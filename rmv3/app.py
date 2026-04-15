@@ -411,11 +411,15 @@ def wa_norm_number(numero):
     if len(n) in (10,11): return '55'+n
     return n
 
+def wa_is_valid_number(numero):
+    n=re.sub(r'\D+','',str(numero or ''))
+    return bool(re.fullmatch(r'\d{10,15}',n))
+
 def wa_send_text(numero,mensagem):
     cfg=wa_cfg()
     if not cfg['url'] or not cfg['instancia']: raise ValueError('WhatsApp nao configurado')
     num=wa_norm_number(numero)
-    if not num: raise ValueError('Numero WhatsApp invalido')
+    if not wa_is_valid_number(num): raise ValueError(f'Numero WhatsApp invalido: {num or "vazio"}')
     url=f"{cfg['url'].rstrip('/')}/message/sendText/{cfg['instancia']}"
     data=json.dumps({'number':num,'text':mensagem}).encode()
     req=urllib.request.Request(url,data=data,headers={'Content-Type':'application/json','apikey':cfg['token']})
@@ -429,7 +433,7 @@ def wa_send_pdf(numero,caminho_abs,nome_arquivo,caption=''):
     cfg=wa_cfg()
     if not cfg['url'] or not cfg['instancia']: raise ValueError('WhatsApp nao configurado')
     num=wa_norm_number(numero)
-    if not num: raise ValueError('Numero WhatsApp invalido')
+    if not wa_is_valid_number(num): raise ValueError(f'Numero WhatsApp invalido: {num or "vazio"}')
     with open(caminho_abs,'rb') as f: pdf_b64=base64.b64encode(f.read()).decode()
     url=f"{cfg['url'].rstrip('/')}/message/sendMedia/{cfg['instancia']}"
     data=json.dumps({'number':num,'mediatype':'document','mimetype':'application/pdf','media':pdf_b64,'fileName':nome_arquivo,'caption':caption or nome_arquivo}).encode()
@@ -2170,6 +2174,9 @@ def webhook_whatsapp():
                 numero=(jid.split('@')[0] if jid else '')
                 if not numero: continue
                 numero=only_digits(numero) or numero
+                if not wa_is_valid_number(numero):
+                    diag['erros'].append(f'Numero invalido no webhook: {numero}')
+                    continue
                 conteudo=(msg_data.get('message',{}).get('conversation') or
                           msg_data.get('message',{}).get('extendedTextMessage',{}).get('text') or
                           msg_data.get('body') or msg_data.get('text') or '')
