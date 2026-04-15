@@ -1,0 +1,2153 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RM Facilities — Sistema</title>
+<link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-brand">
+    <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities"
+         onerror="this.style.display='none'">
+    <h1>RM Facilities</h1>
+  </div>
+  <div class="topbar-right">
+    <div class="topbar-user">
+      <div style="font-weight:700">{{ nome }}</div>
+      <div id="relogio"></div>
+    </div>
+    <a href="/logout" class="btn-top">Sair</a>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <nav class="sidebar">
+    <div class="nav-section">Principal</div>
+    <a class="nav-item on" onclick="nav('dashboard',this)">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </a>
+
+    <div class="nav-section">Faturamento</div>
+    <a class="nav-item" onclick="nav('nova-medicao',this)">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Nova Medição
+    </a>
+    <a class="nav-item" onclick="nav('historico',this)">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Histórico
+    </a>
+    <a class="nav-item" onclick="nav('clientes',this)">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Clientes
+    </a>
+    <a class="nav-item" onclick="nav('rh',this)">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>
+      RH
+    </a>
+    <a class="nav-item" onclick="nav('rh-digital',this)">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+      RH Digital
+    </a>
+    <a class="nav-item" onclick="nav('operacional',this)">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 20h16"/><path d="M6 20V8l6-4 6 4v12"/></svg>
+      Operacional
+    </a>
+    <a class="nav-item" onclick="nav('sst',this)">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 9.5-8 10-4.5-.5-8-5-8-10V6l8-4z"/><path d="M9 12l2 2 4-4"/></svg>
+      Segurança do Trabalho
+    </a>
+
+    <hr class="nav-sep">
+    {% if perfil == 'dono' %}
+    <div class="nav-section">Administração</div>
+    <a class="nav-item" onclick="nav('empresas',this)">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      Empresas
+    </a>
+    <a class="nav-item" onclick="nav('usuarios',this)">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Usuários
+    </a>
+    <a class="nav-item" onclick="nav('config',this)">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+      Configurações
+    </a>
+    {% endif %}
+  </nav>
+
+  <!-- CONTEÚDO -->
+  <main class="content">
+
+    <!-- ══ DASHBOARD ══ -->
+    <div id="pg-dashboard" class="pg on">
+      <div style="margin-bottom:20px">
+        <div style="font-size:22px;font-weight:700;color:var(--azul)" id="dash-saudacao">Olá!</div>
+        <div style="font-size:13px;color:#888" id="dash-data"></div>
+      </div>
+      <div class="dash-grid">
+        <div class="metric"><div class="n" id="d-at">—</div><div class="l">Clientes ativos</div></div>
+        <div class="metric lj"><div class="n" id="d-rec">—</div><div class="l">Receita mensal</div></div>
+        <div class="metric vd"><div class="n" id="d-med">—</div><div class="l">Medições este mês</div></div>
+        <div class="metric vm"><div class="n" id="d-pen">—</div><div class="l">Sem emissão</div></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Acesso rápido</span></div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+          <button class="btn b-az b-lg" style="justify-content:center" onclick="nav('nova-medicao',document.querySelector('[onclick*=nova-medicao]'))">+ Nova Medição</button>
+          <button class="btn b-gh b-lg" style="justify-content:center" onclick="nav('clientes',document.querySelector('[onclick*=clientes]'))">Clientes</button>
+          <button class="btn b-ghl b-lg" style="justify-content:center" onclick="nav('historico',document.querySelector('[onclick*=historico]'))">Histórico</button>
+        </div>
+      </div>
+      <div id="dash-empresas" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"></div>
+    </div>
+
+    <!-- ══ NOVA MEDIÇÃO ══ -->
+    <div id="pg-nova-medicao" class="pg">
+      <div id="st-med" class="st"></div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Identificação</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span style="font-size:12px;color:#888">Próximo nº:</span>
+            <span id="prox-num" style="font-weight:700;color:var(--azul)">—</span>
+          </div>
+        </div>
+        <div class="g4" style="margin-bottom:12px">
+          <div class="f"><label>Tipo de documento</label>
+            <select id="tipo-doc">
+              <option>Medição de Serviços</option>
+              <option>Fatura de Locação</option>
+              <option>Nota de Serviço</option>
+              <option>Recibo</option>
+              <option>Orçamento</option>
+            </select>
+          </div>
+          <div class="f"><label>Nº do documento</label><input id="nmed" placeholder="Auto" readonly style="background:var(--azul-cc);font-weight:700;color:var(--azul)"></div>
+          <div class="f"><label>Mês de referência</label><input type="month" id="mesref"></div>
+          <div class="f"><label>Vencimento</label><input type="date" id="dtvenc"></div>
+        </div>
+        <div class="g2">
+          <div class="f">
+            <label>Empresa prestadora</label>
+            <select id="emp-sel" onchange="onEmpSel()">
+              <option value="">Selecione a empresa...</option>
+            </select>
+          </div>
+          <div class="f"><label>Data de emissão</label><input type="date" id="dtem"></div>
+        </div>
+      </div>
+
+      <!-- Dados de pagamento — somente leitura -->
+      <div class="card" id="pag-card" style="display:none">
+        <div class="card-header"><span class="card-title">Dados de pagamento</span><span style="font-size:11px;color:#aaa">Preenchido automaticamente da empresa</span></div>
+        <div class="pag-box" id="pag-info"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">Cliente</span></div>
+        <div id="cli-sel-box" style="display:none" class="cli-card">
+          <div><div class="nm" id="cs-nm"></div><div class="sb" id="cs-sb"></div></div>
+          <div style="display:flex;gap:7px">
+            <button class="btn b-gh b-sm" onclick="editCliAtual()">Editar</button>
+            <button class="btn b-ci b-sm" onclick="clearCli()">Trocar</button>
+          </div>
+        </div>
+        <div id="busca-box">
+          <div class="g2" style="margin-bottom:11px">
+            <div class="f ac-wrap">
+              <label>Buscar cliente</label>
+              <input id="bcli" placeholder="Nome, CNPJ ou número..." autocomplete="off" oninput="busca(this.value)" onkeydown="acKey(event)">
+              <div id="acl" class="ac-list" style="display:none"></div>
+              <div class="hint">↓↑ navegar · Enter selecionar</div>
+            </div>
+            <div class="f"><label>CNPJ / CPF</label><input id="c-cnpj" readonly></div>
+          </div>
+          <div class="g3">
+            <div class="f s2"><label>Endereço</label><input id="c-end" readonly></div>
+            <div class="f"><label>Responsável</label><input id="c-resp" readonly></div>
+          </div>
+        </div>
+        <div class="arow" style="margin-top:12px">
+          <button class="btn b-gh b-sm" onclick="openModal('novo')">+ Novo cliente</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">Serviços</span></div>
+        <div style="overflow-x:auto;margin-bottom:8px">
+          <table class="svc-tbl">
+            <thead><tr>
+              <th style="width:28px">#</th>
+              <th>Descrição do serviço</th>
+              <th style="width:72px">Unidade</th>
+              <th style="width:68px" class="r">Qtd.</th>
+              <th style="width:115px" class="r">Valor unit. (R$)</th>
+              <th style="width:115px" class="r">Valor total</th>
+              <th style="width:28px"></th>
+            </tr></thead>
+            <tbody id="svcs"></tbody>
+          </table>
+        </div>
+        <div class="arow">
+          <button class="btn b-gh b-sm" onclick="addS('Limpeza e conservação — contrato mensal','Mês',1,0)">+ Limpeza</button>
+          <button class="btn b-gh b-sm" onclick="addS('Jardinagem e paisagismo — contrato mensal','Mês',1,0)">+ Jardinagem</button>
+          <button class="btn b-gh b-sm" onclick="addS('Portaria e recepção — contrato mensal','Mês',1,0)">+ Portaria</button>
+          <button class="btn b-ghl b-sm" onclick="addS('Locação de equipamento','un',1,0)">+ Locação</button>
+          <button class="btn b-ci b-sm" onclick="addS('','Serv.',1,0)">+ Avulso</button>
+        </div>
+        <div class="tot-box">
+          <div class="tot-lbl">Valor total a receber:</div>
+          <div class="tot-val" id="tot-val">R$ 0,00</div>
+        </div>
+      </div>
+
+      <div class="g2">
+        <div class="card" style="margin-bottom:0">
+          <div class="card-header"><span class="card-title">Assinaturas</span></div>
+          <div class="f" style="margin-bottom:10px"><label>Assinatura — empresa (nome/cargo)</label><input id="ass1" placeholder="Ex: João Silva — Gerente Operacional"></div>
+          <div class="f"><label>Assinatura — cliente (nome/cargo)</label><input id="ass2" id="ass2" placeholder="Ex: Maria Souza — Síndica"></div>
+        </div>
+        <div class="card" style="margin-bottom:0">
+          <div class="card-header"><span class="card-title">Observações</span></div>
+          <div class="f"><textarea id="obs" placeholder="Observações que aparecerão no documento..." style="min-height:90px"></textarea></div>
+        </div>
+      </div>
+
+      <div class="brow" style="margin-top:14px">
+        <button class="btn b-ci" onclick="limparMed()">Limpar</button>
+        <button class="btn b-ghv" onclick="registrar()">Registrar emissão</button>
+        <button class="btn b-lj b-lg" id="btn-pdf" onclick="gerarPDF()">⬇ Gerar PDF</button>
+      </div>
+    </div>
+
+    <!-- ══ HISTÓRICO ══ -->
+    <div id="pg-historico" class="pg">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Medições emitidas</span>
+          <div style="display:flex;gap:8px">
+            <input id="hist-busca" placeholder="Buscar..." oninput="renderHist()" style="padding:6px 10px;font-size:12px;border:1.5px solid var(--borda);border-radius:var(--r);width:180px">
+            <button class="btn b-ghr b-sm" onclick="if(confirm('Limpar todo o histórico?'))limparHist()">Limpar tudo</button>
+          </div>
+        </div>
+        <div id="hist-lista"><div class="vazio">Nenhuma medição registrada.</div></div>
+      </div>
+    </div>
+
+    <!-- ══ CLIENTES ══ -->
+    <div id="pg-clientes" class="pg">
+      <div id="st-cli" class="st"></div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Base de clientes</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <select id="fe" onchange="renderCli()" style="padding:6px 9px;font-size:12px;border:1.5px solid var(--borda);border-radius:var(--r)">
+              <option value="">Todas as empresas</option>
+            </select>
+            <select id="fs" onchange="renderCli()" style="padding:6px 9px;font-size:12px;border:1.5px solid var(--borda);border-radius:var(--r)">
+              <option value="">Todos os status</option>
+              <option>Ativo</option><option>Inativo</option><option>Suspenso</option>
+            </select>
+            <input id="fb" placeholder="Buscar..." oninput="renderCli()" style="padding:6px 11px;font-size:12px;border:1.5px solid var(--borda);border-radius:var(--r);width:160px">
+            <button class="btn b-az b-sm" onclick="openModal('novo')">+ Novo cliente</button>
+            <a class="btn b-gh b-sm" href="/api/clientes/modelo">Modelo planilha</a>
+            <label class="btn b-ghl b-sm" for="cli-import-file" style="cursor:pointer">Importar planilha</label>
+            <input type="file" id="cli-import-file" accept=".csv,.xlsx" style="display:none" onchange="importarClientesPlanilha(event)">
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr>
+              <th>Nº</th><th>Cliente</th><th>Empresa</th><th>Serviços</th>
+              <th style="text-align:right">Contrato</th><th>Venc.</th><th>Status</th><th>Ações</th>
+            </tr></thead>
+            <tbody id="tb-cli"></tbody>
+          </table>
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:#aaa" id="tb-res"></div>
+      </div>
+    </div>
+
+    <!-- ══ RH ══ -->
+    <div id="pg-rh" class="pg">
+      <div id="st-rh" class="st"></div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Funcionários</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input id="rh-busca" placeholder="Buscar por nome, CPF ou cargo" oninput="renderFuncionarios()" style="padding:6px 10px;font-size:12px;border:1.5px solid var(--borda);border-radius:var(--r);width:220px">
+            <button class="btn b-az b-sm" onclick="openModalFunc('novo')">+ Novo funcionário</button>
+            <a class="btn b-gh b-sm" href="/api/funcionarios/modelo">Modelo funcionários</a>
+            <label class="btn b-ghl b-sm" for="func-import-file" style="cursor:pointer">Importar planilha</label>
+            <input type="file" id="func-import-file" accept=".csv,.xlsx" style="display:none" onchange="importarFuncionariosPlanilha(event)">
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr><th>Nome</th><th>Cargo</th><th>Empresa</th><th>Contato</th><th>Áreas</th><th>Status</th><th>Ações</th></tr></thead>
+            <tbody id="tb-func"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">Holerites em lote (PDF)</span></div>
+        <div class="g3">
+          <div class="f"><label>Competência (ex: 04/2026)</label><input id="rh-comp"></div>
+          <div class="f s2"><label>Arquivo PDF único (com vários holerites)</label><input type="file" id="rh-holerite-arq" accept="application/pdf"></div>
+        </div>
+        <div class="brow" style="justify-content:flex-start"><button class="btn b-ghv" onclick="uploadHoleritesLote()">Processar e separar por funcionário</button></div>
+      </div>
+    </div>
+
+    <!-- ══ RH DIGITAL ══ -->
+    <div id="pg-rh-digital" class="pg">
+      <div id="st-rhd" class="st"></div>
+      <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap" id="rhd-tabs">
+        <button class="btn b-az b-sm" onclick="switchTab('rhd','holerites',this)">Holerites</button>
+        <button class="btn b-gh b-sm" onclick="switchTab('rhd','whatsapp',this)">WhatsApp Web</button>
+        <button class="btn b-gh b-sm" onclick="switchTab('rhd','cfg-email',this)">Config E-mail</button>
+        <button class="btn b-gh b-sm" onclick="switchTab('rhd','cfg-wa',this)">Config WhatsApp</button>
+      </div>
+
+      <!-- Tab Holerites -->
+      <div id="rhd-tab-holerites">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Processar e enviar holerites</span></div>
+          <div class="g3">
+            <div class="f"><label>Competência (ex: 04/2026)</label><input id="rhd-comp" placeholder="04/2026"></div>
+            <div class="f s2"><label>PDF com todos os holerites (múltiplas páginas)</label><input type="file" id="rhd-arq" accept="application/pdf"></div>
+          </div>
+          <div class="brow" style="justify-content:flex-start">
+            <button class="btn b-az" onclick="rhdProcessar()">Separar por funcionário</button>
+          </div>
+          <p style="font-size:12px;color:#888;margin-top:6px">O sistema identifica o funcionário pelo nome no PDF e salva o holerite na pasta dele. Após processar, escolha como enviar.</p>
+        </div>
+        <div id="rhd-preview-box" style="display:none">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Holerites identificados — preview</span>
+              <div style="display:flex;gap:8px">
+                <button class="btn b-gh b-sm" onclick="rhdSelecionarTodos(true)">Selec. todos</button>
+                <button class="btn b-ci b-sm" onclick="rhdSelecionarTodos(false)">Desmarcar</button>
+              </div>
+            </div>
+            <div id="rhd-preview-lista"></div>
+            <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <select id="rhd-canal" style="padding:6px 10px;border:1.5px solid var(--borda);border-radius:var(--r);font-size:13px">
+                <option value="email">Enviar por e-mail</option>
+                <option value="whatsapp">Enviar por WhatsApp</option>
+                <option value="ambos">Enviar por e-mail e WhatsApp</option>
+              </select>
+              <button class="btn b-ghv" onclick="rhdEnviar()">Enviar selecionados</button>
+            </div>
+            <div id="rhd-envio-st" class="st" style="margin-top:8px"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab WhatsApp Web -->
+      <div id="rhd-tab-whatsapp" style="display:none">
+        <div style="display:grid;grid-template-columns:280px 1fr;gap:12px">
+          <div class="card" style="margin-bottom:0">
+            <div class="card-header">
+              <span class="card-title">Conversas</span>
+              <button class="btn b-gh b-sm" onclick="loadWAConversas()">Atualizar</button>
+            </div>
+            <div id="wa-conversas-lista"><div class="vazio">Nenhuma conversa.</div></div>
+          </div>
+          <div class="card" style="display:flex;flex-direction:column;margin-bottom:0;min-height:520px">
+            <div class="card-header">
+              <span class="card-title" id="wa-chat-titulo">Selecione uma conversa</span>
+            </div>
+            <div id="wa-chat-msgs" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:400px"></div>
+            <div style="padding:12px;border-top:1.5px solid var(--borda);display:flex;gap:8px">
+              <input id="wa-msg-input" placeholder="Digite uma mensagem..." style="flex:1;padding:8px 12px;border:1.5px solid var(--borda);border-radius:var(--r);font-size:13px" onkeydown="if(event.key==='Enter')waSend()">
+              <button class="btn b-az" onclick="waSend()">Enviar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab Config E-mail -->
+      <div id="rhd-tab-cfg-email" style="display:none">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Configuração de E-mail (SMTP)</span></div>
+          <div class="g3">
+            <div class="f s2"><label>Servidor SMTP</label><input id="smtp-host" placeholder="smtp.gmail.com"></div>
+            <div class="f"><label>Porta</label><input id="smtp-port" value="587"></div>
+          </div>
+          <div class="g2">
+            <div class="f"><label>Usuário / Login</label><input id="smtp-user" placeholder="seu@email.com" type="email"></div>
+            <div class="f"><label>Senha / App Password</label><input id="smtp-senha" type="password" placeholder="••••••••"></div>
+          </div>
+          <div class="g2">
+            <div class="f"><label>Nome / E-mail remetente</label><input id="smtp-de" placeholder="RM Facilities &lt;contato@rmfacilities.com.br&gt;"></div>
+            <div class="f"><label>Método de segurança</label>
+              <select id="smtp-tls">
+                <option value="1">STARTTLS (porta 587 — recomendado)</option>
+                <option value="0">SSL direto (porta 465)</option>
+              </select>
+            </div>
+          </div>
+          <div class="brow" style="justify-content:flex-start">
+            <button class="btn b-az" onclick="salvarSMTP()">Salvar configurações</button>
+            <button class="btn b-ghv" onclick="testarSMTP()">Enviar e-mail de teste</button>
+          </div>
+          <div id="smtp-st" class="st"></div>
+        </div>
+      </div>
+
+      <!-- Tab Config WhatsApp -->
+      <div id="rhd-tab-cfg-wa" style="display:none">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Configuração WhatsApp (Evolution API)</span></div>
+          <div class="f"><label>URL base da Evolution API</label><input id="wa-url" placeholder="https://api.suaevolution.com.br"></div>
+          <div class="g2">
+            <div class="f"><label>Nome da Instância</label><input id="wa-instancia" placeholder="minhainstancia"></div>
+            <div class="f"><label>API Key / Token</label><input id="wa-token" type="password" placeholder="••••••••••••"></div>
+          </div>
+          <div class="brow" style="justify-content:flex-start">
+            <button class="btn b-az" onclick="salvarWAConfig()">Salvar configurações</button>
+            <button class="btn b-ghv" onclick="testarWA()">Testar conexão</button>
+          </div>
+          <div id="wa-cfg-st" class="st"></div>
+          <p style="font-size:12px;color:#888;margin-top:8px">Configure o webhook em sua instância Evolution API para: <code>POST /webhook/whatsapp</code></p>
+        </div>
+        <div class="card" style="margin-top:10px">
+          <div class="card-header"><span class="card-title">Agente IA no WhatsApp (Gemini/OpenAI)</span></div>
+          <div class="g3">
+            <div class="f"><label>Ativar resposta automática</label><select id="iawa-enabled"><option value="0">Não</option><option value="1">Sim</option></select></div>
+            <div class="f"><label>Provedor</label><select id="iawa-provider"><option value="gemini">Google Gemini</option><option value="openai">OpenAI (ChatGPT)</option></select></div>
+            <div class="f"><label>Modelo</label><input id="iawa-model" placeholder="gemini-1.5-flash ou gpt-4o-mini"></div>
+          </div>
+          <div class="g2">
+            <div class="f"><label>API Key da IA</label><input id="iawa-api-key" type="password" placeholder="••••••••••••"></div>
+            <div class="f"><label>Temperatura (0.0 a 1.0)</label><input id="iawa-temperature" type="number" min="0" max="1" step="0.1" placeholder="0.3"></div>
+          </div>
+          <div class="g2">
+            <div class="f"><label>Máx. tokens</label><input id="iawa-max-tokens" type="number" min="50" max="2000" step="10" placeholder="350"></div>
+            <div class="f"><label>Número para teste (com DDI)</label><input id="iawa-numero-teste" placeholder="5511999998888"></div>
+          </div>
+          <div class="f"><label>Prompt do agente</label><textarea id="iawa-prompt" placeholder="Você é atendente da RM Facilities. Seja objetivo, cordial e comercial."></textarea></div>
+          <div class="brow" style="justify-content:flex-start">
+            <button class="btn b-az" onclick="salvarIAWAConfig()">Salvar IA</button>
+            <button class="btn b-ghv" onclick="testarIAWA()">Testar IA</button>
+          </div>
+          <div id="iawa-st" class="st"></div>
+          <div id="iawa-resp" style="font-size:12px;color:#444;margin-top:8px;white-space:pre-wrap"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ OPERACIONAL ══ -->
+    <div id="pg-operacional" class="pg">
+      <div id="st-op" class="st"></div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Ordem de Compra</span></div>
+        <div class="g4">
+          <div class="f"><label>Número</label><input id="oc-num" placeholder="OC-2026-001"></div>
+          <div class="f"><label>Empresa</label><select id="oc-emp"><option value="">Selecione...</option></select></div>
+          <div class="f"><label>Solicitante</label><input id="oc-sol"></div>
+          <div class="f"><label>Data</label><input id="oc-data" type="date"></div>
+        </div>
+        <div class="g3" style="margin-top:10px">
+          <div class="f"><label>Fornecedor</label><input id="oc-for"></div>
+          <div class="f"><label>Valor</label><input id="oc-val" type="number" min="0" step="0.01"></div>
+          <div class="f"><label>Status</label><select id="oc-status"><option>Aberta</option><option>Aprovada</option><option>Cancelada</option></select></div>
+        </div>
+        <div class="f" style="margin-top:10px"><label>Descrição</label><textarea id="oc-desc"></textarea></div>
+        <div class="brow" style="justify-content:flex-start"><button class="btn b-az" onclick="salvarOrdemCompra()">Salvar ordem</button></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Ordens cadastradas</span></div>
+        <div id="lista-oc"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">Documentação operacional</span></div>
+        <div class="g3">
+          <div class="f"><label>Tipo</label><select id="op-tipo"><option>DDS</option><option>Ficha de EPI</option><option>Procedimento</option><option>Outros</option></select></div>
+          <div class="f"><label>Empresa</label><select id="op-emp"><option value="">Selecione...</option></select></div>
+          <div class="f"><label>Título</label><input id="op-titulo"></div>
+        </div>
+        <div class="f" style="margin-top:10px"><label>Descrição</label><textarea id="op-desc"></textarea></div>
+        <div class="f" style="margin-top:10px"><label>Arquivo</label><input type="file" id="op-arq"></div>
+        <div class="brow" style="justify-content:flex-start"><button class="btn b-ghv" onclick="salvarDocOperacional()">Salvar documento</button></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Documentos operacionais</span></div>
+        <div id="lista-op-docs"></div>
+      </div>
+    </div>
+
+    <!-- ══ SST ══ -->
+    <div id="pg-sst" class="pg">
+      <div id="st-sst" class="st"></div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Segurança do Trabalho</span></div>
+        <p style="font-size:13px;color:#666">Nesta aba você pode anexar ASO, ficha de EPI e documentos relacionados direto no cadastro do funcionário.</p>
+        <div class="g3" style="margin-top:8px">
+          <div class="f"><label>Funcionário</label><select id="sst-func"><option value="">Selecione...</option></select></div>
+            <div class="f"><label>Categoria</label><select id="sst-cat"><option value="aso">ASO</option><option value="epi">Ficha de EPI</option><option value="treinamento">Treinamento</option><option value="folha_ponto">Folha de Ponto</option><option value="contrato_trabalho">Contrato de Trabalho</option><option value="vale_transporte">Vale Transporte</option><option value="requisicao_vale_transporte">Requisição de Vale Transporte</option><option value="uniforme">Uniforme / Fardamento</option><option value="outros">Outros</option></select></div>
+          <div class="f"><label>Competência/Validade</label><input id="sst-comp" placeholder="04/2026"></div>
+        </div>
+        <div class="f" style="margin-top:10px"><label>Arquivo</label><input type="file" id="sst-arq"></div>
+        <div class="brow" style="justify-content:flex-start"><button class="btn b-az" onclick="uploadSSTArquivo()">Anexar ao funcionário</button></div>
+      </div>
+    </div>
+
+    <!-- ══ EMPRESAS ══ -->
+    <div id="pg-empresas" class="pg">
+      <div id="st-emp" class="st"></div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Empresas cadastradas</span>
+          <button class="btn b-az b-sm" onclick="openModalEmp('novo')">+ Nova empresa</button>
+        </div>
+        <div id="lista-empresas"><div class="vazio">Nenhuma empresa cadastrada.</div></div>
+      </div>
+    </div>
+
+    <!-- ══ USUÁRIOS ══ -->
+    <div id="pg-usuarios" class="pg">
+      <div id="st-usr" class="st"></div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Usuários do sistema</span>
+          <button class="btn b-az b-sm" onclick="openModalUsr('novo')">+ Novo usuário</button>
+        </div>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th>Ações</th></tr></thead>
+            <tbody id="tb-usr"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ CONFIGURAÇÕES ══ -->
+    <div id="pg-config" class="pg">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Numeração de documentos</span></div>
+        <div class="g2">
+          <div class="f"><label>Número base (próxima medição começará a partir daqui)</label><input type="number" id="cfg-num-base" placeholder="100" min="1"></div>
+          <div class="f"><label>Última medição emitida (o sistema usará o próximo número)</label><input type="number" id="cfg-num-ultima" placeholder="0" min="0"></div>
+        </div>
+        <div class="brow" style="justify-content:flex-start;margin-top:14px">
+          <button class="btn b-az" onclick="salvarConfig()">Salvar configurações</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Backup do sistema</span></div>
+        <p style="font-size:13px;color:#666;margin-bottom:14px">Faça o download de todos os dados do sistema em formato ZIP. Inclui banco de dados e exportação JSON de clientes, medições e empresas.</p>
+        <a href="/api/backup" class="btn b-vd">⬇ Baixar backup completo</a>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="file" id="bk-restore" accept=".zip">
+          <button class="btn b-ghr" onclick="restaurarBackup()">Restaurar backup ZIP</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- MODAL ARQUIVOS FUNCIONARIO -->
+<div id="mod-farq" class="mb" onclick="if(event.target===this)closeModal('farq')">
+  <div class="md" style="max-width:760px">
+    <div class="mh"><span class="mt" id="mod-farq-tit">Arquivos do funcionário</span><button class="btn b-ci b-sm" onclick="closeModal('farq')">Fechar ×</button></div>
+    <div class="mb-body">
+      <input type="hidden" id="farq-fid">
+      <div class="g3">
+        <div class="f"><label>Categoria</label><select id="farq-cat"><option value="outros">Outros</option><option value="aso">ASO</option><option value="epi">EPI</option><option value="holerite">Holerite</option><option value="treinamento">Treinamento</option><option value="folha_ponto">Folha de Ponto</option><option value="contrato_trabalho">Contrato de Trabalho</option><option value="vale_transporte">Vale Transporte</option><option value="requisicao_vale_transporte">Requisição de Vale Transporte</option><option value="uniforme">Uniforme / Fardamento</option></select></div>
+        <div class="f"><label>Competência/Validade</label><input id="farq-comp"></div>
+        <div class="f"><label>Arquivo</label><input type="file" id="farq-arq"></div>
+      </div>
+      <div class="brow" style="justify-content:flex-start"><button class="btn b-az" onclick="uploadArquivoFuncionarioModal()">Anexar arquivo</button></div>
+      <div id="farq-lista"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL FUNCIONARIO -->
+<div id="mod-func" class="mb" onclick="if(event.target===this)closeModal('func')">
+  <div class="md" style="max-width:760px">
+    <div class="mh"><span class="mt" id="mod-func-tit">Novo funcionário</span><button class="btn b-ci b-sm" onclick="closeModal('func')">Fechar ×</button></div>
+    <div class="mb-body">
+      <input type="hidden" id="fid">
+      <div class="g3">
+        <div class="f s2"><label>Nome *</label><input id="fnome"></div>
+        <div class="f"><label>CPF</label><input id="fcpf" placeholder="000.000.000-00" oninput="maskCPF(this)" onblur="buscarFuncionarioPorCPF()"><div id="fcpf-st" class="hint" style="display:none"></div></div>
+      </div>
+      <div class="g3">
+        <div class="f"><label>E-mail</label><input id="femail" type="email"></div>
+        <div class="f"><label>Telefone</label><div style="display:flex;gap:8px"><select id="fddi" style="width:170px"><option value="55">🇧🇷 +55 Brasil</option><option value="1">🇺🇸 +1 EUA/Canadá</option><option value="351">🇵🇹 +351 Portugal</option><option value="34">🇪🇸 +34 Espanha</option><option value="44">🇬🇧 +44 Reino Unido</option><option value="49">🇩🇪 +49 Alemanha</option><option value="39">🇮🇹 +39 Itália</option><option value="54">🇦🇷 +54 Argentina</option><option value="56">🇨🇱 +56 Chile</option><option value="57">🇨🇴 +57 Colômbia</option><option value="58">🇻🇪 +58 Venezuela</option><option value="52">🇲🇽 +52 México</option><option value="593">🇪🇨 +593 Equador</option><option value="595">🇵🇾 +595 Paraguai</option><option value="598">🇺🇾 +598 Uruguai</option><option value="591">🇧🇴 +591 Bolívia</option></select><input id="ftel" placeholder="(00) 00000-0000" oninput="maskTelefone(this)" style="flex:1"></div></div>
+        <div class="f"><label>Status</label><select id="fstatus"><option>Ativo</option><option>Inativo</option><option>Afastado</option></select></div>
+      </div>
+      <div class="g3">
+        <div class="f"><label>Cargo</label><input id="fcargo"></div>
+        <div class="f"><label>Setor</label><input id="fsetor"></div>
+        <div class="f"><label>Empresa</label><select id="femp"><option value="">Selecione...</option></select></div>
+      </div>
+      <div class="g3">
+        <div class="f"><label>Admissão</label><input id="fadmissao" type="date"></div>
+        <div class="f"><label>Salário</label><input id="fsal" type="number" min="0" step="0.01"></div>
+        <div class="f"><label>CEP</label><input id="fcep" placeholder="00000-000" oninput="maskCEP(this)"></div>
+      </div>
+      <div class="g3">
+        <div class="f s2"><label>Endereço</label><input id="fend"></div>
+        <div class="f"><label>Cidade/UF</label><input id="fciduf" placeholder="Cidade/UF"></div>
+      </div>
+      <div class="f"><label>Áreas com acesso</label>
+        <div id="fareas" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:12px;color:#444"></div>
+      </div>
+      <div class="f"><label>Observações</label><textarea id="fobs"></textarea></div>
+      <div class="brow" style="margin-top:6px">
+        <button class="btn b-ci" onclick="closeModal('func')">Cancelar</button>
+        <button class="btn b-az" onclick="salvarFuncionario()">Salvar funcionário</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CLIENTE -->
+<div id="mod-cli" class="mb" onclick="if(event.target===this)closeModal('cli')">
+  <div class="md">
+    <div class="mh"><span class="mt" id="mod-cli-tit">Novo cliente</span><button class="btn b-ci b-sm" onclick="closeModal('cli')">Fechar ×</button></div>
+    <div class="mb-body">
+      <input type="hidden" id="mid">
+      <div class="f"><label>Nome do cliente *</label><input id="mn"></div>
+      <div class="g2">
+        <div class="f">
+          <label>CNPJ / CPF</label>
+          <div style="display:flex;gap:6px">
+            <input id="mc" placeholder="00.000.000/0001-00" style="flex:1" oninput="maskDoc(this)">
+            <button type="button" class="btn b-gh b-sm" onclick="buscarCNPJ()" id="btn-bcnpj">Buscar</button>
+          </div>
+          <div id="cnpj-st" class="hint" style="display:none"></div>
+        </div>
+        <div class="f"><label>Responsável / Contato</label><input id="mr"></div>
+      </div>
+      <div class="g2">
+        <div class="f"><label>Telefone</label><input id="mt" placeholder="(00) 00000-0000" oninput="maskTelefone(this)"></div>
+        <div class="f"><label>E-mail</label><input id="me" type="email"></div>
+      </div>
+      <div class="sep"></div>
+      <div class="g2">
+        <div class="f">
+          <label>CEP</label>
+          <div style="display:flex;gap:6px">
+            <input id="mcep" placeholder="00000-000" style="flex:1" oninput="maskCEP(this)" onblur="buscarCEP()">
+            <button type="button" class="btn b-gh b-sm" onclick="buscarCEP()">Buscar</button>
+          </div>
+          <div id="cep-st" class="hint" style="display:none"></div>
+        </div>
+        <div class="f"><label>Número</label><input id="mnum-end" placeholder="123"></div>
+      </div>
+      <div class="g2">
+        <div class="f"><label>Logradouro</label><input id="mend" placeholder="Rua / Av."></div>
+        <div class="f"><label>Complemento</label><input id="mcompl"></div>
+      </div>
+      <div class="g3">
+        <div class="f"><label>Bairro</label><input id="mbairro"></div>
+        <div class="f"><label>Cidade</label><input id="mcidade"></div>
+        <div class="f"><label>Estado</label><input id="mestado" maxlength="2" placeholder="SP"></div>
+      </div>
+      <div class="sep"></div>
+      <div class="g2">
+        <div class="f"><label>Empresa responsável</label>
+          <select id="memp"><option value="">Selecione...</option></select>
+        </div>
+        <div class="f"><label>Status</label>
+          <select id="mst"><option>Ativo</option><option>Inativo</option><option>Suspenso</option></select>
+        </div>
+      </div>
+      <div style="font-size:11px;font-weight:700;color:var(--azul);text-transform:uppercase;letter-spacing:.5px;margin-top:4px">Valores mensais do contrato</div>
+      <div class="g3">
+        <div class="f"><label>Limpeza (R$)</label><input type="number" id="ml" value="0" min="0" step="0.01"></div>
+        <div class="f"><label>Jardinagem (R$)</label><input type="number" id="mj" value="0" min="0" step="0.01"></div>
+        <div class="f"><label>Portaria (R$)</label><input type="number" id="mp" value="0" min="0" step="0.01"></div>
+      </div>
+      <div class="g2">
+        <div class="f"><label>Dia de vencimento</label><input type="number" id="mv" min="1" max="31" placeholder="10"></div>
+        <div class="f"><label>Observação interna</label><input id="mob"></div>
+      </div>
+      <div class="brow" style="margin-top:6px">
+        <button class="btn b-ci" onclick="closeModal('cli')">Cancelar</button>
+        <button class="btn b-az" onclick="salvarCliente()">Salvar cliente</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EMPRESA -->
+<div id="mod-emp" class="mb" onclick="if(event.target===this)closeModal('emp')">
+  <div class="md" style="max-width:720px">
+    <div class="mh"><span class="mt" id="mod-emp-tit">Nova empresa</span><button class="btn b-ci b-sm" onclick="closeModal('emp')">Fechar ×</button></div>
+    <div class="mb-body">
+      <input type="hidden" id="eid">
+      <div class="g2">
+        <div class="f">
+          <label>CNPJ</label>
+          <div style="display:flex;gap:6px">
+            <input id="ecnpj" placeholder="00.000.000/0001-00" style="flex:1" oninput="maskCNPJ(this)">
+            <button type="button" class="btn b-gh b-sm" onclick="buscarCNPJEmp()">Buscar</button>
+          </div>
+          <div id="ecnpj-st" class="hint" style="display:none"></div>
+        </div>
+        <div class="f"><label>Nome fantasia *</label><input id="enome"></div>
+      </div>
+      <div class="g2">
+        <div class="f"><label>Razão social</label><input id="erazao"></div>
+        <div class="f"><label>Site</label><input id="esite" placeholder="https://"></div>
+      </div>
+      <div class="g3">
+        <div class="f"><label>Contato principal</label><input id="econtato"></div>
+        <div class="f"><label>E-mail do contato</label><input id="econtato-email" type="email"></div>
+        <div class="f"><label>Telefone do contato</label><input id="econtato-tel" placeholder="(00) 00000-0000" oninput="maskTelefone(this)"></div>
+      </div>
+      <div class="f"><label>Logo da empresa (URL)</label><input id="elogo" placeholder="https://.../logo.png"></div>
+      <div class="g2">
+        <div class="f"><label>Telefone</label><input id="etel" placeholder="(00) 00000-0000" oninput="maskTelefone(this)"></div>
+        <div class="f"><label>E-mail</label><input id="eemail" type="email"></div>
+      </div>
+      <div class="sep"></div>
+      <div class="g2">
+        <div class="f">
+          <label>CEP</label>
+          <div style="display:flex;gap:6px">
+            <input id="ecep" placeholder="00000-000" style="flex:1" oninput="maskCEP(this)" onblur="buscarCEPEmp()">
+            <button type="button" class="btn b-gh b-sm" onclick="buscarCEPEmp()">Buscar</button>
+          </div>
+        </div>
+        <div class="f"><label>Número</label><input id="enum-end"></div>
+      </div>
+      <div class="g2">
+        <div class="f"><label>Logradouro</label><input id="elogr"></div>
+        <div class="f"><label>Bairro</label><input id="ebairro"></div>
+      </div>
+      <div class="g3">
+        <div class="f"><label>Cidade</label><input id="ecidade"></div>
+        <div class="f"><label>Estado</label><input id="estado" maxlength="2" placeholder="SP"></div>
+        <div class="f"><label>Complemento</label><input id="ecompl"></div>
+      </div>
+      <div class="sep"></div>
+      <div class="g3">
+        <div class="f"><label>Chave Pix</label><input id="epix"></div>
+        <div class="f"><label>Banco</label><input id="ebanco"></div>
+        <div class="f"><label>Agência</label><input id="eagencia"></div>
+      </div>
+      <div class="g2">
+        <div class="f"><label>Conta</label><input id="econta"></div>
+        <div class="f"><label>Informações de boleto</label><input id="eboleto" placeholder="Ex: Banco, beneficiário, instruções"></div>
+      </div>
+      <div class="brow" style="margin-top:6px">
+        <button class="btn b-ci" onclick="closeModal('emp')">Cancelar</button>
+        <button class="btn b-az" onclick="salvarEmpresa()">Salvar empresa</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL USUÁRIO -->
+<div id="mod-usr" class="mb" onclick="if(event.target===this)closeModal('usr')">
+  <div class="md" style="max-width:480px">
+    <div class="mh"><span class="mt" id="mod-usr-tit">Novo usuário</span><button class="btn b-ci b-sm" onclick="closeModal('usr')">Fechar ×</button></div>
+    <div class="mb-body">
+      <input type="hidden" id="uid-edit">
+      <div class="f"><label>Nome *</label><input id="un"></div>
+      <div class="f"><label>E-mail *</label><input id="ue" type="email"></div>
+      <div class="f"><label>Senha (deixe em branco para manter)</label><input id="up" type="password" placeholder="••••••••"></div>
+      <div class="g2">
+        <div class="f"><label>Perfil</label>
+          <select id="uperfil">
+            <option value="admin">Administrador</option>
+            <option value="dono">Dono (acesso total)</option>
+            <option value="operador">Operador (somente leitura)</option>
+          </select>
+        </div>
+        <div class="f"><label>Status</label>
+          <select id="uativo">
+            <option value="true">Ativo</option>
+            <option value="false">Inativo</option>
+          </select>
+        </div>
+      </div>
+      <div class="f"><label>Áreas de acesso</label><div id="uareas" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:12px;color:#444"></div></div>
+      <div class="brow" style="margin-top:6px">
+        <button class="btn b-ci" onclick="closeModal('usr')">Cancelar</button>
+        <button class="btn b-az" onclick="salvarUsuario()">Salvar usuário</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const N='{{ nome }}', P='{{ perfil }}';
+const USER_AREAS={{ areas|safe }};
+const AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','sst','rh-digital'];
+let todos=[], emps=[], funcs=[], acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
+
+async function api(url,m='GET',b=null){
+  const o={method:m,headers:{'Content-Type':'application/json'}};
+  if(b)o.body=JSON.stringify(b);
+  const r=await fetch(url,o); return r.json();
+}
+
+async function init(){
+  tick(); setInterval(tick,1000);
+  const h=new Date();
+  document.getElementById('mesref').value=h.toISOString().slice(0,7);
+  document.getElementById('dtem').value=h.toISOString().split('T')[0];
+  const v=new Date(h); v.setDate(v.getDate()+20);
+  document.getElementById('dtvenc').value=v.toISOString().split('T')[0];
+  await loadEmps();
+  await loadDash();
+  todos=await api('/api/clientes');
+  funcs=await api('/api/funcionarios');
+  document.getElementById('ass1').value=N;
+  await loadProxNum();
+}
+
+function tick(){
+  const n=new Date();
+  document.getElementById('relogio').innerHTML=n.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'})+'<br>'+n.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+
+async function loadProxNum(){
+  const d=await api('/api/proximo-numero');
+  document.getElementById('prox-num').textContent=d.numero;
+  document.getElementById('nmed').value=d.numero;
+}
+
+async function loadEmps(){
+  emps=await api('/api/empresas');
+  ['emp-sel','fe','memp','femp','oc-emp','op-emp'].forEach(id=>{
+    const el=document.getElementById(id); if(!el)return;
+    const keep=el.options[0]; el.innerHTML=''; el.appendChild(keep);
+    emps.forEach(e=>{const o=new Option(e.nome,e.id); el.appendChild(o);});
+  });
+}
+
+function fillSSTFuncionarios(){
+  const el=document.getElementById('sst-func');
+  if(!el)return;
+  const keep=el.options[0]; el.innerHTML=''; el.appendChild(keep);
+  funcs.forEach(f=>el.appendChild(new Option(f.nome,f.id)));
+}
+
+async function loadDash(){
+  const d=await api('/api/dashboard');
+  document.getElementById('d-at').textContent=d.ativos;
+  document.getElementById('d-rec').textContent='R$'+parseInt(d.receita).toLocaleString('pt-BR');
+  document.getElementById('d-med').textContent=d.med_mes;
+  document.getElementById('d-pen').textContent=d.pendentes;
+  document.getElementById('dash-saudacao').textContent='Olá, '+N.split(' ')[0]+'!';
+  document.getElementById('dash-data').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  const de=document.getElementById('dash-empresas');
+  if(d.empresas && d.empresas.length){
+    de.innerHTML=d.empresas.map(e=>`<div class="card" style="margin-bottom:0"><div style="font-size:13px;font-weight:700;color:var(--azul);margin-bottom:8px">${e.nome}</div><div style="font-size:24px;font-weight:700;color:var(--laranja)">${e.cli}</div><div style="font-size:11px;color:#888">clientes ativos</div></div>`).join('');
+  }
+}
+
+function nav(id,el,force=false){
+  const liberadoHistorico = force && id==='nova-medicao' && USER_AREAS.includes('historico');
+  if(P!=='dono' && USER_AREAS.length && !USER_AREAS.includes(id) && id!=='dashboard' && !liberadoHistorico){
+    alert('Seu usuário não tem acesso a esta área.');
+    return;
+  }
+  document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));
+  document.getElementById('pg-'+id).classList.add('on');
+  if(el)el.classList.add('on');
+  if(id==='clientes')renderCli();
+  if(id==='historico')renderHist();
+  if(id==='empresas')renderEmps();
+  if(id==='usuarios')renderUsr();
+  if(id==='config')loadConfig();
+  if(id==='rh')renderFuncionarios();
+  if(id==='operacional'){renderOrdensCompra();renderOperDocs();}
+  if(id==='sst')fillSSTFuncionarios();
+  if(id==='nova-medicao'){loadProxNum(); onEmpSel();}
+  if(id==='rh-digital')initRHDigital();
+}
+
+function onEmpSel(){
+  const v=document.getElementById('emp-sel').value;
+  if(!v){document.getElementById('pag-card').style.display='none';empAtual=null;return;}
+  const e=emps.find(x=>String(x.id)===String(v));
+  if(!e){document.getElementById('pag-card').style.display='none';empAtual=null;return;}
+  empAtual=e;
+  let html='';
+  if(e.pix) html+=`<div class="pag-row"><span class="pag-lbl">Chave Pix:</span><span class="pag-val">${e.pix}</span></div>`;
+  if(e.banco) html+=`<div class="pag-row"><span class="pag-lbl">Banco:</span><span class="pag-val">${e.banco}${e.agencia?' — Ag: '+e.agencia:''}${e.conta?' / Cc: '+e.conta:''}</span></div>`;
+  if(e.boleto) html+=`<div class="pag-row"><span class="pag-lbl">Boleto:</span><span class="pag-val">${e.boleto}</span></div>`;
+  if(e.contato_nome) html+=`<div class="pag-row"><span class="pag-lbl">Contato:</span><span class="pag-val">${e.contato_nome}</span></div>`;
+  if(e.email) html+=`<div class="pag-row"><span class="pag-lbl">E-mail:</span><span class="pag-val">${e.email}</span></div>`;
+  document.getElementById('pag-info').innerHTML=html||'<div class="vazio" style="padding:8px">Dados de pagamento não cadastrados para esta empresa.</div>';
+  document.getElementById('pag-card').style.display='block';
+  if(!document.getElementById('ass1').value) document.getElementById('ass1').value=N;
+}
+
+function busca(q){
+  const list=document.getElementById('acl');
+  if(!q){list.style.display='none';return;}
+  const emp=document.getElementById('emp-sel').value;
+  const t=q.toLowerCase();
+  const td=(q||'').replace(/\D/g,'');
+  const res=todos.filter(c=>{
+    if(emp && String(c.empresa_id)!==emp) return false;
+    const cnpj=(c.cnpj||'');
+    const cnpjDig=cnpj.replace(/\D/g,'');
+    return c.nome.toLowerCase().includes(t) || cnpj.toLowerCase().includes(t) || (c.numero||'').includes(t) || (td && cnpjDig.includes(td));
+  });
+  if(!res.length){list.style.display='none';return;}
+  list.innerHTML=res.slice(0,10).map(c=>`<div class="ac-item" data-id="${c.id}" onmousedown="selCli(${c.id})">
+    <div><div class="ac-nm">${hl(c.nome,q)}</div><div class="ac-sb">${fmtDoc(c.cnpj)||''} ${c.responsavel?'· '+c.responsavel:''}</div></div>
+  </div>`).join('');
+  list.style.display='block'; acIdx=-1;
+}
+
+function hl(t,q){return t.replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');}
+
+function acKey(e){
+  const list=document.getElementById('acl');
+  if(list.style.display==='none')return;
+  const its=list.querySelectorAll('.ac-item');
+  if(e.key==='ArrowDown'){acIdx=Math.min(acIdx+1,its.length-1);updAC(its);e.preventDefault();}
+  else if(e.key==='ArrowUp'){acIdx=Math.max(acIdx-1,0);updAC(its);e.preventDefault();}
+  else if(e.key==='Enter'&&acIdx>=0){selCli(parseInt(its[acIdx].dataset.id));e.preventDefault();}
+  else if(e.key==='Escape')list.style.display='none';
+}
+function updAC(its){its.forEach((el,i)=>el.classList.toggle('sel',i===acIdx));if(acIdx>=0)its[acIdx].scrollIntoView({block:'nearest'});}
+document.addEventListener('click',e=>{if(!e.target.closest('#bcli')&&!e.target.closest('#acl'))document.getElementById('acl').style.display='none';});
+
+function selCli(id){
+  const c=todos.find(x=>x.id===id); if(!c)return;
+  cliAtual=c;
+  document.getElementById('acl').style.display='none';
+  document.getElementById('busca-box').style.display='none';
+  document.getElementById('cli-sel-box').style.display='flex';
+  document.getElementById('cs-nm').textContent=c.nome;
+  document.getElementById('cs-sb').textContent=[fmtDoc(c.cnpj),c.responsavel,fmtTelefone(c.telefone)].filter(Boolean).join(' · ');
+  document.getElementById('c-cnpj').value=fmtDoc(c.cnpj);
+  document.getElementById('c-end').value=c.end_fmt||'';
+  document.getElementById('c-resp').value=c.responsavel||'';
+  if(!document.getElementById('emp-sel').value && c.empresa_id){
+    document.getElementById('emp-sel').value=String(c.empresa_id); onEmpSel();
+  }
+  document.getElementById('svcs').innerHTML=''; svcId=0;
+  if(c.limpeza>0)addS('Limpeza e conservação — contrato mensal','Mês',1,c.limpeza);
+  if(c.jardinagem>0)addS('Jardinagem e paisagismo — contrato mensal','Mês',1,c.jardinagem);
+  if(c.portaria>0)addS('Portaria e recepção — contrato mensal','Mês',1,c.portaria);
+  // Preenche responsável automaticamente
+  if(c.responsavel && !document.getElementById('ass2').value)
+    document.getElementById('ass2').value=c.responsavel;
+  showSt('st-med','Cliente "'+c.nome+'" carregado.',false);
+}
+
+function clearCli(){
+  cliAtual=null;
+  document.getElementById('cli-sel-box').style.display='none';
+  document.getElementById('busca-box').style.display='block';
+  document.getElementById('bcli').value='';
+  ['c-cnpj','c-end','c-resp'].forEach(id=>document.getElementById(id).value='');
+}
+
+function editCliAtual(){if(cliAtual)openModal('editar',cliAtual.id);}
+
+function addS(desc,unid,qtd,vun){
+  const id=++svcId; const n=document.getElementById('svcs').children.length+1;
+  const tr=document.createElement('tr'); tr.id='s'+id;
+  tr.innerHTML=`<td style="color:#bbb;font-size:11px;text-align:center">${n}</td>
+    <td><input type="text" value="${desc}" placeholder="Descreva o serviço..." oninput="calc()"></td>
+    <td><input type="text" value="${unid}" style="text-align:center" oninput="calc()"></td>
+    <td><input type="number" class="r" value="${qtd}" min="0" step="0.01" oninput="calc()" style="width:60px"></td>
+    <td><input type="number" class="r" value="${vun}" min="0" step="0.01" oninput="calc()" style="width:105px"></td>
+    <td class="svt" id="vt${id}">R$ 0,00</td>
+    <td><button class="bd" onclick="delS(${id})">×</button></td>`;
+  document.getElementById('svcs').appendChild(tr); calc();
+}
+function delS(id){document.getElementById('s'+id)?.remove();renum();calc();}
+function renum(){document.querySelectorAll('#svcs tr').forEach((tr,i)=>{const td=tr.querySelector('td:first-child');if(td)td.textContent=i+1;});}
+
+function getSvcs(){
+  return Array.from(document.querySelectorAll('#svcs tr')).map(tr=>{
+    const ins=tr.querySelectorAll('input');
+    const q=parseFloat(ins[2]?.value)||0, u=parseFloat(ins[3]?.value)||0;
+    return{desc:ins[0]?.value||'',unid:ins[1]?.value||'',qtd:q,vun:u,vtot:q*u};
+  }).filter(s=>s.desc||s.vun>0);
+}
+
+function calc(){
+  let sub=0;
+  document.querySelectorAll('#svcs tr').forEach(tr=>{
+    const ins=tr.querySelectorAll('input');
+    const vt=(parseFloat(ins[2]?.value)||0)*(parseFloat(ins[3]?.value)||0);
+    sub+=vt;
+    const el=document.getElementById('vt'+tr.id.replace('s',''));
+    if(el)el.textContent=brl(vt);
+  });
+  document.getElementById('tot-val').textContent=brl(sub);
+}
+
+async function registrar(){
+  const svcs=getSvcs(); const sub=svcs.reduce((a,s)=>a+s.vtot,0);
+  const ee=document.getElementById('emp-sel');
+  const d={numero:document.getElementById('nmed').value,tipo:document.getElementById('tipo-doc').value,
+    cliente_id:cliAtual?.id,cliente_nome:cliAtual?.nome||document.getElementById('bcli').value||'',
+    cliente_cnpj:document.getElementById('c-cnpj').value,cliente_end:document.getElementById('c-end').value,
+    cliente_resp:document.getElementById('c-resp').value,
+    empresa_id:parseInt(ee.value)||null,empresa_nome:ee.options[ee.selectedIndex]?.text||'',
+    mes_ref:document.getElementById('mesref').value,dt_emissao:document.getElementById('dtem').value,
+    dt_vencimento:document.getElementById('dtvenc').value,servicos:svcs,
+    observacoes:document.getElementById('obs').value,
+    ass_empresa:document.getElementById('ass1').value,ass_cliente:document.getElementById('ass2').value};
+  await api('/api/medicoes','POST',d);
+  showSt('st-med','Medição registrada no histórico!',false);
+  await loadDash(); await loadProxNum();
+}
+
+async function gerarPDF(){
+  const cNome=cliAtual?.nome||document.getElementById('bcli').value||'';
+  if(!cNome){showSt('st-med','Informe o cliente antes de gerar o PDF.',true);return;}
+  const btn=document.getElementById('btn-pdf'); btn.textContent='Gerando...'; btn.disabled=true;
+  const svcs=getSvcs(); const ee=document.getElementById('emp-sel');
+  const d={numero:document.getElementById('nmed').value,tipo:document.getElementById('tipo-doc').value,
+    mes_ref:document.getElementById('mesref').value,dt_emissao:document.getElementById('dtem').value,
+    dt_vencimento:document.getElementById('dtvenc').value,
+    empresa_id:parseInt(ee.value)||null,empresa_nome:ee.options[ee.selectedIndex]?.text||'',
+    cliente_nome:cNome,cliente_cnpj:document.getElementById('c-cnpj').value,
+    cliente_end:document.getElementById('c-end').value,cliente_resp:document.getElementById('c-resp').value,
+    servicos:svcs,observacoes:document.getElementById('obs').value,
+    ass_empresa:document.getElementById('ass1').value,ass_cliente:document.getElementById('ass2').value};
+  try{
+    const r=await fetch('/api/pdf/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
+    const blob=await r.blob(); const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url;
+    a.download=`${d.tipo.replace(/ /g,'_')}_${d.numero.replace('/','_')}_${(cNome||'').replace(/ /g,'_').substring(0,20)}_${d.mes_ref}.pdf`;
+    a.click(); URL.revokeObjectURL(url);
+    showSt('st-med','PDF gerado!',false);
+  }catch(e){showSt('st-med','Erro ao gerar PDF.',true);}
+  btn.textContent='⬇ Gerar PDF'; btn.disabled=false;
+}
+
+function limparMed(){
+  if(!confirm('Limpar o formulário?'))return;
+  clearCli(); document.getElementById('svcs').innerHTML=''; svcId=0;
+  ['obs','ass1','ass2'].forEach(id=>document.getElementById(id).value='');
+  loadProxNum();
+  addS('Limpeza e conservação — contrato mensal','Mês',1,0);
+  addS('Jardinagem e paisagismo — contrato mensal','Mês',1,0);
+  addS('Portaria e recepção — contrato mensal','Mês',1,0);
+  calc();
+}
+
+async function renderHist(){
+  const q=(document.getElementById('hist-busca').value||'').toLowerCase();
+  const lista=await api('/api/medicoes');
+  const fil=q?lista.filter(m=>m.cliente_nome?.toLowerCase().includes(q)||m.numero?.includes(q)):lista;
+  const el=document.getElementById('hist-lista');
+  if(!fil.length){el.innerHTML='<div class="vazio">Nenhuma medição encontrada.</div>';return;}
+  el.innerHTML=fil.map(m=>{
+    const stCor=m.status==='cancelada'?'p-vm':m.status==='rascunho'?'p-ci':'p-vd';
+    const stLabel=m.status==='cancelada'?'Cancelada':m.status==='rascunho'?'Rascunho':'Emitida';
+    return`<div class="hist-item">
+    <div>
+      <div class="hist-tit">${m.tipo||'Medição'} ${m.numero} — ${m.cliente_nome}</div>
+      <div class="hist-sub">${m.empresa_nome||'Empresa não informada'} · Ref.: ${fmtMes(m.mes_ref)} · Emitida em ${m.criado_fmt}</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="pill ${stCor}">${stLabel}</span>
+      <div>
+        <div class="hist-val">${brl(m.valor_bruto)}</div>
+        <div class="hist-sub-val">valor total</div>
+      </div>
+      <button class="btn b-gh b-sm" onclick="abrirMedicao(${m.id})">Abrir</button>
+      <button class="btn b-lj b-sm" onclick="reimprimirPDF(${m.id})">⬇ PDF</button>
+      <button class="btn b-ghv b-sm" onclick="imprimirPDF(${m.id})">🖨 Imprimir</button>
+      ${m.status!=='cancelada'?`<button class="btn b-ci b-sm" onclick="cancelarMedicao(${m.id},'${(m.numero||'').replace(/'/g,"\\'")}')">Cancelar</button>`:''}
+      <button class="btn b-ghr b-sm" onclick="delMed(${m.id})">×</button>
+    </div>
+  </div>`;
+  }).join('');
+}
+
+async function abrirMedicao(id){
+  const m=await api('/api/medicoes/'+id);
+  nav('nova-medicao',document.querySelector('[onclick*=nova-medicao]'),true);
+  document.getElementById('tipo-doc').value=m.tipo||'Medição de Serviços';
+  document.getElementById('nmed').value=m.numero||'';
+  document.getElementById('mesref').value=m.mes_ref||'';
+  document.getElementById('dtem').value=m.dt_emissao||'';
+  document.getElementById('dtvenc').value=m.dt_vencimento||'';
+  document.getElementById('emp-sel').value=m.empresa_id?String(m.empresa_id):'';
+  onEmpSel();
+  cliAtual=todos.find(c=>c.id===m.cliente_id)||null;
+  if(cliAtual){
+    selCli(cliAtual.id);
+  }else{
+    document.getElementById('busca-box').style.display='block';
+    document.getElementById('cli-sel-box').style.display='none';
+    document.getElementById('bcli').value=m.cliente_nome||'';
+    document.getElementById('c-cnpj').value=fmtDoc(m.cliente_cnpj||'');
+    document.getElementById('c-end').value=m.cliente_end||'';
+    document.getElementById('c-resp').value=m.cliente_resp||'';
+  }
+  document.getElementById('svcs').innerHTML=''; svcId=0;
+  (m.svcs||[]).forEach(s=>addS(s.desc||'',s.unid||'',s.qtd||1,s.vun||0));
+  document.getElementById('obs').value=m.observacoes||'';
+  document.getElementById('ass1').value=m.ass_empresa||N;
+  document.getElementById('ass2').value=m.ass_cliente||'';
+  calc();
+  showSt('st-med','Medição carregada do histórico.',false);
+}
+
+async function reimprimirPDF(id){
+  const r=await fetch('/api/pdf/'+id);
+  const blob=await r.blob(); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='medicao_'+id+'.pdf'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function imprimirPDF(id){
+  const r=await fetch('/api/pdf/'+id);
+  const blob=await r.blob();
+  const url=URL.createObjectURL(blob);
+  const w=window.open(url,'_blank');
+  if(w){
+    w.addEventListener('load',()=>w.print(),{once:true});
+  }
+  setTimeout(()=>URL.revokeObjectURL(url),8000);
+}
+
+async function delMed(id){
+  if(!confirm('Remover esta medição?'))return;
+  await api('/api/medicoes/'+id,'DELETE');
+  renderHist(); loadDash();
+}
+
+async function limparHist(){
+  const lista=await api('/api/medicoes');
+  for(const m of lista) await api('/api/medicoes/'+m.id,'DELETE');
+  renderHist(); loadDash();
+}
+
+async function renderCli(){
+  const ef=document.getElementById('fe').value;
+  const sf=document.getElementById('fs').value;
+  const q=(document.getElementById('fb').value||'').toLowerCase();
+  const lista=await api('/api/clientes?emp='+ef+'&status='+sf+'&q='+encodeURIComponent(q));
+  todos=await api('/api/clientes');
+  const tb=document.getElementById('tb-cli');
+  if(!lista.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:28px;color:#bbb">Nenhum cliente encontrado.</td></tr>';return;}
+  tb.innerHTML=lista.map(c=>{
+    const tot=(c.limpeza||0)+(c.jardinagem||0)+(c.portaria||0);
+    const svs=[c.limpeza>0?'Limpeza':'',c.jardinagem>0?'Jardinagem':'',c.portaria>0?'Portaria':''].filter(Boolean).join(', ');
+    const emp=emps.find(e=>e.id===c.empresa_id);
+    const pc=c.status==='Ativo'?'p-vd':c.status==='Inativo'?'p-ci':'p-vm';
+    return`<tr>
+      <td style="color:#bbb;font-size:11px">${c.numero||''}</td>
+      <td><div style="font-weight:700;font-size:13px">${c.nome}</div><div style="font-size:11px;color:#999">${fmtDoc(c.cnpj)||''} ${c.responsavel?'· '+c.responsavel:''}</div></td>
+      <td style="font-size:12px">${emp?emp.nome:'—'}</td>
+      <td style="font-size:11px">${svs||'—'}</td>
+      <td style="text-align:right;font-weight:700;color:var(--verde);white-space:nowrap">${brl(tot)}</td>
+      <td style="font-size:11px">${c.vencimento?'Dia '+c.vencimento:'—'}</td>
+      <td><span class="pill ${pc}">${c.status}</span></td>
+      <td><div class="tac">
+        <button class="btn b-gh b-sm" onclick="emitirCli(${c.id})">Emitir</button>
+        <button class="btn b-ghv b-sm" onclick="openModal('editar',${c.id})">Editar</button>
+        <button class="btn b-ghr b-sm" onclick="excluirCli(${c.id},'${c.nome.replace(/'/g,"\\'")}')">Excluir</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+  const tot=lista.reduce((s,c)=>s+(c.limpeza||0)+(c.jardinagem||0)+(c.portaria||0),0);
+  document.getElementById('tb-res').textContent=lista.length+' cliente(s) · Receita: '+brl(tot);
+}
+
+function emitirCli(id){selCli(id);nav('nova-medicao',document.querySelector('[onclick*=nova-medicao]'));}
+
+async function excluirCli(id,nome){
+  if(!confirm('Excluir "'+nome+'"? Esta ação não pode ser desfeita.'))return;
+  await api('/api/clientes/'+id,'DELETE');
+  todos=await api('/api/clientes');
+  if(cliAtual&&cliAtual.id===id)clearCli();
+  showSt('st-cli','Cliente excluído.',false); renderCli();
+}
+
+async function openModal(modo,id){
+  document.getElementById('mid').value='';
+  ['mn','mc','mr','mt','me','mcep','mend','mnum-end','mcompl','mbairro','mcidade','mestado','mob'].forEach(k=>document.getElementById(k).value='');
+  ['ml','mj','mp'].forEach(k=>document.getElementById(k).value=0);
+  document.getElementById('mv').value=''; document.getElementById('mst').value='Ativo';
+  document.getElementById('memp').value='';
+  if(modo==='editar'&&id){
+    const c=todos.find(x=>x.id===id); if(!c)return;
+    document.getElementById('mod-cli-tit').textContent='Editar cliente';
+    document.getElementById('mid').value=c.id;
+    document.getElementById('mn').value=c.nome||'';
+    document.getElementById('mc').value=c.cnpj||'';
+    document.getElementById('mr').value=c.responsavel||'';
+    document.getElementById('mt').value=c.telefone||'';
+    document.getElementById('me').value=c.email||'';
+    document.getElementById('mcep').value=c.cep||'';
+    maskDoc(document.getElementById('mc'));
+    maskTelefone(document.getElementById('mt'));
+    maskCEP(document.getElementById('mcep'));
+    document.getElementById('mend').value=c.logradouro||'';
+    document.getElementById('mnum-end').value=c.numero_end||'';
+    document.getElementById('mcompl').value=c.complemento||'';
+    document.getElementById('mbairro').value=c.bairro||'';
+    document.getElementById('mcidade').value=c.cidade||'';
+    document.getElementById('mestado').value=c.estado||'';
+    document.getElementById('memp').value=c.empresa_id||'';
+    document.getElementById('mst').value=c.status||'Ativo';
+    document.getElementById('ml').value=c.limpeza||0;
+    document.getElementById('mj').value=c.jardinagem||0;
+    document.getElementById('mp').value=c.portaria||0;
+    document.getElementById('mv').value=c.vencimento||'';
+    document.getElementById('mob').value=c.obs||'';
+  } else {
+    document.getElementById('mod-cli-tit').textContent='Novo cliente';
+  }
+  document.getElementById('mod-cli').classList.add('on');
+  setTimeout(()=>document.getElementById('mn').focus(),120);
+}
+
+function closeModal(t){document.getElementById('mod-'+t).classList.remove('on');}
+
+async function salvarCliente(){
+  const nome=document.getElementById('mn').value.trim();
+  if(!nome){alert('Informe o nome do cliente.');return;}
+  const id=document.getElementById('mid').value;
+  const end_fmt=[document.getElementById('mend').value,document.getElementById('mnum-end').value,document.getElementById('mcompl').value,document.getElementById('mbairro').value].filter(Boolean).join(', ')+(document.getElementById('mcidade').value?' — '+document.getElementById('mcidade').value+'/'+(document.getElementById('mestado').value||''):'');
+  const d={nome,cnpj:document.getElementById('mc').value,responsavel:document.getElementById('mr').value,telefone:document.getElementById('mt').value,email:document.getElementById('me').value,cep:document.getElementById('mcep').value,logradouro:document.getElementById('mend').value,numero_end:document.getElementById('mnum-end').value,complemento:document.getElementById('mcompl').value,bairro:document.getElementById('mbairro').value,cidade:document.getElementById('mcidade').value,estado:document.getElementById('mestado').value,empresa_id:parseInt(document.getElementById('memp').value)||null,status:document.getElementById('mst').value,limpeza:parseFloat(document.getElementById('ml').value)||0,jardinagem:parseFloat(document.getElementById('mj').value)||0,portaria:parseFloat(document.getElementById('mp').value)||0,vencimento:parseInt(document.getElementById('mv').value)||0,obs:document.getElementById('mob').value};
+  if(id) await api('/api/clientes/'+id,'PUT',d);
+  else await api('/api/clientes','POST',d);
+  todos=await api('/api/clientes');
+  showSt('st-cli','Cliente salvo!',false); showSt('st-med','Cliente salvo!',false);
+  closeModal('cli'); renderCli();
+}
+
+async function renderEmps(){
+  const lista=await api('/api/empresas');
+  const el=document.getElementById('lista-empresas');
+  if(!lista.length){el.innerHTML='<div class="vazio">Nenhuma empresa. Clique em "+ Nova empresa".</div>';return;}
+  el.innerHTML=lista.map(e=>`<div style="background:var(--azul-cc);border:1.5px solid var(--azul-cl);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <div>
+      <div style="font-weight:700;font-size:15px;color:var(--azul)">${e.nome}</div>
+      <div style="font-size:12px;color:#666;margin-top:2px">${e.razao||''} ${e.cnpj?'· CNPJ: '+fmtDoc(e.cnpj):''}</div>
+      <div style="font-size:11px;color:#888;margin-top:2px">${e.end_fmt||''} ${e.site?'| <a href="'+normUrl(e.site)+'" target="_blank" rel="noopener noreferrer">'+e.site+'</a>':''}</div>
+    </div>
+    <div style="display:flex;gap:7px">
+      <button class="btn b-gh b-sm" onclick="openModalEmp('editar',${e.id})">Editar</button>
+      <button class="btn b-ghr b-sm" onclick="excluirEmp(${e.id},'${e.nome.replace(/'/g,"\\'")}')">Remover</button>
+    </div>
+  </div>`).join('');
+}
+
+function openModalEmp(modo,id){
+  document.getElementById('eid').value='';
+  ['enome','erazao','ecnpj','esite','econtato','econtato-email','econtato-tel','elogo','etel','eemail','ecep','elogr','enum-end','ebairro','ecidade','estado','ecompl','epix','ebanco','eagencia','econta','eboleto'].forEach(k=>document.getElementById(k).value='');
+  if(modo==='editar'&&id){
+    const e=emps.find(x=>x.id===id); if(!e)return;
+    document.getElementById('mod-emp-tit').textContent='Editar empresa';
+    document.getElementById('eid').value=e.id;
+    document.getElementById('enome').value=e.nome||'';
+    document.getElementById('erazao').value=e.razao||'';
+    document.getElementById('ecnpj').value=e.cnpj||'';
+    document.getElementById('esite').value=e.site||'';
+    document.getElementById('econtato').value=e.contato_nome||'';
+    document.getElementById('econtato-email').value=e.contato_email||'';
+    document.getElementById('econtato-tel').value=e.contato_telefone||'';
+    document.getElementById('elogo').value=e.logo_url||'';
+    document.getElementById('etel').value=e.telefone||'';
+    document.getElementById('eemail').value=e.email||'';
+    document.getElementById('ecep').value=e.cep||'';
+    maskCNPJ(document.getElementById('ecnpj'));
+    maskTelefone(document.getElementById('econtato-tel'));
+    maskTelefone(document.getElementById('etel'));
+    maskCEP(document.getElementById('ecep'));
+    document.getElementById('elogr').value=e.logradouro||'';
+    document.getElementById('enum-end').value=e.numero||'';
+    document.getElementById('ebairro').value=e.bairro||'';
+    document.getElementById('ecidade').value=e.cidade||'';
+    document.getElementById('estado').value=e.estado||'';
+    document.getElementById('ecompl').value=e.complemento||'';
+    document.getElementById('epix').value=e.pix||'';
+    document.getElementById('ebanco').value=e.banco||'';
+    document.getElementById('eagencia').value=e.agencia||'';
+    document.getElementById('econta').value=e.conta||'';
+    document.getElementById('eboleto').value=e.boleto||'';
+  } else {
+    document.getElementById('mod-emp-tit').textContent='Nova empresa';
+  }
+  document.getElementById('mod-emp').classList.add('on');
+  setTimeout(()=>document.getElementById('enome').focus(),120);
+}
+
+async function salvarEmpresa(){
+  const nome=document.getElementById('enome').value.trim();
+  if(!nome){alert('Informe o nome da empresa.');return;}
+  const id=document.getElementById('eid').value;
+  const d={nome,razao:document.getElementById('erazao').value,cnpj:document.getElementById('ecnpj').value,site:document.getElementById('esite').value,contato_nome:document.getElementById('econtato').value,contato_email:document.getElementById('econtato-email').value,contato_telefone:document.getElementById('econtato-tel').value,logo_url:document.getElementById('elogo').value,telefone:document.getElementById('etel').value,email:document.getElementById('eemail').value,cep:document.getElementById('ecep').value,logradouro:document.getElementById('elogr').value,numero:document.getElementById('enum-end').value,bairro:document.getElementById('ebairro').value,cidade:document.getElementById('ecidade').value,estado:document.getElementById('estado').value,complemento:document.getElementById('ecompl').value,pix:document.getElementById('epix').value,banco:document.getElementById('ebanco').value,agencia:document.getElementById('eagencia').value,conta:document.getElementById('econta').value,boleto:document.getElementById('eboleto').value};
+  if(id) await api('/api/empresas/'+id,'PUT',d);
+  else await api('/api/empresas','POST',d);
+  showSt('st-emp','Empresa salva!',false);
+  closeModal('emp'); await loadEmps(); renderEmps();
+}
+
+async function excluirEmp(id,nome){
+  if(!confirm('Remover "'+nome+'"?'))return;
+  await api('/api/empresas/'+id,'DELETE');
+  await loadEmps(); renderEmps();
+  showSt('st-emp','Empresa removida.',false);
+}
+
+async function buscarCNPJEmp(){
+  const cnpj=document.getElementById('ecnpj').value.replace(/\D/g,'');
+  if(cnpj.length!==14){alert('CNPJ inválido.');return;}
+  const st=document.getElementById('ecnpj-st'); st.style.display='block'; st.textContent='Consultando...';
+  try{
+    const d=await api('/api/cnpj/'+cnpj);
+    if(d.erro){st.style.color='var(--verm)';st.textContent=d.erro;return;}
+    document.getElementById('enome').value=d.nome||d.razao||'';
+    document.getElementById('erazao').value=d.razao||'';
+    document.getElementById('eemail').value=d.email||'';
+    document.getElementById('etel').value=d.telefone||'';
+    maskTelefone(document.getElementById('etel'));
+    if(d.cep){document.getElementById('ecep').value=d.cep;buscarCEPEmp();}
+    st.style.color='var(--verde)'; st.textContent='Dados preenchidos!';
+  }catch(e){st.style.color='var(--verm)';st.textContent='Erro ao consultar.';}
+}
+
+async function buscarCEPEmp(){
+  const cep=document.getElementById('ecep').value.replace(/\D/g,'');
+  if(cep.length!==8)return;
+  try{
+    const d=await api('/api/cep/'+cep);
+    if(d.erro)return;
+    document.getElementById('elogr').value=d.logradouro||'';
+    document.getElementById('ebairro').value=d.bairro||'';
+    document.getElementById('ecidade').value=d.cidade||'';
+    document.getElementById('estado').value=d.estado||'';
+  }catch(e){}
+}
+
+async function renderUsr(){
+  const lista=await api('/api/usuarios');
+  const tb=document.getElementById('tb-usr');
+  tb.innerHTML=lista.map(u=>`<tr>
+    <td style="font-weight:700">${u.nome}</td>
+    <td>${u.email}</td>
+    <td><span class="pill ${u.perfil==='dono'?'p-lj':u.perfil==='admin'?'p-az':'p-ci'}">${u.perfil}</span></td>
+    <td><span class="pill ${u.ativo?'p-vd':'p-ci'}">${u.ativo?'Ativo':'Inativo'}</span></td>
+    <td><div class="tac">
+      <button class="btn b-gh b-sm" onclick="openModalUsr('editar',${u.id})">Editar</button>
+      <button class="btn b-ghr b-sm" onclick="excluirUsr(${u.id},'${u.nome.replace(/'/g,"\\'")}')">Excluir</button>
+    </div></td>
+  </tr>`).join('');
+}
+
+function openModalUsr(modo,id){
+  document.getElementById('uid-edit').value='';
+  ['un','ue','up'].forEach(k=>document.getElementById(k).value='');
+  document.getElementById('uperfil').value='admin';
+  document.getElementById('uativo').value='true';
+  areaChecksUsuario([]);
+  if(modo==='editar'&&id){
+    api('/api/usuarios').then(lista=>{
+      const u=lista.find(x=>x.id===id); if(!u)return;
+      document.getElementById('mod-usr-tit').textContent='Editar usuário';
+      document.getElementById('uid-edit').value=u.id;
+      document.getElementById('un').value=u.nome||'';
+      document.getElementById('ue').value=u.email||'';
+      document.getElementById('uperfil').value=u.perfil||'admin';
+      document.getElementById('uativo').value=String(u.ativo);
+      areaChecksUsuario(u.areas||[]);
+    });
+  } else {
+    document.getElementById('mod-usr-tit').textContent='Novo usuário';
+  }
+  document.getElementById('mod-usr').classList.add('on');
+}
+
+async function salvarUsuario(){
+  const nome=document.getElementById('un').value.trim();
+  const email=document.getElementById('ue').value.trim();
+  if(!nome||!email){alert('Nome e e-mail são obrigatórios.');return;}
+  const id=document.getElementById('uid-edit').value;
+  const areas=AREAS.filter(a=>document.getElementById('ua-'+a)?.checked);
+  const d={nome,email,senha:document.getElementById('up').value,perfil:document.getElementById('uperfil').value,ativo:document.getElementById('uativo').value==='true',areas};
+  if(id) await api('/api/usuarios/'+id,'PUT',d);
+  else await api('/api/usuarios','POST',d);
+  showSt('st-usr','Usuário salvo!',false);
+  closeModal('usr'); renderUsr();
+}
+
+async function excluirUsr(id,nome){
+  if(!confirm('Excluir "'+nome+'"?'))return;
+  const r=await api('/api/usuarios/'+id,'DELETE');
+  if(r.erro){alert(r.erro);return;}
+  renderUsr();
+}
+
+async function loadConfig(){
+  const d=await api('/api/config');
+  document.getElementById('cfg-num-base').value=d.num_base||'100';
+  document.getElementById('cfg-num-ultima').value=d.num_ultima||'0';
+}
+
+async function salvarConfig(){
+  await api('/api/config','POST',{num_base:document.getElementById('cfg-num-base').value,num_ultima:document.getElementById('cfg-num-ultima').value});
+  await loadProxNum();
+  alert('Configurações salvas! Próxima medição: '+document.getElementById('prox-num').textContent);
+}
+
+async function importarClientesPlanilha(ev){
+  const f=ev.target.files?.[0];
+  if(!f)return;
+  const fd=new FormData(); fd.append('arquivo',f);
+  const r=await fetch('/api/clientes/import',{method:'POST',body:fd});
+  const d=await r.json();
+  if(d.erro){alert(d.erro); ev.target.value=''; return;}
+  todos=await api('/api/clientes');
+  renderCli(); loadDash();
+  const msg=`Importação concluída. Criados: ${d.criados}. Erros: ${d.erros.length}.`;
+  showSt('st-cli',msg,d.erros.length>0);
+  if(d.erros.length) alert(d.erros.join('\n'));
+  ev.target.value='';
+}
+
+async function importarFuncionariosPlanilha(ev){
+  const f=ev.target.files?.[0];
+  if(!f)return;
+  const fd=new FormData(); fd.append('arquivo',f);
+  const r=await fetch('/api/funcionarios/import',{method:'POST',body:fd});
+  const d=await r.json();
+  if(d.erro){alert(d.erro); ev.target.value=''; return;}
+  funcs=await api('/api/funcionarios');
+  renderFuncionarios(); fillSSTFuncionarios();
+  showSt('st-rh',`Importação de funcionários concluída. Criados: ${d.criados}.`,d.erros.length>0);
+  if(d.erros.length) alert(d.erros.join('\n'));
+  ev.target.value='';
+}
+
+async function restaurarBackup(){
+  const f=document.getElementById('bk-restore').files?.[0];
+  if(!f){alert('Selecione o ZIP de backup.');return;}
+  if(!confirm('A restauração substituirá os dados atuais. Deseja continuar?'))return;
+  const fd=new FormData(); fd.append('arquivo',f);
+  const r=await fetch('/api/backup/restore',{method:'POST',body:fd});
+  const d=await r.json();
+  if(d.erro){alert(d.erro);return;}
+  await loadEmps();
+  todos=await api('/api/clientes');
+  funcs=await api('/api/funcionarios');
+  await loadDash();
+  renderCli(); renderFuncionarios(); renderOrdensCompra(); renderOperDocs(); fillSSTFuncionarios();
+  alert('Backup restaurado com sucesso.');
+}
+
+function areaChecks(sel){
+  const box=document.getElementById('fareas'); if(!box)return;
+  box.innerHTML='';
+  AREAS.forEach(a=>{
+    const id='fa-'+a;
+    const row=document.createElement('label');
+    row.style.display='flex'; row.style.gap='6px'; row.style.alignItems='center';
+    row.innerHTML=`<input type="checkbox" id="${id}" ${sel.includes(a)?'checked':''}> ${a.toUpperCase()}`;
+    box.appendChild(row);
+  });
+}
+
+function areaChecksUsuario(sel){
+  const box=document.getElementById('uareas'); if(!box)return;
+  box.innerHTML='';
+  AREAS.forEach(a=>{
+    const id='ua-'+a;
+    const row=document.createElement('label');
+    row.style.display='flex'; row.style.gap='6px'; row.style.alignItems='center';
+    row.innerHTML=`<input type="checkbox" id="${id}" ${sel.includes(a)?'checked':''}> ${a.toUpperCase()}`;
+    box.appendChild(row);
+  });
+}
+
+function openModalFunc(modo,id){
+  document.getElementById('fid').value='';
+  ['fnome','fcpf','femail','ftel','fcargo','fsetor','fadmissao','fsal','fcep','fend','fciduf','fobs'].forEach(k=>document.getElementById(k).value='');
+  document.getElementById('fddi').value='55';
+  const st=document.getElementById('fcpf-st'); if(st){st.style.display='none';st.textContent='';}
+  document.getElementById('fstatus').value='Ativo';
+  document.getElementById('femp').value='';
+  areaChecks([]);
+  if(modo==='editar'&&id){
+    const f=funcs.find(x=>x.id===id); if(!f)return;
+    preencherFormFuncionario(f,'Editar funcionário');
+  } else {
+    document.getElementById('mod-func-tit').textContent='Novo funcionário';
+  }
+  document.getElementById('mod-func').classList.add('on');
+}
+
+function preencherFormFuncionario(f,titulo='Editar funcionário'){ 
+  document.getElementById('mod-func-tit').textContent=titulo;
+  document.getElementById('fid').value=f.id||'';
+  document.getElementById('fnome').value=f.nome||'';
+  document.getElementById('fcpf').value=f.cpf||'';
+  document.getElementById('femail').value=f.email||'';
+  const tel=splitIntlPhone(f.telefone||'');
+  document.getElementById('fddi').value=tel.ddi||'55';
+  document.getElementById('ftel').value=tel.local||'';
+  maskTelefone(document.getElementById('ftel'));
+  document.getElementById('fcargo').value=f.cargo||'';
+  document.getElementById('fsetor').value=f.setor||'';
+  document.getElementById('femp').value=f.empresa_id||'';
+  document.getElementById('fadmissao').value=f.data_admissao||'';
+  document.getElementById('fstatus').value=f.status||'Ativo';
+  document.getElementById('fsal').value=f.salario||0;
+  document.getElementById('fcep').value=f.cep||'';
+  maskCEP(document.getElementById('fcep'));
+  document.getElementById('fend').value=f.endereco||'';
+  document.getElementById('fciduf').value=[f.cidade||'',f.estado||''].filter(Boolean).join('/');
+  document.getElementById('fobs').value=f.obs||'';
+  areaChecks(f.areas||[]);
+}
+
+function maskCPF(el){
+  let v=(el.value||'').replace(/\D/g,'').substring(0,11);
+  if(v.length>9)v=v.replace(/^(\d{3})(\d{3})(\d{3})(\d{2}).*/,'$1.$2.$3-$4');
+  else if(v.length>6)v=v.replace(/^(\d{3})(\d{3})(\d*)/,'$1.$2.$3');
+  else if(v.length>3)v=v.replace(/^(\d{3})(\d*)/,'$1.$2');
+  el.value=v;
+}
+
+function maskDoc(el){
+  const v=(el.value||'').replace(/\D/g,'');
+  if(v.length<=11){
+    let x=v.substring(0,11);
+    if(x.length>9)x=x.replace(/^(\d{3})(\d{3})(\d{3})(\d{2}).*/,'$1.$2.$3-$4');
+    else if(x.length>6)x=x.replace(/^(\d{3})(\d{3})(\d*)/,'$1.$2.$3');
+    else if(x.length>3)x=x.replace(/^(\d{3})(\d*)/,'$1.$2');
+    el.value=x;
+    return;
+  }
+  maskCNPJ(el);
+}
+
+function maskTelefone(el){
+  let v=(el.value||'').replace(/\D/g,'').substring(0,11);
+  if(v.length>10)v=v.replace(/^(\d{2})(\d{5})(\d{0,4}).*/,'($1) $2-$3');
+  else if(v.length>6)v=v.replace(/^(\d{2})(\d{4})(\d{0,4}).*/,'($1) $2-$3');
+  else if(v.length>2)v=v.replace(/^(\d{2})(\d*)/,'($1) $2');
+  else if(v.length>0)v='('+v;
+  el.value=v.replace(/-$/,'');
+}
+
+function splitIntlPhone(v){
+  const d=(v||'').toString().replace(/\D/g,'');
+  if(!d) return {ddi:'55',local:''};
+  const ddies=['593','595','598','591','351','55','34','44','49','39','54','56','57','58','52','1'];
+  for(const code of ddies){
+    if(d.startsWith(code) && d.length>code.length){
+      return {ddi:code,local:d.slice(code.length)};
+    }
+  }
+  if(d.length<=11) return {ddi:'55',local:d};
+  return {ddi:'55',local:d.slice(-11)};
+}
+
+function composeIntlPhone(){
+  const ddi=(document.getElementById('fddi')?.value||'55').replace(/\D/g,'');
+  const local=(document.getElementById('ftel')?.value||'').replace(/\D/g,'');
+  if(!local) return '';
+  return ddi+local;
+}
+
+async function buscarFuncionarioPorCPF(){
+  const st=document.getElementById('fcpf-st');
+  const cpf=(document.getElementById('fcpf').value||'').replace(/\D/g,'');
+  if(cpf.length!==11){ if(st) st.style.display='none'; return; }
+  const ex=document.getElementById('fid').value||'';
+  if(st){ st.style.display='block'; st.style.color='#888'; st.textContent='Buscando CPF...'; }
+  const r=await api('/api/funcionarios/cpf-lookup?cpf='+cpf+'&exclude_id='+ex);
+  if(r?.origem==='interno' && r?.funcionario?.id){
+    preencherFormFuncionario(r.funcionario,'Editar funcionário (encontrado por CPF)');
+    if(st){ st.style.color='var(--azul)'; st.textContent='Funcionário encontrado no cadastro interno. Dados preenchidos automaticamente.'; }
+    return;
+  }
+  if(r?.ok && r?.dados){
+    const d=r.dados||{};
+    if(d.nome) document.getElementById('fnome').value=d.nome;
+    if(d.cpf) document.getElementById('fcpf').value=d.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4');
+    if(d.cep){
+      document.getElementById('fcep').value=d.cep;
+      maskCEP(document.getElementById('fcep'));
+    }
+    if(d.telefone){
+      const fone=(d.ddd||'')+d.telefone;
+      if(fone){
+        document.getElementById('fddi').value='55';
+        document.getElementById('ftel').value=fone;
+        maskTelefone(document.getElementById('ftel'));
+      }
+    }
+    const endParts=[d.endereco,d.numero,d.complemento,d.bairro].filter(Boolean);
+    if(endParts.length) document.getElementById('fend').value=endParts.join(', ');
+    if(d.cidade || d.estado){
+      document.getElementById('fciduf').value=[d.cidade||'',d.estado||''].filter(Boolean).join('/');
+    }
+    const obs=[];
+    if(d.nome_social) obs.push('Nome social: '+d.nome_social);
+    if(d.nascimento) obs.push('Nascimento: '+d.nascimento);
+    if(d.mae) obs.push('Mãe: '+d.mae);
+    if(d.situacao) obs.push('Situação CPF: '+d.situacao);
+    if(obs.length){
+      const atual=(document.getElementById('fobs').value||'').trim();
+      document.getElementById('fobs').value=atual ? (atual+'\n'+obs.join(' · ')) : obs.join(' · ');
+    }
+    if(st){ st.style.color='var(--azul)'; st.textContent='Dados do CPF carregados da '+(r.fonte||'fonte externa')+'.'; }
+    return;
+  }
+  if(r?.motivo==='nao_configurado'){
+    if(st){ st.style.color='var(--verm)'; st.textContent='Consulta externa de CPF não configurada no servidor.'; }
+    return;
+  }
+  if(r?.motivo==='sem_dados'){
+    if(st){ st.style.color='var(--verde)'; st.textContent='CPF livre para novo cadastro.'; }
+    return;
+  }
+  if(st){ st.style.color='var(--verm)'; st.textContent='Falha ao consultar CPF em fonte externa.'; }
+}
+
+async function salvarFuncionario(){
+  const nome=document.getElementById('fnome').value.trim();
+  if(!nome){alert('Nome é obrigatório.');return;}
+  const id=document.getElementById('fid').value;
+  const ciduf=(document.getElementById('fciduf').value||'').split('/');
+  const areas=AREAS.filter(a=>document.getElementById('fa-'+a)?.checked);
+  const d={nome,cpf:document.getElementById('fcpf').value,email:document.getElementById('femail').value,telefone:composeIntlPhone(),cargo:document.getElementById('fcargo').value,setor:document.getElementById('fsetor').value,empresa_id:parseInt(document.getElementById('femp').value)||null,data_admissao:document.getElementById('fadmissao').value,status:document.getElementById('fstatus').value,salario:parseFloat(document.getElementById('fsal').value)||0,cep:document.getElementById('fcep').value,endereco:document.getElementById('fend').value,cidade:(ciduf[0]||'').trim(),estado:(ciduf[1]||'').trim(),obs:document.getElementById('fobs').value,areas};
+  if(id) await api('/api/funcionarios/'+id,'PUT',d);
+  else await api('/api/funcionarios','POST',d);
+  funcs=await api('/api/funcionarios');
+  fillSSTFuncionarios();
+  closeModal('func');
+  renderFuncionarios();
+  showSt('st-rh','Funcionário salvo com sucesso.',false);
+}
+
+async function renderFuncionarios(){
+  const q=(document.getElementById('rh-busca')?.value||'').toLowerCase();
+  funcs=await api('/api/funcionarios?q='+encodeURIComponent(q));
+  const tb=document.getElementById('tb-func');
+  if(!tb)return;
+  if(!funcs.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:24px;color:#999">Nenhum funcionário cadastrado.</td></tr>';return;}
+  tb.innerHTML=funcs.map(f=>{
+    const emp=emps.find(e=>e.id===f.empresa_id);
+    return `<tr>
+      <td><div style="font-weight:700">${f.nome}</div><div style="font-size:11px;color:#888">${fmtDoc(f.cpf)||''}</div></td>
+      <td>${f.cargo||'—'}</td>
+      <td>${emp?emp.nome:'—'}</td>
+      <td>${[f.email,fmtTelefone(f.telefone)].filter(Boolean).join(' · ')||'—'}</td>
+      <td style="font-size:11px">${(f.areas||[]).join(', ')||'—'}</td>
+      <td><span class="pill ${f.status==='Ativo'?'p-vd':'p-ci'}">${f.status||'Ativo'}</span></td>
+      <td><div class="tac">
+        <button class="btn b-gh b-sm" onclick="openModalFunc('editar',${f.id})">Editar</button>
+        <button class="btn b-ghv b-sm" onclick="openArquivosFuncionario(${f.id},'${(f.nome||'').replace(/'/g,"\\'")}')">Arquivos</button>
+        <button class="btn b-ghr b-sm" onclick="excluirFuncionario(${f.id},'${(f.nome||'').replace(/'/g,"\\'")}')">Excluir</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+async function excluirFuncionario(id,nome){
+  if(!confirm('Excluir funcionário '+nome+'?'))return;
+  await api('/api/funcionarios/'+id,'DELETE');
+  funcs=await api('/api/funcionarios');
+  renderFuncionarios();
+  fillSSTFuncionarios();
+  showSt('st-rh','Funcionário removido.',false);
+}
+
+async function openArquivosFuncionario(id,nome){
+  document.getElementById('farq-fid').value=id;
+  document.getElementById('mod-farq-tit').textContent='Arquivos de '+nome;
+  document.getElementById('mod-farq').classList.add('on');
+  await carregarArquivosFuncionario();
+}
+
+async function carregarArquivosFuncionario(){
+  const id=document.getElementById('farq-fid').value;
+  const lst=await api('/api/funcionarios/'+id+'/arquivos');
+  const el=document.getElementById('farq-lista');
+  if(!lst.length){el.innerHTML='<div class="vazio">Nenhum arquivo anexado.</div>';return;}
+  const catLabel={
+    aso:'ASO',
+    epi:'EPI',
+    treinamento:'Treinamento',
+    holerite:'Holerite',
+    folha_ponto:'Folha de Ponto',
+    contrato_trabalho:'Contrato de Trabalho',
+    vale_transporte:'Vale Transporte',
+    requisicao_vale_transporte:'Requisição de Vale Transporte',
+    uniforme:'Uniforme / Fardamento',
+    outros:'Outros'
+  };
+  el.innerHTML=lst.map(a=>`<div class="hist-item"><div><div class="hist-tit">${a.nome_arquivo}</div><div class="hist-sub">${catLabel[a.categoria]||a.categoria} ${a.competencia?('· '+a.competencia):''} · ${a.criado_fmt||''} ${a.pasta?('· pasta: '+a.pasta):''}</div></div><div style="display:flex;gap:8px"><button class="btn b-gh b-sm" onclick="window.open('/api/funcionarios/arquivos/${a.id}/download','_blank')">Baixar</button><button class="btn b-ghr b-sm" onclick="delArquivoFuncionario(${a.id})">Excluir</button></div></div>`).join('');
+}
+
+async function uploadArquivoFuncionarioModal(){
+  const id=document.getElementById('farq-fid').value;
+  const f=document.getElementById('farq-arq').files?.[0];
+  if(!id||!f){alert('Selecione um arquivo.');return;}
+  const fd=new FormData();
+  fd.append('arquivo',f);
+  fd.append('categoria',document.getElementById('farq-cat').value);
+  fd.append('competencia',document.getElementById('farq-comp').value||'');
+  const r=await fetch('/api/funcionarios/'+id+'/arquivos',{method:'POST',body:fd});
+  const d=await r.json();
+  if(d.erro){alert(d.erro);return;}
+  document.getElementById('farq-arq').value='';
+  showSt('st-rh','Arquivo anexado.',false);
+  carregarArquivosFuncionario();
+}
+
+async function delArquivoFuncionario(id){
+  if(!confirm('Excluir este arquivo?'))return;
+  const d=await api('/api/funcionarios/arquivos/'+id,'DELETE');
+  if(d.erro){alert(d.erro);return;}
+  carregarArquivosFuncionario();
+}
+
+async function uploadHoleritesLote(){
+  const f=document.getElementById('rh-holerite-arq').files?.[0];
+  if(!f){alert('Selecione o PDF de holerites.');return;}
+  const fd=new FormData();
+  fd.append('arquivo',f);
+  fd.append('competencia',document.getElementById('rh-comp').value||'');
+  const r=await fetch('/api/funcionarios/holerites/upload',{method:'POST',body:fd});
+  const d=await r.json();
+  if(d.erro){alert(d.erro);return;}
+  showSt('st-rh',`Processamento concluído. Arquivos: ${d.arquivos_gerados}.`,false);
+  if(d.paginas_sem_funcionario?.length) alert('Páginas sem funcionário identificado: '+d.paginas_sem_funcionario.join(', '));
+}
+
+async function uploadSSTArquivo(){
+  const fid=document.getElementById('sst-func').value;
+  const cat=document.getElementById('sst-cat').value;
+  const comp=document.getElementById('sst-comp').value;
+  const f=document.getElementById('sst-arq').files?.[0];
+  if(!fid||!f){alert('Selecione funcionário e arquivo.');return;}
+  const fd=new FormData();
+  fd.append('arquivo',f); fd.append('categoria',cat); fd.append('competencia',comp);
+  const r=await fetch('/api/funcionarios/'+fid+'/arquivos',{method:'POST',body:fd});
+  const d=await r.json();
+  if(d.erro){alert(d.erro);return;}
+  showSt('st-sst','Documento SST anexado ao funcionário.',false);
+  document.getElementById('sst-arq').value='';
+}
+
+async function salvarOrdemCompra(){
+  const d={numero:document.getElementById('oc-num').value,empresa_id:parseInt(document.getElementById('oc-emp').value)||null,solicitante:document.getElementById('oc-sol').value,fornecedor:document.getElementById('oc-for').value,descricao:document.getElementById('oc-desc').value,valor:parseFloat(document.getElementById('oc-val').value)||0,status:document.getElementById('oc-status').value,data_emissao:document.getElementById('oc-data').value};
+  await api('/api/ordens-compra','POST',d);
+  ['oc-num','oc-sol','oc-for','oc-desc','oc-val'].forEach(id=>document.getElementById(id).value='');
+  renderOrdensCompra();
+  showSt('st-op','Ordem de compra salva.',false);
+}
+
+async function renderOrdensCompra(){
+  const lst=await api('/api/ordens-compra');
+  const el=document.getElementById('lista-oc');
+  if(!el)return;
+  if(!lst.length){el.innerHTML='<div class="vazio">Nenhuma ordem de compra.</div>';return;}
+  el.innerHTML=lst.map(o=>`<div class="hist-item"><div><div class="hist-tit">${o.numero} · ${o.fornecedor||'Sem fornecedor'}</div><div class="hist-sub">${o.status} · ${o.data_emissao||''} · ${o.descricao||''}</div></div><div style="display:flex;gap:8px;align-items:center"><div class="hist-val">${brl(o.valor||0)}</div><button class="btn b-ghr b-sm" onclick="delOC(${o.id})">Excluir</button></div></div>`).join('');
+}
+
+async function delOC(id){
+  if(!confirm('Excluir ordem de compra?'))return;
+  await api('/api/ordens-compra/'+id,'DELETE');
+  renderOrdensCompra();
+}
+
+async function salvarDocOperacional(){
+  const titulo=document.getElementById('op-titulo').value.trim();
+  if(!titulo){alert('Informe o título do documento.');return;}
+  const fd=new FormData();
+  fd.append('tipo',document.getElementById('op-tipo').value);
+  fd.append('empresa_id',document.getElementById('op-emp').value||'');
+  fd.append('titulo',titulo);
+  fd.append('descricao',document.getElementById('op-desc').value);
+  const f=document.getElementById('op-arq').files?.[0];
+  if(f)fd.append('arquivo',f);
+  const r=await fetch('/api/operacional/documentos',{method:'POST',body:fd});
+  const d=await r.json();
+  if(d.erro){alert(d.erro);return;}
+  ['op-titulo','op-desc'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('op-arq').value='';
+  renderOperDocs();
+  showSt('st-op','Documento operacional salvo.',false);
+}
+
+async function renderOperDocs(){
+  const lst=await api('/api/operacional/documentos');
+  const el=document.getElementById('lista-op-docs');
+  if(!el)return;
+  if(!lst.length){el.innerHTML='<div class="vazio">Nenhum documento operacional.</div>';return;}
+  el.innerHTML=lst.map(d=>`<div class="hist-item"><div><div class="hist-tit">${d.tipo} · ${d.titulo}</div><div class="hist-sub">${d.descricao||''}</div></div><div style="display:flex;gap:8px"><button class="btn b-gh b-sm" ${d.nome_arquivo?`onclick="window.open('/api/operacional/documentos/${d.id}/download','_blank')"`:''} ${d.nome_arquivo?'':'disabled'}>Baixar</button><button class="btn b-ghr b-sm" onclick="delOperDoc(${d.id})">Excluir</button></div></div>`).join('');
+}
+
+async function delOperDoc(id){
+  if(!confirm('Excluir documento operacional?'))return;
+  await api('/api/operacional/documentos/'+id,'DELETE');
+  renderOperDocs();
+}
+
+function maskCNPJ(el){
+  let v=el.value.replace(/\D/g,'').substring(0,14);
+  if(v.length>12)v=v.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2}).*/,'$1.$2.$3/$4-$5');
+  else if(v.length>8)v=v.replace(/^(\d{2})(\d{3})(\d{3})(\d*)/,'$1.$2.$3/$4');
+  else if(v.length>5)v=v.replace(/^(\d{2})(\d{3})(\d*)/,'$1.$2.$3');
+  else if(v.length>2)v=v.replace(/^(\d{2})(\d*)/,'$1.$2');
+  el.value=v;
+}
+
+function maskCEP(el){
+  let v=el.value.replace(/\D/g,'').substring(0,8);
+  if(v.length>5)v=v.replace(/^(\d{5})(\d*)/,'$1-$2');
+  el.value=v;
+}
+
+async function buscarCNPJ(){
+  const cnpj=document.getElementById('mc').value.replace(/\D/g,'');
+  if(cnpj.length!==14){alert('CNPJ deve ter 14 dígitos.');return;}
+  const btn=document.getElementById('btn-bcnpj'); const st=document.getElementById('cnpj-st');
+  btn.textContent='...'; btn.disabled=true;
+  st.style.display='block'; st.style.color='#888'; st.textContent='Consultando Receita Federal...';
+  try{
+    const d=await api('/api/cnpj/'+cnpj);
+    if(d.erro){st.style.color='var(--verm)';st.textContent=d.erro;return;}
+    document.getElementById('mn').value=d.nome||d.razao||'';
+    document.getElementById('me').value=d.email||'';
+    document.getElementById('mt').value=d.telefone||'';
+    maskTelefone(document.getElementById('mt'));
+    if(d.cep){
+      document.getElementById('mcep').value=d.cep.replace(/^(\d{5})(\d)/,'$1-$2');
+      document.getElementById('mend').value=d.logradouro||'';
+      document.getElementById('mnum-end').value=d.numero||'';
+      document.getElementById('mcompl').value=d.complemento||'';
+      document.getElementById('mbairro').value=d.bairro||'';
+      document.getElementById('mcidade').value=d.cidade||'';
+      document.getElementById('mestado').value=d.estado||'';
+    }
+    st.style.color='var(--verde)';
+    st.textContent='CNPJ ativo — dados preenchidos!';
+  }catch(e){st.style.color='var(--verm)';st.textContent='Erro ao consultar.';}
+  btn.textContent='Buscar'; btn.disabled=false;
+}
+
+async function buscarCEP(){
+  const cep=document.getElementById('mcep').value.replace(/\D/g,'');
+  if(cep.length!==8)return;
+  const st=document.getElementById('cep-st');
+  st.style.display='block'; st.style.color='#888'; st.textContent='Buscando...';
+  try{
+    const d=await api('/api/cep/'+cep);
+    if(d.erro){st.style.color='var(--verm)';st.textContent=d.erro;return;}
+    document.getElementById('mend').value=d.logradouro||'';
+    document.getElementById('mbairro').value=d.bairro||'';
+    document.getElementById('mcidade').value=d.cidade||'';
+    document.getElementById('mestado').value=d.estado||'';
+    st.style.color='var(--verde)'; st.textContent='Endereço preenchido!';
+    setTimeout(()=>document.getElementById('mnum-end').focus(),100);
+  }catch(e){st.style.color='var(--verm)';st.textContent='Erro ao buscar CEP.';}
+}
+
+function fmtDoc(v){
+  const d=(v||'').toString().replace(/\D/g,'');
+  if(!d) return '';
+  if(d.length<=11){
+    if(d.length>9)return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2}).*/,'$1.$2.$3-$4');
+    if(d.length>6)return d.replace(/^(\d{3})(\d{3})(\d*)/,'$1.$2.$3');
+    if(d.length>3)return d.replace(/^(\d{3})(\d*)/,'$1.$2');
+    return d;
+  }
+  return d.substring(0,14).replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2}).*/,'$1.$2.$3/$4-$5');
+}
+
+function fmtTelefone(v){
+  const d=(v||'').toString().replace(/\D/g,'');
+  if(!d) return '';
+  const sp=splitIntlPhone(d);
+  const loc=(sp.local||'').substring(0,11);
+  let localFmt='';
+  if(loc.length>10)localFmt=loc.replace(/^(\d{2})(\d{5})(\d{4}).*/,'($1) $2-$3');
+  else if(loc.length>6)localFmt=loc.replace(/^(\d{2})(\d{4})(\d{0,4}).*/,'($1) $2-$3').replace(/-$/,'');
+  else if(loc.length>2)localFmt=loc.replace(/^(\d{2})(\d*)/,'($1) $2');
+  else localFmt='('+loc;
+  return '+'+sp.ddi+' '+localFmt;
+}
+
+const brl=v=>'R$ '+(parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const normUrl=v=>{const s=(v||'').trim(); if(!s) return ''; return /^https?:\/\//i.test(s)?s:'https://'+s;};
+const fmtData=s=>{if(!s)return'';const p=s.split('-');return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:s;};
+const fmtMes=s=>{if(!s)return'';const ms=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];const p=s.split('-');return ms[parseInt(p[1])-1]+'/'+p[0];};
+
+function showSt(id,msg,err){
+  const el=document.getElementById(id); if(!el)return;
+  el.textContent=msg; el.className='st '+(err?'er':'ok');
+  clearTimeout(el._t); el._t=setTimeout(()=>{el.className='st';},4500);
+}
+
+async function cancelarMedicao(id,numero){
+  if(!confirm(`Cancelar a medição ${numero}? Ela ficará marcada como cancelada no histórico.`))return;
+  const r=await api('/api/medicoes/'+id+'/status','PUT',{status:'cancelada'});
+  if(r.erro){alert(r.erro);return;}
+  showSt('st-med','Medição cancelada.',false);
+  renderHist();
+}
+
+// ══ RH DIGITAL ══
+let _rhdJob=null, _waNumeroAtual=null;
+
+function initRHDigital(){
+  // activate first tab if not active
+  const tabs=document.querySelectorAll('#rhd-tabs .btn');
+  if(tabs.length && !Array.from(tabs).some(b=>b.classList.contains('b-az'))){
+    tabs[0].classList.replace('b-gh','b-az');
+  }
+}
+
+function switchTab(prefix,tab,el){
+  document.querySelectorAll(`[id^="${prefix}-tab-"]`).forEach(d=>d.style.display='none');
+  const target=document.getElementById(`${prefix}-tab-${tab}`);
+  if(target)target.style.display='';
+  document.querySelectorAll(`#${prefix}-tabs .btn`).forEach(b=>{b.classList.remove('b-az');b.classList.add('b-gh');});
+  if(el){el.classList.remove('b-gh');el.classList.add('b-az');}
+  if(prefix==='rhd'&&tab==='whatsapp')loadWAConversas();
+  if(prefix==='rhd'&&tab==='cfg-email')loadSMTPConfig();
+  if(prefix==='rhd'&&tab==='cfg-wa')loadWAConfig();
+}
+
+async function rhdProcessar(){
+  const f=document.getElementById('rhd-arq').files?.[0];
+  if(!f){alert('Selecione o arquivo PDF.');return;}
+  const st=document.getElementById('rhd-envio-st');
+  showSt('rhd-envio-st','Processando PDF...',false);
+  const fd=new FormData();
+  fd.append('arquivo',f);
+  fd.append('competencia',document.getElementById('rhd-comp').value||'');
+  try{
+    const r=await fetch('/api/rh/holerites/processar',{method:'POST',body:fd});
+    let d=null;
+    const ct=(r.headers.get('content-type')||'').toLowerCase();
+    if(ct.includes('application/json')) d=await r.json();
+    else {
+      const tx=await r.text();
+      throw new Error(r.status===401||r.status===403?'Sessao expirada. Entre novamente no sistema.':(tx&&tx.trim()?tx.slice(0,180):`Falha HTTP ${r.status}`));
+    }
+    if(d.erro){showSt('rhd-envio-st',d.erro,true);return;}
+    _rhdJob=d;
+    document.getElementById('rhd-preview-box').style.display='';
+    renderRHDPreview(d);
+    showSt('rhd-envio-st',`${d.separados} holerites extraídos de ${d.total_paginas} página(s).${d.sem_match.length?' Páginas sem match: '+d.sem_match.join(', '):''}`,false);
+  }catch(e){showSt('rhd-envio-st','Erro ao processar: '+e.message,true);}
+}
+
+function renderRHDPreview(data){
+  const el=document.getElementById('rhd-preview-lista');
+  if(!data.itens||!data.itens.length){
+    el.innerHTML='<div class="vazio">Nenhum funcionário identificado no PDF. Verifique se os nomes estão cadastrados no sistema.</div>';
+    return;
+  }
+  const stMap={'enviado_email':'📧 E-mail','enviado_wa':'📱 WhatsApp','enviado_ambos':'📧📱 Ambos','sem_contato':'⚠️ Sem contato','erro':'❌ Erro','enviando':'⏳ Enviando'};
+  const clsMap={'enviado_email':'p-vd','enviado_wa':'p-vd','enviado_ambos':'p-vd','sem_contato':'p-ci','erro':'p-vm','enviando':'p-ci'};
+  el.innerHTML=data.itens.map(item=>`<div class="hist-item">
+    <div style="display:flex;align-items:center;gap:10px;flex:1">
+      <input type="checkbox" class="rhd-sel" data-id="${item.arquivo_id}" checked style="width:16px;height:16px;flex-shrink:0">
+      <div style="flex:1">
+        <div class="hist-tit">${item.funcionario_nome}</div>
+        <div class="hist-sub">Pág. ${item.pagina} · ${item.nome_arquivo}${item.email?' · 📧 '+item.email:''}${item.whatsapp?' · 📱 '+fmtTelefone(item.whatsapp):''}</div>
+        ${item.status_envio==='erro'&&item.erro_envio?`<div style="font-size:11px;color:var(--verm);margin-top:2px">Erro: ${item.erro_envio}</div>`:''}
+      </div>
+    </div>
+    <span class="pill ${clsMap[item.status_envio]||'p-ci'}">${stMap[item.status_envio]||'⏳ Aguardando'}</span>
+  </div>`).join('');
+}
+
+function rhdSelecionarTodos(val){
+  document.querySelectorAll('.rhd-sel').forEach(cb=>cb.checked=val);
+}
+
+async function rhdEnviar(){
+  if(!_rhdJob){alert('Processe o PDF primeiro.');return;}
+  const canal=document.getElementById('rhd-canal').value;
+  const ids=Array.from(document.querySelectorAll('.rhd-sel:checked')).map(cb=>parseInt(cb.dataset.id));
+  if(!ids.length){alert('Selecione ao menos um holerite para enviar.');return;}
+  const idsSet=new Set(ids);
+  _rhdJob.itens=(_rhdJob.itens||[]).map(it=>idsSet.has(it.arquivo_id)?{...it,status_envio:'enviando',erro_envio:null}:it);
+  renderRHDPreview(_rhdJob);
+  showSt('rhd-envio-st','Enviando em background...', false);
+  const r=await api('/api/rh/holerites/enviar/'+_rhdJob.job_id,'POST',{canal,arquivo_ids:ids});
+  if(r.erro){showSt('rhd-envio-st',r.erro,true);return;}
+  let tries=0;
+  const poll=setInterval(async()=>{
+    tries++;
+    const j=await api('/api/rh/holerites/job/'+_rhdJob.job_id);
+    if(j.job){
+      _rhdJob.itens=j.job.itens;
+      renderRHDPreview(_rhdJob);
+      if(j.job.status==='concluido'||tries>60){
+        clearInterval(poll);
+        const alvo=(j.job.itens||[]).filter(it=>idsSet.has(it.arquivo_id));
+        const ok=alvo.filter(it=>['enviado_email','enviado_wa','enviado_ambos'].includes(it.status_envio)).length;
+        const sem=alvo.filter(it=>it.status_envio==='sem_contato').length;
+        const err=alvo.filter(it=>it.status_envio==='erro').length;
+        const msg=err>0?`Envio concluído com ${err} erro(s). Sucesso: ${ok}. Sem contato: ${sem}.`:`Envio concluído! Sucesso: ${ok}. Sem contato: ${sem}.`;
+        showSt('rhd-envio-st',msg,err>0);
+      }
+    }
+  },2000);
+}
+
+// WhatsApp Web
+async function loadWAConversas(){
+  const lst=await api('/api/whatsapp/conversas');
+  const el=document.getElementById('wa-conversas-lista');
+  if(!lst.length){el.innerHTML='<div class="vazio">Nenhuma conversa ainda.</div>';return;}
+  el.innerHTML=lst.map(c=>`<div class="hist-item" style="cursor:pointer;padding:10px 12px" onclick="abrirWAConversa('${c.numero}','${(c.nome||c.numero).replace(/'/g,"\\'")}')">
+    <div>
+      <div style="font-weight:700;font-size:13px">${c.nome||c.numero}</div>
+      <div style="font-size:11px;color:#888">${fmtTelefone(c.numero)} · ${c.ultima_msg_fmt||''}</div>
+    </div>
+  </div>`).join('');
+}
+
+async function abrirWAConversa(numero,nome){
+  _waNumeroAtual=numero;
+  document.getElementById('wa-chat-titulo').textContent=nome||numero;
+  const d=await api('/api/whatsapp/conversas/'+numero);
+  const el=document.getElementById('wa-chat-msgs');
+  if(!d.mensagens||!d.mensagens.length){el.innerHTML='<div class="vazio">Nenhuma mensagem ainda.</div>';return;}
+  el.innerHTML=d.mensagens.map(m=>`<div style="display:flex;justify-content:${m.direcao==='out'?'flex-end':'flex-start'}">
+    <div style="background:${m.direcao==='out'?'var(--azul)':'#f0f0f0'};color:${m.direcao==='out'?'white':'#333'};padding:8px 12px;border-radius:12px;max-width:70%;font-size:13px">
+      <div>${m.conteudo||''}</div>
+      <div style="font-size:10px;opacity:.7;margin-top:2px;text-align:right">${m.criado_fmt||''}</div>
+    </div>
+  </div>`).join('');
+  el.scrollTop=el.scrollHeight;
+}
+
+async function waSend(){
+  if(!_waNumeroAtual){alert('Selecione uma conversa.');return;}
+  const txt=document.getElementById('wa-msg-input').value.trim();
+  if(!txt)return;
+  document.getElementById('wa-msg-input').value='';
+  const r=await api('/api/whatsapp/send','POST',{numero:_waNumeroAtual,texto:txt});
+  if(r.erro){alert(r.erro);return;}
+  abrirWAConversa(_waNumeroAtual,document.getElementById('wa-chat-titulo').textContent);
+  loadWAConversas();
+}
+
+// SMTP Config
+async function loadSMTPConfig(){
+  const d=await api('/api/config/smtp');
+  document.getElementById('smtp-host').value=d.host||'';
+  document.getElementById('smtp-port').value=d.port||'587';
+  document.getElementById('smtp-user').value=d.user||'';
+  document.getElementById('smtp-senha').value=d.senha||'';
+  document.getElementById('smtp-de').value=d.de||'';
+  document.getElementById('smtp-tls').value=d.tls||'1';
+}
+
+async function salvarSMTP(){
+  const d={host:document.getElementById('smtp-host').value,port:document.getElementById('smtp-port').value,user:document.getElementById('smtp-user').value,senha:document.getElementById('smtp-senha').value,de:document.getElementById('smtp-de').value,tls:document.getElementById('smtp-tls').value};
+  const r=await api('/api/config/smtp','POST',d);
+  showSt('smtp-st',r.erro||'Configurações salvas!',!!r.erro);
+}
+
+async function testarSMTP(){
+  const dest=document.getElementById('smtp-user').value;
+  if(!dest){showSt('smtp-st','Configure o e-mail primeiro.',true);return;}
+  showSt('smtp-st','Enviando e-mail de teste...',false);
+  const r=await api('/api/config/smtp/testar','POST',{email:dest});
+  showSt('smtp-st',r.erro||r.mensagem||'Teste enviado!',!!r.erro);
+}
+
+// WhatsApp Config
+async function loadWAConfig(){
+  const d=await api('/api/config/whatsapp');
+  document.getElementById('wa-url').value=d.url||'';
+  document.getElementById('wa-instancia').value=d.instancia||'';
+  document.getElementById('wa-token').value=d.token||'';
+  await loadIAWAConfig();
+}
+
+async function salvarWAConfig(){
+  const d={url:document.getElementById('wa-url').value,instancia:document.getElementById('wa-instancia').value,token:document.getElementById('wa-token').value};
+  const r=await api('/api/config/whatsapp','POST',d);
+  showSt('wa-cfg-st',r.erro||'Configurações salvas!',!!r.erro);
+}
+
+async function testarWA(){
+  const num=prompt('Número para teste (com DDI, ex: 5511999998888):');
+  if(!num)return;
+  showSt('wa-cfg-st','Testando conexão...',false);
+  const r=await api('/api/config/whatsapp/testar','POST',{numero:num});
+  showSt('wa-cfg-st',r.erro||'Mensagem de teste enviada! Verifique o WhatsApp.',!!r.erro);
+}
+
+async function loadIAWAConfig(){
+  const d=await api('/api/config/ia-whatsapp');
+  document.getElementById('iawa-enabled').value=(d.enabled||'0').toString();
+  document.getElementById('iawa-provider').value=d.provider||'gemini';
+  document.getElementById('iawa-api-key').value=d.api_key||'';
+  document.getElementById('iawa-model').value=d.model||'';
+  document.getElementById('iawa-prompt').value=d.prompt||'';
+  document.getElementById('iawa-temperature').value=d.temperature||'0.3';
+  document.getElementById('iawa-max-tokens').value=d.max_tokens||'350';
+}
+
+async function salvarIAWAConfig(){
+  const d={
+    enabled:document.getElementById('iawa-enabled').value,
+    provider:document.getElementById('iawa-provider').value,
+    api_key:document.getElementById('iawa-api-key').value,
+    model:document.getElementById('iawa-model').value,
+    prompt:document.getElementById('iawa-prompt').value,
+    temperature:document.getElementById('iawa-temperature').value,
+    max_tokens:document.getElementById('iawa-max-tokens').value,
+  };
+  const r=await api('/api/config/ia-whatsapp','POST',d);
+  if(!r.erro){
+    if(r.provider) document.getElementById('iawa-provider').value=r.provider;
+    if(r.model) document.getElementById('iawa-model').value=r.model;
+    if(r.temperature!==undefined) document.getElementById('iawa-temperature').value=r.temperature;
+    if(r.max_tokens!==undefined) document.getElementById('iawa-max-tokens').value=r.max_tokens;
+  }
+  showSt('iawa-st',r.erro||r.warning||'Configuração da IA salva!',!!r.erro);
+}
+
+async function testarIAWA(){
+  const texto=prompt('Digite uma mensagem para a IA responder:','Olá, gostaria de saber sobre os serviços da RM Facilities.');
+  if(!texto)return;
+  const numero=(document.getElementById('iawa-numero-teste').value||'5511999998888').trim();
+  showSt('iawa-st','Testando IA...',false);
+  const r=await api('/api/whatsapp/ia/testar','POST',{numero,texto});
+  if(r.erro){
+    document.getElementById('iawa-resp').textContent='';
+    showSt('iawa-st',r.erro,true);
+    return;
+  }
+  showSt('iawa-st','IA respondeu com sucesso.',false);
+  document.getElementById('iawa-resp').textContent=r.resposta||'';
+}
+
+init();
+</script>
+</body>
+</html>
