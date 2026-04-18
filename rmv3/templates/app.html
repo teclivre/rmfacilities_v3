@@ -14,6 +14,7 @@
     <h1>RM Facilities</h1>
   </div>
   <div class="topbar-right">
+    <button class="btn-top" type="button" id="theme-toggle" onclick="toggleTheme()" title="Alternar tema">🌙 Dark</button>
     <div class="topbar-user">
       <div style="font-weight:700">{{ nome }}</div>
       <div id="relogio"></div>
@@ -364,6 +365,8 @@
           <div class="card" style="display:flex;flex-direction:column;margin-bottom:0;min-height:520px">
             <div class="card-header">
               <span class="card-title" id="wa-chat-titulo">Selecione uma conversa</span>
+              <button class="btn b-gh b-sm" id="wa-pausar-btn" onclick="waPausarIA()" style="display:none">Pausar IA 8h</button>
+              <button class="btn b-ghv b-sm" id="wa-retomar-btn" onclick="waRetomarIA()" style="display:none">Retomar IA agora</button>
             </div>
             <div id="wa-chat-msgs" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:400px"></div>
             <div style="padding:12px;border-top:1.5px solid var(--borda);display:flex;gap:8px">
@@ -415,6 +418,23 @@
           <div class="brow" style="justify-content:flex-start">
             <button class="btn b-az" onclick="salvarWAConfig()">Salvar configurações</button>
             <button class="btn b-ghv" onclick="testarWA()">Testar conexão</button>
+          </div>
+          <div class="g3" style="margin-top:10px">
+            <div class="f"><label>Backup automático ativo</label><select id="wa-backup-enabled"><option value="1">Sim</option><option value="0">Não</option></select></div>
+            <div class="f"><label>Backup a cada (horas)</label><input id="wa-backup-interval" type="number" min="1" max="168" step="1" value="2"></div>
+            <div class="f"><label>Janela de coleta (horas)</label><input id="wa-backup-window" type="number" min="1" max="168" step="1" value="8"></div>
+          </div>
+          <div class="g2">
+            <div class="f"><label>E-mail destino do backup</label><input id="wa-backup-email" type="email" placeholder="backup@seudominio.com"></div>
+            <div class="f"><label>Máx. conversas por backup</label><input id="wa-backup-max" type="number" min="1" max="50" step="1" value="10"></div>
+          </div>
+          <div class="brow" style="justify-content:flex-start">
+            <button class="btn b-ghv" onclick="testarWABackup()">Testar envio do backup</button>
+            <button class="btn b-ci" onclick="gerarWABackupLocal()">Gerar backup local (JSON)</button>
+          </div>
+          <div class="g2">
+            <div class="f"><label>Restaurar backup JSON (e-mail)</label><input id="wa-backup-file" type="file" accept=".json,application/json"></div>
+            <div class="f" style="display:flex;align-items:flex-end"><button class="btn b-az" onclick="restaurarWABackup()">Restaurar backup</button></div>
           </div>
           <div id="wa-cfg-st" class="st"></div>
           <p style="font-size:12px;color:#888;margin-top:8px">Configure o webhook em sua instância Evolution API para: <code>POST /webhook/whatsapp</code></p>
@@ -544,12 +564,45 @@
         </div>
       </div>
       <div class="card">
-        <div class="card-header"><span class="card-title">Backup do sistema</span></div>
-        <p style="font-size:13px;color:#666;margin-bottom:14px">Faça o download de todos os dados do sistema em formato ZIP. Inclui banco de dados e exportação JSON de clientes, medições e empresas.</p>
-        <a href="/api/backup" class="btn b-vd">⬇ Baixar backup completo</a>
-        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <input type="file" id="bk-restore" accept=".zip">
-          <button class="btn b-ghr" onclick="restaurarBackup()">Restaurar backup ZIP</button>
+        <div class="card-header"><span class="card-title">🔒 Backup & Recuperação Completa do Sistema</span></div>
+        <p style="font-size:13px;color:#666;margin-bottom:14px">
+          <strong>Backup completo incluindo:</strong> Empresas, Clientes, Funcionários, Medições, Configurações, Chaves de API, Evolution WhatsApp, Conversas e Mensagens, Ordens de Compra, Documentos Operacionais, e todos os arquivos anexados.
+        </p>
+        
+        <div style="background:#f0f9ff;border-left:4px solid #0066cc;padding:10px;margin-bottom:14px;border-radius:4px">
+          <div style="font-size:12px;color:#003366">
+            <strong>⚠️ Importante:</strong> Use esta ferramenta regularmente para proteger seus dados. Em caso de problema ou atualização do sistema, terá tudo pronto para restaurar.
+          </div>
+        </div>
+
+        <div style="margin-bottom:16px">
+          <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:8px">Fazer Backup Agora:</div>
+          <a href="/api/backup" class="btn b-vd" style="font-weight:600;font-size:14px">⬇ Baixar Backup Completo</a>
+          <div style="font-size:11px;color:#666;margin-top:4px">Baixa um arquivo ZIP com tudo do sistema pronto para salvar</div>
+        </div>
+
+        <div style="margin-bottom:14px;border-top:1px solid #ddd;padding-top:14px">
+          <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:8px">Restaurar Backup:</div>
+          <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
+            <input type="file" id="bk-restore" accept=".zip" style="flex:1;min-width:200px;padding:8px;border:1px solid #ddd;border-radius:3px">
+            <button class="btn b-ghr" onclick="restaurarBackup()" style="white-space:nowrap">Restaurar</button>
+          </div>
+          <div style="font-size:11px;color:#666;margin-top:4px">
+            ⚠️ Aviso: Restauração substituirá TODOS os dados atuais. Faça backup antes!
+          </div>
+        </div>
+
+        <div id="bk-status" class="st"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">📧 Backups Automáticos WhatsApp</span></div>
+        <p style="font-size:13px;color:#666;margin-bottom:14px">
+          O sistema realiza automaticamente backups das conversas e configurações do WhatsApp a cada 2 horas e envia por e-mail. Para configurar horário, intervalo e e-mail de destino, acesse a aba <strong>RH Digital → Configurações → Config WhatsApp</strong>.
+        </p>
+        <div style="background:#f0fff0;border-left:4px solid #00cc00;padding:10px;border-radius:4px">
+          <div style="font-size:12px;color:#003300">
+            <strong>✅ Proteção contínua:</strong> Seus dados de WhatsApp são protegidos automaticamente enquanto você trabalha.
+          </div>
         </div>
       </div>
     </div>
@@ -557,19 +610,56 @@
   </main>
 </div>
 
-<!-- MODAL ARQUIVOS FUNCIONARIO -->
+<!-- MODAL ARQUIVOS FUNCIONARIO (MELHORADO) -->
 <div id="mod-farq" class="mb" onclick="if(event.target===this)closeModal('farq')">
-  <div class="md" style="max-width:760px">
-    <div class="mh"><span class="mt" id="mod-farq-tit">Arquivos do funcionário</span><button class="btn b-ci b-sm" onclick="closeModal('farq')">Fechar ×</button></div>
+  <div class="md" style="max-width:900px">
+    <div class="mh"><span class="mt" id="mod-farq-tit">📁 Arquivos do funcionário</span><button class="btn b-ci b-sm" onclick="closeModal('farq')">Fechar ×</button></div>
     <div class="mb-body">
       <input type="hidden" id="farq-fid">
-      <div class="g3">
-        <div class="f"><label>Categoria</label><select id="farq-cat"><option value="outros">Outros</option><option value="aso">ASO</option><option value="epi">EPI</option><option value="holerite">Holerite</option><option value="treinamento">Treinamento</option><option value="folha_ponto">Folha de Ponto</option><option value="contrato_trabalho">Contrato de Trabalho</option><option value="vale_transporte">Vale Transporte</option><option value="requisicao_vale_transporte">Requisição de Vale Transporte</option><option value="uniforme">Uniforme / Fardamento</option></select></div>
-        <div class="f"><label>Competência/Validade</label><input id="farq-comp"></div>
-        <div class="f"><label>Arquivo</label><input type="file" id="farq-arq"></div>
+      
+      <!-- Upload Section com drag-and-drop -->
+      <div id="farq-upload-box" style="background: linear-gradient(135deg, var(--azul-cc) 0%, var(--azul-cl) 100%); border: 2px dashed var(--azul); border-radius: 12px; padding: 16px; margin-bottom: 16px; transition: all 0.3s ease;">
+        <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; align-items: flex-end;">
+          <div class="f">
+            <label style="font-weight: 600; color: var(--preto);">📄 Arquivo</label>
+            <input type="file" id="farq-arq" style="width:100%" onchange="previewFileUpload(this)">
+            <div id="farq-preview" style="font-size:11px;color:var(--preto);opacity:.75;margin-top:4px"></div>
+          </div>
+          <div class="f">
+            <label style="font-weight: 600; color: var(--preto);">🏷️ Categoria</label>
+            <select id="farq-cat" style="width:100%">
+              <option value="outros">📦 Outros</option>
+              <option value="holerite">💼 Holerite</option>
+              <option value="aso">🏥 ASO</option>
+              <option value="treinamento">📚 Treinamento</option>
+              <option value="contrato_trabalho">📋 Contrato</option>
+              <option value="folha_ponto">⏰ Folha Ponto</option>
+              <option value="epi">🦺 EPI</option>
+              <option value="uniforme">👕 Uniforme</option>
+              <option value="vale_transporte">🚌 Vale Transporte</option>
+              <option value="requisicao_vale_transporte">📝 Req. V.T.</option>
+            </select>
+          </div>
+          <div class="f">
+            <label style="font-weight: 600; color: var(--preto);">📅 Competência</label>
+            <input id="farq-comp" placeholder="04/2026" style="width:100%">
+          </div>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px">
+          <button class="btn b-az" onclick="uploadArquivoFuncionarioModal()" style="flex:1"><span style="font-size:14px">⬆️ Anexar arquivo</span></button>
+          <button class="btn b-gh b-sm" onclick="buscarAnos()"><span>🔄 Atualizar</span></button>
+        </div>
+        <div id="farq-upload-st" class="st" style="margin-top:8px"></div>
       </div>
-      <div class="brow" style="justify-content:flex-start"><button class="btn b-az" onclick="uploadArquivoFuncionarioModal()">Anexar arquivo</button></div>
-      <div id="farq-lista"></div>
+
+      <!-- Árvore de Pastas -->
+      <div style="background: var(--cinza-cl); border-radius: 8px; border: 1px solid var(--borda); overflow: hidden;">
+        <div id="farq-tree" style="max-height:500px;overflow-y:auto;padding:8px"></div>
+      </div>
+
+      <div style="font-size:11px;color:var(--preto);opacity:.7;margin-top:8px;text-align:center">
+        💡 Clique nas pastas para expandir • Arraste arquivos para mover
+      </div>
     </div>
   </div>
 </div>
@@ -604,7 +694,7 @@
         <div class="f"><label>Cidade/UF</label><input id="fciduf" placeholder="Cidade/UF"></div>
       </div>
       <div class="f"><label>Áreas com acesso</label>
-        <div id="fareas" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:12px;color:#444"></div>
+        <div id="fareas" class="areas-grid"></div>
       </div>
       <div class="f"><label>Observações</label><textarea id="fobs"></textarea></div>
       <div class="brow" style="margin-top:6px">
@@ -778,7 +868,7 @@
           </select>
         </div>
       </div>
-      <div class="f"><label>Áreas de acesso</label><div id="uareas" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:12px;color:#444"></div></div>
+      <div class="f"><label>Áreas de acesso</label><div id="uareas" class="areas-grid"></div></div>
       <div class="brow" style="margin-top:6px">
         <button class="btn b-ci" onclick="closeModal('usr')">Cancelar</button>
         <button class="btn b-az" onclick="salvarUsuario()">Salvar usuário</button>
@@ -790,8 +880,33 @@
 <script>
 const N='{{ nome }}', P='{{ perfil }}';
 const USER_AREAS={{ areas|safe }};
+const THEME_KEY='rm_theme';
 const AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','sst','rh-digital'];
 let todos=[], emps=[], funcs=[], acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
+
+function applyTheme(theme){
+  const t=(theme==='dark')?'dark':'light';
+  document.documentElement.setAttribute('data-theme',t);
+  const btn=document.getElementById('theme-toggle');
+  if(btn) btn.textContent=t==='dark'?'☀️ Claro':'🌙 Dark';
+}
+
+function preferredTheme(){
+  const saved=localStorage.getItem(THEME_KEY);
+  if(saved==='dark' || saved==='light') return saved;
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function initTheme(){
+  applyTheme(preferredTheme());
+}
+
+function toggleTheme(){
+  const current=document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light';
+  const next=current==='dark'?'light':'dark';
+  localStorage.setItem(THEME_KEY,next);
+  applyTheme(next);
+}
 
 async function api(url,m='GET',b=null){
   const o={method:m,headers:{'Content-Type':'application/json'}};
@@ -1440,18 +1555,51 @@ async function importarFuncionariosPlanilha(ev){
 
 async function restaurarBackup(){
   const f=document.getElementById('bk-restore').files?.[0];
-  if(!f){alert('Selecione o ZIP de backup.');return;}
-  if(!confirm('A restauração substituirá os dados atuais. Deseja continuar?'))return;
-  const fd=new FormData(); fd.append('arquivo',f);
-  const r=await fetch('/api/backup/restore',{method:'POST',body:fd});
-  const d=await r.json();
-  if(d.erro){alert(d.erro);return;}
-  await loadEmps();
-  todos=await api('/api/clientes');
-  funcs=await api('/api/funcionarios');
-  await loadDash();
-  renderCli(); renderFuncionarios(); renderOrdensCompra(); renderOperDocs(); fillSSTFuncionarios();
-  alert('Backup restaurado com sucesso.');
+  if(!f){
+    showSt('bk-status','❌ Selecione um arquivo ZIP de backup.',true);
+    return;
+  }
+  
+  if(!confirm('⚠️ Restauração substituirá TODOS os dados atuais da sua empresa.\n\nDeseja continuar?\n\n(Certifique-se de que fez backup dos dados atuais antes!)')){
+    return;
+  }
+  
+  showSt('bk-status','⏳ Restaurando backup... Por favor aguarde (pode levar alguns minutos).',false);
+  
+  const fd=new FormData(); 
+  fd.append('arquivo',f);
+  
+  try {
+    const r=await fetch('/api/backup/restore',{method:'POST',body:fd});
+    const d=await r.json();
+    
+    if(d.erro){
+      showSt('bk-status','❌ Erro na restauração: '+d.erro,true);
+      return;
+    }
+    
+    const rest=d.restaurado||{};
+    const msg=`✅ Backup restaurado com sucesso!\n\n📊 Dados restaurados:\n• Empresas: ${rest.empresas||0}\n• Clientes: ${rest.clientes||0}\n• Funcionários: ${rest.funcionarios||0}\n• Medições: ${rest.medicoes||0}\n• Configurações: ${rest.configs||0}\n• WhatsApp conversas: ${rest.wa_conversas||0}\n• WhatsApp mensagens: ${rest.wa_mensagens||0}\n\nCarregando dados atualizados...`;
+    
+    showSt('bk-status',msg.replace(/\n/g,'<br>'),false);
+    
+    // Aguarda um pouco e recarrega
+    await new Promise(r=>setTimeout(r,2000));
+    await loadEmps();
+    todos=await api('/api/clientes');
+    funcs=await api('/api/funcionarios');
+    await loadDash();
+    renderCli(); 
+    renderFuncionarios(); 
+    renderOrdensCompra(); 
+    renderOperDocs(); 
+    fillSSTFuncionarios();
+    
+    showSt('bk-status','✅ Backup restaurado com sucesso! Sistema atualizado.',false);
+    document.getElementById('bk-restore').value='';
+  } catch(e) {
+    showSt('bk-status','❌ Erro ao restaurar: '+String(e),true);
+  }
 }
 
 function areaChecks(sel){
@@ -1460,8 +1608,8 @@ function areaChecks(sel){
   AREAS.forEach(a=>{
     const id='fa-'+a;
     const row=document.createElement('label');
-    row.style.display='flex'; row.style.gap='6px'; row.style.alignItems='center';
-    row.innerHTML=`<input type="checkbox" id="${id}" ${sel.includes(a)?'checked':''}> ${a.toUpperCase()}`;
+    row.className='areas-item';
+    row.innerHTML=`<input type="checkbox" id="${id}" ${sel.includes(a)?'checked':''}><span>${a.toUpperCase()}</span>`;
     box.appendChild(row);
   });
 }
@@ -1472,8 +1620,8 @@ function areaChecksUsuario(sel){
   AREAS.forEach(a=>{
     const id='ua-'+a;
     const row=document.createElement('label');
-    row.style.display='flex'; row.style.gap='6px'; row.style.alignItems='center';
-    row.innerHTML=`<input type="checkbox" id="${id}" ${sel.includes(a)?'checked':''}> ${a.toUpperCase()}`;
+    row.className='areas-item';
+    row.innerHTML=`<input type="checkbox" id="${id}" ${sel.includes(a)?'checked':''}><span>${a.toUpperCase()}</span>`;
     box.appendChild(row);
   });
 }
@@ -1676,52 +1824,222 @@ async function excluirFuncionario(id,nome){
 
 async function openArquivosFuncionario(id,nome){
   document.getElementById('farq-fid').value=id;
-  document.getElementById('mod-farq-tit').textContent='Arquivos de '+nome;
+  document.getElementById('mod-farq-tit').textContent='📁 Arquivos de '+nome;
   document.getElementById('mod-farq').classList.add('on');
-  await carregarArquivosFuncionario();
+  document.getElementById('farq-tree').innerHTML='<div style="padding:20px;text-align:center;color:var(--preto);opacity:.7">⏳ Carregando...</div>';
+  await buscarAnos();
 }
 
-async function carregarArquivosFuncionario(){
+async function buscarAnos(){
   const id=document.getElementById('farq-fid').value;
-  const lst=await api('/api/funcionarios/'+id+'/arquivos');
-  const el=document.getElementById('farq-lista');
-  if(!lst.length){el.innerHTML='<div class="vazio">Nenhum arquivo anexado.</div>';return;}
-  const catLabel={
-    aso:'ASO',
-    epi:'EPI',
-    treinamento:'Treinamento',
-    holerite:'Holerite',
-    folha_ponto:'Folha de Ponto',
-    contrato_trabalho:'Contrato de Trabalho',
-    vale_transporte:'Vale Transporte',
-    requisicao_vale_transporte:'Requisição de Vale Transporte',
-    uniforme:'Uniforme / Fardamento',
-    outros:'Outros'
+  if(!id) return;
+  try{
+    const arvore=await api('/api/funcionarios/'+id+'/documentos/arvore');
+    if(!arvore.ok){
+      showSt('farq-upload-st','❌ Erro ao carregar arquivos',true);
+      return;
+    }
+    renderArquivoTree(arvore.categorias);
+  }catch(e){
+    showSt('farq-upload-st','❌ Erro ao carregar',true);
+  }
+}
+
+function renderArquivoTree(categorias){
+  const tree=document.getElementById('farq-tree');
+  if(!categorias||!categorias.length){
+    tree.innerHTML='<div style="padding:20px;text-align:center;color:var(--preto);opacity:.7">📭 Nenhuma pasta criada. Anexe um arquivo para iniciar.</div>';
+    return;
+  }
+  
+  const categoryEmojis={
+    'holerite':'💼','aso':'🏥','epi':'🦺','treinamento':'📚','folha_ponto':'⏰',
+    'contrato_trabalho':'📋','vale_transporte':'🚌','requisicao_vale_transporte':'📝','uniforme':'👕','outros':'📦'
   };
-  el.innerHTML=lst.map(a=>`<div class="hist-item"><div><div class="hist-tit">${a.nome_arquivo}</div><div class="hist-sub">${catLabel[a.categoria]||a.categoria} ${a.competencia?('· '+a.competencia):''} · ${a.criado_fmt||''} ${a.pasta?('· pasta: '+a.pasta):''}</div></div><div style="display:flex;gap:8px"><button class="btn b-gh b-sm" onclick="window.open('/api/funcionarios/arquivos/${a.id}/download','_blank')">Baixar</button><button class="btn b-ghr b-sm" onclick="delArquivoFuncionario(${a.id})">Excluir</button></div></div>`).join('');
+
+  let html='<div style="padding:8px">';
+  categorias.forEach((cat,idx)=>{
+    const emoji=categoryEmojis[cat.categoria]||'📁';
+    const isOpen=localStorage.getItem('farq-cat-'+cat.categoria)!='0';
+    html+=`
+    <div style="margin-bottom:4px;animation:slideDown 0.3s ease;">
+      <div onclick="toggleCategory('${cat.categoria}')" style="cursor:pointer;padding:10px;background:var(--cinza-cl);border-radius:6px;display:flex;align-items:center;gap:8px;user-select:none;transition:all 0.2s;border-left:3px solid transparent" onmouseover="this.style.filter='brightness(0.96)'" onmouseout="this.style.filter='brightness(1)'">
+        <span style="font-size:16px;transition:transform 0.2s" id="cat-arrow-${cat.categoria}">${isOpen?'▼':'▶'}</span>
+        <span style="font-size:16px">${emoji}</span>
+        <span style="font-weight:600;flex:1;color:var(--preto)">${cat.categoria_label}</span>
+        <span style="font-size:12px;background:#3b82f6;color:white;padding:2px 8px;border-radius:12px;font-weight:600">${calcularTotalArquivos(cat.anos)}</span>
+      </div>
+      <div id="cat-content-${cat.categoria}" style="display:${isOpen?'block':'none'};animation:${isOpen?'slideDown':'slideUp'} 0.2s ease;margin-left:16px;border-left:2px solid var(--borda);padding-left:8px;margin-top:4px">
+        ${cat.anos.map(ano=>`
+          <div style="margin-bottom:6px">
+            <div onclick="toggleAno('${cat.categoria}','${ano.ano}')" style="cursor:pointer;padding:8px;background:var(--branco);border:1px solid var(--borda);border-radius:6px;display:flex;align-items:center;gap:6px;user-select:none;transition:all 0.2s" onmouseover="this.style.filter='brightness(0.96)'" onmouseout="this.style.filter='brightness(1)'">
+              <span style="font-size:14px;transition:transform 0.2s" id="ano-arrow-${cat.categoria}-${ano.ano}">▼</span>
+              <span style="font-size:14px">📅</span>
+              <span style="font-weight:500;flex:1;color:var(--preto)">${ano.ano}</span>
+              <span style="font-size:11px;background:#10b981;color:white;padding:2px 6px;border-radius:8px">${ano.itens.length}</span>
+            </div>
+            <div id="ano-content-${cat.categoria}-${ano.ano}" style="display:block;margin-top:4px;padding:8px;background:var(--cinza-cl);border-radius:6px;border:1px solid var(--borda)">
+              ${ano.itens.map((item,idx)=>`
+                <div draggable="true" ondragstart="startDrag(event,'${item.id}','${cat.categoria}','${ano.ano}')" ondragover="dragOver(event)" ondrop="dropFile(event,'${cat.categoria}','${ano.ano}')" style="padding:8px;background:var(--branco);border:1px solid var(--borda);border-radius:4px;margin-bottom:4px;cursor:move;display:flex;align-items:center;gap:8px;transition:all 0.2s;user-select:none" onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.18)';this.style.transform='translateX(4px)'" onmouseout="this.style.boxShadow='none';this.style.transform='translateX(0)'">
+                  <span style="font-size:16px">📄</span>
+                  <div style="flex:1">
+                    <div style="font-weight:500;color:var(--preto);font-size:13px">${item.nome_arquivo}</div>
+                    <div style="font-size:11px;color:var(--preto);opacity:.7">${item.criado_fmt}${item.competencia?' · '+item.competencia:''}</div>
+                  </div>
+                  <div style="display:flex;gap:4px">
+                    <button class="btn b-gh b-sm" onclick="downloadArquivoFuncionario('${item.download_url}')" style="padding:4px 8px;font-size:11px">⬇️</button>
+                    <button class="btn b-ghr b-sm" onclick="delArquivoFuncionario(${item.id})" style="padding:4px 8px;font-size:11px">🗑️</button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    `;
+  });
+  html+='</div>';
+  tree.innerHTML=html;
+  
+  // Adiciona estilos de animação
+  if(!document.getElementById('farq-animations')){
+    const style=document.createElement('style');
+    style.id='farq-animations';
+    style.textContent=`
+      @keyframes slideDown {
+        from { opacity:0;transform:translateY(-8px) }
+        to { opacity:1;transform:translateY(0) }
+      }
+      @keyframes slideUp {
+        from { opacity:1;transform:translateY(0) }
+        to { opacity:0;transform:translateY(-8px) }
+      }
+      @keyframes pulse {
+        0%,100% { opacity:1 }
+        50% { opacity:0.5 }
+      }
+      .farq-drag-over {
+        background: #dbeafe !important;
+        border: 2px dashed #3b82f6 !important;
+        box-shadow: 0 0 8px rgba(59,130,246,0.3) !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+}
+
+function calcularTotalArquivos(anos){
+  return anos.reduce((sum,ano)=>sum+ano.itens.length,0);
+}
+
+function toggleCategory(cat){
+  const content=document.getElementById('cat-content-'+cat);
+  const arrow=document.getElementById('cat-arrow-'+cat);
+  const isOpen=content.style.display!=='none';
+  content.style.display=isOpen?'none':'block';
+  arrow.textContent=isOpen?'▶':'▼';
+  localStorage.setItem('farq-cat-'+cat,isOpen?'0':'1');
+}
+
+function toggleAno(cat,ano){
+  const content=document.getElementById('ano-content-'+cat+'-'+ano);
+  const arrow=document.getElementById('ano-arrow-'+cat+'-'+ano);
+  const isOpen=content.style.display!=='none';
+  content.style.display=isOpen?'none':'block';
+  arrow.textContent=isOpen?'▶':'▼';
+}
+
+let draggedFileId=null;
+let draggedFromCat=null;
+let draggedFromAno=null;
+
+function startDrag(e,fileId,cat,ano){
+  draggedFileId=fileId;
+  draggedFromCat=cat;
+  draggedFromAno=ano;
+  e.dataTransfer.effectAllowed='move';
+  e.dataTransfer.setData('text/plain',fileId);
+  e.target.style.opacity='0.6';
+}
+
+function dragOver(e){
+  e.preventDefault();
+  e.dataTransfer.dropEffect='move';
+  e.target.closest('[draggable]').classList.add('farq-drag-over');
+}
+
+function dropFile(e,cat,ano){
+  e.preventDefault();
+  e.target.closest('[draggable]').classList.remove('farq-drag-over');
+  
+  if(draggedFileId && (draggedFromCat!==cat || draggedFromAno!==ano)){
+    alert('Mover arquivo de '+draggedFromAno+'/'+draggedFromCat+' para '+ano+'/'+cat+'?');
+  }
+  draggedFileId=null;
+}
+
+function downloadArquivoFuncionario(url){
+  window.open(url,'_blank');
+}
+
+function previewFileUpload(input){
+  const preview=document.getElementById('farq-preview');
+  if(input.files&&input.files[0]){
+    preview.textContent='✓ '+input.files[0].name+' ('+formatBytes(input.files[0].size)+')';
+    preview.style.color='#10b981';
+  }else{
+    preview.textContent='';
+  }
+}
+
+function formatBytes(bytes){
+  if(bytes===0) return '0 B';
+  const k=1024;
+  const sizes=['B','KB','MB','GB'];
+  const i=Math.floor(Math.log(bytes)/Math.log(k));
+  return Math.round(bytes/Math.pow(k,i)*100)/100+' '+sizes[i];
 }
 
 async function uploadArquivoFuncionarioModal(){
   const id=document.getElementById('farq-fid').value;
   const f=document.getElementById('farq-arq').files?.[0];
-  if(!id||!f){alert('Selecione um arquivo.');return;}
+  if(!id||!f){
+    showSt('farq-upload-st','⚠️ Selecione categoria e arquivo.',true);
+    return;
+  }
   const fd=new FormData();
   fd.append('arquivo',f);
   fd.append('categoria',document.getElementById('farq-cat').value);
   fd.append('competencia',document.getElementById('farq-comp').value||'');
-  const r=await fetch('/api/funcionarios/'+id+'/arquivos',{method:'POST',body:fd});
-  const d=await r.json();
-  if(d.erro){alert(d.erro);return;}
-  document.getElementById('farq-arq').value='';
-  showSt('st-rh','Arquivo anexado.',false);
-  carregarArquivosFuncionario();
+  
+  showSt('farq-upload-st','⏳ Anexando arquivo...',false);
+  try{
+    const r=await fetch('/api/funcionarios/'+id+'/arquivos',{method:'POST',body:fd});
+    const d=await r.json();
+    if(d.erro){
+      showSt('farq-upload-st','❌ '+d.erro,true);
+      return;
+    }
+    showSt('farq-upload-st','✅ Arquivo anexado com sucesso!',false);
+    document.getElementById('farq-arq').value='';
+    document.getElementById('farq-comp').value='';
+    document.getElementById('farq-preview').textContent='';
+    setTimeout(buscarAnos,600);
+  }catch(e){
+    showSt('farq-upload-st','❌ Erro ao anexar',true);
+  }
 }
 
 async function delArquivoFuncionario(id){
-  if(!confirm('Excluir este arquivo?'))return;
+  if(!confirm('💾 Deseja excluir este arquivo? A ação não pode ser desfeita.'))return;
   const d=await api('/api/funcionarios/arquivos/'+id,'DELETE');
-  if(d.erro){alert(d.erro);return;}
-  carregarArquivosFuncionario();
+  if(d.erro){
+    showSt('farq-upload-st','❌ '+d.erro,true);
+    return;
+  }
+  showSt('farq-upload-st','✅ Arquivo excluído',false);
+  buscarAnos();
 }
 
 async function uploadHoleritesLote(){
@@ -2029,17 +2347,39 @@ async function loadWAConversas(){
 
 async function abrirWAConversa(numero,nome){
   _waNumeroAtual=numero;
-  document.getElementById('wa-chat-titulo').textContent=nome||numero;
   const d=await api('/api/whatsapp/conversas/'+numero);
+  const pausaTxt=d.ia_pausada?(' · IA pausada ate '+new Date(d.ia_pausada_ate).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})):'',
+        tituloBase=nome||numero;
+  document.getElementById('wa-chat-titulo').textContent=tituloBase+pausaTxt;
+  document.getElementById('wa-pausar-btn').style.display=d.ia_pausada?'none':'inline-flex';
+  document.getElementById('wa-retomar-btn').style.display=d.ia_pausada?'inline-flex':'none';
   const el=document.getElementById('wa-chat-msgs');
   if(!d.mensagens||!d.mensagens.length){el.innerHTML='<div class="vazio">Nenhuma mensagem ainda.</div>';return;}
   el.innerHTML=d.mensagens.map(m=>`<div style="display:flex;justify-content:${m.direcao==='out'?'flex-end':'flex-start'}">
-    <div style="background:${m.direcao==='out'?'var(--azul)':'#f0f0f0'};color:${m.direcao==='out'?'white':'#333'};padding:8px 12px;border-radius:12px;max-width:70%;font-size:13px">
+    <div style="background:${m.direcao==='out'?'var(--azul)':'var(--cinza-cl)'};color:${m.direcao==='out'?'white':'var(--preto)'};padding:8px 12px;border-radius:12px;max-width:70%;font-size:13px;border:${m.direcao==='out'?'none':'1px solid var(--borda)'}">
       <div>${m.conteudo||''}</div>
       <div style="font-size:10px;opacity:.7;margin-top:2px;text-align:right">${m.criado_fmt||''}</div>
     </div>
   </div>`).join('');
   el.scrollTop=el.scrollHeight;
+}
+
+async function waRetomarIA(){
+  if(!_waNumeroAtual){alert('Selecione uma conversa.');return;}
+  const r=await api('/api/whatsapp/ia/retomar','POST',{numero:_waNumeroAtual});
+  if(r.erro){alert(r.erro);return;}
+  const nomeAtual=(document.getElementById('wa-chat-titulo').textContent||'').split(' · IA pausada')[0];
+  abrirWAConversa(_waNumeroAtual,nomeAtual);
+  loadWAConversas();
+}
+
+async function waPausarIA(){
+  if(!_waNumeroAtual){alert('Selecione uma conversa.');return;}
+  const r=await api('/api/whatsapp/ia/pausar','POST',{numero:_waNumeroAtual,horas:8});
+  if(r.erro){alert(r.erro);return;}
+  const nomeAtual=(document.getElementById('wa-chat-titulo').textContent||'').split(' · IA pausada')[0];
+  abrirWAConversa(_waNumeroAtual,nomeAtual);
+  loadWAConversas();
 }
 
 async function waSend(){
@@ -2049,7 +2389,8 @@ async function waSend(){
   document.getElementById('wa-msg-input').value='';
   const r=await api('/api/whatsapp/send','POST',{numero:_waNumeroAtual,texto:txt});
   if(r.erro){alert(r.erro);return;}
-  abrirWAConversa(_waNumeroAtual,document.getElementById('wa-chat-titulo').textContent);
+  const nomeAtual=(document.getElementById('wa-chat-titulo').textContent||'').split(' · IA pausada')[0];
+  abrirWAConversa(_waNumeroAtual,nomeAtual);
   loadWAConversas();
 }
 
@@ -2084,11 +2425,25 @@ async function loadWAConfig(){
   document.getElementById('wa-url').value=d.url||'';
   document.getElementById('wa-instancia').value=d.instancia||'';
   document.getElementById('wa-token').value=d.token||'';
+  document.getElementById('wa-backup-enabled').value=(d.backup_enabled||'1').toString();
+  document.getElementById('wa-backup-email').value=d.backup_email||'';
+  document.getElementById('wa-backup-interval').value=d.backup_interval_hours||'2';
+  document.getElementById('wa-backup-window').value=d.backup_window_hours||'8';
+  document.getElementById('wa-backup-max').value=d.backup_max_conversas||'10';
   await loadIAWAConfig();
 }
 
 async function salvarWAConfig(){
-  const d={url:document.getElementById('wa-url').value,instancia:document.getElementById('wa-instancia').value,token:document.getElementById('wa-token').value};
+  const d={
+    url:document.getElementById('wa-url').value,
+    instancia:document.getElementById('wa-instancia').value,
+    token:document.getElementById('wa-token').value,
+    backup_enabled:document.getElementById('wa-backup-enabled').value,
+    backup_email:document.getElementById('wa-backup-email').value,
+    backup_interval_hours:document.getElementById('wa-backup-interval').value,
+    backup_window_hours:document.getElementById('wa-backup-window').value,
+    backup_max_conversas:document.getElementById('wa-backup-max').value,
+  };
   const r=await api('/api/config/whatsapp','POST',d);
   showSt('wa-cfg-st',r.erro||'Configurações salvas!',!!r.erro);
 }
@@ -2099,6 +2454,56 @@ async function testarWA(){
   showSt('wa-cfg-st','Testando conexão...',false);
   const r=await api('/api/config/whatsapp/testar','POST',{numero:num});
   showSt('wa-cfg-st',r.erro||'Mensagem de teste enviada! Verifique o WhatsApp.',!!r.erro);
+}
+
+async function testarWABackup(){
+  showSt('wa-cfg-st','Gerando e enviando backup...',false);
+  const r=await api('/api/config/whatsapp/backup/testar','POST',{});
+  if(r.erro){
+    showSt('wa-cfg-st',r.erro,true);
+    return;
+  }
+  showSt('wa-cfg-st',r.mensagem||'Backup enviado com sucesso.',false);
+}
+
+async function gerarWABackupLocal(){
+  showSt('wa-cfg-st','Gerando backup local...',false);
+  const r=await api('/api/config/whatsapp/backup/gerar','POST',{});
+  if(r.erro){
+    showSt('wa-cfg-st',r.erro,true);
+    return;
+  }
+  const nome='wa_backup_manual_'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';
+  const blob=new Blob([JSON.stringify(r.payload||{},null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=nome;
+  document.body.appendChild(a);
+  a.click();
+  URL.revokeObjectURL(a.href);
+  a.remove();
+  showSt('wa-cfg-st','Backup local gerado e baixado.',false);
+}
+
+async function restaurarWABackup(){
+  const inp=document.getElementById('wa-backup-file');
+  if(!inp.files||!inp.files[0]){showSt('wa-cfg-st','Selecione um arquivo JSON de backup.',true);return;}
+  if(!confirm('Restaurar configuracoes e conversas do backup selecionado?')) return;
+  showSt('wa-cfg-st','Restaurando backup...',false);
+  const fd=new FormData();
+  fd.append('arquivo',inp.files[0]);
+  fd.append('restore_config','1');
+  fd.append('restore_conversas','1');
+  try{
+    const resp=await fetch('/api/config/whatsapp/backup/restaurar',{method:'POST',body:fd});
+    const r=await resp.json();
+    if(r.erro){ showSt('wa-cfg-st',r.erro,true); return; }
+    const st=r.restaurado||{};
+    showSt('wa-cfg-st',`Backup restaurado. Configs: ${st.configs||0}, conversas: ${st.conversas||0}, mensagens: ${st.mensagens||0}.`,false);
+    await loadWAConfig();
+  }catch(e){
+    showSt('wa-cfg-st',String(e),true);
+  }
 }
 
 async function loadIAWAConfig(){
@@ -2147,6 +2552,7 @@ async function testarIAWA(){
   document.getElementById('iawa-resp').textContent=r.resposta||'';
 }
 
+initTheme();
 init();
 </script>
 </body>

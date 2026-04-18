@@ -2,7 +2,7 @@ from flask import Flask,render_template,request,jsonify,send_file,redirect,url_f
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
 from functools import wraps
-from datetime import datetime,timedelta,timezone
+from datetime import datetime,timedelta,timezone,date
 import os,json,io,hashlib,urllib.request,urllib.error,zipfile,re,csv,base64,hmac,time,secrets
 import shutil,threading,smtplib
 from email.mime.multipart import MIMEMultipart
@@ -404,6 +404,229 @@ def smtp_cfg():
 def wa_cfg():
     return {'url':gc('wa_url',''),'instancia':gc('wa_instancia',''),'token':gc('wa_token','')}
 
+def wa_backup_cfg():
+    return {
+        'enabled':gc('wa_backup_enabled','1'),
+        'email':gc('wa_backup_email',''),
+        'interval_hours':gc('wa_backup_interval_hours','2'),
+        'window_hours':gc('wa_backup_window_hours','8'),
+        'max_conversas':gc('wa_backup_max_conversas','10'),
+        'last_ts':gc('wa_backup_last_ts','0'),
+    }
+
+def wa_backup_enabled():
+    return str(wa_backup_cfg().get('enabled','0')).strip().lower() in ('1','true','yes','on')
+
+def _wa_backup_root():
+    return os.path.join(os.path.dirname(__file__),'instance','wa_backups')
+
+def _to_int(v,dv=0):
+    try: return int(float(str(v).strip()))
+    except Exception: return dv
+
+def _parse_dt_iso(v):
+    s=(v or '').strip()
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace('Z','+00:00')).replace(tzinfo=None)
+    except Exception:
+        return None
+
+def _cfg_snapshot_dict():
+    out={}
+    for c in Config.query.all():
+        out[c.chave]=c.valor
+    return out
+
+def _cfg_apply_snapshot(dct):
+    if not isinstance(dct,dict):
+        return 0
+    n=0
+    for k,v in dct.items():
+        if not str(k or '').strip():
+            continue
+        sc_cfg(str(k).strip(),'' if v is None else str(v))
+        n+=1
+    return n
+
+def _wa_backup_collect(window_hours=8,max_conversas=10):
+    janela=max(1,min(168,_to_int(window_hours,8)))
+    qtd=max(1,min(50,_to_int(max_conversas,10)))
+    corte=utcnow()-timedelta(hours=janela)
+    convs=WhatsAppConversa.query.order_by(WhatsAppConversa.ultima_msg.desc()).limit(qtd).all()
+    out=[]
+    for c in convs:
+        q=WhatsAppMensagem.query.filter_by(conversa_id=c.id).filter(WhatsAppMensagem.criado_em>=corte).order_by(WhatsAppMensagem.criado_em.asc())
+        msgs=q.all()
+        out.append({
+            'conversa':c.to_dict(),
+            'mensagens':[{
+                'id':m.id,
+                'numero':m.numero,
+                'direcao':m.direcao,
+                'tipo':m.tipo,
+                'conteudo':m.conteudo,
+                'criado_em':m.criado_em.isoformat() if m.criado_em else '',
+            } for m in msgs]
+        })
+    ia=ai_wa_cfg()
+    payload={
+        'gerado_em':utcnow().isoformat(),
+        'versao_backup':'wa-v2',
+        'janela_horas':janela,
+        'max_conversas':qtd,
+        'total_conversas':len(out),
+        'total_mensagens':sum(len(c['mensagens']) for c in out),
+        'config':_cfg_snapshot_dict(),
+        'ia':{
+            'enabled':ai_wa_enabled(),
+            'provider':ia.get('provider',''),
+            'model':ia.get('model',''),
+            'temperature':ia.get('temperature',''),
+            'max_tokens':ia.get('max_tokens',''),
+        },
+        'conversas':out,
+    }
+    return payload
+
+def _wa_backup_store(payload):
+    root=_wa_backup_root()
+    os.makedirs(root,exist_ok=True)
+    nome=f"wa_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    caminho=os.path.join(root,nome)
+    with open(caminho,'w',encoding='utf-8') as f:
+        json.dump(payload,f,ensure_ascii=False,indent=2)
+    return caminho
+
+def _wa_backup_store_txt(payload):
+    root=_wa_backup_root()
+    os.makedirs(root,exist_ok=True)
+    base=datetime.now().strftime('%Y%m%d_%H%M%S')
+    nome=f"wa_historico_{base}.txt"
+    caminho=os.path.join(root,nome)
+    linhas=[]
+    linhas.append('Backup de Historico WhatsApp - RM Facilities')
+    linhas.append(f"Gerado em: {payload.get('gerado_em','')}")
+    linhas.append(f"Janela (horas): {payload.get('janela_horas',0)}")
+    linhas.append(f"Conversas: {payload.get('total_conversas',0)}")
+    linhas.append(f"Mensagens: {payload.get('total_mensagens',0)}")
+    linhas.append('')
+    for bloco in (payload.get('conversas') or []):
+        conv=bloco.get('conversa') or {}
+        nome_conv=conv.get('nome') or conv.get('numero') or 'Sem nome'
+        num=conv.get('numero') or ''
+        linhas.append('='*72)
+        linhas.append(f"Conversa: {nome_conv} ({num})")
+        linhas.append('='*72)
+        for m in (bloco.get('mensagens') or []):
+            lado='Cliente' if m.get('direcao')=='in' else 'Atendente'
+            dt=m.get('criado_em') or ''
+            txt=(m.get('conteudo') or '').replace('\r','').strip()
+            linhas.append(f"[{dt}] {lado}: {txt}")
+        linhas.append('')
+    with open(caminho,'w',encoding='utf-8') as f:
+        f.write('\n'.join(linhas))
+    return caminho
+
+def smtp_send_text(dest,assunto,corpo,anexos=None):
+    cfg=smtp_cfg()
+    if not cfg['host'] or not cfg['user']: raise ValueError('SMTP nao configurado')
+    msg=MIMEMultipart()
+    msg['From']=cfg['de'] or cfg['user']
+    msg['To']=dest
+    msg['Subject']=assunto
+    msg.attach(MIMEText(corpo or '','plain','utf-8'))
+    for a in (anexos or []):
+        caminho=a.get('path')
+        nome=a.get('name') or os.path.basename(caminho or 'anexo.bin')
+        if not caminho or not os.path.isfile(caminho):
+            continue
+        with open(caminho,'rb') as f:
+            part=MIMEBase('application','octet-stream')
+            part.set_payload(f.read())
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition',f'attachment; filename="{nome}"')
+        msg.attach(part)
+    port=int(cfg['port'] or 587)
+    if str(cfg['tls']) in ('1','true','True','yes'):
+        with smtplib.SMTP(cfg['host'],port,timeout=20) as s:
+            s.starttls(); s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+    else:
+        with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s:
+            s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+
+def wa_backup_maybe_send(force=False):
+    cfg=wa_backup_cfg()
+    if not force and not wa_backup_enabled():
+        return {'ok':False,'skip':'desativado'}
+    email=(cfg.get('email') or '').strip()
+    if not email:
+        return {'ok':False,'skip':'sem_email'}
+    intervalo=max(1,min(168,_to_int(cfg.get('interval_hours'),2)))
+    janela=max(1,min(168,_to_int(cfg.get('window_hours'),8)))
+    max_conv=max(1,min(50,_to_int(cfg.get('max_conversas'),10)))
+    agora=int(time.time())
+    ultimo=max(0,_to_int(cfg.get('last_ts'),0))
+    if not force and (agora-ultimo)<(intervalo*3600):
+        return {'ok':False,'skip':'intervalo'}
+    payload=_wa_backup_collect(janela,max_conv)
+    arq=_wa_backup_store(payload)
+    arq_txt=_wa_backup_store_txt(payload)
+    assunto=f"Backup WhatsApp RM Facilities - {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    corpo=(
+        f"Backup automatico das conversas WhatsApp.\n\n"
+        f"Janela: {payload.get('janela_horas')}h\n"
+        f"Conversas: {payload.get('total_conversas')}\n"
+        f"Mensagens: {payload.get('total_mensagens')}\n"
+        f"Modelo IA: {payload.get('ia',{}).get('model','')}\n"
+    )
+    smtp_send_text(email,assunto,corpo,anexos=[
+        {'path':arq,'name':os.path.basename(arq)},
+        {'path':arq_txt,'name':os.path.basename(arq_txt)},
+    ])
+    sc_cfg('wa_backup_last_ts',str(agora))
+    return {'ok':True,'email':email,'arquivo':arq,'total_conversas':payload.get('total_conversas',0),'total_mensagens':payload.get('total_mensagens',0)}
+
+def wa_backup_restore_payload(payload,restore_config=True,restore_conversas=True):
+    if not isinstance(payload,dict):
+        raise ValueError('Arquivo de backup invalido')
+    stat={'configs':0,'conversas':0,'mensagens':0}
+    if restore_config:
+        stat['configs']=_cfg_apply_snapshot(payload.get('config') or {})
+    if restore_conversas:
+        blocos=payload.get('conversas') or []
+        for bloco in blocos:
+            conv=bloco.get('conversa') or {}
+            numero=wa_norm_number(conv.get('numero') or '')
+            if not wa_is_valid_number(numero):
+                continue
+            c=WhatsAppConversa.query.filter_by(numero=numero).first()
+            if not c:
+                c=WhatsAppConversa(numero=numero,nome=(conv.get('nome') or numero))
+                db.session.add(c)
+                db.session.flush()
+                stat['conversas']+=1
+            elif (conv.get('nome') or '').strip():
+                c.nome=(conv.get('nome') or c.nome)
+            ult=_parse_dt_iso(conv.get('ultima_msg') or '')
+            if ult and (not c.ultima_msg or ult>c.ultima_msg):
+                c.ultima_msg=ult
+            for m in (bloco.get('mensagens') or []):
+                txt=(m.get('conteudo') or '').strip()
+                if not txt:
+                    continue
+                created=_parse_dt_iso(m.get('criado_em') or '') or utcnow()
+                direcao=(m.get('direcao') or 'in').strip().lower()
+                tipo=(m.get('tipo') or 'texto').strip().lower() or 'texto'
+                existe=WhatsAppMensagem.query.filter_by(conversa_id=c.id,direcao=direcao,tipo=tipo,conteudo=txt,criado_em=created).first()
+                if existe:
+                    continue
+                db.session.add(WhatsAppMensagem(conversa_id=c.id,numero=numero,direcao=direcao,tipo=tipo,conteudo=txt,criado_em=created))
+                stat['mensagens']+=1
+    db.session.commit()
+    return stat
+
 def wa_norm_number(numero):
     n=re.sub(r'\D+','',str(numero or ''))
     if n.startswith('00'): n=n[2:]
@@ -481,6 +704,43 @@ def ai_model_norm(provider,raw_model):
 
 def ai_wa_enabled():
     return str(ai_wa_cfg().get('enabled','0')).strip().lower() in ('1','true','yes','on')
+
+def wa_ai_pause_key(numero):
+    n=wa_norm_number(numero)
+    return f'wa_ai_pause_until_{n}' if n else ''
+
+def wa_ai_pause_until(numero):
+    k=wa_ai_pause_key(numero)
+    if not k:
+        return None
+    return _parse_dt_iso(gc(k,''))
+
+def wa_ai_pause_active(numero,ref=None):
+    until=wa_ai_pause_until(numero)
+    if not until:
+        return False
+    now=ref or utcnow()
+    return until>now
+
+def wa_ai_pause_for(numero,hours=8):
+    n=wa_norm_number(numero)
+    if not n:
+        return None
+    h=max(1,min(168,_to_int(hours,8)))
+    until=utcnow()+timedelta(hours=h)
+    sc_cfg(wa_ai_pause_key(n),until.isoformat())
+    return until
+
+def wa_ai_resume(numero):
+    n=wa_norm_number(numero)
+    if not n:
+        return None
+    until=utcnow()-timedelta(seconds=1)
+    sc_cfg(wa_ai_pause_key(n),until.isoformat())
+    return until
+
+def wa_ai_pause_set(numero,hours=8):
+    return wa_ai_pause_for(numero,hours)
 
 def _post_json(url,payload,headers=None,timeout=30):
     h={'Content-Type':'application/json'}
@@ -1707,6 +1967,9 @@ def api_backup():
         z.writestr('medicoes.json',json.dumps([m.to_dict() for m in Medicao.query.all()],default=str,ensure_ascii=False,indent=2))
         z.writestr('empresas.json',json.dumps([e.to_dict() for e in Empresa.query.all()],default=str,ensure_ascii=False,indent=2))
         z.writestr('funcionarios.json',json.dumps([f.to_dict() for f in Funcionario.query.all()],default=str,ensure_ascii=False,indent=2))
+        z.writestr('config.json',json.dumps([{'chave':c.chave,'valor':c.valor} for c in Config.query.all()],default=str,ensure_ascii=False,indent=2))
+        z.writestr('whatsapp_conversas.json',json.dumps([c.to_dict() for c in WhatsAppConversa.query.all()],default=str,ensure_ascii=False,indent=2))
+        z.writestr('whatsapp_mensagens.json',json.dumps([m.to_dict() for m in WhatsAppMensagem.query.all()],default=str,ensure_ascii=False,indent=2))
         z.writestr('funcionario_arquivos.json',json.dumps([a.to_dict() for a in FuncionarioArquivo.query.all()],default=str,ensure_ascii=False,indent=2))
         z.writestr('ordens_compra.json',json.dumps([o.to_dict() for o in OrdemCompra.query.all()],default=str,ensure_ascii=False,indent=2))
         z.writestr('operacional_documentos.json',json.dumps([d.to_dict() for d in OperacionalDocumento.query.all()],default=str,ensure_ascii=False,indent=2))
@@ -1735,21 +1998,93 @@ def api_backup_restore():
         except Exception: return default
 
     # Limpa dados operacionais antes de restaurar.
-    for model in [FuncionarioArquivo,OperacionalDocumento,OrdemCompra,Medicao,Cliente,Funcionario,Empresa]:
+    for model in [WhatsAppMensagem,WhatsAppConversa,FuncionarioArquivo,OperacionalDocumento,OrdemCompra,Medicao,Cliente,Funcionario,Empresa,Config]:
         model.query.delete()
 
     empresas=jread('empresas.json',[])
     clientes=jread('clientes.json',[])
     medicoes=jread('medicoes.json',[])
     funcs=jread('funcionarios.json',[])
+    configs=jread('config.json',[])
+    wa_convs=jread('whatsapp_conversas.json',[])
+    wa_msgs=jread('whatsapp_mensagens.json',[])
     farqs=jread('funcionario_arquivos.json',[])
     ocs=jread('ordens_compra.json',[])
     opdocs=jread('operacional_documentos.json',[])
 
+    def _coerce_value(col,val):
+        if val is None:
+            return None
+        try:
+            py_t=col.type.python_type
+        except Exception:
+            return val
+
+        if py_t is datetime:
+            if isinstance(val,datetime):
+                return val
+            if isinstance(val,str):
+                s=val.strip()
+                if not s:
+                    return None
+                dt=_parse_dt_iso(s)
+                if not dt and ' ' in s and 'T' not in s:
+                    dt=_parse_dt_iso(s.replace(' ','T'))
+                if dt:
+                    return dt
+                for fmt in ('%Y-%m-%d %H:%M:%S.%f','%Y-%m-%d %H:%M:%S','%Y-%m-%dT%H:%M:%S.%f','%Y-%m-%dT%H:%M:%S'):
+                    try:
+                        return datetime.strptime(s,fmt)
+                    except Exception:
+                        pass
+            return None
+
+        if py_t is date:
+            if isinstance(val,date):
+                return val
+            if isinstance(val,str):
+                s=val.strip()
+                if not s:
+                    return None
+                for fmt in ('%Y-%m-%d','%d/%m/%Y'):
+                    try:
+                        return datetime.strptime(s,fmt).date()
+                    except Exception:
+                        pass
+            return None
+
+        if py_t is bool:
+            if isinstance(val,bool):
+                return val
+            if isinstance(val,str):
+                return val.strip().lower() in ('1','true','yes','on','sim')
+            return bool(val)
+
+        if py_t is int:
+            if val=='':
+                return None
+            try:
+                return int(val)
+            except Exception:
+                return None
+
+        if py_t is float:
+            if val=='':
+                return None
+            try:
+                return float(val)
+            except Exception:
+                return None
+
+        return val
+
     def add_rows(model,rows,conv=None):
-        cols={c.name for c in model.__table__.columns}
+        cols_map={c.name:c for c in model.__table__.columns}
         for r in rows:
-            d={k:r[k] for k in r.keys() if k in cols}
+            d={}
+            for k,v in r.items():
+                if k in cols_map:
+                    d[k]=_coerce_value(cols_map[k],v)
             if conv: d=conv(d)
             db.session.add(model(**d))
 
@@ -1757,6 +2092,9 @@ def api_backup_restore():
     add_rows(Cliente,clientes)
     add_rows(Medicao,medicoes,lambda d: ({**d,'servicos':json.dumps(d.get('svcs',[]),ensure_ascii=False)} if 'svcs' in d and 'servicos' not in d else d))
     add_rows(Funcionario,funcs,lambda d: ({**d,'areas':json.dumps(d.get('areas',[]),ensure_ascii=False)} if isinstance(d.get('areas'),list) else d))
+    add_rows(Config,configs)
+    add_rows(WhatsAppConversa,wa_convs)
+    add_rows(WhatsAppMensagem,wa_msgs)
     add_rows(FuncionarioArquivo,farqs)
     add_rows(OrdemCompra,ocs)
     add_rows(OperacionalDocumento,opdocs)
@@ -1772,7 +2110,7 @@ def api_backup_restore():
         os.makedirs(os.path.dirname(ap),exist_ok=True)
         with open(ap,'wb') as out: out.write(z.read(n))
 
-    return jsonify({'ok':True,'restaurado':{'empresas':len(empresas),'clientes':len(clientes),'medicoes':len(medicoes),'funcionarios':len(funcs)}})
+    return jsonify({'ok':True,'restaurado':{'empresas':len(empresas),'clientes':len(clientes),'medicoes':len(medicoes),'funcionarios':len(funcs),'configs':len(configs),'wa_conversas':len(wa_convs),'wa_mensagens':len(wa_msgs)}})
 
 @app.route('/api/pdf/<int:id>')
 @lr
@@ -2054,7 +2392,17 @@ def api_smtp_testar():
 @app.route('/api/config/whatsapp',methods=['GET'])
 @dr
 def api_wa_cfg_get():
-    return jsonify({'url':gc('wa_url',''),'instancia':gc('wa_instancia',''),'token':gc('wa_token','')})
+    b=wa_backup_cfg()
+    return jsonify({
+        'url':gc('wa_url',''),
+        'instancia':gc('wa_instancia',''),
+        'token':gc('wa_token',''),
+        'backup_enabled':b.get('enabled','1'),
+        'backup_email':b.get('email',''),
+        'backup_interval_hours':b.get('interval_hours','2'),
+        'backup_window_hours':b.get('window_hours','8'),
+        'backup_max_conversas':b.get('max_conversas','10'),
+    })
 
 @app.route('/api/config/whatsapp',methods=['POST'])
 @dr
@@ -2062,7 +2410,58 @@ def api_wa_cfg_save():
     d=request.json or {}
     for k in ['url','instancia','token']:
         if k in d: sc_cfg(f'wa_{k}',str(d[k]))
+    if 'backup_enabled' in d:
+        sc_cfg('wa_backup_enabled','1' if str(d.get('backup_enabled','0')).strip().lower() in ('1','true','yes','on') else '0')
+    if 'backup_email' in d:
+        sc_cfg('wa_backup_email',str(d.get('backup_email','')).strip())
+    if 'backup_interval_hours' in d:
+        sc_cfg('wa_backup_interval_hours',str(max(1,min(168,_to_int(d.get('backup_interval_hours'),2)))))
+    if 'backup_window_hours' in d:
+        sc_cfg('wa_backup_window_hours',str(max(1,min(168,_to_int(d.get('backup_window_hours'),8)))))
+    if 'backup_max_conversas' in d:
+        sc_cfg('wa_backup_max_conversas',str(max(1,min(50,_to_int(d.get('backup_max_conversas'),10)))))
     return jsonify({'ok':True})
+
+@app.route('/api/config/whatsapp/backup/testar',methods=['POST'])
+@dr
+def api_wa_backup_testar():
+    try:
+        r=wa_backup_maybe_send(force=True)
+        if not r.get('ok'):
+            return jsonify({'erro':f"Backup nao enviado: {r.get('skip','falha')}"}),400
+        return jsonify({'ok':True,'mensagem':f"Backup enviado para {r.get('email','')}",'arquivo':r.get('arquivo',''),'total_conversas':r.get('total_conversas',0),'total_mensagens':r.get('total_mensagens',0)})
+    except Exception as e:
+        return jsonify({'erro':str(e)}),500
+
+@app.route('/api/config/whatsapp/backup/gerar',methods=['POST'])
+@dr
+def api_wa_backup_gerar():
+    try:
+        cfg=wa_backup_cfg()
+        payload=_wa_backup_collect(cfg.get('window_hours','8'),cfg.get('max_conversas','10'))
+        arq=_wa_backup_store(payload)
+        return jsonify({'ok':True,'arquivo':arq,'payload':payload})
+    except Exception as e:
+        return jsonify({'erro':str(e)}),500
+
+@app.route('/api/config/whatsapp/backup/restaurar',methods=['POST'])
+@dr
+def api_wa_backup_restaurar():
+    arq=request.files.get('arquivo')
+    if not arq:
+        return jsonify({'erro':'Arquivo JSON do backup nao enviado'}),400
+    try:
+        payload=json.loads(arq.read().decode('utf-8'))
+    except Exception:
+        return jsonify({'erro':'JSON invalido'}),400
+    restore_config=str(request.form.get('restore_config','1')).strip().lower() in ('1','true','yes','on')
+    restore_conversas=str(request.form.get('restore_conversas','1')).strip().lower() in ('1','true','yes','on')
+    try:
+        st=wa_backup_restore_payload(payload,restore_config=restore_config,restore_conversas=restore_conversas)
+        return jsonify({'ok':True,'restaurado':st})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'erro':str(e)}),500
 
 @app.route('/api/config/whatsapp/testar',methods=['POST'])
 @dr
@@ -2086,7 +2485,8 @@ def api_ia_wa_cfg_save():
     d=request.json or {}
     enabled='1' if str(d.get('enabled','0')).strip().lower() in ('1','true','yes','on') else '0'
     provider=ai_provider_norm(d.get('provider','gemini'))
-    model=ai_model_norm(provider,d.get('model',''))
+    raw_model=str(d.get('model','') or '').strip()
+    model=ai_model_norm(provider,raw_model) if raw_model else (gc('ia_wa_model','') or ai_model_norm(provider,''))
     try:
         temp=max(0.0,min(1.0,float(d.get('temperature',0.3))))
     except Exception:
@@ -2103,7 +2503,6 @@ def api_ia_wa_cfg_save():
     sc_cfg('ia_wa_temperature',str(temp))
     sc_cfg('ia_wa_max_tokens',str(max_tokens))
     warn=''
-    raw_model=str(d.get('model','') or '').strip()
     if raw_model and raw_model!=model:
         warn=f'Modelo ajustado automaticamente para: {model}'
     return jsonify({'ok':True,'provider':provider,'model':model,'temperature':temp,'max_tokens':max_tokens,'warning':warn})
@@ -2122,6 +2521,31 @@ def api_wa_ia_testar():
     except Exception as e:
         return jsonify({'erro':str(e)}),500
 
+@app.route('/api/whatsapp/ia/retomar',methods=['POST'])
+@lr
+def api_wa_ia_retomar():
+    d=request.json or {}
+    numero=wa_norm_number(d.get('numero') or '')
+    if not numero:
+        return jsonify({'erro':'numero obrigatorio'}),400
+    if not wa_is_valid_number(numero):
+        return jsonify({'erro':'numero invalido'}),400
+    wa_ai_resume(numero)
+    return jsonify({'ok':True,'numero':numero,'ia_pausada':False})
+
+@app.route('/api/whatsapp/ia/pausar',methods=['POST'])
+@lr
+def api_wa_ia_pausar():
+    d=request.json or {}
+    numero=wa_norm_number(d.get('numero') or '')
+    horas=_to_int(d.get('horas'),8)
+    if not numero:
+        return jsonify({'erro':'numero obrigatorio'}),400
+    if not wa_is_valid_number(numero):
+        return jsonify({'erro':'numero invalido'}),400
+    pausa_ate=wa_ai_pause_set(numero,max(1,min(168,horas)))
+    return jsonify({'ok':True,'numero':numero,'ia_pausada':True,'ia_pausada_ate':(pausa_ate.isoformat() if pausa_ate else '')})
+
 @app.route('/api/whatsapp/conversas')
 @lr
 def api_wa_conversas():
@@ -2132,9 +2556,15 @@ def api_wa_conversas():
 @lr
 def api_wa_conversa_msgs(numero):
     c=WhatsAppConversa.query.filter_by(numero=numero).first()
-    if not c: return jsonify({'conversa':None,'mensagens':[]})
+    if not c: return jsonify({'conversa':None,'mensagens':[],'ia_pausada':False,'ia_pausada_ate':''})
     msgs=WhatsAppMensagem.query.filter_by(conversa_id=c.id).order_by(WhatsAppMensagem.criado_em).all()
-    return jsonify({'conversa':c.to_dict(),'mensagens':[m.to_dict() for m in msgs]})
+    pausa_ate=wa_ai_pause_until(numero)
+    return jsonify({
+        'conversa':c.to_dict(),
+        'mensagens':[m.to_dict() for m in msgs],
+        'ia_pausada':bool(pausa_ate and pausa_ate>utcnow()),
+        'ia_pausada_ate':pausa_ate.isoformat() if pausa_ate else '',
+    })
 
 @app.route('/api/whatsapp/send',methods=['POST'])
 @lr
@@ -2150,7 +2580,8 @@ def api_wa_send():
     c.ultima_msg=utcnow()
     db.session.add(WhatsAppMensagem(conversa_id=c.id,numero=numero,direcao='out',tipo='texto',conteudo=texto))
     db.session.commit()
-    return jsonify({'ok':True})
+    pausa_ate=wa_ai_pause_for(numero,8)
+    return jsonify({'ok':True,'ia_pausada_ate':(pausa_ate.isoformat() if pausa_ate else '')})
 
 @app.route('/webhook/whatsapp',methods=['GET','POST'])
 def webhook_whatsapp():
@@ -2168,6 +2599,12 @@ def webhook_whatsapp():
             diag['mensagens_recebidas']=len(msgs)
             for msg_data in msgs:
                 if bool(msg_data.get('key',{}).get('fromMe')) or bool(msg_data.get('fromMe')):
+                    jid=(msg_data.get('key',{}).get('remoteJid') or msg_data.get('sender') or msg_data.get('from') or '')
+                    if jid.endswith('@s.whatsapp.net'):
+                        numero_out=(jid.split('@')[0] if jid else '')
+                        numero_out=only_digits(numero_out) or numero_out
+                        if wa_is_valid_number(numero_out):
+                            wa_ai_pause_for(numero_out,8)
                     continue
                 jid=(msg_data.get('key',{}).get('remoteJid') or msg_data.get('sender') or msg_data.get('from') or '')
                 if not jid.endswith('@s.whatsapp.net'): continue
@@ -2191,7 +2628,7 @@ def webhook_whatsapp():
                 db.session.add(WhatsAppMensagem(conversa_id=c.id,numero=numero,direcao='in',tipo='texto',conteudo=conteudo))
                 db.session.commit()
                 historico_db=WhatsAppMensagem.query.filter_by(conversa_id=c.id).order_by(WhatsAppMensagem.criado_em.asc()).limit(20).all()
-                if ai_wa_enabled():
+                if ai_wa_enabled() and not wa_ai_pause_active(numero):
                     try:
                         resposta=ai_wa_reply(numero,conteudo,historico=historico_db)
                         if resposta:
@@ -2217,6 +2654,14 @@ def webhook_whatsapp():
         app.logger.exception('Falha no processamento do webhook WhatsApp')
         diag['erros'].append('Falha no processamento do webhook')
         db.session.rollback()
+    try:
+        bk=wa_backup_maybe_send(force=False)
+        if debug and bk.get('ok'):
+            diag['backup']=f"enviado para {bk.get('email','')}"
+    except Exception as e:
+        app.logger.exception('Falha no backup automatico WhatsApp')
+        if debug:
+            diag['erros'].append(f'Backup automatico: {str(e)}')
     return jsonify({'ok':True,'debug':diag} if debug else {'ok':True})
 
 @app.route('/api/medicoes/<int:id>/status',methods=['PUT'])
