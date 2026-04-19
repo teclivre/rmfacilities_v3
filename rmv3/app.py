@@ -98,6 +98,8 @@ class Cliente(db.Model):
     cidade=db.Column(db.String(100))
     estado=db.Column(db.String(2))
     empresa_id=db.Column(db.Integer,db.ForeignKey('empresa.id'),nullable=True)
+    numero_contrato=db.Column(db.String(60))
+    qtd_funcionarios_posto=db.Column(db.Integer,default=0)
     status=db.Column(db.String(20),default='Ativo')
     limpeza=db.Column(db.Float,default=0)
     jardinagem=db.Column(db.Float,default=0)
@@ -167,6 +169,8 @@ class Funcionario(db.Model):
     vale_refeicao=db.Column(db.Float,default=0)
     vale_alimentacao=db.Column(db.Float,default=0)
     vale_transporte=db.Column(db.Float,default=0)
+    posto_operacional=db.Column(db.String(150))
+    posto_cliente_id=db.Column(db.Integer,db.ForeignKey('cliente.id'),nullable=True)
     endereco=db.Column(db.String(250))
     cidade=db.Column(db.String(100))
     estado=db.Column(db.String(2))
@@ -202,6 +206,8 @@ class Funcionario(db.Model):
         except: d['areas']=[]
         d.pop('app_senha',None)
         if d.get('app_ativo') is None: d['app_ativo']=True
+        if not (d.get('posto_operacional') or '').strip():
+            d['posto_operacional']='Reserva tecnica'
         return d
 
 class FuncionarioArquivo(db.Model):
@@ -248,6 +254,28 @@ class OperacionalDocumento(db.Model):
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
+        return d
+
+class BeneficioMensal(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False,index=True)
+    empresa_id=db.Column(db.Integer,db.ForeignKey('empresa.id'),nullable=True,index=True)
+    competencia=db.Column(db.String(7),nullable=False,index=True)
+    dias_trabalhados=db.Column(db.Integer,default=0)
+    dias_vt=db.Column(db.Integer,default=0)
+    dias_vr=db.Column(db.Integer,default=0)
+    dias_va=db.Column(db.Integer,default=0)
+    salario=db.Column(db.Float,default=0)
+    vale_refeicao=db.Column(db.Float,default=0)
+    vale_alimentacao=db.Column(db.Float,default=0)
+    vale_transporte=db.Column(db.Float,default=0)
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    atualizado_em=db.Column(db.DateTime,default=utcnow,onupdate=utcnow)
+    __table_args__=(db.UniqueConstraint('funcionario_id','competencia',name='uq_beneficio_func_comp'),)
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
+        d['atualizado_fmt']=self.atualizado_em.strftime('%d/%m/%Y %H:%M') if self.atualizado_em else ''
         return d
 
 class FuncionarioAppSessao(db.Model):
@@ -1509,10 +1537,46 @@ def jloads(v,dv):
     except: return dv
 
 def to_num(s,dec=False):
-    if s is None: return 0.0 if dec else 0
-    t=str(s).strip().replace('.','').replace(',','.')
-    try: return float(t) if dec else int(float(t))
-    except: return 0.0 if dec else 0
+    if s is None:
+        return 0.0 if dec else 0
+    t=str(s).strip().replace(' ','')
+    if not t:
+        return 0.0 if dec else 0
+    neg=t.startswith('-')
+    if neg:
+        t=t[1:]
+    if ',' in t and '.' in t:
+        if t.rfind(',')>t.rfind('.'):
+            t=t.replace('.','').replace(',','.')
+        else:
+            t=t.replace(',','')
+    elif ',' in t:
+        t=t.replace('.','').replace(',','.')
+    else:
+        t=t.replace(',','')
+    try:
+        v=float(t)
+        if neg:
+            v=-v
+        return v if dec else int(v)
+    except Exception:
+        return 0.0 if dec else 0
+
+def norm_competencia(v=''):
+    s=str(v or '').strip()
+    if not s:
+        return datetime.now().strftime('%Y-%m')
+    m=re.search(r'^(\d{4})[-/](\d{2})$',s)
+    if m:
+        y,mm=m.group(1),m.group(2)
+        if 1<=int(mm)<=12:
+            return f'{y}-{mm}'
+    m=re.search(r'^(\d{2})[-/](\d{4})$',s)
+    if m:
+        mm,y=m.group(1),m.group(2)
+        if 1<=int(mm)<=12:
+            return f'{y}-{mm}'
+    return datetime.now().strftime('%Y-%m')
 
 def next_cli_num():
     max_n=0
@@ -1565,6 +1629,51 @@ def prepare_func_doc_dirs(funcionario_id,ano=None):
         os.makedirs(ap,exist_ok=True)
         made.append(rel)
     return made
+
+def holerite_comp_label(comp=''):
+    c=(comp or '').strip()
+    if not c:
+        return datetime.now().strftime('%m-%Y')
+    m=re.match(r'^(\d{4})[-/](\d{2})$',c)
+    if m:
+        return f"{m.group(2)}-{m.group(1)}"
+    m=re.match(r'^(\d{2})[-/](\d{4})$',c)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}"
+    return re.sub(r'[\\/]+','-',c)
+
+def _clean_file_part(v,max_len=80,fallback='item'):
+    s=str(v or '').strip()
+    s=re.sub(r'[\\/:*?"<>|]+','-',s)
+    s=re.sub(r'\s+',' ',s).strip(' .-_')
+    if not s:
+        s=fallback
+    return s[:max_len]
+
+def holerite_batch_filename(funcionario,competencia=''):
+    nome=_clean_file_part(getattr(funcionario,'nome','') or '',80,'Colaborador')
+    matricula=(getattr(funcionario,'matricula',None) or '').strip()
+    if not matricula:
+        re_val=getattr(funcionario,'re',None)
+        matricula=str(re_val) if re_val not in [None,''] else str(getattr(funcionario,'id','SEM-MAT'))
+    mat=_clean_file_part(matricula,30,'SEM-MAT')
+    comp=holerite_comp_label(competencia)
+    return f"{nome} - {mat} - {comp}.pdf"
+
+def unique_rel_filename(subdir,filename):
+    name=str(filename or '').strip() or 'arquivo.pdf'
+    base,ext=os.path.splitext(name)
+    if not ext:
+        ext='.pdf'
+    idx=1
+    cand=f"{base}{ext}"
+    while True:
+        rel=os.path.join(subdir,cand)
+        abs_p=os.path.join(UPLOAD_ROOT,rel)
+        if not os.path.exists(abs_p):
+            return rel,abs_p,cand
+        idx+=1
+        cand=f"{base} ({idx}){ext}"
 
 def arq_year_from_path(caminho):
     p=[x for x in str(caminho or '').split(os.sep) if x]
@@ -2209,6 +2318,8 @@ def api_criar_cliente():
     d['cnpj']=norm_doc(d.get('cnpj'))
     d['telefone']=norm_phone(d.get('telefone'))
     d['cep']=norm_cep(d.get('cep'))
+    if 'qtd_funcionarios_posto' in d:
+        d['qtd_funcionarios_posto']=max(0,to_num(d.get('qtd_funcionarios_posto')))
     skip=['id','numero','criado_em','end_fmt']
     cols=[c.name for c in Cliente.__table__.columns if c.name not in skip]
     kw={k:d[k] for k in cols if k in d}
@@ -2217,8 +2328,8 @@ def api_criar_cliente():
 @app.route('/api/clientes/modelo')
 @lr
 def api_clientes_modelo():
-    cab=['nome','cnpj','responsavel','telefone','email','cep','logradouro','numero_end','complemento','bairro','cidade','estado','empresa_id','status','limpeza','jardinagem','portaria','vencimento','obs']
-    exemplo=['Condominio Exemplo','12.345.678/0001-90','Maria Silva','(12) 99123-4567','contato@exemplo.com','12246000','Rua Central','100','','Centro','Sao Jose dos Campos','SP','','Ativo','1500,00','300,00','2500,00','10','Contrato mensal']
+    cab=['nome','cnpj','responsavel','telefone','email','cep','logradouro','numero_end','complemento','bairro','cidade','estado','empresa_id','numero_contrato','qtd_funcionarios_posto','status','limpeza','jardinagem','portaria','vencimento','obs']
+    exemplo=['Condominio Exemplo','12.345.678/0001-90','Maria Silva','(12) 99123-4567','contato@exemplo.com','12246000','Rua Central','100','','Centro','Sao Jose dos Campos','SP','','CT-2026-001','8','Ativo','1500,00','300,00','2500,00','10','Contrato mensal']
     buf=io.StringIO(); w=csv.writer(buf,delimiter=';'); w.writerow(cab); w.writerow(exemplo)
     b=io.BytesIO(buf.getvalue().encode('utf-8-sig')); b.seek(0)
     return send_file(b,mimetype='text/csv',as_attachment=True,download_name='modelo_clientes_rmfacilities.csv')
@@ -2255,6 +2366,8 @@ def api_clientes_import():
                 cidade=(row.get('cidade') or '').strip(),
                 estado=(row.get('estado') or '').strip(),
                 empresa_id=to_num(row.get('empresa_id')) or None,
+                numero_contrato=(row.get('numero_contrato') or '').strip(),
+                qtd_funcionarios_posto=max(0,to_num(row.get('qtd_funcionarios_posto'))),
                 status=(row.get('status') or 'Ativo').strip() or 'Ativo',
                 limpeza=to_num(row.get('limpeza'),dec=True),
                 jardinagem=to_num(row.get('jardinagem'),dec=True),
@@ -2314,6 +2427,7 @@ def api_funcionarios_import():
                 tipo_contrato=str(row.get('tipo_contrato','') or '').strip(),
                 jornada=str(row.get('jornada','') or '').strip(),
                 status=str(row.get('status','Ativo') or 'Ativo').strip() or 'Ativo',
+                posto_operacional='Reserva tecnica',
                 salario=to_num(row.get('salario'),dec=True),
                 vale_refeicao=to_num(row.get('vale_refeicao'),dec=True),
                 vale_alimentacao=to_num(row.get('vale_alimentacao'),dec=True),
@@ -2357,6 +2471,7 @@ def api_atualizar_cliente(id):
     if 'cnpj' in d: d['cnpj']=norm_doc(d.get('cnpj'))
     if 'telefone' in d: d['telefone']=norm_phone(d.get('telefone'))
     if 'cep' in d: d['cep']=norm_cep(d.get('cep'))
+    if 'qtd_funcionarios_posto' in d: d['qtd_funcionarios_posto']=max(0,to_num(d.get('qtd_funcionarios_posto')))
     for k in [col.name for col in Cliente.__table__.columns if col.name not in['id','numero','criado_em']]:
         if k in d: setattr(c,k,d[k])
     db.session.commit(); return jsonify(c.to_dict())
@@ -2423,6 +2538,7 @@ def api_funcionarios():
             q in (f.cpf or '').lower() or
             q in (f.cargo or '').lower() or
             q in (f.funcao or '').lower() or
+            q in (f.posto_operacional or '').lower() or
             q in (f.telefone or '').lower() or
             (qdig and (qdig in only_digits(f.matricula) or qdig in only_digits(f.cpf) or qdig in only_digits(f.telefone)))
         )]
@@ -2504,6 +2620,7 @@ def api_criar_funcionario():
         tipo_contrato=d.get('tipo_contrato','').strip(),
         jornada=d.get('jornada','').strip(),
         status=d.get('status','Ativo'),
+        posto_operacional='Reserva tecnica',
         salario=to_num(d.get('salario'),dec=True),
         vale_refeicao=to_num(d.get('vale_refeicao'),dec=True),
         vale_alimentacao=to_num(d.get('vale_alimentacao'),dec=True),
@@ -2787,10 +2904,9 @@ def api_holerites_upload():
         ano=infer_doc_year(comp)
         prepare_func_doc_dirs(alvo.id,ano)
         writer=PdfWriter(); writer.add_page(page)
-        fake_name=f"holerite_{idx}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        fake_name=holerite_batch_filename(alvo,comp)
         subdir,_=func_doc_subdir(alvo.id,'holerite',comp)
-        rel=os.path.join(subdir,secure_filename(fake_name))
-        abs_p=os.path.join(UPLOAD_ROOT,rel)
+        rel,abs_p,fake_name=unique_rel_filename(subdir,fake_name)
         os.makedirs(os.path.dirname(abs_p),exist_ok=True)
         with open(abs_p,'wb') as out: writer.write(out)
         a=FuncionarioArquivo(funcionario_id=alvo.id,categoria='holerite',competencia=comp,nome_arquivo=fake_name,caminho=rel)
@@ -2860,6 +2976,264 @@ def api_download_oper_doc(id):
     if not os.path.exists(abs_p): return jsonify({'erro':'Arquivo nao encontrado'}),404
     return send_file(abs_p,as_attachment=True,download_name=d.nome_arquivo or 'documento.bin')
 
+@app.route('/api/operacional/postos',methods=['GET'])
+@lr
+def api_operacional_postos():
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    q=Funcionario.query.filter_by(status='Ativo')
+    if empresa_id:
+        q=q.filter_by(empresa_id=empresa_id)
+    cls=Cliente.query.order_by(Cliente.nome).all()
+    if empresa_id:
+        cls=[c for c in cls if c.empresa_id==empresa_id]
+    clientes=[{
+        'id':c.id,
+        'nome':c.nome or '',
+        'empresa_id':c.empresa_id,
+        'numero_contrato':c.numero_contrato or '',
+        'qtd_funcionarios_posto':max(0,to_num(c.qtd_funcionarios_posto)),
+        'ocupados':Funcionario.query.filter_by(posto_cliente_id=c.id,status='Ativo').count(),
+        'posto_label':(c.nome or '').strip()
+    } for c in cls]
+    cli_map={c.id:c for c in cls}
+    itens=[]
+    for f in q.order_by(Funcionario.nome).all():
+        emp=Empresa.query.get(f.empresa_id) if f.empresa_id else None
+        cli=cli_map.get(f.posto_cliente_id) if f.posto_cliente_id else None
+        posto_label=(f.posto_operacional or 'Reserva tecnica')
+        if cli:
+            posto_label=(cli.nome or '').strip() or 'Reserva tecnica'
+        itens.append({
+            'funcionario_id':f.id,
+            'matricula':f.matricula or '',
+            'nome':f.nome or '',
+            'empresa_id':f.empresa_id,
+            'empresa_nome':(emp.nome if emp else ''),
+            'posto_operacional':f.posto_operacional or '',
+            'posto_cliente_id':f.posto_cliente_id,
+            'posto_label':posto_label
+        })
+    return jsonify({'ok':True,'itens':itens,'clientes':clientes})
+
+@app.route('/api/operacional/postos',methods=['POST'])
+@lr
+def api_operacional_postos_salvar():
+    d=request.json or {}
+    fid=to_num(d.get('funcionario_id'))
+    if not fid:
+        return jsonify({'erro':'Funcionario obrigatorio'}),400
+    f=Funcionario.query.get_or_404(fid)
+    posto_cliente_id=to_num(d.get('posto_cliente_id')) or None
+    if posto_cliente_id:
+        cli=Cliente.query.get_or_404(posto_cliente_id)
+        if f.empresa_id and cli.empresa_id and f.empresa_id!=cli.empresa_id:
+            return jsonify({'erro':'O posto selecionado pertence a outra empresa.'}),400
+        cap=max(0,to_num(cli.qtd_funcionarios_posto))
+        if cap<=0:
+            return jsonify({'erro':'Defina no cliente a quantidade de funcionarios por posto para permitir vinculo.'}),400
+        ocupados=Funcionario.query.filter_by(posto_cliente_id=cli.id,status='Ativo').count()
+        if f.posto_cliente_id!=cli.id and ocupados>=cap:
+            return jsonify({'erro':f'Limite deste posto atingido ({ocupados}/{cap}).'}),400
+        f.posto_cliente_id=cli.id
+        f.posto_operacional=(cli.nome or '').strip() or 'Reserva tecnica'
+    else:
+        f.posto_cliente_id=None
+        f.posto_operacional='Reserva tecnica'
+    db.session.commit()
+    return jsonify({'ok':True,'funcionario':f.to_dict()})
+
+@app.route('/api/beneficios/lancamentos',methods=['GET'])
+@lr
+def api_beneficios_lancamentos():
+    comp=norm_competencia(request.args.get('competencia'))
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    qf=Funcionario.query.filter_by(status='Ativo')
+    if empresa_id:
+        qf=qf.filter_by(empresa_id=empresa_id)
+    funcs_ativos=qf.order_by(Funcionario.nome).all()
+    qb=BeneficioMensal.query.filter_by(competencia=comp)
+    if empresa_id:
+        qb=qb.filter_by(empresa_id=empresa_id)
+    mapa={b.funcionario_id:b for b in qb.all()}
+    itens=[]
+    for f in funcs_ativos:
+        emp=Empresa.query.get(f.empresa_id) if f.empresa_id else None
+        cli=Cliente.query.get(f.posto_cliente_id) if f.posto_cliente_id else None
+        posto_nome=(cli.nome.strip() if cli and (cli.nome or '').strip() else (f.posto_operacional or 'Reserva tecnica'))
+        b=mapa.get(f.id)
+        itens.append({
+            'funcionario_id':f.id,
+            'matricula':f.matricula or '',
+            'nome':f.nome or '',
+            'posto_operacional':posto_nome,
+            'posto_cliente_id':f.posto_cliente_id,
+            'empresa_id':f.empresa_id,
+            'empresa_nome':(emp.nome if emp else ''),
+            'competencia':comp,
+            'dias_trabalhados':(b.dias_trabalhados if b else 0),
+            'dias_vt':(b.dias_vt if b else 0),
+            'dias_vr':(b.dias_vr if b else 0),
+            'dias_va':(b.dias_va if b else 0),
+            'salario':(b.salario if b else (f.salario or 0)),
+            'vale_refeicao':(b.vale_refeicao if b else (f.vale_refeicao or 0)),
+            'vale_alimentacao':(b.vale_alimentacao if b else (f.vale_alimentacao or 0)),
+            'vale_transporte':(b.vale_transporte if b else (f.vale_transporte or 0))
+        })
+    return jsonify({'ok':True,'competencia':comp,'itens':itens})
+
+@app.route('/api/beneficios/lancamentos',methods=['POST'])
+@lr
+def api_beneficios_lancamentos_salvar():
+    d=request.json or {}
+    comp=norm_competencia(d.get('competencia'))
+    itens=d.get('itens') or []
+    salvos=0
+    for it in itens:
+        fid=to_num(it.get('funcionario_id'))
+        if not fid:
+            continue
+        f=Funcionario.query.get(fid)
+        if not f:
+            continue
+        b=BeneficioMensal.query.filter_by(funcionario_id=fid,competencia=comp).first()
+        if not b:
+            b=BeneficioMensal(funcionario_id=fid,competencia=comp)
+            db.session.add(b)
+        b.empresa_id=f.empresa_id
+        b.dias_trabalhados=max(0,to_num(it.get('dias_trabalhados')))
+        b.dias_vt=max(0,to_num(it.get('dias_vt')))
+        b.dias_vr=max(0,to_num(it.get('dias_vr')))
+        b.dias_va=max(0,to_num(it.get('dias_va')))
+        b.salario=to_num(it.get('salario'),dec=True)
+        b.vale_refeicao=to_num(it.get('vale_refeicao'),dec=True)
+        b.vale_alimentacao=to_num(it.get('vale_alimentacao'),dec=True)
+        b.vale_transporte=to_num(it.get('vale_transporte'),dec=True)
+        salvos+=1
+    db.session.commit()
+    return jsonify({'ok':True,'competencia':comp,'salvos':salvos})
+
+@app.route('/api/beneficios/vale-transporte/pdf')
+@lr
+def api_beneficios_vale_transporte_pdf():
+    return _api_beneficios_pdf_tipo('vale_transporte')
+
+@app.route('/api/beneficios/vale-refeicao/pdf')
+@lr
+def api_beneficios_vale_refeicao_pdf():
+    return _api_beneficios_pdf_tipo('vale_refeicao')
+
+@app.route('/api/beneficios/vale-alimentacao/pdf')
+@lr
+def api_beneficios_vale_alimentacao_pdf():
+    return _api_beneficios_pdf_tipo('vale_alimentacao')
+
+def _api_beneficios_pdf_tipo(tipo):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer
+    from reportlab.lib.styles import ParagraphStyle
+
+    comp=norm_competencia(request.args.get('competencia'))
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    cfg={
+        'vale_transporte':('Vale Transporte','vale_transporte','dias_vt'),
+        'vale_refeicao':('Vale Refeição','vale_refeicao','dias_vr'),
+        'vale_alimentacao':('Vale Alimentação','vale_alimentacao','dias_va'),
+    }
+    if tipo not in cfg:
+        return jsonify({'erro':'Tipo de beneficio invalido'}),400
+    tit,col_valor,col_dias=cfg[tipo]
+    q=BeneficioMensal.query.filter_by(competencia=comp)
+    if empresa_id:
+        q=q.filter_by(empresa_id=empresa_id)
+    regs=[b for b in q.all() if float(getattr(b,col_valor) or 0)>0]
+    if not regs:
+        return jsonify({'erro':f'Nenhum lançamento de {tit.lower()} com valor para a competência informada.'}),400
+
+    buf=io.BytesIO()
+    doc=SimpleDocTemplate(buf,pagesize=A4,leftMargin=1.3*cm,rightMargin=1.3*cm,topMargin=1.2*cm,bottomMargin=1.2*cm)
+    st=ParagraphStyle('n',fontName='Helvetica',fontSize=9,leading=12)
+    st_h=ParagraphStyle('h',fontName='Helvetica-Bold',fontSize=12,leading=14,textColor=colors.HexColor('#205d8a'))
+    st_cell=ParagraphStyle('cell',fontName='Helvetica',fontSize=8.3,leading=10)
+    st_num=ParagraphStyle('num',fontName='Helvetica',fontSize=8.3,leading=10,alignment=2)
+    story=[]
+
+    def _esc(v):
+        s=str(v or '')
+        return s.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+
+    emps_map={e.id:e for e in Empresa.query.all()}
+    funcs_map={f.id:f for f in Funcionario.query.all()}
+    grupos={}
+    for r in regs:
+        grupos.setdefault(r.empresa_id or 0,[]).append(r)
+
+    for emp_id,items in sorted(grupos.items(),key=lambda kv: ((emps_map.get(kv[0]).nome if emps_map.get(kv[0]) else 'ZZZ'),kv[0])):
+        emp=emps_map.get(emp_id)
+        nome_emp=(emp.nome if emp else 'Sem empresa')
+        story.append(Paragraph(f'Relatório de {tit} - {nome_emp}',st_h))
+        story.append(Paragraph(f'Competência: {comp}',st))
+        story.append(Spacer(1,6))
+        if tipo=='vale_alimentacao':
+            rows=[['Matrícula','Colaborador','Posto',f'{tit} (R$)',f'Total {tit} (R$)']]
+        else:
+            rows=[['Matrícula','Colaborador','Posto','Dias',f'{tit} (R$)',f'Total {tit} (R$)']]
+        total_emp=0.0
+        for r in sorted(items,key=lambda x:(funcs_map.get(x.funcionario_id).nome if funcs_map.get(x.funcionario_id) else '')):
+            f=funcs_map.get(r.funcionario_id)
+            valor=float(getattr(r,col_valor) or 0)
+            dias=int(getattr(r,col_dias) or 0)
+            if tipo=='vale_alimentacao':
+                total=valor
+            else:
+                total=dias*valor
+            total_emp+=total
+            if tipo=='vale_alimentacao':
+                rows.append([
+                    Paragraph(_esc(f.matricula if f else ''),st_cell),
+                    Paragraph(_esc(f.nome if f else f'Funcionario {r.funcionario_id}'),st_cell),
+                    Paragraph(_esc(f.posto_operacional if f and f.posto_operacional else 'Reserva tecnica'),st_cell),
+                    Paragraph(_esc(fmt_brl(valor)),st_num),
+                    Paragraph(_esc(fmt_brl(total)),st_num)
+                ])
+            else:
+                rows.append([
+                    Paragraph(_esc(f.matricula if f else ''),st_cell),
+                    Paragraph(_esc(f.nome if f else f'Funcionario {r.funcionario_id}'),st_cell),
+                    Paragraph(_esc(f.posto_operacional if f and f.posto_operacional else 'Reserva tecnica'),st_cell),
+                    Paragraph(_esc(str(dias)),st_num),
+                    Paragraph(_esc(fmt_brl(valor)),st_num),
+                    Paragraph(_esc(fmt_brl(total)),st_num)
+                ])
+        if tipo=='vale_alimentacao':
+            rows.append(['','','', Paragraph('Total da empresa:',st_num), Paragraph(_esc(fmt_brl(total_emp)),st_num)])
+            tb=Table(rows,colWidths=[2.3*cm,5.6*cm,5.0*cm,3.1*cm,3.0*cm])
+        else:
+            rows.append(['','','','', Paragraph('Total da empresa:',st_num), Paragraph(_esc(fmt_brl(total_emp)),st_num)])
+            tb=Table(rows,colWidths=[2.2*cm,5.0*cm,4.8*cm,1.4*cm,2.8*cm,2.8*cm])
+        tb.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#205d8a')),
+            ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+            ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+            ('FONTNAME',(0,-1),(-1,-1),'Helvetica-Bold'),
+            ('GRID',(0,0),(-1,-1),0.4,colors.HexColor('#d0d7de')),
+            ('ALIGN',(3,1),(-1,-1),'RIGHT'),
+            ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+            ('FONTSIZE',(0,0),(-1,-1),8.5),
+            ('TOPPADDING',(0,0),(-1,-1),4),
+            ('BOTTOMPADDING',(0,0),(-1,-1),4),
+        ]))
+        story.append(tb)
+        story.append(Spacer(1,10))
+
+    doc.build(story)
+    buf.seek(0)
+    comp_nome=f"{comp[5:7]}-{comp[:4]}" if isinstance(comp,str) and len(comp)>=7 and '-' in comp else str(comp)
+    sigla={'vale_transporte':'vt','vale_refeicao':'vr','vale_alimentacao':'va'}.get(tipo,'beneficio')
+    nome=f"relatorio_{sigla}_competencia_{comp_nome}.pdf"
+    return send_file(buf,mimetype='application/pdf',as_attachment=True,download_name=nome)
+
 @app.route('/api/dashboard')
 @lr
 def api_dashboard():
@@ -2888,6 +3262,7 @@ def api_backup():
         z.writestr('whatsapp_conversas.json',json.dumps([c.to_dict() for c in WhatsAppConversa.query.all()],default=str,ensure_ascii=False,indent=2))
         z.writestr('whatsapp_mensagens.json',json.dumps([m.to_dict() for m in WhatsAppMensagem.query.all()],default=str,ensure_ascii=False,indent=2))
         z.writestr('funcionario_arquivos.json',json.dumps([a.to_dict() for a in FuncionarioArquivo.query.all()],default=str,ensure_ascii=False,indent=2))
+        z.writestr('beneficios_mensais.json',json.dumps([b.to_dict() for b in BeneficioMensal.query.all()],default=str,ensure_ascii=False,indent=2))
         z.writestr('ordens_compra.json',json.dumps([o.to_dict() for o in OrdemCompra.query.all()],default=str,ensure_ascii=False,indent=2))
         z.writestr('operacional_documentos.json',json.dumps([d.to_dict() for d in OperacionalDocumento.query.all()],default=str,ensure_ascii=False,indent=2))
         if os.path.isdir(UPLOAD_ROOT):
@@ -2916,7 +3291,7 @@ def api_backup_restore():
             except Exception: return default
 
         # Limpa dados operacionais antes de restaurar.
-        for model in [WhatsAppMensagem,WhatsAppConversa,FuncionarioArquivo,OperacionalDocumento,OrdemCompra,Medicao,Cliente,Funcionario,Empresa,Config]:
+        for model in [WhatsAppMensagem,WhatsAppConversa,BeneficioMensal,FuncionarioArquivo,OperacionalDocumento,OrdemCompra,Medicao,Cliente,Funcionario,Empresa,Config]:
             model.query.delete()
 
         empresas=jread('empresas.json',[])
@@ -2927,6 +3302,7 @@ def api_backup_restore():
         wa_convs=jread('whatsapp_conversas.json',[])
         wa_msgs=jread('whatsapp_mensagens.json',[])
         farqs=jread('funcionario_arquivos.json',[])
+        bens=jread('beneficios_mensais.json',[])
         ocs=jread('ordens_compra.json',[])
         opdocs=jread('operacional_documentos.json',[])
 
@@ -3028,6 +3404,7 @@ def api_backup_restore():
         add_rows(WhatsAppConversa,wa_convs)
         add_rows(WhatsAppMensagem,wa_msgs)
         add_rows(FuncionarioArquivo,farqs)
+        add_rows(BeneficioMensal,bens)
         add_rows(OrdemCompra,ocs)
         add_rows(OperacionalDocumento,opdocs)
         db.session.commit()
@@ -3251,11 +3628,9 @@ def api_rh_holerites_processar():
         if not alvo: sem_match.append(idx); continue
         ano=infer_doc_year(comp); prepare_func_doc_dirs(alvo.id,ano)
         writer=PdfWriter(); writer.add_page(page)
-        comp_safe=(comp.replace('/','_') if comp else str(idx))
-        ts=datetime.now().strftime('%Y%m%d_%H%M%S%f')[:17]
-        fake_name=secure_filename(f"holerite_{comp_safe}_{alvo.nome.replace(' ','_')[:15]}_{ts}.pdf")
+        fake_name=holerite_batch_filename(alvo,comp)
         subdir,_=func_doc_subdir(alvo.id,'holerite',comp)
-        rel=os.path.join(subdir,fake_name); abs_p=os.path.join(UPLOAD_ROOT,rel)
+        rel,abs_p,fake_name=unique_rel_filename(subdir,fake_name)
         os.makedirs(os.path.dirname(abs_p),exist_ok=True)
         with open(abs_p,'wb') as out: writer.write(out)
         a=FuncionarioArquivo(funcionario_id=alvo.id,categoria='holerite',competencia=comp,nome_arquivo=fake_name,caminho=rel)
@@ -3784,7 +4159,18 @@ with app.app_context():
         'banco_agencia VARCHAR(30)',
         'banco_conta VARCHAR(40)',
         'banco_tipo_conta VARCHAR(20)',
-        'banco_pix VARCHAR(150)'
+        'banco_pix VARCHAR(150)',
+        'posto_operacional VARCHAR(150)',
+        'posto_cliente_id INTEGER'
+    ])
+    ensure_cols('cliente',[
+        'numero_contrato VARCHAR(60)',
+        'qtd_funcionarios_posto INTEGER DEFAULT 0'
+    ])
+    ensure_cols('beneficio_mensal',[
+        'dias_vt INTEGER DEFAULT 0',
+        'dias_vr INTEGER DEFAULT 0',
+        'dias_va INTEGER DEFAULT 0'
     ])
     db.session.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ix_funcionario_re ON funcionario(re)'))
     db.session.commit()

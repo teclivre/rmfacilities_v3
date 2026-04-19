@@ -34,6 +34,7 @@
       <button type="button" class="mobile-nav-btn" data-nav="rh" onclick="navFromMobile('rh')">RH</button>
       <button type="button" class="mobile-nav-btn" data-nav="rh-digital" onclick="navFromMobile('rh-digital')">Comunicação</button>
       <button type="button" class="mobile-nav-btn" data-nav="operacional" onclick="navFromMobile('operacional')">Operacional</button>
+      <button type="button" class="mobile-nav-btn" data-nav="beneficios" onclick="navFromMobile('beneficios')">Benefícios</button>
       <button type="button" class="mobile-nav-btn" data-nav="sst" onclick="navFromMobile('sst')">SST</button>
       {% if perfil == 'dono' %}
       <button type="button" class="mobile-nav-btn" data-nav="empresas" onclick="navFromMobile('empresas')">Empresas</button>
@@ -78,6 +79,10 @@
     <a class="nav-item" onclick="nav('operacional',this)">
       <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 20h16"/><path d="M6 20V8l6-4 6 4v12"/></svg>
       Operacional
+    </a>
+    <a class="nav-item" onclick="nav('beneficios',this)">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 1v22"/><path d="M17 5H9a4 4 0 0 0 0 8h6a4 4 0 0 1 0 8H7"/></svg>
+      Benefícios
     </a>
     <a class="nav-item" onclick="nav('sst',this)">
       <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 9.5-8 10-4.5-.5-8-5-8-10V6l8-4z"/><path d="M9 12l2 2 4-4"/></svg>
@@ -294,8 +299,8 @@
         <div class="tbl-wrap">
           <table class="tbl">
             <thead><tr>
-              <th>Nº</th><th>Cliente</th><th>Empresa</th><th>Serviços</th>
-              <th style="text-align:right">Contrato</th><th>Venc.</th><th>Status</th><th>Ações</th>
+              <th>Nº</th><th>Cliente</th><th>Nº Contrato</th><th>Empresa</th><th>Serviços</th>
+              <th style="text-align:right">Valor Contrato</th><th>Venc.</th><th>Status</th><th>Ações</th>
             </tr></thead>
             <tbody id="tb-cli"></tbody>
           </table>
@@ -320,7 +325,7 @@
         </div>
         <div class="tbl-wrap">
           <table class="tbl">
-            <thead><tr><th>Matrícula</th><th>Nome</th><th>Cargo/Função</th><th>Empresa</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead>
+            <thead><tr><th>Matrícula</th><th>Nome</th><th>Cargo/Função</th><th>Posto</th><th>Empresa</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody id="tb-func"></tbody>
           </table>
         </div>
@@ -542,6 +547,77 @@
         <div class="card-header"><span class="card-title">Documentos operacionais</span></div>
         <div id="lista-op-docs"></div>
       </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">Colaboradores x Posto</span></div>
+        <div class="g3">
+          <div class="f"><label>Empresa</label><select id="op-posto-emp"><option value="">Todas</option></select></div>
+          <div class="f" style="display:flex;align-items:flex-end"><button class="btn b-gh b-sm" onclick="renderOperPostos()">Atualizar lista</button></div>
+        </div>
+        <div class="tbl-wrap" style="margin-top:10px">
+          <table class="tbl">
+            <thead><tr><th>Matrícula</th><th>Colaborador</th><th>Empresa</th><th>Posto (Cliente)</th><th>Ação</th></tr></thead>
+            <tbody id="tb-op-postos"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ BENEFÍCIOS ══ -->
+    <div id="pg-beneficios" class="pg">
+      <div id="st-benef" class="st"></div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Lançamento mensal de benefícios (ativos)</span></div>
+        <div class="g4">
+          <div class="f"><label>Competência</label><input id="ben-comp" type="month"></div>
+          <div class="f"><label>Empresa</label><select id="ben-emp"><option value="">Todas</option></select></div>
+          <div class="f"><label>Buscar colaborador / matrícula</label><input id="ben-busca" placeholder="Ex: Joana ou 395" oninput="renderBeneficiosAtivos();renderBeneficioPorTipo('vt','tb-benef-vt');renderBeneficioPorTipo('vr','tb-benef-vr');renderBeneficioPorTipo('va','tb-benef-va')"></div>
+          <div class="f"><label>Posto</label><select id="ben-posto" onchange="renderBeneficiosAtivos();renderBeneficioPorTipo('vt','tb-benef-vt');renderBeneficioPorTipo('vr','tb-benef-vr');renderBeneficioPorTipo('va','tb-benef-va')"><option value="">Todos os postos</option></select></div>
+        </div>
+        <div class="g4" style="margin-top:8px">
+          <div class="f" style="display:flex;align-items:flex-end"><button class="btn b-gh b-sm" onclick="carregarBeneficiosMensais()">Carregar colaboradores</button></div>
+          <div class="f" style="display:flex;align-items:flex-end"><button class="btn b-az b-sm" onclick="salvarBeneficiosValoresBase()">Salvar valores-base</button></div>
+          <div class="f"></div>
+          <div class="f"></div>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;background:linear-gradient(90deg,rgba(35,93,138,.22),rgba(9,35,74,.55));padding:10px;border-radius:12px;border:1px solid rgba(120,180,240,.35)">
+          <button id="ben-tab-ativos" class="btn b-az b-sm" onclick="switchBenTab('ativos',this)">Colaboradores Ativos</button>
+          <button id="ben-tab-vt" class="btn b-gh b-sm" onclick="switchBenTab('vt',this)">Vale Transporte</button>
+          <button id="ben-tab-vr" class="btn b-gh b-sm" onclick="switchBenTab('vr',this)">Vale Refeição</button>
+          <button id="ben-tab-va" class="btn b-gh b-sm" onclick="switchBenTab('va',this)">Vale Alimentação</button>
+        </div>
+
+        <div class="brow" style="justify-content:flex-start;margin-top:10px">
+          <button class="btn b-gh b-sm" onclick="salvarBeneficiosDias()">Salvar dias (VT/VR)</button>
+          <button class="btn b-ghv b-sm" onclick="gerarPDFBeneficioAtivo()">Gerar PDF do benefício ativo (por empresa)</button>
+        </div>
+
+        <div id="ben-pane-ativos" class="tbl-wrap" style="margin-top:10px">
+          <table class="tbl">
+            <thead><tr><th>Matrícula</th><th>Colaborador</th><th>Posto</th><th>Empresa</th><th>Valor VT</th><th>Valor VR</th><th>Valor VA (mensal)</th></tr></thead>
+            <tbody id="tb-benef-ativos"></tbody>
+          </table>
+        </div>
+
+        <div id="ben-pane-vt" class="tbl-wrap" style="margin-top:10px;display:none">
+          <table class="tbl">
+            <thead><tr><th>Matrícula</th><th>Colaborador</th><th>Posto</th><th>Empresa</th><th>Dias VT</th><th>Valor VT (cadastrado)</th><th>Total VT</th></tr></thead>
+            <tbody id="tb-benef-vt"></tbody>
+          </table>
+        </div>
+        <div id="ben-pane-vr" class="tbl-wrap" style="margin-top:10px;display:none">
+          <table class="tbl">
+            <thead><tr><th>Matrícula</th><th>Colaborador</th><th>Posto</th><th>Empresa</th><th>Dias VR</th><th>Valor VR (cadastrado)</th><th>Total VR</th></tr></thead>
+            <tbody id="tb-benef-vr"></tbody>
+          </table>
+        </div>
+        <div id="ben-pane-va" class="tbl-wrap" style="margin-top:10px;display:none">
+          <table class="tbl">
+            <thead><tr><th>Matrícula</th><th>Colaborador</th><th>Posto</th><th>Empresa</th><th>Valor VA (mensal)</th><th>Total VA (mensal)</th></tr></thead>
+            <tbody id="tb-benef-va"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- ══ SST ══ -->
@@ -730,12 +806,7 @@
         <div class="f"><label>Empresa</label><select id="femp"><option value="">Selecione...</option></select></div>
         <div class="f"><label>Tipo de contrato</label><input id="ftipo-contrato" placeholder="CLT, PJ, Temporário..."></div>
         <div class="f"><label>Jornada</label><input id="fjornada" placeholder="44h semanais"></div>
-        <div class="f"><label>Salário</label><input id="fsal" type="number" min="0" step="0.01"></div>
-      </div>
-      <div class="g3">
-        <div class="f"><label>Vale Refeição</label><input id="fvr" type="number" min="0" step="0.01"></div>
-        <div class="f"><label>Vale Alimentação</label><input id="fva" type="number" min="0" step="0.01"></div>
-        <div class="f"><label>Vale Transporte</label><input id="fvt" type="number" min="0" step="0.01"></div>
+        <div class="f"><label>Posto (definido no Operacional)</label><input id="fposto" readonly placeholder="Defina na aba Operacional"></div>
       </div>
       <div class="g4">
         <div class="f s2"><label>Banco (busca por código/nome)</label><div style="display:flex;gap:6px"><input id="fbanco-busca" list="fbanco-list" placeholder="Ex: 077 - Banco Inter S.A." oninput="onBancoBuscaInput()" onblur="onBancoBuscaBlur()" style="flex:1"><button type="button" class="btn b-gh b-sm" onclick="atualizarBancosBR()">Atualizar</button></div><datalist id="fbanco-list"></datalist><div id="fbanco-st" class="hint" style="display:none"></div></div>
@@ -795,7 +866,6 @@
     <div class="mh"><span class="mt" id="mod-cli-tit">Novo cliente</span><button class="btn b-ci b-sm" onclick="closeModal('cli')">Fechar ×</button></div>
     <div class="mb-body">
       <input type="hidden" id="mid">
-      <div class="f"><label>Nome do cliente *</label><input id="mn"></div>
       <div class="g2">
         <div class="f">
           <label>CNPJ / CPF</label>
@@ -805,11 +875,16 @@
           </div>
           <div id="cnpj-st" class="hint" style="display:none"></div>
         </div>
-        <div class="f"><label>Responsável / Contato</label><input id="mr"></div>
+        <div class="f"><label>Nome *</label><input id="mn"></div>
       </div>
+      <div class="f"><label>Responsável / Contato</label><input id="mr"></div>
       <div class="g2">
         <div class="f"><label>Telefone</label><input id="mt" placeholder="(00) 00000-0000" oninput="maskTelefone(this)"></div>
         <div class="f"><label>E-mail</label><input id="me" type="email"></div>
+      </div>
+      <div class="g2">
+        <div class="f"><label>Número do contrato</label><input id="mcontrato" placeholder="Ex: CT-2026-001"></div>
+        <div class="f"><label>Qtd. funcionários por posto</label><input id="mqtd-posto" type="number" min="0" step="1" placeholder="Ex: 8"></div>
       </div>
       <div class="sep"></div>
       <div class="g2">
@@ -965,8 +1040,8 @@
 const N='{{ nome }}', P='{{ perfil }}';
 const USER_AREAS={{ areas|safe }};
 const THEME_KEY='rm_theme';
-const AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','sst','rh-digital','documentos'];
-let todos=[], emps=[], funcs=[], bancosBR=[], acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
+const AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','beneficios','sst','rh-digital','documentos'];
+let todos=[], emps=[], funcs=[], bancosBR=[], beneficiosMensais=[], benTab='ativos', acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
 
 function applyTheme(theme){
   const t=(theme==='dark')?'dark':'light';
@@ -1005,6 +1080,7 @@ async function init(){
   document.getElementById('dtem').value=h.toISOString().split('T')[0];
   const v=new Date(h); v.setDate(v.getDate()+20);
   document.getElementById('dtvenc').value=v.toISOString().split('T')[0];
+  document.getElementById('ben-comp').value=h.toISOString().slice(0,7);
   await loadEmps();
   await loadDash();
   await carregarBancosBR();
@@ -1027,7 +1103,7 @@ async function loadProxNum(){
 
 async function loadEmps(){
   emps=await api('/api/empresas');
-  ['emp-sel','fe','memp','femp','oc-emp','op-emp'].forEach(id=>{
+  ['emp-sel','fe','memp','femp','oc-emp','op-emp','op-posto-emp','ben-emp'].forEach(id=>{
     const el=document.getElementById(id); if(!el)return;
     const keep=el.options[0]; el.innerHTML=''; el.appendChild(keep);
     emps.forEach(e=>{const o=new Option(e.nome,e.id); el.appendChild(o);});
@@ -1074,7 +1150,8 @@ function nav(id,el,force=false){
   if(id==='usuarios')renderUsr();
   if(id==='config')loadConfig();
   if(id==='rh')renderFuncionarios();
-  if(id==='operacional'){renderOrdensCompra();renderOperDocs();}
+  if(id==='operacional'){renderOrdensCompra();renderOperDocs();renderOperPostos();}
+  if(id==='beneficios')carregarBeneficiosMensais();
   if(id==='sst')fillSSTFuncionarios();
   if(id==='nova-medicao'){loadProxNum(); onEmpSel();}
   if(id==='rh-digital')initRHDigital();
@@ -1361,7 +1438,7 @@ async function renderCli(){
   const lista=await api('/api/clientes?emp='+ef+'&status='+sf+'&q='+encodeURIComponent(q));
   todos=await api('/api/clientes');
   const tb=document.getElementById('tb-cli');
-  if(!lista.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:28px;color:#bbb">Nenhum cliente encontrado.</td></tr>';return;}
+  if(!lista.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:28px;color:#bbb">Nenhum cliente encontrado.</td></tr>';return;}
   tb.innerHTML=lista.map(c=>{
     const tot=(c.limpeza||0)+(c.jardinagem||0)+(c.portaria||0);
     const svs=[c.limpeza>0?'Limpeza':'',c.jardinagem>0?'Jardinagem':'',c.portaria>0?'Portaria':''].filter(Boolean).join(', ');
@@ -1369,7 +1446,8 @@ async function renderCli(){
     const pc=c.status==='Ativo'?'p-vd':c.status==='Inativo'?'p-ci':'p-vm';
     return`<tr>
       <td style="color:#bbb;font-size:11px">${c.numero||''}</td>
-      <td><div style="font-weight:700;font-size:13px">${c.nome}</div><div style="font-size:11px;color:#999">${fmtDoc(c.cnpj)||''} ${c.responsavel?'· '+c.responsavel:''}</div></td>
+      <td><div style="font-weight:700;font-size:13px">${c.nome}</div><div style="font-size:11px;color:#999">${fmtDoc(c.cnpj)||''} ${c.responsavel?'· '+c.responsavel:''} ${(c.qtd_funcionarios_posto||0)>0?'· Posto: '+c.qtd_funcionarios_posto+' vagas':''}</div></td>
+      <td style="font-size:11px">${c.numero_contrato||'—'}</td>
       <td style="font-size:12px">${emp?emp.nome:'—'}</td>
       <td style="font-size:11px">${svs||'—'}</td>
       <td style="text-align:right;font-weight:700;color:var(--verde);white-space:nowrap">${brl(tot)}</td>
@@ -1414,7 +1492,7 @@ async function excluirCli(id,nome){
 
 async function openModal(modo,id){
   document.getElementById('mid').value='';
-  ['mn','mc','mr','mt','me','mcep','mend','mnum-end','mcompl','mbairro','mcidade','mestado','mob'].forEach(k=>document.getElementById(k).value='');
+  ['mn','mc','mr','mt','me','mcontrato','mqtd-posto','mcep','mend','mnum-end','mcompl','mbairro','mcidade','mestado','mob'].forEach(k=>document.getElementById(k).value='');
   ['ml','mj','mp'].forEach(k=>document.getElementById(k).value=0);
   document.getElementById('mv').value=''; document.getElementById('mst').value='Ativo';
   document.getElementById('memp').value='';
@@ -1427,6 +1505,8 @@ async function openModal(modo,id){
     document.getElementById('mr').value=c.responsavel||'';
     document.getElementById('mt').value=c.telefone||'';
     document.getElementById('me').value=c.email||'';
+    document.getElementById('mcontrato').value=c.numero_contrato||'';
+    document.getElementById('mqtd-posto').value=c.qtd_funcionarios_posto||0;
     document.getElementById('mcep').value=c.cep||'';
     maskDoc(document.getElementById('mc'));
     maskTelefone(document.getElementById('mt'));
@@ -1463,10 +1543,10 @@ function closeModal(t,force=false){
 
 async function salvarCliente(){
   const nome=document.getElementById('mn').value.trim();
-  if(!nome){alert('Informe o nome do cliente.');return;}
+  if(!nome){alert('Informe o nome.');return;}
   const id=document.getElementById('mid').value;
   const end_fmt=[document.getElementById('mend').value,document.getElementById('mnum-end').value,document.getElementById('mcompl').value,document.getElementById('mbairro').value].filter(Boolean).join(', ')+(document.getElementById('mcidade').value?' — '+document.getElementById('mcidade').value+'/'+(document.getElementById('mestado').value||''):'');
-  const d={nome,cnpj:document.getElementById('mc').value,responsavel:document.getElementById('mr').value,telefone:document.getElementById('mt').value,email:document.getElementById('me').value,cep:document.getElementById('mcep').value,logradouro:document.getElementById('mend').value,numero_end:document.getElementById('mnum-end').value,complemento:document.getElementById('mcompl').value,bairro:document.getElementById('mbairro').value,cidade:document.getElementById('mcidade').value,estado:document.getElementById('mestado').value,empresa_id:parseInt(document.getElementById('memp').value)||null,status:document.getElementById('mst').value,limpeza:parseFloat(document.getElementById('ml').value)||0,jardinagem:parseFloat(document.getElementById('mj').value)||0,portaria:parseFloat(document.getElementById('mp').value)||0,vencimento:parseInt(document.getElementById('mv').value)||0,obs:document.getElementById('mob').value};
+  const d={nome,cnpj:document.getElementById('mc').value,responsavel:document.getElementById('mr').value,telefone:document.getElementById('mt').value,email:document.getElementById('me').value,numero_contrato:(document.getElementById('mcontrato').value||'').trim(),qtd_funcionarios_posto:Math.max(0,parseInt(document.getElementById('mqtd-posto').value||'0',10)||0),cep:document.getElementById('mcep').value,logradouro:document.getElementById('mend').value,numero_end:document.getElementById('mnum-end').value,complemento:document.getElementById('mcompl').value,bairro:document.getElementById('mbairro').value,cidade:document.getElementById('mcidade').value,estado:document.getElementById('mestado').value,empresa_id:parseInt(document.getElementById('memp').value)||null,status:document.getElementById('mst').value,limpeza:numBR(document.getElementById('ml').value),jardinagem:numBR(document.getElementById('mj').value),portaria:numBR(document.getElementById('mp').value),vencimento:parseInt(document.getElementById('mv').value)||0,obs:document.getElementById('mob').value};
   if(id) await api('/api/clientes/'+id,'PUT',d);
   else await api('/api/clientes','POST',d);
   todos=await api('/api/clientes');
@@ -1768,7 +1848,7 @@ function areaChecksUsuario(sel){
 
 function openModalFunc(modo,id){
   document.getElementById('fid').value='';
-  ['fmatricula','fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fsal','fvr','fva','fvt','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
+  ['fmatricula','fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fposto','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
   document.getElementById('fbanco-tipo').value='';
   document.getElementById('fddi').value='55';
   const st=document.getElementById('fcpf-st'); if(st){st.style.display='none';st.textContent='';}
@@ -1776,6 +1856,7 @@ function openModalFunc(modo,id){
   const stBanco=document.getElementById('fbanco-st'); if(stBanco){stBanco.style.display='none';stBanco.textContent='';}
   _fCepLastLookup='';
   document.getElementById('fstatus').value='Ativo';
+  document.getElementById('fposto').value='';
   document.getElementById('fdocs-ok').value='0';
   document.getElementById('femp').value='';
   if(!bancosBR.length) carregarBancosBR();
@@ -1819,10 +1900,7 @@ function preencherFormFuncionario(f,titulo='Editar funcionário'){
   document.getElementById('ftipo-contrato').value=f.tipo_contrato||'';
   document.getElementById('fjornada').value=f.jornada||'';
   document.getElementById('fstatus').value=f.status||'Ativo';
-  document.getElementById('fsal').value=f.salario||0;
-  document.getElementById('fvr').value=f.vale_refeicao||0;
-  document.getElementById('fva').value=f.vale_alimentacao||0;
-  document.getElementById('fvt').value=f.vale_transporte||0;
+  document.getElementById('fposto').value=f.posto_operacional||'Reserva tecnica';
   document.getElementById('fbanco-codigo').value=f.banco_codigo||'';
   document.getElementById('fbanco-nome').value=f.banco_nome||'';
   document.getElementById('fbanco-agencia').value=f.banco_agencia||'';
@@ -2074,10 +2152,7 @@ async function salvarFuncionario(){
     tipo_contrato:document.getElementById('ftipo-contrato').value,
     jornada:document.getElementById('fjornada').value,
     status:document.getElementById('fstatus').value,
-    salario:parseFloat(document.getElementById('fsal').value)||0,
-    vale_refeicao:parseFloat(document.getElementById('fvr').value)||0,
-    vale_alimentacao:parseFloat(document.getElementById('fva').value)||0,
-    vale_transporte:parseFloat(document.getElementById('fvt').value)||0,
+    posto_operacional:(document.getElementById('fposto').value||'').trim(),
     banco_codigo:(document.getElementById('fbanco-codigo').value||'').replace(/\D/g,'').slice(0,3),
     banco_nome:(document.getElementById('fbanco-nome').value||'').trim(),
     banco_agencia:(document.getElementById('fbanco-agencia').value||'').trim(),
@@ -2118,13 +2193,14 @@ async function renderFuncionarios(){
   funcs=await api('/api/funcionarios?q='+encodeURIComponent(q));
   const tb=document.getElementById('tb-func');
   if(!tb)return;
-  if(!funcs.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:24px;color:#999">Nenhum funcionário cadastrado.</td></tr>';return;}
+  if(!funcs.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:#999">Nenhum funcionário cadastrado.</td></tr>';return;}
   tb.innerHTML=funcs.map(f=>{
     const emp=emps.find(e=>e.id===f.empresa_id);
     return `<tr>
       <td style="font-weight:700">${f.matricula||'—'}</td>
       <td><div style="font-weight:700">${f.nome}</div><div style="font-size:11px;color:#888">${fmtDoc(f.cpf)||''}</div></td>
       <td><div>${f.cargo||'—'}</div><div style="font-size:11px;color:#888">${f.funcao||''}</div></td>
+      <td style="font-size:11px">${f.posto_operacional||'Reserva tecnica'}</td>
       <td>${emp?emp.nome:'—'}</td>
       <td>${[f.email,fmtTelefone(f.telefone)].filter(Boolean).join(' · ')||'—'}</td>
       <td><span class="pill ${f.status==='Ativo'?'p-vd':'p-ci'}">${f.status||'Ativo'}</span></td>
@@ -2447,6 +2523,274 @@ async function delOperDoc(id){
   if(!confirm('Excluir documento operacional?'))return;
   await api('/api/operacional/documentos/'+id,'DELETE');
   renderOperDocs();
+}
+
+function numBR(v){
+  let t=String(v||'').trim().replace(/\s+/g,'');
+  if(!t)return 0;
+  const neg=t.startsWith('-');
+  if(neg)t=t.slice(1);
+  if(t.includes(',') && t.includes('.')){
+    if(t.lastIndexOf(',')>t.lastIndexOf('.')) t=t.replace(/\./g,'').replace(',','.');
+    else t=t.replace(/,/g,'');
+  }else if(t.includes(',')){
+    t=t.replace(/\./g,'').replace(',','.');
+  }else{
+    t=t.replace(/,/g,'');
+  }
+  let n=parseFloat(t);
+  if(!Number.isFinite(n)) n=0;
+  return neg ? -n : n;
+}
+
+function moneyPt(v){
+  return (Number(v||0)).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+async function renderOperPostos(){
+  const emp=document.getElementById('op-posto-emp')?.value||'';
+  const r=await api('/api/operacional/postos?empresa_id='+encodeURIComponent(emp));
+  const tb=document.getElementById('tb-op-postos');
+  if(!tb)return;
+  const itens=r?.itens||[];
+  const clientes=r?.clientes||[];
+  if(!itens.length){
+    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;color:#999">Nenhum colaborador ativo encontrado.</td></tr>';
+    return;
+  }
+  function opcoesCliente(empresaId,selId){
+    const opts=[];
+    clientes.filter(c=>!empresaId || !c.empresa_id || String(c.empresa_id)===String(empresaId)).forEach(c=>{
+      const s=String(c.id)===String(selId)?'selected':'';
+      const cap=parseInt(c.qtd_funcionarios_posto||0,10)||0;
+      const ocu=parseInt(c.ocupados||0,10)||0;
+      const liv=Math.max(0,cap-ocu);
+      const lotado=(cap>0 && liv<=0);
+      const txt=((c.posto_label||c.nome||'') + (cap>0?` (${ocu}/${cap} · livres ${liv})`:' (sem limite cadastrado)') + (lotado?' - LOTADO':'' )).replace(/"/g,'&quot;');
+      const disabled=(lotado && !s)?'disabled':'';
+      const cheio=lotado?'1':'0';
+      opts.push(`<option value="${c.id}" data-cheio="${cheio}" data-cap="${cap}" data-ocup="${ocu}" ${s} ${disabled}>${txt}</option>`);
+    });
+    return opts.join('');
+  }
+  tb.innerHTML=itens.map(it=>`<tr>
+    <td>${it.matricula||'—'}</td>
+    <td>${it.nome||''}</td>
+    <td>${it.empresa_nome||'—'}</td>
+    <td><select id="op-posto-${it.funcionario_id}" onchange="avisoPostoCheio(${it.funcionario_id})"><option value="">Reserva tecnica</option>${opcoesCliente(it.empresa_id,it.posto_cliente_id)}</select></td>
+    <td><button class="btn b-gh b-sm" onclick="salvarPostoOperacional(${it.funcionario_id})">Salvar</button></td>
+  </tr>`).join('');
+}
+
+function avisoPostoCheio(funcionarioId){
+  const el=document.getElementById('op-posto-'+funcionarioId);
+  if(!el) return;
+  const opt=el.options[el.selectedIndex];
+  if(!opt) return;
+  if(opt.getAttribute('data-cheio')==='1'){
+    const cap=opt.getAttribute('data-cap')||'0';
+    const ocup=opt.getAttribute('data-ocup')||'0';
+    showSt('st-op',`Posto já está cheio (${ocup}/${cap}). Escolha outro posto.`,true);
+  }
+}
+
+async function salvarPostoOperacional(funcionarioId){
+  const postoClienteId=parseInt(document.getElementById('op-posto-'+funcionarioId)?.value||'')||null;
+  const r=await api('/api/operacional/postos','POST',{funcionario_id:funcionarioId,posto_cliente_id:postoClienteId});
+  if(r?.erro){
+    showSt('st-op',r.erro,true);
+    return;
+  }
+  funcs=await api('/api/funcionarios');
+  if(document.getElementById('pg-beneficios')?.classList.contains('on')) await carregarBeneficiosMensais();
+  showSt('st-op','Posto operacional atualizado.',false);
+}
+
+function switchBenTab(tab,btn){
+  benTab=tab;
+  ['ativos','vt','vr','va'].forEach(t=>{
+    const pane=document.getElementById('ben-pane-'+t);
+    const b=document.getElementById('ben-tab-'+t);
+    if(pane)pane.style.display=t===tab?'block':'none';
+    if(b)b.className=t===tab?'btn b-az b-sm':'btn b-gh b-sm';
+  });
+  if(btn && btn.scrollIntoView) btn.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});
+}
+
+function benComp(){
+  return document.getElementById('ben-comp')?.value || new Date().toISOString().slice(0,7);
+}
+
+function benEmp(){
+  return document.getElementById('ben-emp')?.value || '';
+}
+
+function benBusca(){
+  return (document.getElementById('ben-busca')?.value||'').trim().toLowerCase();
+}
+
+function benPosto(){
+  return (document.getElementById('ben-posto')?.value||'').trim().toLowerCase();
+}
+
+function beneficiosFiltrados(){
+  const q=benBusca();
+  const posto=benPosto();
+  const qDig=q.replace(/\D/g,'');
+  return (beneficiosMensais||[]).filter(it=>{
+    const mat=(it.matricula||'').toString();
+    const nome=(it.nome||'').toLowerCase();
+    const p=(it.posto_operacional||'').toLowerCase();
+    const okBusca=!q || nome.includes(q) || mat.toLowerCase().includes(q) || (qDig && mat.replace(/\D/g,'').includes(qDig));
+    const okPosto=!posto || p===posto;
+    return okBusca && okPosto;
+  });
+}
+
+function atualizarFiltroPostoBeneficios(){
+  const sel=document.getElementById('ben-posto');
+  if(!sel) return;
+  const atual=(sel.value||'').toLowerCase();
+  const postos=[...new Set((beneficiosMensais||[]).map(it=>(it.posto_operacional||'Reserva tecnica').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  sel.innerHTML='<option value="">Todos os postos</option>'+postos.map(p=>`<option value="${p}">${p}</option>`).join('');
+  const found=postos.find(p=>p.toLowerCase()===atual);
+  sel.value=found||'';
+}
+
+function benTotal(fid,tipo){
+  const dias=parseInt(document.getElementById(`ben-${tipo}-dias-${fid}`)?.value||'0',10)||0;
+  const val=numBR(document.getElementById(`ben-base-${tipo}-val-${fid}`)?.value||'0');
+  const el=document.getElementById(`ben-${tipo}-total-${fid}`);
+  if(el)el.textContent='R$ '+moneyPt(dias*val);
+}
+
+function renderBeneficiosAtivos(){
+  const tb=document.getElementById('tb-benef-ativos');
+  if(!tb)return;
+  const lista=beneficiosFiltrados();
+  if(!lista.length){
+    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:16px;color:#999">Nenhum colaborador ativo para os filtros selecionados.</td></tr>';
+    return;
+  }
+  tb.innerHTML=lista.map(it=>`<tr>
+    <td>${it.matricula||'—'}</td>
+    <td>${it.nome||''}</td>
+    <td>${it.posto_operacional||'Reserva tecnica'}</td>
+    <td>${it.empresa_nome||'—'}</td>
+    <td><input id="ben-base-vt-val-${it.funcionario_id}" value="${moneyPt(it.vale_transporte||0)}" style="width:110px"></td>
+    <td><input id="ben-base-vr-val-${it.funcionario_id}" value="${moneyPt(it.vale_refeicao||0)}" style="width:110px"></td>
+    <td><input id="ben-base-va-val-${it.funcionario_id}" value="${moneyPt(it.vale_alimentacao||0)}" style="width:110px"></td>
+  </tr>`).join('');
+}
+
+function renderBeneficioPorTipo(tipo,tbId){
+  const tb=document.getElementById(tbId);
+  if(!tb)return;
+  const lista=beneficiosFiltrados();
+  if(!lista.length){
+    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:16px;color:#999">Nenhum colaborador ativo para os filtros selecionados.</td></tr>';
+    return;
+  }
+  if(tipo==='va'){
+    tb.innerHTML=lista.map(it=>`<tr>
+      <td>${it.matricula||'—'}</td>
+      <td>${it.nome||''}</td>
+      <td>${it.posto_operacional||'Reserva tecnica'}</td>
+      <td>${it.empresa_nome||'—'}</td>
+      <td>R$ ${moneyPt(numBR(document.getElementById('ben-base-va-val-'+it.funcionario_id)?.value||it.vale_alimentacao||0))}</td>
+      <td id="ben-va-total-${it.funcionario_id}">R$ ${moneyPt(numBR(document.getElementById('ben-base-va-val-'+it.funcionario_id)?.value||it.vale_alimentacao||0))}</td>
+    </tr>`).join('');
+    return;
+  }
+  const cfg={
+    vt:{dias:'dias_vt',valor:'vale_transporte'},
+    vr:{dias:'dias_vr',valor:'vale_refeicao'},
+  }[tipo];
+  tb.innerHTML=lista.map(it=>`<tr>
+    <td>${it.matricula||'—'}</td>
+    <td>${it.nome||''}</td>
+    <td>${it.posto_operacional||'Reserva tecnica'}</td>
+    <td>${it.empresa_nome||'—'}</td>
+    <td><input id="ben-${tipo}-dias-${it.funcionario_id}" type="number" min="0" step="1" value="${it[cfg.dias]||0}" oninput="benTotal(${it.funcionario_id},'${tipo}')" style="width:95px"></td>
+    <td>R$ ${moneyPt(numBR(document.getElementById('ben-base-'+tipo+'-val-'+it.funcionario_id)?.value||it[cfg.valor]||0))}</td>
+    <td id="ben-${tipo}-total-${it.funcionario_id}">R$ ${moneyPt((it[cfg.dias]||0)*numBR(document.getElementById('ben-base-'+tipo+'-val-'+it.funcionario_id)?.value||it[cfg.valor]||0))}</td>
+  </tr>`).join('');
+}
+
+async function carregarBeneficiosMensais(){
+  const q='?competencia='+encodeURIComponent(benComp())+'&empresa_id='+encodeURIComponent(benEmp());
+  const r=await api('/api/beneficios/lancamentos'+q);
+  if(r?.erro){
+    showSt('st-benef',r.erro,true);
+    return;
+  }
+  beneficiosMensais=r?.itens||[];
+  atualizarFiltroPostoBeneficios();
+  renderBeneficiosAtivos();
+  renderBeneficioPorTipo('vt','tb-benef-vt');
+  renderBeneficioPorTipo('vr','tb-benef-vr');
+  renderBeneficioPorTipo('va','tb-benef-va');
+  switchBenTab(benTab,document.getElementById('ben-tab-'+benTab));
+  showSt('st-benef','Colaboradores carregados para lançamento mensal.',false);
+}
+
+function montarItensBeneficios(opts={}){
+  const incluirBase=opts.incluirBase!==false;
+  const incluirDias=opts.incluirDias!==false;
+  return beneficiosMensais.map(it=>({
+    funcionario_id:it.funcionario_id,
+    dias_trabalhados:(incluirDias?Math.max(
+      parseInt(document.getElementById('ben-vt-dias-'+it.funcionario_id)?.value||'0',10)||0,
+      parseInt(document.getElementById('ben-vr-dias-'+it.funcionario_id)?.value||'0',10)||0
+    ):(it.dias_trabalhados||0)),
+    dias_vt:(incluirDias?(parseInt(document.getElementById('ben-vt-dias-'+it.funcionario_id)?.value||'0',10)||0):(it.dias_vt||0)),
+    dias_vr:(incluirDias?(parseInt(document.getElementById('ben-vr-dias-'+it.funcionario_id)?.value||'0',10)||0):(it.dias_vr||0)),
+    dias_va:1,
+    salario:it.salario||0,
+    vale_transporte:(incluirBase?numBR(document.getElementById('ben-base-vt-val-'+it.funcionario_id)?.value||it.vale_transporte||0):(it.vale_transporte||0)),
+    vale_refeicao:(incluirBase?numBR(document.getElementById('ben-base-vr-val-'+it.funcionario_id)?.value||it.vale_refeicao||0):(it.vale_refeicao||0)),
+    vale_alimentacao:(incluirBase?numBR(document.getElementById('ben-base-va-val-'+it.funcionario_id)?.value||it.vale_alimentacao||0):(it.vale_alimentacao||0))
+  }));
+}
+
+async function salvarBeneficiosValoresBase(){
+  if(!beneficiosMensais.length){
+    showSt('st-benef','Carregue os colaboradores antes de salvar.',true);
+    return;
+  }
+  const itens=montarItensBeneficios({incluirBase:true,incluirDias:false});
+  const r=await api('/api/beneficios/lancamentos','POST',{competencia:benComp(),itens});
+  if(r?.erro){
+    showSt('st-benef',r.erro,true);
+    return;
+  }
+  showSt('st-benef','Valores-base de benefícios salvos com sucesso.',false);
+  await carregarBeneficiosMensais();
+}
+
+async function salvarBeneficiosDias(){
+  if(!beneficiosMensais.length){
+    showSt('st-benef','Carregue os colaboradores antes de salvar.',true);
+    return;
+  }
+  const itens=montarItensBeneficios({incluirBase:false,incluirDias:true});
+  const r=await api('/api/beneficios/lancamentos','POST',{competencia:benComp(),itens});
+  if(r?.erro){
+    showSt('st-benef',r.erro,true);
+    return;
+  }
+  showSt('st-benef','Dias de benefícios (VT/VR) salvos com sucesso.',false);
+  await carregarBeneficiosMensais();
+}
+
+function gerarPDFBeneficioAtivo(){
+  const mapa={vt:'vale-transporte',vr:'vale-refeicao',va:'vale-alimentacao'};
+  if(benTab==='ativos'){
+    showSt('st-benef','Selecione VT, VR ou VA para gerar o PDF.',true);
+    return;
+  }
+  const url='/api/beneficios/'+mapa[benTab]+'/pdf?competencia='+encodeURIComponent(benComp())+'&empresa_id='+encodeURIComponent(benEmp());
+  window.open(url,'_blank');
 }
 
 function maskCNPJ(el){
