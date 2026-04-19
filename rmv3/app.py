@@ -171,6 +171,15 @@ class Funcionario(db.Model):
     cidade=db.Column(db.String(100))
     estado=db.Column(db.String(2))
     cep=db.Column(db.String(10))
+    endereco_numero=db.Column(db.String(20))
+    endereco_complemento=db.Column(db.String(120))
+    endereco_bairro=db.Column(db.String(120))
+    banco_codigo=db.Column(db.String(3))
+    banco_nome=db.Column(db.String(150))
+    banco_agencia=db.Column(db.String(30))
+    banco_conta=db.Column(db.String(40))
+    banco_tipo_conta=db.Column(db.String(20))
+    banco_pix=db.Column(db.String(150))
     rg=db.Column(db.String(30))
     orgao_emissor=db.Column(db.String(30))
     pis=db.Column(db.String(30))
@@ -1722,6 +1731,12 @@ def norm_phone(v):
 def norm_cep(v):
     return only_digits(v)[:8]
 
+def norm_bank_code(v):
+    return only_digits(v)[:3]
+
+def norm_uf(v):
+    return str(v or '').strip().upper()[:2]
+
 def norm_matricula(v):
     return only_digits(v)[:20]
 
@@ -1754,6 +1769,110 @@ def parse_json_bytes(raw):
         return json.loads((raw or b'').decode('utf-8','ignore'))
     except Exception:
         return {}
+
+_BANCOS_BR_CACHE=os.path.join(os.path.dirname(__file__),'instance','bancos_br.json')
+_BANCOS_BR_FALLBACK=[
+    {'codigo':'001','nome':'Banco do Brasil S.A.'},
+    {'codigo':'003','nome':'Banco da Amazonia S.A.'},
+    {'codigo':'004','nome':'Banco do Nordeste do Brasil S.A.'},
+    {'codigo':'007','nome':'Banco Nacional de Desenvolvimento Economico e Social (BNDES)'},
+    {'codigo':'010','nome':'Credicoamo'},
+    {'codigo':'021','nome':'BANESTES S.A. Banco do Estado do Espirito Santo'},
+    {'codigo':'033','nome':'Banco Santander (Brasil) S.A.'},
+    {'codigo':'041','nome':'Banco do Estado do Rio Grande do Sul S.A. (Banrisul)'},
+    {'codigo':'047','nome':'Banco do Estado de Sergipe S.A. (Banese)'},
+    {'codigo':'070','nome':'BRB - Banco de Brasilia S.A.'},
+    {'codigo':'077','nome':'Banco Inter S.A.'},
+    {'codigo':'084','nome':'Uniprime Norte do Parana'},
+    {'codigo':'085','nome':'Cooperativa Central de Credito Urbano (Ailos)'},
+    {'codigo':'104','nome':'Caixa Economica Federal'},
+    {'codigo':'107','nome':'Banco Bocom BBM S.A.'},
+    {'codigo':'121','nome':'Agibank S.A.'},
+    {'codigo':'133','nome':'Cresol Confederacao'},
+    {'codigo':'136','nome':'Unicred do Brasil'},
+    {'codigo':'197','nome':'Stone Pagamentos S.A.'},
+    {'codigo':'208','nome':'Banco BTG Pactual S.A.'},
+    {'codigo':'212','nome':'Banco Original S.A.'},
+    {'codigo':'218','nome':'Banco BS2 S.A.'},
+    {'codigo':'237','nome':'Banco Bradesco S.A.'},
+    {'codigo':'246','nome':'Banco ABC Brasil S.A.'},
+    {'codigo':'260','nome':'Nu Pagamentos S.A. (Nubank)'},
+    {'codigo':'290','nome':'PagSeguro Internet S.A.'},
+    {'codigo':'318','nome':'Banco BMG S.A.'},
+    {'codigo':'336','nome':'Banco C6 S.A. (C6 Bank)'},
+    {'codigo':'341','nome':'Itau Unibanco S.A.'},
+    {'codigo':'364','nome':'Gerencianet S.A.'},
+    {'codigo':'380','nome':'PicPay Bank - Banco Multiplo S.A.'},
+    {'codigo':'389','nome':'Banco Mercantil do Brasil S.A.'},
+    {'codigo':'422','nome':'Banco Safra S.A.'},
+    {'codigo':'623','nome':'Banco Pan S.A.'},
+    {'codigo':'633','nome':'Banco Rendimento S.A.'},
+    {'codigo':'637','nome':'Sofisa S.A.'},
+    {'codigo':'655','nome':'Banco Votorantim S.A.'},
+    {'codigo':'707','nome':'Banco Daycoval S.A.'},
+    {'codigo':'735','nome':'Neon Pagamentos S.A.'},
+    {'codigo':'748','nome':'Sicredi'},
+    {'codigo':'756','nome':'Banco Cooperativo do Brasil S.A. (Sicoob)'}
+]
+
+def _bancos_br_normalize(items):
+    out=[]
+    for it in (items or []):
+        if not isinstance(it,dict):
+            continue
+        cod=norm_bank_code(it.get('codigo') or it.get('code') or it.get('compe') or '')
+        nome=(it.get('nome') or it.get('name') or it.get('fullName') or it.get('full_name') or '').strip()
+        if not cod or not nome:
+            continue
+        cod=cod.zfill(3)
+        out.append({'codigo':cod,'nome':nome,'label':f'{cod} - {nome}'})
+    seen={}
+    for b in sorted(out,key=lambda x:(x['codigo'],x['nome'].lower())):
+        seen[b['codigo']]=b
+    return list(seen.values())
+
+def _bancos_br_fetch_remote():
+    req=urllib.request.Request('https://brasilapi.com.br/api/banks/v1',headers={'User-Agent':'Mozilla/5.0'})
+    with urllib.request.urlopen(req,timeout=15) as r:
+        data=parse_json_bytes(r.read())
+    if not isinstance(data,list):
+        return []
+    return _bancos_br_normalize(data)
+
+def _bancos_br_load_cached():
+    try:
+        if not os.path.isfile(_BANCOS_BR_CACHE):
+            return []
+        with open(_BANCOS_BR_CACHE,'r',encoding='utf-8') as f:
+            data=json.load(f)
+        return _bancos_br_normalize(data)
+    except Exception:
+        return []
+
+def _bancos_br_save_cache(items):
+    try:
+        os.makedirs(os.path.dirname(_BANCOS_BR_CACHE),exist_ok=True)
+        with open(_BANCOS_BR_CACHE,'w',encoding='utf-8') as f:
+            json.dump(items,f,ensure_ascii=False,indent=2)
+    except Exception:
+        pass
+
+def bancos_br_get(refresh=False):
+    if not refresh:
+        cached=_bancos_br_load_cached()
+        if cached:
+            return cached
+    try:
+        remote=_bancos_br_fetch_remote()
+        if remote:
+            _bancos_br_save_cache(remote)
+            return remote
+    except Exception:
+        pass
+    cached=_bancos_br_load_cached()
+    if cached:
+        return cached
+    return _bancos_br_normalize(_BANCOS_BR_FALLBACK)
 
 def norm_dt8(v):
     s=''.join(ch for ch in str(v or '') if ch.isdigit())
@@ -1972,6 +2091,16 @@ def api_cep(cep):
         return jsonify({'logradouro':d.get('logradouro',''),'bairro':d.get('bairro',''),'cidade':d.get('localidade',''),'estado':d.get('uf','')})
     except Exception as e: return jsonify({'erro':str(e)}),500
 
+@app.route('/api/bancos-br')
+@lr
+def api_bancos_br():
+    q=(request.args.get('q','') or '').strip().lower()
+    refresh=str(request.args.get('refresh','0')).strip().lower() in ('1','true','yes','on')
+    bancos=bancos_br_get(refresh=refresh)
+    if q:
+        bancos=[b for b in bancos if q in b.get('codigo','') or q in b.get('nome','').lower() or q in b.get('label','').lower()]
+    return jsonify({'ok':True,'total':len(bancos),'bancos':bancos})
+
 @app.route('/api/empresas',methods=['GET'])
 @lr
 def api_empresas(): return jsonify([e.to_dict() for e in Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem).all()])
@@ -2142,8 +2271,8 @@ def api_clientes_import():
 @app.route('/api/funcionarios/modelo')
 @lr
 def api_funcionarios_modelo():
-    cab=['matricula','re','nome','cpf','email','telefone','cargo','funcao','cbo','setor','empresa_id','data_admissao','tipo_contrato','jornada','status','salario','vale_refeicao','vale_alimentacao','vale_transporte','cep','endereco','cidade','estado','rg','orgao_emissor','pis','ctps','titulo_eleitor','cert_reservista','cnh','exame_admissional_data','docs_admissao_ok','docs_admissao_obs','obs','areas']
-    exemplo=['1001','300','Joao da Silva','123.456.789-00','joao@empresa.com','5512999990000','Auxiliar','Auxiliar de Limpeza','5143-20','Operacional','1','2026-01-10','CLT','44h semanais','Ativo','2500,00','350,00','450,00','220,00','12246000','Rua A, 100','Sao Jose dos Campos','SP','1234567','SSP/SP','12345678901','123456-serie 001','9876543210','123456','AB','2026-01-08','1','Checklist conferido','Exemplo','rh,operacional,sst']
+    cab=['matricula','re','nome','cpf','email','telefone','cargo','funcao','cbo','setor','empresa_id','data_admissao','tipo_contrato','jornada','status','salario','vale_refeicao','vale_alimentacao','vale_transporte','cep','endereco','endereco_numero','endereco_complemento','endereco_bairro','cidade','estado','banco_codigo','banco_nome','banco_agencia','banco_conta','banco_tipo_conta','banco_pix','rg','orgao_emissor','pis','ctps','titulo_eleitor','cert_reservista','cnh','exame_admissional_data','docs_admissao_ok','docs_admissao_obs','obs','areas']
+    exemplo=['1001','300','Joao da Silva','123.456.789-00','joao@empresa.com','5512999990000','Auxiliar','Auxiliar de Limpeza','5143-20','Operacional','1','2026-01-10','CLT','44h semanais','Ativo','2500,00','350,00','450,00','220,00','12246000','Rua A','100','Apto 12','Centro','Sao Jose dos Campos','SP','077','Banco Inter S.A.','0001','12345-6','corrente','joao@pix.com','1234567','SSP/SP','12345678901','123456-serie 001','9876543210','123456','AB','2026-01-08','1','Checklist conferido','Exemplo','rh,operacional,sst']
     buf=io.StringIO(); w=csv.writer(buf,delimiter=';'); w.writerow(cab); w.writerow(exemplo)
     b=io.BytesIO(buf.getvalue().encode('utf-8-sig')); b.seek(0)
     return send_file(b,mimetype='text/csv',as_attachment=True,download_name='modelo_funcionarios_rmfacilities.csv')
@@ -2191,8 +2320,17 @@ def api_funcionarios_import():
                 vale_transporte=to_num(row.get('vale_transporte'),dec=True),
                 cep=norm_cep(str(row.get('cep','') or '').strip()),
                 endereco=str(row.get('endereco','') or '').strip(),
+                endereco_numero=str(row.get('endereco_numero','') or '').strip(),
+                endereco_complemento=str(row.get('endereco_complemento','') or '').strip(),
+                endereco_bairro=str(row.get('endereco_bairro','') or '').strip(),
                 cidade=str(row.get('cidade','') or '').strip(),
-                estado=str(row.get('estado','') or '').strip(),
+                estado=norm_uf(row.get('estado','')),
+                banco_codigo=norm_bank_code(row.get('banco_codigo')),
+                banco_nome=str(row.get('banco_nome','') or '').strip(),
+                banco_agencia=str(row.get('banco_agencia','') or '').strip(),
+                banco_conta=str(row.get('banco_conta','') or '').strip(),
+                banco_tipo_conta=str(row.get('banco_tipo_conta','') or '').strip(),
+                banco_pix=str(row.get('banco_pix','') or '').strip(),
                 rg=str(row.get('rg','') or '').strip(),
                 orgao_emissor=str(row.get('orgao_emissor','') or '').strip(),
                 pis=str(row.get('pis','') or '').strip(),
@@ -2372,8 +2510,17 @@ def api_criar_funcionario():
         vale_transporte=to_num(d.get('vale_transporte'),dec=True),
         endereco=d.get('endereco','').strip(),
         cidade=d.get('cidade','').strip(),
-        estado=d.get('estado','').strip(),
+        estado=norm_uf(d.get('estado','')),
         cep=norm_cep(d.get('cep','')),
+        endereco_numero=d.get('endereco_numero','').strip(),
+        endereco_complemento=d.get('endereco_complemento','').strip(),
+        endereco_bairro=d.get('endereco_bairro','').strip(),
+        banco_codigo=norm_bank_code(d.get('banco_codigo','')),
+        banco_nome=d.get('banco_nome','').strip(),
+        banco_agencia=d.get('banco_agencia','').strip(),
+        banco_conta=d.get('banco_conta','').strip(),
+        banco_tipo_conta=d.get('banco_tipo_conta','').strip(),
+        banco_pix=d.get('banco_pix','').strip(),
         rg=d.get('rg','').strip(),
         orgao_emissor=d.get('orgao_emissor','').strip(),
         pis=d.get('pis','').strip(),
@@ -2393,13 +2540,15 @@ def api_criar_funcionario():
 @lr
 def api_atualizar_funcionario(id):
     f=Funcionario.query.get_or_404(id); d=request.json or {}
-    for k in ['matricula','re','nome','cpf','email','telefone','cargo','funcao','cbo','setor','empresa_id','data_admissao','tipo_contrato','jornada','status','endereco','cidade','estado','cep','rg','orgao_emissor','pis','ctps','titulo_eleitor','cert_reservista','cnh','exame_admissional_data','docs_admissao_obs','obs']:
+    for k in ['matricula','re','nome','cpf','email','telefone','cargo','funcao','cbo','setor','empresa_id','data_admissao','tipo_contrato','jornada','status','endereco','endereco_numero','endereco_complemento','endereco_bairro','cidade','estado','cep','banco_codigo','banco_nome','banco_agencia','banco_conta','banco_tipo_conta','banco_pix','rg','orgao_emissor','pis','ctps','titulo_eleitor','cert_reservista','cnh','exame_admissional_data','docs_admissao_obs','obs']:
         if k in d:
             if k=='cpf': setattr(f,k,norm_cpf(d.get(k)))
             elif k=='matricula': setattr(f,k,norm_matricula(d.get(k)))
             elif k=='re': setattr(f,k,to_num(d.get(k)))
             elif k=='telefone': setattr(f,k,wa_norm_number(d.get(k)))
             elif k=='cep': setattr(f,k,norm_cep(d.get(k)))
+            elif k=='estado': setattr(f,k,norm_uf(d.get(k)))
+            elif k=='banco_codigo': setattr(f,k,norm_bank_code(d.get(k)))
             else: setattr(f,k,d[k])
     if 'salario' in d: f.salario=to_num(d.get('salario'),dec=True)
     if 'vale_refeicao' in d: f.vale_refeicao=to_num(d.get('vale_refeicao'),dec=True)
@@ -2789,6 +2938,19 @@ def api_backup_restore():
                 py_t=col.type.python_type
             except Exception:
                 py_t=None
+
+            # Backups antigos podem trazer objetos em colunas textuais (ex.: contexto da conversa).
+            if isinstance(val,(dict,list)) and (py_t is str or 'text' in type_name or 'string' in type_name):
+                try:
+                    return json.dumps(val,ensure_ascii=False)
+                except Exception:
+                    return str(val)
+
+            if isinstance(val,bytes) and (py_t is str or 'text' in type_name or 'string' in type_name):
+                try:
+                    return val.decode('utf-8')
+                except Exception:
+                    return val.decode('latin-1',errors='ignore')
 
             if py_t is datetime or 'datetime' in type_name:
                 if isinstance(val,datetime):
@@ -3613,7 +3775,16 @@ with app.app_context():
         'docs_admissao_obs TEXT',
         'app_senha VARCHAR(256)',
         'app_ativo BOOLEAN DEFAULT 1',
-        'app_ultimo_acesso DATETIME'
+        'app_ultimo_acesso DATETIME',
+        'endereco_numero VARCHAR(20)',
+        'endereco_complemento VARCHAR(120)',
+        'endereco_bairro VARCHAR(120)',
+        'banco_codigo VARCHAR(3)',
+        'banco_nome VARCHAR(150)',
+        'banco_agencia VARCHAR(30)',
+        'banco_conta VARCHAR(40)',
+        'banco_tipo_conta VARCHAR(20)',
+        'banco_pix VARCHAR(150)'
     ])
     db.session.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ix_funcionario_re ON funcionario(re)'))
     db.session.commit()

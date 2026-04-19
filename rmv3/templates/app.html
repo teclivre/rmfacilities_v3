@@ -737,12 +737,29 @@
         <div class="f"><label>Vale Alimentação</label><input id="fva" type="number" min="0" step="0.01"></div>
         <div class="f"><label>Vale Transporte</label><input id="fvt" type="number" min="0" step="0.01"></div>
       </div>
-      <div class="g3">
-        <div class="f"><label>CEP</label><input id="fcep" placeholder="00000-000" oninput="maskCEP(this)"></div>
-        <div class="f s2"><label>Endereço</label><input id="fend"></div>
+      <div class="g4">
+        <div class="f s2"><label>Banco (busca por código/nome)</label><div style="display:flex;gap:6px"><input id="fbanco-busca" list="fbanco-list" placeholder="Ex: 077 - Banco Inter S.A." oninput="onBancoBuscaInput()" onblur="onBancoBuscaBlur()" style="flex:1"><button type="button" class="btn b-gh b-sm" onclick="atualizarBancosBR()">Atualizar</button></div><datalist id="fbanco-list"></datalist><div id="fbanco-st" class="hint" style="display:none"></div></div>
+        <div class="f"><label>Código banco</label><input id="fbanco-codigo" maxlength="3" placeholder="077" oninput="this.value=this.value.replace(/\D/g,'').slice(0,3)"></div>
+        <div class="f"><label>Nome do banco</label><input id="fbanco-nome" placeholder="Banco Inter S.A."></div>
       </div>
-      <div class="g3">
-        <div class="f"><label>Cidade/UF</label><input id="fciduf" placeholder="Cidade/UF"></div>
+      <div class="g4">
+        <div class="f"><label>Agência</label><input id="fbanco-agencia" placeholder="0001"></div>
+        <div class="f"><label>Conta</label><input id="fbanco-conta" placeholder="12345-6"></div>
+        <div class="f"><label>Tipo de conta</label><select id="fbanco-tipo"><option value="">Selecione...</option><option value="corrente">Corrente</option><option value="poupanca">Poupança</option><option value="salario">Salário</option><option value="pagamento">Pagamento</option></select></div>
+        <div class="f"><label>Chave PIX</label><input id="fbanco-pix" placeholder="cpf, e-mail, telefone ou aleatória"></div>
+      </div>
+      <div class="g4">
+        <div class="f"><label>CEP</label><input id="fcep" placeholder="00000-000" oninput="maskCEPFuncionario(this)" onblur="buscarCEPFuncionario()"><div id="fcep-st" class="hint" style="display:none"></div></div>
+        <div class="f"><label>Número</label><input id="fnum-end" placeholder="123"></div>
+        <div class="f"><label>Complemento</label><input id="fcompl" placeholder="Apto, bloco, sala..."></div>
+        <div class="f"><label>Bairro</label><input id="fbairro"></div>
+      </div>
+      <div class="g4">
+        <div class="f s2"><label>Endereço (logradouro)</label><input id="fend" placeholder="Rua / Av."></div>
+        <div class="f"><label>Cidade</label><input id="fcidade"></div>
+        <div class="f"><label>Estado (UF)</label><input id="festado" maxlength="2" placeholder="SP"></div>
+      </div>
+      <div class="g2">
         <div class="f"><label>RG</label><input id="frg"></div>
         <div class="f"><label>Órgão emissor</label><input id="forgao"></div>
       </div>
@@ -949,7 +966,7 @@ const N='{{ nome }}', P='{{ perfil }}';
 const USER_AREAS={{ areas|safe }};
 const THEME_KEY='rm_theme';
 const AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','sst','rh-digital','documentos'];
-let todos=[], emps=[], funcs=[], acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
+let todos=[], emps=[], funcs=[], bancosBR=[], acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
 
 function applyTheme(theme){
   const t=(theme==='dark')?'dark':'light';
@@ -990,6 +1007,7 @@ async function init(){
   document.getElementById('dtvenc').value=v.toISOString().split('T')[0];
   await loadEmps();
   await loadDash();
+  await carregarBancosBR();
   todos=await api('/api/clientes');
   funcs=await api('/api/funcionarios');
   document.getElementById('ass1').value=N;
@@ -1750,12 +1768,17 @@ function areaChecksUsuario(sel){
 
 function openModalFunc(modo,id){
   document.getElementById('fid').value='';
-  ['fmatricula','fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fsal','fvr','fva','fvt','fcep','fend','fciduf','frg','forgao','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
+  ['fmatricula','fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fsal','fvr','fva','fvt','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
+  document.getElementById('fbanco-tipo').value='';
   document.getElementById('fddi').value='55';
   const st=document.getElementById('fcpf-st'); if(st){st.style.display='none';st.textContent='';}
+  const stCep=document.getElementById('fcep-st'); if(stCep){stCep.style.display='none';stCep.textContent='';}
+  const stBanco=document.getElementById('fbanco-st'); if(stBanco){stBanco.style.display='none';stBanco.textContent='';}
+  _fCepLastLookup='';
   document.getElementById('fstatus').value='Ativo';
   document.getElementById('fdocs-ok').value='0';
   document.getElementById('femp').value='';
+  if(!bancosBR.length) carregarBancosBR();
   areaChecks([]);
   if(modo==='editar'&&id){
     const f=funcs.find(x=>x.id===id); if(!f)return;
@@ -1800,10 +1823,22 @@ function preencherFormFuncionario(f,titulo='Editar funcionário'){
   document.getElementById('fvr').value=f.vale_refeicao||0;
   document.getElementById('fva').value=f.vale_alimentacao||0;
   document.getElementById('fvt').value=f.vale_transporte||0;
+  document.getElementById('fbanco-codigo').value=f.banco_codigo||'';
+  document.getElementById('fbanco-nome').value=f.banco_nome||'';
+  document.getElementById('fbanco-agencia').value=f.banco_agencia||'';
+  document.getElementById('fbanco-conta').value=f.banco_conta||'';
+  document.getElementById('fbanco-tipo').value=f.banco_tipo_conta||'';
+  document.getElementById('fbanco-pix').value=f.banco_pix||'';
+  document.getElementById('fbanco-busca').value=[f.banco_codigo||'',f.banco_nome||''].filter(Boolean).join(' - ');
   document.getElementById('fcep').value=f.cep||'';
   maskCEP(document.getElementById('fcep'));
-  document.getElementById('fend').value=f.endereco||'';
-  document.getElementById('fciduf').value=[f.cidade||'',f.estado||''].filter(Boolean).join('/');
+  const end=parseEnderecoFuncionario(f.endereco||'');
+  document.getElementById('fend').value=f.endereco||end.logradouro||'';
+  document.getElementById('fnum-end').value=f.endereco_numero||end.numero||'';
+  document.getElementById('fcompl').value=f.endereco_complemento||end.complemento||'';
+  document.getElementById('fbairro').value=f.endereco_bairro||end.bairro||'';
+  document.getElementById('fcidade').value=f.cidade||end.cidade||'';
+  document.getElementById('festado').value=(f.estado||end.estado||'').toUpperCase();
   document.getElementById('frg').value=f.rg||'';
   document.getElementById('forgao').value=f.orgao_emissor||'';
   document.getElementById('fpis').value=f.pis||'';
@@ -1868,6 +1903,99 @@ function composeIntlPhone(){
   return ddi+local;
 }
 
+function parseEnderecoFuncionario(v){
+  const raw=(v||'').toString().trim();
+  const out={logradouro:'',numero:'',complemento:'',bairro:'',cidade:'',estado:''};
+  if(!raw) return out;
+  const chunks=raw.split(' - ');
+  let base=chunks[0]||'';
+  if(chunks.length>1){
+    out.bairro=chunks.slice(1).join(' - ').trim();
+  }
+  const comma=base.split(',').map(s=>s.trim()).filter(Boolean);
+  if(comma.length){
+    out.logradouro=comma[0]||'';
+    out.numero=comma[1]||'';
+    out.complemento=comma.length>2 ? comma.slice(2).join(', ') : '';
+  } else {
+    out.logradouro=base.trim();
+  }
+  return out;
+}
+
+function composeEnderecoFuncionario(){
+  const logradouro=(document.getElementById('fend')?.value||'').trim();
+  const numero=(document.getElementById('fnum-end')?.value||'').trim();
+  const complemento=(document.getElementById('fcompl')?.value||'').trim();
+  const bairro=(document.getElementById('fbairro')?.value||'').trim();
+  const base=[logradouro,numero,complemento].filter(Boolean).join(', ');
+  return [base,bairro].filter(Boolean).join(' - ');
+}
+
+async function carregarBancosBR(refresh=false){
+  try{
+    const sufixo=refresh?'?refresh=1':'';
+    const d=await api('/api/bancos-br'+sufixo);
+    bancosBR=d?.bancos||[];
+    const dl=document.getElementById('fbanco-list');
+    if(dl){
+      dl.innerHTML=bancosBR.map(b=>`<option value="${b.label}"></option>`).join('');
+    }
+  }catch(e){
+    bancosBR=[];
+  }
+}
+
+async function atualizarBancosBR(){
+  const st=document.getElementById('fbanco-st');
+  if(st){
+    st.style.display='block';
+    st.style.color='#888';
+    st.textContent='Atualizando lista de bancos...';
+  }
+  await carregarBancosBR(true);
+  if(st){
+    st.style.display='block';
+    st.style.color='var(--verde)';
+    st.textContent='Lista de bancos atualizada.';
+  }
+}
+
+function onBancoBuscaInput(){
+  const inp=document.getElementById('fbanco-busca');
+  const st=document.getElementById('fbanco-st');
+  const v=(inp?.value||'').trim();
+  if(!v){
+    if(st){st.style.display='none'; st.textContent='';}
+    return;
+  }
+  const m=v.match(/^(\d{3})\s*[-–]\s*(.+)$/);
+  if(m){
+    document.getElementById('fbanco-codigo').value=m[1];
+    document.getElementById('fbanco-nome').value=m[2].trim();
+    if(st){st.style.display='block'; st.style.color='var(--verde)'; st.textContent='Banco identificado automaticamente.';}
+    return;
+  }
+  const code=v.replace(/\D/g,'').slice(0,3);
+  if(code.length===3){
+    const b=bancosBR.find(x=>x.codigo===code);
+    if(b){
+      document.getElementById('fbanco-codigo').value=b.codigo;
+      document.getElementById('fbanco-nome').value=b.nome;
+      if(st){st.style.display='block'; st.style.color='var(--verde)'; st.textContent='Banco encontrado pelo código.';}
+    }
+  }
+}
+
+function onBancoBuscaBlur(){
+  onBancoBuscaInput();
+  const cod=(document.getElementById('fbanco-codigo').value||'').replace(/\D/g,'').slice(0,3);
+  const nome=(document.getElementById('fbanco-nome').value||'').trim();
+  if(cod && nome){
+    document.getElementById('fbanco-busca').value=cod+' - '+nome;
+  }
+}
+
 async function buscarFuncionarioPorCPF(){
   const st=document.getElementById('fcpf-st');
   const cpf=(document.getElementById('fcpf').value||'').replace(/\D/g,'');
@@ -1896,11 +2024,12 @@ async function buscarFuncionarioPorCPF(){
         maskTelefone(document.getElementById('ftel'));
       }
     }
-    const endParts=[d.endereco,d.numero,d.complemento,d.bairro].filter(Boolean);
-    if(endParts.length) document.getElementById('fend').value=endParts.join(', ');
-    if(d.cidade || d.estado){
-      document.getElementById('fciduf').value=[d.cidade||'',d.estado||''].filter(Boolean).join('/');
-    }
+    if(d.endereco) document.getElementById('fend').value=d.endereco;
+    if(d.numero) document.getElementById('fnum-end').value=d.numero;
+    if(d.complemento) document.getElementById('fcompl').value=d.complemento;
+    if(d.bairro) document.getElementById('fbairro').value=d.bairro;
+    if(d.cidade) document.getElementById('fcidade').value=d.cidade;
+    if(d.estado) document.getElementById('festado').value=String(d.estado).toUpperCase();
     const obs=[];
     if(d.nome_social) obs.push('Nome social: '+d.nome_social);
     if(d.nascimento) obs.push('Nascimento: '+d.nascimento);
@@ -1928,7 +2057,6 @@ async function salvarFuncionario(){
   const nome=document.getElementById('fnome').value.trim();
   if(!nome){alert('Nome é obrigatório.');return;}
   const id=document.getElementById('fid').value;
-  const ciduf=(document.getElementById('fciduf').value||'').split('/');
   const areas=AREAS.filter(a=>document.getElementById('fa-'+a)?.checked);
   const d={
     matricula:document.getElementById('fmatricula').value,
@@ -1950,10 +2078,19 @@ async function salvarFuncionario(){
     vale_refeicao:parseFloat(document.getElementById('fvr').value)||0,
     vale_alimentacao:parseFloat(document.getElementById('fva').value)||0,
     vale_transporte:parseFloat(document.getElementById('fvt').value)||0,
+    banco_codigo:(document.getElementById('fbanco-codigo').value||'').replace(/\D/g,'').slice(0,3),
+    banco_nome:(document.getElementById('fbanco-nome').value||'').trim(),
+    banco_agencia:(document.getElementById('fbanco-agencia').value||'').trim(),
+    banco_conta:(document.getElementById('fbanco-conta').value||'').trim(),
+    banco_tipo_conta:(document.getElementById('fbanco-tipo').value||'').trim(),
+    banco_pix:(document.getElementById('fbanco-pix').value||'').trim(),
     cep:document.getElementById('fcep').value,
-    endereco:document.getElementById('fend').value,
-    cidade:(ciduf[0]||'').trim(),
-    estado:(ciduf[1]||'').trim(),
+    endereco:(document.getElementById('fend').value||'').trim(),
+    endereco_numero:(document.getElementById('fnum-end').value||'').trim(),
+    endereco_complemento:(document.getElementById('fcompl').value||'').trim(),
+    endereco_bairro:(document.getElementById('fbairro').value||'').trim(),
+    cidade:(document.getElementById('fcidade').value||'').trim(),
+    estado:(document.getElementById('festado').value||'').trim().toUpperCase().slice(0,2),
     rg:document.getElementById('frg').value,
     orgao_emissor:document.getElementById('forgao').value,
     pis:document.getElementById('fpis').value,
@@ -2325,6 +2462,48 @@ function maskCEP(el){
   let v=el.value.replace(/\D/g,'').substring(0,8);
   if(v.length>5)v=v.replace(/^(\d{5})(\d*)/,'$1-$2');
   el.value=v;
+}
+
+let _fCepLastLookup='';
+
+function maskCEPFuncionario(el){
+  maskCEP(el);
+  const cep=(el.value||'').replace(/\D/g,'');
+  if(cep.length===8 && cep!==_fCepLastLookup){
+    buscarCEPFuncionario();
+  }
+}
+
+async function buscarCEPFuncionario(){
+  const inp=document.getElementById('fcep');
+  const st=document.getElementById('fcep-st');
+  if(!inp || !st)return;
+  const cep=(inp.value||'').replace(/\D/g,'');
+  if(cep.length!==8){
+    st.style.display='none';
+    return;
+  }
+  _fCepLastLookup=cep;
+  st.style.display='block';
+  st.style.color='#888';
+  st.textContent='Buscando CEP...';
+  try{
+    const d=await api('/api/cep/'+cep);
+    if(d?.erro){
+      st.style.color='var(--verm)';
+      st.textContent=d.erro;
+      return;
+    }
+    document.getElementById('fend').value=d?.logradouro||'';
+    document.getElementById('fbairro').value=d?.bairro||'';
+    document.getElementById('fcidade').value=d?.cidade||'';
+    document.getElementById('festado').value=(d?.estado||'').toUpperCase();
+    st.style.color='var(--verde)';
+    st.textContent='Endereço preenchido automaticamente.';
+  }catch(e){
+    st.style.color='var(--verm)';
+    st.textContent='Erro ao buscar CEP.';
+  }
 }
 
 async function buscarCNPJ(){
