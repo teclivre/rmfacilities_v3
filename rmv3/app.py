@@ -148,20 +148,39 @@ class Medicao(db.Model):
 
 class Funcionario(db.Model):
     id=db.Column(db.Integer,primary_key=True)
+    matricula=db.Column(db.String(30),index=True)
+    re=db.Column(db.Integer,unique=True,index=True)
     nome=db.Column(db.String(200),nullable=False)
     cpf=db.Column(db.String(20),unique=True)
     email=db.Column(db.String(150))
     telefone=db.Column(db.String(30))
     cargo=db.Column(db.String(120))
+    funcao=db.Column(db.String(150))
+    cbo=db.Column(db.String(20))
     setor=db.Column(db.String(120))
     empresa_id=db.Column(db.Integer,db.ForeignKey('empresa.id'),nullable=True)
     data_admissao=db.Column(db.String(10))
+    tipo_contrato=db.Column(db.String(60))
+    jornada=db.Column(db.String(80))
     status=db.Column(db.String(20),default='Ativo')
     salario=db.Column(db.Float,default=0)
+    vale_refeicao=db.Column(db.Float,default=0)
+    vale_alimentacao=db.Column(db.Float,default=0)
+    vale_transporte=db.Column(db.Float,default=0)
     endereco=db.Column(db.String(250))
     cidade=db.Column(db.String(100))
     estado=db.Column(db.String(2))
     cep=db.Column(db.String(10))
+    rg=db.Column(db.String(30))
+    orgao_emissor=db.Column(db.String(30))
+    pis=db.Column(db.String(30))
+    ctps=db.Column(db.String(30))
+    titulo_eleitor=db.Column(db.String(30))
+    cert_reservista=db.Column(db.String(30))
+    cnh=db.Column(db.String(30))
+    exame_admissional_data=db.Column(db.String(10))
+    docs_admissao_ok=db.Column(db.Boolean,default=False)
+    docs_admissao_obs=db.Column(db.Text,default='')
     obs=db.Column(db.Text,default='')
     areas=db.Column(db.Text,default='[]')
     app_senha=db.Column(db.String(256))
@@ -272,10 +291,17 @@ class WhatsAppConversa(db.Model):
     numero=db.Column(db.String(30),nullable=False,index=True)
     nome=db.Column(db.String(200))
     ultima_msg=db.Column(db.DateTime,default=utcnow)
+    contexto=db.Column(db.Text,default='{}')
     criado_em=db.Column(db.DateTime,default=utcnow)
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['ultima_msg']=self.ultima_msg.isoformat() if self.ultima_msg else ''
+        d['criado_em']=self.criado_em.isoformat() if self.criado_em else ''
         d['ultima_msg_fmt']=self.ultima_msg.strftime('%d/%m/%Y %H:%M') if self.ultima_msg else ''
+        try:
+            d['contexto']=json.loads(self.contexto or '{}')
+        except:
+            d['contexto']={}
         return d
 
 class WhatsAppMensagem(db.Model):
@@ -289,6 +315,7 @@ class WhatsAppMensagem(db.Model):
     criado_em=db.Column(db.DateTime,default=utcnow)
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['criado_em']=self.criado_em.isoformat() if self.criado_em else ''
         d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
         return d
 
@@ -636,7 +663,21 @@ def wa_norm_number(numero):
 
 def wa_is_valid_number(numero):
     n=re.sub(r'\D+','',str(numero or ''))
-    return bool(re.fullmatch(r'\d{10,15}',n))
+    return bool(re.fullmatch(r'\d{12,15}',n))
+
+def wa_phone_matches(a,b):
+    da=only_digits(a)
+    dbn=only_digits(b)
+    if not da or not dbn:
+        return False
+    na=wa_norm_number(da)
+    nb=wa_norm_number(dbn)
+    if na and nb and na==nb:
+        return True
+    for size in (11,10,9,8):
+        if len(da)>=size and len(dbn)>=size and da[-size:]==dbn[-size:]:
+            return True
+    return False
 
 def wa_send_text(numero,mensagem):
     cfg=wa_cfg()
@@ -754,6 +795,166 @@ def _post_json(url,payload,headers=None,timeout=30):
         detalhe=e.read().decode(errors='ignore')
         raise ValueError(f'IA API {e.code}: {detalhe or e.reason}')
 
+def _post_multipart(url,fields=None,files=None,headers=None,timeout=60):
+    boundary='----rmfacilities'+secrets.token_hex(12)
+    body=bytearray()
+    for k,v in (fields or {}).items():
+        body.extend(f'--{boundary}\r\n'.encode())
+        body.extend(f'Content-Disposition: form-data; name="{k}"\r\n\r\n'.encode())
+        body.extend(str(v).encode('utf-8'))
+        body.extend(b'\r\n')
+    for f in (files or []):
+        body.extend(f'--{boundary}\r\n'.encode())
+        body.extend(
+            f'Content-Disposition: form-data; name="{f.get("field","file")}"; filename="{f.get("filename","arquivo.bin")}"\r\n'.encode()
+        )
+        body.extend(f'Content-Type: {f.get("content_type","application/octet-stream")}\r\n\r\n'.encode())
+        body.extend(f.get('data') or b'')
+        body.extend(b'\r\n')
+    body.extend(f'--{boundary}--\r\n'.encode())
+    h={'Content-Type':f'multipart/form-data; boundary={boundary}'}
+    if headers:
+        h.update(headers)
+    req=urllib.request.Request(url,data=bytes(body),headers=h)
+    try:
+        with urllib.request.urlopen(req,timeout=timeout) as r:
+            raw=r.read().decode('utf-8',errors='ignore')
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        detalhe=e.read().decode(errors='ignore')
+        raise ValueError(f'IA API {e.code}: {detalhe or e.reason}')
+
+def _http_read_bytes(url,headers=None,timeout=30):
+    req=urllib.request.Request(url,headers=headers or {})
+    with urllib.request.urlopen(req,timeout=timeout) as r:
+        return r.read()
+
+def _audio_ext_from_mime(mime):
+    m=(mime or '').split(';')[0].strip().lower()
+    return {
+        'audio/ogg':'ogg',
+        'audio/opus':'ogg',
+        'audio/webm':'webm',
+        'audio/mpeg':'mp3',
+        'audio/mp3':'mp3',
+        'audio/mp4':'m4a',
+        'audio/x-m4a':'m4a',
+        'audio/wav':'wav',
+        'audio/x-wav':'wav',
+        'audio/aac':'aac',
+    }.get(m,'ogg')
+
+def _maybe_b64decode(raw):
+    s=str(raw or '').strip()
+    if not s:
+        return b''
+    if ',' in s and ';base64' in s[:80].lower():
+        s=s.split(',',1)[1]
+    s=re.sub(r'\s+','',s)
+    try:
+        return base64.b64decode(s)
+    except Exception:
+        return b''
+
+def _extract_audio_blob(msg_data):
+    msg_obj=msg_data.get('message',{}) if isinstance(msg_data.get('message',{}),dict) else {}
+    audio_obj=msg_obj.get('audioMessage',{}) if isinstance(msg_obj.get('audioMessage',{}),dict) else {}
+    mime=(
+        audio_obj.get('mimetype') or
+        audio_obj.get('mimeType') or
+        msg_data.get('mimetype') or
+        msg_data.get('mimeType') or
+        'audio/ogg'
+    )
+    filename=(
+        audio_obj.get('fileName') or
+        msg_data.get('fileName') or
+        f'audio.{_audio_ext_from_mime(mime)}'
+    )
+    for candidate in (
+        audio_obj.get('base64'),
+        audio_obj.get('media'),
+        audio_obj.get('data'),
+        audio_obj.get('fileBase64'),
+        msg_data.get('base64'),
+        msg_data.get('media'),
+        msg_data.get('data'),
+    ):
+        blob=_maybe_b64decode(candidate)
+        if blob:
+            return blob,mime,filename
+
+    headers={}
+    cfg=wa_cfg()
+    if (cfg.get('token') or '').strip():
+        headers['apikey']=cfg['token']
+        headers['Authorization']=f'Bearer {cfg["token"]}'
+    for media_url in (
+        audio_obj.get('url'),
+        audio_obj.get('mediaUrl'),
+        audio_obj.get('directPath'),
+        msg_data.get('mediaUrl'),
+        msg_data.get('url'),
+    ):
+        u=str(media_url or '').strip()
+        if not u or not u.startswith(('http://','https://')):
+            continue
+        try:
+            blob=_http_read_bytes(u,headers=headers,timeout=45)
+            if blob:
+                return blob,mime,filename
+        except Exception:
+            continue
+    return b'',mime,filename
+
+def wa_transcribe_audio(msg_data):
+    audio_bytes,mime,filename=_extract_audio_blob(msg_data)
+    if not audio_bytes:
+        return ''
+    cfg=ai_wa_cfg()
+    key=(cfg.get('api_key') or '').strip()
+    if not key:
+        return ''
+    provider=ai_provider_norm(cfg.get('provider') or 'gemini')
+    if key.startswith('AIza'):
+        provider='gemini'
+    elif key.startswith('sk-'):
+        provider='openai'
+
+    mime_base=(mime or 'audio/ogg').split(';')[0].strip().lower() or 'audio/ogg'
+    if provider=='openai':
+        url=(gc('ia_openai_audio_url','') or 'https://api.openai.com/v1/audio/transcriptions').strip()
+        out=_post_multipart(
+            url,
+            fields={
+                'model':'whisper-1',
+                'language':'pt',
+                'prompt':'Transcreva em portugues do Brasil.',
+            },
+            files=[{'field':'file','filename':filename,'content_type':mime_base,'data':audio_bytes}],
+            headers={'Authorization':f'Bearer {key}'},
+            timeout=90,
+        )
+        return str(out.get('text') or out.get('transcript') or '').strip()
+
+    model=ai_model_norm('gemini',cfg.get('model') or '')
+    base=(gc('ia_gemini_url','') or '').strip()
+    url=base or f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}'
+    payload={
+        'contents':[{ 
+            'role':'user',
+            'parts':[
+                {'text':'Transcreva este audio em portugues do Brasil. Responda apenas com a transcricao, sem observacoes adicionais.'},
+                {'inline_data':{'mime_type':mime_base,'data':base64.b64encode(audio_bytes).decode()}}
+            ]
+        }],
+        'generationConfig':{'temperature':0.1,'maxOutputTokens':700}
+    }
+    out=_post_json(url,payload,timeout=90)
+    cand=(out.get('candidates') or [{}])[0]
+    parts=((cand.get('content') or {}).get('parts') or [])
+    return '\n'.join((p.get('text') or '').strip() for p in parts if (p.get('text') or '').strip()).strip()
+
 def _build_turns(hist,in_role,out_role):
     """Merge consecutive same-role messages into valid chat turns."""
     turns=[]
@@ -767,15 +968,398 @@ def _build_turns(hist,in_role,out_role):
             turns.append({'role':role,'_text':txt_m})
     return turns
 
+def _detecta_pedido_holerite(texto):
+    """Detecta se o texto contém um pedido de holerite."""
+    palavras=['holerite','hollerite','contracheque','contra-cheque','recibo','salario','salário','comprovante de renda','comprovante','vencimento','13o','décimo terceiro']
+    txt_lower=texto.lower()
+    return any(p in txt_lower for p in palavras)
+
+def funcionario_docs_whatsapp_habilitado(funcionario):
+    if not funcionario:
+        return False
+    try:
+        ars=json.loads(funcionario.areas or '[]')
+    except Exception:
+        ars=[]
+    return 'documentos' in ars
+
+def _parse_competencias_holerite(texto,ano_padrao=None):
+    """Extrai uma ou mais competências (MM/YYYY) do texto.
+
+    Regras:
+    - aceita formatos numéricos (05/2026, 5-2026)
+    - aceita nomes de meses (maio, junho)
+    - quando o ano não é informado, usa o ano corrente
+    """
+    if ano_padrao is None:
+        ano_padrao=datetime.now().year
+    s=(texto or '').strip().lower()
+    if not s:
+        return []
+
+    ano_global=None
+    m_ano=re.search(r'\b(19\d{2}|20\d{2})\b',s)
+    if m_ano:
+        try:
+            ano_global=int(m_ano.group(1))
+        except Exception:
+            ano_global=None
+
+    meses={
+        'janeiro':1,'jan':1,
+        'fevereiro':2,'fev':2,
+        'marco':3,'março':3,'mar':3,
+        'abril':4,'abr':4,
+        'maio':5,'mai':5,
+        'junho':6,'jun':6,
+        'julho':7,'jul':7,
+        'agosto':8,'ago':8,
+        'setembro':9,'set':9,
+        'outubro':10,'out':10,
+        'novembro':11,'nov':11,
+        'dezembro':12,'dez':12,
+    }
+
+    out=[]
+    seen=set()
+
+    def add_comp(mes,ano):
+        try:
+            mi=int(mes)
+            ai=int(ano)
+        except Exception:
+            return
+        if not (1<=mi<=12 and 1900<=ai<=2099):
+            return
+        comp=f"{mi:02d}/{ai}"
+        if comp not in seen:
+            seen.add(comp)
+            out.append(comp)
+
+    for mm,yy in re.findall(r'\b(0?[1-9]|1[0-2])\s*[/-]\s*(\d{4})\b',s):
+        add_comp(mm,yy)
+
+    for mt in re.finditer(r'\b(janeiro|jan|fevereiro|fev|março|marco|mar|abril|abr|maio|mai|junho|jun|julho|jul|agosto|ago|setembro|set|outubro|out|novembro|nov|dezembro|dez)\b(?:\s*(?:de|/|-)?\s*(\d{4}))?',s):
+        token=mt.group(1)
+        ano_txt=mt.group(2)
+        ano=int(ano_txt) if ano_txt else (ano_global or ano_padrao)
+        add_comp(meses.get(token),ano)
+
+    # Se vier apenas mês numérico sem ano (ex.: "5 e 6"), assume ano corrente.
+    for mm in re.findall(r'\b(0?[1-9]|1[0-2])\b',s):
+        add_comp(mm,ano_global or ano_padrao)
+
+    return out
+
+def _processa_dialogo_holerite(conversa_id,numero,texto):
+    """Processa o diálogo de busca e envio de holerite."""
+    conversa=WhatsAppConversa.query.get(conversa_id)
+    if not conversa:
+        return None
+    
+    try:
+        ctx=json.loads(conversa.contexto or '{}')
+    except:
+        ctx={}
+    
+    estado=ctx.get('holerite_estado')
+    
+    # Estado inicial: solicitar dados
+    if not estado:
+        ctx['holerite_estado']='aguardando_identificacao'
+        ctx['holerite_tentativas']=0
+        conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+        db.session.commit()
+        return "Ótimo! Para buscar seu holerite, primeiro preciso do seu nome completo.\n\nPor favor, digite seu nome completo."
+    
+    # Aguardando identificação por nome
+    if estado=='aguardando_identificacao':
+        texto_clean=texto.strip()
+        nome_match=re.sub(r'[\d\-.]','',texto_clean).strip()
+        if not nome_match or len(nome_match)<3:
+            ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            if ctx['holerite_tentativas']>=3:
+                ctx['holerite_estado']=None
+                conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+                db.session.commit()
+                return "Desculpe, não consegui identificar seu nome completo. Envie 'holerite' para recomeçar."
+            return "Não consegui identificar seu nome completo. Digite apenas seu nome e sobrenome."
+        
+        # Busca o funcionário pelo nome informado.
+        funcionarios=Funcionario.query.filter(Funcionario.nome.ilike(f'%{nome_match}%')).all()
+        funcionarios_com_tel=[f for f in funcionarios if wa_phone_matches(numero,f.telefone)]
+        if funcionarios_com_tel:
+            funcionarios=funcionarios_com_tel
+        
+        if not funcionarios:
+            ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            if ctx['holerite_tentativas']>=3:
+                ctx['holerite_estado']=None
+                conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+                db.session.commit()
+                return "Desculpe, não consegui validar seu cadastro com este número de telefone. Verifique o nome informado e se está falando do telefone cadastrado."
+            return "Não encontrei um cadastro compatível com seu nome e este número de telefone. Verifique o nome completo e tente novamente."
+        
+        if len(funcionarios)>1:
+            ctx['holerite_estado']='escolhendo_funcionario'
+            ctx['holerite_opcoes']=[f.id for f in funcionarios]
+            ctx['holerite_tentativas']=0
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            opcoes_txt='\n'.join([f"{i+1}️⃣ {func.nome} (RE {func.re})" for i,func in enumerate(funcionarios)])
+            return f"Encontrei múltiplos registros. Qual é você?\n\n{opcoes_txt}"
+        
+        # Um único funcionário encontrado
+        funcionario=funcionarios[0]
+        if not wa_phone_matches(numero,funcionario.telefone):
+            ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            if ctx['holerite_tentativas']>=3:
+                ctx['holerite_estado']=None
+                conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+                db.session.commit()
+                return "Por segurança, não consegui validar seu telefone com o cadastro do funcionário. Envie 'holerite' para recomeçar ou fale com o RH."
+            return "Por segurança, este telefone não confere com o cadastro do funcionário informado. Tente novamente usando o telefone cadastrado."
+        if not funcionario_docs_whatsapp_habilitado(funcionario):
+            ctx['holerite_estado']=None
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            return "Seu cadastro não está habilitado para receber documentos pelo WhatsApp. Solicite ao RH a liberação de acesso a documentos."
+        ctx['holerite_estado']='aguardando_cpf'
+        ctx['holerite_funcionario_id']=funcionario.id
+        ctx['holerite_tentativas']=0
+        conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+        db.session.commit()
+        return f"Encontrei seu cadastro, {funcionario.nome}.\n\nPor segurança, informe seu CPF completo (apenas números) para liberar o envio do holerite."
+    
+    # Escolhendo entre múltiplos funcionários
+    if estado=='escolhendo_funcionario':
+        try:
+            escolha=int(texto.strip())
+            opcoes=ctx.get('holerite_opcoes',[])
+            if 1<=escolha<=len(opcoes):
+                func_id=opcoes[escolha-1]
+                funcionario=Funcionario.query.get(func_id)
+                if funcionario:
+                    if not wa_phone_matches(numero,funcionario.telefone):
+                        ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
+                        conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+                        db.session.commit()
+                        if ctx['holerite_tentativas']>=3:
+                            ctx['holerite_estado']=None
+                            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+                            db.session.commit()
+                            return "Por segurança, este telefone não corresponde ao cadastro do funcionário selecionado. Envie 'holerite' para recomeçar ou fale com o RH."
+                        return "Por segurança, este telefone não corresponde ao cadastro do funcionário selecionado."
+                    if not funcionario_docs_whatsapp_habilitado(funcionario):
+                        ctx['holerite_estado']=None
+                        conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+                        db.session.commit()
+                        return "Seu cadastro não está habilitado para receber documentos pelo WhatsApp. Solicite ao RH a liberação de acesso a documentos."
+                    ctx['holerite_estado']='aguardando_cpf'
+                    ctx['holerite_funcionario_id']=func_id
+                    ctx['holerite_tentativas']=0
+                    conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+                    db.session.commit()
+                    return f"Perfeito, {funcionario.nome}.\n\nPor segurança, informe seu CPF completo (apenas números) para liberar o envio do holerite."
+        except:
+            pass
+        
+        ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
+        if ctx['holerite_tentativas']>=3:
+            ctx['holerite_estado']=None
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            return "Desculpe, não consegui processar sua escolha. Envie 'holerite' novamente para recomeçar."
+        
+        conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+        db.session.commit()
+        return "Responda com o número (1, 2, 3...) do funcionário desejado."
+
+    # Validação de CPF antes de informar competência
+    if estado=='aguardando_cpf':
+        func_id=ctx.get('holerite_funcionario_id')
+        funcionario=Funcionario.query.get(func_id) if func_id else None
+        if not funcionario:
+            ctx['holerite_estado']=None
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            return "Desculpe, houve um erro ao validar seus dados. Envie 'holerite' para recomeçar."
+        if not funcionario_docs_whatsapp_habilitado(funcionario):
+            ctx['holerite_estado']=None
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            return "Seu cadastro não está habilitado para receber documentos pelo WhatsApp. Solicite ao RH a liberação de acesso a documentos."
+        if not wa_phone_matches(numero,funcionario.telefone):
+            ctx['holerite_estado']=None
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            return "Por segurança, este telefone não corresponde ao cadastro do funcionário. Procure o RH para atualizar seu número e tente novamente."
+
+        cpf_informado=only_digits(texto)
+        cpf_cadastrado=only_digits(funcionario.cpf or '')
+        if len(cpf_informado)!=11:
+            ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            if ctx['holerite_tentativas']>=3:
+                ctx['holerite_estado']=None
+                conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+                db.session.commit()
+                return "Não foi possível validar sua identidade. Envie 'holerite' para recomeçar."
+            return "CPF inválido. Informe seu CPF completo com 11 dígitos (apenas números)."
+
+        if not cpf_cadastrado or cpf_informado!=cpf_cadastrado:
+            ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            if ctx['holerite_tentativas']>=3:
+                ctx['holerite_estado']=None
+                conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+                db.session.commit()
+                return "CPF não confere com o cadastro. Por segurança, o fluxo foi encerrado. Envie 'holerite' para tentar novamente."
+            return "CPF não confere com o cadastro. Tente novamente com o CPF correto."
+
+        ctx['holerite_estado']='aguardando_competencia'
+        ctx['holerite_tentativas']=0
+        conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+        db.session.commit()
+        return "Identidade validada com sucesso.\n\nAgora informe o(s) mês(es) do holerite. Você pode pedir mais de um de uma vez (ex.: 05/2026 e 06/2026, ou maio e junho). Se não informar o ano, assumirei o ano corrente."
+    
+    # Aguardando competência (mês/ano)
+    if estado=='aguardando_competencia':
+        competencias=_parse_competencias_holerite(texto,ano_padrao=datetime.now().year)
+        if not competencias:
+            ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            if ctx['holerite_tentativas']>=3:
+                ctx['holerite_estado']=None
+                conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+                db.session.commit()
+                return "Desculpe, não consegui processar a data. Envie 'holerite' novamente para recomeçar."
+            return "Formato inválido. Informe mês/ano (ex: 04/2026) ou nomes de meses (ex: maio e junho). Se não informar o ano, usarei o ano corrente."
+
+        func_id=ctx.get('holerite_funcionario_id')
+        funcionario=Funcionario.query.get(func_id) if func_id else None
+        
+        if not funcionario:
+            ctx['holerite_estado']=None
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            return "Desculpe, houve um erro ao buscar seus dados. Tente novamente."
+
+        arquivos_por_comp=[]
+        nao_encontrados=[]
+        for competencia in competencias:
+            arquivo=FuncionarioArquivo.query.filter(
+                FuncionarioArquivo.funcionario_id==func_id,
+                FuncionarioArquivo.categoria=='holerite',
+                FuncionarioArquivo.competencia==competencia
+            ).first()
+            if arquivo:
+                arquivos_por_comp.append((competencia,arquivo))
+            else:
+                nao_encontrados.append(competencia)
+
+        if not arquivos_por_comp:
+            ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            if ctx['holerite_tentativas']>=3:
+                ctx['holerite_estado']=None
+                conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+                db.session.commit()
+                return "Desculpe, não encontrei seu holerite. Envie 'holerite' para tentar novamente."
+            if nao_encontrados:
+                return f"Ops! Não encontrei holerite para: {', '.join(nao_encontrados)}. Tente outro mês ou verifique os dados."
+            return "Ops! Não encontrei seu holerite para os meses informados."
+        
+        # Envia um ou mais holerites
+        try:
+            enviados=[]
+            erros=[]
+            for competencia,arquivo in arquivos_por_comp:
+                caminho_abs=os.path.join(UPLOAD_ROOT,arquivo.caminho)
+                if not os.path.exists(caminho_abs):
+                    erros.append(f"{competencia} (arquivo indisponível)")
+                    continue
+                nome_arquivo=(arquivo.nome_arquivo or os.path.basename(caminho_abs) or f'holerite_{competencia.replace("/", "-")}.pdf')
+                wa_send_pdf(numero,caminho_abs,nome_arquivo,f"Holerite {competencia}")
+                enviados.append((competencia,nome_arquivo))
+
+            ctx['holerite_estado']=None
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            conversa.ultima_msg=utcnow()
+            if enviados:
+                db.session.add(WhatsAppMensagem(
+                    conversa_id=conversa.id,
+                    numero=numero,
+                    direcao='out',
+                    tipo='documento',
+                    conteudo='Holerites enviados: '+', '.join([f"{c} ({n})" for c,n in enviados])
+                ))
+            db.session.commit()
+
+            if not enviados:
+                base='Não consegui enviar os holerites solicitados agora.'
+                if erros:
+                    base+=f" Erros: {', '.join(erros)}."
+                if nao_encontrados:
+                    base+=f" Não encontrados: {', '.join(nao_encontrados)}."
+                return base
+
+            comps_enviadas=', '.join([c for c,_ in enviados])
+            msg=f"✅ Pronto! Enviei seu(s) holerite(s) de: {comps_enviadas}."
+            if nao_encontrados:
+                msg+=f"\n\nNão encontrei para: {', '.join(nao_encontrados)}."
+            if erros:
+                msg+=f"\n\nHouve falha no envio para: {', '.join(erros)}."
+            return msg
+        except Exception as e:
+            ctx['holerite_estado']=None
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            return f"Desculpe, houve um erro ao enviar seu holerite. Tente novamente mais tarde."
+    
+    # Padrão: reinicia o diálogo
+    ctx['holerite_estado']=None
+    conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+    db.session.commit()
+    return None
+
 def ai_wa_reply(numero,texto,historico=None):
     txt=(texto or '').strip()
     if not txt: return ''
+    
+    # Verifica se é um pedido de holerite
+    conversa=WhatsAppConversa.query.filter_by(numero=numero).first()
+    if conversa and _detecta_pedido_holerite(txt):
+        resposta_holerite=_processa_dialogo_holerite(conversa.id,numero,txt)
+        if resposta_holerite is not None:
+            return resposta_holerite
+    elif conversa:
+        # Verifica se está em um diálogo de holerite já em progresso
+        try:
+            ctx=json.loads(conversa.contexto or '{}')
+            if ctx.get('holerite_estado'):
+                resposta_holerite=_processa_dialogo_holerite(conversa.id,numero,txt)
+                if resposta_holerite is not None:
+                    return resposta_holerite
+        except:
+            pass
+    
     cfg=ai_wa_cfg()
     key=(cfg.get('api_key') or '').strip()
     if not key: raise ValueError('API Key da IA nao configurada')
     provider=ai_provider_norm(cfg.get('provider') or 'gemini')
     model=ai_model_norm(provider,cfg.get('model') or '')
-    system=(cfg.get('prompt') or '').strip() or 'Você é um assistente de atendimento da RM Facilities. Responda em português, de forma objetiva e cordial.'
+    system=(cfg.get('prompt') or '').strip() or 'Você é um assistente de atendimento da RM Facilities. Responda em português, de forma objetiva e cordial. Se o usuário pedir por holerite, contracheque ou documentos relacionados, responda de forma amigável. Se o usuário pedir mais de um mês e não informar o ano, considere o ano corrente.'
     try: temp=float(cfg.get('temperature') or 0.3)
     except Exception: temp=0.3
     try: max_tk=int(float(cfg.get('max_tokens') or 350))
@@ -793,8 +1377,42 @@ def ai_wa_reply(numero,texto,historico=None):
             msgs=[{'role':'system','content':system},{'role':'user','content':f'Número: {numero}\nMensagem: {txt}'}]
         payload={'model':mdl,'messages':msgs,'temperature':temp,'max_tokens':max_tk}
         out=_post_json(url,payload,headers={'Authorization':f'Bearer {key}'},timeout=45)
-        resp=((out.get('choices') or [{}])[0].get('message') or {}).get('content') or ''
-        return str(resp).strip()
+        msg=((out.get('choices') or [{}])[0].get('message') or {})
+        resp=msg.get('content') or ''
+        if isinstance(resp,list):
+            # Newer OpenAI payloads may return content blocks instead of a plain string.
+            txt_blocks=[]
+            for b in resp:
+                if isinstance(b,dict):
+                    t=(b.get('text') or '').strip()
+                    if t:
+                        txt_blocks.append(t)
+            resp='\n'.join(txt_blocks)
+        resp=str(resp).strip()
+        if resp:
+            return resp
+        # Fallback sem historico quando o provider retorna escolha vazia.
+        payload_fb={
+            'model':mdl,
+            'messages':[{'role':'system','content':system},{'role':'user','content':f'Número: {numero}\nMensagem: {txt}'}],
+            'temperature':temp,
+            'max_tokens':max_tk
+        }
+        out_fb=_post_json(url,payload_fb,headers={'Authorization':f'Bearer {key}'},timeout=45)
+        msg_fb=((out_fb.get('choices') or [{}])[0].get('message') or {})
+        resp_fb=msg_fb.get('content') or ''
+        if isinstance(resp_fb,list):
+            txt_blocks=[]
+            for b in resp_fb:
+                if isinstance(b,dict):
+                    t=(b.get('text') or '').strip()
+                    if t:
+                        txt_blocks.append(t)
+            resp_fb='\n'.join(txt_blocks)
+        resp_fb=str(resp_fb).strip()
+        if resp_fb:
+            return resp_fb
+        raise ValueError('IA retornou resposta vazia (OpenAI). Verifique modelo/chave e tente novamente.')
     if provider=='gemini':
         if key.startswith('sk-'):
             raise ValueError('API Key parece ser da OpenAI, mas o provedor selecionado é Gemini.')
@@ -812,7 +1430,25 @@ def ai_wa_reply(numero,texto,historico=None):
         cand=(out.get('candidates') or [{}])[0]
         parts=((cand.get('content') or {}).get('parts') or [])
         resp='\n'.join((p.get('text') or '').strip() for p in parts if (p.get('text') or '').strip())
-        return resp.strip()
+        resp=resp.strip()
+        if resp:
+            return resp
+        # Fallback sem historico quando Gemini nao devolve parts/texto.
+        payload_fb={
+            'system_instruction':{'parts':[{'text':system}]},
+            'contents':[{'role':'user','parts':[{'text':f'Número: {numero}\nMensagem: {txt}'}]}],
+            'generationConfig':{'temperature':temp,'maxOutputTokens':max_tk}
+        }
+        out_fb=_post_json(url,payload_fb,timeout=45)
+        cand_fb=(out_fb.get('candidates') or [{}])[0]
+        parts_fb=((cand_fb.get('content') or {}).get('parts') or [])
+        resp_fb='\n'.join((p.get('text') or '').strip() for p in parts_fb if (p.get('text') or '').strip()).strip()
+        if resp_fb:
+            return resp_fb
+        finish=(cand_fb.get('finishReason') or cand.get('finishReason') or '').strip()
+        if finish:
+            raise ValueError(f'IA retornou resposta vazia (Gemini: {finish}).')
+        raise ValueError('IA retornou resposta vazia (Gemini). Verifique modelo/chave e tente novamente.')
     raise ValueError('Provedor de IA inválido. Use gemini ou openai.')
 
 def smtp_send_pdf(dest,nome_dest,caminho_abs,nome_arquivo,competencia='',remetente='RM Facilities'):
@@ -832,7 +1468,7 @@ def smtp_send_pdf(dest,nome_dest,caminho_abs,nome_arquivo,competencia='',remeten
     else:
         with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s: s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
 
-ALLOWED_AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','sst','rh-digital']
+ALLOWED_AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','sst','rh-digital','documentos']
 UPLOAD_ROOT=os.path.join(os.path.dirname(__file__),'instance','uploads')
 DOC_CAT_PATH={
     'aso':'aso',
@@ -1085,6 +1721,33 @@ def norm_phone(v):
 
 def norm_cep(v):
     return only_digits(v)[:8]
+
+def norm_matricula(v):
+    return only_digits(v)[:20]
+
+def to_bool(v):
+    if isinstance(v,bool):
+        return v
+    return str(v or '').strip().lower() in ('1','true','sim','yes','on')
+
+def next_func_matricula():
+    mx=0
+    for (m,) in db.session.query(Funcionario.matricula).all():
+        d=only_digits(m)
+        if not d:
+            continue
+        try:
+            mx=max(mx,int(d))
+        except Exception:
+            pass
+    return str(mx+1)
+
+def next_func_re():
+    mx=299
+    for (r,) in db.session.query(Funcionario.re).all():
+        if r and isinstance(r,int):
+            mx=max(mx,int(r))
+    return mx+1
 
 def parse_json_bytes(raw):
     try:
@@ -1479,8 +2142,8 @@ def api_clientes_import():
 @app.route('/api/funcionarios/modelo')
 @lr
 def api_funcionarios_modelo():
-    cab=['nome','cpf','email','telefone','cargo','setor','empresa_id','data_admissao','status','salario','cep','endereco','cidade','estado','obs','areas']
-    exemplo=['Joao da Silva','123.456.789-00','joao@empresa.com','5512999990000','Auxiliar','Operacional','1','2026-01-10','Ativo','2500,00','12246000','Rua A, 100','Sao Jose dos Campos','SP','Exemplo','rh,operacional,sst']
+    cab=['matricula','re','nome','cpf','email','telefone','cargo','funcao','cbo','setor','empresa_id','data_admissao','tipo_contrato','jornada','status','salario','vale_refeicao','vale_alimentacao','vale_transporte','cep','endereco','cidade','estado','rg','orgao_emissor','pis','ctps','titulo_eleitor','cert_reservista','cnh','exame_admissional_data','docs_admissao_ok','docs_admissao_obs','obs','areas']
+    exemplo=['1001','300','Joao da Silva','123.456.789-00','joao@empresa.com','5512999990000','Auxiliar','Auxiliar de Limpeza','5143-20','Operacional','1','2026-01-10','CLT','44h semanais','Ativo','2500,00','350,00','450,00','220,00','12246000','Rua A, 100','Sao Jose dos Campos','SP','1234567','SSP/SP','12345678901','123456-serie 001','9876543210','123456','AB','2026-01-08','1','Checklist conferido','Exemplo','rh,operacional,sst']
     buf=io.StringIO(); w=csv.writer(buf,delimiter=';'); w.writerow(cab); w.writerow(exemplo)
     b=io.BytesIO(buf.getvalue().encode('utf-8-sig')); b.seek(0)
     return send_file(b,mimetype='text/csv',as_attachment=True,download_name='modelo_funcionarios_rmfacilities.csv')
@@ -1505,21 +2168,41 @@ def api_funcionarios_import():
             areas_raw=str(row.get('areas','') or '')
             ars=[a.strip().lower() for a in re.split(r'[;,]',areas_raw) if a.strip()]
             ars=[a for a in ars if a in ALLOWED_AREAS]
+            mat=norm_matricula(row.get('matricula')) or next_func_matricula()
             f=Funcionario(
+                matricula=mat,
+                re=to_num(row.get('re')) or next_func_re(),
                 nome=nome,
                 cpf=norm_cpf(str(row.get('cpf','') or '').strip()),
                 email=str(row.get('email','') or '').strip(),
                 telefone=wa_norm_number(str(row.get('telefone','') or '').strip()),
                 cargo=str(row.get('cargo','') or '').strip(),
+                funcao=str(row.get('funcao','') or '').strip(),
+                cbo=str(row.get('cbo','') or '').strip(),
                 setor=str(row.get('setor','') or '').strip(),
                 empresa_id=to_num(row.get('empresa_id')) or None,
                 data_admissao=str(row.get('data_admissao','') or '').strip(),
+                tipo_contrato=str(row.get('tipo_contrato','') or '').strip(),
+                jornada=str(row.get('jornada','') or '').strip(),
                 status=str(row.get('status','Ativo') or 'Ativo').strip() or 'Ativo',
                 salario=to_num(row.get('salario'),dec=True),
+                vale_refeicao=to_num(row.get('vale_refeicao'),dec=True),
+                vale_alimentacao=to_num(row.get('vale_alimentacao'),dec=True),
+                vale_transporte=to_num(row.get('vale_transporte'),dec=True),
                 cep=norm_cep(str(row.get('cep','') or '').strip()),
                 endereco=str(row.get('endereco','') or '').strip(),
                 cidade=str(row.get('cidade','') or '').strip(),
                 estado=str(row.get('estado','') or '').strip(),
+                rg=str(row.get('rg','') or '').strip(),
+                orgao_emissor=str(row.get('orgao_emissor','') or '').strip(),
+                pis=str(row.get('pis','') or '').strip(),
+                ctps=str(row.get('ctps','') or '').strip(),
+                titulo_eleitor=str(row.get('titulo_eleitor','') or '').strip(),
+                cert_reservista=str(row.get('cert_reservista','') or '').strip(),
+                cnh=str(row.get('cnh','') or '').strip(),
+                exame_admissional_data=str(row.get('exame_admissional_data','') or '').strip(),
+                docs_admissao_ok=str(row.get('docs_admissao_ok','') or '').strip().lower() in ('1','true','sim','yes','on'),
+                docs_admissao_obs=str(row.get('docs_admissao_obs','') or '').strip(),
                 obs=str(row.get('obs','') or '').strip(),
                 areas=json.dumps(ars,ensure_ascii=False)
             )
@@ -1597,13 +2280,25 @@ def api_funcionarios():
     if q:
         qdig=only_digits(q)
         lst=[f for f in lst if (
+            q in (f.matricula or '').lower() or
             q in (f.nome or '').lower() or
             q in (f.cpf or '').lower() or
             q in (f.cargo or '').lower() or
+            q in (f.funcao or '').lower() or
             q in (f.telefone or '').lower() or
-            (qdig and (qdig in only_digits(f.cpf) or qdig in only_digits(f.telefone)))
+            (qdig and (qdig in only_digits(f.matricula) or qdig in only_digits(f.cpf) or qdig in only_digits(f.telefone)))
         )]
     return jsonify([f.to_dict() for f in lst])
+
+@app.route('/api/funcionarios/proxima-matricula')
+@lr
+def api_funcionarios_proxima_matricula():
+    return jsonify({'ok':True,'matricula':next_func_matricula()})
+
+@app.route('/api/funcionarios/proxima-re')
+@lr
+def api_funcionarios_proxima_re():
+    return jsonify({'ok':True,'re':next_func_re()})
 
 @app.route('/api/funcionarios/cpf-lookup')
 @lr
@@ -1618,26 +2313,99 @@ def api_funcionario_cpf_lookup():
     r=lookup_cpf_externo(cpf)
     return jsonify(r)
 
+@app.route('/api/funcionarios/busca-rapida')
+@lr
+def api_funcionario_busca_rapida():
+    re=to_num(request.args.get('re'))
+    cpf=only_digits(request.args.get('cpf',''))
+    nome=(request.args.get('nome','') or '').strip().lower()
+    
+    resultados=[]
+    
+    # Busca por RE se fornecido
+    if re and re>0:
+        f=Funcionario.query.filter_by(re=re).first()
+        if f:
+            resultados.append(f.to_dict())
+    
+    # Busca por CPF se fornecido
+    if cpf and len(cpf)==11:
+        f=Funcionario.query.filter(Funcionario.cpf.ilike(f'%{cpf}%')).first()
+        if f and f.to_dict() not in resultados:
+            resultados.append(f.to_dict())
+    
+    # Busca por nome se fornecido
+    if nome:
+        funcs=Funcionario.query.filter(Funcionario.nome.ilike(f'%{nome}%')).all()
+        for f in funcs:
+            if f.to_dict() not in resultados:
+                resultados.append(f.to_dict())
+    
+    return jsonify(resultados if resultados else [])
+
 @app.route('/api/funcionarios',methods=['POST'])
 @lr
 def api_criar_funcionario():
     d=request.json or {}
     if not d.get('nome'): return jsonify({'erro':'Nome obrigatorio'}),400
     ars=[a for a in d.get('areas',[]) if a in ALLOWED_AREAS]
-    f=Funcionario(nome=d.get('nome','').strip(),cpf=norm_cpf(d.get('cpf','')),email=d.get('email','').strip(),telefone=wa_norm_number(d.get('telefone','')),cargo=d.get('cargo','').strip(),setor=d.get('setor','').strip(),empresa_id=d.get('empresa_id'),data_admissao=d.get('data_admissao',''),status=d.get('status','Ativo'),salario=to_num(d.get('salario'),dec=True),endereco=d.get('endereco','').strip(),cidade=d.get('cidade','').strip(),estado=d.get('estado','').strip(),cep=norm_cep(d.get('cep','')),obs=d.get('obs','').strip(),areas=json.dumps(ars,ensure_ascii=False))
+    mat=norm_matricula(d.get('matricula')) or next_func_matricula()
+    f=Funcionario(
+        matricula=mat,
+        re=to_num(d.get('re')) or next_func_re(),
+        nome=d.get('nome','').strip(),
+        cpf=norm_cpf(d.get('cpf','')),
+        email=d.get('email','').strip(),
+        telefone=wa_norm_number(d.get('telefone','')),
+        cargo=d.get('cargo','').strip(),
+        funcao=d.get('funcao','').strip(),
+        cbo=d.get('cbo','').strip(),
+        setor=d.get('setor','').strip(),
+        empresa_id=d.get('empresa_id'),
+        data_admissao=d.get('data_admissao',''),
+        tipo_contrato=d.get('tipo_contrato','').strip(),
+        jornada=d.get('jornada','').strip(),
+        status=d.get('status','Ativo'),
+        salario=to_num(d.get('salario'),dec=True),
+        vale_refeicao=to_num(d.get('vale_refeicao'),dec=True),
+        vale_alimentacao=to_num(d.get('vale_alimentacao'),dec=True),
+        vale_transporte=to_num(d.get('vale_transporte'),dec=True),
+        endereco=d.get('endereco','').strip(),
+        cidade=d.get('cidade','').strip(),
+        estado=d.get('estado','').strip(),
+        cep=norm_cep(d.get('cep','')),
+        rg=d.get('rg','').strip(),
+        orgao_emissor=d.get('orgao_emissor','').strip(),
+        pis=d.get('pis','').strip(),
+        ctps=d.get('ctps','').strip(),
+        titulo_eleitor=d.get('titulo_eleitor','').strip(),
+        cert_reservista=d.get('cert_reservista','').strip(),
+        cnh=d.get('cnh','').strip(),
+        exame_admissional_data=d.get('exame_admissional_data','').strip(),
+        docs_admissao_ok=to_bool(d.get('docs_admissao_ok')),
+        docs_admissao_obs=d.get('docs_admissao_obs','').strip(),
+        obs=d.get('obs','').strip(),
+        areas=json.dumps(ars,ensure_ascii=False)
+    )
     db.session.add(f); db.session.commit(); return jsonify(f.to_dict()),201
 
 @app.route('/api/funcionarios/<int:id>',methods=['PUT'])
 @lr
 def api_atualizar_funcionario(id):
     f=Funcionario.query.get_or_404(id); d=request.json or {}
-    for k in ['nome','cpf','email','telefone','cargo','setor','empresa_id','data_admissao','status','endereco','cidade','estado','cep','obs']:
+    for k in ['matricula','re','nome','cpf','email','telefone','cargo','funcao','cbo','setor','empresa_id','data_admissao','tipo_contrato','jornada','status','endereco','cidade','estado','cep','rg','orgao_emissor','pis','ctps','titulo_eleitor','cert_reservista','cnh','exame_admissional_data','docs_admissao_obs','obs']:
         if k in d:
             if k=='cpf': setattr(f,k,norm_cpf(d.get(k)))
+            elif k=='matricula': setattr(f,k,norm_matricula(d.get(k)))
+            elif k=='re': setattr(f,k,to_num(d.get(k)))
             elif k=='telefone': setattr(f,k,wa_norm_number(d.get(k)))
             elif k=='cep': setattr(f,k,norm_cep(d.get(k)))
             else: setattr(f,k,d[k])
     if 'salario' in d: f.salario=to_num(d.get('salario'),dec=True)
+    if 'vale_refeicao' in d: f.vale_refeicao=to_num(d.get('vale_refeicao'),dec=True)
+    if 'vale_alimentacao' in d: f.vale_alimentacao=to_num(d.get('vale_alimentacao'),dec=True)
+    if 'vale_transporte' in d: f.vale_transporte=to_num(d.get('vale_transporte'),dec=True)
+    if 'docs_admissao_ok' in d: f.docs_admissao_ok=to_bool(d.get('docs_admissao_ok'))
     if 'areas' in d:
         ars=[a for a in d.get('areas',[]) if a in ALLOWED_AREAS]
         f.areas=json.dumps(ars,ensure_ascii=False)
@@ -1993,124 +2761,135 @@ def api_backup_restore():
     except Exception:
         return jsonify({'erro':'Arquivo invalido. Envie um ZIP de backup'}),400
 
-    def jread(name,default):
-        try: return json.loads(z.read(name).decode('utf-8'))
-        except Exception: return default
+    try:
+        def jread(name,default):
+            try: return json.loads(z.read(name).decode('utf-8'))
+            except Exception: return default
 
-    # Limpa dados operacionais antes de restaurar.
-    for model in [WhatsAppMensagem,WhatsAppConversa,FuncionarioArquivo,OperacionalDocumento,OrdemCompra,Medicao,Cliente,Funcionario,Empresa,Config]:
-        model.query.delete()
+        # Limpa dados operacionais antes de restaurar.
+        for model in [WhatsAppMensagem,WhatsAppConversa,FuncionarioArquivo,OperacionalDocumento,OrdemCompra,Medicao,Cliente,Funcionario,Empresa,Config]:
+            model.query.delete()
 
-    empresas=jread('empresas.json',[])
-    clientes=jread('clientes.json',[])
-    medicoes=jread('medicoes.json',[])
-    funcs=jread('funcionarios.json',[])
-    configs=jread('config.json',[])
-    wa_convs=jread('whatsapp_conversas.json',[])
-    wa_msgs=jread('whatsapp_mensagens.json',[])
-    farqs=jread('funcionario_arquivos.json',[])
-    ocs=jread('ordens_compra.json',[])
-    opdocs=jread('operacional_documentos.json',[])
+        empresas=jread('empresas.json',[])
+        clientes=jread('clientes.json',[])
+        medicoes=jread('medicoes.json',[])
+        funcs=jread('funcionarios.json',[])
+        configs=jread('config.json',[])
+        wa_convs=jread('whatsapp_conversas.json',[])
+        wa_msgs=jread('whatsapp_mensagens.json',[])
+        farqs=jread('funcionario_arquivos.json',[])
+        ocs=jread('ordens_compra.json',[])
+        opdocs=jread('operacional_documentos.json',[])
 
-    def _coerce_value(col,val):
-        if val is None:
-            return None
-        try:
-            py_t=col.type.python_type
-        except Exception:
+        def _coerce_value(col,val):
+            if val is None:
+                return None
+            type_name=(col.type.__class__.__name__ or '').lower()
+            try:
+                py_t=col.type.python_type
+            except Exception:
+                py_t=None
+
+            if py_t is datetime or 'datetime' in type_name:
+                if isinstance(val,datetime):
+                    return val
+                if isinstance(val,str):
+                    s=val.strip()
+                    if not s:
+                        return None
+                    dt=_parse_dt_iso(s)
+                    if not dt and ' ' in s and 'T' not in s:
+                        dt=_parse_dt_iso(s.replace(' ','T'))
+                    if dt:
+                        return dt
+                    for fmt in ('%Y-%m-%d %H:%M:%S.%f','%Y-%m-%d %H:%M:%S','%Y-%m-%dT%H:%M:%S.%f','%Y-%m-%dT%H:%M:%S'):
+                        try:
+                            return datetime.strptime(s,fmt)
+                        except Exception:
+                            pass
+                return None
+
+            if py_t is date or (type_name=='date'):
+                if isinstance(val,date):
+                    return val
+                if isinstance(val,str):
+                    s=val.strip()
+                    if not s:
+                        return None
+                    for fmt in ('%Y-%m-%d','%d/%m/%Y'):
+                        try:
+                            return datetime.strptime(s,fmt).date()
+                        except Exception:
+                            pass
+                return None
+
+            if py_t is bool or 'boolean' in type_name:
+                if isinstance(val,bool):
+                    return val
+                if isinstance(val,str):
+                    return val.strip().lower() in ('1','true','yes','on','sim')
+                return bool(val)
+
+            if py_t is int or 'integer' in type_name:
+                if val=='':
+                    return None
+                try:
+                    return int(val)
+                except Exception:
+                    return None
+
+            if py_t is float or 'float' in type_name:
+                if val=='':
+                    return None
+                try:
+                    return float(val)
+                except Exception:
+                    return None
+
             return val
 
-        if py_t is datetime:
-            if isinstance(val,datetime):
-                return val
-            if isinstance(val,str):
-                s=val.strip()
-                if not s:
-                    return None
-                dt=_parse_dt_iso(s)
-                if not dt and ' ' in s and 'T' not in s:
-                    dt=_parse_dt_iso(s.replace(' ','T'))
-                if dt:
-                    return dt
-                for fmt in ('%Y-%m-%d %H:%M:%S.%f','%Y-%m-%d %H:%M:%S','%Y-%m-%dT%H:%M:%S.%f','%Y-%m-%dT%H:%M:%S'):
-                    try:
-                        return datetime.strptime(s,fmt)
-                    except Exception:
-                        pass
-            return None
+        def add_rows(model,rows,conv=None):
+            cols_map={c.name:c for c in model.__table__.columns}
+            for r in rows:
+                d={}
+                for k,v in r.items():
+                    if k in cols_map:
+                        d[k]=_coerce_value(cols_map[k],v)
+                if conv: d=conv(d)
+                db.session.add(model(**d))
 
-        if py_t is date:
-            if isinstance(val,date):
-                return val
-            if isinstance(val,str):
-                s=val.strip()
-                if not s:
-                    return None
-                for fmt in ('%Y-%m-%d','%d/%m/%Y'):
-                    try:
-                        return datetime.strptime(s,fmt).date()
-                    except Exception:
-                        pass
-            return None
+        add_rows(Empresa,empresas)
+        add_rows(Cliente,clientes)
+        add_rows(Medicao,medicoes,lambda d: ({**d,'servicos':json.dumps(d.get('svcs',[]),ensure_ascii=False)} if 'svcs' in d and 'servicos' not in d else d))
+        add_rows(Funcionario,funcs,lambda d: ({**d,'areas':json.dumps(d.get('areas',[]),ensure_ascii=False)} if isinstance(d.get('areas'),list) else d))
+        add_rows(Config,configs)
+        add_rows(WhatsAppConversa,wa_convs)
+        add_rows(WhatsAppMensagem,wa_msgs)
+        add_rows(FuncionarioArquivo,farqs)
+        add_rows(OrdemCompra,ocs)
+        add_rows(OperacionalDocumento,opdocs)
+        db.session.commit()
 
-        if py_t is bool:
-            if isinstance(val,bool):
-                return val
-            if isinstance(val,str):
-                return val.strip().lower() in ('1','true','yes','on','sim')
-            return bool(val)
+        # Restaura uploads.
+        if os.path.isdir(UPLOAD_ROOT): shutil.rmtree(UPLOAD_ROOT)
+        os.makedirs(UPLOAD_ROOT,exist_ok=True)
+        for n in z.namelist():
+            if not n.startswith('uploads/') or n.endswith('/'): continue
+            rel=n[len('uploads/'):]
+            ap=os.path.join(UPLOAD_ROOT,rel)
+            os.makedirs(os.path.dirname(ap),exist_ok=True)
+            with open(ap,'wb') as out: out.write(z.read(n))
 
-        if py_t is int:
-            if val=='':
-                return None
-            try:
-                return int(val)
-            except Exception:
-                return None
-
-        if py_t is float:
-            if val=='':
-                return None
-            try:
-                return float(val)
-            except Exception:
-                return None
-
-        return val
-
-    def add_rows(model,rows,conv=None):
-        cols_map={c.name:c for c in model.__table__.columns}
-        for r in rows:
-            d={}
-            for k,v in r.items():
-                if k in cols_map:
-                    d[k]=_coerce_value(cols_map[k],v)
-            if conv: d=conv(d)
-            db.session.add(model(**d))
-
-    add_rows(Empresa,empresas)
-    add_rows(Cliente,clientes)
-    add_rows(Medicao,medicoes,lambda d: ({**d,'servicos':json.dumps(d.get('svcs',[]),ensure_ascii=False)} if 'svcs' in d and 'servicos' not in d else d))
-    add_rows(Funcionario,funcs,lambda d: ({**d,'areas':json.dumps(d.get('areas',[]),ensure_ascii=False)} if isinstance(d.get('areas'),list) else d))
-    add_rows(Config,configs)
-    add_rows(WhatsAppConversa,wa_convs)
-    add_rows(WhatsAppMensagem,wa_msgs)
-    add_rows(FuncionarioArquivo,farqs)
-    add_rows(OrdemCompra,ocs)
-    add_rows(OperacionalDocumento,opdocs)
-    db.session.commit()
-
-    # Restaura uploads.
-    if os.path.isdir(UPLOAD_ROOT): shutil.rmtree(UPLOAD_ROOT)
-    os.makedirs(UPLOAD_ROOT,exist_ok=True)
-    for n in z.namelist():
-        if not n.startswith('uploads/') or n.endswith('/'): continue
-        rel=n[len('uploads/'):]
-        ap=os.path.join(UPLOAD_ROOT,rel)
-        os.makedirs(os.path.dirname(ap),exist_ok=True)
-        with open(ap,'wb') as out: out.write(z.read(n))
-
-    return jsonify({'ok':True,'restaurado':{'empresas':len(empresas),'clientes':len(clientes),'medicoes':len(medicoes),'funcionarios':len(funcs),'configs':len(configs),'wa_conversas':len(wa_convs),'wa_mensagens':len(wa_msgs)}})
+        return jsonify({'ok':True,'restaurado':{'empresas':len(empresas),'clientes':len(clientes),'medicoes':len(medicoes),'funcionarios':len(funcs),'configs':len(configs),'wa_conversas':len(wa_convs),'wa_mensagens':len(wa_msgs)}})
+    except Exception as e:
+        app.logger.exception('Falha ao restaurar backup completo')
+        db.session.rollback()
+        return jsonify({'erro':f'Falha ao restaurar backup: {str(e)}'}),500
+    finally:
+        try:
+            z.close()
+        except Exception:
+            pass
 
 @app.route('/api/pdf/<int:id>')
 @lr
@@ -2208,7 +2987,15 @@ def _build_pdf(d):
     th=[Paragraph(f'<b>{h}</b>',ps('th',textColor=colors.white,fontSize=9,alignment=a)) for h,a in [('Descrição',TA_LEFT),('Unid.',TA_CENTER),('Qtd.',TA_CENTER),('Valor unit.',TA_RIGHT),('Valor total',TA_RIGHT)]]
     sr=[th]
     for i,s in enumerate(svcs):
-        sr.append([Paragraph(s.get('desc',''),ps('td',fontSize=9)),Paragraph(str(s.get('unid','')),ps('tc',fontSize=9,alignment=TA_CENTER)),Paragraph(str(s.get('qtd',1)),ps('tc2',fontSize=9,alignment=TA_CENTER)),Paragraph(fmt_brl(s.get('vun',0)),ps('tr',fontSize=9,alignment=TA_RIGHT)),Paragraph(fmt_brl(s.get('vtot',0)),ps('tv',fontSize=9,alignment=TA_RIGHT,textColor=VD))])
+        desc=(s.get('desc','') or '').strip()
+        tags=[]
+        if bool(s.get('fornece_materiais')):
+            tags.append('com materiais')
+        if bool(s.get('fornece_equipamentos')):
+            tags.append('com equipamentos')
+        if tags:
+            desc=f"{desc} ({', '.join(tags)})"
+        sr.append([Paragraph(desc,ps('td',fontSize=9)),Paragraph(str(s.get('unid','')),ps('tc',fontSize=9,alignment=TA_CENTER)),Paragraph(str(s.get('qtd',1)),ps('tc2',fontSize=9,alignment=TA_CENTER)),Paragraph(fmt_brl(s.get('vun',0)),ps('tr',fontSize=9,alignment=TA_RIGHT)),Paragraph(fmt_brl(s.get('vtot',0)),ps('tv',fontSize=9,alignment=TA_RIGHT,textColor=VD))])
 
     st2=TableStyle([('BACKGROUND',(0,0),(-1,0),AZ),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6),('LEFTPADDING',(0,0),(-1,-1),6),('RIGHTPADDING',(0,0),(-1,-1),6),('LINEBELOW',(0,0),(-1,-1),0.3,colors.HexColor('#DDDDDD')),('BOX',(0,0),(-1,-1),0.5,colors.HexColor('#CCCCCC'))])
     for i in range(1,len(sr)):
@@ -2311,7 +3098,9 @@ def api_rh_holerites_processar():
         with open(abs_p,'wb') as out: writer.write(out)
         a=FuncionarioArquivo(funcionario_id=alvo.id,categoria='holerite',competencia=comp,nome_arquivo=fake_name,caminho=rel)
         db.session.add(a); db.session.flush()
-        itens.append({'pagina':idx,'funcionario_id':alvo.id,'funcionario_nome':alvo.nome,'arquivo_id':a.id,'nome_arquivo':fake_name,'caminho':rel,'abs_caminho':abs_p,'email':alvo.email or '','whatsapp':alvo.telefone or '','status_envio':None,'erro_envio':None})
+        whatsapp_num=wa_norm_number(alvo.telefone or '')
+        wa_habilitado=funcionario_docs_whatsapp_habilitado(alvo)
+        itens.append({'pagina':idx,'funcionario_id':alvo.id,'funcionario_nome':alvo.nome,'arquivo_id':a.id,'nome_arquivo':fake_name,'caminho':rel,'abs_caminho':abs_p,'email':alvo.email or '','whatsapp':(whatsapp_num if wa_is_valid_number(whatsapp_num) else ''),'whatsapp_habilitado':wa_habilitado,'status_envio':None,'erro_envio':None})
     db.session.commit()
     job_id=secrets.token_hex(16)
     _holerite_jobs[job_id]={'id':job_id,'status':'pronto','total_paginas':len(reader.pages),'itens':itens,'sem_match':sem_match,'competencia':comp,'criado_em':utcnow().isoformat()}
@@ -2343,7 +3132,7 @@ def api_rh_holerites_enviar(job_id):
                     s_e=False; s_w=False
                     if canal in ('email','ambos') and item.get('email'):
                         smtp_send_pdf(item['email'],fn,abs_p,item['nome_arquivo'],comp); s_e=True
-                    if canal in ('whatsapp','ambos') and item.get('whatsapp'):
+                    if canal in ('whatsapp','ambos') and item.get('whatsapp_habilitado') and item.get('whatsapp'):
                         wa_send_pdf(item['whatsapp'],abs_p,item['nome_arquivo'],f"Holerite {comp} - {fn}"); s_w=True
                     if s_e and s_w: item['status_envio']='enviado_ambos'
                     elif s_e: item['status_envio']='enviado_email'
@@ -2580,8 +3369,8 @@ def api_wa_send():
     c.ultima_msg=utcnow()
     db.session.add(WhatsAppMensagem(conversa_id=c.id,numero=numero,direcao='out',tipo='texto',conteudo=texto))
     db.session.commit()
-    pausa_ate=wa_ai_pause_for(numero,8)
-    return jsonify({'ok':True,'ia_pausada_ate':(pausa_ate.isoformat() if pausa_ate else '')})
+    wa_ai_pause_for(numero, 2)
+    return jsonify({'ok':True})
 
 @app.route('/webhook/whatsapp',methods=['GET','POST'])
 def webhook_whatsapp():
@@ -2593,18 +3382,20 @@ def webhook_whatsapp():
     try:
         evento=(data.get('event') or '').lower()
         diag['evento']=evento
-        if 'message' in evento or 'upsert' in evento:
-            raw=data.get('data',{})
+        raw=data.get('data',{})
+        is_message_payload=False
+        if isinstance(raw,dict):
+            is_message_payload=bool(raw.get('message') or raw.get('body') or raw.get('text'))
+        elif isinstance(raw,list):
+            for _m in raw:
+                if isinstance(_m,dict) and (_m.get('message') or _m.get('body') or _m.get('text')):
+                    is_message_payload=True
+                    break
+        if 'message' in evento or 'upsert' in evento or is_message_payload:
             msgs=[raw] if isinstance(raw,dict) else (raw if isinstance(raw,list) else [])
             diag['mensagens_recebidas']=len(msgs)
             for msg_data in msgs:
                 if bool(msg_data.get('key',{}).get('fromMe')) or bool(msg_data.get('fromMe')):
-                    jid=(msg_data.get('key',{}).get('remoteJid') or msg_data.get('sender') or msg_data.get('from') or '')
-                    if jid.endswith('@s.whatsapp.net'):
-                        numero_out=(jid.split('@')[0] if jid else '')
-                        numero_out=only_digits(numero_out) or numero_out
-                        if wa_is_valid_number(numero_out):
-                            wa_ai_pause_for(numero_out,8)
                     continue
                 jid=(msg_data.get('key',{}).get('remoteJid') or msg_data.get('sender') or msg_data.get('from') or '')
                 if not jid.endswith('@s.whatsapp.net'): continue
@@ -2614,10 +3405,60 @@ def webhook_whatsapp():
                 if not wa_is_valid_number(numero):
                     diag['erros'].append(f'Numero invalido no webhook: {numero}')
                     continue
-                conteudo=(msg_data.get('message',{}).get('conversation') or
-                          msg_data.get('message',{}).get('extendedTextMessage',{}).get('text') or
-                          msg_data.get('body') or msg_data.get('text') or '')
-                if not conteudo: continue
+
+                msg_obj=msg_data.get('message',{}) if isinstance(msg_data.get('message',{}),dict) else {}
+                audio_obj=msg_obj.get('audioMessage',{}) if isinstance(msg_obj.get('audioMessage',{}),dict) else {}
+                tipo_in='audio' if audio_obj else 'texto'
+                conteudo=(
+                    msg_obj.get('conversation') or
+                    msg_obj.get('extendedTextMessage',{}).get('text') or
+                    msg_data.get('body') or
+                    msg_data.get('text') or
+                    msg_data.get('transcription') or
+                    msg_data.get('transcript') or
+                    audio_obj.get('transcription') or
+                    audio_obj.get('transcript') or
+                    audio_obj.get('text') or
+                    ''
+                )
+                conteudo=str(conteudo or '').strip()
+
+                if tipo_in=='audio' and not conteudo:
+                    try:
+                        conteudo=wa_transcribe_audio(msg_data)
+                    except Exception as e:
+                        diag['erros'].append(f'Falha transcricao audio: {str(e)}')
+                        conteudo=''
+
+                if tipo_in=='audio' and not conteudo:
+                    # Audio chegou sem transcricao no payload: salva no historico e pede texto.
+                    c=WhatsAppConversa.query.filter_by(numero=numero).first()
+                    if not c:
+                        nome=(msg_data.get('pushName') or msg_data.get('notifyName') or numero)
+                        c=WhatsAppConversa(numero=numero,nome=nome)
+                        db.session.add(c)
+                        db.session.flush()
+                    c.ultima_msg=utcnow()
+                    db.session.add(WhatsAppMensagem(conversa_id=c.id,numero=numero,direcao='in',tipo='audio',conteudo='[audio sem transcricao]'))
+                    db.session.commit()
+
+                    cfg_wa=wa_cfg()
+                    wa_ready=bool((cfg_wa.get('url') or '').strip() and (cfg_wa.get('instancia') or '').strip())
+                    if ai_wa_enabled() and wa_ready and not wa_ai_pause_active(numero):
+                        try:
+                            aviso='Recebi seu audio, mas ainda nao consegui transcrever automaticamente. Pode me enviar em texto?'
+                            wa_send_text(numero,aviso)
+                            diag['respostas_enviadas']+=1
+                            c.ultima_msg=utcnow()
+                            db.session.add(WhatsAppMensagem(conversa_id=c.id,numero=numero,direcao='out',tipo='texto',conteudo=aviso))
+                            db.session.commit()
+                        except Exception as e:
+                            diag['erros'].append(str(e))
+                            db.session.rollback()
+                    continue
+
+                if not conteudo:
+                    continue
                 diag['mensagens_processadas']+=1
                 c=WhatsAppConversa.query.filter_by(numero=numero).first()
                 if not c:
@@ -2625,10 +3466,25 @@ def webhook_whatsapp():
                     c=WhatsAppConversa(numero=numero,nome=nome)
                     db.session.add(c); db.session.flush()
                 c.ultima_msg=utcnow()
-                db.session.add(WhatsAppMensagem(conversa_id=c.id,numero=numero,direcao='in',tipo='texto',conteudo=conteudo))
+                db.session.add(WhatsAppMensagem(conversa_id=c.id,numero=numero,direcao='in',tipo=tipo_in,conteudo=conteudo))
                 db.session.commit()
-                historico_db=WhatsAppMensagem.query.filter_by(conversa_id=c.id).order_by(WhatsAppMensagem.criado_em.asc()).limit(20).all()
-                if ai_wa_enabled() and not wa_ai_pause_active(numero):
+                # Usa as mensagens mais recentes para preservar o estado atual da conversa.
+                historico_db=(
+                    WhatsAppMensagem.query
+                    .filter_by(conversa_id=c.id)
+                    .order_by(WhatsAppMensagem.criado_em.desc())
+                    .limit(20)
+                    .all()
+                )
+                historico_db.reverse()
+                cfg_wa=wa_cfg()
+                wa_ready=bool((cfg_wa.get('url') or '').strip() and (cfg_wa.get('instancia') or '').strip())
+                if ai_wa_enabled() and not wa_ready:
+                    msg_cfg='Auto-reply desativado: WhatsApp nao configurado (url/instancia).'
+                    if msg_cfg not in diag['erros']:
+                        diag['erros'].append(msg_cfg)
+                    app.logger.warning('Auto-reply WhatsApp inativo para %s: configuracao incompleta',numero)
+                if ai_wa_enabled() and wa_ready and not wa_ai_pause_active(numero):
                     try:
                         resposta=ai_wa_reply(numero,conteudo,historico=historico_db)
                         if resposta:
@@ -2650,6 +3506,8 @@ def webhook_whatsapp():
                             db.session.commit()
                         except Exception:
                             db.session.rollback()
+        elif debug:
+            diag['erros'].append(f'Evento ignorado: {evento or "sem_evento"}')
     except Exception:
         app.logger.exception('Falha no processamento do webhook WhatsApp')
         diag['erros'].append('Falha no processamento do webhook')
@@ -2734,9 +3592,33 @@ with app.app_context():
         'boleto TEXT'
     ])
     ensure_cols('funcionario',[
+        're INTEGER',
+        'matricula VARCHAR(30)',
+        'funcao VARCHAR(150)',
+        'cbo VARCHAR(20)',
+        'tipo_contrato VARCHAR(60)',
+        'jornada VARCHAR(80)',
+        'vale_refeicao FLOAT DEFAULT 0',
+        'vale_alimentacao FLOAT DEFAULT 0',
+        'vale_transporte FLOAT DEFAULT 0',
+        'rg VARCHAR(30)',
+        'orgao_emissor VARCHAR(30)',
+        'pis VARCHAR(30)',
+        'ctps VARCHAR(30)',
+        'titulo_eleitor VARCHAR(30)',
+        'cert_reservista VARCHAR(30)',
+        'cnh VARCHAR(30)',
+        'exame_admissional_data VARCHAR(10)',
+        'docs_admissao_ok BOOLEAN DEFAULT 0',
+        'docs_admissao_obs TEXT',
         'app_senha VARCHAR(256)',
         'app_ativo BOOLEAN DEFAULT 1',
         'app_ultimo_acesso DATETIME'
+    ])
+    db.session.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ix_funcionario_re ON funcionario(re)'))
+    db.session.commit()
+    ensure_cols('whats_app_conversa',[
+        "contexto TEXT DEFAULT '{}'"
     ])
     ensure_cols('medicao',[
         'status VARCHAR(20) DEFAULT "emitida"',
