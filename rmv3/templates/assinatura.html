@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assinatura Eletrônica - RM Facilities</title>
+  <style>
+    :root{--az:#0f4c81;--lj:#ff8a00;--ok:#16803c;--bg:#f4f7fb;--tx:#14222f;--bd:#d6e0ea}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Segoe UI,Tahoma,sans-serif;background:linear-gradient(140deg,#f9fcff,#edf3fa);color:var(--tx)}
+    .wrap{max-width:760px;margin:32px auto;padding:0 14px}
+    .card{background:#fff;border:1px solid var(--bd);border-radius:14px;box-shadow:0 12px 28px rgba(15,76,129,.08);padding:22px}
+    h1{margin:0 0 6px;color:var(--az);font-size:24px}
+    .sub{margin:0 0 18px;color:#55687a;font-size:14px}
+    .kv{display:grid;grid-template-columns:180px 1fr;gap:8px 10px;margin:12px 0}
+    .k{font-size:12px;color:#6a7d8f;text-transform:uppercase;letter-spacing:.04em}
+    .v{font-weight:600}
+    .f{margin-top:12px}
+    label{display:block;font-size:12px;color:#5f7386;margin-bottom:5px}
+    input{width:100%;padding:10px 12px;border:1.5px solid var(--bd);border-radius:10px;font-size:14px}
+    .aceite{display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:13px;color:#34495f}
+    .brow{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
+    button{border:none;background:var(--az);color:#fff;font-weight:700;padding:10px 14px;border-radius:10px;cursor:pointer}
+    button:hover{filter:brightness(.95)}
+    .msg{margin-top:12px;font-size:13px;padding:10px;border-radius:8px;display:none}
+    .ok{background:#ebfaef;color:var(--ok);border:1px solid #bde6ca}
+    .err{background:#fff1f1;color:#a02020;border:1px solid #f5c0c0}
+    .tag{display:inline-block;background:#fff4e8;color:#b15f00;font-size:11px;font-weight:700;padding:4px 8px;border-radius:999px;border:1px solid #ffd9ad;margin-bottom:10px}
+    @media (max-width:640px){.kv{grid-template-columns:1fr}.wrap{margin:18px auto}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Assinatura eletrônica</h1>
+      {% if medicao %}
+      <p class="sub">Confirme os dados e assine para validar a medição.</p>
+      <span class="tag">Medição {{ medicao.numero or '' }}</span>
+      <div class="kv">
+        <div class="k">Cliente</div><div class="v">{{ medicao.cliente_nome or '-' }}</div>
+        <div class="k">Empresa</div><div class="v">{{ medicao.empresa_nome or '-' }}</div>
+        <div class="k">Referência</div><div class="v">{{ medicao.mes_ref or '-' }}</div>
+        <div class="k">Valor</div><div class="v">R$ {{ '%.2f'|format(medicao.valor_bruto or 0)|replace('.',',') }}</div>
+      </div>
+      {% endif %}
+
+      {% if ok and medicao %}
+      <div class="f">
+        <label>Nome completo</label>
+        <input id="nome" placeholder="Ex: Maria Souza">
+      </div>
+      <div class="f">
+        <label>Cargo (opcional)</label>
+        <input id="cargo" placeholder="Ex: Síndica">
+      </div>
+      <label class="aceite"><input type="checkbox" id="aceite" style="width:auto;margin-top:2px">Declaro que li e confirmo as informações da medição apresentada.</label>
+      <div class="brow">
+        <button onclick="confirmar('{{ medicao.assinatura_token }}')">Confirmar assinatura</button>
+      </div>
+      <div id="msg" class="msg"></div>
+      {% else %}
+      <div class="msg err" style="display:block">{{ mensagem or 'Este link não está disponível.' }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <script>
+    async function confirmar(token){
+      const nome=(document.getElementById('nome').value||'').trim();
+      const cargo=(document.getElementById('cargo').value||'').trim();
+      const aceite=!!document.getElementById('aceite').checked;
+      const msg=document.getElementById('msg');
+      try{
+        const r=await fetch('/api/assinatura/'+token+'/confirmar',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({nome,cargo,aceite})
+        });
+        const d=await r.json();
+        if(!r.ok || d.erro){
+          msg.className='msg err';
+          msg.textContent=d.erro||'Falha ao confirmar assinatura.';
+          msg.style.display='block';
+          return;
+        }
+        msg.className='msg ok';
+        msg.textContent=d.mensagem||'Assinatura concluída com sucesso.';
+        msg.style.display='block';
+      }catch(e){
+        msg.className='msg err';
+        msg.textContent='Erro de conexão ao confirmar assinatura.';
+        msg.style.display='block';
+      }
+    }
+  </script>
+</body>
+</html>

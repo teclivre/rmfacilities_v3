@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Assinar Documento — RM Facilities</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px}
+.page-wrap{max-width:580px;width:100%}
+.company-header{background:#fff;border-radius:12px 12px 0 0;border-bottom:3px solid #205d8a;padding:18px 24px;display:flex;align-items:center;gap:18px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+.company-header img{height:52px;width:auto;object-fit:contain;flex-shrink:0}
+.company-info{flex:1;min-width:0}
+.company-info .co-name{font-size:15px;font-weight:700;color:#1a2b3c;line-height:1.3}
+.company-info .co-cnpj{font-size:12px;color:#555;margin-top:2px}
+.company-info .co-end{font-size:11px;color:#777;margin-top:2px;line-height:1.4}
+.company-sep{width:1px;height:48px;background:#e0e8f0;flex-shrink:0}
+.box{background:#fff;border-radius:0 0 12px 12px;box-shadow:0 4px 24px rgba(0,0,0,.10);padding:28px 24px}
+.divider-line{height:1px;background:#e8eef5;margin:0 -24px 20px -24px}
+.card-doc{background:#f5f9ff;border:1px solid #c5d9f0;border-radius:8px;padding:14px 16px;margin-bottom:18px}
+.card-doc h3{font-size:13px;font-weight:700;color:#205d8a;margin-bottom:8px}
+.card-doc ul{list-style:none;padding:0}
+.card-doc ul li{font-size:13px;color:#333;padding:3px 0;border-bottom:1px solid #e8f0f8}
+.card-doc ul li:last-child{border-bottom:none}
+.card-doc ul li::before{content:"📄 ";font-size:12px}
+h2{font-size:17px;color:#1a2b3c;margin-bottom:6px}
+.sub{font-size:13px;color:#666;margin-bottom:20px}
+.f{margin-bottom:14px}
+label{display:block;font-size:12px;font-weight:600;color:#444;margin-bottom:5px}
+input{width:100%;border:1px solid #cdd5de;border-radius:6px;padding:9px 11px;font-size:14px;outline:none;transition:border .2s}
+input:focus{border-color:#205d8a}
+.aceite{display:flex;align-items:flex-start;gap:10px;background:#f5f9ff;border:1px solid #c5d9f0;border-radius:8px;padding:14px;margin:16px 0}
+.aceite input[type=checkbox]{margin-top:3px;width:16px;height:16px;accent-color:#205d8a;flex-shrink:0}
+.aceite label{font-size:12px;color:#333;font-weight:400;margin:0;cursor:pointer}
+.btn{display:block;width:100%;padding:13px;background:#205d8a;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;transition:background .2s;text-align:center;text-decoration:none}
+.btn:hover{background:#174870}
+.btn:disabled{background:#9bb;cursor:not-allowed}
+.btn-sec{background:#1a7a45;margin-top:8px}
+.btn-sec:hover{background:#145c34}
+#msg-ok{display:none;text-align:center;padding:20px 0}
+#msg-ok .ico{font-size:48px}
+#msg-ok h3{color:#1a7a45;font-size:18px;margin:10px 0 6px}
+#msg-ok .cd{background:#f0fff6;border:1px solid #8dd5a3;border-radius:8px;padding:12px;margin:10px 0}
+#msg-ok .cd span{font-size:20px;font-weight:700;color:#1a7a45;letter-spacing:2px}
+#msg-ok small{color:#666;font-size:12px}
+#msg-ok a{display:inline-block;margin-top:12px;color:#205d8a;font-size:13px}
+.erro{background:#fff0f0;border:1px solid #f5c5c5;border-radius:6px;color:#c0392b;font-size:13px;padding:10px 12px;margin-bottom:14px;display:none}
+.info-sig{background:#fffbf0;border:1px solid #f0e0a0;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px;color:#7a5800}
+.info-sig strong{color:#5a3f00}
+.page-footer{text-align:center;font-size:11px;color:#aaa;margin-top:14px}
+</style>
+</head>
+<body>
+<div class="page-wrap">
+  <div class="company-header">
+    <img src="/static/img/logo.png" alt="Logo RM Facilities" onerror="this.style.display='none'">
+    {% for emp in empresas %}
+      {% if not loop.first %}<div class="company-sep"></div>{% endif %}
+      <div class="company-info">
+        <div class="co-name">{{ emp.razao or emp.nome }}</div>
+        {% if emp.cnpj %}<div class="co-cnpj">CNPJ: {{ emp.cnpj }}</div>{% endif %}
+        {% if emp.logradouro %}<div class="co-end">{{ emp.end_fmt() }}</div>{% endif %}
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="box">
+    <div class="divider-line"></div>
+
+    {% if sig.status == 'assinado' %}
+    <div id="msg-ok" style="display:block">
+      <div class="ico">✅</div>
+      <h3>Documento já assinado!</h3>
+      <p style="font-size:13px;color:#666;margin-bottom:10px">Você já assinou este documento anteriormente.</p>
+      <a href="/envelope/validar/{{ env.codigo }}">🔍 Ver validação do envelope</a>
+      {% if env.status == 'concluido' %}
+      <a class="btn btn-sec" href="/envelope/baixar/{{ env.codigo }}">⬇ Baixar documento assinado</a>
+      {% endif %}
+    </div>
+    {% else %}
+    <div id="form-area">
+      <h2>{{ env.titulo }}</h2>
+      {% if env.descricao %}<p class="sub">{{ env.descricao }}</p>{% endif %}
+
+      <div class="info-sig">
+        <strong>Signatário:</strong> {{ sig.nome or 'Não informado' }}
+        {% if sig.cargo %} &middot; <strong>Cargo:</strong> {{ sig.cargo }}{% endif %}
+      </div>
+
+      <div class="card-doc">
+        <h3>Documentos a assinar ({{ arquivos|length }})</h3>
+        <ul>
+          {% for a in arquivos %}
+          <li>{{ a.nome_arquivo }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      <div class="erro" id="erro-box"></div>
+
+      <div class="f"><label>Nome completo *</label><input id="inp-nome" type="text" placeholder="Seu nome completo" value="{{ sig.nome or '' }}"></div>
+      <div class="f"><label>Cargo / Função</label><input id="inp-cargo" type="text" placeholder="Seu cargo" value="{{ sig.cargo or '' }}"></div>
+      <div class="f"><label>CPF *</label><input id="inp-cpf" type="text" placeholder="000.000.000-00" maxlength="14" oninput="fmtCpf(this)"></div>
+
+      <div class="aceite">
+        <input type="checkbox" id="chk-aceite">
+        <label for="chk-aceite">Declaro que li e entendi os documentos listados acima e, ao clicar em <strong>Confirmar Assinatura</strong>, confirmo minha assinatura eletrônica com validade legal, conforme a Lei nº 14.063/2020.</label>
+      </div>
+
+      <button class="btn" id="btn-assinar" onclick="confirmarAssinatura()">Confirmar Assinatura</button>
+    </div>
+
+    <div id="msg-ok">
+      <div class="ico">✅</div>
+      <h3>Assinatura confirmada!</h3>
+      <p style="font-size:13px;color:#555;margin-bottom:8px">Seu código de comprovação:</p>
+      <div class="cd"><span id="cod-val"></span></div>
+      <small>Guarde este código para consultar sua assinatura.</small><br>
+      <a id="link-val" href="#">🔍 Validar assinatura</a>
+      <a id="link-download" class="btn btn-sec" href="#" style="display:none">⬇ Baixar documento assinado</a>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="page-footer">Assinatura Eletrônica — RM Facilities | Plataforma segura, validade jurídica conforme Lei nº 14.063/2020</div>
+</div>
+
+<script>
+const TOKEN='{{ sig.token or "" }}';
+const ENV_COD='{{ env.codigo }}';
+
+function fmtCpf(el){
+  let v=el.value.replace(/\D/g,'');
+  if(v.length>3) v=v.slice(0,3)+'.'+v.slice(3);
+  if(v.length>7) v=v.slice(0,7)+'.'+v.slice(7);
+  if(v.length>11) v=v.slice(0,11)+'-'+v.slice(11);
+  el.value=v.slice(0,14);
+}
+
+async function confirmarAssinatura(){
+  const nome=document.getElementById('inp-nome').value.trim();
+  const cargo=document.getElementById('inp-cargo').value.trim();
+  const cpf=document.getElementById('inp-cpf').value.trim();
+  const aceite=document.getElementById('chk-aceite').checked;
+  const erroBox=document.getElementById('erro-box');
+  erroBox.style.display='none';
+
+  if(!nome||!cpf||!aceite){
+    erroBox.textContent='Preencha nome, CPF e confirme o aceite.';
+    erroBox.style.display='block';
+    return;
+  }
+  const btn=document.getElementById('btn-assinar');
+  btn.disabled=true;
+  btn.textContent='Aguarde...';
+
+  try{
+    const r=await fetch(`/api/envelope/assinar/${TOKEN}/confirmar`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({nome,cargo,cpf,aceite:true})
+    });
+    const j=await r.json();
+    if(!r.ok){
+      erroBox.textContent=j.erro||'Erro ao confirmar.';
+      erroBox.style.display='block';
+      btn.disabled=false;
+      btn.textContent='Confirmar Assinatura';
+      return;
+    }
+    document.getElementById('form-area').style.display='none';
+    document.getElementById('cod-val').textContent=j.codigo||'';
+    const la=document.getElementById('link-val');
+    la.href=j.validacao_link||`/envelope/validar/${ENV_COD}`;
+    if(j.signed_pdf_link){
+      const dl=document.getElementById('link-download');
+      dl.href=j.signed_pdf_link;
+      dl.style.display='block';
+    }
+    document.getElementById('msg-ok').style.display='block';
+  }catch(e){
+    erroBox.textContent='Erro de conexão. Tente novamente.';
+    erroBox.style.display='block';
+    btn.disabled=false;
+    btn.textContent='Confirmar Assinatura';
+  }
+}
+</script>
+</body>
+</html>
