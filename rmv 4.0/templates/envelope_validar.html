@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Validação de Documento — RM Facilities</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px}
+.page-wrap{max-width:680px;width:100%}
+.company-header{background:#fff;border-radius:12px 12px 0 0;border-bottom:3px solid #205d8a;padding:18px 24px;display:flex;align-items:center;gap:18px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+.company-header img{height:52px;width:auto;object-fit:contain;flex-shrink:0}
+.company-info{flex:1;min-width:0}
+.company-info .co-name{font-size:15px;font-weight:700;color:#1a2b3c;line-height:1.3}
+.company-info .co-cnpj{font-size:12px;color:#555;margin-top:2px}
+.company-info .co-end{font-size:11px;color:#777;margin-top:2px;line-height:1.4}
+.company-sep{width:1px;height:48px;background:#e0e8f0;flex-shrink:0}
+.box{background:#fff;border-radius:0 0 12px 12px;box-shadow:0 4px 24px rgba(0,0,0,.10);padding:28px 24px}
+.divider-line{height:1px;background:#e8eef5;margin:0 -24px 22px -24px}
+.badge{display:inline-flex;align-items:center;gap:6px;border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;margin-bottom:18px}
+.badge-ok{background:#ecf8f0;color:#1a7a45;border:1px solid #8dd5a3}
+.badge-pend{background:#fff8ec;color:#7a5800;border:1px solid #f5d97a}
+.badge-canc{background:#fff0f0;color:#a32020;border:1px solid #f5c5c5}
+h2{font-size:18px;color:#1a2b3c;margin-bottom:4px}
+.sub{font-size:13px;color:#777;margin-bottom:20px}
+.section{margin-bottom:20px}
+.section h3{font-size:13px;font-weight:700;color:#205d8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;padding-bottom:5px;border-bottom:2px solid #e8f0f8}
+.detail-grid{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:13px}
+.detail-grid dt{font-weight:600;color:#555;white-space:nowrap}
+.detail-grid dd{color:#222;word-break:break-all}
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{background:#205d8a;color:#fff;text-align:left;padding:7px 9px}
+.tbl td{padding:7px 9px;border-bottom:1px solid #e8eef5;vertical-align:top}
+.tbl tr:nth-child(even) td{background:#f5f9ff}
+.pill{border-radius:10px;padding:2px 9px;font-size:11px;font-weight:600;white-space:nowrap}
+.pill-ok{background:#ecf8f0;color:#1a7a45}
+.pill-pend{background:#fff8ec;color:#8a5c00}
+.file-list{list-style:none;padding:0}
+.file-list li{padding:5px 0;border-bottom:1px solid #eef2f7;font-size:13px;color:#333}
+.file-list li:last-child{border-bottom:none}
+.file-list li::before{content:"📄 "}
+.btn-down{display:inline-block;background:#1a7a45;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:700}
+.btn-down:hover{background:#145c34}
+.page-footer{text-align:center;font-size:11px;color:#aaa;margin-top:14px}
+@media (max-width:760px){
+  body{padding:12px}
+  .company-header{padding:14px;gap:12px;flex-wrap:wrap;align-items:flex-start}
+  .company-header img{height:44px}
+  .company-sep{display:none}
+  .box{padding:18px 14px}
+  .divider-line{margin:0 -14px 16px -14px}
+  .section{margin-bottom:16px}
+  .tbl{display:block;width:100%;overflow-x:auto;white-space:nowrap}
+  .tbl th,.tbl td{font-size:11px;padding:6px 7px}
+}
+</style>
+</head>
+<body>
+<div class="page-wrap">
+  <div class="company-header">
+    <img src="/static/img/logo.png" alt="Logo RM Facilities" onerror="this.style.display='none'">
+    {% for emp in empresas %}
+      {% if not loop.first %}<div class="company-sep"></div>{% endif %}
+      <div class="company-info">
+        <div class="co-name">{{ emp.razao or emp.nome }}</div>
+        {% if emp.cnpj %}<div class="co-cnpj">CNPJ: {{ emp.cnpj }}</div>{% endif %}
+        {% if emp.logradouro %}<div class="co-end">{{ emp.end_fmt() }}</div>{% endif %}
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="box">
+    <div class="divider-line"></div>
+
+    {% set total = signatarios|length %}
+    {% set assinados = signatarios|selectattr('status','equalto','assinado')|list %}
+    {% if env.status == 'concluido' %}
+      <div class="badge badge-ok">✔ TODOS OS SIGNATÁRIOS ASSINARAM</div>
+    {% elif env.status == 'cancelado' %}
+      <div class="badge badge-canc">✖ DOCUMENTO CANCELADO</div>
+    {% else %}
+      <div class="badge badge-pend">⏳ {{ assinados|length }} de {{ total }} signatários assinaram</div>
+    {% endif %}
+
+    <h2>{{ env.titulo }}</h2>
+    {% if env.descricao %}<p class="sub">{{ env.descricao }}</p>{% endif %}
+
+    {% if env.status == 'concluido' %}
+    <div style="margin-bottom:16px">
+      <a class="btn-down" href="/envelope/baixar/{{ env.codigo }}">⬇ Baixar documento assinado</a>
+    </div>
+    {% endif %}
+
+    <div class="section">
+      <h3>Informações do Documento</h3>
+      <dl class="detail-grid">
+        <dt>Código</dt><dd>{{ env.codigo }}</dd>
+        <dt>Tipo</dt><dd>{% if env.tipo=='funcionario' %}Funcionário{% elif env.tipo=='cliente' %}Cliente{% else %}Avulso{% endif %}</dd>
+        <dt>Criado por</dt><dd>{{ env.criado_por or '-' }}</dd>
+        <dt>Data de criação</dt><dd>{{ env.criado_em.strftime('%d/%m/%Y %H:%M') if env.criado_em else '-' }}</dd>
+        <dt>Validade</dt><dd>{{ env.expira_em.strftime('%d/%m/%Y') if env.expira_em else 'Sem prazo' }}</dd>
+      </dl>
+    </div>
+
+    <div class="section">
+      <h3>Documentos ({{ arquivos|length }})</h3>
+      <ul class="file-list">
+        {% for a in arquivos %}
+        <li>{{ a.nome_arquivo }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <div class="section">
+      <h3>Signatários</h3>
+      <table class="tbl">
+        <thead>
+          <tr><th>Nome</th><th>Cargo</th><th>CPF</th><th>Data/Hora</th><th>IP</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {% for s in signatarios %}
+          {% set cpf_m = '' %}
+          {% if s.ass_cpf_informado and s.ass_cpf_informado|length >= 11 %}
+            {% set cpf_m = '***' + s.ass_cpf_informado[-8:-5] + '***' %}
+          {% elif s.cpf %}
+            {% set cpf_m = '***' + s.cpf[-3:] %}
+          {% endif %}
+          <tr>
+            <td>{{ s.nome or '-' }}</td>
+            <td>{{ s.cargo or '-' }}</td>
+            <td>{{ cpf_m or '-' }}</td>
+            <td>{{ s.ass_em.strftime('%d/%m/%Y %H:%M') if s.ass_em else '-' }}</td>
+            <td>{{ s.ass_ip or '-' }}</td>
+            <td>
+              {% if s.status == 'assinado' %}
+              <span class="pill pill-ok">✔ ASSINADO</span>
+              {% else %}
+              <span class="pill pill-pend">⏳ PENDENTE</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="page-footer">Validação em tempo real | RM Facilities | Assinatura eletrônica com validade jurídica — Lei nº 14.063/2020</div>
+</div>
+</body>
+</html>

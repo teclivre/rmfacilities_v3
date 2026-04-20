@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assinatura de Documento - RM Facilities</title>
+  <style>
+    :root{--az:#0f4c81;--ok:#1b6b3b;--err:#9f1f1f;--tx:#132235;--bd:#d6e0ea;--lj:#f28e34}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Segoe UI,Tahoma,sans-serif;background:linear-gradient(140deg,#f9fcff,#edf3fa);color:var(--tx)}
+    .wrap{max-width:680px;margin:32px auto;padding:0 14px}
+    .card{background:#fff;border:1px solid var(--bd);border-radius:14px;box-shadow:0 12px 28px rgba(15,76,129,.09);padding:24px}
+    h1{margin:0 0 4px;color:var(--az);font-size:22px}
+    .sub{margin:0 0 16px;color:#55687a;font-size:13px}
+    .tag{display:inline-block;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid;margin-bottom:14px}
+    .tag-ok{background:#ecf8f0;color:var(--ok);border-color:#9ed3b1}
+    .tag-err{background:#fff1f1;color:var(--err);border-color:#f5c0c0}
+    .doc-info{background:#f7faff;border:1px solid var(--bd);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:13px}
+    .doc-info strong{color:var(--az)}
+    .f{margin-bottom:12px}
+    label{display:block;font-size:12px;color:#5f7386;margin-bottom:4px;font-weight:600}
+    input{width:100%;padding:10px 12px;border:1.5px solid var(--bd);border-radius:10px;font-size:14px;transition:border .15s}
+    input:focus{outline:none;border-color:var(--az)}
+    .aceite{display:flex;gap:8px;align-items:flex-start;margin:14px 0;font-size:13px;color:#34495f}
+    .aceite input{width:auto;margin-top:2px;flex-shrink:0}
+    .brow{margin-top:16px;display:flex;gap:8px}
+    .btn{border:none;font-weight:700;padding:11px 18px;border-radius:10px;cursor:pointer;font-size:14px}
+    .btn-az{background:var(--az);color:#fff}
+    .btn-az:hover{filter:brightness(.93)}
+    .msg{margin-top:12px;font-size:13px;padding:10px 12px;border-radius:8px;display:none}
+    .msg-ok{background:#ebfaef;color:var(--ok);border:1px solid #bde6ca}
+    .msg-err{background:#fff1f1;color:var(--err);border:1px solid #f5c0c0}
+    .aviso-err{margin-top:14px;font-size:13px;padding:12px;border-radius:8px;background:#fff1f1;color:var(--err);border:1px solid #f5c0c0}
+    @media(max-width:600px){.wrap{margin:16px auto}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Assinatura eletrônica de documento</h1>
+    <p class="sub">Leia os dados abaixo e confirme a assinatura com seu CPF.</p>
+
+    {% if arquivo %}
+    <div class="doc-info">
+      <strong>Documento:</strong> {{ arquivo.nome_arquivo }}<br>
+      <strong>Categoria:</strong> {{ arquivo.categoria or '-' }}<br>
+      {% if arquivo.competencia %}<strong>Competência:</strong> {{ arquivo.competencia }}<br>{% endif %}
+      {% if funcionario %}<strong>Funcionário:</strong> {{ funcionario.nome }}{% endif %}
+    </div>
+    {% endif %}
+
+    {% if ok and arquivo %}
+    <span class="tag tag-ok">AGUARDANDO ASSINATURA</span>
+
+    <div class="f">
+      <label>Nome completo *</label>
+      <input id="nome" placeholder="Seu nome completo" autocomplete="name">
+    </div>
+    <div class="f">
+      <label>CPF *</label>
+      <input id="cpf" placeholder="000.000.000-00" maxlength="14" oninput="fmtCPF(this)" inputmode="numeric">
+    </div>
+    <div class="f">
+      <label>Cargo (opcional)</label>
+      <input id="cargo" placeholder="Ex: Auxiliar de limpeza">
+    </div>
+    <label class="aceite">
+      <input type="checkbox" id="aceite">
+      Declaro que li e aceito as informações do documento apresentado, confirmando minha assinatura eletrônica.
+    </label>
+    <div class="brow">
+      <button class="btn btn-az" onclick="confirmar('{{ arquivo.ass_token }}')">Confirmar assinatura</button>
+    </div>
+    <div id="msg" class="msg"></div>
+
+    {% else %}
+    <span class="tag tag-err">LINK INDISPONÍVEL</span>
+    <div class="aviso-err">{{ mensagem or 'Este link não está disponível.' }}</div>
+    {% endif %}
+  </div>
+</div>
+<script>
+function fmtCPF(el){
+  let v=el.value.replace(/\D/g,'').slice(0,11);
+  if(v.length>9) v=v.replace(/^(\d{3})(\d{3})(\d{3})(\d{0,2}).*/,'$1.$2.$3-$4');
+  else if(v.length>6) v=v.replace(/^(\d{3})(\d{3})(\d{0,3}).*/,'$1.$2.$3');
+  else if(v.length>3) v=v.replace(/^(\d{3})(\d{0,3}).*/,'$1.$2');
+  el.value=v;
+}
+async function confirmar(token){
+  const nome=(document.getElementById('nome').value||'').trim();
+  const cpf=(document.getElementById('cpf').value||'').replace(/\D/g,'');
+  const cargo=(document.getElementById('cargo').value||'').trim();
+  const aceite=!!document.getElementById('aceite').checked;
+  const msg=document.getElementById('msg');
+  try{
+    const r=await fetch('/api/doc/assinar/'+token+'/confirmar',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({nome,cpf,cargo,aceite})
+    });
+    const d=await r.json();
+    if(!r.ok||d.erro){
+      msg.className='msg msg-err'; msg.textContent=d.erro||'Falha ao confirmar assinatura.'; msg.style.display='block'; return;
+    }
+    msg.className='msg msg-ok';
+    msg.innerHTML=(d.mensagem||'Assinatura concluída!')+(d.whatsapp_enviado?'<br>✅ Uma cópia assinada foi enviada para o seu WhatsApp.':'')+(d.validacao_link?`<br><a href="${d.validacao_link}" target="_blank" style="color:var(--ok);font-size:12px">Validar assinatura</a>`:'');
+    msg.style.display='block';
+    document.querySelector('.btn-az').disabled=true;
+    document.querySelector('.btn-az').textContent='Assinado';
+  }catch(e){
+    msg.className='msg msg-err'; msg.textContent='Erro de conexão ao confirmar assinatura.'; msg.style.display='block';
+  }
+}
+</script>
+</body>
+</html>
