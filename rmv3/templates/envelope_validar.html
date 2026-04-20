@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Validação de Envelope — RM Facilities</title>
+<title>Validação de Documento — RM Facilities</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px}
@@ -42,6 +42,17 @@ h2{font-size:18px;color:#1a2b3c;margin-bottom:4px}
 .btn-down{display:inline-block;background:#1a7a45;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:700}
 .btn-down:hover{background:#145c34}
 .page-footer{text-align:center;font-size:11px;color:#aaa;margin-top:14px}
+@media (max-width:760px){
+  body{padding:12px}
+  .company-header{padding:14px;gap:12px;flex-wrap:wrap;align-items:flex-start}
+  .company-header img{height:44px}
+  .company-sep{display:none}
+  .box{padding:18px 14px}
+  .divider-line{margin:0 -14px 16px -14px}
+  .section{margin-bottom:16px}
+  .tbl{display:block;width:100%;overflow-x:auto;white-space:nowrap}
+  .tbl th,.tbl td{font-size:11px;padding:6px 7px}
+}
 </style>
 </head>
 <body>
@@ -66,7 +77,7 @@ h2{font-size:18px;color:#1a2b3c;margin-bottom:4px}
     {% if env.status == 'concluido' %}
       <div class="badge badge-ok">✔ TODOS OS SIGNATÁRIOS ASSINARAM</div>
     {% elif env.status == 'cancelado' %}
-      <div class="badge badge-canc">✖ ENVELOPE CANCELADO</div>
+      <div class="badge badge-canc">✖ DOCUMENTO CANCELADO</div>
     {% else %}
       <div class="badge badge-pend">⏳ {{ assinados|length }} de {{ total }} signatários assinaram</div>
     {% endif %}
@@ -81,7 +92,7 @@ h2{font-size:18px;color:#1a2b3c;margin-bottom:4px}
     {% endif %}
 
     <div class="section">
-      <h3>Informações do Envelope</h3>
+      <h3>Informações do Documento</h3>
       <dl class="detail-grid">
         <dt>Código</dt><dd>{{ env.codigo }}</dd>
         <dt>Tipo</dt><dd>{% if env.tipo=='funcionario' %}Funcionário{% elif env.tipo=='cliente' %}Cliente{% else %}Avulso{% endif %}</dd>

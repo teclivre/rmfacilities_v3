@@ -389,6 +389,7 @@ class AssinaturaEnvelope(db.Model):
     ref_id=db.Column(db.Integer)
     status=db.Column(db.String(20),default='rascunho')  # rascunho|pendente|parcial|concluido|cancelado
     codigo=db.Column(db.String(120))
+    nome_documento_assinado=db.Column(db.String(255))
     criado_por=db.Column(db.String(100))
     criado_em=db.Column(db.DateTime,default=utcnow)
     expira_em=db.Column(db.DateTime)
@@ -830,6 +831,205 @@ def wa_phone_matches(a,b):
             return True
     return False
 
+def _funcionario_por_whatsapp(numero):
+    num=only_digits(numero)
+    if not num:
+        return None
+    for funcionario in Funcionario.query.all():
+        if wa_phone_matches(num,funcionario.telefone or ''):
+            return funcionario
+    return None
+
+def _funcionario_por_cpf(cpf_digits):
+    alvo=only_digits(cpf_digits)
+    if len(alvo)!=11:
+        return None
+    for funcionario in Funcionario.query.all():
+        if only_digits(funcionario.cpf or '')==alvo:
+            return funcionario
+    return None
+
+def _valida_cpf(cpf):
+    """Valida CPF pelo algoritmo dos dígitos verificadores."""
+    d=only_digits(cpf)
+    if len(d)!=11 or len(set(d))==1:
+        return False
+    s=sum(int(d[i])*(10-i) for i in range(9))
+    r=(s*10)%11; r=0 if r==10 else r
+    if r!=int(d[9]): return False
+    s=sum(int(d[i])*(11-i) for i in range(10))
+    r=(s*10)%11; r=0 if r==10 else r
+    return r==int(d[10])
+
+def _telefone_final_3(numero):
+    dig=only_digits(numero)
+    if len(dig)<3:
+        return ''
+    return dig[-3:]
+
+def _normaliza_telefone_destino(texto):
+    num=wa_norm_number(texto)
+    if not wa_is_valid_number(num):
+        return ''
+    return num
+
+def _resposta_sim_nao(texto):
+    t=(texto or '').strip().lower()
+    if t in ('s','sim','ok','confirmo','confirma','isso','correto'):
+        return True
+    if t in ('n','nao','não','negativo'):
+        return False
+    return None
+
+DEFAULT_IA_WA_PROMPT="""PERSONA
+Você é o Rômulo, assistente virtual oficial da RM Facilities.
+Responda sempre em português do Brasil, com tom cordial, objetivo e profissional.
+
+REGRAS DE COMUNICAÇÃO
+Formato WhatsApp: sempre uma linha em branco entre blocos.
+Use negrito com um asterisco em cada lado da palavra.
+Áudios entram como texto; a resposta deve ser sempre por texto.
+Nunca invente dados, políticas, valores ou prazos.
+Faça apenas uma pergunta por mensagem.
+Não repita perguntas já respondidas.
+Não reinicie o fluxo sem pedido explícito do usuário.
+
+HORÁRIO
+Atendimento humano: segunda a sexta, 08h00 às 18h00.
+Fora do expediente: avise isso logo no início, mas continue a coleta normalmente.
+
+COBERTURA SPOT
+Para serviços pontuais/avulsos (SPOT), atendemos somente:
+
+São José dos Campos
+Jacareí
+Caçapava
+
+Se for SPOT fora dessas cidades: informar sem cobertura e encerrar apenas esse fluxo.
+Se for serviço fixo/recorrente: seguir normalmente.
+
+IDENTIFICAÇÃO POR TELEFONE (PRIORIDADE MÁXIMA)
+Antes de qualquer triagem, verificar se o telefone do WhatsApp está vinculado a funcionário cadastrado.
+
+Se estiver vinculado:
+
+Não pedir nome.
+Ir direto para atendimento de funcionário, perguntando o que deseja.
+Para liberar documento, exigir CPF.
+Pedir confirmação do telefone de destino mostrando apenas os 3 últimos dígitos.
+Permitir informar outro número para envio após a validação do CPF.
+
+Se não estiver vinculado:
+
+Seguir triagem normal.
+
+ESTADO DA CONVERSA
+Estados possíveis:
+
+TRIAGEM
+CLIENTE_COLETA
+FUNCIONARIO_ATENDIMENTO
+FUNCIONARIO_DOC_CPF
+CANDIDATO
+FORNECEDOR
+OUVIDORIA_COLETA
+ENCERRADO
+
+Regras:
+
+Mostrar menu apenas quando estado for TRIAGEM.
+Não repetir menu se já houver fluxo ativo.
+Não voltar ao início sem comando do usuário.
+Se o usuário enviar vários dados em uma mensagem, aproveite os válidos e pergunte apenas o próximo campo faltante.
+
+TRIAGEM PADRÃO
+Não pedir nome completo para clientes.
+Quando não houver fluxo ativo:
+
+Olá! Seja bem-vindo à RM Facilities. Como posso te ajudar hoje?
+
+1 - Cliente — Solicitar orçamento
+2 - Funcionário — Assuntos de RH ou operacional
+3 - Candidato a vaga
+4 - Fornecedor / Compras
+5 - Ouvidoria
+
+Se a primeira mensagem já indicar o assunto, iniciar direto no fluxo correspondente, sem repetir menu.
+
+FLUXOS
+1) CLIENTE (ORÇAMENTO)
+Coletar, nesta ordem:
+
+Nome
+Tipo de serviço
+Cidade (aplicar regra SPOT)
+Escala ou metragem
+CNPJ ou CPF
+E-mail
+
+2) FUNCIONÁRIO (RH/OPERACIONAL)
+Se identificado por telefone:
+
+Não pedir nome.
+Perguntar diretamente o que deseja.
+Se pedir documento, entrar em validação de CPF.
+Liberar documento mesmo se o telefone não for o mesmo do cadastro após validar o CPF.
+
+Se não identificado:
+
+Pedir CPF primeiro como identificação principal.
+Depois confirmar o telefone mostrando apenas os 3 últimos dígitos do cadastro.
+Perguntar o assunto.
+Pedir o detalhamento.
+
+3) CANDIDATO
+Responder com o e-mail de currículo: trabalheconosco@rmfacilities.com.br
+
+4) FORNECEDOR / COMPRAS
+Responder com o e-mail: compras@rmfacilities.com.br
+
+5) OUVIDORIA
+Pedir:
+
+O que aconteceu
+Quando ocorreu
+Local/contrato
+Como prefere retorno
+
+SEGURANÇA PARA DOCUMENTOS (OBRIGATÓRIA)
+Para holerite, contracheque e documentos:
+
+Sempre pedir CPF completo antes de liberar.
+Sem CPF validado, não enviar.
+CPF divergente: negar envio e orientar contato com RH.
+Mesmo com telefone identificado, CPF continua obrigatório.
+
+Mensagem padrão:
+Por segurança, confirme seu CPF completo (apenas números) para liberar o documento.
+
+Telefone para envio:
+Aceitar telefone com ou sem máscara, por exemplo: (12) 99775-2283 ou 12997752283.
+
+CPF:
+Aceitar CPF com ou sem máscara, por exemplo: 273.962.528-89 ou 27396252889.
+
+MÚLTIPLOS DOCUMENTOS E ANO CORRENTE
+Quando o usuário pedir mais de um documento no mesmo pedido, processar todos os meses solicitados.
+
+Exemplos válidos:
+
+maio e junho
+05/2026 e 06/2026
+maio, junho e julho
+
+Regra obrigatória:
+
+Se o mês vier sem ano, considerar automaticamente o ano corrente.
+Ao final, informar quais meses foram enviados e quais não foram encontrados, se houver.
+
+ENCERRAMENTO
+Ao finalizar fluxos com coleta, gerar resumo técnico em tópicos e encerrar cordialmente."""
+
 def wa_send_text(numero,mensagem):
     cfg=wa_cfg()
     if not cfg['url'] or not cfg['instancia']: raise ValueError('WhatsApp nao configurado')
@@ -1215,172 +1415,128 @@ def _processa_dialogo_holerite(conversa_id,numero,texto):
     
     estado=ctx.get('holerite_estado')
     
-    # Estado inicial: solicitar dados
+    # Estado inicial: pedir CPF diretamente.
     if not estado:
-        ctx['holerite_estado']='aguardando_identificacao'
+        reiniciou=ctx.pop('_reiniciou_inatividade',False)
+        funcionario_vinculado=_funcionario_por_whatsapp(numero)
+        numero_destino=_normaliza_telefone_destino(numero)
         ctx['holerite_tentativas']=0
-        conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-        db.session.commit()
-        return "Ótimo! Para buscar seu holerite, primeiro preciso do seu nome completo.\n\nPor favor, digite seu nome completo."
-    
-    # Aguardando identificação por nome
-    if estado=='aguardando_identificacao':
-        texto_clean=texto.strip()
-        nome_match=re.sub(r'[\d\-.]','',texto_clean).strip()
-        if not nome_match or len(nome_match)<3:
-            ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
-            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-            db.session.commit()
-            if ctx['holerite_tentativas']>=3:
-                ctx['holerite_estado']=None
-                conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-                db.session.commit()
-                return "Desculpe, não consegui identificar seu nome completo. Envie 'holerite' para recomeçar."
-            return "Não consegui identificar seu nome completo. Digite apenas seu nome e sobrenome."
-        
-        # Busca o funcionário pelo nome informado.
-        funcionarios=Funcionario.query.filter(Funcionario.nome.ilike(f'%{nome_match}%')).all()
-        funcionarios_com_tel=[f for f in funcionarios if wa_phone_matches(numero,f.telefone)]
-        if funcionarios_com_tel:
-            funcionarios=funcionarios_com_tel
-        
-        if not funcionarios:
-            ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
-            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-            db.session.commit()
-            if ctx['holerite_tentativas']>=3:
-                ctx['holerite_estado']=None
-                conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-                db.session.commit()
-                return "Desculpe, não consegui validar seu cadastro com este número de telefone. Verifique o nome informado e se está falando do telefone cadastrado."
-            return "Não encontrei um cadastro compatível com seu nome e este número de telefone. Verifique o nome completo e tente novamente."
-        
-        if len(funcionarios)>1:
-            ctx['holerite_estado']='escolhendo_funcionario'
-            ctx['holerite_opcoes']=[f.id for f in funcionarios]
-            ctx['holerite_tentativas']=0
-            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-            db.session.commit()
-            opcoes_txt='\n'.join([f"{i+1}️⃣ {func.nome} (RE {func.re})" for i,func in enumerate(funcionarios)])
-            return f"Encontrei múltiplos registros. Qual é você?\n\n{opcoes_txt}"
-        
-        # Um único funcionário encontrado
-        funcionario=funcionarios[0]
-        if not wa_phone_matches(numero,funcionario.telefone):
-            ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
-            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-            db.session.commit()
-            if ctx['holerite_tentativas']>=3:
-                ctx['holerite_estado']=None
-                conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-                db.session.commit()
-                return "Por segurança, não consegui validar seu telefone com o cadastro do funcionário. Envie 'holerite' para recomeçar ou fale com o RH."
-            return "Por segurança, este telefone não confere com o cadastro do funcionário informado. Tente novamente usando o telefone cadastrado."
-        if not funcionario_docs_whatsapp_habilitado(funcionario):
-            ctx['holerite_estado']=None
-            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-            db.session.commit()
-            return "Seu cadastro não está habilitado para receber documentos pelo WhatsApp. Solicite ao RH a liberação de acesso a documentos."
+        ctx['holerite_funcionario_id']=(funcionario_vinculado.id if funcionario_vinculado else None)
+        ctx['holerite_numero_envio']=numero_destino or only_digits(numero)
+        ctx['holerite_telefone_final3']=_telefone_final_3(numero_destino or numero)
         ctx['holerite_estado']='aguardando_cpf'
-        ctx['holerite_funcionario_id']=funcionario.id
+        conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+        db.session.commit()
+        aviso="Olá! O atendimento anterior foi encerrado por inatividade. Vamos iniciar um novo atendimento.\n\n" if reiniciou else ""
+        return aviso+"Por segurança, confirme seu CPF completo (apenas números) para liberar o documento."
+
+    if estado in ('aguardando_identificacao','escolhendo_funcionario'):
+        ctx['holerite_estado']='aguardando_cpf'
         ctx['holerite_tentativas']=0
         conversa.contexto=json.dumps(ctx,ensure_ascii=False)
         db.session.commit()
-        return f"Encontrei seu cadastro, {funcionario.nome}.\n\nPor segurança, informe seu CPF completo (apenas números) para liberar o envio do holerite."
-    
-    # Escolhendo entre múltiplos funcionários
-    if estado=='escolhendo_funcionario':
-        try:
-            escolha=int(texto.strip())
-            opcoes=ctx.get('holerite_opcoes',[])
-            if 1<=escolha<=len(opcoes):
-                func_id=opcoes[escolha-1]
-                funcionario=Funcionario.query.get(func_id)
-                if funcionario:
-                    if not wa_phone_matches(numero,funcionario.telefone):
-                        ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
-                        conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-                        db.session.commit()
-                        if ctx['holerite_tentativas']>=3:
-                            ctx['holerite_estado']=None
-                            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-                            db.session.commit()
-                            return "Por segurança, este telefone não corresponde ao cadastro do funcionário selecionado. Envie 'holerite' para recomeçar ou fale com o RH."
-                        return "Por segurança, este telefone não corresponde ao cadastro do funcionário selecionado."
-                    if not funcionario_docs_whatsapp_habilitado(funcionario):
-                        ctx['holerite_estado']=None
-                        conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-                        db.session.commit()
-                        return "Seu cadastro não está habilitado para receber documentos pelo WhatsApp. Solicite ao RH a liberação de acesso a documentos."
-                    ctx['holerite_estado']='aguardando_cpf'
-                    ctx['holerite_funcionario_id']=func_id
-                    ctx['holerite_tentativas']=0
-                    conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-                    db.session.commit()
-                    return f"Perfeito, {funcionario.nome}.\n\nPor segurança, informe seu CPF completo (apenas números) para liberar o envio do holerite."
-        except:
-            pass
-        
-        ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
-        if ctx['holerite_tentativas']>=3:
-            ctx['holerite_estado']=None
-            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-            db.session.commit()
-            return "Desculpe, não consegui processar sua escolha. Envie 'holerite' novamente para recomeçar."
-        
-        conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-        db.session.commit()
-        return "Responda com o número (1, 2, 3...) do funcionário desejado."
+        return "Por segurança, confirme seu CPF completo (apenas números) para liberar o documento."
 
     # Validação de CPF antes de informar competência
     if estado=='aguardando_cpf':
         func_id=ctx.get('holerite_funcionario_id')
         funcionario=Funcionario.query.get(func_id) if func_id else None
-        if not funcionario:
-            ctx['holerite_estado']=None
+        cpf_informado=only_digits(texto)
+        if len(cpf_informado)!=11 or not _valida_cpf(cpf_informado):
+            ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
             conversa.contexto=json.dumps(ctx,ensure_ascii=False)
             db.session.commit()
-            return "Desculpe, houve um erro ao validar seus dados. Envie 'holerite' para recomeçar."
+            if ctx['holerite_tentativas']>=3:
+                ctx['holerite_estado']=None
+                conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+                db.session.commit()
+                return "Não foi possível validar sua identidade após 3 tentativas. Envie 'holerite' para recomeçar."
+            restantes=3-ctx['holerite_tentativas']
+            return f"CPF inválido ou não reconhecido. Informe seu CPF completo com 11 dígitos. Você ainda tem {restantes} tentativa(s)."
+
+        funcionario_cpf=_funcionario_por_cpf(cpf_informado)
+        if funcionario and only_digits(funcionario.cpf or '')==cpf_informado and funcionario_cpf is None:
+            funcionario_cpf=funcionario
+        if funcionario_cpf:
+            funcionario=funcionario_cpf
+            ctx['holerite_funcionario_id']=funcionario.id
+
+        cpf_cadastrado=only_digits(funcionario.cpf or '') if funcionario else ''
+        if not funcionario or not cpf_cadastrado or cpf_informado!=cpf_cadastrado:
+            ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            if ctx['holerite_tentativas']>=3:
+                ctx['holerite_estado']=None
+                conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+                db.session.commit()
+                return "CPF não confere com o cadastro. Por segurança, o atendimento foi encerrado após 3 tentativas. Envie 'holerite' para tentar novamente."
+            restantes=3-ctx['holerite_tentativas']
+            return f"CPF não confere com o cadastro. Tente novamente com o CPF correto. Você ainda tem {restantes} tentativa(s)."
+
         if not funcionario_docs_whatsapp_habilitado(funcionario):
             ctx['holerite_estado']=None
             conversa.contexto=json.dumps(ctx,ensure_ascii=False)
             db.session.commit()
             return "Seu cadastro não está habilitado para receber documentos pelo WhatsApp. Solicite ao RH a liberação de acesso a documentos."
-        if not wa_phone_matches(numero,funcionario.telefone):
-            ctx['holerite_estado']=None
-            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-            db.session.commit()
-            return "Por segurança, este telefone não corresponde ao cadastro do funcionário. Procure o RH para atualizar seu número e tente novamente."
 
-        cpf_informado=only_digits(texto)
-        cpf_cadastrado=only_digits(funcionario.cpf or '')
-        if len(cpf_informado)!=11:
-            ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
+        numero_destino=ctx.get('holerite_numero_envio') or _normaliza_telefone_destino(numero) or wa_norm_number(funcionario.telefone or '')
+        final3=_telefone_final_3(numero_destino)
+        if final3:
+            ctx['holerite_estado']='confirmando_telefone'
+            ctx['holerite_telefone_final3']=final3
+            ctx['holerite_numero_envio']=numero_destino
+            ctx['holerite_tentativas']=0
             conversa.contexto=json.dumps(ctx,ensure_ascii=False)
             db.session.commit()
-            if ctx['holerite_tentativas']>=3:
-                ctx['holerite_estado']=None
-                conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-                db.session.commit()
-                return "Não foi possível validar sua identidade. Envie 'holerite' para recomeçar."
-            return "CPF inválido. Informe seu CPF completo com 11 dígitos (apenas números)."
-
-        if not cpf_cadastrado or cpf_informado!=cpf_cadastrado:
-            ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
-            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-            db.session.commit()
-            if ctx['holerite_tentativas']>=3:
-                ctx['holerite_estado']=None
-                conversa.contexto=json.dumps(ctx,ensure_ascii=False)
-                db.session.commit()
-                return "CPF não confere com o cadastro. Por segurança, o fluxo foi encerrado. Envie 'holerite' para tentar novamente."
-            return "CPF não confere com o cadastro. Tente novamente com o CPF correto."
+            return f"CPF validado com sucesso.\n\nPosso enviar para o número com final *{final3}*? Se preferir outro, digite o número completo com DDD."
 
         ctx['holerite_estado']='aguardando_competencia'
         ctx['holerite_tentativas']=0
         conversa.contexto=json.dumps(ctx,ensure_ascii=False)
         db.session.commit()
         return "Identidade validada com sucesso.\n\nAgora informe o(s) mês(es) do holerite. Você pode pedir mais de um de uma vez (ex.: 05/2026 e 06/2026, ou maio e junho). Se não informar o ano, assumirei o ano corrente."
+
+    if estado=='confirmando_telefone':
+        confirmado=_resposta_sim_nao(texto)
+        if confirmado is True:
+            ctx['holerite_estado']='aguardando_competencia'
+            ctx['holerite_tentativas']=0
+            ctx['holerite_telefone_confirmado']='sim'
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            return "Perfeito.\n\nAgora informe o(s) mês(es) do holerite. Você pode pedir mais de um de uma vez (ex.: 05/2026 e 06/2026, ou maio e junho). Se não informar o ano, assumirei o ano corrente."
+
+        novo_numero=_normaliza_telefone_destino(texto)
+        if confirmado is False and not novo_numero:
+            ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            if ctx['holerite_tentativas']>=3:
+                ctx['holerite_estado']=None
+                conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+                db.session.commit()
+                return "Não consegui confirmar o telefone de envio. Envie 'holerite' para recomeçar."
+            return "Digite o número completo com DDD para envio do documento."
+
+        if not novo_numero and confirmado is None:
+            ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
+            conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+            db.session.commit()
+            if ctx['holerite_tentativas']>=3:
+                ctx['holerite_estado']=None
+                conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+                db.session.commit()
+                return "Não consegui confirmar o telefone de envio. Envie 'holerite' para recomeçar."
+            return "Responda SIM ou informe outro número com DDD para envio."
+
+        ctx['holerite_estado']='aguardando_competencia'
+        ctx['holerite_tentativas']=0
+        ctx['holerite_telefone_confirmado']='sim' if confirmado else 'outro'
+        ctx['holerite_numero_envio']=novo_numero or ctx.get('holerite_numero_envio') or _normaliza_telefone_destino(numero)
+        conversa.contexto=json.dumps(ctx,ensure_ascii=False)
+        db.session.commit()
+        return "Número confirmado.\n\nAgora informe o(s) mês(es) do holerite. Você pode pedir mais de um de uma vez (ex.: 05/2026 e 06/2026, ou maio e junho). Se não informar o ano, assumirei o ano corrente."
     
     # Aguardando competência (mês/ano)
     if estado=='aguardando_competencia':
@@ -1435,13 +1591,16 @@ def _processa_dialogo_holerite(conversa_id,numero,texto):
         try:
             enviados=[]
             erros=[]
+            numero_envio=_normaliza_telefone_destino(ctx.get('holerite_numero_envio') or numero)
+            if not numero_envio:
+                raise ValueError('Número de envio inválido.')
             for competencia,arquivo in arquivos_por_comp:
                 caminho_abs=os.path.join(UPLOAD_ROOT,arquivo.caminho)
                 if not os.path.exists(caminho_abs):
                     erros.append(f"{competencia} (arquivo indisponível)")
                     continue
                 nome_arquivo=(arquivo.nome_arquivo or os.path.basename(caminho_abs) or f'holerite_{competencia.replace("/", "-")}.pdf')
-                wa_send_pdf(numero,caminho_abs,nome_arquivo,f"Holerite {competencia}")
+                wa_send_pdf(numero_envio,caminho_abs,nome_arquivo,f"Holerite {competencia}")
                 enviados.append((competencia,nome_arquivo))
 
             ctx['holerite_estado']=None
@@ -1510,7 +1669,24 @@ def ai_wa_reply(numero,texto,historico=None):
     if not key: raise ValueError('API Key da IA nao configurada')
     provider=ai_provider_norm(cfg.get('provider') or 'gemini')
     model=ai_model_norm(provider,cfg.get('model') or '')
-    system=(cfg.get('prompt') or '').strip() or 'Você é um assistente de atendimento da RM Facilities. Responda em português, de forma objetiva e cordial. Se o usuário pedir por holerite, contracheque ou documentos relacionados, responda de forma amigável. Se o usuário pedir mais de um mês e não informar o ano, considere o ano corrente.'
+    system=(cfg.get('prompt') or '').strip() or DEFAULT_IA_WA_PROMPT
+    # Verifica reinício por inatividade para personalizar saudação na resposta da IA.
+    if conversa:
+        try:
+            ctx_ia=json.loads(conversa.contexto or '{}')
+            if ctx_ia.pop('_reiniciou_inatividade',False):
+                conversa.contexto=json.dumps(ctx_ia,ensure_ascii=False)
+                db.session.commit()
+                system+='\n\nINSTRUÇÃO: O atendimento anterior encerrou por mais de 2 horas de inatividade. Inicie sua resposta cumprimentando o usuário e informando que um novo atendimento foi iniciado.'
+        except Exception:
+            pass
+    funcionario_vinculado=_funcionario_por_whatsapp(numero)
+    if funcionario_vinculado:
+        final3=_telefone_final_3(funcionario_vinculado.telefone or numero)
+        extra='\n\nCONTEXTO INTERNO AUTOMÁTICO\nO telefone atual está vinculado a um funcionário cadastrado. Não peça nome. Se o assunto for documento, peça CPF antes de liberar qualquer arquivo. O documento pode ser enviado para qualquer número confirmado pelo usuário após a validação do CPF.'
+        if final3:
+            extra+=f' Ao confirmar telefone, mostre somente os 3 últimos dígitos: {final3}.'
+        system+=extra
     try: temp=float(cfg.get('temperature') or 0.3)
     except Exception: temp=0.3
     try: max_tk=int(float(cfg.get('max_tokens') or 350))
@@ -1621,7 +1797,7 @@ def smtp_send_pdf(dest,nome_dest,caminho_abs,nome_arquivo,competencia='',remeten
 
 
 def smtp_send_link_assinatura(dest, nome_dest, titulo_envelope, link, remetente='RM Facilities'):
-    """Envia link de assinatura de envelope por e-mail."""
+    """Envia link de assinatura de documento por e-mail."""
     cfg=smtp_cfg()
     if not cfg['host'] or not cfg['user']: raise ValueError('SMTP não configurado')
     msg=MIMEMultipart('alternative')
@@ -1631,7 +1807,7 @@ def smtp_send_link_assinatura(dest, nome_dest, titulo_envelope, link, remetente=
     corpo_txt=(
         f"Olá {nome_dest},\n\n"
         f"Você recebeu um documento para assinar eletronicamente.\n\n"
-        f"Envelope: {titulo_envelope}\n\n"
+        f"Documento: {titulo_envelope}\n\n"
         f"Acesse o link abaixo para assinar:\n{link}\n\n"
         f"Este link é exclusivo para você. Não compartilhe.\n\n"
         f"Atenciosamente,\n{remetente}"
@@ -1644,7 +1820,7 @@ def smtp_send_link_assinatura(dest, nome_dest, titulo_envelope, link, remetente=
         f"<p style='color:#333;font-size:15px'>Olá <strong>{nome_dest}</strong>,</p>"
         f"<p style='color:#555;font-size:14px;margin-top:10px'>Você recebeu um documento para assinar eletronicamente.</p>"
         f"<div style='background:#f5f9ff;border:1px solid #c5d9f0;border-radius:8px;padding:14px;margin:18px 0'>"
-        f"<span style='font-size:13px;color:#205d8a;font-weight:600'>📄 Envelope:</span><br>"
+        f"<span style='font-size:13px;color:#205d8a;font-weight:600'>📄 Documento:</span><br>"
         f"<span style='font-size:15px;color:#1a2b3c;font-weight:700'>{titulo_envelope}</span></div>"
         f"<div style='text-align:center;margin:22px 0'>"
         f"<a href='{link}' style='background:#205d8a;color:#fff;text-decoration:none;padding:13px 32px;"
@@ -2966,19 +3142,81 @@ def api_funcionario_arquivos(id):
 @app.route('/api/funcionarios/<int:id>/arquivos',methods=['POST'])
 @lr
 def api_funcionario_upload_arquivo(id):
-    Funcionario.query.get_or_404(id)
+    f=Funcionario.query.get_or_404(id)
     fs=request.files.get('arquivo')
     if not fs: return jsonify({'erro':'Arquivo nao enviado'}),400
     cat=(request.form.get('categoria') or 'outros').strip().lower()
     comp=(request.form.get('competencia') or '').strip()
+    canal_ass=(request.form.get('canal_assinatura') or 'whatsapp').strip().lower()
+    if canal_ass not in ('whatsapp','link','nao'):
+        canal_ass='whatsapp'
     ano=infer_doc_year(comp)
     prepare_func_doc_dirs(id,ano)
     subdir,cat=func_doc_subdir(id,cat,comp)
     rel,_=save_upload(fs,subdir)
     a=FuncionarioArquivo(funcionario_id=id,categoria=cat,competencia=comp,nome_arquivo=fs.filename,caminho=rel)
     db.session.add(a); db.session.commit()
+    assinatura_auto={'status':'nao_solicitada'}
+    if canal_ass in ('whatsapp','link'):
+        try:
+            rs=_solicitar_assinatura_arquivo_funcionario(a,f,canal=canal_ass,commit_now=True)
+            if rs.get('ok'):
+                assinatura_auto={
+                    'status':('solicitada' if canal_ass=='whatsapp' else 'link_gerado'),
+                    'link':rs.get('link',''),
+                    'canal':canal_ass,
+                }
+            else:
+                assinatura_auto={'status':'erro','erro':rs.get('erro',''),'link':rs.get('link','')}
+        except Exception as e:
+            assinatura_auto={'status':'erro','erro':str(e)}
     audit_event('funcionario_arquivo_upload','usuario',session.get('uid'),'funcionario',id,True,{'arquivo_id':a.id,'categoria':cat,'caminho':rel})
-    return jsonify(a.to_dict()),201
+    out=a.to_dict(); out['assinatura_auto']=assinatura_auto
+    return jsonify(out),201
+
+
+def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',dias_validade=7,commit_now=True,forcar_novo_token=True):
+    if not arquivo:
+        return {'ok':False,'erro':'Arquivo invalido.'}
+    if not funcionario:
+        funcionario=Funcionario.query.get(arquivo.funcionario_id)
+    if (arquivo.ass_status or '')=='assinado':
+        return {'ok':False,'erro':'Documento ja assinado.'}
+    canal=(canal or 'link').strip().lower()
+    if canal not in ('link','whatsapp'):
+        canal='link'
+    tel=''
+    if canal=='whatsapp':
+        tel=wa_norm_number((funcionario.telefone if funcionario else '') or '')
+        if not wa_is_valid_number(tel):
+            return {'ok':False,'erro':'Funcionario sem WhatsApp valido cadastrado.'}
+    if not arquivo.ass_codigo:
+        arquivo.ass_codigo=secrets.token_urlsafe(10)
+    if forcar_novo_token or not (arquivo.ass_token or '').strip():
+        arquivo.ass_token=secrets.token_urlsafe(24)
+    arquivo.ass_status='pendente'
+    arquivo.ass_expira_em=utcnow()+timedelta(days=max(1,int(dias_validade or 7)))
+
+    link=f"{request.url_root.rstrip('/')}/doc/assinar/{arquivo.ass_token}"
+    enviado_wa=False
+    if canal=='whatsapp':
+        nome_func=(funcionario.nome if funcionario else 'colaborador')
+        msg=(f"Olá, {nome_func}! Segue o link para assinatura do documento "
+             f"'{arquivo.nome_arquivo}'. O link expira em 7 dias: {link}")
+        wa_send_text(tel,msg)
+        enviado_wa=True
+
+    if commit_now:
+        db.session.commit()
+    else:
+        db.session.flush()
+    return {
+        'ok':True,
+        'link':link,
+        'canal':('whatsapp' if enviado_wa else 'link'),
+        'expira_em':(arquivo.ass_expira_em.isoformat() if arquivo.ass_expira_em else ''),
+        'enviado_wa':enviado_wa,
+    }
 
 @app.route('/api/funcionarios/<int:id>/documentos/preparar',methods=['POST'])
 @lr
@@ -3153,27 +3391,14 @@ def api_func_arquivo_solicitar_assinatura(id):
     f=Funcionario.query.get_or_404(a.funcionario_id)
     d=request.json or {}
     canal=(d.get('canal') or 'link').strip().lower()
-    if not a.ass_codigo:
-        a.ass_codigo=secrets.token_urlsafe(10)
-    token=secrets.token_urlsafe(24)
-    expira=utcnow()+timedelta(days=7)
-    a.ass_token=token; a.ass_status='pendente'; a.ass_expira_em=expira
-    db.session.commit()
-    link=f"{request.url_root.rstrip('/')}/doc/assinar/{token}"
-    enviado_wa=False
-    if canal=='whatsapp':
-        tel=wa_norm_number(f.telefone or '')
-        if not wa_is_valid_number(tel):
-            return jsonify({'erro':'Funcionario sem WhatsApp valido cadastrado.'}),400
-        msg=(f"Olá, {f.nome}! Segue o link para assinatura do documento "
-             f"'{a.nome_arquivo}'. O link expira em 7 dias: {link}")
-        wa_send_text(tel,msg)
-        enviado_wa=True
+    rs=_solicitar_assinatura_arquivo_funcionario(a,f,canal=canal,commit_now=True)
+    if not rs.get('ok'):
+        return jsonify({'erro':rs.get('erro') or 'Falha ao solicitar assinatura.'}),400
     audit_event('func_arquivo_assinatura_solicitada','usuario',session.get('uid'),'funcionario',f.id,True,
-                {'arquivo_id':id,'nome':a.nome_arquivo,'canal':'whatsapp' if enviado_wa else 'link'})
-    return jsonify({'ok':True,'arquivo_id':id,'link':link,
-                    'canal':'whatsapp' if enviado_wa else 'link',
-                    'expira_em':expira.isoformat()})
+                {'arquivo_id':id,'nome':a.nome_arquivo,'canal':rs.get('canal','link')})
+    return jsonify({'ok':True,'arquivo_id':id,'link':rs.get('link',''),
+                    'canal':rs.get('canal','link'),
+                    'expira_em':rs.get('expira_em','')})
 
 @app.route('/doc/assinar/<token>')
 def func_doc_assinar_publica(token):
@@ -3202,7 +3427,7 @@ def api_func_doc_assinatura_confirmar(token):
     aceite=bool(d.get('aceite'))
     if not nome:
         return jsonify({'erro':'Informe o nome completo para assinar.'}),400
-    if not cpf_info or len(cpf_info)!=11:
+    if not cpf_info or len(cpf_info)!=11 or not _valida_cpf(cpf_info):
         return jsonify({'erro':'Informe um CPF válido (11 dígitos) para assinar.'}),400
     if not aceite:
         return jsonify({'erro':'Confirme o aceite para concluir a assinatura.'}),400
@@ -3218,6 +3443,7 @@ def api_func_doc_assinatura_confirmar(token):
     a.ass_status='assinado'; a.ass_nome=nome; a.ass_cargo=cargo
     a.ass_cpf=cpf_info; a.ass_ip=ip; a.ass_em=utcnow(); a.ass_token=None
     db.session.commit()
+    copia_assinada=_salvar_pdf_assinado_em_arquivos_funcionario(a,f,request.url_root.rstrip('/'))
     audit_event('func_arquivo_assinatura_confirmada','externo',None,'funcionario',a.funcionario_id,True,
                 {'arquivo_id':a.id,'nome':nome,'cpf_parcial':cpf_info[:3]+'***'+cpf_info[-2:]})
     validacao_link=f"{request.url_root.rstrip('/')}/doc/validar/{a.ass_codigo}"
@@ -3227,20 +3453,25 @@ def api_func_doc_assinatura_confirmar(token):
         tel=wa_norm_number(f.telefone or '')
         if wa_is_valid_number(tel):
             try:
-                pdf_buf=_build_doc_assinatura_pdf(a,f,request.url_root.rstrip('/'))
-                nome_pdf=f"doc_assinado_{a.ass_codigo}.pdf"
-                tmp_path=os.path.join(UPLOAD_ROOT,'tmp_ass')
-                os.makedirs(tmp_path,exist_ok=True)
-                tmp_file=os.path.join(tmp_path,nome_pdf)
-                with open(tmp_file,'wb') as fp: fp.write(pdf_buf)
-                wa_send_pdf(tel,tmp_file,nome_pdf,
-                    f"✅ Documento assinado: {a.nome_arquivo}\nCódigo: {a.ass_codigo}\nValidar: {validacao_link}")
+                pdf_path=(copia_assinada.get('abs_path') if copia_assinada else '')
+                pdf_nome=(copia_assinada.get('nome_arquivo') if copia_assinada else '') or f"doc_assinado_{a.ass_codigo}.pdf"
+                if pdf_path and os.path.exists(pdf_path):
+                    wa_send_pdf(tel,pdf_path,pdf_nome,
+                        f"✅ Documento assinado: {a.nome_arquivo}\nCódigo: {a.ass_codigo}\nValidar: {validacao_link}")
+                else:
+                    pdf_buf=_build_doc_assinatura_pdf(a,f,request.url_root.rstrip('/'))
+                    tmp_path=os.path.join(UPLOAD_ROOT,'tmp_ass')
+                    os.makedirs(tmp_path,exist_ok=True)
+                    tmp_file=os.path.join(tmp_path,pdf_nome)
+                    with open(tmp_file,'wb') as fp: fp.write(pdf_buf)
+                    wa_send_pdf(tel,tmp_file,pdf_nome,
+                        f"✅ Documento assinado: {a.nome_arquivo}\nCódigo: {a.ass_codigo}\nValidar: {validacao_link}")
+                    try: os.remove(tmp_file)
+                    except: pass
                 enviado_wa=True
-                try: os.remove(tmp_file)
-                except: pass
             except Exception:
                 pass
-    return jsonify({'ok':True,'mensagem':'Assinatura concluída com sucesso.','validacao_link':validacao_link,'whatsapp_enviado':enviado_wa})
+    return jsonify({'ok':True,'mensagem':'Assinatura concluída com sucesso.','validacao_link':validacao_link,'whatsapp_enviado':enviado_wa,'arquivo_assinado_salvo':bool(copia_assinada and copia_assinada.get('ok'))})
 
 @app.route('/doc/validar/<codigo>')
 def func_doc_validar_publica(codigo):
@@ -3340,6 +3571,133 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
     story.append(Paragraph(f'Gerado em {datetime.now().strftime("%d/%m/%Y %H:%M")} — RM Facilities',ps('rod',fontSize=7,textColor=colors.HexColor('#999'),alignment=TA_CENTER)))
     doc.build(story); return buf.getvalue()
 
+
+def _montar_pdf_assinado_funcionario(arquivo,funcionario,url_root):
+    """Retorna bytes do PDF assinado: páginas originais estampadas + página de auditoria."""
+    try:
+        from pypdf import PdfReader, PdfWriter
+    except ImportError:
+        from PyPDF2 import PdfReader, PdfWriter
+    from reportlab.pdfgen import canvas as rl_canvas
+    from reportlab.graphics.barcode import qr as qr_code
+    from reportlab.graphics.shapes import Drawing
+    from reportlab.graphics import renderPDF
+
+    # Resolve caminho do arquivo original
+    raw=(arquivo.caminho or '').strip()
+    abs_path=''
+    if raw:
+        cands=[raw]
+        if not os.path.isabs(raw):
+            cands.append(os.path.join(UPLOAD_ROOT,raw))
+            cands.append(os.path.join(_get_uploads_base(),raw))
+        for p in cands:
+            if p and os.path.exists(p):
+                abs_path=p; break
+
+    validacao_link=f"{url_root}/doc/validar/{arquivo.ass_codigo}" if arquivo.ass_codigo else ''
+    footer_text=(f"Assinado eletronicamente por {arquivo.ass_nome or '?'} em "
+                 f"{(arquivo.ass_em.strftime('%d/%m/%Y %H:%M') if isinstance(arquivo.ass_em,datetime) else str(arquivo.ass_em or ''))} "
+                 f"| Cód. {arquivo.ass_codigo or ''} | RM Facilities")
+
+    writer=PdfWriter()
+    pages_added=0
+
+    if abs_path:
+        try:
+            with open(abs_path,'rb') as fh:
+                reader=PdfReader(fh)
+                for page in reader.pages:
+                    try:
+                        w=float(page.mediabox.width)
+                        h=float(page.mediabox.height)
+                        ov=io.BytesIO()
+                        c=rl_canvas.Canvas(ov,pagesize=(w,h))
+                        c.setFillColorRGB(0.93,0.95,0.99)
+                        c.rect(0,0,w,22,fill=1,stroke=0)
+                        text_x=6
+                        if validacao_link:
+                            try:
+                                qr_widget=qr_code.QrCodeWidget(validacao_link)
+                                b=qr_widget.getBounds()
+                                bw=max(1,b[2]-b[0]); bh=max(1,b[3]-b[1])
+                                sz=14
+                                qr_draw=Drawing(sz,sz,transform=[sz/bw,0,0,sz/bh,0,0])
+                                qr_draw.add(qr_widget)
+                                renderPDF.draw(qr_draw,c,5,4)
+                                text_x=22
+                            except Exception:
+                                text_x=6
+                        c.setFillColorRGB(0.13,0.36,0.54)
+                        c.setFont('Helvetica',6)
+                        c.drawString(text_x,8,footer_text)
+                        c.save(); ov.seek(0)
+                        ov_page=PdfReader(ov).pages[0]
+                        page.merge_page(ov_page)
+                    except Exception:
+                        pass
+                    writer.add_page(page)
+                    pages_added+=1
+        except Exception:
+            pass
+
+    # Página de auditoria
+    audit_bytes=_build_doc_assinatura_pdf(arquivo,funcionario,url_root)
+    try:
+        from pypdf import PdfReader as _PR
+        audit_reader=_PR(io.BytesIO(audit_bytes))
+    except Exception:
+        try:
+            from PyPDF2 import PdfReader as _PR2
+            audit_reader=_PR2(io.BytesIO(audit_bytes))
+        except Exception:
+            audit_reader=None
+    if audit_reader:
+        for page in audit_reader.pages:
+            writer.add_page(page)
+            pages_added+=1
+
+    if pages_added==0:
+        raise ValueError('Nenhuma página gerada para o PDF assinado.')
+    out=io.BytesIO(); writer.write(out); return out.getvalue()
+
+
+def _salvar_pdf_assinado_em_arquivos_funcionario(arquivo,funcionario,url_root):
+    if not arquivo or not funcionario:
+        return {'ok':False,'erro':'Arquivo ou funcionario invalido.'}
+    try:
+        pdf_buf=_montar_pdf_assinado_funcionario(arquivo,funcionario,url_root)
+        comp=(arquivo.competencia or '').strip()
+        ano=infer_doc_year(comp)
+        prepare_func_doc_dirs(funcionario.id,ano)
+        subdir,cat=func_doc_subdir(funcionario.id,arquivo.categoria or 'outros',comp)
+        base_nome=os.path.splitext((arquivo.nome_arquivo or 'documento').strip())[0] or 'documento'
+        nome_ass=f'{base_nome}_ASSINADO.pdf'
+        rel,abs_p,nome_final=unique_rel_filename(subdir,nome_ass)
+        os.makedirs(os.path.dirname(abs_p),exist_ok=True)
+        with open(abs_p,'wb') as out:
+            out.write(pdf_buf)
+        novo=FuncionarioArquivo(
+            funcionario_id=funcionario.id,
+            categoria=cat,
+            competencia=arquivo.competencia,
+            nome_arquivo=nome_final,
+            caminho=rel,
+            ass_status='assinado',
+            ass_codigo=arquivo.ass_codigo,
+            ass_nome=arquivo.ass_nome,
+            ass_cargo=arquivo.ass_cargo,
+            ass_cpf=arquivo.ass_cpf,
+            ass_ip=arquivo.ass_ip,
+            ass_em=arquivo.ass_em,
+        )
+        db.session.add(novo)
+        db.session.commit()
+        return {'ok':True,'arquivo_id':novo.id,'nome_arquivo':nome_final,'caminho':rel,'abs_path':abs_p}
+    except Exception as e:
+        db.session.rollback()
+        return {'ok':False,'erro':str(e)}
+
 @app.route('/api/funcionarios/arquivos/<int:id>/assinatura/pdf-auditoria')
 @lr
 def api_func_arquivo_assinatura_pdf(id):
@@ -3380,7 +3738,7 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     hash_comp=hashlib.sha256(trilha_base.encode('utf-8')).hexdigest().upper()
 
     story=[]
-    hdr=Table([[Paragraph('<b><font color="white">AUDITORIA DE ASSINATURA ELETRÔNICA — ENVELOPE</font></b>',ps('ht',fontSize=12,alignment=TA_CENTER))]],colWidths=[W])
+    hdr=Table([[Paragraph('<b><font color="white">AUDITORIA DE ASSINATURA ELETRÔNICA — DOCUMENTO</font></b>',ps('ht',fontSize=12,alignment=TA_CENTER))]],colWidths=[W])
     hdr.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),AZ),('TOPPADDING',(0,0),(-1,-1),10),('BOTTOMPADDING',(0,0),(-1,-1),10)]))
     story.append(hdr); story.append(Spacer(1,10))
     assinados=[s for s in signatarios if s.status=='assinado']
@@ -3394,7 +3752,7 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     story.append(st); story.append(Spacer(1,10))
 
     detalhes=[
-        ('Título do Envelope',envelope.titulo or '-'),
+        ('Título do Documento',envelope.titulo or '-'),
         ('Descrição',envelope.descricao or '-'),
         ('Tipo',{'funcionario':'Funcionário','cliente':'Cliente','avulso':'Avulso'}.get(envelope.tipo,envelope.tipo or '-')),
         ('Status',envelope.status or '-'),
@@ -3469,14 +3827,33 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
     except ImportError:
         from PyPDF2 import PdfReader, PdfWriter
     from reportlab.pdfgen import canvas as rl_canvas
+    from reportlab.graphics.barcode import qr as qr_code
+    from reportlab.graphics.shapes import Drawing
+    from reportlab.graphics import renderPDF
 
     writer=PdfWriter()
+    pages_added=0
+    footer_qr_link=f"{url_root}/envelope/validar/{envelope.codigo}" if getattr(envelope,'codigo',None) else ''
+
+    def _resolve_abs_path(caminho):
+        raw=(caminho or '').strip()
+        if not raw:
+            return ''
+        cands=[raw]
+        if not os.path.isabs(raw):
+            cands.append(os.path.join(UPLOAD_ROOT,raw))
+            cands.append(os.path.join(_get_uploads_base(),raw))
+        for p in cands:
+            if p and os.path.exists(p):
+                return p
+        return ''
 
     for arq in arquivos:
-        if not arq.caminho or not os.path.exists(arq.caminho):
+        abs_path=_resolve_abs_path(arq.caminho)
+        if not abs_path:
             continue
         try:
-            with open(arq.caminho,'rb') as fh:
+            with open(abs_path,'rb') as fh:
                 reader=PdfReader(fh)
                 for page in reader.pages:
                     try:
@@ -3485,18 +3862,35 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
                         ov=io.BytesIO()
                         c=rl_canvas.Canvas(ov,pagesize=(w,h))
                         c.setFillColorRGB(0.93,0.95,0.99)
-                        c.rect(0,0,w,20,fill=1,stroke=0)
+                        c.rect(0,0,w,40,fill=1,stroke=0)
+                        text_x=8
+                        if footer_qr_link:
+                            try:
+                                qr_widget=qr_code.QrCodeWidget(footer_qr_link)
+                                b=qr_widget.getBounds()
+                                bw=max(1,b[2]-b[0]); bh=max(1,b[3]-b[1])
+                                sz=34
+                                qr_draw=Drawing(sz,sz,transform=[sz/bw,0,0,sz/bh,0,0])
+                                qr_draw.add(qr_widget)
+                                renderPDF.draw(qr_draw,c,5,4)
+                                text_x=44
+                            except Exception:
+                                text_x=8
                         c.setFillColorRGB(0.13,0.36,0.54)
-                        c.setFont('Helvetica',6)
-                        c.drawString(6,7,footer_text)
+                        c.setFont('Helvetica',8)
+                        c.drawString(text_x,22,footer_text)
                         c.save(); ov.seek(0)
                         ov_page=PdfReader(ov).pages[0]
                         page.merge_page(ov_page)
                     except Exception:
                         pass
                     writer.add_page(page)
+                    pages_added+=1
         except Exception:
             continue
+
+    if pages_added==0:
+        raise ValueError('Nenhum arquivo PDF válido foi encontrado no envelope para geração do documento assinado.')
 
     # Página de auditoria final
     signatarios=AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=envelope.id).all()
@@ -3521,10 +3915,41 @@ def _get_uploads_base():
     return os.path.join(os.path.dirname(__file__),'instance','uploads')
 
 
+def _normalize_signed_pdf_name(name):
+    raw=(name or '').strip()
+    if not raw:
+        return ''
+    base=os.path.basename(raw)
+    if not base.lower().endswith('.pdf'):
+        base=f'{base}.pdf'
+    safe=secure_filename(base)
+    if not safe:
+        return ''
+    if not safe.lower().endswith('.pdf'):
+        safe=f"{os.path.splitext(safe)[0]}.pdf"
+    return safe
+
+
+def _default_signed_pdf_name(envelope):
+    arq=(AssinaturaEnvelopeArquivo.query
+         .filter_by(envelope_id=envelope.id)
+         .order_by(AssinaturaEnvelopeArquivo.id.asc())
+         .first())
+    base='documento'
+    if arq and (arq.nome_arquivo or '').strip():
+        base=os.path.splitext(os.path.basename(arq.nome_arquivo.strip()))[0] or 'documento'
+    default_name=_normalize_signed_pdf_name(f'{base} ASSINADO.pdf')
+    if default_name:
+        return default_name
+    return f'documento_assinado_{envelope.id}.pdf'
+
+
 def _envelope_signed_pdf_path(envelope):
     base=os.path.join(_get_uploads_base(),'envelopes',str(envelope.id),'assinado')
     os.makedirs(base,exist_ok=True)
-    fname=f"envelope_assinado_{envelope.codigo or envelope.id}.pdf"
+    fname=_normalize_signed_pdf_name(getattr(envelope,'nome_documento_assinado',None))
+    if not fname:
+        fname=_default_signed_pdf_name(envelope)
     return os.path.join(base,fname),fname
 
 
@@ -3578,6 +4003,7 @@ def api_envelopes_criar():
         ref_id=data.get('ref_id') or None,
         status='rascunho',
         codigo=secrets.token_urlsafe(12),
+        nome_documento_assinado=_normalize_signed_pdf_name(data.get('nome_documento_assinado')) or None,
         criado_por=session.get('usuario',''),
         expira_em=datetime.fromisoformat(data['expira_em']) if data.get('expira_em') else None,
     )
@@ -3608,6 +4034,8 @@ def api_envelope_atualizar(id):
     if 'expira_em' in data: env.expira_em=datetime.fromisoformat(data['expira_em']) if data['expira_em'] else None
     if 'empresa_id' in data:
         env.empresa_id=(int(data.get('empresa_id')) if str(data.get('empresa_id') or '').isdigit() else None)
+    if 'nome_documento_assinado' in data:
+        env.nome_documento_assinado=_normalize_signed_pdf_name(data.get('nome_documento_assinado')) or None
     db.session.commit()
     return jsonify(env.to_dict())
 
@@ -3617,7 +4045,7 @@ def api_envelope_atualizar(id):
 def api_envelope_deletar(id):
     env=AssinaturaEnvelope.query.get_or_404(id)
     if env.status not in ('rascunho',):
-        return jsonify({'erro':'Só é possível excluir envelopes em rascunho'}),400
+        return jsonify({'erro':'Só é possível excluir documentos em rascunho'}),400
     AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).delete()
     AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=id).delete()
     db.session.delete(env); db.session.commit()
@@ -3641,7 +4069,11 @@ def api_envelope_add_arquivo(id):
             nome_arquivo=fa.nome_arquivo,
             caminho=fa.caminho,
         )
-        db.session.add(arq); db.session.commit()
+        db.session.add(arq)
+        if not (env.nome_documento_assinado or '').strip():
+            base_nome=os.path.splitext(os.path.basename(arq.nome_arquivo or 'documento'))[0] or 'documento'
+            env.nome_documento_assinado=_normalize_signed_pdf_name(f'{base_nome} ASSINADO.pdf') or _default_signed_pdf_name(env)
+        db.session.commit()
         return jsonify(arq.to_dict()),201
     # Upload
     f=request.files.get('arquivo')
@@ -3657,7 +4089,11 @@ def api_envelope_add_arquivo(id):
         nome_arquivo=f.filename,
         caminho=path,
     )
-    db.session.add(arq); db.session.commit()
+    db.session.add(arq)
+    if not (env.nome_documento_assinado or '').strip():
+        base_nome=os.path.splitext(os.path.basename(arq.nome_arquivo or 'documento'))[0] or 'documento'
+        env.nome_documento_assinado=_normalize_signed_pdf_name(f'{base_nome} ASSINADO.pdf') or _default_signed_pdf_name(env)
+    db.session.commit()
     return jsonify(arq.to_dict()),201
 
 
@@ -3718,6 +4154,10 @@ def api_envelope_enviar(id):
     arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).all()
     if not arquivos:
         return jsonify({'erro':'Adicione ao menos um arquivo antes de enviar'}),400
+    if not env.codigo:
+        env.codigo=secrets.token_urlsafe(12)
+    emp=Empresa.query.get(env.empresa_id) if env.empresa_id else None
+    empresa_nome=(emp.razao or emp.nome) if emp else 'RM Facilities'
     url_root=request.url_root.rstrip('/')
     enviados=[]
     falhas=[]
@@ -3736,7 +4176,8 @@ def api_envelope_enviar(id):
                 continue
             tel=sig.telefone.strip().replace(' ','').replace('-','').replace('(','').replace(')','')
             msg=(f"Olá {sig.nome}, você recebeu um documento para assinar eletronicamente.\n"
-                 f"📄 Envelope: *{env.titulo}*\n"
+                  f"🏢 Empresa remetente: *{empresa_nome}*\n"
+                 f"📄 Documento: *{env.titulo}*\n"
                  f"🔗 Acesse e assine aqui:\n{link}")
             try:
                 wa_send_text(tel,msg)
@@ -3749,7 +4190,7 @@ def api_envelope_enviar(id):
                 falhas.append({'id':sig.id,'nome':sig.nome,'canal':'email','erro':'Signatário sem e-mail cadastrado.'})
                 continue
             try:
-                smtp_send_link_assinatura(sig.email.strip(),sig.nome or 'Signatário',env.titulo or 'Envelope',link)
+                smtp_send_link_assinatura(sig.email.strip(),sig.nome or 'Signatário',env.titulo or 'Documento',link)
                 enviados.append({'id':sig.id,'nome':sig.nome,'canal':'email','destino':sig.email.strip(),'link':link})
             except Exception as e:
                 falhas.append({'id':sig.id,'nome':sig.nome,'canal':'email','erro':str(e)})
@@ -3771,6 +4212,25 @@ def api_envelope_sig_link(id,sig_id):
     return jsonify({'link':link,'nome':sig.nome})
 
 
+@app.route('/envelope/assinar/<token>/arquivo/<int:arq_id>')
+def envelope_assinar_visualizar_arquivo(token,arq_id):
+    sig=AssinaturaEnvelopeSignatario.query.filter_by(token=token).first_or_404()
+    arq=AssinaturaEnvelopeArquivo.query.filter_by(id=arq_id,envelope_id=sig.envelope_id).first_or_404()
+    raw=(arq.caminho or '').strip()
+    cands=[raw]
+    if raw and not os.path.isabs(raw):
+        cands.append(os.path.join(UPLOAD_ROOT,raw))
+        cands.append(os.path.join(_get_uploads_base(),raw))
+    abs_path=''
+    for p in cands:
+        if p and os.path.exists(p):
+            abs_path=p
+            break
+    if not abs_path:
+        return 'Arquivo não encontrado.',404
+    return send_file(abs_path,as_attachment=False,download_name=arq.nome_arquivo or os.path.basename(abs_path))
+
+
 # Página pública de assinatura do envelope
 @app.route('/envelope/assinar/<token>')
 def envelope_assinar_publica(token):
@@ -3790,7 +4250,9 @@ def api_envelope_assinatura_confirmar(token):
         return jsonify({'erro':'Você já assinou este documento.'}),400
     env=AssinaturaEnvelope.query.get_or_404(sig.envelope_id)
     if env.expira_em and datetime.utcnow() > env.expira_em:
-        return jsonify({'erro':'O prazo para assinatura deste envelope expirou.'}),400
+        return jsonify({'erro':'O prazo para assinatura deste documento expirou.'}),400
+    if not env.codigo:
+        env.codigo=secrets.token_urlsafe(12)
     data=request.get_json() or {}
     nome=(data.get('nome') or '').strip()
     cargo=(data.get('cargo') or '').strip()
@@ -3798,8 +4260,8 @@ def api_envelope_assinatura_confirmar(token):
     aceite=data.get('aceite')
     if not nome or not cpf_inf or not aceite:
         return jsonify({'erro':'Preencha nome, CPF e confirme o aceite.'}),400
-    if len(cpf_inf)<11:
-        return jsonify({'erro':'CPF inválido.'}),400
+    if len(cpf_inf)<11 or not _valida_cpf(cpf_inf):
+        return jsonify({'erro':'CPF inválido. Verifique os dígitos e tente novamente.'}),400
     ip=request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
     sig.nome=nome
     sig.cargo=cargo
@@ -3811,20 +4273,24 @@ def api_envelope_assinatura_confirmar(token):
     sig.token=None  # invalida o token após uso
     url_root=request.url_root.rstrip('/')
     signed_pdf_link=''
+    emp=Empresa.query.get(env.empresa_id) if env.empresa_id else None
+    empresa_nome=(emp.razao or emp.nome) if emp else 'RM Facilities'
     # Verifica se todos assinaram
     todos=AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=env.id).all()
     if all(s.status=='assinado' for s in todos):
         env.status='concluido'
-        signed_pdf_link=f"{url_root}/envelope/baixar/{env.codigo}"
         try:
             abs_pdf,fname=_gerar_pdf_assinado_envelope(env,url_root)
+            signed_pdf_link=f"{url_root}/envelope/baixar/{env.codigo}"
             for s in todos:
                 if s.telefone:
                     tel=s.telefone.strip().replace(' ','').replace('-','').replace('(','').replace(')','')
-                    caption=f"✅ Todos assinaram! Segue o envelope *{env.titulo}* com a página de auditoria."
+                    caption=(f"✅ Assinatura concluída por *{empresa_nome}*! "
+                             f"Segue o documento *{env.titulo}* com a página de auditoria.")
                     try:
                         wa_send_pdf(tel,abs_pdf,fname,caption)
-                        wa_send_text(tel,f"🔗 Link para download do documento assinado:\n{signed_pdf_link}")
+                        wa_send_text(tel,(f"🏢 Empresa remetente: *{empresa_nome}*\n"
+                                          f"🔗 Link para download do documento assinado:\n{signed_pdf_link}"))
                     except Exception:
                         pass
         except Exception:
@@ -3837,6 +4303,7 @@ def api_envelope_assinatura_confirmar(token):
         try:
             tel_sig=sig.telefone.strip().replace(' ','').replace('-','').replace('(','').replace(')','')
             msg_sig=(f"✅ Assinatura registrada com sucesso.\n"
+                     f"🏢 Empresa remetente: *{empresa_nome}*\n"
                      f"🔎 Validação: {validacao_link}")
             if signed_pdf_link:
                 msg_sig+=f"\n⬇ Download do documento assinado: {signed_pdf_link}"
@@ -3887,6 +4354,9 @@ def api_holerites_upload():
     fs=request.files.get('arquivo')
     comp=(request.form.get('competencia') or '').strip()
     if not fs: return jsonify({'erro':'PDF nao enviado'}),400
+    canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
+    if canal_ass not in ('nao','whatsapp','link'):
+        canal_ass='nao'
     try:
         from pypdf import PdfReader, PdfWriter
     except Exception:
@@ -3894,7 +4364,7 @@ def api_holerites_upload():
     funcs=Funcionario.query.all()
     if not funcs: return jsonify({'erro':'Cadastre funcionarios antes do upload'}),400
     reader=PdfReader(fs)
-    enviados=0; sem_match=[]
+    enviados=0; sem_match=[]; assinaturas_auto=0; sem_tel=[]; erro_ass=[]
     for idx,page in enumerate(reader.pages,start=1):
         txt=(page.extract_text() or '').lower()
         alvo=None
@@ -3914,9 +4384,24 @@ def api_holerites_upload():
         os.makedirs(os.path.dirname(abs_p),exist_ok=True)
         with open(abs_p,'wb') as out: writer.write(out)
         a=FuncionarioArquivo(funcionario_id=alvo.id,categoria='holerite',competencia=comp,nome_arquivo=fake_name,caminho=rel)
-        db.session.add(a); enviados+=1
-    db.session.commit()
-    return jsonify({'ok':True,'arquivos_gerados':enviados,'paginas_sem_funcionario':sem_match})
+        db.session.add(a); db.session.commit(); enviados+=1
+        if canal_ass=='whatsapp':
+            tel=wa_norm_number(alvo.telefone or '')
+            if wa_is_valid_number(tel):
+                rs=_solicitar_assinatura_arquivo_funcionario(a,alvo,canal='whatsapp',commit_now=True)
+                if rs.get('ok'):
+                    assinaturas_auto+=1
+                else:
+                    erro_ass.append({'funcionario_id':alvo.id,'nome':alvo.nome,'erro':rs.get('erro') or 'Falha ao solicitar assinatura.'})
+            else:
+                sem_tel.append({'funcionario_id':alvo.id,'nome':alvo.nome})
+        elif canal_ass=='link':
+            rs=_solicitar_assinatura_arquivo_funcionario(a,alvo,canal='link',commit_now=True)
+            if rs.get('ok'):
+                assinaturas_auto+=1
+            else:
+                erro_ass.append({'funcionario_id':alvo.id,'nome':alvo.nome,'erro':rs.get('erro') or 'Falha ao gerar link de assinatura.'})
+    return jsonify({'ok':True,'arquivos_gerados':enviados,'paginas_sem_funcionario':sem_match,'assinaturas_auto':assinaturas_auto,'sem_telefone':sem_tel,'falhas_assinatura':erro_ass,'canal_assinatura':canal_ass})
 
 @app.route('/api/ordens-compra',methods=['GET'])
 @lr
@@ -4267,7 +4752,10 @@ def _api_beneficios_pdf_tipo(tipo):
 @lr
 def api_dashboard():
     ativos=Cliente.query.filter_by(status='Ativo').all()
-    receita=sum((c.limpeza or 0)+(c.jardinagem or 0)+(c.portaria or 0)+(c.materiais_equip_locacao or 0) for c in ativos)
+    receita=sum(
+        to_num(c.limpeza,True)+to_num(c.jardinagem,True)+to_num(c.portaria,True)+to_num(c.materiais_equip_locacao,True)
+        for c in ativos
+    )
     total_ativos=len(ativos)
     mes=datetime.now().strftime('%Y-%m')
     emitidos={m.cliente_id for m in Medicao.query.filter_by(mes_ref=mes).all() if m.cliente_id}
@@ -4943,6 +5431,9 @@ def api_rh_holerites_processar():
     fs=request.files.get('arquivo')
     comp=(request.form.get('competencia') or '').strip()
     if not fs: return jsonify({'erro':'PDF nao enviado'}),400
+    canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
+    if canal_ass not in ('nao','whatsapp','link'):
+        canal_ass='nao'
     nome_arq=(fs.filename or '').strip().lower()
     if nome_arq and not nome_arq.endswith('.pdf'):
         return jsonify({'erro':'Arquivo invalido. Envie um PDF (.pdf).'}),400
@@ -4992,15 +5483,34 @@ def api_rh_holerites_processar():
         with open(abs_p,'wb') as out: writer.write(out)
         a=FuncionarioArquivo(funcionario_id=alvo.id,categoria='holerite',competencia=comp,nome_arquivo=fake_name,caminho=rel)
         db.session.add(a); db.session.flush()
+        assinatura_auto={'status':'nao_solicitada','link':'','erro':''}
+        if canal_ass=='whatsapp':
+            tel=wa_norm_number(alvo.telefone or '')
+            if wa_is_valid_number(tel):
+                rs=_solicitar_assinatura_arquivo_funcionario(a,alvo,canal='whatsapp',commit_now=True)
+                if rs.get('ok'):
+                    assinatura_auto={'status':'solicitada','link':rs.get('link',''),'erro':''}
+                else:
+                    assinatura_auto={'status':'erro','link':rs.get('link',''),'erro':rs.get('erro') or 'Falha ao solicitar assinatura.'}
+            elif (alvo.telefone or '').strip():
+                assinatura_auto={'status':'telefone_invalido','link':'','erro':'Telefone cadastrado sem formato WhatsApp valido.'}
+            else:
+                assinatura_auto={'status':'sem_telefone','link':'','erro':'Funcionario sem telefone cadastrado.'}
+        elif canal_ass=='link':
+            rs=_solicitar_assinatura_arquivo_funcionario(a,alvo,canal='link',commit_now=True)
+            if rs.get('ok'):
+                assinatura_auto={'status':'link_gerado','link':rs.get('link',''),'erro':''}
+            else:
+                assinatura_auto={'status':'erro','link':rs.get('link',''),'erro':rs.get('erro') or 'Falha ao gerar link de assinatura.'}
         folha_ponto=_folha_ponto_for_func(alvo.id,comp)
         whatsapp_num=wa_norm_number(alvo.telefone or '')
         wa_habilitado=funcionario_docs_whatsapp_habilitado(alvo)
-        itens.append({'pagina':idx,'funcionario_id':alvo.id,'funcionario_nome':alvo.nome,'arquivo_id':a.id,'nome_arquivo':fake_name,'caminho':rel,'abs_caminho':abs_p,'email':alvo.email or '','whatsapp':(whatsapp_num if wa_is_valid_number(whatsapp_num) else ''),'whatsapp_habilitado':wa_habilitado,'folha_ponto_id':(folha_ponto.id if folha_ponto else None),'folha_ponto_nome':(folha_ponto.nome_arquivo if folha_ponto else ''),'folha_ponto_caminho':(folha_ponto.caminho if folha_ponto else ''),'status_envio':None,'erro_envio':None})
+        itens.append({'pagina':idx,'funcionario_id':alvo.id,'funcionario_nome':alvo.nome,'arquivo_id':a.id,'nome_arquivo':fake_name,'caminho':rel,'abs_caminho':abs_p,'email':alvo.email or '','whatsapp':(whatsapp_num if wa_is_valid_number(whatsapp_num) else ''),'whatsapp_habilitado':wa_habilitado,'folha_ponto_id':(folha_ponto.id if folha_ponto else None),'folha_ponto_nome':(folha_ponto.nome_arquivo if folha_ponto else ''),'folha_ponto_caminho':(folha_ponto.caminho if folha_ponto else ''),'status_envio':None,'erro_envio':None,'assinatura_auto_status':assinatura_auto.get('status'),'assinatura_auto_link':assinatura_auto.get('link'),'assinatura_auto_erro':assinatura_auto.get('erro')})
     db.session.commit()
     job_id=secrets.token_hex(16)
     _holerite_jobs[job_id]={'id':job_id,'status':'pronto','total_paginas':len(reader.pages),'itens':itens,'sem_match':sem_match,'competencia':comp,'criado_em':utcnow().isoformat()}
     itens_resp=[{k:v for k,v in it.items() if k!='abs_caminho'} for it in itens]
-    return jsonify({'ok':True,'job_id':job_id,'total_paginas':len(reader.pages),'separados':len(itens),'sem_match':sem_match,'itens':itens_resp})
+    return jsonify({'ok':True,'job_id':job_id,'total_paginas':len(reader.pages),'separados':len(itens),'sem_match':sem_match,'itens':itens_resp,'canal_assinatura':canal_ass})
 
 @app.route('/api/rh/holerites/job/<job_id>')
 @lr
@@ -5042,6 +5552,7 @@ def api_rh_holerites_enviar(job_id):
                     if s_e and s_w: item['status_envio']='enviado_ambos'
                     elif s_e: item['status_envio']='enviado_email'
                     elif s_w: item['status_envio']='enviado_wa'
+                    elif canal=='link': item['status_envio']='link_disponivel'
                     else: item['status_envio']='sem_contato'
                     item['erro_envio']=None
                 except Exception as e:
@@ -5171,7 +5682,7 @@ def api_wa_testar():
 @dr
 def api_ia_wa_cfg_get():
     d=ai_wa_cfg()
-    return jsonify({'enabled':d['enabled'],'provider':d['provider'],'api_key':d['api_key'],'model':d['model'],'prompt':d['prompt'],'temperature':d['temperature'],'max_tokens':d['max_tokens']})
+    return jsonify({'enabled':d['enabled'],'provider':d['provider'],'api_key':d['api_key'],'model':d['model'],'prompt':(d['prompt'] or DEFAULT_IA_WA_PROMPT),'temperature':d['temperature'],'max_tokens':d['max_tokens']})
 
 @app.route('/api/config/ia-whatsapp',methods=['POST'])
 @dr
@@ -5277,6 +5788,59 @@ def api_wa_send():
     wa_ai_pause_for(numero, 2)
     return jsonify({'ok':True})
 
+@app.route('/api/whatsapp/send-colaboradores',methods=['POST'])
+@lr
+def api_wa_send_colaboradores():
+    d=request.json or {}
+    texto=(d.get('texto') or '').strip()
+    ids_raw=d.get('funcionario_ids') or []
+    if not texto:
+        return jsonify({'erro':'texto obrigatorio'}),400
+    if not isinstance(ids_raw,list) or not ids_raw:
+        return jsonify({'erro':'funcionario_ids obrigatorio'}),400
+
+    ids=[]
+    for x in ids_raw:
+        try:
+            ids.append(int(x))
+        except Exception:
+            continue
+    ids=sorted(set(ids))
+    if not ids:
+        return jsonify({'erro':'Nenhum colaborador valido informado.'}),400
+
+    enviados=[]
+    falhas=[]
+    for func_id in ids:
+        f=Funcionario.query.get(func_id)
+        if not f:
+            falhas.append({'funcionario_id':func_id,'erro':'Colaborador não encontrado.'})
+            continue
+        if (f.status or '').strip().lower()!='ativo':
+            falhas.append({'funcionario_id':f.id,'nome':f.nome,'erro':'Colaborador não está ativo.'})
+            continue
+        tel=wa_norm_number(f.telefone or '')
+        if not wa_is_valid_number(tel):
+            falhas.append({'funcionario_id':f.id,'nome':f.nome,'erro':'Telefone cadastrado inválido ou ausente.'})
+            continue
+        try:
+            wa_send_text(tel,texto)
+            c=WhatsAppConversa.query.filter_by(numero=tel).first()
+            if not c:
+                c=WhatsAppConversa(numero=tel,nome=f.nome or tel)
+                db.session.add(c)
+                db.session.flush()
+            c.ultima_msg=utcnow()
+            db.session.add(WhatsAppMensagem(conversa_id=c.id,numero=tel,direcao='out',tipo='texto',conteudo=texto))
+            db.session.commit()
+            wa_ai_pause_for(tel,2)
+            enviados.append({'funcionario_id':f.id,'nome':f.nome,'telefone':tel})
+        except Exception as e:
+            db.session.rollback()
+            falhas.append({'funcionario_id':f.id,'nome':f.nome,'erro':str(e)})
+
+    return jsonify({'ok':True,'enviados':enviados,'enviados_count':len(enviados),'falhas':falhas})
+
 @app.route('/webhook/whatsapp',methods=['GET','POST'])
 def webhook_whatsapp():
     if request.method=='GET':
@@ -5370,13 +5934,27 @@ def webhook_whatsapp():
                     nome=(msg_data.get('pushName') or msg_data.get('notifyName') or numero)
                     c=WhatsAppConversa(numero=numero,nome=nome)
                     db.session.add(c); db.session.flush()
-                c.ultima_msg=utcnow()
+                agora=utcnow()
+                ultimo_msg_anterior=c.ultima_msg
+                # Após 2h sem interação, reinicia o estado do fluxo para começar nova conversa.
+                if ultimo_msg_anterior and (agora-ultimo_msg_anterior)>timedelta(hours=2):
+                    try:
+                        ctx_reset=json.loads(c.contexto or '{}')
+                    except Exception:
+                        ctx_reset={}
+                    ctx_reset['holerite_estado']=None
+                    ctx_reset['holerite_tentativas']=0
+                    ctx_reset['_reiniciou_inatividade']=True
+                    c.contexto=json.dumps(ctx_reset,ensure_ascii=False)
+                c.ultima_msg=agora
                 db.session.add(WhatsAppMensagem(conversa_id=c.id,numero=numero,direcao='in',tipo=tipo_in,conteudo=conteudo))
                 db.session.commit()
-                # Usa as mensagens mais recentes para preservar o estado atual da conversa.
+                # A IA considera apenas as mensagens das últimas 2 horas.
+                corte_hist=agora-timedelta(hours=2)
                 historico_db=(
                     WhatsAppMensagem.query
                     .filter_by(conversa_id=c.id)
+                    .filter(WhatsAppMensagem.criado_em>=corte_hist)
                     .order_by(WhatsAppMensagem.criado_em.desc())
                     .limit(20)
                     .all()
@@ -5581,6 +6159,7 @@ with app.app_context():
         'ref_id INTEGER',
         'status VARCHAR(20) DEFAULT "rascunho"',
         'codigo VARCHAR(120)',
+        'nome_documento_assinado VARCHAR(255)',
         'criado_por VARCHAR(100)',
         'criado_em DATETIME',
         'expira_em DATETIME',

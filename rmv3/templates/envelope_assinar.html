@@ -23,6 +23,8 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;min-height:100vh
 .card-doc ul li{font-size:13px;color:#333;padding:3px 0;border-bottom:1px solid #e8f0f8}
 .card-doc ul li:last-child{border-bottom:none}
 .card-doc ul li::before{content:"📄 ";font-size:12px}
+.doc-view{display:inline-block;margin-left:8px;font-size:12px;color:#205d8a;text-decoration:none;font-weight:600}
+.doc-view:hover{text-decoration:underline}
 h2{font-size:17px;color:#1a2b3c;margin-bottom:6px}
 .sub{font-size:13px;color:#666;margin-bottom:20px}
 .f{margin-bottom:14px}
@@ -48,6 +50,19 @@ input:focus{border-color:#205d8a}
 .info-sig{background:#fffbf0;border:1px solid #f0e0a0;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px;color:#7a5800}
 .info-sig strong{color:#5a3f00}
 .page-footer{text-align:center;font-size:11px;color:#aaa;margin-top:14px}
+@media (max-width:700px){
+  body{padding:12px}
+  .company-header{padding:14px;gap:12px;flex-wrap:wrap;align-items:flex-start}
+  .company-header img{height:44px}
+  .company-sep{display:none}
+  .box{padding:18px 14px}
+  .divider-line{margin:0 -14px 16px -14px}
+  .card-doc{padding:12px}
+  .doc-view{display:block;margin-left:0;margin-top:4px}
+  .aceite{padding:12px}
+  .btn{font-size:14px;padding:12px}
+  #msg-ok .cd span{font-size:17px;letter-spacing:1px}
+}
 </style>
 </head>
 <body>
@@ -72,7 +87,7 @@ input:focus{border-color:#205d8a}
       <div class="ico">✅</div>
       <h3>Documento já assinado!</h3>
       <p style="font-size:13px;color:#666;margin-bottom:10px">Você já assinou este documento anteriormente.</p>
-      <a href="/envelope/validar/{{ env.codigo }}">🔍 Ver validação do envelope</a>
+      <a href="/envelope/validar/{{ env.codigo }}">🔍 Ver validação do documento</a>
       {% if env.status == 'concluido' %}
       <a class="btn btn-sec" href="/envelope/baixar/{{ env.codigo }}">⬇ Baixar documento assinado</a>
       {% endif %}
@@ -91,7 +106,10 @@ input:focus{border-color:#205d8a}
         <h3>Documentos a assinar ({{ arquivos|length }})</h3>
         <ul>
           {% for a in arquivos %}
-          <li>{{ a.nome_arquivo }}</li>
+          <li>
+            {{ a.nome_arquivo }}
+            <a class="doc-view" href="/envelope/assinar/{{ sig.token }}/arquivo/{{ a.id }}" target="_blank" rel="noopener">Visualizar</a>
+          </li>
           {% endfor %}
         </ul>
       </div>

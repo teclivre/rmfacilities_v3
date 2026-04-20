@@ -388,7 +388,13 @@
           <div class="card">
             <div class="card-header">
               <span class="card-title">Holerites identificados — preview</span>
-              <div style="display:flex;gap:8px">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                <select id="rhd-ass-filtro" onchange="rhdAplicarFiltroAssinatura(this.value)" style="padding:6px 10px;border:1.5px solid var(--borda);border-radius:var(--r);font-size:12px">
+                  <option value="todos">Assinatura automática: todos</option>
+                  <option value="pendentes">Sem assinatura automática</option>
+                  <option value="solicitada">Com assinatura automática solicitada</option>
+                </select>
+                <button class="btn b-ghl b-sm" onclick="rhdSelecionarPendentesAssinatura()">Selec. pendentes assinatura</button>
                 <button class="btn b-gh b-sm" onclick="rhdSelecionarTodos(true)">Selec. todos</button>
                 <button class="btn b-ci b-sm" onclick="rhdSelecionarTodos(false)">Desmarcar</button>
               </div>
@@ -396,9 +402,10 @@
             <div id="rhd-preview-lista"></div>
             <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
               <select id="rhd-canal" style="padding:6px 10px;border:1.5px solid var(--borda);border-radius:var(--r);font-size:13px">
-                <option value="email">Enviar por e-mail</option>
-                <option value="whatsapp">Enviar por WhatsApp</option>
-                <option value="ambos">Enviar por e-mail e WhatsApp</option>
+                 <option value="whatsapp">Enviar por WhatsApp</option>
+                 <option value="email">Enviar por e-mail</option>
+                 <option value="ambos">Enviar por WhatsApp e e-mail</option>
+                 <option value="link">Apenas gerar link</option>
               </select>
               <label style="display:flex;gap:6px;align-items:center;font-size:12px;color:#666;cursor:pointer;user-select:none">
                 <input type="checkbox" id="rhd-incluir-folha" checked>
@@ -413,11 +420,35 @@
 
       <!-- Tab Conversas WhatsApp -->
       <div id="rhd-tab-conversas" style="display:none">
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-header"><span class="card-title">Envio para colaboradores ativos</span></div>
+          <div class="g3" style="margin-top:8px">
+            <div class="f"><label>Empresa</label><select id="wa-colab-empresa" onchange="waAtualizarPostosColab();waRenderListaColab()"><option value="">Todas</option></select></div>
+            <div class="f"><label>Posto</label><select id="wa-colab-posto" onchange="waRenderListaColab()"><option value="">Todos</option></select></div>
+            <div class="f"><label>Buscar colaborador</label><input id="wa-colab-q" placeholder="Nome, matrícula, RE ou telefone" oninput="waRenderListaColab()"></div>
+          </div>
+          <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
+            <button class="btn b-gh b-sm" onclick="waSelTodosColab(true)">Selecionar visíveis</button>
+            <button class="btn b-gh b-sm" onclick="waSelTodosColab(false)">Desmarcar</button>
+            <button class="btn b-gh b-sm" onclick="waCarregarDisparoColaboradores()">Atualizar lista</button>
+            <span id="wa-colab-count" style="font-size:12px;color:#6a7d8f;margin-left:4px">0 selecionado(s)</span>
+          </div>
+          <div id="wa-colab-list" style="margin-top:8px;max-height:220px;overflow:auto;border:1px solid var(--borda);border-radius:10px;padding:8px;background:var(--cinza-cl)"><div class="vazio">Carregando colaboradores...</div></div>
+          <div class="f" style="margin-top:10px"><label>Mensagem para envio</label><textarea id="wa-colab-msg" placeholder="Digite a mensagem que será enviada aos colaboradores selecionados" style="min-height:84px"></textarea></div>
+          <div class="brow" style="justify-content:flex-start;gap:8px">
+            <button class="btn b-az" onclick="waEnviarColaboradoresSelecionados()">Enviar para selecionados</button>
+          </div>
+          <div id="wa-colab-st" class="st" style="margin-top:8px"></div>
+        </div>
+
         <div style="display:grid;grid-template-columns:280px 1fr;gap:12px">
           <div class="card" style="margin-bottom:0">
             <div class="card-header">
               <span class="card-title">Conversas</span>
               <button class="btn b-gh b-sm" onclick="loadWAConversas()">Atualizar</button>
+            </div>
+            <div style="padding:8px 0 4px">
+              <input id="wa-conv-busca" placeholder="Buscar conversa..." oninput="waFiltrarConversas()" style="width:100%;padding:6px 10px;border:1.5px solid var(--borda);border-radius:var(--r);font-size:12px;box-sizing:border-box">
             </div>
             <div id="wa-conversas-lista"><div class="vazio">Nenhuma conversa.</div></div>
           </div>
@@ -683,10 +714,10 @@
       <div id="asi-list-panel">
         <div class="card">
           <div class="card-header">
-            <span class="card-title" id="asi-list-title">Envelopes — Funcionários</span>
-            <button class="btn b-az b-sm" onclick="abrirNovoEnvelope()">+ Novo Envelope</button>
+            <span class="card-title" id="asi-list-title">Documentos — Funcionários</span>
+            <button class="btn b-az b-sm" onclick="abrirNovoEnvelope()">+ Novo Documento</button>
           </div>
-          <div id="asi-lista"><div class="vazio">Nenhum envelope encontrado.</div></div>
+          <div id="asi-lista"><div class="vazio">Nenhum documento encontrado.</div></div>
         </div>
       </div>
 
@@ -701,7 +732,7 @@
         <!-- Arquivos -->
         <div class="card" style="margin-bottom:14px">
           <div class="card-header">
-            <span class="card-title">📎 Arquivos do envelope</span>
+            <span class="card-title">📎 Arquivos do documento</span>
             <div style="display:flex;gap:8px">
               <button class="btn b-sm b-az" onclick="abrirPickerArqSistema()">+ Do sistema</button>
               <label class="btn b-sm" style="background:#1a7a45;color:#fff;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:4px">
@@ -740,6 +771,16 @@
         <!-- Ações -->
         <div class="card">
           <div class="card-header"><span class="card-title">⚡ Ações</span></div>
+          <div class="g2" style="margin:10px 0 4px 0">
+            <div class="f" style="margin-bottom:0">
+              <label>Nome do PDF assinado</label>
+              <input id="asi-nome-assinado" placeholder="Ex: Contrato ASSINADO.pdf" oninput="atualizarPreviewNomeAssinado()">
+              <div id="asi-nome-assinado-preview" style="font-size:12px;margin-top:6px;padding:6px 8px;border-radius:8px"></div>
+            </div>
+            <div class="f" style="display:flex;align-items:flex-end;margin-bottom:0">
+              <button class="btn b-sm b-az" onclick="salvarNomeDocumentoAssinado()">Salvar nome</button>
+            </div>
+          </div>
           <div class="brow" style="gap:10px;padding:8px 0">
             <button class="btn b-az" onclick="enviarEnvelopeAtual()" id="btn-enviar-envelope">📨 Enviar para assinar</button>
             <button class="btn" style="background:#1a7a45;color:#fff;border:none;cursor:pointer" onclick="abrirValidacaoEnvelope()">🔍 Página de validação</button>
@@ -771,11 +812,11 @@
         </div>
       </div>
 
-      <!-- modal novo envelope -->
-      <div id="asi-novo-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:998;overflow-y:auto">
-        <div style="background:#fff;max-width:500px;margin:40px auto;border-radius:12px;padding:24px;box-shadow:0 8px 40px rgba(0,0,0,.2)">
+      <!-- modal novo documento -->
+      <div id="asi-novo-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:998;overflow-y:auto;padding:16px">
+        <div style="background:#fff;max-width:500px;max-height:calc(100vh - 32px);overflow-y:auto;margin:12px auto;border-radius:12px;padding:24px;box-shadow:0 8px 40px rgba(0,0,0,.2)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-            <h3 style="font-size:16px;color:#1a2b3c">Novo Envelope</h3>
+            <h3 style="font-size:16px;color:#1a2b3c">Novo Documento</h3>
             <button onclick="document.getElementById('asi-novo-modal').style.display='none'" style="background:none;border:none;font-size:20px;cursor:pointer;color:#888">×</button>
           </div>
           <div class="f"><label>Título *</label><input id="nenv-titulo" placeholder="Ex: Contrato de Trabalho — João Silva"></div>
@@ -783,9 +824,10 @@
             <select id="nenv-empresa"><option value="">Selecione...</option></select>
           </div>
           <div class="f"><label>Descrição</label><input id="nenv-desc" placeholder="Breve descrição (opcional)"></div>
+          <div class="f"><label>Nome do PDF assinado (opcional)</label><input id="nenv-nome-assinado" placeholder="Ex: Contrato ASSINADO.pdf"></div>
           <div class="f"><label>Validade (deixe em branco para sem prazo)</label><input type="date" id="nenv-expira"></div>
           <div class="brow" style="gap:8px;margin-top:14px">
-            <button class="btn b-az" onclick="salvarNovoEnvelope()">Criar envelope</button>
+            <button class="btn b-az" onclick="salvarNovoEnvelope()">Criar documento</button>
             <button class="btn b-sm" style="background:#e8eef5;color:#555;border:none;cursor:pointer" onclick="document.getElementById('asi-novo-modal').style.display='none'">Cancelar</button>
           </div>
         </div>
@@ -847,7 +889,7 @@
 
         <div style="margin-bottom:16px">
           <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:8px">Fazer Backup Agora:</div>
-          <a href="/api/backup" class="btn b-vd" style="font-weight:600;font-size:14px">⬇ Baixar Backup Completo</a>
+          <button class="btn b-vd" style="font-weight:600;font-size:14px" onclick="confirmarBackupCompleto()">⬇ Baixar Backup Completo</button>
           <div style="font-size:11px;color:#666;margin-top:4px">Baixa um arquivo ZIP com tudo do sistema pronto para salvar</div>
         </div>
 
@@ -1293,8 +1335,10 @@ function fillSSTFuncionarios(){
 
 async function loadDash(){
   const d=await api('/api/dashboard');
+  const receitaNum=Number(d?.receita);
+  const receitaSafe=Number.isFinite(receitaNum)?receitaNum:0;
   document.getElementById('d-at').textContent=d.ativos;
-  document.getElementById('d-rec').textContent='R$'+parseInt(d.receita).toLocaleString('pt-BR');
+  document.getElementById('d-rec').textContent='R$'+receitaSafe.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   document.getElementById('d-med').textContent=d.med_mes;
   document.getElementById('d-pen').textContent=d.pendentes;
   const inad=document.getElementById('d-inad');
@@ -2104,6 +2148,12 @@ async function importarFuncionariosPlanilha(ev){
   ev.target.value='';
 }
 
+function confirmarBackupCompleto(){
+  const agora=new Date().toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  if(!confirm(`Confirma gerar o backup completo do sistema?\n\nData/hora: ${agora}\n\nO arquivo ZIP será baixado automaticamente após a confirmação.`)) return;
+  window.location.href='/api/backup';
+}
+
 async function restaurarBackup(){
   const f=document.getElementById('bk-restore').files?.[0];
   if(!f){
@@ -2757,7 +2807,12 @@ async function uploadArquivoFuncionarioModal(){
   fd.append('arquivo',f);
   fd.append('categoria',document.getElementById('farq-cat').value);
   fd.append('competencia',document.getElementById('farq-comp').value||'');
-  
+  const optCanal=prompt('Como deseja solicitar a assinatura?\n1 = Enviar link via WhatsApp\n2 = Gerar link (sem envio automático)\n3 = Não solicitar assinatura\n\nDigite 1, 2 ou 3:','1');
+  if(optCanal===null) return;
+  const mapaCanal={'1':'whatsapp','2':'link','3':'nao'};
+  const canalEscolhido=mapaCanal[(optCanal||'').trim()];
+  if(!canalEscolhido){alert('Opção inválida.');return;}
+  fd.append('canal_assinatura', canalEscolhido);
   showSt('farq-upload-st','⏳ Anexando arquivo...',false);
   try{
     const r=await fetch('/api/funcionarios/'+id+'/arquivos',{method:'POST',body:fd});
@@ -2766,7 +2821,14 @@ async function uploadArquivoFuncionarioModal(){
       showSt('farq-upload-st','❌ '+d.erro,true);
       return;
     }
-    showSt('farq-upload-st','✅ Arquivo anexado com sucesso!',false);
+    const assStatus=d.assinatura_auto?.status||'';
+    let msg='✅ Arquivo anexado com sucesso!';
+    if(assStatus==='solicitada') msg+=' Assinatura solicitada via WhatsApp.';
+    else if(assStatus==='sem_telefone') msg+=' ⚠️ Assinatura não solicitada: funcionário sem telefone.';
+    else if(assStatus==='telefone_invalido') msg+=' ⚠️ Assinatura não solicitada: telefone inválido.';
+    else if(assStatus==='link_gerado') msg+=` Link gerado: ${d.assinatura_auto?.link||''}`;
+    else if(assStatus==='nao_solicitada') msg+=' Assinatura não solicitada.';
+    showSt('farq-upload-st',msg,false);
     document.getElementById('farq-arq').value='';
     document.getElementById('farq-comp').value='';
     document.getElementById('farq-preview').textContent='';
@@ -2790,13 +2852,23 @@ async function delArquivoFuncionario(id){
 async function uploadHoleritesLote(){
   const f=document.getElementById('rh-holerite-arq').files?.[0];
   if(!f){alert('Selecione o PDF de holerites.');return;}
+  const optAss=prompt('Deseja solicitar assinatura após separar os holerites?\n1 = Não solicitar assinatura\n2 = Solicitar via WhatsApp\n3 = Apenas gerar link\n\nDigite 1, 2 ou 3:','1');
+  if(optAss===null) return;
+  const mapaAss={'1':'nao','2':'whatsapp','3':'link'};
+  const canalAss=mapaAss[(optAss||'').trim()];
+  if(!canalAss){alert('Opção inválida.');return;}
   const fd=new FormData();
   fd.append('arquivo',f);
   fd.append('competencia',document.getElementById('rh-comp').value||'');
+  fd.append('canal_assinatura',canalAss);
   const r=await fetch('/api/funcionarios/holerites/upload',{method:'POST',body:fd});
   const d=await r.json();
   if(d.erro){alert(d.erro);return;}
-  showSt('st-rh',`Processamento concluído. Arquivos: ${d.arquivos_gerados}.`,false);
+  let msg=`Processamento concluído. Arquivos: ${d.arquivos_gerados}.`;
+  if(canalAss==='nao') msg+=' Assinatura não solicitada.';
+  if(canalAss==='whatsapp') msg+=` Assinaturas solicitadas: ${d.assinaturas_auto||0}.`;
+  if(canalAss==='link') msg+=` Links gerados: ${d.assinaturas_auto||0}.`;
+  showSt('st-rh',msg,false);
   if(d.paginas_sem_funcionario?.length) alert('Páginas sem funcionário identificado: '+d.paginas_sem_funcionario.join(', '));
 }
 
@@ -2806,12 +2878,24 @@ async function uploadSSTArquivo(){
   const comp=document.getElementById('sst-comp').value;
   const f=document.getElementById('sst-arq').files?.[0];
   if(!fid||!f){alert('Selecione funcionário e arquivo.');return;}
+  const optCanal=prompt('Deseja solicitar assinatura deste documento?\n1 = Não solicitar assinatura\n2 = Sim, enviar link via WhatsApp\n3 = Sim, apenas gerar link\n\nDigite 1, 2 ou 3:','1');
+  if(optCanal===null) return;
+  const mapaCanal={'1':'nao','2':'whatsapp','3':'link'};
+  const canalAss=mapaCanal[(optCanal||'').trim()];
+  if(!canalAss){alert('Opção inválida.');return;}
   const fd=new FormData();
-  fd.append('arquivo',f); fd.append('categoria',cat); fd.append('competencia',comp);
+  fd.append('arquivo',f); fd.append('categoria',cat); fd.append('competencia',comp); fd.append('canal_assinatura',canalAss);
   const r=await fetch('/api/funcionarios/'+fid+'/arquivos',{method:'POST',body:fd});
   const d=await r.json();
   if(d.erro){alert(d.erro);return;}
-  showSt('st-sst','Documento SST anexado ao funcionário.',false);
+  const assStatus=d.assinatura_auto?.status||'';
+  let msg='Documento SST anexado ao funcionário.';
+  if(assStatus==='solicitada') msg+=' Assinatura solicitada via WhatsApp.';
+  else if(assStatus==='link_gerado') msg+=' Link de assinatura gerado com sucesso.';
+  else if(assStatus==='sem_telefone') msg+=' Assinatura não solicitada: funcionário sem telefone.';
+  else if(assStatus==='telefone_invalido') msg+=' Assinatura não solicitada: telefone inválido.';
+  else if(assStatus==='nao_solicitada') msg+=' Assinatura não solicitada.';
+  showSt('st-sst',msg,false);
   document.getElementById('sst-arq').value='';
 }
 
@@ -3463,7 +3547,8 @@ async function cancelarMedicao(id,numero){
 }
 
 // ══ RH DIGITAL ══
-let _rhdJob=null, _waNumeroAtual=null;
+let _rhdJob=null, _waNumeroAtual=null, _waConversasTodas=[];
+let _rhdAssFiltro='todos';
 
 function initRHDigital(){
   // activate first tab if not active
@@ -3479,7 +3564,10 @@ function switchTab(prefix,tab,el){
   if(target)target.style.display='';
   document.querySelectorAll(`#${prefix}-tabs .btn`).forEach(b=>{b.classList.remove('b-az');b.classList.add('b-gh');});
   if(el){el.classList.remove('b-gh');el.classList.add('b-az');}
-  if(prefix==='rhd'&&tab==='conversas')loadWAConversas();
+  if(prefix==='rhd'&&tab==='conversas'){
+    loadWAConversas();
+    waCarregarDisparoColaboradores();
+  }
   if(prefix==='rhd'&&tab==='cfg-email')loadSMTPConfig();
   if(prefix==='rhd'&&tab==='cfg-wa')loadWAConfig();
 }
@@ -3487,11 +3575,17 @@ function switchTab(prefix,tab,el){
 async function rhdProcessar(){
   const f=document.getElementById('rhd-arq').files?.[0];
   if(!f){alert('Selecione o arquivo PDF.');return;}
+  const optAss=prompt('Deseja solicitar assinatura durante a separação?\n1 = Não solicitar assinatura\n2 = Solicitar via WhatsApp\n3 = Apenas gerar link\n\nDigite 1, 2 ou 3:','1');
+  if(optAss===null) return;
+  const mapaAss={'1':'nao','2':'whatsapp','3':'link'};
+  const canalAss=mapaAss[(optAss||'').trim()];
+  if(!canalAss){alert('Opção inválida.');return;}
   const st=document.getElementById('rhd-envio-st');
   showSt('rhd-envio-st','Processando PDF...',false);
   const fd=new FormData();
   fd.append('arquivo',f);
   fd.append('competencia',document.getElementById('rhd-comp').value||'');
+  fd.append('canal_assinatura',canalAss);
   try{
     const r=await fetch('/api/rh/holerites/processar',{method:'POST',body:fd});
     let d=null;
@@ -3503,6 +3597,9 @@ async function rhdProcessar(){
     }
     if(d.erro){showSt('rhd-envio-st',d.erro,true);return;}
     _rhdJob=d;
+    _rhdAssFiltro='todos';
+    const selFiltro=document.getElementById('rhd-ass-filtro');
+    if(selFiltro) selFiltro.value='todos';
     document.getElementById('rhd-preview-box').style.display='';
     renderRHDPreview(d);
     showSt('rhd-envio-st',`${d.separados} holerites extraídos de ${d.total_paginas} página(s).${d.sem_match.length?' Páginas sem match: '+d.sem_match.join(', '):''}`,false);
@@ -3515,14 +3612,27 @@ function renderRHDPreview(data){
     el.innerHTML='<div class="vazio">Nenhum funcionário identificado no PDF. Verifique se os nomes estão cadastrados no sistema.</div>';
     return;
   }
+  const itens=(data.itens||[]).filter(it=>{
+    if(_rhdAssFiltro==='solicitada') return it.assinatura_auto_status==='solicitada';
+    if(_rhdAssFiltro==='pendentes') return ['sem_telefone','telefone_invalido','erro'].includes(it.assinatura_auto_status);
+    return true;
+  });
+  if(!itens.length){
+    el.innerHTML='<div class="vazio">Nenhum item para o filtro selecionado.</div>';
+    return;
+  }
   const stMap={'enviado_email':'📧 E-mail','enviado_wa':'📱 WhatsApp','enviado_ambos':'📧📱 Ambos','sem_contato':'⚠️ Sem contato','erro':'❌ Erro','enviando':'⏳ Enviando'};
   const clsMap={'enviado_email':'p-vd','enviado_wa':'p-vd','enviado_ambos':'p-vd','sem_contato':'p-ci','erro':'p-vm','enviando':'p-ci'};
-  el.innerHTML=data.itens.map(item=>`<div class="hist-item">
+  el.innerHTML=itens.map(item=>`<div class="hist-item">
     <div style="display:flex;align-items:center;gap:10px;flex:1">
-      <input type="checkbox" class="rhd-sel" data-id="${item.arquivo_id}" checked style="width:16px;height:16px;flex-shrink:0">
+      <input type="checkbox" class="rhd-sel" data-id="${item.arquivo_id}" data-ass="${item.assinatura_auto_status||''}" checked style="width:16px;height:16px;flex-shrink:0">
       <div style="flex:1">
         <div class="hist-tit">${item.funcionario_nome}</div>
         <div class="hist-sub">Pág. ${item.pagina} · ${item.nome_arquivo}${item.email?' · 📧 '+item.email:''}${item.whatsapp?' · 📱 '+fmtTelefone(item.whatsapp):''}</div>
+        ${item.assinatura_auto_status==='solicitada'?`<div style="font-size:11px;color:#1a7a45;margin-top:2px">✍ Assinatura automática solicitada.</div>`:''}
+        ${item.assinatura_auto_status==='sem_telefone'?`<div style="font-size:11px;color:#8a5c00;margin-top:2px">⚠ Sem telefone cadastrado para assinatura automática.</div>`:''}
+        ${item.assinatura_auto_status==='telefone_invalido'?`<div style="font-size:11px;color:#8a5c00;margin-top:2px">⚠ Telefone cadastrado inválido para WhatsApp.</div>`:''}
+        ${item.assinatura_auto_status==='erro'&&item.assinatura_auto_erro?`<div style="font-size:11px;color:var(--verm);margin-top:2px">Erro assinatura automática: ${item.assinatura_auto_erro}</div>`:''}
         ${item.folha_ponto_nome?`<div style="font-size:11px;color:#6a7d8f;margin-top:2px">🕒 Folha de ponto encontrada: ${item.folha_ponto_nome}</div>`:''}
         ${item.status_envio==='erro'&&item.erro_envio?`<div style="font-size:11px;color:var(--verm);margin-top:2px">Erro: ${item.erro_envio}</div>`:''}
       </div>
@@ -3531,8 +3641,30 @@ function renderRHDPreview(data){
   </div>`).join('');
 }
 
+function rhdAplicarFiltroAssinatura(v){
+  _rhdAssFiltro=(v||'todos');
+  if(_rhdJob) renderRHDPreview(_rhdJob);
+}
+
 function rhdSelecionarTodos(val){
   document.querySelectorAll('.rhd-sel').forEach(cb=>cb.checked=val);
+}
+
+function rhdSelecionarPendentesAssinatura(){
+  const pendentes=new Set(['sem_telefone','telefone_invalido','erro','nao_solicitada']);
+  let marcados=0;
+  let total=0;
+  document.querySelectorAll('.rhd-sel').forEach(cb=>{
+    total++;
+    const st=(cb.dataset.ass||'').trim();
+    const isPendente=pendentes.has(st);
+    cb.checked=isPendente;
+    if(isPendente) marcados++;
+  });
+  const msg=(marcados>0)
+    ? `${marcados} item(ns) pendente(s) de assinatura automática selecionado(s).`
+    : 'Nenhum item pendente de assinatura automática neste filtro atual.';
+  showSt('rhd-envio-st',msg,false);
 }
 
 async function rhdEnviar(){
@@ -3571,12 +3703,137 @@ async function rhdEnviar(){
 
 async function loadWAConversas(){
   const lst=await api('/api/whatsapp/conversas');
+  _waConversasTodas=lst||[];
+  waRenderConversas();
+}
+
+function waFiltrarConversas(){
+  waRenderConversas();
+}
+
+function waRenderConversas(){
+  const q=(document.getElementById('wa-conv-busca')?.value||'').trim().toLowerCase();
   const el=document.getElementById('wa-conversas-lista');
-  if(!lst||!lst.length){el.innerHTML='<div class="vazio">Nenhuma conversa ainda.</div>';return;}
-  el.innerHTML=lst.map(c=>`<div class="hist-item" style="cursor:pointer;padding:10px 12px;border-bottom:1px solid var(--borda)" onclick="abrirWAConversa('${c.numero}','${(c.nome||c.numero).replace(/'/g,"\\'")}')">
+  if(!el)return;
+  const lista=q ? _waConversasTodas.filter(c=>((c.nome||c.numero||'').toLowerCase().includes(q)||(c.numero||'').includes(q))) : _waConversasTodas;
+  if(!lista||!lista.length){el.innerHTML='<div class="vazio">Nenhuma conversa ainda.</div>';return;}
+  el.innerHTML=lista.map(c=>`<div class="hist-item" style="cursor:pointer;padding:10px 12px;border-bottom:1px solid var(--borda)" onclick="abrirWAConversa('${c.numero}','${(c.nome||c.numero).replace(/'/g,"\\'")}')">
     <div style="font-weight:700;font-size:13px">${c.nome||c.numero}</div>
     <div style="font-size:11px;color:#888">${fmtTelefone(c.numero)} · ${c.ultima_msg_fmt||''}</div>
   </div>`).join('');
+}
+
+function waAtualizarContadorColab(){
+  const total=document.querySelectorAll('.wa-colab-sel').length;
+  const sel=document.querySelectorAll('.wa-colab-sel:checked').length;
+  const el=document.getElementById('wa-colab-count');
+  if(el) el.textContent=`${sel} de ${total} colaborador(es) selecionado(s)`;
+}
+
+function waIsColaboradorAtivo(f){
+  return ((f?.status||'').toString().trim().toLowerCase()==='ativo');
+}
+
+function waPostoColaborador(f){
+  return (f?.posto_operacional||f?.setor||f?.funcao||'').toString().trim();
+}
+
+function waNomeEmpresa(empresaId){
+  const e=(emps||[]).find(x=>String(x.id)===String(empresaId));
+  return e?.nome||'';
+}
+
+async function waCarregarDisparoColaboradores(){
+  if(!Array.isArray(emps)||!emps.length){
+    emps=await api('/api/empresas');
+  }
+  if(!Array.isArray(funcs)||!funcs.length){
+    funcs=await api('/api/funcionarios');
+  }
+  const elEmp=document.getElementById('wa-colab-empresa');
+  if(elEmp){
+    const atual=elEmp.value||'';
+    elEmp.innerHTML='<option value="">Todas</option>';
+    (emps||[]).forEach(e=>elEmp.appendChild(new Option(e.nome,e.id)));
+    elEmp.value=atual;
+  }
+  waAtualizarPostosColab();
+  waRenderListaColab();
+}
+
+function waAtualizarPostosColab(){
+  const empresaId=document.getElementById('wa-colab-empresa')?.value||'';
+  const elPosto=document.getElementById('wa-colab-posto');
+  if(!elPosto)return;
+  const atual=elPosto.value||'';
+  const base=(funcs||[]).filter(f=>waIsColaboradorAtivo(f) && (!empresaId || String(f.empresa_id||'')===String(empresaId)));
+  const postos=[...new Set(base.map(waPostoColaborador).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  elPosto.innerHTML='<option value="">Todos</option>';
+  postos.forEach(p=>elPosto.appendChild(new Option(p,p)));
+  if(postos.includes(atual)) elPosto.value=atual;
+}
+
+function waRenderListaColab(){
+  const el=document.getElementById('wa-colab-list');
+  if(!el)return;
+  const empresaId=(document.getElementById('wa-colab-empresa')?.value||'').trim();
+  const posto=(document.getElementById('wa-colab-posto')?.value||'').trim().toLowerCase();
+  const q=(document.getElementById('wa-colab-q')?.value||'').trim().toLowerCase();
+  const ativos=(funcs||[]).filter(f=>waIsColaboradorAtivo(f));
+  const lista=ativos.filter(f=>{
+    const empOk=!empresaId || String(f.empresa_id||'')===String(empresaId);
+    const postoVal=waPostoColaborador(f);
+    const postoOk=!posto || postoVal.toLowerCase()===posto;
+    const hay=[f.nome||'',String(f.matricula||''),String(f.re||''),f.telefone||'',postoVal].join(' ').toLowerCase();
+    const qOk=!q || hay.includes(q);
+    return empOk && postoOk && qOk;
+  });
+  if(!lista.length){
+    el.innerHTML='<div class="vazio">Nenhum colaborador ativo para os filtros selecionados.</div>';
+    return;
+  }
+  el.innerHTML=lista.map(f=>{
+    const tel=fmtTelefone(f.telefone||'');
+    const semTel=!(f.telefone||'').trim();
+    const postoTxt=waPostoColaborador(f) || 'Sem posto';
+    const empTxt=waNomeEmpresa(f.empresa_id)||'Sem empresa';
+    return `<label style="display:flex;gap:8px;align-items:flex-start;padding:7px 6px;border-bottom:1px solid var(--borda);cursor:${semTel?'not-allowed':'pointer'};opacity:${semTel?0.6:1}">
+      <input type="checkbox" class="wa-colab-sel" data-id="${f.id}" ${semTel?'disabled':''}>
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:13px">${f.nome||'-'}</div>
+        <div style="font-size:11px;color:#6a7d8f">${empTxt} · ${postoTxt} · ${tel||'Sem telefone cadastrado'}</div>
+      </div>
+    </label>`;
+  }).join('');
+  document.querySelectorAll('.wa-colab-sel').forEach(cb=>cb.addEventListener('change',waAtualizarContadorColab));
+  waAtualizarContadorColab();
+}
+
+function waSelTodosColab(mark){
+  document.querySelectorAll('.wa-colab-sel').forEach(cb=>{ if(!cb.disabled) cb.checked=!!mark; });
+  waAtualizarContadorColab();
+}
+
+async function waEnviarColaboradoresSelecionados(){
+  const texto=(document.getElementById('wa-colab-msg')?.value||'').trim();
+  const ids=Array.from(document.querySelectorAll('.wa-colab-sel:checked')).map(cb=>parseInt(cb.dataset.id)).filter(Number.isFinite);
+  if(!ids.length){showSt('wa-colab-st','Selecione ao menos um colaborador ativo.',true);return;}
+  if(!texto){showSt('wa-colab-st','Digite a mensagem para envio.',true);return;}
+  const nomesConf=ids.slice(0,5).map(id=>(funcs||[]).find(f=>f.id===id)?.nome||'Colaborador').join(', ');
+  const maisConf=ids.length>5?` e mais ${ids.length-5}...`:'';
+  const msgConf=texto.length>100?texto.substring(0,100)+'...':texto;
+  if(!confirm(`Você está prestes a enviar mensagem para ${ids.length} colaborador(es):\n\n${nomesConf}${maisConf}\n\nMensagem:\n"${msgConf}"\n\nConfirmar envio?`)) return;
+  showSt('wa-colab-st','Enviando mensagens...',false);
+  const r=await api('/api/whatsapp/send-colaboradores','POST',{funcionario_ids:ids,texto});
+  if(r.erro){showSt('wa-colab-st',r.erro,true);return;}
+  const falhas=(r.falhas||[]);
+  const envioMsg=`Envio concluído. Sucesso: ${r.enviados_count||0}. Falhas: ${falhas.length}.`;
+  showSt('wa-colab-st',envioMsg,falhas.length>0);
+  if(falhas.length){
+    const amostra=falhas.slice(0,5).map(f=>`• ${f.nome||'Colaborador'}: ${f.erro||'Falha'}`).join('\n');
+    alert(`Algumas falhas ocorreram:\n${amostra}${falhas.length>5?'\n...':''}`);
+  }
+  loadWAConversas();
 }
 
 async function abrirWAConversa(numero,nome){
@@ -3805,6 +4062,7 @@ init();
 
 // ══ ASSINATURAS ══
 let _asiTipo='funcionario', _asiEnvelopeId=null, _asiFuncionarios=[];
+let _asiNomeAssinadoPadrao='documento ASSINADO.pdf';
 
 function initAssinaturas(){
   loadEnvelopes(_asiTipo);
@@ -3830,8 +4088,8 @@ function switchAsiTab(tipo){
     tb.classList.add('on','b-az');
     tb.classList.remove('b-gh');
   }
-  const titles={'funcionario':'Envelopes — Funcionários','cliente':'Envelopes — Clientes','avulso':'Envelopes — Avulso'};
-  document.getElementById('asi-list-title').textContent=titles[tipo]||'Envelopes';
+  const titles={'funcionario':'Documentos — Funcionários','cliente':'Documentos — Clientes','avulso':'Documentos — Avulso'};
+  document.getElementById('asi-list-title').textContent=titles[tipo]||'Documentos';
   fecharDetalheEnvelope();
   loadEnvelopes(tipo);
 }
@@ -3842,7 +4100,7 @@ async function loadEnvelopes(tipo){
   try{
     const r=await fetch(`/api/envelopes?tipo=${tipo}`);
     const lista=await r.json();
-    if(!lista.length){ box.innerHTML='<div class="vazio">Nenhum envelope encontrado.</div>'; return; }
+    if(!lista.length){ box.innerHTML='<div class="vazio">Nenhum documento encontrado.</div>'; return; }
     const statusCls={'rascunho':'pill-warn','pendente':'pill-warn','parcial':'pill-warn','concluido':'pill-ok','cancelado':'pill-err'};
     const statusLabel={'rascunho':'Rascunho','pendente':'Aguardando','parcial':'Em andamento','concluido':'Concluído','cancelado':'Cancelado'};
     box.innerHTML=`<div class="tbl-wrap"><table class="tbl">
@@ -3881,6 +4139,11 @@ async function recarregarDetalheEnvelope(){
     const sp=document.getElementById('asi-detail-status-pill');
     sp.textContent=statusLabel[env.status]||env.status;
     sp.className='pill '+(statusCls[env.status]||'');
+    const primeiroNome=(env.arquivos&&env.arquivos.length&&env.arquivos[0].nome_arquivo)||'documento';
+    _asiNomeAssinadoPadrao=((primeiroNome||'documento').replace(/\.[^/.]+$/,'')||'documento')+' ASSINADO.pdf';
+    const inpNomeAss=document.getElementById('asi-nome-assinado');
+    if(inpNomeAss) inpNomeAss.value=env.nome_documento_assinado||'';
+    atualizarPreviewNomeAssinado();
     // Arquivos
     const arqBox=document.getElementById('asi-arq-lista');
     if(!env.arquivos||!env.arquivos.length){
@@ -3921,7 +4184,42 @@ async function recarregarDetalheEnvelope(){
           </tr>`).join('')}
         </tbody></table></div>`;
     }
-  }catch(e){ showSt('st-assinaturas','Erro ao carregar envelope.',true); }
+  }catch(e){ showSt('st-assinaturas','Erro ao carregar documento.',true); }
+}
+
+function atualizarPreviewNomeAssinado(){
+  const inp=document.getElementById('asi-nome-assinado');
+  const prev=document.getElementById('asi-nome-assinado-preview');
+  if(!inp||!prev) return;
+  const valor=(inp.value||'').trim();
+  const nomeFinal=valor||_asiNomeAssinadoPadrao||'documento ASSINADO.pdf';
+  const customizado=!!valor;
+  prev.textContent='Nome final do arquivo: '+nomeFinal+' · '+(customizado?'Personalizado':'Automático');
+  prev.style.background=customizado?'#ecf8f0':'#f5f9ff';
+  prev.style.border='1px solid '+(customizado?'#9ed3b1':'#c5d9f0');
+  prev.style.color=customizado?'#1a7a45':'#205d8a';
+}
+
+async function salvarNomeDocumentoAssinado(){
+  if(!_asiEnvelopeId) return;
+  const nome=(document.getElementById('asi-nome-assinado').value||'').trim();
+  try{
+    const r=await fetch(`/api/envelopes/${_asiEnvelopeId}`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({nome_documento_assinado:nome})
+    });
+    const j=await r.json();
+    if(!r.ok){
+      showSt('st-assinaturas',j.erro||'Erro ao salvar nome do documento assinado.',true);
+      return;
+    }
+    document.getElementById('asi-nome-assinado').value=j.nome_documento_assinado||'';
+    atualizarPreviewNomeAssinado();
+    showSt('st-assinaturas','Nome do PDF assinado salvo.',false);
+  }catch(e){
+    showSt('st-assinaturas','Erro ao salvar nome do documento assinado.',true);
+  }
 }
 
 function fecharDetalheEnvelope(){
@@ -3934,6 +4232,7 @@ function fecharDetalheEnvelope(){
 function abrirNovoEnvelope(){
   document.getElementById('nenv-titulo').value='';
   document.getElementById('nenv-desc').value='';
+  document.getElementById('nenv-nome-assinado').value='';
   document.getElementById('nenv-expira').value='';
   const selEmp=document.getElementById('nenv-empresa');
   if(selEmp){
@@ -3946,10 +4245,12 @@ function abrirNovoEnvelope(){
 async function salvarNovoEnvelope(){
   const titulo=document.getElementById('nenv-titulo').value.trim();
   const empresaId=(document.getElementById('nenv-empresa').value||'').trim();
+  const nomeAssinado=document.getElementById('nenv-nome-assinado').value.trim();
   if(!titulo){ alert('Informe um título.'); return; }
   if(!empresaId){ alert('Selecione a empresa responsável.'); return; }
   const expira=document.getElementById('nenv-expira').value;
   const payload={titulo,descricao:document.getElementById('nenv-desc').value.trim(),tipo:_asiTipo,empresa_id:Number(empresaId)};
+  if(nomeAssinado) payload.nome_documento_assinado=nomeAssinado;
   if(expira) payload.expira_em=expira+'T23:59:59';
   try{
     const r=await fetch('/api/envelopes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
@@ -3961,7 +4262,7 @@ async function salvarNovoEnvelope(){
 }
 
 async function deletarEnvelope(id){
-  if(!confirm('Excluir este envelope?')) return;
+  if(!confirm('Excluir este documento?')) return;
   const r=await fetch(`/api/envelopes/${id}`,{method:'DELETE'});
   if(r.ok) loadEnvelopes(_asiTipo);
   else { const j=await r.json(); alert(j.erro||'Erro ao excluir.'); }
