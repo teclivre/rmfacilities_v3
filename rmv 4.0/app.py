@@ -298,6 +298,9 @@ class PontoMarcacao(db.Model):
             'saida':'Saída'
         }
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        # Normaliza datetime para string antes de persistir snapshots JSON.
+        d['data_hora']=self.data_hora.isoformat() if self.data_hora else ''
+        d['criado_em']=self.criado_em.isoformat() if self.criado_em else ''
         d['tipo_label']=lab.get(self.tipo,self.tipo)
         d['data_hora_fmt']=self.data_hora.strftime('%d/%m/%Y %H:%M:%S') if self.data_hora else ''
         d['hora_fmt']=self.data_hora.strftime('%H:%M') if self.data_hora else ''
@@ -2557,7 +2560,7 @@ def _ponto_parse_data_hora(v):
     return dt
 
 def _ponto_min_esperado_jornada(funcionario):
-    j=(funcionario.jornada or '').strip().lower()
+    j=str(funcionario.jornada or '').strip().lower()
     if not j:
         return 8*60
     m=re.search(r'(\d{1,2})\s*[:h]\s*(\d{1,2})',j)
@@ -2664,6 +2667,10 @@ def _ponto_resumo_func_dia(funcionario,data_ref):
     segundos_total=0
     aberta_em=None
     for m in marcacoes:
+        if not getattr(m,'data_hora',None):
+            inconsistencias.append('Marcação sem data/hora válida foi ignorada no cálculo.')
+            esperado=_ponto_next_tipo(m.tipo)
+            continue
         if m.tipo!=esperado:
             inconsistencias.append(
                 f"Sequência inesperada: recebido {_ponto_label(m.tipo)}; esperado {_ponto_label(esperado)}."
@@ -3407,7 +3414,9 @@ def api_ponto_marcar():
     fid=to_num(d.get('funcionario_id'))
     if not fid:
         return jsonify({'erro':'Selecione o funcionário para registrar ponto.'}),400
-    f=Funcionario.query.get_or_404(fid)
+    f=Funcionario.query.get(fid)
+    if not f:
+        return jsonify({'erro':'Funcionário não encontrado.'}),404
     if (f.status or '').strip().lower()!='ativo':
         return jsonify({'erro':'Somente funcionários ativos podem registrar ponto.'}),400
     dt=_ponto_parse_data_hora(d.get('data_hora')) or utcnow()
@@ -3451,44 +3460,68 @@ def api_ponto_dia():
     fid=to_num(request.args.get('funcionario_id'))
     if not fid:
         return jsonify({'erro':'funcionario_id é obrigatório.'}),400
-    f=Funcionario.query.get_or_404(fid)
+    f=Funcionario.query.get(fid)
+    if not f:
+        return jsonify({'erro':'Funcionário não encontrado.'}),404
     data_ref=_ponto_parse_data_ref(request.args.get('data'))
     return jsonify({'ok':True,'resumo':_ponto_resumo_func_dia(f,data_ref)})
 
 @app.route('/api/ponto/resumo-dia')
 @lr
 def api_ponto_resumo_dia():
-    data_ref=_ponto_parse_data_ref(request.args.get('data'))
-    empresa_id=to_num(request.args.get('empresa_id'))
-    q=Funcionario.query.filter(Funcionario.status=='Ativo')
-    if empresa_id:
-        q=q.filter(Funcionario.empresa_id==empresa_id)
-    funcionarios=q.order_by(Funcionario.nome).all()
-    itens=[]
-    ok=0
-    inc=0
-    for f in funcionarios:
-        r=_ponto_resumo_func_dia(f,data_ref)
-        if r['status']=='ok': ok+=1
-        else: inc+=1
-        itens.append({
-            'funcionario_id':f.id,
-            'funcionario_nome':f.nome,
-            'empresa_id':f.empresa_id,
-            'proximo_tipo_label':r['proximo_tipo_label'],
-            'horas_trabalhadas_fmt':r['horas_trabalhadas_fmt'],
-            'horas_esperadas_fmt':r['horas_esperadas_fmt'],
-            'saldo_fmt':r['saldo_fmt'],
-            'status':r['status'],
-            'inconsistencias':r['inconsistencias'],
-            'marcacoes_count':len(r['marcacoes'])
+    try:
+        data_ref=_ponto_parse_data_ref(request.args.get('data'))
+        empresa_id=to_num(request.args.get('empresa_id'))
+        q=Funcionario.query.filter(Funcionario.status=='Ativo')
+        if empresa_id:
+            q=q.filter(Funcionario.empresa_id==empresa_id)
+        funcionarios=q.order_by(Funcionario.nome).all()
+        itens=[]
+        ok=0
+        inc=0
+        erros=[]
+        for f in funcionarios:
+            try:
+                r=_ponto_resumo_func_dia(f,data_ref)
+                if r['status']=='ok': ok+=1
+                else: inc+=1
+                itens.append({
+                    'funcionario_id':f.id,
+                    'funcionario_nome':f.nome,
+                    'empresa_id':f.empresa_id,
+                    'proximo_tipo_label':r['proximo_tipo_label'],
+                    'horas_trabalhadas_fmt':r['horas_trabalhadas_fmt'],
+                    'horas_esperadas_fmt':r['horas_esperadas_fmt'],
+                    'saldo_fmt':r['saldo_fmt'],
+                    'status':r['status'],
+                    'inconsistencias':r['inconsistencias'],
+                    'marcacoes_count':len(r['marcacoes'])
+                })
+            except Exception as ex:
+                inc+=1
+                erros.append({'funcionario_id':f.id,'nome':f.nome,'erro':str(ex)[:180]})
+                itens.append({
+                    'funcionario_id':f.id,
+                    'funcionario_nome':f.nome,
+                    'empresa_id':f.empresa_id,
+                    'proximo_tipo_label':'Entrada',
+                    'horas_trabalhadas_fmt':'00:00',
+                    'horas_esperadas_fmt':'00:00',
+                    'saldo_fmt':'00:00',
+                    'status':'inconsistente',
+                    'inconsistencias':['Falha ao processar marcações deste colaborador.'],
+                    'marcacoes_count':0
+                })
+        return jsonify({
+            'ok':True,
+            'data_ref':data_ref.strftime('%Y-%m-%d'),
+            'itens':itens,
+            'totais':{'funcionarios':len(itens),'ok':ok,'inconsistentes':inc},
+            'erros_processamento':erros[:10]
         })
-    return jsonify({
-        'ok':True,
-        'data_ref':data_ref.strftime('%Y-%m-%d'),
-        'itens':itens,
-        'totais':{'funcionarios':len(itens),'ok':ok,'inconsistentes':inc}
-    })
+    except Exception as e:
+        app.logger.exception('Falha no resumo diário de ponto')
+        return jsonify({'erro':'Falha ao carregar painel de ponto.','detalhe':str(e)[:220]}),500
 
 @app.route('/api/ponto/ajuste',methods=['POST'])
 @lr
@@ -3508,34 +3541,48 @@ def api_ponto_ajuste():
         return jsonify({'erro':'Não é permitido ajuste em horário futuro.'}),400
     if not motivo:
         return jsonify({'erro':'Informe o motivo do ajuste.'}),400
-    f=Funcionario.query.get_or_404(fid)
-    data_ref=dt.date()
-    antes=[m.to_dict() for m in _ponto_marcacoes_dia(fid,data_ref)]
-    nova=PontoMarcacao(
-        funcionario_id=fid,
-        tipo=tipo,
-        data_hora=dt,
-        origem='admin',
-        observacao=(d.get('observacao') or '').strip()[:500],
-        criado_por=session.get('nome',''),
-        ip=(request.headers.get('X-Forwarded-For','') or request.remote_addr or '').split(',')[0].strip()[:60]
-    )
-    db.session.add(nova)
-    db.session.flush()
-    depois=[m.to_dict() for m in _ponto_marcacoes_dia(fid,data_ref)]
-    aj=PontoAjuste(
-        funcionario_id=fid,
-        data_ref=data_ref.strftime('%Y-%m-%d'),
-        motivo=motivo,
-        antes_json=json.dumps(antes,ensure_ascii=False),
-        depois_json=json.dumps(depois,ensure_ascii=False),
-        criado_por=session.get('nome','')
-    )
-    db.session.add(aj)
-    db.session.commit()
-    audit_event('ponto_ajuste','usuario',session.get('uid'),'funcionario',f.id,True,
-                {'data_ref':data_ref.strftime('%Y-%m-%d'),'tipo':tipo,'motivo':motivo[:200]})
-    return jsonify({'ok':True,'ajuste':aj.to_dict(),'resumo':_ponto_resumo_func_dia(f,data_ref)})
+
+    for tentativa in range(2):
+        try:
+            f=Funcionario.query.get(fid)
+            if not f:
+                return jsonify({'erro':'Funcionário não encontrado.'}),404
+            data_ref=dt.date()
+            antes=[m.to_dict() for m in _ponto_marcacoes_dia(fid,data_ref)]
+            nova=PontoMarcacao(
+                funcionario_id=fid,
+                tipo=tipo,
+                data_hora=dt,
+                origem='admin',
+                observacao=(d.get('observacao') or '').strip()[:500],
+                criado_por=session.get('nome',''),
+                ip=(request.headers.get('X-Forwarded-For','') or request.remote_addr or '').split(',')[0].strip()[:60]
+            )
+            db.session.add(nova)
+            db.session.flush()
+            depois=[m.to_dict() for m in _ponto_marcacoes_dia(fid,data_ref)]
+            aj=PontoAjuste(
+                funcionario_id=fid,
+                data_ref=data_ref.strftime('%Y-%m-%d'),
+                motivo=motivo,
+                antes_json=json.dumps(antes,ensure_ascii=False),
+                depois_json=json.dumps(depois,ensure_ascii=False),
+                criado_por=session.get('nome','')
+            )
+            db.session.add(aj)
+            db.session.commit()
+            audit_event('ponto_ajuste','usuario',session.get('uid'),'funcionario',f.id,True,
+                        {'data_ref':data_ref.strftime('%Y-%m-%d'),'tipo':tipo,'motivo':motivo[:200]})
+            return jsonify({'ok':True,'ajuste':aj.to_dict(),'resumo':_ponto_resumo_func_dia(f,data_ref)})
+        except Exception as e:
+            db.session.rollback()
+            msg=str(e).lower()
+            if tentativa==0 and 'no such table' in msg and ('ponto_marcacao' in msg or 'ponto_ajuste' in msg):
+                # Em ambientes sem migração automática, cria as tabelas e tenta novamente uma vez.
+                db.create_all()
+                continue
+            app.logger.exception('Falha ao aplicar ajuste de ponto')
+            return jsonify({'erro':'Falha ao aplicar ajuste de ponto.','detalhe':str(e)[:220]}),500
 
 @app.route('/api/ponto/fechar-dia',methods=['POST'])
 @lr
@@ -3544,7 +3591,9 @@ def api_ponto_fechar_dia():
     fid=to_num(d.get('funcionario_id'))
     if not fid:
         return jsonify({'erro':'funcionario_id é obrigatório.'}),400
-    f=Funcionario.query.get_or_404(fid)
+    f=Funcionario.query.get(fid)
+    if not f:
+        return jsonify({'erro':'Funcionário não encontrado.'}),404
     data_ref=_ponto_parse_data_ref(d.get('data'))
     force=bool(d.get('forcar'))
     obs=(d.get('observacao') or '').strip()[:1000]
@@ -3586,7 +3635,9 @@ def api_ponto_espelho_mensal():
         return jsonify({'erro':'funcionario_id é obrigatório.'}),400
     if not re.match(r'^\d{4}-\d{2}$',comp):
         return jsonify({'erro':'competencia inválida. Use YYYY-MM.'}),400
-    f=Funcionario.query.get_or_404(fid)
+    f=Funcionario.query.get(fid)
+    if not f:
+        return jsonify({'erro':'Funcionário não encontrado.'}),404
     resumo_comp=_ponto_resumo_competencia(f,comp)
     if not resumo_comp:
         return jsonify({'erro':'Não foi possível gerar o espelho para a competência informada.'}),400
@@ -3600,41 +3651,57 @@ def api_ponto_espelho_mensal():
     except Exception:
         return jsonify({'erro':'Dependência ReportLab não disponível para gerar o espelho.'}),500
 
-    def p(txt,sty):
-        return Paragraph((txt or '').replace('&','&amp;').replace('<','&lt;').replace('>','&gt;'),sty)
+    def p(txt,sty,html=False):
+        s=str(txt or '')
+        if not html:
+            s=s.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+        return Paragraph(s,sty)
 
     nome_arq=f"espelho_ponto_{f.id}_{comp}.pdf"
     out=io.BytesIO()
     doc=SimpleDocTemplate(out,pagesize=A4,leftMargin=12*mm,rightMargin=12*mm,topMargin=12*mm,bottomMargin=14*mm)
     W,H=A4
     styles=getSampleStyleSheet()
-    st_title=ParagraphStyle('ptt',parent=styles['Heading2'],fontName='Helvetica-Bold',fontSize=14,alignment=TA_CENTER,spaceAfter=4)
-    st_small=ParagraphStyle('pts',parent=styles['Normal'],fontName='Helvetica',fontSize=9,leading=11)
-    st_norm=ParagraphStyle('ptn',parent=styles['Normal'],fontName='Helvetica',fontSize=10,leading=12)
+    st_title=ParagraphStyle('ptt',parent=styles['Heading2'],fontName='Helvetica-Bold',fontSize=16,alignment=TA_CENTER,textColor=colors.HexColor('#133a5e'),spaceAfter=4)
+    st_sub=ParagraphStyle('ptsb',parent=styles['Normal'],fontName='Helvetica',fontSize=9,leading=11,alignment=TA_CENTER,textColor=colors.HexColor('#35526f'))
+    st_small=ParagraphStyle('pts',parent=styles['Normal'],fontName='Helvetica',fontSize=9,leading=11,textColor=colors.HexColor('#183046'))
+    st_norm=ParagraphStyle('ptn',parent=styles['Normal'],fontName='Helvetica',fontSize=10,leading=12,textColor=colors.HexColor('#183046'))
+    st_sign=ParagraphStyle('ptsig',parent=styles['Normal'],fontName='Helvetica',fontSize=9,leading=11,alignment=TA_CENTER,textColor=colors.HexColor('#2f4a64'))
 
     elems=[]
-    elems.append(p('ESPELHO MENSAL DE PONTO',st_title))
-    elems.append(p(f"Competência: {comp} · Emissão: {datetime.now().strftime('%d/%m/%Y %H:%M')}",st_small))
+    hdr=Table([[p('ESPELHO MENSAL DE PONTO',st_title)]],colWidths=[W*0.92])
+    hdr.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#eef4fb')),
+        ('BOX',(0,0),(-1,-1),0.8,colors.HexColor('#9fb6cf')),
+        ('TOPPADDING',(0,0),(-1,-1),8),
+        ('BOTTOMPADDING',(0,0),(-1,-1),8),
+    ]))
+    elems.append(hdr)
+    elems.append(Spacer(1,4))
+    elems.append(p(f"Competência: {comp}  |  Emissão: {datetime.now().strftime('%d/%m/%Y %H:%M')}",st_sub))
     elems.append(Spacer(1,6))
 
     info=[
-        [p('<b>Colaborador</b>',st_small),p(f.nome or '-',st_small),p('<b>Matrícula</b>',st_small),p(f.matricula or '-',st_small)],
-        [p('<b>Cargo/Função</b>',st_small),p((f.cargo or '-')+(f" / {f.funcao}" if (f.funcao or '').strip() else ''),st_small),p('<b>Jornada</b>',st_small),p(f.jornada or '08:00',st_small)]
+        [p('<b>Colaborador</b>',st_small,html=True),p(f.nome or '-',st_small),p('<b>Matrícula</b>',st_small,html=True),p(f.matricula or '-',st_small)],
+        [p('<b>Cargo/Função</b>',st_small,html=True),p((f.cargo or '-')+(f" / {f.funcao}" if (f.funcao or '').strip() else ''),st_small),p('<b>Jornada</b>',st_small,html=True),p(f.jornada or '08:00',st_small)]
     ]
     tinfo=Table(info,colWidths=[W*0.16,W*0.34,W*0.16,W*0.26])
     tinfo.setStyle(TableStyle([
-        ('GRID',(0,0),(-1,-1),0.5,colors.HexColor('#d4dde6')),
-        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f5f8fb')),
+        ('GRID',(0,0),(-1,-1),0.5,colors.HexColor('#8ca6c0')),
+        ('BACKGROUND',(0,0),(0,-1),colors.HexColor('#f3f8fd')),
+        ('BACKGROUND',(2,0),(2,-1),colors.HexColor('#f3f8fd')),
+        ('FONTNAME',(0,0),(0,-1),'Helvetica-Bold'),
+        ('FONTNAME',(2,0),(2,-1),'Helvetica-Bold'),
         ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
-        ('LEFTPADDING',(0,0),(-1,-1),6),
-        ('RIGHTPADDING',(0,0),(-1,-1),6),
-        ('TOPPADDING',(0,0),(-1,-1),5),
-        ('BOTTOMPADDING',(0,0),(-1,-1),5),
+        ('LEFTPADDING',(0,0),(-1,-1),5),
+        ('RIGHTPADDING',(0,0),(-1,-1),5),
+        ('TOPPADDING',(0,0),(-1,-1),3),
+        ('BOTTOMPADDING',(0,0),(-1,-1),3),
     ]))
     elems.append(tinfo)
     elems.append(Spacer(1,8))
 
-    rows=[[p('<b>Data</b>',st_small),p('<b>Marcações</b>',st_small),p('<b>Trabalhadas</b>',st_small),p('<b>Esperadas</b>',st_small),p('<b>Saldo</b>',st_small),p('<b>Status</b>',st_small)]]
+    rows=[[p('<b>Data</b>',st_small,html=True),p('<b>Marcações</b>',st_small,html=True),p('<b>Trabalhadas</b>',st_small,html=True),p('<b>Esperadas</b>',st_small,html=True),p('<b>Saldo</b>',st_small,html=True),p('<b>Status</b>',st_small,html=True)]]
     for d in resumo_comp['dias']:
         dt=d['data_ref']
         marks='Sem marcações' if (d['marcacoes_count'] or 0)==0 else f"{d['marcacoes_count']} batida(s)"
@@ -3648,16 +3715,31 @@ def api_ponto_espelho_mensal():
             p(st,st_small)
         ])
     tbl=Table(rows,colWidths=[W*0.12,W*0.30,W*0.14,W*0.14,W*0.12,W*0.14],repeatRows=1)
-    tbl.setStyle(TableStyle([
-        ('GRID',(0,0),(-1,-1),0.5,colors.HexColor('#d4dde6')),
-        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#edf4fa')),
+    ts=[
+        ('GRID',(0,0),(-1,-1),0.45,colors.HexColor('#9ab1c8')),
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#dfeaf6')),
         ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.HexColor('#173955')),
         ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
-        ('LEFTPADDING',(0,0),(-1,-1),5),
-        ('RIGHTPADDING',(0,0),(-1,-1),5),
-        ('TOPPADDING',(0,0),(-1,-1),4),
-        ('BOTTOMPADDING',(0,0),(-1,-1),4),
-    ]))
+        ('LEFTPADDING',(0,0),(-1,-1),3),
+        ('RIGHTPADDING',(0,0),(-1,-1),3),
+        ('TOPPADDING',(0,0),(-1,-1),2),
+        ('BOTTOMPADDING',(0,0),(-1,-1),2),
+    ]
+    for i in range(1,len(rows)):
+        if i%2==0:
+            ts.append(('BACKGROUND',(0,i),(-1,i),colors.HexColor('#f7fbff')))
+        status=(resumo_comp['dias'][i-1].get('status') or '').lower()
+        saldo=(resumo_comp['dias'][i-1].get('saldo_fmt') or '').strip()
+        if status!='ok':
+            ts.append(('TEXTCOLOR',(5,i),(5,i),colors.HexColor('#9b1d1d')))
+            ts.append(('FONTNAME',(5,i),(5,i),'Helvetica-Bold'))
+        if saldo.startswith('-'):
+            ts.append(('TEXTCOLOR',(4,i),(4,i),colors.HexColor('#8a1c1c')))
+            ts.append(('FONTNAME',(4,i),(4,i),'Helvetica-Bold'))
+        elif saldo and saldo!='00:00':
+            ts.append(('TEXTCOLOR',(4,i),(4,i),colors.HexColor('#1a6a3a')))
+    tbl.setStyle(TableStyle(ts))
     elems.append(tbl)
     elems.append(Spacer(1,8))
 
@@ -3667,18 +3749,29 @@ def api_ponto_espelho_mensal():
         f"Esperadas: {tt['horas_esperadas_fmt']} · Saldo: {tt['saldo_fmt']} · "
         f"Inconsistências: {tt['inconsistencias']}"
     )
-    elems.append(p(resumo_txt,st_norm))
+    resumo_box=Table([[p(resumo_txt,st_norm,html=True)]],colWidths=[W*0.92])
+    resumo_box.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#f5faf4')),
+        ('BOX',(0,0),(-1,-1),0.8,colors.HexColor('#9bc39a')),
+        ('TOPPADDING',(0,0),(-1,-1),6),
+        ('BOTTOMPADDING',(0,0),(-1,-1),6),
+        ('LEFTPADDING',(0,0),(-1,-1),6),
+        ('RIGHTPADDING',(0,0),(-1,-1),6),
+    ]))
+    elems.append(resumo_box)
     elems.append(Spacer(1,18))
 
     assinatura=[
-        [p('Assinatura do colaborador',st_small),p('Assinatura do gestor',st_small)],
-        [p('________________________________________',st_small),p('________________________________________',st_small)],
-        [p('Data: ____/____/______',st_small),p('Data: ____/____/______',st_small)]
+        [p('Assinatura do colaborador',st_sign),p('Assinatura do gestor',st_sign)],
+        [p('________________________________________',st_sign),p('________________________________________',st_sign)],
+        [p('Data: ____/____/______',st_sign),p('Data: ____/____/______',st_sign)]
     ]
     tast=Table(assinatura,colWidths=[W*0.45,W*0.45])
     tast.setStyle(TableStyle([
         ('ALIGN',(0,0),(-1,-1),'CENTER'),
         ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('TOPPADDING',(0,0),(-1,-1),6),
+        ('BOTTOMPADDING',(0,0),(-1,-1),6),
     ]))
     elems.append(tast)
     doc.build(elems)
@@ -5320,6 +5413,7 @@ def api_dashboard():
 
     inad_itens=[]
     total_inadimplencia=0.0
+    hoje=date.today()
     for m in Medicao.query.filter(Medicao.status!='cancelada').all():
         dt=(m.dt_vencimento or '').strip()
         if not dt:
@@ -5376,7 +5470,6 @@ def api_dashboard():
             return date(yy,12,31)
         return None
 
-    hoje=date.today()
     limite=hoje+timedelta(days=30)
     dia_alerta_vt=max(1,min(31,to_num(gc('benef_alerta_vt_dia','25')) or 25))
     dia_alerta_vrva=max(1,min(31,to_num(gc('benef_alerta_vrva_dia','26')) or 26))

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assinatura do Espelho de Ponto</title>
+  <style>
+    body{font-family:Arial,sans-serif;background:#f3f7fb;margin:0;color:#183046}
+    .box{max-width:760px;margin:28px auto;background:#fff;border:1px solid #d6e1ec;border-radius:12px;padding:20px}
+    h1{margin:0 0 12px;font-size:22px}
+    .meta{font-size:13px;color:#4c6074;background:#f7fbff;border:1px solid #d6e4f2;border-radius:8px;padding:10px;margin-bottom:12px}
+    .ok{background:#ebfaef;border:1px solid #b7e7c1;color:#145c24;padding:10px;border-radius:8px}
+    .er{background:#fff1f1;border:1px solid #f0c4c4;color:#7d1f1f;padding:10px;border-radius:8px}
+    label{display:block;margin:10px 0 4px;font-weight:700;font-size:13px}
+    input{width:100%;box-sizing:border-box;padding:10px;border:1px solid #c9d5e3;border-radius:8px;font-size:14px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .actions{margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    button{padding:10px 16px;border:0;border-radius:8px;background:#0e5ea8;color:#fff;font-weight:700;cursor:pointer}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .muted{font-size:12px;color:#60758b}
+    @media (max-width:640px){.row{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>Assinatura eletronica do espelho mensal</h1>
+    {% if not ok %}
+      <div class="er">{{ mensagem }}</div>
+    {% else %}
+      <div class="meta">
+        <div><b>Colaborador:</b> {{ funcionario.nome if funcionario else '-' }}</div>
+        <div><b>Competencia:</b> {{ espelho.competencia }}</div>
+        <div><b>Expira em:</b> {{ espelho.assinatura_expira_em.strftime('%d/%m/%Y %H:%M') if espelho.assinatura_expira_em else '-' }}</div>
+      </div>
+      <div id="st"></div>
+      <div class="row">
+        <div>
+          <label>Nome completo</label>
+          <input id="nome" placeholder="Digite seu nome completo">
+        </div>
+        <div>
+          <label>CPF</label>
+          <input id="cpf" placeholder="Somente numeros ou com mascara">
+        </div>
+      </div>
+      <label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-weight:400">
+        <input id="aceite" type="checkbox" style="width:auto;margin-top:2px">
+        <span>Confirmo que li o espelho mensal e concordo com os registros apresentados.</span>
+      </label>
+      <div class="actions">
+        <button id="btn" onclick="confirmar()">Assinar espelho</button>
+        <span class="muted">A assinatura gera codigo publico de validacao.</span>
+      </div>
+    {% endif %}
+  </div>
+  {% if ok %}
+  <script>
+    async function confirmar(){
+      const btn=document.getElementById('btn');
+      const nome=(document.getElementById('nome').value||'').trim();
+      const cpf=(document.getElementById('cpf').value||'').trim();
+      const aceite=!!document.getElementById('aceite').checked;
+      const st=document.getElementById('st');
+      if(!nome){st.className='er';st.textContent='Informe seu nome completo.';return;}
+      if(!cpf){st.className='er';st.textContent='Informe seu CPF.';return;}
+      if(!aceite){st.className='er';st.textContent='Confirme o aceite para continuar.';return;}
+      btn.disabled=true;
+      st.className='';
+      st.textContent='Enviando assinatura...';
+      try{
+        const r=await fetch('/api/ponto/espelho/assinar/{{ espelho.assinatura_token }}/confirmar',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({nome,cpf,aceite})
+        });
+        const d=await r.json();
+        if(!r.ok||d.erro){
+          st.className='er';
+          st.textContent=d.erro||'Falha ao assinar.';
+          btn.disabled=false;
+          return;
+        }
+        st.className='ok';
+        st.innerHTML='Assinatura concluida com sucesso. <a href="'+(d.validacao_link||'#')+'" target="_blank" rel="noopener">Validar assinatura</a>';
+      }catch(e){
+        st.className='er';
+        st.textContent='Erro de comunicacao ao assinar.';
+        btn.disabled=false;
+      }
+    }
+  </script>
+  {% endif %}
+</body>
+</html>
