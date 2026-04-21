@@ -10,6 +10,11 @@
     body{margin:0;font-family:Segoe UI,Tahoma,sans-serif;background:linear-gradient(140deg,#f9fcff,#edf3fa);color:var(--tx)}
     .wrap{max-width:760px;margin:34px auto;padding:0 14px}
     .card{background:#fff;border:1px solid var(--bd);border-radius:14px;box-shadow:0 12px 28px rgba(15,76,129,.08);padding:22px}
+    .brand{display:flex;align-items:center;gap:14px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid #e7eef6}
+    .brand img{height:52px;width:auto;object-fit:contain;flex-shrink:0}
+    .brand-copy{min-width:0}
+    .brand-copy strong{display:block;color:var(--az);font-size:16px}
+    .brand-copy span{display:block;color:#66798c;font-size:12px;margin-top:2px}
     h1{margin:0 0 6px;color:var(--az);font-size:24px}
     .sub{margin:0 0 16px;color:#55687a;font-size:14px}
     .tag{display:inline-block;font-size:11px;font-weight:700;padding:4px 8px;border-radius:999px;margin-bottom:12px}
@@ -24,6 +29,13 @@
 <body>
   <div class="wrap">
     <div class="card">
+      <div class="brand">
+        <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
+        <div class="brand-copy">
+          <strong>RM Facilities</strong>
+          <span>Página oficial de auditoria e validação de assinatura eletrônica</span>
+        </div>
+      </div>
       <h1>Validação de assinatura</h1>
       <p class="sub">Confira abaixo os dados da assinatura eletrônica deste documento.</p>
 

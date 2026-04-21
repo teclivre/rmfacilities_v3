@@ -72,8 +72,16 @@ class Usuario(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     nome=db.Column(db.String(100),nullable=False)
     email=db.Column(db.String(150),unique=True,nullable=False)
+    telefone=db.Column(db.String(30))
     senha=db.Column(db.String(256),nullable=False)
     perfil=db.Column(db.String(20),default='admin')
+    twofa_ativo=db.Column(db.Boolean,default=True)
+    cert_arquivo=db.Column(db.String(500))
+    cert_nome_arquivo=db.Column(db.String(255))
+    cert_senha=db.Column(db.String(255))
+    cert_ativo=db.Column(db.Boolean,default=False)
+    cert_assunto=db.Column(db.String(255))
+    cert_validade_fim=db.Column(db.String(30))
     areas=db.Column(db.Text,default='[]')
     ativo=db.Column(db.Boolean,default=True)
     ultimo_acesso=db.Column(db.DateTime)
@@ -82,7 +90,21 @@ class Usuario(db.Model):
     def to_dict(self):
         try: a=json.loads(self.areas or '[]')
         except: a=[]
-        return {'id':self.id,'nome':self.nome,'email':self.email,'perfil':self.perfil,'ativo':self.ativo,'areas':a}
+        return {
+            'id':self.id,
+            'nome':self.nome,
+            'email':self.email,
+            'telefone':self.telefone or '',
+            'perfil':self.perfil,
+            'twofa_ativo':bool(self.twofa_ativo if self.twofa_ativo is not None else True),
+            'ativo':self.ativo,
+            'areas':a,
+            'cert_configurado':bool((self.cert_arquivo or '').strip()),
+            'cert_nome_arquivo':self.cert_nome_arquivo or '',
+            'cert_ativo':bool(self.cert_ativo if self.cert_ativo is not None else False),
+            'cert_assunto':self.cert_assunto or '',
+            'cert_validade_fim':self.cert_validade_fim or ''
+        }
 
 class Empresa(db.Model):
     id=db.Column(db.Integer,primary_key=True)
@@ -107,6 +129,12 @@ class Empresa(db.Model):
     contato_email=db.Column(db.String(150))
     contato_telefone=db.Column(db.String(30))
     logo_url=db.Column(db.String(500))
+    cert_arquivo=db.Column(db.String(500))
+    cert_nome_arquivo=db.Column(db.String(255))
+    cert_senha=db.Column(db.String(255))
+    cert_ativo=db.Column(db.Boolean,default=False)
+    cert_assunto=db.Column(db.String(255))
+    cert_validade_fim=db.Column(db.String(30))
     boleto=db.Column(db.Text)
     ativa=db.Column(db.Boolean,default=True)
     ordem=db.Column(db.Integer,default=0)
@@ -118,6 +146,12 @@ class Empresa(db.Model):
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         d['end_fmt']=self.end_fmt()
+        d['cert_configurado']=bool((self.cert_arquivo or '').strip())
+        d['cert_nome_arquivo']=self.cert_nome_arquivo or ''
+        d['cert_ativo']=bool(self.cert_ativo if self.cert_ativo is not None else False)
+        d['cert_assunto']=self.cert_assunto or ''
+        d['cert_validade_fim']=self.cert_validade_fim or ''
+        d.pop('cert_senha',None)
         return d
 
 class Config(db.Model):
@@ -189,10 +223,17 @@ class Medicao(db.Model):
     assinatura_token=db.Column(db.String(120))
     assinatura_expira_em=db.Column(db.DateTime)
     assinatura_nome=db.Column(db.String(200))
+    assinatura_cpf=db.Column(db.String(20))
     assinatura_cargo=db.Column(db.String(120))
     assinatura_ip=db.Column(db.String(60))
     assinatura_em=db.Column(db.DateTime)
     assinatura_codigo=db.Column(db.String(120))
+    assinatura_otp_hash=db.Column(db.String(256))
+    assinatura_otp_expira_em=db.Column(db.DateTime)
+    assinatura_otp_tentativas=db.Column(db.Integer,default=0)
+    assinatura_doc_hash=db.Column(db.String(128))
+    assinatura_crypto_ok=db.Column(db.Boolean,default=False)
+    assinatura_cert_subject=db.Column(db.String(255))
     criado_em=db.Column(db.DateTime,default=utcnow)
     criado_por=db.Column(db.String(100))
     def to_dict(self):
@@ -282,6 +323,12 @@ class FuncionarioArquivo(db.Model):
     ass_cpf=db.Column(db.String(20))
     ass_ip=db.Column(db.String(60))
     ass_em=db.Column(db.DateTime)
+    ass_otp_hash=db.Column(db.String(256))
+    ass_otp_expira_em=db.Column(db.DateTime)
+    ass_otp_tentativas=db.Column(db.Integer,default=0)
+    ass_doc_hash=db.Column(db.String(128))
+    ass_crypto_ok=db.Column(db.Boolean,default=False)
+    ass_cert_subject=db.Column(db.String(255))
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
@@ -459,9 +506,16 @@ class AssinaturaEnvelope(db.Model):
     status=db.Column(db.String(20),default='rascunho')  # rascunho|pendente|parcial|concluido|cancelado
     codigo=db.Column(db.String(120))
     nome_documento_assinado=db.Column(db.String(255))
+    destino_salvar_tipo=db.Column(db.String(30),default='envelope')  # envelope|funcionario
+    destino_funcionario_id=db.Column(db.Integer)
+    destino_categoria=db.Column(db.String(40),default='outros')
+    destino_competencia=db.Column(db.String(20))
     criado_por=db.Column(db.String(100))
     criado_em=db.Column(db.DateTime,default=utcnow)
     expira_em=db.Column(db.DateTime)
+    assinatura_doc_hash=db.Column(db.String(128))
+    assinatura_crypto_ok=db.Column(db.Boolean,default=False)
+    assinatura_cert_subject=db.Column(db.String(255))
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
@@ -499,6 +553,9 @@ class AssinaturaEnvelopeSignatario(db.Model):
     ass_em=db.Column(db.DateTime)
     ass_codigo=db.Column(db.String(120))
     ass_cpf_informado=db.Column(db.String(20))
+    ass_otp_hash=db.Column(db.String(256))
+    ass_otp_expira_em=db.Column(db.DateTime)
+    ass_otp_tentativas=db.Column(db.Integer,default=0)
     ordem=db.Column(db.Integer,default=0)
     criado_em=db.Column(db.DateTime,default=utcnow)
     def to_dict(self):
@@ -578,6 +635,239 @@ def reg_auth_attempt(tipo,ident,ok,motivo=''):
     ip=(request.headers.get('X-Forwarded-For') or request.remote_addr or '').split(',')[0].strip()
     db.session.add(AuthTentativa(tipo=tipo,identificador=ident,ip=ip,ok=bool(ok),motivo=(motivo or '')[:250]))
     db.session.commit()
+
+def _mask_email(v):
+    s=(v or '').strip()
+    if '@' not in s:
+        return s
+    usr,dom=s.split('@',1)
+    if len(usr)<=2:
+        usr_mask='*'*len(usr)
+    else:
+        usr_mask=usr[0]+'*'*(len(usr)-2)+usr[-1]
+    return f'{usr_mask}@{dom}'
+
+def _mask_phone(v):
+    d=only_digits(v)
+    if len(d)<4:
+        return '***'
+    return f'*** *** {d[-4:]}'
+
+def _admin_needs_2fa(u):
+    if not u:
+        return False
+    if (u.perfil or '').strip().lower() not in ('admin','dono'):
+        return False
+    return bool(u.twofa_ativo if u.twofa_ativo is not None else True)
+
+def _send_admin_2fa_code(u,codigo,contexto='login'):
+    tel=norm_phone(getattr(u,'telefone','') or '')
+    email=(getattr(u,'email','') or '').strip()
+    if contexto=='recuperacao':
+        msg=(
+            f'RM Facilities - Recuperação de acesso\n'
+            f'Código: {codigo}\n'
+            'Validade: 10 minutos.\n'
+            'Se não solicitou, ignore esta mensagem.'
+        )
+    else:
+        msg=(
+            f'RM Facilities - Verificação em duas etapas\n'
+            f'Código: {codigo}\n'
+            'Validade: 10 minutos.\n'
+            'Não compartilhe este código.'
+        )
+    ultimo_erro=''
+    if len(tel)>=10:
+        try:
+            wa_send_text(tel,msg)
+            return
+        except Exception as ex:
+            ultimo_erro=str(ex)
+    if email:
+        try:
+            smtp_send_text(email,'Código de segurança RM Facilities',msg)
+            return
+        except Exception as ex:
+            ultimo_erro=str(ex)
+    raise ValueError(ultimo_erro or 'Não foi possível enviar o código de segurança por celular/e-mail.')
+
+def _certs_base_dir():
+    p=os.path.join(UPLOAD_ROOT,'certificados')
+    os.makedirs(p,exist_ok=True)
+    return p
+
+def _cert_rel_to_abs(rel_path):
+    raw=(rel_path or '').strip()
+    if not raw:
+        return ''
+    if os.path.isabs(raw):
+        return raw if os.path.exists(raw) else ''
+    cands=[
+        os.path.join(UPLOAD_ROOT,raw),
+        os.path.join(_get_uploads_base(),raw) if '_get_uploads_base' in globals() else '',
+    ]
+    for p in cands:
+        if p and os.path.exists(p):
+            return p
+    return ''
+
+def _cert_store_file(fs,scope,obj_id):
+    if not fs or not fs.filename:
+        raise ValueError('Arquivo de certificado não enviado.')
+    name=secure_filename(fs.filename)
+    ext=os.path.splitext(name)[1].lower()
+    if ext not in ('.p12','.pfx'):
+        raise ValueError('Formato inválido. Envie certificado .p12 ou .pfx.')
+    base=os.path.join(_certs_base_dir(),scope,str(obj_id))
+    os.makedirs(base,exist_ok=True)
+    final_name=f'certificado{ext}'
+    abs_path=os.path.join(base,final_name)
+    fs.save(abs_path)
+    rel=os.path.relpath(abs_path,UPLOAD_ROOT).replace('\\','/')
+    return rel,name
+
+def _cert_inspect_pkcs12(abs_path,senha=''):
+    try:
+        from cryptography.hazmat.primitives.serialization import pkcs12
+    except Exception as ex:
+        raise ValueError(f'Biblioteca de certificado não disponível: {str(ex)}')
+    with open(abs_path,'rb') as f:
+        raw=f.read()
+    pwd=(senha or '').encode('utf-8') if (senha or '').strip() else None
+    key,cert,_=pkcs12.load_key_and_certificates(raw,pwd)
+    if not key or not cert:
+        raise ValueError('Certificado inválido ou sem chave privada.')
+    assunto=''
+    validade=''
+    try:
+        assunto=cert.subject.rfc4514_string()
+    except Exception:
+        assunto=''
+    try:
+        dt=getattr(cert,'not_valid_after_utc',None) or cert.not_valid_after
+        validade=dt.strftime('%Y-%m-%d') if dt else ''
+    except Exception:
+        validade=''
+    return {'assunto':assunto[:255],'validade_fim':validade}
+
+def _get_cert_context(empresa_id=None,usuario_id=None):
+    if empresa_id:
+        emp=Empresa.query.get(empresa_id)
+        if emp and bool(emp.cert_ativo if emp.cert_ativo is not None else False):
+            abs_cert=_cert_rel_to_abs(emp.cert_arquivo)
+            if abs_cert and (emp.cert_senha or '').strip():
+                return {
+                    'cert_path':abs_cert,
+                    'cert_pass':emp.cert_senha,
+                    'cert_subject':emp.cert_assunto or '',
+                    'source':'empresa',
+                }
+    if usuario_id:
+        usr=Usuario.query.get(usuario_id)
+        if usr and bool(usr.cert_ativo if usr.cert_ativo is not None else False):
+            abs_cert=_cert_rel_to_abs(usr.cert_arquivo)
+            if abs_cert and (usr.cert_senha or '').strip():
+                return {
+                    'cert_path':abs_cert,
+                    'cert_pass':usr.cert_senha,
+                    'cert_subject':usr.cert_assunto or '',
+                    'source':'usuario',
+                }
+    return None
+
+def _sha256_bytes(raw):
+    h=hashlib.sha256()
+    h.update(raw or b'')
+    return h.hexdigest().upper()
+
+def _sha256_file(path):
+    h=hashlib.sha256()
+    with open(path,'rb') as f:
+        for chunk in iter(lambda: f.read(1024*1024),b''):
+            h.update(chunk)
+    return h.hexdigest().upper()
+
+def _otp_new_code():
+    return ''.join(secrets.choice('0123456789') for _ in range(6))
+
+def _send_signature_otp(codigo,nome_dest='',telefone='',email='',contexto='assinatura'):
+    nome=(nome_dest or 'assinante').strip()
+    if contexto=='medicao':
+        assunto='Código de confirmação de assinatura da medição'
+        titulo='assinatura da medição'
+    elif contexto=='envelope':
+        assunto='Código de confirmação de assinatura do envelope'
+        titulo='assinatura do envelope'
+    else:
+        assunto='Código de confirmação de assinatura de documento'
+        titulo='assinatura do documento'
+    msg=(
+        f'RM Facilities - Confirmação de {titulo}\n'
+        f'Destinatário: {nome}\n'
+        f'Código OTP: {codigo}\n'
+        'Validade: 10 minutos.\n'
+        'Não compartilhe este código.'
+    )
+    tel=wa_norm_number(telefone or '')
+    ultimo_erro=''
+    if wa_is_valid_number(tel):
+        try:
+            wa_send_text(tel,msg)
+            return {'canal':'whatsapp','destino':_mask_phone(tel)}
+        except Exception as ex:
+            ultimo_erro=str(ex)
+    if (email or '').strip():
+        try:
+            smtp_send_text((email or '').strip(),assunto,msg)
+            return {'canal':'email','destino':_mask_email(email)}
+        except Exception as ex:
+            ultimo_erro=str(ex)
+    raise ValueError(ultimo_erro or 'Não foi possível enviar o código OTP para confirmação da assinatura.')
+
+def _try_sign_pdf_bytes_crypto(pdf_bytes,empresa_id=None,usuario_id=None):
+    cert_ctx=_get_cert_context(empresa_id=empresa_id,usuario_id=usuario_id)
+    p12_path=(cert_ctx.get('cert_path') if cert_ctx else '') or (os.environ.get('PDF_SIGN_P12_PATH') or '').strip()
+    p12_pass=(cert_ctx.get('cert_pass') if cert_ctx else '') or (os.environ.get('PDF_SIGN_P12_PASS') or '').strip()
+    if not p12_path or not p12_pass or not os.path.exists(p12_path):
+        return {'ok':False,'bytes':pdf_bytes,'reason':'crypto_not_configured'}
+    try:
+        from pyhanko.sign import signers
+        from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+    except Exception as ex:
+        return {'ok':False,'bytes':pdf_bytes,'reason':f'pyhanko_unavailable:{str(ex)}'}
+    try:
+        meta=signers.PdfSignatureMetadata(
+            field_name='Signature1',
+            reason=(os.environ.get('PDF_SIGN_REASON') or 'Assinatura eletrônica RM Facilities'),
+            location=(os.environ.get('PDF_SIGN_LOCATION') or 'Brasil')
+        )
+        signer=signers.SimpleSigner.load_pkcs12(
+            pfx_file=p12_path,
+            passphrase=p12_pass.encode('utf-8')
+        )
+        out=io.BytesIO()
+        writer=IncrementalPdfFileWriter(io.BytesIO(pdf_bytes))
+        signers.PdfSigner(signature_meta=meta,signer=signer).sign_pdf(writer,output=out)
+        cert=''
+        try:
+            cert=signer.signing_cert.subject.human_friendly
+        except Exception:
+            cert=cert_ctx.get('cert_subject','') if cert_ctx else ''
+        return {'ok':True,'bytes':out.getvalue(),'cert_subject':cert}
+    except Exception as ex:
+        return {'ok':False,'bytes':pdf_bytes,'reason':str(ex)}
+
+def _try_sign_pdf_file_crypto(abs_path,empresa_id=None,usuario_id=None):
+    if not abs_path or not os.path.exists(abs_path):
+        return {'ok':False,'reason':'file_not_found'}
+    with open(abs_path,'rb') as f:
+        raw=f.read()
+    rs=_try_sign_pdf_bytes_crypto(raw,empresa_id=empresa_id,usuario_id=usuario_id)
+    if rs.get('ok'):
+        with open(abs_path,'wb') as f:
+            f.write(rs.get('bytes') or b'')
+    return rs
 
 def audit_event(evento,ator_tipo='',ator_id='',alvo_tipo='',alvo_id='',ok=True,det=None):
     try:
@@ -1906,7 +2196,7 @@ def smtp_send_link_assinatura(dest, nome_dest, titulo_envelope, link, remetente=
     else:
         with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s: s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
 
-ALLOWED_AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','sst','rh-digital','documentos']
+ALLOWED_AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','compras','sst','rh-digital','documentos']
 UPLOAD_ROOT=os.path.join(os.path.dirname(__file__),'instance','uploads')
 DOC_CAT_PATH={
     'aso':'aso',
@@ -2114,7 +2404,8 @@ def area_from_path(path):
     if p.startswith('/api/config') or p.startswith('/api/backup'): return 'config'
     if p.startswith('/api/funcionarios'): return 'rh'
     if p.startswith('/api/rh/'): return 'rh-digital'
-    if p.startswith('/api/ordens-compra') or p.startswith('/api/operacional'): return 'operacional'
+    if p.startswith('/api/ordens-compra'): return 'compras'
+    if p.startswith('/api/operacional'): return 'operacional'
     if p.startswith('/api/usuarios'): return 'usuarios'
     return None
 
@@ -2558,19 +2849,97 @@ register_ponto_routes(
 
 @app.route('/login',methods=['GET','POST'])
 def login():
+    recuperar=request.args.get('recuperar')=='1'
+    if request.method=='GET' and request.args.get('cancel2fa'):
+        session.pop('login_2fa_uid',None)
+        session.pop('login_2fa_email',None)
+        session.pop('login_2fa_code_hash',None)
+        session.pop('login_2fa_exp',None)
+        session.pop('login_2fa_attempts',None)
     if 'uid' in session: return redirect(url_for('index'))
     erro=None
     if request.method=='POST':
+        etapa=(request.form.get('etapa') or '').strip().lower()
+        if etapa=='2fa':
+            uid=session.get('login_2fa_uid')
+            if not uid:
+                erro='Sessão de verificação expirada. Faça login novamente.'
+                return render_template('login.html',erro=erro)
+            u=Usuario.query.get(uid)
+            if not u or not u.ativo:
+                erro='Usuário inválido para verificação.'
+                return render_template('login.html',erro=erro)
+            if request.form.get('acao')=='reenviar':
+                codigo=f'{secrets.randbelow(1000000):06d}'
+                try:
+                    _send_admin_2fa_code(u,codigo,'login')
+                except Exception as ex:
+                    erro=f'Não foi possível reenviar o código: {str(ex)}'
+                    return render_template('login.html',erro=erro,etapa='2fa',email=u.email,email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone))
+                session['login_2fa_code_hash']=token_hash(codigo)
+                session['login_2fa_exp']=int(time.time())+600
+                session['login_2fa_attempts']=0
+                return render_template('login.html',ok='Novo código enviado para seu celular.',etapa='2fa',email=u.email,email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone))
+            codigo=(request.form.get('codigo') or '').strip()
+            if not re.fullmatch(r'\d{6}',codigo):
+                return render_template('login.html',erro='Informe o código de 6 dígitos.',etapa='2fa',email=u.email,email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone))
+            if int(session.get('login_2fa_exp',0) or 0)<int(time.time()):
+                erro='Código expirado. Faça login novamente para gerar outro.'
+                session.pop('login_2fa_uid',None)
+                session.pop('login_2fa_email',None)
+                session.pop('login_2fa_code_hash',None)
+                session.pop('login_2fa_exp',None)
+                session.pop('login_2fa_attempts',None)
+                return render_template('login.html',erro=erro)
+            tent=int(session.get('login_2fa_attempts',0) or 0)
+            if tent>=5:
+                session.pop('login_2fa_uid',None)
+                session.pop('login_2fa_email',None)
+                session.pop('login_2fa_code_hash',None)
+                session.pop('login_2fa_exp',None)
+                session.pop('login_2fa_attempts',None)
+                return render_template('login.html',erro='Muitas tentativas inválidas. Faça login novamente.')
+            if not hmac.compare_digest(token_hash(codigo),str(session.get('login_2fa_code_hash') or '')):
+                session['login_2fa_attempts']=tent+1
+                return render_template('login.html',erro='Código inválido.',etapa='2fa',email=u.email,email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone))
+            session.permanent=True
+            session['uid']=u.id; session['nome']=u.nome; session['perfil']=u.perfil
+            session['areas']=jloads(u.areas,[])
+            u.ultimo_acesso=utcnow(); db.session.commit()
+            reg_auth_attempt('admin',u.email,True,'ok_2fa')
+            audit_event('auth_admin_sucesso_2fa','usuario',u.id,'usuario',u.id,True,{})
+            session.pop('login_2fa_uid',None)
+            session.pop('login_2fa_email',None)
+            session.pop('login_2fa_code_hash',None)
+            session.pop('login_2fa_exp',None)
+            session.pop('login_2fa_attempts',None)
+            return redirect(url_for('index'))
+
         email=request.form.get('email','').lower().strip()
         senha=request.form.get('senha','')
         if auth_blocked('admin',email,(request.remote_addr or '')):
             erro='Muitas tentativas. Aguarde alguns minutos.'
             audit_event('auth_admin_bloqueado','admin',email,'usuario','',False,{'motivo':'rate_limit'})
-            return render_template('login.html',erro=erro)
+            return render_template('login.html',erro=erro,recuperar=recuperar)
         u=Usuario.query.filter_by(email=email,ativo=True).first()
         if u and pw_check(u.senha,senha):
             if not pw_is_modern(u.senha):
                 u.senha=pw_hash(senha)
+            if _admin_needs_2fa(u):
+                codigo=f'{secrets.randbelow(1000000):06d}'
+                try:
+                    _send_admin_2fa_code(u,codigo,'login')
+                except Exception as ex:
+                    erro=f'Falha ao enviar código de verificação: {str(ex)}'
+                    audit_event('auth_admin_2fa_envio_falha','usuario',u.id,'usuario',u.id,False,{'erro':str(ex)[:200]})
+                    return render_template('login.html',erro=erro,recuperar=recuperar)
+                session['login_2fa_uid']=u.id
+                session['login_2fa_email']=u.email
+                session['login_2fa_code_hash']=token_hash(codigo)
+                session['login_2fa_exp']=int(time.time())+600
+                session['login_2fa_attempts']=0
+                audit_event('auth_admin_2fa_desafio','usuario',u.id,'usuario',u.id,True,{})
+                return render_template('login.html',etapa='2fa',email=u.email,email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),ok='Código de 6 dígitos enviado para seu celular.')
             session.permanent=True
             session['uid']=u.id; session['nome']=u.nome; session['perfil']=u.perfil
             session['areas']=jloads(u.areas,[])
@@ -2581,7 +2950,62 @@ def login():
         reg_auth_attempt('admin',email,False,'credenciais_invalidas')
         audit_event('auth_admin_falha','admin',email,'usuario','',False,{})
         erro='E-mail ou senha incorretos.'
-    return render_template('login.html',erro=erro)
+    return render_template('login.html',erro=erro,recuperar=recuperar)
+
+@app.route('/recuperar-acesso',methods=['POST'])
+def recuperar_acesso():
+    etapa=(request.form.get('etapa') or 'solicitar').strip().lower()
+    if etapa=='solicitar':
+        ident=(request.form.get('identificador') or '').strip().lower()
+        if not ident:
+            return render_template('login.html',recuperar=True,erro='Informe e-mail ou telefone para recuperar acesso.')
+        tel=norm_phone(ident)
+        u=None
+        if '@' in ident:
+            u=Usuario.query.filter_by(email=ident,ativo=True).first()
+        elif tel:
+            u=Usuario.query.filter_by(telefone=tel,ativo=True).first()
+        if not u:
+            return render_template('login.html',recuperar=True,erro='Não localizamos usuário ativo com os dados informados.')
+        if not norm_phone(u.telefone):
+            return render_template('login.html',recuperar=True,erro='Usuário sem telefone válido cadastrado para recuperação.')
+        codigo=f'{secrets.randbelow(1000000):06d}'
+        try:
+            _send_admin_2fa_code(u,codigo,'recuperacao')
+        except Exception as ex:
+            return render_template('login.html',recuperar=True,erro=f'Não foi possível enviar o código: {str(ex)}')
+        session['rec_uid']=u.id
+        session['rec_code_hash']=token_hash(codigo)
+        session['rec_exp']=int(time.time())+600
+        session['rec_attempts']=0
+        return render_template('login.html',recuperar=True,rec_etapa='codigo',email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),ok='Código enviado para seu celular.')
+
+    uid=session.get('rec_uid')
+    u=Usuario.query.get(uid) if uid else None
+    if not u or not u.ativo:
+        return render_template('login.html',recuperar=True,erro='Sessão de recuperação expirada. Solicite novo código.')
+    codigo=(request.form.get('codigo') or '').strip()
+    nova_senha=(request.form.get('nova_senha') or '').strip()
+    if not re.fullmatch(r'\d{6}',codigo):
+        return render_template('login.html',recuperar=True,rec_etapa='codigo',email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),erro='Código inválido. Use 6 dígitos.')
+    if len(nova_senha)<8:
+        return render_template('login.html',recuperar=True,rec_etapa='codigo',email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),erro='A nova senha deve ter ao menos 8 caracteres.')
+    if int(session.get('rec_exp',0) or 0)<int(time.time()):
+        session.pop('rec_uid',None); session.pop('rec_code_hash',None); session.pop('rec_exp',None); session.pop('rec_attempts',None)
+        return render_template('login.html',recuperar=True,erro='Código expirado. Solicite outro.')
+    tent=int(session.get('rec_attempts',0) or 0)
+    if tent>=5:
+        session.pop('rec_uid',None); session.pop('rec_code_hash',None); session.pop('rec_exp',None); session.pop('rec_attempts',None)
+        return render_template('login.html',recuperar=True,erro='Muitas tentativas inválidas. Solicite novo código.')
+    if not hmac.compare_digest(token_hash(codigo),str(session.get('rec_code_hash') or '')):
+        session['rec_attempts']=tent+1
+        return render_template('login.html',recuperar=True,rec_etapa='codigo',email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),erro='Código incorreto.')
+
+    u.senha=pw_hash(nova_senha)
+    db.session.commit()
+    audit_event('auth_recuperacao_senha','usuario',u.id,'usuario',u.id,True,{})
+    session.pop('rec_uid',None); session.pop('rec_code_hash',None); session.pop('rec_exp',None); session.pop('rec_attempts',None)
+    return render_template('login.html',ok=f'Acesso recuperado. Usuário: {_mask_email(u.email)}. Faça login com a nova senha.')
 
 @app.route('/logout')
 def logout(): session.clear(); return redirect(url_for('login'))
@@ -2673,6 +3097,52 @@ def api_atualizar_empresa(id):
 def api_deletar_empresa(id):
     e=Empresa.query.get_or_404(id); e.ativa=False; db.session.commit(); return jsonify({'ok':True})
 
+@app.route('/api/empresas/<int:id>/certificado',methods=['POST'])
+@dr
+def api_empresa_cert_upload(id):
+    e=Empresa.query.get_or_404(id)
+    fs=request.files.get('arquivo')
+    senha=(request.form.get('senha') or '').strip()
+    if not fs:
+        return jsonify({'erro':'Arquivo do certificado não enviado.'}),400
+    if not senha:
+        return jsonify({'erro':'Informe a senha do certificado da empresa.'}),400
+    old_abs=_cert_rel_to_abs(e.cert_arquivo)
+    try:
+        rel,name=_cert_store_file(fs,'empresa',id)
+        abs_path=_cert_rel_to_abs(rel)
+        info=_cert_inspect_pkcs12(abs_path,senha)
+    except Exception as ex:
+        return jsonify({'erro':str(ex)}),400
+    e.cert_arquivo=rel
+    e.cert_nome_arquivo=name
+    e.cert_senha=senha
+    e.cert_ativo=True
+    e.cert_assunto=info.get('assunto','')
+    e.cert_validade_fim=info.get('validade_fim','')
+    db.session.commit()
+    if old_abs and old_abs!=abs_path and os.path.exists(old_abs):
+        try: os.remove(old_abs)
+        except Exception: pass
+    return jsonify({'ok':True,'empresa':e.to_dict()})
+
+@app.route('/api/empresas/<int:id>/certificado',methods=['DELETE'])
+@dr
+def api_empresa_cert_delete(id):
+    e=Empresa.query.get_or_404(id)
+    abs_old=_cert_rel_to_abs(e.cert_arquivo)
+    e.cert_arquivo=None
+    e.cert_nome_arquivo=None
+    e.cert_senha=None
+    e.cert_ativo=False
+    e.cert_assunto=None
+    e.cert_validade_fim=None
+    db.session.commit()
+    if abs_old and os.path.exists(abs_old):
+        try: os.remove(abs_old)
+        except Exception: pass
+    return jsonify({'ok':True,'empresa':e.to_dict()})
+
 @app.route('/api/config',methods=['GET'])
 @lr
 def api_get_config(): return jsonify({k:gc(k) for k in ['num_base','num_ultima']})
@@ -2692,8 +3162,20 @@ def api_usuarios(): return jsonify([u.to_dict() for u in Usuario.query.all()])
 def api_criar_usuario():
     d=request.json
     if Usuario.query.filter_by(email=d['email'].lower()).first(): return jsonify({'erro':'E-mail já cadastrado'}),400
+    tel=norm_phone(d.get('telefone'))
+    perfil=(d.get('perfil','admin') or 'admin').strip().lower()
+    if perfil in ('admin','dono') and len(tel)<10:
+        return jsonify({'erro':'Telefone é obrigatório para usuários admin/dono (2FA).'}),400
     ars=[a for a in d.get('areas',[]) if a in ALLOWED_AREAS]
-    u=Usuario(nome=d['nome'],email=d['email'].lower(),senha=hs(d['senha']),perfil=d.get('perfil','admin'),areas=json.dumps(ars,ensure_ascii=False))
+    u=Usuario(
+        nome=d['nome'],
+        email=d['email'].lower(),
+        telefone=tel,
+        senha=pw_hash(d['senha']),
+        perfil=perfil,
+        twofa_ativo=bool(d.get('twofa_ativo',True)),
+        areas=json.dumps(ars,ensure_ascii=False)
+    )
     db.session.add(u); db.session.commit(); return jsonify(u.to_dict()),201
 
 @app.route('/api/usuarios/<int:id>',methods=['PUT'])
@@ -2702,10 +3184,16 @@ def api_atualizar_usuario(id):
     u=Usuario.query.get_or_404(id); d=request.json
     for k in ['nome','perfil','ativo']:
         if k in d: setattr(u,k,d[k])
-    if d.get('senha'): u.senha=hs(d['senha'])
+    if 'telefone' in d:
+        u.telefone=norm_phone(d.get('telefone'))
+    if 'twofa_ativo' in d:
+        u.twofa_ativo=bool(d.get('twofa_ativo'))
+    if d.get('senha'): u.senha=pw_hash(d['senha'])
     if 'areas' in d:
         ars=[a for a in d.get('areas',[]) if a in ALLOWED_AREAS]
         u.areas=json.dumps(ars,ensure_ascii=False)
+    if (u.perfil or '').strip().lower() in ('admin','dono') and len(norm_phone(u.telefone))<10:
+        return jsonify({'erro':'Telefone é obrigatório para usuários admin/dono (2FA).'}),400
     db.session.commit(); return jsonify(u.to_dict())
 
 @app.route('/api/usuarios/<int:id>',methods=['DELETE'])
@@ -2714,6 +3202,53 @@ def api_deletar_usuario(id):
     u=Usuario.query.get_or_404(id)
     if u.perfil=='dono' and Usuario.query.filter_by(perfil='dono').count()<=1: return jsonify({'erro':'Não é possível excluir o único dono'}),400
     db.session.delete(u); db.session.commit(); return jsonify({'ok':True})
+
+@app.route('/api/usuarios/<int:id>/certificado',methods=['POST'])
+@dr
+def api_usuario_cert_upload(id):
+    u=Usuario.query.get_or_404(id)
+    fs=request.files.get('arquivo')
+    senha=(request.form.get('senha') or '').strip()
+    ativo=str(request.form.get('ativo','1')).strip().lower() in ('1','true','yes','on')
+    if not fs:
+        return jsonify({'erro':'Arquivo do certificado não enviado.'}),400
+    if not senha:
+        return jsonify({'erro':'Informe a senha do certificado do usuário.'}),400
+    old_abs=_cert_rel_to_abs(u.cert_arquivo)
+    try:
+        rel,name=_cert_store_file(fs,'usuario',id)
+        abs_path=_cert_rel_to_abs(rel)
+        info=_cert_inspect_pkcs12(abs_path,senha)
+    except Exception as ex:
+        return jsonify({'erro':str(ex)}),400
+    u.cert_arquivo=rel
+    u.cert_nome_arquivo=name
+    u.cert_senha=senha
+    u.cert_ativo=ativo
+    u.cert_assunto=info.get('assunto','')
+    u.cert_validade_fim=info.get('validade_fim','')
+    db.session.commit()
+    if old_abs and old_abs!=abs_path and os.path.exists(old_abs):
+        try: os.remove(old_abs)
+        except Exception: pass
+    return jsonify({'ok':True,'usuario':u.to_dict()})
+
+@app.route('/api/usuarios/<int:id>/certificado',methods=['DELETE'])
+@dr
+def api_usuario_cert_delete(id):
+    u=Usuario.query.get_or_404(id)
+    abs_old=_cert_rel_to_abs(u.cert_arquivo)
+    u.cert_arquivo=None
+    u.cert_nome_arquivo=None
+    u.cert_senha=None
+    u.cert_ativo=False
+    u.cert_assunto=None
+    u.cert_validade_fim=None
+    db.session.commit()
+    if abs_old and os.path.exists(abs_old):
+        try: os.remove(abs_old)
+        except Exception: pass
+    return jsonify({'ok':True,'usuario':u.to_dict()})
 
 @app.route('/api/clientes',methods=['GET'])
 @lr
@@ -3027,19 +3562,62 @@ def api_assinatura_confirmar(token):
     d=request.json or {}
     nome=(d.get('nome') or '').strip()
     cargo=(d.get('cargo') or '').strip()
+    cpf=(only_digits(d.get('cpf') or '') or '').strip()
+    otp=(only_digits(d.get('otp') or '') or '').strip()
     aceite=bool(d.get('aceite'))
     if not nome:
         return jsonify({'erro':'Informe o nome completo para assinar.'}),400
+    if not cpf or len(cpf)!=11 or not _valida_cpf(cpf):
+        return jsonify({'erro':'Informe um CPF válido (11 dígitos) para assinar.'}),400
     if not aceite:
         return jsonify({'erro':'Confirme o aceite para concluir a assinatura.'}),400
+
+    cli=Cliente.query.get(m.cliente_id) if m.cliente_id else None
+    tel=wa_norm_number((cli.telefone if cli else '') or '')
+    email=((getattr(cli,'email','') or '').strip() if cli else '')
+
+    if not otp:
+        codigo=_otp_new_code()
+        m.assinatura_otp_hash=token_hash(codigo)
+        m.assinatura_otp_expira_em=utcnow()+timedelta(minutes=10)
+        m.assinatura_otp_tentativas=0
+        try:
+            envio=_send_signature_otp(codigo,nome_dest=nome,telefone=tel,email=email,contexto='medicao')
+        except Exception as ex:
+            db.session.rollback()
+            return jsonify({'erro':f'Falha ao enviar OTP de confirmação: {str(ex)}'}),400
+        db.session.commit()
+        return jsonify({
+            'ok':False,
+            'otp_required':True,
+            'mensagem':f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",
+            'canal':envio.get('canal',''),
+            'destino':envio.get('destino','')
+        })
+
+    if not (m.assinatura_otp_hash or '').strip() or not m.assinatura_otp_expira_em:
+        return jsonify({'erro':'Solicite um novo código OTP para concluir a assinatura.'}),400
+    if m.assinatura_otp_expira_em<utcnow():
+        return jsonify({'erro':'Código OTP expirado. Solicite um novo código.'}),400
+    tent=int(m.assinatura_otp_tentativas or 0)
+    if tent>=5:
+        return jsonify({'erro':'Limite de tentativas de OTP excedido. Solicite um novo código.'}),400
+    if not hmac.compare_digest(token_hash(otp),str(m.assinatura_otp_hash or '')):
+        m.assinatura_otp_tentativas=tent+1
+        db.session.commit()
+        return jsonify({'erro':'Código OTP inválido.'}),400
 
     m.assinatura_status='assinado'
     if not (m.assinatura_codigo or '').strip():
         m.assinatura_codigo=secrets.token_urlsafe(10)
     m.assinatura_nome=nome
+    m.assinatura_cpf=cpf
     m.assinatura_cargo=cargo
     m.assinatura_ip=(request.headers.get('X-Forwarded-For','') or request.remote_addr or '').split(',')[0].strip()[:60]
     m.assinatura_em=utcnow()
+    m.assinatura_otp_hash=None
+    m.assinatura_otp_expira_em=None
+    m.assinatura_otp_tentativas=0
     m.ass_cliente=f"{nome}{(' - '+cargo) if cargo else ''}".strip()
     m.assinatura_token=None
     db.session.commit()
@@ -3511,6 +4089,7 @@ def api_func_doc_assinatura_confirmar(token):
     nome=(d.get('nome') or '').strip()
     cargo=(d.get('cargo') or '').strip()
     cpf_info=only_digits(d.get('cpf') or '')
+    otp=(only_digits(d.get('otp') or '') or '').strip()
     aceite=bool(d.get('aceite'))
     if not nome:
         return jsonify({'erro':'Informe o nome completo para assinar.'}),400
@@ -3524,13 +4103,60 @@ def api_func_doc_assinatura_confirmar(token):
         cpf_cadastrado=only_digits(f.cpf or '')
         if cpf_cadastrado and cpf_info!=cpf_cadastrado:
             return jsonify({'erro':'O CPF informado não confere com o funcionário vinculado ao documento.'}),400
+
+    if not otp:
+        codigo=_otp_new_code()
+        a.ass_otp_hash=token_hash(codigo)
+        a.ass_otp_expira_em=utcnow()+timedelta(minutes=10)
+        a.ass_otp_tentativas=0
+        try:
+            envio=_send_signature_otp(codigo,nome_dest=nome,telefone=(f.telefone if f else ''),email=(f.email if f else ''),contexto='documento')
+        except Exception as ex:
+            db.session.rollback()
+            return jsonify({'erro':f'Falha ao enviar OTP de confirmação: {str(ex)}'}),400
+        db.session.commit()
+        return jsonify({
+            'ok':False,
+            'otp_required':True,
+            'mensagem':f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",
+            'canal':envio.get('canal',''),
+            'destino':envio.get('destino','')
+        })
+
+    if not (a.ass_otp_hash or '').strip() or not a.ass_otp_expira_em:
+        return jsonify({'erro':'Solicite um novo código OTP para concluir a assinatura.'}),400
+    if a.ass_otp_expira_em<utcnow():
+        return jsonify({'erro':'Código OTP expirado. Solicite um novo código.'}),400
+    tent=int(a.ass_otp_tentativas or 0)
+    if tent>=5:
+        return jsonify({'erro':'Limite de tentativas de OTP excedido. Solicite um novo código.'}),400
+    if not hmac.compare_digest(token_hash(otp),str(a.ass_otp_hash or '')):
+        a.ass_otp_tentativas=tent+1
+        db.session.commit()
+        return jsonify({'erro':'Código OTP inválido.'}),400
+
     if not a.ass_codigo:
         a.ass_codigo=secrets.token_urlsafe(10)
     ip=(request.headers.get('X-Forwarded-For','') or request.remote_addr or '').split(',')[0].strip()[:60]
     a.ass_status='assinado'; a.ass_nome=nome; a.ass_cargo=cargo
     a.ass_cpf=cpf_info; a.ass_ip=ip; a.ass_em=utcnow(); a.ass_token=None
+    a.ass_otp_hash=None; a.ass_otp_expira_em=None; a.ass_otp_tentativas=0
     db.session.commit()
     copia_assinada=_salvar_pdf_assinado_em_arquivos_funcionario(a,f,request.url_root.rstrip('/'))
+
+    if copia_assinada and copia_assinada.get('ok') and copia_assinada.get('abs_path'):
+        rs_crypto=_try_sign_pdf_file_crypto(copia_assinada.get('abs_path'),empresa_id=(f.empresa_id if f else None),usuario_id=session.get('uid'))
+        hash_final=_sha256_file(copia_assinada.get('abs_path'))
+        novo=FuncionarioArquivo.query.get(copia_assinada.get('arquivo_id')) if copia_assinada.get('arquivo_id') else None
+        if novo:
+            novo.ass_doc_hash=hash_final
+            novo.ass_crypto_ok=bool(rs_crypto.get('ok'))
+            novo.ass_cert_subject=(rs_crypto.get('cert_subject') or '')[:255] if rs_crypto.get('ok') else None
+        a.ass_doc_hash=hash_final
+        a.ass_crypto_ok=bool(rs_crypto.get('ok'))
+        a.ass_cert_subject=(rs_crypto.get('cert_subject') or '')[:255] if rs_crypto.get('ok') else None
+        db.session.commit()
+
     audit_event('func_arquivo_assinatura_confirmada','externo',None,'funcionario',a.funcionario_id,True,
                 {'arquivo_id':a.id,'nome':nome,'cpf_parcial':cpf_info[:3]+'***'+cpf_info[-2:]})
     validacao_link=f"{request.url_root.rstrip('/')}/doc/validar/{a.ass_codigo}"
@@ -3578,7 +4204,7 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
-    from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer
+    from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer,Image
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_LEFT,TA_RIGHT,TA_CENTER
     from reportlab.graphics.barcode import qr as qr_code
@@ -3598,26 +4224,107 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
         if not t: return '-'
         try: return datetime.fromisoformat(t.replace('Z','+00:00')).strftime('%d/%m/%Y %H:%M')
         except: return t
+
+    emp=None
+    if funcionario and funcionario.empresa_id:
+        emp=Empresa.query.get(funcionario.empresa_id)
+    if not emp:
+        emp=Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
+    empresa_nome=(emp.nome if emp and emp.nome else 'RM Facilities')
+
+    def _logo_flowable():
+        cands=[]
+        if emp and (emp.logo_url or '').strip():
+            cands.append(emp.logo_url.strip())
+        lp=get_logo()
+        if lp:
+            cands.append(lp)
+        for cand in cands:
+            try:
+                if str(cand).lower().startswith('http'):
+                    with urllib.request.urlopen(cand,timeout=8) as resp:
+                        data=resp.read()
+                    img=Image(io.BytesIO(data),width=3.2*cm,height=1.45*cm)
+                    img.hAlign='LEFT'
+                    return img
+                if os.path.exists(cand):
+                    img=Image(cand,width=3.2*cm,height=1.45*cm)
+                    img.hAlign='LEFT'
+                    return img
+            except Exception:
+                continue
+        return Paragraph(f'<b>{empresa_nome}</b>',ps('lgfb',fontSize=12,textColor=colors.HexColor('#0f2b47')))
+
     validacao_link=f"{url_root}/doc/validar/{arquivo.ass_codigo}" if arquivo.ass_codigo else ''
-    trilha='|'.join([str(arquivo.id or ''),arquivo.nome_arquivo or '',arquivo.categoria or '',
-                     arquivo.ass_nome or '',arquivo.ass_cpf or '',arquivo.ass_ip or '',
-                     _fmt(arquivo.ass_em),arquivo.ass_codigo or ''])
-    hash_comp=hashlib.sha256(trilha.encode('utf-8')).hexdigest().upper()
+    hash_comp=(arquivo.ass_doc_hash or '').strip()
+    if not hash_comp:
+        abs_src=''
+        raw=(arquivo.caminho or '').strip()
+        if raw:
+            cands=[raw]
+            if not os.path.isabs(raw):
+                cands.append(os.path.join(UPLOAD_ROOT,raw))
+                cands.append(os.path.join(_get_uploads_base(),raw))
+            for p in cands:
+                if p and os.path.exists(p):
+                    abs_src=p
+                    break
+        if abs_src:
+            try:
+                hash_comp=_sha256_file(abs_src)
+            except Exception:
+                hash_comp=''
+    if not hash_comp:
+        trilha='|'.join([str(arquivo.id or ''),arquivo.nome_arquivo or '',arquivo.categoria or '',
+                         arquivo.ass_nome or '',arquivo.ass_cpf or '',arquivo.ass_ip or '',
+                         _fmt(arquivo.ass_em),arquivo.ass_codigo or ''])
+        hash_comp=hashlib.sha256(trilha.encode('utf-8')).hexdigest().upper()
     story=[]
-    # Cabeçalho
-    hdr=Table([[Paragraph(f'<b><font color="white">AUDITORIA DE ASSINATURA ELETRÔNICA</font></b>',ps('ht',fontSize=13,alignment=TA_CENTER))]],colWidths=[W])
-    hdr.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),AZ),('TOPPADDING',(0,0),(-1,-1),10),('BOTTOMPADDING',(0,0),(-1,-1),10)]))
+
+    # Cabeçalho profissional com identidade da empresa
+    logo=_logo_flowable()
+    hdr_right=Paragraph(
+        f'<b>AUDITORIA E VALIDAÇÃO DE ASSINATURA ELETRÔNICA</b><br/>'
+        f'<font size="9" color="#49607a">{empresa_nome}</font><br/>'
+        f'<font size="8" color="#6f8093">Emitido em {_fmt(localnow())}</font>',
+        ps('htr',fontSize=11,leading=13,textColor=colors.white)
+    )
+    hdr=Table([[logo,hdr_right]],colWidths=[W*0.26,W*0.74])
+    hdr.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,-1),AZ),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('LEFTPADDING',(0,0),(-1,-1),10),
+        ('RIGHTPADDING',(0,0),(-1,-1),10),
+        ('TOPPADDING',(0,0),(-1,-1),8),
+        ('BOTTOMPADDING',(0,0),(-1,-1),8),
+    ]))
     story.append(hdr); story.append(Spacer(1,10))
+
     badge_cor=colors.HexColor('#ecf8f0'); badge_txt=VD
     st=Table([[Paragraph('<b>✔ DOCUMENTO ASSINADO ELETRONICAMENTE</b>',ps('bs',fontSize=10,textColor=badge_txt))]],colWidths=[W])
     st.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),badge_cor),('BOX',(0,0),(-1,-1),0.7,colors.HexColor('#9ed3b1')),('LEFTPADDING',(0,0),(-1,-1),8),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6)]))
     story.append(st); story.append(Spacer(1,10))
+
+    # Selo visual de validação
+    selo_txt=(
+        'SELO DE CONFORMIDADE DIGITAL\n'
+        f'Código: {arquivo.ass_codigo or "-"}\n'
+        f'Integridade: SHA-256 {hash_comp[:16]}...'
+    )
+    selo=Table([[Paragraph(selo_txt.replace('\n','<br/>'),ps('selo1',fontSize=8,leading=11,textColor=colors.HexColor('#0f2b47')))]],colWidths=[W])
+    selo.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#f2f8ff')),
+        ('BOX',(0,0),(-1,-1),1.1,colors.HexColor('#5b7ea1')),
+        ('LEFTPADDING',(0,0),(-1,-1),9),
+        ('RIGHTPADDING',(0,0),(-1,-1),9),
+        ('TOPPADDING',(0,0),(-1,-1),7),
+        ('BOTTOMPADDING',(0,0),(-1,-1),7),
+    ]))
+    story.append(selo); story.append(Spacer(1,10))
+
     fn_nome=(funcionario.nome if funcionario else '-')
     fn_cpf=(funcionario.cpf if funcionario else '-')
-    fn_emp=''
-    if funcionario and funcionario.empresa_id:
-        emp=Empresa.query.get(funcionario.empresa_id)
-        if emp: fn_emp=emp.nome or ''
+    fn_emp=(emp.nome if emp else '')
     detalhes=[
         ('Documento',arquivo.nome_arquivo or '-'),
         ('Categoria',arquivo.categoria or '-'),
@@ -3632,12 +4339,74 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
         ('IP de origem',arquivo.ass_ip or '-'),
         ('Código de validação',arquivo.ass_codigo or '-'),
         ('Link de validação',validacao_link or '-'),
+        ('Assinatura criptográfica PDF',('Ativa' if bool(getattr(arquivo,'ass_crypto_ok',False)) else 'Não aplicada')),
+        ('Certificado digital',getattr(arquivo,'ass_cert_subject',None) or '-'),
         ('Hash de comprovação (SHA-256)',hash_comp),
     ]
     rows=[[Paragraph(f'<b>{k}</b>',ps('dk',fontSize=8,textColor=AZ)),Paragraph(v,ps('dv',fontSize=8,leading=11))] for k,v in detalhes]
     det=Table(rows,colWidths=[W*0.32,W*0.68])
     det.setStyle(TableStyle([('BACKGROUND',(0,0),(0,-1),CI),('BOX',(0,0),(-1,-1),0.6,colors.HexColor('#d0d7df')),('LINEBELOW',(0,0),(-1,-2),0.3,colors.HexColor('#e3e8ef')),('LEFTPADDING',(0,0),(-1,-1),7),('RIGHTPADDING',(0,0),(-1,-1),7),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
     story.append(det); story.append(Spacer(1,12))
+
+    # Assinatura em estilo manuscrito
+    ass_nome=arquivo.ass_nome or '-'
+    ass_cargo=arquivo.ass_cargo or 'Assinante'
+    ass_data=_fmt(arquivo.ass_em)
+    sig_title=Paragraph('<b>ASSINATURA ELETRÔNICA REGISTRADA</b>',ps('sgt',fontSize=9,textColor=AZ))
+    sig_draw=Paragraph(ass_nome,ps('sgn',fontName='Helvetica-Oblique',fontSize=24,textColor=colors.HexColor('#24384d'),leading=25))
+    sig_meta=Paragraph(f'{ass_cargo} · Data/hora: {ass_data}',ps('sgm',fontSize=8,textColor=colors.HexColor('#5d6f82')))
+    sig=Table([[sig_title],[sig_draw],[Paragraph('<font color="#9db0c1">______________________________________________</font>',ps('sgl',fontSize=9))],[sig_meta]],colWidths=[W])
+    sig.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#f8fbff')),
+        ('BOX',(0,0),(-1,-1),0.6,colors.HexColor('#d0d7df')),
+        ('LEFTPADDING',(0,0),(-1,-1),10),
+        ('RIGHTPADDING',(0,0),(-1,-1),10),
+        ('TOPPADDING',(0,0),(-1,-1),6),
+        ('BOTTOMPADDING',(0,0),(-1,-1),6),
+    ]))
+    story.append(sig); story.append(Spacer(1,10))
+
+    # Base legal
+    legal=(
+        'Este relatório comprova a assinatura eletrônica do documento e sua integridade por hash SHA-256, '
+        'com validade jurídica conforme a MP 2.200-2/2001 (ICP-Brasil) e a Lei 14.063/2020.'
+    )
+    leg_tbl=Table([[Paragraph(legal,ps('lgl',fontSize=8,leading=11,textColor=colors.HexColor('#465a70')))]],colWidths=[W])
+    leg_tbl.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#eef4fb')),
+        ('BOX',(0,0),(-1,-1),0.5,colors.HexColor('#cfd8e5')),
+        ('LEFTPADDING',(0,0),(-1,-1),8),
+        ('RIGHTPADDING',(0,0),(-1,-1),8),
+        ('TOPPADDING',(0,0),(-1,-1),6),
+        ('BOTTOMPADDING',(0,0),(-1,-1),6),
+    ]))
+    story.append(leg_tbl); story.append(Spacer(1,10))
+
+    # Timeline de auditoria
+    evt=[
+        ('Documento anexado',_fmt(getattr(arquivo,'criado_em',None))),
+        ('Assinatura concluída',_fmt(arquivo.ass_em)),
+        ('Relatório emitido',_fmt(localnow())),
+    ]
+    story.append(Paragraph('<b>TRILHA DE EVENTOS</b>',ps('evtt',fontSize=9,textColor=AZ,spaceAfter=4)))
+    evt_rows=[]
+    for titulo,dh in evt:
+        evt_rows.append([
+            Paragraph('<font color="#1a7a45">●</font>',ps('evtb',fontSize=11,alignment=TA_CENTER)),
+            Paragraph(f'<b>{titulo}</b><br/><font color="#5d6f82">{dh}</font>',ps('evtd',fontSize=8,leading=10))
+        ])
+    evt_tbl=Table(evt_rows,colWidths=[W*0.05,W*0.95])
+    evt_tbl.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#fbfdff')),
+        ('BOX',(0,0),(-1,-1),0.45,colors.HexColor('#d9e2ee')),
+        ('LINEBELOW',(0,0),(-1,-2),0.25,colors.HexColor('#e3eaf2')),
+        ('LEFTPADDING',(0,0),(-1,-1),6),
+        ('RIGHTPADDING',(0,0),(-1,-1),6),
+        ('TOPPADDING',(0,0),(-1,-1),5),
+        ('BOTTOMPADDING',(0,0),(-1,-1),5),
+    ]))
+    story.append(evt_tbl); story.append(Spacer(1,10))
+
     if validacao_link:
         try:
             qr_widget=qr_code.QrCodeWidget(validacao_link)
@@ -3764,6 +4533,7 @@ def _salvar_pdf_assinado_em_arquivos_funcionario(arquivo,funcionario,url_root):
         os.makedirs(os.path.dirname(abs_p),exist_ok=True)
         with open(abs_p,'wb') as out:
             out.write(pdf_buf)
+        hash_pdf=_sha256_file(abs_p)
         novo=FuncionarioArquivo(
             funcionario_id=funcionario.id,
             categoria=cat,
@@ -3777,6 +4547,7 @@ def _salvar_pdf_assinado_em_arquivos_funcionario(arquivo,funcionario,url_root):
             ass_cpf=arquivo.ass_cpf,
             ass_ip=arquivo.ass_ip,
             ass_em=arquivo.ass_em,
+            ass_doc_hash=hash_pdf,
         )
         db.session.add(novo)
         db.session.commit()
@@ -3805,7 +4576,7 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
-    from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer
+    from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer,Image
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_LEFT,TA_RIGHT,TA_CENTER
     from reportlab.graphics.barcode import qr as qr_code
@@ -3819,14 +4590,66 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     def ps(nm,**kw):
         b=dict(fontName='Helvetica',fontSize=10,leading=14,textColor=colors.HexColor('#020202'),spaceAfter=0,spaceBefore=0)
         b.update(kw); return ParagraphStyle(nm,**b)
+
+    emp=Empresa.query.get(envelope.empresa_id) if envelope.empresa_id else None
+    if not emp:
+        emp=Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
+    empresa_nome=(emp.nome if emp and emp.nome else 'RM Facilities')
+
+    def _logo_flowable():
+        cands=[]
+        if emp and (emp.logo_url or '').strip():
+            cands.append(emp.logo_url.strip())
+        lp=get_logo()
+        if lp:
+            cands.append(lp)
+        for cand in cands:
+            try:
+                if str(cand).lower().startswith('http'):
+                    with urllib.request.urlopen(cand,timeout=8) as resp:
+                        data=resp.read()
+                    img=Image(io.BytesIO(data),width=3.2*cm,height=1.45*cm)
+                    img.hAlign='LEFT'
+                    return img
+                if os.path.exists(cand):
+                    img=Image(cand,width=3.2*cm,height=1.45*cm)
+                    img.hAlign='LEFT'
+                    return img
+            except Exception:
+                continue
+        return Paragraph(f'<b>{empresa_nome}</b>',ps('lgfb2',fontSize=12,textColor=colors.HexColor('#0f2b47')))
+
     validacao_link=f"{url_root}/envelope/validar/{envelope.codigo}" if envelope.codigo else ''
-    trilha_base='|'.join([str(envelope.id),envelope.titulo or '',envelope.codigo or '',
-                          '|'.join([f"{s.nome}|{s.cpf or ''}|{s.ass_em.isoformat() if s.ass_em else ''}" for s in signatarios])])
-    hash_comp=hashlib.sha256(trilha_base.encode('utf-8')).hexdigest().upper()
+    hash_comp=(envelope.assinatura_doc_hash or '').strip()
+    if not hash_comp:
+        try:
+            abs_pdf,_=_envelope_signed_pdf_path(envelope)
+            if abs_pdf and os.path.exists(abs_pdf):
+                hash_comp=_sha256_file(abs_pdf)
+        except Exception:
+            hash_comp=''
+    if not hash_comp:
+        trilha_base='|'.join([str(envelope.id),envelope.titulo or '',envelope.codigo or '',
+                              '|'.join([f"{s.nome}|{s.cpf or ''}|{s.ass_em.isoformat() if s.ass_em else ''}" for s in signatarios])])
+        hash_comp=hashlib.sha256(trilha_base.encode('utf-8')).hexdigest().upper()
 
     story=[]
-    hdr=Table([[Paragraph('<b><font color="white">AUDITORIA DE ASSINATURA ELETRÔNICA — DOCUMENTO</font></b>',ps('ht',fontSize=12,alignment=TA_CENTER))]],colWidths=[W])
-    hdr.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),AZ),('TOPPADDING',(0,0),(-1,-1),10),('BOTTOMPADDING',(0,0),(-1,-1),10)]))
+    logo=_logo_flowable()
+    hdr_right=Paragraph(
+        f'<b>AUDITORIA E VALIDAÇÃO DE ASSINATURA ELETRÔNICA</b><br/>'
+        f'<font size="9" color="#49607a">{empresa_nome}</font><br/>'
+        f'<font size="8" color="#6f8093">Documento: {envelope.titulo or "-"}</font>',
+        ps('htr2',fontSize=11,leading=13,textColor=colors.white)
+    )
+    hdr=Table([[logo,hdr_right]],colWidths=[W*0.26,W*0.74])
+    hdr.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,-1),AZ),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('LEFTPADDING',(0,0),(-1,-1),10),
+        ('RIGHTPADDING',(0,0),(-1,-1),10),
+        ('TOPPADDING',(0,0),(-1,-1),8),
+        ('BOTTOMPADDING',(0,0),(-1,-1),8),
+    ]))
     story.append(hdr); story.append(Spacer(1,10))
     assinados=[s for s in signatarios if s.status=='assinado']
     pendentes=[s for s in signatarios if s.status!='assinado']
@@ -3848,6 +4671,8 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
         ('Criado por',envelope.criado_por or '-'),
         ('Data de Criação',envelope.criado_em.strftime('%d/%m/%Y %H:%M') if envelope.criado_em else '-'),
         ('Validade',envelope.expira_em.strftime('%d/%m/%Y') if envelope.expira_em else 'Sem prazo'),
+        ('Assinatura criptográfica PDF',('Ativa' if bool(getattr(envelope,'assinatura_crypto_ok',False)) else 'Não aplicada')),
+        ('Certificado digital',getattr(envelope,'assinatura_cert_subject',None) or '-'),
         ('Hash SHA-256',hash_comp),
     ]
     rows=[[Paragraph(f'<b>{k}</b>',ps('dk',fontSize=8,textColor=AZ)),Paragraph(v,ps('dv',fontSize=8,leading=11))] for k,v in detalhes]
@@ -3885,6 +4710,85 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
         ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,CI]),
     ]))
     story.append(sig_tbl); story.append(Spacer(1,12))
+
+    assinantes_confirmados=[s for s in signatarios if s.status=='assinado']
+    if assinantes_confirmados:
+        story.append(Paragraph('<b>ASSINATURAS REGISTRADAS</b>',ps('asg1',fontSize=9,textColor=AZ,spaceAfter=4)))
+        cards=[]
+        for s in assinantes_confirmados:
+            ass_meta=(s.ass_em.strftime('%d/%m/%Y %H:%M') if s.ass_em else '-')
+            sig_name=Paragraph(s.nome or '-',ps('asg2',fontName='Helvetica-Oblique',fontSize=21,textColor=colors.HexColor('#24384d'),leading=22))
+            sig_line=Paragraph('<font color="#9db0c1">__________________________________________</font>',ps('asg3',fontSize=9))
+            sig_info=Paragraph(f'{s.cargo or "Signatário"} · Data/hora: {ass_meta}',ps('asg4',fontSize=8,textColor=colors.HexColor('#5d6f82')))
+            sig_box=Table([[sig_name],[sig_line],[sig_info]],colWidths=[W])
+            sig_box.setStyle(TableStyle([
+                ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#f8fbff')),
+                ('BOX',(0,0),(-1,-1),0.5,colors.HexColor('#d0d7df')),
+                ('LEFTPADDING',(0,0),(-1,-1),10),
+                ('RIGHTPADDING',(0,0),(-1,-1),10),
+                ('TOPPADDING',(0,0),(-1,-1),5),
+                ('BOTTOMPADDING',(0,0),(-1,-1),5),
+            ]))
+            cards.append(sig_box)
+        grid=[]
+        row=[]
+        for card in cards:
+            row.append(card)
+            if len(row)==2:
+                grid.append(row)
+                row=[]
+        if row:
+            row.append(Paragraph('',ps('asg-empty',fontSize=1)))
+            grid.append(row)
+        sig_grid=Table(grid,colWidths=[W*0.49,W*0.49])
+        sig_grid.setStyle(TableStyle([
+            ('VALIGN',(0,0),(-1,-1),'TOP'),
+            ('LEFTPADDING',(0,0),(-1,-1),0),
+            ('RIGHTPADDING',(0,0),(-1,-1),0),
+            ('TOPPADDING',(0,0),(-1,-1),0),
+            ('BOTTOMPADDING',(0,0),(-1,-1),6),
+        ]))
+        story.append(sig_grid)
+
+    # Timeline do envelope
+    evt=[('Envelope criado',envelope.criado_em.strftime('%d/%m/%Y %H:%M') if envelope.criado_em else '-')]
+    for s in signatarios:
+        if s.ass_em:
+            evt.append((f'Assinatura: {s.nome or "Signatário"}',s.ass_em.strftime('%d/%m/%Y %H:%M')))
+    evt.append(('Relatório emitido',localnow().strftime('%d/%m/%Y %H:%M')))
+    story.append(Paragraph('<b>TRILHA DE EVENTOS</b>',ps('evtt2',fontSize=9,textColor=AZ,spaceAfter=4)))
+    evt_rows=[]
+    for titulo,dh in evt:
+        evt_rows.append([
+            Paragraph('<font color="#1a7a45">●</font>',ps('evtb2',fontSize=11,alignment=TA_CENTER)),
+            Paragraph(f'<b>{titulo}</b><br/><font color="#5d6f82">{dh}</font>',ps('evtd2',fontSize=8,leading=10))
+        ])
+    evt_tbl=Table(evt_rows,colWidths=[W*0.05,W*0.95])
+    evt_tbl.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#fbfdff')),
+        ('BOX',(0,0),(-1,-1),0.45,colors.HexColor('#d9e2ee')),
+        ('LINEBELOW',(0,0),(-1,-2),0.25,colors.HexColor('#e3eaf2')),
+        ('LEFTPADDING',(0,0),(-1,-1),6),
+        ('RIGHTPADDING',(0,0),(-1,-1),6),
+        ('TOPPADDING',(0,0),(-1,-1),5),
+        ('BOTTOMPADDING',(0,0),(-1,-1),5),
+    ]))
+    story.append(evt_tbl); story.append(Spacer(1,8))
+
+    legal=(
+        'Este relatório comprova as assinaturas eletrônicas do documento e sua integridade por hash SHA-256, '
+        'com validade jurídica conforme a MP 2.200-2/2001 (ICP-Brasil) e a Lei 14.063/2020.'
+    )
+    leg_tbl=Table([[Paragraph(legal,ps('lgl2',fontSize=8,leading=11,textColor=colors.HexColor('#465a70')))]],colWidths=[W])
+    leg_tbl.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#eef4fb')),
+        ('BOX',(0,0),(-1,-1),0.5,colors.HexColor('#cfd8e5')),
+        ('LEFTPADDING',(0,0),(-1,-1),8),
+        ('RIGHTPADDING',(0,0),(-1,-1),8),
+        ('TOPPADDING',(0,0),(-1,-1),6),
+        ('BOTTOMPADDING',(0,0),(-1,-1),6),
+    ]))
+    story.append(leg_tbl); story.append(Spacer(1,10))
 
     if validacao_link:
         try:
@@ -4053,6 +4957,63 @@ def _gerar_pdf_assinado_envelope(envelope,url_root):
     return abs_path,fname
 
 
+def _salvar_pdf_assinado_destino_envelope(envelope,abs_pdf_path,fname):
+    """Salva o PDF assinado no destino configurado da aba Assinaturas.
+    Retorna dict com ok, destino e detalhes/erro.
+    """
+    destino=(getattr(envelope,'destino_salvar_tipo',None) or 'envelope').strip().lower()
+    if destino!='funcionario':
+        return {'ok':True,'destino':'envelope'}
+
+    fid=getattr(envelope,'destino_funcionario_id',None)
+    if not fid and (envelope.tipo or '').strip().lower()=='funcionario':
+        fid=envelope.ref_id
+    if not fid:
+        return {'ok':False,'destino':'funcionario','erro':'Destino funcionário selecionado, mas nenhum funcionário foi definido.'}
+
+    func=Funcionario.query.get(fid)
+    if not func:
+        return {'ok':False,'destino':'funcionario','erro':'Funcionário de destino não encontrado.'}
+
+    cat=norm_cat(getattr(envelope,'destino_categoria',None) or 'outros')
+    comp=(getattr(envelope,'destino_competencia',None) or '').strip()
+    ano=infer_doc_year(comp)
+    prepare_func_doc_dirs(func.id,ano)
+    subdir,_=func_doc_subdir(func.id,cat,comp)
+
+    base_nome=os.path.splitext(os.path.basename(fname or envelope.nome_documento_assinado or 'documento_assinado.pdf'))[0] or 'documento_assinado'
+    rel,abs_dest,nome_final=unique_rel_filename(subdir,f'{base_nome}.pdf')
+    os.makedirs(os.path.dirname(abs_dest),exist_ok=True)
+    with open(abs_pdf_path,'rb') as src:
+        pdf_bytes=src.read()
+    with open(abs_dest,'wb') as out:
+        out.write(pdf_bytes)
+
+    reg=FuncionarioArquivo(
+        funcionario_id=func.id,
+        categoria=cat,
+        competencia=comp,
+        nome_arquivo=nome_final,
+        caminho=rel,
+        ass_status='assinado',
+        ass_codigo=envelope.codigo,
+        ass_nome='Assinatura por envelope',
+        ass_cargo='Fluxo digital',
+        ass_em=localnow(),
+    )
+    db.session.add(reg)
+    return {
+        'ok':True,
+        'destino':'funcionario',
+        'funcionario_id':func.id,
+        'funcionario_nome':func.nome,
+        'arquivo_id':reg.id,
+        'categoria':cat,
+        'competencia':comp,
+        'caminho':rel,
+    }
+
+
 # ══════════════════════════════════════════════════════
 #  ASSINATURA DE ENVELOPES — rotas
 # ══════════════════════════════════════════════════════
@@ -4091,6 +5052,10 @@ def api_envelopes_criar():
         status='rascunho',
         codigo=secrets.token_urlsafe(12),
         nome_documento_assinado=_normalize_signed_pdf_name(data.get('nome_documento_assinado')) or None,
+        destino_salvar_tipo=((data.get('destino_salvar_tipo') or 'envelope').strip().lower() if (data.get('destino_salvar_tipo') or '').strip().lower() in ('envelope','funcionario') else 'envelope'),
+        destino_funcionario_id=(int(data.get('destino_funcionario_id')) if str(data.get('destino_funcionario_id') or '').isdigit() else None),
+        destino_categoria=norm_cat(data.get('destino_categoria') or 'outros'),
+        destino_competencia=(data.get('destino_competencia') or '').strip() or None,
         criado_por=session.get('usuario',''),
         expira_em=datetime.fromisoformat(data['expira_em']) if data.get('expira_em') else None,
     )
@@ -4123,6 +5088,15 @@ def api_envelope_atualizar(id):
         env.empresa_id=(int(data.get('empresa_id')) if str(data.get('empresa_id') or '').isdigit() else None)
     if 'nome_documento_assinado' in data:
         env.nome_documento_assinado=_normalize_signed_pdf_name(data.get('nome_documento_assinado')) or None
+    if 'destino_salvar_tipo' in data:
+        tp=(data.get('destino_salvar_tipo') or 'envelope').strip().lower()
+        env.destino_salvar_tipo=tp if tp in ('envelope','funcionario') else 'envelope'
+    if 'destino_funcionario_id' in data:
+        env.destino_funcionario_id=(int(data.get('destino_funcionario_id')) if str(data.get('destino_funcionario_id') or '').isdigit() else None)
+    if 'destino_categoria' in data:
+        env.destino_categoria=norm_cat(data.get('destino_categoria') or 'outros')
+    if 'destino_competencia' in data:
+        env.destino_competencia=(data.get('destino_competencia') or '').strip() or None
     db.session.commit()
     return jsonify(env.to_dict())
 
@@ -4344,11 +5318,47 @@ def api_envelope_assinatura_confirmar(token):
     nome=(data.get('nome') or '').strip()
     cargo=(data.get('cargo') or '').strip()
     cpf_inf=(data.get('cpf') or '').strip().replace('.','').replace('-','').replace(' ','')
+    otp=(only_digits(data.get('otp') or '') or '').strip()
     aceite=data.get('aceite')
     if not nome or not cpf_inf or not aceite:
         return jsonify({'erro':'Preencha nome, CPF e confirme o aceite.'}),400
     if len(cpf_inf)<11 or not _valida_cpf(cpf_inf):
         return jsonify({'erro':'CPF inválido. Verifique os dígitos e tente novamente.'}),400
+    cpf_base=only_digits(sig.cpf or '')
+    if cpf_base and cpf_inf!=cpf_base:
+        return jsonify({'erro':'O CPF informado não confere com o CPF cadastrado para este signatário.'}),400
+
+    if not otp:
+        codigo=_otp_new_code()
+        sig.ass_otp_hash=token_hash(codigo)
+        sig.ass_otp_expira_em=utcnow()+timedelta(minutes=10)
+        sig.ass_otp_tentativas=0
+        try:
+            envio=_send_signature_otp(codigo,nome_dest=nome,telefone=sig.telefone or '',email=sig.email or '',contexto='envelope')
+        except Exception as ex:
+            db.session.rollback()
+            return jsonify({'erro':f'Falha ao enviar OTP de confirmação: {str(ex)}'}),400
+        db.session.commit()
+        return jsonify({
+            'ok':False,
+            'otp_required':True,
+            'mensagem':f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",
+            'canal':envio.get('canal',''),
+            'destino':envio.get('destino','')
+        })
+
+    if not (sig.ass_otp_hash or '').strip() or not sig.ass_otp_expira_em:
+        return jsonify({'erro':'Solicite um novo código OTP para concluir a assinatura.'}),400
+    if sig.ass_otp_expira_em<utcnow():
+        return jsonify({'erro':'Código OTP expirado. Solicite um novo código.'}),400
+    tent=int(sig.ass_otp_tentativas or 0)
+    if tent>=5:
+        return jsonify({'erro':'Limite de tentativas de OTP excedido. Solicite um novo código.'}),400
+    if not hmac.compare_digest(token_hash(otp),str(sig.ass_otp_hash or '')):
+        sig.ass_otp_tentativas=tent+1
+        db.session.commit()
+        return jsonify({'erro':'Código OTP inválido.'}),400
+
     ip=request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
     sig.nome=nome
     sig.cargo=cargo
@@ -4356,6 +5366,9 @@ def api_envelope_assinatura_confirmar(token):
     sig.ass_ip=ip
     sig.ass_em=datetime.utcnow()
     sig.ass_codigo=secrets.token_urlsafe(10)
+    sig.ass_otp_hash=None
+    sig.ass_otp_expira_em=None
+    sig.ass_otp_tentativas=0
     sig.status='assinado'
     sig.token=None  # invalida o token após uso
     url_root=request.url_root.rstrip('/')
@@ -4364,11 +5377,17 @@ def api_envelope_assinatura_confirmar(token):
     empresa_nome=(emp.razao or emp.nome) if emp else 'RM Facilities'
     # Verifica se todos assinaram
     todos=AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=env.id).all()
+    destino_info={'ok':True,'destino':(env.destino_salvar_tipo or 'envelope')}
     if all(s.status=='assinado' for s in todos):
         env.status='concluido'
         try:
             abs_pdf,fname=_gerar_pdf_assinado_envelope(env,url_root)
+            rs_crypto=_try_sign_pdf_file_crypto(abs_pdf,empresa_id=env.empresa_id,usuario_id=session.get('uid'))
+            env.assinatura_doc_hash=_sha256_file(abs_pdf)
+            env.assinatura_crypto_ok=bool(rs_crypto.get('ok'))
+            env.assinatura_cert_subject=(rs_crypto.get('cert_subject') or '')[:255] if rs_crypto.get('ok') else None
             signed_pdf_link=f"{url_root}/envelope/baixar/{env.codigo}"
+            destino_info=_salvar_pdf_assinado_destino_envelope(env,abs_pdf,fname)
             for s in todos:
                 if s.telefone:
                     tel=s.telefone.strip().replace(' ','').replace('-','').replace('(','').replace(')','')
@@ -4397,7 +5416,7 @@ def api_envelope_assinatura_confirmar(token):
             wa_send_text(tel_sig,msg_sig)
         except Exception:
             pass
-    return jsonify({'ok':True,'codigo':sig.ass_codigo,'validacao_link':validacao_link,'signed_pdf_link':signed_pdf_link})
+    return jsonify({'ok':True,'codigo':sig.ass_codigo,'validacao_link':validacao_link,'signed_pdf_link':signed_pdf_link,'destino_salvamento':destino_info})
 
 
 @app.route('/envelope/baixar/<codigo>')
@@ -4489,6 +5508,66 @@ def api_holerites_upload():
             else:
                 erro_ass.append({'funcionario_id':alvo.id,'nome':alvo.nome,'erro':rs.get('erro') or 'Falha ao gerar link de assinatura.'})
     return jsonify({'ok':True,'arquivos_gerados':enviados,'paginas_sem_funcionario':sem_match,'assinaturas_auto':assinaturas_auto,'sem_telefone':sem_tel,'falhas_assinatura':erro_ass,'canal_assinatura':canal_ass})
+
+@app.route('/api/funcionarios/folhas-ponto/upload',methods=['POST'])
+@lr
+def api_folhas_ponto_upload():
+    fs=request.files.get('arquivo')
+    comp=(request.form.get('competencia') or '').strip()
+    if not fs: return jsonify({'erro':'PDF nao enviado'}),400
+    canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
+    if canal_ass not in ('nao','whatsapp','link'):
+        canal_ass='nao'
+    try:
+        from pypdf import PdfReader, PdfWriter
+    except Exception:
+        return jsonify({'erro':'Dependencia pypdf nao instalada'}),500
+    funcs=Funcionario.query.all()
+    if not funcs: return jsonify({'erro':'Cadastre funcionarios antes do upload'}),400
+    reader=PdfReader(fs)
+    enviados=0; sem_match=[]; assinaturas_auto=0; sem_tel=[]; erro_ass=[]; duplicadas=[]
+    for idx,page in enumerate(reader.pages,start=1):
+        txt=(page.extract_text() or '').lower()
+        alvo=None
+        for f in funcs:
+            nm=(f.nome or '').lower().strip()
+            if nm and nm in txt:
+                alvo=f; break
+        if not alvo:
+            sem_match.append(idx)
+            continue
+        ano=infer_doc_year(comp)
+        prepare_func_doc_dirs(alvo.id,ano)
+        # verifica se ja existe arquivo desta competencia para nao duplicar
+        existente=FuncionarioArquivo.query.filter_by(funcionario_id=alvo.id,categoria='folha_ponto',competencia=comp).first()
+        if existente:
+            duplicadas.append(f'{alvo.nome} ({comp})')
+            continue
+        writer=PdfWriter(); writer.add_page(page)
+        fake_name=f'folha_ponto_{comp}_{alvo.id}.pdf'.replace('/','_').replace(' ','_')
+        subdir,_=func_doc_subdir(alvo.id,'folha_ponto',comp)
+        rel,abs_p,fake_name=unique_rel_filename(subdir,fake_name)
+        os.makedirs(os.path.dirname(abs_p),exist_ok=True)
+        with open(abs_p,'wb') as out: writer.write(out)
+        a=FuncionarioArquivo(funcionario_id=alvo.id,categoria='folha_ponto',competencia=comp,nome_arquivo=fake_name,caminho=rel)
+        db.session.add(a); db.session.commit(); enviados+=1
+        if canal_ass=='whatsapp':
+            tel=wa_norm_number(alvo.telefone or '')
+            if wa_is_valid_number(tel):
+                rs=_solicitar_assinatura_arquivo_funcionario(a,alvo,canal='whatsapp',commit_now=True)
+                if rs.get('ok'):
+                    assinaturas_auto+=1
+                else:
+                    erro_ass.append({'funcionario_id':alvo.id,'nome':alvo.nome,'erro':rs.get('erro') or 'Falha ao solicitar assinatura.'})
+            else:
+                sem_tel.append({'funcionario_id':alvo.id,'nome':alvo.nome})
+        elif canal_ass=='link':
+            rs=_solicitar_assinatura_arquivo_funcionario(a,alvo,canal='link',commit_now=True)
+            if rs.get('ok'):
+                assinaturas_auto+=1
+            else:
+                erro_ass.append({'funcionario_id':alvo.id,'nome':alvo.nome,'erro':rs.get('erro') or 'Falha ao gerar link de assinatura.'})
+    return jsonify({'ok':True,'arquivos_gerados':enviados,'paginas_sem_funcionario':sem_match,'assinaturas_auto':assinaturas_auto,'sem_telefone':sem_tel,'falhas_assinatura':erro_ass,'canal_assinatura':canal_ass,'duplicadas':duplicadas})
 
 @app.route('/api/ordens-compra',methods=['GET'])
 @lr
@@ -4730,7 +5809,7 @@ def _api_beneficios_pdf_tipo(tipo):
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
-    from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer
+    from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer,Image
     from reportlab.lib.styles import ParagraphStyle
 
     comp=norm_competencia(request.args.get('competencia'))
@@ -4754,11 +5833,29 @@ def _api_beneficios_pdf_tipo(tipo):
 
     buf=io.BytesIO()
     doc=SimpleDocTemplate(buf,pagesize=A4,leftMargin=1.3*cm,rightMargin=1.3*cm,topMargin=1.2*cm,bottomMargin=1.2*cm)
+    W=A4[0]-2.6*cm
     st=ParagraphStyle('n',fontName='Helvetica',fontSize=9,leading=12)
     st_h=ParagraphStyle('h',fontName='Helvetica-Bold',fontSize=12,leading=14,textColor=colors.HexColor('#205d8a'))
     st_cell=ParagraphStyle('cell',fontName='Helvetica',fontSize=8.3,leading=10)
     st_num=ParagraphStyle('num',fontName='Helvetica',fontSize=8.3,leading=10,alignment=2)
     story=[]
+
+    lp=get_logo()
+    logo_flow=Paragraph('<b>RM Facilities</b>',ParagraphStyle('lgfb',fontName='Helvetica-Bold',fontSize=12,textColor=colors.HexColor('#205d8a')))
+    for cand in [lp,LOGO_URL]:
+        if not cand:
+            continue
+        try:
+            if isinstance(cand,str) and cand.startswith(('http://','https://')):
+                req=urllib.request.Request(cand,headers={'User-Agent':'Mozilla/5.0'})
+                with urllib.request.urlopen(req,timeout=8) as r:
+                    img_data=r.read()
+                logo_flow=Image(io.BytesIO(img_data),width=3.8*cm,height=1.5*cm,kind='proportional')
+            elif os.path.exists(cand):
+                logo_flow=Image(cand,width=3.8*cm,height=1.5*cm,kind='proportional')
+            break
+        except Exception:
+            continue
 
     def _esc(v):
         s=str(v or '')
@@ -4773,7 +5870,15 @@ def _api_beneficios_pdf_tipo(tipo):
     for emp_id,items in sorted(grupos.items(),key=lambda kv: ((emps_map.get(kv[0]).nome if emps_map.get(kv[0]) else 'ZZZ'),kv[0])):
         emp=emps_map.get(emp_id)
         nome_emp=(emp.nome if emp else 'Sem empresa')
-        story.append(Paragraph(f'Relatório de {tit} - {nome_emp}',st_h))
+        hdr=Table([[logo_flow,Paragraph(f'Relatório de {tit}<br/><font size="9">{nome_emp}</font>',ParagraphStyle('h2',fontName='Helvetica-Bold',fontSize=12,leading=14,textColor=colors.HexColor('#205d8a')))]],colWidths=[W*0.28,W*0.72])
+        hdr.setStyle(TableStyle([
+            ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+            ('LEFTPADDING',(0,0),(-1,-1),0),
+            ('RIGHTPADDING',(0,0),(-1,-1),0),
+            ('TOPPADDING',(0,0),(-1,-1),0),
+            ('BOTTOMPADDING',(0,0),(-1,-1),6),
+        ]))
+        story.append(hdr)
         story.append(Paragraph(f'Competência: {comp}',st))
         story.append(Spacer(1,6))
         if tipo=='vale_alimentacao':
@@ -5246,11 +6351,15 @@ def _build_pdf(d):
     obs=d.get('observacoes',''); a1=d.get('ass_empresa',''); a2=d.get('ass_cliente','')
     ass_status=(d.get('assinatura_status') or '').strip().lower()
     ass_nome=(d.get('assinatura_nome') or '').strip()
+    ass_cpf=(d.get('assinatura_cpf') or '').strip()
     ass_cargo=(d.get('assinatura_cargo') or '').strip()
     ass_ip=(d.get('assinatura_ip') or '').strip()
     ass_em=d.get('assinatura_em')
     ass_expira=d.get('assinatura_expira_em')
     ass_codigo=(d.get('assinatura_codigo') or '').strip()
+    ass_doc_hash=(d.get('assinatura_doc_hash') or '').strip()
+    ass_crypto_ok=bool(d.get('assinatura_crypto_ok'))
+    ass_cert_subject=(d.get('assinatura_cert_subject') or '').strip()
     validacao_link=f"{request.url_root.rstrip('/')}/assinatura/validar/{ass_codigo}" if ass_codigo else ''
     svcs=d.get('svcs',d.get('servicos',[]));
     if isinstance(svcs,str):
@@ -5399,6 +6508,7 @@ def _build_pdf(d):
         linhas=[
             f'<b>Documento assinado eletronicamente</b>',
             f'Assinante: {ass_quem}',
+            f'CPF: {ass_cpf or "-"}',
             f'Data/hora: {ass_quando or "-"}',
             f'IP: {ass_ip or "-"}',
             f'Codigo de validacao: {ass_codigo or "-"}',
@@ -5457,10 +6567,10 @@ def _build_pdf(d):
         status_txt=_status_label(ass_status)
         trilha='|'.join([
             str(nmed or ''),str(tipo or ''),str(cname or ''),str(ccnpj or ''),str(mes or ''),
-            str(ass_status or ''),str(ass_nome or ''),str(ass_cargo or ''),str(ass_ip or ''),
+            str(ass_status or ''),str(ass_nome or ''),str(ass_cpf or ''),str(ass_cargo or ''),str(ass_ip or ''),
             str(_fmt_dt(ass_em) or ''),str(ass_codigo or '')
         ])
-        hash_comp=hashlib.sha256(trilha.encode('utf-8')).hexdigest().upper()
+        hash_comp=ass_doc_hash or hashlib.sha256(trilha.encode('utf-8')).hexdigest().upper()
 
         story.append(PageBreak())
         story.append(Paragraph('AUDITORIA DA ASSINATURA ELETRONICA',ps('aud_tit',fontSize=14,textColor=AZ,alignment=TA_CENTER)))
@@ -5480,11 +6590,14 @@ def _build_pdf(d):
             ('Empresa',enome or '-'),
             ('Competencia',fmt_mes(mes) if mes else '-'),
             ('Assinante',ass_nome or '-'),
+            ('CPF do assinante',ass_cpf or '-'),
             ('Cargo',ass_cargo or '-'),
             ('Data/Hora assinatura',_fmt_dt(ass_em) or '-'),
             ('IP de origem',ass_ip or '-'),
             ('Codigo de validacao',ass_codigo or '-'),
             ('Link de validacao',validacao_link or '-'),
+            ('Assinatura criptográfica PDF',('Ativa' if ass_crypto_ok else 'Não aplicada')),
+            ('Certificado digital',ass_cert_subject or '-'),
             ('Hash de comprovacao (SHA-256)',hash_comp),
             ('Emitido por',por or '-'),
             ('Data/Hora da emissao',now.strftime('%d/%m/%Y %H:%M')),
@@ -5508,7 +6621,25 @@ def _build_pdf(d):
             except Exception:
                 story.append(Paragraph(f'Link de validacao: {validacao_link}',ps('aud_qrf',fontSize=8,textColor=colors.HexColor('#4c6072'))))
 
-    doc.build(story); buf.seek(0)
+    doc.build(story)
+    pdf_bytes=buf.getvalue()
+    crypto_ok=False
+    cert_subject=''
+    if ass_status=='assinado':
+        rs_crypto=_try_sign_pdf_bytes_crypto(pdf_bytes,empresa_id=(to_num(d.get('empresa_id')) or None),usuario_id=session.get('uid'))
+        pdf_bytes=rs_crypto.get('bytes') or pdf_bytes
+        crypto_ok=bool(rs_crypto.get('ok'))
+        cert_subject=(rs_crypto.get('cert_subject') or '')[:255] if crypto_ok else ''
+        mid=to_num(d.get('id'))
+        if mid:
+            med=Medicao.query.get(mid)
+            if med:
+                med.assinatura_doc_hash=_sha256_bytes(pdf_bytes)
+                med.assinatura_crypto_ok=crypto_ok
+                med.assinatura_cert_subject=(cert_subject or None)
+                db.session.commit()
+    buf=io.BytesIO(pdf_bytes)
+    buf.seek(0)
     slug=(cname or 'cliente').replace(' ','_')[:20]
     return send_file(buf,mimetype='application/pdf',as_attachment=True,download_name=f'{tipo.replace(" ","_")}_{nmed.replace("/","-")}_{slug}_{mes}.pdf')
 
@@ -6152,14 +7283,28 @@ with app.app_context():
     os.makedirs(UPLOAD_ROOT,exist_ok=True)
     db.create_all()
     ensure_cols('usuario',[
-        'areas TEXT'
+        'areas TEXT',
+        'telefone VARCHAR(30)',
+        'twofa_ativo BOOLEAN DEFAULT 1',
+        'cert_arquivo VARCHAR(500)',
+        'cert_nome_arquivo VARCHAR(255)',
+        'cert_senha VARCHAR(255)',
+        'cert_ativo BOOLEAN DEFAULT 0',
+        'cert_assunto VARCHAR(255)',
+        'cert_validade_fim VARCHAR(30)'
     ])
     ensure_cols('empresa',[
         'contato_nome VARCHAR(150)',
         'contato_email VARCHAR(150)',
         'contato_telefone VARCHAR(30)',
         'logo_url VARCHAR(500)',
-        'boleto TEXT'
+        'boleto TEXT',
+        'cert_arquivo VARCHAR(500)',
+        'cert_nome_arquivo VARCHAR(255)',
+        'cert_senha VARCHAR(255)',
+        'cert_ativo BOOLEAN DEFAULT 0',
+        'cert_assunto VARCHAR(255)',
+        'cert_validade_fim VARCHAR(30)'
     ])
     ensure_cols('funcionario',[
         're INTEGER',
@@ -6218,6 +7363,12 @@ with app.app_context():
         'ass_cpf VARCHAR(20)',
         'ass_ip VARCHAR(60)',
         'ass_em DATETIME',
+        'ass_otp_hash VARCHAR(256)',
+        'ass_otp_expira_em DATETIME',
+        'ass_otp_tentativas INTEGER DEFAULT 0',
+        'ass_doc_hash VARCHAR(128)',
+        'ass_crypto_ok BOOLEAN DEFAULT 0',
+        'ass_cert_subject VARCHAR(255)',
     ])
     db.session.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ix_funcionario_re ON funcionario(re)'))
     db.session.commit()
@@ -6232,10 +7383,17 @@ with app.app_context():
         'assinatura_token VARCHAR(120)',
         'assinatura_expira_em DATETIME',
         'assinatura_nome VARCHAR(200)',
+        'assinatura_cpf VARCHAR(20)',
         'assinatura_cargo VARCHAR(120)',
         'assinatura_ip VARCHAR(60)',
         'assinatura_em DATETIME',
         'assinatura_codigo VARCHAR(120)',
+        'assinatura_otp_hash VARCHAR(256)',
+        'assinatura_otp_expira_em DATETIME',
+        'assinatura_otp_tentativas INTEGER DEFAULT 0',
+        'assinatura_doc_hash VARCHAR(128)',
+        'assinatura_crypto_ok BOOLEAN DEFAULT 0',
+        'assinatura_cert_subject VARCHAR(255)',
     ])
     ensure_cols('assinatura_envelope',[
         'id INTEGER PRIMARY KEY AUTOINCREMENT',
@@ -6247,9 +7405,16 @@ with app.app_context():
         'status VARCHAR(20) DEFAULT "rascunho"',
         'codigo VARCHAR(120)',
         'nome_documento_assinado VARCHAR(255)',
+        'destino_salvar_tipo VARCHAR(30) DEFAULT "envelope"',
+        'destino_funcionario_id INTEGER',
+        'destino_categoria VARCHAR(40) DEFAULT "outros"',
+        'destino_competencia VARCHAR(20)',
         'criado_por VARCHAR(100)',
         'criado_em DATETIME',
         'expira_em DATETIME',
+        'assinatura_doc_hash VARCHAR(128)',
+        'assinatura_crypto_ok BOOLEAN DEFAULT 0',
+        'assinatura_cert_subject VARCHAR(255)',
     ])
     ensure_cols('assinatura_envelope_arquivo',[
         'id INTEGER PRIMARY KEY AUTOINCREMENT',
@@ -6276,6 +7441,9 @@ with app.app_context():
         'ass_em DATETIME',
         'ass_codigo VARCHAR(120)',
         'ass_cpf_informado VARCHAR(20)',
+        'ass_otp_hash VARCHAR(256)',
+        'ass_otp_expira_em DATETIME',
+        'ass_otp_tentativas INTEGER DEFAULT 0',
         'ordem INTEGER DEFAULT 0',
         'criado_em DATETIME',
     ])

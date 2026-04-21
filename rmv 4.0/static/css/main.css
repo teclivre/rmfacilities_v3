@@ -36,6 +36,15 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;ba
 .card:hover{transform:translateY(-2px);box-shadow:var(--shadow-md);border-color:rgba(31,110,176,.28)}
 .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid var(--azul-cl);gap:10px;flex-wrap:wrap}
 .card-title{font-family:'Space Grotesk',sans-serif;font-size:11px;font-weight:700;color:var(--azul);text-transform:uppercase;letter-spacing:.8px}
+.subaba-blocos{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:9px;margin:2px 0 14px}
+.subaba-bloco{border:1.5px solid var(--borda);background:linear-gradient(180deg,#fff,#f4f9ff);color:var(--azul-esc);border-radius:12px;padding:10px 12px;font-size:12px;font-weight:800;font-family:'Manrope',sans-serif;text-align:left;cursor:pointer;transition:all .18s ease;min-height:42px}
+.subaba-bloco:hover{border-color:rgba(31,110,176,.45);box-shadow:0 8px 20px rgba(31,110,176,.14);transform:translateY(-1px)}
+.subaba-bloco.on{background:linear-gradient(180deg,var(--azul),#2f7fbe);color:#fff;border-color:var(--azul);box-shadow:0 10px 22px rgba(31,110,176,.26)}
+
+#rhd-tabs,
+#pg-assinaturas .tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px}
+#rhd-tabs .btn,
+#pg-assinaturas .tabs .tab{justify-content:center;border-radius:12px;padding:10px 12px;font-weight:800}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:11px}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:11px}
 .g4{display:grid;grid-template-columns:repeat(4,1fr);gap:11px}
@@ -275,6 +284,8 @@ html[data-theme='dark'] .btn-top{background:rgba(255,255,255,.08);border-color:r
 html[data-theme='dark'] .btn-top:hover{background:rgba(255,255,255,.16)}
 html[data-theme='dark'] .mobile-nav-btn{background:#0b1627;color:var(--preto);border-color:var(--borda)}
 html[data-theme='dark'] .mobile-nav-btn.on{background:var(--azul);border-color:var(--azul);color:#fff}
+html[data-theme='dark'] .subaba-bloco{background:linear-gradient(180deg,#0f1b2d,#12243a);color:#d7e8f8;border-color:var(--borda)}
+html[data-theme='dark'] .subaba-bloco.on{background:linear-gradient(180deg,#337fbd,#23679f);border-color:#3f90cf;color:#fff}
 html[data-theme='dark'] .metric-go{background:rgba(103,184,255,.16);border-color:rgba(103,184,255,.28);color:#9dd5ff}
 html[data-theme='dark'] mark{background:#7c5d10;color:#fff3c6}
 html[data-theme='dark'] .areas-item{background:#0b1627;border-color:var(--borda)}

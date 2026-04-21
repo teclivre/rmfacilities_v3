@@ -53,6 +53,14 @@
         <label>Cargo (opcional)</label>
         <input id="cargo" placeholder="Ex: Síndica">
       </div>
+      <div class="f">
+        <label>CPF *</label>
+        <input id="cpf" placeholder="000.000.000-00" maxlength="14" oninput="fmtCPF(this)" inputmode="numeric">
+      </div>
+      <div class="f">
+        <label>Código OTP (6 dígitos)</label>
+        <input id="otp" placeholder="Informe o código recebido" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
+      </div>
       <label class="aceite"><input type="checkbox" id="aceite" style="width:auto;margin-top:2px">Declaro que li e confirmo as informações da medição apresentada.</label>
       <div class="brow">
         <button onclick="confirmar('{{ medicao.assinatura_token }}')">Confirmar assinatura</button>
@@ -65,21 +73,37 @@
   </div>
 
   <script>
+    function fmtCPF(el){
+      let v=(el.value||'').replace(/\D/g,'').slice(0,11);
+      if(v.length>9) v=v.replace(/^(\d{3})(\d{3})(\d{3})(\d{0,2}).*/,'$1.$2.$3-$4');
+      else if(v.length>6) v=v.replace(/^(\d{3})(\d{3})(\d{0,3}).*/,'$1.$2.$3');
+      else if(v.length>3) v=v.replace(/^(\d{3})(\d{0,3}).*/,'$1.$2');
+      el.value=v;
+    }
+
     async function confirmar(token){
       const nome=(document.getElementById('nome').value||'').trim();
       const cargo=(document.getElementById('cargo').value||'').trim();
+      const cpf=(document.getElementById('cpf').value||'').replace(/\D/g,'');
+      const otp=(document.getElementById('otp').value||'').replace(/\D/g,'');
       const aceite=!!document.getElementById('aceite').checked;
       const msg=document.getElementById('msg');
       try{
         const r=await fetch('/api/assinatura/'+token+'/confirmar',{
           method:'POST',
           headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({nome,cargo,aceite})
+          body:JSON.stringify({nome,cargo,cpf,otp,aceite})
         });
         const d=await r.json();
         if(!r.ok || d.erro){
           msg.className='msg err';
           msg.textContent=d.erro||'Falha ao confirmar assinatura.';
+          msg.style.display='block';
+          return;
+        }
+        if(d.otp_required){
+          msg.className='msg ok';
+          msg.textContent=d.mensagem||'Código OTP enviado. Informe o código para concluir a assinatura.';
           msg.style.display='block';
           return;
         }

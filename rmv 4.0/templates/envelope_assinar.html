@@ -119,6 +119,7 @@ input:focus{border-color:#205d8a}
       <div class="f"><label>Nome completo *</label><input id="inp-nome" type="text" placeholder="Seu nome completo" value="{{ sig.nome or '' }}"></div>
       <div class="f"><label>Cargo / Função</label><input id="inp-cargo" type="text" placeholder="Seu cargo" value="{{ sig.cargo or '' }}"></div>
       <div class="f"><label>CPF *</label><input id="inp-cpf" type="text" placeholder="000.000.000-00" maxlength="14" oninput="fmtCpf(this)"></div>
+      <div class="f"><label>Código OTP (6 dígitos)</label><input id="inp-otp" type="text" placeholder="Informe o código recebido" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)"></div>
 
       <div class="aceite">
         <input type="checkbox" id="chk-aceite">
@@ -159,6 +160,7 @@ async function confirmarAssinatura(){
   const nome=document.getElementById('inp-nome').value.trim();
   const cargo=document.getElementById('inp-cargo').value.trim();
   const cpf=document.getElementById('inp-cpf').value.trim();
+  const otp=(document.getElementById('inp-otp').value||'').replace(/\D/g,'');
   const aceite=document.getElementById('chk-aceite').checked;
   const erroBox=document.getElementById('erro-box');
   erroBox.style.display='none';
@@ -176,11 +178,18 @@ async function confirmarAssinatura(){
     const r=await fetch(`/api/envelope/assinar/${TOKEN}/confirmar`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({nome,cargo,cpf,aceite:true})
+      body:JSON.stringify({nome,cargo,cpf,otp,aceite:true})
     });
     const j=await r.json();
     if(!r.ok){
       erroBox.textContent=j.erro||'Erro ao confirmar.';
+      erroBox.style.display='block';
+      btn.disabled=false;
+      btn.textContent='Confirmar Assinatura';
+      return;
+    }
+    if(j.otp_required){
+      erroBox.textContent=j.mensagem||'Código OTP enviado. Informe o código para concluir a assinatura.';
       erroBox.style.display='block';
       btn.disabled=false;
       btn.textContent='Confirmar Assinatura';

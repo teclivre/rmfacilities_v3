@@ -64,6 +64,10 @@
       <label>Cargo (opcional)</label>
       <input id="cargo" placeholder="Ex: Auxiliar de limpeza">
     </div>
+    <div class="f">
+      <label>Código OTP (6 dígitos)</label>
+      <input id="otp" placeholder="Informe o código recebido" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
+    </div>
     <label class="aceite">
       <input type="checkbox" id="aceite">
       Declaro que li e aceito as informações do documento apresentado, confirmando minha assinatura eletrônica.
@@ -91,17 +95,24 @@ async function confirmar(token){
   const nome=(document.getElementById('nome').value||'').trim();
   const cpf=(document.getElementById('cpf').value||'').replace(/\D/g,'');
   const cargo=(document.getElementById('cargo').value||'').trim();
+  const otp=(document.getElementById('otp').value||'').replace(/\D/g,'');
   const aceite=!!document.getElementById('aceite').checked;
   const msg=document.getElementById('msg');
   try{
     const r=await fetch('/api/doc/assinar/'+token+'/confirmar',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({nome,cpf,cargo,aceite})
+      body:JSON.stringify({nome,cpf,cargo,otp,aceite})
     });
     const d=await r.json();
     if(!r.ok||d.erro){
       msg.className='msg msg-err'; msg.textContent=d.erro||'Falha ao confirmar assinatura.'; msg.style.display='block'; return;
+    }
+    if(d.otp_required){
+      msg.className='msg msg-ok';
+      msg.textContent=d.mensagem||'Código OTP enviado. Informe o código para concluir a assinatura.';
+      msg.style.display='block';
+      return;
     }
     msg.className='msg msg-ok';
     msg.innerHTML=(d.mensagem||'Assinatura concluída!')+(d.whatsapp_enviado?'<br>✅ Uma cópia assinada foi enviada para o seu WhatsApp.':'')+(d.validacao_link?`<br><a href="${d.validacao_link}" target="_blank" style="color:var(--ok);font-size:12px">Validar assinatura</a>`:'');
