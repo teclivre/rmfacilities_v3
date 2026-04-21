@@ -3926,6 +3926,7 @@ async function rhdProcessar(){
     const selFiltro=document.getElementById('rhd-ass-filtro');
     if(selFiltro) selFiltro.value='todos';
     document.getElementById('rhd-preview-box').style.display='';
+    rhdLimparResumoPainel();
     renderRHDPreview(d);
     showSt('rhd-envio-st',`${d.separados} holerites extraídos de ${d.total_paginas} página(s).${d.sem_match.length?' Páginas sem match: '+d.sem_match.join(', '):''}`,false);
   }catch(e){showSt('rhd-envio-st','Erro ao processar: '+e.message,true);}
@@ -3959,11 +3960,94 @@ function renderRHDPreview(data){
         ${item.assinatura_auto_status==='telefone_invalido'?`<div style="font-size:11px;color:#8a5c00;margin-top:2px">⚠ Telefone cadastrado inválido para WhatsApp.</div>`:''}
         ${item.assinatura_auto_status==='erro'&&item.assinatura_auto_erro?`<div style="font-size:11px;color:var(--verm);margin-top:2px">Erro assinatura automática: ${item.assinatura_auto_erro}</div>`:''}
         ${item.folha_ponto_nome?`<div style="font-size:11px;color:#6a7d8f;margin-top:2px">🕒 Folha de ponto encontrada: ${item.folha_ponto_nome}</div>`:''}
+        ${item.status_envio==='enviado_email'&&item.email?`<div style="font-size:11px;color:#1a7a45;margin-top:2px">✅ Enviado para e-mail: ${item.email}</div>`:''}
+        ${item.status_envio==='enviado_wa'&&item.whatsapp?`<div style="font-size:11px;color:#1a7a45;margin-top:2px">✅ Enviado para WhatsApp: ${fmtTelefone(item.whatsapp)}</div>`:''}
+        ${item.status_envio==='enviado_ambos'?`<div style="font-size:11px;color:#1a7a45;margin-top:2px">✅ Enviado para: ${item.email?('e-mail '+item.email):'e-mail não informado'}${item.whatsapp?(' · WhatsApp '+fmtTelefone(item.whatsapp)):' · WhatsApp não informado'}</div>`:''}
+        ${item.status_envio==='sem_contato'?`<div style="font-size:11px;color:#8a5c00;margin-top:2px">⚠️ Não enviado: sem contato válido (e-mail/WhatsApp).</div>`:''}
         ${item.status_envio==='erro'&&item.erro_envio?`<div style="font-size:11px;color:var(--verm);margin-top:2px">Erro: ${item.erro_envio}</div>`:''}
       </div>
     </div>
     <span class="pill ${clsMap[item.status_envio]||'p-ci'}">${stMap[item.status_envio]||'⏳ Aguardando'}</span>
   </div>`).join('');
+}
+
+function rhdMontarResumoEnvio(alvo){
+  const okList=[];
+  const semList=[];
+  const errList=[];
+  (alvo||[]).forEach(it=>{
+    const nome=it.funcionario_nome||'Funcionário';
+    if(it.status_envio==='enviado_email') okList.push(`• ${nome} → e-mail ${it.email||'-'}`);
+    else if(it.status_envio==='enviado_wa') okList.push(`• ${nome} → WhatsApp ${fmtTelefone(it.whatsapp||'')||it.whatsapp||'-'}`);
+    else if(it.status_envio==='enviado_ambos') okList.push(`• ${nome} → e-mail ${it.email||'-'} e WhatsApp ${fmtTelefone(it.whatsapp||'')||it.whatsapp||'-'}`);
+    else if(it.status_envio==='sem_contato') semList.push(`• ${nome}`);
+    else if(it.status_envio==='erro') errList.push(`• ${nome}: ${it.erro_envio||'falha no envio'}`);
+  });
+  return {
+    okText:okList.length?okList.join('\n'):'Nenhum envio com sucesso.',
+    semText:semList.length?semList.join('\n'):'Nenhum sem contato.',
+    errText:errList.length?errList.join('\n'):'Nenhum erro.',
+    okCount:okList.length,
+    semCount:semList.length,
+    errCount:errList.length,
+  };
+}
+
+function rhdEnsureResumoPainel(){
+  let panel=document.getElementById('rhd-resumo-painel');
+  if(panel) return panel;
+  const st=document.getElementById('rhd-envio-st');
+  if(!st||!st.parentElement) return null;
+  panel=document.createElement('div');
+  panel.id='rhd-resumo-painel';
+  panel.style.cssText='display:none;margin-top:10px;border:1px solid var(--borda);border-radius:10px;background:var(--cinza-cl);padding:10px';
+  panel.innerHTML=`
+    <div style="font-size:12px;font-weight:700;color:#1a2b3c;margin-bottom:8px">Resumo de envio</div>
+    <div id="rhd-resumo-contadores" style="font-size:12px;color:#4c6072;margin-bottom:8px"></div>
+    <div style="display:grid;grid-template-columns:1fr;gap:8px">
+      <div style="background:#f6fbf8;border:1px solid #cfe8d8;border-radius:8px;padding:8px">
+        <div style="font-size:11px;font-weight:700;color:#1a7a45;margin-bottom:4px">Enviados com sucesso</div>
+        <pre id="rhd-resumo-ok" style="margin:0;font-size:11px;white-space:pre-wrap;color:#2b4a3a"></pre>
+      </div>
+      <div style="background:#fffaf1;border:1px solid #f0dfb6;border-radius:8px;padding:8px">
+        <div style="font-size:11px;font-weight:700;color:#8a5c00;margin-bottom:4px">Sem contato</div>
+        <pre id="rhd-resumo-sem" style="margin:0;font-size:11px;white-space:pre-wrap;color:#6a5626"></pre>
+      </div>
+      <div style="background:#fff4f4;border:1px solid #efc9c9;border-radius:8px;padding:8px">
+        <div style="font-size:11px;font-weight:700;color:#a52b2b;margin-bottom:4px">Erros</div>
+        <pre id="rhd-resumo-err" style="margin:0;font-size:11px;white-space:pre-wrap;color:#7d3030"></pre>
+      </div>
+    </div>`;
+  st.parentElement.appendChild(panel);
+  return panel;
+}
+
+function rhdLimparResumoPainel(){
+  const panel=rhdEnsureResumoPainel();
+  if(!panel) return;
+  panel.style.display='none';
+  const c=document.getElementById('rhd-resumo-contadores');
+  const ok=document.getElementById('rhd-resumo-ok');
+  const sem=document.getElementById('rhd-resumo-sem');
+  const err=document.getElementById('rhd-resumo-err');
+  if(c) c.textContent='';
+  if(ok) ok.textContent='';
+  if(sem) sem.textContent='';
+  if(err) err.textContent='';
+}
+
+function rhdRenderResumoPainel(det){
+  const panel=rhdEnsureResumoPainel();
+  if(!panel) return;
+  const c=document.getElementById('rhd-resumo-contadores');
+  const ok=document.getElementById('rhd-resumo-ok');
+  const sem=document.getElementById('rhd-resumo-sem');
+  const err=document.getElementById('rhd-resumo-err');
+  if(c) c.textContent=`Sucesso: ${det.okCount} · Sem contato: ${det.semCount} · Erros: ${det.errCount}`;
+  if(ok) ok.textContent=det.okText;
+  if(sem) sem.textContent=det.semText;
+  if(err) err.textContent=det.errText;
+  panel.style.display='block';
 }
 
 function rhdAplicarFiltroAssinatura(v){
@@ -3999,6 +4083,7 @@ async function rhdEnviar(){
   const ids=Array.from(document.querySelectorAll('.rhd-sel:checked')).map(cb=>parseInt(cb.dataset.id));
   if(!ids.length){alert('Selecione ao menos um holerite para enviar.');return;}
   const idsSet=new Set(ids);
+  rhdLimparResumoPainel();
   _rhdJob.itens=(_rhdJob.itens||[]).map(it=>idsSet.has(it.arquivo_id)?{...it,status_envio:'enviando',erro_envio:null}:it);
   renderRHDPreview(_rhdJob);
   showSt('rhd-envio-st','Enviando em background...', false);
@@ -4019,6 +4104,8 @@ async function rhdEnviar(){
         const err=alvo.filter(it=>it.status_envio==='erro').length;
         const msg=err>0?`Envio concluído com ${err} erro(s). Sucesso: ${ok}. Sem contato: ${sem}.`:`Envio concluído! Sucesso: ${ok}. Sem contato: ${sem}.`;
         showSt('rhd-envio-st',msg,err>0);
+        const det=rhdMontarResumoEnvio(alvo);
+        rhdRenderResumoPainel(det);
       }
     }
   },2000);
