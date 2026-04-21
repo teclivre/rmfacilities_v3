@@ -132,8 +132,11 @@
           return;
         }
         msg.className='msg ok';
-        msg.textContent=d.mensagem||'Assinatura concluída com sucesso.';
+        msg.textContent=(d.mensagem||'Assinatura concluída com sucesso.') + (d.whatsapp_enviado ? ' Cópia enviada no WhatsApp.' : '');
         msg.style.display='block';
+        if(d.validacao_link){
+          setTimeout(()=>{ window.location.href=d.validacao_link; },900);
+        }
       }catch(e){
         msg.className='msg err';
         msg.textContent='Erro de conexão ao confirmar assinatura.';

@@ -3684,9 +3684,44 @@ def api_assinatura_confirmar(token):
     m.ass_cliente=f"{nome}{(' - '+cargo) if cargo else ''}".strip()
     m.assinatura_token=None
     db.session.commit()
+
+    # Envia cópia da medição assinada para o assinante via WhatsApp, quando houver telefone válido.
+    enviado_wa=False
+    try:
+        cli=Cliente.query.get(m.cliente_id) if m.cliente_id else None
+        tel=wa_norm_number((cli.telefone if cli else '') or '')
+        if tel and wa_is_valid_number(tel):
+            emp=Empresa.query.get(m.empresa_id) if m.empresa_id else None
+            d=m.to_dict()
+            d['empresa']=emp.to_dict() if emp else {}
+            pdf_resp=_build_pdf(d)
+            pdf_bytes=b''
+            try:
+                pdf_resp.direct_passthrough=False
+                pdf_bytes=pdf_resp.get_data()
+            except Exception:
+                pdf_bytes=b''
+            if pdf_bytes:
+                tmp_dir=os.path.join(UPLOAD_ROOT,'tmp_ass')
+                os.makedirs(tmp_dir,exist_ok=True)
+                nome_pdf=f"medicao_{(m.numero or m.id)}_assinada.pdf".replace('/','-')
+                tmp_file=os.path.join(tmp_dir,nome_pdf)
+                with open(tmp_file,'wb') as fp:
+                    fp.write(pdf_bytes)
+                validacao_link=f"{request.url_root.rstrip('/')}/assinatura/validar/{m.assinatura_codigo}"
+                wa_send_pdf(tel,tmp_file,nome_pdf,
+                    f"✅ Medição assinada com sucesso.\nCódigo: {m.assinatura_codigo}\nValidar: {validacao_link}")
+                try:
+                    os.remove(tmp_file)
+                except Exception:
+                    pass
+                enviado_wa=True
+    except Exception:
+        enviado_wa=False
+
     audit_event('medicao_assinatura_confirmada','externo',None,'medicao',m.id,True,{'numero':m.numero,'nome':nome})
     validacao_link=f"{request.url_root.rstrip('/')}/assinatura/validar/{m.assinatura_codigo}"
-    return jsonify({'ok':True,'mensagem':'Assinatura concluida com sucesso.','validacao_link':validacao_link})
+    return jsonify({'ok':True,'mensagem':'Assinatura concluida com sucesso.','validacao_link':validacao_link,'whatsapp_enviado':enviado_wa})
 
 @app.route('/api/funcionarios',methods=['GET'])
 @lr
@@ -4279,7 +4314,41 @@ def api_func_doc_assinatura_confirmar(token):
                 enviado_wa=True
             except Exception:
                 pass
-    return jsonify({'ok':True,'mensagem':'Assinatura concluída com sucesso.','validacao_link':validacao_link,'whatsapp_enviado':enviado_wa,'arquivo_assinado_salvo':bool(copia_assinada and copia_assinada.get('ok'))})
+    signed_pdf_link=(f"{request.url_root.rstrip('/')}/doc/assinado/{a.ass_codigo}" if a.ass_codigo else '')
+    return jsonify({'ok':True,'mensagem':'Assinatura concluída com sucesso.','validacao_link':validacao_link,'signed_pdf_link':signed_pdf_link,'whatsapp_enviado':enviado_wa,'arquivo_assinado_salvo':bool(copia_assinada and copia_assinada.get('ok'))})
+
+@app.route('/doc/assinado/<codigo>')
+def func_doc_assinado_publico(codigo):
+    cod=(codigo or '').strip()
+    if not cod:
+        return 'Código inválido.',400
+    arqs=(FuncionarioArquivo.query
+          .filter_by(ass_codigo=cod,ass_status='assinado')
+          .order_by(FuncionarioArquivo.id.desc())
+          .all())
+    if not arqs:
+        return 'Documento assinado não encontrado.',404
+    alvo=None
+    for a in arqs:
+        nm=(a.nome_arquivo or '').lower()
+        if nm.endswith('_assinado.pdf') or '_assinado' in nm:
+            alvo=a
+            break
+    if not alvo:
+        alvo=arqs[0]
+    raw=(alvo.caminho or '').strip()
+    cands=[raw]
+    if raw and not os.path.isabs(raw):
+        cands.append(os.path.join(UPLOAD_ROOT,raw))
+        cands.append(os.path.join(_get_uploads_base(),raw))
+    abs_path=''
+    for p in cands:
+        if p and os.path.exists(p):
+            abs_path=p
+            break
+    if not abs_path:
+        return 'Arquivo assinado não encontrado.',404
+    return send_file(abs_path,mimetype='application/pdf',as_attachment=False,download_name=alvo.nome_arquivo or 'documento_assinado.pdf')
 
 @app.route('/doc/validar/<codigo>')
 def func_doc_validar_publica(codigo):
@@ -5434,7 +5503,7 @@ def envelope_baixar_assinado_publico(codigo):
             abs_pdf,fname=_gerar_pdf_assinado_envelope(env,url_root)
         except Exception:
             return 'Não foi possível gerar o PDF assinado neste momento.',500
-    return send_file(abs_pdf,mimetype='application/pdf',as_attachment=True,download_name=fname)
+    return send_file(abs_pdf,mimetype='application/pdf',as_attachment=False,download_name=fname)
 
 
 # Página pública de validação do envelope

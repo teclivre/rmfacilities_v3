@@ -139,7 +139,10 @@ async function confirmar(token){
       return;
     }
     msg.className='msg msg-ok';
-    msg.innerHTML=(d.mensagem||'Assinatura concluída!')+(d.whatsapp_enviado?'<br>✅ Uma cópia assinada foi enviada para o seu WhatsApp.':'')+(d.validacao_link?`<br><a href="${d.validacao_link}" target="_blank" style="color:var(--ok);font-size:12px">Validar assinatura</a>`:'');
+    msg.innerHTML=(d.mensagem||'Assinatura concluída!')+
+      (d.whatsapp_enviado?'<br>✅ Uma cópia assinada foi enviada para o seu WhatsApp.':'')+
+      (d.validacao_link?`<br><a href="${d.validacao_link}" target="_blank" style="color:var(--ok);font-size:12px">Validar assinatura</a>`:'')+
+      (d.signed_pdf_link?`<br><a href="${d.signed_pdf_link}" target="_blank" style="color:var(--az);font-size:12px">Abrir PDF assinado</a>`:'');
     msg.style.display='block';
     document.querySelector('.btn-az').disabled=true;
     document.querySelector('.btn-az').textContent='Assinado';
