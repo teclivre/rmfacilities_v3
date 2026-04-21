@@ -370,18 +370,22 @@
       </div>
 
       <div class="card">
-        <div class="card-header"><span class="card-title">Upload em lote (RH)</span></div>
+        <div class="card-header"><span class="card-title">Envio de arquivo</span></div>
         <div class="g4">
           <div class="f"><label>Tipo de documento</label>
             <select id="rh-lote-tipo">
               <option value="holerite">Holerite</option>
               <option value="folha_ponto">Folha de Ponto</option>
+              <option value="atestado">Atestado</option>
+              <option value="outros">Outros documentos RH</option>
             </select>
           </div>
           <div class="f"><label>Competência (ex: 04/2026)</label><input id="rh-lote-comp"></div>
+          <div class="f"><label>Funcionário específico (opcional)</label><select id="rh-lote-func"><option value="">Separar automaticamente pelo PDF</option></select></div>
           <div class="f s2"><label>Arquivo PDF único (com várias páginas)</label><input type="file" id="rh-lote-arq" accept="application/pdf"></div>
         </div>
-        <div class="brow" style="justify-content:flex-start"><button class="btn b-ghv" onclick="uploadDocumentoRHLote()">Processar e separar por funcionário</button></div>
+        <div class="hint" style="margin-top:8px">Se escolher um funcionário, o PDF inteiro será salvo para ele. Sem seleção, o sistema tenta identificar o colaborador pelo conteúdo de cada página.</div>
+        <div class="brow" style="justify-content:flex-start"><button class="btn b-ghv" onclick="uploadDocumentoRHLote()">Enviar arquivo</button></div>
       </div>
     </div>
 
@@ -822,6 +826,16 @@
           <div class="f"><label>Número base (próxima medição começará a partir daqui)</label><input type="number" id="cfg-num-base" placeholder="100" min="1"></div>
           <div class="f"><label>Última medição emitida (o sistema usará o próximo número)</label><input type="number" id="cfg-num-ultima" placeholder="0" min="0"></div>
         </div>
+        <div class="g2" style="margin-top:10px">
+          <div class="f"><label>Política do certificado nas assinaturas em PDF</label>
+            <select id="cfg-pdf-cert-policy" onchange="document.getElementById('cfg-cert-policy-resumo').textContent=certPolicySummary(this.value)">
+              <option value="prefer_empresa">Preferir certificado da empresa</option>
+              <option value="empresa_obrigatorio">Usar somente certificado da empresa</option>
+              <option value="prefer_usuario">Preferir certificado do usuário</option>
+            </select>
+          </div>
+          <div class="f"><label>Resumo</label><div id="cfg-cert-policy-resumo" class="hint" style="padding-top:10px">O sistema usará a política definida abaixo.</div></div>
+        </div>
         <div class="brow" style="justify-content:flex-start;margin-top:14px">
           <button class="btn b-az" onclick="salvarConfig()">Salvar configurações</button>
         </div>
@@ -1159,6 +1173,7 @@
           <input id="ecert-file" type="file" accept=".p12,.pfx" style="max-width:280px">
           <input id="ecert-pass" type="password" placeholder="Senha do certificado" style="max-width:240px">
           <button type="button" class="btn b-gh b-sm" onclick="uploadCertEmpresa()">Salvar certificado</button>
+          <button type="button" class="btn b-gh b-sm" onclick="atualizarSenhaCertEmpresa()">Atualizar senha</button>
           <button type="button" class="btn b-ghr b-sm" onclick="removerCertEmpresa()">Remover</button>
         </div>
         <div id="ecert-info" class="hint" style="margin-top:6px"></div>
@@ -1204,6 +1219,7 @@
           <input id="ucert-pass" type="password" placeholder="Senha do certificado" style="max-width:220px">
           <label style="display:flex;align-items:center;gap:6px;font-size:12px"><input id="ucert-ativo" type="checkbox" checked style="width:auto">Usar para assinatura</label>
           <button type="button" class="btn b-gh b-sm" onclick="uploadCertUsuario()">Salvar certificado</button>
+          <button type="button" class="btn b-gh b-sm" onclick="atualizarSenhaCertUsuario()">Atualizar senha</button>
           <button type="button" class="btn b-ghr b-sm" onclick="removerCertUsuario()">Remover</button>
         </div>
         <div id="ucert-info" class="hint" style="margin-top:6px"></div>
@@ -1265,6 +1281,47 @@ async function api(url,m='GET',b=null){
   return {erro:`Erro HTTP ${r.status}${tx?`: ${tx.slice(0,120)}`:''}`};
 }
 
+async function apiForm(url,fd,m='POST'){
+  const r=await fetch(url,{method:m,body:fd,credentials:'same-origin'});
+  const ct=(r.headers.get('content-type')||'').toLowerCase();
+  if(ct.includes('application/json')){
+    const d=await r.json();
+    if(!r.ok && !d?.erro) d.erro='Erro HTTP '+r.status;
+    return d;
+  }
+  const tx=(await r.text()||'').trim();
+  return {erro:`Erro HTTP ${r.status}${tx?`: ${tx.slice(0,120)}`:''}`};
+}
+
+function certInfoHtml(ent){
+  if(!ent || !ent.cert_configurado) return 'Nenhum certificado cadastrado.';
+  const partes=[
+    `Arquivo: ${ent.cert_nome_arquivo||'certificado'}`,
+    `Status: ${ent.cert_ativo?'ativo':'inativo'}`,
+    ent.cert_validade_fim?`Validade: ${ent.cert_validade_fim}`:'',
+    ent.cert_assunto?`Assunto: ${ent.cert_assunto}`:''
+  ].filter(Boolean);
+  return partes.join(' | ');
+}
+
+function certPolicyLabel(v){
+  const mapa={
+    prefer_empresa:'Preferir certificado da empresa',
+    empresa_obrigatorio:'Usar somente certificado da empresa',
+    prefer_usuario:'Preferir certificado do usuário'
+  };
+  return mapa[v]||mapa.prefer_empresa;
+}
+
+function certPolicySummary(v){
+  const mapa={
+    prefer_empresa:'Se existir certificado ativo da empresa, ele será usado primeiro. Na falta dele, o sistema tenta o certificado ativo do usuário.',
+    empresa_obrigatorio:'Somente o certificado ativo da empresa será aceito. Sem ele, a assinatura criptográfica do PDF não será aplicada.',
+    prefer_usuario:'Se o usuário tiver certificado ativo, ele terá prioridade. Sem ele, o sistema tenta o certificado da empresa.'
+  };
+  return mapa[v]||mapa.prefer_empresa;
+}
+
 async function init(){
   tick(); setInterval(tick,1000);
   const h=new Date();
@@ -1314,6 +1371,19 @@ function fillSSTFuncionarios(){
     el.appendChild(new Option(rotulo,f.id));
   });
   filtrarSSTFuncionarios();
+
+  const rh=document.getElementById('rh-lote-func');
+  if(rh){
+    const atual=rh.value;
+    const keepRh=rh.options[0];
+    rh.innerHTML='';
+    rh.appendChild(keepRh);
+    funcs.forEach(f=>{
+      const rotulo=[f.nome||'',f.matricula?('Mat '+f.matricula):'',f.re?('RE '+f.re):''].filter(Boolean).join(' · ');
+      rh.appendChild(new Option(rotulo,f.id));
+    });
+    if(atual && Array.from(rh.options).some(o=>o.value===atual)) rh.value=atual;
+  }
 }
 
 function filtrarSSTFuncionarios(){
@@ -1361,6 +1431,7 @@ async function loadDash(){
     const benPend=d.alerta_beneficios_pendentes||{qtd:0,itens:[]};
     const asoInval=d.alerta_sem_aso_valido||{qtd:0,itens:[]};
     const inad=d.alerta_inadimplencia||{qtd:0,total:0,itens:[]};
+    const certs=d.alerta_certificados||{qtd:0,itens:[]};
     const calcItens=(calc.itens||[]).length
       ? calc.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.titulo||'—'}</div><div style="font-size:11px;color:#8aa">${it.descricao||''}</div></div>`).join('')
       : '';
@@ -1376,7 +1447,10 @@ async function loadDash(){
     const inadItens=(inad.itens||[]).length
       ? inad.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.numero||'—'} · ${it.cliente_nome||'Sem cliente'}</div><div style="font-size:11px;color:#8aa">Venc. ${it.vencimento||'—'} · atraso ${it.dias_atraso||0} dia(s) · ${brl(it.valor||0)}</div></div>`).join('')
       : '';
-    if((aso.itens||[]).length || (calc.itens||[]).length || (benPend.itens||[]).length || (asoInval.itens||[]).length || (inad.itens||[]).length){
+    const certItens=(certs.itens||[]).length
+      ? certs.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.nome||'—'} <span style="opacity:.7">(${it.origem||it.tipo||'certificado'})</span></div><div style="font-size:11px;color:#8aa">Vence em ${it.validade||'—'} · faltam ${it.dias_restantes} dia(s)</div></div>`).join('')
+      : '';
+    if((aso.itens||[]).length || (calc.itens||[]).length || (benPend.itens||[]).length || (asoInval.itens||[]).length || (inad.itens||[]).length || (certs.itens||[]).length){
       al.style.display='grid';
       const cards=[];
       if((inad.itens||[]).length){
@@ -1408,6 +1482,13 @@ async function loadDash(){
         cards.push(`<button type="button" class="card dash-alert-btn" style="margin-bottom:0;text-align:left" onclick="abrirDashboardDestino('sst')">
           <div class="card-header" style="margin-bottom:8px"><span class="card-title">Eventos vencendo (ASO até 30 dias)</span><div style="display:flex;align-items:center;gap:8px"><span class="pill p-lj">${aso.qtd||0}</span><span class="metric-go" style="font-size:9px">Ir</span></div></div>
           <div>${asoItens}</div>
+        </button>`);
+      }
+      if((certs.itens||[]).length){
+        cards.push(`<button type="button" class="card dash-alert-btn" style="margin-bottom:0;text-align:left" onclick="abrirDashboardDestino('config')">
+          <div class="card-header" style="margin-bottom:8px"><span class="card-title">Certificados próximos do vencimento</span><div style="display:flex;align-items:center;gap:8px"><span class="pill p-lj">${certs.qtd||0}</span><span class="metric-go" style="font-size:9px">Ir</span></div></div>
+          <div style="font-size:11px;color:#8aa;margin-bottom:6px">Avisos em 30 dias e depois a cada 5 dias.</div>
+          <div>${certItens}</div>
         </button>`);
       }
       al.innerHTML=cards.join('');
@@ -2027,6 +2108,7 @@ async function renderEmps(){
       <div style="font-weight:700;font-size:15px;color:var(--azul)">${e.nome}</div>
       <div style="font-size:12px;color:#666;margin-top:2px">${e.razao||''} ${e.cnpj?'· CNPJ: '+fmtDoc(e.cnpj):''}</div>
       <div style="font-size:11px;color:#888;margin-top:2px">${e.end_fmt||''} ${e.site?'| <a onclick="event.stopPropagation()" href="'+normUrl(e.site)+'" target="_blank" rel="noopener noreferrer">'+e.site+'</a>':''}</div>
+      <div style="font-size:11px;color:#4b5563;margin-top:4px">Certificado: ${e.cert_configurado?(e.cert_ativo?'ativo na empresa':'cadastrado e inativo'):'não cadastrado'} · Política atual: ${certPolicyLabel(document.getElementById('cfg-pdf-cert-policy')?.value||'prefer_empresa')}</div>
     </div>
     <div style="display:flex;gap:7px">
       <button class="btn b-gh b-sm" onclick="event.stopPropagation();openModalEmp('editar',${e.id})">Editar</button>
@@ -2038,6 +2120,9 @@ async function renderEmps(){
 function openModalEmp(modo,id){
   document.getElementById('eid').value='';
   ['enome','erazao','ecnpj','esite','econtato','econtato-email','econtato-tel','elogo','etel','eemail','ecep','elogr','enum-end','ebairro','ecidade','estado','ecompl','epix','ebanco','eagencia','econta','eboleto'].forEach(k=>document.getElementById(k).value='');
+  document.getElementById('ecert-file').value='';
+  document.getElementById('ecert-pass').value='';
+  document.getElementById('ecert-info').textContent='Nenhum certificado cadastrado.';
   if(modo==='editar'&&id){
     const e=emps.find(x=>x.id===id); if(!e)return;
     document.getElementById('mod-emp-tit').textContent='Editar empresa';
@@ -2068,12 +2153,63 @@ function openModalEmp(modo,id){
     document.getElementById('eagencia').value=e.agencia||'';
     document.getElementById('econta').value=e.conta||'';
     document.getElementById('eboleto').value=e.boleto||'';
+    document.getElementById('ecert-info').textContent=certInfoHtml(e);
   } else {
     document.getElementById('mod-emp-tit').textContent='Nova empresa';
   }
   setModalClean('emp');
   document.getElementById('mod-emp').classList.add('on');
   setTimeout(()=>document.getElementById('enome').focus(),120);
+}
+
+async function uploadCertEmpresa(){
+  const id=document.getElementById('eid').value;
+  if(!id){ alert('Salve a empresa primeiro para vincular o certificado.'); return; }
+  const arq=document.getElementById('ecert-file').files?.[0];
+  const senha=(document.getElementById('ecert-pass').value||'').trim();
+  if(!arq){ alert('Selecione o arquivo do certificado .p12 ou .pfx.'); return; }
+  if(!senha){ alert('Informe a senha do certificado da empresa.'); return; }
+  const fd=new FormData();
+  fd.append('arquivo',arq);
+  fd.append('senha',senha);
+  const r=await apiForm('/api/empresas/'+id+'/certificado',fd,'POST');
+  if(r.erro){ alert(r.erro); return; }
+  await loadEmps();
+  const e=emps.find(x=>String(x.id)===String(id));
+  document.getElementById('ecert-file').value='';
+  document.getElementById('ecert-pass').value='';
+  document.getElementById('ecert-info').textContent=certInfoHtml(e||r.empresa);
+  renderEmps();
+  showSt('st-emp','Certificado da empresa salvo!',false);
+}
+
+async function atualizarSenhaCertEmpresa(){
+  const id=document.getElementById('eid').value;
+  if(!id){ alert('Nenhuma empresa selecionada.'); return; }
+  const senha=(document.getElementById('ecert-pass').value||'').trim();
+  if(!senha){ alert('Informe a nova senha do certificado da empresa.'); return; }
+  const r=await api('/api/empresas/'+id+'/certificado/senha','PUT',{senha});
+  if(r.erro){ alert(r.erro); return; }
+  await loadEmps();
+  const e=emps.find(x=>String(x.id)===String(id));
+  document.getElementById('ecert-pass').value='';
+  document.getElementById('ecert-info').textContent=certInfoHtml(e||r.empresa);
+  renderEmps();
+  showSt('st-emp','Senha do certificado da empresa atualizada.',false);
+}
+
+async function removerCertEmpresa(){
+  const id=document.getElementById('eid').value;
+  if(!id){ alert('Nenhuma empresa selecionada.'); return; }
+  if(!confirm('Remover o certificado digital desta empresa?')) return;
+  const r=await api('/api/empresas/'+id+'/certificado','DELETE');
+  if(r.erro){ alert(r.erro); return; }
+  await loadEmps();
+  document.getElementById('ecert-file').value='';
+  document.getElementById('ecert-pass').value='';
+  document.getElementById('ecert-info').textContent='Nenhum certificado cadastrado.';
+  renderEmps();
+  showSt('st-emp','Certificado da empresa removido.',false);
 }
 
 async function salvarEmpresa(){
@@ -2133,7 +2269,7 @@ async function renderUsr(){
     <td>${u.email}</td>
     <td>${u.telefone?fmtTelefone(u.telefone):'—'}</td>
     <td><span class="pill ${u.perfil==='dono'?'p-lj':u.perfil==='admin'?'p-az':'p-ci'}">${u.perfil}</span></td>
-    <td><span class="pill ${u.ativo?'p-vd':'p-ci'}">${u.ativo?'Ativo':'Inativo'}</span></td>
+    <td><span class="pill ${u.ativo?'p-vd':'p-ci'}">${u.ativo?'Ativo':'Inativo'}</span><div style="font-size:10px;color:#6b7280;margin-top:4px">Certificado: ${u.cert_configurado?(u.cert_ativo?'ativo':'inativo'):'não cadastrado'}</div></td>
     <td><div class="tac">
       <button class="btn b-gh b-sm" onclick="event.stopPropagation();openModalUsr('editar',${u.id})">Editar</button>
       <button class="btn b-ghr b-sm" onclick="event.stopPropagation();excluirUsr(${u.id},'${u.nome.replace(/'/g,"\\'")}')">Excluir</button>
@@ -2144,6 +2280,10 @@ async function renderUsr(){
 function openModalUsr(modo,id){
   document.getElementById('uid-edit').value='';
   ['un','ue','utel','up'].forEach(k=>document.getElementById(k).value='');
+  document.getElementById('ucert-file').value='';
+  document.getElementById('ucert-pass').value='';
+  document.getElementById('ucert-ativo').checked=true;
+  document.getElementById('ucert-info').textContent='Nenhum certificado cadastrado.';
   document.getElementById('uperfil').value='admin';
   document.getElementById('uativo').value='true';
   areaChecksUsuario([]);
@@ -2158,6 +2298,8 @@ function openModalUsr(modo,id){
       maskTelefone(document.getElementById('utel'));
       document.getElementById('uperfil').value=u.perfil||'admin';
       document.getElementById('uativo').value=String(u.ativo);
+      document.getElementById('ucert-ativo').checked=!!u.cert_ativo;
+      document.getElementById('ucert-info').textContent=certInfoHtml(u);
       areaChecksUsuario(u.areas||[]);
     });
   } else {
@@ -2165,6 +2307,55 @@ function openModalUsr(modo,id){
   }
   setModalClean('usr');
   document.getElementById('mod-usr').classList.add('on');
+}
+
+async function uploadCertUsuario(){
+  const id=document.getElementById('uid-edit').value;
+  if(!id){ alert('Salve o usuário primeiro para vincular o certificado.'); return; }
+  const arq=document.getElementById('ucert-file').files?.[0];
+  const senha=(document.getElementById('ucert-pass').value||'').trim();
+  const ativo=document.getElementById('ucert-ativo').checked;
+  if(!arq){ alert('Selecione o arquivo do certificado .p12 ou .pfx.'); return; }
+  if(!senha){ alert('Informe a senha do certificado do usuário.'); return; }
+  const fd=new FormData();
+  fd.append('arquivo',arq);
+  fd.append('senha',senha);
+  fd.append('ativo',ativo?'1':'0');
+  const r=await apiForm('/api/usuarios/'+id+'/certificado',fd,'POST');
+  if(r.erro){ alert(r.erro); return; }
+  await renderUsr();
+  document.getElementById('ucert-file').value='';
+  document.getElementById('ucert-pass').value='';
+  document.getElementById('ucert-info').textContent=certInfoHtml(r.usuario);
+  showSt('st-usr','Certificado do usuário salvo!',false);
+}
+
+async function atualizarSenhaCertUsuario(){
+  const id=document.getElementById('uid-edit').value;
+  if(!id){ alert('Nenhum usuário selecionado.'); return; }
+  const senha=(document.getElementById('ucert-pass').value||'').trim();
+  const ativo=document.getElementById('ucert-ativo').checked;
+  if(!senha){ alert('Informe a nova senha do certificado do usuário.'); return; }
+  const r=await api('/api/usuarios/'+id+'/certificado/senha','PUT',{senha,ativo});
+  if(r.erro){ alert(r.erro); return; }
+  await renderUsr();
+  document.getElementById('ucert-pass').value='';
+  document.getElementById('ucert-info').textContent=certInfoHtml(r.usuario);
+  showSt('st-usr','Senha do certificado do usuário atualizada.',false);
+}
+
+async function removerCertUsuario(){
+  const id=document.getElementById('uid-edit').value;
+  if(!id){ alert('Nenhum usuário selecionado.'); return; }
+  if(!confirm('Remover o certificado digital deste usuário?')) return;
+  const r=await api('/api/usuarios/'+id+'/certificado','DELETE');
+  if(r.erro){ alert(r.erro); return; }
+  document.getElementById('ucert-file').value='';
+  document.getElementById('ucert-pass').value='';
+  document.getElementById('ucert-ativo').checked=true;
+  document.getElementById('ucert-info').textContent='Nenhum certificado cadastrado.';
+  await renderUsr();
+  showSt('st-usr','Certificado do usuário removido.',false);
 }
 
 async function salvarUsuario(){
@@ -2197,10 +2388,14 @@ async function loadConfig(){
   const d=await api('/api/config');
   document.getElementById('cfg-num-base').value=d.num_base||'100';
   document.getElementById('cfg-num-ultima').value=d.num_ultima||'0';
+  const pol=d.pdf_cert_policy||'prefer_empresa';
+  document.getElementById('cfg-pdf-cert-policy').value=pol;
+  document.getElementById('cfg-cert-policy-resumo').textContent=certPolicySummary(pol);
 }
 
 async function salvarConfig(){
-  await api('/api/config','POST',{num_base:document.getElementById('cfg-num-base').value,num_ultima:document.getElementById('cfg-num-ultima').value});
+  const pol=document.getElementById('cfg-pdf-cert-policy').value||'prefer_empresa';
+  await api('/api/config','POST',{num_base:document.getElementById('cfg-num-base').value,num_ultima:document.getElementById('cfg-num-ultima').value,pdf_cert_policy:pol});
   await loadProxNum();
   alert('Configurações salvas! Próxima medição: '+document.getElementById('prox-num').textContent);
 }
@@ -2748,7 +2943,7 @@ function renderArquivoTree(categorias){
   }
   
   const categoryEmojis={
-    'holerite':'💼','aso':'🏥','epi':'🦺','treinamento':'📚','folha_ponto':'⏰',
+    'holerite':'💼','aso':'🏥','atestado':'🩺','epi':'🦺','treinamento':'📚','folha_ponto':'⏰',
     'contrato_trabalho':'📋','vale_transporte':'🚌','requisicao_vale_transporte':'📝','uniforme':'👕','outros':'📦'
   };
 
@@ -2951,6 +3146,7 @@ async function delArquivoFuncionario(id){
 
 async function uploadDocumentoRHLote(){
   const tipo=document.getElementById('rh-lote-tipo')?.value||'holerite';
+  const funcionarioId=document.getElementById('rh-lote-func')?.value||'';
   const f=document.getElementById('rh-lote-arq').files?.[0];
   if(!f){alert('Selecione o arquivo PDF.');return;}
   const comp=(document.getElementById('rh-lote-comp').value||'').trim();
@@ -2961,24 +3157,44 @@ async function uploadDocumentoRHLote(){
   const canalAss=mapaAss[(optAss||'').trim()];
   if(!canalAss){alert('Opção inválida.');return;}
 
-  const endpoint=(tipo==='folha_ponto')?'/api/funcionarios/folhas-ponto/upload':'/api/funcionarios/holerites/upload';
-  const nomeTipo=(tipo==='folha_ponto')?'folhas de ponto':'holerites';
   const fd=new FormData();
   fd.append('arquivo',f);
   fd.append('competencia',comp);
   fd.append('canal_assinatura',canalAss);
+  fd.append('categoria',tipo);
+  let endpoint='';
+  let nomeTipo='arquivos';
+  if(funcionarioId){
+    endpoint='/api/funcionarios/'+funcionarioId+'/arquivos';
+    nomeTipo=(tipo==='folha_ponto')?'folha de ponto':(tipo==='holerite'?'holerite':tipo);
+  }else if(tipo==='folha_ponto'){
+    endpoint='/api/funcionarios/folhas-ponto/upload';
+    nomeTipo='folhas de ponto';
+  }else if(tipo==='holerite'){
+    endpoint='/api/funcionarios/holerites/upload';
+    nomeTipo='holerites';
+  }else{
+    endpoint='/api/funcionarios/documentos-rh/upload';
+    nomeTipo=(tipo==='atestado')?'atestados':'documentos RH';
+  }
   const r=await fetch(endpoint,{method:'POST',body:fd});
   const d=await r.json();
   if(d.erro){alert(d.erro);return;}
-  let msg=`Processamento de ${nomeTipo} concluído. Arquivos: ${d.arquivos_gerados}.`;
+  const qtd=(typeof d.arquivos_gerados==='number')?d.arquivos_gerados:1;
+  const assinaturasAuto=(typeof d.assinaturas_auto==='number')
+    ? d.assinaturas_auto
+    : (d.assinatura_auto && ['solicitada','link_gerado'].includes(d.assinatura_auto.status) ? 1 : 0);
+  let msg=`Envio de ${nomeTipo} concluído. Arquivos: ${qtd}.`;
+  if(funcionarioId) msg+=' Documento vinculado ao funcionário selecionado.';
   if(canalAss==='nao') msg+=' Assinatura não solicitada.';
-  if(canalAss==='whatsapp') msg+=` Assinaturas solicitadas: ${d.assinaturas_auto||0}.`;
-  if(canalAss==='link') msg+=` Links gerados: ${d.assinaturas_auto||0}.`;
+  if(canalAss==='whatsapp') msg+=` Assinaturas solicitadas: ${assinaturasAuto}.`;
+  if(canalAss==='link') msg+=` Links gerados: ${assinaturasAuto}.`;
   showSt('st-rh',msg,false);
   if(d.paginas_sem_funcionario?.length) alert('Páginas sem funcionário identificado: '+d.paginas_sem_funcionario.join(', '));
   if(d.duplicadas?.length) alert('Competências já existentes (sem duplicar): '+d.duplicadas.join(', '));
   document.getElementById('rh-lote-arq').value='';
   document.getElementById('rh-lote-comp').value='';
+  document.getElementById('rh-lote-func').value='';
 }
 
 async function uploadSSTArquivo(){

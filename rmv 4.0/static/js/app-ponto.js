@@ -356,5 +356,6 @@ function pontoBaixarEspelhoMensal(){
     showSt('ponto-st','Competência inválida. Use YYYY-MM.',true);
     return;
   }
-  window.location.href='/api/ponto/espelho-mensal?funcionario_id='+fid+'&competencia='+encodeURIComponent(comp);
+  const url='/api/ponto/espelho-mensal?funcionario_id='+fid+'&competencia='+encodeURIComponent(comp);
+  window.open(url, '_blank');
 }

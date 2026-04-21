@@ -681,22 +681,22 @@ def register_ponto_routes(
 
         nome_arquivo = f'espelho_ponto_{funcionario.id}_{competencia}.pdf'
         saida = io.BytesIO()
-        doc = SimpleDocTemplate(saida, pagesize=A4, leftMargin=8 * mm, rightMargin=8 * mm, topMargin=8 * mm, bottomMargin=8 * mm)
-        largura, _ = A4
+        doc = SimpleDocTemplate(saida, pagesize=A4, leftMargin=10 * mm, rightMargin=10 * mm, topMargin=10 * mm, bottomMargin=12 * mm)
+        largura = A4[0] - (doc.leftMargin + doc.rightMargin)  # largura útil dentro das margens
         styles = getSampleStyleSheet()
         st_titulo = ParagraphStyle('ptt', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=13, alignment=TA_CENTER)
-        st_small = ParagraphStyle('pts', parent=styles['Normal'], fontName='Helvetica', fontSize=7, leading=8)
-        st_sign = ParagraphStyle('ptsig', parent=styles['Normal'], fontName='Helvetica', fontSize=7, leading=8, alignment=TA_CENTER)
+        st_small = ParagraphStyle('pts', parent=styles['Normal'], fontName='Helvetica', fontSize=7.4, leading=9.2)
+        st_sign = ParagraphStyle('ptsig', parent=styles['Normal'], fontName='Helvetica', fontSize=7.6, leading=9.6, alignment=TA_CENTER)
 
         elementos = []
+        empresa = Empresa.query.get(funcionario.empresa_id) if funcionario.empresa_id else None
         logo = get_logo()
-        logo_cell = ''
+        logo_cell = p(f'<b>{(empresa.nome if empresa else "RM FACILITIES LTDA")}</b>', st_small, html=True)
         if logo and os.path.exists(logo):
             try:
-                logo_cell = Image(logo, width=20 * mm, height=8 * mm)
+                logo_cell = Image(logo, width=30 * mm, height=13 * mm)
             except Exception:
-                logo_cell = 'RM'
-        empresa = Empresa.query.get(funcionario.empresa_id) if funcionario.empresa_id else None
+                logo_cell = p(f'<b>{(empresa.nome if empresa else "RM FACILITIES LTDA")}</b>', st_small, html=True)
         inicio_br, fim_br = fmt_comp_br(competencia)
 
         cabecalho = [[
@@ -710,22 +710,22 @@ def register_ponto_routes(
             p('<b>Escala:</b> Normal', st_small, html=True),
             p(f'<b>Data de emissão:</b> {datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y")}', st_small, html=True),
         ]]
-        tabela_cab = Table(cabecalho, colWidths=[largura * 0.12, largura * 0.43, largura * 0.18, largura * 0.19])
+        tabela_cab = Table(cabecalho, colWidths=[largura * 0.12, largura * 0.46, largura * 0.21, largura * 0.21])
         tabela_cab.setStyle(TableStyle([
             ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#777777')),
             ('SPAN', (0, 0), (0, 1)),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('ALIGN', (0, 0), (0, 1), 'CENTER'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 4),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-            ('TOPPADDING', (0, 0), (-1, -1), 3),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ]))
 
         elementos.append(p('Espelho Ponto', st_titulo))
-        elementos.append(Spacer(1, 2))
+        elementos.append(Spacer(1, 6))
         elementos.append(tabela_cab)
-        elementos.append(Spacer(1, 3))
+        elementos.append(Spacer(1, 6))
 
         tabela_dias = [['Data', 'Ent. 1', 'Sai. 1', 'Ent. 2', 'Sai. 2', 'Previstas', 'Diurnas', 'Intervalo', 'Faltas', 'Ext. 100']]
         tabela_dias.extend(linhas)
@@ -735,15 +735,15 @@ def register_ponto_routes(
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e8e8e8')),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 6.6),
+            ('FONTSIZE', (0, 0), (-1, -1), 6.9),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 2),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 2),
-            ('TOPPADDING', (0, 0), (-1, -1), 1.6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 1.6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 2.6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 2.6),
+            ('TOPPADDING', (0, 0), (-1, -1), 2.4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2.4),
         ]))
         elementos.append(tabela_main)
-        elementos.append(Spacer(1, 4))
+        elementos.append(Spacer(1, 8))
 
         resumo_line = (
             f'<b>Previstas:</b> {_ponto_fmt_minutos(total_previstas)}   '
@@ -752,16 +752,16 @@ def register_ponto_routes(
             f'<b>Faltas:</b> -{_ponto_fmt_minutos(total_faltas)}   '
             f'<b>Extras 100%:</b> {_ponto_fmt_minutos(total_extras)}'
         )
-        resumo_tbl = Table([[p(resumo_line, st_small, html=True)]], colWidths=[largura * 0.92])
+        resumo_tbl = Table([[p(resumo_line, st_small, html=True)]], colWidths=[largura * 1.00])
         resumo_tbl.setStyle(TableStyle([
             ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#888888')),
-            ('LEFTPADDING', (0, 0), (-1, -1), 4),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-            ('TOPPADDING', (0, 0), (-1, -1), 3),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ]))
         elementos.append(resumo_tbl)
-        elementos.append(Spacer(1, 2))
+        elementos.append(Spacer(1, 14))
 
         assinatura = Table([
             [
@@ -770,21 +770,32 @@ def register_ponto_routes(
             ],
             [
                 p(f'<b>Marcações consideradas:</b> {datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y %H:%M")}', st_small, html=True),
-                p('Assinatura do colaborador: ______________________________', st_sign),
+                p('Assinatura do colaborador:', st_sign),
             ],
-        ], colWidths=[largura * 0.62, largura * 0.30])
+            [
+                p('', st_small),
+                p('____________________________________________________________', st_sign),
+            ],
+            [
+                p('', st_small),
+                p(' ', st_sign),
+            ],
+        ], colWidths=[largura * 0.67, largura * 0.33])
         assinatura.setStyle(TableStyle([
             ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#888888')),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 4),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-            ('TOPPADDING', (0, 0), (-1, -1), 3),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (1, 2), (1, 2), 18),
+            ('TOPPADDING', (1, 3), (1, 3), 10),
+            ('BOTTOMPADDING', (1, 3), (1, 3), 18),
         ]))
         elementos.append(assinatura)
-        elementos.append(Spacer(1, 2))
+        elementos.append(Spacer(1, 6))
         elementos.append(p('Assinado eletronicamente por RM Facilities', st_small))
 
         doc.build(elementos)
         saida.seek(0)
-        return send_file(saida, mimetype='application/pdf', as_attachment=True, download_name=nome_arquivo)
+        return send_file(saida, mimetype='application/pdf', as_attachment=False, download_name=nome_arquivo)
