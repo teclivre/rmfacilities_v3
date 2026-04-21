@@ -597,6 +597,35 @@ class WhatsAppMensagem(db.Model):
         d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
         return d
 
+class ShortLink(db.Model):
+    __tablename__='short_link'
+    id=db.Column(db.Integer,primary_key=True)
+    codigo=db.Column(db.String(12),unique=True,nullable=False,index=True)
+    destino=db.Column(db.String(1000),nullable=False)
+    criado_em=db.Column(db.DateTime,default=utcnow)
+
+def _short_link_criar(destino):
+    """Cria ou reutiliza link curto para o destino dado."""
+    ex=ShortLink.query.filter_by(destino=destino).first()
+    if ex:
+        return ex.codigo
+    for _ in range(8):
+        codigo=secrets.token_urlsafe(6)[:8]
+        if not ShortLink.query.filter_by(codigo=codigo).first():
+            sl=ShortLink(codigo=codigo,destino=destino)
+            db.session.add(sl)
+            try:
+                db.session.commit()
+                return codigo
+            except Exception:
+                db.session.rollback()
+    return None
+
+@app.route('/s/<codigo>')
+def short_link_redirect(codigo):
+    sl=ShortLink.query.filter_by(codigo=codigo).first_or_404()
+    return redirect(sl.destino)
+
 _holerite_jobs={}
 
 def hs(s): return hashlib.sha256(s.encode()).hexdigest()
@@ -3504,13 +3533,21 @@ def api_medicao_solicitar_assinatura(id):
 
     link=f"{request.url_root.rstrip('/')}/assinatura/{token}"
     validacao_link=f"{request.url_root.rstrip('/')}/assinatura/validar/{m.assinatura_codigo}"
+    try:
+        sc=_short_link_criar(link)
+        if sc:
+            link_curto=f"{request.url_root.rstrip('/')}/s/{sc}"
+        else:
+            link_curto=link
+    except Exception:
+        link_curto=link
     enviado_wa=False
     if canal=='whatsapp':
         if not telefone or not wa_is_valid_number(telefone):
             return jsonify({'erro':'Telefone WhatsApp invalido para envio do link.'}),400
         msg=(
             f"Olá! Segue link para assinatura eletrônica da medição {m.numero or ''} "
-            f"(vence em 7 dias): {link}"
+            f"(vence em 7 dias): {link_curto}"
         )
         wa_send_text(telefone,msg)
         enviado_wa=True
@@ -3521,7 +3558,7 @@ def api_medicao_solicitar_assinatura(id):
         'expira_em':expira.isoformat(),
         'assinatura_codigo':m.assinatura_codigo,
     })
-    return jsonify({'ok':True,'medicao_id':m.id,'link':link,'validacao_link':validacao_link,'canal':('whatsapp' if enviado_wa else 'link'),'expira_em':expira.isoformat()})
+    return jsonify({'ok':True,'medicao_id':m.id,'link':link,'link_curto':link_curto,'validacao_link':validacao_link,'canal':('whatsapp' if enviado_wa else 'link'),'expira_em':expira.isoformat()})
 
 @app.route('/assinatura/<token>')
 def assinatura_publica(token):
@@ -3535,6 +3572,32 @@ def assinatura_publica(token):
         db.session.commit()
         return render_template('assinatura.html',ok=False,mensagem='Link expirado. Solicite um novo link.',medicao=m)
     return render_template('assinatura.html',ok=True,mensagem='',medicao=m)
+
+@app.route('/api/assinatura/<token>/enviar-otp',methods=['GET','POST'])
+def api_assinatura_enviar_otp(token):
+    m=Medicao.query.filter_by(assinatura_token=token).first()
+    if not m:
+        return jsonify({'erro':'Link inválido.'}),404
+    if (m.assinatura_status or '')=='assinado':
+        return jsonify({'erro':'Documento já assinado.'}),400
+    if m.assinatura_expira_em and m.assinatura_expira_em<utcnow():
+        return jsonify({'erro':'Link expirado.'}),400
+    cli=Cliente.query.get(m.cliente_id) if m.cliente_id else None
+    tel=wa_norm_number((cli.telefone if cli else '') or '')
+    email=((getattr(cli,'email','') or '').strip() if cli else '')
+    if not tel and not email:
+        return jsonify({'erro':'Nenhum telefone ou e-mail cadastrado para envio do OTP.'}),400
+    codigo=_otp_new_code()
+    m.assinatura_otp_hash=token_hash(codigo)
+    m.assinatura_otp_expira_em=utcnow()+timedelta(minutes=10)
+    m.assinatura_otp_tentativas=0
+    try:
+        envio=_send_signature_otp(codigo,nome_dest=(cli.nome if cli else ''),telefone=tel,email=email,contexto='medicao')
+        db.session.commit()
+        return jsonify({'ok':True,'mensagem':f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",'canal':envio.get('canal',''),'destino':envio.get('destino','')})
+    except Exception as ex:
+        db.session.rollback()
+        return jsonify({'erro':f'Falha ao enviar OTP: {str(ex)}'}),500
 
 @app.route('/assinatura/validar/<codigo>')
 def assinatura_validar_publica(codigo):
@@ -3828,7 +3891,7 @@ def api_funcionario_upload_arquivo(id):
             if rs.get('ok'):
                 assinatura_auto={
                     'status':('solicitada' if canal_ass=='whatsapp' else 'link_gerado'),
-                    'link':rs.get('link',''),
+                    'link':(rs.get('link_curto') or rs.get('link','')),
                     'canal':canal_ass,
                 }
             else:
@@ -3863,11 +3926,16 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
     arquivo.ass_expira_em=utcnow()+timedelta(days=max(1,int(dias_validade or 7)))
 
     link=f"{request.url_root.rstrip('/')}/doc/assinar/{arquivo.ass_token}"
+    try:
+        sc=_short_link_criar(link)
+        link_curto=(f"{request.url_root.rstrip('/')}/s/{sc}" if sc else link)
+    except Exception:
+        link_curto=link
     enviado_wa=False
     if canal=='whatsapp':
         nome_func=(funcionario.nome if funcionario else 'colaborador')
         msg=(f"Olá, {nome_func}! Segue o link para assinatura do documento "
-             f"'{arquivo.nome_arquivo}'. O link expira em 7 dias: {link}")
+             f"'{arquivo.nome_arquivo}'. O link expira em 7 dias: {link_curto}")
         wa_send_text(tel,msg)
         enviado_wa=True
 
@@ -3878,6 +3946,7 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
     return {
         'ok':True,
         'link':link,
+        'link_curto':link_curto,
         'canal':('whatsapp' if enviado_wa else 'link'),
         'expira_em':(arquivo.ass_expira_em.isoformat() if arquivo.ass_expira_em else ''),
         'enviado_wa':enviado_wa,
@@ -4061,7 +4130,7 @@ def api_func_arquivo_solicitar_assinatura(id):
         return jsonify({'erro':rs.get('erro') or 'Falha ao solicitar assinatura.'}),400
     audit_event('func_arquivo_assinatura_solicitada','usuario',session.get('uid'),'funcionario',f.id,True,
                 {'arquivo_id':id,'nome':a.nome_arquivo,'canal':rs.get('canal','link')})
-    return jsonify({'ok':True,'arquivo_id':id,'link':rs.get('link',''),
+    return jsonify({'ok':True,'arquivo_id':id,'link':rs.get('link',''),'link_curto':rs.get('link_curto',''),
                     'canal':rs.get('canal','link'),
                     'expira_em':rs.get('expira_em','')})
 
@@ -4076,6 +4145,32 @@ def func_doc_assinar_publica(token):
         a.ass_status='expirado'; db.session.commit()
         return render_template('doc_assinatura.html',ok=False,mensagem='Link expirado. Solicite um novo link ao RH.',arquivo=a,funcionario=Funcionario.query.get(a.funcionario_id))
     return render_template('doc_assinatura.html',ok=True,mensagem='',arquivo=a,funcionario=Funcionario.query.get(a.funcionario_id))
+
+@app.route('/api/doc/assinar/<token>/enviar-otp',methods=['GET','POST'])
+def api_func_doc_assinatura_enviar_otp(token):
+    a=FuncionarioArquivo.query.filter_by(ass_token=token).first()
+    if not a:
+        return jsonify({'erro':'Link inválido.'}),404
+    if (a.ass_status or '')=='assinado':
+        return jsonify({'erro':'Documento já assinado.'}),400
+    if a.ass_expira_em and a.ass_expira_em<utcnow():
+        return jsonify({'erro':'Link expirado.'}),400
+    f=Funcionario.query.get(a.funcionario_id)
+    tel=(f.telefone if f else '') or ''
+    email=(f.email if f else '') or ''
+    if not (wa_norm_number(tel) or (email or '').strip()):
+        return jsonify({'erro':'Nenhum telefone ou e-mail cadastrado para envio do OTP.'}),400
+    codigo=_otp_new_code()
+    a.ass_otp_hash=token_hash(codigo)
+    a.ass_otp_expira_em=utcnow()+timedelta(minutes=10)
+    a.ass_otp_tentativas=0
+    try:
+        envio=_send_signature_otp(codigo,nome_dest=(f.nome if f else ''),telefone=tel,email=email,contexto='documento')
+        db.session.commit()
+        return jsonify({'ok':True,'mensagem':f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",'canal':envio.get('canal',''),'destino':envio.get('destino','')})
+    except Exception as ex:
+        db.session.rollback()
+        return jsonify({'erro':f'Falha ao enviar OTP: {str(ex)}'}),500
 
 @app.route('/api/doc/assinar/<token>/confirmar',methods=['POST'])
 def api_func_doc_assinatura_confirmar(token):
@@ -5104,8 +5199,13 @@ def api_envelope_enviar(id):
         if not sig.token:
             sig.token=secrets.token_urlsafe(24)
         link=f"{url_root}/envelope/assinar/{sig.token}"
+        try:
+            sc=_short_link_criar(link)
+            link_curto=(f"{url_root}/s/{sc}" if sc else link)
+        except Exception:
+            link_curto=link
         if canal=='link':
-            enviados.append({'id':sig.id,'nome':sig.nome,'canal':'link','link':link})
+            enviados.append({'id':sig.id,'nome':sig.nome,'canal':'link','link':link,'link_curto':link_curto})
             continue
         if canal=='whatsapp':
             if not (sig.telefone or '').strip():
@@ -5115,10 +5215,10 @@ def api_envelope_enviar(id):
             msg=(f"Olá {sig.nome}, você recebeu um documento para assinar eletronicamente.\n"
                   f"🏢 Empresa remetente: *{empresa_nome}*\n"
                  f"📄 Documento: *{env.titulo}*\n"
-                 f"🔗 Acesse e assine aqui:\n{link}")
+                 f"🔗 Acesse e assine aqui:\n{link_curto}")
             try:
                 wa_send_text(tel,msg)
-                enviados.append({'id':sig.id,'nome':sig.nome,'canal':'whatsapp','destino':tel,'link':link})
+                enviados.append({'id':sig.id,'nome':sig.nome,'canal':'whatsapp','destino':tel,'link':link,'link_curto':link_curto})
             except Exception as e:
                 falhas.append({'id':sig.id,'nome':sig.nome,'canal':'whatsapp','erro':str(e)})
             continue
@@ -5127,8 +5227,8 @@ def api_envelope_enviar(id):
                 falhas.append({'id':sig.id,'nome':sig.nome,'canal':'email','erro':'Signatário sem e-mail cadastrado.'})
                 continue
             try:
-                smtp_send_link_assinatura(sig.email.strip(),sig.nome or 'Signatário',env.titulo or 'Documento',link)
-                enviados.append({'id':sig.id,'nome':sig.nome,'canal':'email','destino':sig.email.strip(),'link':link})
+                smtp_send_link_assinatura(sig.email.strip(),sig.nome or 'Signatário',env.titulo or 'Documento',link_curto)
+                enviados.append({'id':sig.id,'nome':sig.nome,'canal':'email','destino':sig.email.strip(),'link':link,'link_curto':link_curto})
             except Exception as e:
                 falhas.append({'id':sig.id,'nome':sig.nome,'canal':'email','erro':str(e)})
     env.status='pendente'
@@ -5146,7 +5246,12 @@ def api_envelope_sig_link(id,sig_id):
         db.session.commit()
     url_root=request.url_root.rstrip('/')
     link=f"{url_root}/envelope/assinar/{sig.token}"
-    return jsonify({'link':link,'nome':sig.nome})
+    try:
+        sc=_short_link_criar(link)
+        link_curto=(f"{url_root}/s/{sc}" if sc else link)
+    except Exception:
+        link_curto=link
+    return jsonify({'link':link,'link_curto':link_curto,'nome':sig.nome})
 
 
 @app.route('/envelope/assinar/<token>/arquivo/<int:arq_id>')
@@ -5177,6 +5282,28 @@ def envelope_assinar_publica(token):
     empresa=Empresa.query.get(env.empresa_id) if env.empresa_id else Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
     empresas=[empresa] if empresa else []
     return render_template('envelope_assinar.html',sig=sig,env=env,arquivos=arquivos,empresas=empresas)
+
+@app.route('/api/envelope/assinar/<token>/enviar-otp',methods=['GET','POST'])
+def api_envelope_assinatura_enviar_otp(token):
+    sig=AssinaturaEnvelopeSignatario.query.filter_by(token=token).first_or_404()
+    if sig.status=='assinado':
+        return jsonify({'erro':'Você já assinou este documento.'}),400
+    env=AssinaturaEnvelope.query.get_or_404(sig.envelope_id)
+    if env.expira_em and datetime.utcnow() > env.expira_em:
+        return jsonify({'erro':'O prazo para assinatura deste documento expirou.'}),400
+    if not (wa_norm_number(sig.telefone or '') or (sig.email or '').strip()):
+        return jsonify({'erro':'Nenhum telefone ou e-mail cadastrado para envio do OTP.'}),400
+    codigo=_otp_new_code()
+    sig.ass_otp_hash=token_hash(codigo)
+    sig.ass_otp_expira_em=utcnow()+timedelta(minutes=10)
+    sig.ass_otp_tentativas=0
+    try:
+        envio=_send_signature_otp(codigo,nome_dest=(sig.nome or ''),telefone=sig.telefone or '',email=sig.email or '',contexto='envelope')
+        db.session.commit()
+        return jsonify({'ok':True,'mensagem':f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",'canal':envio.get('canal',''),'destino':envio.get('destino','')})
+    except Exception as ex:
+        db.session.rollback()
+        return jsonify({'erro':f'Falha ao enviar OTP: {str(ex)}'}),500
 
 
 # API pública: confirmar assinatura

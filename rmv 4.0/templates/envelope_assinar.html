@@ -148,6 +148,30 @@ input:focus{border-color:#205d8a}
 const TOKEN='{{ sig.token or "" }}';
 const ENV_COD='{{ env.codigo }}';
 
+async function enviarOtpAutomaticoEnvelope(){
+  if(!TOKEN) return;
+  const erroBox=document.getElementById('erro-box');
+  if(!erroBox) return;
+  erroBox.style.display='none';
+  try{
+    const r=await fetch(`/api/envelope/assinar/${TOKEN}/enviar-otp`,{method:'GET'});
+    const j=await r.json();
+    if(!r.ok||j.erro){
+      erroBox.textContent=j.erro||'Não foi possível enviar o OTP automaticamente.';
+      erroBox.style.display='block';
+      return;
+    }
+    erroBox.textContent=j.mensagem||'Código OTP enviado automaticamente.';
+    erroBox.style.display='block';
+    erroBox.style.background='#eef9ff';
+    erroBox.style.borderColor='#bcdff5';
+    erroBox.style.color='#1a5578';
+  }catch(e){
+    erroBox.textContent='Falha de conexão ao enviar OTP automático.';
+    erroBox.style.display='block';
+  }
+}
+
 function fmtCpf(el){
   let v=el.value.replace(/\D/g,'');
   if(v.length>3) v=v.slice(0,3)+'.'+v.slice(3);
@@ -212,6 +236,10 @@ async function confirmarAssinatura(){
     btn.textContent='Confirmar Assinatura';
   }
 }
+
+document.addEventListener('DOMContentLoaded',()=>{
+  if(TOKEN && document.getElementById('form-area')) enviarOtpAutomaticoEnvelope();
+});
 </script>
 </body>
 </html>

@@ -73,12 +73,36 @@
   </div>
 
   <script>
+    const ASS_TOKEN='{{ medicao.assinatura_token if medicao else "" }}';
+
     function fmtCPF(el){
       let v=(el.value||'').replace(/\D/g,'').slice(0,11);
       if(v.length>9) v=v.replace(/^(\d{3})(\d{3})(\d{3})(\d{0,2}).*/,'$1.$2.$3-$4');
       else if(v.length>6) v=v.replace(/^(\d{3})(\d{3})(\d{0,3}).*/,'$1.$2.$3');
       else if(v.length>3) v=v.replace(/^(\d{3})(\d{0,3}).*/,'$1.$2');
       el.value=v;
+    }
+
+    async function enviarOtpAutomatico(){
+      if(!ASS_TOKEN) return;
+      const msg=document.getElementById('msg');
+      try{
+        const r=await fetch('/api/assinatura/'+ASS_TOKEN+'/enviar-otp',{method:'GET'});
+        const d=await r.json();
+        if(!r.ok || d.erro){
+          msg.className='msg err';
+          msg.textContent=d.erro||'Não foi possível enviar o OTP automaticamente.';
+          msg.style.display='block';
+          return;
+        }
+        msg.className='msg ok';
+        msg.textContent=d.mensagem||'Código OTP enviado automaticamente.';
+        msg.style.display='block';
+      }catch(e){
+        msg.className='msg err';
+        msg.textContent='Falha de conexão ao enviar OTP automático.';
+        msg.style.display='block';
+      }
     }
 
     async function confirmar(token){
@@ -116,6 +140,10 @@
         msg.style.display='block';
       }
     }
+
+    document.addEventListener('DOMContentLoaded',()=>{
+      if(ASS_TOKEN) enviarOtpAutomatico();
+    });
   </script>
 </body>
 </html>
