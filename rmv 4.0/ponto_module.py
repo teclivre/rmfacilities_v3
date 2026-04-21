@@ -3,6 +3,7 @@ import io
 import json
 import os
 import re
+import urllib.request
 
 from flask import jsonify, request, send_file, session
 from zoneinfo import ZoneInfo
@@ -690,13 +691,49 @@ def register_ponto_routes(
 
         elementos = []
         empresa = Empresa.query.get(funcionario.empresa_id) if funcionario.empresa_id else None
-        logo = get_logo()
-        logo_cell = p(f'<b>{(empresa.nome if empresa else "RM FACILITIES LTDA")}</b>', st_small, html=True)
-        if logo and os.path.exists(logo):
-            try:
-                logo_cell = Image(logo, width=30 * mm, height=13 * mm)
-            except Exception:
-                logo_cell = p(f'<b>{(empresa.nome if empresa else "RM FACILITIES LTDA")}</b>', st_small, html=True)
+        logo_url_padrao = 'https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png'
+        empresas_hdr = []
+        if empresa:
+            empresas_hdr.append(empresa)
+        for e in Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem, Empresa.id).all():
+            if not any((x.id == e.id) for x in empresas_hdr if getattr(x, 'id', None) and getattr(e, 'id', None)):
+                empresas_hdr.append(e)
+            if len(empresas_hdr) >= 2:
+                break
+
+        def _logo_flowable(emp_item):
+            cands = []
+            if emp_item and (getattr(emp_item, 'logo_url', '') or '').strip():
+                cands.append(getattr(emp_item, 'logo_url').strip())
+            lp = get_logo()
+            if lp:
+                cands.append(lp)
+            cands.append(logo_url_padrao)
+            for cand in cands:
+                try:
+                    if isinstance(cand, str) and cand.startswith(('http://', 'https://')):
+                        req = urllib.request.Request(cand, headers={'User-Agent': 'Mozilla/5.0'})
+                        with urllib.request.urlopen(req, timeout=8) as resp:
+                            data = resp.read()
+                        return Image(io.BytesIO(data), width=26 * mm, height=11 * mm)
+                    if os.path.exists(cand):
+                        return Image(cand, width=26 * mm, height=11 * mm)
+                except Exception:
+                    continue
+            return p(f'<b>{(getattr(emp_item, "nome", "") or "RM FACILITIES LTDA")}</b>', st_small, html=True)
+
+        logo_lines = []
+        for emp_item in empresas_hdr[:2]:
+            logo_lines.append([_logo_flowable(emp_item)])
+        if not logo_lines:
+            logo_lines = [[p('<b>RM FACILITIES LTDA</b>', st_small, html=True)]]
+        logo_cell = Table(logo_lines, colWidths=[26 * mm])
+        logo_cell.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ]))
         inicio_br, fim_br = fmt_comp_br(competencia)
 
         cabecalho = [[

@@ -2854,12 +2854,51 @@ def fmt_mes(s):
 
 LOGO_PATH=os.path.join(os.path.dirname(__file__),'static','img','logo.png')
 LOGO_URL='https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png'
+LOGO_URL_SECUNDARIO='https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png'
 
 def get_logo():
     if not os.path.exists(LOGO_PATH):
         try: urllib.request.urlretrieve(LOGO_URL,LOGO_PATH)
         except: pass
     return LOGO_PATH if os.path.exists(LOGO_PATH) else None
+
+def _pdf_companies_for_header(empresa_obj=None,empresa_dict=None,limit=2):
+    itens=[]
+    seen=set()
+
+    def _push(nome,cnpj,logo_url,emp_id=None):
+        if len(itens)>=limit:
+            return
+        key=(str(emp_id or '').strip(),str(nome or '').strip().lower(),str(cnpj or '').strip())
+        if key in seen:
+            return
+        seen.add(key)
+        logos=[]
+        for cand in [logo_url,get_logo(),LOGO_URL,LOGO_URL_SECUNDARIO]:
+            c=(cand or '').strip() if isinstance(cand,str) else cand
+            if not c:
+                continue
+            if c not in logos:
+                logos.append(c)
+        itens.append({
+            'nome':(nome or 'RM Facilities').strip(),
+            'cnpj':(cnpj or '').strip(),
+            'logos':logos,
+        })
+
+    if empresa_obj is not None:
+        _push(getattr(empresa_obj,'razao',None) or getattr(empresa_obj,'nome',None),getattr(empresa_obj,'cnpj',None),getattr(empresa_obj,'logo_url',None),getattr(empresa_obj,'id',None))
+    elif isinstance(empresa_dict,dict):
+        _push(empresa_dict.get('razao') or empresa_dict.get('nome') or empresa_dict.get('empresa_nome'),empresa_dict.get('cnpj'),empresa_dict.get('logo_url'),empresa_dict.get('id'))
+
+    for e in Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).all():
+        _push(getattr(e,'razao',None) or getattr(e,'nome',None),getattr(e,'cnpj',None),getattr(e,'logo_url',None),getattr(e,'id',None))
+        if len(itens)>=limit:
+            break
+
+    if not itens:
+        _push('RM Facilities','',None,None)
+    return itens
 
 register_ponto_routes(
     app,
@@ -4395,15 +4434,10 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
     if not emp:
         emp=Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
     empresa_nome=(emp.nome if emp and emp.nome else 'RM Facilities')
+    empresas_hdr=_pdf_companies_for_header(empresa_obj=emp,limit=2)
 
-    def _logo_flowable():
-        cands=[]
-        if emp and (emp.logo_url or '').strip():
-            cands.append(emp.logo_url.strip())
-        lp=get_logo()
-        if lp:
-            cands.append(lp)
-        for cand in cands:
+    def _logo_flowable(item):
+        for cand in (item.get('logos') or []):
             try:
                 if str(cand).lower().startswith('http'):
                     with urllib.request.urlopen(cand,timeout=8) as resp:
@@ -4417,7 +4451,7 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
                     return img
             except Exception:
                 continue
-        return Paragraph(f'<b>{empresa_nome}</b>',ps('lgfb',fontSize=12,textColor=colors.HexColor('#0f2b47')))
+            return Paragraph(f'<b>{item.get("nome") or empresa_nome}</b>',ps('lgfb',fontSize=11,textColor=colors.HexColor('#0f2b47')))
 
     validacao_link=f"{url_root}/doc/validar/{arquivo.ass_codigo}" if arquivo.ass_codigo else ''
     hash_comp=(arquivo.ass_doc_hash or '').strip()
@@ -4446,7 +4480,7 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
     story=[]
 
     # Cabeçalho profissional com identidade da empresa
-    logo=_logo_flowable()
+    logo=_logo_flowable(empresas_hdr[0])
     hdr_right=Paragraph(
         f'<b>AUDITORIA E VALIDAÇÃO DE ASSINATURA ELETRÔNICA</b><br/>'
         f'<font size="9" color="#49607a">{empresa_nome}</font><br/>'
@@ -4462,7 +4496,34 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
         ('TOPPADDING',(0,0),(-1,-1),8),
         ('BOTTOMPADDING',(0,0),(-1,-1),8),
     ]))
-    story.append(hdr); story.append(Spacer(1,10))
+    story.append(hdr); story.append(Spacer(1,5))
+
+    emp_cells=[]
+    for i,item in enumerate(empresas_hdr[:2]):
+        cell=Table([
+            [_logo_flowable(item)],
+            [Paragraph(f'<b>{item.get("nome") or "-"}</b><br/><font size="8" color="#4c6072">CNPJ: {item.get("cnpj") or "-"}</font>',ps(f'empc{i}',fontSize=8.2,leading=10))]
+        ],colWidths=[W*0.49])
+        cell.setStyle(TableStyle([
+            ('BOX',(0,0),(-1,-1),0.5,colors.HexColor('#d0d7df')),
+            ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#f8fbff')),
+            ('LEFTPADDING',(0,0),(-1,-1),6),
+            ('RIGHTPADDING',(0,0),(-1,-1),6),
+            ('TOPPADDING',(0,0),(-1,-1),4),
+            ('BOTTOMPADDING',(0,0),(-1,-1),4),
+        ]))
+        emp_cells.append(cell)
+    while len(emp_cells)<2:
+        emp_cells.append(Paragraph('',ps('empemptyd',fontSize=1)))
+    emp_tbl=Table([emp_cells],colWidths=[W*0.495,W*0.495])
+    emp_tbl.setStyle(TableStyle([
+        ('VALIGN',(0,0),(-1,-1),'TOP'),
+        ('LEFTPADDING',(0,0),(-1,-1),0),
+        ('RIGHTPADDING',(0,0),(-1,-1),0),
+        ('TOPPADDING',(0,0),(-1,-1),0),
+        ('BOTTOMPADDING',(0,0),(-1,-1),0),
+    ]))
+    story.append(emp_tbl); story.append(Spacer(1,6))
 
     badge_cor=colors.HexColor('#ecf8f0'); badge_txt=VD
     st=Table([[Paragraph('<b>✔ DOCUMENTO ASSINADO ELETRONICAMENTE</b>',ps('bs',fontSize=10,textColor=badge_txt))]],colWidths=[W])
@@ -4699,15 +4760,10 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     if not emp:
         emp=Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
     empresa_nome=(emp.nome if emp and emp.nome else 'RM Facilities')
+    empresas_hdr=_pdf_companies_for_header(empresa_obj=emp,limit=2)
 
-    def _logo_flowable():
-        cands=[]
-        if emp and (emp.logo_url or '').strip():
-            cands.append(emp.logo_url.strip())
-        lp=get_logo()
-        if lp:
-            cands.append(lp)
-        for cand in cands:
+    def _logo_flowable(item):
+        for cand in (item.get('logos') or []):
             try:
                 if str(cand).lower().startswith('http'):
                     with urllib.request.urlopen(cand,timeout=8) as resp:
@@ -4721,7 +4777,7 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
                     return img
             except Exception:
                 continue
-        return Paragraph(f'<b>{empresa_nome}</b>',ps('lgfb2',fontSize=12,textColor=colors.HexColor('#0f2b47')))
+            return Paragraph(f'<b>{item.get("nome") or empresa_nome}</b>',ps('lgfb2',fontSize=11,textColor=colors.HexColor('#0f2b47')))
 
     validacao_link=f"{url_root}/envelope/validar/{envelope.codigo}" if envelope.codigo else ''
     hash_comp=(envelope.assinatura_doc_hash or '').strip()
@@ -4738,7 +4794,7 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
         hash_comp=hashlib.sha256(trilha_base.encode('utf-8')).hexdigest().upper()
 
     story=[]
-    logo=_logo_flowable()
+    logo=_logo_flowable(empresas_hdr[0])
     hdr_right=Paragraph(
         f'<b>AUDITORIA E VALIDAÇÃO DE ASSINATURA ELETRÔNICA</b><br/>'
         f'<font size="9" color="#49607a">{empresa_nome}</font><br/>'
@@ -4754,7 +4810,34 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
         ('TOPPADDING',(0,0),(-1,-1),8),
         ('BOTTOMPADDING',(0,0),(-1,-1),8),
     ]))
-    story.append(hdr); story.append(Spacer(1,10))
+    story.append(hdr); story.append(Spacer(1,5))
+
+    emp_cells=[]
+    for i,item in enumerate(empresas_hdr[:2]):
+        cell=Table([
+            [_logo_flowable(item)],
+            [Paragraph(f'<b>{item.get("nome") or "-"}</b><br/><font size="8" color="#4c6072">CNPJ: {item.get("cnpj") or "-"}</font>',ps(f'empe{i}',fontSize=8.2,leading=10))]
+        ],colWidths=[W*0.49])
+        cell.setStyle(TableStyle([
+            ('BOX',(0,0),(-1,-1),0.5,colors.HexColor('#d0d7df')),
+            ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#f8fbff')),
+            ('LEFTPADDING',(0,0),(-1,-1),6),
+            ('RIGHTPADDING',(0,0),(-1,-1),6),
+            ('TOPPADDING',(0,0),(-1,-1),4),
+            ('BOTTOMPADDING',(0,0),(-1,-1),4),
+        ]))
+        emp_cells.append(cell)
+    while len(emp_cells)<2:
+        emp_cells.append(Paragraph('',ps('empemptye',fontSize=1)))
+    emp_tbl=Table([emp_cells],colWidths=[W*0.495,W*0.495])
+    emp_tbl.setStyle(TableStyle([
+        ('VALIGN',(0,0),(-1,-1),'TOP'),
+        ('LEFTPADDING',(0,0),(-1,-1),0),
+        ('RIGHTPADDING',(0,0),(-1,-1),0),
+        ('TOPPADDING',(0,0),(-1,-1),0),
+        ('BOTTOMPADDING',(0,0),(-1,-1),0),
+    ]))
+    story.append(emp_tbl); story.append(Spacer(1,6))
     assinados=[s for s in signatarios if s.status=='assinado']
     pendentes=[s for s in signatarios if s.status!='assinado']
     if len(pendentes)==0:
@@ -5942,6 +6025,22 @@ def _api_beneficios_pdf_tipo(tipo):
     for emp_id,items in sorted(grupos.items(),key=lambda kv: ((emps_map.get(kv[0]).nome if emps_map.get(kv[0]) else 'ZZZ'),kv[0])):
         emp=emps_map.get(emp_id)
         nome_emp=(emp.nome if emp else 'Sem empresa')
+        empresas_hdr=_pdf_companies_for_header(empresa_obj=emp,limit=2)
+
+        def _logo_flowable_b(item):
+            for cand in (item.get('logos') or []):
+                try:
+                    if isinstance(cand,str) and cand.startswith(('http://','https://')):
+                        req=urllib.request.Request(cand,headers={'User-Agent':'Mozilla/5.0'})
+                        with urllib.request.urlopen(req,timeout=8) as r:
+                            img_data=r.read()
+                        return Image(io.BytesIO(img_data),width=3.2*cm,height=1.3*cm,kind='proportional')
+                    if os.path.exists(cand):
+                        return Image(cand,width=3.2*cm,height=1.3*cm,kind='proportional')
+                except Exception:
+                    continue
+            return Paragraph(f'<b>{item.get("nome") or nome_emp}</b>',ParagraphStyle('lgfbb',fontName='Helvetica-Bold',fontSize=10,textColor=colors.HexColor('#205d8a')))
+
         hdr=Table([[logo_flow,Paragraph(f'Relatório de {tit}<br/><font size="9">{nome_emp}</font>',ParagraphStyle('h2',fontName='Helvetica-Bold',fontSize=12,leading=14,textColor=colors.HexColor('#205d8a')))]],colWidths=[W*0.28,W*0.72])
         hdr.setStyle(TableStyle([
             ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
@@ -5951,6 +6050,32 @@ def _api_beneficios_pdf_tipo(tipo):
             ('BOTTOMPADDING',(0,0),(-1,-1),6),
         ]))
         story.append(hdr)
+        emp_cells=[]
+        for i,item in enumerate(empresas_hdr[:2]):
+            cell=Table([
+                [_logo_flowable_b(item)],
+                [Paragraph(f'<b>{item.get("nome") or "-"}</b><br/><font size="8" color="#4c6072">CNPJ: {item.get("cnpj") or "-"}</font>',ParagraphStyle(f'empb{i}',fontName='Helvetica',fontSize=7.8,leading=9.5))]
+            ],colWidths=[W*0.49])
+            cell.setStyle(TableStyle([
+                ('BOX',(0,0),(-1,-1),0.45,colors.HexColor('#d0d7df')),
+                ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#f8fbff')),
+                ('LEFTPADDING',(0,0),(-1,-1),5),
+                ('RIGHTPADDING',(0,0),(-1,-1),5),
+                ('TOPPADDING',(0,0),(-1,-1),3),
+                ('BOTTOMPADDING',(0,0),(-1,-1),3),
+            ]))
+            emp_cells.append(cell)
+        while len(emp_cells)<2:
+            emp_cells.append(Paragraph('',ParagraphStyle('empbe',fontSize=1)))
+        emp_tbl=Table([emp_cells],colWidths=[W*0.495,W*0.495])
+        emp_tbl.setStyle(TableStyle([
+            ('VALIGN',(0,0),(-1,-1),'TOP'),
+            ('LEFTPADDING',(0,0),(-1,-1),0),
+            ('RIGHTPADDING',(0,0),(-1,-1),0),
+            ('TOPPADDING',(0,0),(-1,-1),0),
+            ('BOTTOMPADDING',(0,0),(-1,-1),2),
+        ]))
+        story.append(emp_tbl)
         story.append(Paragraph(f'Competência: {comp}',st))
         story.append(Spacer(1,6))
         if tipo=='vale_alimentacao':
@@ -6453,6 +6578,21 @@ def _build_pdf(d):
 
     story=[]
 
+    empresas_hdr=_pdf_companies_for_header(empresa_dict=emp,limit=2)
+    def _logo_flowable_hdr(item,w=3.6*cm,h=1.4*cm):
+        for cand in (item.get('logos') or []):
+            try:
+                if isinstance(cand,str) and cand.startswith(('http://','https://')):
+                    req=urllib.request.Request(cand,headers={'User-Agent':'Mozilla/5.0'})
+                    with urllib.request.urlopen(req,timeout=8) as r:
+                        img_data=r.read()
+                    return Image(io.BytesIO(img_data),width=w,height=h,kind='proportional')
+                if os.path.exists(cand):
+                    return Image(cand,width=w,height=h,kind='proportional')
+            except Exception:
+                continue
+        return Paragraph(f'<b>{item.get("nome") or enome}</b>',ps('lgfbm',fontSize=10,textColor=AZ))
+
     # Cabeçalho
     lp=get_logo()
     lc=Paragraph(f'<b>{enome}</b>',ps('lg',fontSize=13,textColor=AZ))
@@ -6488,6 +6628,33 @@ def _build_pdf(d):
     bar=Table([[' ']],colWidths=[W])
     bar.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),LJ),('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3)]))
     story.append(bar); story.append(Spacer(1,6))
+
+    emp_cells=[]
+    for i,item in enumerate(empresas_hdr[:2]):
+        cell=Table([
+            [_logo_flowable_hdr(item)],
+            [Paragraph(f'<b>{item.get("nome") or "-"}</b><br/><font size="8" color="#4c6072">CNPJ: {item.get("cnpj") or "-"}</font>',ps(f'empm{i}',fontSize=8.2,leading=10))]
+        ],colWidths=[W*0.49])
+        cell.setStyle(TableStyle([
+            ('BOX',(0,0),(-1,-1),0.5,colors.HexColor('#d0d7df')),
+            ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#f8fbff')),
+            ('LEFTPADDING',(0,0),(-1,-1),6),
+            ('RIGHTPADDING',(0,0),(-1,-1),6),
+            ('TOPPADDING',(0,0),(-1,-1),4),
+            ('BOTTOMPADDING',(0,0),(-1,-1),4),
+        ]))
+        emp_cells.append(cell)
+    while len(emp_cells)<2:
+        emp_cells.append(Paragraph('',ps('empemptym',fontSize=1)))
+    emp_tbl=Table([emp_cells],colWidths=[W*0.495,W*0.495])
+    emp_tbl.setStyle(TableStyle([
+        ('VALIGN',(0,0),(-1,-1),'TOP'),
+        ('LEFTPADDING',(0,0),(-1,-1),0),
+        ('RIGHTPADDING',(0,0),(-1,-1),0),
+        ('TOPPADDING',(0,0),(-1,-1),0),
+        ('BOTTOMPADDING',(0,0),(-1,-1),0),
+    ]))
+    story.append(emp_tbl); story.append(Spacer(1,6))
 
     def campo(lbl,val):
         return [Paragraph(f'<b><font color="#205d8a">{lbl}</font></b>',ps('lb',fontSize=8)),Paragraph(str(val or '—'),ps('vl',fontSize=9))]
