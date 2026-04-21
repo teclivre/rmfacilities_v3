@@ -4,33 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Validação de Assinatura - RM Facilities</title>
-  <style>
-    :root{--az:#0f4c81;--ok:#1b6b3b;--err:#9f1f1f;--tx:#132235;--bd:#d6e0ea;--lj:#f28e34}
-    *{box-sizing:border-box}
-    body{margin:0;font-family:Segoe UI,Tahoma,sans-serif;background:linear-gradient(140deg,#f9fcff,#edf3fa);color:var(--tx)}
-    .wrap{max-width:680px;margin:36px auto;padding:0 14px}
-    .card{background:#fff;border:1px solid var(--bd);border-radius:14px;box-shadow:0 12px 28px rgba(15,76,129,.09);padding:26px}
-    .brand{display:flex;align-items:center;gap:14px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid #e7eef6}
-    .brand img{height:52px;width:auto;object-fit:contain;flex-shrink:0}
-    .brand-copy{min-width:0}
-    .brand-copy strong{display:block;color:var(--az);font-size:16px}
-    .brand-copy span{display:block;color:#66798c;font-size:12px;margin-top:2px}
-    h1{margin:0 0 4px;color:var(--az);font-size:22px}
-    .sub{margin:0 0 18px;color:#55687a;font-size:13px}
-    .badge{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;padding:7px 16px;border-radius:999px;border:1px solid;margin-bottom:18px}
-    .b-ok{background:#ecf8f0;color:var(--ok);border-color:#9ed3b1}
-    .b-err{background:#fff1f1;color:var(--err);border-color:#f5c0c0}
-    .detalhes{background:#f7faff;border:1px solid var(--bd);border-radius:10px;overflow:hidden;margin-bottom:18px}
-    .det-row{display:flex;align-items:flex-start;border-bottom:1px solid #eaf0f7;font-size:13px}
-    .det-row:last-child{border-bottom:none}
-    .det-k{min-width:190px;padding:9px 12px;background:#eef4fb;color:#3a5774;font-weight:600;font-size:12px;border-right:1px solid #dde8f3}
-    .det-v{padding:9px 12px;color:var(--tx);word-break:break-word}
-    .hash{font-family:monospace;font-size:11px;word-break:break-all;color:#4a6078}
-    .msg-simples{padding:12px;border-radius:8px;margin-top:12px;font-size:13px;background:#fff1f1;color:var(--err);border:1px solid #f5c0c0}
-    @media(max-width:520px){.det-row{flex-direction:column}.det-k{border-right:none;border-bottom:1px solid #dde8f3;min-width:auto}}
-  </style>
+  <link rel="stylesheet" href="/static/css/main.css">
 </head>
-<body>
+<body class="public-page">
+  <div class="public-topbar">
+      <div class="public-topbar-brand">
+        <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
+        <h1>RM Facilities</h1>
+      </div>
+    </div>
+    <div class="public-main">
+      <div class="public-container">
+        <div class="public-card">
 <div class="wrap">
   <div class="card">
     <div class="brand">
@@ -79,5 +64,9 @@
     {% endif %}
   </div>
 </div>
+
+      </div>
+    </div>
+  </div>
 </body>
 </html>

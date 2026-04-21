@@ -4,58 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Validação de Documento — RM Facilities</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px}
-.page-wrap{max-width:680px;width:100%}
-.company-header{background:#fff;border-radius:12px 12px 0 0;border-bottom:3px solid #205d8a;padding:18px 24px;display:flex;align-items:center;gap:18px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
-.company-header img{height:52px;width:auto;object-fit:contain;flex-shrink:0}
-.company-info{flex:1;min-width:0}
-.company-info .co-name{font-size:15px;font-weight:700;color:#1a2b3c;line-height:1.3}
-.company-info .co-cnpj{font-size:12px;color:#555;margin-top:2px}
-.company-info .co-end{font-size:11px;color:#777;margin-top:2px;line-height:1.4}
-.company-sep{width:1px;height:48px;background:#e0e8f0;flex-shrink:0}
-.box{background:#fff;border-radius:0 0 12px 12px;box-shadow:0 4px 24px rgba(0,0,0,.10);padding:28px 24px}
-.divider-line{height:1px;background:#e8eef5;margin:0 -24px 22px -24px}
-.badge{display:inline-flex;align-items:center;gap:6px;border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;margin-bottom:18px}
-.badge-ok{background:#ecf8f0;color:#1a7a45;border:1px solid #8dd5a3}
-.badge-pend{background:#fff8ec;color:#7a5800;border:1px solid #f5d97a}
-.badge-canc{background:#fff0f0;color:#a32020;border:1px solid #f5c5c5}
-h2{font-size:18px;color:#1a2b3c;margin-bottom:4px}
-.sub{font-size:13px;color:#777;margin-bottom:20px}
-.section{margin-bottom:20px}
-.section h3{font-size:13px;font-weight:700;color:#205d8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;padding-bottom:5px;border-bottom:2px solid #e8f0f8}
-.detail-grid{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:13px}
-.detail-grid dt{font-weight:600;color:#555;white-space:nowrap}
-.detail-grid dd{color:#222;word-break:break-all}
-.tbl{width:100%;border-collapse:collapse;font-size:12px}
-.tbl th{background:#205d8a;color:#fff;text-align:left;padding:7px 9px}
-.tbl td{padding:7px 9px;border-bottom:1px solid #e8eef5;vertical-align:top}
-.tbl tr:nth-child(even) td{background:#f5f9ff}
-.pill{border-radius:10px;padding:2px 9px;font-size:11px;font-weight:600;white-space:nowrap}
-.pill-ok{background:#ecf8f0;color:#1a7a45}
-.pill-pend{background:#fff8ec;color:#8a5c00}
-.file-list{list-style:none;padding:0}
-.file-list li{padding:5px 0;border-bottom:1px solid #eef2f7;font-size:13px;color:#333}
-.file-list li:last-child{border-bottom:none}
-.file-list li::before{content:"📄 "}
-.btn-down{display:inline-block;background:#1a7a45;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:700}
-.btn-down:hover{background:#145c34}
-.page-footer{text-align:center;font-size:11px;color:#aaa;margin-top:14px}
-@media (max-width:760px){
-  body{padding:12px}
-  .company-header{padding:14px;gap:12px;flex-wrap:wrap;align-items:flex-start}
-  .company-header img{height:44px}
-  .company-sep{display:none}
-  .box{padding:18px 14px}
-  .divider-line{margin:0 -14px 16px -14px}
-  .section{margin-bottom:16px}
-  .tbl{display:block;width:100%;overflow-x:auto;white-space:nowrap}
-  .tbl th,.tbl td{font-size:11px;padding:6px 7px}
-}
-</style>
+<link rel="stylesheet" href="/static/css/main.css">
 </head>
-<body>
+<body class="public-page">
+  <div class="public-topbar">
+      <div class="public-topbar-brand">
+        <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
+        <h1>RM Facilities</h1>
+      </div>
+    </div>
+    <div class="public-main">
+      <div class="public-container">
+        <div class="public-card">
 <div class="page-wrap">
   <div class="company-header">
     <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="Logo RM Facilities" onerror="this.style.display='none'">
@@ -147,5 +107,9 @@ h2{font-size:18px;color:#1a2b3c;margin-bottom:4px}
 
   <div class="page-footer">Validação em tempo real | RM Facilities | Assinatura eletrônica com validade jurídica — Lei nº 14.063/2020</div>
 </div>
+
+      </div>
+    </div>
+  </div>
 </body>
 </html>

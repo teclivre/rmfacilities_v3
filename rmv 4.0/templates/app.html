@@ -382,10 +382,31 @@
           </div>
           <div class="f"><label>Competência (ex: 04/2026)</label><input id="rh-lote-comp"></div>
           <div class="f"><label>Funcionário específico (opcional)</label><select id="rh-lote-func"><option value="">Separar automaticamente pelo PDF</option></select></div>
+          <div class="f"><label>Solicitação de assinatura</label>
+            <select id="rh-lote-ass">
+              <option value="nao">Não solicitar assinatura</option>
+              <option value="whatsapp">Solicitar via WhatsApp</option>
+              <option value="link">Apenas gerar link</option>
+            </select>
+          </div>
           <div class="f s2"><label>Arquivo PDF único (com várias páginas)</label><input type="file" id="rh-lote-arq" accept="application/pdf"></div>
         </div>
         <div class="hint" style="margin-top:8px">Se escolher um funcionário, o PDF inteiro será salvo para ele. Sem seleção, o sistema tenta identificar o colaborador pelo conteúdo de cada página.</div>
-        <div class="brow" style="justify-content:flex-start"><button class="btn b-ghv" onclick="uploadDocumentoRHLote()">Enviar arquivo</button></div>
+        <div class="brow" style="justify-content:flex-start">
+          <button class="btn b-gh" type="button" onclick="previewDocumentoRHLote()">Pré-visualizar destinatários</button>
+          <button class="btn b-ghv" type="button" onclick="uploadDocumentoRHLote()">Enviar arquivo</button>
+        </div>
+        <div id="rh-lote-prev-box" style="display:none;margin-top:10px;border:1px solid var(--borda);border-radius:10px;background:var(--cinza-cl);padding:10px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <strong style="font-size:12px;color:#1a2b3c">Pré-visualização de destinatários</strong>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn b-gh b-sm" type="button" onclick="toggleAllRHLotePreview(true)">Selecionar todos</button>
+              <button class="btn b-gh b-sm" type="button" onclick="toggleAllRHLotePreview(false)">Limpar seleção</button>
+            </div>
+          </div>
+          <div id="rh-lote-prev-meta" style="font-size:12px;color:#5f7386;margin-bottom:8px"></div>
+          <div id="rh-lote-prev-list" style="display:flex;flex-direction:column;gap:7px;max-height:220px;overflow:auto"></div>
+        </div>
       </div>
     </div>
 
@@ -3151,11 +3172,18 @@ async function uploadDocumentoRHLote(){
   if(!f){alert('Selecione o arquivo PDF.');return;}
   const comp=(document.getElementById('rh-lote-comp').value||'').trim();
   if(!comp){alert('Informe a competência (ex: 04/2026).');return;}
-  const optAss=prompt('Deseja solicitar assinatura após separar os documentos?\n1 = Não solicitar assinatura\n2 = Solicitar via WhatsApp\n3 = Apenas gerar link\n\nDigite 1, 2 ou 3:','1');
-  if(optAss===null) return;
-  const mapaAss={'1':'nao','2':'whatsapp','3':'link'};
-  const canalAss=mapaAss[(optAss||'').trim()];
-  if(!canalAss){alert('Opção inválida.');return;}
+  const canalAss=document.getElementById('rh-lote-ass')?.value||'nao';
+
+  if(!funcionarioId && canalAss!=='nao'){
+    if(!_rhLotePreview || !_rhLotePreview.ready){
+      showSt('st-rh','Faça a pré-visualização para confirmar os destinatários antes de enviar.',true);
+      return;
+    }
+    if(!_rhLotePreview.selectedIds || !_rhLotePreview.selectedIds.length){
+      showSt('st-rh','Selecione ao menos um destinatário para solicitar assinatura.',true);
+      return;
+    }
+  }
 
   const fd=new FormData();
   fd.append('arquivo',f);
@@ -3174,9 +3202,22 @@ async function uploadDocumentoRHLote(){
     endpoint='/api/funcionarios/holerites/upload';
     nomeTipo='holerites';
   }else{
-    endpoint='/api/funcionarios/documentos-rh/upload';
-    nomeTipo=(tipo==='atestado')?'atestados':'documentos RH';
+    showSt('st-rh','Para este tipo sem funcionário específico, selecione primeiro o funcionário.',true);
+    return;
   }
+
+  if(canalAss!=='nao'){
+    const idsAss=funcionarioId
+      ? [parseInt(funcionarioId,10)].filter(Number.isFinite)
+      : ((_rhLotePreview && Array.isArray(_rhLotePreview.selectedIds)) ? _rhLotePreview.selectedIds : []);
+    if(idsAss.length){
+      fd.append('assinatura_funcionario_ids',idsAss.join(','));
+    }else if(!funcionarioId){
+      showSt('st-rh','Nenhum destinatário selecionado para assinatura.',true);
+      return;
+    }
+  }
+
   const r=await fetch(endpoint,{method:'POST',body:fd});
   const d=await r.json();
   if(d.erro){alert(d.erro);return;}
@@ -3195,6 +3236,93 @@ async function uploadDocumentoRHLote(){
   document.getElementById('rh-lote-arq').value='';
   document.getElementById('rh-lote-comp').value='';
   document.getElementById('rh-lote-func').value='';
+  resetRHLotePreview();
+}
+
+let _rhLotePreview={ready:false,selectedIds:[],destinatarios:[],totalPaginas:0,paginasSemFuncionario:[]};
+
+function resetRHLotePreview(){
+  _rhLotePreview={ready:false,selectedIds:[],destinatarios:[],totalPaginas:0,paginasSemFuncionario:[]};
+  const box=document.getElementById('rh-lote-prev-box');
+  const list=document.getElementById('rh-lote-prev-list');
+  const meta=document.getElementById('rh-lote-prev-meta');
+  if(box) box.style.display='none';
+  if(list) list.innerHTML='';
+  if(meta) meta.textContent='';
+}
+
+function renderRHLotePreview(){
+  const box=document.getElementById('rh-lote-prev-box');
+  const list=document.getElementById('rh-lote-prev-list');
+  const meta=document.getElementById('rh-lote-prev-meta');
+  if(!box || !list || !meta) return;
+  const itens=_rhLotePreview.destinatarios||[];
+  box.style.display='';
+  const semMatch=(_rhLotePreview.paginasSemFuncionario||[]).length;
+  meta.textContent=`Destinatários: ${itens.length} · Páginas do PDF: ${_rhLotePreview.totalPaginas||0}`+(semMatch?` · Páginas sem identificação: ${semMatch}`:'');
+  if(!itens.length){
+    list.innerHTML='<div class="vazio">Nenhum destinatário identificado no arquivo.</div>';
+    return;
+  }
+  list.innerHTML=itens.map(it=>{
+    const checked=_rhLotePreview.selectedIds.includes(it.funcionario_id)?'checked':'';
+    const tel=it.telefone?(' · 📱 '+fmtTelefone(it.telefone)) : '';
+    const em=it.email?(' · 📧 '+it.email) : '';
+    const pgs=(it.paginas||[]).length?(' · Páginas: '+it.paginas.join(', ')) : '';
+    return `<label style="display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid var(--borda);border-radius:8px;background:#fff;cursor:pointer">
+      <input type="checkbox" class="rh-lote-prev-sel" data-fid="${it.funcionario_id}" ${checked} onchange="syncRHLotePreviewSelection()">
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:13px">${it.nome||'Funcionário'}</div>
+        <div style="font-size:11px;color:#6a7d8f">${it.matricula||'Matrícula não informada'}${tel}${em}${pgs}</div>
+      </div>
+    </label>`;
+  }).join('');
+}
+
+function syncRHLotePreviewSelection(){
+  _rhLotePreview.selectedIds=Array.from(document.querySelectorAll('.rh-lote-prev-sel:checked'))
+    .map(cb=>parseInt(cb.dataset.fid,10))
+    .filter(Number.isFinite);
+}
+
+function toggleAllRHLotePreview(mark){
+  document.querySelectorAll('.rh-lote-prev-sel').forEach(cb=>{cb.checked=!!mark;});
+  syncRHLotePreviewSelection();
+}
+
+async function previewDocumentoRHLote(){
+  const f=document.getElementById('rh-lote-arq').files?.[0];
+  const funcionarioId=document.getElementById('rh-lote-func')?.value||'';
+  const comp=(document.getElementById('rh-lote-comp').value||'').trim();
+  if(!f){
+    showSt('st-rh','Selecione o arquivo PDF para pré-visualizar os destinatários.',true);
+    return;
+  }
+  const fd=new FormData();
+  fd.append('arquivo',f);
+  fd.append('competencia',comp);
+  if(funcionarioId) fd.append('funcionario_id',funcionarioId);
+  showSt('st-rh','Pré-visualizando destinatários do arquivo...',false);
+  try{
+    const r=await fetch('/api/rh/preview-destinatarios',{method:'POST',body:fd});
+    const d=await r.json();
+    if(!r.ok || d.erro){
+      showSt('st-rh',d.erro||'Não foi possível pré-visualizar o arquivo.',true);
+      return;
+    }
+    const itens=Array.isArray(d.destinatarios)?d.destinatarios:[];
+    _rhLotePreview={
+      ready:true,
+      destinatarios:itens,
+      selectedIds:itens.map(it=>it.funcionario_id).filter(Number.isFinite),
+      totalPaginas:parseInt(d.total_paginas||0,10)||0,
+      paginasSemFuncionario:Array.isArray(d.paginas_sem_funcionario)?d.paginas_sem_funcionario:[]
+    };
+    renderRHLotePreview();
+    showSt('st-rh',`Pré-visualização pronta. Destinatários identificados: ${itens.length}.`,false);
+  }catch(e){
+    showSt('st-rh','Erro ao pré-visualizar destinatários.',true);
+  }
 }
 
 async function uploadSSTArquivo(){

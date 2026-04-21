@@ -854,6 +854,32 @@ def _send_signature_otp(codigo,nome_dest='',telefone='',email='',contexto='assin
             ultimo_erro=str(ex)
     raise ValueError(ultimo_erro or 'Não foi possível enviar o código OTP para confirmação da assinatura.')
 
+def _assinatura_json_base(**extra):
+    base={
+        'ok':False,
+        'mensagem':'',
+        'erro':'',
+        'otp_required':False,
+        'validacao_link':'',
+        'signed_pdf_link':'',
+        'whatsapp_enviado':False,
+        'codigo':'',
+    }
+    base.update(extra or {})
+    return base
+
+def _assinatura_json_erro(msg,status=400,**extra):
+    payload=_assinatura_json_base(ok=False,erro=(msg or 'Não foi possível concluir sua solicitação.'),**extra)
+    return jsonify(payload),status
+
+def _assinatura_json_otp(mensagem,canal='',destino='',**extra):
+    payload=_assinatura_json_base(ok=False,otp_required=True,mensagem=(mensagem or ''),canal=(canal or ''),destino=(destino or ''),**extra)
+    return jsonify(payload)
+
+def _assinatura_json_ok(mensagem='',**extra):
+    payload=_assinatura_json_base(ok=True,mensagem=(mensagem or 'Assinatura concluída com sucesso.'),**extra)
+    return jsonify(payload)
+
 def _try_sign_pdf_bytes_crypto(pdf_bytes,empresa_id=None,usuario_id=None):
     cert_ctx=_get_cert_context(empresa_id=empresa_id,usuario_id=usuario_id)
     p12_path=(cert_ctx.get('cert_path') if cert_ctx else '') or (os.environ.get('PDF_SIGN_P12_PATH') or '').strip()
@@ -3616,16 +3642,16 @@ def assinatura_publica(token):
 def api_assinatura_enviar_otp(token):
     m=Medicao.query.filter_by(assinatura_token=token).first()
     if not m:
-        return jsonify({'erro':'Link inválido.'}),404
+        return _assinatura_json_erro('Link inválido.',404)
     if (m.assinatura_status or '')=='assinado':
-        return jsonify({'erro':'Documento já assinado.'}),400
+        return _assinatura_json_erro('Documento já assinado.',400)
     if m.assinatura_expira_em and m.assinatura_expira_em<utcnow():
-        return jsonify({'erro':'Link expirado.'}),400
+        return _assinatura_json_erro('Link expirado.',400)
     cli=Cliente.query.get(m.cliente_id) if m.cliente_id else None
     tel=wa_norm_number((cli.telefone if cli else '') or '')
     email=((getattr(cli,'email','') or '').strip() if cli else '')
     if not tel and not email:
-        return jsonify({'erro':'Nenhum telefone ou e-mail cadastrado para envio do OTP.'}),400
+        return _assinatura_json_erro('Nenhum telefone ou e-mail cadastrado para envio do OTP.',400)
     codigo=_otp_new_code()
     m.assinatura_otp_hash=token_hash(codigo)
     m.assinatura_otp_expira_em=utcnow()+timedelta(minutes=10)
@@ -3633,10 +3659,14 @@ def api_assinatura_enviar_otp(token):
     try:
         envio=_send_signature_otp(codigo,nome_dest=(cli.nome if cli else ''),telefone=tel,email=email,contexto='medicao')
         db.session.commit()
-        return jsonify({'ok':True,'mensagem':f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",'canal':envio.get('canal',''),'destino':envio.get('destino','')})
+        return _assinatura_json_ok(
+            mensagem=f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",
+            canal=envio.get('canal',''),
+            destino=envio.get('destino','')
+        )
     except Exception as ex:
         db.session.rollback()
-        return jsonify({'erro':f'Falha ao enviar OTP: {str(ex)}'}),500
+        return _assinatura_json_erro(f'Falha ao enviar OTP: {str(ex)}',500)
 
 @app.route('/assinatura/validar/<codigo>')
 def assinatura_validar_publica(codigo):
@@ -3656,11 +3686,11 @@ def assinatura_validar_publica(codigo):
 def api_assinatura_confirmar(token):
     m=Medicao.query.filter_by(assinatura_token=token).first()
     if not m:
-        return jsonify({'erro':'Link invalido.'}),404
+        return _assinatura_json_erro('Link inválido.',404)
     if m.assinatura_expira_em and m.assinatura_expira_em<utcnow():
         m.assinatura_status='expirado'
         db.session.commit()
-        return jsonify({'erro':'Link expirado. Solicite um novo link.'}),400
+        return _assinatura_json_erro('Link expirado. Solicite um novo link.',400)
     d=request.json or {}
     nome=(d.get('nome') or '').strip()
     cargo=(d.get('cargo') or '').strip()
@@ -3668,11 +3698,11 @@ def api_assinatura_confirmar(token):
     otp=(only_digits(d.get('otp') or '') or '').strip()
     aceite=bool(d.get('aceite'))
     if not nome:
-        return jsonify({'erro':'Informe o nome completo para assinar.'}),400
+        return _assinatura_json_erro('Informe o nome completo para assinar.',400)
     if not cpf or len(cpf)!=11 or not _valida_cpf(cpf):
-        return jsonify({'erro':'Informe um CPF válido (11 dígitos) para assinar.'}),400
+        return _assinatura_json_erro('Informe um CPF válido (11 dígitos) para assinar.',400)
     if not aceite:
-        return jsonify({'erro':'Confirme o aceite para concluir a assinatura.'}),400
+        return _assinatura_json_erro('Confirme o aceite para concluir a assinatura.',400)
 
     cli=Cliente.query.get(m.cliente_id) if m.cliente_id else None
     tel=wa_norm_number((cli.telefone if cli else '') or '')
@@ -3687,27 +3717,25 @@ def api_assinatura_confirmar(token):
             envio=_send_signature_otp(codigo,nome_dest=nome,telefone=tel,email=email,contexto='medicao')
         except Exception as ex:
             db.session.rollback()
-            return jsonify({'erro':f'Falha ao enviar OTP de confirmação: {str(ex)}'}),400
+            return _assinatura_json_erro(f'Falha ao enviar OTP de confirmação: {str(ex)}',400)
         db.session.commit()
-        return jsonify({
-            'ok':False,
-            'otp_required':True,
-            'mensagem':f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",
-            'canal':envio.get('canal',''),
-            'destino':envio.get('destino','')
-        })
+        return _assinatura_json_otp(
+            mensagem=f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",
+            canal=envio.get('canal',''),
+            destino=envio.get('destino','')
+        )
 
     if not (m.assinatura_otp_hash or '').strip() or not m.assinatura_otp_expira_em:
-        return jsonify({'erro':'Solicite um novo código OTP para concluir a assinatura.'}),400
+        return _assinatura_json_erro('Solicite um novo código OTP para concluir a assinatura.',400)
     if m.assinatura_otp_expira_em<utcnow():
-        return jsonify({'erro':'Código OTP expirado. Solicite um novo código.'}),400
+        return _assinatura_json_erro('Código OTP expirado. Solicite um novo código.',400)
     tent=int(m.assinatura_otp_tentativas or 0)
     if tent>=5:
-        return jsonify({'erro':'Limite de tentativas de OTP excedido. Solicite um novo código.'}),400
+        return _assinatura_json_erro('Limite de tentativas de OTP excedido. Solicite um novo código.',400)
     if not hmac.compare_digest(token_hash(otp),str(m.assinatura_otp_hash or '')):
         m.assinatura_otp_tentativas=tent+1
         db.session.commit()
-        return jsonify({'erro':'Código OTP inválido.'}),400
+        return _assinatura_json_erro('Código OTP inválido.',400)
 
     m.assinatura_status='assinado'
     if not (m.assinatura_codigo or '').strip():
@@ -3760,7 +3788,12 @@ def api_assinatura_confirmar(token):
 
     audit_event('medicao_assinatura_confirmada','externo',None,'medicao',m.id,True,{'numero':m.numero,'nome':nome})
     validacao_link=f"{request.url_root.rstrip('/')}/assinatura/validar/{m.assinatura_codigo}"
-    return jsonify({'ok':True,'mensagem':'Assinatura concluida com sucesso.','validacao_link':validacao_link,'whatsapp_enviado':enviado_wa})
+    return _assinatura_json_ok(
+        mensagem='Assinatura concluída com sucesso.',
+        validacao_link=validacao_link,
+        whatsapp_enviado=enviado_wa,
+        codigo=(m.assinatura_codigo or '')
+    )
 
 @app.route('/api/funcionarios',methods=['GET'])
 @lr
@@ -4224,16 +4257,16 @@ def func_doc_assinar_publica(token):
 def api_func_doc_assinatura_enviar_otp(token):
     a=FuncionarioArquivo.query.filter_by(ass_token=token).first()
     if not a:
-        return jsonify({'erro':'Link inválido.'}),404
+        return _assinatura_json_erro('Link inválido.',404)
     if (a.ass_status or '')=='assinado':
-        return jsonify({'erro':'Documento já assinado.'}),400
+        return _assinatura_json_erro('Documento já assinado.',400)
     if a.ass_expira_em and a.ass_expira_em<utcnow():
-        return jsonify({'erro':'Link expirado.'}),400
+        return _assinatura_json_erro('Link expirado.',400)
     f=Funcionario.query.get(a.funcionario_id)
     tel=(f.telefone if f else '') or ''
     email=(f.email if f else '') or ''
     if not (wa_norm_number(tel) or (email or '').strip()):
-        return jsonify({'erro':'Nenhum telefone ou e-mail cadastrado para envio do OTP.'}),400
+        return _assinatura_json_erro('Nenhum telefone ou e-mail cadastrado para envio do OTP.',400)
     codigo=_otp_new_code()
     a.ass_otp_hash=token_hash(codigo)
     a.ass_otp_expira_em=utcnow()+timedelta(minutes=10)
@@ -4241,19 +4274,23 @@ def api_func_doc_assinatura_enviar_otp(token):
     try:
         envio=_send_signature_otp(codigo,nome_dest=(f.nome if f else ''),telefone=tel,email=email,contexto='documento')
         db.session.commit()
-        return jsonify({'ok':True,'mensagem':f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",'canal':envio.get('canal',''),'destino':envio.get('destino','')})
+        return _assinatura_json_ok(
+            mensagem=f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",
+            canal=envio.get('canal',''),
+            destino=envio.get('destino','')
+        )
     except Exception as ex:
         db.session.rollback()
-        return jsonify({'erro':f'Falha ao enviar OTP: {str(ex)}'}),500
+        return _assinatura_json_erro(f'Falha ao enviar OTP: {str(ex)}',500)
 
 @app.route('/api/doc/assinar/<token>/confirmar',methods=['POST'])
 def api_func_doc_assinatura_confirmar(token):
     a=FuncionarioArquivo.query.filter_by(ass_token=token).first()
     if not a:
-        return jsonify({'erro':'Link inválido.'}),404
+        return _assinatura_json_erro('Link inválido.',404)
     if a.ass_expira_em and a.ass_expira_em<utcnow():
         a.ass_status='expirado'; db.session.commit()
-        return jsonify({'erro':'Link expirado. Solicite novo link ao RH.'}),400
+        return _assinatura_json_erro('Link expirado. Solicite novo link ao RH.',400)
     d=request.json or {}
     nome=(d.get('nome') or '').strip()
     cargo=(d.get('cargo') or '').strip()
@@ -4261,17 +4298,18 @@ def api_func_doc_assinatura_confirmar(token):
     otp=(only_digits(d.get('otp') or '') or '').strip()
     aceite=bool(d.get('aceite'))
     if not nome:
-        return jsonify({'erro':'Informe o nome completo para assinar.'}),400
+        return _assinatura_json_erro('Informe o nome completo para assinar.',400)
     if not cpf_info or len(cpf_info)!=11 or not _valida_cpf(cpf_info):
-        return jsonify({'erro':'Informe um CPF válido (11 dígitos) para assinar.'}),400
+        return _assinatura_json_erro('Informe um CPF válido (11 dígitos) para assinar.',400)
     if not aceite:
-        return jsonify({'erro':'Confirme o aceite para concluir a assinatura.'}),400
-    # Validar se CPF pertence ao funcionário vinculado ao documento
+        return _assinatura_json_erro('Confirme o aceite para concluir a assinatura.',400)
+    # Validar CPF cadastral apenas quando o CPF do cadastro for válido.
+    # Isso evita falso negativo quando há CPF antigo/inválido salvo no cadastro do funcionário.
     f=Funcionario.query.get(a.funcionario_id)
     if f and f.cpf:
         cpf_cadastrado=only_digits(f.cpf or '')
-        if cpf_cadastrado and cpf_info!=cpf_cadastrado:
-            return jsonify({'erro':'O CPF informado não confere com o funcionário vinculado ao documento.'}),400
+        if cpf_cadastrado and _valida_cpf(cpf_cadastrado) and cpf_info!=cpf_cadastrado:
+            return _assinatura_json_erro('O CPF informado não confere com o funcionário vinculado ao documento.',400)
 
     if not otp:
         codigo=_otp_new_code()
@@ -4282,27 +4320,25 @@ def api_func_doc_assinatura_confirmar(token):
             envio=_send_signature_otp(codigo,nome_dest=nome,telefone=(f.telefone if f else ''),email=(f.email if f else ''),contexto='documento')
         except Exception as ex:
             db.session.rollback()
-            return jsonify({'erro':f'Falha ao enviar OTP de confirmação: {str(ex)}'}),400
+            return _assinatura_json_erro(f'Falha ao enviar OTP de confirmação: {str(ex)}',400)
         db.session.commit()
-        return jsonify({
-            'ok':False,
-            'otp_required':True,
-            'mensagem':f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",
-            'canal':envio.get('canal',''),
-            'destino':envio.get('destino','')
-        })
+        return _assinatura_json_otp(
+            mensagem=f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",
+            canal=envio.get('canal',''),
+            destino=envio.get('destino','')
+        )
 
     if not (a.ass_otp_hash or '').strip() or not a.ass_otp_expira_em:
-        return jsonify({'erro':'Solicite um novo código OTP para concluir a assinatura.'}),400
+        return _assinatura_json_erro('Solicite um novo código OTP para concluir a assinatura.',400)
     if a.ass_otp_expira_em<utcnow():
-        return jsonify({'erro':'Código OTP expirado. Solicite um novo código.'}),400
+        return _assinatura_json_erro('Código OTP expirado. Solicite um novo código.',400)
     tent=int(a.ass_otp_tentativas or 0)
     if tent>=5:
-        return jsonify({'erro':'Limite de tentativas de OTP excedido. Solicite um novo código.'}),400
+        return _assinatura_json_erro('Limite de tentativas de OTP excedido. Solicite um novo código.',400)
     if not hmac.compare_digest(token_hash(otp),str(a.ass_otp_hash or '')):
         a.ass_otp_tentativas=tent+1
         db.session.commit()
-        return jsonify({'erro':'Código OTP inválido.'}),400
+        return _assinatura_json_erro('Código OTP inválido.',400)
 
     if not a.ass_codigo:
         a.ass_codigo=secrets.token_urlsafe(10)
@@ -4354,7 +4390,14 @@ def api_func_doc_assinatura_confirmar(token):
             except Exception:
                 pass
     signed_pdf_link=(f"{request.url_root.rstrip('/')}/doc/assinado/{a.ass_codigo}" if a.ass_codigo else '')
-    return jsonify({'ok':True,'mensagem':'Assinatura concluída com sucesso.','validacao_link':validacao_link,'signed_pdf_link':signed_pdf_link,'whatsapp_enviado':enviado_wa,'arquivo_assinado_salvo':bool(copia_assinada and copia_assinada.get('ok'))})
+    return _assinatura_json_ok(
+        mensagem='Assinatura concluída com sucesso.',
+        validacao_link=validacao_link,
+        signed_pdf_link=signed_pdf_link,
+        whatsapp_enviado=enviado_wa,
+        codigo=(a.ass_codigo or ''),
+        arquivo_assinado_salvo=bool(copia_assinada and copia_assinada.get('ok'))
+    )
 
 @app.route('/doc/assinado/<codigo>')
 def func_doc_assinado_publico(codigo):
@@ -4699,24 +4742,29 @@ def _salvar_pdf_assinado_em_arquivos_funcionario(arquivo,funcionario,url_root):
         with open(abs_p,'wb') as out:
             out.write(pdf_buf)
         hash_pdf=_sha256_file(abs_p)
-        novo=FuncionarioArquivo(
-            funcionario_id=funcionario.id,
-            categoria=cat,
-            competencia=arquivo.competencia,
-            nome_arquivo=nome_final,
-            caminho=rel,
-            ass_status='assinado',
-            ass_codigo=arquivo.ass_codigo,
-            ass_nome=arquivo.ass_nome,
-            ass_cargo=arquivo.ass_cargo,
-            ass_cpf=arquivo.ass_cpf,
-            ass_ip=arquivo.ass_ip,
-            ass_em=arquivo.ass_em,
-            ass_doc_hash=hash_pdf,
-        )
-        db.session.add(novo)
+        # Mantém o mesmo registro do documento e troca o arquivo principal pelo PDF assinado.
+        caminho_antigo=(arquivo.caminho or '').strip()
+        arquivo.categoria=cat
+        arquivo.competencia=arquivo.competencia
+        arquivo.nome_arquivo=nome_final
+        arquivo.caminho=rel
+        arquivo.ass_status='assinado'
+        arquivo.ass_doc_hash=hash_pdf
         db.session.commit()
-        return {'ok':True,'arquivo_id':novo.id,'nome_arquivo':nome_final,'caminho':rel,'abs_path':abs_p}
+        # Remove o arquivo anterior quando for diferente do novo assinado.
+        try:
+            if caminho_antigo and caminho_antigo!=rel:
+                cand=[caminho_antigo]
+                if not os.path.isabs(caminho_antigo):
+                    cand.append(os.path.join(UPLOAD_ROOT,caminho_antigo))
+                    cand.append(os.path.join(_get_uploads_base(),caminho_antigo))
+                for p in cand:
+                    if p and os.path.exists(p):
+                        os.remove(p)
+                        break
+        except Exception:
+            pass
+        return {'ok':True,'arquivo_id':arquivo.id,'nome_arquivo':nome_final,'caminho':rel,'abs_path':abs_p}
     except Exception as e:
         db.session.rollback()
         return {'ok':False,'erro':str(e)}
@@ -5439,12 +5487,12 @@ def envelope_assinar_publica(token):
 def api_envelope_assinatura_enviar_otp(token):
     sig=AssinaturaEnvelopeSignatario.query.filter_by(token=token).first_or_404()
     if sig.status=='assinado':
-        return jsonify({'erro':'Você já assinou este documento.'}),400
+        return _assinatura_json_erro('Você já assinou este documento.',400)
     env=AssinaturaEnvelope.query.get_or_404(sig.envelope_id)
     if env.expira_em and datetime.utcnow() > env.expira_em:
-        return jsonify({'erro':'O prazo para assinatura deste documento expirou.'}),400
+        return _assinatura_json_erro('O prazo para assinatura deste documento expirou.',400)
     if not (wa_norm_number(sig.telefone or '') or (sig.email or '').strip()):
-        return jsonify({'erro':'Nenhum telefone ou e-mail cadastrado para envio do OTP.'}),400
+        return _assinatura_json_erro('Nenhum telefone ou e-mail cadastrado para envio do OTP.',400)
     codigo=_otp_new_code()
     sig.ass_otp_hash=token_hash(codigo)
     sig.ass_otp_expira_em=utcnow()+timedelta(minutes=10)
@@ -5452,10 +5500,14 @@ def api_envelope_assinatura_enviar_otp(token):
     try:
         envio=_send_signature_otp(codigo,nome_dest=(sig.nome or ''),telefone=sig.telefone or '',email=sig.email or '',contexto='envelope')
         db.session.commit()
-        return jsonify({'ok':True,'mensagem':f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",'canal':envio.get('canal',''),'destino':envio.get('destino','')})
+        return _assinatura_json_ok(
+            mensagem=f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",
+            canal=envio.get('canal',''),
+            destino=envio.get('destino','')
+        )
     except Exception as ex:
         db.session.rollback()
-        return jsonify({'erro':f'Falha ao enviar OTP: {str(ex)}'}),500
+        return _assinatura_json_erro(f'Falha ao enviar OTP: {str(ex)}',500)
 
 
 # API pública: confirmar assinatura
@@ -5463,10 +5515,10 @@ def api_envelope_assinatura_enviar_otp(token):
 def api_envelope_assinatura_confirmar(token):
     sig=AssinaturaEnvelopeSignatario.query.filter_by(token=token).first_or_404()
     if sig.status=='assinado':
-        return jsonify({'erro':'Você já assinou este documento.'}),400
+        return _assinatura_json_erro('Você já assinou este documento.',400)
     env=AssinaturaEnvelope.query.get_or_404(sig.envelope_id)
     if env.expira_em and datetime.utcnow() > env.expira_em:
-        return jsonify({'erro':'O prazo para assinatura deste documento expirou.'}),400
+        return _assinatura_json_erro('O prazo para assinatura deste documento expirou.',400)
     if not env.codigo:
         env.codigo=secrets.token_urlsafe(12)
     data=request.get_json() or {}
@@ -5476,12 +5528,12 @@ def api_envelope_assinatura_confirmar(token):
     otp=(only_digits(data.get('otp') or '') or '').strip()
     aceite=data.get('aceite')
     if not nome or not cpf_inf or not aceite:
-        return jsonify({'erro':'Preencha nome, CPF e confirme o aceite.'}),400
+        return _assinatura_json_erro('Preencha nome, CPF e confirme o aceite.',400)
     if len(cpf_inf)<11 or not _valida_cpf(cpf_inf):
-        return jsonify({'erro':'CPF inválido. Verifique os dígitos e tente novamente.'}),400
+        return _assinatura_json_erro('CPF inválido. Verifique os dígitos e tente novamente.',400)
     cpf_base=only_digits(sig.cpf or '')
     if cpf_base and cpf_inf!=cpf_base:
-        return jsonify({'erro':'O CPF informado não confere com o CPF cadastrado para este signatário.'}),400
+        return _assinatura_json_erro('O CPF informado não confere com o CPF cadastrado para este signatário.',400)
 
     if not otp:
         codigo=_otp_new_code()
@@ -5492,27 +5544,25 @@ def api_envelope_assinatura_confirmar(token):
             envio=_send_signature_otp(codigo,nome_dest=nome,telefone=sig.telefone or '',email=sig.email or '',contexto='envelope')
         except Exception as ex:
             db.session.rollback()
-            return jsonify({'erro':f'Falha ao enviar OTP de confirmação: {str(ex)}'}),400
+            return _assinatura_json_erro(f'Falha ao enviar OTP de confirmação: {str(ex)}',400)
         db.session.commit()
-        return jsonify({
-            'ok':False,
-            'otp_required':True,
-            'mensagem':f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",
-            'canal':envio.get('canal',''),
-            'destino':envio.get('destino','')
-        })
+        return _assinatura_json_otp(
+            mensagem=f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",
+            canal=envio.get('canal',''),
+            destino=envio.get('destino','')
+        )
 
     if not (sig.ass_otp_hash or '').strip() or not sig.ass_otp_expira_em:
-        return jsonify({'erro':'Solicite um novo código OTP para concluir a assinatura.'}),400
+        return _assinatura_json_erro('Solicite um novo código OTP para concluir a assinatura.',400)
     if sig.ass_otp_expira_em<utcnow():
-        return jsonify({'erro':'Código OTP expirado. Solicite um novo código.'}),400
+        return _assinatura_json_erro('Código OTP expirado. Solicite um novo código.',400)
     tent=int(sig.ass_otp_tentativas or 0)
     if tent>=5:
-        return jsonify({'erro':'Limite de tentativas de OTP excedido. Solicite um novo código.'}),400
+        return _assinatura_json_erro('Limite de tentativas de OTP excedido. Solicite um novo código.',400)
     if not hmac.compare_digest(token_hash(otp),str(sig.ass_otp_hash or '')):
         sig.ass_otp_tentativas=tent+1
         db.session.commit()
-        return jsonify({'erro':'Código OTP inválido.'}),400
+        return _assinatura_json_erro('Código OTP inválido.',400)
 
     ip=request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
     sig.nome=nome
@@ -5560,6 +5610,7 @@ def api_envelope_assinatura_confirmar(token):
         env.status='parcial'
     db.session.commit()
     validacao_link=f"{url_root}/envelope/validar/{env.codigo}"
+    enviado_wa=False
     if sig.telefone:
         try:
             tel_sig=sig.telefone.strip().replace(' ','').replace('-','').replace('(','').replace(')','')
@@ -5569,9 +5620,17 @@ def api_envelope_assinatura_confirmar(token):
             if signed_pdf_link:
                 msg_sig+=f"\n⬇ Download do documento assinado: {signed_pdf_link}"
             wa_send_text(tel_sig,msg_sig)
+            enviado_wa=True
         except Exception:
             pass
-    return jsonify({'ok':True,'codigo':sig.ass_codigo,'validacao_link':validacao_link,'signed_pdf_link':signed_pdf_link,'destino_salvamento':destino_info})
+    return _assinatura_json_ok(
+        mensagem='Assinatura concluída com sucesso.',
+        codigo=(sig.ass_codigo or ''),
+        validacao_link=validacao_link,
+        signed_pdf_link=signed_pdf_link,
+        whatsapp_enviado=enviado_wa,
+        destino_salvamento=destino_info
+    )
 
 
 @app.route('/envelope/baixar/<codigo>')
@@ -5618,6 +5677,13 @@ def api_holerites_upload():
     canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
     if canal_ass not in ('nao','whatsapp','link'):
         canal_ass='nao'
+    ids_ass_raw=(request.form.get('assinatura_funcionario_ids') or '').strip()
+    ids_ass_sel=set()
+    if ids_ass_raw:
+        for p in ids_ass_raw.split(','):
+            p=(p or '').strip()
+            if p.isdigit():
+                ids_ass_sel.add(int(p))
     try:
         from pypdf import PdfReader, PdfWriter
     except Exception:
@@ -5646,7 +5712,8 @@ def api_holerites_upload():
         with open(abs_p,'wb') as out: writer.write(out)
         a=FuncionarioArquivo(funcionario_id=alvo.id,categoria='holerite',competencia=comp,nome_arquivo=fake_name,caminho=rel)
         db.session.add(a); db.session.commit(); enviados+=1
-        if canal_ass=='whatsapp':
+        solicitar_ass=(canal_ass!='nao') and (not ids_ass_sel or alvo.id in ids_ass_sel)
+        if solicitar_ass and canal_ass=='whatsapp':
             tel=wa_norm_number(alvo.telefone or '')
             if wa_is_valid_number(tel):
                 rs=_solicitar_assinatura_arquivo_funcionario(a,alvo,canal='whatsapp',commit_now=True)
@@ -5656,7 +5723,7 @@ def api_holerites_upload():
                     erro_ass.append({'funcionario_id':alvo.id,'nome':alvo.nome,'erro':rs.get('erro') or 'Falha ao solicitar assinatura.'})
             else:
                 sem_tel.append({'funcionario_id':alvo.id,'nome':alvo.nome})
-        elif canal_ass=='link':
+        elif solicitar_ass and canal_ass=='link':
             rs=_solicitar_assinatura_arquivo_funcionario(a,alvo,canal='link',commit_now=True)
             if rs.get('ok'):
                 assinaturas_auto+=1
@@ -5673,6 +5740,13 @@ def api_folhas_ponto_upload():
     canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
     if canal_ass not in ('nao','whatsapp','link'):
         canal_ass='nao'
+    ids_ass_raw=(request.form.get('assinatura_funcionario_ids') or '').strip()
+    ids_ass_sel=set()
+    if ids_ass_raw:
+        for p in ids_ass_raw.split(','):
+            p=(p or '').strip()
+            if p.isdigit():
+                ids_ass_sel.add(int(p))
     try:
         from pypdf import PdfReader, PdfWriter
     except Exception:
@@ -5706,7 +5780,8 @@ def api_folhas_ponto_upload():
         with open(abs_p,'wb') as out: writer.write(out)
         a=FuncionarioArquivo(funcionario_id=alvo.id,categoria='folha_ponto',competencia=comp,nome_arquivo=fake_name,caminho=rel)
         db.session.add(a); db.session.commit(); enviados+=1
-        if canal_ass=='whatsapp':
+        solicitar_ass=(canal_ass!='nao') and (not ids_ass_sel or alvo.id in ids_ass_sel)
+        if solicitar_ass and canal_ass=='whatsapp':
             tel=wa_norm_number(alvo.telefone or '')
             if wa_is_valid_number(tel):
                 rs=_solicitar_assinatura_arquivo_funcionario(a,alvo,canal='whatsapp',commit_now=True)
@@ -5716,13 +5791,92 @@ def api_folhas_ponto_upload():
                     erro_ass.append({'funcionario_id':alvo.id,'nome':alvo.nome,'erro':rs.get('erro') or 'Falha ao solicitar assinatura.'})
             else:
                 sem_tel.append({'funcionario_id':alvo.id,'nome':alvo.nome})
-        elif canal_ass=='link':
+        elif solicitar_ass and canal_ass=='link':
             rs=_solicitar_assinatura_arquivo_funcionario(a,alvo,canal='link',commit_now=True)
             if rs.get('ok'):
                 assinaturas_auto+=1
             else:
                 erro_ass.append({'funcionario_id':alvo.id,'nome':alvo.nome,'erro':rs.get('erro') or 'Falha ao gerar link de assinatura.'})
     return jsonify({'ok':True,'arquivos_gerados':enviados,'paginas_sem_funcionario':sem_match,'assinaturas_auto':assinaturas_auto,'sem_telefone':sem_tel,'falhas_assinatura':erro_ass,'canal_assinatura':canal_ass,'duplicadas':duplicadas})
+
+
+@app.route('/api/rh/preview-destinatarios',methods=['POST'])
+@lr
+def api_rh_preview_destinatarios():
+    fs=request.files.get('arquivo')
+    comp=(request.form.get('competencia') or '').strip()
+    funcionario_id=to_num(request.form.get('funcionario_id'))
+    if not fs:
+        return jsonify({'erro':'PDF nao enviado'}),400
+    try:
+        from pypdf import PdfReader
+    except Exception:
+        return jsonify({'erro':'Dependencia pypdf nao instalada'}),500
+
+    if funcionario_id:
+        f=Funcionario.query.get(funcionario_id)
+        if not f:
+            return jsonify({'erro':'Funcionario selecionado nao encontrado.'}),404
+        tel=wa_norm_number(f.telefone or '')
+        return jsonify({
+            'ok':True,
+            'total_paginas':0,
+            'paginas_sem_funcionario':[],
+            'destinatarios':[{
+                'funcionario_id':f.id,
+                'nome':f.nome or '',
+                'matricula':f.matricula or '',
+                'email':f.email or '',
+                'telefone':(tel if wa_is_valid_number(tel) else ''),
+                'paginas':[]
+            }],
+            'competencia':comp,
+            'preview_tipo':'funcionario_especifico'
+        })
+
+    funcs=Funcionario.query.all()
+    if not funcs:
+        return jsonify({'erro':'Cadastre funcionarios antes do upload'}),400
+
+    try:
+        reader=PdfReader(fs)
+    except Exception:
+        return jsonify({'erro':'PDF invalido ou corrompido.'}),400
+
+    dest_idx={}
+    sem_match=[]
+    for idx,page in enumerate(reader.pages,start=1):
+        txt=(page.extract_text() or '').lower()
+        alvo=None
+        for f in funcs:
+            nm=(f.nome or '').lower().strip()
+            if nm and nm in txt:
+                alvo=f
+                break
+        if not alvo:
+            sem_match.append(idx)
+            continue
+        if alvo.id not in dest_idx:
+            tel=wa_norm_number(alvo.telefone or '')
+            dest_idx[alvo.id]={
+                'funcionario_id':alvo.id,
+                'nome':alvo.nome or '',
+                'matricula':alvo.matricula or '',
+                'email':alvo.email or '',
+                'telefone':(tel if wa_is_valid_number(tel) else ''),
+                'paginas':[]
+            }
+        dest_idx[alvo.id]['paginas'].append(idx)
+
+    destinatarios=sorted(dest_idx.values(),key=lambda x:(x.get('nome') or '').lower())
+    return jsonify({
+        'ok':True,
+        'total_paginas':len(reader.pages),
+        'paginas_sem_funcionario':sem_match,
+        'destinatarios':destinatarios,
+        'competencia':comp,
+        'preview_tipo':'separacao_automatica'
+    })
 
 @app.route('/api/ordens-compra',methods=['GET'])
 @lr
