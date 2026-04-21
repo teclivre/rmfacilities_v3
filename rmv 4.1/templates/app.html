@@ -33,6 +33,7 @@
       <button type="button" class="mobile-nav-btn" data-nav="rh" onclick="navFromMobile('rh')">RH</button>
       <button type="button" class="mobile-nav-btn" data-nav="rh-digital" onclick="navFromMobile('rh-digital')">Comunicação</button>
       <button type="button" class="mobile-nav-btn" data-nav="operacional" onclick="navFromMobile('operacional')">Operacional</button>
+      <button type="button" class="mobile-nav-btn" data-nav="compras" onclick="navFromMobile('compras')">Compras</button>
       <button type="button" class="mobile-nav-btn" data-nav="beneficios" onclick="navFromMobile('beneficios')">Benefícios</button>
       <button type="button" class="mobile-nav-btn" data-nav="sst" onclick="navFromMobile('sst')">SST</button>
       <button type="button" class="mobile-nav-btn" data-nav="assinaturas" onclick="navFromMobile('assinaturas')">Assinaturas</button>
@@ -75,6 +76,10 @@
     <a class="nav-item" onclick="nav('operacional',this)">
       <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 20h16"/><path d="M6 20V8l6-4 6 4v12"/></svg>
       Operacional
+    </a>
+    <a class="nav-item" onclick="nav('compras',this)">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 6h15l-1.5 9h-12z"/><circle cx="10" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M6 6L4.5 3.5H2"/></svg>
+      Compras
     </a>
     <a class="nav-item" onclick="nav('beneficios',this)">
       <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 1v22"/><path d="M17 5H9a4 4 0 0 0 0 8h6a4 4 0 0 1 0 8H7"/></svg>
@@ -351,77 +356,7 @@
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-header"><span class="card-title">Ponto - Pacote 2</span></div>
-        <div class="g3">
-          <div class="f">
-            <label>Colaborador ativo</label>
-            <select id="ponto-funcionario" onchange="pontoCarregarDia()"></select>
-          </div>
-          <div class="f">
-            <label>Data</label>
-            <input id="ponto-data" type="date" onchange="pontoCarregarDia();pontoCarregarPainelDia()">
-          </div>
-          <div class="f" style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap">
-            <button class="btn b-az" onclick="pontoRegistrarAgora()">Registrar ponto agora</button>
-            <button class="btn b-gh" onclick="pontoCarregarDia()">Atualizar dia</button>
-            <button class="btn b-ghv" onclick="pontoCarregarPainelDia()">Atualizar painel</button>
-          </div>
-        </div>
-        <div id="ponto-st" class="st" style="margin-top:8px"></div>
-        <div id="ponto-fechamento-st" class="st" style="margin-top:6px"></div>
-        <div id="ponto-resumo" style="margin-top:10px"></div>
-
-        <div class="g4" style="margin-top:10px;align-items:flex-end">
-          <div class="f">
-            <label>Ajuste manual - tipo</label>
-            <select id="ponto-ajuste-tipo">
-              <option value="entrada">Entrada</option>
-              <option value="saida_intervalo">Saída intervalo</option>
-              <option value="retorno_intervalo">Retorno intervalo</option>
-              <option value="saida">Saída</option>
-            </select>
-          </div>
-          <div class="f">
-            <label>Data/hora do ajuste</label>
-            <input id="ponto-ajuste-dh" type="datetime-local">
-          </div>
-          <div class="f s2">
-            <label>Motivo do ajuste</label>
-            <input id="ponto-ajuste-motivo" placeholder="Ex.: esquecimento de marcação às 12:00">
-          </div>
-          <div class="f" style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn b-ghr" onclick="pontoAplicarAjuste()">Aplicar ajuste</button>
-            <button class="btn b-ghv" onclick="pontoFecharDia(false)">Fechar dia</button>
-            <button class="btn b-ci" onclick="pontoFecharDia(true)">Fechar com ressalvas</button>
-          </div>
-        </div>
-
-        <div class="g3" style="margin-top:10px;align-items:flex-end">
-          <div class="f">
-            <label>Competência espelho (YYYY-MM)</label>
-            <input id="ponto-competencia" placeholder="2026-04" onchange="pontoCarregarEspelhoStatus();pontoCarregarBancoHoras()">
-          </div>
-          <div class="f" style="display:flex;align-items:flex-end">
-            <button class="btn b-az" onclick="pontoBaixarEspelhoMensal()">Baixar espelho mensal (PDF)</button>
-          </div>
-          <div class="f"><div style="font-size:11px;color:#6e7f8f">O PDF inclui totais da competência e bloco de assinatura do colaborador e gestor.</div></div>
-        </div>
-        <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px;flex-wrap:wrap">
-          <button class="btn b-ghv" onclick="pontoPrepararEspelhoAssinatura()">Preparar assinatura eletronica</button>
-          <button class="btn b-gh" onclick="pontoAprovarEspelho(true)">Aprovar espelho</button>
-          <button class="btn b-ghr" onclick="pontoAprovarEspelho(false)">Reprovar espelho</button>
-        </div>
-        <div id="ponto-espelho-st" class="st" style="margin-top:6px"></div>
-        <div id="ponto-bh" style="margin-top:6px;font-size:12px;color:#60758a"></div>
-
-        <div class="tbl-wrap" style="margin-top:8px">
-          <table class="tbl">
-            <thead><tr><th>Tipo</th><th>Horário</th><th>Origem</th><th>Observação</th></tr></thead>
-            <tbody id="tb-ponto-dia"></tbody>
-          </table>
-        </div>
-      </div>
+      {% include 'partials/rh_ponto_section.html' %}
 
       <div class="card">
         <div class="card-header"><span class="card-title">Painel do dia (colaboradores ativos)</span></div>
@@ -435,12 +370,43 @@
       </div>
 
       <div class="card">
-        <div class="card-header"><span class="card-title">Holerites em lote (PDF)</span></div>
-        <div class="g3">
-          <div class="f"><label>Competência (ex: 04/2026)</label><input id="rh-comp"></div>
-          <div class="f s2"><label>Arquivo PDF único (com vários holerites)</label><input type="file" id="rh-holerite-arq" accept="application/pdf"></div>
+        <div class="card-header"><span class="card-title">Envio de arquivo</span></div>
+        <div class="g4">
+          <div class="f"><label>Tipo de documento</label>
+            <select id="rh-lote-tipo">
+              <option value="holerite">Holerite</option>
+              <option value="folha_ponto">Folha de Ponto</option>
+              <option value="atestado">Atestado</option>
+              <option value="outros">Outros documentos RH</option>
+            </select>
+          </div>
+          <div class="f"><label>Competência (ex: 04/2026)</label><input id="rh-lote-comp"></div>
+          <div class="f"><label>Funcionário específico (opcional)</label><select id="rh-lote-func"><option value="">Separar automaticamente pelo PDF</option></select></div>
+          <div class="f"><label>Solicitação de assinatura</label>
+            <select id="rh-lote-ass">
+              <option value="nao">Não solicitar assinatura</option>
+              <option value="whatsapp">Solicitar via WhatsApp</option>
+              <option value="link">Apenas gerar link</option>
+            </select>
+          </div>
+          <div class="f s2"><label>Arquivo PDF único (com várias páginas)</label><input type="file" id="rh-lote-arq" accept="application/pdf"></div>
         </div>
-        <div class="brow" style="justify-content:flex-start"><button class="btn b-ghv" onclick="uploadHoleritesLote()">Processar e separar por funcionário</button></div>
+        <div class="hint" style="margin-top:8px">Se escolher um funcionário, o PDF inteiro será salvo para ele. Sem seleção, o sistema tenta identificar o colaborador pelo conteúdo de cada página.</div>
+        <div class="brow" style="justify-content:flex-start">
+          <button class="btn b-gh" type="button" onclick="previewDocumentoRHLote()">Pré-visualizar destinatários</button>
+          <button class="btn b-ghv" type="button" onclick="uploadDocumentoRHLote()">Enviar arquivo</button>
+        </div>
+        <div id="rh-lote-prev-box" style="display:none;margin-top:10px;border:1px solid var(--borda);border-radius:10px;background:var(--cinza-cl);padding:10px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <strong style="font-size:12px;color:#1a2b3c">Pré-visualização de destinatários</strong>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn b-gh b-sm" type="button" onclick="toggleAllRHLotePreview(true)">Selecionar todos</button>
+              <button class="btn b-gh b-sm" type="button" onclick="toggleAllRHLotePreview(false)">Limpar seleção</button>
+            </div>
+          </div>
+          <div id="rh-lote-prev-meta" style="font-size:12px;color:#5f7386;margin-bottom:8px"></div>
+          <div id="rh-lote-prev-list" style="display:flex;flex-direction:column;gap:7px;max-height:220px;overflow:auto"></div>
+        </div>
       </div>
     </div>
 
@@ -448,61 +414,13 @@
     <div id="pg-rh-digital" class="pg">
       <div id="st-rhd" class="st"></div>
       <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap" id="rhd-tabs">
-        <button class="btn b-az b-sm" onclick="switchTab('rhd','holerites',this)">Holerites</button>
-        <button class="btn b-gh b-sm" onclick="switchTab('rhd','conversas',this)">Conversas</button>
+        <button class="btn b-az b-sm" onclick="switchTab('rhd','conversas',this)">Envio ativos</button>
         <button class="btn b-gh b-sm" onclick="switchTab('rhd','cfg-email',this)">Config E-mail</button>
         <button class="btn b-gh b-sm" onclick="switchTab('rhd','cfg-wa',this)">Config WhatsApp</button>
       </div>
 
-      <!-- Tab Holerites -->
-      <div id="rhd-tab-holerites">
-        <div class="card">
-          <div class="card-header"><span class="card-title">Processar e enviar holerites</span></div>
-          <div class="g3">
-            <div class="f"><label>Competência (ex: 04/2026)</label><input id="rhd-comp" placeholder="04/2026"></div>
-            <div class="f s2"><label>PDF com todos os holerites (múltiplas páginas)</label><input type="file" id="rhd-arq" accept="application/pdf"></div>
-          </div>
-          <div class="brow" style="justify-content:flex-start">
-            <button class="btn b-az" onclick="rhdProcessar()">Separar por funcionário</button>
-          </div>
-          <p style="font-size:12px;color:#888;margin-top:6px">O sistema identifica o funcionário pelo nome no PDF e salva o holerite na pasta dele. Após processar, escolha como enviar.</p>
-        </div>
-        <div id="rhd-preview-box" style="display:none">
-          <div class="card">
-            <div class="card-header">
-              <span class="card-title">Holerites identificados — preview</span>
-              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                <select id="rhd-ass-filtro" onchange="rhdAplicarFiltroAssinatura(this.value)" style="padding:6px 10px;border:1.5px solid var(--borda);border-radius:var(--r);font-size:12px">
-                  <option value="todos">Assinatura automática: todos</option>
-                  <option value="pendentes">Sem assinatura automática</option>
-                  <option value="solicitada">Com assinatura automática solicitada</option>
-                </select>
-                <button class="btn b-ghl b-sm" onclick="rhdSelecionarPendentesAssinatura()">Selec. pendentes assinatura</button>
-                <button class="btn b-gh b-sm" onclick="rhdSelecionarTodos(true)">Selec. todos</button>
-                <button class="btn b-ci b-sm" onclick="rhdSelecionarTodos(false)">Desmarcar</button>
-              </div>
-            </div>
-            <div id="rhd-preview-lista"></div>
-            <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-              <select id="rhd-canal" style="padding:6px 10px;border:1.5px solid var(--borda);border-radius:var(--r);font-size:13px">
-                 <option value="whatsapp">Enviar por WhatsApp</option>
-                 <option value="email">Enviar por e-mail</option>
-                 <option value="ambos">Enviar por WhatsApp e e-mail</option>
-                 <option value="link">Apenas gerar link</option>
-              </select>
-              <label style="display:flex;gap:6px;align-items:center;font-size:12px;color:#666;cursor:pointer;user-select:none">
-                <input type="checkbox" id="rhd-incluir-folha" checked>
-                Incluir folha de ponto da mesma competência
-              </label>
-              <button class="btn b-ghv" onclick="rhdEnviar()">Enviar selecionados</button>
-            </div>
-            <div id="rhd-envio-st" class="st" style="margin-top:8px"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Tab Conversas WhatsApp -->
-      <div id="rhd-tab-conversas" style="display:none">
+      <!-- Tab Envio WhatsApp -->
+      <div id="rhd-tab-conversas">
         <div class="card" style="margin-bottom:12px">
           <div class="card-header"><span class="card-title">Envio para colaboradores ativos</span></div>
           <div class="g3" style="margin-top:8px">
@@ -522,36 +440,6 @@
             <button class="btn b-az" onclick="waEnviarColaboradoresSelecionados()">Enviar para selecionados</button>
           </div>
           <div id="wa-colab-st" class="st" style="margin-top:8px"></div>
-        </div>
-
-        <div style="display:grid;grid-template-columns:280px 1fr;gap:12px">
-          <div class="card" style="margin-bottom:0">
-            <div class="card-header">
-              <span class="card-title">Conversas</span>
-              <button class="btn b-gh b-sm" onclick="loadWAConversas()">Atualizar</button>
-            </div>
-            <div style="padding:8px 0 4px">
-              <input id="wa-conv-busca" placeholder="Buscar conversa..." oninput="waFiltrarConversas()" style="width:100%;padding:6px 10px;border:1.5px solid var(--borda);border-radius:var(--r);font-size:12px;box-sizing:border-box">
-            </div>
-            <div id="wa-conversas-lista"><div class="vazio">Nenhuma conversa.</div></div>
-          </div>
-          <div class="card" style="display:flex;flex-direction:column;margin-bottom:0;min-height:520px">
-            <div class="card-header">
-              <span class="card-title" id="wa-chat-titulo">Selecione uma conversa</span>
-              <div style="display:flex;gap:6px;align-items:center">
-                <span id="wa-pausa-info" style="font-size:11px;color:#e07000;display:none"></span>
-                <button class="btn b-ci b-sm" id="wa-pausar-btn" onclick="waPausarIA()" style="display:none">Pausar IA 2h</button>
-                <button class="btn b-ghv b-sm" id="wa-retomar-btn" onclick="waRetomarIA()" style="display:none">Retomar IA</button>
-              </div>
-            </div>
-            <div id="wa-chat-msgs" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:400px">
-              <div class="vazio">Selecione uma conversa para ver as mensagens.</div>
-            </div>
-            <div style="padding:12px;border-top:1.5px solid var(--borda);display:flex;gap:8px">
-              <input id="wa-msg-input" placeholder="Digite uma mensagem..." style="flex:1;padding:8px 12px;border:1.5px solid var(--borda);border-radius:var(--r);font-size:13px" onkeydown="if(event.key==='Enter')waSend()" disabled>
-              <button class="btn b-az" onclick="waSend()" id="wa-send-btn" disabled>Enviar</button>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -650,27 +538,6 @@
     <div id="pg-operacional" class="pg">
       <div id="st-op" class="st"></div>
       <div class="card">
-        <div class="card-header"><span class="card-title">Ordem de Compra</span></div>
-        <div class="g4">
-          <div class="f"><label>Número</label><input id="oc-num" placeholder="OC-2026-001"></div>
-          <div class="f"><label>Empresa</label><select id="oc-emp"><option value="">Selecione...</option></select></div>
-          <div class="f"><label>Solicitante</label><input id="oc-sol"></div>
-          <div class="f"><label>Data</label><input id="oc-data" type="date"></div>
-        </div>
-        <div class="g3" style="margin-top:10px">
-          <div class="f"><label>Fornecedor</label><input id="oc-for"></div>
-          <div class="f"><label>Valor</label><input id="oc-val" type="number" min="0" step="0.01"></div>
-          <div class="f"><label>Status</label><select id="oc-status"><option>Aberta</option><option>Aprovada</option><option>Cancelada</option></select></div>
-        </div>
-        <div class="f" style="margin-top:10px"><label>Descrição</label><textarea id="oc-desc"></textarea></div>
-        <div class="brow" style="justify-content:flex-start"><button class="btn b-az" onclick="salvarOrdemCompra()">Salvar ordem</button></div>
-      </div>
-      <div class="card">
-        <div class="card-header"><span class="card-title">Ordens cadastradas</span></div>
-        <div id="lista-oc"></div>
-      </div>
-
-      <div class="card">
         <div class="card-header"><span class="card-title">Documentação operacional</span></div>
         <div class="g3">
           <div class="f"><label>Tipo</label><select id="op-tipo"><option>DDS</option><option>Ficha de EPI</option><option>Procedimento</option><option>Outros</option></select></div>
@@ -700,6 +567,31 @@
             <tbody id="tb-op-postos"></tbody>
           </table>
         </div>
+      </div>
+    </div>
+
+    <!-- ══ COMPRAS ══ -->
+    <div id="pg-compras" class="pg">
+      <div id="st-compras" class="st"></div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Ordem de Compra</span></div>
+        <div class="g4">
+          <div class="f"><label>Número</label><input id="oc-num" placeholder="OC-2026-001"></div>
+          <div class="f"><label>Empresa</label><select id="oc-emp"><option value="">Selecione...</option></select></div>
+          <div class="f"><label>Solicitante</label><input id="oc-sol"></div>
+          <div class="f"><label>Data</label><input id="oc-data" type="date"></div>
+        </div>
+        <div class="g3" style="margin-top:10px">
+          <div class="f"><label>Fornecedor</label><input id="oc-for"></div>
+          <div class="f"><label>Valor</label><input id="oc-val" type="number" min="0" step="0.01"></div>
+          <div class="f"><label>Status</label><select id="oc-status"><option>Aberta</option><option>Aprovada</option><option>Cancelada</option></select></div>
+        </div>
+        <div class="f" style="margin-top:10px"><label>Descrição</label><textarea id="oc-desc"></textarea></div>
+        <div class="brow" style="justify-content:flex-start"><button class="btn b-az" onclick="salvarOrdemCompra()">Salvar ordem</button></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Ordens cadastradas</span></div>
+        <div id="lista-oc"></div>
       </div>
     </div>
 
@@ -773,6 +665,7 @@
         <div class="card-header"><span class="card-title">Segurança do Trabalho</span></div>
         <p style="font-size:13px;color:#666">Nesta aba você pode anexar ASO, ficha de EPI e documentos relacionados direto no cadastro do funcionário.</p>
         <div class="g3" style="margin-top:8px">
+          <div class="f"><label>Buscar colaborador</label><input id="sst-func-busca" placeholder="Digite nome, matrícula ou RE" oninput="filtrarSSTFuncionarios()"></div>
           <div class="f"><label>Funcionário</label><select id="sst-func"><option value="">Selecione...</option></select></div>
             <div class="f"><label>Categoria</label><select id="sst-cat"><option value="aso">ASO</option><option value="epi">Ficha de EPI</option><option value="treinamento">Treinamento</option><option value="folha_ponto">Folha de Ponto</option><option value="contrato_trabalho">Contrato de Trabalho</option><option value="vale_transporte">Vale Transporte</option><option value="requisicao_vale_transporte">Requisição de Vale Transporte</option><option value="uniforme">Uniforme / Fardamento</option><option value="outros">Outros</option></select></div>
           <div class="f"><label>Competência/Validade</label><input id="sst-comp" placeholder="04/2026"></div>
@@ -939,7 +832,7 @@
         </div>
         <div class="tbl-wrap">
           <table class="tbl">
-            <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th>Ações</th></tr></thead>
+            <thead><tr><th>Nome</th><th>E-mail</th><th>Telefone</th><th>Perfil</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody id="tb-usr"></tbody>
           </table>
         </div>
@@ -953,6 +846,16 @@
         <div class="g2">
           <div class="f"><label>Número base (próxima medição começará a partir daqui)</label><input type="number" id="cfg-num-base" placeholder="100" min="1"></div>
           <div class="f"><label>Última medição emitida (o sistema usará o próximo número)</label><input type="number" id="cfg-num-ultima" placeholder="0" min="0"></div>
+        </div>
+        <div class="g2" style="margin-top:10px">
+          <div class="f"><label>Política do certificado nas assinaturas em PDF</label>
+            <select id="cfg-pdf-cert-policy" onchange="document.getElementById('cfg-cert-policy-resumo').textContent=certPolicySummary(this.value)">
+              <option value="prefer_empresa">Preferir certificado da empresa</option>
+              <option value="empresa_obrigatorio">Usar somente certificado da empresa</option>
+              <option value="prefer_usuario">Preferir certificado do usuário</option>
+            </select>
+          </div>
+          <div class="f"><label>Resumo</label><div id="cfg-cert-policy-resumo" class="hint" style="padding-top:10px">O sistema usará a política definida abaixo.</div></div>
         </div>
         <div class="brow" style="justify-content:flex-start;margin-top:14px">
           <button class="btn b-az" onclick="salvarConfig()">Salvar configurações</button>
@@ -1285,6 +1188,17 @@
         <div class="f"><label>Conta</label><input id="econta"></div>
         <div class="f"><label>Informações de boleto</label><input id="eboleto" placeholder="Ex: Banco, beneficiário, instruções"></div>
       </div>
+      <div class="sep"></div>
+      <div class="f"><label>Certificado digital da empresa (A1 .p12/.pfx)</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input id="ecert-file" type="file" accept=".p12,.pfx" style="max-width:280px">
+          <input id="ecert-pass" type="password" placeholder="Senha do certificado" style="max-width:240px">
+          <button type="button" class="btn b-gh b-sm" onclick="uploadCertEmpresa()">Salvar certificado</button>
+          <button type="button" class="btn b-gh b-sm" onclick="atualizarSenhaCertEmpresa()">Atualizar senha</button>
+          <button type="button" class="btn b-ghr b-sm" onclick="removerCertEmpresa()">Remover</button>
+        </div>
+        <div id="ecert-info" class="hint" style="margin-top:6px"></div>
+      </div>
       <div class="brow" style="margin-top:6px">
         <button class="btn b-ci" onclick="closeModal('emp')">Cancelar</button>
         <button class="btn b-az" onclick="salvarEmpresa()">Salvar empresa</button>
@@ -1301,6 +1215,7 @@
       <input type="hidden" id="uid-edit">
       <div class="f"><label>Nome *</label><input id="un"></div>
       <div class="f"><label>E-mail *</label><input id="ue" type="email"></div>
+      <div class="f"><label>Telefone (WhatsApp/SMS) *</label><input id="utel" placeholder="(11) 99999-9999" oninput="maskTelefone(this)"></div>
       <div class="f"><label>Senha (deixe em branco para manter)</label><input id="up" type="password" placeholder="••••••••"></div>
       <div class="g2">
         <div class="f"><label>Perfil</label>
@@ -1318,6 +1233,18 @@
         </div>
       </div>
       <div class="f"><label>Áreas de acesso</label><div id="uareas" class="areas-grid"></div></div>
+      <div class="sep"></div>
+      <div class="f"><label>Certificado digital do usuário (opcional, .p12/.pfx)</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input id="ucert-file" type="file" accept=".p12,.pfx" style="max-width:220px">
+          <input id="ucert-pass" type="password" placeholder="Senha do certificado" style="max-width:220px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px"><input id="ucert-ativo" type="checkbox" checked style="width:auto">Usar para assinatura</label>
+          <button type="button" class="btn b-gh b-sm" onclick="uploadCertUsuario()">Salvar certificado</button>
+          <button type="button" class="btn b-gh b-sm" onclick="atualizarSenhaCertUsuario()">Atualizar senha</button>
+          <button type="button" class="btn b-ghr b-sm" onclick="removerCertUsuario()">Remover</button>
+        </div>
+        <div id="ucert-info" class="hint" style="margin-top:6px"></div>
+      </div>
       <div class="brow" style="margin-top:6px">
         <button class="btn b-ci" onclick="closeModal('usr')">Cancelar</button>
         <button class="btn b-az" onclick="salvarUsuario()">Salvar usuário</button>
@@ -1326,12 +1253,16 @@
   </div>
 </div>
 
+{% include 'partials/ponto_edit_modal.html' %}
+
 <script>
 const N='{{ nome }}', P='{{ perfil }}';
 const USER_AREAS={{ areas|safe }};
 const THEME_KEY='rm_theme';
-const AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','beneficios','sst','rh-digital','documentos'];
-let todos=[], emps=[], funcs=[], pontoFuncs=[], bancosBR=[], beneficiosMensais=[], benTab='ativos', acIdx=-1, svcId=0, cliAtual=null, empAtual=null, _pontoEspelhoId=null;
+const AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','compras','beneficios','sst','rh-digital','documentos'];
+let todos=[], emps=[], funcs=[], pontoFuncs=[], bancosBR=[], beneficiosMensais=[], benTab='ativos', acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
+let pontoResumoPainelByFunc={};
+let pontoMarcacoesDiaAtual=[];
 
 function applyTheme(theme){
   const t=(theme==='dark')?'dark':'light';
@@ -1371,6 +1302,47 @@ async function api(url,m='GET',b=null){
   return {erro:`Erro HTTP ${r.status}${tx?`: ${tx.slice(0,120)}`:''}`};
 }
 
+async function apiForm(url,fd,m='POST'){
+  const r=await fetch(url,{method:m,body:fd,credentials:'same-origin'});
+  const ct=(r.headers.get('content-type')||'').toLowerCase();
+  if(ct.includes('application/json')){
+    const d=await r.json();
+    if(!r.ok && !d?.erro) d.erro='Erro HTTP '+r.status;
+    return d;
+  }
+  const tx=(await r.text()||'').trim();
+  return {erro:`Erro HTTP ${r.status}${tx?`: ${tx.slice(0,120)}`:''}`};
+}
+
+function certInfoHtml(ent){
+  if(!ent || !ent.cert_configurado) return 'Nenhum certificado cadastrado.';
+  const partes=[
+    `Arquivo: ${ent.cert_nome_arquivo||'certificado'}`,
+    `Status: ${ent.cert_ativo?'ativo':'inativo'}`,
+    ent.cert_validade_fim?`Validade: ${ent.cert_validade_fim}`:'',
+    ent.cert_assunto?`Assunto: ${ent.cert_assunto}`:''
+  ].filter(Boolean);
+  return partes.join(' | ');
+}
+
+function certPolicyLabel(v){
+  const mapa={
+    prefer_empresa:'Preferir certificado da empresa',
+    empresa_obrigatorio:'Usar somente certificado da empresa',
+    prefer_usuario:'Preferir certificado do usuário'
+  };
+  return mapa[v]||mapa.prefer_empresa;
+}
+
+function certPolicySummary(v){
+  const mapa={
+    prefer_empresa:'Se existir certificado ativo da empresa, ele será usado primeiro. Na falta dele, o sistema tenta o certificado ativo do usuário.',
+    empresa_obrigatorio:'Somente o certificado ativo da empresa será aceito. Sem ele, a assinatura criptográfica do PDF não será aplicada.',
+    prefer_usuario:'Se o usuário tiver certificado ativo, ele terá prioridade. Sem ele, o sistema tenta o certificado da empresa.'
+  };
+  return mapa[v]||mapa.prefer_empresa;
+}
+
 async function init(){
   tick(); setInterval(tick,1000);
   const h=new Date();
@@ -1387,6 +1359,8 @@ async function init(){
   funcs=await api('/api/funcionarios');
   document.getElementById('ass1').value=N;
   await loadProxNum();
+  montarSubAbasBloco();
+  ativarSubAbaPagina('dashboard');
 }
 
 function tick(){
@@ -1413,7 +1387,43 @@ function fillSSTFuncionarios(){
   const el=document.getElementById('sst-func');
   if(!el)return;
   const keep=el.options[0]; el.innerHTML=''; el.appendChild(keep);
-  funcs.forEach(f=>el.appendChild(new Option(f.nome,f.id)));
+  funcs.forEach(f=>{
+    const rotulo=[f.nome||'',f.matricula?('Mat '+f.matricula):'',f.re?('RE '+f.re):''].filter(Boolean).join(' · ');
+    el.appendChild(new Option(rotulo,f.id));
+  });
+  filtrarSSTFuncionarios();
+
+  const rh=document.getElementById('rh-lote-func');
+  if(rh){
+    const atual=rh.value;
+    const keepRh=rh.options[0];
+    rh.innerHTML='';
+    rh.appendChild(keepRh);
+    funcs.forEach(f=>{
+      const rotulo=[f.nome||'',f.matricula?('Mat '+f.matricula):'',f.re?('RE '+f.re):''].filter(Boolean).join(' · ');
+      rh.appendChild(new Option(rotulo,f.id));
+    });
+    if(atual && Array.from(rh.options).some(o=>o.value===atual)) rh.value=atual;
+  }
+}
+
+function filtrarSSTFuncionarios(){
+  const el=document.getElementById('sst-func');
+  if(!el)return;
+  const q=(document.getElementById('sst-func-busca')?.value||'').trim().toLowerCase();
+  const atual=el.value;
+  const keep=el.options[0];
+  el.innerHTML='';
+  el.appendChild(keep);
+  const lista=!q?funcs:funcs.filter(f=>{
+    const txt=[f.nome||'',String(f.matricula||''),String(f.re||''),f.cpf||''].join(' ').toLowerCase();
+    return txt.includes(q);
+  });
+  lista.forEach(f=>{
+    const rotulo=[f.nome||'',f.matricula?('Mat '+f.matricula):'',f.re?('RE '+f.re):''].filter(Boolean).join(' · ');
+    el.appendChild(new Option(rotulo,f.id));
+  });
+  if(atual && Array.from(el.options).some(o=>o.value===atual)) el.value=atual;
 }
 
 async function loadDash(){
@@ -1442,6 +1452,7 @@ async function loadDash(){
     const benPend=d.alerta_beneficios_pendentes||{qtd:0,itens:[]};
     const asoInval=d.alerta_sem_aso_valido||{qtd:0,itens:[]};
     const inad=d.alerta_inadimplencia||{qtd:0,total:0,itens:[]};
+    const certs=d.alerta_certificados||{qtd:0,itens:[]};
     const calcItens=(calc.itens||[]).length
       ? calc.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.titulo||'—'}</div><div style="font-size:11px;color:#8aa">${it.descricao||''}</div></div>`).join('')
       : '';
@@ -1457,7 +1468,10 @@ async function loadDash(){
     const inadItens=(inad.itens||[]).length
       ? inad.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.numero||'—'} · ${it.cliente_nome||'Sem cliente'}</div><div style="font-size:11px;color:#8aa">Venc. ${it.vencimento||'—'} · atraso ${it.dias_atraso||0} dia(s) · ${brl(it.valor||0)}</div></div>`).join('')
       : '';
-    if((aso.itens||[]).length || (calc.itens||[]).length || (benPend.itens||[]).length || (asoInval.itens||[]).length || (inad.itens||[]).length){
+    const certItens=(certs.itens||[]).length
+      ? certs.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.nome||'—'} <span style="opacity:.7">(${it.origem||it.tipo||'certificado'})</span></div><div style="font-size:11px;color:#8aa">Vence em ${it.validade||'—'} · faltam ${it.dias_restantes} dia(s)</div></div>`).join('')
+      : '';
+    if((aso.itens||[]).length || (calc.itens||[]).length || (benPend.itens||[]).length || (asoInval.itens||[]).length || (inad.itens||[]).length || (certs.itens||[]).length){
       al.style.display='grid';
       const cards=[];
       if((inad.itens||[]).length){
@@ -1489,6 +1503,13 @@ async function loadDash(){
         cards.push(`<button type="button" class="card dash-alert-btn" style="margin-bottom:0;text-align:left" onclick="abrirDashboardDestino('sst')">
           <div class="card-header" style="margin-bottom:8px"><span class="card-title">Eventos vencendo (ASO até 30 dias)</span><div style="display:flex;align-items:center;gap:8px"><span class="pill p-lj">${aso.qtd||0}</span><span class="metric-go" style="font-size:9px">Ir</span></div></div>
           <div>${asoItens}</div>
+        </button>`);
+      }
+      if((certs.itens||[]).length){
+        cards.push(`<button type="button" class="card dash-alert-btn" style="margin-bottom:0;text-align:left" onclick="abrirDashboardDestino('config')">
+          <div class="card-header" style="margin-bottom:8px"><span class="card-title">Certificados próximos do vencimento</span><div style="display:flex;align-items:center;gap:8px"><span class="pill p-lj">${certs.qtd||0}</span><span class="metric-go" style="font-size:9px">Ir</span></div></div>
+          <div style="font-size:11px;color:#8aa;margin-bottom:6px">Avisos em 30 dias e depois a cada 5 dias.</div>
+          <div>${certItens}</div>
         </button>`);
       }
       al.innerHTML=cards.join('');
@@ -1535,6 +1556,7 @@ function nav(id,el,force=false){
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));
   document.getElementById('pg-'+targetId).classList.add('on');
+  ativarSubAbaPagina(targetId);
   if(el)el.classList.add('on');
   const navMobile=((targetId==='nova-medicao'||targetId==='historico')?'faturamento':id);
   document.querySelectorAll('.mobile-nav-btn').forEach(btn=>btn.classList.toggle('on',btn.dataset.nav===navMobile));
@@ -1546,12 +1568,86 @@ function nav(id,el,force=false){
   if(targetId==='usuarios')renderUsr();
   if(targetId==='config')loadConfig();
   if(targetId==='rh')renderFuncionarios();
-  if(targetId==='operacional'){renderOrdensCompra();renderOperDocs();renderOperPostos();}
+  if(targetId==='operacional'){renderOperDocs();renderOperPostos();}
+  if(targetId==='compras'){renderOrdensCompra();}
   if(targetId==='beneficios'){carregarBeneficiosMensais();carregarConfigAlertaBeneficios();}
   if(targetId==='sst')fillSSTFuncionarios();
   if(targetId==='nova-medicao'){loadProxNum(); onEmpSel(); loadFaturamentoAlert();}
   if(targetId==='rh-digital')initRHDigital();
   if(targetId==='assinaturas')initAssinaturas();
+}
+
+const _subAbaState={};
+
+function _subAbaLabel(item,idx){
+  const title=item.querySelector('.card-title');
+  let txt=(title?.textContent||'').trim();
+  if(!txt && item.id){
+    txt=item.id.replace(/^pg-|^rhd-tab-|^asi-/g,'').replace(/-/g,' ');
+  }
+  if(!txt) txt='Bloco '+(idx+1);
+  if(txt.length>34) txt=txt.slice(0,34).trim()+'...';
+  return txt;
+}
+
+function montarSubAbasBloco(){
+  document.querySelectorAll('.pg').forEach(pg=>{
+    if(pg.dataset.subabaReady==='1') return;
+    if(['pg-rh-digital','pg-assinaturas'].includes(pg.id)) return;
+
+    const itens=Array.from(pg.children).filter(el=>{
+      if(!el) return false;
+      if(el.classList.contains('st')) return false;
+      if(el.classList.contains('subaba-blocos')) return false;
+      if(!(el.classList.contains('card') || el.classList.contains('g2') || el.classList.contains('g3') || el.classList.contains('g4'))) return false;
+      if(getComputedStyle(el).display==='none') return false;
+      return true;
+    });
+
+    if(itens.length<2) return;
+
+    const box=document.createElement('div');
+    box.className='subaba-blocos';
+    box.dataset.pg=pg.id;
+
+    itens.forEach((item,idx)=>{
+      item.dataset.subabaItem='1';
+      const bt=document.createElement('button');
+      bt.type='button';
+      bt.className='subaba-bloco';
+      bt.textContent=_subAbaLabel(item,idx);
+      bt.onclick=()=>setSubAba(pg.id,idx);
+      box.appendChild(bt);
+    });
+
+    const st=pg.querySelector(':scope > .st');
+    if(st && st.nextSibling) pg.insertBefore(box,st.nextSibling);
+    else pg.insertBefore(box,pg.firstChild);
+
+    pg.dataset.subabaReady='1';
+    setSubAba(pg.id,0);
+  });
+}
+
+function setSubAba(pgId,idx){
+  const pg=document.getElementById(pgId);
+  if(!pg) return;
+  const itens=Array.from(pg.querySelectorAll(':scope > [data-subaba-item="1"]'));
+  if(!itens.length) return;
+  const alvo=Math.max(0,Math.min(idx,itens.length-1));
+  _subAbaState[pgId]=alvo;
+
+  itens.forEach((it,i)=>{ it.style.display=(i===alvo)?'':'none'; });
+  const botoes=Array.from(pg.querySelectorAll(':scope > .subaba-blocos .subaba-bloco'));
+  botoes.forEach((b,i)=>b.classList.toggle('on',i===alvo));
+}
+
+function ativarSubAbaPagina(targetId){
+  const pgId='pg-'+targetId;
+  const pg=document.getElementById(pgId);
+  if(!pg || pg.dataset.subabaReady!=='1') return;
+  const idx=_subAbaState[pgId] ?? 0;
+  setSubAba(pgId,idx);
 }
 
 function navFromMobile(id){
@@ -1915,7 +2011,7 @@ async function renderCli(){
 
 function emitirCli(id){selCli(id);nav('nova-medicao',document.querySelector('[onclick*=nova-medicao]'));}
 
-const MODAL_FORM_IDS=['cli','func','emp','usr'];
+const MODAL_FORM_IDS=['cli','func','emp','usr','ponto-edit'];
 const _modalDirty={};
 
 function setModalClean(id){ _modalDirty[id]=false; }
@@ -2033,6 +2129,7 @@ async function renderEmps(){
       <div style="font-weight:700;font-size:15px;color:var(--azul)">${e.nome}</div>
       <div style="font-size:12px;color:#666;margin-top:2px">${e.razao||''} ${e.cnpj?'· CNPJ: '+fmtDoc(e.cnpj):''}</div>
       <div style="font-size:11px;color:#888;margin-top:2px">${e.end_fmt||''} ${e.site?'| <a onclick="event.stopPropagation()" href="'+normUrl(e.site)+'" target="_blank" rel="noopener noreferrer">'+e.site+'</a>':''}</div>
+      <div style="font-size:11px;color:#4b5563;margin-top:4px">Certificado: ${e.cert_configurado?(e.cert_ativo?'ativo na empresa':'cadastrado e inativo'):'não cadastrado'} · Política atual: ${certPolicyLabel(document.getElementById('cfg-pdf-cert-policy')?.value||'prefer_empresa')}</div>
     </div>
     <div style="display:flex;gap:7px">
       <button class="btn b-gh b-sm" onclick="event.stopPropagation();openModalEmp('editar',${e.id})">Editar</button>
@@ -2044,6 +2141,9 @@ async function renderEmps(){
 function openModalEmp(modo,id){
   document.getElementById('eid').value='';
   ['enome','erazao','ecnpj','esite','econtato','econtato-email','econtato-tel','elogo','etel','eemail','ecep','elogr','enum-end','ebairro','ecidade','estado','ecompl','epix','ebanco','eagencia','econta','eboleto'].forEach(k=>document.getElementById(k).value='');
+  document.getElementById('ecert-file').value='';
+  document.getElementById('ecert-pass').value='';
+  document.getElementById('ecert-info').textContent='Nenhum certificado cadastrado.';
   if(modo==='editar'&&id){
     const e=emps.find(x=>x.id===id); if(!e)return;
     document.getElementById('mod-emp-tit').textContent='Editar empresa';
@@ -2074,12 +2174,63 @@ function openModalEmp(modo,id){
     document.getElementById('eagencia').value=e.agencia||'';
     document.getElementById('econta').value=e.conta||'';
     document.getElementById('eboleto').value=e.boleto||'';
+    document.getElementById('ecert-info').textContent=certInfoHtml(e);
   } else {
     document.getElementById('mod-emp-tit').textContent='Nova empresa';
   }
   setModalClean('emp');
   document.getElementById('mod-emp').classList.add('on');
   setTimeout(()=>document.getElementById('enome').focus(),120);
+}
+
+async function uploadCertEmpresa(){
+  const id=document.getElementById('eid').value;
+  if(!id){ alert('Salve a empresa primeiro para vincular o certificado.'); return; }
+  const arq=document.getElementById('ecert-file').files?.[0];
+  const senha=(document.getElementById('ecert-pass').value||'').trim();
+  if(!arq){ alert('Selecione o arquivo do certificado .p12 ou .pfx.'); return; }
+  if(!senha){ alert('Informe a senha do certificado da empresa.'); return; }
+  const fd=new FormData();
+  fd.append('arquivo',arq);
+  fd.append('senha',senha);
+  const r=await apiForm('/api/empresas/'+id+'/certificado',fd,'POST');
+  if(r.erro){ alert(r.erro); return; }
+  await loadEmps();
+  const e=emps.find(x=>String(x.id)===String(id));
+  document.getElementById('ecert-file').value='';
+  document.getElementById('ecert-pass').value='';
+  document.getElementById('ecert-info').textContent=certInfoHtml(e||r.empresa);
+  renderEmps();
+  showSt('st-emp','Certificado da empresa salvo!',false);
+}
+
+async function atualizarSenhaCertEmpresa(){
+  const id=document.getElementById('eid').value;
+  if(!id){ alert('Nenhuma empresa selecionada.'); return; }
+  const senha=(document.getElementById('ecert-pass').value||'').trim();
+  if(!senha){ alert('Informe a nova senha do certificado da empresa.'); return; }
+  const r=await api('/api/empresas/'+id+'/certificado/senha','PUT',{senha});
+  if(r.erro){ alert(r.erro); return; }
+  await loadEmps();
+  const e=emps.find(x=>String(x.id)===String(id));
+  document.getElementById('ecert-pass').value='';
+  document.getElementById('ecert-info').textContent=certInfoHtml(e||r.empresa);
+  renderEmps();
+  showSt('st-emp','Senha do certificado da empresa atualizada.',false);
+}
+
+async function removerCertEmpresa(){
+  const id=document.getElementById('eid').value;
+  if(!id){ alert('Nenhuma empresa selecionada.'); return; }
+  if(!confirm('Remover o certificado digital desta empresa?')) return;
+  const r=await api('/api/empresas/'+id+'/certificado','DELETE');
+  if(r.erro){ alert(r.erro); return; }
+  await loadEmps();
+  document.getElementById('ecert-file').value='';
+  document.getElementById('ecert-pass').value='';
+  document.getElementById('ecert-info').textContent='Nenhum certificado cadastrado.';
+  renderEmps();
+  showSt('st-emp','Certificado da empresa removido.',false);
 }
 
 async function salvarEmpresa(){
@@ -2137,8 +2288,9 @@ async function renderUsr(){
   tb.innerHTML=lista.map(u=>`<tr class="row-clickable" onclick="openModalUsr('editar',${u.id})">
     <td style="font-weight:700">${u.nome}</td>
     <td>${u.email}</td>
+    <td>${u.telefone?fmtTelefone(u.telefone):'—'}</td>
     <td><span class="pill ${u.perfil==='dono'?'p-lj':u.perfil==='admin'?'p-az':'p-ci'}">${u.perfil}</span></td>
-    <td><span class="pill ${u.ativo?'p-vd':'p-ci'}">${u.ativo?'Ativo':'Inativo'}</span></td>
+    <td><span class="pill ${u.ativo?'p-vd':'p-ci'}">${u.ativo?'Ativo':'Inativo'}</span><div style="font-size:10px;color:#6b7280;margin-top:4px">Certificado: ${u.cert_configurado?(u.cert_ativo?'ativo':'inativo'):'não cadastrado'}</div></td>
     <td><div class="tac">
       <button class="btn b-gh b-sm" onclick="event.stopPropagation();openModalUsr('editar',${u.id})">Editar</button>
       <button class="btn b-ghr b-sm" onclick="event.stopPropagation();excluirUsr(${u.id},'${u.nome.replace(/'/g,"\\'")}')">Excluir</button>
@@ -2148,7 +2300,11 @@ async function renderUsr(){
 
 function openModalUsr(modo,id){
   document.getElementById('uid-edit').value='';
-  ['un','ue','up'].forEach(k=>document.getElementById(k).value='');
+  ['un','ue','utel','up'].forEach(k=>document.getElementById(k).value='');
+  document.getElementById('ucert-file').value='';
+  document.getElementById('ucert-pass').value='';
+  document.getElementById('ucert-ativo').checked=true;
+  document.getElementById('ucert-info').textContent='Nenhum certificado cadastrado.';
   document.getElementById('uperfil').value='admin';
   document.getElementById('uativo').value='true';
   areaChecksUsuario([]);
@@ -2159,8 +2315,12 @@ function openModalUsr(modo,id){
       document.getElementById('uid-edit').value=u.id;
       document.getElementById('un').value=u.nome||'';
       document.getElementById('ue').value=u.email||'';
+      document.getElementById('utel').value=u.telefone?fmtTelefone(u.telefone):'';
+      maskTelefone(document.getElementById('utel'));
       document.getElementById('uperfil').value=u.perfil||'admin';
       document.getElementById('uativo').value=String(u.ativo);
+      document.getElementById('ucert-ativo').checked=!!u.cert_ativo;
+      document.getElementById('ucert-info').textContent=certInfoHtml(u);
       areaChecksUsuario(u.areas||[]);
     });
   } else {
@@ -2170,13 +2330,68 @@ function openModalUsr(modo,id){
   document.getElementById('mod-usr').classList.add('on');
 }
 
+async function uploadCertUsuario(){
+  const id=document.getElementById('uid-edit').value;
+  if(!id){ alert('Salve o usuário primeiro para vincular o certificado.'); return; }
+  const arq=document.getElementById('ucert-file').files?.[0];
+  const senha=(document.getElementById('ucert-pass').value||'').trim();
+  const ativo=document.getElementById('ucert-ativo').checked;
+  if(!arq){ alert('Selecione o arquivo do certificado .p12 ou .pfx.'); return; }
+  if(!senha){ alert('Informe a senha do certificado do usuário.'); return; }
+  const fd=new FormData();
+  fd.append('arquivo',arq);
+  fd.append('senha',senha);
+  fd.append('ativo',ativo?'1':'0');
+  const r=await apiForm('/api/usuarios/'+id+'/certificado',fd,'POST');
+  if(r.erro){ alert(r.erro); return; }
+  await renderUsr();
+  document.getElementById('ucert-file').value='';
+  document.getElementById('ucert-pass').value='';
+  document.getElementById('ucert-info').textContent=certInfoHtml(r.usuario);
+  showSt('st-usr','Certificado do usuário salvo!',false);
+}
+
+async function atualizarSenhaCertUsuario(){
+  const id=document.getElementById('uid-edit').value;
+  if(!id){ alert('Nenhum usuário selecionado.'); return; }
+  const senha=(document.getElementById('ucert-pass').value||'').trim();
+  const ativo=document.getElementById('ucert-ativo').checked;
+  if(!senha){ alert('Informe a nova senha do certificado do usuário.'); return; }
+  const r=await api('/api/usuarios/'+id+'/certificado/senha','PUT',{senha,ativo});
+  if(r.erro){ alert(r.erro); return; }
+  await renderUsr();
+  document.getElementById('ucert-pass').value='';
+  document.getElementById('ucert-info').textContent=certInfoHtml(r.usuario);
+  showSt('st-usr','Senha do certificado do usuário atualizada.',false);
+}
+
+async function removerCertUsuario(){
+  const id=document.getElementById('uid-edit').value;
+  if(!id){ alert('Nenhum usuário selecionado.'); return; }
+  if(!confirm('Remover o certificado digital deste usuário?')) return;
+  const r=await api('/api/usuarios/'+id+'/certificado','DELETE');
+  if(r.erro){ alert(r.erro); return; }
+  document.getElementById('ucert-file').value='';
+  document.getElementById('ucert-pass').value='';
+  document.getElementById('ucert-ativo').checked=true;
+  document.getElementById('ucert-info').textContent='Nenhum certificado cadastrado.';
+  await renderUsr();
+  showSt('st-usr','Certificado do usuário removido.',false);
+}
+
 async function salvarUsuario(){
   const nome=document.getElementById('un').value.trim();
   const email=document.getElementById('ue').value.trim();
+  const telefone=(document.getElementById('utel').value||'').replace(/\D/g,'');
+  const perfil=document.getElementById('uperfil').value;
   if(!nome||!email){alert('Nome e e-mail são obrigatórios.');return;}
+  if((perfil==='admin' || perfil==='dono') && telefone.length<10){
+    alert('Telefone é obrigatório para perfil admin/dono (2FA).');
+    return;
+  }
   const id=document.getElementById('uid-edit').value;
   const areas=AREAS.filter(a=>document.getElementById('ua-'+a)?.checked);
-  const d={nome,email,senha:document.getElementById('up').value,perfil:document.getElementById('uperfil').value,ativo:document.getElementById('uativo').value==='true',areas};
+  const d={nome,email,telefone,senha:document.getElementById('up').value,perfil,ativo:document.getElementById('uativo').value==='true',areas};
   if(id) await api('/api/usuarios/'+id,'PUT',d);
   else await api('/api/usuarios','POST',d);
   showSt('st-usr','Usuário salvo!',false);
@@ -2194,10 +2409,14 @@ async function loadConfig(){
   const d=await api('/api/config');
   document.getElementById('cfg-num-base').value=d.num_base||'100';
   document.getElementById('cfg-num-ultima').value=d.num_ultima||'0';
+  const pol=d.pdf_cert_policy||'prefer_empresa';
+  document.getElementById('cfg-pdf-cert-policy').value=pol;
+  document.getElementById('cfg-cert-policy-resumo').textContent=certPolicySummary(pol);
 }
 
 async function salvarConfig(){
-  await api('/api/config','POST',{num_base:document.getElementById('cfg-num-base').value,num_ultima:document.getElementById('cfg-num-ultima').value});
+  const pol=document.getElementById('cfg-pdf-cert-policy').value||'prefer_empresa';
+  await api('/api/config','POST',{num_base:document.getElementById('cfg-num-base').value,num_ultima:document.getElementById('cfg-num-ultima').value,pdf_cert_policy:pol});
   await loadProxNum();
   alert('Configurações salvas! Próxima medição: '+document.getElementById('prox-num').textContent);
 }
@@ -2672,312 +2891,6 @@ function pontoFmtStatus(st){
   return `<span class="pill p-ci">${st||'—'}</span>`;
 }
 
-function pontoDataHojeISO(){
-  const d=new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-
-function pontoAgoraLocalInput(){
-  const d=new Date();
-  const y=d.getFullYear();
-  const m=String(d.getMonth()+1).padStart(2,'0');
-  const day=String(d.getDate()).padStart(2,'0');
-  const h=String(d.getHours()).padStart(2,'0');
-  const mi=String(d.getMinutes()).padStart(2,'0');
-  return `${y}-${m}-${day}T${h}:${mi}`;
-}
-
-function pontoCompetenciaAtual(){
-  const d=new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-}
-
-async function pontoSyncFuncionarios(force=false){
-  if(force || !Array.isArray(pontoFuncs) || !pontoFuncs.length){
-    pontoFuncs=await api('/api/funcionarios');
-  }
-}
-
-function pontoPopularFuncionarios(){
-  const sel=document.getElementById('ponto-funcionario');
-  if(!sel)return;
-  const atual=sel.value||'';
-  const ativos=(pontoFuncs||[])
-    .filter(f=>String((f.status||'').toLowerCase())==='ativo')
-    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
-  sel.innerHTML=ativos.map(f=>`<option value="${f.id}">${f.nome}${f.matricula?` · Mat ${f.matricula}`:''}</option>`).join('');
-  if(!document.getElementById('ponto-data').value){
-    document.getElementById('ponto-data').value=pontoDataHojeISO();
-  }
-  if(document.getElementById('ponto-ajuste-dh') && !document.getElementById('ponto-ajuste-dh').value){
-    document.getElementById('ponto-ajuste-dh').value=pontoAgoraLocalInput();
-  }
-  if(document.getElementById('ponto-competencia') && !document.getElementById('ponto-competencia').value){
-    document.getElementById('ponto-competencia').value=pontoCompetenciaAtual();
-  }
-  if(atual && ativos.some(f=>String(f.id)===String(atual))) sel.value=atual;
-}
-
-async function pontoCarregarFechamentoDia(){
-  const el=document.getElementById('ponto-fechamento-st');
-  if(!el)return;
-  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
-  const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
-  if(!fid){ el.textContent=''; el.className='st'; return; }
-  const r=await api('/api/ponto/fechamentos-dia?data='+encodeURIComponent(data));
-  if(r.erro){ el.textContent=''; el.className='st'; return; }
-  const itens=(r.itens||[]).filter(x=>String(x.funcionario_id)===String(fid));
-  if(!itens.length){
-    el.className='st';
-    el.textContent='';
-    return;
-  }
-  const it=itens[0];
-  const st=(it.status==='fechado')?'Dia fechado':'Dia fechado com ressalvas';
-  el.className='st ok';
-  el.textContent=`${st} por ${it.fechado_por||'usuário'} em ${it.fechado_em_fmt||''}.`;
-}
-
-async function pontoCarregarEspelhoStatus(){
-  const st=document.getElementById('ponto-espelho-st');
-  if(!st)return;
-  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
-  const comp=(document.getElementById('ponto-competencia')?.value||'').trim();
-  if(!fid || !/^\d{4}-\d{2}$/.test(comp)){
-    _pontoEspelhoId=null;
-    st.className='st';
-    st.textContent='';
-    return;
-  }
-  const r=await api('/api/ponto/espelho-mensal/lista?funcionario_id='+fid+'&competencia='+encodeURIComponent(comp));
-  if(r.erro){
-    _pontoEspelhoId=null;
-    st.className='st';
-    st.textContent='';
-    return;
-  }
-  const it=(r.itens||[])[0];
-  if(!it){
-    _pontoEspelhoId=null;
-    st.className='st';
-    st.textContent='';
-    return;
-  }
-  _pontoEspelhoId=it.id;
-  const ass=it.status_assinatura||'pendente';
-  const apr=it.status_aprovacao||'pendente';
-  st.className='st ok';
-  st.textContent=`Espelho ${comp}: assinatura=${ass} · aprovacao=${apr}${it.assinatura_em_fmt?(' · assinado em '+it.assinatura_em_fmt):''}`;
-}
-
-async function pontoCarregarBancoHoras(){
-  const el=document.getElementById('ponto-bh');
-  if(!el)return;
-  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
-  const comp=(document.getElementById('ponto-competencia')?.value||'').trim();
-  if(!fid){ el.textContent=''; return; }
-  const q='/api/ponto/banco-horas?funcionario_id='+fid+(comp?('&competencia='+encodeURIComponent(comp)):'');
-  const r=await api(q);
-  if(r.erro){ el.textContent=''; return; }
-  const at=r.atual;
-  if(!at){
-    el.textContent='Banco de horas: sem saldo aprovado ainda.';
-    return;
-  }
-  el.textContent=`Banco de horas acumulado ate ${at.competencia}: ${at.saldo_acumulado_fmt} (saldo do mes: ${at.saldo_mes_fmt})`;
-}
-
-async function pontoCarregarDia(){
-  const sel=document.getElementById('ponto-funcionario');
-  const tb=document.getElementById('tb-ponto-dia');
-  const resumoEl=document.getElementById('ponto-resumo');
-  if(!sel||!tb||!resumoEl)return;
-  const fid=parseInt(sel.value||'0',10);
-  const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
-  if(!fid){
-    tb.innerHTML='<tr><td colspan="4" style="text-align:center;padding:18px;color:#888">Selecione um colaborador ativo.</td></tr>';
-    resumoEl.innerHTML='';
-    return;
-  }
-  const r=await api('/api/ponto/dia?funcionario_id='+fid+'&data='+encodeURIComponent(data));
-  if(r.erro){
-    showSt('ponto-st',r.erro,true);
-    tb.innerHTML='<tr><td colspan="4" style="text-align:center;padding:18px;color:#888">Não foi possível carregar o ponto do dia.</td></tr>';
-    resumoEl.innerHTML='';
-    return;
-  }
-  const s=r.resumo||{};
-  const selTipo=document.getElementById('ponto-ajuste-tipo');
-  if(selTipo && s.proximo_tipo) selTipo.value=s.proximo_tipo;
-  const inc=(s.inconsistencias||[]);
-  resumoEl.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px">
-    <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:#7b8a97">Horas trabalhadas</div><div style="font-size:19px;font-weight:700">${s.horas_trabalhadas_fmt||'00:00'}</div></div>
-    <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:#7b8a97">Carga esperada</div><div style="font-size:19px;font-weight:700">${s.horas_esperadas_fmt||'08:00'}</div></div>
-    <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:#7b8a97">Saldo</div><div style="font-size:19px;font-weight:700">${s.saldo_fmt||'00:00'}</div></div>
-    <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:#7b8a97">Próxima marcação</div><div style="font-size:19px;font-weight:700">${s.proximo_tipo_label||'Entrada'}</div></div>
-  </div>
-  ${inc.length?`<div style="margin-top:8px;font-size:12px;color:#8a1c1c;background:#fff3f3;border:1px solid #f2c5c5;border-radius:8px;padding:8px">⚠ ${inc.join(' | ')}</div>`:''}`;
-  const marc=s.marcacoes||[];
-  if(!marc.length){
-    tb.innerHTML='<tr><td colspan="4" style="text-align:center;padding:18px;color:#888">Nenhuma marcação neste dia.</td></tr>';
-    return;
-  }
-  tb.innerHTML=marc.map(m=>`<tr>
-    <td>${m.tipo_label||m.tipo||'—'}</td>
-    <td style="font-weight:700">${m.hora_fmt||''}</td>
-    <td>${m.origem||'web'}</td>
-    <td>${m.observacao||'—'}</td>
-  </tr>`).join('');
-  await pontoCarregarFechamentoDia();
-  await pontoCarregarEspelhoStatus();
-  await pontoCarregarBancoHoras();
-}
-
-async function pontoCarregarPainelDia(){
-  const tb=document.getElementById('tb-ponto-painel');
-  if(!tb)return;
-  const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
-  const r=await api('/api/ponto/resumo-dia?data='+encodeURIComponent(data));
-  if(r.erro){
-    showSt('ponto-painel-st',r.erro,true);
-    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:18px;color:#888">Erro ao carregar painel do dia.</td></tr>';
-    return;
-  }
-  showSt('ponto-painel-st',`Funcionários: ${r.totais?.funcionarios||0} · OK: ${r.totais?.ok||0} · Inconsistentes: ${r.totais?.inconsistentes||0}`,false);
-  const itens=r.itens||[];
-  if(!itens.length){
-    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:18px;color:#888">Nenhum colaborador ativo encontrado.</td></tr>';
-    return;
-  }
-  tb.innerHTML=itens.map(it=>`<tr>
-    <td>${it.funcionario_nome||'—'}</td>
-    <td>${it.marcacoes_count||0}</td>
-    <td>${it.horas_trabalhadas_fmt||'00:00'}</td>
-    <td>${it.horas_esperadas_fmt||'08:00'}</td>
-    <td>${it.saldo_fmt||'00:00'}</td>
-    <td>${it.proximo_tipo_label||'Entrada'}</td>
-    <td>${pontoFmtStatus(it.status)}</td>
-  </tr>`).join('');
-}
-
-async function pontoRegistrarAgora(){
-  const sel=document.getElementById('ponto-funcionario');
-  const fid=parseInt(sel?.value||'0',10);
-  if(!fid){
-    showSt('ponto-st','Selecione um colaborador ativo.',true);
-    return;
-  }
-  const f=(pontoFuncs||[]).find(x=>String(x.id)===String(fid));
-  if(!confirm(`Confirma registrar ponto agora para ${f?.nome||'o colaborador selecionado'}?`)) return;
-  const r=await api('/api/ponto/marcar','POST',{funcionario_id:fid,origem:'web'});
-  if(r.erro){
-    showSt('ponto-st',r.erro,true);
-    return;
-  }
-  showSt('ponto-st',`Marcação registrada: ${r.marcacao?.tipo_label||'OK'} às ${r.marcacao?.hora_fmt||''}.`,false);
-  await pontoCarregarDia();
-  await pontoCarregarPainelDia();
-}
-
-async function pontoAplicarAjuste(){
-  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
-  const tipo=(document.getElementById('ponto-ajuste-tipo')?.value||'').trim();
-  const dh=(document.getElementById('ponto-ajuste-dh')?.value||'').trim();
-  const motivo=(document.getElementById('ponto-ajuste-motivo')?.value||'').trim();
-  if(!fid){showSt('ponto-st','Selecione um colaborador ativo.',true);return;}
-  if(!tipo){showSt('ponto-st','Selecione o tipo de ajuste.',true);return;}
-  if(!dh){showSt('ponto-st','Informe a data/hora do ajuste.',true);return;}
-  if(!motivo){showSt('ponto-st','Informe o motivo do ajuste.',true);return;}
-  if(!confirm('Confirma aplicar este ajuste manual no ponto?')) return;
-  const r=await api('/api/ponto/ajuste','POST',{
-    funcionario_id:fid,
-    tipo,
-    data_hora:dh,
-    motivo
-  });
-  if(r.erro){showSt('ponto-st',r.erro,true);return;}
-  showSt('ponto-st','Ajuste aplicado e auditado com sucesso.',false);
-  document.getElementById('ponto-ajuste-motivo').value='';
-  await pontoCarregarDia();
-  await pontoCarregarPainelDia();
-}
-
-async function pontoFecharDia(forcar){
-  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
-  const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
-  if(!fid){showSt('ponto-st','Selecione um colaborador ativo.',true);return;}
-  const msg=forcar
-    ? 'Fechar o dia com ressalvas? Use somente quando houver inconsistências justificadas.'
-    : 'Confirma fechar o dia deste colaborador?';
-  if(!confirm(msg)) return;
-  const r=await api('/api/ponto/fechar-dia','POST',{funcionario_id:fid,data,forcar:!!forcar});
-  if(r.erro){
-    showSt('ponto-st',r.erro,true);
-    return;
-  }
-  showSt('ponto-st',forcar?'Dia fechado com ressalvas.':'Dia fechado com sucesso.',false);
-  await pontoCarregarDia();
-  await pontoCarregarPainelDia();
-}
-
-function pontoBaixarEspelhoMensal(){
-  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
-  const comp=(document.getElementById('ponto-competencia')?.value||'').trim();
-  if(!fid){showSt('ponto-st','Selecione um colaborador ativo.',true);return;}
-  if(!/^\d{4}-\d{2}$/.test(comp)){
-    showSt('ponto-st','Competência inválida. Use YYYY-MM.',true);
-    return;
-  }
-  window.location.href='/api/ponto/espelho-mensal?funcionario_id='+fid+'&competencia='+encodeURIComponent(comp);
-}
-
-async function pontoPrepararEspelhoAssinatura(){
-  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
-  const comp=(document.getElementById('ponto-competencia')?.value||'').trim();
-  if(!fid){showSt('ponto-st','Selecione um colaborador ativo.',true);return;}
-  if(!/^\d{4}-\d{2}$/.test(comp)){
-    showSt('ponto-st','Competencia invalida. Use YYYY-MM.',true);
-    return;
-  }
-  if(!confirm('Preparar espelho mensal para assinatura eletronica?')) return;
-  const r=await api('/api/ponto/espelho-mensal/preparar','POST',{funcionario_id:fid,competencia:comp,dias_validade:7});
-  if(r.erro){showSt('ponto-st',r.erro,true);return;}
-  _pontoEspelhoId=r.espelho?.id||null;
-  const ass=r.assinatura_link||'';
-  const val=r.validacao_link||'';
-  const dl=r.download_link||'';
-  const st=document.getElementById('ponto-espelho-st');
-  if(st){
-    st.className='st ok';
-    st.innerHTML=`Espelho preparado. <a href="${ass}" target="_blank" rel="noopener">Link de assinatura</a> · <a href="${val}" target="_blank" rel="noopener">Validacao</a> · <a href="${dl}" target="_blank" rel="noopener">Download</a>`;
-  }
-  showSt('ponto-st','Espelho preparado com sucesso para assinatura eletronica.',false);
-  await pontoCarregarBancoHoras();
-}
-
-async function pontoAprovarEspelho(aprovado){
-  const comp=(document.getElementById('ponto-competencia')?.value||'').trim();
-  if(!_pontoEspelhoId){
-    await pontoCarregarEspelhoStatus();
-  }
-  if(!_pontoEspelhoId){
-    showSt('ponto-st','Nenhum espelho preparado para esta competencia.',true);
-    return;
-  }
-  const obs=prompt(aprovado?'Observacao da aprovacao (opcional):':'Motivo da reprovacao (obrigatorio):',aprovado?'':'');
-  if(obs===null) return;
-  if(!aprovado && !(obs||'').trim()){
-    showSt('ponto-st','Informe o motivo da reprovacao.',true);
-    return;
-  }
-  if(!confirm(aprovado?'Confirma aprovar este espelho mensal?':'Confirma reprovar este espelho mensal?')) return;
-  const r=await api('/api/ponto/espelho-mensal/'+_pontoEspelhoId+'/aprovar','POST',{aprovado:!!aprovado,observacao:obs||''});
-  if(r.erro){showSt('ponto-st',r.erro,true);return;}
-  showSt('ponto-st',aprovado?'Espelho aprovado e banco de horas recalculado.':'Espelho reprovado.',false);
-  await pontoCarregarEspelhoStatus();
-  await pontoCarregarBancoHoras();
-}
-
 async function renderFuncionarios(){
   const q=(document.getElementById('rh-busca')?.value||'').toLowerCase();
   funcs=await api('/api/funcionarios?q='+encodeURIComponent(q));
@@ -3051,7 +2964,7 @@ function renderArquivoTree(categorias){
   }
   
   const categoryEmojis={
-    'holerite':'💼','aso':'🏥','epi':'🦺','treinamento':'📚','folha_ponto':'⏰',
+    'holerite':'💼','aso':'🏥','atestado':'🩺','epi':'🦺','treinamento':'📚','folha_ponto':'⏰',
     'contrato_trabalho':'📋','vale_transporte':'🚌','requisicao_vale_transporte':'📝','uniforme':'👕','outros':'📦'
   };
 
@@ -3252,27 +3165,164 @@ async function delArquivoFuncionario(id){
   buscarAnos();
 }
 
-async function uploadHoleritesLote(){
-  const f=document.getElementById('rh-holerite-arq').files?.[0];
-  if(!f){alert('Selecione o PDF de holerites.');return;}
-  const optAss=prompt('Deseja solicitar assinatura após separar os holerites?\n1 = Não solicitar assinatura\n2 = Solicitar via WhatsApp\n3 = Apenas gerar link\n\nDigite 1, 2 ou 3:','1');
-  if(optAss===null) return;
-  const mapaAss={'1':'nao','2':'whatsapp','3':'link'};
-  const canalAss=mapaAss[(optAss||'').trim()];
-  if(!canalAss){alert('Opção inválida.');return;}
+async function uploadDocumentoRHLote(){
+  const tipo=document.getElementById('rh-lote-tipo')?.value||'holerite';
+  const funcionarioId=document.getElementById('rh-lote-func')?.value||'';
+  const f=document.getElementById('rh-lote-arq').files?.[0];
+  if(!f){alert('Selecione o arquivo PDF.');return;}
+  const comp=(document.getElementById('rh-lote-comp').value||'').trim();
+  if(!comp){alert('Informe a competência (ex: 04/2026).');return;}
+  const canalAss=document.getElementById('rh-lote-ass')?.value||'nao';
+
+  if(!funcionarioId && canalAss!=='nao'){
+    if(!_rhLotePreview || !_rhLotePreview.ready){
+      showSt('st-rh','Faça a pré-visualização para confirmar os destinatários antes de enviar.',true);
+      return;
+    }
+    if(!_rhLotePreview.selectedIds || !_rhLotePreview.selectedIds.length){
+      showSt('st-rh','Selecione ao menos um destinatário para solicitar assinatura.',true);
+      return;
+    }
+  }
+
   const fd=new FormData();
   fd.append('arquivo',f);
-  fd.append('competencia',document.getElementById('rh-comp').value||'');
+  fd.append('competencia',comp);
   fd.append('canal_assinatura',canalAss);
-  const r=await fetch('/api/funcionarios/holerites/upload',{method:'POST',body:fd});
+  fd.append('categoria',tipo);
+  let endpoint='';
+  let nomeTipo='arquivos';
+  if(funcionarioId){
+    endpoint='/api/funcionarios/'+funcionarioId+'/arquivos';
+    nomeTipo=(tipo==='folha_ponto')?'folha de ponto':(tipo==='holerite'?'holerite':tipo);
+  }else if(tipo==='folha_ponto'){
+    endpoint='/api/funcionarios/folhas-ponto/upload';
+    nomeTipo='folhas de ponto';
+  }else if(tipo==='holerite'){
+    endpoint='/api/funcionarios/holerites/upload';
+    nomeTipo='holerites';
+  }else{
+    endpoint='/api/funcionarios/documentos-rh/upload';
+    nomeTipo=(tipo==='atestado')?'atestados':'documentos RH';
+  }
+
+  if(canalAss!=='nao'){
+    const idsAss=funcionarioId
+      ? [parseInt(funcionarioId,10)].filter(Number.isFinite)
+      : ((_rhLotePreview && Array.isArray(_rhLotePreview.selectedIds)) ? _rhLotePreview.selectedIds : []);
+    if(idsAss.length){
+      fd.append('assinatura_funcionario_ids',idsAss.join(','));
+    }else if(!funcionarioId){
+      showSt('st-rh','Nenhum destinatário selecionado para assinatura.',true);
+      return;
+    }
+  }
+
+  const r=await fetch(endpoint,{method:'POST',body:fd});
   const d=await r.json();
   if(d.erro){alert(d.erro);return;}
-  let msg=`Processamento concluído. Arquivos: ${d.arquivos_gerados}.`;
+  const qtd=(typeof d.arquivos_gerados==='number')?d.arquivos_gerados:1;
+  const assinaturasAuto=(typeof d.assinaturas_auto==='number')
+    ? d.assinaturas_auto
+    : (d.assinatura_auto && ['solicitada','link_gerado'].includes(d.assinatura_auto.status) ? 1 : 0);
+  let msg=`Envio de ${nomeTipo} concluído. Arquivos: ${qtd}.`;
+  if(funcionarioId) msg+=' Documento vinculado ao funcionário selecionado.';
   if(canalAss==='nao') msg+=' Assinatura não solicitada.';
-  if(canalAss==='whatsapp') msg+=` Assinaturas solicitadas: ${d.assinaturas_auto||0}.`;
-  if(canalAss==='link') msg+=` Links gerados: ${d.assinaturas_auto||0}.`;
+  if(canalAss==='whatsapp') msg+=` Assinaturas solicitadas: ${assinaturasAuto}.`;
+  if(canalAss==='link') msg+=` Links gerados: ${assinaturasAuto}.`;
   showSt('st-rh',msg,false);
   if(d.paginas_sem_funcionario?.length) alert('Páginas sem funcionário identificado: '+d.paginas_sem_funcionario.join(', '));
+  if(d.duplicadas?.length) alert('Competências já existentes (sem duplicar): '+d.duplicadas.join(', '));
+  document.getElementById('rh-lote-arq').value='';
+  document.getElementById('rh-lote-comp').value='';
+  document.getElementById('rh-lote-func').value='';
+  resetRHLotePreview();
+}
+
+let _rhLotePreview={ready:false,selectedIds:[],destinatarios:[],totalPaginas:0,paginasSemFuncionario:[]};
+
+function resetRHLotePreview(){
+  _rhLotePreview={ready:false,selectedIds:[],destinatarios:[],totalPaginas:0,paginasSemFuncionario:[]};
+  const box=document.getElementById('rh-lote-prev-box');
+  const list=document.getElementById('rh-lote-prev-list');
+  const meta=document.getElementById('rh-lote-prev-meta');
+  if(box) box.style.display='none';
+  if(list) list.innerHTML='';
+  if(meta) meta.textContent='';
+}
+
+function renderRHLotePreview(){
+  const box=document.getElementById('rh-lote-prev-box');
+  const list=document.getElementById('rh-lote-prev-list');
+  const meta=document.getElementById('rh-lote-prev-meta');
+  if(!box || !list || !meta) return;
+  const itens=_rhLotePreview.destinatarios||[];
+  box.style.display='';
+  const semMatch=(_rhLotePreview.paginasSemFuncionario||[]).length;
+  meta.textContent=`Destinatários: ${itens.length} · Páginas do PDF: ${_rhLotePreview.totalPaginas||0}`+(semMatch?` · Páginas sem identificação: ${semMatch}`:'');
+  if(!itens.length){
+    list.innerHTML='<div class="vazio">Nenhum destinatário identificado no arquivo.</div>';
+    return;
+  }
+  list.innerHTML=itens.map(it=>{
+    const checked=_rhLotePreview.selectedIds.includes(it.funcionario_id)?'checked':'';
+    const tel=it.telefone?(' · 📱 '+fmtTelefone(it.telefone)) : '';
+    const em=it.email?(' · 📧 '+it.email) : '';
+    const pgs=(it.paginas||[]).length?(' · Páginas: '+it.paginas.join(', ')) : '';
+    return `<label style="display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid var(--borda);border-radius:8px;background:#fff;cursor:pointer">
+      <input type="checkbox" class="rh-lote-prev-sel" data-fid="${it.funcionario_id}" ${checked} onchange="syncRHLotePreviewSelection()">
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:13px">${it.nome||'Funcionário'}</div>
+        <div style="font-size:11px;color:#6a7d8f">${it.matricula||'Matrícula não informada'}${tel}${em}${pgs}</div>
+      </div>
+    </label>`;
+  }).join('');
+}
+
+function syncRHLotePreviewSelection(){
+  _rhLotePreview.selectedIds=Array.from(document.querySelectorAll('.rh-lote-prev-sel:checked'))
+    .map(cb=>parseInt(cb.dataset.fid,10))
+    .filter(Number.isFinite);
+}
+
+function toggleAllRHLotePreview(mark){
+  document.querySelectorAll('.rh-lote-prev-sel').forEach(cb=>{cb.checked=!!mark;});
+  syncRHLotePreviewSelection();
+}
+
+async function previewDocumentoRHLote(){
+  const f=document.getElementById('rh-lote-arq').files?.[0];
+  const funcionarioId=document.getElementById('rh-lote-func')?.value||'';
+  const comp=(document.getElementById('rh-lote-comp').value||'').trim();
+  if(!f){
+    showSt('st-rh','Selecione o arquivo PDF para pré-visualizar os destinatários.',true);
+    return;
+  }
+  const fd=new FormData();
+  fd.append('arquivo',f);
+  fd.append('competencia',comp);
+  if(funcionarioId) fd.append('funcionario_id',funcionarioId);
+  showSt('st-rh','Pré-visualizando destinatários do arquivo...',false);
+  try{
+    const r=await fetch('/api/rh/preview-destinatarios',{method:'POST',body:fd});
+    const d=await r.json();
+    if(!r.ok || d.erro){
+      showSt('st-rh',d.erro||'Não foi possível pré-visualizar o arquivo.',true);
+      return;
+    }
+    const itens=Array.isArray(d.destinatarios)?d.destinatarios:[];
+    _rhLotePreview={
+      ready:true,
+      destinatarios:itens,
+      selectedIds:itens.map(it=>it.funcionario_id).filter(Number.isFinite),
+      totalPaginas:parseInt(d.total_paginas||0,10)||0,
+      paginasSemFuncionario:Array.isArray(d.paginas_sem_funcionario)?d.paginas_sem_funcionario:[]
+    };
+    renderRHLotePreview();
+    showSt('st-rh',`Pré-visualização pronta. Destinatários identificados: ${itens.length}.`,false);
+  }catch(e){
+    showSt('st-rh','Erro ao pré-visualizar destinatários.',true);
+  }
 }
 
 async function uploadSSTArquivo(){
@@ -3959,6 +4009,7 @@ function initRHDigital(){
   if(tabs.length && !Array.from(tabs).some(b=>b.classList.contains('b-az'))){
     tabs[0].classList.replace('b-gh','b-az');
   }
+  waCarregarDisparoColaboradores();
 }
 
 function switchTab(prefix,tab,el){
@@ -3968,7 +4019,6 @@ function switchTab(prefix,tab,el){
   document.querySelectorAll(`#${prefix}-tabs .btn`).forEach(b=>{b.classList.remove('b-az');b.classList.add('b-gh');});
   if(el){el.classList.remove('b-gh');el.classList.add('b-az');}
   if(prefix==='rhd'&&tab==='conversas'){
-    loadWAConversas();
     waCarregarDisparoColaboradores();
   }
   if(prefix==='rhd'&&tab==='cfg-email')loadSMTPConfig();
@@ -4004,6 +4054,7 @@ async function rhdProcessar(){
     const selFiltro=document.getElementById('rhd-ass-filtro');
     if(selFiltro) selFiltro.value='todos';
     document.getElementById('rhd-preview-box').style.display='';
+    rhdLimparResumoPainel();
     renderRHDPreview(d);
     showSt('rhd-envio-st',`${d.separados} holerites extraídos de ${d.total_paginas} página(s).${d.sem_match.length?' Páginas sem match: '+d.sem_match.join(', '):''}`,false);
   }catch(e){showSt('rhd-envio-st','Erro ao processar: '+e.message,true);}
@@ -4037,11 +4088,94 @@ function renderRHDPreview(data){
         ${item.assinatura_auto_status==='telefone_invalido'?`<div style="font-size:11px;color:#8a5c00;margin-top:2px">⚠ Telefone cadastrado inválido para WhatsApp.</div>`:''}
         ${item.assinatura_auto_status==='erro'&&item.assinatura_auto_erro?`<div style="font-size:11px;color:var(--verm);margin-top:2px">Erro assinatura automática: ${item.assinatura_auto_erro}</div>`:''}
         ${item.folha_ponto_nome?`<div style="font-size:11px;color:#6a7d8f;margin-top:2px">🕒 Folha de ponto encontrada: ${item.folha_ponto_nome}</div>`:''}
+        ${item.status_envio==='enviado_email'&&item.email?`<div style="font-size:11px;color:#1a7a45;margin-top:2px">✅ Enviado para e-mail: ${item.email}</div>`:''}
+        ${item.status_envio==='enviado_wa'&&item.whatsapp?`<div style="font-size:11px;color:#1a7a45;margin-top:2px">✅ Enviado para WhatsApp: ${fmtTelefone(item.whatsapp)}</div>`:''}
+        ${item.status_envio==='enviado_ambos'?`<div style="font-size:11px;color:#1a7a45;margin-top:2px">✅ Enviado para: ${item.email?('e-mail '+item.email):'e-mail não informado'}${item.whatsapp?(' · WhatsApp '+fmtTelefone(item.whatsapp)):' · WhatsApp não informado'}</div>`:''}
+        ${item.status_envio==='sem_contato'?`<div style="font-size:11px;color:#8a5c00;margin-top:2px">⚠️ Não enviado: sem contato válido (e-mail/WhatsApp).</div>`:''}
         ${item.status_envio==='erro'&&item.erro_envio?`<div style="font-size:11px;color:var(--verm);margin-top:2px">Erro: ${item.erro_envio}</div>`:''}
       </div>
     </div>
     <span class="pill ${clsMap[item.status_envio]||'p-ci'}">${stMap[item.status_envio]||'⏳ Aguardando'}</span>
   </div>`).join('');
+}
+
+function rhdMontarResumoEnvio(alvo){
+  const okList=[];
+  const semList=[];
+  const errList=[];
+  (alvo||[]).forEach(it=>{
+    const nome=it.funcionario_nome||'Funcionário';
+    if(it.status_envio==='enviado_email') okList.push(`• ${nome} → e-mail ${it.email||'-'}`);
+    else if(it.status_envio==='enviado_wa') okList.push(`• ${nome} → WhatsApp ${fmtTelefone(it.whatsapp||'')||it.whatsapp||'-'}`);
+    else if(it.status_envio==='enviado_ambos') okList.push(`• ${nome} → e-mail ${it.email||'-'} e WhatsApp ${fmtTelefone(it.whatsapp||'')||it.whatsapp||'-'}`);
+    else if(it.status_envio==='sem_contato') semList.push(`• ${nome}`);
+    else if(it.status_envio==='erro') errList.push(`• ${nome}: ${it.erro_envio||'falha no envio'}`);
+  });
+  return {
+    okText:okList.length?okList.join('\n'):'Nenhum envio com sucesso.',
+    semText:semList.length?semList.join('\n'):'Nenhum sem contato.',
+    errText:errList.length?errList.join('\n'):'Nenhum erro.',
+    okCount:okList.length,
+    semCount:semList.length,
+    errCount:errList.length,
+  };
+}
+
+function rhdEnsureResumoPainel(){
+  let panel=document.getElementById('rhd-resumo-painel');
+  if(panel) return panel;
+  const st=document.getElementById('rhd-envio-st');
+  if(!st||!st.parentElement) return null;
+  panel=document.createElement('div');
+  panel.id='rhd-resumo-painel';
+  panel.style.cssText='display:none;margin-top:10px;border:1px solid var(--borda);border-radius:10px;background:var(--cinza-cl);padding:10px';
+  panel.innerHTML=`
+    <div style="font-size:12px;font-weight:700;color:#1a2b3c;margin-bottom:8px">Resumo de envio</div>
+    <div id="rhd-resumo-contadores" style="font-size:12px;color:#4c6072;margin-bottom:8px"></div>
+    <div style="display:grid;grid-template-columns:1fr;gap:8px">
+      <div style="background:#f6fbf8;border:1px solid #cfe8d8;border-radius:8px;padding:8px">
+        <div style="font-size:11px;font-weight:700;color:#1a7a45;margin-bottom:4px">Enviados com sucesso</div>
+        <pre id="rhd-resumo-ok" style="margin:0;font-size:11px;white-space:pre-wrap;color:#2b4a3a"></pre>
+      </div>
+      <div style="background:#fffaf1;border:1px solid #f0dfb6;border-radius:8px;padding:8px">
+        <div style="font-size:11px;font-weight:700;color:#8a5c00;margin-bottom:4px">Sem contato</div>
+        <pre id="rhd-resumo-sem" style="margin:0;font-size:11px;white-space:pre-wrap;color:#6a5626"></pre>
+      </div>
+      <div style="background:#fff4f4;border:1px solid #efc9c9;border-radius:8px;padding:8px">
+        <div style="font-size:11px;font-weight:700;color:#a52b2b;margin-bottom:4px">Erros</div>
+        <pre id="rhd-resumo-err" style="margin:0;font-size:11px;white-space:pre-wrap;color:#7d3030"></pre>
+      </div>
+    </div>`;
+  st.parentElement.appendChild(panel);
+  return panel;
+}
+
+function rhdLimparResumoPainel(){
+  const panel=rhdEnsureResumoPainel();
+  if(!panel) return;
+  panel.style.display='none';
+  const c=document.getElementById('rhd-resumo-contadores');
+  const ok=document.getElementById('rhd-resumo-ok');
+  const sem=document.getElementById('rhd-resumo-sem');
+  const err=document.getElementById('rhd-resumo-err');
+  if(c) c.textContent='';
+  if(ok) ok.textContent='';
+  if(sem) sem.textContent='';
+  if(err) err.textContent='';
+}
+
+function rhdRenderResumoPainel(det){
+  const panel=rhdEnsureResumoPainel();
+  if(!panel) return;
+  const c=document.getElementById('rhd-resumo-contadores');
+  const ok=document.getElementById('rhd-resumo-ok');
+  const sem=document.getElementById('rhd-resumo-sem');
+  const err=document.getElementById('rhd-resumo-err');
+  if(c) c.textContent=`Sucesso: ${det.okCount} · Sem contato: ${det.semCount} · Erros: ${det.errCount}`;
+  if(ok) ok.textContent=det.okText;
+  if(sem) sem.textContent=det.semText;
+  if(err) err.textContent=det.errText;
+  panel.style.display='block';
 }
 
 function rhdAplicarFiltroAssinatura(v){
@@ -4077,6 +4211,7 @@ async function rhdEnviar(){
   const ids=Array.from(document.querySelectorAll('.rhd-sel:checked')).map(cb=>parseInt(cb.dataset.id));
   if(!ids.length){alert('Selecione ao menos um holerite para enviar.');return;}
   const idsSet=new Set(ids);
+  rhdLimparResumoPainel();
   _rhdJob.itens=(_rhdJob.itens||[]).map(it=>idsSet.has(it.arquivo_id)?{...it,status_envio:'enviando',erro_envio:null}:it);
   renderRHDPreview(_rhdJob);
   showSt('rhd-envio-st','Enviando em background...', false);
@@ -4097,6 +4232,8 @@ async function rhdEnviar(){
         const err=alvo.filter(it=>it.status_envio==='erro').length;
         const msg=err>0?`Envio concluído com ${err} erro(s). Sucesso: ${ok}. Sem contato: ${sem}.`:`Envio concluído! Sucesso: ${ok}. Sem contato: ${sem}.`;
         showSt('rhd-envio-st',msg,err>0);
+        const det=rhdMontarResumoEnvio(alvo);
+        rhdRenderResumoPainel(det);
       }
     }
   },2000);
@@ -4671,6 +4808,84 @@ async function deletarEnvelope(id){
   else { const j=await r.json(); alert(j.erro||'Erro ao excluir.'); }
 }
 
+function abrirFormSignatario(){
+  const box=document.getElementById('asi-sig-form');
+  if(!box) return;
+  ['sigf-nome','sigf-cargo','sigf-cpf','sigf-tel','sigf-email'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.value='';
+  });
+  box.style.display='block';
+  setTimeout(()=>document.getElementById('sigf-nome')?.focus(),80);
+}
+
+function fmtCpfSig(el){
+  let v=(el.value||'').replace(/\D/g,'').slice(0,11);
+  if(v.length>9) v=v.replace(/^(\d{3})(\d{3})(\d{3})(\d{2}).*/, '$1.$2.$3-$4');
+  else if(v.length>6) v=v.replace(/^(\d{3})(\d{3})(\d*)/, '$1.$2.$3');
+  else if(v.length>3) v=v.replace(/^(\d{3})(\d*)/, '$1.$2');
+  el.value=v;
+}
+
+async function salvarSignatario(){
+  if(!_asiEnvelopeId){ alert('Abra um documento antes de adicionar signatário.'); return; }
+  const nome=(document.getElementById('sigf-nome').value||'').trim();
+  const cargo=(document.getElementById('sigf-cargo').value||'').trim();
+  const cpf=(document.getElementById('sigf-cpf').value||'').trim();
+  const telefone=(document.getElementById('sigf-tel').value||'').trim();
+  const email=(document.getElementById('sigf-email').value||'').trim();
+  if(!nome){ alert('Informe o nome do signatário.'); return; }
+  if(!telefone && !email){
+    alert('Informe ao menos telefone WhatsApp ou e-mail para envio.');
+    return;
+  }
+  try{
+    const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/signatarios`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({nome,cargo,cpf,telefone,email,tipo:'externo'})
+    });
+    const j=await r.json();
+    if(!r.ok){ alert(j.erro||'Erro ao salvar signatário.'); return; }
+    document.getElementById('asi-sig-form').style.display='none';
+    await recarregarDetalheEnvelope();
+  }catch(e){
+    alert('Erro de conexão ao salvar signatário.');
+  }
+}
+
+async function remSigEnvelope(sigId){
+  if(!_asiEnvelopeId) return;
+  if(!confirm('Remover este signatário?')) return;
+  try{
+    const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/signatarios/${sigId}`,{method:'DELETE'});
+    if(!r.ok){
+      const j=await r.json().catch(()=>({}));
+      alert(j.erro||'Erro ao remover signatário.');
+      return;
+    }
+    await recarregarDetalheEnvelope();
+  }catch(e){
+    alert('Erro de conexão ao remover signatário.');
+  }
+}
+
+async function remArqEnvelope(arqId){
+  if(!_asiEnvelopeId) return;
+  if(!confirm('Remover este arquivo do documento?')) return;
+  try{
+    const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/arquivos/${arqId}`,{method:'DELETE'});
+    if(!r.ok){
+      const j=await r.json().catch(()=>({}));
+      alert(j.erro||'Erro ao remover arquivo.');
+      return;
+    }
+    await recarregarDetalheEnvelope();
+  }catch(e){
+    alert('Erro de conexão ao remover arquivo.');
+  }
+}
+
 // Arquivos
 function abrirPickerArqSistema(){
   document.getElementById('asi-picker-modal').style.display='block';
@@ -4722,61 +4937,11 @@ async function uploadArqEnvelope(){
   else { const j=await r.json(); alert(j.erro||'Erro no upload.'); }
 }
 
-async function remArqEnvelope(arqId){
-  if(!_asiEnvelopeId||!confirm('Remover arquivo?')) return;
-  const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/arquivos/${arqId}`,{method:'DELETE'});
-  if(r.ok) await recarregarDetalheEnvelope();
-}
-
-// Signatários
-function abrirFormSignatario(){
-  ['sigf-nome','sigf-cargo','sigf-cpf','sigf-tel','sigf-email'].forEach(id=>{
-    const el=document.getElementById(id); if(el) el.value='';
-  });
-  document.getElementById('asi-sig-form').style.display='block';
-}
-
-function fmtCpfSig(el){
-  let v=el.value.replace(/\D/g,'');
-  if(v.length>3) v=v.slice(0,3)+'.'+v.slice(3);
-  if(v.length>7) v=v.slice(0,7)+'.'+v.slice(7);
-  if(v.length>11) v=v.slice(0,11)+'-'+v.slice(11);
-  el.value=v.slice(0,14);
-}
-
-async function salvarSignatario(){
-  if(!_asiEnvelopeId) return;
-  const nome=(document.getElementById('sigf-nome').value||'').trim();
-  if(!nome){ alert('Nome obrigatório.'); return; }
-  const payload={
-    nome,
-    cargo:(document.getElementById('sigf-cargo').value||'').trim(),
-    cpf:(document.getElementById('sigf-cpf').value||'').trim(),
-    telefone:(document.getElementById('sigf-tel').value||'').trim(),
-    email:(document.getElementById('sigf-email').value||'').trim(),
-    tipo:'externo',
-  };
-  const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/signatarios`,{
-    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)
-  });
-  if(r.ok){
-    document.getElementById('asi-sig-form').style.display='none';
-    await recarregarDetalheEnvelope();
-  } else { const j=await r.json(); alert(j.erro||'Erro.'); }
-}
-
-async function remSigEnvelope(sigId){
-  if(!_asiEnvelopeId||!confirm('Remover signatário?')) return;
-  const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/signatarios/${sigId}`,{method:'DELETE'});
-  if(r.ok) await recarregarDetalheEnvelope();
-}
-
 async function enviarEnvelopeAtual(){
   if(!_asiEnvelopeId) return;
-  const opt=prompt('Canal de envio:\n1 = WhatsApp\n2 = E-mail\n3 = Gerar links (não envia)\n\nDigite 1, 2 ou 3:','1');
-  if(opt===null) return;
-  const mapa={'1':'whatsapp','2':'email','3':'link'};
-  const canal=mapa[(opt||'').trim()];
+  const op=(prompt('Canal de envio:\n1 = WhatsApp\n2 = E-mail\n3 = Ambos\n4 = Apenas gerar links','1')||'').trim();
+  const mapa={'1':'whatsapp','2':'email','3':'ambos','4':'link'};
+  const canal=mapa[op];
   if(!canal){ alert('Opção inválida.'); return; }
   const btn=document.getElementById('btn-enviar-envelope');
   btn.disabled=true; btn.textContent='Enviando...';
@@ -4831,5 +4996,6 @@ function abrirValidacaoEnvelope(){
   });
 }
 </script>
+<script src="/static/js/app-ponto.js"></script>
 </body>
 </html>
