@@ -4211,8 +4211,8 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
     from reportlab.graphics.shapes import Drawing
 
     buf=io.BytesIO()
-    doc=SimpleDocTemplate(buf,pagesize=A4,leftMargin=1.8*cm,rightMargin=1.8*cm,topMargin=2*cm,bottomMargin=2*cm)
-    W=A4[0]-3.6*cm
+    doc=SimpleDocTemplate(buf,pagesize=A4,leftMargin=1.2*cm,rightMargin=1.2*cm,topMargin=1.2*cm,bottomMargin=1.2*cm)
+    W=A4[0]-2.4*cm
     AZ=colors.HexColor('#205d8a'); VD=colors.HexColor('#1a7a45'); CI=colors.HexColor('#f5f5f5')
     LJ=colors.HexColor('#f28e34')
     def ps(nm,**kw):
@@ -4303,24 +4303,7 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
     badge_cor=colors.HexColor('#ecf8f0'); badge_txt=VD
     st=Table([[Paragraph('<b>✔ DOCUMENTO ASSINADO ELETRONICAMENTE</b>',ps('bs',fontSize=10,textColor=badge_txt))]],colWidths=[W])
     st.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),badge_cor),('BOX',(0,0),(-1,-1),0.7,colors.HexColor('#9ed3b1')),('LEFTPADDING',(0,0),(-1,-1),8),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6)]))
-    story.append(st); story.append(Spacer(1,10))
-
-    # Selo visual de validação
-    selo_txt=(
-        'SELO DE CONFORMIDADE DIGITAL\n'
-        f'Código: {arquivo.ass_codigo or "-"}\n'
-        f'Integridade: SHA-256 {hash_comp[:16]}...'
-    )
-    selo=Table([[Paragraph(selo_txt.replace('\n','<br/>'),ps('selo1',fontSize=8,leading=11,textColor=colors.HexColor('#0f2b47')))]],colWidths=[W])
-    selo.setStyle(TableStyle([
-        ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#f2f8ff')),
-        ('BOX',(0,0),(-1,-1),1.1,colors.HexColor('#5b7ea1')),
-        ('LEFTPADDING',(0,0),(-1,-1),9),
-        ('RIGHTPADDING',(0,0),(-1,-1),9),
-        ('TOPPADDING',(0,0),(-1,-1),7),
-        ('BOTTOMPADDING',(0,0),(-1,-1),7),
-    ]))
-    story.append(selo); story.append(Spacer(1,10))
+    story.append(st); story.append(Spacer(1,5))
 
     fn_nome=(funcionario.nome if funcionario else '-')
     fn_cpf=(funcionario.cpf if funcionario else '-')
@@ -4339,21 +4322,19 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
         ('IP de origem',arquivo.ass_ip or '-'),
         ('Código de validação',arquivo.ass_codigo or '-'),
         ('Link de validação',validacao_link or '-'),
-        ('Assinatura criptográfica PDF',('Ativa' if bool(getattr(arquivo,'ass_crypto_ok',False)) else 'Não aplicada')),
-        ('Certificado digital',getattr(arquivo,'ass_cert_subject',None) or '-'),
-        ('Hash de comprovação (SHA-256)',hash_comp),
+        ('Hash SHA-256',hash_comp[:32]+'...'),
     ]
     rows=[[Paragraph(f'<b>{k}</b>',ps('dk',fontSize=8,textColor=AZ)),Paragraph(v,ps('dv',fontSize=8,leading=11))] for k,v in detalhes]
     det=Table(rows,colWidths=[W*0.32,W*0.68])
-    det.setStyle(TableStyle([('BACKGROUND',(0,0),(0,-1),CI),('BOX',(0,0),(-1,-1),0.6,colors.HexColor('#d0d7df')),('LINEBELOW',(0,0),(-1,-2),0.3,colors.HexColor('#e3e8ef')),('LEFTPADDING',(0,0),(-1,-1),7),('RIGHTPADDING',(0,0),(-1,-1),7),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
-    story.append(det); story.append(Spacer(1,12))
+    det.setStyle(TableStyle([('BACKGROUND',(0,0),(0,-1),CI),('BOX',(0,0),(-1,-1),0.6,colors.HexColor('#d0d7df')),('LINEBELOW',(0,0),(-1,-2),0.3,colors.HexColor('#e3e8ef')),('LEFTPADDING',(0,0),(-1,-1),5),('RIGHTPADDING',(0,0),(-1,-1),5),('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3)]))
+    story.append(det); story.append(Spacer(1,6))
 
-    # Assinatura em estilo manuscrito
+    # Assinatura em estilo cursivo
     ass_nome=arquivo.ass_nome or '-'
     ass_cargo=arquivo.ass_cargo or 'Assinante'
     ass_data=_fmt(arquivo.ass_em)
     sig_title=Paragraph('<b>ASSINATURA ELETRÔNICA REGISTRADA</b>',ps('sgt',fontSize=9,textColor=AZ))
-    sig_draw=Paragraph(ass_nome,ps('sgn',fontName='Helvetica-Oblique',fontSize=24,textColor=colors.HexColor('#24384d'),leading=25))
+    sig_draw=Paragraph(ass_nome,ps('sgn',fontName='Times-Italic',fontSize=22,textColor=colors.HexColor('#1a2e42'),leading=24))
     sig_meta=Paragraph(f'{ass_cargo} · Data/hora: {ass_data}',ps('sgm',fontSize=8,textColor=colors.HexColor('#5d6f82')))
     sig=Table([[sig_title],[sig_draw],[Paragraph('<font color="#9db0c1">______________________________________________</font>',ps('sgl',fontSize=9))],[sig_meta]],colWidths=[W])
     sig.setStyle(TableStyle([
@@ -4364,63 +4345,22 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
         ('TOPPADDING',(0,0),(-1,-1),6),
         ('BOTTOMPADDING',(0,0),(-1,-1),6),
     ]))
-    story.append(sig); story.append(Spacer(1,10))
-
-    # Base legal
-    legal=(
-        'Este relatório comprova a assinatura eletrônica do documento e sua integridade por hash SHA-256, '
-        'com validade jurídica conforme a MP 2.200-2/2001 (ICP-Brasil) e a Lei 14.063/2020.'
-    )
-    leg_tbl=Table([[Paragraph(legal,ps('lgl',fontSize=8,leading=11,textColor=colors.HexColor('#465a70')))]],colWidths=[W])
-    leg_tbl.setStyle(TableStyle([
-        ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#eef4fb')),
-        ('BOX',(0,0),(-1,-1),0.5,colors.HexColor('#cfd8e5')),
-        ('LEFTPADDING',(0,0),(-1,-1),8),
-        ('RIGHTPADDING',(0,0),(-1,-1),8),
-        ('TOPPADDING',(0,0),(-1,-1),6),
-        ('BOTTOMPADDING',(0,0),(-1,-1),6),
-    ]))
-    story.append(leg_tbl); story.append(Spacer(1,10))
-
-    # Timeline de auditoria
-    evt=[
-        ('Documento anexado',_fmt(getattr(arquivo,'criado_em',None))),
-        ('Assinatura concluída',_fmt(arquivo.ass_em)),
-        ('Relatório emitido',_fmt(localnow())),
-    ]
-    story.append(Paragraph('<b>TRILHA DE EVENTOS</b>',ps('evtt',fontSize=9,textColor=AZ,spaceAfter=4)))
-    evt_rows=[]
-    for titulo,dh in evt:
-        evt_rows.append([
-            Paragraph('<font color="#1a7a45">●</font>',ps('evtb',fontSize=11,alignment=TA_CENTER)),
-            Paragraph(f'<b>{titulo}</b><br/><font color="#5d6f82">{dh}</font>',ps('evtd',fontSize=8,leading=10))
-        ])
-    evt_tbl=Table(evt_rows,colWidths=[W*0.05,W*0.95])
-    evt_tbl.setStyle(TableStyle([
-        ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#fbfdff')),
-        ('BOX',(0,0),(-1,-1),0.45,colors.HexColor('#d9e2ee')),
-        ('LINEBELOW',(0,0),(-1,-2),0.25,colors.HexColor('#e3eaf2')),
-        ('LEFTPADDING',(0,0),(-1,-1),6),
-        ('RIGHTPADDING',(0,0),(-1,-1),6),
-        ('TOPPADDING',(0,0),(-1,-1),5),
-        ('BOTTOMPADDING',(0,0),(-1,-1),5),
-    ]))
-    story.append(evt_tbl); story.append(Spacer(1,10))
+    story.append(sig); story.append(Spacer(1,6))
 
     if validacao_link:
         try:
             qr_widget=qr_code.QrCodeWidget(validacao_link)
             b=qr_widget.getBounds()
             bw=max(1,b[2]-b[0]); bh=max(1,b[3]-b[1])
-            sz=110
+            sz=80
             qr_draw=Drawing(sz,sz,transform=[sz/bw,0,0,sz/bh,0,0])
             qr_draw.add(qr_widget)
-            qr_tbl=Table([[qr_draw,Paragraph('Escaneie o QR Code para validar esta assinatura em tempo real no portal RM Facilities.',ps('qrp',fontSize=9,leading=13,textColor=colors.HexColor('#4c6072')))]],colWidths=[W*0.28,W*0.72])
+            qr_tbl=Table([[qr_draw,Paragraph('Escaneie o QR Code para validar esta assinatura em tempo real no portal RM Facilities.',ps('qrp',fontSize=9,leading=13,textColor=colors.HexColor('#4c6072')))]],colWidths=[W*0.22,W*0.78])
             qr_tbl.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),4),('RIGHTPADDING',(0,0),(-1,-1),4)]))
             story.append(qr_tbl)
         except Exception:
             story.append(Paragraph(f'Link: {validacao_link}',ps('ql',fontSize=8)))
-    story.append(Spacer(1,14))
+    story.append(Spacer(1,6))
     bar=Table([[' ']],colWidths=[W])
     bar.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),LJ),('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2)]))
     story.append(bar); story.append(Spacer(1,4))
@@ -4583,8 +4523,8 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     from reportlab.graphics.shapes import Drawing
 
     buf=io.BytesIO()
-    doc=SimpleDocTemplate(buf,pagesize=A4,leftMargin=1.8*cm,rightMargin=1.8*cm,topMargin=2*cm,bottomMargin=2*cm)
-    W=A4[0]-3.6*cm
+    doc=SimpleDocTemplate(buf,pagesize=A4,leftMargin=1.2*cm,rightMargin=1.2*cm,topMargin=1.2*cm,bottomMargin=1.2*cm)
+    W=A4[0]-2.4*cm
     AZ=colors.HexColor('#205d8a'); VD=colors.HexColor('#1a7a45'); CI=colors.HexColor('#f5f5f5')
     LJ=colors.HexColor('#f28e34')
     def ps(nm,**kw):
@@ -4659,26 +4599,22 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
         badge_cor=colors.HexColor('#fff8ec'); badge_txt=LJ; badge_label=f'⏳ {len(assinados)} de {len(signatarios)} SIGNATÁRIOS ASSINARAM'
     st=Table([[Paragraph(f'<b>{badge_label}</b>',ps('bs',fontSize=10,textColor=badge_txt))]],colWidths=[W])
     st.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),badge_cor),('BOX',(0,0),(-1,-1),0.7,colors.HexColor('#9ed3b1')),('LEFTPADDING',(0,0),(-1,-1),8),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6)]))
-    story.append(st); story.append(Spacer(1,10))
+    story.append(st); story.append(Spacer(1,5))
 
     detalhes=[
         ('Título do Documento',envelope.titulo or '-'),
-        ('Descrição',envelope.descricao or '-'),
         ('Tipo',{'funcionario':'Funcionário','cliente':'Cliente','avulso':'Avulso'}.get(envelope.tipo,envelope.tipo or '-')),
         ('Status',envelope.status or '-'),
         ('Código de Validação',envelope.codigo or '-'),
-        ('Link de Validação',validacao_link or '-'),
         ('Criado por',envelope.criado_por or '-'),
         ('Data de Criação',envelope.criado_em.strftime('%d/%m/%Y %H:%M') if envelope.criado_em else '-'),
         ('Validade',envelope.expira_em.strftime('%d/%m/%Y') if envelope.expira_em else 'Sem prazo'),
-        ('Assinatura criptográfica PDF',('Ativa' if bool(getattr(envelope,'assinatura_crypto_ok',False)) else 'Não aplicada')),
-        ('Certificado digital',getattr(envelope,'assinatura_cert_subject',None) or '-'),
-        ('Hash SHA-256',hash_comp),
+        ('Hash SHA-256',hash_comp[:32]+'...'),
     ]
     rows=[[Paragraph(f'<b>{k}</b>',ps('dk',fontSize=8,textColor=AZ)),Paragraph(v,ps('dv',fontSize=8,leading=11))] for k,v in detalhes]
     det=Table(rows,colWidths=[W*0.32,W*0.68])
-    det.setStyle(TableStyle([('BACKGROUND',(0,0),(0,-1),CI),('BOX',(0,0),(-1,-1),0.6,colors.HexColor('#d0d7df')),('LINEBELOW',(0,0),(-1,-2),0.3,colors.HexColor('#e3e8ef')),('LEFTPADDING',(0,0),(-1,-1),7),('RIGHTPADDING',(0,0),(-1,-1),7),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
-    story.append(det); story.append(Spacer(1,12))
+    det.setStyle(TableStyle([('BACKGROUND',(0,0),(0,-1),CI),('BOX',(0,0),(-1,-1),0.6,colors.HexColor('#d0d7df')),('LINEBELOW',(0,0),(-1,-2),0.3,colors.HexColor('#e3e8ef')),('LEFTPADDING',(0,0),(-1,-1),5),('RIGHTPADDING',(0,0),(-1,-1),5),('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3)]))
+    story.append(det); story.append(Spacer(1,6))
 
     # Tabela de signatários
     story.append(Paragraph('<b>Signatários</b>',ps('sh',fontSize=10,textColor=AZ,spaceAfter=6)))
@@ -4705,100 +4641,40 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     sig_tbl.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,0),AZ),('BOX',(0,0),(-1,-1),0.5,colors.HexColor('#d0d7df')),
         ('LINEBELOW',(0,0),(-1,-1),0.3,colors.HexColor('#e3e8ef')),
-        ('LEFTPADDING',(0,0),(-1,-1),5),('RIGHTPADDING',(0,0),(-1,-1),5),
-        ('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4),
+        ('LEFTPADDING',(0,0),(-1,-1),4),('RIGHTPADDING',(0,0),(-1,-1),4),
+        ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
         ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,CI]),
     ]))
-    story.append(sig_tbl); story.append(Spacer(1,12))
+    story.append(sig_tbl); story.append(Spacer(1,6))
 
-    assinantes_confirmados=[s for s in signatarios if s.status=='assinado']
     if assinantes_confirmados:
-        story.append(Paragraph('<b>ASSINATURAS REGISTRADAS</b>',ps('asg1',fontSize=9,textColor=AZ,spaceAfter=4)))
-        cards=[]
-        for s in assinantes_confirmados:
-            ass_meta=(s.ass_em.strftime('%d/%m/%Y %H:%M') if s.ass_em else '-')
-            sig_name=Paragraph(s.nome or '-',ps('asg2',fontName='Helvetica-Oblique',fontSize=21,textColor=colors.HexColor('#24384d'),leading=22))
-            sig_line=Paragraph('<font color="#9db0c1">__________________________________________</font>',ps('asg3',fontSize=9))
-            sig_info=Paragraph(f'{s.cargo or "Signatário"} · Data/hora: {ass_meta}',ps('asg4',fontSize=8,textColor=colors.HexColor('#5d6f82')))
-            sig_box=Table([[sig_name],[sig_line],[sig_info]],colWidths=[W])
-            sig_box.setStyle(TableStyle([
-                ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#f8fbff')),
-                ('BOX',(0,0),(-1,-1),0.5,colors.HexColor('#d0d7df')),
-                ('LEFTPADDING',(0,0),(-1,-1),10),
-                ('RIGHTPADDING',(0,0),(-1,-1),10),
-                ('TOPPADDING',(0,0),(-1,-1),5),
-                ('BOTTOMPADDING',(0,0),(-1,-1),5),
-            ]))
-            cards.append(sig_box)
-        grid=[]
-        row=[]
-        for card in cards:
-            row.append(card)
-            if len(row)==2:
-                grid.append(row)
-                row=[]
-        if row:
-            row.append(Paragraph('',ps('asg-empty',fontSize=1)))
-            grid.append(row)
-        sig_grid=Table(grid,colWidths=[W*0.49,W*0.49])
-        sig_grid.setStyle(TableStyle([
-            ('VALIGN',(0,0),(-1,-1),'TOP'),
-            ('LEFTPADDING',(0,0),(-1,-1),0),
-            ('RIGHTPADDING',(0,0),(-1,-1),0),
-            ('TOPPADDING',(0,0),(-1,-1),0),
-            ('BOTTOMPADDING',(0,0),(-1,-1),6),
+        story.append(Paragraph('<b>ASSINATURAS REGISTRADAS</b>',ps('asg1',fontSize=8,textColor=AZ,spaceAfter=3)))
+        sig_rows_cursive=[
+            [Paragraph(f'<i>{s.nome or "-"}</i>',ps(f'asn{i}',fontName='Times-Italic',fontSize=18,textColor=colors.HexColor('#1a2e42'),leading=20)),
+             Paragraph(f'{s.cargo or "Signatário"}<br/><font color="#5d6f82">{s.ass_em.strftime("%d/%m/%Y %H:%M") if s.ass_em else "-"}</font>',ps(f'asd{i}',fontSize=7.5,leading=10))]
+            for i,s in enumerate(assinantes_confirmados)
+        ]
+        sig_curs=Table(sig_rows_cursive,colWidths=[W*0.52,W*0.48])
+        sig_curs.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#f8fbff')),
+            ('BOX',(0,0),(-1,-1),0.5,colors.HexColor('#d0d7df')),
+            ('LINEBELOW',(0,0),(-1,-2),0.3,colors.HexColor('#e3e8ef')),
+            ('LEFTPADDING',(0,0),(-1,-1),8),('RIGHTPADDING',(0,0),(-1,-1),8),
+            ('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4),
+            ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
         ]))
-        story.append(sig_grid)
-
-    # Timeline do envelope
-    evt=[('Envelope criado',envelope.criado_em.strftime('%d/%m/%Y %H:%M') if envelope.criado_em else '-')]
-    for s in signatarios:
-        if s.ass_em:
-            evt.append((f'Assinatura: {s.nome or "Signatário"}',s.ass_em.strftime('%d/%m/%Y %H:%M')))
-    evt.append(('Relatório emitido',localnow().strftime('%d/%m/%Y %H:%M')))
-    story.append(Paragraph('<b>TRILHA DE EVENTOS</b>',ps('evtt2',fontSize=9,textColor=AZ,spaceAfter=4)))
-    evt_rows=[]
-    for titulo,dh in evt:
-        evt_rows.append([
-            Paragraph('<font color="#1a7a45">●</font>',ps('evtb2',fontSize=11,alignment=TA_CENTER)),
-            Paragraph(f'<b>{titulo}</b><br/><font color="#5d6f82">{dh}</font>',ps('evtd2',fontSize=8,leading=10))
-        ])
-    evt_tbl=Table(evt_rows,colWidths=[W*0.05,W*0.95])
-    evt_tbl.setStyle(TableStyle([
-        ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#fbfdff')),
-        ('BOX',(0,0),(-1,-1),0.45,colors.HexColor('#d9e2ee')),
-        ('LINEBELOW',(0,0),(-1,-2),0.25,colors.HexColor('#e3eaf2')),
-        ('LEFTPADDING',(0,0),(-1,-1),6),
-        ('RIGHTPADDING',(0,0),(-1,-1),6),
-        ('TOPPADDING',(0,0),(-1,-1),5),
-        ('BOTTOMPADDING',(0,0),(-1,-1),5),
-    ]))
-    story.append(evt_tbl); story.append(Spacer(1,8))
-
-    legal=(
-        'Este relatório comprova as assinaturas eletrônicas do documento e sua integridade por hash SHA-256, '
-        'com validade jurídica conforme a MP 2.200-2/2001 (ICP-Brasil) e a Lei 14.063/2020.'
-    )
-    leg_tbl=Table([[Paragraph(legal,ps('lgl2',fontSize=8,leading=11,textColor=colors.HexColor('#465a70')))]],colWidths=[W])
-    leg_tbl.setStyle(TableStyle([
-        ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#eef4fb')),
-        ('BOX',(0,0),(-1,-1),0.5,colors.HexColor('#cfd8e5')),
-        ('LEFTPADDING',(0,0),(-1,-1),8),
-        ('RIGHTPADDING',(0,0),(-1,-1),8),
-        ('TOPPADDING',(0,0),(-1,-1),6),
-        ('BOTTOMPADDING',(0,0),(-1,-1),6),
-    ]))
-    story.append(leg_tbl); story.append(Spacer(1,10))
+        story.append(sig_curs)
+    story.append(Spacer(1,6))
 
     if validacao_link:
         try:
             qr_widget=qr_code.QrCodeWidget(validacao_link)
             b=qr_widget.getBounds()
             bw=max(1,b[2]-b[0]); bh=max(1,b[3]-b[1])
-            sz=100
+            sz=75
             qr_draw=Drawing(sz,sz,transform=[sz/bw,0,0,sz/bh,0,0])
             qr_draw.add(qr_widget)
-            qr_tbl=Table([[qr_draw,Paragraph('Escaneie para validar esta assinatura no portal RM Facilities.',ps('qrp',fontSize=9,leading=13,textColor=colors.HexColor('#4c6072')))]],colWidths=[W*0.25,W*0.75])
+            qr_tbl=Table([[qr_draw,Paragraph('Escaneie para validar esta assinatura no portal RM Facilities.',ps('qrp',fontSize=9,leading=13,textColor=colors.HexColor('#4c6072')))]],colWidths=[W*0.20,W*0.80])
             qr_tbl.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),4)]))
             story.append(qr_tbl)
         except Exception:
