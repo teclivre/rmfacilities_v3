@@ -351,70 +351,7 @@
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-header"><span class="card-title">Ponto - Pacote 2</span></div>
-        <div class="g3">
-          <div class="f">
-            <label>Colaborador ativo</label>
-            <select id="ponto-funcionario" onchange="pontoCarregarDia()"></select>
-          </div>
-          <div class="f">
-            <label>Data</label>
-            <input id="ponto-data" type="date" onchange="pontoCarregarDia();pontoCarregarPainelDia()">
-          </div>
-          <div class="f" style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap">
-            <button class="btn b-az" onclick="pontoRegistrarAgora()">Registrar ponto agora</button>
-            <button class="btn b-gh" onclick="pontoCarregarDia()">Atualizar dia</button>
-            <button class="btn b-ghv" onclick="pontoCarregarPainelDia()">Atualizar painel</button>
-          </div>
-        </div>
-        <div id="ponto-st" class="st" style="margin-top:8px"></div>
-        <div id="ponto-fechamento-st" class="st" style="margin-top:6px"></div>
-        <div id="ponto-resumo" style="margin-top:10px"></div>
-
-        <div class="g4" style="margin-top:10px;align-items:flex-end">
-          <div class="f">
-            <label>Ajuste manual - tipo</label>
-            <select id="ponto-ajuste-tipo">
-              <option value="entrada">Entrada</option>
-              <option value="saida_intervalo">Saída intervalo</option>
-              <option value="retorno_intervalo">Retorno intervalo</option>
-              <option value="saida">Saída</option>
-            </select>
-          </div>
-          <div class="f">
-            <label>Data/hora do ajuste</label>
-            <input id="ponto-ajuste-dh" type="datetime-local">
-          </div>
-          <div class="f s2">
-            <label>Motivo do ajuste</label>
-            <input id="ponto-ajuste-motivo" placeholder="Ex.: esquecimento de marcação às 12:00">
-          </div>
-          <div class="f" style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn b-ghr" onclick="pontoAplicarAjuste()">Aplicar ajuste</button>
-            <button class="btn b-ghv" onclick="pontoFecharDia(false)">Fechar dia</button>
-            <button class="btn b-ci" onclick="pontoFecharDia(true)">Fechar com ressalvas</button>
-          </div>
-        </div>
-
-        <div class="g3" style="margin-top:10px;align-items:flex-end">
-          <div class="f">
-            <label>Competência espelho (YYYY-MM)</label>
-            <input id="ponto-competencia" placeholder="2026-04">
-          </div>
-          <div class="f" style="display:flex;align-items:flex-end">
-            <button class="btn b-az" onclick="pontoBaixarEspelhoMensal()">Baixar espelho mensal (PDF)</button>
-          </div>
-          <div class="f"><div style="font-size:11px;color:#6e7f8f">O PDF inclui totais da competência e bloco de assinatura do colaborador e gestor.</div></div>
-        </div>
-
-        <div class="tbl-wrap" style="margin-top:8px">
-          <table class="tbl">
-            <thead><tr><th>Tipo</th><th>Horário</th><th>Origem</th><th>Observação</th></tr></thead>
-            <tbody id="tb-ponto-dia"></tbody>
-          </table>
-        </div>
-      </div>
+      {% include 'partials/rh_ponto_section.html' %}
 
       <div class="card">
         <div class="card-header"><span class="card-title">Painel do dia (colaboradores ativos)</span></div>
@@ -1319,12 +1256,16 @@
   </div>
 </div>
 
+{% include 'partials/ponto_edit_modal.html' %}
+
 <script>
 const N='{{ nome }}', P='{{ perfil }}';
 const USER_AREAS={{ areas|safe }};
 const THEME_KEY='rm_theme';
 const AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','beneficios','sst','rh-digital','documentos'];
 let todos=[], emps=[], funcs=[], pontoFuncs=[], bancosBR=[], beneficiosMensais=[], benTab='ativos', acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
+let pontoResumoPainelByFunc={};
+let pontoMarcacoesDiaAtual=[];
 
 function applyTheme(theme){
   const t=(theme==='dark')?'dark':'light';
@@ -1908,7 +1849,7 @@ async function renderCli(){
 
 function emitirCli(id){selCli(id);nav('nova-medicao',document.querySelector('[onclick*=nova-medicao]'));}
 
-const MODAL_FORM_IDS=['cli','func','emp','usr'];
+const MODAL_FORM_IDS=['cli','func','emp','usr','ponto-edit'];
 const _modalDirty={};
 
 function setModalClean(id){ _modalDirty[id]=false; }
@@ -2663,214 +2604,6 @@ function pontoFmtStatus(st){
   if(st==='ok') return '<span class="pill p-vd">OK</span>';
   if(st==='inconsistente') return '<span class="pill p-vm">Inconsistente</span>';
   return `<span class="pill p-ci">${st||'—'}</span>`;
-}
-
-function pontoDataHojeISO(){
-  const d=new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-
-function pontoAgoraLocalInput(){
-  const d=new Date();
-  const y=d.getFullYear();
-  const m=String(d.getMonth()+1).padStart(2,'0');
-  const day=String(d.getDate()).padStart(2,'0');
-  const h=String(d.getHours()).padStart(2,'0');
-  const mi=String(d.getMinutes()).padStart(2,'0');
-  return `${y}-${m}-${day}T${h}:${mi}`;
-}
-
-function pontoCompetenciaAtual(){
-  const d=new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-}
-
-async function pontoSyncFuncionarios(force=false){
-  if(force || !Array.isArray(pontoFuncs) || !pontoFuncs.length){
-    pontoFuncs=await api('/api/funcionarios');
-  }
-}
-
-function pontoPopularFuncionarios(){
-  const sel=document.getElementById('ponto-funcionario');
-  if(!sel)return;
-  const atual=sel.value||'';
-  const ativos=(pontoFuncs||[])
-    .filter(f=>String((f.status||'').toLowerCase())==='ativo')
-    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
-  sel.innerHTML=ativos.map(f=>`<option value="${f.id}">${f.nome}${f.matricula?` · Mat ${f.matricula}`:''}</option>`).join('');
-  if(!document.getElementById('ponto-data').value){
-    document.getElementById('ponto-data').value=pontoDataHojeISO();
-  }
-  if(document.getElementById('ponto-ajuste-dh') && !document.getElementById('ponto-ajuste-dh').value){
-    document.getElementById('ponto-ajuste-dh').value=pontoAgoraLocalInput();
-  }
-  if(document.getElementById('ponto-competencia') && !document.getElementById('ponto-competencia').value){
-    document.getElementById('ponto-competencia').value=pontoCompetenciaAtual();
-  }
-  if(atual && ativos.some(f=>String(f.id)===String(atual))) sel.value=atual;
-}
-
-async function pontoCarregarFechamentoDia(){
-  const el=document.getElementById('ponto-fechamento-st');
-  if(!el)return;
-  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
-  const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
-  if(!fid){ el.textContent=''; el.className='st'; return; }
-  const r=await api('/api/ponto/fechamentos-dia?data='+encodeURIComponent(data));
-  if(r.erro){ el.textContent=''; el.className='st'; return; }
-  const itens=(r.itens||[]).filter(x=>String(x.funcionario_id)===String(fid));
-  if(!itens.length){
-    el.className='st';
-    el.textContent='';
-    return;
-  }
-  const it=itens[0];
-  const st=(it.status==='fechado')?'Dia fechado':'Dia fechado com ressalvas';
-  el.className='st ok';
-  el.textContent=`${st} por ${it.fechado_por||'usuário'} em ${it.fechado_em_fmt||''}.`;
-}
-
-async function pontoCarregarDia(){
-  const sel=document.getElementById('ponto-funcionario');
-  const tb=document.getElementById('tb-ponto-dia');
-  const resumoEl=document.getElementById('ponto-resumo');
-  if(!sel||!tb||!resumoEl)return;
-  const fid=parseInt(sel.value||'0',10);
-  const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
-  if(!fid){
-    tb.innerHTML='<tr><td colspan="4" style="text-align:center;padding:18px;color:#888">Selecione um colaborador ativo.</td></tr>';
-    resumoEl.innerHTML='';
-    return;
-  }
-  const r=await api('/api/ponto/dia?funcionario_id='+fid+'&data='+encodeURIComponent(data));
-  if(r.erro){
-    showSt('ponto-st',r.erro,true);
-    tb.innerHTML='<tr><td colspan="4" style="text-align:center;padding:18px;color:#888">Não foi possível carregar o ponto do dia.</td></tr>';
-    resumoEl.innerHTML='';
-    return;
-  }
-  const s=r.resumo||{};
-  const selTipo=document.getElementById('ponto-ajuste-tipo');
-  if(selTipo && s.proximo_tipo) selTipo.value=s.proximo_tipo;
-  const inc=(s.inconsistencias||[]);
-  resumoEl.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px">
-    <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:#7b8a97">Horas trabalhadas</div><div style="font-size:19px;font-weight:700">${s.horas_trabalhadas_fmt||'00:00'}</div></div>
-    <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:#7b8a97">Carga esperada</div><div style="font-size:19px;font-weight:700">${s.horas_esperadas_fmt||'08:00'}</div></div>
-    <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:#7b8a97">Saldo</div><div style="font-size:19px;font-weight:700">${s.saldo_fmt||'00:00'}</div></div>
-    <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:#7b8a97">Próxima marcação</div><div style="font-size:19px;font-weight:700">${s.proximo_tipo_label||'Entrada'}</div></div>
-  </div>
-  ${inc.length?`<div style="margin-top:8px;font-size:12px;color:#8a1c1c;background:#fff3f3;border:1px solid #f2c5c5;border-radius:8px;padding:8px">⚠ ${inc.join(' | ')}</div>`:''}`;
-  const marc=s.marcacoes||[];
-  if(!marc.length){
-    tb.innerHTML='<tr><td colspan="4" style="text-align:center;padding:18px;color:#888">Nenhuma marcação neste dia.</td></tr>';
-    return;
-  }
-  tb.innerHTML=marc.map(m=>`<tr>
-    <td>${m.tipo_label||m.tipo||'—'}</td>
-    <td style="font-weight:700">${m.hora_fmt||''}</td>
-    <td>${m.origem||'web'}</td>
-    <td>${m.observacao||'—'}</td>
-  </tr>`).join('');
-  await pontoCarregarFechamentoDia();
-}
-
-async function pontoCarregarPainelDia(){
-  const tb=document.getElementById('tb-ponto-painel');
-  if(!tb)return;
-  const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
-  const r=await api('/api/ponto/resumo-dia?data='+encodeURIComponent(data));
-  if(r.erro){
-    showSt('ponto-painel-st',r.erro,true);
-    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:18px;color:#888">Erro ao carregar painel do dia.</td></tr>';
-    return;
-  }
-  showSt('ponto-painel-st',`Funcionários: ${r.totais?.funcionarios||0} · OK: ${r.totais?.ok||0} · Inconsistentes: ${r.totais?.inconsistentes||0}`,false);
-  const itens=r.itens||[];
-  if(!itens.length){
-    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:18px;color:#888">Nenhum colaborador ativo encontrado.</td></tr>';
-    return;
-  }
-  tb.innerHTML=itens.map(it=>`<tr>
-    <td>${it.funcionario_nome||'—'}</td>
-    <td>${it.marcacoes_count||0}</td>
-    <td>${it.horas_trabalhadas_fmt||'00:00'}</td>
-    <td>${it.horas_esperadas_fmt||'08:00'}</td>
-    <td>${it.saldo_fmt||'00:00'}</td>
-    <td>${it.proximo_tipo_label||'Entrada'}</td>
-    <td>${pontoFmtStatus(it.status)}</td>
-  </tr>`).join('');
-}
-
-async function pontoRegistrarAgora(){
-  const sel=document.getElementById('ponto-funcionario');
-  const fid=parseInt(sel?.value||'0',10);
-  if(!fid){
-    showSt('ponto-st','Selecione um colaborador ativo.',true);
-    return;
-  }
-  const f=(pontoFuncs||[]).find(x=>String(x.id)===String(fid));
-  if(!confirm(`Confirma registrar ponto agora para ${f?.nome||'o colaborador selecionado'}?`)) return;
-  const r=await api('/api/ponto/marcar','POST',{funcionario_id:fid,origem:'web'});
-  if(r.erro){
-    showSt('ponto-st',r.erro,true);
-    return;
-  }
-  showSt('ponto-st',`Marcação registrada: ${r.marcacao?.tipo_label||'OK'} às ${r.marcacao?.hora_fmt||''}.`,false);
-  await pontoCarregarDia();
-  await pontoCarregarPainelDia();
-}
-
-async function pontoAplicarAjuste(){
-  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
-  const tipo=(document.getElementById('ponto-ajuste-tipo')?.value||'').trim();
-  const dh=(document.getElementById('ponto-ajuste-dh')?.value||'').trim();
-  const motivo=(document.getElementById('ponto-ajuste-motivo')?.value||'').trim();
-  if(!fid){showSt('ponto-st','Selecione um colaborador ativo.',true);return;}
-  if(!tipo){showSt('ponto-st','Selecione o tipo de ajuste.',true);return;}
-  if(!dh){showSt('ponto-st','Informe a data/hora do ajuste.',true);return;}
-  if(!motivo){showSt('ponto-st','Informe o motivo do ajuste.',true);return;}
-  if(!confirm('Confirma aplicar este ajuste manual no ponto?')) return;
-  const r=await api('/api/ponto/ajuste','POST',{
-    funcionario_id:fid,
-    tipo,
-    data_hora:dh,
-    motivo
-  });
-  if(r.erro){showSt('ponto-st',r.erro,true);return;}
-  showSt('ponto-st','Ajuste aplicado e auditado com sucesso.',false);
-  document.getElementById('ponto-ajuste-motivo').value='';
-  await pontoCarregarDia();
-  await pontoCarregarPainelDia();
-}
-
-async function pontoFecharDia(forcar){
-  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
-  const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
-  if(!fid){showSt('ponto-st','Selecione um colaborador ativo.',true);return;}
-  const msg=forcar
-    ? 'Fechar o dia com ressalvas? Use somente quando houver inconsistências justificadas.'
-    : 'Confirma fechar o dia deste colaborador?';
-  if(!confirm(msg)) return;
-  const r=await api('/api/ponto/fechar-dia','POST',{funcionario_id:fid,data,forcar:!!forcar});
-  if(r.erro){
-    showSt('ponto-st',r.erro,true);
-    return;
-  }
-  showSt('ponto-st',forcar?'Dia fechado com ressalvas.':'Dia fechado com sucesso.',false);
-  await pontoCarregarDia();
-  await pontoCarregarPainelDia();
-}
-
-function pontoBaixarEspelhoMensal(){
-  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
-  const comp=(document.getElementById('ponto-competencia')?.value||'').trim();
-  if(!fid){showSt('ponto-st','Selecione um colaborador ativo.',true);return;}
-  if(!/^\d{4}-\d{2}$/.test(comp)){
-    showSt('ponto-st','Competência inválida. Use YYYY-MM.',true);
-    return;
-  }
-  window.location.href='/api/ponto/espelho-mensal?funcionario_id='+fid+'&competencia='+encodeURIComponent(comp);
 }
 
 async function renderFuncionarios(){
@@ -4726,5 +4459,6 @@ function abrirValidacaoEnvelope(){
   });
 }
 </script>
+<script src="/static/js/app-ponto.js"></script>
 </body>
 </html>

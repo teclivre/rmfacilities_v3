@@ -1,0 +1,96 @@
+<div class="card">
+  <div class="card-header"><span class="card-title">Gestão de Ponto por Funcionário</span></div>
+  <div class="ponto-gestao-wrap">
+    <aside class="ponto-side">
+      <div class="ponto-side-head">
+        <div style="font-size:11px;color:#6f8091">Colaboradores ativos</div>
+        <span id="ponto-func-qtd" class="pill p-vd">0</span>
+      </div>
+      <div class="f" style="margin-top:8px">
+        <label>Buscar colaborador</label>
+        <input id="ponto-func-busca" placeholder="Nome, matrícula ou cargo" oninput="pontoRenderGestaoFuncionarios()">
+      </div>
+      <div id="ponto-func-list" class="ponto-lista"></div>
+    </aside>
+
+    <section class="ponto-main">
+      <div class="ponto-main-head">
+        <div>
+          <div id="ponto-func-atual-nome" style="font-size:16px;font-weight:700;color:var(--azul)">Selecione um colaborador</div>
+          <div id="ponto-func-atual-meta" class="ponto-main-sub">Escolha um colaborador para lançar e auditar as marcações do dia.</div>
+        </div>
+        <div class="f" style="min-width:170px">
+          <label>Data de gestão</label>
+          <input id="ponto-data" type="date" onchange="pontoCarregarDia();pontoCarregarPainelDia()">
+        </div>
+      </div>
+
+      <div class="ponto-kpis">
+        <div class="ponto-kpi"><div class="l">Próxima marcação</div><div class="v" id="ponto-proximo-label">Entrada</div></div>
+        <div class="ponto-kpi"><div class="l">Ações rápidas</div><div class="v" style="font-size:13px">1 clique</div></div>
+        <div class="ponto-kpi"><div class="l">Acompanhamento</div><div class="v" style="font-size:13px">Tempo real</div></div>
+      </div>
+
+      <div class="ponto-acoes">
+        <button class="btn b-az b-sm" onclick="pontoRegistrarAgora()">Registrar ponto agora</button>
+        <button class="btn b-gh b-sm" onclick="pontoRegistrarTipo('entrada')">Entrada</button>
+        <button class="btn b-gh b-sm" onclick="pontoRegistrarTipo('saida_intervalo')">Saída intervalo</button>
+        <button class="btn b-gh b-sm" onclick="pontoRegistrarTipo('retorno_intervalo')">Retorno intervalo</button>
+        <button class="btn b-gh b-sm" onclick="pontoRegistrarTipo('saida')">Saída</button>
+        <button class="btn b-ghv b-sm" onclick="pontoCarregarDia();pontoCarregarPainelDia()">Atualizar</button>
+      </div>
+
+      <div id="ponto-st" class="st" style="margin-top:8px"></div>
+      <div id="ponto-fechamento-st" class="st" style="margin-top:6px"></div>
+      <div id="ponto-resumo" style="margin-top:10px"></div>
+
+      <div class="f" style="display:none">
+        <label>Colaborador ativo</label>
+        <select id="ponto-funcionario" onchange="pontoSelecionarFuncionario(this.value,true)"></select>
+      </div>
+
+      <div class="g4" style="margin-top:10px;align-items:flex-end">
+        <div class="f">
+          <label>Ajuste manual - tipo</label>
+          <select id="ponto-ajuste-tipo">
+            <option value="entrada">Entrada</option>
+            <option value="saida_intervalo">Saída intervalo</option>
+            <option value="retorno_intervalo">Retorno intervalo</option>
+            <option value="saida">Saída</option>
+          </select>
+        </div>
+        <div class="f">
+          <label>Data/hora do ajuste</label>
+          <input id="ponto-ajuste-dh" type="datetime-local">
+        </div>
+        <div class="f s2">
+          <label>Motivo do ajuste</label>
+          <input id="ponto-ajuste-motivo" placeholder="Ex.: esquecimento de marcação às 12:00">
+        </div>
+        <div class="f" style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn b-ghr" onclick="pontoAplicarAjuste()">Aplicar ajuste</button>
+          <button class="btn b-ghv" onclick="pontoFecharDia(false)">Fechar dia</button>
+          <button class="btn b-ci" onclick="pontoFecharDia(true)">Fechar com ressalvas</button>
+        </div>
+      </div>
+
+      <div class="g3" style="margin-top:10px;align-items:flex-end">
+        <div class="f">
+          <label>Competência espelho (YYYY-MM)</label>
+          <input id="ponto-competencia" placeholder="2026-04">
+        </div>
+        <div class="f" style="display:flex;align-items:flex-end">
+          <button class="btn b-az" onclick="pontoBaixarEspelhoMensal()">Baixar espelho mensal (PDF)</button>
+        </div>
+        <div class="f"><div style="font-size:11px;color:#6e7f8f">O PDF inclui totais da competência e bloco de assinatura do colaborador e gestor.</div></div>
+      </div>
+
+      <div class="tbl-wrap" style="margin-top:8px">
+        <table class="tbl">
+          <thead><tr><th>Tipo</th><th>Horário</th><th>Origem</th><th>Observação</th><th>Ações</th></tr></thead>
+          <tbody id="tb-ponto-dia"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>

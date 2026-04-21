@@ -11,6 +11,8 @@ from email.mime.text import MIMEText
 from email import encoders
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash,check_password_hash
+from ponto_module import register_ponto_routes
+from zoneinfo import ZoneInfo
 
 app=Flask(__name__)
 app.secret_key=os.environ.get('SECRET_KEY','rmfacilities2026@prod')
@@ -26,6 +28,8 @@ _strict_origin_check=(os.environ.get('STRICT_ORIGIN_CHECK','').lower() in ('1','
 app.config['SESSION_COOKIE_SECURE']=bool(_is_prod_env or _force_secure_cookie)
 if _is_prod_env and app.secret_key=='rmfacilities2026@prod':
     raise RuntimeError('SECRET_KEY insegura em produção. Defina SECRET_KEY no ambiente.')
+
+APP_TZ=ZoneInfo('America/Sao_Paulo')
 
 def _same_origin_request(req):
     if not _strict_origin_check:
@@ -54,8 +58,13 @@ def add_security_headers(resp):
     return resp
 
 
+def localnow():
+    return datetime.now(APP_TZ).replace(tzinfo=None)
+
 def utcnow():
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    # Compatibilidade histórica: a aplicação persiste timestamps como naive datetime,
+    # mas o valor correto para o negócio é o horário de Brasília.
+    return localnow()
 
 db=SQLAlchemy(app)
 
@@ -732,7 +741,7 @@ def _wa_backup_collect(window_hours=8,max_conversas=10):
 def _wa_backup_store(payload):
     root=_wa_backup_root()
     os.makedirs(root,exist_ok=True)
-    nome=f"wa_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    nome=f"wa_backup_{localnow().strftime('%Y%m%d_%H%M%S')}.json"
     caminho=os.path.join(root,nome)
     with open(caminho,'w',encoding='utf-8') as f:
         json.dump(payload,f,ensure_ascii=False,indent=2)
@@ -741,7 +750,7 @@ def _wa_backup_store(payload):
 def _wa_backup_store_txt(payload):
     root=_wa_backup_root()
     os.makedirs(root,exist_ok=True)
-    base=datetime.now().strftime('%Y%m%d_%H%M%S')
+    base=localnow().strftime('%Y%m%d_%H%M%S')
     nome=f"wa_historico_{base}.txt"
     caminho=os.path.join(root,nome)
     linhas=[]
@@ -812,7 +821,7 @@ def wa_backup_maybe_send(force=False):
     payload=_wa_backup_collect(janela,max_conv)
     arq=_wa_backup_store(payload)
     arq_txt=_wa_backup_store_txt(payload)
-    assunto=f"Backup WhatsApp RM Facilities - {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    assunto=f"Backup WhatsApp RM Facilities - {localnow().strftime('%d/%m/%Y %H:%M')}"
     corpo=(
         f"Backup automatico das conversas WhatsApp.\n\n"
         f"Janela: {payload.get('janela_horas')}h\n"
@@ -1403,7 +1412,7 @@ def _parse_competencias_holerite(texto,ano_padrao=None):
     - quando o ano não é informado, usa o ano corrente
     """
     if ano_padrao is None:
-        ano_padrao=datetime.now().year
+        ano_padrao=localnow().year
     s=(texto or '').strip().lower()
     if not s:
         return []
@@ -1600,7 +1609,7 @@ def _processa_dialogo_holerite(conversa_id,numero,texto):
     
     # Aguardando competência (mês/ano)
     if estado=='aguardando_competencia':
-        competencias=_parse_competencias_holerite(texto,ano_padrao=datetime.now().year)
+        competencias=_parse_competencias_holerite(texto,ano_padrao=localnow().year)
         if not competencias:
             ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
             conversa.contexto=json.dumps(ctx,ensure_ascii=False)
@@ -1957,7 +1966,7 @@ def to_num(s,dec=False):
 def norm_competencia(v=''):
     s=str(v or '').strip()
     if not s:
-        return datetime.now().strftime('%Y-%m')
+        return localnow().strftime('%Y-%m')
     m=re.search(r'^(\d{4})[-/](\d{2})$',s)
     if m:
         y,mm=m.group(1),m.group(2)
@@ -1968,7 +1977,7 @@ def norm_competencia(v=''):
         mm,y=m.group(1),m.group(2)
         if 1<=int(mm)<=12:
             return f'{y}-{mm}'
-    return datetime.now().strftime('%Y-%m')
+    return localnow().strftime('%Y-%m')
 
 def next_cli_num():
     max_n=0
@@ -1980,7 +1989,7 @@ def next_cli_num():
 def save_upload(fs,subdir):
     os.makedirs(os.path.join(UPLOAD_ROOT,subdir),exist_ok=True)
     base=secure_filename(fs.filename or 'arquivo.bin')
-    nome=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{base}"
+    nome=f"{localnow().strftime('%Y%m%d_%H%M%S')}_{base}"
     rel=os.path.join(subdir,nome)
     abs_p=os.path.join(UPLOAD_ROOT,rel)
     fs.save(abs_p)
@@ -2004,7 +2013,7 @@ def infer_doc_year(comp=''):
     c=(comp or '').strip()
     m=re.search(r'(19|20)\d{2}',c)
     if m: return m.group(0)
-    return str(datetime.now().year)
+    return str(localnow().year)
 
 def func_doc_subdir(funcionario_id,categoria,competencia=''):
     cat=norm_cat(categoria)
@@ -2013,7 +2022,7 @@ def func_doc_subdir(funcionario_id,categoria,competencia=''):
     return os.path.join('funcionarios',str(funcionario_id),pasta_cat,ano),cat
 
 def prepare_func_doc_dirs(funcionario_id,ano=None):
-    y=str(ano or datetime.now().year)
+    y=str(ano or localnow().year)
     made=[]
     for _,pasta in DOC_CAT_PATH.items():
         rel=os.path.join('funcionarios',str(funcionario_id),pasta,y)
@@ -2025,7 +2034,7 @@ def prepare_func_doc_dirs(funcionario_id,ano=None):
 def holerite_comp_label(comp=''):
     c=(comp or '').strip()
     if not c:
-        return datetime.now().strftime('%m-%Y')
+        return localnow().strftime('%m-%Y')
     m=re.match(r'^(\d{4})[-/](\d{2})$',c)
     if m:
         return f"{m.group(2)}-{m.group(1)}"
@@ -2072,7 +2081,7 @@ def arq_year_from_path(caminho):
     if p and re.fullmatch(r'(19|20)\d{2}',p[-2] if len(p)>=2 else ''):
         return p[-2]
     m=re.search(r'/(19|20)\d{2}/',('/'+str(caminho or '').replace('\\','/')+'/'))
-    return m.group(0).strip('/') if m else str(datetime.now().year)
+    return m.group(0).strip('/') if m else str(localnow().year)
 
 def can_access_area(area):
     if session.get('perfil')=='dono': return True
@@ -2486,7 +2495,7 @@ def prox_num():
     ul=Medicao.query.order_by(Medicao.id.desc()).first()
     ultima_db=parse_doc_num(ul.numero) if ul and ul.numero else 0
     prox=max(base,ultima_cfg,ultima_db)+1
-    return f"{prox}/{datetime.now().year}"
+    return f"{prox}/{localnow().year}"
 
 def lr(f):
     @wraps(f)
@@ -2507,217 +2516,6 @@ def dr(f):
             return jsonify({'erro':'Origem da requisição não permitida'}),403
         return f(*a,**k)
     return w
-
-PONTO_TIPOS=['entrada','saida_intervalo','retorno_intervalo','saida']
-
-def _ponto_label(tipo):
-    return {
-        'entrada':'Entrada',
-        'saida_intervalo':'Saída intervalo',
-        'retorno_intervalo':'Retorno intervalo',
-        'saida':'Saída'
-    }.get((tipo or '').strip().lower(),(tipo or '').strip())
-
-def _ponto_next_tipo(tipo):
-    tipo=(tipo or '').strip().lower()
-    if tipo not in PONTO_TIPOS:
-        return 'entrada'
-    return PONTO_TIPOS[(PONTO_TIPOS.index(tipo)+1)%len(PONTO_TIPOS)]
-
-def _ponto_tipo_esperado(marcacoes):
-    if not marcacoes:
-        return 'entrada'
-    return _ponto_next_tipo(marcacoes[-1].tipo)
-
-def _ponto_parse_data_ref(v):
-    s=(v or '').strip()
-    if not s:
-        return date.today()
-    try:
-        return datetime.strptime(s,'%Y-%m-%d').date()
-    except Exception:
-        return date.today()
-
-def _ponto_parse_data_hora(v):
-    s=(v or '').strip()
-    if not s:
-        return None
-    cand=s.replace('Z','+00:00')
-    try:
-        dt=datetime.fromisoformat(cand)
-    except Exception:
-        dt=None
-        for fmt in ('%Y-%m-%d %H:%M','%Y-%m-%dT%H:%M','%Y-%m-%d %H:%M:%S','%Y-%m-%dT%H:%M:%S'):
-            try:
-                dt=datetime.strptime(s,fmt)
-                break
-            except Exception:
-                continue
-    if not dt:
-        return None
-    if dt.tzinfo:
-        dt=dt.astimezone(timezone.utc).replace(tzinfo=None)
-    return dt
-
-def _ponto_min_esperado_jornada(funcionario):
-    j=str(funcionario.jornada or '').strip().lower()
-    if not j:
-        return 8*60
-    m=re.search(r'(\d{1,2})\s*[:h]\s*(\d{1,2})',j)
-    if m:
-        hh=max(0,min(16,int(m.group(1))))
-        mm=max(0,min(59,int(m.group(2))))
-        return hh*60+mm
-    m2=re.search(r'\b(\d{1,2})\b',j)
-    if m2:
-        hh=max(0,min(16,int(m2.group(1))))
-        return hh*60
-    return 8*60
-
-def _ponto_min_esperado_data(funcionario,data_ref):
-    # Sábado/domingo sem jornada esperada no MVP para evitar saldo negativo artificial.
-    if data_ref.weekday()>=5:
-        return 0
-    return _ponto_min_esperado_jornada(funcionario)
-
-def _ponto_competencia_bounds(competencia):
-    comp=(competencia or '').strip()
-    if not re.match(r'^\d{4}-\d{2}$',comp):
-        return None,None
-    y,m=comp.split('-')
-    yi=int(y); mi=int(m)
-    if yi<2000 or yi>2100 or mi<1 or mi>12:
-        return None,None
-    ini=date(yi,mi,1)
-    prox=date(yi+1,1,1) if mi==12 else date(yi,mi+1,1)
-    fim=prox-timedelta(days=1)
-    return ini,fim
-
-def _ponto_resumo_competencia(funcionario,competencia):
-    ini,fim=_ponto_competencia_bounds(competencia)
-    if not ini:
-        return None
-    dias=[]
-    total_trab=0
-    total_esp=0
-    total_saldo=0
-    inconsistencias=0
-    dt=ini
-    while dt<=fim:
-        r=_ponto_resumo_func_dia(funcionario,dt)
-        dias.append({
-            'data_ref':r['data_ref'],
-            'horas_trabalhadas_fmt':r['horas_trabalhadas_fmt'],
-            'horas_esperadas_fmt':r['horas_esperadas_fmt'],
-            'saldo_fmt':r['saldo_fmt'],
-            'status':r['status'],
-            'marcacoes_count':len(r['marcacoes']),
-            'inconsistencias':r['inconsistencias']
-        })
-        total_trab+=r['horas_trabalhadas_min']
-        total_esp+=r['horas_esperadas_min']
-        total_saldo+=r['saldo_min']
-        if r['status']!='ok':
-            inconsistencias+=1
-        dt+=timedelta(days=1)
-    return {
-        'funcionario_id':funcionario.id,
-        'funcionario_nome':funcionario.nome,
-        'competencia':competencia,
-        'dias':dias,
-        'totais':{
-            'horas_trabalhadas_min':total_trab,
-            'horas_trabalhadas_fmt':_ponto_fmt_minutos(total_trab),
-            'horas_esperadas_min':total_esp,
-            'horas_esperadas_fmt':_ponto_fmt_minutos(total_esp),
-            'saldo_min':total_saldo,
-            'saldo_fmt':_ponto_fmt_minutos(total_saldo,signed=True),
-            'inconsistencias':inconsistencias,
-            'dias':len(dias)
-        }
-    }
-
-def _ponto_fmt_minutos(total,signed=False):
-    try:
-        n=int(total or 0)
-    except Exception:
-        n=0
-    sign=''
-    if signed and n<0:
-        sign='-'
-    n=abs(n)
-    return f"{sign}{n//60:02d}:{n%60:02d}"
-
-def _ponto_marcacoes_dia(funcionario_id,data_ref):
-    ini=datetime.combine(data_ref,datetime.min.time())
-    fim=ini+timedelta(days=1)
-    return (
-        PontoMarcacao.query
-        .filter(PontoMarcacao.funcionario_id==funcionario_id)
-        .filter(PontoMarcacao.data_hora>=ini)
-        .filter(PontoMarcacao.data_hora<fim)
-        .order_by(PontoMarcacao.data_hora.asc(),PontoMarcacao.id.asc())
-        .all()
-    )
-
-def _ponto_resumo_func_dia(funcionario,data_ref):
-    marcacoes=_ponto_marcacoes_dia(funcionario.id,data_ref)
-    inconsistencias=[]
-    esperado='entrada'
-    segundos_total=0
-    aberta_em=None
-    for m in marcacoes:
-        if not getattr(m,'data_hora',None):
-            inconsistencias.append('Marcação sem data/hora válida foi ignorada no cálculo.')
-            esperado=_ponto_next_tipo(m.tipo)
-            continue
-        if m.tipo!=esperado:
-            inconsistencias.append(
-                f"Sequência inesperada: recebido {_ponto_label(m.tipo)}; esperado {_ponto_label(esperado)}."
-            )
-        if m.tipo=='entrada':
-            if aberta_em is not None:
-                inconsistencias.append('Existe uma entrada sem fechamento antes desta nova entrada.')
-            aberta_em=m.data_hora
-        elif m.tipo=='saida_intervalo':
-            if aberta_em is None:
-                inconsistencias.append('Saída para intervalo sem entrada anterior.')
-            else:
-                segundos_total+=max(0,int((m.data_hora-aberta_em).total_seconds()))
-                aberta_em=None
-        elif m.tipo=='retorno_intervalo':
-            if aberta_em is not None:
-                inconsistencias.append('Retorno de intervalo sem saída anterior.')
-            aberta_em=m.data_hora
-        elif m.tipo=='saida':
-            if aberta_em is None:
-                inconsistencias.append('Saída final sem entrada anterior.')
-            else:
-                segundos_total+=max(0,int((m.data_hora-aberta_em).total_seconds()))
-                aberta_em=None
-        esperado=_ponto_next_tipo(m.tipo)
-    if aberta_em is not None:
-        inconsistencias.append('Jornada em aberto (faltou batida de fechamento).')
-    minutos_trabalhados=int(round(segundos_total/60.0))
-    minutos_esperados=_ponto_min_esperado_data(funcionario,data_ref)
-    saldo=minutos_trabalhados-minutos_esperados
-    status='ok' if not inconsistencias else 'inconsistente'
-    return {
-        'funcionario_id':funcionario.id,
-        'funcionario_nome':funcionario.nome,
-        'data_ref':data_ref.strftime('%Y-%m-%d'),
-        'marcacoes':[m.to_dict() for m in marcacoes],
-        'proximo_tipo':_ponto_tipo_esperado(marcacoes),
-        'proximo_tipo_label':_ponto_label(_ponto_tipo_esperado(marcacoes)),
-        'horas_trabalhadas_min':minutos_trabalhados,
-        'horas_trabalhadas_fmt':_ponto_fmt_minutos(minutos_trabalhados),
-        'horas_esperadas_min':minutos_esperados,
-        'horas_esperadas_fmt':_ponto_fmt_minutos(minutos_esperados),
-        'saldo_min':saldo,
-        'saldo_fmt':_ponto_fmt_minutos(saldo,signed=True),
-        'status':status,
-        'inconsistencias':inconsistencias,
-    }
 
 def fmt_brl(v):
     try: return 'R$ {:,.2f}'.format(float(v or 0)).replace(',','X').replace('.',',').replace('X','.')
@@ -2742,6 +2540,21 @@ def get_logo():
         try: urllib.request.urlretrieve(LOGO_URL,LOGO_PATH)
         except: pass
     return LOGO_PATH if os.path.exists(LOGO_PATH) else None
+
+register_ponto_routes(
+    app,
+    db=db,
+    utcnow=utcnow,
+    to_num=to_num,
+    lr=lr,
+    audit_event=audit_event,
+    Funcionario=Funcionario,
+    PontoMarcacao=PontoMarcacao,
+    PontoAjuste=PontoAjuste,
+    PontoFechamentoDia=PontoFechamentoDia,
+    Empresa=Empresa,
+    get_logo=get_logo,
+)
 
 @app.route('/login',methods=['GET','POST'])
 def login():
@@ -3407,377 +3220,6 @@ def api_deletar_funcionario(id):
     PontoFechamentoDia.query.filter_by(funcionario_id=id).delete()
     db.session.delete(f); db.session.commit(); return jsonify({'ok':True})
 
-@app.route('/api/ponto/marcar',methods=['POST'])
-@lr
-def api_ponto_marcar():
-    d=request.json or {}
-    fid=to_num(d.get('funcionario_id'))
-    if not fid:
-        return jsonify({'erro':'Selecione o funcionário para registrar ponto.'}),400
-    f=Funcionario.query.get(fid)
-    if not f:
-        return jsonify({'erro':'Funcionário não encontrado.'}),404
-    if (f.status or '').strip().lower()!='ativo':
-        return jsonify({'erro':'Somente funcionários ativos podem registrar ponto.'}),400
-    dt=_ponto_parse_data_hora(d.get('data_hora')) or utcnow()
-    if dt>(utcnow()+timedelta(minutes=1)):
-        return jsonify({'erro':'Não é permitido registrar ponto em horário futuro.'}),400
-    data_ref=dt.date()
-    marcacoes_dia=_ponto_marcacoes_dia(f.id,data_ref)
-    tipo=(d.get('tipo') or '').strip().lower()
-    if not tipo:
-        tipo=_ponto_tipo_esperado(marcacoes_dia)
-    if tipo not in PONTO_TIPOS:
-        return jsonify({'erro':'Tipo de marcação inválido.'}),400
-    esperado=_ponto_tipo_esperado(marcacoes_dia)
-    if tipo!=esperado:
-        return jsonify({'erro':f'Ordem de marcação inválida. Agora é esperado: {_ponto_label(esperado)}.'}),400
-    if any(abs((dt-m.data_hora).total_seconds())<60 for m in marcacoes_dia):
-        return jsonify({'erro':'Já existe marcação neste minuto para este funcionário.'}),400
-    origem=(d.get('origem') or 'web').strip().lower()
-    if origem not in ('web','admin','importacao'):
-        origem='web'
-    obs=(d.get('observacao') or '').strip()[:500]
-    ip=(request.headers.get('X-Forwarded-For','') or request.remote_addr or '').split(',')[0].strip()[:60]
-    m=PontoMarcacao(
-        funcionario_id=f.id,
-        tipo=tipo,
-        data_hora=dt,
-        origem=origem,
-        observacao=obs,
-        criado_por=session.get('nome',''),
-        ip=ip
-    )
-    db.session.add(m)
-    db.session.commit()
-    audit_event('ponto_marcacao','usuario',session.get('uid'),'funcionario',f.id,True,
-                {'tipo':tipo,'data_ref':data_ref.strftime('%Y-%m-%d'),'origem':origem})
-    return jsonify({'ok':True,'marcacao':m.to_dict(),'resumo':_ponto_resumo_func_dia(f,data_ref)})
-
-@app.route('/api/ponto/dia')
-@lr
-def api_ponto_dia():
-    fid=to_num(request.args.get('funcionario_id'))
-    if not fid:
-        return jsonify({'erro':'funcionario_id é obrigatório.'}),400
-    f=Funcionario.query.get(fid)
-    if not f:
-        return jsonify({'erro':'Funcionário não encontrado.'}),404
-    data_ref=_ponto_parse_data_ref(request.args.get('data'))
-    return jsonify({'ok':True,'resumo':_ponto_resumo_func_dia(f,data_ref)})
-
-@app.route('/api/ponto/resumo-dia')
-@lr
-def api_ponto_resumo_dia():
-    try:
-        data_ref=_ponto_parse_data_ref(request.args.get('data'))
-        empresa_id=to_num(request.args.get('empresa_id'))
-        q=Funcionario.query.filter(Funcionario.status=='Ativo')
-        if empresa_id:
-            q=q.filter(Funcionario.empresa_id==empresa_id)
-        funcionarios=q.order_by(Funcionario.nome).all()
-        itens=[]
-        ok=0
-        inc=0
-        erros=[]
-        for f in funcionarios:
-            try:
-                r=_ponto_resumo_func_dia(f,data_ref)
-                if r['status']=='ok': ok+=1
-                else: inc+=1
-                itens.append({
-                    'funcionario_id':f.id,
-                    'funcionario_nome':f.nome,
-                    'empresa_id':f.empresa_id,
-                    'proximo_tipo_label':r['proximo_tipo_label'],
-                    'horas_trabalhadas_fmt':r['horas_trabalhadas_fmt'],
-                    'horas_esperadas_fmt':r['horas_esperadas_fmt'],
-                    'saldo_fmt':r['saldo_fmt'],
-                    'status':r['status'],
-                    'inconsistencias':r['inconsistencias'],
-                    'marcacoes_count':len(r['marcacoes'])
-                })
-            except Exception as ex:
-                inc+=1
-                erros.append({'funcionario_id':f.id,'nome':f.nome,'erro':str(ex)[:180]})
-                itens.append({
-                    'funcionario_id':f.id,
-                    'funcionario_nome':f.nome,
-                    'empresa_id':f.empresa_id,
-                    'proximo_tipo_label':'Entrada',
-                    'horas_trabalhadas_fmt':'00:00',
-                    'horas_esperadas_fmt':'00:00',
-                    'saldo_fmt':'00:00',
-                    'status':'inconsistente',
-                    'inconsistencias':['Falha ao processar marcações deste colaborador.'],
-                    'marcacoes_count':0
-                })
-        return jsonify({
-            'ok':True,
-            'data_ref':data_ref.strftime('%Y-%m-%d'),
-            'itens':itens,
-            'totais':{'funcionarios':len(itens),'ok':ok,'inconsistentes':inc},
-            'erros_processamento':erros[:10]
-        })
-    except Exception as e:
-        app.logger.exception('Falha no resumo diário de ponto')
-        return jsonify({'erro':'Falha ao carregar painel de ponto.','detalhe':str(e)[:220]}),500
-
-@app.route('/api/ponto/ajuste',methods=['POST'])
-@lr
-def api_ponto_ajuste():
-    d=request.json or {}
-    fid=to_num(d.get('funcionario_id'))
-    tipo=(d.get('tipo') or '').strip().lower()
-    motivo=(d.get('motivo') or '').strip()
-    dt=_ponto_parse_data_hora(d.get('data_hora'))
-    if not fid:
-        return jsonify({'erro':'funcionario_id é obrigatório.'}),400
-    if tipo not in PONTO_TIPOS:
-        return jsonify({'erro':'Tipo de marcação inválido para ajuste.'}),400
-    if not dt:
-        return jsonify({'erro':'data_hora inválida para ajuste.'}),400
-    if dt>(utcnow()+timedelta(minutes=1)):
-        return jsonify({'erro':'Não é permitido ajuste em horário futuro.'}),400
-    if not motivo:
-        return jsonify({'erro':'Informe o motivo do ajuste.'}),400
-
-    for tentativa in range(2):
-        try:
-            f=Funcionario.query.get(fid)
-            if not f:
-                return jsonify({'erro':'Funcionário não encontrado.'}),404
-            data_ref=dt.date()
-            antes=[m.to_dict() for m in _ponto_marcacoes_dia(fid,data_ref)]
-            nova=PontoMarcacao(
-                funcionario_id=fid,
-                tipo=tipo,
-                data_hora=dt,
-                origem='admin',
-                observacao=(d.get('observacao') or '').strip()[:500],
-                criado_por=session.get('nome',''),
-                ip=(request.headers.get('X-Forwarded-For','') or request.remote_addr or '').split(',')[0].strip()[:60]
-            )
-            db.session.add(nova)
-            db.session.flush()
-            depois=[m.to_dict() for m in _ponto_marcacoes_dia(fid,data_ref)]
-            aj=PontoAjuste(
-                funcionario_id=fid,
-                data_ref=data_ref.strftime('%Y-%m-%d'),
-                motivo=motivo,
-                antes_json=json.dumps(antes,ensure_ascii=False),
-                depois_json=json.dumps(depois,ensure_ascii=False),
-                criado_por=session.get('nome','')
-            )
-            db.session.add(aj)
-            db.session.commit()
-            audit_event('ponto_ajuste','usuario',session.get('uid'),'funcionario',f.id,True,
-                        {'data_ref':data_ref.strftime('%Y-%m-%d'),'tipo':tipo,'motivo':motivo[:200]})
-            return jsonify({'ok':True,'ajuste':aj.to_dict(),'resumo':_ponto_resumo_func_dia(f,data_ref)})
-        except Exception as e:
-            db.session.rollback()
-            msg=str(e).lower()
-            if tentativa==0 and 'no such table' in msg and ('ponto_marcacao' in msg or 'ponto_ajuste' in msg):
-                # Em ambientes sem migração automática, cria as tabelas e tenta novamente uma vez.
-                db.create_all()
-                continue
-            app.logger.exception('Falha ao aplicar ajuste de ponto')
-            return jsonify({'erro':'Falha ao aplicar ajuste de ponto.','detalhe':str(e)[:220]}),500
-
-@app.route('/api/ponto/fechar-dia',methods=['POST'])
-@lr
-def api_ponto_fechar_dia():
-    d=request.json or {}
-    fid=to_num(d.get('funcionario_id'))
-    if not fid:
-        return jsonify({'erro':'funcionario_id é obrigatório.'}),400
-    f=Funcionario.query.get(fid)
-    if not f:
-        return jsonify({'erro':'Funcionário não encontrado.'}),404
-    data_ref=_ponto_parse_data_ref(d.get('data'))
-    force=bool(d.get('forcar'))
-    obs=(d.get('observacao') or '').strip()[:1000]
-    resumo=_ponto_resumo_func_dia(f,data_ref)
-    if resumo['status']!='ok' and not force:
-        return jsonify({
-            'erro':'O dia possui inconsistências. Revise as marcações ou feche com ressalvas (forcar=true).',
-            'resumo':resumo
-        }),400
-    data_ref_str=data_ref.strftime('%Y-%m-%d')
-    fechamento=PontoFechamentoDia.query.filter_by(funcionario_id=f.id,data_ref=data_ref_str).first()
-    if not fechamento:
-        fechamento=PontoFechamentoDia(funcionario_id=f.id,data_ref=data_ref_str)
-        db.session.add(fechamento)
-    fechamento.status='fechado' if resumo['status']=='ok' else 'fechado_com_ressalvas'
-    fechamento.observacao=obs
-    fechamento.resumo_json=json.dumps(resumo,ensure_ascii=False)
-    fechamento.fechado_por=session.get('nome','')
-    fechamento.fechado_em=utcnow()
-    db.session.commit()
-    audit_event('ponto_fechamento_dia','usuario',session.get('uid'),'funcionario',f.id,True,
-                {'data_ref':data_ref_str,'status':fechamento.status})
-    return jsonify({'ok':True,'fechamento':fechamento.to_dict(),'resumo':resumo})
-
-@app.route('/api/ponto/fechamentos-dia')
-@lr
-def api_ponto_fechamentos_dia():
-    data_ref=_ponto_parse_data_ref(request.args.get('data'))
-    data_ref_str=data_ref.strftime('%Y-%m-%d')
-    lst=PontoFechamentoDia.query.filter_by(data_ref=data_ref_str).order_by(PontoFechamentoDia.fechado_em.desc()).all()
-    return jsonify({'ok':True,'data_ref':data_ref_str,'itens':[x.to_dict() for x in lst]})
-
-@app.route('/api/ponto/espelho-mensal')
-@lr
-def api_ponto_espelho_mensal():
-    fid=to_num(request.args.get('funcionario_id'))
-    comp=(request.args.get('competencia') or '').strip()
-    if not fid:
-        return jsonify({'erro':'funcionario_id é obrigatório.'}),400
-    if not re.match(r'^\d{4}-\d{2}$',comp):
-        return jsonify({'erro':'competencia inválida. Use YYYY-MM.'}),400
-    f=Funcionario.query.get(fid)
-    if not f:
-        return jsonify({'erro':'Funcionário não encontrado.'}),404
-    resumo_comp=_ponto_resumo_competencia(f,comp)
-    if not resumo_comp:
-        return jsonify({'erro':'Não foi possível gerar o espelho para a competência informada.'}),400
-    try:
-        from reportlab.lib.pagesizes import A4
-        from reportlab.lib import colors
-        from reportlab.lib.units import mm
-        from reportlab.lib.styles import getSampleStyleSheet,ParagraphStyle
-        from reportlab.lib.enums import TA_CENTER
-        from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,Table,TableStyle
-    except Exception:
-        return jsonify({'erro':'Dependência ReportLab não disponível para gerar o espelho.'}),500
-
-    def p(txt,sty,html=False):
-        s=str(txt or '')
-        if not html:
-            s=s.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
-        return Paragraph(s,sty)
-
-    nome_arq=f"espelho_ponto_{f.id}_{comp}.pdf"
-    out=io.BytesIO()
-    doc=SimpleDocTemplate(out,pagesize=A4,leftMargin=12*mm,rightMargin=12*mm,topMargin=12*mm,bottomMargin=14*mm)
-    W,H=A4
-    styles=getSampleStyleSheet()
-    st_title=ParagraphStyle('ptt',parent=styles['Heading2'],fontName='Helvetica-Bold',fontSize=16,alignment=TA_CENTER,textColor=colors.HexColor('#133a5e'),spaceAfter=4)
-    st_sub=ParagraphStyle('ptsb',parent=styles['Normal'],fontName='Helvetica',fontSize=9,leading=11,alignment=TA_CENTER,textColor=colors.HexColor('#35526f'))
-    st_small=ParagraphStyle('pts',parent=styles['Normal'],fontName='Helvetica',fontSize=9,leading=11,textColor=colors.HexColor('#183046'))
-    st_norm=ParagraphStyle('ptn',parent=styles['Normal'],fontName='Helvetica',fontSize=10,leading=12,textColor=colors.HexColor('#183046'))
-    st_sign=ParagraphStyle('ptsig',parent=styles['Normal'],fontName='Helvetica',fontSize=9,leading=11,alignment=TA_CENTER,textColor=colors.HexColor('#2f4a64'))
-
-    elems=[]
-    hdr=Table([[p('ESPELHO MENSAL DE PONTO',st_title)]],colWidths=[W*0.92])
-    hdr.setStyle(TableStyle([
-        ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#eef4fb')),
-        ('BOX',(0,0),(-1,-1),0.8,colors.HexColor('#9fb6cf')),
-        ('TOPPADDING',(0,0),(-1,-1),8),
-        ('BOTTOMPADDING',(0,0),(-1,-1),8),
-    ]))
-    elems.append(hdr)
-    elems.append(Spacer(1,4))
-    elems.append(p(f"Competência: {comp}  |  Emissão: {datetime.now().strftime('%d/%m/%Y %H:%M')}",st_sub))
-    elems.append(Spacer(1,6))
-
-    info=[
-        [p('<b>Colaborador</b>',st_small,html=True),p(f.nome or '-',st_small),p('<b>Matrícula</b>',st_small,html=True),p(f.matricula or '-',st_small)],
-        [p('<b>Cargo/Função</b>',st_small,html=True),p((f.cargo or '-')+(f" / {f.funcao}" if (f.funcao or '').strip() else ''),st_small),p('<b>Jornada</b>',st_small,html=True),p(f.jornada or '08:00',st_small)]
-    ]
-    tinfo=Table(info,colWidths=[W*0.16,W*0.34,W*0.16,W*0.26])
-    tinfo.setStyle(TableStyle([
-        ('GRID',(0,0),(-1,-1),0.5,colors.HexColor('#8ca6c0')),
-        ('BACKGROUND',(0,0),(0,-1),colors.HexColor('#f3f8fd')),
-        ('BACKGROUND',(2,0),(2,-1),colors.HexColor('#f3f8fd')),
-        ('FONTNAME',(0,0),(0,-1),'Helvetica-Bold'),
-        ('FONTNAME',(2,0),(2,-1),'Helvetica-Bold'),
-        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
-        ('LEFTPADDING',(0,0),(-1,-1),5),
-        ('RIGHTPADDING',(0,0),(-1,-1),5),
-        ('TOPPADDING',(0,0),(-1,-1),3),
-        ('BOTTOMPADDING',(0,0),(-1,-1),3),
-    ]))
-    elems.append(tinfo)
-    elems.append(Spacer(1,8))
-
-    rows=[[p('<b>Data</b>',st_small,html=True),p('<b>Marcações</b>',st_small,html=True),p('<b>Trabalhadas</b>',st_small,html=True),p('<b>Esperadas</b>',st_small,html=True),p('<b>Saldo</b>',st_small,html=True),p('<b>Status</b>',st_small,html=True)]]
-    for d in resumo_comp['dias']:
-        dt=d['data_ref']
-        marks='Sem marcações' if (d['marcacoes_count'] or 0)==0 else f"{d['marcacoes_count']} batida(s)"
-        st='OK' if d['status']=='ok' else 'Inconsistente'
-        rows.append([
-            p(fmt_data(dt),st_small),
-            p(marks,st_small),
-            p(d['horas_trabalhadas_fmt'],st_small),
-            p(d['horas_esperadas_fmt'],st_small),
-            p(d['saldo_fmt'],st_small),
-            p(st,st_small)
-        ])
-    tbl=Table(rows,colWidths=[W*0.12,W*0.30,W*0.14,W*0.14,W*0.12,W*0.14],repeatRows=1)
-    ts=[
-        ('GRID',(0,0),(-1,-1),0.45,colors.HexColor('#9ab1c8')),
-        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#dfeaf6')),
-        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
-        ('TEXTCOLOR',(0,0),(-1,0),colors.HexColor('#173955')),
-        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
-        ('LEFTPADDING',(0,0),(-1,-1),3),
-        ('RIGHTPADDING',(0,0),(-1,-1),3),
-        ('TOPPADDING',(0,0),(-1,-1),2),
-        ('BOTTOMPADDING',(0,0),(-1,-1),2),
-    ]
-    for i in range(1,len(rows)):
-        if i%2==0:
-            ts.append(('BACKGROUND',(0,i),(-1,i),colors.HexColor('#f7fbff')))
-        status=(resumo_comp['dias'][i-1].get('status') or '').lower()
-        saldo=(resumo_comp['dias'][i-1].get('saldo_fmt') or '').strip()
-        if status!='ok':
-            ts.append(('TEXTCOLOR',(5,i),(5,i),colors.HexColor('#9b1d1d')))
-            ts.append(('FONTNAME',(5,i),(5,i),'Helvetica-Bold'))
-        if saldo.startswith('-'):
-            ts.append(('TEXTCOLOR',(4,i),(4,i),colors.HexColor('#8a1c1c')))
-            ts.append(('FONTNAME',(4,i),(4,i),'Helvetica-Bold'))
-        elif saldo and saldo!='00:00':
-            ts.append(('TEXTCOLOR',(4,i),(4,i),colors.HexColor('#1a6a3a')))
-    tbl.setStyle(TableStyle(ts))
-    elems.append(tbl)
-    elems.append(Spacer(1,8))
-
-    tt=resumo_comp['totais']
-    resumo_txt=(
-        f"<b>Totais da competência</b> · Trabalhadas: {tt['horas_trabalhadas_fmt']} · "
-        f"Esperadas: {tt['horas_esperadas_fmt']} · Saldo: {tt['saldo_fmt']} · "
-        f"Inconsistências: {tt['inconsistencias']}"
-    )
-    resumo_box=Table([[p(resumo_txt,st_norm,html=True)]],colWidths=[W*0.92])
-    resumo_box.setStyle(TableStyle([
-        ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#f5faf4')),
-        ('BOX',(0,0),(-1,-1),0.8,colors.HexColor('#9bc39a')),
-        ('TOPPADDING',(0,0),(-1,-1),6),
-        ('BOTTOMPADDING',(0,0),(-1,-1),6),
-        ('LEFTPADDING',(0,0),(-1,-1),6),
-        ('RIGHTPADDING',(0,0),(-1,-1),6),
-    ]))
-    elems.append(resumo_box)
-    elems.append(Spacer(1,18))
-
-    assinatura=[
-        [p('Assinatura do colaborador',st_sign),p('Assinatura do gestor',st_sign)],
-        [p('________________________________________',st_sign),p('________________________________________',st_sign)],
-        [p('Data: ____/____/______',st_sign),p('Data: ____/____/______',st_sign)]
-    ]
-    tast=Table(assinatura,colWidths=[W*0.45,W*0.45])
-    tast.setStyle(TableStyle([
-        ('ALIGN',(0,0),(-1,-1),'CENTER'),
-        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
-        ('TOPPADDING',(0,0),(-1,-1),6),
-        ('BOTTOMPADDING',(0,0),(-1,-1),6),
-    ]))
-    elems.append(tast)
-    doc.build(elems)
-    out.seek(0)
-    return send_file(out,mimetype='application/pdf',as_attachment=True,download_name=nome_arq)
-
 @app.route('/api/funcionarios/<int:id>/arquivos',methods=['GET'])
 @lr
 def api_funcionario_arquivos(id):
@@ -3868,7 +3310,7 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
 def api_preparar_pastas_funcionario(id):
     Funcionario.query.get_or_404(id)
     d=request.json or {}
-    ano=str((d.get('ano') or request.args.get('ano') or datetime.now().year)).strip()
+    ano=str((d.get('ano') or request.args.get('ano') or localnow().year)).strip()
     if not re.fullmatch(r'(19|20)\d{2}',ano):
         return jsonify({'erro':'Ano invalido'}),400
     pastas=prepare_func_doc_dirs(id,ano)
@@ -4213,7 +3655,7 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
     bar=Table([[' ']],colWidths=[W])
     bar.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),LJ),('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2)]))
     story.append(bar); story.append(Spacer(1,4))
-    story.append(Paragraph(f'Gerado em {datetime.now().strftime("%d/%m/%Y %H:%M")} — RM Facilities',ps('rod',fontSize=7,textColor=colors.HexColor('#999'),alignment=TA_CENTER)))
+    story.append(Paragraph(f'Gerado em {localnow().strftime("%d/%m/%Y %H:%M")} — RM Facilities',ps('rod',fontSize=7,textColor=colors.HexColor('#999'),alignment=TA_CENTER)))
     doc.build(story); return buf.getvalue()
 
 
@@ -4461,7 +3903,7 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     bar=Table([[' ']],colWidths=[W])
     bar.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),LJ),('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2)]))
     story.append(bar); story.append(Spacer(1,4))
-    story.append(Paragraph(f'Gerado em {datetime.now().strftime("%d/%m/%Y %H:%M")} — RM Facilities',ps('rod',fontSize=7,textColor=colors.HexColor('#999'),alignment=TA_CENTER)))
+    story.append(Paragraph(f'Gerado em {localnow().strftime("%d/%m/%Y %H:%M")} — RM Facilities',ps('rod',fontSize=7,textColor=colors.HexColor('#999'),alignment=TA_CENTER)))
     doc.build(story); return buf.getvalue()
 
 
@@ -5057,7 +4499,7 @@ def api_ordens_compra():
 @lr
 def api_criar_ordem_compra():
     d=request.json or {}
-    num=d.get('numero') or f"OC-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    num=d.get('numero') or f"OC-{localnow().strftime('%Y%m%d%H%M%S')}"
     o=OrdemCompra(numero=num,empresa_id=d.get('empresa_id'),solicitante=d.get('solicitante',''),fornecedor=d.get('fornecedor',''),descricao=d.get('descricao',''),valor=to_num(d.get('valor'),dec=True),status=d.get('status','Aberta'),data_emissao=d.get('data_emissao',''),criado_por=session.get('nome',''))
     db.session.add(o); db.session.commit(); return jsonify(o.to_dict()),201
 
@@ -5402,7 +4844,7 @@ def api_dashboard():
         for c in ativos
     )
     total_ativos=len(ativos)
-    mes=datetime.now().strftime('%Y-%m')
+    mes=localnow().strftime('%Y-%m')
     emitidos={m.cliente_id for m in Medicao.query.filter_by(mes_ref=mes).all() if m.cliente_id}
     emps_all={e.id:e for e in Empresa.query.all()}
 
@@ -5591,9 +5033,9 @@ def api_backup():
                     ap=os.path.join(root,fn)
                     rel=os.path.relpath(ap,UPLOAD_ROOT)
                     z.write(ap,os.path.join('uploads',rel))
-        z.writestr('info.json',json.dumps({'data':datetime.now().isoformat(),'versao':'3.0'},ensure_ascii=False))
+        z.writestr('info.json',json.dumps({'data':localnow().isoformat(),'versao':'3.0'},ensure_ascii=False))
     buf.seek(0)
-    return send_file(buf,mimetype='application/zip',as_attachment=True,download_name=f'backup_rm_{datetime.now().strftime("%Y%m%d_%H%M")}.zip')
+    return send_file(buf,mimetype='application/zip',as_attachment=True,download_name=f'backup_rm_{localnow().strftime("%Y%m%d_%H%M")}.zip')
 
 @app.route('/api/backup/restore',methods=['POST'])
 @lr
@@ -5815,7 +5257,7 @@ def _build_pdf(d):
         try: svcs=json.loads(svcs)
         except: svcs=[]
     sub=sum(float(s.get('vtot',0)) for s in svcs)
-    por=d.get('criado_por',session.get('nome','')); now=datetime.now()
+    por=d.get('criado_por',session.get('nome','')); now=localnow()
 
     buf=io.BytesIO()
     doc=SimpleDocTemplate(buf,pagesize=A4,leftMargin=1.5*cm,rightMargin=1.5*cm,topMargin=1.5*cm,bottomMargin=2*cm)
