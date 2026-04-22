@@ -16,56 +16,41 @@
     <div class="public-main">
       <div class="public-container">
         <div class="public-card">
-<div class="wrap">
-  <div class="card">
-    <div class="brand">
-      <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
-      <div class="brand-copy">
-        <strong>RM Facilities</strong>
-        <span>Página oficial de auditoria e validação de assinatura eletrônica</span>
-      </div>
-    </div>
-    <h1>Validação de assinatura eletrônica</h1>
-    <p class="sub">Confirme a autenticidade da assinatura eletrônica do documento.</p>
+          <h1>Validação de assinatura eletrônica</h1>
+          <p class="sub">Confirme a autenticidade da assinatura eletrônica do documento.</p>
 
-    {% if ok %}
-    <span class="badge b-ok">✔ ASSINATURA VÁLIDA</span>
-    {% else %}
-    <span class="badge b-err">✖ ASSINATURA INVÁLIDA OU NÃO ENCONTRADA</span>
-    {% endif %}
-
-    {% if arquivo %}
-    <div class="detalhes">
-      <div class="det-row"><span class="det-k">Documento</span><span class="det-v">{{ arquivo.nome_arquivo or '-' }}</span></div>
-      <div class="det-row"><span class="det-k">Categoria</span><span class="det-v">{{ arquivo.categoria or '-' }}</span></div>
-      {% if arquivo.competencia %}<div class="det-row"><span class="det-k">Competência</span><span class="det-v">{{ arquivo.competencia }}</span></div>{% endif %}
-      {% if funcionario %}<div class="det-row"><span class="det-k">Funcionário</span><span class="det-v">{{ funcionario.nome }}</span></div>{% endif %}
-      <div class="det-row"><span class="det-k">Assinante</span><span class="det-v">{{ arquivo.ass_nome or '-' }}</span></div>
-      <div class="det-row"><span class="det-k">Cargo informado</span><span class="det-v">{{ arquivo.ass_cargo or '-' }}</span></div>
-      <div class="det-row"><span class="det-k">CPF (mascarado)</span>
-        <span class="det-v">
-          {% if arquivo.ass_cpf and arquivo.ass_cpf|length == 11 %}
-            {{ arquivo.ass_cpf[:3] }}.***.***-{{ arquivo.ass_cpf[-2:] }}
+          {% if ok %}
+          <div class="public-alert ok"><strong>✔ ASSINATURA VÁLIDA</strong></div>
           {% else %}
-            {{ arquivo.ass_cpf or '-' }}
+          <div class="public-alert err"><strong>✖ ASSINATURA INVÁLIDA OU NÃO ENCONTRADA</strong></div>
           {% endif %}
-        </span>
-      </div>
-      <div class="det-row"><span class="det-k">Data/Hora</span><span class="det-v">{{ arquivo.ass_em_fmt or '-' }}</span></div>
-      <div class="det-row"><span class="det-k">IP de origem</span><span class="det-v">{{ arquivo.ass_ip or '-' }}</span></div>
-      <div class="det-row"><span class="det-k">Código de validação</span><span class="det-v"><strong>{{ arquivo.ass_codigo or '-' }}</strong></span></div>
-    </div>
-    {% else %}
-    <div class="msg-simples">{{ mensagem }}</div>
-    {% endif %}
 
-    {% if not ok and mensagem %}
-    <div class="msg-simples">{{ mensagem }}</div>
-    {% endif %}
-  </div>
-</div>
+          {% if arquivo %}
+          <div class="public-info-box">
+            <strong>Documento:</strong> {{ arquivo.nome_arquivo or '-' }}<br>
+            <strong>Categoria:</strong> {{ arquivo.categoria or '-' }}<br>
+            {% if arquivo.competencia %}<strong>Competência:</strong> {{ arquivo.competencia }}<br>{% endif %}
+            {% if funcionario %}<strong>Funcionário:</strong> {{ funcionario.nome }}<br>{% endif %}
+            <strong>Assinante:</strong> {{ arquivo.ass_nome or '-' }}<br>
+            <strong>Cargo informado:</strong> {{ arquivo.ass_cargo or '-' }}<br>
+            <strong>CPF (mascarado):</strong> 
+            {% if arquivo.ass_cpf and arquivo.ass_cpf|length == 11 %}
+              {{ arquivo.ass_cpf[:3] }}.***.***-{{ arquivo.ass_cpf[-2:] }}
+            {% else %}
+              {{ arquivo.ass_cpf or '-' }}
+            {% endif %}<br>
+            <strong>Data/Hora:</strong> {{ arquivo.ass_em_fmt or '-' }}<br>
+            <strong>IP de origem:</strong> {{ arquivo.ass_ip or '-' }}<br>
+            <strong>Código de validação:</strong> <strong>{{ arquivo.ass_codigo or '-' }}</strong>
+          </div>
+          {% else %}
+          <div class="public-alert err">{{ mensagem }}</div>
+          {% endif %}
 
-      </div>
+          {% if not ok and mensagem %}
+          <div class="public-alert err">{{ mensagem }}</div>
+          {% endif %}
+        </div>
     </div>
   </div>
 </body>

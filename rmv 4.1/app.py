@@ -4299,17 +4299,26 @@ def api_func_doc_assinatura_confirmar(token):
     aceite=bool(d.get('aceite'))
     if not nome:
         return _assinatura_json_erro('Informe o nome completo para assinar.',400)
-    if not cpf_info or len(cpf_info)!=11 or not _valida_cpf(cpf_info):
+    if not cpf_info or len(cpf_info)!=11:
         return _assinatura_json_erro('Informe um CPF válido (11 dígitos) para assinar.',400)
     if not aceite:
         return _assinatura_json_erro('Confirme o aceite para concluir a assinatura.',400)
-    # Validar CPF cadastral apenas quando o CPF do cadastro for válido.
-    # Isso evita falso negativo quando há CPF antigo/inválido salvo no cadastro do funcionário.
+
+    # Regra RH: se CPF digitado for igual ao CPF cadastrado do funcionário, não bloquear.
+    # Só bloquear por divergência quando existir CPF cadastrado diferente.
     f=Funcionario.query.get(a.funcionario_id)
+    cpf_cadastrado=''
     if f and f.cpf:
         cpf_cadastrado=only_digits(f.cpf or '')
-        if cpf_cadastrado and _valida_cpf(cpf_cadastrado) and cpf_info!=cpf_cadastrado:
-            return _assinatura_json_erro('O CPF informado não confere com o funcionário vinculado ao documento.',400)
+    cpf_confere_cadastro=bool(cpf_cadastrado and cpf_info==cpf_cadastrado)
+
+    # Se não confere com cadastro, exigimos CPF válido por algoritmo.
+    if not cpf_confere_cadastro and not _valida_cpf(cpf_info):
+        return _assinatura_json_erro('Informe um CPF válido (11 dígitos) para assinar.',400)
+
+    # Se existe CPF cadastrado e é diferente do informado, bloqueia para segurança.
+    if cpf_cadastrado and cpf_info!=cpf_cadastrado:
+        return _assinatura_json_erro('O CPF informado não confere com o funcionário vinculado ao documento.',400)
 
     if not otp:
         codigo=_otp_new_code()
@@ -4942,12 +4951,12 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     ]))
     story.append(sig_tbl); story.append(Spacer(1,6))
 
-    if assinantes_confirmados:
+    if assinados:
         story.append(Paragraph('<b>ASSINATURAS REGISTRADAS</b>',ps('asg1',fontSize=8,textColor=AZ,spaceAfter=3)))
         sig_rows_cursive=[
             [Paragraph(f'<i>{s.nome or "-"}</i>',ps(f'asn{i}',fontName='Times-Italic',fontSize=18,textColor=colors.HexColor('#1a2e42'),leading=20)),
              Paragraph(f'{s.cargo or "Signatário"}<br/><font color="#5d6f82">{s.ass_em.strftime("%d/%m/%Y %H:%M") if s.ass_em else "-"}</font>',ps(f'asd{i}',fontSize=7.5,leading=10))]
-            for i,s in enumerate(assinantes_confirmados)
+            for i,s in enumerate(assinados)
         ]
         sig_curs=Table(sig_rows_cursive,colWidths=[W*0.52,W*0.48])
         sig_curs.setStyle(TableStyle([
@@ -5057,7 +5066,7 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
     # Página de auditoria final
     signatarios=AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=envelope.id).all()
     audit_bytes=_build_envelope_audit_pdf(envelope,signatarios,url_root)
-    from pypdf import PdfReader as PdfReaderAudit  # noqa: use same
+    PdfReaderAudit=PdfReader
     try:
         audit_reader=PdfReaderAudit(io.BytesIO(audit_bytes))
     except Exception:
@@ -5644,6 +5653,7 @@ def envelope_baixar_assinado_publico(codigo):
         try:
             abs_pdf,fname=_gerar_pdf_assinado_envelope(env,url_root)
         except Exception:
+            app.logger.exception('Falha ao gerar PDF assinado do envelope %s',codigo)
             return 'Não foi possível gerar o PDF assinado neste momento.',500
     return send_file(abs_pdf,mimetype='application/pdf',as_attachment=False,download_name=fname)
 

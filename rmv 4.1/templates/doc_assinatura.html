@@ -30,47 +30,31 @@
 
         <span class="public-tag">AGUARDANDO ASSINATURA</span>
 
-        <div class="public-steps">
-          <span id="stp-1" class="public-step on">1. Conferir dados</span>
-          <span id="stp-2" class="public-step">2. OTP e confirmação</span>
+        <div class="public-form">
+          <div class="public-form-group">
+            <label>Nome completo *</label>
+            <input id="nome" type="text" placeholder="Seu nome completo" autocomplete="name">
+          </div>
+          <div class="public-form-group">
+            <label>CPF *</label>
+            <input id="cpf" type="text" placeholder="000.000.000-00" maxlength="14" oninput="fmtCPF(this)" inputmode="numeric">
+          </div>
+          <div class="public-form-group">
+            <label>Cargo (opcional)</label>
+            <input id="cargo" type="text" placeholder="Ex: Auxiliar de limpeza">
+          </div>
+          <div class="public-form-group">
+            <label>Código OTP (6 dígitos)</label>
+            <input id="otp" type="text" placeholder="Informe o código recebido" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
+          </div>
+          <label class="public-check">
+            <input type="checkbox" id="aceite">
+            Declaro que li e aceito as informações do documento apresentado, confirmando minha assinatura eletrônica.
+          </label>
         </div>
-
-        <div id="sec-1" class="public-section on">
-          <div class="public-form">
-            <div class="public-form-group">
-              <label>Nome completo *</label>
-              <input id="nome" type="text" placeholder="Seu nome completo" autocomplete="name">
-            </div>
-            <div class="public-form-group">
-              <label>CPF *</label>
-              <input id="cpf" type="text" placeholder="000.000.000-00" maxlength="14" oninput="fmtCPF(this)" inputmode="numeric">
-            </div>
-            <div class="public-form-group">
-              <label>Cargo (opcional)</label>
-              <input id="cargo" type="text" placeholder="Ex: Auxiliar de limpeza">
-            </div>
-            <label class="public-check">
-              <input type="checkbox" id="aceite">
-              Declaro que li e aceito as informações do documento apresentado, confirmando minha assinatura eletrônica.
-            </label>
-          </div>
-          <div class="public-btngroup">
-            <button class="public-btn public-btn-primary" id="btn-next" onclick="irParaOtp()">Continuar para OTP</button>
-          </div>
-        </div>
-
-        <div id="sec-2" class="public-section">
-          <div class="public-form">
-            <div class="public-form-group">
-              <label>Código OTP (6 dígitos)</label>
-              <input id="otp" type="text" placeholder="Informe o código recebido" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\\D/g,'').slice(0,6)">
-            </div>
-          </div>
-          <div class="public-btngroup">
-            <button class="public-btn public-btn-primary" id="btn-confirmar" onclick="confirmar('{{ arquivo.ass_token }}')">Confirmar assinatura</button>
-            <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()">Reenviar código</button>
-            <button class="public-btn public-btn-secondary" type="button" onclick="setStep(1)">Voltar</button>
-          </div>
+        <div class="public-btngroup">
+          <button class="public-btn public-btn-primary" id="btn-confirmar" onclick="confirmar('{{ arquivo.ass_token }}')">Confirmar assinatura</button>
+          <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()">Reenviar código</button>
         </div>
 
         <div id="msg" class="public-msg"></div>
@@ -96,10 +80,6 @@
       el.value=SignatureCommon.formatCpfValue(el.value||'');
     }
 
-    function setStep(n){
-      SignatureCommon.setStep(n,'sec-1','sec-2','stp-1','stp-2');
-    }
-
     function erroAmigavel(txt){
       return SignatureCommon.friendlyError(txt);
     }
@@ -110,25 +90,12 @@
 
     function validaEtapa1(){
       const nome=(document.getElementById('nome').value||'').trim();
-      const cpf=(document.getElementById('cpf').value||'').replace(/\\D/g,'');
+      const cpf=(document.getElementById('cpf').value||'').replace(/[^0-9]/g,'');
       const aceite=!!document.getElementById('aceite').checked;
       if(!nome) return 'Informe seu nome completo.';
       if(!cpf||cpf.length!==11) return 'CPF inválido. Confira se digitou os 11 números corretamente.';
       if(!aceite) return 'Marque o aceite para continuar com a assinatura.';
       return '';
-    }
-
-    function irParaOtp(){
-      const msg=document.getElementById('msg');
-      const err=validaEtapa1();
-      if(err){
-        msg.className='public-msg err';
-        msg.textContent=err;
-        return;
-      }
-      setStep(2);
-      const otp=document.getElementById('otp');
-      if(otp) otp.focus();
     }
 
     async function enviarOtpAutomaticoDoc(){
@@ -159,8 +126,8 @@
     async function confirmar(token){
       const nome=(document.getElementById('nome').value||'').trim();
       const cargo=(document.getElementById('cargo').value||'').trim();
-      const cpf=(document.getElementById('cpf').value||'').replace(/\\D/g,'');
-      const otp=(document.getElementById('otp').value||'').replace(/\\D/g,'');
+      const cpf=(document.getElementById('cpf').value||'').replace(/[^0-9]/g,'');
+      const otp=(document.getElementById('otp').value||'').replace(/[^0-9]/g,'');
       const aceite=!!document.getElementById('aceite').checked;
       const msg=document.getElementById('msg');
       const btn=document.getElementById('btn-confirmar');
@@ -168,12 +135,6 @@
       if(err1){
         msg.className='public-msg err';
         msg.textContent=err1;
-        setStep(1);
-        return;
-      }
-      if(!otp||otp.length!==6){
-        msg.className='public-msg err';
-        msg.textContent='Informe o código OTP de 6 dígitos.';
         return;
       }
       try{
@@ -193,6 +154,8 @@
         if(d.otp_required){
           msg.className='public-msg ok';
           msg.textContent=d.mensagem||'Código OTP enviado. Informe o código para concluir a assinatura.';
+          const otpEl=document.getElementById('otp');
+          if(otpEl) otpEl.focus();
           startOtpCooldown(60);
           SignatureCommon.buttonState(btn,'Confirmar assinatura',false);
           return;
@@ -211,7 +174,6 @@
 
     document.addEventListener('DOMContentLoaded',()=>{
       if(DOC_ASS_TOKEN) enviarOtpAutomaticoDoc();
-      setStep(1);
     });
   </script>
 </body>

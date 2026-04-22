@@ -16,43 +16,31 @@
     <div class="public-main">
       <div class="public-container">
         <div class="public-card">
-  <div class="wrap">
-    <div class="card">
-      <div class="brand">
-        <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
-        <div class="brand-copy">
-          <strong>RM Facilities</strong>
-          <span>Página oficial de auditoria e validação de assinatura eletrônica</span>
+          <h1>Validação de assinatura</h1>
+          <p class="sub">Confira abaixo os dados da assinatura eletrônica deste documento.</p>
+
+          {% if ok %}
+          <div class="public-alert ok"><strong>✔ ASSINATURA VÁLIDA</strong></div>
+          {% else %}
+          <div class="public-alert err"><strong>✖ VALIDAÇÃO PENDENTE/INVÁLIDA</strong></div>
+          {% endif %}
+
+          {% if mensagem %}<div style="font-size:14px;margin-bottom:8px">{{ mensagem }}</div>{% endif %}
+
+          {% if medicao %}
+          <div class="public-info-box">
+            <strong>Medição:</strong> {{ medicao.numero or '-' }}<br>
+            <strong>Cliente:</strong> {{ medicao.cliente_nome or '-' }}<br>
+            <strong>Empresa:</strong> {{ medicao.empresa_nome or '-' }}<br>
+            <strong>Competência:</strong> {{ medicao.mes_ref or '-' }}<br>
+            <strong>Assinante:</strong> {{ medicao.assinatura_nome or '-' }}<br>
+            <strong>Cargo:</strong> {{ medicao.assinatura_cargo or '-' }}<br>
+            <strong>IP:</strong> {{ medicao.assinatura_ip or '-' }}<br>
+            <strong>Data/Hora:</strong> {{ medicao.assinatura_em.strftime('%d/%m/%Y %H:%M') if medicao.assinatura_em else '-' }}<br>
+            <strong>Código:</strong> {{ medicao.assinatura_codigo or '-' }}
+          </div>
+          {% endif %}
         </div>
-      </div>
-      <h1>Validação de assinatura</h1>
-      <p class="sub">Confira abaixo os dados da assinatura eletrônica deste documento.</p>
-
-      {% if ok %}
-      <span class="tag ok">ASSINATURA VÁLIDA</span>
-      {% else %}
-      <span class="tag err">VALIDAÇÃO PENDENTE/INVÁLIDA</span>
-      {% endif %}
-
-      <div style="font-size:14px;margin-bottom:8px">{{ mensagem }}</div>
-
-      {% if medicao %}
-      <div class="kv">
-        <div class="k">Medição</div><div class="v">{{ medicao.numero or '-' }}</div>
-        <div class="k">Cliente</div><div class="v">{{ medicao.cliente_nome or '-' }}</div>
-        <div class="k">Empresa</div><div class="v">{{ medicao.empresa_nome or '-' }}</div>
-        <div class="k">Competência</div><div class="v">{{ medicao.mes_ref or '-' }}</div>
-        <div class="k">Assinante</div><div class="v">{{ medicao.assinatura_nome or '-' }}</div>
-        <div class="k">Cargo</div><div class="v">{{ medicao.assinatura_cargo or '-' }}</div>
-        <div class="k">IP</div><div class="v">{{ medicao.assinatura_ip or '-' }}</div>
-        <div class="k">Data/Hora</div><div class="v">{{ medicao.assinatura_em.strftime('%d/%m/%Y %H:%M') if medicao.assinatura_em else '-' }}</div>
-        <div class="k">Código</div><div class="v">{{ medicao.assinatura_codigo or '-' }}</div>
-      </div>
-      {% endif %}
-    </div>
-  </div>
-
-      </div>
     </div>
   </div>
 </body>

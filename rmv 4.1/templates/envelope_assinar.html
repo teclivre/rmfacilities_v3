@@ -8,20 +8,15 @@
 
 </head>
 <body class="public-page">
-  <div class="company-header">
-    <img src="/static/img/logo.png" alt="Logo RM Facilities" onerror="this.style.display='none'">
-    {% for emp in empresas %}
-      {% if not loop.first %}<div class="company-sep"></div>{% endif %}
-      <div class="company-info">
-        <div class="co-name">{{ emp.razao or emp.nome }}</div>
-        {% if emp.cnpj %}<div class="co-cnpj">CNPJ: {{ emp.cnpj }}</div>{% endif %}
-        {% if emp.logradouro %}<div class="co-end">{{ emp.end_fmt() }}</div>{% endif %}
-      </div>
-    {% endfor %}
+  <div class="public-topbar">
+    <div class="public-topbar-brand">
+      <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
+      <h1>RM Facilities</h1>
+    </div>
   </div>
 
   <div class="public-main">
-    <div class="page-wrap">
+    <div class="public-container">
       {% if sig.status == 'assinado' %}
       <div class="public-success">
         <div class="ico">✅</div>
@@ -35,7 +30,7 @@
         </div>
       </div>
       {% else %}
-      <div class="public-card">
+      <div class="public-card" id="sec-form">
         <h1>Assinatura eletrônica</h1>
         <p class="sub">Confira os dados abaixo e confirme com seu código OTP.</p>
 
@@ -61,47 +56,31 @@
 
         <div class="public-msg" id="msg"></div>
 
-        <div class="public-steps">
-          <span id="stp-1" class="public-step on">1. Conferir dados</span>
-          <span id="stp-2" class="public-step">2. OTP e confirmação</span>
+        <div class="public-form">
+          <div class="public-form-group">
+            <label>Nome completo *</label>
+            <input id="inp-nome" type="text" placeholder="Seu nome completo" value="{{ sig.nome or '' }}">
+          </div>
+          <div class="public-form-group">
+            <label>Cargo / Função (opcional)</label>
+            <input id="inp-cargo" type="text" placeholder="Seu cargo" value="{{ sig.cargo or '' }}">
+          </div>
+          <div class="public-form-group">
+            <label>CPF *</label>
+            <input id="inp-cpf" type="text" placeholder="000.000.000-00" maxlength="14" oninput="fmtCpf(this)">
+          </div>
+          <div class="public-form-group">
+            <label>Código OTP (6 dígitos)</label>
+            <input id="inp-otp" type="text" placeholder="Informe o código recebido" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
+          </div>
+          <label class="public-check">
+            <input type="checkbox" id="chk-aceite">
+            Declaro que li e entendi os documentos listados acima e, ao clicar em <strong>Confirmar Assinatura</strong>, confirmo minha assinatura eletrônica com validade legal, conforme a Lei nº 14.063/2020.
+          </label>
         </div>
-
-        <div id="sec-1" class="public-section on">
-          <div class="public-form">
-            <div class="public-form-group">
-              <label>Nome completo *</label>
-              <input id="inp-nome" type="text" placeholder="Seu nome completo" value="{{ sig.nome or '' }}">
-            </div>
-            <div class="public-form-group">
-              <label>Cargo / Função (opcional)</label>
-              <input id="inp-cargo" type="text" placeholder="Seu cargo" value="{{ sig.cargo or '' }}">
-            </div>
-            <div class="public-form-group">
-              <label>CPF *</label>
-              <input id="inp-cpf" type="text" placeholder="000.000.000-00" maxlength="14" oninput="fmtCpf(this)">
-            </div>
-            <label class="public-check">
-              <input type="checkbox" id="chk-aceite">
-              Declaro que li e entendi os documentos listados acima e, ao clicar em <strong>Confirmar Assinatura</strong>, confirmo minha assinatura eletrônica com validade legal, conforme a Lei nº 14.063/2020.
-            </label>
-          </div>
-          <div class="public-btngroup">
-            <button class="public-btn public-btn-primary" id="btn-next" onclick="irParaOtp()" style="width:100%">Continuar para OTP</button>
-          </div>
-        </div>
-
-        <div id="sec-2" class="public-section">
-          <div class="public-form">
-            <div class="public-form-group">
-              <label>Código OTP (6 dígitos)</label>
-              <input id="inp-otp" type="text" placeholder="Informe o código recebido" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
-            </div>
-          </div>
-          <div class="public-btngroup" style="display:flex;flex-wrap:wrap;gap:8px">
-            <button class="public-btn public-btn-primary" id="btn-assinar" onclick="confirmarAssinatura()" style="flex:1;min-width:150px">Confirmar assinatura</button>
-            <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()" style="flex:1;min-width:150px">Reenviar código</button>
-            <button class="public-btn public-btn-secondary" type="button" onclick="setStep(1)" style="flex:1;min-width:150px">Voltar</button>
-          </div>
+        <div class="public-btngroup" style="display:flex;flex-wrap:wrap;gap:8px">
+          <button class="public-btn public-btn-primary" id="btn-assinar" onclick="confirmarAssinatura()" style="flex:1;min-width:150px">Confirmar assinatura</button>
+          <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()" style="flex:1;min-width:150px">Reenviar código</button>
         </div>
       </div>
 
@@ -118,7 +97,7 @@
       </div>
       {% endif %}
 
-      <div class="public-page-footer">
+      <div style="margin-top:16px;font-size:12px;color:#999;text-align:center">
         Assinatura Eletrônica — RM Facilities | Plataforma segura, validade jurídica conforme Lei nº 14.063/2020
       </div>
     </div>
@@ -129,10 +108,6 @@
 const TOKEN='{{ sig.token or "" }}';
 const ENV_COD='{{ env.codigo }}';
 const otpCooldownCtrl=SignatureCommon.makeCooldown('btn-resend',60);
-
-function setStep(n){
-  SignatureCommon.setStep(n,'sec-1','sec-2','stp-1','stp-2');
-}
 
 function showMsg(txt,type='err'){
   const msg=document.getElementById('msg');
@@ -157,17 +132,6 @@ function validaEtapa1(){
   if(!cpf||cpf.length!==11) return 'CPF inválido. Confira se digitou os 11 números corretamente.';
   if(!aceite) return 'Marque o aceite para continuar com a assinatura.';
   return '';
-}
-
-function irParaOtp(){
-  const err=validaEtapa1();
-  if(err){
-    showMsg(err,'err');
-    return;
-  }
-  setStep(2);
-  const otp=document.getElementById('inp-otp');
-  if(otp) otp.focus();
 }
 
 async function enviarOtpAutomaticoEnvelope(){
@@ -206,11 +170,6 @@ async function confirmarAssinatura(){
   const err1=validaEtapa1();
   if(err1){
     showMsg(err1,'err');
-    setStep(1);
-    return;
-  }
-  if(!otp||otp.length!==6){
-    showMsg('Informe o código OTP de 6 dígitos.','err');
     return;
   }
   try{
@@ -228,12 +187,14 @@ async function confirmarAssinatura(){
     }
     if(d.otp_required){
       showMsg(d.mensagem||'Código OTP enviado. Informe o código para concluir.','ok');
+      const otpEl=document.getElementById('inp-otp');
+      if(otpEl) otpEl.focus();
       startOtpCooldown(60);
       SignatureCommon.buttonState(btn,'Confirmar assinatura',false);
       return;
     }
-    document.getElementById('sec-1').style.display='none';
-    document.getElementById('sec-2').style.display='none';
+    const secForm=document.getElementById('sec-form');
+    if(secForm) secForm.style.display='none';
     document.getElementById('sucesso').style.display='block';
     if(d.codigo) document.getElementById('cod-val').textContent=d.codigo;
     if(d.validacao_link) document.getElementById('link-val').href=d.validacao_link;
@@ -249,7 +210,6 @@ async function confirmarAssinatura(){
 
 document.addEventListener('DOMContentLoaded',()=>{
   if(TOKEN) enviarOtpAutomaticoEnvelope();
-  setStep(1);
 });
   </script>
 </body>

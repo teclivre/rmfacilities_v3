@@ -2582,6 +2582,7 @@ function preencherFormFuncionario(f,titulo='Editar funcionário'){
   document.getElementById('fre').value=f.re||'';
   document.getElementById('fnome').value=f.nome||'';
   document.getElementById('fcpf').value=f.cpf||'';
+  maskCPF(document.getElementById('fcpf'));
   document.getElementById('femail').value=f.email||'';
   const tel=splitIntlPhone(f.telefone||'');
   document.getElementById('fddi').value=tel.ddi||'55';
