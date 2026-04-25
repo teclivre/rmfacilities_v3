@@ -1,3 +1,94 @@
+<!-- Modal Detalhe Faturamento -->
+<div id="modal-fat-detalhe" class="modal" style="display:none">
+  <div class="modal-content" style="max-width:600px">
+    <span class="close" onclick="fecharModalFatDetalhe()">&times;</span>
+    <div id="fat-detalhe-body">Carregando...</div>
+  </div>
+</div>
+<script>
+function abrirModalFatDetalhe(id){
+  const modal=document.getElementById('modal-fat-detalhe');
+  const body=document.getElementById('fat-detalhe-body');
+  modal.style.display='block';
+  body.innerHTML='Carregando...';
+  api('/api/medicoes/'+id).then(m=>{
+    let html=`<div style='font-size:18px;font-weight:700;margin-bottom:8px'>Fatura Nº ${m.numero||''}</div>`;
+    html+=`<div><b>Cliente:</b> ${m.cliente_nome||''} (${fmtDoc(m.cliente_cnpj)||''})</div>`;
+    html+=`<div><b>Empresa:</b> ${m.empresa_nome||''}</div>`;
+    html+=`<div><b>Mês Ref.:</b> ${m.mes_ref||''}</div>`;
+    html+=`<div><b>Emissão:</b> ${m.dt_emissao||''} <b>Vencimento:</b> ${m.dt_vencimento||''}</div>`;
+    html+=`<div><b>Valor:</b> <span style='color:var(--verde);font-weight:700'>${brl(m.valor_bruto)}</span></div>`;
+    html+=`<div><b>Status:</b> <span class='pill'>${m.status||''}</span></div>`;
+    if(m.svcs&&m.svcs.length){
+      html+='<div style="margin-top:10px"><b>Serviços:</b><ul style="margin:0 0 0 18px">'+m.svcs.map(s=>`<li>${s}</li>`).join('')+'</ul></div>';
+    }
+    if(m.observacoes){html+=`<div style='margin-top:10px'><b>Observações:</b> ${m.observacoes}</div>`;}
+    html+=`<div style='margin-top:10px'><button class='btn b-gh b-sm' onclick='editarFatura(${m.id})'>Editar</button> <button class='btn b-ghr b-sm' onclick='cancelarFatura(${m.id})'>Cancelar</button></div>`;
+    body.innerHTML=html;
+  });
+}
+function fecharModalFatDetalhe(){document.getElementById('modal-fat-detalhe').style.display='none';}
+// === FATURAMENTO (Financeiro) ===
+</script>
+<script>
+async function carregarFaturamento(){
+  const mes=document.getElementById('fat-filtro-mes').value;
+  const cliente=(document.getElementById('fat-filtro-cliente').value||'').toLowerCase();
+  const status=document.getElementById('fat-filtro-status').value;
+  let url='/api/medicoes?';
+  if(mes) url+='mes_ref='+encodeURIComponent(mes)+'&';
+  if(cliente) url+='cliente='+encodeURIComponent(cliente)+'&';
+  if(status) url+='status='+encodeURIComponent(status)+'&';
+  const lista=await api(url);
+  const tb=document.getElementById('tb-faturamento');
+  if(!lista.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:28px;color:#bbb">Nenhum faturamento encontrado.</td></tr>';document.getElementById('fat-res').textContent='';return;}
+  tb.innerHTML=lista.map(m=>{
+    const st=m.status||'emitida';
+    let pc='p-vd';
+    if(st==='paga')pc='p-vd';
+    else if(st==='pendente')pc='p-vm';
+    else if(st==='vencida')pc='p-ci';
+    else if(st==='cancelada')pc='p-ghr';
+    else pc='p-gh';
+    return `<tr class='row-clickable' onclick='abrirModalFatDetalhe(${m.id})'>
+      <td>${m.numero||''}</td>
+      <td><div style="font-weight:700;font-size:13px">${m.cliente_nome||''}</div><div style="font-size:11px;color:#999">${fmtDoc(m.cliente_cnpj)||''}</div></td>
+      <td style="font-size:12px">${m.empresa_nome||'—'}</td>
+      <td style="font-size:12px">${m.mes_ref||'—'}</td>
+      <td style="font-size:12px">${m.dt_emissao||'—'}</td>
+      <td style="font-size:12px">${m.dt_vencimento||'—'}</td>
+      <td style="text-align:right;font-weight:700;color:var(--verde);white-space:nowrap">${brl(m.valor_bruto)}</td>
+      <td><span class="pill ${pc}">${st.charAt(0).toUpperCase()+st.slice(1)}</span></td>
+      <td><button class="btn b-gh b-sm" onclick="event.stopPropagation();imprimirPDF(${m.id})">PDF</button></td>
+    </tr>`;
+  }).join('');
+  const tot=lista.reduce((s,m)=>s+(m.valor_bruto||0),0);
+  document.getElementById('fat-res').textContent=lista.length+' registro(s) · Total: '+brl(tot);
+}
+
+function exportarFaturamento(tipo){
+  // Simples: exporta tabela atual como CSV (PDF: usa impressão do navegador)
+  if(tipo==='csv'){
+    let csv='Nº;Cliente;Empresa;Mês Ref.;Emissão;Vencimento;Valor;Status\n';
+    document.querySelectorAll('#tb-faturamento tr').forEach(tr=>{
+      const tds=tr.querySelectorAll('td');
+      if(tds.length<8)return;
+      csv+=Array.from(tds).slice(0,8).map(td=>td.textContent.replace(/;/g,',')).join(';')+'\n';
+    });
+    const blob=new Blob([csv],{type:'text/csv'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download='faturamento.csv';a.click();URL.revokeObjectURL(url);
+  }else if(tipo==='pdf'){
+    window.print();
+  }
+}
+// Carregar ao abrir a subaba
+document.addEventListener('DOMContentLoaded',()=>{
+  if(document.getElementById('pg-faturamento')){
+    carregarFaturamento();
+  }
+});
+</script>
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -56,11 +147,18 @@
       Dashboard
     </a>
 
-    <div class="nav-section">Faturamento</div>
-    <a class="nav-item" data-nav="faturamento" onclick="nav('faturamento',this)">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-      Faturamento
+    <div class="nav-section">Financeiro</div>
+    <a class="nav-item" data-nav="financeiro" onclick="nav('financeiro',this)">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/><path d="M6 14h.01"/><path d="M10 14h.01"/></svg>
+      Financeiro
     </a>
+    <div id="subnav-financeiro" style="display:none;padding-left:18px">
+      <a class="nav-item sub" data-nav="faturamento" onclick="nav('faturamento',this)">Faturamento</a>
+      <a class="nav-item sub" data-nav="despesas" onclick="nav('despesas',this)">Despesas</a>
+      <a class="nav-item sub" data-nav="fluxo-caixa" onclick="nav('fluxo-caixa',this)">Fluxo de Caixa</a>
+      <a class="nav-item sub" data-nav="contas" onclick="nav('contas',this)">Contas a Pagar/Receber</a>
+      <a class="nav-item sub" data-nav="relatorios" onclick="nav('relatorios',this)">Relatórios</a>
+    </div>
     <a class="nav-item" onclick="nav('clientes',this)">
       <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       Clientes
@@ -140,6 +238,151 @@
         </div>
       </div>
       <div id="dash-empresas" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"></div>
+    </div>
+
+    <!-- ══ ABA FINANCEIRO (PLACEHOLDER) ══ -->
+    <div id="pg-financeiro" class="pg">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Financeiro</span></div>
+        <div style="padding:20px 0">Selecione uma subaba: Faturamento, Despesas, Fluxo de Caixa, Contas a Pagar/Receber ou Relatórios.</div>
+      </div>
+    </div>
+
+    <!-- ══ SUBABAS FINANCEIRO (PLACEHOLDERS) ══ -->
+    <div id="pg-faturamento" class="pg">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Faturamento</span></div>
+        <div style="margin-bottom:14px;display:flex;gap:12px;flex-wrap:wrap">
+          <input type="month" id="fat-filtro-mes" style="width:140px" placeholder="Mês">
+          <input type="text" id="fat-filtro-cliente" style="width:180px" placeholder="Cliente ou CNPJ">
+          <select id="fat-filtro-status" style="width:120px">
+            <option value="">Todos status</option>
+            <option value="emitida">Emitida</option>
+            <option value="paga">Paga</option>
+            <option value="pendente">Pendente</option>
+            <option value="vencida">Vencida</option>
+            <option value="cancelada">Cancelada</option>
+          </select>
+          <button class="btn b-gh b-sm" onclick="carregarFaturamento()">Filtrar</button>
+          <button class="btn b-ghl b-sm" onclick="exportarFaturamento('csv')">Exportar CSV</button>
+          <button class="btn b-ghl b-sm" onclick="exportarFaturamento('pdf')">Exportar PDF</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="tabela" style="min-width:900px">
+            <thead>
+              <tr>
+                <th>Nº</th>
+                <th>Cliente</th>
+                <th>Empresa</th>
+                <th>Mês Ref.</th>
+                <th>Emissão</th>
+                <th>Vencimento</th>
+                <th>Valor</th>
+                <th>Status</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tb-faturamento">
+              <tr><td colspan="9" style="text-align:center;padding:28px;color:#bbb">Nenhum faturamento encontrado.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="fat-res" style="margin-top:10px;color:#888;font-size:13px"></div>
+      </div>
+    </div>
+    <div id="pg-despesas" class="pg">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Despesas</span></div>
+        <form id="form-despesa" onsubmit="cadastrarDespesa(event)" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:18px">
+          <div><label>Descrição</label><input name="descricao" required style="width:180px"></div>
+          <div><label>Valor</label><input name="valor" type="number" step="0.01" required style="width:90px"></div>
+          <div><label>Categoria</label><select name="categoria" style="width:120px">
+            <option>Outras</option><option>Fixa</option><option>Variável</option><option>Impostos</option><option>Serviços</option>
+          </select></div>
+          <div><label>Data</label><input name="data" type="date" required style="width:120px"></div>
+          <div><label>Comprovante</label><input name="comprovante" type="file" accept="image/*,application/pdf"></div>
+          <div><label>Obs.</label><input name="observacoes" style="width:120px"></div>
+          <button class="btn b-az b-sm" type="submit">Cadastrar</button>
+        </form>
+        <div style="margin-bottom:10px;display:flex;gap:10px;align-items:center">
+          <input type="month" id="desp-filtro-periodo" style="width:140px" placeholder="Período">
+          <select id="desp-filtro-categoria" style="width:120px">
+            <option value="">Todas categorias</option>
+            <option>Fixa</option><option>Variável</option><option>Impostos</option><option>Serviços</option><option>Outras</option>
+          </select>
+          <button class="btn b-gh b-sm" onclick="carregarDespesas()">Filtrar</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="tabela" style="min-width:800px">
+            <thead>
+              <tr>
+                <th>Descrição</th><th>Valor</th><th>Categoria</th><th>Data</th><th>Comprovante</th><th>Obs.</th><th>Criado em</th>
+              </tr>
+            </thead>
+            <tbody id="tb-despesas">
+              <tr><td colspan="7" style="text-align:center;padding:28px;color:#bbb">Nenhuma despesa cadastrada.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="desp-res" style="margin-top:10px;color:#888;font-size:13px"></div>
+      </div>
+    </div>
+    <script>
+    // === DESPESAS ===
+    async function cadastrarDespesa(ev){
+      ev.preventDefault();
+      const form=document.getElementById('form-despesa');
+      const fd=new FormData(form);
+      await fetch('/api/despesas',{method:'POST',body:fd});
+      form.reset();
+      carregarDespesas();
+    }
+
+    async function carregarDespesas(){
+      const periodo=document.getElementById('desp-filtro-periodo').value;
+      const categoria=document.getElementById('desp-filtro-categoria').value;
+      let url='/api/despesas?';
+      if(periodo) url+='periodo='+encodeURIComponent(periodo)+'&';
+      if(categoria) url+='categoria='+encodeURIComponent(categoria)+'&';
+      const lista=await api(url);
+      const tb=document.getElementById('tb-despesas');
+      if(!lista.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:28px;color:#bbb">Nenhuma despesa cadastrada.</td></tr>';document.getElementById('desp-res').textContent='';return;}
+      tb.innerHTML=lista.map(d=>{
+        let comp='';
+        if(d.comprovante){
+          let url = d.comprovante.startsWith('/') ? d.comprovante : '/uploads/' + d.comprovante;
+          if(url.match(/\.(pdf)$/i))
+            comp = `<a href="${url}" target="_blank">PDF</a>`;
+          else
+            comp = `<a href="${url}" target="_blank"><img src="${url}" style="max-width:40px;max-height:40px"></a>`;
+        }
+        return `<tr>
+          <td>${d.descricao||''}</td>
+          <td style="text-align:right;font-weight:700;color:var(--vermelho)">${brl(d.valor)}</td>
+          <td>${d.categoria||''}</td>
+          <td>${d.data||''}</td>
+          <td>${comp}</td>
+          <td>${d.observacoes||''}</td>
+          <td>${d.criado_fmt||''}</td>
+        </tr>`;
+      }).join('');
+      const tot=lista.reduce((s,d)=>s+(d.valor||0),0);
+      document.getElementById('desp-res').textContent=lista.length+' despesa(s) · Total: '+brl(tot);
+    }
+    document.addEventListener('DOMContentLoaded',()=>{
+      if(document.getElementById('pg-despesas')){
+        carregarDespesas();
+      }
+    });
+    </script>
+    <div id="pg-fluxo-caixa" class="pg">
+      <div class="card"><div class="card-header"><span class="card-title">Fluxo de Caixa</span></div><div style="padding:20px 0">Entradas, saídas e saldo.</div></div>
+    </div>
+    <div id="pg-contas" class="pg">
+      <div class="card"><div class="card-header"><span class="card-title">Contas a Pagar/Receber</span></div><div style="padding:20px 0">Controle de contas e vencimentos.</div></div>
+    </div>
+    <div id="pg-relatorios" class="pg">
+      <div class="card"><div class="card-header"><span class="card-title">Relatórios</span></div><div style="padding:20px 0">Relatórios financeiros customizáveis.</div></div>
     </div>
 
     <!-- ══ NOVA MEDIÇÃO ══ -->
@@ -1545,6 +1788,28 @@ async function loadFaturamentoAlert(){
 }
 
 function nav(id,el,force=false){
+  // Lógica especial para Financeiro e subabas
+  const isFinanceiroParent = id==='financeiro';
+  const subabasFinanceiro = ['faturamento','despesas','fluxo-caixa','contas','relatorios'];
+  if(isFinanceiroParent){
+    document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
+    document.getElementById('pg-financeiro').classList.add('on');
+    document.getElementById('subnav-financeiro').style.display='block';
+    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));
+    if(el)el.classList.add('on');
+    return;
+  }
+  if(subabasFinanceiro.includes(id)){
+    document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
+    document.getElementById('pg-'+id).classList.add('on');
+    document.getElementById('subnav-financeiro').style.display='block';
+    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));
+    const navFinanceiro = document.querySelector('.nav-item[data-nav="financeiro"]');
+    if(navFinanceiro) navFinanceiro.classList.add('on');
+    if(el)el.classList.add('on');
+    return;
+  }
+  // Lógica padrão
   const isFaturamentoParent=id==='faturamento';
   const targetId=isFaturamentoParent?'nova-medicao':id;
   const areaOkFaturamento=(USER_AREAS.includes('medicoes')||USER_AREAS.includes('historico')||USER_AREAS.includes('nova-medicao'));
@@ -1573,6 +1838,10 @@ function nav(id,el,force=false){
   if(targetId==='beneficios'){carregarBeneficiosMensais();carregarConfigAlertaBeneficios();}
   if(targetId==='sst')fillSSTFuncionarios();
   if(targetId==='nova-medicao'){loadProxNum(); onEmpSel(); loadFaturamentoAlert();}
+  // Esconder subnav financeiro se sair da área
+  if(!subabasFinanceiro.includes(id) && !isFinanceiroParent){
+    document.getElementById('subnav-financeiro').style.display='none';
+  }
   if(targetId==='rh-digital')initRHDigital();
   if(targetId==='assinaturas')initAssinaturas();
 }

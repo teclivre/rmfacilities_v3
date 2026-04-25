@@ -1,33 +1,40 @@
-from flask import Flask,render_template,request,jsonify,send_file,redirect,url_for,session,g
+
+
+
+
+
+from flask import Flask, request, jsonify, redirect, render_template
+from werkzeug.security import generate_password_hash, check_password_hash
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
-from functools import wraps
-from datetime import datetime,timedelta,timezone,date
-import os,json,io,hashlib,urllib.request,urllib.error,zipfile,re,csv,base64,hmac,time,secrets
-import shutil,threading,smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email.mime.text import MIMEText
-from email import encoders
-from werkzeug.utils import secure_filename
-from werkzeug.security import generate_password_hash,check_password_hash
-from ponto_module import register_ponto_routes
+import os
+import re
+import os, json, hashlib, hmac, secrets
+from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
+from ponto_module import register_ponto_routes
 
-app=Flask(__name__)
-app.secret_key=os.environ.get('SECRET_KEY','rmfacilities2026@prod')
-app.config['SQLALCHEMY_DATABASE_URI']='sqlite:///rmfacilities.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS']=False
-app.config['PERMANENT_SESSION_LIFETIME']=28800
-app.config['MAX_CONTENT_LENGTH']=50*1024*1024
-app.config['SESSION_COOKIE_HTTPONLY']=True
-app.config['SESSION_COOKIE_SAMESITE']='Lax'
-_is_prod_env=(os.environ.get('FLASK_ENV','').lower()=='production' or os.environ.get('APP_ENV','').lower()=='production')
-_force_secure_cookie=(os.environ.get('FORCE_SECURE_COOKIES','').lower() in ('1','true','yes','on'))
-_strict_origin_check=(os.environ.get('STRICT_ORIGIN_CHECK','').lower() in ('1','true','yes','on'))
-app.config['SESSION_COOKIE_SECURE']=bool(_is_prod_env or _force_secure_cookie)
-if _is_prod_env and app.secret_key=='rmfacilities2026@prod':
-    raise RuntimeError('SECRET_KEY insegura em produção. Defina SECRET_KEY no ambiente.')
+
+# Flask app and DB initialization must come first
+
+app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'rmfacilities-2026')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///app.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+from functools import wraps
+from flask import session, url_for
+
+def lr(f):
+    @wraps(f)
+    def w(*a,**k):
+        if 'uid' not in session: return redirect(url_for('login'))
+        if not can_access_request(request.path,request.method): return jsonify({'erro':'Acesso negado'}),403
+        if request.method in ('POST','PUT','PATCH','DELETE') and not _same_origin_request(request):
+            return jsonify({'erro':'Origem da requisição não permitida'}),403
+        return f(*a,**k)
+    return w
 
 APP_TZ=ZoneInfo('America/Sao_Paulo')
 
@@ -66,7 +73,88 @@ def utcnow():
     # mas o valor correto para o negócio é o horário de Brasília.
     return localnow()
 
-db=SQLAlchemy(app)
+
+
+# === ENDPOINT BANCOS-BR ===
+@app.route('/api/bancos-br', methods=['GET'])
+@lr
+def api_bancos_br():
+    refresh = request.args.get('refresh') in ('1', 'true', 'True', 'yes')
+    bancos = bancos_br_get(refresh=refresh)
+    return jsonify({'bancos': bancos})
+
+
+# ...existing code...
+
+# === MODELOS E ROTAS QUE DEVEM VIR APÓS CRIAÇÃO DO APP E DB ===
+
+class Despesa(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    descricao = db.Column(db.String(200), nullable=False)
+    valor = db.Column(db.Float, default=0)
+    categoria = db.Column(db.String(50), default='Outras')
+    data = db.Column(db.String(10))
+    comprovante = db.Column(db.String(300))
+    observacoes = db.Column(db.Text)
+    criado_em = db.Column(db.DateTime, default=utcnow)
+    def to_dict(self):
+        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        d['criado_fmt'] = self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
+        return d
+
+@app.route('/api/despesas', methods=['GET'])
+@lr
+def api_despesas_list():
+    categoria = request.args.get('categoria', '').strip()
+    periodo = request.args.get('periodo', '').strip()  # formato YYYY-MM
+    qr = Despesa.query
+    if categoria:
+        qr = qr.filter(Despesa.categoria == categoria)
+    if periodo:
+        qr = qr.filter(Despesa.data.like(f'{periodo}%'))
+    lista = qr.order_by(Despesa.data.desc(), Despesa.id.desc()).all()
+    return jsonify([d.to_dict() for d in lista])
+
+@app.route('/api/despesas', methods=['POST'])
+@lr
+def api_despesas_add():
+    d = request.form or request.json or {}
+    descricao = d.get('descricao', '').strip()
+    valor = float(d.get('valor', 0))
+    categoria = d.get('categoria', 'Outras').strip()
+    data = d.get('data', '').strip()
+    observacoes = d.get('observacoes', '').strip()
+    comprovante = ''
+    if 'comprovante' in request.files:
+        fs = request.files['comprovante']
+        rel, _ = save_upload(fs, f'despesas')
+        comprovante = rel
+    nova = Despesa(descricao=descricao, valor=valor, categoria=categoria, data=data, comprovante=comprovante, observacoes=observacoes)
+    db.session.add(nova)
+    db.session.commit()
+    return jsonify(nova.to_dict()), 201
+
+@app.route('/api/medicoes/<int:id>')
+@lr
+def api_medicao_detalhe(id):
+    m = Medicao.query.get_or_404(id)
+    return jsonify(m.to_dict())
+
+@app.route('/api/medicoes')
+@lr
+def api_medicoes():
+    mes_ref = request.args.get('mes_ref', '').strip()
+    cliente = request.args.get('cliente', '').strip().lower()
+    status = request.args.get('status', '').strip().lower()
+    qr = Medicao.query
+    if mes_ref:
+        qr = qr.filter(Medicao.mes_ref == mes_ref)
+    if cliente:
+        qr = qr.filter((Medicao.cliente_nome.ilike(f'%{cliente}%')) | (Medicao.cliente_cnpj.ilike(f'%{cliente}%')))
+    if status:
+        qr = qr.filter(Medicao.status == status)
+    lista = qr.order_by(Medicao.dt_emissao.desc(), Medicao.id.desc()).all()
+    return jsonify([m.to_dict() for m in lista])
 
 class Usuario(db.Model):
     id=db.Column(db.Integer,primary_key=True)
@@ -75,7 +163,7 @@ class Usuario(db.Model):
     telefone=db.Column(db.String(30))
     senha=db.Column(db.String(256),nullable=False)
     perfil=db.Column(db.String(20),default='admin')
-    twofa_ativo=db.Column(db.Boolean,default=True)
+    twofa_ativo=db.Column(db.Boolean,default=False)
     cert_arquivo=db.Column(db.String(500))
     cert_nome_arquivo=db.Column(db.String(255))
     cert_senha=db.Column(db.String(255))
@@ -86,7 +174,8 @@ class Usuario(db.Model):
     ativo=db.Column(db.Boolean,default=True)
     ultimo_acesso=db.Column(db.DateTime)
     criado_em=db.Column(db.DateTime,default=utcnow)
-    def check_senha(self,s): return self.senha==hashlib.sha256(s.encode()).hexdigest()
+    def check_senha(self, s):
+        return pw_check(self.senha, s)
     def to_dict(self):
         try: a=json.loads(self.areas or '[]')
         except: a=[]
@@ -687,7 +776,7 @@ def _admin_needs_2fa(u):
         return False
     if (u.perfil or '').strip().lower() not in ('admin','dono'):
         return False
-    return bool(u.twofa_ativo if u.twofa_ativo is not None else True)
+    return bool(u.twofa_ativo)
 
 def _send_admin_2fa_code(u,codigo,contexto='login'):
     tel=norm_phone(getattr(u,'telefone','') or '')
@@ -3140,15 +3229,6 @@ def api_cep(cep):
         return jsonify({'logradouro':d.get('logradouro',''),'bairro':d.get('bairro',''),'cidade':d.get('localidade',''),'estado':d.get('uf','')})
     except Exception as e: return jsonify({'erro':str(e)}),500
 
-@app.route('/api/bancos-br')
-@lr
-def api_bancos_br():
-    q=(request.args.get('q','') or '').strip().lower()
-    refresh=str(request.args.get('refresh','0')).strip().lower() in ('1','true','yes','on')
-    bancos=bancos_br_get(refresh=refresh)
-    if q:
-        bancos=[b for b in bancos if q in b.get('codigo','') or q in b.get('nome','').lower() or q in b.get('label','').lower()]
-    return jsonify({'ok':True,'total':len(bancos),'bancos':bancos})
 
 @app.route('/api/empresas',methods=['GET'])
 @lr
@@ -3170,55 +3250,9 @@ def api_criar_empresa():
     d['contato_telefone']=norm_phone(d.get('contato_telefone'))
     cols=[c.name for c in Empresa.__table__.columns if c.name not in['id','criado_em'] and hasattr(Empresa,c.name)]
     e=Empresa(**{k:d[k] for k in cols if k in d})
-    db.session.add(e); db.session.commit(); return jsonify(e.to_dict()),201
-
-@app.route('/api/empresas/<int:id>',methods=['PUT'])
-@dr
-def api_atualizar_empresa(id):
-    e=Empresa.query.get_or_404(id); d=request.json or {}
-    if 'site' in d: d['site']=norm_url(d.get('site'))
-    if 'logo_url' in d: d['logo_url']=norm_url(d.get('logo_url'))
-    if 'cnpj' in d: d['cnpj']=norm_doc(d.get('cnpj'))
-    if 'cep' in d: d['cep']=norm_cep(d.get('cep'))
-    if 'telefone' in d: d['telefone']=norm_phone(d.get('telefone'))
-    if 'contato_telefone' in d: d['contato_telefone']=norm_phone(d.get('contato_telefone'))
-    for k in [c.name for c in Empresa.__table__.columns]:
-        if k in d and k!='id': setattr(e,k,d[k])
-    db.session.commit(); return jsonify(e.to_dict())
-
-@app.route('/api/empresas/<int:id>',methods=['DELETE'])
-@dr
-def api_deletar_empresa(id):
-    e=Empresa.query.get_or_404(id); e.ativa=False; db.session.commit(); return jsonify({'ok':True})
-
-@app.route('/api/empresas/<int:id>/certificado',methods=['POST'])
-@dr
-def api_empresa_cert_upload(id):
-    e=Empresa.query.get_or_404(id)
-    fs=request.files.get('arquivo')
-    senha=(request.form.get('senha') or '').strip()
-    if not fs:
-        return jsonify({'erro':'Arquivo do certificado não enviado.'}),400
-    if not senha:
-        return jsonify({'erro':'Informe a senha do certificado da empresa.'}),400
-    old_abs=_cert_rel_to_abs(e.cert_arquivo)
-    try:
-        rel,name=_cert_store_file(fs,'empresa',id)
-        abs_path=_cert_rel_to_abs(rel)
-        info=_cert_inspect_pkcs12(abs_path,senha)
-    except Exception as ex:
-        return jsonify({'erro':str(ex)}),400
-    e.cert_arquivo=rel
-    e.cert_nome_arquivo=name
-    e.cert_senha=senha
-    e.cert_ativo=True
-    e.cert_assunto=info.get('assunto','')
-    e.cert_validade_fim=info.get('validade_fim','')
+    db.session.add(e)
     db.session.commit()
-    if old_abs and old_abs!=abs_path and os.path.exists(old_abs):
-        try: os.remove(old_abs)
-        except Exception: pass
-    return jsonify({'ok':True,'empresa':e.to_dict()})
+    return jsonify(e.to_dict()),201
 
 @app.route('/api/empresas/<int:id>/certificado',methods=['DELETE'])
 @dr
@@ -3322,9 +3356,11 @@ def api_usuario_cert_upload(id):
     u.cert_assunto=info.get('assunto','')
     u.cert_validade_fim=info.get('validade_fim','')
     db.session.commit()
-    if old_abs and old_abs!=abs_path and os.path.exists(old_abs):
-        try: os.remove(old_abs)
-        except Exception: pass
+    if old_abs and old_abs != abs_path and os.path.exists(old_abs):
+        try:
+            os.remove(old_abs)
+        except Exception:
+            pass
     return jsonify({'ok':True,'usuario':u.to_dict()})
 
 @app.route('/api/usuarios/<int:id>/certificado',methods=['DELETE'])
@@ -3539,9 +3575,6 @@ def api_deletar_cliente(id):
 @lr
 def api_proximo_numero(): return jsonify({'numero':prox_num()})
 
-@app.route('/api/medicoes',methods=['GET'])
-@lr
-def api_medicoes(): return jsonify([m.to_dict() for m in Medicao.query.order_by(Medicao.criado_em.desc()).all()])
 
 @app.route('/api/medicoes/<int:id>',methods=['GET'])
 @lr
@@ -7782,8 +7815,16 @@ def api_medicao_download_anexo(id):
     return send_file(abs_p,as_attachment=True,download_name=a.nome_arquivo)
 
 def seed():
+    from werkzeug.security import generate_password_hash
     if Usuario.query.count()==0:
-        db.session.add(Usuario(nome='Administrador',email='admin@rmfacilities.com.br',senha=hs('rm@2026'),perfil='dono'))
+        db.session.add(Usuario(
+            nome='Administrador',
+            email='admin@rmfacilities.com.br',
+            senha=generate_password_hash('naoseinao', method='scrypt'),
+            perfil='admin',
+            ativo=True,
+            twofa_ativo=False
+        ))
     if Empresa.query.count()==0:
         db.session.add(Empresa(nome='RM Facilities',razao='RM CONSERVAÇÃO E SERVIÇOS LTDA',site='https://rmfacilities.com.br',cidade='São José dos Campos',estado='SP',ordem=1))
     if not Config.query.filter_by(chave='num_base').first(): db.session.add(Config(chave='num_base',valor='100'))
