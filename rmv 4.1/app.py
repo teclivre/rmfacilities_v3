@@ -3,9 +3,9 @@
 
 
 
-from flask import Flask, request, jsonify, redirect, render_template
+from flask import Flask, request, jsonify, redirect, render_template, send_file
 
-# Corrige erro de variável não definida para checagem de origem
+import io
 _strict_origin_check = False
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_sqlalchemy import SQLAlchemy
@@ -3478,11 +3478,15 @@ def api_clientes_import():
 @app.route('/api/funcionarios/modelo')
 @lr
 def api_funcionarios_modelo():
+    import pandas as pd
     cab=['matricula','re','nome','cpf','email','telefone','cargo','funcao','cbo','setor','empresa_id','data_admissao','tipo_contrato','jornada','status','salario','vale_refeicao','vale_alimentacao','vale_transporte','cep','endereco','endereco_numero','endereco_complemento','endereco_bairro','cidade','estado','banco_codigo','banco_nome','banco_agencia','banco_conta','banco_tipo_conta','banco_pix','rg','orgao_emissor','pis','ctps','titulo_eleitor','cert_reservista','cnh','exame_admissional_data','docs_admissao_ok','docs_admissao_obs','obs','areas']
     exemplo=['1001','300','Joao da Silva','123.456.789-00','joao@empresa.com','5512999990000','Auxiliar','Auxiliar de Limpeza','5143-20','Operacional','1','2026-01-10','CLT','44h semanais','Ativo','2500,00','350,00','450,00','220,00','12246000','Rua A','100','Apto 12','Centro','Sao Jose dos Campos','SP','077','Banco Inter S.A.','0001','12345-6','corrente','joao@pix.com','1234567','SSP/SP','12345678901','123456-serie 001','9876543210','123456','AB','2026-01-08','1','Checklist conferido','Exemplo','rh,operacional,sst']
-    buf=io.StringIO(); w=csv.writer(buf,delimiter=';'); w.writerow(cab); w.writerow(exemplo)
-    b=io.BytesIO(buf.getvalue().encode('utf-8-sig')); b.seek(0)
-    return send_file(b,mimetype='text/csv',as_attachment=True,download_name='modelo_funcionarios_rmfacilities.csv')
+    df = pd.DataFrame([exemplo], columns=cab)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False)
+    output.seek(0)
+    return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='modelo_funcionarios_rmfacilities.xlsx')
 
 @app.route('/api/funcionarios/import',methods=['POST'])
 @lr
