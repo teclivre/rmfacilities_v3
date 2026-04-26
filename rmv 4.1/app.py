@@ -4,6 +4,9 @@
 
 
 from flask import Flask, request, jsonify, redirect, render_template
+
+# Corrige erro de variável não definida para checagem de origem
+_strict_origin_check = False
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
@@ -18,6 +21,7 @@ from ponto_module import register_ponto_routes
 # Flask app and DB initialization must come first
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
 app.secret_key = os.environ.get('SECRET_KEY', 'rmfacilities-2026')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///app.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -84,7 +88,7 @@ def api_bancos_br():
     return jsonify({'bancos': bancos})
 
 
-# ...existing code...
+_strict_origin_check = False  # Corrige NameError para _strict_origin_check
 
 # === MODELOS E ROTAS QUE DEVEM VIR APÓS CRIAÇÃO DO APP E DB ===
 
