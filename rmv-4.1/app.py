@@ -565,7 +565,41 @@ class Funcionario(db.Model):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         try: d['areas']=json.loads(self.areas or '[]')
         except: d['areas']=[]
+        return d
 
+class FuncionarioArquivo(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False,index=True)
+    categoria=db.Column(db.String(30),nullable=False,index=True)
+    competencia=db.Column(db.String(20),index=True)
+    nome_arquivo=db.Column(db.String(250),nullable=False)
+    caminho=db.Column(db.String(500),nullable=False)
+    ass_status=db.Column(db.String(20),default='nao_solicitada')
+    ass_token=db.Column(db.String(120))
+    ass_expira_em=db.Column(db.DateTime)
+    ass_codigo=db.Column(db.String(120))
+    ass_nome=db.Column(db.String(200))
+    ass_cargo=db.Column(db.String(120))
+    ass_cpf=db.Column(db.String(20))
+    ass_ip=db.Column(db.String(60))
+    ass_em=db.Column(db.DateTime)
+    ass_otp_hash=db.Column(db.String(256))
+    ass_otp_expira_em=db.Column(db.DateTime)
+    ass_otp_tentativas=db.Column(db.Integer,default=0)
+    ass_doc_hash=db.Column(db.String(128))
+    ass_crypto_ok=db.Column(db.Boolean,default=False)
+    ass_cert_subject=db.Column(db.String(255))
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
+        d['ass_em_fmt']=self.ass_em.strftime('%d/%m/%Y %H:%M') if self.ass_em else ''
+        return d
+
+class OperacionalDocumento(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    empresa_id=db.Column(db.Integer,db.ForeignKey('empresa.id'),nullable=True,index=True)
+    tipo=db.Column(db.String(50),default='Documento')
     titulo=db.Column(db.String(200),nullable=False)
     descricao=db.Column(db.Text)
     nome_arquivo=db.Column(db.String(250))
