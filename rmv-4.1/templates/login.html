@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RM Facilities — Acesso</title>
+<link rel="stylesheet" href="/static/css/main.css">
+<style>
+body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#eef1f6}
+.box{background:#fff;border-radius:16px;padding:40px 36px;width:100%;max-width:400px;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+.logo{text-align:center;margin-bottom:28px}
+.logo img{height:54px;width:auto;object-fit:contain}
+.logo-txt{font-size:22px;font-weight:700;color:var(--azul)}
+h2{font-size:18px;font-weight:700;color:var(--azul);text-align:center;margin-bottom:6px}
+.sub{font-size:13px;color:#888;text-align:center;margin-bottom:28px}
+.erro{background:var(--verm-cl);color:var(--verm);border-radius:var(--r);padding:10px 14px;font-size:13px;font-weight:700;margin-bottom:16px;text-align:center}
+.ok{background:#eaf8ef;color:#1a6a3a;border-radius:var(--r);padding:10px 14px;font-size:13px;font-weight:700;margin-bottom:16px;text-align:center;border:1px solid #b8e2c4}
+.btn-login{width:100%;background:var(--azul);color:#fff;border:none;border-radius:var(--r);padding:13px;font-size:15px;font-weight:700;cursor:pointer;margin-top:8px;transition:opacity .15s}
+.btn-login:hover{opacity:.88}
+.lnk{display:inline-block;margin-top:10px;font-size:12px;color:var(--azul);text-decoration:none;cursor:pointer}
+.lnk:hover{text-decoration:underline}
+.rodape{text-align:center;margin-top:24px;font-size:12px;color:#bbb}
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="logo">
+    <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities"
+         onerror="this.style.display='none';document.getElementById('ltxt').style.display='block'">
+    <div id="ltxt" class="logo-txt" style="display:none">RM Facilities</div>
+  </div>
+  <h2>Acesso ao sistema</h2>
+  <p class="sub">
+    {% if recuperar %}
+      Recuperar usuário e senha
+    {% elif etapa=='2fa' %}
+      Verificação em duas etapas
+    {% else %}
+      Entre com seu e-mail e senha
+    {% endif %}
+  </p>
+  {% if ok %}<div class="ok">{{ ok }}</div>{% endif %}
+  {% if erro %}<div class="erro">{{ erro }}</div>{% endif %}
+
+  {% if recuperar %}
+    {% if rec_etapa=='codigo' %}
+      <form method="POST" action="/recuperar-acesso">
+        <input type="hidden" name="etapa" value="codigo">
+        <div class="f" style="margin-bottom:10px"><label>Usuário</label><input value="{{ email_mask or '' }}" readonly></div>
+        <div class="f" style="margin-bottom:10px"><label>Destino do código</label><input value="{{ telefone_mask or '' }}" readonly></div>
+        <div class="f" style="margin-bottom:10px"><label>Código (6 dígitos)</label><input name="codigo" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus></div>
+        <div class="f" style="margin-bottom:12px"><label>Nova senha</label><input type="password" name="nova_senha" placeholder="mínimo 8 caracteres" required></div>
+        <button type="submit" class="btn-login">Salvar nova senha</button>
+      </form>
+      <a class="lnk" href="/login">Voltar ao login</a>
+    {% else %}
+      <form method="POST" action="/recuperar-acesso">
+        <input type="hidden" name="etapa" value="solicitar">
+        <div class="f" style="margin-bottom:14px"><label>E-mail ou telefone cadastrado</label><input name="identificador" placeholder="seu@email.com.br ou (11) 99999-9999" required autofocus></div>
+        <button type="submit" class="btn-login">Enviar código de recuperação</button>
+      </form>
+      <a class="lnk" href="/login">Voltar ao login</a>
+    {% endif %}
+
+  {% elif etapa=='2fa' %}
+    <form method="POST" action="/login">
+      <input type="hidden" name="etapa" value="2fa">
+      <div class="f" style="margin-bottom:10px"><label>Usuário</label><input value="{{ email_mask or email or '' }}" readonly></div>
+      <div class="f" style="margin-bottom:10px"><label>Código enviado para</label><input value="{{ telefone_mask or '' }}" readonly></div>
+      <div class="f" style="margin-bottom:12px"><label>Código (6 dígitos)</label><input name="codigo" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus></div>
+      <button type="submit" class="btn-login">Validar código</button>
+    </form>
+    <form method="POST" action="/login" style="margin-top:8px">
+      <input type="hidden" name="etapa" value="2fa">
+      <input type="hidden" name="acao" value="reenviar">
+      <button type="submit" class="btn-login" style="background:#4d6f8f">Reenviar código</button>
+    </form>
+    <a class="lnk" href="/login?cancel2fa=1">Usar outro usuário</a>
+
+  {% else %}
+    <form method="POST" action="/login">
+      <div class="f" style="margin-bottom:14px"><label>E-mail</label><input type="email" name="email" placeholder="seu@email.com.br" required autofocus></div>
+      <div class="f" style="margin-bottom:14px"><label>Senha</label><input type="password" name="senha" placeholder="••••••••" required></div>
+      <button type="submit" class="btn-login">Entrar</button>
+    </form>
+    <a class="lnk" href="/login?recuperar=1" onclick="event.preventDefault(); window.location='/login?recuperar=1';">Esqueci meu usuário/senha</a>
+  {% endif %}
+  <div class="rodape">RM Facilities · Sistema de Gestão v3.0</div>
+</div>
+</body>
+</html>

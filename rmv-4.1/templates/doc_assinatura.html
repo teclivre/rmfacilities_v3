@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assinatura de Documento - RM Facilities</title>
+  <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body class="public-page">
+  <div class="public-topbar">
+    <div class="public-topbar-brand">
+      <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
+      <h1>RM Facilities</h1>
+    </div>
+  </div>
+
+  <div class="public-main">
+    <div class="public-container">
+      {% if ok and arquivo %}
+      <div class="public-card">
+        <h1>Assinatura eletrônica</h1>
+        <p class="sub">Confira os dados abaixo e confirme com seu código OTP.</p>
+
+        <div class="public-info-box">
+          <strong>Documento:</strong> {{ arquivo.nome_arquivo }}<br>
+          <strong>Categoria:</strong> {{ arquivo.categoria or '-' }}<br>
+          {% if arquivo.competencia %}<strong>Competência:</strong> {{ arquivo.competencia }}<br>{% endif %}
+          {% if funcionario %}<strong>Funcionário:</strong> {{ funcionario.nome }}{% endif %}
+        </div>
+
+        <span class="public-tag">AGUARDANDO ASSINATURA</span>
+
+        <div class="public-form">
+          <div class="public-form-group">
+            <label>Nome completo *</label>
+            <input id="nome" type="text" placeholder="Seu nome completo" autocomplete="name">
+          </div>
+          <div class="public-form-group">
+            <label>CPF *</label>
+            <input id="cpf" type="text" placeholder="000.000.000-00" maxlength="14" oninput="fmtCPF(this)" inputmode="numeric">
+          </div>
+          <div class="public-form-group">
+            <label>Cargo (opcional)</label>
+            <input id="cargo" type="text" placeholder="Ex: Auxiliar de limpeza">
+          </div>
+          <div class="public-form-group">
+            <label>Código OTP (6 dígitos)</label>
+            <input id="otp" type="text" placeholder="Informe o código recebido" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
+          </div>
+          <label class="public-check">
+            <input type="checkbox" id="aceite">
+            Declaro que li e aceito as informações do documento apresentado, confirmando minha assinatura eletrônica.
+          </label>
+        </div>
+        <div class="public-btngroup">
+          <button class="public-btn public-btn-primary" id="btn-confirmar" onclick="confirmar('{{ arquivo.ass_token }}')">Confirmar assinatura</button>
+          <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()">Reenviar código</button>
+        </div>
+
+        <div id="msg" class="public-msg"></div>
+      </div>
+      {% else %}
+      <div class="public-card">
+        <h1>Assinatura eletrônica</h1>
+        <div class="public-alert err">
+          <strong>Link indisponível</strong>
+          <p>{{ mensagem or 'Este link não está disponível.' }}</p>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <script src="/static/js/assinatura-common.js"></script>
+  <script>
+    const DOC_ASS_TOKEN='{{ arquivo.ass_token if arquivo else "" }}';
+    const otpCooldownCtrl=SignatureCommon.makeCooldown('btn-resend',60);
+
+    function fmtCPF(el){
+      el.value=SignatureCommon.formatCpfValue(el.value||'');
+    }
+
+    function erroAmigavel(txt){
+      return SignatureCommon.friendlyError(txt);
+    }
+
+    function startOtpCooldown(seg){
+      otpCooldownCtrl.start(seg||60);
+    }
+
+    function validaEtapa1(){
+      const nome=(document.getElementById('nome').value||'').trim();
+      const cpf=(document.getElementById('cpf').value||'').replace(/[^0-9]/g,'');
+      const aceite=!!document.getElementById('aceite').checked;
+      if(!nome) return 'Informe seu nome completo.';
+      if(!cpf||cpf.length!==11) return 'CPF inválido. Confira se digitou os 11 números corretamente.';
+      if(!aceite) return 'Marque o aceite para continuar com a assinatura.';
+      return '';
+    }
+
+    async function enviarOtpAutomaticoDoc(){
+      if(!DOC_ASS_TOKEN) return;
+      const msg=document.getElementById('msg');
+      try{
+        const r=await fetch('/api/doc/assinar/'+DOC_ASS_TOKEN+'/enviar-otp',{method:'GET'});
+        const d=await r.json();
+        if(!r.ok||d.erro){
+          msg.className='public-msg err';
+          msg.textContent=erroAmigavel(d.erro||'Não foi possível enviar o OTP automaticamente.');
+          return;
+        }
+        msg.className='public-msg ok';
+        msg.textContent=d.mensagem||'Código OTP enviado automaticamente.';
+        startOtpCooldown(60);
+      }catch(e){
+        msg.className='public-msg err';
+        msg.textContent='Falha de conexão ao enviar OTP automático.';
+      }
+    }
+
+    async function reenviarOtp(){
+      if((otpCooldownCtrl && otpCooldownCtrl.remaining)>0) return;
+      await enviarOtpAutomaticoDoc();
+    }
+
+    async function confirmar(token){
+      const nome=(document.getElementById('nome').value||'').trim();
+      const cargo=(document.getElementById('cargo').value||'').trim();
+      const cpf=(document.getElementById('cpf').value||'').replace(/[^0-9]/g,'');
+      const otp=(document.getElementById('otp').value||'').replace(/[^0-9]/g,'');
+      const aceite=!!document.getElementById('aceite').checked;
+      const msg=document.getElementById('msg');
+      const btn=document.getElementById('btn-confirmar');
+      const err1=validaEtapa1();
+      if(err1){
+        msg.className='public-msg err';
+        msg.textContent=err1;
+        return;
+      }
+      try{
+        SignatureCommon.buttonState(btn,'Validando assinatura...',true);
+        const r=await fetch('/api/doc/assinar/'+token+'/confirmar',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({nome,cargo,cpf,otp,aceite})
+        });
+        const d=await r.json();
+        if(!r.ok || d.erro){
+          msg.className='public-msg err';
+          msg.textContent=erroAmigavel(d.erro||'Falha ao confirmar assinatura.');
+          SignatureCommon.buttonState(btn,'Confirmar assinatura',false);
+          return;
+        }
+        if(d.otp_required){
+          msg.className='public-msg ok';
+          msg.textContent=d.mensagem||'Código OTP enviado. Informe o código para concluir a assinatura.';
+          const otpEl=document.getElementById('otp');
+          if(otpEl) otpEl.focus();
+          startOtpCooldown(60);
+          SignatureCommon.buttonState(btn,'Confirmar assinatura',false);
+          return;
+        }
+        msg.className='public-msg ok';
+        msg.textContent='Assinatura concluída com sucesso. Seu comprovante foi registrado com segurança.' + (d.whatsapp_enviado ? ' Cópia enviada no WhatsApp.' : '');
+        if(d.validacao_link){
+          setTimeout(()=>{ window.location.href=d.validacao_link; },900);
+        }
+      }catch(e){
+        msg.className='public-msg err';
+        msg.textContent='Erro de conexão ao confirmar assinatura.';
+        SignatureCommon.buttonState(btn,'Confirmar assinatura',false);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded',()=>{
+      if(DOC_ASS_TOKEN) enviarOtpAutomaticoDoc();
+    });
+  </script>
+</body>
+</html>
