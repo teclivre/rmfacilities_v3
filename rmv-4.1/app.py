@@ -3381,6 +3381,14 @@ def api_criar_cliente():
     kw={k:d[k] for k in cols if k in d}
     c=Cliente(numero=n,**kw); db.session.add(c); db.session.commit(); return jsonify(c.to_dict()),201
 
+@app.route('/api/clientes/<int:id>',methods=['DELETE'])
+@lr
+def api_deletar_cliente(id):
+    c=Cliente.query.get_or_404(id)
+    db.session.delete(c)
+    db.session.commit()
+    return jsonify({'ok':True})
+
 @app.route('/api/clientes/modelo')
 @lr
 def api_clientes_modelo():
