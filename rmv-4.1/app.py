@@ -3,6 +3,7 @@ import urllib.request
 import urllib.error
 import csv
 import zipfile
+import shutil
 # Corrige NameError: _strict_origin_check
 _strict_origin_check = True
 
