@@ -1806,6 +1806,9 @@ def funcionario_docs_whatsapp_habilitado(funcionario):
         ars=json.loads(funcionario.areas or '[]')
     except Exception:
         ars=[]
+    # Compatibilidade: quando não há áreas configuradas, não bloquear envio de documentos.
+    if not isinstance(ars,list) or not ars:
+        return True
     return 'documentos' in ars
 
 def _parse_competencias_holerite(texto,ano_padrao=None):
