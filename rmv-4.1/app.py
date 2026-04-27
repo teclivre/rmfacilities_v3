@@ -2485,7 +2485,7 @@ def can_access_request(path,method='GET'):
     if can_access_area(area): return True
     p=(path or '').lower()
     m=(method or 'GET').upper()
-    if p.startswith('/api/config/whatsapp') or p.startswith('/api/config/ia-whatsapp'):
+    if p.startswith('/api/config/whatsapp') or p.startswith('/api/config/ia-whatsapp') or p.startswith('/api/whatsapp/ia/'):
         if can_access_area('config'):
             return True
     if p.startswith('/api/backup'):
@@ -7384,7 +7384,7 @@ def api_ia_wa_cfg_save():
     return jsonify({'ok':True,'provider':provider,'model':model,'temperature':temp,'max_tokens':max_tokens,'warning':warn})
 
 @app.route('/api/whatsapp/ia/testar',methods=['POST'])
-@dr
+@lr
 def api_wa_ia_testar():
     d=request.json or {}
     txt=(d.get('texto') or '').strip()
