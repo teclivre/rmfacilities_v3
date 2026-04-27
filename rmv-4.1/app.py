@@ -2,6 +2,7 @@ import io
 import urllib.request
 import urllib.error
 import csv
+import zipfile
 # Corrige NameError: _strict_origin_check
 _strict_origin_check = True
 
@@ -380,7 +381,6 @@ class OrdemCompra(db.Model):
     valor=db.Column(db.Float,default=0)
     status=db.Column(db.String(50),default='Aberta')
     data_emissao=db.Column(db.String(10))
-    data_vencimento=db.Column(db.String(10))
     criado_por=db.Column(db.String(100))
     criado_em=db.Column(db.DateTime,default=utcnow)
     def to_dict(self):
