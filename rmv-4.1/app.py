@@ -36,7 +36,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 from functools import wraps
-from flask import session, url_for
+from flask import session, url_for, g
 
 def lr(f):
     @wraps(f)
