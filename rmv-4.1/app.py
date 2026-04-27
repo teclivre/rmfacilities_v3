@@ -1802,14 +1802,8 @@ def _detecta_pedido_holerite(texto):
 def funcionario_docs_whatsapp_habilitado(funcionario):
     if not funcionario:
         return False
-    try:
-        ars=json.loads(funcionario.areas or '[]')
-    except Exception:
-        ars=[]
-    # Compatibilidade: quando não há áreas configuradas, não bloquear envio de documentos.
-    if not isinstance(ars,list) or not ars:
-        return True
-    return 'documentos' in ars
+    # O envio de holerite/documentos para o próprio colaborador não deve depender de áreas.
+    return True
 
 def _parse_competencias_holerite(texto,ano_padrao=None):
     """Extrai uma ou mais competências (MM/YYYY) do texto.
