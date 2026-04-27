@@ -2485,6 +2485,9 @@ def can_access_request(path,method='GET'):
     if can_access_area(area): return True
     p=(path or '').lower()
     m=(method or 'GET').upper()
+    if p.startswith('/api/config/whatsapp') or p.startswith('/api/config/ia-whatsapp'):
+        if can_access_area('config'):
+            return True
     if p.startswith('/api/backup'):
         return True
     if m=='GET' and p.startswith('/api/clientes') and can_access_area('medicoes'):
