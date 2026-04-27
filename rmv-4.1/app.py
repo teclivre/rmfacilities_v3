@@ -8,11 +8,13 @@ _strict_origin_check = True
 
 
 
+
 from flask import Flask, request, jsonify, redirect, render_template, send_file
 
 import io
 _strict_origin_check = False
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
 import os
@@ -55,155 +57,14 @@ def _same_origin_request(req):
     origin=(req.headers.get('Origin') or '').rstrip('/').lower()
     referer=(req.headers.get('Referer') or '').lower()
     sec_fetch_site=(req.headers.get('Sec-Fetch-Site') or '').lower().strip()
-
-    # Corrige NameError: _strict_origin_check
-    _strict_origin_check = True
-
-    import io
-    import os
-    import re
-    import json
-    import hashlib
-    import hmac
-    import secrets
-    import base64
-    import time
-    import csv
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-    from email.mime.base import MIMEBase
-    from email import encoders
-    from werkzeug.utils import secure_filename
-    from datetime import datetime, timedelta, date
-    from zoneinfo import ZoneInfo
-    from flask import Flask, request, jsonify, redirect, render_template, send_file
-    from flask_sqlalchemy import SQLAlchemy
-    from sqlalchemy import text
-    from functools import wraps
-    from flask import session, url_for, g
-    from ponto_module import register_ponto_routes
-def localnow():
-    return datetime.now(APP_TZ).replace(tzinfo=None)
-
-# --- MOVE ENDPOINTS HERE ---
-@app.route('/api/empresas/<int:id>', methods=['PUT'])
-@lr
-def api_editar_empresa(id):
-    e = Empresa.query.get_or_404(id)
-    d = request.json or {}
-    if 'site' in d:
-        d['site'] = norm_url(d.get('site'))
-    if 'logo_url' in d:
-        d['logo_url'] = norm_url(d.get('logo_url'))
-    if 'cnpj' in d:
-        d['cnpj'] = norm_doc(d.get('cnpj'))
-    if 'cep' in d:
-        d['cep'] = norm_cep(d.get('cep'))
-    if 'telefone' in d:
-        d['telefone'] = norm_phone(d.get('telefone'))
-    if 'contato_telefone' in d:
-        d['contato_telefone'] = norm_phone(d.get('contato_telefone'))
-    cols = [c.name for c in Empresa.__table__.columns if c.name not in ['id', 'criado_em'] and hasattr(Empresa, c.name)]
-    for k in cols:
-        if k in d:
-            setattr(e, k, d[k])
-    db.session.commit()
-    return jsonify(e.to_dict())
-
-@app.route('/api/empresas/<int:id>', methods=['DELETE'])
-@lr
-def api_remover_empresa(id):
-    e = Empresa.query.get_or_404(id)
-    db.session.delete(e)
-    db.session.commit()
-    return jsonify({'ok': True})
-import io
-import urllib.request
-import urllib.error
-import csv
-# Corrige NameError: _strict_origin_check
-_strict_origin_check = True
-
-
-
-
-
-from flask import Flask, request, jsonify, redirect, render_template, send_file
-
-import io
-_strict_origin_check = False
-from werkzeug.security import generate_password_hash, check_password_hash
-from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import text
-import os
-import re
-import os, json, hashlib, hmac, secrets
-from datetime import datetime, timedelta, date
-from zoneinfo import ZoneInfo
-from ponto_module import register_ponto_routes
-
-
-# Flask app and DB initialization must come first
-
-app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
-app.secret_key = os.environ.get('SECRET_KEY', 'rmfacilities-2026')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///app.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
-
-from functools import wraps
-from flask import session, url_for
-
-def lr(f):
-    @wraps(f)
-    def w(*a,**k):
-        if 'uid' not in session: return redirect(url_for('login'))
-        if not can_access_request(request.path,request.method): return jsonify({'erro':'Acesso negado'}),403
-        if request.method in ('POST','PUT','PATCH','DELETE') and not _same_origin_request(request):
-            return jsonify({'erro':'Origem da requisição não permitida'}),403
-        return f(*a,**k)
-    return w
-
-APP_TZ=ZoneInfo('America/Sao_Paulo')
-
-def _same_origin_request(req):
-    global _strict_origin_check
-    if not _strict_origin_check:
+    if sec_fetch_site in ('same-origin', 'none', ''):
         return True
-    host=(req.host_url or '').rstrip('/').lower()
-    origin=(req.headers.get('Origin') or '').rstrip('/').lower()
-    referer=(req.headers.get('Referer') or '').lower()
-    sec_fetch_site=(req.headers.get('Sec-Fetch-Site') or '').lower().strip()
+    if origin and host and origin.startswith(host):
+        return True
+    if not origin and referer and referer.startswith(host):
+        return True
+    return False
 
-    # Corrige NameError: _strict_origin_check
-    _strict_origin_check = True
-
-    import io
-    import os
-    import re
-    import json
-    import hashlib
-    import hmac
-    import secrets
-    import base64
-    import time
-    import csv
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-    from email.mime.base import MIMEBase
-    from email import encoders
-    from werkzeug.utils import secure_filename
-    from datetime import datetime, timedelta, date
-    from zoneinfo import ZoneInfo
-    from flask import Flask, request, jsonify, redirect, render_template, send_file
-    from flask_sqlalchemy import SQLAlchemy
-    from sqlalchemy import text
-    from functools import wraps
-    from flask import session, url_for, g
-    from ponto_module import register_ponto_routes
 def localnow():
     return datetime.now(APP_TZ).replace(tzinfo=None)
 
@@ -3317,6 +3178,31 @@ def api_criar_empresa():
     db.session.add(e)
     db.session.commit()
     return jsonify(e.to_dict()),201
+
+@app.route('/api/empresas/<int:id>',methods=['PUT'])
+@lr
+def api_editar_empresa(id):
+    e=Empresa.query.get_or_404(id)
+    d=request.json or {}
+    if 'site' in d: d['site']=norm_url(d.get('site'))
+    if 'logo_url' in d: d['logo_url']=norm_url(d.get('logo_url'))
+    if 'cnpj' in d: d['cnpj']=norm_doc(d.get('cnpj'))
+    if 'cep' in d: d['cep']=norm_cep(d.get('cep'))
+    if 'telefone' in d: d['telefone']=norm_phone(d.get('telefone'))
+    if 'contato_telefone' in d: d['contato_telefone']=norm_phone(d.get('contato_telefone'))
+    cols=[c.name for c in Empresa.__table__.columns if c.name not in['id','criado_em'] and hasattr(Empresa,c.name)]
+    for k in cols:
+        if k in d: setattr(e,k,d[k])
+    db.session.commit()
+    return jsonify(e.to_dict())
+
+@app.route('/api/empresas/<int:id>',methods=['DELETE'])
+@lr
+def api_remover_empresa(id):
+    e=Empresa.query.get_or_404(id)
+    db.session.delete(e)
+    db.session.commit()
+    return jsonify({'ok':True})
 
 @app.route('/api/empresas/<int:id>/certificado',methods=['DELETE'])
 @lr
