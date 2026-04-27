@@ -7263,7 +7263,7 @@ def api_smtp_testar():
     except Exception as e: return jsonify({'erro':str(e)}),500
 
 @app.route('/api/config/whatsapp',methods=['GET'])
-@dr
+@lr
 def api_wa_cfg_get():
     b=wa_backup_cfg()
     return jsonify({
@@ -7278,7 +7278,7 @@ def api_wa_cfg_get():
     })
 
 @app.route('/api/config/whatsapp',methods=['POST'])
-@dr
+@lr
 def api_wa_cfg_save():
     d=request.json or {}
     for k in ['url','instancia','token']:
@@ -7296,7 +7296,7 @@ def api_wa_cfg_save():
     return jsonify({'ok':True})
 
 @app.route('/api/config/whatsapp/backup/testar',methods=['POST'])
-@dr
+@lr
 def api_wa_backup_testar():
     try:
         r=wa_backup_maybe_send(force=True)
@@ -7307,7 +7307,7 @@ def api_wa_backup_testar():
         return jsonify({'erro':str(e)}),500
 
 @app.route('/api/config/whatsapp/backup/gerar',methods=['POST'])
-@dr
+@lr
 def api_wa_backup_gerar():
     try:
         cfg=wa_backup_cfg()
@@ -7318,7 +7318,7 @@ def api_wa_backup_gerar():
         return jsonify({'erro':str(e)}),500
 
 @app.route('/api/config/whatsapp/backup/restaurar',methods=['POST'])
-@dr
+@lr
 def api_wa_backup_restaurar():
     arq=request.files.get('arquivo')
     if not arq:
@@ -7337,7 +7337,7 @@ def api_wa_backup_restaurar():
         return jsonify({'erro':str(e)}),500
 
 @app.route('/api/config/whatsapp/testar',methods=['POST'])
-@dr
+@lr
 def api_wa_testar():
     d=request.json or {}; numero=(d.get('numero') or '').strip()
     if not numero: return jsonify({'erro':'Informe o numero de destino'}),400
@@ -7347,13 +7347,13 @@ def api_wa_testar():
     except Exception as e: return jsonify({'erro':str(e)}),500
 
 @app.route('/api/config/ia-whatsapp',methods=['GET'])
-@dr
+@lr
 def api_ia_wa_cfg_get():
     d=ai_wa_cfg()
     return jsonify({'enabled':d['enabled'],'provider':d['provider'],'api_key':d['api_key'],'model':d['model'],'prompt':(d['prompt'] or DEFAULT_IA_WA_PROMPT),'temperature':d['temperature'],'max_tokens':d['max_tokens']})
 
 @app.route('/api/config/ia-whatsapp',methods=['POST'])
-@dr
+@lr
 def api_ia_wa_cfg_save():
     d=request.json or {}
     enabled='1' if str(d.get('enabled','0')).strip().lower() in ('1','true','yes','on') else '0'
