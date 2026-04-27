@@ -370,6 +370,22 @@ class Medicao(db.Model):
         d.setdefault('status','emitida')
         return d
 
+class OrdemCompra(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    numero=db.Column(db.String(30),nullable=False,unique=True)
+    empresa_id=db.Column(db.Integer,db.ForeignKey('empresa.id'),nullable=True)
+    solicitante=db.Column(db.String(200))
+    fornecedor=db.Column(db.String(200),nullable=False)
+    descricao=db.Column(db.Text)
+    valor=db.Column(db.Float,default=0)
+    status=db.Column(db.String(50),default='Aberta')
+    data_emissao=db.Column(db.String(10))
+    data_vencimento=db.Column(db.String(10))
+    criado_por=db.Column(db.String(100))
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    def to_dict(self):
+        return {c.name:getattr(self,c.name) for c in self.__table__.columns}
+
 class Funcionario(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     matricula=db.Column(db.String(30),index=True)
