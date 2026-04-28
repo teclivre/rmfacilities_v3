@@ -5635,6 +5635,26 @@ def api_envelope_del_arquivo(id,arq_id):
     return jsonify({'ok':True})
 
 
+@app.route('/api/envelopes/<int:id>/arquivos/<int:arq_id>/visualizar',methods=['GET'])
+@lr
+def api_envelope_visualizar_arquivo_admin(id,arq_id):
+    AssinaturaEnvelope.query.get_or_404(id)
+    arq=AssinaturaEnvelopeArquivo.query.filter_by(id=arq_id,envelope_id=id).first_or_404()
+    raw=(arq.caminho or '').strip()
+    cands=[raw]
+    if raw and not os.path.isabs(raw):
+        cands.append(os.path.join(UPLOAD_ROOT,raw))
+        cands.append(os.path.join(_get_uploads_base(),raw))
+    abs_path=''
+    for p in cands:
+        if p and os.path.exists(p):
+            abs_path=p
+            break
+    if not abs_path:
+        return jsonify({'erro':'Arquivo não encontrado'}),404
+    return send_file(abs_path,as_attachment=False,download_name=arq.nome_arquivo or os.path.basename(abs_path))
+
+
 @app.route('/api/envelopes/<int:id>/signatarios',methods=['POST'])
 @lr
 def api_envelope_add_signatario(id):

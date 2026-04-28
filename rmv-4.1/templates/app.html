@@ -1004,27 +1004,33 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
             <div class="f" style="margin-bottom:0">
               <label>Página do carimbo</label>
-              <input type="number" id="stamp-pagina" min="1" value="1" style="max-width:90px" oninput="previewStampPos()">
+              <input type="number" id="stamp-pagina" min="1" value="1" style="max-width:90px" oninput="previewStampPos();carregarPreviewCarimbo()">
+            </div>
+            <div class="f" style="margin-bottom:0">
+              <label>Documento base</label>
+              <select id="stamp-arquivo" onchange="carregarPreviewCarimbo()">
+                <option value="">Selecione...</option>
+              </select>
             </div>
           </div>
           <div id="stamp-pos-area" style="margin-top:10px">
-            <p style="font-size:12px;color:#555;margin:0 0 6px 0">Clique na prévia abaixo para posicionar o carimbo:</p>
-            <div style="position:relative;display:inline-block;border:1px solid #c8d8f0;border-radius:8px;overflow:hidden;cursor:crosshair;background:#f0f4fa"
-                 id="stamp-preview-area" onclick="setStampPosFromClick(event)" title="Clique para posicionar o carimbo">
-              <!-- miniatura de uma página A4 (proporcional) -->
-              <div style="width:180px;height:254px;background:white;position:relative" id="stamp-page-preview">
-                <div id="stamp-indicator" style="position:absolute;bottom:10%;left:60%;transform:translate(-50%,50%);
-                     background:rgba(30,60,120,0.13);border:2px dashed #3060c0;border-radius:4px;
-                     width:68px;height:28px;pointer-events:none;display:flex;align-items:center;justify-content:center">
-                  <span style="font-size:9px;color:#3060c0;font-weight:700">CARIMBO</span>
-                </div>
+            <p style="font-size:12px;color:#555;margin:0 0 6px 0">Abra o documento abaixo e clique no ponto exato onde o carimbo deve aparecer:</p>
+            <div id="stamp-preview-wrap" style="position:relative;display:inline-block;width:min(100%,520px);height:700px;border:1px solid #c8d8f0;border-radius:8px;overflow:hidden;background:#f0f4fa">
+              <iframe id="stamp-doc-frame" title="Prévia real do documento" style="width:100%;height:100%;border:none;background:#fff;pointer-events:none"></iframe>
+              <div id="stamp-click-layer" style="position:absolute;inset:0;cursor:crosshair" onclick="setStampPosFromClick(event)"></div>
+              <div id="stamp-indicator" style="position:absolute;bottom:10%;left:60%;transform:translate(-50%,50%);
+                   background:rgba(30,60,120,0.13);border:2px dashed #3060c0;border-radius:4px;
+                   width:68px;height:28px;pointer-events:none;display:flex;align-items:center;justify-content:center">
+                <span style="font-size:9px;color:#3060c0;font-weight:700">CARIMBO</span>
               </div>
             </div>
+            <div id="stamp-preview-msg" style="margin-top:6px;font-size:12px;color:#6b7a90"></div>
             <div style="display:flex;gap:12px;margin-top:8px;align-items:center;font-size:12px;flex-wrap:wrap">
               <span>X: <strong id="stamp-x-val">60</strong>%</span>
               <span>Y: <strong id="stamp-y-val">10</strong>%</span>
               <input type="hidden" id="stamp-x-pct" value="60">
               <input type="hidden" id="stamp-y-pct" value="10">
+              <button class="btn b-sm" style="background:#eef6ff;color:#205d8a;border:1px solid #c5d9f0" onclick="carregarPreviewCarimbo()">Atualizar prévia</button>
               <button class="btn b-sm b-az" onclick="salvarStampConfig()">Salvar posição</button>
             </div>
           </div>
@@ -4917,7 +4923,7 @@ initTheme();
 init();
 
 // ══ ASSINATURAS ══
-let _asiTipo='funcionario', _asiEnvelopeId=null, _asiFuncionarios=[];
+let _asiTipo='funcionario', _asiEnvelopeId=null, _asiFuncionarios=[], _asiEnvelopeArquivos=[];
 let _asiNomeAssinadoPadrao='documento ASSINADO.pdf';
 
 function initAssinaturas(){
@@ -5016,6 +5022,16 @@ async function recarregarDetalheEnvelope(){
           </tr>`).join('')}
         </tbody></table></div>`;
     }
+    _asiEnvelopeArquivos=Array.isArray(env.arquivos)?env.arquivos:[];
+    const selArq=document.getElementById('stamp-arquivo');
+    if(selArq){
+      const oldVal=selArq.value||'';
+      selArq.innerHTML='<option value="">Selecione...</option>'+_asiEnvelopeArquivos
+        .map(a=>`<option value="${a.id}">${a.nome_arquivo||('Arquivo #'+a.id)}</option>`).join('');
+      const hasOld=_asiEnvelopeArquivos.some(a=>String(a.id)===String(oldVal));
+      if(hasOld) selArq.value=oldVal;
+      else if(_asiEnvelopeArquivos.length) selArq.value=String(_asiEnvelopeArquivos[0].id);
+    }
     // Signatários
     const sigBox=document.getElementById('asi-sig-lista');
     if(!env.signatarios||!env.signatarios.length){
@@ -5050,6 +5066,7 @@ async function recarregarDetalheEnvelope(){
     if(btnReativar) btnReativar.style.display=(env.status==='cancelado')?'':'none';
     if(btnExcluir) btnExcluir.style.display=(env.status!=='concluido')?'':'none';
     if(btnEnviar) btnEnviar.style.display=(env.status==='cancelado'||env.status==='concluido')?'none':'';
+    carregarPreviewCarimbo();
   }catch(e){ showSt('st-assinaturas','Erro ao carregar documento.',true); }
 }
 
@@ -5329,7 +5346,7 @@ function previewStampPos(){
 }
 
 function setStampPosFromClick(e){
-  const area=document.getElementById('stamp-page-preview');
+  const area=document.getElementById('stamp-click-layer');
   if(!area) return;
   const rect=area.getBoundingClientRect();
   const xPct=Math.round(((e.clientX-rect.left)/rect.width)*100);
@@ -5346,6 +5363,37 @@ function setStampPosFromClick(e){
     ind.style.bottom=yClamped+'%';
     ind.style.transform='translate(-50%,50%)';
   }
+}
+
+function _nomeArquivoEnvelope(arqId){
+  const idNum=parseInt(arqId||'0',10);
+  const a=_asiEnvelopeArquivos.find(x=>parseInt(x.id,10)===idNum);
+  return (a&&a.nome_arquivo)||'';
+}
+
+function carregarPreviewCarimbo(){
+  const msg=document.getElementById('stamp-preview-msg');
+  const frame=document.getElementById('stamp-doc-frame');
+  const selArq=document.getElementById('stamp-arquivo');
+  const pg=Math.max(1,parseInt(document.getElementById('stamp-pagina')?.value||'1',10)||1);
+  if(!frame||!selArq||!_asiEnvelopeId){
+    if(msg) msg.textContent='';
+    return;
+  }
+  const arqId=parseInt(selArq.value||'0',10);
+  if(!arqId){
+    frame.src='about:blank';
+    if(msg) msg.textContent='Adicione um documento ao envelope para posicionar o carimbo.';
+    return;
+  }
+  const nome=(_nomeArquivoEnvelope(arqId)||'').toLowerCase();
+  if(nome && !nome.endsWith('.pdf')){
+    frame.src='about:blank';
+    if(msg) msg.textContent='Prévia com posicionamento exato disponível para PDF.';
+    return;
+  }
+  frame.src=`/api/envelopes/${_asiEnvelopeId}/arquivos/${arqId}/visualizar?_=${Date.now()}#page=${pg}&zoom=page-width`;
+  if(msg) msg.textContent='Documento aberto para posicionamento. Clique na área desejada para o carimbo.';
 }
 
 async function salvarStampConfig(){
