@@ -14,13 +14,14 @@ function abrirModalFatDetalhe(id){
   api('/api/medicoes/'+id).then(m=>{
     let html=`<div style='font-size:18px;font-weight:700;margin-bottom:8px'>Fatura Nº ${m.numero||''}</div>`;
     html+=`<div><b>Cliente:</b> ${m.cliente_nome||''} (${fmtDoc(m.cliente_cnpj)||''})</div>`;
-    html+=`<div><b>Empresa:</b> ${m.empresa_nome||''}</div>`;
+    const _empNome=(m.empresa_nome&&!m.empresa_nome.toLowerCase().startsWith('selecione'))?m.empresa_nome:'';
+    html+=`<div><b>Empresa:</b> ${_empNome||'—'}</div>`;
     html+=`<div><b>Mês Ref.:</b> ${m.mes_ref||''}</div>`;
     html+=`<div><b>Emissão:</b> ${m.dt_emissao||''} <b>Vencimento:</b> ${m.dt_vencimento||''}</div>`;
     html+=`<div><b>Valor:</b> <span style='color:var(--verde);font-weight:700'>${brl(m.valor_bruto)}</span></div>`;
     html+=`<div><b>Status:</b> <span class='pill'>${m.status||''}</span></div>`;
     if(m.svcs&&m.svcs.length){
-      html+='<div style="margin-top:10px"><b>Serviços:</b><ul style="margin:0 0 0 18px">'+m.svcs.map(s=>`<li>${s}</li>`).join('')+'</ul></div>';
+      html+='<div style="margin-top:10px"><b>Serviços:</b><ul style="margin:0 0 0 18px">'+m.svcs.map(s=>`<li>${(s&&s.desc)||''} ${(s&&s.vtot)?'— '+brl(s.vtot):''}</li>`).join('')+'</ul></div>';
     }
     if(m.observacoes){html+=`<div style='margin-top:10px'><b>Observações:</b> ${m.observacoes}</div>`;}
     html+=`<div style='margin-top:10px'><button class='btn b-gh b-sm' onclick='editarFatura(${m.id})'>Editar</button> <button class='btn b-ghr b-sm' onclick='cancelarFatura(${m.id})'>Cancelar</button></div>`;
@@ -2092,7 +2093,7 @@ async function registrar(){
     cliente_id:cliAtual?.id,cliente_nome:cliAtual?.nome||document.getElementById('bcli').value||'',
     cliente_cnpj:document.getElementById('c-cnpj').value,cliente_end:document.getElementById('c-end').value,
     cliente_resp:document.getElementById('c-resp').value,
-    empresa_id:parseInt(ee.value)||null,empresa_nome:ee.options[ee.selectedIndex]?.text||'',
+    empresa_id:parseInt(ee.value)||null,empresa_nome:parseInt(ee.value)?(ee.options[ee.selectedIndex]?.text||''):'',
     mes_ref:document.getElementById('mesref').value,dt_emissao:document.getElementById('dtem').value,
     dt_vencimento:document.getElementById('dtvenc').value,servicos:svcs,
     observacoes:document.getElementById('obs').value,
@@ -2110,7 +2111,7 @@ async function gerarPDF(){
   const d={numero:document.getElementById('nmed').value,tipo:document.getElementById('tipo-doc').value,
     mes_ref:document.getElementById('mesref').value,dt_emissao:document.getElementById('dtem').value,
     dt_vencimento:document.getElementById('dtvenc').value,
-    empresa_id:parseInt(ee.value)||null,empresa_nome:ee.options[ee.selectedIndex]?.text||'',
+    empresa_id:parseInt(ee.value)||null,empresa_nome:parseInt(ee.value)?(ee.options[ee.selectedIndex]?.text||''):'',
     cliente_nome:cNome,cliente_cnpj:document.getElementById('c-cnpj').value,
     cliente_end:document.getElementById('c-end').value,cliente_resp:document.getElementById('c-resp').value,
     servicos:svcs,observacoes:document.getElementById('obs').value,

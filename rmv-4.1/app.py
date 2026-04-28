@@ -403,6 +403,11 @@ class Medicao(db.Model):
         d['svcs']=json.loads(self.servicos) if self.servicos else []
         d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
         d.setdefault('status','emitida')
+        # Corrige empresa_nome vazia ou com texto de placeholder para registros antigos
+        nome=d.get('empresa_nome') or ''
+        if (not nome or nome.lower().startswith('selecione')) and self.empresa_id:
+            emp=db.session.get(Empresa, self.empresa_id)
+            d['empresa_nome']=emp.nome if emp else ''
         return d
 
 class OrdemCompra(db.Model):
