@@ -8260,6 +8260,10 @@ with app.app_context():
         'assinatura_doc_hash VARCHAR(128)',
         'assinatura_crypto_ok BOOLEAN DEFAULT 0',
         'assinatura_cert_subject VARCHAR(255)',
+        'stamp_habilitado BOOLEAN DEFAULT 0',
+        'stamp_pagina INTEGER DEFAULT 1',
+        'stamp_x_pct REAL DEFAULT 60.0',
+        'stamp_y_pct REAL DEFAULT 10.0',
     ])
     ensure_cols('assinatura_envelope',[
         'id INTEGER PRIMARY KEY AUTOINCREMENT',
