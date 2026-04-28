@@ -317,18 +317,26 @@ async function carregarDocumentoAtual(docId){
   pages.innerHTML='<div class="viewer-loading">Carregando documento...</div>';
   showViewerMsg('Documento carregando...','ok');
   try{
-    const r=await fetch(url,{cache:'no-store'});
-    if(!r.ok) throw new Error('Falha ao carregar documento.');
-    const blob=await r.blob();
-    const isPdf=(blob.type||'').toLowerCase().includes('pdf') || isPdfName(nome);
-    if(isPdf && window.pdfjsLib){
+    // Tenta PDF.js se disponível
+    if(isPdfName(nome) && window.pdfjsLib){
+      const r=await fetch(url,{cache:'no-store'});
+      if(!r.ok) throw new Error('Falha ao carregar documento.');
+      const blob=await r.blob();
       const ok=await renderPdfIntoViewer(await blob.arrayBuffer(),docId);
       if(ok){
-        showViewerMsg('Documento aberto na página. Role até o final para liberar a assinatura.','ok');
+        showViewerMsg('Documento aberto. Role até o final para liberar a assinatura.','ok');
         return;
       }
     }
-    // fallback para arquivos não-PDF
+    // Fallback iframe para PDFs (sem PDF.js ou se PDF.js falhou)
+    if(isPdfName(nome)){
+      pages.innerHTML=`<iframe src="${url}" style="width:100%;min-height:560px;border:none;border-radius:8px;display:block" onload="markDocViewed(${docId});showViewerMsg('Documento visualizado com sucesso.','ok')"></iframe>`;
+      showViewerMsg('Documento aberto. Visualize o conteúdo para liberar a assinatura.','ok');
+      return;
+    }
+    // Arquivos não-PDF: abre em nova aba
+    const r2=await fetch(url,{cache:'no-store'});
+    if(!r2.ok) throw new Error('Falha ao carregar documento.');
     pages.innerHTML=`<div class="viewer-loading">Este arquivo não é PDF. Abra para visualizar e liberar a assinatura.</div>
       <div style="text-align:center;padding:8px 0 12px"><a class="public-btn public-btn-secondary" href="${url}" target="_blank" rel="noopener">Abrir documento</a></div>`;
     markDocViewed(docId);
@@ -425,7 +433,6 @@ async function confirmarAssinatura(){
 }
 
 document.addEventListener('DOMContentLoaded',()=>{
-  if(TOKEN) enviarOtpAutomaticoEnvelope();
   atualizarProgressoDocs();
   if(DOCS.length>0){
     abrirDocumento(DOCS[0]);
