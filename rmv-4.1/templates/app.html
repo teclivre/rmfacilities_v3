@@ -991,6 +991,46 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
 
         <!-- Ações -->
+        <!-- Carimbo de Assinatura -->
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-header"><span class="card-title">🔏 Carimbo de assinatura no PDF</span></div>
+          <p style="font-size:12px;color:#666;margin:4px 0 10px 0">Quando habilitado, um carimbo visual com nome, data e código será inserido no PDF gerado na posição configurada.</p>
+          <div class="g3" style="align-items:start">
+            <div class="f" style="margin-bottom:0">
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+                <input type="checkbox" id="stamp-hab" onchange="previewStampPos()" style="width:16px;height:16px">
+                Habilitar carimbo de assinatura
+              </label>
+            </div>
+            <div class="f" style="margin-bottom:0">
+              <label>Página do carimbo</label>
+              <input type="number" id="stamp-pagina" min="1" value="1" style="max-width:90px" oninput="previewStampPos()">
+            </div>
+          </div>
+          <div id="stamp-pos-area" style="margin-top:10px">
+            <p style="font-size:12px;color:#555;margin:0 0 6px 0">Clique na prévia abaixo para posicionar o carimbo:</p>
+            <div style="position:relative;display:inline-block;border:1px solid #c8d8f0;border-radius:8px;overflow:hidden;cursor:crosshair;background:#f0f4fa"
+                 id="stamp-preview-area" onclick="setStampPosFromClick(event)" title="Clique para posicionar o carimbo">
+              <!-- miniatura de uma página A4 (proporcional) -->
+              <div style="width:180px;height:254px;background:white;position:relative" id="stamp-page-preview">
+                <div id="stamp-indicator" style="position:absolute;bottom:10%;left:60%;transform:translate(-50%,50%);
+                     background:rgba(30,60,120,0.13);border:2px dashed #3060c0;border-radius:4px;
+                     width:68px;height:28px;pointer-events:none;display:flex;align-items:center;justify-content:center">
+                  <span style="font-size:9px;color:#3060c0;font-weight:700">CARIMBO</span>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;gap:12px;margin-top:8px;align-items:center;font-size:12px;flex-wrap:wrap">
+              <span>X: <strong id="stamp-x-val">60</strong>%</span>
+              <span>Y: <strong id="stamp-y-val">10</strong>%</span>
+              <input type="hidden" id="stamp-x-pct" value="60">
+              <input type="hidden" id="stamp-y-pct" value="10">
+              <button class="btn b-sm b-az" onclick="salvarStampConfig()">Salvar posição</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ações -->
         <div class="card">
           <div class="card-header"><span class="card-title">⚡ Ações</span></div>
           <div class="g2" style="margin:10px 0 4px 0">
@@ -1006,6 +1046,9 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div class="brow" style="gap:10px;padding:8px 0">
             <button class="btn b-az" onclick="enviarEnvelopeAtual()" id="btn-enviar-envelope">📨 Enviar para assinar</button>
             <button class="btn" style="background:#1a7a45;color:#fff;border:none;cursor:pointer" onclick="abrirValidacaoEnvelope()">🔍 Página de validação</button>
+            <button class="btn" id="btn-cancelar-envelope" style="background:#e67e22;color:#fff;border:none;cursor:pointer;display:none" onclick="cancelarEnvelopeAtual()">🚫 Bloquear</button>
+            <button class="btn" id="btn-reativar-envelope" style="background:#2980b9;color:#fff;border:none;cursor:pointer;display:none" onclick="reativarEnvelopeAtual()">▶ Reativar</button>
+            <button class="btn" id="btn-excluir-envelope" style="background:#c0392b;color:#fff;border:none;cursor:pointer" onclick="excluirEnvelopeAtual()">🗑 Excluir</button>
           </div>
         </div>
       </div>
@@ -4997,6 +5040,16 @@ async function recarregarDetalheEnvelope(){
           </tr>`).join('')}
         </tbody></table></div>`;
     }
+    _carregarStampConfig(env);
+    // Botões de ação conforme status
+    const btnCancelar=document.getElementById('btn-cancelar-envelope');
+    const btnReativar=document.getElementById('btn-reativar-envelope');
+    const btnExcluir=document.getElementById('btn-excluir-envelope');
+    const btnEnviar=document.getElementById('btn-enviar-envelope');
+    if(btnCancelar) btnCancelar.style.display=(env.status!=='cancelado'&&env.status!=='concluido')?'':'none';
+    if(btnReativar) btnReativar.style.display=(env.status==='cancelado')?'':'none';
+    if(btnExcluir) btnExcluir.style.display=(env.status!=='concluido')?'':'none';
+    if(btnEnviar) btnEnviar.style.display=(env.status==='cancelado'||env.status==='concluido')?'none':'';
   }catch(e){ showSt('st-assinaturas','Erro ao carregar documento.',true); }
 }
 
@@ -5267,6 +5320,112 @@ function abrirValidacaoEnvelope(){
     if(env.codigo) window.open(`/envelope/validar/${env.codigo}`,'_blank');
     else alert('Envelope sem código de validação. Salve primeiro.');
   });
+}
+
+function previewStampPos(){
+  const hab=document.getElementById('stamp-hab')?.checked;
+  const area=document.getElementById('stamp-pos-area');
+  if(area) area.style.display=hab?'block':'none';
+}
+
+function setStampPosFromClick(e){
+  const area=document.getElementById('stamp-page-preview');
+  if(!area) return;
+  const rect=area.getBoundingClientRect();
+  const xPct=Math.round(((e.clientX-rect.left)/rect.width)*100);
+  const yPctFromBottom=Math.round((1-(e.clientY-rect.top)/rect.height)*100);
+  const xClamped=Math.max(0,Math.min(62,xPct));
+  const yClamped=Math.max(2,Math.min(90,yPctFromBottom));
+  document.getElementById('stamp-x-pct').value=xClamped;
+  document.getElementById('stamp-y-pct').value=yClamped;
+  document.getElementById('stamp-x-val').textContent=xClamped;
+  document.getElementById('stamp-y-val').textContent=yClamped;
+  const ind=document.getElementById('stamp-indicator');
+  if(ind){
+    ind.style.left=xClamped+'%';
+    ind.style.bottom=yClamped+'%';
+    ind.style.transform='translate(-50%,50%)';
+  }
+}
+
+async function salvarStampConfig(){
+  if(!_asiEnvelopeId) return;
+  const hab=document.getElementById('stamp-hab')?.checked||false;
+  const pagina=parseInt(document.getElementById('stamp-pagina')?.value||'1')||1;
+  const xPct=parseFloat(document.getElementById('stamp-x-pct')?.value||'60')||60;
+  const yPct=parseFloat(document.getElementById('stamp-y-pct')?.value||'10')||10;
+  try{
+    const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/stamp`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({stamp_habilitado:hab,stamp_pagina:pagina,stamp_x_pct:xPct,stamp_y_pct:yPct})
+    });
+    const j=await r.json();
+    if(!r.ok){ alert(j.erro||'Erro ao salvar configuração de carimbo.'); return; }
+    showSt('assinaturas','Configuração de carimbo salva com sucesso.','ok');
+  }catch(e){
+    alert('Erro de conexão ao salvar carimbo.');
+  }
+}
+
+async function cancelarEnvelopeAtual(){
+  if(!_asiEnvelopeId) return;
+  if(!confirm('Bloquear este envelope? Os signatários não poderão mais assinar. Você pode reativar depois.')) return;
+  try{
+    const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/cancelar`,{method:'POST'});
+    const j=await r.json();
+    if(!r.ok){ alert(j.erro||'Erro ao bloquear envelope.'); return; }
+    showSt('assinaturas','Envelope bloqueado com sucesso.','ok');
+    await recarregarDetalheEnvelope();
+  }catch(e){ alert('Erro de conexão.'); }
+}
+
+async function reativarEnvelopeAtual(){
+  if(!_asiEnvelopeId) return;
+  if(!confirm('Reativar este envelope?')) return;
+  try{
+    const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/reativar`,{method:'POST'});
+    const j=await r.json();
+    if(!r.ok){ alert(j.erro||'Erro ao reativar envelope.'); return; }
+    showSt('assinaturas','Envelope reativado.','ok');
+    await recarregarDetalheEnvelope();
+  }catch(e){ alert('Erro de conexão.'); }
+}
+
+async function excluirEnvelopeAtual(){
+  if(!_asiEnvelopeId) return;
+  if(!confirm('EXCLUIR este envelope permanentemente? Esta ação não pode ser desfeita.')) return;
+  try{
+    const r=await fetch(`/api/envelopes/${_asiEnvelopeId}`,{method:'DELETE'});
+    const j=await r.json();
+    if(!r.ok){ alert(j.erro||'Erro ao excluir.'); return; }
+    showSt('assinaturas','Envelope excluído.','ok');
+    document.getElementById('asi-detail-panel').style.display='none';
+    _asiEnvelopeId=null;
+    await carregarListaEnvelopes?.();
+  }catch(e){ alert('Erro de conexão.'); }
+}
+
+function _carregarStampConfig(env){
+  const hab=document.getElementById('stamp-hab');
+  const pagina=document.getElementById('stamp-pagina');
+  const xPct=document.getElementById('stamp-x-pct');
+  const yPct=document.getElementById('stamp-y-pct');
+  if(hab) hab.checked=!!env.stamp_habilitado;
+  if(pagina) pagina.value=env.stamp_pagina||1;
+  const xVal=parseFloat(env.stamp_x_pct||60);
+  const yVal=parseFloat(env.stamp_y_pct||10);
+  if(xPct) xPct.value=xVal;
+  if(yPct) yPct.value=yVal;
+  document.getElementById('stamp-x-val').textContent=Math.round(xVal);
+  document.getElementById('stamp-y-val').textContent=Math.round(yVal);
+  const ind=document.getElementById('stamp-indicator');
+  if(ind){
+    ind.style.left=Math.max(0,Math.min(62,xVal))+'%';
+    ind.style.bottom=Math.max(2,Math.min(90,yVal))+'%';
+    ind.style.transform='translate(-50%,50%)';
+  }
+  previewStampPos();
 }
 </script>
 <script src="/static/js/app-ponto.js"></script>

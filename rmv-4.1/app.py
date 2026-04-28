@@ -398,6 +398,10 @@ class Medicao(db.Model):
     assinatura_cert_subject=db.Column(db.String(255))
     criado_em=db.Column(db.DateTime,default=utcnow)
     criado_por=db.Column(db.String(100))
+    stamp_habilitado=db.Column(db.Boolean,default=False)
+    stamp_pagina=db.Column(db.Integer,default=1)
+    stamp_x_pct=db.Column(db.Float,default=60.0)
+    stamp_y_pct=db.Column(db.Float,default=10.0)
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         d['svcs']=json.loads(self.servicos) if self.servicos else []
@@ -422,6 +426,7 @@ class OrdemCompra(db.Model):
     data_emissao=db.Column(db.String(10))
     criado_por=db.Column(db.String(100))
     criado_em=db.Column(db.DateTime,default=utcnow)
+    ass_assinatura_img=db.Column(db.Text)
     def to_dict(self):
         return {c.name:getattr(self,c.name) for c in self.__table__.columns}
 
@@ -5147,19 +5152,32 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
 
 
 def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
-    """Estampa rodapé de auditoria em todos os PDFs do envelope e adiciona página de auditoria."""
+    """Estampa rodapé + carimbo de signatários nos PDFs do envelope e adiciona página de auditoria."""
     try:
         from pypdf import PdfReader, PdfWriter
     except ImportError:
         from PyPDF2 import PdfReader, PdfWriter
     from reportlab.pdfgen import canvas as rl_canvas
+
     from reportlab.graphics.barcode import qr as qr_code
     from reportlab.graphics.shapes import Drawing
     from reportlab.graphics import renderPDF
+    import base64 as _b64
 
     writer=PdfWriter()
     pages_added=0
     footer_qr_link=f"{url_root}/envelope/validar/{envelope.codigo}" if getattr(envelope,'codigo',None) else ''
+    stamp_habilitado=bool(getattr(envelope,'stamp_habilitado',False))
+    stamp_pagina=int(getattr(envelope,'stamp_pagina',1) or 1)
+    stamp_x_pct=float(getattr(envelope,'stamp_x_pct',60.0) or 60.0)
+    stamp_y_pct=float(getattr(envelope,'stamp_y_pct',10.0) or 10.0)
+    stamp_signatarios=[]
+    assinatura_img_map={}
+    if stamp_habilitado:
+        stamp_signatarios=AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=envelope.id,status='assinado').all()
+        for s in stamp_signatarios:
+            if getattr(s,'ass_assinatura_img',None):
+                assinatura_img_map[s.id]=s.ass_assinatura_img
 
     def _resolve_abs_path(caminho):
         raw=(caminho or '').strip()
@@ -5174,6 +5192,93 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
                 return p
         return ''
 
+    def _make_footer_overlay(w,h):
+        ov=io.BytesIO()
+        c=rl_canvas.Canvas(ov,pagesize=(w,h))
+        c.setFillColorRGB(0.93,0.95,0.99)
+        c.rect(0,0,w,40,fill=1,stroke=0)
+        text_x=8
+        if footer_qr_link:
+            try:
+                qr_widget=qr_code.QrCodeWidget(footer_qr_link)
+                b=qr_widget.getBounds()
+                bw=max(1,b[2]-b[0]); bh=max(1,b[3]-b[1])
+                sz=34
+                qr_draw=Drawing(sz,sz,transform=[sz/bw,0,0,sz/bh,0,0])
+                qr_draw.add(qr_widget)
+                renderPDF.draw(qr_draw,c,5,4)
+                text_x=44
+            except Exception:
+                text_x=8
+        c.setFillColorRGB(0.13,0.36,0.54)
+        c.setFont('Helvetica',8)
+        c.drawString(text_x,22,footer_text)
+        c.save(); ov.seek(0)
+        return ov.getvalue()
+
+    def _make_stamp_overlay(w,h,sigs,img_map,x_pct,y_pct):
+        """Gera overlay com carimbos de assinatura posicionados na página."""
+        if not sigs:
+            return None
+        ov=io.BytesIO()
+        c=rl_canvas.Canvas(ov,pagesize=(w,h))
+        stamp_w=w*0.38
+        stamp_h=62.0
+        gap=5.0
+        x=w*(x_pct/100.0)
+        x=max(0,min(x,w-stamp_w-4))
+        y_base=h*(y_pct/100.0)
+        # empilha stamps para cima a partir de y_base
+        for i,sig in enumerate(sigs):
+            y_bottom=y_base+(i*(stamp_h+gap))
+            if y_bottom+stamp_h>h:
+                break
+            # fundo branco com borda azul
+            c.setFillColorRGB(0.97,0.98,1.0)
+            c.setStrokeColorRGB(0.55,0.70,0.90)
+            c.roundRect(x,y_bottom,stamp_w,stamp_h,5,fill=1,stroke=1)
+            # barra lateral azul esquerda
+            c.setFillColorRGB(0.18,0.40,0.72)
+            c.rect(x,y_bottom,3,stamp_h,fill=1,stroke=0)
+            # label SIGNATÁRIO top-right
+            c.setFillColorRGB(0.18,0.40,0.72)
+            c.setFont('Helvetica-Bold',5.5)
+            lbl='SIGNATÁRIO'
+            lw=c.stringWidth(lbl,'Helvetica-Bold',5.5)
+            c.drawString(x+stamp_w-lw-5,y_bottom+stamp_h-9,lbl)
+            # imagem de assinatura (se disponível)
+            text_x=x+8
+            img_b64=img_map.get(sig.id)
+            if img_b64:
+                try:
+                    from reportlab.lib.utils import ImageReader
+                    raw=img_b64.split(',')[-1] if ',' in img_b64 else img_b64
+                    img_bytes=_b64.b64decode(raw)
+                    img_reader=ImageReader(io.BytesIO(img_bytes))
+                    img_h_pt=28; img_w_pt=62
+                    c.drawImage(img_reader,x+5,y_bottom+stamp_h-42,width=img_w_pt,height=img_h_pt,
+                                preserveAspectRatio=True,mask='auto')
+                    text_x=x+8
+                except Exception:
+                    pass
+            # texto do signatário
+            nome=(sig.nome or '').strip()[:38]
+            data_str=sig.ass_em.strftime('%d/%m/%Y %H:%M') if sig.ass_em else ''
+            codigo=('#'+(sig.ass_codigo or '')[:16])
+            c.setFillColorRGB(0.08,0.18,0.38)
+            c.setFont('Helvetica',6.5)
+            c.drawString(text_x,y_bottom+17,'Assinado eletronicamente por')
+            c.setFont('Helvetica-Bold',7)
+            c.drawString(text_x,y_bottom+9,nome)
+            c.setFont('Helvetica',6.5)
+            c.drawString(text_x,y_bottom+2,f'Data: {data_str}')
+            c.setFillColorRGB(0.45,0.52,0.65)
+            c.setFont('Helvetica',5.5)
+            c.drawString(text_x+stamp_w*0.35,y_bottom+stamp_h-10,codigo)
+        c.save(); ov.seek(0)
+        return ov.getvalue()
+
+    file_idx=0
     for arq in arquivos:
         abs_path=_resolve_abs_path(arq.caminho)
         if not abs_path:
@@ -5181,37 +5286,27 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
         try:
             with open(abs_path,'rb') as fh:
                 reader=PdfReader(fh)
-                for page in reader.pages:
+                n_pages=len(reader.pages)
+                stamp_page_idx=min(stamp_pagina,n_pages)-1  # 0-based
+                for page_idx,page in enumerate(reader.pages):
                     try:
                         w=float(page.mediabox.width)
                         h=float(page.mediabox.height)
-                        ov=io.BytesIO()
-                        c=rl_canvas.Canvas(ov,pagesize=(w,h))
-                        c.setFillColorRGB(0.93,0.95,0.99)
-                        c.rect(0,0,w,40,fill=1,stroke=0)
-                        text_x=8
-                        if footer_qr_link:
-                            try:
-                                qr_widget=qr_code.QrCodeWidget(footer_qr_link)
-                                b=qr_widget.getBounds()
-                                bw=max(1,b[2]-b[0]); bh=max(1,b[3]-b[1])
-                                sz=34
-                                qr_draw=Drawing(sz,sz,transform=[sz/bw,0,0,sz/bh,0,0])
-                                qr_draw.add(qr_widget)
-                                renderPDF.draw(qr_draw,c,5,4)
-                                text_x=44
-                            except Exception:
-                                text_x=8
-                        c.setFillColorRGB(0.13,0.36,0.54)
-                        c.setFont('Helvetica',8)
-                        c.drawString(text_x,22,footer_text)
-                        c.save(); ov.seek(0)
-                        ov_page=PdfReader(ov).pages[0]
-                        page.merge_page(ov_page)
+                        # footer overlay
+                        footer_bytes=_make_footer_overlay(w,h)
+                        footer_page=PdfReader(io.BytesIO(footer_bytes)).pages[0]
+                        page.merge_page(footer_page)
+                        # stamp overlay (first arquivo, target page only)
+                        if stamp_habilitado and stamp_signatarios and file_idx==0 and page_idx==stamp_page_idx:
+                            stamp_bytes=_make_stamp_overlay(w,h,stamp_signatarios,assinatura_img_map,stamp_x_pct,stamp_y_pct)
+                            if stamp_bytes:
+                                stamp_page=PdfReader(io.BytesIO(stamp_bytes)).pages[0]
+                                page.merge_page(stamp_page)
                     except Exception:
                         pass
                     writer.add_page(page)
                     pages_added+=1
+            file_idx+=1
         except Exception:
             continue
 
@@ -5440,12 +5535,48 @@ def api_envelope_atualizar(id):
 @lr
 def api_envelope_deletar(id):
     env=AssinaturaEnvelope.query.get_or_404(id)
-    if env.status not in ('rascunho',):
-        return jsonify({'erro':'Só é possível excluir documentos em rascunho'}),400
+    # Permite excluir em qualquer status (admin decide); bloquear = cancelar
     AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).delete()
     AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=id).delete()
     db.session.delete(env); db.session.commit()
     return jsonify({'ok':True})
+
+
+@app.route('/api/envelopes/<int:id>/cancelar',methods=['POST'])
+@lr
+def api_envelope_cancelar(id):
+    env=AssinaturaEnvelope.query.get_or_404(id)
+    if env.status=='concluido':
+        return jsonify({'erro':'Não é possível cancelar um envelope já concluído.'}),400
+    env.status='cancelado'
+    db.session.commit()
+    return jsonify({'ok':True,'status':'cancelado'})
+
+
+@app.route('/api/envelopes/<int:id>/reativar',methods=['POST'])
+@lr
+def api_envelope_reativar(id):
+    env=AssinaturaEnvelope.query.get_or_404(id)
+    if env.status!='cancelado':
+        return jsonify({'erro':'Só é possível reativar envelopes cancelados.'}),400
+    # Verifica se ainda há signatários pendentes
+    pendentes=AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=id,status='pendente').count()
+    env.status='pendente' if pendentes else 'rascunho'
+    db.session.commit()
+    return jsonify({'ok':True,'status':env.status})
+
+
+@app.route('/api/envelopes/<int:id>/stamp',methods=['PUT'])
+@lr
+def api_envelope_stamp(id):
+    env=AssinaturaEnvelope.query.get_or_404(id)
+    data=request.get_json() or {}
+    env.stamp_habilitado=bool(data.get('stamp_habilitado',False))
+    env.stamp_pagina=max(1,int(data.get('stamp_pagina',1) or 1))
+    env.stamp_x_pct=max(0.0,min(100.0,float(data.get('stamp_x_pct',60.0) or 60.0)))
+    env.stamp_y_pct=max(0.0,min(100.0,float(data.get('stamp_y_pct',10.0) or 10.0)))
+    db.session.commit()
+    return jsonify({'ok':True,'stamp_habilitado':env.stamp_habilitado,'stamp_pagina':env.stamp_pagina,'stamp_x_pct':env.stamp_x_pct,'stamp_y_pct':env.stamp_y_pct})
 
 
 @app.route('/api/envelopes/<int:id>/arquivos',methods=['POST'])
@@ -5774,6 +5905,9 @@ def api_envelope_assinatura_confirmar(token):
     sig.ass_otp_expira_em=None
     sig.ass_otp_tentativas=0
     sig.status='assinado'
+    assinatura_img=(data.get('assinatura_img') or '').strip()
+    if assinatura_img and assinatura_img.startswith('data:image/'):
+        sig.ass_assinatura_img=assinatura_img[:200000]  # limita a ~150 KB base64
     if not sig.ass_aberto_em:
         sig.ass_aberto_em=utcnow()
     sig.token=None  # invalida o token após uso
@@ -8147,6 +8281,10 @@ with app.app_context():
         'assinatura_doc_hash VARCHAR(128)',
         'assinatura_crypto_ok BOOLEAN DEFAULT 0',
         'assinatura_cert_subject VARCHAR(255)',
+        'stamp_habilitado BOOLEAN DEFAULT 0',
+        'stamp_pagina INTEGER DEFAULT 1',
+        'stamp_x_pct REAL DEFAULT 60.0',
+        'stamp_y_pct REAL DEFAULT 10.0',
     ])
     ensure_cols('assinatura_envelope_arquivo',[
         'id INTEGER PRIMARY KEY AUTOINCREMENT',
@@ -8188,6 +8326,7 @@ with app.app_context():
         'ass_email_recebido_em DATETIME',
         'ordem INTEGER DEFAULT 0',
         'criado_em DATETIME',
+        'ass_assinatura_img TEXT',
     ])
     seed(); get_logo()
 
