@@ -383,6 +383,11 @@ def api_medicao_detalhe(id):
         return jsonify({'ok':True})
     return jsonify(m.to_dict())
 
+@app.route('/api/proximo-numero')
+@lr
+def api_proximo_numero():
+    return jsonify({'numero': prox_num()})
+
 @app.route('/api/medicoes')
 @lr
 def api_medicoes():
