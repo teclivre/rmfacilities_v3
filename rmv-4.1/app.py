@@ -365,10 +365,22 @@ def api_despesas_export_csv():
         headers={'Content-Disposition':'attachment; filename=despesas.csv'}
     )
 
-@app.route('/api/medicoes/<int:id>')
+@app.route('/api/medicoes/<int:id>',methods=['GET','DELETE'])
 @lr
 def api_medicao_detalhe(id):
     m = Medicao.query.get_or_404(id)
+    if request.method=='DELETE':
+        # remove anexos do disco antes de deletar
+        for a in MedicaoAnexo.query.filter_by(medicao_id=id).all():
+            try:
+                fp=os.path.join(DATA_DIR,a.caminho) if a.caminho and not os.path.isabs(a.caminho) else (a.caminho or '')
+                if fp and os.path.exists(fp): os.remove(fp)
+            except Exception: pass
+            db.session.delete(a)
+        audit_event('medicao_excluida','usuario',session.get('uid'),'medicao',m.id,True,{'numero':m.numero})
+        db.session.delete(m)
+        db.session.commit()
+        return jsonify({'ok':True})
     return jsonify(m.to_dict())
 
 @app.route('/api/medicoes')
