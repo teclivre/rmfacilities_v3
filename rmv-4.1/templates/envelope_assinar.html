@@ -5,7 +5,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Assinar Documento — RM Facilities</title>
 <link rel="stylesheet" href="/static/css/main.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.min.js"></script>
 <style>
+  .public-main{padding-top:14px}
+  .public-container{max-width:min(96vw,1600px)}
+  .signature-shell{padding:14px;background:linear-gradient(160deg,#f9fbff,#f0f4fb);border:1px solid #d7e1f0}
+  .ass-layout{display:grid;grid-template-columns:1fr;gap:14px}
+  .viewer-col{background:#fff;border:1px solid #d8e2ef;border-radius:12px;padding:12px}
+  .signer-col{min-width:0}
+  .signer-panel{background:#ffffff;border:1px solid #d8e2ef;border-radius:12px;padding:12px;box-shadow:0 8px 20px rgba(35,66,120,.08)}
+  .signer-title{font-size:16px;font-weight:800;color:#1e365f;margin:0 0 2px 0}
+  .signer-sub{font-size:12px;color:#58719a;margin:0 0 10px 0}
   .viewer-shell{padding:10px;background:#f7f9fc;border:1px solid #d9e1ee;border-radius:10px}
   .viewer-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
   .viewer-progress{font-size:12px;color:#2f4f8f;font-weight:700;background:#e9f1ff;border-radius:999px;padding:4px 10px}
@@ -14,7 +24,18 @@
   .doc-chip.active{background:#2d7ef7;color:#fff;border-color:#2d7ef7}
   .doc-chip.done{border-color:#2aa876;background:#ebfff5;color:#12714d}
   .doc-frame-wrap{background:#fff;border:1px solid #d9e1ee;border-radius:10px;padding:8px}
-  .doc-frame{width:100%;min-height:68vh;border:0;border-radius:6px;background:#f2f5fa}
+  .doc-scroll{max-height:68vh;overflow:auto;background:#f3f5f9;border-radius:8px;padding:8px}
+  .pdf-pages{display:flex;flex-direction:column;gap:10px;align-items:center}
+  .pdf-page{background:#fff;border:1px solid #d7deea;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.06);max-width:100%}
+  .viewer-loading{font-size:13px;color:#3f5f92;padding:16px;text-align:center}
+  .viewer-tip{font-size:12px;color:#4a5f82;text-align:center;padding:6px 4px}
+  .fs-btn{border:1px solid #bfd0ee;background:#f4f8ff;color:#2f4f8f;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
+  .fs-btn:hover{background:#eaf2ff}
+  @media (min-width:1100px){
+    .ass-layout{grid-template-columns:minmax(0,1fr) 390px;gap:16px;align-items:start}
+    .signer-panel{position:sticky;top:14px}
+    .doc-scroll{max-height:calc(100vh - 220px)}
+  }
 </style>
 
 </head>
@@ -41,62 +62,81 @@
         </div>
       </div>
       {% else %}
-      <div class="public-card" id="sec-form">
+      <div class="public-card signature-shell" id="sec-form">
         <h1>Assinatura eletrônica</h1>
-        <p class="sub">Confira os dados abaixo e confirme com seu código OTP.</p>
+        <p class="sub">Visualize o documento em tela grande e assine no painel lateral.</p>
 
         <h2>{{ env.titulo }}</h2>
         {% if env.descricao %}<p class="sub">{{ env.descricao }}</p>{% endif %}
 
-        <div class="public-info-box">
-          <strong>Signatário:</strong> {{ sig.nome or 'Não informado' }}
-          {% if sig.cargo %}<br><strong>Cargo:</strong> {{ sig.cargo }}{% endif %}
-        </div>
+        <div class="ass-layout">
+          <section class="viewer-col">
+            <div class="public-info-box">
+              <strong>Signatário:</strong> {{ sig.nome or 'Não informado' }}
+              {% if sig.cargo %}<br><strong>Cargo:</strong> {{ sig.cargo }}{% endif %}
+            </div>
 
-        <div class="card-doc viewer-shell">
-          <div class="viewer-head">
-            <h3 style="margin:0">Documentos a assinar ({{ arquivos|length }})</h3>
-            <span class="viewer-progress" id="viewer-progress">0/{{ arquivos|length }} visualizado(s)</span>
+            <div class="card-doc viewer-shell">
+              <div class="viewer-head">
+                <h3 style="margin:0">Documentos a assinar ({{ arquivos|length }})</h3>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <span class="viewer-progress" id="viewer-progress">0/{{ arquivos|length }} visualizado(s)</span>
+                  <button type="button" class="fs-btn" onclick="toggleViewerFullscreen()">Tela cheia</button>
+                </div>
+              </div>
+              <p class="sub" style="margin:0 0 8px 0">Para assinar, você precisa visualizar todos os documentos desta lista.</p>
+              <div class="doc-chip-list" id="doc-chip-list">
+                {% for a in arquivos %}
+                <button type="button" class="doc-chip" data-doc-id="{{ a.id }}" onclick="abrirDocumento({{ a.id }})">{{ a.nome_arquivo }}</button>
+                {% endfor %}
+              </div>
+              <div class="doc-frame-wrap" id="doc-frame-wrap">
+                <div id="doc-viewer-scroll" class="doc-scroll">
+                  <div id="doc-viewer-pages" class="pdf-pages"></div>
+                  <div id="doc-viewer-tip" class="viewer-tip" style="display:none">Role até o final para confirmar que visualizou o documento.</div>
+                </div>
+              </div>
+              <div class="public-msg" id="viewer-msg" style="margin-top:8px"></div>
+            </div>
           </div>
-          <p class="sub" style="margin:0 0 8px 0">Para assinar, você precisa abrir e visualizar todos os documentos desta lista.</p>
-          <div class="doc-chip-list" id="doc-chip-list">
-            {% for a in arquivos %}
-            <button type="button" class="doc-chip" data-doc-id="{{ a.id }}" onclick="abrirDocumento({{ a.id }})">{{ a.nome_arquivo }}</button>
-            {% endfor %}
-          </div>
-          <div class="doc-frame-wrap">
-            <iframe id="doc-frame" class="doc-frame" title="Documento para assinatura"></iframe>
-          </div>
-          <div class="public-msg" id="viewer-msg" style="margin-top:8px"></div>
-        </div>
 
-        <div class="public-msg" id="msg"></div>
+          </section>
 
-        <div class="public-form">
-          <div class="public-form-group">
-            <label>Nome completo *</label>
-            <input id="inp-nome" type="text" placeholder="Seu nome completo" value="{{ sig.nome or '' }}">
-          </div>
-          <div class="public-form-group">
-            <label>Cargo / Função (opcional)</label>
-            <input id="inp-cargo" type="text" placeholder="Seu cargo" value="{{ sig.cargo or '' }}">
-          </div>
-          <div class="public-form-group">
-            <label>CPF *</label>
-            <input id="inp-cpf" type="text" placeholder="000.000.000-00" maxlength="14" oninput="fmtCpf(this)">
-          </div>
-          <div class="public-form-group">
-            <label>Código OTP (6 dígitos)</label>
-            <input id="inp-otp" type="text" placeholder="Informe o código recebido" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
-          </div>
-          <label class="public-check">
-            <input type="checkbox" id="chk-aceite">
-            Declaro que li e entendi os documentos listados acima e, ao clicar em <strong>Confirmar Assinatura</strong>, confirmo minha assinatura eletrônica com validade legal, conforme a Lei nº 14.063/2020.
-          </label>
-        </div>
-        <div class="public-btngroup" style="display:flex;flex-wrap:wrap;gap:8px">
-          <button class="public-btn public-btn-primary" id="btn-assinar" onclick="confirmarAssinatura()" style="flex:1;min-width:150px" disabled>Visualize os documentos para assinar</button>
-          <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()" style="flex:1;min-width:150px">Reenviar código</button>
+          <aside class="signer-col">
+            <div class="signer-panel">
+              <h3 class="signer-title">Conferir dados do signatário</h3>
+              <p class="signer-sub">Preencha seus dados e confirme com OTP.</p>
+
+              <div class="public-msg" id="msg"></div>
+
+              <div class="public-form">
+                <div class="public-form-group">
+                  <label>Nome completo *</label>
+                  <input id="inp-nome" type="text" placeholder="Seu nome completo" value="{{ sig.nome or '' }}">
+                </div>
+                <div class="public-form-group">
+                  <label>Cargo / Função (opcional)</label>
+                  <input id="inp-cargo" type="text" placeholder="Seu cargo" value="{{ sig.cargo or '' }}">
+                </div>
+                <div class="public-form-group">
+                  <label>CPF *</label>
+                  <input id="inp-cpf" type="text" placeholder="000.000.000-00" maxlength="14" oninput="fmtCpf(this)">
+                </div>
+                <div class="public-form-group">
+                  <label>Código OTP (6 dígitos)</label>
+                  <input id="inp-otp" type="text" placeholder="Informe o código recebido" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
+                </div>
+                <label class="public-check">
+                  <input type="checkbox" id="chk-aceite">
+                  Declaro que li e entendi os documentos listados acima e, ao clicar em <strong>Confirmar Assinatura</strong>, confirmo minha assinatura eletrônica com validade legal, conforme a Lei nº 14.063/2020.
+                </label>
+              </div>
+              <div class="public-btngroup" style="display:flex;flex-wrap:wrap;gap:8px">
+                <button class="public-btn public-btn-primary" id="btn-assinar" onclick="confirmarAssinatura()" style="flex:1;min-width:150px" disabled>Visualize os documentos para assinar</button>
+                <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()" style="flex:1;min-width:150px">Reenviar código</button>
+              </div>
+            </div>
+          </aside>
         </div>
       </div>
 
@@ -125,10 +165,15 @@ const TOKEN='{{ sig.token or "" }}';
 const ENV_COD='{{ env.codigo }}';
 const SRC='{{ request.args.get("src","link") }}';
 const DOCS={{ arquivos|map(attribute='id')|list|tojson }};
+const DOC_NAMES={{ arquivos|map(attribute='nome_arquivo')|list|tojson }};
 const otpCooldownCtrl=SignatureCommon.makeCooldown('btn-resend',60);
 const docsVistos=new Set();
 let docAtual=null;
-let leituraTimer=null;
+let currentRenderToken=0;
+
+if(window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions){
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.js';
+}
 
 function showMsg(txt,type='err'){
   const msg=document.getElementById('msg');
@@ -181,12 +226,117 @@ function marcarChipAtivo(docId){
 function abrirDocumento(docId){
   if(!TOKEN||!docId) return;
   docAtual=parseInt(docId,10);
-  if(leituraTimer){ clearTimeout(leituraTimer); leituraTimer=null; }
-  const fr=document.getElementById('doc-frame');
-  if(!fr) return;
   marcarChipAtivo(docAtual);
-  fr.src=`/envelope/assinar/${TOKEN}/arquivo/${docAtual}?src=${encodeURIComponent(SRC||'link')}&_=${Date.now()}`;
+  carregarDocumentoAtual(docAtual);
+}
+
+function nomeDocPorId(docId){
+  const idx=DOCS.indexOf(docId);
+  if(idx<0) return '';
+  return String(DOC_NAMES[idx]||'');
+}
+
+function isPdfName(nome){
+  return /\.pdf(\?|#|$)/i.test(String(nome||''));
+}
+
+function markDocViewed(docId){
+  const id=parseInt(docId||'0',10);
+  if(!id) return;
+  docsVistos.add(id);
+  marcarChipAtivo(id);
+  atualizarProgressoDocs();
+}
+
+function bindReadScroll(docId){
+  const sc=document.getElementById('doc-viewer-scroll');
+  const tip=document.getElementById('doc-viewer-tip');
+  if(!sc) return;
+  if(tip) tip.style.display='block';
+  const check=()=>{
+    const maxTop=Math.max(1,sc.scrollHeight-sc.clientHeight);
+    const pct=sc.scrollTop/maxTop;
+    if(pct>=0.92){
+      markDocViewed(docId);
+      showViewerMsg('Documento visualizado com sucesso.','ok');
+    }
+  };
+  sc.onscroll=check;
+  setTimeout(()=>{
+    if(sc.scrollHeight<=sc.clientHeight+20){
+      markDocViewed(docId);
+      showViewerMsg('Documento visualizado com sucesso.','ok');
+    }
+  },300);
+}
+
+function toggleViewerFullscreen(){
+  const el=document.getElementById('doc-frame-wrap');
+  if(!el) return;
+  if(document.fullscreenElement){
+    document.exitFullscreen().catch(()=>{});
+  }else{
+    el.requestFullscreen?.().catch(()=>{});
+  }
+}
+
+async function renderPdfIntoViewer(arrayBuffer,docId){
+  const pages=document.getElementById('doc-viewer-pages');
+  const sc=document.getElementById('doc-viewer-scroll');
+  if(!pages||!sc||!window.pdfjsLib) return false;
+  const token=++currentRenderToken;
+  pages.innerHTML='<div class="viewer-loading">Renderizando documento...</div>';
+  const pdf=await window.pdfjsLib.getDocument({data:arrayBuffer}).promise;
+  if(token!==currentRenderToken) return false;
+  pages.innerHTML='';
+  const renderWidth=Math.max(280,Math.min(900,sc.clientWidth-24));
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p);
+    const vp=page.getViewport({scale:1});
+    const scale=renderWidth/vp.width;
+    const viewport=page.getViewport({scale});
+    const canvas=document.createElement('canvas');
+    canvas.className='pdf-page';
+    canvas.width=Math.floor(viewport.width);
+    canvas.height=Math.floor(viewport.height);
+    canvas.style.width=Math.floor(viewport.width)+'px';
+    canvas.style.height=Math.floor(viewport.height)+'px';
+    await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+    if(token!==currentRenderToken) return false;
+    pages.appendChild(canvas);
+  }
+  bindReadScroll(docId);
+  return true;
+}
+
+async function carregarDocumentoAtual(docId){
+  const pages=document.getElementById('doc-viewer-pages');
+  if(!pages) return;
+  const nome=nomeDocPorId(docId);
+  const url=`/envelope/assinar/${TOKEN}/arquivo/${docId}?src=${encodeURIComponent(SRC||'link')}&_=${Date.now()}`;
+  pages.innerHTML='<div class="viewer-loading">Carregando documento...</div>';
   showViewerMsg('Documento carregando...','ok');
+  try{
+    const r=await fetch(url,{cache:'no-store'});
+    if(!r.ok) throw new Error('Falha ao carregar documento.');
+    const blob=await r.blob();
+    const isPdf=(blob.type||'').toLowerCase().includes('pdf') || isPdfName(nome);
+    if(isPdf && window.pdfjsLib){
+      const ok=await renderPdfIntoViewer(await blob.arrayBuffer(),docId);
+      if(ok){
+        showViewerMsg('Documento aberto na página. Role até o final para liberar a assinatura.','ok');
+        return;
+      }
+    }
+    // fallback para arquivos não-PDF
+    pages.innerHTML=`<div class="viewer-loading">Este arquivo não é PDF. Abra para visualizar e liberar a assinatura.</div>
+      <div style="text-align:center;padding:8px 0 12px"><a class="public-btn public-btn-secondary" href="${url}" target="_blank" rel="noopener">Abrir documento</a></div>`;
+    markDocViewed(docId);
+    showViewerMsg('Documento não-PDF marcado como visualizado após abertura.','ok');
+  }catch(e){
+    pages.innerHTML='<div class="viewer-loading">Não foi possível carregar o documento agora.</div>';
+    showViewerMsg('Falha ao carregar documento. Tente novamente.','err');
+  }
 }
 
 function validaEtapa1(){
@@ -276,19 +426,6 @@ async function confirmarAssinatura(){
 
 document.addEventListener('DOMContentLoaded',()=>{
   if(TOKEN) enviarOtpAutomaticoEnvelope();
-  const frame=document.getElementById('doc-frame');
-  if(frame){
-    frame.addEventListener('load',()=>{
-      if(!docAtual) return;
-      if(leituraTimer){ clearTimeout(leituraTimer); leituraTimer=null; }
-      showViewerMsg('Documento aberto. Aguarde alguns segundos para confirmar leitura.','ok');
-      leituraTimer=setTimeout(()=>{
-        docsVistos.add(docAtual);
-        marcarChipAtivo(docAtual);
-        atualizarProgressoDocs();
-      },3000);
-    });
-  }
   atualizarProgressoDocs();
   if(DOCS.length>0){
     abrirDocumento(DOCS[0]);
