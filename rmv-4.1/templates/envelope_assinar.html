@@ -5,6 +5,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Assinar Documento — RM Facilities</title>
 <link rel="stylesheet" href="/static/css/main.css">
+<style>
+  .viewer-shell{padding:10px;background:#f7f9fc;border:1px solid #d9e1ee;border-radius:10px}
+  .viewer-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .viewer-progress{font-size:12px;color:#2f4f8f;font-weight:700;background:#e9f1ff;border-radius:999px;padding:4px 10px}
+  .doc-chip-list{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 10px}
+  .doc-chip{border:1px solid #b8c7e4;background:#fff;color:#27406d;border-radius:999px;padding:7px 12px;font-size:12px;cursor:pointer}
+  .doc-chip.active{background:#2d7ef7;color:#fff;border-color:#2d7ef7}
+  .doc-chip.done{border-color:#2aa876;background:#ebfff5;color:#12714d}
+  .doc-frame-wrap{background:#fff;border:1px solid #d9e1ee;border-radius:10px;padding:8px}
+  .doc-frame{width:100%;min-height:68vh;border:0;border-radius:6px;background:#f2f5fa}
+</style>
 
 </head>
 <body class="public-page">
@@ -42,16 +53,21 @@
           {% if sig.cargo %}<br><strong>Cargo:</strong> {{ sig.cargo }}{% endif %}
         </div>
 
-        <div class="card-doc">
-          <h3>Documentos a assinar ({{ arquivos|length }})</h3>
-          <ul>
+        <div class="card-doc viewer-shell">
+          <div class="viewer-head">
+            <h3 style="margin:0">Documentos a assinar ({{ arquivos|length }})</h3>
+            <span class="viewer-progress" id="viewer-progress">0/{{ arquivos|length }} visualizado(s)</span>
+          </div>
+          <p class="sub" style="margin:0 0 8px 0">Para assinar, você precisa abrir e visualizar todos os documentos desta lista.</p>
+          <div class="doc-chip-list" id="doc-chip-list">
             {% for a in arquivos %}
-            <li>
-              <span>{{ a.nome_arquivo }}</span>
-              <a class="doc-view" href="/envelope/assinar/{{ sig.token }}/arquivo/{{ a.id }}?src={{ request.args.get('src','link')|urlencode }}" target="_blank" rel="noopener">Visualizar</a>
-            </li>
+            <button type="button" class="doc-chip" data-doc-id="{{ a.id }}" onclick="abrirDocumento({{ a.id }})">{{ a.nome_arquivo }}</button>
             {% endfor %}
-          </ul>
+          </div>
+          <div class="doc-frame-wrap">
+            <iframe id="doc-frame" class="doc-frame" title="Documento para assinatura"></iframe>
+          </div>
+          <div class="public-msg" id="viewer-msg" style="margin-top:8px"></div>
         </div>
 
         <div class="public-msg" id="msg"></div>
@@ -79,7 +95,7 @@
           </label>
         </div>
         <div class="public-btngroup" style="display:flex;flex-wrap:wrap;gap:8px">
-          <button class="public-btn public-btn-primary" id="btn-assinar" onclick="confirmarAssinatura()" style="flex:1;min-width:150px">Confirmar assinatura</button>
+          <button class="public-btn public-btn-primary" id="btn-assinar" onclick="confirmarAssinatura()" style="flex:1;min-width:150px" disabled>Visualize os documentos para assinar</button>
           <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()" style="flex:1;min-width:150px">Reenviar código</button>
         </div>
       </div>
@@ -107,7 +123,12 @@
   <script>
 const TOKEN='{{ sig.token or "" }}';
 const ENV_COD='{{ env.codigo }}';
+const SRC='{{ request.args.get("src","link") }}';
+const DOCS={{ arquivos|map(attribute='id')|list|tojson }};
 const otpCooldownCtrl=SignatureCommon.makeCooldown('btn-resend',60);
+const docsVistos=new Set();
+let docAtual=null;
+let leituraTimer=null;
 
 function showMsg(txt,type='err'){
   const msg=document.getElementById('msg');
@@ -124,10 +145,55 @@ function startOtpCooldown(seg){
   otpCooldownCtrl.start(seg||60);
 }
 
+function showViewerMsg(txt,type='ok'){
+  const msg=document.getElementById('viewer-msg');
+  if(!msg) return;
+  msg.className='public-msg '+type;
+  msg.textContent=txt;
+}
+
+function atualizarProgressoDocs(){
+  const total=DOCS.length;
+  const vistos=docsVistos.size;
+  const lbl=document.getElementById('viewer-progress');
+  if(lbl) lbl.textContent=`${vistos}/${total} visualizado(s)`;
+  const btn=document.getElementById('btn-assinar');
+  if(btn){
+    if(total>0 && vistos>=total){
+      btn.disabled=false;
+      btn.textContent='Confirmar assinatura';
+      showViewerMsg('Todos os documentos foram visualizados. Agora você pode assinar.','ok');
+    }else{
+      btn.disabled=true;
+      btn.textContent='Visualize os documentos para assinar';
+    }
+  }
+}
+
+function marcarChipAtivo(docId){
+  document.querySelectorAll('#doc-chip-list .doc-chip').forEach(el=>{
+    const id=parseInt(el.getAttribute('data-doc-id')||'0',10);
+    el.classList.toggle('active',id===docId);
+    el.classList.toggle('done',docsVistos.has(id));
+  });
+}
+
+function abrirDocumento(docId){
+  if(!TOKEN||!docId) return;
+  docAtual=parseInt(docId,10);
+  if(leituraTimer){ clearTimeout(leituraTimer); leituraTimer=null; }
+  const fr=document.getElementById('doc-frame');
+  if(!fr) return;
+  marcarChipAtivo(docAtual);
+  fr.src=`/envelope/assinar/${TOKEN}/arquivo/${docAtual}?src=${encodeURIComponent(SRC||'link')}&_=${Date.now()}`;
+  showViewerMsg('Documento carregando...','ok');
+}
+
 function validaEtapa1(){
   const nome=document.getElementById('inp-nome').value.trim();
   const cpf=(document.getElementById('inp-cpf').value||'').replace(/\D/g,'');
   const aceite=document.getElementById('chk-aceite').checked;
+  if(DOCS.length>0 && docsVistos.size<DOCS.length) return 'Visualize todos os documentos para liberar a assinatura.';
   if(!nome) return 'Informe seu nome completo.';
   if(!cpf||cpf.length!==11) return 'CPF inválido. Confira se digitou os 11 números corretamente.';
   if(!aceite) return 'Marque o aceite para continuar com a assinatura.';
@@ -210,6 +276,23 @@ async function confirmarAssinatura(){
 
 document.addEventListener('DOMContentLoaded',()=>{
   if(TOKEN) enviarOtpAutomaticoEnvelope();
+  const frame=document.getElementById('doc-frame');
+  if(frame){
+    frame.addEventListener('load',()=>{
+      if(!docAtual) return;
+      if(leituraTimer){ clearTimeout(leituraTimer); leituraTimer=null; }
+      showViewerMsg('Documento aberto. Aguarde alguns segundos para confirmar leitura.','ok');
+      leituraTimer=setTimeout(()=>{
+        docsVistos.add(docAtual);
+        marcarChipAtivo(docAtual);
+        atualizarProgressoDocs();
+      },3000);
+    });
+  }
+  atualizarProgressoDocs();
+  if(DOCS.length>0){
+    abrirDocumento(DOCS[0]);
+  }
 });
   </script>
 </body>
