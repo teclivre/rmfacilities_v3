@@ -2324,9 +2324,8 @@ async function gerarPDF(){
   try{
     const r=await fetch('/api/pdf/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
     const blob=await r.blob(); const url=URL.createObjectURL(blob);
-    const a=document.createElement('a'); a.href=url;
-    a.download=`${d.tipo.replace(/ /g,'_')}_${d.numero.replace('/','_')}_${(cNome||'').replace(/ /g,'_').substring(0,20)}_${d.mes_ref}.pdf`;
-    a.click(); URL.revokeObjectURL(url);
+    window.open(url,'_blank');
+    setTimeout(()=>URL.revokeObjectURL(url),30000);
     showSt('st-med','PDF gerado!',false);
   }catch(e){showSt('st-med','Erro ao gerar PDF.',true);}
   btn.textContent='⬇ Gerar PDF'; btn.disabled=false;
@@ -2437,10 +2436,7 @@ async function solicitarAssinaturaMedicaoAtual(){
 }
 
 async function reimprimirPDF(id){
-  const r=await fetch('/api/pdf/'+id);
-  const blob=await r.blob(); const url=URL.createObjectURL(blob);
-  const a=document.createElement('a'); a.href=url; a.download='medicao_'+id+'.pdf'; a.click();
-  URL.revokeObjectURL(url);
+  window.open('/api/pdf/'+id,'_blank');
 }
 
 async function imprimirPDF(id){

@@ -7916,7 +7916,7 @@ def _build_pdf(d):
     buf=io.BytesIO(pdf_bytes)
     buf.seek(0)
     slug=(cname or 'cliente').replace(' ','_')[:20]
-    return send_file(buf,mimetype='application/pdf',as_attachment=True,download_name=f'{tipo.replace(" ","_")}_{nmed.replace("/","-")}_{slug}_{mes}.pdf')
+    return send_file(buf,mimetype='application/pdf',as_attachment=False,download_name=f'{tipo.replace(" ","_")}_{nmed.replace("/","-")}_{slug}_{mes}.pdf')
 
 @app.route('/api/rh/holerites/processar',methods=['POST'])
 @lr
