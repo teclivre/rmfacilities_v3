@@ -7980,3 +7980,100 @@ with app.app_context():
 
 if __name__=='__main__':
     app.run(host='0.0.0.0',port=5000,debug=False)
+
+# ============================================================
+# BACKUP AUTOMÁTICO DIÁRIO
+# ============================================================
+AUTO_BACKUP_DIR = os.path.join(DATA_DIR, 'backups')
+AUTO_BACKUP_KEEP = 7
+AUTO_BACKUP_HOUR = 3
+_auto_backup_status = {'ultimo': None, 'proximo': None, 'ok': None, 'msg': ''}
+
+def _auto_backup_gerar():
+    os.makedirs(AUTO_BACKUP_DIR, exist_ok=True)
+    nome = f"auto_backup_{localnow().strftime('%Y%m%d_%H%M%S')}.zip"
+    dest = os.path.join(AUTO_BACKUP_DIR, nome)
+    with app.app_context():
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+            if os.path.exists(DB_PATH): z.write(DB_PATH, 'rmfacilities.db')
+            z.writestr('clientes.json', json.dumps([c.to_dict() for c in Cliente.query.all()], default=str, ensure_ascii=False, indent=2))
+            z.writestr('medicoes.json', json.dumps([m.to_dict() for m in Medicao.query.all()], default=str, ensure_ascii=False, indent=2))
+            z.writestr('empresas.json', json.dumps([e.to_dict() for e in Empresa.query.all()], default=str, ensure_ascii=False, indent=2))
+            z.writestr('funcionarios.json', json.dumps([f.to_dict() for f in Funcionario.query.all()], default=str, ensure_ascii=False, indent=2))
+            z.writestr('config.json', json.dumps([{'chave': c.chave, 'valor': c.valor} for c in Config.query.all()], default=str, ensure_ascii=False, indent=2))
+            z.writestr('whatsapp_conversas.json', json.dumps([c.to_dict() for c in WhatsAppConversa.query.all()], default=str, ensure_ascii=False, indent=2))
+            z.writestr('whatsapp_mensagens.json', json.dumps([m.to_dict() for m in WhatsAppMensagem.query.all()], default=str, ensure_ascii=False, indent=2))
+            z.writestr('funcionario_arquivos.json', json.dumps([a.to_dict() for a in FuncionarioArquivo.query.all()], default=str, ensure_ascii=False, indent=2))
+            z.writestr('beneficios_mensais.json', json.dumps([b.to_dict() for b in BeneficioMensal.query.all()], default=str, ensure_ascii=False, indent=2))
+            z.writestr('ordens_compra.json', json.dumps([o.to_dict() for o in OrdemCompra.query.all()], default=str, ensure_ascii=False, indent=2))
+            z.writestr('operacional_documentos.json', json.dumps([d.to_dict() for d in OperacionalDocumento.query.all()], default=str, ensure_ascii=False, indent=2))
+            if os.path.isdir(UPLOAD_ROOT):
+                for root, _, files in os.walk(UPLOAD_ROOT):
+                    for fn in files:
+                        ap = os.path.join(root, fn)
+                        rel = os.path.relpath(ap, UPLOAD_ROOT)
+                        z.write(ap, os.path.join('uploads', rel))
+            z.writestr('info.json', json.dumps({'data': localnow().isoformat(), 'tipo': 'auto', 'versao': '3.0'}, ensure_ascii=False))
+        buf.seek(0)
+        with open(dest, 'wb') as f:
+            f.write(buf.read())
+    arqs = sorted([a for a in os.listdir(AUTO_BACKUP_DIR) if a.startswith('auto_backup_') and a.endswith('.zip')], reverse=True)
+    for antigo in arqs[AUTO_BACKUP_KEEP:]:
+        try: os.remove(os.path.join(AUTO_BACKUP_DIR, antigo))
+        except: pass
+    return dest
+
+def _auto_backup_segundos_ate_proxima():
+    agora = datetime.now(APP_TZ)
+    proxima = agora.replace(hour=AUTO_BACKUP_HOUR, minute=0, second=0, microsecond=0)
+    if agora >= proxima:
+        proxima += timedelta(days=1)
+    return max(60, (proxima - agora).total_seconds()), proxima.replace(tzinfo=None)
+
+def _auto_backup_loop():
+    while True:
+        secs, proxima_dt = _auto_backup_segundos_ate_proxima()
+        _auto_backup_status['proximo'] = proxima_dt.strftime('%d/%m/%Y %H:%M')
+        time.sleep(secs)
+        try:
+            dest = _auto_backup_gerar()
+            _auto_backup_status['ultimo'] = localnow().strftime('%d/%m/%Y %H:%M')
+            _auto_backup_status['ok'] = True
+            _auto_backup_status['msg'] = os.path.basename(dest)
+        except Exception as e:
+            _auto_backup_status['ok'] = False
+            _auto_backup_status['msg'] = str(e)
+
+threading.Thread(target=_auto_backup_loop, daemon=True, name='auto-backup').start()
+
+@app.route('/api/backup/auto/status')
+@lr
+def api_auto_backup_status():
+    arqs = []
+    if os.path.isdir(AUTO_BACKUP_DIR):
+        arqs = sorted([a for a in os.listdir(AUTO_BACKUP_DIR) if a.startswith('auto_backup_') and a.endswith('.zip')], reverse=True)
+    return jsonify({'ultimo': _auto_backup_status['ultimo'], 'proximo': _auto_backup_status['proximo'], 'ok': _auto_backup_status['ok'], 'msg': _auto_backup_status['msg'], 'arquivos': arqs})
+
+@app.route('/api/backup/auto/agora', methods=['POST'])
+@lr
+def api_auto_backup_agora():
+    try:
+        dest = _auto_backup_gerar()
+        _auto_backup_status['ultimo'] = localnow().strftime('%d/%m/%Y %H:%M')
+        _auto_backup_status['ok'] = True
+        _auto_backup_status['msg'] = os.path.basename(dest)
+        return jsonify({'ok': True, 'arquivo': os.path.basename(dest)})
+    except Exception as e:
+        return jsonify({'ok': False, 'erro': str(e)}), 500
+
+@app.route('/api/backup/auto/<nome>/download')
+@lr
+def api_auto_backup_download(nome):
+    if '/' in nome or '\\' in nome or not nome.startswith('auto_backup_') or not nome.endswith('.zip'):
+        return jsonify({'erro': 'Nome inválido'}), 400
+    p = os.path.join(AUTO_BACKUP_DIR, nome)
+    if not os.path.exists(p): return jsonify({'erro': 'Arquivo não encontrado'}), 404
+    return send_file(p, mimetype='application/zip', as_attachment=True, download_name=nome)
+
+# ============================================================
