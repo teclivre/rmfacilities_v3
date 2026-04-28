@@ -6,6 +6,25 @@
   </div>
 </div>
 <script>
+const FAT_STATE={page:1,per_page:20,order_by:'dt_emissao',order_dir:'desc'};
+
+function _fatQueryString(includePage=true){
+  const mes=document.getElementById('fat-filtro-mes')?.value||'';
+  const cliente=(document.getElementById('fat-filtro-cliente')?.value||'').trim();
+  const status=document.getElementById('fat-filtro-status')?.value||'';
+  const p=new URLSearchParams();
+  if(mes) p.set('mes_ref',mes);
+  if(cliente) p.set('cliente',cliente);
+  if(status) p.set('status',status);
+  p.set('order_by',FAT_STATE.order_by);
+  p.set('order_dir',FAT_STATE.order_dir);
+  if(includePage){
+    p.set('page',String(FAT_STATE.page));
+    p.set('per_page',String(FAT_STATE.per_page));
+  }
+  return p.toString();
+}
+
 function abrirModalFatDetalhe(id){
   const modal=document.getElementById('modal-fat-detalhe');
   const body=document.getElementById('fat-detalhe-body');
@@ -33,15 +52,18 @@ function fecharModalFatDetalhe(){document.getElementById('modal-fat-detalhe').st
 </script>
 <script>
 async function carregarFaturamento(){
-  const mes=document.getElementById('fat-filtro-mes').value;
-  const cliente=(document.getElementById('fat-filtro-cliente').value||'').toLowerCase();
-  const status=document.getElementById('fat-filtro-status').value;
-  let url='/api/medicoes?';
-  if(mes) url+='mes_ref='+encodeURIComponent(mes)+'&';
-  if(cliente) url+='cliente='+encodeURIComponent(cliente)+'&';
-  if(status) url+='status='+encodeURIComponent(status)+'&';
-  const lista=await api(url);
+  const perSel=document.getElementById('fat-per-page');
+  if(perSel) FAT_STATE.per_page=parseInt(perSel.value||'20',10)||20;
+  const r=await api('/api/financeiro/faturamento?'+_fatQueryString(true));
   const tb=document.getElementById('tb-faturamento');
+  const pag=document.getElementById('fat-pag');
+  if(r?.erro){
+    tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:28px;color:#c33">Erro ao carregar faturamento.</td></tr>';
+    document.getElementById('fat-res').textContent=r.erro;
+    if(pag) pag.innerHTML='';
+    return;
+  }
+  const lista=r.itens||[];
   if(!lista.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:28px;color:#bbb">Nenhum faturamento encontrado.</td></tr>';document.getElementById('fat-res').textContent='';return;}
   tb.innerHTML=lista.map(m=>{
     const st=m.status||'emitida';
@@ -63,22 +85,29 @@ async function carregarFaturamento(){
       <td><button class="btn b-gh b-sm" onclick="event.stopPropagation();imprimirPDF(${m.id})">PDF</button></td>
     </tr>`;
   }).join('');
-  const tot=lista.reduce((s,m)=>s+(m.valor_bruto||0),0);
-  document.getElementById('fat-res').textContent=lista.length+' registro(s) · Total: '+brl(tot);
+  const tot=(r.total_valor||0);
+  document.getElementById('fat-res').textContent=(r.total||0)+' registro(s) · Página '+(r.page||1)+'/'+(r.total_paginas||1)+' · Total da página: '+brl(tot);
+  if(pag){
+    pag.innerHTML=`<button class="btn b-sm" ${r.tem_anterior?'':'disabled'} onclick="fatGo(${(r.page||1)-1})">Anterior</button>
+      <span style="font-size:12px;color:#6d7a8c">Página ${(r.page||1)} de ${(r.total_paginas||1)}</span>
+      <button class="btn b-sm" ${r.tem_proxima?'':'disabled'} onclick="fatGo(${(r.page||1)+1})">Próxima</button>`;
+  }
+}
+
+function fatGo(page){
+  FAT_STATE.page=Math.max(1,parseInt(page||1,10)||1);
+  carregarFaturamento();
+}
+
+function fatFiltrar(){
+  FAT_STATE.page=1;
+  carregarFaturamento();
 }
 
 function exportarFaturamento(tipo){
-  // Simples: exporta tabela atual como CSV (PDF: usa impressão do navegador)
+  const qs=_fatQueryString(false);
   if(tipo==='csv'){
-    let csv='Nº;Cliente;Empresa;Mês Ref.;Emissão;Vencimento;Valor;Status\n';
-    document.querySelectorAll('#tb-faturamento tr').forEach(tr=>{
-      const tds=tr.querySelectorAll('td');
-      if(tds.length<8)return;
-      csv+=Array.from(tds).slice(0,8).map(td=>td.textContent.replace(/;/g,',')).join(';')+'\n';
-    });
-    const blob=new Blob([csv],{type:'text/csv'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');a.href=url;a.download='faturamento.csv';a.click();URL.revokeObjectURL(url);
+    window.open('/api/financeiro/faturamento/export.csv?'+qs,'_blank');
   }else if(tipo==='pdf'){
     window.print();
   }
@@ -267,7 +296,12 @@ document.addEventListener('DOMContentLoaded',()=>{
             <option value="vencida">Vencida</option>
             <option value="cancelada">Cancelada</option>
           </select>
-          <button class="btn b-gh b-sm" onclick="carregarFaturamento()">Filtrar</button>
+          <select id="fat-per-page" style="width:120px" onchange="fatFiltrar()">
+            <option value="10">10 por página</option>
+            <option value="20" selected>20 por página</option>
+            <option value="50">50 por página</option>
+          </select>
+          <button class="btn b-gh b-sm" onclick="fatFiltrar()">Filtrar</button>
           <button class="btn b-ghl b-sm" onclick="exportarFaturamento('csv')">Exportar CSV</button>
           <button class="btn b-ghl b-sm" onclick="exportarFaturamento('pdf')">Exportar PDF</button>
         </div>
@@ -292,6 +326,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           </table>
         </div>
         <div id="fat-res" style="margin-top:10px;color:#888;font-size:13px"></div>
+        <div id="fat-pag" style="display:flex;gap:8px;align-items:center;margin-top:8px"></div>
       </div>
     </div>
     <div id="pg-despesas" class="pg">
@@ -314,43 +349,85 @@ document.addEventListener('DOMContentLoaded',()=>{
             <option value="">Todas categorias</option>
             <option>Fixa</option><option>Variável</option><option>Impostos</option><option>Serviços</option><option>Outras</option>
           </select>
-          <button class="btn b-gh b-sm" onclick="carregarDespesas()">Filtrar</button>
+          <input type="text" id="desp-filtro-q" style="width:180px" placeholder="Buscar descrição/obs" oninput="despFiltrar()">
+          <select id="desp-per-page" style="width:120px" onchange="despFiltrar()">
+            <option value="10">10 por página</option>
+            <option value="20" selected>20 por página</option>
+            <option value="50">50 por página</option>
+          </select>
+          <button class="btn b-gh b-sm" onclick="despFiltrar()">Filtrar</button>
+          <button class="btn b-ghl b-sm" onclick="exportarDespesasCSV()">Exportar CSV</button>
         </div>
         <div style="overflow-x:auto">
           <table class="tabela" style="min-width:800px">
             <thead>
               <tr>
-                <th>Descrição</th><th>Valor</th><th>Categoria</th><th>Data</th><th>Comprovante</th><th>Obs.</th><th>Criado em</th>
+                <th>Descrição</th><th>Valor</th><th>Categoria</th><th>Data</th><th>Comprovante</th><th>Obs.</th><th>Criado em</th><th>Ações</th>
               </tr>
             </thead>
             <tbody id="tb-despesas">
-              <tr><td colspan="7" style="text-align:center;padding:28px;color:#bbb">Nenhuma despesa cadastrada.</td></tr>
+              <tr><td colspan="8" style="text-align:center;padding:28px;color:#bbb">Nenhuma despesa cadastrada.</td></tr>
             </tbody>
           </table>
         </div>
         <div id="desp-res" style="margin-top:10px;color:#888;font-size:13px"></div>
+        <div id="desp-pag" style="display:flex;gap:8px;align-items:center;margin-top:8px"></div>
       </div>
     </div>
     <script>
     // === DESPESAS ===
+    const DESP_STATE={page:1,per_page:20,order_by:'data',order_dir:'desc'};
+    let DESP_CACHE=[];
+
+    function _despQueryString(includePage=true){
+      const periodo=document.getElementById('desp-filtro-periodo')?.value||'';
+      const categoria=document.getElementById('desp-filtro-categoria')?.value||'';
+      const q=(document.getElementById('desp-filtro-q')?.value||'').trim();
+      const p=new URLSearchParams();
+      if(periodo) p.set('periodo',periodo);
+      if(categoria) p.set('categoria',categoria);
+      if(q) p.set('q',q);
+      p.set('paged','1');
+      p.set('order_by',DESP_STATE.order_by);
+      p.set('order_dir',DESP_STATE.order_dir);
+      if(includePage){
+        p.set('page',String(DESP_STATE.page));
+        p.set('per_page',String(DESP_STATE.per_page));
+      }
+      return p.toString();
+    }
+
     async function cadastrarDespesa(ev){
       ev.preventDefault();
       const form=document.getElementById('form-despesa');
       const fd=new FormData(form);
-      await fetch('/api/despesas',{method:'POST',body:fd});
+      const r=await fetch('/api/despesas',{method:'POST',body:fd});
+      let d={};
+      try{ d=await r.json(); }catch(_){ d={erro:'Erro ao processar resposta do servidor.'}; }
+      if(!r.ok || d.erro){
+        alert(d.erro||'Erro ao cadastrar despesa.');
+        return;
+      }
       form.reset();
+      DESP_STATE.page=1;
       carregarDespesas();
     }
 
     async function carregarDespesas(){
-      const periodo=document.getElementById('desp-filtro-periodo').value;
-      const categoria=document.getElementById('desp-filtro-categoria').value;
-      let url='/api/despesas?';
-      if(periodo) url+='periodo='+encodeURIComponent(periodo)+'&';
-      if(categoria) url+='categoria='+encodeURIComponent(categoria)+'&';
-      const lista=await api(url);
+      const perSel=document.getElementById('desp-per-page');
+      if(perSel) DESP_STATE.per_page=parseInt(perSel.value||'20',10)||20;
+      const r=await api('/api/despesas?'+_despQueryString(true));
       const tb=document.getElementById('tb-despesas');
-      if(!lista.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:28px;color:#bbb">Nenhuma despesa cadastrada.</td></tr>';document.getElementById('desp-res').textContent='';return;}
+      const pag=document.getElementById('desp-pag');
+      if(r?.erro){
+        tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:28px;color:#c33">Erro ao carregar despesas.</td></tr>';
+        document.getElementById('desp-res').textContent=r.erro;
+        if(pag) pag.innerHTML='';
+        return;
+      }
+      const lista=r.itens||[];
+      DESP_CACHE=lista;
+      if(!lista.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:28px;color:#bbb">Nenhuma despesa cadastrada.</td></tr>';document.getElementById('desp-res').textContent='';if(pag) pag.innerHTML='';return;}
       tb.innerHTML=lista.map(d=>{
         let comp='';
         if(d.comprovante){
@@ -368,11 +445,59 @@ document.addEventListener('DOMContentLoaded',()=>{
           <td>${comp}</td>
           <td>${d.observacoes||''}</td>
           <td>${d.criado_fmt||''}</td>
+          <td>
+            <button class="btn b-gh b-sm" onclick="editarDespesa(${d.id})">Editar</button>
+            <button class="btn b-ghr b-sm" onclick="excluirDespesa(${d.id})">Excluir</button>
+          </td>
         </tr>`;
       }).join('');
       const tot=lista.reduce((s,d)=>s+(d.valor||0),0);
-      document.getElementById('desp-res').textContent=lista.length+' despesa(s) · Total: '+brl(tot);
+      document.getElementById('desp-res').textContent=(r.total||0)+' despesa(s) · Página '+(r.page||1)+'/'+(r.total_paginas||1)+' · Total da página: '+brl(tot);
+      if(pag){
+        pag.innerHTML=`<button class="btn b-sm" ${(r.tem_anterior)?'':'disabled'} onclick="despGo(${(r.page||1)-1})">Anterior</button>
+          <span style="font-size:12px;color:#6d7a8c">Página ${(r.page||1)} de ${(r.total_paginas||1)}</span>
+          <button class="btn b-sm" ${(r.tem_proxima)?'':'disabled'} onclick="despGo(${(r.page||1)+1})">Próxima</button>`;
+      }
     }
+
+    function despGo(page){
+      DESP_STATE.page=Math.max(1,parseInt(page||1,10)||1);
+      carregarDespesas();
+    }
+
+    function despFiltrar(){
+      DESP_STATE.page=1;
+      carregarDespesas();
+    }
+
+    async function editarDespesa(id){
+      const d=DESP_CACHE.find(x=>parseInt(x.id,10)===parseInt(id,10));
+      if(!d){ alert('Despesa não encontrada na página atual.'); return; }
+      const descricao=(prompt('Descrição:',d.descricao||'')||'').trim();
+      if(!descricao){ alert('Descrição é obrigatória.'); return; }
+      const valorTxt=(prompt('Valor (ex: 123.45):',String(d.valor??''))||'').trim();
+      const valor=parseFloat(valorTxt.replace(',','.'));
+      if(!isFinite(valor) || valor<0){ alert('Valor inválido.'); return; }
+      const categoria=(prompt('Categoria:',d.categoria||'Outras')||'').trim()||'Outras';
+      const data=(prompt('Data (YYYY-MM-DD):',d.data||'')||'').trim();
+      const observacoes=(prompt('Observações:',d.observacoes||'')||'').trim();
+      const r=await api('/api/despesas/'+id,'PUT',{descricao,valor,categoria,data,observacoes});
+      if(r?.erro){ alert(r.erro); return; }
+      carregarDespesas();
+    }
+
+    async function excluirDespesa(id){
+      if(!confirm('Excluir esta despesa?')) return;
+      const r=await api('/api/despesas/'+id,'DELETE');
+      if(r?.erro){ alert(r.erro); return; }
+      carregarDespesas();
+    }
+
+    function exportarDespesasCSV(){
+      const qs=_despQueryString(false).replace('paged=1&','').replace('&paged=1','').replace('paged=1','');
+      window.open('/api/despesas/export.csv?'+qs,'_blank');
+    }
+
     document.addEventListener('DOMContentLoaded',()=>{
       if(document.getElementById('pg-despesas')){
         carregarDespesas();

@@ -19,7 +19,7 @@ _strict_origin_check = True
 
 
 
-from flask import Flask, request, jsonify, redirect, render_template, send_file
+from flask import Flask, request, jsonify, redirect, render_template, send_file, Response
 
 import io
 _strict_origin_check = False
@@ -176,37 +176,194 @@ class Despesa(db.Model):
         d['criado_fmt'] = self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
         return d
 
+def _parse_date_ymd(raw):
+    s=(raw or '').strip()
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s,'%Y-%m-%d').date()
+    except Exception:
+        return None
+
+def _is_true_param(v):
+    return str(v or '').strip().lower() in ('1','true','yes','on')
+
+def _to_float_safe(v, default=0.0):
+    try:
+        return float(str(v).replace(',','.'))
+    except Exception:
+        return default
+
+def _build_despesas_query(args):
+    categoria=(args.get('categoria') or '').strip()
+    periodo=(args.get('periodo') or '').strip()  # YYYY-MM
+    q=(args.get('q') or '').strip().lower()
+    data_ini=_parse_date_ymd(args.get('data_ini'))
+    data_fim=_parse_date_ymd(args.get('data_fim'))
+
+    qr=Despesa.query
+    if categoria:
+        qr=qr.filter(Despesa.categoria==categoria)
+    if periodo:
+        qr=qr.filter(Despesa.data.like(f'{periodo}%'))
+    if q:
+        qr=qr.filter(
+            Despesa.descricao.ilike(f'%{q}%') |
+            Despesa.categoria.ilike(f'%{q}%') |
+            Despesa.observacoes.ilike(f'%{q}%')
+        )
+    if data_ini:
+        qr=qr.filter(Despesa.data>=data_ini.strftime('%Y-%m-%d'))
+    if data_fim:
+        qr=qr.filter(Despesa.data<=data_fim.strftime('%Y-%m-%d'))
+
+    order_by=(args.get('order_by') or 'data').strip().lower()
+    order_dir=(args.get('order_dir') or 'desc').strip().lower()
+    sort_map={
+        'id':Despesa.id,
+        'descricao':Despesa.descricao,
+        'categoria':Despesa.categoria,
+        'data':Despesa.data,
+        'valor':Despesa.valor,
+        'criado_em':Despesa.criado_em,
+    }
+    col=sort_map.get(order_by,Despesa.data)
+    qr=qr.order_by(col.asc() if order_dir=='asc' else col.desc(),Despesa.id.desc())
+    return qr
+
 @app.route('/api/despesas', methods=['GET'])
 @lr
 def api_despesas_list():
-    categoria = request.args.get('categoria', '').strip()
-    periodo = request.args.get('periodo', '').strip()  # formato YYYY-MM
-    qr = Despesa.query
-    if categoria:
-        qr = qr.filter(Despesa.categoria == categoria)
-    if periodo:
-        qr = qr.filter(Despesa.data.like(f'{periodo}%'))
-    lista = qr.order_by(Despesa.data.desc(), Despesa.id.desc()).all()
-    return jsonify([d.to_dict() for d in lista])
+    qr=_build_despesas_query(request.args)
+    wants_paged=_is_true_param(request.args.get('paged')) or bool(request.args.get('page') or request.args.get('per_page'))
+    if not wants_paged:
+        lista=qr.all()
+        return jsonify([d.to_dict() for d in lista])
+
+    page=max(1,to_num(request.args.get('page')) or 1)
+    per_page=to_num(request.args.get('per_page')) or 20
+    per_page=min(max(1,per_page),200)
+    total=qr.count()
+    itens=qr.offset((page-1)*per_page).limit(per_page).all()
+    total_paginas=max(1,(total+per_page-1)//per_page)
+    return jsonify({
+        'ok':True,
+        'itens':[d.to_dict() for d in itens],
+        'page':page,
+        'per_page':per_page,
+        'total':total,
+        'total_paginas':total_paginas,
+        'tem_anterior':page>1,
+        'tem_proxima':page<total_paginas,
+        'total_valor':round(sum((x.valor or 0) for x in itens),2),
+    })
 
 @app.route('/api/despesas', methods=['POST'])
 @lr
 def api_despesas_add():
-    d = request.form or request.json or {}
-    descricao = d.get('descricao', '').strip()
-    valor = float(d.get('valor', 0))
-    categoria = d.get('categoria', 'Outras').strip()
-    data = d.get('data', '').strip()
-    observacoes = d.get('observacoes', '').strip()
-    comprovante = ''
+    d=request.form or request.json or {}
+    descricao=(d.get('descricao') or '').strip()
+    categoria=(d.get('categoria') or 'Outras').strip() or 'Outras'
+    data=(d.get('data') or '').strip()
+    observacoes=(d.get('observacoes') or '').strip()
+    valor=_to_float_safe(d.get('valor'),-1)
+    if not descricao:
+        return jsonify({'erro':'Descrição é obrigatória.'}),400
+    if valor<0:
+        return jsonify({'erro':'Valor inválido.'}),400
+    if data and not _parse_date_ymd(data):
+        return jsonify({'erro':'Data inválida. Use o formato YYYY-MM-DD.'}),400
+
+    comprovante=''
     if 'comprovante' in request.files:
-        fs = request.files['comprovante']
-        rel, _ = save_upload(fs, f'despesas')
-        comprovante = rel
-    nova = Despesa(descricao=descricao, valor=valor, categoria=categoria, data=data, comprovante=comprovante, observacoes=observacoes)
-    db.session.add(nova)
-    db.session.commit()
-    return jsonify(nova.to_dict()), 201
+        fs=request.files['comprovante']
+        if fs and fs.filename:
+            rel,_=save_upload(fs,'despesas')
+            comprovante=rel
+    try:
+        nova=Despesa(descricao=descricao[:200],valor=valor,categoria=categoria[:50],data=data[:10],comprovante=comprovante,observacoes=observacoes)
+        db.session.add(nova)
+        db.session.commit()
+        return jsonify(nova.to_dict()),201
+    except Exception:
+        db.session.rollback()
+        return jsonify({'erro':'Erro ao cadastrar despesa.'}),500
+
+@app.route('/api/despesas/<int:id>', methods=['PUT'])
+@lr
+def api_despesas_edit(id):
+    desp=Despesa.query.get_or_404(id)
+    d=request.get_json(silent=True) or request.form or {}
+    descricao=(d.get('descricao') if 'descricao' in d else desp.descricao) or ''
+    categoria=(d.get('categoria') if 'categoria' in d else desp.categoria) or 'Outras'
+    data=(d.get('data') if 'data' in d else desp.data) or ''
+    observacoes=(d.get('observacoes') if 'observacoes' in d else desp.observacoes) or ''
+    valor=_to_float_safe((d.get('valor') if 'valor' in d else desp.valor),-1)
+
+    descricao=str(descricao).strip()
+    categoria=str(categoria).strip() or 'Outras'
+    data=str(data).strip()
+    observacoes=str(observacoes).strip()
+    if not descricao:
+        return jsonify({'erro':'Descrição é obrigatória.'}),400
+    if valor<0:
+        return jsonify({'erro':'Valor inválido.'}),400
+    if data and not _parse_date_ymd(data):
+        return jsonify({'erro':'Data inválida. Use o formato YYYY-MM-DD.'}),400
+
+    try:
+        desp.descricao=descricao[:200]
+        desp.categoria=categoria[:50]
+        desp.data=data[:10]
+        desp.valor=valor
+        desp.observacoes=observacoes
+        db.session.commit()
+        return jsonify(desp.to_dict())
+    except Exception:
+        db.session.rollback()
+        return jsonify({'erro':'Erro ao atualizar despesa.'}),500
+
+@app.route('/api/despesas/<int:id>', methods=['DELETE'])
+@lr
+def api_despesas_delete(id):
+    desp=Despesa.query.get_or_404(id)
+    try:
+        if (desp.comprovante or '').strip():
+            abs_path=os.path.join(UPLOAD_ROOT,desp.comprovante)
+            if os.path.exists(abs_path):
+                try:
+                    os.remove(abs_path)
+                except Exception:
+                    pass
+        db.session.delete(desp)
+        db.session.commit()
+        return jsonify({'ok':True})
+    except Exception:
+        db.session.rollback()
+        return jsonify({'erro':'Erro ao excluir despesa.'}),500
+
+@app.route('/api/despesas/export.csv', methods=['GET'])
+@lr
+def api_despesas_export_csv():
+    lista=_build_despesas_query(request.args).all()
+    out=io.StringIO()
+    w=csv.writer(out,delimiter=';')
+    w.writerow(['ID','Descricao','Categoria','Data','Valor','Observacoes'])
+    for d in lista:
+        w.writerow([
+            d.id,
+            d.descricao or '',
+            d.categoria or '',
+            d.data or '',
+            f'{(d.valor or 0):.2f}'.replace('.',','),
+            d.observacoes or '',
+        ])
+    csv_txt=out.getvalue()
+    return Response(
+        csv_txt,
+        mimetype='text/csv; charset=utf-8',
+        headers={'Content-Disposition':'attachment; filename=despesas.csv'}
+    )
 
 @app.route('/api/medicoes/<int:id>')
 @lr
@@ -236,6 +393,130 @@ def api_medicoes():
         _ensure_medicao_stamp_cols_runtime(force=True)
         lista = qr.order_by(Medicao.dt_emissao.desc(), Medicao.id.desc()).all()
     return jsonify([m.to_dict() for m in lista])
+
+def _build_faturamento_query(args):
+    mes_ref=(args.get('mes_ref') or '').strip()
+    cliente=(args.get('cliente') or '').strip().lower()
+    status=(args.get('status') or '').strip().lower()
+    empresa_id=to_num(args.get('empresa_id'))
+    q=(args.get('q') or '').strip().lower()
+    dt_ini=(args.get('dt_ini') or '').strip()
+    dt_fim=(args.get('dt_fim') or '').strip()
+    valor_min=_to_float_safe(args.get('valor_min'),None) if (args.get('valor_min') or '').strip()!='' else None
+    valor_max=_to_float_safe(args.get('valor_max'),None) if (args.get('valor_max') or '').strip()!='' else None
+
+    qr=Medicao.query
+    if mes_ref:
+        qr=qr.filter(Medicao.mes_ref==mes_ref)
+    if cliente:
+        qr=qr.filter((Medicao.cliente_nome.ilike(f'%{cliente}%')) | (Medicao.cliente_cnpj.ilike(f'%{cliente}%')))
+    if status:
+        qr=qr.filter(Medicao.status==status)
+    if empresa_id:
+        qr=qr.filter(Medicao.empresa_id==empresa_id)
+    if q:
+        qr=qr.filter(
+            Medicao.numero.ilike(f'%{q}%') |
+            Medicao.cliente_nome.ilike(f'%{q}%') |
+            Medicao.cliente_cnpj.ilike(f'%{q}%') |
+            Medicao.empresa_nome.ilike(f'%{q}%')
+        )
+    if dt_ini and _parse_date_ymd(dt_ini):
+        qr=qr.filter(Medicao.dt_emissao>=dt_ini)
+    if dt_fim and _parse_date_ymd(dt_fim):
+        qr=qr.filter(Medicao.dt_emissao<=dt_fim)
+    if valor_min is not None:
+        qr=qr.filter(Medicao.valor_bruto>=valor_min)
+    if valor_max is not None:
+        qr=qr.filter(Medicao.valor_bruto<=valor_max)
+
+    order_by=(args.get('order_by') or 'dt_emissao').strip().lower()
+    order_dir=(args.get('order_dir') or 'desc').strip().lower()
+    sort_map={
+        'id':Medicao.id,
+        'numero':Medicao.numero,
+        'cliente_nome':Medicao.cliente_nome,
+        'empresa_nome':Medicao.empresa_nome,
+        'mes_ref':Medicao.mes_ref,
+        'dt_emissao':Medicao.dt_emissao,
+        'dt_vencimento':Medicao.dt_vencimento,
+        'valor_bruto':Medicao.valor_bruto,
+        'status':Medicao.status,
+    }
+    col=sort_map.get(order_by,Medicao.dt_emissao)
+    qr=qr.order_by(col.asc() if order_dir=='asc' else col.desc(),Medicao.id.desc())
+    return qr
+
+@app.route('/api/financeiro/faturamento', methods=['GET'])
+@lr
+def api_financeiro_faturamento_list():
+    try:
+        qr=_build_faturamento_query(request.args)
+        page=max(1,to_num(request.args.get('page')) or 1)
+        per_page=to_num(request.args.get('per_page')) or 20
+        per_page=min(max(1,per_page),200)
+        total=qr.count()
+        itens=qr.offset((page-1)*per_page).limit(per_page).all()
+        total_paginas=max(1,(total+per_page-1)//per_page)
+        total_valor=0.0
+        out=[]
+        for m in itens:
+            d=m.to_dict()
+            total_valor+=(d.get('valor_bruto') or 0)
+            out.append(d)
+        return jsonify({
+            'ok':True,
+            'itens':out,
+            'page':page,
+            'per_page':per_page,
+            'total':total,
+            'total_paginas':total_paginas,
+            'tem_anterior':page>1,
+            'tem_proxima':page<total_paginas,
+            'total_valor':round(total_valor,2),
+        })
+    except OperationalError as e:
+        if not _is_missing_medicao_stamp_error(e):
+            raise
+        db.session.rollback()
+        _ensure_medicao_stamp_cols_runtime(force=True)
+        return api_financeiro_faturamento_list()
+
+@app.route('/api/financeiro/faturamento/export.csv', methods=['GET'])
+@lr
+def api_financeiro_faturamento_export_csv():
+    try:
+        lista=_build_faturamento_query(request.args).all()
+    except OperationalError as e:
+        if not _is_missing_medicao_stamp_error(e):
+            raise
+        db.session.rollback()
+        _ensure_medicao_stamp_cols_runtime(force=True)
+        lista=_build_faturamento_query(request.args).all()
+
+    out=io.StringIO()
+    w=csv.writer(out,delimiter=';')
+    w.writerow(['ID','Numero','Cliente','CNPJ','Empresa','Mes Ref','Emissao','Vencimento','Valor','Status'])
+    for m in lista:
+        d=m.to_dict()
+        w.writerow([
+            d.get('id') or '',
+            d.get('numero') or '',
+            d.get('cliente_nome') or '',
+            d.get('cliente_cnpj') or '',
+            d.get('empresa_nome') or '',
+            d.get('mes_ref') or '',
+            d.get('dt_emissao') or '',
+            d.get('dt_vencimento') or '',
+            f"{(d.get('valor_bruto') or 0):.2f}".replace('.',','),
+            d.get('status') or '',
+        ])
+    csv_txt=out.getvalue()
+    return Response(
+        csv_txt,
+        mimetype='text/csv; charset=utf-8',
+        headers={'Content-Disposition':'attachment; filename=faturamento.csv'}
+    )
 
 class Usuario(db.Model):
     id=db.Column(db.Integer,primary_key=True)
@@ -2660,6 +2941,7 @@ def can_access_request(path,method='GET'):
 def area_from_path(path):
     p=(path or '').lower()
     if p.startswith('/api/dashboard'): return 'dashboard'
+    if p.startswith('/api/financeiro'): return 'medicoes'
     if p.startswith('/api/medicoes') or p.startswith('/api/proximo-numero') or p.startswith('/api/pdf'): return 'medicoes'
     if p.startswith('/api/clientes'): return 'clientes'
     if p.startswith('/api/empresas'): return 'empresas'
