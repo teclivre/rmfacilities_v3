@@ -1,7 +1,7 @@
 <!-- Modal Detalhe Faturamento -->
 <div id="modal-fat-detalhe" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:24px 16px">
-  <div style="background:var(--card,#fff);border-radius:10px;max-width:600px;margin:40px auto;padding:24px;position:relative">
-    <span class="close" onclick="fecharModalFatDetalhe()">&times;</span>
+  <div style="background:#fff;color:#222;border-radius:10px;max-width:600px;margin:40px auto;padding:24px;position:relative">
+    <span class="close" style="color:#666" onclick="fecharModalFatDetalhe()">&times;</span>
     <div id="fat-detalhe-body">Carregando...</div>
   </div>
 </div>
@@ -43,11 +43,19 @@ function abrirModalFatDetalhe(id){
       html+='<div style="margin-top:10px"><b>Serviços:</b><ul style="margin:0 0 0 18px">'+m.svcs.map(s=>`<li>${(s&&s.desc)||''} ${(s&&s.vtot)?'— '+brl(s.vtot):''}</li>`).join('')+'</ul></div>';
     }
     if(m.observacoes){html+=`<div style='margin-top:10px'><b>Observações:</b> ${m.observacoes}</div>`;}
-    html+=`<div style='margin-top:10px'><button class='btn b-gh b-sm' onclick='editarFatura(${m.id})'>Editar</button> <button class='btn b-ghr b-sm' onclick='cancelarFatura(${m.id})'>Cancelar</button></div>`;
+    html+=`<div style='margin-top:10px'><button class='btn b-az b-sm' onclick='editarFatura(${m.id})'>Editar</button> <button class='btn b-ci b-sm' onclick='cancelarFatura(${m.id},"${(m.numero||'').replace(/"/g,"&quot;")}")' ${m.status==='cancelada'?'disabled':''}>Cancelar Fatura</button></div>`;
     body.innerHTML=html;
   });
 }
 function fecharModalFatDetalhe(){document.getElementById('modal-fat-detalhe').style.display='none';}
+function editarFatura(id){fecharModalFatDetalhe();abrirMedicao(id);}
+async function cancelarFatura(id,numero){
+  if(!confirm('Cancelar a fatura '+numero+'? Ela ficará marcada como cancelada.'))return;
+  const r=await api('/api/medicoes/'+id+'/status','PUT',{status:'cancelada'});
+  if(r&&r.erro){alert(r.erro);return;}
+  fecharModalFatDetalhe();
+  carregarFaturamento();
+}
 document.getElementById('modal-fat-detalhe').addEventListener('click',function(e){if(e.target===this)fecharModalFatDetalhe();});
 // === FATURAMENTO (Financeiro) ===
 </script>
