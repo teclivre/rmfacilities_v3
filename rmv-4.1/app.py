@@ -5215,6 +5215,8 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
     stamp_pagina=int(getattr(envelope,'stamp_pagina',1) or 1)
     stamp_x_pct=float(getattr(envelope,'stamp_x_pct',60.0) or 60.0)
     stamp_y_pct=float(getattr(envelope,'stamp_y_pct',10.0) or 10.0)
+    stamp_todas_paginas=bool(getattr(envelope,'stamp_todas_paginas',False))
+    stamp_todos_arquivos=bool(getattr(envelope,'stamp_todos_arquivos',False))
     stamp_signatarios=[]
     assinatura_img_map={}
     if stamp_habilitado:
@@ -5350,8 +5352,13 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
                         footer_bytes=_make_footer_overlay(w,h)
                         footer_page=PdfReader(io.BytesIO(footer_bytes)).pages[0]
                         page.merge_page(footer_page)
-                        # stamp overlay (first arquivo, target page only)
-                        if stamp_habilitado and stamp_signatarios and file_idx==0 and page_idx==stamp_page_idx:
+                        # stamp overlay
+                        apply_stamp=False
+                        if stamp_habilitado and stamp_signatarios:
+                            if stamp_todos_arquivos or file_idx==0:
+                                if stamp_todas_paginas or page_idx==stamp_page_idx:
+                                    apply_stamp=True
+                        if apply_stamp:
                             stamp_bytes=_make_stamp_overlay(w,h,stamp_signatarios,assinatura_img_map,stamp_x_pct,stamp_y_pct)
                             if stamp_bytes:
                                 stamp_page=PdfReader(io.BytesIO(stamp_bytes)).pages[0]
@@ -5658,8 +5665,10 @@ def api_envelope_stamp(id):
     env.stamp_pagina=max(1,int(data.get('stamp_pagina',1) or 1))
     env.stamp_x_pct=max(0.0,min(100.0,float(data.get('stamp_x_pct',60.0) or 60.0)))
     env.stamp_y_pct=max(0.0,min(100.0,float(data.get('stamp_y_pct',10.0) or 10.0)))
+    env.stamp_todas_paginas=bool(data.get('stamp_todas_paginas',False))
+    env.stamp_todos_arquivos=bool(data.get('stamp_todos_arquivos',False))
     db.session.commit()
-    return jsonify({'ok':True,'stamp_habilitado':env.stamp_habilitado,'stamp_pagina':env.stamp_pagina,'stamp_x_pct':env.stamp_x_pct,'stamp_y_pct':env.stamp_y_pct})
+    return jsonify({'ok':True,'stamp_habilitado':env.stamp_habilitado,'stamp_pagina':env.stamp_pagina,'stamp_x_pct':env.stamp_x_pct,'stamp_y_pct':env.stamp_y_pct,'stamp_todas_paginas':env.stamp_todas_paginas,'stamp_todos_arquivos':env.stamp_todos_arquivos})
 
 
 @app.route('/api/envelopes/<int:id>/arquivos',methods=['POST'])
@@ -8398,6 +8407,10 @@ with app.app_context():
         'stamp_pagina INTEGER DEFAULT 1',
         'stamp_x_pct REAL DEFAULT 60.0',
         'stamp_y_pct REAL DEFAULT 10.0',
+        'stamp_todas_paginas BOOLEAN DEFAULT 0',
+        'stamp_todos_arquivos BOOLEAN DEFAULT 0',
+        'stamp_todas_paginas BOOLEAN DEFAULT 0',
+        'stamp_todos_arquivos BOOLEAN DEFAULT 0',
     ])
     ensure_cols('assinatura_envelope_arquivo',[
         'id INTEGER PRIMARY KEY AUTOINCREMENT',

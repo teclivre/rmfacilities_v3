@@ -126,14 +126,6 @@
                   <label>Código OTP (6 dígitos)</label>
                   <input id="inp-otp" type="text" placeholder="Informe o código recebido" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
                 </div>
-                <!-- Canvas de assinatura manuscrita -->
-                <div class="public-form-group" id="sig-canvas-group">
-                  <label style="margin-bottom:6px;display:block">Assinatura manuscrita <span style="font-size:11px;color:#888">(opcional — desenhe com o dedo ou mouse)</span></label>
-                  <div style="border:1px solid #c5d9f0;border-radius:8px;overflow:hidden;background:#fff;position:relative">
-                    <canvas id="sig-canvas" width="500" height="120" style="display:block;width:100%;height:120px;touch-action:none;cursor:crosshair"></canvas>
-                  </div>
-                  <button type="button" onclick="limparCanvas()" style="margin-top:6px;font-size:12px;background:none;border:none;color:#888;cursor:pointer;text-decoration:underline">Limpar assinatura</button>
-                </div>
                 <label class="public-check">
                   <input type="checkbox" id="chk-aceite">
                   Declaro que li e entendi os documentos listados acima e, ao clicar em <strong>Confirmar Assinatura</strong>, confirmo minha assinatura eletrônica com validade legal, conforme a Lei nº 14.063/2020.
@@ -181,49 +173,6 @@ let currentRenderToken=0;
 
 if(window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions){
   window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.js';
-}
-
-// --- Canvas assinatura ---
-(function(){
-  const canvas=document.getElementById('sig-canvas');
-  if(!canvas) return;
-  const ctx=canvas.getContext('2d');
-  let drawing=false;
-  let lastX=0,lastY=0;
-  ctx.strokeStyle='#1a2b6e';
-  ctx.lineWidth=2;
-  ctx.lineCap='round';
-  ctx.lineJoin='round';
-  function pos(e){
-    const r=canvas.getBoundingClientRect();
-    const scaleX=canvas.width/r.width;
-    const scaleY=canvas.height/r.height;
-    if(e.touches){
-      return [(e.touches[0].clientX-r.left)*scaleX,(e.touches[0].clientY-r.top)*scaleY];
-    }
-    return [(e.clientX-r.left)*scaleX,(e.clientY-r.top)*scaleY];
-  }
-  function start(e){ e.preventDefault(); drawing=true; [lastX,lastY]=pos(e); }
-  function move(e){ e.preventDefault(); if(!drawing) return; const [x,y]=pos(e); ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(x,y); ctx.stroke(); [lastX,lastY]=[x,y]; }
-  function end(e){ drawing=false; }
-  canvas.addEventListener('mousedown',start); canvas.addEventListener('mousemove',move); canvas.addEventListener('mouseup',end); canvas.addEventListener('mouseleave',end);
-  canvas.addEventListener('touchstart',start,{passive:false}); canvas.addEventListener('touchmove',move,{passive:false}); canvas.addEventListener('touchend',end);
-})();
-
-function limparCanvas(){
-  const canvas=document.getElementById('sig-canvas');
-  if(!canvas) return;
-  canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);
-}
-
-function getCanvasImgData(){
-  const canvas=document.getElementById('sig-canvas');
-  if(!canvas) return '';
-  // Só retorna imagem se o canvas tiver traços (não estiver em branco)
-  const ctx=canvas.getContext('2d');
-  const data=ctx.getImageData(0,0,canvas.width,canvas.height).data;
-  const hasData=data.some(v=>v!==0);
-  return hasData?canvas.toDataURL('image/png'):'';
 }
 
 function showMsg(txt,type='err'){
@@ -452,7 +401,7 @@ async function confirmarAssinatura(){
     const r=await fetch(`/api/envelope/assinar/${TOKEN}/confirmar`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({nome,cargo,cpf,otp,aceite,assinatura_img:getCanvasImgData()})
+    body:JSON.stringify({nome,cargo,cpf,otp,aceite})
     });
     const d=await r.json();
     if(!r.ok || d.erro){

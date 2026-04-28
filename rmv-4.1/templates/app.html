@@ -102,6 +102,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 <link rel="icon" type="image/svg+xml" href="/static/img/pwa-icon.svg">
 <link rel="apple-touch-icon" href="/static/img/pwa-icon.svg">
 <link rel="stylesheet" href="/static/css/main.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.min.js"></script>
 </head>
 <body>
 
@@ -1004,10 +1005,22 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
             <div class="f" style="margin-bottom:0">
               <label>Página do carimbo</label>
-              <input type="number" id="stamp-pagina" min="1" value="1" style="max-width:90px" oninput="previewStampPos();carregarPreviewCarimbo()">
+              <input type="number" id="stamp-pagina" min="1" value="1" style="max-width:90px" oninput="previewStampPos()">
             </div>
             <div class="f" style="margin-bottom:0">
-              <label>Documento base</label>
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+                <input type="checkbox" id="stamp-todas-paginas" style="width:16px;height:16px">
+                Carimbar em todas as páginas
+              </label>
+            </div>
+            <div class="f" style="margin-bottom:0">
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+                <input type="checkbox" id="stamp-todos-arquivos" style="width:16px;height:16px">
+                Carimbar em todos os arquivos
+              </label>
+            </div>
+            <div class="f" style="margin-bottom:0">
+              <label>Prévia do documento</label>
               <select id="stamp-arquivo" onchange="carregarPreviewCarimbo()">
                 <option value="">Selecione...</option>
               </select>
@@ -1015,17 +1028,13 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
           <div id="stamp-pos-area" style="margin-top:10px">
             <p style="font-size:12px;color:#555;margin:0 0 6px 0">Abra o documento abaixo e clique no ponto exato onde o carimbo deve aparecer:</p>
-            <div id="stamp-preview-wrap" style="position:relative;display:inline-block;width:min(100%,520px);height:700px;border:1px solid #c8d8f0;border-radius:8px;overflow:hidden;background:#f0f4fa">
-              <iframe id="stamp-doc-frame" title="Prévia real do documento" style="width:100%;height:100%;border:none;background:#fff;pointer-events:none"></iframe>
-              <div id="stamp-click-layer" style="position:absolute;inset:0;cursor:crosshair" onclick="setStampPosFromClick(event)"></div>
-              <div id="stamp-indicator" style="position:absolute;bottom:10%;left:60%;transform:translate(-50%,50%);
-                   background:rgba(30,60,120,0.13);border:2px dashed #3060c0;border-radius:4px;
-                   width:68px;height:28px;pointer-events:none;display:flex;align-items:center;justify-content:center">
-                <span style="font-size:9px;color:#3060c0;font-weight:700">CARIMBO</span>
-              </div>
+            <div id="stamp-preview-wrap" style="position:relative;display:block;width:min(100%,520px);max-height:700px;overflow-y:auto;border:1px solid #c8d8f0;border-radius:8px;background:#f0f4fa">
+              <div id="stamp-pages-container" style="position:relative"></div>
+              <div id="stamp-loading" style="display:flex;align-items:center;justify-content:center;padding:40px;color:#6b7a90;font-size:13px">Selecione um documento para prévia</div>
             </div>
             <div id="stamp-preview-msg" style="margin-top:6px;font-size:12px;color:#6b7a90"></div>
             <div style="display:flex;gap:12px;margin-top:8px;align-items:center;font-size:12px;flex-wrap:wrap">
+              <span>Pág: <strong id="stamp-pagina-val">1</strong></span>
               <span>X: <strong id="stamp-x-val">60</strong>%</span>
               <span>Y: <strong id="stamp-y-val">10</strong>%</span>
               <input type="hidden" id="stamp-x-pct" value="60">
@@ -5382,24 +5391,30 @@ function previewStampPos(){
   if(area) area.style.display=hab?'block':'none';
 }
 
-function setStampPosFromClick(e){
-  const area=document.getElementById('stamp-click-layer');
-  if(!area) return;
-  const rect=area.getBoundingClientRect();
+function setStampPosFromClick(e,canvasEl,pageNum){
+  const rect=canvasEl.getBoundingClientRect();
   const xPct=Math.round(((e.clientX-rect.left)/rect.width)*100);
   const yPctFromBottom=Math.round((1-(e.clientY-rect.top)/rect.height)*100);
-  const xClamped=Math.max(0,Math.min(62,xPct));
+  const xClamped=Math.max(2,Math.min(90,xPct));
   const yClamped=Math.max(2,Math.min(90,yPctFromBottom));
   document.getElementById('stamp-x-pct').value=xClamped;
   document.getElementById('stamp-y-pct').value=yClamped;
   document.getElementById('stamp-x-val').textContent=xClamped;
   document.getElementById('stamp-y-val').textContent=yClamped;
-  const ind=document.getElementById('stamp-indicator');
-  if(ind){
-    ind.style.left=xClamped+'%';
-    ind.style.bottom=yClamped+'%';
-    ind.style.transform='translate(-50%,50%)';
+  if(pageNum){
+    const pgInput=document.getElementById('stamp-pagina');
+    if(pgInput) pgInput.value=pageNum;
+    const pgVal=document.getElementById('stamp-pagina-val');
+    if(pgVal) pgVal.textContent=pageNum;
   }
+  // Atualiza indicador visual na página clicada
+  document.querySelectorAll('.stamp-page-indicator').forEach(el=>el.remove());
+  const ind=document.createElement('div');
+  ind.className='stamp-page-indicator';
+  ind.style.cssText=`position:absolute;left:${xClamped}%;bottom:${yClamped}%;transform:translate(-50%,50%);background:rgba(30,60,120,0.15);border:2px dashed #3060c0;border-radius:4px;width:68px;height:28px;pointer-events:none;display:flex;align-items:center;justify-content:center;z-index:10`;
+  ind.innerHTML='<span style="font-size:9px;color:#3060c0;font-weight:700">CARIMBO</span>';
+  const wrapper=canvasEl.closest('.stamp-page-wrap');
+  if(wrapper) wrapper.style.position='relative', wrapper.appendChild(ind);
 }
 
 function _nomeArquivoEnvelope(arqId){
@@ -5408,29 +5423,72 @@ function _nomeArquivoEnvelope(arqId){
   return (a&&a.nome_arquivo)||'';
 }
 
-function carregarPreviewCarimbo(){
+async function carregarPreviewCarimbo(){
   const msg=document.getElementById('stamp-preview-msg');
-  const frame=document.getElementById('stamp-doc-frame');
+  const container=document.getElementById('stamp-pages-container');
+  const loading=document.getElementById('stamp-loading');
   const selArq=document.getElementById('stamp-arquivo');
-  const pg=Math.max(1,parseInt(document.getElementById('stamp-pagina')?.value||'1',10)||1);
-  if(!frame||!selArq||!_asiEnvelopeId){
+  if(!container||!selArq||!_asiEnvelopeId){
     if(msg) msg.textContent='';
     return;
   }
   const arqId=parseInt(selArq.value||'0',10);
   if(!arqId){
-    frame.src='about:blank';
-    if(msg) msg.textContent='Adicione um documento ao envelope para posicionar o carimbo.';
+    container.innerHTML='';
+    if(loading){ loading.style.display='flex'; loading.textContent='Adicione um documento ao envelope para posicionar o carimbo.'; }
+    if(msg) msg.textContent='';
     return;
   }
   const nome=(_nomeArquivoEnvelope(arqId)||'').toLowerCase();
   if(nome && !nome.endsWith('.pdf')){
-    frame.src='about:blank';
+    container.innerHTML='';
+    if(loading){ loading.style.display='flex'; loading.textContent='Prévia disponível apenas para PDF.'; }
     if(msg) msg.textContent='Prévia com posicionamento exato disponível para PDF.';
     return;
   }
-  frame.src=`/api/envelopes/${_asiEnvelopeId}/arquivos/${arqId}/visualizar?_=${Date.now()}#page=${pg}&zoom=page-width`;
-  if(msg) msg.textContent='Documento aberto para posicionamento. Clique na área desejada para o carimbo.';
+  if(loading){ loading.style.display='flex'; loading.textContent='Carregando documento...'; }
+  container.innerHTML='';
+  if(msg) msg.textContent='';
+  try{
+    if(!window.pdfjsLib){
+      if(loading) loading.textContent='PDF.js não carregado.';
+      return;
+    }
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.js';
+    const url=`/api/envelopes/${_asiEnvelopeId}/arquivos/${arqId}/visualizar?_=${Date.now()}`;
+    const pdfDoc=await window.pdfjsLib.getDocument(url).promise;
+    if(loading) loading.style.display='none';
+    const numPages=pdfDoc.numPages;
+    for(let pgNum=1;pgNum<=numPages;pgNum++){
+      const page=await pdfDoc.getPage(pgNum);
+      const viewport=page.getViewport({scale:1.0});
+      const wrapWidth=document.getElementById('stamp-preview-wrap').clientWidth||480;
+      const scale=(wrapWidth-4)/viewport.width;
+      const scaledVP=page.getViewport({scale});
+      const wrap=document.createElement('div');
+      wrap.className='stamp-page-wrap';
+      wrap.style.cssText='position:relative;display:block;margin:0 0 6px 0;cursor:crosshair;user-select:none';
+      const lbl=document.createElement('div');
+      lbl.style.cssText='font-size:11px;color:#6b7a90;padding:2px 6px;background:#e8eef5';
+      lbl.textContent=`Página ${pgNum} de ${numPages}`;
+      wrap.appendChild(lbl);
+      const canvas=document.createElement('canvas');
+      canvas.width=scaledVP.width;
+      canvas.height=scaledVP.height;
+      canvas.style.cssText='display:block;width:100%';
+      wrap.appendChild(canvas);
+      const ctx=canvas.getContext('2d');
+      await page.render({canvasContext:ctx,viewport:scaledVP}).promise;
+      const capturedPg=pgNum;
+      canvas.addEventListener('click',function(e){ setStampPosFromClick(e,canvas,capturedPg); });
+      container.appendChild(wrap);
+    }
+    if(msg) msg.textContent=`${numPages} página(s) carregada(s). Clique em qualquer ponto para posicionar o carimbo.`;
+  }catch(err){
+    container.innerHTML='';
+    if(loading){ loading.style.display='flex'; loading.textContent='Erro ao carregar documento: '+(err?.message||err); }
+    if(msg) msg.textContent='Erro ao carregar PDF.';
+  }
 }
 
 async function salvarStampConfig(){
@@ -5439,11 +5497,13 @@ async function salvarStampConfig(){
   const pagina=parseInt(document.getElementById('stamp-pagina')?.value||'1')||1;
   const xPct=parseFloat(document.getElementById('stamp-x-pct')?.value||'60')||60;
   const yPct=parseFloat(document.getElementById('stamp-y-pct')?.value||'10')||10;
+  const todasPaginas=document.getElementById('stamp-todas-paginas')?.checked||false;
+  const todosArquivos=document.getElementById('stamp-todos-arquivos')?.checked||false;
   try{
     const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/stamp`,{
       method:'PUT',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({stamp_habilitado:hab,stamp_pagina:pagina,stamp_x_pct:xPct,stamp_y_pct:yPct})
+      body:JSON.stringify({stamp_habilitado:hab,stamp_pagina:pagina,stamp_x_pct:xPct,stamp_y_pct:yPct,stamp_todas_paginas:todasPaginas,stamp_todos_arquivos:todosArquivos})
     });
     const j=await r.json();
     if(!r.ok){ alert(j.erro||'Erro ao salvar configuração de carimbo.'); return; }
@@ -5507,12 +5567,12 @@ function _carregarStampConfig(env){
   if(yPct) yPct.value=yVal;
   document.getElementById('stamp-x-val').textContent=Math.round(xVal);
   document.getElementById('stamp-y-val').textContent=Math.round(yVal);
-  const ind=document.getElementById('stamp-indicator');
-  if(ind){
-    ind.style.left=Math.max(0,Math.min(62,xVal))+'%';
-    ind.style.bottom=Math.max(2,Math.min(90,yVal))+'%';
-    ind.style.transform='translate(-50%,50%)';
-  }
+  const pgVal=document.getElementById('stamp-pagina-val');
+  if(pgVal) pgVal.textContent=env.stamp_pagina||1;
+  const chkTodas=document.getElementById('stamp-todas-paginas');
+  if(chkTodas) chkTodas.checked=!!env.stamp_todas_paginas;
+  const chkTodos=document.getElementById('stamp-todos-arquivos');
+  if(chkTodos) chkTodos.checked=!!env.stamp_todos_arquivos;
   previewStampPos();
 }
 </script>
