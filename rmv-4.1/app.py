@@ -3031,8 +3031,14 @@ def ensure_cols(table,defs):
     for d in defs:
         name=d.split(' ',1)[0]
         if name not in cols:
-            db.session.execute(text(f'ALTER TABLE {table} ADD COLUMN {d}'))
-            changed=True
+            try:
+                db.session.execute(text(f'ALTER TABLE {table} ADD COLUMN {d}'))
+                changed=True
+            except Exception as e:
+                if 'duplicate column' in str(e).lower():
+                    pass  # coluna já existe, ignorar
+                else:
+                    raise
     if changed: db.session.commit()
 
 def sc_cfg(k,v):
