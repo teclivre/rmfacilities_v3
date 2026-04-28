@@ -5588,36 +5588,41 @@ def api_envelope_atualizar(id):
 @app.route('/api/envelopes/<int:id>',methods=['DELETE'])
 @lr
 def api_envelope_deletar(id):
-    env=AssinaturaEnvelope.query.get_or_404(id)
-    # Permite excluir em qualquer status (inclusive concluído/assinado).
-    # Remove também arquivos físicos para evitar órfãos em disco.
-    arqs=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).all()
-    for arq in arqs:
-        raw=(arq.caminho or '').strip()
-        if not raw:
-            continue
-        cands=[raw]
-        if raw and not os.path.isabs(raw):
-            cands.append(os.path.join(UPLOAD_ROOT,raw))
-            cands.append(os.path.join(_get_uploads_base(),raw))
-        for p in cands:
-            try:
-                if p and os.path.isfile(p):
-                    os.remove(p)
-                    break
-            except Exception:
-                pass
-    # Remove diretório do envelope (uploads + assinado)
     try:
-        env_dir=os.path.join(_get_uploads_base(),'envelopes',str(id))
-        if os.path.isdir(env_dir):
-            shutil.rmtree(env_dir,ignore_errors=True)
-    except Exception:
-        pass
-    AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).delete()
-    AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=id).delete()
-    db.session.delete(env); db.session.commit()
-    return jsonify({'ok':True})
+        env=AssinaturaEnvelope.query.get_or_404(id)
+        # Permite excluir em qualquer status (inclusive concluído/assinado).
+        # Remove também arquivos físicos para evitar órfãos em disco.
+        arqs=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).all()
+        for arq in arqs:
+            raw=(arq.caminho or '').strip()
+            if not raw:
+                continue
+            cands=[raw]
+            if raw and not os.path.isabs(raw):
+                cands.append(os.path.join(UPLOAD_ROOT,raw))
+                cands.append(os.path.join(_get_uploads_base(),raw))
+            for p in cands:
+                try:
+                    if p and os.path.isfile(p):
+                        os.remove(p)
+                        break
+                except Exception:
+                    pass
+        # Remove diretório do envelope (uploads + assinado)
+        try:
+            env_dir=os.path.join(_get_uploads_base(),'envelopes',str(id))
+            if os.path.isdir(env_dir):
+                shutil.rmtree(env_dir,ignore_errors=True)
+        except Exception:
+            pass
+        AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).delete()
+        AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=id).delete()
+        db.session.delete(env)
+        db.session.commit()
+        return jsonify({'ok':True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'erro':f'Falha ao excluir envelope: {str(e)}'}),500
 
 
 @app.route('/api/envelopes/<int:id>/cancelar',methods=['POST'])

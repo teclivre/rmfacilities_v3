@@ -5482,13 +5482,16 @@ async function excluirEnvelopeAtual(){
   if(!confirm('EXCLUIR este envelope permanentemente? Esta ação não pode ser desfeita.')) return;
   try{
     const r=await fetch(`/api/envelopes/${_asiEnvelopeId}`,{method:'DELETE'});
-    const j=await r.json();
+    const txt=await r.text();
+    let j={};
+    try{ j=txt?JSON.parse(txt):{}; }
+    catch(_){ j={erro:(txt||'').slice(0,180)}; }
     if(!r.ok){ alert(j.erro||'Erro ao excluir.'); return; }
     showSt('assinaturas','Envelope excluído.','ok');
     document.getElementById('asi-detail-panel').style.display='none';
     _asiEnvelopeId=null;
     await carregarListaEnvelopes?.();
-  }catch(e){ alert('Erro de conexão.'); }
+  }catch(e){ alert('Erro de conexão ao excluir envelope. '+(e?.message||'')); }
 }
 
 function _carregarStampConfig(env){
