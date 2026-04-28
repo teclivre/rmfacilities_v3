@@ -3547,6 +3547,25 @@ def api_criar_cliente():
     kw={k:d[k] for k in cols if k in d}
     c=Cliente(numero=n,**kw); db.session.add(c); db.session.commit(); return jsonify(c.to_dict()),201
 
+@app.route('/api/clientes/<int:id>',methods=['PUT'])
+@lr
+def api_atualizar_cliente(id):
+    c=Cliente.query.get_or_404(id)
+    d=request.json or {}
+    d['cnpj']=norm_doc(d.get('cnpj'))
+    d['telefone']=norm_phone(d.get('telefone'))
+    d['cep']=norm_cep(d.get('cep'))
+    if 'qtd_funcionarios_posto' in d:
+        d['qtd_funcionarios_posto']=max(0,to_num(d.get('qtd_funcionarios_posto')))
+    skip={'id','numero','criado_em','end_fmt'}
+    cols={col.name for col in Cliente.__table__.columns}
+    for k,v in d.items():
+        if k in skip or k not in cols:
+            continue
+        setattr(c,k,v)
+    db.session.commit()
+    return jsonify(c.to_dict())
+
 @app.route('/api/clientes/<int:id>',methods=['DELETE'])
 @lr
 def api_deletar_cliente(id):

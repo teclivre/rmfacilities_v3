@@ -1840,6 +1840,12 @@ async function loadFaturamentoAlert(){
 }
 
 function nav(id,el,force=false){
+  if(!force && hasUnsavedChanges()){
+    const ok=confirm('Existem alterações não salvas. Deseja sair desta página mesmo assim?');
+    if(!ok) return;
+    markPageClean();
+    MODAL_FORM_IDS.forEach(setModalClean);
+  }
   // Lógica especial para Financeiro e subabas
   const isFinanceiroParent = id==='financeiro';
   const subabasFinanceiro = ['faturamento','despesas','fluxo-caixa','contas','relatorios'];
@@ -2334,8 +2340,18 @@ function emitirCli(id){selCli(id);nav('nova-medicao',document.querySelector('[on
 
 const MODAL_FORM_IDS=['cli','func','emp','usr','ponto-edit'];
 const _modalDirty={};
+let _pageDirty=false;
 
 function setModalClean(id){ _modalDirty[id]=false; }
+
+function markPageDirty(){ _pageDirty=true; }
+
+function markPageClean(){ _pageDirty=false; }
+
+function hasUnsavedChanges(){
+  if(_pageDirty) return true;
+  return MODAL_FORM_IDS.some(id=>!!_modalDirty[id]);
+}
 
 function setupModalDirtyTracking(){
   MODAL_FORM_IDS.forEach(id=>{
@@ -2345,6 +2361,21 @@ function setupModalDirtyTracking(){
       el.addEventListener('input',()=>{_modalDirty[id]=true;});
       el.addEventListener('change',()=>{_modalDirty[id]=true;});
     });
+  });
+}
+
+function setupPageDirtyTracking(){
+  document.querySelectorAll('input,select,textarea').forEach(el=>{
+    if(el.closest('.modal')) return;
+    const t=(el.type||'').toLowerCase();
+    if(t==='button' || t==='submit' || t==='reset' || t==='hidden') return;
+    el.addEventListener('input',markPageDirty);
+    el.addEventListener('change',markPageDirty);
+  });
+  window.addEventListener('beforeunload',(e)=>{
+    if(!hasUnsavedChanges()) return;
+    e.preventDefault();
+    e.returnValue='';
   });
 }
 
@@ -2434,9 +2465,14 @@ async function salvarCliente(){
   const id=document.getElementById('mid').value;
   const end_fmt=[document.getElementById('mend').value,document.getElementById('mnum-end').value,document.getElementById('mcompl').value,document.getElementById('mbairro').value].filter(Boolean).join(', ')+(document.getElementById('mcidade').value?' — '+document.getElementById('mcidade').value+'/'+(document.getElementById('mestado').value||''):'');
   const d={nome,cnpj:document.getElementById('mc').value,responsavel:document.getElementById('mr').value,telefone:document.getElementById('mt').value,email:document.getElementById('me').value,numero_contrato:(document.getElementById('mcontrato').value||'').trim(),qtd_funcionarios_posto:Math.max(0,parseInt(document.getElementById('mqtd-posto').value||'0',10)||0),cep:document.getElementById('mcep').value,logradouro:document.getElementById('mend').value,numero_end:document.getElementById('mnum-end').value,complemento:document.getElementById('mcompl').value,bairro:document.getElementById('mbairro').value,cidade:document.getElementById('mcidade').value,estado:document.getElementById('mestado').value,empresa_id:parseInt(document.getElementById('memp').value)||null,status:document.getElementById('mst').value,limpeza:numBR(document.getElementById('ml').value),jardinagem:numBR(document.getElementById('mj').value),portaria:numBR(document.getElementById('mp').value),materiais_equip_locacao:numBR(document.getElementById('mmel').value),vencimento:parseInt(document.getElementById('mdia-fat').value)||1,dia_faturamento:parseInt(document.getElementById('mdia-fat').value)||1,dias_faturamento:parseInt(document.getElementById('mdias-fat').value)||30,obs:document.getElementById('mob').value};
-  if(id) await api('/api/clientes/'+id,'PUT',d);
-  else await api('/api/clientes','POST',d);
+  const resp=id ? await api('/api/clientes/'+id,'PUT',d) : await api('/api/clientes','POST',d);
+  if(resp?.erro){
+    showSt('st-cli',resp.erro,true);
+    alert(resp.erro);
+    return;
+  }
   todos=await api('/api/clientes');
+  markPageClean();
   showSt('st-cli','Cliente salvo!',false); showSt('st-med','Cliente salvo!',false);
   closeModal('cli',true); renderCli();
 }
@@ -4919,6 +4955,7 @@ async function testarIAWA(){
 }
 
 setupModalDirtyTracking();
+setupPageDirtyTracking();
 initTheme();
 init();
 
