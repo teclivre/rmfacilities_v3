@@ -4,6 +4,14 @@ import urllib.error
 import csv
 import zipfile
 import shutil
+import base64
+import time
+import smtplib
+import threading
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 # Corrige NameError: _strict_origin_check
 _strict_origin_check = True
 
@@ -29,10 +37,35 @@ from ponto_module import register_ponto_routes
 
 # Flask app and DB initialization must come first
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.abspath(os.environ.get('DATA_DIR', os.path.join(BASE_DIR, 'instance')))
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_PATH = os.path.join(DATA_DIR, 'rmfacilities.db')
+DEFAULT_DB_URI = f"sqlite:///{DB_PATH}"
+UPLOAD_ROOT = os.path.join(DATA_DIR, 'uploads')
+
+def _migrate_legacy_data_dir():
+    # Migra dados locais legados na primeira inicializacao com DATA_DIR.
+    if os.environ.get('DATABASE_URL'):
+        return
+    if not os.path.exists(DB_PATH):
+        for old_db in (
+            os.path.join(BASE_DIR, 'instance', 'rmfacilities.db'),
+            os.path.join(BASE_DIR, 'app.db'),
+        ):
+            if os.path.exists(old_db):
+                shutil.copy2(old_db, DB_PATH)
+                break
+    legacy_uploads = os.path.join(BASE_DIR, 'instance', 'uploads')
+    if not os.path.isdir(UPLOAD_ROOT) and os.path.isdir(legacy_uploads):
+        shutil.copytree(legacy_uploads, UPLOAD_ROOT, dirs_exist_ok=True)
+
+_migrate_legacy_data_dir()
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
 app.secret_key = os.environ.get('SECRET_KEY', 'rmfacilities-2026')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///app.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', DEFAULT_DB_URI)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -1072,7 +1105,7 @@ def wa_backup_enabled():
     return str(wa_backup_cfg().get('enabled','0')).strip().lower() in ('1','true','yes','on')
 
 def _wa_backup_root():
-    return os.path.join(os.path.dirname(__file__),'instance','wa_backups')
+    return os.path.join(DATA_DIR, 'wa_backups')
 
 def _to_int(v,dv=0):
     try: return int(float(str(v).strip()))
@@ -2310,7 +2343,6 @@ def smtp_send_link_assinatura(dest, nome_dest, titulo_envelope, link, remetente=
         with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s: s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
 
 ALLOWED_AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','compras','sst','rh-digital','documentos']
-UPLOAD_ROOT=os.path.join(os.path.dirname(__file__),'instance','uploads')
 DOC_CAT_PATH={
     'aso':'aso',
     'epi':'epi',
@@ -2689,7 +2721,7 @@ def parse_json_bytes(raw):
     except Exception:
         return {}
 
-_BANCOS_BR_CACHE=os.path.join(os.path.dirname(__file__),'instance','bancos_br.json')
+_BANCOS_BR_CACHE=os.path.join(DATA_DIR, 'bancos_br.json')
 _BANCOS_BR_FALLBACK=[
     {'codigo':'001','nome':'Banco do Brasil S.A.'},
     {'codigo':'003','nome':'Banco da Amazonia S.A.'},
@@ -3468,6 +3500,15 @@ def api_funcionarios_modelo():
 def api_funcionarios_import():
     arq=request.files.get('arquivo')
     if not arq: return jsonify({'erro':'Arquivo nao enviado'}),400
+
+    try:
+        linhas=read_rows_from_upload(arq)
+    except Exception as e:
+        return jsonify({'erro':str(e)}),400
+    if not linhas:
+        return jsonify({'erro':'Planilha vazia'}),400
+    criados=0
+    erros=[]
 
     try:
         for i, row in enumerate(linhas, start=2):
@@ -5046,7 +5087,7 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
 
 
 def _get_uploads_base():
-    return os.path.join(os.path.dirname(__file__),'instance','uploads')
+    return UPLOAD_ROOT
 
 
 def _normalize_signed_pdf_name(name):
@@ -6552,7 +6593,7 @@ def api_dashboard():
 def api_backup():
     buf=io.BytesIO()
     with zipfile.ZipFile(buf,'w',zipfile.ZIP_DEFLATED) as z:
-        db_p=os.path.join(os.path.dirname(__file__),'instance','rmfacilities.db')
+        db_p=DB_PATH
         if os.path.exists(db_p): z.write(db_p,'rmfacilities.db')
         z.writestr('clientes.json',json.dumps([c.to_dict() for c in Cliente.query.all()],default=str,ensure_ascii=False,indent=2))
         z.writestr('medicoes.json',json.dumps([m.to_dict() for m in Medicao.query.all()],default=str,ensure_ascii=False,indent=2))
@@ -7762,7 +7803,7 @@ def seed():
     db.session.commit()
 
 with app.app_context():
-    os.makedirs('instance',exist_ok=True)
+    os.makedirs(DATA_DIR,exist_ok=True)
     os.makedirs(UPLOAD_ROOT,exist_ok=True)
     db.create_all()
     ensure_cols('usuario',[
