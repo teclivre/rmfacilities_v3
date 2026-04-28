@@ -27,6 +27,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 import os
 import re
 import os, json, hashlib, hmac, secrets
@@ -226,7 +227,14 @@ def api_medicoes():
         qr = qr.filter((Medicao.cliente_nome.ilike(f'%{cliente}%')) | (Medicao.cliente_cnpj.ilike(f'%{cliente}%')))
     if status:
         qr = qr.filter(Medicao.status == status)
-    lista = qr.order_by(Medicao.dt_emissao.desc(), Medicao.id.desc()).all()
+    try:
+        lista = qr.order_by(Medicao.dt_emissao.desc(), Medicao.id.desc()).all()
+    except OperationalError as e:
+        if not _is_missing_medicao_stamp_error(e):
+            raise
+        db.session.rollback()
+        _ensure_medicao_stamp_cols_runtime(force=True)
+        lista = qr.order_by(Medicao.dt_emissao.desc(), Medicao.id.desc()).all()
     return jsonify([m.to_dict() for m in lista])
 
 class Usuario(db.Model):
@@ -3471,6 +3479,27 @@ def api_usuario_cert_upload(id):
             os.remove(old_abs)
         except Exception:
             pass
+
+
+_medicao_stamp_ready=False
+
+def _ensure_medicao_stamp_cols_runtime(force=False):
+    """Auto-recupera colunas de carimbo em medicao quando faltar no SQLite."""
+    global _medicao_stamp_ready
+    if _medicao_stamp_ready and not force:
+        return
+    ensure_cols('medicao',[
+        'stamp_habilitado BOOLEAN DEFAULT 0',
+        'stamp_pagina INTEGER DEFAULT 1',
+        'stamp_x_pct REAL DEFAULT 60.0',
+        'stamp_y_pct REAL DEFAULT 10.0',
+    ])
+    db.session.commit()
+    _medicao_stamp_ready=True
+
+def _is_missing_medicao_stamp_error(err):
+    msg=str(err or '').lower()
+    return 'no such column' in msg and 'medicao.stamp_' in msg
     return jsonify({'ok':True,'usuario':u.to_dict()})
 
 @app.route('/api/usuarios/<int:id>/certificado',methods=['DELETE'])
@@ -6800,7 +6829,17 @@ def api_dashboard():
     )
     total_ativos=len(ativos)
     mes=localnow().strftime('%Y-%m')
-    emitidos={m.cliente_id for m in Medicao.query.filter_by(mes_ref=mes).all() if m.cliente_id}
+    try:
+        medicoes_mes=Medicao.query.filter_by(mes_ref=mes).all()
+        medicoes_validas=Medicao.query.filter(Medicao.status!='cancelada').all()
+    except OperationalError as e:
+        if not _is_missing_medicao_stamp_error(e):
+            raise
+        db.session.rollback()
+        _ensure_medicao_stamp_cols_runtime(force=True)
+        medicoes_mes=Medicao.query.filter_by(mes_ref=mes).all()
+        medicoes_validas=Medicao.query.filter(Medicao.status!='cancelada').all()
+    emitidos={m.cliente_id for m in medicoes_mes if m.cliente_id}
     emps_all={e.id:e for e in Empresa.query.all()}
 
     pendentes_clientes=[c for c in ativos if c.id not in emitidos]
@@ -6811,7 +6850,7 @@ def api_dashboard():
     inad_itens=[]
     total_inadimplencia=0.0
     hoje=date.today()
-    for m in Medicao.query.filter(Medicao.status!='cancelada').all():
+    for m in medicoes_validas:
         dt=(m.dt_vencimento or '').strip()
         if not dt:
             continue
