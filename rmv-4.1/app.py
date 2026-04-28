@@ -406,10 +406,6 @@ class Medicao(db.Model):
     assinatura_cert_subject=db.Column(db.String(255))
     criado_em=db.Column(db.DateTime,default=utcnow)
     criado_por=db.Column(db.String(100))
-    stamp_habilitado=db.Column(db.Boolean,default=False)
-    stamp_pagina=db.Column(db.Integer,default=1)
-    stamp_x_pct=db.Column(db.Float,default=60.0)
-    stamp_y_pct=db.Column(db.Float,default=10.0)
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         d['svcs']=json.loads(self.servicos) if self.servicos else []
@@ -8353,10 +8349,6 @@ with app.app_context():
         'assinatura_doc_hash VARCHAR(128)',
         'assinatura_crypto_ok BOOLEAN DEFAULT 0',
         'assinatura_cert_subject VARCHAR(255)',
-        'stamp_habilitado BOOLEAN DEFAULT 0',
-        'stamp_pagina INTEGER DEFAULT 1',
-        'stamp_x_pct REAL DEFAULT 60.0',
-        'stamp_y_pct REAL DEFAULT 10.0',
     ])
     ensure_cols('assinatura_envelope',[
         'id INTEGER PRIMARY KEY AUTOINCREMENT',
