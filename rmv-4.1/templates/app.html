@@ -5064,7 +5064,7 @@ async function recarregarDetalheEnvelope(){
     const btnEnviar=document.getElementById('btn-enviar-envelope');
     if(btnCancelar) btnCancelar.style.display=(env.status!=='cancelado'&&env.status!=='concluido')?'':'none';
     if(btnReativar) btnReativar.style.display=(env.status==='cancelado')?'':'none';
-    if(btnExcluir) btnExcluir.style.display=(env.status!=='concluido')?'':'none';
+    if(btnExcluir) btnExcluir.style.display='';
     if(btnEnviar) btnEnviar.style.display=(env.status==='cancelado'||env.status==='concluido')?'none':'';
     carregarPreviewCarimbo();
   }catch(e){ showSt('st-assinaturas','Erro ao carregar documento.',true); }

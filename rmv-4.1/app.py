@@ -5261,6 +5261,16 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
                     text_x=x+8
                 except Exception:
                     pass
+            else:
+                # Fallback visual: quando não houver assinatura manuscrita,
+                # imprime o nome completo no bloco de assinatura.
+                nome_ass=(sig.nome or '').strip()[:42] or 'Assinatura não informada'
+                c.setFillColorRGB(0.15,0.29,0.56)
+                c.setFont('Helvetica-Oblique',10.5)
+                c.drawString(x+6,y_bottom+stamp_h-29,nome_ass)
+                c.setStrokeColorRGB(0.70,0.76,0.86)
+                c.setLineWidth(0.6)
+                c.line(x+6,y_bottom+stamp_h-31,x+6+min(stamp_w-18,180),y_bottom+stamp_h-31)
             # texto do signatário
             nome=(sig.nome or '').strip()[:38]
             data_str=sig.ass_em.strftime('%d/%m/%Y %H:%M') if sig.ass_em else ''
@@ -5535,7 +5545,31 @@ def api_envelope_atualizar(id):
 @lr
 def api_envelope_deletar(id):
     env=AssinaturaEnvelope.query.get_or_404(id)
-    # Permite excluir em qualquer status (admin decide); bloquear = cancelar
+    # Permite excluir em qualquer status (inclusive concluído/assinado).
+    # Remove também arquivos físicos para evitar órfãos em disco.
+    arqs=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).all()
+    for arq in arqs:
+        raw=(arq.caminho or '').strip()
+        if not raw:
+            continue
+        cands=[raw]
+        if raw and not os.path.isabs(raw):
+            cands.append(os.path.join(UPLOAD_ROOT,raw))
+            cands.append(os.path.join(_get_uploads_base(),raw))
+        for p in cands:
+            try:
+                if p and os.path.isfile(p):
+                    os.remove(p)
+                    break
+            except Exception:
+                pass
+    # Remove diretório do envelope (uploads + assinado)
+    try:
+        env_dir=os.path.join(_get_uploads_base(),'envelopes',str(id))
+        if os.path.isdir(env_dir):
+            shutil.rmtree(env_dir,ignore_errors=True)
+    except Exception:
+        pass
     AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).delete()
     AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=id).delete()
     db.session.delete(env); db.session.commit()
