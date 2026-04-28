@@ -524,6 +524,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button class="btn b-ci" onclick="limparMed()">Limpar</button>
         <button class="btn b-ghv" onclick="registrar()">Registrar emissão</button>
         <button class="btn b-lj b-lg" id="btn-pdf" onclick="gerarPDF()">⬇ Gerar PDF</button>
+        <button class="btn b-az" id="btn-med-assinatura" onclick="solicitarAssinaturaMedicaoAtual()" style="display:none">✍ Solicitar assinatura</button>
       </div>
     </div>
 
@@ -1567,6 +1568,7 @@ const AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios'
 let todos=[], emps=[], funcs=[], pontoFuncs=[], bancosBR=[], beneficiosMensais=[], benTab='ativos', acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
 let pontoResumoPainelByFunc={};
 let pontoMarcacoesDiaAtual=[];
+let medicaoAtualId=null;
 
 function applyTheme(theme){
   const t=(theme==='dark')?'dark':'light';
@@ -2162,7 +2164,12 @@ async function registrar(){
     dt_vencimento:document.getElementById('dtvenc').value,servicos:svcs,
     observacoes:document.getElementById('obs').value,
     ass_empresa:document.getElementById('ass1').value,ass_cliente:document.getElementById('ass2').value};
-  await api('/api/medicoes','POST',d);
+  const created=await api('/api/medicoes','POST',d);
+  if(created && !created.erro && created.id){
+    medicaoAtualId=created.id;
+    const bAss=document.getElementById('btn-med-assinatura');
+    if(bAss) bAss.style.display='';
+  }
   showSt('st-med','Medição registrada no histórico!',false);
   await loadDash(); await loadProxNum();
 }
@@ -2193,6 +2200,9 @@ async function gerarPDF(){
 
 function limparMed(){
   if(!confirm('Limpar o formulário?'))return;
+  medicaoAtualId=null;
+  const bAss=document.getElementById('btn-med-assinatura');
+  if(bAss) bAss.style.display='none';
   clearCli(); document.getElementById('svcs').innerHTML=''; svcId=0;
   ['obs','ass1','ass2'].forEach(id=>document.getElementById(id).value='');
   loadProxNum();
@@ -2253,6 +2263,9 @@ async function solicitarAssinaturaMedicao(id){
 
 async function abrirMedicao(id){
   const m=await api('/api/medicoes/'+id);
+  medicaoAtualId=id;
+  const bAss=document.getElementById('btn-med-assinatura');
+  if(bAss) bAss.style.display='';
   nav('nova-medicao',document.querySelector('[onclick*=nova-medicao]'),true);
   document.getElementById('tipo-doc').value=m.tipo||'Medição de Serviços';
   document.getElementById('nmed').value=m.numero||'';
@@ -2279,6 +2292,14 @@ async function abrirMedicao(id){
   document.getElementById('ass2').value=m.ass_cliente||'';
   calc();
   showSt('st-med','Medição carregada do histórico.',false);
+}
+
+async function solicitarAssinaturaMedicaoAtual(){
+  if(!medicaoAtualId){
+    alert('Registre ou abra uma medição para solicitar assinatura.');
+    return;
+  }
+  await solicitarAssinaturaMedicao(medicaoAtualId);
 }
 
 async function reimprimirPDF(id){
