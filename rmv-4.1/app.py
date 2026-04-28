@@ -505,11 +505,28 @@ class FuncionarioArquivo(db.Model):
     ass_doc_hash=db.Column(db.String(128))
     ass_crypto_ok=db.Column(db.Boolean,default=False)
     ass_cert_subject=db.Column(db.String(255))
+    ass_canal_envio=db.Column(db.String(20))
+    ass_enviado_em=db.Column(db.DateTime)
+    ass_recebido_em=db.Column(db.DateTime)
+    ass_aberto_em=db.Column(db.DateTime)
+    ass_wa_status=db.Column(db.String(20),default='nao_enviado')
+    ass_wa_enviado_em=db.Column(db.DateTime)
+    ass_wa_recebido_em=db.Column(db.DateTime)
+    ass_email_status=db.Column(db.String(20),default='nao_enviado')
+    ass_email_enviado_em=db.Column(db.DateTime)
+    ass_email_recebido_em=db.Column(db.DateTime)
     criado_em=db.Column(db.DateTime,default=utcnow)
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
         d['ass_em_fmt']=self.ass_em.strftime('%d/%m/%Y %H:%M') if self.ass_em else ''
+        d['ass_enviado_fmt']=self.ass_enviado_em.strftime('%d/%m/%Y %H:%M') if self.ass_enviado_em else ''
+        d['ass_recebido_fmt']=self.ass_recebido_em.strftime('%d/%m/%Y %H:%M') if self.ass_recebido_em else ''
+        d['ass_aberto_fmt']=self.ass_aberto_em.strftime('%d/%m/%Y %H:%M') if self.ass_aberto_em else ''
+        d['ass_wa_enviado_fmt']=self.ass_wa_enviado_em.strftime('%d/%m/%Y %H:%M') if self.ass_wa_enviado_em else ''
+        d['ass_wa_recebido_fmt']=self.ass_wa_recebido_em.strftime('%d/%m/%Y %H:%M') if self.ass_wa_recebido_em else ''
+        d['ass_email_enviado_fmt']=self.ass_email_enviado_em.strftime('%d/%m/%Y %H:%M') if self.ass_email_enviado_em else ''
+        d['ass_email_recebido_fmt']=self.ass_email_recebido_em.strftime('%d/%m/%Y %H:%M') if self.ass_email_recebido_em else ''
         return d
 
 class OperacionalDocumento(db.Model):
@@ -655,12 +672,29 @@ class AssinaturaEnvelopeSignatario(db.Model):
     ass_otp_hash=db.Column(db.String(256))
     ass_otp_expira_em=db.Column(db.DateTime)
     ass_otp_tentativas=db.Column(db.Integer,default=0)
+    ass_canal_envio=db.Column(db.String(20))
+    ass_enviado_em=db.Column(db.DateTime)
+    ass_recebido_em=db.Column(db.DateTime)
+    ass_aberto_em=db.Column(db.DateTime)
+    ass_wa_status=db.Column(db.String(20),default='nao_enviado')
+    ass_wa_enviado_em=db.Column(db.DateTime)
+    ass_wa_recebido_em=db.Column(db.DateTime)
+    ass_email_status=db.Column(db.String(20),default='nao_enviado')
+    ass_email_enviado_em=db.Column(db.DateTime)
+    ass_email_recebido_em=db.Column(db.DateTime)
     ordem=db.Column(db.Integer,default=0)
     criado_em=db.Column(db.DateTime,default=utcnow)
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
         d['ass_em_fmt']=self.ass_em.strftime('%d/%m/%Y %H:%M') if self.ass_em else ''
+        d['ass_enviado_fmt']=self.ass_enviado_em.strftime('%d/%m/%Y %H:%M') if self.ass_enviado_em else ''
+        d['ass_recebido_fmt']=self.ass_recebido_em.strftime('%d/%m/%Y %H:%M') if self.ass_recebido_em else ''
+        d['ass_aberto_fmt']=self.ass_aberto_em.strftime('%d/%m/%Y %H:%M') if self.ass_aberto_em else ''
+        d['ass_wa_enviado_fmt']=self.ass_wa_enviado_em.strftime('%d/%m/%Y %H:%M') if self.ass_wa_enviado_em else ''
+        d['ass_wa_recebido_fmt']=self.ass_wa_recebido_em.strftime('%d/%m/%Y %H:%M') if self.ass_wa_recebido_em else ''
+        d['ass_email_enviado_fmt']=self.ass_email_enviado_em.strftime('%d/%m/%Y %H:%M') if self.ass_email_enviado_em else ''
+        d['ass_email_recebido_fmt']=self.ass_email_recebido_em.strftime('%d/%m/%Y %H:%M') if self.ass_email_recebido_em else ''
         return d
 
 class WhatsAppConversa(db.Model):
@@ -978,6 +1012,73 @@ def _assinatura_json_otp(mensagem,canal='',destino='',**extra):
 def _assinatura_json_ok(mensagem='',**extra):
     payload=_assinatura_json_base(ok=True,mensagem=(mensagem or 'Assinatura concluída com sucesso.'),**extra)
     return jsonify(payload)
+
+def _ass_track_channel(src,default='link'):
+    s=(src or '').strip().lower()
+    if s in ('wa','wpp','whatsapp'):
+        return 'whatsapp'
+    if s in ('mail','email','e-mail'):
+        return 'email'
+    if s in ('link','manual','direto'):
+        return 'link'
+    return (default or 'link')
+
+def _ass_track_mark_sent(obj,channel):
+    ch=_ass_track_channel(channel)
+    now=utcnow()
+    changed=False
+    if getattr(obj,'ass_canal_envio',None)!=ch:
+        obj.ass_canal_envio=ch
+        changed=True
+    if not getattr(obj,'ass_enviado_em',None):
+        obj.ass_enviado_em=now
+        changed=True
+    if ch=='whatsapp':
+        if (getattr(obj,'ass_wa_status',None) or '')!='enviado':
+            obj.ass_wa_status='enviado'
+            changed=True
+        if not getattr(obj,'ass_wa_enviado_em',None):
+            obj.ass_wa_enviado_em=now
+            changed=True
+    elif ch=='email':
+        if (getattr(obj,'ass_email_status',None) or '')!='enviado':
+            obj.ass_email_status='enviado'
+            changed=True
+        if not getattr(obj,'ass_email_enviado_em',None):
+            obj.ass_email_enviado_em=now
+            changed=True
+    return changed
+
+def _ass_track_mark_received(obj,channel):
+    ch=_ass_track_channel(channel,getattr(obj,'ass_canal_envio',None) or 'link')
+    now=utcnow()
+    changed=False
+    if not getattr(obj,'ass_recebido_em',None):
+        obj.ass_recebido_em=now
+        changed=True
+    if ch=='whatsapp':
+        if (getattr(obj,'ass_wa_status',None) or '')!='recebido':
+            obj.ass_wa_status='recebido'
+            changed=True
+        if not getattr(obj,'ass_wa_recebido_em',None):
+            obj.ass_wa_recebido_em=now
+            changed=True
+    elif ch=='email':
+        if (getattr(obj,'ass_email_status',None) or '')!='recebido':
+            obj.ass_email_status='recebido'
+            changed=True
+        if not getattr(obj,'ass_email_recebido_em',None):
+            obj.ass_email_recebido_em=now
+            changed=True
+    return changed
+
+def _ass_track_mark_opened(obj,channel):
+    now=utcnow()
+    changed=_ass_track_mark_received(obj,channel)
+    if not getattr(obj,'ass_aberto_em',None):
+        obj.ass_aberto_em=now
+        changed=True
+    return changed
 
 def _try_sign_pdf_bytes_crypto(pdf_bytes,empresa_id=None,usuario_id=None):
     cert_ctx=_get_cert_context(empresa_id=empresa_id,usuario_id=usuario_id)
@@ -4040,8 +4141,10 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
         arquivo.ass_token=secrets.token_urlsafe(24)
     arquivo.ass_status='pendente'
     arquivo.ass_expira_em=utcnow()+timedelta(days=max(1,int(dias_validade or 7)))
+    _ass_track_mark_sent(arquivo,canal)
 
-    link=f"{request.url_root.rstrip('/')}/doc/assinar/{arquivo.ass_token}"
+    src_q=_ass_track_channel(canal)
+    link=f"{request.url_root.rstrip('/')}/doc/assinar/{arquivo.ass_token}?src={src_q}"
     try:
         sc=_short_link_criar(link)
         link_curto=(f"{request.url_root.rstrip('/')}/s/{sc}" if sc else link)
@@ -4250,6 +4353,31 @@ def api_func_arquivo_solicitar_assinatura(id):
                     'canal':rs.get('canal','link'),
                     'expira_em':rs.get('expira_em','')})
 
+@app.route('/api/funcionarios/arquivos/<int:id>/assinatura/rastreio')
+@lr
+def api_func_arquivo_assinatura_rastreio(id):
+    a=FuncionarioArquivo.query.get_or_404(id)
+    return jsonify({
+        'ok':True,
+        'arquivo_id':a.id,
+        'status_assinatura':a.ass_status or '',
+        'canal_envio':a.ass_canal_envio or '',
+        'enviado_em':(a.ass_enviado_em.isoformat() if a.ass_enviado_em else ''),
+        'recebido_em':(a.ass_recebido_em.isoformat() if a.ass_recebido_em else ''),
+        'aberto_em':(a.ass_aberto_em.isoformat() if a.ass_aberto_em else ''),
+        'assinado_em':(a.ass_em.isoformat() if a.ass_em else ''),
+        'whatsapp':{
+            'status':a.ass_wa_status or 'nao_enviado',
+            'enviado_em':(a.ass_wa_enviado_em.isoformat() if a.ass_wa_enviado_em else ''),
+            'recebido_em':(a.ass_wa_recebido_em.isoformat() if a.ass_wa_recebido_em else ''),
+        },
+        'email':{
+            'status':a.ass_email_status or 'nao_enviado',
+            'enviado_em':(a.ass_email_enviado_em.isoformat() if a.ass_email_enviado_em else ''),
+            'recebido_em':(a.ass_email_recebido_em.isoformat() if a.ass_email_recebido_em else ''),
+        }
+    })
+
 @app.route('/doc/assinar/<token>')
 def func_doc_assinar_publica(token):
     a=FuncionarioArquivo.query.filter_by(ass_token=token).first()
@@ -4260,7 +4388,23 @@ def func_doc_assinar_publica(token):
     if a.ass_expira_em and a.ass_expira_em<utcnow():
         a.ass_status='expirado'; db.session.commit()
         return render_template('doc_assinatura.html',ok=False,mensagem='Link expirado. Solicite um novo link ao RH.',arquivo=a,funcionario=Funcionario.query.get(a.funcionario_id))
+    src=request.args.get('src','')
+    if _ass_track_mark_received(a,src):
+        db.session.commit()
     return render_template('doc_assinatura.html',ok=True,mensagem='',arquivo=a,funcionario=Funcionario.query.get(a.funcionario_id))
+
+@app.route('/doc/assinar/<token>/arquivo')
+def func_doc_assinar_visualizar_arquivo(token):
+    a=FuncionarioArquivo.query.filter_by(ass_token=token).first_or_404()
+    if a.ass_expira_em and a.ass_expira_em<utcnow():
+        return 'Link expirado.',400
+    abs_p=os.path.join(UPLOAD_ROOT,a.caminho or '')
+    if not os.path.exists(abs_p):
+        return 'Arquivo não encontrado.',404
+    src=request.args.get('src','')
+    if _ass_track_mark_opened(a,src):
+        db.session.commit()
+    return send_file(abs_p,as_attachment=False,download_name=a.nome_arquivo)
 
 @app.route('/api/doc/assinar/<token>/enviar-otp',methods=['GET','POST'])
 def api_func_doc_assinatura_enviar_otp(token):
@@ -4364,6 +4508,8 @@ def api_func_doc_assinatura_confirmar(token):
     a.ass_status='assinado'; a.ass_nome=nome; a.ass_cargo=cargo
     a.ass_cpf=cpf_info; a.ass_ip=ip; a.ass_em=utcnow(); a.ass_token=None
     a.ass_otp_hash=None; a.ass_otp_expira_em=None; a.ass_otp_tentativas=0
+    if not a.ass_aberto_em:
+        a.ass_aberto_em=utcnow()
     db.session.commit()
     copia_assinada=_salvar_pdf_assinado_em_arquivos_funcionario(a,f,request.url_root.rstrip('/'))
 
@@ -5416,13 +5562,15 @@ def api_envelope_enviar(id):
             continue
         if not sig.token:
             sig.token=secrets.token_urlsafe(24)
-        link=f"{url_root}/envelope/assinar/{sig.token}"
+        src_q=_ass_track_channel(canal)
+        link=f"{url_root}/envelope/assinar/{sig.token}?src={src_q}"
         try:
             sc=_short_link_criar(link)
             link_curto=(f"{url_root}/s/{sc}" if sc else link)
         except Exception:
             link_curto=link
         if canal=='link':
+            _ass_track_mark_sent(sig,'link')
             enviados.append({'id':sig.id,'nome':sig.nome,'canal':'link','link':link,'link_curto':link_curto})
             continue
         if canal=='whatsapp':
@@ -5436,6 +5584,7 @@ def api_envelope_enviar(id):
                  f"🔗 Acesse e assine aqui:\n{link_curto}")
             try:
                 wa_send_text(tel,msg)
+                _ass_track_mark_sent(sig,'whatsapp')
                 enviados.append({'id':sig.id,'nome':sig.nome,'canal':'whatsapp','destino':tel,'link':link,'link_curto':link_curto})
             except Exception as e:
                 falhas.append({'id':sig.id,'nome':sig.nome,'canal':'whatsapp','erro':str(e)})
@@ -5446,6 +5595,7 @@ def api_envelope_enviar(id):
                 continue
             try:
                 smtp_send_link_assinatura(sig.email.strip(),sig.nome or 'Signatário',env.titulo or 'Documento',link_curto)
+                _ass_track_mark_sent(sig,'email')
                 enviados.append({'id':sig.id,'nome':sig.nome,'canal':'email','destino':sig.email.strip(),'link':link,'link_curto':link_curto})
             except Exception as e:
                 falhas.append({'id':sig.id,'nome':sig.nome,'canal':'email','erro':str(e)})
@@ -5463,13 +5613,38 @@ def api_envelope_sig_link(id,sig_id):
         sig.token=secrets.token_urlsafe(24)
         db.session.commit()
     url_root=request.url_root.rstrip('/')
-    link=f"{url_root}/envelope/assinar/{sig.token}"
+    link=f"{url_root}/envelope/assinar/{sig.token}?src=link"
     try:
         sc=_short_link_criar(link)
         link_curto=(f"{url_root}/s/{sc}" if sc else link)
     except Exception:
         link_curto=link
     return jsonify({'link':link,'link_curto':link_curto,'nome':sig.nome})
+
+@app.route('/api/envelopes/<int:id>/signatarios/<int:sig_id>/rastreio')
+@lr
+def api_envelope_sig_rastreio(id,sig_id):
+    sig=AssinaturaEnvelopeSignatario.query.filter_by(id=sig_id,envelope_id=id).first_or_404()
+    return jsonify({
+        'ok':True,
+        'signatario_id':sig.id,
+        'status_assinatura':sig.status or '',
+        'canal_envio':sig.ass_canal_envio or '',
+        'enviado_em':(sig.ass_enviado_em.isoformat() if sig.ass_enviado_em else ''),
+        'recebido_em':(sig.ass_recebido_em.isoformat() if sig.ass_recebido_em else ''),
+        'aberto_em':(sig.ass_aberto_em.isoformat() if sig.ass_aberto_em else ''),
+        'assinado_em':(sig.ass_em.isoformat() if sig.ass_em else ''),
+        'whatsapp':{
+            'status':sig.ass_wa_status or 'nao_enviado',
+            'enviado_em':(sig.ass_wa_enviado_em.isoformat() if sig.ass_wa_enviado_em else ''),
+            'recebido_em':(sig.ass_wa_recebido_em.isoformat() if sig.ass_wa_recebido_em else ''),
+        },
+        'email':{
+            'status':sig.ass_email_status or 'nao_enviado',
+            'enviado_em':(sig.ass_email_enviado_em.isoformat() if sig.ass_email_enviado_em else ''),
+            'recebido_em':(sig.ass_email_recebido_em.isoformat() if sig.ass_email_recebido_em else ''),
+        }
+    })
 
 
 @app.route('/envelope/assinar/<token>/arquivo/<int:arq_id>')
@@ -5488,6 +5663,9 @@ def envelope_assinar_visualizar_arquivo(token,arq_id):
             break
     if not abs_path:
         return 'Arquivo não encontrado.',404
+    src=request.args.get('src','')
+    if _ass_track_mark_opened(sig,src):
+        db.session.commit()
     return send_file(abs_path,as_attachment=False,download_name=arq.nome_arquivo or os.path.basename(abs_path))
 
 
@@ -5499,6 +5677,9 @@ def envelope_assinar_publica(token):
     arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=env.id).all()
     empresa=Empresa.query.get(env.empresa_id) if env.empresa_id else Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
     empresas=[empresa] if empresa else []
+    src=request.args.get('src','')
+    if _ass_track_mark_received(sig,src):
+        db.session.commit()
     return render_template('envelope_assinar.html',sig=sig,env=env,arquivos=arquivos,empresas=empresas)
 
 @app.route('/api/envelope/assinar/<token>/enviar-otp',methods=['GET','POST'])
@@ -5593,6 +5774,8 @@ def api_envelope_assinatura_confirmar(token):
     sig.ass_otp_expira_em=None
     sig.ass_otp_tentativas=0
     sig.status='assinado'
+    if not sig.ass_aberto_em:
+        sig.ass_aberto_em=utcnow()
     sig.token=None  # invalida o token após uso
     url_root=request.url_root.rstrip('/')
     signed_pdf_link=''
@@ -6643,6 +6826,16 @@ def api_backup_restore():
             'ass_cpf VARCHAR(20)',
             'ass_ip VARCHAR(60)',
             'ass_em DATETIME',
+            'ass_canal_envio VARCHAR(20)',
+            'ass_enviado_em DATETIME',
+            'ass_recebido_em DATETIME',
+            'ass_aberto_em DATETIME',
+            'ass_wa_status VARCHAR(20) DEFAULT "nao_enviado"',
+            'ass_wa_enviado_em DATETIME',
+            'ass_wa_recebido_em DATETIME',
+            'ass_email_status VARCHAR(20) DEFAULT "nao_enviado"',
+            'ass_email_enviado_em DATETIME',
+            'ass_email_recebido_em DATETIME',
         ])
 
         def jread(name,default):
@@ -7898,6 +8091,16 @@ with app.app_context():
         'ass_doc_hash VARCHAR(128)',
         'ass_crypto_ok BOOLEAN DEFAULT 0',
         'ass_cert_subject VARCHAR(255)',
+        'ass_canal_envio VARCHAR(20)',
+        'ass_enviado_em DATETIME',
+        'ass_recebido_em DATETIME',
+        'ass_aberto_em DATETIME',
+        'ass_wa_status VARCHAR(20) DEFAULT "nao_enviado"',
+        'ass_wa_enviado_em DATETIME',
+        'ass_wa_recebido_em DATETIME',
+        'ass_email_status VARCHAR(20) DEFAULT "nao_enviado"',
+        'ass_email_enviado_em DATETIME',
+        'ass_email_recebido_em DATETIME',
     ])
     db.session.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ix_funcionario_re ON funcionario(re)'))
     db.session.commit()
@@ -7973,6 +8176,16 @@ with app.app_context():
         'ass_otp_hash VARCHAR(256)',
         'ass_otp_expira_em DATETIME',
         'ass_otp_tentativas INTEGER DEFAULT 0',
+        'ass_canal_envio VARCHAR(20)',
+        'ass_enviado_em DATETIME',
+        'ass_recebido_em DATETIME',
+        'ass_aberto_em DATETIME',
+        'ass_wa_status VARCHAR(20) DEFAULT "nao_enviado"',
+        'ass_wa_enviado_em DATETIME',
+        'ass_wa_recebido_em DATETIME',
+        'ass_email_status VARCHAR(20) DEFAULT "nao_enviado"',
+        'ass_email_enviado_em DATETIME',
+        'ass_email_recebido_em DATETIME',
         'ordem INTEGER DEFAULT 0',
         'criado_em DATETIME',
     ])

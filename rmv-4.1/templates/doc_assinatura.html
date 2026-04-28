@@ -28,6 +28,14 @@
           {% if funcionario %}<strong>Funcionário:</strong> {{ funcionario.nome }}{% endif %}
         </div>
 
+        <div class="public-info-box" style="padding:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+            <strong>Visualização do documento</strong>
+            <a class="public-btn public-btn-secondary" href="/doc/assinar/{{ arquivo.ass_token }}/arquivo?src={{ request.args.get('src','link')|urlencode }}" target="_blank" rel="noopener">Abrir em nova guia</a>
+          </div>
+          <iframe src="/doc/assinar/{{ arquivo.ass_token }}/arquivo?src={{ request.args.get('src','link')|urlencode }}" style="width:100%;min-height:420px;border:1px solid #dbe2ea;border-radius:8px;background:#fff" title="Documento para assinatura"></iframe>
+        </div>
+
         <span class="public-tag">AGUARDANDO ASSINATURA</span>
 
         <div class="public-form">
@@ -74,6 +82,7 @@
   <script src="/static/js/assinatura-common.js"></script>
   <script>
     const DOC_ASS_TOKEN='{{ arquivo.ass_token if arquivo else "" }}';
+    const DOC_ASS_SRC='{{ request.args.get("src","link") }}';
     const otpCooldownCtrl=SignatureCommon.makeCooldown('btn-resend',60);
 
     function fmtCPF(el){

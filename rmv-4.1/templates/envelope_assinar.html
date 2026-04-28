@@ -48,7 +48,7 @@
             {% for a in arquivos %}
             <li>
               <span>{{ a.nome_arquivo }}</span>
-              <a class="doc-view" href="/envelope/assinar/{{ sig.token }}/arquivo/{{ a.id }}" target="_blank" rel="noopener">Visualizar</a>
+              <a class="doc-view" href="/envelope/assinar/{{ sig.token }}/arquivo/{{ a.id }}?src={{ request.args.get('src','link')|urlencode }}" target="_blank" rel="noopener">Visualizar</a>
             </li>
             {% endfor %}
           </ul>
