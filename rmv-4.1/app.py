@@ -7436,9 +7436,9 @@ def _api_beneficios_xlsx_tipo(tipo):
         ws.append([f'Competência: {comp_fmt}'])
         ws.append([])
         if tipo=='vale_alimentacao':
-            headers=['RE','Colaborador','Posto','Empresa',f'{tit} (R$)','Total (R$)']
+            headers=['RE','Colaborador','CPF',f'{tit} (R$)','Total (R$)']
         else:
-            headers=['RE','Colaborador','Posto','Empresa','Dias',f'{tit} (R$)','Total (R$)']
+            headers=['RE','Colaborador','CPF','Dias',f'{tit} (R$)','Total (R$)']
         ws.append(headers)
         hrow=4
         for col_idx,_ in enumerate(headers,1):
@@ -7454,13 +7454,13 @@ def _api_beneficios_xlsx_tipo(tipo):
             dias=int(getattr(r,col_dias) or 0)
             total=(valor if tipo=='vale_alimentacao' else dias*valor)
             total_geral+=total
-            re_val=(f.re if f else '')
+            re_val=(f.re if f and f.re else (f.matricula if f and f.matricula else ''))
             nome_val=(f.nome if f else f'Funcionario {r.funcionario_id}')
-            posto_val=(f.posto_operacional if f and f.posto_operacional else 'Reserva tecnica')
+            cpf_val=(f.cpf if f and f.cpf else '')
             if tipo=='vale_alimentacao':
-                row=[re_val,nome_val,posto_val,nome_emp,valor,total]
+                row=[re_val,nome_val,cpf_val,valor,total]
             else:
-                row=[re_val,nome_val,posto_val,nome_emp,dias,valor,total]
+                row=[re_val,nome_val,cpf_val,dias,valor,total]
             ws.append(row)
             dr=ws.max_row
             for ci,val in enumerate(row,1):
@@ -7477,17 +7477,17 @@ def _api_beneficios_xlsx_tipo(tipo):
         # Total row
         tr=ws.max_row+1
         if tipo=='vale_alimentacao':
+            ws.cell(row=tr,column=4,value='Total da empresa:').font=total_font
+            tc=ws.cell(row=tr,column=5,value=total_geral)
+        else:
             ws.cell(row=tr,column=5,value='Total da empresa:').font=total_font
             tc=ws.cell(row=tr,column=6,value=total_geral)
-        else:
-            ws.cell(row=tr,column=6,value='Total da empresa:').font=total_font
-            tc=ws.cell(row=tr,column=7,value=total_geral)
         tc.font=total_font
         tc.number_format='#,##0.00'
         tc.alignment=right
         tc.fill=total_fill
-        # Column widths
-        col_widths=[10,35,25,25,8,16,16] if tipo!='vale_alimentacao' else [10,35,25,25,16,16]
+        # Column widths: RE, Colaborador, CPF, [Dias,] Valor, Total
+        col_widths=[10,35,18,8,16,16] if tipo!='vale_alimentacao' else [10,35,18,16,16]
         for i,w in enumerate(col_widths[:len(headers)],1):
             ws.column_dimensions[get_column_letter(i)].width=w
         ws.row_dimensions[1].height=16
@@ -7619,9 +7619,9 @@ def _api_beneficios_pdf_tipo(tipo):
         story.append(Paragraph(f'Competência: {comp}',st))
         story.append(Spacer(1,6))
         if tipo=='vale_alimentacao':
-            rows=[['Matrícula','Colaborador','Posto',f'{tit} (R$)',f'Total {tit} (R$)']]
+            rows=[['RE','Colaborador','CPF',f'{tit} (R$)',f'Total {tit} (R$)']]
         else:
-            rows=[['Matrícula','Colaborador','Posto','Dias',f'{tit} (R$)',f'Total {tit} (R$)']]
+            rows=[['RE','Colaborador','CPF','Dias',f'{tit} (R$)',f'Total {tit} (R$)']]
         total_emp=0.0
         for r in sorted(items,key=lambda x:(funcs_map.get(x.funcionario_id).nome if funcs_map.get(x.funcionario_id) else '')):
             f=funcs_map.get(r.funcionario_id)
@@ -7632,29 +7632,31 @@ def _api_beneficios_pdf_tipo(tipo):
             else:
                 total=dias*valor
             total_emp+=total
+            re_str=str(f.re if f and f.re else (f.matricula if f and f.matricula else ''))
+            cpf_str=(f.cpf if f and f.cpf else '')
             if tipo=='vale_alimentacao':
                 rows.append([
-                    Paragraph(_esc(f.matricula if f else ''),st_cell),
+                    Paragraph(_esc(re_str),st_cell),
                     Paragraph(_esc(f.nome if f else f'Funcionario {r.funcionario_id}'),st_cell),
-                    Paragraph(_esc(f.posto_operacional if f and f.posto_operacional else 'Reserva tecnica'),st_cell),
+                    Paragraph(_esc(cpf_str),st_cell),
                     Paragraph(_esc(fmt_brl(valor)),st_num),
                     Paragraph(_esc(fmt_brl(total)),st_num)
                 ])
             else:
                 rows.append([
-                    Paragraph(_esc(f.matricula if f else ''),st_cell),
+                    Paragraph(_esc(re_str),st_cell),
                     Paragraph(_esc(f.nome if f else f'Funcionario {r.funcionario_id}'),st_cell),
-                    Paragraph(_esc(f.posto_operacional if f and f.posto_operacional else 'Reserva tecnica'),st_cell),
+                    Paragraph(_esc(cpf_str),st_cell),
                     Paragraph(_esc(str(dias)),st_num),
                     Paragraph(_esc(fmt_brl(valor)),st_num),
                     Paragraph(_esc(fmt_brl(total)),st_num)
                 ])
         if tipo=='vale_alimentacao':
             rows.append(['','','', Paragraph('Total da empresa:',st_num), Paragraph(_esc(fmt_brl(total_emp)),st_num)])
-            tb=Table(rows,colWidths=[2.3*cm,5.6*cm,5.0*cm,3.1*cm,3.0*cm])
+            tb=Table(rows,colWidths=[1.8*cm,5.8*cm,3.5*cm,3.2*cm,3.2*cm])
         else:
             rows.append(['','','','', Paragraph('Total da empresa:',st_num), Paragraph(_esc(fmt_brl(total_emp)),st_num)])
-            tb=Table(rows,colWidths=[2.2*cm,5.0*cm,4.8*cm,1.4*cm,2.8*cm,2.8*cm])
+            tb=Table(rows,colWidths=[1.8*cm,5.2*cm,3.3*cm,1.4*cm,2.8*cm,2.8*cm])
         tb.setStyle(TableStyle([
             ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#205d8a')),
             ('TEXTCOLOR',(0,0),(-1,0),colors.white),
