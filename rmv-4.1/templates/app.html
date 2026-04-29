@@ -1949,9 +1949,31 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
       <div class="f"><label>Áreas de acesso</label><div id="uareas" class="areas-grid"></div></div>
-      <div class="f"><label>Permissões avançadas (JSON por ação, opcional)</label>
-        <textarea id="uperms" rows="5" placeholder='{"clientes":["view","edit"],"medicoes":["view","create","edit"],"*":["view"]}' style="font-family:Consolas,monospace"></textarea>
-        <div class="hint" style="margin-top:4px">Ações válidas: view, create, edit, delete, approve, export, *.</div>
+      <div class="f">
+        <label>Permissões por ação</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+          <button type="button" class="btn b-gh b-sm" onclick="rbacPreset('operador')">Operador (só leitura)</button>
+          <button type="button" class="btn b-gh b-sm" onclick="rbacPreset('admin')">Admin (sem excluir/aprovar)</button>
+          <button type="button" class="btn b-az b-sm" onclick="rbacPreset('total')">Acesso total</button>
+          <button type="button" class="btn b-ci b-sm" onclick="rbacLimpar()">Limpar tudo</button>
+        </div>
+        <div style="overflow-x:auto;max-height:300px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:4px">
+          <table id="perm-matrix" style="font-size:11px;border-collapse:collapse;width:100%;min-width:380px">
+            <thead style="position:sticky;top:0;background:#f5f5f5;z-index:1">
+              <tr>
+                <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #ddd;min-width:100px">Área</th>
+                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center">Ver</th>
+                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center">Criar</th>
+                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center">Editar</th>
+                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center">Excluir</th>
+                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center">Aprovar</th>
+                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center">Export.</th>
+              </tr>
+            </thead>
+            <tbody id="perm-matrix-body"></tbody>
+          </table>
+        </div>
+        <div class="hint" style="margin-top:4px">Permissões granulares só têm efeito quando o sistema RBAC por ação está ativo.</div>
       </div>
       <div class="sep"></div>
       <div class="f"><label>Certificado digital do usuário (opcional, .p12/.pfx)</label>
@@ -1980,6 +2002,71 @@ const N='{{ nome }}', P='{{ perfil }}';
 const USER_AREAS={{ areas|safe }};
 const THEME_KEY='rm_theme';
 const AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','compras','beneficios','sst','rh-digital','documentos'];
+const RBAC_ACTIONS=['view','create','edit','delete','approve','export'];
+const AREA_LABELS={dashboard:'Dashboard',medicoes:'Medições',historico:'Histórico',clientes:'Clientes',empresas:'Empresas',usuarios:'Usuários',config:'Config.',rh:'RH',operacional:'Operacional',compras:'Compras',beneficios:'Benefícios',sst:'SST','rh-digital':'RH Digital',documentos:'Documentos'};
+
+function rbacInicializarMatrix(){
+  const tb=document.getElementById('perm-matrix-body');
+  if(!tb||tb.children.length>0) return;
+  AREAS.forEach((area,i)=>{
+    const tr=document.createElement('tr');
+    tr.style.background=i%2===0?'#fff':'#fafafa';
+    let html=`<td style="padding:3px 8px;border-bottom:1px solid #f0f0f0;white-space:nowrap">${AREA_LABELS[area]||area}</td>`;
+    RBAC_ACTIONS.forEach(act=>{
+      html+=`<td style="text-align:center;border-bottom:1px solid #f0f0f0;padding:2px"><input type="checkbox" id="rbac-${area}-${act}" data-area="${area}" data-act="${act}" style="width:auto;margin:0"></td>`;
+    });
+    tr.innerHTML=html;
+    tb.appendChild(tr);
+  });
+}
+
+function rbacCarregarPermissoes(obj){
+  rbacInicializarMatrix();
+  AREAS.forEach(area=>{
+    RBAC_ACTIONS.forEach(act=>{
+      const el=document.getElementById('rbac-'+area+'-'+act);
+      if(!el) return;
+      const areaActs=obj&&obj[area];
+      const globalActs=obj&&obj['*'];
+      el.checked=!!(areaActs&&(areaActs.includes(act)||areaActs.includes('*')))||
+                 !!(globalActs&&(globalActs.includes(act)||globalActs.includes('*')));
+    });
+  });
+}
+
+function rbacLerPermissoes(){
+  rbacInicializarMatrix();
+  const obj={};
+  AREAS.forEach(area=>{
+    const acts=RBAC_ACTIONS.filter(act=>{
+      const el=document.getElementById('rbac-'+area+'-'+act);
+      return el&&el.checked;
+    });
+    if(acts.length) obj[area]=acts;
+  });
+  return obj;
+}
+
+function rbacPreset(tipo){
+  rbacInicializarMatrix();
+  AREAS.forEach(area=>{
+    RBAC_ACTIONS.forEach(act=>{
+      const el=document.getElementById('rbac-'+area+'-'+act);
+      if(!el) return;
+      if(tipo==='total') el.checked=true;
+      else if(tipo==='operador') el.checked=(act==='view');
+      else if(tipo==='admin') el.checked=(area==='usuarios'?(act==='view'):(act!=='delete'&&act!=='approve'));
+    });
+  });
+}
+
+function rbacLimpar(){
+  rbacInicializarMatrix();
+  AREAS.forEach(area=>RBAC_ACTIONS.forEach(act=>{
+    const el=document.getElementById('rbac-'+area+'-'+act);
+    if(el) el.checked=false;
+  }));
+}
 let todos=[], emps=[], funcs=[], pontoFuncs=[], bancosBR=[], beneficiosMensais=[], benTab='ativos', acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
 let pontoResumoPainelByFunc={};
 let pontoMarcacoesDiaAtual=[];
@@ -3279,7 +3366,7 @@ async function renderUsr(){
 
 function openModalUsr(modo,id){
   document.getElementById('uid-edit').value='';
-  ['un','ue','utel','up','uperms'].forEach(k=>document.getElementById(k).value='');
+  ['un','ue','utel','up'].forEach(k=>document.getElementById(k).value='');
   document.getElementById('ucert-file').value='';
   document.getElementById('ucert-pass').value='';
   document.getElementById('ucert-ativo').checked=true;
@@ -3287,6 +3374,7 @@ function openModalUsr(modo,id){
   document.getElementById('uperfil').value='admin';
   document.getElementById('uativo').value='true';
   areaChecksUsuario([]);
+  rbacInicializarMatrix(); rbacCarregarPermissoes({});
   if(modo==='editar'&&id){
     api('/api/usuarios').then(lista=>{
       const u=lista.find(x=>x.id===id); if(!u)return;
@@ -3300,7 +3388,7 @@ function openModalUsr(modo,id){
       document.getElementById('uativo').value=String(u.ativo);
       document.getElementById('ucert-ativo').checked=!!u.cert_ativo;
       document.getElementById('ucert-info').textContent=certInfoHtml(u);
-      document.getElementById('uperms').value=(u.permissoes&&Object.keys(u.permissoes).length)?JSON.stringify(u.permissoes,null,2):'';
+      rbacCarregarPermissoes(u.permissoes||{});
       areaChecksUsuario(u.areas||[]);
     });
   } else {
@@ -3369,17 +3457,7 @@ async function salvarUsuario(){
     alert('Telefone é obrigatório para perfil admin/dono (2FA).');
     return;
   }
-  let permissoes={};
-  const txtPerm=(document.getElementById('uperms').value||'').trim();
-  if(txtPerm){
-    try{
-      permissoes=JSON.parse(txtPerm);
-      if(!permissoes || typeof permissoes!=='object' || Array.isArray(permissoes)) throw new Error('Formato inválido');
-    }catch(e){
-      alert('Permissões avançadas inválidas. Use JSON válido.');
-      return;
-    }
-  }
+  const permissoes=rbacLerPermissoes();
   const id=document.getElementById('uid-edit').value;
   const areas=AREAS.filter(a=>document.getElementById('ua-'+a)?.checked);
   const d={nome,email,telefone,senha:document.getElementById('up').value,perfil,ativo:document.getElementById('uativo').value==='true',areas,permissoes};
