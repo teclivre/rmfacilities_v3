@@ -802,6 +802,9 @@ class Funcionario(db.Model):
     vale_refeicao=db.Column(db.Float,default=0)
     vale_alimentacao=db.Column(db.Float,default=0)
     vale_transporte=db.Column(db.Float,default=0)
+    opta_vt=db.Column(db.Boolean,default=True)
+    opta_vr=db.Column(db.Boolean,default=True)
+    opta_va=db.Column(db.Boolean,default=True)
     posto_operacional=db.Column(db.String(150))
     posto_cliente_id=db.Column(db.Integer,db.ForeignKey('cliente.id'),nullable=True)
     endereco=db.Column(db.String(250))
@@ -4758,6 +4761,9 @@ def api_atualizar_funcionario(id):
     if 'vale_refeicao' in d: f.vale_refeicao=to_num(d.get('vale_refeicao'),dec=True)
     if 'vale_alimentacao' in d: f.vale_alimentacao=to_num(d.get('vale_alimentacao'),dec=True)
     if 'vale_transporte' in d: f.vale_transporte=to_num(d.get('vale_transporte'),dec=True)
+    if 'opta_vt' in d: f.opta_vt=to_bool(d.get('opta_vt'))
+    if 'opta_vr' in d: f.opta_vr=to_bool(d.get('opta_vr'))
+    if 'opta_va' in d: f.opta_va=to_bool(d.get('opta_va'))
     if 'docs_admissao_ok' in d: f.docs_admissao_ok=to_bool(d.get('docs_admissao_ok'))
     if 'areas' in d:
         ars=[a for a in d.get('areas',[]) if a in ALLOWED_AREAS]
@@ -7271,6 +7277,7 @@ def api_beneficios_lancamentos():
         itens.append({
             'funcionario_id':f.id,
             'matricula':f.matricula or '',
+            're':f.re or '',
             'nome':f.nome or '',
             'posto_operacional':posto_nome,
             'posto_cliente_id':f.posto_cliente_id,
@@ -7284,7 +7291,10 @@ def api_beneficios_lancamentos():
             'salario':(b.salario if b else (f.salario or 0)),
             'vale_refeicao':(b.vale_refeicao if b else (f.vale_refeicao or 0)),
             'vale_alimentacao':(b.vale_alimentacao if b else (f.vale_alimentacao or 0)),
-            'vale_transporte':(b.vale_transporte if b else (f.vale_transporte or 0))
+            'vale_transporte':(b.vale_transporte if b else (f.vale_transporte or 0)),
+            'opta_vt': True if f.opta_vt is None else bool(f.opta_vt),
+            'opta_vr': True if f.opta_vr is None else bool(f.opta_vr),
+            'opta_va': True if f.opta_va is None else bool(f.opta_va),
         })
     return jsonify({'ok':True,'competencia':comp,'itens':itens})
 
@@ -7356,6 +7366,139 @@ def api_beneficios_vale_refeicao_pdf():
 @lr
 def api_beneficios_vale_alimentacao_pdf():
     return _api_beneficios_pdf_tipo('vale_alimentacao')
+
+@app.route('/api/beneficios/vale-transporte/xlsx')
+@lr
+def api_beneficios_vale_transporte_xlsx():
+    return _api_beneficios_xlsx_tipo('vale_transporte')
+
+@app.route('/api/beneficios/vale-refeicao/xlsx')
+@lr
+def api_beneficios_vale_refeicao_xlsx():
+    return _api_beneficios_xlsx_tipo('vale_refeicao')
+
+@app.route('/api/beneficios/vale-alimentacao/xlsx')
+@lr
+def api_beneficios_vale_alimentacao_xlsx():
+    return _api_beneficios_xlsx_tipo('vale_alimentacao')
+
+def _api_beneficios_xlsx_tipo(tipo):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    comp=norm_competencia(request.args.get('competencia'))
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    func_ids_raw=request.args.get('funcionarios','').strip()
+    func_ids_filter={int(x) for x in func_ids_raw.split(',') if x.strip().isdigit()} if func_ids_raw else set()
+    cfg={
+        'vale_transporte':('Vale Transporte','vale_transporte','dias_vt','vt'),
+        'vale_refeicao':('Vale Refeição','vale_refeicao','dias_vr','vr'),
+        'vale_alimentacao':('Vale Alimentação','vale_alimentacao','dias_va','va'),
+    }
+    if tipo not in cfg:
+        return jsonify({'erro':'Tipo de beneficio invalido'}),400
+    tit,col_valor,col_dias,sigla=cfg[tipo]
+    q=BeneficioMensal.query.filter_by(competencia=comp)
+    if empresa_id:
+        q=q.filter_by(empresa_id=empresa_id)
+    regs=[b for b in q.all() if float(getattr(b,col_valor) or 0)>0 and (not func_ids_filter or b.funcionario_id in func_ids_filter)]
+    if not regs:
+        return jsonify({'erro':f'Nenhum lançamento de {tit.lower()} com valor para a competência informada.'}),400
+
+    emps_map={e.id:e for e in Empresa.query.all()}
+    funcs_map={f.id:f for f in Funcionario.query.all()}
+    grupos={}
+    for r in regs:
+        grupos.setdefault(r.empresa_id or 0,[]).append(r)
+
+    wb=Workbook()
+    first=True
+    header_fill=PatternFill('solid',fgColor='205D8A')
+    total_fill=PatternFill('solid',fgColor='EAF2FB')
+    header_font=Font(bold=True,color='FFFFFF',size=10)
+    total_font=Font(bold=True,size=10)
+    normal_font=Font(size=10)
+    center=Alignment(horizontal='center',vertical='center')
+    left=Alignment(horizontal='left',vertical='center')
+    right=Alignment(horizontal='right',vertical='center')
+    thin=Side(style='thin',color='D0D7DE')
+    border=Border(left=thin,right=thin,top=thin,bottom=thin)
+    comp_fmt=f"{comp[5:7]}/{comp[:4]}" if isinstance(comp,str) and len(comp)>=7 and '-' in comp else str(comp)
+
+    for emp_id,items in sorted(grupos.items(),key=lambda kv:((emps_map.get(kv[0]).nome if emps_map.get(kv[0]) else 'ZZZ'),kv[0])):
+        emp=emps_map.get(emp_id)
+        nome_emp=(emp.nome if emp else 'Sem empresa')
+        ws=wb.active if first else wb.create_sheet()
+        first=False
+        ws.title=nome_emp[:31].replace('/','_').replace('\\','_').replace('?','').replace('*','').replace('[','').replace(']','').replace(':','')
+        ws.append([f'Relatório de {tit} — {nome_emp}'])
+        ws.append([f'Competência: {comp_fmt}'])
+        ws.append([])
+        if tipo=='vale_alimentacao':
+            headers=['RE','Colaborador','Posto','Empresa',f'{tit} (R$)','Total (R$)']
+        else:
+            headers=['RE','Colaborador','Posto','Empresa','Dias',f'{tit} (R$)','Total (R$)']
+        ws.append(headers)
+        hrow=4
+        for col_idx,_ in enumerate(headers,1):
+            cell=ws.cell(row=hrow,column=col_idx)
+            cell.fill=header_fill
+            cell.font=header_font
+            cell.alignment=center
+            cell.border=border
+        total_geral=0.0
+        for r in sorted(items,key=lambda x:(funcs_map.get(x.funcionario_id).nome if funcs_map.get(x.funcionario_id) else '')):
+            f=funcs_map.get(r.funcionario_id)
+            valor=float(getattr(r,col_valor) or 0)
+            dias=int(getattr(r,col_dias) or 0)
+            total=(valor if tipo=='vale_alimentacao' else dias*valor)
+            total_geral+=total
+            re_val=(f.re if f else '')
+            nome_val=(f.nome if f else f'Funcionario {r.funcionario_id}')
+            posto_val=(f.posto_operacional if f and f.posto_operacional else 'Reserva tecnica')
+            if tipo=='vale_alimentacao':
+                row=[re_val,nome_val,posto_val,nome_emp,valor,total]
+            else:
+                row=[re_val,nome_val,posto_val,nome_emp,dias,valor,total]
+            ws.append(row)
+            dr=ws.max_row
+            for ci,val in enumerate(row,1):
+                cell=ws.cell(row=dr,column=ci)
+                cell.font=normal_font
+                cell.border=border
+                if isinstance(val,float):
+                    cell.number_format='#,##0.00'
+                    cell.alignment=right
+                elif isinstance(val,int) and ci>4:
+                    cell.alignment=right
+                else:
+                    cell.alignment=left
+        # Total row
+        tr=ws.max_row+1
+        if tipo=='vale_alimentacao':
+            ws.cell(row=tr,column=5,value='Total da empresa:').font=total_font
+            tc=ws.cell(row=tr,column=6,value=total_geral)
+        else:
+            ws.cell(row=tr,column=6,value='Total da empresa:').font=total_font
+            tc=ws.cell(row=tr,column=7,value=total_geral)
+        tc.font=total_font
+        tc.number_format='#,##0.00'
+        tc.alignment=right
+        tc.fill=total_fill
+        # Column widths
+        col_widths=[10,35,25,25,8,16,16] if tipo!='vale_alimentacao' else [10,35,25,25,16,16]
+        for i,w in enumerate(col_widths[:len(headers)],1):
+            ws.column_dimensions[get_column_letter(i)].width=w
+        ws.row_dimensions[1].height=16
+        ws.cell(row=1,column=1).font=Font(bold=True,size=12)
+
+    buf=io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    comp_nome=f"{comp[5:7]}-{comp[:4]}" if isinstance(comp,str) and len(comp)>=7 and '-' in comp else str(comp)
+    nome=f"relatorio_{sigla}_competencia_{comp_nome}.xlsx"
+    return send_file(buf,mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',as_attachment=True,download_name=nome)
 
 def _api_beneficios_pdf_tipo(tipo):
     from reportlab.lib.pagesizes import A4
@@ -9450,7 +9593,10 @@ with app.app_context():
         'banco_tipo_conta VARCHAR(20)',
         'banco_pix VARCHAR(150)',
         'posto_operacional VARCHAR(150)',
-        'posto_cliente_id INTEGER'
+        'posto_cliente_id INTEGER',
+        'opta_vt BOOLEAN DEFAULT 1',
+        'opta_vr BOOLEAN DEFAULT 1',
+        'opta_va BOOLEAN DEFAULT 1'
     ])
     ensure_cols('cliente',[
         'numero_contrato VARCHAR(60)',

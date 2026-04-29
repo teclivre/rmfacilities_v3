@@ -1269,6 +1269,11 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div class="f"><label>Empresa</label><select id="ben-emp"><option value="">Todas</option></select></div>
           <div class="f"><label>Buscar colaborador / matrícula</label><input id="ben-busca" placeholder="Ex: Joana ou 395" oninput="renderBeneficiosAtivos();renderBeneficioPorTipo('vt','tb-benef-vt');renderBeneficioPorTipo('vr','tb-benef-vr');renderBeneficioPorTipo('va','tb-benef-va')"></div>
           <div class="f"><label>Posto</label><select id="ben-posto" onchange="renderBeneficiosAtivos();renderBeneficioPorTipo('vt','tb-benef-vt');renderBeneficioPorTipo('vr','tb-benef-vr');renderBeneficioPorTipo('va','tb-benef-va')"><option value="">Todos os postos</option></select></div>
+          <div class="f"><label>Optante</label><select id="ben-opta" onchange="renderBeneficiosAtivos();renderBeneficioPorTipo('vt','tb-benef-vt');renderBeneficioPorTipo('vr','tb-benef-vr');renderBeneficioPorTipo('va','tb-benef-va')">
+            <option value="">Todos</option>
+            <option value="optantes">Somente optantes</option>
+            <option value="nao_optantes">Somente não-optantes</option>
+          </select></div>
         </div>
         <div class="g4" style="margin-top:8px">
           <div class="f" style="display:flex;align-items:flex-end"><button class="btn b-gh b-sm" onclick="carregarBeneficiosMensais()">Carregar colaboradores</button></div>
@@ -1289,6 +1294,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="brow" style="justify-content:flex-start;margin-top:10px;flex-wrap:wrap;gap:6px">
           <button class="btn b-gh b-sm" onclick="salvarBeneficiosDias()">Salvar dias (VT/VR)</button>
           <button class="btn b-ghv b-sm" onclick="gerarPDFBeneficioAtivo()">Gerar PDF</button>
+          <button class="btn b-ghl b-sm" onclick="gerarXLSXBeneficioAtivo()">Exportar XLSX</button>
           <button class="btn b-az b-sm" onclick="selecionarTodosBen()">Selecionar todos</button>
           <button class="btn b-ghr b-sm" onclick="limparSelecaoBen()">Limpar seleção</button>
           <span id="ben-sel-count" style="font-size:12px;color:#7ecfff;align-self:center"></span>
@@ -1753,6 +1759,20 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div class="g2">
         <div class="f"><label>Checklist docs admissão OK</label><select id="fdocs-ok"><option value="0">Não</option><option value="1">Sim</option></select></div>
         <div class="f"><label>Obs. documentação admissão</label><input id="fdocs-obs"></div>
+      </div>
+      <div class="g3" style="margin-top:4px">
+        <div class="f" style="display:flex;align-items:center;gap:8px;padding-top:22px">
+          <input type="checkbox" id="fopta-vt" checked style="width:16px;height:16px">
+          <label for="fopta-vt" style="margin:0;font-weight:500">Optante VT</label>
+        </div>
+        <div class="f" style="display:flex;align-items:center;gap:8px;padding-top:22px">
+          <input type="checkbox" id="fopta-vr" checked style="width:16px;height:16px">
+          <label for="fopta-vr" style="margin:0;font-weight:500">Optante VR</label>
+        </div>
+        <div class="f" style="display:flex;align-items:center;gap:8px;padding-top:22px">
+          <input type="checkbox" id="fopta-va" checked style="width:16px;height:16px">
+          <label for="fopta-va" style="margin:0;font-weight:500">Optante VA</label>
+        </div>
       </div>
       <div class="f"><label>Áreas com acesso</label>
         <div id="fareas" class="areas-grid"></div>
@@ -3702,6 +3722,9 @@ function preencherFormFuncionario(f,titulo='Editar funcionário'){
   document.getElementById('fdocs-ok').value=f.docs_admissao_ok?'1':'0';
   document.getElementById('fdocs-obs').value=f.docs_admissao_obs||'';
   document.getElementById('fobs').value=f.obs||'';
+  document.getElementById('fopta-vt').checked=f.opta_vt!==false;
+  document.getElementById('fopta-vr').checked=f.opta_vr!==false;
+  document.getElementById('fopta-va').checked=f.opta_va!==false;
   areaChecks(f.areas||[]);
 }
 
@@ -3950,6 +3973,9 @@ async function salvarFuncionario(){
     docs_admissao_ok:document.getElementById('fdocs-ok').value==='1',
     docs_admissao_obs:document.getElementById('fdocs-obs').value,
     obs:document.getElementById('fobs').value,
+    opta_vt:document.getElementById('fopta-vt').checked,
+    opta_vr:document.getElementById('fopta-vr').checked,
+    opta_va:document.getElementById('fopta-va').checked,
     areas
   };
   const r=id ? await api('/api/funcionarios/'+id,'PUT',d) : await api('/api/funcionarios','POST',d);
@@ -4778,17 +4804,27 @@ async function salvarConfigAlertaBeneficios(){
   await loadDash();
 }
 
-function beneficiosFiltrados(){
+function beneficiosFiltrados(tipoOpta){
   const q=benBusca();
   const posto=benPosto();
+  const optaFiltro=(document.getElementById('ben-opta')?.value||'');
   const qDig=q.replace(/\D/g,'');
   return (beneficiosMensais||[]).filter(it=>{
-    const mat=(it.matricula||'').toString();
+    const mat=(it.matricula||it.re||'').toString();
     const nome=(it.nome||'').toLowerCase();
     const p=(it.posto_operacional||'').toLowerCase();
     const okBusca=!q || nome.includes(q) || mat.toLowerCase().includes(q) || (qDig && mat.replace(/\D/g,'').includes(qDig));
     const okPosto=!posto || p===posto;
-    return okBusca && okPosto;
+    let okOpta=true;
+    if(optaFiltro==='optantes'||optaFiltro==='nao_optantes'){
+      const tipo=tipoOpta||benTab;
+      const optaKey=tipo==='vt'?'opta_vt':tipo==='vr'?'opta_vr':tipo==='va'?'opta_va':null;
+      if(optaKey){
+        const isOpta=it[optaKey]!==false;
+        okOpta=(optaFiltro==='optantes')?isOpta:!isOpta;
+      }
+    }
+    return okBusca && okPosto && okOpta;
   });
 }
 
@@ -4820,15 +4856,18 @@ function renderBeneficiosAtivos(){
   }
   tb.innerHTML=lista.map(it=>{
     const chk=benSelecionados.has(it.funcionario_id)?'checked':'';
+    const vtTag=it.opta_vt===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
+    const vrTag=it.opta_vr===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
+    const vaTag=it.opta_va===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
     return`<tr class="row-clickable" onclick="toggleBenSelRow(${it.funcionario_id})">
     <td style="text-align:center"><input type="checkbox" class="ben-sel-cb" data-fid="${it.funcionario_id}" ${chk} onchange="toggleBenSel(${it.funcionario_id},this.checked)" onclick="event.stopPropagation()"></td>
-    <td>${it.matricula||'—'}</td>
+    <td>${it.re||it.matricula||'—'}</td>
     <td>${it.nome||''}</td>
     <td>${it.posto_operacional||'Reserva tecnica'}</td>
     <td>${it.empresa_nome||'—'}</td>
-    <td><input id="ben-base-vt-val-${it.funcionario_id}" value="${moneyPt(it.vale_transporte||0)}" style="width:110px" onclick="event.stopPropagation()"></td>
-    <td><input id="ben-base-vr-val-${it.funcionario_id}" value="${moneyPt(it.vale_refeicao||0)}" style="width:110px" onclick="event.stopPropagation()"></td>
-    <td><input id="ben-base-va-val-${it.funcionario_id}" value="${moneyPt(it.vale_alimentacao||0)}" style="width:110px" onclick="event.stopPropagation()"></td>
+    <td><input id="ben-base-vt-val-${it.funcionario_id}" value="${moneyPt(it.vale_transporte||0)}" style="width:110px" onclick="event.stopPropagation()">${vtTag}</td>
+    <td><input id="ben-base-vr-val-${it.funcionario_id}" value="${moneyPt(it.vale_refeicao||0)}" style="width:110px" onclick="event.stopPropagation()">${vrTag}</td>
+    <td><input id="ben-base-va-val-${it.funcionario_id}" value="${moneyPt(it.vale_alimentacao||0)}" style="width:110px" onclick="event.stopPropagation()">${vaTag}</td>
   </tr>`;
   }).join('');
   atualizarContadorSel();
@@ -4837,7 +4876,7 @@ function renderBeneficiosAtivos(){
 function renderBeneficioPorTipo(tipo,tbId){
   const tb=document.getElementById(tbId);
   if(!tb)return;
-  const lista=beneficiosFiltrados();
+  const lista=beneficiosFiltrados(tipo);
   if(!lista.length){
     tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:16px;color:#999">Nenhum colaborador ativo para os filtros selecionados.</td></tr>';
     return;
@@ -4953,6 +4992,17 @@ function gerarPDFBeneficioAtivo(){
     return;
   }
   let url='/api/beneficios/'+mapa[benTab]+'/pdf?competencia='+encodeURIComponent(benComp())+'&empresa_id='+encodeURIComponent(benEmp());
+  if(benSelecionados.size>0) url+='&funcionarios='+[...benSelecionados].join(',');
+  window.open(url,'_blank');
+}
+
+function gerarXLSXBeneficioAtivo(){
+  const mapa={vt:'vale-transporte',vr:'vale-refeicao',va:'vale-alimentacao'};
+  if(benTab==='ativos'){
+    showSt('st-benef','Selecione VT, VR ou VA para exportar o XLSX.',true);
+    return;
+  }
+  let url='/api/beneficios/'+mapa[benTab]+'/xlsx?competencia='+encodeURIComponent(benComp())+'&empresa_id='+encodeURIComponent(benEmp());
   if(benSelecionados.size>0) url+='&funcionarios='+[...benSelecionados].join(',');
   window.open(url,'_blank');
 }
