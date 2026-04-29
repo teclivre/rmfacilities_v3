@@ -48,6 +48,7 @@ function abrirModalFatDetalhe(id){
       <button class='btn b-az b-sm' onclick='editarFatura(${m.id})'>Editar</button>
       <button class='btn b-sm' style='background:#28a745;color:#fff' onclick='marcarComoPaga(${m.id},"${(m.numero||'').replace(/"/g,"&quot;")}")' ${(m.status==='paga'||m.status==='cancelada')?'disabled':''}>✓ Marcar como paga</button>
       <button class='btn b-gh b-sm' onclick='enviarFaturaPorEmail(${m.id},"${(m.numero||'').replace(/"/g,"&quot;")}")'>✉ Enviar por e-mail</button>
+      <button class='btn b-sm' style='background:#e67e22;color:#fff' onclick='verEncargos(${m.id},"${(m.numero||'').replace(/"/g,"&quot;")}")' ${(m.status==='paga'||m.status==='cancelada')?'disabled':''}>⚡ Encargos/Multa</button>
       <button class='btn b-ci b-sm' onclick='cancelarFatura(${m.id},"${(m.numero||'').replace(/"/g,"&quot;")}")' ${m.status==='cancelada'?'disabled':''}>Cancelar Fatura</button>
     </div>`;
     body.innerHTML=html;
@@ -83,6 +84,156 @@ async function enviarFaturaPorEmail(id,numero){
   toast('Fatura '+numero+' enviada para '+(r.enviado_para||'o cliente')+'!','ok');
 }
 document.getElementById('modal-fat-detalhe').addEventListener('click',function(e){if(e.target===this)fecharModalFatDetalhe();});
+
+// ============================================================
+// ENCARGOS / JUROS / MULTA
+// ============================================================
+async function verEncargos(id,numero){
+  const r=await api('/api/medicoes/'+id+'/calcular-encargos','POST',{});
+  if(!r||r.erro){alert(r&&r.erro?r.erro:'Erro ao calcular encargos');return;}
+  const msg=`Fatura ${numero} — ${r.dias_atraso} dia(s) de atraso\n`+
+    `Multa: ${brl(r.valor_multa)}\nJuros: ${brl(r.valor_juros)}\n`+
+    `Total encargos: ${brl(r.total_encargos)}\nTotal com encargos: ${brl(r.total_com_encargos)}\n\n`+
+    `Deseja aplicar os encargos à fatura?`;
+  if(!confirm(msg))return;
+  const r2=await api('/api/medicoes/'+id+'/calcular-encargos','POST',{aplicar:true});
+  if(r2&&r2.ok!==false) toast('Encargos aplicados!','ok');
+  else if(r2&&r2.erro) alert(r2.erro);
+}
+
+// ============================================================
+// CONCILIAÇÃO BANCÁRIA OFX
+// ============================================================
+let _concPage=1,_concLoteId='';
+async function concInicializar(){
+  const sel=document.getElementById('conc-empresa');
+  if(sel&&!sel.options.length){
+    const emps=await api('/api/empresas');
+    (emps||[]).forEach(e=>{const o=document.createElement('option');o.value=e.id;o.textContent=e.nome;sel.appendChild(o);});
+  }
+  const lotes=await api('/api/conciliacao/lotes');
+  const sl=document.getElementById('conc-filtro-lote');
+  if(sl){
+    while(sl.options.length>1)sl.remove(1);
+    (lotes||[]).forEach(l=>{const o=document.createElement('option');o.value=l.id;o.textContent=l.arquivo_nome+' ('+l.importado_fmt+')';sl.appendChild(o);});
+  }
+  concCarregar();
+}
+async function concImportar(){
+  const f=document.getElementById('conc-arquivo');
+  if(!f||!f.files.length){alert('Selecione um arquivo OFX');return;}
+  const empId=document.getElementById('conc-empresa').value||'';
+  const fd=new FormData();
+  fd.append('arquivo',f.files[0]);
+  fd.append('empresa_id',empId);
+  const resp=await fetch('/api/conciliacao/importar',{method:'POST',body:fd});
+  const r=await resp.json();
+  if(r.erro){alert('Erro: '+r.erro);return;}
+  toast('Importado! '+r.total+' transações.','ok');
+  f.value='';
+  concInicializar();
+}
+async function concCarregar(page){
+  page=page||1; _concPage=page;
+  const lote=document.getElementById('conc-filtro-lote')?.value||'';
+  const status=document.getElementById('conc-filtro-status')?.value||'';
+  const qs=new URLSearchParams({page:page,per_page:50});
+  if(lote)qs.set('lote_id',lote);
+  if(status)qs.set('status',status);
+  const r=await api('/api/conciliacao/transacoes?'+qs);
+  const tb=document.getElementById('tb-conciliacao');
+  if(!tb)return;
+  if(!r||!r.items||!r.items.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:20px;color:#aaa">Nenhuma transação.</td></tr>';concRenderPag(0,1,50);return;}
+  tb.innerHTML=r.items.map(t=>{
+    const pago=t.medicao_id?`<span style='color:var(--verde)'>✓ ${t.medicao_numero} — ${t.medicao_cliente}</span>`:'<span style="color:#aaa">—</span>';
+    const btnConc=t.medicao_id?
+      `<button class='btn b-sm' style='background:#c33;color:#fff;padding:2px 7px' onclick='concDesvincular(${t.id})'>Desvincular</button>`:
+      `<button class='btn b-az b-sm' style='padding:2px 7px' onclick='concVincular(${t.id},${t.valor})'>Vincular</button>`;
+    return `<tr>
+      <td>${t.data_mov||''}</td>
+      <td style='max-width:200px;overflow:hidden;text-overflow:ellipsis'>${t.historico||''}</td>
+      <td>${t.num_doc||''}</td>
+      <td><span class='pill ${t.tipo==='C'?'p-vd':'p-vm'}'>${t.tipo==='C'?'Crédito':'Débito'}</span></td>
+      <td style='font-weight:700'>${brl(t.valor)}</td>
+      <td>${pago}</td>
+      <td>${btnConc}</td>
+    </tr>`;
+  }).join('');
+  concRenderPag(r.total,r.page,r.per_page);
+}
+function concRenderPag(total,page,per){
+  const el=document.getElementById('conc-pag'); if(!el)return;
+  const pages=Math.ceil(total/per)||1;
+  el.innerHTML='';
+  for(let i=1;i<=pages;i++){
+    const b=document.createElement('button');
+    b.className='btn b-gh b-sm';
+    if(i===page)b.style.background='var(--azul)';
+    b.textContent=String(i);
+    b.onclick=()=>concCarregar(i);
+    el.appendChild(b);
+  }
+}
+async function concAuto(){
+  const lote=document.getElementById('conc-filtro-lote')?.value||'';
+  const body=lote?{lote_id:parseInt(lote)}:{};
+  const r=await api('/api/conciliacao/auto','POST',body);
+  if(r&&r.ok)toast(`Auto-conciliadas: ${r.conciliadas} de ${r.pendentes_total}`,'ok');
+  concCarregar(_concPage);
+}
+async function concVincular(txId,valor){
+  const num=prompt(`Vincular transação de ${brl(valor)} com qual Nº de fatura?`,'');
+  if(!num)return;
+  const lista=await api('/api/medicoes?per_page=0');
+  const m=(lista||[]).find(x=>x.numero&&x.numero.trim()===num.trim());
+  if(!m){alert('Fatura não encontrada com número: '+num);return;}
+  const r=await api('/api/conciliacao/'+txId+'/conciliar','POST',{medicao_id:m.id});
+  if(r&&r.ok)toast('Vinculado!','ok');
+  concCarregar(_concPage);
+}
+async function concDesvincular(txId){
+  if(!confirm('Remover vínculo desta transação?'))return;
+  const r=await api('/api/conciliacao/'+txId+'/conciliar','POST',{medicao_id:null});
+  if(r&&r.ok)toast('Desvinculado.','ok');
+  concCarregar(_concPage);
+}
+
+// ============================================================
+// RÉGUA DE COBRANÇA
+// ============================================================
+async function cobrancarProcessar(){
+  const tipos=[];
+  if(document.getElementById('rg-d5')?.checked)tipos.push('D-5');
+  if(document.getElementById('rg-d1')?.checked)tipos.push('D-1');
+  if(document.getElementById('rg-d3')?.checked)tipos.push('D+3');
+  if(!tipos.length){alert('Selecione pelo menos um tipo de lembrete.');return;}
+  const r=await api('/api/cobrancas/processar','POST',{tipos});
+  const el=document.getElementById('cob-res');
+  if(el){
+    el.style.display='block';
+    el.innerHTML=`<div style='padding:10px;background:#f0fff0;border-radius:6px;color:#1a5c1a'>
+      Enviados: <b>${r.processadas||0}</b> &nbsp;|&nbsp; Erros: <b>${r.erros||0}</b>
+      ${(r.detalhes||[]).length?'<ul style="margin:8px 0 0 18px">'+r.detalhes.map(d=>`<li>${d.numero} [${d.tipo}] ${d.ok?'✓':'✗ '+d.erro}</li>`).join('')+'</ul>':''}
+    </div>`;
+  }
+  cobLogCarregar();
+}
+async function cobLogCarregar(){
+  const r=await api('/api/cobrancas/logs?per_page=100');
+  const tb=document.getElementById('tb-cob-log');
+  if(!tb)return;
+  const items=r&&r.items?r.items:[];
+  if(!items.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:20px;color:#aaa">Nenhum envio registrado.</td></tr>';return;}
+  tb.innerHTML=items.map(l=>`<tr>
+    <td>${l.enviado_fmt||''}</td>
+    <td>${l.numero||''}</td>
+    <td>${l.cliente||''}</td>
+    <td><span class='pill'>${l.tipo||''}</span></td>
+    <td>${l.dest_email||''}</td>
+    <td><span class='pill ${l.status==='ok'?'p-vd':'p-vm'}'>${l.status||''}</span>${l.erro?`<span style='color:#c33;font-size:11px'> ${l.erro}</span>`:''}</td>
+  </tr>`).join('');
+}
+
 // === FATURAMENTO (Financeiro) ===
 </script>
 <script>
@@ -234,6 +385,8 @@ document.addEventListener('DOMContentLoaded',()=>{
       <a class="nav-item sub" data-nav="fluxo-caixa" onclick="nav('fluxo-caixa',this)">Fluxo de Caixa</a>
       <a class="nav-item sub" data-nav="contas" onclick="nav('contas',this)">Contas a Pagar/Receber</a>
       <a class="nav-item sub" data-nav="relatorios" onclick="nav('relatorios',this)">Relatórios</a>
+      <a class="nav-item sub" data-nav="conciliacao" onclick="nav('conciliacao',this)">Conciliação OFX</a>
+      <a class="nav-item sub" data-nav="cobrancas" onclick="nav('cobrancas',this)">Régua de Cobrança</a>
     </div>
     <a class="nav-item" onclick="nav('clientes',this)">
       <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -558,6 +711,67 @@ document.addEventListener('DOMContentLoaded',()=>{
     </div>
     <div id="pg-relatorios" class="pg">
       <div class="card"><div class="card-header"><span class="card-title">Relatórios</span></div><div style="padding:20px 0">Relatórios financeiros customizáveis.</div></div>
+    </div>
+
+    <!-- ══ CONCILIAÇÃO OFX ══ -->
+    <div id="pg-conciliacao" class="pg">
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-header"><span class="card-title">Conciliação Bancária — Importar OFX</span></div>
+        <div style="padding:12px">
+          <div class="f" style="flex-wrap:wrap;gap:10px;align-items:flex-end">
+            <div><label>Empresa</label><select id="conc-empresa" style="min-width:180px"></select></div>
+            <div><label>Arquivo OFX</label><input type="file" id="conc-arquivo" accept=".ofx,.OFX"></div>
+            <button class="btn b-az b-sm" onclick="concImportar()">⬆ Importar</button>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-header">
+          <span class="card-title">Transações importadas</span>
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="conc-filtro-lote" onchange="concCarregar()" style="min-width:160px"><option value="">Todos os lotes</option></select>
+            <select id="conc-filtro-status" onchange="concCarregar()">
+              <option value="">Todos</option>
+              <option value="pendente">Pendentes</option>
+              <option value="conciliado">Conciliados</option>
+            </select>
+            <button class="btn b-gh b-sm" onclick="concAuto()">⚡ Auto-Conciliar</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="t" style="font-size:13px">
+            <thead><tr><th>Data</th><th>Histórico</th><th>Doc</th><th>Tipo</th><th>Valor</th><th>Medição</th><th></th></tr></thead>
+            <tbody id="tb-conciliacao"><tr><td colspan="7" style="text-align:center;padding:20px;color:#aaa">Importe um arquivo OFX para começar.</td></tr></tbody>
+          </table>
+        </div>
+        <div id="conc-pag" style="display:flex;gap:6px;padding:10px;justify-content:center"></div>
+      </div>
+    </div>
+
+    <!-- ══ RÉGUA DE COBRANÇA ══ -->
+    <div id="pg-cobrancas" class="pg">
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-header"><span class="card-title">Régua de Cobrança Automática</span></div>
+        <div style="padding:12px">
+          <p style="margin:0 0 10px;color:#555">Enviar lembretes de vencimento e cobrança de faturas em atraso com base nas datas de vencimento.</p>
+          <div class="f" style="flex-wrap:wrap;gap:8px;align-items:center">
+            <label><input type="checkbox" id="rg-d5" checked> D-5 (5 dias antes)</label>
+            <label><input type="checkbox" id="rg-d1" checked> D-1 (dia anterior)</label>
+            <label><input type="checkbox" id="rg-d3" checked> D+3 (3 dias em atraso)</label>
+            <button class="btn b-az b-sm" onclick="cobrancarProcessar()">▶ Processar agora</button>
+          </div>
+          <div id="cob-res" style="margin-top:10px;display:none"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Histórico de envios</span><button class="btn b-gh b-sm" onclick="cobLogCarregar()">Atualizar</button></div>
+        <div style="overflow-x:auto">
+          <table class="t" style="font-size:13px">
+            <thead><tr><th>Data/Hora</th><th>Nº Fatura</th><th>Cliente</th><th>Tipo</th><th>Destino</th><th>Status</th></tr></thead>
+            <tbody id="tb-cob-log"><tr><td colspan="6" style="text-align:center;padding:20px;color:#aaa">Clique em Atualizar para carregar.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- ══ NOVA MEDIÇÃO ══ -->
@@ -2087,7 +2301,7 @@ function nav(id,el,force=false){
   }
   // Lógica especial para Financeiro e subabas
   const isFinanceiroParent = id==='financeiro';
-  const subabasFinanceiro = ['faturamento','despesas','fluxo-caixa','contas','relatorios'];
+  const subabasFinanceiro = ['faturamento','despesas','fluxo-caixa','contas','relatorios','conciliacao','cobrancas'];
   if(isFinanceiroParent){
     document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
     document.getElementById('pg-financeiro').classList.add('on');
@@ -2141,6 +2355,8 @@ function nav(id,el,force=false){
   }
   if(targetId==='rh-digital')initRHDigital();
   if(targetId==='assinaturas')initAssinaturas();
+  if(targetId==='conciliacao')concInicializar();
+  if(targetId==='cobrancas')cobLogCarregar();
 }
 
 const _subAbaState={};

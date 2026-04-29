@@ -738,6 +738,8 @@ class Medicao(db.Model):
     assinatura_cert_subject=db.Column(db.String(255))
     dt_pagamento=db.Column(db.String(10))
     forma_pagamento=db.Column(db.String(50))
+    valor_juros=db.Column(db.Float,default=0)
+    valor_multa=db.Column(db.Float,default=0)
     criado_em=db.Column(db.DateTime,default=utcnow)
     criado_por=db.Column(db.String(100))
     def to_dict(self):
@@ -952,6 +954,48 @@ class MedicaoAnexo(db.Model):
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
+        return d
+
+class CobrangaLog(db.Model):
+    __tablename__='cobranca_log'
+    id=db.Column(db.Integer,primary_key=True)
+    medicao_id=db.Column(db.Integer,db.ForeignKey('medicao.id'),nullable=False)
+    tipo=db.Column(db.String(20))   # D-5, D-1, D+3, manual
+    enviado_em=db.Column(db.DateTime,default=utcnow)
+    status=db.Column(db.String(20),default='ok')  # ok | erro
+    dest_email=db.Column(db.String(150))
+    erro=db.Column(db.Text)
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['enviado_fmt']=self.enviado_em.strftime('%d/%m/%Y %H:%M') if self.enviado_em else ''
+        return d
+
+class ConciliacaoLote(db.Model):
+    __tablename__='conciliacao_lote'
+    id=db.Column(db.Integer,primary_key=True)
+    empresa_id=db.Column(db.Integer,db.ForeignKey('empresa.id'),nullable=True)
+    arquivo_nome=db.Column(db.String(250))
+    importado_em=db.Column(db.DateTime,default=utcnow)
+    total_transacoes=db.Column(db.Integer,default=0)
+    importado_por=db.Column(db.String(100))
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['importado_fmt']=self.importado_em.strftime('%d/%m/%Y %H:%M') if self.importado_em else ''
+        return d
+
+class ConciliacaoTransacao(db.Model):
+    __tablename__='conciliacao_transacao'
+    id=db.Column(db.Integer,primary_key=True)
+    lote_id=db.Column(db.Integer,db.ForeignKey('conciliacao_lote.id'),nullable=False)
+    data_mov=db.Column(db.String(10))
+    valor=db.Column(db.Float,default=0)
+    historico=db.Column(db.Text)
+    num_doc=db.Column(db.String(80))
+    tipo=db.Column(db.String(10),default='C')  # C=crédito D=débito
+    medicao_id=db.Column(db.Integer,db.ForeignKey('medicao.id'),nullable=True)
+    conciliado_em=db.Column(db.DateTime)
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         return d
 
 class AssinaturaEnvelope(db.Model):
@@ -8691,6 +8735,280 @@ def api_medicao_enviar_email(id):
     except Exception as ex:
         return jsonify({'erro':str(ex)}),500
 
+# ============================================================
+# JUROS E MULTA AUTOMÁTICOS
+# ============================================================
+@app.route('/api/medicoes/<int:id>/calcular-encargos',methods=['POST'])
+@lr
+def api_medicao_calcular_encargos(id):
+    m=Medicao.query.get_or_404(id)
+    if m.status not in ('emitida','rascunho'): return jsonify({'erro':'Somente medições emitidas podem ter encargos calculados.'}),400
+    if not m.dt_vencimento: return jsonify({'erro':'Medição sem data de vencimento.'}),400
+    from datetime import date as _date
+    try:
+        venc=_date.fromisoformat(m.dt_vencimento)
+    except Exception:
+        return jsonify({'erro':'Data de vencimento inválida.'}),400
+    hoje=_date.today()
+    dias_atraso=max(0,(hoje-venc).days)
+    taxa_juros_dia=float(gc('taxa_juros_dia','0.033'))   # % ao dia
+    taxa_multa=float(gc('taxa_multa','2.0'))              # % única
+    base=m.valor_bruto or 0
+    multa=round(base*taxa_multa/100,2) if dias_atraso>0 else 0
+    juros=round(base*taxa_juros_dia/100*dias_atraso,2)
+    d=request.json or {}
+    if d.get('aplicar'):
+        m.valor_multa=multa; m.valor_juros=juros
+        db.session.commit()
+        audit_event('medicao_encargos_aplicados','usuario',session.get('uid'),'medicao',m.id,True,
+                    {'dias_atraso':dias_atraso,'multa':multa,'juros':juros})
+    return jsonify({'dias_atraso':dias_atraso,'valor_multa':multa,'valor_juros':juros,
+                    'total_encargos':multa+juros,'total_com_encargos':base+multa+juros,
+                    'aplicado':bool(d.get('aplicar'))})
+
+@app.route('/api/medicoes/<int:id>/encargos',methods=['GET'])
+@lr
+def api_medicao_encargos(id):
+    m=Medicao.query.get_or_404(id)
+    from datetime import date as _date
+    venc=None
+    if m.dt_vencimento:
+        try: venc=_date.fromisoformat(m.dt_vencimento)
+        except: pass
+    dias_atraso=max(0,(_date.today()-venc).days) if venc else 0
+    return jsonify({'valor_juros':m.valor_juros or 0,'valor_multa':m.valor_multa or 0,
+                    'total_encargos':(m.valor_juros or 0)+(m.valor_multa or 0),
+                    'total_com_encargos':(m.valor_bruto or 0)+(m.valor_juros or 0)+(m.valor_multa or 0),
+                    'dias_atraso':dias_atraso})
+
+# ============================================================
+# RÉGUA DE COBRANÇA
+# ============================================================
+def _cobranca_enviar_lembrete(m,tipo,emp=None):
+    """Envia e-mail de cobrança e registra no log. Retorna (ok, erro_msg)."""
+    cli=Cliente.query.get(m.cliente_id) if m.cliente_id else None
+    dest=(cli.email or '').strip() if cli else ''
+    if not dest: return False,'Cliente sem e-mail'
+    if not emp and m.empresa_id: emp=Empresa.query.get(m.empresa_id)
+    remetente=emp.nome if emp else 'RM Facilities'
+    if tipo in ('D-5','D-1'):
+        assunto=f'Lembrete de vencimento — {m.tipo or "Medição"} Nº {m.numero}'
+        corpo=(f'Prezado(a) {m.cliente_resp or m.cliente_nome or "Cliente"},\n\n'
+               f'Este é um lembrete de que a {m.tipo or "Medição"} Nº {m.numero} vence em {m.dt_vencimento}.\n'
+               f'Valor: R$ {(m.valor_bruto or 0):,.2f}\n\n'
+               f'Favor efetuar o pagamento até a data de vencimento.\n\nAtenciosamente,\n{remetente}')
+    else:
+        dias=((__import__('datetime').date.today()-__import__('datetime').date.fromisoformat(m.dt_vencimento)).days
+              if m.dt_vencimento else 0)
+        encargos=(m.valor_juros or 0)+(m.valor_multa or 0)
+        total=( m.valor_bruto or 0)+encargos
+        assunto=f'Cobrança em atraso — {m.tipo or "Medição"} Nº {m.numero}'
+        corpo=(f'Prezado(a) {m.cliente_resp or m.cliente_nome or "Cliente"},\n\n'
+               f'A {m.tipo or "Medição"} Nº {m.numero} encontra-se em atraso há {dias} dia(s).\n'
+               f'Valor original: R$ {(m.valor_bruto or 0):,.2f}\n'
+               +(f'Encargos (juros/multa): R$ {encargos:,.2f}\nTotal com encargos: R$ {total:,.2f}\n' if encargos else '')+
+               f'\nPor favor entre em contato para regularizar.\n\nAtenciosamente,\n{remetente}')
+    try:
+        smtp_send_text(dest,assunto,corpo)
+        log=CobrangaLog(medicao_id=m.id,tipo=tipo,status='ok',dest_email=dest)
+        db.session.add(log); db.session.commit()
+        return True,None
+    except Exception as ex:
+        log=CobrangaLog(medicao_id=m.id,tipo=tipo,status='erro',dest_email=dest,erro=str(ex)[:500])
+        db.session.add(log); db.session.commit()
+        return False,str(ex)
+
+@app.route('/api/cobrancas/processar',methods=['POST'])
+@lr
+def api_cobrancas_processar():
+    from datetime import date as _date, timedelta as _td
+    hoje=_date.today()
+    d=request.json or {}
+    tipos_solicitados=d.get('tipos',['D-5','D-1','D+3'])
+    medicoes_emitidas=Medicao.query.filter(Medicao.status=='emitida').all()
+    resultados=[]; processadas=0; erros=0
+    for m in medicoes_emitidas:
+        if not m.dt_vencimento: continue
+        try: venc=_date.fromisoformat(m.dt_vencimento)
+        except: continue
+        dias=(hoje-venc).days  # positivo = atrasado
+        tipo=None
+        if 'D-5' in tipos_solicitados and (venc-hoje).days==5: tipo='D-5'
+        elif 'D-1' in tipos_solicitados and (venc-hoje).days==1: tipo='D-1'
+        elif 'D+3' in tipos_solicitados and dias==3: tipo='D+3'
+        if not tipo: continue
+        # evita reenvio no mesmo dia
+        ja_enviado=CobrangaLog.query.filter_by(medicao_id=m.id,tipo=tipo).filter(
+            CobrangaLog.enviado_em>=__import__('datetime').datetime.combine(hoje,__import__('datetime').time.min)
+        ).first()
+        if ja_enviado: continue
+        ok,erro=_cobranca_enviar_lembrete(m,tipo)
+        resultados.append({'medicao_id':m.id,'numero':m.numero,'tipo':tipo,'ok':ok,'erro':erro})
+        if ok: processadas+=1
+        else: erros+=1
+    return jsonify({'processadas':processadas,'erros':erros,'detalhes':resultados})
+
+@app.route('/api/cobrancas/logs')
+@lr
+def api_cobrancas_logs():
+    page=max(1,int(request.args.get('page',1)))
+    per=min(100,int(request.args.get('per_page',50)))
+    qr=CobrangaLog.query.order_by(CobrangaLog.enviado_em.desc())
+    total=qr.count()
+    items=[l.to_dict() for l in qr.offset((page-1)*per).limit(per).all()]
+    for it in items:
+        m=db.session.get(Medicao,it['medicao_id'])
+        it['numero']=m.numero if m else ''; it['cliente']=m.cliente_nome if m else ''
+    return jsonify({'items':items,'total':total,'page':page,'per_page':per})
+
+@app.route('/api/cobrancas/<int:medicao_id>/manual',methods=['POST'])
+@lr
+def api_cobranca_manual(medicao_id):
+    m=Medicao.query.get_or_404(medicao_id)
+    ok,erro=_cobranca_enviar_lembrete(m,'manual')
+    return jsonify({'ok':ok,'erro':erro})
+
+# ============================================================
+# CONCILIAÇÃO BANCÁRIA OFX
+# ============================================================
+def _parse_ofx(texto):
+    """Parser simples de OFX (SGML/XML) — retorna lista de transações."""
+    import re
+    transacoes=[]
+    # Remove cabeçalho SGML antes do primeiro <OFX> ou <STMTTRN>
+    blocos=re.findall(r'<STMTTRN>(.*?)</STMTTRN>',texto,re.DOTALL|re.IGNORECASE)
+    if not blocos:
+        # tenta formato linha-a-linha (OFX 1.x sem fechamento)
+        ttrn=None
+        for linha in texto.splitlines():
+            linha=linha.strip()
+            if re.match(r'<STMTTRN>',linha,re.I): ttrn={}
+            elif ttrn is not None:
+                if re.match(r'</STMTTRN>',linha,re.I):
+                    transacoes.append(ttrn); ttrn=None
+                else:
+                    m2=re.match(r'<([A-Z]+)>([^<]*)',linha,re.I)
+                    if m2: ttrn[m2.group(1).upper()]=m2.group(2).strip()
+    else:
+        for bloco in blocos:
+            ttrn={}
+            for m2 in re.finditer(r'<([A-Z]+)>([^<\n]*)',bloco,re.I):
+                ttrn[m2.group(1).upper()]=m2.group(2).strip()
+            transacoes.append(ttrn)
+    resultado=[]
+    for t in transacoes:
+        dtraw=t.get('DTPOSTED','')[:8]
+        try: dt=f'{dtraw[:4]}-{dtraw[4:6]}-{dtraw[6:8]}'
+        except: dt=''
+        try: valor=float(t.get('TRNAMT','0').replace(',','.'))
+        except: valor=0.0
+        tipo='C' if valor>=0 else 'D'
+        resultado.append({'data_mov':dt,'valor':abs(valor),'historico':t.get('MEMO',t.get('NAME','')),'num_doc':t.get('FITID',''),'tipo':tipo})
+    return resultado
+
+@app.route('/api/conciliacao/importar',methods=['POST'])
+@lr
+def api_conciliacao_importar():
+    empresa_id=to_num(request.form.get('empresa_id'))
+    fs=request.files.get('arquivo')
+    if not fs: return jsonify({'erro':'Arquivo OFX não enviado'}),400
+    nome=fs.filename or 'extrato.ofx'
+    texto=fs.read().decode('latin-1','replace')
+    try:
+        txns=_parse_ofx(texto)
+    except Exception as ex:
+        return jsonify({'erro':f'Erro ao processar OFX: {ex}'}),400
+    if not txns: return jsonify({'erro':'Nenhuma transação encontrada no arquivo OFX.'}),400
+    lote=ConciliacaoLote(empresa_id=empresa_id,arquivo_nome=nome,total_transacoes=len(txns),
+                         importado_por=session.get('nome',''))
+    db.session.add(lote); db.session.flush()
+    for t in txns:
+        db.session.add(ConciliacaoTransacao(lote_id=lote.id,**t))
+    db.session.commit()
+    audit_event('conciliacao_importada','usuario',session.get('uid'),'conciliacao_lote',lote.id,True,
+                {'arquivo':nome,'total':len(txns)})
+    return jsonify({'ok':True,'lote_id':lote.id,'total':len(txns)})
+
+@app.route('/api/conciliacao/lotes')
+@lr
+def api_conciliacao_lotes():
+    lotes=ConciliacaoLote.query.order_by(ConciliacaoLote.importado_em.desc()).limit(50).all()
+    return jsonify([l.to_dict() for l in lotes])
+
+@app.route('/api/conciliacao/transacoes')
+@lr
+def api_conciliacao_transacoes():
+    lote_id=to_num(request.args.get('lote_id'))
+    status=request.args.get('status','')  # pendente|conciliado
+    page=max(1,int(request.args.get('page',1)))
+    per=min(200,int(request.args.get('per_page',50)))
+    qr=ConciliacaoTransacao.query
+    if lote_id: qr=qr.filter_by(lote_id=lote_id)
+    if status=='pendente': qr=qr.filter(ConciliacaoTransacao.medicao_id==None)
+    elif status=='conciliado': qr=qr.filter(ConciliacaoTransacao.medicao_id!=None)
+    qr=qr.order_by(ConciliacaoTransacao.data_mov.desc(),ConciliacaoTransacao.id.desc())
+    total=qr.count()
+    items=[]
+    for t in qr.offset((page-1)*per).limit(per).all():
+        d=t.to_dict()
+        if t.medicao_id:
+            m=db.session.get(Medicao,t.medicao_id)
+            d['medicao_numero']=m.numero if m else ''; d['medicao_cliente']=m.cliente_nome if m else ''
+        else:
+            d['medicao_numero']=''; d['medicao_cliente']=''
+        items.append(d)
+    return jsonify({'items':items,'total':total,'page':page,'per_page':per})
+
+@app.route('/api/conciliacao/<int:transacao_id>/conciliar',methods=['POST'])
+@lr
+def api_conciliacao_conciliar(transacao_id):
+    t=ConciliacaoTransacao.query.get_or_404(transacao_id)
+    d=request.json or {}
+    medicao_id=to_num(d.get('medicao_id'))
+    if medicao_id:
+        m=Medicao.query.get_or_404(medicao_id)
+        t.medicao_id=medicao_id; t.conciliado_em=utcnow()
+        audit_event('conciliacao_conciliada','usuario',session.get('uid'),'conciliacao_transacao',t.id,True,
+                    {'medicao_id':medicao_id,'numero':m.numero})
+    else:
+        t.medicao_id=None; t.conciliado_em=None
+    db.session.commit()
+    return jsonify({'ok':True})
+
+@app.route('/api/conciliacao/auto',methods=['POST'])
+@lr
+def api_conciliacao_auto():
+    """Auto-conciliação: cruza transações de crédito com medições pelo valor exato."""
+    d=request.json or {}
+    lote_id=to_num(d.get('lote_id'))
+    pendentes=ConciliacaoTransacao.query.filter(ConciliacaoTransacao.medicao_id==None,
+                                                ConciliacaoTransacao.tipo=='C')
+    if lote_id: pendentes=pendentes.filter_by(lote_id=lote_id)
+    pendentes=pendentes.all()
+    conciliadas=0
+    for t in pendentes:
+        # busca medições emitidas com valor_bruto igual (tolerância R$ 0,01)
+        candidatas=Medicao.query.filter(Medicao.status=='emitida',
+            db.func.abs(Medicao.valor_bruto-t.valor)<0.02).all()
+        # refina por data próxima ao vencimento (±15 dias)
+        from datetime import date as _d, timedelta as _td
+        melhor=None
+        if t.data_mov:
+            try: dt_mov=_d.fromisoformat(t.data_mov)
+            except: dt_mov=None
+            if dt_mov:
+                for c in candidatas:
+                    if c.dt_vencimento:
+                        try:
+                            venc=_d.fromisoformat(c.dt_vencimento)
+                            if abs((dt_mov-venc).days)<=15: melhor=c; break
+                        except: pass
+        if melhor is None and len(candidatas)==1: melhor=candidatas[0]
+        if melhor:
+            t.medicao_id=melhor.id; t.conciliado_em=utcnow(); conciliadas+=1
+    db.session.commit()
+    return jsonify({'ok':True,'conciliadas':conciliadas,'pendentes_total':len(pendentes)})
+
 @app.route('/api/medicoes/<int:id>/anexos',methods=['GET'])
 @lr
 def api_medicao_anexos(id):
@@ -8871,6 +9189,8 @@ with app.app_context():
         'assinatura_cert_subject VARCHAR(255)',
         'dt_pagamento VARCHAR(10)',
         'forma_pagamento VARCHAR(50)',
+        'valor_juros FLOAT DEFAULT 0',
+        'valor_multa FLOAT DEFAULT 0',
     ])
     ensure_cols('assinatura_envelope',[
         'id INTEGER PRIMARY KEY AUTOINCREMENT',
