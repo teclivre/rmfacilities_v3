@@ -6,44 +6,35 @@
   <title>Prévia de Relatório de Benefícios</title>
   <link rel="stylesheet" href="/static/css/main.css">
   <style>
-    body { margin: 0; background: radial-gradient(circle at top right, rgba(38,102,158,.18), transparent 45%), linear-gradient(180deg, #f2f7fc 0%, #eef4fa 100%); color: #1b2a3a; }
-    .topbar-preview { background: linear-gradient(120deg, #0d2e58, #164b82); color: #fff; padding: 12px 18px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; border-bottom: 1px solid rgba(255,255,255,.14); }
-    .topbar-brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .2px; }
-    .topbar-brand img { width: 38px; height: 38px; object-fit: contain; border-radius: 8px; background: rgba(255,255,255,.08); padding: 4px; }
-    .topbar-info { font-size: 12px; color: #c9ddf7; }
+    body { margin: 0; background: var(--bg); color: var(--preto); }
     .wrap { max-width: 1240px; margin: 0 auto; padding: 18px; }
     .top { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
-    .title { margin: 0; font-size: 24px; color: #174f81; letter-spacing: .2px; }
+    .title { margin: 0; font-size: 24px; color: var(--azul); }
     .sub { color: #4a5d72; margin-top: 6px; font-size: 14px; }
     .btns { display: flex; gap: 8px; flex-wrap: wrap; }
-    .btn { border: none; border-radius: 10px; padding: 10px 14px; cursor: pointer; text-decoration: none; display: inline-block; font-weight: 700; box-shadow: 0 3px 10px rgba(12,42,80,.16); }
-    .btn-primary { background: linear-gradient(120deg, #1f5e8b, #2670a8); color: #fff; }
-    .btn-green { background: linear-gradient(120deg, #1d7e47, #26a05c); color: #fff; }
-    .btn-gray { background: #edf2f8; color: #1b2a3a; }
-    .summary { margin-top: 16px; background: #fff; border: 1px solid #d7e0ea; border-radius: 12px; padding: 14px; box-shadow: 0 8px 22px rgba(24,63,105,.08); }
-    .card { margin-top: 14px; background: #fff; border: 1px solid #d7e0ea; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 22px rgba(24,63,105,.08); }
-    .card-hd { padding: 11px 12px; background: linear-gradient(90deg, #eaf3ff, #f4f9ff); border-bottom: 1px solid #d7e0ea; font-weight: 700; color: #1f5e8b; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #d7e0ea; padding: 8px; font-size: 13px; }
-    th { background: linear-gradient(120deg, #1f5e8b, #236ca1); color: #fff; text-align: left; }
+    .summary { margin-top: 12px; padding: 10px 12px; background: #fff; border: 1px solid var(--borda); border-radius: var(--r); }
+    .tbl-wrap { margin-top: 8px; }
+    .tbl th, .tbl td { font-size: 13px; }
     td.num { text-align: right; }
-    .empty { margin-top: 16px; padding: 14px; background: #fff8e8; border: 1px solid #f2dfb3; border-radius: 8px; }
+    .empty { margin-top: 16px; padding: 14px; background: #fff8e8; border: 1px solid #f2dfb3; border-radius: var(--r); }
     .foot { margin-top: 10px; font-size: 12px; color: #5c6f84; }
     @media (max-width: 768px) {
       .title { font-size: 20px; }
       th, td { font-size: 12px; padding: 6px; }
-      .btn { padding: 9px 12px; }
       .wrap { padding: 12px; }
     }
   </style>
 </head>
 <body>
-  <div class="topbar-preview">
+  <div class="topbar">
     <div class="topbar-brand">
       <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
-      <span>RM Facilities</span>
+      <h1>RM Facilities</h1>
     </div>
-    <div class="topbar-info">Prévia de cálculos de benefícios</div>
+    <div class="topbar-right">
+      <div class="topbar-user"><div style="font-weight:700">Prévia de cálculos de benefícios</div></div>
+      <a class="btn-top" href="{{ voltar_url }}">Voltar ao sistema</a>
+    </div>
   </div>
   <div class="wrap">
     <div class="top">
@@ -52,9 +43,8 @@
         <div class="sub">Competência: {{ competencia }}</div>
       </div>
       <div class="btns">
-        <a class="btn btn-primary" href="{{ pdf_url }}" target="_blank" rel="noopener">Abrir PDF</a>
-        <a class="btn btn-green" href="{{ xlsx_url }}" target="_blank" rel="noopener">Baixar XLSX</a>
-        <a class="btn btn-gray" href="{{ voltar_url }}">Voltar ao sistema</a>
+        <a class="btn b-ghv b-sm" href="{{ pdf_url }}" target="_blank" rel="noopener">Abrir PDF</a>
+        <a class="btn b-ghl b-sm" href="{{ xlsx_url }}" target="_blank" rel="noopener">Baixar XLSX</a>
       </div>
     </div>
 
@@ -69,8 +59,9 @@
 
     {% for emp in empresas %}
       <div class="card">
-        <div class="card-hd">{{ emp.nome }}{% if emp.cnpj %} - CNPJ: {{ emp.cnpj }}{% endif %}</div>
-        <table>
+        <div class="card-header"><span class="card-title">{{ emp.nome }}{% if emp.cnpj %} - CNPJ: {{ emp.cnpj }}{% endif %}</span></div>
+        <div class="tbl-wrap">
+        <table class="tbl">
           <thead>
             <tr>
               <th>RE</th>
@@ -102,6 +93,7 @@
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
     {% endfor %}
 

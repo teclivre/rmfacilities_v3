@@ -999,6 +999,11 @@ document.addEventListener('DOMContentLoaded',()=>{
             <input type="file" id="func-import-file" accept=".csv,.xlsx" style="display:none" onchange="importarFuncionariosPlanilha(event)">
           </div>
         </div>
+        <div class="brow" style="justify-content:flex-start;gap:8px;flex-wrap:wrap;margin:0 12px 10px 12px">
+          <button id="rh-tab-ativos" class="btn b-az b-sm" onclick="switchRhFuncTab('ativos',this)">Ativos</button>
+          <button id="rh-tab-inativos" class="btn b-gh b-sm" onclick="switchRhFuncTab('inativos',this)">Inativos / Arquivados</button>
+          <span class="pill p-vd" id="rh-total-ativos">Ativos: 0</span>
+        </div>
         <div class="tbl-wrap">
           <table class="tbl">
             <thead><tr><th>RE</th><th>Nome</th><th>Cargo/Função</th><th>Posto</th><th>Empresa</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead>
@@ -2121,7 +2126,7 @@ function rbacLimpar(){
     if(el) el.checked=false;
   }));
 }
-let todos=[], emps=[], funcs=[], pontoFuncs=[], bancosBR=[], beneficiosMensais=[], benTab='ativos', acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
+let todos=[], emps=[], funcs=[], pontoFuncs=[], bancosBR=[], beneficiosMensais=[], benTab='ativos', rhFuncTab='ativos', acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
 let pontoResumoPainelByFunc={};
 let pontoMarcacoesDiaAtual=[];
 let medicaoAtualId=null;
@@ -4151,11 +4156,25 @@ function pontoFmtStatus(st){
 async function renderFuncionarios(){
   const q=(document.getElementById('rh-busca')?.value||'').toLowerCase();
   funcs=await api('/api/funcionarios?q='+encodeURIComponent(q));
+  const allFuncs=q ? await api('/api/funcionarios') : funcs;
   const tb=document.getElementById('tb-func');
+  const totEl=document.getElementById('rh-total-ativos');
   if(!tb)return;
-  if(!funcs.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:#999">Nenhum funcionário cadastrado.</td></tr>';return;}
-  tb.innerHTML=funcs.map(f=>{
+  const isAtivo=f=>((f?.status||'Ativo').toString().trim().toLowerCase()==='ativo');
+  const ativosTotal=(Array.isArray(allFuncs)?allFuncs:[]).filter(isAtivo).length;
+  if(totEl) totEl.textContent='Ativos: '+ativosTotal;
+  const lista=(Array.isArray(funcs)?funcs:[]).filter(f=>rhFuncTab==='ativos'?isAtivo(f):!isAtivo(f));
+  const tabAt=document.getElementById('rh-tab-ativos');
+  const tabIn=document.getElementById('rh-tab-inativos');
+  if(tabAt) tabAt.className=rhFuncTab==='ativos'?'btn b-az b-sm':'btn b-gh b-sm';
+  if(tabIn) tabIn.className=rhFuncTab==='inativos'?'btn b-az b-sm':'btn b-gh b-sm';
+  if(!lista.length){
+    tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:#999">'+(rhFuncTab==='ativos'?'Nenhum colaborador ativo encontrado.':'Nenhum colaborador inativo/arquivado encontrado.')+'</td></tr>';
+    return;
+  }
+  tb.innerHTML=lista.map(f=>{
     const emp=emps.find(e=>e.id===f.empresa_id);
+    const ativo=isAtivo(f);
     return `<tr class="row-clickable" onclick="openModalFunc('editar',${f.id})">
       <td style="font-weight:700">${f.re||'—'}</td>
       <td><div style="font-weight:700">${f.nome}</div><div style="font-size:11px;color:#888">${fmtDoc(f.cpf)||''}</div></td>
@@ -4163,7 +4182,7 @@ async function renderFuncionarios(){
       <td style="font-size:11px">${f.posto_operacional||'Reserva tecnica'}</td>
       <td>${emp?emp.nome:'—'}</td>
       <td>${[f.email,fmtTelefone(f.telefone)].filter(Boolean).join(' · ')||'—'}</td>
-      <td><span class="pill ${f.status==='Ativo'?'p-vd':'p-ci'}">${f.status||'Ativo'}</span></td>
+      <td><span class="pill ${ativo?'p-vd':'p-ci'}">${f.status||'Ativo'}</span></td>
       <td><div class="tac">
         <button class="btn b-gh b-sm" onclick="event.stopPropagation();openModalFunc('editar',${f.id})">Editar</button>
         <button class="btn b-ghv b-sm" onclick="event.stopPropagation();openArquivosFuncionario(${f.id},'${(f.nome||'').replace(/'/g,"\\'")}')">Arquivos</button>
@@ -4177,6 +4196,12 @@ async function renderFuncionarios(){
     pontoCarregarDia();
     pontoCarregarPainelDia();
   }
+}
+
+function switchRhFuncTab(tab,btn){
+  rhFuncTab=(tab==='inativos')?'inativos':'ativos';
+  renderFuncionarios();
+  if(btn && btn.scrollIntoView) btn.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});
 }
 
 async function excluirFuncionario(id,nome){
