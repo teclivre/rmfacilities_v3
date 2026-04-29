@@ -3711,7 +3711,10 @@ def api_cep(cep):
 
 @app.route('/api/empresas',methods=['GET'])
 @lr
-def api_empresas(): return jsonify([e.to_dict() for e in Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem).all()])
+def api_empresas():
+    # Compatibilidade: registros antigos podem ter ativa nulo.
+    qr=Empresa.query.filter((Empresa.ativa==True) | (Empresa.ativa.is_(None))).order_by(Empresa.ordem,Empresa.nome)
+    return jsonify([e.to_dict() for e in qr.all()])
 
 @app.route('/api/empresas/<int:id>',methods=['GET'])
 @lr
