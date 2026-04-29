@@ -3021,8 +3021,24 @@ def arq_year_from_path(caminho):
     m=re.search(r'/(19|20)\d{2}/',('/'+str(caminho or '').replace('\\','/')+'/'))
     return m.group(0).strip('/') if m else str(localnow().year)
 
+def is_owner_user():
+    perfil=(session.get('perfil') or '').strip().lower()
+    if perfil=='dono':
+        return True
+    uid=session.get('uid')
+    if not uid:
+        return False
+    try:
+        u=Usuario.query.get(int(uid))
+        if u and (u.perfil or '').strip().lower()=='dono':
+            session['perfil']='dono'
+            return True
+    except Exception:
+        pass
+    return False
+
 def can_access_area(area):
-    if session.get('perfil')=='dono': return True
+    if is_owner_user(): return True
     areas=session.get('areas',[]) or []
     # Compatibilidade: usuários antigos sem áreas seguem com acesso até configuração explícita.
     if not areas: return True
@@ -3042,7 +3058,7 @@ def action_from_request(path,method='GET'):
     return 'view'
 
 def can_access_action(area,action='view'):
-    if session.get('perfil')=='dono':
+    if is_owner_user():
         return True
     if not session.get('rbac_actions_ativo'):
         return None
@@ -3500,7 +3516,7 @@ def dr(f):
     @wraps(f)
     def w(*a,**k):
         if 'uid' not in session: return redirect(url_for('login'))
-        if session.get('perfil')!='dono': return jsonify({'erro':'Acesso negado'}),403
+        if not is_owner_user(): return jsonify({'erro':'Acesso negado'}),403
         if request.method in ('POST','PUT','PATCH','DELETE') and not _same_origin_request(request):
             return jsonify({'erro':'Origem da requisição não permitida'}),403
         return f(*a,**k)
@@ -3852,7 +3868,7 @@ def api_criar_usuario():
     if Usuario.query.filter_by(email=(d.get('email','').lower())).first(): return jsonify({'erro':'E-mail já cadastrado'}),400
     tel=norm_phone(d.get('telefone'))
     perfil=(d.get('perfil','admin') or 'admin').strip().lower()
-    if perfil=='dono' and session.get('perfil')!='dono':
+    if perfil=='dono' and not is_owner_user():
         return jsonify({'erro':'Apenas dono pode criar usuário dono.'}),403
     if perfil in ('admin','dono') and len(tel)<10:
         return jsonify({'erro':'Telefone é obrigatório para usuários admin/dono (2FA).'}),400
@@ -3886,7 +3902,7 @@ def api_atualizar_usuario(id):
     u=Usuario.query.get_or_404(id); d=request.json or {}
     perfil_novo=(d.get('perfil',u.perfil) or u.perfil or '').strip().lower()
     perfil_atual=(u.perfil or '').strip().lower()
-    if session.get('perfil')!='dono' and (perfil_atual=='dono' or perfil_novo=='dono'):
+    if (not is_owner_user()) and (perfil_atual=='dono' or perfil_novo=='dono'):
         return jsonify({'erro':'Apenas dono pode alterar usuário dono.'}),403
     for k in ['nome','perfil','ativo']:
         if k in d: setattr(u,k,d[k])
@@ -3919,7 +3935,7 @@ def api_atualizar_usuario(id):
 @lr
 def api_deletar_usuario(id):
     u=Usuario.query.get_or_404(id)
-    if (u.perfil or '').strip().lower()=='dono' and session.get('perfil')!='dono':
+    if (u.perfil or '').strip().lower()=='dono' and (not is_owner_user()):
         return jsonify({'erro':'Apenas dono pode excluir usuário dono.'}),403
     if u.perfil=='dono' and Usuario.query.filter_by(perfil='dono').count()<=1: return jsonify({'erro':'Não é possível excluir o único dono'}),400
     db.session.delete(u); db.session.commit(); return jsonify({'ok':True})
