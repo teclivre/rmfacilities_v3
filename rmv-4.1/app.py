@@ -923,6 +923,7 @@ class BeneficioMensal(db.Model):
     vale_refeicao=db.Column(db.Float,default=0)
     vale_alimentacao=db.Column(db.Float,default=0)
     vale_transporte=db.Column(db.Float,default=0)
+    pp_falta=db.Column(db.Boolean,default=False)
     premio_produtividade=db.Column(db.Float)
     vale_gasolina=db.Column(db.Float)
     cesta_natal=db.Column(db.Float)
@@ -7322,6 +7323,7 @@ def api_beneficios_lancamentos():
             'opta_premio_prod': bool(f.opta_premio_prod),
             'opta_vale_gasolina': bool(f.opta_vale_gasolina),
             'opta_cesta_natal': bool(f.opta_cesta_natal),
+            'pp_falta': bool(b.pp_falta) if b and (b.pp_falta is not None) else False,
             'premio_produtividade':_benef_val(b,f,'premio_produtividade'),
             'vale_gasolina':_benef_val(b,f,'vale_gasolina'),
             'cesta_natal':_benef_val(b,f,'cesta_natal'),
@@ -7364,6 +7366,7 @@ def api_beneficios_lancamentos_excluir():
                 if b.dias_va!=0: b.dias_va=0; changed=True
                 if b.vale_alimentacao is not None: b.vale_alimentacao=None; changed=True
             elif tipo=='pp':
+                if bool(b.pp_falta): b.pp_falta=False; changed=True
                 if b.premio_produtividade is not None: b.premio_produtividade=None; changed=True
             elif tipo=='vg':
                 if b.dias_vg!=0: b.dias_vg=0; changed=True
@@ -7407,6 +7410,7 @@ def api_beneficios_lancamentos_limpar():
             if b.dias_va!=0: b.dias_va=0; changed=True
             if b.vale_alimentacao is not None: b.vale_alimentacao=None; changed=True
         if tipo in {'pp','todos'}:
+            if bool(b.pp_falta): b.pp_falta=False; changed=True
             if b.premio_produtividade is not None: b.premio_produtividade=None; changed=True
         if tipo in {'vg','todos'}:
             if b.dias_vg!=0: b.dias_vg=0; changed=True
@@ -7448,17 +7452,19 @@ def api_beneficios_lancamentos_salvar():
         dias_vt=max(0,to_num(it.get('dias_vt')))
         dias_vr=max(0,to_num(it.get('dias_vr')))
         dias_va=max(0,to_num(it.get('dias_va')))
+        pp_falta=to_bool(it.get('pp_falta')) if pp_optante else False
 
         b.dias_vt=dias_vt if vt_optante else 0
         b.dias_vr=dias_vr if vr_optante else 0
         b.dias_va=dias_va if va_optante else 0
+        b.pp_falta=pp_falta
         b.dias_trabalhados=max(b.dias_vt,b.dias_vr)
 
         b.salario=to_num(it.get('salario'),dec=True)
         b.vale_transporte=(to_num(it.get('vale_transporte'),dec=True) if vt_optante else 0)
         b.vale_refeicao=(to_num(it.get('vale_refeicao'),dec=True) if vr_optante else 0)
         b.vale_alimentacao=(to_num(it.get('vale_alimentacao'),dec=True) if va_optante else 0)
-        b.premio_produtividade=(to_num(it.get('premio_produtividade'),dec=True) if pp_optante else 0)
+        b.premio_produtividade=(to_num(it.get('premio_produtividade'),dec=True) if (pp_optante and not pp_falta) else 0)
         b.vale_gasolina=(to_num(it.get('vale_gasolina'),dec=True) if vg_optante else 0)
         b.cesta_natal=(to_num(it.get('cesta_natal'),dec=True) if cn_optante else 0)
         salvos+=1
@@ -9901,6 +9907,7 @@ with app.app_context():
         'dias_vr INTEGER DEFAULT 0',
         'dias_va INTEGER DEFAULT 0',
         'dias_vg INTEGER DEFAULT 0',
+        'pp_falta BOOLEAN DEFAULT 0',
         'premio_produtividade FLOAT DEFAULT 0',
         'vale_gasolina FLOAT DEFAULT 0',
         'cesta_natal FLOAT DEFAULT 0'

@@ -1339,7 +1339,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div id="ben-pane-pp" class="tbl-wrap" style="margin-top:10px;display:none">
           <table class="tbl">
-            <thead><tr><th style="width:32px"></th><th>Matrícula</th><th>Colaborador</th><th>Posto</th><th>Empresa</th><th>Prêmio Produtividade (R$)</th><th>Total (mensal)</th></tr></thead>
+            <thead><tr><th style="width:32px"></th><th>Matrícula</th><th>Colaborador</th><th>Posto</th><th>Empresa</th><th>Teve falta?</th><th>Prêmio Produtividade (R$)</th><th>Total (mensal)</th></tr></thead>
             <tbody id="tb-benef-pp"></tbody>
           </table>
         </div>
@@ -5253,13 +5253,25 @@ function benValorEdit(fid,tipo){
     return;
   }
   const valor=numBR(document.getElementById(`ben-base-${tipo}-val-${fid}`)?.value||'0');
+  const ppFalta=(tipo==='pp') ? !!document.getElementById(`ben-pp-falta-${fid}`)?.checked : false;
+  const valorFinal=(tipo==='pp' && ppFalta) ? 0 : valor;
   benAtualizarModeloLocal(fid,{[campos[tipo]]:valor});
+  if(tipo==='pp') benAtualizarModeloLocal(fid,{pp_falta:ppFalta,premio_produtividade:valorFinal});
   if(tipo==='va'||tipo==='pp'||tipo==='cn'){
     const totalEl=document.getElementById(`ben-${tipo}-total-${fid}`);
-    if(totalEl) totalEl.textContent='R$ '+moneyPt(valor);
+    if(totalEl) totalEl.textContent='R$ '+moneyPt(valorFinal);
   }else{
     benTotal(fid,tipo);
   }
+  agendarAutoSaveBeneficios();
+}
+
+function benPremioFaltaEdit(fid){
+  const faltou=!!document.getElementById(`ben-pp-falta-${fid}`)?.checked;
+  benAtualizarModeloLocal(fid,{pp_falta:faltou});
+  const valor=numBR(document.getElementById(`ben-base-pp-val-${fid}`)?.value||'0');
+  const totalEl=document.getElementById(`ben-pp-total-${fid}`);
+  if(totalEl) totalEl.textContent='R$ '+moneyPt(faltou?0:valor);
   agendarAutoSaveBeneficios();
 }
 
@@ -5368,12 +5380,32 @@ function renderBeneficioPorTipo(tipo,tbId){
     }).join('');
     return;
   }
-  if(tipo==='pp'||tipo==='cn'){
-    const campoVal={pp:'premio_produtividade',vg:'vale_gasolina',cn:'cesta_natal'}[tipo];
+  if(tipo==='pp'){
     tb.innerHTML=lista.map(it=>{
       const chk=benSelecionados.has(it.funcionario_id)?'checked':'';
       const opta=benIsOptante(it,tipo);
-      const valor=opta?numBR(document.getElementById('ben-base-'+tipo+'-val-'+it.funcionario_id)?.value||it[campoVal]||0):0;
+      const faltou=opta?!!it.pp_falta:false;
+      const faltaDis=opta?'':'disabled';
+      const valorBase=opta?numBR(document.getElementById('ben-base-pp-val-'+it.funcionario_id)?.value||it.premio_produtividade||0):0;
+      const valor=faltou?0:valorBase;
+      return`<tr class="row-clickable" onclick="toggleBenSelRow(${it.funcionario_id})">
+      <td style="text-align:center"><input type="checkbox" class="ben-sel-cb" data-fid="${it.funcionario_id}" ${chk} onchange="toggleBenSel(${it.funcionario_id},this.checked)" onclick="event.stopPropagation()"></td>
+      <td>${it.matricula||'—'}</td>
+      <td>${it.nome||''}</td>
+      <td>${it.posto_operacional||'Reserva tecnica'}</td>
+      <td>${it.empresa_nome||'—'}</td>
+      <td style="text-align:center"><input type="checkbox" id="ben-pp-falta-${it.funcionario_id}" ${faltou?'checked':''} ${faltaDis} onchange="benPremioFaltaEdit(${it.funcionario_id})" onclick="event.stopPropagation()"></td>
+      <td>R$ ${moneyPt(valor)}</td>
+      <td id="ben-pp-total-${it.funcionario_id}">R$ ${moneyPt(valor)}</td>
+    </tr>`;
+    }).join('');
+    return;
+  }
+  if(tipo==='cn'){
+    tb.innerHTML=lista.map(it=>{
+      const chk=benSelecionados.has(it.funcionario_id)?'checked':'';
+      const opta=benIsOptante(it,tipo);
+      const valor=opta?numBR(document.getElementById('ben-base-cn-val-'+it.funcionario_id)?.value||it.cesta_natal||0):0;
       return`<tr class="row-clickable" onclick="toggleBenSelRow(${it.funcionario_id})">
       <td style="text-align:center"><input type="checkbox" class="ben-sel-cb" data-fid="${it.funcionario_id}" ${chk} onchange="toggleBenSel(${it.funcionario_id},this.checked)" onclick="event.stopPropagation()"></td>
       <td>${it.matricula||'—'}</td>
@@ -5381,7 +5413,7 @@ function renderBeneficioPorTipo(tipo,tbId){
       <td>${it.posto_operacional||'Reserva tecnica'}</td>
       <td>${it.empresa_nome||'—'}</td>
       <td>R$ ${moneyPt(valor)}</td>
-      <td id="ben-${tipo}-total-${it.funcionario_id}">R$ ${moneyPt(valor)}</td>
+      <td id="ben-cn-total-${it.funcionario_id}">R$ ${moneyPt(valor)}</td>
     </tr>`;
     }).join('');
     return;
@@ -5449,6 +5481,9 @@ function montarItensBeneficios(opts={}){
     const diasVr=(vrOpta?(incluirDias?(parseInt(document.getElementById('ben-vr-dias-'+it.funcionario_id)?.value||'0',10)||0):(it.dias_vr||0)):0);
     const diasVg=(vgOpta?(incluirDias?(parseInt(document.getElementById('ben-vg-dias-'+it.funcionario_id)?.value||'0',10)||0):(it.dias_vg||0)):0);
 
+    const ppFalta=(ppOpta ? !!it.pp_falta : false);
+    const premioBase=(incluirBase?numBR(document.getElementById('ben-base-pp-val-'+it.funcionario_id)?.value||it.premio_produtividade||0):(it.premio_produtividade||0));
+
     return {
       funcionario_id:it.funcionario_id,
       dias_trabalhados:Math.max(diasVt,diasVr),
@@ -5460,7 +5495,8 @@ function montarItensBeneficios(opts={}){
       vale_transporte:(vtOpta?(incluirBase?numBR(document.getElementById('ben-base-vt-val-'+it.funcionario_id)?.value||it.vale_transporte||0):(it.vale_transporte||0)):0),
       vale_refeicao:(vrOpta?(incluirBase?numBR(document.getElementById('ben-base-vr-val-'+it.funcionario_id)?.value||it.vale_refeicao||0):(it.vale_refeicao||0)):0),
       vale_alimentacao:(vaOpta?(incluirBase?numBR(document.getElementById('ben-base-va-val-'+it.funcionario_id)?.value||it.vale_alimentacao||0):(it.vale_alimentacao||0)):0),
-      premio_produtividade:(ppOpta?(incluirBase?numBR(document.getElementById('ben-base-pp-val-'+it.funcionario_id)?.value||it.premio_produtividade||0):(it.premio_produtividade||0)):0),
+      pp_falta:ppFalta,
+      premio_produtividade:(ppOpta && !ppFalta ? premioBase : 0),
       vale_gasolina:(vgOpta?(incluirBase?numBR(document.getElementById('ben-base-vg-val-'+it.funcionario_id)?.value||it.vale_gasolina||0):(it.vale_gasolina||0)):0),
       cesta_natal:(cnOpta?(incluirBase?numBR(document.getElementById('ben-base-cn-val-'+it.funcionario_id)?.value||it.cesta_natal||0):(it.cesta_natal||0)):0)
     };
