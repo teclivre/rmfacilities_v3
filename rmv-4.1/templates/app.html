@@ -4920,6 +4920,7 @@ async function salvarPostoOperacional(funcionarioId){
     return;
   }
   funcs=await api('/api/funcionarios');
+  await renderOperPostos();
   if(document.getElementById('pg-beneficios')?.classList.contains('on')) await carregarBeneficiosMensais();
   showSt('st-op','Posto operacional atualizado.',false);
 }
