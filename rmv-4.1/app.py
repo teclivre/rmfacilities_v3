@@ -7305,6 +7305,46 @@ def api_beneficios_lancamentos():
         })
     return jsonify({'ok':True,'competencia':comp,'itens':itens})
 
+@app.route('/api/beneficios/lancamentos',methods=['DELETE'])
+@lr
+def api_beneficios_lancamentos_excluir():
+    d=request.json or {}
+    comp=norm_competencia(d.get('competencia'))
+    tipo=(d.get('tipo') or 'todos').strip().lower()
+    empresa_id=to_num(d.get('empresa_id')) or None
+    func_ids=d.get('funcionarios') or []
+    func_ids={int(x) for x in func_ids if str(x).isdigit()}
+    if tipo not in {'vt','vr','va','todos'}:
+        return jsonify({'erro':'Tipo inválido para exclusão.'}),400
+
+    q=BeneficioMensal.query.filter_by(competencia=comp)
+    if empresa_id:
+        q=q.filter_by(empresa_id=empresa_id)
+    regs=q.all()
+    if func_ids:
+        regs=[b for b in regs if b.funcionario_id in func_ids]
+
+    excluidos=0
+    for b in regs:
+        if tipo=='todos':
+            db.session.delete(b)
+            excluidos+=1
+        else:
+            changed=False
+            if tipo=='vt':
+                if b.dias_vt!=0: b.dias_vt=0; changed=True
+                if b.vale_transporte is not None: b.vale_transporte=None; changed=True
+            elif tipo=='vr':
+                if b.dias_vr!=0: b.dias_vr=0; changed=True
+                if b.vale_refeicao is not None: b.vale_refeicao=None; changed=True
+            elif tipo=='va':
+                if b.dias_va!=0: b.dias_va=0; changed=True
+                if b.vale_alimentacao is not None: b.vale_alimentacao=None; changed=True
+            if changed: excluidos+=1
+
+    db.session.commit()
+    return jsonify({'ok':True,'competencia':comp,'tipo':tipo,'excluidos':excluidos})
+
 @app.route('/api/beneficios/lancamentos/limpar',methods=['POST'])
 @lr
 def api_beneficios_lancamentos_limpar():
