@@ -7269,6 +7269,13 @@ def api_beneficios_lancamentos():
         qb=qb.filter_by(empresa_id=empresa_id)
     mapa={b.funcionario_id:b for b in qb.all()}
     itens=[]
+    def _benef_val(bm,func_obj,attr_name):
+        if not bm:
+            return getattr(func_obj,attr_name) or 0
+        val=getattr(bm,attr_name)
+        if val is None:
+            return getattr(func_obj,attr_name) or 0
+        return val
     for f in funcs_ativos:
         emp=Empresa.query.get(f.empresa_id) if f.empresa_id else None
         cli=Cliente.query.get(f.posto_cliente_id) if f.posto_cliente_id else None
@@ -7289,14 +7296,63 @@ def api_beneficios_lancamentos():
             'dias_vr':(b.dias_vr if b else 0),
             'dias_va':(b.dias_va if b else 0),
             'salario':(b.salario if b else (f.salario or 0)),
-            'vale_refeicao':(b.vale_refeicao if b else (f.vale_refeicao or 0)),
-            'vale_alimentacao':(b.vale_alimentacao if b else (f.vale_alimentacao or 0)),
-            'vale_transporte':(b.vale_transporte if b else (f.vale_transporte or 0)),
+            'vale_refeicao':_benef_val(b,f,'vale_refeicao'),
+            'vale_alimentacao':_benef_val(b,f,'vale_alimentacao'),
+            'vale_transporte':_benef_val(b,f,'vale_transporte'),
             'opta_vt': True if f.opta_vt is None else bool(f.opta_vt),
             'opta_vr': True if f.opta_vr is None else bool(f.opta_vr),
             'opta_va': True if f.opta_va is None else bool(f.opta_va),
         })
     return jsonify({'ok':True,'competencia':comp,'itens':itens})
+
+@app.route('/api/beneficios/lancamentos/limpar',methods=['POST'])
+@lr
+def api_beneficios_lancamentos_limpar():
+    d=request.json or {}
+    comp=norm_competencia(d.get('competencia'))
+    tipo=(d.get('tipo') or '').strip().lower()
+    empresa_id=to_num(d.get('empresa_id')) or None
+    func_ids=d.get('funcionarios') or []
+    func_ids={int(x) for x in func_ids if str(x).isdigit()}
+    if tipo not in {'vt','vr','va','todos'}:
+        return jsonify({'erro':'Tipo inválido para limpeza.'}),400
+
+    q=BeneficioMensal.query.filter_by(competencia=comp)
+    if empresa_id:
+        q=q.filter_by(empresa_id=empresa_id)
+    regs=q.all()
+    if func_ids:
+        regs=[b for b in regs if b.funcionario_id in func_ids]
+
+    alterados=0
+    for b in regs:
+        changed=False
+        if tipo in {'vt','todos'}:
+            if b.dias_vt!=0:
+                b.dias_vt=0
+                changed=True
+            if b.vale_transporte is not None:
+                b.vale_transporte=None
+                changed=True
+        if tipo in {'vr','todos'}:
+            if b.dias_vr!=0:
+                b.dias_vr=0
+                changed=True
+            if b.vale_refeicao is not None:
+                b.vale_refeicao=None
+                changed=True
+        if tipo in {'va','todos'}:
+            if b.dias_va!=0:
+                b.dias_va=0
+                changed=True
+            if b.vale_alimentacao is not None:
+                b.vale_alimentacao=None
+                changed=True
+        if changed:
+            alterados+=1
+
+    db.session.commit()
+    return jsonify({'ok':True,'competencia':comp,'tipo':tipo,'alterados':alterados})
 
 @app.route('/api/beneficios/lancamentos',methods=['POST'])
 @lr

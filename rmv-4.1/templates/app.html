@@ -1301,6 +1301,8 @@ document.addEventListener('DOMContentLoaded',()=>{
           <button class="btn b-gh b-sm" onclick="salvarBeneficiosDias()">Salvar dias (VT/VR)</button>
           <button class="btn b-ghv b-sm" onclick="abrirPreviaBeneficioAtivo()">Abrir prévia</button>
           <button class="btn b-ghl b-sm" onclick="abrirPreviaBeneficioAtivo()">Prévia + downloads</button>
+          <button class="btn b-ghr b-sm" onclick="limparLancamentosBeneficioAbaAtual()">Limpar dados da aba</button>
+          <button class="btn b-ghr b-sm" onclick="excluirLancamentosBeneficioAbaAtual()">Excluir lançamentos</button>
           <button class="btn b-az b-sm" onclick="selecionarTodosBen()">Selecionar todos</button>
           <button class="btn b-ghr b-sm" onclick="limparSelecaoBen()">Limpar seleção</button>
           <span id="ben-sel-count" style="font-size:12px;color:#7ecfff;align-self:center"></span>
@@ -4966,6 +4968,53 @@ async function abrirPreviaBeneficioAtivo(){
     return;
   }
   await abrirPreviaBeneficio(benTab);
+}
+
+function benTipoApiAtual(){
+  if(benTab==='vt' || benTab==='vr' || benTab==='va') return benTab;
+  return '';
+}
+
+async function limparLancamentosBeneficioAbaAtual(){
+  const tipo=benTipoApiAtual();
+  if(!tipo){
+    showSt('st-benef','A limpeza só está disponível nas abas VT, VR e VA.',true);
+    return;
+  }
+  const msg=benSelecionados.size>0
+    ? `Limpar os dados de ${tipo.toUpperCase()} para ${benSelecionados.size} colaborador(es) selecionado(s)?`
+    : `Limpar os dados de ${tipo.toUpperCase()} para os colaboradores filtrados desta competência?`;
+  if(!confirm(msg)) return;
+  const body={competencia:benComp(),empresa_id:benEmp()||null,tipo};
+  if(benSelecionados.size>0) body.funcionarios=[...benSelecionados];
+  const r=await api('/api/beneficios/lancamentos/limpar','POST',body);
+  if(r?.erro){
+    showSt('st-benef',r.erro,true);
+    return;
+  }
+  showSt('st-benef',`Dados de ${tipo.toUpperCase()} limpos com sucesso.`,false);
+  await carregarBeneficiosMensais();
+}
+
+async function excluirLancamentosBeneficioAbaAtual(){
+  const tipo=benTipoApiAtual();
+  if(!tipo){
+    showSt('st-benef','A exclusão só está disponível nas abas VT, VR e VA.',true);
+    return;
+  }
+  const msg=benSelecionados.size>0
+    ? `Excluir os lançamentos de ${tipo.toUpperCase()} para ${benSelecionados.size} colaborador(es) selecionado(s)?`
+    : `Excluir os lançamentos de ${tipo.toUpperCase()} para os colaboradores filtrados desta competência?`;
+  if(!confirm(msg)) return;
+  const body={competencia:benComp(),empresa_id:benEmp()||null,tipo};
+  if(benSelecionados.size>0) body.funcionarios=[...benSelecionados];
+  const r=await api('/api/beneficios/lancamentos/limpar','POST',body);
+  if(r?.erro){
+    showSt('st-benef',r.erro,true);
+    return;
+  }
+  showSt('st-benef',`Lançamentos de ${tipo.toUpperCase()} excluídos com sucesso.`,false);
+  await carregarBeneficiosMensais();
 }
 
 function benComp(){
