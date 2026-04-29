@@ -2980,14 +2980,27 @@ def _norm_text_match(v):
     s=re.sub(r'[^a-z0-9]+',' ',s)
     return re.sub(r'\s+',' ',s).strip()
 
-def find_funcionario_in_text(page_text,funcs):
+def _match_conf_level(score):
+    try:
+        s=int(score or 0)
+    except Exception:
+        s=0
+    if s>=100:
+        return 'alta'
+    if s>=70:
+        return 'media'
+    return 'baixa'
+
+def find_funcionario_in_text(page_text,funcs,return_meta=False):
     txt_norm=_norm_text_match(page_text)
+    meta={'score':0,'second_score':0,'confianca':'baixa'}
     if not txt_norm:
-        return None
+        return (None,meta) if return_meta else None
     txt_pad=f' {txt_norm} '
     txt_digits=only_digits(page_text)
     best=None
     best_score=0
+    second_score=0
     for f in funcs:
         nome_norm=_norm_text_match(getattr(f,'nome',None))
         if not nome_norm:
@@ -3011,9 +3024,15 @@ def find_funcionario_in_text(page_text,funcs):
         if len(re_num)>=4 and re_num in txt_digits:
             score+=20
         if score>best_score:
+            second_score=best_score
             best_score=score
             best=f
-    return best if best_score>=45 else None
+        elif score>second_score:
+            second_score=score
+    meta={'score':best_score,'second_score':second_score,'confianca':_match_conf_level(best_score)}
+    if best_score<45:
+        return (None,meta) if return_meta else None
+    return (best,meta) if return_meta else best
 
 def infer_doc_year(comp=''):
     c=(comp or '').strip()
@@ -6996,6 +7015,9 @@ def api_rh_preview_destinatarios():
                 'matricula':f.matricula or '',
                 'email':f.email or '',
                 'telefone':(tel if wa_is_valid_number(tel) else ''),
+                'match_confianca':'manual',
+                'match_score':100,
+                'match_detalhe':'Selecionado manualmente.',
                 'paginas':[]
             }],
             'competencia':comp,
@@ -7015,7 +7037,7 @@ def api_rh_preview_destinatarios():
     sem_match=[]
     for idx,page in enumerate(reader.pages,start=1):
         txt=(page.extract_text() or '')
-        alvo=find_funcionario_in_text(txt,funcs)
+        alvo,match_meta=find_funcionario_in_text(txt,funcs,return_meta=True)
         if not alvo:
             sem_match.append(idx)
             continue
@@ -7027,9 +7049,32 @@ def api_rh_preview_destinatarios():
                 'matricula':alvo.matricula or '',
                 'email':alvo.email or '',
                 'telefone':(tel if wa_is_valid_number(tel) else ''),
+                'match_scores':[],
                 'paginas':[]
             }
         dest_idx[alvo.id]['paginas'].append(idx)
+        dest_idx[alvo.id]['match_scores'].append(int(match_meta.get('score') or 0))
+
+    for item in dest_idx.values():
+        scores=[int(s) for s in item.pop('match_scores',[]) if isinstance(s,(int,float)) or str(s).isdigit()]
+        if not scores:
+            item['match_confianca']='baixa'
+            item['match_score']=0
+            item['match_detalhe']='Sem score de correspondencia.'
+            continue
+        media=int(round(sum(scores)/max(1,len(scores))))
+        cont_alta=sum(1 for s in scores if _match_conf_level(s)=='alta')
+        cont_media=sum(1 for s in scores if _match_conf_level(s)=='media')
+        cont_baixa=sum(1 for s in scores if _match_conf_level(s)=='baixa')
+        if cont_baixa>0:
+            conf='baixa'
+        elif cont_media>0:
+            conf='media'
+        else:
+            conf='alta'
+        item['match_confianca']=conf
+        item['match_score']=media
+        item['match_detalhe']=f'Alta: {cont_alta}, Media: {cont_media}, Baixa: {cont_baixa}.'
 
     destinatarios=sorted(dest_idx.values(),key=lambda x:(x.get('nome') or '').lower())
     return jsonify({
