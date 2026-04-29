@@ -2866,10 +2866,12 @@ ALLOWED_AREAS=['dashboard','medicoes','historico','clientes','empresas','usuario
 ALLOWED_ACTIONS=['view','create','edit','delete','approve','export']
 DOC_CAT_PATH={
     'aso':'aso',
+    'atestado':'atestado',
     'epi':'epi',
     'treinamento':'treinamento',
     'holerite':'holerites',
     'folha_ponto':'folha_ponto',
+    'recibo_ferias':'recibo_ferias',
     'contrato_trabalho':'contrato_trabalho',
     'vale_transporte':'vale_transporte',
     'requisicao_vale_transporte':'requisicao_vale_transporte',
@@ -2878,10 +2880,12 @@ DOC_CAT_PATH={
 }
 DOC_CAT_LABEL={
     'aso':'ASO',
+    'atestado':'Atestado',
     'epi':'EPI',
     'treinamento':'Treinamento',
     'holerite':'Holerite',
     'folha_ponto':'Folha de Ponto',
+    'recibo_ferias':'Recibo de Ferias',
     'contrato_trabalho':'Contrato de Trabalho',
     'vale_transporte':'Vale Transporte',
     'requisicao_vale_transporte':'Requisicao de Vale Transporte',
@@ -2955,6 +2959,8 @@ def norm_cat(v):
     s=(v or 'outros').strip().lower().replace('-', '_').replace(' ', '_')
     aliases={
         'holerites':'holerite',
+        'recibo_de_ferias':'recibo_ferias',
+        'recibo_ferias':'recibo_ferias',
         'ficha_de_epi':'epi',
         'fardamento':'uniforme',
         'figurino':'uniforme',
@@ -6828,7 +6834,9 @@ def api_documentos_rh_upload():
             if p.isdigit():
                 ids_ass_sel.add(int(p))
 
-    categoria='atestado' if cat_in=='atestado' else 'outros'
+    categoria=norm_cat(cat_in)
+    if categoria not in ('atestado','recibo_ferias','outros'):
+        categoria='outros'
 
     try:
         from pypdf import PdfReader, PdfWriter
@@ -6863,7 +6871,11 @@ def api_documentos_rh_upload():
         writer=PdfWriter()
         writer.add_page(page)
 
-        doc_tipo='Atestado' if categoria=='atestado' else 'Documento RH'
+        doc_tipo={
+            'atestado':'Atestado',
+            'recibo_ferias':'Recibo de Ferias',
+            'outros':'Documento RH'
+        }.get(categoria,'Documento RH')
         nome_base=f'{doc_tipo} - {(alvo.nome or "Colaborador")} - {holerite_comp_label(comp)}.pdf'
         nome_base=_clean_file_part(nome_base,120,'documento_rh')
         if not nome_base.lower().endswith('.pdf'):

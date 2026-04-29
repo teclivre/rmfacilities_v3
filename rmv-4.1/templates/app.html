@@ -1028,6 +1028,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               <option value="holerite">Holerite</option>
               <option value="folha_ponto">Folha de Ponto</option>
               <option value="atestado">Atestado</option>
+              <option value="recibo_ferias">Recibo de Férias</option>
               <option value="outros">Outros documentos RH</option>
             </select>
           </div>
@@ -4039,7 +4040,7 @@ function renderArquivoTree(categorias){
   }
   
   const categoryEmojis={
-    'holerite':'💼','aso':'🏥','atestado':'🩺','epi':'🦺','treinamento':'📚','folha_ponto':'⏰',
+    'holerite':'💼','aso':'🏥','atestado':'🩺','epi':'🦺','treinamento':'📚','folha_ponto':'⏰','recibo_ferias':'🏖️',
     'contrato_trabalho':'📋','vale_transporte':'🚌','requisicao_vale_transporte':'📝','uniforme':'👕','outros':'📦'
   };
 
@@ -4269,7 +4270,12 @@ async function uploadDocumentoRHLote(){
   let nomeTipo='arquivos';
   if(funcionarioId){
     endpoint='/api/funcionarios/'+funcionarioId+'/arquivos';
-    nomeTipo=(tipo==='folha_ponto')?'folha de ponto':(tipo==='holerite'?'holerite':tipo);
+    nomeTipo=(
+      tipo==='folha_ponto'?'folha de ponto':
+      tipo==='holerite'?'holerite':
+      tipo==='atestado'?'atestado':
+      tipo==='recibo_ferias'?'recibo de férias':'documento RH'
+    );
   }else if(tipo==='folha_ponto'){
     endpoint='/api/funcionarios/folhas-ponto/upload';
     nomeTipo='folhas de ponto';
@@ -4278,7 +4284,7 @@ async function uploadDocumentoRHLote(){
     nomeTipo='holerites';
   }else{
     endpoint='/api/funcionarios/documentos-rh/upload';
-    nomeTipo=(tipo==='atestado')?'atestados':'documentos RH';
+    nomeTipo=(tipo==='atestado')?'atestados':((tipo==='recibo_ferias')?'recibos de férias':'documentos RH');
   }
 
   if(canalAss!=='nao'){
