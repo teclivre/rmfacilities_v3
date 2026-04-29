@@ -7452,11 +7452,13 @@ def api_beneficios_lancamentos_salvar():
         dias_vt=max(0,to_num(it.get('dias_vt')))
         dias_vr=max(0,to_num(it.get('dias_vr')))
         dias_va=max(0,to_num(it.get('dias_va')))
+        dias_vg=max(0,to_num(it.get('dias_vg')))
         pp_falta=to_bool(it.get('pp_falta')) if pp_optante else False
 
         b.dias_vt=dias_vt if vt_optante else 0
         b.dias_vr=dias_vr if vr_optante else 0
         b.dias_va=dias_va if va_optante else 0
+        b.dias_vg=dias_vg if vg_optante else 0
         b.pp_falta=pp_falta
         b.dias_trabalhados=max(b.dias_vt,b.dias_vr)
 
