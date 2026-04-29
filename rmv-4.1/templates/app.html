@@ -4985,23 +4985,40 @@ async function salvarBeneficiosDias(){
   await carregarBeneficiosMensais();
 }
 
-function gerarPDFBeneficioAtivo(){
+async function persistirBeneficiosAntesExportar(){
+  if(!beneficiosMensais.length){
+    showSt('st-benef','Carregue os colaboradores antes de exportar.',true);
+    return false;
+  }
+  const incluirDias=(benTab==='vt' || benTab==='vr');
+  const itens=montarItensBeneficios({incluirBase:true,incluirDias});
+  const r=await api('/api/beneficios/lancamentos','POST',{competencia:benComp(),itens});
+  if(r?.erro){
+    showSt('st-benef',r.erro,true);
+    return false;
+  }
+  return true;
+}
+
+async function gerarPDFBeneficioAtivo(){
   const mapa={vt:'vale-transporte',vr:'vale-refeicao',va:'vale-alimentacao'};
   if(benTab==='ativos'){
     showSt('st-benef','Selecione VT, VR ou VA para gerar o PDF.',true);
     return;
   }
+  if(!(await persistirBeneficiosAntesExportar())) return;
   let url='/api/beneficios/'+mapa[benTab]+'/pdf?competencia='+encodeURIComponent(benComp())+'&empresa_id='+encodeURIComponent(benEmp());
   if(benSelecionados.size>0) url+='&funcionarios='+[...benSelecionados].join(',');
   window.open(url,'_blank');
 }
 
-function gerarXLSXBeneficioAtivo(){
+async function gerarXLSXBeneficioAtivo(){
   const mapa={vt:'vale-transporte',vr:'vale-refeicao',va:'vale-alimentacao'};
   if(benTab==='ativos'){
     showSt('st-benef','Selecione VT, VR ou VA para exportar o XLSX.',true);
     return;
   }
+  if(!(await persistirBeneficiosAntesExportar())) return;
   let url='/api/beneficios/'+mapa[benTab]+'/xlsx?competencia='+encodeURIComponent(benComp())+'&empresa_id='+encodeURIComponent(benEmp());
   if(benSelecionados.size>0) url+='&funcionarios='+[...benSelecionados].join(',');
   window.open(url,'_blank');
