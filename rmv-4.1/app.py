@@ -3031,6 +3031,8 @@ def can_access_request(path,method='GET'):
         return True
     if m=='GET' and p.startswith('/api/clientes') and can_access_area('medicoes'):
         return True
+    if m=='GET' and p.startswith('/api/empresas') and can_access_area('medicoes'):
+        return True
     if m in ('GET','DELETE') and (p.startswith('/api/medicoes') or p.startswith('/api/pdf')) and can_access_area('historico'):
         return True
     return False

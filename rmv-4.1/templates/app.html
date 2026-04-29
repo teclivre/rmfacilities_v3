@@ -109,7 +109,16 @@ async function concInicializar(){
   const sel=document.getElementById('conc-empresa');
   if(sel&&!sel.options.length){
     const emps=await api('/api/empresas');
-    (emps||[]).forEach(e=>{const o=document.createElement('option');o.value=e.id;o.textContent=e.nome;sel.appendChild(o);});
+    sel.innerHTML='';
+    const lista=Array.isArray(emps)?emps:[];
+    if(!lista.length){
+      const o=document.createElement('option');
+      o.value='';
+      o.textContent=(emps&&emps.erro)?('Sem acesso: '+emps.erro):'Nenhuma empresa ativa encontrada';
+      sel.appendChild(o);
+    }else{
+      lista.forEach(e=>{const o=document.createElement('option');o.value=e.id;o.textContent=e.nome;sel.appendChild(o);});
+    }
   }
   const lotes=await api('/api/conciliacao/lotes');
   const sl=document.getElementById('conc-filtro-lote');
