@@ -28,7 +28,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, IntegrityError
 import os
 import re
 import unicodedata
@@ -4724,7 +4724,20 @@ def api_criar_funcionario():
         obs=d.get('obs','').strip(),
         areas=json.dumps(ars,ensure_ascii=False)
     )
-    db.session.add(f); db.session.commit(); return jsonify(f.to_dict()),201
+    try:
+        db.session.add(f)
+        db.session.commit()
+        return jsonify(f.to_dict()),201
+    except IntegrityError as e:
+        db.session.rollback()
+        msg=str(e).lower()
+        if 'funcionario.re' in msg:
+            return jsonify({'erro':'RE já cadastrado. Informe outro RE.'}),400
+        if 'funcionario.cpf' in msg:
+            return jsonify({'erro':'CPF já cadastrado para outro funcionário.'}),400
+        if 'funcionario.matricula' in msg:
+            return jsonify({'erro':'Matrícula já cadastrada. Informe outra matrícula.'}),400
+        return jsonify({'erro':'Não foi possível salvar o funcionário (dados duplicados).'}),400
 
 @app.route('/api/funcionarios/<int:id>',methods=['PUT'])
 @lr
@@ -4748,7 +4761,19 @@ def api_atualizar_funcionario(id):
     if 'areas' in d:
         ars=[a for a in d.get('areas',[]) if a in ALLOWED_AREAS]
         f.areas=json.dumps(ars,ensure_ascii=False)
-    db.session.commit(); return jsonify(f.to_dict())
+    try:
+        db.session.commit()
+        return jsonify(f.to_dict())
+    except IntegrityError as e:
+        db.session.rollback()
+        msg=str(e).lower()
+        if 'funcionario.re' in msg:
+            return jsonify({'erro':'RE já cadastrado. Informe outro RE.'}),400
+        if 'funcionario.cpf' in msg:
+            return jsonify({'erro':'CPF já cadastrado para outro funcionário.'}),400
+        if 'funcionario.matricula' in msg:
+            return jsonify({'erro':'Matrícula já cadastrada. Informe outra matrícula.'}),400
+        return jsonify({'erro':'Não foi possível atualizar o funcionário (dados duplicados).'}),400
 
 @app.route('/api/funcionarios/<int:id>',methods=['DELETE'])
 @lr

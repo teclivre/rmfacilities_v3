@@ -3960,8 +3960,12 @@ async function salvarFuncionario(){
     obs:document.getElementById('fobs').value,
     areas
   };
-  if(id) await api('/api/funcionarios/'+id,'PUT',d);
-  else await api('/api/funcionarios','POST',d);
+  const r=id ? await api('/api/funcionarios/'+id,'PUT',d) : await api('/api/funcionarios','POST',d);
+  if(r?.erro){
+    showSt('st-rh',r.erro,true);
+    alert(r.erro);
+    return;
+  }
   funcs=await api('/api/funcionarios');
   pontoFuncs=[...funcs];
   fillSSTFuncionarios();
