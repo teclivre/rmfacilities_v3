@@ -1027,6 +1027,13 @@ document.addEventListener('DOMContentLoaded',()=>{
             <select id="rh-lote-tipo">
               <option value="holerite">Holerite</option>
               <option value="folha_ponto">Folha de Ponto</option>
+              <option value="aso">ASO</option>
+              <option value="epi">Ficha de EPI</option>
+              <option value="treinamento">Treinamento</option>
+              <option value="contrato_trabalho">Contrato de Trabalho</option>
+              <option value="vale_transporte">Vale Transporte</option>
+              <option value="requisicao_vale_transporte">Requisição de Vale Transporte</option>
+              <option value="uniforme">Uniforme / Fardamento</option>
               <option value="atestado">Atestado</option>
               <option value="recibo_ferias">Recibo de Férias</option>
               <option value="outros">Outros documentos RH</option>
@@ -1324,7 +1331,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="g3" style="margin-top:8px">
           <div class="f"><label>Buscar colaborador</label><input id="sst-func-busca" placeholder="Digite nome, matrícula ou RE" oninput="filtrarSSTFuncionarios()"></div>
           <div class="f"><label>Funcionário</label><select id="sst-func"><option value="">Selecione...</option></select></div>
-            <div class="f"><label>Categoria</label><select id="sst-cat"><option value="aso">ASO</option><option value="epi">Ficha de EPI</option><option value="treinamento">Treinamento</option><option value="folha_ponto">Folha de Ponto</option><option value="contrato_trabalho">Contrato de Trabalho</option><option value="vale_transporte">Vale Transporte</option><option value="requisicao_vale_transporte">Requisição de Vale Transporte</option><option value="uniforme">Uniforme / Fardamento</option><option value="outros">Outros</option></select></div>
+            <div class="f"><label>Categoria</label><select id="sst-cat"><option value="aso">ASO</option><option value="epi">Ficha de EPI</option><option value="treinamento">Treinamento</option><option value="folha_ponto">Folha de Ponto</option><option value="contrato_trabalho">Contrato de Trabalho</option><option value="vale_transporte">Vale Transporte</option><option value="requisicao_vale_transporte">Requisição de Vale Transporte</option><option value="uniforme">Uniforme / Fardamento</option><option value="atestado">Atestado</option><option value="recibo_ferias">Recibo de Férias</option><option value="outros">Outros</option></select></div>
           <div class="f"><label>Competência/Validade</label><input id="sst-comp" placeholder="04/2026"></div>
         </div>
         <div class="f" style="margin-top:10px"><label>Arquivo</label><input type="file" id="sst-arq"></div>
@@ -1643,6 +1650,8 @@ document.addEventListener('DOMContentLoaded',()=>{
               <option value="outros">📦 Outros</option>
               <option value="holerite">💼 Holerite</option>
               <option value="aso">🏥 ASO</option>
+              <option value="atestado">🩺 Atestado</option>
+              <option value="recibo_ferias">🏖️ Recibo de Férias</option>
               <option value="treinamento">📚 Treinamento</option>
               <option value="contrato_trabalho">📋 Contrato</option>
               <option value="folha_ponto">⏰ Folha Ponto</option>
@@ -4266,16 +4275,25 @@ async function uploadDocumentoRHLote(){
   fd.append('competencia',comp);
   fd.append('canal_assinatura',canalAss);
   fd.append('categoria',tipo);
+  const DOC_TIPO_LABEL={
+    holerite:'holerite',
+    folha_ponto:'folha de ponto',
+    aso:'ASO',
+    epi:'ficha de EPI',
+    treinamento:'treinamento',
+    contrato_trabalho:'contrato de trabalho',
+    vale_transporte:'vale transporte',
+    requisicao_vale_transporte:'requisição de vale transporte',
+    uniforme:'uniforme/fardamento',
+    atestado:'atestado',
+    recibo_ferias:'recibo de férias',
+    outros:'documento RH'
+  };
   let endpoint='';
   let nomeTipo='arquivos';
   if(funcionarioId){
     endpoint='/api/funcionarios/'+funcionarioId+'/arquivos';
-    nomeTipo=(
-      tipo==='folha_ponto'?'folha de ponto':
-      tipo==='holerite'?'holerite':
-      tipo==='atestado'?'atestado':
-      tipo==='recibo_ferias'?'recibo de férias':'documento RH'
-    );
+    nomeTipo=DOC_TIPO_LABEL[tipo]||'documento RH';
   }else if(tipo==='folha_ponto'){
     endpoint='/api/funcionarios/folhas-ponto/upload';
     nomeTipo='folhas de ponto';
@@ -4284,7 +4302,7 @@ async function uploadDocumentoRHLote(){
     nomeTipo='holerites';
   }else{
     endpoint='/api/funcionarios/documentos-rh/upload';
-    nomeTipo=(tipo==='atestado')?'atestados':((tipo==='recibo_ferias')?'recibos de férias':'documentos RH');
+    nomeTipo=(tipo==='atestado')?'atestados':((tipo==='recibo_ferias')?'recibos de férias':(DOC_TIPO_LABEL[tipo]||'documentos RH'));
   }
 
   if(canalAss!=='nao'){

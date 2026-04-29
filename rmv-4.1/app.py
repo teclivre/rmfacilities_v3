@@ -6835,7 +6835,9 @@ def api_documentos_rh_upload():
                 ids_ass_sel.add(int(p))
 
     categoria=norm_cat(cat_in)
-    if categoria not in ('atestado','recibo_ferias','outros'):
+    if categoria in ('holerite','folha_ponto'):
+        categoria='outros'
+    if categoria not in DOC_CAT_PATH:
         categoria='outros'
 
     try:
@@ -6872,6 +6874,13 @@ def api_documentos_rh_upload():
         writer.add_page(page)
 
         doc_tipo={
+            'aso':'ASO',
+            'epi':'Ficha de EPI',
+            'treinamento':'Treinamento',
+            'contrato_trabalho':'Contrato de Trabalho',
+            'vale_transporte':'Vale Transporte',
+            'requisicao_vale_transporte':'Requisicao de Vale Transporte',
+            'uniforme':'Uniforme/Fardamento',
             'atestado':'Atestado',
             'recibo_ferias':'Recibo de Ferias',
             'outros':'Documento RH'
