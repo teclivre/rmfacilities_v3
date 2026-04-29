@@ -918,6 +918,7 @@ class BeneficioMensal(db.Model):
     dias_vt=db.Column(db.Integer,default=0)
     dias_vr=db.Column(db.Integer,default=0)
     dias_va=db.Column(db.Integer,default=0)
+    dias_vg=db.Column(db.Integer,default=0)
     salario=db.Column(db.Float,default=0)
     vale_refeicao=db.Column(db.Float,default=0)
     vale_alimentacao=db.Column(db.Float,default=0)
@@ -7310,6 +7311,7 @@ def api_beneficios_lancamentos():
             'dias_vt':(b.dias_vt if b else 0),
             'dias_vr':(b.dias_vr if b else 0),
             'dias_va':(b.dias_va if b else 0),
+            'dias_vg':(b.dias_vg if b else 0),
             'salario':(b.salario if b else (f.salario or 0)),
             'vale_refeicao':_benef_val(b,f,'vale_refeicao'),
             'vale_alimentacao':_benef_val(b,f,'vale_alimentacao'),
@@ -7364,6 +7366,7 @@ def api_beneficios_lancamentos_excluir():
             elif tipo=='pp':
                 if b.premio_produtividade is not None: b.premio_produtividade=None; changed=True
             elif tipo=='vg':
+                if b.dias_vg!=0: b.dias_vg=0; changed=True
                 if b.vale_gasolina is not None: b.vale_gasolina=None; changed=True
             elif tipo=='cn':
                 if b.cesta_natal is not None: b.cesta_natal=None; changed=True
@@ -7406,6 +7409,7 @@ def api_beneficios_lancamentos_limpar():
         if tipo in {'pp','todos'}:
             if b.premio_produtividade is not None: b.premio_produtividade=None; changed=True
         if tipo in {'vg','todos'}:
+            if b.dias_vg!=0: b.dias_vg=0; changed=True
             if b.vale_gasolina is not None: b.vale_gasolina=None; changed=True
         if tipo in {'cn','todos'}:
             if b.cesta_natal is not None: b.cesta_natal=None; changed=True
@@ -7569,11 +7573,11 @@ def beneficios_relatorio_preview():
         'vale_refeicao':('Vale Refeição','vale_refeicao','dias_vr','opta_vr'),
         'vale_alimentacao':('Vale Alimentação','vale_alimentacao','dias_va','opta_va'),
         'premio_produtividade':('Prêmio Produtividade','premio_produtividade','','opta_premio_prod'),
-        'vale_gasolina':('Vale Gasolina','vale_gasolina','','opta_vale_gasolina'),
+        'vale_gasolina':('Vale Gasolina','vale_gasolina','dias_vg','opta_vale_gasolina'),
         'cesta_natal':('Cesta de Natal','cesta_natal','','opta_cesta_natal'),
     }
     tit,col_valor,col_dias,opta_col=cfg[tipo]
-    is_va=(tipo in {'vale_alimentacao','premio_produtividade','vale_gasolina','cesta_natal'})
+    is_va=(tipo in {'vale_alimentacao','premio_produtividade','cesta_natal'})
 
     q=BeneficioMensal.query.filter_by(competencia=comp)
     if empresa_id:
@@ -7662,7 +7666,7 @@ def _api_beneficios_xlsx_tipo(tipo):
         'vale_refeicao':('Vale Refeição','vale_refeicao','dias_vr','vr','opta_vr'),
         'vale_alimentacao':('Vale Alimentação','vale_alimentacao','dias_va','va','opta_va'),
         'premio_produtividade':('Prêmio Produtividade','premio_produtividade','','pp','opta_premio_prod'),
-        'vale_gasolina':('Vale Gasolina','vale_gasolina','','vg','opta_vale_gasolina'),
+        'vale_gasolina':('Vale Gasolina','vale_gasolina','dias_vg','vg','opta_vale_gasolina'),
         'cesta_natal':('Cesta de Natal','cesta_natal','','cn','opta_cesta_natal'),
     }
     if tipo not in cfg:
@@ -9896,6 +9900,7 @@ with app.app_context():
         'dias_vt INTEGER DEFAULT 0',
         'dias_vr INTEGER DEFAULT 0',
         'dias_va INTEGER DEFAULT 0',
+        'dias_vg INTEGER DEFAULT 0',
         'premio_produtividade FLOAT DEFAULT 0',
         'vale_gasolina FLOAT DEFAULT 0',
         'cesta_natal FLOAT DEFAULT 0'
