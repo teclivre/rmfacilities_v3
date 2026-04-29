@@ -31,6 +31,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 import os
 import re
+import unicodedata
 import os, json, hashlib, hmac, secrets
 from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
@@ -2970,6 +2971,49 @@ def norm_cat(v):
     }
     s=aliases.get(s,s)
     return s if s in DOC_CAT_PATH else 'outros'
+
+def _norm_text_match(v):
+    s=str(v or '').strip().lower()
+    if not s:
+        return ''
+    s=''.join(ch for ch in unicodedata.normalize('NFKD',s) if not unicodedata.combining(ch))
+    s=re.sub(r'[^a-z0-9]+',' ',s)
+    return re.sub(r'\s+',' ',s).strip()
+
+def find_funcionario_in_text(page_text,funcs):
+    txt_norm=_norm_text_match(page_text)
+    if not txt_norm:
+        return None
+    txt_pad=f' {txt_norm} '
+    txt_digits=only_digits(page_text)
+    best=None
+    best_score=0
+    for f in funcs:
+        nome_norm=_norm_text_match(getattr(f,'nome',None))
+        if not nome_norm:
+            continue
+        score=0
+        if f' {nome_norm} ' in txt_pad:
+            score+=100
+        else:
+            partes=[p for p in nome_norm.split(' ') if len(p)>=3]
+            if len(partes)>=2:
+                if f' {partes[0]} ' in txt_pad and f' {partes[-1]} ' in txt_pad:
+                    score+=60
+                hits=sum(1 for p in partes if f' {p} ' in txt_pad)
+                score+=min(30,hits*10)
+            elif len(partes)==1 and f' {partes[0]} ' in txt_pad:
+                score+=25
+        mat=only_digits(getattr(f,'matricula',None))
+        if len(mat)>=4 and mat in txt_digits:
+            score+=25
+        re_num=only_digits(getattr(f,'re',None))
+        if len(re_num)>=4 and re_num in txt_digits:
+            score+=20
+        if score>best_score:
+            best_score=score
+            best=f
+    return best if best_score>=45 else None
 
 def infer_doc_year(comp=''):
     c=(comp or '').strip()
@@ -6706,12 +6750,8 @@ def api_holerites_upload():
     reader=PdfReader(fs)
     enviados=0; sem_match=[]; assinaturas_auto=0; sem_tel=[]; erro_ass=[]
     for idx,page in enumerate(reader.pages,start=1):
-        txt=(page.extract_text() or '').lower()
-        alvo=None
-        for f in funcs:
-            nm=(f.nome or '').lower().strip()
-            if nm and nm in txt:
-                alvo=f; break
+        txt=(page.extract_text() or '')
+        alvo=find_funcionario_in_text(txt,funcs)
         if not alvo:
             sem_match.append(idx)
             continue
@@ -6769,12 +6809,8 @@ def api_folhas_ponto_upload():
     reader=PdfReader(fs)
     enviados=0; sem_match=[]; assinaturas_auto=0; sem_tel=[]; erro_ass=[]; duplicadas=[]
     for idx,page in enumerate(reader.pages,start=1):
-        txt=(page.extract_text() or '').lower()
-        alvo=None
-        for f in funcs:
-            nm=(f.nome or '').lower().strip()
-            if nm and nm in txt:
-                alvo=f; break
+        txt=(page.extract_text() or '')
+        alvo=find_funcionario_in_text(txt,funcs)
         if not alvo:
             sem_match.append(idx)
             continue
@@ -6857,13 +6893,8 @@ def api_documentos_rh_upload():
     erro_ass=[]
 
     for idx,page in enumerate(reader.pages,start=1):
-        txt=(page.extract_text() or '').lower()
-        alvo=None
-        for f in funcs:
-            nm=(f.nome or '').lower().strip()
-            if nm and nm in txt:
-                alvo=f
-                break
+        txt=(page.extract_text() or '')
+        alvo=find_funcionario_in_text(txt,funcs)
         if not alvo:
             sem_match.append(idx)
             continue
@@ -6983,13 +7014,8 @@ def api_rh_preview_destinatarios():
     dest_idx={}
     sem_match=[]
     for idx,page in enumerate(reader.pages,start=1):
-        txt=(page.extract_text() or '').lower()
-        alvo=None
-        for f in funcs:
-            nm=(f.nome or '').lower().strip()
-            if nm and nm in txt:
-                alvo=f
-                break
+        txt=(page.extract_text() or '')
+        alvo=find_funcionario_in_text(txt,funcs)
         if not alvo:
             sem_match.append(idx)
             continue
@@ -8310,11 +8336,8 @@ def api_rh_holerites_processar():
 
     itens=[]; sem_match=[]
     for idx,page in enumerate(reader.pages,start=1):
-        txt=(page.extract_text() or '').lower()
-        alvo=None
-        for f in funcs_todos:
-            nm=(f.nome or '').lower().strip()
-            if nm and nm in txt: alvo=f; break
+        txt=(page.extract_text() or '')
+        alvo=find_funcionario_in_text(txt,funcs_todos)
         if not alvo: sem_match.append(idx); continue
         ano=infer_doc_year(comp); prepare_func_doc_dirs(alvo.id,ano)
         writer=PdfWriter(); writer.add_page(page)
