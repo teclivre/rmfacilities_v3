@@ -76,13 +76,18 @@ async function carregarFaturamento(){
   if(!lista.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:28px;color:#bbb">Nenhum faturamento encontrado.</td></tr>';document.getElementById('fat-res').textContent='';return;}
   tb.innerHTML=lista.map(m=>{
     const st=m.status||'emitida';
+    const hoje2=new Date().toISOString().split('T')[0];
+    const isVenc=m.dt_vencimento&&m.dt_vencimento<hoje2&&st==='emitida';
+    const stDisplay=isVenc?'Vencida':st.charAt(0).toUpperCase()+st.slice(1);
     let pc='p-vd';
     if(st==='paga')pc='p-vd';
     else if(st==='pendente')pc='p-vm';
     else if(st==='vencida')pc='p-ci';
     else if(st==='cancelada')pc='p-ghr';
+    else if(isVenc)pc='p-ci';
     else pc='p-gh';
-    return `<tr class='row-clickable' onclick='abrirModalFatDetalhe(${m.id})'>
+    const rowStyle=isVenc?'border-left:3px solid #c33':'';
+    return `<tr class='row-clickable' onclick='abrirModalFatDetalhe(${m.id})' style='${rowStyle}'>
       <td>${m.numero||''}</td>
       <td><div style="font-weight:700;font-size:13px">${m.cliente_nome||''}</div><div style="font-size:11px;color:#999">${fmtDoc(m.cliente_cnpj)||''}</div></td>
       <td style="font-size:12px">${m.empresa_nome||'—'}</td>
@@ -90,7 +95,7 @@ async function carregarFaturamento(){
       <td style="font-size:12px">${m.dt_emissao||'—'}</td>
       <td style="font-size:12px">${m.dt_vencimento||'—'}</td>
       <td style="text-align:right;font-weight:700;color:var(--verde);white-space:nowrap">${brl(m.valor_bruto)}</td>
-      <td><span class="pill ${pc}">${st.charAt(0).toUpperCase()+st.slice(1)}</span></td>
+      <td><span class="pill ${pc}">${stDisplay}</span></td>
       <td><button class="btn b-gh b-sm" onclick="event.stopPropagation();imprimirPDF(${m.id})">PDF</button></td>
     </tr>`;
   }).join('');
@@ -141,6 +146,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 <link rel="apple-touch-icon" href="/static/img/pwa-icon.svg">
 <link rel="stylesheet" href="/static/css/main.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -271,6 +277,10 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button class="metric metric-btn lj" type="button" onclick="abrirDashboardDestino('clientes')" aria-label="Abrir ticket médio"><div class="n" id="d-tm">—</div><div class="l">Ticket médio <span class="metric-go">Abrir</span></div></button>
       </div>
       <div id="dash-alertas" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px"></div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-header"><span class="card-title">Faturamento mensal</span></div>
+        <div style="position:relative;height:180px;padding:0 4px"><canvas id="chart-fat-mensal"></canvas></div>
+      </div>
       <div class="card">
         <div class="card-header"><span class="card-title">Acesso rápido</span></div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
@@ -554,7 +564,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               <option>Orçamento</option>
             </select>
           </div>
-          <div class="f"><label>Nº do documento</label><input id="nmed" placeholder="Auto" readonly style="background:var(--azul-cc);font-weight:700;color:var(--azul)"></div>
+          <div class="f"><label>Nº do documento</label><input id="nmed" placeholder="Auto" oninput="verificarNumeroMed(this.value)" style="font-weight:700;color:var(--azul)"><span id="nmed-warn" style="display:none;font-size:11px;color:#c33;margin-top:2px">&#9888; Número já utilizado</span></div>
           <div class="f"><label>Mês de referência</label><input type="month" id="mesref"></div>
           <div class="f"><label>Vencimento</label><input type="date" id="dtvenc"></div>
         </div>
@@ -673,8 +683,15 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div class="card">
         <div class="card-header">
           <span class="card-title">Medições emitidas</span>
-          <div style="display:flex;gap:8px">
-            <input id="hist-busca" placeholder="Buscar..." oninput="renderHist()" style="padding:6px 10px;font-size:12px;border:1.5px solid var(--borda);border-radius:var(--r);width:180px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <input type="month" id="hist-mes" onchange="renderHist()" title="Filtrar por mês" style="padding:6px 8px;font-size:12px;border:1.5px solid var(--borda);border-radius:var(--r)">
+            <select id="hist-status" onchange="renderHist()" style="padding:6px 8px;font-size:12px;border:1.5px solid var(--borda);border-radius:var(--r)">
+              <option value="">Todos status</option>
+              <option value="emitida">Emitida</option>
+              <option value="cancelada">Cancelada</option>
+              <option value="rascunho">Rascunho</option>
+            </select>
+            <input id="hist-busca" placeholder="Buscar..." oninput="renderHist()" style="padding:6px 10px;font-size:12px;border:1.5px solid var(--borda);border-radius:var(--r);width:160px">
             <button class="btn b-ghr b-sm" onclick="if(confirm('Limpar todo o histórico?'))limparHist()">Limpar tudo</button>
           </div>
         </div>
@@ -1812,6 +1829,20 @@ async function loadProxNum(){
   const d=await api('/api/proximo-numero');
   document.getElementById('prox-num').textContent=d.numero;
   document.getElementById('nmed').value=d.numero;
+  const w=document.getElementById('nmed-warn'); if(w) w.style.display='none';
+}
+
+let _nmedTimer=null;
+async function verificarNumeroMed(val){
+  const warn=document.getElementById('nmed-warn');
+  if(!warn) return;
+  if(!val){warn.style.display='none';return;}
+  clearTimeout(_nmedTimer);
+  _nmedTimer=setTimeout(async()=>{
+    const excl=medicaoAtualId?'&exclude_id='+medicaoAtualId:'';
+    const r=await api('/api/medicoes/check-numero?numero='+encodeURIComponent(val)+excl);
+    warn.style.display=(r&&r.existe)?'':'none';
+  },450);
 }
 
 async function loadEmps(){
@@ -1963,6 +1994,23 @@ async function loadDash(){
     de.innerHTML=d.empresas.map(e=>`<button type="button" class="card dash-company-btn" style="margin-bottom:0" onclick="abrirDashboardDestino('clientes',${e.id})"><div style="font-size:13px;font-weight:700;color:var(--azul);margin-bottom:8px">${e.nome}</div><div style="font-size:24px;font-weight:700;color:var(--laranja)">${e.cli}</div><div style="font-size:11px;color:#888">clientes ativos · tocar para abrir</div></button>`).join('');
   } else {
     de.innerHTML='';
+  }
+  // Gráfico faturamento mensal
+  const fatMensal=d.faturamento_mensal||[];
+  const chartCtx=document.getElementById('chart-fat-mensal');
+  if(chartCtx&&fatMensal.length&&typeof Chart!=='undefined'){
+    const mNomes=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    const labels=fatMensal.map(f=>{const[yr,mo]=f.mes.split('-');return mNomes[parseInt(mo)-1]+'/'+yr.slice(2);});
+    const vals=fatMensal.map(f=>f.total);
+    if(window._chartFat)window._chartFat.destroy();
+    window._chartFat=new Chart(chartCtx,{
+      type:'bar',
+      data:{labels,datasets:[{label:'Faturamento',data:vals,backgroundColor:'rgba(29,155,240,0.7)',borderRadius:4}]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>'R$ '+parseFloat(ctx.raw||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}}},
+        scales:{y:{ticks:{callback:v=>'R$'+v.toLocaleString('pt-BR')},grid:{color:'rgba(128,128,128,0.08)'}},x:{grid:{display:false}}}
+      }
+    });
   }
 }
 

@@ -365,6 +365,16 @@ def api_despesas_export_csv():
         headers={'Content-Disposition':'attachment; filename=despesas.csv'}
     )
 
+@app.route('/api/medicoes/check-numero')
+@lr
+def api_check_numero():
+    numero=(request.args.get('numero') or '').strip()
+    exclude_id=request.args.get('exclude_id',type=int)
+    if not numero: return jsonify({'existe':False})
+    q=Medicao.query.filter(Medicao.numero==numero)
+    if exclude_id: q=q.filter(Medicao.id!=exclude_id)
+    return jsonify({'existe':q.first() is not None})
+
 @app.route('/api/medicoes/<int:id>',methods=['GET','DELETE'])
 @lr
 def api_medicao_detalhe(id):
@@ -7323,11 +7333,23 @@ def api_dashboard():
                 'dias_vencido':(hoje-validade).days
             })
 
+    # Faturamento últimos 12 meses
+    fat_por_mes = {}
+    for _m in Medicao.query.filter(Medicao.status != 'cancelada').all():
+        if _m.mes_ref:
+            fat_por_mes[_m.mes_ref] = fat_por_mes.get(_m.mes_ref, 0) + float(_m.valor_bruto or 0)
+    fat_mensal = []
+    for _i in range(11, -1, -1):
+        _yr = hoje.year; _mo = hoje.month - _i
+        while _mo <= 0: _mo += 12; _yr -= 1
+        _k = f"{_yr}-{_mo:02d}"
+        fat_mensal.append({'mes': _k, 'total': round(fat_por_mes.get(_k, 0), 2)})
     return jsonify({'ativos':len(ativos),'receita':receita,'total_med':Medicao.query.count(),
         'med_mes':Medicao.query.filter_by(mes_ref=mes).count(),
         'pendentes':len(pendentes_clientes),
         'taxa_emissao':round(taxa_emissao,1),
         'ticket_medio':round(ticket_medio,2),
+        'faturamento_mensal':fat_mensal,
         'alerta_inadimplencia':{'qtd':len(inad_itens),'total':round(total_inadimplencia,2),'itens':inad_itens[:8]},
         'alerta_faturamento':{'qtd':len(alertas_faturamento),'itens':alertas_faturamento[:8]},
         'alerta_calculo_beneficios':{'qtd':len(alertas_calculo),'itens':alertas_calculo},
