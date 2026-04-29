@@ -2105,6 +2105,118 @@ let todos=[], emps=[], funcs=[], pontoFuncs=[], bancosBR=[], beneficiosMensais=[
 let pontoResumoPainelByFunc={};
 let pontoMarcacoesDiaAtual=[];
 let medicaoAtualId=null;
+const AUTOSAVE_KEY='rmfacilities:autosave:v1';
+let _autosaveDrafts=null;
+const _autosaveTimers={};
+let _autosaveObserver=null;
+let _benefAutosaveTimer=null;
+let _benefAutosaveReq=0;
+
+function loadAutosaveDrafts(){
+  if(_autosaveDrafts) return _autosaveDrafts;
+  try{ _autosaveDrafts=JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'{}')||{}; }
+  catch(_){ _autosaveDrafts={}; }
+  const now=Date.now();
+  Object.keys(_autosaveDrafts).forEach(k=>{
+    const ent=_autosaveDrafts[k];
+    if(!ent || !ent.savedAt || (now-ent.savedAt)>(7*24*60*60*1000)) delete _autosaveDrafts[k];
+  });
+  return _autosaveDrafts;
+}
+
+function persistAutosaveDrafts(){
+  try{ localStorage.setItem(AUTOSAVE_KEY,JSON.stringify(loadAutosaveDrafts())); }catch(_){ }
+}
+
+function isAutosaveEligible(el){
+  if(!el || !el.matches || !el.matches('input,select,textarea')) return false;
+  const t=(el.type||'').toLowerCase();
+  if(['button','submit','reset','hidden','file','password','image'].includes(t)) return false;
+  if(el.hasAttribute('data-autosave-off') || el.closest('[data-autosave="off"]')) return false;
+  return true;
+}
+
+function autosaveFieldKey(el){
+  if(!isAutosaveEligible(el)) return '';
+  const scope=(el.closest('.mb,.pg')?.id)||'root';
+  if(el.id) return scope+'#'+el.id;
+  if(el.name) return scope+'@'+el.name;
+  return '';
+}
+
+function rememberAutosaveField(el){
+  const key=autosaveFieldKey(el);
+  if(!key) return;
+  const drafts=loadAutosaveDrafts();
+  const type=(el.type||'').toLowerCase();
+  drafts[key]={
+    type,
+    value:(type==='checkbox' || type==='radio') ? !!el.checked : (el.value||''),
+    savedAt:Date.now()
+  };
+  persistAutosaveDrafts();
+}
+
+function scheduleAutosaveField(el){
+  const key=autosaveFieldKey(el);
+  if(!key) return;
+  clearTimeout(_autosaveTimers[key]);
+  _autosaveTimers[key]=setTimeout(()=>{
+    rememberAutosaveField(el);
+    delete _autosaveTimers[key];
+  },400);
+}
+
+function restoreAutosaveFields(root=document){
+  const drafts=loadAutosaveDrafts();
+  const nodes=(root.matches && root.matches('input,select,textarea')) ? [root] : [...(root.querySelectorAll ? root.querySelectorAll('input,select,textarea') : [])];
+  nodes.forEach(el=>{
+    const key=autosaveFieldKey(el);
+    const ent=key ? drafts[key] : null;
+    if(!ent) return;
+    const type=(el.type||'').toLowerCase();
+    if(type==='checkbox' || type==='radio'){
+      const next=!!ent.value;
+      if(el.checked===next) return;
+      el.checked=next;
+    }else{
+      const next=String(ent.value??'');
+      if((el.value||'')===next) return;
+      el.value=next;
+    }
+    if(el.hasAttribute('oninput')) el.dispatchEvent(new Event('input',{bubbles:true}));
+    else if(el.hasAttribute('onchange')) el.dispatchEvent(new Event('change',{bubbles:true}));
+  });
+}
+
+function clearAutosaveDraftsIn(root=document){
+  const drafts=loadAutosaveDrafts();
+  let changed=false;
+  const nodes=(root.matches && root.matches('input,select,textarea')) ? [root] : [...(root.querySelectorAll ? root.querySelectorAll('input,select,textarea') : [])];
+  nodes.forEach(el=>{
+    const key=autosaveFieldKey(el);
+    if(key && Object.prototype.hasOwnProperty.call(drafts,key)){
+      delete drafts[key];
+      changed=true;
+    }
+  });
+  if(changed) persistAutosaveDrafts();
+}
+
+function currentPageRoot(){
+  return document.querySelector('.pg.on')||document;
+}
+
+function setupAutosaveRestoreObserver(){
+  if(_autosaveObserver || !document.body) return;
+  _autosaveObserver=new MutationObserver(muts=>{
+    muts.forEach(m=>m.addedNodes.forEach(node=>{
+      if(!node || node.nodeType!==1) return;
+      restoreAutosaveFields(node);
+    }));
+  });
+  _autosaveObserver.observe(document.body,{childList:true,subtree:true});
+}
 
 function applyTheme(theme){
   const t=(theme==='dark')?'dark':'light';
@@ -3062,11 +3174,18 @@ const MODAL_FORM_IDS=['cli','func','emp','usr','ponto-edit'];
 const _modalDirty={};
 let _pageDirty=false;
 
-function setModalClean(id){ _modalDirty[id]=false; }
+function setModalClean(id){
+  _modalDirty[id]=false;
+  const root=document.getElementById('mod-'+id);
+  if(root) clearAutosaveDraftsIn(root);
+}
 
 function markPageDirty(){ _pageDirty=true; }
 
-function markPageClean(){ _pageDirty=false; }
+function markPageClean(){
+  _pageDirty=false;
+  clearAutosaveDraftsIn(currentPageRoot());
+}
 
 function hasUnsavedChanges(){
   if(_pageDirty) return true;
@@ -3085,13 +3204,24 @@ function setupModalDirtyTracking(){
 }
 
 function setupPageDirtyTracking(){
-  document.querySelectorAll('input,select,textarea').forEach(el=>{
-    if(el.closest('.modal')) return;
-    const t=(el.type||'').toLowerCase();
-    if(t==='button' || t==='submit' || t==='reset' || t==='hidden') return;
-    el.addEventListener('input',markPageDirty);
-    el.addEventListener('change',markPageDirty);
+  if(window.__pageDirtyTrackingReady) return;
+  window.__pageDirtyTrackingReady=true;
+  document.addEventListener('input',(e)=>{
+    const el=e.target;
+    if(!isAutosaveEligible(el)) return;
+    scheduleAutosaveField(el);
+    if(el.closest('.mb')) return;
+    markPageDirty();
   });
+  document.addEventListener('change',(e)=>{
+    const el=e.target;
+    if(!isAutosaveEligible(el)) return;
+    scheduleAutosaveField(el);
+    if(el.closest('.mb')) return;
+    markPageDirty();
+  });
+  restoreAutosaveFields(document);
+  setupAutosaveRestoreObserver();
   window.addEventListener('beforeunload',(e)=>{
     if(!hasUnsavedChanges()) return;
     e.preventDefault();
@@ -4845,6 +4975,56 @@ function benTotal(fid,tipo){
   if(el)el.textContent='R$ '+moneyPt(dias*val);
 }
 
+function benAtualizarModeloLocal(fid,patch){
+  const item=(beneficiosMensais||[]).find(it=>parseInt(it.funcionario_id,10)===parseInt(fid,10));
+  if(item) Object.assign(item,patch);
+}
+
+function benValorEdit(fid,tipo){
+  const campos={vt:'vale_transporte',vr:'vale_refeicao',va:'vale_alimentacao'};
+  const valor=numBR(document.getElementById(`ben-base-${tipo}-val-${fid}`)?.value||'0');
+  benAtualizarModeloLocal(fid,{[campos[tipo]]:valor});
+  if(tipo==='va'){
+    const totalEl=document.getElementById(`ben-va-total-${fid}`);
+    if(totalEl) totalEl.textContent='R$ '+moneyPt(valor);
+  }else{
+    benTotal(fid,tipo);
+  }
+  agendarAutoSaveBeneficios();
+}
+
+function benDiasEdit(fid,tipo){
+  const campos={vt:'dias_vt',vr:'dias_vr'};
+  const dias=parseInt(document.getElementById(`ben-${tipo}-dias-${fid}`)?.value||'0',10)||0;
+  const outroTipo=(tipo==='vt'?'vr':'vt');
+  const outroDias=parseInt(document.getElementById(`ben-${outroTipo}-dias-${fid}`)?.value||'0',10)||0;
+  benAtualizarModeloLocal(fid,{
+    [campos[tipo]]:dias,
+    dias_trabalhados:Math.max(dias,outroDias)
+  });
+  benTotal(fid,tipo);
+  agendarAutoSaveBeneficios();
+}
+
+async function salvarBeneficiosAuto(){
+  if(!beneficiosMensais.length) return;
+  const req=++_benefAutosaveReq;
+  const itens=montarItensBeneficios({incluirBase:true,incluirDias:true,ignorarSelecao:true});
+  const r=await api('/api/beneficios/lancamentos','POST',{competencia:benComp(),itens});
+  if(req!==_benefAutosaveReq) return;
+  if(r?.erro){
+    showSt('st-benef','Falha no auto-save: '+r.erro,true);
+    return;
+  }
+  markPageClean();
+  showSt('st-benef','Alterações salvas automaticamente.',false);
+}
+
+function agendarAutoSaveBeneficios(){
+  clearTimeout(_benefAutosaveTimer);
+  _benefAutosaveTimer=setTimeout(salvarBeneficiosAuto,900);
+}
+
 function renderBeneficiosAtivos(){
   const tb=document.getElementById('tb-benef-ativos');
   if(!tb)return;
@@ -4865,9 +5045,9 @@ function renderBeneficiosAtivos(){
     <td>${it.nome||''}</td>
     <td>${it.posto_operacional||'Reserva tecnica'}</td>
     <td>${it.empresa_nome||'—'}</td>
-    <td><input id="ben-base-vt-val-${it.funcionario_id}" value="${moneyPt(it.vale_transporte||0)}" style="width:110px" onclick="event.stopPropagation()">${vtTag}</td>
-    <td><input id="ben-base-vr-val-${it.funcionario_id}" value="${moneyPt(it.vale_refeicao||0)}" style="width:110px" onclick="event.stopPropagation()">${vrTag}</td>
-    <td><input id="ben-base-va-val-${it.funcionario_id}" value="${moneyPt(it.vale_alimentacao||0)}" style="width:110px" onclick="event.stopPropagation()">${vaTag}</td>
+    <td><input id="ben-base-vt-val-${it.funcionario_id}" value="${moneyPt(it.vale_transporte||0)}" style="width:110px" oninput="benValorEdit(${it.funcionario_id},'vt')" onchange="benValorEdit(${it.funcionario_id},'vt')" onclick="event.stopPropagation()">${vtTag}</td>
+    <td><input id="ben-base-vr-val-${it.funcionario_id}" value="${moneyPt(it.vale_refeicao||0)}" style="width:110px" oninput="benValorEdit(${it.funcionario_id},'vr')" onchange="benValorEdit(${it.funcionario_id},'vr')" onclick="event.stopPropagation()">${vrTag}</td>
+    <td><input id="ben-base-va-val-${it.funcionario_id}" value="${moneyPt(it.vale_alimentacao||0)}" style="width:110px" oninput="benValorEdit(${it.funcionario_id},'va')" onchange="benValorEdit(${it.funcionario_id},'va')" onclick="event.stopPropagation()">${vaTag}</td>
   </tr>`;
   }).join('');
   atualizarContadorSel();
@@ -4908,7 +5088,7 @@ function renderBeneficioPorTipo(tipo,tbId){
     <td>${it.nome||''}</td>
     <td>${it.posto_operacional||'Reserva tecnica'}</td>
     <td>${it.empresa_nome||'—'}</td>
-    <td><input id="ben-${tipo}-dias-${it.funcionario_id}" type="number" min="0" step="1" value="${it[cfg.dias]||0}" oninput="benTotal(${it.funcionario_id},'${tipo}')" style="width:95px" onclick="event.stopPropagation()"></td>
+    <td><input id="ben-${tipo}-dias-${it.funcionario_id}" type="number" min="0" step="1" value="${it[cfg.dias]||0}" oninput="benDiasEdit(${it.funcionario_id},'${tipo}')" onchange="benDiasEdit(${it.funcionario_id},'${tipo}')" style="width:95px" onclick="event.stopPropagation()"></td>
     <td>R$ ${moneyPt(numBR(document.getElementById('ben-base-'+tipo+'-val-'+it.funcionario_id)?.value||it[cfg.valor]||0))}</td>
     <td id="ben-${tipo}-total-${it.funcionario_id}">R$ ${moneyPt((it[cfg.dias]||0)*numBR(document.getElementById('ben-base-'+tipo+'-val-'+it.funcionario_id)?.value||it[cfg.valor]||0))}</td>
   </tr>`;
@@ -4936,9 +5116,9 @@ async function carregarBeneficiosMensais(){
 function montarItensBeneficios(opts={}){
   const incluirBase=opts.incluirBase!==false;
   const incluirDias=opts.incluirDias!==false;
-  const fonte=benSelecionados.size>0
+  const fonte=opts.ignorarSelecao ? beneficiosMensais : (benSelecionados.size>0
     ? beneficiosMensais.filter(it=>benSelecionados.has(it.funcionario_id))
-    : beneficiosMensais;
+    : beneficiosMensais);
   return fonte.map(it=>({
     funcionario_id:it.funcionario_id,
     dias_trabalhados:(incluirDias?Math.max(
@@ -4966,6 +5146,7 @@ async function salvarBeneficiosValoresBase(){
     showSt('st-benef',r.erro,true);
     return;
   }
+  markPageClean();
   showSt('st-benef','Valores-base de benefícios salvos com sucesso.',false);
   await carregarBeneficiosMensais();
 }
@@ -4981,6 +5162,7 @@ async function salvarBeneficiosDias(){
     showSt('st-benef',r.erro,true);
     return;
   }
+  markPageClean();
   showSt('st-benef','Dias de benefícios (VT/VR) salvos com sucesso.',false);
   await carregarBeneficiosMensais();
 }
@@ -4997,6 +5179,7 @@ async function persistirBeneficiosAntesExportar(){
     showSt('st-benef',r.erro,true);
     return false;
   }
+  markPageClean();
   return true;
 }
 
