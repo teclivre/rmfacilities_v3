@@ -7456,7 +7456,7 @@ def _api_beneficios_xlsx_tipo(tipo):
             f=funcs_map.get(r.funcionario_id)
             valor=float(getattr(r,col_valor) or 0)
             dias=int(getattr(r,col_dias) or 0)
-            total=(valor if tipo=='vale_alimentacao' else dias*valor)
+            total=(valor if tipo=='vale_alimentacao' else (dias*valor if dias>0 else valor))
             total_geral+=total
             re_val=(f.re if f and f.re else (f.matricula if f and f.matricula else ''))
             nome_val=(f.nome if f else f'Funcionario {r.funcionario_id}')
@@ -7619,7 +7619,7 @@ def _api_beneficios_pdf_tipo(tipo):
             if tipo=='vale_alimentacao':
                 total=valor
             else:
-                total=dias*valor
+                total=(dias*valor if dias>0 else valor)
             total_emp+=total
             re_str=str(f.re if f and f.re else (f.matricula if f and f.matricula else ''))
             cpf_str=(f.cpf if f and f.cpf else '')
