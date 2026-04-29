@@ -583,6 +583,7 @@ class Usuario(db.Model):
     cert_assunto=db.Column(db.String(255))
     cert_validade_fim=db.Column(db.String(30))
     areas=db.Column(db.Text,default='[]')
+    permissoes=db.Column(db.Text,default='{}')
     ativo=db.Column(db.Boolean,default=True)
     ultimo_acesso=db.Column(db.DateTime)
     criado_em=db.Column(db.DateTime,default=utcnow)
@@ -591,6 +592,9 @@ class Usuario(db.Model):
     def to_dict(self):
         try: a=json.loads(self.areas or '[]')
         except: a=[]
+        try: p=json.loads(self.permissoes or '{}')
+        except: p={}
+        if not isinstance(p,dict): p={}
         return {
             'id':self.id,
             'nome':self.nome,
@@ -600,6 +604,8 @@ class Usuario(db.Model):
             'twofa_ativo':bool(self.twofa_ativo if self.twofa_ativo is not None else True),
             'ativo':self.ativo,
             'areas':a,
+            'permissoes':p,
+            'rbac_actions_ativo':bool(p),
             'cert_configurado':bool((self.cert_arquivo or '').strip()),
             'cert_nome_arquivo':self.cert_nome_arquivo or '',
             'cert_ativo':bool(self.cert_ativo if self.cert_ativo is not None else False),
@@ -2839,6 +2845,7 @@ def smtp_send_link_assinatura(dest, nome_dest, titulo_envelope, link, remetente=
         with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s: s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
 
 ALLOWED_AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','compras','sst','rh-digital','documentos']
+ALLOWED_ACTIONS=['view','create','edit','delete','approve','export']
 DOC_CAT_PATH={
     'aso':'aso',
     'epi':'epi',
@@ -3021,22 +3028,60 @@ def can_access_area(area):
     if not areas: return True
     return area in areas
 
+def action_from_request(path,method='GET'):
+    p=(path or '').lower()
+    m=(method or 'GET').upper()
+    if 'export' in p or p.endswith('.csv'):
+        return 'export'
+    if any(x in p for x in ['/aprovar','/aprovar/','/reprovar','/rejeitar','/autorizar']):
+        return 'approve'
+    if m=='GET': return 'view'
+    if m=='POST': return 'create'
+    if m in ('PUT','PATCH'): return 'edit'
+    if m=='DELETE': return 'delete'
+    return 'view'
+
+def can_access_action(area,action='view'):
+    if session.get('perfil')=='dono':
+        return True
+    if not session.get('rbac_actions_ativo'):
+        return None
+    perms=session.get('permissoes',{}) or {}
+    if not isinstance(perms,dict):
+        return False
+    acts=perms.get(area)
+    if acts is None:
+        acts=perms.get('*',[])
+    if isinstance(acts,str):
+        acts=[acts]
+    if not isinstance(acts,list):
+        return False
+    acts=[str(a).strip().lower() for a in acts if str(a).strip()]
+    return ('*' in acts) or (str(action or 'view').lower() in acts)
+
+def can_access_scope(area,action='view'):
+    chk=can_access_action(area,action)
+    if chk is None:
+        return can_access_area(area)
+    return chk
+
 def can_access_request(path,method='GET'):
     area=area_from_path(path)
     if not area: return True
-    if can_access_area(area): return True
+    action=action_from_request(path,method)
+    if can_access_scope(area,action): return True
     p=(path or '').lower()
     m=(method or 'GET').upper()
     if p.startswith('/api/config/whatsapp') or p.startswith('/api/config/ia-whatsapp') or p.startswith('/api/whatsapp/ia/'):
-        if can_access_area('config'):
+        if can_access_scope('config',action):
             return True
     if p.startswith('/api/backup'):
         return True
-    if m=='GET' and p.startswith('/api/clientes') and can_access_area('medicoes'):
+    if m=='GET' and p.startswith('/api/clientes') and can_access_scope('medicoes','view'):
         return True
-    if m=='GET' and p.startswith('/api/empresas') and can_access_area('medicoes'):
+    if m=='GET' and p.startswith('/api/empresas') and can_access_scope('medicoes','view'):
         return True
-    if m in ('GET','DELETE') and (p.startswith('/api/medicoes') or p.startswith('/api/pdf')) and can_access_area('historico'):
+    if m in ('GET','DELETE') and (p.startswith('/api/medicoes') or p.startswith('/api/pdf')) and can_access_scope('historico',action):
         return True
     return False
 
@@ -3597,6 +3642,10 @@ def login():
             session.permanent=True
             session['uid']=u.id; session['nome']=u.nome; session['perfil']=u.perfil
             session['areas']=jloads(u.areas,[])
+            perms=jloads(getattr(u,'permissoes','{}'),{})
+            if not isinstance(perms,dict): perms={}
+            session['permissoes']=perms
+            session['rbac_actions_ativo']=bool(perms)
             u.ultimo_acesso=utcnow(); db.session.commit()
             reg_auth_attempt('admin',u.email,True,'ok_2fa')
             audit_event('auth_admin_sucesso_2fa','usuario',u.id,'usuario',u.id,True,{})
@@ -3635,6 +3684,10 @@ def login():
             session.permanent=True
             session['uid']=u.id; session['nome']=u.nome; session['perfil']=u.perfil
             session['areas']=jloads(u.areas,[])
+            perms=jloads(getattr(u,'permissoes','{}'),{})
+            if not isinstance(perms,dict): perms={}
+            session['permissoes']=perms
+            session['rbac_actions_ativo']=bool(perms)
             u.ultimo_acesso=utcnow(); db.session.commit()
             reg_auth_attempt('admin',email,True,'ok')
             audit_event('auth_admin_sucesso','usuario',u.id,'usuario',u.id,True,{})
@@ -3795,13 +3848,24 @@ def api_usuarios(): return jsonify([u.to_dict() for u in Usuario.query.all()])
 @app.route('/api/usuarios',methods=['POST'])
 @dr
 def api_criar_usuario():
-    d=request.json
-    if Usuario.query.filter_by(email=d['email'].lower()).first(): return jsonify({'erro':'E-mail já cadastrado'}),400
+    d=request.json or {}
+    if Usuario.query.filter_by(email=(d.get('email','').lower())).first(): return jsonify({'erro':'E-mail já cadastrado'}),400
     tel=norm_phone(d.get('telefone'))
     perfil=(d.get('perfil','admin') or 'admin').strip().lower()
     if perfil in ('admin','dono') and len(tel)<10:
         return jsonify({'erro':'Telefone é obrigatório para usuários admin/dono (2FA).'}),400
     ars=[a for a in d.get('areas',[]) if a in ALLOWED_AREAS]
+    perms_in=d.get('permissoes') if isinstance(d.get('permissoes'),dict) else {}
+    perms={}
+    for area,acts in perms_in.items():
+        if area!='*' and area not in ALLOWED_AREAS:
+            continue
+        if isinstance(acts,str): acts=[acts]
+        if not isinstance(acts,list):
+            continue
+        limpos=[str(a).strip().lower() for a in acts if str(a).strip().lower() in ALLOWED_ACTIONS or str(a).strip()=='*']
+        if limpos:
+            perms[area]=sorted(set(limpos))
     u=Usuario(
         nome=d['nome'],
         email=d['email'].lower(),
@@ -3809,14 +3873,15 @@ def api_criar_usuario():
         senha=pw_hash(d['senha']),
         perfil=perfil,
         twofa_ativo=bool(d.get('twofa_ativo',True)),
-        areas=json.dumps(ars,ensure_ascii=False)
+        areas=json.dumps(ars,ensure_ascii=False),
+        permissoes=json.dumps(perms,ensure_ascii=False)
     )
     db.session.add(u); db.session.commit(); return jsonify(u.to_dict()),201
 
 @app.route('/api/usuarios/<int:id>',methods=['PUT'])
 @dr
 def api_atualizar_usuario(id):
-    u=Usuario.query.get_or_404(id); d=request.json
+    u=Usuario.query.get_or_404(id); d=request.json or {}
     for k in ['nome','perfil','ativo']:
         if k in d: setattr(u,k,d[k])
     if 'telefone' in d:
@@ -3827,6 +3892,19 @@ def api_atualizar_usuario(id):
     if 'areas' in d:
         ars=[a for a in d.get('areas',[]) if a in ALLOWED_AREAS]
         u.areas=json.dumps(ars,ensure_ascii=False)
+    if 'permissoes' in d:
+        perms_in=d.get('permissoes') if isinstance(d.get('permissoes'),dict) else {}
+        perms={}
+        for area,acts in perms_in.items():
+            if area!='*' and area not in ALLOWED_AREAS:
+                continue
+            if isinstance(acts,str): acts=[acts]
+            if not isinstance(acts,list):
+                continue
+            limpos=[str(a).strip().lower() for a in acts if str(a).strip().lower() in ALLOWED_ACTIONS or str(a).strip()=='*']
+            if limpos:
+                perms[area]=sorted(set(limpos))
+        u.permissoes=json.dumps(perms,ensure_ascii=False)
     if (u.perfil or '').strip().lower() in ('admin','dono') and len(norm_phone(u.telefone))<10:
         return jsonify({'erro':'Telefone é obrigatório para usuários admin/dono (2FA).'}),400
     db.session.commit(); return jsonify(u.to_dict())
@@ -9120,6 +9198,7 @@ with app.app_context():
     db.create_all()
     ensure_cols('usuario',[
         'areas TEXT',
+        'permissoes TEXT DEFAULT "{}"',
         'telefone VARCHAR(30)',
         'twofa_ativo BOOLEAN DEFAULT 1',
         'cert_arquivo VARCHAR(500)',

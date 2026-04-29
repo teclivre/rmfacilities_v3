@@ -1949,6 +1949,10 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
       <div class="f"><label>Áreas de acesso</label><div id="uareas" class="areas-grid"></div></div>
+      <div class="f"><label>Permissões avançadas (JSON por ação, opcional)</label>
+        <textarea id="uperms" rows="5" placeholder='{"clientes":["view","edit"],"medicoes":["view","create","edit"],"*":["view"]}' style="font-family:Consolas,monospace"></textarea>
+        <div class="hint" style="margin-top:4px">Ações válidas: view, create, edit, delete, approve, export, *.</div>
+      </div>
       <div class="sep"></div>
       <div class="f"><label>Certificado digital do usuário (opcional, .p12/.pfx)</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -3275,7 +3279,7 @@ async function renderUsr(){
 
 function openModalUsr(modo,id){
   document.getElementById('uid-edit').value='';
-  ['un','ue','utel','up'].forEach(k=>document.getElementById(k).value='');
+  ['un','ue','utel','up','uperms'].forEach(k=>document.getElementById(k).value='');
   document.getElementById('ucert-file').value='';
   document.getElementById('ucert-pass').value='';
   document.getElementById('ucert-ativo').checked=true;
@@ -3296,6 +3300,7 @@ function openModalUsr(modo,id){
       document.getElementById('uativo').value=String(u.ativo);
       document.getElementById('ucert-ativo').checked=!!u.cert_ativo;
       document.getElementById('ucert-info').textContent=certInfoHtml(u);
+      document.getElementById('uperms').value=(u.permissoes&&Object.keys(u.permissoes).length)?JSON.stringify(u.permissoes,null,2):'';
       areaChecksUsuario(u.areas||[]);
     });
   } else {
@@ -3364,11 +3369,22 @@ async function salvarUsuario(){
     alert('Telefone é obrigatório para perfil admin/dono (2FA).');
     return;
   }
+  let permissoes={};
+  const txtPerm=(document.getElementById('uperms').value||'').trim();
+  if(txtPerm){
+    try{
+      permissoes=JSON.parse(txtPerm);
+      if(!permissoes || typeof permissoes!=='object' || Array.isArray(permissoes)) throw new Error('Formato inválido');
+    }catch(e){
+      alert('Permissões avançadas inválidas. Use JSON válido.');
+      return;
+    }
+  }
   const id=document.getElementById('uid-edit').value;
   const areas=AREAS.filter(a=>document.getElementById('ua-'+a)?.checked);
-  const d={nome,email,telefone,senha:document.getElementById('up').value,perfil,ativo:document.getElementById('uativo').value==='true',areas};
-  if(id) await api('/api/usuarios/'+id,'PUT',d);
-  else await api('/api/usuarios','POST',d);
+  const d={nome,email,telefone,senha:document.getElementById('up').value,perfil,ativo:document.getElementById('uativo').value==='true',areas,permissoes};
+  const r=id ? await api('/api/usuarios/'+id,'PUT',d) : await api('/api/usuarios','POST',d);
+  if(r?.erro){ alert(r.erro); return; }
   showSt('st-usr','Usuário salvo!',false);
   closeModal('usr',true); renderUsr();
 }
