@@ -3842,16 +3842,18 @@ def api_save_config():
     return jsonify({'ok':True})
 
 @app.route('/api/usuarios',methods=['GET'])
-@dr
+@lr
 def api_usuarios(): return jsonify([u.to_dict() for u in Usuario.query.all()])
 
 @app.route('/api/usuarios',methods=['POST'])
-@dr
+@lr
 def api_criar_usuario():
     d=request.json or {}
     if Usuario.query.filter_by(email=(d.get('email','').lower())).first(): return jsonify({'erro':'E-mail já cadastrado'}),400
     tel=norm_phone(d.get('telefone'))
     perfil=(d.get('perfil','admin') or 'admin').strip().lower()
+    if perfil=='dono' and session.get('perfil')!='dono':
+        return jsonify({'erro':'Apenas dono pode criar usuário dono.'}),403
     if perfil in ('admin','dono') and len(tel)<10:
         return jsonify({'erro':'Telefone é obrigatório para usuários admin/dono (2FA).'}),400
     ars=[a for a in d.get('areas',[]) if a in ALLOWED_AREAS]
@@ -3879,9 +3881,13 @@ def api_criar_usuario():
     db.session.add(u); db.session.commit(); return jsonify(u.to_dict()),201
 
 @app.route('/api/usuarios/<int:id>',methods=['PUT'])
-@dr
+@lr
 def api_atualizar_usuario(id):
     u=Usuario.query.get_or_404(id); d=request.json or {}
+    perfil_novo=(d.get('perfil',u.perfil) or u.perfil or '').strip().lower()
+    perfil_atual=(u.perfil or '').strip().lower()
+    if session.get('perfil')!='dono' and (perfil_atual=='dono' or perfil_novo=='dono'):
+        return jsonify({'erro':'Apenas dono pode alterar usuário dono.'}),403
     for k in ['nome','perfil','ativo']:
         if k in d: setattr(u,k,d[k])
     if 'telefone' in d:
@@ -3910,14 +3916,16 @@ def api_atualizar_usuario(id):
     db.session.commit(); return jsonify(u.to_dict())
 
 @app.route('/api/usuarios/<int:id>',methods=['DELETE'])
-@dr
+@lr
 def api_deletar_usuario(id):
     u=Usuario.query.get_or_404(id)
+    if (u.perfil or '').strip().lower()=='dono' and session.get('perfil')!='dono':
+        return jsonify({'erro':'Apenas dono pode excluir usuário dono.'}),403
     if u.perfil=='dono' and Usuario.query.filter_by(perfil='dono').count()<=1: return jsonify({'erro':'Não é possível excluir o único dono'}),400
     db.session.delete(u); db.session.commit(); return jsonify({'ok':True})
 
 @app.route('/api/usuarios/<int:id>/certificado',methods=['POST'])
-@dr
+@lr
 def api_usuario_cert_upload(id):
     u=Usuario.query.get_or_404(id)
     fs=request.files.get('arquivo')
@@ -3946,6 +3954,7 @@ def api_usuario_cert_upload(id):
             os.remove(old_abs)
         except Exception:
             pass
+    return jsonify({'ok':True,'usuario':u.to_dict()})
 
 
 _medicao_stamp_ready=False
@@ -3967,10 +3976,9 @@ def _ensure_medicao_stamp_cols_runtime(force=False):
 def _is_missing_medicao_stamp_error(err):
     msg=str(err or '').lower()
     return 'no such column' in msg and 'medicao.stamp_' in msg
-    return jsonify({'ok':True,'usuario':u.to_dict()})
 
 @app.route('/api/usuarios/<int:id>/certificado',methods=['DELETE'])
-@dr
+@lr
 def api_usuario_cert_delete(id):
     u=Usuario.query.get_or_404(id)
     abs_old=_cert_rel_to_abs(u.cert_arquivo)
