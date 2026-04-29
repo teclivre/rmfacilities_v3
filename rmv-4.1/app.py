@@ -2,6 +2,7 @@ import io
 import urllib.request
 import urllib.error
 import csv
+import mimetypes
 import zipfile
 import shutil
 import base64
@@ -2054,20 +2055,37 @@ def wa_send_text(numero,mensagem):
         detalhe=e.read().decode(errors='ignore')
         raise ValueError(f'WhatsApp API {e.code}: {detalhe or e.reason}')
 
-def wa_send_pdf(numero,caminho_abs,nome_arquivo,caption=''):
+def wa_media_meta(nome_arquivo,mimetype=''):
+    mime=(mimetype or '').split(';')[0].strip().lower()
+    if not mime:
+        mime=(mimetypes.guess_type(nome_arquivo or '')[0] or '').strip().lower()
+    if mime.startswith('image/'):
+        return 'image',mime
+    if mime.startswith('audio/'):
+        return 'audio',mime
+    if mime=='application/pdf':
+        return 'document',mime
+    raise ValueError('Arquivo deve ser imagem, audio ou PDF.')
+
+def wa_send_media_bytes(numero,arquivo_bytes,nome_arquivo,mimetype='',caption=''):
     cfg=wa_cfg()
     if not cfg['url'] or not cfg['instancia']: raise ValueError('WhatsApp nao configurado')
     num=wa_norm_number(numero)
     if not wa_is_valid_number(num): raise ValueError(f'Numero WhatsApp invalido: {num or "vazio"}')
-    with open(caminho_abs,'rb') as f: pdf_b64=base64.b64encode(f.read()).decode()
+    media_type,mime=wa_media_meta(nome_arquivo,mimetype)
+    media_b64=base64.b64encode(arquivo_bytes).decode()
     url=f"{cfg['url'].rstrip('/')}/message/sendMedia/{cfg['instancia']}"
-    data=json.dumps({'number':num,'mediatype':'document','mimetype':'application/pdf','media':pdf_b64,'fileName':nome_arquivo,'caption':caption or nome_arquivo}).encode()
+    data=json.dumps({'number':num,'mediatype':media_type,'mimetype':mime,'media':media_b64,'fileName':nome_arquivo,'caption':caption or nome_arquivo}).encode()
     req=urllib.request.Request(url,data=data,headers={'Content-Type':'application/json','apikey':cfg['token']})
     try:
         with urllib.request.urlopen(req,timeout=30) as r: return json.loads(r.read().decode())
     except urllib.error.HTTPError as e:
         detalhe=e.read().decode(errors='ignore')
         raise ValueError(f'WhatsApp API {e.code}: {detalhe or e.reason}')
+
+def wa_send_pdf(numero,caminho_abs,nome_arquivo,caption=''):
+    with open(caminho_abs,'rb') as f:
+        return wa_send_media_bytes(numero,f.read(),nome_arquivo,'application/pdf',caption)
 
 def ai_wa_cfg():
     return {
@@ -8594,13 +8612,31 @@ def api_wa_send():
 @app.route('/api/whatsapp/send-colaboradores',methods=['POST'])
 @lr
 def api_wa_send_colaboradores():
-    d=request.json or {}
+    is_form=bool(request.files) or 'multipart/form-data' in (request.content_type or '').lower()
+    d=request.form if is_form else (request.json or {})
     texto=(d.get('texto') or '').strip()
-    ids_raw=d.get('funcionario_ids') or []
-    if not texto:
-        return jsonify({'erro':'texto obrigatorio'}),400
+    ids_raw=request.form.getlist('funcionario_ids') if is_form else (d.get('funcionario_ids') or [])
+    fs=request.files.get('arquivo') if is_form else None
+    if not texto and not fs:
+        return jsonify({'erro':'Informe uma mensagem ou anexe um arquivo.'}),400
     if not isinstance(ids_raw,list) or not ids_raw:
         return jsonify({'erro':'funcionario_ids obrigatorio'}),400
+
+    arquivo_bytes=b''
+    arquivo_nome=''
+    arquivo_tipo=''
+    arquivo_mimetype=''
+    if fs and (fs.filename or '').strip():
+        arquivo_nome=secure_filename(fs.filename or 'arquivo') or 'arquivo'
+        arquivo_bytes=fs.read()
+        if not arquivo_bytes:
+            return jsonify({'erro':'Arquivo anexado está vazio.'}),400
+        if len(arquivo_bytes)>16*1024*1024:
+            return jsonify({'erro':'Arquivo excede o limite de 16 MB.'}),400
+        try:
+            arquivo_tipo,arquivo_mimetype=wa_media_meta(arquivo_nome,fs.mimetype or '')
+        except Exception as e:
+            return jsonify({'erro':str(e)}),400
 
     ids=[]
     for x in ids_raw:
@@ -8611,6 +8647,10 @@ def api_wa_send_colaboradores():
     ids=sorted(set(ids))
     if not ids:
         return jsonify({'erro':'Nenhum colaborador valido informado.'}),400
+
+    remetente=(session.get('nome') or 'RM Facilities').strip() or 'RM Facilities'
+    prefixo=f'Mensagem enviada por {remetente}:'
+    texto_envio=f'{prefixo}\n\n{texto}' if texto else prefixo
 
     enviados=[]
     falhas=[]
@@ -8627,17 +8667,25 @@ def api_wa_send_colaboradores():
             falhas.append({'funcionario_id':f.id,'nome':f.nome,'erro':'Telefone cadastrado inválido ou ausente.'})
             continue
         try:
-            wa_send_text(tel,texto)
+            if arquivo_bytes:
+                wa_send_media_bytes(tel,arquivo_bytes,arquivo_nome,arquivo_mimetype,texto_envio)
+            else:
+                wa_send_text(tel,texto_envio)
             c=WhatsAppConversa.query.filter_by(numero=tel).first()
             if not c:
                 c=WhatsAppConversa(numero=tel,nome=f.nome or tel)
                 db.session.add(c)
                 db.session.flush()
             c.ultima_msg=utcnow()
-            db.session.add(WhatsAppMensagem(conversa_id=c.id,numero=tel,direcao='out',tipo='texto',conteudo=texto))
+            conteudo_log=texto_envio
+            if arquivo_bytes and not texto:
+                conteudo_log=f'{prefixo}\n\n[{arquivo_tipo}] {arquivo_nome}'
+            elif arquivo_bytes:
+                conteudo_log=f'{texto_envio}\n\n[{arquivo_tipo}] {arquivo_nome}'
+            db.session.add(WhatsAppMensagem(conversa_id=c.id,numero=tel,direcao='out',tipo=(arquivo_tipo or 'texto'),conteudo=conteudo_log,nome_arquivo=(arquivo_nome or None)))
             db.session.commit()
             wa_ai_pause_for(tel,2)
-            enviados.append({'funcionario_id':f.id,'nome':f.nome,'telefone':tel})
+            enviados.append({'funcionario_id':f.id,'nome':f.nome,'telefone':tel,'arquivo':arquivo_nome})
         except Exception as e:
             db.session.rollback()
             falhas.append({'funcionario_id':f.id,'nome':f.nome,'erro':str(e)})

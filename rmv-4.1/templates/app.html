@@ -1087,6 +1087,11 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
           <div id="wa-colab-list" style="margin-top:8px;max-height:220px;overflow:auto;border:1px solid var(--borda);border-radius:10px;padding:8px;background:var(--cinza-cl)"><div class="vazio">Carregando colaboradores...</div></div>
           <div class="f" style="margin-top:10px"><label>Mensagem para envio</label><textarea id="wa-colab-msg" placeholder="Digite a mensagem que será enviada aos colaboradores selecionados" style="min-height:84px"></textarea></div>
+          <div class="g2" style="margin-top:8px">
+            <div class="f"><label>Anexo opcional (imagem ou áudio)</label><input id="wa-colab-arquivo" type="file" accept="image/*,audio/*"></div>
+            <div class="f"><label>Remetente exibido</label><input value="{{ nome }}" disabled></div>
+          </div>
+          <div class="hint" style="margin-top:4px">O sistema inclui automaticamente o nome do usuário logado no texto/caption do envio.</div>
           <div class="brow" style="justify-content:flex-start;gap:8px">
             <button class="btn b-az" onclick="waEnviarColaboradoresSelecionados()">Enviar para selecionados</button>
           </div>
@@ -5426,19 +5431,26 @@ function waSelTodosColab(mark){
 
 async function waEnviarColaboradoresSelecionados(){
   const texto=(document.getElementById('wa-colab-msg')?.value||'').trim();
+  const arq=document.getElementById('wa-colab-arquivo')?.files?.[0]||null;
   const ids=Array.from(document.querySelectorAll('.wa-colab-sel:checked')).map(cb=>parseInt(cb.dataset.id)).filter(Number.isFinite);
   if(!ids.length){showSt('wa-colab-st','Selecione ao menos um colaborador ativo.',true);return;}
-  if(!texto){showSt('wa-colab-st','Digite a mensagem para envio.',true);return;}
+  if(!texto && !arq){showSt('wa-colab-st','Digite uma mensagem ou selecione um anexo.',true);return;}
   const nomesConf=ids.slice(0,5).map(id=>(funcs||[]).find(f=>f.id===id)?.nome||'Colaborador').join(', ');
   const maisConf=ids.length>5?` e mais ${ids.length-5}...`:'';
   const msgConf=texto.length>100?texto.substring(0,100)+'...':texto;
-  if(!confirm(`Você está prestes a enviar mensagem para ${ids.length} colaborador(es):\n\n${nomesConf}${maisConf}\n\nMensagem:\n"${msgConf}"\n\nConfirmar envio?`)) return;
-  showSt('wa-colab-st','Enviando mensagens...',false);
-  const r=await api('/api/whatsapp/send-colaboradores','POST',{funcionario_ids:ids,texto});
+  const anexoConf=arq?`\n\nAnexo:\n${arq.name}`:'';
+  if(!confirm(`Você está prestes a enviar mensagem para ${ids.length} colaborador(es):\n\n${nomesConf}${maisConf}\n\nMensagem:\n"${msgConf||'[sem texto]'}"${anexoConf}\n\nRemetente exibido:\n${N}\n\nConfirmar envio?`)) return;
+  showSt('wa-colab-st',arq?'Enviando mensagens com anexo...':'Enviando mensagens...',false);
+  const fd=new FormData();
+  ids.forEach(id=>fd.append('funcionario_ids',String(id)));
+  fd.append('texto',texto);
+  if(arq) fd.append('arquivo',arq);
+  const r=await apiForm('/api/whatsapp/send-colaboradores',fd,'POST');
   if(r.erro){showSt('wa-colab-st',r.erro,true);return;}
   const falhas=(r.falhas||[]);
   const envioMsg=`Envio concluído. Sucesso: ${r.enviados_count||0}. Falhas: ${falhas.length}.`;
   showSt('wa-colab-st',envioMsg,falhas.length>0);
+  document.getElementById('wa-colab-arquivo').value='';
   if(falhas.length){
     const amostra=falhas.slice(0,5).map(f=>`• ${f.nome||'Colaborador'}: ${f.erro||'Falha'}`).join('\n');
     alert(`Algumas falhas ocorreram:\n${amostra}${falhas.length>5?'\n...':''}`);
