@@ -805,6 +805,12 @@ class Funcionario(db.Model):
     opta_vt=db.Column(db.Boolean,default=True)
     opta_vr=db.Column(db.Boolean,default=True)
     opta_va=db.Column(db.Boolean,default=True)
+    opta_premio_prod=db.Column(db.Boolean,default=False)
+    opta_vale_gasolina=db.Column(db.Boolean,default=False)
+    opta_cesta_natal=db.Column(db.Boolean,default=False)
+    premio_produtividade=db.Column(db.Float,default=0)
+    vale_gasolina=db.Column(db.Float,default=0)
+    cesta_natal=db.Column(db.Float,default=0)
     posto_operacional=db.Column(db.String(150))
     posto_cliente_id=db.Column(db.Integer,db.ForeignKey('cliente.id'),nullable=True)
     endereco=db.Column(db.String(250))
@@ -916,6 +922,9 @@ class BeneficioMensal(db.Model):
     vale_refeicao=db.Column(db.Float,default=0)
     vale_alimentacao=db.Column(db.Float,default=0)
     vale_transporte=db.Column(db.Float,default=0)
+    premio_produtividade=db.Column(db.Float)
+    vale_gasolina=db.Column(db.Float)
+    cesta_natal=db.Column(db.Float)
     criado_em=db.Column(db.DateTime,default=utcnow)
     atualizado_em=db.Column(db.DateTime,default=utcnow,onupdate=utcnow)
     __table_args__=(db.UniqueConstraint('funcionario_id','competencia',name='uq_beneficio_func_comp'),)
@@ -4764,6 +4773,12 @@ def api_atualizar_funcionario(id):
     if 'opta_vt' in d: f.opta_vt=to_bool(d.get('opta_vt'))
     if 'opta_vr' in d: f.opta_vr=to_bool(d.get('opta_vr'))
     if 'opta_va' in d: f.opta_va=to_bool(d.get('opta_va'))
+    if 'opta_premio_prod' in d: f.opta_premio_prod=to_bool(d.get('opta_premio_prod'))
+    if 'opta_vale_gasolina' in d: f.opta_vale_gasolina=to_bool(d.get('opta_vale_gasolina'))
+    if 'opta_cesta_natal' in d: f.opta_cesta_natal=to_bool(d.get('opta_cesta_natal'))
+    if 'premio_produtividade' in d: f.premio_produtividade=to_num(d.get('premio_produtividade'),dec=True)
+    if 'vale_gasolina' in d: f.vale_gasolina=to_num(d.get('vale_gasolina'),dec=True)
+    if 'cesta_natal' in d: f.cesta_natal=to_num(d.get('cesta_natal'),dec=True)
     if 'docs_admissao_ok' in d: f.docs_admissao_ok=to_bool(d.get('docs_admissao_ok'))
     if 'areas' in d:
         ars=[a for a in d.get('areas',[]) if a in ALLOWED_AREAS]
@@ -7302,6 +7317,12 @@ def api_beneficios_lancamentos():
             'opta_vt': True if f.opta_vt is None else bool(f.opta_vt),
             'opta_vr': True if f.opta_vr is None else bool(f.opta_vr),
             'opta_va': True if f.opta_va is None else bool(f.opta_va),
+            'opta_premio_prod': bool(f.opta_premio_prod),
+            'opta_vale_gasolina': bool(f.opta_vale_gasolina),
+            'opta_cesta_natal': bool(f.opta_cesta_natal),
+            'premio_produtividade':_benef_val(b,f,'premio_produtividade'),
+            'vale_gasolina':_benef_val(b,f,'vale_gasolina'),
+            'cesta_natal':_benef_val(b,f,'cesta_natal'),
         })
     return jsonify({'ok':True,'competencia':comp,'itens':itens})
 
@@ -7314,7 +7335,7 @@ def api_beneficios_lancamentos_excluir():
     empresa_id=to_num(d.get('empresa_id')) or None
     func_ids=d.get('funcionarios') or []
     func_ids={int(x) for x in func_ids if str(x).isdigit()}
-    if tipo not in {'vt','vr','va','todos'}:
+    if tipo not in {'vt','vr','va','pp','vg','cn','todos'}:
         return jsonify({'erro':'Tipo inválido para exclusão.'}),400
 
     q=BeneficioMensal.query.filter_by(competencia=comp)
@@ -7340,6 +7361,12 @@ def api_beneficios_lancamentos_excluir():
             elif tipo=='va':
                 if b.dias_va!=0: b.dias_va=0; changed=True
                 if b.vale_alimentacao is not None: b.vale_alimentacao=None; changed=True
+            elif tipo=='pp':
+                if b.premio_produtividade is not None: b.premio_produtividade=None; changed=True
+            elif tipo=='vg':
+                if b.vale_gasolina is not None: b.vale_gasolina=None; changed=True
+            elif tipo=='cn':
+                if b.cesta_natal is not None: b.cesta_natal=None; changed=True
             if changed: excluidos+=1
 
     db.session.commit()
@@ -7354,7 +7381,7 @@ def api_beneficios_lancamentos_limpar():
     empresa_id=to_num(d.get('empresa_id')) or None
     func_ids=d.get('funcionarios') or []
     func_ids={int(x) for x in func_ids if str(x).isdigit()}
-    if tipo not in {'vt','vr','va','todos'}:
+    if tipo not in {'vt','vr','va','pp','vg','cn','todos'}:
         return jsonify({'erro':'Tipo inválido para limpeza.'}),400
 
     q=BeneficioMensal.query.filter_by(competencia=comp)
@@ -7368,26 +7395,20 @@ def api_beneficios_lancamentos_limpar():
     for b in regs:
         changed=False
         if tipo in {'vt','todos'}:
-            if b.dias_vt!=0:
-                b.dias_vt=0
-                changed=True
-            if b.vale_transporte is not None:
-                b.vale_transporte=None
-                changed=True
+            if b.dias_vt!=0: b.dias_vt=0; changed=True
+            if b.vale_transporte is not None: b.vale_transporte=None; changed=True
         if tipo in {'vr','todos'}:
-            if b.dias_vr!=0:
-                b.dias_vr=0
-                changed=True
-            if b.vale_refeicao is not None:
-                b.vale_refeicao=None
-                changed=True
+            if b.dias_vr!=0: b.dias_vr=0; changed=True
+            if b.vale_refeicao is not None: b.vale_refeicao=None; changed=True
         if tipo in {'va','todos'}:
-            if b.dias_va!=0:
-                b.dias_va=0
-                changed=True
-            if b.vale_alimentacao is not None:
-                b.vale_alimentacao=None
-                changed=True
+            if b.dias_va!=0: b.dias_va=0; changed=True
+            if b.vale_alimentacao is not None: b.vale_alimentacao=None; changed=True
+        if tipo in {'pp','todos'}:
+            if b.premio_produtividade is not None: b.premio_produtividade=None; changed=True
+        if tipo in {'vg','todos'}:
+            if b.vale_gasolina is not None: b.vale_gasolina=None; changed=True
+        if tipo in {'cn','todos'}:
+            if b.cesta_natal is not None: b.cesta_natal=None; changed=True
         if changed:
             alterados+=1
 
@@ -7421,6 +7442,9 @@ def api_beneficios_lancamentos_salvar():
         b.vale_refeicao=to_num(it.get('vale_refeicao'),dec=True)
         b.vale_alimentacao=to_num(it.get('vale_alimentacao'),dec=True)
         b.vale_transporte=to_num(it.get('vale_transporte'),dec=True)
+        b.premio_produtividade=to_num(it.get('premio_produtividade'),dec=True)
+        b.vale_gasolina=to_num(it.get('vale_gasolina'),dec=True)
+        b.cesta_natal=to_num(it.get('cesta_natal'),dec=True)
         salvos+=1
     db.session.commit()
     return jsonify({'ok':True,'competencia':comp,'salvos':salvos})
@@ -7463,6 +7487,21 @@ def api_beneficios_vale_refeicao_pdf():
 def api_beneficios_vale_alimentacao_pdf():
     return _api_beneficios_pdf_tipo('vale_alimentacao')
 
+@app.route('/api/beneficios/premio-produtividade/pdf')
+@lr
+def api_beneficios_premio_produtividade_pdf():
+    return _api_beneficios_pdf_tipo('premio_produtividade')
+
+@app.route('/api/beneficios/vale-gasolina/pdf')
+@lr
+def api_beneficios_vale_gasolina_pdf():
+    return _api_beneficios_pdf_tipo('vale_gasolina')
+
+@app.route('/api/beneficios/cesta-natal/pdf')
+@lr
+def api_beneficios_cesta_natal_pdf():
+    return _api_beneficios_pdf_tipo('cesta_natal')
+
 @app.route('/api/beneficios/vale-transporte/xlsx')
 @lr
 def api_beneficios_vale_transporte_xlsx():
@@ -7478,6 +7517,21 @@ def api_beneficios_vale_refeicao_xlsx():
 def api_beneficios_vale_alimentacao_xlsx():
     return _api_beneficios_xlsx_tipo('vale_alimentacao')
 
+@app.route('/api/beneficios/premio-produtividade/xlsx')
+@lr
+def api_beneficios_premio_produtividade_xlsx():
+    return _api_beneficios_xlsx_tipo('premio_produtividade')
+
+@app.route('/api/beneficios/vale-gasolina/xlsx')
+@lr
+def api_beneficios_vale_gasolina_xlsx():
+    return _api_beneficios_xlsx_tipo('vale_gasolina')
+
+@app.route('/api/beneficios/cesta-natal/xlsx')
+@lr
+def api_beneficios_cesta_natal_xlsx():
+    return _api_beneficios_xlsx_tipo('cesta_natal')
+
 @app.route('/beneficios/relatorio')
 @lr
 def beneficios_relatorio_preview():
@@ -7486,6 +7540,9 @@ def beneficios_relatorio_preview():
         'vale-transporte':'vale_transporte',
         'vale-refeicao':'vale_refeicao',
         'vale-alimentacao':'vale_alimentacao',
+        'premio-produtividade':'premio_produtividade',
+        'vale-gasolina':'vale_gasolina',
+        'cesta-natal':'cesta_natal',
     }
     tipo=mapa_tipo.get(tipo_slug)
     if not tipo:
@@ -7499,8 +7556,12 @@ def beneficios_relatorio_preview():
         'vale_transporte':('Vale Transporte','vale_transporte','dias_vt','opta_vt'),
         'vale_refeicao':('Vale Refeição','vale_refeicao','dias_vr','opta_vr'),
         'vale_alimentacao':('Vale Alimentação','vale_alimentacao','dias_va','opta_va'),
+        'premio_produtividade':('Prêmio Produtividade','premio_produtividade','','opta_premio_prod'),
+        'vale_gasolina':('Vale Gasolina','vale_gasolina','','opta_vale_gasolina'),
+        'cesta_natal':('Cesta de Natal','cesta_natal','','opta_cesta_natal'),
     }
     tit,col_valor,col_dias,opta_col=cfg[tipo]
+    is_va=(tipo in {'vale_alimentacao','premio_produtividade','vale_gasolina','cesta_natal'})
 
     q=BeneficioMensal.query.filter_by(competencia=comp)
     if empresa_id:
@@ -7522,7 +7583,6 @@ def beneficios_relatorio_preview():
     empresas=[]
     total_geral=0.0
     qtd_geral=0
-    is_va=(tipo=='vale_alimentacao')
     for emp_id,items in sorted(grupos.items(),key=lambda kv:((emps_map.get(kv[0]).nome if emps_map.get(kv[0]) else 'ZZZ'),kv[0])):
         emp=emps_map.get(emp_id)
         nome_emp=(emp.nome if emp else 'Sem empresa')
@@ -7532,7 +7592,7 @@ def beneficios_relatorio_preview():
         for r in sorted(items,key=lambda x:(funcs_map.get(x.funcionario_id).nome if funcs_map.get(x.funcionario_id) else '')):
             f=funcs_map.get(r.funcionario_id)
             valor=float(getattr(r,col_valor) or 0)
-            dias=int(getattr(r,col_dias) or 0)
+            dias=int(getattr(r,col_dias) or 0) if col_dias else 0
             total=(valor if is_va else (dias*valor if dias>0 else valor))
             total_emp+=total
             linhas.append({
@@ -7589,10 +7649,14 @@ def _api_beneficios_xlsx_tipo(tipo):
         'vale_transporte':('Vale Transporte','vale_transporte','dias_vt','vt','opta_vt'),
         'vale_refeicao':('Vale Refeição','vale_refeicao','dias_vr','vr','opta_vr'),
         'vale_alimentacao':('Vale Alimentação','vale_alimentacao','dias_va','va','opta_va'),
+        'premio_produtividade':('Prêmio Produtividade','premio_produtividade','','pp','opta_premio_prod'),
+        'vale_gasolina':('Vale Gasolina','vale_gasolina','','vg','opta_vale_gasolina'),
+        'cesta_natal':('Cesta de Natal','cesta_natal','','cn','opta_cesta_natal'),
     }
     if tipo not in cfg:
         return jsonify({'erro':'Tipo de beneficio invalido'}),400
     tit,col_valor,col_dias,sigla,opta_col=cfg[tipo]
+    is_fixed=not col_dias or tipo=='vale_alimentacao'
     q=BeneficioMensal.query.filter_by(competencia=comp)
     if empresa_id:
         q=q.filter_by(empresa_id=empresa_id)
@@ -7633,7 +7697,7 @@ def _api_beneficios_xlsx_tipo(tipo):
         ws.append([f'Relatório de {tit} — {nome_emp}'])
         ws.append([f'Competência: {comp_fmt}'])
         ws.append([])
-        if tipo=='vale_alimentacao':
+        if is_fixed:
             headers=['RE','Colaborador','CPF',f'{tit} (R$)','Total (R$)']
         else:
             headers=['RE','Colaborador','CPF','Dias',f'{tit} (R$)','Total (R$)']
@@ -7649,13 +7713,13 @@ def _api_beneficios_xlsx_tipo(tipo):
         for r in sorted(items,key=lambda x:(funcs_map.get(x.funcionario_id).nome if funcs_map.get(x.funcionario_id) else '')):
             f=funcs_map.get(r.funcionario_id)
             valor=float(getattr(r,col_valor) or 0)
-            dias=int(getattr(r,col_dias) or 0)
-            total=(valor if tipo=='vale_alimentacao' else (dias*valor if dias>0 else valor))
+            dias=int(getattr(r,col_dias) or 0) if col_dias else 0
+            total=(valor if is_fixed else (dias*valor if dias>0 else valor))
             total_geral+=total
             re_val=(f.re if f and f.re else (f.matricula if f and f.matricula else ''))
             nome_val=(f.nome if f else f'Funcionario {r.funcionario_id}')
             cpf_val=(f.cpf if f and f.cpf else '')
-            if tipo=='vale_alimentacao':
+            if is_fixed:
                 row=[re_val,nome_val,cpf_val,valor,total]
             else:
                 row=[re_val,nome_val,cpf_val,dias,valor,total]
@@ -7675,7 +7739,7 @@ def _api_beneficios_xlsx_tipo(tipo):
         # Quantidade de funcionários
         qr=ws.max_row+1
         qtd_funcs=len(items)
-        if tipo=='vale_alimentacao':
+        if is_fixed:
             qc=ws.cell(row=qr,column=4,value='Funcionários:')
             qc.font=total_font; qc.alignment=right; qc.fill=total_fill
             qv=ws.cell(row=qr,column=5,value=qtd_funcs)
@@ -7686,7 +7750,7 @@ def _api_beneficios_xlsx_tipo(tipo):
         qv.font=total_font; qv.alignment=right; qv.fill=total_fill
         # Total row
         tr=ws.max_row+1
-        if tipo=='vale_alimentacao':
+        if is_fixed:
             ws.cell(row=tr,column=4,value='Total da empresa:').font=total_font
             tc=ws.cell(row=tr,column=5,value=total_geral)
         else:
@@ -7697,7 +7761,7 @@ def _api_beneficios_xlsx_tipo(tipo):
         tc.alignment=right
         tc.fill=total_fill
         # Column widths: RE, Colaborador, CPF, [Dias,] Valor, Total
-        col_widths=[10,35,18,8,16,16] if tipo!='vale_alimentacao' else [10,35,18,16,16]
+        col_widths=[10,35,18,8,16,16] if not is_fixed else [10,35,18,16,16]
         for i,w in enumerate(col_widths[:len(headers)],1):
             ws.column_dimensions[get_column_letter(i)].width=w
         ws.row_dimensions[1].height=16
@@ -7725,10 +7789,14 @@ def _api_beneficios_pdf_tipo(tipo):
         'vale_transporte':('Vale Transporte','vale_transporte','dias_vt','opta_vt'),
         'vale_refeicao':('Vale Refeição','vale_refeicao','dias_vr','opta_vr'),
         'vale_alimentacao':('Vale Alimentação','vale_alimentacao','dias_va','opta_va'),
+        'premio_produtividade':('Prêmio Produtividade','premio_produtividade','','opta_premio_prod'),
+        'vale_gasolina':('Vale Gasolina','vale_gasolina','','opta_vale_gasolina'),
+        'cesta_natal':('Cesta de Natal','cesta_natal','','opta_cesta_natal'),
     }
     if tipo not in cfg:
         return jsonify({'erro':'Tipo de beneficio invalido'}),400
     tit,col_valor,col_dias,opta_col=cfg[tipo]
+    is_fixed=not col_dias or tipo=='vale_alimentacao'
     q=BeneficioMensal.query.filter_by(competencia=comp)
     if empresa_id:
         q=q.filter_by(empresa_id=empresa_id)
@@ -7813,7 +7881,7 @@ def _api_beneficios_pdf_tipo(tipo):
         story.append(Spacer(1,4))
         story.append(Paragraph(f'Competência: {comp}',st))
         story.append(Spacer(1,6))
-        if tipo=='vale_alimentacao':
+        if is_fixed:
             rows=[['RE','Colaborador','CPF',f'{tit} (R$)',f'Total {tit} (R$)']]
         else:
             rows=[['RE','Colaborador','CPF','Dias',f'{tit} (R$)',f'Total {tit} (R$)']]
@@ -7821,15 +7889,12 @@ def _api_beneficios_pdf_tipo(tipo):
         for r in sorted(items,key=lambda x:(funcs_map.get(x.funcionario_id).nome if funcs_map.get(x.funcionario_id) else '')):
             f=funcs_map.get(r.funcionario_id)
             valor=float(getattr(r,col_valor) or 0)
-            dias=int(getattr(r,col_dias) or 0)
-            if tipo=='vale_alimentacao':
-                total=valor
-            else:
-                total=(dias*valor if dias>0 else valor)
+            dias=int(getattr(r,col_dias) or 0) if col_dias else 0
+            total=valor if is_fixed else (dias*valor if dias>0 else valor)
             total_emp+=total
             re_str=str(f.re if f and f.re else (f.matricula if f and f.matricula else ''))
             cpf_str=(f.cpf if f and f.cpf else '')
-            if tipo=='vale_alimentacao':
+            if is_fixed:
                 rows.append([
                     Paragraph(_esc(re_str),st_cell),
                     Paragraph(_esc(f.nome if f else f'Funcionario {r.funcionario_id}'),st_cell),
@@ -7847,7 +7912,7 @@ def _api_beneficios_pdf_tipo(tipo):
                     Paragraph(_esc(fmt_brl(total)),st_num)
                 ])
         qtd_funcs=len(items)
-        if tipo=='vale_alimentacao':
+        if is_fixed:
             rows.append(['','','', Paragraph('Funcionários:',st_num), Paragraph(_esc(str(qtd_funcs)),st_num)])
             rows.append(['','','', Paragraph('Total da empresa:',st_num), Paragraph(_esc(fmt_brl(total_emp)),st_num)])
             tb=Table(rows,colWidths=[1.8*cm,5.8*cm,3.5*cm,3.2*cm,3.2*cm])
@@ -7873,7 +7938,7 @@ def _api_beneficios_pdf_tipo(tipo):
     doc.build(story)
     buf.seek(0)
     comp_nome=f"{comp[5:7]}-{comp[:4]}" if isinstance(comp,str) and len(comp)>=7 and '-' in comp else str(comp)
-    sigla={'vale_transporte':'vt','vale_refeicao':'vr','vale_alimentacao':'va'}.get(tipo,'beneficio')
+    sigla={'vale_transporte':'vt','vale_refeicao':'vr','vale_alimentacao':'va','premio_produtividade':'pp','vale_gasolina':'vg','cesta_natal':'cn'}.get(tipo,'beneficio')
     nome=f"relatorio_{sigla}_competencia_{comp_nome}.pdf"
     return send_file(buf,mimetype='application/pdf',as_attachment=False,download_name=nome)
 
@@ -9796,7 +9861,13 @@ with app.app_context():
         'posto_cliente_id INTEGER',
         'opta_vt BOOLEAN DEFAULT 1',
         'opta_vr BOOLEAN DEFAULT 1',
-        'opta_va BOOLEAN DEFAULT 1'
+        'opta_va BOOLEAN DEFAULT 1',
+        'opta_premio_prod BOOLEAN DEFAULT 0',
+        'opta_vale_gasolina BOOLEAN DEFAULT 0',
+        'opta_cesta_natal BOOLEAN DEFAULT 0',
+        'premio_produtividade FLOAT DEFAULT 0',
+        'vale_gasolina FLOAT DEFAULT 0',
+        'cesta_natal FLOAT DEFAULT 0'
     ])
     ensure_cols('cliente',[
         'numero_contrato VARCHAR(60)',
@@ -9812,7 +9883,10 @@ with app.app_context():
     ensure_cols('beneficio_mensal',[
         'dias_vt INTEGER DEFAULT 0',
         'dias_vr INTEGER DEFAULT 0',
-        'dias_va INTEGER DEFAULT 0'
+        'dias_va INTEGER DEFAULT 0',
+        'premio_produtividade FLOAT DEFAULT 0',
+        'vale_gasolina FLOAT DEFAULT 0',
+        'cesta_natal FLOAT DEFAULT 0'
     ])
     ensure_cols('funcionario_arquivo',[
         'ass_status VARCHAR(20) DEFAULT "nao_solicitada"',

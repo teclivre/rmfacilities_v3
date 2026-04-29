@@ -1272,9 +1272,9 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="g4">
           <div class="f"><label>Competência</label><input id="ben-comp" type="month"></div>
           <div class="f"><label>Empresa</label><select id="ben-emp"><option value="">Todas</option></select></div>
-          <div class="f"><label>Buscar colaborador / matrícula</label><input id="ben-busca" placeholder="Ex: Joana ou 395" oninput="renderBeneficiosAtivos();renderBeneficioPorTipo('vt','tb-benef-vt');renderBeneficioPorTipo('vr','tb-benef-vr');renderBeneficioPorTipo('va','tb-benef-va')"></div>
-          <div class="f"><label>Posto</label><select id="ben-posto" onchange="renderBeneficiosAtivos();renderBeneficioPorTipo('vt','tb-benef-vt');renderBeneficioPorTipo('vr','tb-benef-vr');renderBeneficioPorTipo('va','tb-benef-va')"><option value="">Todos os postos</option></select></div>
-          <div class="f"><label>Optante</label><select id="ben-opta" onchange="renderBeneficiosAtivos();renderBeneficioPorTipo('vt','tb-benef-vt');renderBeneficioPorTipo('vr','tb-benef-vr');renderBeneficioPorTipo('va','tb-benef-va')">
+          <div class="f"><label>Buscar colaborador / matrícula</label><input id="ben-busca" placeholder="Ex: Joana ou 395" oninput="renderBeneficiosAtivos();renderBeneficioPorTipo('vt','tb-benef-vt');renderBeneficioPorTipo('vr','tb-benef-vr');renderBeneficioPorTipo('va','tb-benef-va');renderBeneficioPorTipo('pp','tb-benef-pp');renderBeneficioPorTipo('vg','tb-benef-vg');renderBeneficioPorTipo('cn','tb-benef-cn')"></div>
+          <div class="f"><label>Posto</label><select id="ben-posto" onchange="renderBeneficiosAtivos();renderBeneficioPorTipo('vt','tb-benef-vt');renderBeneficioPorTipo('vr','tb-benef-vr');renderBeneficioPorTipo('va','tb-benef-va');renderBeneficioPorTipo('pp','tb-benef-pp');renderBeneficioPorTipo('vg','tb-benef-vg');renderBeneficioPorTipo('cn','tb-benef-cn')"><option value="">Todos os postos</option></select></div>
+          <div class="f"><label>Optante</label><select id="ben-opta" onchange="renderBeneficiosAtivos();renderBeneficioPorTipo('vt','tb-benef-vt');renderBeneficioPorTipo('vr','tb-benef-vr');renderBeneficioPorTipo('va','tb-benef-va');renderBeneficioPorTipo('pp','tb-benef-pp');renderBeneficioPorTipo('vg','tb-benef-vg');renderBeneficioPorTipo('cn','tb-benef-cn')">
             <option value="">Todos</option>
             <option value="optantes">Somente optantes</option>
             <option value="nao_optantes">Somente não-optantes</option>
@@ -1294,6 +1294,9 @@ document.addEventListener('DOMContentLoaded',()=>{
           <button id="ben-tab-vt" class="btn b-gh b-sm" onclick="switchBenTab('vt',this)">Vale Transporte</button>
           <button id="ben-tab-vr" class="btn b-gh b-sm" onclick="switchBenTab('vr',this)">Vale Refeição</button>
           <button id="ben-tab-va" class="btn b-gh b-sm" onclick="switchBenTab('va',this)">Vale Alimentação</button>
+          <button id="ben-tab-pp" class="btn b-gh b-sm" onclick="switchBenTab('pp',this)">Prêmio Produtividade</button>
+          <button id="ben-tab-vg" class="btn b-gh b-sm" onclick="switchBenTab('vg',this)">Vale Gasolina</button>
+          <button id="ben-tab-cn" class="btn b-gh b-sm" onclick="switchBenTab('cn',this)">Cesta de Natal</button>
           <button id="ben-tab-relatorios" class="btn b-gh b-sm" onclick="switchBenTab('relatorios',this)">Relatórios</button>
         </div>
 
@@ -1311,7 +1314,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
         <div id="ben-pane-ativos" class="tbl-wrap" style="margin-top:10px">
           <table class="tbl">
-            <thead><tr><th style="width:32px"><input type="checkbox" id="ben-check-all" title="Marcar/desmarcar todos" onchange="toggleAllBenSel(this.checked)"></th><th>Matrícula</th><th>Colaborador</th><th>Posto</th><th>Empresa</th><th>Valor VT</th><th>Valor VR</th><th>Valor VA (mensal)</th></tr></thead>
+            <thead><tr><th style="width:32px"><input type="checkbox" id="ben-check-all" title="Marcar/desmarcar todos" onchange="toggleAllBenSel(this.checked)"></th><th>Matrícula</th><th>Colaborador</th><th>Posto</th><th>Empresa</th><th>VT</th><th>VR</th><th>VA</th><th>Prêmio Prod.</th><th>Vale Gasolina</th><th>Cesta Natal</th></tr></thead>
             <tbody id="tb-benef-ativos"></tbody>
           </table>
         </div>
@@ -1334,6 +1337,24 @@ document.addEventListener('DOMContentLoaded',()=>{
             <tbody id="tb-benef-va"></tbody>
           </table>
         </div>
+        <div id="ben-pane-pp" class="tbl-wrap" style="margin-top:10px;display:none">
+          <table class="tbl">
+            <thead><tr><th style="width:32px"></th><th>Matrícula</th><th>Colaborador</th><th>Posto</th><th>Empresa</th><th>Prêmio Produtividade (R$)</th><th>Total (mensal)</th></tr></thead>
+            <tbody id="tb-benef-pp"></tbody>
+          </table>
+        </div>
+        <div id="ben-pane-vg" class="tbl-wrap" style="margin-top:10px;display:none">
+          <table class="tbl">
+            <thead><tr><th style="width:32px"></th><th>Matrícula</th><th>Colaborador</th><th>Posto</th><th>Empresa</th><th>Vale Gasolina (R$)</th><th>Total (mensal)</th></tr></thead>
+            <tbody id="tb-benef-vg"></tbody>
+          </table>
+        </div>
+        <div id="ben-pane-cn" class="tbl-wrap" style="margin-top:10px;display:none">
+          <table class="tbl">
+            <thead><tr><th style="width:32px"></th><th>Matrícula</th><th>Colaborador</th><th>Posto</th><th>Empresa</th><th>Cesta de Natal (R$)</th><th>Total (mensal)</th></tr></thead>
+            <tbody id="tb-benef-cn"></tbody>
+          </table>
+        </div>
         <div id="ben-pane-relatorios" class="tbl-wrap" style="margin-top:10px;display:none">
           <div class="g3">
             <div class="card" style="padding:12px">
@@ -1350,6 +1371,21 @@ document.addEventListener('DOMContentLoaded',()=>{
               <div class="card-header"><span class="card-title">Vale Alimentação</span></div>
               <p style="margin:8px 0 12px 0;font-size:13px;color:#5d6f82">Visualize cálculos e depois baixe PDF/XLSX.</p>
               <button class="btn b-ghv b-sm" onclick="abrirPreviaBeneficio('va')">Abrir prévia VA</button>
+            </div>
+            <div class="card" style="padding:12px">
+              <div class="card-header"><span class="card-title">Prêmio Produtividade</span></div>
+              <p style="margin:8px 0 12px 0;font-size:13px;color:#5d6f82">Visualize cálculos e depois baixe PDF/XLSX.</p>
+              <button class="btn b-ghv b-sm" onclick="abrirPreviaBeneficio('pp')">Abrir prévia PP</button>
+            </div>
+            <div class="card" style="padding:12px">
+              <div class="card-header"><span class="card-title">Vale Gasolina</span></div>
+              <p style="margin:8px 0 12px 0;font-size:13px;color:#5d6f82">Visualize cálculos e depois baixe PDF/XLSX.</p>
+              <button class="btn b-ghv b-sm" onclick="abrirPreviaBeneficio('vg')">Abrir prévia VG</button>
+            </div>
+            <div class="card" style="padding:12px">
+              <div class="card-header"><span class="card-title">Cesta de Natal</span></div>
+              <p style="margin:8px 0 12px 0;font-size:13px;color:#5d6f82">Visualize cálculos e depois baixe PDF/XLSX.</p>
+              <button class="btn b-ghv b-sm" onclick="abrirPreviaBeneficio('cn')">Abrir prévia CN</button>
             </div>
           </div>
           <div class="card" style="margin-top:14px;border:1px solid #8b1a1a;background:rgba(80,0,0,.25);padding:14px">
@@ -1805,6 +1841,18 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="f" style="display:flex;align-items:center;gap:8px;padding-top:22px">
           <input type="checkbox" id="fopta-va" checked style="width:16px;height:16px">
           <label for="fopta-va" style="margin:0;font-weight:500">Optante VA</label>
+        </div>
+        <div class="f" style="display:flex;align-items:center;gap:8px;padding-top:22px">
+          <input type="checkbox" id="fopta-pp" style="width:16px;height:16px">
+          <label for="fopta-pp" style="margin:0;font-weight:500">Prêmio Produtividade</label>
+        </div>
+        <div class="f" style="display:flex;align-items:center;gap:8px;padding-top:22px">
+          <input type="checkbox" id="fopta-vg" style="width:16px;height:16px">
+          <label for="fopta-vg" style="margin:0;font-weight:500">Vale Gasolina</label>
+        </div>
+        <div class="f" style="display:flex;align-items:center;gap:8px;padding-top:22px">
+          <input type="checkbox" id="fopta-cn" style="width:16px;height:16px">
+          <label for="fopta-cn" style="margin:0;font-weight:500">Cesta de Natal</label>
         </div>
       </div>
       <div class="f"><label>Áreas com acesso</label>
@@ -3888,6 +3936,9 @@ function preencherFormFuncionario(f,titulo='Editar funcionário'){
   document.getElementById('fopta-vt').checked=f.opta_vt!==false;
   document.getElementById('fopta-vr').checked=f.opta_vr!==false;
   document.getElementById('fopta-va').checked=f.opta_va!==false;
+  document.getElementById('fopta-pp').checked=!!f.opta_premio_prod;
+  document.getElementById('fopta-vg').checked=!!f.opta_vale_gasolina;
+  document.getElementById('fopta-cn').checked=!!f.opta_cesta_natal;
   areaChecks(f.areas||[]);
 }
 
@@ -4139,6 +4190,9 @@ async function salvarFuncionario(){
     opta_vt:document.getElementById('fopta-vt').checked,
     opta_vr:document.getElementById('fopta-vr').checked,
     opta_va:document.getElementById('fopta-va').checked,
+    opta_premio_prod:document.getElementById('fopta-pp').checked,
+    opta_vale_gasolina:document.getElementById('fopta-vg').checked,
+    opta_cesta_natal:document.getElementById('fopta-cn').checked,
     areas
   };
   const r=id ? await api('/api/funcionarios/'+id,'PUT',d) : await api('/api/funcionarios','POST',d);
@@ -4917,6 +4971,9 @@ function selecionarTodosBen(){
   renderBeneficioPorTipo('vt','tb-benef-vt');
   renderBeneficioPorTipo('vr','tb-benef-vr');
   renderBeneficioPorTipo('va','tb-benef-va');
+  renderBeneficioPorTipo('pp','tb-benef-pp');
+  renderBeneficioPorTipo('vg','tb-benef-vg');
+  renderBeneficioPorTipo('cn','tb-benef-cn');
   atualizarContadorSel();
 }
 
@@ -4926,12 +4983,15 @@ function limparSelecaoBen(){
   renderBeneficioPorTipo('vt','tb-benef-vt');
   renderBeneficioPorTipo('vr','tb-benef-vr');
   renderBeneficioPorTipo('va','tb-benef-va');
+  renderBeneficioPorTipo('pp','tb-benef-pp');
+  renderBeneficioPorTipo('vg','tb-benef-vg');
+  renderBeneficioPorTipo('cn','tb-benef-cn');
   atualizarContadorSel();
 }
 
 function switchBenTab(tab,btn){
   benTab=tab;
-  ['ativos','vt','vr','va','relatorios'].forEach(t=>{
+  ['ativos','vt','vr','va','pp','vg','cn','relatorios'].forEach(t=>{
     const pane=document.getElementById('ben-pane-'+t);
     const b=document.getElementById('ben-tab-'+t);
     if(pane)pane.style.display=t===tab?'block':'none';
@@ -4940,12 +5000,15 @@ function switchBenTab(tab,btn){
   if(tab==='vt') renderBeneficioPorTipo('vt','tb-benef-vt');
   else if(tab==='vr') renderBeneficioPorTipo('vr','tb-benef-vr');
   else if(tab==='va') renderBeneficioPorTipo('va','tb-benef-va');
+  else if(tab==='pp') renderBeneficioPorTipo('pp','tb-benef-pp');
+  else if(tab==='vg') renderBeneficioPorTipo('vg','tb-benef-vg');
+  else if(tab==='cn') renderBeneficioPorTipo('cn','tb-benef-cn');
   else if(tab==='ativos') renderBeneficiosAtivos();
   if(btn && btn.scrollIntoView) btn.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});
 }
 
 function benPreviewUrlByTab(tab){
-  const mapa={vt:'vale-transporte',vr:'vale-refeicao',va:'vale-alimentacao'};
+  const mapa={vt:'vale-transporte',vr:'vale-refeicao',va:'vale-alimentacao',pp:'premio-produtividade',vg:'vale-gasolina',cn:'cesta-natal'};
   const tipo=mapa[tab];
   if(!tipo) return '';
   let url='/beneficios/relatorio?tipo='+encodeURIComponent(tipo)+'&competencia='+encodeURIComponent(benComp())+'&empresa_id='+encodeURIComponent(benEmp());
@@ -4954,8 +5017,8 @@ function benPreviewUrlByTab(tab){
 }
 
 async function abrirPreviaBeneficio(tab){
-  if(tab!=='vt' && tab!=='vr' && tab!=='va'){
-    showSt('st-benef','Selecione VT, VR ou VA para abrir a prévia.',true);
+  if(!['vt','vr','va','pp','vg','cn'].includes(tab)){
+    showSt('st-benef','Selecione VT, VR, VA, PP, VG ou CN para abrir a prévia.',true);
     return;
   }
   benTab=tab;
@@ -4970,21 +5033,21 @@ async function abrirPreviaBeneficio(tab){
 
 async function abrirPreviaBeneficioAtivo(){
   if(benTab==='ativos' || benTab==='relatorios'){
-    showSt('st-benef','Selecione VT, VR ou VA para abrir a prévia.',true);
+    showSt('st-benef','Selecione VT, VR, VA, PP, VG ou CN para abrir a prévia.',true);
     return;
   }
   await abrirPreviaBeneficio(benTab);
 }
 
 function benTipoApiAtual(){
-  if(benTab==='vt' || benTab==='vr' || benTab==='va') return benTab;
+  if(['vt','vr','va','pp','vg','cn'].includes(benTab)) return benTab;
   return '';
 }
 
 async function limparLancamentosBeneficioAbaAtual(){
   const tipo=benTipoApiAtual();
   if(!tipo){
-    showSt('st-benef','A limpeza só está disponível nas abas VT, VR e VA.',true);
+    showSt('st-benef','A limpeza só está disponível nas abas VT, VR, VA, PP, VG e CN.',true);
     return;
   }
   const msg=benSelecionados.size>0
@@ -5005,7 +5068,7 @@ async function limparLancamentosBeneficioAbaAtual(){
 async function excluirLancamentosBeneficioAbaAtual(){
   const tipo=benTipoApiAtual();
   if(!tipo){
-    showSt('st-benef','A exclusão só está disponível nas abas VT, VR e VA.',true);
+    showSt('st-benef','A exclusão só está disponível nas abas VT, VR, VA, PP, VG e CN.',true);
     return;
   }
   const qtd=benSelecionados.size>0?`${benSelecionados.size} colaborador(es) selecionado(s)`:` competência ${benComp()}`;
@@ -5134,7 +5197,7 @@ function beneficiosFiltrados(tipoOpta){
     let okOpta=true;
     if(optaFiltro==='optantes'||optaFiltro==='nao_optantes'){
       const tipo=tipoOpta||benTab;
-      const optaKey=tipo==='vt'?'opta_vt':tipo==='vr'?'opta_vr':tipo==='va'?'opta_va':null;
+        const optaKey={vt:'opta_vt',vr:'opta_vr',va:'opta_va',pp:'opta_premio_prod',vg:'opta_vale_gasolina',cn:'opta_cesta_natal'}[tipo]||null;
       if(optaKey){
         const isOpta=it[optaKey]!==false;
         okOpta=(optaFiltro==='optantes')?isOpta:!isOpta;
@@ -5167,11 +5230,11 @@ function benAtualizarModeloLocal(fid,patch){
 }
 
 function benValorEdit(fid,tipo){
-  const campos={vt:'vale_transporte',vr:'vale_refeicao',va:'vale_alimentacao'};
+  const campos={vt:'vale_transporte',vr:'vale_refeicao',va:'vale_alimentacao',pp:'premio_produtividade',vg:'vale_gasolina',cn:'cesta_natal'};
   const valor=numBR(document.getElementById(`ben-base-${tipo}-val-${fid}`)?.value||'0');
   benAtualizarModeloLocal(fid,{[campos[tipo]]:valor});
-  if(tipo==='va'){
-    const totalEl=document.getElementById(`ben-va-total-${fid}`);
+  if(tipo==='va'||tipo==='pp'||tipo==='vg'||tipo==='cn'){
+    const totalEl=document.getElementById(`ben-${tipo}-total-${fid}`);
     if(totalEl) totalEl.textContent='R$ '+moneyPt(valor);
   }else{
     benTotal(fid,tipo);
@@ -5216,7 +5279,7 @@ function renderBeneficiosAtivos(){
   if(!tb)return;
   const lista=beneficiosFiltrados();
   if(!lista.length){
-    tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:16px;color:#999">Nenhum colaborador ativo para os filtros selecionados.</td></tr>';
+    tb.innerHTML='<tr><td colspan="11" style="text-align:center;padding:16px;color:#999">Nenhum colaborador ativo para os filtros selecionados.</td></tr>';
     atualizarContadorSel();
     return;
   }
@@ -5225,6 +5288,9 @@ function renderBeneficiosAtivos(){
     const vtTag=it.opta_vt===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
     const vrTag=it.opta_vr===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
     const vaTag=it.opta_va===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
+    const ppTag=it.opta_premio_prod===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
+    const vgTag=it.opta_vale_gasolina===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
+    const cnTag=it.opta_cesta_natal===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
     return`<tr class="row-clickable" onclick="toggleBenSelRow(${it.funcionario_id})">
     <td style="text-align:center"><input type="checkbox" class="ben-sel-cb" data-fid="${it.funcionario_id}" ${chk} onchange="toggleBenSel(${it.funcionario_id},this.checked)" onclick="event.stopPropagation()"></td>
     <td>${it.re||it.matricula||'—'}</td>
@@ -5234,6 +5300,9 @@ function renderBeneficiosAtivos(){
     <td><input id="ben-base-vt-val-${it.funcionario_id}" value="${moneyPt(it.vale_transporte||0)}" style="width:110px" oninput="benValorEdit(${it.funcionario_id},'vt')" onchange="benValorEdit(${it.funcionario_id},'vt')" onclick="event.stopPropagation()">${vtTag}</td>
     <td><input id="ben-base-vr-val-${it.funcionario_id}" value="${moneyPt(it.vale_refeicao||0)}" style="width:110px" oninput="benValorEdit(${it.funcionario_id},'vr')" onchange="benValorEdit(${it.funcionario_id},'vr')" onclick="event.stopPropagation()">${vrTag}</td>
     <td><input id="ben-base-va-val-${it.funcionario_id}" value="${moneyPt(it.vale_alimentacao||0)}" style="width:110px" oninput="benValorEdit(${it.funcionario_id},'va')" onchange="benValorEdit(${it.funcionario_id},'va')" onclick="event.stopPropagation()">${vaTag}</td>
+    <td><input id="ben-base-pp-val-${it.funcionario_id}" value="${moneyPt(it.premio_produtividade||0)}" style="width:110px" oninput="benValorEdit(${it.funcionario_id},'pp')" onchange="benValorEdit(${it.funcionario_id},'pp')" onclick="event.stopPropagation()">${ppTag}</td>
+    <td><input id="ben-base-vg-val-${it.funcionario_id}" value="${moneyPt(it.vale_gasolina||0)}" style="width:110px" oninput="benValorEdit(${it.funcionario_id},'vg')" onchange="benValorEdit(${it.funcionario_id},'vg')" onclick="event.stopPropagation()">${vgTag}</td>
+    <td><input id="ben-base-cn-val-${it.funcionario_id}" value="${moneyPt(it.cesta_natal||0)}" style="width:110px" oninput="benValorEdit(${it.funcionario_id},'cn')" onchange="benValorEdit(${it.funcionario_id},'cn')" onclick="event.stopPropagation()">${cnTag}</td>
   </tr>`;
   }).join('');
   atualizarContadorSel();
@@ -5258,6 +5327,22 @@ function renderBeneficioPorTipo(tipo,tbId){
       <td>${it.empresa_nome||'—'}</td>
       <td>R$ ${moneyPt(numBR(document.getElementById('ben-base-va-val-'+it.funcionario_id)?.value||it.vale_alimentacao||0))}</td>
       <td id="ben-va-total-${it.funcionario_id}">R$ ${moneyPt(numBR(document.getElementById('ben-base-va-val-'+it.funcionario_id)?.value||it.vale_alimentacao||0))}</td>
+    </tr>`;
+    }).join('');
+    return;
+  }
+  if(tipo==='pp'||tipo==='vg'||tipo==='cn'){
+    const campoVal={pp:'premio_produtividade',vg:'vale_gasolina',cn:'cesta_natal'}[tipo];
+    tb.innerHTML=lista.map(it=>{
+      const chk=benSelecionados.has(it.funcionario_id)?'checked':'';
+      return`<tr class="row-clickable" onclick="toggleBenSelRow(${it.funcionario_id})">
+      <td style="text-align:center"><input type="checkbox" class="ben-sel-cb" data-fid="${it.funcionario_id}" ${chk} onchange="toggleBenSel(${it.funcionario_id},this.checked)" onclick="event.stopPropagation()"></td>
+      <td>${it.matricula||'—'}</td>
+      <td>${it.nome||''}</td>
+      <td>${it.posto_operacional||'Reserva tecnica'}</td>
+      <td>${it.empresa_nome||'—'}</td>
+      <td>R$ ${moneyPt(numBR(document.getElementById('ben-base-'+tipo+'-val-'+it.funcionario_id)?.value||it[campoVal]||0))}</td>
+      <td id="ben-${tipo}-total-${it.funcionario_id}">R$ ${moneyPt(numBR(document.getElementById('ben-base-'+tipo+'-val-'+it.funcionario_id)?.value||it[campoVal]||0))}</td>
     </tr>`;
     }).join('');
     return;
@@ -5295,6 +5380,9 @@ async function carregarBeneficiosMensais(){
   renderBeneficioPorTipo('vt','tb-benef-vt');
   renderBeneficioPorTipo('vr','tb-benef-vr');
   renderBeneficioPorTipo('va','tb-benef-va');
+  renderBeneficioPorTipo('pp','tb-benef-pp');
+  renderBeneficioPorTipo('vg','tb-benef-vg');
+  renderBeneficioPorTipo('cn','tb-benef-cn');
   switchBenTab(benTab,document.getElementById('ben-tab-'+benTab));
   showSt('st-benef','Colaboradores carregados para lançamento mensal.',false);
 }
@@ -5317,7 +5405,10 @@ function montarItensBeneficios(opts={}){
     salario:it.salario||0,
     vale_transporte:(incluirBase?numBR(document.getElementById('ben-base-vt-val-'+it.funcionario_id)?.value||it.vale_transporte||0):(it.vale_transporte||0)),
     vale_refeicao:(incluirBase?numBR(document.getElementById('ben-base-vr-val-'+it.funcionario_id)?.value||it.vale_refeicao||0):(it.vale_refeicao||0)),
-    vale_alimentacao:(incluirBase?numBR(document.getElementById('ben-base-va-val-'+it.funcionario_id)?.value||it.vale_alimentacao||0):(it.vale_alimentacao||0))
+    vale_alimentacao:(incluirBase?numBR(document.getElementById('ben-base-va-val-'+it.funcionario_id)?.value||it.vale_alimentacao||0):(it.vale_alimentacao||0)),
+    premio_produtividade:(incluirBase?numBR(document.getElementById('ben-base-pp-val-'+it.funcionario_id)?.value||it.premio_produtividade||0):(it.premio_produtividade||0)),
+    vale_gasolina:(incluirBase?numBR(document.getElementById('ben-base-vg-val-'+it.funcionario_id)?.value||it.vale_gasolina||0):(it.vale_gasolina||0)),
+    cesta_natal:(incluirBase?numBR(document.getElementById('ben-base-cn-val-'+it.funcionario_id)?.value||it.cesta_natal||0):(it.cesta_natal||0))
   }));
 }
 
