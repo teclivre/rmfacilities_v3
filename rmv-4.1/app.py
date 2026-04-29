@@ -7590,32 +7590,13 @@ def _api_beneficios_pdf_tipo(tipo):
             ('BOTTOMPADDING',(0,0),(-1,-1),6),
         ]))
         story.append(hdr)
-        emp_cells=[]
-        for i,item in enumerate(empresas_hdr[:2]):
-            cell=Table([
-                [_logo_flowable_b(item)],
-                [Paragraph(f'<b>{item.get("nome") or "-"}</b><br/><font size="8" color="#4c6072">CNPJ: {item.get("cnpj") or "-"}</font>',ParagraphStyle(f'empb{i}',fontName='Helvetica',fontSize=7.8,leading=9.5))]
-            ],colWidths=[W*0.49])
-            cell.setStyle(TableStyle([
-                ('BOX',(0,0),(-1,-1),0.45,colors.HexColor('#d0d7df')),
-                ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#f8fbff')),
-                ('LEFTPADDING',(0,0),(-1,-1),5),
-                ('RIGHTPADDING',(0,0),(-1,-1),5),
-                ('TOPPADDING',(0,0),(-1,-1),3),
-                ('BOTTOMPADDING',(0,0),(-1,-1),3),
-            ]))
-            emp_cells.append(cell)
-        while len(emp_cells)<2:
-            emp_cells.append(Paragraph('',ParagraphStyle('empbe',fontSize=1)))
-        emp_tbl=Table([emp_cells],colWidths=[W*0.495,W*0.495])
-        emp_tbl.setStyle(TableStyle([
-            ('VALIGN',(0,0),(-1,-1),'TOP'),
-            ('LEFTPADDING',(0,0),(-1,-1),0),
-            ('RIGHTPADDING',(0,0),(-1,-1),0),
-            ('TOPPADDING',(0,0),(-1,-1),0),
-            ('BOTTOMPADDING',(0,0),(-1,-1),2),
-        ]))
-        story.append(emp_tbl)
+        cnpj_str=(emp.cnpj if emp and emp.cnpj else '')
+        emp_info=Paragraph(
+            f'<font color="#4c6072">CNPJ: {cnpj_str}</font>',
+            ParagraphStyle('empinfo',fontName='Helvetica',fontSize=8.5,leading=11)
+        )
+        story.append(emp_info)
+        story.append(Spacer(1,4))
         story.append(Paragraph(f'Competência: {comp}',st))
         story.append(Spacer(1,6))
         if tipo=='vale_alimentacao':
