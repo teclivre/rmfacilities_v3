@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prévia de Relatório de Benefícios</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #f4f7fb; color: #1b2a3a; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .title { margin: 0; font-size: 24px; color: #1f5e8b; }
+    .sub { color: #4a5d72; margin-top: 4px; }
+    .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn { border: none; border-radius: 8px; padding: 10px 14px; cursor: pointer; text-decoration: none; display: inline-block; font-weight: 700; }
+    .btn-primary { background: #1f5e8b; color: #fff; }
+    .btn-green { background: #1c7a44; color: #fff; }
+    .btn-gray { background: #e8edf3; color: #1b2a3a; }
+    .summary { margin-top: 16px; background: #fff; border: 1px solid #d7e0ea; border-radius: 10px; padding: 12px; }
+    .card { margin-top: 14px; background: #fff; border: 1px solid #d7e0ea; border-radius: 10px; overflow: hidden; }
+    .card-hd { padding: 10px 12px; background: #f1f7ff; border-bottom: 1px solid #d7e0ea; font-weight: 700; color: #1f5e8b; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #d7e0ea; padding: 8px; font-size: 13px; }
+    th { background: #1f5e8b; color: #fff; text-align: left; }
+    td.num { text-align: right; }
+    .empty { margin-top: 16px; padding: 14px; background: #fff8e8; border: 1px solid #f2dfb3; border-radius: 8px; }
+    .foot { margin-top: 8px; font-size: 12px; color: #5c6f84; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <h1 class="title">Prévia de {{ titulo }}</h1>
+        <div class="sub">Competência: {{ competencia }}</div>
+      </div>
+      <div class="btns">
+        <a class="btn btn-primary" href="{{ pdf_url }}" target="_blank" rel="noopener">Abrir PDF</a>
+        <a class="btn btn-green" href="{{ xlsx_url }}" target="_blank" rel="noopener">Baixar XLSX</a>
+        <a class="btn btn-gray" href="{{ voltar_url }}">Voltar ao sistema</a>
+      </div>
+    </div>
+
+    <div class="summary">
+      <b>Total geral de funcionários:</b> {{ qtd_geral }}<br>
+      <b>Total geral do benefício:</b> R$ {{ total_geral_fmt }}
+    </div>
+
+    {% if not empresas %}
+      <div class="empty">Nenhum lançamento encontrado para os filtros informados.</div>
+    {% endif %}
+
+    {% for emp in empresas %}
+      <div class="card">
+        <div class="card-hd">{{ emp.nome }}{% if emp.cnpj %} - CNPJ: {{ emp.cnpj }}{% endif %}</div>
+        <table>
+          <thead>
+            <tr>
+              <th>RE</th>
+              <th>Colaborador</th>
+              <th>CPF</th>
+              {% if not is_va %}<th>Dias</th>{% endif %}
+              <th>Valor (R$)</th>
+              <th>Total (R$)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for it in emp.linhas %}
+              <tr>
+                <td>{{ it.re }}</td>
+                <td>{{ it.nome }}</td>
+                <td>{{ it.cpf }}</td>
+                {% if not is_va %}<td class="num">{{ it.dias }}</td>{% endif %}
+                <td class="num">{{ it.valor_fmt }}</td>
+                <td class="num">{{ it.total_fmt }}</td>
+              </tr>
+            {% endfor %}
+            <tr>
+              <td colspan="{% if is_va %}4{% else %}5{% endif %}" class="num"><b>Funcionários:</b></td>
+              <td class="num"><b>{{ emp.qtd }}</b></td>
+            </tr>
+            <tr>
+              <td colspan="{% if is_va %}4{% else %}5{% endif %}" class="num"><b>Total da empresa:</b></td>
+              <td class="num"><b>{{ emp.total_fmt }}</b></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    {% endfor %}
+
+    <div class="foot">A prévia usa os mesmos filtros da aba Benefícios e permite conferir os cálculos antes de baixar os arquivos.</div>
+  </div>
+</body>
+</html>

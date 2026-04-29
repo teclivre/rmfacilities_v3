@@ -1289,12 +1289,13 @@ document.addEventListener('DOMContentLoaded',()=>{
           <button id="ben-tab-vt" class="btn b-gh b-sm" onclick="switchBenTab('vt',this)">Vale Transporte</button>
           <button id="ben-tab-vr" class="btn b-gh b-sm" onclick="switchBenTab('vr',this)">Vale Refeição</button>
           <button id="ben-tab-va" class="btn b-gh b-sm" onclick="switchBenTab('va',this)">Vale Alimentação</button>
+          <button id="ben-tab-relatorios" class="btn b-gh b-sm" onclick="switchBenTab('relatorios',this)">Relatórios</button>
         </div>
 
         <div class="brow" style="justify-content:flex-start;margin-top:10px;flex-wrap:wrap;gap:6px">
           <button class="btn b-gh b-sm" onclick="salvarBeneficiosDias()">Salvar dias (VT/VR)</button>
-          <button class="btn b-ghv b-sm" onclick="gerarPDFBeneficioAtivo()">Gerar PDF</button>
-          <button class="btn b-ghl b-sm" onclick="gerarXLSXBeneficioAtivo()">Exportar XLSX</button>
+          <button class="btn b-ghv b-sm" onclick="abrirPreviaBeneficioAtivo()">Abrir prévia</button>
+          <button class="btn b-ghl b-sm" onclick="abrirPreviaBeneficioAtivo()">Prévia + downloads</button>
           <button class="btn b-az b-sm" onclick="selecionarTodosBen()">Selecionar todos</button>
           <button class="btn b-ghr b-sm" onclick="limparSelecaoBen()">Limpar seleção</button>
           <span id="ben-sel-count" style="font-size:12px;color:#7ecfff;align-self:center"></span>
@@ -1324,6 +1325,25 @@ document.addEventListener('DOMContentLoaded',()=>{
             <thead><tr><th style="width:32px"></th><th>Matrícula</th><th>Colaborador</th><th>Posto</th><th>Empresa</th><th>Valor VA (mensal)</th><th>Total VA (mensal)</th></tr></thead>
             <tbody id="tb-benef-va"></tbody>
           </table>
+        </div>
+        <div id="ben-pane-relatorios" class="tbl-wrap" style="margin-top:10px;display:none">
+          <div class="g3">
+            <div class="card" style="padding:12px">
+              <div class="card-header"><span class="card-title">Vale Transporte</span></div>
+              <p style="margin:8px 0 12px 0;font-size:13px;color:#5d6f82">Visualize cálculos e depois baixe PDF/XLSX.</p>
+              <button class="btn b-ghv b-sm" onclick="abrirPreviaBeneficio('vt')">Abrir prévia VT</button>
+            </div>
+            <div class="card" style="padding:12px">
+              <div class="card-header"><span class="card-title">Vale Refeição</span></div>
+              <p style="margin:8px 0 12px 0;font-size:13px;color:#5d6f82">Visualize cálculos e depois baixe PDF/XLSX.</p>
+              <button class="btn b-ghv b-sm" onclick="abrirPreviaBeneficio('vr')">Abrir prévia VR</button>
+            </div>
+            <div class="card" style="padding:12px">
+              <div class="card-header"><span class="card-title">Vale Alimentação</span></div>
+              <p style="margin:8px 0 12px 0;font-size:13px;color:#5d6f82">Visualize cálculos e depois baixe PDF/XLSX.</p>
+              <button class="btn b-ghv b-sm" onclick="abrirPreviaBeneficio('va')">Abrir prévia VA</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -4878,7 +4898,7 @@ function limparSelecaoBen(){
 
 function switchBenTab(tab,btn){
   benTab=tab;
-  ['ativos','vt','vr','va'].forEach(t=>{
+  ['ativos','vt','vr','va','relatorios'].forEach(t=>{
     const pane=document.getElementById('ben-pane-'+t);
     const b=document.getElementById('ben-tab-'+t);
     if(pane)pane.style.display=t===tab?'block':'none';
@@ -4889,6 +4909,38 @@ function switchBenTab(tab,btn){
   else if(tab==='va') renderBeneficioPorTipo('va','tb-benef-va');
   else if(tab==='ativos') renderBeneficiosAtivos();
   if(btn && btn.scrollIntoView) btn.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});
+}
+
+function benPreviewUrlByTab(tab){
+  const mapa={vt:'vale-transporte',vr:'vale-refeicao',va:'vale-alimentacao'};
+  const tipo=mapa[tab];
+  if(!tipo) return '';
+  let url='/beneficios/relatorio?tipo='+encodeURIComponent(tipo)+'&competencia='+encodeURIComponent(benComp())+'&empresa_id='+encodeURIComponent(benEmp());
+  if(benSelecionados.size>0) url+='&funcionarios='+[...benSelecionados].join(',');
+  return url;
+}
+
+async function abrirPreviaBeneficio(tab){
+  if(tab!=='vt' && tab!=='vr' && tab!=='va'){
+    showSt('st-benef','Selecione VT, VR ou VA para abrir a prévia.',true);
+    return;
+  }
+  benTab=tab;
+  if(!(await persistirBeneficiosAntesExportar())) return;
+  const url=benPreviewUrlByTab(tab);
+  if(!url){
+    showSt('st-benef','Não foi possível montar a URL da prévia.',true);
+    return;
+  }
+  window.open(url,'_blank');
+}
+
+async function abrirPreviaBeneficioAtivo(){
+  if(benTab==='ativos' || benTab==='relatorios'){
+    showSt('st-benef','Selecione VT, VR ou VA para abrir a prévia.',true);
+    return;
+  }
+  await abrirPreviaBeneficio(benTab);
 }
 
 function benComp(){
@@ -5184,27 +5236,11 @@ async function persistirBeneficiosAntesExportar(){
 }
 
 async function gerarPDFBeneficioAtivo(){
-  const mapa={vt:'vale-transporte',vr:'vale-refeicao',va:'vale-alimentacao'};
-  if(benTab==='ativos'){
-    showSt('st-benef','Selecione VT, VR ou VA para gerar o PDF.',true);
-    return;
-  }
-  if(!(await persistirBeneficiosAntesExportar())) return;
-  let url='/api/beneficios/'+mapa[benTab]+'/pdf?competencia='+encodeURIComponent(benComp())+'&empresa_id='+encodeURIComponent(benEmp());
-  if(benSelecionados.size>0) url+='&funcionarios='+[...benSelecionados].join(',');
-  window.open(url,'_blank');
+  await abrirPreviaBeneficioAtivo();
 }
 
 async function gerarXLSXBeneficioAtivo(){
-  const mapa={vt:'vale-transporte',vr:'vale-refeicao',va:'vale-alimentacao'};
-  if(benTab==='ativos'){
-    showSt('st-benef','Selecione VT, VR ou VA para exportar o XLSX.',true);
-    return;
-  }
-  if(!(await persistirBeneficiosAntesExportar())) return;
-  let url='/api/beneficios/'+mapa[benTab]+'/xlsx?competencia='+encodeURIComponent(benComp())+'&empresa_id='+encodeURIComponent(benEmp());
-  if(benSelecionados.size>0) url+='&funcionarios='+[...benSelecionados].join(',');
-  window.open(url,'_blank');
+  await abrirPreviaBeneficioAtivo();
 }
 
 function maskCNPJ(el){

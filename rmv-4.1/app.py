@@ -20,7 +20,7 @@ _strict_origin_check = True
 
 
 
-from flask import Flask, request, jsonify, redirect, render_template, send_file, Response
+from flask import Flask, request, jsonify, redirect, render_template, send_file, Response, url_for
 
 import io
 _strict_origin_check = False
@@ -7382,6 +7382,104 @@ def api_beneficios_vale_refeicao_xlsx():
 def api_beneficios_vale_alimentacao_xlsx():
     return _api_beneficios_xlsx_tipo('vale_alimentacao')
 
+@app.route('/beneficios/relatorio')
+@lr
+def beneficios_relatorio_preview():
+    tipo_slug=(request.args.get('tipo') or 'vale-transporte').strip().lower()
+    mapa_tipo={
+        'vale-transporte':'vale_transporte',
+        'vale-refeicao':'vale_refeicao',
+        'vale-alimentacao':'vale_alimentacao',
+    }
+    tipo=mapa_tipo.get(tipo_slug)
+    if not tipo:
+        return 'Tipo de benefício inválido.',400
+
+    comp=norm_competencia(request.args.get('competencia'))
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    func_ids_raw=request.args.get('funcionarios','').strip()
+    func_ids_filter={int(x) for x in func_ids_raw.split(',') if x.strip().isdigit()} if func_ids_raw else set()
+    cfg={
+        'vale_transporte':('Vale Transporte','vale_transporte','dias_vt','opta_vt'),
+        'vale_refeicao':('Vale Refeição','vale_refeicao','dias_vr','opta_vr'),
+        'vale_alimentacao':('Vale Alimentação','vale_alimentacao','dias_va','opta_va'),
+    }
+    tit,col_valor,col_dias,opta_col=cfg[tipo]
+
+    q=BeneficioMensal.query.filter_by(competencia=comp)
+    if empresa_id:
+        q=q.filter_by(empresa_id=empresa_id)
+
+    funcs_map={f.id:f for f in Funcionario.query.all()}
+    emps_map={e.id:e for e in Empresa.query.all()}
+
+    def _is_optante(b):
+        f=funcs_map.get(b.funcionario_id)
+        return f is None or getattr(f,opta_col,True) is not False
+
+    regs=[b for b in q.all() if float(getattr(b,col_valor) or 0)>0 and _is_optante(b) and (not func_ids_filter or b.funcionario_id in func_ids_filter)]
+
+    grupos={}
+    for r in regs:
+        grupos.setdefault(r.empresa_id or 0,[]).append(r)
+
+    empresas=[]
+    total_geral=0.0
+    qtd_geral=0
+    is_va=(tipo=='vale_alimentacao')
+    for emp_id,items in sorted(grupos.items(),key=lambda kv:((emps_map.get(kv[0]).nome if emps_map.get(kv[0]) else 'ZZZ'),kv[0])):
+        emp=emps_map.get(emp_id)
+        nome_emp=(emp.nome if emp else 'Sem empresa')
+        cnpj_emp=(emp.cnpj if emp and emp.cnpj else '')
+        linhas=[]
+        total_emp=0.0
+        for r in sorted(items,key=lambda x:(funcs_map.get(x.funcionario_id).nome if funcs_map.get(x.funcionario_id) else '')):
+            f=funcs_map.get(r.funcionario_id)
+            valor=float(getattr(r,col_valor) or 0)
+            dias=int(getattr(r,col_dias) or 0)
+            total=(valor if is_va else (dias*valor if dias>0 else valor))
+            total_emp+=total
+            linhas.append({
+                're':str((f.re if f and f.re else (f.matricula if f and f.matricula else '')) or ''),
+                'nome':(f.nome if f else f'Funcionario {r.funcionario_id}'),
+                'cpf':(f.cpf if f and f.cpf else ''),
+                'dias':dias,
+                'valor_fmt':fmt_brl(valor),
+                'total_fmt':fmt_brl(total),
+            })
+        qtd_emp=len(items)
+        total_geral+=total_emp
+        qtd_geral+=qtd_emp
+        empresas.append({
+            'nome':nome_emp,
+            'cnpj':cnpj_emp,
+            'qtd':qtd_emp,
+            'total_fmt':fmt_brl(total_emp),
+            'linhas':linhas,
+        })
+
+    base_tipo=tipo.replace('_','-')
+    query_base=f'competencia={comp}'
+    if empresa_id:
+        query_base+=f'&empresa_id={empresa_id}'
+    if func_ids_raw:
+        query_base+=f'&funcionarios={func_ids_raw}'
+    pdf_url=f"/api/beneficios/{base_tipo}/pdf?{query_base}"
+    xlsx_url=f"/api/beneficios/{base_tipo}/xlsx?{query_base}"
+
+    return render_template(
+        'beneficios_relatorio_preview.html',
+        titulo=tit,
+        competencia=comp,
+        empresas=empresas,
+        is_va=is_va,
+        qtd_geral=qtd_geral,
+        total_geral_fmt=fmt_brl(total_geral),
+        pdf_url=pdf_url,
+        xlsx_url=xlsx_url,
+        voltar_url=url_for('index')
+    )
+
 def _api_beneficios_xlsx_tipo(tipo):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -7681,7 +7779,7 @@ def _api_beneficios_pdf_tipo(tipo):
     comp_nome=f"{comp[5:7]}-{comp[:4]}" if isinstance(comp,str) and len(comp)>=7 and '-' in comp else str(comp)
     sigla={'vale_transporte':'vt','vale_refeicao':'vr','vale_alimentacao':'va'}.get(tipo,'beneficio')
     nome=f"relatorio_{sigla}_competencia_{comp_nome}.pdf"
-    return send_file(buf,mimetype='application/pdf',as_attachment=True,download_name=nome)
+    return send_file(buf,mimetype='application/pdf',as_attachment=False,download_name=nome)
 
 @app.route('/api/dashboard')
 @lr
