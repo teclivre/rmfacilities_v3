@@ -9399,6 +9399,18 @@ with app.app_context():
         'criado_em DATETIME',
         'ass_assinatura_img TEXT',
     ])
+    ensure_cols('ordem_compra',[
+        'empresa_id INTEGER',
+        'solicitante VARCHAR(200)',
+        'fornecedor VARCHAR(200)',
+        'descricao TEXT',
+        'valor REAL DEFAULT 0',
+        'status VARCHAR(50) DEFAULT "Aberta"',
+        'data_emissao VARCHAR(10)',
+        'criado_por VARCHAR(100)',
+        'criado_em DATETIME',
+        'ass_assinatura_img TEXT',
+    ])
     seed(); get_logo()
 
 if __name__=='__main__':
