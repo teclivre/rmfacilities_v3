@@ -1778,6 +1778,11 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="f"><label>Número do contrato</label><input id="mcontrato" placeholder="Ex: CT-2026-001"></div>
         <div class="f"><label>Data de vencimento do contrato</label><input type="date" id="mdt-contrato-venc"></div>
       </div>
+      <div class="g3">
+        <div class="f"><label>Reajuste padrão (%)</label><input id="mreajuste-pct" type="number" step="0.01" placeholder="Ex: 5.00"></div>
+        <div class="f"><label>Data-base reajuste</label><input type="date" id="mreajuste-base"></div>
+        <div class="f"><label>Último reajuste</label><input type="date" id="multimo-reajuste" readonly></div>
+      </div>
       <div class="g2">
         <div class="f"><label>Qtd. funcionários por posto</label><input id="mqtd-posto" type="number" min="0" step="1" placeholder="Ex: 8"></div>
       </div>
@@ -2889,6 +2894,7 @@ async function renderCli(){
       <td><span class="pill ${pc}">${c.status}</span></td>
       <td><div class="tac">
         <button class="btn b-gh b-sm" onclick="event.stopPropagation();emitirCli(${c.id})">Emitir</button>
+        <button class="btn b-gh b-sm" onclick="event.stopPropagation();aplicarReajusteContrato(${c.id},'${c.nome.replace(/'/g,"\\'")}')">Reajuste</button>
         <button class="btn b-ghv b-sm" onclick="event.stopPropagation();openModal('editar',${c.id})">Editar</button>
         <button class="btn b-az b-sm" onclick="event.stopPropagation();verFaturasCliente(${c.id},'${c.nome.replace(/'/g,"\\'")}')">Faturas</button>
         <button class="btn b-ghr b-sm" onclick="event.stopPropagation();excluirCli(${c.id},'${c.nome.replace(/'/g,"\\'")}')">Excluir</button>
@@ -2981,6 +2987,9 @@ async function openModal(modo,id){
   document.getElementById('mid').value='';
   ['mn','mc','mr','mt','me','mcontrato','mqtd-posto','mcep','mend','mnum-end','mcompl','mbairro','mcidade','mestado','mob'].forEach(k=>document.getElementById(k).value='');
   document.getElementById('mdt-contrato-venc').value='';
+  document.getElementById('mreajuste-pct').value='';
+  document.getElementById('mreajuste-base').value='';
+  document.getElementById('multimo-reajuste').value='';
   ['ml','mj','mp','mmel'].forEach(k=>document.getElementById(k).value=0);
   document.getElementById('mdia-fat').value=''; document.getElementById('mdias-fat').value=''; document.getElementById('prev-vencimento').style.display='none';
   document.getElementById('mst').value='Ativo';
@@ -2996,6 +3005,9 @@ async function openModal(modo,id){
     document.getElementById('me').value=c.email||'';
     document.getElementById('mcontrato').value=c.numero_contrato||'';
     document.getElementById('mdt-contrato-venc').value=c.dt_contrato_vencimento||'';
+    document.getElementById('mreajuste-pct').value=(c.reajuste_percentual??'');
+    document.getElementById('mreajuste-base').value=c.reajuste_data_base||'';
+    document.getElementById('multimo-reajuste').value=c.ultimo_reajuste_em||'';
     document.getElementById('mqtd-posto').value=c.qtd_funcionarios_posto||0;
     document.getElementById('mcep').value=c.cep||'';
     maskDoc(document.getElementById('mc'));
@@ -3055,7 +3067,7 @@ async function salvarCliente(){
   if(!nome){alert('Informe o nome.');return;}
   const id=document.getElementById('mid').value;
   const end_fmt=[document.getElementById('mend').value,document.getElementById('mnum-end').value,document.getElementById('mcompl').value,document.getElementById('mbairro').value].filter(Boolean).join(', ')+(document.getElementById('mcidade').value?' — '+document.getElementById('mcidade').value+'/'+(document.getElementById('mestado').value||''):'');
-  const d={nome,cnpj:document.getElementById('mc').value,responsavel:document.getElementById('mr').value,telefone:document.getElementById('mt').value,email:document.getElementById('me').value,numero_contrato:(document.getElementById('mcontrato').value||'').trim(),dt_contrato_vencimento:(document.getElementById('mdt-contrato-venc').value||'').trim()||null,qtd_funcionarios_posto:Math.max(0,parseInt(document.getElementById('mqtd-posto').value||'0',10)||0),cep:document.getElementById('mcep').value,logradouro:document.getElementById('mend').value,numero_end:document.getElementById('mnum-end').value,complemento:document.getElementById('mcompl').value,bairro:document.getElementById('mbairro').value,cidade:document.getElementById('mcidade').value,estado:document.getElementById('mestado').value,empresa_id:parseInt(document.getElementById('memp').value)||null,status:document.getElementById('mst').value,limpeza:numBR(document.getElementById('ml').value),jardinagem:numBR(document.getElementById('mj').value),portaria:numBR(document.getElementById('mp').value),materiais_equip_locacao:numBR(document.getElementById('mmel').value),vencimento:parseInt(document.getElementById('mdia-fat').value)||1,dia_faturamento:parseInt(document.getElementById('mdia-fat').value)||1,dias_faturamento:parseInt(document.getElementById('mdias-fat').value)||30,obs:document.getElementById('mob').value};
+  const d={nome,cnpj:document.getElementById('mc').value,responsavel:document.getElementById('mr').value,telefone:document.getElementById('mt').value,email:document.getElementById('me').value,numero_contrato:(document.getElementById('mcontrato').value||'').trim(),dt_contrato_vencimento:(document.getElementById('mdt-contrato-venc').value||'').trim()||null,reajuste_percentual:numBR(document.getElementById('mreajuste-pct').value),reajuste_data_base:(document.getElementById('mreajuste-base').value||'').trim()||null,qtd_funcionarios_posto:Math.max(0,parseInt(document.getElementById('mqtd-posto').value||'0',10)||0),cep:document.getElementById('mcep').value,logradouro:document.getElementById('mend').value,numero_end:document.getElementById('mnum-end').value,complemento:document.getElementById('mcompl').value,bairro:document.getElementById('mbairro').value,cidade:document.getElementById('mcidade').value,estado:document.getElementById('mestado').value,empresa_id:parseInt(document.getElementById('memp').value)||null,status:document.getElementById('mst').value,limpeza:numBR(document.getElementById('ml').value),jardinagem:numBR(document.getElementById('mj').value),portaria:numBR(document.getElementById('mp').value),materiais_equip_locacao:numBR(document.getElementById('mmel').value),vencimento:parseInt(document.getElementById('mdia-fat').value)||1,dia_faturamento:parseInt(document.getElementById('mdia-fat').value)||1,dias_faturamento:parseInt(document.getElementById('mdias-fat').value)||30,obs:document.getElementById('mob').value};
   const resp=id ? await api('/api/clientes/'+id,'PUT',d) : await api('/api/clientes','POST',d);
   if(resp?.erro){
     showSt('st-cli',resp.erro,true);
@@ -3066,6 +3078,21 @@ async function salvarCliente(){
   markPageClean();
   showSt('st-cli','Cliente salvo!',false); showSt('st-med','Cliente salvo!',false);
   closeModal('cli',true); renderCli();
+}
+
+async function aplicarReajusteContrato(id,nome){
+  const c=todos.find(x=>x.id===id) || {};
+  const padrao=(c.reajuste_percentual||0);
+  const valor=prompt('Percentual de reajuste para '+nome+' (%):', String(padrao||''));
+  if(valor===null) return;
+  const pct=parseFloat(String(valor).replace(',','.'));
+  if(Number.isNaN(pct)){alert('Percentual inválido.');return;}
+  if(!confirm('Aplicar reajuste de '+pct.toFixed(2)+'% no contrato de '+nome+'?')) return;
+  const r=await api('/api/clientes/'+id+'/reajuste','POST',{percentual:pct,atualizar_padrao:true,anotar_obs:true});
+  if(r?.erro){alert(r.erro);return;}
+  todos=await api('/api/clientes');
+  renderCli();
+  alert('Reajuste aplicado com sucesso.\nAntes: '+brl(r.antes_total)+'\nDepois: '+brl(r.depois_total));
 }
 
 async function renderEmps(){

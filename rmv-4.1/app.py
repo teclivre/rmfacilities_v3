@@ -687,6 +687,9 @@ class Cliente(db.Model):
     dia_faturamento=db.Column(db.Integer,default=1)
     dias_faturamento=db.Column(db.Integer,default=30)
     dt_contrato_vencimento=db.Column(db.String(10))
+    reajuste_percentual=db.Column(db.Float,default=0)
+    reajuste_data_base=db.Column(db.String(10))
+    ultimo_reajuste_em=db.Column(db.String(10))
     obs=db.Column(db.Text,default='')
     criado_em=db.Column(db.DateTime,default=utcnow)
     def end_fmt(self):
@@ -3953,6 +3956,50 @@ def api_atualizar_cliente(id):
     db.session.commit()
     return jsonify(c.to_dict())
 
+@app.route('/api/clientes/<int:id>/reajuste',methods=['POST'])
+@lr
+def api_cliente_reajuste(id):
+    c=Cliente.query.get_or_404(id)
+    d=request.json or {}
+    pct=to_num(d.get('percentual'),dec=True)
+    if pct is None:
+        pct=to_num(c.reajuste_percentual,dec=True) or 0
+    try:
+        pct=float(pct or 0)
+    except Exception:
+        return jsonify({'erro':'Percentual de reajuste inválido.'}),400
+    if pct<=-100:
+        return jsonify({'erro':'Percentual deve ser maior que -100%.'}),400
+
+    fator=(100.0+pct)/100.0
+    campos=['limpeza','jardinagem','portaria','materiais_equip_locacao']
+    antes={k:float(getattr(c,k) or 0) for k in campos}
+    for k in campos:
+        setattr(c,k,round((float(getattr(c,k) or 0)*fator),2))
+    depois={k:float(getattr(c,k) or 0) for k in campos}
+
+    hoje=localnow().strftime('%Y-%m-%d')
+    c.ultimo_reajuste_em=hoje
+    if d.get('atualizar_padrao',True):
+        c.reajuste_percentual=pct
+        c.reajuste_data_base=hoje
+    if d.get('anotar_obs',True):
+        linha=f"[Reajuste {hoje}] {pct:+.2f}% aplicado no contrato"
+        c.obs=(f"{(c.obs or '').strip()}\n{linha}").strip()
+
+    db.session.commit()
+    audit_event('cliente_reajuste_contrato','usuario',session.get('uid'),'cliente',c.id,True,
+                {'percentual':pct,'antes_total':sum(antes.values()),'depois_total':sum(depois.values())})
+    return jsonify({
+        'ok':True,
+        'cliente':c.to_dict(),
+        'percentual':pct,
+        'antes':antes,
+        'depois':depois,
+        'antes_total':round(sum(antes.values()),2),
+        'depois_total':round(sum(depois.values()),2)
+    })
+
 @app.route('/api/clientes/<int:id>',methods=['DELETE'])
 @lr
 def api_deletar_cliente(id):
@@ -3965,8 +4012,8 @@ def api_deletar_cliente(id):
 @lr
 def api_clientes_modelo():
     import pandas as pd
-    cab=['nome','cnpj','responsavel','telefone','email','cep','logradouro','numero_end','complemento','bairro','cidade','estado','empresa_id','numero_contrato','qtd_funcionarios_posto','status','limpeza','jardinagem','portaria','materiais_equip_locacao','dia_faturamento','dias_faturamento','obs']
-    exemplo=['Condominio Exemplo','12.345.678/0001-90','Maria Silva','(12) 99123-4567','contato@exemplo.com','12246000','Rua Central','100','','Centro','Sao Jose dos Campos','SP','','CT-2026-001','8','Ativo','1500,00','300,00','2500,00','900,00','1','21','Contrato mensal']
+    cab=['nome','cnpj','responsavel','telefone','email','cep','logradouro','numero_end','complemento','bairro','cidade','estado','empresa_id','numero_contrato','qtd_funcionarios_posto','status','limpeza','jardinagem','portaria','materiais_equip_locacao','dia_faturamento','dias_faturamento','reajuste_percentual','reajuste_data_base','obs']
+    exemplo=['Condominio Exemplo','12.345.678/0001-90','Maria Silva','(12) 99123-4567','contato@exemplo.com','12246000','Rua Central','100','','Centro','Sao Jose dos Campos','SP','','CT-2026-001','8','Ativo','1500,00','300,00','2500,00','900,00','1','21','5,00','2026-04-01','Contrato mensal']
     df = pd.DataFrame([exemplo], columns=cab)
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -4016,6 +4063,8 @@ def api_clientes_import():
                 vencimento=to_num(row.get('vencimento')) or 10,
                 dia_faturamento=to_num(row.get('dia_faturamento')) or 1,
                 dias_faturamento=to_num(row.get('dias_faturamento')) or 30,
+                reajuste_percentual=to_num(row.get('reajuste_percentual'),dec=True),
+                reajuste_data_base=(row.get('reajuste_data_base') or '').strip() or None,
                 obs=(row.get('obs') or '').strip()
             )
             db.session.add(c); prox+=1; criados+=1
@@ -9132,6 +9181,9 @@ with app.app_context():
         'dia_faturamento INTEGER DEFAULT 1',
         'dias_faturamento INTEGER DEFAULT 30',
         'dt_contrato_vencimento VARCHAR(10)',
+        'reajuste_percentual FLOAT DEFAULT 0',
+        'reajuste_data_base VARCHAR(10)',
+        'ultimo_reajuste_em VARCHAR(10)',
     ])
     ensure_cols('beneficio_mensal',[
         'dias_vt INTEGER DEFAULT 0',
