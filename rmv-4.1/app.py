@@ -4283,6 +4283,8 @@ def api_funcionarios_modelo():
 def api_funcionarios_import():
     arq=request.files.get('arquivo')
     if not arq: return jsonify({'erro':'Arquivo nao enviado'}),400
+    modo=(request.form.get('modo') or 'adicionar').strip().lower()
+    atualizar_existentes=modo in ('atualizar','upsert','merge')
 
     try:
         linhas=read_rows_from_upload(arq)
@@ -4291,6 +4293,8 @@ def api_funcionarios_import():
     if not linhas:
         return jsonify({'erro':'Planilha vazia'}),400
     criados=0
+    atualizados=0
+    ignorados=0
     erros=[]
 
     try:
@@ -4308,6 +4312,10 @@ def api_funcionarios_import():
                 # Verifica se já existe funcionário com esse RE
                 f = Funcionario.query.filter_by(re=re_num).first()
                 if f:
+                    if not atualizar_existentes:
+                        ignorados += 1
+                        erros.append(f'Linha {i}: RE {re_num} já existe (ignorado para evitar sobrescrever).')
+                        continue
                     # Atualiza campos do funcionário existente
                     f.matricula = mat
                     f.nome = nome
@@ -4353,6 +4361,7 @@ def api_funcionarios_import():
                     f.docs_admissao_obs = str(row.get('docs_admissao_obs', '') or '').strip()
                     f.obs = str(row.get('obs', '') or '').strip()
                     f.areas = json.dumps(ars, ensure_ascii=False)
+                    atualizados += 1
                 else:
                     f = Funcionario(
                         matricula=mat,
@@ -4406,7 +4415,7 @@ def api_funcionarios_import():
             except Exception as e:
                 erros.append(f'Linha {i}: {str(e)}')
         db.session.commit()
-        return jsonify({'ok': True, 'criados': criados, 'erros': erros})
+        return jsonify({'ok': True, 'criados': criados, 'atualizados': atualizados, 'ignorados': ignorados, 'modo': ('atualizar' if atualizar_existentes else 'adicionar'), 'erros': erros})
     except Exception as e:
         return jsonify({'erro': str(e)}), 400
 

@@ -3523,13 +3523,13 @@ async function importarClientesPlanilha(ev){
 async function importarFuncionariosPlanilha(ev){
   const f=ev.target.files?.[0];
   if(!f)return;
-  const fd=new FormData(); fd.append('arquivo',f);
+  const fd=new FormData(); fd.append('arquivo',f); fd.append('modo','adicionar');
   const r=await fetch('/api/funcionarios/import',{method:'POST',body:fd});
   const d=await r.json();
   if(d.erro){alert(d.erro); ev.target.value=''; return;}
   funcs=await api('/api/funcionarios');
   renderFuncionarios(); fillSSTFuncionarios();
-  showSt('st-rh',`Importação de funcionários concluída. Criados: ${d.criados}.`,d.erros.length>0);
+  showSt('st-rh',`Importação concluída. Criados: ${d.criados||0}. Atualizados: ${d.atualizados||0}. Ignorados: ${d.ignorados||0}.`,(d.erros||[]).length>0);
   if(d.erros.length) alert(d.erros.join('\n'));
   ev.target.value='';
 }
