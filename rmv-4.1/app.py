@@ -7392,17 +7392,21 @@ def _api_beneficios_xlsx_tipo(tipo):
     func_ids_raw=request.args.get('funcionarios','').strip()
     func_ids_filter={int(x) for x in func_ids_raw.split(',') if x.strip().isdigit()} if func_ids_raw else set()
     cfg={
-        'vale_transporte':('Vale Transporte','vale_transporte','dias_vt','vt'),
-        'vale_refeicao':('Vale Refeição','vale_refeicao','dias_vr','vr'),
-        'vale_alimentacao':('Vale Alimentação','vale_alimentacao','dias_va','va'),
+        'vale_transporte':('Vale Transporte','vale_transporte','dias_vt','vt','opta_vt'),
+        'vale_refeicao':('Vale Refeição','vale_refeicao','dias_vr','vr','opta_vr'),
+        'vale_alimentacao':('Vale Alimentação','vale_alimentacao','dias_va','va','opta_va'),
     }
     if tipo not in cfg:
         return jsonify({'erro':'Tipo de beneficio invalido'}),400
-    tit,col_valor,col_dias,sigla=cfg[tipo]
+    tit,col_valor,col_dias,sigla,opta_col=cfg[tipo]
     q=BeneficioMensal.query.filter_by(competencia=comp)
     if empresa_id:
         q=q.filter_by(empresa_id=empresa_id)
-    regs=[b for b in q.all() if float(getattr(b,col_valor) or 0)>0 and (not func_ids_filter or b.funcionario_id in func_ids_filter)]
+    funcs_map_pre={f.id:f for f in Funcionario.query.all()}
+    def _is_optante_x(b):
+        f=funcs_map_pre.get(b.funcionario_id)
+        return f is None or getattr(f,opta_col,True) is not False
+    regs=[b for b in q.all() if float(getattr(b,col_valor) or 0)>0 and _is_optante_x(b) and (not func_ids_filter or b.funcionario_id in func_ids_filter)]
     if not regs:
         return jsonify({'erro':f'Nenhum lançamento de {tit.lower()} com valor para a competência informada.'}),400
 
@@ -7512,17 +7516,21 @@ def _api_beneficios_pdf_tipo(tipo):
     func_ids_raw=request.args.get('funcionarios','').strip()
     func_ids_filter={int(x) for x in func_ids_raw.split(',') if x.strip().isdigit()} if func_ids_raw else set()
     cfg={
-        'vale_transporte':('Vale Transporte','vale_transporte','dias_vt'),
-        'vale_refeicao':('Vale Refeição','vale_refeicao','dias_vr'),
-        'vale_alimentacao':('Vale Alimentação','vale_alimentacao','dias_va'),
+        'vale_transporte':('Vale Transporte','vale_transporte','dias_vt','opta_vt'),
+        'vale_refeicao':('Vale Refeição','vale_refeicao','dias_vr','opta_vr'),
+        'vale_alimentacao':('Vale Alimentação','vale_alimentacao','dias_va','opta_va'),
     }
     if tipo not in cfg:
         return jsonify({'erro':'Tipo de beneficio invalido'}),400
-    tit,col_valor,col_dias=cfg[tipo]
+    tit,col_valor,col_dias,opta_col=cfg[tipo]
     q=BeneficioMensal.query.filter_by(competencia=comp)
     if empresa_id:
         q=q.filter_by(empresa_id=empresa_id)
-    regs=[b for b in q.all() if float(getattr(b,col_valor) or 0)>0 and (not func_ids_filter or b.funcionario_id in func_ids_filter)]
+    funcs_map_pre={f.id:f for f in Funcionario.query.all()}
+    def _is_optante(b):
+        f=funcs_map_pre.get(b.funcionario_id)
+        return f is None or getattr(f,opta_col,True) is not False
+    regs=[b for b in q.all() if float(getattr(b,col_valor) or 0)>0 and _is_optante(b) and (not func_ids_filter or b.funcionario_id in func_ids_filter)]
     if not regs:
         return jsonify({'erro':f'Nenhum lançamento de {tit.lower()} com valor para a competência informada.'}),400
 
