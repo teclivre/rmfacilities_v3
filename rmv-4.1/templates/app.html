@@ -39,11 +39,17 @@ function abrirModalFatDetalhe(id){
     html+=`<div><b>Emissão:</b> ${m.dt_emissao||''} <b>Vencimento:</b> ${m.dt_vencimento||''}</div>`;
     html+=`<div><b>Valor:</b> <span style='color:var(--verde);font-weight:700'>${brl(m.valor_bruto)}</span></div>`;
     html+=`<div><b>Status:</b> <span class='pill'>${m.status||''}</span></div>`;
+    if(m.dt_pagamento){html+=`<div><b>Pago em:</b> ${m.dt_pagamento} ${m.forma_pagamento?'('+m.forma_pagamento+')':''}</div>`;}
     if(m.svcs&&m.svcs.length){
       html+='<div style="margin-top:10px"><b>Serviços:</b><ul style="margin:0 0 0 18px">'+m.svcs.map(s=>`<li>${(s&&s.desc)||''} ${(s&&s.vtot)?'— '+brl(s.vtot):''}</li>`).join('')+'</ul></div>';
     }
     if(m.observacoes){html+=`<div style='margin-top:10px'><b>Observações:</b> ${m.observacoes}</div>`;}
-    html+=`<div style='margin-top:10px'><button class='btn b-az b-sm' onclick='editarFatura(${m.id})'>Editar</button> <button class='btn b-ci b-sm' onclick='cancelarFatura(${m.id},"${(m.numero||'').replace(/"/g,"&quot;")}")' ${m.status==='cancelada'?'disabled':''}>Cancelar Fatura</button></div>`;
+    html+=`<div style='margin-top:14px;display:flex;flex-wrap:wrap;gap:6px'>
+      <button class='btn b-az b-sm' onclick='editarFatura(${m.id})'>Editar</button>
+      <button class='btn b-sm' style='background:#28a745;color:#fff' onclick='marcarComoPaga(${m.id},"${(m.numero||'').replace(/"/g,"&quot;")}")' ${(m.status==='paga'||m.status==='cancelada')?'disabled':''}>✓ Marcar como paga</button>
+      <button class='btn b-gh b-sm' onclick='enviarFaturaPorEmail(${m.id},"${(m.numero||'').replace(/"/g,"&quot;")}")'>✉ Enviar por e-mail</button>
+      <button class='btn b-ci b-sm' onclick='cancelarFatura(${m.id},"${(m.numero||'').replace(/"/g,"&quot;")}")' ${m.status==='cancelada'?'disabled':''}>Cancelar Fatura</button>
+    </div>`;
     body.innerHTML=html;
   });
 }
@@ -55,6 +61,26 @@ async function cancelarFatura(id,numero){
   if(r&&r.erro){alert(r.erro);return;}
   fecharModalFatDetalhe();
   carregarFaturamento();
+}
+async function marcarComoPaga(id,numero){
+  const dt=prompt('Data do pagamento (AAAA-MM-DD):',new Date().toISOString().split('T')[0]);
+  if(!dt)return;
+  const forma=prompt('Forma de pagamento (ex: PIX, Transferência, Boleto):', 'PIX') || '';
+  const r=await api('/api/medicoes/'+id+'/status','PUT',{status:'paga',dt_pagamento:dt,forma_pagamento:forma});
+  if(r&&r.erro){alert(r.erro);return;}
+  fecharModalFatDetalhe();
+  renderHist();
+  if(typeof carregarFaturamento==='function') carregarFaturamento();
+  loadDash();
+  toast('Fatura '+numero+' marcada como paga!','ok');
+}
+async function enviarFaturaPorEmail(id,numero){
+  const email=prompt('E-mail do destinatário (deixe em branco para usar o do cliente):','');
+  if(email===null)return;
+  const body2=email?{email}:{};
+  const r=await api('/api/medicoes/'+id+'/enviar-email','POST',body2);
+  if(r&&r.erro){alert('Erro: '+r.erro);return;}
+  toast('Fatura '+numero+' enviada para '+(r.enviado_para||'o cliente')+'!','ok');
 }
 document.getElementById('modal-fat-detalhe').addEventListener('click',function(e){if(e.target===this)fecharModalFatDetalhe();});
 // === FATURAMENTO (Financeiro) ===
@@ -273,6 +299,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button class="metric metric-btn vd" type="button" onclick="abrirDashboardDestino('nova-medicao')" aria-label="Abrir medição do mês"><div class="n" id="d-med">—</div><div class="l">Medições este mês <span class="metric-go">Abrir</span></div></button>
         <button class="metric metric-btn vm" type="button" onclick="abrirDashboardDestino('nova-medicao')" aria-label="Abrir pendências de emissão"><div class="n" id="d-pen">—</div><div class="l">Sem emissão <span class="metric-go">Abrir</span></div></button>
         <button class="metric metric-btn vm" type="button" onclick="abrirDashboardDestino('historico')" aria-label="Abrir inadimplência"><div class="n" id="d-inad">—</div><div class="l">Inadimplência <span class="metric-go">Abrir</span></div></button>
+        <button class="metric metric-btn" style="--metric-c:#c33" type="button" onclick="abrirDashboardDestino('historico')" aria-label="Faturas vencidas"><div class="n" id="d-venc" style="color:#c33">—</div><div class="l">Faturas vencidas <span class="metric-go">Ver</span></div></button>
         <button class="metric metric-btn" type="button" onclick="abrirDashboardDestino('historico')" aria-label="Abrir taxa de emissão"><div class="n" id="d-tx">—</div><div class="l">Taxa de emissão <span class="metric-go">Abrir</span></div></button>
         <button class="metric metric-btn lj" type="button" onclick="abrirDashboardDestino('clientes')" aria-label="Abrir ticket médio"><div class="n" id="d-tm">—</div><div class="l">Ticket médio <span class="metric-go">Abrir</span></div></button>
       </div>
@@ -667,7 +694,9 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div class="brow" style="margin-top:14px">
         <button class="btn b-ci" onclick="limparMed()">Limpar</button>
         <button class="btn b-ghv" onclick="registrar()">Registrar emissão</button>
+        <button class="btn b-gh" onclick="salvarRascunho()">Salvar Rascunho</button>
         <button class="btn b-lj b-lg" id="btn-pdf" onclick="gerarPDF()">⬇ Gerar PDF</button>
+        <button class="btn b-vd" id="btn-emitir" onclick="emitirMedicao()" style="display:none">✓ Emitir</button>
         <button class="btn b-az" id="btn-med-assinatura" onclick="solicitarAssinaturaMedicaoAtual()" style="display:none">✍ Solicitar assinatura</button>
       </div>
     </div>
@@ -1524,6 +1553,9 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
       <div class="g2">
         <div class="f"><label>Número do contrato</label><input id="mcontrato" placeholder="Ex: CT-2026-001"></div>
+        <div class="f"><label>Data de vencimento do contrato</label><input type="date" id="mdt-contrato-venc"></div>
+      </div>
+      <div class="g2">
         <div class="f"><label>Qtd. funcionários por posto</label><input id="mqtd-posto" type="number" min="0" step="1" placeholder="Ex: 8"></div>
       </div>
       <div class="sep"></div>
@@ -1910,6 +1942,10 @@ async function loadDash(){
     const inadData=d.alerta_inadimplencia||{qtd:0,total:0};
     inad.textContent='R$'+parseFloat(inadData.total||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   }
+  const dvenc=document.getElementById('d-venc');
+  if(dvenc){
+    dvenc.textContent=(d.total_vencidas||0)+' ('+brl(d.valor_vencidas||0)+')';
+  }
   const tx=document.getElementById('d-tx');
   const tm=document.getElementById('d-tm');
   if(tx) tx.textContent=((d.taxa_emissao??0).toString().replace('.',','))+'%';
@@ -1924,6 +1960,7 @@ async function loadDash(){
     const asoInval=d.alerta_sem_aso_valido||{qtd:0,itens:[]};
     const inad=d.alerta_inadimplencia||{qtd:0,total:0,itens:[]};
     const certs=d.alerta_certificados||{qtd:0,itens:[]};
+    const contratos=d.alerta_contratos||{qtd:0,itens:[]};
     const calcItens=(calc.itens||[]).length
       ? calc.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.titulo||'—'}</div><div style="font-size:11px;color:#8aa">${it.descricao||''}</div></div>`).join('')
       : '';
@@ -1942,7 +1979,10 @@ async function loadDash(){
     const certItens=(certs.itens||[]).length
       ? certs.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.nome||'—'} <span style="opacity:.7">(${it.origem||it.tipo||'certificado'})</span></div><div style="font-size:11px;color:#8aa">Vence em ${it.validade||'—'} · faltam ${it.dias_restantes} dia(s)</div></div>`).join('')
       : '';
-    if((aso.itens||[]).length || (calc.itens||[]).length || (benPend.itens||[]).length || (asoInval.itens||[]).length || (inad.itens||[]).length || (certs.itens||[]).length){
+    const contratosItens=(contratos.itens||[]).length
+      ? contratos.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.cliente_nome||'—'}</div><div style="font-size:11px;color:#8aa">${it.vencido?'Vencido em':'Vence em'} ${it.vencimento||'—'} · ${it.vencido?'vencido há '+Math.abs(it.dias)+' dia(s)':'faltam '+it.dias+' dia(s)'}</div></div>`).join('')
+      : '';
+    if((aso.itens||[]).length || (calc.itens||[]).length || (benPend.itens||[]).length || (asoInval.itens||[]).length || (inad.itens||[]).length || (certs.itens||[]).length || (contratos.itens||[]).length){
       al.style.display='grid';
       const cards=[];
       if((inad.itens||[]).length){
@@ -1950,6 +1990,12 @@ async function loadDash(){
           <div class="card-header" style="margin-bottom:8px"><span class="card-title">Inadimplência</span><div style="display:flex;align-items:center;gap:8px"><span class="pill p-vm">${inad.qtd||0}</span><span class="metric-go" style="font-size:9px">Ir</span></div></div>
           <div style="font-size:12px;color:#b03;margin-bottom:6px;font-weight:700">Total em atraso: ${brl(inad.total||0)}</div>
           <div>${inadItens}</div>
+        </button>`);
+      }
+      if((contratos.itens||[]).length){
+        cards.push(`<button type="button" class="card dash-alert-btn" style="margin-bottom:0;text-align:left" onclick="abrirDashboardDestino('clientes')">
+          <div class="card-header" style="margin-bottom:8px"><span class="card-title">Contratos vencendo / vencidos</span><div style="display:flex;align-items:center;gap:8px"><span class="pill p-vm">${contratos.qtd||0}</span><span class="metric-go" style="font-size:9px">Ver</span></div></div>
+          <div>${contratosItens}</div>
         </button>`);
       }
       if((calc.itens||[]).length){
@@ -2384,6 +2430,8 @@ function limparMed(){
   medicaoAtualId=null;
   const bAss=document.getElementById('btn-med-assinatura');
   if(bAss) bAss.style.display='none';
+  const bEmit=document.getElementById('btn-emitir');
+  if(bEmit) bEmit.style.display='none';
   clearCli(); document.getElementById('svcs').innerHTML=''; svcId=0;
   ['obs','ass1','ass2'].forEach(id=>document.getElementById(id).value='');
   loadProxNum();
@@ -2393,23 +2441,75 @@ function limparMed(){
   calc();
 }
 
-async function renderHist(){
+async function salvarRascunho(){
+  const cNome=cliAtual?.nome||document.getElementById('bcli').value||'';
+  if(!cNome){showSt('st-med','Informe o cliente.',true);return;}
+  const svcs=getSvcs(); const ee=document.getElementById('emp-sel');
+  const d={numero:document.getElementById('nmed').value,tipo:document.getElementById('tipo-doc').value,
+    mes_ref:document.getElementById('mesref').value,dt_emissao:document.getElementById('dtem').value,
+    dt_vencimento:document.getElementById('dtvenc').value,
+    empresa_id:parseInt(ee.value)||null,empresa_nome:parseInt(ee.value)?(ee.options[ee.selectedIndex]?.text||''):'',
+    cliente_id:cliAtual?.id||null,cliente_nome:cNome,cliente_cnpj:document.getElementById('c-cnpj').value,
+    cliente_end:document.getElementById('c-end').value,cliente_resp:document.getElementById('c-resp').value,
+    servicos:svcs,observacoes:document.getElementById('obs').value,
+    ass_empresa:document.getElementById('ass1').value,ass_cliente:document.getElementById('ass2').value,
+    status:'rascunho'};
+  let r;
+  if(medicaoAtualId){r=await api('/api/medicoes/'+medicaoAtualId,'PUT',d);}
+  else{r=await api('/api/medicoes','POST',d);if(r&&!r.erro&&r.id)medicaoAtualId=r.id;}
+  if(r&&r.erro){showSt('st-med',r.erro,true);return;}
+  const bEmit=document.getElementById('btn-emitir');
+  if(bEmit) bEmit.style.display='';
+  showSt('st-med','Rascunho salvo!',false);
+  renderHist(1);
+}
+
+async function emitirMedicao(){
+  if(!medicaoAtualId){showSt('st-med','Salve primeiro.',true);return;}
+  if(!confirm('Emitir esta medição? O status será alterado para Emitida.'))return;
+  const r=await api('/api/medicoes/'+medicaoAtualId+'/status','PUT',{status:'emitida'});
+  if(r&&r.erro){alert(r.erro);return;}
+  const bEmit=document.getElementById('btn-emitir');
+  if(bEmit) bEmit.style.display='none';
+  showSt('st-med','Medição emitida com sucesso!',false);
+  renderHist(1);
+  loadDash();
+}
+
+let _histPage=1;
+const _histPerPage=20;
+async function renderHist(page){
+  if(page!=null) _histPage=page;
   const q=(document.getElementById('hist-busca').value||'').toLowerCase();
-  const lista=await api('/api/medicoes');
-  const fil=q?lista.filter(m=>m.cliente_nome?.toLowerCase().includes(q)||m.numero?.includes(q)):lista;
+  const mes=(document.getElementById('hist-mes')?.value||'');
+  const status=(document.getElementById('hist-status')?.value||'');
+  const params=new URLSearchParams();
+  if(q) params.set('cliente',q);
+  if(mes) params.set('mes_ref',mes);
+  if(status) params.set('status',status);
+  params.set('page',String(_histPage));
+  params.set('per_page',String(_histPerPage));
+  const resp=await api('/api/medicoes?'+params.toString());
+  const lista=resp.items||resp;
+  const total=resp.total;
+  const pages=resp.pages;
   const el=document.getElementById('hist-lista');
-  if(!fil.length){el.innerHTML='<div class="vazio">Nenhuma medição encontrada.</div>';return;}
-  el.innerHTML=fil.map(m=>{
-    const stCor=m.status==='cancelada'?'p-vm':m.status==='rascunho'?'p-ci':'p-vd';
-    const stLabel=m.status==='cancelada'?'Cancelada':m.status==='rascunho'?'Rascunho':'Emitida';
+  const hoje2=new Date().toISOString().split('T')[0];
+  if(!lista.length){el.innerHTML='<div class="vazio">Nenhuma medição encontrada.</div>';_renderHistPag(total,pages);return;}
+  el.innerHTML=lista.map(m=>{
+    const stCor=m.status==='cancelada'?'p-vm':m.status==='rascunho'?'p-ci':m.status==='paga'?'p-vd':'p-gh';
+    const stLabel=m.status==='cancelada'?'Cancelada':m.status==='rascunho'?'Rascunho':m.status==='paga'?'Paga':'Emitida';
     const assCor=m.assinatura_status==='assinado'?'p-vd':m.assinatura_status==='pendente'?'p-lj':'p-ci';
     const assLabel=m.assinatura_status==='assinado'?'Assinado':m.assinatura_status==='pendente'?'Assinatura pendente':'Sem assinatura';
-    return`<div class="hist-item row-clickable" onclick="abrirMedicao(${m.id})">
+    const isVencHist=m.dt_vencimento&&m.dt_vencimento<hoje2&&m.status==='emitida';
+    return`<div class="hist-item row-clickable${isVencHist?' hist-vencida':''}" onclick="abrirMedicao(${m.id})" style="${isVencHist?'border-left:3px solid #c33':''}">
     <div>
       <div class="hist-tit">${m.tipo||'Medição'} ${m.numero} — ${m.cliente_nome}</div>
       <div class="hist-sub">${m.empresa_nome||'Empresa não informada'} · Ref.: ${fmtMes(m.mes_ref)} · Emitida em ${m.criado_fmt}</div>
+      ${isVencHist?`<div style="font-size:11px;color:#c33;font-weight:700">Vencida em ${m.dt_vencimento}</div>`:''}
+      ${m.dt_pagamento?`<div style="font-size:11px;color:#28a745">Pago em ${m.dt_pagamento}${m.forma_pagamento?' ('+m.forma_pagamento+')':''}</div>`:''}
     </div>
-    <div style="display:flex;align-items:center;gap:10px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <span class="pill ${stCor}">${stLabel}</span>
       <span class="pill ${assCor}">${assLabel}</span>
       <div>
@@ -2419,12 +2519,39 @@ async function renderHist(){
       <button class="btn b-gh b-sm" onclick="event.stopPropagation();abrirMedicao(${m.id})">Abrir</button>
       <button class="btn b-lj b-sm" onclick="event.stopPropagation();reimprimirPDF(${m.id})">⬇ PDF</button>
       <button class="btn b-ghv b-sm" onclick="event.stopPropagation();imprimirPDF(${m.id})">🖨 Imprimir</button>
+      <button class="btn b-gh b-sm" title="Duplicar medição" onclick="event.stopPropagation();duplicarMedicao(${m.id},'${(m.numero||'').replace(/'/g,"\\'")}')">Duplicar</button>
       ${m.status!=='cancelada'&&m.assinatura_status!=='assinado'?`<button class="btn b-az b-sm" onclick="event.stopPropagation();solicitarAssinaturaMedicao(${m.id})">Assinatura</button>`:''}
       ${m.status!=='cancelada'?`<button class="btn b-ci b-sm" onclick="event.stopPropagation();cancelarMedicao(${m.id},'${(m.numero||'').replace(/'/g,"\\'")}')">Cancelar</button>`:''}
       <button class="btn b-ghr b-sm" onclick="event.stopPropagation();delMed(${m.id})">×</button>
     </div>
   </div>`;
   }).join('');
+  _renderHistPag(total,pages);
+}
+
+function _renderHistPag(total,pages){
+  let pag=document.getElementById('hist-pag');
+  if(!pag){
+    const el=document.getElementById('hist-lista');
+    pag=document.createElement('div');
+    pag.id='hist-pag';
+    pag.style.cssText='display:flex;gap:8px;align-items:center;justify-content:center;padding:12px 0;flex-wrap:wrap';
+    el.after(pag);
+  }
+  if(!total&&!pages){pag.innerHTML='';return;}
+  const p=_histPage; const pg=pages||1;
+  pag.innerHTML=`<button class="btn b-sm" ${p<=1?'disabled':''} onclick="renderHist(${p-1})">Anterior</button>
+    <span style="font-size:12px;color:#6d7a8c">Página ${p} de ${pg} · ${total||0} registros</span>
+    <button class="btn b-sm" ${p>=pg?'disabled':''} onclick="renderHist(${p+1})">Próxima</button>`;
+}
+
+async function duplicarMedicao(id,numero){
+  if(!confirm('Duplicar a medição '+numero+'? Será criada uma cópia como Rascunho.'))return;
+  const r=await api('/api/medicoes/'+id+'/duplicar','POST',{});
+  if(r&&r.erro){alert(r.erro);return;}
+  toast('Medição duplicada com nº '+r.numero+'. Abrindo como rascunho...','ok');
+  renderHist(1);
+  if(r.id) setTimeout(()=>abrirMedicao(r.id),600);
 }
 
 async function solicitarAssinaturaMedicao(id){
@@ -2447,6 +2574,8 @@ async function abrirMedicao(id){
   medicaoAtualId=id;
   const bAss=document.getElementById('btn-med-assinatura');
   if(bAss) bAss.style.display='';
+  const bEmit=document.getElementById('btn-emitir');
+  if(bEmit) bEmit.style.display=(m.status==='rascunho'?'':'none');
   nav('nova-medicao',document.querySelector('[onclick*=nova-medicao]'),true);
   document.getElementById('tipo-doc').value=m.tipo||'Medição de Serviços';
   document.getElementById('nmed').value=m.numero||'';
@@ -2536,6 +2665,7 @@ async function renderCli(){
       <td><div class="tac">
         <button class="btn b-gh b-sm" onclick="event.stopPropagation();emitirCli(${c.id})">Emitir</button>
         <button class="btn b-ghv b-sm" onclick="event.stopPropagation();openModal('editar',${c.id})">Editar</button>
+        <button class="btn b-az b-sm" onclick="event.stopPropagation();verFaturasCliente(${c.id},'${c.nome.replace(/'/g,"\\'")}')">Faturas</button>
         <button class="btn b-ghr b-sm" onclick="event.stopPropagation();excluirCli(${c.id},'${c.nome.replace(/'/g,"\\'")}')">Excluir</button>
       </div></td>
     </tr>`;
@@ -2545,6 +2675,32 @@ async function renderCli(){
 }
 
 function emitirCli(id){selCli(id);nav('nova-medicao',document.querySelector('[onclick*=nova-medicao]'));}
+
+async function verFaturasCliente(clienteId, clienteNome){
+  const modal=document.getElementById('modal-fat-detalhe');
+  const body=document.getElementById('fat-detalhe-body');
+  modal.style.display='block';
+  body.innerHTML='Carregando faturas de '+clienteNome+'...';
+  const resp=await api('/api/medicoes?cliente_id='+clienteId+'&per_page=50&page=1');
+  const lista=resp.items||resp||[];
+  const hoje2=new Date().toISOString().split('T')[0];
+  if(!lista.length){body.innerHTML=`<div style='font-size:16px;font-weight:700;margin-bottom:12px'>Faturas — ${clienteNome}</div><div style='color:#999'>Nenhuma fatura encontrada.</div>`;return;}
+  let html=`<div style='font-size:16px;font-weight:700;margin-bottom:12px'>Faturas — ${clienteNome}</div>`;
+  html+='<div style="max-height:70vh;overflow-y:auto">';
+  html+=lista.map(m=>{
+    const st=m.status||'emitida';
+    const isV=m.dt_vencimento&&m.dt_vencimento<hoje2&&st==='emitida';
+    const cor=st==='paga'?'#28a745':st==='cancelada'?'#888':isV?'#c33':'#205d8a';
+    const label=st==='paga'?'Paga':st==='cancelada'?'Cancelada':isV?'VENCIDA':st.charAt(0).toUpperCase()+st.slice(1);
+    return`<div style="padding:8px 0;border-bottom:1px solid #eee;cursor:pointer" onclick="fecharModalFatDetalhe();abrirMedicao(${m.id})">
+      <div style="font-weight:700">${m.tipo||'Medição'} Nº ${m.numero||'—'} — ${fmtMes(m.mes_ref)}</div>
+      <div style="font-size:12px;color:#888">${m.empresa_nome||'—'} · Emit. ${m.dt_emissao||'—'} · Venc. ${m.dt_vencimento||'—'}</div>
+      <div style="font-size:13px;font-weight:700;color:var(--verde)">${brl(m.valor_bruto)} <span style="font-size:11px;color:${cor};font-weight:600">[${label}]</span></div>
+    </div>`;
+  }).join('');
+  html+='</div>';
+  body.innerHTML=html;
+}
 
 const MODAL_FORM_IDS=['cli','func','emp','usr','ponto-edit'];
 const _modalDirty={};
@@ -2599,6 +2755,7 @@ async function excluirCli(id,nome){
 async function openModal(modo,id){
   document.getElementById('mid').value='';
   ['mn','mc','mr','mt','me','mcontrato','mqtd-posto','mcep','mend','mnum-end','mcompl','mbairro','mcidade','mestado','mob'].forEach(k=>document.getElementById(k).value='');
+  document.getElementById('mdt-contrato-venc').value='';
   ['ml','mj','mp','mmel'].forEach(k=>document.getElementById(k).value=0);
   document.getElementById('mdia-fat').value=''; document.getElementById('mdias-fat').value=''; document.getElementById('prev-vencimento').style.display='none';
   document.getElementById('mst').value='Ativo';
@@ -2613,6 +2770,7 @@ async function openModal(modo,id){
     document.getElementById('mt').value=c.telefone||'';
     document.getElementById('me').value=c.email||'';
     document.getElementById('mcontrato').value=c.numero_contrato||'';
+    document.getElementById('mdt-contrato-venc').value=c.dt_contrato_vencimento||'';
     document.getElementById('mqtd-posto').value=c.qtd_funcionarios_posto||0;
     document.getElementById('mcep').value=c.cep||'';
     maskDoc(document.getElementById('mc'));
@@ -2672,7 +2830,7 @@ async function salvarCliente(){
   if(!nome){alert('Informe o nome.');return;}
   const id=document.getElementById('mid').value;
   const end_fmt=[document.getElementById('mend').value,document.getElementById('mnum-end').value,document.getElementById('mcompl').value,document.getElementById('mbairro').value].filter(Boolean).join(', ')+(document.getElementById('mcidade').value?' — '+document.getElementById('mcidade').value+'/'+(document.getElementById('mestado').value||''):'');
-  const d={nome,cnpj:document.getElementById('mc').value,responsavel:document.getElementById('mr').value,telefone:document.getElementById('mt').value,email:document.getElementById('me').value,numero_contrato:(document.getElementById('mcontrato').value||'').trim(),qtd_funcionarios_posto:Math.max(0,parseInt(document.getElementById('mqtd-posto').value||'0',10)||0),cep:document.getElementById('mcep').value,logradouro:document.getElementById('mend').value,numero_end:document.getElementById('mnum-end').value,complemento:document.getElementById('mcompl').value,bairro:document.getElementById('mbairro').value,cidade:document.getElementById('mcidade').value,estado:document.getElementById('mestado').value,empresa_id:parseInt(document.getElementById('memp').value)||null,status:document.getElementById('mst').value,limpeza:numBR(document.getElementById('ml').value),jardinagem:numBR(document.getElementById('mj').value),portaria:numBR(document.getElementById('mp').value),materiais_equip_locacao:numBR(document.getElementById('mmel').value),vencimento:parseInt(document.getElementById('mdia-fat').value)||1,dia_faturamento:parseInt(document.getElementById('mdia-fat').value)||1,dias_faturamento:parseInt(document.getElementById('mdias-fat').value)||30,obs:document.getElementById('mob').value};
+  const d={nome,cnpj:document.getElementById('mc').value,responsavel:document.getElementById('mr').value,telefone:document.getElementById('mt').value,email:document.getElementById('me').value,numero_contrato:(document.getElementById('mcontrato').value||'').trim(),dt_contrato_vencimento:(document.getElementById('mdt-contrato-venc').value||'').trim()||null,qtd_funcionarios_posto:Math.max(0,parseInt(document.getElementById('mqtd-posto').value||'0',10)||0),cep:document.getElementById('mcep').value,logradouro:document.getElementById('mend').value,numero_end:document.getElementById('mnum-end').value,complemento:document.getElementById('mcompl').value,bairro:document.getElementById('mbairro').value,cidade:document.getElementById('mcidade').value,estado:document.getElementById('mestado').value,empresa_id:parseInt(document.getElementById('memp').value)||null,status:document.getElementById('mst').value,limpeza:numBR(document.getElementById('ml').value),jardinagem:numBR(document.getElementById('mj').value),portaria:numBR(document.getElementById('mp').value),materiais_equip_locacao:numBR(document.getElementById('mmel').value),vencimento:parseInt(document.getElementById('mdia-fat').value)||1,dia_faturamento:parseInt(document.getElementById('mdia-fat').value)||1,dias_faturamento:parseInt(document.getElementById('mdias-fat').value)||30,obs:document.getElementById('mob').value};
   const resp=id ? await api('/api/clientes/'+id,'PUT',d) : await api('/api/clientes','POST',d);
   if(resp?.erro){
     showSt('st-cli',resp.erro,true);

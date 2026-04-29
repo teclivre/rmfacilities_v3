@@ -375,7 +375,7 @@ def api_check_numero():
     if exclude_id: q=q.filter(Medicao.id!=exclude_id)
     return jsonify({'existe':q.first() is not None})
 
-@app.route('/api/medicoes/<int:id>',methods=['GET','DELETE'])
+@app.route('/api/medicoes/<int:id>',methods=['GET','DELETE','PUT'])
 @lr
 def api_medicao_detalhe(id):
     m = Medicao.query.get_or_404(id)
@@ -391,6 +391,19 @@ def api_medicao_detalhe(id):
         db.session.delete(m)
         db.session.commit()
         return jsonify({'ok':True})
+    if request.method=='PUT':
+        d=request.json or {}
+        for campo in ['numero','tipo','cliente_nome','cliente_cnpj','cliente_end','cliente_resp',
+                      'empresa_nome','mes_ref','dt_emissao','dt_vencimento','observacoes',
+                      'ass_empresa','ass_cliente','status']:
+            if campo in d: setattr(m, campo, d[campo])
+        if 'empresa_id' in d: m.empresa_id=to_num(d['empresa_id'])
+        if 'cliente_id' in d: m.cliente_id=to_num(d['cliente_id'])
+        if 'servicos' in d: m.servicos=json.dumps(d['servicos'],ensure_ascii=False)
+        if 'valor_bruto' in d: m.valor_bruto=float(d['valor_bruto'] or 0)
+        db.session.commit()
+        audit_event('medicao_editada','usuario',session.get('uid'),'medicao',m.id,True,{'numero':m.numero,'status':m.status})
+        return jsonify({'ok':True,'id':m.id})
     return jsonify(m.to_dict())
 
 @app.route('/api/proximo-numero')
@@ -404,6 +417,9 @@ def api_medicoes():
     mes_ref = request.args.get('mes_ref', '').strip()
     cliente = request.args.get('cliente', '').strip().lower()
     status = request.args.get('status', '').strip().lower()
+    cliente_id = to_num(request.args.get('cliente_id'))
+    page = max(1, to_num(request.args.get('page', 1)) or 1)
+    per_page = max(1, min(200, to_num(request.args.get('per_page', 0)) or 0))
     qr = Medicao.query
     if mes_ref:
         qr = qr.filter(Medicao.mes_ref == mes_ref)
@@ -411,8 +427,15 @@ def api_medicoes():
         qr = qr.filter((Medicao.cliente_nome.ilike(f'%{cliente}%')) | (Medicao.cliente_cnpj.ilike(f'%{cliente}%')))
     if status:
         qr = qr.filter(Medicao.status == status)
+    if cliente_id:
+        qr = qr.filter(Medicao.cliente_id == cliente_id)
     try:
-        lista = qr.order_by(Medicao.dt_emissao.desc(), Medicao.id.desc()).all()
+        qr = qr.order_by(Medicao.dt_emissao.desc(), Medicao.id.desc())
+        if per_page:
+            total = qr.count()
+            lista = qr.offset((page - 1) * per_page).limit(per_page).all()
+            return jsonify({'items': [m.to_dict() for m in lista], 'total': total, 'page': page, 'per_page': per_page, 'pages': -(-total // per_page)})
+        lista = qr.all()
     except OperationalError as e:
         if not _is_missing_medicao_stamp_error(e):
             raise
@@ -663,6 +686,7 @@ class Cliente(db.Model):
     vencimento=db.Column(db.Integer,default=10)
     dia_faturamento=db.Column(db.Integer,default=1)
     dias_faturamento=db.Column(db.Integer,default=30)
+    dt_contrato_vencimento=db.Column(db.String(10))
     obs=db.Column(db.Text,default='')
     criado_em=db.Column(db.DateTime,default=utcnow)
     def end_fmt(self):
@@ -712,6 +736,8 @@ class Medicao(db.Model):
     assinatura_doc_hash=db.Column(db.String(128))
     assinatura_crypto_ok=db.Column(db.Boolean,default=False)
     assinatura_cert_subject=db.Column(db.String(255))
+    dt_pagamento=db.Column(db.String(10))
+    forma_pagamento=db.Column(db.String(50))
     criado_em=db.Column(db.DateTime,default=utcnow)
     criado_por=db.Column(db.String(100))
     def to_dict(self):
@@ -7344,18 +7370,64 @@ def api_dashboard():
         while _mo <= 0: _mo += 12; _yr -= 1
         _k = f"{_yr}-{_mo:02d}"
         fat_mensal.append({'mes': _k, 'total': round(fat_por_mes.get(_k, 0), 2)})
+
+    # faturas vencidas
+    venc_itens = []
+    total_vencidas = 0.0
+    for _m in medicoes_validas:
+        _status = (_m.status or '').lower()
+        if _status in ('cancelada', 'paga'):
+            continue
+        _dt = (_m.dt_vencimento or '').strip()
+        if not _dt:
+            continue
+        try:
+            _vd = datetime.strptime(_dt, '%Y-%m-%d').date()
+        except Exception:
+            continue
+        if _vd >= hoje:
+            continue
+        _val = float(_m.valor_bruto or 0)
+        total_vencidas += _val
+        venc_itens.append({'id': _m.id, 'numero': _m.numero or '', 'cliente': _m.cliente_nome or '',
+                           'vencimento': _vd.strftime('%d/%m/%Y'), 'valor': round(_val, 2),
+                           'dias': (hoje - _vd).days})
+
+    # alertas contratos vencendo (30 dias)
+    alertas_contratos = []
+    limite_cont = hoje + timedelta(days=30)
+    for _c in ativos:
+        _dtv = getattr(_c, 'dt_contrato_vencimento', None) or ''
+        if not _dtv:
+            continue
+        try:
+            _dv = datetime.strptime(_dtv.strip(), '%Y-%m-%d').date()
+        except Exception:
+            continue
+        if hoje <= _dv <= limite_cont:
+            alertas_contratos.append({'cliente_id': _c.id, 'cliente_nome': _c.nome or '',
+                                      'vencimento': _dv.strftime('%d/%m/%Y'),
+                                      'dias': (_dv - hoje).days})
+        elif _dv < hoje:
+            alertas_contratos.append({'cliente_id': _c.id, 'cliente_nome': _c.nome or '',
+                                      'vencimento': _dv.strftime('%d/%m/%Y'),
+                                      'dias': (_dv - hoje).days, 'vencido': True})
+    alertas_contratos.sort(key=lambda x: x['dias'])
+
     return jsonify({'ativos':len(ativos),'receita':receita,'total_med':Medicao.query.count(),
         'med_mes':Medicao.query.filter_by(mes_ref=mes).count(),
         'pendentes':len(pendentes_clientes),
         'taxa_emissao':round(taxa_emissao,1),
         'ticket_medio':round(ticket_medio,2),
         'faturamento_mensal':fat_mensal,
+        'total_vencidas':len(venc_itens), 'valor_vencidas':round(total_vencidas,2),
         'alerta_inadimplencia':{'qtd':len(inad_itens),'total':round(total_inadimplencia,2),'itens':inad_itens[:8]},
         'alerta_faturamento':{'qtd':len(alertas_faturamento),'itens':alertas_faturamento[:8]},
         'alerta_calculo_beneficios':{'qtd':len(alertas_calculo),'itens':alertas_calculo},
         'alerta_beneficios_pendentes':{'qtd':len(alertas_benef_pend),'itens':alertas_benef_pend[:8],'competencia':mes},
         'alerta_sem_aso_valido':{'qtd':len(alertas_sem_aso),'itens':alertas_sem_aso[:8]},
         'alerta_aso':{'qtd':len(alertas_aso),'itens':alertas_aso[:8],'janela_dias':30},
+        'alerta_contratos':{'qtd':len(alertas_contratos),'itens':alertas_contratos[:8]},
         'total_cli':Cliente.query.count(),'proximo_num':prox_num(),
         'empresas':[{'id':e.id,'nome':e.nome,'cli':Cliente.query.filter_by(empresa_id=e.id,status='Ativo').count()} for e in Empresa.query.filter_by(ativa=True).all()]})
 
@@ -7761,7 +7833,23 @@ def _build_pdf(d):
         pr=[[Paragraph(f'<b>{l}</b>',ps('pl',fontSize=9,textColor=AZ)),Paragraph(v,ps('pv',fontSize=10))] for l,v in pags]
         pt=Table(pr,colWidths=[W*0.22,W*0.78])
         pt.setStyle(TableStyle([('BACKGROUND',(0,0),(0,-1),CI),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5),('LEFTPADDING',(0,0),(-1,-1),8),('BOX',(0,0),(-1,-1),0.5,colors.HexColor('#CCCCCC')),('LINEBELOW',(0,0),(-1,-2),0.3,colors.HexColor('#DDDDDD'))]))
-        story.append(pt); story.append(Spacer(1,10))
+        story.append(pt)
+        # QR Code PIX
+        if epix:
+            try:
+                qr_pix=qr_code.QrCodeWidget(epix)
+                b_pix=qr_pix.getBounds()
+                bw_pix=max(1,(b_pix[2]-b_pix[0])); bh_pix=max(1,(b_pix[3]-b_pix[1]))
+                qr_sz=80
+                qr_pix_draw=Drawing(qr_sz,qr_sz,transform=[qr_sz/bw_pix,0,0,qr_sz/bh_pix,0,0])
+                qr_pix_draw.add(qr_pix)
+                txt_pix=Paragraph('Escaneie para<br/>pagar via PIX',ps('qrpixtxt',fontSize=8,leading=11,alignment=TA_CENTER,textColor=AZ))
+                qr_row=Table([[qr_pix_draw,txt_pix]],colWidths=[qr_sz*0.5*cm,W-qr_sz*0.5*cm])
+                qr_row.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),8)]))
+                story.append(qr_row)
+            except Exception:
+                pass
+        story.append(Spacer(1,10))
 
     if eboleto:
         story.append(Paragraph('<b><font color="white">  INFORMAÇÕES DE BOLETO</font></b>',ps('bh',fontSize=10,backColor=AZ,leading=22,leftIndent=6)))
@@ -8526,11 +8614,82 @@ def api_medicao_status(id):
     m=Medicao.query.get_or_404(id)
     d=request.json or {}
     novo=(d.get('status') or '').strip().lower()
-    validos=['rascunho','emitida','cancelada']
+    validos=['rascunho','emitida','cancelada','paga']
     if novo not in validos: return jsonify({'erro':f'Status invalido. Use: {validos}'}),400
-    m.status=novo; db.session.commit()
+    m.status=novo
+    if novo=='paga':
+        m.dt_pagamento=(d.get('dt_pagamento') or '').strip() or localnow().strftime('%Y-%m-%d')
+        m.forma_pagamento=(d.get('forma_pagamento') or '').strip()
+    db.session.commit()
     audit_event('medicao_status_alterado','usuario',session.get('uid'),'medicao',m.id,True,{'status':novo,'numero':m.numero})
     return jsonify({'ok':True,'id':m.id,'status':novo})
+
+@app.route('/api/medicoes/<int:id>/duplicar',methods=['POST'])
+@lr
+def api_medicao_duplicar(id):
+    orig=Medicao.query.get_or_404(id)
+    novo_num=prox_num()
+    copia=Medicao(
+        numero=novo_num, tipo=orig.tipo,
+        cliente_id=orig.cliente_id, cliente_nome=orig.cliente_nome,
+        cliente_cnpj=orig.cliente_cnpj, cliente_end=orig.cliente_end,
+        cliente_resp=orig.cliente_resp,
+        empresa_id=orig.empresa_id, empresa_nome=orig.empresa_nome,
+        mes_ref=localnow().strftime('%Y-%m'),
+        dt_emissao=localnow().strftime('%Y-%m-%d'),
+        dt_vencimento=orig.dt_vencimento,
+        servicos=orig.servicos, valor_bruto=orig.valor_bruto,
+        observacoes=orig.observacoes,
+        ass_empresa=orig.ass_empresa, ass_cliente=orig.ass_cliente,
+        status='rascunho', desconto=orig.desconto, impostos=orig.impostos,
+        criado_por=session.get('nome','')
+    )
+    db.session.add(copia); db.session.commit()
+    audit_event('medicao_duplicada','usuario',session.get('uid'),'medicao',copia.id,True,{'original_id':orig.id,'numero':novo_num})
+    return jsonify({'ok':True,'id':copia.id,'numero':novo_num})
+
+@app.route('/api/medicoes/<int:id>/enviar-email',methods=['POST'])
+@lr
+def api_medicao_enviar_email(id):
+    m=Medicao.query.get_or_404(id)
+    d=request.json or {}
+    destino=(d.get('email') or '').strip()
+    if not destino:
+        cli=Cliente.query.get(m.cliente_id) if m.cliente_id else None
+        destino=(cli.email or '').strip() if cli else ''
+    if not destino: return jsonify({'erro':'E-mail do destinatário não informado e cliente não possui e-mail cadastrado.'}),400
+    emp=Empresa.query.get(m.empresa_id) if m.empresa_id else None
+    md=m.to_dict(); md['empresa']=emp.to_dict() if emp else {}
+    try:
+        from flask import current_app
+        from reportlab.lib.pagesizes import A4
+        import io as _io
+        # gera PDF em memória
+        buf=_io.BytesIO()
+        _pdf_data=md.copy()
+        # build via _build_pdf retorna Response; precisa gerar bytes direto
+        # Chamamos a mesma lógica mas capturamos os bytes
+        resp=_build_pdf(_pdf_data)
+        pdf_bytes=resp.get_data()
+        # salva temporário
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False,suffix='.pdf') as tf:
+            tf.write(pdf_bytes); tmp_path=tf.name
+        tipo=m.tipo or 'Medição'
+        numero=m.numero or str(m.id)
+        slug=(m.cliente_nome or 'cliente').replace(' ','_')[:20]
+        nome_arq=f'{tipo.replace(" ","_")}_{numero.replace("/","-")}_{slug}_{m.mes_ref or ""}.pdf'
+        assunto=f'{tipo} Nº {numero} — {m.cliente_nome or ""}'
+        corpo=(f'Prezado(a),\n\nSegue em anexo a {tipo} Nº {numero} referente ao período {m.mes_ref or ""}.\n\n'
+               f'Valor: R$ {m.valor_bruto:,.2f}\nVencimento: {m.dt_vencimento or "-"}\n\n'
+               f'Em caso de dúvidas, entre em contato conosco.\n\nAtenciosamente,\n{emp.nome if emp else "RM Facilities"}')
+        smtp_send_text(destino, assunto, corpo, anexos=[{'path':tmp_path,'name':nome_arq}])
+        try: os.remove(tmp_path)
+        except: pass
+        audit_event('medicao_email_enviado','usuario',session.get('uid'),'medicao',m.id,True,{'dest':destino,'numero':numero})
+        return jsonify({'ok':True,'enviado_para':destino})
+    except Exception as ex:
+        return jsonify({'erro':str(ex)}),500
 
 @app.route('/api/medicoes/<int:id>/anexos',methods=['GET'])
 @lr
@@ -8651,7 +8810,8 @@ with app.app_context():
         'qtd_funcionarios_posto INTEGER DEFAULT 0',
         'materiais_equip_locacao FLOAT DEFAULT 0',
         'dia_faturamento INTEGER DEFAULT 1',
-        'dias_faturamento INTEGER DEFAULT 30'
+        'dias_faturamento INTEGER DEFAULT 30',
+        'dt_contrato_vencimento VARCHAR(10)',
     ])
     ensure_cols('beneficio_mensal',[
         'dias_vt INTEGER DEFAULT 0',
@@ -8709,6 +8869,8 @@ with app.app_context():
         'assinatura_doc_hash VARCHAR(128)',
         'assinatura_crypto_ok BOOLEAN DEFAULT 0',
         'assinatura_cert_subject VARCHAR(255)',
+        'dt_pagamento VARCHAR(10)',
+        'forma_pagamento VARCHAR(50)',
     ])
     ensure_cols('assinatura_envelope',[
         'id INTEGER PRIMARY KEY AUTOINCREMENT',
