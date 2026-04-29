@@ -7434,17 +7434,29 @@ def api_beneficios_lancamentos_salvar():
             b=BeneficioMensal(funcionario_id=fid,competencia=comp)
             db.session.add(b)
         b.empresa_id=f.empresa_id
-        b.dias_trabalhados=max(0,to_num(it.get('dias_trabalhados')))
-        b.dias_vt=max(0,to_num(it.get('dias_vt')))
-        b.dias_vr=max(0,to_num(it.get('dias_vr')))
-        b.dias_va=max(0,to_num(it.get('dias_va')))
+        vt_optante=(f.opta_vt is not False)
+        vr_optante=(f.opta_vr is not False)
+        va_optante=(f.opta_va is not False)
+        pp_optante=bool(f.opta_premio_prod)
+        vg_optante=bool(f.opta_vale_gasolina)
+        cn_optante=bool(f.opta_cesta_natal)
+
+        dias_vt=max(0,to_num(it.get('dias_vt')))
+        dias_vr=max(0,to_num(it.get('dias_vr')))
+        dias_va=max(0,to_num(it.get('dias_va')))
+
+        b.dias_vt=dias_vt if vt_optante else 0
+        b.dias_vr=dias_vr if vr_optante else 0
+        b.dias_va=dias_va if va_optante else 0
+        b.dias_trabalhados=max(b.dias_vt,b.dias_vr)
+
         b.salario=to_num(it.get('salario'),dec=True)
-        b.vale_refeicao=to_num(it.get('vale_refeicao'),dec=True)
-        b.vale_alimentacao=to_num(it.get('vale_alimentacao'),dec=True)
-        b.vale_transporte=to_num(it.get('vale_transporte'),dec=True)
-        b.premio_produtividade=to_num(it.get('premio_produtividade'),dec=True)
-        b.vale_gasolina=to_num(it.get('vale_gasolina'),dec=True)
-        b.cesta_natal=to_num(it.get('cesta_natal'),dec=True)
+        b.vale_transporte=(to_num(it.get('vale_transporte'),dec=True) if vt_optante else 0)
+        b.vale_refeicao=(to_num(it.get('vale_refeicao'),dec=True) if vr_optante else 0)
+        b.vale_alimentacao=(to_num(it.get('vale_alimentacao'),dec=True) if va_optante else 0)
+        b.premio_produtividade=(to_num(it.get('premio_produtividade'),dec=True) if pp_optante else 0)
+        b.vale_gasolina=(to_num(it.get('vale_gasolina'),dec=True) if vg_optante else 0)
+        b.cesta_natal=(to_num(it.get('cesta_natal'),dec=True) if cn_optante else 0)
         salvos+=1
     db.session.commit()
     return jsonify({'ok':True,'competencia':comp,'salvos':salvos})

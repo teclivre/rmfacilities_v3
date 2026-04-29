@@ -5224,6 +5224,17 @@ function benTotal(fid,tipo){
   if(el)el.textContent='R$ '+moneyPt(dias*val);
 }
 
+function benOptaKeyByTipo(tipo){
+  return {vt:'opta_vt',vr:'opta_vr',va:'opta_va',pp:'opta_premio_prod',vg:'opta_vale_gasolina',cn:'opta_cesta_natal'}[tipo]||null;
+}
+
+function benIsOptante(item,tipo){
+  if(!item) return true;
+  const k=benOptaKeyByTipo(tipo);
+  if(!k) return true;
+  return item[k]!==false;
+}
+
 function benAtualizarModeloLocal(fid,patch){
   const item=(beneficiosMensais||[]).find(it=>parseInt(it.funcionario_id,10)===parseInt(fid,10));
   if(item) Object.assign(item,patch);
@@ -5231,6 +5242,15 @@ function benAtualizarModeloLocal(fid,patch){
 
 function benValorEdit(fid,tipo){
   const campos={vt:'vale_transporte',vr:'vale_refeicao',va:'vale_alimentacao',pp:'premio_produtividade',vg:'vale_gasolina',cn:'cesta_natal'};
+  const item=(beneficiosMensais||[]).find(it=>parseInt(it.funcionario_id,10)===parseInt(fid,10));
+  if(!benIsOptante(item,tipo)){
+    const inp=document.getElementById(`ben-base-${tipo}-val-${fid}`);
+    if(inp) inp.value='0,00';
+    benAtualizarModeloLocal(fid,{[campos[tipo]]:0});
+    const totalEl=document.getElementById(`ben-${tipo}-total-${fid}`);
+    if(totalEl) totalEl.textContent='R$ 0,00';
+    return;
+  }
   const valor=numBR(document.getElementById(`ben-base-${tipo}-val-${fid}`)?.value||'0');
   benAtualizarModeloLocal(fid,{[campos[tipo]]:valor});
   if(tipo==='va'||tipo==='pp'||tipo==='vg'||tipo==='cn'){
@@ -5244,6 +5264,14 @@ function benValorEdit(fid,tipo){
 
 function benDiasEdit(fid,tipo){
   const campos={vt:'dias_vt',vr:'dias_vr'};
+  const item=(beneficiosMensais||[]).find(it=>parseInt(it.funcionario_id,10)===parseInt(fid,10));
+  if(!benIsOptante(item,tipo)){
+    const inp=document.getElementById(`ben-${tipo}-dias-${fid}`);
+    if(inp) inp.value='0';
+    benAtualizarModeloLocal(fid,{[campos[tipo]]:0});
+    benTotal(fid,tipo);
+    return;
+  }
   const dias=parseInt(document.getElementById(`ben-${tipo}-dias-${fid}`)?.value||'0',10)||0;
   const outroTipo=(tipo==='vt'?'vr':'vt');
   const outroDias=parseInt(document.getElementById(`ben-${outroTipo}-dias-${fid}`)?.value||'0',10)||0;
@@ -5291,18 +5319,24 @@ function renderBeneficiosAtivos(){
     const ppTag=it.opta_premio_prod===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
     const vgTag=it.opta_vale_gasolina===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
     const cnTag=it.opta_cesta_natal===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
+    const vtDis=it.opta_vt===false?'disabled':'';
+    const vrDis=it.opta_vr===false?'disabled':'';
+    const vaDis=it.opta_va===false?'disabled':'';
+    const ppDis=it.opta_premio_prod===false?'disabled':'';
+    const vgDis=it.opta_vale_gasolina===false?'disabled':'';
+    const cnDis=it.opta_cesta_natal===false?'disabled':'';
     return`<tr class="row-clickable" onclick="toggleBenSelRow(${it.funcionario_id})">
     <td style="text-align:center"><input type="checkbox" class="ben-sel-cb" data-fid="${it.funcionario_id}" ${chk} onchange="toggleBenSel(${it.funcionario_id},this.checked)" onclick="event.stopPropagation()"></td>
     <td>${it.re||it.matricula||'—'}</td>
     <td>${it.nome||''}</td>
     <td>${it.posto_operacional||'Reserva tecnica'}</td>
     <td>${it.empresa_nome||'—'}</td>
-    <td><input id="ben-base-vt-val-${it.funcionario_id}" value="${moneyPt(it.vale_transporte||0)}" style="width:110px" oninput="benValorEdit(${it.funcionario_id},'vt')" onchange="benValorEdit(${it.funcionario_id},'vt')" onclick="event.stopPropagation()">${vtTag}</td>
-    <td><input id="ben-base-vr-val-${it.funcionario_id}" value="${moneyPt(it.vale_refeicao||0)}" style="width:110px" oninput="benValorEdit(${it.funcionario_id},'vr')" onchange="benValorEdit(${it.funcionario_id},'vr')" onclick="event.stopPropagation()">${vrTag}</td>
-    <td><input id="ben-base-va-val-${it.funcionario_id}" value="${moneyPt(it.vale_alimentacao||0)}" style="width:110px" oninput="benValorEdit(${it.funcionario_id},'va')" onchange="benValorEdit(${it.funcionario_id},'va')" onclick="event.stopPropagation()">${vaTag}</td>
-    <td><input id="ben-base-pp-val-${it.funcionario_id}" value="${moneyPt(it.premio_produtividade||0)}" style="width:110px" oninput="benValorEdit(${it.funcionario_id},'pp')" onchange="benValorEdit(${it.funcionario_id},'pp')" onclick="event.stopPropagation()">${ppTag}</td>
-    <td><input id="ben-base-vg-val-${it.funcionario_id}" value="${moneyPt(it.vale_gasolina||0)}" style="width:110px" oninput="benValorEdit(${it.funcionario_id},'vg')" onchange="benValorEdit(${it.funcionario_id},'vg')" onclick="event.stopPropagation()">${vgTag}</td>
-    <td><input id="ben-base-cn-val-${it.funcionario_id}" value="${moneyPt(it.cesta_natal||0)}" style="width:110px" oninput="benValorEdit(${it.funcionario_id},'cn')" onchange="benValorEdit(${it.funcionario_id},'cn')" onclick="event.stopPropagation()">${cnTag}</td>
+    <td><input class="ben-input" id="ben-base-vt-val-${it.funcionario_id}" value="${moneyPt(it.vale_transporte||0)}" style="width:110px" ${vtDis} oninput="benValorEdit(${it.funcionario_id},'vt')" onchange="benValorEdit(${it.funcionario_id},'vt')" onclick="event.stopPropagation()">${vtTag}</td>
+    <td><input class="ben-input" id="ben-base-vr-val-${it.funcionario_id}" value="${moneyPt(it.vale_refeicao||0)}" style="width:110px" ${vrDis} oninput="benValorEdit(${it.funcionario_id},'vr')" onchange="benValorEdit(${it.funcionario_id},'vr')" onclick="event.stopPropagation()">${vrTag}</td>
+    <td><input class="ben-input" id="ben-base-va-val-${it.funcionario_id}" value="${moneyPt(it.vale_alimentacao||0)}" style="width:110px" ${vaDis} oninput="benValorEdit(${it.funcionario_id},'va')" onchange="benValorEdit(${it.funcionario_id},'va')" onclick="event.stopPropagation()">${vaTag}</td>
+    <td><input class="ben-input" id="ben-base-pp-val-${it.funcionario_id}" value="${moneyPt(it.premio_produtividade||0)}" style="width:110px" ${ppDis} oninput="benValorEdit(${it.funcionario_id},'pp')" onchange="benValorEdit(${it.funcionario_id},'pp')" onclick="event.stopPropagation()">${ppTag}</td>
+    <td><input class="ben-input" id="ben-base-vg-val-${it.funcionario_id}" value="${moneyPt(it.vale_gasolina||0)}" style="width:110px" ${vgDis} oninput="benValorEdit(${it.funcionario_id},'vg')" onchange="benValorEdit(${it.funcionario_id},'vg')" onclick="event.stopPropagation()">${vgTag}</td>
+    <td><input class="ben-input" id="ben-base-cn-val-${it.funcionario_id}" value="${moneyPt(it.cesta_natal||0)}" style="width:110px" ${cnDis} oninput="benValorEdit(${it.funcionario_id},'cn')" onchange="benValorEdit(${it.funcionario_id},'cn')" onclick="event.stopPropagation()">${cnTag}</td>
   </tr>`;
   }).join('');
   atualizarContadorSel();
@@ -5319,14 +5353,16 @@ function renderBeneficioPorTipo(tipo,tbId){
   if(tipo==='va'){
     tb.innerHTML=lista.map(it=>{
       const chk=benSelecionados.has(it.funcionario_id)?'checked':'';
+      const opta=it.opta_va!==false;
+      const valor=opta?numBR(document.getElementById('ben-base-va-val-'+it.funcionario_id)?.value||it.vale_alimentacao||0):0;
       return`<tr class="row-clickable" onclick="toggleBenSelRow(${it.funcionario_id})">
       <td style="text-align:center"><input type="checkbox" class="ben-sel-cb" data-fid="${it.funcionario_id}" ${chk} onchange="toggleBenSel(${it.funcionario_id},this.checked)" onclick="event.stopPropagation()"></td>
       <td>${it.matricula||'—'}</td>
       <td>${it.nome||''}</td>
       <td>${it.posto_operacional||'Reserva tecnica'}</td>
       <td>${it.empresa_nome||'—'}</td>
-      <td>R$ ${moneyPt(numBR(document.getElementById('ben-base-va-val-'+it.funcionario_id)?.value||it.vale_alimentacao||0))}</td>
-      <td id="ben-va-total-${it.funcionario_id}">R$ ${moneyPt(numBR(document.getElementById('ben-base-va-val-'+it.funcionario_id)?.value||it.vale_alimentacao||0))}</td>
+      <td>R$ ${moneyPt(valor)}</td>
+      <td id="ben-va-total-${it.funcionario_id}">R$ ${moneyPt(valor)}</td>
     </tr>`;
     }).join('');
     return;
@@ -5335,14 +5371,16 @@ function renderBeneficioPorTipo(tipo,tbId){
     const campoVal={pp:'premio_produtividade',vg:'vale_gasolina',cn:'cesta_natal'}[tipo];
     tb.innerHTML=lista.map(it=>{
       const chk=benSelecionados.has(it.funcionario_id)?'checked':'';
+      const opta=benIsOptante(it,tipo);
+      const valor=opta?numBR(document.getElementById('ben-base-'+tipo+'-val-'+it.funcionario_id)?.value||it[campoVal]||0):0;
       return`<tr class="row-clickable" onclick="toggleBenSelRow(${it.funcionario_id})">
       <td style="text-align:center"><input type="checkbox" class="ben-sel-cb" data-fid="${it.funcionario_id}" ${chk} onchange="toggleBenSel(${it.funcionario_id},this.checked)" onclick="event.stopPropagation()"></td>
       <td>${it.matricula||'—'}</td>
       <td>${it.nome||''}</td>
       <td>${it.posto_operacional||'Reserva tecnica'}</td>
       <td>${it.empresa_nome||'—'}</td>
-      <td>R$ ${moneyPt(numBR(document.getElementById('ben-base-'+tipo+'-val-'+it.funcionario_id)?.value||it[campoVal]||0))}</td>
-      <td id="ben-${tipo}-total-${it.funcionario_id}">R$ ${moneyPt(numBR(document.getElementById('ben-base-'+tipo+'-val-'+it.funcionario_id)?.value||it[campoVal]||0))}</td>
+      <td>R$ ${moneyPt(valor)}</td>
+      <td id="ben-${tipo}-total-${it.funcionario_id}">R$ ${moneyPt(valor)}</td>
     </tr>`;
     }).join('');
     return;
@@ -5353,15 +5391,19 @@ function renderBeneficioPorTipo(tipo,tbId){
   }[tipo];
   tb.innerHTML=lista.map(it=>{
     const chk=benSelecionados.has(it.funcionario_id)?'checked':'';
+    const opta=benIsOptante(it,tipo);
+    const diasBase=opta?(it[cfg.dias]||0):0;
+    const diasDis=opta?'':'disabled';
+    const valBase=opta?numBR(document.getElementById('ben-base-'+tipo+'-val-'+it.funcionario_id)?.value||it[cfg.valor]||0):0;
     return`<tr class="row-clickable" onclick="toggleBenSelRow(${it.funcionario_id})">
     <td style="text-align:center"><input type="checkbox" class="ben-sel-cb" data-fid="${it.funcionario_id}" ${chk} onchange="toggleBenSel(${it.funcionario_id},this.checked)" onclick="event.stopPropagation()"></td>
     <td>${it.matricula||'—'}</td>
     <td>${it.nome||''}</td>
     <td>${it.posto_operacional||'Reserva tecnica'}</td>
     <td>${it.empresa_nome||'—'}</td>
-    <td><input id="ben-${tipo}-dias-${it.funcionario_id}" type="number" min="0" step="1" value="${it[cfg.dias]||0}" oninput="benDiasEdit(${it.funcionario_id},'${tipo}')" onchange="benDiasEdit(${it.funcionario_id},'${tipo}')" style="width:95px" onclick="event.stopPropagation()"></td>
-    <td>R$ ${moneyPt(numBR(document.getElementById('ben-base-'+tipo+'-val-'+it.funcionario_id)?.value||it[cfg.valor]||0))}</td>
-    <td id="ben-${tipo}-total-${it.funcionario_id}">R$ ${moneyPt((it[cfg.dias]||0)*numBR(document.getElementById('ben-base-'+tipo+'-val-'+it.funcionario_id)?.value||it[cfg.valor]||0))}</td>
+    <td><input class="ben-input" id="ben-${tipo}-dias-${it.funcionario_id}" type="number" min="0" step="1" value="${diasBase}" ${diasDis} oninput="benDiasEdit(${it.funcionario_id},'${tipo}')" onchange="benDiasEdit(${it.funcionario_id},'${tipo}')" style="width:95px" onclick="event.stopPropagation()"></td>
+    <td>R$ ${moneyPt(valBase)}</td>
+    <td id="ben-${tipo}-total-${it.funcionario_id}">R$ ${moneyPt(diasBase*valBase)}</td>
   </tr>`;
   }).join('');
 }
@@ -5393,23 +5435,32 @@ function montarItensBeneficios(opts={}){
   const fonte=opts.ignorarSelecao ? beneficiosMensais : (benSelecionados.size>0
     ? beneficiosMensais.filter(it=>benSelecionados.has(it.funcionario_id))
     : beneficiosMensais);
-  return fonte.map(it=>({
-    funcionario_id:it.funcionario_id,
-    dias_trabalhados:(incluirDias?Math.max(
-      parseInt(document.getElementById('ben-vt-dias-'+it.funcionario_id)?.value||'0',10)||0,
-      parseInt(document.getElementById('ben-vr-dias-'+it.funcionario_id)?.value||'0',10)||0
-    ):(it.dias_trabalhados||0)),
-    dias_vt:(incluirDias?(parseInt(document.getElementById('ben-vt-dias-'+it.funcionario_id)?.value||'0',10)||0):(it.dias_vt||0)),
-    dias_vr:(incluirDias?(parseInt(document.getElementById('ben-vr-dias-'+it.funcionario_id)?.value||'0',10)||0):(it.dias_vr||0)),
-    dias_va:1,
-    salario:it.salario||0,
-    vale_transporte:(incluirBase?numBR(document.getElementById('ben-base-vt-val-'+it.funcionario_id)?.value||it.vale_transporte||0):(it.vale_transporte||0)),
-    vale_refeicao:(incluirBase?numBR(document.getElementById('ben-base-vr-val-'+it.funcionario_id)?.value||it.vale_refeicao||0):(it.vale_refeicao||0)),
-    vale_alimentacao:(incluirBase?numBR(document.getElementById('ben-base-va-val-'+it.funcionario_id)?.value||it.vale_alimentacao||0):(it.vale_alimentacao||0)),
-    premio_produtividade:(incluirBase?numBR(document.getElementById('ben-base-pp-val-'+it.funcionario_id)?.value||it.premio_produtividade||0):(it.premio_produtividade||0)),
-    vale_gasolina:(incluirBase?numBR(document.getElementById('ben-base-vg-val-'+it.funcionario_id)?.value||it.vale_gasolina||0):(it.vale_gasolina||0)),
-    cesta_natal:(incluirBase?numBR(document.getElementById('ben-base-cn-val-'+it.funcionario_id)?.value||it.cesta_natal||0):(it.cesta_natal||0))
-  }));
+  return fonte.map(it=>{
+    const vtOpta=it.opta_vt!==false;
+    const vrOpta=it.opta_vr!==false;
+    const vaOpta=it.opta_va!==false;
+    const ppOpta=it.opta_premio_prod!==false;
+    const vgOpta=it.opta_vale_gasolina!==false;
+    const cnOpta=it.opta_cesta_natal!==false;
+
+    const diasVt=(vtOpta?(incluirDias?(parseInt(document.getElementById('ben-vt-dias-'+it.funcionario_id)?.value||'0',10)||0):(it.dias_vt||0)):0);
+    const diasVr=(vrOpta?(incluirDias?(parseInt(document.getElementById('ben-vr-dias-'+it.funcionario_id)?.value||'0',10)||0):(it.dias_vr||0)):0);
+
+    return {
+      funcionario_id:it.funcionario_id,
+      dias_trabalhados:Math.max(diasVt,diasVr),
+      dias_vt:diasVt,
+      dias_vr:diasVr,
+      dias_va:(vaOpta?1:0),
+      salario:it.salario||0,
+      vale_transporte:(vtOpta?(incluirBase?numBR(document.getElementById('ben-base-vt-val-'+it.funcionario_id)?.value||it.vale_transporte||0):(it.vale_transporte||0)):0),
+      vale_refeicao:(vrOpta?(incluirBase?numBR(document.getElementById('ben-base-vr-val-'+it.funcionario_id)?.value||it.vale_refeicao||0):(it.vale_refeicao||0)):0),
+      vale_alimentacao:(vaOpta?(incluirBase?numBR(document.getElementById('ben-base-va-val-'+it.funcionario_id)?.value||it.vale_alimentacao||0):(it.vale_alimentacao||0)):0),
+      premio_produtividade:(ppOpta?(incluirBase?numBR(document.getElementById('ben-base-pp-val-'+it.funcionario_id)?.value||it.premio_produtividade||0):(it.premio_produtividade||0)):0),
+      vale_gasolina:(vgOpta?(incluirBase?numBR(document.getElementById('ben-base-vg-val-'+it.funcionario_id)?.value||it.vale_gasolina||0):(it.vale_gasolina||0)):0),
+      cesta_natal:(cnOpta?(incluirBase?numBR(document.getElementById('ben-base-cn-val-'+it.funcionario_id)?.value||it.cesta_natal||0):(it.cesta_natal||0)):0)
+    };
+  });
 }
 
 async function salvarBeneficiosValoresBase(){

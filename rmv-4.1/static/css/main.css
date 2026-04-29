@@ -146,6 +146,51 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;ba
 	box-shadow:0 0 0 2px rgba(31,110,176,.18);
 	background:rgba(28,110,176,.13);
 }
+
+#pg-beneficios{animation:pageIn .35s ease both}
+#pg-beneficios .card{background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(236,246,255,.9));border:1px solid rgba(31,110,176,.2)}
+#pg-beneficios .tbl-wrap{border:1px solid rgba(31,110,176,.22);border-radius:12px;background:linear-gradient(180deg,rgba(241,248,255,.92),rgba(233,244,255,.88))}
+#pg-beneficios .tbl{min-width:920px}
+#pg-beneficios .tbl th{background:linear-gradient(90deg,#1f6eb0,#3f95dd);font-size:10.5px;letter-spacing:.35px}
+#pg-beneficios .tbl td{border-bottom:1px solid rgba(31,110,176,.14)}
+#pg-beneficios .tbl tbody tr{transition:transform .16s ease,background .2s ease}
+#pg-beneficios .tbl tbody tr:hover td{background:rgba(79,153,220,.16)}
+#pg-beneficios .tbl tbody tr:hover{transform:translateY(-1px)}
+
+#pg-beneficios .ben-input,
+#pg-beneficios .tbl td input[type='number'].ben-input,
+#pg-beneficios .tbl td input[type='text'].ben-input,
+#pg-beneficios .tbl td input[id^='ben-base-'],
+#pg-beneficios .tbl td input[id^='ben-vt-dias-'],
+#pg-beneficios .tbl td input[id^='ben-vr-dias-']{
+	background:linear-gradient(180deg,#102b45,#0b2238);
+	border:1px solid rgba(126,199,255,.32);
+	color:#dff1ff;
+	border-radius:10px;
+	font-weight:600;
+	box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+#pg-beneficios .ben-input:focus,
+#pg-beneficios .tbl td input[id^='ben-base-']:focus,
+#pg-beneficios .tbl td input[id^='ben-vt-dias-']:focus,
+#pg-beneficios .tbl td input[id^='ben-vr-dias-']:focus{
+	outline:none;
+	border-color:#67b8ff;
+	box-shadow:0 0 0 2px rgba(103,184,255,.24),0 6px 14px rgba(12,42,70,.28);
+	background:linear-gradient(180deg,#123654,#0e2a45);
+}
+
+#pg-beneficios input:disabled{
+	opacity:.62;
+	cursor:not-allowed;
+	filter:saturate(.65);
+	text-decoration:line-through;
+}
+
+#pg-beneficios .brow .btn{transition:transform .16s ease,box-shadow .2s ease}
+#pg-beneficios .brow .btn:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(21,84,135,.22)}
+#pg-beneficios [id^='ben-pane-']{animation:riseIn .28s ease both}
 .tac{display:flex;gap:5px;flex-wrap:wrap}
 .pill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px}
 .p-az{background:var(--azul-cl);color:var(--azul)}
@@ -263,6 +308,17 @@ html[data-theme='dark'] .tbl td input[type='number']:focus{
 	background:rgba(103,184,255,.16);
 	border-color:rgba(103,184,255,.72);
 	box-shadow:0 0 0 2px rgba(103,184,255,.20);
+}
+html[data-theme='dark'] #pg-beneficios .card{background:linear-gradient(180deg,#0f2136,#0c1c2e);border-color:rgba(103,184,255,.24)}
+html[data-theme='dark'] #pg-beneficios .tbl-wrap{background:linear-gradient(180deg,#0b1a2d,#0a1829);border-color:rgba(103,184,255,.25)}
+html[data-theme='dark'] #pg-beneficios .tbl tbody tr:hover td{background:rgba(103,184,255,.15)}
+html[data-theme='dark'] #pg-beneficios .ben-input,
+html[data-theme='dark'] #pg-beneficios .tbl td input[id^='ben-base-'],
+html[data-theme='dark'] #pg-beneficios .tbl td input[id^='ben-vt-dias-'],
+html[data-theme='dark'] #pg-beneficios .tbl td input[id^='ben-vr-dias-']{
+	background:linear-gradient(180deg,#0a2137,#091c30);
+	border-color:rgba(103,184,255,.38);
+	color:#e2f2ff;
 }
 html[data-theme='dark'] .f input,
 html[data-theme='dark'] .f select,
