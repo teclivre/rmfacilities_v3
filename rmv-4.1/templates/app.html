@@ -1096,7 +1096,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div id="wa-colab-list" style="margin-top:8px;max-height:220px;overflow:auto;border:1px solid var(--borda);border-radius:10px;padding:8px;background:var(--cinza-cl)"><div class="vazio">Carregando colaboradores...</div></div>
           <div class="f" style="margin-top:10px"><label>Mensagem para envio</label><textarea id="wa-colab-msg" placeholder="Digite a mensagem que será enviada aos colaboradores selecionados" style="min-height:84px"></textarea></div>
           <div class="g2" style="margin-top:8px">
-            <div class="f"><label>Anexo opcional (imagem ou áudio)</label><input id="wa-colab-arquivo" type="file" accept="image/*,audio/*"></div>
+            <div class="f"><label>Anexo opcional</label><input id="wa-colab-arquivo" type="file" accept="*/*"></div>
             <div class="f"><label>Remetente exibido</label><input value="{{ nome }}" disabled></div>
           </div>
           <div class="hint" style="margin-top:4px">O sistema inclui automaticamente o nome do usuário logado no texto/caption do envio.</div>

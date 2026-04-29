@@ -2064,9 +2064,11 @@ def wa_media_meta(nome_arquivo,mimetype=''):
         return 'image',mime
     if mime.startswith('audio/'):
         return 'audio',mime
-    if mime=='application/pdf':
-        return 'document',mime
-    raise ValueError('Arquivo deve ser imagem, audio ou PDF.')
+    if mime.startswith('video/'):
+        return 'video',mime
+    if not mime:
+        mime='application/octet-stream'
+    return 'document',mime
 
 def wa_send_media_bytes(numero,arquivo_bytes,nome_arquivo,mimetype='',caption=''):
     cfg=wa_cfg()
