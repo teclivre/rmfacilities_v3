@@ -1957,17 +1957,17 @@ document.addEventListener('DOMContentLoaded',()=>{
           <button type="button" class="btn b-az b-sm" onclick="rbacPreset('total')">Acesso total</button>
           <button type="button" class="btn b-ci b-sm" onclick="rbacLimpar()">Limpar tudo</button>
         </div>
-        <div style="overflow-x:auto;max-height:300px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:4px">
-          <table id="perm-matrix" style="font-size:11px;border-collapse:collapse;width:100%;min-width:380px">
-            <thead style="position:sticky;top:0;background:#f5f5f5;z-index:1">
+        <div style="overflow-x:auto;max-height:300px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:4px;background:#ffffff">
+          <table id="perm-matrix" style="font-size:11px;border-collapse:collapse;width:100%;min-width:380px;color:#1f2937">
+            <thead style="position:sticky;top:0;background:#f5f5f5;z-index:1;color:#1f2937">
               <tr>
-                <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #ddd;min-width:100px">Área</th>
-                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center">Ver</th>
-                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center">Criar</th>
-                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center">Editar</th>
-                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center">Excluir</th>
-                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center">Aprovar</th>
-                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center">Export.</th>
+                <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #ddd;min-width:100px;color:#374151">Área</th>
+                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center;color:#374151">Ver</th>
+                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center;color:#374151">Criar</th>
+                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center;color:#374151">Editar</th>
+                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center;color:#374151">Excluir</th>
+                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center;color:#374151">Aprovar</th>
+                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center;color:#374151">Export.</th>
               </tr>
             </thead>
             <tbody id="perm-matrix-body"></tbody>
@@ -2011,7 +2011,7 @@ function rbacInicializarMatrix(){
   AREAS.forEach((area,i)=>{
     const tr=document.createElement('tr');
     tr.style.background=i%2===0?'#fff':'#fafafa';
-    let html=`<td style="padding:3px 8px;border-bottom:1px solid #f0f0f0;white-space:nowrap">${AREA_LABELS[area]||area}</td>`;
+    let html=`<td style="padding:3px 8px;border-bottom:1px solid #f0f0f0;white-space:nowrap;color:#374151">${AREA_LABELS[area]||area}</td>`;
     RBAC_ACTIONS.forEach(act=>{
       html+=`<td style="text-align:center;border-bottom:1px solid #f0f0f0;padding:2px"><input type="checkbox" id="rbac-${area}-${act}" data-area="${area}" data-act="${act}" style="width:auto;margin:0"></td>`;
     });
