@@ -4676,7 +4676,7 @@ def api_criar_funcionario():
     d=request.json or {}
     if not d.get('nome'): return jsonify({'erro':'Nome obrigatorio'}),400
     ars=[a for a in d.get('areas',[]) if a in ALLOWED_AREAS]
-    mat=norm_matricula(d.get('matricula')) or next_func_matricula()
+    mat=next_func_matricula()
     f=Funcionario(
         matricula=mat,
         re=to_num(d.get('re')) or next_func_re(),
@@ -4743,10 +4743,9 @@ def api_criar_funcionario():
 @lr
 def api_atualizar_funcionario(id):
     f=Funcionario.query.get_or_404(id); d=request.json or {}
-    for k in ['matricula','re','nome','cpf','email','telefone','cargo','funcao','cbo','setor','empresa_id','data_admissao','tipo_contrato','jornada','status','endereco','endereco_numero','endereco_complemento','endereco_bairro','cidade','estado','cep','banco_codigo','banco_nome','banco_agencia','banco_conta','banco_tipo_conta','banco_pix','rg','orgao_emissor','pis','ctps','titulo_eleitor','cert_reservista','cnh','exame_admissional_data','docs_admissao_obs','obs']:
+    for k in ['re','nome','cpf','email','telefone','cargo','funcao','cbo','setor','empresa_id','data_admissao','tipo_contrato','jornada','status','endereco','endereco_numero','endereco_complemento','endereco_bairro','cidade','estado','cep','banco_codigo','banco_nome','banco_agencia','banco_conta','banco_tipo_conta','banco_pix','rg','orgao_emissor','pis','ctps','titulo_eleitor','cert_reservista','cnh','exame_admissional_data','docs_admissao_obs','obs']:
         if k in d:
             if k=='cpf': setattr(f,k,norm_cpf(d.get(k)))
-            elif k=='matricula': setattr(f,k,norm_matricula(d.get(k)))
             elif k=='re': setattr(f,k,to_num(d.get(k)))
             elif k=='telefone': setattr(f,k,wa_norm_number(d.get(k)))
             elif k=='cep': setattr(f,k,norm_cep(d.get(k)))

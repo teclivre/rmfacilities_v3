@@ -1001,7 +1001,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div class="tbl-wrap">
           <table class="tbl">
-            <thead><tr><th>Matrícula</th><th>Nome</th><th>Cargo/Função</th><th>Posto</th><th>Empresa</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead>
+            <thead><tr><th>RE</th><th>Nome</th><th>Cargo/Função</th><th>Posto</th><th>Empresa</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody id="tb-func"></tbody>
           </table>
         </div>
@@ -1692,7 +1692,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div class="mb-body">
       <input type="hidden" id="fid">
       <div class="g4">
-        <div class="f"><label>Matrícula</label><input id="fmatricula" type="number" min="1" step="1" placeholder="Automática"></div>
         <div class="f"><label>RE</label><input id="fre" type="number" min="1" step="1" placeholder="Automático"></div>
         <div class="f s2"><label>Nome *</label><input id="fnome"></div>
         <div class="f"><label>CPF</label><input id="fcpf" placeholder="000.000.000-00" oninput="maskCPF(this)" onblur="buscarFuncionarioPorCPF()"><div id="fcpf-st" class="hint" style="display:none"></div></div>
@@ -3628,7 +3627,7 @@ function areaChecksUsuario(sel){
 
 function openModalFunc(modo,id){
   document.getElementById('fid').value='';
-  ['fmatricula','fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fposto','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
+  ['fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fposto','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
   document.getElementById('fbanco-tipo').value='';
   document.getElementById('fddi').value='55';
   const st=document.getElementById('fcpf-st'); if(st){st.style.display='none';st.textContent='';}
@@ -3646,14 +3645,9 @@ function openModalFunc(modo,id){
     preencherFormFuncionario(f,'Editar funcionário');
   } else {
     document.getElementById('mod-func-tit').textContent='Novo funcionário';
-    Promise.all([
-      api('/api/funcionarios/proxima-matricula').then(r=>{
-        if(r && r.matricula) document.getElementById('fmatricula').value=r.matricula;
-      }),
-      api('/api/funcionarios/proxima-re').then(r=>{
-        if(r && r.re) document.getElementById('fre').value=r.re;
-      })
-    ]);
+    api('/api/funcionarios/proxima-re').then(r=>{
+      if(r && r.re) document.getElementById('fre').value=r.re;
+    });
   }
   setModalClean('func');
   document.getElementById('mod-func').classList.add('on');
@@ -3662,7 +3656,6 @@ function openModalFunc(modo,id){
 function preencherFormFuncionario(f,titulo='Editar funcionário'){ 
   document.getElementById('mod-func-tit').textContent=titulo;
   document.getElementById('fid').value=f.id||'';
-  document.getElementById('fmatricula').value=f.matricula||'';
   document.getElementById('fre').value=f.re||'';
   document.getElementById('fnome').value=f.nome||'';
   document.getElementById('fcpf').value=f.cpf||'';
@@ -3918,7 +3911,6 @@ async function salvarFuncionario(){
   const id=document.getElementById('fid').value;
   const areas=AREAS.filter(a=>document.getElementById('fa-'+a)?.checked);
   const d={
-    matricula:document.getElementById('fmatricula').value,
     re:parseInt(document.getElementById('fre').value)||null,
     nome,
     cpf:document.getElementById('fcpf').value,
@@ -3989,7 +3981,7 @@ async function renderFuncionarios(){
   tb.innerHTML=funcs.map(f=>{
     const emp=emps.find(e=>e.id===f.empresa_id);
     return `<tr class="row-clickable" onclick="openModalFunc('editar',${f.id})">
-      <td style="font-weight:700">${f.matricula||'—'}</td>
+      <td style="font-weight:700">${f.re||'—'}</td>
       <td><div style="font-weight:700">${f.nome}</div><div style="font-size:11px;color:#888">${fmtDoc(f.cpf)||''}</div></td>
       <td><div>${f.cargo||'—'}</div><div style="font-size:11px;color:#888">${f.funcao||''}</div></td>
       <td style="font-size:11px">${f.posto_operacional||'Reserva tecnica'}</td>
