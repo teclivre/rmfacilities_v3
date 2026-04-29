@@ -7478,6 +7478,18 @@ def _api_beneficios_xlsx_tipo(tipo):
                     cell.alignment=right
                 else:
                     cell.alignment=left
+        # Quantidade de funcionários
+        qr=ws.max_row+1
+        qtd_funcs=len(items)
+        if tipo=='vale_alimentacao':
+            qc=ws.cell(row=qr,column=4,value='Funcionários:')
+            qc.font=total_font; qc.alignment=right; qc.fill=total_fill
+            qv=ws.cell(row=qr,column=5,value=qtd_funcs)
+        else:
+            qc=ws.cell(row=qr,column=5,value='Funcionários:')
+            qc.font=total_font; qc.alignment=right; qc.fill=total_fill
+            qv=ws.cell(row=qr,column=6,value=qtd_funcs)
+        qv.font=total_font; qv.alignment=right; qv.fill=total_fill
         # Total row
         tr=ws.max_row+1
         if tipo=='vale_alimentacao':
@@ -7640,10 +7652,13 @@ def _api_beneficios_pdf_tipo(tipo):
                     Paragraph(_esc(fmt_brl(valor)),st_num),
                     Paragraph(_esc(fmt_brl(total)),st_num)
                 ])
+        qtd_funcs=len(items)
         if tipo=='vale_alimentacao':
+            rows.append(['','','', Paragraph('Funcionários:',st_num), Paragraph(_esc(str(qtd_funcs)),st_num)])
             rows.append(['','','', Paragraph('Total da empresa:',st_num), Paragraph(_esc(fmt_brl(total_emp)),st_num)])
             tb=Table(rows,colWidths=[1.8*cm,5.8*cm,3.5*cm,3.2*cm,3.2*cm])
         else:
+            rows.append(['','','','', Paragraph('Funcionários:',st_num), Paragraph(_esc(str(qtd_funcs)),st_num)])
             rows.append(['','','','', Paragraph('Total da empresa:',st_num), Paragraph(_esc(fmt_brl(total_emp)),st_num)])
             tb=Table(rows,colWidths=[1.8*cm,5.2*cm,3.3*cm,1.4*cm,2.8*cm,2.8*cm])
         tb.setStyle(TableStyle([
