@@ -1245,6 +1245,31 @@ def wa_phone_matches(a,b):
             return True
     return False
 
+def _peek_upload_bytes(fs,size=8):
+    if not fs:
+        return b''
+    try:
+        stream=getattr(fs,'stream',None)
+        if stream is not None:
+            pos=stream.tell()
+            data=stream.read(size) or b''
+            stream.seek(pos)
+            return data
+    except Exception:
+        pass
+    try:
+        data=fs.read(size) or b''
+        try:
+            fs.seek(0)
+        except Exception:
+            pass
+        return data
+    except Exception:
+        return b''
+
+def _upload_is_pdf(fs):
+    return _peek_upload_bytes(fs,5).startswith(b'%PDF-')
+
 def _funcionario_por_whatsapp(numero):
     num=only_digits(numero)
     if not num:
@@ -5673,13 +5698,32 @@ def api_funcionario_arquivos_lista(fid):
     arqs=FuncionarioArquivo.query.filter_by(funcionario_id=fid).order_by(FuncionarioArquivo.criado_em.desc()).all()
     return jsonify([{'id':a.id,'nome':a.nome_arquivo,'categoria':a.categoria,'competencia':a.competencia} for a in arqs])
 
-
+@app.route('/api/rh/extrair-competencia',methods=['POST'])
+@lr
+def api_rh_extrair_competencia():
+    """Extrai a competência (MM/YYYY) de um PDF enviado.
+    Retorna a primeira competência encontrada ou o mês corrente como fallback."""
+    from pypdf import PdfReader
+    import io
+    fs=request.files.get('arquivo')
+    if not fs:
+        return jsonify({'erro':'Arquivo não enviado'}),400
+    if not _upload_is_pdf(fs):
+        return jsonify({'erro':'Arquivo inválido. Envie um PDF válido.'}),400
+    try:
+        reader=PdfReader(io.BytesIO(fs.read()))
+        texto=_extract_pdf_competencia_text(reader,max_pages=30)
+    except Exception:
+        texto=''
+    comp,origem=_resolver_competencia_envio(comp_in='',texto=texto,nome_arquivo=(fs.filename or ''))
+    return jsonify({'competencia':comp,'competencia_origem':origem,'encontrada_no_documento':origem in ('texto_pdf','nome_arquivo')})
 @app.route('/api/funcionarios/holerites/upload',methods=['POST'])
 @lr
 def api_holerites_upload():
     fs=request.files.get('arquivo')
     comp=(request.form.get('competencia') or '').strip()
     if not fs: return jsonify({'erro':'PDF nao enviado'}),400
+    if not _upload_is_pdf(fs): return jsonify({'erro':'Arquivo invalido. Envie um PDF valido.'}),400
     canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
     if canal_ass not in ('nao','whatsapp','link'):
         canal_ass='nao'
@@ -5743,6 +5787,7 @@ def api_folhas_ponto_upload():
     fs=request.files.get('arquivo')
     comp=(request.form.get('competencia') or '').strip()
     if not fs: return jsonify({'erro':'PDF nao enviado'}),400
+    if not _upload_is_pdf(fs): return jsonify({'erro':'Arquivo invalido. Envie um PDF valido.'}),400
     canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
     if canal_ass not in ('nao','whatsapp','link'):
         canal_ass='nao'
@@ -5814,6 +5859,8 @@ def api_documentos_rh_upload():
     cat_in=(request.form.get('categoria') or 'outros').strip().lower()
     if not fs:
         return jsonify({'erro':'PDF nao enviado'}),400
+    if not _upload_is_pdf(fs):
+        return jsonify({'erro':'Arquivo invalido. Envie um PDF valido.'}),400
 
     canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
     if canal_ass not in ('nao','whatsapp','link'):
@@ -5923,6 +5970,8 @@ def api_rh_preview_destinatarios():
     funcionario_id=to_num(request.form.get('funcionario_id'))
     if not fs:
         return jsonify({'erro':'PDF nao enviado'}),400
+    if not _upload_is_pdf(fs):
+        return jsonify({'erro':'Arquivo invalido. Envie um PDF valido.'}),400
     try:
         from pypdf import PdfReader
     except Exception:
