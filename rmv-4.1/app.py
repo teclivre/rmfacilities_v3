@@ -2463,6 +2463,30 @@ def _competencia_from_texto_nome(texto='',nome_arquivo=''):
     comps=_parse_competencias_holerite(base,ano_padrao=localnow().year)
     return comps[0] if comps else ''
 
+def _resolver_competencia_envio(comp_in='',texto='',nome_arquivo=''):
+    """Resolve competência e informa a origem usada.
+    Origem: manual | texto_pdf | nome_arquivo | mes_atual
+    """
+    comp_manual=(comp_in or '').strip()
+    if comp_manual:
+        return comp_manual,'manual'
+
+    comp_txt=''
+    if (texto or '').strip():
+        comp_txt=_parse_competencias_holerite(texto,ano_padrao=localnow().year)
+        comp_txt=comp_txt[0] if comp_txt else ''
+    if comp_txt:
+        return comp_txt,'texto_pdf'
+
+    comp_nome=''
+    if (nome_arquivo or '').strip():
+        comp_nome=_parse_competencias_holerite(nome_arquivo,ano_padrao=localnow().year)
+        comp_nome=comp_nome[0] if comp_nome else ''
+    if comp_nome:
+        return comp_nome,'nome_arquivo'
+
+    return _competencia_mes_atual(),'mes_atual'
+
 def _nome_candidatos_holerite(page_text):
     """Extrai candidatos de nome em layouts comuns de holerite (ex.: Dominio)."""
     txt=str(page_text or '')
@@ -2503,6 +2527,26 @@ def _nome_candidatos_holerite(page_text):
                 add_nome(cand)
                 break
     return out
+
+def _indicadores_pdf_funcionario(page_text):
+    """Extrai indicadores úteis para matching em PDFs (CPF, matrícula/RE)."""
+    txt=str(page_text or '')
+    txt_norm=_norm_text_match(txt)
+    txt_digits=only_digits(txt)
+
+    cpfs=set(re.findall(r'\d{11}',txt_digits or ''))
+    mats=set()
+    for m in re.finditer(r'\b(?:matricula|matr|codigo|cod|re)\s*[:\-]?\s*(\d{1,8})\b',txt_norm):
+        v=(m.group(1) or '').strip()
+        if v:
+            mats.add((v.lstrip('0') or '0'))
+    # Valor numérico isolado no início de linha (ex.: "48 ALINE ...")
+    for ln in txt.splitlines():
+        mm=re.match(r'^\s*(\d{1,8})\s+[A-Za-zÀ-ÿ]',(ln or '').strip())
+        if mm:
+            mats.add((mm.group(1).lstrip('0') or '0'))
+
+    return {'txt_norm':txt_norm,'txt_digits':txt_digits,'cpfs':cpfs,'mats':mats}
 
 def _processa_dialogo_holerite(conversa_id,numero,texto):
     """Processa o diálogo de busca e envio de holerite."""
@@ -3068,13 +3112,18 @@ def _match_conf_level(score):
     return 'baixa'
 
 def find_funcionario_in_text(page_text,funcs,return_meta=False):
-    txt_norm=_norm_text_match(page_text)
+    from difflib import SequenceMatcher
+
+    indic=_indicadores_pdf_funcionario(page_text)
+    txt_norm=indic.get('txt_norm') or ''
+    txt_digits=indic.get('txt_digits') or ''
+    cpfs_pdf=indic.get('cpfs') or set()
+    mats_pdf=indic.get('mats') or set()
     nome_cands=_nome_candidatos_holerite(page_text)
     meta={'score':0,'second_score':0,'confianca':'baixa'}
     if not txt_norm:
         return (None,meta) if return_meta else None
     txt_pad=f' {txt_norm} '
-    txt_digits=only_digits(page_text)
     best=None
     best_score=0
     second_score=0
@@ -3099,6 +3148,13 @@ def find_funcionario_in_text(page_text,funcs,return_meta=False):
                 if cand==nome_norm:
                     score+=110
                     break
+                ratio_full=SequenceMatcher(None,nome_norm,cand).ratio()
+                if ratio_full>=0.94:
+                    score+=95
+                    break
+                if ratio_full>=0.88:
+                    score+=65
+                    break
                 nome_parts=[p for p in nome_norm.split(' ') if len(p)>=3]
                 if not nome_parts:
                     continue
@@ -3113,9 +3169,23 @@ def find_funcionario_in_text(page_text,funcs,return_meta=False):
         mat=only_digits(getattr(f,'matricula',None))
         if len(mat)>=4 and mat in txt_digits:
             score+=25
+        if mat:
+            mat_n=(mat.lstrip('0') or '0')
+            if mat_n in mats_pdf:
+                score+=55
         re_num=only_digits(getattr(f,'re',None))
         if len(re_num)>=4 and re_num in txt_digits:
             score+=20
+        if re_num:
+            re_n=(re_num.lstrip('0') or '0')
+            if re_n in mats_pdf:
+                score+=50
+        cpf=only_digits(getattr(f,'cpf',None))
+        if len(cpf)==11:
+            if cpf in cpfs_pdf:
+                score+=140
+            elif cpf in txt_digits:
+                score+=80
         if score>best_score:
             second_score=best_score
             best_score=score
@@ -4903,26 +4973,25 @@ def api_funcionario_upload_arquivo(id):
     fs=request.files.get('arquivo')
     if not fs: return jsonify({'erro':'Arquivo nao enviado'}),400
     cat=(request.form.get('categoria') or 'outros').strip().lower()
-    comp=(request.form.get('competencia') or '').strip()
+    comp_in=(request.form.get('competencia') or '').strip()
     canal_ass=(request.form.get('canal_assinatura') or 'whatsapp').strip().lower()
     if canal_ass not in ('whatsapp','link','nao'):
         canal_ass='whatsapp'
-    if not comp:
-        texto=''
+    texto=''
+    if not comp_in and str((fs.filename or '')).lower().endswith('.pdf'):
         try:
-            if str((fs.filename or '')).lower().endswith('.pdf'):
-                from pypdf import PdfReader
-                pos=fs.stream.tell()
-                reader=PdfReader(fs.stream)
-                texto=' '.join((p.extract_text() or '') for p in reader.pages[:5])
-                fs.stream.seek(pos)
-        except Exception:
+            from pypdf import PdfReader
+            import io
+            blob=fs.read()
             try:
-                fs.stream.seek(0)
+                fs.seek(0)
             except Exception:
                 pass
+            reader=PdfReader(io.BytesIO(blob))
+            texto=' '.join((p.extract_text() or '') for p in reader.pages[:5])
+        except Exception:
             texto=''
-        comp=_competencia_from_texto_nome(texto,nome_arquivo=(fs.filename or '')) or _competencia_mes_atual()
+    comp,comp_origem=_resolver_competencia_envio(comp_in=comp_in,texto=texto,nome_arquivo=(fs.filename or ''))
     ano=infer_doc_year(comp)
     prepare_func_doc_dirs(id,ano)
     subdir,cat=func_doc_subdir(id,cat,comp)
@@ -4944,7 +5013,7 @@ def api_funcionario_upload_arquivo(id):
         except Exception as e:
             assinatura_auto={'status':'erro','erro':str(e)}
     audit_event('funcionario_arquivo_upload','usuario',session.get('uid'),'funcionario',id,True,{'arquivo_id':a.id,'categoria':cat,'caminho':rel})
-    out=a.to_dict(); out['assinatura_auto']=assinatura_auto
+    out=a.to_dict(); out['assinatura_auto']=assinatura_auto; out['competencia_origem']=comp_origem
     return jsonify(out),201
 
 
@@ -6910,15 +6979,14 @@ def api_rh_extrair_competencia():
         texto=' '.join((p.extract_text() or '') for p in reader.pages[:5])
     except Exception:
         texto=''
-    comp_doc=_competencia_from_texto_nome(texto,nome_arquivo=(fs.filename or ''))
-    comp=comp_doc or _competencia_mes_atual()
-    return jsonify({'competencia':comp,'encontrada_no_documento':bool(comp_doc)})
+    comp,origem=_resolver_competencia_envio(comp_in='',texto=texto,nome_arquivo=(fs.filename or ''))
+    return jsonify({'competencia':comp,'competencia_origem':origem,'encontrada_no_documento':origem in ('texto_pdf','nome_arquivo')})
 
 @app.route('/api/funcionarios/holerites/upload',methods=['POST'])
 @lr
 def api_holerites_upload():
     fs=request.files.get('arquivo')
-    comp=(request.form.get('competencia') or '').strip()
+    comp_in=(request.form.get('competencia') or '').strip()
     if not fs: return jsonify({'erro':'PDF nao enviado'}),400
     canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
     if canal_ass not in ('nao','whatsapp','link'):
@@ -6937,9 +7005,8 @@ def api_holerites_upload():
     funcs=Funcionario.query.all()
     if not funcs: return jsonify({'erro':'Cadastre funcionarios antes do upload'}),400
     reader=PdfReader(fs)
-    if not comp:
-        texto_amostra=' '.join((p.extract_text() or '') for p in reader.pages[:5])
-        comp=_competencia_from_texto_nome(texto_amostra,nome_arquivo=(fs.filename or '')) or _competencia_mes_atual()
+    texto_amostra=' '.join((p.extract_text() or '') for p in reader.pages[:5])
+    comp,comp_origem=_resolver_competencia_envio(comp_in=comp_in,texto=texto_amostra,nome_arquivo=(fs.filename or ''))
     enviados=0; sem_match=[]; assinaturas_auto=0; sem_tel=[]; erro_ass=[]
     for idx,page in enumerate(reader.pages,start=1):
         txt=(page.extract_text() or '')
@@ -6974,13 +7041,13 @@ def api_holerites_upload():
                 assinaturas_auto+=1
             else:
                 erro_ass.append({'funcionario_id':alvo.id,'nome':alvo.nome,'erro':rs.get('erro') or 'Falha ao gerar link de assinatura.'})
-    return jsonify({'ok':True,'arquivos_gerados':enviados,'paginas_sem_funcionario':sem_match,'assinaturas_auto':assinaturas_auto,'sem_telefone':sem_tel,'falhas_assinatura':erro_ass,'canal_assinatura':canal_ass})
+    return jsonify({'ok':True,'arquivos_gerados':enviados,'paginas_sem_funcionario':sem_match,'assinaturas_auto':assinaturas_auto,'sem_telefone':sem_tel,'falhas_assinatura':erro_ass,'canal_assinatura':canal_ass,'competencia':comp,'competencia_origem':comp_origem})
 
 @app.route('/api/funcionarios/folhas-ponto/upload',methods=['POST'])
 @lr
 def api_folhas_ponto_upload():
     fs=request.files.get('arquivo')
-    comp=(request.form.get('competencia') or '').strip()
+    comp_in=(request.form.get('competencia') or '').strip()
     if not fs: return jsonify({'erro':'PDF nao enviado'}),400
     canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
     if canal_ass not in ('nao','whatsapp','link'):
@@ -6999,9 +7066,8 @@ def api_folhas_ponto_upload():
     funcs=Funcionario.query.all()
     if not funcs: return jsonify({'erro':'Cadastre funcionarios antes do upload'}),400
     reader=PdfReader(fs)
-    if not comp:
-        texto_amostra=' '.join((p.extract_text() or '') for p in reader.pages[:5])
-        comp=_competencia_from_texto_nome(texto_amostra,nome_arquivo=(fs.filename or '')) or _competencia_mes_atual()
+    texto_amostra=' '.join((p.extract_text() or '') for p in reader.pages[:5])
+    comp,comp_origem=_resolver_competencia_envio(comp_in=comp_in,texto=texto_amostra,nome_arquivo=(fs.filename or ''))
     enviados=0; sem_match=[]; assinaturas_auto=0; sem_tel=[]; erro_ass=[]; duplicadas=[]
     for idx,page in enumerate(reader.pages,start=1):
         txt=(page.extract_text() or '')
@@ -7041,14 +7107,14 @@ def api_folhas_ponto_upload():
                 assinaturas_auto+=1
             else:
                 erro_ass.append({'funcionario_id':alvo.id,'nome':alvo.nome,'erro':rs.get('erro') or 'Falha ao gerar link de assinatura.'})
-    return jsonify({'ok':True,'arquivos_gerados':enviados,'paginas_sem_funcionario':sem_match,'assinaturas_auto':assinaturas_auto,'sem_telefone':sem_tel,'falhas_assinatura':erro_ass,'canal_assinatura':canal_ass,'duplicadas':duplicadas})
+    return jsonify({'ok':True,'arquivos_gerados':enviados,'paginas_sem_funcionario':sem_match,'assinaturas_auto':assinaturas_auto,'sem_telefone':sem_tel,'falhas_assinatura':erro_ass,'canal_assinatura':canal_ass,'duplicadas':duplicadas,'competencia':comp,'competencia_origem':comp_origem})
 
 
 @app.route('/api/funcionarios/documentos-rh/upload',methods=['POST'])
 @lr
 def api_documentos_rh_upload():
     fs=request.files.get('arquivo')
-    comp=(request.form.get('competencia') or '').strip()
+    comp_in=(request.form.get('competencia') or '').strip()
     cat_in=(request.form.get('categoria') or 'outros').strip().lower()
     if not fs:
         return jsonify({'erro':'PDF nao enviado'}),400
@@ -7081,9 +7147,8 @@ def api_documentos_rh_upload():
         return jsonify({'erro':'Cadastre funcionarios antes do upload'}),400
 
     reader=PdfReader(fs)
-    if not comp:
-        texto_amostra=' '.join((p.extract_text() or '') for p in reader.pages[:5])
-        comp=_competencia_from_texto_nome(texto_amostra,nome_arquivo=(fs.filename or '')) or _competencia_mes_atual()
+    texto_amostra=' '.join((p.extract_text() or '') for p in reader.pages[:5])
+    comp,comp_origem=_resolver_competencia_envio(comp_in=comp_in,texto=texto_amostra,nome_arquivo=(fs.filename or ''))
     enviados=0
     sem_match=[]
     assinaturas_auto=0
@@ -7162,7 +7227,9 @@ def api_documentos_rh_upload():
         'sem_telefone':sem_tel,
         'falhas_assinatura':erro_ass,
         'canal_assinatura':canal_ass,
-        'categoria':categoria
+        'categoria':categoria,
+        'competencia':comp,
+        'competencia_origem':comp_origem
     })
 
 
@@ -7170,7 +7237,7 @@ def api_documentos_rh_upload():
 @lr
 def api_rh_preview_destinatarios():
     fs=request.files.get('arquivo')
-    comp=(request.form.get('competencia') or '').strip()
+    comp_in=(request.form.get('competencia') or '').strip()
     funcionario_id=to_num(request.form.get('funcionario_id'))
     if not fs:
         return jsonify({'erro':'PDF nao enviado'}),400
@@ -7199,7 +7266,8 @@ def api_rh_preview_destinatarios():
                 'match_detalhe':'Selecionado manualmente.',
                 'paginas':[]
             }],
-            'competencia':comp,
+            'competencia':(comp_in or _competencia_mes_atual()),
+            'competencia_origem':('manual' if comp_in else 'mes_atual'),
             'preview_tipo':'funcionario_especifico'
         })
 
@@ -7212,9 +7280,8 @@ def api_rh_preview_destinatarios():
     except Exception:
         return jsonify({'erro':'PDF invalido ou corrompido.'}),400
 
-    if not comp:
-        texto_amostra=' '.join((p.extract_text() or '') for p in reader.pages[:5])
-        comp=_competencia_from_texto_nome(texto_amostra,nome_arquivo=(fs.filename or '')) or _competencia_mes_atual()
+    texto_amostra=' '.join((p.extract_text() or '') for p in reader.pages[:5])
+    comp,comp_origem=_resolver_competencia_envio(comp_in=comp_in,texto=texto_amostra,nome_arquivo=(fs.filename or ''))
 
     dest_idx={}
     sem_match=[]
@@ -7266,6 +7333,7 @@ def api_rh_preview_destinatarios():
         'paginas_sem_funcionario':sem_match,
         'destinatarios':destinatarios,
         'competencia':comp,
+        'competencia_origem':comp_origem,
         'preview_tipo':'separacao_automatica'
     })
 
