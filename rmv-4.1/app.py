@@ -2494,6 +2494,12 @@ def _nome_candidatos_holerite(page_text):
         return []
     out=[]
     seen=set()
+    termos_ruido={
+        'salario','rescisao','ferias','faltas','referencia','vencimentos','descontos','descricao','descricao',
+        'codigo','funcionario','assinatura','liquido','inss','vale','transporte','adiantamento','desconto',
+        'familia','insalubridade','provisao','prov','acumulo','funcao','normal','normais','dias','horas',
+        'reflexo','noturno','dsr','cbo','departamento','filial','custo','cnpj','mensalista','folha'
+    }
 
     def add_nome(raw):
         s=re.sub(r'\s+',' ',str(raw or '')).strip(' -:\t')
@@ -2508,6 +2514,12 @@ def _nome_candidatos_holerite(page_text):
             return
         if len(s)<6:
             return
+        partes=[p for p in _norm_text_match(s).split(' ') if p]
+        if partes:
+            hits_ruido=sum(1 for p in partes if p in termos_ruido)
+            # Evita capturar linhas de verbas/descontos como se fossem nome.
+            if hits_ruido>=2:
+                return
         n=_norm_text_match(s)
         if n and n not in seen:
             seen.add(n)
@@ -2518,6 +2530,13 @@ def _nome_candidatos_holerite(page_text):
         m=re.match(r'^\s*\d{1,6}\s+([A-ZÀ-Ú][A-ZÀ-Ú\s\'\.-]{3,120}?)(?:\s+\d.*)?\s*$',(ln or '').strip())
         if m:
             add_nome(m.group(1))
+
+    # Extração em linha única/colunas coladas: "Código MARIA ... Nome do Funcionário"
+    for m in re.finditer(r'c[oó]digo\s+([A-ZÀ-Ú][A-ZÀ-Ú\s\'\.-]{4,140}?)(?=\s*nome\s+do\s+funcion[aá]rio\b)',txt,re.I):
+        add_nome(m.group(1))
+    # Variação comum quando o código numérico vem antes de "Código" no texto extraído.
+    for m in re.finditer(r'\b(\d{1,8})\s*c[oó]digo\s+([A-ZÀ-Ú][A-ZÀ-Ú\s\'\.-]{4,140}?)(?=\s*nome\s+do\s+funcion[aá]rio\b|\s+cbo\b|\s+departamento\b|\s+filial\b|$)',txt,re.I):
+        add_nome(m.group(2))
 
     # Ancora em "Nome do Funcionário" e usa a proxima linha nao vazia.
     linhas=[(ln or '').strip() for ln in txt.splitlines()]
@@ -2572,11 +2591,24 @@ def _indicadores_pdf_funcionario(page_text):
         v=(m.group(1) or '').strip()
         if v:
             mats.add((v.lstrip('0') or '0'))
-    # Valor numérico isolado no início de linha (ex.: "48 ALINE ...")
-    for ln in txt.splitlines():
-        mm=re.match(r'^\s*(\d{1,8})\s+[A-Za-zÀ-ÿ]',(ln or '').strip())
-        if mm:
-            mats.add((mm.group(1).lstrip('0') or '0'))
+
+    # Só aceita número no início quando a linha parece realmente nome de funcionário.
+    linhas=[(ln or '').strip() for ln in txt.splitlines()]
+    stop_linha=('salario','rescisao','ferias','faltas','inss','vale','desconto','adiantamento','codigo descricao')
+    for ln in linhas:
+        if not ln:
+            continue
+        mm=re.match(r'^\s*(\d{1,8})\s+([A-ZÀ-Ú][A-ZÀ-Ú\s\'\.-]{6,120})\s*$',ln)
+        if not mm:
+            continue
+        nome_raw=(mm.group(2) or '').strip()
+        nome_norm=_norm_text_match(nome_raw)
+        if any(sw in nome_norm for sw in stop_linha):
+            continue
+        partes=[p for p in nome_norm.split(' ') if p]
+        if len(partes)<2:
+            continue
+        mats.add((mm.group(1).lstrip('0') or '0'))
 
     return {'txt_norm':txt_norm,'txt_digits':txt_digits,'cpfs':cpfs,'mats':mats}
 
@@ -2604,6 +2636,25 @@ def _codigo_holerite_candidatos(page_text):
                         seen.add(code)
                         out.append(code)
                     break
+
+    # Padrão de extração sem quebra de linha entre colunas.
+    # Ex.: "... C.Custo: 54Código BENEDITO ... Nome do Funcionário ..."
+    for m in re.finditer(r'(?<![\d,.])(\d{1,8})\s*c[oó]digo\s+[A-ZÀ-Ú]',txt,re.I):
+        code=(m.group(1).lstrip('0') or '0')
+        if code=='0':
+            continue
+        if code not in seen:
+            seen.add(code)
+            out.append(code)
+
+    # Ex.: "Código 54 Nome do Funcionário" (variação por ordem de colunas)
+    for m in re.finditer(r'c[oó]digo\s*(\d{1,8})\b(?:\s+nome\s+do\s+funcion[aá]rio)?',txt,re.I):
+        code=(m.group(1).lstrip('0') or '0')
+        if code=='0':
+            continue
+        if code not in seen:
+            seen.add(code)
+            out.append(code)
     return out
 
 def _extract_pdf_page_text(page):
