@@ -2548,6 +2548,45 @@ def _indicadores_pdf_funcionario(page_text):
 
     return {'txt_norm':txt_norm,'txt_digits':txt_digits,'cpfs':cpfs,'mats':mats}
 
+def _extract_pdf_page_text(page):
+    """Extrai texto de uma página PDF com fallback para modo layout."""
+    txt=''
+    try:
+        txt=(page.extract_text() or '')
+    except Exception:
+        txt=''
+    txt=txt or ''
+
+    # Fallback útil para PDFs com fonte/encoding ruim no modo padrão.
+    txt_layout=''
+    if len(txt.strip())<40:
+        try:
+            txt_layout=(page.extract_text(extraction_mode='layout') or '')
+        except Exception:
+            txt_layout=''
+
+    if txt_layout:
+        if txt and txt_layout!=txt:
+            return (txt+'\n'+txt_layout).strip()
+        return txt_layout.strip()
+    return txt.strip()
+
+def _extract_pdf_sample_text(reader,max_pages=5):
+    partes=[]
+    try:
+        total=len(reader.pages)
+    except Exception:
+        total=0
+    limite=min(max_pages,max(0,total))
+    for i in range(limite):
+        try:
+            t=_extract_pdf_page_text(reader.pages[i])
+        except Exception:
+            t=''
+        if t:
+            partes.append(t)
+    return ' '.join(partes)
+
 def _processa_dialogo_holerite(conversa_id,numero,texto):
     """Processa o diálogo de busca e envio de holerite."""
     conversa=WhatsAppConversa.query.get(conversa_id)
@@ -3123,6 +3162,20 @@ def find_funcionario_in_text(page_text,funcs,return_meta=False):
     meta={'score':0,'second_score':0,'confianca':'baixa'}
     if not txt_norm:
         return (None,meta) if return_meta else None
+
+    # Atalho determinístico: RE/matricula único encontrado na página.
+    if mats_pdf:
+        candidatos=[]
+        for f in funcs:
+            mat_f=(only_digits(getattr(f,'matricula',None)).lstrip('0') or '0') if only_digits(getattr(f,'matricula',None)) else ''
+            re_f=(only_digits(getattr(f,'re',None)).lstrip('0') or '0') if only_digits(getattr(f,'re',None)) else ''
+            if (mat_f and mat_f in mats_pdf) or (re_f and re_f in mats_pdf):
+                candidatos.append(f)
+        # Se houver apenas um candidato por código, prioriza identificação dessa página.
+        if len(candidatos)==1:
+            meta={'score':180,'second_score':0,'confianca':'alta'}
+            return (candidatos[0],meta) if return_meta else candidatos[0]
+
     txt_pad=f' {txt_norm} '
     best=None
     best_score=0
@@ -6976,7 +7029,7 @@ def api_rh_extrair_competencia():
         return jsonify({'erro':'Arquivo não enviado'}),400
     try:
         reader=PdfReader(io.BytesIO(fs.read()))
-        texto=' '.join((p.extract_text() or '') for p in reader.pages[:5])
+        texto=_extract_pdf_sample_text(reader,max_pages=6)
     except Exception:
         texto=''
     comp,origem=_resolver_competencia_envio(comp_in='',texto=texto,nome_arquivo=(fs.filename or ''))
@@ -7005,11 +7058,11 @@ def api_holerites_upload():
     funcs=Funcionario.query.all()
     if not funcs: return jsonify({'erro':'Cadastre funcionarios antes do upload'}),400
     reader=PdfReader(fs)
-    texto_amostra=' '.join((p.extract_text() or '') for p in reader.pages[:5])
+    texto_amostra=_extract_pdf_sample_text(reader,max_pages=6)
     comp,comp_origem=_resolver_competencia_envio(comp_in=comp_in,texto=texto_amostra,nome_arquivo=(fs.filename or ''))
     enviados=0; sem_match=[]; assinaturas_auto=0; sem_tel=[]; erro_ass=[]
     for idx,page in enumerate(reader.pages,start=1):
-        txt=(page.extract_text() or '')
+        txt=_extract_pdf_page_text(page)
         alvo=find_funcionario_in_text(txt,funcs)
         if not alvo:
             sem_match.append(idx)
@@ -7066,11 +7119,11 @@ def api_folhas_ponto_upload():
     funcs=Funcionario.query.all()
     if not funcs: return jsonify({'erro':'Cadastre funcionarios antes do upload'}),400
     reader=PdfReader(fs)
-    texto_amostra=' '.join((p.extract_text() or '') for p in reader.pages[:5])
+    texto_amostra=_extract_pdf_sample_text(reader,max_pages=6)
     comp,comp_origem=_resolver_competencia_envio(comp_in=comp_in,texto=texto_amostra,nome_arquivo=(fs.filename or ''))
     enviados=0; sem_match=[]; assinaturas_auto=0; sem_tel=[]; erro_ass=[]; duplicadas=[]
     for idx,page in enumerate(reader.pages,start=1):
-        txt=(page.extract_text() or '')
+        txt=_extract_pdf_page_text(page)
         alvo=find_funcionario_in_text(txt,funcs)
         if not alvo:
             sem_match.append(idx)
@@ -7147,7 +7200,7 @@ def api_documentos_rh_upload():
         return jsonify({'erro':'Cadastre funcionarios antes do upload'}),400
 
     reader=PdfReader(fs)
-    texto_amostra=' '.join((p.extract_text() or '') for p in reader.pages[:5])
+    texto_amostra=_extract_pdf_sample_text(reader,max_pages=6)
     comp,comp_origem=_resolver_competencia_envio(comp_in=comp_in,texto=texto_amostra,nome_arquivo=(fs.filename or ''))
     enviados=0
     sem_match=[]
@@ -7156,7 +7209,7 @@ def api_documentos_rh_upload():
     erro_ass=[]
 
     for idx,page in enumerate(reader.pages,start=1):
-        txt=(page.extract_text() or '')
+        txt=_extract_pdf_page_text(page)
         alvo=find_funcionario_in_text(txt,funcs)
         if not alvo:
             sem_match.append(idx)
@@ -7280,13 +7333,13 @@ def api_rh_preview_destinatarios():
     except Exception:
         return jsonify({'erro':'PDF invalido ou corrompido.'}),400
 
-    texto_amostra=' '.join((p.extract_text() or '') for p in reader.pages[:5])
+    texto_amostra=_extract_pdf_sample_text(reader,max_pages=6)
     comp,comp_origem=_resolver_competencia_envio(comp_in=comp_in,texto=texto_amostra,nome_arquivo=(fs.filename or ''))
 
     dest_idx={}
     sem_match=[]
     for idx,page in enumerate(reader.pages,start=1):
-        txt=(page.extract_text() or '')
+        txt=_extract_pdf_page_text(page)
         alvo,match_meta=find_funcionario_in_text(txt,funcs,return_meta=True)
         if not alvo:
             sem_match.append(idx)
