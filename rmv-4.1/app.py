@@ -5468,12 +5468,17 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
     except Exception:
         link_curto=link
     enviado_wa=False
+    erro_envio=''
     if canal=='whatsapp':
         nome_func=(funcionario.nome if funcionario else 'colaborador')
         msg=(f"Olá, {nome_func}! Segue o link para assinatura do documento "
              f"'{arquivo.nome_arquivo}'. O link expira em 7 dias: {link_curto}")
-        wa_send_text(tel,msg)
-        enviado_wa=True
+        try:
+            wa_send_text(tel,msg)
+            enviado_wa=True
+        except Exception as ex:
+            # Mantem assinatura pendente com link ativo mesmo se o WhatsApp falhar.
+            erro_envio=str(ex)
 
     if commit_now:
         db.session.commit()
@@ -5486,6 +5491,7 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
         'canal':('whatsapp' if enviado_wa else 'link'),
         'expira_em':(arquivo.ass_expira_em.isoformat() if arquivo.ass_expira_em else ''),
         'enviado_wa':enviado_wa,
+        'erro_envio':erro_envio,
     }
 
 @app.route('/api/funcionarios/<int:id>/documentos/preparar',methods=['POST'])
