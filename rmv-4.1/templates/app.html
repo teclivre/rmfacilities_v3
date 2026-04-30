@@ -1070,6 +1070,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
           <div id="rh-lote-prev-meta" style="font-size:12px;color:#5f7386;margin-bottom:8px"></div>
           <div id="rh-lote-prev-list" style="display:flex;flex-direction:column;gap:7px;max-height:220px;overflow:auto"></div>
+          <div id="rh-lote-prev-debug"></div>
         </div>
       </div>
     </div>
@@ -4617,22 +4618,25 @@ async function uploadDocumentoRHLote(){
   resetRHLotePreview();
 }
 
-let _rhLotePreview={ready:false,selectedIds:[],destinatarios:[],totalPaginas:0,paginasSemFuncionario:[]};
+let _rhLotePreview={ready:false,selectedIds:[],destinatarios:[],totalPaginas:0,paginasSemFuncionario:[],debugPaginas:[]};
 
 function resetRHLotePreview(){
-  _rhLotePreview={ready:false,selectedIds:[],destinatarios:[],totalPaginas:0,paginasSemFuncionario:[]};
+  _rhLotePreview={ready:false,selectedIds:[],destinatarios:[],totalPaginas:0,paginasSemFuncionario:[],debugPaginas:[]};
   const box=document.getElementById('rh-lote-prev-box');
   const list=document.getElementById('rh-lote-prev-list');
   const meta=document.getElementById('rh-lote-prev-meta');
+  const dbg=document.getElementById('rh-lote-prev-debug');
   if(box) box.style.display='none';
   if(list) list.innerHTML='';
   if(meta) meta.textContent='';
+  if(dbg) dbg.innerHTML='';
 }
 
 function renderRHLotePreview(){
   const box=document.getElementById('rh-lote-prev-box');
   const list=document.getElementById('rh-lote-prev-list');
   const meta=document.getElementById('rh-lote-prev-meta');
+  const dbg=document.getElementById('rh-lote-prev-debug');
   if(!box || !list || !meta) return;
   const itens=_rhLotePreview.destinatarios||[];
   box.style.display='';
@@ -4665,6 +4669,33 @@ function renderRHLotePreview(){
       </div>
     </label>`;
   }).join('');
+
+  if(dbg){
+    const logs=_rhLotePreview.debugPaginas||[];
+    if(!logs.length){
+      dbg.innerHTML='';
+    }else{
+      dbg.innerHTML=`<details style="margin-top:10px;border:1px solid var(--borda);border-radius:8px;background:#0f1b2d;padding:8px">
+        <summary style="cursor:pointer;font-weight:700;color:#dce9f8">Diagnóstico das páginas sem identificação (${logs.length})</summary>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+          ${logs.map(log=>{
+            const inds=log.indicadores||{};
+            const top=Array.isArray(log.top_candidatos)?log.top_candidatos:[];
+            const topTxt=top.length?top.map(t=>`${t.nome||'?' } [${t.score||0}]${t.matricula?` mat ${t.matricula}`:''}${t.motivos?.length?` · ${t.motivos.join(', ')}`:''}`).join('<br>'):'Nenhum candidato ranqueado';
+            const cods=(inds.codigos_holerite?.length||inds.codigos_pdf?.length)?`Códigos: ${(inds.codigos_holerite||[]).join(', ')||'-'}${inds.codigos_pdf?.length?` | PDF: ${(inds.codigos_pdf||[]).join(', ')}`:''}`:'Códigos: nenhum';
+            const nomes=(inds.nomes_candidatos||[]).join(' | ')||'Nenhum nome candidato';
+            return `<div style="background:#fff;border-radius:8px;padding:10px;color:#1f2937;border:1px solid #d6e2ee">
+              <div style="font-weight:700">Página ${log.pagina} · ${log.motivo||'sem_match'}</div>
+              <div style="font-size:12px;color:#334155;margin-top:4px">${cods}</div>
+              <div style="font-size:12px;color:#334155;margin-top:4px">Nomes candidatos: ${nomes}</div>
+              <div style="font-size:12px;color:#334155;margin-top:4px">Texto: ${(log.snippet||'').replace(/</g,'&lt;')}</div>
+              <div style="font-size:12px;color:#0f172a;margin-top:6px"><strong>Top candidatos</strong><br>${topTxt}</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </details>`;
+    }
+  }
 }
 
 function syncRHLotePreviewSelection(){
@@ -4704,7 +4735,8 @@ async function previewDocumentoRHLote(){
       destinatarios:itens,
       selectedIds:itens.map(it=>it.funcionario_id).filter(Number.isFinite),
       totalPaginas:parseInt(d.total_paginas||0,10)||0,
-      paginasSemFuncionario:Array.isArray(d.paginas_sem_funcionario)?d.paginas_sem_funcionario:[]
+      paginasSemFuncionario:Array.isArray(d.paginas_sem_funcionario)?d.paginas_sem_funcionario:[],
+      debugPaginas:Array.isArray(d.debug_paginas)?d.debug_paginas:[]
     };
     renderRHLotePreview();
     showSt('st-rh',`Pré-visualização pronta. Destinatários identificados: ${itens.length}.`,false);

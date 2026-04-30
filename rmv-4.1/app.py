@@ -3234,6 +3234,116 @@ def _match_conf_level(score):
         return 'media'
     return 'baixa'
 
+def _rank_funcionarios_in_text(page_text,funcs,limit=5):
+    from difflib import SequenceMatcher
+
+    indic=_indicadores_pdf_funcionario(page_text)
+    txt_norm=indic.get('txt_norm') or ''
+    txt_digits=indic.get('txt_digits') or ''
+    cpfs_pdf=indic.get('cpfs') or set()
+    mats_pdf=indic.get('mats') or set()
+    cods_holerite=_codigo_holerite_candidatos(page_text)
+    nome_cands=_nome_candidatos_holerite(page_text)
+    txt_pad=f' {txt_norm} '
+    ranking=[]
+
+    for f in funcs:
+        nome_norm=_norm_text_match(getattr(f,'nome',None))
+        if not nome_norm:
+            continue
+        score=0
+        motivos=[]
+
+        mat_f=(only_digits(getattr(f,'matricula',None)).lstrip('0') or '0') if only_digits(getattr(f,'matricula',None)) else ''
+        re_f=(only_digits(getattr(f,'re',None)).lstrip('0') or '0') if only_digits(getattr(f,'re',None)) else ''
+        cpf_f=only_digits(getattr(f,'cpf',None))
+
+        if cods_holerite and ((mat_f and mat_f in cods_holerite) or (re_f and re_f in cods_holerite)):
+            score+=180
+            motivos.append('codigo_holerite')
+        elif mats_pdf and ((mat_f and mat_f in mats_pdf) or (re_f and re_f in mats_pdf)):
+            score+=120
+            motivos.append('codigo_pdf')
+
+        if f' {nome_norm} ' in txt_pad:
+            score+=100
+            motivos.append('nome_exato')
+        else:
+            partes=[p for p in nome_norm.split(' ') if len(p)>=3]
+            if len(partes)>=2:
+                if f' {partes[0]} ' in txt_pad and f' {partes[-1]} ' in txt_pad:
+                    score+=60
+                    motivos.append('primeiro_ultimo_nome')
+                hits=sum(1 for p in partes if f' {p} ' in txt_pad)
+                if hits:
+                    score+=min(30,hits*10)
+                    motivos.append(f'partes_nome:{hits}')
+            elif len(partes)==1 and f' {partes[0]} ' in txt_pad:
+                score+=25
+                motivos.append('nome_unico')
+
+        for cand in nome_cands:
+            if cand==nome_norm:
+                score+=110
+                motivos.append('candidato_nome_exato')
+                break
+            ratio_full=SequenceMatcher(None,nome_norm,cand).ratio()
+            if ratio_full>=0.94:
+                score+=95
+                motivos.append(f'fuzzy:{ratio_full:.2f}')
+                break
+            if ratio_full>=0.88:
+                score+=65
+                motivos.append(f'fuzzy:{ratio_full:.2f}')
+                break
+            nome_parts=[p for p in nome_norm.split(' ') if len(p)>=3]
+            if nome_parts:
+                hits=sum(1 for p in nome_parts if p in cand.split(' '))
+                ratio=hits/max(1,len(nome_parts))
+                if ratio>=0.75:
+                    score+=75
+                    motivos.append(f'partes_candidato:{ratio:.2f}')
+                    break
+                if ratio>=0.5:
+                    score+=40
+                    motivos.append(f'partes_candidato:{ratio:.2f}')
+                    break
+
+        if mat_f and len(mat_f)>=4 and mat_f in txt_digits:
+            score+=25
+            motivos.append('matricula_texto')
+        if re_f and len(re_f)>=4 and re_f in txt_digits:
+            score+=20
+            motivos.append('re_texto')
+        if len(cpf_f)==11:
+            if cpf_f in cpfs_pdf:
+                score+=140
+                motivos.append('cpf_exato')
+            elif cpf_f in txt_digits:
+                score+=80
+                motivos.append('cpf_texto')
+
+        ranking.append({
+            'funcionario_id':getattr(f,'id',None),
+            'nome':getattr(f,'nome','') or '',
+            'matricula':getattr(f,'matricula','') or '',
+            're':getattr(f,'re',None),
+            'score':int(score),
+            'motivos':motivos,
+        })
+
+    ranking.sort(key=lambda x:(-int(x.get('score') or 0),(x.get('nome') or '').lower()))
+    return {
+        'indicadores':{
+            'codigos_holerite':sorted(list(cods_holerite)),
+            'codigos_pdf':sorted(list(mats_pdf)),
+            'cpfs':sorted(list(cpfs_pdf))[:3],
+            'nomes_candidatos':nome_cands[:5],
+            'texto_vazio':(not txt_norm),
+        },
+        'top':ranking[:max(1,int(limit or 5))]
+    }
+
 def find_funcionario_in_text(page_text,funcs,return_meta=False):
     from difflib import SequenceMatcher
 
@@ -7436,11 +7546,21 @@ def api_rh_preview_destinatarios():
 
     dest_idx={}
     sem_match=[]
+    debug_paginas=[]
     for idx,page in enumerate(reader.pages,start=1):
         txt=_extract_pdf_page_text(page)
         alvo,match_meta=find_funcionario_in_text(txt,funcs,return_meta=True)
         if not alvo:
             sem_match.append(idx)
+            rank=_rank_funcionarios_in_text(txt,funcs,limit=5)
+            txt_limpo=' '.join((txt or '').split())
+            debug_paginas.append({
+                'pagina':idx,
+                'motivo':('texto_vazio' if not (txt or '').strip() else 'sem_match'),
+                'snippet':txt_limpo[:280],
+                'indicadores':rank.get('indicadores') or {},
+                'top_candidatos':rank.get('top') or []
+            })
             continue
         if alvo.id not in dest_idx:
             tel=wa_norm_number(alvo.telefone or '')
@@ -7482,6 +7602,7 @@ def api_rh_preview_destinatarios():
         'ok':True,
         'total_paginas':len(reader.pages),
         'paginas_sem_funcionario':sem_match,
+        'debug_paginas':debug_paginas,
         'destinatarios':destinatarios,
         'competencia':comp,
         'competencia_origem':comp_origem,
