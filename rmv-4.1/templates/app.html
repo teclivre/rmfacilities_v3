@@ -1409,7 +1409,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div class="f"><label>Categoria</label><select id="sst-cat"><option value="aso">ASO</option><option value="epi">Ficha de EPI</option><option value="treinamento">Treinamento</option><option value="folha_ponto">Folha de Ponto</option><option value="contrato_trabalho">Contrato de Trabalho</option><option value="vale_transporte">Vale Transporte</option><option value="requisicao_vale_transporte">Requisição de Vale Transporte</option><option value="uniforme">Uniforme / Fardamento</option><option value="atestado">Atestado</option><option value="recibo_ferias">Recibo de Férias</option><option value="outros">Outros</option></select></div>
           <div class="f"><label>Competência/Validade</label><input id="sst-comp" placeholder="04/2026"></div>
         </div>
-        <div class="f" style="margin-top:10px"><label>Arquivo</label><input type="file" id="sst-arq"></div>
+        <div class="f" style="margin-top:10px"><label>Arquivo</label><input type="file" id="sst-arq" onchange="autoPreencherCompetencia(this,'sst-comp')"></div>
         <div class="brow" style="justify-content:flex-start"><button class="btn b-az" onclick="uploadSSTArquivo()">Anexar ao funcionário</button></div>
       </div>
     </div>
@@ -4487,7 +4487,7 @@ async function uploadArquivoFuncionarioModal(){
   const fd=new FormData();
   fd.append('arquivo',f);
   fd.append('categoria',document.getElementById('farq-cat').value);
-  fd.append('competencia',document.getElementById('farq-comp').value||'');
+  fd.append('competencia',document.getElementById('farq-comp').value.trim()||_compMesAtual());
   const optCanal=prompt('Como deseja solicitar a assinatura?\n1 = Enviar link via WhatsApp\n2 = Gerar link (sem envio automático)\n3 = Não solicitar assinatura\n\nDigite 1, 2 ou 3:','1');
   if(optCanal===null) return;
   const mapaCanal={'1':'whatsapp','2':'link','3':'nao'};
@@ -4535,8 +4535,7 @@ async function uploadDocumentoRHLote(){
   const funcionarioId=document.getElementById('rh-lote-func')?.value||'';
   const f=document.getElementById('rh-lote-arq').files?.[0];
   if(!f){alert('Selecione o arquivo PDF.');return;}
-  const comp=(document.getElementById('rh-lote-comp').value||'').trim();
-  if(!comp){alert('Informe a competência (ex: 04/2026).');return;}
+  const comp=(document.getElementById('rh-lote-comp').value||'').trim()||_compMesAtual();
   const canalAss=document.getElementById('rh-lote-ass')?.value||'nao';
 
   if(!funcionarioId && canalAss!=='nao'){
@@ -4713,10 +4712,15 @@ async function previewDocumentoRHLote(){
   }
 }
 
+function _compMesAtual(){
+  const n=new Date();
+  return String(n.getMonth()+1).padStart(2,'0')+'/'+n.getFullYear();
+}
+
 async function uploadSSTArquivo(){
   const fid=document.getElementById('sst-func').value;
   const cat=document.getElementById('sst-cat').value;
-  const comp=document.getElementById('sst-comp').value;
+  const comp=document.getElementById('sst-comp').value.trim()||_compMesAtual();
   const f=document.getElementById('sst-arq').files?.[0];
   if(!fid||!f){alert('Selecione funcionário e arquivo.');return;}
   const optCanal=prompt('Deseja solicitar assinatura deste documento?\n1 = Não solicitar assinatura\n2 = Sim, enviar link via WhatsApp\n3 = Sim, apenas gerar link\n\nDigite 1, 2 ou 3:','1');
