@@ -2390,6 +2390,9 @@ def _parse_competencias_holerite(texto,ano_padrao=None):
     if not s:
         return []
 
+    # Versao normalizada sem acentos/pontuacao para capturar textos com OCR irregular.
+    s_norm=_norm_text_match(s)
+
     ano_global=None
     m_ano=re.search(r'\b(19\d{2}|20\d{2})\b',s)
     if m_ano:
@@ -2438,10 +2441,67 @@ def _parse_competencias_holerite(texto,ano_padrao=None):
         ano=int(ano_txt) if ano_txt else (ano_global or ano_padrao)
         add_comp(meses.get(token),ano)
 
-    # Se vier apenas mês numérico sem ano (ex.: "5 e 6"), assume ano corrente.
-    for mm in re.findall(r'\b(0?[1-9]|1[0-2])\b',s):
+    # Padrao em texto normalizado (sem acentos): "janeiro de 2025" etc.
+    for mt in re.finditer(r'\b(janeiro|jan|fevereiro|fev|marco|mar|abril|abr|maio|mai|junho|jun|julho|jul|agosto|ago|setembro|set|outubro|out|novembro|nov|dezembro|dez)\b(?:\s*(?:de|/|-)?\s*(\d{4}))?',s_norm):
+        token=mt.group(1)
+        ano_txt=mt.group(2)
+        ano=int(ano_txt) if ano_txt else (ano_global or ano_padrao)
+        add_comp(meses.get(token),ano)
+
+    # Mes sem ano so e aceito quando vier com marcador de competencia/mes.
+    for mm in re.findall(r'(?:\bcompet[eê]ncia\b|\bm[eê]s\b|\bperiodo\b)\D{0,8}(0?[1-9]|1[0-2])\b',s):
         add_comp(mm,ano_global or ano_padrao)
 
+    return out
+
+def _competencia_mes_atual():
+    now=localnow()
+    return f"{now.month:02d}/{now.year}"
+
+def _competencia_from_texto_nome(texto='',nome_arquivo=''):
+    base=f"{texto or ''}\n{nome_arquivo or ''}"
+    comps=_parse_competencias_holerite(base,ano_padrao=localnow().year)
+    return comps[0] if comps else ''
+
+def _nome_candidatos_holerite(page_text):
+    """Extrai candidatos de nome em layouts comuns de holerite (ex.: Dominio)."""
+    txt=str(page_text or '')
+    if not txt.strip():
+        return []
+    out=[]
+    seen=set()
+
+    def add_nome(raw):
+        s=re.sub(r'\s+',' ',str(raw or '')).strip(' -:\t')
+        if not s:
+            return
+        if any(ch.isdigit() for ch in s):
+            return
+        if len(s)<6:
+            return
+        n=_norm_text_match(s)
+        if n and n not in seen:
+            seen.add(n)
+            out.append(n)
+
+    # Linha com codigo + nome (nome normalmente em caixa alta no holerite).
+    for ln in txt.splitlines():
+        m=re.match(r'^\s*\d{1,6}\s+([A-ZÀ-Ú][A-ZÀ-Ú\s\'\.-]{5,90})\s*$',(ln or '').strip())
+        if m:
+            add_nome(m.group(1))
+
+    # Ancora em "Nome do Funcionário" e usa a proxima linha nao vazia.
+    linhas=[(ln or '').strip() for ln in txt.splitlines()]
+    for i,ln in enumerate(linhas):
+        if re.search(r'nome\s+do\s+funcion[aá]rio',ln,re.I):
+            for j in range(i+1,min(i+5,len(linhas))):
+                cand=linhas[j]
+                if not cand:
+                    continue
+                cand=re.sub(r'^\d{1,6}\s+','',cand)
+                cand=re.sub(r'\s{2,}.*$','',cand)
+                add_nome(cand)
+                break
     return out
 
 def _processa_dialogo_holerite(conversa_id,numero,texto):
@@ -3009,6 +3069,7 @@ def _match_conf_level(score):
 
 def find_funcionario_in_text(page_text,funcs,return_meta=False):
     txt_norm=_norm_text_match(page_text)
+    nome_cands=_nome_candidatos_holerite(page_text)
     meta={'score':0,'second_score':0,'confianca':'baixa'}
     if not txt_norm:
         return (None,meta) if return_meta else None
@@ -3033,6 +3094,22 @@ def find_funcionario_in_text(page_text,funcs,return_meta=False):
                 score+=min(30,hits*10)
             elif len(partes)==1 and f' {partes[0]} ' in txt_pad:
                 score+=25
+        if nome_cands:
+            for cand in nome_cands:
+                if cand==nome_norm:
+                    score+=110
+                    break
+                nome_parts=[p for p in nome_norm.split(' ') if len(p)>=3]
+                if not nome_parts:
+                    continue
+                hits=sum(1 for p in nome_parts if p in cand.split(' '))
+                ratio=hits/max(1,len(nome_parts))
+                if ratio>=0.75:
+                    score+=75
+                    break
+                if ratio>=0.5:
+                    score+=40
+                    break
         mat=only_digits(getattr(f,'matricula',None))
         if len(mat)>=4 and mat in txt_digits:
             score+=25
@@ -3046,7 +3123,7 @@ def find_funcionario_in_text(page_text,funcs,return_meta=False):
         elif score>second_score:
             second_score=score
     meta={'score':best_score,'second_score':second_score,'confianca':_match_conf_level(best_score)}
-    if best_score<45:
+    if best_score<45 and not (best_score>=30 and (best_score-second_score)>=12):
         return (None,meta) if return_meta else None
     return (best,meta) if return_meta else best
 
@@ -4830,6 +4907,22 @@ def api_funcionario_upload_arquivo(id):
     canal_ass=(request.form.get('canal_assinatura') or 'whatsapp').strip().lower()
     if canal_ass not in ('whatsapp','link','nao'):
         canal_ass='whatsapp'
+    if not comp:
+        texto=''
+        try:
+            if str((fs.filename or '')).lower().endswith('.pdf'):
+                from pypdf import PdfReader
+                pos=fs.stream.tell()
+                reader=PdfReader(fs.stream)
+                texto=' '.join((p.extract_text() or '') for p in reader.pages[:5])
+                fs.stream.seek(pos)
+        except Exception:
+            try:
+                fs.stream.seek(0)
+            except Exception:
+                pass
+            texto=''
+        comp=_competencia_from_texto_nome(texto,nome_arquivo=(fs.filename or '')) or _competencia_mes_atual()
     ano=infer_doc_year(comp)
     prepare_func_doc_dirs(id,ano)
     subdir,cat=func_doc_subdir(id,cat,comp)
@@ -6817,13 +6910,9 @@ def api_rh_extrair_competencia():
         texto=' '.join((p.extract_text() or '') for p in reader.pages[:5])
     except Exception:
         texto=''
-    competencias=_parse_competencias_holerite(texto,ano_padrao=localnow().year)
-    if competencias:
-        comp=competencias[0]
-    else:
-        now=localnow()
-        comp=f"{now.month:02d}/{now.year}"
-    return jsonify({'competencia':comp,'encontrada_no_documento':bool(competencias)})
+    comp_doc=_competencia_from_texto_nome(texto,nome_arquivo=(fs.filename or ''))
+    comp=comp_doc or _competencia_mes_atual()
+    return jsonify({'competencia':comp,'encontrada_no_documento':bool(comp_doc)})
 
 @app.route('/api/funcionarios/holerites/upload',methods=['POST'])
 @lr
@@ -6848,6 +6937,9 @@ def api_holerites_upload():
     funcs=Funcionario.query.all()
     if not funcs: return jsonify({'erro':'Cadastre funcionarios antes do upload'}),400
     reader=PdfReader(fs)
+    if not comp:
+        texto_amostra=' '.join((p.extract_text() or '') for p in reader.pages[:5])
+        comp=_competencia_from_texto_nome(texto_amostra,nome_arquivo=(fs.filename or '')) or _competencia_mes_atual()
     enviados=0; sem_match=[]; assinaturas_auto=0; sem_tel=[]; erro_ass=[]
     for idx,page in enumerate(reader.pages,start=1):
         txt=(page.extract_text() or '')
@@ -6907,6 +6999,9 @@ def api_folhas_ponto_upload():
     funcs=Funcionario.query.all()
     if not funcs: return jsonify({'erro':'Cadastre funcionarios antes do upload'}),400
     reader=PdfReader(fs)
+    if not comp:
+        texto_amostra=' '.join((p.extract_text() or '') for p in reader.pages[:5])
+        comp=_competencia_from_texto_nome(texto_amostra,nome_arquivo=(fs.filename or '')) or _competencia_mes_atual()
     enviados=0; sem_match=[]; assinaturas_auto=0; sem_tel=[]; erro_ass=[]; duplicadas=[]
     for idx,page in enumerate(reader.pages,start=1):
         txt=(page.extract_text() or '')
@@ -6986,6 +7081,9 @@ def api_documentos_rh_upload():
         return jsonify({'erro':'Cadastre funcionarios antes do upload'}),400
 
     reader=PdfReader(fs)
+    if not comp:
+        texto_amostra=' '.join((p.extract_text() or '') for p in reader.pages[:5])
+        comp=_competencia_from_texto_nome(texto_amostra,nome_arquivo=(fs.filename or '')) or _competencia_mes_atual()
     enviados=0
     sem_match=[]
     assinaturas_auto=0
@@ -7113,6 +7211,10 @@ def api_rh_preview_destinatarios():
         reader=PdfReader(fs)
     except Exception:
         return jsonify({'erro':'PDF invalido ou corrompido.'}),400
+
+    if not comp:
+        texto_amostra=' '.join((p.extract_text() or '') for p in reader.pages[:5])
+        comp=_competencia_from_texto_nome(texto_amostra,nome_arquivo=(fs.filename or '')) or _competencia_mes_atual()
 
     dest_idx={}
     sem_match=[]
