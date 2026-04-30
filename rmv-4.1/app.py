@@ -6802,6 +6802,29 @@ def api_funcionario_arquivos_lista(fid):
     return jsonify([{'id':a.id,'nome':a.nome_arquivo,'categoria':a.categoria,'competencia':a.competencia} for a in arqs])
 
 
+@app.route('/api/rh/extrair-competencia',methods=['POST'])
+@lr
+def api_rh_extrair_competencia():
+    """Extrai a competência (MM/YYYY) de um PDF enviado.
+    Retorna a primeira competência encontrada ou o mês corrente como fallback."""
+    from pypdf import PdfReader
+    import io
+    fs=request.files.get('arquivo')
+    if not fs:
+        return jsonify({'erro':'Arquivo não enviado'}),400
+    try:
+        reader=PdfReader(io.BytesIO(fs.read()))
+        texto=' '.join((p.extract_text() or '') for p in reader.pages[:5])
+    except Exception:
+        texto=''
+    competencias=_parse_competencias_holerite(texto,ano_padrao=localnow().year)
+    if competencias:
+        comp=competencias[0]
+    else:
+        now=localnow()
+        comp=f"{now.month:02d}/{now.year}"
+    return jsonify({'competencia':comp,'encontrada_no_documento':bool(competencias)})
+
 @app.route('/api/funcionarios/holerites/upload',methods=['POST'])
 @lr
 def api_holerites_upload():

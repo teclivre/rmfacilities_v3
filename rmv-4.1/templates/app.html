@@ -1053,7 +1053,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               <option value="link">Apenas gerar link</option>
             </select>
           </div>
-          <div class="f s2"><label>Arquivo PDF único (com várias páginas)</label><input type="file" id="rh-lote-arq" accept="application/pdf"></div>
+          <div class="f s2"><label>Arquivo PDF único (com várias páginas)</label><input type="file" id="rh-lote-arq" accept="application/pdf" onchange="autoPreencherCompetencia(this,'rh-lote-comp')"></div>
         </div>
         <div class="hint" style="margin-top:8px">Se escolher um funcionário, o PDF inteiro será salvo para ele. Sem seleção, o sistema tenta identificar o colaborador pelo conteúdo de cada página.</div>
         <div class="brow" style="justify-content:flex-start">
@@ -1716,7 +1716,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; align-items: flex-end;">
           <div class="f">
             <label style="font-weight: 600; color: var(--preto);">📄 Arquivo</label>
-            <input type="file" id="farq-arq" style="width:100%" onchange="previewFileUpload(this)">
+            <input type="file" id="farq-arq" style="width:100%" onchange="previewFileUpload(this);autoPreencherCompetencia(this,'farq-comp')">
             <div id="farq-preview" style="font-size:11px;color:var(--preto);opacity:.75;margin-top:4px"></div>
           </div>
           <div class="f">
@@ -4446,6 +4446,27 @@ function previewFileUpload(input){
   }else{
     preview.textContent='';
   }
+}
+
+async function autoPreencherCompetencia(input,compInputId){
+  const f=input.files?.[0];
+  if(!f||f.type!=='application/pdf') return;
+  const compInput=document.getElementById(compInputId);
+  if(!compInput||compInput.value.trim()) return; // não sobrescrever se já preenchido
+  try{
+    const fd=new FormData();
+    fd.append('arquivo',f);
+    const r=await fetch('/api/rh/extrair-competencia',{method:'POST',body:fd});
+    const d=await r.json();
+    if(d.competencia){
+      compInput.value=d.competencia;
+      if(!d.encontrada_no_documento){
+        compInput.title='Competência não encontrada no documento — usando mês corrente';
+      } else {
+        compInput.title='Competência extraída automaticamente do documento';
+      }
+    }
+  }catch(e){}
 }
 
 function formatBytes(bytes){
