@@ -2548,6 +2548,32 @@ def _indicadores_pdf_funcionario(page_text):
 
     return {'txt_norm':txt_norm,'txt_digits':txt_digits,'cpfs':cpfs,'mats':mats}
 
+def _codigo_holerite_candidatos(page_text):
+    """Extrai códigos de funcionário no bloco 'Código / Nome do Funcionário'."""
+    txt=str(page_text or '')
+    if not txt.strip():
+        return []
+    out=[]
+    seen=set()
+    linhas=[(ln or '').strip() for ln in txt.splitlines()]
+    for i,ln in enumerate(linhas):
+        if re.search(r'codigo\s+nome\s+do\s+funcion[aá]rio',ln,re.I):
+            for j in range(i+1,min(i+7,len(linhas))):
+                lj=linhas[j]
+                if not lj:
+                    continue
+                m=re.match(r'^(\d{1,8})\b',lj)
+                if not m:
+                    # Alguns PDFs extraem em colunas com espaços iniciais estranhos.
+                    m=re.search(r'\b(\d{1,8})\b',lj)
+                if m:
+                    code=(m.group(1).lstrip('0') or '0')
+                    if code not in seen:
+                        seen.add(code)
+                        out.append(code)
+                    break
+    return out
+
 def _extract_pdf_page_text(page):
     """Extrai texto de uma página PDF com fallback para modo layout."""
     txt=''
@@ -3158,10 +3184,23 @@ def find_funcionario_in_text(page_text,funcs,return_meta=False):
     txt_digits=indic.get('txt_digits') or ''
     cpfs_pdf=indic.get('cpfs') or set()
     mats_pdf=indic.get('mats') or set()
+    cods_holerite=_codigo_holerite_candidatos(page_text)
     nome_cands=_nome_candidatos_holerite(page_text)
     meta={'score':0,'second_score':0,'confianca':'baixa'}
     if not txt_norm:
         return (None,meta) if return_meta else None
+
+    # Atalho mais forte: código identificado no cabeçalho padrão de holerite.
+    if cods_holerite:
+        candidatos=[]
+        for f in funcs:
+            mat_f=(only_digits(getattr(f,'matricula',None)).lstrip('0') or '0') if only_digits(getattr(f,'matricula',None)) else ''
+            re_f=(only_digits(getattr(f,'re',None)).lstrip('0') or '0') if only_digits(getattr(f,'re',None)) else ''
+            if (mat_f and mat_f in cods_holerite) or (re_f and re_f in cods_holerite):
+                candidatos.append(f)
+        if len(candidatos)==1:
+            meta={'score':230,'second_score':0,'confianca':'alta'}
+            return (candidatos[0],meta) if return_meta else candidatos[0]
 
     # Atalho determinístico: RE/matricula único encontrado na página.
     if mats_pdf:
