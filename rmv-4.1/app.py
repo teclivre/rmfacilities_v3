@@ -2497,8 +2497,13 @@ def _nome_candidatos_holerite(page_text):
 
     def add_nome(raw):
         s=re.sub(r'\s+',' ',str(raw or '')).strip(' -:\t')
+        # Remove sufixos numéricos comuns do layout (CBO, depto, filial etc.).
+        s=re.sub(r'\s+\d[\d\s./-]*$','',s).strip()
+        # Remove eventual código no início da linha.
+        s=re.sub(r'^\d{1,8}\s+','',s).strip()
         if not s:
             return
+        # Se ainda sobrou dígito no meio, é provável ruído de OCR/metadado.
         if any(ch.isdigit() for ch in s):
             return
         if len(s)<6:
@@ -2510,7 +2515,7 @@ def _nome_candidatos_holerite(page_text):
 
     # Linha com codigo + nome (nome normalmente em caixa alta no holerite).
     for ln in txt.splitlines():
-        m=re.match(r'^\s*\d{1,6}\s+([A-ZÀ-Ú][A-ZÀ-Ú\s\'\.-]{5,90})\s*$',(ln or '').strip())
+        m=re.match(r'^\s*\d{1,6}\s+([A-ZÀ-Ú][A-ZÀ-Ú\s\'\.-]{3,120}?)(?:\s+\d.*)?\s*$',(ln or '').strip())
         if m:
             add_nome(m.group(1))
 
@@ -2605,6 +2610,32 @@ def _extract_pdf_sample_text(reader,max_pages=5):
         total=0
     limite=min(max_pages,max(0,total))
     for i in range(limite):
+        try:
+            t=_extract_pdf_page_text(reader.pages[i])
+        except Exception:
+            t=''
+        if t:
+            partes.append(t)
+    return ' '.join(partes)
+
+def _extract_pdf_competencia_text(reader,max_pages=30):
+    """Texto de amostra ampliado para detectar competência em PDFs longos."""
+    partes=[]
+    try:
+        total=len(reader.pages)
+    except Exception:
+        total=0
+    if total<=0:
+        return ''
+    # Captura início e fim do documento (muitos layouts repetem cabeçalho no fim).
+    head=min(max_pages//2,total)
+    tail=min(max_pages-head,max(0,total-head))
+    idxs=list(range(head)) + list(range(max(0,total-tail),total))
+    used=set()
+    for i in idxs:
+        if i in used:
+            continue
+        used.add(i)
         try:
             t=_extract_pdf_page_text(reader.pages[i])
         except Exception:
@@ -7068,7 +7099,7 @@ def api_rh_extrair_competencia():
         return jsonify({'erro':'Arquivo não enviado'}),400
     try:
         reader=PdfReader(io.BytesIO(fs.read()))
-        texto=_extract_pdf_sample_text(reader,max_pages=6)
+        texto=_extract_pdf_competencia_text(reader,max_pages=30)
     except Exception:
         texto=''
     comp,origem=_resolver_competencia_envio(comp_in='',texto=texto,nome_arquivo=(fs.filename or ''))
@@ -7097,7 +7128,7 @@ def api_holerites_upload():
     funcs=Funcionario.query.all()
     if not funcs: return jsonify({'erro':'Cadastre funcionarios antes do upload'}),400
     reader=PdfReader(fs)
-    texto_amostra=_extract_pdf_sample_text(reader,max_pages=6)
+    texto_amostra=_extract_pdf_competencia_text(reader,max_pages=30)
     comp,comp_origem=_resolver_competencia_envio(comp_in=comp_in,texto=texto_amostra,nome_arquivo=(fs.filename or ''))
     enviados=0; sem_match=[]; assinaturas_auto=0; sem_tel=[]; erro_ass=[]
     for idx,page in enumerate(reader.pages,start=1):
@@ -7158,7 +7189,7 @@ def api_folhas_ponto_upload():
     funcs=Funcionario.query.all()
     if not funcs: return jsonify({'erro':'Cadastre funcionarios antes do upload'}),400
     reader=PdfReader(fs)
-    texto_amostra=_extract_pdf_sample_text(reader,max_pages=6)
+    texto_amostra=_extract_pdf_competencia_text(reader,max_pages=30)
     comp,comp_origem=_resolver_competencia_envio(comp_in=comp_in,texto=texto_amostra,nome_arquivo=(fs.filename or ''))
     enviados=0; sem_match=[]; assinaturas_auto=0; sem_tel=[]; erro_ass=[]; duplicadas=[]
     for idx,page in enumerate(reader.pages,start=1):
@@ -7239,7 +7270,7 @@ def api_documentos_rh_upload():
         return jsonify({'erro':'Cadastre funcionarios antes do upload'}),400
 
     reader=PdfReader(fs)
-    texto_amostra=_extract_pdf_sample_text(reader,max_pages=6)
+    texto_amostra=_extract_pdf_competencia_text(reader,max_pages=30)
     comp,comp_origem=_resolver_competencia_envio(comp_in=comp_in,texto=texto_amostra,nome_arquivo=(fs.filename or ''))
     enviados=0
     sem_match=[]
@@ -7372,7 +7403,7 @@ def api_rh_preview_destinatarios():
     except Exception:
         return jsonify({'erro':'PDF invalido ou corrompido.'}),400
 
-    texto_amostra=_extract_pdf_sample_text(reader,max_pages=6)
+    texto_amostra=_extract_pdf_competencia_text(reader,max_pages=30)
     comp,comp_origem=_resolver_competencia_envio(comp_in=comp_in,texto=texto_amostra,nome_arquivo=(fs.filename or ''))
 
     dest_idx={}
