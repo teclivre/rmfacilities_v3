@@ -710,6 +710,28 @@ class Cliente(db.Model):
         d['end_fmt']=self.end_fmt()
         return d
 
+class Contrato(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    cliente_id=db.Column(db.Integer,db.ForeignKey('cliente.id'),nullable=False)
+    numero=db.Column(db.String(60))
+    status=db.Column(db.String(20),default='Ativo')
+    dt_inicio=db.Column(db.String(10))
+    dt_vencimento=db.Column(db.String(10))
+    qtd_funcionarios_posto=db.Column(db.Integer,default=0)
+    limpeza=db.Column(db.Float,default=0)
+    jardinagem=db.Column(db.Float,default=0)
+    portaria=db.Column(db.Float,default=0)
+    materiais_equip_locacao=db.Column(db.Float,default=0)
+    dia_faturamento=db.Column(db.Integer,default=1)
+    dias_faturamento=db.Column(db.Integer,default=30)
+    reajuste_percentual=db.Column(db.Float,default=0)
+    reajuste_data_base=db.Column(db.String(10))
+    ultimo_reajuste_em=db.Column(db.String(10))
+    obs=db.Column(db.Text,default='')
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    def to_dict(self):
+        return {c.name:getattr(self,c.name) for c in self.__table__.columns}
+
 class Medicao(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     numero=db.Column(db.String(20))
@@ -4675,6 +4697,92 @@ def api_deletar_cliente(id):
     db.session.commit()
     return jsonify({'ok':True})
 
+# ── CONTRATOS ────────────────────────────────────────────────────────────────
+@app.route('/api/contratos',methods=['GET'])
+@lr
+def api_listar_contratos():
+    cliente_id=request.args.get('cliente_id','')
+    st=request.args.get('status','')
+    qr=Contrato.query
+    if cliente_id: qr=qr.filter_by(cliente_id=int(cliente_id))
+    if st: qr=qr.filter_by(status=st)
+    lista=qr.order_by(Contrato.cliente_id,Contrato.id).all()
+    return jsonify([c.to_dict() for c in lista])
+
+@app.route('/api/clientes/<int:cid>/contratos',methods=['POST'])
+@lr
+def api_criar_contrato(cid):
+    Cliente.query.get_or_404(cid)
+    d=request.json or {}
+    skip=['id','criado_em']
+    cols=[c.name for c in Contrato.__table__.columns if c.name not in skip]
+    kw={k:d[k] for k in cols if k in d}
+    kw['cliente_id']=cid
+    ct=Contrato(**kw)
+    db.session.add(ct); db.session.commit()
+    return jsonify(ct.to_dict()),201
+
+@app.route('/api/contratos/<int:id>',methods=['GET'])
+@lr
+def api_get_contrato(id):
+    return jsonify(Contrato.query.get_or_404(id).to_dict())
+
+@app.route('/api/contratos/<int:id>',methods=['PUT'])
+@lr
+def api_atualizar_contrato(id):
+    ct=Contrato.query.get_or_404(id)
+    d=request.json or {}
+    skip={'id','cliente_id','criado_em'}
+    cols={col.name for col in Contrato.__table__.columns}
+    for k,v in d.items():
+        if k in skip or k not in cols: continue
+        setattr(ct,k,v)
+    db.session.commit()
+    return jsonify(ct.to_dict())
+
+@app.route('/api/contratos/<int:id>',methods=['DELETE'])
+@lr
+def api_deletar_contrato(id):
+    ct=Contrato.query.get_or_404(id)
+    db.session.delete(ct); db.session.commit()
+    return jsonify({'ok':True})
+
+@app.route('/api/contratos/<int:id>/reajuste',methods=['POST'])
+@lr
+def api_contrato_reajuste(id):
+    ct=Contrato.query.get_or_404(id)
+    d=request.json or {}
+    pct=to_num(d.get('percentual'),dec=True)
+    if pct is None:
+        pct=to_num(ct.reajuste_percentual,dec=True) or 0
+    try:
+        pct=float(pct or 0)
+    except Exception:
+        return jsonify({'erro':'Percentual de reajuste inválido.'}),400
+    if pct<=-100:
+        return jsonify({'erro':'Percentual deve ser maior que -100%.'}),400
+    fator=(100.0+pct)/100.0
+    campos=['limpeza','jardinagem','portaria','materiais_equip_locacao']
+    antes={k:float(getattr(ct,k) or 0) for k in campos}
+    for k in campos:
+        setattr(ct,k,round(float(getattr(ct,k) or 0)*fator,2))
+    depois={k:float(getattr(ct,k) or 0) for k in campos}
+    hoje=localnow().strftime('%Y-%m-%d')
+    ct.ultimo_reajuste_em=hoje
+    if d.get('atualizar_padrao',True):
+        ct.reajuste_percentual=pct
+        ct.reajuste_data_base=hoje
+    if d.get('anotar_obs',True):
+        linha=f"[Reajuste {hoje}] {pct:+.2f}% aplicado"
+        ct.obs=(f"{(ct.obs or '').strip()}\n{linha}").strip()
+    db.session.commit()
+    audit_event('contrato_reajuste','usuario',session.get('uid'),'contrato',ct.id,True,
+                {'percentual':pct,'antes_total':sum(antes.values()),'depois_total':sum(depois.values())})
+    return jsonify({'ok':True,'contrato':ct.to_dict(),'percentual':pct,
+                    'antes':antes,'depois':depois,
+                    'antes_total':round(sum(antes.values()),2),
+                    'depois_total':round(sum(depois.values()),2)})
+
 @app.route('/api/clientes/modelo')
 @lr
 def api_clientes_modelo():
@@ -8486,10 +8594,18 @@ def _api_beneficios_pdf_tipo(tipo):
 @lr
 def api_dashboard():
     ativos=Cliente.query.filter_by(status='Ativo').all()
-    receita=sum(
-        to_num(c.limpeza,True)+to_num(c.jardinagem,True)+to_num(c.portaria,True)+to_num(c.materiais_equip_locacao,True)
-        for c in ativos
+    # sum revenue from Contrato table; fall back to Cliente fields for clients without contracts
+    contratos_ativos=Contrato.query.filter_by(status='Ativo').all()
+    clientes_com_contrato={ct.cliente_id for ct in Contrato.query.all()}
+    receita_contratos=sum(
+        (ct.limpeza or 0)+(ct.jardinagem or 0)+(ct.portaria or 0)+(ct.materiais_equip_locacao or 0)
+        for ct in contratos_ativos
     )
+    receita_legado=sum(
+        to_num(c.limpeza,True)+to_num(c.jardinagem,True)+to_num(c.portaria,True)+to_num(c.materiais_equip_locacao,True)
+        for c in ativos if c.id not in clientes_com_contrato
+    )
+    receita=receita_contratos+receita_legado
     total_ativos=len(ativos)
     mes=localnow().strftime('%Y-%m')
     try:

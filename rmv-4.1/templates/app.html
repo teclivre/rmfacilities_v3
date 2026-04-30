@@ -994,6 +994,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div class="card-header">
             <span class="card-title">Contratos por cliente</span>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <button class="btn b-az b-sm" onclick="openModalContrato(null,null)">+ Novo contrato</button>
               <button class="btn b-gh b-sm" onclick="renderContratosCli()">Atualizar</button>
             </div>
           </div>
@@ -1957,20 +1958,29 @@ document.addEventListener('DOMContentLoaded',()=>{
 <!-- MODAL CONTRATO -->
 <div id="mod-contrato" class="mb" onclick="if(event.target===this)closeModal('contrato')">
   <div class="md">
-    <div class="mh"><span class="mt" id="mod-contrato-tit">Editar contrato</span><button class="btn b-ci b-sm" onclick="closeModal('contrato')">Fechar ×</button></div>
+    <div class="mh"><span class="mt" id="mod-contrato-tit">Novo contrato</span><button class="btn b-ci b-sm" onclick="closeModal('contrato')">Fechar ×</button></div>
     <div class="mb-body">
       <input type="hidden" id="mcid">
+      <input type="hidden" id="mcontrato-id">
       <div class="g2">
-        <div class="f"><label>Cliente</label><input id="mc-cli-nome" readonly></div>
+        <div class="f"><label>Cliente</label>
+          <select id="mc-cli-sel"></select>
+        </div>
         <div class="f"><label>Número do contrato</label><input id="mcontrato" placeholder="Ex: CT-2026-001"></div>
       </div>
       <div class="g3">
+        <div class="f"><label>Data de início do contrato</label><input type="date" id="mdt-contrato-ini"></div>
         <div class="f"><label>Data de vencimento do contrato</label><input type="date" id="mdt-contrato-venc"></div>
+        <div class="f"><label>Status</label>
+          <select id="mct-status"><option>Ativo</option><option>Inativo</option><option>Suspenso</option><option>Encerrado</option></select>
+        </div>
+      </div>
+      <div class="g3">
         <div class="f"><label>Reajuste padrão (%)</label><input id="mreajuste-pct" type="number" step="0.01" placeholder="Ex: 5.00"></div>
         <div class="f"><label>Data-base reajuste</label><input type="date" id="mreajuste-base"></div>
+        <div class="f"><label>Último reajuste</label><input type="date" id="multimo-reajuste" readonly></div>
       </div>
       <div class="g2">
-        <div class="f"><label>Último reajuste</label><input type="date" id="multimo-reajuste" readonly></div>
         <div class="f"><label>Qtd. funcionários por posto</label><input id="mqtd-posto" type="number" min="0" step="1" placeholder="Ex: 8"></div>
       </div>
       <div style="font-size:11px;font-weight:700;color:var(--azul);text-transform:uppercase;letter-spacing:.5px;margin-top:4px">Valores mensais do contrato</div>
@@ -1991,8 +2001,10 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
       <div id="prev-vencimento" style="font-size:12px;color:#7ecfff;margin:-6px 0 6px 2px;display:none"></div>
+      <div class="f"><label>Observação</label><textarea id="mct-obs" rows="2" placeholder="Observações sobre o contrato..."></textarea></div>
       <div class="brow" style="margin-top:6px">
         <button class="btn b-ci" onclick="closeModal('contrato')">Cancelar</button>
+        <button class="btn b-ghr b-sm" id="btn-excluir-contrato" style="display:none" onclick="excluirContratoModal()">Excluir contrato</button>
         <button class="btn b-az" onclick="salvarContratoCliente()">Salvar contrato</button>
       </div>
     </div>
@@ -2895,7 +2907,7 @@ function acKey(e){
 function updAC(its){its.forEach((el,i)=>el.classList.toggle('sel',i===acIdx));if(acIdx>=0)its[acIdx].scrollIntoView({block:'nearest'});}
 document.addEventListener('click',e=>{if(!e.target.closest('#bcli')&&!e.target.closest('#acl'))document.getElementById('acl').style.display='none';});
 
-function selCli(id){
+async function selCli(id){
   const c=todos.find(x=>x.id===id); if(!c)return;
   cliAtual=c;
   document.getElementById('acl').style.display='none';
@@ -2910,14 +2922,19 @@ function selCli(id){
     document.getElementById('emp-sel').value=String(c.empresa_id); onEmpSel();
   }
   document.getElementById('svcs').innerHTML=''; svcId=0;
-  if(c.limpeza>0)addS('Limpeza e conservação — contrato mensal','Mês',1,c.limpeza);
-  if(c.jardinagem>0)addS('Jardinagem e paisagismo — contrato mensal','Mês',1,c.jardinagem);
-  if(c.portaria>0)addS('Portaria e recepção — contrato mensal','Mês',1,c.portaria);
-  if(c.materiais_equip_locacao>0)addS('Materiais, equipamentos e locação — contrato mensal','Mês',1,c.materiais_equip_locacao);
+  // use first active contract from Contrato table; fall back to client fields
+  const contratos=await api('/api/contratos?cliente_id='+id+'&status=Ativo');
+  const ct=contratos && contratos.length ? contratos[0] : null;
+  const src=ct||c;
+  if((src.limpeza||0)>0) addS('Limpeza e conservação — contrato mensal','Mês',1,src.limpeza);
+  if((src.jardinagem||0)>0) addS('Jardinagem e paisagismo — contrato mensal','Mês',1,src.jardinagem);
+  if((src.portaria||0)>0) addS('Portaria e recepção — contrato mensal','Mês',1,src.portaria);
+  if((src.materiais_equip_locacao||0)>0) addS('Materiais, equipamentos e locação — contrato mensal','Mês',1,src.materiais_equip_locacao);
+  if(ct && contratos.length>1) showSt('st-med',`Cliente "${c.nome}" carregado — usando contrato ${ct.numero||'#'+ct.id} (${contratos.length} contratos ativos).`,false);
+  else showSt('st-med','Cliente "'+c.nome+'" carregado.',false);
   // Preenche responsável automaticamente
   if(c.responsavel && !document.getElementById('ass2').value)
     document.getElementById('ass2').value=c.responsavel;
-  showSt('st-med','Cliente "'+c.nome+'" carregado.',false);
 }
 
 function clearCli(){
@@ -3252,7 +3269,7 @@ async function renderCli(){
       <td><div class="tac">
         <button class="btn b-gh b-sm" onclick="event.stopPropagation();emitirCli(${c.id})">Emitir</button>
         <button class="btn b-ghv b-sm" onclick="event.stopPropagation();openModal('editar',${c.id})">Editar</button>
-        <button class="btn b-gh b-sm" onclick="event.stopPropagation();openModalContrato(${c.id})">Contrato</button>
+        <button class="btn b-gh b-sm" onclick="event.stopPropagation();openModalContrato(${c.id},null)">+ Contrato</button>
         <button class="btn b-az b-sm" onclick="event.stopPropagation();verFaturasCliente(${c.id},'${c.nome.replace(/'/g,"\\'")}')">Faturas</button>
         <button class="btn b-ghr b-sm" onclick="event.stopPropagation();excluirCli(${c.id},'${c.nome.replace(/'/g,"\\'")}')">Excluir</button>
       </div></td>
@@ -3278,39 +3295,45 @@ async function renderContratosCli(){
   const ef=document.getElementById('fe').value;
   const sf=document.getElementById('fs').value;
   const q=(document.getElementById('fb').value||'').toLowerCase();
-  const lista=await api('/api/clientes?emp='+ef+'&status='+sf+'&q='+encodeURIComponent(q));
+  // fetch from new Contrato table, filter client-side for empresa/status/search
+  const [contratos,clientes]=await Promise.all([api('/api/contratos'),api('/api/clientes?emp='+ef+'&status='+sf+'&q='+encodeURIComponent(q))]);
   const tb=document.getElementById('tb-cli-contratos');
   if(!tb) return;
+  // filter contratos to only those belonging to visible clients
+  const cliIds=new Set(clientes.map(c=>c.id));
+  const lista=contratos.filter(ct=>cliIds.has(ct.cliente_id));
   if(!lista.length){
     tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:28px;color:#bbb">Nenhum contrato encontrado.</td></tr>';
     const res=document.getElementById('tb-contr-res');
     if(res) res.textContent='';
     return;
   }
-  tb.innerHTML=lista.map(c=>{
+  tb.innerHTML=lista.map(ct=>{
+    const c=clientes.find(x=>x.id===ct.cliente_id)||{};
     const emp=emps.find(e=>e.id===c.empresa_id);
-    const total=(c.limpeza||0)+(c.jardinagem||0)+(c.portaria||0)+(c.materiais_equip_locacao||0);
-    const pc=c.status==='Ativo'?'p-vd':c.status==='Inativo'?'p-ci':'p-vm';
-    return `<tr class="row-clickable" onclick="openModalContrato(${c.id})">
-      <td><div style="font-weight:700;font-size:13px">${c.nome||''}</div><div style="font-size:11px;color:#999">${emp?emp.nome:'—'}</div></td>
-      <td style="font-size:11px">${c.numero_contrato||'—'}</td>
-      <td style="font-size:12px">${Math.max(0,parseInt(c.qtd_funcionarios_posto||0,10)||0)}</td>
-      <td style="font-size:11px">Limpeza ${brl(c.limpeza||0)} · Jardinagem ${brl(c.jardinagem||0)} · Portaria ${brl(c.portaria||0)} · Mat/Equip/Loc ${brl(c.materiais_equip_locacao||0)}<br><strong style="color:var(--verde)">Total: ${brl(total)}</strong></td>
-      <td style="font-size:11px">${c.dia_faturamento?'Fat. dia '+c.dia_faturamento+(c.dias_faturamento?' · Vence +'+c.dias_faturamento+'d':''):'—'}</td>
-      <td style="font-size:11px">${c.dt_contrato_vencimento||'—'}</td>
-      <td><span class="pill ${pc}">${c.status||'Ativo'}</span></td>
+    const total=(ct.limpeza||0)+(ct.jardinagem||0)+(ct.portaria||0)+(ct.materiais_equip_locacao||0);
+    const pc=ct.status==='Ativo'?'p-vd':ct.status==='Inativo'?'p-ci':'p-vm';
+    return `<tr class="row-clickable" onclick="openModalContrato(${ct.cliente_id},${ct.id})">
+      <td><div style="font-weight:700;font-size:13px">${c.nome||'—'}</div><div style="font-size:11px;color:#999">${emp?emp.nome:'—'}</div></td>
+      <td style="font-size:11px">${ct.numero||'—'}</td>
+      <td style="font-size:12px">${Math.max(0,parseInt(ct.qtd_funcionarios_posto||0,10)||0)}</td>
+      <td style="font-size:11px">Limpeza ${brl(ct.limpeza||0)} · Jardinagem ${brl(ct.jardinagem||0)} · Portaria ${brl(ct.portaria||0)} · Mat/Equip/Loc ${brl(ct.materiais_equip_locacao||0)}<br><strong style="color:var(--verde)">Total: ${brl(total)}</strong></td>
+      <td style="font-size:11px">${ct.dia_faturamento?'Fat. dia '+ct.dia_faturamento+(ct.dias_faturamento?' · Vence +'+ct.dias_faturamento+'d':''):'—'}</td>
+      <td style="font-size:11px">${ct.dt_vencimento||'—'}</td>
+      <td><span class="pill ${pc}">${ct.status||'Ativo'}</span></td>
       <td><div class="tac">
-        <button class="btn b-ghv b-sm" onclick="event.stopPropagation();openModalContrato(${c.id})">Editar</button>
-        <button class="btn b-gh b-sm" onclick="event.stopPropagation();aplicarReajusteContrato(${c.id},'${(c.nome||'').replace(/'/g,"\\'")}')">Reajuste</button>
+        <button class="btn b-ghv b-sm" onclick="event.stopPropagation();openModalContrato(${ct.cliente_id},${ct.id})">Editar</button>
+        <button class="btn b-gh b-sm" onclick="event.stopPropagation();aplicarReajusteContrato(${ct.id},'${(c.nome||'').replace(/'/g,"\\'")}','${(ct.numero||'').replace(/'/g,"\\'")}')">Reajuste</button>
+        <button class="btn b-ghr b-sm" onclick="event.stopPropagation();excluirContrato(${ct.id},'${(ct.numero||ct.id).toString().replace(/'/g,"\\'")}')">Excluir</button>
       </div></td>
     </tr>`;
   }).join('');
-  const totalGeral=lista.reduce((s,c)=>s+((c.limpeza||0)+(c.jardinagem||0)+(c.portaria||0)+(c.materiais_equip_locacao||0)),0);
+  const totalGeral=lista.reduce((s,ct)=>s+((ct.limpeza||0)+(ct.jardinagem||0)+(ct.portaria||0)+(ct.materiais_equip_locacao||0)),0);
   const res=document.getElementById('tb-contr-res');
   if(res) res.textContent=lista.length+' contrato(s) · Valor mensal total: '+brl(totalGeral);
 }
 
-function emitirCli(id){selCli(id);nav('nova-medicao',document.querySelector('[onclick*=nova-medicao]'));}
+function emitirCli(id){nav('nova-medicao',document.querySelector('[onclick*=nova-medicao]'));selCli(id);}
 
 async function verFaturasCliente(clienteId, clienteNome){
   const modal=document.getElementById('modal-fat-detalhe');
@@ -3499,39 +3522,76 @@ async function salvarCliente(){
   closeModal('cli',true); renderCli(); renderContratosCli();
 }
 
-function openModalContrato(id){
-  const c=todos.find(x=>x.id===id);
-  if(!c){
-    showSt('st-cli','Cliente não encontrado para editar contrato.',true);
-    return;
+function openModalContrato(clienteId, contratoId){
+  // populate client selector
+  const sel=document.getElementById('mc-cli-sel');
+  sel.innerHTML='<option value="">Selecione o cliente...</option>'+todos.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
+  document.getElementById('mcid').value='';
+  document.getElementById('mcontrato-id').value='';
+  document.getElementById('mcontrato').value='';
+  document.getElementById('mdt-contrato-ini').value='';
+  document.getElementById('mdt-contrato-venc').value='';
+  document.getElementById('mreajuste-pct').value='';
+  document.getElementById('mreajuste-base').value='';
+  document.getElementById('multimo-reajuste').value='';
+  document.getElementById('mqtd-posto').value='0';
+  document.getElementById('ml').value='0';
+  document.getElementById('mj').value='0';
+  document.getElementById('mp').value='0';
+  document.getElementById('mmel').value='0';
+  document.getElementById('mdia-fat').value='';
+  document.getElementById('mdias-fat').value='';
+  document.getElementById('mct-obs').value='';
+  document.getElementById('mct-status').value='Ativo';
+  document.getElementById('btn-excluir-contrato').style.display='none';
+  if(clienteId) document.getElementById('mcid').value=String(clienteId);
+  if(clienteId) sel.value=String(clienteId);
+  if(contratoId){
+    // load existing contract
+    api('/api/contratos/'+contratoId).then(ct=>{
+      document.getElementById('mcontrato-id').value=ct.id;
+      document.getElementById('mcid').value=ct.cliente_id;
+      sel.value=String(ct.cliente_id);
+      document.getElementById('mcontrato').value=ct.numero||'';
+      document.getElementById('mdt-contrato-ini').value=ct.dt_inicio||'';
+      document.getElementById('mdt-contrato-venc').value=ct.dt_vencimento||'';
+      document.getElementById('mct-status').value=ct.status||'Ativo';
+      document.getElementById('mreajuste-pct').value=ct.reajuste_percentual??'';
+      document.getElementById('mreajuste-base').value=ct.reajuste_data_base||'';
+      document.getElementById('multimo-reajuste').value=ct.ultimo_reajuste_em||'';
+      document.getElementById('mqtd-posto').value=Math.max(0,parseInt(ct.qtd_funcionarios_posto||0,10)||0);
+      document.getElementById('ml').value=ct.limpeza||0;
+      document.getElementById('mj').value=ct.jardinagem||0;
+      document.getElementById('mp').value=ct.portaria||0;
+      document.getElementById('mmel').value=ct.materiais_equip_locacao||0;
+      document.getElementById('mdia-fat').value=ct.dia_faturamento||'';
+      document.getElementById('mdias-fat').value=ct.dias_faturamento||'';
+      document.getElementById('mct-obs').value=ct.obs||'';
+      calcVencimentoContrato();
+      document.getElementById('mod-contrato-tit').textContent='Editar contrato';
+      document.getElementById('btn-excluir-contrato').style.display='';
+    });
+  } else {
+    document.getElementById('mod-contrato-tit').textContent='Novo contrato';
+    calcVencimentoContrato();
   }
-  document.getElementById('mcid').value=String(c.id);
-  document.getElementById('mc-cli-nome').value=c.nome||'';
-  document.getElementById('mcontrato').value=c.numero_contrato||'';
-  document.getElementById('mdt-contrato-venc').value=c.dt_contrato_vencimento||'';
-  document.getElementById('mreajuste-pct').value=(c.reajuste_percentual??'');
-  document.getElementById('mreajuste-base').value=c.reajuste_data_base||'';
-  document.getElementById('multimo-reajuste').value=c.ultimo_reajuste_em||'';
-  document.getElementById('mqtd-posto').value=Math.max(0,parseInt(c.qtd_funcionarios_posto||0,10)||0);
-  document.getElementById('ml').value=c.limpeza||0;
-  document.getElementById('mj').value=c.jardinagem||0;
-  document.getElementById('mp').value=c.portaria||0;
-  document.getElementById('mmel').value=c.materiais_equip_locacao||0;
-  document.getElementById('mdia-fat').value=c.dia_faturamento||'';
-  document.getElementById('mdias-fat').value=c.dias_faturamento||'';
-  calcVencimentoContrato();
+  setModalClean('contrato');
   document.getElementById('mod-contrato').classList.add('on');
 }
 
 async function salvarContratoCliente(){
-  const id=parseInt(document.getElementById('mcid').value||'0',10);
-  if(!id){
-    showSt('st-cli','Cliente inválido para salvar contrato.',true);
+  const clienteId=parseInt(document.getElementById('mcid').value||document.getElementById('mc-cli-sel').value||'0',10);
+  if(!clienteId){
+    showSt('st-cli','Selecione o cliente.',true);
+    alert('Selecione o cliente antes de salvar.');
     return;
   }
+  const contratoId=parseInt(document.getElementById('mcontrato-id').value||'0',10);
   const d={
-    numero_contrato:(document.getElementById('mcontrato').value||'').trim(),
-    dt_contrato_vencimento:(document.getElementById('mdt-contrato-venc').value||'').trim()||null,
+    numero:(document.getElementById('mcontrato').value||'').trim(),
+    dt_inicio:(document.getElementById('mdt-contrato-ini').value||'').trim()||null,
+    dt_vencimento:(document.getElementById('mdt-contrato-venc').value||'').trim()||null,
+    status:document.getElementById('mct-status').value||'Ativo',
     reajuste_percentual:numBR(document.getElementById('mreajuste-pct').value),
     reajuste_data_base:(document.getElementById('mreajuste-base').value||'').trim()||null,
     qtd_funcionarios_posto:Math.max(0,parseInt(document.getElementById('mqtd-posto').value||'0',10)||0),
@@ -3541,33 +3601,51 @@ async function salvarContratoCliente(){
     materiais_equip_locacao:numBR(document.getElementById('mmel').value),
     dia_faturamento:parseInt(document.getElementById('mdia-fat').value)||1,
     dias_faturamento:parseInt(document.getElementById('mdias-fat').value)||30,
-    vencimento:parseInt(document.getElementById('mdia-fat').value)||1
+    obs:document.getElementById('mct-obs').value||''
   };
-  const resp=await api('/api/clientes/'+id,'PUT',d);
+  const url=contratoId ? '/api/contratos/'+contratoId : '/api/clientes/'+clienteId+'/contratos';
+  const method=contratoId ? 'PUT' : 'POST';
+  const resp=await api(url,method,d);
   if(resp?.erro){
     showSt('st-cli',resp.erro,true);
     alert(resp.erro);
     return;
   }
-  todos=await api('/api/clientes');
   showSt('st-cli','Contrato salvo!',false);
   closeModal('contrato',true);
   renderCli();
   renderContratosCli();
 }
 
-async function aplicarReajusteContrato(id,nome){
-  const c=todos.find(x=>x.id===id) || {};
-  const padrao=(c.reajuste_percentual||0);
-  const valor=prompt('Percentual de reajuste para '+nome+' (%):', String(padrao||''));
+async function excluirContrato(id, label){
+  if(!confirm('Excluir contrato "'+label+'"? Esta ação não pode ser desfeita.')) return;
+  const r=await api('/api/contratos/'+id,'DELETE');
+  if(r?.erro){ showSt('st-cli',r.erro,true); return; }
+  showSt('st-cli','Contrato excluído.',false);
+  renderContratosCli();
+}
+
+async function excluirContratoModal(){
+  const id=parseInt(document.getElementById('mcontrato-id').value||'0',10);
+  if(!id) return;
+  const label=document.getElementById('mcontrato').value||String(id);
+  if(!confirm('Excluir contrato "'+label+'"? Esta ação não pode ser desfeita.')) return;
+  const r=await api('/api/contratos/'+id,'DELETE');
+  if(r?.erro){ showSt('st-cli',r.erro,true); return; }
+  showSt('st-cli','Contrato excluído.',false);
+  closeModal('contrato',true);
+  renderContratosCli();
+}
+
+async function aplicarReajusteContrato(contratoId, nomeCliente, numeroContrato){
+  const label=(numeroContrato?'contrato '+numeroContrato+' — ':'')+nomeCliente;
+  const valor=prompt('Percentual de reajuste para '+label+' (%):', '');
   if(valor===null) return;
   const pct=parseFloat(String(valor).replace(',','.'));
   if(Number.isNaN(pct)){alert('Percentual inválido.');return;}
-  if(!confirm('Aplicar reajuste de '+pct.toFixed(2)+'% no contrato de '+nome+'?')) return;
-  const r=await api('/api/clientes/'+id+'/reajuste','POST',{percentual:pct,atualizar_padrao:true,anotar_obs:true});
+  if(!confirm('Aplicar reajuste de '+pct.toFixed(2)+'% em '+label+'?')) return;
+  const r=await api('/api/contratos/'+contratoId+'/reajuste','POST',{percentual:pct,atualizar_padrao:true,anotar_obs:true});
   if(r?.erro){alert(r.erro);return;}
-  todos=await api('/api/clientes');
-  renderCli();
   renderContratosCli();
   alert('Reajuste aplicado com sucesso.\nAntes: '+brl(r.antes_total)+'\nDepois: '+brl(r.depois_total));
 }
