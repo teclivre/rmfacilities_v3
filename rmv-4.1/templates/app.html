@@ -4898,7 +4898,7 @@ function filtrarOpPostos(){
     <td>${it.matricula||'—'}</td>
     <td>${it.nome||''}</td>
     <td>${it.empresa_nome||'—'}</td>
-    <td><select id="op-posto-${it.funcionario_id}" onchange="avisoPostoCheio(${it.funcionario_id})" onclick="event.stopPropagation()"><option value="">Reserva tecnica</option>${opcoesClienteFiltro(it.empresa_id,it.posto_cliente_id)}</select></td>
+    <td><select id="op-posto-${it.funcionario_id}" onchange="onChangePostoOperacional(${it.funcionario_id})" onclick="event.stopPropagation()"><option value="">Reserva tecnica</option>${opcoesClienteFiltro(it.empresa_id,it.posto_cliente_id)}</select></td>
     <td><button class="btn b-gh b-sm" onclick="event.stopPropagation();salvarPostoOperacional(${it.funcionario_id})">Salvar</button></td>
   </tr>`).join('');
 }
@@ -4938,17 +4938,32 @@ function avisoPostoCheio(funcionarioId){
   }
 }
 
-async function salvarPostoOperacional(funcionarioId){
+const _opPostoAutosaveTimers={};
+const _opPostoAutosaveInflight=new Set();
+
+function onChangePostoOperacional(funcionarioId){
+  avisoPostoCheio(funcionarioId);
+  if(_opPostoAutosaveTimers[funcionarioId]) clearTimeout(_opPostoAutosaveTimers[funcionarioId]);
+  _opPostoAutosaveTimers[funcionarioId]=setTimeout(()=>{
+    salvarPostoOperacional(funcionarioId,true);
+  },450);
+}
+
+async function salvarPostoOperacional(funcionarioId,isAuto=false){
+  if(_opPostoAutosaveInflight.has(funcionarioId)) return;
   const postoClienteId=parseInt(document.getElementById('op-posto-'+funcionarioId)?.value||'')||null;
+  _opPostoAutosaveInflight.add(funcionarioId);
   const r=await api('/api/operacional/postos','POST',{funcionario_id:funcionarioId,posto_cliente_id:postoClienteId});
   if(r?.erro){
+    _opPostoAutosaveInflight.delete(funcionarioId);
     showSt('st-op',r.erro,true);
     return;
   }
   funcs=await api('/api/funcionarios');
   await renderOperPostos();
   if(document.getElementById('pg-beneficios')?.classList.contains('on')) await carregarBeneficiosMensais();
-  showSt('st-op','Posto operacional atualizado.',false);
+  _opPostoAutosaveInflight.delete(funcionarioId);
+  showSt('st-op',isAuto?'Posto atualizado automaticamente.':'Posto operacional atualizado.',false);
 }
 
 let benSelecionados=new Set();
