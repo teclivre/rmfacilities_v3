@@ -2531,6 +2531,33 @@ def _nome_candidatos_holerite(page_text):
                 cand=re.sub(r'\s{2,}.*$','',cand)
                 add_nome(cand)
                 break
+
+    # Fallback de topo: em alguns PDFs o marcador não vem íntegro,
+    # mas o nome aparece nas primeiras linhas em caixa alta.
+    topo=linhas[:28]
+    stop_words=('folha mensal','mensalista','admissao','admissão','codigo','código','descricao','descrição',
+                'vencimentos','descontos','referencia','referência','cbo','departamento','filial','cc geral','cnpj')
+    for ln in topo:
+        l=(ln or '').strip()
+        if not l:
+            continue
+        low=l.lower()
+        if any(sw in low for sw in stop_words):
+            continue
+        # remove metadados numéricos comuns
+        l=re.sub(r'^\d{1,8}\s+','',l)
+        l=re.sub(r'\s+\d[\d\s./-]*$','',l).strip()
+        if not l:
+            continue
+        words=[w for w in re.split(r'\s+',l) if w]
+        if len(words)<3:
+            continue
+        letters=[c for c in l if c.isalpha()]
+        if not letters:
+            continue
+        upper_ratio=sum(1 for c in letters if c.isupper())/len(letters)
+        if upper_ratio>=0.75:
+            add_nome(l)
     return out
 
 def _indicadores_pdf_funcionario(page_text):
@@ -3316,7 +3343,8 @@ def find_funcionario_in_text(page_text,funcs,return_meta=False):
         elif score>second_score:
             second_score=score
     meta={'score':best_score,'second_score':second_score,'confianca':_match_conf_level(best_score)}
-    if best_score<45 and not (best_score>=30 and (best_score-second_score)>=12):
+    # Regra mais permissiva para reduzir falsos negativos em holerite de lote.
+    if best_score<32 and not (best_score>=24 and (best_score-second_score)>=8):
         return (None,meta) if return_meta else None
     return (best,meta) if return_meta else best
 
