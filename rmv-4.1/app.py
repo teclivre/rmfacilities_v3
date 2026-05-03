@@ -65,9 +65,22 @@ def _migrate_legacy_data_dir():
 
 _migrate_legacy_data_dir()
 
+def _is_production_env():
+    env=(os.environ.get('APP_ENV') or os.environ.get('FLASK_ENV') or '').strip().lower()
+    return env in ('prod','production')
+
+def _load_app_secret_key():
+    key=(os.environ.get('SECRET_KEY') or '').strip()
+    if key:
+        return key
+    if _is_production_env():
+        raise RuntimeError('SECRET_KEY obrigatoria em producao. Configure a variavel de ambiente SECRET_KEY.')
+    # Em ambiente local, usa chave efemera para evitar segredo padrao hardcoded no repositorio.
+    return secrets.token_urlsafe(48)
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
-app.secret_key = os.environ.get('SECRET_KEY', 'rmfacilities-2026')
+app.secret_key = _load_app_secret_key()
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', DEFAULT_DB_URI)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
@@ -863,6 +876,9 @@ class Funcionario(db.Model):
     app_senha=db.Column(db.String(256))
     app_ativo=db.Column(db.Boolean,default=True)
     app_ultimo_acesso=db.Column(db.DateTime)
+    app_otp_hash=db.Column(db.String(256))
+    app_otp_expira_em=db.Column(db.DateTime)
+    app_otp_tentativas=db.Column(db.Integer,default=0)
     criado_em=db.Column(db.DateTime,default=utcnow)
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
@@ -968,6 +984,23 @@ class FuncionarioAppSessao(db.Model):
     ua=db.Column(db.String(250))
     criado_em=db.Column(db.DateTime,default=utcnow)
     atualizado_em=db.Column(db.DateTime,default=utcnow,onupdate=utcnow)
+
+class FuncionarioAlteracaoSolicitacao(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False,index=True)
+    payload=db.Column(db.Text,default='{}')
+    observacao=db.Column(db.Text,default='')
+    status=db.Column(db.String(20),default='pendente')
+    motivo_admin=db.Column(db.Text,default='')
+    analisado_por=db.Column(db.Integer,db.ForeignKey('usuario.id'),nullable=True)
+    solicitado_em=db.Column(db.DateTime,default=utcnow)
+    analisado_em=db.Column(db.DateTime)
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['solicitado_fmt']=self.solicitado_em.strftime('%d/%m/%Y %H:%M') if self.solicitado_em else ''
+        d['analisado_fmt']=self.analisado_em.strftime('%d/%m/%Y %H:%M') if self.analisado_em else ''
+        d['payload']=jloads(self.payload,{})
+        return d
 
 class AuthTentativa(db.Model):
     id=db.Column(db.Integer,primary_key=True)
@@ -1576,7 +1609,13 @@ def b64u_dec(s):
     return base64.urlsafe_b64decode((s+pad).encode())
 
 def app_token_secret():
-    return (os.environ.get('APP_TOKEN_SECRET') or app.secret_key or 'rmfacilities-app').encode()
+    tok=(os.environ.get('APP_TOKEN_SECRET') or '').strip()
+    if tok:
+        return tok.encode()
+    if _is_production_env():
+        raise RuntimeError('APP_TOKEN_SECRET obrigatoria em producao. Configure a variavel de ambiente APP_TOKEN_SECRET.')
+    sk=app.secret_key or ''
+    return (sk if isinstance(sk,str) else str(sk)).encode()
 
 def app_issue_access_token(funcionario_id,sessao_id,ttl=3600):
     now=int(time.time())
@@ -1622,6 +1661,51 @@ def app_func_required(f):
         g.app_sessao=sessao
         return f(*a,**k)
     return w
+
+def _norm_nome_login(v):
+    s=unicodedata.normalize('NFKD',str(v or ''))
+    s=''.join(ch for ch in s if not unicodedata.combining(ch))
+    s=re.sub(r'\s+',' ',s).strip().lower()
+    return s
+
+def _nome_confere_funcionario(nome_informado,nome_cadastro):
+    ni=_norm_nome_login(nome_informado)
+    nc=_norm_nome_login(nome_cadastro)
+    if not ni or not nc:
+        return False
+    if ni==nc:
+        return True
+    # Aceita conferir primeiro e último nome para reduzir rejeição por nome composto.
+    ni_parts=[p for p in ni.split(' ') if p]
+    nc_parts=[p for p in nc.split(' ') if p]
+    if len(ni_parts)>=2 and len(nc_parts)>=2:
+        return ni_parts[0]==nc_parts[0] and ni_parts[-1]==nc_parts[-1]
+    return False
+
+def _app_issue_session_tokens(funcionario):
+    refresh=app_issue_refresh_token()
+    ip=(request.headers.get('X-Forwarded-For') or request.remote_addr or '').split(',')[0].strip()
+    ua=(request.headers.get('User-Agent') or '')[:250]
+    sessao=FuncionarioAppSessao(
+        funcionario_id=funcionario.id,
+        refresh_hash=token_hash(refresh),
+        exp_refresh=utcnow()+timedelta(days=14),
+        revogado=False,
+        ip=ip,
+        ua=ua
+    )
+    db.session.add(sessao)
+    db.session.flush()
+    access=app_issue_access_token(funcionario.id,sessao.id,ttl=3600)
+    funcionario.app_ultimo_acesso=utcnow()
+    return {
+        'access_token':access,
+        'refresh_token':refresh,
+        'token_type':'Bearer',
+        'expires_in':3600,
+        'refresh_expires_in':1209600,
+        'sessao_id':sessao.id,
+    }
 
 def gc(k,dv=''): c=Config.query.filter_by(chave=k).first(); return c.valor if c else dv
 
@@ -5581,17 +5665,100 @@ def api_app_funcionario_login():
     if not pw_is_modern(f.app_senha):
         f.app_senha=pw_hash(senha)
 
-    refresh=app_issue_refresh_token()
-    ip=(request.headers.get('X-Forwarded-For') or request.remote_addr or '').split(',')[0].strip()
-    ua=(request.headers.get('User-Agent') or '')[:250]
-    sessao=FuncionarioAppSessao(funcionario_id=f.id,refresh_hash=token_hash(refresh),exp_refresh=utcnow()+timedelta(days=14),revogado=False,ip=ip,ua=ua)
-    db.session.add(sessao)
-    db.session.flush()
-    access=app_issue_access_token(f.id,sessao.id,ttl=3600)
-    f.app_ultimo_acesso=utcnow(); db.session.commit()
+    sess=_app_issue_session_tokens(f)
+    db.session.commit()
     reg_auth_attempt('app',cpf,True,'ok')
-    audit_event('auth_app_sucesso','funcionario',f.id,'funcionario',f.id,True,{'sessao_id':sessao.id})
-    return jsonify({'ok':True,'access_token':access,'refresh_token':refresh,'token_type':'Bearer','expires_in':3600,'refresh_expires_in':1209600,'funcionario':{'id':f.id,'nome':f.nome,'cpf':f.cpf,'cargo':f.cargo,'setor':f.setor,'status':f.status}})
+    audit_event('auth_app_sucesso','funcionario',f.id,'funcionario',f.id,True,{'sessao_id':sess['sessao_id'],'modo':'senha'})
+    return jsonify({'ok':True,**sess,'funcionario':{'id':f.id,'nome':f.nome,'cpf':f.cpf,'cargo':f.cargo,'setor':f.setor,'status':f.status}})
+
+@app.route('/api/app/funcionario/auth/iniciar',methods=['POST'])
+def api_app_funcionario_auth_iniciar():
+    d=request.json or {}
+    cpf=norm_cpf(d.get('cpf'))
+    nome=(d.get('nome') or '').strip()
+    if not cpf or len(cpf)!=11:
+        return jsonify({'erro':'CPF obrigatorio (11 digitos).'}),400
+    if not nome:
+        return jsonify({'erro':'Nome obrigatorio para validacao.'}),400
+    if auth_blocked('app_otp',cpf,(request.remote_addr or '')):
+        return jsonify({'erro':'Muitas tentativas. Aguarde alguns minutos.'}),429
+
+    f=Funcionario.query.filter_by(cpf=cpf).first()
+    if not f:
+        reg_auth_attempt('app_otp',cpf,False,'nao_encontrado')
+        return jsonify({'erro':'Funcionario nao encontrado para o CPF informado.'}),404
+    if f.app_ativo is False:
+        reg_auth_attempt('app_otp',cpf,False,'app_desativado')
+        return jsonify({'erro':'Acesso do aplicativo desativado.'}),403
+    if not _nome_confere_funcionario(nome,f.nome or ''):
+        reg_auth_attempt('app_otp',cpf,False,'nome_divergente')
+        return jsonify({'erro':'Nome nao confere com o cadastro.'}),401
+
+    tel=wa_norm_number(f.telefone or '')
+    if not wa_is_valid_number(tel):
+        return jsonify({'erro':'Funcionario sem celular valido cadastrado. Contate o RH.'}),400
+
+    codigo=_otp_new_code()
+    f.app_otp_hash=token_hash(codigo)
+    f.app_otp_expira_em=utcnow()+timedelta(minutes=10)
+    f.app_otp_tentativas=0
+    try:
+        msg=(
+            f'RM Facilities - Codigo de acesso do aplicativo\n'
+            f'Funcionario: {(f.nome or "").strip()}\n'
+            f'Codigo OTP: {codigo}\n'
+            'Validade: 10 minutos. Nao compartilhe este codigo.'
+        )
+        wa_send_text(tel,msg)
+        db.session.commit()
+        reg_auth_attempt('app_otp',cpf,True,'desafio_enviado')
+        audit_event('auth_app_otp_enviado','funcionario',f.id,'funcionario',f.id,True,{})
+        return jsonify({'ok':True,'mensagem':'Codigo enviado para o celular cadastrado.','destino':_mask_phone(tel)})
+    except Exception as ex:
+        db.session.rollback()
+        reg_auth_attempt('app_otp',cpf,False,'envio_falha')
+        return jsonify({'erro':f'Falha ao enviar codigo OTP: {str(ex)}'}),500
+
+@app.route('/api/app/funcionario/auth/confirmar',methods=['POST'])
+def api_app_funcionario_auth_confirmar():
+    d=request.json or {}
+    cpf=norm_cpf(d.get('cpf'))
+    codigo=only_digits(d.get('codigo'))
+    if not cpf or len(cpf)!=11 or not codigo:
+        return jsonify({'erro':'CPF e codigo OTP sao obrigatorios.'}),400
+    if auth_blocked('app_otp_confirm',cpf,(request.remote_addr or '')):
+        return jsonify({'erro':'Muitas tentativas. Aguarde alguns minutos.'}),429
+
+    f=Funcionario.query.filter_by(cpf=cpf).first()
+    if not f:
+        reg_auth_attempt('app_otp_confirm',cpf,False,'nao_encontrado')
+        return jsonify({'erro':'Funcionario nao encontrado.'}),404
+    if f.app_ativo is False:
+        reg_auth_attempt('app_otp_confirm',cpf,False,'app_desativado')
+        return jsonify({'erro':'Acesso do aplicativo desativado.'}),403
+
+    if not (f.app_otp_hash or '').strip() or not f.app_otp_expira_em:
+        return jsonify({'erro':'Solicite um novo codigo para acessar.'}),400
+    if f.app_otp_expira_em<utcnow():
+        return jsonify({'erro':'Codigo expirado. Solicite um novo codigo.'}),400
+
+    tent=int(f.app_otp_tentativas or 0)
+    if tent>=5:
+        return jsonify({'erro':'Limite de tentativas excedido. Solicite novo codigo.'}),400
+    if not hmac.compare_digest(token_hash(codigo),str(f.app_otp_hash or '')):
+        f.app_otp_tentativas=tent+1
+        db.session.commit()
+        reg_auth_attempt('app_otp_confirm',cpf,False,'codigo_invalido')
+        return jsonify({'erro':'Codigo OTP invalido.'}),401
+
+    f.app_otp_hash=None
+    f.app_otp_expira_em=None
+    f.app_otp_tentativas=0
+    sess=_app_issue_session_tokens(f)
+    db.session.commit()
+    reg_auth_attempt('app_otp_confirm',cpf,True,'ok')
+    audit_event('auth_app_sucesso','funcionario',f.id,'funcionario',f.id,True,{'sessao_id':sess['sessao_id'],'modo':'otp'})
+    return jsonify({'ok':True,**sess,'funcionario':{'id':f.id,'nome':f.nome,'cpf':f.cpf,'cargo':f.cargo,'setor':f.setor,'status':f.status}})
 
 @app.route('/api/app/funcionario/refresh',methods=['POST'])
 def api_app_funcionario_refresh():
@@ -5628,6 +5795,113 @@ def api_app_funcionario_logout():
 def api_app_funcionario_me():
     f=g.app_funcionario
     return jsonify({'ok':True,'funcionario':{'id':f.id,'nome':f.nome,'cpf':f.cpf,'email':f.email,'telefone':f.telefone,'cargo':f.cargo,'setor':f.setor,'empresa_id':f.empresa_id,'status':f.status}})
+
+@app.route('/api/app/funcionario/me/contato',methods=['PUT'])
+@app_func_required
+def api_app_funcionario_me_contato():
+    f=g.app_funcionario
+    d=request.json or {}
+    mudou=False
+    if 'email' in d:
+        em=(d.get('email') or '').strip().lower()
+        if em and not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+',em):
+            return jsonify({'erro':'E-mail invalido.'}),400
+        f.email=em
+        mudou=True
+    if 'telefone' in d:
+        tel=norm_phone(d.get('telefone'))
+        if tel and len(tel) not in (10,11):
+            return jsonify({'erro':'Telefone invalido. Informe DDD + numero.'}),400
+        f.telefone=tel
+        mudou=True
+    if not mudou:
+        return jsonify({'erro':'Informe ao menos um campo para atualizar (email/telefone).'}),400
+    db.session.commit()
+    audit_event('funcionario_app_atualizou_contato','funcionario',f.id,'funcionario',f.id,True,{})
+    return jsonify({'ok':True,'funcionario':{'id':f.id,'email':f.email,'telefone':f.telefone}})
+
+@app.route('/api/app/funcionario/me/solicitacoes-alteracao',methods=['GET'])
+@app_func_required
+def api_app_funcionario_minhas_solicitacoes_alteracao():
+    itens=FuncionarioAlteracaoSolicitacao.query.filter_by(funcionario_id=g.app_funcionario.id).order_by(
+        FuncionarioAlteracaoSolicitacao.solicitado_em.desc(),FuncionarioAlteracaoSolicitacao.id.desc()
+    ).all()
+    return jsonify({'ok':True,'items':[it.to_dict() for it in itens]})
+
+@app.route('/api/app/funcionario/me/solicitacoes-alteracao',methods=['POST'])
+@app_func_required
+def api_app_funcionario_solicitar_alteracao():
+    d=request.json or {}
+    campos=d.get('campos') or {}
+    if not isinstance(campos,dict):
+        return jsonify({'erro':'Formato invalido para campos.'}),400
+    permitidos={
+        'nome','cargo','funcao','setor','endereco','endereco_numero','endereco_complemento',
+        'endereco_bairro','cidade','estado','cep','banco_codigo','banco_nome',
+        'banco_agencia','banco_conta','banco_tipo_conta','banco_pix'
+    }
+    payload={}
+    for k,v in campos.items():
+        if k not in permitidos:
+            continue
+        payload[k]=str(v or '').strip()
+    if not payload:
+        return jsonify({'erro':'Nenhum campo permitido foi informado para solicitacao.'}),400
+    obs=(d.get('observacao') or '').strip()
+    it=FuncionarioAlteracaoSolicitacao(
+        funcionario_id=g.app_funcionario.id,
+        payload=json.dumps(payload,ensure_ascii=False),
+        observacao=obs,
+        status='pendente'
+    )
+    db.session.add(it)
+    db.session.commit()
+    audit_event('funcionario_app_solicitou_alteracao','funcionario',g.app_funcionario.id,'funcionario',g.app_funcionario.id,True,{'solicitacao_id':it.id})
+    return jsonify({'ok':True,'item':it.to_dict()}),201
+
+@app.route('/api/funcionarios/<int:id>/solicitacoes-alteracao',methods=['GET'])
+@lr
+def api_funcionario_solicitacoes_alteracao(id):
+    Funcionario.query.get_or_404(id)
+    itens=FuncionarioAlteracaoSolicitacao.query.filter_by(funcionario_id=id).order_by(
+        FuncionarioAlteracaoSolicitacao.solicitado_em.desc(),FuncionarioAlteracaoSolicitacao.id.desc()
+    ).all()
+    return jsonify([it.to_dict() for it in itens])
+
+@app.route('/api/funcionarios/solicitacoes-alteracao/<int:id>/decidir',methods=['POST'])
+@lr
+def api_decidir_solicitacao_alteracao(id):
+    it=FuncionarioAlteracaoSolicitacao.query.get_or_404(id)
+    if (it.status or '')!='pendente':
+        return jsonify({'erro':'Solicitacao ja foi analisada.'}),400
+    d=request.json or {}
+    acao=(d.get('acao') or '').strip().lower()
+    motivo=(d.get('motivo') or '').strip()
+    if acao not in ('aprovar','rejeitar'):
+        return jsonify({'erro':'Acao invalida. Use aprovar ou rejeitar.'}),400
+    f=Funcionario.query.get_or_404(it.funcionario_id)
+    if acao=='aprovar':
+        payload=jloads(it.payload,{})
+        for k,v in (payload.items() if isinstance(payload,dict) else []):
+            if not hasattr(f,k):
+                continue
+            if k=='cep':
+                setattr(f,k,norm_cep(v))
+            elif k=='estado':
+                setattr(f,k,norm_uf(v))
+            elif k=='banco_codigo':
+                setattr(f,k,norm_bank_code(v))
+            else:
+                setattr(f,k,v)
+        it.status='aprovada'
+    else:
+        it.status='rejeitada'
+    it.motivo_admin=motivo
+    it.analisado_por=session.get('uid')
+    it.analisado_em=utcnow()
+    db.session.commit()
+    audit_event('funcionario_alteracao_solicitacao_decidida','usuario',session.get('uid'),'funcionario',f.id,True,{'solicitacao_id':it.id,'acao':acao})
+    return jsonify({'ok':True,'item':it.to_dict(),'funcionario':f.to_dict()})
 
 @app.route('/api/app/funcionario/me/documentos')
 @app_func_required
@@ -9613,14 +9887,27 @@ def api_rh_holerites_enviar(job_id):
 @app.route('/api/config/smtp',methods=['GET'])
 @dr
 def api_smtp_get():
-    return jsonify({'host':gc('smtp_host',''),'port':gc('smtp_port','587'),'user':gc('smtp_user',''),'senha':gc('smtp_senha',''),'de':gc('smtp_de',''),'tls':gc('smtp_tls','1')})
+    senha=(gc('smtp_senha','') or '').strip()
+    return jsonify({
+        'host':gc('smtp_host',''),
+        'port':gc('smtp_port','587'),
+        'user':gc('smtp_user',''),
+        'senha':'',
+        'has_senha':bool(senha),
+        'de':gc('smtp_de',''),
+        'tls':gc('smtp_tls','1')
+    })
 
 @app.route('/api/config/smtp',methods=['POST'])
 @dr
 def api_smtp_save():
     d=request.json or {}
-    for k in ['host','port','user','senha','de','tls']:
+    for k in ['host','port','user','de','tls']:
         if k in d: sc_cfg(f'smtp_{k}',str(d[k]))
+    if str(d.get('senha_clear','0')).strip().lower() in ('1','true','yes','on'):
+        sc_cfg('smtp_senha','')
+    elif 'senha' in d and str(d.get('senha','')).strip():
+        sc_cfg('smtp_senha',str(d.get('senha','')).strip())
     return jsonify({'ok':True})
 
 @app.route('/api/config/smtp/testar',methods=['POST'])
@@ -9646,10 +9933,12 @@ def api_smtp_testar():
 @lr
 def api_wa_cfg_get():
     b=wa_backup_cfg()
+    token=(gc('wa_token','') or '').strip()
     return jsonify({
         'url':gc('wa_url',''),
         'instancia':gc('wa_instancia',''),
-        'token':gc('wa_token',''),
+        'token':'',
+        'has_token':bool(token),
         'backup_enabled':b.get('enabled','1'),
         'backup_email':b.get('email',''),
         'backup_interval_hours':b.get('interval_hours','2'),
@@ -9661,8 +9950,12 @@ def api_wa_cfg_get():
 @lr
 def api_wa_cfg_save():
     d=request.json or {}
-    for k in ['url','instancia','token']:
+    for k in ['url','instancia']:
         if k in d: sc_cfg(f'wa_{k}',str(d[k]))
+    if str(d.get('token_clear','0')).strip().lower() in ('1','true','yes','on'):
+        sc_cfg('wa_token','')
+    elif 'token' in d and str(d.get('token','')).strip():
+        sc_cfg('wa_token',str(d.get('token','')).strip())
     if 'backup_enabled' in d:
         sc_cfg('wa_backup_enabled','1' if str(d.get('backup_enabled','0')).strip().lower() in ('1','true','yes','on') else '0')
     if 'backup_email' in d:
@@ -9730,7 +10023,16 @@ def api_wa_testar():
 @lr
 def api_ia_wa_cfg_get():
     d=ai_wa_cfg()
-    return jsonify({'enabled':d['enabled'],'provider':d['provider'],'api_key':d['api_key'],'model':d['model'],'prompt':(d['prompt'] or DEFAULT_IA_WA_PROMPT),'temperature':d['temperature'],'max_tokens':d['max_tokens']})
+    return jsonify({
+        'enabled':d['enabled'],
+        'provider':d['provider'],
+        'api_key':'',
+        'has_api_key':bool((d.get('api_key') or '').strip()),
+        'model':d['model'],
+        'prompt':(d['prompt'] or DEFAULT_IA_WA_PROMPT),
+        'temperature':d['temperature'],
+        'max_tokens':d['max_tokens']
+    })
 
 @app.route('/api/config/ia-whatsapp',methods=['POST'])
 @lr
@@ -9750,7 +10052,10 @@ def api_ia_wa_cfg_save():
         max_tokens=350
     sc_cfg('ia_wa_enabled',enabled)
     sc_cfg('ia_wa_provider',provider)
-    sc_cfg('ia_wa_api_key',str(d.get('api_key','')))
+    if str(d.get('api_key_clear','0')).strip().lower() in ('1','true','yes','on'):
+        sc_cfg('ia_wa_api_key','')
+    elif 'api_key' in d and str(d.get('api_key','')).strip():
+        sc_cfg('ia_wa_api_key',str(d.get('api_key','')).strip())
     sc_cfg('ia_wa_model',model)
     sc_cfg('ia_wa_prompt',str(d.get('prompt','')))
     sc_cfg('ia_wa_temperature',str(temp))
@@ -10543,6 +10848,9 @@ with app.app_context():
         'app_senha VARCHAR(256)',
         'app_ativo BOOLEAN DEFAULT 1',
         'app_ultimo_acesso DATETIME',
+        'app_otp_hash VARCHAR(256)',
+        'app_otp_expira_em DATETIME',
+        'app_otp_tentativas INTEGER DEFAULT 0',
         'endereco_numero VARCHAR(20)',
         'endereco_complemento VARCHAR(120)',
         'endereco_bairro VARCHAR(120)',

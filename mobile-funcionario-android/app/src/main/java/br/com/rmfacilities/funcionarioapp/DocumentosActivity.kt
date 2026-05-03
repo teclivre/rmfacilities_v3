@@ -31,10 +31,16 @@ class DocumentosActivity : AppCompatActivity() {
         swipe = findViewById(R.id.swipeDocs)
         val rv = findViewById<RecyclerView>(R.id.rvDocs)
 
+        // Botão voltar
+        findViewById<android.widget.TextView>(R.id.btnVoltar).setOnClickListener { finish() }
+
         adapter = DocumentoAdapter(mutableListOf()) { item ->
             baixarDocumento(item)
         }
         rv.adapter = adapter
+        (rv.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager)
+            ?: run { rv.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this) }
+
 
         swipe.setOnRefreshListener { carregar() }
         swipe.isRefreshing = true

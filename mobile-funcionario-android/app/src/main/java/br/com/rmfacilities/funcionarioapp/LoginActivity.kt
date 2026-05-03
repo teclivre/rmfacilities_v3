@@ -3,6 +3,7 @@ package br.com.rmfacilities.funcionarioapp
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -17,6 +18,19 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var session: SessionManager
     private lateinit var api: ApiClient
 
+    private lateinit var etCpf: TextInputEditText
+    private lateinit var etNome: TextInputEditText
+    private lateinit var etCodigo: TextInputEditText
+    private lateinit var btnEnviarCodigo: MaterialButton
+    private lateinit var btnEntrar: MaterialButton
+    private lateinit var tvReenviar: TextView
+    private lateinit var layoutOtp: LinearLayout
+    private lateinit var tvOtpMsg: TextView
+    private lateinit var progress: ProgressBar
+    private lateinit var tvErro: TextView
+
+    private var cpfAtual = ""
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_login)
@@ -25,55 +39,107 @@ class LoginActivity : AppCompatActivity() {
         api = ApiClient(session)
 
         if (session.accessToken.isNotBlank()) {
-            startActivity(Intent(this, HomeActivity::class.java))
-            finish()
+            goHome()
             return
         }
 
-        val etApiUrl = findViewById<TextInputEditText>(R.id.etApiUrl)
-        val etCpf = findViewById<TextInputEditText>(R.id.etCpf)
-        val etSenha = findViewById<TextInputEditText>(R.id.etSenha)
-        val btnEntrar = findViewById<MaterialButton>(R.id.btnEntrar)
-        val progress = findViewById<ProgressBar>(R.id.progressLogin)
-        val tvErro = findViewById<TextView>(R.id.tvErro)
+        etCpf = findViewById(R.id.etCpf)
+        etNome = findViewById(R.id.etNome)
+        etCodigo = findViewById(R.id.etCodigo)
+        btnEnviarCodigo = findViewById(R.id.btnEnviarCodigo)
+        btnEntrar = findViewById(R.id.btnEntrar)
+        tvReenviar = findViewById(R.id.tvReenviar)
+        layoutOtp = findViewById(R.id.layoutOtp)
+        tvOtpMsg = findViewById(R.id.tvOtpMsg)
+        progress = findViewById(R.id.progressLogin)
+        tvErro = findViewById(R.id.tvErro)
 
-        etApiUrl.setText(session.apiBaseUrl)
+        btnEnviarCodigo.setOnClickListener { enviarCodigo() }
+        btnEntrar.setOnClickListener { confirmarOtp() }
+        tvReenviar.setOnClickListener { enviarCodigo() }
+    }
 
-        btnEntrar.setOnClickListener {
-            val apiBase = etApiUrl.text?.toString()?.trim().orEmpty()
-            val cpf = etCpf.text?.toString()?.replace("\\D".toRegex(), "").orEmpty()
-            val senha = etSenha.text?.toString().orEmpty()
+    private fun enviarCodigo() {
+        val cpf = etCpf.text?.toString()?.replace("\\D".toRegex(), "").orEmpty()
+        val nome = etNome.text?.toString()?.trim().orEmpty()
 
-            if (apiBase.isBlank() || cpf.isBlank() || senha.isBlank()) {
-                tvErro.text = "Preencha URL da API, CPF e senha."
-                return@setOnClickListener
+        if (cpf.length != 11) { showErro("Informe o CPF com 11 dígitos."); return }
+        if (nome.isBlank()) { showErro("Informe seu nome completo."); return }
+
+        cpfAtual = cpf
+        setLoading(true)
+        hideErro()
+
+        CoroutineScope(Dispatchers.IO).launch {
+            val resp = try {
+                api.iniciarOtp(cpf, nome)
+            } catch (e: Exception) {
+                OtpStartResponse(ok = false, erro = "Erro de conexão: ${e.message}")
             }
-
-            session.apiBaseUrl = apiBase
-            progress.visibility = View.VISIBLE
-            btnEntrar.isEnabled = false
-            tvErro.text = ""
-
-            CoroutineScope(Dispatchers.IO).launch {
-                val resp = try {
-                    api.login(cpf, senha)
-                } catch (e: Exception) {
-                    LoginResponse(ok = false, erro = e.message ?: "Erro de conexão")
-                }
-
-                withContext(Dispatchers.Main) {
-                    progress.visibility = View.GONE
-                    btnEntrar.isEnabled = true
-                    if (resp.ok && !resp.access_token.isNullOrBlank()) {
-                        session.accessToken = resp.access_token
-                        session.refreshToken = resp.refresh_token ?: ""
-                        startActivity(Intent(this@LoginActivity, HomeActivity::class.java))
-                        finish()
-                    } else {
-                        tvErro.text = resp.erro ?: "Falha no login"
-                    }
+            withContext(Dispatchers.Main) {
+                setLoading(false)
+                if (resp.ok) {
+                    tvOtpMsg.text = resp.mensagem ?: "Código enviado! Verifique seu celular."
+                    layoutOtp.visibility = View.VISIBLE
+                    btnEnviarCodigo.text = "Reenviar código"
+                    etCodigo.requestFocus()
+                    hideErro()
+                } else {
+                    showErro(resp.erro ?: "Erro ao enviar código.")
                 }
             }
         }
+    }
+
+    private fun confirmarOtp() {
+        val cpf = cpfAtual.ifBlank {
+            etCpf.text?.toString()?.replace("\\D".toRegex(), "").orEmpty()
+        }
+        val codigo = etCodigo.text?.toString()?.replace("\\D".toRegex(), "").orEmpty()
+
+        if (cpf.length != 11) { showErro("CPF inválido."); return }
+        if (codigo.length != 6) { showErro("O código tem 6 dígitos."); return }
+
+        setLoading(true)
+        hideErro()
+
+        CoroutineScope(Dispatchers.IO).launch {
+            val resp = try {
+                api.confirmarOtp(cpf, codigo)
+            } catch (e: Exception) {
+                LoginResponse(ok = false, erro = "Erro de conexão: ${e.message}")
+            }
+            withContext(Dispatchers.Main) {
+                setLoading(false)
+                if (resp.ok && !resp.access_token.isNullOrBlank()) {
+                    session.accessToken = resp.access_token
+                    session.refreshToken = resp.refresh_token ?: ""
+                    goHome()
+                } else {
+                    showErro(resp.erro ?: "Código inválido ou expirado.")
+                }
+            }
+        }
+    }
+
+    private fun setLoading(loading: Boolean) {
+        progress.visibility = if (loading) View.VISIBLE else View.GONE
+        btnEnviarCodigo.isEnabled = !loading
+        btnEntrar.isEnabled = !loading
+        tvReenviar.isEnabled = !loading
+    }
+
+    private fun showErro(msg: String) {
+        tvErro.text = msg
+        tvErro.visibility = View.VISIBLE
+    }
+
+    private fun hideErro() {
+        tvErro.visibility = View.GONE
+    }
+
+    private fun goHome() {
+        startActivity(Intent(this, HomeActivity::class.java))
+        finish()
     }
 }

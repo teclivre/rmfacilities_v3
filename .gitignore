@@ -1,0 +1,23 @@
+# Python caches and environments
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.venv/
+**/venv/
+
+# Runtime and local data
+*.db
+*.sqlite
+*.sqlite3
+instance/
+**/instance/uploads/
+
+# Build and artifacts
+*.zip
+
+# OS/editor artifacts
+.DS_Store
+Thumbs.db

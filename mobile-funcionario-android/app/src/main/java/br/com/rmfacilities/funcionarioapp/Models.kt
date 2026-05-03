@@ -8,6 +8,13 @@ data class LoginResponse(
     val funcionario: FuncionarioResumo? = null
 )
 
+data class OtpStartResponse(
+    val ok: Boolean = false,
+    val erro: String? = null,
+    val mensagem: String? = null,
+    val destino: String? = null
+)
+
 data class FuncionarioResumo(
     val id: Int,
     val nome: String? = null,
@@ -32,6 +39,33 @@ data class FuncionarioPerfil(
     val cargo: String? = null,
     val setor: String? = null,
     val status: String? = null
+)
+
+data class ContatoUpdateResponse(
+    val ok: Boolean = false,
+    val erro: String? = null,
+    val funcionario: ContatoInfo? = null
+)
+
+data class ContatoInfo(
+    val id: Int? = null,
+    val email: String? = null,
+    val telefone: String? = null
+)
+
+data class SolicitacaoResponse(
+    val ok: Boolean = false,
+    val erro: String? = null,
+    val item: SolicitacaoItem? = null,
+    val items: List<SolicitacaoItem> = emptyList()
+)
+
+data class SolicitacaoItem(
+    val id: Int,
+    val status: String? = null,
+    val observacao: String? = null,
+    val motivo_admin: String? = null,
+    val solicitado_fmt: String? = null
 )
 
 data class DocsResponse(
