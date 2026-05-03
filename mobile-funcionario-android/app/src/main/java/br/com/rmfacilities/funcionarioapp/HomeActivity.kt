@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +30,7 @@ class HomeActivity : AppCompatActivity() {
         val tvBoasVindas = findViewById<TextView>(R.id.tvBoasVindas)
         val tvCargo = findViewById<TextView>(R.id.tvCargo)
         val tvAvatar = findViewById<TextView>(R.id.tvAvatar)
+        val tvUltimoAso = findViewById<TextView>(R.id.tvUltimoAso)
 
         findViewById<LinearLayout>(R.id.btnPerfil).setOnClickListener {
             startActivity(Intent(this, PerfilActivity::class.java))
@@ -36,6 +38,10 @@ class HomeActivity : AppCompatActivity() {
 
         findViewById<LinearLayout>(R.id.btnDocumentos).setOnClickListener {
             startActivity(Intent(this, DocumentosActivity::class.java))
+        }
+
+        findViewById<LinearLayout>(R.id.btnPonto).setOnClickListener {
+            Toast.makeText(this, "Modulo de ponto em implantacao nesta versao.", Toast.LENGTH_SHORT).show()
         }
 
         findViewById<MaterialButton>(R.id.btnLogout).setOnClickListener {
@@ -54,8 +60,21 @@ class HomeActivity : AppCompatActivity() {
                 tvCargo.text = listOf(me.funcionario?.cargo, me.funcionario?.setor)
                     .filter { !it.isNullOrBlank() }
                     .joinToString(" • ")
+                tvUltimoAso.text = formatUltimoAso(me.funcionario?.ultimo_aso_competencia, me.funcionario?.ultimo_aso_enviado_em)
             }
         }
+    }
+
+    private fun formatUltimoAso(competencia: String?, enviadoEmIso: String?): String {
+        val comp = competencia?.trim().orEmpty()
+        if (comp.isNotBlank()) {
+            return "Competencia: $comp"
+        }
+        val enviado = enviadoEmIso?.trim().orEmpty()
+        if (enviado.length >= 10) {
+            return "Enviado em: ${enviado.substring(0, 10)}"
+        }
+        return "Nao encontrado"
     }
 
     private fun goLogin() {

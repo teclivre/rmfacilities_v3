@@ -5794,7 +5794,22 @@ def api_app_funcionario_logout():
 @app_func_required
 def api_app_funcionario_me():
     f=g.app_funcionario
-    return jsonify({'ok':True,'funcionario':{'id':f.id,'nome':f.nome,'cpf':f.cpf,'email':f.email,'telefone':f.telefone,'cargo':f.cargo,'setor':f.setor,'empresa_id':f.empresa_id,'status':f.status}})
+    ultimo_aso=FuncionarioArquivo.query.filter_by(funcionario_id=f.id,categoria='aso').order_by(
+        FuncionarioArquivo.criado_em.desc(),FuncionarioArquivo.id.desc()
+    ).first()
+    return jsonify({'ok':True,'funcionario':{
+        'id':f.id,
+        'nome':f.nome,
+        'cpf':f.cpf,
+        'email':f.email,
+        'telefone':f.telefone,
+        'cargo':f.cargo,
+        'setor':f.setor,
+        'empresa_id':f.empresa_id,
+        'status':f.status,
+        'ultimo_aso_competencia':(ultimo_aso.competencia if ultimo_aso else None),
+        'ultimo_aso_enviado_em':(ultimo_aso.criado_em.isoformat() if (ultimo_aso and ultimo_aso.criado_em) else None)
+    }})
 
 @app.route('/api/app/funcionario/me/contato',methods=['PUT'])
 @app_func_required

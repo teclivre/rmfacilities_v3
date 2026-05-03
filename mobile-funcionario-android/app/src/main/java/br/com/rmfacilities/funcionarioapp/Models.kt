@@ -38,7 +38,9 @@ data class FuncionarioPerfil(
     val telefone: String? = null,
     val cargo: String? = null,
     val setor: String? = null,
-    val status: String? = null
+    val status: String? = null,
+    val ultimo_aso_competencia: String? = null,
+    val ultimo_aso_enviado_em: String? = null
 )
 
 data class ContatoUpdateResponse(
