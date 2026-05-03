@@ -6,6 +6,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +16,11 @@ import kotlinx.coroutines.withContext
 class HomeActivity : AppCompatActivity() {
     private lateinit var session: SessionManager
     private lateinit var api: ApiClient
+    private lateinit var swipeRefresh: SwipeRefreshLayout
+    private lateinit var tvBoasVindas: TextView
+    private lateinit var tvCargo: TextView
+    private lateinit var tvAvatar: TextView
+    private lateinit var tvUltimoAso: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,10 +33,14 @@ class HomeActivity : AppCompatActivity() {
             goLogin(); return
         }
 
-        val tvBoasVindas = findViewById<TextView>(R.id.tvBoasVindas)
-        val tvCargo = findViewById<TextView>(R.id.tvCargo)
-        val tvAvatar = findViewById<TextView>(R.id.tvAvatar)
-        val tvUltimoAso = findViewById<TextView>(R.id.tvUltimoAso)
+        tvBoasVindas = findViewById(R.id.tvBoasVindas)
+        tvCargo = findViewById(R.id.tvCargo)
+        tvAvatar = findViewById(R.id.tvAvatar)
+        tvUltimoAso = findViewById(R.id.tvUltimoAso)
+        swipeRefresh = findViewById(R.id.swipeRefreshHome)
+
+        swipeRefresh.setColorSchemeResources(R.color.accent)
+        swipeRefresh.setProgressBackgroundColorSchemeResource(R.color.surface)
 
         findViewById<LinearLayout>(R.id.btnPerfil).setOnClickListener {
             startActivity(Intent(this, PerfilActivity::class.java))
@@ -49,9 +59,16 @@ class HomeActivity : AppCompatActivity() {
             goLogin()
         }
 
+        swipeRefresh.setOnRefreshListener { carregarDados() }
+        swipeRefresh.isRefreshing = true
+        carregarDados()
+    }
+
+    private fun carregarDados() {
         CoroutineScope(Dispatchers.IO).launch {
             val me = try { api.me() } catch (_: Exception) { MeResponse(ok = false) }
             withContext(Dispatchers.Main) {
+                swipeRefresh.isRefreshing = false
                 val nome = me.funcionario?.nome ?: "colaborador"
                 val primeiroNome = nome.split(" ").firstOrNull() ?: nome
                 val inicial = nome.firstOrNull()?.uppercaseChar()?.toString() ?: "U"
