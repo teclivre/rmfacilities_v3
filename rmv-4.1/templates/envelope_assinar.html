@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Assinar Documento — RM Facilities</title>
+<link rel="stylesheet" href="/static/css/main.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.min.js"></script>
+<style>
+  .public-main{padding-top:14px}
+  .public-container{max-width:min(96vw,1600px)}
+  .signature-shell{padding:14px;background:linear-gradient(160deg,#f9fbff,#f0f4fb);border:1px solid #d7e1f0}
+  .ass-layout{display:grid;grid-template-columns:1fr;gap:14px}
+  .viewer-col{background:#fff;border:1px solid #d8e2ef;border-radius:12px;padding:12px}
+  .signer-col{min-width:0}
+  .signer-panel{background:#ffffff;border:1px solid #d8e2ef;border-radius:12px;padding:12px;box-shadow:0 8px 20px rgba(35,66,120,.08)}
+  .signer-title{font-size:16px;font-weight:800;color:#1e365f;margin:0 0 2px 0}
+  .signer-sub{font-size:12px;color:#58719a;margin:0 0 10px 0}
+  .viewer-shell{padding:10px;background:#f7f9fc;border:1px solid #d9e1ee;border-radius:10px}
+  .viewer-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .viewer-progress{font-size:12px;color:#2f4f8f;font-weight:700;background:#e9f1ff;border-radius:999px;padding:4px 10px}
+  .doc-chip-list{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 10px}
+  .doc-chip{border:1px solid #b8c7e4;background:#fff;color:#27406d;border-radius:999px;padding:7px 12px;font-size:12px;cursor:pointer}
+  .doc-chip.active{background:#2d7ef7;color:#fff;border-color:#2d7ef7}
+  .doc-chip.done{border-color:#2aa876;background:#ebfff5;color:#12714d}
+  .doc-frame-wrap{background:#fff;border:1px solid #d9e1ee;border-radius:10px;padding:8px}
+  .doc-scroll{max-height:68vh;overflow:auto;background:#f3f5f9;border-radius:8px;padding:8px}
+  .pdf-pages{display:flex;flex-direction:column;gap:10px;align-items:center}
+  .pdf-page{background:#fff;border:1px solid #d7deea;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.06);max-width:100%}
+  .viewer-loading{font-size:13px;color:#3f5f92;padding:16px;text-align:center}
+  .viewer-tip{font-size:12px;color:#4a5f82;text-align:center;padding:6px 4px}
+  .fs-btn{border:1px solid #bfd0ee;background:#f4f8ff;color:#2f4f8f;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
+  .fs-btn:hover{background:#eaf2ff}
+  @media (min-width:1100px){
+    .ass-layout{grid-template-columns:minmax(0,1fr) 390px;gap:16px;align-items:start}
+    .signer-panel{position:sticky;top:14px}
+    .doc-scroll{max-height:calc(100vh - 220px)}
+  }
+</style>
+
+</head>
+<body class="public-page">
+  <div class="public-topbar">
+    <div class="public-topbar-brand">
+      <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
+      <h1>RM Facilities</h1>
+    </div>
+  </div>
+
+  <div class="public-main">
+    <div class="public-container">
+      {% if sig.status == 'assinado' %}
+      <div class="public-success">
+        <div class="ico">✅</div>
+        <h3>Documento já assinado!</h3>
+        <p style="font-size:13px;color:#666;margin:10px 0">Você já assinou este documento anteriormente.</p>
+        <div class="public-success .links">
+          <a href="/envelope/validar/{{ env.codigo }}">🔍 Ver validação do documento</a>
+          {% if env.status == 'concluido' %}
+          <a href="/envelope/baixar/{{ env.codigo }}" style="color:var(--verde)">⬇ Baixar documento assinado</a>
+          {% endif %}
+        </div>
+      </div>
+      {% else %}
+      <div class="public-card signature-shell" id="sec-form">
+        <h1>Assinatura eletrônica</h1>
+        <p class="sub">Visualize o documento em tela grande e assine no painel lateral.</p>
+
+        <h2>{{ env.titulo }}</h2>
+        {% if env.descricao %}<p class="sub">{{ env.descricao }}</p>{% endif %}
+
+        <div class="ass-layout">
+          <section class="viewer-col">
+            <div class="public-info-box">
+              <strong>Signatário:</strong> {{ sig.nome or 'Não informado' }}
+              {% if sig.cargo %}<br><strong>Cargo:</strong> {{ sig.cargo }}{% endif %}
+            </div>
+
+            <div class="card-doc viewer-shell">
+              <div class="viewer-head">
+                <h3 style="margin:0">Documentos a assinar ({{ arquivos|length }})</h3>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <span class="viewer-progress" id="viewer-progress">0/{{ arquivos|length }} visualizado(s)</span>
+                  <button type="button" class="fs-btn" onclick="toggleViewerFullscreen()">Tela cheia</button>
+                </div>
+              </div>
+              <p class="sub" style="margin:0 0 8px 0">Para assinar, você precisa visualizar todos os documentos desta lista.</p>
+              <div class="doc-chip-list" id="doc-chip-list">
+                {% for a in arquivos %}
+                <button type="button" class="doc-chip" data-doc-id="{{ a.id }}" onclick="abrirDocumento({{ a.id }})">{{ a.nome_arquivo }}</button>
+                {% endfor %}
+              </div>
+              <div class="doc-frame-wrap" id="doc-frame-wrap">
+                <div id="doc-viewer-scroll" class="doc-scroll">
+                  <div id="doc-viewer-pages" class="pdf-pages"></div>
+                  <div id="doc-viewer-tip" class="viewer-tip" style="display:none">Role até o final para confirmar que visualizou o documento.</div>
+                </div>
+              </div>
+              <div class="public-msg" id="viewer-msg" style="margin-top:8px"></div>
+            </div>
+          </div>
+
+          </section>
+
+          <aside class="signer-col">
+            <div class="signer-panel">
+              <h3 class="signer-title">Conferir dados do signatário</h3>
+              <p class="signer-sub">Preencha seus dados e confirme com OTP.</p>
+
+              <div class="public-msg" id="msg"></div>
+
+              <div class="public-form">
+                <div class="public-form-group">
+                  <label>Nome completo *</label>
+                  <input id="inp-nome" type="text" placeholder="Seu nome completo" value="{{ sig.nome or '' }}">
+                </div>
+                <div class="public-form-group">
+                  <label>Cargo / Função (opcional)</label>
+                  <input id="inp-cargo" type="text" placeholder="Seu cargo" value="{{ sig.cargo or '' }}">
+                </div>
+                <div class="public-form-group">
+                  <label>CPF *</label>
+                  <input id="inp-cpf" type="text" placeholder="000.000.000-00" maxlength="14" oninput="fmtCpf(this)">
+                </div>
+                <div class="public-form-group">
+                  <label>Código OTP (6 dígitos)</label>
+                  <input id="inp-otp" type="text" placeholder="Informe o código recebido" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
+                </div>
+                <label class="public-check">
+                  <input type="checkbox" id="chk-aceite">
+                  Declaro que li e entendi os documentos listados acima e, ao clicar em <strong>Confirmar Assinatura</strong>, confirmo minha assinatura eletrônica com validade legal, conforme a Lei nº 14.063/2020.
+                </label>
+              </div>
+              <div class="public-btngroup" style="display:flex;flex-wrap:wrap;gap:8px">
+                <button class="public-btn public-btn-primary" id="btn-assinar" onclick="confirmarAssinatura()" style="flex:1;min-width:150px" disabled>Visualize os documentos para assinar</button>
+                <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()" style="flex:1;min-width:150px">Reenviar código</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+
+      <div id="sucesso" class="public-success" style="display:none">
+        <div class="ico">✅</div>
+        <h3>Assinatura concluída com sucesso!</h3>
+        <p style="font-size:13px;color:#555;margin:10px 0 8px">Seu comprovante foi registrado com segurança.</p>
+        <div class="public-success .code"><span id="cod-val"></span></div>
+        <small style="color:#666">Guarde este código para consultar sua assinatura.</small><br>
+        <div style="margin-top:12px">
+          <a id="link-val" href="#" style="display:block;margin-bottom:8px">🔍 Validar assinatura</a>
+          <a id="link-download" href="#" style="display:none;color:var(--verde);font-weight:700">⬇ Baixar documento assinado</a>
+        </div>
+      </div>
+      {% endif %}
+
+      <div style="margin-top:16px;font-size:12px;color:#999;text-align:center">
+        Assinatura Eletrônica — RM Facilities | Plataforma segura, validade jurídica conforme Lei nº 14.063/2020
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/assinatura-common.js"></script>
+  <script>
+const TOKEN='{{ sig.token or "" }}';
+const ENV_COD='{{ env.codigo }}';
+const SRC='{{ request.args.get("src","link") }}';
+const DOCS={{ arquivos|map(attribute='id')|list|tojson }};
+const DOC_NAMES={{ arquivos|map(attribute='nome_arquivo')|list|tojson }};
+const otpCooldownCtrl=SignatureCommon.makeCooldown('btn-resend',60);
+const docsVistos=new Set();
+let docAtual=null;
+let currentRenderToken=0;
+
+if(window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions){
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.js';
+}
+
+function showMsg(txt,type='err'){
+  const msg=document.getElementById('msg');
+  if(!msg) return;
+  msg.className='public-msg '+type;
+  msg.textContent=txt;
+}
+
+function erroAmigavel(txt){
+  return SignatureCommon.friendlyError(txt);
+}
+
+function startOtpCooldown(seg){
+  otpCooldownCtrl.start(seg||60);
+}
+
+function showViewerMsg(txt,type='ok'){
+  const msg=document.getElementById('viewer-msg');
+  if(!msg) return;
+  msg.className='public-msg '+type;
+  msg.textContent=txt;
+}
+
+function atualizarProgressoDocs(){
+  const total=DOCS.length;
+  const vistos=docsVistos.size;
+  const lbl=document.getElementById('viewer-progress');
+  if(lbl) lbl.textContent=`${vistos}/${total} visualizado(s)`;
+  const btn=document.getElementById('btn-assinar');
+  if(btn){
+    if(total>0 && vistos>=total){
+      btn.disabled=false;
+      btn.textContent='Confirmar assinatura';
+      showViewerMsg('Todos os documentos foram visualizados. Agora você pode assinar.','ok');
+    }else{
+      btn.disabled=true;
+      btn.textContent='Visualize os documentos para assinar';
+    }
+  }
+}
+
+function marcarChipAtivo(docId){
+  document.querySelectorAll('#doc-chip-list .doc-chip').forEach(el=>{
+    const id=parseInt(el.getAttribute('data-doc-id')||'0',10);
+    el.classList.toggle('active',id===docId);
+    el.classList.toggle('done',docsVistos.has(id));
+  });
+}
+
+function abrirDocumento(docId){
+  if(!TOKEN||!docId) return;
+  docAtual=parseInt(docId,10);
+  marcarChipAtivo(docAtual);
+  carregarDocumentoAtual(docAtual);
+}
+
+function nomeDocPorId(docId){
+  const idx=DOCS.indexOf(docId);
+  if(idx<0) return '';
+  return String(DOC_NAMES[idx]||'');
+}
+
+function isPdfName(nome){
+  return /\.pdf(\?|#|$)/i.test(String(nome||''));
+}
+
+function markDocViewed(docId){
+  const id=parseInt(docId||'0',10);
+  if(!id) return;
+  docsVistos.add(id);
+  marcarChipAtivo(id);
+  atualizarProgressoDocs();
+}
+
+function bindReadScroll(docId){
+  const sc=document.getElementById('doc-viewer-scroll');
+  const tip=document.getElementById('doc-viewer-tip');
+  if(!sc) return;
+  if(tip) tip.style.display='block';
+  const check=()=>{
+    const maxTop=Math.max(1,sc.scrollHeight-sc.clientHeight);
+    const pct=sc.scrollTop/maxTop;
+    if(pct>=0.92){
+      markDocViewed(docId);
+      showViewerMsg('Documento visualizado com sucesso.','ok');
+    }
+  };
+  sc.onscroll=check;
+  setTimeout(()=>{
+    if(sc.scrollHeight<=sc.clientHeight+20){
+      markDocViewed(docId);
+      showViewerMsg('Documento visualizado com sucesso.','ok');
+    }
+  },300);
+}
+
+function toggleViewerFullscreen(){
+  const el=document.getElementById('doc-frame-wrap');
+  if(!el) return;
+  if(document.fullscreenElement){
+    document.exitFullscreen().catch(()=>{});
+  }else{
+    el.requestFullscreen?.().catch(()=>{});
+  }
+}
+
+async function renderPdfIntoViewer(arrayBuffer,docId){
+  const pages=document.getElementById('doc-viewer-pages');
+  const sc=document.getElementById('doc-viewer-scroll');
+  if(!pages||!sc||!window.pdfjsLib) return false;
+  const token=++currentRenderToken;
+  pages.innerHTML='<div class="viewer-loading">Renderizando documento...</div>';
+  const pdf=await window.pdfjsLib.getDocument({data:arrayBuffer}).promise;
+  if(token!==currentRenderToken) return false;
+  pages.innerHTML='';
+  const renderWidth=Math.max(280,Math.min(900,sc.clientWidth-24));
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p);
+    const vp=page.getViewport({scale:1});
+    const scale=renderWidth/vp.width;
+    const viewport=page.getViewport({scale});
+    const canvas=document.createElement('canvas');
+    canvas.className='pdf-page';
+    canvas.width=Math.floor(viewport.width);
+    canvas.height=Math.floor(viewport.height);
+    canvas.style.width=Math.floor(viewport.width)+'px';
+    canvas.style.height=Math.floor(viewport.height)+'px';
+    await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+    if(token!==currentRenderToken) return false;
+    pages.appendChild(canvas);
+  }
+  bindReadScroll(docId);
+  return true;
+}
+
+async function carregarDocumentoAtual(docId){
+  const pages=document.getElementById('doc-viewer-pages');
+  if(!pages) return;
+  const nome=nomeDocPorId(docId);
+  const url=`/envelope/assinar/${TOKEN}/arquivo/${docId}?src=${encodeURIComponent(SRC||'link')}&_=${Date.now()}`;
+  pages.innerHTML='<div class="viewer-loading">Carregando documento...</div>';
+  showViewerMsg('Documento carregando...','ok');
+  try{
+    // Tenta PDF.js se disponível
+    if(isPdfName(nome) && window.pdfjsLib){
+      const r=await fetch(url,{cache:'no-store'});
+      if(!r.ok) throw new Error('Falha ao carregar documento.');
+      const blob=await r.blob();
+      const ok=await renderPdfIntoViewer(await blob.arrayBuffer(),docId);
+      if(ok){
+        showViewerMsg('Documento aberto. Role até o final para liberar a assinatura.','ok');
+        return;
+      }
+    }
+    // Fallback iframe para PDFs (sem PDF.js ou se PDF.js falhou)
+    if(isPdfName(nome)){
+      pages.innerHTML=`<iframe src="${url}" style="width:100%;min-height:560px;border:none;border-radius:8px;display:block" onload="markDocViewed(${docId});showViewerMsg('Documento visualizado com sucesso.','ok')"></iframe>`;
+      showViewerMsg('Documento aberto. Visualize o conteúdo para liberar a assinatura.','ok');
+      return;
+    }
+    // Arquivos não-PDF: abre em nova aba
+    const r2=await fetch(url,{cache:'no-store'});
+    if(!r2.ok) throw new Error('Falha ao carregar documento.');
+    pages.innerHTML=`<div class="viewer-loading">Este arquivo não é PDF. Abra para visualizar e liberar a assinatura.</div>
+      <div style="text-align:center;padding:8px 0 12px"><a class="public-btn public-btn-secondary" href="${url}" target="_blank" rel="noopener">Abrir documento</a></div>`;
+    markDocViewed(docId);
+    showViewerMsg('Documento não-PDF marcado como visualizado após abertura.','ok');
+  }catch(e){
+    pages.innerHTML='<div class="viewer-loading">Não foi possível carregar o documento agora.</div>';
+    showViewerMsg('Falha ao carregar documento. Tente novamente.','err');
+  }
+}
+
+function validaEtapa1(){
+  const nome=document.getElementById('inp-nome').value.trim();
+  const cpf=(document.getElementById('inp-cpf').value||'').replace(/\D/g,'');
+  const aceite=document.getElementById('chk-aceite').checked;
+  if(DOCS.length>0 && docsVistos.size<DOCS.length) return 'Visualize todos os documentos para liberar a assinatura.';
+  if(!nome) return 'Informe seu nome completo.';
+  if(!cpf||cpf.length!==11) return 'CPF inválido. Confira se digitou os 11 números corretamente.';
+  if(!aceite) return 'Marque o aceite para continuar com a assinatura.';
+  return '';
+}
+
+async function enviarOtpAutomaticoEnvelope(){
+  if(!TOKEN) return;
+  try{
+    const r=await fetch(`/api/envelope/assinar/${TOKEN}/enviar-otp`,{method:'GET'});
+    const j=await r.json();
+    if(!r.ok||j.erro){
+      showMsg(erroAmigavel(j.erro||'Não foi possível enviar o OTP automaticamente.'),'err');
+      return;
+    }
+    showMsg(j.mensagem||'Código OTP enviado automaticamente.','ok');
+    startOtpCooldown(60);
+  }catch(e){
+    showMsg('Falha de conexão ao enviar OTP automático.','err');
+  }
+}
+
+async function reenviarOtp(){
+  if((otpCooldownCtrl && otpCooldownCtrl.remaining)>0) return;
+  await enviarOtpAutomaticoEnvelope();
+}
+
+function fmtCpf(el){
+  el.value=SignatureCommon.formatCpfValue(el.value||'');
+}
+
+async function confirmarAssinatura(){
+  const nome=document.getElementById('inp-nome').value.trim();
+  const cargo=document.getElementById('inp-cargo').value.trim();
+  const cpf=(document.getElementById('inp-cpf').value||'').replace(/\D/g,'');
+  const otp=(document.getElementById('inp-otp').value||'').replace(/\D/g,'');
+  const aceite=document.getElementById('chk-aceite').checked;
+  const msg=document.getElementById('msg');
+  const btn=document.getElementById('btn-assinar');
+  const err1=validaEtapa1();
+  if(err1){
+    showMsg(err1,'err');
+    return;
+  }
+  try{
+    SignatureCommon.buttonState(btn,'Validando assinatura...',true);
+    const r=await fetch(`/api/envelope/assinar/${TOKEN}/confirmar`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({nome,cargo,cpf,otp,aceite})
+    });
+    const d=await r.json();
+    if(!r.ok || d.erro){
+      showMsg(erroAmigavel(d.erro||'Falha ao confirmar assinatura.'),'err');
+      SignatureCommon.buttonState(btn,'Confirmar assinatura',false);
+      return;
+    }
+    if(d.otp_required){
+      showMsg(d.mensagem||'Código OTP enviado. Informe o código para concluir.','ok');
+      const otpEl=document.getElementById('inp-otp');
+      if(otpEl) otpEl.focus();
+      startOtpCooldown(60);
+      SignatureCommon.buttonState(btn,'Confirmar assinatura',false);
+      return;
+    }
+    const secForm=document.getElementById('sec-form');
+    if(secForm) secForm.style.display='none';
+    document.getElementById('sucesso').style.display='block';
+    if(d.codigo) document.getElementById('cod-val').textContent=d.codigo;
+    if(d.validacao_link) document.getElementById('link-val').href=d.validacao_link;
+    if(d.signed_pdf_link){
+      document.getElementById('link-download').href=d.signed_pdf_link;
+      document.getElementById('link-download').style.display='block';
+    }
+  }catch(e){
+    showMsg('Erro de conexão ao confirmar assinatura.','err');
+    SignatureCommon.buttonState(btn,'Confirmar assinatura',false);
+  }
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  atualizarProgressoDocs();
+  if(DOCS.length>0){
+    abrirDocumento(DOCS[0]);
+  }
+});
+  </script>
+</body>
+</html>

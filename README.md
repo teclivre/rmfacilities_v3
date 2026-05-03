@@ -88,7 +88,11 @@ Na pasta `rmv3`:
 
 ```bash
 docker build -t rmfacilities-v3 .
-docker run --rm -p 5000:5000 -e SECRET_KEY="troque-esta-chave" rmfacilities-v3
+docker run --rm -p 5000:5000 \
+  -e SECRET_KEY="troque-esta-chave" \
+  -e DATA_DIR=/data \
+  -v rmfacilities_data:/data \
+  rmfacilities-v3
 ```
 
 ## Deploy (Nixpacks / Procfile)
@@ -109,9 +113,18 @@ gunicorn --bind 0.0.0.0:${PORT:-5000} app:app
 - Banco padrão: SQLite em `instance/rmfacilities.db`.
 - Uploads e anexos: armazenados em `instance/uploads/`.
 
+Com `DATA_DIR` definido em produção, os caminhos ficam:
+
+- Banco SQLite: `${DATA_DIR}/rmfacilities.db`
+- Uploads: `${DATA_DIR}/uploads/`
+- Backups auxiliares: `${DATA_DIR}/wa_backups/`, `${DATA_DIR}/bancos_br.json`
+
+Na primeira inicialização sem `DATABASE_URL`, o app tenta migrar automaticamente dados legados de `instance/rmfacilities.db`, `app.db` e `instance/uploads/` para o `DATA_DIR`.
+
 Importante para produção:
 
 - Use volume persistente para a pasta `instance/`.
+- Em container, monte um volume persistente no caminho definido em `DATA_DIR` (exemplo: `/data`).
 - Faça backup periódico da pasta `instance/`.
 
 ## Configurações importantes
@@ -122,6 +135,7 @@ A aplicação usa configurações por variáveis de ambiente e tabela `Config`.
 
 - `SECRET_KEY`: chave de sessão Flask (obrigatória em produção).
 - `PORT`: porta de execução.
+- `DATA_DIR`: diretório persistente para banco SQLite, uploads e arquivos auxiliares. Padrão local: `instance/`.
 
 ### Integrações (via tela de configuração)
 
