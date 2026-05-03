@@ -25,10 +25,13 @@ class ApiClient(private val session: SessionManager) {
 
         http.newCall(req).execute().use { resp ->
             val raw = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                return OtpStartResponse(ok = false, erro = if (resp.code == 404) "Funcionalidade ainda não disponível neste servidor." else "Erro do servidor (${resp.code}).")
+            }
             return try {
                 gson.fromJson(raw, OtpStartResponse::class.java)
             } catch (_: Exception) {
-                OtpStartResponse(ok = false, erro = "Falha ao interpretar resposta do servidor.")
+                OtpStartResponse(ok = false, erro = "Resposta inesperada do servidor.")
             }
         }
     }
@@ -43,10 +46,13 @@ class ApiClient(private val session: SessionManager) {
 
         http.newCall(req).execute().use { resp ->
             val raw = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                return LoginResponse(ok = false, erro = if (resp.code == 404) "Funcionalidade ainda não disponível neste servidor." else "Erro do servidor (${resp.code}).")
+            }
             return try {
                 gson.fromJson(raw, LoginResponse::class.java)
             } catch (_: Exception) {
-                LoginResponse(ok = false, erro = "Falha ao interpretar resposta do servidor.")
+                LoginResponse(ok = false, erro = "Resposta inesperada do servidor.")
             }
         }
     }
