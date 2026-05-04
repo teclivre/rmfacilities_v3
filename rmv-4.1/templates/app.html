@@ -1075,6 +1075,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div class="f"><label>Solicitação de assinatura</label>
             <select id="rh-lote-ass">
               <option value="nao">Não solicitar assinatura</option>
+              <option value="app">Solicitar assinatura no app</option>
               <option value="whatsapp">Solicitar via WhatsApp</option>
               <option value="link">Apenas gerar link</option>
             </select>
@@ -4784,9 +4785,9 @@ async function uploadArquivoFuncionarioModal(){
   fd.append('arquivo',f);
   fd.append('categoria',document.getElementById('farq-cat').value);
   fd.append('competencia',document.getElementById('farq-comp').value.trim()||_compMesAtual());
-  const optCanal=prompt('Como deseja solicitar a assinatura?\n1 = Enviar link via WhatsApp\n2 = Gerar link (sem envio automático)\n3 = Não solicitar assinatura\n\nDigite 1, 2 ou 3:','1');
+  const optCanal=prompt('Como deseja solicitar a assinatura?\n1 = Enviar link via WhatsApp\n2 = Gerar link (sem envio automático)\n3 = Solicitar assinatura no app\n4 = Não solicitar assinatura\n\nDigite 1, 2, 3 ou 4:','1');
   if(optCanal===null) return;
-  const mapaCanal={'1':'whatsapp','2':'link','3':'nao'};
+  const mapaCanal={'1':'whatsapp','2':'link','3':'app','4':'nao'};
   const canalEscolhido=mapaCanal[(optCanal||'').trim()];
   if(!canalEscolhido){alert('Opção inválida.');return;}
   fd.append('canal_assinatura', canalEscolhido);
@@ -4801,6 +4802,7 @@ async function uploadArquivoFuncionarioModal(){
     const assStatus=d.assinatura_auto?.status||'';
     let msg='✅ Arquivo anexado com sucesso!';
     if(assStatus==='solicitada') msg+=' Assinatura solicitada via WhatsApp.';
+    else if(assStatus==='app_pendente') msg+=' Assinatura pendente no app do funcionário.';
     else if(assStatus==='sem_telefone') msg+=' ⚠️ Assinatura não solicitada: funcionário sem telefone.';
     else if(assStatus==='telefone_invalido') msg+=' ⚠️ Assinatura não solicitada: telefone inválido.';
     else if(assStatus==='link_gerado') msg+=` Link gerado: ${d.assinatura_auto?.link||''}`;
@@ -4898,10 +4900,11 @@ async function uploadDocumentoRHLote(){
   const qtd=(typeof d.arquivos_gerados==='number')?d.arquivos_gerados:1;
   const assinaturasAuto=(typeof d.assinaturas_auto==='number')
     ? d.assinaturas_auto
-    : (d.assinatura_auto && ['solicitada','link_gerado'].includes(d.assinatura_auto.status) ? 1 : 0);
+    : (d.assinatura_auto && ['solicitada','link_gerado','app_pendente'].includes(d.assinatura_auto.status) ? 1 : 0);
   let msg=`Envio de ${nomeTipo} concluído. Arquivos: ${qtd}.`;
   if(funcionarioId) msg+=' Documento vinculado ao funcionário selecionado.';
   if(canalAss==='nao') msg+=' Assinatura não solicitada.';
+  if(canalAss==='app') msg+=` Pendentes para assinar no app: ${assinaturasAuto}.`;
   if(canalAss==='whatsapp') msg+=` Assinaturas solicitadas: ${assinaturasAuto}.`;
   if(canalAss==='link') msg+=` Links gerados: ${assinaturasAuto}.`;
   showSt('st-rh',msg,false);
@@ -5051,9 +5054,9 @@ async function uploadSSTArquivo(){
   const comp=document.getElementById('sst-comp').value.trim()||_compMesAtual();
   const f=document.getElementById('sst-arq').files?.[0];
   if(!fid||!f){alert('Selecione funcionário e arquivo.');return;}
-  const optCanal=prompt('Deseja solicitar assinatura deste documento?\n1 = Não solicitar assinatura\n2 = Sim, enviar link via WhatsApp\n3 = Sim, apenas gerar link\n\nDigite 1, 2 ou 3:','1');
+  const optCanal=prompt('Deseja solicitar assinatura deste documento?\n1 = Não solicitar assinatura\n2 = Sim, enviar link via WhatsApp\n3 = Sim, apenas gerar link\n4 = Sim, assinatura pelo app\n\nDigite 1, 2, 3 ou 4:','1');
   if(optCanal===null) return;
-  const mapaCanal={'1':'nao','2':'whatsapp','3':'link'};
+  const mapaCanal={'1':'nao','2':'whatsapp','3':'link','4':'app'};
   const canalAss=mapaCanal[(optCanal||'').trim()];
   if(!canalAss){alert('Opção inválida.');return;}
   const fd=new FormData();
@@ -5064,6 +5067,7 @@ async function uploadSSTArquivo(){
   const assStatus=d.assinatura_auto?.status||'';
   let msg='Documento SST anexado ao funcionário.';
   if(assStatus==='solicitada') msg+=' Assinatura solicitada via WhatsApp.';
+  else if(assStatus==='app_pendente') msg+=' Assinatura pendente no app do funcionário.';
   else if(assStatus==='link_gerado') msg+=' Link de assinatura gerado com sucesso.';
   else if(assStatus==='sem_telefone') msg+=' Assinatura não solicitada: funcionário sem telefone.';
   else if(assStatus==='telefone_invalido') msg+=' Assinatura não solicitada: telefone inválido.';
@@ -6307,9 +6311,9 @@ setInterval(mapsVerificarBadgeGlobal,30000);
 async function rhdProcessar(){
   const f=document.getElementById('rhd-arq').files?.[0];
   if(!f){alert('Selecione o arquivo PDF.');return;}
-  const optAss=prompt('Deseja solicitar assinatura durante a separação?\n1 = Não solicitar assinatura\n2 = Solicitar via WhatsApp\n3 = Apenas gerar link\n\nDigite 1, 2 ou 3:','1');
+  const optAss=prompt('Deseja solicitar assinatura durante a separação?\n1 = Não solicitar assinatura\n2 = Solicitar via WhatsApp\n3 = Apenas gerar link\n4 = Solicitar assinatura no app\n\nDigite 1, 2, 3 ou 4:','1');
   if(optAss===null) return;
-  const mapaAss={'1':'nao','2':'whatsapp','3':'link'};
+  const mapaAss={'1':'nao','2':'whatsapp','3':'link','4':'app'};
   const canalAss=mapaAss[(optAss||'').trim()];
   if(!canalAss){alert('Opção inválida.');return;}
   const st=document.getElementById('rhd-envio-st');
@@ -6346,7 +6350,7 @@ function renderRHDPreview(data){
     return;
   }
   const itens=(data.itens||[]).filter(it=>{
-    if(_rhdAssFiltro==='solicitada') return it.assinatura_auto_status==='solicitada';
+    if(_rhdAssFiltro==='solicitada') return ['solicitada','app_pendente','link_gerado'].includes(it.assinatura_auto_status);
     if(_rhdAssFiltro==='pendentes') return ['sem_telefone','telefone_invalido','erro'].includes(it.assinatura_auto_status);
     return true;
   });
@@ -6363,6 +6367,8 @@ function renderRHDPreview(data){
         <div class="hist-tit">${item.funcionario_nome}</div>
         <div class="hist-sub">Pág. ${item.pagina} · ${item.nome_arquivo}${item.email?' · 📧 '+item.email:''}${item.whatsapp?' · 📱 '+fmtTelefone(item.whatsapp):''}</div>
         ${item.assinatura_auto_status==='solicitada'?`<div style="font-size:11px;color:#1a7a45;margin-top:2px">✍ Assinatura automática solicitada.</div>`:''}
+        ${item.assinatura_auto_status==='app_pendente'?`<div style="font-size:11px;color:#1a7a45;margin-top:2px">📲 Assinatura pendente no app do funcionário.</div>`:''}
+        ${item.assinatura_auto_status==='link_gerado'?`<div style="font-size:11px;color:#1a7a45;margin-top:2px">🔗 Link de assinatura gerado.</div>`:''}
         ${item.assinatura_auto_status==='sem_telefone'?`<div style="font-size:11px;color:#8a5c00;margin-top:2px">⚠ Sem telefone cadastrado para assinatura automática.</div>`:''}
         ${item.assinatura_auto_status==='telefone_invalido'?`<div style="font-size:11px;color:#8a5c00;margin-top:2px">⚠ Telefone cadastrado inválido para WhatsApp.</div>`:''}
         ${item.assinatura_auto_status==='erro'&&item.assinatura_auto_erro?`<div style="font-size:11px;color:var(--verm);margin-top:2px">Erro assinatura automática: ${item.assinatura_auto_erro}</div>`:''}
