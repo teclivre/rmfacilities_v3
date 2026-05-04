@@ -11,6 +11,38 @@ if (hasGoogleServices) {
     apply plugin: 'com.google.gms.google-services'
 }
 
+// ── Auto-versioning ──────────────────────────────────────────────────────────
+def versionPropsFile = file('version.properties')
+def versionProps = new Properties()
+versionPropsFile.withInputStream { versionProps.load(it) }
+
+def verCode = versionProps['VERSION_CODE'].toInteger()
+def verMajor = versionProps['VERSION_MAJOR'].toInteger()
+def verMinor = versionProps['VERSION_MINOR'].toInteger()
+def verPatch = versionProps['VERSION_PATCH'].toInteger()
+
+// Incrementa versionCode e patch a cada build
+gradle.taskGraph.whenReady { taskGraph ->
+    def isBuild = taskGraph.allTasks.any { t ->
+        t.name ==~ /.*assemble.*/
+    }
+    if (isBuild) {
+        verCode += 1
+        verPatch += 1
+        if (verPatch >= 100) { verPatch = 0; verMinor += 1 }
+        if (verMinor >= 100) { verMinor = 0; verMajor += 1 }
+        versionProps['VERSION_CODE'] = verCode.toString()
+        versionProps['VERSION_MAJOR'] = verMajor.toString()
+        versionProps['VERSION_MINOR'] = verMinor.toString()
+        versionProps['VERSION_PATCH'] = verPatch.toString()
+        versionPropsFile.withOutputStream { versionProps.store(it, null) }
+        println "▶ Version bumped to ${verMajor}.${verMinor}.${verPatch} (code ${verCode})"
+    }
+}
+
+def buildVersionName = "${verMajor}.${verMinor}.${verPatch}"
+// ─────────────────────────────────────────────────────────────────────────────
+
 android {
     namespace 'br.com.rmfacilities.funcionarioapp'
     compileSdk 34
@@ -19,8 +51,8 @@ android {
         applicationId "br.com.rmfacilities.funcionarioapp"
         minSdk 24
         targetSdk 34
-        versionCode 5
-        versionName "1.5.0"
+        versionCode verCode
+        versionName buildVersionName
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField "String", "DEFAULT_API_BASE_URL", '"https://portal.grupormfacilities.com.br"'
