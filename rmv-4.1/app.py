@@ -879,6 +879,7 @@ class Funcionario(db.Model):
     app_otp_hash=db.Column(db.String(256))
     app_otp_expira_em=db.Column(db.DateTime)
     app_otp_tentativas=db.Column(db.Integer,default=0)
+    foto_perfil=db.Column(db.String(500))
     criado_em=db.Column(db.DateTime,default=utcnow)
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
@@ -1233,6 +1234,8 @@ class ComunicadoApp(db.Model):
     conteudo=db.Column(db.Text,nullable=False)
     # None = para todos; int = para funcionario específico
     funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=True)
+    # None = todos os postos; string = apenas esse posto
+    posto_operacional=db.Column(db.String(150))
     criado_por=db.Column(db.String(100))
     criado_em=db.Column(db.DateTime,default=utcnow)
     ativo=db.Column(db.Boolean,default=True)
@@ -5832,6 +5835,8 @@ def api_app_funcionario_me():
     ultimo_aso=FuncionarioArquivo.query.filter_by(funcionario_id=f.id,categoria='aso').order_by(
         FuncionarioArquivo.criado_em.desc(),FuncionarioArquivo.id.desc()
     ).first()
+    emp=db.session.get(Empresa,f.empresa_id) if f.empresa_id else None
+    foto_url='/api/app/funcionario/me/foto' if f.foto_perfil else None
     return jsonify({'ok':True,'funcionario':{
         'id':f.id,
         'nome':f.nome,
@@ -5841,10 +5846,49 @@ def api_app_funcionario_me():
         'cargo':f.cargo,
         'setor':f.setor,
         'empresa_id':f.empresa_id,
+        'empresa_nome':(emp.nome if emp else None),
+        'posto_operacional':f.posto_operacional,
         'status':f.status,
+        'foto_url':foto_url,
         'ultimo_aso_competencia':(ultimo_aso.competencia if ultimo_aso else None),
         'ultimo_aso_enviado_em':(ultimo_aso.criado_em.isoformat() if (ultimo_aso and ultimo_aso.criado_em) else None)
     }})
+
+@app.route('/api/app/funcionario/me/foto',methods=['POST'])
+@app_func_required
+def api_app_funcionario_foto_upload():
+    f=g.app_funcionario
+    if 'foto' not in request.files:
+        return jsonify({'erro':'Nenhuma foto enviada'}),400
+    file=request.files['foto']
+    ext=os.path.splitext(file.filename or 'foto.jpg')[1].lower() or '.jpg'
+    if ext not in ('.jpg','.jpeg','.png','.webp'):
+        return jsonify({'erro':'Formato inválido. Use JPG, PNG ou WEBP.'}),400
+    # Limit size to 5MB
+    file.seek(0,2)
+    size=file.tell(); file.seek(0)
+    if size>5*1024*1024:
+        return jsonify({'erro':'Foto muito grande. Máximo 5MB.'}),400
+    dir_path=os.path.join(UPLOAD_ROOT,'funcionarios',str(f.id),'foto')
+    os.makedirs(dir_path,exist_ok=True)
+    filename=f'perfil{ext}'
+    abs_path=os.path.join(dir_path,filename)
+    file.save(abs_path)
+    rel_path=os.path.relpath(abs_path,UPLOAD_ROOT).replace('\\','/')
+    f.foto_perfil=rel_path
+    db.session.commit()
+    return jsonify({'ok':True,'foto_url':'/api/app/funcionario/me/foto'})
+
+@app.route('/api/app/funcionario/me/foto')
+@app_func_required
+def api_app_funcionario_foto_get():
+    f=g.app_funcionario
+    if not f.foto_perfil:
+        return jsonify({'erro':'Sem foto'}),404
+    abs_p=os.path.join(UPLOAD_ROOT,f.foto_perfil)
+    if not os.path.exists(abs_p):
+        return jsonify({'erro':'Arquivo não encontrado'}),404
+    return send_file(abs_p)
 
 @app.route('/api/app/funcionario/me/contato',methods=['PUT'])
 @app_func_required
@@ -5859,7 +5903,12 @@ def api_app_funcionario_me_contato():
         f.email=em
         mudou=True
     if 'telefone' in d:
-        tel=norm_phone(d.get('telefone'))
+        tel_raw=only_digits(d.get('telefone'))
+        # No app, o usuário pode digitar sem DDI. Se vier com +55, removemos o país.
+        if tel_raw.startswith('55') and len(tel_raw) in (12,13):
+            tel=tel_raw[2:]
+        else:
+            tel=tel_raw[:11]
         if tel and len(tel) not in (10,11):
             return jsonify({'erro':'Telefone invalido. Informe DDD + numero.'}),400
         f.telefone=tel
@@ -5997,7 +6046,8 @@ def api_app_comunicados_lista():
     from sqlalchemy import or_
     itens=ComunicadoApp.query.filter(
         ComunicadoApp.ativo==True,
-        or_(ComunicadoApp.funcionario_id==None, ComunicadoApp.funcionario_id==f.id)
+        or_(ComunicadoApp.funcionario_id==None, ComunicadoApp.funcionario_id==f.id),
+        or_(ComunicadoApp.posto_operacional==None, ComunicadoApp.posto_operacional=='', ComunicadoApp.posto_operacional==f.posto_operacional)
     ).order_by(ComunicadoApp.criado_em.desc()).all()
     return jsonify([c.to_dict(funcionario_id=f.id) for c in itens])
 
@@ -6017,7 +6067,8 @@ def api_app_comunicados_nao_lidos():
     from sqlalchemy import or_
     itens=ComunicadoApp.query.filter(
         ComunicadoApp.ativo==True,
-        or_(ComunicadoApp.funcionario_id==None, ComunicadoApp.funcionario_id==f.id)
+        or_(ComunicadoApp.funcionario_id==None, ComunicadoApp.funcionario_id==f.id),
+        or_(ComunicadoApp.posto_operacional==None, ComunicadoApp.posto_operacional=='', ComunicadoApp.posto_operacional==f.posto_operacional)
     ).all()
     lidos=list(set(fid for c in itens for fid in c.lidos_por()))
     count=sum(1 for c in itens if f.id not in c.lidos_por())
@@ -6078,10 +6129,12 @@ def api_rh_comunicado_criar():
     if not titulo: return jsonify({'erro':'Titulo obrigatorio'}),400
     if not conteudo: return jsonify({'erro':'Conteudo obrigatorio'}),400
     fid=d.get('funcionario_id')
+    posto=(d.get('posto_operacional') or '').strip() or None
     c=ComunicadoApp(
         titulo=titulo,
         conteudo=conteudo,
         funcionario_id=int(fid) if fid else None,
+        posto_operacional=posto,
         criado_por=session.get('nome') or session.get('email') or 'RH',
         ativo=True
     )
@@ -6169,6 +6222,30 @@ def api_rh_mensagem_responder(fid):
 def api_rh_mensagens_nao_lidas_total():
     count=MensagemApp.query.filter_by(de_rh=False,lida=False).count()
     return jsonify({'nao_lidas':count})
+
+@app.route('/api/mensagens-app/broadcast',methods=['POST'])
+@lr
+def api_rh_mensagens_broadcast():
+    d=request.json or {}
+    conteudo=(d.get('conteudo') or '').strip()
+    if not conteudo: return jsonify({'erro':'Mensagem nao pode ser vazia'}),400
+    if len(conteudo)>2000: return jsonify({'erro':'Mensagem muito longa'}),400
+    empresa_id=d.get('empresa_id')
+    posto=(d.get('posto') or '').strip()
+    nome_rh=session.get('nome') or session.get('email') or 'RH'
+    q=Funcionario.query.filter_by(status='Ativo',app_ativo=True)
+    if empresa_id:
+        q=q.filter_by(empresa_id=int(empresa_id))
+    if posto:
+        q=q.filter(Funcionario.posto_operacional.ilike(f'%{posto}%'))
+    funcs=q.all()
+    if not funcs:
+        return jsonify({'erro':'Nenhum colaborador encontrado com esse filtro'}),404
+    for func in funcs:
+        m=MensagemApp(funcionario_id=func.id,de_rh=True,conteudo=conteudo,lida=False,enviado_por=nome_rh)
+        db.session.add(m)
+    db.session.commit()
+    return jsonify({'ok':True,'enviado_para':len(funcs)})
 
 @app.route('/api/funcionarios/arquivos/<int:id>',methods=['DELETE'])
 @lr
@@ -11104,7 +11181,11 @@ with app.app_context():
         'opta_cesta_natal BOOLEAN DEFAULT 0',
         'premio_produtividade FLOAT DEFAULT 0',
         'vale_gasolina FLOAT DEFAULT 0',
-        'cesta_natal FLOAT DEFAULT 0'
+        'cesta_natal FLOAT DEFAULT 0',
+        'foto_perfil VARCHAR(500)'
+    ])
+    ensure_cols('comunicado_app',[
+        'posto_operacional VARCHAR(150)'
     ])
     ensure_cols('cliente',[
         'numero_contrato VARCHAR(60)',

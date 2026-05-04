@@ -38,9 +38,18 @@ data class FuncionarioPerfil(
     val telefone: String? = null,
     val cargo: String? = null,
     val setor: String? = null,
+    val empresa_nome: String? = null,
+    val posto_operacional: String? = null,
     val status: String? = null,
+    val foto_url: String? = null,
     val ultimo_aso_competencia: String? = null,
     val ultimo_aso_enviado_em: String? = null
+)
+
+data class FotoUploadResponse(
+    val ok: Boolean = false,
+    val erro: String? = null,
+    val foto_url: String? = null
 )
 
 data class ContatoUpdateResponse(

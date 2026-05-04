@@ -3,6 +3,7 @@ package br.com.rmfacilities.funcionarioapp
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -181,6 +182,28 @@ class ApiClient(private val session: SessionManager) {
         http.newCall(req).execute().use { resp ->
             val raw = resp.body?.string().orEmpty()
             return try { gson.fromJson(raw, NaoLidasResponse::class.java).nao_lidas } catch (_: Exception) { 0 }
+        }
+    }
+
+    fun uploadFoto(bytes: ByteArray, mimeType: String): FotoUploadResponse {
+        val ext = when {
+            mimeType.contains("png") -> "foto.png"
+            mimeType.contains("webp") -> "foto.webp"
+            else -> "foto.jpg"
+        }
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("foto", ext, bytes.toRequestBody(mimeType.toMediaType()))
+            .build()
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/foto"))
+            .post(body)
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try { gson.fromJson(raw, FotoUploadResponse::class.java) }
+            catch (_: Exception) { FotoUploadResponse(ok = false, erro = "Falha ao enviar foto.") }
         }
     }
 }

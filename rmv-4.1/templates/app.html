@@ -1168,11 +1168,19 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <!-- Comunicados broadcast -->
         <div class="card" style="margin-top:14px">
-          <div class="card-header"><span class="card-title">📢 Comunicados (broadcast para todos ou por funcionário)</span></div>
+          <div class="card-header"><span class="card-title">📢 Comunicados (broadcast para todos ou por funcionário/posto)</span></div>
           <div class="g2" style="margin-top:8px">
             <div class="f"><label>Título</label><input id="com-titulo" placeholder="Ex: Reunião amanhã às 9h"></div>
             <div class="f"><label>Funcionário específico (opcional)</label>
-              <select id="com-fid"><option value="">Todos os ativos</option></select>
+              <select id="com-fid"><option value="">Todos</option></select>
+            </div>
+          </div>
+          <div class="g2">
+            <div class="f"><label>Empresa (opcional)</label>
+              <select id="com-empresa"><option value="">Todas as empresas</option></select>
+            </div>
+            <div class="f"><label>Posto (opcional)</label>
+              <select id="com-posto"><option value="">Todos os postos</option></select>
             </div>
           </div>
           <div class="f"><label>Conteúdo</label><textarea id="com-conteudo" style="min-height:72px" placeholder="Texto do comunicado…"></textarea></div>
@@ -1181,6 +1189,30 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
           <div id="com-st" class="st" style="margin-top:6px"></div>
           <div id="com-lista" style="margin-top:10px"></div>
+        </div>
+
+        <!-- Mensagem direta (broadcast chat) -->
+        <div class="card" style="margin-top:10px">
+          <div class="card-header"><span class="card-title">💬 Enviar mensagem direta (aparece no chat do app)</span></div>
+          <div class="g3" style="margin-top:8px">
+            <div class="f"><label>Empresa (opcional)</label>
+              <select id="bc-empresa"><option value="">Todas as empresas</option></select>
+            </div>
+            <div class="f"><label>Posto (opcional)</label>
+              <select id="bc-posto"><option value="">Todos os postos</option></select>
+            </div>
+            <div class="f"><label>Destinatário</label>
+              <select id="bc-fid"><option value="">Todos ativos filtrados</option></select>
+            </div>
+          </div>
+          <div class="f" style="margin-top:8px">
+            <label>Mensagem</label>
+            <textarea id="bc-msg" style="min-height:72px" placeholder="Mensagem que aparecerá no chat de cada funcionário…"></textarea>
+          </div>
+          <div class="brow" style="justify-content:flex-start;gap:8px">
+            <button class="btn b-az" onclick="mapsEnviarBroadcast()">Enviar para todos selecionados</button>
+          </div>
+          <div id="bc-st" class="st" style="margin-top:6px"></div>
         </div>
       </div>
 
@@ -6076,7 +6108,7 @@ let _mapsPolling=null;
 async function mapsIniciar(){
   await mapsCarregarFuncionarios();
   await mapsCarregarBadge();
-  await mapsCarregarSelectComunicados();
+  await mapsCarregarSelectsEmpresasPosto();
   await mapsCarregarListaComunicados();
 }
 
@@ -6160,16 +6192,27 @@ async function mapsEnviar(){
   finally{btn.disabled=false;inp.disabled=false;inp.focus();}
 }
 
-async function mapsCarregarSelectComunicados(){
+async function mapsCarregarSelectsEmpresasPosto(){
   try{
-    const lista=await api('/api/funcionarios?status=ativo&_limit=200');
-    const sel=document.getElementById('com-fid');
-    if(!sel)return;
-    (lista.itens||lista||[]).forEach(f=>{
-      const o=document.createElement('option');
-      o.value=f.id;o.textContent=f.nome;
-      sel.appendChild(o);
-    });
+    const [listaFunc,listaEmp]=await Promise.all([
+      api('/api/funcionarios?status=ativo&_limit=500'),
+      api('/api/empresas')
+    ]);
+    const funcs=(listaFunc.itens||listaFunc||[]);
+    const empsData=(Array.isArray(listaEmp)?listaEmp:[]);
+    // Postos únicos
+    const postos=[...new Set(funcs.map(f=>(f.posto_operacional||'').trim()).filter(Boolean))].sort();
+    // Preenche selects de comunicado
+    const fillSel=(id,items,valFn,txtFn)=>{
+      const sel=document.getElementById(id); if(!sel)return;
+      items.forEach(it=>{const o=document.createElement('option');o.value=valFn(it);o.textContent=txtFn(it);sel.appendChild(o);});
+    };
+    fillSel('com-fid',funcs,f=>f.id,f=>f.nome);
+    fillSel('com-empresa',empsData,e=>e.id,e=>e.nome);
+    fillSel('com-posto',postos,p=>p,p=>p);
+    fillSel('bc-empresa',empsData,e=>e.id,e=>e.nome);
+    fillSel('bc-posto',postos,p=>p,p=>p);
+    fillSel('bc-fid',funcs,f=>f.id,f=>f.nome);
   }catch(e){}
 }
 
@@ -6188,7 +6231,9 @@ async function mapsCarregarListaComunicados(){
           <button class="btn b-er b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsExcluirComunicado(${c.id})">✕</button>
         </div>
         <div style="font-size:12px;color:#aaa;margin-top:4px">${escHtml(c.conteudo)}</div>
-        ${c.funcionario_id?`<div style="font-size:10px;color:#67b8ff;margin-top:2px">Para: funcionário #${c.funcionario_id}</div>`:'<div style="font-size:10px;color:#36d09a;margin-top:2px">Para: todos</div>'}
+        ${c.funcionario_id?`<div style="font-size:10px;color:#67b8ff;margin-top:2px">Para: funcionário #${c.funcionario_id}</div>`:
+         c.posto_operacional?`<div style="font-size:10px;color:#f0a830;margin-top:2px">Para: posto "${c.posto_operacional}"</div>`:
+         '<div style="font-size:10px;color:#36d09a;margin-top:2px">Para: todos</div>'}
       </div>`).join('');
   }catch(e){el.innerHTML='<div class="vazio">Erro ao carregar comunicados.</div>';}
 }
@@ -6197,14 +6242,42 @@ async function mapsCriarComunicado(){
   const titulo=(document.getElementById('com-titulo').value||'').trim();
   const conteudo=(document.getElementById('com-conteudo').value||'').trim();
   const fid=document.getElementById('com-fid').value||null;
+  const posto=(document.getElementById('com-posto').value||'').trim()||null;
   if(!titulo||!conteudo){showSt('com-st','Preencha título e conteúdo.',true);return;}
-  const r=await api('/api/comunicados-app','POST',{titulo,conteudo,funcionario_id:fid?parseInt(fid):null});
+  const r=await api('/api/comunicados-app','POST',{titulo,conteudo,funcionario_id:fid?parseInt(fid):null,posto_operacional:posto});
   if(r.erro){showSt('com-st',r.erro,true);return;}
   document.getElementById('com-titulo').value='';
   document.getElementById('com-conteudo').value='';
   document.getElementById('com-fid').value='';
+  document.getElementById('com-posto').value='';
   showSt('com-st','Comunicado publicado!',false);
   await mapsCarregarListaComunicados();
+}
+
+async function mapsEnviarBroadcast(){
+  const msg=(document.getElementById('bc-msg').value||'').trim();
+  if(!msg){showSt('bc-st','Digite a mensagem.',true);return;}
+  const empId=document.getElementById('bc-empresa').value||null;
+  const posto=document.getElementById('bc-posto').value||null;
+  const fidSel=document.getElementById('bc-fid').value||null;
+  const dest=fidSel?`1 funcionário`:(posto?`posto "${posto}"`:(empId?`empresa selecionada`:'todos os ativos'));
+  if(!confirm(`Enviar mensagem para ${dest}?\n\n"${msg.substring(0,100)}${msg.length>100?'…':''}"`))return;
+  const body={conteudo:msg};
+  if(fidSel){
+    // Enviar para apenas um via endpoint normal de chat
+    const r=await api('/api/mensagens-app/'+fidSel,'POST',{conteudo:msg});
+    if(r.erro){showSt('bc-st',r.erro,true);return;}
+    showSt('bc-st','Mensagem enviada!',false);
+  } else {
+    if(empId)body.empresa_id=parseInt(empId);
+    if(posto)body.posto=posto;
+    const r=await api('/api/mensagens-app/broadcast','POST',body);
+    if(r.erro){showSt('bc-st',r.erro,true);return;}
+    showSt('bc-st',`Mensagem enviada para ${r.enviado_para} colaborador(es).`,false);
+  }
+  document.getElementById('bc-msg').value='';
+  await mapsCarregarFuncionarios();
+  await mapsCarregarBadge();
 }
 
 async function mapsToggleComunicado(id,ativo){
