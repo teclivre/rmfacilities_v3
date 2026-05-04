@@ -155,6 +155,24 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    fun assinarDocumento(documentoId: Int): ApiSimpleResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/arquivos/$documentoId/assinar"))
+            .post("{}".toRequestBody("application/json".toMediaType()))
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .addHeader("Content-Type", "application/json")
+            .build()
+
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, ApiSimpleResponse::class.java)
+            } catch (_: Exception) {
+                ApiSimpleResponse(ok = resp.isSuccessful, erro = if (resp.isSuccessful) null else parseErro(raw, "Falha ao assinar documento."))
+            }
+        }
+    }
+
     fun getMensagens(): List<MensagemItem> {
         val req = Request.Builder()
             .url(url("/api/app/funcionario/mensagens"))

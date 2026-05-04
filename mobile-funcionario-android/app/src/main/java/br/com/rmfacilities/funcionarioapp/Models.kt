@@ -93,7 +93,10 @@ data class DocumentoItem(
     val nome_arquivo: String? = null,
     val competencia: String? = null,
     val criado_fmt: String? = null,
-    val app_download_url: String? = null
+    val app_download_url: String? = null,
+    val ass_status: String? = null,
+    val ass_em_fmt: String? = null,
+    val can_assinar: Boolean = true
 )
 
 data class MensagemItem(

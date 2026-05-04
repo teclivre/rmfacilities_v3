@@ -13,7 +13,8 @@ private sealed class DocListItem {
 }
 
 class DocumentoAdapter(
-    private val onBaixar: (DocumentoItem) -> Unit
+    private val onBaixar: (DocumentoItem) -> Unit,
+    private val onAssinar: (DocumentoItem) -> Unit
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     companion object {
@@ -30,7 +31,9 @@ class DocumentoAdapter(
     class ItemVH(v: View) : RecyclerView.ViewHolder(v) {
         val tvNome: TextView = v.findViewById(R.id.tvNomeArquivo)
         val tvInfo: TextView = v.findViewById(R.id.tvInfo)
+        val tvAssStatus: TextView = v.findViewById(R.id.tvAssStatus)
         val btnBaixar: MaterialButton = v.findViewById(R.id.btnBaixar)
+        val btnAssinar: MaterialButton = v.findViewById(R.id.btnAssinar)
     }
 
     override fun getItemViewType(position: Int): Int =
@@ -57,7 +60,21 @@ class DocumentoAdapter(
                 vh.tvInfo.text = listOf(item.categoria_label, item.competencia, item.criado_fmt)
                     .filter { !it.isNullOrBlank() }
                     .joinToString(" • ")
+
+                val assinado = (item.ass_status ?: "").equals("concluida", ignoreCase = true)
+                vh.tvAssStatus.text = if (assinado) {
+                    val quando = item.ass_em_fmt?.takeIf { it.isNotBlank() }
+                    if (quando != null) "Assinado em $quando" else "Documento assinado"
+                } else {
+                    "Assinatura pendente"
+                }
+
                 vh.btnBaixar.setOnClickListener { onBaixar(item) }
+                vh.btnAssinar.isEnabled = !assinado && item.can_assinar
+                vh.btnAssinar.text = if (assinado) "Assinado" else "Assinar"
+                vh.btnAssinar.setOnClickListener {
+                    if (!assinado && item.can_assinar) onAssinar(item)
+                }
             }
         }
     }

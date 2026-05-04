@@ -34,9 +34,10 @@ class DocumentosActivity : AppCompatActivity() {
         // Botão voltar
         findViewById<android.widget.TextView>(R.id.btnVoltar).setOnClickListener { finish() }
 
-        adapter = DocumentoAdapter { item ->
-            baixarDocumento(item)
-        }
+        adapter = DocumentoAdapter(
+            onBaixar = { item -> baixarDocumento(item) },
+            onAssinar = { item -> assinarDocumento(item) }
+        )
         rv.adapter = adapter
         (rv.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager)
             ?: run { rv.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this) }
@@ -88,6 +89,26 @@ class DocumentosActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     swipe.isRefreshing = false
                     Toast.makeText(this@DocumentosActivity, e.message ?: "Erro no download", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun assinarDocumento(item: DocumentoItem) {
+        swipe.isRefreshing = true
+        CoroutineScope(Dispatchers.IO).launch {
+            val resp = try {
+                api.assinarDocumento(item.id)
+            } catch (e: Exception) {
+                ApiSimpleResponse(ok = false, erro = e.message)
+            }
+            withContext(Dispatchers.Main) {
+                swipe.isRefreshing = false
+                if (resp.ok) {
+                    Toast.makeText(this@DocumentosActivity, "Documento assinado com sucesso.", Toast.LENGTH_SHORT).show()
+                    carregar()
+                } else {
+                    Toast.makeText(this@DocumentosActivity, resp.erro ?: "Falha ao assinar documento", Toast.LENGTH_LONG).show()
                 }
             }
         }

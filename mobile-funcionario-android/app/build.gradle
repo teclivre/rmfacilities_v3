@@ -3,6 +3,14 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+def hasGoogleServices =
+        file('google-services.json').exists() ||
+        file('src/debug/google-services.json').exists() ||
+        file('src/release/google-services.json').exists()
+if (hasGoogleServices) {
+    apply plugin: 'com.google.gms.google-services'
+}
+
 android {
     namespace 'br.com.rmfacilities.funcionarioapp'
     compileSdk 34

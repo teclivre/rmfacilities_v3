@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.CoroutineScope
@@ -92,6 +93,14 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun registrarPushToken() {
+        // Se o Firebase nao estiver configurado (sem google-services.json), ignora push sem derrubar o app.
+        val firebaseApp = try {
+            FirebaseApp.initializeApp(this) ?: FirebaseApp.getInstance()
+        } catch (_: Exception) {
+            null
+        }
+        if (firebaseApp == null) return
+
         FirebaseMessaging.getInstance().token
             .addOnSuccessListener { token ->
                 if (token.isNullOrBlank()) return@addOnSuccessListener

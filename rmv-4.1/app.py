@@ -1500,7 +1500,7 @@ def _send_signature_otp(codigo,nome_dest='',telefone='',email='',contexto='assin
     raise ValueError(ultimo_erro or 'Não foi possível enviar o código OTP para confirmação da assinatura.')
 
 def _send_app_login_otp(codigo,funcionario):
-    """Tenta enviar OTP de login por WhatsApp e faz fallback para e-mail."""
+    """Envia OTP de login do app exclusivamente por WhatsApp."""
     f=funcionario
     nome=(f.nome or 'funcionario').strip()
     msg=(
@@ -1510,24 +1510,13 @@ def _send_app_login_otp(codigo,funcionario):
         'Validade: 10 minutos. Nao compartilhe este codigo.'
     )
     tel=wa_norm_number(f.telefone or '')
-    ultimo_erro=''
-    if wa_is_valid_number(tel):
-        try:
-            wa_send_text(tel,msg)
-            return {'canal':'whatsapp','destino':_mask_phone(tel)}
-        except Exception as ex:
-            ultimo_erro=str(ex)
-    if (f.email or '').strip():
-        try:
-            smtp_send_text(
-                (f.email or '').strip(),
-                'Codigo de acesso ao app RM Facilities',
-                msg
-            )
-            return {'canal':'email','destino':_mask_email(f.email)}
-        except Exception as ex:
-            ultimo_erro=str(ex)
-    raise ValueError(ultimo_erro or 'Nao foi possivel enviar OTP por WhatsApp ou e-mail.')
+    if not wa_is_valid_number(tel):
+        raise ValueError('Telefone WhatsApp invalido ou nao cadastrado para este funcionario.')
+    try:
+        wa_send_text(tel,msg)
+        return {'canal':'whatsapp','destino':_mask_phone(tel)}
+    except Exception as ex:
+        raise ValueError(str(ex) or 'Nao foi possivel enviar OTP por WhatsApp.')
 
 def _assinatura_json_base(**extra):
     base={
@@ -2280,8 +2269,8 @@ def _fcm_send_to_token(token,titulo,corpo,data=None):
     """Envio opcional via FCM. Se firebase-admin nao estiver configurado, ignora com segurança."""
     if not token:
         return False
-    cred_path=(os.environ.get('FIREBASE_CREDENTIALS_JSON') or '').strip()
-    if not cred_path or not os.path.exists(cred_path):
+    cred_val=(os.environ.get('FIREBASE_CREDENTIALS_JSON') or '').strip()
+    if not cred_val:
         return False
     try:
         import firebase_admin
@@ -2292,7 +2281,18 @@ def _fcm_send_to_token(token,titulo,corpo,data=None):
         firebase_admin.get_app()
     except Exception:
         try:
-            firebase_admin.initialize_app(credentials.Certificate(cred_path))
+            # Aceita JSON inline (string) ou caminho de arquivo
+            if cred_val.startswith('{'):
+                import json as _json
+                import tempfile, atexit
+                _tmp=tempfile.NamedTemporaryFile(mode='w',suffix='.json',delete=False)
+                _tmp.write(cred_val); _tmp.flush(); _tmp.close()
+                atexit.register(lambda p=_tmp.name: os.path.exists(p) and os.remove(p))
+                firebase_admin.initialize_app(credentials.Certificate(_tmp.name))
+            else:
+                if not os.path.exists(cred_val):
+                    return False
+                firebase_admin.initialize_app(credentials.Certificate(cred_val))
         except Exception:
             return False
     try:
@@ -3956,6 +3956,9 @@ def build_func_docs_response(funcionario_id):
             'ano':ano,
             'nome_arquivo':a.nome_arquivo,
             'competencia':a.competencia,
+            'ass_status':a.ass_status or 'nao_solicitada',
+            'ass_em_fmt':a.ass_em.strftime('%d/%m/%Y %H:%M') if a.ass_em else '',
+            'can_assinar':(a.ass_status or '').lower()!='concluida',
             'caminho':a.caminho,
             'criado_em':a.criado_em.isoformat() if a.criado_em else '',
             'criado_fmt':a.criado_em.strftime('%d/%m/%Y %H:%M') if a.criado_em else '',
@@ -5813,7 +5816,7 @@ def api_app_funcionario_auth_iniciar():
     except Exception as ex:
         db.session.rollback()
         reg_auth_attempt('app_otp',cpf,False,'envio_falha')
-        return jsonify({'erro':'Nao foi possivel enviar o codigo OTP. Verifique telefone/e-mail com o RH e as configuracoes de envio.','detalhe':str(ex)}),503
+        return jsonify({'erro':'Nao foi possivel enviar o codigo OTP por WhatsApp. Verifique telefone com o RH e as configuracoes do WhatsApp.','detalhe':str(ex)}),503
 
 @app.route('/api/app/funcionario/auth/confirmar',methods=['POST'])
 def api_app_funcionario_auth_confirmar():
@@ -6090,6 +6093,40 @@ def api_app_funcionario_download_arquivo(id):
     if not os.path.exists(abs_p): return jsonify({'erro':'Arquivo nao encontrado'}),404
     audit_event('funcionario_app_arquivo_download','funcionario',g.app_funcionario.id,'funcionario',a.funcionario_id,True,{'arquivo_id':a.id,'caminho':a.caminho})
     return send_file(abs_p,as_attachment=True,download_name=a.nome_arquivo)
+
+@app.route('/api/app/funcionario/arquivos/<int:id>/assinar',methods=['POST'])
+@app_func_required
+def api_app_funcionario_assinar_arquivo(id):
+    f=g.app_funcionario
+    a=FuncionarioArquivo.query.get_or_404(id)
+    if a.funcionario_id!=f.id:
+        return jsonify({'erro':'Acesso negado'}),403
+    status_atual=(a.ass_status or '').strip().lower()
+    if status_atual=='concluida':
+        return jsonify({'ok':True,'mensagem':'Documento ja assinado.','item':a.to_dict()})
+
+    a.ass_status='concluida'
+    a.ass_nome=(f.nome or '').strip()
+    a.ass_cpf=norm_cpf(f.cpf)
+    a.ass_cargo=(f.cargo or '').strip()
+    a.ass_ip=(request.remote_addr or '')[:60]
+    a.ass_em=utcnow()
+    a.ass_token=''
+    a.ass_expira_em=None
+    a.ass_otp_hash=''
+    a.ass_otp_expira_em=None
+    a.ass_otp_tentativas=0
+    a.ass_codigo=(a.ass_codigo or secrets.token_urlsafe(16))
+
+    db.session.commit()
+    audit_event(
+        'funcionario_app_arquivo_assinado',
+        'funcionario',f.id,
+        'arquivo',a.id,
+        True,
+        {'arquivo_id':a.id,'categoria':a.categoria,'competencia':a.competencia,'origem':'app'}
+    )
+    return jsonify({'ok':True,'mensagem':'Documento assinado com sucesso.','item':a.to_dict()})
 
 @app.route('/api/app/funcionario/me/senha',methods=['PUT'])
 @app_func_required
@@ -8138,6 +8175,12 @@ def api_holerites_upload():
         with open(abs_p,'wb') as out: writer.write(out)
         a=FuncionarioArquivo(funcionario_id=alvo.id,categoria='holerite',competencia=comp,nome_arquivo=fake_name,caminho=rel)
         db.session.add(a); db.session.commit(); enviados+=1
+        _push_notify_funcionario(
+            alvo.id,
+            'Novo documento disponivel',
+            f'{fake_name} foi incluido no sistema. Toque para abrir e assinar no app.',
+            {'tipo':'documento_novo','arquivo_id':a.id,'categoria':'holerite'}
+        )
         solicitar_ass=(canal_ass!='nao') and (not ids_ass_sel or alvo.id in ids_ass_sel)
         if solicitar_ass and canal_ass=='whatsapp':
             tel=wa_norm_number(alvo.telefone or '')
@@ -8205,6 +8248,12 @@ def api_folhas_ponto_upload():
         with open(abs_p,'wb') as out: writer.write(out)
         a=FuncionarioArquivo(funcionario_id=alvo.id,categoria='folha_ponto',competencia=comp,nome_arquivo=fake_name,caminho=rel)
         db.session.add(a); db.session.commit(); enviados+=1
+        _push_notify_funcionario(
+            alvo.id,
+            'Novo documento disponivel',
+            f'{fake_name} foi incluido no sistema. Toque para abrir e assinar no app.',
+            {'tipo':'documento_novo','arquivo_id':a.id,'categoria':'folha_ponto'}
+        )
         solicitar_ass=(canal_ass!='nao') and (not ids_ass_sel or alvo.id in ids_ass_sel)
         if solicitar_ass and canal_ass=='whatsapp':
             tel=wa_norm_number(alvo.telefone or '')
@@ -8317,6 +8366,12 @@ def api_documentos_rh_upload():
         db.session.add(a)
         db.session.commit()
         enviados+=1
+        _push_notify_funcionario(
+            alvo.id,
+            'Novo documento disponivel',
+            f'{nome_final} foi incluido no sistema. Toque para abrir e assinar no app.',
+            {'tipo':'documento_novo','arquivo_id':a.id,'categoria':categoria}
+        )
 
         solicitar_ass=(canal_ass!='nao') and (not ids_ass_sel or alvo.id in ids_ass_sel)
         if solicitar_ass and canal_ass=='whatsapp':
