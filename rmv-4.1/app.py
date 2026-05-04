@@ -41,7 +41,25 @@ from ponto_module import register_ponto_routes
 # Flask app and DB initialization must come first
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.abspath(os.environ.get('DATA_DIR', os.path.join(BASE_DIR, 'instance')))
+
+def _is_prod_hint():
+    env = (os.environ.get('APP_ENV') or os.environ.get('FLASK_ENV') or '').strip().lower()
+    return env in ('prod', 'production')
+
+def _resolve_data_dir():
+    configured = (os.environ.get('DATA_DIR') or '').strip()
+    if configured:
+        return os.path.abspath(configured)
+    # In production we strongly prefer /data (persistent volume in containers).
+    if _is_prod_hint():
+        try:
+            os.makedirs('/data', exist_ok=True)
+            return '/data'
+        except Exception:
+            pass
+    return os.path.join(BASE_DIR, 'instance')
+
+DATA_DIR = os.path.abspath(_resolve_data_dir())
 os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, 'rmfacilities.db')
 DEFAULT_DB_URI = f"sqlite:///{DB_PATH}"
@@ -52,13 +70,17 @@ def _migrate_legacy_data_dir():
     if os.environ.get('DATABASE_URL'):
         return
     if not os.path.exists(DB_PATH):
-        for old_db in (
+        old_candidates = [
             os.path.join(BASE_DIR, 'instance', 'rmfacilities.db'),
+            os.path.join(BASE_DIR, 'instance', 'app.db'),
             os.path.join(BASE_DIR, 'app.db'),
-        ):
-            if os.path.exists(old_db):
-                shutil.copy2(old_db, DB_PATH)
-                break
+            os.path.join(os.path.dirname(BASE_DIR), 'instance', 'rmfacilities.db'),
+            os.path.join(os.path.dirname(BASE_DIR), 'instance', 'app.db'),
+        ]
+        existing = [p for p in old_candidates if os.path.exists(p) and os.path.abspath(p) != os.path.abspath(DB_PATH)]
+        if existing:
+            existing.sort(key=lambda p: (os.path.getmtime(p), os.path.getsize(p)), reverse=True)
+            shutil.copy2(existing[0], DB_PATH)
     legacy_uploads = os.path.join(BASE_DIR, 'instance', 'uploads')
     if not os.path.isdir(UPLOAD_ROOT) and os.path.isdir(legacy_uploads):
         shutil.copytree(legacy_uploads, UPLOAD_ROOT, dirs_exist_ok=True)

@@ -5,4 +5,4 @@ nixPkgs = ["python3", "gcc"]
 cmds = ["python -m venv --copies /opt/venv", ". /opt/venv/bin/activate && pip install -r requirements.txt"]
 
 [start]
-cmd = "gunicorn --bind 0.0.0.0:${PORT:-5000} app:app"
+cmd = "DATA_DIR=/data DATABASE_URL=sqlite:////data/rmfacilities.db gunicorn --bind 0.0.0.0:${PORT:-5000} app:app"
