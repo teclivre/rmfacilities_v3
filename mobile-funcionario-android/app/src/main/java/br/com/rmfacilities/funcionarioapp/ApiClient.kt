@@ -123,9 +123,15 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
-    fun documentos(): DocsResponse {
+    fun documentos(q: String = "", categoria: String = "", ano: String = ""): DocsResponse {
+        val params = buildList {
+            add("formato=lista&page=1&per_page=200")
+            if (q.isNotBlank()) add("q=${android.net.Uri.encode(q)}")
+            if (categoria.isNotBlank()) add("categoria=${android.net.Uri.encode(categoria)}")
+            if (ano.isNotBlank()) add("ano=${android.net.Uri.encode(ano)}")
+        }.joinToString("&")
         val req = Request.Builder()
-            .url(url("/api/app/funcionario/me/documentos?formato=lista&page=1&per_page=200"))
+            .url(url("/api/app/funcionario/me/documentos?$params"))
             .get()
             .addHeader("Authorization", "Bearer ${session.accessToken}")
             .build()
@@ -296,6 +302,22 @@ class ApiClient(private val session: SessionManager) {
                 gson.fromJson(raw, ApiSimpleResponse::class.java)
             } catch (_: Exception) {
                 ApiSimpleResponse(ok = resp.isSuccessful, erro = if (resp.isSuccessful) null else "Falha ao registrar notificações")
+            }
+        }
+    }
+
+    fun historicoAssinaturas(): HistoricoAssinaturasResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/historico-assinaturas"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, HistoricoAssinaturasResponse::class.java)
+            } catch (_: Exception) {
+                HistoricoAssinaturasResponse(ok = false, erro = "Falha ao carregar histórico.")
             }
         }
     }

@@ -118,4 +118,9 @@ class DocumentoAdapter(
         }
         return "Outros"
     }
+
+    /** Returns the list position of the item with the given arquivoId, or -1 if not found. */
+    fun indexOfArquivoId(arquivoId: Int): Int {
+        return listItems.indexOfFirst { it is DocListItem.Doc && it.item.id == arquivoId }
+    }
 }

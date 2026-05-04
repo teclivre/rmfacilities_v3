@@ -6174,6 +6174,33 @@ def api_app_funcionario_pendentes_assinatura():
         })
     return jsonify({'ok':True,'itens':itens})
 
+@app.route('/api/app/funcionario/historico-assinaturas')
+@app_func_required
+def api_app_funcionario_historico_assinaturas():
+    f=g.app_funcionario
+    regs=FuncionarioArquivo.query.filter_by(funcionario_id=f.id,ass_status='concluida').order_by(FuncionarioArquivo.ass_em.desc()).all()
+    itens=[]
+    for a in regs:
+        cat=norm_cat(a.categoria)
+        ip_raw=a.ass_ip or ''
+        # mask last octet for privacy: 192.168.1.100 -> 192.168.1.xxx
+        ip_parts=ip_raw.split('.')
+        ip_mask='.'.join(ip_parts[:-1]+['xxx']) if len(ip_parts)==4 else ip_raw
+        itens.append({
+            'id':a.id,
+            'categoria':cat,
+            'categoria_label':DOC_CAT_LABEL.get(cat,cat),
+            'ano':arq_year_from_path(a.caminho),
+            'nome_arquivo':a.nome_arquivo,
+            'competencia':a.competencia or '',
+            'ass_em':a.ass_em.isoformat() if a.ass_em else '',
+            'ass_em_fmt':a.ass_em.strftime('%d/%m/%Y %H:%M') if a.ass_em else '',
+            'ass_ip_mask':ip_mask,
+            'ass_codigo':a.ass_codigo or '',
+            'app_download_url':f'/api/app/funcionario/arquivos/{a.id}/download',
+        })
+    return jsonify({'ok':True,'itens':itens})
+
 @app.route('/api/app/funcionario/me/senha',methods=['PUT'])
 @app_func_required
 def api_app_funcionario_me_senha():
@@ -11452,6 +11479,7 @@ with app.app_context():
         'ass_email_status VARCHAR(20) DEFAULT "nao_enviado"',
         'ass_email_enviado_em DATETIME',
         'ass_email_recebido_em DATETIME',
+        'ass_lembretes_enviados INTEGER DEFAULT 0',
     ])
     db.session.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ix_funcionario_re ON funcionario(re)'))
     db.session.commit()
@@ -11640,6 +11668,37 @@ def _auto_backup_loop():
             _auto_backup_status['msg'] = str(e)
 
 threading.Thread(target=_auto_backup_loop, daemon=True, name='auto-backup').start()
+
+def _lembrete_assinatura_loop():
+    """Sends reminder push notifications for documents pending signature at day 3 and day 7."""
+    DIAS_LEMBRETE = [3, 7]  # send at day 3 and day 7
+    MAX_LEMBRETES = len(DIAS_LEMBRETE)
+    while True:
+        time.sleep(3600)  # check every hour
+        try:
+            with app.app_context():
+                agora = utcnow()
+                pendentes = FuncionarioArquivo.query.filter_by(ass_status='pendente').filter(
+                    FuncionarioArquivo.ass_lembretes_enviados < MAX_LEMBRETES
+                ).filter(FuncionarioArquivo.ass_canal_envio == 'app').all()
+                for a in pendentes:
+                    if not a.criado_em:
+                        continue
+                    dias = (agora - a.criado_em).days
+                    enviados = a.ass_lembretes_enviados or 0
+                    if enviados < len(DIAS_LEMBRETE) and dias >= DIAS_LEMBRETE[enviados]:
+                        _push_notify_funcionario(
+                            a.funcionario_id,
+                            'Lembrete: documento aguardando assinatura',
+                            f'O arquivo "{a.nome_arquivo}" ainda aguarda sua assinatura.',
+                            {'tipo': 'documento_assinar', 'arquivo_id': str(a.id)}
+                        )
+                        a.ass_lembretes_enviados = enviados + 1
+                        db.session.commit()
+        except Exception as e:
+            app.logger.error(f'[lembrete-assinatura] erro: {e}')
+
+threading.Thread(target=_lembrete_assinatura_loop, daemon=True, name='lembrete-assinatura').start()
 
 @app.route('/api/backup/auto/status')
 @lr

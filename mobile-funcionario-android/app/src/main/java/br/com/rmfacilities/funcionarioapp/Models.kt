@@ -121,3 +121,22 @@ data class ApiSimpleResponse(
     val ok: Boolean = false,
     val erro: String? = null
 )
+
+data class AssinaturaHistoricoItem(
+    val id: Int,
+    val categoria: String? = null,
+    val categoria_label: String? = null,
+    val ano: String? = null,
+    val nome_arquivo: String? = null,
+    val competencia: String? = null,
+    val ass_em_fmt: String? = null,
+    val ass_ip_mask: String? = null,
+    val ass_codigo: String? = null,
+    val app_download_url: String? = null
+)
+
+data class HistoricoAssinaturasResponse(
+    val ok: Boolean = false,
+    val erro: String? = null,
+    val itens: List<AssinaturaHistoricoItem> = emptyList()
+)
