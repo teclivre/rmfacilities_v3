@@ -12,6 +12,15 @@ class ApiClient(private val session: SessionManager) {
     private val gson = Gson()
     private val http = OkHttpClient.Builder().build()
 
+    private fun parseErro(raw: String, fallback: String): String {
+        return try {
+            val map = gson.fromJson(raw, Map::class.java)
+            (map["erro"] as? String)?.takeIf { it.isNotBlank() } ?: fallback
+        } catch (_: Exception) {
+            fallback
+        }
+    }
+
     private fun url(path: String): String {
         val base = session.apiBaseUrl.trim().trimEnd('/')
         return if (path.startsWith("http")) path else "$base$path"
@@ -28,7 +37,8 @@ class ApiClient(private val session: SessionManager) {
         http.newCall(req).execute().use { resp ->
             val raw = resp.body?.string().orEmpty()
             if (!resp.isSuccessful) {
-                return OtpStartResponse(ok = false, erro = if (resp.code == 404) "Funcionalidade ainda não disponível neste servidor." else "Erro do servidor (${resp.code}).")
+                val fallback = if (resp.code == 404) "Funcionalidade ainda não disponível neste servidor." else "Erro do servidor (${resp.code})."
+                return OtpStartResponse(ok = false, erro = parseErro(raw, fallback))
             }
             return try {
                 gson.fromJson(raw, OtpStartResponse::class.java)
@@ -49,7 +59,8 @@ class ApiClient(private val session: SessionManager) {
         http.newCall(req).execute().use { resp ->
             val raw = resp.body?.string().orEmpty()
             if (!resp.isSuccessful) {
-                return LoginResponse(ok = false, erro = if (resp.code == 404) "Funcionalidade ainda não disponível neste servidor." else "Erro do servidor (${resp.code}).")
+                val fallback = if (resp.code == 404) "Funcionalidade ainda não disponível neste servidor." else "Erro do servidor (${resp.code})."
+                return LoginResponse(ok = false, erro = parseErro(raw, fallback))
             }
             return try {
                 gson.fromJson(raw, LoginResponse::class.java)
@@ -204,6 +215,24 @@ class ApiClient(private val session: SessionManager) {
             val raw = resp.body?.string().orEmpty()
             return try { gson.fromJson(raw, FotoUploadResponse::class.java) }
             catch (_: Exception) { FotoUploadResponse(ok = false, erro = "Falha ao enviar foto.") }
+        }
+    }
+
+    fun registrarPushToken(token: String): ApiSimpleResponse {
+        val payload = gson.toJson(mapOf("token" to token))
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/push-token"))
+            .post(payload.toRequestBody("application/json".toMediaType()))
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .addHeader("Content-Type", "application/json")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, ApiSimpleResponse::class.java)
+            } catch (_: Exception) {
+                ApiSimpleResponse(ok = resp.isSuccessful, erro = if (resp.isSuccessful) null else "Falha ao registrar notificações")
+            }
         }
     }
 }

@@ -1,13 +1,19 @@
 package br.com.rmfacilities.funcionarioapp
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.google.firebase.messaging.FirebaseMessaging
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +29,10 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var tvAvatar: TextView
     private lateinit var tvUltimoAso: TextView
     private lateinit var tvMsgBadge: TextView
+
+    private val notifPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,6 +79,33 @@ class HomeActivity : AppCompatActivity() {
         swipeRefresh.setOnRefreshListener { carregarDados() }
         swipeRefresh.isRefreshing = true
         carregarDados()
+        ensureNotificationPermission()
+        registrarPushToken()
+    }
+
+    private fun ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT < 33) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+        notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private fun registrarPushToken() {
+        FirebaseMessaging.getInstance().token
+            .addOnSuccessListener { token ->
+                if (token.isNullOrBlank()) return@addOnSuccessListener
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        api.registrarPushToken(token)
+                    } catch (_: Exception) {
+                        // Silencioso: não deve impactar uso do app.
+                    }
+                }
+            }
+            .addOnFailureListener {
+                // Silencioso: ausência de push não bloqueia app.
+            }
     }
 
     private fun carregarDados() {

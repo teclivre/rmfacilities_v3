@@ -879,6 +879,7 @@ class Funcionario(db.Model):
     app_otp_hash=db.Column(db.String(256))
     app_otp_expira_em=db.Column(db.DateTime)
     app_otp_tentativas=db.Column(db.Integer,default=0)
+    app_push_token=db.Column(db.String(300))
     foto_perfil=db.Column(db.String(500))
     criado_em=db.Column(db.DateTime,default=utcnow)
     def to_dict(self):
@@ -1497,6 +1498,36 @@ def _send_signature_otp(codigo,nome_dest='',telefone='',email='',contexto='assin
         except Exception as ex:
             ultimo_erro=str(ex)
     raise ValueError(ultimo_erro or 'Não foi possível enviar o código OTP para confirmação da assinatura.')
+
+def _send_app_login_otp(codigo,funcionario):
+    """Tenta enviar OTP de login por WhatsApp e faz fallback para e-mail."""
+    f=funcionario
+    nome=(f.nome or 'funcionario').strip()
+    msg=(
+        'RM Facilities - Codigo de acesso do aplicativo\n'
+        f'Funcionario: {nome}\n'
+        f'Codigo OTP: {codigo}\n'
+        'Validade: 10 minutos. Nao compartilhe este codigo.'
+    )
+    tel=wa_norm_number(f.telefone or '')
+    ultimo_erro=''
+    if wa_is_valid_number(tel):
+        try:
+            wa_send_text(tel,msg)
+            return {'canal':'whatsapp','destino':_mask_phone(tel)}
+        except Exception as ex:
+            ultimo_erro=str(ex)
+    if (f.email or '').strip():
+        try:
+            smtp_send_text(
+                (f.email or '').strip(),
+                'Codigo de acesso ao app RM Facilities',
+                msg
+            )
+            return {'canal':'email','destino':_mask_email(f.email)}
+        except Exception as ex:
+            ultimo_erro=str(ex)
+    raise ValueError(ultimo_erro or 'Nao foi possivel enviar OTP por WhatsApp ou e-mail.')
 
 def _assinatura_json_base(**extra):
     base={
@@ -2244,6 +2275,42 @@ def wa_send_text(numero,mensagem):
     except urllib.error.HTTPError as e:
         detalhe=e.read().decode(errors='ignore')
         raise ValueError(f'WhatsApp API {e.code}: {detalhe or e.reason}')
+
+def _fcm_send_to_token(token,titulo,corpo,data=None):
+    """Envio opcional via FCM. Se firebase-admin nao estiver configurado, ignora com segurança."""
+    if not token:
+        return False
+    cred_path=(os.environ.get('FIREBASE_CREDENTIALS_JSON') or '').strip()
+    if not cred_path or not os.path.exists(cred_path):
+        return False
+    try:
+        import firebase_admin
+        from firebase_admin import credentials, messaging
+    except Exception:
+        return False
+    try:
+        firebase_admin.get_app()
+    except Exception:
+        try:
+            firebase_admin.initialize_app(credentials.Certificate(cred_path))
+        except Exception:
+            return False
+    try:
+        msg=messaging.Message(
+            token=token,
+            notification=messaging.Notification(title=titulo,body=corpo),
+            data={k:str(v) for k,v in (data or {}).items()}
+        )
+        messaging.send(msg)
+        return True
+    except Exception:
+        return False
+
+def _push_notify_funcionario(fid,titulo,corpo,data=None):
+    f=Funcionario.query.get(fid)
+    if not f or not (f.app_push_token or '').strip():
+        return False
+    return _fcm_send_to_token(f.app_push_token.strip(),titulo,corpo,data=data)
 
 def wa_media_meta(nome_arquivo,mimetype=''):
     mime=(mimetype or '').split(';')[0].strip().lower()
@@ -5732,30 +5799,21 @@ def api_app_funcionario_auth_iniciar():
         reg_auth_attempt('app_otp',cpf,False,'app_desativado')
         return jsonify({'erro':'Acesso do aplicativo desativado.'}),403
 
-    tel=wa_norm_number(f.telefone or '')
-    if not wa_is_valid_number(tel):
-        return jsonify({'erro':'Funcionario sem celular valido cadastrado. Contate o RH.'}),400
-
     codigo=_otp_new_code()
     f.app_otp_hash=token_hash(codigo)
     f.app_otp_expira_em=utcnow()+timedelta(minutes=10)
     f.app_otp_tentativas=0
     try:
-        msg=(
-            f'RM Facilities - Codigo de acesso do aplicativo\n'
-            f'Funcionario: {(f.nome or "").strip()}\n'
-            f'Codigo OTP: {codigo}\n'
-            'Validade: 10 minutos. Nao compartilhe este codigo.'
-        )
-        wa_send_text(tel,msg)
+        envio=_send_app_login_otp(codigo,f)
         db.session.commit()
         reg_auth_attempt('app_otp',cpf,True,'desafio_enviado')
-        audit_event('auth_app_otp_enviado','funcionario',f.id,'funcionario',f.id,True,{})
-        return jsonify({'ok':True,'mensagem':'Codigo enviado para o celular cadastrado.','destino':_mask_phone(tel)})
+        audit_event('auth_app_otp_enviado','funcionario',f.id,'funcionario',f.id,True,{'canal':envio.get('canal')})
+        msg_ok='Codigo enviado com sucesso.' if envio.get('canal')!='email' else 'Codigo enviado para o e-mail cadastrado.'
+        return jsonify({'ok':True,'mensagem':msg_ok,'destino':envio.get('destino'),'canal':envio.get('canal')})
     except Exception as ex:
         db.session.rollback()
         reg_auth_attempt('app_otp',cpf,False,'envio_falha')
-        return jsonify({'erro':f'Falha ao enviar codigo OTP: {str(ex)}'}),500
+        return jsonify({'erro':'Nao foi possivel enviar o codigo OTP. Verifique telefone/e-mail com o RH e as configuracoes de envio.','detalhe':str(ex)}),503
 
 @app.route('/api/app/funcionario/auth/confirmar',methods=['POST'])
 def api_app_funcionario_auth_confirmar():
@@ -5889,6 +5947,20 @@ def api_app_funcionario_foto_get():
     if not os.path.exists(abs_p):
         return jsonify({'erro':'Arquivo não encontrado'}),404
     return send_file(abs_p)
+
+@app.route('/api/app/funcionario/me/push-token',methods=['POST'])
+@app_func_required
+def api_app_funcionario_push_token():
+    f=g.app_funcionario
+    d=request.json or {}
+    token=(d.get('token') or '').strip()
+    if not token:
+        return jsonify({'erro':'Token obrigatorio'}),400
+    if len(token)>300:
+        return jsonify({'erro':'Token invalido'}),400
+    f.app_push_token=token
+    db.session.commit()
+    return jsonify({'ok':True})
 
 @app.route('/api/app/funcionario/me/contato',methods=['PUT'])
 @app_func_required
@@ -6215,6 +6287,7 @@ def api_rh_mensagem_responder(fid):
     m=MensagemApp(funcionario_id=fid,de_rh=True,conteudo=conteudo,lida=False,enviado_por=nome_rh)
     db.session.add(m)
     db.session.commit()
+    _push_notify_funcionario(fid,'Nova mensagem do RH',conteudo[:160],data={'tipo':'chat','funcionario_id':str(fid)})
     return jsonify(m.to_dict()),201
 
 @app.route('/api/mensagens-app/nao-lidas-total')
@@ -6245,6 +6318,8 @@ def api_rh_mensagens_broadcast():
         m=MensagemApp(funcionario_id=func.id,de_rh=True,conteudo=conteudo,lida=False,enviado_por=nome_rh)
         db.session.add(m)
     db.session.commit()
+    for func in funcs:
+        _push_notify_funcionario(func.id,'Nova mensagem do RH',conteudo[:160],data={'tipo':'chat_broadcast','funcionario_id':str(func.id)})
     return jsonify({'ok':True,'enviado_para':len(funcs)})
 
 @app.route('/api/funcionarios/arquivos/<int:id>',methods=['DELETE'])
@@ -11162,6 +11237,7 @@ with app.app_context():
         'app_otp_hash VARCHAR(256)',
         'app_otp_expira_em DATETIME',
         'app_otp_tentativas INTEGER DEFAULT 0',
+        'app_push_token VARCHAR(300)',
         'endereco_numero VARCHAR(20)',
         'endereco_complemento VARCHAR(120)',
         'endereco_bairro VARCHAR(120)',

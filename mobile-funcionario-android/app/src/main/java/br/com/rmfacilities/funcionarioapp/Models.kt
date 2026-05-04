@@ -110,3 +110,8 @@ data class MensagemItem(
 data class NaoLidasResponse(
     val nao_lidas: Int = 0
 )
+
+data class ApiSimpleResponse(
+    val ok: Boolean = false,
+    val erro: String? = null
+)
