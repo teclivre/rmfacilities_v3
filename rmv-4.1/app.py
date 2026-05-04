@@ -920,6 +920,8 @@ class FuncionarioArquivo(db.Model):
     ass_email_status=db.Column(db.String(20),default='nao_enviado')
     ass_email_enviado_em=db.Column(db.DateTime)
     ass_email_recebido_em=db.Column(db.DateTime)
+    ass_lembretes_enviados=db.Column(db.Integer,default=0)
+    ass_prazo_em=db.Column(db.DateTime)
     criado_em=db.Column(db.DateTime,default=utcnow)
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
@@ -6163,6 +6165,7 @@ def api_app_funcionario_pendentes_assinatura():
     regs=FuncionarioArquivo.query.filter_by(funcionario_id=f.id,ass_status='pendente').order_by(FuncionarioArquivo.criado_em.desc()).all()
     itens=[]
     for a in regs:
+        prazo_em=getattr(a,'ass_prazo_em',None)
         cat=norm_cat(a.categoria)
         itens.append({
             'id':a.id,
@@ -6173,8 +6176,8 @@ def api_app_funcionario_pendentes_assinatura():
             'competencia':a.competencia,
             'ass_status':'pendente',
             'ass_em_fmt':'',
-            'ass_prazo_em':a.ass_prazo_em.isoformat() if a.ass_prazo_em else None,
-            'ass_prazo_fmt':a.ass_prazo_em.strftime('%d/%m/%Y') if a.ass_prazo_em else None,
+            'ass_prazo_em':prazo_em.isoformat() if prazo_em else None,
+            'ass_prazo_fmt':prazo_em.strftime('%d/%m/%Y') if prazo_em else None,
             'can_assinar':True,
             'criado_em':a.criado_em.isoformat() if a.criado_em else '',
             'criado_fmt':a.criado_em.strftime('%d/%m/%Y %H:%M') if a.criado_em else '',
