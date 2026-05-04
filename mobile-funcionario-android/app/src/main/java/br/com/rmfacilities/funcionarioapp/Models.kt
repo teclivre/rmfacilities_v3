@@ -107,7 +107,10 @@ data class MensagemItem(
     val enviado_em: String? = null,
     val enviado_fmt: String? = null,
     val lida: Boolean = false,
-    val enviado_por: String? = null
+    val enviado_por: String? = null,
+    val tipo: String? = "texto",
+    val arquivo_nome: String? = null,
+    val arquivo_url: String? = null
 )
 
 data class NaoLidasResponse(

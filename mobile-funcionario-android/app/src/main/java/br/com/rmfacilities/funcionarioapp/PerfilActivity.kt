@@ -9,7 +9,6 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -70,13 +69,6 @@ class PerfilActivity : AppCompatActivity() {
         val tvPosto = findViewById<TextView>(R.id.tvPosto)
         val tvSetor = findViewById<TextView>(R.id.tvSetor)
         val tvStatus = findViewById<TextView>(R.id.tvStatus)
-        val etEmail = findViewById<TextInputEditText>(R.id.etEmail)
-        val etTelefone = findViewById<TextInputEditText>(R.id.etTelefone)
-        val etNovoCargo = findViewById<TextInputEditText>(R.id.etNovoCargo)
-        val etNovoSetor = findViewById<TextInputEditText>(R.id.etNovoSetor)
-        val etObsSolicitacao = findViewById<TextInputEditText>(R.id.etObsSolicitacao)
-        val btnSalvarContato = findViewById<MaterialButton>(R.id.btnSalvarContato)
-        val btnSolicitar = findViewById<MaterialButton>(R.id.btnSolicitarAlteracao)
         val btnAlterarFoto = findViewById<MaterialButton>(R.id.btnAlterarFoto)
 
         btnAlterarFoto.setOnClickListener {
@@ -99,66 +91,13 @@ class PerfilActivity : AppCompatActivity() {
                     tvPosto.text = f?.posto_operacional.orEmpty().ifBlank { "—" }
                     tvSetor.text = f?.setor.orEmpty()
                     tvStatus.text = f?.status.orEmpty()
-                    etEmail.setText(f?.email.orEmpty())
-                    etTelefone.setText(telefoneSemPais(f?.telefone))
                     fotoUrlAtual = f?.foto_url
                     if (f?.foto_url != null) carregarFotoUrl(f.foto_url)
                 }
             }
         }
 
-        btnSalvarContato.setOnClickListener {
-            val email = etEmail.text?.toString()?.trim().orEmpty()
-            val telefone = telefoneSemPais(etTelefone.text?.toString())
-            tvFeedback.text = "Salvando contato..."
-            CoroutineScope(Dispatchers.IO).launch {
-                val r = try {
-                    api.atualizarContato(email, telefone)
-                } catch (e: Exception) {
-                    ContatoUpdateResponse(ok = false, erro = e.message)
-                }
-                withContext(Dispatchers.Main) {
-                    tvFeedback.text = if (r.ok) "Contato atualizado com sucesso." else (r.erro ?: "Falha ao atualizar contato.")
-                    if (r.ok) carregarPerfil()
-                }
-            }
-        }
-
-        btnSolicitar.setOnClickListener {
-            val campos = mutableMapOf<String, String>()
-            val novoCargo = etNovoCargo.text?.toString()?.trim().orEmpty()
-            val novoSetor = etNovoSetor.text?.toString()?.trim().orEmpty()
-            if (novoCargo.isNotBlank()) campos["cargo"] = novoCargo
-            if (novoSetor.isNotBlank()) campos["setor"] = novoSetor
-            if (campos.isEmpty()) {
-                tvFeedback.text = "Informe ao menos cargo ou setor para solicitar alteracao."
-                return@setOnClickListener
-            }
-            val obs = etObsSolicitacao.text?.toString()?.trim().orEmpty()
-            tvFeedback.text = "Enviando solicitacao para aprovacao..."
-            CoroutineScope(Dispatchers.IO).launch {
-                val r = try {
-                    api.solicitarAlteracao(campos, obs)
-                } catch (e: Exception) {
-                    SolicitacaoResponse(ok = false, erro = e.message)
-                }
-                withContext(Dispatchers.Main) {
-                    tvFeedback.text = if (r.ok) "Solicitacao enviada ao administrador." else (r.erro ?: "Falha ao registrar solicitacao.")
-                    if (r.ok) {
-                        etNovoCargo.setText("")
-                        etNovoSetor.setText("")
-                        etObsSolicitacao.setText("")
-                    }
-                }
-            }
-        }
-
         carregarPerfil()
-    }
-
-    private fun telefoneSemPais(v: String?): String {
-        val digits = (v ?: "").filter { it.isDigit() }
-        return if (digits.startsWith("55") && digits.length in 12..13) digits.substring(2) else digits
     }
 
     private fun exibirFotoDosBytes(bytes: ByteArray) {

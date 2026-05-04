@@ -1266,9 +1266,16 @@ class MensagemApp(db.Model):
     enviado_em=db.Column(db.DateTime,default=utcnow)
     lida=db.Column(db.Boolean,default=False)
     enviado_por=db.Column(db.String(100))  # nome do usuário RH ou 'funcionario'
+    tipo=db.Column(db.String(20),default='texto')  # 'texto' | 'arquivo'
+    arquivo_nome=db.Column(db.String(300))
+    arquivo_caminho=db.Column(db.String(500))
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         d['enviado_fmt']=self.enviado_em.strftime('%d/%m/%Y %H:%M') if self.enviado_em else ''
+        if self.arquivo_caminho:
+            d['arquivo_url']=f'/api/app/funcionario/mensagens/{self.id}/arquivo'
+        else:
+            d['arquivo_url']=None
         return d
 
 _holerite_jobs={}
@@ -6236,10 +6243,51 @@ def api_app_mensagem_enviar():
     conteudo=(d.get('conteudo') or '').strip()
     if not conteudo: return jsonify({'erro':'Mensagem nao pode ser vazia'}),400
     if len(conteudo)>2000: return jsonify({'erro':'Mensagem muito longa'}),400
-    m=MensagemApp(funcionario_id=f.id,de_rh=False,conteudo=conteudo,lida=False,enviado_por='funcionario')
+    m=MensagemApp(funcionario_id=f.id,de_rh=False,conteudo=conteudo,lida=False,enviado_por='funcionario',tipo='texto')
     db.session.add(m)
     db.session.commit()
     return jsonify(m.to_dict()),201
+
+@app.route('/api/app/funcionario/mensagens/arquivo',methods=['POST'])
+@app_func_required
+def api_app_mensagem_enviar_arquivo():
+    f=g.app_funcionario
+    arq=request.files.get('arquivo')
+    if not arq: return jsonify({'erro':'Nenhum arquivo enviado'}),400
+    nome_orig=secure_filename(arq.filename or 'arquivo')
+    if not nome_orig: return jsonify({'erro':'Nome de arquivo invalido'}),400
+    ext=os.path.splitext(nome_orig)[1].lower()
+    exts_permitidas={'.pdf','.jpg','.jpeg','.png','.doc','.docx','.xls','.xlsx','.txt','.zip'}
+    if ext not in exts_permitidas:
+        return jsonify({'erro':'Tipo de arquivo nao permitido'}),400
+    conteudo=(request.form.get('conteudo') or '').strip()[:500]
+    pasta=os.path.join(UPLOAD_ROOT,'funcionarios',str(f.id),'chat')
+    os.makedirs(pasta,exist_ok=True)
+    ts=datetime.utcnow().strftime('%Y%m%d%H%M%S')
+    nome_final=f'{ts}_{nome_orig}'
+    abs_p=os.path.join(pasta,nome_final)
+    arq.save(abs_p)
+    rel=os.path.relpath(abs_p,UPLOAD_ROOT)
+    texto_msg=conteudo if conteudo else f'[Arquivo: {nome_orig}]'
+    m=MensagemApp(
+        funcionario_id=f.id,de_rh=False,conteudo=texto_msg,
+        lida=False,enviado_por='funcionario',
+        tipo='arquivo',arquivo_nome=nome_orig,arquivo_caminho=rel
+    )
+    db.session.add(m); db.session.commit()
+    return jsonify(m.to_dict()),201
+
+@app.route('/api/app/funcionario/mensagens/<int:mid>/arquivo')
+@app_func_required
+def api_app_mensagem_download_arquivo(mid):
+    f=g.app_funcionario
+    m=MensagemApp.query.get_or_404(mid)
+    if m.funcionario_id!=f.id:
+        return jsonify({'erro':'Acesso negado'}),403
+    if not m.arquivo_caminho: return jsonify({'erro':'Mensagem sem arquivo'}),404
+    abs_p=os.path.join(UPLOAD_ROOT,m.arquivo_caminho)
+    if not os.path.exists(abs_p): return jsonify({'erro':'Arquivo nao encontrado'}),404
+    return send_file(abs_p,as_attachment=True,download_name=m.arquivo_nome or 'arquivo')
 
 @app.route('/api/app/funcionario/mensagens/nao-lidas')
 @app_func_required
@@ -11496,6 +11544,11 @@ with app.app_context():
         'criado_por VARCHAR(100)',
         'criado_em DATETIME',
         'ass_assinatura_img TEXT',
+    ])
+    ensure_cols('mensagem_app',[
+        'tipo VARCHAR(20) DEFAULT "texto"',
+        'arquivo_nome VARCHAR(300)',
+        'arquivo_caminho VARCHAR(500)',
     ])
     seed(); get_logo()
 

@@ -67,16 +67,29 @@
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:background="@color/surface"
-        android:paddingStart="12dp"
+        android:paddingStart="8dp"
         android:paddingEnd="12dp"
         android:paddingTop="10dp"
         android:paddingBottom="10dp">
+
+        <!-- Botão anexar arquivo -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAnexar"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="0dp"
+            android:text="📎"
+            android:textSize="20sp"
+            app:backgroundTint="@android:color/transparent"
+            xmlns:app="http://schemas.android.com/apk/res-auto" />
 
         <EditText
             android:id="@+id/etMensagem"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:layout_marginStart="4dp"
             android:background="@drawable/bg_input"
             android:hint="Digite sua mensagem..."
             android:textColorHint="@color/text_hint"

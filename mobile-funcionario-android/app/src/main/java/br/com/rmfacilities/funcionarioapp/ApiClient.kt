@@ -219,6 +219,35 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    fun enviarArquivoMensagem(bytes: ByteArray, mimeType: String, fileName: String, legenda: String = ""): MensagemItem? {
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("arquivo", fileName, bytes.toRequestBody(mimeType.toMediaType()))
+            .apply { if (legenda.isNotBlank()) addFormDataPart("conteudo", legenda) }
+            .build()
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/mensagens/arquivo"))
+            .post(body)
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try { gson.fromJson(raw, MensagemItem::class.java) } catch (_: Exception) { null }
+        }
+    }
+
+    fun downloadMensagemArquivo(arquivoUrl: String): ByteArray {
+        val req = Request.Builder()
+            .url(url(arquivoUrl))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw IllegalStateException("Falha no download: HTTP ${resp.code}")
+            return resp.body?.bytes() ?: throw IllegalStateException("Arquivo vazio")
+        }
+    }
+
     fun getNaoLidas(): Int {
         val req = Request.Builder()
             .url(url("/api/app/funcionario/mensagens/nao-lidas"))
