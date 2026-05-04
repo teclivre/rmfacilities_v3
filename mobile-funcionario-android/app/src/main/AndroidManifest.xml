@@ -27,6 +27,9 @@
             android:name=".DocumentosActivity"
             android:exported="false" />
         <activity
+            android:name=".PdfPreviewActivity"
+            android:exported="false" />
+        <activity
             android:name=".HistoricoAssinaturasActivity"
             android:exported="false" />
         <activity

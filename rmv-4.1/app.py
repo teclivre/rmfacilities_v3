@@ -5631,6 +5631,11 @@ def api_funcionario_upload_arquivo(id):
     canal_ass=(request.form.get('canal_assinatura') or 'whatsapp').strip().lower()
     if canal_ass not in ('whatsapp','link','nao','app'):
         canal_ass='whatsapp'
+    prazo_dias_raw=request.form.get('prazo_dias') or ''
+    try:
+        prazo_dias=max(1,min(90,int(prazo_dias_raw))) if prazo_dias_raw.strip() else None
+    except (ValueError, TypeError):
+        prazo_dias=None
     texto=''
     if not comp_in and str((fs.filename or '')).lower().endswith('.pdf') and _upload_is_pdf(fs):
         try:
@@ -5655,6 +5660,8 @@ def api_funcionario_upload_arquivo(id):
     assinatura_auto={'status':'nao_solicitada'}
     if canal_ass=='app':
         a.ass_status='pendente'
+        if prazo_dias:
+            a.ass_prazo_em=utcnow()+timedelta(days=prazo_dias)
         db.session.commit()
         _push_notify_funcionario(
             f.id,
@@ -6166,6 +6173,8 @@ def api_app_funcionario_pendentes_assinatura():
             'competencia':a.competencia,
             'ass_status':'pendente',
             'ass_em_fmt':'',
+            'ass_prazo_em':a.ass_prazo_em.isoformat() if a.ass_prazo_em else None,
+            'ass_prazo_fmt':a.ass_prazo_em.strftime('%d/%m/%Y') if a.ass_prazo_em else None,
             'can_assinar':True,
             'criado_em':a.criado_em.isoformat() if a.criado_em else '',
             'criado_fmt':a.criado_em.strftime('%d/%m/%Y %H:%M') if a.criado_em else '',
@@ -6525,6 +6534,7 @@ def api_func_arquivo_assinatura_rastreio(id):
         'recebido_em':(a.ass_recebido_em.isoformat() if a.ass_recebido_em else ''),
         'aberto_em':(a.ass_aberto_em.isoformat() if a.ass_aberto_em else ''),
         'assinado_em':(a.ass_em.isoformat() if a.ass_em else ''),
+        'prazo_em':(a.ass_prazo_em.isoformat() if a.ass_prazo_em else ''),
         'whatsapp':{
             'status':a.ass_wa_status or 'nao_enviado',
             'enviado_em':(a.ass_wa_enviado_em.isoformat() if a.ass_wa_enviado_em else ''),
@@ -6536,6 +6546,61 @@ def api_func_arquivo_assinatura_rastreio(id):
             'recebido_em':(a.ass_email_recebido_em.isoformat() if a.ass_email_recebido_em else ''),
         }
     })
+
+@app.route('/api/funcionarios/arquivos/<int:id>/assinatura/cancelar',methods=['POST'])
+@lr
+def api_func_arquivo_cancelar_assinatura(id):
+    a=FuncionarioArquivo.query.get_or_404(id)
+    status_atual=(a.ass_status or '').strip().lower()
+    if status_atual not in ('pendente','nao_solicitada','expirado',''):
+        return jsonify({'erro':'Não é possível cancelar: assinatura já concluída ou em status inválido.'}),400
+    a.ass_status='cancelada'
+    a.ass_token=''
+    a.ass_expira_em=None
+    a.ass_prazo_em=None
+    a.ass_lembretes_enviados=0
+    db.session.commit()
+    audit_event('func_arquivo_assinatura_cancelada','usuario',session.get('uid'),'funcionario',a.funcionario_id,True,
+                {'arquivo_id':id,'nome':a.nome_arquivo})
+    return jsonify({'ok':True,'mensagem':'Solicitação de assinatura cancelada.'})
+
+@app.route('/api/rh/dashboard/assinaturas-pendentes')
+@lr
+def api_rh_dashboard_assinaturas_pendentes():
+    """Dashboard: pendentes de assinatura por funcionário, ordenados por mais antigo."""
+    from sqlalchemy import func as sqlfunc
+    pendentes=FuncionarioArquivo.query.filter_by(ass_status='pendente').order_by(FuncionarioArquivo.criado_em.asc()).all()
+    por_func={}
+    agora=utcnow()
+    for a in pendentes:
+        fid=a.funcionario_id
+        if fid not in por_func:
+            f=Funcionario.query.get(fid)
+            por_func[fid]={
+                'funcionario_id':fid,
+                'funcionario_nome':(f.nome if f else f'ID {fid}'),
+                'funcionario_cargo':(f.cargo or '') if f else '',
+                'total':0,
+                'vencidos':0,
+                'itens':[],
+            }
+        dias_pendente=(agora-a.criado_em).days if a.criado_em else 0
+        vencido=bool(a.ass_prazo_em and a.ass_prazo_em<agora)
+        por_func[fid]['total']+=1
+        if vencido: por_func[fid]['vencidos']+=1
+        por_func[fid]['itens'].append({
+            'arquivo_id':a.id,
+            'nome_arquivo':a.nome_arquivo,
+            'categoria':DOC_CAT_LABEL.get(norm_cat(a.categoria),a.categoria),
+            'competencia':a.competencia or '',
+            'dias_pendente':dias_pendente,
+            'prazo_em':(a.ass_prazo_em.isoformat() if a.ass_prazo_em else None),
+            'prazo_fmt':(a.ass_prazo_em.strftime('%d/%m/%Y') if a.ass_prazo_em else None),
+            'vencido':vencido,
+            'lembretes_enviados':a.ass_lembretes_enviados or 0,
+        })
+    lista=sorted(por_func.values(),key=lambda x:x['vencidos'],reverse=True)
+    return jsonify({'ok':True,'total_pendentes':len(pendentes),'funcionarios':lista})
 
 @app.route('/doc/assinar/<token>')
 def func_doc_assinar_publica(token):
@@ -10304,6 +10369,11 @@ def api_rh_holerites_processar():
     canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
     if canal_ass not in ('nao','whatsapp','link','app'):
         canal_ass='nao'
+    prazo_dias_lote_raw=request.form.get('prazo_dias') or ''
+    try:
+        prazo_dias_lote=max(1,min(90,int(prazo_dias_lote_raw))) if prazo_dias_lote_raw.strip() else None
+    except (ValueError, TypeError):
+        prazo_dias_lote=None
     nome_arq=(fs.filename or '').strip().lower()
     if nome_arq and not nome_arq.endswith('.pdf'):
         return jsonify({'erro':'Arquivo invalido. Envie um PDF (.pdf).'}),400
@@ -10353,6 +10423,8 @@ def api_rh_holerites_processar():
         assinatura_auto={'status':'nao_solicitada','link':'','erro':''}
         if canal_ass=='app':
             a.ass_status='pendente'
+            if prazo_dias_lote:
+                a.ass_prazo_em=utcnow()+timedelta(days=prazo_dias_lote)
             db.session.flush()
             _push_notify_funcionario(
                 alvo.id,
@@ -11480,6 +11552,7 @@ with app.app_context():
         'ass_email_enviado_em DATETIME',
         'ass_email_recebido_em DATETIME',
         'ass_lembretes_enviados INTEGER DEFAULT 0',
+        'ass_prazo_em DATETIME',
     ])
     db.session.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ix_funcionario_re ON funcionario(re)'))
     db.session.commit()

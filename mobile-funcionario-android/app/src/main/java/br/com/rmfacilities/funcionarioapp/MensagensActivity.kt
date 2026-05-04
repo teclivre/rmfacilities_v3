@@ -3,6 +3,7 @@ package br.com.rmfacilities.funcionarioapp
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.webkit.MimeTypeMap
 import android.widget.EditText
 import android.widget.TextView
@@ -18,6 +19,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MensagensActivity : AppCompatActivity() {
     private lateinit var session: SessionManager
@@ -27,8 +31,14 @@ class MensagensActivity : AppCompatActivity() {
     private lateinit var etMensagem: EditText
     private lateinit var tvBadge: TextView
 
+    private var cameraPhotoUri: Uri? = null
+
     private val pickFile = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) enviarArquivo(uri)
+    }
+
+    private val takePhoto = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) cameraPhotoUri?.let { enviarArquivo(it) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,10 +59,23 @@ class MensagensActivity : AppCompatActivity() {
         findViewById<MaterialButton>(R.id.btnVoltar).setOnClickListener { finish() }
         findViewById<MaterialButton>(R.id.btnEnviar).setOnClickListener { enviar() }
         findViewById<MaterialButton>(R.id.btnAnexar).setOnClickListener {
-            pickFile.launch("*/*")
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle("Enviar arquivo")
+                .setItems(arrayOf("📷 Câmera", "📁 Arquivo / Galeria")) { _, which ->
+                    if (which == 0) abrirCamera() else pickFile.launch("*/*")
+                }
+                .show()
         }
 
         carregarMensagens()
+    }
+
+    private fun abrirCamera() {
+        val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val imgFile = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "foto_chat_$ts.jpg")
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", imgFile)
+        cameraPhotoUri = uri
+        takePhoto.launch(uri)
     }
 
     private fun carregarMensagens() {

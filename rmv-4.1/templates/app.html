@@ -1849,6 +1849,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div style="margin-top:10px;display:flex;gap:8px">
           <button class="btn b-az" onclick="uploadArquivoFuncionarioModal()" style="flex:1"><span style="font-size:14px">⬆️ Anexar arquivo</span></button>
           <button class="btn b-gh b-sm" onclick="buscarAnos()"><span>🔄 Atualizar</span></button>
+          <button class="btn b-gh b-sm" onclick="abrirDashboardAssinaturas()" title="Dashboard de pendentes de assinatura"><span>📋 Pendentes</span></button>
         </div>
         <div id="farq-upload-st" class="st" style="margin-top:8px"></div>
       </div>
@@ -4636,10 +4637,11 @@ function renderArquivoTree(categorias){
                   <span style="font-size:16px">📄</span>
                   <div style="flex:1">
                     <div style="font-weight:500;color:var(--preto);font-size:13px">${item.nome_arquivo}</div>
-                    <div style="font-size:11px;color:var(--preto);opacity:.7">${item.criado_fmt}${item.competencia?' · '+item.competencia:''}</div>
+                    <div style="font-size:11px;color:var(--preto);opacity:.7">${item.criado_fmt}${item.competencia?' · '+item.competencia:''}${item.ass_status==='pendente'?` · <span style="color:#d97706">⏳ Assinatura pendente no app</span>`:''}${item.ass_status==='concluida'?` · <span style="color:#16a34a">✅ Assinado</span>`:''}${item.ass_status==='cancelada'?` · <span style="color:#6b7280">🚫 Assinatura cancelada</span>`:''}</div>
                   </div>
                   <div style="display:flex;gap:4px">
                     <button class="btn b-gh b-sm" onclick="downloadArquivoFuncionario('${item.download_url}')" style="padding:4px 8px;font-size:11px">⬇️</button>
+                    ${item.ass_status==='pendente'?`<button class="btn b-sm" onclick="cancelarAssinaturaArquivo(${item.id})" style="padding:4px 8px;font-size:11px;background:#fef3c7;color:#92400e;border:1px solid #f59e0b" title="Cancelar solicitação de assinatura">🚫</button>`:''}
                     <button class="btn b-ghr b-sm" onclick="delArquivoFuncionario(${item.id})" style="padding:4px 8px;font-size:11px">🗑️</button>
                   </div>
                 </div>
@@ -4826,6 +4828,56 @@ async function delArquivoFuncionario(id){
   }
   showSt('farq-upload-st','✅ Arquivo excluído',false);
   buscarAnos();
+}
+
+async function cancelarAssinaturaArquivo(id){
+  if(!confirm('Cancelar a solicitação de assinatura deste documento?\nO funcionário não poderá mais assinar pelo app até que uma nova solicitação seja feita.'))return;
+  const d=await api('/api/funcionarios/arquivos/'+id+'/assinatura/cancelar','POST');
+  if(d.erro){alert('Erro: '+d.erro);return;}
+  showSt('farq-upload-st','✅ Assinatura cancelada.',false);
+  buscarAnos();
+}
+
+async function abrirDashboardAssinaturas(){
+  const modal=document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center';
+  modal.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;max-width:700px;width:95%;max-height:85vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <strong style="font-size:16px">📋 Pendentes de Assinatura</strong>
+      <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div id="dash-ass-content"><span style="color:#888">Carregando...</span></div>
+  </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click',e=>{if(e.target===modal)modal.remove();});
+  try{
+    const d=await api('/api/rh/dashboard/assinaturas-pendentes','GET');
+    const el=document.getElementById('dash-ass-content');
+    if(!d.ok||!d.funcionarios?.length){el.innerHTML='<div style="color:#888;text-align:center;padding:24px">Nenhum documento pendente de assinatura.</div>';return;}
+    el.innerHTML=`<div style="font-size:13px;color:#666;margin-bottom:12px">Total: <strong>${d.total_pendentes}</strong> documento(s) pendente(s)</div>`+
+    d.funcionarios.map(f=>`<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <strong>${f.funcionario_nome}</strong>
+          ${f.funcionario_cargo?`<span style="font-size:11px;color:#888;margin-left:6px">${f.funcionario_cargo}</span>`:''}
+        </div>
+        <div style="display:flex;gap:6px">
+          <span style="background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:12px;font-size:11px">${f.total} pendente(s)</span>
+          ${f.vencidos>0?`<span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:12px;font-size:11px">${f.vencidos} vencido(s)</span>`:''}
+        </div>
+      </div>
+      ${f.itens.map(it=>`<div style="font-size:12px;padding:6px 8px;background:${it.vencido?'#fff7ed':'#f9fafb'};border-radius:4px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <strong>${it.nome_arquivo}</strong> · ${it.categoria}${it.competencia?' · '+it.competencia:''}
+          <div style="color:#888;margin-top:1px">Pendente há ${it.dias_pendente} dia(s)${it.prazo_fmt?' · Prazo: '+it.prazo_fmt:''}${it.lembretes_enviados>0?' · '+it.lembretes_enviados+' lembrete(s) enviado(s)':''}</div>
+        </div>
+        <button onclick="cancelarAssinaturaArquivo(${it.arquivo_id})" style="font-size:10px;padding:3px 7px;background:#fef3c7;color:#92400e;border:1px solid #f59e0b;border-radius:4px;cursor:pointer;white-space:nowrap">🚫 Cancelar</button>
+      </div>`).join('')}
+    </div>`).join('');
+  }catch(e){
+    const el=document.getElementById('dash-ass-content');
+    if(el)el.innerHTML='<div style="color:red">Erro ao carregar dashboard.</div>';
+  }
 }
 
 async function uploadDocumentoRHLote(){

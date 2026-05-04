@@ -96,7 +96,9 @@ data class DocumentoItem(
     val app_download_url: String? = null,
     val ass_status: String? = null,
     val ass_em_fmt: String? = null,
-    val can_assinar: Boolean = true
+    val can_assinar: Boolean = true,
+    val ass_prazo_em: String? = null,
+    val ass_prazo_fmt: String? = null
 )
 
 data class MensagemItem(

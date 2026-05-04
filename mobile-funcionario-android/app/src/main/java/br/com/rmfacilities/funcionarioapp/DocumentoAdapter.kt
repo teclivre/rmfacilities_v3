@@ -74,7 +74,22 @@ class DocumentoAdapter(
                     }
                     pendente -> {
                         vh.tvAssStatus.visibility = View.VISIBLE
-                        vh.tvAssStatus.text = "Pendente de assinatura"
+                        // Show deadline badge if available
+                        val prazoBadge = if (!item.ass_prazo_em.isNullOrBlank()) {
+                            try {
+                                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault())
+                                sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+                                val prazoDate = sdf.parse(item.ass_prazo_em.substring(0, 19))
+                                val diffMs = (prazoDate?.time ?: 0L) - System.currentTimeMillis()
+                                val dias = (diffMs / (1000 * 60 * 60 * 24)).toInt()
+                                when {
+                                    dias < 0 -> " • 🔴 VENCIDO"
+                                    dias == 0 -> " • ⏰ Vence hoje"
+                                    else -> " • ⏰ Expira em $dias dia${if (dias > 1) "s" else ""}"
+                                }
+                            } catch (_: Exception) { "" }
+                        } else ""
+                        vh.tvAssStatus.text = "Pendente de assinatura$prazoBadge"
                     }
                     else -> vh.tvAssStatus.visibility = View.GONE
                 }

@@ -205,14 +205,3 @@ class DocumentosActivity : AppCompatActivity() {
         }
     }
 }
-
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-
-        try {
-            startActivity(Intent.createChooser(intent, "Abrir documento"))
-        } catch (e: Exception) {
-            Toast.makeText(this, "Nenhum app disponível para abrir este arquivo", Toast.LENGTH_LONG).show()
-        }
-    }
-}
