@@ -38,7 +38,7 @@ class LoginActivity : AppCompatActivity() {
         api = ApiClient(session)
 
         if (session.accessToken.isNotBlank()) {
-            goHome()
+            goHomeOrDeepLink()
             return
         }
 
@@ -110,7 +110,7 @@ class LoginActivity : AppCompatActivity() {
                 if (resp.ok && !resp.access_token.isNullOrBlank()) {
                     session.accessToken = resp.access_token
                     session.refreshToken = resp.refresh_token ?: ""
-                    goHome()
+                    goHomeOrDeepLink()
                 } else {
                     showErro(resp.erro ?: "Código inválido ou expirado.")
                 }
@@ -136,6 +136,23 @@ class LoginActivity : AppCompatActivity() {
 
     private fun goHome() {
         startActivity(Intent(this, HomeActivity::class.java))
+        finish()
+    }
+
+    private fun goHomeOrDeepLink() {
+        val tipo = intent?.getStringExtra("tipo") ?: intent?.extras?.getString("tipo") ?: ""
+        val arquivoId = intent?.getStringExtra("arquivo_id")?.toIntOrNull() ?: -1
+        val target: Intent = when {
+            tipo == "documento_assinar" && arquivoId > 0 ->
+                Intent(this, DocumentosActivity::class.java).apply {
+                    putExtra(FcmService.EXTRA_ARQUIVO_ID, arquivoId)
+                }
+            tipo == "chat" || tipo == "chat_broadcast" ->
+                Intent(this, MensagensActivity::class.java)
+            else ->
+                Intent(this, HomeActivity::class.java)
+        }
+        startActivity(target)
         finish()
     }
 }

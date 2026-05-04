@@ -82,6 +82,21 @@ class HomeActivity : AppCompatActivity() {
         carregarDados()
         ensureNotificationPermission()
         registrarPushToken()
+        handleDeepLink()
+    }
+
+    private fun handleDeepLink() {
+        val tipo = intent?.getStringExtra("tipo") ?: return
+        val arquivoId = intent.getStringExtra("arquivo_id")?.toIntOrNull() ?: -1
+        intent.removeExtra("tipo")
+        when {
+            tipo == "documento_assinar" && arquivoId > 0 ->
+                startActivity(Intent(this, DocumentosActivity::class.java).apply {
+                    putExtra(FcmService.EXTRA_ARQUIVO_ID, arquivoId)
+                })
+            tipo == "chat" || tipo == "chat_broadcast" ->
+                startActivity(Intent(this, MensagensActivity::class.java))
+        }
     }
 
     private fun ensureNotificationPermission() {

@@ -2308,7 +2308,24 @@ def _fcm_send_to_token(token,titulo,corpo,data=None):
         msg=messaging.Message(
             token=token,
             notification=messaging.Notification(title=titulo,body=corpo),
-            data={k:str(v) for k,v in (data or {}).items()}
+            data={k:str(v) for k,v in (data or {}).items()},
+            android=messaging.AndroidConfig(
+                priority='high',
+                notification=messaging.AndroidNotification(
+                    channel_id='rmf_documentos',
+                    sound='default',
+                    notification_priority=messaging.AndroidNotificationPriority.MAX,
+                    visibility=messaging.AndroidNotificationVisibility.PUBLIC,
+                    default_vibrate_timings=True,
+                    default_sound=True,
+                    default_light_settings=True,
+                )
+            ),
+            apns=messaging.APNSConfig(
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(badge=1,sound='default')
+                )
+            ),
         )
         messaging.send(msg)
         return True
