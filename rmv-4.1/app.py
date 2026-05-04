@@ -2302,11 +2302,13 @@ def _fcm_send_to_token(token,titulo,corpo,data=None):
         return False
     cred_val=(os.environ.get('FIREBASE_CREDENTIALS_JSON') or '').strip()
     if not cred_val:
+        app.logger.warning('[fcm] FIREBASE_CREDENTIALS_JSON ausente; push ignorado')
         return False
     try:
         import firebase_admin
         from firebase_admin import credentials, messaging
-    except Exception:
+    except Exception as e:
+        app.logger.exception(f'[fcm] falha ao importar firebase_admin: {e}')
         return False
     try:
         firebase_admin.get_app()
@@ -2322,9 +2324,11 @@ def _fcm_send_to_token(token,titulo,corpo,data=None):
                 firebase_admin.initialize_app(credentials.Certificate(_tmp.name))
             else:
                 if not os.path.exists(cred_val):
+                    app.logger.warning(f'[fcm] arquivo de credencial nao encontrado: {cred_val}')
                     return False
                 firebase_admin.initialize_app(credentials.Certificate(cred_val))
-        except Exception:
+        except Exception as e:
+            app.logger.exception(f'[fcm] falha ao inicializar firebase app: {e}')
             return False
     try:
         msg=messaging.Message(
@@ -2351,14 +2355,41 @@ def _fcm_send_to_token(token,titulo,corpo,data=None):
         )
         messaging.send(msg)
         return True
-    except Exception:
+    except Exception as e:
+        app.logger.exception(f'[fcm] falha ao enviar para token: {e}')
         return False
 
 def _push_notify_funcionario(fid,titulo,corpo,data=None):
     f=Funcionario.query.get(fid)
     if not f or not (f.app_push_token or '').strip():
+        if f:
+            app.logger.info(f'[fcm] funcionario {fid} sem app_push_token salvo')
         return False
-    return _fcm_send_to_token(f.app_push_token.strip(),titulo,corpo,data=data)
+    token=f.app_push_token.strip()
+    ok=_fcm_send_to_token(token,titulo,corpo,data=data)
+    if ok:
+        return True
+    try:
+        import firebase_admin
+        from firebase_admin import messaging
+        try:
+            firebase_admin.get_app()
+        except Exception:
+            return False
+        msg=messaging.Message(
+            token=token,
+            data={k:str(v) for k,v in (data or {}).items()},
+        )
+        messaging.send(msg)
+        return True
+    except Exception as e:
+        msg=(str(e) or '').lower()
+        app.logger.exception(f'[fcm] segunda tentativa falhou para funcionario {fid}: {e}')
+        if 'unregistered' in msg or 'registration-token-not-registered' in msg:
+            f.app_push_token=None
+            db.session.commit()
+            app.logger.warning(f'[fcm] token invalido removido para funcionario {fid}')
+        return False
 
 def wa_media_meta(nome_arquivo,mimetype=''):
     mime=(mimetype or '').split(';')[0].strip().lower()
@@ -5819,6 +5850,21 @@ def api_funcionario_app_acesso(id):
     audit_event('funcionario_app_acesso_alterado','usuario',session.get('uid'),'funcionario',f.id,True,{'ativo_app':f.app_ativo,'senha_alterada':bool(senha)})
     return jsonify({'ok':True,'funcionario':f.to_dict()})
 
+@app.route('/api/funcionarios/<int:id>/push-teste',methods=['POST'])
+@lr
+def api_funcionario_push_teste(id):
+    f=Funcionario.query.get_or_404(id)
+    tem_token=bool((f.app_push_token or '').strip())
+    if not tem_token:
+        return jsonify({'ok':False,'erro':'Funcionario sem token push salvo'}),400
+    ok=_push_notify_funcionario(
+        f.id,
+        'Teste de notificacao',
+        'Se voce recebeu esta mensagem, o push de documentos esta funcionando.',
+        {'tipo':'documento_assinar','arquivo_id':'0','origem':'teste_push_admin'}
+    )
+    return jsonify({'ok':ok,'funcionario_id':f.id,'tem_token':tem_token})
+
 @app.route('/api/app/funcionario/login',methods=['POST'])
 def api_app_funcionario_login():
     d=request.json or {}
@@ -6033,6 +6079,21 @@ def api_app_funcionario_push_token():
     f.app_push_token=token
     db.session.commit()
     return jsonify({'ok':True})
+
+@app.route('/api/app/funcionario/me/push-token/teste',methods=['POST'])
+@app_func_required
+def api_app_funcionario_push_token_teste():
+    f=g.app_funcionario
+    tem_token=bool((f.app_push_token or '').strip())
+    if not tem_token:
+        return jsonify({'ok':False,'erro':'Funcionario sem token push salvo'}),400
+    ok=_push_notify_funcionario(
+        f.id,
+        'Teste de notificacao',
+        'Se voce recebeu esta mensagem, o push do app esta funcionando.',
+        {'tipo':'documento_assinar','arquivo_id':'0','origem':'teste_push'}
+    )
+    return jsonify({'ok':ok,'tem_token':tem_token})
 
 @app.route('/api/app/funcionario/me/contato',methods=['PUT'])
 @app_func_required
