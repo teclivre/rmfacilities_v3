@@ -21,6 +21,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import android.view.View
+import android.widget.HorizontalScrollView
+import com.facebook.shimmer.ShimmerFrameLayout
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
 
 class DocumentosActivity : AppCompatActivity() {
     private lateinit var session: SessionManager
@@ -32,6 +37,11 @@ class DocumentosActivity : AppCompatActivity() {
     private var filtroQ = ""
     private var filtroCategoria = ""
     private var filtroAno = ""
+    private lateinit var shimmerDocs: ShimmerFrameLayout
+    private lateinit var scrollChips: HorizontalScrollView
+    private lateinit var chipGroupAnos: ChipGroup
+    private var primeiroLoad = true
+    private var anosDisponiveis: List<String> = emptyList()
 
     private val debounceHandler = Handler(Looper.getMainLooper())
     private val debounceRunnable = Runnable { carregarComFiltros() }
@@ -45,6 +55,9 @@ class DocumentosActivity : AppCompatActivity() {
 
         swipe = findViewById(R.id.swipeDocs)
         rv = findViewById(R.id.rvDocs)
+        shimmerDocs = findViewById(R.id.shimmerDocs)
+        scrollChips = findViewById(R.id.scrollChips)
+        chipGroupAnos = findViewById(R.id.chipGroupAnos)
 
         // Botão voltar
         findViewById<android.widget.TextView>(R.id.btnVoltar).setOnClickListener { finish() }
@@ -75,7 +88,8 @@ class DocumentosActivity : AppCompatActivity() {
         }
 
         swipe.setOnRefreshListener { carregarComFiltros() }
-        swipe.isRefreshing = true
+        swipe.isRefreshing = false
+        shimmerDocs.startShimmer()
         carregar()
     }
 
@@ -101,8 +115,15 @@ class DocumentosActivity : AppCompatActivity() {
                             catch (e: Exception) { DocsResponse(ok = false) }
             withContext(Dispatchers.Main) {
                 swipe.isRefreshing = false
+                if (primeiroLoad) {
+                    shimmerDocs.stopShimmer()
+                    shimmerDocs.visibility = View.GONE
+                    rv.visibility = View.VISIBLE
+                    primeiroLoad = false
+                }
                 if (docs.ok) {
                     adapter.replaceAll(pendentes.itens, docs.itens)
+                    atualizarChips((pendentes.itens ?: emptyList()) + (docs.itens ?: emptyList()))
                     if (scrollToArquivoId > 0) {
                         scrollToArquivo(scrollToArquivoId)
                     }
@@ -202,6 +223,53 @@ class DocumentosActivity : AppCompatActivity() {
             startActivity(Intent.createChooser(intent, "Abrir documento"))
         } catch (e: Exception) {
             Toast.makeText(this, "Nenhum app disponível para abrir este arquivo", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun atualizarChips(itens: List<DocumentoItem>) {
+        val anosNovos = itens.mapNotNull { item ->
+            item.competencia?.take(4)?.takeIf { it.matches(Regex("\\d{4}")) }
+                ?: item.criado_fmt?.takeLast(4)?.takeIf { it.matches(Regex("\\d{4}")) }
+        }.toSortedSet(compareByDescending { it }).toList()
+
+        if (anosNovos.isNotEmpty()) {
+            anosDisponiveis = (anosNovos + anosDisponiveis)
+                .toSortedSet(compareByDescending { it }).toList()
+        }
+
+        if (anosDisponiveis.isEmpty()) { scrollChips.visibility = View.GONE; return }
+        scrollChips.visibility = View.VISIBLE
+
+        val labels = listOf("Todos") + anosDisponiveis
+        val currentLabels = (0 until chipGroupAnos.childCount)
+            .mapNotNull { (chipGroupAnos.getChildAt(it) as? Chip)?.text?.toString() }
+
+        if (labels != currentLabels) {
+            chipGroupAnos.setOnCheckedChangeListener(null)
+            chipGroupAnos.removeAllViews()
+            for ((i, label) in labels.withIndex()) {
+                chipGroupAnos.addView(Chip(this).apply {
+                    id = i + 1
+                    text = label
+                    isCheckable = true
+                    isChecked = (label == "Todos" && filtroAno.isEmpty()) || label == filtroAno
+                })
+            }
+            chipGroupAnos.setOnCheckedChangeListener { group, checkedId ->
+                if (checkedId == View.NO_ID) return@setOnCheckedChangeListener
+                val chip = group.findViewById<Chip>(checkedId) ?: return@setOnCheckedChangeListener
+                val sel = chip.text.toString()
+                val novoFiltro = if (sel == "Todos") "" else sel
+                if (novoFiltro == filtroAno) return@setOnCheckedChangeListener
+                filtroAno = novoFiltro
+                carregarComFiltros()
+            }
+        } else {
+            for (i in 0 until chipGroupAnos.childCount) {
+                val chip = chipGroupAnos.getChildAt(i) as? Chip ?: continue
+                val label = chip.text.toString()
+                chip.isChecked = (label == "Todos" && filtroAno.isEmpty()) || label == filtroAno
+            }
         }
     }
 }
