@@ -86,3 +86,18 @@ data class DocumentoItem(
     val criado_fmt: String? = null,
     val app_download_url: String? = null
 )
+
+data class MensagemItem(
+    val id: Int,
+    val funcionario_id: Int,
+    val de_rh: Boolean = false,
+    val conteudo: String = "",
+    val enviado_em: String? = null,
+    val enviado_fmt: String? = null,
+    val lida: Boolean = false,
+    val enviado_por: String? = null
+)
+
+data class NaoLidasResponse(
+    val nao_lidas: Int = 0
+)

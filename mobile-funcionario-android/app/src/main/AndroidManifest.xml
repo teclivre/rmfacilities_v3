@@ -29,6 +29,9 @@
             android:name=".PerfilActivity"
             android:exported="false" />
         <activity
+            android:name=".MensagensActivity"
+            android:exported="false" />
+        <activity
             android:name=".HomeActivity"
             android:exported="false" />
         <activity

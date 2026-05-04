@@ -2,6 +2,7 @@ package br.com.rmfacilities.funcionarioapp
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -21,6 +22,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var tvCargo: TextView
     private lateinit var tvAvatar: TextView
     private lateinit var tvUltimoAso: TextView
+    private lateinit var tvMsgBadge: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,6 +39,7 @@ class HomeActivity : AppCompatActivity() {
         tvCargo = findViewById(R.id.tvCargo)
         tvAvatar = findViewById(R.id.tvAvatar)
         tvUltimoAso = findViewById(R.id.tvUltimoAso)
+        tvMsgBadge = findViewById(R.id.tvMsgBadge)
         swipeRefresh = findViewById(R.id.swipeRefreshHome)
 
         swipeRefresh.setColorSchemeResources(R.color.accent)
@@ -54,6 +57,10 @@ class HomeActivity : AppCompatActivity() {
             Toast.makeText(this, "Modulo de ponto em implantacao nesta versao.", Toast.LENGTH_SHORT).show()
         }
 
+        findViewById<LinearLayout>(R.id.btnMensagens).setOnClickListener {
+            startActivity(Intent(this, MensagensActivity::class.java))
+        }
+
         findViewById<MaterialButton>(R.id.btnLogout).setOnClickListener {
             session.clear()
             goLogin()
@@ -67,6 +74,7 @@ class HomeActivity : AppCompatActivity() {
     private fun carregarDados() {
         CoroutineScope(Dispatchers.IO).launch {
             val me = try { api.me() } catch (_: Exception) { MeResponse(ok = false) }
+            val naoLidas = try { api.getNaoLidas() } catch (_: Exception) { 0 }
             withContext(Dispatchers.Main) {
                 swipeRefresh.isRefreshing = false
                 val nome = me.funcionario?.nome ?: "colaborador"
@@ -78,6 +86,12 @@ class HomeActivity : AppCompatActivity() {
                     .filter { !it.isNullOrBlank() }
                     .joinToString(" • ")
                 tvUltimoAso.text = formatUltimoAso(me.funcionario?.ultimo_aso_competencia, me.funcionario?.ultimo_aso_enviado_em)
+                if (naoLidas > 0) {
+                    tvMsgBadge.text = if (naoLidas > 9) "9+" else naoLidas.toString()
+                    tvMsgBadge.visibility = View.VISIBLE
+                } else {
+                    tvMsgBadge.visibility = View.GONE
+                }
             }
         }
     }

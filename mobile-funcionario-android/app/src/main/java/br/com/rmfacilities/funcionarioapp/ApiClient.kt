@@ -1,6 +1,7 @@
 package br.com.rmfacilities.funcionarioapp
 
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -139,6 +140,47 @@ class ApiClient(private val session: SessionManager) {
                 throw IllegalStateException("Falha no download: HTTP ${resp.code}")
             }
             return resp.body?.bytes() ?: throw IllegalStateException("Arquivo vazio")
+        }
+    }
+
+    fun getMensagens(): List<MensagemItem> {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/mensagens"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                val type = object : TypeToken<List<MensagemItem>>() {}.type
+                gson.fromJson(raw, type) ?: emptyList()
+            } catch (_: Exception) { emptyList() }
+        }
+    }
+
+    fun enviarMensagem(conteudo: String): MensagemItem? {
+        val payload = gson.toJson(mapOf("conteudo" to conteudo))
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/mensagens"))
+            .post(payload.toRequestBody("application/json".toMediaType()))
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .addHeader("Content-Type", "application/json")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try { gson.fromJson(raw, MensagemItem::class.java) } catch (_: Exception) { null }
+        }
+    }
+
+    fun getNaoLidas(): Int {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/mensagens/nao-lidas"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try { gson.fromJson(raw, NaoLidasResponse::class.java).nao_lidas } catch (_: Exception) { 0 }
         }
     }
 }

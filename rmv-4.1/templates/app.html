@@ -1106,6 +1106,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div id="st-rhd" class="st"></div>
       <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap" id="rhd-tabs">
         <button class="btn b-az b-sm" onclick="switchTab('rhd','conversas',this)">Envio ativos</button>
+        <button class="btn b-gh b-sm" onclick="switchTab('rhd','mensagens-app',this)">💬 Chat App <span id="badge-msgs-app" style="display:none;background:#e55;color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>
         <button class="btn b-gh b-sm" onclick="switchTab('rhd','cfg-email',this)">Config E-mail</button>
         <button class="btn b-gh b-sm" onclick="switchTab('rhd','cfg-wa',this)">Config WhatsApp</button>
       </div>
@@ -1136,6 +1137,50 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-az" onclick="waEnviarColaboradoresSelecionados()">Enviar para selecionados</button>
           </div>
           <div id="wa-colab-st" class="st" style="margin-top:8px"></div>
+        </div>
+      </div>
+
+      <!-- Tab Chat App -->
+      <div id="rhd-tab-mensagens-app" style="display:none">
+        <div style="display:flex;gap:10px;height:520px">
+          <!-- Lista de funcionários -->
+          <div style="width:260px;min-width:200px;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
+            <div style="padding:10px 12px;border-bottom:1px solid var(--borda);display:flex;align-items:center;justify-content:space-between">
+              <span style="font-weight:600;font-size:13px">Funcionários</span>
+              <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsCarregarFuncionarios()">↺</button>
+            </div>
+            <div id="maps-func-list" style="flex:1;overflow-y:auto;padding:4px"></div>
+          </div>
+          <!-- Chat -->
+          <div style="flex:1;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
+            <div style="padding:10px 14px;border-bottom:1px solid var(--borda);display:flex;align-items:center;gap:8px">
+              <span id="maps-chat-titulo" style="font-weight:600;font-size:13px;flex:1">Selecione um funcionário</span>
+              <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsCarregarChat()" id="maps-btn-refresh" disabled>↺</button>
+            </div>
+            <div id="maps-bubbles" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px">
+              <div class="vazio" style="margin-top:40px">Selecione um funcionário para ver o chat</div>
+            </div>
+            <div style="padding:10px;border-top:1px solid var(--borda);display:flex;gap:8px;align-items:flex-end">
+              <textarea id="maps-input" placeholder="Digite sua mensagem…" style="flex:1;min-height:38px;max-height:120px;resize:vertical;border-radius:8px;border:1px solid var(--borda);background:var(--fundo);color:var(--text);padding:8px 10px;font-size:13px" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();mapsEnviar()}" disabled></textarea>
+              <button class="btn b-az" id="maps-btn-enviar" onclick="mapsEnviar()" disabled style="white-space:nowrap">Enviar</button>
+            </div>
+          </div>
+        </div>
+        <!-- Comunicados broadcast -->
+        <div class="card" style="margin-top:14px">
+          <div class="card-header"><span class="card-title">📢 Comunicados (broadcast para todos ou por funcionário)</span></div>
+          <div class="g2" style="margin-top:8px">
+            <div class="f"><label>Título</label><input id="com-titulo" placeholder="Ex: Reunião amanhã às 9h"></div>
+            <div class="f"><label>Funcionário específico (opcional)</label>
+              <select id="com-fid"><option value="">Todos os ativos</option></select>
+            </div>
+          </div>
+          <div class="f"><label>Conteúdo</label><textarea id="com-conteudo" style="min-height:72px" placeholder="Texto do comunicado…"></textarea></div>
+          <div class="brow" style="justify-content:flex-start;gap:8px">
+            <button class="btn b-az" onclick="mapsCriarComunicado()">Publicar comunicado</button>
+          </div>
+          <div id="com-st" class="st" style="margin-top:6px"></div>
+          <div id="com-lista" style="margin-top:10px"></div>
         </div>
       </div>
 
@@ -6020,7 +6065,171 @@ function switchTab(prefix,tab,el){
   }
   if(prefix==='rhd'&&tab==='cfg-email')loadSMTPConfig();
   if(prefix==='rhd'&&tab==='cfg-wa')loadWAConfig();
+  if(prefix==='rhd'&&tab==='mensagens-app')mapsIniciar();
 }
+
+// ── MENSAGENS APP (chat RH ↔ funcionário) ──────────────────
+let _mapsFidAtual=null;
+let _mapsNomeAtual='';
+let _mapsPolling=null;
+
+async function mapsIniciar(){
+  await mapsCarregarFuncionarios();
+  await mapsCarregarBadge();
+  await mapsCarregarSelectComunicados();
+  await mapsCarregarListaComunicados();
+}
+
+async function mapsCarregarBadge(){
+  try{
+    const d=await api('/api/mensagens-app/nao-lidas-total');
+    const b=document.getElementById('badge-msgs-app');
+    if(b){if(d.nao_lidas>0){b.textContent=d.nao_lidas;b.style.display='';}else{b.style.display='none';}}
+  }catch(e){}
+}
+
+async function mapsCarregarFuncionarios(){
+  const el=document.getElementById('maps-func-list');
+  if(!el)return;
+  el.innerHTML='<div class="vazio" style="padding:8px">Carregando…</div>';
+  try{
+    const lista=await api('/api/mensagens-app/funcionarios');
+    if(!lista.length){el.innerHTML='<div class="vazio" style="padding:8px;font-size:12px">Nenhuma conversa ainda.</div>';return;}
+    el.innerHTML=lista.map(f=>{
+      const badge=f.nao_lidas>0?`<span style="background:#e55;color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:auto">${f.nao_lidas}</span>`:'';
+      const ativo=_mapsFidAtual===f.funcionario_id?'background:var(--az);color:#fff;':'';
+      return `<div onclick="mapsAbrirChat(${f.funcionario_id},${JSON.stringify(f.nome)})" style="cursor:pointer;padding:8px 10px;border-radius:8px;margin:2px 4px;display:flex;align-items:center;gap:6px;${ativo}">
+        <div style="flex:1;overflow:hidden">
+          <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${f.nome}</div>
+          <div style="font-size:10px;color:#888">${f.ultima||''}</div>
+        </div>${badge}</div>`;
+    }).join('');
+  }catch(e){el.innerHTML='<div class="vazio" style="padding:8px">Erro ao carregar.</div>';}
+}
+
+async function mapsAbrirChat(fid,nome){
+  _mapsFidAtual=fid;
+  _mapsNomeAtual=nome;
+  document.getElementById('maps-chat-titulo').textContent='💬 '+nome;
+  document.getElementById('maps-btn-refresh').disabled=false;
+  document.getElementById('maps-input').disabled=false;
+  document.getElementById('maps-btn-enviar').disabled=false;
+  await mapsCarregarChat();
+  await mapsCarregarFuncionarios(); // atualizar badges da lista
+  if(_mapsPolling)clearInterval(_mapsPolling);
+  _mapsPolling=setInterval(()=>{mapsCarregarChat(true);mapsCarregarBadge();},7000);
+}
+
+async function mapsCarregarChat(silencioso=false){
+  if(!_mapsFidAtual)return;
+  const el=document.getElementById('maps-bubbles');
+  if(!silencioso)el.innerHTML='<div class="vazio">Carregando…</div>';
+  try{
+    const msgs=await api('/api/mensagens-app/'+_mapsFidAtual);
+    if(!msgs.length){el.innerHTML='<div class="vazio" style="margin-top:40px">Nenhuma mensagem ainda.</div>';return;}
+    const era=el.scrollTop>=el.scrollHeight-el.clientHeight-20||!silencioso;
+    el.innerHTML=msgs.map(m=>{
+      const deRh=m.de_rh;
+      const align=deRh?'flex-end':'flex-start';
+      const bg=deRh?'var(--az)':'var(--cinza-md,#2a3a4a)';
+      const cor=deRh?'#fff':'var(--text)';
+      const label=deRh?'RH':_mapsNomeAtual;
+      return `<div style="display:flex;flex-direction:column;align-items:${align}">
+        <div style="font-size:10px;color:#888;margin-bottom:2px">${label}</div>
+        <div style="background:${bg};color:${cor};padding:8px 12px;border-radius:12px;max-width:78%;font-size:13px;line-height:1.4;word-break:break-word">${escHtml(m.conteudo)}</div>
+        <div style="font-size:10px;color:#888;margin-top:2px">${m.enviado_fmt||''}</div>
+      </div>`;
+    }).join('');
+    if(era)el.scrollTop=el.scrollHeight;
+  }catch(e){if(!silencioso)el.innerHTML='<div class="vazio">Erro ao carregar.</div>';}
+}
+
+async function mapsEnviar(){
+  if(!_mapsFidAtual)return;
+  const inp=document.getElementById('maps-input');
+  const txt=(inp.value||'').trim();
+  if(!txt)return;
+  const btn=document.getElementById('maps-btn-enviar');
+  btn.disabled=true;inp.disabled=true;
+  try{
+    const r=await api('/api/mensagens-app/'+_mapsFidAtual,'POST',{conteudo:txt});
+    if(r.erro){alert(r.erro);return;}
+    inp.value='';
+    await mapsCarregarChat();
+  }catch(e){alert('Erro ao enviar mensagem.');}
+  finally{btn.disabled=false;inp.disabled=false;inp.focus();}
+}
+
+async function mapsCarregarSelectComunicados(){
+  try{
+    const lista=await api('/api/funcionarios?status=ativo&_limit=200');
+    const sel=document.getElementById('com-fid');
+    if(!sel)return;
+    (lista.itens||lista||[]).forEach(f=>{
+      const o=document.createElement('option');
+      o.value=f.id;o.textContent=f.nome;
+      sel.appendChild(o);
+    });
+  }catch(e){}
+}
+
+async function mapsCarregarListaComunicados(){
+  const el=document.getElementById('com-lista');
+  if(!el)return;
+  try{
+    const lista=await api('/api/comunicados-app');
+    if(!lista.length){el.innerHTML='<div class="vazio">Nenhum comunicado ainda.</div>';return;}
+    el.innerHTML=lista.slice(0,20).map(c=>`
+      <div style="border:1px solid var(--borda);border-radius:8px;padding:8px 12px;margin-bottom:6px;${c.ativo?'':'opacity:.5'}">
+        <div style="display:flex;align-items:center;gap:8px">
+          <strong style="font-size:13px;flex:1">${escHtml(c.titulo)}</strong>
+          <span style="font-size:10px;color:#888">${c.criado_em_fmt||''}</span>
+          <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsToggleComunicado(${c.id},${!c.ativo})">${c.ativo?'Desativar':'Ativar'}</button>
+          <button class="btn b-er b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsExcluirComunicado(${c.id})">✕</button>
+        </div>
+        <div style="font-size:12px;color:#aaa;margin-top:4px">${escHtml(c.conteudo)}</div>
+        ${c.funcionario_id?`<div style="font-size:10px;color:#67b8ff;margin-top:2px">Para: funcionário #${c.funcionario_id}</div>`:'<div style="font-size:10px;color:#36d09a;margin-top:2px">Para: todos</div>'}
+      </div>`).join('');
+  }catch(e){el.innerHTML='<div class="vazio">Erro ao carregar comunicados.</div>';}
+}
+
+async function mapsCriarComunicado(){
+  const titulo=(document.getElementById('com-titulo').value||'').trim();
+  const conteudo=(document.getElementById('com-conteudo').value||'').trim();
+  const fid=document.getElementById('com-fid').value||null;
+  if(!titulo||!conteudo){showSt('com-st','Preencha título e conteúdo.',true);return;}
+  const r=await api('/api/comunicados-app','POST',{titulo,conteudo,funcionario_id:fid?parseInt(fid):null});
+  if(r.erro){showSt('com-st',r.erro,true);return;}
+  document.getElementById('com-titulo').value='';
+  document.getElementById('com-conteudo').value='';
+  document.getElementById('com-fid').value='';
+  showSt('com-st','Comunicado publicado!',false);
+  await mapsCarregarListaComunicados();
+}
+
+async function mapsToggleComunicado(id,ativo){
+  await api('/api/comunicados-app/'+id,'PUT',{ativo});
+  await mapsCarregarListaComunicados();
+}
+
+async function mapsExcluirComunicado(id){
+  if(!confirm('Excluir comunicado?'))return;
+  await api('/api/comunicados-app/'+id,'DELETE');
+  await mapsCarregarListaComunicados();
+}
+
+function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');}
+
+async function mapsVerificarBadgeGlobal(){
+  try{
+    const d=await api('/api/mensagens-app/nao-lidas-total');
+    const b=document.getElementById('badge-msgs-app');
+    if(b){if(d.nao_lidas>0){b.textContent=d.nao_lidas;b.style.display='';}else b.style.display='none';}
+  }catch(e){}
+}
+
+// Verificar badge a cada 30s para mostrar no botão mesmo fora da aba
+setInterval(mapsVerificarBadgeGlobal,30000);
 
 async function rhdProcessar(){
   const f=document.getElementById('rhd-arq').files?.[0];

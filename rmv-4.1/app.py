@@ -1226,6 +1226,47 @@ def short_link_redirect(codigo):
     sl=ShortLink.query.filter_by(codigo=codigo).first_or_404()
     return redirect(sl.destino)
 
+class ComunicadoApp(db.Model):
+    __tablename__='comunicado_app'
+    id=db.Column(db.Integer,primary_key=True)
+    titulo=db.Column(db.String(200),nullable=False)
+    conteudo=db.Column(db.Text,nullable=False)
+    # None = para todos; int = para funcionario específico
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=True)
+    criado_por=db.Column(db.String(100))
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    ativo=db.Column(db.Boolean,default=True)
+    # JSON list of funcionario_ids que leram
+    lidos_por_json=db.Column(db.Text,default='[]')
+    def lidos_por(self):
+        try: return json.loads(self.lidos_por_json or '[]')
+        except: return []
+    def marcar_lido(self,fid):
+        lst=self.lidos_por()
+        if fid not in lst:
+            lst.append(fid)
+            self.lidos_por_json=json.dumps(lst)
+    def to_dict(self,funcionario_id=None):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns if c.name!='lidos_por_json'}
+        d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
+        d['lido']=funcionario_id in self.lidos_por() if funcionario_id else False
+        d['lidos_count']=len(self.lidos_por())
+        return d
+
+class MensagemApp(db.Model):
+    __tablename__='mensagem_app'
+    id=db.Column(db.Integer,primary_key=True)
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False)
+    de_rh=db.Column(db.Boolean,default=False)  # True = RH→funcionário; False = funcionário→RH
+    conteudo=db.Column(db.Text,nullable=False)
+    enviado_em=db.Column(db.DateTime,default=utcnow)
+    lida=db.Column(db.Boolean,default=False)
+    enviado_por=db.Column(db.String(100))  # nome do usuário RH ou 'funcionario'
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['enviado_fmt']=self.enviado_em.strftime('%d/%m/%Y %H:%M') if self.enviado_em else ''
+        return d
+
 _holerite_jobs={}
 
 def hs(s): return hashlib.sha256(s.encode()).hexdigest()
@@ -5944,6 +5985,190 @@ def api_app_funcionario_me_senha():
     db.session.commit()
     audit_event('auth_app_troca_senha','funcionario',f.id,'funcionario',f.id,True,{})
     return jsonify({'ok':True})
+
+# ============================================================
+# COMUNICADOS - APP (funcionário lê comunicados do RH)
+# ============================================================
+
+@app.route('/api/app/funcionario/comunicados')
+@app_func_required
+def api_app_comunicados_lista():
+    f=g.app_funcionario
+    from sqlalchemy import or_
+    itens=ComunicadoApp.query.filter(
+        ComunicadoApp.ativo==True,
+        or_(ComunicadoApp.funcionario_id==None, ComunicadoApp.funcionario_id==f.id)
+    ).order_by(ComunicadoApp.criado_em.desc()).all()
+    return jsonify([c.to_dict(funcionario_id=f.id) for c in itens])
+
+@app.route('/api/app/funcionario/comunicados/<int:cid>/lido',methods=['POST'])
+@app_func_required
+def api_app_comunicado_marcar_lido(cid):
+    f=g.app_funcionario
+    c=ComunicadoApp.query.get_or_404(cid)
+    c.marcar_lido(f.id)
+    db.session.commit()
+    return jsonify({'ok':True})
+
+@app.route('/api/app/funcionario/comunicados/nao-lidos')
+@app_func_required
+def api_app_comunicados_nao_lidos():
+    f=g.app_funcionario
+    from sqlalchemy import or_
+    itens=ComunicadoApp.query.filter(
+        ComunicadoApp.ativo==True,
+        or_(ComunicadoApp.funcionario_id==None, ComunicadoApp.funcionario_id==f.id)
+    ).all()
+    lidos=list(set(fid for c in itens for fid in c.lidos_por()))
+    count=sum(1 for c in itens if f.id not in c.lidos_por())
+    return jsonify({'nao_lidos':count})
+
+# ============================================================
+# MENSAGENS - APP (chat funcionário ↔ RH)
+# ============================================================
+
+@app.route('/api/app/funcionario/mensagens')
+@app_func_required
+def api_app_mensagens_lista():
+    f=g.app_funcionario
+    msgs=MensagemApp.query.filter_by(funcionario_id=f.id).order_by(MensagemApp.enviado_em.asc()).all()
+    # Marcar mensagens do RH como lidas ao abrir
+    for m in msgs:
+        if m.de_rh and not m.lida:
+            m.lida=True
+    db.session.commit()
+    return jsonify([m.to_dict() for m in msgs])
+
+@app.route('/api/app/funcionario/mensagens',methods=['POST'])
+@app_func_required
+def api_app_mensagem_enviar():
+    f=g.app_funcionario
+    d=request.json or {}
+    conteudo=(d.get('conteudo') or '').strip()
+    if not conteudo: return jsonify({'erro':'Mensagem nao pode ser vazia'}),400
+    if len(conteudo)>2000: return jsonify({'erro':'Mensagem muito longa'}),400
+    m=MensagemApp(funcionario_id=f.id,de_rh=False,conteudo=conteudo,lida=False,enviado_por='funcionario')
+    db.session.add(m)
+    db.session.commit()
+    return jsonify(m.to_dict()),201
+
+@app.route('/api/app/funcionario/mensagens/nao-lidas')
+@app_func_required
+def api_app_mensagens_nao_lidas():
+    f=g.app_funcionario
+    count=MensagemApp.query.filter_by(funcionario_id=f.id,de_rh=True,lida=False).count()
+    return jsonify({'nao_lidas':count})
+
+# ============================================================
+# COMUNICADOS - WEB RH (gestão)
+# ============================================================
+
+@app.route('/api/comunicados-app',methods=['GET'])
+@lr
+def api_rh_comunicados_lista():
+    itens=ComunicadoApp.query.order_by(ComunicadoApp.criado_em.desc()).all()
+    return jsonify([c.to_dict() for c in itens])
+
+@app.route('/api/comunicados-app',methods=['POST'])
+@lr
+def api_rh_comunicado_criar():
+    d=request.json or {}
+    titulo=(d.get('titulo') or '').strip()
+    conteudo=(d.get('conteudo') or '').strip()
+    if not titulo: return jsonify({'erro':'Titulo obrigatorio'}),400
+    if not conteudo: return jsonify({'erro':'Conteudo obrigatorio'}),400
+    fid=d.get('funcionario_id')
+    c=ComunicadoApp(
+        titulo=titulo,
+        conteudo=conteudo,
+        funcionario_id=int(fid) if fid else None,
+        criado_por=session.get('nome') or session.get('email') or 'RH',
+        ativo=True
+    )
+    db.session.add(c)
+    db.session.commit()
+    return jsonify(c.to_dict()),201
+
+@app.route('/api/comunicados-app/<int:cid>',methods=['PUT'])
+@lr
+def api_rh_comunicado_editar(cid):
+    c=ComunicadoApp.query.get_or_404(cid)
+    d=request.json or {}
+    if 'titulo' in d: c.titulo=(d['titulo'] or '').strip()
+    if 'conteudo' in d: c.conteudo=(d['conteudo'] or '').strip()
+    if 'ativo' in d: c.ativo=bool(d['ativo'])
+    db.session.commit()
+    return jsonify(c.to_dict())
+
+@app.route('/api/comunicados-app/<int:cid>',methods=['DELETE'])
+@lr
+def api_rh_comunicado_excluir(cid):
+    c=ComunicadoApp.query.get_or_404(cid)
+    c.ativo=False
+    db.session.commit()
+    return jsonify({'ok':True})
+
+# ============================================================
+# MENSAGENS - WEB RH (chat com funcionário)
+# ============================================================
+
+@app.route('/api/mensagens-app/funcionarios')
+@lr
+def api_rh_mensagens_funcionarios():
+    """Lista funcionários que têm mensagens + contagem de não lidas."""
+    from sqlalchemy import func as sqlfunc
+    subq=db.session.query(
+        MensagemApp.funcionario_id,
+        sqlfunc.count(MensagemApp.id).label('total'),
+        sqlfunc.sum(db.cast(db.and_(MensagemApp.de_rh==False,MensagemApp.lida==False),db.Integer)).label('nao_lidas'),
+        sqlfunc.max(MensagemApp.enviado_em).label('ultima')
+    ).group_by(MensagemApp.funcionario_id).all()
+    result=[]
+    for row in subq:
+        f=Funcionario.query.get(row.funcionario_id)
+        if not f: continue
+        result.append({
+            'funcionario_id':f.id,
+            'nome':f.nome,
+            'cargo':f.cargo,
+            'total':row.total,
+            'nao_lidas':int(row.nao_lidas or 0),
+            'ultima':row.ultima.strftime('%d/%m/%Y %H:%M') if row.ultima else ''
+        })
+    result.sort(key=lambda x:x['nao_lidas'],reverse=True)
+    return jsonify(result)
+
+@app.route('/api/mensagens-app/<int:fid>')
+@lr
+def api_rh_mensagens_chat(fid):
+    Funcionario.query.get_or_404(fid)
+    msgs=MensagemApp.query.filter_by(funcionario_id=fid).order_by(MensagemApp.enviado_em.asc()).all()
+    # Marcar mensagens do funcionário como lidas
+    for m in msgs:
+        if not m.de_rh and not m.lida:
+            m.lida=True
+    db.session.commit()
+    return jsonify([m.to_dict() for m in msgs])
+
+@app.route('/api/mensagens-app/<int:fid>',methods=['POST'])
+@lr
+def api_rh_mensagem_responder(fid):
+    Funcionario.query.get_or_404(fid)
+    d=request.json or {}
+    conteudo=(d.get('conteudo') or '').strip()
+    if not conteudo: return jsonify({'erro':'Mensagem nao pode ser vazia'}),400
+    if len(conteudo)>2000: return jsonify({'erro':'Mensagem muito longa'}),400
+    nome_rh=session.get('nome') or session.get('email') or 'RH'
+    m=MensagemApp(funcionario_id=fid,de_rh=True,conteudo=conteudo,lida=False,enviado_por=nome_rh)
+    db.session.add(m)
+    db.session.commit()
+    return jsonify(m.to_dict()),201
+
+@app.route('/api/mensagens-app/nao-lidas-total')
+@lr
+def api_rh_mensagens_nao_lidas_total():
+    count=MensagemApp.query.filter_by(de_rh=False,lida=False).count()
+    return jsonify({'nao_lidas':count})
 
 @app.route('/api/funcionarios/arquivos/<int:id>',methods=['DELETE'])
 @lr
