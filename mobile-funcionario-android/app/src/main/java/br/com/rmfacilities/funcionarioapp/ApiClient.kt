@@ -140,6 +140,23 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    fun pendentesAssinatura(): DocsResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/pendentes-assinatura"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, DocsResponse::class.java)
+            } catch (_: Exception) {
+                DocsResponse(ok = false, erro = "Falha ao carregar pendentes.")
+            }
+        }
+    }
+
     fun downloadFile(downloadPath: String): ByteArray {
         val req = Request.Builder()
             .url(url(downloadPath))

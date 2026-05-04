@@ -61,27 +61,41 @@ class DocumentoAdapter(
                     .filter { !it.isNullOrBlank() }
                     .joinToString(" • ")
 
-                val assinado = (item.ass_status ?: "").equals("concluida", ignoreCase = true)
-                vh.tvAssStatus.text = if (assinado) {
-                    val quando = item.ass_em_fmt?.takeIf { it.isNotBlank() }
-                    if (quando != null) "Assinado em $quando" else "Documento assinado"
-                } else {
-                    "Assinatura pendente"
+                val statusNorm = (item.ass_status ?: "").lowercase().trim()
+                val pendente = statusNorm == "pendente"
+                val assinado = statusNorm == "concluida"
+
+                // Status text: só mostrar quando relevante
+                when {
+                    assinado -> {
+                        vh.tvAssStatus.visibility = View.VISIBLE
+                        val quando = item.ass_em_fmt?.takeIf { it.isNotBlank() }
+                        vh.tvAssStatus.text = if (quando != null) "Assinado em $quando" else "Documento assinado"
+                    }
+                    pendente -> {
+                        vh.tvAssStatus.visibility = View.VISIBLE
+                        vh.tvAssStatus.text = "Pendente de assinatura"
+                    }
+                    else -> vh.tvAssStatus.visibility = View.GONE
                 }
 
+                // Botão assinar: só para documentos pendentes
+                vh.btnAssinar.visibility = if (pendente) View.VISIBLE else View.GONE
                 vh.btnBaixar.setOnClickListener { onBaixar(item) }
-                vh.btnAssinar.isEnabled = !assinado && item.can_assinar
-                vh.btnAssinar.text = if (assinado) "Assinado" else "Assinar"
-                vh.btnAssinar.setOnClickListener {
-                    if (!assinado && item.can_assinar) onAssinar(item)
-                }
+                vh.btnAssinar.setOnClickListener { if (pendente) onAssinar(item) }
             }
         }
     }
 
-    fun replaceAll(newItems: List<DocumentoItem>) {
+    fun replaceAll(pendentes: List<DocumentoItem>, docs: List<DocumentoItem>) {
         listItems.clear()
-        val grouped = newItems.groupBy { extractYear(it) }
+        // Seção de pendentes de assinatura
+        if (pendentes.isNotEmpty()) {
+            listItems.add(DocListItem.Header("Pendentes de assinatura"))
+            pendentes.forEach { listItems.add(DocListItem.Doc(it)) }
+        }
+        // Documentos agrupados por ano
+        val grouped = docs.groupBy { extractYear(it) }
         val sortedYears = grouped.keys.sortedDescending()
         for (year in sortedYears) {
             listItems.add(DocListItem.Header(year))

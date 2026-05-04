@@ -50,15 +50,12 @@ class DocumentosActivity : AppCompatActivity() {
 
     private fun carregar() {
         CoroutineScope(Dispatchers.IO).launch {
-            val docs = try {
-                api.documentos()
-            } catch (e: Exception) {
-                DocsResponse(ok = false, erro = e.message)
-            }
+            val docs = try { api.documentos() } catch (e: Exception) { DocsResponse(ok = false, erro = e.message) }
+            val pendentes = try { api.pendentesAssinatura() } catch (e: Exception) { DocsResponse(ok = false) }
             withContext(Dispatchers.Main) {
                 swipe.isRefreshing = false
                 if (docs.ok) {
-                    adapter.replaceAll(docs.itens)
+                    adapter.replaceAll(pendentes.itens, docs.itens)
                 } else {
                     Toast.makeText(this@DocumentosActivity, docs.erro ?: "Falha ao carregar", Toast.LENGTH_LONG).show()
                 }

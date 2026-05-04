@@ -3937,7 +3937,11 @@ def build_func_docs_response(funcionario_id):
     if formato not in ['arvore','lista']:
         return {'erro':'Formato invalido. Use arvore ou lista'},400
 
-    regs=FuncionarioArquivo.query.filter_by(funcionario_id=funcionario_id).order_by(FuncionarioArquivo.criado_em.desc()).all()
+    from sqlalchemy import or_ as _or_
+    regs=FuncionarioArquivo.query.filter(
+        FuncionarioArquivo.funcionario_id==funcionario_id,
+        _or_(FuncionarioArquivo.ass_status==None,FuncionarioArquivo.ass_status!='pendente')
+    ).order_by(FuncionarioArquivo.criado_em.desc()).all()
     itens=[]
     for a in regs:
         cat=norm_cat(a.categoria)
@@ -6128,6 +6132,31 @@ def api_app_funcionario_assinar_arquivo(id):
     )
     return jsonify({'ok':True,'mensagem':'Documento assinado com sucesso.','item':a.to_dict()})
 
+@app.route('/api/app/funcionario/pendentes-assinatura')
+@app_func_required
+def api_app_funcionario_pendentes_assinatura():
+    f=g.app_funcionario
+    regs=FuncionarioArquivo.query.filter_by(funcionario_id=f.id,ass_status='pendente').order_by(FuncionarioArquivo.criado_em.desc()).all()
+    itens=[]
+    for a in regs:
+        cat=norm_cat(a.categoria)
+        itens.append({
+            'id':a.id,
+            'categoria':cat,
+            'categoria_label':DOC_CAT_LABEL.get(cat,cat),
+            'ano':arq_year_from_path(a.caminho),
+            'nome_arquivo':a.nome_arquivo,
+            'competencia':a.competencia,
+            'ass_status':'pendente',
+            'ass_em_fmt':'',
+            'can_assinar':True,
+            'criado_em':a.criado_em.isoformat() if a.criado_em else '',
+            'criado_fmt':a.criado_em.strftime('%d/%m/%Y %H:%M') if a.criado_em else '',
+            'download_url':f'/api/funcionarios/arquivos/{a.id}/download',
+            'app_download_url':f'/api/app/funcionario/arquivos/{a.id}/download',
+        })
+    return jsonify({'ok':True,'itens':itens})
+
 @app.route('/api/app/funcionario/me/senha',methods=['PUT'])
 @app_func_required
 def api_app_funcionario_me_senha():
@@ -8140,7 +8169,7 @@ def api_holerites_upload():
     if not fs: return jsonify({'erro':'PDF nao enviado'}),400
     if not _upload_is_pdf(fs): return jsonify({'erro':'Arquivo invalido. Envie um PDF valido.'}),400
     canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
-    if canal_ass not in ('nao','whatsapp','link'):
+    if canal_ass not in ('nao','whatsapp','link','app'):
         canal_ass='nao'
     ids_ass_raw=(request.form.get('assinatura_funcionario_ids') or '').strip()
     ids_ass_sel=set()
@@ -8175,14 +8204,11 @@ def api_holerites_upload():
         with open(abs_p,'wb') as out: writer.write(out)
         a=FuncionarioArquivo(funcionario_id=alvo.id,categoria='holerite',competencia=comp,nome_arquivo=fake_name,caminho=rel)
         db.session.add(a); db.session.commit(); enviados+=1
-        _push_notify_funcionario(
-            alvo.id,
-            'Novo documento disponivel',
-            f'{fake_name} foi incluido no sistema. Toque para abrir e assinar no app.',
-            {'tipo':'documento_novo','arquivo_id':a.id,'categoria':'holerite'}
-        )
         solicitar_ass=(canal_ass!='nao') and (not ids_ass_sel or alvo.id in ids_ass_sel)
-        if solicitar_ass and canal_ass=='whatsapp':
+        if solicitar_ass and canal_ass=='app':
+            a.ass_status='pendente'; db.session.commit(); assinaturas_auto+=1
+            _push_notify_funcionario(alvo.id,'Documento para assinar',f'{fake_name} aguarda sua assinatura no app.',{'tipo':'documento_assinar','arquivo_id':str(a.id)})
+        elif solicitar_ass and canal_ass=='whatsapp':
             tel=wa_norm_number(alvo.telefone or '')
             if wa_is_valid_number(tel):
                 rs=_solicitar_assinatura_arquivo_funcionario(a,alvo,canal='whatsapp',commit_now=True)
@@ -8208,7 +8234,7 @@ def api_folhas_ponto_upload():
     if not fs: return jsonify({'erro':'PDF nao enviado'}),400
     if not _upload_is_pdf(fs): return jsonify({'erro':'Arquivo invalido. Envie um PDF valido.'}),400
     canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
-    if canal_ass not in ('nao','whatsapp','link'):
+    if canal_ass not in ('nao','whatsapp','link','app'):
         canal_ass='nao'
     ids_ass_raw=(request.form.get('assinatura_funcionario_ids') or '').strip()
     ids_ass_sel=set()
@@ -8248,14 +8274,11 @@ def api_folhas_ponto_upload():
         with open(abs_p,'wb') as out: writer.write(out)
         a=FuncionarioArquivo(funcionario_id=alvo.id,categoria='folha_ponto',competencia=comp,nome_arquivo=fake_name,caminho=rel)
         db.session.add(a); db.session.commit(); enviados+=1
-        _push_notify_funcionario(
-            alvo.id,
-            'Novo documento disponivel',
-            f'{fake_name} foi incluido no sistema. Toque para abrir e assinar no app.',
-            {'tipo':'documento_novo','arquivo_id':a.id,'categoria':'folha_ponto'}
-        )
         solicitar_ass=(canal_ass!='nao') and (not ids_ass_sel or alvo.id in ids_ass_sel)
-        if solicitar_ass and canal_ass=='whatsapp':
+        if solicitar_ass and canal_ass=='app':
+            a.ass_status='pendente'; db.session.commit(); assinaturas_auto+=1
+            _push_notify_funcionario(alvo.id,'Documento para assinar',f'{fake_name} aguarda sua assinatura no app.',{'tipo':'documento_assinar','arquivo_id':str(a.id)})
+        elif solicitar_ass and canal_ass=='whatsapp':
             tel=wa_norm_number(alvo.telefone or '')
             if wa_is_valid_number(tel):
                 rs=_solicitar_assinatura_arquivo_funcionario(a,alvo,canal='whatsapp',commit_now=True)
@@ -8286,7 +8309,7 @@ def api_documentos_rh_upload():
         return jsonify({'erro':'Arquivo invalido. Envie um PDF valido.'}),400
 
     canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
-    if canal_ass not in ('nao','whatsapp','link'):
+    if canal_ass not in ('nao','whatsapp','link','app'):
         canal_ass='nao'
 
     ids_ass_raw=(request.form.get('assinatura_funcionario_ids') or '').strip()
@@ -8366,15 +8389,11 @@ def api_documentos_rh_upload():
         db.session.add(a)
         db.session.commit()
         enviados+=1
-        _push_notify_funcionario(
-            alvo.id,
-            'Novo documento disponivel',
-            f'{nome_final} foi incluido no sistema. Toque para abrir e assinar no app.',
-            {'tipo':'documento_novo','arquivo_id':a.id,'categoria':categoria}
-        )
-
         solicitar_ass=(canal_ass!='nao') and (not ids_ass_sel or alvo.id in ids_ass_sel)
-        if solicitar_ass and canal_ass=='whatsapp':
+        if solicitar_ass and canal_ass=='app':
+            a.ass_status='pendente'; db.session.commit(); assinaturas_auto+=1
+            _push_notify_funcionario(alvo.id,'Documento para assinar',f'{nome_final} aguarda sua assinatura no app.',{'tipo':'documento_assinar','arquivo_id':str(a.id)})
+        elif solicitar_ass and canal_ass=='whatsapp':
             tel=wa_norm_number(alvo.telefone or '')
             if wa_is_valid_number(tel):
                 rs=_solicitar_assinatura_arquivo_funcionario(a,alvo,canal='whatsapp',commit_now=True)
