@@ -34,7 +34,7 @@ class DocumentosActivity : AppCompatActivity() {
         // Botão voltar
         findViewById<android.widget.TextView>(R.id.btnVoltar).setOnClickListener { finish() }
 
-        adapter = DocumentoAdapter(mutableListOf()) { item ->
+        adapter = DocumentoAdapter { item ->
             baixarDocumento(item)
         }
         rv.adapter = adapter

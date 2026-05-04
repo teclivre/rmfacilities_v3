@@ -1,16 +1,19 @@
 <resources>
-    <color name="primary">#0B2A4A</color>
-    <color name="primary_variant">#143E65</color>
-    <color name="accent">#1AA35A</color>
-    <color name="accent_dark">#157A44</color>
-    <color name="background">#F4F7FA</color>
-    <color name="surface">#FFFFFF</color>
-    <color name="text_primary">#111827</color>
-    <color name="text_secondary">#6B7280</color>
-    <color name="text_hint">#9CA3AF</color>
-    <color name="divider">#E5E7EB</color>
-    <color name="error">#DC2626</color>
-    <color name="success">#1AA35A</color>
-    <color name="primary_light">#1A4D7A</color>
-    <color name="white">#FFFFFF</color>
+    <!-- Paleta escura - identica ao sistema web -->
+    <color name="primary">#0d2e4d</color>
+    <color name="primary_variant">#0a2037</color>
+    <color name="background">#08111d</color>
+    <color name="surface">#172538</color>
+    <color name="accent">#ff9f4a</color>
+    <color name="accent_dark">#e88930</color>
+    <color name="accent_blue">#67b8ff</color>
+    <color name="text_primary">#e6eef7</color>
+    <color name="text_secondary">#8fa8bf</color>
+    <color name="text_hint">#4d6b84</color>
+    <color name="divider">#21374d</color>
+    <color name="error">#f57575</color>
+    <color name="success">#36d09a</color>
+    <color name="primary_light">#1a3a58</color>
+    <color name="white">#ffffff</color>
+    <color name="border">#21374d</color>
 </resources>

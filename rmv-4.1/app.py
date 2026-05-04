@@ -879,6 +879,8 @@ class Funcionario(db.Model):
     app_otp_hash=db.Column(db.String(256))
     app_otp_expira_em=db.Column(db.DateTime)
     app_otp_tentativas=db.Column(db.Integer,default=0)
+    app_push_token=db.Column(db.String(300))
+    foto_perfil=db.Column(db.String(500))
     criado_em=db.Column(db.DateTime,default=utcnow)
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
@@ -1226,6 +1228,49 @@ def short_link_redirect(codigo):
     sl=ShortLink.query.filter_by(codigo=codigo).first_or_404()
     return redirect(sl.destino)
 
+class ComunicadoApp(db.Model):
+    __tablename__='comunicado_app'
+    id=db.Column(db.Integer,primary_key=True)
+    titulo=db.Column(db.String(200),nullable=False)
+    conteudo=db.Column(db.Text,nullable=False)
+    # None = para todos; int = para funcionario específico
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=True)
+    # None = todos os postos; string = apenas esse posto
+    posto_operacional=db.Column(db.String(150))
+    criado_por=db.Column(db.String(100))
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    ativo=db.Column(db.Boolean,default=True)
+    # JSON list of funcionario_ids que leram
+    lidos_por_json=db.Column(db.Text,default='[]')
+    def lidos_por(self):
+        try: return json.loads(self.lidos_por_json or '[]')
+        except: return []
+    def marcar_lido(self,fid):
+        lst=self.lidos_por()
+        if fid not in lst:
+            lst.append(fid)
+            self.lidos_por_json=json.dumps(lst)
+    def to_dict(self,funcionario_id=None):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns if c.name!='lidos_por_json'}
+        d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
+        d['lido']=funcionario_id in self.lidos_por() if funcionario_id else False
+        d['lidos_count']=len(self.lidos_por())
+        return d
+
+class MensagemApp(db.Model):
+    __tablename__='mensagem_app'
+    id=db.Column(db.Integer,primary_key=True)
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False)
+    de_rh=db.Column(db.Boolean,default=False)  # True = RH→funcionário; False = funcionário→RH
+    conteudo=db.Column(db.Text,nullable=False)
+    enviado_em=db.Column(db.DateTime,default=utcnow)
+    lida=db.Column(db.Boolean,default=False)
+    enviado_por=db.Column(db.String(100))  # nome do usuário RH ou 'funcionario'
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['enviado_fmt']=self.enviado_em.strftime('%d/%m/%Y %H:%M') if self.enviado_em else ''
+        return d
+
 _holerite_jobs={}
 
 def hs(s): return hashlib.sha256(s.encode()).hexdigest()
@@ -1453,6 +1498,36 @@ def _send_signature_otp(codigo,nome_dest='',telefone='',email='',contexto='assin
         except Exception as ex:
             ultimo_erro=str(ex)
     raise ValueError(ultimo_erro or 'Não foi possível enviar o código OTP para confirmação da assinatura.')
+
+def _send_app_login_otp(codigo,funcionario):
+    """Tenta enviar OTP de login por WhatsApp e faz fallback para e-mail."""
+    f=funcionario
+    nome=(f.nome or 'funcionario').strip()
+    msg=(
+        'RM Facilities - Codigo de acesso do aplicativo\n'
+        f'Funcionario: {nome}\n'
+        f'Codigo OTP: {codigo}\n'
+        'Validade: 10 minutos. Nao compartilhe este codigo.'
+    )
+    tel=wa_norm_number(f.telefone or '')
+    ultimo_erro=''
+    if wa_is_valid_number(tel):
+        try:
+            wa_send_text(tel,msg)
+            return {'canal':'whatsapp','destino':_mask_phone(tel)}
+        except Exception as ex:
+            ultimo_erro=str(ex)
+    if (f.email or '').strip():
+        try:
+            smtp_send_text(
+                (f.email or '').strip(),
+                'Codigo de acesso ao app RM Facilities',
+                msg
+            )
+            return {'canal':'email','destino':_mask_email(f.email)}
+        except Exception as ex:
+            ultimo_erro=str(ex)
+    raise ValueError(ultimo_erro or 'Nao foi possivel enviar OTP por WhatsApp ou e-mail.')
 
 def _assinatura_json_base(**extra):
     base={
@@ -2200,6 +2275,42 @@ def wa_send_text(numero,mensagem):
     except urllib.error.HTTPError as e:
         detalhe=e.read().decode(errors='ignore')
         raise ValueError(f'WhatsApp API {e.code}: {detalhe or e.reason}')
+
+def _fcm_send_to_token(token,titulo,corpo,data=None):
+    """Envio opcional via FCM. Se firebase-admin nao estiver configurado, ignora com segurança."""
+    if not token:
+        return False
+    cred_path=(os.environ.get('FIREBASE_CREDENTIALS_JSON') or '').strip()
+    if not cred_path or not os.path.exists(cred_path):
+        return False
+    try:
+        import firebase_admin
+        from firebase_admin import credentials, messaging
+    except Exception:
+        return False
+    try:
+        firebase_admin.get_app()
+    except Exception:
+        try:
+            firebase_admin.initialize_app(credentials.Certificate(cred_path))
+        except Exception:
+            return False
+    try:
+        msg=messaging.Message(
+            token=token,
+            notification=messaging.Notification(title=titulo,body=corpo),
+            data={k:str(v) for k,v in (data or {}).items()}
+        )
+        messaging.send(msg)
+        return True
+    except Exception:
+        return False
+
+def _push_notify_funcionario(fid,titulo,corpo,data=None):
+    f=Funcionario.query.get(fid)
+    if not f or not (f.app_push_token or '').strip():
+        return False
+    return _fcm_send_to_token(f.app_push_token.strip(),titulo,corpo,data=data)
 
 def wa_media_meta(nome_arquivo,mimetype=''):
     mime=(mimetype or '').split(';')[0].strip().lower()
@@ -5675,11 +5786,8 @@ def api_app_funcionario_login():
 def api_app_funcionario_auth_iniciar():
     d=request.json or {}
     cpf=norm_cpf(d.get('cpf'))
-    nome=(d.get('nome') or '').strip()
     if not cpf or len(cpf)!=11:
         return jsonify({'erro':'CPF obrigatorio (11 digitos).'}),400
-    if not nome:
-        return jsonify({'erro':'Nome obrigatorio para validacao.'}),400
     if auth_blocked('app_otp',cpf,(request.remote_addr or '')):
         return jsonify({'erro':'Muitas tentativas. Aguarde alguns minutos.'}),429
 
@@ -5690,34 +5798,22 @@ def api_app_funcionario_auth_iniciar():
     if f.app_ativo is False:
         reg_auth_attempt('app_otp',cpf,False,'app_desativado')
         return jsonify({'erro':'Acesso do aplicativo desativado.'}),403
-    if not _nome_confere_funcionario(nome,f.nome or ''):
-        reg_auth_attempt('app_otp',cpf,False,'nome_divergente')
-        return jsonify({'erro':'Nome nao confere com o cadastro.'}),401
-
-    tel=wa_norm_number(f.telefone or '')
-    if not wa_is_valid_number(tel):
-        return jsonify({'erro':'Funcionario sem celular valido cadastrado. Contate o RH.'}),400
 
     codigo=_otp_new_code()
     f.app_otp_hash=token_hash(codigo)
     f.app_otp_expira_em=utcnow()+timedelta(minutes=10)
     f.app_otp_tentativas=0
     try:
-        msg=(
-            f'RM Facilities - Codigo de acesso do aplicativo\n'
-            f'Funcionario: {(f.nome or "").strip()}\n'
-            f'Codigo OTP: {codigo}\n'
-            'Validade: 10 minutos. Nao compartilhe este codigo.'
-        )
-        wa_send_text(tel,msg)
+        envio=_send_app_login_otp(codigo,f)
         db.session.commit()
         reg_auth_attempt('app_otp',cpf,True,'desafio_enviado')
-        audit_event('auth_app_otp_enviado','funcionario',f.id,'funcionario',f.id,True,{})
-        return jsonify({'ok':True,'mensagem':'Codigo enviado para o celular cadastrado.','destino':_mask_phone(tel)})
+        audit_event('auth_app_otp_enviado','funcionario',f.id,'funcionario',f.id,True,{'canal':envio.get('canal')})
+        msg_ok='Codigo enviado com sucesso.' if envio.get('canal')!='email' else 'Codigo enviado para o e-mail cadastrado.'
+        return jsonify({'ok':True,'mensagem':msg_ok,'destino':envio.get('destino'),'canal':envio.get('canal')})
     except Exception as ex:
         db.session.rollback()
         reg_auth_attempt('app_otp',cpf,False,'envio_falha')
-        return jsonify({'erro':f'Falha ao enviar codigo OTP: {str(ex)}'}),500
+        return jsonify({'erro':'Nao foi possivel enviar o codigo OTP. Verifique telefone/e-mail com o RH e as configuracoes de envio.','detalhe':str(ex)}),503
 
 @app.route('/api/app/funcionario/auth/confirmar',methods=['POST'])
 def api_app_funcionario_auth_confirmar():
@@ -5794,7 +5890,77 @@ def api_app_funcionario_logout():
 @app_func_required
 def api_app_funcionario_me():
     f=g.app_funcionario
-    return jsonify({'ok':True,'funcionario':{'id':f.id,'nome':f.nome,'cpf':f.cpf,'email':f.email,'telefone':f.telefone,'cargo':f.cargo,'setor':f.setor,'empresa_id':f.empresa_id,'status':f.status}})
+    ultimo_aso=FuncionarioArquivo.query.filter_by(funcionario_id=f.id,categoria='aso').order_by(
+        FuncionarioArquivo.criado_em.desc(),FuncionarioArquivo.id.desc()
+    ).first()
+    emp=db.session.get(Empresa,f.empresa_id) if f.empresa_id else None
+    foto_url='/api/app/funcionario/me/foto' if f.foto_perfil else None
+    return jsonify({'ok':True,'funcionario':{
+        'id':f.id,
+        'nome':f.nome,
+        'cpf':f.cpf,
+        'email':f.email,
+        'telefone':f.telefone,
+        'cargo':f.cargo,
+        'setor':f.setor,
+        'empresa_id':f.empresa_id,
+        'empresa_nome':(emp.nome if emp else None),
+        'posto_operacional':f.posto_operacional,
+        'status':f.status,
+        'foto_url':foto_url,
+        'ultimo_aso_competencia':(ultimo_aso.competencia if ultimo_aso else None),
+        'ultimo_aso_enviado_em':(ultimo_aso.criado_em.isoformat() if (ultimo_aso and ultimo_aso.criado_em) else None)
+    }})
+
+@app.route('/api/app/funcionario/me/foto',methods=['POST'])
+@app_func_required
+def api_app_funcionario_foto_upload():
+    f=g.app_funcionario
+    if 'foto' not in request.files:
+        return jsonify({'erro':'Nenhuma foto enviada'}),400
+    file=request.files['foto']
+    ext=os.path.splitext(file.filename or 'foto.jpg')[1].lower() or '.jpg'
+    if ext not in ('.jpg','.jpeg','.png','.webp'):
+        return jsonify({'erro':'Formato inválido. Use JPG, PNG ou WEBP.'}),400
+    # Limit size to 5MB
+    file.seek(0,2)
+    size=file.tell(); file.seek(0)
+    if size>5*1024*1024:
+        return jsonify({'erro':'Foto muito grande. Máximo 5MB.'}),400
+    dir_path=os.path.join(UPLOAD_ROOT,'funcionarios',str(f.id),'foto')
+    os.makedirs(dir_path,exist_ok=True)
+    filename=f'perfil{ext}'
+    abs_path=os.path.join(dir_path,filename)
+    file.save(abs_path)
+    rel_path=os.path.relpath(abs_path,UPLOAD_ROOT).replace('\\','/')
+    f.foto_perfil=rel_path
+    db.session.commit()
+    return jsonify({'ok':True,'foto_url':'/api/app/funcionario/me/foto'})
+
+@app.route('/api/app/funcionario/me/foto')
+@app_func_required
+def api_app_funcionario_foto_get():
+    f=g.app_funcionario
+    if not f.foto_perfil:
+        return jsonify({'erro':'Sem foto'}),404
+    abs_p=os.path.join(UPLOAD_ROOT,f.foto_perfil)
+    if not os.path.exists(abs_p):
+        return jsonify({'erro':'Arquivo não encontrado'}),404
+    return send_file(abs_p)
+
+@app.route('/api/app/funcionario/me/push-token',methods=['POST'])
+@app_func_required
+def api_app_funcionario_push_token():
+    f=g.app_funcionario
+    d=request.json or {}
+    token=(d.get('token') or '').strip()
+    if not token:
+        return jsonify({'erro':'Token obrigatorio'}),400
+    if len(token)>300:
+        return jsonify({'erro':'Token invalido'}),400
+    f.app_push_token=token
+    db.session.commit()
+    return jsonify({'ok':True})
 
 @app.route('/api/app/funcionario/me/contato',methods=['PUT'])
 @app_func_required
@@ -5809,7 +5975,12 @@ def api_app_funcionario_me_contato():
         f.email=em
         mudou=True
     if 'telefone' in d:
-        tel=norm_phone(d.get('telefone'))
+        tel_raw=only_digits(d.get('telefone'))
+        # No app, o usuário pode digitar sem DDI. Se vier com +55, removemos o país.
+        if tel_raw.startswith('55') and len(tel_raw) in (12,13):
+            tel=tel_raw[2:]
+        else:
+            tel=tel_raw[:11]
         if tel and len(tel) not in (10,11):
             return jsonify({'erro':'Telefone invalido. Informe DDD + numero.'}),400
         f.telefone=tel
@@ -5935,6 +6106,221 @@ def api_app_funcionario_me_senha():
     db.session.commit()
     audit_event('auth_app_troca_senha','funcionario',f.id,'funcionario',f.id,True,{})
     return jsonify({'ok':True})
+
+# ============================================================
+# COMUNICADOS - APP (funcionário lê comunicados do RH)
+# ============================================================
+
+@app.route('/api/app/funcionario/comunicados')
+@app_func_required
+def api_app_comunicados_lista():
+    f=g.app_funcionario
+    from sqlalchemy import or_
+    itens=ComunicadoApp.query.filter(
+        ComunicadoApp.ativo==True,
+        or_(ComunicadoApp.funcionario_id==None, ComunicadoApp.funcionario_id==f.id),
+        or_(ComunicadoApp.posto_operacional==None, ComunicadoApp.posto_operacional=='', ComunicadoApp.posto_operacional==f.posto_operacional)
+    ).order_by(ComunicadoApp.criado_em.desc()).all()
+    return jsonify([c.to_dict(funcionario_id=f.id) for c in itens])
+
+@app.route('/api/app/funcionario/comunicados/<int:cid>/lido',methods=['POST'])
+@app_func_required
+def api_app_comunicado_marcar_lido(cid):
+    f=g.app_funcionario
+    c=ComunicadoApp.query.get_or_404(cid)
+    c.marcar_lido(f.id)
+    db.session.commit()
+    return jsonify({'ok':True})
+
+@app.route('/api/app/funcionario/comunicados/nao-lidos')
+@app_func_required
+def api_app_comunicados_nao_lidos():
+    f=g.app_funcionario
+    from sqlalchemy import or_
+    itens=ComunicadoApp.query.filter(
+        ComunicadoApp.ativo==True,
+        or_(ComunicadoApp.funcionario_id==None, ComunicadoApp.funcionario_id==f.id),
+        or_(ComunicadoApp.posto_operacional==None, ComunicadoApp.posto_operacional=='', ComunicadoApp.posto_operacional==f.posto_operacional)
+    ).all()
+    lidos=list(set(fid for c in itens for fid in c.lidos_por()))
+    count=sum(1 for c in itens if f.id not in c.lidos_por())
+    return jsonify({'nao_lidos':count})
+
+# ============================================================
+# MENSAGENS - APP (chat funcionário ↔ RH)
+# ============================================================
+
+@app.route('/api/app/funcionario/mensagens')
+@app_func_required
+def api_app_mensagens_lista():
+    f=g.app_funcionario
+    msgs=MensagemApp.query.filter_by(funcionario_id=f.id).order_by(MensagemApp.enviado_em.asc()).all()
+    # Marcar mensagens do RH como lidas ao abrir
+    for m in msgs:
+        if m.de_rh and not m.lida:
+            m.lida=True
+    db.session.commit()
+    return jsonify([m.to_dict() for m in msgs])
+
+@app.route('/api/app/funcionario/mensagens',methods=['POST'])
+@app_func_required
+def api_app_mensagem_enviar():
+    f=g.app_funcionario
+    d=request.json or {}
+    conteudo=(d.get('conteudo') or '').strip()
+    if not conteudo: return jsonify({'erro':'Mensagem nao pode ser vazia'}),400
+    if len(conteudo)>2000: return jsonify({'erro':'Mensagem muito longa'}),400
+    m=MensagemApp(funcionario_id=f.id,de_rh=False,conteudo=conteudo,lida=False,enviado_por='funcionario')
+    db.session.add(m)
+    db.session.commit()
+    return jsonify(m.to_dict()),201
+
+@app.route('/api/app/funcionario/mensagens/nao-lidas')
+@app_func_required
+def api_app_mensagens_nao_lidas():
+    f=g.app_funcionario
+    count=MensagemApp.query.filter_by(funcionario_id=f.id,de_rh=True,lida=False).count()
+    return jsonify({'nao_lidas':count})
+
+# ============================================================
+# COMUNICADOS - WEB RH (gestão)
+# ============================================================
+
+@app.route('/api/comunicados-app',methods=['GET'])
+@lr
+def api_rh_comunicados_lista():
+    itens=ComunicadoApp.query.order_by(ComunicadoApp.criado_em.desc()).all()
+    return jsonify([c.to_dict() for c in itens])
+
+@app.route('/api/comunicados-app',methods=['POST'])
+@lr
+def api_rh_comunicado_criar():
+    d=request.json or {}
+    titulo=(d.get('titulo') or '').strip()
+    conteudo=(d.get('conteudo') or '').strip()
+    if not titulo: return jsonify({'erro':'Titulo obrigatorio'}),400
+    if not conteudo: return jsonify({'erro':'Conteudo obrigatorio'}),400
+    fid=d.get('funcionario_id')
+    posto=(d.get('posto_operacional') or '').strip() or None
+    c=ComunicadoApp(
+        titulo=titulo,
+        conteudo=conteudo,
+        funcionario_id=int(fid) if fid else None,
+        posto_operacional=posto,
+        criado_por=session.get('nome') or session.get('email') or 'RH',
+        ativo=True
+    )
+    db.session.add(c)
+    db.session.commit()
+    return jsonify(c.to_dict()),201
+
+@app.route('/api/comunicados-app/<int:cid>',methods=['PUT'])
+@lr
+def api_rh_comunicado_editar(cid):
+    c=ComunicadoApp.query.get_or_404(cid)
+    d=request.json or {}
+    if 'titulo' in d: c.titulo=(d['titulo'] or '').strip()
+    if 'conteudo' in d: c.conteudo=(d['conteudo'] or '').strip()
+    if 'ativo' in d: c.ativo=bool(d['ativo'])
+    db.session.commit()
+    return jsonify(c.to_dict())
+
+@app.route('/api/comunicados-app/<int:cid>',methods=['DELETE'])
+@lr
+def api_rh_comunicado_excluir(cid):
+    c=ComunicadoApp.query.get_or_404(cid)
+    c.ativo=False
+    db.session.commit()
+    return jsonify({'ok':True})
+
+# ============================================================
+# MENSAGENS - WEB RH (chat com funcionário)
+# ============================================================
+
+@app.route('/api/mensagens-app/funcionarios')
+@lr
+def api_rh_mensagens_funcionarios():
+    """Lista funcionários que têm mensagens + contagem de não lidas."""
+    from sqlalchemy import func as sqlfunc
+    subq=db.session.query(
+        MensagemApp.funcionario_id,
+        sqlfunc.count(MensagemApp.id).label('total'),
+        sqlfunc.sum(db.cast(db.and_(MensagemApp.de_rh==False,MensagemApp.lida==False),db.Integer)).label('nao_lidas'),
+        sqlfunc.max(MensagemApp.enviado_em).label('ultima')
+    ).group_by(MensagemApp.funcionario_id).all()
+    result=[]
+    for row in subq:
+        f=Funcionario.query.get(row.funcionario_id)
+        if not f: continue
+        result.append({
+            'funcionario_id':f.id,
+            'nome':f.nome,
+            'cargo':f.cargo,
+            'total':row.total,
+            'nao_lidas':int(row.nao_lidas or 0),
+            'ultima':row.ultima.strftime('%d/%m/%Y %H:%M') if row.ultima else ''
+        })
+    result.sort(key=lambda x:x['nao_lidas'],reverse=True)
+    return jsonify(result)
+
+@app.route('/api/mensagens-app/<int:fid>')
+@lr
+def api_rh_mensagens_chat(fid):
+    Funcionario.query.get_or_404(fid)
+    msgs=MensagemApp.query.filter_by(funcionario_id=fid).order_by(MensagemApp.enviado_em.asc()).all()
+    # Marcar mensagens do funcionário como lidas
+    for m in msgs:
+        if not m.de_rh and not m.lida:
+            m.lida=True
+    db.session.commit()
+    return jsonify([m.to_dict() for m in msgs])
+
+@app.route('/api/mensagens-app/<int:fid>',methods=['POST'])
+@lr
+def api_rh_mensagem_responder(fid):
+    Funcionario.query.get_or_404(fid)
+    d=request.json or {}
+    conteudo=(d.get('conteudo') or '').strip()
+    if not conteudo: return jsonify({'erro':'Mensagem nao pode ser vazia'}),400
+    if len(conteudo)>2000: return jsonify({'erro':'Mensagem muito longa'}),400
+    nome_rh=session.get('nome') or session.get('email') or 'RH'
+    m=MensagemApp(funcionario_id=fid,de_rh=True,conteudo=conteudo,lida=False,enviado_por=nome_rh)
+    db.session.add(m)
+    db.session.commit()
+    _push_notify_funcionario(fid,'Nova mensagem do RH',conteudo[:160],data={'tipo':'chat','funcionario_id':str(fid)})
+    return jsonify(m.to_dict()),201
+
+@app.route('/api/mensagens-app/nao-lidas-total')
+@lr
+def api_rh_mensagens_nao_lidas_total():
+    count=MensagemApp.query.filter_by(de_rh=False,lida=False).count()
+    return jsonify({'nao_lidas':count})
+
+@app.route('/api/mensagens-app/broadcast',methods=['POST'])
+@lr
+def api_rh_mensagens_broadcast():
+    d=request.json or {}
+    conteudo=(d.get('conteudo') or '').strip()
+    if not conteudo: return jsonify({'erro':'Mensagem nao pode ser vazia'}),400
+    if len(conteudo)>2000: return jsonify({'erro':'Mensagem muito longa'}),400
+    empresa_id=d.get('empresa_id')
+    posto=(d.get('posto') or '').strip()
+    nome_rh=session.get('nome') or session.get('email') or 'RH'
+    q=Funcionario.query.filter_by(status='Ativo',app_ativo=True)
+    if empresa_id:
+        q=q.filter_by(empresa_id=int(empresa_id))
+    if posto:
+        q=q.filter(Funcionario.posto_operacional.ilike(f'%{posto}%'))
+    funcs=q.all()
+    if not funcs:
+        return jsonify({'erro':'Nenhum colaborador encontrado com esse filtro'}),404
+    for func in funcs:
+        m=MensagemApp(funcionario_id=func.id,de_rh=True,conteudo=conteudo,lida=False,enviado_por=nome_rh)
+        db.session.add(m)
+    db.session.commit()
+    for func in funcs:
+        _push_notify_funcionario(func.id,'Nova mensagem do RH',conteudo[:160],data={'tipo':'chat_broadcast','funcionario_id':str(func.id)})
+    return jsonify({'ok':True,'enviado_para':len(funcs)})
 
 @app.route('/api/funcionarios/arquivos/<int:id>',methods=['DELETE'])
 @lr
@@ -10851,6 +11237,7 @@ with app.app_context():
         'app_otp_hash VARCHAR(256)',
         'app_otp_expira_em DATETIME',
         'app_otp_tentativas INTEGER DEFAULT 0',
+        'app_push_token VARCHAR(300)',
         'endereco_numero VARCHAR(20)',
         'endereco_complemento VARCHAR(120)',
         'endereco_bairro VARCHAR(120)',
@@ -10870,7 +11257,11 @@ with app.app_context():
         'opta_cesta_natal BOOLEAN DEFAULT 0',
         'premio_produtividade FLOAT DEFAULT 0',
         'vale_gasolina FLOAT DEFAULT 0',
-        'cesta_natal FLOAT DEFAULT 0'
+        'cesta_natal FLOAT DEFAULT 0',
+        'foto_perfil VARCHAR(500)'
+    ])
+    ensure_cols('comunicado_app',[
+        'posto_operacional VARCHAR(150)'
     ])
     ensure_cols('cliente',[
         'numero_contrato VARCHAR(60)',

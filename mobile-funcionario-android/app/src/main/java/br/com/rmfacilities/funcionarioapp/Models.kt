@@ -38,7 +38,18 @@ data class FuncionarioPerfil(
     val telefone: String? = null,
     val cargo: String? = null,
     val setor: String? = null,
-    val status: String? = null
+    val empresa_nome: String? = null,
+    val posto_operacional: String? = null,
+    val status: String? = null,
+    val foto_url: String? = null,
+    val ultimo_aso_competencia: String? = null,
+    val ultimo_aso_enviado_em: String? = null
+)
+
+data class FotoUploadResponse(
+    val ok: Boolean = false,
+    val erro: String? = null,
+    val foto_url: String? = null
 )
 
 data class ContatoUpdateResponse(
@@ -83,4 +94,24 @@ data class DocumentoItem(
     val competencia: String? = null,
     val criado_fmt: String? = null,
     val app_download_url: String? = null
+)
+
+data class MensagemItem(
+    val id: Int,
+    val funcionario_id: Int,
+    val de_rh: Boolean = false,
+    val conteudo: String = "",
+    val enviado_em: String? = null,
+    val enviado_fmt: String? = null,
+    val lida: Boolean = false,
+    val enviado_por: String? = null
+)
+
+data class NaoLidasResponse(
+    val nao_lidas: Int = 0
+)
+
+data class ApiSimpleResponse(
+    val ok: Boolean = false,
+    val erro: String? = null
 )

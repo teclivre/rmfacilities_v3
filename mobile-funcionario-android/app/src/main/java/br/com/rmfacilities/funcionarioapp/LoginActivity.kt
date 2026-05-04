@@ -19,7 +19,6 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var api: ApiClient
 
     private lateinit var etCpf: TextInputEditText
-    private lateinit var etNome: TextInputEditText
     private lateinit var etCodigo: TextInputEditText
     private lateinit var btnEnviarCodigo: MaterialButton
     private lateinit var btnEntrar: MaterialButton
@@ -44,7 +43,6 @@ class LoginActivity : AppCompatActivity() {
         }
 
         etCpf = findViewById(R.id.etCpf)
-        etNome = findViewById(R.id.etNome)
         etCodigo = findViewById(R.id.etCodigo)
         btnEnviarCodigo = findViewById(R.id.btnEnviarCodigo)
         btnEntrar = findViewById(R.id.btnEntrar)
@@ -61,10 +59,8 @@ class LoginActivity : AppCompatActivity() {
 
     private fun enviarCodigo() {
         val cpf = etCpf.text?.toString()?.replace("\\D".toRegex(), "").orEmpty()
-        val nome = etNome.text?.toString()?.trim().orEmpty()
 
         if (cpf.length != 11) { showErro("Informe o CPF com 11 dígitos."); return }
-        if (nome.isBlank()) { showErro("Informe seu nome completo."); return }
 
         cpfAtual = cpf
         setLoading(true)
@@ -72,7 +68,7 @@ class LoginActivity : AppCompatActivity() {
 
         CoroutineScope(Dispatchers.IO).launch {
             val resp = try {
-                api.iniciarOtp(cpf, nome)
+                api.iniciarOtp(cpf)
             } catch (e: Exception) {
                 OtpStartResponse(ok = false, erro = "Erro de conexão: ${e.message}")
             }

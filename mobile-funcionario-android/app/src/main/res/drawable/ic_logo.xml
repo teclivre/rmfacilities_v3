@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="64dp"
+    android:height="64dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!-- Background rounded rect with gradient -->
+    <path android:pathData="M96,0 L416,0 Q512,0 512,96 L512,416 Q512,512 416,512 L96,512 Q0,512 0,416 L0,96 Q0,0 96,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="512"
+                android:endY="512">
+                <item android:offset="0" android:color="#FF0a3f7a"/>
+                <item android:offset="1" android:color="#FF09234a"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Orange circle top-left -->
+    <path
+        android:pathData="M120,120 m-38,0 a38,38 0 1,0 76,0 a38,38 0 1,0 -76,0"
+        android:fillColor="#f5b33f"/>
+
+    <!-- Blue R letter -->
+    <path
+        android:pathData="M88 306V170h72c58 0 92 28 92 78 0 52-35 82-95 82h-30v58H88zm39-91h30c36 0 56-13 56-40 0-25-19-38-56-38h-30v78z"
+        android:fillColor="#59c2ff"/>
+
+    <!-- White M letter -->
+    <path
+        android:pathData="M264 306V170h39l78 87c14 16 30 39 30 39h1s-3-24-3-41v-85h39v136h-39l-78-87c-14-16-30-39-30-39h-1s3 24 3 41v85h-39z"
+        android:fillColor="#ffffff"/>
+</vector>

@@ -2,10 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
+        android:icon="@drawable/ic_fenix_round"
         android:label="RM Funcionário"
+        android:roundIcon="@drawable/ic_fenix_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.RMFuncionarioApp"
         android:usesCleartextTraffic="true">
@@ -25,6 +28,9 @@
             android:exported="false" />
         <activity
             android:name=".PerfilActivity"
+            android:exported="false" />
+        <activity
+            android:name=".MensagensActivity"
             android:exported="false" />
         <activity
             android:name=".HomeActivity"
