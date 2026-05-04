@@ -15,8 +15,8 @@ class ApiClient(private val session: SessionManager) {
         return if (path.startsWith("http")) path else "$base$path"
     }
 
-    fun iniciarOtp(cpf: String, nome: String): OtpStartResponse {
-        val payload = gson.toJson(mapOf("cpf" to cpf, "nome" to nome))
+    fun iniciarOtp(cpf: String): OtpStartResponse {
+        val payload = gson.toJson(mapOf("cpf" to cpf))
         val req = Request.Builder()
             .url(url("/api/app/funcionario/auth/iniciar"))
             .post(payload.toRequestBody("application/json".toMediaType()))

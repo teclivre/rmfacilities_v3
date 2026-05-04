@@ -5675,11 +5675,8 @@ def api_app_funcionario_login():
 def api_app_funcionario_auth_iniciar():
     d=request.json or {}
     cpf=norm_cpf(d.get('cpf'))
-    nome=(d.get('nome') or '').strip()
     if not cpf or len(cpf)!=11:
         return jsonify({'erro':'CPF obrigatorio (11 digitos).'}),400
-    if not nome:
-        return jsonify({'erro':'Nome obrigatorio para validacao.'}),400
     if auth_blocked('app_otp',cpf,(request.remote_addr or '')):
         return jsonify({'erro':'Muitas tentativas. Aguarde alguns minutos.'}),429
 
@@ -5690,9 +5687,6 @@ def api_app_funcionario_auth_iniciar():
     if f.app_ativo is False:
         reg_auth_attempt('app_otp',cpf,False,'app_desativado')
         return jsonify({'erro':'Acesso do aplicativo desativado.'}),403
-    if not _nome_confere_funcionario(nome,f.nome or ''):
-        reg_auth_attempt('app_otp',cpf,False,'nome_divergente')
-        return jsonify({'erro':'Nome nao confere com o cadastro.'}),401
 
     tel=wa_norm_number(f.telefone or '')
     if not wa_is_valid_number(tel):
