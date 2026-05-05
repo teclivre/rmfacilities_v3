@@ -1,6 +1,7 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.LinearLayout
@@ -57,11 +58,21 @@ class LoginActivity : AppCompatActivity() {
         tvOtpMsg = findViewById(R.id.tvOtpMsg)
         progress = findViewById(R.id.progressLogin)
         tvErro = findViewById(R.id.tvErro)
+        val tvPrivacidade: TextView = findViewById(R.id.tvPrivacidade)
 
         btnEnviarCodigo.setOnClickListener { enviarCodigo() }
         btnBiometria.setOnClickListener { autenticarComBiometria() }
         btnEntrar.setOnClickListener { confirmarOtp() }
         tvReenviar.setOnClickListener { enviarCodigo() }
+        tvPrivacidade.setOnClickListener {
+            val base = (session.apiBaseUrl.ifBlank { BuildConfig.DEFAULT_API_BASE_URL }).trimEnd('/')
+            val url = "$base/politica-de-privacidade"
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            } catch (_: Exception) {
+                showErro("Não foi possível abrir a Política de Privacidade.")
+            }
+        }
 
         inicializarBiometriaUI()
     }
