@@ -9,6 +9,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
+import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -110,6 +111,12 @@ class LoginActivity : AppCompatActivity() {
                 if (resp.ok && !resp.access_token.isNullOrBlank()) {
                     session.accessToken = resp.access_token
                     session.refreshToken = resp.refresh_token ?: ""
+                    // Registrar token FCM imediatamente após login
+                    FirebaseMessaging.getInstance().token.addOnSuccessListener { fcmToken ->
+                        CoroutineScope(Dispatchers.IO).launch {
+                            try { ApiClient(session).registrarPushToken(fcmToken) } catch (_: Exception) {}
+                        }
+                    }
                     goHomeOrDeepLink()
                 } else {
                     showErro(resp.erro ?: "Código inválido ou expirado.")
