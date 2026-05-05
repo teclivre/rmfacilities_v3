@@ -7242,7 +7242,9 @@ async function loadWAConfig(){
   document.getElementById('wa-backup-max').value=d.backup_max_conversas||'10';
   await loadIAWAConfig();
   iawaSincronizarStatus();
-}{
+}
+
+async function salvarWAConfig(){
   const d={
     url:document.getElementById('wa-url').value,
     instancia:document.getElementById('wa-instancia').value,
