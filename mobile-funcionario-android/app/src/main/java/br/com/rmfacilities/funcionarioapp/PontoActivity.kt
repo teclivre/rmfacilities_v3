@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
@@ -33,6 +34,16 @@ class PontoActivity : AppCompatActivity() {
     private lateinit var containerMarcacoes: LinearLayout
     private lateinit var btnMarcarPonto: MaterialButton
     private lateinit var btnAtualizarPonto: MaterialButton
+
+    private val locationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            registrarComLocalizacao()
+        } else {
+            tvPontoStatus.text = "Permissão de localização é obrigatória para registrar ponto."
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -76,20 +87,29 @@ class PontoActivity : AppCompatActivity() {
     }
 
     private fun registrarComLocalizacao() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            return
+        }
         btnMarcarPonto.isEnabled = false
         tvPontoStatus.text = "Obtendo localização..."
 
         CoroutineScope(Dispatchers.IO).launch {
             val loc = withContext(Dispatchers.Main) { obterLocalizacao() }
+            if (loc == null) {
+                withContext(Dispatchers.Main) {
+                    btnMarcarPonto.isEnabled = true
+                    tvPontoStatus.text = "Não foi possível identificar sua localização. Ative GPS/rede e tente novamente."
+                }
+                return@launch
+            }
             withContext(Dispatchers.Main) {
-                tvPontoStatus.text = if (loc != null)
-                    "📍 Localização obtida — registrando ponto..."
-                else
-                    "⚠️ Sem GPS — registrando ponto sem localização..."
+                tvPontoStatus.text = "📍 Localização obtida — registrando ponto..."
             }
 
             val resp = try {
-                api.marcarPonto(lat = loc?.latitude, lon = loc?.longitude, precisao = loc?.accuracy)
+                api.marcarPonto(lat = loc.latitude, lon = loc.longitude, precisao = loc.accuracy)
             } catch (e: Exception) {
                 PontoDiaResponse(ok = false, erro = e.message)
             }
@@ -98,10 +118,7 @@ class PontoActivity : AppCompatActivity() {
                 btnMarcarPonto.isEnabled = true
                 if (resp.ok) {
                     renderResumo(resp.resumo)
-                    tvPontoStatus.text = if (loc != null)
-                        "✅ Ponto registrado com localização."
-                    else
-                        "✅ Ponto registrado (sem localização GPS)."
+                    tvPontoStatus.text = "✅ Ponto registrado com localização."
                 } else {
                     tvPontoStatus.text = resp.erro ?: "Falha ao registrar ponto."
                 }

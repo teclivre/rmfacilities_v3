@@ -31,6 +31,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError, IntegrityError
 import os
 import re
+import math
 import unicodedata
 import os, json, hashlib, hmac, secrets
 from datetime import datetime, timedelta, date
@@ -777,6 +778,9 @@ class Cliente(db.Model):
     reajuste_percentual=db.Column(db.Float,default=0)
     reajuste_data_base=db.Column(db.String(10))
     ultimo_reajuste_em=db.Column(db.String(10))
+    geo_lat=db.Column(db.Float)
+    geo_lon=db.Column(db.Float)
+    geofence_raio_m=db.Column(db.Float,default=150)
     obs=db.Column(db.Text,default='')
     criado_em=db.Column(db.DateTime,default=utcnow)
     def end_fmt(self):
@@ -6950,6 +6954,19 @@ def _app_ponto_resumo_dia(funcionario,data_ref):
         'inconsistencias':inconsistencias,
     }
 
+def _geo_haversine_m(lat1,lon1,lat2,lon2):
+    try:
+        lat1=float(lat1); lon1=float(lon1); lat2=float(lat2); lon2=float(lon2)
+    except (ValueError,TypeError):
+        return None
+    if not (-90<=lat1<=90 and -90<=lat2<=90 and -180<=lon1<=180 and -180<=lon2<=180):
+        return None
+    r=6371000.0
+    p1=math.radians(lat1); p2=math.radians(lat2)
+    dp=math.radians(lat2-lat1); dl=math.radians(lon2-lon1)
+    a=math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
+    return 2*r*math.atan2(math.sqrt(a),math.sqrt(1-a))
+
 @app.route('/api/app/funcionario/me/ponto/dia')
 @app_func_required
 def api_app_ponto_dia_me():
@@ -6990,6 +7007,30 @@ def api_app_ponto_marcar_me():
     except (ValueError,TypeError): lon=None
     try: precisao=float(precisao) if precisao is not None else None
     except (ValueError,TypeError): precisao=None
+    if lat is None or lon is None:
+        return jsonify({'erro':'Localização obrigatória para registrar ponto. Ative o GPS e tente novamente.'}),400
+    if not (-90<=lat<=90 and -180<=lon<=180):
+        return jsonify({'erro':'Coordenadas de localização inválidas.'}),400
+
+    localizacao={
+        'status':'sem_referencia_posto',
+        'distancia_m':None,
+        'raio_m':None,
+        'posto_cliente_id':f.posto_cliente_id,
+    }
+    if f.posto_cliente_id:
+        cli=Cliente.query.get(f.posto_cliente_id)
+        if cli and cli.geo_lat is not None and cli.geo_lon is not None:
+            distancia=_geo_haversine_m(lat,lon,cli.geo_lat,cli.geo_lon)
+            raio=float(cli.geofence_raio_m or 150)
+            localizacao={
+                'status':('no_posto' if (distancia is not None and distancia<=raio) else 'fora_posto'),
+                'distancia_m':(round(distancia,1) if distancia is not None else None),
+                'raio_m':raio,
+                'posto_cliente_id':f.posto_cliente_id,
+            }
+        else:
+            localizacao['status']='posto_sem_coordenada'
     m=PontoMarcacao(
         funcionario_id=f.id,
         tipo=tipo,
@@ -7004,8 +7045,26 @@ def api_app_ponto_marcar_me():
     )
     db.session.add(m)
     db.session.commit()
-    audit_event('ponto_marcacao_app','funcionario',f.id,'funcionario',f.id,True,{'tipo':tipo,'data_ref':data_ref.strftime('%Y-%m-%d'),'origem':'app','lat':lat,'lon':lon})
-    return jsonify({'ok':True,'marcacao':{'id':m.id,'tipo':m.tipo,'tipo_label':_app_ponto_label(m.tipo),'hora_fmt':m.data_hora.strftime('%H:%M') if m.data_hora else ''},'resumo':_app_ponto_resumo_dia(f,data_ref)})
+    audit_event('ponto_marcacao_app','funcionario',f.id,'funcionario',f.id,True,{
+        'tipo':tipo,
+        'data_ref':data_ref.strftime('%Y-%m-%d'),
+        'origem':'app',
+        'lat':lat,
+        'lon':lon,
+        'localizacao_status':localizacao.get('status'),
+        'distancia_m':localizacao.get('distancia_m'),
+    })
+    return jsonify({
+        'ok':True,
+        'marcacao':{
+            'id':m.id,
+            'tipo':m.tipo,
+            'tipo_label':_app_ponto_label(m.tipo),
+            'hora_fmt':m.data_hora.strftime('%H:%M') if m.data_hora else '',
+            'localizacao':localizacao,
+        },
+        'resumo':_app_ponto_resumo_dia(f,data_ref)
+    })
 
 # ============================================================
 # JORNADAS DE TRABALHO
@@ -12519,6 +12578,9 @@ with app.app_context():
         'reajuste_percentual FLOAT DEFAULT 0',
         'reajuste_data_base VARCHAR(10)',
         'ultimo_reajuste_em VARCHAR(10)',
+        'geo_lat FLOAT',
+        'geo_lon FLOAT',
+        'geofence_raio_m FLOAT DEFAULT 150',
     ])
     ensure_cols('beneficio_mensal',[
         'dias_vt INTEGER DEFAULT 0',
