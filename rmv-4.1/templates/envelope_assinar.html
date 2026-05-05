@@ -7,34 +7,64 @@
 <link rel="stylesheet" href="/static/css/main.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.min.js"></script>
 <style>
-  .public-main{padding-top:14px}
-  .public-container{max-width:min(96vw,1600px)}
-  .signature-shell{padding:14px;background:linear-gradient(160deg,#f9fbff,#f0f4fb);border:1px solid #d7e1f0}
-  .ass-layout{display:grid;grid-template-columns:1fr;gap:14px}
-  .viewer-col{background:#fff;border:1px solid #d8e2ef;border-radius:12px;padding:12px}
-  .signer-col{min-width:0}
-  .signer-panel{background:#ffffff;border:1px solid #d8e2ef;border-radius:12px;padding:12px;box-shadow:0 8px 20px rgba(35,66,120,.08)}
-  .signer-title{font-size:16px;font-weight:800;color:#1e365f;margin:0 0 2px 0}
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{height:100%;margin:0;padding:0}
+  body.public-page{display:flex;flex-direction:column;min-height:100vh}
+  .public-topbar{flex-shrink:0}
+  .public-main{flex:1 1 auto;padding:0;overflow:hidden}
+  .public-container{max-width:100%;height:100%}
+  /* ── Layout principal ── */
+  .ass-page-wrap{display:flex;height:calc(100vh - 52px)}
+  /* coluna esquerda: painel do formulário */
+  .signer-col{
+    width:340px;
+    min-width:280px;
+    max-width:380px;
+    flex-shrink:0;
+    overflow-y:auto;
+    background:#f4f7fb;
+    border-right:1px solid #d7e1f0;
+    padding:16px 14px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .signer-panel{background:#ffffff;border:1px solid #d8e2ef;border-radius:12px;padding:14px;box-shadow:0 4px 14px rgba(35,66,120,.09)}
+  .signer-title{font-size:15px;font-weight:800;color:#1e365f;margin:0 0 2px 0}
   .signer-sub{font-size:12px;color:#58719a;margin:0 0 10px 0}
-  .viewer-shell{padding:10px;background:#f7f9fc;border:1px solid #d9e1ee;border-radius:10px}
-  .viewer-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .sig-env-title{font-size:14px;font-weight:700;color:#1e365f;margin:0 0 2px}
+  .sig-env-sub{font-size:12px;color:#556;margin:0 0 8px}
+  /* coluna direita: visualizador PDF */
+  .viewer-col{
+    flex:1 1 auto;
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+    background:#1a2235;
+  }
+  .viewer-shell{display:flex;flex-direction:column;height:100%;padding:10px;gap:6px}
+  .viewer-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;flex-shrink:0}
   .viewer-progress{font-size:12px;color:#2f4f8f;font-weight:700;background:#e9f1ff;border-radius:999px;padding:4px 10px}
-  .doc-chip-list{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 10px}
-  .doc-chip{border:1px solid #b8c7e4;background:#fff;color:#27406d;border-radius:999px;padding:7px 12px;font-size:12px;cursor:pointer}
+  .doc-chip-list{display:flex;flex-wrap:wrap;gap:6px;flex-shrink:0}
+  .doc-chip{border:1px solid #b8c7e4;background:#fff;color:#27406d;border-radius:999px;padding:5px 12px;font-size:12px;cursor:pointer}
   .doc-chip.active{background:#2d7ef7;color:#fff;border-color:#2d7ef7}
   .doc-chip.done{border-color:#2aa876;background:#ebfff5;color:#12714d}
-  .doc-frame-wrap{background:#fff;border:1px solid #d9e1ee;border-radius:10px;padding:8px}
-  .doc-scroll{max-height:68vh;overflow:auto;background:#f3f5f9;border-radius:8px;padding:8px}
+  .doc-frame-wrap{flex:1 1 auto;background:#1a2235;border-radius:8px;overflow:hidden;display:flex;flex-direction:column}
+  .doc-scroll{flex:1 1 auto;overflow:auto;background:#1a2235;padding:10px}
   .pdf-pages{display:flex;flex-direction:column;gap:10px;align-items:center}
-  .pdf-page{background:#fff;border:1px solid #d7deea;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.06);max-width:100%}
-  .viewer-loading{font-size:13px;color:#3f5f92;padding:16px;text-align:center}
-  .viewer-tip{font-size:12px;color:#4a5f82;text-align:center;padding:6px 4px}
-  .fs-btn{border:1px solid #bfd0ee;background:#f4f8ff;color:#2f4f8f;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
-  .fs-btn:hover{background:#eaf2ff}
-  @media (min-width:1100px){
-    .ass-layout{grid-template-columns:minmax(0,1fr) 390px;gap:16px;align-items:start}
-    .signer-panel{position:sticky;top:14px}
-    .doc-scroll{max-height:calc(100vh - 220px)}
+  .pdf-page{background:#fff;border:1px solid #334155;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.35);max-width:100%}
+  .viewer-loading{font-size:13px;color:#9bb;padding:24px;text-align:center}
+  .viewer-tip{font-size:12px;color:#aac;text-align:center;padding:6px 4px}
+  .fs-btn{border:1px solid #4a6080;background:#253349;color:#9ec5f7;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
+  .fs-btn:hover{background:#2e4060}
+  .viewer-msg-bar{flex-shrink:0;min-height:24px}
+  /* shell e card herdados do main.css – sobrescrevemos apenas o necessário */
+  .signature-shell{background:transparent;border:none;padding:0}
+  /* mobile: empilha form em cima, PDF embaixo */
+  @media (max-width:800px){
+    .ass-page-wrap{flex-direction:column;height:auto}
+    .signer-col{width:100%;max-width:100%;border-right:none;border-bottom:1px solid #d7e1f0}
+    .viewer-col{height:70vh}
   }
 </style>
 
@@ -50,7 +80,7 @@
   <div class="public-main">
     <div class="public-container">
       {% if sig.status == 'assinado' %}
-      <div class="public-success">
+      <div class="public-success" style="padding:32px">
         <div class="ico">✅</div>
         <h3>Documento já assinado!</h3>
         <p style="font-size:13px;color:#666;margin:10px 0">Você já assinou este documento anteriormente.</p>
@@ -62,50 +92,22 @@
         </div>
       </div>
       {% else %}
-      <div class="public-card signature-shell" id="sec-form">
-        <h1>Assinatura eletrônica</h1>
-        <p class="sub">Visualize o documento em tela grande e assine no painel lateral.</p>
+      <div id="sec-form">
+        <div class="ass-page-wrap">
 
-        <h2>{{ env.titulo }}</h2>
-        {% if env.descricao %}<p class="sub">{{ env.descricao }}</p>{% endif %}
-
-        <div class="ass-layout">
-          <section class="viewer-col">
-            <div class="public-info-box">
-              <strong>Signatário:</strong> {{ sig.nome or 'Não informado' }}
-              {% if sig.cargo %}<br><strong>Cargo:</strong> {{ sig.cargo }}{% endif %}
-            </div>
-
-            <div class="card-doc viewer-shell">
-              <div class="viewer-head">
-                <h3 style="margin:0">Documentos a assinar ({{ arquivos|length }})</h3>
-                <div style="display:flex;gap:8px;align-items:center">
-                  <span class="viewer-progress" id="viewer-progress">0/{{ arquivos|length }} visualizado(s)</span>
-                  <button type="button" class="fs-btn" onclick="toggleViewerFullscreen()">Tela cheia</button>
-                </div>
-              </div>
-              <p class="sub" style="margin:0 0 8px 0">Para assinar, você precisa visualizar todos os documentos desta lista.</p>
-              <div class="doc-chip-list" id="doc-chip-list">
-                {% for a in arquivos %}
-                <button type="button" class="doc-chip" data-doc-id="{{ a.id }}" onclick="abrirDocumento({{ a.id }})">{{ a.nome_arquivo }}</button>
-                {% endfor %}
-              </div>
-              <div class="doc-frame-wrap" id="doc-frame-wrap">
-                <div id="doc-viewer-scroll" class="doc-scroll">
-                  <div id="doc-viewer-pages" class="pdf-pages"></div>
-                  <div id="doc-viewer-tip" class="viewer-tip" style="display:none">Role até o final para confirmar que visualizou o documento.</div>
-                </div>
-              </div>
-              <div class="public-msg" id="viewer-msg" style="margin-top:8px"></div>
-            </div>
-          </div>
-
-          </section>
-
+          <!-- ═══ COLUNA ESQUERDA: Formulário ═══ -->
           <aside class="signer-col">
+            <div class="sig-env-title">📄 {{ env.titulo }}</div>
+            {% if env.descricao %}<div class="sig-env-sub">{{ env.descricao }}</div>{% endif %}
+
             <div class="signer-panel">
-              <h3 class="signer-title">Conferir dados do signatário</h3>
+              <h3 class="signer-title">Assinatura eletrônica</h3>
               <p class="signer-sub">Preencha seus dados e confirme com OTP.</p>
+
+              <div style="font-size:12px;color:#445;margin-bottom:10px">
+                <strong>Signatário:</strong> {{ sig.nome or 'Não informado' }}
+                {% if sig.cargo %}<br><strong>Cargo:</strong> {{ sig.cargo }}{% endif %}
+              </div>
 
               <div class="public-msg" id="msg"></div>
 
@@ -131,16 +133,47 @@
                   Declaro que li e entendi os documentos listados acima e, ao clicar em <strong>Confirmar Assinatura</strong>, confirmo minha assinatura eletrônica com validade legal, conforme a Lei nº 14.063/2020.
                 </label>
               </div>
-              <div class="public-btngroup" style="display:flex;flex-wrap:wrap;gap:8px">
-                <button class="public-btn public-btn-primary" id="btn-assinar" onclick="confirmarAssinatura()" style="flex:1;min-width:150px" disabled>Visualize os documentos para assinar</button>
-                <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()" style="flex:1;min-width:150px">Reenviar código</button>
+              <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+                <button class="public-btn public-btn-primary" id="btn-assinar" onclick="confirmarAssinatura()" disabled>Visualize os documentos para assinar</button>
+                <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()">Reenviar código</button>
               </div>
             </div>
+
+            <div style="font-size:11px;color:#999;text-align:center;margin-top:auto;padding-top:12px">
+              Assinatura Eletrônica — RM Facilities<br>Validade jurídica conforme Lei nº 14.063/2020
+            </div>
           </aside>
+
+          <!-- ═══ COLUNA DIREITA: Visualizador PDF ═══ -->
+          <section class="viewer-col">
+            <div class="viewer-shell">
+              <div class="viewer-head">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <span style="font-size:13px;font-weight:700;color:#9ec5f7">Documentos ({{ arquivos|length }})</span>
+                  <span class="viewer-progress" id="viewer-progress">0/{{ arquivos|length }} visualizado(s)</span>
+                </div>
+                <button type="button" class="fs-btn" onclick="toggleViewerFullscreen()">⛶ Tela cheia</button>
+              </div>
+              <p style="font-size:11px;color:#8aafcc;margin:0">Selecione um documento e role até o final para liberar a assinatura.</p>
+              <div class="doc-chip-list" id="doc-chip-list">
+                {% for a in arquivos %}
+                <button type="button" class="doc-chip" data-doc-id="{{ a.id }}" onclick="abrirDocumento({{ a.id }})">{{ a.nome_arquivo }}</button>
+                {% endfor %}
+              </div>
+              <div class="doc-frame-wrap" id="doc-frame-wrap">
+                <div id="doc-viewer-scroll" class="doc-scroll">
+                  <div id="doc-viewer-pages" class="pdf-pages"></div>
+                  <div id="doc-viewer-tip" class="viewer-tip" style="display:none">Role até o final para confirmar que visualizou o documento.</div>
+                </div>
+              </div>
+              <div class="public-msg viewer-msg-bar" id="viewer-msg"></div>
+            </div>
+          </section>
+
         </div>
       </div>
 
-      <div id="sucesso" class="public-success" style="display:none">
+      <div id="sucesso" class="public-success" style="display:none;padding:32px">
         <div class="ico">✅</div>
         <h3>Assinatura concluída com sucesso!</h3>
         <p style="font-size:13px;color:#555;margin:10px 0 8px">Seu comprovante foi registrado com segurança.</p>
@@ -152,10 +185,6 @@
         </div>
       </div>
       {% endif %}
-
-      <div style="margin-top:16px;font-size:12px;color:#999;text-align:center">
-        Assinatura Eletrônica — RM Facilities | Plataforma segura, validade jurídica conforme Lei nº 14.063/2020
-      </div>
     </div>
   </div>
 
@@ -272,11 +301,12 @@ function bindReadScroll(docId){
 
 function toggleViewerFullscreen(){
   const el=document.getElementById('doc-frame-wrap');
+  const btn=document.querySelector('.fs-btn');
   if(!el) return;
   if(document.fullscreenElement){
-    document.exitFullscreen().catch(()=>{});
+    document.exitFullscreen().then(()=>{ if(btn) btn.textContent='Tela cheia'; }).catch(()=>{});
   }else{
-    el.requestFullscreen?.().catch(()=>{});
+    el.requestFullscreen?.().then(()=>{ if(btn) btn.textContent='Sair da tela cheia'; }).catch(()=>{});
   }
 }
 

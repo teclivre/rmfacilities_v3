@@ -5,6 +5,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Assinatura de Documento - RM Facilities</title>
   <link rel="stylesheet" href="/static/css/main.css">
+<style>
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{height:100%;margin:0;padding:0}
+  body.public-page{display:flex;flex-direction:column;min-height:100vh}
+  .public-topbar{flex-shrink:0}
+  .public-main{flex:1 1 auto;padding:0;overflow:hidden}
+  .public-container{max-width:100%;height:100%}
+  /* layout two-col */
+  .doc-page-wrap{display:flex;height:calc(100vh - 52px)}
+  /* esquerda: formulário */
+  .doc-form-col{
+    width:320px;min-width:260px;max-width:360px;
+    flex-shrink:0;overflow-y:auto;
+    background:#f4f7fb;border-right:1px solid #d7e1f0;
+    padding:16px 14px;display:flex;flex-direction:column;gap:10px
+  }
+  .doc-form-panel{background:#fff;border:1px solid #d8e2ef;border-radius:12px;padding:14px;box-shadow:0 4px 14px rgba(35,66,120,.09)}
+  .doc-form-title{font-size:15px;font-weight:800;color:#1e365f;margin:0 0 6px}
+  /* direita: PDF */
+  .doc-pdf-col{flex:1 1 auto;display:flex;flex-direction:column;overflow:hidden;background:#1a2235}
+  .doc-pdf-wrap{flex:1 1 auto;display:flex;flex-direction:column;padding:10px;gap:6px}
+  .doc-pdf-toolbar{display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+  .doc-pdf-frame{flex:1 1 auto;border:none;border-radius:8px;background:#fff;min-height:0}
+  @media(max-width:800px){
+    .doc-page-wrap{flex-direction:column;height:auto}
+    .doc-form-col{width:100%;max-width:100%;border-right:none;border-bottom:1px solid #d7e1f0}
+    .doc-pdf-col{height:65vh}
+  }
+</style>
 </head>
 <body class="public-page">
   <div class="public-topbar">
@@ -17,58 +46,75 @@
   <div class="public-main">
     <div class="public-container">
       {% if ok and arquivo %}
-      <div class="public-card">
-        <h1>Assinatura eletrônica</h1>
-        <p class="sub">Confira os dados abaixo e confirme com seu código OTP.</p>
+      <div class="doc-page-wrap">
 
-        <div class="public-info-box">
-          <strong>Documento:</strong> {{ arquivo.nome_arquivo }}<br>
-          <strong>Categoria:</strong> {{ arquivo.categoria or '-' }}<br>
-          {% if arquivo.competencia %}<strong>Competência:</strong> {{ arquivo.competencia }}<br>{% endif %}
-          {% if funcionario %}<strong>Funcionário:</strong> {{ funcionario.nome }}{% endif %}
-        </div>
+        <!-- ═══ COLUNA ESQUERDA: Formulário ═══ -->
+        <aside class="doc-form-col">
+          <div class="doc-form-panel">
+            <h2 class="doc-form-title">Assinatura eletrônica</h2>
 
-        <div class="public-info-box" style="padding:8px">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-            <strong>Visualização do documento</strong>
-            <a class="public-btn public-btn-secondary" href="/doc/assinar/{{ arquivo.ass_token }}/arquivo?src={{ request.args.get('src','link')|urlencode }}" target="_blank" rel="noopener">Abrir em nova guia</a>
-          </div>
-          <iframe src="/doc/assinar/{{ arquivo.ass_token }}/arquivo?src={{ request.args.get('src','link')|urlencode }}" style="width:100%;min-height:420px;border:1px solid #dbe2ea;border-radius:8px;background:#fff" title="Documento para assinatura"></iframe>
-        </div>
+            <div style="font-size:12px;color:#445;margin-bottom:10px;line-height:1.6">
+              <strong>Documento:</strong> {{ arquivo.nome_arquivo }}<br>
+              {% if arquivo.categoria %}<strong>Categoria:</strong> {{ arquivo.categoria }}<br>{% endif %}
+              {% if arquivo.competencia %}<strong>Competência:</strong> {{ arquivo.competencia }}<br>{% endif %}
+              {% if funcionario %}<strong>Funcionário:</strong> {{ funcionario.nome }}{% endif %}
+            </div>
 
-        <span class="public-tag">AGUARDANDO ASSINATURA</span>
+            <span class="public-tag">AGUARDANDO ASSINATURA</span>
 
-        <div class="public-form">
-          <div class="public-form-group">
-            <label>Nome completo *</label>
-            <input id="nome" type="text" placeholder="Seu nome completo" autocomplete="name">
-          </div>
-          <div class="public-form-group">
-            <label>CPF *</label>
-            <input id="cpf" type="text" placeholder="000.000.000-00" maxlength="14" oninput="fmtCPF(this)" inputmode="numeric">
-          </div>
-          <div class="public-form-group">
-            <label>Cargo (opcional)</label>
-            <input id="cargo" type="text" placeholder="Ex: Auxiliar de limpeza">
-          </div>
-          <div class="public-form-group">
-            <label>Código OTP (6 dígitos)</label>
-            <input id="otp" type="text" placeholder="Informe o código recebido" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
-          </div>
-          <label class="public-check">
-            <input type="checkbox" id="aceite">
-            Declaro que li e aceito as informações do documento apresentado, confirmando minha assinatura eletrônica.
-          </label>
-        </div>
-        <div class="public-btngroup">
-          <button class="public-btn public-btn-primary" id="btn-confirmar" onclick="confirmar('{{ arquivo.ass_token }}')">Confirmar assinatura</button>
-          <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()">Reenviar código</button>
-        </div>
+            <div class="public-form" style="margin-top:10px">
+              <div class="public-form-group">
+                <label>Nome completo *</label>
+                <input id="nome" type="text" placeholder="Seu nome completo" autocomplete="name">
+              </div>
+              <div class="public-form-group">
+                <label>CPF *</label>
+                <input id="cpf" type="text" placeholder="000.000.000-00" maxlength="14" oninput="fmtCPF(this)" inputmode="numeric">
+              </div>
+              <div class="public-form-group">
+                <label>Cargo (opcional)</label>
+                <input id="cargo" type="text" placeholder="Ex: Auxiliar de limpeza">
+              </div>
+              <div class="public-form-group">
+                <label>Código OTP (6 dígitos)</label>
+                <input id="otp" type="text" placeholder="Informe o código recebido" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
+              </div>
+              <label class="public-check">
+                <input type="checkbox" id="aceite">
+                Declaro que li e aceito as informações do documento apresentado, confirmando minha assinatura eletrônica.
+              </label>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+              <button class="public-btn public-btn-primary" id="btn-confirmar" onclick="confirmar('{{ arquivo.ass_token }}')">Confirmar assinatura</button>
+              <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()">Reenviar código</button>
+            </div>
 
-        <div id="msg" class="public-msg"></div>
+            <div id="msg" class="public-msg" style="margin-top:8px"></div>
+          </div>
+
+          <div style="font-size:11px;color:#999;text-align:center;margin-top:auto;padding-top:12px">
+            Assinatura Eletrônica — RM Facilities<br>Validade jurídica conforme Lei nº 14.063/2020
+          </div>
+        </aside>
+
+        <!-- ═══ COLUNA DIREITA: PDF Fullscreen ═══ -->
+        <section class="doc-pdf-col">
+          <div class="doc-pdf-wrap">
+            <div class="doc-pdf-toolbar">
+              <span style="font-size:12px;color:#9ec5f7;font-weight:600">{{ arquivo.nome_arquivo }}</span>
+              <a class="public-btn public-btn-secondary" style="font-size:11px;padding:4px 10px" href="/doc/assinar/{{ arquivo.ass_token }}/arquivo?src={{ request.args.get('src','link')|urlencode }}" target="_blank" rel="noopener">Abrir em nova guia</a>
+            </div>
+            <iframe
+              src="/doc/assinar/{{ arquivo.ass_token }}/arquivo?src={{ request.args.get('src','link')|urlencode }}"
+              class="doc-pdf-frame"
+              title="Documento para assinatura"
+            ></iframe>
+          </div>
+        </section>
+
       </div>
       {% else %}
-      <div class="public-card">
+      <div class="public-card" style="max-width:500px;margin:40px auto">
         <h1>Assinatura eletrônica</h1>
         <div class="public-alert err">
           <strong>Link indisponível</strong>
