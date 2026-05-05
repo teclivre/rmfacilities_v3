@@ -3444,16 +3444,24 @@ def smtp_send_pdf(dest,nome_dest,caminho_abs,nome_arquivo,competencia='',remeten
         with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s: s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
 
 
-def smtp_send_link_assinatura(dest, nome_dest, titulo_envelope, link, remetente='RM Facilities'):
+def smtp_send_link_assinatura(dest, nome_dest, titulo_envelope, link, remetente='RM Facilities', eh_lembrete=False):
     """Envia link de assinatura de documento por e-mail."""
     cfg=smtp_cfg()
     if not cfg['host'] or not cfg['user']: raise ValueError('SMTP não configurado')
     msg=MIMEMultipart('alternative')
     msg['From']=f"{remetente} <{cfg['de'] or cfg['user']}>"
     msg['To']=dest
-    msg['Subject']=f"Documento para assinar — {titulo_envelope}"
+    assunto_prefixo='Lembrete: ' if eh_lembrete else ''
+    texto_intro='Este e um lembrete de um envio anterior.\n\n' if eh_lembrete else ''
+    html_intro=(
+        "<p style='color:#8a5c00;font-size:13px;font-weight:700;margin-top:8px'>"
+        "🔔 Este e um lembrete de um envio anterior.</p>"
+        if eh_lembrete else ''
+    )
+    msg['Subject']=f"{assunto_prefixo}Documento para assinar — {titulo_envelope}"
     corpo_txt=(
         f"Olá {nome_dest},\n\n"
+        f"{texto_intro}"
         f"Você recebeu um documento para assinar eletronicamente.\n\n"
         f"Documento: {titulo_envelope}\n\n"
         f"Acesse o link abaixo para assinar:\n{link}\n\n"
@@ -3466,6 +3474,7 @@ def smtp_send_link_assinatura(dest, nome_dest, titulo_envelope, link, remetente=
         f"<span style='color:#fff;font-size:18px;font-weight:700'>✍ {remetente}</span></div>"
         f"<div style='background:#fff;border:1px solid #dde5f0;border-top:none;padding:24px;border-radius:0 0 8px 8px'>"
         f"<p style='color:#333;font-size:15px'>Olá <strong>{nome_dest}</strong>,</p>"
+        f"{html_intro}"
         f"<p style='color:#555;font-size:14px;margin-top:10px'>Você recebeu um documento para assinar eletronicamente.</p>"
         f"<div style='background:#f5f9ff;border:1px solid #c5d9f0;border-radius:8px;padding:14px;margin:18px 0'>"
         f"<span style='font-size:13px;color:#205d8a;font-weight:600'>📄 Documento:</span><br>"
@@ -5922,7 +5931,7 @@ def api_funcionario_upload_arquivo(id):
     return jsonify(out),201
 
 
-def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',dias_validade=7,commit_now=True,forcar_novo_token=True):
+def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',dias_validade=7,commit_now=True,forcar_novo_token=True,eh_lembrete=False):
     if not arquivo:
         return {'ok':False,'erro':'Arquivo invalido.'}
     if not funcionario:
@@ -5966,8 +5975,13 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
     erro_envio=''
     if canal=='whatsapp':
         nome_func=(funcionario.nome if funcionario else 'colaborador')
-        msg=(f"Olá, {nome_func}! Segue o link para assinatura do documento "
-             f"'{arquivo.nome_arquivo}'. O link expira em 7 dias: {link_curto}")
+        if eh_lembrete:
+            msg=(f"🔔 Lembrete de envio anterior\n"
+                 f"Olá, {nome_func}! Este e um lembrete para assinatura do documento "
+                 f"'{arquivo.nome_arquivo}'. O link expira em 7 dias: {link_curto}")
+        else:
+            msg=(f"Olá, {nome_func}! Segue o link para assinatura do documento "
+                 f"'{arquivo.nome_arquivo}'. O link expira em 7 dias: {link_curto}")
         try:
             wa_send_text(tel,msg)
             enviado_wa=True
@@ -5977,16 +5991,28 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
     elif canal=='email':
         nome_func=(funcionario.nome if funcionario else 'colaborador')
         try:
-            smtp_send_link_assinatura(email,nome_func,arquivo.nome_arquivo or 'Documento',link_curto)
+            smtp_send_link_assinatura(
+                email,
+                nome_func,
+                arquivo.nome_arquivo or 'Documento',
+                link_curto,
+                eh_lembrete=eh_lembrete,
+            )
             enviado_email=True
         except Exception as ex:
             erro_envio=str(ex)
     elif canal=='app':
         try:
+            titulo_push='Lembrete: documento para assinar' if eh_lembrete else 'Documento para assinar'
+            corpo_push=(
+                f"Lembrete de envio anterior: {arquivo.nome_arquivo} ainda aguarda sua assinatura no app."
+                if eh_lembrete else
+                f"{arquivo.nome_arquivo} aguarda sua assinatura no app."
+            )
             enviado_app=bool(_push_notify_funcionario(
                 funcionario.id,
-                'Documento para assinar',
-                f'{arquivo.nome_arquivo} aguarda sua assinatura no app.',
+                titulo_push,
+                corpo_push,
                 {'tipo':'documento_assinar','arquivo_id':str(arquivo.id)}
             ))
             if not enviado_app:
@@ -6826,6 +6852,7 @@ def api_func_arquivo_solicitar_assinatura(id):
         canal=canal,
         commit_now=True,
         forcar_novo_token=forcar_novo_token,
+        eh_lembrete=(not forcar_novo_token),
     )
     if not rs.get('ok'):
         return jsonify({'erro':rs.get('erro') or 'Falha ao solicitar assinatura.'}),400
