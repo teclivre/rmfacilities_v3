@@ -6185,11 +6185,13 @@ def api_funcionario_app_acesso(id):
     return jsonify({'ok':True,'funcionario':f.to_dict()})
 
 @app.route('/api/funcionarios/<int:id>/push-teste',methods=['POST'])
+@app.route('/api/funcionarios/<int:id>/push-validar',methods=['POST'])
 @lr
 def api_funcionario_push_teste(id):
     f=Funcionario.query.get_or_404(id)
-    tem_token=bool((f.app_push_token or '').strip())
-    if not tem_token:
+    token_antes=(f.app_push_token or '').strip()
+    tem_token=bool(token_antes)
+    if not token_antes:
         return jsonify({'ok':False,'erro':'Funcionario sem token push salvo'}),400
     ok=_push_notify_funcionario(
         f.id,
@@ -6197,7 +6199,18 @@ def api_funcionario_push_teste(id):
         'Se voce recebeu esta mensagem, o push de documentos esta funcionando.',
         {'tipo':'documento_assinar','arquivo_id':'0','origem':'teste_push_admin'}
     )
-    return jsonify({'ok':ok,'funcionario_id':f.id,'tem_token':tem_token})
+    f2=Funcionario.query.get(f.id)
+    token_depois=((f2.app_push_token or '').strip() if f2 else '')
+    token_removido=bool(token_antes and not token_depois)
+    status='enviado' if ok else ('token_invalido_removido' if token_removido else 'falha_envio')
+    return jsonify({
+        'ok':ok,
+        'status':status,
+        'funcionario_id':f.id,
+        'tem_token':tem_token,
+        'token_valido':bool(token_depois),
+        'token_removido':token_removido,
+    })
 
 @app.route('/api/app/versao')
 def api_app_versao():
