@@ -79,7 +79,14 @@ def _migrate_legacy_data_dir():
         ]
         existing = [p for p in old_candidates if os.path.exists(p) and os.path.abspath(p) != os.path.abspath(DB_PATH)]
         if existing:
-            existing.sort(key=lambda p: (os.path.getmtime(p), os.path.getsize(p)), reverse=True)
+            # Prefer rmfacilities.db over app.db, then bigger/newer files.
+            existing.sort(
+                key=lambda p: (
+                    os.path.basename(p) != 'rmfacilities.db',
+                    -os.path.getsize(p),
+                    -os.path.getmtime(p),
+                )
+            )
             shutil.copy2(existing[0], DB_PATH)
     legacy_uploads = os.path.join(BASE_DIR, 'instance', 'uploads')
     if not os.path.isdir(UPLOAD_ROOT) and os.path.isdir(legacy_uploads):
@@ -12080,6 +12087,9 @@ with app.app_context():
         'app_otp_expira_em DATETIME',
         'app_otp_tentativas INTEGER DEFAULT 0',
         'app_push_token VARCHAR(300)',
+        'app_lat FLOAT',
+        'app_lon FLOAT',
+        'app_localizacao_em DATETIME',
         'endereco_numero VARCHAR(20)',
         'endereco_complemento VARCHAR(120)',
         'endereco_bairro VARCHAR(120)',
