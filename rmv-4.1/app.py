@@ -110,10 +110,15 @@ db = SQLAlchemy(app)
 from functools import wraps
 from flask import session, url_for, g
 
+def _lr_unauth_response():
+    if (request.path or '').startswith('/api/'):
+        return jsonify({'erro':'Sessao expirada. Faca login novamente.'}),401
+    return redirect(url_for('login'))
+
 def lr(f):
     @wraps(f)
     def w(*a,**k):
-        if 'uid' not in session: return redirect(url_for('login'))
+        if 'uid' not in session: return _lr_unauth_response()
         if not can_access_request(request.path,request.method): return jsonify({'erro':'Acesso negado'}),403
         if request.method in ('POST','PUT','PATCH','DELETE') and not _same_origin_request(request):
             return jsonify({'erro':'Origem da requisição não permitida'}),403
@@ -4397,7 +4402,7 @@ def prox_num():
 def lr(f):
     @wraps(f)
     def w(*a,**k):
-        if 'uid' not in session: return redirect(url_for('login'))
+        if 'uid' not in session: return _lr_unauth_response()
         if not can_access_request(request.path,request.method): return jsonify({'erro':'Acesso negado'}),403
         if request.method in ('POST','PUT','PATCH','DELETE') and not _same_origin_request(request):
             return jsonify({'erro':'Origem da requisição não permitida'}),403
@@ -6803,7 +6808,16 @@ def api_func_arquivo_solicitar_assinatura(id):
     f=Funcionario.query.get_or_404(a.funcionario_id)
     d=request.json or {}
     canal_req=(d.get('canal') or '').strip().lower()
-    canal_padrao=(a.ass_canal_envio or 'link')
+    canal_padrao=(a.ass_canal_envio or '').strip().lower()
+    if not canal_padrao:
+        if (a.ass_wa_status or '') in ('enviado','recebido') or bool(a.ass_wa_enviado_em):
+            canal_padrao='whatsapp'
+        elif (a.ass_email_status or '') in ('enviado','recebido') or bool(a.ass_email_enviado_em):
+            canal_padrao='email'
+        elif not (a.ass_token or '').strip():
+            canal_padrao='app'
+        else:
+            canal_padrao='link'
     canal=_ass_track_channel(canal_req,canal_padrao)
     forcar_novo_token=bool(d.get('forcar_novo_token',True))
     rs=_solicitar_assinatura_arquivo_funcionario(
