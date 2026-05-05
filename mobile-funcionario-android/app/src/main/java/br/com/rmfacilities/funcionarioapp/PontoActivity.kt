@@ -1,10 +1,16 @@
 package br.com.rmfacilities.funcionarioapp
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationManager
 import android.os.Bundle
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,26 +55,58 @@ class PontoActivity : AppCompatActivity() {
 
         tvData.text = SimpleDateFormat("dd/MM", Locale.getDefault()).format(Date())
 
-        btnMarcarPonto.setOnClickListener {
-            btnMarcarPonto.isEnabled = false
-            tvPontoStatus.text = "Registrando ponto..."
-            CoroutineScope(Dispatchers.IO).launch {
-                val resp = try { api.marcarPonto() } catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message) }
-                withContext(Dispatchers.Main) {
-                    btnMarcarPonto.isEnabled = true
-                    if (resp.ok) {
-                        renderResumo(resp.resumo)
-                        tvPontoStatus.text = "Ponto registrado com sucesso."
-                    } else {
-                        tvPontoStatus.text = resp.erro ?: "Falha ao registrar ponto."
-                    }
-                }
-            }
-        }
-
+        btnMarcarPonto.setOnClickListener { registrarComLocalizacao() }
         btnAtualizarPonto.setOnClickListener { carregarDia() }
 
         carregarDia()
+    }
+
+    private fun obterLocalizacao(): Location? {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            return null
+        }
+        val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val provider = when {
+            lm.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
+            lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
+            else -> return null
+        }
+        return try { lm.getLastKnownLocation(provider) } catch (_: Exception) { null }
+    }
+
+    private fun registrarComLocalizacao() {
+        btnMarcarPonto.isEnabled = false
+        tvPontoStatus.text = "Obtendo localização..."
+
+        CoroutineScope(Dispatchers.IO).launch {
+            val loc = withContext(Dispatchers.Main) { obterLocalizacao() }
+            withContext(Dispatchers.Main) {
+                tvPontoStatus.text = if (loc != null)
+                    "📍 Localização obtida — registrando ponto..."
+                else
+                    "⚠️ Sem GPS — registrando ponto sem localização..."
+            }
+
+            val resp = try {
+                api.marcarPonto(lat = loc?.latitude, lon = loc?.longitude, precisao = loc?.accuracy)
+            } catch (e: Exception) {
+                PontoDiaResponse(ok = false, erro = e.message)
+            }
+
+            withContext(Dispatchers.Main) {
+                btnMarcarPonto.isEnabled = true
+                if (resp.ok) {
+                    renderResumo(resp.resumo)
+                    tvPontoStatus.text = if (loc != null)
+                        "✅ Ponto registrado com localização."
+                    else
+                        "✅ Ponto registrado (sem localização GPS)."
+                } else {
+                    tvPontoStatus.text = resp.erro ?: "Falha ao registrar ponto."
+                }
+            }
+        }
     }
 
     private fun carregarDia() {
@@ -118,7 +156,6 @@ class PontoActivity : AppCompatActivity() {
                 text = "${m.hora_fmt ?: "--:--"} • ${m.tipo_label ?: m.tipo ?: "Marcação"}"
                 setTextColor(resources.getColor(R.color.text_primary, theme))
                 textSize = 14f
-                setPadding(0, 8, 0, 8)
                 background = resources.getDrawable(R.drawable.bg_card_aso, theme)
             }
             val params = LinearLayout.LayoutParams(

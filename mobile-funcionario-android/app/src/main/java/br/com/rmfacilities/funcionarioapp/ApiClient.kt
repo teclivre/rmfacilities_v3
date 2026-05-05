@@ -390,10 +390,13 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
-    fun marcarPonto(tipo: String = "", observacao: String = ""): PontoDiaResponse {
+    fun marcarPonto(tipo: String = "", observacao: String = "", lat: Double? = null, lon: Double? = null, precisao: Float? = null): PontoDiaResponse {
         val payload = gson.toJson(buildMap {
             if (tipo.isNotBlank()) put("tipo", tipo)
             if (observacao.isNotBlank()) put("observacao", observacao)
+            if (lat != null) put("lat", lat)
+            if (lon != null) put("lon", lon)
+            if (precisao != null) put("precisao", precisao)
         })
         val req = Request.Builder()
             .url(url("/api/app/funcionario/me/ponto/marcar"))

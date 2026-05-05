@@ -184,6 +184,9 @@ class PontoMarcacao(db.Model):
     observacao = db.Column(db.String(255))
     criado_por = db.Column(db.String(100))
     ip = db.Column(db.String(60))
+    latitude = db.Column(db.Float)
+    longitude = db.Column(db.Float)
+    precisao_gps = db.Column(db.Float)
     def to_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
@@ -210,6 +213,35 @@ class PontoAjuste(db.Model):
     criado_em = db.Column(db.DateTime, default=utcnow)
     def to_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
+class JornadaTrabalho(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(120), nullable=False)
+    descricao = db.Column(db.String(255))
+    dias_semana = db.Column(db.String(30), default='1,2,3,4,5')  # 0=dom 1=seg ... 6=sab
+    hora_entrada = db.Column(db.String(5), default='08:00')       # HH:MM
+    hora_saida = db.Column(db.String(5), default='17:48')         # HH:MM
+    hora_intervalo_inicio = db.Column(db.String(5), default='12:00')
+    hora_intervalo_fim = db.Column(db.String(5), default='13:00')
+    tolerancia_min = db.Column(db.Integer, default=10)            # minutos de tolerância
+    ativo = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=utcnow)
+    def carga_horaria_min(self):
+        try:
+            he=list(map(int,self.hora_entrada.split(':'))); hs=list(map(int,self.hora_saida.split(':')))
+            hi=list(map(int,self.hora_intervalo_inicio.split(':'))); hf=list(map(int,self.hora_intervalo_fim.split(':')))
+            trabalho=(hs[0]*60+hs[1])-(he[0]*60+he[1])
+            intervalo=(hf[0]*60+hf[1])-(hi[0]*60+hi[1])
+            return max(0, trabalho-intervalo)
+        except Exception:
+            return 480
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        try: d['dias_semana_list']=[int(x) for x in (self.dias_semana or '').split(',') if x.strip().isdigit()]
+        except: d['dias_semana_list']=[1,2,3,4,5]
+        d['carga_horaria_min']=self.carga_horaria_min()
+        d['funcionarios_count']=Funcionario.query.filter_by(jornada_id=self.id).count() if self.id else 0
+        return d
 
 class Despesa(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -866,6 +898,7 @@ class Funcionario(db.Model):
     data_admissao=db.Column(db.String(10))
     tipo_contrato=db.Column(db.String(60))
     jornada=db.Column(db.String(80))
+    jornada_id=db.Column(db.Integer,db.ForeignKey('jornada_trabalho.id'),nullable=True)
     status=db.Column(db.String(20),default='Ativo')
     salario=db.Column(db.Float,default=0)
     vale_refeicao=db.Column(db.Float,default=0)
@@ -6301,6 +6334,16 @@ def api_app_funcionario_me():
     ).first()
     emp=db.session.get(Empresa,f.empresa_id) if f.empresa_id else None
     foto_url='/api/app/funcionario/me/foto' if f.foto_perfil else None
+    jornada_info=None
+    if getattr(f,'jornada_id',None):
+        j=JornadaTrabalho.query.get(f.jornada_id)
+        if j:
+            jornada_info={
+                'id':j.id,'nome':j.nome,
+                'hora_entrada':j.hora_entrada,'hora_saida':j.hora_saida,
+                'hora_intervalo_inicio':j.hora_intervalo_inicio,'hora_intervalo_fim':j.hora_intervalo_fim,
+                'dias_semana':j.dias_semana,'tolerancia_min':j.tolerancia_min,
+            }
     return jsonify({'ok':True,'funcionario':{
         'id':f.id,
         'nome':f.nome,
@@ -6315,7 +6358,9 @@ def api_app_funcionario_me():
         'status':f.status,
         'foto_url':foto_url,
         'ultimo_aso_competencia':(ultimo_aso.competencia if ultimo_aso else None),
-        'ultimo_aso_enviado_em':(ultimo_aso.criado_em.isoformat() if (ultimo_aso and ultimo_aso.criado_em) else None)
+        'ultimo_aso_enviado_em':(ultimo_aso.criado_em.isoformat() if (ultimo_aso and ultimo_aso.criado_em) else None),
+        'jornada':f.jornada,
+        'jornada_info':jornada_info,
     }})
 
 @app.route('/api/app/funcionario/me/foto',methods=['POST'])
@@ -6800,6 +6845,12 @@ def _app_ponto_marcacoes_dia(funcionario_id,data_ref):
     )
 
 def _app_ponto_min_esperado_jornada(funcionario):
+    # Preferir jornada estruturada (JornadaTrabalho)
+    if getattr(funcionario,'jornada_id',None):
+        j=JornadaTrabalho.query.get(funcionario.jornada_id)
+        if j:
+            return j.carga_horaria_min()
+    # Fallback: campo texto legado
     jornada=str(funcionario.jornada or '').strip().lower()
     if not jornada:
         return 8*60
@@ -6930,6 +6981,15 @@ def api_app_ponto_marcar_me():
         return jsonify({'erro':'Já existe marcação neste minuto para este funcionário.'}),400
 
     ip=(request.headers.get('X-Forwarded-For','') or request.remote_addr or '').split(',')[0].strip()[:60]
+    lat=dados.get('lat')
+    lon=dados.get('lon')
+    precisao=dados.get('precisao')
+    try: lat=float(lat) if lat is not None else None
+    except (ValueError,TypeError): lat=None
+    try: lon=float(lon) if lon is not None else None
+    except (ValueError,TypeError): lon=None
+    try: precisao=float(precisao) if precisao is not None else None
+    except (ValueError,TypeError): precisao=None
     m=PontoMarcacao(
         funcionario_id=f.id,
         tipo=tipo,
@@ -6938,11 +6998,133 @@ def api_app_ponto_marcar_me():
         observacao=observacao,
         criado_por='funcionario-app',
         ip=ip,
+        latitude=lat,
+        longitude=lon,
+        precisao_gps=precisao,
     )
     db.session.add(m)
     db.session.commit()
-    audit_event('ponto_marcacao_app','funcionario',f.id,'funcionario',f.id,True,{'tipo':tipo,'data_ref':data_ref.strftime('%Y-%m-%d'),'origem':'app'})
+    audit_event('ponto_marcacao_app','funcionario',f.id,'funcionario',f.id,True,{'tipo':tipo,'data_ref':data_ref.strftime('%Y-%m-%d'),'origem':'app','lat':lat,'lon':lon})
     return jsonify({'ok':True,'marcacao':{'id':m.id,'tipo':m.tipo,'tipo_label':_app_ponto_label(m.tipo),'hora_fmt':m.data_hora.strftime('%H:%M') if m.data_hora else ''},'resumo':_app_ponto_resumo_dia(f,data_ref)})
+
+# ============================================================
+# JORNADAS DE TRABALHO
+# ============================================================
+
+@app.route('/api/jornadas',methods=['GET'])
+@lr
+def api_jornadas_listar():
+    ativas=request.args.get('ativas','0').strip()
+    q=JornadaTrabalho.query
+    if ativas=='1':
+        q=q.filter_by(ativo=True)
+    return jsonify([j.to_dict() for j in q.order_by(JornadaTrabalho.nome).all()])
+
+@app.route('/api/jornadas',methods=['POST'])
+@lr
+def api_jornadas_criar():
+    d=request.json or {}
+    nome=(d.get('nome') or '').strip()
+    if not nome:
+        return jsonify({'erro':'Nome é obrigatório'}),400
+    j=JornadaTrabalho(
+        nome=nome,
+        descricao=(d.get('descricao') or '').strip()[:255],
+        dias_semana=(d.get('dias_semana') or '1,2,3,4,5').strip(),
+        hora_entrada=(d.get('hora_entrada') or '08:00').strip()[:5],
+        hora_saida=(d.get('hora_saida') or '17:48').strip()[:5],
+        hora_intervalo_inicio=(d.get('hora_intervalo_inicio') or '12:00').strip()[:5],
+        hora_intervalo_fim=(d.get('hora_intervalo_fim') or '13:00').strip()[:5],
+        tolerancia_min=max(0,min(60,int(d.get('tolerancia_min') or 10))),
+        ativo=bool(d.get('ativo',True)),
+    )
+    db.session.add(j); db.session.commit()
+    audit_event('jornada_criar','usuario',session.get('uid'),'jornada_trabalho',j.id,True,{'nome':nome})
+    return jsonify(j.to_dict()),201
+
+@app.route('/api/jornadas/<int:id>',methods=['GET'])
+@lr
+def api_jornada_detalhe(id):
+    j=JornadaTrabalho.query.get_or_404(id)
+    d=j.to_dict()
+    d['funcionarios']=[{'id':f.id,'nome':f.nome,'cargo':f.cargo,'status':f.status} for f in Funcionario.query.filter_by(jornada_id=id).order_by(Funcionario.nome).all()]
+    return jsonify(d)
+
+@app.route('/api/jornadas/<int:id>',methods=['PUT'])
+@lr
+def api_jornada_editar(id):
+    j=JornadaTrabalho.query.get_or_404(id)
+    d=request.json or {}
+    if 'nome' in d:
+        n=(d['nome'] or '').strip()
+        if not n: return jsonify({'erro':'Nome não pode ser vazio'}),400
+        j.nome=n
+    if 'descricao' in d: j.descricao=(d['descricao'] or '').strip()[:255]
+    if 'dias_semana' in d: j.dias_semana=(d['dias_semana'] or '1,2,3,4,5').strip()
+    if 'hora_entrada' in d: j.hora_entrada=(d['hora_entrada'] or '08:00').strip()[:5]
+    if 'hora_saida' in d: j.hora_saida=(d['hora_saida'] or '17:48').strip()[:5]
+    if 'hora_intervalo_inicio' in d: j.hora_intervalo_inicio=(d['hora_intervalo_inicio'] or '12:00').strip()[:5]
+    if 'hora_intervalo_fim' in d: j.hora_intervalo_fim=(d['hora_intervalo_fim'] or '13:00').strip()[:5]
+    if 'tolerancia_min' in d:
+        try: j.tolerancia_min=max(0,min(60,int(d['tolerancia_min'])))
+        except (ValueError,TypeError): pass
+    if 'ativo' in d: j.ativo=bool(d['ativo'])
+    db.session.commit()
+    audit_event('jornada_editar','usuario',session.get('uid'),'jornada_trabalho',id,True,{})
+    return jsonify(j.to_dict())
+
+@app.route('/api/jornadas/<int:id>',methods=['DELETE'])
+@lr
+def api_jornada_excluir(id):
+    j=JornadaTrabalho.query.get_or_404(id)
+    count=Funcionario.query.filter_by(jornada_id=id).count()
+    if count>0:
+        return jsonify({'erro':f'Jornada está vinculada a {count} funcionário(s). Desvincule antes de excluir.'}),400
+    db.session.delete(j); db.session.commit()
+    audit_event('jornada_excluir','usuario',session.get('uid'),'jornada_trabalho',id,True,{'nome':j.nome})
+    return jsonify({'ok':True})
+
+@app.route('/api/jornadas/<int:id>/funcionarios',methods=['POST'])
+@lr
+def api_jornada_vincular_funcionarios(id):
+    j=JornadaTrabalho.query.get_or_404(id)
+    d=request.json or {}
+    ids=d.get('funcionario_ids') or []
+    if not isinstance(ids,list): return jsonify({'erro':'funcionario_ids deve ser lista'}),400
+    vinculados=[]
+    for fid in ids:
+        f=Funcionario.query.get(fid)
+        if f:
+            f.jornada_id=id
+            vinculados.append(fid)
+    db.session.commit()
+    audit_event('jornada_vincular','usuario',session.get('uid'),'jornada_trabalho',id,True,{'funcionarios':vinculados})
+    return jsonify({'ok':True,'vinculados':len(vinculados)})
+
+@app.route('/api/jornadas/<int:id>/funcionarios/<int:fid>',methods=['DELETE'])
+@lr
+def api_jornada_desvincular_funcionario(id,fid):
+    f=Funcionario.query.get_or_404(fid)
+    if f.jornada_id!=id:
+        return jsonify({'erro':'Funcionário não está nesta jornada'}),400
+    f.jornada_id=None
+    db.session.commit()
+    return jsonify({'ok':True})
+
+@app.route('/api/funcionarios/<int:id>/jornada',methods=['PUT'])
+@lr
+def api_funcionario_definir_jornada(id):
+    f=Funcionario.query.get_or_404(id)
+    d=request.json or {}
+    jid=d.get('jornada_id')
+    if jid is None or jid=='':
+        f.jornada_id=None
+    else:
+        j=JornadaTrabalho.query.get(int(jid))
+        if not j: return jsonify({'erro':'Jornada não encontrada'}),404
+        f.jornada_id=j.id
+    db.session.commit()
+    return jsonify({'ok':True,'jornada_id':f.jornada_id})
 
 # ============================================================
 # COMUNICADOS - WEB RH (gestão)
@@ -12347,6 +12529,19 @@ with app.app_context():
         'premio_produtividade FLOAT DEFAULT 0',
         'vale_gasolina FLOAT DEFAULT 0',
         'cesta_natal FLOAT DEFAULT 0'
+    ])
+    ensure_cols('ponto_marcacao',[
+        'latitude FLOAT',
+        'longitude FLOAT',
+        'precisao_gps FLOAT',
+    ])
+    ensure_cols('jornada_trabalho',[
+        'descricao VARCHAR(255)',
+        'tolerancia_min INTEGER DEFAULT 10',
+        'ativo BOOLEAN DEFAULT 1',
+    ])
+    ensure_cols('funcionario',[
+        'jornada_id INTEGER',
     ])
     ensure_cols('funcionario_arquivo',[
         'ass_status VARCHAR(20) DEFAULT "nao_solicitada"',
