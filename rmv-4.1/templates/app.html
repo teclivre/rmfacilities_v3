@@ -1070,6 +1070,95 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
 
+      <div class="card">
+        <div class="card-header"><span class="card-title">Jornadas de Trabalho e Geofence de Posto</span></div>
+        <div class="g2" style="margin-top:8px">
+          <div class="f" style="border:1px solid var(--borda);border-radius:10px;padding:10px;background:var(--cinza-cl)">
+            <input id="rh-jor-id" type="hidden">
+            <label>Nome da jornada</label>
+            <input id="rh-jor-nome" placeholder="Ex.: Segunda a sexta 08:00-17:48">
+
+            <label style="margin-top:8px">Descrição</label>
+            <input id="rh-jor-desc" placeholder="Ex.: Jornada administrativa com 1h de refeição">
+
+            <label style="margin-top:8px">Dias da semana</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px">
+              <label><input type="checkbox" id="rh-jor-dia-1" checked> Seg</label>
+              <label><input type="checkbox" id="rh-jor-dia-2" checked> Ter</label>
+              <label><input type="checkbox" id="rh-jor-dia-3" checked> Qua</label>
+              <label><input type="checkbox" id="rh-jor-dia-4" checked> Qui</label>
+              <label><input type="checkbox" id="rh-jor-dia-5" checked> Sex</label>
+              <label><input type="checkbox" id="rh-jor-dia-6"> Sáb</label>
+              <label><input type="checkbox" id="rh-jor-dia-0"> Dom</label>
+            </div>
+
+            <div class="g4" style="margin-top:8px">
+              <div class="f"><label>Entrada</label><input id="rh-jor-ent" type="time" value="08:00"></div>
+              <div class="f"><label>Saída</label><input id="rh-jor-sai" type="time" value="17:48"></div>
+              <div class="f"><label>Início refeição</label><input id="rh-jor-int-ini" type="time" value="12:00"></div>
+              <div class="f"><label>Fim refeição</label><input id="rh-jor-int-fim" type="time" value="13:00"></div>
+            </div>
+
+            <div class="g3" style="margin-top:8px">
+              <div class="f"><label>Tolerância (min)</label><input id="rh-jor-tol" type="number" min="0" max="60" value="10"></div>
+              <div class="f"><label>Status</label>
+                <select id="rh-jor-ativo"><option value="1">Ativa</option><option value="0">Inativa</option></select>
+              </div>
+            </div>
+
+            <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
+              <button class="btn b-az b-sm" onclick="rhJornadaSalvar()">Salvar jornada</button>
+              <button class="btn b-gh b-sm" onclick="rhJornadaLimparForm()">Limpar</button>
+            </div>
+          </div>
+
+          <div class="f" style="border:1px solid var(--borda);border-radius:10px;padding:10px;background:var(--cinza-cl)">
+            <label>Jornadas cadastradas</label>
+            <div class="tbl-wrap" style="margin-top:6px;max-height:240px;overflow:auto">
+              <table class="tbl">
+                <thead><tr><th>Jornada</th><th>Carga</th><th>Funcionários</th><th>Ações</th></tr></thead>
+                <tbody id="rh-jor-tb"></tbody>
+              </table>
+            </div>
+
+            <label style="margin-top:10px">Vincular funcionários à jornada</label>
+            <div class="g2" style="margin-top:6px">
+              <div class="f">
+                <label>Jornada</label>
+                <select id="rh-jor-vinc-jornada"></select>
+              </div>
+              <div class="f">
+                <label>Funcionários ativos</label>
+                <select id="rh-jor-vinc-funcs" multiple size="7"></select>
+              </div>
+            </div>
+            <div class="hint" style="margin-top:4px">Use Ctrl/Cmd para selecionar múltiplos funcionários.</div>
+            <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
+              <button class="btn b-ghv b-sm" onclick="rhJornadaVincularSelecionados()">Vincular selecionados</button>
+              <button class="btn b-gh b-sm" onclick="rhJornadaDesvincularSelecionados()">Desvincular selecionados</button>
+            </div>
+
+            <hr style="margin:12px 0;border:none;border-top:1px solid var(--borda)">
+
+            <label>Geofence do posto (cliente)</label>
+            <div class="g3" style="margin-top:6px">
+              <div class="f s2">
+                <label>Posto / Cliente</label>
+                <select id="rh-geo-cliente" onchange="rhGeoCarregarCliente()"></select>
+              </div>
+              <div class="f"><label>Latitude</label><input id="rh-geo-lat" placeholder="-23.123456"></div>
+              <div class="f"><label>Longitude</label><input id="rh-geo-lon" placeholder="-46.123456"></div>
+              <div class="f"><label>Raio (metros)</label><input id="rh-geo-raio" type="number" min="10" max="2000" value="150"></div>
+            </div>
+            <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
+              <button class="btn b-gh b-sm" onclick="rhGeoUsarLocalAtual()">Usar localização atual</button>
+              <button class="btn b-az b-sm" onclick="rhGeoSalvarCliente()">Salvar geofence</button>
+            </div>
+          </div>
+        </div>
+        <div id="rh-jornada-st" class="st" style="margin-top:8px"></div>
+      </div>
+
       {% include 'partials/rh_ponto_section.html' %}
 
       <div class="card">
@@ -2485,6 +2574,7 @@ function rbacLimpar(){
   }));
 }
 let todos=[], emps=[], funcs=[], pontoFuncs=[], bancosBR=[], beneficiosMensais=[], benTab='ativos', rhFuncTab='ativos', acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
+let rhJornadas=[], rhJornadaInitDone=false;
 let rhExportFuncsAtivos=[];
 let pontoResumoPainelByFunc={};
 let pontoMarcacoesDiaAtual=[];
@@ -2993,7 +3083,7 @@ function nav(id,el,force=false){
   if(targetId==='empresas')renderEmps();
   if(targetId==='usuarios')renderUsr();
   if(targetId==='config')loadConfig();
-  if(targetId==='rh'){renderFuncionarios();painelAssInicializar();rhExportCarregarFiltros();}
+  if(targetId==='rh'){renderFuncionarios();painelAssInicializar();rhExportCarregarFiltros();rhJornadaInit();}
   if(targetId==='operacional'){renderOperDocs();renderOperPostos();}
   if(targetId==='compras'){renderOrdensCompra();}
   if(targetId==='beneficios'){carregarBeneficiosMensais();carregarConfigAlertaBeneficios();}
@@ -4701,6 +4791,269 @@ async function salvarFuncionario(){
   showSt('st-rh','Funcionário salvo com sucesso.',false);
 }
 
+function rhJornadaFmtMin(min){
+  const n=Math.max(0,parseInt(min||0,10));
+  return `${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;
+}
+
+function rhJornadaDiasSelecionados(){
+  const dias=[];
+  [0,1,2,3,4,5,6].forEach(d=>{
+    if(document.getElementById(`rh-jor-dia-${d}`)?.checked) dias.push(d);
+  });
+  return dias.sort((a,b)=>a-b);
+}
+
+function rhJornadaAplicarDias(csv){
+  const set=new Set(String(csv||'').split(',').map(x=>parseInt(x,10)).filter(x=>!Number.isNaN(x)));
+  [0,1,2,3,4,5,6].forEach(d=>{
+    const el=document.getElementById(`rh-jor-dia-${d}`);
+    if(el) el.checked=set.has(d);
+  });
+}
+
+function rhJornadaLimparForm(){
+  document.getElementById('rh-jor-id').value='';
+  document.getElementById('rh-jor-nome').value='';
+  document.getElementById('rh-jor-desc').value='';
+  document.getElementById('rh-jor-ent').value='08:00';
+  document.getElementById('rh-jor-sai').value='17:48';
+  document.getElementById('rh-jor-int-ini').value='12:00';
+  document.getElementById('rh-jor-int-fim').value='13:00';
+  document.getElementById('rh-jor-tol').value='10';
+  document.getElementById('rh-jor-ativo').value='1';
+  rhJornadaAplicarDias('1,2,3,4,5');
+}
+
+function rhJornadaRenderTabela(){
+  const tb=document.getElementById('rh-jor-tb');
+  const sel=document.getElementById('rh-jor-vinc-jornada');
+  if(!tb || !sel) return;
+  if(!rhJornadas.length){
+    tb.innerHTML='<tr><td colspan="4" style="text-align:center;color:#999;padding:16px">Nenhuma jornada cadastrada.</td></tr>';
+    sel.innerHTML='<option value="">Selecione...</option>';
+    return;
+  }
+  tb.innerHTML=rhJornadas.map(j=>`<tr>
+    <td><div style="font-weight:700">${esc(j.nome||'—')}</div><div style="font-size:11px;color:#8a9fb5">${esc(j.descricao||'')}</div></td>
+    <td>${rhJornadaFmtMin(j.carga_horaria_min)}</td>
+    <td>${j.funcionarios_count||0}</td>
+    <td>
+      <button class="btn b-gh b-sm" onclick="rhJornadaEditar(${j.id})">Editar</button>
+      <button class="btn b-ghr b-sm" onclick="rhJornadaExcluir(${j.id})">Excluir</button>
+    </td>
+  </tr>`).join('');
+  const atual=sel.value||'';
+  sel.innerHTML='<option value="">Selecione...</option>'+rhJornadas
+    .map(j=>`<option value="${j.id}">${esc(j.nome||'Jornada')}</option>`).join('');
+  if(atual && rhJornadas.some(j=>String(j.id)===String(atual))) sel.value=atual;
+}
+
+async function rhJornadaCarregar(){
+  const r=await api('/api/jornadas');
+  rhJornadas=Array.isArray(r)?r:[];
+  rhJornadaRenderTabela();
+}
+
+function rhJornadaEditar(id){
+  const j=rhJornadas.find(x=>String(x.id)===String(id));
+  if(!j) return;
+  document.getElementById('rh-jor-id').value=String(j.id||'');
+  document.getElementById('rh-jor-nome').value=j.nome||'';
+  document.getElementById('rh-jor-desc').value=j.descricao||'';
+  document.getElementById('rh-jor-ent').value=j.hora_entrada||'08:00';
+  document.getElementById('rh-jor-sai').value=j.hora_saida||'17:48';
+  document.getElementById('rh-jor-int-ini').value=j.hora_intervalo_inicio||'12:00';
+  document.getElementById('rh-jor-int-fim').value=j.hora_intervalo_fim||'13:00';
+  document.getElementById('rh-jor-tol').value=String(j.tolerancia_min??10);
+  document.getElementById('rh-jor-ativo').value=j.ativo?'1':'0';
+  rhJornadaAplicarDias(j.dias_semana||'1,2,3,4,5');
+}
+
+async function rhJornadaSalvar(){
+  const id=(document.getElementById('rh-jor-id')?.value||'').trim();
+  const nome=(document.getElementById('rh-jor-nome')?.value||'').trim();
+  if(!nome){
+    showSt('rh-jornada-st','Informe o nome da jornada.',true);
+    return;
+  }
+  const dias=rhJornadaDiasSelecionados();
+  if(!dias.length){
+    showSt('rh-jornada-st','Selecione ao menos um dia da semana.',true);
+    return;
+  }
+  const payload={
+    nome,
+    descricao:(document.getElementById('rh-jor-desc')?.value||'').trim(),
+    dias_semana:dias.join(','),
+    hora_entrada:document.getElementById('rh-jor-ent')?.value||'08:00',
+    hora_saida:document.getElementById('rh-jor-sai')?.value||'17:48',
+    hora_intervalo_inicio:document.getElementById('rh-jor-int-ini')?.value||'12:00',
+    hora_intervalo_fim:document.getElementById('rh-jor-int-fim')?.value||'13:00',
+    tolerancia_min:parseInt(document.getElementById('rh-jor-tol')?.value||'10',10)||10,
+    ativo:document.getElementById('rh-jor-ativo')?.value==='1',
+  };
+  const r=id ? await api('/api/jornadas/'+id,'PUT',payload) : await api('/api/jornadas','POST',payload);
+  if(r?.erro){
+    showSt('rh-jornada-st',r.erro,true);
+    return;
+  }
+  await rhJornadaCarregar();
+  rhJornadaLimparForm();
+  showSt('rh-jornada-st','Jornada salva com sucesso.',false);
+}
+
+async function rhJornadaExcluir(id){
+  if(!confirm('Deseja excluir esta jornada?')) return;
+  const r=await api('/api/jornadas/'+id,'DELETE');
+  if(r?.erro){
+    showSt('rh-jornada-st',r.erro,true);
+    return;
+  }
+  await rhJornadaCarregar();
+  showSt('rh-jornada-st','Jornada excluída.',false);
+}
+
+function rhJornadaPopularFuncionariosAtivos(){
+  const sel=document.getElementById('rh-jor-vinc-funcs');
+  if(!sel) return;
+  const atual=new Set(Array.from(sel.selectedOptions||[]).map(o=>String(o.value)));
+  const ativos=(Array.isArray(funcs)?funcs:[])
+    .filter(f=>String((f.status||'').toLowerCase())==='ativo')
+    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
+  sel.innerHTML=ativos.map(f=>{
+    const jtxt=f.jornada_id?` · jornada #${f.jornada_id}`:'';
+    return `<option value="${f.id}">${esc(f.nome||'Sem nome')}${jtxt}</option>`;
+  }).join('');
+  Array.from(sel.options).forEach(o=>{o.selected=atual.has(String(o.value));});
+}
+
+async function rhJornadaVincularSelecionados(){
+  const jid=(document.getElementById('rh-jor-vinc-jornada')?.value||'').trim();
+  if(!jid){
+    showSt('rh-jornada-st','Selecione a jornada para vincular.',true);
+    return;
+  }
+  const sel=document.getElementById('rh-jor-vinc-funcs');
+  const ids=Array.from(sel?.selectedOptions||[]).map(o=>parseInt(o.value,10)).filter(x=>!Number.isNaN(x));
+  if(!ids.length){
+    showSt('rh-jornada-st','Selecione ao menos um funcionário.',true);
+    return;
+  }
+  const r=await api('/api/jornadas/'+jid+'/funcionarios','POST',{funcionario_ids:ids});
+  if(r?.erro){
+    showSt('rh-jornada-st',r.erro,true);
+    return;
+  }
+  funcs=await api('/api/funcionarios');
+  pontoFuncs=[...funcs];
+  rhJornadaPopularFuncionariosAtivos();
+  await rhJornadaCarregar();
+  renderFuncionarios();
+  showSt('rh-jornada-st','Funcionários vinculados à jornada.',false);
+}
+
+async function rhJornadaDesvincularSelecionados(){
+  const sel=document.getElementById('rh-jor-vinc-funcs');
+  const ids=Array.from(sel?.selectedOptions||[]).map(o=>parseInt(o.value,10)).filter(x=>!Number.isNaN(x));
+  if(!ids.length){
+    showSt('rh-jornada-st','Selecione ao menos um funcionário.',true);
+    return;
+  }
+  for(const fid of ids){
+    const r=await api('/api/funcionarios/'+fid+'/jornada','PUT',{jornada_id:null});
+    if(r?.erro){
+      showSt('rh-jornada-st',`Falha ao desvincular funcionário ${fid}: ${r.erro}`,true);
+      return;
+    }
+  }
+  funcs=await api('/api/funcionarios');
+  pontoFuncs=[...funcs];
+  rhJornadaPopularFuncionariosAtivos();
+  await rhJornadaCarregar();
+  renderFuncionarios();
+  showSt('rh-jornada-st','Funcionários desvinculados da jornada.',false);
+}
+
+function rhGeoPopularClientes(){
+  const sel=document.getElementById('rh-geo-cliente');
+  if(!sel) return;
+  const atual=sel.value||'';
+  const cls=(Array.isArray(todos)?todos:[]).slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
+  sel.innerHTML='<option value="">Selecione o posto...</option>' + cls.map(c=>`<option value="${c.id}">${esc(c.nome||'Sem nome')}</option>`).join('');
+  if(atual && cls.some(c=>String(c.id)===String(atual))) sel.value=atual;
+  rhGeoCarregarCliente();
+}
+
+function rhGeoCarregarCliente(){
+  const cid=(document.getElementById('rh-geo-cliente')?.value||'').trim();
+  const c=(Array.isArray(todos)?todos:[]).find(x=>String(x.id)===String(cid));
+  document.getElementById('rh-geo-lat').value=(c?.geo_lat??'')!==''?String(c.geo_lat):'';
+  document.getElementById('rh-geo-lon').value=(c?.geo_lon??'')!==''?String(c.geo_lon):'';
+  document.getElementById('rh-geo-raio').value=String(c?.geofence_raio_m??150);
+}
+
+function rhGeoUsarLocalAtual(){
+  if(!navigator.geolocation){
+    showSt('rh-jornada-st','Navegador não suporta geolocalização.',true);
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      document.getElementById('rh-geo-lat').value=String(pos.coords.latitude.toFixed(6));
+      document.getElementById('rh-geo-lon').value=String(pos.coords.longitude.toFixed(6));
+      showSt('rh-jornada-st','Localização atual preenchida.',false);
+    },
+    _=>showSt('rh-jornada-st','Não foi possível obter sua localização atual.',true),
+    {enableHighAccuracy:true,timeout:12000,maximumAge:0}
+  );
+}
+
+async function rhGeoSalvarCliente(){
+  const cid=(document.getElementById('rh-geo-cliente')?.value||'').trim();
+  if(!cid){
+    showSt('rh-jornada-st','Selecione um posto/cliente.',true);
+    return;
+  }
+  const latRaw=(document.getElementById('rh-geo-lat')?.value||'').trim().replace(',','.');
+  const lonRaw=(document.getElementById('rh-geo-lon')?.value||'').trim().replace(',','.');
+  const raioRaw=(document.getElementById('rh-geo-raio')?.value||'150').trim().replace(',','.');
+  const lat=parseFloat(latRaw), lon=parseFloat(lonRaw), raio=parseFloat(raioRaw);
+  if(!Number.isFinite(lat) || !Number.isFinite(lon) || lat<-90 || lat>90 || lon<-180 || lon>180){
+    showSt('rh-jornada-st','Latitude/longitude inválidas.',true);
+    return;
+  }
+  if(!Number.isFinite(raio) || raio<10 || raio>2000){
+    showSt('rh-jornada-st','Raio inválido (use entre 10 e 2000 metros).',true);
+    return;
+  }
+  const r=await api('/api/clientes/'+cid,'PUT',{geo_lat:lat,geo_lon:lon,geofence_raio_m:raio});
+  if(r?.erro){
+    showSt('rh-jornada-st',r.erro,true);
+    return;
+  }
+  todos=await api('/api/clientes');
+  rhGeoPopularClientes();
+  document.getElementById('rh-geo-cliente').value=String(cid);
+  rhGeoCarregarCliente();
+  showSt('rh-jornada-st','Geofence do posto salva com sucesso.',false);
+}
+
+async function rhJornadaInit(force=false){
+  if(rhJornadaInitDone && !force) return;
+  try{
+    if(!Array.isArray(funcs) || !funcs.length) funcs=await api('/api/funcionarios');
+    if(!Array.isArray(todos) || !todos.length) todos=await api('/api/clientes');
+    await rhJornadaCarregar();
+    rhJornadaPopularFuncionariosAtivos();
+    rhGeoPopularClientes();
+    rhJornadaLimparForm();
+    rhJornadaInitDone=true;
+  }catch(e){
+    showSt('rh-jornada-st','Falha ao carregar jornadas/geofence.',true);
+  }
+}
+
 function pontoFmtStatus(st){
   if(st==='ok') return '<span class="pill p-vd">OK</span>';
   if(st==='inconsistente') return '<span class="pill p-vm">Inconsistente</span>';
@@ -5006,6 +5359,7 @@ async function renderFuncionarios(){
   }).join('');
   await pontoSyncFuncionarios(!q);
   pontoPopularFuncionarios();
+  rhJornadaPopularFuncionariosAtivos();
   if(document.getElementById('pg-rh')?.classList.contains('on')){
     pontoCarregarDia();
     pontoCarregarPainelDia();
