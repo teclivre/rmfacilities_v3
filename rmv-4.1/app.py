@@ -4723,6 +4723,12 @@ def login():
 @app.route('/logout')
 def logout(): session.clear(); return redirect(url_for('login'))
 
+@app.route('/privacidade')
+@app.route('/politica-de-privacidade')
+@app.route('/privacy-policy')
+def pagina_privacidade_publica():
+    return render_template('privacidade_publica.html',atualizado_em='05/05/2026')
+
 @app.route('/')
 @lr
 def index(): return render_template('app.html',nome=session['nome'],perfil=session['perfil'],areas=json.dumps(session.get('areas',[]),ensure_ascii=False))

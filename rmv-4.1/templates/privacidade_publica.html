@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Politica de Privacidade - RM Facilities</title>
+  <meta name="description" content="Politica de Privacidade do aplicativo RM Funcionario.">
+  <style>
+    :root{
+      --bg:#0a1624;
+      --card:#0f2237;
+      --line:#1f3d5b;
+      --text:#e8f0f8;
+      --muted:#9ab1c7;
+      --accent:#67b7ff;
+      --ok:#70d6a5;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:radial-gradient(1200px 600px at 20% -10%, #163457 0%, var(--bg) 45%), var(--bg);
+      color:var(--text);
+      font:15px/1.6 "Segoe UI", Tahoma, Arial, sans-serif;
+    }
+    .wrap{max-width:980px;margin:0 auto;padding:28px 18px 44px}
+    .hero{margin-bottom:16px}
+    h1{margin:0 0 8px;font-size:30px;line-height:1.15}
+    .sub{color:var(--muted);font-size:14px}
+    .card{
+      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.00));
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:18px;
+      margin-top:12px;
+      box-shadow:0 8px 24px rgba(0,0,0,0.25);
+    }
+    h2{margin:0 0 8px;font-size:20px;color:var(--accent)}
+    p{margin:0 0 10px}
+    ul{margin:6px 0 0 18px;padding:0}
+    li{margin:0 0 6px}
+    .tag{
+      display:inline-block;
+      padding:4px 9px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      font-size:12px;
+      color:var(--ok);
+      background:rgba(112,214,165,0.08);
+      margin-bottom:8px;
+    }
+    .foot{margin-top:14px;color:var(--muted);font-size:13px}
+    a{color:#9ccfff}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="hero">
+      <div class="tag">Documento publico</div>
+      <h1>Politica de Privacidade</h1>
+      <div class="sub">Aplicativo RM Funcionario e servicos relacionados da RM Facilities.</div>
+      <div class="sub">Ultima atualizacao: {{ atualizado_em }}</div>
+    </header>
+
+    <section class="card">
+      <h2>1. Quem somos</h2>
+      <p>Esta Politica de Privacidade descreve como a RM Facilities trata dados pessoais no aplicativo RM Funcionario e em sistemas relacionados para gestao de documentos, comunicacao interna e registro de ponto.</p>
+    </section>
+
+    <section class="card">
+      <h2>2. Dados que coletamos</h2>
+      <p>Podemos coletar e tratar as seguintes categorias de dados:</p>
+      <ul>
+        <li>Dados cadastrais e profissionais: nome, CPF, matricula, cargo, empresa e posto.</li>
+        <li>Dados de contato: e-mail e telefone.</li>
+        <li>Dados de autenticacao e seguranca: token de sessao, historico de acesso, dados de confirmacao de login e dados tecnicos de dispositivo.</li>
+        <li>Dados de documentos: arquivos enviados, status de leitura/assinatura, registros de download e historico associado.</li>
+        <li>Dados de mensagens e notificacoes: conteudo de mensagens corporativas, status de envio e leitura, token de push.</li>
+        <li>Dados de ponto e localizacao: data/hora das marcacoes de ponto, coordenadas geograficas no momento da batida, precisao de GPS e dados de comparacao com geofence do posto de trabalho.</li>
+        <li>Dados opcionais de perfil: foto de perfil e informacoes complementares inseridas pelo usuario ou RH.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>3. Como usamos os dados</h2>
+      <p>Os dados sao utilizados para finalidades legitimas de gestao de relacao de trabalho, incluindo:</p>
+      <ul>
+        <li>permitir autenticacao e acesso seguro ao aplicativo;</li>
+        <li>disponibilizar documentos do colaborador e fluxo de assinatura;</li>
+        <li>enviar notificacoes de novos documentos, mensagens e alertas operacionais;</li>
+        <li>registrar e auditar marcacoes de ponto;</li>
+        <li>verificar, quando configurado, se a marcacao ocorreu dentro do raio georreferenciado do posto de trabalho;</li>
+        <li>manter trilha de auditoria para seguranca, compliance e prevencao de fraude.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>4. Base legal e compartilhamento</h2>
+      <p>O tratamento ocorre com base em obrigacoes legais/regulatorias, execucao de contrato e legitimo interesse, conforme aplicavel. Os dados podem ser compartilhados com operadores e provedores de tecnologia estritamente necessarios para prestacao do servico (hospedagem, notificacoes push e infraestrutura de comunicacao), observados deveres de confidencialidade e seguranca.</p>
+    </section>
+
+    <section class="card">
+      <h2>5. Permissoes do dispositivo</h2>
+      <ul>
+        <li>Localizacao: usada para registro de ponto com contexto geografico e verificacao de geofence quando habilitada.</li>
+        <li>Notificacoes: usada para informar novos documentos, mensagens e eventos importantes.</li>
+        <li>Biometria (quando ativada): usada apenas para facilitar o login no proprio dispositivo do usuario.</li>
+      </ul>
+      <p>O usuario pode gerenciar permissoes nas configuracoes do aparelho, observando que algumas funcionalidades podem ficar indisponiveis.</p>
+    </section>
+
+    <section class="card">
+      <h2>6. Retencao e seguranca</h2>
+      <p>Adotamos medidas tecnicas e administrativas para proteger os dados contra acesso nao autorizado, perda, alteracao ou divulgacao indevida. Os dados sao mantidos pelo periodo necessario ao atendimento das finalidades informadas, exigencias legais e necessidades de auditoria.</p>
+    </section>
+
+    <section class="card">
+      <h2>7. Direitos do titular</h2>
+      <p>Nos termos da legislacao aplicavel, o titular pode solicitar confirmacao de tratamento, acesso, correcao e demais direitos previstos em lei, conforme cabivel ao contexto da relacao de trabalho e obrigacoes legais da empresa.</p>
+    </section>
+
+    <section class="card">
+      <h2>8. Contato</h2>
+      <p>Para solicitacoes relacionadas a privacidade e protecao de dados, utilize os canais oficiais da RM Facilities no portal corporativo.</p>
+      <p class="foot">Esta politica pode ser atualizada periodicamente. Recomendamos consulta regular desta pagina.</p>
+    </section>
+  </main>
+</body>
+</html>
