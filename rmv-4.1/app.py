@@ -1581,6 +1581,8 @@ def _ass_track_channel(src,default='link'):
         return 'whatsapp'
     if s in ('mail','email','e-mail'):
         return 'email'
+    if s in ('app','aplicativo','push'):
+        return 'app'
     if s in ('link','manual','direto'):
         return 'link'
     return (default or 'link')
@@ -5888,6 +5890,7 @@ def api_funcionario_upload_arquivo(id):
         a.ass_status='pendente'
         if prazo_dias:
             a.ass_prazo_em=utcnow()+timedelta(days=prazo_dias)
+        _ass_track_mark_sent(a,'app')
         db.session.commit()
         _push_notify_funcionario(
             f.id,
@@ -5922,13 +5925,21 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
     if (arquivo.ass_status or '')=='assinado':
         return {'ok':False,'erro':'Documento ja assinado.'}
     canal=(canal or 'link').strip().lower()
-    if canal not in ('link','whatsapp'):
+    if canal not in ('link','whatsapp','email','app'):
         canal='link'
     tel=''
+    email=''
     if canal=='whatsapp':
         tel=wa_norm_number((funcionario.telefone if funcionario else '') or '')
         if not wa_is_valid_number(tel):
             return {'ok':False,'erro':'Funcionario sem WhatsApp valido cadastrado.'}
+    if canal=='email':
+        email=((funcionario.email if funcionario else '') or '').strip()
+        if not email or '@' not in email:
+            return {'ok':False,'erro':'Funcionario sem e-mail valido cadastrado.'}
+    if canal=='app':
+        if not funcionario:
+            return {'ok':False,'erro':'Funcionario invalido para envio no app.'}
     if not arquivo.ass_codigo:
         arquivo.ass_codigo=secrets.token_urlsafe(10)
     if forcar_novo_token or not (arquivo.ass_token or '').strip():
@@ -5945,6 +5956,8 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
     except Exception:
         link_curto=link
     enviado_wa=False
+    enviado_email=False
+    enviado_app=False
     erro_envio=''
     if canal=='whatsapp':
         nome_func=(funcionario.nome if funcionario else 'colaborador')
@@ -5956,6 +5969,25 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
         except Exception as ex:
             # Mantem assinatura pendente com link ativo mesmo se o WhatsApp falhar.
             erro_envio=str(ex)
+    elif canal=='email':
+        nome_func=(funcionario.nome if funcionario else 'colaborador')
+        try:
+            smtp_send_link_assinatura(email,nome_func,arquivo.nome_arquivo or 'Documento',link_curto)
+            enviado_email=True
+        except Exception as ex:
+            erro_envio=str(ex)
+    elif canal=='app':
+        try:
+            enviado_app=bool(_push_notify_funcionario(
+                funcionario.id,
+                'Documento para assinar',
+                f'{arquivo.nome_arquivo} aguarda sua assinatura no app.',
+                {'tipo':'documento_assinar','arquivo_id':str(arquivo.id)}
+            ))
+            if not enviado_app:
+                erro_envio='Falha ao enviar notificacao push para o aplicativo.'
+        except Exception as ex:
+            erro_envio=str(ex)
 
     if commit_now:
         db.session.commit()
@@ -5965,9 +5997,11 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
         'ok':True,
         'link':link,
         'link_curto':link_curto,
-        'canal':('whatsapp' if enviado_wa else 'link'),
+        'canal':canal,
         'expira_em':(arquivo.ass_expira_em.isoformat() if arquivo.ass_expira_em else ''),
         'enviado_wa':enviado_wa,
+        'enviado_email':enviado_email,
+        'enviado_app':enviado_app,
         'erro_envio':erro_envio,
     }
 
@@ -6768,14 +6802,24 @@ def api_func_arquivo_solicitar_assinatura(id):
     a=FuncionarioArquivo.query.get_or_404(id)
     f=Funcionario.query.get_or_404(a.funcionario_id)
     d=request.json or {}
-    canal=(d.get('canal') or 'link').strip().lower()
-    rs=_solicitar_assinatura_arquivo_funcionario(a,f,canal=canal,commit_now=True)
+    canal_req=(d.get('canal') or '').strip().lower()
+    canal_padrao=(a.ass_canal_envio or 'link')
+    canal=_ass_track_channel(canal_req,canal_padrao)
+    forcar_novo_token=bool(d.get('forcar_novo_token',True))
+    rs=_solicitar_assinatura_arquivo_funcionario(
+        a,
+        f,
+        canal=canal,
+        commit_now=True,
+        forcar_novo_token=forcar_novo_token,
+    )
     if not rs.get('ok'):
         return jsonify({'erro':rs.get('erro') or 'Falha ao solicitar assinatura.'}),400
     audit_event('func_arquivo_assinatura_solicitada','usuario',session.get('uid'),'funcionario',f.id,True,
-                {'arquivo_id':id,'nome':a.nome_arquivo,'canal':rs.get('canal','link')})
+                {'arquivo_id':id,'nome':a.nome_arquivo,'canal':rs.get('canal','link'),'lembrete':not forcar_novo_token})
     return jsonify({'ok':True,'arquivo_id':id,'link':rs.get('link',''),'link_curto':rs.get('link_curto',''),
                     'canal':rs.get('canal','link'),
+                    'erro_envio':rs.get('erro_envio',''),
                     'expira_em':rs.get('expira_em','')})
 
 @app.route('/api/funcionarios/arquivos/<int:id>/assinatura/rastreio')

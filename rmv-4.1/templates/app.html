@@ -4798,7 +4798,11 @@ function _painelAssAcoes(it){
 }
 async function painelAssReenviar(arquivoId){
   const r=await apiPost('/api/funcionarios/arquivos/'+arquivoId+'/assinatura/solicitar',{forcar_novo_token:false});
-  if(r&&r.ok) showSt('st-painel-ass','Lembrete reenviado com sucesso.',false);
+  if(r&&r.ok){
+    const canal=r?.canal?` (${r.canal})`:'';
+    const aviso=r?.erro_envio?` Atenção: ${r.erro_envio}`:'';
+    showSt('st-painel-ass','Lembrete reenviado com sucesso'+canal+'.'+aviso,false);
+  }
   else showSt('st-painel-ass','Erro ao reenviar: '+(r?.erro||'falha'),true);
   painelAssCarregar();
 }
