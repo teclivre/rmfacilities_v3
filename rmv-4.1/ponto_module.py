@@ -682,12 +682,13 @@ def register_ponto_routes(
 
         nome_arquivo = f'espelho_ponto_{funcionario.id}_{competencia}.pdf'
         saida = io.BytesIO()
-        doc = SimpleDocTemplate(saida, pagesize=A4, leftMargin=10 * mm, rightMargin=10 * mm, topMargin=10 * mm, bottomMargin=12 * mm)
+        doc = SimpleDocTemplate(saida, pagesize=A4, leftMargin=8 * mm, rightMargin=8 * mm, topMargin=7 * mm, bottomMargin=7 * mm)
         largura = A4[0] - (doc.leftMargin + doc.rightMargin)  # largura útil dentro das margens
+        compact_mode = len(linhas) >= 30
         styles = getSampleStyleSheet()
-        st_titulo = ParagraphStyle('ptt', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=13, alignment=TA_CENTER)
-        st_small = ParagraphStyle('pts', parent=styles['Normal'], fontName='Helvetica', fontSize=7.4, leading=9.2)
-        st_sign = ParagraphStyle('ptsig', parent=styles['Normal'], fontName='Helvetica', fontSize=7.6, leading=9.6, alignment=TA_CENTER)
+        st_titulo = ParagraphStyle('ptt', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=(12 if compact_mode else 13), alignment=TA_CENTER)
+        st_small = ParagraphStyle('pts', parent=styles['Normal'], fontName='Helvetica', fontSize=(6.8 if compact_mode else 7.4), leading=(8.0 if compact_mode else 9.2))
+        st_sign = ParagraphStyle('ptsig', parent=styles['Normal'], fontName='Helvetica', fontSize=(6.6 if compact_mode else 7.6), leading=(8.0 if compact_mode else 9.6), alignment=TA_CENTER)
 
         elementos = []
         empresa = Empresa.query.get(funcionario.empresa_id) if funcionario.empresa_id else None
@@ -707,9 +708,9 @@ def register_ponto_routes(
                         req = urllib.request.Request(cand, headers={'User-Agent': 'Mozilla/5.0'})
                         with urllib.request.urlopen(req, timeout=8) as resp:
                             data = resp.read()
-                        return Image(io.BytesIO(data), width=26 * mm, height=11 * mm)
+                        return Image(io.BytesIO(data), width=20 * mm, height=8 * mm)
                     if os.path.exists(cand):
-                        return Image(cand, width=26 * mm, height=11 * mm)
+                        return Image(cand, width=20 * mm, height=8 * mm)
                 except Exception:
                     continue
             return p(f'<b>{(getattr(emp_item, "nome", "") or "RM FACILITIES LTDA")}</b>', st_small, html=True)
@@ -734,16 +735,16 @@ def register_ponto_routes(
             ('SPAN', (0, 0), (0, 1)),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('ALIGN', (0, 0), (0, 1), 'CENTER'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 6),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 5),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), (3 if compact_mode else 5)),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), (3 if compact_mode else 5)),
         ]))
 
         elementos.append(p('Espelho Ponto', st_titulo))
-        elementos.append(Spacer(1, 6))
+        elementos.append(Spacer(1, (4 if compact_mode else 6)))
         elementos.append(tabela_cab)
-        elementos.append(Spacer(1, 6))
+        elementos.append(Spacer(1, (4 if compact_mode else 6)))
 
         tabela_dias = [['Data', 'Ent. 1', 'Sai. 1', 'Ent. 2', 'Sai. 2', 'Previstas', 'Diurnas', 'Intervalo', 'Faltas', 'Ext. 100']]
         tabela_dias.extend(linhas)
@@ -753,15 +754,15 @@ def register_ponto_routes(
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e8e8e8')),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 6.9),
+            ('FONTSIZE', (0, 0), (-1, -1), (6.2 if compact_mode else 6.9)),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 2.6),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 2.6),
-            ('TOPPADDING', (0, 0), (-1, -1), 2.4),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 2.4),
+            ('LEFTPADDING', (0, 0), (-1, -1), 2.0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 2.0),
+            ('TOPPADDING', (0, 0), (-1, -1), (1.2 if compact_mode else 2.2)),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), (1.2 if compact_mode else 2.2)),
         ]))
         elementos.append(tabela_main)
-        elementos.append(Spacer(1, 8))
+        elementos.append(Spacer(1, (4 if compact_mode else 8)))
 
         resumo_line = (
             f'<b>Previstas:</b> {_ponto_fmt_minutos(total_previstas)}   '
@@ -773,13 +774,13 @@ def register_ponto_routes(
         resumo_tbl = Table([[p(resumo_line, st_small, html=True)]], colWidths=[largura * 1.00])
         resumo_tbl.setStyle(TableStyle([
             ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#888888')),
-            ('LEFTPADDING', (0, 0), (-1, -1), 6),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 5),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), (3 if compact_mode else 5)),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), (3 if compact_mode else 5)),
         ]))
         elementos.append(resumo_tbl)
-        elementos.append(Spacer(1, 14))
+        elementos.append(Spacer(1, (6 if compact_mode else 10)))
 
         assinatura = Table([
             [
@@ -794,24 +795,18 @@ def register_ponto_routes(
                 p('', st_small),
                 p('____________________________________________________________', st_sign),
             ],
-            [
-                p('', st_small),
-                p(' ', st_sign),
-            ],
         ], colWidths=[largura * 0.67, largura * 0.33])
         assinatura.setStyle(TableStyle([
             ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#888888')),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 6),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (1, 2), (1, 2), 18),
-            ('TOPPADDING', (1, 3), (1, 3), 10),
-            ('BOTTOMPADDING', (1, 3), (1, 3), 18),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), (4 if compact_mode else 6)),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), (4 if compact_mode else 6)),
+            ('BOTTOMPADDING', (1, 2), (1, 2), (8 if compact_mode else 14)),
         ]))
         elementos.append(assinatura)
-        elementos.append(Spacer(1, 6))
+        elementos.append(Spacer(1, 3))
         elementos.append(p('Assinado eletronicamente por RM Facilities', st_small))
 
         doc.build(elementos)
