@@ -1225,6 +1225,41 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
           <div id="wa-colab-st" class="st" style="margin-top:8px"></div>
         </div>
+
+        <!-- Caixa de conversas WhatsApp -->
+        <div class="card" style="margin-top:14px">
+          <div class="card-header">
+            <span class="card-title">💬 Conversas WhatsApp (Inbox)</span>
+            <button class="btn b-gh b-sm" onclick="loadWAConversas()">↻ Atualizar</button>
+          </div>
+          <div style="display:flex;gap:10px;height:480px;margin-top:8px">
+            <!-- Lista de conversas -->
+            <div style="width:260px;min-width:200px;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
+              <div style="padding:8px 10px;border-bottom:1px solid var(--borda)">
+                <input id="wa-conv-busca" placeholder="Buscar conversa…" oninput="waFiltrarConversas()" style="width:100%;border:1px solid var(--borda);border-radius:8px;padding:5px 8px;font-size:12px;background:var(--fundo);color:var(--text)">
+              </div>
+              <div id="wa-conversas-lista" style="flex:1;overflow-y:auto">
+                <div class="vazio" style="padding:16px">Carregando conversas…</div>
+              </div>
+            </div>
+            <!-- Chat -->
+            <div style="flex:1;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
+              <div style="padding:10px 14px;border-bottom:1px solid var(--borda);display:flex;align-items:center;gap:8px">
+                <span id="wa-chat-titulo" style="font-weight:600;font-size:13px;flex:1">Selecione uma conversa</span>
+                <span id="wa-pausa-info" style="display:none;font-size:11px;background:#fff3cd;color:#856404;padding:2px 8px;border-radius:8px"></span>
+                <button id="wa-pausar-btn" class="btn b-gh b-sm" style="display:none;padding:2px 10px;font-size:11px" onclick="waPausarIA()">⏸ Pausar IA</button>
+                <button id="wa-retomar-btn" class="btn b-az b-sm" style="display:none;padding:2px 10px;font-size:11px" onclick="waRetomarIA()">▶ Reativar IA</button>
+              </div>
+              <div id="wa-chat-msgs" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px">
+                <div class="vazio" style="margin-top:40px">Selecione uma conversa para ver as mensagens</div>
+              </div>
+              <div style="padding:10px;border-top:1px solid var(--borda);display:flex;gap:8px;align-items:flex-end">
+                <textarea id="wa-msg-input" placeholder="Digite uma mensagem…" style="flex:1;min-height:38px;max-height:120px;resize:vertical;border-radius:8px;border:1px solid var(--borda);background:var(--fundo);color:var(--text);padding:8px 10px;font-size:13px" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();waSend()}" disabled></textarea>
+                <button class="btn b-az" id="wa-send-btn" onclick="waSend()" disabled style="white-space:nowrap">Enviar</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Tab Chat App -->
@@ -1390,6 +1425,16 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
           <div id="iawa-st" class="st"></div>
           <div id="iawa-resp" style="font-size:12px;color:#444;margin-top:8px;white-space:pre-wrap"></div>
+
+          <!-- Status de pausa e botão global de despausar -->
+          <div style="margin-top:14px;padding:12px 14px;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span style="font-size:13px;font-weight:600">Agente IA:</span>
+            <span id="iawa-status-badge" style="font-size:12px;padding:3px 10px;border-radius:8px;background:#d1e7dd;color:#0a3622">● Ativo</span>
+            <span id="iawa-status-info" style="font-size:12px;color:#6a7d8f;flex:1"></span>
+            <button class="btn b-az b-sm" id="iawa-retomar-btn" style="display:none" onclick="waRetomarIAGlobal()">▶ Reativar agente agora</button>
+            <button class="btn b-gh b-sm" onclick="iawaSincronizarStatus()">↻ Verificar status</button>
+          </div>
+          <div id="iawa-retomar-st" class="st" style="margin-top:6px"></div>
         </div>
       </div>
     </div>
@@ -6355,6 +6400,7 @@ function switchTab(prefix,tab,el){
   if(el){el.classList.remove('b-gh');el.classList.add('b-az');}
   if(prefix==='rhd'&&tab==='conversas'){
     waCarregarDisparoColaboradores();
+    loadWAConversas();
   }
   if(prefix==='rhd'&&tab==='cfg-email')loadSMTPConfig();
   if(prefix==='rhd'&&tab==='cfg-wa')loadWAConfig();
@@ -6973,6 +7019,36 @@ async function waRetomarIA(){
   abrirWAConversa(_waNumeroAtual,nome);
 }
 
+async function waRetomarIAGlobal(){
+  const r=await api('/api/whatsapp/ia/retomar-todos','POST',{});
+  const st=document.getElementById('iawa-retomar-st');
+  if(r.erro){if(st)showSt('iawa-retomar-st',r.erro,true);else alert(r.erro);return;}
+  if(st) showSt('iawa-retomar-st',r.mensagem||'Agente reativado com sucesso.',false);
+  iawaSincronizarStatus();
+  loadWAConversas();
+}
+
+async function iawaSincronizarStatus(){
+  const badge=document.getElementById('iawa-status-badge');
+  const info=document.getElementById('iawa-status-info');
+  const btn=document.getElementById('iawa-retomar-btn');
+  const d=await api('/api/whatsapp/ia/status');
+  if(!badge)return;
+  if(d.pausados && d.pausados.length>0){
+    badge.textContent='⏸ Pausado';
+    badge.style.background='#fff3cd';badge.style.color='#856404';
+    const nomes=d.pausados.map(p=>p.nome||p.numero).join(', ');
+    const ates=d.pausados.map(p=>p.pausado_ate?'até '+new Date(p.pausado_ate).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'').filter(Boolean).join('; ');
+    if(info) info.textContent=`Pausado para: ${nomes}${ates?' ('+ates+')':''}`;
+    if(btn) btn.style.display='inline-flex';
+  } else {
+    badge.textContent='● Ativo';
+    badge.style.background='#d1e7dd';badge.style.color='#0a3622';
+    if(info) info.textContent='';
+    if(btn) btn.style.display='none';
+  }
+}
+
 async function waSend(){
   if(!_waNumeroAtual)return;
   const input=document.getElementById('wa-msg-input');
@@ -7024,9 +7100,8 @@ async function loadWAConfig(){
   document.getElementById('wa-backup-window').value=d.backup_window_hours||'8';
   document.getElementById('wa-backup-max').value=d.backup_max_conversas||'10';
   await loadIAWAConfig();
-}
-
-async function salvarWAConfig(){
+  iawaSincronizarStatus();
+}{
   const d={
     url:document.getElementById('wa-url').value,
     instancia:document.getElementById('wa-instancia').value,

@@ -10891,6 +10891,34 @@ def api_wa_ia_retomar():
     wa_ai_resume(numero)
     return jsonify({'ok':True,'numero':numero,'ia_pausada':False})
 
+@app.route('/api/whatsapp/ia/retomar-todos',methods=['POST'])
+@lr
+def api_wa_ia_retomar_todos():
+    agora=utcnow()
+    pausados=Config.query.filter(Config.chave.like('wa_ai_pause_until_%')).all()
+    count=0
+    for cfg in pausados:
+        until=_parse_dt_iso(cfg.valor or '')
+        if until and until>agora:
+            numero=cfg.chave.replace('wa_ai_pause_until_','')
+            wa_ai_resume(numero)
+            count+=1
+    return jsonify({'ok':True,'retomados':count,'mensagem':f'{count} número(s) reativado(s).' if count else 'Nenhum agente estava pausado.'})
+
+@app.route('/api/whatsapp/ia/status')
+@lr
+def api_wa_ia_status():
+    agora=utcnow()
+    pausados=Config.query.filter(Config.chave.like('wa_ai_pause_until_%')).all()
+    ativos=[]
+    for cfg in pausados:
+        until=_parse_dt_iso(cfg.valor or '')
+        if until and until>agora:
+            numero=cfg.chave.replace('wa_ai_pause_until_','')
+            c=WhatsAppConversa.query.filter_by(numero=numero).first()
+            ativos.append({'numero':numero,'nome':c.nome if c else numero,'pausado_ate':until.isoformat()})
+    return jsonify({'pausados':ativos,'total_pausados':len(ativos)})
+
 @app.route('/api/whatsapp/ia/pausar',methods=['POST'])
 @lr
 def api_wa_ia_pausar():
