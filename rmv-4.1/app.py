@@ -5965,6 +5965,27 @@ def api_funcionario_upload_arquivo(id):
                 assinatura_auto={'status':'erro','erro':rs.get('erro',''),'link':rs.get('link','')}
         except Exception as e:
             assinatura_auto={'status':'erro','erro':str(e)}
+        # Notificar funcionário de novo documento (quando não é 'app', pois 'app' já notifica acima)
+        try:
+            _push_notify_funcionario(
+                f.id,
+                'Novo documento disponível',
+                f'{a.nome_arquivo} foi adicionado ao seu perfil.',
+                {'tipo':'novo_documento','arquivo_id':str(a.id)}
+            )
+        except Exception:
+            pass
+    elif canal_ass=='nao':
+        # Sem assinatura — apenas notificar sobre o novo documento
+        try:
+            _push_notify_funcionario(
+                f.id,
+                'Novo documento disponível',
+                f'{a.nome_arquivo} foi adicionado ao seu perfil.',
+                {'tipo':'novo_documento','arquivo_id':str(a.id)}
+            )
+        except Exception:
+            pass
     audit_event('funcionario_arquivo_upload','usuario',session.get('uid'),'funcionario',id,True,{'arquivo_id':a.id,'categoria':cat,'caminho':rel})
     out=a.to_dict(); out['assinatura_auto']=assinatura_auto; out['competencia_origem']=comp_origem
     return jsonify(out),201

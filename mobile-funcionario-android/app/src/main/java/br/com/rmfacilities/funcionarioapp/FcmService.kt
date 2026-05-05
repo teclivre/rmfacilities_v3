@@ -42,11 +42,13 @@ class FcmService : FirebaseMessagingService() {
         // Títulos e corpos descritivos por tipo
         val titulo = message.notification?.title ?: data["titulo"] ?: when (tipo) {
             "documento_assinar" -> "📄 Novo documento para assinar"
+            "novo_documento" -> "📁 Novo documento disponível"
             "chat", "chat_broadcast" -> "💬 Nova mensagem"
             else -> "RM Funcionário"
         }
         val corpo = message.notification?.body ?: data["corpo"] ?: when (tipo) {
             "documento_assinar" -> "Você tem um documento aguardando sua assinatura."
+            "novo_documento" -> "Um novo documento foi adicionado ao seu perfil."
             "chat" -> "Você recebeu uma nova mensagem."
             "chat_broadcast" -> "Há um aviso novo para você."
             else -> "Toque para abrir o aplicativo."
@@ -58,6 +60,10 @@ class FcmService : FirebaseMessagingService() {
             tipo == "documento_assinar" && arquivoId > 0 ->
                 Intent(this, DocumentosActivity::class.java).apply {
                     putExtra(EXTRA_ARQUIVO_ID, arquivoId)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+            tipo == "novo_documento" ->
+                Intent(this, DocumentosActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 }
             isChat ->

@@ -4,10 +4,10 @@
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:paddingStart="32dp"
+    android:paddingStart="4dp"
     android:paddingEnd="12dp"
-    android:paddingTop="10dp"
-    android:paddingBottom="6dp"
+    android:paddingTop="18dp"
+    android:paddingBottom="8dp"
     android:clickable="true"
     android:focusable="true"
     android:foreground="@drawable/ripple_card">
@@ -15,34 +15,38 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="📂"
-        android:textSize="15sp"
-        android:layout_marginEnd="8dp" />
-
-    <TextView
-        android:id="@+id/tvYearHeader"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:textColor="@color/accent_blue"
-        android:textSize="13sp"
-        android:textStyle="bold"
-        android:letterSpacing="0.08" />
-
-    <TextView
-        android:id="@+id/tvYearCount"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:textColor="@color/text_secondary"
-        android:textSize="11sp"
+        android:text="📁"
+        android:textSize="20sp"
         android:layout_marginEnd="10dp" />
 
     <TextView
-        android:id="@+id/tvYearArrow"
+        android:id="@+id/tvCategoryLabel"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/tvCategoryCount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_badge_count"
+        android:textColor="@color/text_secondary"
+        android:textSize="11sp"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:layout_marginEnd="12dp" />
+
+    <TextView
+        android:id="@+id/tvCategoryArrow"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="▶"
-        android:textColor="@color/accent_blue"
-        android:textSize="11sp" />
+        android:textColor="@color/text_secondary"
+        android:textSize="12sp" />
 
 </LinearLayout>

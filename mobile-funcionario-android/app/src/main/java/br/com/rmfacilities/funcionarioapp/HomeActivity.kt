@@ -19,6 +19,7 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -86,8 +87,15 @@ class HomeActivity : AppCompatActivity() {
         }
 
         findViewById<MaterialButton>(R.id.btnLogout).setOnClickListener {
-            session.clear()
-            goLogin()
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Sair do aplicativo")
+                .setMessage("Deseja realmente sair da sua conta?")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Sair") { _dialog, _ ->
+                    session.clear()
+                    goLogin()
+                }
+                .show()
         }
 
         swipeRefresh.setOnRefreshListener { carregarDados() }
