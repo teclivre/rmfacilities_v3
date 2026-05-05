@@ -6020,6 +6020,46 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
         except Exception as ex:
             erro_envio=str(ex)
 
+        # Fallback: se push do app falhar, tenta WhatsApp e depois e-mail.
+        if not enviado_app:
+            erro_push=erro_envio or 'Falha no envio via aplicativo.'
+            nome_func=(funcionario.nome if funcionario else 'colaborador')
+            tel_fb=wa_norm_number((funcionario.telefone if funcionario else '') or '')
+            email_fb=((funcionario.email if funcionario else '') or '').strip()
+
+            if wa_is_valid_number(tel_fb):
+                try:
+                    if eh_lembrete:
+                        msg_fb=(f"🔔 Lembrete de envio anterior\n"
+                                f"Olá, {nome_func}! Este e um lembrete para assinatura do documento "
+                                f"'{arquivo.nome_arquivo}'. O link expira em 7 dias: {link_curto}")
+                    else:
+                        msg_fb=(f"Olá, {nome_func}! Segue o link para assinatura do documento "
+                                f"'{arquivo.nome_arquivo}'. O link expira em 7 dias: {link_curto}")
+                    wa_send_text(tel_fb,msg_fb)
+                    enviado_wa=True
+                    canal='whatsapp'
+                    erro_envio=''
+                    _ass_track_mark_sent(arquivo,'whatsapp')
+                except Exception as ex_fb:
+                    erro_envio=f"{erro_push} Fallback WhatsApp falhou: {str(ex_fb)}"
+
+            if not enviado_wa and email_fb and '@' in email_fb:
+                try:
+                    smtp_send_link_assinatura(
+                        email_fb,
+                        nome_func,
+                        arquivo.nome_arquivo or 'Documento',
+                        link_curto,
+                        eh_lembrete=eh_lembrete,
+                    )
+                    enviado_email=True
+                    canal='email'
+                    erro_envio=''
+                    _ass_track_mark_sent(arquivo,'email')
+                except Exception as ex_fb:
+                    erro_envio=f"{erro_push} Fallback e-mail falhou: {str(ex_fb)}"
+
     if commit_now:
         db.session.commit()
     else:
@@ -7077,7 +7117,8 @@ def api_rh_assinaturas_lembrete_pendentes():
             )
             if rs.get('ok'):
                 enviados+=1
-                canais[canal]=canais.get(canal,0)+1
+                canal_efetivo=_ass_track_channel(rs.get('canal') or canal,canal)
+                canais[canal_efetivo]=canais.get(canal_efetivo,0)+1
                 a.ass_lembretes_enviados=(a.ass_lembretes_enviados or 0)+1
                 if rs.get('erro_envio'):
                     falhas+=1
