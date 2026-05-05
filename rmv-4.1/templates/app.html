@@ -4797,7 +4797,7 @@ function _painelAssAcoes(it){
   return btns||'—';
 }
 async function painelAssReenviar(arquivoId){
-  const r=await apiPost('/api/funcionarios/arquivos/'+arquivoId+'/assinatura/solicitar',{forcar_novo_token:false});
+  const r=await api('/api/funcionarios/arquivos/'+arquivoId+'/assinatura/solicitar','POST',{forcar_novo_token:false});
   if(r&&r.ok){
     const canal=r?.canal?` (${r.canal})`:'';
     const aviso=r?.erro_envio?` Atenção: ${r.erro_envio}`:'';
@@ -4808,7 +4808,7 @@ async function painelAssReenviar(arquivoId){
 }
 async function painelAssCancelar(arquivoId){
   if(!confirm('Cancelar a solicitação de assinatura deste documento?')) return;
-  const r=await apiPost('/api/funcionarios/arquivos/'+arquivoId+'/assinatura/cancelar',{});
+  const r=await api('/api/funcionarios/arquivos/'+arquivoId+'/assinatura/cancelar','POST',{});
   if(r&&r.ok) showSt('st-painel-ass','Solicitação cancelada.',false);
   else showSt('st-painel-ass','Erro ao cancelar: '+(r?.erro||'falha'),true);
   painelAssCarregar();
