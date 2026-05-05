@@ -1038,6 +1038,38 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
 
+      <div class="card">
+        <div class="card-header"><span class="card-title">Exportar colaboradores ativos</span></div>
+        <div class="g3" style="margin-top:8px">
+          <div class="f">
+            <label>Empresa</label>
+            <select id="rh-exp-empresa" onchange="rhExportOnEmpresaChange()">
+              <option value="">Todas as empresas</option>
+            </select>
+          </div>
+          <div class="f s2">
+            <label>Postos (selecione um ou mais)</label>
+            <select id="rh-exp-postos" multiple size="6" onchange="rhExportRenderPreview()" style="min-height:130px"></select>
+            <div class="hint" style="margin-top:4px">Dica: use Ctrl/Cmd para selecionar múltiplos postos.</div>
+          </div>
+        </div>
+        <div class="brow" style="justify-content:flex-start;gap:8px;flex-wrap:wrap">
+          <button class="btn b-gh b-sm" type="button" onclick="rhExportMarcarTodosPostos(true)">Selecionar todos os postos</button>
+          <button class="btn b-gh b-sm" type="button" onclick="rhExportMarcarTodosPostos(false)">Limpar postos</button>
+          <button class="btn b-ghv b-sm" type="button" onclick="rhExportCarregarFiltros()">Atualizar colaboradores</button>
+          <button class="btn b-az b-sm" type="button" onclick="rhExportar('xlsx')">Exportar planilha</button>
+          <button class="btn b-ghl b-sm" type="button" onclick="rhExportar('pdf')">Exportar PDF</button>
+        </div>
+        <div id="rh-exp-st" class="st" style="margin-top:8px"></div>
+        <div id="rh-exp-resumo" class="hint" style="margin-top:4px"></div>
+        <div class="tbl-wrap" style="margin-top:8px">
+          <table class="tbl">
+            <thead><tr><th>RE</th><th>Nome</th><th>Posto</th><th>Empresa</th></tr></thead>
+            <tbody id="rh-exp-tb"><tr><td colspan="4" style="text-align:center;color:#999;padding:16px">Carregando colaboradores ativos...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
       {% include 'partials/rh_ponto_section.html' %}
 
       <div class="card">
@@ -2446,6 +2478,7 @@ function rbacLimpar(){
   }));
 }
 let todos=[], emps=[], funcs=[], pontoFuncs=[], bancosBR=[], beneficiosMensais=[], benTab='ativos', rhFuncTab='ativos', acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
+let rhExportFuncsAtivos=[];
 let pontoResumoPainelByFunc={};
 let pontoMarcacoesDiaAtual=[];
 let medicaoAtualId=null;
@@ -2949,7 +2982,7 @@ function nav(id,el,force=false){
   if(targetId==='empresas')renderEmps();
   if(targetId==='usuarios')renderUsr();
   if(targetId==='config')loadConfig();
-  if(targetId==='rh'){renderFuncionarios();painelAssInicializar();}
+  if(targetId==='rh'){renderFuncionarios();painelAssInicializar();rhExportCarregarFiltros();}
   if(targetId==='operacional'){renderOperDocs();renderOperPostos();}
   if(targetId==='compras'){renderOrdensCompra();}
   if(targetId==='beneficios'){carregarBeneficiosMensais();carregarConfigAlertaBeneficios();}
@@ -4767,6 +4800,106 @@ async function painelAssInicializar(){
     sel.innerHTML='<option value="">Todos</option>'+fs.map(f=>`<option value="${f.id}">${esc(f.nome)}</option>`).join('');
   }
   painelAssCarregar();
+}
+
+function rhExportSelectedPostos(){
+  const el=document.getElementById('rh-exp-postos');
+  if(!el) return [];
+  return Array.from(el.selectedOptions||[]).map(o=>(o.value||'').trim()).filter(Boolean);
+}
+
+function rhExportFilteredList(){
+  const empresaId=(document.getElementById('rh-exp-empresa')?.value||'').trim();
+  const postosSel=rhExportSelectedPostos().map(p=>p.toLowerCase());
+  const all=Array.isArray(rhExportFuncsAtivos)?rhExportFuncsAtivos:[];
+  return all.filter(f=>{
+    const okEmpresa=!empresaId || String(f.empresa_id||'')===String(empresaId);
+    const posto=(f.posto_operacional||'Reserva tecnica').toString().trim();
+    const okPosto=!postosSel.length || postosSel.includes(posto.toLowerCase());
+    return okEmpresa && okPosto;
+  });
+}
+
+function rhExportRenderPreview(){
+  const tb=document.getElementById('rh-exp-tb');
+  const resumo=document.getElementById('rh-exp-resumo');
+  if(!tb) return;
+  const lista=rhExportFilteredList();
+  const totalAtivos=Array.isArray(rhExportFuncsAtivos)?rhExportFuncsAtivos.length:0;
+  const postosSel=rhExportSelectedPostos().length;
+  if(resumo){
+    resumo.textContent=`${lista.length} colaborador(es) filtrado(s) de ${totalAtivos} ativo(s)${postosSel?` · ${postosSel} posto(s) selecionado(s)`:''}.`;
+  }
+  if(!lista.length){
+    tb.innerHTML='<tr><td colspan="4" style="text-align:center;color:#999;padding:16px">Nenhum colaborador ativo para os filtros selecionados.</td></tr>';
+    return;
+  }
+  tb.innerHTML=lista.slice(0,300).map(f=>{
+    const emp=(emps||[]).find(e=>String(e.id)===String(f.empresa_id||''));
+    return `<tr><td>${f.re||'—'}</td><td>${esc(f.nome||'—')}</td><td>${esc(f.posto_operacional||'Reserva tecnica')}</td><td>${esc(emp?.nome||'—')}</td></tr>`;
+  }).join('');
+}
+
+function rhExportPopularPostos(){
+  const el=document.getElementById('rh-exp-postos');
+  if(!el) return;
+  const empresaId=(document.getElementById('rh-exp-empresa')?.value||'').trim();
+  const atuais=new Set(rhExportSelectedPostos());
+  const base=(Array.isArray(rhExportFuncsAtivos)?rhExportFuncsAtivos:[]).filter(f=>!empresaId || String(f.empresa_id||'')===String(empresaId));
+  const postos=[...new Set(base.map(f=>(f.posto_operacional||'Reserva tecnica').toString().trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  el.innerHTML='';
+  postos.forEach(p=>{
+    const opt=new Option(p,p);
+    opt.selected=atuais.has(p);
+    el.appendChild(opt);
+  });
+}
+
+function rhExportOnEmpresaChange(){
+  rhExportPopularPostos();
+  rhExportRenderPreview();
+}
+
+function rhExportMarcarTodosPostos(mark){
+  const el=document.getElementById('rh-exp-postos');
+  if(!el) return;
+  Array.from(el.options||[]).forEach(o=>{o.selected=!!mark;});
+  rhExportRenderPreview();
+}
+
+function rhExportMontarUrl(formato){
+  const empresaId=(document.getElementById('rh-exp-empresa')?.value||'').trim();
+  const postos=rhExportSelectedPostos();
+  const p=new URLSearchParams();
+  p.set('formato',formato);
+  if(empresaId) p.set('empresa_id',empresaId);
+  if(postos.length) p.set('postos',postos.join(','));
+  return '/api/funcionarios/ativos/exportar?'+p.toString();
+}
+
+function rhExportar(formato){
+  const lista=rhExportFilteredList();
+  if(!lista.length){
+    showSt('rh-exp-st','Nenhum colaborador ativo para exportar com os filtros atuais.',true);
+    return;
+  }
+  window.open(rhExportMontarUrl(formato),'_blank');
+  showSt('rh-exp-st',`Exportação ${formato.toUpperCase()} iniciada.`,false);
+}
+
+async function rhExportCarregarFiltros(){
+  const st=document.getElementById('rh-exp-st');
+  const selEmp=document.getElementById('rh-exp-empresa');
+  if(!selEmp) return;
+  if(st) showSt('rh-exp-st','Carregando colaboradores ativos...',false);
+  const all=await api('/api/funcionarios');
+  rhExportFuncsAtivos=(Array.isArray(all)?all:[]).filter(f=>((f?.status||'').toString().trim().toLowerCase()==='ativo'));
+  const empAtual=selEmp.value||'';
+  selEmp.innerHTML='<option value="">Todas as empresas</option>'+(emps||[]).map(e=>`<option value="${e.id}">${esc(e.nome||'Empresa')}</option>`).join('');
+  if(Array.from(selEmp.options).some(o=>o.value===empAtual)) selEmp.value=empAtual;
+  rhExportPopularPostos();
+  rhExportRenderPreview();
+  if(st) showSt('rh-exp-st','Filtros atualizados.',false);
 }
 
 async function renderFuncionarios(){

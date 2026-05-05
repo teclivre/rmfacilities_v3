@@ -5506,6 +5506,160 @@ def api_funcionarios():
         )]
     return jsonify([f.to_dict() for f in lst])
 
+def _funcionarios_ativos_filtrados_export():
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+
+    postos_raw=[]
+    csv_postos=(request.args.get('postos') or '').strip()
+    if csv_postos:
+        postos_raw.extend([x.strip() for x in csv_postos.split(',') if x.strip()])
+    postos_raw.extend([(x or '').strip() for x in request.args.getlist('posto') if (x or '').strip()])
+
+    postos_norm=[]
+    seen=set()
+    for p in postos_raw:
+        k=p.lower()
+        if k and k not in seen:
+            seen.add(k)
+            postos_norm.append(k)
+
+    q=Funcionario.query.filter_by(status='Ativo')
+    if empresa_id:
+        q=q.filter_by(empresa_id=empresa_id)
+    lst=q.order_by(Funcionario.nome).all()
+
+    if postos_norm:
+        set_postos=set(postos_norm)
+        lst=[f for f in lst if ((f.posto_operacional or 'Reserva tecnica').strip().lower() in set_postos)]
+
+    return lst
+
+def _export_funcionarios_ativos_xlsx(funcs):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb=Workbook()
+    ws=wb.active
+    ws.title='Colaboradores ativos'
+
+    headers=['RE','Matrícula','Nome','CPF','Telefone','Cargo','Função','Posto','Empresa','Status']
+    ws.append(['Relatório de colaboradores ativos'])
+    ws.append([f'Gerado em: {localnow().strftime("%d/%m/%Y %H:%M") }'])
+    ws.append([])
+    ws.append(headers)
+
+    emps_map={e.id:e.nome for e in Empresa.query.all()}
+    for f in funcs:
+        ws.append([
+            f.re or '',
+            f.matricula or '',
+            f.nome or '',
+            f.cpf or '',
+            f.telefone or '',
+            f.cargo or '',
+            f.funcao or '',
+            f.posto_operacional or 'Reserva tecnica',
+            emps_map.get(f.empresa_id,'') if f.empresa_id else '',
+            f.status or 'Ativo',
+        ])
+
+    header_fill=PatternFill('solid',fgColor='205D8A')
+    header_font=Font(bold=True,color='FFFFFF')
+    center=Alignment(horizontal='center',vertical='center')
+    left=Alignment(horizontal='left',vertical='center')
+    thin=Side(style='thin',color='D0D7DE')
+    border=Border(left=thin,right=thin,top=thin,bottom=thin)
+
+    hrow=4
+    for c in range(1,len(headers)+1):
+        cell=ws.cell(row=hrow,column=c)
+        cell.fill=header_fill
+        cell.font=header_font
+        cell.alignment=center
+        cell.border=border
+
+    for r in range(hrow+1,ws.max_row+1):
+        for c in range(1,len(headers)+1):
+            cell=ws.cell(row=r,column=c)
+            cell.border=border
+            cell.alignment=left
+
+    widths=[10,12,34,18,16,20,20,24,26,10]
+    for i,w in enumerate(widths,1):
+        ws.column_dimensions[get_column_letter(i)].width=w
+
+    buf=io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    nome=f'colaboradores_ativos_{localnow().strftime("%Y%m%d_%H%M")}.xlsx'
+    return send_file(buf,mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',as_attachment=True,download_name=nome)
+
+def _export_funcionarios_ativos_pdf(funcs):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer
+    from reportlab.lib.styles import ParagraphStyle
+
+    buf=io.BytesIO()
+    doc=SimpleDocTemplate(buf,pagesize=A4,leftMargin=1.2*cm,rightMargin=1.2*cm,topMargin=1.2*cm,bottomMargin=1.2*cm)
+    st_t=ParagraphStyle('t',fontName='Helvetica-Bold',fontSize=12,leading=14,textColor=colors.HexColor('#123B60'))
+    st_s=ParagraphStyle('s',fontName='Helvetica',fontSize=9,leading=11,textColor=colors.HexColor('#4A5A6A'))
+    st_c=ParagraphStyle('c',fontName='Helvetica',fontSize=8,leading=10)
+
+    emps_map={e.id:e.nome for e in Empresa.query.all()}
+    data=[[Paragraph('<b>RE</b>',st_c),Paragraph('<b>Nome</b>',st_c),Paragraph('<b>Posto</b>',st_c),Paragraph('<b>Empresa</b>',st_c),Paragraph('<b>Telefone</b>',st_c)]]
+    for f in funcs:
+        data.append([
+            Paragraph(str(f.re or '—'),st_c),
+            Paragraph((f.nome or '—')[:80],st_c),
+            Paragraph((f.posto_operacional or 'Reserva tecnica')[:60],st_c),
+            Paragraph((emps_map.get(f.empresa_id,'') if f.empresa_id else '—')[:60],st_c),
+            Paragraph(str(f.telefone or '—'),st_c),
+        ])
+
+    table=Table(data,colWidths=[1.8*cm,5.9*cm,4.6*cm,4.7*cm,3.0*cm],repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#205D8A')),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('GRID',(0,0),(-1,-1),0.25,colors.HexColor('#D0D7DE')),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('FONTNAME',(0,1),(-1,-1),'Helvetica'),
+        ('FONTSIZE',(0,1),(-1,-1),8),
+        ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#F8FBFF')]),
+        ('LEFTPADDING',(0,0),(-1,-1),4),
+        ('RIGHTPADDING',(0,0),(-1,-1),4),
+        ('TOPPADDING',(0,0),(-1,-1),3),
+        ('BOTTOMPADDING',(0,0),(-1,-1),3),
+    ]))
+
+    elementos=[
+        Paragraph('Relatório de colaboradores ativos',st_t),
+        Paragraph(f'Gerado em {localnow().strftime("%d/%m/%Y %H:%M")} · Total: {len(funcs)} colaborador(es)',st_s),
+        Spacer(1,0.3*cm),
+        table
+    ]
+    doc.build(elementos)
+    buf.seek(0)
+    nome=f'colaboradores_ativos_{localnow().strftime("%Y%m%d_%H%M")}.pdf'
+    return send_file(buf,mimetype='application/pdf',as_attachment=False,download_name=nome)
+
+@app.route('/api/funcionarios/ativos/exportar')
+@lr
+def api_funcionarios_ativos_exportar():
+    formato=(request.args.get('formato') or 'xlsx').strip().lower()
+    if formato not in ('xlsx','pdf'):
+        return jsonify({'erro':'Formato inválido. Use xlsx ou pdf.'}),400
+
+    funcs=_funcionarios_ativos_filtrados_export()
+    if not funcs:
+        return jsonify({'erro':'Nenhum colaborador ativo encontrado para os filtros informados.'}),404
+
+    if formato=='pdf':
+        return _export_funcionarios_ativos_pdf(funcs)
+    return _export_funcionarios_ativos_xlsx(funcs)
+
 @app.route('/api/funcionarios/proxima-matricula')
 @lr
 def api_funcionarios_proxima_matricula():
