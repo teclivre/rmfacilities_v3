@@ -692,14 +692,6 @@ def register_ponto_routes(
         elementos = []
         empresa = Empresa.query.get(funcionario.empresa_id) if funcionario.empresa_id else None
         logo_url_padrao = 'https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png'
-        empresas_hdr = []
-        if empresa:
-            empresas_hdr.append(empresa)
-        for e in Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem, Empresa.id).all():
-            if not any((x.id == e.id) for x in empresas_hdr if getattr(x, 'id', None) and getattr(e, 'id', None)):
-                empresas_hdr.append(e)
-            if len(empresas_hdr) >= 2:
-                break
 
         def _logo_flowable(emp_item):
             cands = []
@@ -722,18 +714,7 @@ def register_ponto_routes(
                     continue
             return p(f'<b>{(getattr(emp_item, "nome", "") or "RM FACILITIES LTDA")}</b>', st_small, html=True)
 
-        logo_lines = []
-        for emp_item in empresas_hdr[:2]:
-            logo_lines.append([_logo_flowable(emp_item)])
-        if not logo_lines:
-            logo_lines = [[p('<b>RM FACILITIES LTDA</b>', st_small, html=True)]]
-        logo_cell = Table(logo_lines, colWidths=[26 * mm])
-        logo_cell.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('TOPPADDING', (0, 0), (-1, -1), 2),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-        ]))
+        logo_cell = _logo_flowable(empresa)
         inicio_br, fim_br = fmt_comp_br(competencia)
 
         cabecalho = [[

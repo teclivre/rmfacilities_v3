@@ -20,7 +20,7 @@ _strict_origin_check = True
 
 
 
-from flask import Flask, request, jsonify, redirect, render_template, send_file, Response, url_for
+from flask import Flask, request, jsonify, redirect, render_template, send_file, Response, url_for, has_request_context
 
 import io
 _strict_origin_check = False
@@ -2423,7 +2423,6 @@ def _fcm_send_to_token(token,titulo,corpo,data=None):
                 notification=messaging.AndroidNotification(
                     channel_id='rmf_documentos',
                     sound='default',
-                    notification_priority=messaging.AndroidNotificationPriority.MAX,
                     visibility=messaging.AndroidNotificationVisibility.PUBLIC,
                     default_vibrate_timings=True,
                     default_sound=True,
@@ -2468,7 +2467,11 @@ def _push_notify_funcionario(fid,titulo,corpo,data=None):
     except Exception as e:
         msg=(str(e) or '').lower()
         app.logger.exception(f'[fcm] segunda tentativa falhou para funcionario {fid}: {e}')
-        if 'unregistered' in msg or 'registration-token-not-registered' in msg:
+        if (
+            'unregistered' in msg or
+            'registration-token-not-registered' in msg or
+            'requested entity was not found' in msg
+        ):
             f.app_push_token=None
             db.session.commit()
             app.logger.warning(f'[fcm] token invalido removido para funcionario {fid}')
@@ -6066,10 +6069,19 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
     _ass_track_mark_sent(arquivo,canal)
 
     src_q=_ass_track_channel(canal)
-    link=f"{request.url_root.rstrip('/')}/doc/assinar/{arquivo.ass_token}?src={src_q}"
+    if has_request_context():
+        base_url=request.url_root.rstrip('/')
+    else:
+        base_url=(
+            (os.environ.get('PUBLIC_BASE_URL') or '').strip() or
+            (gc('public_base_url','') or '').strip() or
+            (os.environ.get('APP_BASE_URL') or '').strip() or
+            'https://portal.grupormfacilities.com.br'
+        ).rstrip('/')
+    link=f"{base_url}/doc/assinar/{arquivo.ass_token}?src={src_q}"
     try:
         sc=_short_link_criar(link)
-        link_curto=(f"{request.url_root.rstrip('/')}/s/{sc}" if sc else link)
+        link_curto=(f"{base_url}/s/{sc}" if sc else link)
     except Exception:
         link_curto=link
     enviado_wa=False
