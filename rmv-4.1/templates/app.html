@@ -6740,6 +6740,7 @@ async function mapsExcluirComunicado(id){
 }
 
 function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');}
+function esc(s){return escHtml(s);}
 
 async function mapsVerificarBadgeGlobal(){
   try{
