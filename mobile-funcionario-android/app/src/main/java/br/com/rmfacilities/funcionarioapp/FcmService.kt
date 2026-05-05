@@ -37,9 +37,20 @@ class FcmService : FirebaseMessagingService() {
         super.onMessageReceived(message)
         val data = message.data
         val tipo = data["tipo"] ?: ""
-        val titulo = message.notification?.title ?: data["titulo"] ?: "RM Funcionário"
-        val corpo = message.notification?.body ?: data["corpo"] ?: ""
         val arquivoId = data["arquivo_id"]?.toIntOrNull() ?: -1
+
+        // Títulos e corpos descritivos por tipo
+        val titulo = message.notification?.title ?: data["titulo"] ?: when (tipo) {
+            "documento_assinar" -> "📄 Novo documento para assinar"
+            "chat", "chat_broadcast" -> "💬 Nova mensagem"
+            else -> "RM Funcionário"
+        }
+        val corpo = message.notification?.body ?: data["corpo"] ?: when (tipo) {
+            "documento_assinar" -> "Você tem um documento aguardando sua assinatura."
+            "chat" -> "Você recebeu uma nova mensagem."
+            "chat_broadcast" -> "Há um aviso novo para você."
+            else -> "Toque para abrir o aplicativo."
+        }
 
         val isChat = tipo == "chat" || tipo == "chat_broadcast"
 

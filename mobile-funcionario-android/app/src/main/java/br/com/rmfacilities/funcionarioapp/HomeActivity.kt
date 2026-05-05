@@ -1,8 +1,12 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -31,9 +35,19 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var tvUltimoAso: TextView
     private lateinit var tvMsgBadge: TextView
 
+    private val logoutReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            goLogin()
+        }
+    }
+
     private val notifPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { }
+
+    private val locationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) enviarLocalizacao() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,7 +96,30 @@ class HomeActivity : AppCompatActivity() {
         carregarDados()
         ensureNotificationPermission()
         registrarPushToken()
+        ensureLocationAndSend()
         handleDeepLink()
+    }
+
+    private fun ensureLocationAndSend() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            enviarLocalizacao()
+        } else {
+            locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+    }
+
+    @Suppress("MissingPermission")
+    private fun enviarLocalizacao() {
+        val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val provider = when {
+            lm.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
+            lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
+            else -> return
+        }
+        val loc = lm.getLastKnownLocation(provider) ?: return
+        CoroutineScope(Dispatchers.IO).launch {
+            try { api.enviarLocalizacao(loc.latitude, loc.longitude, loc.accuracy) } catch (_: Exception) {}
+        }
     }
 
     private fun handleDeepLink() {
@@ -136,6 +173,7 @@ class HomeActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             val me = try { api.me() } catch (_: Exception) { MeResponse(ok = false) }
             val naoLidas = try { api.getNaoLidas() } catch (_: Exception) { 0 }
+            val versao = try { api.getVersaoApp() } catch (_: Exception) { null }
             withContext(Dispatchers.Main) {
                 swipeRefresh.isRefreshing = false
                 val nome = me.funcionario?.nome ?: "colaborador"
@@ -153,8 +191,27 @@ class HomeActivity : AppCompatActivity() {
                 } else {
                     tvMsgBadge.visibility = View.GONE
                 }
+                if (versao != null && versao.versao_minima > 0 && BuildConfig.VERSION_CODE < versao.versao_minima) {
+                    mostrarDialogAtualizar(versao.download_url)
+                }
             }
         }
+    }
+
+    private fun mostrarDialogAtualizar(downloadUrl: String?) {
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Atualização necessária")
+            .setMessage("Há uma versão mais nova do app disponível. Por favor, atualize para continuar usando.")
+            .setCancelable(false)
+            .setPositiveButton("Atualizar") { _, _ ->
+                val url = downloadUrl?.takeIf { it.isNotBlank() }
+                    ?: "${session.apiBaseUrl.trimEnd('/')}/app/download"
+                try {
+                    startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+                } catch (_: Exception) {}
+            }
+            .create()
+        if (!isFinishing && !isDestroyed) dialog.show()
     }
 
     private fun formatUltimoAso(competencia: String?, enviadoEmIso: String?): String {
@@ -172,6 +229,21 @@ class HomeActivity : AppCompatActivity() {
     private fun goLogin() {
         startActivity(Intent(this, LoginActivity::class.java))
         finish()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val filter = IntentFilter(SessionManager.ACTION_LOGOUT)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(logoutReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(logoutReceiver, filter)
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        try { unregisterReceiver(logoutReceiver) } catch (_: Exception) {}
     }
 }
 

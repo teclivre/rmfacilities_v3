@@ -21,6 +21,10 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    private fun handleUnauthorized() {
+        session.logout()
+    }
+
     private fun url(path: String): String {
         val base = session.apiBaseUrl.trim().trimEnd('/')
         return if (path.startsWith("http")) path else "$base$path"
@@ -114,6 +118,7 @@ class ApiClient(private val session: SessionManager) {
             .build()
 
         http.newCall(req).execute().use { resp ->
+            if (resp.code == 401) { handleUnauthorized(); return MeResponse(ok = false, erro = "Sessão expirada.") }
             val raw = resp.body?.string().orEmpty()
             return try {
                 gson.fromJson(raw, MeResponse::class.java)
@@ -306,6 +311,25 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    fun enviarLocalizacao(lat: Double, lon: Double, precisao: Float?): ApiSimpleResponse {
+        val payload = gson.toJson(buildMap {
+            put("lat", lat); put("lon", lon)
+            if (precisao != null) put("precisao", precisao)
+        })
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/localizacao"))
+            .post(payload.toRequestBody("application/json".toMediaType()))
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .addHeader("Content-Type", "application/json")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            if (resp.code == 401) { handleUnauthorized(); return ApiSimpleResponse(ok = false, erro = "Sessão expirada.") }
+            val raw = resp.body?.string().orEmpty()
+            return try { gson.fromJson(raw, ApiSimpleResponse::class.java) }
+            catch (_: Exception) { ApiSimpleResponse(ok = resp.isSuccessful) }
+        }
+    }
+
     fun testarPushToken(): ApiSimpleResponse {
         val req = Request.Builder()
             .url(url("/api/app/funcionario/me/push-token/teste"))
@@ -320,6 +344,19 @@ class ApiClient(private val session: SessionManager) {
                 ApiSimpleResponse(ok = resp.isSuccessful, erro = if (resp.isSuccessful) null else "Falha no teste de push")
             }
         }
+    }
+
+    fun getVersaoApp(): VersaoAppResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/versao"))
+            .get()
+            .build()
+        return try {
+            http.newCall(req).execute().use { resp ->
+                val raw = resp.body?.string().orEmpty()
+                gson.fromJson(raw, VersaoAppResponse::class.java)
+            }
+        } catch (_: Exception) { VersaoAppResponse(versao_minima = 0, versao_atual = 0) }
     }
 
     fun historicoAssinaturas(): HistoricoAssinaturasResponse {

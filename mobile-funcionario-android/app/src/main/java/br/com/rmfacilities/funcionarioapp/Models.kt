@@ -124,6 +124,12 @@ data class ApiSimpleResponse(
     val erro: String? = null
 )
 
+data class VersaoAppResponse(
+    val versao_minima: Int = 0,
+    val versao_atual: Int = 0,
+    val download_url: String? = null
+)
+
 data class AssinaturaHistoricoItem(
     val id: Int,
     val categoria: String? = null,

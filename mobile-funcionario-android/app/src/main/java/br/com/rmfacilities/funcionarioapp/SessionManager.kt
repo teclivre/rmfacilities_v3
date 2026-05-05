@@ -2,7 +2,7 @@ package br.com.rmfacilities.funcionarioapp
 
 import android.content.Context
 
-class SessionManager(context: Context) {
+class SessionManager(private val context: Context) {
     private val prefs = context.getSharedPreferences("rm_funcionario_app", Context.MODE_PRIVATE)
 
     var apiBaseUrl: String
@@ -19,5 +19,17 @@ class SessionManager(context: Context) {
 
     fun clear() {
         prefs.edit().clear().apply()
+    }
+
+    fun logout() {
+        clear()
+        val intent = android.content.Intent(ACTION_LOGOUT).apply {
+            setPackage(context.packageName)
+        }
+        context.sendBroadcast(intent)
+    }
+
+    companion object {
+        const val ACTION_LOGOUT = "br.com.rmfacilities.funcionarioapp.LOGOUT"
     }
 }
