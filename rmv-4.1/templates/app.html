@@ -2131,6 +2131,10 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div id="fareas" class="areas-grid"></div>
       </div>
       <div class="f"><label>Observações</label><textarea id="fobs"></textarea></div>
+      <div class="f" id="f-localizacao-row" style="display:none">
+        <label>📍 Última localização do app</label>
+        <div id="f-localizacao-info" style="font-size:13px;color:#555"></div>
+      </div>
       <div class="brow" style="margin-top:6px">
         <button class="btn b-ci" onclick="closeModal('func')">Cancelar</button>
         <button class="btn b-az" onclick="salvarFuncionario()">Salvar funcionário</button>
@@ -4410,6 +4414,17 @@ function preencherFormFuncionario(f,titulo='Editar funcionário'){
   document.getElementById('fdocs-ok').value=f.docs_admissao_ok?'1':'0';
   document.getElementById('fdocs-obs').value=f.docs_admissao_obs||'';
   document.getElementById('fobs').value=f.obs||'';
+  // localização
+  const locRow=document.getElementById('f-localizacao-row');
+  const locInfo=document.getElementById('f-localizacao-info');
+  if(f.app_lat!=null && f.app_lon!=null){
+    const em=f.app_localizacao_em?new Date(f.app_localizacao_em).toLocaleString('pt-BR'):'';
+    const mapsUrl=`https://www.google.com/maps?q=${f.app_lat},${f.app_lon}`;
+    locInfo.innerHTML=`<a href="${mapsUrl}" target="_blank" rel="noopener">${f.app_lat.toFixed(6)}, ${f.app_lon.toFixed(6)}</a>${em?' — '+em:''}`;
+    locRow.style.display='';
+  } else {
+    locRow.style.display='none';
+  }
   document.getElementById('fopta-vt').checked=f.opta_vt!==false;
   document.getElementById('fopta-vr').checked=f.opta_vr!==false;
   document.getElementById('fopta-va').checked=f.opta_va!==false;

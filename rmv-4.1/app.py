@@ -907,6 +907,9 @@ class Funcionario(db.Model):
     app_otp_expira_em=db.Column(db.DateTime)
     app_otp_tentativas=db.Column(db.Integer,default=0)
     app_push_token=db.Column(db.String(300))
+    app_lat=db.Column(db.Float)
+    app_lon=db.Column(db.Float)
+    app_localizacao_em=db.Column(db.DateTime)
     foto_perfil=db.Column(db.String(500))
     criado_em=db.Column(db.DateTime,default=utcnow)
     def to_dict(self):
@@ -6112,6 +6115,15 @@ def api_funcionario_push_teste(id):
     )
     return jsonify({'ok':ok,'funcionario_id':f.id,'tem_token':tem_token})
 
+@app.route('/api/app/versao')
+def api_app_versao():
+    """Retorna versão mínima e atual do app. Configurável por variável de ambiente APP_VERSION_CODE."""
+    import os
+    versao_minima=int(os.environ.get('APP_VERSION_MINIMA','14'))
+    versao_atual=int(os.environ.get('APP_VERSION_ATUAL','14'))
+    download_url=os.environ.get('APP_DOWNLOAD_URL','')
+    return jsonify({'versao_minima':versao_minima,'versao_atual':versao_atual,'download_url':download_url})
+
 @app.route('/api/app/funcionario/login',methods=['POST'])
 def api_app_funcionario_login():
     d=request.json or {}
@@ -6341,6 +6353,27 @@ def api_app_funcionario_push_token_teste():
         {'tipo':'documento_assinar','arquivo_id':'0','origem':'teste_push'}
     )
     return jsonify({'ok':ok,'tem_token':tem_token})
+
+@app.route('/api/app/funcionario/me/localizacao',methods=['POST'])
+@app_func_required
+def api_app_funcionario_me_localizacao():
+    f=g.app_funcionario
+    d=request.json or {}
+    lat=d.get('lat')
+    lon=d.get('lon')
+    if lat is None or lon is None:
+        return jsonify({'erro':'lat e lon obrigatorios'}),400
+    try:
+        lat=float(lat); lon=float(lon)
+    except Exception:
+        return jsonify({'erro':'lat/lon invalidos'}),400
+    if not (-90<=lat<=90) or not (-180<=lon<=180):
+        return jsonify({'erro':'coordenadas fora do intervalo'}),400
+    f.app_lat=lat
+    f.app_lon=lon
+    f.app_localizacao_em=utcnow()
+    db.session.commit()
+    return jsonify({'ok':True})
 
 @app.route('/api/app/funcionario/me/contato',methods=['PUT'])
 @app_func_required
