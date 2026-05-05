@@ -2620,17 +2620,21 @@ function toggleTheme(){
 }
 
 async function api(url,m='GET',b=null){
-  const o={method:m,headers:{'Content-Type':'application/json'},credentials:'same-origin'};
-  if(b)o.body=JSON.stringify(b);
-  const r=await fetch(url,o);
-  const ct=(r.headers.get('content-type')||'').toLowerCase();
-  if(ct.includes('application/json')){
-    const d=await r.json();
-    if(!r.ok && !d?.erro) d.erro='Erro HTTP '+r.status;
-    return d;
+  try{
+    const o={method:m,headers:{'Content-Type':'application/json'},credentials:'same-origin'};
+    if(b)o.body=JSON.stringify(b);
+    const r=await fetch(url,o);
+    const ct=(r.headers.get('content-type')||'').toLowerCase();
+    if(ct.includes('application/json')){
+      const d=await r.json();
+      if(!r.ok && !d?.erro) d.erro='Erro HTTP '+r.status;
+      return d;
+    }
+    const tx=(await r.text()||'').trim();
+    return {erro:`Erro HTTP ${r.status}${tx?`: ${tx.slice(0,120)}`:''}`};
+  }catch(e){
+    return {erro:'Falha de conexao com o servidor. Verifique sua rede e tente novamente.'};
   }
-  const tx=(await r.text()||'').trim();
-  return {erro:`Erro HTTP ${r.status}${tx?`: ${tx.slice(0,120)}`:''}`};
 }
 
 async function apiForm(url,fd,m='POST'){
@@ -4710,50 +4714,64 @@ async function painelAssCarregar(){
   const st=document.getElementById('st-painel-ass');
   if(tb) tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#8a9fb5;padding:16px">Carregando…</td></tr>';
   if(empty) empty.style.display='none';
-  let url='/api/rh/assinaturas/painel?status='+encodeURIComponent(status);
-  if(cat) url+='&categoria='+encodeURIComponent(cat);
-  if(comp) url+='&competencia='+encodeURIComponent(comp);
-  if(fid) url+='&funcionario_id='+encodeURIComponent(fid);
-  if(ini) url+='&data_ini='+encodeURIComponent(ini);
-  if(fim) url+='&data_fim='+encodeURIComponent(fim);
-  const r=await api(url);
-  if(!r||!r.ok){
-    if(st) showSt('st-painel-ass','Erro ao carregar painel.',true);
+
+  try{
+    let url='/api/rh/assinaturas/painel?status='+encodeURIComponent(status);
+    if(cat) url+='&categoria='+encodeURIComponent(cat);
+    if(comp) url+='&competencia='+encodeURIComponent(comp);
+    if(fid) url+='&funcionario_id='+encodeURIComponent(fid);
+    if(ini) url+='&data_ini='+encodeURIComponent(ini);
+    if(fim) url+='&data_fim='+encodeURIComponent(fim);
+    const r=await api(url);
+    if(!r||!r.ok){
+      if(st) showSt('st-painel-ass',r?.erro||'Erro ao carregar painel.',true);
+      if(tb) tb.innerHTML='';
+      return;
+    }
+
+    // Atualizar contadores
+    const tot=r.totais||{};
+    const allItens=r.itens||[];
+    const elTotal=document.getElementById('pac-total');
+    const elPend=document.getElementById('pac-pendente');
+    const elConc=document.getElementById('pac-concluida');
+    const elCanc=document.getElementById('pac-cancelada');
+    const elExp=document.getElementById('pac-expirado');
+    if(elTotal) elTotal.textContent='Total: '+(r.total||0);
+    if(elPend) elPend.textContent='Pendentes: '+(tot.pendente||0);
+    if(elConc) elConc.textContent='Assinados: '+(tot.concluida||0);
+    if(elCanc) elCanc.textContent='Cancelados: '+(tot.cancelada||0);
+    if(elExp) elExp.textContent='Expirados: '+(tot.expirado||0);
+
+    if(!tb) return;
+    if(!allItens.length){
+      tb.innerHTML='';
+      if(empty) empty.style.display='';
+      return;
+    }
+
+    if(empty) empty.style.display='none';
+    tb.innerHTML=allItens.map(it=>{
+      const stBadge=_painelAssStatusBadge(it.ass_status,it.vencido);
+      const canal=_painelAssCanal(it.ass_canal);
+      const acoes=_painelAssAcoes(it);
+      return `<tr>
+        <td><div style="font-weight:600;font-size:13px">${esc(it.funcionario_nome)}</div><div style="font-size:11px;color:#7a8fa0">${esc(it.funcionario_cargo)}</div></td>
+        <td style="font-size:12px;max-width:160px;word-break:break-word">${esc(it.nome_arquivo)}</td>
+        <td><span class="pill" style="background:#f0f4ff;color:#2a4a8f;font-size:11px">${esc(it.categoria_label)}</span></td>
+        <td style="font-size:12px">${esc(it.competencia)||'—'}</td>
+        <td style="font-size:12px">${canal}</td>
+        <td style="font-size:12px">${esc(it.criado_fmt)||'—'}</td>
+        <td style="font-size:12px">${it.prazo_fmt?`<span style="color:${it.vencido?'#c0392b':'#555'}">${esc(it.prazo_fmt)}</span>`:'—'}</td>
+        <td>${stBadge}</td>
+        <td style="font-size:12px">${it.ass_em_fmt||'—'}</td>
+        <td style="white-space:nowrap">${acoes}</td>
+      </tr>`;
+    }).join('');
+  }catch(e){
+    if(st) showSt('st-painel-ass','Erro inesperado ao montar painel.',true);
     if(tb) tb.innerHTML='';
-    return;
   }
-  // Atualizar contadores
-  const tot=r.totais||{};
-  const allItens=r.itens||[];
-  document.getElementById('pac-total').textContent='Total: '+(r.total||0);
-  document.getElementById('pac-pendente').textContent='Pendentes: '+(tot.pendente||0);
-  document.getElementById('pac-concluida').textContent='Assinados: '+(tot.concluida||0);
-  document.getElementById('pac-cancelada').textContent='Cancelados: '+(tot.cancelada||0);
-  document.getElementById('pac-expirado').textContent='Expirados: '+(tot.expirado||0);
-  if(!tb) return;
-  if(!allItens.length){
-    tb.innerHTML='';
-    if(empty) empty.style.display='';
-    return;
-  }
-  if(empty) empty.style.display='none';
-  tb.innerHTML=allItens.map(it=>{
-    const stBadge=_painelAssStatusBadge(it.ass_status,it.vencido);
-    const canal=_painelAssCanal(it.ass_canal);
-    const acoes=_painelAssAcoes(it);
-    return `<tr>
-      <td><div style="font-weight:600;font-size:13px">${esc(it.funcionario_nome)}</div><div style="font-size:11px;color:#7a8fa0">${esc(it.funcionario_cargo)}</div></td>
-      <td style="font-size:12px;max-width:160px;word-break:break-word">${esc(it.nome_arquivo)}</td>
-      <td><span class="pill" style="background:#f0f4ff;color:#2a4a8f;font-size:11px">${esc(it.categoria_label)}</span></td>
-      <td style="font-size:12px">${esc(it.competencia)||'—'}</td>
-      <td style="font-size:12px">${canal}</td>
-      <td style="font-size:12px">${esc(it.criado_fmt)||'—'}</td>
-      <td style="font-size:12px">${it.prazo_fmt?`<span style="color:${it.vencido?'#c0392b':'#555'}">${esc(it.prazo_fmt)}</span>`:'—'}</td>
-      <td>${stBadge}</td>
-      <td style="font-size:12px">${it.ass_em_fmt||'—'}</td>
-      <td style="white-space:nowrap">${acoes}</td>
-    </tr>`;
-  }).join('');
 }
 function _painelAssStatusBadge(st,vencido){
   if(st==='concluida') return '<span class="pill p-vd" style="font-size:11px">✔ Assinado</span>';
