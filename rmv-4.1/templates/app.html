@@ -2649,14 +2649,15 @@ async function init(){
   const v=new Date(h); v.setDate(v.getDate()+20);
   document.getElementById('dtvenc').value=v.toISOString().split('T')[0];
   document.getElementById('ben-comp').value=h.toISOString().slice(0,7);
-  await loadEmps();
-  await carregarConfigAlertaBeneficios();
-  await loadDash();
-  await carregarBancosBR();
-  todos=await api('/api/clientes');
-  funcs=await api('/api/funcionarios');
-  document.getElementById('ass1').value=N;
-  await loadProxNum();
+  try{ await loadEmps(); }catch(e){ console.error('Falha ao carregar empresas',e); }
+  try{ await carregarConfigAlertaBeneficios(); }catch(e){ console.error('Falha ao carregar config benefícios',e); }
+  try{ await loadDash(); }catch(e){ console.error('Falha ao carregar dashboard',e); }
+  try{ await carregarBancosBR(); }catch(e){ console.error('Falha ao carregar bancos',e); }
+  try{ todos=await api('/api/clientes'); }catch(e){ console.error('Falha ao carregar clientes',e); todos=[]; }
+  try{ funcs=await api('/api/funcionarios'); }catch(e){ console.error('Falha ao carregar funcionários',e); funcs=[]; }
+  const ass1=document.getElementById('ass1');
+  if(ass1) ass1.value=(typeof N==='string' ? N : '');
+  try{ await loadProxNum(); }catch(e){ console.error('Falha ao carregar próximo número',e); }
   montarSubAbasBloco();
   ativarSubAbaPagina('dashboard');
 }
@@ -2740,6 +2741,12 @@ function filtrarSSTFuncionarios(){
 
 async function loadDash(){
   const d=await api('/api/dashboard');
+  if(d?.erro){
+    const al=document.getElementById('dash-alertas');
+    if(al) al.style.display='none';
+    console.error('Falha em /api/dashboard:', d.erro);
+    return;
+  }
   const receitaNum=Number(d?.receita);
   const receitaSafe=Number.isFinite(receitaNum)?receitaNum:0;
   document.getElementById('d-at').textContent=d.ativos;
@@ -2759,7 +2766,8 @@ async function loadDash(){
   const tm=document.getElementById('d-tm');
   if(tx) tx.textContent=((d.taxa_emissao??0).toString().replace('.',','))+'%';
   if(tm) tm.textContent='R$'+parseFloat(d.ticket_medio||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-  document.getElementById('dash-saudacao').textContent='Olá, '+N.split(' ')[0]+'!';
+  const nomeBase=(typeof N==='string' && N.trim()) ? N.trim() : 'usuário';
+  document.getElementById('dash-saudacao').textContent='Olá, '+nomeBase.split(' ')[0]+'!';
   document.getElementById('dash-data').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
   const al=document.getElementById('dash-alertas');
   if(al){
