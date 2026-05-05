@@ -41,6 +41,9 @@
             android:name=".MensagensActivity"
             android:exported="false" />
         <activity
+            android:name=".PontoActivity"
+            android:exported="false" />
+        <activity
             android:name=".AboutActivity"
             android:exported="false" />
         <activity

@@ -12,7 +12,6 @@ import android.os.Bundle
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -79,7 +78,7 @@ class HomeActivity : AppCompatActivity() {
         }
 
         findViewById<LinearLayout>(R.id.btnPonto).setOnClickListener {
-            Toast.makeText(this, "Modulo de ponto em implantacao nesta versao.", Toast.LENGTH_SHORT).show()
+            startActivity(Intent(this, PontoActivity::class.java))
         }
 
         findViewById<LinearLayout>(R.id.btnMensagens).setOnClickListener {

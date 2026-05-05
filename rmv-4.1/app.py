@@ -6734,6 +6734,196 @@ def api_app_mensagens_nao_lidas():
     return jsonify({'nao_lidas':count})
 
 # ============================================================
+# PONTO - APP (funcionário autenticado)
+# ============================================================
+
+_APP_PONTO_TIPOS=['entrada','saida_intervalo','retorno_intervalo','saida']
+
+def _app_ponto_label(tipo):
+    return {
+        'entrada':'Entrada',
+        'saida_intervalo':'Saída intervalo',
+        'retorno_intervalo':'Retorno intervalo',
+        'saida':'Saída',
+    }.get((tipo or '').strip().lower(),(tipo or '').strip())
+
+def _app_ponto_next_tipo(tipo):
+    t=(tipo or '').strip().lower()
+    if t not in _APP_PONTO_TIPOS:
+        return 'entrada'
+    return _APP_PONTO_TIPOS[(_APP_PONTO_TIPOS.index(t)+1)%len(_APP_PONTO_TIPOS)]
+
+def _app_ponto_tipo_esperado(marcacoes):
+    if not marcacoes:
+        return 'entrada'
+    return _app_ponto_next_tipo(marcacoes[-1].tipo)
+
+def _app_ponto_parse_data_ref(v):
+    s=(v or '').strip()
+    if not s:
+        return localnow().date()
+    try:
+        return datetime.strptime(s,'%Y-%m-%d').date()
+    except Exception:
+        return localnow().date()
+
+def _app_ponto_marcacoes_dia(funcionario_id,data_ref):
+    inicio=datetime.combine(data_ref,datetime.min.time())
+    fim=inicio+timedelta(days=1)
+    return (
+        PontoMarcacao.query.filter(PontoMarcacao.funcionario_id==funcionario_id)
+        .filter(PontoMarcacao.data_hora>=inicio)
+        .filter(PontoMarcacao.data_hora<fim)
+        .order_by(PontoMarcacao.data_hora.asc(),PontoMarcacao.id.asc())
+        .all()
+    )
+
+def _app_ponto_min_esperado_jornada(funcionario):
+    jornada=str(funcionario.jornada or '').strip().lower()
+    if not jornada:
+        return 8*60
+    m=re.search(r'(\d{1,2})\s*[:h]\s*(\d{1,2})',jornada)
+    if m:
+        h=max(0,min(16,int(m.group(1))))
+        mm=max(0,min(59,int(m.group(2))))
+        return h*60+mm
+    m=re.search(r'\b(\d{1,2})\b',jornada)
+    if m:
+        h=max(0,min(16,int(m.group(1))))
+        return h*60
+    return 8*60
+
+def _app_ponto_fmt_minutos(total,signed=False):
+    try:
+        minutos=int(total or 0)
+    except Exception:
+        minutos=0
+    sinal=''
+    if signed and minutos<0:
+        sinal='-'
+    minutos=abs(minutos)
+    return f'{sinal}{minutos//60:02d}:{minutos%60:02d}'
+
+def _app_ponto_resumo_dia(funcionario,data_ref):
+    marcacoes=_app_ponto_marcacoes_dia(funcionario.id,data_ref)
+    inconsistencias=[]
+    esperado='entrada'
+    segundos_total=0
+    aberta_em=None
+    for m in marcacoes:
+        if not getattr(m,'data_hora',None):
+            inconsistencias.append('Marcação sem data/hora válida foi ignorada no cálculo.')
+            esperado=_app_ponto_next_tipo(m.tipo)
+            continue
+        if m.tipo!=esperado:
+            inconsistencias.append(
+                f'Sequência inesperada: recebido {_app_ponto_label(m.tipo)}; esperado {_app_ponto_label(esperado)}.'
+            )
+        if m.tipo=='entrada':
+            if aberta_em is not None:
+                inconsistencias.append('Existe uma entrada sem fechamento antes desta nova entrada.')
+            aberta_em=m.data_hora
+        elif m.tipo=='saida_intervalo':
+            if aberta_em is None:
+                inconsistencias.append('Saída para intervalo sem entrada anterior.')
+            else:
+                segundos_total+=max(0,int((m.data_hora-aberta_em).total_seconds()))
+                aberta_em=None
+        elif m.tipo=='retorno_intervalo':
+            if aberta_em is not None:
+                inconsistencias.append('Retorno de intervalo sem saída anterior.')
+            aberta_em=m.data_hora
+        elif m.tipo=='saida':
+            if aberta_em is None:
+                inconsistencias.append('Saída final sem entrada anterior.')
+            else:
+                segundos_total+=max(0,int((m.data_hora-aberta_em).total_seconds()))
+                aberta_em=None
+        esperado=_app_ponto_next_tipo(m.tipo)
+    if aberta_em is not None:
+        inconsistencias.append('Jornada em aberto (faltou batida de fechamento).')
+
+    min_trab=int(round(segundos_total/60.0))
+    min_esp=0 if data_ref.weekday()>=5 else _app_ponto_min_esperado_jornada(funcionario)
+    saldo=min_trab-min_esp
+
+    itens=[]
+    for m in marcacoes:
+        dt=m.data_hora
+        itens.append({
+            'id':m.id,
+            'tipo':m.tipo,
+            'tipo_label':_app_ponto_label(m.tipo),
+            'data_hora':dt.isoformat() if dt else '',
+            'hora_fmt':dt.strftime('%H:%M') if dt else '',
+            'origem':(m.origem or 'app'),
+            'observacao':m.observacao or '',
+        })
+
+    prox=_app_ponto_tipo_esperado(marcacoes)
+    return {
+        'funcionario_id':funcionario.id,
+        'funcionario_nome':funcionario.nome,
+        'data_ref':data_ref.strftime('%Y-%m-%d'),
+        'marcacoes':itens,
+        'proximo_tipo':prox,
+        'proximo_tipo_label':_app_ponto_label(prox),
+        'horas_trabalhadas_min':min_trab,
+        'horas_trabalhadas_fmt':_app_ponto_fmt_minutos(min_trab),
+        'horas_esperadas_min':min_esp,
+        'horas_esperadas_fmt':_app_ponto_fmt_minutos(min_esp),
+        'saldo_min':saldo,
+        'saldo_fmt':_app_ponto_fmt_minutos(saldo,signed=True),
+        'status':'ok' if not inconsistencias else 'inconsistente',
+        'inconsistencias':inconsistencias,
+    }
+
+@app.route('/api/app/funcionario/me/ponto/dia')
+@app_func_required
+def api_app_ponto_dia_me():
+    f=g.app_funcionario
+    data_ref=_app_ponto_parse_data_ref(request.args.get('data'))
+    return jsonify({'ok':True,'resumo':_app_ponto_resumo_dia(f,data_ref)})
+
+@app.route('/api/app/funcionario/me/ponto/marcar',methods=['POST'])
+@app_func_required
+def api_app_ponto_marcar_me():
+    f=g.app_funcionario
+    if (f.status or '').strip().lower()!='ativo':
+        return jsonify({'erro':'Somente funcionários ativos podem registrar ponto.'}),400
+    dados=request.json or {}
+    tipo=(dados.get('tipo') or '').strip().lower()
+    observacao=(dados.get('observacao') or '').strip()[:500]
+    data_hora=utcnow()
+    if data_hora>(utcnow()+timedelta(minutes=1)):
+        return jsonify({'erro':'Não é permitido registrar ponto em horário futuro.'}),400
+    data_ref=data_hora.date()
+    marcacoes_dia=_app_ponto_marcacoes_dia(f.id,data_ref)
+    tipo=tipo or _app_ponto_tipo_esperado(marcacoes_dia)
+    if tipo not in _APP_PONTO_TIPOS:
+        return jsonify({'erro':'Tipo de marcação inválido.'}),400
+    esperado=_app_ponto_tipo_esperado(marcacoes_dia)
+    if tipo!=esperado:
+        return jsonify({'erro':f'Ordem de marcação inválida. Agora é esperado: {_app_ponto_label(esperado)}.'}),400
+    if any(abs((data_hora-m.data_hora).total_seconds())<60 for m in marcacoes_dia if getattr(m,'data_hora',None)):
+        return jsonify({'erro':'Já existe marcação neste minuto para este funcionário.'}),400
+
+    ip=(request.headers.get('X-Forwarded-For','') or request.remote_addr or '').split(',')[0].strip()[:60]
+    m=PontoMarcacao(
+        funcionario_id=f.id,
+        tipo=tipo,
+        data_hora=data_hora,
+        origem='app',
+        observacao=observacao,
+        criado_por='funcionario-app',
+        ip=ip,
+    )
+    db.session.add(m)
+    db.session.commit()
+    audit_event('ponto_marcacao_app','funcionario',f.id,'funcionario',f.id,True,{'tipo':tipo,'data_ref':data_ref.strftime('%Y-%m-%d'),'origem':'app'})
+    return jsonify({'ok':True,'marcacao':{'id':m.id,'tipo':m.tipo,'tipo_label':_app_ponto_label(m.tipo),'hora_fmt':m.data_hora.strftime('%H:%M') if m.data_hora else ''},'resumo':_app_ponto_resumo_dia(f,data_ref)})
+
+# ============================================================
 # COMUNICADOS - WEB RH (gestão)
 # ============================================================
 

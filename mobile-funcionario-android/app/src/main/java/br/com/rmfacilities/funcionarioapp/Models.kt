@@ -148,3 +148,33 @@ data class HistoricoAssinaturasResponse(
     val erro: String? = null,
     val itens: List<AssinaturaHistoricoItem> = emptyList()
 )
+
+data class PontoMarcacaoItem(
+    val id: Int,
+    val tipo: String? = null,
+    val tipo_label: String? = null,
+    val data_hora: String? = null,
+    val hora_fmt: String? = null,
+    val origem: String? = null,
+    val observacao: String? = null
+)
+
+data class PontoResumo(
+    val funcionario_id: Int? = null,
+    val funcionario_nome: String? = null,
+    val data_ref: String? = null,
+    val marcacoes: List<PontoMarcacaoItem> = emptyList(),
+    val proximo_tipo: String? = null,
+    val proximo_tipo_label: String? = null,
+    val horas_trabalhadas_fmt: String? = null,
+    val horas_esperadas_fmt: String? = null,
+    val saldo_fmt: String? = null,
+    val status: String? = null,
+    val inconsistencias: List<String> = emptyList()
+)
+
+data class PontoDiaResponse(
+    val ok: Boolean = false,
+    val erro: String? = null,
+    val resumo: PontoResumo? = null
+)

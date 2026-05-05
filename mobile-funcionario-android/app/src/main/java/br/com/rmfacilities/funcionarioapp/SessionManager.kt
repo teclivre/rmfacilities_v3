@@ -17,8 +17,22 @@ class SessionManager(private val context: Context) {
         get() = prefs.getString("refresh_token", "") ?: ""
         set(value) = prefs.edit().putString("refresh_token", value).apply()
 
+    var biometricEnabled: Boolean
+        get() = prefs.getBoolean("biometric_enabled", false)
+        set(value) = prefs.edit().putBoolean("biometric_enabled", value).apply()
+
+    var biometricCpf: String
+        get() = prefs.getString("biometric_cpf", "") ?: ""
+        set(value) = prefs.edit().putString("biometric_cpf", value).apply()
+
     fun clear() {
+        val base = apiBaseUrl
+        val bio = biometricEnabled
+        val bioCpf = biometricCpf
         prefs.edit().clear().apply()
+        apiBaseUrl = base
+        biometricEnabled = bio
+        biometricCpf = bioCpf
     }
 
     fun logout() {
