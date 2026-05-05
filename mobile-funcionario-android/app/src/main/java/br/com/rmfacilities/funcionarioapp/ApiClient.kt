@@ -306,6 +306,22 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    fun testarPushToken(): ApiSimpleResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/push-token/teste"))
+            .post("{}".toRequestBody("application/json".toMediaType()))
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, ApiSimpleResponse::class.java)
+            } catch (_: Exception) {
+                ApiSimpleResponse(ok = resp.isSuccessful, erro = if (resp.isSuccessful) null else "Falha no teste de push")
+            }
+        }
+    }
+
     fun historicoAssinaturas(): HistoricoAssinaturasResponse {
         val req = Request.Builder()
             .url(url("/api/app/funcionario/historico-assinaturas"))

@@ -70,9 +70,20 @@ class PerfilActivity : AppCompatActivity() {
         val tvSetor = findViewById<TextView>(R.id.tvSetor)
         val tvStatus = findViewById<TextView>(R.id.tvStatus)
         val btnAlterarFoto = findViewById<MaterialButton>(R.id.btnAlterarFoto)
+        val btnTestarNotificacao = findViewById<MaterialButton>(R.id.btnTestarNotificacao)
 
         btnAlterarFoto.setOnClickListener {
             pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        }
+
+        btnTestarNotificacao.setOnClickListener {
+            tvFeedback.text = "Enviando notificação de teste..."
+            CoroutineScope(Dispatchers.IO).launch {
+                val result = try { api.testarPushToken() } catch (e: Exception) { ApiSimpleResponse(ok = false, erro = e.message) }
+                withContext(Dispatchers.Main) {
+                    tvFeedback.text = if (result.ok) "✅ Notificação enviada! Verifique o celular." else "❌ Falha: ${result.erro ?: "sem token registrado"}"
+                }
+            }
         }
 
         fun carregarPerfil() {
