@@ -1,19 +1,27 @@
 <resources>
-    <!-- Paleta escura - identica ao sistema web -->
+    <!-- Paleta premium dark -->
     <color name="primary">#0d2e4d</color>
     <color name="primary_variant">#0a2037</color>
-    <color name="background">#08111d</color>
-    <color name="surface">#172538</color>
+    <color name="background">#0a1929</color>
+    <color name="surface">#0f1f35</color>
+    <color name="surface_elevated">#142840</color>
     <color name="accent">#ff9f4a</color>
     <color name="accent_dark">#e88930</color>
-    <color name="accent_blue">#67b8ff</color>
-    <color name="text_primary">#e6eef7</color>
-    <color name="text_secondary">#8fa8bf</color>
-    <color name="text_hint">#4d6b84</color>
-    <color name="divider">#21374d</color>
-    <color name="error">#f57575</color>
-    <color name="success">#36d09a</color>
+    <color name="accent_blue">#4da6ff</color>
+    <color name="accent_purple">#9b59ff</color>
+    <color name="accent_green">#00d49a</color>
+    <color name="text_primary">#e8f0f8</color>
+    <color name="text_secondary">#7a9ab8</color>
+    <color name="text_hint">#3d5f7a</color>
+    <color name="divider">#142840</color>
+    <color name="error">#ff5f6d</color>
+    <color name="success">#00d49a</color>
     <color name="primary_light">#1a3a58</color>
     <color name="white">#ffffff</color>
-    <color name="border">#21374d</color>
+    <color name="border">#1e3a5f</color>
+    <!-- Icon colors para quick action cards -->
+    <color name="icon_blue">#4da6ff</color>
+    <color name="icon_purple">#9b59ff</color>
+    <color name="icon_orange">#ff8c1a</color>
+    <color name="icon_green">#00d49a</color>
 </resources>

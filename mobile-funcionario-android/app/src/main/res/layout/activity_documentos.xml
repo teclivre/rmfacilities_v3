@@ -4,17 +4,19 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/primary">
+    android:background="@color/background">
 
-    <!-- Toolbar simples -->
+    <!-- Header -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="@drawable/bg_header_gradient"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingTop="48dp"
+        android:paddingTop="52dp"
         android:paddingBottom="18dp"
-        android:paddingHorizontal="20dp">
+        android:paddingStart="20dp"
+        android:paddingEnd="16dp">
 
         <TextView
             android:id="@+id/btnVoltar"
@@ -23,102 +25,106 @@
             android:gravity="center"
             android:text="‹"
             android:textColor="@color/white"
-            android:textSize="28sp"
-            android:background="?attr/selectableItemBackgroundBorderless" />
+            android:textSize="30sp" />
 
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginStart="8dp"
-            android:text="Meus documentos"
+            android:text="Meus Documentos"
             android:textColor="@color/white"
-            android:textSize="18sp"
+            android:textSize="19sp"
             android:textStyle="bold" />
 
-        <ImageButton
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnHistoricoAss"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:src="@android:drawable/ic_menu_recent_history"
-            android:tint="@color/white"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Histórico de assinaturas" />
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:minWidth="0dp"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:text="Histórico"
+            android:textColor="#4da6ff"
+            android:textSize="12.5sp" />
     </LinearLayout>
 
-    <!-- Conteúdo -->
+    <!-- Busca e filtros -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:background="@drawable/bg_card_top_rounded"
-        android:orientation="vertical">
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_sheet_rounded"
+        android:orientation="vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="18dp"
+        android:paddingBottom="6dp">
 
-        <!-- Barra de busca -->
         <com.google.android.material.textfield.TextInputLayout
-            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+            style="@style/Widget.App.TextInputLayout"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="4dp"
-            android:hint="Buscar documentos">
+            android:layout_height="52dp"
+            android:hint="Buscar documento...">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etBuscaDoc"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:inputType="text"
                 android:imeOptions="actionSearch"
-                android:maxLines="1" />
+                android:singleLine="true" />
         </com.google.android.material.textfield.TextInputLayout>
 
-        <!-- Chips de filtro por ano -->
         <HorizontalScrollView
             android:id="@+id/scrollChips"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:scrollbars="none"
-            android:visibility="gone">
+            android:layout_marginTop="10dp"
+            android:scrollbars="none">
+
             <com.google.android.material.chip.ChipGroup
                 android:id="@+id/chipGroupAnos"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="6dp"
                 app:singleSelection="true"
-                app:selectionRequired="true"/>
+                app:chipSpacingHorizontal="4dp" />
         </HorizontalScrollView>
 
-        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-            android:id="@+id/swipeDocs"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1">
-
-            <FrameLayout
-                android:layout_width="match_parent"
-                android:layout_height="match_parent">
-
-                <com.facebook.shimmer.ShimmerFrameLayout
-                    android:id="@+id/shimmerDocs"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:visibility="visible">
-                    <include layout="@layout/shimmer_docs"/>
-                </com.facebook.shimmer.ShimmerFrameLayout>
-
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/rvDocs"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:padding="16dp"
-                    android:paddingTop="8dp"
-                    android:clipToPadding="false"
-                    android:visibility="invisible"/>
-
-            </FrameLayout>
-        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
     </LinearLayout>
-</LinearLayout>
 
+    <!-- Lista de documentos -->
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/swipeDocs"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@color/background">
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <com.facebook.shimmer.ShimmerFrameLayout
+                android:id="@+id/shimmerDocs"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="16dp">
+                <include layout="@layout/shimmer_docs" />
+            </com.facebook.shimmer.ShimmerFrameLayout>
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rvDocs"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="16dp"
+                android:clipToPadding="false"
+                android:scrollbars="none"
+                android:visibility="gone" />
+        </FrameLayout>
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+</LinearLayout>
