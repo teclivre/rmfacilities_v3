@@ -32,7 +32,6 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var tvBoasVindas: TextView
     private lateinit var tvCargo: TextView
     private lateinit var tvAvatar: TextView
-    private lateinit var tvUltimoAso: TextView
     private lateinit var tvMsgBadge: TextView
 
     private val logoutReceiver = object : BroadcastReceiver() {
@@ -63,7 +62,6 @@ class HomeActivity : AppCompatActivity() {
         tvBoasVindas = findViewById(R.id.tvBoasVindas)
         tvCargo = findViewById(R.id.tvCargo)
         tvAvatar = findViewById(R.id.tvAvatar)
-        tvUltimoAso = findViewById(R.id.tvUltimoAso)
         tvMsgBadge = findViewById(R.id.tvMsgBadge)
         swipeRefresh = findViewById(R.id.swipeRefreshHome)
 
@@ -184,7 +182,6 @@ class HomeActivity : AppCompatActivity() {
                 tvCargo.text = listOf(me.funcionario?.cargo, me.funcionario?.setor)
                     .filter { !it.isNullOrBlank() }
                     .joinToString(" • ")
-                tvUltimoAso.text = formatUltimoAso(me.funcionario?.ultimo_aso_competencia, me.funcionario?.ultimo_aso_enviado_em)
                 if (naoLidas > 0) {
                     tvMsgBadge.text = if (naoLidas > 9) "9+" else naoLidas.toString()
                     tvMsgBadge.visibility = View.VISIBLE
@@ -212,18 +209,6 @@ class HomeActivity : AppCompatActivity() {
             }
             .create()
         if (!isFinishing && !isDestroyed) dialog.show()
-    }
-
-    private fun formatUltimoAso(competencia: String?, enviadoEmIso: String?): String {
-        val comp = competencia?.trim().orEmpty()
-        if (comp.isNotBlank()) {
-            return "Competencia: $comp"
-        }
-        val enviado = enviadoEmIso?.trim().orEmpty()
-        if (enviado.length >= 10) {
-            return "Enviado em: ${enviado.substring(0, 10)}"
-        }
-        return "Nao encontrado"
     }
 
     private fun goLogin() {

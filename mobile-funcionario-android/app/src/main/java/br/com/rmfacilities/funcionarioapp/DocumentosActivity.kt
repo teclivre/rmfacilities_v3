@@ -16,6 +16,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -42,6 +43,7 @@ class DocumentosActivity : AppCompatActivity() {
     private lateinit var chipGroupAnos: ChipGroup
     private var primeiroLoad = true
     private var anosDisponiveis: List<String> = emptyList()
+    private lateinit var tvUltimoAsoDoc: android.widget.TextView
 
     private val debounceHandler = Handler(Looper.getMainLooper())
     private val debounceRunnable = Runnable { carregarComFiltros() }
@@ -58,12 +60,13 @@ class DocumentosActivity : AppCompatActivity() {
         shimmerDocs = findViewById(R.id.shimmerDocs)
         scrollChips = findViewById(R.id.scrollChips)
         chipGroupAnos = findViewById(R.id.chipGroupAnos)
+        tvUltimoAsoDoc = findViewById(R.id.tvUltimoAsoDoc)
 
         // Botão voltar
         findViewById<android.widget.TextView>(R.id.btnVoltar).setOnClickListener { finish() }
 
         // Botão histórico de assinaturas
-        findViewById<android.widget.ImageButton>(R.id.btnHistoricoAss).setOnClickListener {
+        findViewById<MaterialButton>(R.id.btnHistoricoAss).setOnClickListener {
             startActivity(Intent(this, HistoricoAssinaturasActivity::class.java))
         }
 
@@ -90,7 +93,23 @@ class DocumentosActivity : AppCompatActivity() {
         swipe.setOnRefreshListener { carregarComFiltros() }
         swipe.isRefreshing = false
         shimmerDocs.startShimmer()
+        carregarUltimoAso()
         carregar()
+    }
+
+    private fun carregarUltimoAso() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val me = try { api.me() } catch (_: Exception) { MeResponse(ok = false) }
+            withContext(Dispatchers.Main) {
+                val comp = me.funcionario?.ultimo_aso_competencia?.trim().orEmpty()
+                val enviado = me.funcionario?.ultimo_aso_enviado_em?.trim().orEmpty()
+                tvUltimoAsoDoc.text = when {
+                    comp.isNotBlank() -> "Competência: $comp"
+                    enviado.length >= 10 -> "Enviado em: ${enviado.substring(0, 10)}"
+                    else -> "Não informado"
+                }
+            }
+        }
     }
 
     override fun onResume() {

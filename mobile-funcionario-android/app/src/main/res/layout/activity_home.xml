@@ -73,55 +73,6 @@
                 android:paddingEnd="12dp" />
         </LinearLayout>
 
-        <!-- Card status ASO -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:background="@drawable/bg_card_aso"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:padding="16dp">
-
-            <LinearLayout
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/bg_icon_docs"
-                android:gravity="center">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="🩺"
-                    android:textSize="17sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="14dp"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="ÚLTIMO ASO"
-                    android:textColor="#4a7aa8"
-                    android:textSize="10sp"
-                    android:textStyle="bold"
-                    android:letterSpacing="0.1" />
-
-                <TextView
-                    android:id="@+id/tvUltimoAso"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="Não informado"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
-        </LinearLayout>
     </LinearLayout>
 
     <!-- Conteúdo com Sheet arredondado -->

@@ -109,14 +109,33 @@ class DocumentoAdapter(
             listItems.add(DocListItem.Header("Pendentes de assinatura"))
             pendentes.forEach { listItems.add(DocListItem.Doc(it)) }
         }
-        // Documentos agrupados por ano
-        val grouped = docs.groupBy { extractYear(it) }
-        val sortedYears = grouped.keys.sortedDescending()
-        for (year in sortedYears) {
-            listItems.add(DocListItem.Header(year))
-            grouped[year]?.forEach { listItems.add(DocListItem.Doc(it)) }
+        // Documentos agrupados por pasta/categoria
+        val groupedByCategoria = docs.groupBy { categoryLabel(it) }
+        val sortedCategorias = groupedByCategoria.keys.sortedWith(
+            compareBy<String>({ it == "Outros" }, { it.lowercase() })
+        )
+        for (categoria in sortedCategorias) {
+            listItems.add(DocListItem.Header(categoria))
+            val docsCategoria = groupedByCategoria[categoria].orEmpty().sortedWith(
+                compareByDescending<DocumentoItem> { extractYear(it) }
+                    .thenByDescending { it.competencia.orEmpty() }
+                    .thenByDescending { it.criado_fmt.orEmpty() }
+            )
+            docsCategoria.forEach { listItems.add(DocListItem.Doc(it)) }
         }
         notifyDataSetChanged()
+    }
+
+    private fun categoryLabel(item: DocumentoItem): String {
+        val direct = item.categoria_label?.trim().orEmpty()
+        if (direct.isNotBlank()) return direct
+        return when (item.categoria?.trim()?.lowercase().orEmpty()) {
+            "holerite" -> "Holerites"
+            "folha_ponto", "ponto", "espelho_ponto" -> "Folha de Ponto"
+            "aso" -> "ASO"
+            "contrato" -> "Contratos"
+            else -> "Outros"
+        }
     }
 
     private fun extractYear(item: DocumentoItem): String {

@@ -85,8 +85,11 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnEnviarCodigo"
                 android:layout_width="match_parent"
-                android:layout_height="54dp"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
+                android:minHeight="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
                 android:text="Receber código no celular"
                 android:textSize="15sp"
                 android:textStyle="bold" />
@@ -127,8 +130,11 @@
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnEntrar"
                     android:layout_width="match_parent"
-                    android:layout_height="54dp"
+                    android:layout_height="wrap_content"
                     android:layout_marginTop="16dp"
+                    android:minHeight="0dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
                     android:text="Confirmar e entrar"
                     android:textSize="15sp"
                     android:textStyle="bold" />
