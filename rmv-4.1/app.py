@@ -7014,6 +7014,105 @@ def api_rh_assinaturas_painel():
 
     return jsonify({'ok':True,'total':len(itens),'totais':totais,'itens':itens})
 
+@app.route('/api/rh/assinaturas/lembrete-pendentes',methods=['POST'])
+@lr
+def api_rh_assinaturas_lembrete_pendentes():
+    """Reenvia lembrete para todos os documentos pendentes, respeitando o canal original."""
+    fid_filtro=to_num(request.args.get('funcionario_id') or 0)
+    cat_filtro=(request.args.get('categoria') or '').strip().lower()
+    comp_filtro=(request.args.get('competencia') or '').strip()
+    data_ini_str=(request.args.get('data_ini') or '').strip()
+    data_fim_str=(request.args.get('data_fim') or '').strip()
+
+    q=FuncionarioArquivo.query.filter(FuncionarioArquivo.ass_status=='pendente')
+    if fid_filtro:
+        q=q.filter(FuncionarioArquivo.funcionario_id==fid_filtro)
+    if cat_filtro:
+        q=q.filter(FuncionarioArquivo.categoria==cat_filtro)
+    if comp_filtro:
+        q=q.filter(FuncionarioArquivo.competencia==comp_filtro)
+    try:
+        if data_ini_str:
+            q=q.filter(FuncionarioArquivo.criado_em>=datetime.strptime(data_ini_str,'%Y-%m-%d'))
+        if data_fim_str:
+            q=q.filter(FuncionarioArquivo.criado_em<datetime.strptime(data_fim_str,'%Y-%m-%d')+timedelta(days=1))
+    except Exception:
+        pass
+
+    registros=q.order_by(FuncionarioArquivo.criado_em.desc()).limit(500).all()
+    if not registros:
+        return jsonify({'ok':True,'total':0,'enviados':0,'falhas':0,'mensagem':'Nenhum pendente encontrado para lembrete.'})
+
+    enviados=0
+    falhas=0
+    canais={'whatsapp':0,'email':0,'app':0,'link':0}
+    erros=[]
+    func_cache={}
+
+    def _canal_padrao_arquivo(a):
+        ch=(a.ass_canal_envio or '').strip().lower()
+        if ch:
+            return ch
+        if (a.ass_wa_status or '') in ('enviado','recebido') or bool(a.ass_wa_enviado_em):
+            return 'whatsapp'
+        if (a.ass_email_status or '') in ('enviado','recebido') or bool(a.ass_email_enviado_em):
+            return 'email'
+        if not (a.ass_token or '').strip():
+            return 'app'
+        return 'link'
+
+    for a in registros:
+        try:
+            if a.funcionario_id not in func_cache:
+                func_cache[a.funcionario_id]=Funcionario.query.get(a.funcionario_id)
+            f=func_cache[a.funcionario_id]
+            canal=_ass_track_channel('',_canal_padrao_arquivo(a))
+            rs=_solicitar_assinatura_arquivo_funcionario(
+                a,
+                f,
+                canal=canal,
+                commit_now=False,
+                forcar_novo_token=False,
+                eh_lembrete=True,
+            )
+            if rs.get('ok'):
+                enviados+=1
+                canais[canal]=canais.get(canal,0)+1
+                a.ass_lembretes_enviados=(a.ass_lembretes_enviados or 0)+1
+                if rs.get('erro_envio'):
+                    falhas+=1
+                    erros.append(f"{a.nome_arquivo}: {rs.get('erro_envio')}")
+            else:
+                falhas+=1
+                erros.append(f"{a.nome_arquivo}: {rs.get('erro') or 'falha no envio'}")
+        except Exception as ex:
+            falhas+=1
+            erros.append(f"{a.nome_arquivo}: {str(ex)}")
+
+    db.session.commit()
+    audit_event(
+        'rh_assinaturas_lembrete_massa',
+        'usuario',
+        session.get('uid'),
+        'rh',
+        0,
+        True,
+        {
+            'total':len(registros),
+            'enviados':enviados,
+            'falhas':falhas,
+            'canais':canais,
+        }
+    )
+    return jsonify({
+        'ok':True,
+        'total':len(registros),
+        'enviados':enviados,
+        'falhas':falhas,
+        'canais':canais,
+        'erros':erros[:20],
+    })
+
 @app.route('/doc/assinar/<token>')
 def func_doc_assinar_publica(token):
     a=FuncionarioArquivo.query.filter_by(ass_token=token).first()

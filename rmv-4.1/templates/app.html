@@ -1137,7 +1137,10 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div class="card" id="card-painel-assinaturas">
         <div class="card-header">
           <span class="card-title">Painel de Assinaturas</span>
-          <button class="btn b-gh b-sm" onclick="painelAssCarregar()">↻ Atualizar</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn b-gh b-sm" onclick="painelAssLembretePendentes()">🔔 Lembrar pendentes</button>
+            <button class="btn b-gh b-sm" onclick="painelAssCarregar()">↻ Atualizar</button>
+          </div>
         </div>
 
         <!-- Contadores -->
@@ -4811,6 +4814,31 @@ async function painelAssCancelar(arquivoId){
   const r=await api('/api/funcionarios/arquivos/'+arquivoId+'/assinatura/cancelar','POST',{});
   if(r&&r.ok) showSt('st-painel-ass','Solicitação cancelada.',false);
   else showSt('st-painel-ass','Erro ao cancelar: '+(r?.erro||'falha'),true);
+  painelAssCarregar();
+}
+async function painelAssLembretePendentes(){
+  if(!confirm('Enviar lembrete para todos os documentos pendentes conforme filtros atuais?')) return;
+  const cat=document.getElementById('painel-ass-filtro-cat')?.value||'';
+  const comp=(document.getElementById('painel-ass-filtro-comp')?.value||'').trim();
+  const fid=document.getElementById('painel-ass-filtro-func')?.value||'';
+  const ini=document.getElementById('painel-ass-filtro-ini')?.value||'';
+  const fim=document.getElementById('painel-ass-filtro-fim')?.value||'';
+  let url='/api/rh/assinaturas/lembrete-pendentes';
+  const qs=[];
+  if(cat) qs.push('categoria='+encodeURIComponent(cat));
+  if(comp) qs.push('competencia='+encodeURIComponent(comp));
+  if(fid) qs.push('funcionario_id='+encodeURIComponent(fid));
+  if(ini) qs.push('data_ini='+encodeURIComponent(ini));
+  if(fim) qs.push('data_fim='+encodeURIComponent(fim));
+  if(qs.length) url+='?'+qs.join('&');
+  const r=await api(url,'POST',{});
+  if(!r||!r.ok){
+    showSt('st-painel-ass','Erro ao enviar lembretes em massa: '+(r?.erro||'falha'),true);
+    return;
+  }
+  const canais=r.canais||{};
+  const resumo=`Lembretes processados: ${r.enviados||0}/${r.total||0} · falhas: ${r.falhas||0} · WA: ${canais.whatsapp||0} · E-mail: ${canais.email||0} · App: ${canais.app||0} · Link: ${canais.link||0}`;
+  showSt('st-painel-ass',resumo,(r.falhas||0)>0);
   painelAssCarregar();
 }
 async function painelAssInicializar(){
