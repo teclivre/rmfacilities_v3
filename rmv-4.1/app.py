@@ -2308,9 +2308,20 @@ def _fcm_send_to_token(token,titulo,corpo,data=None):
     if not token:
         return False
     cred_val=(os.environ.get('FIREBASE_CREDENTIALS_JSON') or '').strip()
+    cred_b64=(os.environ.get('FIREBASE_CREDENTIALS_B64') or '').strip()
+    cred_path=(os.environ.get('FIREBASE_CREDENTIALS_FILE') or '').strip()
     if not cred_val:
-        app.logger.warning('[fcm] FIREBASE_CREDENTIALS_JSON ausente; push ignorado')
-        return False
+        if cred_b64:
+            try:
+                cred_val=base64.b64decode(cred_b64).decode('utf-8').strip()
+            except Exception as e:
+                app.logger.error(f'[fcm] FIREBASE_CREDENTIALS_B64 inválido: {e}')
+                return False
+        elif cred_path:
+            cred_val=cred_path
+        else:
+            app.logger.warning('[fcm] FIREBASE_CREDENTIALS_JSON ausente; push ignorado')
+            return False
     try:
         import firebase_admin
         from firebase_admin import credentials, messaging
@@ -2324,9 +2335,26 @@ def _fcm_send_to_token(token,titulo,corpo,data=None):
             # Aceita JSON inline (string) ou caminho de arquivo
             if cred_val.startswith('{'):
                 import json as _json
+                import ast as _ast
                 import tempfile, atexit
+                payload=cred_val
+                # Remove aspas externas extras comuns em variáveis mal copiadas
+                if (payload.startswith('"') and payload.endswith('"')) or (payload.startswith("'") and payload.endswith("'")):
+                    payload=payload[1:-1].strip()
+                try:
+                    _json.loads(payload)
+                except Exception:
+                    # Suporta dicionário em formato Python com aspas simples
+                    try:
+                        parsed=_ast.literal_eval(payload)
+                        if isinstance(parsed,dict):
+                            payload=_json.dumps(parsed)
+                        else:
+                            raise ValueError('Formato de credencial inválido (não é objeto JSON).')
+                    except Exception as pe:
+                        raise ValueError(f'JSON de credencial inválido: {pe}')
                 _tmp=tempfile.NamedTemporaryFile(mode='w',suffix='.json',delete=False)
-                _tmp.write(cred_val); _tmp.flush(); _tmp.close()
+                _tmp.write(payload); _tmp.flush(); _tmp.close()
                 atexit.register(lambda p=_tmp.name: os.path.exists(p) and os.remove(p))
                 firebase_admin.initialize_app(credentials.Certificate(_tmp.name))
             else:
@@ -2335,7 +2363,7 @@ def _fcm_send_to_token(token,titulo,corpo,data=None):
                     return False
                 firebase_admin.initialize_app(credentials.Certificate(cred_val))
         except Exception as e:
-            app.logger.exception(f'[fcm] falha ao inicializar firebase app: {e}')
+            app.logger.error(f'[fcm] falha ao inicializar firebase app: {e}')
             return False
     try:
         msg=messaging.Message(
