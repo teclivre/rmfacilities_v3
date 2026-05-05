@@ -1100,6 +1100,92 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div id="rh-lote-prev-debug"></div>
         </div>
       </div>
+
+      <!-- ══ PAINEL DE ASSINATURAS ══ -->
+      <div class="card" id="card-painel-assinaturas">
+        <div class="card-header">
+          <span class="card-title">Painel de Assinaturas</span>
+          <button class="btn b-gh b-sm" onclick="painelAssCarregar()">↻ Atualizar</button>
+        </div>
+
+        <!-- Contadores -->
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin:0 12px 12px 12px" id="painel-ass-counters">
+          <span class="pill" id="pac-total" style="background:#e8f0fe;color:#1a3c6b">Total: –</span>
+          <span class="pill" id="pac-pendente" style="background:#fff3cd;color:#856404;cursor:pointer" onclick="painelAssSetStatus('pendente')">Pendentes: –</span>
+          <span class="pill" id="pac-concluida" style="background:#d1e7dd;color:#0a3622;cursor:pointer" onclick="painelAssSetStatus('concluida')">Assinados: –</span>
+          <span class="pill" id="pac-cancelada" style="background:#f8d7da;color:#58151c;cursor:pointer" onclick="painelAssSetStatus('cancelada')">Cancelados: –</span>
+          <span class="pill" id="pac-expirado" style="background:#ffe5d0;color:#7b3a00;cursor:pointer" onclick="painelAssSetStatus('expirado')">Expirados: –</span>
+        </div>
+
+        <!-- Filtros -->
+        <div class="g4" style="margin:0 12px 12px 12px;align-items:flex-end">
+          <div class="f">
+            <label>Status</label>
+            <select id="painel-ass-filtro-status" onchange="painelAssCarregar()">
+              <option value="todos">Todos</option>
+              <option value="pendente">Pendentes</option>
+              <option value="concluida">Assinados</option>
+              <option value="cancelada">Cancelados</option>
+              <option value="expirado">Expirados</option>
+            </select>
+          </div>
+          <div class="f">
+            <label>Tipo de documento</label>
+            <select id="painel-ass-filtro-cat" onchange="painelAssCarregar()">
+              <option value="">Todos os tipos</option>
+              <option value="holerite">Holerite</option>
+              <option value="folha_ponto">Folha de Ponto</option>
+              <option value="aso">ASO</option>
+              <option value="epi">Ficha de EPI</option>
+              <option value="treinamento">Treinamento</option>
+              <option value="contrato_trabalho">Contrato de Trabalho</option>
+              <option value="outros">Outros</option>
+            </select>
+          </div>
+          <div class="f">
+            <label>Competência</label>
+            <input id="painel-ass-filtro-comp" placeholder="ex: 04/2026" oninput="painelAssCarregarDebounce()">
+          </div>
+          <div class="f">
+            <label>Funcionário</label>
+            <select id="painel-ass-filtro-func" onchange="painelAssCarregar()">
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div class="f">
+            <label>Envio de</label>
+            <input type="date" id="painel-ass-filtro-ini" onchange="painelAssCarregar()">
+          </div>
+          <div class="f">
+            <label>Envio até</label>
+            <input type="date" id="painel-ass-filtro-fim" onchange="painelAssCarregar()">
+          </div>
+        </div>
+
+        <div id="st-painel-ass" class="st" style="margin:0 12px 8px"></div>
+
+        <!-- Tabela -->
+        <div class="tbl-wrap">
+          <table class="tbl" id="tbl-painel-ass">
+            <thead>
+              <tr>
+                <th>Funcionário</th>
+                <th>Documento</th>
+                <th>Tipo</th>
+                <th>Competência</th>
+                <th>Canal</th>
+                <th>Enviado em</th>
+                <th>Prazo</th>
+                <th>Status</th>
+                <th>Assinado em</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tb-painel-ass"></tbody>
+          </table>
+        </div>
+        <div id="painel-ass-empty" style="display:none;text-align:center;color:#8a9fb5;padding:24px;font-size:13px">Nenhum registro encontrado para os filtros selecionados.</div>
+      </div>
     </div>
 
     <!-- ══ COMUNICAÇÃO ══ -->
@@ -2810,7 +2896,7 @@ function nav(id,el,force=false){
   if(targetId==='empresas')renderEmps();
   if(targetId==='usuarios')renderUsr();
   if(targetId==='config')loadConfig();
-  if(targetId==='rh')renderFuncionarios();
+  if(targetId==='rh'){renderFuncionarios();painelAssInicializar();}
   if(targetId==='operacional'){renderOperDocs();renderOperPostos();}
   if(targetId==='compras'){renderOrdensCompra();}
   if(targetId==='beneficios'){carregarBeneficiosMensais();carregarConfigAlertaBeneficios();}
@@ -4513,6 +4599,123 @@ function pontoFmtStatus(st){
   return `<span class="pill p-ci">${st||'—'}</span>`;
 }
 
+// ══════════════════════════════════════════════
+//  PAINEL DE ASSINATURAS
+// ══════════════════════════════════════════════
+let _painelAssDebTimer=null;
+function painelAssCarregarDebounce(){
+  clearTimeout(_painelAssDebTimer);
+  _painelAssDebTimer=setTimeout(painelAssCarregar,500);
+}
+function painelAssSetStatus(st){
+  const sel=document.getElementById('painel-ass-filtro-status');
+  if(sel){sel.value=st;}
+  painelAssCarregar();
+}
+async function painelAssCarregar(){
+  const status=document.getElementById('painel-ass-filtro-status')?.value||'todos';
+  const cat=document.getElementById('painel-ass-filtro-cat')?.value||'';
+  const comp=(document.getElementById('painel-ass-filtro-comp')?.value||'').trim();
+  const fid=document.getElementById('painel-ass-filtro-func')?.value||'';
+  const ini=document.getElementById('painel-ass-filtro-ini')?.value||'';
+  const fim=document.getElementById('painel-ass-filtro-fim')?.value||'';
+  const tb=document.getElementById('tb-painel-ass');
+  const empty=document.getElementById('painel-ass-empty');
+  const st=document.getElementById('st-painel-ass');
+  if(tb) tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#8a9fb5;padding:16px">Carregando…</td></tr>';
+  if(empty) empty.style.display='none';
+  let url='/api/rh/assinaturas/painel?status='+encodeURIComponent(status);
+  if(cat) url+='&categoria='+encodeURIComponent(cat);
+  if(comp) url+='&competencia='+encodeURIComponent(comp);
+  if(fid) url+='&funcionario_id='+encodeURIComponent(fid);
+  if(ini) url+='&data_ini='+encodeURIComponent(ini);
+  if(fim) url+='&data_fim='+encodeURIComponent(fim);
+  const r=await api(url);
+  if(!r||!r.ok){
+    if(st) showSt('st-painel-ass','Erro ao carregar painel.',true);
+    if(tb) tb.innerHTML='';
+    return;
+  }
+  // Atualizar contadores
+  const tot=r.totais||{};
+  const allItens=r.itens||[];
+  document.getElementById('pac-total').textContent='Total: '+(r.total||0);
+  document.getElementById('pac-pendente').textContent='Pendentes: '+(tot.pendente||0);
+  document.getElementById('pac-concluida').textContent='Assinados: '+(tot.concluida||0);
+  document.getElementById('pac-cancelada').textContent='Cancelados: '+(tot.cancelada||0);
+  document.getElementById('pac-expirado').textContent='Expirados: '+(tot.expirado||0);
+  if(!tb) return;
+  if(!allItens.length){
+    tb.innerHTML='';
+    if(empty) empty.style.display='';
+    return;
+  }
+  if(empty) empty.style.display='none';
+  tb.innerHTML=allItens.map(it=>{
+    const stBadge=_painelAssStatusBadge(it.ass_status,it.vencido);
+    const canal=_painelAssCanal(it.ass_canal);
+    const acoes=_painelAssAcoes(it);
+    return `<tr>
+      <td><div style="font-weight:600;font-size:13px">${esc(it.funcionario_nome)}</div><div style="font-size:11px;color:#7a8fa0">${esc(it.funcionario_cargo)}</div></td>
+      <td style="font-size:12px;max-width:160px;word-break:break-word">${esc(it.nome_arquivo)}</td>
+      <td><span class="pill" style="background:#f0f4ff;color:#2a4a8f;font-size:11px">${esc(it.categoria_label)}</span></td>
+      <td style="font-size:12px">${esc(it.competencia)||'—'}</td>
+      <td style="font-size:12px">${canal}</td>
+      <td style="font-size:12px">${esc(it.criado_fmt)||'—'}</td>
+      <td style="font-size:12px">${it.prazo_fmt?`<span style="color:${it.vencido?'#c0392b':'#555'}">${esc(it.prazo_fmt)}</span>`:'—'}</td>
+      <td>${stBadge}</td>
+      <td style="font-size:12px">${it.ass_em_fmt||'—'}</td>
+      <td style="white-space:nowrap">${acoes}</td>
+    </tr>`;
+  }).join('');
+}
+function _painelAssStatusBadge(st,vencido){
+  if(st==='concluida') return '<span class="pill p-vd" style="font-size:11px">✔ Assinado</span>';
+  if(st==='cancelada') return '<span class="pill p-vm" style="font-size:11px">✖ Cancelado</span>';
+  if(st==='expirado') return '<span class="pill" style="background:#ffe5d0;color:#7b3a00;font-size:11px">⌛ Expirado</span>';
+  if(st==='pendente'&&vencido) return '<span class="pill p-ci" style="font-size:11px">⚠ Vencido</span>';
+  if(st==='pendente') return '<span class="pill" style="background:#fff3cd;color:#856404;font-size:11px">⏳ Pendente</span>';
+  return `<span class="pill" style="font-size:11px">${st||'—'}</span>`;
+}
+function _painelAssCanal(c){
+  if(c==='whatsapp') return '<span style="font-size:12px">📱 WhatsApp</span>';
+  if(c==='email') return '<span style="font-size:12px">✉ E-mail</span>';
+  if(c==='app') return '<span style="font-size:12px">📲 App</span>';
+  if(c==='link') return '<span style="font-size:12px">🔗 Link</span>';
+  return c||'—';
+}
+function _painelAssAcoes(it){
+  let btns='';
+  if(it.ass_status==='pendente'){
+    btns+=`<button class="btn b-gh b-sm" onclick="painelAssReenviar(${it.arquivo_id})" title="Reenviar lembrete">↩ Lembrete</button> `;
+    btns+=`<button class="btn b-ghr b-sm" onclick="painelAssCancelar(${it.arquivo_id})" title="Cancelar solicitação">✖</button>`;
+  }
+  return btns||'—';
+}
+async function painelAssReenviar(arquivoId){
+  const r=await apiPost('/api/funcionarios/arquivos/'+arquivoId+'/assinatura/solicitar',{forcar_novo_token:false});
+  if(r&&r.ok) showSt('st-painel-ass','Lembrete reenviado com sucesso.',false);
+  else showSt('st-painel-ass','Erro ao reenviar: '+(r?.erro||'falha'),true);
+  painelAssCarregar();
+}
+async function painelAssCancelar(arquivoId){
+  if(!confirm('Cancelar a solicitação de assinatura deste documento?')) return;
+  const r=await apiPost('/api/funcionarios/arquivos/'+arquivoId+'/assinatura/cancelar',{});
+  if(r&&r.ok) showSt('st-painel-ass','Solicitação cancelada.',false);
+  else showSt('st-painel-ass','Erro ao cancelar: '+(r?.erro||'falha'),true);
+  painelAssCarregar();
+}
+async function painelAssInicializar(){
+  // Popula select de funcionários
+  const sel=document.getElementById('painel-ass-filtro-func');
+  if(!sel) return;
+  const fs=await api('/api/funcionarios');
+  if(Array.isArray(fs)){
+    sel.innerHTML='<option value="">Todos</option>'+fs.map(f=>`<option value="${f.id}">${esc(f.nome)}</option>`).join('');
+  }
+  painelAssCarregar();
+}
+
 async function renderFuncionarios(){
   const q=(document.getElementById('rh-busca')?.value||'').toLowerCase();
   funcs=await api('/api/funcionarios?q='+encodeURIComponent(q));
@@ -4966,6 +5169,8 @@ async function uploadDocumentoRHLote(){
   document.getElementById('rh-lote-comp').value='';
   document.getElementById('rh-lote-func').value='';
   resetRHLotePreview();
+  // Atualizar painel de assinaturas automaticamente após upload
+  if(canalAss!=='nao') painelAssCarregar();
 }
 
 let _rhLotePreview={ready:false,selectedIds:[],destinatarios:[],totalPaginas:0,paginasSemFuncionario:[],debugPaginas:[]};

@@ -6705,6 +6705,76 @@ def api_rh_dashboard_assinaturas_pendentes():
     lista=sorted(por_func.values(),key=lambda x:x['vencidos'],reverse=True)
     return jsonify({'ok':True,'total_pendentes':len(pendentes),'funcionarios':lista})
 
+@app.route('/api/rh/assinaturas/painel')
+@lr
+def api_rh_assinaturas_painel():
+    """Painel completo de status de assinaturas com filtros."""
+    status_filtro=(request.args.get('status') or 'todos').strip().lower()
+    fid_filtro=to_num(request.args.get('funcionario_id') or 0)
+    cat_filtro=(request.args.get('categoria') or '').strip().lower()
+    comp_filtro=(request.args.get('competencia') or '').strip()
+    data_ini_str=(request.args.get('data_ini') or '').strip()
+    data_fim_str=(request.args.get('data_fim') or '').strip()
+
+    q=FuncionarioArquivo.query.filter(
+        FuncionarioArquivo.ass_status!='nao_solicitada',
+        FuncionarioArquivo.ass_status!=None
+    )
+    if status_filtro!='todos':
+        q=q.filter(FuncionarioArquivo.ass_status==status_filtro)
+    if fid_filtro:
+        q=q.filter(FuncionarioArquivo.funcionario_id==fid_filtro)
+    if cat_filtro:
+        q=q.filter(FuncionarioArquivo.categoria==cat_filtro)
+    if comp_filtro:
+        q=q.filter(FuncionarioArquivo.competencia==comp_filtro)
+    try:
+        if data_ini_str:
+            q=q.filter(FuncionarioArquivo.criado_em>=datetime.strptime(data_ini_str,'%Y-%m-%d'))
+        if data_fim_str:
+            q=q.filter(FuncionarioArquivo.criado_em<datetime.strptime(data_fim_str,'%Y-%m-%d')+timedelta(days=1))
+    except Exception:
+        pass
+
+    registros=q.order_by(FuncionarioArquivo.criado_em.desc()).limit(500).all()
+    agora=utcnow()
+    func_cache={}
+    def _get_func(fid):
+        if fid not in func_cache:
+            func_cache[fid]=Funcionario.query.get(fid)
+        return func_cache[fid]
+
+    itens=[]
+    totais={'pendente':0,'concluida':0,'cancelada':0,'expirado':0,'outros':0}
+    for a in registros:
+        f=_get_func(a.funcionario_id)
+        st=a.ass_status or 'pendente'
+        vencido=bool(st=='pendente' and a.ass_prazo_em and a.ass_prazo_em<agora)
+        if st in totais: totais[st]+=1
+        else: totais['outros']+=1
+        itens.append({
+            'arquivo_id':a.id,
+            'funcionario_id':a.funcionario_id,
+            'funcionario_nome':(f.nome if f else f'ID {a.funcionario_id}'),
+            'funcionario_cargo':(f.cargo or '') if f else '',
+            'nome_arquivo':a.nome_arquivo,
+            'categoria':a.categoria or '',
+            'categoria_label':DOC_CAT_LABEL.get(norm_cat(a.categoria),a.categoria or ''),
+            'competencia':a.competencia or '',
+            'ass_status':st,
+            'ass_canal':a.ass_canal_envio or '',
+            'criado_em':(a.criado_em.isoformat() if a.criado_em else None),
+            'criado_fmt':(a.criado_em.strftime('%d/%m/%Y') if a.criado_em else ''),
+            'ass_em':(a.ass_em.isoformat() if a.ass_em else None),
+            'ass_em_fmt':(a.ass_em.strftime('%d/%m/%Y %H:%M') if a.ass_em else ''),
+            'prazo_em':(a.ass_prazo_em.isoformat() if a.ass_prazo_em else None),
+            'prazo_fmt':(a.ass_prazo_em.strftime('%d/%m/%Y') if a.ass_prazo_em else ''),
+            'vencido':vencido,
+            'lembretes':a.ass_lembretes_enviados or 0,
+        })
+
+    return jsonify({'ok':True,'total':len(itens),'totais':totais,'itens':itens})
+
 @app.route('/doc/assinar/<token>')
 def func_doc_assinar_publica(token):
     a=FuncionarioArquivo.query.filter_by(ass_token=token).first()
