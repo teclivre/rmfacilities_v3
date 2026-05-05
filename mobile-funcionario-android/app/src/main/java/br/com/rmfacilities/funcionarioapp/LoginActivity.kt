@@ -35,6 +35,7 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var tvErro: TextView
 
     private var cpfAtual = ""
+    private var biometricPromptShown = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,6 +76,14 @@ class LoginActivity : AppCompatActivity() {
         }
 
         inicializarBiometriaUI()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!biometricPromptShown && shouldOfferBiometric()) {
+            biometricPromptShown = true
+            autenticarComBiometria()
+        }
     }
 
     private fun enviarCodigo() {
@@ -159,8 +168,7 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun inicializarBiometriaUI() {
-        val biometricManager = BiometricManager.from(this)
-        val canBio = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
+        val canBio = canUseBiometric()
         btnBiometria.visibility = if (canBio && session.biometricEnabled && session.biometricCpf.isNotBlank()) View.VISIBLE else View.GONE
         if (session.biometricCpf.isNotBlank() && etCpf.text.isNullOrBlank()) {
             etCpf.setText(session.biometricCpf)
@@ -168,8 +176,7 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun autenticarComBiometria() {
-        val biometricManager = BiometricManager.from(this)
-        if (biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) != BiometricManager.BIOMETRIC_SUCCESS) {
+        if (!canUseBiometric()) {
             showErro("Biometria não disponível neste aparelho.")
             return
         }
@@ -178,13 +185,7 @@ class LoginActivity : AppCompatActivity() {
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     super.onAuthenticationSucceeded(result)
-                    val cpf = session.biometricCpf
-                    if (cpf.length == 11) {
-                        etCpf.setText(cpf)
-                        enviarCodigo()
-                    } else {
-                        showErro("CPF biométrico não configurado. Faça login com código uma vez.")
-                    }
+                    loginComBiometria()
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
@@ -202,9 +203,55 @@ class LoginActivity : AppCompatActivity() {
         prompt.authenticate(promptInfo)
     }
 
-    private fun perguntarAtivarBiometria(cpf: String) {
+    private fun shouldOfferBiometric(): Boolean {
+        return canUseBiometric() && session.biometricEnabled && session.biometricCpf.isNotBlank()
+    }
+
+    private fun canUseBiometric(): Boolean {
         val biometricManager = BiometricManager.from(this)
-        val canBio = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
+        return biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
+    }
+
+    private fun loginComBiometria() {
+        val cpf = session.biometricCpf
+        if (cpf.length != 11) {
+            showErro("CPF biométrico não configurado. Faça login com código uma vez.")
+            return
+        }
+        etCpf.setText(cpf)
+
+        if (session.refreshToken.isBlank()) {
+            enviarCodigo()
+            return
+        }
+
+        setLoading(true)
+        hideErro()
+        CoroutineScope(Dispatchers.IO).launch {
+            val resp = try {
+                api.renovarSessao(session.refreshToken)
+            } catch (e: Exception) {
+                LoginResponse(ok = false, erro = "Erro de conexão: ${e.message}")
+            }
+            withContext(Dispatchers.Main) {
+                setLoading(false)
+                if (resp.ok && !resp.access_token.isNullOrBlank()) {
+                    session.accessToken = resp.access_token
+                    if (!resp.refresh_token.isNullOrBlank()) {
+                        session.refreshToken = resp.refresh_token
+                    }
+                    goHomeOrDeepLink()
+                } else {
+                    // Se refresh expirou, mantém biometria, mas volta para o fluxo OTP.
+                    session.refreshToken = ""
+                    enviarCodigo()
+                }
+            }
+        }
+    }
+
+    private fun perguntarAtivarBiometria(cpf: String) {
+        val canBio = canUseBiometric()
         if (!canBio) return
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Ativar biometria?")

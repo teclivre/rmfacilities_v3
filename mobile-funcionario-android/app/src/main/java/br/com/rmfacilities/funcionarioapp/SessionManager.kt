@@ -29,10 +29,14 @@ class SessionManager(private val context: Context) {
         val base = apiBaseUrl
         val bio = biometricEnabled
         val bioCpf = biometricCpf
+        val refresh = refreshToken
         prefs.edit().clear().apply()
         apiBaseUrl = base
         biometricEnabled = bio
         biometricCpf = bioCpf
+        if (bio && bioCpf.isNotBlank() && refresh.isNotBlank()) {
+            refreshToken = refresh
+        }
     }
 
     fun logout() {

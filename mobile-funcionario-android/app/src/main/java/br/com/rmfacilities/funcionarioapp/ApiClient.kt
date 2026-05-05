@@ -74,6 +74,27 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    fun renovarSessao(refreshToken: String): LoginResponse {
+        val payload = gson.toJson(mapOf("refresh_token" to refreshToken))
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/refresh"))
+            .post(payload.toRequestBody("application/json".toMediaType()))
+            .addHeader("Content-Type", "application/json")
+            .build()
+
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                return LoginResponse(ok = false, erro = parseErro(raw, "Não foi possível renovar a sessão."))
+            }
+            return try {
+                gson.fromJson(raw, LoginResponse::class.java)
+            } catch (_: Exception) {
+                LoginResponse(ok = false, erro = "Resposta inesperada do servidor.")
+            }
+        }
+    }
+
     fun atualizarContato(email: String, telefone: String): ContatoUpdateResponse {
         val payload = gson.toJson(mapOf("email" to email, "telefone" to telefone))
         val req = Request.Builder()
