@@ -8,6 +8,7 @@ import android.widget.TextView
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import com.google.firebase.messaging.FirebaseMessaging
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -77,13 +78,39 @@ class PerfilActivity : AppCompatActivity() {
         }
 
         btnTestarNotificacao.setOnClickListener {
-            tvFeedback.text = "Enviando notificação de teste..."
-            CoroutineScope(Dispatchers.IO).launch {
-                val result = try { api.testarPushToken() } catch (e: Exception) { ApiSimpleResponse(ok = false, erro = e.message) }
-                withContext(Dispatchers.Main) {
-                    tvFeedback.text = if (result.ok) "✅ Notificação enviada! Verifique o celular." else "❌ Falha: ${result.erro ?: "sem token registrado"}"
+            tvFeedback.text = "Registrando token do app..."
+            FirebaseMessaging.getInstance().token
+                .addOnSuccessListener { fcmToken ->
+                    CoroutineScope(Dispatchers.IO).launch {
+                        val reg = try {
+                            api.registrarPushToken(fcmToken)
+                        } catch (e: Exception) {
+                            ApiSimpleResponse(ok = false, erro = e.message)
+                        }
+                        if (!reg.ok) {
+                            withContext(Dispatchers.Main) {
+                                tvFeedback.text = "❌ Falha ao registrar token: ${reg.erro ?: "erro desconhecido"}"
+                            }
+                            return@launch
+                        }
+
+                        val result = try {
+                            api.testarPushToken()
+                        } catch (e: Exception) {
+                            ApiSimpleResponse(ok = false, erro = e.message)
+                        }
+                        withContext(Dispatchers.Main) {
+                            tvFeedback.text = if (result.ok) {
+                                "✅ Notificação enviada! Verifique o celular."
+                            } else {
+                                "❌ Falha: ${result.erro ?: "sem token registrado"}"
+                            }
+                        }
+                    }
                 }
-            }
+                .addOnFailureListener { ex ->
+                    tvFeedback.text = "❌ Não foi possível obter token FCM: ${ex.message ?: "erro desconhecido"}"
+                }
         }
 
         fun carregarPerfil() {
