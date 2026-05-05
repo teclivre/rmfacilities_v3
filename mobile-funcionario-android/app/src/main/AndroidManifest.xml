@@ -8,9 +8,9 @@
 
     <application
         android:allowBackup="true"
-        android:icon="@drawable/ic_fenix_round"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name_version"
-        android:roundIcon="@drawable/ic_fenix_round"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.RMFuncionarioApp"
         android:usesCleartextTraffic="true">
@@ -39,6 +39,9 @@
             android:exported="false" />
         <activity
             android:name=".MensagensActivity"
+            android:exported="false" />
+        <activity
+            android:name=".AboutActivity"
             android:exported="false" />
         <activity
             android:name=".HomeActivity"

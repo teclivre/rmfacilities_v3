@@ -958,6 +958,7 @@ class FuncionarioArquivo(db.Model):
     ass_email_enviado_em=db.Column(db.DateTime)
     ass_email_recebido_em=db.Column(db.DateTime)
     ass_lembretes_enviados=db.Column(db.Integer,default=0)
+    ass_ultimo_lembrete_em=db.Column(db.DateTime)
     ass_prazo_em=db.Column(db.DateTime)
     criado_em=db.Column(db.DateTime,default=utcnow)
     def to_dict(self):
@@ -12163,6 +12164,7 @@ with app.app_context():
         'ass_email_enviado_em DATETIME',
         'ass_email_recebido_em DATETIME',
         'ass_lembretes_enviados INTEGER DEFAULT 0',
+        'ass_ultimo_lembrete_em DATETIME',
         'ass_prazo_em DATETIME',
     ])
     db.session.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ix_funcionario_re ON funcionario(re)'))
@@ -12354,33 +12356,74 @@ def _auto_backup_loop():
 threading.Thread(target=_auto_backup_loop, daemon=True, name='auto-backup').start()
 
 def _lembrete_assinatura_loop():
-    """Sends reminder push notifications for documents pending signature at day 3 and day 7."""
-    DIAS_LEMBRETE = [3, 7]  # send at day 3 and day 7
-    MAX_LEMBRETES = len(DIAS_LEMBRETE)
+    """Envia lembretes automáticos para documentos pendentes de assinatura.
+    Intervalo configurável via env LEMBRETE_ASSINATURA_INTERVALO_HORAS (padrão: 2h).
+    Usa o canal original de cada documento (whatsapp / email / app / link)."""
+    intervalo_horas = max(1, min(168, _to_int(os.environ.get('LEMBRETE_ASSINATURA_INTERVALO_HORAS'), 2)))
+    intervalo_seg = intervalo_horas * 3600
+
+    def _canal_padrao(a):
+        ch = (a.ass_canal_envio or '').strip().lower()
+        if ch:
+            return ch
+        if (a.ass_wa_status or '') in ('enviado', 'recebido') or bool(a.ass_wa_enviado_em):
+            return 'whatsapp'
+        if (a.ass_email_status or '') in ('enviado', 'recebido') or bool(a.ass_email_enviado_em):
+            return 'email'
+        if not (a.ass_token or '').strip():
+            return 'app'
+        return 'link'
+
+    # Aguarda 2 minutos no boot antes do primeiro ciclo
+    time.sleep(120)
     while True:
-        time.sleep(3600)  # check every hour
         try:
             with app.app_context():
                 agora = utcnow()
-                pendentes = FuncionarioArquivo.query.filter_by(ass_status='pendente').filter(
-                    FuncionarioArquivo.ass_lembretes_enviados < MAX_LEMBRETES
-                ).filter(FuncionarioArquivo.ass_canal_envio == 'app').all()
+                pendentes = FuncionarioArquivo.query.filter_by(ass_status='pendente').all()
+                func_cache = {}
                 for a in pendentes:
                     if not a.criado_em:
                         continue
-                    dias = (agora - a.criado_em).days
-                    enviados = a.ass_lembretes_enviados or 0
-                    if enviados < len(DIAS_LEMBRETE) and dias >= DIAS_LEMBRETE[enviados]:
-                        _push_notify_funcionario(
-                            a.funcionario_id,
-                            'Lembrete: documento aguardando assinatura',
-                            f'O arquivo "{a.nome_arquivo}" ainda aguarda sua assinatura.',
-                            {'tipo': 'documento_assinar', 'arquivo_id': str(a.id)}
+                    # Só envia se nenhum lembrete foi enviado ainda OU
+                    # se já passaram intervalo_horas desde o último lembrete
+                    ultimo = a.ass_ultimo_lembrete_em
+                    if ultimo is not None:
+                        horas_desde = (agora - ultimo).total_seconds() / 3600
+                        if horas_desde < intervalo_horas:
+                            continue
+                    else:
+                        # Primeiro lembrete: aguarda ao menos intervalo_horas após criação
+                        horas_desde_criacao = (agora - a.criado_em).total_seconds() / 3600
+                        if horas_desde_criacao < intervalo_horas:
+                            continue
+                    try:
+                        if a.funcionario_id not in func_cache:
+                            func_cache[a.funcionario_id] = Funcionario.query.get(a.funcionario_id)
+                        f = func_cache[a.funcionario_id]
+                        if not f:
+                            continue
+                        canal = _canal_padrao(a)
+                        rs = _solicitar_assinatura_arquivo_funcionario(
+                            a, f,
+                            canal=canal,
+                            commit_now=False,
+                            forcar_novo_token=False,
+                            eh_lembrete=True,
                         )
-                        a.ass_lembretes_enviados = enviados + 1
+                        a.ass_lembretes_enviados = (a.ass_lembretes_enviados or 0) + 1
+                        a.ass_ultimo_lembrete_em = agora
                         db.session.commit()
+                        app.logger.info(
+                            f'[lembrete-auto] funcionario={a.funcionario_id} arquivo={a.id} '
+                            f'canal={canal} ok={rs.get("ok")}'
+                        )
+                    except Exception as ex:
+                        app.logger.error(f'[lembrete-auto] arquivo={a.id} erro={ex}')
+                        db.session.rollback()
         except Exception as e:
-            app.logger.error(f'[lembrete-assinatura] erro: {e}')
+            app.logger.error(f'[lembrete-assinatura] erro geral: {e}')
+        time.sleep(intervalo_seg)
 
 threading.Thread(target=_lembrete_assinatura_loop, daemon=True, name='lembrete-assinatura').start()
 

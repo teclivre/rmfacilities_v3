@@ -59,6 +59,10 @@ class PerfilActivity : AppCompatActivity() {
 
         findViewById<TextView>(R.id.btnVoltar).setOnClickListener { finish() }
 
+        findViewById<com.google.android.material.button.MaterialButton>(R.id.btnSobre).setOnClickListener {
+            startActivity(android.content.Intent(this, AboutActivity::class.java))
+        }
+
         tvAvatar = findViewById(R.id.tvAvatar)
         ivFoto = findViewById(R.id.ivFoto)
         tvFeedback = findViewById(R.id.tvFeedbackPerfil)

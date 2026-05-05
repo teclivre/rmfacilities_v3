@@ -33,6 +33,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var tvCargo: TextView
     private lateinit var tvAvatar: TextView
     private lateinit var tvMsgBadge: TextView
+    private lateinit var tvDocsBadge: TextView
 
     private val logoutReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -63,6 +64,7 @@ class HomeActivity : AppCompatActivity() {
         tvCargo = findViewById(R.id.tvCargo)
         tvAvatar = findViewById(R.id.tvAvatar)
         tvMsgBadge = findViewById(R.id.tvMsgBadge)
+        tvDocsBadge = findViewById(R.id.tvDocsBadge)
         swipeRefresh = findViewById(R.id.swipeRefreshHome)
 
         swipeRefresh.setColorSchemeResources(R.color.accent)
@@ -172,6 +174,7 @@ class HomeActivity : AppCompatActivity() {
             val me = try { api.me() } catch (_: Exception) { MeResponse(ok = false) }
             val naoLidas = try { api.getNaoLidas() } catch (_: Exception) { 0 }
             val versao = try { api.getVersaoApp() } catch (_: Exception) { null }
+            val pendentesCount = try { api.pendentesAssinatura().itens.size } catch (_: Exception) { 0 }
             withContext(Dispatchers.Main) {
                 swipeRefresh.isRefreshing = false
                 val nome = me.funcionario?.nome ?: "colaborador"
@@ -188,6 +191,15 @@ class HomeActivity : AppCompatActivity() {
                 } else {
                     tvMsgBadge.visibility = View.GONE
                 }
+                if (pendentesCount > 0) {
+                    tvDocsBadge.text = if (pendentesCount > 9) "9+" else pendentesCount.toString()
+                    tvDocsBadge.visibility = View.VISIBLE
+                } else {
+                    tvDocsBadge.visibility = View.GONE
+                }
+                // Salva timestamp de última sincronização para a tela Sobre
+                getSharedPreferences("rm_funcionario_app", MODE_PRIVATE)
+                    .edit().putLong("last_sync_ts", System.currentTimeMillis()).apply()
                 if (versao != null && versao.versao_minima > 0 && BuildConfig.VERSION_CODE < versao.versao_minima) {
                     mostrarDialogAtualizar(versao.download_url)
                 }
