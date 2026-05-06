@@ -1621,11 +1621,8 @@ def _send_app_login_otp(codigo, funcionario, canal_override=None):
     canal=(canal_override or f.app_canal_otp or 'whatsapp').strip().lower()
 
     if canal=='sms':
-        tel=wa_norm_number(f.telefone or '')
-        if not wa_is_valid_number(tel):
-            raise ValueError('Numero de telefone invalido ou nao cadastrado para SMS.')
-        sms_send(tel, msg)
-        return {'canal':'sms','destino':_mask_phone(tel)}
+        # SMS desabilitado (Twilio não configurado). Redirecionar para WhatsApp.
+        canal='whatsapp'
 
     if canal=='email':
         email=(f.email or '').strip()
@@ -2283,7 +2280,9 @@ Responda sempre em português do Brasil, com tom cordial, objetivo e profissiona
 
 REGRAS DE COMUNICAÇÃO
 Formato WhatsApp: sempre uma linha em branco entre blocos.
-Use negrito com um asterisco em cada lado da palavra.
+Use negrito com um asterisco em cada lado: *palavra*.
+Nunca use itálico (underline como _palavra_). Proibido.
+Nunca use markdown como ##, **, __, ``` ou similares fora do padrão WhatsApp.
 Áudios entram como texto; a resposta deve ser sempre por texto.
 Nunca invente dados, políticas, valores ou prazos.
 Faça apenas uma pergunta por mensagem.
@@ -2611,7 +2610,7 @@ def ai_wa_cfg():
         'model':gc('ia_wa_model',''),
         'prompt':gc('ia_wa_prompt',''),
         'temperature':gc('ia_wa_temperature','0.3'),
-        'max_tokens':gc('ia_wa_max_tokens','350'),
+        'max_tokens':gc('ia_wa_max_tokens','800'),
     }
 
 def ai_provider_norm(v):
@@ -6372,7 +6371,7 @@ def api_app_funcionario_auth_iniciar():
 
     # Atualiza canal preferido se o app enviou
     canal_req=(d.get('canal') or '').strip().lower()
-    if canal_req in ('whatsapp','sms','email'):
+    if canal_req in ('whatsapp','email'):
         f.app_canal_otp=canal_req
 
     # Persistimos o OTP antes do envio para evitar falso-erro quando o código
@@ -6467,7 +6466,7 @@ def api_app_funcionario_stepup_solicitar():
 
     # Atualiza canal preferido se enviado
     canal_req=(d.get('canal') or '').strip().lower()
-    if canal_req in ('whatsapp','sms','email'):
+    if canal_req in ('whatsapp','email'):
         f.app_canal_otp=canal_req
 
     try:

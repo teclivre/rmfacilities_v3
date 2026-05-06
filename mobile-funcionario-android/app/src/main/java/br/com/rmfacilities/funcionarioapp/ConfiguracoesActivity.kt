@@ -46,7 +46,6 @@ class ConfiguracoesActivity : AppCompatActivity() {
 
         // Selecionar canal atual
         when (session.canalOtp) {
-            "sms" -> rgCanal.check(R.id.rbCanalSms)
             "email" -> rgCanal.check(R.id.rbCanalEmail)
             else -> rgCanal.check(R.id.rbCanalWhatsapp)
         }
@@ -67,7 +66,6 @@ class ConfiguracoesActivity : AppCompatActivity() {
 
         rgCanal.setOnCheckedChangeListener { _, checkedId ->
             val canal = when (checkedId) {
-                R.id.rbCanalSms -> "sms"
                 R.id.rbCanalEmail -> "email"
                 else -> "whatsapp"
             }
@@ -81,7 +79,7 @@ class ConfiguracoesActivity : AppCompatActivity() {
                 }
                 withContext(Dispatchers.Main) {
                     if (resp?.ok == true) {
-                        val label = mapOf("whatsapp" to "WhatsApp", "sms" to "SMS", "email" to "E-mail")
+                        val label = mapOf("whatsapp" to "WhatsApp", "email" to "E-mail")
                         tvCanalStatus.text = "Preferência salva: ${label[canal]}"
                     } else {
                         tvCanalStatus.text = resp?.erro ?: "Salvo localmente (sincronize ao entrar)"

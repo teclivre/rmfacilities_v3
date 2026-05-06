@@ -103,15 +103,6 @@
                     android:textSize="14sp" />
 
                 <RadioButton
-                    android:id="@+id/rbCanalSms"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:gravity="center_vertical"
-                    android:text="SMS"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
-
-                <RadioButton
                     android:id="@+id/rbCanalEmail"
                     android:layout_width="match_parent"
                     android:layout_height="48dp"
