@@ -3517,7 +3517,7 @@ def ai_wa_reply(numero,texto,historico=None):
         system+=extra
     try: temp=float(cfg.get('temperature') or 0.3)
     except Exception: temp=0.3
-    try: max_tk=int(float(cfg.get('max_tokens') or 800))
+    try: max_tk=max(800,min(2000,int(float(cfg.get('max_tokens') or 800))))
     except Exception: max_tk=800
     hist=[m for m in (historico or []) if (m.conteudo or '').strip() and m.tipo!='erro']
     if provider=='openai':
@@ -11994,7 +11994,7 @@ def api_ia_wa_cfg_save():
     except Exception:
         temp=0.3
     try:
-        max_tokens=max(50,min(2000,int(float(d.get('max_tokens',800)))))
+        max_tokens=max(800,min(2000,int(float(d.get('max_tokens',800)))))
     except Exception:
         max_tokens=800
     sc_cfg('ia_wa_enabled',enabled)
