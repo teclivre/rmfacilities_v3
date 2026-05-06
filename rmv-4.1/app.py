@@ -1951,6 +1951,55 @@ def sms_send(numero, mensagem):
 def wa_cfg():
     return {'url':gc('wa_url',''),'instancia':gc('wa_instancia',''),'token':gc('wa_token','')}
 
+def wa_webhook_secret():
+    # Segredo dedicado do webhook com fallback no token já existente de integração.
+    return (
+        (os.environ.get('WA_WEBHOOK_SECRET') or '').strip() or
+        (gc('wa_webhook_secret','') or '').strip() or
+        (gc('wa_token','') or '').strip()
+    )
+
+def wa_webhook_authorized(payload=None):
+    expected=(wa_webhook_secret() or '').strip()
+    if not expected:
+        return False
+
+    presented=[]
+    auth=(request.headers.get('Authorization') or '').strip()
+    if auth:
+        if auth.lower().startswith('bearer '):
+            presented.append(auth[7:].strip())
+        else:
+            presented.append(auth)
+
+    for h in ('X-Webhook-Token','X-Webhook-Secret','X-Api-Key','apikey'):
+        v=(request.headers.get(h) or '').strip()
+        if v:
+            presented.append(v)
+
+    for q in ('token','secret','key'):
+        v=(request.args.get(q) or '').strip()
+        if v:
+            presented.append(v)
+
+    if isinstance(payload,dict):
+        for k in ('token','secret','apiKey','apikey'):
+            v=(payload.get(k) or '')
+            if isinstance(v,str) and v.strip():
+                presented.append(v.strip())
+
+    for cand in presented:
+        if hmac.compare_digest(cand,expected):
+            return True
+
+    sig=(request.headers.get('X-Hub-Signature-256') or request.headers.get('X-Signature-256') or '').strip()
+    if sig:
+        raw=request.get_data(cache=True) or b''
+        dig='sha256='+hmac.new(expected.encode('utf-8'),raw,hashlib.sha256).hexdigest()
+        return hmac.compare_digest(sig,dig)
+
+    return False
+
 def wa_backup_cfg():
     return {
         'enabled':gc('wa_backup_enabled','1'),
@@ -11910,11 +11959,14 @@ def api_smtp_testar():
 def api_wa_cfg_get():
     b=wa_backup_cfg()
     token=(gc('wa_token','') or '').strip()
+    webhook_secret=(wa_webhook_secret() or '').strip()
     return jsonify({
         'url':gc('wa_url',''),
         'instancia':gc('wa_instancia',''),
         'token':'',
         'has_token':bool(token),
+        'webhook_secret':'',
+        'has_webhook_secret':bool(webhook_secret),
         'backup_enabled':b.get('enabled','1'),
         'backup_email':b.get('email',''),
         'backup_interval_hours':b.get('interval_hours','2'),
@@ -11932,6 +11984,10 @@ def api_wa_cfg_save():
         sc_cfg('wa_token','')
     elif 'token' in d and str(d.get('token','')).strip():
         sc_cfg('wa_token',str(d.get('token','')).strip())
+    if str(d.get('webhook_secret_clear','0')).strip().lower() in ('1','true','yes','on'):
+        sc_cfg('wa_webhook_secret','')
+    elif 'webhook_secret' in d and str(d.get('webhook_secret','')).strip():
+        sc_cfg('wa_webhook_secret',str(d.get('webhook_secret','')).strip())
     if 'backup_enabled' in d:
         sc_cfg('wa_backup_enabled','1' if str(d.get('backup_enabled','0')).strip().lower() in ('1','true','yes','on') else '0')
     if 'backup_email' in d:
@@ -12234,7 +12290,12 @@ def webhook_whatsapp():
         return jsonify({'ok':True,'endpoint':'/webhook/whatsapp','metodos':['POST'],'status':'ativo'})
     debug=str(request.args.get('debug','0')).strip().lower() in ('1','true','yes','on')
     diag={'evento':None,'mensagens_recebidas':0,'mensagens_processadas':0,'ia_ativa':ai_wa_enabled(),'respostas_enviadas':0,'erros':[]}
-    data=request.json or {}
+    data=request.get_json(silent=True) or {}
+    if not wa_webhook_authorized(data):
+        app.logger.warning('[wa-webhook] requisicao nao autorizada ip=%s ua=%s',
+                           (request.headers.get('X-Forwarded-For') or request.remote_addr or ''),
+                           (request.headers.get('User-Agent') or '')[:160])
+        return jsonify({'erro':'Nao autorizado'}),401
     try:
         evento=(data.get('event') or '').lower()
         diag['evento']=evento
