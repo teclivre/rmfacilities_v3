@@ -44,13 +44,18 @@ class DocumentosActivity : AppCompatActivity() {
     private var filtroQ = ""
     private var filtroCategoria = ""
     private var filtroAno = ""
+    private var filtroStatus = "todos"
     private lateinit var shimmerDocs: ShimmerFrameLayout
     private lateinit var scrollChips: HorizontalScrollView
     private lateinit var chipGroupAnos: ChipGroup
+    private lateinit var chipGroupCategorias: ChipGroup
+    private lateinit var chipGroupStatus: ChipGroup
     private var primeiroLoad = true
     private var anosDisponiveis: List<String> = emptyList()
+    private var categoriasDisponiveis: List<String> = emptyList()
     private lateinit var tvUltimoAsoDoc: android.widget.TextView
     private lateinit var offlineStore: OfflineDocsStore
+    private lateinit var retryQueue: ActionRetryQueue
     private var pendentesAssinatura: List<DocumentoItem> = emptyList()
 
     private val debounceHandler = Handler(Looper.getMainLooper())
@@ -63,12 +68,15 @@ class DocumentosActivity : AppCompatActivity() {
         session = SessionManager(this)
         api = ApiClient(session)
         offlineStore = OfflineDocsStore(this)
+        retryQueue = ActionRetryQueue(this)
 
         swipe = findViewById(R.id.swipeDocs)
         rv = findViewById(R.id.rvDocs)
         shimmerDocs = findViewById(R.id.shimmerDocs)
         scrollChips = findViewById(R.id.scrollChips)
         chipGroupAnos = findViewById(R.id.chipGroupAnos)
+        chipGroupCategorias = findViewById(R.id.chipGroupCategorias)
+        chipGroupStatus = findViewById(R.id.chipGroupStatus)
         tvUltimoAsoDoc = findViewById(R.id.tvUltimoAsoDoc)
 
         // Botão voltar
@@ -83,6 +91,9 @@ class DocumentosActivity : AppCompatActivity() {
         }
         findViewById<MaterialButton>(R.id.btnLerPendentes).setOnClickListener {
             abrirPendentesEmSequencia()
+        }
+        findViewById<MaterialButton>(R.id.btnBaixarPendentes).setOnClickListener {
+            baixarPendentesParaOffline()
         }
 
         // Busca por nome
@@ -132,12 +143,23 @@ class DocumentosActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        session.touchActivity()
         // Handle deep link from push notification
         val arquivoId = intent.getIntExtra(FcmService.EXTRA_ARQUIVO_ID, -1)
         if (arquivoId > 0) {
             intent.removeExtra(FcmService.EXTRA_ARQUIVO_ID)
             carregarEScrollar(arquivoId)
         }
+        val openOffline = intent.getBooleanExtra("open_offline_list", false)
+        if (openOffline) {
+            intent.removeExtra("open_offline_list")
+            abrirListaOffline()
+        }
+    }
+
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        session.touchActivity()
     }
 
     private fun carregar() {
@@ -160,7 +182,9 @@ class DocumentosActivity : AppCompatActivity() {
                 }
                 if (docs.ok) {
                     pendentesAssinatura = pendentes.itens ?: emptyList()
-                    adapter.replaceAll(pendentes.itens, docs.itens)
+                    val pendentesFiltrados = aplicarFiltrosLocais(pendentes.itens ?: emptyList())
+                    val docsFiltrados = aplicarFiltrosLocais(docs.itens ?: emptyList())
+                    adapter.replaceAll(pendentesFiltrados, docsFiltrados)
                     atualizarChips((pendentes.itens ?: emptyList()) + (docs.itens ?: emptyList()))
                     if (scrollToArquivoId > 0) {
                         scrollToArquivo(scrollToArquivoId)
@@ -326,7 +350,44 @@ class DocumentosActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     swipe.isRefreshing = false
                     TelemetryLogger.logHandled(this@DocumentosActivity, "documentos_download", e)
-                    Toast.makeText(this@DocumentosActivity, e.message ?: "Erro no download", Toast.LENGTH_LONG).show()
+                    retryQueue.enqueueDocumentoDownload(item)
+                    Toast.makeText(this@DocumentosActivity, "Sem conexão agora. O download entrou na fila offline.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun baixarPendentesParaOffline() {
+        if (pendentesAssinatura.isEmpty()) {
+            Toast.makeText(this, "Não há pendentes para baixar.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        var enfileirados = 0
+        for (item in pendentesAssinatura) {
+            val path = item.app_download_url?.trim().orEmpty()
+            if (path.isNotBlank() && !path.startsWith("offline://")) {
+                retryQueue.enqueueDocumentoDownload(item)
+                enfileirados += 1
+            }
+        }
+        if (enfileirados == 0) {
+            Toast.makeText(this, "Nenhum item válido para fila.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        swipe.isRefreshing = true
+        CoroutineScope(Dispatchers.IO).launch {
+            val result = try { retryQueue.process(api) } catch (_: Exception) { null }
+            withContext(Dispatchers.Main) {
+                swipe.isRefreshing = false
+                if (result == null) {
+                    Toast.makeText(this@DocumentosActivity, "$enfileirados download(s) foram salvos na fila offline.", Toast.LENGTH_LONG).show()
+                } else {
+                    val msg = if (result.pendentes > 0) {
+                        "${result.enviados} baixado(s), ${result.pendentes} pendente(s) para retomada automática."
+                    } else {
+                        "Todos os downloads pendentes foram concluídos: ${result.enviados}."
+                    }
+                    Toast.makeText(this@DocumentosActivity, msg, Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -465,9 +526,18 @@ class DocumentosActivity : AppCompatActivity() {
                 ?: item.criado_fmt?.takeLast(4)?.takeIf { it.matches(Regex("\\d{4}")) }
         }.toSortedSet(compareByDescending { it }).toList()
 
+        val categoriasNovas = itens
+            .mapNotNull { it.categoria_label?.trim()?.takeIf { c -> c.isNotBlank() } }
+            .toSortedSet(compareBy { it.lowercase(Locale.getDefault()) })
+            .toList()
+
         if (anosNovos.isNotEmpty()) {
             anosDisponiveis = (anosNovos + anosDisponiveis)
                 .toSortedSet(compareByDescending { it }).toList()
+        }
+        if (categoriasNovas.isNotEmpty()) {
+            categoriasDisponiveis = (categoriasNovas + categoriasDisponiveis)
+                .toSortedSet(compareBy { it.lowercase(Locale.getDefault()) }).toList()
         }
 
         if (anosDisponiveis.isEmpty()) { scrollChips.visibility = View.GONE; return }
@@ -503,6 +573,77 @@ class DocumentosActivity : AppCompatActivity() {
                 val label = chip.text.toString()
                 chip.isChecked = (label == "Todos" && filtroAno.isEmpty()) || label == filtroAno
             }
+        }
+
+        val catLabels = listOf("Todas") + categoriasDisponiveis
+        val currentCatLabels = (0 until chipGroupCategorias.childCount)
+            .mapNotNull { (chipGroupCategorias.getChildAt(it) as? Chip)?.text?.toString() }
+        if (catLabels != currentCatLabels) {
+            chipGroupCategorias.setOnCheckedChangeListener(null)
+            chipGroupCategorias.removeAllViews()
+            for ((i, label) in catLabels.withIndex()) {
+                chipGroupCategorias.addView(Chip(this).apply {
+                    id = 2000 + i
+                    text = label
+                    isCheckable = true
+                    isChecked = (label == "Todas" && filtroCategoria.isEmpty()) || label == filtroCategoria
+                })
+            }
+            chipGroupCategorias.setOnCheckedChangeListener { group, checkedId ->
+                if (checkedId == View.NO_ID) return@setOnCheckedChangeListener
+                val chip = group.findViewById<Chip>(checkedId) ?: return@setOnCheckedChangeListener
+                val sel = chip.text.toString()
+                filtroCategoria = if (sel == "Todas") "" else sel
+                carregarComFiltros()
+            }
+        }
+
+        val statusLabels = listOf(
+            "Todos" to "todos",
+            "Pendentes" to "pendente",
+            "Assinados" to "assinado"
+        )
+        val currentStatusLabels = (0 until chipGroupStatus.childCount)
+            .mapNotNull { (chipGroupStatus.getChildAt(it) as? Chip)?.text?.toString() }
+        val targetStatusLabels = statusLabels.map { it.first }
+        if (currentStatusLabels != targetStatusLabels) {
+            chipGroupStatus.setOnCheckedChangeListener(null)
+            chipGroupStatus.removeAllViews()
+            for ((idx, pair) in statusLabels.withIndex()) {
+                chipGroupStatus.addView(Chip(this).apply {
+                    id = 3000 + idx
+                    text = pair.first
+                    isCheckable = true
+                    isChecked = pair.second == filtroStatus
+                })
+            }
+            chipGroupStatus.setOnCheckedChangeListener { group, checkedId ->
+                if (checkedId == View.NO_ID) return@setOnCheckedChangeListener
+                val idx = checkedId - 3000
+                filtroStatus = statusLabels.getOrNull(idx)?.second ?: "todos"
+                carregarComFiltros()
+            }
+        }
+    }
+
+    private fun aplicarFiltrosLocais(origem: List<DocumentoItem>): List<DocumentoItem> {
+        val q = filtroQ.trim().lowercase(Locale.getDefault())
+        return origem.filter { item ->
+            val nome = (item.nome_arquivo ?: "").lowercase(Locale.getDefault())
+            val categoria = (item.categoria_label ?: item.categoria ?: "")
+            val competencia = (item.competencia ?: "")
+            val criado = (item.criado_fmt ?: "")
+            val ano = item.ano ?: ""
+            val isPendente = item.can_assinar || item.ass_status.equals("pendente", ignoreCase = true)
+            val statusOk = when (filtroStatus) {
+                "pendente" -> isPendente
+                "assinado" -> !isPendente
+                else -> true
+            }
+            val categoriaOk = filtroCategoria.isBlank() || categoria.equals(filtroCategoria, ignoreCase = true)
+            val anoOk = filtroAno.isBlank() || ano == filtroAno || competencia.startsWith(filtroAno) || criado.endsWith(filtroAno)
+            val textoOk = q.isBlank() || nome.contains(q) || categoria.lowercase(Locale.getDefault()).contains(q)
+            statusOk && categoriaOk && anoOk && textoOk
         }
     }
 }

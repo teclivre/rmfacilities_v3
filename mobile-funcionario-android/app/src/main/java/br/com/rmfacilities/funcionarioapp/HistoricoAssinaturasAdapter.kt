@@ -6,7 +6,9 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 
-class HistoricoAssinaturasAdapter : RecyclerView.Adapter<HistoricoAssinaturasAdapter.VH>() {
+class HistoricoAssinaturasAdapter(
+    private val onClick: (AssinaturaHistoricoItem) -> Unit = {}
+) : RecyclerView.Adapter<HistoricoAssinaturasAdapter.VH>() {
 
     private val itens = mutableListOf<AssinaturaHistoricoItem>()
 
@@ -35,6 +37,7 @@ class HistoricoAssinaturasAdapter : RecyclerView.Adapter<HistoricoAssinaturasAda
         val codigo = item.ass_codigo?.takeIf { it.isNotBlank() }
         holder.tvCodigo.text = if (codigo != null) "Código: $codigo" else ""
         holder.tvCodigo.visibility = if (codigo != null) View.VISIBLE else View.GONE
+        holder.itemView.setOnClickListener { onClick(item) }
     }
 
     fun replaceAll(newItens: List<AssinaturaHistoricoItem>) {

@@ -1,6 +1,7 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.content.Context
+import kotlin.math.max
 
 class SessionManager(private val context: Context) {
     private val prefs = context.getSharedPreferences("rm_funcionario_app", Context.MODE_PRIVATE)
@@ -34,6 +35,22 @@ class SessionManager(private val context: Context) {
         get() = prefs.getString("canal_otp", "whatsapp") ?: "whatsapp"
         set(value) = prefs.edit().putString("canal_otp", value).apply()
 
+    var trustedDeviceUntil: Long
+        get() = prefs.getLong("trusted_device_until", 0L)
+        set(value) = prefs.edit().putLong("trusted_device_until", value).apply()
+
+    var trustedDeviceLabel: String
+        get() = prefs.getString("trusted_device_label", "") ?: ""
+        set(value) = prefs.edit().putString("trusted_device_label", value).apply()
+
+    var sessionIdleTimeoutMin: Int
+        get() = max(1, prefs.getInt("session_idle_timeout_min", 15))
+        set(value) = prefs.edit().putInt("session_idle_timeout_min", max(1, value)).apply()
+
+    var lastActivityAt: Long
+        get() = prefs.getLong("last_activity_at", 0L)
+        set(value) = prefs.edit().putLong("last_activity_at", value).apply()
+
     fun clear() {
         val base = apiBaseUrl
         val bio = biometricEnabled
@@ -41,15 +58,44 @@ class SessionManager(private val context: Context) {
         val notif = notificationsEnabled
         val canal = canalOtp
         val refresh = refreshToken
+        val timeoutMin = sessionIdleTimeoutMin
         prefs.edit().clear().apply()
         apiBaseUrl = base
         biometricEnabled = bio
         biometricCpf = bioCpf
         notificationsEnabled = notif
         canalOtp = canal
+        sessionIdleTimeoutMin = timeoutMin
         if (bio && bioCpf.isNotBlank() && refresh.isNotBlank()) {
             refreshToken = refresh
         }
+    }
+
+    fun markLoginSuccess(rememberDays: Int = 30, label: String = "") {
+        lastActivityAt = System.currentTimeMillis()
+        trustedDeviceUntil = System.currentTimeMillis() + (rememberDays.coerceAtLeast(1) * 86_400_000L)
+        trustedDeviceLabel = label
+    }
+
+    fun touchActivity() {
+        lastActivityAt = System.currentTimeMillis()
+    }
+
+    fun isTrustedDeviceValid(now: Long = System.currentTimeMillis()): Boolean {
+        return trustedDeviceUntil > now
+    }
+
+    fun isIdleSessionExpired(now: Long = System.currentTimeMillis()): Boolean {
+        if (accessToken.isBlank()) return false
+        val last = lastActivityAt
+        if (last <= 0L) return false
+        val timeoutMs = sessionIdleTimeoutMin.toLong() * 60_000L
+        return (now - last) > timeoutMs
+    }
+
+    fun revokeTrustedDevice() {
+        trustedDeviceUntil = 0L
+        trustedDeviceLabel = ""
     }
 
     fun logout() {

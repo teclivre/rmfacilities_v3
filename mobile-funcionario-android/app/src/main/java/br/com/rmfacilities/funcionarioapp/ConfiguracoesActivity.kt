@@ -32,6 +32,7 @@ class ConfiguracoesActivity : AppCompatActivity() {
         val switchNotificacoes = findViewById<SwitchMaterial>(R.id.switchNotificacoesConfig)
         val tvBiometriaStatus = findViewById<TextView>(R.id.tvBiometriaStatusConfig)
         val rgCanal = findViewById<RadioGroup>(R.id.rgCanalOtp)
+        val rgTimeout = findViewById<RadioGroup>(R.id.rgTimeoutSessao)
         val tvCanalStatus = findViewById<TextView>(R.id.tvCanalOtpStatus)
 
         findViewById<TextView>(R.id.btnVoltar).setOnClickListener { finish() }
@@ -47,6 +48,12 @@ class ConfiguracoesActivity : AppCompatActivity() {
         when (session.canalOtp) {
             "email" -> rgCanal.check(R.id.rbCanalEmail)
             else -> rgCanal.check(R.id.rbCanalWhatsapp)
+        }
+
+        when (session.sessionIdleTimeoutMin) {
+            in 1..10 -> rgTimeout.check(R.id.rbTimeout10)
+            in 11..15 -> rgTimeout.check(R.id.rbTimeout15)
+            else -> rgTimeout.check(R.id.rbTimeout30)
         }
 
         switchBiometria.setOnCheckedChangeListener { _, checked ->
@@ -85,6 +92,27 @@ class ConfiguracoesActivity : AppCompatActivity() {
                     }
                 }
             }
+        }
+
+        rgTimeout.setOnCheckedChangeListener { _, checkedId ->
+            val minutes = when (checkedId) {
+                R.id.rbTimeout10 -> 10
+                R.id.rbTimeout30 -> 30
+                else -> 15
+            }
+            session.sessionIdleTimeoutMin = minutes
+            Toast.makeText(this, "Bloqueio configurado para $minutes min.", Toast.LENGTH_SHORT).show()
+        }
+
+        findViewById<MaterialButton>(R.id.btnRevogarDispositivo).setOnClickListener {
+            session.revokeTrustedDevice()
+            Toast.makeText(this, "Dispositivo confiável revogado neste aparelho.", Toast.LENGTH_LONG).show()
+        }
+
+        findViewById<MaterialButton>(R.id.btnLogoutRemoto).setOnClickListener {
+            session.clear()
+            startActivity(Intent(this, LoginActivity::class.java))
+            finishAffinity()
         }
 
         findViewById<MaterialButton>(R.id.btnPoliticaPrivacidade).setOnClickListener {

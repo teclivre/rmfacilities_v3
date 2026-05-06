@@ -6,6 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkRequest
 import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
@@ -26,6 +29,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class HomeActivity : AppCompatActivity() {
+    companion object {
+        private const val PREF_SHORTCUTS = "home_shortcuts"
+        private const val KEY_ENABLED = "enabled"
+    }
+
     private lateinit var session: SessionManager
     private lateinit var api: ApiClient
     private lateinit var swipeRefresh: SwipeRefreshLayout
@@ -35,6 +43,14 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var tvMsgBadge: TextView
     private lateinit var tvDocsBadge: TextView
     private lateinit var retryQueue: ActionRetryQueue
+    private lateinit var connectivityManager: ConnectivityManager
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private lateinit var btnDocumentos: LinearLayout
+    private lateinit var btnPerfil: LinearLayout
+    private lateinit var btnPonto: LinearLayout
+    private lateinit var btnMensagens: LinearLayout
+    private lateinit var btnOfflineHome: LinearLayout
+    private lateinit var btnConfiguracoesHome: LinearLayout
 
     private val logoutReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -57,6 +73,7 @@ class HomeActivity : AppCompatActivity() {
         session = SessionManager(this)
         api = ApiClient(session)
         retryQueue = ActionRetryQueue(this)
+        connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         TelemetryLogger.init(this)
 
         if (session.accessToken.isBlank()) {
@@ -73,21 +90,43 @@ class HomeActivity : AppCompatActivity() {
         swipeRefresh.setColorSchemeResources(R.color.accent)
         swipeRefresh.setProgressBackgroundColorSchemeResource(R.color.surface)
 
-        findViewById<LinearLayout>(R.id.btnPerfil).setOnClickListener {
+        btnPerfil = findViewById(R.id.btnPerfil)
+        btnDocumentos = findViewById(R.id.btnDocumentos)
+        btnPonto = findViewById(R.id.btnPonto)
+        btnMensagens = findViewById(R.id.btnMensagens)
+        btnOfflineHome = findViewById(R.id.btnOfflineHome)
+        btnConfiguracoesHome = findViewById(R.id.btnConfiguracoesHome)
+
+        btnPerfil.setOnClickListener {
             startActivity(Intent(this, PerfilActivity::class.java))
         }
 
-        findViewById<LinearLayout>(R.id.btnDocumentos).setOnClickListener {
+        btnDocumentos.setOnClickListener {
             startActivity(Intent(this, DocumentosActivity::class.java))
         }
 
-        findViewById<LinearLayout>(R.id.btnPonto).setOnClickListener {
+        btnPonto.setOnClickListener {
             startActivity(Intent(this, PontoActivity::class.java))
         }
 
-        findViewById<LinearLayout>(R.id.btnMensagens).setOnClickListener {
+        btnMensagens.setOnClickListener {
             startActivity(Intent(this, MensagensActivity::class.java))
         }
+
+        btnOfflineHome.setOnClickListener {
+            startActivity(Intent(this, DocumentosActivity::class.java).apply {
+                putExtra("open_offline_list", true)
+            })
+        }
+
+        btnConfiguracoesHome.setOnClickListener {
+            startActivity(Intent(this, ConfiguracoesActivity::class.java))
+        }
+
+        findViewById<MaterialButton>(R.id.btnAtalhos).setOnClickListener {
+            abrirPersonalizacaoAtalhos()
+        }
+        aplicarVisibilidadeAtalhos()
 
         findViewById<MaterialButton>(R.id.btnLogout).setOnClickListener {
             MaterialAlertDialogBuilder(this)
@@ -109,6 +148,23 @@ class HomeActivity : AppCompatActivity() {
         ensureLocationAndSend()
         handleDeepLink()
         processarFilaPendente()
+        registrarCallbackRede()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (session.isIdleSessionExpired() && !session.isTrustedDeviceValid()) {
+            session.clear()
+            android.widget.Toast.makeText(this, "Sessão expirada por inatividade.", android.widget.Toast.LENGTH_LONG).show()
+            goLogin()
+            return
+        }
+        session.touchActivity()
+    }
+
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        session.touchActivity()
     }
 
     private fun ensureLocationAndSend() {
@@ -134,6 +190,11 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun handleDeepLink() {
+        if (intent?.getBooleanExtra("notif_later", false) == true) {
+            intent?.removeExtra("notif_later")
+            android.widget.Toast.makeText(this, "Notificação marcada para depois.", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
         val tipo = intent?.getStringExtra("tipo") ?: return
         val arquivoId = intent.getStringExtra("arquivo_id")?.toIntOrNull() ?: -1
         intent.removeExtra("tipo")
@@ -144,6 +205,8 @@ class HomeActivity : AppCompatActivity() {
                 })
             tipo == "chat" || tipo == "chat_broadcast" ->
                 startActivity(Intent(this, MensagensActivity::class.java))
+            tipo == "novo_documento" ->
+                startActivity(Intent(this, DocumentosActivity::class.java))
         }
     }
 
@@ -228,7 +291,7 @@ class HomeActivity : AppCompatActivity() {
                     withContext(Dispatchers.Main) {
                         android.widget.Toast.makeText(
                             this@HomeActivity,
-                            "${result.enviados} ação(ões) pendente(s) sincronizada(s).",
+                            "${result.enviados} item(ns) da fila offline sincronizado(s).",
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -237,6 +300,65 @@ class HomeActivity : AppCompatActivity() {
                 TelemetryLogger.logHandled(this@HomeActivity, "fila_retry_processar", e)
             }
         }
+    }
+
+    private fun registrarCallbackRede() {
+        if (networkCallback != null) return
+        networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                processarFilaPendente()
+            }
+        }
+        try {
+            connectivityManager.registerNetworkCallback(NetworkRequest.Builder().build(), networkCallback!!)
+        } catch (_: Exception) {
+            networkCallback = null
+        }
+    }
+
+    private fun abrirPersonalizacaoAtalhos() {
+        val labels = arrayOf("Documentos", "Perfil", "Ponto", "Mensagens", "Offline", "Configurações")
+        val keys = listOf("documentos", "perfil", "ponto", "mensagens", "offline", "config")
+        val enabled = carregarAtalhosHabilitados().toMutableSet()
+        val checks = keys.map { enabled.contains(it) }.toBooleanArray()
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Personalizar atalhos")
+            .setMultiChoiceItems(labels, checks) { _, which, isChecked ->
+                if (isChecked) enabled.add(keys[which]) else enabled.remove(keys[which])
+            }
+            .setNegativeButton("Cancelar", null)
+            .setPositiveButton("Salvar") { _, _ ->
+                if (enabled.isEmpty()) enabled.add("documentos")
+                salvarAtalhosHabilitados(enabled)
+                aplicarVisibilidadeAtalhos()
+            }
+            .show()
+    }
+
+    private fun carregarAtalhosHabilitados(): Set<String> {
+        val prefs = getSharedPreferences(PREF_SHORTCUTS, MODE_PRIVATE)
+        val raw = prefs.getString(KEY_ENABLED, "") ?: ""
+        if (raw.isBlank()) {
+            return setOf("documentos", "perfil", "ponto", "mensagens")
+        }
+        return raw.split(',').map { it.trim() }.filter { it.isNotBlank() }.toSet()
+    }
+
+    private fun salvarAtalhosHabilitados(enabled: Set<String>) {
+        getSharedPreferences(PREF_SHORTCUTS, MODE_PRIVATE)
+            .edit()
+            .putString(KEY_ENABLED, enabled.joinToString(","))
+            .apply()
+    }
+
+    private fun aplicarVisibilidadeAtalhos() {
+        val enabled = carregarAtalhosHabilitados()
+        btnDocumentos.visibility = if (enabled.contains("documentos")) View.VISIBLE else View.GONE
+        btnPerfil.visibility = if (enabled.contains("perfil")) View.VISIBLE else View.GONE
+        btnPonto.visibility = if (enabled.contains("ponto")) View.VISIBLE else View.GONE
+        btnMensagens.visibility = if (enabled.contains("mensagens")) View.VISIBLE else View.GONE
+        btnOfflineHome.visibility = if (enabled.contains("offline")) View.VISIBLE else View.GONE
+        btnConfiguracoesHome.visibility = if (enabled.contains("config")) View.VISIBLE else View.GONE
     }
 
     private fun mostrarDialogAtualizar(downloadUrl: String?) {
@@ -268,11 +390,17 @@ class HomeActivity : AppCompatActivity() {
         } else {
             registerReceiver(logoutReceiver, filter)
         }
+        registrarCallbackRede()
     }
 
     override fun onStop() {
         super.onStop()
         try { unregisterReceiver(logoutReceiver) } catch (_: Exception) {}
+        val cb = networkCallback
+        if (cb != null) {
+            try { connectivityManager.unregisterNetworkCallback(cb) } catch (_: Exception) {}
+            networkCallback = null
+        }
     }
 }
 

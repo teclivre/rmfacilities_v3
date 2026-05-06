@@ -34,6 +34,16 @@
             android:textColor="@color/white"
             android:textSize="18sp"
             android:textStyle="bold" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnExportarHistorico"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:minWidth="0dp"
+            android:text="Exportar"
+            android:textColor="#4da6ff"
+            android:textSize="12sp" />
     </LinearLayout>
 
     <!-- Conteúdo -->

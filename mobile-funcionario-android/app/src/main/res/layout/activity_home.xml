@@ -23,6 +23,19 @@
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAtalhos"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:text="Atalhos"
+                android:textColor="#4da6ff"
+                android:textSize="13sp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp" />
+
             <TextView
                 android:id="@+id/tvAvatar"
                 android:layout_width="58dp"
@@ -329,6 +342,102 @@
                             android:layout_marginTop="3dp"
                             android:text="Chat com o RH"
                             android:textColor="#0a4a30"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="16dp"
+                    android:weightSum="2">
+
+                    <LinearLayout
+                        android:id="@+id/btnOfflineHome"
+                        android:layout_width="0dp"
+                        android:layout_height="158dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="8dp"
+                        android:background="@drawable/bg_card_docs"
+                        android:foreground="@drawable/ripple_card"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:orientation="vertical"
+                        android:padding="18dp">
+
+                        <LinearLayout
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:background="@drawable/bg_icon_docs"
+                            android:gravity="center">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="📥"
+                                android:textSize="18sp" />
+                        </LinearLayout>
+
+                        <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Offline"
+                            android:textColor="@color/white"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="Arquivos salvos"
+                            android:textColor="#3a6890"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/btnConfiguracoesHome"
+                        android:layout_width="0dp"
+                        android:layout_height="158dp"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        android:background="@drawable/bg_card_perfil"
+                        android:foreground="@drawable/ripple_card"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:orientation="vertical"
+                        android:padding="18dp">
+
+                        <LinearLayout
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:background="@drawable/bg_icon_perfil"
+                            android:gravity="center">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="⚙"
+                                android:textSize="18sp" />
+                        </LinearLayout>
+
+                        <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Configurações"
+                            android:textColor="@color/white"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="Segurança e app"
+                            android:textColor="#4a2a80"
                             android:textSize="11sp" />
                     </LinearLayout>
                 </LinearLayout>

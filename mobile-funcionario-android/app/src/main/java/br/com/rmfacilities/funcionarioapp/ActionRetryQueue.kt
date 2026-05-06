@@ -14,6 +14,7 @@ data class PendingAction(
 )
 
 class ActionRetryQueue(context: Context) {
+    private val appContext = context.applicationContext
     private val prefs = context.getSharedPreferences("rm_funcionario_retry_queue", Context.MODE_PRIVATE)
     private val gson = Gson()
     private val key = "pending_actions"
@@ -78,11 +79,39 @@ class ActionRetryQueue(context: Context) {
         save(items)
     }
 
+    fun enqueueDocumentoDownload(item: DocumentoItem) {
+        val path = item.app_download_url?.trim().orEmpty()
+        if (path.isBlank() || path.startsWith("offline://")) return
+        val items = load()
+        val alreadyQueued = items.any {
+            it.type == "documento_download" && it.payload["download_path"] == path
+        }
+        if (alreadyQueued) return
+        items.add(
+            PendingAction(
+                id = UUID.randomUUID().toString(),
+                type = "documento_download",
+                payload = mapOf(
+                    "documento_id" to item.id.toString(),
+                    "download_path" to path,
+                    "nome" to (item.nome_arquivo ?: "Documento ${item.id}"),
+                    "categoria" to (item.categoria_label ?: item.categoria.orEmpty()),
+                    "ano" to item.ano.orEmpty(),
+                    "competencia" to item.competencia.orEmpty(),
+                    "criado_fmt" to item.criado_fmt.orEmpty()
+                ),
+                createdAt = System.currentTimeMillis()
+            )
+        )
+        save(items)
+    }
+
     data class ProcessResult(val enviados: Int, val pendentes: Int)
 
     fun process(api: ApiClient): ProcessResult {
         val items = load()
         if (items.isEmpty()) return ProcessResult(0, 0)
+        val offlineStore = OfflineDocsStore(appContext)
 
         val remaining = mutableListOf<PendingAction>()
         var sent = 0
@@ -107,6 +136,28 @@ class ActionRetryQueue(context: Context) {
                         else {
                             val bytes = Base64.decode(b64, Base64.DEFAULT)
                             api.uploadFoto(bytes, mime).ok
+                        }
+                    }
+                    "documento_download" -> {
+                        val path = action.payload["download_path"].orEmpty()
+                        val docId = action.payload["documento_id"]?.toIntOrNull()
+                        if (path.isBlank() || docId == null) {
+                            false
+                        } else {
+                            val bytes = api.downloadFile(path)
+                            val item = DocumentoItem(
+                                id = docId,
+                                nome_arquivo = action.payload["nome"],
+                                categoria = action.payload["categoria"],
+                                categoria_label = action.payload["categoria"],
+                                ano = action.payload["ano"],
+                                competencia = action.payload["competencia"],
+                                criado_fmt = action.payload["criado_fmt"],
+                                app_download_url = path,
+                                can_assinar = false
+                            )
+                            offlineStore.saveDownloaded(item, bytes)
+                            true
                         }
                     }
                     else -> false

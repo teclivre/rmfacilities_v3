@@ -79,11 +79,36 @@ class FcmService : FirebaseMessagingService() {
         }
 
         val channelId = if (isChat) CHANNEL_CHAT else CHANNEL_DOCS
+        val openLabel = when (tipo) {
+            "documento_assinar" -> "Assinar agora"
+            "novo_documento" -> "Abrir documento"
+            "chat", "chat_broadcast" -> "Abrir chat"
+            else -> "Abrir"
+        }
+
+        val laterIntent = Intent(this, HomeActivity::class.java).apply {
+            putExtra("notif_later", true)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
 
         val pendingIntent = PendingIntent.getActivity(
             this,
             System.currentTimeMillis().toInt(),
             targetIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val openNowPendingIntent = PendingIntent.getActivity(
+            this,
+            (System.currentTimeMillis() + 1).toInt(),
+            targetIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val laterPendingIntent = PendingIntent.getActivity(
+            this,
+            (System.currentTimeMillis() + 2).toInt(),
+            laterIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -93,9 +118,12 @@ class FcmService : FirebaseMessagingService() {
             .setSmallIcon(R.drawable.ic_fenix_round)
             .setContentTitle(titulo)
             .setContentText(corpo)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(corpo))
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .addAction(0, openLabel, openNowPendingIntent)
+            .addAction(0, "Marcar para depois", laterPendingIntent)
             .build()
 
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager

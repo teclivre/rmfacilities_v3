@@ -98,63 +98,38 @@ class PdfPreviewActivity : AppCompatActivity() {
         rvPages.visibility = View.GONE
 
         CoroutineScope(Dispatchers.IO).launch {
-            val adapter = PdfPageAdapter()
             try {
                 val displayWidth = resources.displayMetrics.widthPixels
-                val targetWidth = minOf(displayWidth, 960)
+                val widths = listOf(minOf(displayWidth, 960), minOf(displayWidth, 720), minOf(displayWidth, 560))
+                var rendered = false
+                var lastError: Throwable? = null
 
-                withContext(Dispatchers.Main) {
-                    rvPages.layoutManager = LinearLayoutManager(this@PdfPreviewActivity)
-                    rvPages.setHasFixedSize(false)
-                    rvPages.adapter = adapter
-                }
-
-                var totalPages = 0
-                files.forEach { (file, _) ->
-                    val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-                    val renderer = PdfRenderer(fd)
-                    totalPages += renderer.pageCount
-                    renderer.close()
-                    fd.close()
-                }
-
-                var renderedPages = 0
-                files.forEach { (file, title) ->
-                    withContext(Dispatchers.Main) {
-                        adapter.append(PreviewItem.Header(title))
-                    }
-                    val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-                    val renderer = PdfRenderer(fd)
-                    for (i in 0 until renderer.pageCount) {
+                for ((attempt, width) in widths.withIndex()) {
+                    try {
+                        val adapter = renderAtWidth(files, width)
                         withContext(Dispatchers.Main) {
-                            tvLoading.text = "Renderizando ${renderedPages + 1}/$totalPages..."
-                        }
-                        val page = renderer.openPage(i)
-                        val scale = targetWidth.toFloat() / page.width
-                        val bmpHeight = (page.height * scale).toInt()
-                            val bmp = Bitmap.createBitmap(targetWidth, bmpHeight, Bitmap.Config.ARGB_8888)
-                        bmp.eraseColor(android.graphics.Color.WHITE)
-                        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                        page.close()
-                        renderedPages += 1
-                        withContext(Dispatchers.Main) {
-                            adapter.append(PreviewItem.Page(bmp))
-                            if (rvPages.visibility != View.VISIBLE) {
-                                tvLoading.visibility = View.GONE
-                                rvPages.visibility = View.VISIBLE
+                            rvPages.layoutManager = LinearLayoutManager(this@PdfPreviewActivity)
+                            rvPages.setHasFixedSize(false)
+                            rvPages.adapter = adapter
+                            tvLoading.visibility = View.GONE
+                            rvPages.visibility = View.VISIBLE
+                            (rvPages.itemAnimator as? androidx.recyclerview.widget.SimpleItemAnimator)?.supportsChangeAnimations = false
+                            if (attempt > 0) {
+                                Toast.makeText(this@PdfPreviewActivity, "Prévia otimizada para seu aparelho.", Toast.LENGTH_SHORT).show()
                             }
                         }
+                        rendered = true
+                        break
+                    } catch (oom: OutOfMemoryError) {
+                        lastError = oom
+                        TelemetryLogger.logHandled(this@PdfPreviewActivity, "pdf_preview_oom_attempt_${attempt + 1}", Exception("OOM em renderização"))
+                    } catch (e: Exception) {
+                        lastError = e
+                        TelemetryLogger.logHandled(this@PdfPreviewActivity, "pdf_preview_render_attempt_${attempt + 1}", e)
                     }
-                    renderer.close()
-                    fd.close()
                 }
-                pdfRenderer = null
 
-                withContext(Dispatchers.Main) {
-                    tvLoading.visibility = View.GONE
-                    rvPages.visibility = View.VISIBLE
-                    (rvPages.itemAnimator as? androidx.recyclerview.widget.SimpleItemAnimator)?.supportsChangeAnimations = false
-                }
+                if (!rendered) throw (lastError ?: IllegalStateException("Falha ao renderizar PDF"))
             } catch (oom: OutOfMemoryError) {
                 withContext(Dispatchers.Main) {
                     tvLoading.visibility = View.VISIBLE
@@ -163,10 +138,52 @@ class PdfPreviewActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    TelemetryLogger.logHandled(this@PdfPreviewActivity, "pdf_preview_fatal", e)
                     tvLoading.text = "Erro ao carregar PDF: ${e.message}"
                 }
             }
         }
+    }
+
+    private suspend fun renderAtWidth(files: List<Pair<File, String>>, targetWidth: Int): PdfPageAdapter {
+        val adapter = PdfPageAdapter()
+        var totalPages = 0
+        files.forEach { (file, _) ->
+            val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+            val renderer = PdfRenderer(fd)
+            totalPages += renderer.pageCount
+            renderer.close()
+            fd.close()
+        }
+
+        var renderedPages = 0
+        files.forEach { (file, title) ->
+            withContext(Dispatchers.Main) {
+                adapter.append(PreviewItem.Header(title))
+            }
+            val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+            val renderer = PdfRenderer(fd)
+            for (i in 0 until renderer.pageCount) {
+                withContext(Dispatchers.Main) {
+                    tvLoading.text = "Renderizando ${renderedPages + 1}/$totalPages..."
+                }
+                val page = renderer.openPage(i)
+                val scale = targetWidth.toFloat() / page.width
+                val bmpHeight = (page.height * scale).toInt()
+                val bmp = Bitmap.createBitmap(targetWidth, bmpHeight, Bitmap.Config.ARGB_8888)
+                bmp.eraseColor(android.graphics.Color.WHITE)
+                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                page.close()
+                renderedPages += 1
+                withContext(Dispatchers.Main) {
+                    adapter.append(PreviewItem.Page(bmp))
+                }
+            }
+            renderer.close()
+            fd.close()
+        }
+        pdfRenderer = null
+        return adapter
     }
 
     override fun onDestroy() {

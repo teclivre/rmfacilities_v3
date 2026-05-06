@@ -163,6 +163,7 @@ class LoginActivity : AppCompatActivity() {
                 if (resp.ok && !resp.access_token.isNullOrBlank()) {
                     session.accessToken = resp.access_token
                     session.refreshToken = resp.refresh_token ?: ""
+                    session.markLoginSuccess(label = android.os.Build.MODEL)
                     if (session.biometricCpf.isBlank()) {
                         session.biometricCpf = cpf
                     }
@@ -269,6 +270,7 @@ class LoginActivity : AppCompatActivity() {
                     if (!resp.refresh_token.isNullOrBlank()) {
                         session.refreshToken = resp.refresh_token
                     }
+                    session.touchActivity()
                     goHomeOrDeepLink()
                 } else {
                     // Se refresh expirou, mantém biometria, mas volta para o fluxo OTP.
