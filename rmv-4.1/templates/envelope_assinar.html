@@ -45,10 +45,24 @@
   .viewer-shell{display:flex;flex-direction:column;height:100%;padding:10px;gap:6px}
   .viewer-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;flex-shrink:0}
   .viewer-progress{font-size:12px;color:#2f4f8f;font-weight:700;background:#e9f1ff;border-radius:999px;padding:4px 10px}
-  .doc-chip-list{display:flex;flex-wrap:wrap;gap:6px;flex-shrink:0}
-  .doc-chip{border:1px solid #b8c7e4;background:#fff;color:#27406d;border-radius:999px;padding:5px 12px;font-size:12px;cursor:pointer}
-  .doc-chip.active{background:#2d7ef7;color:#fff;border-color:#2d7ef7}
-  .doc-chip.done{border-color:#2aa876;background:#ebfff5;color:#12714d}
+  .doc-chip-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;flex-shrink:0}
+  .doc-chip{
+    border:1px solid #b8c7e4;
+    background:linear-gradient(180deg,#ffffff 0%,#f4f8ff 100%);
+    color:#27406d;
+    border-radius:12px;
+    padding:10px 12px;
+    font-size:12px;
+    font-weight:700;
+    text-align:left;
+    cursor:pointer;
+    min-height:46px;
+    box-shadow:0 2px 8px rgba(20,48,92,.08);
+    transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease, background .12s ease;
+  }
+  .doc-chip:hover{transform:translateY(-1px);box-shadow:0 6px 14px rgba(20,48,92,.14)}
+  .doc-chip.active{background:linear-gradient(180deg,#3d8bff 0%,#2d7ef7 100%);color:#fff;border-color:#2d7ef7;box-shadow:0 8px 18px rgba(45,126,247,.35)}
+  .doc-chip.done{border-color:#2aa876;background:linear-gradient(180deg,#f5fffa 0%,#ebfff5 100%);color:#12714d}
   .doc-frame-wrap{flex:1 1 auto;background:#1a2235;border-radius:8px;overflow:hidden;display:flex;flex-direction:column}
   .doc-scroll{flex:1 1 auto;overflow:auto;background:#1a2235;padding:10px}
   .pdf-pages{display:flex;flex-direction:column;gap:10px;align-items:center}
