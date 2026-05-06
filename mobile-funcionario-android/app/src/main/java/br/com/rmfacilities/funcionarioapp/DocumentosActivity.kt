@@ -14,6 +14,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.SimpleItemAnimator
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.button.MaterialButton
@@ -103,6 +104,9 @@ class DocumentosActivity : AppCompatActivity() {
         if (rv.layoutManager == null) {
             rv.layoutManager = LinearLayoutManager(this)
         }
+        rv.setHasFixedSize(true)
+        rv.setItemViewCacheSize(24)
+        (rv.itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
 
         swipe.setOnRefreshListener { carregarComFiltros() }
         swipe.isRefreshing = false

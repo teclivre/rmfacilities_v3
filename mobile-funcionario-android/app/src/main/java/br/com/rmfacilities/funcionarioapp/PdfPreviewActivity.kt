@@ -100,6 +100,7 @@ class PdfPreviewActivity : AppCompatActivity() {
             try {
                 val items = mutableListOf<PreviewItem>()
                 val displayWidth = resources.displayMetrics.widthPixels
+                val targetWidth = minOf(displayWidth, 1280)
 
                 files.forEach { (file, title) ->
                     items.add(PreviewItem.Header(title))
@@ -107,9 +108,9 @@ class PdfPreviewActivity : AppCompatActivity() {
                     val renderer = PdfRenderer(fd)
                     for (i in 0 until renderer.pageCount) {
                         val page = renderer.openPage(i)
-                        val scale = displayWidth.toFloat() / page.width
+                        val scale = targetWidth.toFloat() / page.width
                         val bmpHeight = (page.height * scale).toInt()
-                        val bmp = Bitmap.createBitmap(displayWidth, bmpHeight, Bitmap.Config.ARGB_8888)
+                        val bmp = Bitmap.createBitmap(targetWidth, bmpHeight, Bitmap.Config.RGB_565)
                         bmp.eraseColor(android.graphics.Color.WHITE)
                         page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                         page.close()
@@ -124,6 +125,8 @@ class PdfPreviewActivity : AppCompatActivity() {
                     tvLoading.visibility = View.GONE
                     rvPages.visibility = View.VISIBLE
                     rvPages.layoutManager = LinearLayoutManager(this@PdfPreviewActivity)
+                    rvPages.setHasFixedSize(true)
+                    (rvPages.itemAnimator as? androidx.recyclerview.widget.SimpleItemAnimator)?.supportsChangeAnimations = false
                     rvPages.adapter = PdfPageAdapter(items)
                 }
             } catch (e: Exception) {
