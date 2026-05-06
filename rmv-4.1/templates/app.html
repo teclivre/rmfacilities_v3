@@ -331,7 +331,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 <link rel="icon" type="image/svg+xml" href="/static/img/pwa-icon.svg">
 <link rel="apple-touch-icon" href="/static/img/pwa-icon.svg">
 <link rel="stylesheet" href="/static/css/main.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.min.js"></script>
+<script src="/static/vendor/pdfjs/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -8274,7 +8274,7 @@ async function carregarPreviewCarimbo(){
       if(loading) loading.textContent='PDF.js não carregado.';
       return;
     }
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.js';
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc='/static/vendor/pdfjs/pdf.worker.min.js';
     const url=`/api/envelopes/${_asiEnvelopeId}/arquivos/${arqId}/visualizar?_=${Date.now()}`;
     const pdfDoc=await window.pdfjsLib.getDocument(url).promise;
     if(loading) loading.style.display='none';
@@ -8285,6 +8285,7 @@ async function carregarPreviewCarimbo(){
       const wrapWidth=document.getElementById('stamp-preview-wrap').clientWidth||480;
       const scale=(wrapWidth-4)/viewport.width;
       const scaledVP=page.getViewport({scale});
+      const outputScale=Math.min(window.devicePixelRatio||1,2);
       const wrap=document.createElement('div');
       wrap.className='stamp-page-wrap';
       wrap.style.cssText='position:relative;display:block;margin:0 0 6px 0;cursor:crosshair;user-select:none';
@@ -8293,11 +8294,12 @@ async function carregarPreviewCarimbo(){
       lbl.textContent=`Página ${pgNum} de ${numPages}`;
       wrap.appendChild(lbl);
       const canvas=document.createElement('canvas');
-      canvas.width=scaledVP.width;
-      canvas.height=scaledVP.height;
+      canvas.width=Math.floor(scaledVP.width*outputScale);
+      canvas.height=Math.floor(scaledVP.height*outputScale);
       canvas.style.cssText='display:block;width:100%';
       wrap.appendChild(canvas);
-      const ctx=canvas.getContext('2d');
+      const ctx=canvas.getContext('2d',{alpha:false});
+      ctx.setTransform(outputScale,0,0,outputScale,0,0);
       await page.render({canvasContext:ctx,viewport:scaledVP}).promise;
       const capturedPg=pgNum;
       canvas.addEventListener('click',function(e){ setStampPosFromClick(e,canvas,capturedPg); });

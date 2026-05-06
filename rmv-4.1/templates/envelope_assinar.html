@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Assinar Documento — RM Facilities</title>
 <link rel="stylesheet" href="/static/css/main.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.min.js"></script>
+<script src="/static/vendor/pdfjs/pdf.min.js"></script>
 <style>
   *,*::before,*::after{box-sizing:border-box}
   html,body{height:100%;margin:0;padding:0}
@@ -226,7 +226,7 @@ let docAtual=null;
 let currentRenderToken=0;
 
 if(window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions){
-  window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.js';
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc='/static/vendor/pdfjs/pdf.worker.min.js';
 }
 
 function showMsg(txt,type='err'){
@@ -344,7 +344,9 @@ async function renderPdfIntoViewer(arrayBuffer,docId){
   const pdf=await window.pdfjsLib.getDocument({data:arrayBuffer}).promise;
   if(token!==currentRenderToken) return false;
   pages.innerHTML='';
-  const renderWidth=Math.max(280,Math.min(900,sc.clientWidth-24));
+  const gutter=window.innerWidth<=800?12:24;
+  const renderWidth=Math.max(280,Math.min(980,sc.clientWidth-gutter));
+  const outputScale=Math.min(window.devicePixelRatio||1,2);
   for(let p=1;p<=pdf.numPages;p++){
     const page=await pdf.getPage(p);
     const vp=page.getViewport({scale:1});
@@ -352,11 +354,13 @@ async function renderPdfIntoViewer(arrayBuffer,docId){
     const viewport=page.getViewport({scale});
     const canvas=document.createElement('canvas');
     canvas.className='pdf-page';
-    canvas.width=Math.floor(viewport.width);
-    canvas.height=Math.floor(viewport.height);
+    canvas.width=Math.floor(viewport.width*outputScale);
+    canvas.height=Math.floor(viewport.height*outputScale);
     canvas.style.width=Math.floor(viewport.width)+'px';
     canvas.style.height=Math.floor(viewport.height)+'px';
-    await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+    const ctx=canvas.getContext('2d',{alpha:false});
+    ctx.setTransform(outputScale,0,0,outputScale,0,0);
+    await page.render({canvasContext:ctx,viewport}).promise;
     if(token!==currentRenderToken) return false;
     pages.appendChild(canvas);
   }
