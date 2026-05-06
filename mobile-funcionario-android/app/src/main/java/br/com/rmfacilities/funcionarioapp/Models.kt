@@ -121,7 +121,8 @@ data class NaoLidasResponse(
 
 data class ApiSimpleResponse(
     val ok: Boolean = false,
-    val erro: String? = null
+    val erro: String? = null,
+    val mensagem: String? = null
 )
 
 data class VersaoAppResponse(

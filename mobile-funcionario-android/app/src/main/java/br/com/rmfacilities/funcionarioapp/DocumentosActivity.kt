@@ -24,9 +24,13 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import android.view.View
 import android.widget.HorizontalScrollView
+import android.widget.LinearLayout
 import com.facebook.shimmer.ShimmerFrameLayout
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
 
 class DocumentosActivity : AppCompatActivity() {
     private lateinit var session: SessionManager
@@ -183,10 +187,97 @@ class DocumentosActivity : AppCompatActivity() {
 
         MaterialAlertDialogBuilder(this)
             .setTitle("Confirmar assinatura")
-            .setMessage("${item.nome_arquivo ?: "Documento"}\n\n$detalhes")
+            .setMessage("${item.nome_arquivo ?: "Documento"}\n\n$detalhes\n\nSua identidade será confirmada antes de assinar.")
             .setNegativeButton("Cancelar", null)
-            .setPositiveButton("✍ Confirmar assinatura") { _, _ ->
-                assinarDocumento(item)
+            .setPositiveButton("✍ Prosseguir") { _, _ ->
+                iniciarStepUp(item)
+            }
+            .show()
+    }
+
+    private fun canUseBiometric(): Boolean {
+        val bm = BiometricManager.from(this)
+        return bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
+    }
+
+    private fun iniciarStepUp(item: DocumentoItem) {
+        if (canUseBiometric() && session.biometricEnabled && session.biometricCpf.isNotBlank()) {
+            val executor = ContextCompat.getMainExecutor(this)
+            val prompt = BiometricPrompt(this, executor,
+                object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                        super.onAuthenticationSucceeded(result)
+                        assinarDocumento(item, stepupBiometria = true)
+                    }
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        super.onAuthenticationError(errorCode, errString)
+                        if (errorCode != BiometricPrompt.ERROR_USER_CANCELED && errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
+                            Toast.makeText(this@DocumentosActivity, "Biometria: $errString", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                })
+            prompt.authenticate(
+                BiometricPrompt.PromptInfo.Builder()
+                    .setTitle("Confirmar identidade")
+                    .setSubtitle("Autentique para assinar: ${item.nome_arquivo ?: "documento"}")
+                    .setNegativeButtonText("Usar código")
+                    .build()
+            )
+        } else {
+            solicitarOtpEAssinar(item)
+        }
+    }
+
+    private fun solicitarOtpEAssinar(item: DocumentoItem) {
+        swipe.isRefreshing = true
+        CoroutineScope(Dispatchers.IO).launch {
+            val resp = try {
+                api.solicitarStepupOtp(item.id)
+            } catch (e: Exception) {
+                ApiSimpleResponse(ok = false, erro = e.message)
+            }
+            withContext(Dispatchers.Main) {
+                swipe.isRefreshing = false
+                if (resp.ok) {
+                    mostrarDialogOtpAssinatura(item, resp.mensagem ?: "Código enviado.")
+                } else {
+                    Toast.makeText(this@DocumentosActivity, resp.erro ?: "Falha ao enviar código", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun mostrarDialogOtpAssinatura(item: DocumentoItem, infoEnvio: String) {
+        val etOtp = EditText(this).apply {
+            hint = "Código de 6 dígitos"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            maxLines = 1
+        }
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val dp16 = (16 * resources.displayMetrics.density).toInt()
+            setPadding(dp16 * 2, dp16, dp16 * 2, dp16 / 2)
+            addView(android.widget.TextView(this@DocumentosActivity).apply {
+                text = infoEnvio
+                setTextColor(android.graphics.Color.GRAY)
+                textSize = 13f
+                setPadding(0, 0, 0, (8 * resources.displayMetrics.density).toInt())
+            })
+            addView(etOtp)
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Código de confirmação")
+            .setMessage("Para assinar \"${item.nome_arquivo ?: "documento"}\" insira o código enviado.")
+            .setView(layout)
+            .setNegativeButton("Cancelar", null)
+            .setNeutralButton("Reenviar") { _, _ -> solicitarOtpEAssinar(item) }
+            .setPositiveButton("✍ Assinar") { _, _ ->
+                val codigo = etOtp.text.toString().trim()
+                if (codigo.length < 4) {
+                    Toast.makeText(this, "Informe o código recebido.", Toast.LENGTH_SHORT).show()
+                } else {
+                    assinarDocumento(item, stepupOtp = codigo)
+                }
             }
             .show()
     }
@@ -249,11 +340,11 @@ class DocumentosActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun assinarDocumento(item: DocumentoItem) {
+    private fun assinarDocumento(item: DocumentoItem, stepupOtp: String? = null, stepupBiometria: Boolean = false) {
         swipe.isRefreshing = true
         CoroutineScope(Dispatchers.IO).launch {
             val resp = try {
-                api.assinarDocumento(item.id)
+                api.assinarDocumento(item.id, stepupOtp = stepupOtp, stepupBiometria = stepupBiometria)
             } catch (e: Exception) {
                 ApiSimpleResponse(ok = false, erro = e.message)
             }

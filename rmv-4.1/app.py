@@ -970,6 +970,10 @@ class Funcionario(db.Model):
     app_otp_hash=db.Column(db.String(256))
     app_otp_expira_em=db.Column(db.DateTime)
     app_otp_tentativas=db.Column(db.Integer,default=0)
+    app_stepup_hash=db.Column(db.String(256))
+    app_stepup_expira_em=db.Column(db.DateTime)
+    app_stepup_tentativas=db.Column(db.Integer,default=0)
+    app_stepup_arquivo_id=db.Column(db.Integer)
     app_push_token=db.Column(db.String(300))
     app_lat=db.Column(db.Float)
     app_lon=db.Column(db.Float)
@@ -6387,6 +6391,48 @@ def api_app_funcionario_auth_confirmar():
     audit_event('auth_app_sucesso','funcionario',f.id,'funcionario',f.id,True,{'sessao_id':sess['sessao_id'],'modo':'otp'})
     return jsonify({'ok':True,**sess,'funcionario':{'id':f.id,'nome':f.nome,'cpf':f.cpf,'cargo':f.cargo,'setor':f.setor,'status':f.status}})
 
+@app.route('/api/app/funcionario/stepup/solicitar',methods=['POST'])
+@app_func_required
+def api_app_funcionario_stepup_solicitar():
+    f=g.app_funcionario
+    d=request.json or {}
+    arquivo_id=d.get('arquivo_id')
+    if not arquivo_id:
+        return jsonify({'erro':'arquivo_id obrigatorio'}),400
+    try: arquivo_id=int(arquivo_id)
+    except: return jsonify({'erro':'arquivo_id invalido'}),400
+
+    a=FuncionarioArquivo.query.get(arquivo_id)
+    if not a or a.funcionario_id!=f.id:
+        return jsonify({'erro':'Acesso negado'}),403
+    if (a.ass_status or '').strip().lower()=='concluida':
+        return jsonify({'erro':'Documento ja assinado.'}),400
+
+    codigo=_otp_new_code()
+    f.app_stepup_hash=token_hash(codigo)
+    f.app_stepup_expira_em=utcnow()+timedelta(minutes=5)
+    f.app_stepup_tentativas=0
+    f.app_stepup_arquivo_id=arquivo_id
+
+    try:
+        _db_commit_retry('app_stepup_persist',attempts=4)
+    except Exception as ex:
+        db.session.rollback()
+        return jsonify({'erro':'Nao foi possivel preparar o codigo OTP.','detalhe':str(ex)}),503
+
+    try:
+        envio=_send_app_login_otp(codigo,f)
+    except Exception as ex:
+        return jsonify({'erro':'Nao foi possivel enviar o codigo OTP.','detalhe':str(ex)}),503
+
+    try:
+        audit_event('app_stepup_otp_enviado','funcionario',f.id,'arquivo',arquivo_id,True,{'canal':envio.get('canal')})
+    except Exception as ex:
+        app.logger.warning(f'[stepup] auditoria pos-envio: {ex}')
+
+    msg_ok='Codigo enviado com sucesso.' if envio.get('canal')!='email' else 'Codigo enviado para o e-mail cadastrado.'
+    return jsonify({'ok':True,'mensagem':msg_ok,'destino':envio.get('destino'),'canal':envio.get('canal')})
+
 @app.route('/api/app/funcionario/refresh',methods=['POST'])
 def api_app_funcionario_refresh():
     d=request.json or {}
@@ -6681,6 +6727,32 @@ def api_app_funcionario_assinar_arquivo(id):
     if status_atual=='concluida':
         return jsonify({'ok':True,'mensagem':'Documento ja assinado.','item':a.to_dict()})
 
+    d=request.json or {}
+    stepup_otp=only_digits(d.get('stepup_otp') or '')
+    stepup_biometria=bool(d.get('stepup_biometria'))
+
+    if not stepup_biometria:
+        if not stepup_otp:
+            return jsonify({'erro':'step_up_required','mensagem':'Confirme sua identidade antes de assinar.'}),403
+        if not (f.app_stepup_hash or '').strip() or not f.app_stepup_expira_em:
+            return jsonify({'erro':'Solicite um codigo de confirmacao antes de assinar.'}),400
+        if f.app_stepup_expira_em<utcnow():
+            return jsonify({'erro':'Codigo expirado. Solicite um novo codigo de confirmacao.'}),400
+        if int(f.app_stepup_arquivo_id or 0)!=id:
+            return jsonify({'erro':'Codigo de confirmacao invalido para este documento.'}),400
+        tent=int(f.app_stepup_tentativas or 0)
+        if tent>=5:
+            return jsonify({'erro':'Limite de tentativas excedido. Solicite novo codigo.'}),400
+        if not hmac.compare_digest(token_hash(stepup_otp),str(f.app_stepup_hash or '')):
+            f.app_stepup_tentativas=tent+1
+            db.session.commit()
+            return jsonify({'erro':'Codigo de confirmacao invalido.'}),401
+
+    f.app_stepup_hash=None
+    f.app_stepup_expira_em=None
+    f.app_stepup_tentativas=0
+    f.app_stepup_arquivo_id=None
+
     a.ass_status='concluida'
     a.ass_nome=(f.nome or '').strip()
     a.ass_cpf=norm_cpf(f.cpf)
@@ -6695,12 +6767,13 @@ def api_app_funcionario_assinar_arquivo(id):
     a.ass_codigo=(a.ass_codigo or secrets.token_urlsafe(16))
 
     db.session.commit()
+    modo='biometria' if stepup_biometria else 'otp'
     audit_event(
         'funcionario_app_arquivo_assinado',
         'funcionario',f.id,
         'arquivo',a.id,
         True,
-        {'arquivo_id':a.id,'categoria':a.categoria,'competencia':a.competencia,'origem':'app'}
+        {'arquivo_id':a.id,'categoria':a.categoria,'competencia':a.competencia,'origem':'app','stepup':modo}
     )
     return jsonify({'ok':True,'mensagem':'Documento assinado com sucesso.','item':a.to_dict()})
 
@@ -12627,6 +12700,10 @@ with app.app_context():
         'app_otp_hash VARCHAR(256)',
         'app_otp_expira_em DATETIME',
         'app_otp_tentativas INTEGER DEFAULT 0',
+        'app_stepup_hash VARCHAR(256)',
+        'app_stepup_expira_em DATETIME',
+        'app_stepup_tentativas INTEGER DEFAULT 0',
+        'app_stepup_arquivo_id INTEGER',
         'app_push_token VARCHAR(300)',
         'app_lat FLOAT',
         'app_lon FLOAT',
