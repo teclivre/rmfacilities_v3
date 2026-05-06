@@ -1717,6 +1717,25 @@ def _ass_track_mark_opened(obj,channel):
         changed=True
     return changed
 
+def _db_commit_retry(context='', attempts=3, base_delay=0.2, swallow_locked=False):
+    for idx in range(max(1, int(attempts))):
+        try:
+            db.session.commit()
+            return True
+        except OperationalError as ex:
+            db.session.rollback()
+            msg=(str(ex) or '').lower()
+            is_locked='database is locked' in msg or 'sqlite busy' in msg
+            last_try=idx >= max(1, int(attempts)) - 1
+            if not is_locked:
+                raise
+            if last_try:
+                if swallow_locked:
+                    app.logger.warning(f'[db] commit ignorado por lock em {context or "contexto_desconhecido"}: {ex}')
+                    return False
+                raise
+            time.sleep(base_delay * (idx + 1))
+
 def _try_sign_pdf_bytes_crypto(pdf_bytes,empresa_id=None,usuario_id=None):
     cert_ctx=_get_cert_context(empresa_id=empresa_id,usuario_id=usuario_id)
     p12_path=(cert_ctx.get('cert_path') if cert_ctx else '') or (os.environ.get('PDF_SIGN_P12_PATH') or '').strip()
@@ -7697,11 +7716,11 @@ def func_doc_assinar_publica(token):
     if (a.ass_status or '')=='assinado':
         return render_template('doc_assinatura.html',ok=False,mensagem='Este documento já foi assinado.',arquivo=a,funcionario=Funcionario.query.get(a.funcionario_id))
     if a.ass_expira_em and a.ass_expira_em<utcnow():
-        a.ass_status='expirado'; db.session.commit()
+        a.ass_status='expirado'; _db_commit_retry('doc_assinar_expirado', swallow_locked=True)
         return render_template('doc_assinatura.html',ok=False,mensagem='Link expirado. Solicite um novo link ao RH.',arquivo=a,funcionario=Funcionario.query.get(a.funcionario_id))
     src=request.args.get('src','')
     if _ass_track_mark_received(a,src):
-        db.session.commit()
+        _db_commit_retry('doc_assinar_recebido', swallow_locked=True)
     return render_template('doc_assinatura.html',ok=True,mensagem='',arquivo=a,funcionario=Funcionario.query.get(a.funcionario_id))
 
 @app.route('/doc/assinar/<token>/arquivo')
@@ -7714,7 +7733,7 @@ def func_doc_assinar_visualizar_arquivo(token):
         return 'Arquivo não encontrado.',404
     src=request.args.get('src','')
     if _ass_track_mark_opened(a,src):
-        db.session.commit()
+        _db_commit_retry('doc_assinar_arquivo_aberto', swallow_locked=True)
     return send_file(abs_p,as_attachment=False,download_name=a.nome_arquivo)
 
 @app.route('/api/doc/assinar/<token>/enviar-otp',methods=['GET','POST'])
@@ -9170,7 +9189,7 @@ def envelope_assinar_visualizar_arquivo(token,arq_id):
         return 'Arquivo não encontrado.',404
     src=request.args.get('src','')
     if _ass_track_mark_opened(sig,src):
-        db.session.commit()
+        _db_commit_retry('envelope_assinar_arquivo_aberto', swallow_locked=True)
     return send_file(abs_path,as_attachment=False,download_name=arq.nome_arquivo or os.path.basename(abs_path))
 
 
@@ -9184,7 +9203,7 @@ def envelope_assinar_publica(token):
     empresas=[empresa] if empresa else []
     src=request.args.get('src','')
     if _ass_track_mark_received(sig,src):
-        db.session.commit()
+        _db_commit_retry('envelope_assinar_recebido', swallow_locked=True)
     return render_template('envelope_assinar.html',sig=sig,env=env,arquivos=arquivos,empresas=empresas)
 
 @app.route('/api/envelope/assinar/<token>/enviar-otp',methods=['GET','POST'])
