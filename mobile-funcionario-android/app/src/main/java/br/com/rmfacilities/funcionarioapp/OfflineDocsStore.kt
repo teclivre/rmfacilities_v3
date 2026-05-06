@@ -78,6 +78,10 @@ class OfflineDocsStore(private val context: Context) {
     fun openDecrypted(entry: OfflineDocEntry): File? {
         val enc = File(entry.path)
         if (!enc.exists()) return null
+        if (!enc.name.lowercase().endsWith(".enc")) {
+            // Compatibilidade com documentos offline legados salvos sem criptografia.
+            return enc
+        }
         return try {
             materializeTempDecrypted(enc)
         } catch (_: Exception) {
@@ -144,6 +148,9 @@ class OfflineDocsStore(private val context: Context) {
     }
 
     private fun materializeTempDecrypted(encFile: File): File {
+        if (!encFile.name.lowercase().endsWith(".enc")) {
+            return encFile
+        }
         val plain = decrypt(encFile.readBytes())
         val baseName = encFile.name.removeSuffix(".enc").ifBlank { "documento.pdf" }
         val out = File(context.cacheDir, "tmp_${System.currentTimeMillis()}_$baseName")
