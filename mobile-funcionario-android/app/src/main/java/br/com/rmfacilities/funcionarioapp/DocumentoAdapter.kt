@@ -52,7 +52,6 @@ class DocumentoAdapter(
         val tvNome: TextView = v.findViewById(R.id.tvNomeArquivo)
         val tvInfo: TextView = v.findViewById(R.id.tvInfo)
         val tvAssStatus: TextView = v.findViewById(R.id.tvAssStatus)
-        val btnBaixar: MaterialButton = v.findViewById(R.id.btnBaixar)
         val btnAssinar: MaterialButton = v.findViewById(R.id.btnAssinar)
     }
 
@@ -136,7 +135,7 @@ class DocumentoAdapter(
         }
 
         vh.btnAssinar.visibility = if (pendente) View.VISIBLE else View.GONE
-        vh.btnBaixar.setOnClickListener { onBaixar(item) }
+        vh.itemView.setOnClickListener { onBaixar(item) }
         vh.btnAssinar.setOnClickListener { if (pendente) onAssinar(item) }
     }
 

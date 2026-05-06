@@ -76,20 +76,6 @@
             android:paddingEnd="14dp"
             android:text="Assinar"
             android:textSize="12sp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnBaixar"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:layout_marginTop="6dp"
-            android:minWidth="0dp"
-            android:paddingStart="14dp"
-            android:paddingEnd="14dp"
-            android:text="Ver"
-            android:textColor="@color/accent_blue"
-            android:textSize="12sp"
-            app:strokeColor="@color/border" />
     </LinearLayout>
 
 </LinearLayout>
