@@ -970,6 +970,7 @@ class Funcionario(db.Model):
     app_otp_hash=db.Column(db.String(256))
     app_otp_expira_em=db.Column(db.DateTime)
     app_otp_tentativas=db.Column(db.Integer,default=0)
+    app_canal_otp=db.Column(db.String(20),default='whatsapp')
     app_stepup_hash=db.Column(db.String(256))
     app_stepup_expira_em=db.Column(db.DateTime)
     app_stepup_tentativas=db.Column(db.Integer,default=0)
@@ -1607,24 +1608,39 @@ def _send_signature_otp(codigo,nome_dest='',telefone='',email='',contexto='assin
             ultimo_erro=str(ex)
     raise ValueError(ultimo_erro or 'Não foi possível enviar o código OTP para confirmação da assinatura.')
 
-def _send_app_login_otp(codigo,funcionario):
-    """Envia OTP de login do app exclusivamente por WhatsApp."""
+def _send_app_login_otp(codigo, funcionario, canal_override=None):
+    """Envia OTP de login/step-up pelo canal preferido do funcionário (whatsapp, sms, email)."""
     f=funcionario
     nome=(f.nome or 'funcionario').strip()
     msg=(
-        'RM Facilities - Codigo de acesso do aplicativo\n'
+        'RM Facilities - Codigo de acesso\n'
         f'Funcionario: {nome}\n'
-        f'Codigo OTP: {codigo}\n'
+        f'Codigo: {codigo}\n'
         'Validade: 10 minutos. Nao compartilhe este codigo.'
     )
+    canal=(canal_override or f.app_canal_otp or 'whatsapp').strip().lower()
+
+    if canal=='sms':
+        tel=wa_norm_number(f.telefone or '')
+        if not wa_is_valid_number(tel):
+            raise ValueError('Numero de telefone invalido ou nao cadastrado para SMS.')
+        sms_send(tel, msg)
+        return {'canal':'sms','destino':_mask_phone(tel)}
+
+    if canal=='email':
+        email=(f.email or '').strip()
+        if not email:
+            raise ValueError('E-mail nao cadastrado para este funcionario.')
+        smtp_send_text(email,'Código de acesso RM Facilities',msg)
+        return {'canal':'email','destino':_mask_email(email)}
+
+    # padrão: whatsapp
     tel=wa_norm_number(f.telefone or '')
     if not wa_is_valid_number(tel):
         raise ValueError('Telefone WhatsApp invalido ou nao cadastrado para este funcionario.')
-    try:
-        wa_send_text(tel,msg)
-        return {'canal':'whatsapp','destino':_mask_phone(tel)}
-    except Exception as ex:
-        raise ValueError(str(ex) or 'Nao foi possivel enviar OTP por WhatsApp.')
+    wa_send_text(tel, msg)
+    return {'canal':'whatsapp','destino':_mask_phone(tel)}
+
 
 def _assinatura_json_base(**extra):
     base={
@@ -1904,6 +1920,36 @@ def gc(k,dv=''): c=Config.query.filter_by(chave=k).first(); return c.valor if c 
 
 def smtp_cfg():
     return {'host':gc('smtp_host',''),'port':gc('smtp_port','587'),'user':gc('smtp_user',''),'senha':gc('smtp_senha',''),'de':gc('smtp_de',''),'tls':gc('smtp_tls','1')}
+
+def sms_cfg():
+    return {
+        'account_sid':os.environ.get('TWILIO_ACCOUNT_SID') or gc('sms_account_sid',''),
+        'auth_token':os.environ.get('TWILIO_AUTH_TOKEN') or gc('sms_auth_token',''),
+        'from_number':os.environ.get('TWILIO_FROM_NUMBER') or gc('sms_from_number',''),
+    }
+
+def sms_send(numero, mensagem):
+    """Envia SMS via Twilio. Requer TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER."""
+    cfg=sms_cfg()
+    if not cfg['account_sid'] or not cfg['auth_token'] or not cfg['from_number']:
+        raise ValueError('SMS nao configurado. Configure TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN e TWILIO_FROM_NUMBER.')
+    tel=wa_norm_number(numero or '')
+    if not wa_is_valid_number(tel):
+        raise ValueError('Numero de telefone invalido para envio de SMS.')
+    url=f'https://api.twilio.com/2010-04-01/Accounts/{cfg["account_sid"]}/Messages.json'
+    import urllib.request, urllib.parse, base64
+    payload=urllib.parse.urlencode({'From':cfg['from_number'],'To':f'+{tel}','Body':mensagem}).encode()
+    creds=base64.b64encode(f'{cfg["account_sid"]}:{cfg["auth_token"]}'.encode()).decode()
+    req=urllib.request.Request(url,data=payload,headers={'Authorization':f'Basic {creds}','Content-Type':'application/x-www-form-urlencoded'})
+    try:
+        with urllib.request.urlopen(req,timeout=20) as resp:
+            result=json.loads(resp.read().decode())
+            if result.get('status') in ('queued','sent','delivered','undelivered','failed',None):
+                if result.get('status')=='failed':
+                    raise ValueError(f'SMS falhou: {result.get("error_message","erro desconhecido")}')
+    except urllib.error.HTTPError as e:
+        body=e.read().decode() if hasattr(e,'read') else ''
+        raise ValueError(f'Erro ao enviar SMS (HTTP {e.code}): {body[:200]}')
 
 def wa_cfg():
     return {'url':gc('wa_url',''),'instancia':gc('wa_instancia',''),'token':gc('wa_token','')}
@@ -6324,6 +6370,11 @@ def api_app_funcionario_auth_iniciar():
     f.app_otp_expira_em=utcnow()+timedelta(minutes=10)
     f.app_otp_tentativas=0
 
+    # Atualiza canal preferido se o app enviou
+    canal_req=(d.get('canal') or '').strip().lower()
+    if canal_req in ('whatsapp','sms','email'):
+        f.app_canal_otp=canal_req
+
     # Persistimos o OTP antes do envio para evitar falso-erro quando o código
     # já foi entregue no canal, mas um commit/auditoria posterior falha.
     try:
@@ -6338,7 +6389,7 @@ def api_app_funcionario_auth_iniciar():
     except Exception as ex:
         # O OTP já ficou persistido; em caso de falha de envio, apenas retornamos erro.
         reg_auth_attempt('app_otp',cpf,False,'envio_falha')
-        return jsonify({'erro':'Nao foi possivel enviar o codigo OTP por WhatsApp. Verifique telefone com o RH e as configuracoes do WhatsApp.','detalhe':str(ex)}),503
+        return jsonify({'erro':'Nao foi possivel enviar o codigo OTP. Verifique suas informacoes de contato no RH.','detalhe':str(ex)}),503
 
     # Telemetria não deve bloquear a resposta de sucesso ao app.
     try:
@@ -6414,6 +6465,11 @@ def api_app_funcionario_stepup_solicitar():
     f.app_stepup_tentativas=0
     f.app_stepup_arquivo_id=arquivo_id
 
+    # Atualiza canal preferido se enviado
+    canal_req=(d.get('canal') or '').strip().lower()
+    if canal_req in ('whatsapp','sms','email'):
+        f.app_canal_otp=canal_req
+
     try:
         _db_commit_retry('app_stepup_persist',attempts=4)
     except Exception as ex:
@@ -6430,7 +6486,9 @@ def api_app_funcionario_stepup_solicitar():
     except Exception as ex:
         app.logger.warning(f'[stepup] auditoria pos-envio: {ex}')
 
-    msg_ok='Codigo enviado com sucesso.' if envio.get('canal')!='email' else 'Codigo enviado para o e-mail cadastrado.'
+    canal_label={'whatsapp':'WhatsApp','sms':'SMS','email':'e-mail'}
+    label=canal_label.get(envio.get('canal',''),'canal')
+    msg_ok=f'Código enviado via {label}.'
     return jsonify({'ok':True,'mensagem':msg_ok,'destino':envio.get('destino'),'canal':envio.get('canal')})
 
 @app.route('/api/app/funcionario/refresh',methods=['POST'])
@@ -6499,7 +6557,22 @@ def api_app_funcionario_me():
         'ultimo_aso_enviado_em':(ultimo_aso.criado_em.isoformat() if (ultimo_aso and ultimo_aso.criado_em) else None),
         'jornada':f.jornada,
         'jornada_info':jornada_info,
+        'canal_otp':f.app_canal_otp or 'whatsapp',
     }})
+
+@app.route('/api/app/funcionario/me/preferencias',methods=['PUT'])
+@app_func_required
+def api_app_funcionario_preferencias():
+    f=g.app_funcionario
+    d=request.json or {}
+    canal=(d.get('canal_otp') or '').strip().lower()
+    if canal and canal not in ('whatsapp','sms','email'):
+        return jsonify({'erro':'Canal invalido. Use: whatsapp, sms ou email.'}),400
+    if canal:
+        f.app_canal_otp=canal
+        db.session.commit()
+        audit_event('app_preferencia_canal_otp','funcionario',f.id,'funcionario',f.id,True,{'canal':canal})
+    return jsonify({'ok':True,'canal_otp':f.app_canal_otp or 'whatsapp'})
 
 @app.route('/api/app/funcionario/me/foto',methods=['POST'])
 @app_func_required
@@ -12700,6 +12773,7 @@ with app.app_context():
         'app_otp_hash VARCHAR(256)',
         'app_otp_expira_em DATETIME',
         'app_otp_tentativas INTEGER DEFAULT 0',
+        'app_canal_otp VARCHAR(20) DEFAULT "whatsapp"',
         'app_stepup_hash VARCHAR(256)',
         'app_stepup_expira_em DATETIME',
         'app_stepup_tentativas INTEGER DEFAULT 0',

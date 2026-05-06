@@ -43,7 +43,8 @@ data class FuncionarioPerfil(
     val status: String? = null,
     val foto_url: String? = null,
     val ultimo_aso_competencia: String? = null,
-    val ultimo_aso_enviado_em: String? = null
+    val ultimo_aso_enviado_em: String? = null,
+    val canal_otp: String? = null
 )
 
 data class FotoUploadResponse(

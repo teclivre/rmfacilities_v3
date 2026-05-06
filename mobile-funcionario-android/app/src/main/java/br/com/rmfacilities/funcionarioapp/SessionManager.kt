@@ -29,17 +29,24 @@ class SessionManager(private val context: Context) {
         get() = prefs.getBoolean("notifications_enabled", true)
         set(value) = prefs.edit().putBoolean("notifications_enabled", value).apply()
 
+    // Canal preferido para receber OTP: "whatsapp", "sms" ou "email"
+    var canalOtp: String
+        get() = prefs.getString("canal_otp", "whatsapp") ?: "whatsapp"
+        set(value) = prefs.edit().putString("canal_otp", value).apply()
+
     fun clear() {
         val base = apiBaseUrl
         val bio = biometricEnabled
         val bioCpf = biometricCpf
         val notif = notificationsEnabled
+        val canal = canalOtp
         val refresh = refreshToken
         prefs.edit().clear().apply()
         apiBaseUrl = base
         biometricEnabled = bio
         biometricCpf = bioCpf
         notificationsEnabled = notif
+        canalOtp = canal
         if (bio && bioCpf.isNotBlank() && refresh.isNotBlank()) {
             refreshToken = refresh
         }

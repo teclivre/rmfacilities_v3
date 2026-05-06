@@ -128,7 +128,7 @@ class ApiClient(private val session: SessionManager) {
     }
 
     fun iniciarOtp(cpf: String): OtpStartResponse {
-        val payload = gson.toJson(mapOf("cpf" to cpf))
+        val payload = gson.toJson(mapOf("cpf" to cpf, "canal" to session.canalOtp))
         val req = Request.Builder()
             .url(url("/api/app/funcionario/auth/iniciar"))
             .post(payload.toRequestBody("application/json".toMediaType()))
@@ -315,7 +315,7 @@ class ApiClient(private val session: SessionManager) {
     }
 
     fun solicitarStepupOtp(arquivoId: Int): ApiSimpleResponse {
-        val payload = gson.toJson(mapOf("arquivo_id" to arquivoId))
+        val payload = gson.toJson(mapOf("arquivo_id" to arquivoId, "canal" to session.canalOtp))
         val req = Request.Builder()
             .url(url("/api/app/funcionario/stepup/solicitar"))
             .post(payload.toRequestBody("application/json".toMediaType()))
@@ -328,6 +328,24 @@ class ApiClient(private val session: SessionManager) {
                 gson.fromJson(raw, ApiSimpleResponse::class.java)
             } catch (_: Exception) {
                 ApiSimpleResponse(ok = resp.isSuccessful, erro = if (resp.isSuccessful) null else parseErro(raw, "Falha ao solicitar código."))
+            }
+        }
+    }
+
+    fun salvarPreferenciaCanalOtp(canal: String): ApiSimpleResponse {
+        val payload = gson.toJson(mapOf("canal_otp" to canal))
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/preferencias"))
+            .put(payload.toRequestBody("application/json".toMediaType()))
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .addHeader("Content-Type", "application/json")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, ApiSimpleResponse::class.java)
+            } catch (_: Exception) {
+                ApiSimpleResponse(ok = resp.isSuccessful, erro = if (resp.isSuccessful) null else parseErro(raw, "Falha ao salvar preferência."))
             }
         }
     }

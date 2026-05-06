@@ -165,6 +165,8 @@ class PerfilActivity : AppCompatActivity() {
                     tvStatus.text = f?.status.orEmpty()
                     fotoUrlAtual = f?.foto_url
                     if (f?.foto_url != null) carregarFotoUrl(f.foto_url)
+                    // Sincronizar canal OTP do servidor
+                    if (!f?.canal_otp.isNullOrBlank()) session.canalOtp = f!!.canal_otp!!
                     atualizarBiometriaUi()
                 }
             }

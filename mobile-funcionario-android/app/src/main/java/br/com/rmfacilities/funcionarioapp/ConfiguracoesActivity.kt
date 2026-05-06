@@ -3,16 +3,23 @@ package br.com.rmfacilities.funcionarioapp
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.widget.RadioGroup
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class ConfiguracoesActivity : AppCompatActivity() {
     private lateinit var session: SessionManager
+    private lateinit var api: ApiClient
     private var internalBiometricChange = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -20,9 +27,13 @@ class ConfiguracoesActivity : AppCompatActivity() {
         setContentView(R.layout.activity_configuracoes)
 
         session = SessionManager(this)
+        api = ApiClient(session)
+
         val switchBiometria = findViewById<SwitchMaterial>(R.id.switchBiometriaConfig)
         val switchNotificacoes = findViewById<SwitchMaterial>(R.id.switchNotificacoesConfig)
         val tvBiometriaStatus = findViewById<TextView>(R.id.tvBiometriaStatusConfig)
+        val rgCanal = findViewById<RadioGroup>(R.id.rgCanalOtp)
+        val tvCanalStatus = findViewById<TextView>(R.id.tvCanalOtpStatus)
 
         findViewById<TextView>(R.id.btnVoltar).setOnClickListener { finish() }
 
@@ -32,6 +43,13 @@ class ConfiguracoesActivity : AppCompatActivity() {
         internalBiometricChange = false
 
         tvBiometriaStatus.text = if (session.biometricEnabled) "Biometria ativa" else "Biometria desativada"
+
+        // Selecionar canal atual
+        when (session.canalOtp) {
+            "sms" -> rgCanal.check(R.id.rbCanalSms)
+            "email" -> rgCanal.check(R.id.rbCanalEmail)
+            else -> rgCanal.check(R.id.rbCanalWhatsapp)
+        }
 
         switchBiometria.setOnCheckedChangeListener { _, checked ->
             if (internalBiometricChange) return@setOnCheckedChangeListener
@@ -47,6 +65,31 @@ class ConfiguracoesActivity : AppCompatActivity() {
             session.notificationsEnabled = checked
         }
 
+        rgCanal.setOnCheckedChangeListener { _, checkedId ->
+            val canal = when (checkedId) {
+                R.id.rbCanalSms -> "sms"
+                R.id.rbCanalEmail -> "email"
+                else -> "whatsapp"
+            }
+            session.canalOtp = canal
+            tvCanalStatus.text = "Salvando..."
+            CoroutineScope(Dispatchers.IO).launch {
+                val resp = try {
+                    api.salvarPreferenciaCanalOtp(canal)
+                } catch (e: Exception) {
+                    null
+                }
+                withContext(Dispatchers.Main) {
+                    if (resp?.ok == true) {
+                        val label = mapOf("whatsapp" to "WhatsApp", "sms" to "SMS", "email" to "E-mail")
+                        tvCanalStatus.text = "Preferência salva: ${label[canal]}"
+                    } else {
+                        tvCanalStatus.text = resp?.erro ?: "Salvo localmente (sincronize ao entrar)"
+                    }
+                }
+            }
+        }
+
         findViewById<MaterialButton>(R.id.btnPoliticaPrivacidade).setOnClickListener {
             val base = (session.apiBaseUrl.ifBlank { BuildConfig.DEFAULT_API_BASE_URL }).trimEnd('/')
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$base/politica-de-privacidade")))
@@ -54,6 +97,7 @@ class ConfiguracoesActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.btnLimparOffline).setOnClickListener {
             OfflineDocsStore(this).clearAll()
+            Toast.makeText(this, "Documentos offline limpos.", Toast.LENGTH_SHORT).show()
         }
     }
 
