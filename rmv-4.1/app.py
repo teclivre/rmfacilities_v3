@@ -3519,6 +3519,24 @@ def ai_wa_reply(numero,texto,historico=None):
     except Exception: temp=0.3
     try: max_tk=max(800,min(2000,int(float(cfg.get('max_tokens') or 800))))
     except Exception: max_tk=800
+
+    numero_mask=_mask_phone(numero)
+    def _log_wa_ai_diag(etapa, finish='', resp_len=0, continuacao=False):
+        try:
+            app.logger.info(
+                '[wa-ai-diag] numero=%s provider=%s model=%s etapa=%s finish=%s max_tokens=%s resp_len=%s continuacao=%s',
+                numero_mask,
+                provider,
+                model,
+                etapa,
+                (finish or 'n/a'),
+                max_tk,
+                int(resp_len or 0),
+                '1' if continuacao else '0'
+            )
+        except Exception:
+            pass
+
     hist=[m for m in (historico or []) if (m.conteudo or '').strip() and m.tipo!='erro']
     if provider=='openai':
         if key.startswith('AIza'):
@@ -3546,9 +3564,11 @@ def ai_wa_reply(numero,texto,historico=None):
                         txt_blocks.append(t)
             resp='\n'.join(txt_blocks)
         resp=str(resp).strip()
+        _log_wa_ai_diag('openai-primeira', finish=finish, resp_len=len(resp), continuacao=False)
         if resp and finish!='length':
             return resp
         if resp and finish=='length':
+            app.logger.warning('[wa-ai-diag] truncamento_detectado numero=%s provider=openai finish=%s',numero_mask,finish)
             payload_cont={
                 'model':mdl,
                 'messages':msgs+[
@@ -3559,7 +3579,9 @@ def ai_wa_reply(numero,texto,historico=None):
                 'max_tokens':max_tk
             }
             out_cont=_post_json(url,payload_cont,headers={'Authorization':f'Bearer {key}'},timeout=45)
-            msg_cont=((out_cont.get('choices') or [{}])[0].get('message') or {})
+            choice_cont=(out_cont.get('choices') or [{}])[0] or {}
+            msg_cont=(choice_cont.get('message') or {})
+            finish_cont=(choice_cont.get('finish_reason') or '').strip().lower()
             resp_cont=msg_cont.get('content') or ''
             if isinstance(resp_cont,list):
                 txt_blocks=[]
@@ -3570,6 +3592,7 @@ def ai_wa_reply(numero,texto,historico=None):
                             txt_blocks.append(t)
                 resp_cont='\n'.join(txt_blocks)
             resp_cont=str(resp_cont).strip()
+            _log_wa_ai_diag('openai-continuacao', finish=finish_cont, resp_len=len(resp_cont), continuacao=True)
             if resp_cont:
                 return (resp.rstrip()+'\n'+resp_cont.lstrip()).strip()
             return resp
@@ -3592,6 +3615,7 @@ def ai_wa_reply(numero,texto,historico=None):
                         txt_blocks.append(t)
             resp_fb='\n'.join(txt_blocks)
         resp_fb=str(resp_fb).strip()
+        _log_wa_ai_diag('openai-fallback', finish='', resp_len=len(resp_fb), continuacao=False)
         if resp_fb:
             return resp_fb
         raise ValueError('IA retornou resposta vazia (OpenAI). Verifique modelo/chave e tente novamente.')
@@ -3614,9 +3638,11 @@ def ai_wa_reply(numero,texto,historico=None):
         resp='\n'.join((p.get('text') or '').strip() for p in parts if (p.get('text') or '').strip())
         resp=resp.strip()
         finish=(cand.get('finishReason') or '').strip().upper()
+        _log_wa_ai_diag('gemini-primeira', finish=finish, resp_len=len(resp), continuacao=False)
         if resp and finish!='MAX_TOKENS':
             return resp
         if resp and finish=='MAX_TOKENS':
+            app.logger.warning('[wa-ai-diag] truncamento_detectado numero=%s provider=gemini finish=%s',numero_mask,finish)
             payload_cont={
                 'system_instruction':{'parts':[{'text':system}]},
                 'contents':contents+[
@@ -3629,6 +3655,8 @@ def ai_wa_reply(numero,texto,historico=None):
             cand_cont=(out_cont.get('candidates') or [{}])[0]
             parts_cont=((cand_cont.get('content') or {}).get('parts') or [])
             resp_cont='\n'.join((p.get('text') or '').strip() for p in parts_cont if (p.get('text') or '').strip()).strip()
+            finish_cont=(cand_cont.get('finishReason') or '').strip().upper()
+            _log_wa_ai_diag('gemini-continuacao', finish=finish_cont, resp_len=len(resp_cont), continuacao=True)
             if resp_cont:
                 return (resp.rstrip()+'\n'+resp_cont.lstrip()).strip()
             return resp
@@ -3642,6 +3670,7 @@ def ai_wa_reply(numero,texto,historico=None):
         cand_fb=(out_fb.get('candidates') or [{}])[0]
         parts_fb=((cand_fb.get('content') or {}).get('parts') or [])
         resp_fb='\n'.join((p.get('text') or '').strip() for p in parts_fb if (p.get('text') or '').strip()).strip()
+        _log_wa_ai_diag('gemini-fallback', finish=(cand_fb.get('finishReason') or ''), resp_len=len(resp_fb), continuacao=False)
         if resp_fb:
             return resp_fb
         finish=(cand_fb.get('finishReason') or cand.get('finishReason') or '').strip()
