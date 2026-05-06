@@ -32,6 +32,13 @@
   .signer-panel{background:#ffffff;border:1px solid #d8e2ef;border-radius:12px;padding:14px;box-shadow:0 4px 14px rgba(35,66,120,.09)}
   .signer-title{font-size:15px;font-weight:800;color:#1e365f;margin:0 0 2px 0}
   .signer-sub{font-size:12px;color:#58719a;margin:0 0 10px 0}
+  .signer-actions-sticky{
+    position:sticky;
+    bottom:0;
+    z-index:5;
+    background:linear-gradient(180deg,rgba(244,247,251,.2),#f4f7fb 24%);
+    padding-top:10px;
+  }
   .sig-env-title{font-size:14px;font-weight:700;color:#1e365f;margin:0 0 2px}
   .sig-env-sub{font-size:12px;color:#556;margin:0 0 8px}
   /* coluna direita: visualizador PDF */
@@ -147,9 +154,11 @@
                   Declaro que li e entendi os documentos listados acima e, ao clicar em <strong>Confirmar Assinatura</strong>, confirmo minha assinatura eletrônica com validade legal, conforme a Lei nº 14.063/2020.
                 </label>
               </div>
-              <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
-                <button class="public-btn public-btn-primary" id="btn-assinar" onclick="confirmarAssinatura()" disabled>Visualize os documentos para assinar</button>
-                <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()">Reenviar código</button>
+                <div class="signer-actions-sticky">
+                  <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+                    <button class="public-btn public-btn-primary" id="btn-assinar" onclick="confirmarAssinatura()" disabled>Visualize os documentos para assinar</button>
+                    <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()">Reenviar código</button>
+                  </div>
               </div>
             </div>
 
@@ -386,8 +395,12 @@ async function carregarDocumentoAtual(docId){
     markDocViewed(docId);
     showViewerMsg('Documento não-PDF marcado como visualizado após abertura.','ok');
   }catch(e){
-    pages.innerHTML='<div class="viewer-loading">Não foi possível carregar o documento agora.</div>';
-    showViewerMsg('Falha ao carregar documento. Tente novamente.','err');
+    pages.innerHTML=`
+      <div class="viewer-loading">Não foi possível renderizar o preview neste dispositivo.</div>
+      <iframe src="${url}" style="width:100%;min-height:560px;border:none;border-radius:8px;display:block" onload="markDocViewed(${docId});showViewerMsg('Documento visualizado com sucesso.','ok')"></iframe>
+      <div style="text-align:center;padding:8px 0 12px"><a class="public-btn public-btn-secondary" href="${url}" target="_blank" rel="noopener">Abrir documento</a></div>
+    `;
+    showViewerMsg('Preview alternativo ativado. Se necessário, use o botão Abrir documento.','ok');
   }
 }
 
