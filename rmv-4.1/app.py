@@ -13146,9 +13146,10 @@ threading.Thread(target=_auto_backup_loop, daemon=True, name='auto-backup').star
 
 def _lembrete_assinatura_loop():
     """Envia lembretes automáticos para documentos pendentes de assinatura.
-    Intervalo configurável via env LEMBRETE_ASSINATURA_INTERVALO_HORAS (padrão: 2h).
+    Intervalo configurável via env LEMBRETE_ASSINATURA_INTERVALO_HORAS (padrão: 8h).
     Usa o canal original de cada documento (whatsapp / email / app / link)."""
-    intervalo_horas = max(1, min(168, _to_int(os.environ.get('LEMBRETE_ASSINATURA_INTERVALO_HORAS'), 2)))
+    # Garantimos ao menos 8h entre lembretes automáticos para evitar excesso de mensagens.
+    intervalo_horas = max(8, min(168, _to_int(os.environ.get('LEMBRETE_ASSINATURA_INTERVALO_HORAS'), 8)))
     intervalo_seg = intervalo_horas * 3600
 
     def _canal_padrao(a):
