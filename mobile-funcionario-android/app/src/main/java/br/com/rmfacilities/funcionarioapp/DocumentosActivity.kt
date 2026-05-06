@@ -288,8 +288,8 @@ class DocumentosActivity : AppCompatActivity() {
             val id = path.removePrefix("offline://").toIntOrNull()
             val offline = id?.let { offlineStore.findById(it) }
             if (offline != null) {
-                val file = File(offline.path)
-                if (file.exists()) {
+                val file = offlineStore.openDecrypted(offline)
+                if (file != null && file.exists()) {
                     abrirArquivo(file)
                     return
                 }
@@ -333,8 +333,8 @@ class DocumentosActivity : AppCompatActivity() {
             .setTitle("Documentos offline")
             .setItems(labels.toTypedArray()) { _, which ->
                 val sel = offline[which]
-                val file = File(sel.path)
-                if (file.exists()) abrirArquivo(file)
+                val file = offlineStore.openDecrypted(sel)
+                if (file != null && file.exists()) abrirArquivo(file)
                 else Toast.makeText(this, "Arquivo não encontrado", Toast.LENGTH_SHORT).show()
             }
             .show()

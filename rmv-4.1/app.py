@@ -33,6 +33,7 @@ from sqlalchemy.exc import OperationalError, IntegrityError
 import os
 import re
 import math
+import logging
 import sqlite3
 import unicodedata
 import os, json, hashlib, hmac, secrets
@@ -178,6 +179,41 @@ def utcnow():
     # Compatibilidade histórica: a aplicação persiste timestamps como naive datetime,
     # mas o valor correto para o negócio é o horário de Brasília.
     return localnow()
+
+_SENSITIVE_EMAIL_RE=re.compile(r'\b([A-Za-z0-9._%+-]{1,64})@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b')
+_SENSITIVE_CPF_RE=re.compile(r'\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b')
+_SENSITIVE_PHONE_RE=re.compile(r'(?<!\d)(?:\+?55)?\d{10,13}(?!\d)')
+
+def _mask_sensitive_text(v):
+    s=str(v or '')
+    s=_SENSITIVE_EMAIL_RE.sub(lambda m: _mask_email(m.group(0)) if '_mask_email' in globals() else '***@***', s)
+    s=_SENSITIVE_CPF_RE.sub('***.***.***-**', s)
+    s=_SENSITIVE_PHONE_RE.sub(lambda m: _mask_phone(m.group(0)) if '_mask_phone' in globals() else '*** *** ****', s)
+    return s
+
+class _SensitiveLogFilter(logging.Filter):
+    def filter(self, record):
+        try:
+            record.msg=_mask_sensitive_text(record.getMessage())
+            record.args=()
+        except Exception:
+            pass
+        return True
+
+def _install_sensitive_log_filter(logger_obj):
+    try:
+        if getattr(logger_obj,'_rm_sensitive_filter_installed',False):
+            return
+        f=_SensitiveLogFilter()
+        logger_obj.addFilter(f)
+        for h in (logger_obj.handlers or []):
+            h.addFilter(f)
+        logger_obj._rm_sensitive_filter_installed=True
+    except Exception:
+        pass
+
+_install_sensitive_log_filter(app.logger)
+_install_sensitive_log_filter(logging.getLogger('werkzeug'))
 
 
 
@@ -6578,6 +6614,9 @@ def api_app_funcionario_auth_confirmar():
 def api_app_funcionario_stepup_solicitar():
     f=g.app_funcionario
     d=request.json or {}
+    ident=norm_cpf(getattr(f,'cpf',None)) or str(f.id)
+    if auth_blocked('app_stepup',ident,(request.remote_addr or '')):
+        return jsonify({'erro':'Muitas tentativas. Aguarde alguns minutos.'}),429
     arquivo_id=d.get('arquivo_id')
     if not arquivo_id:
         return jsonify({'erro':'arquivo_id obrigatorio'}),400
@@ -6605,12 +6644,16 @@ def api_app_funcionario_stepup_solicitar():
         _db_commit_retry('app_stepup_persist',attempts=4)
     except Exception as ex:
         db.session.rollback()
+        reg_auth_attempt('app_stepup',ident,False,'persist_falha')
         return jsonify({'erro':'Nao foi possivel preparar o codigo OTP.','detalhe':str(ex)}),503
 
     try:
         envio=_send_app_login_otp(codigo,f)
     except Exception as ex:
+        reg_auth_attempt('app_stepup',ident,False,'envio_falha')
         return jsonify({'erro':'Nao foi possivel enviar o codigo OTP.','detalhe':str(ex)}),503
+
+    reg_auth_attempt('app_stepup',ident,True,'desafio_enviado')
 
     try:
         audit_event('app_stepup_otp_enviado','funcionario',f.id,'arquivo',arquivo_id,True,{'canal':envio.get('canal')})
@@ -6934,8 +6977,11 @@ def api_app_funcionario_assinar_arquivo(id):
     d=request.json or {}
     stepup_otp=only_digits(d.get('stepup_otp') or '')
     stepup_biometria=bool(d.get('stepup_biometria'))
+    ident=norm_cpf(getattr(f,'cpf',None)) or str(f.id)
 
     if not stepup_biometria:
+        if auth_blocked('app_stepup_confirm',ident,(request.remote_addr or '')):
+            return jsonify({'erro':'Muitas tentativas. Aguarde alguns minutos.'}),429
         if not stepup_otp:
             return jsonify({'erro':'step_up_required','mensagem':'Confirme sua identidade antes de assinar.'}),403
         if not (f.app_stepup_hash or '').strip() or not f.app_stepup_expira_em:
@@ -6946,10 +6992,12 @@ def api_app_funcionario_assinar_arquivo(id):
             return jsonify({'erro':'Codigo de confirmacao invalido para este documento.'}),400
         tent=int(f.app_stepup_tentativas or 0)
         if tent>=5:
+            reg_auth_attempt('app_stepup_confirm',ident,False,'limite_tentativas')
             return jsonify({'erro':'Limite de tentativas excedido. Solicite novo codigo.'}),400
         if not hmac.compare_digest(token_hash(stepup_otp),str(f.app_stepup_hash or '')):
             f.app_stepup_tentativas=tent+1
             db.session.commit()
+            reg_auth_attempt('app_stepup_confirm',ident,False,'codigo_invalido')
             return jsonify({'erro':'Codigo de confirmacao invalido.'}),401
 
     f.app_stepup_hash=None
@@ -6971,6 +7019,8 @@ def api_app_funcionario_assinar_arquivo(id):
     a.ass_codigo=(a.ass_codigo or secrets.token_urlsafe(16))
 
     db.session.commit()
+    if not stepup_biometria:
+        reg_auth_attempt('app_stepup_confirm',ident,True,'ok')
     modo='biometria' if stepup_biometria else 'otp'
     audit_event(
         'funcionario_app_arquivo_assinado',
