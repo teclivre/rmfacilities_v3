@@ -34,9 +34,10 @@
   .doc-pdf-toolbar{display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
   .doc-pdf-frame{flex:1 1 auto;border:none;border-radius:8px;background:#fff;min-height:0}
   .doc-scroll{flex:1 1 auto;overflow:auto;background:#1a2235;padding:10px}
-  .pdf-pages{display:flex;flex-direction:column;gap:10px;align-items:center}
+  .pdf-pages{display:flex;flex-direction:column;gap:10px;align-items:center;width:100%}
   .pdf-page{background:#fff;border:1px solid #334155;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.35);max-width:100%}
   .viewer-loading{font-size:13px;color:#9bb;padding:24px;text-align:center}
+  .pdf-fallback-frame{width:100%;min-height:72vh;border:none;border-radius:8px;display:block;background:#fff}
   @media(max-width:800px){
     .public-main{overflow:auto}
     .public-container{height:auto}
@@ -275,7 +276,7 @@
         }
         throw new Error('PDF.js indisponível');
       }catch(e){
-        pages.innerHTML=`<iframe src="${DOC_ASS_PDF_URL}" class="doc-pdf-frame" title="Documento para assinatura"></iframe>`;
+        pages.innerHTML=`<iframe src="${DOC_ASS_PDF_URL}" class="pdf-fallback-frame" title="Documento para assinatura"></iframe>`;
       }
     }
 
