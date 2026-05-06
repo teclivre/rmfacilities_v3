@@ -24,7 +24,7 @@ def verPatch = versionProps['VERSION_PATCH'].toInteger()
 // Incrementa versionCode e patch a cada build
 gradle.taskGraph.whenReady { taskGraph ->
     def isBuild = taskGraph.allTasks.any { t ->
-        t.name ==~ /.*assemble.*/
+        t.name ==~ /.*(assemble|bundle).*/
     }
     if (isBuild) {
         verCode += 1
