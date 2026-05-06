@@ -6244,6 +6244,8 @@ def api_funcionario_upload_arquivo(id):
     a=FuncionarioArquivo(funcionario_id=id,categoria=cat,competencia=comp,nome_arquivo=fs.filename,caminho=rel)
     db.session.add(a); db.session.commit()
     assinatura_auto={'status':'nao_solicitada'}
+    cat_label=DOC_CAT_LABEL.get(norm_cat(a.categoria),a.categoria or 'Documento')
+    doc_desc=cat_label + (f' ({a.competencia})' if (a.competencia or '').strip() else '')
     if canal_ass=='app':
         a.ass_status='pendente'
         if prazo_dias:
@@ -6252,8 +6254,8 @@ def api_funcionario_upload_arquivo(id):
         db.session.commit()
         _push_notify_funcionario(
             f.id,
-            'Documento para assinar',
-            f'{a.nome_arquivo} aguarda sua assinatura no app.',
+            f'{cat_label} para assinar',
+            f'Seu {doc_desc} aguarda assinatura no app. Arquivo: {a.nome_arquivo}.',
             {'tipo':'documento_assinar','arquivo_id':str(a.id)}
         )
         assinatura_auto={'status':'app_pendente','canal':'app'}
@@ -6343,6 +6345,8 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
         link_curto=(f"{base_url}/s/{sc}" if sc else link)
     except Exception:
         link_curto=link
+    cat_label=DOC_CAT_LABEL.get(norm_cat(arquivo.categoria),arquivo.categoria or 'Documento')
+    doc_desc=cat_label + (f' ({arquivo.competencia})' if (arquivo.competencia or '').strip() else '')
     enviado_wa=False
     enviado_email=False
     enviado_app=False
@@ -6351,11 +6355,13 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
         nome_func=(funcionario.nome if funcionario else 'colaborador')
         if eh_lembrete:
             msg=(f"🔔 Lembrete de envio anterior\n"
-                 f"Olá, {nome_func}! Este e um lembrete para assinatura do documento "
-                 f"'{arquivo.nome_arquivo}'. O link expira em 7 dias: {link_curto}")
+                 f"Olá, {nome_func}! Este e um lembrete para assinatura do seu {doc_desc}.\n"
+                 f"Arquivo: {arquivo.nome_arquivo}\n"
+                 f"O link expira em 7 dias: {link_curto}")
         else:
-            msg=(f"Olá, {nome_func}! Segue o link para assinatura do documento "
-                 f"'{arquivo.nome_arquivo}'. O link expira em 7 dias: {link_curto}")
+            msg=(f"Olá, {nome_func}! Segue o link para assinatura do seu {doc_desc}.\n"
+                 f"Arquivo: {arquivo.nome_arquivo}\n"
+                 f"O link expira em 7 dias: {link_curto}")
         try:
             wa_send_text(tel,msg)
             enviado_wa=True
@@ -6368,7 +6374,7 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
             smtp_send_link_assinatura(
                 email,
                 nome_func,
-                arquivo.nome_arquivo or 'Documento',
+                f'{doc_desc} - {arquivo.nome_arquivo or "Documento"}',
                 link_curto,
                 eh_lembrete=eh_lembrete,
             )
@@ -6377,11 +6383,11 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
             erro_envio=str(ex)
     elif canal=='app':
         try:
-            titulo_push='Lembrete: documento para assinar' if eh_lembrete else 'Documento para assinar'
+            titulo_push=(f'Lembrete: {cat_label} para assinar' if eh_lembrete else f'{cat_label} para assinar')
             corpo_push=(
-                f"Lembrete de envio anterior: {arquivo.nome_arquivo} ainda aguarda sua assinatura no app."
+                f"Lembrete: seu {doc_desc} ainda aguarda assinatura no app. Arquivo: {arquivo.nome_arquivo}."
                 if eh_lembrete else
-                f"{arquivo.nome_arquivo} aguarda sua assinatura no app."
+                f"Seu {doc_desc} aguarda assinatura no app. Arquivo: {arquivo.nome_arquivo}."
             )
             enviado_app=bool(_push_notify_funcionario(
                 funcionario.id,
