@@ -1,7 +1,6 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.os.CountDownTimer
 import android.view.View
@@ -72,7 +71,9 @@ class LoginActivity : AppCompatActivity() {
             val base = (session.apiBaseUrl.ifBlank { BuildConfig.DEFAULT_API_BASE_URL }).trimEnd('/')
             val url = "$base/politica-de-privacidade"
             try {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                startActivity(Intent(this, PrivacyPolicyActivity::class.java).apply {
+                    putExtra(PrivacyPolicyActivity.EXTRA_URL, url)
+                })
             } catch (_: Exception) {
                 showErro("Não foi possível abrir a Política de Privacidade.")
             }

@@ -128,9 +128,8 @@ class OfflineDocsStore(private val context: Context) {
 
     private fun encrypt(plain: ByteArray): ByteArray {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        val iv = ByteArray(ivSize)
-        SecureRandom().nextBytes(iv)
-        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey(), GCMParameterSpec(128, iv))
+        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
+        val iv = cipher.iv ?: ByteArray(ivSize).also { SecureRandom().nextBytes(it) }
         val ciphertext = cipher.doFinal(plain)
         return iv + ciphertext
     }

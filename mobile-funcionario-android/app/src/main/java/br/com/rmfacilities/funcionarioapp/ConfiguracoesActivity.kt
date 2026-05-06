@@ -1,7 +1,6 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.widget.RadioGroup
 import android.widget.TextView
@@ -90,7 +89,9 @@ class ConfiguracoesActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.btnPoliticaPrivacidade).setOnClickListener {
             val base = (session.apiBaseUrl.ifBlank { BuildConfig.DEFAULT_API_BASE_URL }).trimEnd('/')
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$base/politica-de-privacidade")))
+            startActivity(Intent(this, PrivacyPolicyActivity::class.java).apply {
+                putExtra(PrivacyPolicyActivity.EXTRA_URL, "$base/politica-de-privacidade")
+            })
         }
 
         findViewById<MaterialButton>(R.id.btnLimparOffline).setOnClickListener {

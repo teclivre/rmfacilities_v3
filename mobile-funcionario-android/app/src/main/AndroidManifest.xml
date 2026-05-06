@@ -29,6 +29,9 @@
             android:name=".DocumentosActivity"
             android:exported="false" />
         <activity
+            android:name=".PrivacyPolicyActivity"
+            android:exported="false" />
+        <activity
             android:name=".PdfPreviewActivity"
             android:exported="false" />
         <activity
