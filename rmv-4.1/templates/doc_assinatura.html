@@ -23,11 +23,20 @@
   }
   .doc-form-panel{background:#fff;border:1px solid #d8e2ef;border-radius:12px;padding:14px;box-shadow:0 4px 14px rgba(35,66,120,.09)}
   .doc-form-title{font-size:15px;font-weight:800;color:#1e365f;margin:0 0 6px}
+  .doc-actions-sticky{
+    position:sticky;bottom:0;z-index:5;
+    background:linear-gradient(180deg,rgba(244,247,251,.2),#f4f7fb 24%);
+    padding-top:10px;
+  }
   /* direita: PDF */
   .doc-pdf-col{flex:1 1 auto;display:flex;flex-direction:column;overflow:hidden;background:#1a2235}
   .doc-pdf-wrap{flex:1 1 auto;display:flex;flex-direction:column;padding:10px;gap:6px}
   .doc-pdf-toolbar{display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
   .doc-pdf-frame{flex:1 1 auto;border:none;border-radius:8px;background:#fff;min-height:0}
+  .doc-scroll{flex:1 1 auto;overflow:auto;background:#1a2235;padding:10px}
+  .pdf-pages{display:flex;flex-direction:column;gap:10px;align-items:center}
+  .pdf-page{background:#fff;border:1px solid #334155;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.35);max-width:100%}
+  .viewer-loading{font-size:13px;color:#9bb;padding:24px;text-align:center}
   @media(max-width:800px){
     .doc-page-wrap{flex-direction:column;height:auto}
     .doc-form-col{width:100%;max-width:100%;border-right:none;border-bottom:1px solid #d7e1f0}
@@ -84,9 +93,11 @@
                 Declaro que li e aceito as informações do documento apresentado, confirmando minha assinatura eletrônica.
               </label>
             </div>
-            <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
-              <button class="public-btn public-btn-primary" id="btn-confirmar" onclick="confirmar('{{ arquivo.ass_token }}')">Confirmar assinatura</button>
-              <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()">Reenviar código</button>
+            <div class="doc-actions-sticky">
+              <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+                <button class="public-btn public-btn-primary" id="btn-confirmar" onclick="confirmar('{{ arquivo.ass_token }}')">Confirmar assinatura</button>
+                <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()">Reenviar código</button>
+              </div>
             </div>
 
             <div id="msg" class="public-msg" style="margin-top:8px"></div>
@@ -104,11 +115,9 @@
               <span style="font-size:12px;color:#9ec5f7;font-weight:600">{{ arquivo.nome_arquivo }}</span>
               <a class="public-btn public-btn-secondary" style="font-size:11px;padding:4px 10px" href="/doc/assinar/{{ arquivo.ass_token }}/arquivo?src={{ request.args.get('src','link')|urlencode }}" target="_blank" rel="noopener">Abrir em nova guia</a>
             </div>
-            <iframe
-              src="/doc/assinar/{{ arquivo.ass_token }}/arquivo?src={{ request.args.get('src','link')|urlencode }}"
-              class="doc-pdf-frame"
-              title="Documento para assinatura"
-            ></iframe>
+            <div id="doc-viewer-scroll" class="doc-scroll">
+              <div id="doc-viewer-pages" class="pdf-pages"></div>
+            </div>
           </div>
         </section>
 
@@ -125,11 +134,17 @@
     </div>
   </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.min.js"></script>
   <script src="/static/js/assinatura-common.js"></script>
   <script>
     const DOC_ASS_TOKEN='{{ arquivo.ass_token if arquivo else "" }}';
     const DOC_ASS_SRC='{{ request.args.get("src","link") }}';
+    const DOC_ASS_PDF_URL='/doc/assinar/{{ arquivo.ass_token if arquivo else "" }}/arquivo?src={{ request.args.get("src","link")|urlencode }}';
     const otpCooldownCtrl=SignatureCommon.makeCooldown('btn-resend',60);
+
+    if(window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions){
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.js';
+    }
 
     function fmtCPF(el){
       el.value=SignatureCommon.formatCpfValue(el.value||'');
@@ -227,7 +242,42 @@
       }
     }
 
-    document.addEventListener('DOMContentLoaded',()=>{});
+    async function renderDocPreview(){
+      const pages=document.getElementById('doc-viewer-pages');
+      const sc=document.getElementById('doc-viewer-scroll');
+      if(!pages || !sc) return;
+      pages.innerHTML='<div class="viewer-loading">Carregando documento...</div>';
+      try{
+        if(window.pdfjsLib){
+          const r=await fetch(DOC_ASS_PDF_URL,{cache:'no-store'});
+          if(!r.ok) throw new Error('Falha ao carregar documento.');
+          const blob=await r.blob();
+          const pdf=await window.pdfjsLib.getDocument({data:await blob.arrayBuffer()}).promise;
+          pages.innerHTML='';
+          const renderWidth=Math.max(280,Math.min(900,sc.clientWidth-24));
+          for(let p=1;p<=pdf.numPages;p++){
+            const page=await pdf.getPage(p);
+            const vp=page.getViewport({scale:1});
+            const scale=renderWidth/vp.width;
+            const viewport=page.getViewport({scale});
+            const canvas=document.createElement('canvas');
+            canvas.className='pdf-page';
+            canvas.width=Math.floor(viewport.width);
+            canvas.height=Math.floor(viewport.height);
+            canvas.style.width=Math.floor(viewport.width)+'px';
+            canvas.style.height=Math.floor(viewport.height)+'px';
+            await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+            pages.appendChild(canvas);
+          }
+          return;
+        }
+        throw new Error('PDF.js indisponível');
+      }catch(e){
+        pages.innerHTML=`<iframe src="${DOC_ASS_PDF_URL}" class="doc-pdf-frame" title="Documento para assinatura"></iframe>`;
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded',()=>{ renderDocPreview(); });
   </script>
 </body>
 </html>
