@@ -161,6 +161,16 @@
                     android:text="Reenviar código"
                     android:textColor="@color/accent_blue"
                     android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/tvDicaSeguranca"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center"
+                    android:text="Dica: nunca compartilhe seu código de acesso."
+                    android:textColor="@color/text_hint"
+                    android:textSize="12sp" />
             </LinearLayout>
 
             <ProgressBar

@@ -3,6 +3,7 @@ package br.com.rmfacilities.funcionarioapp
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.CountDownTimer
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -36,6 +37,7 @@ class LoginActivity : AppCompatActivity() {
 
     private var cpfAtual = ""
     private var biometricPromptShown = false
+    private var otpCooldownTimer: CountDownTimer? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -109,12 +111,32 @@ class LoginActivity : AppCompatActivity() {
                     layoutOtp.visibility = View.VISIBLE
                     btnEnviarCodigo.text = "Reenviar código"
                     etCodigo.requestFocus()
+                    iniciarCooldownReenvio()
                     hideErro()
                 } else {
                     showErro(resp.erro ?: "Erro ao enviar código.")
                 }
             }
         }
+    }
+
+    private fun iniciarCooldownReenvio() {
+        otpCooldownTimer?.cancel()
+        tvReenviar.isEnabled = false
+        btnEnviarCodigo.isEnabled = false
+        otpCooldownTimer = object : CountDownTimer(45_000L, 1_000L) {
+            override fun onTick(ms: Long) {
+                val s = ms / 1000
+                tvReenviar.text = "Reenviar em ${String.format("%02d", s)}s"
+            }
+
+            override fun onFinish() {
+                tvReenviar.text = "Reenviar código"
+                tvReenviar.isEnabled = true
+                btnEnviarCodigo.isEnabled = true
+                otpCooldownTimer = null
+            }
+        }.start()
     }
 
     private fun confirmarOtp() {
@@ -162,10 +184,15 @@ class LoginActivity : AppCompatActivity() {
 
     private fun setLoading(loading: Boolean) {
         progress.visibility = if (loading) View.VISIBLE else View.GONE
-        btnEnviarCodigo.isEnabled = !loading
+        if (loading) {
+            btnEnviarCodigo.isEnabled = false
+            tvReenviar.isEnabled = false
+        } else if (otpCooldownTimer == null) {
+            btnEnviarCodigo.isEnabled = true
+            tvReenviar.isEnabled = true
+        }
         btnBiometria.isEnabled = !loading
         btnEntrar.isEnabled = !loading
-        tvReenviar.isEnabled = !loading
     }
 
     private fun inicializarBiometriaUI() {
@@ -295,5 +322,11 @@ class LoginActivity : AppCompatActivity() {
         }
         startActivity(target)
         finish()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        otpCooldownTimer?.cancel()
+        otpCooldownTimer = null
     }
 }
