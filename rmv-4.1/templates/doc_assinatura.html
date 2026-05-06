@@ -38,9 +38,11 @@
   .pdf-page{background:#fff;border:1px solid #334155;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.35);max-width:100%}
   .viewer-loading{font-size:13px;color:#9bb;padding:24px;text-align:center}
   @media(max-width:800px){
+    .public-main{overflow:auto}
+    .public-container{height:auto}
     .doc-page-wrap{flex-direction:column;height:auto}
-    .doc-form-col{width:100%;max-width:100%;border-right:none;border-top:1px solid #d7e1f0;order:2}
-    .doc-pdf-col{height:65vh;order:1}
+    .doc-form-col{order:2;width:100%;max-width:100%;border-right:none;border-bottom:none}
+    .doc-pdf-col{order:1;height:58vh;min-height:380px}
   }
 </style>
 </head>

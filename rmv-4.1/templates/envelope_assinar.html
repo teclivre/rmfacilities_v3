@@ -83,9 +83,11 @@
   .signature-shell{background:transparent;border:none;padding:0}
   /* mobile: empilha form em cima, PDF embaixo */
   @media (max-width:800px){
+    .public-main{overflow:auto}
+    .public-container{height:auto}
     .ass-page-wrap{flex-direction:column;height:auto}
-    .signer-col{width:100%;max-width:100%;border-right:none;border-top:1px solid #d7e1f0;order:2}
-    .viewer-col{height:70vh;order:1}
+    .signer-col{order:2;width:100%;max-width:100%;border-right:none;border-bottom:none}
+    .viewer-col{order:1;height:58vh;min-height:380px}
   }
 </style>
 
