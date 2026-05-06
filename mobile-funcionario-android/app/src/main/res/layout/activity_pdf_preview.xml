@@ -43,7 +43,7 @@
                 style="@style/Widget.MaterialComponents.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Baixar"
+                android:text="Salvar"
                 android:textColor="@color/text_primary"
                 android:textSize="14sp" />
 

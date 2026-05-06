@@ -2,9 +2,6 @@ package br.com.rmfacilities.funcionarioapp
 
 import android.content.ContentValues
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
 import android.graphics.pdf.PdfRenderer
 import android.os.Build
 import android.os.Bundle
@@ -27,9 +24,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class PdfPreviewActivity : AppCompatActivity() {
 
@@ -41,7 +35,6 @@ class PdfPreviewActivity : AppCompatActivity() {
     private lateinit var rvPages: RecyclerView
     private lateinit var tvLoading: TextView
     private var pdfRenderer: PdfRenderer? = null
-    private lateinit var watermarkText: String
     private var currentPdfFile: File? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,12 +42,6 @@ class PdfPreviewActivity : AppCompatActivity() {
         // Bloqueia captura e gravação de tela nesta tela sensível.
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         setContentView(R.layout.activity_pdf_preview)
-
-        val session = SessionManager(this)
-        val cpf = session.biometricCpf.filter { it.isDigit() }
-        val cpfMask = if (cpf.length >= 4) "***.***.***-${cpf.takeLast(2)}" else "usuario"
-        val ts = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
-        watermarkText = "RM Facilities - $cpfMask - $ts"
 
         rvPages = findViewById(R.id.rvPages)
         tvLoading = findViewById(R.id.tvLoading)
@@ -103,7 +90,6 @@ class PdfPreviewActivity : AppCompatActivity() {
                     val bmp = Bitmap.createBitmap(displayWidth, bmpHeight, Bitmap.Config.ARGB_8888)
                     bmp.eraseColor(android.graphics.Color.WHITE)
                     page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                    applyWatermark(bmp)
                     page.close()
                     bitmaps.add(bmp)
                 }
@@ -128,30 +114,6 @@ class PdfPreviewActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         pdfRenderer?.close()
-    }
-
-    private fun applyWatermark(bitmap: Bitmap) {
-        val canvas = Canvas(bitmap)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(52, 45, 55, 72)
-            textSize = (bitmap.width * 0.042f).coerceAtLeast(22f)
-            style = Paint.Style.FILL
-        }
-
-        canvas.save()
-        canvas.rotate(-28f, bitmap.width / 2f, bitmap.height / 2f)
-        val xStep = bitmap.width * 0.62f
-        val yStep = bitmap.height * 0.28f
-        var y = -bitmap.height.toFloat()
-        while (y < bitmap.height * 2f) {
-            var x = -bitmap.width.toFloat()
-            while (x < bitmap.width * 2f) {
-                canvas.drawText(watermarkText, x, y, paint)
-                x += xStep
-            }
-            y += yStep
-        }
-        canvas.restore()
     }
 
     private fun salvarNoDownloads(file: File, title: String) {
