@@ -27,11 +27,13 @@ _strict_origin_check = False
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import text
+from sqlalchemy import text, event
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError, IntegrityError
 import os
 import re
 import math
+import sqlite3
 import unicodedata
 import os, json, hashlib, hmac, secrets
 from datetime import datetime, timedelta, date
@@ -113,7 +115,25 @@ app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
 app.secret_key = _load_app_secret_key()
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', DEFAULT_DB_URI)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite'):
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'connect_args': {'timeout': 30},
+        'pool_pre_ping': True,
+    }
 db = SQLAlchemy(app)
+
+if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite'):
+    @event.listens_for(Engine, 'connect')
+    def _sqlite_configure_connection(dbapi_connection, _connection_record):
+        if not isinstance(dbapi_connection, sqlite3.Connection):
+            return
+        cur = dbapi_connection.cursor()
+        try:
+            cur.execute('PRAGMA journal_mode=WAL')
+            cur.execute('PRAGMA busy_timeout=30000')
+            cur.execute('PRAGMA synchronous=NORMAL')
+        finally:
+            cur.close()
 
 from functools import wraps
 from flask import session, url_for, g
@@ -2414,20 +2434,23 @@ def _fcm_send_to_token(token,titulo,corpo,data=None):
             app.logger.error(f'[fcm] falha ao inicializar firebase app: {e}')
             return False
     try:
+        android_notification_kwargs=dict(
+            channel_id='rmf_documentos',
+            sound='default',
+            default_vibrate_timings=True,
+            default_sound=True,
+            default_light_settings=True,
+        )
+        visibility_enum=getattr(messaging,'AndroidNotificationVisibility',None)
+        if visibility_enum is not None and hasattr(visibility_enum,'PUBLIC'):
+            android_notification_kwargs['visibility']=visibility_enum.PUBLIC
         msg=messaging.Message(
             token=token,
             notification=messaging.Notification(title=titulo,body=corpo),
             data={k:str(v) for k,v in (data or {}).items()},
             android=messaging.AndroidConfig(
                 priority='high',
-                notification=messaging.AndroidNotification(
-                    channel_id='rmf_documentos',
-                    sound='default',
-                    visibility=messaging.AndroidNotificationVisibility.PUBLIC,
-                    default_vibrate_timings=True,
-                    default_sound=True,
-                    default_light_settings=True,
-                )
+                notification=messaging.AndroidNotification(**android_notification_kwargs)
             ),
             apns=messaging.APNSConfig(
                 payload=messaging.APNSPayload(
