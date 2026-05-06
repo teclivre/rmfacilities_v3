@@ -361,9 +361,19 @@ class DocumentosActivity : AppCompatActivity() {
     }
 
     private fun abrirArquivo(file: File) {
-        val uri: Uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
         val ext = file.extension.lowercase()
         val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+
+        if (ext == "pdf") {
+            val intent = Intent(this, PdfPreviewActivity::class.java).apply {
+                putExtra(PdfPreviewActivity.EXTRA_FILE_PATH, file.absolutePath)
+                putExtra(PdfPreviewActivity.EXTRA_TITLE, file.name)
+            }
+            startActivity(intent)
+            return
+        }
+
+        val uri: Uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
 
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, mime)
