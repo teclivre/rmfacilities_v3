@@ -1848,16 +1848,29 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="card" style="margin-bottom:14px">
           <div class="card-header"><span class="card-title">🔏 Carimbo de assinatura no PDF</span></div>
           <p style="font-size:12px;color:#666;margin:4px 0 10px 0">Quando habilitado, um carimbo visual com nome, data e código será inserido no PDF gerado na posição configurada.</p>
+          <style>
+            #stamp-layout{display:grid;grid-template-columns:minmax(620px,1fr) 360px;gap:16px;align-items:start}
+            #stamp-preview-wrap{max-height:74vh}
+            #stamp-controls-col{position:sticky;top:10px}
+            @media (max-width:1500px){
+              #stamp-layout{grid-template-columns:minmax(560px,1fr) 330px}
+            }
+            @media (max-width:1280px){
+              #stamp-layout{grid-template-columns:1fr}
+              #stamp-controls-col{position:static}
+              #stamp-preview-wrap{max-height:68vh}
+            }
+          </style>
           <div id="stamp-pos-area" style="margin-top:8px">
-            <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
-              <div style="flex:1 1 620px;min-width:340px">
+            <div id="stamp-layout">
+              <div id="stamp-preview-col" style="min-width:340px">
                 <p style="font-size:12px;color:#555;margin:0 0 6px 0">Prévia completa em sequência (ordem definida nos arquivos). Clique no ponto exato onde o carimbo deve aparecer:</p>
                 <div id="stamp-preview-wrap" style="position:relative;display:block;width:100%;max-height:760px;overflow-y:auto;border:1px solid #c8d8f0;border-radius:8px;background:#f0f4fa;padding:8px">
                   <div id="stamp-pages-container" style="position:relative"></div>
                   <div id="stamp-loading" style="display:flex;align-items:center;justify-content:center;padding:40px;color:#6b7a90;font-size:13px">Carregando prévia dos documentos...</div>
                 </div>
               </div>
-              <div style="flex:0 1 360px;min-width:280px;background:#f7fbff;border:1px solid #d8e5f7;border-radius:10px;padding:10px">
+              <div id="stamp-controls-col" style="min-width:280px;background:#f7fbff;border:1px solid #d8e5f7;border-radius:10px;padding:10px">
                 <div class="f" style="margin-bottom:8px">
                   <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
                     <input type="checkbox" id="stamp-hab" onchange="previewStampPos()" style="width:16px;height:16px">
