@@ -94,27 +94,56 @@ class PdfPreviewActivity : AppCompatActivity() {
 
     private fun renderPdfs(files: List<Pair<File, String>>) {
         tvLoading.visibility = View.VISIBLE
+        tvLoading.text = "Preparando prévia..."
         rvPages.visibility = View.GONE
 
         CoroutineScope(Dispatchers.IO).launch {
+            val adapter = PdfPageAdapter()
             try {
-                val items = mutableListOf<PreviewItem>()
                 val displayWidth = resources.displayMetrics.widthPixels
-                val targetWidth = minOf(displayWidth, 1280)
+                val targetWidth = minOf(displayWidth, 960)
 
+                withContext(Dispatchers.Main) {
+                    rvPages.layoutManager = LinearLayoutManager(this@PdfPreviewActivity)
+                    rvPages.setHasFixedSize(false)
+                    rvPages.adapter = adapter
+                }
+
+                var totalPages = 0
+                files.forEach { (file, _) ->
+                    val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+                    val renderer = PdfRenderer(fd)
+                    totalPages += renderer.pageCount
+                    renderer.close()
+                    fd.close()
+                }
+
+                var renderedPages = 0
                 files.forEach { (file, title) ->
-                    items.add(PreviewItem.Header(title))
+                    withContext(Dispatchers.Main) {
+                        adapter.append(PreviewItem.Header(title))
+                    }
                     val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
                     val renderer = PdfRenderer(fd)
                     for (i in 0 until renderer.pageCount) {
+                        withContext(Dispatchers.Main) {
+                            tvLoading.text = "Renderizando ${renderedPages + 1}/$totalPages..."
+                        }
                         val page = renderer.openPage(i)
                         val scale = targetWidth.toFloat() / page.width
                         val bmpHeight = (page.height * scale).toInt()
-                        val bmp = Bitmap.createBitmap(targetWidth, bmpHeight, Bitmap.Config.RGB_565)
+                            val bmp = Bitmap.createBitmap(targetWidth, bmpHeight, Bitmap.Config.ARGB_8888)
                         bmp.eraseColor(android.graphics.Color.WHITE)
                         page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                         page.close()
-                        items.add(PreviewItem.Page(bmp))
+                        renderedPages += 1
+                        withContext(Dispatchers.Main) {
+                            adapter.append(PreviewItem.Page(bmp))
+                            if (rvPages.visibility != View.VISIBLE) {
+                                tvLoading.visibility = View.GONE
+                                rvPages.visibility = View.VISIBLE
+                            }
+                        }
                     }
                     renderer.close()
                     fd.close()
@@ -124,10 +153,13 @@ class PdfPreviewActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     tvLoading.visibility = View.GONE
                     rvPages.visibility = View.VISIBLE
-                    rvPages.layoutManager = LinearLayoutManager(this@PdfPreviewActivity)
-                    rvPages.setHasFixedSize(true)
                     (rvPages.itemAnimator as? androidx.recyclerview.widget.SimpleItemAnimator)?.supportsChangeAnimations = false
-                    rvPages.adapter = PdfPageAdapter(items)
+                }
+            } catch (oom: OutOfMemoryError) {
+                withContext(Dispatchers.Main) {
+                    tvLoading.visibility = View.VISIBLE
+                    rvPages.visibility = View.GONE
+                    tvLoading.text = "Prévia muito grande para este aparelho. Tente abrir um documento por vez."
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -188,7 +220,9 @@ sealed class PreviewItem {
     data class Page(val bitmap: Bitmap) : PreviewItem()
 }
 
-class PdfPageAdapter(private val items: List<PreviewItem>) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+class PdfPageAdapter(
+    private val items: MutableList<PreviewItem> = mutableListOf()
+) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     companion object {
         private const val VT_HEADER = 1
         private const val VT_PAGE = 2
@@ -237,4 +271,10 @@ class PdfPageAdapter(private val items: List<PreviewItem>) : RecyclerView.Adapte
     }
 
     override fun getItemCount() = items.size
+
+    fun append(item: PreviewItem) {
+        val pos = items.size
+        items.add(item)
+        notifyItemInserted(pos)
+    }
 }
