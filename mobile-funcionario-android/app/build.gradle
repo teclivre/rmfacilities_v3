@@ -51,12 +51,12 @@ if (keystorePropsFile.exists()) {
 
 android {
     namespace 'br.com.rmfacilities.funcionarioapp'
-    compileSdk 34
+    compileSdk 35
 
     defaultConfig {
         applicationId "rmfacilities.funcionario"
         minSdk 24
-        targetSdk 34
+        targetSdk 35
         versionCode verCode
         versionName buildVersionName
         resValue "string", "app_name_version", "RM Funcionário"
@@ -79,7 +79,7 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.release
-            minifyEnabled false
+            minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
