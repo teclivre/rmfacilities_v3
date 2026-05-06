@@ -21,23 +21,21 @@ def verMajor = versionProps['VERSION_MAJOR'].toInteger()
 def verMinor = versionProps['VERSION_MINOR'].toInteger()
 def verPatch = versionProps['VERSION_PATCH'].toInteger()
 
-// Incrementa versionCode e patch a cada build
-gradle.taskGraph.whenReady { taskGraph ->
-    def isBuild = taskGraph.allTasks.any { t ->
-        t.name ==~ /.*(assemble|bundle).*/
-    }
-    if (isBuild) {
-        verCode += 1
-        verPatch += 1
-        if (verPatch >= 100) { verPatch = 0; verMinor += 1 }
-        if (verMinor >= 100) { verMinor = 0; verMajor += 1 }
-        versionProps['VERSION_CODE'] = verCode.toString()
-        versionProps['VERSION_MAJOR'] = verMajor.toString()
-        versionProps['VERSION_MINOR'] = verMinor.toString()
-        versionProps['VERSION_PATCH'] = verPatch.toString()
-        versionPropsFile.withOutputStream { versionProps.store(it, null) }
-        println "▶ Version bumped to ${verMajor}.${verMinor}.${verPatch} (code ${verCode})"
-    }
+// Incrementa versionCode e patch antes da configuração do Android para que o
+// mesmo build já saia com a nova versão.
+def requestedTasks = gradle.startParameter.taskNames.join(' ')
+def isBuild = requestedTasks ==~ /(?s).*(assemble|bundle).*/
+if (isBuild) {
+    verCode += 1
+    verPatch += 1
+    if (verPatch >= 100) { verPatch = 0; verMinor += 1 }
+    if (verMinor >= 100) { verMinor = 0; verMajor += 1 }
+    versionProps['VERSION_CODE'] = verCode.toString()
+    versionProps['VERSION_MAJOR'] = verMajor.toString()
+    versionProps['VERSION_MINOR'] = verMinor.toString()
+    versionProps['VERSION_PATCH'] = verPatch.toString()
+    versionPropsFile.withOutputStream { versionProps.store(it, null) }
+    println "▶ Version bumped to ${verMajor}.${verMinor}.${verPatch} (code ${verCode})"
 }
 
 def buildVersionName = "${verMajor}.${verMinor}.${verPatch}"
