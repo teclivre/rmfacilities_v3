@@ -6319,17 +6319,32 @@ def api_app_funcionario_auth_iniciar():
     f.app_otp_hash=token_hash(codigo)
     f.app_otp_expira_em=utcnow()+timedelta(minutes=10)
     f.app_otp_tentativas=0
+
+    # Persistimos o OTP antes do envio para evitar falso-erro quando o código
+    # já foi entregue no canal, mas um commit/auditoria posterior falha.
     try:
-        envio=_send_app_login_otp(codigo,f)
-        db.session.commit()
-        reg_auth_attempt('app_otp',cpf,True,'desafio_enviado')
-        audit_event('auth_app_otp_enviado','funcionario',f.id,'funcionario',f.id,True,{'canal':envio.get('canal')})
-        msg_ok='Codigo enviado com sucesso.' if envio.get('canal')!='email' else 'Codigo enviado para o e-mail cadastrado.'
-        return jsonify({'ok':True,'mensagem':msg_ok,'destino':envio.get('destino'),'canal':envio.get('canal')})
+        _db_commit_retry('app_auth_otp_persist', attempts=4)
     except Exception as ex:
         db.session.rollback()
+        reg_auth_attempt('app_otp',cpf,False,'persist_falha')
+        return jsonify({'erro':'Nao foi possivel preparar o codigo OTP no momento. Tente novamente.','detalhe':str(ex)}),503
+
+    try:
+        envio=_send_app_login_otp(codigo,f)
+    except Exception as ex:
+        # O OTP já ficou persistido; em caso de falha de envio, apenas retornamos erro.
         reg_auth_attempt('app_otp',cpf,False,'envio_falha')
         return jsonify({'erro':'Nao foi possivel enviar o codigo OTP por WhatsApp. Verifique telefone com o RH e as configuracoes do WhatsApp.','detalhe':str(ex)}),503
+
+    # Telemetria não deve bloquear a resposta de sucesso ao app.
+    try:
+        reg_auth_attempt('app_otp',cpf,True,'desafio_enviado')
+        audit_event('auth_app_otp_enviado','funcionario',f.id,'funcionario',f.id,True,{'canal':envio.get('canal')})
+    except Exception as ex:
+        app.logger.warning(f'[auth_app_otp] falha em auditoria pos-envio: {ex}')
+
+    msg_ok='Codigo enviado com sucesso.' if envio.get('canal')!='email' else 'Codigo enviado para o e-mail cadastrado.'
+    return jsonify({'ok':True,'mensagem':msg_ok,'destino':envio.get('destino'),'canal':envio.get('canal')})
 
 @app.route('/api/app/funcionario/auth/confirmar',methods=['POST'])
 def api_app_funcionario_auth_confirmar():
