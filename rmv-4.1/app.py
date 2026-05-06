@@ -2426,12 +2426,22 @@ ENCERRAMENTO
 Ao finalizar fluxos com coleta, gerar resumo técnico em tópicos e encerrar cordialmente."""
 
 def wa_send_text(numero,mensagem):
+    def _sanitize_whatsapp_text(raw_text):
+        t=str(raw_text or '').replace('\r\n','\n').replace('\r','\n')
+        # Remove marcacoes markdown que costumam quebrar no WhatsApp.
+        t=re.sub(r'(?m)^\s*#{1,6}\s*','',t)
+        t=t.replace('**','*').replace('__','')
+        # Evita itálico por underscore (_texto_) que pode aparecer truncado em alguns clientes.
+        t=re.sub(r'(?<!\w)_([^_\n]{1,160})_(?!\w)',r'\1',t)
+        t=re.sub(r'\n{3,}','\n\n',t)
+        return t.strip()
+
     cfg=wa_cfg()
     if not cfg['url'] or not cfg['instancia']: raise ValueError('WhatsApp nao configurado')
     num=wa_norm_number(numero)
     if not wa_is_valid_number(num): raise ValueError(f'Numero WhatsApp invalido: {num or "vazio"}')
     url=f"{cfg['url'].rstrip('/')}/message/sendText/{cfg['instancia']}"
-    data=json.dumps({'number':num,'text':mensagem}).encode()
+    data=json.dumps({'number':num,'text':_sanitize_whatsapp_text(mensagem)}).encode()
     req=urllib.request.Request(url,data=data,headers={'Content-Type':'application/json','apikey':cfg['token']})
     try:
         with urllib.request.urlopen(req,timeout=15) as r: return json.loads(r.read().decode())
@@ -3507,8 +3517,8 @@ def ai_wa_reply(numero,texto,historico=None):
         system+=extra
     try: temp=float(cfg.get('temperature') or 0.3)
     except Exception: temp=0.3
-    try: max_tk=int(float(cfg.get('max_tokens') or 350))
-    except Exception: max_tk=350
+    try: max_tk=int(float(cfg.get('max_tokens') or 800))
+    except Exception: max_tk=800
     hist=[m for m in (historico or []) if (m.conteudo or '').strip() and m.tipo!='erro']
     if provider=='openai':
         if key.startswith('AIza'):
@@ -3522,7 +3532,9 @@ def ai_wa_reply(numero,texto,historico=None):
             msgs=[{'role':'system','content':system},{'role':'user','content':f'Número: {numero}\nMensagem: {txt}'}]
         payload={'model':mdl,'messages':msgs,'temperature':temp,'max_tokens':max_tk}
         out=_post_json(url,payload,headers={'Authorization':f'Bearer {key}'},timeout=45)
-        msg=((out.get('choices') or [{}])[0].get('message') or {})
+        choice=(out.get('choices') or [{}])[0] or {}
+        msg=(choice.get('message') or {})
+        finish=(choice.get('finish_reason') or '').strip().lower()
         resp=msg.get('content') or ''
         if isinstance(resp,list):
             # Newer OpenAI payloads may return content blocks instead of a plain string.
@@ -3534,7 +3546,32 @@ def ai_wa_reply(numero,texto,historico=None):
                         txt_blocks.append(t)
             resp='\n'.join(txt_blocks)
         resp=str(resp).strip()
-        if resp:
+        if resp and finish!='length':
+            return resp
+        if resp and finish=='length':
+            payload_cont={
+                'model':mdl,
+                'messages':msgs+[
+                    {'role':'assistant','content':resp},
+                    {'role':'user','content':'Continue exatamente de onde parou, sem repetir o texto anterior e sem reiniciar.'}
+                ],
+                'temperature':temp,
+                'max_tokens':max_tk
+            }
+            out_cont=_post_json(url,payload_cont,headers={'Authorization':f'Bearer {key}'},timeout=45)
+            msg_cont=((out_cont.get('choices') or [{}])[0].get('message') or {})
+            resp_cont=msg_cont.get('content') or ''
+            if isinstance(resp_cont,list):
+                txt_blocks=[]
+                for b in resp_cont:
+                    if isinstance(b,dict):
+                        t=(b.get('text') or '').strip()
+                        if t:
+                            txt_blocks.append(t)
+                resp_cont='\n'.join(txt_blocks)
+            resp_cont=str(resp_cont).strip()
+            if resp_cont:
+                return (resp.rstrip()+'\n'+resp_cont.lstrip()).strip()
             return resp
         # Fallback sem historico quando o provider retorna escolha vazia.
         payload_fb={
@@ -3576,7 +3613,24 @@ def ai_wa_reply(numero,texto,historico=None):
         parts=((cand.get('content') or {}).get('parts') or [])
         resp='\n'.join((p.get('text') or '').strip() for p in parts if (p.get('text') or '').strip())
         resp=resp.strip()
-        if resp:
+        finish=(cand.get('finishReason') or '').strip().upper()
+        if resp and finish!='MAX_TOKENS':
+            return resp
+        if resp and finish=='MAX_TOKENS':
+            payload_cont={
+                'system_instruction':{'parts':[{'text':system}]},
+                'contents':contents+[
+                    {'role':'model','parts':[{'text':resp}]},
+                    {'role':'user','parts':[{'text':'Continue exatamente de onde parou, sem repetir o texto anterior e sem reiniciar.'}]}
+                ],
+                'generationConfig':{'temperature':temp,'maxOutputTokens':max_tk}
+            }
+            out_cont=_post_json(url,payload_cont,timeout=45)
+            cand_cont=(out_cont.get('candidates') or [{}])[0]
+            parts_cont=((cand_cont.get('content') or {}).get('parts') or [])
+            resp_cont='\n'.join((p.get('text') or '').strip() for p in parts_cont if (p.get('text') or '').strip()).strip()
+            if resp_cont:
+                return (resp.rstrip()+'\n'+resp_cont.lstrip()).strip()
             return resp
         # Fallback sem historico quando Gemini nao devolve parts/texto.
         payload_fb={
@@ -11940,9 +11994,9 @@ def api_ia_wa_cfg_save():
     except Exception:
         temp=0.3
     try:
-        max_tokens=max(50,min(2000,int(float(d.get('max_tokens',350)))))
+        max_tokens=max(50,min(2000,int(float(d.get('max_tokens',800)))))
     except Exception:
-        max_tokens=350
+        max_tokens=800
     sc_cfg('ia_wa_enabled',enabled)
     sc_cfg('ia_wa_provider',provider)
     if str(d.get('api_key_clear','0')).strip().lower() in ('1','true','yes','on'):
