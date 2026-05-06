@@ -7879,13 +7879,14 @@ async function recarregarDetalheEnvelope(){
     }else{
       arqBox.innerHTML=`<div class="tbl-wrap"><table class="tbl">
         <thead><tr><th>Arquivo</th><th>Origem</th><th>Adicionado</th><th>Ordem</th><th></th></tr></thead>
-        <tbody>${env.arquivos.map((a,idx)=>`
-          <tr>
+        <tbody id="asi-arq-tbody">${env.arquivos.map((a,idx)=>`
+          <tr class="asi-arq-row" data-arq-id="${a.id}" draggable="true">
             <td>📄 ${a.nome_arquivo}</td>
             <td>${a.origem==='sistema'?'Sistema':'Upload'}</td>
             <td>${a.criado_fmt||''}</td>
             <td>
               <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end">
+                <span title="Arraste para reordenar" style="font-size:14px;color:#6b7a90;cursor:grab;user-select:none">↕</span>
                 <button class="btn b-sm" style="padding:2px 7px" onclick="moverArqEnvelope(${a.id},-1)" ${idx===0?'disabled':''}>↑</button>
                 <button class="btn b-sm" style="padding:2px 7px" onclick="moverArqEnvelope(${a.id},1)" ${idx===env.arquivos.length-1?'disabled':''}>↓</button>
               </div>
@@ -7893,6 +7894,7 @@ async function recarregarDetalheEnvelope(){
             <td><button class="btn b-sm" style="background:#fff0f0;color:#c0392b;border:1px solid #f5c5c5;cursor:pointer" onclick="remArqEnvelope(${a.id})">✕</button></td>
           </tr>`).join('')}
         </tbody></table></div>`;
+      ativarDragArquivosEnvelope();
     }
     _asiEnvelopeArquivos=Array.isArray(env.arquivos)?env.arquivos:[];
     const selArq=document.getElementById('stamp-arquivo');
@@ -8127,6 +8129,56 @@ async function moverArqEnvelope(arqId,direcao){
   }catch(e){
     alert('Erro de conexão ao reordenar arquivos.');
   }
+}
+
+function ativarDragArquivosEnvelope(){
+  const tbody=document.getElementById('asi-arq-tbody');
+  if(!tbody) return;
+  let dragId=0;
+  tbody.querySelectorAll('tr.asi-arq-row').forEach(row=>{
+    row.addEventListener('dragstart',()=>{
+      dragId=parseInt(row.getAttribute('data-arq-id')||'0',10);
+      row.style.opacity='0.45';
+    });
+    row.addEventListener('dragend',()=>{
+      row.style.opacity='1';
+      dragId=0;
+      tbody.querySelectorAll('tr.asi-arq-row').forEach(r=>r.style.boxShadow='');
+    });
+    row.addEventListener('dragover',(ev)=>{
+      ev.preventDefault();
+      row.style.boxShadow='inset 0 -2px 0 #2d7ef7';
+    });
+    row.addEventListener('dragleave',()=>{ row.style.boxShadow=''; });
+    row.addEventListener('drop',async(ev)=>{
+      ev.preventDefault();
+      row.style.boxShadow='';
+      const targetId=parseInt(row.getAttribute('data-arq-id')||'0',10);
+      if(!dragId || !targetId || dragId===targetId) return;
+      const lista=Array.isArray(_asiEnvelopeArquivos)?_asiEnvelopeArquivos.slice():[];
+      const from=lista.findIndex(a=>parseInt(a.id,10)===dragId);
+      const to=lista.findIndex(a=>parseInt(a.id,10)===targetId);
+      if(from<0 || to<0) return;
+      const moved=lista.splice(from,1)[0];
+      lista.splice(to,0,moved);
+      const ordem=lista.map(a=>parseInt(a.id,10));
+      try{
+        const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/arquivos/ordem`,{
+          method:'PUT',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({ordem})
+        });
+        const j=await r.json().catch(()=>({}));
+        if(!r.ok){
+          alert(j.erro||'Não foi possível reordenar os arquivos.');
+          return;
+        }
+        await recarregarDetalheEnvelope();
+      }catch(e){
+        alert('Erro de conexão ao reordenar arquivos.');
+      }
+    });
+  });
 }
 
 // Arquivos

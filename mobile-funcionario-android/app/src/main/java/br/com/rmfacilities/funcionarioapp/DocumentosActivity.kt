@@ -31,6 +31,7 @@ import com.google.android.material.chip.ChipGroup
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
+import java.util.Locale
 
 class DocumentosActivity : AppCompatActivity() {
     private lateinit var session: SessionManager
@@ -49,6 +50,7 @@ class DocumentosActivity : AppCompatActivity() {
     private var anosDisponiveis: List<String> = emptyList()
     private lateinit var tvUltimoAsoDoc: android.widget.TextView
     private lateinit var offlineStore: OfflineDocsStore
+    private var pendentesAssinatura: List<DocumentoItem> = emptyList()
 
     private val debounceHandler = Handler(Looper.getMainLooper())
     private val debounceRunnable = Runnable { carregarComFiltros() }
@@ -77,6 +79,9 @@ class DocumentosActivity : AppCompatActivity() {
         }
         findViewById<MaterialButton>(R.id.btnOfflineDocs).setOnClickListener {
             abrirListaOffline()
+        }
+        findViewById<MaterialButton>(R.id.btnLerPendentes).setOnClickListener {
+            abrirPendentesEmSequencia()
         }
 
         // Busca por nome
@@ -150,6 +155,7 @@ class DocumentosActivity : AppCompatActivity() {
                     primeiroLoad = false
                 }
                 if (docs.ok) {
+                    pendentesAssinatura = pendentes.itens ?: emptyList()
                     adapter.replaceAll(pendentes.itens, docs.itens)
                     atualizarChips((pendentes.itens ?: emptyList()) + (docs.itens ?: emptyList()))
                     if (scrollToArquivoId > 0) {
@@ -338,6 +344,68 @@ class DocumentosActivity : AppCompatActivity() {
                 else Toast.makeText(this, "Arquivo não encontrado", Toast.LENGTH_SHORT).show()
             }
             .show()
+    }
+
+    private fun abrirPendentesEmSequencia() {
+        if (pendentesAssinatura.isEmpty()) {
+            Toast.makeText(this, "Nenhum documento pendente para leitura.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val opcoes = arrayOf("Mais recente primeiro", "Mais antigo primeiro", "Nome A-Z")
+        var escolha = 0
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Ordem de leitura")
+            .setSingleChoiceItems(opcoes, 0) { _, which -> escolha = which }
+            .setNegativeButton("Cancelar", null)
+            .setPositiveButton("Abrir") { _, _ ->
+                abrirPendentesOrdenados(escolha)
+            }
+            .show()
+    }
+
+    private fun abrirPendentesOrdenados(ordem: Int) {
+        swipe.isRefreshing = true
+        CoroutineScope(Dispatchers.IO).launch {
+            val sorted = when (ordem) {
+                1 -> pendentesAssinatura.sortedBy { (it.competencia ?: "").trim() }
+                2 -> pendentesAssinatura.sortedBy { (it.nome_arquivo ?: "").lowercase(Locale.getDefault()) }
+                else -> pendentesAssinatura.sortedByDescending { (it.competencia ?: "").trim() }
+            }
+            val files = arrayListOf<String>()
+            val titles = arrayListOf<String>()
+            for (item in sorted) {
+                val path = item.app_download_url
+                if (path.isNullOrBlank()) continue
+                try {
+                    val file = if (path.startsWith("offline://")) {
+                        val id = path.removePrefix("offline://").toIntOrNull()
+                        val offline = id?.let { offlineStore.findById(it) }
+                        offline?.let { offlineStore.openDecrypted(it) }
+                    } else {
+                        val bytes = api.downloadFile(path)
+                        offlineStore.saveDownloaded(item, bytes)
+                    }
+                    if (file != null && file.exists() && file.extension.equals("pdf", ignoreCase = true)) {
+                        files.add(file.absolutePath)
+                        titles.add(item.nome_arquivo ?: file.name)
+                    }
+                } catch (_: Exception) {
+                    // Ignora falhas pontuais para abrir o máximo de arquivos possível.
+                }
+            }
+            withContext(Dispatchers.Main) {
+                swipe.isRefreshing = false
+                if (files.isEmpty()) {
+                    Toast.makeText(this@DocumentosActivity, "Nenhum PDF pendente disponível para abrir.", Toast.LENGTH_LONG).show()
+                    return@withContext
+                }
+                startActivity(Intent(this@DocumentosActivity, PdfPreviewActivity::class.java).apply {
+                    putExtra(PdfPreviewActivity.EXTRA_TITLE, "Pendentes para assinatura")
+                    putStringArrayListExtra(PdfPreviewActivity.EXTRA_FILE_PATHS, files)
+                    putStringArrayListExtra(PdfPreviewActivity.EXTRA_TITLES, titles)
+                })
+            }
+        }
     }
 
     private fun assinarDocumento(item: DocumentoItem, stepupOtp: String? = null, stepupBiometria: Boolean = false) {
