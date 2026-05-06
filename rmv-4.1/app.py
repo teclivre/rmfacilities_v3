@@ -1261,6 +1261,7 @@ class AssinaturaEnvelopeArquivo(db.Model):
     __tablename__='assinatura_envelope_arquivo'
     id=db.Column(db.Integer,primary_key=True)
     envelope_id=db.Column(db.Integer,db.ForeignKey('assinatura_envelope.id'),nullable=False)
+    ordem=db.Column(db.Integer,default=0)
     origem=db.Column(db.String(10),default='upload')  # sistema|upload
     func_arquivo_id=db.Column(db.Integer)
     nome_arquivo=db.Column(db.String(250),nullable=False)
@@ -9199,7 +9200,7 @@ def _normalize_signed_pdf_name(name):
 def _default_signed_pdf_name(envelope):
     arq=(AssinaturaEnvelopeArquivo.query
          .filter_by(envelope_id=envelope.id)
-         .order_by(AssinaturaEnvelopeArquivo.id.asc())
+         .order_by(AssinaturaEnvelopeArquivo.ordem.asc(),AssinaturaEnvelopeArquivo.id.asc())
          .first())
     base='documento'
     if arq and (arq.nome_arquivo or '').strip():
@@ -9220,7 +9221,10 @@ def _envelope_signed_pdf_path(envelope):
 
 
 def _gerar_pdf_assinado_envelope(envelope,url_root):
-    arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=envelope.id).all()
+    arquivos=(AssinaturaEnvelopeArquivo.query
+              .filter_by(envelope_id=envelope.id)
+              .order_by(AssinaturaEnvelopeArquivo.ordem.asc(),AssinaturaEnvelopeArquivo.id.asc())
+              .all())
     if not arquivos:
         raise ValueError('Envelope sem arquivos para gerar PDF assinado.')
     footer_text=(f"RM Facilities | Assinatura Eletrônica | Cód: {envelope.codigo} | "
@@ -9346,7 +9350,7 @@ def api_envelope_detalhe(id):
     emp=Empresa.query.get(env.empresa_id) if env.empresa_id else None
     d['empresa_nome']=(emp.nome if emp else '')
     d['empresa_razao']=(emp.razao if emp else '')
-    d['arquivos']=[a.to_dict() for a in AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).all()]
+    d['arquivos']=[a.to_dict() for a in AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).order_by(AssinaturaEnvelopeArquivo.ordem,AssinaturaEnvelopeArquivo.id).all()]
     d['signatarios']=[s.to_dict() for s in AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=id).order_by(AssinaturaEnvelopeSignatario.ordem,AssinaturaEnvelopeSignatario.id).all()]
     return jsonify(d)
 
@@ -9466,8 +9470,12 @@ def api_envelope_add_arquivo(id):
         fa=FuncionarioArquivo.query.get(int(func_arquivo_id))
         if not fa:
             return jsonify({'erro':'Arquivo não encontrado'}),404
+        ordem_top=(db.session.query(db.func.max(AssinaturaEnvelopeArquivo.ordem))
+                   .filter(AssinaturaEnvelopeArquivo.envelope_id==id)
+                   .scalar() or 0)
         arq=AssinaturaEnvelopeArquivo(
             envelope_id=id, origem='sistema',
+            ordem=int(ordem_top)+1,
             func_arquivo_id=fa.id,
             nome_arquivo=fa.nome_arquivo,
             caminho=fa.caminho,
@@ -9487,8 +9495,12 @@ def api_envelope_add_arquivo(id):
     fname=f'{secrets.token_urlsafe(8)}_{secure_filename(f.filename)}'
     path=os.path.join(base,fname)
     f.save(path)
+    ordem_top=(db.session.query(db.func.max(AssinaturaEnvelopeArquivo.ordem))
+               .filter(AssinaturaEnvelopeArquivo.envelope_id==id)
+               .scalar() or 0)
     arq=AssinaturaEnvelopeArquivo(
         envelope_id=id, origem='upload',
+        ordem=int(ordem_top)+1,
         nome_arquivo=f.filename,
         caminho=path,
     )
@@ -9509,6 +9521,33 @@ def api_envelope_del_arquivo(id,arq_id):
         except Exception: pass
     db.session.delete(arq); db.session.commit()
     return jsonify({'ok':True})
+
+
+@app.route('/api/envelopes/<int:id>/arquivos/ordem',methods=['PUT'])
+@lr
+def api_envelope_reordenar_arquivos(id):
+    AssinaturaEnvelope.query.get_or_404(id)
+    data=request.get_json(silent=True) or {}
+    ordem_ids=data.get('ordem') or []
+    if not isinstance(ordem_ids,list) or not ordem_ids:
+        return jsonify({'erro':'Informe a ordem dos arquivos.'}),400
+    try:
+        ordem_ids=[int(x) for x in ordem_ids]
+    except Exception:
+        return jsonify({'erro':'Lista de ordem inválida.'}),400
+    existentes=(AssinaturaEnvelopeArquivo.query
+                .filter_by(envelope_id=id)
+                .order_by(AssinaturaEnvelopeArquivo.ordem,AssinaturaEnvelopeArquivo.id)
+                .all())
+    if not existentes:
+        return jsonify({'erro':'Envelope sem arquivos para ordenar.'}),400
+    by_id={a.id:a for a in existentes}
+    if set(ordem_ids)!=set(by_id.keys()):
+        return jsonify({'erro':'A lista de ordem deve conter todos os arquivos do envelope.'}),400
+    for pos,aid in enumerate(ordem_ids,start=1):
+        by_id[aid].ordem=pos
+    db.session.commit()
+    return jsonify({'ok':True,'ordem':ordem_ids})
 
 
 @app.route('/api/envelopes/<int:id>/arquivos/<int:arq_id>/visualizar',methods=['GET'])
@@ -9574,7 +9613,7 @@ def api_envelope_enviar(id):
     signatarios=AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=id).all()
     if not signatarios:
         return jsonify({'erro':'Adicione ao menos um signatário antes de enviar'}),400
-    arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).all()
+    arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).order_by(AssinaturaEnvelopeArquivo.ordem,AssinaturaEnvelopeArquivo.id).all()
     if not arquivos:
         return jsonify({'erro':'Adicione ao menos um arquivo antes de enviar'}),400
     if not env.codigo:
@@ -9701,7 +9740,7 @@ def envelope_assinar_visualizar_arquivo(token,arq_id):
 def envelope_assinar_publica(token):
     sig=AssinaturaEnvelopeSignatario.query.filter_by(token=token).first_or_404()
     env=AssinaturaEnvelope.query.get_or_404(sig.envelope_id)
-    arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=env.id).all()
+    arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=env.id).order_by(AssinaturaEnvelopeArquivo.ordem,AssinaturaEnvelopeArquivo.id).all()
     empresa=Empresa.query.get(env.empresa_id) if env.empresa_id else Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
     empresas=[empresa] if empresa else []
     src=request.args.get('src','')
@@ -9886,7 +9925,7 @@ def envelope_validar_publica(codigo):
     env=AssinaturaEnvelope.query.filter_by(codigo=codigo).first_or_404()
     signatarios=AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=env.id).order_by(
         AssinaturaEnvelopeSignatario.ordem,AssinaturaEnvelopeSignatario.id).all()
-    arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=env.id).all()
+    arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=env.id).order_by(AssinaturaEnvelopeArquivo.ordem,AssinaturaEnvelopeArquivo.id).all()
     empresa=Empresa.query.get(env.empresa_id) if env.empresa_id else Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
     empresas=[empresa] if empresa else []
     return render_template('envelope_validar.html',env=env,signatarios=signatarios,arquivos=arquivos,empresas=empresas)
@@ -13289,6 +13328,7 @@ with app.app_context():
     ensure_cols('assinatura_envelope_arquivo',[
         'id INTEGER PRIMARY KEY AUTOINCREMENT',
         'envelope_id INTEGER',
+        'ordem INTEGER DEFAULT 0',
         'origem VARCHAR(10) DEFAULT "upload"',
         'func_arquivo_id INTEGER',
         'nome_arquivo VARCHAR(250)',

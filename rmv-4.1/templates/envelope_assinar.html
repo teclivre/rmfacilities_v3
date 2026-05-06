@@ -180,10 +180,10 @@
                 </div>
                 <button type="button" class="fs-btn" onclick="toggleViewerFullscreen()">⛶ Tela cheia</button>
               </div>
-              <p style="font-size:11px;color:#8aafcc;margin:0">Selecione um documento e role até o final para liberar a assinatura.</p>
+              <p style="font-size:11px;color:#8aafcc;margin:0">Todos os documentos são carregados em sequência abaixo. Role até o final para liberar a assinatura.</p>
               <div class="doc-chip-list" id="doc-chip-list">
                 {% for a in arquivos %}
-                <button type="button" class="doc-chip" data-doc-id="{{ a.id }}" onclick="abrirDocumento({{ a.id }})">{{ a.nome_arquivo }}</button>
+                <button type="button" class="doc-chip" data-doc-id="{{ a.id }}" onclick="irParaDocumento({{ a.id }})">{{ a.nome_arquivo }}</button>
                 {% endfor %}
               </div>
               <div class="doc-frame-wrap" id="doc-frame-wrap">
@@ -223,7 +223,6 @@ const DOCS={{ arquivos|map(attribute='id')|list|tojson }};
 const DOC_NAMES={{ arquivos|map(attribute='nome_arquivo')|list|tojson }};
 const otpCooldownCtrl=SignatureCommon.makeCooldown('btn-resend',60);
 const docsVistos=new Set();
-let docAtual=null;
 let currentRenderToken=0;
 
 if(window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions){
@@ -279,10 +278,17 @@ function marcarChipAtivo(docId){
 }
 
 function abrirDocumento(docId){
-  if(!TOKEN||!docId) return;
-  docAtual=parseInt(docId,10);
-  marcarChipAtivo(docAtual);
-  carregarDocumentoAtual(docAtual);
+  irParaDocumento(docId);
+}
+
+function irParaDocumento(docId){
+  const id=parseInt(docId||'0',10);
+  if(!id) return;
+  const el=document.getElementById(`doc-section-${id}`);
+  const sc=document.getElementById('doc-viewer-scroll');
+  if(!el || !sc) return;
+  marcarChipAtivo(id);
+  sc.scrollTo({top:Math.max(0,el.offsetTop-8),behavior:'smooth'});
 }
 
 function nomeDocPorId(docId){
@@ -303,7 +309,12 @@ function markDocViewed(docId){
   atualizarProgressoDocs();
 }
 
-function bindReadScroll(docId){
+function markAllDocsViewed(){
+  DOCS.forEach(id=>docsVistos.add(parseInt(id,10)));
+  atualizarProgressoDocs();
+}
+
+function bindReadScroll(){
   const sc=document.getElementById('doc-viewer-scroll');
   const tip=document.getElementById('doc-viewer-tip');
   if(!sc) return;
@@ -311,16 +322,29 @@ function bindReadScroll(docId){
   const check=()=>{
     const maxTop=Math.max(1,sc.scrollHeight-sc.clientHeight);
     const pct=sc.scrollTop/maxTop;
-    if(pct>=0.92){
-      markDocViewed(docId);
-      showViewerMsg('Documento visualizado com sucesso.','ok');
+    if(pct>=0.92 && docsVistos.size<DOCS.length){
+      markAllDocsViewed();
+      showViewerMsg('Todos os documentos foram visualizados com sucesso.','ok');
     }
+    let activeId=0;
+    let bestDelta=Infinity;
+    DOCS.forEach(rawId=>{
+      const id=parseInt(rawId,10);
+      const sec=document.getElementById(`doc-section-${id}`);
+      if(!sec) return;
+      const delta=Math.abs(sec.offsetTop-sc.scrollTop);
+      if(delta<bestDelta){
+        bestDelta=delta;
+        activeId=id;
+      }
+    });
+    if(activeId) marcarChipAtivo(activeId);
   };
   sc.onscroll=check;
   setTimeout(()=>{
-    if(sc.scrollHeight<=sc.clientHeight+20){
-      markDocViewed(docId);
-      showViewerMsg('Documento visualizado com sucesso.','ok');
+    if(sc.scrollHeight<=sc.clientHeight+20 && DOCS.length){
+      markAllDocsViewed();
+      showViewerMsg('Todos os documentos foram visualizados com sucesso.','ok');
     }
   },300);
 }
@@ -337,7 +361,7 @@ function toggleViewerFullscreen(){
 }
 
 async function renderPdfIntoViewer(arrayBuffer,docId){
-  const pages=document.getElementById('doc-viewer-pages');
+  const pages=document.getElementById(`doc-pages-${docId}`);
   const sc=document.getElementById('doc-viewer-scroll');
   if(!pages||!sc||!window.pdfjsLib) return false;
   const token=++currentRenderToken;
@@ -365,49 +389,61 @@ async function renderPdfIntoViewer(arrayBuffer,docId){
     if(token!==currentRenderToken) return false;
     pages.appendChild(canvas);
   }
-  bindReadScroll(docId);
   return true;
 }
 
 async function carregarDocumentoAtual(docId){
+  return irParaDocumento(docId);
+}
+
+function _appendDocSection(docId,nome){
+  const pages=document.getElementById('doc-viewer-pages');
+  if(!pages) return null;
+  const sec=document.createElement('section');
+  sec.id=`doc-section-${docId}`;
+  sec.style.cssText='width:100%;background:#111b30;border:1px solid #2a3a57;border-radius:10px;padding:10px 10px 12px;margin:0 0 12px 0';
+  sec.innerHTML=`<div style="font-size:12px;color:#9ec5f7;font-weight:700;margin:0 0 8px">📄 ${nome||('Documento '+docId)}</div><div id="doc-pages-${docId}"></div>`;
+  pages.appendChild(sec);
+  return sec;
+}
+
+async function carregarTodosDocumentos(){
   const pages=document.getElementById('doc-viewer-pages');
   if(!pages) return;
-  const nome=nomeDocPorId(docId);
-  const url=`/envelope/assinar/${TOKEN}/arquivo/${docId}?src=${encodeURIComponent(SRC||'link')}&_=${Date.now()}`;
-  pages.innerHTML='<div class="viewer-loading">Carregando documento...</div>';
-  showViewerMsg('Documento carregando...','ok');
-  try{
-    // Tenta PDF.js se disponível
-    if(isPdfName(nome) && window.pdfjsLib){
-      const r=await fetch(url,{cache:'no-store'});
-      if(!r.ok) throw new Error('Falha ao carregar documento.');
-      const blob=await r.blob();
-      const ok=await renderPdfIntoViewer(await blob.arrayBuffer(),docId);
-      if(ok){
-        showViewerMsg('Documento aberto. Role até o final para liberar a assinatura.','ok');
-        return;
+  pages.innerHTML='';
+  showViewerMsg('Carregando todos os documentos...','ok');
+  for(const rawId of DOCS){
+    const docId=parseInt(rawId,10);
+    const nome=nomeDocPorId(docId);
+    const sec=_appendDocSection(docId,nome);
+    if(!sec) continue;
+    const box=document.getElementById(`doc-pages-${docId}`);
+    const url=`/envelope/assinar/${TOKEN}/arquivo/${docId}?src=${encodeURIComponent(SRC||'link')}&_=${Date.now()}`;
+    if(!box) continue;
+    box.innerHTML='<div class="viewer-loading">Carregando documento...</div>';
+    try{
+      if(isPdfName(nome) && window.pdfjsLib){
+        const r=await fetch(url,{cache:'no-store'});
+        if(!r.ok) throw new Error('Falha ao carregar documento.');
+        const blob=await r.blob();
+        const ok=await renderPdfIntoViewer(await blob.arrayBuffer(),docId);
+        if(ok) continue;
       }
+      if(isPdfName(nome)){
+        box.innerHTML=`<iframe src="${url}" style="width:100%;min-height:560px;border:none;border-radius:8px;display:block"></iframe>`;
+        continue;
+      }
+      box.innerHTML=`<div class="viewer-loading">Este arquivo não é PDF. Abra para visualizar.</div>
+      <div style="text-align:center;padding:8px 0 6px"><a class="public-btn public-btn-secondary" href="${url}" target="_blank" rel="noopener">Abrir documento</a></div>`;
+    }catch(e){
+      box.innerHTML=`<div class="viewer-loading">Não foi possível renderizar este documento neste dispositivo.</div>
+      <iframe src="${url}" style="width:100%;min-height:560px;border:none;border-radius:8px;display:block"></iframe>`;
     }
-    // Fallback iframe para PDFs (sem PDF.js ou se PDF.js falhou)
-    if(isPdfName(nome)){
-      pages.innerHTML=`<iframe src="${url}" style="width:100%;min-height:560px;border:none;border-radius:8px;display:block" onload="markDocViewed(${docId});showViewerMsg('Documento visualizado com sucesso.','ok')"></iframe>`;
-      showViewerMsg('Documento aberto. Visualize o conteúdo para liberar a assinatura.','ok');
-      return;
-    }
-    // Arquivos não-PDF: abre em nova aba
-    const r2=await fetch(url,{cache:'no-store'});
-    if(!r2.ok) throw new Error('Falha ao carregar documento.');
-    pages.innerHTML=`<div class="viewer-loading">Este arquivo não é PDF. Abra para visualizar e liberar a assinatura.</div>
-      <div style="text-align:center;padding:8px 0 12px"><a class="public-btn public-btn-secondary" href="${url}" target="_blank" rel="noopener">Abrir documento</a></div>`;
-    markDocViewed(docId);
-    showViewerMsg('Documento não-PDF marcado como visualizado após abertura.','ok');
-  }catch(e){
-    pages.innerHTML=`
-      <div class="viewer-loading">Não foi possível renderizar o preview neste dispositivo.</div>
-      <iframe src="${url}" style="width:100%;min-height:560px;border:none;border-radius:8px;display:block" onload="markDocViewed(${docId});showViewerMsg('Documento visualizado com sucesso.','ok')"></iframe>
-      <div style="text-align:center;padding:8px 0 12px"><a class="public-btn public-btn-secondary" href="${url}" target="_blank" rel="noopener">Abrir documento</a></div>
-    `;
-    showViewerMsg('Preview alternativo ativado. Se necessário, use o botão Abrir documento.','ok');
+  }
+  bindReadScroll();
+  if(DOCS.length){
+    marcarChipAtivo(parseInt(DOCS[0],10));
+    showViewerMsg('Documentos carregados. Role até o final para liberar a assinatura.','ok');
   }
 }
 
@@ -498,9 +534,7 @@ async function confirmarAssinatura(){
 
 document.addEventListener('DOMContentLoaded',()=>{
   atualizarProgressoDocs();
-  if(DOCS.length>0){
-    abrirDocumento(DOCS[0]);
-  }
+  carregarTodosDocumentos();
 });
   </script>
 </body>

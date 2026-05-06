@@ -7878,12 +7878,18 @@ async function recarregarDetalheEnvelope(){
       arqBox.innerHTML='<div class="vazio">Nenhum arquivo adicionado.</div>';
     }else{
       arqBox.innerHTML=`<div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Arquivo</th><th>Origem</th><th>Adicionado</th><th></th></tr></thead>
-        <tbody>${env.arquivos.map(a=>`
+        <thead><tr><th>Arquivo</th><th>Origem</th><th>Adicionado</th><th>Ordem</th><th></th></tr></thead>
+        <tbody>${env.arquivos.map((a,idx)=>`
           <tr>
             <td>📄 ${a.nome_arquivo}</td>
             <td>${a.origem==='sistema'?'Sistema':'Upload'}</td>
             <td>${a.criado_fmt||''}</td>
+            <td>
+              <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end">
+                <button class="btn b-sm" style="padding:2px 7px" onclick="moverArqEnvelope(${a.id},-1)" ${idx===0?'disabled':''}>↑</button>
+                <button class="btn b-sm" style="padding:2px 7px" onclick="moverArqEnvelope(${a.id},1)" ${idx===env.arquivos.length-1?'disabled':''}>↓</button>
+              </div>
+            </td>
             <td><button class="btn b-sm" style="background:#fff0f0;color:#c0392b;border:1px solid #f5c5c5;cursor:pointer" onclick="remArqEnvelope(${a.id})">✕</button></td>
           </tr>`).join('')}
         </tbody></table></div>`;
@@ -8092,6 +8098,34 @@ async function remArqEnvelope(arqId){
     await recarregarDetalheEnvelope();
   }catch(e){
     alert('Erro de conexão ao remover arquivo.');
+  }
+}
+
+async function moverArqEnvelope(arqId,direcao){
+  if(!_asiEnvelopeId) return;
+  const lista=Array.isArray(_asiEnvelopeArquivos)?_asiEnvelopeArquivos.slice():[];
+  const idx=lista.findIndex(a=>parseInt(a.id,10)===parseInt(arqId,10));
+  if(idx<0) return;
+  const novo=idx+(direcao<0?-1:1);
+  if(novo<0||novo>=lista.length) return;
+  const tmp=lista[idx];
+  lista[idx]=lista[novo];
+  lista[novo]=tmp;
+  const ordem=lista.map(a=>parseInt(a.id,10));
+  try{
+    const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/arquivos/ordem`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ordem})
+    });
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){
+      alert(j.erro||'Não foi possível alterar a ordem dos arquivos.');
+      return;
+    }
+    await recarregarDetalheEnvelope();
+  }catch(e){
+    alert('Erro de conexão ao reordenar arquivos.');
   }
 }
 
