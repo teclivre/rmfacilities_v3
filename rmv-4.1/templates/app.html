@@ -7880,7 +7880,7 @@ async function recarregarDetalheEnvelope(){
       arqBox.innerHTML=`<div class="tbl-wrap"><table class="tbl">
         <thead><tr><th>Arquivo</th><th>Origem</th><th>Adicionado</th><th>Ordem</th><th></th></tr></thead>
         <tbody id="asi-arq-tbody">${env.arquivos.map((a,idx)=>`
-          <tr class="asi-arq-row" data-arq-id="${a.id}" draggable="true">
+          <tr class="asi-arq-row" data-arq-id="${a.id}" draggable="true" style="transition:background .12s ease, box-shadow .12s ease, opacity .12s ease">
             <td>📄 ${a.nome_arquivo}</td>
             <td>${a.origem==='sistema'?'Sistema':'Upload'}</td>
             <td>${a.criado_fmt||''}</td>
@@ -8135,24 +8135,42 @@ function ativarDragArquivosEnvelope(){
   const tbody=document.getElementById('asi-arq-tbody');
   if(!tbody) return;
   let dragId=0;
+  const clearIndicators=()=>{
+    tbody.querySelectorAll('tr.asi-arq-row').forEach(r=>{
+      r.style.boxShadow='';
+      r.style.background='';
+      r.style.opacity='1';
+    });
+  };
   tbody.querySelectorAll('tr.asi-arq-row').forEach(row=>{
-    row.addEventListener('dragstart',()=>{
+    row.addEventListener('dragstart',(ev)=>{
       dragId=parseInt(row.getAttribute('data-arq-id')||'0',10);
       row.style.opacity='0.45';
+      row.style.background='rgba(45,126,247,.10)';
+      if(ev.dataTransfer) ev.dataTransfer.dropEffect='move';
     });
     row.addEventListener('dragend',()=>{
-      row.style.opacity='1';
+      clearIndicators();
       dragId=0;
-      tbody.querySelectorAll('tr.asi-arq-row').forEach(r=>r.style.boxShadow='');
     });
     row.addEventListener('dragover',(ev)=>{
       ev.preventDefault();
-      row.style.boxShadow='inset 0 -2px 0 #2d7ef7';
+      if(!dragId) return;
+      const rect=row.getBoundingClientRect();
+      const dropBefore=(ev.clientY-rect.top)<(rect.height/2);
+      row.dataset.dropPos=dropBefore?'before':'after';
+      clearIndicators();
+      row.style.background='rgba(45,126,247,.08)';
+      row.style.boxShadow=dropBefore
+        ? 'inset 0 3px 0 #2d7ef7, 0 0 0 1px rgba(45,126,247,.20)'
+        : 'inset 0 -3px 0 #2d7ef7, 0 0 0 1px rgba(45,126,247,.20)';
+      if(ev.dataTransfer) ev.dataTransfer.dropEffect='move';
     });
-    row.addEventListener('dragleave',()=>{ row.style.boxShadow=''; });
+    row.addEventListener('dragleave',()=>{ row.style.boxShadow=''; row.style.background=''; });
     row.addEventListener('drop',async(ev)=>{
       ev.preventDefault();
-      row.style.boxShadow='';
+      const dropPos=(row.dataset.dropPos||'before');
+      clearIndicators();
       const targetId=parseInt(row.getAttribute('data-arq-id')||'0',10);
       if(!dragId || !targetId || dragId===targetId) return;
       const lista=Array.isArray(_asiEnvelopeArquivos)?_asiEnvelopeArquivos.slice():[];
@@ -8160,7 +8178,9 @@ function ativarDragArquivosEnvelope(){
       const to=lista.findIndex(a=>parseInt(a.id,10)===targetId);
       if(from<0 || to<0) return;
       const moved=lista.splice(from,1)[0];
-      lista.splice(to,0,moved);
+      let insertAt=(dropPos==='after')?(to+1):to;
+      if(from<insertAt) insertAt-=1;
+      lista.splice(insertAt,0,moved);
       const ordem=lista.map(a=>parseInt(a.id,10));
       try{
         const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/arquivos/ordem`,{
