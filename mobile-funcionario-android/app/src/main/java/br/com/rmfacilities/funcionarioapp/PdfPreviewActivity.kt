@@ -1,12 +1,16 @@
 package br.com.rmfacilities.funcionarioapp
 
+import android.content.ContentValues
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.pdf.PdfRenderer
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.ParcelFileDescriptor
+import android.provider.MediaStore
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -38,6 +42,7 @@ class PdfPreviewActivity : AppCompatActivity() {
     private lateinit var tvLoading: TextView
     private var pdfRenderer: PdfRenderer? = null
     private lateinit var watermarkText: String
+    private var currentPdfFile: File? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,8 +71,18 @@ class PdfPreviewActivity : AppCompatActivity() {
             finish()
             return
         }
+        currentPdfFile = File(filePath)
 
-        renderPdf(File(filePath))
+        findViewById<MaterialButton>(R.id.btnBaixarPdf).setOnClickListener {
+            val f = currentPdfFile
+            if (f == null || !f.exists()) {
+                Toast.makeText(this, "Arquivo não encontrado", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            salvarNoDownloads(f, title)
+        }
+
+        renderPdf(currentPdfFile!!)
     }
 
     private fun renderPdf(file: File) {
@@ -137,6 +152,46 @@ class PdfPreviewActivity : AppCompatActivity() {
             y += yStep
         }
         canvas.restore()
+    }
+
+    private fun salvarNoDownloads(file: File, title: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val rawName = title.ifBlank { file.name }
+                val finalName = if (rawName.lowercase().endsWith(".pdf")) rawName else "$rawName.pdf"
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, finalName)
+                    put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                        put(MediaStore.Downloads.IS_PENDING, 1)
+                    }
+                }
+
+                val resolver = contentResolver
+                val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                val uri = resolver.insert(collection, values)
+                    ?: throw IllegalStateException("Não foi possível criar o arquivo no Downloads")
+
+                resolver.openOutputStream(uri).use { out ->
+                    if (out == null) throw IllegalStateException("Falha ao abrir destino no Downloads")
+                    file.inputStream().use { input -> input.copyTo(out) }
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val done = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
+                    resolver.update(uri, done, null, null)
+                }
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@PdfPreviewActivity, "Arquivo salvo em Downloads", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@PdfPreviewActivity, "Erro ao salvar: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 }
 
