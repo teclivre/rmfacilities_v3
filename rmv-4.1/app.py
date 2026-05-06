@@ -1151,6 +1151,18 @@ class AuthTentativa(db.Model):
     motivo=db.Column(db.String(250))
     criado_em=db.Column(db.DateTime,default=utcnow)
 
+class UsuarioDispositivoConfiavel(db.Model):
+    __tablename__='usuario_dispositivo_confiavel'
+    id=db.Column(db.Integer,primary_key=True)
+    usuario_id=db.Column(db.Integer,db.ForeignKey('usuario.id'),nullable=False,index=True)
+    token_hash=db.Column(db.String(256),nullable=False,index=True)
+    ip_bucket=db.Column(db.String(80))
+    ua_hash=db.Column(db.String(256))
+    revogado=db.Column(db.Boolean,default=False)
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    ultimo_uso_em=db.Column(db.DateTime,default=utcnow)
+    expira_em=db.Column(db.DateTime,nullable=False)
+
 class AuditoriaEvento(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     evento=db.Column(db.String(120),nullable=False)
@@ -1440,6 +1452,8 @@ def token_hash(v):
 LOGIN_WINDOW_MIN=15
 LOGIN_FAIL_MAX=5
 LOGIN_BLOCK_MIN=15
+ADMIN_TRUST_DAYS=max(1,min(90,int((os.environ.get('ADMIN_TRUST_DAYS') or '30').strip() or 30)))
+ADMIN_TRUST_COOKIE='rm_admin_trust'
 
 def auth_blocked(tipo,ident,ip):
     lim=utcnow()-timedelta(minutes=LOGIN_WINDOW_MIN)
@@ -1478,6 +1492,109 @@ def _admin_needs_2fa(u):
     if (u.perfil or '').strip().lower() not in ('admin','dono'):
         return False
     return bool(u.twofa_ativo)
+
+def _client_ip_addr():
+    return (request.headers.get('X-Forwarded-For') or request.remote_addr or '').split(',')[0].strip()
+
+def _ip_bucket(v):
+    ip=(v or '').strip().lower()
+    if not ip:
+        return ''
+    if ':' in ip:
+        parts=[p for p in ip.split(':') if p]
+        return ':'.join(parts[:4])
+    nums=ip.split('.')
+    if len(nums)==4 and all(n.isdigit() for n in nums):
+        return '.'.join(nums[:3])
+    return ip
+
+def _ua_hash_for_trust():
+    ua=(request.headers.get('User-Agent') or '').strip().lower()
+    return token_hash(ua[:240]) if ua else ''
+
+def _trust_cookie_secure():
+    proto=(request.headers.get('X-Forwarded-Proto') or '').strip().lower()
+    return bool(request.is_secure or proto=='https')
+
+def _admin_trust_cookie_opts():
+    return {
+        'max_age':ADMIN_TRUST_DAYS*24*3600,
+        'httponly':True,
+        'samesite':'Lax',
+        'secure':_trust_cookie_secure(),
+        'path':'/',
+    }
+
+def _admin_is_trusted_device(u):
+    if not u:
+        return False
+    raw=(request.cookies.get(ADMIN_TRUST_COOKIE) or '').strip()
+    if not raw:
+        return False
+    now=utcnow()
+    rec=UsuarioDispositivoConfiavel.query.filter_by(
+        usuario_id=u.id,
+        token_hash=token_hash(raw),
+        revogado=False,
+    ).first()
+    if not rec:
+        return False
+    if (not rec.expira_em) or rec.expira_em<now:
+        rec.revogado=True
+        db.session.commit()
+        return False
+    if (rec.ua_hash or '')!=(_ua_hash_for_trust() or ''):
+        return False
+    if (rec.ip_bucket or '')!=(_ip_bucket(_client_ip_addr()) or ''):
+        return False
+    rec.ultimo_uso_em=now
+    rec.expira_em=now+timedelta(days=ADMIN_TRUST_DAYS)
+    return True
+
+def _admin_bind_trusted_device(resp,u,reuse_cookie=False):
+    if not u or not resp:
+        return resp
+    raw=''
+    if reuse_cookie:
+        raw=(request.cookies.get(ADMIN_TRUST_COOKIE) or '').strip()
+    if not raw:
+        raw=secrets.token_urlsafe(36)
+    now=utcnow()
+    th=token_hash(raw)
+    rec=UsuarioDispositivoConfiavel.query.filter_by(usuario_id=u.id,token_hash=th).first()
+    if not rec:
+        rec=UsuarioDispositivoConfiavel(usuario_id=u.id,token_hash=th)
+        db.session.add(rec)
+    rec.revogado=False
+    rec.ua_hash=_ua_hash_for_trust()
+    rec.ip_bucket=_ip_bucket(_client_ip_addr())
+    rec.ultimo_uso_em=now
+    rec.expira_em=now+timedelta(days=ADMIN_TRUST_DAYS)
+    # Limpa vínculos antigos para reduzir superfície e manter apenas os mais recentes.
+    antigos=UsuarioDispositivoConfiavel.query.filter(
+        UsuarioDispositivoConfiavel.usuario_id==u.id,
+        UsuarioDispositivoConfiavel.id!=(rec.id or 0),
+        UsuarioDispositivoConfiavel.expira_em<now,
+    ).all()
+    for a in antigos:
+        db.session.delete(a)
+    db.session.commit()
+    resp.set_cookie(ADMIN_TRUST_COOKIE,raw,**_admin_trust_cookie_opts())
+    return resp
+
+def _admin_revoke_current_trusted_device():
+    raw=(request.cookies.get(ADMIN_TRUST_COOKIE) or '').strip()
+    uid=session.get('uid')
+    if not raw or not uid:
+        return
+    rec=UsuarioDispositivoConfiavel.query.filter_by(
+        usuario_id=uid,
+        token_hash=token_hash(raw),
+        revogado=False,
+    ).first()
+    if rec:
+        rec.revogado=True
+        db.session.commit()
 
 def _send_admin_2fa_code(u,codigo,contexto='login'):
     tel=norm_phone(getattr(u,'telefone','') or '')
@@ -4914,7 +5031,12 @@ def login():
             session.pop('login_2fa_code_hash',None)
             session.pop('login_2fa_exp',None)
             session.pop('login_2fa_attempts',None)
-            return redirect(url_for('index'))
+            resp=redirect(url_for('index'))
+            try:
+                resp=_admin_bind_trusted_device(resp,u,reuse_cookie=False)
+            except Exception as ex:
+                app.logger.warning(f'[auth_admin_trust] falha ao gravar dispositivo confiavel: {ex}')
+            return resp
 
         email=request.form.get('email','').lower().strip()
         senha=request.form.get('senha','')
@@ -4927,6 +5049,28 @@ def login():
             if not pw_is_modern(u.senha):
                 u.senha=pw_hash(senha)
             if _admin_needs_2fa(u):
+                trusted=False
+                try:
+                    trusted=_admin_is_trusted_device(u)
+                except Exception as ex:
+                    app.logger.warning(f'[auth_admin_trust] falha ao validar dispositivo confiavel: {ex}')
+                if trusted:
+                    session.permanent=True
+                    session['uid']=u.id; session['nome']=u.nome; session['perfil']=u.perfil
+                    session['areas']=jloads(u.areas,[])
+                    perms=jloads(getattr(u,'permissoes','{}'),{})
+                    if not isinstance(perms,dict): perms={}
+                    session['permissoes']=perms
+                    session['rbac_actions_ativo']=bool(perms)
+                    u.ultimo_acesso=utcnow(); db.session.commit()
+                    reg_auth_attempt('admin',email,True,'ok_dispositivo_confiavel')
+                    audit_event('auth_admin_sucesso_dispositivo_confiavel','usuario',u.id,'usuario',u.id,True,{})
+                    resp=redirect(url_for('index'))
+                    try:
+                        resp=_admin_bind_trusted_device(resp,u,reuse_cookie=True)
+                    except Exception as ex:
+                        app.logger.warning(f'[auth_admin_trust] falha ao renovar dispositivo confiavel: {ex}')
+                    return resp
                 codigo=f'{secrets.randbelow(1000000):06d}'
                 try:
                     _send_admin_2fa_code(u,codigo,'login')
@@ -4983,7 +5127,18 @@ def login():
     return render_template('login.html',ok=f'Acesso recuperado. Usuário: {_mask_email(u.email)}. Faça login com a nova senha.')
 
 @app.route('/logout')
-def logout(): session.clear(); return redirect(url_for('login'))
+def logout():
+    try:
+        _admin_revoke_current_trusted_device()
+    except Exception as ex:
+        app.logger.warning(f'[auth_admin_trust] falha ao revogar dispositivo no logout: {ex}')
+    session.clear()
+    resp=redirect(url_for('login'))
+    try:
+        resp.set_cookie(ADMIN_TRUST_COOKIE,'',max_age=0,expires=0,path='/',httponly=True,samesite='Lax',secure=_trust_cookie_secure())
+    except Exception:
+        pass
+    return resp
 
 @app.route('/privacidade')
 @app.route('/politica-de-privacidade')
