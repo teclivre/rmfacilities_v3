@@ -39,6 +39,8 @@ class AboutActivity : AppCompatActivity() {
             "Nunca"
         }
         findViewById<TextView>(R.id.tvUltimaSync).text = syncText
+        findViewById<TextView>(R.id.tvFilaPendente).text = ActionRetryQueue(this).pendingCount().toString()
+        findViewById<TextView>(R.id.tvUltimoErro).text = TelemetryLogger.lastError(this)
 
         // Push token status
         val tvPush = findViewById<TextView>(R.id.tvPushStatus)

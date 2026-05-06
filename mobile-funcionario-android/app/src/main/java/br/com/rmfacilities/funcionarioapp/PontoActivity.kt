@@ -24,6 +24,7 @@ import java.util.Locale
 class PontoActivity : AppCompatActivity() {
 
     private lateinit var api: ApiClient
+    private lateinit var retryQueue: ActionRetryQueue
     private lateinit var tvData: TextView
     private lateinit var tvHorasTrabalhadas: TextView
     private lateinit var tvHorasEsperadas: TextView
@@ -50,6 +51,7 @@ class PontoActivity : AppCompatActivity() {
         setContentView(R.layout.activity_ponto)
 
         api = ApiClient(SessionManager(this))
+        retryQueue = ActionRetryQueue(this)
 
         findViewById<TextView>(R.id.btnVoltar).setOnClickListener { finish() }
 
@@ -120,6 +122,9 @@ class PontoActivity : AppCompatActivity() {
                     renderResumo(resp.resumo)
                     tvPontoStatus.text = "✅ Ponto registrado com localização."
                 } else {
+                    if (loc.latitude != 0.0 || loc.longitude != 0.0) {
+                        retryQueue.enqueuePonto(loc.latitude, loc.longitude, loc.accuracy)
+                    }
                     tvPontoStatus.text = resp.erro ?: "Falha ao registrar ponto."
                 }
             }
@@ -135,6 +140,9 @@ class PontoActivity : AppCompatActivity() {
                     renderResumo(resp.resumo)
                     tvPontoStatus.text = "Atualizado agora"
                 } else {
+                    if (!resp.erro.isNullOrBlank()) {
+                        TelemetryLogger.logHandled(this@PontoActivity, "ponto_carregar", IllegalStateException(resp.erro))
+                    }
                     tvPontoStatus.text = resp.erro ?: "Falha ao carregar ponto."
                 }
             }

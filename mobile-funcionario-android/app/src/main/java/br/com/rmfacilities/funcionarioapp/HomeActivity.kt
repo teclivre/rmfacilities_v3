@@ -34,6 +34,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var tvAvatar: TextView
     private lateinit var tvMsgBadge: TextView
     private lateinit var tvDocsBadge: TextView
+    private lateinit var retryQueue: ActionRetryQueue
 
     private val logoutReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -55,6 +56,8 @@ class HomeActivity : AppCompatActivity() {
 
         session = SessionManager(this)
         api = ApiClient(session)
+        retryQueue = ActionRetryQueue(this)
+        TelemetryLogger.init(this)
 
         if (session.accessToken.isBlank()) {
             goLogin(); return
@@ -105,6 +108,7 @@ class HomeActivity : AppCompatActivity() {
         registrarPushToken()
         ensureLocationAndSend()
         handleDeepLink()
+        processarFilaPendente()
     }
 
     private fun ensureLocationAndSend() {
@@ -144,6 +148,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun ensureNotificationPermission() {
+        if (!session.notificationsEnabled) return
         if (Build.VERSION.SDK_INT < 33) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
             return
@@ -152,6 +157,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun registrarPushToken() {
+        if (!session.notificationsEnabled) return
         // Se o Firebase nao estiver configurado (sem google-services.json), ignora push sem derrubar o app.
         val firebaseApp = try {
             FirebaseApp.initializeApp(this) ?: FirebaseApp.getInstance()
@@ -210,6 +216,25 @@ class HomeActivity : AppCompatActivity() {
                 if (versao != null && versao.versao_minima > 0 && BuildConfig.VERSION_CODE < versao.versao_minima) {
                     mostrarDialogAtualizar(versao.download_url)
                 }
+            }
+        }
+    }
+
+    private fun processarFilaPendente() {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val result = retryQueue.process(api)
+                if (result.enviados > 0) {
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(
+                            this@HomeActivity,
+                            "${result.enviados} ação(ões) pendente(s) sincronizada(s).",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            } catch (e: Exception) {
+                TelemetryLogger.logHandled(this@HomeActivity, "fila_retry_processar", e)
             }
         }
     }

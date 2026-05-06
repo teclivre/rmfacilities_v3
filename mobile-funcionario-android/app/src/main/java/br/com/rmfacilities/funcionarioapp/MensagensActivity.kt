@@ -30,6 +30,7 @@ class MensagensActivity : AppCompatActivity() {
     private lateinit var rvMensagens: RecyclerView
     private lateinit var etMensagem: EditText
     private lateinit var tvBadge: TextView
+    private lateinit var retryQueue: ActionRetryQueue
 
     private var cameraPhotoUri: Uri? = null
 
@@ -47,6 +48,7 @@ class MensagensActivity : AppCompatActivity() {
 
         session = SessionManager(this)
         api = ApiClient(session)
+        retryQueue = ActionRetryQueue(this)
 
         rvMensagens = findViewById(R.id.rvMensagens)
         etMensagem = findViewById(R.id.etMensagem)
@@ -105,7 +107,8 @@ class MensagensActivity : AppCompatActivity() {
                     adapter.addMensagem(nova)
                     rvMensagens.scrollToPosition(adapter.itemCount - 1)
                 } else {
-                    Toast.makeText(this@MensagensActivity, "Erro ao enviar mensagem.", Toast.LENGTH_SHORT).show()
+                    retryQueue.enqueueMensagem(texto)
+                    Toast.makeText(this@MensagensActivity, "Sem conexão. Mensagem colocada na fila.", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -125,11 +128,15 @@ class MensagensActivity : AppCompatActivity() {
                         adapter.addMensagem(nova)
                         rvMensagens.scrollToPosition(adapter.itemCount - 1)
                     } else {
+                        val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                        retryQueue.enqueueMensagem("[arquivo pendente] $fileName")
+                        TelemetryLogger.logHandled(this@MensagensActivity, "mensagem_arquivo_fila", IllegalStateException("Arquivo enfileirado: ${b64.length}"))
                         Toast.makeText(this@MensagensActivity, "Erro ao enviar arquivo.", Toast.LENGTH_LONG).show()
                     }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    TelemetryLogger.logHandled(this@MensagensActivity, "mensagem_enviar_arquivo", e)
                     Toast.makeText(this@MensagensActivity, e.message ?: "Erro ao enviar arquivo.", Toast.LENGTH_LONG).show()
                 }
             }

@@ -44,6 +44,7 @@ class DocumentosActivity : AppCompatActivity() {
     private var primeiroLoad = true
     private var anosDisponiveis: List<String> = emptyList()
     private lateinit var tvUltimoAsoDoc: android.widget.TextView
+    private lateinit var offlineStore: OfflineDocsStore
 
     private val debounceHandler = Handler(Looper.getMainLooper())
     private val debounceRunnable = Runnable { carregarComFiltros() }
@@ -54,6 +55,7 @@ class DocumentosActivity : AppCompatActivity() {
 
         session = SessionManager(this)
         api = ApiClient(session)
+        offlineStore = OfflineDocsStore(this)
 
         swipe = findViewById(R.id.swipeDocs)
         rv = findViewById(R.id.rvDocs)
@@ -68,6 +70,9 @@ class DocumentosActivity : AppCompatActivity() {
         // Botão histórico de assinaturas
         findViewById<MaterialButton>(R.id.btnHistoricoAss).setOnClickListener {
             startActivity(Intent(this, HistoricoAssinaturasActivity::class.java))
+        }
+        findViewById<MaterialButton>(R.id.btnOfflineDocs).setOnClickListener {
+            abrirListaOffline()
         }
 
         // Busca por nome
@@ -147,7 +152,13 @@ class DocumentosActivity : AppCompatActivity() {
                         scrollToArquivo(scrollToArquivoId)
                     }
                 } else {
-                    Toast.makeText(this@DocumentosActivity, docs.erro ?: "Falha ao carregar", Toast.LENGTH_LONG).show()
+                    val offline = offlineStore.toDocumentoItems()
+                    if (offline.isNotEmpty()) {
+                        adapter.replaceAll(emptyList(), offline)
+                        Toast.makeText(this@DocumentosActivity, "Sem conexão. Exibindo documentos offline.", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(this@DocumentosActivity, docs.erro ?: "Falha ao carregar", Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }
@@ -182,6 +193,19 @@ class DocumentosActivity : AppCompatActivity() {
 
     private fun baixarDocumento(item: DocumentoItem) {
         val path = item.app_download_url
+        if (!path.isNullOrBlank() && path.startsWith("offline://")) {
+            val id = path.removePrefix("offline://").toIntOrNull()
+            val offline = id?.let { offlineStore.findById(it) }
+            if (offline != null) {
+                val file = File(offline.path)
+                if (file.exists()) {
+                    abrirArquivo(file)
+                    return
+                }
+            }
+            Toast.makeText(this, "Arquivo offline não encontrado", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (path.isNullOrBlank()) {
             Toast.makeText(this, "Link de download indisponível", Toast.LENGTH_SHORT).show()
             return
@@ -191,9 +215,7 @@ class DocumentosActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val bytes = api.downloadFile(path)
-                val fileName = item.nome_arquivo ?: "documento_${item.id}.pdf"
-                val file = File(cacheDir, fileName)
-                file.writeBytes(bytes)
+                val file = offlineStore.saveDownloaded(item, bytes)
 
                 withContext(Dispatchers.Main) {
                     swipe.isRefreshing = false
@@ -202,10 +224,29 @@ class DocumentosActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     swipe.isRefreshing = false
+                    TelemetryLogger.logHandled(this@DocumentosActivity, "documentos_download", e)
                     Toast.makeText(this@DocumentosActivity, e.message ?: "Erro no download", Toast.LENGTH_LONG).show()
                 }
             }
         }
+    }
+
+    private fun abrirListaOffline() {
+        val offline = offlineStore.list()
+        if (offline.isEmpty()) {
+            Toast.makeText(this, "Nenhum documento offline salvo.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val labels = offline.map { "${it.nome} (${java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.getDefault()).format(java.util.Date(it.salvoEm))})" }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Documentos offline")
+            .setItems(labels.toTypedArray()) { _, which ->
+                val sel = offline[which]
+                val file = File(sel.path)
+                if (file.exists()) abrirArquivo(file)
+                else Toast.makeText(this, "Arquivo não encontrado", Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
 
     private fun assinarDocumento(item: DocumentoItem) {

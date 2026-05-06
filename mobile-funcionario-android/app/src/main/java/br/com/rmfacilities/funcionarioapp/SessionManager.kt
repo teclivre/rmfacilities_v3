@@ -25,15 +25,21 @@ class SessionManager(private val context: Context) {
         get() = prefs.getString("biometric_cpf", "") ?: ""
         set(value) = prefs.edit().putString("biometric_cpf", value).apply()
 
+    var notificationsEnabled: Boolean
+        get() = prefs.getBoolean("notifications_enabled", true)
+        set(value) = prefs.edit().putBoolean("notifications_enabled", value).apply()
+
     fun clear() {
         val base = apiBaseUrl
         val bio = biometricEnabled
         val bioCpf = biometricCpf
+        val notif = notificationsEnabled
         val refresh = refreshToken
         prefs.edit().clear().apply()
         apiBaseUrl = base
         biometricEnabled = bio
         biometricCpf = bioCpf
+        notificationsEnabled = notif
         if (bio && bioCpf.isNotBlank() && refresh.isNotBlank()) {
             refreshToken = refresh
         }

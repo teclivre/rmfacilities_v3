@@ -24,7 +24,7 @@ class FcmService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         val session = SessionManager(applicationContext)
-        if (session.accessToken.isNotBlank()) {
+        if (session.notificationsEnabled && session.accessToken.isNotBlank()) {
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     ApiClient(session).registrarPushToken(token)
@@ -35,6 +35,8 @@ class FcmService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
+        val session = SessionManager(applicationContext)
+        if (!session.notificationsEnabled) return
         val data = message.data
         val tipo = data["tipo"] ?: ""
         val arquivoId = data["arquivo_id"]?.toIntOrNull() ?: -1

@@ -39,6 +39,7 @@ class LoginActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        TelemetryLogger.init(this)
         setContentView(R.layout.activity_login)
 
         session = SessionManager(this)

@@ -2,15 +2,23 @@ package br.com.rmfacilities.funcionarioapp
 
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import okhttp3.Authenticator
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 
 class ApiClient(private val session: SessionManager) {
     private val gson = Gson()
-    private val http = OkHttpClient.Builder().build()
+    private val refreshHttp = OkHttpClient.Builder().build()
+    private val refreshLock = Any()
+    private val http = OkHttpClient.Builder()
+        .authenticator(Authenticator { _, response ->
+            authRetryRequest(response)
+        })
+        .build()
 
     private fun parseErro(raw: String, fallback: String): String {
         return try {
@@ -23,6 +31,73 @@ class ApiClient(private val session: SessionManager) {
 
     private fun handleUnauthorized() {
         session.logout()
+    }
+
+    private fun responseCount(response: Response): Int {
+        var count = 1
+        var prior = response.priorResponse
+        while (prior != null) {
+            count++
+            prior = prior.priorResponse
+        }
+        return count
+    }
+
+    private fun refreshWithToken(refreshToken: String): LoginResponse {
+        val payload = gson.toJson(mapOf("refresh_token" to refreshToken))
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/refresh"))
+            .post(payload.toRequestBody("application/json".toMediaType()))
+            .addHeader("Content-Type", "application/json")
+            .build()
+
+        refreshHttp.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                return LoginResponse(ok = false, erro = parseErro(raw, "Não foi possível renovar a sessão."))
+            }
+            return try {
+                gson.fromJson(raw, LoginResponse::class.java)
+            } catch (_: Exception) {
+                LoginResponse(ok = false, erro = "Resposta inesperada do servidor.")
+            }
+        }
+    }
+
+    private fun authRetryRequest(response: Response): Request? {
+        val authHeader = response.request.header("Authorization") ?: return null
+        if (!authHeader.startsWith("Bearer ")) return null
+        if (response.request.url.encodedPath.endsWith("/api/app/funcionario/refresh")) return null
+        if (responseCount(response) >= 2) return null
+
+        val tokenUsado = authHeader.removePrefix("Bearer ").trim()
+        synchronized(refreshLock) {
+            val atual = session.accessToken.trim()
+            if (atual.isNotBlank() && atual != tokenUsado) {
+                return response.request.newBuilder()
+                    .header("Authorization", "Bearer $atual")
+                    .build()
+            }
+
+            val refresh = session.refreshToken.trim()
+            if (refresh.isBlank()) return null
+
+            val renovado = try {
+                refreshWithToken(refresh)
+            } catch (_: Exception) {
+                null
+            } ?: return null
+
+            if (!renovado.ok || renovado.access_token.isNullOrBlank()) return null
+            session.accessToken = renovado.access_token
+            if (!renovado.refresh_token.isNullOrBlank()) {
+                session.refreshToken = renovado.refresh_token
+            }
+
+            return response.request.newBuilder()
+                .header("Authorization", "Bearer ${session.accessToken}")
+                .build()
+        }
     }
 
     private fun tentarRenovarSessao(): Boolean {
@@ -97,24 +172,7 @@ class ApiClient(private val session: SessionManager) {
     }
 
     fun renovarSessao(refreshToken: String): LoginResponse {
-        val payload = gson.toJson(mapOf("refresh_token" to refreshToken))
-        val req = Request.Builder()
-            .url(url("/api/app/funcionario/refresh"))
-            .post(payload.toRequestBody("application/json".toMediaType()))
-            .addHeader("Content-Type", "application/json")
-            .build()
-
-        http.newCall(req).execute().use { resp ->
-            val raw = resp.body?.string().orEmpty()
-            if (!resp.isSuccessful) {
-                return LoginResponse(ok = false, erro = parseErro(raw, "Não foi possível renovar a sessão."))
-            }
-            return try {
-                gson.fromJson(raw, LoginResponse::class.java)
-            } catch (_: Exception) {
-                LoginResponse(ok = false, erro = "Resposta inesperada do servidor.")
-            }
-        }
+        return refreshWithToken(refreshToken)
     }
 
     fun atualizarContato(email: String, telefone: String): ContatoUpdateResponse {

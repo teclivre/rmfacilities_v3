@@ -48,6 +48,18 @@
             android:text="Histórico"
             android:textColor="#4da6ff"
             android:textSize="12.5sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnOfflineDocs"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:minWidth="0dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:text="Offline"
+                android:textColor="#4da6ff"
+                android:textSize="12sp" />
     </LinearLayout>
 
     <!-- Busca e filtros -->

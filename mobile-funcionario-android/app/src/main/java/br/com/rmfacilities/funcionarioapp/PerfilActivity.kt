@@ -1,6 +1,7 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.graphics.BitmapFactory
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.ImageView
@@ -48,11 +49,14 @@ class PerfilActivity : AppCompatActivity() {
                         fotoUrlAtual = r.foto_url
                         exibirFotoDosBytes(bytes)
                     } else {
+                        val queue = ActionRetryQueue(this@PerfilActivity)
+                        queue.enqueueFoto(android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP), mimeType)
                         tvFeedback.text = r.erro ?: "Falha ao enviar foto."
                     }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    TelemetryLogger.logHandled(this@PerfilActivity, "perfil_upload_foto", e)
                     tvFeedback.text = "Erro ao processar foto."
                 }
             }
@@ -70,6 +74,9 @@ class PerfilActivity : AppCompatActivity() {
 
         findViewById<com.google.android.material.button.MaterialButton>(R.id.btnSobre).setOnClickListener {
             startActivity(android.content.Intent(this, AboutActivity::class.java))
+        }
+        findViewById<com.google.android.material.button.MaterialButton>(R.id.btnConfiguracoes).setOnClickListener {
+            startActivity(Intent(this, ConfiguracoesActivity::class.java))
         }
 
         tvAvatar = findViewById(R.id.tvAvatar)

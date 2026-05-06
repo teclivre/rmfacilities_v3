@@ -348,6 +348,17 @@
                 app:strokeColor="@color/border" />
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnConfiguracoes"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginTop="10dp"
+                android:text="⚙ Configurações"
+                android:textColor="@color/accent_blue"
+                android:textSize="13sp"
+                app:strokeColor="@color/border" />
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSobre"
                 style="@style/Widget.MaterialComponents.Button.TextButton"
                 android:layout_width="match_parent"
