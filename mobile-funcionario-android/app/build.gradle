@@ -43,6 +43,14 @@ gradle.taskGraph.whenReady { taskGraph ->
 def buildVersionName = "${verMajor}.${verMinor}.${verPatch}"
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Signing ──────────────────────────────────────────────────────────────────
+def keystorePropsFile = rootProject.file("keystore.properties")
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 android {
     namespace 'br.com.rmfacilities.funcionarioapp'
     compileSdk 34
@@ -59,8 +67,20 @@ android {
         buildConfigField "String", "DEFAULT_API_BASE_URL", '"https://portal.grupormfacilities.com.br"'
     }
 
+    signingConfigs {
+        release {
+            if (keystorePropsFile.exists()) {
+                storeFile rootProject.file("app/" + keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
