@@ -1205,6 +1205,17 @@ document.addEventListener('DOMContentLoaded',()=>{
           <span class="pill p-vd" id="rh-total-ativos">Ativos: 0</span>
           <span class="pill p-az" id="rh-total-folha">Folha: R$ 0,00</span>
         </div>
+        <div id="rh-sal-toolbar" class="brow" style="display:none;justify-content:flex-start;gap:8px;flex-wrap:wrap;margin:0 12px 10px 12px">
+          <div class="f" style="min-width:260px;margin:0">
+            <label style="font-size:11px">Empresa</label>
+            <select id="rh-sal-empresa" onchange="rhSalariosOnEmpresaChange()" style="min-width:240px">
+              <option value="">Todas as empresas</option>
+            </select>
+          </div>
+          <button class="btn b-gh b-sm" type="button" onclick="rhSalariosOnEmpresaChange()">Filtrar</button>
+          <button class="btn b-az b-sm" type="button" onclick="rhSalariosExportar('xlsx')">Exportar planilha</button>
+          <button class="btn b-ghl b-sm" type="button" onclick="rhSalariosExportar('pdf')">Exportar PDF</button>
+        </div>
         <div class="tbl-wrap">
           <table class="tbl">
             <thead><tr><th>RE</th><th>Nome</th><th>Cargo/Função</th><th>Posto</th><th>Empresa</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead>
@@ -5515,6 +5526,31 @@ async function rhExportCarregarFiltros(){
   if(st) showSt('rh-exp-st','Filtros atualizados.',false);
 }
 
+function rhSalariosEmpresaAtual(){
+  return (document.getElementById('rh-sal-empresa')?.value||'').trim();
+}
+
+function rhSalariosPopularEmpresas(){
+  const sel=document.getElementById('rh-sal-empresa');
+  if(!sel) return;
+  const atual=sel.value||'';
+  sel.innerHTML='<option value="">Todas as empresas</option>'+(emps||[]).map(e=>`<option value="${e.id}">${esc(e.nome||'Empresa')}</option>`).join('');
+  if(Array.from(sel.options).some(o=>o.value===atual)) sel.value=atual;
+}
+
+function rhSalariosOnEmpresaChange(){
+  renderFuncionarios();
+}
+
+function rhSalariosExportar(formato){
+  const empresaId=rhSalariosEmpresaAtual();
+  const p=new URLSearchParams();
+  p.set('formato',formato);
+  p.set('include_salario','1');
+  if(empresaId) p.set('empresa_id',empresaId);
+  window.open('/api/funcionarios/ativos/exportar?'+p.toString(),'_blank');
+}
+
 async function renderFuncionarios(){
   const q=(document.getElementById('rh-busca')?.value||'').toLowerCase();
   funcs=await api('/api/funcionarios?q='+encodeURIComponent(q));
@@ -5523,8 +5559,9 @@ async function renderFuncionarios(){
   const tbSal=document.getElementById('tb-func-salarios');
   const totEl=document.getElementById('rh-total-ativos');
   const folhaEl=document.getElementById('rh-total-folha');
-  const wrapPadrao=document.querySelector('#pg-rh .card .tbl-wrap');
+  const wrapPadrao=document.querySelector('#pg-rh .card .tbl-wrap:not(#rh-salarios-wrap)');
   const wrapSal=document.getElementById('rh-salarios-wrap');
+  const salToolbar=document.getElementById('rh-sal-toolbar');
   if(!tb)return;
   const isAtivo=f=>((f?.status||'Ativo').toString().trim().toLowerCase()==='ativo');
   const ativosTotal=(Array.isArray(allFuncs)?allFuncs:[]).filter(isAtivo).length;
@@ -5532,6 +5569,9 @@ async function renderFuncionarios(){
   if(wrapPadrao && wrapSal){
     wrapPadrao.style.display=rhFuncTab==='salarios'?'none':'';
     wrapSal.style.display=rhFuncTab==='salarios'?'':'none';
+  }
+  if(salToolbar){
+    salToolbar.style.display=rhFuncTab==='salarios'?'flex':'none';
   }
   const lista=(Array.isArray(funcs)?funcs:[]).filter(f=>rhFuncTab==='ativos'?isAtivo(f):!isAtivo(f));
   const tabAt=document.getElementById('rh-tab-ativos');
@@ -5542,12 +5582,17 @@ async function renderFuncionarios(){
   if(tabSal) tabSal.className=rhFuncTab==='salarios'?'btn b-az b-sm':'btn b-gh b-sm';
 
   if(rhFuncTab==='salarios'){
-    const listaSal=(Array.isArray(funcs)?funcs:[]).filter(isAtivo);
+    rhSalariosPopularEmpresas();
+    const empresaId=rhSalariosEmpresaAtual();
+    let listaSal=(Array.isArray(funcs)?funcs:[]).filter(isAtivo);
+    if(empresaId){
+      listaSal=listaSal.filter(f=>String(f.empresa_id||'')===String(empresaId));
+    }
     const folhaTotal=listaSal.reduce((acc,f)=>acc+(Number(f?.salario)||0),0);
     if(folhaEl) folhaEl.textContent='Folha: '+brl(folhaTotal);
     if(!tbSal) return;
     if(!listaSal.length){
-      tbSal.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:#999">Nenhum colaborador ativo encontrado para pagamento.</td></tr>';
+      tbSal.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:#999">Nenhum colaborador ativo encontrado para o filtro selecionado.</td></tr>';
       return;
     }
     tbSal.innerHTML=listaSal.map(f=>{
