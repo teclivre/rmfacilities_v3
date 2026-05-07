@@ -1093,16 +1093,22 @@ document.addEventListener('DOMContentLoaded',()=>{
           <span class="pill p-az" id="rh-total-folha">Folha: R$ 0,00</span>
         </div>
         <div id="rh-sal-toolbar" class="brow" style="display:none;justify-content:flex-start;gap:8px;flex-wrap:wrap;margin:0 12px 10px 12px">
+          <div class="f" style="min-width:180px;margin:0">
+            <label style="font-size:11px">Competência</label>
+            <input id="rh-sal-comp" type="month" onchange="rhSalariosOnEmpresaChange()" style="min-width:160px">
+          </div>
           <div class="f" style="min-width:260px;margin:0">
             <label style="font-size:11px">Empresa</label>
             <select id="rh-sal-empresa" onchange="rhSalariosOnEmpresaChange()" style="min-width:240px">
               <option value="">Todas as empresas</option>
             </select>
           </div>
-          <button class="btn b-gh b-sm" type="button" onclick="rhSalariosOnEmpresaChange()">Filtrar</button>
+          <button class="btn b-gh b-sm" type="button" onclick="rhSalariosOnEmpresaChange()">Carregar</button>
+          <button class="btn b-az b-sm" type="button" onclick="rhSalariosSalvar()">Salvar valores</button>
           <button class="btn b-az b-sm" type="button" onclick="rhSalariosExportar('xlsx')">Exportar planilha</button>
           <button class="btn b-ghl b-sm" type="button" onclick="rhSalariosExportar('pdf')">Exportar PDF</button>
         </div>
+        <div id="rh-sal-res" style="display:none;margin:0 12px 10px 12px;color:#6d7a8c;font-size:13px"></div>
         <div class="tbl-wrap">
           <table class="tbl">
             <thead><tr><th>RE</th><th>Nome</th><th>Cargo/Função</th><th>Posto</th><th>Empresa</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead>
@@ -1111,7 +1117,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div class="tbl-wrap" id="rh-salarios-wrap" style="display:none">
           <table class="tbl">
-            <thead><tr><th>RE</th><th>Nome</th><th>Cargo</th><th>Posto</th><th>Empresa</th><th>Status</th><th style="text-align:right">Salário</th><th>Ações</th></tr></thead>
+            <thead><tr><th>RE</th><th>Nome</th><th>Cargo</th><th>Posto</th><th>Empresa</th><th style="text-align:right">Salário líquido</th><th style="text-align:right">Total anual</th><th>Ações</th></tr></thead>
             <tbody id="tb-func-salarios"></tbody>
           </table>
         </div>
@@ -5427,6 +5433,16 @@ function rhSalariosEmpresaAtual(){
   return (document.getElementById('rh-sal-empresa')?.value||'').trim();
 }
 
+function rhSalariosCompetenciaAtual(){
+  const inp=document.getElementById('rh-sal-comp');
+  if(!inp) return '';
+  if(!inp.value){
+    const d=new Date();
+    inp.value=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+  return (inp.value||'').trim();
+}
+
 function rhSalariosPopularEmpresas(){
   const sel=document.getElementById('rh-sal-empresa');
   if(!sel) return;
@@ -5439,13 +5455,50 @@ function rhSalariosOnEmpresaChange(){
   renderFuncionarios();
 }
 
+function rhSalariosAtualizarTotalTela(){
+  const folhaEl=document.getElementById('rh-total-folha');
+  if(!folhaEl) return;
+  const total=Array.from(document.querySelectorAll('#tb-func-salarios .rh-sal-valor')).reduce((acc,el)=>acc+(parseFloat((el.value||'').replace(',','.'))||0),0);
+  folhaEl.textContent='Folha: '+brl(total);
+}
+
 function rhSalariosExportar(formato){
+  const comp=rhSalariosCompetenciaAtual();
   const empresaId=rhSalariosEmpresaAtual();
+  if(!/^\d{4}-\d{2}$/.test(comp)){
+    showSt('st-rh','Competência inválida. Use AAAA-MM.',true);
+    return;
+  }
   const p=new URLSearchParams();
-  p.set('formato',formato);
-  p.set('include_salario','1');
+  p.set('competencia',comp);
   if(empresaId) p.set('empresa_id',empresaId);
-  window.open('/api/funcionarios/ativos/exportar?'+p.toString(),'_blank');
+  window.open('/api/financeiro/salarios/export.'+(formato==='pdf'?'pdf':'xlsx')+'?'+p.toString(),'_blank');
+}
+
+async function rhSalariosSalvar(){
+  const comp=rhSalariosCompetenciaAtual();
+  const empresaId=rhSalariosEmpresaAtual();
+  if(!/^\d{4}-\d{2}$/.test(comp)){
+    showSt('st-rh','Competência inválida. Use AAAA-MM.',true);
+    return;
+  }
+  const valores=Array.from(document.querySelectorAll('#tb-func-salarios .rh-sal-valor')).map(el=>({
+    funcionario_id:parseInt(el.dataset.fid||'0',10),
+    valor_liquido:el.value
+  })).filter(it=>it.funcionario_id>0);
+  if(!valores.length){
+    showSt('st-rh','Nenhum colaborador disponível para salvar.',true);
+    return;
+  }
+  const body={competencia:comp,valores};
+  if(empresaId) body.empresa_id=parseInt(empresaId,10);
+  const r=await api('/api/financeiro/salarios','POST',body);
+  if(r?.erro){
+    showSt('st-rh',r.erro,true);
+    return;
+  }
+  showSt('st-rh',`Pagamentos salvos para ${comp} (${r.alterados||0} alteração(ões)).`,false);
+  await renderFuncionarios();
 }
 
 async function renderFuncionarios(){
@@ -5459,6 +5512,7 @@ async function renderFuncionarios(){
   const wrapPadrao=document.querySelector('#pg-rh .card .tbl-wrap:not(#rh-salarios-wrap)');
   const wrapSal=document.getElementById('rh-salarios-wrap');
   const salToolbar=document.getElementById('rh-sal-toolbar');
+  const salResumo=document.getElementById('rh-sal-res');
   if(!tb)return;
   const isAtivo=f=>((f?.status||'Ativo').toString().trim().toLowerCase()==='ativo');
   const ativosTotal=(Array.isArray(allFuncs)?allFuncs:[]).filter(isAtivo).length;
@@ -5470,6 +5524,9 @@ async function renderFuncionarios(){
   if(salToolbar){
     salToolbar.style.display=rhFuncTab==='salarios'?'flex':'none';
   }
+  if(salResumo){
+    salResumo.style.display=rhFuncTab==='salarios'?'block':'none';
+  }
   const lista=(Array.isArray(funcs)?funcs:[]).filter(f=>rhFuncTab==='ativos'?isAtivo(f):!isAtivo(f));
   const tabAt=document.getElementById('rh-tab-ativos');
   const tabIn=document.getElementById('rh-tab-inativos');
@@ -5480,32 +5537,59 @@ async function renderFuncionarios(){
 
   if(rhFuncTab==='salarios'){
     rhSalariosPopularEmpresas();
+    const comp=rhSalariosCompetenciaAtual();
     const empresaId=rhSalariosEmpresaAtual();
-    let listaSal=(Array.isArray(funcs)?funcs:[]).filter(isAtivo);
-    if(empresaId){
-      listaSal=listaSal.filter(f=>String(f.empresa_id||'')===String(empresaId));
+    if(!/^\d{4}-\d{2}$/.test(comp)){
+      if(folhaEl) folhaEl.textContent='Folha: R$ 0,00';
+      if(tbSal) tbSal.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:#c33">Competência inválida. Use AAAA-MM.</td></tr>';
+      if(salResumo) salResumo.textContent='';
+      return;
     }
-    const folhaTotal=listaSal.reduce((acc,f)=>acc+(Number(f?.salario)||0),0);
-    if(folhaEl) folhaEl.textContent='Folha: '+brl(folhaTotal);
     if(!tbSal) return;
+    const p=new URLSearchParams();
+    p.set('competencia',comp);
+    if(empresaId) p.set('empresa_id',empresaId);
+    const rSal=await api('/api/financeiro/salarios?'+p.toString());
+    if(rSal?.erro){
+      if(folhaEl) folhaEl.textContent='Folha: R$ 0,00';
+      tbSal.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:#c33">Erro ao carregar pagamentos mensais.</td></tr>';
+      if(salResumo) salResumo.textContent=rSal.erro;
+      return;
+    }
+    let listaSal=Array.isArray(rSal?.itens)?rSal.itens:[];
+    if(q){
+      listaSal=listaSal.filter(f=>[
+        f.nome||'',
+        String(f.re||''),
+        f.cpf||'',
+        f.cargo||'',
+        f.posto_operacional||'',
+        f.empresa_nome||''
+      ].join(' ').toLowerCase().includes(q));
+    }
+    const folhaTotal=listaSal.reduce((acc,f)=>acc+(Number(f?.valor_liquido)||0),0);
+    if(folhaEl) folhaEl.textContent='Folha: '+brl(folhaTotal || rSal.total_competencia || 0);
+    const empNome=empresaId?((emps||[]).find(e=>String(e.id)===String(empresaId))?.nome||'Empresa selecionada'):'Todas as empresas';
+    if(salResumo) salResumo.textContent=`${listaSal.length} colaborador(es) · ${empNome} · Competência ${comp}`;
     if(!listaSal.length){
       tbSal.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:#999">Nenhum colaborador ativo encontrado para o filtro selecionado.</td></tr>';
       return;
     }
     tbSal.innerHTML=listaSal.map(f=>{
-      const emp=emps.find(e=>e.id===f.empresa_id);
-      const salario=Number(f?.salario)||0;
-      return `<tr class="row-clickable" onclick="openModalFunc('editar',${f.id})">
-        <td style="font-weight:700">${f.re||'—'}</td>
+      const valor=Number(f?.valor_liquido)||0;
+      const totalAnual=Number(f?.total_anual_funcionario)||0;
+      return `<tr>
+        <td style="font-weight:700">${f.re||f.matricula||'—'}</td>
         <td><div style="font-weight:700">${f.nome}</div><div style="font-size:11px;color:#888">${fmtDoc(f.cpf)||''}</div></td>
         <td>${f.cargo||'—'}</td>
         <td style="font-size:11px">${f.posto_operacional||'Reserva tecnica'}</td>
-        <td>${emp?emp.nome:'—'}</td>
-        <td><span class="pill p-vd">${f.status||'Ativo'}</span></td>
-        <td style="text-align:right;font-weight:700;color:var(--verde)">${brl(salario)}</td>
-        <td><button class="btn b-gh b-sm" onclick="event.stopPropagation();openModalFunc('editar',${f.id})">Editar</button></td>
+        <td>${f.empresa_nome||'—'}</td>
+        <td style="text-align:right"><input class="rh-sal-valor" data-fid="${f.funcionario_id}" type="number" min="0" step="0.01" value="${valor.toFixed(2)}" style="width:150px;text-align:right" oninput="rhSalariosAtualizarTotalTela()"></td>
+        <td style="text-align:right;font-weight:700;color:var(--azul)">${brl(totalAnual)}</td>
+        <td><button class="btn b-gh b-sm" onclick="openModalFunc('editar',${f.funcionario_id})">Editar funcionário</button></td>
       </tr>`;
     }).join('');
+    rhSalariosAtualizarTotalTela();
     return;
   }
 

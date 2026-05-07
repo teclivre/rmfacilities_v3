@@ -11201,6 +11201,300 @@ def _api_beneficios_pdf_tipo(tipo):
     nome=f"relatorio_{sigla}_competencia_{comp_nome}.pdf"
     return send_file(buf,mimetype='application/pdf',as_attachment=False,download_name=nome)
 
+def _financeiro_salarios_competencia(comp, empresa_id=None):
+    qf=Funcionario.query.filter_by(status='Ativo')
+    if empresa_id:
+        qf=qf.filter_by(empresa_id=empresa_id)
+    funcs_ativos=qf.order_by(Funcionario.nome).all()
+
+    qb=BeneficioMensal.query.filter_by(competencia=comp)
+    if empresa_id:
+        qb=qb.filter_by(empresa_id=empresa_id)
+    mapa_comp={b.funcionario_id:b for b in qb.all()}
+
+    ano=(comp[:4] if isinstance(comp,str) and len(comp)>=7 and '-' in comp else '')
+    totais_anuais={}
+    if ano:
+        qa=BeneficioMensal.query.filter(BeneficioMensal.competencia.like(f'{ano}-%'))
+        if empresa_id:
+            qa=qa.filter_by(empresa_id=empresa_id)
+        for reg in qa.all():
+            totais_anuais[reg.funcionario_id]=totais_anuais.get(reg.funcionario_id,0.0)+float(reg.salario or 0)
+
+    itens=[]
+    total_competencia=0.0
+    total_anual=0.0
+    for f in funcs_ativos:
+        emp=Empresa.query.get(f.empresa_id) if f.empresa_id else None
+        cli=Cliente.query.get(f.posto_cliente_id) if f.posto_cliente_id else None
+        posto_nome=(cli.nome.strip() if cli and (cli.nome or '').strip() else (f.posto_operacional or 'Reserva tecnica'))
+        reg=mapa_comp.get(f.id)
+        valor_liquido=float(reg.salario if reg and reg.salario is not None else (f.salario or 0) or 0)
+        total_funcionario=float(totais_anuais.get(f.id,0) or 0)
+        total_competencia+=valor_liquido
+        total_anual+=total_funcionario
+        itens.append({
+            'funcionario_id':f.id,
+            'matricula':f.matricula or '',
+            're':f.re or '',
+            'nome':f.nome or '',
+            'cpf':f.cpf or '',
+            'cargo':f.cargo or '',
+            'posto_operacional':posto_nome,
+            'empresa_id':f.empresa_id,
+            'empresa_nome':(emp.nome if emp else ''),
+            'competencia':comp,
+            'status':f.status or 'Ativo',
+            'salario_base':float(f.salario or 0),
+            'valor_liquido':valor_liquido,
+            'total_anual_funcionario':total_funcionario,
+        })
+    return {
+        'competencia':comp,
+        'empresa_id':empresa_id,
+        'total_funcionarios':len(itens),
+        'total_competencia':total_competencia,
+        'total_anual':total_anual,
+        'itens':itens,
+    }
+
+def _financeiro_salarios_grupos(comp, empresa_id=None):
+    resumo=_financeiro_salarios_competencia(comp,empresa_id=empresa_id)
+    grupos={}
+    for item in resumo['itens']:
+        chave=item.get('empresa_id') or 0
+        grupos.setdefault(chave,[]).append(item)
+    empresas=[]
+    total_geral=0.0
+    for emp_id,items in sorted(grupos.items(),key=lambda kv:((kv[1][0].get('empresa_nome') or 'Sem empresa').lower(),kv[0])):
+        nome_emp=(items[0].get('empresa_nome') or 'Sem empresa')
+        total_emp=sum(float(it.get('valor_liquido') or 0) for it in items)
+        total_geral+=total_emp
+        empresas.append({
+            'empresa_id':emp_id,
+            'empresa_nome':nome_emp,
+            'qtd':len(items),
+            'total':total_emp,
+            'itens':items,
+        })
+    return resumo,empresas,total_geral
+
+@app.route('/api/financeiro/salarios',methods=['GET'])
+@lr
+def api_financeiro_salarios():
+    comp=norm_competencia(request.args.get('competencia'))
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    return jsonify({'ok':True,**_financeiro_salarios_competencia(comp,empresa_id=empresa_id)})
+
+@app.route('/api/financeiro/salarios',methods=['POST'])
+@lr
+def api_financeiro_salarios_salvar():
+    d=request.json or {}
+    comp=norm_competencia(d.get('competencia'))
+    empresa_id=to_num(d.get('empresa_id')) or None
+    valores=d.get('valores') or d.get('itens') or []
+    if not isinstance(valores,list):
+        return jsonify({'erro':'Lista de valores inválida.'}),400
+
+    alterados=0
+    salvos=0
+    for it in valores:
+        fid=to_num(it.get('funcionario_id'))
+        if not fid:
+            continue
+        f=Funcionario.query.get(fid)
+        if not f or (str(f.status or 'Ativo').strip().lower()!='ativo'):
+            continue
+        if empresa_id and int(f.empresa_id or 0)!=int(empresa_id):
+            continue
+        reg=BeneficioMensal.query.filter_by(funcionario_id=fid,competencia=comp).first()
+        if not reg:
+            reg=BeneficioMensal(funcionario_id=fid,competencia=comp)
+            db.session.add(reg)
+        valor=to_num(it.get('valor_liquido') if 'valor_liquido' in it else it.get('salario'),dec=True)
+        novo_valor=float(valor or 0)
+        anterior=float(reg.salario or 0)
+        reg.empresa_id=f.empresa_id
+        reg.salario=novo_valor
+        salvos+=1
+        if abs(anterior-novo_valor)>0.0001:
+            alterados+=1
+
+    db.session.commit()
+    return jsonify({'ok':True,'competencia':comp,'salvos':salvos,'alterados':alterados})
+
+@app.route('/api/financeiro/salarios/export.xlsx')
+@lr
+def api_financeiro_salarios_export_xlsx():
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    comp=norm_competencia(request.args.get('competencia'))
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    resumo,empresas,total_geral=_financeiro_salarios_grupos(comp,empresa_id=empresa_id)
+    if not empresas:
+        return jsonify({'erro':'Nenhum funcionário ativo encontrado para a competência informada.'}),400
+
+    wb=Workbook()
+    first=True
+    header_fill=PatternFill('solid',fgColor='205D8A')
+    total_fill=PatternFill('solid',fgColor='EAF2FB')
+    header_font=Font(bold=True,color='FFFFFF',size=10)
+    total_font=Font(bold=True,size=10)
+    normal_font=Font(size=10)
+    left=Alignment(horizontal='left',vertical='center')
+    right=Alignment(horizontal='right',vertical='center')
+    center=Alignment(horizontal='center',vertical='center')
+    thin=Side(style='thin',color='D0D7DE')
+    border=Border(left=thin,right=thin,top=thin,bottom=thin)
+    comp_fmt=f"{comp[5:7]}/{comp[:4]}" if isinstance(comp,str) and len(comp)>=7 and '-' in comp else str(comp)
+
+    for grupo in empresas:
+        ws=wb.active if first else wb.create_sheet()
+        first=False
+        nome_emp=(grupo['empresa_nome'] or 'Sem empresa')
+        ws.title=nome_emp[:31].replace('/','_').replace('\\','_').replace('?','').replace('*','').replace('[','').replace(']','').replace(':','')
+        ws.append([f'Pagamento de salário líquido — {nome_emp}'])
+        ws.append([f'Competência: {comp_fmt}'])
+        ws.append([])
+        headers=['RE','Colaborador','CPF','Cargo','Posto','Salário líquido (R$)','Total anual pago (R$)']
+        ws.append(headers)
+        for col_idx,_ in enumerate(headers,1):
+            cell=ws.cell(row=4,column=col_idx)
+            cell.fill=header_fill
+            cell.font=header_font
+            cell.alignment=center
+            cell.border=border
+        for item in grupo['itens']:
+            row=[
+                item.get('re') or item.get('matricula') or '',
+                item.get('nome') or '',
+                item.get('cpf') or '',
+                item.get('cargo') or '',
+                item.get('posto_operacional') or '',
+                float(item.get('valor_liquido') or 0),
+                float(item.get('total_anual_funcionario') or 0),
+            ]
+            ws.append(row)
+            dr=ws.max_row
+            for ci,val in enumerate(row,1):
+                cell=ws.cell(row=dr,column=ci)
+                cell.font=normal_font
+                cell.border=border
+                if ci>=6:
+                    cell.number_format='#,##0.00'
+                    cell.alignment=right
+                else:
+                    cell.alignment=left
+        qr=ws.max_row+1
+        ws.cell(row=qr,column=6,value='Funcionários:').font=total_font
+        ws.cell(row=qr,column=6).alignment=right
+        ws.cell(row=qr,column=6).fill=total_fill
+        ws.cell(row=qr,column=7,value=grupo['qtd']).font=total_font
+        ws.cell(row=qr,column=7).alignment=right
+        ws.cell(row=qr,column=7).fill=total_fill
+
+        tr=ws.max_row+1
+        ws.cell(row=tr,column=6,value='Total da empresa:').font=total_font
+        ws.cell(row=tr,column=6).alignment=right
+        ws.cell(row=tr,column=6).fill=total_fill
+        tc=ws.cell(row=tr,column=7,value=float(grupo['total'] or 0))
+        tc.font=total_font
+        tc.alignment=right
+        tc.number_format='#,##0.00'
+        tc.fill=total_fill
+        widths=[10,34,18,22,26,18,18]
+        for i,w in enumerate(widths,1):
+            ws.column_dimensions[get_column_letter(i)].width=w
+        ws.cell(row=1,column=1).font=Font(bold=True,size=12)
+
+    resumo_ws=wb.create_sheet('Resumo')
+    resumo_ws.append(['Competência',comp_fmt])
+    resumo_ws.append(['Total de funcionários',resumo['total_funcionarios']])
+    resumo_ws.append(['Total da competência',float(resumo['total_competencia'] or 0)])
+    resumo_ws.append(['Total anual pago',float(resumo['total_anual'] or 0)])
+    resumo_ws.append(['Total geral exportado',float(total_geral or 0)])
+    for row in (3,4,5):
+        resumo_ws.cell(row=row,column=2).number_format='#,##0.00'
+    resumo_ws.column_dimensions['A'].width=24
+    resumo_ws.column_dimensions['B'].width=20
+
+    buf=io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    comp_nome=f"{comp[5:7]}-{comp[:4]}" if isinstance(comp,str) and len(comp)>=7 and '-' in comp else str(comp)
+    nome=f"pagamento_salarios_{comp_nome}.xlsx"
+    return send_file(buf,mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',as_attachment=True,download_name=nome)
+
+@app.route('/api/financeiro/salarios/export.pdf')
+@lr
+def api_financeiro_salarios_export_pdf():
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer
+    from reportlab.lib.styles import ParagraphStyle
+
+    comp=norm_competencia(request.args.get('competencia'))
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    resumo,empresas,total_geral=_financeiro_salarios_grupos(comp,empresa_id=empresa_id)
+    if not empresas:
+        return jsonify({'erro':'Nenhum funcionário ativo encontrado para a competência informada.'}),400
+
+    def _esc(v):
+        s=str(v or '')
+        return s.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+
+    buf=io.BytesIO()
+    doc=SimpleDocTemplate(buf,pagesize=A4,leftMargin=1.2*cm,rightMargin=1.2*cm,topMargin=1.2*cm,bottomMargin=1.2*cm)
+    st_title=ParagraphStyle('t',fontName='Helvetica-Bold',fontSize=12,leading=14,textColor=colors.HexColor('#205d8a'))
+    st_text=ParagraphStyle('n',fontName='Helvetica',fontSize=9,leading=11)
+    st_cell=ParagraphStyle('c',fontName='Helvetica',fontSize=8.2,leading=10)
+    st_num=ParagraphStyle('r',fontName='Helvetica',fontSize=8.2,leading=10,alignment=2)
+    story=[]
+
+    for grupo in empresas:
+        story.append(Paragraph(f"Pagamento de salário líquido — {_esc(grupo['empresa_nome'])}",st_title))
+        story.append(Paragraph(f"Competência: {_esc(comp)}",st_text))
+        story.append(Spacer(1,6))
+        rows=[[Paragraph('<b>RE</b>',st_cell),Paragraph('<b>Colaborador</b>',st_cell),Paragraph('<b>CPF</b>',st_cell),Paragraph('<b>Cargo</b>',st_cell),Paragraph('<b>Posto</b>',st_cell),Paragraph('<b>Salário líquido</b>',st_num),Paragraph('<b>Total anual</b>',st_num)]]
+        for item in grupo['itens']:
+            rows.append([
+                Paragraph(_esc(item.get('re') or item.get('matricula') or ''),st_cell),
+                Paragraph(_esc(item.get('nome') or ''),st_cell),
+                Paragraph(_esc(item.get('cpf') or ''),st_cell),
+                Paragraph(_esc(item.get('cargo') or ''),st_cell),
+                Paragraph(_esc(item.get('posto_operacional') or ''),st_cell),
+                Paragraph(_esc(fmt_brl(item.get('valor_liquido') or 0)),st_num),
+                Paragraph(_esc(fmt_brl(item.get('total_anual_funcionario') or 0)),st_num),
+            ])
+        rows.append(['','','','','',Paragraph('<b>Funcionários:</b>',st_num),Paragraph(_esc(str(grupo['qtd'])),st_num)])
+        rows.append(['','','','','',Paragraph('<b>Total da empresa:</b>',st_num),Paragraph(_esc(fmt_brl(grupo['total'] or 0)),st_num)])
+        tb=Table(rows,colWidths=[1.5*cm,4.4*cm,2.9*cm,3.1*cm,4.0*cm,2.3*cm,2.3*cm])
+        tb.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#205d8a')),
+            ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+            ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+            ('FONTNAME',(0,-2),(-1,-1),'Helvetica-Bold'),
+            ('GRID',(0,0),(-1,-1),0.35,colors.HexColor('#d0d7de')),
+            ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+            ('ALIGN',(5,1),(-1,-1),'RIGHT'),
+            ('TOPPADDING',(0,0),(-1,-1),4),
+            ('BOTTOMPADDING',(0,0),(-1,-1),4),
+        ]))
+        story.append(tb)
+        story.append(Spacer(1,10))
+
+    story.append(Paragraph(f"Total geral da competência: {fmt_brl(resumo['total_competencia'])}",st_text))
+    story.append(Paragraph(f"Total anual pago: {fmt_brl(resumo['total_anual'])}",st_text))
+    story.append(Paragraph(f"Total geral exportado: {fmt_brl(total_geral)}",st_text))
+    doc.build(story)
+    buf.seek(0)
+    comp_nome=f"{comp[5:7]}-{comp[:4]}" if isinstance(comp,str) and len(comp)>=7 and '-' in comp else str(comp)
+    nome=f"pagamento_salarios_{comp_nome}.pdf"
+    return send_file(buf,mimetype='application/pdf',as_attachment=False,download_name=nome)
+
 @app.route('/api/dashboard')
 @lr
 def api_dashboard():
