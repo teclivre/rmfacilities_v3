@@ -1114,6 +1114,27 @@ class BeneficioMensal(db.Model):
         d['atualizado_fmt']=self.atualizado_em.strftime('%d/%m/%Y %H:%M') if self.atualizado_em else ''
         return d
 
+class FolhaPagamentoMensal(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    competencia=db.Column(db.String(7),nullable=False,index=True)
+    empresa_ref_id=db.Column(db.Integer,nullable=False,default=0,index=True)
+    empresa_nome=db.Column(db.String(200),default='Todas as empresas')
+    total_funcionarios=db.Column(db.Integer,default=0)
+    total_competencia=db.Column(db.Float,default=0)
+    dados_json=db.Column(db.Text,default='{}')
+    salvo_por=db.Column(db.String(100))
+    salvo_em=db.Column(db.DateTime,default=utcnow,index=True)
+    __table_args__=(db.UniqueConstraint('competencia','empresa_ref_id',name='uq_folha_pagto_comp_emp'),)
+
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['salvo_fmt']=self.salvo_em.strftime('%d/%m/%Y %H:%M') if self.salvo_em else ''
+        try:
+            d['dados']=json.loads(self.dados_json or '{}')
+        except Exception:
+            d['dados']={}
+        return d
+
 class FuncionarioAppSessao(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False)
@@ -11258,6 +11279,59 @@ def _financeiro_salarios_competencia(comp, empresa_id=None):
         'itens':itens,
     }
 
+def _financeiro_salarios_chave_empresa(empresa_id=None):
+    try:
+        return int(empresa_id or 0)
+    except Exception:
+        return 0
+
+def _financeiro_salarios_aplicar_valores(comp,empresa_id,valores):
+    alterados=0
+    salvos=0
+    for it in (valores or []):
+        fid=to_num(it.get('funcionario_id'))
+        if not fid:
+            continue
+        f=Funcionario.query.get(fid)
+        if not f or (str(f.status or 'Ativo').strip().lower()!='ativo'):
+            continue
+        if empresa_id and int(f.empresa_id or 0)!=int(empresa_id):
+            continue
+        reg=BeneficioMensal.query.filter_by(funcionario_id=fid,competencia=comp).first()
+        if not reg:
+            reg=BeneficioMensal(funcionario_id=fid,competencia=comp)
+            db.session.add(reg)
+        valor=to_num(it.get('valor_liquido') if 'valor_liquido' in it else it.get('salario'),dec=True)
+        novo_valor=float(valor or 0)
+        anterior=float(reg.salario or 0)
+        reg.empresa_id=f.empresa_id
+        reg.salario=novo_valor
+        salvos+=1
+        if abs(anterior-novo_valor)>0.0001:
+            alterados+=1
+    return salvos,alterados
+
+def _financeiro_salarios_salvar_snapshot(comp,empresa_id=None,resumo=None,usuario=''):
+    resumo=resumo or _financeiro_salarios_competencia(comp,empresa_id=empresa_id)
+    empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)
+    emp_nome='Todas as empresas'
+    if empresa_ref_id:
+        emp=Empresa.query.get(empresa_ref_id)
+        if emp and (emp.nome or '').strip():
+            emp_nome=emp.nome.strip()
+
+    folha=FolhaPagamentoMensal.query.filter_by(competencia=comp,empresa_ref_id=empresa_ref_id).first()
+    if not folha:
+        folha=FolhaPagamentoMensal(competencia=comp,empresa_ref_id=empresa_ref_id)
+        db.session.add(folha)
+    folha.empresa_nome=emp_nome
+    folha.total_funcionarios=int(resumo.get('total_funcionarios') or 0)
+    folha.total_competencia=float(resumo.get('total_competencia') or 0)
+    folha.dados_json=json.dumps(resumo,ensure_ascii=False)
+    folha.salvo_por=(usuario or '').strip() or 'sistema'
+    folha.salvo_em=utcnow()
+    return folha
+
 def _financeiro_salarios_grupos(comp, empresa_id=None):
     resumo=_financeiro_salarios_competencia(comp,empresa_id=empresa_id)
     grupos={}
@@ -11284,7 +11358,20 @@ def _financeiro_salarios_grupos(comp, empresa_id=None):
 def api_financeiro_salarios():
     comp=norm_competencia(request.args.get('competencia'))
     empresa_id=to_num(request.args.get('empresa_id')) or None
-    return jsonify({'ok':True,**_financeiro_salarios_competencia(comp,empresa_id=empresa_id)})
+    resumo=_financeiro_salarios_competencia(comp,empresa_id=empresa_id)
+    folha=FolhaPagamentoMensal.query.filter_by(
+        competencia=comp,
+        empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)
+    ).first()
+    if folha:
+        resumo['folha_salva_id']=folha.id
+        resumo['folha_salva_em']=folha.salvo_em.isoformat() if folha.salvo_em else None
+        resumo['folha_salva_por']=folha.salvo_por or ''
+    else:
+        resumo['folha_salva_id']=None
+        resumo['folha_salva_em']=None
+        resumo['folha_salva_por']=''
+    return jsonify({'ok':True,**resumo})
 
 @app.route('/api/financeiro/salarios',methods=['POST'])
 @lr
@@ -11295,33 +11382,108 @@ def api_financeiro_salarios_salvar():
     valores=d.get('valores') or d.get('itens') or []
     if not isinstance(valores,list):
         return jsonify({'erro':'Lista de valores inválida.'}),400
-
-    alterados=0
-    salvos=0
-    for it in valores:
-        fid=to_num(it.get('funcionario_id'))
-        if not fid:
-            continue
-        f=Funcionario.query.get(fid)
-        if not f or (str(f.status or 'Ativo').strip().lower()!='ativo'):
-            continue
-        if empresa_id and int(f.empresa_id or 0)!=int(empresa_id):
-            continue
-        reg=BeneficioMensal.query.filter_by(funcionario_id=fid,competencia=comp).first()
-        if not reg:
-            reg=BeneficioMensal(funcionario_id=fid,competencia=comp)
-            db.session.add(reg)
-        valor=to_num(it.get('valor_liquido') if 'valor_liquido' in it else it.get('salario'),dec=True)
-        novo_valor=float(valor or 0)
-        anterior=float(reg.salario or 0)
-        reg.empresa_id=f.empresa_id
-        reg.salario=novo_valor
-        salvos+=1
-        if abs(anterior-novo_valor)>0.0001:
-            alterados+=1
+    salvos,alterados=_financeiro_salarios_aplicar_valores(comp,empresa_id,valores)
 
     db.session.commit()
     return jsonify({'ok':True,'competencia':comp,'salvos':salvos,'alterados':alterados})
+
+@app.route('/api/financeiro/salarios/fechar',methods=['POST'])
+@lr
+def api_financeiro_salarios_fechar():
+    d=request.json or {}
+    comp=norm_competencia(d.get('competencia'))
+    empresa_id=to_num(d.get('empresa_id')) or None
+    valores=d.get('valores') or []
+    if valores and not isinstance(valores,list):
+        return jsonify({'erro':'Lista de valores inválida.'}),400
+
+    salvos=0
+    alterados=0
+    if isinstance(valores,list) and valores:
+        salvos,alterados=_financeiro_salarios_aplicar_valores(comp,empresa_id,valores)
+
+    resumo=_financeiro_salarios_competencia(comp,empresa_id=empresa_id)
+    usuario=(session.get('nome') or session.get('email') or 'sistema')
+    folha=_financeiro_salarios_salvar_snapshot(comp,empresa_id=empresa_id,resumo=resumo,usuario=usuario)
+    db.session.commit()
+
+    return jsonify({
+        'ok':True,
+        'competencia':comp,
+        'salvos':salvos,
+        'alterados':alterados,
+        'folha_id':folha.id,
+        'total_funcionarios':resumo.get('total_funcionarios') or 0,
+        'total_competencia':resumo.get('total_competencia') or 0,
+        'salvo_em':(folha.salvo_em.isoformat() if folha.salvo_em else None),
+        'salvo_por':folha.salvo_por or ''
+    })
+
+@app.route('/api/financeiro/salarios/folhas',methods=['GET'])
+@lr
+def api_financeiro_salarios_folhas():
+    comp=(request.args.get('competencia') or '').strip()
+    empresa_id=to_num(request.args.get('empresa_id'))
+    q=FolhaPagamentoMensal.query
+    if comp:
+        q=q.filter_by(competencia=norm_competencia(comp))
+    if empresa_id is not None:
+        q=q.filter_by(empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id))
+    folhas=q.order_by(FolhaPagamentoMensal.salvo_em.desc()).limit(24).all()
+    return jsonify({'ok':True,'itens':[f.to_dict() for f in folhas]})
+
+@app.route('/financeiro/salarios/preview')
+@lr
+def financeiro_salarios_preview():
+    comp=norm_competencia(request.args.get('competencia'))
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    usar_salva=(request.args.get('modo') or 'salva').strip().lower()!='atual'
+
+    origem='atual'
+    resumo=None
+    folha_salva=None
+    if usar_salva:
+        folha_salva=FolhaPagamentoMensal.query.filter_by(
+            competencia=comp,
+            empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)
+        ).first()
+        if folha_salva:
+            try:
+                resumo=json.loads(folha_salva.dados_json or '{}')
+                origem='salva'
+            except Exception:
+                resumo=None
+
+    if not isinstance(resumo,dict) or not isinstance(resumo.get('itens'),list):
+        resumo=_financeiro_salarios_competencia(comp,empresa_id=empresa_id)
+
+    grupos={}
+    for item in (resumo.get('itens') or []):
+        chave=item.get('empresa_id') or 0
+        grupos.setdefault(chave,[]).append(item)
+    empresas=[]
+    for _,items in sorted(grupos.items(),key=lambda kv:((kv[1][0].get('empresa_nome') or 'Sem empresa').lower(),kv[0])):
+        nome_emp=(items[0].get('empresa_nome') or 'Sem empresa')
+        total_emp=sum(float(it.get('valor_liquido') or 0) for it in items)
+        empresas.append({
+            'empresa_nome':nome_emp,
+            'qtd':len(items),
+            'total_fmt':fmt_brl(total_emp),
+            'itens':items,
+        })
+
+    return render_template(
+        'folha_pagamento_preview.html',
+        competencia=comp,
+        origem=origem,
+        salvo_em=(folha_salva.salvo_em.strftime('%d/%m/%Y %H:%M') if folha_salva and folha_salva.salvo_em else ''),
+        salvo_por=(folha_salva.salvo_por if folha_salva else ''),
+        empresas=empresas,
+        total_funcionarios=int(resumo.get('total_funcionarios') or 0),
+        total_competencia_fmt=fmt_brl(resumo.get('total_competencia') or 0),
+        total_anual_fmt=fmt_brl(resumo.get('total_anual') or 0),
+        gerar_em=localnow().strftime('%d/%m/%Y %H:%M')
+    )
 
 @app.route('/api/financeiro/salarios/export.xlsx')
 @lr

@@ -1105,6 +1105,8 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
           <button class="btn b-gh b-sm" type="button" onclick="rhSalariosOnEmpresaChange()">Carregar</button>
           <button class="btn b-az b-sm" type="button" onclick="rhSalariosSalvar()">Salvar valores</button>
+          <button class="btn b-vd b-sm" type="button" onclick="rhSalariosSalvarFolha()">Salvar folha do mês</button>
+          <button class="btn b-gh b-sm" type="button" onclick="rhSalariosPrevia()">Prévia</button>
           <button class="btn b-az b-sm" type="button" onclick="rhSalariosExportar('xlsx')">Exportar planilha</button>
           <button class="btn b-ghl b-sm" type="button" onclick="rhSalariosExportar('pdf')">Exportar PDF</button>
         </div>
@@ -5475,6 +5477,20 @@ function rhSalariosExportar(formato){
   window.open('/api/financeiro/salarios/export.'+(formato==='pdf'?'pdf':'xlsx')+'?'+p.toString(),'_blank');
 }
 
+function rhSalariosPrevia(){
+  const comp=rhSalariosCompetenciaAtual();
+  const empresaId=rhSalariosEmpresaAtual();
+  if(!/^\d{4}-\d{2}$/.test(comp)){
+    showSt('st-rh','Competência inválida. Use AAAA-MM.',true);
+    return;
+  }
+  const p=new URLSearchParams();
+  p.set('competencia',comp);
+  p.set('modo','salva');
+  if(empresaId) p.set('empresa_id',empresaId);
+  window.open('/financeiro/salarios/preview?'+p.toString(),'_blank');
+}
+
 async function rhSalariosSalvar(){
   const comp=rhSalariosCompetenciaAtual();
   const empresaId=rhSalariosEmpresaAtual();
@@ -5498,6 +5514,32 @@ async function rhSalariosSalvar(){
     return;
   }
   showSt('st-rh',`Pagamentos salvos para ${comp} (${r.alterados||0} alteração(ões)).`,false);
+  await renderFuncionarios();
+}
+
+async function rhSalariosSalvarFolha(){
+  const comp=rhSalariosCompetenciaAtual();
+  const empresaId=rhSalariosEmpresaAtual();
+  if(!/^\d{4}-\d{2}$/.test(comp)){
+    showSt('st-rh','Competência inválida. Use AAAA-MM.',true);
+    return;
+  }
+  const valores=Array.from(document.querySelectorAll('#tb-func-salarios .rh-sal-valor')).map(el=>({
+    funcionario_id:parseInt(el.dataset.fid||'0',10),
+    valor_liquido:el.value
+  })).filter(it=>it.funcionario_id>0);
+  if(!valores.length){
+    showSt('st-rh','Nenhum colaborador disponível para salvar.',true);
+    return;
+  }
+  const body={competencia:comp,valores};
+  if(empresaId) body.empresa_id=parseInt(empresaId,10);
+  const r=await api('/api/financeiro/salarios/fechar','POST',body);
+  if(r?.erro){
+    showSt('st-rh',r.erro,true);
+    return;
+  }
+  showSt('st-rh',`Folha de ${comp} salva no banco (${r.total_funcionarios||0} colaborador(es), total ${brl(r.total_competencia||0)}).`,false);
   await renderFuncionarios();
 }
 
@@ -5570,7 +5612,10 @@ async function renderFuncionarios(){
     const folhaTotal=listaSal.reduce((acc,f)=>acc+(Number(f?.valor_liquido)||0),0);
     if(folhaEl) folhaEl.textContent='Folha: '+brl(folhaTotal || rSal.total_competencia || 0);
     const empNome=empresaId?((emps||[]).find(e=>String(e.id)===String(empresaId))?.nome||'Empresa selecionada'):'Todas as empresas';
-    if(salResumo) salResumo.textContent=`${listaSal.length} colaborador(es) · ${empNome} · Competência ${comp}`;
+    if(salResumo){
+      const metaSalvar=(rSal.folha_salva_em?` · folha salva em ${new Date(rSal.folha_salva_em).toLocaleString('pt-BR')}${rSal.folha_salva_por?(' por '+rSal.folha_salva_por):''}`:' · folha ainda não salva no histórico');
+      salResumo.textContent=`${listaSal.length} colaborador(es) · ${empNome} · Competência ${comp}${metaSalvar}`;
+    }
     if(!listaSal.length){
       tbSal.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:#999">Nenhum colaborador ativo encontrado para o filtro selecionado.</td></tr>';
       return;
