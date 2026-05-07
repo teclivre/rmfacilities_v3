@@ -1105,6 +1105,9 @@ class BeneficioMensal(db.Model):
     premio_produtividade=db.Column(db.Float)
     vale_gasolina=db.Column(db.Float)
     cesta_natal=db.Column(db.Float)
+    salario_obs=db.Column(db.Text,default='')
+    salario_editado_por=db.Column(db.String(100))
+    salario_editado_em=db.Column(db.DateTime)
     criado_em=db.Column(db.DateTime,default=utcnow)
     atualizado_em=db.Column(db.DateTime,default=utcnow,onupdate=utcnow)
     __table_args__=(db.UniqueConstraint('funcionario_id','competencia',name='uq_beneficio_func_comp'),)
@@ -1119,11 +1122,23 @@ class FolhaPagamentoMensal(db.Model):
     competencia=db.Column(db.String(7),nullable=False,index=True)
     empresa_ref_id=db.Column(db.Integer,nullable=False,default=0,index=True)
     empresa_nome=db.Column(db.String(200),default='Todas as empresas')
+    status=db.Column(db.String(20),default='aberta',index=True)
+    versao_atual=db.Column(db.Integer,default=0)
     total_funcionarios=db.Column(db.Integer,default=0)
     total_competencia=db.Column(db.Float,default=0)
     dados_json=db.Column(db.Text,default='{}')
+    historico_json=db.Column(db.Text,default='[]')
+    fechamento_obs=db.Column(db.Text,default='')
     salvo_por=db.Column(db.String(100))
     salvo_em=db.Column(db.DateTime,default=utcnow,index=True)
+    fechado_em=db.Column(db.DateTime)
+    fechado_por=db.Column(db.String(100))
+    reaberto_em=db.Column(db.DateTime)
+    reaberto_por=db.Column(db.String(100))
+    assinatura_status=db.Column(db.String(20),default='pendente')
+    assinatura_hash=db.Column(db.String(128))
+    assinatura_por=db.Column(db.String(100))
+    assinatura_em=db.Column(db.DateTime)
     __table_args__=(db.UniqueConstraint('competencia','empresa_ref_id',name='uq_folha_pagto_comp_emp'),)
 
     def to_dict(self):
@@ -4458,12 +4473,22 @@ def can_access_scope(area,action='view'):
     return chk
 
 def can_access_request(path,method='GET'):
+    p=(path or '').lower()
+    m=(method or 'GET').upper()
+    if p.startswith('/api/financeiro/salarios/importar'):
+        return can_access_scope('rh','edit')
+    if p.startswith('/api/financeiro/salarios/fechar') or p.startswith('/api/financeiro/salarios/reabrir') or p.startswith('/api/financeiro/salarios/assinar'):
+        return can_access_scope('rh','approve')
+    if p.startswith('/api/financeiro/salarios/export'):
+        return can_access_scope('rh','export') or can_access_scope('rh','view')
+    if p.startswith('/api/financeiro/salarios'):
+        return can_access_scope('rh',('view' if m=='GET' else 'edit'))
+    if p.startswith('/financeiro/salarios/preview'):
+        return can_access_scope('rh','view')
     area=area_from_path(path)
     if not area: return True
     action=action_from_request(path,method)
     if can_access_scope(area,action): return True
-    p=(path or '').lower()
-    m=(method or 'GET').upper()
     if p.startswith('/api/config/whatsapp') or p.startswith('/api/config/ia-whatsapp') or p.startswith('/api/whatsapp/ia/'):
         if can_access_scope('config',action):
             return True
@@ -5170,7 +5195,7 @@ def pagina_privacidade_publica():
 
 @app.route('/')
 @lr
-def index(): return render_template('app.html',nome=session['nome'],perfil=session['perfil'],areas=json.dumps(session.get('areas',[]),ensure_ascii=False))
+def index(): return render_template('app.html',nome=session['nome'],perfil=session['perfil'],areas=json.dumps(session.get('areas',[]),ensure_ascii=False),permissoes=json.dumps(session.get('permissoes',{}),ensure_ascii=False))
 
 @app.route('/api/cnpj/<cnpj>')
 @lr
@@ -11232,6 +11257,21 @@ def _financeiro_salarios_competencia(comp, empresa_id=None):
     if empresa_id:
         qb=qb.filter_by(empresa_id=empresa_id)
     mapa_comp={b.funcionario_id:b for b in qb.all()}
+    comp_ant=''
+    try:
+        ano_ant=int(comp[:4]); mes_ant=int(comp[5:7])
+        if mes_ant==1:
+            comp_ant=f'{ano_ant-1}-12'
+        else:
+            comp_ant=f'{ano_ant}-{str(mes_ant-1).zfill(2)}'
+    except Exception:
+        comp_ant=''
+    mapa_ant={}
+    if comp_ant:
+        qant=BeneficioMensal.query.filter_by(competencia=comp_ant)
+        if empresa_id:
+            qant=qant.filter_by(empresa_id=empresa_id)
+        mapa_ant={b.funcionario_id:b for b in qant.all()}
 
     ano=(comp[:4] if isinstance(comp,str) and len(comp)>=7 and '-' in comp else '')
     totais_anuais={}
@@ -11245,15 +11285,25 @@ def _financeiro_salarios_competencia(comp, empresa_id=None):
     itens=[]
     total_competencia=0.0
     total_anual=0.0
+    cargos=set()
+    postos=set()
     for f in funcs_ativos:
         emp=Empresa.query.get(f.empresa_id) if f.empresa_id else None
         cli=Cliente.query.get(f.posto_cliente_id) if f.posto_cliente_id else None
         posto_nome=(cli.nome.strip() if cli and (cli.nome or '').strip() else (f.posto_operacional or 'Reserva tecnica'))
         reg=mapa_comp.get(f.id)
         valor_liquido=float(reg.salario if reg and reg.salario is not None else (f.salario or 0) or 0)
+        valor_anterior=float((mapa_ant.get(f.id).salario if mapa_ant.get(f.id) and mapa_ant.get(f.id).salario is not None else 0) or 0)
+        delta_valor=valor_liquido-valor_anterior
+        delta_pct=((delta_valor/valor_anterior)*100.0) if valor_anterior else (100.0 if valor_liquido else 0.0)
+        inconsistente=bool((valor_anterior>0 and abs(delta_pct)>=25) or (valor_anterior==0 and valor_liquido>0))
         total_funcionario=float(totais_anuais.get(f.id,0) or 0)
         total_competencia+=valor_liquido
         total_anual+=total_funcionario
+        if (f.cargo or '').strip():
+            cargos.add((f.cargo or '').strip())
+        if (posto_nome or '').strip():
+            postos.add((posto_nome or '').strip())
         itens.append({
             'funcionario_id':f.id,
             'matricula':f.matricula or '',
@@ -11268,6 +11318,13 @@ def _financeiro_salarios_competencia(comp, empresa_id=None):
             'status':f.status or 'Ativo',
             'salario_base':float(f.salario or 0),
             'valor_liquido':valor_liquido,
+            'valor_anterior':valor_anterior,
+            'delta_valor':delta_valor,
+            'delta_pct':delta_pct,
+            'inconsistente':inconsistente,
+            'salario_obs':(reg.salario_obs if reg and getattr(reg,'salario_obs',None) else ''),
+            'salario_editado_por':(reg.salario_editado_por if reg else ''),
+            'salario_editado_em':(reg.salario_editado_em.isoformat() if reg and reg.salario_editado_em else None),
             'total_anual_funcionario':total_funcionario,
         })
     return {
@@ -11276,6 +11333,9 @@ def _financeiro_salarios_competencia(comp, empresa_id=None):
         'total_funcionarios':len(itens),
         'total_competencia':total_competencia,
         'total_anual':total_anual,
+        'qtd_inconsistencias':len([it for it in itens if it.get('inconsistente')]),
+        'cargos':sorted(cargos,key=lambda s:s.lower()),
+        'postos':sorted(postos,key=lambda s:s.lower()),
         'itens':itens,
     }
 
@@ -11285,9 +11345,17 @@ def _financeiro_salarios_chave_empresa(empresa_id=None):
     except Exception:
         return 0
 
+def _financeiro_usuario_atual():
+    return (session.get('nome') or session.get('email') or 'sistema')
+
+def _financeiro_resumo_hash(resumo):
+    raw=json.dumps(resumo or {},sort_keys=True,ensure_ascii=False,default=str)
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
 def _financeiro_salarios_aplicar_valores(comp,empresa_id,valores):
     alterados=0
     salvos=0
+    usuario=_financeiro_usuario_atual()
     for it in (valores or []):
         fid=to_num(it.get('funcionario_id'))
         if not fid:
@@ -11306,9 +11374,19 @@ def _financeiro_salarios_aplicar_valores(comp,empresa_id,valores):
         anterior=float(reg.salario or 0)
         reg.empresa_id=f.empresa_id
         reg.salario=novo_valor
+        reg.salario_obs=(it.get('salario_obs') or it.get('obs') or '').strip()
+        reg.salario_editado_por=usuario
+        reg.salario_editado_em=utcnow()
         salvos+=1
         if abs(anterior-novo_valor)>0.0001:
             alterados+=1
+            audit_event('folha_salario_editado','usuario',session.get('uid'),'funcionario',fid,True,{
+                'competencia':comp,
+                'empresa_id':f.empresa_id,
+                'anterior':anterior,
+                'novo':novo_valor,
+                'obs':reg.salario_obs[:120]
+            })
     return salvos,alterados
 
 def _financeiro_salarios_salvar_snapshot(comp,empresa_id=None,resumo=None,usuario=''):
@@ -11324,13 +11402,49 @@ def _financeiro_salarios_salvar_snapshot(comp,empresa_id=None,resumo=None,usuari
     if not folha:
         folha=FolhaPagamentoMensal(competencia=comp,empresa_ref_id=empresa_ref_id)
         db.session.add(folha)
+    try:
+        historico=json.loads(folha.historico_json or '[]')
+    except Exception:
+        historico=[]
+    if not isinstance(historico,list):
+        historico=[]
+    proxima_versao=int(folha.versao_atual or 0)+1
+    historico.append({
+        'versao':proxima_versao,
+        'salvo_em':utcnow().isoformat(),
+        'salvo_por':(usuario or '').strip() or 'sistema',
+        'hash':_financeiro_resumo_hash(resumo),
+        'total_funcionarios':int(resumo.get('total_funcionarios') or 0),
+        'total_competencia':float(resumo.get('total_competencia') or 0),
+        'dados':resumo,
+    })
     folha.empresa_nome=emp_nome
+    folha.versao_atual=proxima_versao
     folha.total_funcionarios=int(resumo.get('total_funcionarios') or 0)
     folha.total_competencia=float(resumo.get('total_competencia') or 0)
     folha.dados_json=json.dumps(resumo,ensure_ascii=False)
+    folha.historico_json=json.dumps(historico[-24:],ensure_ascii=False)
     folha.salvo_por=(usuario or '').strip() or 'sistema'
     folha.salvo_em=utcnow()
     return folha
+
+def _financeiro_folha_carregar_dados(folha,versao=None):
+    if not folha:
+        return {}
+    if versao:
+        try:
+            historico=json.loads(folha.historico_json or '[]')
+        except Exception:
+            historico=[]
+        for item in historico:
+            if int(item.get('versao') or 0)==int(versao):
+                dados=item.get('dados') or {}
+                return dados if isinstance(dados,dict) else {}
+    try:
+        dados=json.loads(folha.dados_json or '{}')
+    except Exception:
+        dados={}
+    return dados if isinstance(dados,dict) else {}
 
 def _financeiro_salarios_grupos(comp, empresa_id=None):
     resumo=_financeiro_salarios_competencia(comp,empresa_id=empresa_id)
@@ -11367,10 +11481,20 @@ def api_financeiro_salarios():
         resumo['folha_salva_id']=folha.id
         resumo['folha_salva_em']=folha.salvo_em.isoformat() if folha.salvo_em else None
         resumo['folha_salva_por']=folha.salvo_por or ''
+        resumo['folha_status']=folha.status or 'aberta'
+        resumo['folha_versao']=int(folha.versao_atual or 0)
+        resumo['folha_assinatura_status']=folha.assinatura_status or 'pendente'
+        resumo['folha_fechamento_obs']=folha.fechamento_obs or ''
+        resumo['folha_historico']=json.loads(folha.historico_json or '[]') if (folha.historico_json or '').strip() else []
     else:
         resumo['folha_salva_id']=None
         resumo['folha_salva_em']=None
         resumo['folha_salva_por']=''
+        resumo['folha_status']='aberta'
+        resumo['folha_versao']=0
+        resumo['folha_assinatura_status']='pendente'
+        resumo['folha_fechamento_obs']=''
+        resumo['folha_historico']=[]
     return jsonify({'ok':True,**resumo})
 
 @app.route('/api/financeiro/salarios',methods=['POST'])
@@ -11382,6 +11506,9 @@ def api_financeiro_salarios_salvar():
     valores=d.get('valores') or d.get('itens') or []
     if not isinstance(valores,list):
         return jsonify({'erro':'Lista de valores inválida.'}),400
+    folha=FolhaPagamentoMensal.query.filter_by(competencia=comp,empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)).first()
+    if folha and (folha.status or '')=='fechada':
+        return jsonify({'erro':'Esta folha está fechada. Reabra a competência para editar.'}),400
     salvos,alterados=_financeiro_salarios_aplicar_valores(comp,empresa_id,valores)
 
     db.session.commit()
@@ -11403,9 +11530,14 @@ def api_financeiro_salarios_fechar():
         salvos,alterados=_financeiro_salarios_aplicar_valores(comp,empresa_id,valores)
 
     resumo=_financeiro_salarios_competencia(comp,empresa_id=empresa_id)
-    usuario=(session.get('nome') or session.get('email') or 'sistema')
+    usuario=_financeiro_usuario_atual()
     folha=_financeiro_salarios_salvar_snapshot(comp,empresa_id=empresa_id,resumo=resumo,usuario=usuario)
+    folha.status='fechada'
+    folha.fechado_em=utcnow()
+    folha.fechado_por=usuario
+    folha.fechamento_obs=(d.get('fechamento_obs') or '').strip()
     db.session.commit()
+    audit_event('folha_fechada','usuario',session.get('uid'),'folha_pagamento',folha.id,True,{'competencia':comp,'empresa_id':empresa_id,'versao':folha.versao_atual})
 
     return jsonify({
         'ok':True,
@@ -11416,8 +11548,48 @@ def api_financeiro_salarios_fechar():
         'total_funcionarios':resumo.get('total_funcionarios') or 0,
         'total_competencia':resumo.get('total_competencia') or 0,
         'salvo_em':(folha.salvo_em.isoformat() if folha.salvo_em else None),
-        'salvo_por':folha.salvo_por or ''
+        'salvo_por':folha.salvo_por or '',
+        'status':folha.status or 'fechada',
+        'versao':int(folha.versao_atual or 0)
     })
+
+@app.route('/api/financeiro/salarios/reabrir',methods=['POST'])
+@lr
+def api_financeiro_salarios_reabrir():
+    d=request.json or {}
+    comp=norm_competencia(d.get('competencia'))
+    empresa_id=to_num(d.get('empresa_id')) or None
+    folha=FolhaPagamentoMensal.query.filter_by(competencia=comp,empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)).first()
+    if not folha:
+        return jsonify({'erro':'Folha não encontrada para esta competência.'}),404
+    folha.status='aberta'
+    folha.reaberto_em=utcnow()
+    folha.reaberto_por=_financeiro_usuario_atual()
+    folha.assinatura_status='pendente'
+    db.session.commit()
+    audit_event('folha_reaberta','usuario',session.get('uid'),'folha_pagamento',folha.id,True,{'competencia':comp,'empresa_id':empresa_id})
+    return jsonify({'ok':True,'competencia':comp,'empresa_id':empresa_id,'status':'aberta'})
+
+@app.route('/api/financeiro/salarios/assinar',methods=['POST'])
+@lr
+def api_financeiro_salarios_assinar():
+    d=request.json or {}
+    comp=norm_competencia(d.get('competencia'))
+    empresa_id=to_num(d.get('empresa_id')) or None
+    folha=FolhaPagamentoMensal.query.filter_by(competencia=comp,empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)).first()
+    if not folha:
+        return jsonify({'erro':'Salve a folha antes de assinar.'}),404
+    if (folha.status or '')!='fechada':
+        return jsonify({'erro':'A folha precisa estar fechada para assinatura.'}),400
+    resumo=_financeiro_folha_carregar_dados(folha)
+    assinatura_hash=_financeiro_resumo_hash({'folha_id':folha.id,'competencia':comp,'empresa_id':empresa_id,'dados':resumo})
+    folha.assinatura_status='assinado'
+    folha.assinatura_hash=assinatura_hash
+    folha.assinatura_por=_financeiro_usuario_atual()
+    folha.assinatura_em=utcnow()
+    db.session.commit()
+    audit_event('folha_assinada','usuario',session.get('uid'),'folha_pagamento',folha.id,True,{'competencia':comp,'empresa_id':empresa_id,'hash':assinatura_hash[:16]})
+    return jsonify({'ok':True,'competencia':comp,'empresa_id':empresa_id,'assinatura_status':'assinado','assinatura_hash':assinatura_hash,'assinatura_por':folha.assinatura_por,'assinatura_em':(folha.assinatura_em.isoformat() if folha.assinatura_em else None)})
 
 @app.route('/api/financeiro/salarios/folhas',methods=['GET'])
 @lr
@@ -11432,12 +11604,83 @@ def api_financeiro_salarios_folhas():
     folhas=q.order_by(FolhaPagamentoMensal.salvo_em.desc()).limit(24).all()
     return jsonify({'ok':True,'itens':[f.to_dict() for f in folhas]})
 
+@app.route('/api/financeiro/salarios/evolucao',methods=['GET'])
+@lr
+def api_financeiro_salarios_evolucao():
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    hoje=localnow()
+    meses=[]
+    ano=hoje.year
+    mes=hoje.month
+    for _ in range(11,-1,-1):
+        meses.append(f'{ano}-{str(mes).zfill(2)}')
+        mes-=1
+        if mes<1:
+            mes=12
+            ano-=1
+    itens=[]
+    for comp in meses:
+        resumo=_financeiro_salarios_competencia(comp,empresa_id=empresa_id)
+        itens.append({'competencia':comp,'total':float(resumo.get('total_competencia') or 0),'qtd':int(resumo.get('total_funcionarios') or 0)})
+    return jsonify({'ok':True,'itens':itens})
+
+@app.route('/api/financeiro/salarios/importar',methods=['POST'])
+@lr
+def api_financeiro_salarios_importar():
+    comp=norm_competencia(request.form.get('competencia'))
+    empresa_id=to_num(request.form.get('empresa_id')) or None
+    folha=FolhaPagamentoMensal.query.filter_by(competencia=comp,empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)).first()
+    if folha and (folha.status or '')=='fechada':
+        return jsonify({'erro':'Esta folha está fechada. Reabra a competência para importar.'}),400
+    fs=request.files.get('arquivo')
+    if not fs:
+        return jsonify({'erro':'Arquivo não enviado.'}),400
+    nome=(fs.filename or 'folha.xlsx').lower()
+    rows=[]
+    if nome.endswith('.csv'):
+        import csv
+        rows=list(csv.DictReader(fs.read().decode('utf-8','replace').splitlines()))
+    elif nome.endswith('.xlsx'):
+        from openpyxl import load_workbook
+        wb=load_workbook(fs,read_only=True,data_only=True)
+        ws=wb.active
+        data=list(ws.iter_rows(values_only=True))
+        if not data:
+            return jsonify({'erro':'Planilha vazia.'}),400
+        headers=[str(v or '').strip().lower() for v in data[0]]
+        rows=[{headers[i]:row[i] for i in range(min(len(headers),len(row)))} for row in data[1:] if any(v not in (None,'') for v in row)]
+    else:
+        return jsonify({'erro':'Formato inválido. Use CSV ou XLSX.'}),400
+    funcs=Funcionario.query.all()
+    by_re={str(f.re):f for f in funcs if f.re is not None}
+    by_matricula={str(f.matricula or '').strip().lower():f for f in funcs if (f.matricula or '').strip()}
+    by_cpf={re.sub(r'\D+','',str(f.cpf or '')):f for f in funcs if (f.cpf or '').strip()}
+    by_nome={str(f.nome or '').strip().lower():f for f in funcs if (f.nome or '').strip()}
+    valores=[]
+    ignorados=0
+    for row in rows:
+        re_key=str(row.get('re') or '').strip()
+        mat_key=str(row.get('matricula') or '').strip().lower()
+        cpf_key=re.sub(r'\D+','',str(row.get('cpf') or ''))
+        nome_key=str(row.get('nome') or row.get('colaborador') or '').strip().lower()
+        f=by_re.get(re_key) or by_matricula.get(mat_key) or by_cpf.get(cpf_key) or by_nome.get(nome_key)
+        if not f:
+            ignorados+=1
+            continue
+        if empresa_id and int(f.empresa_id or 0)!=int(empresa_id):
+            continue
+        valores.append({'funcionario_id':f.id,'valor_liquido':row.get('valor_liquido',row.get('salario')),'salario_obs':row.get('observacao',row.get('obs',''))})
+    salvos,alterados=_financeiro_salarios_aplicar_valores(comp,empresa_id,valores)
+    db.session.commit()
+    return jsonify({'ok':True,'competencia':comp,'importados':len(valores),'salvos':salvos,'alterados':alterados,'ignorados':ignorados})
+
 @app.route('/financeiro/salarios/preview')
 @lr
 def financeiro_salarios_preview():
     comp=norm_competencia(request.args.get('competencia'))
     empresa_id=to_num(request.args.get('empresa_id')) or None
     usar_salva=(request.args.get('modo') or 'salva').strip().lower()!='atual'
+    versao=to_num(request.args.get('versao')) or None
 
     origem='atual'
     resumo=None
@@ -11448,11 +11691,8 @@ def financeiro_salarios_preview():
             empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)
         ).first()
         if folha_salva:
-            try:
-                resumo=json.loads(folha_salva.dados_json or '{}')
-                origem='salva'
-            except Exception:
-                resumo=None
+            resumo=_financeiro_folha_carregar_dados(folha_salva,versao=versao)
+            origem='salva'
 
     if not isinstance(resumo,dict) or not isinstance(resumo.get('itens'),list):
         resumo=_financeiro_salarios_competencia(comp,empresa_id=empresa_id)
@@ -11476,8 +11716,13 @@ def financeiro_salarios_preview():
         'folha_pagamento_preview.html',
         competencia=comp,
         origem=origem,
+        versao=(versao or int(getattr(folha_salva,'versao_atual',0) or 0)),
+        status=(folha_salva.status if folha_salva else 'aberta'),
         salvo_em=(folha_salva.salvo_em.strftime('%d/%m/%Y %H:%M') if folha_salva and folha_salva.salvo_em else ''),
         salvo_por=(folha_salva.salvo_por if folha_salva else ''),
+        assinatura_status=(folha_salva.assinatura_status if folha_salva else 'pendente'),
+        assinatura_por=(folha_salva.assinatura_por if folha_salva else ''),
+        assinatura_em=(folha_salva.assinatura_em.strftime('%d/%m/%Y %H:%M') if folha_salva and folha_salva.assinatura_em else ''),
         empresas=empresas,
         total_funcionarios=int(resumo.get('total_funcionarios') or 0),
         total_competencia_fmt=fmt_brl(resumo.get('total_competencia') or 0),
@@ -13718,7 +13963,24 @@ with app.app_context():
         'pp_falta BOOLEAN DEFAULT 0',
         'premio_produtividade FLOAT DEFAULT 0',
         'vale_gasolina FLOAT DEFAULT 0',
-        'cesta_natal FLOAT DEFAULT 0'
+        'cesta_natal FLOAT DEFAULT 0',
+        'salario_obs TEXT DEFAULT ""',
+        'salario_editado_por VARCHAR(100)',
+        'salario_editado_em DATETIME'
+    ])
+    ensure_cols('folha_pagamento_mensal',[
+        'status VARCHAR(20) DEFAULT "aberta"',
+        'versao_atual INTEGER DEFAULT 0',
+        'historico_json TEXT DEFAULT "[]"',
+        'fechamento_obs TEXT DEFAULT ""',
+        'fechado_em DATETIME',
+        'fechado_por VARCHAR(100)',
+        'reaberto_em DATETIME',
+        'reaberto_por VARCHAR(100)',
+        'assinatura_status VARCHAR(20) DEFAULT "pendente"',
+        'assinatura_hash VARCHAR(128)',
+        'assinatura_por VARCHAR(100)',
+        'assinatura_em DATETIME'
     ])
     ensure_cols('ponto_marcacao',[
         'latitude FLOAT',

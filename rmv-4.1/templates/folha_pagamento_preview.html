@@ -50,9 +50,13 @@
       </div>
       <div class="meta">
         <div><strong>Origem:</strong> {{ 'folha salva no banco' if origem=='salva' else 'valores atuais' }}</div>
+        <div><strong>Status:</strong> {{ status or 'aberta' }} · <strong>Versão:</strong> {{ versao or 0 }}</div>
         <div><strong>Gerado em:</strong> {{ gerar_em }}</div>
         {% if origem=='salva' and salvo_em %}
         <div><strong>Último salvamento:</strong> {{ salvo_em }}{% if salvo_por %} por {{ salvo_por }}{% endif %}</div>
+        {% endif %}
+        {% if assinatura_status=='assinado' and assinatura_em %}
+        <div><strong>Assinatura:</strong> assinada em {{ assinatura_em }}{% if assinatura_por %} por {{ assinatura_por }}{% endif %}</div>
         {% endif %}
       </div>
       <div class="kpi">

@@ -1103,14 +1103,37 @@ document.addEventListener('DOMContentLoaded',()=>{
               <option value="">Todas as empresas</option>
             </select>
           </div>
+          <div class="f" style="min-width:220px;margin:0">
+            <label style="font-size:11px">Cargo</label>
+            <select id="rh-sal-cargo" onchange="rhSalariosOnEmpresaChange()" style="min-width:200px">
+              <option value="">Todos os cargos</option>
+            </select>
+          </div>
+          <div class="f" style="min-width:220px;margin:0">
+            <label style="font-size:11px">Posto</label>
+            <select id="rh-sal-posto" onchange="rhSalariosOnEmpresaChange()" style="min-width:200px">
+              <option value="">Todos os postos</option>
+            </select>
+          </div>
           <button class="btn b-gh b-sm" type="button" onclick="rhSalariosOnEmpresaChange()">Carregar</button>
           <button class="btn b-az b-sm" type="button" onclick="rhSalariosSalvar()">Salvar valores</button>
           <button class="btn b-vd b-sm" type="button" onclick="rhSalariosSalvarFolha()">Salvar folha do mês</button>
+          <button class="btn b-gh b-sm" type="button" onclick="rhSalariosReabrirFolha()">Reabrir folha</button>
+          <button class="btn b-ghl b-sm" type="button" onclick="rhSalariosAssinarFolha()">Assinar fechamento</button>
           <button class="btn b-gh b-sm" type="button" onclick="rhSalariosPrevia()">Prévia</button>
           <button class="btn b-az b-sm" type="button" onclick="rhSalariosExportar('xlsx')">Exportar planilha</button>
           <button class="btn b-ghl b-sm" type="button" onclick="rhSalariosExportar('pdf')">Exportar PDF</button>
+          <label class="btn b-ghl b-sm" for="rh-sal-import-file" style="cursor:pointer">Importar planilha</label>
+          <input type="file" id="rh-sal-import-file" accept=".csv,.xlsx" style="display:none" onchange="rhSalariosImportarPlanilha(event)">
         </div>
         <div id="rh-sal-res" style="display:none;margin:0 12px 10px 12px;color:#6d7a8c;font-size:13px"></div>
+        <div id="rh-sal-painel" style="display:none;margin:0 12px 12px 12px">
+          <div class="g3" style="margin-top:0">
+            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Histórico e versões</span></div><div id="rh-sal-historico" style="padding:8px 12px 12px 12px;color:#5d6f82;font-size:13px"></div></div>
+            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Alertas</span></div><div id="rh-sal-alertas" style="padding:8px 12px 12px 12px;color:#5d6f82;font-size:13px"></div></div>
+            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Evolução mensal</span></div><div style="position:relative;height:180px;padding:4px 8px 12px 8px"><canvas id="chart-rh-salarios"></canvas></div></div>
+          </div>
+        </div>
         <div class="tbl-wrap">
           <table class="tbl">
             <thead><tr><th>RE</th><th>Nome</th><th>Cargo/Função</th><th>Posto</th><th>Empresa</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead>
@@ -1119,7 +1142,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div class="tbl-wrap" id="rh-salarios-wrap" style="display:none">
           <table class="tbl">
-            <thead><tr><th>RE</th><th>Nome</th><th>Cargo</th><th>Posto</th><th>Empresa</th><th style="text-align:right">Salário líquido</th><th style="text-align:right">Total anual</th><th>Ações</th></tr></thead>
+            <thead><tr><th>RE</th><th>Nome</th><th>Cargo</th><th>Posto</th><th>Empresa</th><th style="text-align:right">Salário líquido</th><th style="text-align:right">Mês anterior</th><th>Observação</th><th style="text-align:right">Total anual</th><th>Ações</th></tr></thead>
             <tbody id="tb-func-salarios"></tbody>
           </table>
         </div>
@@ -2606,6 +2629,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 <script>
 const N='{{ nome }}', P='{{ perfil }}';
 const USER_AREAS={{ areas|safe }};
+const USER_PERMISSIONS={{ permissoes|safe }};
 const THEME_KEY='rm_theme';
 const AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','compras','beneficios','sst','rh-digital','documentos'];
 const RBAC_ACTIONS=['view','create','edit','delete','approve','export'];
@@ -5445,11 +5469,36 @@ function rhSalariosCompetenciaAtual(){
   return (inp.value||'').trim();
 }
 
+function rhPayrollCan(action){
+  if(P==='dono') return true;
+  const perms=(USER_PERMISSIONS&&typeof USER_PERMISSIONS==='object')?USER_PERMISSIONS:{};
+  const keys=Object.keys(perms);
+  if(!keys.length) return !USER_AREAS.length || USER_AREAS.includes('rh');
+  const acts=Array.isArray(perms.rh)?perms.rh:(Array.isArray(perms['*'])?perms['*']:[]);
+  return acts.includes('*') || acts.includes(action);
+}
+
+function rhSalariosCargoAtual(){
+  return (document.getElementById('rh-sal-cargo')?.value||'').trim().toLowerCase();
+}
+
+function rhSalariosPostoAtual(){
+  return (document.getElementById('rh-sal-posto')?.value||'').trim().toLowerCase();
+}
+
 function rhSalariosPopularEmpresas(){
   const sel=document.getElementById('rh-sal-empresa');
   if(!sel) return;
   const atual=sel.value||'';
   sel.innerHTML='<option value="">Todas as empresas</option>'+(emps||[]).map(e=>`<option value="${e.id}">${esc(e.nome||'Empresa')}</option>`).join('');
+  if(Array.from(sel.options).some(o=>o.value===atual)) sel.value=atual;
+}
+
+function rhSalariosPopularFiltroSelect(id,lista,label){
+  const sel=document.getElementById(id);
+  if(!sel) return;
+  const atual=sel.value||'';
+  sel.innerHTML=`<option value="">Todos os ${label}</option>`+(lista||[]).map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
   if(Array.from(sel.options).some(o=>o.value===atual)) sel.value=atual;
 }
 
@@ -5484,24 +5533,35 @@ function rhSalariosPrevia(){
     showSt('st-rh','Competência inválida. Use AAAA-MM.',true);
     return;
   }
+  const versaoSel=document.getElementById('rh-sal-versao');
   const p=new URLSearchParams();
   p.set('competencia',comp);
   p.set('modo','salva');
   if(empresaId) p.set('empresa_id',empresaId);
+  if(versaoSel && versaoSel.value) p.set('versao',versaoSel.value);
   window.open('/financeiro/salarios/preview?'+p.toString(),'_blank');
+}
+
+function rhSalariosColetarValores(){
+  return Array.from(document.querySelectorAll('#tb-func-salarios tr[data-fid]')).map(tr=>({
+    funcionario_id:parseInt(tr.dataset.fid||'0',10),
+    valor_liquido:tr.querySelector('.rh-sal-valor')?.value||'0',
+    salario_obs:tr.querySelector('.rh-sal-obs')?.value||''
+  })).filter(it=>it.funcionario_id>0);
 }
 
 async function rhSalariosSalvar(){
   const comp=rhSalariosCompetenciaAtual();
   const empresaId=rhSalariosEmpresaAtual();
+  if(!rhPayrollCan('edit')){
+    showSt('st-rh','Seu usuário não tem permissão para editar a folha.',true);
+    return;
+  }
   if(!/^\d{4}-\d{2}$/.test(comp)){
     showSt('st-rh','Competência inválida. Use AAAA-MM.',true);
     return;
   }
-  const valores=Array.from(document.querySelectorAll('#tb-func-salarios .rh-sal-valor')).map(el=>({
-    funcionario_id:parseInt(el.dataset.fid||'0',10),
-    valor_liquido:el.value
-  })).filter(it=>it.funcionario_id>0);
+  const valores=rhSalariosColetarValores();
   if(!valores.length){
     showSt('st-rh','Nenhum colaborador disponível para salvar.',true);
     return;
@@ -5520,19 +5580,21 @@ async function rhSalariosSalvar(){
 async function rhSalariosSalvarFolha(){
   const comp=rhSalariosCompetenciaAtual();
   const empresaId=rhSalariosEmpresaAtual();
+  if(!rhPayrollCan('approve')){
+    showSt('st-rh','Seu usuário não tem permissão para fechar a folha.',true);
+    return;
+  }
   if(!/^\d{4}-\d{2}$/.test(comp)){
     showSt('st-rh','Competência inválida. Use AAAA-MM.',true);
     return;
   }
-  const valores=Array.from(document.querySelectorAll('#tb-func-salarios .rh-sal-valor')).map(el=>({
-    funcionario_id:parseInt(el.dataset.fid||'0',10),
-    valor_liquido:el.value
-  })).filter(it=>it.funcionario_id>0);
+  const valores=rhSalariosColetarValores();
   if(!valores.length){
     showSt('st-rh','Nenhum colaborador disponível para salvar.',true);
     return;
   }
-  const body={competencia:comp,valores};
+  const fechamento_obs=(prompt('Observação do fechamento da folha:', '')||'').trim();
+  const body={competencia:comp,valores,fechamento_obs};
   if(empresaId) body.empresa_id=parseInt(empresaId,10);
   const r=await api('/api/financeiro/salarios/fechar','POST',body);
   if(r?.erro){
@@ -5541,6 +5603,94 @@ async function rhSalariosSalvarFolha(){
   }
   showSt('st-rh',`Folha de ${comp} salva no banco (${r.total_funcionarios||0} colaborador(es), total ${brl(r.total_competencia||0)}).`,false);
   await renderFuncionarios();
+}
+
+async function rhSalariosReabrirFolha(){
+  const comp=rhSalariosCompetenciaAtual();
+  const empresaId=rhSalariosEmpresaAtual();
+  if(!rhPayrollCan('approve')){
+    showSt('st-rh','Seu usuário não tem permissão para reabrir a folha.',true);
+    return;
+  }
+  const body={competencia:comp};
+  if(empresaId) body.empresa_id=parseInt(empresaId,10);
+  const r=await api('/api/financeiro/salarios/reabrir','POST',body);
+  if(r?.erro){ showSt('st-rh',r.erro,true); return; }
+  showSt('st-rh',`Folha ${comp} reaberta para edição.`,false);
+  await renderFuncionarios();
+}
+
+async function rhSalariosAssinarFolha(){
+  const comp=rhSalariosCompetenciaAtual();
+  const empresaId=rhSalariosEmpresaAtual();
+  if(!rhPayrollCan('approve')){
+    showSt('st-rh','Seu usuário não tem permissão para assinar o fechamento.',true);
+    return;
+  }
+  const body={competencia:comp};
+  if(empresaId) body.empresa_id=parseInt(empresaId,10);
+  const r=await api('/api/financeiro/salarios/assinar','POST',body);
+  if(r?.erro){ showSt('st-rh',r.erro,true); return; }
+  showSt('st-rh',`Folha assinada por ${r.assinatura_por||'usuário'} em ${new Date(r.assinatura_em).toLocaleString('pt-BR')}.`,false);
+  await renderFuncionarios();
+}
+
+async function rhSalariosImportarPlanilha(ev){
+  const f=ev?.target?.files?.[0];
+  if(!f) return;
+  if(!rhPayrollCan('edit')){
+    showSt('st-rh','Seu usuário não tem permissão para importar lançamentos.',true);
+    ev.target.value='';
+    return;
+  }
+  const comp=rhSalariosCompetenciaAtual();
+  const empresaId=rhSalariosEmpresaAtual();
+  const fd=new FormData();
+  fd.append('arquivo',f);
+  fd.append('competencia',comp);
+  if(empresaId) fd.append('empresa_id',empresaId);
+  const r=await fetch('/api/financeiro/salarios/importar',{method:'POST',body:fd,credentials:'same-origin'});
+  let d={};
+  try{ d=await r.json(); }catch(_){ d={erro:'Erro ao processar a importação.'}; }
+  ev.target.value='';
+  if(!r.ok || d.erro){ showSt('st-rh',d.erro||'Falha ao importar planilha.',true); return; }
+  showSt('st-rh',`Planilha importada: ${d.importados||0} registro(s), ${d.ignorados||0} ignorado(s).`,false);
+  await renderFuncionarios();
+}
+
+async function rhSalariosCarregarGrafico(){
+  const canvas=document.getElementById('chart-rh-salarios');
+  if(!canvas || typeof Chart==='undefined') return;
+  const empresaId=rhSalariosEmpresaAtual();
+  const p=new URLSearchParams();
+  if(empresaId) p.set('empresa_id',empresaId);
+  const r=await api('/api/financeiro/salarios/evolucao'+(p.toString()?('?'+p.toString()):''));
+  if(r?.erro || !Array.isArray(r?.itens)) return;
+  const labels=r.itens.map(it=>(it.competencia||'').slice(5,7)+'/'+(it.competencia||'').slice(2,4));
+  const vals=r.itens.map(it=>Number(it.total||0));
+  if(window._chartRhSal) window._chartRhSal.destroy();
+  window._chartRhSal=new Chart(canvas,{type:'line',data:{labels,datasets:[{label:'Folha mensal',data:vals,borderColor:'#205d8a',backgroundColor:'rgba(32,93,138,.18)',fill:true,tension:.25}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:(v)=>brl(v)}}}}});
+}
+
+function rhSalariosRenderPainel(res){
+  const wrap=document.getElementById('rh-sal-painel');
+  const hist=document.getElementById('rh-sal-historico');
+  const alerts=document.getElementById('rh-sal-alertas');
+  if(wrap) wrap.style.display='block';
+  if(hist){
+    const historico=Array.isArray(res?.folha_historico)?res.folha_historico:[];
+    const versaoAtual=Number(res?.folha_versao||0);
+    const status=res?.folha_status||'aberta';
+    const assinatura=res?.folha_assinatura_status||'pendente';
+    hist.innerHTML=`<div style="margin-bottom:6px"><strong>Status:</strong> ${status} · <strong>Versão:</strong> ${versaoAtual} · <strong>Assinatura:</strong> ${assinatura}</div>`+
+      `<div style="margin-bottom:8px"><label style="font-size:11px">Prévia da versão</label><select id="rh-sal-versao" style="min-width:180px;margin-left:8px"><option value="">Atual</option>${historico.map(h=>`<option value="${h.versao}">v${h.versao} · ${(h.salvo_em||'').replace('T',' ').slice(0,16)}</option>`).join('')}</select></div>`+
+      (historico.length?historico.slice().reverse().map(h=>`<div style="padding:5px 0;border-top:1px dashed var(--borda)">v${h.versao} · ${brl(h.total_competencia||0)} · ${(h.salvo_por||'sistema')}</div>`).join(''):'<div>Nenhuma versão salva ainda.</div>');
+  }
+  if(alerts){
+    const qtd=Number(res?.qtd_inconsistencias||0);
+    alerts.innerHTML=qtd?`<div style="color:#c33;font-weight:700;margin-bottom:6px">${qtd} inconsistência(s) detectada(s)</div><div>Linhas destacadas em vermelho indicam variação relevante em relação ao mês anterior.</div>`:'<div>Nenhuma inconsistência relevante detectada.</div>';
+  }
+  rhSalariosCarregarGrafico();
 }
 
 async function renderFuncionarios(){
@@ -5555,6 +5705,7 @@ async function renderFuncionarios(){
   const wrapSal=document.getElementById('rh-salarios-wrap');
   const salToolbar=document.getElementById('rh-sal-toolbar');
   const salResumo=document.getElementById('rh-sal-res');
+  const salPainel=document.getElementById('rh-sal-painel');
   if(!tb)return;
   const isAtivo=f=>((f?.status||'Ativo').toString().trim().toLowerCase()==='ativo');
   const ativosTotal=(Array.isArray(allFuncs)?allFuncs:[]).filter(isAtivo).length;
@@ -5569,6 +5720,9 @@ async function renderFuncionarios(){
   if(salResumo){
     salResumo.style.display=rhFuncTab==='salarios'?'block':'none';
   }
+  if(salPainel){
+    salPainel.style.display=rhFuncTab==='salarios'?'block':'none';
+  }
   const lista=(Array.isArray(funcs)?funcs:[]).filter(f=>rhFuncTab==='ativos'?isAtivo(f):!isAtivo(f));
   const tabAt=document.getElementById('rh-tab-ativos');
   const tabIn=document.getElementById('rh-tab-inativos');
@@ -5581,9 +5735,11 @@ async function renderFuncionarios(){
     rhSalariosPopularEmpresas();
     const comp=rhSalariosCompetenciaAtual();
     const empresaId=rhSalariosEmpresaAtual();
+    const cargoFiltro=rhSalariosCargoAtual();
+    const postoFiltro=rhSalariosPostoAtual();
     if(!/^\d{4}-\d{2}$/.test(comp)){
       if(folhaEl) folhaEl.textContent='Folha: R$ 0,00';
-      if(tbSal) tbSal.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:#c33">Competência inválida. Use AAAA-MM.</td></tr>';
+      if(tbSal) tbSal.innerHTML='<tr><td colspan="10" style="text-align:center;padding:24px;color:#c33">Competência inválida. Use AAAA-MM.</td></tr>';
       if(salResumo) salResumo.textContent='';
       return;
     }
@@ -5594,10 +5750,12 @@ async function renderFuncionarios(){
     const rSal=await api('/api/financeiro/salarios?'+p.toString());
     if(rSal?.erro){
       if(folhaEl) folhaEl.textContent='Folha: R$ 0,00';
-      tbSal.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:#c33">Erro ao carregar pagamentos mensais.</td></tr>';
+      tbSal.innerHTML='<tr><td colspan="10" style="text-align:center;padding:24px;color:#c33">Erro ao carregar pagamentos mensais.</td></tr>';
       if(salResumo) salResumo.textContent=rSal.erro;
       return;
     }
+    rhSalariosPopularFiltroSelect('rh-sal-cargo',rSal.cargos||[],'cargos');
+    rhSalariosPopularFiltroSelect('rh-sal-posto',rSal.postos||[],'postos');
     let listaSal=Array.isArray(rSal?.itens)?rSal.itens:[];
     if(q){
       listaSal=listaSal.filter(f=>[
@@ -5609,27 +5767,36 @@ async function renderFuncionarios(){
         f.empresa_nome||''
       ].join(' ').toLowerCase().includes(q));
     }
+    if(cargoFiltro) listaSal=listaSal.filter(f=>String(f.cargo||'').trim().toLowerCase()===cargoFiltro);
+    if(postoFiltro) listaSal=listaSal.filter(f=>String(f.posto_operacional||'').trim().toLowerCase()===postoFiltro);
     const folhaTotal=listaSal.reduce((acc,f)=>acc+(Number(f?.valor_liquido)||0),0);
     if(folhaEl) folhaEl.textContent='Folha: '+brl(folhaTotal || rSal.total_competencia || 0);
     const empNome=empresaId?((emps||[]).find(e=>String(e.id)===String(empresaId))?.nome||'Empresa selecionada'):'Todas as empresas';
     if(salResumo){
       const metaSalvar=(rSal.folha_salva_em?` · folha salva em ${new Date(rSal.folha_salva_em).toLocaleString('pt-BR')}${rSal.folha_salva_por?(' por '+rSal.folha_salva_por):''}`:' · folha ainda não salva no histórico');
-      salResumo.textContent=`${listaSal.length} colaborador(es) · ${empNome} · Competência ${comp}${metaSalvar}`;
+      salResumo.textContent=`${listaSal.length} colaborador(es) · ${empNome} · Competência ${comp} · status ${rSal.folha_status||'aberta'}${metaSalvar}`;
     }
+    rhSalariosRenderPainel(rSal);
+    const canEdit=rhPayrollCan('edit') && (rSal.folha_status||'aberta')!=='fechada';
     if(!listaSal.length){
-      tbSal.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:#999">Nenhum colaborador ativo encontrado para o filtro selecionado.</td></tr>';
+      tbSal.innerHTML='<tr><td colspan="10" style="text-align:center;padding:24px;color:#999">Nenhum colaborador ativo encontrado para o filtro selecionado.</td></tr>';
       return;
     }
     tbSal.innerHTML=listaSal.map(f=>{
       const valor=Number(f?.valor_liquido)||0;
+      const anterior=Number(f?.valor_anterior)||0;
       const totalAnual=Number(f?.total_anual_funcionario)||0;
-      return `<tr>
+      const linhaStyle=f.inconsistente?' style="background:rgba(195,55,55,.06)"':'';
+      const deltaInfo=f.inconsistente?`<div style="font-size:11px;color:#c33">${brl(f.delta_valor||0)} · ${Number(f.delta_pct||0).toFixed(1)}%</div>`:'';
+      return `<tr data-fid="${f.funcionario_id}"${linhaStyle}>
         <td style="font-weight:700">${f.re||f.matricula||'—'}</td>
         <td><div style="font-weight:700">${f.nome}</div><div style="font-size:11px;color:#888">${fmtDoc(f.cpf)||''}</div></td>
         <td>${f.cargo||'—'}</td>
         <td style="font-size:11px">${f.posto_operacional||'Reserva tecnica'}</td>
         <td>${f.empresa_nome||'—'}</td>
-        <td style="text-align:right"><input class="rh-sal-valor" data-fid="${f.funcionario_id}" type="number" min="0" step="0.01" value="${valor.toFixed(2)}" style="width:150px;text-align:right" oninput="rhSalariosAtualizarTotalTela()"></td>
+        <td style="text-align:right"><input class="rh-sal-valor" data-fid="${f.funcionario_id}" type="number" min="0" step="0.01" value="${valor.toFixed(2)}" style="width:150px;text-align:right" oninput="rhSalariosAtualizarTotalTela()" ${canEdit?'':'disabled'}></td>
+        <td style="text-align:right;font-weight:700;color:${f.inconsistente?'#c33':'var(--azul)'}">${brl(anterior)}${deltaInfo}</td>
+        <td><input class="rh-sal-obs" type="text" value="${esc(f.salario_obs||'')}" placeholder="Observação do ajuste" style="min-width:180px" ${canEdit?'':'disabled'}></td>
         <td style="text-align:right;font-weight:700;color:var(--azul)">${brl(totalAnual)}</td>
         <td><button class="btn b-gh b-sm" onclick="openModalFunc('editar',${f.funcionario_id})">Editar funcionário</button></td>
       </tr>`;
