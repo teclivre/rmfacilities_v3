@@ -3397,9 +3397,7 @@ function rhSetSubAba(tab,btn){
   const tabs=['funcionarios','exportar','jornada','ponto','painel-dia','envio','assinaturas'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
-    const ativo=(p.dataset.rhPane===rhSubAba);
-    p.classList.toggle('on',ativo);
-    p.style.setProperty('display',ativo?'block':'none','important');
+    p.style.display=(p.dataset.rhPane===rhSubAba)?'':'none';
   });
   Array.from(document.querySelectorAll('#rh-subabas .subaba-bloco')).forEach(b=>b.classList.remove('on'));
   const alvo=btn || document.getElementById('rh-subtab-'+rhSubAba);
@@ -7312,12 +7310,66 @@ async function benAssinarFolha(){
   benAtualizarToolbar('assinada');
 }
 
-function benAbrirHistorico(){
-  const comp=benComp(); const empresaId=benEmp()?parseInt(benEmp(),10):null;
+async function benAbrirHistorico(){
+  const comp=benComp();
+  const empresaId=benEmp()?parseInt(benEmp(),10):null;
   const p=new URLSearchParams();
   if(/^\d{4}-\d{2}$/.test(comp)) p.set('competencia',comp);
   if(empresaId) p.set('empresa_id',empresaId);
-  window.open('/api/beneficios/folhas'+(p.toString()?('?'+p.toString()):''),'_blank');
+  const hist=document.getElementById('ben-sal-historico');
+  const alertas=document.getElementById('ben-sal-alertas');
+  const painel=document.getElementById('ben-sal-painel');
+  if(painel) painel.style.display='block';
+  if(hist) hist.innerHTML='<em>Carregando histórico...</em>';
+  showSt('st-benef','Consultando histórico da folha de benefícios...',false);
+
+  const r=await api('/api/beneficios/folhas'+(p.toString()?('?'+p.toString()):''));
+  if(r?.erro){
+    showSt('st-benef',r.erro,true);
+    if(hist) hist.innerHTML='<em>Não foi possível carregar o histórico.</em>';
+    return;
+  }
+  const itens=Array.isArray(r?.itens)?r.itens:[];
+  if(!itens.length){
+    if(hist) hist.innerHTML='<em>Nenhum fechamento encontrado para os filtros informados.</em>';
+    if(alertas) alertas.innerHTML='<span style="color:#9fb3c8">Sem registros de fechamento.</span>';
+    showSt('st-benef','Nenhum histórico encontrado.',false);
+    return;
+  }
+
+  const fmt=(d)=>{
+    if(!d) return '—';
+    const dt=new Date(d);
+    return isNaN(dt.getTime()) ? String(d) : dt.toLocaleString('pt-BR');
+  };
+  const statusTag=(s)=>{
+    if(s==='assinada' || s==='assinado') return '<span style="color:#44cf9a;font-weight:700">Assinada</span>';
+    if(s==='fechada') return '<span style="color:#f6c90e;font-weight:700">Fechada</span>';
+    return '<span style="color:#7ecfff;font-weight:700">Aberta</span>';
+  };
+
+  const rows=itens.map(it=>{
+    let histVers=[];
+    try{ histVers=it?.historico_json?JSON.parse(it.historico_json):[]; }catch(_){ histVers=[]; }
+    const ult=Array.isArray(histVers)&&histVers.length?histVers[histVers.length-1]:null;
+    const empresa=it?.empresa_nome||'Todas as empresas';
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--borda)">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+        <b>${it?.competencia||'—'}</b>
+        <span>${statusTag(it?.status||'aberta')}</span>
+        <span style="color:#8aa0b8">Versão ${it?.versao_atual||0}</span>
+      </div>
+      <div style="margin-top:4px;color:#5d6f82;font-size:12px">${empresa} · ${it?.total_funcionarios||0} colaborador(es) · Total ${brl(it?.total_competencia||0)}</div>
+      <div style="margin-top:4px;color:#5d6f82;font-size:12px">Fechado em: ${fmt(it?.fechado_em)} · Por: ${it?.fechado_por||'—'}</div>
+      <div style="margin-top:2px;color:#5d6f82;font-size:12px">Assinatura: ${it?.assinatura_status||'pendente'}${it?.assinatura_por?` · ${it.assinatura_por}`:''}${it?.assinatura_em?` · ${fmt(it.assinatura_em)}`:''}</div>
+      ${ult?`<div style="margin-top:2px;color:#5d6f82;font-size:12px">Última revisão: v${ult.versao||0} em ${fmt(ult.salvo_em)} por ${ult.salvo_por||'—'}</div>`:''}
+    </div>`;
+  }).join('');
+
+  if(hist) hist.innerHTML=rows;
+  if(alertas) alertas.innerHTML=`<span style="color:#44cf9a">${itens.length} registro(s) de fechamento carregado(s).</span>`;
+  benAtualizarToolbar(itens[0]?.status||'aberta');
+  showSt('st-benef',`Histórico carregado (${itens.length} registro(s)).`,false);
 }
 
 function renderBeneficiosAtivos(){
