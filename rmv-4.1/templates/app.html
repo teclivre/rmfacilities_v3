@@ -336,6 +336,11 @@ document.addEventListener('DOMContentLoaded',()=>{
 </head>
 <body>
 
+<div id="autosave-global-badge" class="autosave-global-badge state-ok" aria-live="polite" title="Status do autosave">
+  <span class="dot"></span>
+  <span id="autosave-global-text">Autosave sincronizado</span>
+</div>
+
 <div class="mobile-nav" id="mobile-nav">
   <div class="mobile-nav-inner">
     <label>Navegação rápida</label>
@@ -2734,6 +2739,8 @@ const _autosaveTimers={};
 let _autosaveObserver=null;
 let _benefAutosaveTimer=null;
 let _benefAutosaveReq=0;
+let _benefAutosaveInflight=false;
+let _autosaveGlobalBadgeTimer=null;
 
 function loadAutosaveDrafts(){
   if(_autosaveDrafts) return _autosaveDrafts;
@@ -2784,10 +2791,12 @@ function scheduleAutosaveField(el){
   const key=autosaveFieldKey(el);
   if(!key) return;
   clearTimeout(_autosaveTimers[key]);
+  updateAutosaveGlobalBadge();
   _autosaveTimers[key]=setTimeout(()=>{
     rememberAutosaveField(el);
     delete _autosaveTimers[key];
     if(!hasAutosavePendingWork()) _pageDirty=false;
+    updateAutosaveGlobalBadge();
   },400);
 }
 
@@ -3990,6 +3999,34 @@ function hasAutosavePendingWork(){
   return timerPending || benefPending || opInflight || opTimers || folhaPending;
 }
 
+function autosaveGlobalState(){
+  const saving=(typeof rhSalAutoInflight!=='undefined' && rhSalAutoInflight)
+    || (typeof _benefAutosaveInflight!=='undefined' && _benefAutosaveInflight)
+    || (typeof _opPostoAutosaveInflight!=='undefined' && _opPostoAutosaveInflight && _opPostoAutosaveInflight.size>0);
+  if(saving) return 'saving';
+  return hasAutosavePendingWork() ? 'pending' : 'ok';
+}
+
+function updateAutosaveGlobalBadge(){
+  const el=document.getElementById('autosave-global-badge');
+  const txt=document.getElementById('autosave-global-text');
+  if(!el || !txt) return;
+  const state=autosaveGlobalState();
+  el.classList.remove('state-saving','state-pending','state-ok');
+  if(state==='saving'){
+    el.classList.add('state-saving');
+    txt.textContent='Autosave salvando...';
+    return;
+  }
+  if(state==='pending'){
+    el.classList.add('state-pending');
+    txt.textContent='Autosave pendente';
+    return;
+  }
+  el.classList.add('state-ok');
+  txt.textContent='Autosave sincronizado';
+}
+
 function setupModalDirtyTracking(){
   MODAL_FORM_IDS.forEach(id=>{
     const root=document.getElementById('mod-'+id);
@@ -4020,6 +4057,10 @@ function setupPageDirtyTracking(){
   });
   restoreAutosaveFields(document);
   setupAutosaveRestoreObserver();
+  updateAutosaveGlobalBadge();
+  if(!_autosaveGlobalBadgeTimer){
+    _autosaveGlobalBadgeTimer=setInterval(updateAutosaveGlobalBadge,500);
+  }
   window.addEventListener('beforeunload',(e)=>{
     if(!hasUnsavedChanges()) return;
     e.preventDefault();
@@ -7235,9 +7276,13 @@ function benDiasEdit(fid,tipo){
 
 async function salvarBeneficiosAuto(){
   if(!beneficiosMensais.length) return;
+  _benefAutosaveInflight=true;
+  updateAutosaveGlobalBadge();
   const req=++_benefAutosaveReq;
   const itens=montarItensBeneficios({incluirBase:true,incluirDias:true,ignorarSelecao:true});
   const r=await api('/api/beneficios/lancamentos','POST',{competencia:benComp(),itens});
+  _benefAutosaveInflight=false;
+  updateAutosaveGlobalBadge();
   if(req!==_benefAutosaveReq) return;
   if(r?.erro){
     showSt('st-benef','Falha no auto-save: '+r.erro,true);
