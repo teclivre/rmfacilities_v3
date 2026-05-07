@@ -589,6 +589,12 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div class="card">
         <div class="card-header"><span class="card-title">Pagamento de Salario Liquido</span></div>
         <div style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+          <div class="f" style="min-width:220px;margin:0">
+            <label>Empresa</label>
+            <select id="sal-empresa" style="min-width:210px" onchange="carregarPagamentoSalario()">
+              <option value="">Todas as empresas</option>
+            </select>
+          </div>
           <div class="f" style="min-width:160px;margin:0">
             <label>Competencia</label>
             <input type="month" id="sal-comp" style="width:150px">
@@ -754,6 +760,24 @@ document.addEventListener('DOMContentLoaded',()=>{
     <script>
     const SALARIO_STATE={totalAnual:0};
 
+    async function salarioPopularEmpresas(){
+      const sel=document.getElementById('sal-empresa');
+      if(!sel) return;
+      let listaEmp=Array.isArray(emps)?emps:[];
+      if(!listaEmp.length){
+        const r=await api('/api/empresas');
+        if(Array.isArray(r)) listaEmp=r;
+      }
+      const atual=sel.value||'';
+      sel.innerHTML='<option value="">Todas as empresas</option>'+(listaEmp||[]).map(e=>`<option value="${e.id}">${esc(e.nome||'Empresa')}</option>`).join('');
+      if(Array.from(sel.options).some(o=>o.value===atual)) sel.value=atual;
+    }
+
+    function salarioEmpresaSelecionada(){
+      const v=(document.getElementById('sal-empresa')?.value||'').trim();
+      return v?parseInt(v,10):null;
+    }
+
     function salarioCompetenciaAtual(){
       const d=new Date();
       return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
@@ -770,20 +794,25 @@ document.addEventListener('DOMContentLoaded',()=>{
 
     function exportarPagamentoSalario(formato){
       const comp=(document.getElementById('sal-comp')?.value||'').trim();
+      const empresaId=salarioEmpresaSelecionada();
       if(!/^\d{4}-\d{2}$/.test(comp)){
         showSt('sal-st','Competencia invalida. Use AAAA-MM.',true);
         return;
       }
+      const p=new URLSearchParams();
+      p.set('competencia',comp);
+      if(empresaId) p.set('empresa_id',String(empresaId));
       if(formato==='xlsx'){
-        window.open('/api/financeiro/salarios/export.xlsx?competencia='+encodeURIComponent(comp),'_blank');
+        window.open('/api/financeiro/salarios/export.xlsx?'+p.toString(),'_blank');
       }else if(formato==='pdf'){
-        window.open('/api/financeiro/salarios/export.pdf?competencia='+encodeURIComponent(comp),'_blank');
+        window.open('/api/financeiro/salarios/export.pdf?'+p.toString(),'_blank');
       }
     }
 
     async function carregarPagamentoSalario(){
       const compInput=document.getElementById('sal-comp');
       const comp=((compInput?.value)||salarioCompetenciaAtual()).trim();
+      const empresaId=salarioEmpresaSelecionada();
       const tb=document.getElementById('tb-salarios');
       const res=document.getElementById('sal-res');
       if(!tb || !res) return;
@@ -793,7 +822,9 @@ document.addEventListener('DOMContentLoaded',()=>{
         return;
       }
       tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:#999">Carregando...</td></tr>';
-      const r=await api('/api/financeiro/salarios?competencia='+encodeURIComponent(comp));
+      let url='/api/financeiro/salarios?competencia='+encodeURIComponent(comp);
+      if(empresaId) url+='&empresa_id='+encodeURIComponent(String(empresaId));
+      const r=await api(url);
       if(r?.erro){
         tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:#c33">Erro ao carregar pagamentos.</td></tr>';
         showSt('sal-st',r.erro,true);
@@ -814,12 +845,14 @@ document.addEventListener('DOMContentLoaded',()=>{
       SALARIO_STATE.totalAnual=Number(r.total_anual||0);
       document.getElementById('sal-total-anual').textContent=brl(r.total_anual||0);
       document.getElementById('sal-total-comp').textContent=brl(r.total_competencia||0);
-      res.textContent=`${r.total_funcionarios||itens.length} colaborador(es) ativo(s) · Competencia ${r.competencia||comp}`;
+      const empNome=empresaId?((emps||[]).find(e=>String(e.id)===String(empresaId))?.nome||'Empresa selecionada'):'Todas as empresas';
+      res.textContent=`${r.total_funcionarios||itens.length} colaborador(es) ativo(s) · ${empNome} · Competencia ${r.competencia||comp}`;
       showSt('sal-st','Pagamentos carregados.',false);
     }
 
     async function salvarPagamentoSalario(){
       const comp=(document.getElementById('sal-comp')?.value||'').trim();
+      const empresaId=salarioEmpresaSelecionada();
       if(!/^\d{4}-\d{2}$/.test(comp)){
         showSt('sal-st','Competencia invalida. Use AAAA-MM.',true);
         return;
@@ -832,7 +865,9 @@ document.addEventListener('DOMContentLoaded',()=>{
         showSt('sal-st','Nenhum colaborador para salvar.',true);
         return;
       }
-      const r=await api('/api/financeiro/salarios','POST',{competencia:comp,valores});
+      const payload={competencia:comp,valores};
+      if(empresaId) payload.empresa_id=empresaId;
+      const r=await api('/api/financeiro/salarios','POST',payload);
       if(r?.erro){
         showSt('sal-st',r.erro,true);
         return;
@@ -845,6 +880,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       const c=document.getElementById('sal-comp');
       if(c && !c.value) c.value=salarioCompetenciaAtual();
       if(document.getElementById('pg-pagamento-salario')){
+        salarioPopularEmpresas();
         carregarPagamentoSalario();
       }
     });

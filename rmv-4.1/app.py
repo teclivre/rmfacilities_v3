@@ -13,17 +13,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
-# Corrige NameError: _strict_origin_check
-_strict_origin_check = True
-
-
-
-
-
 from flask import Flask, request, jsonify, redirect, render_template, send_file, Response, url_for, has_request_context
-
-import io
-_strict_origin_check = False
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from flask_sqlalchemy import SQLAlchemy
@@ -38,6 +28,8 @@ import sqlite3
 import unicodedata
 import os, json, hashlib, hmac, secrets
 from datetime import datetime, timedelta, date
+from zoneinfo import ZoneInfo
+from ponto_module import register_ponto_routes
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -721,11 +713,17 @@ def _parse_competencia(v):
         return ''
     return c
 
-def _salarios_pagamentos_resumo(competencia):
-    funcs=Funcionario.query.filter_by(status='Ativo').order_by(Funcionario.nome).all()
+def _salarios_pagamentos_resumo(competencia,empresa_id=None):
+    qf=Funcionario.query.filter_by(status='Ativo')
+    if empresa_id:
+        qf=qf.filter_by(empresa_id=empresa_id)
+    funcs=qf.order_by(Funcionario.nome).all()
+    ids_funcs={f.id for f in funcs}
     comp_rows=FuncionarioPagamentoSalario.query.filter_by(competencia=competencia).all()
     valores_comp={}
     for r in comp_rows:
+        if ids_funcs and r.funcionario_id not in ids_funcs:
+            continue
         valores_comp[r.funcionario_id]=float(r.valor_liquido or 0)
 
     ano_prefix=f"{competencia[:4]}-%"
@@ -733,6 +731,8 @@ def _salarios_pagamentos_resumo(competencia):
     anual_por_func={}
     total_anual=0.0
     for r in ano_rows:
+        if ids_funcs and r.funcionario_id not in ids_funcs:
+            continue
         v=float(r.valor_liquido or 0)
         anual_por_func[r.funcionario_id]=anual_por_func.get(r.funcionario_id,0.0)+v
         total_anual+=v
@@ -754,6 +754,7 @@ def _salarios_pagamentos_resumo(competencia):
     return {
         'competencia':competencia,
         'ano':competencia[:4],
+        'empresa_id':empresa_id,
         'itens':itens,
         'total_funcionarios':len(itens),
         'total_competencia':round(total_competencia,2),
@@ -889,13 +890,15 @@ def _export_salarios_pagamentos_pdf(resumo):
 @lr
 def api_financeiro_salarios_list():
     competencia=_parse_competencia(request.args.get('competencia')) or _competencia_padrao()
-    return jsonify({'ok':True,**_salarios_pagamentos_resumo(competencia)})
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    return jsonify({'ok':True,**_salarios_pagamentos_resumo(competencia,empresa_id=empresa_id)})
 
 @app.route('/api/financeiro/salarios', methods=['POST'])
 @lr
 def api_financeiro_salarios_save():
     data=request.get_json(silent=True) or {}
     competencia=_parse_competencia(data.get('competencia')) or _competencia_padrao()
+    empresa_id=to_num(data.get('empresa_id')) or None
     valores=data.get('valores') if isinstance(data.get('valores'),list) else []
 
     ids_validos={x.id for x in Funcionario.query.filter_by(status='Ativo').all()}
@@ -936,19 +939,21 @@ def api_financeiro_salarios_save():
 
     db.session.commit()
     audit_event('salario_pagamento_salvar','usuario',session.get('uid'),'financeiro',competencia,True,{'alterados':alterados})
-    return jsonify({'ok':True,'alterados':alterados,**_salarios_pagamentos_resumo(competencia)})
+    return jsonify({'ok':True,'alterados':alterados,**_salarios_pagamentos_resumo(competencia,empresa_id=empresa_id)})
 
 @app.route('/api/financeiro/salarios/export.xlsx', methods=['GET'])
 @lr
 def api_financeiro_salarios_export_xlsx():
     competencia=_parse_competencia(request.args.get('competencia')) or _competencia_padrao()
-    return _export_salarios_pagamentos_xlsx(_salarios_pagamentos_resumo(competencia))
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    return _export_salarios_pagamentos_xlsx(_salarios_pagamentos_resumo(competencia,empresa_id=empresa_id))
 
 @app.route('/api/financeiro/salarios/export.pdf', methods=['GET'])
 @lr
 def api_financeiro_salarios_export_pdf():
     competencia=_parse_competencia(request.args.get('competencia')) or _competencia_padrao()
-    return _export_salarios_pagamentos_pdf(_salarios_pagamentos_resumo(competencia))
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    return _export_salarios_pagamentos_pdf(_salarios_pagamentos_resumo(competencia,empresa_id=empresa_id))
 
 class Usuario(db.Model):
     id=db.Column(db.Integer,primary_key=True)
