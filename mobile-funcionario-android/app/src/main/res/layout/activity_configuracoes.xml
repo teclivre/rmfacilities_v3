@@ -4,16 +4,15 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/background">
+    android:background="@drawable/bg_mobile_gradient">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_header_gradient"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:paddingTop="52dp"
-        android:paddingBottom="20dp"
+        android:paddingBottom="16dp"
         android:paddingStart="20dp"
         android:paddingEnd="20dp">
 
@@ -23,186 +22,254 @@
             android:layout_height="40dp"
             android:gravity="center"
             android:text="‹"
-            android:textColor="@color/white"
+            android:textColor="@color/mobile_text_primary"
             android:textSize="30sp" />
 
-        <TextView
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginStart="8dp"
-            android:text="Configurações"
-            android:textColor="@color/white"
-            android:textSize="19sp"
-            android:textStyle="bold" />
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Configurações"
+                android:textColor="@color/mobile_text_primary"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Formulário de preferências e segurança"
+                android:textColor="@color/mobile_text_secondary"
+                android:textSize="12sp" />
+        </LinearLayout>
     </LinearLayout>
 
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="@drawable/bg_sheet_rounded"
-        android:fillViewport="true">
+        android:fillViewport="true"
+        android:clipToPadding="false"
+        android:paddingBottom="14dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="24dp">
+            android:paddingStart="18dp"
+            android:paddingEnd="18dp"
+            android:paddingBottom="20dp">
 
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switchBiometriaConfig"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Entrar com biometria"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp" />
+                android:orientation="vertical"
+                android:background="@drawable/bg_glass_widget">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Segurança"
+                    android:textColor="@color/mobile_text_primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchBiometriaConfig"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:layout_marginTop="8dp"
+                    android:gravity="center_vertical"
+                    android:text="Entrar com biometria"
+                    android:textColor="@color/mobile_text_primary"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/tvBiometriaStatusConfig"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="10dp"
+                    android:background="@drawable/bg_home_card_soft"
+                    android:textColor="@color/mobile_text_secondary"
+                    android:textSize="12sp" />
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchNotificacoesConfig"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center_vertical"
+                    android:text="Receber notificações push"
+                    android:textColor="@color/mobile_text_primary"
+                    android:textSize="15sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="vertical"
+                android:background="@drawable/bg_home_card_soft"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Canal para código de acesso"
+                    android:textColor="@color/mobile_text_primary"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <RadioGroup
+                    android:id="@+id/rgCanalOtp"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="vertical">
+
+                    <RadioButton
+                        android:id="@+id/rbCanalWhatsapp"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:gravity="center_vertical"
+                        android:text="WhatsApp"
+                        android:textColor="@color/mobile_text_primary"
+                        android:textSize="15sp" />
+
+                    <RadioButton
+                        android:id="@+id/rbCanalEmail"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:gravity="center_vertical"
+                        android:text="E-mail"
+                        android:textColor="@color/mobile_text_primary"
+                        android:textSize="15sp" />
+                </RadioGroup>
+
+                <TextView
+                    android:id="@+id/tvCanalOtpStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textColor="@color/mobile_semantic_info"
+                    android:textSize="12sp" />
+            </LinearLayout>
 
             <TextView
-                android:id="@+id/tvBiometriaStatusConfig"
+                android:id="@+id/tvFeedbackConfig"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:text=""
-                android:textColor="@color/text_secondary"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_home_card_soft"
+                android:padding="12dp"
+                android:text="As alterações são aplicadas automaticamente."
+                android:textColor="@color/mobile_text_secondary"
                 android:textSize="12sp" />
 
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switchNotificacoesConfig"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:text="Receber notificações push"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp" />
+                android:layout_marginTop="12dp"
+                android:orientation="vertical"
+                android:background="@drawable/bg_home_card_soft"
+                android:padding="14dp">
 
-            <!-- Canal de recebimento do código OTP -->
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:layout_marginBottom="8dp"
-                android:text="Receber código de acesso via"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <RadioGroup
-                android:id="@+id/rgCanalOtp"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <RadioButton
-                    android:id="@+id/rbCanalWhatsapp"
+                <TextView
                     android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:gravity="center_vertical"
-                    android:text="WhatsApp"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
+                    android:layout_height="wrap_content"
+                    android:text="Bloqueio por inatividade"
+                    android:textColor="@color/mobile_text_primary"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
 
-                <RadioButton
-                    android:id="@+id/rbCanalEmail"
+                <RadioGroup
+                    android:id="@+id/rgTimeoutSessao"
                     android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:gravity="center_vertical"
-                    android:text="E-mail"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
-            </RadioGroup>
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/tvCanalOtpStatus"
+                    <RadioButton
+                        android:id="@+id/rbTimeout10"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:gravity="center_vertical"
+                        android:text="10 minutos"
+                        android:textColor="@color/mobile_text_primary"
+                        android:textSize="15sp" />
+
+                    <RadioButton
+                        android:id="@+id/rbTimeout15"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:gravity="center_vertical"
+                        android:text="15 minutos"
+                        android:textColor="@color/mobile_text_primary"
+                        android:textSize="15sp" />
+
+                    <RadioButton
+                        android:id="@+id/rbTimeout30"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:gravity="center_vertical"
+                        android:text="30 minutos"
+                        android:textColor="@color/mobile_text_primary"
+                        android:textSize="15sp" />
+                </RadioGroup>
+            </LinearLayout>
+
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text=""
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp" />
+                android:layout_marginTop="14dp"
+                android:orientation="vertical"
+                android:paddingBottom="8dp">
 
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:text="Bloqueio por inatividade"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <RadioGroup
-                android:id="@+id/rgTimeoutSessao"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <RadioButton
-                    android:id="@+id/rbTimeout10"
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRevogarDispositivo"
+                    style="@style/Widget.App.Button.Outlined"
                     android:layout_width="match_parent"
-                    android:layout_height="44dp"
-                    android:gravity="center_vertical"
-                    android:text="10 minutos"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
+                    android:layout_height="56dp"
+                    android:text="Revogar dispositivo confiável"
+                    android:textColor="@color/mobile_semantic_pending"
+                    app:strokeColor="@color/mobile_card_border" />
 
-                <RadioButton
-                    android:id="@+id/rbTimeout15"
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnLogoutRemoto"
+                    style="@style/Widget.App.Button.Outlined"
                     android:layout_width="match_parent"
-                    android:layout_height="44dp"
-                    android:gravity="center_vertical"
-                    android:text="15 minutos"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
+                    android:layout_height="56dp"
+                    android:layout_marginTop="8dp"
+                    android:text="Sair deste aparelho"
+                    android:textColor="@color/mobile_semantic_info"
+                    app:strokeColor="@color/mobile_card_border" />
 
-                <RadioButton
-                    android:id="@+id/rbTimeout30"
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnPoliticaPrivacidade"
+                    style="@style/Widget.App.Button.Outlined"
                     android:layout_width="match_parent"
-                    android:layout_height="44dp"
-                    android:gravity="center_vertical"
-                    android:text="30 minutos"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
-            </RadioGroup>
+                    android:layout_height="56dp"
+                    android:layout_marginTop="8dp"
+                    android:text="Política de privacidade"
+                    android:textColor="@color/mobile_text_secondary"
+                    app:strokeColor="@color/mobile_card_border" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnRevogarDispositivo"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="8dp"
-                android:text="Revogar dispositivo confiável"
-                android:textColor="@color/accent_blue"
-                app:strokeColor="@color/border" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnLimparOffline"
+                    style="@style/Widget.App.Button.Outlined"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:layout_marginTop="8dp"
+                    android:text="Limpar documentos offline"
+                    android:textColor="@color/mobile_text_secondary"
+                    app:strokeColor="@color/mobile_card_border" />
+            </LinearLayout>
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnLogoutRemoto"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="10dp"
-                android:text="Sair deste aparelho"
-                android:textColor="@color/accent_blue"
-                app:strokeColor="@color/border" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnPoliticaPrivacidade"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="22dp"
-                android:text="Política de Privacidade"
-                android:textColor="@color/accent_blue"
-                app:strokeColor="@color/border" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnLimparOffline"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="10dp"
-                android:text="Limpar documentos offline"
-                android:textColor="@color/accent_blue"
-                app:strokeColor="@color/border" />
         </LinearLayout>
     </ScrollView>
 
