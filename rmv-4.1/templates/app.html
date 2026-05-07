@@ -1083,7 +1083,16 @@ document.addEventListener('DOMContentLoaded',()=>{
     <!-- ══ RH ══ -->
     <div id="pg-rh" class="pg">
       <div id="st-rh" class="st"></div>
-      <div class="card">
+      <div id="rh-subabas" class="subaba-blocos rh-subabas">
+        <button type="button" id="rh-subtab-funcionarios" class="subaba-bloco on" onclick="rhSetSubAba('funcionarios',this)">Funcionários</button>
+        <button type="button" id="rh-subtab-exportar" class="subaba-bloco" onclick="rhSetSubAba('exportar',this)">Exportar colaboradores ativos</button>
+        <button type="button" id="rh-subtab-jornada" class="subaba-bloco" onclick="rhSetSubAba('jornada',this)">Jornadas e Geofence</button>
+        <button type="button" id="rh-subtab-ponto" class="subaba-bloco" onclick="rhSetSubAba('ponto',this)">Gestão de Ponto por Funcionário</button>
+        <button type="button" id="rh-subtab-painel-dia" class="subaba-bloco" onclick="rhSetSubAba('painel-dia',this)">Painel do dia</button>
+        <button type="button" id="rh-subtab-envio" class="subaba-bloco" onclick="rhSetSubAba('envio',this)">Envio de arquivo</button>
+        <button type="button" id="rh-subtab-assinaturas" class="subaba-bloco" onclick="rhSetSubAba('assinaturas',this)">Painel de Assinaturas</button>
+      </div>
+      <div class="card rh-pane" id="rh-pane-funcionarios" data-rh-pane="funcionarios">
         <div class="card-header">
           <span class="card-title">Funcionários</span>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1159,7 +1168,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
 
-      <div class="card">
+      <div class="card rh-pane" id="rh-pane-exportar" data-rh-pane="exportar">
         <div class="card-header"><span class="card-title">Exportar colaboradores ativos</span></div>
         <div class="g3" style="margin-top:8px">
           <div class="f">
@@ -1191,7 +1200,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
 
-      <div class="card">
+      <div class="card rh-pane" id="rh-pane-jornada" data-rh-pane="jornada">
         <div class="card-header"><span class="card-title">Jornadas de Trabalho e Geofence de Posto</span></div>
         <div class="g2" style="margin-top:8px">
           <div class="f" style="border:1px solid var(--borda);border-radius:10px;padding:10px;background:var(--cinza-cl)">
@@ -1280,9 +1289,11 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div id="rh-jornada-st" class="st" style="margin-top:8px"></div>
       </div>
 
-      {% include 'partials/rh_ponto_section.html' %}
+      <div class="rh-pane" id="rh-pane-ponto" data-rh-pane="ponto">
+        {% include 'partials/rh_ponto_section.html' %}
+      </div>
 
-      <div class="card">
+      <div class="card rh-pane" id="rh-pane-painel-dia" data-rh-pane="painel-dia">
         <div class="card-header"><span class="card-title">Painel do dia (colaboradores ativos)</span></div>
         <div id="ponto-painel-st" class="st" style="margin-bottom:8px"></div>
         <div class="tbl-wrap">
@@ -1293,7 +1304,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
 
-      <div class="card">
+      <div class="card rh-pane" id="rh-pane-envio" data-rh-pane="envio">
         <div class="card-header"><span class="card-title">Envio de arquivo</span></div>
         <div class="g4">
           <div class="f"><label>Tipo de documento</label>
@@ -1344,7 +1355,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
 
       <!-- ══ PAINEL DE ASSINATURAS ══ -->
-      <div class="card" id="card-painel-assinaturas">
+      <div class="card rh-pane" id="card-painel-assinaturas" data-rh-pane="assinaturas">
         <div class="card-header">
           <span class="card-title">Painel de Assinaturas</span>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -2708,7 +2719,7 @@ function rbacLimpar(){
     if(el) el.checked=false;
   }));
 }
-let todos=[], emps=[], funcs=[], pontoFuncs=[], bancosBR=[], beneficiosMensais=[], benTab='ativos', rhFuncTab='ativos', acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
+let todos=[], emps=[], funcs=[], pontoFuncs=[], bancosBR=[], beneficiosMensais=[], benTab='ativos', rhFuncTab='ativos', rhSubAba='funcionarios', acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
 let rhJornadas=[], rhJornadaInitDone=false;
 let rhExportFuncsAtivos=[];
 let pontoResumoPainelByFunc={};
@@ -3287,7 +3298,13 @@ function nav(id,el,force=false){
   if(targetId==='empresas')renderEmps();
   if(targetId==='usuarios')renderUsr();
   if(targetId==='config')loadConfig();
-  if(targetId==='rh'){renderFuncionarios();painelAssInicializar();rhExportCarregarFiltros();rhJornadaInit();}
+  if(targetId==='rh'){
+    renderFuncionarios();
+    painelAssInicializar();
+    rhExportCarregarFiltros();
+    rhJornadaInit();
+    rhSetSubAba(rhSubAba || 'funcionarios');
+  }
   if(targetId==='operacional'){renderOperDocs();renderOperPostos();}
   if(targetId==='compras'){renderOrdensCompra();}
   if(targetId==='beneficios'){carregarBeneficiosMensais();carregarConfigAlertaBeneficios();}
@@ -3320,7 +3337,7 @@ function _subAbaLabel(item,idx){
 function montarSubAbasBloco(){
   document.querySelectorAll('.pg').forEach(pg=>{
     if(pg.dataset.subabaReady==='1') return;
-    if(['pg-rh-digital','pg-assinaturas'].includes(pg.id)) return;
+    if(['pg-rh','pg-rh-digital','pg-assinaturas'].includes(pg.id)) return;
 
     const itens=Array.from(pg.children).filter(el=>{
       if(!el) return false;
@@ -3386,8 +3403,20 @@ function navFromMobile(id){
 function abrirRhSalarios(){
   const rhNav=[...document.querySelectorAll('.nav-item')].find(n=>((n.textContent||'').trim()==='RH')) || null;
   nav('rh',rhNav,true);
+  rhSetSubAba('funcionarios');
   const bt=document.getElementById('rh-tab-salarios');
   if(bt) switchRhFuncTab('salarios',bt);
+}
+
+function rhSetSubAba(tab,btn){
+  const tabs=['funcionarios','exportar','jornada','ponto','painel-dia','envio','assinaturas'];
+  rhSubAba=tabs.includes(tab)?tab:'funcionarios';
+  Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
+    p.style.display=(p.dataset.rhPane===rhSubAba)?'':'none';
+  });
+  Array.from(document.querySelectorAll('#rh-subabas .subaba-bloco')).forEach(b=>b.classList.remove('on'));
+  const alvo=btn || document.getElementById('rh-subtab-'+rhSubAba);
+  if(alvo) alvo.classList.add('on');
 }
 
 async function abrirDashboardDestino(destino,empresaId=null){
