@@ -3397,7 +3397,7 @@ function rhSetSubAba(tab,btn){
   const tabs=['funcionarios','exportar','jornada','ponto','painel-dia','envio','assinaturas'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
-    p.style.display=(p.dataset.rhPane===rhSubAba)?'':'none';
+    p.style.display=(p.dataset.rhPane===rhSubAba)?'block':'none';
   });
   Array.from(document.querySelectorAll('#rh-subabas .subaba-bloco')).forEach(b=>b.classList.remove('on'));
   const alvo=btn || document.getElementById('rh-subtab-'+rhSubAba);
