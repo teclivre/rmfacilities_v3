@@ -1145,6 +1145,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <a class="btn b-gh b-sm" href="/api/financeiro/salarios/modelo" target="_blank">Modelo importação</a>
           <label class="btn b-gh b-sm" for="rh-sal-import-file" style="cursor:pointer">Importar planilha</label>
           <input type="file" id="rh-sal-import-file" accept=".csv,.xlsx" style="display:none" onchange="rhSalariosImportarPlanilha(event)">
+          <span id="rh-sal-auto-hint" style="font-size:11px;color:#9fb3c8;margin-left:2px">Auto-save ativo</span>
         </div>
         <div id="rh-sal-res" style="display:none;margin:0 12px 10px 12px;color:#6d7a8c;font-size:13px"></div>
         <div id="rh-sal-painel" style="display:none;margin:0 12px 12px 12px">
@@ -2722,6 +2723,8 @@ function rbacLimpar(){
 let todos=[], emps=[], funcs=[], pontoFuncs=[], bancosBR=[], beneficiosMensais=[], benTab='ativos', rhFuncTab='ativos', rhSubAba='funcionarios', acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
 let rhJornadas=[], rhJornadaInitDone=false;
 let rhExportFuncsAtivos=[];
+let rhSalAutoTimer=null, rhSalAutoInflight=false, rhSalAutoLastHash='', rhSalFolhaStatus='aberta';
+let rhSalariosPreviewWin=null;
 let pontoResumoPainelByFunc={};
 let pontoMarcacoesDiaAtual=[];
 let medicaoAtualId=null;
@@ -2784,6 +2787,7 @@ function scheduleAutosaveField(el){
   _autosaveTimers[key]=setTimeout(()=>{
     rememberAutosaveField(el);
     delete _autosaveTimers[key];
+    if(!hasAutosavePendingWork()) _pageDirty=false;
   },400);
 }
 
@@ -3972,8 +3976,18 @@ function markPageClean(){
 }
 
 function hasUnsavedChanges(){
-  if(_pageDirty) return true;
-  return MODAL_FORM_IDS.some(id=>!!_modalDirty[id]);
+  return hasAutosavePendingWork();
+}
+
+function hasAutosavePendingWork(){
+  const timerPending=Object.values(_autosaveTimers).some(Boolean);
+  const benefPending=!!_benefAutosaveTimer;
+  const opInflight=(typeof _opPostoAutosaveInflight!=='undefined' && _opPostoAutosaveInflight && _opPostoAutosaveInflight.size>0);
+  const opTimers=(typeof _opPostoAutosaveTimers!=='undefined' && _opPostoAutosaveTimers)
+    ? Object.values(_opPostoAutosaveTimers).some(Boolean)
+    : false;
+  const folhaPending=(typeof rhSalAutoInflight!=='undefined' && rhSalAutoInflight) || (typeof rhSalAutoTimer!=='undefined' && !!rhSalAutoTimer);
+  return timerPending || benefPending || opInflight || opTimers || folhaPending;
 }
 
 function setupModalDirtyTracking(){
@@ -5656,10 +5670,25 @@ function rhSalariosPrevia(){
   const versaoSel=document.getElementById('rh-sal-versao');
   const p=new URLSearchParams();
   p.set('competencia',comp);
-  p.set('modo','salva');
+  p.set('modo',(versaoSel && versaoSel.value)?'salva':'atual');
   if(empresaId) p.set('empresa_id',empresaId);
   if(versaoSel && versaoSel.value) p.set('versao',versaoSel.value);
-  window.open('/financeiro/salarios/preview?'+p.toString(),'_blank');
+  rhSalariosPreviewWin=window.open('/financeiro/salarios/preview?'+p.toString(),'rh-salarios-preview');
+}
+
+function rhSalariosRefreshPreviaSeAberta(){
+  if(!rhSalariosPreviewWin || rhSalariosPreviewWin.closed) return;
+  const comp=rhSalariosCompetenciaAtual();
+  if(!/^\d{4}-\d{2}$/.test(comp)) return;
+  const empresaId=rhSalariosEmpresaAtual();
+  const versaoSel=document.getElementById('rh-sal-versao');
+  const p=new URLSearchParams();
+  p.set('competencia',comp);
+  p.set('modo',(versaoSel && versaoSel.value)?'salva':'atual');
+  p.set('_ts',String(Date.now()));
+  if(empresaId) p.set('empresa_id',empresaId);
+  if(versaoSel && versaoSel.value) p.set('versao',versaoSel.value);
+  try{ rhSalariosPreviewWin.location.replace('/financeiro/salarios/preview?'+p.toString()); }catch(_){ }
 }
 
 function rhSalariosColetarValores(){
@@ -5668,6 +5697,81 @@ function rhSalariosColetarValores(){
     valor_liquido:tr.querySelector('.rh-sal-valor')?.value||'0',
     salario_obs:tr.querySelector('.rh-sal-obs')?.value||''
   })).filter(it=>it.funcionario_id>0);
+}
+
+function rhSalariosSetAutoHint(msg,tipo='idle'){
+  const el=document.getElementById('rh-sal-auto-hint');
+  if(!el) return;
+  el.textContent=msg||'';
+  el.style.color=(tipo==='ok')?'#7ee5bf':((tipo==='er')?'#ffb3b3':'#9fb3c8');
+}
+
+function rhSalariosPayloadAtual(){
+  const comp=rhSalariosCompetenciaAtual();
+  const empresaId=rhSalariosEmpresaAtual();
+  if(!/^\d{4}-\d{2}$/.test(comp)) return null;
+  const valores=rhSalariosColetarValores();
+  if(!valores.length) return null;
+  const body={competencia:comp,valores};
+  if(empresaId) body.empresa_id=parseInt(empresaId,10);
+  return body;
+}
+
+function rhSalariosPayloadHash(body){
+  if(!body) return '';
+  const itens=(Array.isArray(body.valores)?body.valores:[])
+    .map(v=>({
+      funcionario_id:Number(v.funcionario_id||0),
+      valor_liquido:String(v.valor_liquido||'0').replace(',','.'),
+      salario_obs:String(v.salario_obs||'').trim()
+    }))
+    .sort((a,b)=>a.funcionario_id-b.funcionario_id);
+  return JSON.stringify({competencia:body.competencia,empresa_id:body.empresa_id||0,itens});
+}
+
+function rhSalariosMarcarEstadoSalvo(){
+  const body=rhSalariosPayloadAtual();
+  rhSalAutoLastHash=rhSalariosPayloadHash(body);
+  if((rhSalFolhaStatus||'aberta')==='fechada'){
+    rhSalariosSetAutoHint('Folha fechada para edição.','idle');
+    return;
+  }
+  if(rhPayrollCan('edit')) rhSalariosSetAutoHint('Auto-save ativo.','ok');
+}
+
+function rhSalariosAutoSaveSchedule(){
+  if(!rhPayrollCan('edit')) return;
+  if((rhSalFolhaStatus||'aberta')==='fechada') return;
+  clearTimeout(rhSalAutoTimer);
+  rhSalariosSetAutoHint('Alterações pendentes...','idle');
+  rhSalAutoTimer=setTimeout(()=>{
+    rhSalAutoTimer=null;
+    rhSalariosAutoSaveFlush(false);
+  },850);
+}
+
+async function rhSalariosAutoSaveFlush(force){
+  if(rhSalAutoInflight) return;
+  if(!rhPayrollCan('edit')) return;
+  if((rhSalFolhaStatus||'aberta')==='fechada') return;
+  const body=rhSalariosPayloadAtual();
+  if(!body) return;
+  const payloadHash=rhSalariosPayloadHash(body);
+  if(!force && payloadHash===rhSalAutoLastHash){
+    rhSalariosSetAutoHint('Auto-save em dia.','ok');
+    return;
+  }
+  rhSalAutoInflight=true;
+  rhSalariosSetAutoHint('Salvando automaticamente...','idle');
+  const r=await api('/api/financeiro/salarios','POST',body);
+  rhSalAutoInflight=false;
+  if(r?.erro){
+    rhSalariosSetAutoHint('Falha no auto-save. Use Salvar valores.','er');
+    return;
+  }
+  rhSalAutoLastHash=payloadHash;
+  rhSalariosSetAutoHint('Salvo automaticamente.','ok');
+  rhSalariosRefreshPreviaSeAberta();
 }
 
 async function rhSalariosSalvar(){
@@ -5693,6 +5797,9 @@ async function rhSalariosSalvar(){
     showSt('st-rh',r.erro,true);
     return;
   }
+  rhSalAutoLastHash=rhSalariosPayloadHash(body);
+  rhSalariosSetAutoHint('Salvo manualmente.','ok');
+  rhSalariosRefreshPreviaSeAberta();
   showSt('st-rh',`Pagamentos salvos para ${comp} (${r.alterados||0} alteração(ões)).`,false);
   await renderFuncionarios();
 }
@@ -5721,6 +5828,7 @@ async function rhSalariosSalvarFolha(){
     showSt('st-rh',r.erro,true);
     return;
   }
+  rhSalariosSetAutoHint('Folha fechada. Auto-save pausado.','idle');
   showSt('st-rh',`Folha de ${comp} salva no banco (${r.total_funcionarios||0} colaborador(es), total ${brl(r.total_competencia||0)}).`,false);
   await renderFuncionarios();
 }
@@ -5736,6 +5844,7 @@ async function rhSalariosReabrirFolha(){
   if(empresaId) body.empresa_id=parseInt(empresaId,10);
   const r=await api('/api/financeiro/salarios/reabrir','POST',body);
   if(r?.erro){ showSt('st-rh',r.erro,true); return; }
+  rhSalariosSetAutoHint('Folha reaberta. Auto-save ativo.','ok');
   showSt('st-rh',`Folha ${comp} reaberta para edição.`,false);
   await renderFuncionarios();
 }
@@ -5896,6 +6005,7 @@ async function renderFuncionarios(){
       const metaSalvar=(rSal.folha_salva_em?` · folha salva em ${new Date(rSal.folha_salva_em).toLocaleString('pt-BR')}${rSal.folha_salva_por?(' por '+rSal.folha_salva_por):''}`:' · folha ainda não salva no histórico');
       salResumo.textContent=`${listaSal.length} colaborador(es) · ${empNome} · Competência ${comp} · status ${rSal.folha_status||'aberta'}${metaSalvar}`;
     }
+    rhSalFolhaStatus=rSal.folha_status||'aberta';
     rhSalariosRenderPainel(rSal);
     const canEdit=rhPayrollCan('edit') && (rSal.folha_status||'aberta')!=='fechada';
     if(!listaSal.length){
@@ -5914,14 +6024,15 @@ async function renderFuncionarios(){
         <td>${f.cargo||'—'}</td>
         <td style="font-size:11px">${f.posto_operacional||'Reserva tecnica'}</td>
         <td>${f.empresa_nome||'—'}</td>
-        <td style="text-align:right"><input class="rh-sal-valor" data-fid="${f.funcionario_id}" type="number" min="0" step="0.01" value="${valor.toFixed(2)}" style="width:150px;text-align:right" oninput="rhSalariosAtualizarTotalTela()" ${canEdit?'':'disabled'}></td>
+        <td style="text-align:right"><input class="rh-sal-valor" data-fid="${f.funcionario_id}" type="number" min="0" step="0.01" value="${valor.toFixed(2)}" style="width:150px;text-align:right" oninput="rhSalariosAtualizarTotalTela();rhSalariosAutoSaveSchedule()" ${canEdit?'':'disabled'}></td>
         <td style="text-align:right;font-weight:700;color:${f.inconsistente?'#c33':'var(--azul)'}">${brl(anterior)}${deltaInfo}</td>
-        <td><input class="rh-sal-obs" type="text" value="${esc(f.salario_obs||'')}" placeholder="Observação do ajuste" style="min-width:180px" ${canEdit?'':'disabled'}></td>
+        <td><input class="rh-sal-obs" type="text" value="${esc(f.salario_obs||'')}" placeholder="Observação do ajuste" style="min-width:180px" oninput="rhSalariosAutoSaveSchedule()" ${canEdit?'':'disabled'}></td>
         <td style="text-align:right;font-weight:700;color:var(--azul)">${brl(totalAnual)}</td>
         <td><button class="btn b-gh b-sm" onclick="openModalFunc('editar',${f.funcionario_id})">Editar funcionário</button></td>
       </tr>`;
     }).join('');
     rhSalariosAtualizarTotalTela();
+    rhSalariosMarcarEstadoSalvo();
     return;
   }
 
@@ -6729,6 +6840,7 @@ function onChangePostoOperacional(funcionarioId){
   avisoPostoCheio(funcionarioId);
   if(_opPostoAutosaveTimers[funcionarioId]) clearTimeout(_opPostoAutosaveTimers[funcionarioId]);
   _opPostoAutosaveTimers[funcionarioId]=setTimeout(()=>{
+    delete _opPostoAutosaveTimers[funcionarioId];
     salvarPostoOperacional(funcionarioId,true);
   },450);
 }
@@ -7137,7 +7249,10 @@ async function salvarBeneficiosAuto(){
 
 function agendarAutoSaveBeneficios(){
   clearTimeout(_benefAutosaveTimer);
-  _benefAutosaveTimer=setTimeout(salvarBeneficiosAuto,900);
+  _benefAutosaveTimer=setTimeout(()=>{
+    _benefAutosaveTimer=null;
+    salvarBeneficiosAuto();
+  },900);
 }
 
 function renderBeneficiosAtivos(){
