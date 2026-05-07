@@ -587,43 +587,12 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div id="pg-pagamento-salario" class="pg">
       <div id="sal-st" class="st"></div>
       <div class="card">
-        <div class="card-header"><span class="card-title">Pagamento de Salario Liquido</span></div>
-        <div style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:end">
-          <div class="f" style="min-width:220px;margin:0">
-            <label>Empresa</label>
-            <select id="sal-empresa" style="min-width:210px" onchange="carregarPagamentoSalario()">
-              <option value="">Todas as empresas</option>
-            </select>
-          </div>
-          <div class="f" style="min-width:160px;margin:0">
-            <label>Competencia</label>
-            <input type="month" id="sal-comp" style="width:150px">
-          </div>
-          <button class="btn b-gh b-sm" onclick="carregarPagamentoSalario()">Carregar</button>
-          <button class="btn b-az b-sm" onclick="salvarPagamentoSalario()">Salvar valores</button>
-          <button class="btn b-ghl b-sm" onclick="exportarPagamentoSalario('xlsx')">Exportar planilha</button>
-          <button class="btn b-ghl b-sm" onclick="exportarPagamentoSalario('pdf')">Exportar PDF</button>
+        <div class="card-header"><span class="card-title">Pagamento de Salário</span></div>
+        <div style="padding:10px 0 2px 0;color:#6d7a8c;font-size:14px">
+          Esta visualização foi movida para <strong>RH → Pagamento de salário</strong>, onde estão o filtro por empresa e as exportações em PDF e planilha.
         </div>
-        <div style="overflow-x:auto">
-          <table class="tabela" style="min-width:760px">
-            <thead>
-              <tr>
-                <th>RE</th>
-                <th>Nome</th>
-                <th>CPF</th>
-                <th style="text-align:right">Salario liquido (R$)</th>
-                <th style="text-align:right">Acumulado anual (R$)</th>
-              </tr>
-            </thead>
-            <tbody id="tb-salarios">
-              <tr><td colspan="5" style="text-align:center;padding:28px;color:#bbb">Carregando colaboradores ativos...</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div id="sal-res" style="margin-top:10px;color:#888;font-size:13px"></div>
-        <div style="margin-top:8px;display:flex;gap:20px;flex-wrap:wrap;font-size:14px">
-          <div>Total da competencia: <b id="sal-total-comp">R$ 0,00</b></div>
-          <div>Total anual pago: <b id="sal-total-anual">R$ 0,00</b></div>
+        <div class="brow" style="justify-content:flex-start;gap:8px;flex-wrap:wrap;margin-top:12px">
+          <button class="btn b-az b-sm" type="button" onclick="abrirRhSalarios()">Abrir no RH</button>
         </div>
       </div>
     </div>
@@ -761,16 +730,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     const SALARIO_STATE={totalAnual:0};
 
     async function salarioPopularEmpresas(){
-      const sel=document.getElementById('sal-empresa');
-      if(!sel) return;
-      let listaEmp=Array.isArray(emps)?emps:[];
-      if(!listaEmp.length){
-        const r=await api('/api/empresas');
-        if(Array.isArray(r)) listaEmp=r;
-      }
-      const atual=sel.value||'';
-      sel.innerHTML='<option value="">Todas as empresas</option>'+(listaEmp||[]).map(e=>`<option value="${e.id}">${esc(e.nome||'Empresa')}</option>`).join('');
-      if(Array.from(sel.options).some(o=>o.value===atual)) sel.value=atual;
+      return null;
     }
 
     function salarioEmpresaSelecionada(){
@@ -793,95 +753,22 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
 
     function exportarPagamentoSalario(formato){
-      const comp=(document.getElementById('sal-comp')?.value||'').trim();
-      const empresaId=salarioEmpresaSelecionada();
-      if(!/^\d{4}-\d{2}$/.test(comp)){
-        showSt('sal-st','Competencia invalida. Use AAAA-MM.',true);
-        return;
-      }
-      const p=new URLSearchParams();
-      p.set('competencia',comp);
-      if(empresaId) p.set('empresa_id',String(empresaId));
-      if(formato==='xlsx'){
-        window.open('/api/financeiro/salarios/export.xlsx?'+p.toString(),'_blank');
-      }else if(formato==='pdf'){
-        window.open('/api/financeiro/salarios/export.pdf?'+p.toString(),'_blank');
-      }
+      abrirRhSalarios();
     }
 
     async function carregarPagamentoSalario(){
-      const compInput=document.getElementById('sal-comp');
-      const comp=((compInput?.value)||salarioCompetenciaAtual()).trim();
-      const empresaId=salarioEmpresaSelecionada();
-      const tb=document.getElementById('tb-salarios');
       const res=document.getElementById('sal-res');
-      if(!tb || !res) return;
-      if(compInput && !compInput.value) compInput.value=comp;
-      if(!/^\d{4}-\d{2}$/.test(comp)){
-        showSt('sal-st','Competencia invalida. Use AAAA-MM.',true);
-        return;
-      }
-      tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:#999">Carregando...</td></tr>';
-      let url='/api/financeiro/salarios?competencia='+encodeURIComponent(comp);
-      if(empresaId) url+='&empresa_id='+encodeURIComponent(String(empresaId));
-      const r=await api(url);
-      if(r?.erro){
-        tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:#c33">Erro ao carregar pagamentos.</td></tr>';
-        showSt('sal-st',r.erro,true);
-        return;
-      }
-      const itens=Array.isArray(r?.itens)?r.itens:[];
-      if(!itens.length){
-        tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:#999">Nenhum funcionario ativo encontrado.</td></tr>';
-      }else{
-        tb.innerHTML=itens.map(it=>`<tr>
-          <td>${it.re||'—'}</td>
-          <td><div style="font-weight:700">${it.nome||''}</div></td>
-          <td>${fmtDoc(it.cpf||'')}</td>
-          <td style="text-align:right"><input class="sal-valor" data-fid="${it.funcionario_id}" type="number" min="0" step="0.01" value="${Number(it.valor_liquido||0).toFixed(2)}" style="width:150px;text-align:right" oninput="salarioSomarCompetenciaTela()"></td>
-          <td style="text-align:right;font-weight:700">${brl(it.total_anual_funcionario||0)}</td>
-        </tr>`).join('');
-      }
-      SALARIO_STATE.totalAnual=Number(r.total_anual||0);
-      document.getElementById('sal-total-anual').textContent=brl(r.total_anual||0);
-      document.getElementById('sal-total-comp').textContent=brl(r.total_competencia||0);
-      const empNome=empresaId?((emps||[]).find(e=>String(e.id)===String(empresaId))?.nome||'Empresa selecionada'):'Todas as empresas';
-      res.textContent=`${r.total_funcionarios||itens.length} colaborador(es) ativo(s) · ${empNome} · Competencia ${r.competencia||comp}`;
-      showSt('sal-st','Pagamentos carregados.',false);
+      if(res) res.textContent='Esta funcionalidade foi movida para RH → Pagamento de salário.';
     }
 
     async function salvarPagamentoSalario(){
-      const comp=(document.getElementById('sal-comp')?.value||'').trim();
-      const empresaId=salarioEmpresaSelecionada();
-      if(!/^\d{4}-\d{2}$/.test(comp)){
-        showSt('sal-st','Competencia invalida. Use AAAA-MM.',true);
-        return;
-      }
-      const valores=Array.from(document.querySelectorAll('#tb-salarios .sal-valor')).map(el=>({
-        funcionario_id:parseInt(el.dataset.fid||'0',10),
-        valor_liquido:el.value
-      }));
-      if(!valores.length){
-        showSt('sal-st','Nenhum colaborador para salvar.',true);
-        return;
-      }
-      const payload={competencia:comp,valores};
-      if(empresaId) payload.empresa_id=empresaId;
-      const r=await api('/api/financeiro/salarios','POST',payload);
-      if(r?.erro){
-        showSt('sal-st',r.erro,true);
-        return;
-      }
-      showSt('sal-st',`Valores salvos com sucesso (${r.alterados||0} alteracao(oes)).`,false);
-      await carregarPagamentoSalario();
+      abrirRhSalarios();
     }
 
     document.addEventListener('DOMContentLoaded',()=>{
-      const c=document.getElementById('sal-comp');
-      if(c && !c.value) c.value=salarioCompetenciaAtual();
       if(document.getElementById('pg-pagamento-salario')){
-        salarioPopularEmpresas();
-        carregarPagamentoSalario();
+        const res=document.getElementById('sal-res');
+        if(res) res.textContent='Esta funcionalidade foi movida para RH → Pagamento de salário.';
       }
     });
     </script>
@@ -3241,6 +3128,10 @@ function nav(id,el,force=false){
     markPageClean();
     MODAL_FORM_IDS.forEach(setModalClean);
   }
+  if(id==='pagamento-salario'){
+    abrirRhSalarios();
+    return;
+  }
   // Lógica especial para Financeiro e subabas
   const isFinanceiroParent = id==='financeiro';
   const subabasFinanceiro = ['faturamento','pagamento-salario','despesas','fluxo-caixa','contas','relatorios','conciliacao','cobrancas'];
@@ -3260,7 +3151,6 @@ function nav(id,el,force=false){
     const navFinanceiro = document.querySelector('.nav-item[data-nav="financeiro"]');
     if(navFinanceiro) navFinanceiro.classList.add('on');
     if(el)el.classList.add('on');
-    if(id==='pagamento-salario') carregarPagamentoSalario();
     return;
   }
   // Lógica padrão
@@ -3382,6 +3272,13 @@ function navFromMobile(id){
   if(!id)return;
   const item=document.querySelector(`.nav-item[onclick*="'${id}'"]`);
   nav(id,item||null);
+}
+
+function abrirRhSalarios(){
+  const rhNav=[...document.querySelectorAll('.nav-item')].find(n=>((n.textContent||'').trim()==='RH')) || null;
+  nav('rh',rhNav,true);
+  const bt=document.getElementById('rh-tab-salarios');
+  if(bt) switchRhFuncTab('salarios',bt);
 }
 
 async function abrirDashboardDestino(destino,empresaId=null){
