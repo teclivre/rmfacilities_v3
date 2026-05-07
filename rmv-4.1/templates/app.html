@@ -358,7 +358,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div class="mobile-nav-scroller" id="mobile-nav-scroller">
       <button type="button" class="mobile-nav-btn on" data-nav="dashboard" onclick="navFromMobile('dashboard')">Dashboard</button>
       <button type="button" class="mobile-nav-btn" data-nav="faturamento" onclick="navFromMobile('faturamento')">Faturamento</button>
-      <button type="button" class="mobile-nav-btn" data-nav="pagamento-salario" onclick="navFromMobile('pagamento-salario')">Salarios</button>
       <button type="button" class="mobile-nav-btn" data-nav="clientes" onclick="navFromMobile('clientes')">Clientes</button>
       <button type="button" class="mobile-nav-btn" data-nav="rh" onclick="navFromMobile('rh')">RH</button>
       <button type="button" class="mobile-nav-btn" data-nav="rh-digital" onclick="navFromMobile('rh-digital')">Comunicação</button>
@@ -391,7 +390,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     </a>
     <div id="subnav-financeiro" style="display:none;padding-left:18px">
       <a class="nav-item sub" data-nav="faturamento" onclick="nav('faturamento',this)">Faturamento</a>
-      <a class="nav-item sub" data-nav="pagamento-salario" onclick="nav('pagamento-salario',this)">Pagamento de Salario</a>
       <a class="nav-item sub" data-nav="despesas" onclick="nav('despesas',this)">Despesas</a>
       <a class="nav-item sub" data-nav="fluxo-caixa" onclick="nav('fluxo-caixa',this)">Fluxo de Caixa</a>
       <a class="nav-item sub" data-nav="contas" onclick="nav('contas',this)">Contas a Pagar/Receber</a>
@@ -487,7 +485,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div id="pg-financeiro" class="pg">
       <div class="card">
         <div class="card-header"><span class="card-title">Financeiro</span></div>
-        <div style="padding:20px 0">Selecione uma subaba: Faturamento, Pagamento de Salario, Despesas, Fluxo de Caixa, Contas a Pagar/Receber ou Relatorios.</div>
+        <div style="padding:20px 0">Selecione uma subaba: Faturamento, Despesas, Fluxo de Caixa, Contas a Pagar/Receber ou Relatórios.</div>
       </div>
     </div>
 
@@ -582,49 +580,6 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div id="desp-res" style="margin-top:10px;color:#888;font-size:13px"></div>
         <div id="desp-pag" style="display:flex;gap:8px;align-items:center;margin-top:8px"></div>
-      </div>
-    </div>
-    <div id="pg-pagamento-salario" class="pg">
-      <div id="sal-st" class="st"></div>
-      <div class="card">
-        <div class="card-header"><span class="card-title">Pagamento de Salario Liquido</span></div>
-        <div style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:end">
-          <div class="f" style="min-width:220px;margin:0">
-            <label>Empresa</label>
-            <select id="sal-empresa" style="min-width:210px" onchange="carregarPagamentoSalario()">
-              <option value="">Todas as empresas</option>
-            </select>
-          </div>
-          <div class="f" style="min-width:160px;margin:0">
-            <label>Competencia</label>
-            <input type="month" id="sal-comp" style="width:150px">
-          </div>
-          <button class="btn b-gh b-sm" onclick="carregarPagamentoSalario()">Carregar</button>
-          <button class="btn b-az b-sm" onclick="salvarPagamentoSalario()">Salvar valores</button>
-          <button class="btn b-ghl b-sm" onclick="exportarPagamentoSalario('xlsx')">Exportar planilha</button>
-          <button class="btn b-ghl b-sm" onclick="exportarPagamentoSalario('pdf')">Exportar PDF</button>
-        </div>
-        <div style="overflow-x:auto">
-          <table class="tabela" style="min-width:760px">
-            <thead>
-              <tr>
-                <th>RE</th>
-                <th>Nome</th>
-                <th>CPF</th>
-                <th style="text-align:right">Salario liquido (R$)</th>
-                <th style="text-align:right">Acumulado anual (R$)</th>
-              </tr>
-            </thead>
-            <tbody id="tb-salarios">
-              <tr><td colspan="5" style="text-align:center;padding:28px;color:#bbb">Carregando colaboradores ativos...</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div id="sal-res" style="margin-top:10px;color:#888;font-size:13px"></div>
-        <div style="margin-top:8px;display:flex;gap:20px;flex-wrap:wrap;font-size:14px">
-          <div>Total da competencia: <b id="sal-total-comp">R$ 0,00</b></div>
-          <div>Total anual pago: <b id="sal-total-anual">R$ 0,00</b></div>
-        </div>
       </div>
     </div>
     <script>
@@ -754,134 +709,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     document.addEventListener('DOMContentLoaded',()=>{
       if(document.getElementById('pg-despesas')){
         carregarDespesas();
-      }
-    });
-    </script>
-    <script>
-    const SALARIO_STATE={totalAnual:0};
-
-    async function salarioPopularEmpresas(){
-      const sel=document.getElementById('sal-empresa');
-      if(!sel) return;
-      let listaEmp=Array.isArray(emps)?emps:[];
-      if(!listaEmp.length){
-        const r=await api('/api/empresas');
-        if(Array.isArray(r)) listaEmp=r;
-      }
-      const atual=sel.value||'';
-      sel.innerHTML='<option value="">Todas as empresas</option>'+(listaEmp||[]).map(e=>`<option value="${e.id}">${esc(e.nome||'Empresa')}</option>`).join('');
-      if(Array.from(sel.options).some(o=>o.value===atual)) sel.value=atual;
-    }
-
-    function salarioEmpresaSelecionada(){
-      const v=(document.getElementById('sal-empresa')?.value||'').trim();
-      return v?parseInt(v,10):null;
-    }
-
-    function salarioCompetenciaAtual(){
-      const d=new Date();
-      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    }
-
-    function salarioSomarCompetenciaTela(){
-      const vals=Array.from(document.querySelectorAll('#tb-salarios .sal-valor')).map(el=>parseFloat((el.value||'').replace(',','.'))||0);
-      const total=vals.reduce((s,v)=>s+v,0);
-      const el=document.getElementById('sal-total-comp');
-      if(el) el.textContent=brl(total);
-      const ra=document.getElementById('sal-total-anual');
-      if(ra) ra.textContent=brl(SALARIO_STATE.totalAnual||0);
-    }
-
-    function exportarPagamentoSalario(formato){
-      const comp=(document.getElementById('sal-comp')?.value||'').trim();
-      const empresaId=salarioEmpresaSelecionada();
-      if(!/^\d{4}-\d{2}$/.test(comp)){
-        showSt('sal-st','Competencia invalida. Use AAAA-MM.',true);
-        return;
-      }
-      const p=new URLSearchParams();
-      p.set('competencia',comp);
-      if(empresaId) p.set('empresa_id',String(empresaId));
-      if(formato==='xlsx'){
-        window.open('/api/financeiro/salarios/export.xlsx?'+p.toString(),'_blank');
-      }else if(formato==='pdf'){
-        window.open('/api/financeiro/salarios/export.pdf?'+p.toString(),'_blank');
-      }
-    }
-
-    async function carregarPagamentoSalario(){
-      const compInput=document.getElementById('sal-comp');
-      const comp=((compInput?.value)||salarioCompetenciaAtual()).trim();
-      const empresaId=salarioEmpresaSelecionada();
-      const tb=document.getElementById('tb-salarios');
-      const res=document.getElementById('sal-res');
-      if(!tb || !res) return;
-      if(compInput && !compInput.value) compInput.value=comp;
-      if(!/^\d{4}-\d{2}$/.test(comp)){
-        showSt('sal-st','Competencia invalida. Use AAAA-MM.',true);
-        return;
-      }
-      tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:#999">Carregando...</td></tr>';
-      let url='/api/financeiro/salarios?competencia='+encodeURIComponent(comp);
-      if(empresaId) url+='&empresa_id='+encodeURIComponent(String(empresaId));
-      const r=await api(url);
-      if(r?.erro){
-        tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:#c33">Erro ao carregar pagamentos.</td></tr>';
-        showSt('sal-st',r.erro,true);
-        return;
-      }
-      const itens=Array.isArray(r?.itens)?r.itens:[];
-      if(!itens.length){
-        tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:#999">Nenhum funcionario ativo encontrado.</td></tr>';
-      }else{
-        tb.innerHTML=itens.map(it=>`<tr>
-          <td>${it.re||'—'}</td>
-          <td><div style="font-weight:700">${it.nome||''}</div></td>
-          <td>${fmtDoc(it.cpf||'')}</td>
-          <td style="text-align:right"><input class="sal-valor" data-fid="${it.funcionario_id}" type="number" min="0" step="0.01" value="${Number(it.valor_liquido||0).toFixed(2)}" style="width:150px;text-align:right" oninput="salarioSomarCompetenciaTela()"></td>
-          <td style="text-align:right;font-weight:700">${brl(it.total_anual_funcionario||0)}</td>
-        </tr>`).join('');
-      }
-      SALARIO_STATE.totalAnual=Number(r.total_anual||0);
-      document.getElementById('sal-total-anual').textContent=brl(r.total_anual||0);
-      document.getElementById('sal-total-comp').textContent=brl(r.total_competencia||0);
-      const empNome=empresaId?((emps||[]).find(e=>String(e.id)===String(empresaId))?.nome||'Empresa selecionada'):'Todas as empresas';
-      res.textContent=`${r.total_funcionarios||itens.length} colaborador(es) ativo(s) · ${empNome} · Competencia ${r.competencia||comp}`;
-      showSt('sal-st','Pagamentos carregados.',false);
-    }
-
-    async function salvarPagamentoSalario(){
-      const comp=(document.getElementById('sal-comp')?.value||'').trim();
-      const empresaId=salarioEmpresaSelecionada();
-      if(!/^\d{4}-\d{2}$/.test(comp)){
-        showSt('sal-st','Competencia invalida. Use AAAA-MM.',true);
-        return;
-      }
-      const valores=Array.from(document.querySelectorAll('#tb-salarios .sal-valor')).map(el=>({
-        funcionario_id:parseInt(el.dataset.fid||'0',10),
-        valor_liquido:el.value
-      }));
-      if(!valores.length){
-        showSt('sal-st','Nenhum colaborador para salvar.',true);
-        return;
-      }
-      const payload={competencia:comp,valores};
-      if(empresaId) payload.empresa_id=empresaId;
-      const r=await api('/api/financeiro/salarios','POST',payload);
-      if(r?.erro){
-        showSt('sal-st',r.erro,true);
-        return;
-      }
-      showSt('sal-st',`Valores salvos com sucesso (${r.alterados||0} alteracao(oes)).`,false);
-      await carregarPagamentoSalario();
-    }
-
-    document.addEventListener('DOMContentLoaded',()=>{
-      const c=document.getElementById('sal-comp');
-      if(c && !c.value) c.value=salarioCompetenciaAtual();
-      if(document.getElementById('pg-pagamento-salario')){
-        salarioPopularEmpresas();
-        carregarPagamentoSalario();
       }
     });
     </script>
@@ -1201,12 +1028,20 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="brow" style="justify-content:flex-start;gap:8px;flex-wrap:wrap;margin:0 12px 10px 12px">
           <button id="rh-tab-ativos" class="btn b-az b-sm" onclick="switchRhFuncTab('ativos',this)">Ativos</button>
           <button id="rh-tab-inativos" class="btn b-gh b-sm" onclick="switchRhFuncTab('inativos',this)">Inativos / Arquivados</button>
+          <button id="rh-tab-salarios" class="btn b-gh b-sm" onclick="switchRhFuncTab('salarios',this)">Pagamento de salário</button>
           <span class="pill p-vd" id="rh-total-ativos">Ativos: 0</span>
+          <span class="pill p-az" id="rh-total-folha">Folha: R$ 0,00</span>
         </div>
         <div class="tbl-wrap">
           <table class="tbl">
             <thead><tr><th>RE</th><th>Nome</th><th>Cargo/Função</th><th>Posto</th><th>Empresa</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody id="tb-func"></tbody>
+          </table>
+        </div>
+        <div class="tbl-wrap" id="rh-salarios-wrap" style="display:none">
+          <table class="tbl">
+            <thead><tr><th>RE</th><th>Nome</th><th>Cargo</th><th>Posto</th><th>Empresa</th><th>Status</th><th style="text-align:right">Salário</th><th>Ações</th></tr></thead>
+            <tbody id="tb-func-salarios"></tbody>
           </table>
         </div>
       </div>
@@ -3224,7 +3059,7 @@ function nav(id,el,force=false){
   }
   // Lógica especial para Financeiro e subabas
   const isFinanceiroParent = id==='financeiro';
-  const subabasFinanceiro = ['faturamento','pagamento-salario','despesas','fluxo-caixa','contas','relatorios','conciliacao','cobrancas'];
+  const subabasFinanceiro = ['faturamento','despesas','fluxo-caixa','contas','relatorios','conciliacao','cobrancas'];
   if(isFinanceiroParent){
     document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
     document.getElementById('pg-financeiro').classList.add('on');
@@ -3241,7 +3076,6 @@ function nav(id,el,force=false){
     const navFinanceiro = document.querySelector('.nav-item[data-nav="financeiro"]');
     if(navFinanceiro) navFinanceiro.classList.add('on');
     if(el)el.classList.add('on');
-    if(id==='pagamento-salario') carregarPagamentoSalario();
     return;
   }
   // Lógica padrão
@@ -5512,16 +5346,54 @@ async function renderFuncionarios(){
   funcs=await api('/api/funcionarios?q='+encodeURIComponent(q));
   const allFuncs=q ? await api('/api/funcionarios') : funcs;
   const tb=document.getElementById('tb-func');
+  const tbSal=document.getElementById('tb-func-salarios');
   const totEl=document.getElementById('rh-total-ativos');
+  const folhaEl=document.getElementById('rh-total-folha');
+  const wrapPadrao=document.querySelector('#pg-rh .card .tbl-wrap');
+  const wrapSal=document.getElementById('rh-salarios-wrap');
   if(!tb)return;
   const isAtivo=f=>((f?.status||'Ativo').toString().trim().toLowerCase()==='ativo');
   const ativosTotal=(Array.isArray(allFuncs)?allFuncs:[]).filter(isAtivo).length;
   if(totEl) totEl.textContent='Ativos: '+ativosTotal;
+  if(wrapPadrao && wrapSal){
+    wrapPadrao.style.display=rhFuncTab==='salarios'?'none':'';
+    wrapSal.style.display=rhFuncTab==='salarios'?'':'none';
+  }
   const lista=(Array.isArray(funcs)?funcs:[]).filter(f=>rhFuncTab==='ativos'?isAtivo(f):!isAtivo(f));
   const tabAt=document.getElementById('rh-tab-ativos');
   const tabIn=document.getElementById('rh-tab-inativos');
+  const tabSal=document.getElementById('rh-tab-salarios');
   if(tabAt) tabAt.className=rhFuncTab==='ativos'?'btn b-az b-sm':'btn b-gh b-sm';
   if(tabIn) tabIn.className=rhFuncTab==='inativos'?'btn b-az b-sm':'btn b-gh b-sm';
+  if(tabSal) tabSal.className=rhFuncTab==='salarios'?'btn b-az b-sm':'btn b-gh b-sm';
+
+  if(rhFuncTab==='salarios'){
+    const listaSal=(Array.isArray(funcs)?funcs:[]).filter(isAtivo);
+    const folhaTotal=listaSal.reduce((acc,f)=>acc+(Number(f?.salario)||0),0);
+    if(folhaEl) folhaEl.textContent='Folha: '+brl(folhaTotal);
+    if(!tbSal) return;
+    if(!listaSal.length){
+      tbSal.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:#999">Nenhum colaborador ativo encontrado para pagamento.</td></tr>';
+      return;
+    }
+    tbSal.innerHTML=listaSal.map(f=>{
+      const emp=emps.find(e=>e.id===f.empresa_id);
+      const salario=Number(f?.salario)||0;
+      return `<tr class="row-clickable" onclick="openModalFunc('editar',${f.id})">
+        <td style="font-weight:700">${f.re||'—'}</td>
+        <td><div style="font-weight:700">${f.nome}</div><div style="font-size:11px;color:#888">${fmtDoc(f.cpf)||''}</div></td>
+        <td>${f.cargo||'—'}</td>
+        <td style="font-size:11px">${f.posto_operacional||'Reserva tecnica'}</td>
+        <td>${emp?emp.nome:'—'}</td>
+        <td><span class="pill p-vd">${f.status||'Ativo'}</span></td>
+        <td style="text-align:right;font-weight:700;color:var(--verde)">${brl(salario)}</td>
+        <td><button class="btn b-gh b-sm" onclick="event.stopPropagation();openModalFunc('editar',${f.id})">Editar</button></td>
+      </tr>`;
+    }).join('');
+    return;
+  }
+
+  if(folhaEl) folhaEl.textContent='Folha: R$ 0,00';
   if(!lista.length){
     tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:#999">'+(rhFuncTab==='ativos'?'Nenhum colaborador ativo encontrado.':'Nenhum colaborador inativo/arquivado encontrado.')+'</td></tr>';
     return;
@@ -5554,7 +5426,7 @@ async function renderFuncionarios(){
 }
 
 function switchRhFuncTab(tab,btn){
-  rhFuncTab=(tab==='inativos')?'inativos':'ativos';
+  rhFuncTab=(tab==='inativos')?'inativos':(tab==='salarios'?'salarios':'ativos');
   renderFuncionarios();
   if(btn && btn.scrollIntoView) btn.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});
 }
