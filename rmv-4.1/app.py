@@ -27,7 +27,7 @@ _strict_origin_check = False
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import text, event
+from sqlalchemy import text, event, UniqueConstraint
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError, IntegrityError
 import os
@@ -41,6 +41,8 @@ from datetime import datetime, timedelta, date
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+def _is_prod_hint():
+    env = (os.environ.get('APP_ENV') or os.environ.get('FLASK_ENV') or '').strip().lower()
     return env in ('prod', 'production')
 
 def _is_true_env(name):
@@ -703,6 +705,251 @@ def api_financeiro_faturamento_export_csv():
         headers={'Content-Disposition':'attachment; filename=faturamento.csv'}
     )
 
+def _competencia_padrao():
+    return localnow().strftime('%Y-%m')
+
+def _parse_competencia(v):
+    c=(v or '').strip()
+    if not re.match(r'^\d{4}-\d{2}$',c):
+        return ''
+    try:
+        _y,_m=c.split('-',1)
+        mm=int(_m)
+        if mm<1 or mm>12:
+            return ''
+    except Exception:
+        return ''
+    return c
+
+def _salarios_pagamentos_resumo(competencia):
+    funcs=Funcionario.query.filter_by(status='Ativo').order_by(Funcionario.nome).all()
+    comp_rows=FuncionarioPagamentoSalario.query.filter_by(competencia=competencia).all()
+    valores_comp={}
+    for r in comp_rows:
+        valores_comp[r.funcionario_id]=float(r.valor_liquido or 0)
+
+    ano_prefix=f"{competencia[:4]}-%"
+    ano_rows=FuncionarioPagamentoSalario.query.filter(FuncionarioPagamentoSalario.competencia.like(ano_prefix)).all()
+    anual_por_func={}
+    total_anual=0.0
+    for r in ano_rows:
+        v=float(r.valor_liquido or 0)
+        anual_por_func[r.funcionario_id]=anual_por_func.get(r.funcionario_id,0.0)+v
+        total_anual+=v
+
+    itens=[]
+    total_competencia=0.0
+    for f in funcs:
+        valor_liq=float(valores_comp.get(f.id,0.0) or 0.0)
+        total_competencia+=valor_liq
+        itens.append({
+            'funcionario_id':f.id,
+            're':f.re,
+            'nome':f.nome or '',
+            'cpf':f.cpf or '',
+            'valor_liquido':round(valor_liq,2),
+            'total_anual_funcionario':round(float(anual_por_func.get(f.id,0.0) or 0.0),2),
+        })
+
+    return {
+        'competencia':competencia,
+        'ano':competencia[:4],
+        'itens':itens,
+        'total_funcionarios':len(itens),
+        'total_competencia':round(total_competencia,2),
+        'total_anual':round(total_anual,2),
+    }
+
+def _export_salarios_pagamentos_xlsx(resumo):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb=Workbook()
+    ws=wb.active
+    ws.title='Pagamentos salario'
+
+    headers=['RE','Nome','CPF','Valor liquido (R$)','Acumulado anual (R$)']
+    ws.append(['Relatorio de pagamento de salario liquido'])
+    ws.append([f'Competencia: {resumo.get("competencia") or ""}'])
+    ws.append([f'Gerado em: {localnow().strftime("%d/%m/%Y %H:%M")}'])
+    ws.append([f'Total competencia: {resumo.get("total_competencia",0):.2f}'])
+    ws.append([f'Total anual: {resumo.get("total_anual",0):.2f}'])
+    ws.append([])
+    ws.append(headers)
+
+    for it in (resumo.get('itens') or []):
+        ws.append([
+            it.get('re') or '',
+            it.get('nome') or '',
+            it.get('cpf') or '',
+            float(it.get('valor_liquido') or 0),
+            float(it.get('total_anual_funcionario') or 0),
+        ])
+
+    header_fill=PatternFill('solid',fgColor='205D8A')
+    header_font=Font(bold=True,color='FFFFFF')
+    center=Alignment(horizontal='center',vertical='center')
+    left=Alignment(horizontal='left',vertical='center')
+    right=Alignment(horizontal='right',vertical='center')
+    thin=Side(style='thin',color='D0D7DE')
+    border=Border(left=thin,right=thin,top=thin,bottom=thin)
+
+    hrow=7
+    for c in range(1,len(headers)+1):
+        cell=ws.cell(row=hrow,column=c)
+        cell.fill=header_fill
+        cell.font=header_font
+        cell.alignment=center
+        cell.border=border
+
+    for r in range(hrow+1,ws.max_row+1):
+        for c in range(1,len(headers)+1):
+            cell=ws.cell(row=r,column=c)
+            cell.border=border
+            cell.alignment=right if c in (4,5) else left
+
+    ws.column_dimensions[get_column_letter(1)].width=10
+    ws.column_dimensions[get_column_letter(2)].width=36
+    ws.column_dimensions[get_column_letter(3)].width=18
+    ws.column_dimensions[get_column_letter(4)].width=20
+    ws.column_dimensions[get_column_letter(5)].width=22
+
+    buf=io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    nome=f"pagamento_salario_{(resumo.get('competencia') or '').replace('-','_')}.xlsx"
+    return send_file(
+        buf,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=nome
+    )
+
+def _export_salarios_pagamentos_pdf(resumo):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer
+    from reportlab.lib.styles import ParagraphStyle
+
+    buf=io.BytesIO()
+    doc=SimpleDocTemplate(buf,pagesize=A4,leftMargin=1.2*cm,rightMargin=1.2*cm,topMargin=1.2*cm,bottomMargin=1.2*cm)
+    st_t=ParagraphStyle('t',fontName='Helvetica-Bold',fontSize=12,leading=14,textColor=colors.HexColor('#123B60'))
+    st_s=ParagraphStyle('s',fontName='Helvetica',fontSize=9,leading=11,textColor=colors.HexColor('#4A5A6A'))
+    st_c=ParagraphStyle('c',fontName='Helvetica',fontSize=8,leading=10)
+
+    data=[[
+        Paragraph('<b>RE</b>',st_c),
+        Paragraph('<b>Nome</b>',st_c),
+        Paragraph('<b>CPF</b>',st_c),
+        Paragraph('<b>Valor liquido</b>',st_c),
+        Paragraph('<b>Acumulado anual</b>',st_c),
+    ]]
+    for it in (resumo.get('itens') or []):
+        data.append([
+            Paragraph(str(it.get('re') or '—'),st_c),
+            Paragraph((it.get('nome') or '—')[:90],st_c),
+            Paragraph(str(it.get('cpf') or '—'),st_c),
+            Paragraph(f"R$ {float(it.get('valor_liquido') or 0):,.2f}".replace(',', 'X').replace('.', ',').replace('X','.'),st_c),
+            Paragraph(f"R$ {float(it.get('total_anual_funcionario') or 0):,.2f}".replace(',', 'X').replace('.', ',').replace('X','.'),st_c),
+        ])
+
+    table=Table(data,colWidths=[1.8*cm,7.0*cm,3.4*cm,3.2*cm,3.2*cm],repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#205D8A')),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('GRID',(0,0),(-1,-1),0.25,colors.HexColor('#D0D7DE')),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('FONTNAME',(0,1),(-1,-1),'Helvetica'),
+        ('FONTSIZE',(0,1),(-1,-1),8),
+        ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#F8FBFF')]),
+        ('LEFTPADDING',(0,0),(-1,-1),4),
+        ('RIGHTPADDING',(0,0),(-1,-1),4),
+        ('TOPPADDING',(0,0),(-1,-1),3),
+        ('BOTTOMPADDING',(0,0),(-1,-1),3),
+    ]))
+
+    elementos=[
+        Paragraph('Relatorio de pagamento de salario liquido',st_t),
+        Paragraph(f"Competencia {resumo.get('competencia')} · Gerado em {localnow().strftime('%d/%m/%Y %H:%M')}",st_s),
+        Paragraph(
+            f"Total colaboradores: {resumo.get('total_funcionarios',0)} · Total competencia: R$ {float(resumo.get('total_competencia') or 0):,.2f} · Total anual: R$ {float(resumo.get('total_anual') or 0):,.2f}".replace(',', 'X').replace('.', ',').replace('X','.'),
+            st_s
+        ),
+        Spacer(1,0.3*cm),
+        table,
+    ]
+    doc.build(elementos)
+    buf.seek(0)
+    nome=f"pagamento_salario_{(resumo.get('competencia') or '').replace('-','_')}.pdf"
+    return send_file(buf,mimetype='application/pdf',as_attachment=False,download_name=nome)
+
+@app.route('/api/financeiro/salarios', methods=['GET'])
+@lr
+def api_financeiro_salarios_list():
+    competencia=_parse_competencia(request.args.get('competencia')) or _competencia_padrao()
+    return jsonify({'ok':True,**_salarios_pagamentos_resumo(competencia)})
+
+@app.route('/api/financeiro/salarios', methods=['POST'])
+@lr
+def api_financeiro_salarios_save():
+    data=request.get_json(silent=True) or {}
+    competencia=_parse_competencia(data.get('competencia')) or _competencia_padrao()
+    valores=data.get('valores') if isinstance(data.get('valores'),list) else []
+
+    ids_validos={x.id for x in Funcionario.query.filter_by(status='Ativo').all()}
+    alterados=0
+    for row in valores:
+        if not isinstance(row,dict):
+            continue
+        fid=to_num(row.get('funcionario_id')) or 0
+        if fid<=0 or fid not in ids_validos:
+            continue
+
+        raw=row.get('valor_liquido')
+        if raw is None or str(raw).strip()=='':
+            valor=None
+        else:
+            try:
+                valor=float(str(raw).replace(',','.'))
+            except Exception:
+                return jsonify({'erro':f'Valor liquido invalido para funcionario {fid}.'}),400
+            if valor<0:
+                return jsonify({'erro':f'Valor liquido nao pode ser negativo para funcionario {fid}.'}),400
+            valor=round(valor,2)
+
+        rec=FuncionarioPagamentoSalario.query.filter_by(funcionario_id=fid,competencia=competencia).first()
+        if valor is None:
+            if rec:
+                db.session.delete(rec)
+                alterados+=1
+            continue
+
+        if not rec:
+            rec=FuncionarioPagamentoSalario(funcionario_id=fid,competencia=competencia)
+            db.session.add(rec)
+        rec.valor_liquido=valor
+        rec.atualizado_por=(session.get('nome') or session.get('email') or 'sistema')[:100]
+        rec.atualizado_em=utcnow()
+        alterados+=1
+
+    db.session.commit()
+    audit_event('salario_pagamento_salvar','usuario',session.get('uid'),'financeiro',competencia,True,{'alterados':alterados})
+    return jsonify({'ok':True,'alterados':alterados,**_salarios_pagamentos_resumo(competencia)})
+
+@app.route('/api/financeiro/salarios/export.xlsx', methods=['GET'])
+@lr
+def api_financeiro_salarios_export_xlsx():
+    competencia=_parse_competencia(request.args.get('competencia')) or _competencia_padrao()
+    return _export_salarios_pagamentos_xlsx(_salarios_pagamentos_resumo(competencia))
+
+@app.route('/api/financeiro/salarios/export.pdf', methods=['GET'])
+@lr
+def api_financeiro_salarios_export_pdf():
+    competencia=_parse_competencia(request.args.get('competencia')) or _competencia_padrao()
+    return _export_salarios_pagamentos_pdf(_salarios_pagamentos_resumo(competencia))
+
 class Usuario(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     nome=db.Column(db.String(100),nullable=False)
@@ -1019,6 +1266,17 @@ class Funcionario(db.Model):
         try: d['areas']=json.loads(self.areas or '[]')
         except: d['areas']=[]
         return d
+
+class FuncionarioPagamentoSalario(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False,index=True)
+    competencia=db.Column(db.String(7),nullable=False,index=True)
+    valor_liquido=db.Column(db.Float,default=0)
+    atualizado_por=db.Column(db.String(100))
+    atualizado_em=db.Column(db.DateTime,default=utcnow,onupdate=utcnow)
+    __table_args__=(UniqueConstraint('funcionario_id','competencia',name='uq_funcionario_pag_salario_comp'),)
+    def to_dict(self):
+        return {c.name:getattr(self,c.name) for c in self.__table__.columns}
 
 class FuncionarioArquivo(db.Model):
     id=db.Column(db.Integer,primary_key=True)

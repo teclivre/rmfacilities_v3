@@ -358,6 +358,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div class="mobile-nav-scroller" id="mobile-nav-scroller">
       <button type="button" class="mobile-nav-btn on" data-nav="dashboard" onclick="navFromMobile('dashboard')">Dashboard</button>
       <button type="button" class="mobile-nav-btn" data-nav="faturamento" onclick="navFromMobile('faturamento')">Faturamento</button>
+      <button type="button" class="mobile-nav-btn" data-nav="pagamento-salario" onclick="navFromMobile('pagamento-salario')">Salarios</button>
       <button type="button" class="mobile-nav-btn" data-nav="clientes" onclick="navFromMobile('clientes')">Clientes</button>
       <button type="button" class="mobile-nav-btn" data-nav="rh" onclick="navFromMobile('rh')">RH</button>
       <button type="button" class="mobile-nav-btn" data-nav="rh-digital" onclick="navFromMobile('rh-digital')">Comunicação</button>
@@ -390,6 +391,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     </a>
     <div id="subnav-financeiro" style="display:none;padding-left:18px">
       <a class="nav-item sub" data-nav="faturamento" onclick="nav('faturamento',this)">Faturamento</a>
+      <a class="nav-item sub" data-nav="pagamento-salario" onclick="nav('pagamento-salario',this)">Pagamento de Salario</a>
       <a class="nav-item sub" data-nav="despesas" onclick="nav('despesas',this)">Despesas</a>
       <a class="nav-item sub" data-nav="fluxo-caixa" onclick="nav('fluxo-caixa',this)">Fluxo de Caixa</a>
       <a class="nav-item sub" data-nav="contas" onclick="nav('contas',this)">Contas a Pagar/Receber</a>
@@ -485,7 +487,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div id="pg-financeiro" class="pg">
       <div class="card">
         <div class="card-header"><span class="card-title">Financeiro</span></div>
-        <div style="padding:20px 0">Selecione uma subaba: Faturamento, Despesas, Fluxo de Caixa, Contas a Pagar/Receber ou Relatórios.</div>
+        <div style="padding:20px 0">Selecione uma subaba: Faturamento, Pagamento de Salario, Despesas, Fluxo de Caixa, Contas a Pagar/Receber ou Relatorios.</div>
       </div>
     </div>
 
@@ -580,6 +582,43 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div id="desp-res" style="margin-top:10px;color:#888;font-size:13px"></div>
         <div id="desp-pag" style="display:flex;gap:8px;align-items:center;margin-top:8px"></div>
+      </div>
+    </div>
+    <div id="pg-pagamento-salario" class="pg">
+      <div id="sal-st" class="st"></div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Pagamento de Salario Liquido</span></div>
+        <div style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+          <div class="f" style="min-width:160px;margin:0">
+            <label>Competencia</label>
+            <input type="month" id="sal-comp" style="width:150px">
+          </div>
+          <button class="btn b-gh b-sm" onclick="carregarPagamentoSalario()">Carregar</button>
+          <button class="btn b-az b-sm" onclick="salvarPagamentoSalario()">Salvar valores</button>
+          <button class="btn b-ghl b-sm" onclick="exportarPagamentoSalario('xlsx')">Exportar planilha</button>
+          <button class="btn b-ghl b-sm" onclick="exportarPagamentoSalario('pdf')">Exportar PDF</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="tabela" style="min-width:760px">
+            <thead>
+              <tr>
+                <th>RE</th>
+                <th>Nome</th>
+                <th>CPF</th>
+                <th style="text-align:right">Salario liquido (R$)</th>
+                <th style="text-align:right">Acumulado anual (R$)</th>
+              </tr>
+            </thead>
+            <tbody id="tb-salarios">
+              <tr><td colspan="5" style="text-align:center;padding:28px;color:#bbb">Carregando colaboradores ativos...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="sal-res" style="margin-top:10px;color:#888;font-size:13px"></div>
+        <div style="margin-top:8px;display:flex;gap:20px;flex-wrap:wrap;font-size:14px">
+          <div>Total da competencia: <b id="sal-total-comp">R$ 0,00</b></div>
+          <div>Total anual pago: <b id="sal-total-anual">R$ 0,00</b></div>
+        </div>
       </div>
     </div>
     <script>
@@ -709,6 +748,104 @@ document.addEventListener('DOMContentLoaded',()=>{
     document.addEventListener('DOMContentLoaded',()=>{
       if(document.getElementById('pg-despesas')){
         carregarDespesas();
+      }
+    });
+    </script>
+    <script>
+    const SALARIO_STATE={totalAnual:0};
+
+    function salarioCompetenciaAtual(){
+      const d=new Date();
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    }
+
+    function salarioSomarCompetenciaTela(){
+      const vals=Array.from(document.querySelectorAll('#tb-salarios .sal-valor')).map(el=>parseFloat((el.value||'').replace(',','.'))||0);
+      const total=vals.reduce((s,v)=>s+v,0);
+      const el=document.getElementById('sal-total-comp');
+      if(el) el.textContent=brl(total);
+      const ra=document.getElementById('sal-total-anual');
+      if(ra) ra.textContent=brl(SALARIO_STATE.totalAnual||0);
+    }
+
+    function exportarPagamentoSalario(formato){
+      const comp=(document.getElementById('sal-comp')?.value||'').trim();
+      if(!/^\d{4}-\d{2}$/.test(comp)){
+        showSt('sal-st','Competencia invalida. Use AAAA-MM.',true);
+        return;
+      }
+      if(formato==='xlsx'){
+        window.open('/api/financeiro/salarios/export.xlsx?competencia='+encodeURIComponent(comp),'_blank');
+      }else if(formato==='pdf'){
+        window.open('/api/financeiro/salarios/export.pdf?competencia='+encodeURIComponent(comp),'_blank');
+      }
+    }
+
+    async function carregarPagamentoSalario(){
+      const compInput=document.getElementById('sal-comp');
+      const comp=((compInput?.value)||salarioCompetenciaAtual()).trim();
+      const tb=document.getElementById('tb-salarios');
+      const res=document.getElementById('sal-res');
+      if(!tb || !res) return;
+      if(compInput && !compInput.value) compInput.value=comp;
+      if(!/^\d{4}-\d{2}$/.test(comp)){
+        showSt('sal-st','Competencia invalida. Use AAAA-MM.',true);
+        return;
+      }
+      tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:#999">Carregando...</td></tr>';
+      const r=await api('/api/financeiro/salarios?competencia='+encodeURIComponent(comp));
+      if(r?.erro){
+        tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:#c33">Erro ao carregar pagamentos.</td></tr>';
+        showSt('sal-st',r.erro,true);
+        return;
+      }
+      const itens=Array.isArray(r?.itens)?r.itens:[];
+      if(!itens.length){
+        tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:#999">Nenhum funcionario ativo encontrado.</td></tr>';
+      }else{
+        tb.innerHTML=itens.map(it=>`<tr>
+          <td>${it.re||'—'}</td>
+          <td><div style="font-weight:700">${it.nome||''}</div></td>
+          <td>${fmtDoc(it.cpf||'')}</td>
+          <td style="text-align:right"><input class="sal-valor" data-fid="${it.funcionario_id}" type="number" min="0" step="0.01" value="${Number(it.valor_liquido||0).toFixed(2)}" style="width:150px;text-align:right" oninput="salarioSomarCompetenciaTela()"></td>
+          <td style="text-align:right;font-weight:700">${brl(it.total_anual_funcionario||0)}</td>
+        </tr>`).join('');
+      }
+      SALARIO_STATE.totalAnual=Number(r.total_anual||0);
+      document.getElementById('sal-total-anual').textContent=brl(r.total_anual||0);
+      document.getElementById('sal-total-comp').textContent=brl(r.total_competencia||0);
+      res.textContent=`${r.total_funcionarios||itens.length} colaborador(es) ativo(s) · Competencia ${r.competencia||comp}`;
+      showSt('sal-st','Pagamentos carregados.',false);
+    }
+
+    async function salvarPagamentoSalario(){
+      const comp=(document.getElementById('sal-comp')?.value||'').trim();
+      if(!/^\d{4}-\d{2}$/.test(comp)){
+        showSt('sal-st','Competencia invalida. Use AAAA-MM.',true);
+        return;
+      }
+      const valores=Array.from(document.querySelectorAll('#tb-salarios .sal-valor')).map(el=>({
+        funcionario_id:parseInt(el.dataset.fid||'0',10),
+        valor_liquido:el.value
+      }));
+      if(!valores.length){
+        showSt('sal-st','Nenhum colaborador para salvar.',true);
+        return;
+      }
+      const r=await api('/api/financeiro/salarios','POST',{competencia:comp,valores});
+      if(r?.erro){
+        showSt('sal-st',r.erro,true);
+        return;
+      }
+      showSt('sal-st',`Valores salvos com sucesso (${r.alterados||0} alteracao(oes)).`,false);
+      await carregarPagamentoSalario();
+    }
+
+    document.addEventListener('DOMContentLoaded',()=>{
+      const c=document.getElementById('sal-comp');
+      if(c && !c.value) c.value=salarioCompetenciaAtual();
+      if(document.getElementById('pg-pagamento-salario')){
+        carregarPagamentoSalario();
       }
     });
     </script>
@@ -3051,7 +3188,7 @@ function nav(id,el,force=false){
   }
   // Lógica especial para Financeiro e subabas
   const isFinanceiroParent = id==='financeiro';
-  const subabasFinanceiro = ['faturamento','despesas','fluxo-caixa','contas','relatorios','conciliacao','cobrancas'];
+  const subabasFinanceiro = ['faturamento','pagamento-salario','despesas','fluxo-caixa','contas','relatorios','conciliacao','cobrancas'];
   if(isFinanceiroParent){
     document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
     document.getElementById('pg-financeiro').classList.add('on');
@@ -3068,6 +3205,7 @@ function nav(id,el,force=false){
     const navFinanceiro = document.querySelector('.nav-item[data-nav="financeiro"]');
     if(navFinanceiro) navFinanceiro.classList.add('on');
     if(el)el.classList.add('on');
+    if(id==='pagamento-salario') carregarPagamentoSalario();
     return;
   }
   // Lógica padrão
