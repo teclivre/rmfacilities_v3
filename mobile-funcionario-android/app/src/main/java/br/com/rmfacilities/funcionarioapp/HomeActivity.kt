@@ -51,6 +51,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var btnMensagens: LinearLayout
     private lateinit var btnOfflineHome: LinearLayout
     private lateinit var btnConfiguracoesHome: LinearLayout
+    private lateinit var btnSalarioHome: LinearLayout
 
     private val logoutReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -96,6 +97,7 @@ class HomeActivity : AppCompatActivity() {
         btnMensagens = findViewById(R.id.btnMensagens)
         btnOfflineHome = findViewById(R.id.btnOfflineHome)
         btnConfiguracoesHome = findViewById(R.id.btnConfiguracoesHome)
+        btnSalarioHome = findViewById(R.id.btnSalarioHome)
 
         btnPerfil.setOnClickListener {
             startActivity(Intent(this, PerfilActivity::class.java))
@@ -121,6 +123,13 @@ class HomeActivity : AppCompatActivity() {
 
         btnConfiguracoesHome.setOnClickListener {
             startActivity(Intent(this, ConfiguracoesActivity::class.java))
+        }
+
+        btnSalarioHome.setOnClickListener {
+            startActivity(Intent(this, DocumentosActivity::class.java).apply {
+                putExtra("preset_categoria", "holerite")
+                putExtra("preset_busca", "")
+            })
         }
 
         findViewById<MaterialButton>(R.id.btnAtalhos).setOnClickListener {
@@ -317,8 +326,8 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun abrirPersonalizacaoAtalhos() {
-        val labels = arrayOf("Documentos", "Perfil", "Ponto", "Mensagens", "Offline", "Configurações")
-        val keys = listOf("documentos", "perfil", "ponto", "mensagens", "offline", "config")
+        val labels = arrayOf("Documentos", "Perfil", "Ponto", "Mensagens", "Offline", "Configurações", "Pagamento")
+        val keys = listOf("documentos", "perfil", "ponto", "mensagens", "offline", "config", "pagamento")
         val enabled = carregarAtalhosHabilitados().toMutableSet()
         val checks = keys.map { enabled.contains(it) }.toBooleanArray()
         MaterialAlertDialogBuilder(this)
@@ -339,7 +348,7 @@ class HomeActivity : AppCompatActivity() {
         val prefs = getSharedPreferences(PREF_SHORTCUTS, MODE_PRIVATE)
         val raw = prefs.getString(KEY_ENABLED, "") ?: ""
         if (raw.isBlank()) {
-            return setOf("documentos", "perfil", "ponto", "mensagens")
+            return setOf("documentos", "perfil", "ponto", "mensagens", "pagamento")
         }
         return raw.split(',').map { it.trim() }.filter { it.isNotBlank() }.toSet()
     }
@@ -359,6 +368,7 @@ class HomeActivity : AppCompatActivity() {
         btnMensagens.visibility = if (enabled.contains("mensagens")) View.VISIBLE else View.GONE
         btnOfflineHome.visibility = if (enabled.contains("offline")) View.VISIBLE else View.GONE
         btnConfiguracoesHome.visibility = if (enabled.contains("config")) View.VISIBLE else View.GONE
+        btnSalarioHome.visibility = if (enabled.contains("pagamento")) View.VISIBLE else View.GONE
     }
 
     private fun mostrarDialogAtualizar(downloadUrl: String?) {

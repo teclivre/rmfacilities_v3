@@ -107,6 +107,19 @@ class DocumentosActivity : AppCompatActivity() {
             }
         })
 
+        val presetCategoria = intent.getStringExtra("preset_categoria")?.trim().orEmpty()
+        if (presetCategoria.isNotBlank()) {
+            filtroCategoria = when (presetCategoria.lowercase(Locale.getDefault())) {
+                "holerite", "holerites", "pagamento", "salario", "salário" -> "Holerites"
+                else -> presetCategoria
+            }
+        }
+        val presetBusca = intent.getStringExtra("preset_busca")?.trim().orEmpty()
+        if (presetBusca.isNotBlank()) {
+            filtroQ = presetBusca
+            findViewById<EditText>(R.id.etBuscaDoc).setText(presetBusca)
+        }
+
         adapter = DocumentoAdapter(
             onBaixar = { item -> baixarDocumento(item) },
             onAssinar = { item -> confirmarAssinatura(item) }

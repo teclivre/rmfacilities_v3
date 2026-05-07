@@ -1150,6 +1150,39 @@ class FolhaPagamentoMensal(db.Model):
             d['dados']={}
         return d
 
+class FolhaBeneficios(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    competencia=db.Column(db.String(7),nullable=False,index=True)
+    empresa_ref_id=db.Column(db.Integer,nullable=False,default=0,index=True)
+    empresa_nome=db.Column(db.String(200),default='Todas as empresas')
+    status=db.Column(db.String(20),default='aberta',index=True)
+    versao_atual=db.Column(db.Integer,default=0)
+    total_funcionarios=db.Column(db.Integer,default=0)
+    total_competencia=db.Column(db.Float,default=0)
+    dados_json=db.Column(db.Text,default='{}')
+    historico_json=db.Column(db.Text,default='[]')
+    fechamento_obs=db.Column(db.Text,default='')
+    salvo_por=db.Column(db.String(100))
+    salvo_em=db.Column(db.DateTime,default=utcnow,index=True)
+    fechado_em=db.Column(db.DateTime)
+    fechado_por=db.Column(db.String(100))
+    reaberto_em=db.Column(db.DateTime)
+    reaberto_por=db.Column(db.String(100))
+    assinatura_status=db.Column(db.String(20),default='pendente')
+    assinatura_hash=db.Column(db.String(128))
+    assinatura_por=db.Column(db.String(100))
+    assinatura_em=db.Column(db.DateTime)
+    __table_args__=(db.UniqueConstraint('competencia','empresa_ref_id',name='uq_folha_benef_comp_emp'),)
+
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['salvo_fmt']=self.salvo_em.strftime('%d/%m/%Y %H:%M') if self.salvo_em else ''
+        try:
+            d['dados']=json.loads(self.dados_json or '{}')
+        except Exception:
+            d['dados']={}
+        return d
+
 class FuncionarioAppSessao(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False)
@@ -10613,7 +10646,28 @@ def api_beneficios_lancamentos():
             'vale_gasolina':_benef_val(b,f,'vale_gasolina'),
             'cesta_natal':_benef_val(b,f,'cesta_natal'),
         })
-    return jsonify({'ok':True,'competencia':comp,'itens':itens})
+    empresa_ref_id=empresa_id or 0
+    folha=FolhaBeneficios.query.filter_by(competencia=comp,empresa_ref_id=empresa_ref_id).first()
+    folha_status='aberta'
+    folha_versao=0
+    folha_salva_em=None
+    folha_salva_por=''
+    folha_assinatura_status='pendente'
+    folha_historico=[]
+    if folha:
+        folha_status=folha.status or 'aberta'
+        folha_versao=int(folha.versao_atual or 0)
+        folha_salva_em=folha.salvo_em.isoformat() if folha.salvo_em else None
+        folha_salva_por=folha.salvo_por or ''
+        folha_assinatura_status=folha.assinatura_status or 'pendente'
+        try:
+            folha_historico=json.loads(folha.historico_json or '[]')
+        except Exception:
+            folha_historico=[]
+    return jsonify({'ok':True,'competencia':comp,'itens':itens,
+        'folha_status':folha_status,'folha_versao':folha_versao,
+        'folha_salva_em':folha_salva_em,'folha_salva_por':folha_salva_por,
+        'folha_assinatura_status':folha_assinatura_status,'folha_historico':folha_historico})
 
 @app.route('/api/beneficios/lancamentos',methods=['DELETE'])
 @lr
@@ -10840,6 +10894,154 @@ def api_beneficios_vale_gasolina_xlsx():
 @lr
 def api_beneficios_cesta_natal_xlsx():
     return _api_beneficios_xlsx_tipo('cesta_natal')
+
+def _beneficios_folha_resumo(comp,empresa_id=None):
+    empresa_ref_id=empresa_id or 0
+    comp=norm_competencia(comp)
+    qf=Funcionario.query.filter_by(status='Ativo')
+    if empresa_id:
+        qf=qf.filter_by(empresa_id=empresa_id)
+    funcs_ativos=qf.all()
+    qb=BeneficioMensal.query.filter_by(competencia=comp)
+    if empresa_id:
+        qb=qb.filter_by(empresa_id=empresa_id)
+    mapa={b.funcionario_id:b for b in qb.all()}
+    total=0.0
+    itens_snap=[]
+    for f in funcs_ativos:
+        b=mapa.get(f.id)
+        emp=Empresa.query.get(f.empresa_id) if f.empresa_id else None
+        cli=Cliente.query.get(f.posto_cliente_id) if f.posto_cliente_id else None
+        posto_nome=(cli.nome.strip() if cli and (cli.nome or '').strip() else (f.posto_operacional or 'Reserva tecnica'))
+        vt=float((b.vale_transporte if b and b.vale_transporte is not None else f.vale_transporte) or 0)
+        vr=float((b.vale_refeicao if b and b.vale_refeicao is not None else f.vale_refeicao) or 0)
+        va=float((b.vale_alimentacao if b and b.vale_alimentacao is not None else f.vale_alimentacao) or 0)
+        pp=float((b.premio_produtividade if b and b.premio_produtividade is not None else f.premio_produtividade) or 0)
+        vg=float((b.vale_gasolina if b and b.vale_gasolina is not None else f.vale_gasolina) or 0)
+        cn=float((b.cesta_natal if b and b.cesta_natal is not None else f.cesta_natal) or 0)
+        dias_vt=int((b.dias_vt if b else 0) or 0)
+        dias_vr=int((b.dias_vr if b else 0) or 0)
+        total_func=(vt*dias_vt)+(vr*dias_vr)+va+pp+vg+cn
+        total+=total_func
+        itens_snap.append({
+            'funcionario_id':f.id,'nome':f.nome or '',
+            'empresa_nome':(emp.nome if emp else ''),'posto':posto_nome,
+            'vt':vt,'vr':vr,'va':va,'pp':pp,'vg':vg,'cn':cn,
+            'dias_vt':dias_vt,'dias_vr':dias_vr,'total':total_func,
+        })
+    return {'competencia':comp,'empresa_id':empresa_id,'total_funcionarios':len(itens_snap),'total_competencia':total,'itens':itens_snap}
+
+def _beneficios_salvar_snapshot(comp,empresa_id=None,usuario=''):
+    empresa_ref_id=empresa_id or 0
+    resumo=_beneficios_folha_resumo(comp,empresa_id)
+    emp_nome='Todas as empresas'
+    if empresa_ref_id:
+        emp=Empresa.query.get(empresa_ref_id)
+        if emp and (emp.nome or '').strip():
+            emp_nome=emp.nome.strip()
+    folha=FolhaBeneficios.query.filter_by(competencia=comp,empresa_ref_id=empresa_ref_id).first()
+    if not folha:
+        folha=FolhaBeneficios(competencia=comp,empresa_ref_id=empresa_ref_id)
+        db.session.add(folha)
+    try:
+        historico=json.loads(folha.historico_json or '[]')
+    except Exception:
+        historico=[]
+    if not isinstance(historico,list):
+        historico=[]
+    proxima_versao=int(folha.versao_atual or 0)+1
+    historico.append({
+        'versao':proxima_versao,
+        'salvo_em':utcnow().isoformat(),
+        'salvo_por':(usuario or '').strip() or 'sistema',
+        'total_funcionarios':int(resumo.get('total_funcionarios') or 0),
+        'total_competencia':float(resumo.get('total_competencia') or 0),
+        'dados':resumo,
+    })
+    folha.empresa_nome=emp_nome
+    folha.versao_atual=proxima_versao
+    folha.total_funcionarios=int(resumo.get('total_funcionarios') or 0)
+    folha.total_competencia=float(resumo.get('total_competencia') or 0)
+    folha.dados_json=json.dumps(resumo,ensure_ascii=False)
+    folha.historico_json=json.dumps(historico[-24:],ensure_ascii=False)
+    folha.salvo_por=(usuario or '').strip() or 'sistema'
+    folha.salvo_em=utcnow()
+    return folha
+
+@app.route('/api/beneficios/fechar',methods=['POST'])
+@lr
+def api_beneficios_fechar():
+    d=request.json or {}
+    comp=norm_competencia(d.get('competencia'))
+    empresa_id=to_num(d.get('empresa_id')) or None
+    usuario=_financeiro_usuario_atual()
+    folha=_beneficios_salvar_snapshot(comp,empresa_id=empresa_id,usuario=usuario)
+    folha.status='fechada'
+    folha.fechado_em=utcnow()
+    folha.fechado_por=usuario
+    folha.fechamento_obs=(d.get('fechamento_obs') or '').strip()
+    db.session.commit()
+    audit_event('folha_beneficios_fechada','usuario',session.get('uid'),'folha_beneficios',folha.id,True,{'competencia':comp,'empresa_id':empresa_id,'versao':folha.versao_atual})
+    return jsonify({'ok':True,'competencia':comp,'folha_id':folha.id,
+        'total_funcionarios':folha.total_funcionarios,'total_competencia':folha.total_competencia,
+        'salvo_em':(folha.salvo_em.isoformat() if folha.salvo_em else None),'salvo_por':folha.salvo_por or '',
+        'status':folha.status,'versao':int(folha.versao_atual or 0)})
+
+@app.route('/api/beneficios/reabrir',methods=['POST'])
+@lr
+def api_beneficios_reabrir():
+    d=request.json or {}
+    comp=norm_competencia(d.get('competencia'))
+    empresa_id=to_num(d.get('empresa_id')) or None
+    empresa_ref_id=empresa_id or 0
+    folha=FolhaBeneficios.query.filter_by(competencia=comp,empresa_ref_id=empresa_ref_id).first()
+    if not folha:
+        return jsonify({'erro':'Folha não encontrada para esta competência.'}),404
+    folha.status='aberta'
+    folha.reaberto_em=utcnow()
+    folha.reaberto_por=_financeiro_usuario_atual()
+    folha.assinatura_status='pendente'
+    db.session.commit()
+    audit_event('folha_beneficios_reaberta','usuario',session.get('uid'),'folha_beneficios',folha.id,True,{'competencia':comp,'empresa_id':empresa_id})
+    return jsonify({'ok':True,'competencia':comp,'empresa_id':empresa_id,'status':'aberta'})
+
+@app.route('/api/beneficios/assinar',methods=['POST'])
+@lr
+def api_beneficios_assinar():
+    d=request.json or {}
+    comp=norm_competencia(d.get('competencia'))
+    empresa_id=to_num(d.get('empresa_id')) or None
+    empresa_ref_id=empresa_id or 0
+    folha=FolhaBeneficios.query.filter_by(competencia=comp,empresa_ref_id=empresa_ref_id).first()
+    if not folha:
+        return jsonify({'erro':'Salve a folha antes de assinar.'}),404
+    if (folha.status or '')!='fechada':
+        return jsonify({'erro':'A folha precisa estar fechada para assinatura.'}),400
+    try:
+        dados=json.loads(folha.dados_json or '{}')
+    except Exception:
+        dados={}
+    h=hashlib.sha256(json.dumps({'folha_id':folha.id,'competencia':comp,'empresa_id':empresa_id,'dados':dados},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+    folha.assinatura_status='assinado'
+    folha.assinatura_hash=h
+    folha.assinatura_por=_financeiro_usuario_atual()
+    folha.assinatura_em=utcnow()
+    db.session.commit()
+    audit_event('folha_beneficios_assinada','usuario',session.get('uid'),'folha_beneficios',folha.id,True,{'competencia':comp,'empresa_id':empresa_id,'hash':h[:16]})
+    return jsonify({'ok':True,'competencia':comp,'empresa_id':empresa_id,'assinatura_status':'assinado','assinatura_hash':h,'assinatura_por':folha.assinatura_por,'assinatura_em':(folha.assinatura_em.isoformat() if folha.assinatura_em else None)})
+
+@app.route('/api/beneficios/folhas',methods=['GET'])
+@lr
+def api_beneficios_folhas():
+    comp=(request.args.get('competencia') or '').strip()
+    empresa_id=to_num(request.args.get('empresa_id'))
+    q=FolhaBeneficios.query
+    if comp:
+        q=q.filter_by(competencia=norm_competencia(comp))
+    if empresa_id is not None:
+        q=q.filter_by(empresa_ref_id=empresa_id or 0)
+    folhas=q.order_by(FolhaBeneficios.salvo_em.desc()).limit(24).all()
+    return jsonify({'ok':True,'itens':[f.to_dict() for f in folhas]})
 
 @app.route('/beneficios/relatorio')
 @lr
@@ -14112,6 +14314,20 @@ with app.app_context():
         'salario_editado_em DATETIME'
     ])
     ensure_cols('folha_pagamento_mensal',[
+        'status VARCHAR(20) DEFAULT "aberta"',
+        'versao_atual INTEGER DEFAULT 0',
+        'historico_json TEXT DEFAULT "[]"',
+        'fechamento_obs TEXT DEFAULT ""',
+        'fechado_em DATETIME',
+        'fechado_por VARCHAR(100)',
+        'reaberto_em DATETIME',
+        'reaberto_por VARCHAR(100)',
+        'assinatura_status VARCHAR(20) DEFAULT "pendente"',
+        'assinatura_hash VARCHAR(128)',
+        'assinatura_por VARCHAR(100)',
+        'assinatura_em DATETIME'
+    ])
+    ensure_cols('folha_beneficios',[
         'status VARCHAR(20) DEFAULT "aberta"',
         'versao_atual INTEGER DEFAULT 0',
         'historico_json TEXT DEFAULT "[]"',
