@@ -38,17 +38,17 @@ import sqlite3
 import unicodedata
 import os, json, hashlib, hmac, secrets
 from datetime import datetime, timedelta, date
-from zoneinfo import ZoneInfo
-from ponto_module import register_ponto_routes
-
-
-# Flask app and DB initialization must come first
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-def _is_prod_hint():
-    env = (os.environ.get('APP_ENV') or os.environ.get('FLASK_ENV') or '').strip().lower()
     return env in ('prod', 'production')
+
+def _is_true_env(name):
+    return (os.environ.get(name) or '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+_strict_origin_check = not _is_true_env('DISABLE_ORIGIN_CHECK')
+if _is_prod_hint():
+    _strict_origin_check = True
 
 def _resolve_data_dir():
     configured = (os.environ.get('DATA_DIR') or '').strip()
@@ -224,9 +224,6 @@ def api_bancos_br():
     refresh = request.args.get('refresh') in ('1', 'true', 'True', 'yes')
     bancos = bancos_br_get(refresh=refresh)
     return jsonify({'bancos': bancos})
-
-
-_strict_origin_check = False  # Corrige NameError para _strict_origin_check
 
 
 # === MODELOS E ROTAS QUE DEVEM VIR APÓS CRIAÇÃO DO APP E DB ===
