@@ -1099,7 +1099,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <input id="rh-busca" placeholder="Buscar por matrícula, nome, CPF ou cargo" oninput="renderFuncionarios()" style="padding:6px 10px;font-size:12px;border:1.5px solid var(--borda);border-radius:var(--r);width:280px">
             <button class="btn b-az b-sm" onclick="openModalFunc('novo')">+ Novo funcionário</button>
             <a class="btn b-gh b-sm" href="/api/funcionarios/modelo">Modelo funcionários</a>
-            <label class="btn b-ghl b-sm" for="func-import-file" style="cursor:pointer">Importar planilha</label>
+            <label class="btn b-gh b-sm" for="func-import-file" style="cursor:pointer">Importar planilha</label>
             <input type="file" id="func-import-file" accept=".csv,.xlsx" style="display:none" onchange="importarFuncionariosPlanilha(event)">
           </div>
         </div>
@@ -1137,13 +1137,13 @@ document.addEventListener('DOMContentLoaded',()=>{
           <button class="btn b-az b-sm" type="button" onclick="rhSalariosSalvar()">Salvar valores</button>
           <button class="btn b-vd b-sm" type="button" onclick="rhSalariosSalvarFolha()">Salvar folha do mês</button>
           <button class="btn b-gh b-sm" type="button" onclick="rhSalariosReabrirFolha()">Reabrir folha</button>
-          <button class="btn b-ghl b-sm" type="button" onclick="rhSalariosAssinarFolha()">Assinar fechamento</button>
+          <button class="btn b-gh b-sm" type="button" onclick="rhSalariosAssinarFolha()">Assinar fechamento</button>
           <button class="btn b-gh b-sm" type="button" onclick="rhSalariosPrevia()">Prévia</button>
           <button class="btn b-gh b-sm" type="button" onclick="rhSalariosAbrirHistorico()">Consultar histórico</button>
           <button class="btn b-az b-sm" type="button" onclick="rhSalariosExportar('xlsx')">Exportar planilha</button>
-          <button class="btn b-ghl b-sm" type="button" onclick="rhSalariosExportar('pdf')">Exportar PDF</button>
+          <button class="btn b-gh b-sm" type="button" onclick="rhSalariosExportar('pdf')">Exportar PDF</button>
           <a class="btn b-gh b-sm" href="/api/financeiro/salarios/modelo" target="_blank">Modelo importação</a>
-          <label class="btn b-ghl b-sm" for="rh-sal-import-file" style="cursor:pointer">Importar planilha</label>
+          <label class="btn b-gh b-sm" for="rh-sal-import-file" style="cursor:pointer">Importar planilha</label>
           <input type="file" id="rh-sal-import-file" accept=".csv,.xlsx" style="display:none" onchange="rhSalariosImportarPlanilha(event)">
         </div>
         <div id="rh-sal-res" style="display:none;margin:0 12px 10px 12px;color:#6d7a8c;font-size:13px"></div>
@@ -1188,7 +1188,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <button class="btn b-gh b-sm" type="button" onclick="rhExportMarcarTodosPostos(false)">Limpar postos</button>
           <button class="btn b-ghv b-sm" type="button" onclick="rhExportCarregarFiltros()">Atualizar colaboradores</button>
           <button class="btn b-az b-sm" type="button" onclick="rhExportar('xlsx')">Exportar planilha</button>
-          <button class="btn b-ghl b-sm" type="button" onclick="rhExportar('pdf')">Exportar PDF</button>
+          <button class="btn b-gh b-sm" type="button" onclick="rhExportar('pdf')">Exportar PDF</button>
         </div>
         <div id="rh-exp-st" class="st" style="margin-top:8px"></div>
         <div id="rh-exp-resumo" class="hint" style="margin-top:4px"></div>

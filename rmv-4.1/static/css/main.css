@@ -84,7 +84,12 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 #pg-rh #rh-sal-toolbar{align-items:flex-end;gap:10px}
 #pg-rh #rh-sal-toolbar .btn,
 #pg-rh #rh-sal-toolbar label.btn{height:34px;display:inline-flex;align-items:center;justify-content:center}
-#pg-rh #rh-sal-toolbar .f{background:rgba(255,255,255,.45);border:1px solid var(--borda);border-radius:10px;padding:6px 8px}
+#pg-rh #rh-sal-toolbar .f{background:rgba(11,33,54,.34);border:1px solid rgba(113,182,238,.24);border-radius:10px;padding:6px 8px}
+#pg-rh #rh-sal-toolbar .f label{color:#a6bdd3}
+#pg-rh .btn.b-gh{background:rgba(84,165,230,.14);color:#7ec7ff;border:1px solid rgba(84,165,230,.3)}
+#pg-rh .btn.b-gh:hover{background:rgba(84,165,230,.2)}
+#pg-rh .btn.b-ghv{background:rgba(54,201,148,.16);color:#7ee5bf;border:1px solid rgba(54,201,148,.3)}
+#pg-rh .btn.b-vd{background:linear-gradient(180deg,#37cb99,#22b886)}
 
 @media(max-width:900px){
 	#pg-rh .rh-subabas{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
