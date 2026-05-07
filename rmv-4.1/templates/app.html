@@ -336,22 +336,6 @@ document.addEventListener('DOMContentLoaded',()=>{
 </head>
 <body>
 
-<div class="topbar">
-  <div class="topbar-brand">
-    <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities"
-         onerror="this.style.display='none'">
-    <h1>RM Facilities</h1>
-  </div>
-  <div class="topbar-right">
-    <button class="btn-top" type="button" id="theme-toggle" onclick="toggleTheme()" title="Alternar tema">🌙 Dark</button>
-    <div class="topbar-user">
-      <div style="font-weight:700">{{ nome }}</div>
-      <div id="relogio"></div>
-    </div>
-    <a href="/logout" class="btn-top">Sair</a>
-  </div>
-</div>
-
 <div class="mobile-nav" id="mobile-nav">
   <div class="mobile-nav-inner">
     <label>Navegação rápida</label>
@@ -378,74 +362,99 @@ document.addEventListener('DOMContentLoaded',()=>{
 
   <!-- SIDEBAR -->
   <nav class="sidebar">
-    <div class="nav-section">Principal</div>
-    <a class="nav-item on" onclick="nav('dashboard',this)">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-      Dashboard
-    </a>
-
-    <div class="nav-section">Financeiro</div>
-    <a class="nav-item" data-nav="financeiro" onclick="nav('financeiro',this)">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/><path d="M6 14h.01"/><path d="M10 14h.01"/></svg>
-      Financeiro
-    </a>
-    <div id="subnav-financeiro" style="display:none;padding-left:18px">
-      <a class="nav-item sub" data-nav="faturamento" onclick="nav('faturamento',this)">Faturamento</a>
-      <a class="nav-item sub" data-nav="pagamento-salario" onclick="nav('pagamento-salario',this)">Pagamento de Salario</a>
-      <a class="nav-item sub" data-nav="despesas" onclick="nav('despesas',this)">Despesas</a>
-      <a class="nav-item sub" data-nav="fluxo-caixa" onclick="nav('fluxo-caixa',this)">Fluxo de Caixa</a>
-      <a class="nav-item sub" data-nav="contas" onclick="nav('contas',this)">Contas a Pagar/Receber</a>
-      <a class="nav-item sub" data-nav="relatorios" onclick="nav('relatorios',this)">Relatórios</a>
-      <a class="nav-item sub" data-nav="conciliacao" onclick="nav('conciliacao',this)">Conciliação OFX</a>
-      <a class="nav-item sub" data-nav="cobrancas" onclick="nav('cobrancas',this)">Régua de Cobrança</a>
+    <div class="sidebar-top">
+      <button type="button" class="sidebar-collapse" onclick="toggleSidebarCollapse()" title="Recolher/expandir menu">☰</button>
+      <div class="sidebar-brand">
+        <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
+        <span class="brand-label">RM Facilities</span>
+      </div>
     </div>
-    <a class="nav-item" onclick="nav('clientes',this)">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-      Clientes
-    </a>
-    <a class="nav-item" onclick="nav('rh',this)">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>
-      RH
-    </a>
-    <a class="nav-item" onclick="nav('rh-digital',this)">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-      Comunicação
-    </a>
-    <a class="nav-item" onclick="nav('operacional',this)">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 20h16"/><path d="M6 20V8l6-4 6 4v12"/></svg>
-      Operacional
-    </a>
-    <a class="nav-item" onclick="nav('compras',this)">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 6h15l-1.5 9h-12z"/><circle cx="10" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M6 6L4.5 3.5H2"/></svg>
-      Compras
-    </a>
-    <a class="nav-item" onclick="nav('beneficios',this)">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 1v22"/><path d="M17 5H9a4 4 0 0 0 0 8h6a4 4 0 0 1 0 8H7"/></svg>
-      Benefícios
-    </a>
-    <a class="nav-item" onclick="nav('sst',this)">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 9.5-8 10-4.5-.5-8-5-8-10V6l8-4z"/><path d="M9 12l2 2 4-4"/></svg>
-      Segurança do Trabalho
-    </a>
-    <a class="nav-item" onclick="nav('assinaturas',this)">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
-      Assinaturas
-    </a>
 
-    <hr class="nav-sep">
-    <div class="nav-section">Administração</div>
-    <a class="nav-item" onclick="nav('empresas',this)">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-      Empresas
-    </a>
-    <a class="nav-item" onclick="nav('usuarios',this)">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      Usuários
-    </a>
-    <a class="nav-item" onclick="nav('config',this)">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
-      Configurações
-    </a>
+    <div class="sidebar-main">
+      <div class="nav-module open" id="mod-principal">
+        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-principal')">
+          <span class="mod-icon">🏠</span><span class="module-label">Principal</span><span class="module-caret">▾</span>
+        </button>
+        <div class="module-panel">
+          <a class="nav-item lv2 on" data-nav="dashboard" onclick="nav('dashboard',this)">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            <span class="nav-label">Dashboard</span>
+          </a>
+        </div>
+      </div>
+
+      <div class="nav-module" id="mod-financeiro">
+        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-financeiro')">
+          <span class="mod-icon">💰</span><span class="module-label">Finanças</span><span class="module-caret">▾</span>
+        </button>
+        <div class="module-panel">
+          <a class="nav-item lv2" data-nav="financeiro" onclick="nav('financeiro',this)"><span class="nav-label">Visão Geral</span></a>
+          <button class="nav-item lv2 nav-expand" type="button" onclick="toggleSidebarSublevel('subnav-financeiro',this)"><span class="nav-label">Operações Financeiras</span><span class="module-caret">▸</span></button>
+          <div id="subnav-financeiro" class="subnav-lv3" style="display:none">
+            <a class="nav-item sub lv3" data-nav="faturamento" onclick="nav('faturamento',this)"><span class="nav-label">Faturamento</span></a>
+            <a class="nav-item sub lv3" data-nav="pagamento-salario" onclick="nav('pagamento-salario',this)"><span class="nav-label">Pagamento de Salario</span></a>
+            <a class="nav-item sub lv3" data-nav="despesas" onclick="nav('despesas',this)"><span class="nav-label">Despesas</span></a>
+            <a class="nav-item sub lv3" data-nav="fluxo-caixa" onclick="nav('fluxo-caixa',this)"><span class="nav-label">Fluxo de Caixa</span></a>
+            <a class="nav-item sub lv3" data-nav="contas" onclick="nav('contas',this)"><span class="nav-label">Contas a Pagar/Receber</span></a>
+            <a class="nav-item sub lv3" data-nav="relatorios" onclick="nav('relatorios',this)"><span class="nav-label">Relatorios</span></a>
+            <a class="nav-item sub lv3" data-nav="conciliacao" onclick="nav('conciliacao',this)"><span class="nav-label">Conciliacao OFX</span></a>
+            <a class="nav-item sub lv3" data-nav="cobrancas" onclick="nav('cobrancas',this)"><span class="nav-label">Regua de Cobranca</span></a>
+          </div>
+        </div>
+      </div>
+
+      <div class="nav-module" id="mod-comercial">
+        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-comercial')">
+          <span class="mod-icon">🧾</span><span class="module-label">Comercial</span><span class="module-caret">▾</span>
+        </button>
+        <div class="module-panel">
+          <a class="nav-item lv2" onclick="nav('clientes',this)"><span class="nav-label">Clientes</span></a>
+        </div>
+      </div>
+
+      <div class="nav-module" id="mod-rh">
+        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-rh')">
+          <span class="mod-icon">👥</span><span class="module-label">RH</span><span class="module-caret">▾</span>
+        </button>
+        <div class="module-panel">
+          <a class="nav-item lv2" onclick="nav('rh',this)"><span class="nav-label">RH</span></a>
+          <a class="nav-item lv2" onclick="nav('rh-digital',this)"><span class="nav-label">Comunicacao</span></a>
+          <a class="nav-item lv2" onclick="nav('beneficios',this)"><span class="nav-label">Beneficios</span></a>
+          <a class="nav-item lv2" onclick="nav('sst',this)"><span class="nav-label">Seguranca do Trabalho</span></a>
+          <a class="nav-item lv2" onclick="nav('assinaturas',this)"><span class="nav-label">Assinaturas</span></a>
+        </div>
+      </div>
+
+      <div class="nav-module" id="mod-operacional">
+        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-operacional')">
+          <span class="mod-icon">🏭</span><span class="module-label">Operacional</span><span class="module-caret">▾</span>
+        </button>
+        <div class="module-panel">
+          <a class="nav-item lv2" onclick="nav('operacional',this)"><span class="nav-label">Operacional</span></a>
+          <a class="nav-item lv2" onclick="nav('compras',this)"><span class="nav-label">Compras</span></a>
+        </div>
+      </div>
+
+      <div class="nav-module" id="mod-admin">
+        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-admin')">
+          <span class="mod-icon">⚙️</span><span class="module-label">Administracao</span><span class="module-caret">▾</span>
+        </button>
+        <div class="module-panel">
+          <a class="nav-item lv2" onclick="nav('empresas',this)"><span class="nav-label">Empresas</span></a>
+          <a class="nav-item lv2" onclick="nav('usuarios',this)"><span class="nav-label">Usuarios</span></a>
+          <a class="nav-item lv2" onclick="nav('config',this)"><span class="nav-label">Configuracoes</span></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-bottom">
+      <button class="btn-top" type="button" id="theme-toggle" onclick="toggleTheme()" title="Alternar tema">🌙 Dark</button>
+      <div class="topbar-user">
+        <div style="font-weight:700">{{ nome }}</div>
+        <div id="relogio"></div>
+      </div>
+      <a href="/logout" class="btn-top">Sair</a>
+    </div>
   </nav>
 
   <!-- CONTEÚDO -->
@@ -2901,7 +2910,67 @@ function certPolicySummary(v){
   return mapa[v]||mapa.prefer_empresa;
 }
 
+const SIDEBAR_COLLAPSE_KEY='rm_sidebar_collapsed_v1';
+
+function toggleSidebarCollapse(force){
+  const collapsed=(typeof force==='boolean')?force:!document.body.classList.contains('sidebar-collapsed');
+  document.body.classList.toggle('sidebar-collapsed',collapsed);
+  try{ localStorage.setItem(SIDEBAR_COLLAPSE_KEY,collapsed?'1':'0'); }catch(_){ }
+}
+
+function toggleSidebarModule(moduleId,forceOpen){
+  const mod=document.getElementById(moduleId);
+  if(!mod) return;
+  if(document.body.classList.contains('sidebar-collapsed')) return;
+  const open=(typeof forceOpen==='boolean')?forceOpen:!mod.classList.contains('open');
+  mod.classList.toggle('open',open);
+}
+
+function toggleSidebarSublevel(subId,btn){
+  const el=document.getElementById(subId);
+  if(!el) return;
+  const open=el.style.display!=='block';
+  el.style.display=open?'block':'none';
+  if(btn) btn.classList.toggle('on',open);
+}
+
+function _sidebarFindNavItem(id){
+  const byData=document.querySelector(`.nav-item[data-nav="${id}"]`);
+  if(byData) return byData;
+  return Array.from(document.querySelectorAll('.nav-item')).find(el=>{
+    const oc=(el.getAttribute('onclick')||'');
+    return oc.includes(`'${id}'`);
+  })||null;
+}
+
+function sidebarSyncActiveContext(activeId){
+  const item=_sidebarFindNavItem(activeId);
+  const subFin=document.getElementById('subnav-financeiro');
+  if(item){
+    const mod=item.closest('.nav-module');
+    if(mod) mod.classList.add('open');
+  }
+  if(['financeiro','faturamento','pagamento-salario','despesas','fluxo-caixa','contas','relatorios','conciliacao','cobrancas'].includes(activeId)){
+    toggleSidebarModule('mod-financeiro',true);
+    if(subFin) subFin.style.display=activeId==='financeiro'?'none':'block';
+  }
+  document.querySelectorAll('.nav-module').forEach(mod=>{
+    mod.classList.toggle('active',!!mod.querySelector('.nav-item.on'));
+  });
+}
+
+function initSidebarLayout(){
+  try{
+    const saved=localStorage.getItem(SIDEBAR_COLLAPSE_KEY);
+    toggleSidebarCollapse(saved==='1');
+  }catch(_){
+    toggleSidebarCollapse(false);
+  }
+  sidebarSyncActiveContext('dashboard');
+}
+
 async function init(){
+  initSidebarLayout();
   tick(); setInterval(tick,1000);
   const h=new Date();
   document.getElementById('mesref').value=h.toISOString().slice(0,7);
@@ -2924,7 +2993,10 @@ async function init(){
 
 function tick(){
   const n=new Date();
-  document.getElementById('relogio').innerHTML=n.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'})+'<br>'+n.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const rel=document.getElementById('relogio');
+  if(rel){
+    rel.innerHTML=n.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'})+'<br>'+n.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  }
 }
 
 async function loadProxNum(){
@@ -3175,6 +3247,7 @@ function nav(id,el,force=false){
     document.getElementById('subnav-financeiro').style.display='block';
     document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));
     if(el)el.classList.add('on');
+    sidebarSyncActiveContext('financeiro');
     return;
   }
   if(subabasFinanceiro.includes(id)){
@@ -3185,6 +3258,7 @@ function nav(id,el,force=false){
     const navFinanceiro = document.querySelector('.nav-item[data-nav="financeiro"]');
     if(navFinanceiro) navFinanceiro.classList.add('on');
     if(el)el.classList.add('on');
+    sidebarSyncActiveContext(id);
     return;
   }
   // Lógica padrão
@@ -3227,6 +3301,7 @@ function nav(id,el,force=false){
   if(targetId==='assinaturas')initAssinaturas();
   if(targetId==='conciliacao')concInicializar();
   if(targetId==='cobrancas')cobLogCarregar();
+  sidebarSyncActiveContext(id);
 }
 
 const _subAbaState={};
