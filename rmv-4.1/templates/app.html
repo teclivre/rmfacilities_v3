@@ -1121,8 +1121,10 @@ document.addEventListener('DOMContentLoaded',()=>{
           <button class="btn b-gh b-sm" type="button" onclick="rhSalariosReabrirFolha()">Reabrir folha</button>
           <button class="btn b-ghl b-sm" type="button" onclick="rhSalariosAssinarFolha()">Assinar fechamento</button>
           <button class="btn b-gh b-sm" type="button" onclick="rhSalariosPrevia()">Prévia</button>
+          <button class="btn b-gh b-sm" type="button" onclick="rhSalariosAbrirHistorico()">Consultar histórico</button>
           <button class="btn b-az b-sm" type="button" onclick="rhSalariosExportar('xlsx')">Exportar planilha</button>
           <button class="btn b-ghl b-sm" type="button" onclick="rhSalariosExportar('pdf')">Exportar PDF</button>
+          <a class="btn b-gh b-sm" href="/api/financeiro/salarios/modelo" target="_blank">Modelo importação</a>
           <label class="btn b-ghl b-sm" for="rh-sal-import-file" style="cursor:pointer">Importar planilha</label>
           <input type="file" id="rh-sal-import-file" accept=".csv,.xlsx" style="display:none" onchange="rhSalariosImportarPlanilha(event)">
         </div>
@@ -5516,6 +5518,7 @@ function rhSalariosAtualizarTotalTela(){
 function rhSalariosExportar(formato){
   const comp=rhSalariosCompetenciaAtual();
   const empresaId=rhSalariosEmpresaAtual();
+  const versaoSel=document.getElementById('rh-sal-versao');
   if(!/^\d{4}-\d{2}$/.test(comp)){
     showSt('st-rh','Competência inválida. Use AAAA-MM.',true);
     return;
@@ -5523,7 +5526,20 @@ function rhSalariosExportar(formato){
   const p=new URLSearchParams();
   p.set('competencia',comp);
   if(empresaId) p.set('empresa_id',empresaId);
+  if(versaoSel && versaoSel.value){
+    p.set('versao',versaoSel.value);
+    p.set('modo','salva');
+  }
   window.open('/api/financeiro/salarios/export.'+(formato==='pdf'?'pdf':'xlsx')+'?'+p.toString(),'_blank');
+}
+
+function rhSalariosAbrirHistorico(){
+  const comp=rhSalariosCompetenciaAtual();
+  const empresaId=rhSalariosEmpresaAtual();
+  const p=new URLSearchParams();
+  if(/^\d{4}-\d{2}$/.test(comp)) p.set('competencia',comp);
+  if(empresaId) p.set('empresa_id',empresaId);
+  window.open('/financeiro/salarios/historico'+(p.toString()?('?'+p.toString()):''),'_blank');
 }
 
 function rhSalariosPrevia(){

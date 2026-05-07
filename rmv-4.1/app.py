@@ -4475,6 +4475,8 @@ def can_access_scope(area,action='view'):
 def can_access_request(path,method='GET'):
     p=(path or '').lower()
     m=(method or 'GET').upper()
+    if p.startswith('/api/financeiro/salarios/modelo'):
+        return can_access_scope('rh','export') or can_access_scope('rh','view')
     if p.startswith('/api/financeiro/salarios/importar'):
         return can_access_scope('rh','edit')
     if p.startswith('/api/financeiro/salarios/fechar') or p.startswith('/api/financeiro/salarios/reabrir') or p.startswith('/api/financeiro/salarios/assinar'):
@@ -4483,6 +4485,8 @@ def can_access_request(path,method='GET'):
         return can_access_scope('rh','export') or can_access_scope('rh','view')
     if p.startswith('/api/financeiro/salarios'):
         return can_access_scope('rh',('view' if m=='GET' else 'edit'))
+    if p.startswith('/financeiro/salarios/historico'):
+        return can_access_scope('rh','view')
     if p.startswith('/financeiro/salarios/preview'):
         return can_access_scope('rh','view')
     area=area_from_path(path)
@@ -11467,6 +11471,20 @@ def _financeiro_salarios_grupos(comp, empresa_id=None):
         })
     return resumo,empresas,total_geral
 
+def _financeiro_salarios_resumo_para_saida(comp,empresa_id=None,versao=None,modo='atual'):
+    modo_norm=(modo or 'atual').strip().lower()
+    usar_salva=(modo_norm=='salva') or (versao is not None)
+    if usar_salva:
+        folha=FolhaPagamentoMensal.query.filter_by(
+            competencia=comp,
+            empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)
+        ).first()
+        if folha:
+            resumo=_financeiro_folha_carregar_dados(folha,versao=versao)
+            if isinstance(resumo,dict) and isinstance(resumo.get('itens'),list):
+                return resumo,'salva'
+    return _financeiro_salarios_competencia(comp,empresa_id=empresa_id),'atual'
+
 @app.route('/api/financeiro/salarios',methods=['GET'])
 @lr
 def api_financeiro_salarios():
@@ -11730,6 +11748,101 @@ def financeiro_salarios_preview():
         gerar_em=localnow().strftime('%d/%m/%Y %H:%M')
     )
 
+@app.route('/financeiro/salarios/historico')
+@lr
+def financeiro_salarios_historico():
+    comp_raw=(request.args.get('competencia') or '').strip()
+    empresa_id=to_num(request.args.get('empresa_id'))
+    limite=min(max(to_num(request.args.get('limite')) or 72,1),200)
+
+    q=FolhaPagamentoMensal.query
+    comp=''
+    if comp_raw:
+        comp=norm_competencia(comp_raw)
+        q=q.filter_by(competencia=comp)
+    if empresa_id is not None:
+        q=q.filter_by(empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id))
+
+    folhas=q.order_by(FolhaPagamentoMensal.salvo_em.desc()).limit(limite).all()
+    empresas=Empresa.query.order_by(Empresa.nome.asc()).all()
+    itens=[]
+    for f in folhas:
+        try:
+            historico=json.loads(f.historico_json or '[]')
+        except Exception:
+            historico=[]
+        if not isinstance(historico,list):
+            historico=[]
+        versoes=[]
+        for h in historico:
+            if not isinstance(h,dict):
+                continue
+            versoes.append({
+                'versao':int(h.get('versao') or 0),
+                'salvo_em':str(h.get('salvo_em') or '').replace('T',' ')[:16],
+                'salvo_por':(h.get('salvo_por') or ''),
+                'total_competencia':float(h.get('total_competencia') or 0),
+            })
+        versoes.sort(key=lambda x:int(x.get('versao') or 0),reverse=True)
+        itens.append({'folha':f,'versoes':versoes})
+
+    return render_template(
+        'folha_pagamento_historico.html',
+        itens=itens,
+        empresas=empresas,
+        competencia_filtro=comp,
+        empresa_id_filtro=empresa_id,
+        limite=limite,
+        gerar_em=localnow().strftime('%d/%m/%Y %H:%M')
+    )
+
+@app.route('/api/financeiro/salarios/modelo')
+@lr
+def api_financeiro_salarios_modelo():
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+
+    wb=Workbook()
+    ws=wb.active
+    ws.title='modelo_importacao'
+    headers=['re','matricula','cpf','nome','valor_liquido','observacao']
+    ws.append(headers)
+    ws.append(['1234','','','','3500.00','Ajuste de competencia'])
+
+    fill=PatternFill('solid',fgColor='205D8A')
+    font=Font(bold=True,color='FFFFFF')
+    for idx,_ in enumerate(headers,1):
+        c=ws.cell(row=1,column=idx)
+        c.fill=fill
+        c.font=font
+
+    ws.column_dimensions['A'].width=12
+    ws.column_dimensions['B'].width=16
+    ws.column_dimensions['C'].width=18
+    ws.column_dimensions['D'].width=28
+    ws.column_dimensions['E'].width=16
+    ws.column_dimensions['F'].width=38
+
+    orient=wb.create_sheet('instrucoes')
+    orient.append(['Campo','Obrigatorio','Descricao'])
+    orient.append(['re','Nao','RE do funcionario (prioridade de identificacao)'])
+    orient.append(['matricula','Nao','Matricula do funcionario'])
+    orient.append(['cpf','Nao','CPF (somente numeros ou formatado)'])
+    orient.append(['nome','Nao','Nome completo do colaborador'])
+    orient.append(['valor_liquido','Sim','Valor liquido do salario na competencia'])
+    orient.append(['observacao','Nao','Observacao do ajuste mensal'])
+    orient.append(['Regra','-','Preencha ao menos um identificador entre RE, matricula, CPF ou nome'])
+    orient.append(['Formato','-','Salvar em .xlsx ou .csv'])
+    orient.column_dimensions['A'].width=20
+    orient.column_dimensions['B'].width=14
+    orient.column_dimensions['C'].width=68
+
+    buf=io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    nome='modelo_importacao_folha_pagamento.xlsx'
+    return send_file(buf,mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',as_attachment=True,download_name=nome)
+
 @app.route('/api/financeiro/salarios/export.xlsx')
 @lr
 def api_financeiro_salarios_export_xlsx():
@@ -11739,7 +11852,21 @@ def api_financeiro_salarios_export_xlsx():
 
     comp=norm_competencia(request.args.get('competencia'))
     empresa_id=to_num(request.args.get('empresa_id')) or None
-    resumo,empresas,total_geral=_financeiro_salarios_grupos(comp,empresa_id=empresa_id)
+    versao=to_num(request.args.get('versao')) or None
+    modo=(request.args.get('modo') or 'atual').strip().lower()
+    resumo_base,origem=_financeiro_salarios_resumo_para_saida(comp,empresa_id=empresa_id,versao=versao,modo=modo)
+    grupos={}
+    for item in (resumo_base.get('itens') or []):
+        chave=item.get('empresa_id') or 0
+        grupos.setdefault(chave,[]).append(item)
+    empresas=[]
+    total_geral=0.0
+    for emp_id,items in sorted(grupos.items(),key=lambda kv:((kv[1][0].get('empresa_nome') or 'Sem empresa').lower(),kv[0])):
+        nome_emp=(items[0].get('empresa_nome') or 'Sem empresa')
+        total_emp=sum(float(it.get('valor_liquido') or 0) for it in items)
+        total_geral+=total_emp
+        empresas.append({'empresa_id':emp_id,'empresa_nome':nome_emp,'qtd':len(items),'total':total_emp,'itens':items})
+    resumo=resumo_base
     if not empresas:
         return jsonify({'erro':'Nenhum funcionário ativo encontrado para a competência informada.'}),400
 
@@ -11831,7 +11958,8 @@ def api_financeiro_salarios_export_xlsx():
     wb.save(buf)
     buf.seek(0)
     comp_nome=f"{comp[5:7]}-{comp[:4]}" if isinstance(comp,str) and len(comp)>=7 and '-' in comp else str(comp)
-    nome=f"pagamento_salarios_{comp_nome}.xlsx"
+    sufixo_versao=f"_v{versao}" if (origem=='salva' and versao) else ''
+    nome=f"pagamento_salarios_{comp_nome}{sufixo_versao}.xlsx"
     return send_file(buf,mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',as_attachment=True,download_name=nome)
 
 @app.route('/api/financeiro/salarios/export.pdf')
@@ -11845,7 +11973,21 @@ def api_financeiro_salarios_export_pdf():
 
     comp=norm_competencia(request.args.get('competencia'))
     empresa_id=to_num(request.args.get('empresa_id')) or None
-    resumo,empresas,total_geral=_financeiro_salarios_grupos(comp,empresa_id=empresa_id)
+    versao=to_num(request.args.get('versao')) or None
+    modo=(request.args.get('modo') or 'atual').strip().lower()
+    resumo_base,origem=_financeiro_salarios_resumo_para_saida(comp,empresa_id=empresa_id,versao=versao,modo=modo)
+    grupos={}
+    for item in (resumo_base.get('itens') or []):
+        chave=item.get('empresa_id') or 0
+        grupos.setdefault(chave,[]).append(item)
+    empresas=[]
+    total_geral=0.0
+    for emp_id,items in sorted(grupos.items(),key=lambda kv:((kv[1][0].get('empresa_nome') or 'Sem empresa').lower(),kv[0])):
+        nome_emp=(items[0].get('empresa_nome') or 'Sem empresa')
+        total_emp=sum(float(it.get('valor_liquido') or 0) for it in items)
+        total_geral+=total_emp
+        empresas.append({'empresa_id':emp_id,'empresa_nome':nome_emp,'qtd':len(items),'total':total_emp,'itens':items})
+    resumo=resumo_base
     if not empresas:
         return jsonify({'erro':'Nenhum funcionário ativo encontrado para a competência informada.'}),400
 
@@ -11899,7 +12041,8 @@ def api_financeiro_salarios_export_pdf():
     doc.build(story)
     buf.seek(0)
     comp_nome=f"{comp[5:7]}-{comp[:4]}" if isinstance(comp,str) and len(comp)>=7 and '-' in comp else str(comp)
-    nome=f"pagamento_salarios_{comp_nome}.pdf"
+    sufixo_versao=f"_v{versao}" if (origem=='salva' and versao) else ''
+    nome=f"pagamento_salarios_{comp_nome}{sufixo_versao}.pdf"
     return send_file(buf,mimetype='application/pdf',as_attachment=False,download_name=nome)
 
 @app.route('/api/dashboard')
