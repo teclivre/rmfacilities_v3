@@ -89,6 +89,7 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 #pg-rh .rh-subabas{margin:2px 0 12px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
 #pg-rh .rh-subabas .subaba-bloco{min-height:46px;padding:11px 12px}
 #pg-rh [data-rh-pane]{display:none}
+#pg-rh [data-rh-pane].on{display:block!important}
 #pg-rh #rh-pane-funcionarios{display:block}
 #pg-rh #rh-sal-toolbar{align-items:flex-end;gap:10px}
 #pg-rh #rh-sal-toolbar .btn,
