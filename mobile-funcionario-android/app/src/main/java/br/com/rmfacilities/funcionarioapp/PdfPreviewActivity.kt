@@ -1,6 +1,7 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.content.ContentValues
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.os.Build
@@ -16,6 +17,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
@@ -139,9 +141,42 @@ class PdfPreviewActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     TelemetryLogger.logHandled(this@PdfPreviewActivity, "pdf_preview_fatal", e)
-                    tvLoading.text = "Erro ao carregar PDF: ${e.message}"
+                    val msg = e.message.orEmpty()
+                    val isPixelFormatError = msg.contains("pixel format", ignoreCase = true) ||
+                        msg.contains("unsupported", ignoreCase = true)
+                    if (isPixelFormatError) {
+                        val f = currentPdfFile
+                        if (f != null && f.exists() && openPdfExternally(f)) {
+                            Toast.makeText(
+                                this@PdfPreviewActivity,
+                                "Prévia interna indisponível neste aparelho. Abrindo no leitor externo.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            finish()
+                        } else {
+                            tvLoading.text = "Erro ao carregar PDF: ${e.message}"
+                        }
+                    } else {
+                        tvLoading.text = "Erro ao carregar PDF: ${e.message}"
+                    }
                 }
             }
+        }
+    }
+
+    private fun openPdfExternally(file: File): Boolean {
+        return try {
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/pdf")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
+            }
+            startActivity(Intent.createChooser(intent, "Abrir PDF com"))
+            true
+        } catch (e: Exception) {
+            TelemetryLogger.logHandled(this, "pdf_open_external_failed", e)
+            false
         }
     }
 
