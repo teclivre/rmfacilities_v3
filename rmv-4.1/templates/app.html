@@ -4335,9 +4335,15 @@ async function openModal(modo,id){
   setTimeout(()=>document.getElementById('mn').focus(),120);
 }
 
-function closeModal(t,force=false){
+async function closeModal(t,force=false){
   if(t==='func'){
-    if(_rhFuncAutoTimer){ clearTimeout(_rhFuncAutoTimer); _rhFuncAutoTimer=null; }
+    if(_rhFuncAutoTimer){
+      clearTimeout(_rhFuncAutoTimer);
+      _rhFuncAutoTimer=null;
+    }
+    // Ao fechar o modal de funcionário, tenta sincronizar o autosave antes de perguntar.
+    await rhFuncionarioAutoSaveFlush(false,false);
+    _modalDirty.func=rhFuncionarioHasUnsavedChanges();
   }
   if(!force && MODAL_FORM_IDS.includes(t) && _modalDirty[t]){
     const ok=confirm('Existem alterações não salvas. Deseja fechar mesmo assim?');
@@ -5041,6 +5047,15 @@ function rhFuncionarioAoAlterarFerias(){
     st.value='Ativo';
   }
   rhFuncionarioAutoSaveSchedule();
+}
+
+function rhFuncionarioHasUnsavedChanges(){
+  if(_rhFuncAutoInflight) return true;
+  const id=(document.getElementById('fid')?.value||'').trim();
+  const payload=rhFuncionarioMontarPayload(false);
+  if(!payload) return false;
+  const hash=rhFuncionarioHashPayload(id,payload);
+  return hash!==_rhFuncAutoLastHash;
 }
 
 function rhFuncionarioAutoSaveSchedule(){
