@@ -960,6 +960,9 @@ class Funcionario(db.Model):
     jornada=db.Column(db.String(80))
     jornada_id=db.Column(db.Integer,db.ForeignKey('jornada_trabalho.id'),nullable=True)
     status=db.Column(db.String(20),default='Ativo')
+    ferias_inicio=db.Column(db.String(10))
+    ferias_fim=db.Column(db.String(10))
+    ferias_obs=db.Column(db.String(255))
     salario=db.Column(db.Float,default=0)
     vale_refeicao=db.Column(db.Float,default=0)
     vale_alimentacao=db.Column(db.Float,default=0)
@@ -6375,6 +6378,9 @@ def api_criar_funcionario():
         tipo_contrato=d.get('tipo_contrato','').strip(),
         jornada=d.get('jornada','').strip(),
         status=d.get('status','Ativo'),
+        ferias_inicio=(d.get('ferias_inicio') or '').strip(),
+        ferias_fim=(d.get('ferias_fim') or '').strip(),
+        ferias_obs=(d.get('ferias_obs') or '').strip(),
         posto_operacional='Reserva tecnica',
         salario=to_num(d.get('salario'),dec=True),
         vale_refeicao=to_num(d.get('vale_refeicao'),dec=True),
@@ -6425,7 +6431,7 @@ def api_criar_funcionario():
 @lr
 def api_atualizar_funcionario(id):
     f=Funcionario.query.get_or_404(id); d=request.json or {}
-    for k in ['re','nome','cpf','email','telefone','cargo','funcao','cbo','setor','empresa_id','data_admissao','tipo_contrato','jornada','status','endereco','endereco_numero','endereco_complemento','endereco_bairro','cidade','estado','cep','banco_codigo','banco_nome','banco_agencia','banco_conta','banco_tipo_conta','banco_pix','rg','orgao_emissor','pis','ctps','titulo_eleitor','cert_reservista','cnh','exame_admissional_data','docs_admissao_obs','obs']:
+    for k in ['re','nome','cpf','email','telefone','cargo','funcao','cbo','setor','empresa_id','data_admissao','tipo_contrato','jornada','status','ferias_inicio','ferias_fim','ferias_obs','endereco','endereco_numero','endereco_complemento','endereco_bairro','cidade','estado','cep','banco_codigo','banco_nome','banco_agencia','banco_conta','banco_tipo_conta','banco_pix','rg','orgao_emissor','pis','ctps','titulo_eleitor','cert_reservista','cnh','exame_admissional_data','docs_admissao_obs','obs']:
         if k in d:
             if k=='cpf': setattr(f,k,norm_cpf(d.get(k)))
             elif k=='re': setattr(f,k,to_num(d.get(k)))
@@ -14382,6 +14388,9 @@ with app.app_context():
         'cbo VARCHAR(20)',
         'tipo_contrato VARCHAR(60)',
         'jornada VARCHAR(80)',
+        'ferias_inicio VARCHAR(10)',
+        'ferias_fim VARCHAR(10)',
+        'ferias_obs VARCHAR(255)',
         'vale_refeicao FLOAT DEFAULT 0',
         'vale_alimentacao FLOAT DEFAULT 0',
         'vale_transporte FLOAT DEFAULT 0',

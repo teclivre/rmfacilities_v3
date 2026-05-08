@@ -1023,7 +1023,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             </select>
             <select id="fs" onchange="renderCli()" style="padding:6px 9px;font-size:12px;border:1.5px solid var(--borda);border-radius:var(--r)">
               <option value="">Todos os status</option>
-              <option>Ativo</option><option>Inativo</option><option>Suspenso</option>
+              <option>Ativo</option><option>Inativo</option><option>Suspenso</option><option>Aviso prévio</option><option>Afastado</option><option>Demitido</option>
             </select>
             <input id="fb" placeholder="Buscar..." oninput="renderCli()" style="padding:6px 11px;font-size:12px;border:1.5px solid var(--borda);border-radius:var(--r);width:160px">
             <button class="btn b-az b-sm" onclick="openModal('novo')">+ Novo cliente</button>
@@ -1089,7 +1089,8 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div class="brow" style="justify-content:flex-start;gap:8px;flex-wrap:wrap;margin:0 12px 10px 12px">
           <button id="rh-tab-ativos" class="btn b-az b-sm" onclick="switchRhFuncTab('ativos',this)">Ativos</button>
-          <button id="rh-tab-inativos" class="btn b-gh b-sm" onclick="switchRhFuncTab('inativos',this)">Inativos / Arquivados</button>
+          <button id="rh-tab-ferias" class="btn b-gh b-sm" onclick="switchRhFuncTab('ferias',this)">Férias</button>
+          <button id="rh-tab-inativos" class="btn b-gh b-sm" onclick="switchRhFuncTab('inativos',this)">Demitido / Inativo</button>
           <span class="pill p-vd" id="rh-total-ativos">Ativos: 0</span>
           <span class="pill p-az" id="rh-total-folha">Folha: R$ 0,00</span>
         </div>
@@ -2384,7 +2385,12 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="f"><label>E-mail</label><input id="femail" type="email"></div>
         <div class="f"><label>Telefone</label><div style="display:flex;gap:8px;align-items:center"><select id="fddi" style="flex:0 0 132px;max-width:132px"><option value="55">🇧🇷 +55 Brasil</option><option value="1">🇺🇸 +1 EUA/Canadá</option><option value="351">🇵🇹 +351 Portugal</option><option value="34">🇪🇸 +34 Espanha</option><option value="44">🇬🇧 +44 Reino Unido</option><option value="49">🇩🇪 +49 Alemanha</option><option value="39">🇮🇹 +39 Itália</option><option value="54">🇦🇷 +54 Argentina</option><option value="56">🇨🇱 +56 Chile</option><option value="57">🇨🇴 +57 Colômbia</option><option value="58">🇻🇪 +58 Venezuela</option><option value="52">🇲🇽 +52 México</option><option value="593">🇪🇨 +593 Equador</option><option value="595">🇵🇾 +595 Paraguai</option><option value="598">🇺🇾 +598 Uruguai</option><option value="591">🇧🇴 +591 Bolívia</option></select><input id="ftel" placeholder="(00) 00000-0000" oninput="maskTelefone(this)" style="flex:1 1 auto;min-width:0"></div></div>
         <div class="f"><label>Admissão</label><input id="fadmissao" type="date"></div>
-        <div class="f"><label>Status</label><select id="fstatus"><option>Ativo</option><option>Inativo</option><option>Afastado</option></select></div>
+        <div class="f"><label>Status</label><select id="fstatus"><option>Ativo</option><option>Férias</option><option>Afastado</option><option>Aviso prévio</option><option>Demitido</option><option>Inativo</option></select></div>
+      </div>
+      <div class="g3">
+        <div class="f"><label>Início das férias</label><input id="fferias-inicio" type="date" onchange="rhFuncionarioAoAlterarFerias()"></div>
+        <div class="f"><label>Fim das férias</label><input id="fferias-fim" type="date" onchange="rhFuncionarioAoAlterarFerias()"></div>
+        <div class="f"><label>Obs. férias</label><input id="fferias-obs" placeholder="Ex: férias coletivas"></div>
       </div>
       <div class="g4">
         <div class="f"><label>Cargo</label><input id="fcargo"></div>
@@ -2529,7 +2535,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <select id="memp"><option value="">Selecione...</option></select>
         </div>
         <div class="f"><label>Status</label>
-          <select id="mst"><option>Ativo</option><option>Inativo</option><option>Suspenso</option></select>
+          <select id="mst"><option>Ativo</option><option>Inativo</option><option>Suspenso</option><option>Aviso prévio</option><option>Afastado</option><option>Demitido</option></select>
         </div>
       </div>
       <div class="f"><label>Observação interna</label><input id="mob"></div>
@@ -3943,7 +3949,8 @@ async function renderCli(){
   if(!lista.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:28px;color:#bbb">Nenhum cliente encontrado.</td></tr>';return;}
   tb.innerHTML=lista.map(c=>{
     const emp=emps.find(e=>e.id===c.empresa_id);
-    const pc=c.status==='Ativo'?'p-vd':c.status==='Inativo'?'p-ci':'p-vm';
+    const st=(c.status||'').toLowerCase();
+    const pc=st==='ativo'?'p-vd':(st==='inativo'?'p-ci':(st==='demitido'?'p-ci':'p-vm'));
     return`<tr class="row-clickable" onclick="openModal('editar',${c.id})">
       <td style="color:#bbb;font-size:11px">${c.numero||''}</td>
       <td><div style="font-weight:700;font-size:13px">${c.nome}</div><div style="font-size:11px;color:#999">${fmtDoc(c.cnpj)||''}</div></td>
@@ -4835,6 +4842,9 @@ function rhFuncionarioMontarPayload(requireNome=false){
     tipo_contrato:document.getElementById('ftipo-contrato').value,
     jornada:document.getElementById('fjornada').value,
     status:document.getElementById('fstatus').value,
+    ferias_inicio:document.getElementById('fferias-inicio').value,
+    ferias_fim:document.getElementById('fferias-fim').value,
+    ferias_obs:(document.getElementById('fferias-obs').value||'').trim(),
     posto_operacional:(document.getElementById('fposto').value||'').trim(),
     banco_codigo:(document.getElementById('fbanco-codigo').value||'').replace(/\D/g,'').slice(0,3),
     banco_nome:(document.getElementById('fbanco-nome').value||'').trim(),
@@ -4880,6 +4890,19 @@ function rhFuncionarioBindAutoSave(){
     el.addEventListener('input',rhFuncionarioAutoSaveSchedule);
     el.addEventListener('change',rhFuncionarioAutoSaveSchedule);
   });
+}
+
+function rhFuncionarioAoAlterarFerias(){
+  const ini=(document.getElementById('fferias-inicio')?.value||'').trim();
+  const fim=(document.getElementById('fferias-fim')?.value||'').trim();
+  const st=document.getElementById('fstatus');
+  if(!st) return;
+  if(ini && fim){
+    st.value='Férias';
+  } else if(st.value==='Férias'){
+    st.value='Ativo';
+  }
+  rhFuncionarioAutoSaveSchedule();
 }
 
 function rhFuncionarioAutoSaveSchedule(){
@@ -4946,7 +4969,7 @@ function openModalFunc(modo,id){
   if(_rhFuncAutoTimer){ clearTimeout(_rhFuncAutoTimer); _rhFuncAutoTimer=null; }
   _rhFuncAutoLastHash='';
   document.getElementById('fid').value='';
-  ['fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fposto','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
+  ['fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fferias-inicio','fferias-fim','fferias-obs','fposto','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
   document.getElementById('fbanco-tipo').value='';
   document.getElementById('fddi').value='55';
   const st=document.getElementById('fcpf-st'); if(st){st.style.display='none';st.textContent='';}
@@ -4999,6 +5022,9 @@ function preencherFormFuncionario(f,titulo='Editar funcionário'){
   document.getElementById('ftipo-contrato').value=f.tipo_contrato||'';
   document.getElementById('fjornada').value=f.jornada||'';
   document.getElementById('fstatus').value=f.status||'Ativo';
+  document.getElementById('fferias-inicio').value=f.ferias_inicio||'';
+  document.getElementById('fferias-fim').value=f.ferias_fim||'';
+  document.getElementById('fferias-obs').value=f.ferias_obs||'';
   document.getElementById('fposto').value=f.posto_operacional||'Reserva tecnica';
   document.getElementById('fbanco-codigo').value=f.banco_codigo||'';
   document.getElementById('fbanco-nome').value=f.banco_nome||'';
@@ -6198,20 +6224,32 @@ async function renderFuncionarios(){
   const totEl=document.getElementById('rh-total-ativos');
   const folhaEl=document.getElementById('rh-total-folha');
   if(!tb)return;
-  const isAtivo=f=>((f?.status||'Ativo').toString().trim().toLowerCase()==='ativo');
+  const normStatus=f=>((f?.status||'Ativo').toString().trim().toLowerCase());
+  const isAtivo=f=>(normStatus(f)==='ativo');
+  const isFerias=f=>(normStatus(f)==='férias' || normStatus(f)==='ferias');
+  const isDemitidoOuInativo=f=>(normStatus(f)==='demitido' || normStatus(f)==='inativo');
   const ativosTotal=(Array.isArray(allFuncs)?allFuncs:[]).filter(isAtivo).length;
   if(totEl) totEl.textContent='Ativos: '+ativosTotal;
 
   const tabAt=document.getElementById('rh-tab-ativos');
+  const tabFer=document.getElementById('rh-tab-ferias');
   const tabIn=document.getElementById('rh-tab-inativos');
   if(tabAt) tabAt.className=rhFuncTab==='ativos'?'btn b-az b-sm':'btn b-gh b-sm';
+  if(tabFer) tabFer.className=rhFuncTab==='ferias'?'btn b-az b-sm':'btn b-gh b-sm';
   if(tabIn) tabIn.className=rhFuncTab==='inativos'?'btn b-az b-sm':'btn b-gh b-sm';
 
-  const lista=(Array.isArray(funcs)?funcs:[]).filter(f=>rhFuncTab==='ativos'?isAtivo(f):!isAtivo(f));
+  const lista=(Array.isArray(funcs)?funcs:[]).filter(f=>{
+    if(rhFuncTab==='ferias') return isFerias(f);
+    if(rhFuncTab==='inativos') return isDemitidoOuInativo(f);
+    return isAtivo(f);
+  });
 
   if(folhaEl) folhaEl.textContent='Folha: R$ 0,00';
   if(!lista.length){
-    tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:#999">'+(rhFuncTab==='ativos'?'Nenhum colaborador ativo encontrado.':'Nenhum colaborador inativo/arquivado encontrado.')+'</td></tr>';
+    const vazioMsg=rhFuncTab==='ativos'
+      ? 'Nenhum colaborador ativo encontrado.'
+      : (rhFuncTab==='ferias'?'Nenhum colaborador em férias encontrado.':'Nenhum colaborador demitido/inativo encontrado.');
+    tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:#999">'+vazioMsg+'</td></tr>';
     return;
   }
   tb.innerHTML=lista.map(f=>{
@@ -6224,7 +6262,7 @@ async function renderFuncionarios(){
       <td style="font-size:11px">${f.posto_operacional||'Reserva tecnica'}</td>
       <td>${emp?emp.nome:'—'}</td>
       <td>${[f.email,fmtTelefone(f.telefone)].filter(Boolean).join(' · ')||'—'}</td>
-      <td><span class="pill ${ativo?'p-vd':'p-ci'}">${f.status||'Ativo'}</span></td>
+      <td><span class="pill ${ativo?'p-vd':(isFerias(f)?'p-az':'p-ci')}">${f.status||'Ativo'}</span></td>
       <td><div class="tac">
         <button class="btn b-gh b-sm" onclick="event.stopPropagation();openModalFunc('editar',${f.id})">Editar</button>
         <button class="btn b-ghv b-sm" onclick="event.stopPropagation();openArquivosFuncionario(${f.id},'${(f.nome||'').replace(/'/g,"\\'")}')">Arquivos</button>
@@ -6242,7 +6280,7 @@ async function renderFuncionarios(){
 }
 
 function switchRhFuncTab(tab,btn){
-  rhFuncTab=(tab==='inativos')?'inativos':'ativos';
+  rhFuncTab=(tab==='inativos' || tab==='ferias')?tab:'ativos';
   renderFuncionarios();
   if(btn && btn.scrollIntoView) btn.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});
 }
