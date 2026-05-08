@@ -1881,21 +1881,31 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div id="st-assinaturas" class="st"></div>
 
       <style>
-        #pg-assinaturas .asi-shell{display:grid;grid-template-columns:280px 1fr;gap:14px;align-items:start}
+        #pg-assinaturas .asi-shell{display:grid;grid-template-columns:250px minmax(0,1fr);gap:16px;align-items:start}
         #pg-assinaturas .asi-side{position:sticky;top:8px}
         #pg-assinaturas .asi-side .subaba-bloco{width:100%;text-align:left}
-        #pg-assinaturas .asi-upload-drop{border:2px dashed #9ec4e8;border-radius:12px;padding:18px;background:#f5faff;cursor:pointer;transition:.15s}
+        #pg-assinaturas .asi-upload-drop{border:2px dashed #9ec4e8;border-radius:12px;padding:20px;background:#f5faff;cursor:pointer;transition:.15s}
         #pg-assinaturas .asi-upload-drop.drag{border-color:#1f6eb0;background:#eaf4ff;box-shadow:0 0 0 3px rgba(31,110,176,.12)}
-        #pg-assinaturas .asi-preview-layout{display:grid;grid-template-columns:1fr 300px;gap:12px;margin-top:10px}
-        #pg-assinaturas .asi-preview-frame{width:100%;height:500px;border:1px solid #d7e6f7;border-radius:10px;background:#fff}
-        #pg-assinaturas .asi-preview-list{max-height:500px;overflow:auto;border:1px solid #d7e6f7;border-radius:10px;background:#fff;padding:6px}
-        #pg-assinaturas .asi-preview-item{display:block;width:100%;text-align:left;border:1px solid #e5edf8;background:#f8fbff;border-radius:8px;padding:8px 10px;margin:0 0 6px 0;cursor:pointer;font-size:12px;color:#1e3450}
+        #pg-assinaturas .asi-preview-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;margin-top:12px}
+        #pg-assinaturas .asi-preview-frame{width:100%;height:min(74vh,860px);min-height:560px;border:1px solid #d7e6f7;border-radius:10px;background:#fff}
+        #pg-assinaturas .asi-preview-list{max-height:min(74vh,860px);overflow:auto;border:1px solid #d7e6f7;border-radius:10px;background:#fff;padding:8px}
+        #pg-assinaturas .asi-preview-item{display:block;width:100%;text-align:left;border:1px solid #e5edf8;background:#f8fbff;border-radius:8px;padding:9px 11px;margin:0 0 7px 0;cursor:pointer;font-size:12px;color:#1e3450}
         #pg-assinaturas .asi-preview-item.on{border-color:#5b9ee0;background:#e8f3ff;color:#11406a}
+        @media (min-width:1500px){
+          #pg-assinaturas .asi-shell{grid-template-columns:265px minmax(0,1fr)}
+          #pg-assinaturas .asi-preview-layout{grid-template-columns:minmax(0,1fr) 340px}
+        }
+        @media (max-width:1380px){
+          #pg-assinaturas .asi-shell{grid-template-columns:230px minmax(0,1fr)}
+          #pg-assinaturas .asi-preview-layout{grid-template-columns:minmax(0,1fr) 290px}
+          #pg-assinaturas .asi-preview-frame{height:min(68vh,760px);min-height:500px}
+          #pg-assinaturas .asi-preview-list{max-height:min(68vh,760px)}
+        }
         @media (max-width:1100px){
           #pg-assinaturas .asi-shell{grid-template-columns:1fr}
           #pg-assinaturas .asi-side{position:static}
           #pg-assinaturas .asi-preview-layout{grid-template-columns:1fr}
-          #pg-assinaturas .asi-preview-frame{height:420px}
+          #pg-assinaturas .asi-preview-frame{height:420px;min-height:420px}
           #pg-assinaturas .asi-preview-list{max-height:220px}
         }
       </style>
