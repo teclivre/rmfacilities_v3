@@ -9125,6 +9125,12 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
     stamp_y_pct=float(getattr(envelope,'stamp_y_pct',10.0) or 10.0)
     stamp_todas_paginas=bool(getattr(envelope,'stamp_todas_paginas',False))
     stamp_todos_arquivos=bool(getattr(envelope,'stamp_todos_arquivos',False))
+    audit_pos=(getattr(envelope,'audit_pos',None) or 'personalizado').strip().lower()
+    # Apply preset positions
+    if audit_pos=='rodape':
+        stamp_y_pct=8.0; stamp_x_pct=5.0; stamp_todas_paginas=True; stamp_todos_arquivos=True
+    elif audit_pos in ('lateral-direita','lateral-esquerda'):
+        stamp_todas_paginas=True; stamp_todos_arquivos=True
     stamp_signatarios=[]
     assinatura_img_map={}
     if stamp_habilitado:
@@ -9242,6 +9248,41 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
         c.save(); ov.seek(0)
         return ov.getvalue()
 
+    def _make_stamp_overlay_lateral(w,h,sigs,side='direita'):
+        """Gera faixa lateral rotacionada com info dos signatários."""
+        if not sigs:
+            return None
+        ov=io.BytesIO()
+        c=rl_canvas.Canvas(ov,pagesize=(w,h))
+        strip_h=18.0
+        c.saveState()
+        if side=='direita':
+            c.translate(w,0); c.rotate(90)
+        else:
+            c.translate(0,h); c.rotate(-90)
+        c.setFillColorRGB(0.93,0.96,1.0)
+        c.setStrokeColorRGB(0.55,0.70,0.90)
+        c.setLineWidth(0.5)
+        c.rect(0,0,h,strip_h,fill=1,stroke=0)
+        c.line(0,strip_h,h,strip_h)
+        c.setFillColorRGB(0.13,0.36,0.54)
+        c.setFont('Helvetica-Bold',5.5)
+        x_cur=6.0
+        for sig in sigs:
+            nome=(sig.nome or '').strip()[:26]
+            data_str=sig.ass_em.strftime('%d/%m/%Y %H:%M') if sig.ass_em else ''
+            text=f'✓ {nome}'
+            if data_str: text+=f'  {data_str}'
+            tw=c.stringWidth(text,'Helvetica-Bold',5.5)
+            if x_cur+tw>h-8: break
+            c.drawString(x_cur,6,text)
+            x_cur+=tw+14
+            c.setStrokeColorRGB(0.70,0.76,0.86); c.setLineWidth(0.4)
+            c.line(x_cur-7,3,x_cur-7,15)
+        c.restoreState()
+        c.save(); ov.seek(0)
+        return ov.getvalue()
+
     file_idx=0
     for arq in arquivos:
         abs_path=_resolve_abs_path(arq.caminho)
@@ -9267,7 +9308,11 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
                                 if stamp_todas_paginas or page_idx==stamp_page_idx:
                                     apply_stamp=True
                         if apply_stamp:
-                            stamp_bytes=_make_stamp_overlay(w,h,stamp_signatarios,assinatura_img_map,stamp_x_pct,stamp_y_pct)
+                            if audit_pos in ('lateral-direita','lateral-esquerda'):
+                                side='direita' if audit_pos=='lateral-direita' else 'esquerda'
+                                stamp_bytes=_make_stamp_overlay_lateral(w,h,stamp_signatarios,side)
+                            else:
+                                stamp_bytes=_make_stamp_overlay(w,h,stamp_signatarios,assinatura_img_map,stamp_x_pct,stamp_y_pct)
                             if stamp_bytes:
                                 stamp_page=PdfReader(io.BytesIO(stamp_bytes)).pages[0]
                                 page.merge_page(stamp_page)
@@ -9578,8 +9623,11 @@ def api_envelope_stamp(id):
     env.stamp_y_pct=max(0.0,min(100.0,float(data.get('stamp_y_pct',10.0) or 10.0)))
     env.stamp_todas_paginas=bool(data.get('stamp_todas_paginas',False))
     env.stamp_todos_arquivos=bool(data.get('stamp_todos_arquivos',False))
+    _valid_audit_pos={'rodape','lateral-direita','lateral-esquerda','personalizado'}
+    _ap=(data.get('audit_pos') or 'personalizado').strip().lower()
+    env.audit_pos=_ap if _ap in _valid_audit_pos else 'personalizado'
     db.session.commit()
-    return jsonify({'ok':True,'stamp_habilitado':env.stamp_habilitado,'stamp_pagina':env.stamp_pagina,'stamp_x_pct':env.stamp_x_pct,'stamp_y_pct':env.stamp_y_pct,'stamp_todas_paginas':env.stamp_todas_paginas,'stamp_todos_arquivos':env.stamp_todos_arquivos})
+    return jsonify({'ok':True,'stamp_habilitado':env.stamp_habilitado,'stamp_pagina':env.stamp_pagina,'stamp_x_pct':env.stamp_x_pct,'stamp_y_pct':env.stamp_y_pct,'stamp_todas_paginas':env.stamp_todas_paginas,'stamp_todos_arquivos':env.stamp_todos_arquivos,'audit_pos':env.audit_pos})
 
 
 @app.route('/api/envelopes/<int:id>/arquivos',methods=['POST'])
@@ -14497,8 +14545,7 @@ with app.app_context():
         'stamp_y_pct REAL DEFAULT 10.0',
         'stamp_todas_paginas BOOLEAN DEFAULT 0',
         'stamp_todos_arquivos BOOLEAN DEFAULT 0',
-        'stamp_todas_paginas BOOLEAN DEFAULT 0',
-        'stamp_todos_arquivos BOOLEAN DEFAULT 0',
+        'audit_pos VARCHAR(20) DEFAULT "personalizado"',
     ])
     ensure_cols('assinatura_envelope_arquivo',[
         'id INTEGER PRIMARY KEY AUTOINCREMENT',

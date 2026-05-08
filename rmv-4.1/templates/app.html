@@ -1890,6 +1890,25 @@ document.addEventListener('DOMContentLoaded',()=>{
         #pg-assinaturas .asi-preview-scroll-item+.asi-preview-scroll-item{border-top:2px solid #d0e4f5}
         #pg-assinaturas .asi-preview-scroll-title{font-size:12px;font-weight:700;color:#1e3450;padding:8px 12px;background:#e8f1fb;display:flex;align-items:center;gap:6px}
         #pg-assinaturas .asi-preview-scroll iframe{width:100%;height:min(78vh,900px);border:none;display:block}
+        /* Wizard stepper */
+        #pg-assinaturas .asi-wizard{display:flex;flex-direction:column;gap:0;padding:4px 0}
+        #pg-assinaturas .asi-wz-step{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;border-radius:10px;padding:9px 8px;cursor:pointer;text-align:left;transition:all .18s ease;font-family:'Manrope',sans-serif}
+        #pg-assinaturas .asi-wz-step:hover{background:#f0f7ff}
+        #pg-assinaturas .asi-wz-step.active{background:#e8f3ff}
+        #pg-assinaturas .asi-wz-step.done .wz-num{background:#22a95b!important;color:#fff!important;border-color:#22a95b!important}
+        #pg-assinaturas .asi-wz-step.active .wz-num{background:#1f6eb0;color:#fff;border-color:#1f6eb0}
+        #pg-assinaturas .wz-num{width:28px;height:28px;border-radius:50%;border:2px solid #c5d9f0;background:#f8fbff;color:#1e3450;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .18s}
+        #pg-assinaturas .wz-info{display:flex;flex-direction:column;gap:2px;min-width:0}
+        #pg-assinaturas .wz-label{font-size:12px;font-weight:700;color:#1e3450;white-space:nowrap}
+        #pg-assinaturas .asi-wz-step.active .wz-label{color:#1f6eb0}
+        #pg-assinaturas .wz-badge{font-size:10px;color:#7a8fa6;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+        #pg-assinaturas .asi-wz-step.done .wz-badge{color:#22a95b}
+        #pg-assinaturas .wz-line{width:2px;height:12px;background:#e0eaf5;margin-left:22px}
+        /* Audit position selector */
+        #pg-assinaturas .asi-audit-pos-btn{display:inline-flex;align-items:center;gap:5px;border:1.5px solid #c5d9f0;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;color:#1e3450;cursor:pointer;background:#f8fbff;transition:.15s;user-select:none}
+        #pg-assinaturas .asi-audit-pos-btn:hover{border-color:#7ab8e8;background:#eef6ff}
+        #pg-assinaturas .asi-audit-pos-btn input{display:none}
+        #pg-assinaturas .asi-audit-pos-btn.on{border-color:#1f6eb0;background:#e8f3ff;color:#1f6eb0}
         @media (min-width:1500px){
           #pg-assinaturas .asi-shell{grid-template-columns:265px minmax(0,1fr)}
         }
@@ -1906,17 +1925,74 @@ document.addEventListener('DOMContentLoaded',()=>{
 
       <div class="asi-shell">
         <div class="asi-side">
-          <div class="card" style="margin-bottom:10px">
-            <div class="card-header"><span class="card-title">Menu de Assinaturas</span></div>
-            <div class="subaba-blocos" style="display:grid;grid-template-columns:1fr;gap:8px">
-              <button type="button" class="subaba-bloco asi-side-tab on" id="atab-funcionario" onclick="switchAsiTab('funcionario')">👤 Funcionários</button>
-              <button type="button" class="subaba-bloco asi-side-tab" id="atab-cliente" onclick="switchAsiTab('cliente')">🏢 Clientes</button>
-              <button type="button" class="subaba-bloco asi-side-tab" id="atab-avulso" onclick="switchAsiTab('avulso')">📄 Avulso</button>
-            </div>
-            <div style="margin-top:10px;display:flex;justify-content:flex-start">
-              <button class="btn b-az b-sm" onclick="abrirNovoEnvelope()">+ Novo Documento</button>
+
+          <!-- Modo lista: abas Funcionários/Clientes/Avulso -->
+          <div id="asi-side-list">
+            <div class="card" style="margin-bottom:10px">
+              <div class="card-header"><span class="card-title">Menu de Assinaturas</span></div>
+              <div class="subaba-blocos" style="display:grid;grid-template-columns:1fr;gap:8px">
+                <button type="button" class="subaba-bloco asi-side-tab on" id="atab-funcionario" onclick="switchAsiTab('funcionario')">👤 Funcionários</button>
+                <button type="button" class="subaba-bloco asi-side-tab" id="atab-cliente" onclick="switchAsiTab('cliente')">🏢 Clientes</button>
+                <button type="button" class="subaba-bloco asi-side-tab" id="atab-avulso" onclick="switchAsiTab('avulso')">📄 Avulso</button>
+              </div>
+              <div style="margin-top:10px;display:flex;justify-content:flex-start">
+                <button class="btn b-az b-sm" onclick="abrirNovoEnvelope()">+ Novo Documento</button>
+              </div>
             </div>
           </div>
+
+          <!-- Modo wizard: quando documento está aberto -->
+          <div id="asi-side-wizard" style="display:none">
+            <div class="card" style="margin-bottom:10px">
+              <div class="card-header" style="margin-bottom:10px">
+                <span class="card-title">Preparar Documento</span>
+              </div>
+              <div style="font-size:12px;font-weight:700;color:#1e3450;margin-bottom:10px;padding:6px 8px;background:#f0f6ff;border-radius:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="wz-doc-titulo">—</div>
+              <div class="asi-wizard">
+                <button type="button" class="asi-wz-step active" id="wz-1" onclick="asiWizardGo(1)">
+                  <span class="wz-num">1</span>
+                  <div class="wz-info">
+                    <span class="wz-label">📎 Documentos</span>
+                    <span class="wz-badge" id="wz-1-badge">Nenhum</span>
+                  </div>
+                </button>
+                <div class="wz-line"></div>
+                <button type="button" class="asi-wz-step" id="wz-2" onclick="asiWizardGo(2)">
+                  <span class="wz-num">2</span>
+                  <div class="wz-info">
+                    <span class="wz-label">✍ Signatários</span>
+                    <span class="wz-badge" id="wz-2-badge">Nenhum</span>
+                  </div>
+                </button>
+                <div class="wz-line"></div>
+                <button type="button" class="asi-wz-step" id="wz-3" onclick="asiWizardGo(3)">
+                  <span class="wz-num">3</span>
+                  <div class="wz-info">
+                    <span class="wz-label">🔏 Carimbo</span>
+                    <span class="wz-badge" id="wz-3-badge">Não configurado</span>
+                  </div>
+                </button>
+                <div class="wz-line"></div>
+                <button type="button" class="asi-wz-step" id="wz-4" onclick="asiWizardGo(4)">
+                  <span class="wz-num">4</span>
+                  <div class="wz-info">
+                    <span class="wz-label">📋 Auditoria</span>
+                    <span class="wz-badge" id="wz-4-badge">Prévia abaixo</span>
+                  </div>
+                </button>
+                <div class="wz-line"></div>
+                <button type="button" class="asi-wz-step" id="wz-5" onclick="asiWizardGo(5)">
+                  <span class="wz-num">5</span>
+                  <div class="wz-info">
+                    <span class="wz-label">⚡ Enviar</span>
+                    <span class="wz-badge" id="wz-5-badge">Ações</span>
+                  </div>
+                </button>
+              </div>
+              <button class="btn b-sm" style="margin-top:12px;width:100%;background:#e8eef5;color:#205d8a;border:none;cursor:pointer" onclick="fecharDetalheEnvelope()">← Voltar à lista</button>
+            </div>
+          </div>
+
         </div>
 
         <div>
@@ -1940,7 +2016,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
 
         <!-- Arquivos -->
-        <div class="card" style="margin-bottom:14px">
+        <div class="card" id="sec-arq" style="margin-bottom:14px">
           <div class="card-header">
             <span class="card-title">📎 Arquivos do documento</span>
             <div style="display:flex;gap:8px">
@@ -1957,6 +2033,11 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div id="asi-preview-scroll" class="asi-preview-scroll">
             <div class="vazio" style="padding:16px;text-align:center">Nenhum arquivo para pré-visualizar.</div>
           </div>
+          <!-- Prévia da página de auditoria -->
+          <div id="asi-audit-preview" style="display:none;margin-top:14px" id="sec-auditoria">
+            <div class="asi-preview-scroll-title" style="background:#eef7e8;border-radius:10px 10px 0 0;border:1px solid #c8e6c9;font-size:13px">📋 Página de Auditoria — prévia em tempo real</div>
+            <iframe id="asi-audit-iframe" src="" style="width:100%;height:min(70vh,700px);border:1px solid #c8e6c9;border-top:none;border-radius:0 0 10px 10px;display:block" loading="lazy" title="Página de Auditoria"></iframe>
+          </div>
           <div style="margin-top:10px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
             <button class="btn b-sm" id="asi-toggle-arq-lista" style="background:#eef6ff;color:#205d8a;border:1px solid #c5d9f0" onclick="toggleAsiArquivosLista()">Mostrar tabela de arquivos</button>
             <button class="btn b-sm b-az" onclick="document.getElementById('inp-arq-upload').click()">+ Anexar mais arquivos</button>
@@ -1967,7 +2048,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
 
         <!-- Signatários -->
-        <div class="card" style="margin-bottom:14px">
+        <div class="card" id="sec-sig" style="margin-bottom:14px">
           <div class="card-header">
             <span class="card-title">✍ Signatários</span>
             <button class="btn b-sm b-az" onclick="abrirFormSignatario()">+ Adicionar signatário</button>
@@ -1996,12 +2077,29 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
         </div>
 
-        <!-- Ações -->
         <!-- Carimbo de Assinatura -->
-        <div class="card" style="margin-bottom:14px">
+        <div class="card" id="sec-carimbo" style="margin-bottom:14px">
           <div class="card-header"><span class="card-title">🔏 Carimbo de assinatura no PDF</span></div>
           <div id="asi-stamp-gate" style="display:none;margin:8px 0 10px 0;padding:10px;border-radius:8px;background:#fff9e7;border:1px solid #f0d994;color:#8a6d1f;font-size:12px">
             Adicione ao menos um signatário para habilitar o carimbo de assinatura.
+          </div>
+          <!-- Posição do carimbo de auditoria -->
+          <div style="margin-bottom:14px">
+            <div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Posição do carimbo nos documentos</div>
+            <div style="display:flex;gap:7px;flex-wrap:wrap">
+              <label class="asi-audit-pos-btn" id="auditpos-rodape" onclick="onAuditPosChange('rodape')">
+                <input type="radio" name="audit-pos" value="rodape"> ⬇ Rodapé
+              </label>
+              <label class="asi-audit-pos-btn" id="auditpos-lateral-direita" onclick="onAuditPosChange('lateral-direita')">
+                <input type="radio" name="audit-pos" value="lateral-direita"> ▶ Lateral direita
+              </label>
+              <label class="asi-audit-pos-btn" id="auditpos-lateral-esquerda" onclick="onAuditPosChange('lateral-esquerda')">
+                <input type="radio" name="audit-pos" value="lateral-esquerda"> ◀ Lateral esquerda
+              </label>
+              <label class="asi-audit-pos-btn on" id="auditpos-personalizado" onclick="onAuditPosChange('personalizado')">
+                <input type="radio" name="audit-pos" value="personalizado" checked> 🎯 Personalizado
+              </label>
+            </div>
           </div>
           <p style="font-size:12px;color:#666;margin:4px 0 10px 0">Quando habilitado, um carimbo visual com nome, data e código será inserido no PDF gerado na posição configurada.</p>
           <style>
@@ -2067,7 +2165,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
 
         <!-- Ações -->
-        <div class="card">
+        <div class="card" id="sec-acoes">
           <div class="card-header"><span class="card-title">⚡ Ações</span></div>
           <div class="g2" style="margin:10px 0 4px 0">
             <div class="f" style="margin-bottom:0">
@@ -8675,6 +8773,57 @@ init();
 // ══ ASSINATURAS ══
 let _asiTipo='funcionario', _asiEnvelopeId=null, _asiFuncionarios=[], _asiEnvelopeArquivos=[], _asiPreviewArqId=null, _asiArquivosExpanded=false, _asiSignatariosExpanded=false;
 let _asiNomeAssinadoPadrao='documento ASSINADO.pdf';
+let _asiStep=1, _asiSigCount=0, _asiEnvelopeCodigo=null;
+
+function atualizarWizardSteps(){
+  const arqs=Array.isArray(_asiEnvelopeArquivos)?_asiEnvelopeArquivos:[];
+  const s1done=arqs.length>0;
+  const s2done=_asiSigCount>0;
+  const stampHab=!!(document.getElementById('stamp-hab')?.checked);
+  // step badges
+  const b1=document.getElementById('wz-1-badge');
+  if(b1) b1.textContent=s1done?`${arqs.length} arquivo${arqs.length>1?'s':''}`:' Nenhum';
+  const b2=document.getElementById('wz-2-badge');
+  if(b2) b2.textContent=s2done?`${_asiSigCount} signatário${_asiSigCount>1?'s':''}`:' Nenhum';
+  const b3=document.getElementById('wz-3-badge');
+  if(b3) b3.textContent=stampHab?'✓ Habilitado':'Não configurado';
+  // step done state
+  document.getElementById('wz-1')?.classList.toggle('done',s1done);
+  document.getElementById('wz-2')?.classList.toggle('done',s2done);
+  document.getElementById('wz-3')?.classList.toggle('done',stampHab);
+  document.getElementById('wz-4')?.classList.toggle('done',!!(s1done&&s2done));
+  document.getElementById('wz-5')?.classList.toggle('done',!!(s1done&&s2done));
+  // active step
+  [1,2,3,4,5].forEach(i=>document.getElementById(`wz-${i}`)?.classList.toggle('active',i===_asiStep));
+}
+
+function asiWizardGo(step){
+  _asiStep=step;
+  atualizarWizardSteps();
+  const map={1:'sec-arq',2:'sec-sig',3:'sec-carimbo',4:'sec-auditoria',5:'sec-acoes'};
+  const el=document.getElementById(map[step]);
+  if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function onAuditPosChange(pos){
+  // update visual
+  ['rodape','lateral-direita','lateral-esquerda','personalizado'].forEach(p=>{
+    const el=document.getElementById('auditpos-'+p);
+    if(el) el.classList.toggle('on',p===pos);
+    const inp=el?.querySelector('input');
+    if(inp) inp.checked=(p===pos);
+  });
+  // show/hide manual stamp controls
+  const manualArea=document.getElementById('stamp-pos-area');
+  if(manualArea) manualArea.style.display=(pos==='personalizado')?'':'none';
+  if(pos==='rodape'){
+    // preset: todas páginas, todos arquivos, bottom area
+    const chkTodas=document.getElementById('stamp-todas-paginas');
+    const chkTodos=document.getElementById('stamp-todos-arquivos');
+    if(chkTodas) chkTodas.checked=true;
+    if(chkTodos) chkTodos.checked=true;
+  }
+}
 
 function initAssinaturas(){
   // Ocultar sidebar principal para tela cheia
@@ -8733,8 +8882,12 @@ async function loadEnvelopes(tipo){
 
 async function abrirEnvelope(id){
   _asiEnvelopeId=id;
+  _asiStep=1;
+  _asiSigCount=0;
   document.getElementById('asi-list-panel').style.display='none';
   document.getElementById('asi-detail-panel').style.display='block';
+  document.getElementById('asi-side-list').style.display='none';
+  document.getElementById('asi-side-wizard').style.display='';
   await recarregarDetalheEnvelope();
 }
 
@@ -8808,6 +8961,22 @@ async function recarregarDetalheEnvelope(){
       atualizarToggleAsiSignatarios();
     _carregarStampConfig(env);
     atualizarGateCarimbo(env);
+    // Atualizar contagem de signatários e wizard
+    _asiSigCount=Array.isArray(env.signatarios)?env.signatarios.length:0;
+    _asiEnvelopeCodigo=env.codigo||null;
+    // Atualizar título no wizard
+    const wzTit=document.getElementById('wz-doc-titulo');
+    if(wzTit) wzTit.textContent=env.titulo||'—';
+    atualizarWizardSteps();
+    // Atualizar prévia de auditoria
+    const auditWrap=document.getElementById('asi-audit-preview');
+    const auditFrame=document.getElementById('asi-audit-iframe');
+    if(auditWrap && auditFrame && _asiEnvelopeCodigo){
+      auditWrap.style.display='';
+      auditFrame.src=`/envelope/validar/${_asiEnvelopeCodigo}?_=${Date.now()}`;
+    } else if(auditWrap){
+      auditWrap.style.display='none';
+    }
     // Botões de ação conforme status
     const btnCancelar=document.getElementById('btn-cancelar-envelope');
     const btnReativar=document.getElementById('btn-reativar-envelope');
@@ -8861,9 +9030,16 @@ function fecharDetalheEnvelope(){
   _asiPreviewArqId=null;
   _asiArquivosExpanded=false;
   _asiSignatariosExpanded=false;
+  _asiSigCount=0;
+  _asiEnvelopeCodigo=null;
   document.getElementById('asi-list-panel').style.display='';
   document.getElementById('asi-detail-panel').style.display='none';
   document.getElementById('asi-sig-form').style.display='none';
+  document.getElementById('asi-side-list').style.display='';
+  document.getElementById('asi-side-wizard').style.display='none';
+  // hide audit preview
+  const ap=document.getElementById('asi-audit-preview');
+  if(ap) ap.style.display='none';
 }
 
 function _asiRestoreSidebar(){
@@ -9433,14 +9609,18 @@ async function salvarStampConfig(){
   const yPct=parseFloat(document.getElementById('stamp-y-pct')?.value||'10')||10;
   const todasPaginas=document.getElementById('stamp-todas-paginas')?.checked||false;
   const todosArquivos=document.getElementById('stamp-todos-arquivos')?.checked||false;
+  // audit_pos from radio buttons
+  const auditPosEl=document.querySelector('input[name="audit-pos"]:checked');
+  const auditPos=auditPosEl?.value||'personalizado';
   try{
     const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/stamp`,{
       method:'PUT',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({stamp_habilitado:hab,stamp_pagina:pagina,stamp_x_pct:xPct,stamp_y_pct:yPct,stamp_todas_paginas:todasPaginas,stamp_todos_arquivos:todosArquivos})
+      body:JSON.stringify({stamp_habilitado:hab,stamp_pagina:pagina,stamp_x_pct:xPct,stamp_y_pct:yPct,stamp_todas_paginas:todasPaginas,stamp_todos_arquivos:todosArquivos,audit_pos:auditPos})
     });
     const j=await r.json();
     if(!r.ok){ alert(j.erro||'Erro ao salvar configuração de carimbo.'); return; }
+    atualizarWizardSteps();
     showSt('assinaturas','Configuração de carimbo salva com sucesso.','ok');
   }catch(e){
     alert('Erro de conexão ao salvar carimbo.');
@@ -9507,6 +9687,9 @@ function _carregarStampConfig(env){
   if(chkTodas) chkTodas.checked=!!env.stamp_todas_paginas;
   const chkTodos=document.getElementById('stamp-todos-arquivos');
   if(chkTodos) chkTodos.checked=!!env.stamp_todos_arquivos;
+  // Load audit_pos
+  const ap=(env.audit_pos||'personalizado').trim().toLowerCase();
+  onAuditPosChange(ap);
   previewStampPos();
 }
 </script>
