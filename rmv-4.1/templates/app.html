@@ -1880,19 +1880,48 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div id="pg-assinaturas" class="pg">
       <div id="st-assinaturas" class="st"></div>
 
-      <!-- sub-tabs -->
-      <div class="tabs" style="margin-bottom:16px">
-        <button class="btn b-az b-sm tab" id="atab-funcionario" onclick="switchAsiTab('funcionario')">👤 Funcionários</button>
-        <button class="btn b-gh b-sm tab" id="atab-cliente" onclick="switchAsiTab('cliente')">🏢 Clientes</button>
-        <button class="btn b-gh b-sm tab" id="atab-avulso" onclick="switchAsiTab('avulso')">📄 Avulso</button>
-      </div>
+      <style>
+        #pg-assinaturas .asi-shell{display:grid;grid-template-columns:280px 1fr;gap:14px;align-items:start}
+        #pg-assinaturas .asi-side{position:sticky;top:8px}
+        #pg-assinaturas .asi-side .subaba-bloco{width:100%;text-align:left}
+        #pg-assinaturas .asi-upload-drop{border:2px dashed #9ec4e8;border-radius:12px;padding:18px;background:#f5faff;cursor:pointer;transition:.15s}
+        #pg-assinaturas .asi-upload-drop.drag{border-color:#1f6eb0;background:#eaf4ff;box-shadow:0 0 0 3px rgba(31,110,176,.12)}
+        #pg-assinaturas .asi-preview-layout{display:grid;grid-template-columns:1fr 300px;gap:12px;margin-top:10px}
+        #pg-assinaturas .asi-preview-frame{width:100%;height:500px;border:1px solid #d7e6f7;border-radius:10px;background:#fff}
+        #pg-assinaturas .asi-preview-list{max-height:500px;overflow:auto;border:1px solid #d7e6f7;border-radius:10px;background:#fff;padding:6px}
+        #pg-assinaturas .asi-preview-item{display:block;width:100%;text-align:left;border:1px solid #e5edf8;background:#f8fbff;border-radius:8px;padding:8px 10px;margin:0 0 6px 0;cursor:pointer;font-size:12px;color:#1e3450}
+        #pg-assinaturas .asi-preview-item.on{border-color:#5b9ee0;background:#e8f3ff;color:#11406a}
+        @media (max-width:1100px){
+          #pg-assinaturas .asi-shell{grid-template-columns:1fr}
+          #pg-assinaturas .asi-side{position:static}
+          #pg-assinaturas .asi-preview-layout{grid-template-columns:1fr}
+          #pg-assinaturas .asi-preview-frame{height:420px}
+          #pg-assinaturas .asi-preview-list{max-height:220px}
+        }
+      </style>
+
+      <div class="asi-shell">
+        <div class="asi-side">
+          <div class="card" style="margin-bottom:10px">
+            <div class="card-header"><span class="card-title">Menu de Assinaturas</span></div>
+            <div class="subaba-blocos" style="display:grid;grid-template-columns:1fr;gap:8px">
+              <button type="button" class="subaba-bloco asi-side-tab on" id="atab-funcionario" onclick="switchAsiTab('funcionario')">👤 Funcionários</button>
+              <button type="button" class="subaba-bloco asi-side-tab" id="atab-cliente" onclick="switchAsiTab('cliente')">🏢 Clientes</button>
+              <button type="button" class="subaba-bloco asi-side-tab" id="atab-avulso" onclick="switchAsiTab('avulso')">📄 Avulso</button>
+            </div>
+            <div style="margin-top:10px;display:flex;justify-content:flex-start">
+              <button class="btn b-az b-sm" onclick="abrirNovoEnvelope()">+ Novo Documento</button>
+            </div>
+          </div>
+        </div>
+
+        <div>
 
       <!-- painel lista -->
       <div id="asi-list-panel">
         <div class="card">
           <div class="card-header">
             <span class="card-title" id="asi-list-title">Documentos — Funcionários</span>
-            <button class="btn b-az b-sm" onclick="abrirNovoEnvelope()">+ Novo Documento</button>
           </div>
           <div id="asi-lista"><div class="vazio">Nenhum documento encontrado.</div></div>
         </div>
@@ -1913,9 +1942,20 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div style="display:flex;gap:8px">
               <button class="btn b-sm b-az" onclick="abrirPickerArqSistema()">+ Do sistema</button>
               <label class="btn b-sm" style="background:#1a7a45;color:#fff;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:4px">
-                + Upload <input type="file" id="inp-arq-upload" accept="application/pdf,image/*" style="display:none" onchange="uploadArqEnvelope()">
+                + Upload <input type="file" id="inp-arq-upload" accept="application/pdf,image/*" style="display:none" multiple onchange="uploadArqEnvelope()">
               </label>
             </div>
+          </div>
+          <div id="asi-dropzone" class="asi-upload-drop">
+            Arraste e solte arquivos PDF/Imagem aqui ou clique para anexar.
+            <div style="font-size:12px;color:#5f7590;margin-top:4px">Você pode anexar vários arquivos e continuar adicionando mais depois.</div>
+          </div>
+          <div class="asi-preview-layout">
+            <iframe id="asi-preview-frame" class="asi-preview-frame" title="Prévia do arquivo"></iframe>
+            <div id="asi-preview-list" class="asi-preview-list"><div class="vazio" style="padding:10px">Nenhum arquivo para pré-visualizar.</div></div>
+          </div>
+          <div style="margin-top:10px;display:flex;justify-content:flex-end">
+            <button class="btn b-sm b-az" onclick="document.getElementById('inp-arq-upload').click()">+ Anexar mais arquivos</button>
           </div>
           <div id="asi-arq-lista"><div class="vazio">Nenhum arquivo.</div></div>
         </div>
@@ -1930,7 +1970,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <!-- form add signatário inline -->
           <div id="asi-sig-form" style="display:none;background:#f5f9ff;border-top:1px solid #e0eaf5;padding:14px">
             <div class="g3">
-              <div class="f"><label>Nome *</label><input id="sigf-nome" placeholder="Nome completo"></div>
+              <div class="f"><label>Nome (opcional se telefone já tiver cadastro)</label><input id="sigf-nome" placeholder="Nome completo"></div>
               <div class="f"><label>Cargo</label><input id="sigf-cargo" placeholder="Cargo/Função"></div>
               <div class="f"><label>CPF</label><input id="sigf-cpf" placeholder="000.000.000-00" maxlength="14" oninput="fmtCpfSig(this)"></div>
             </div>
@@ -1949,6 +1989,9 @@ document.addEventListener('DOMContentLoaded',()=>{
         <!-- Carimbo de Assinatura -->
         <div class="card" style="margin-bottom:14px">
           <div class="card-header"><span class="card-title">🔏 Carimbo de assinatura no PDF</span></div>
+          <div id="asi-stamp-gate" style="display:none;margin:8px 0 10px 0;padding:10px;border-radius:8px;background:#fff9e7;border:1px solid #f0d994;color:#8a6d1f;font-size:12px">
+            Adicione ao menos um signatário para habilitar o carimbo de assinatura.
+          </div>
           <p style="font-size:12px;color:#666;margin:4px 0 10px 0">Quando habilitado, um carimbo visual com nome, data e código será inserido no PDF gerado na posição configurada.</p>
           <style>
             #stamp-layout{display:grid;grid-template-columns:minmax(620px,1fr) 360px;gap:16px;align-items:start}
@@ -2033,6 +2076,8 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn" id="btn-excluir-envelope" style="background:#c0392b;color:#fff;border:none;cursor:pointer" onclick="excluirEnvelopeAtual()">🗑 Excluir</button>
           </div>
         </div>
+      </div>
+      </div>
       </div>
 
       <!-- picker arquivos do sistema (funcionário) -->
@@ -8613,11 +8658,12 @@ initTheme();
 init();
 
 // ══ ASSINATURAS ══
-let _asiTipo='funcionario', _asiEnvelopeId=null, _asiFuncionarios=[], _asiEnvelopeArquivos=[];
+let _asiTipo='funcionario', _asiEnvelopeId=null, _asiFuncionarios=[], _asiEnvelopeArquivos=[], _asiPreviewArqId=null;
 let _asiNomeAssinadoPadrao='documento ASSINADO.pdf';
 
 function initAssinaturas(){
   loadEnvelopes(_asiTipo);
+  setupAsiDropzone();
   // load funcionários para picker
   fetch('/api/funcionarios').then(r=>r.json()).then(d=>{
     _asiFuncionarios=Array.isArray(d)?d:(d.funcionarios||[]);
@@ -8631,15 +8677,9 @@ function initAssinaturas(){
 
 function switchAsiTab(tipo){
   _asiTipo=tipo;
-  document.querySelectorAll('#pg-assinaturas .tabs .tab').forEach(b=>{
-    b.classList.remove('on','b-az');
-    if(!b.classList.contains('b-gh')) b.classList.add('b-gh');
-  });
+  document.querySelectorAll('#pg-assinaturas .asi-side-tab').forEach(b=>b.classList.remove('on'));
   const tb=document.getElementById('atab-'+tipo);
-  if(tb){
-    tb.classList.add('on','b-az');
-    tb.classList.remove('b-gh');
-  }
+  if(tb) tb.classList.add('on');
   const titles={'funcionario':'Documentos — Funcionários','cliente':'Documentos — Clientes','avulso':'Documentos — Avulso'};
   document.getElementById('asi-list-title').textContent=titles[tipo]||'Documentos';
   fecharDetalheEnvelope();
@@ -8721,6 +8761,7 @@ async function recarregarDetalheEnvelope(){
       ativarDragArquivosEnvelope();
     }
     _asiEnvelopeArquivos=Array.isArray(env.arquivos)?env.arquivos:[];
+    renderAsiArquivoPreview();
     // Signatários
     const sigBox=document.getElementById('asi-sig-lista');
     if(!env.signatarios||!env.signatarios.length){
@@ -8746,6 +8787,7 @@ async function recarregarDetalheEnvelope(){
         </tbody></table></div>`;
     }
     _carregarStampConfig(env);
+    atualizarGateCarimbo(env);
     // Botões de ação conforme status
     const btnCancelar=document.getElementById('btn-cancelar-envelope');
     const btnReativar=document.getElementById('btn-reativar-envelope');
@@ -8796,6 +8838,7 @@ async function salvarNomeDocumentoAssinado(){
 
 function fecharDetalheEnvelope(){
   _asiEnvelopeId=null;
+  _asiPreviewArqId=null;
   document.getElementById('asi-list-panel').style.display='';
   document.getElementById('asi-detail-panel').style.display='none';
   document.getElementById('asi-sig-form').style.display='none';
@@ -8866,7 +8909,6 @@ async function salvarSignatario(){
   const cpf=(document.getElementById('sigf-cpf').value||'').trim();
   const telefone=(document.getElementById('sigf-tel').value||'').trim();
   const email=(document.getElementById('sigf-email').value||'').trim();
-  if(!nome){ alert('Informe o nome do signatário.'); return; }
   if(!telefone && !email){
     alert('Informe ao menos telefone WhatsApp ou e-mail para envio.');
     return;
@@ -9052,19 +9094,97 @@ async function adicionarArqSistema(funcArquivoId){
   if(r.ok){
     document.getElementById('asi-picker-modal').style.display='none';
     await recarregarDetalheEnvelope();
+    if(_asiEnvelopeArquivos.length){
+      _asiPreviewArqId=(_asiEnvelopeArquivos[_asiEnvelopeArquivos.length-1]||{}).id||null;
+      renderAsiArquivoPreview();
+    }
   } else { const j=await r.json(); alert(j.erro||'Erro.'); }
 }
 
-async function uploadArqEnvelope(){
+async function uploadArqEnvelope(filesOverride){
   if(!_asiEnvelopeId) return;
   const inp=document.getElementById('inp-arq-upload');
-  if(!inp.files.length) return;
-  const fd=new FormData();
-  fd.append('arquivo',inp.files[0]);
-  const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/arquivos`,{method:'POST',body:fd});
+  const files=Array.from(filesOverride || inp.files || []);
+  if(!files.length) return;
+  let uploaded=0;
+  const erros=[];
+  for(const f of files){
+    const fd=new FormData();
+    fd.append('arquivo',f);
+    try{
+      const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/arquivos`,{method:'POST',body:fd});
+      if(r.ok) uploaded+=1;
+      else{
+        const j=await r.json().catch(()=>({}));
+        erros.push(`${f.name}: ${j.erro||'falha no upload'}`);
+      }
+    }catch(e){
+      erros.push(`${f.name}: erro de conexão`);
+    }
+  }
   inp.value='';
-  if(r.ok) await recarregarDetalheEnvelope();
-  else { const j=await r.json(); alert(j.erro||'Erro no upload.'); }
+  await recarregarDetalheEnvelope();
+  if(_asiEnvelopeArquivos.length){
+    _asiPreviewArqId=(_asiEnvelopeArquivos[_asiEnvelopeArquivos.length-1]||{}).id||null;
+    renderAsiArquivoPreview();
+  }
+  if(erros.length){
+    alert(`Alguns arquivos não foram enviados:\n${erros.join('\n')}`);
+  }else if(uploaded>0){
+    showSt('st-assinaturas',`${uploaded} arquivo(s) anexado(s) com sucesso.`,false);
+  }
+}
+
+function setupAsiDropzone(){
+  const dz=document.getElementById('asi-dropzone');
+  const inp=document.getElementById('inp-arq-upload');
+  if(!dz || !inp || dz.dataset.bind==='1') return;
+  dz.dataset.bind='1';
+  dz.addEventListener('click',()=>inp.click());
+  dz.addEventListener('dragover',(e)=>{ e.preventDefault(); dz.classList.add('drag'); });
+  dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
+  dz.addEventListener('drop',(e)=>{
+    e.preventDefault();
+    dz.classList.remove('drag');
+    const files=(e.dataTransfer&&e.dataTransfer.files)?e.dataTransfer.files:null;
+    if(files && files.length) uploadArqEnvelope(files);
+  });
+}
+
+function selecionarArquivoPreview(arqId){
+  _asiPreviewArqId=parseInt(arqId,10)||null;
+  renderAsiArquivoPreview();
+}
+
+function renderAsiArquivoPreview(){
+  const frame=document.getElementById('asi-preview-frame');
+  const list=document.getElementById('asi-preview-list');
+  if(!frame || !list) return;
+  const arqs=Array.isArray(_asiEnvelopeArquivos)?_asiEnvelopeArquivos:[];
+  if(!_asiEnvelopeId || !arqs.length){
+    frame.removeAttribute('src');
+    list.innerHTML='<div class="vazio" style="padding:10px">Nenhum arquivo para pré-visualizar.</div>';
+    return;
+  }
+  const existe=arqs.some(a=>parseInt(a.id,10)===parseInt(_asiPreviewArqId,10));
+  if(!existe) _asiPreviewArqId=arqs[0].id;
+  const ativo=arqs.find(a=>parseInt(a.id,10)===parseInt(_asiPreviewArqId,10)) || arqs[0];
+  frame.src=`/api/envelopes/${_asiEnvelopeId}/arquivos/${ativo.id}/visualizar?_=${Date.now()}`;
+  list.innerHTML=arqs.map(a=>{
+    const on=parseInt(a.id,10)===parseInt(_asiPreviewArqId,10);
+    return `<button type="button" class="asi-preview-item ${on?'on':''}" onclick="selecionarArquivoPreview(${a.id})">📄 ${a.nome_arquivo||('Arquivo '+a.id)}</button>`;
+  }).join('');
+}
+
+function atualizarGateCarimbo(env){
+  const gate=document.getElementById('asi-stamp-gate');
+  const hasSig=!!(env && Array.isArray(env.signatarios) && env.signatarios.length);
+  if(gate) gate.style.display=hasSig?'none':'';
+  if(!hasSig){
+    const hab=document.getElementById('stamp-hab');
+    if(hab) hab.checked=false;
+    previewStampPos();
+  }
 }
 
 async function enviarEnvelopeAtual(){

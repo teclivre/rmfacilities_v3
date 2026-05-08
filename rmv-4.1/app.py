@@ -9693,21 +9693,59 @@ def api_envelope_visualizar_arquivo_admin(id,arq_id):
     return send_file(abs_path,as_attachment=False,download_name=arq.nome_arquivo or os.path.basename(abs_path))
 
 
+def _ass_buscar_cadastro_por_telefone(telefone):
+    tel=wa_norm_number(telefone or '')
+    if not tel:
+        return None
+    hist=(AssinaturaEnvelopeSignatario.query
+          .filter(AssinaturaEnvelopeSignatario.status=='assinado')
+          .filter(AssinaturaEnvelopeSignatario.telefone.isnot(None))
+          .order_by(AssinaturaEnvelopeSignatario.ass_em.desc(),AssinaturaEnvelopeSignatario.id.desc())
+          .limit(500)
+          .all())
+    for s in hist:
+        if wa_phone_matches(s.telefone or '',tel):
+            cpf=(only_digits(s.ass_cpf_informado or s.cpf or '') or '').strip()
+            return {
+                'nome':(s.nome or '').strip(),
+                'cpf':cpf,
+                'cargo':(s.cargo or '').strip(),
+                'email':(s.email or '').strip(),
+                'telefone':wa_norm_number(s.telefone or ''),
+            }
+    return None
+
+
 @app.route('/api/envelopes/<int:id>/signatarios',methods=['POST'])
 @lr
 def api_envelope_add_signatario(id):
     AssinaturaEnvelope.query.get_or_404(id)
     data=request.get_json() or {}
     nome=(data.get('nome') or '').strip()
+    tel_in=(data.get('telefone') or '').strip()
+    tel_norm=wa_norm_number(tel_in) if tel_in else ''
+    cadastro_tel=_ass_buscar_cadastro_por_telefone(tel_norm) if tel_norm else None
     if not nome:
-        return jsonify({'erro':'Nome obrigatório'}),400
+        nome=((cadastro_tel or {}).get('nome') or '').strip()
+    if not nome:
+        return jsonify({'erro':'Informe o nome do signatário ou use um telefone já assinado anteriormente.'}),400
+    cpf_in=(data.get('cpf') or '').strip()
+    cpf_norm=(only_digits(cpf_in) or '').strip()
+    if not cpf_norm:
+        cpf_norm=((cadastro_tel or {}).get('cpf') or '').strip()
+    cpf_salvar=cpf_norm if len(cpf_norm)==11 else None
+    email_in=(data.get('email') or '').strip()
+    email_salvar=email_in or ((cadastro_tel or {}).get('email') or '').strip() or None
+    cargo_in=(data.get('cargo') or '').strip()
+    cargo_salvar=cargo_in or ((cadastro_tel or {}).get('cargo') or '').strip() or None
+    telefone_salvar=tel_norm or tel_in or None
     sig=AssinaturaEnvelopeSignatario(
         envelope_id=id,
         nome=nome,
-        email=(data.get('email') or '').strip() or None,
-        telefone=(data.get('telefone') or '').strip() or None,
-        cpf=(data.get('cpf') or '').strip() or None,
-        cargo=(data.get('cargo') or '').strip() or None,
+        email=email_salvar,
+        telefone=telefone_salvar,
+        cpf=cpf_salvar,
+        cargo=cargo_salvar,
         tipo=data.get('tipo') or 'externo',
         ref_id=data.get('ref_id') or None,
         ordem=int(data.get('ordem') or 0),
@@ -9955,6 +9993,8 @@ def api_envelope_assinatura_confirmar(token):
     ip=request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
     sig.nome=nome
     sig.cargo=cargo
+    if not (sig.cpf or '').strip():
+        sig.cpf=cpf_inf
     sig.ass_cpf_informado=cpf_inf
     sig.ass_ip=ip
     sig.ass_em=datetime.utcnow()
@@ -9968,6 +10008,24 @@ def api_envelope_assinatura_confirmar(token):
         sig.ass_assinatura_img=assinatura_img[:200000]  # limita a ~150 KB base64
     if not sig.ass_aberto_em:
         sig.ass_aberto_em=utcnow()
+
+    # Cadastro automático por telefone para reaproveitar em assinaturas futuras.
+    tel_sig=wa_norm_number(sig.telefone or '')
+    if tel_sig:
+        sig.telefone=tel_sig
+        pendentes=(AssinaturaEnvelopeSignatario.query
+                   .filter(AssinaturaEnvelopeSignatario.id!=sig.id)
+                   .filter(AssinaturaEnvelopeSignatario.telefone.isnot(None))
+                   .filter(AssinaturaEnvelopeSignatario.status=='pendente')
+                   .all())
+        for p in pendentes:
+            if not wa_phone_matches(p.telefone or '',tel_sig):
+                continue
+            if not (p.nome or '').strip():
+                p.nome=nome
+            if not (p.cpf or '').strip():
+                p.cpf=cpf_inf
+
     sig.token=None  # invalida o token após uso
     url_root=request.url_root.rstrip('/')
     signed_pdf_link=''
