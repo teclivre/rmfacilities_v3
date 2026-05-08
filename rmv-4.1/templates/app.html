@@ -1886,27 +1886,21 @@ document.addEventListener('DOMContentLoaded',()=>{
         #pg-assinaturas .asi-side .subaba-bloco{width:100%;text-align:left}
         #pg-assinaturas .asi-upload-drop{border:2px dashed #9ec4e8;border-radius:12px;padding:20px;background:#f5faff;cursor:pointer;transition:.15s}
         #pg-assinaturas .asi-upload-drop.drag{border-color:#1f6eb0;background:#eaf4ff;box-shadow:0 0 0 3px rgba(31,110,176,.12)}
-        #pg-assinaturas .asi-preview-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;margin-top:12px}
-        #pg-assinaturas .asi-preview-frame{width:100%;height:min(74vh,860px);min-height:560px;border:1px solid #d7e6f7;border-radius:10px;background:#fff}
-        #pg-assinaturas .asi-preview-list{max-height:min(74vh,860px);overflow:auto;border:1px solid #d7e6f7;border-radius:10px;background:#fff;padding:8px}
-        #pg-assinaturas .asi-preview-item{display:block;width:100%;text-align:left;border:1px solid #e5edf8;background:#f8fbff;border-radius:8px;padding:9px 11px;margin:0 0 7px 0;cursor:pointer;font-size:12px;color:#1e3450}
-        #pg-assinaturas .asi-preview-item.on{border-color:#5b9ee0;background:#e8f3ff;color:#11406a}
+        #pg-assinaturas .asi-preview-scroll{width:100%;overflow-y:auto;max-height:min(82vh,960px);border:1px solid #d7e6f7;border-radius:10px;background:#f5f8fc;margin-top:12px}
+        #pg-assinaturas .asi-preview-scroll-item+.asi-preview-scroll-item{border-top:2px solid #d0e4f5}
+        #pg-assinaturas .asi-preview-scroll-title{font-size:12px;font-weight:700;color:#1e3450;padding:8px 12px;background:#e8f1fb;display:flex;align-items:center;gap:6px}
+        #pg-assinaturas .asi-preview-scroll iframe{width:100%;height:min(78vh,900px);border:none;display:block}
         @media (min-width:1500px){
           #pg-assinaturas .asi-shell{grid-template-columns:265px minmax(0,1fr)}
-          #pg-assinaturas .asi-preview-layout{grid-template-columns:minmax(0,1fr) 340px}
         }
         @media (max-width:1380px){
           #pg-assinaturas .asi-shell{grid-template-columns:230px minmax(0,1fr)}
-          #pg-assinaturas .asi-preview-layout{grid-template-columns:minmax(0,1fr) 290px}
-          #pg-assinaturas .asi-preview-frame{height:min(68vh,760px);min-height:500px}
-          #pg-assinaturas .asi-preview-list{max-height:min(68vh,760px)}
+          #pg-assinaturas .asi-preview-scroll iframe{height:min(68vh,760px)}
         }
         @media (max-width:1100px){
           #pg-assinaturas .asi-shell{grid-template-columns:1fr}
           #pg-assinaturas .asi-side{position:static}
-          #pg-assinaturas .asi-preview-layout{grid-template-columns:1fr}
-          #pg-assinaturas .asi-preview-frame{height:420px;min-height:420px}
-          #pg-assinaturas .asi-preview-list{max-height:220px}
+          #pg-assinaturas .asi-preview-scroll iframe{height:420px}
         }
       </style>
 
@@ -1960,9 +1954,8 @@ document.addEventListener('DOMContentLoaded',()=>{
             Arraste e solte arquivos PDF/Imagem aqui ou clique para anexar.
             <div style="font-size:12px;color:#5f7590;margin-top:4px">Você pode anexar vários arquivos e continuar adicionando mais depois.</div>
           </div>
-          <div class="asi-preview-layout">
-            <iframe id="asi-preview-frame" class="asi-preview-frame" title="Prévia do arquivo"></iframe>
-            <div id="asi-preview-list" class="asi-preview-list"><div class="vazio" style="padding:10px">Nenhum arquivo para pré-visualizar.</div></div>
+          <div id="asi-preview-scroll" class="asi-preview-scroll">
+            <div class="vazio" style="padding:16px;text-align:center">Nenhum arquivo para pré-visualizar.</div>
           </div>
           <div style="margin-top:10px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
             <button class="btn b-sm" id="asi-toggle-arq-lista" style="background:#eef6ff;color:#205d8a;border:1px solid #c5d9f0" onclick="toggleAsiArquivosLista()">Mostrar tabela de arquivos</button>
@@ -3281,6 +3274,10 @@ async function loadFaturamentoAlert(){
 }
 
 function nav(id,el,force=false){
+  // Restaurar sidebar ao sair da página de Assinaturas
+  if(document.getElementById('pg-assinaturas')?.classList.contains('on') && id!=='assinaturas'){
+    _asiRestoreSidebar();
+  }
   if(!force && hasUnsavedChanges()){
     const ok=confirm('Existem alterações não salvas. Deseja sair desta página mesmo assim?');
     if(!ok) return;
@@ -8680,6 +8677,9 @@ let _asiTipo='funcionario', _asiEnvelopeId=null, _asiFuncionarios=[], _asiEnvelo
 let _asiNomeAssinadoPadrao='documento ASSINADO.pdf';
 
 function initAssinaturas(){
+  // Ocultar sidebar principal para tela cheia
+  document.body.dataset.asiSidebarWas=document.body.classList.contains('sidebar-collapsed')?'1':'0';
+  document.body.classList.add('sidebar-collapsed');
   loadEnvelopes(_asiTipo);
   setupAsiDropzone();
   // load funcionários para picker
@@ -8864,6 +8864,14 @@ function fecharDetalheEnvelope(){
   document.getElementById('asi-list-panel').style.display='';
   document.getElementById('asi-detail-panel').style.display='none';
   document.getElementById('asi-sig-form').style.display='none';
+}
+
+function _asiRestoreSidebar(){
+  if(document.body.dataset.asiSidebarWas==='0'){
+    document.body.classList.remove('sidebar-collapsed');
+    try{ localStorage.setItem('rm_sidebar_collapsed_v1','0'); }catch(_){}
+  }
+  delete document.body.dataset.asiSidebarWas;
 }
 
 function atualizarToggleAsiArquivos(){
@@ -9205,29 +9213,20 @@ function setupAsiDropzone(){
   });
 }
 
-function selecionarArquivoPreview(arqId){
-  _asiPreviewArqId=parseInt(arqId,10)||null;
-  renderAsiArquivoPreview();
-}
-
 function renderAsiArquivoPreview(){
-  const frame=document.getElementById('asi-preview-frame');
-  const list=document.getElementById('asi-preview-list');
-  if(!frame || !list) return;
+  const box=document.getElementById('asi-preview-scroll');
+  if(!box) return;
   const arqs=Array.isArray(_asiEnvelopeArquivos)?_asiEnvelopeArquivos:[];
   if(!_asiEnvelopeId || !arqs.length){
-    frame.removeAttribute('src');
-    list.innerHTML='<div class="vazio" style="padding:10px">Nenhum arquivo para pré-visualizar.</div>';
+    box.innerHTML='<div class="vazio" style="padding:16px;text-align:center">Nenhum arquivo para pré-visualizar.</div>';
     return;
   }
-  const existe=arqs.some(a=>parseInt(a.id,10)===parseInt(_asiPreviewArqId,10));
-  if(!existe) _asiPreviewArqId=arqs[0].id;
-  const ativo=arqs.find(a=>parseInt(a.id,10)===parseInt(_asiPreviewArqId,10)) || arqs[0];
-  frame.src=`/api/envelopes/${_asiEnvelopeId}/arquivos/${ativo.id}/visualizar?_=${Date.now()}`;
-  list.innerHTML=arqs.map(a=>{
-    const on=parseInt(a.id,10)===parseInt(_asiPreviewArqId,10);
-    return `<button type="button" class="asi-preview-item ${on?'on':''}" onclick="selecionarArquivoPreview(${a.id})">📄 ${a.nome_arquivo||('Arquivo '+a.id)}</button>`;
-  }).join('');
+  const ts=Date.now();
+  box.innerHTML=arqs.map((a,i)=>`
+    <div class="asi-preview-scroll-item">
+      <div class="asi-preview-scroll-title">📄 ${a.nome_arquivo||('Arquivo '+(i+1))}</div>
+      <iframe src="/api/envelopes/${_asiEnvelopeId}/arquivos/${a.id}/visualizar?_=${ts}" title="${a.nome_arquivo||('Arquivo '+(i+1))}" loading="lazy"></iframe>
+    </div>`).join('');
 }
 
 function atualizarGateCarimbo(env){
