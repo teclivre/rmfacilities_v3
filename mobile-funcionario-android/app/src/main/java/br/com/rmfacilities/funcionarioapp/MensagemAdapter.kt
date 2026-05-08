@@ -5,6 +5,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 
 class MensagemAdapter(
@@ -19,9 +20,16 @@ class MensagemAdapter(
     }
 
     fun replaceAll(novas: List<MensagemItem>) {
+        val old = itens.toList()
+        val diff = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+            override fun getOldListSize() = old.size
+            override fun getNewListSize() = novas.size
+            override fun areItemsTheSame(op: Int, np: Int) = old[op].id == novas[np].id
+            override fun areContentsTheSame(op: Int, np: Int) = old[op] == novas[np]
+        })
         itens.clear()
         itens.addAll(novas)
-        notifyDataSetChanged()
+        diff.dispatchUpdatesTo(this)
     }
 
     fun addMensagem(m: MensagemItem) {

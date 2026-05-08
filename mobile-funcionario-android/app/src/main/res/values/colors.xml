@@ -24,4 +24,18 @@
     <color name="icon_purple">#9b59ff</color>
     <color name="icon_orange">#ff8c1a</color>
     <color name="icon_green">#00d49a</color>
+
+    <!-- Redesign mobile (light + semantic) -->
+    <color name="mobile_bg_top">#EEF4FF</color>
+    <color name="mobile_bg_bottom">#F8FBFF</color>
+    <color name="mobile_surface">#FFFFFF</color>
+    <color name="mobile_surface_soft">#F2F6FF</color>
+    <color name="mobile_text_primary">#10233A</color>
+    <color name="mobile_text_secondary">#5E738D</color>
+    <color name="mobile_semantic_success">#2CB67D</color>
+    <color name="mobile_semantic_pending">#D49A2A</color>
+    <color name="mobile_semantic_info">#3182F6</color>
+    <color name="mobile_tab_active">#1D4ED8</color>
+    <color name="mobile_tab_inactive">#6B7E97</color>
+    <color name="mobile_card_border">#DCE7FA</color>
 </resources>

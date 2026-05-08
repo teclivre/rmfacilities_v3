@@ -12,13 +12,14 @@ import android.net.NetworkRequest
 import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
+import android.view.HapticFeedbackConstants
 import android.view.View
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.android.material.button.MaterialButton
@@ -40,18 +41,21 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var tvBoasVindas: TextView
     private lateinit var tvCargo: TextView
     private lateinit var tvAvatar: TextView
+    private lateinit var tvResumoPonto: TextView
+    private lateinit var tvResumoTarefas: TextView
+    private lateinit var tvResumoAvisos: TextView
     private lateinit var tvMsgBadge: TextView
     private lateinit var tvDocsBadge: TextView
     private lateinit var retryQueue: ActionRetryQueue
     private lateinit var connectivityManager: ConnectivityManager
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private lateinit var btnDocumentos: LinearLayout
-    private lateinit var btnPerfil: LinearLayout
-    private lateinit var btnPonto: LinearLayout
-    private lateinit var btnMensagens: LinearLayout
-    private lateinit var btnOfflineHome: LinearLayout
-    private lateinit var btnConfiguracoesHome: LinearLayout
-    private lateinit var btnSalarioHome: LinearLayout
+    private lateinit var btnDocumentos: View
+    private lateinit var btnPerfil: View
+    private lateinit var btnPonto: View
+    private lateinit var btnMensagens: View
+    private lateinit var btnOfflineHome: View
+    private lateinit var btnConfiguracoesHome: View
+    private lateinit var btnSalarioHome: View
 
     private val logoutReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -84,6 +88,9 @@ class HomeActivity : AppCompatActivity() {
         tvBoasVindas = findViewById(R.id.tvBoasVindas)
         tvCargo = findViewById(R.id.tvCargo)
         tvAvatar = findViewById(R.id.tvAvatar)
+        tvResumoPonto = findViewById(R.id.tvResumoPonto)
+        tvResumoTarefas = findViewById(R.id.tvResumoTarefas)
+        tvResumoAvisos = findViewById(R.id.tvResumoAvisos)
         tvMsgBadge = findViewById(R.id.tvMsgBadge)
         tvDocsBadge = findViewById(R.id.tvDocsBadge)
         swipeRefresh = findViewById(R.id.swipeRefreshHome)
@@ -100,36 +107,69 @@ class HomeActivity : AppCompatActivity() {
         btnSalarioHome = findViewById(R.id.btnSalarioHome)
 
         btnPerfil.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             startActivity(Intent(this, PerfilActivity::class.java))
         }
 
         btnDocumentos.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             startActivity(Intent(this, DocumentosActivity::class.java))
         }
 
         btnPonto.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             startActivity(Intent(this, PontoActivity::class.java))
         }
 
         btnMensagens.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             startActivity(Intent(this, MensagensActivity::class.java))
         }
 
         btnOfflineHome.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             startActivity(Intent(this, DocumentosActivity::class.java).apply {
                 putExtra("open_offline_list", true)
             })
         }
 
         btnConfiguracoesHome.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             startActivity(Intent(this, ConfiguracoesActivity::class.java))
         }
 
         btnSalarioHome.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             startActivity(Intent(this, DocumentosActivity::class.java).apply {
                 putExtra("preset_categoria", "holerite")
                 putExtra("preset_busca", "")
             })
+        }
+
+        findViewById<BottomNavigationView>(R.id.bottomNavHome).apply {
+            selectedItemId = R.id.nav_home
+            setOnItemSelectedListener { item ->
+                when (item.itemId) {
+                    R.id.nav_home -> true
+                    R.id.nav_tarefas -> {
+                        startActivity(Intent(this@HomeActivity, DocumentosActivity::class.java))
+                        true
+                    }
+                    R.id.nav_ponto -> {
+                        startActivity(Intent(this@HomeActivity, PontoActivity::class.java))
+                        true
+                    }
+                    R.id.nav_mensagens -> {
+                        startActivity(Intent(this@HomeActivity, MensagensActivity::class.java))
+                        true
+                    }
+                    R.id.nav_perfil -> {
+                        startActivity(Intent(this@HomeActivity, PerfilActivity::class.java))
+                        true
+                    }
+                    else -> false
+                }
+            }
         }
 
         findViewById<MaterialButton>(R.id.btnAtalhos).setOnClickListener {
@@ -258,6 +298,7 @@ class HomeActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             val me = try { api.me() } catch (_: Exception) { MeResponse(ok = false) }
             val naoLidas = try { api.getNaoLidas() } catch (_: Exception) { 0 }
+            val pontoDia = try { api.getPontoDia() } catch (_: Exception) { PontoDiaResponse(ok = false) }
             val versao = try { api.getVersaoApp() } catch (_: Exception) { null }
             val pendentesCount = try { api.pendentesAssinatura().itens.size } catch (_: Exception) { 0 }
             withContext(Dispatchers.Main) {
@@ -282,6 +323,17 @@ class HomeActivity : AppCompatActivity() {
                 } else {
                     tvDocsBadge.visibility = View.GONE
                 }
+
+                tvResumoPonto.text = pontoDia.resumo?.horas_trabalhadas_fmt ?: "--:--"
+                tvResumoTarefas.text = if (pendentesCount > 0) "$pendentesCount pendente(s)" else "Sem pendências"
+                tvResumoAvisos.text = if (naoLidas > 0) "$naoLidas aviso(s)" else "Sem alertas"
+                tvResumoAvisos.setTextColor(
+                    ContextCompat.getColor(
+                        this@HomeActivity,
+                        if (naoLidas > 0) R.color.mobile_semantic_pending else R.color.mobile_semantic_success
+                    )
+                )
+
                 // Salva timestamp de última sincronização para a tela Sobre
                 getSharedPreferences("rm_funcionario_app", MODE_PRIVATE)
                     .edit().putLong("last_sync_ts", System.currentTimeMillis()).apply()

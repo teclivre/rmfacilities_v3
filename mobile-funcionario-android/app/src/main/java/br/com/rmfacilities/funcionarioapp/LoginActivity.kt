@@ -3,6 +3,8 @@ package br.com.rmfacilities.funcionarioapp
 import android.content.Intent
 import android.os.Bundle
 import android.os.CountDownTimer
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -67,6 +69,27 @@ class LoginActivity : AppCompatActivity() {
         btnBiometria.setOnClickListener { autenticarComBiometria() }
         btnEntrar.setOnClickListener { confirmarOtp() }
         tvReenviar.setOnClickListener { enviarCodigo() }
+
+        // Máscara CPF: 000.000.000-00
+        etCpf.addTextChangedListener(object : TextWatcher {
+            private var isFormatting = false
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                if (isFormatting || s == null) return
+                isFormatting = true
+                val digits = s.toString().replace("\\D".toRegex(), "").take(11)
+                val formatted = buildString {
+                    digits.forEachIndexed { i, c ->
+                        if (i == 3 || i == 6) append('.')
+                        if (i == 9) append('-')
+                        append(c)
+                    }
+                }
+                s.replace(0, s.length, formatted)
+                isFormatting = false
+            }
+        })
         tvPrivacidade.setOnClickListener {
             val base = (session.apiBaseUrl.ifBlank { BuildConfig.DEFAULT_API_BASE_URL }).trimEnd('/')
             val url = "$base/politica-de-privacidade"
@@ -94,6 +117,7 @@ class LoginActivity : AppCompatActivity() {
         val cpf = etCpf.text?.toString()?.replace("\\D".toRegex(), "").orEmpty()
 
         if (cpf.length != 11) { showErro("Informe o CPF com 11 dígitos."); return }
+        if (!btnEnviarCodigo.isEnabled) return  // evita duplo clique
 
         cpfAtual = cpf
         setLoading(true)
@@ -141,6 +165,7 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun confirmarOtp() {
+        if (!btnEntrar.isEnabled) return  // evita duplo clique
         val cpf = cpfAtual.ifBlank {
             etCpf.text?.toString()?.replace("\\D".toRegex(), "").orEmpty()
         }

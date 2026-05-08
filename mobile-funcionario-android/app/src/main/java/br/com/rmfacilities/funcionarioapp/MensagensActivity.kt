@@ -115,6 +115,16 @@ class MensagensActivity : AppCompatActivity() {
     }
 
     private fun enviarArquivo(uri: Uri) {
+        // Validar tamanho máximo (20 MB)
+        val sizeLimit = 20 * 1024 * 1024L
+        val fileSize = contentResolver.query(
+            uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null
+        )?.use { c -> if (c.moveToFirst()) c.getLong(0) else null }
+        if (fileSize != null && fileSize > sizeLimit) {
+            Toast.makeText(this, "Arquivo muito grande. Limite: 20 MB.", Toast.LENGTH_LONG).show()
+            return
+        }
+
         val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
         val fileName = obterNomeArquivo(uri)
         Toast.makeText(this, "Enviando $fileName...", Toast.LENGTH_SHORT).show()
