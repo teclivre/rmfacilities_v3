@@ -7672,7 +7672,11 @@ async function salvarBeneficiosValoresBase(){
     return;
   }
   const itens=montarItensBeneficios({incluirBase:true,incluirDias:false});
-  const r=await api('/api/beneficios/lancamentos','POST',{competencia:benComp(),itens});
+  const r=await api('/api/beneficios/lancamentos','POST',{
+    competencia:benComp(),
+    itens,
+    atualizar_base_funcionario:true
+  });
   if(r?.erro){
     showSt('st-benef',r.erro,true);
     return;

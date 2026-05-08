@@ -10709,19 +10709,45 @@ def api_beneficios_lancamentos():
     if empresa_id:
         qb=qb.filter_by(empresa_id=empresa_id)
     mapa={b.funcionario_id:b for b in qb.all()}
+    # Fallback: usa o último lançamento anterior quando não houver registro no mês.
+    # Isso evita recadastro mensal manual dos valores-base.
+    mapa_prev={}
+    func_ids=[f.id for f in funcs_ativos if f.id]
+    if func_ids:
+        qprev=BeneficioMensal.query.filter(
+            BeneficioMensal.funcionario_id.in_(func_ids),
+            BeneficioMensal.competencia < comp
+        )
+        if empresa_id:
+            qprev=qprev.filter_by(empresa_id=empresa_id)
+        qprev=qprev.order_by(
+            BeneficioMensal.funcionario_id.asc(),
+            BeneficioMensal.competencia.desc(),
+            BeneficioMensal.id.desc()
+        )
+        for bp in qprev.all():
+            if bp.funcionario_id not in mapa_prev:
+                mapa_prev[bp.funcionario_id]=bp
     itens=[]
-    def _benef_val(bm,func_obj,attr_name):
-        if not bm:
-            return getattr(func_obj,attr_name) or 0
-        val=getattr(bm,attr_name)
-        if val is None:
-            return getattr(func_obj,attr_name) or 0
-        return val
+    def _benef_val(bm,bm_prev,func_obj,attr_name):
+        if bm is not None:
+            val=getattr(bm,attr_name)
+            if val is not None:
+                return val
+        if bm_prev is not None:
+            val_prev=getattr(bm_prev,attr_name)
+            if val_prev is not None:
+                return val_prev
+        val_func=getattr(func_obj,attr_name)
+        if val_func is None:
+            return 0
+        return val_func
     for f in funcs_ativos:
         emp=Empresa.query.get(f.empresa_id) if f.empresa_id else None
         cli=Cliente.query.get(f.posto_cliente_id) if f.posto_cliente_id else None
         posto_nome=(cli.nome.strip() if cli and (cli.nome or '').strip() else (f.posto_operacional or 'Reserva tecnica'))
         b=mapa.get(f.id)
+        b_prev=mapa_prev.get(f.id)
         itens.append({
             'funcionario_id':f.id,
             'matricula':f.matricula or '',
@@ -10738,9 +10764,9 @@ def api_beneficios_lancamentos():
             'dias_va':(b.dias_va if b else 0),
             'dias_vg':(b.dias_vg if b else 0),
             'salario':(b.salario if b else (f.salario or 0)),
-            'vale_refeicao':_benef_val(b,f,'vale_refeicao'),
-            'vale_alimentacao':_benef_val(b,f,'vale_alimentacao'),
-            'vale_transporte':_benef_val(b,f,'vale_transporte'),
+            'vale_refeicao':_benef_val(b,b_prev,f,'vale_refeicao'),
+            'vale_alimentacao':_benef_val(b,b_prev,f,'vale_alimentacao'),
+            'vale_transporte':_benef_val(b,b_prev,f,'vale_transporte'),
             'opta_vt': True if f.opta_vt is None else bool(f.opta_vt),
             'opta_vr': True if f.opta_vr is None else bool(f.opta_vr),
             'opta_va': True if f.opta_va is None else bool(f.opta_va),
@@ -10748,9 +10774,9 @@ def api_beneficios_lancamentos():
             'opta_vale_gasolina': bool(f.opta_vale_gasolina),
             'opta_cesta_natal': bool(f.opta_cesta_natal),
             'pp_falta': bool(b.pp_falta) if b and (b.pp_falta is not None) else False,
-            'premio_produtividade':_benef_val(b,f,'premio_produtividade'),
-            'vale_gasolina':_benef_val(b,f,'vale_gasolina'),
-            'cesta_natal':_benef_val(b,f,'cesta_natal'),
+            'premio_produtividade':_benef_val(b,b_prev,f,'premio_produtividade'),
+            'vale_gasolina':_benef_val(b,b_prev,f,'vale_gasolina'),
+            'cesta_natal':_benef_val(b,b_prev,f,'cesta_natal'),
         })
     empresa_ref_id=empresa_id or 0
     folha=FolhaBeneficios.query.filter_by(competencia=comp,empresa_ref_id=empresa_ref_id).first()
@@ -10874,6 +10900,7 @@ def api_beneficios_lancamentos_salvar():
     d=request.json or {}
     comp=norm_competencia(d.get('competencia'))
     itens=d.get('itens') or []
+    atualizar_base_funcionario=to_bool(d.get('atualizar_base_funcionario'))
     salvos=0
     for it in itens:
         fid=to_num(it.get('funcionario_id'))
@@ -10908,12 +10935,28 @@ def api_beneficios_lancamentos_salvar():
         b.dias_trabalhados=max(b.dias_vt,b.dias_vr)
 
         b.salario=to_num(it.get('salario'),dec=True)
-        b.vale_transporte=(to_num(it.get('vale_transporte'),dec=True) if vt_optante else 0)
-        b.vale_refeicao=(to_num(it.get('vale_refeicao'),dec=True) if vr_optante else 0)
-        b.vale_alimentacao=(to_num(it.get('vale_alimentacao'),dec=True) if va_optante else 0)
-        b.premio_produtividade=(to_num(it.get('premio_produtividade'),dec=True) if (pp_optante and not pp_falta) else 0)
-        b.vale_gasolina=(to_num(it.get('vale_gasolina'),dec=True) if vg_optante else 0)
-        b.cesta_natal=(to_num(it.get('cesta_natal'),dec=True) if cn_optante else 0)
+        vale_transporte=to_num(it.get('vale_transporte'),dec=True)
+        vale_refeicao=to_num(it.get('vale_refeicao'),dec=True)
+        vale_alimentacao=to_num(it.get('vale_alimentacao'),dec=True)
+        premio_base=to_num(it.get('premio_produtividade'),dec=True)
+        vale_gasolina=to_num(it.get('vale_gasolina'),dec=True)
+        cesta_natal=to_num(it.get('cesta_natal'),dec=True)
+
+        b.vale_transporte=(vale_transporte if vt_optante else 0)
+        b.vale_refeicao=(vale_refeicao if vr_optante else 0)
+        b.vale_alimentacao=(vale_alimentacao if va_optante else 0)
+        b.premio_produtividade=(premio_base if (pp_optante and not pp_falta) else 0)
+        b.vale_gasolina=(vale_gasolina if vg_optante else 0)
+        b.cesta_natal=(cesta_natal if cn_optante else 0)
+
+        if atualizar_base_funcionario:
+            # Persiste valores-base fixos no cadastro do colaborador.
+            f.vale_transporte=(vale_transporte if vt_optante else 0)
+            f.vale_refeicao=(vale_refeicao if vr_optante else 0)
+            f.vale_alimentacao=(vale_alimentacao if va_optante else 0)
+            f.premio_produtividade=(premio_base if pp_optante else 0)
+            f.vale_gasolina=(vale_gasolina if vg_optante else 0)
+            f.cesta_natal=(cesta_natal if cn_optante else 0)
         salvos+=1
     db.session.commit()
     return jsonify({'ok':True,'competencia':comp,'salvos':salvos})
