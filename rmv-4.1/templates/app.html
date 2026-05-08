@@ -346,7 +346,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     <label>Navegação rápida</label>
     <div class="mobile-nav-scroller" id="mobile-nav-scroller">
       <button type="button" class="mobile-nav-btn on" data-nav="dashboard" onclick="navFromMobile('dashboard')">Dashboard</button>
-      <button type="button" class="mobile-nav-btn" data-nav="faturamento" onclick="navFromMobile('faturamento')">Faturamento</button>
       <button type="button" class="mobile-nav-btn" data-nav="pagamento-salario" onclick="navFromMobile('pagamento-salario')">Salarios</button>
       <button type="button" class="mobile-nav-btn" data-nav="clientes" onclick="navFromMobile('clientes')">Clientes</button>
       <button type="button" class="mobile-nav-btn" data-nav="rh" onclick="navFromMobile('rh')">RH</button>
@@ -385,26 +384,6 @@ document.addEventListener('DOMContentLoaded',()=>{
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
             <span class="nav-label">Dashboard</span>
           </a>
-        </div>
-      </div>
-
-      <div class="nav-module" id="mod-financeiro">
-        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-financeiro')">
-          <span class="mod-icon">💰</span><span class="module-label">Finanças</span><span class="module-caret">▾</span>
-        </button>
-        <div class="module-panel">
-          <a class="nav-item lv2" data-nav="financeiro" onclick="nav('financeiro',this)"><span class="nav-label">Visão Geral</span></a>
-          <button class="nav-item lv2 nav-expand" type="button" onclick="toggleSidebarSublevel('subnav-financeiro',this)"><span class="nav-label">Operações Financeiras</span><span class="module-caret">▸</span></button>
-          <div id="subnav-financeiro" class="subnav-lv3" style="display:none">
-            <a class="nav-item sub lv3" data-nav="faturamento" onclick="nav('faturamento',this)"><span class="nav-label">Faturamento</span></a>
-            <a class="nav-item sub lv3" data-nav="pagamento-salario" onclick="nav('pagamento-salario',this)"><span class="nav-label">Pagamento de Salario</span></a>
-            <a class="nav-item sub lv3" data-nav="despesas" onclick="nav('despesas',this)"><span class="nav-label">Despesas</span></a>
-            <a class="nav-item sub lv3" data-nav="fluxo-caixa" onclick="nav('fluxo-caixa',this)"><span class="nav-label">Fluxo de Caixa</span></a>
-            <a class="nav-item sub lv3" data-nav="contas" onclick="nav('contas',this)"><span class="nav-label">Contas a Pagar/Receber</span></a>
-            <a class="nav-item sub lv3" data-nav="relatorios" onclick="nav('relatorios',this)"><span class="nav-label">Relatorios</span></a>
-            <a class="nav-item sub lv3" data-nav="conciliacao" onclick="nav('conciliacao',this)"><span class="nav-label">Conciliacao OFX</span></a>
-            <a class="nav-item sub lv3" data-nav="cobrancas" onclick="nav('cobrancas',this)"><span class="nav-label">Regua de Cobranca</span></a>
-          </div>
         </div>
       </div>
 
@@ -3089,14 +3068,9 @@ function _sidebarFindNavItem(id){
 
 function sidebarSyncActiveContext(activeId){
   const item=_sidebarFindNavItem(activeId);
-  const subFin=document.getElementById('subnav-financeiro');
   if(item){
     const mod=item.closest('.nav-module');
     if(mod) mod.classList.add('open');
-  }
-  if(['financeiro','faturamento','despesas','fluxo-caixa','contas','relatorios','conciliacao','cobrancas'].includes(activeId)){
-    toggleSidebarModule('mod-financeiro',true);
-    if(subFin) subFin.style.display=activeId==='financeiro'?'none':'block';
   }
   document.querySelectorAll('.nav-module').forEach(mod=>{
     mod.classList.toggle('active',!!mod.querySelector('.nav-item.on'));
@@ -3376,41 +3350,23 @@ function nav(id,el,force=false){
   if(document.getElementById('pg-assinaturas')?.classList.contains('on') && id!=='assinaturas'){
     _asiRestoreSidebar();
   }
+
+  const rotasFinanceiras=['financeiro','faturamento','historico','nova-medicao','despesas','fluxo-caixa','contas','relatorios','conciliacao','cobrancas'];
+  if(rotasFinanceiras.includes(id)){
+    alert('A área Financeira foi desativada neste programa. Use apenas RH, Clientes e Pagamento de Salário.');
+    return;
+  }
+
   if(!force && hasUnsavedChanges()){
     const ok=confirm('Existem alterações não salvas. Deseja sair desta página mesmo assim?');
     if(!ok) return;
     markPageClean();
     MODAL_FORM_IDS.forEach(setModalClean);
   }
-  // Lógica especial para Financeiro e subabas
-  const isFinanceiroParent = id==='financeiro';
-  const subabasFinanceiro = ['faturamento','despesas','fluxo-caixa','contas','relatorios','conciliacao','cobrancas'];
-  if(isFinanceiroParent){
-    document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
-    document.getElementById('pg-financeiro').classList.add('on');
-    document.getElementById('subnav-financeiro').style.display='block';
-    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));
-    if(el)el.classList.add('on');
-    sidebarSyncActiveContext('financeiro');
-    return;
-  }
-  if(subabasFinanceiro.includes(id)){
-    document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
-    document.getElementById('pg-'+id).classList.add('on');
-    document.getElementById('subnav-financeiro').style.display='block';
-    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));
-    const navFinanceiro = document.querySelector('.nav-item[data-nav="financeiro"]');
-    if(navFinanceiro) navFinanceiro.classList.add('on');
-    if(el)el.classList.add('on');
-    sidebarSyncActiveContext(id);
-    return;
-  }
+
   // Lógica padrão
-  const isFaturamentoParent=id==='faturamento';
-  const targetId=isFaturamentoParent?'nova-medicao':id;
-  const areaOkFaturamento=(USER_AREAS.includes('medicoes')||USER_AREAS.includes('historico')||USER_AREAS.includes('nova-medicao'));
-  const liberadoHistorico = force && id==='nova-medicao' && USER_AREAS.includes('historico');
-  if(P!=='dono' && USER_AREAS.length && !USER_AREAS.includes(id) && !(isFaturamentoParent && areaOkFaturamento) && id!=='dashboard' && !liberadoHistorico){
+  const targetId=id;
+  if(P!=='dono' && USER_AREAS.length && !USER_AREAS.includes(id) && id!=='dashboard'){
     alert('Seu usuário não tem acesso a esta área.');
     return;
   }
@@ -3419,7 +3375,7 @@ function nav(id,el,force=false){
   document.getElementById('pg-'+targetId).classList.add('on');
   ativarSubAbaPagina(targetId);
   if(el)el.classList.add('on');
-  const navMobile=((targetId==='nova-medicao'||targetId==='historico')?'faturamento':id);
+  const navMobile=id;
   document.querySelectorAll('.mobile-nav-btn').forEach(btn=>btn.classList.toggle('on',btn.dataset.nav===navMobile));
   const activeMobileBtn=document.querySelector(`.mobile-nav-btn[data-nav="${navMobile}"]`);
   if(activeMobileBtn) activeMobileBtn.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});
@@ -3427,7 +3383,6 @@ function nav(id,el,force=false){
     renderCli();
     if(_cliSubtab==='contratos') renderContratosCli();
   }
-  if(targetId==='historico')renderHist();
   if(targetId==='empresas')renderEmps();
   if(targetId==='usuarios')renderUsr();
   if(targetId==='config')loadConfig();
@@ -3443,15 +3398,8 @@ function nav(id,el,force=false){
   if(targetId==='beneficios'){carregarBeneficiosMensais();carregarConfigAlertaBeneficios();}
   if(targetId==='pagamento-salario'){rhSalariosIniciarPagina();}
   if(targetId==='sst')fillSSTFuncionarios();
-  if(targetId==='nova-medicao'){loadProxNum(); onEmpSel(); loadFaturamentoAlert();}
-  // Esconder subnav financeiro se sair da área financeira
-  if(!subabasFinanceiro.includes(id) && !isFinanceiroParent){
-    document.getElementById('subnav-financeiro').style.display='none';
-  }
   if(targetId==='rh-digital')initRHDigital();
   if(targetId==='assinaturas')initAssinaturas();
-  if(targetId==='conciliacao')concInicializar();
-  if(targetId==='cobrancas')cobLogCarregar();
   sidebarSyncActiveContext(id);
 }
 
@@ -3563,7 +3511,6 @@ function rhSetSubAba(tab,btn){
 }
 
 async function abrirDashboardDestino(destino,empresaId=null){
-  const navFaturamento=document.querySelector('.nav-item[data-nav="faturamento"]');
   if(destino==='clientes'){
     nav('clientes',document.querySelector('[onclick*=clientes]'));
     const fe=document.getElementById('fe');
@@ -3576,11 +3523,11 @@ async function abrirDashboardDestino(destino,empresaId=null){
     return;
   }
   if(destino==='historico'){
-    nav('historico',navFaturamento,true);
+    alert('A navegação para Histórico financeiro foi desativada neste programa.');
     return;
   }
   if(destino==='nova-medicao'){
-    nav('nova-medicao',navFaturamento,true);
+    alert('A navegação para Medições/Faturamento foi desativada neste programa.');
     return;
   }
   if(destino==='beneficios'){
