@@ -1069,6 +1069,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div id="st-rh" class="st"></div>
       <div id="rh-subabas" class="subaba-blocos rh-subabas">
         <button type="button" id="rh-subtab-funcionarios" class="subaba-bloco on" onclick="rhSetSubAba('funcionarios',this)">Funcionários</button>
+        <button type="button" id="rh-subtab-ferias-gestao" class="subaba-bloco" onclick="rhSetSubAba('ferias-gestao',this)">Gestão de Férias</button>
         <button type="button" id="rh-subtab-exportar" class="subaba-bloco" onclick="rhSetSubAba('exportar',this)">Exportar colaboradores ativos</button>
         <button type="button" id="rh-subtab-jornada" class="subaba-bloco" onclick="rhSetSubAba('jornada',this)">Jornadas e Geofence</button>
         <button type="button" id="rh-subtab-ponto" class="subaba-bloco" onclick="rhSetSubAba('ponto',this)">Gestão de Ponto por Funcionário</button>
@@ -1098,6 +1099,36 @@ document.addEventListener('DOMContentLoaded',()=>{
           <table class="tbl">
             <thead><tr><th>RE</th><th>Nome</th><th>Cargo/Função</th><th>Posto</th><th>Empresa</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody id="tb-func"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card rh-pane" id="rh-pane-ferias-gestao" data-rh-pane="ferias-gestao" style="display:none">
+        <div class="card-header">
+          <span class="card-title">Gestão de Férias</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+            <div class="f" style="min-width:160px">
+              <label>Início do período</label>
+              <input id="rh-ferias-inicio" type="date" onchange="renderRhFerias()">
+            </div>
+            <div class="f" style="min-width:160px">
+              <label>Fim do período</label>
+              <input id="rh-ferias-fim" type="date" onchange="renderRhFerias()">
+            </div>
+            <div class="f" style="min-width:240px">
+              <label>Busca</label>
+              <input id="rh-ferias-busca" placeholder="Nome, RE, função ou empresa" oninput="renderRhFerias()">
+            </div>
+            <button class="btn b-gh b-sm" type="button" onclick="rhFeriasSetMesAtual()">Mês atual</button>
+            <button class="btn b-gh b-sm" type="button" onclick="rhFeriasLimparFiltros()">Limpar filtros</button>
+            <button class="btn b-ghv b-sm" type="button" onclick="renderRhFerias()">Atualizar</button>
+          </div>
+        </div>
+        <div id="rh-ferias-res" class="hint" style="margin:0 12px 8px 12px"></div>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr><th>RE</th><th>Colaborador</th><th>Função</th><th>Empresa</th><th>Período de férias</th><th>Status</th></tr></thead>
+            <tbody id="rh-ferias-tb"></tbody>
           </table>
         </div>
       </div>
@@ -3507,7 +3538,7 @@ function rhSalariosIniciarPagina(){
 }
 
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','exportar','jornada','ponto','painel-dia','envio','assinaturas'];
+  const tabs=['funcionarios','ferias-gestao','exportar','jornada','ponto','painel-dia','envio','assinaturas'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
     p.style.display=(p.dataset.rhPane===rhSubAba)?'block':'none';
@@ -3515,6 +3546,113 @@ function rhSetSubAba(tab,btn){
   Array.from(document.querySelectorAll('#rh-subabas .subaba-bloco')).forEach(b=>b.classList.remove('on'));
   const alvo=btn || document.getElementById('rh-subtab-'+rhSubAba);
   if(alvo) alvo.classList.add('on');
+  if(rhSubAba==='ferias-gestao'){
+    rhFeriasEnsurePeriodoPadrao();
+    renderRhFerias();
+  }
+}
+
+function rhFeriasFmtBr(v){
+  if(!v) return '—';
+  const m=String(v).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return v;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+function rhFeriasParse(v){
+  if(!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+  return new Date(v+'T00:00:00');
+}
+
+function rhFeriasSetMesAtual(){
+  const ini=document.getElementById('rh-ferias-inicio');
+  const fim=document.getElementById('rh-ferias-fim');
+  const hoje=new Date();
+  const ano=hoje.getFullYear();
+  const mes=hoje.getMonth();
+  const primeiro=new Date(ano,mes,1);
+  const ultimo=new Date(ano,mes+1,0);
+  if(ini) ini.value=`${primeiro.getFullYear()}-${String(primeiro.getMonth()+1).padStart(2,'0')}-${String(primeiro.getDate()).padStart(2,'0')}`;
+  if(fim) fim.value=`${ultimo.getFullYear()}-${String(ultimo.getMonth()+1).padStart(2,'0')}-${String(ultimo.getDate()).padStart(2,'0')}`;
+  renderRhFerias();
+}
+
+function rhFeriasEnsurePeriodoPadrao(){
+  const ini=document.getElementById('rh-ferias-inicio');
+  const fim=document.getElementById('rh-ferias-fim');
+  if(!ini || !fim) return;
+  if(!ini.value && !fim.value){
+    rhFeriasSetMesAtual();
+  }
+}
+
+function rhFeriasLimparFiltros(){
+  const ini=document.getElementById('rh-ferias-inicio');
+  const fim=document.getElementById('rh-ferias-fim');
+  const busca=document.getElementById('rh-ferias-busca');
+  if(ini) ini.value='';
+  if(fim) fim.value='';
+  if(busca) busca.value='';
+  renderRhFerias();
+}
+
+function rhFeriasNoPeriodo(f,dtIni,dtFim){
+  const fi=rhFeriasParse(f.ferias_inicio||'');
+  const ff=rhFeriasParse(f.ferias_fim||'');
+  const st=((f.status||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''));
+  const ehFeriasStatus=(st==='ferias');
+  if(!dtIni && !dtFim){
+    return ehFeriasStatus || (!!fi && !!ff);
+  }
+  if(!fi || !ff){
+    return false;
+  }
+  const ini=dtIni || new Date('1900-01-01T00:00:00');
+  const fim=dtFim || new Date('2999-12-31T00:00:00');
+  return fi<=fim && ff>=ini;
+}
+
+async function renderRhFerias(){
+  const tb=document.getElementById('rh-ferias-tb');
+  const res=document.getElementById('rh-ferias-res');
+  if(!tb) return;
+  if(!Array.isArray(funcs) || !funcs.length){
+    funcs=await api('/api/funcionarios');
+  }
+  const iniVal=(document.getElementById('rh-ferias-inicio')?.value||'').trim();
+  const fimVal=(document.getElementById('rh-ferias-fim')?.value||'').trim();
+  const busca=((document.getElementById('rh-ferias-busca')?.value)||'').trim().toLowerCase();
+  const dtIni=rhFeriasParse(iniVal);
+  const dtFim=rhFeriasParse(fimVal);
+  const lista=(Array.isArray(funcs)?funcs:[]).filter(f=>{
+    if(!rhFeriasNoPeriodo(f,dtIni,dtFim)) return false;
+    if(!busca) return true;
+    const emp=emps.find(e=>String(e.id)===String(f.empresa_id||''));
+    const hay=[f.nome,f.re,f.funcao,f.cargo,emp?.nome,f.status].map(v=>(v||'').toString().toLowerCase()).join(' ');
+    return hay.includes(busca);
+  }).sort((a,b)=>((a.nome||'').localeCompare((b.nome||''),'pt-BR')));
+
+  if(!lista.length){
+    tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:24px;color:#999">Nenhum colaborador em férias para os filtros selecionados.</td></tr>';
+    if(res) res.textContent='0 colaborador(es) em férias.';
+    return;
+  }
+
+  tb.innerHTML=lista.map(f=>{
+    const emp=emps.find(e=>String(e.id)===String(f.empresa_id||''));
+    const perIni=rhFeriasFmtBr(f.ferias_inicio||'');
+    const perFim=rhFeriasFmtBr(f.ferias_fim||'');
+    const perTxt=(perIni!=='—' && perFim!=='—') ? `${perIni} até ${perFim}` : 'Período não informado';
+    return `<tr class="row-clickable" onclick="openModalFunc('editar',${f.id})">
+      <td style="font-weight:700">${f.re||'—'}</td>
+      <td><div style="font-weight:700">${esc(f.nome||'—')}</div><div style="font-size:11px;color:#888">${fmtDoc(f.cpf)||''}</div></td>
+      <td>${esc(f.funcao||f.cargo||'—')}</td>
+      <td>${esc(emp?.nome||'—')}</td>
+      <td>${perTxt}${f.ferias_obs?`<div style="font-size:11px;color:#888">${esc(f.ferias_obs)}</div>`:''}</td>
+      <td><span class="pill p-az">${esc(f.status||'Férias')}</span></td>
+    </tr>`;
+  }).join('');
+  if(res) res.textContent=`${lista.length} colaborador(es) em férias.`;
 }
 
 async function abrirDashboardDestino(destino,empresaId=null){
@@ -4952,6 +5090,7 @@ async function rhFuncionarioAutoSaveFlush(force=false,closeAfter=false){
     pontoFuncs=[...funcs];
     fillSSTFuncionarios();
     renderFuncionarios();
+    if(rhSubAba==='ferias-gestao') renderRhFerias();
   }
 
   _rhFuncAutoLastHash=rhFuncionarioHashPayload(document.getElementById('fid').value||'',payload);
