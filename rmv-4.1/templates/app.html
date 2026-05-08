@@ -1979,7 +1979,12 @@ document.addEventListener('DOMContentLoaded',()=>{
             <span class="card-title">✍ Signatários</span>
             <button class="btn b-sm b-az" onclick="abrirFormSignatario()">+ Adicionar signatário</button>
           </div>
-          <div id="asi-sig-lista"><div class="vazio">Nenhum signatário.</div></div>
+          <div style="margin:0 0 10px 0;display:flex;justify-content:flex-start">
+            <button class="btn b-sm" id="asi-toggle-sig-lista" style="background:#eef6ff;color:#205d8a;border:1px solid #c5d9f0" onclick="toggleAsiSignatariosLista()">Mostrar signatários</button>
+          </div>
+          <div id="asi-sig-lista-wrap" style="display:none">
+            <div id="asi-sig-lista"><div class="vazio">Nenhum signatário.</div></div>
+          </div>
           <!-- form add signatário inline -->
           <div id="asi-sig-form" style="display:none;background:#f5f9ff;border-top:1px solid #e0eaf5;padding:14px">
             <div class="g3">
@@ -8671,7 +8676,7 @@ initTheme();
 init();
 
 // ══ ASSINATURAS ══
-let _asiTipo='funcionario', _asiEnvelopeId=null, _asiFuncionarios=[], _asiEnvelopeArquivos=[], _asiPreviewArqId=null, _asiArquivosExpanded=false;
+let _asiTipo='funcionario', _asiEnvelopeId=null, _asiFuncionarios=[], _asiEnvelopeArquivos=[], _asiPreviewArqId=null, _asiArquivosExpanded=false, _asiSignatariosExpanded=false;
 let _asiNomeAssinadoPadrao='documento ASSINADO.pdf';
 
 function initAssinaturas(){
@@ -8800,6 +8805,7 @@ async function recarregarDetalheEnvelope(){
           </tr>`).join('')}
         </tbody></table></div>`;
     }
+      atualizarToggleAsiSignatarios();
     _carregarStampConfig(env);
     atualizarGateCarimbo(env);
     // Botões de ação conforme status
@@ -8854,6 +8860,7 @@ function fecharDetalheEnvelope(){
   _asiEnvelopeId=null;
   _asiPreviewArqId=null;
   _asiArquivosExpanded=false;
+  _asiSignatariosExpanded=false;
   document.getElementById('asi-list-panel').style.display='';
   document.getElementById('asi-detail-panel').style.display='none';
   document.getElementById('asi-sig-form').style.display='none';
@@ -8873,6 +8880,22 @@ function atualizarToggleAsiArquivos(){
 function toggleAsiArquivosLista(){
   _asiArquivosExpanded=!_asiArquivosExpanded;
   atualizarToggleAsiArquivos();
+}
+
+function atualizarToggleAsiSignatarios(){
+  const wrap=document.getElementById('asi-sig-lista-wrap');
+  const btn=document.getElementById('asi-toggle-sig-lista');
+  const hasSignatarios=document.getElementById('asi-sig-lista') && !document.getElementById('asi-sig-lista').textContent.includes('Nenhum signatário adicionado.');
+  if(wrap) wrap.style.display=(hasSignatarios && _asiSignatariosExpanded)?'block':'none';
+  if(btn){
+    btn.style.display=hasSignatarios?'':'none';
+    btn.textContent=_asiSignatariosExpanded?'Ocultar signatários':'Mostrar signatários';
+  }
+}
+
+function toggleAsiSignatariosLista(){
+  _asiSignatariosExpanded=!_asiSignatariosExpanded;
+  atualizarToggleAsiSignatarios();
 }
 
 function abrirNovoEnvelope(){
