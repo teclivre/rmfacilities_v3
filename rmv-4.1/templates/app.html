@@ -1964,10 +1964,13 @@ document.addEventListener('DOMContentLoaded',()=>{
             <iframe id="asi-preview-frame" class="asi-preview-frame" title="Prévia do arquivo"></iframe>
             <div id="asi-preview-list" class="asi-preview-list"><div class="vazio" style="padding:10px">Nenhum arquivo para pré-visualizar.</div></div>
           </div>
-          <div style="margin-top:10px;display:flex;justify-content:flex-end">
+          <div style="margin-top:10px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
+            <button class="btn b-sm" id="asi-toggle-arq-lista" style="background:#eef6ff;color:#205d8a;border:1px solid #c5d9f0" onclick="toggleAsiArquivosLista()">Mostrar tabela de arquivos</button>
             <button class="btn b-sm b-az" onclick="document.getElementById('inp-arq-upload').click()">+ Anexar mais arquivos</button>
           </div>
-          <div id="asi-arq-lista"><div class="vazio">Nenhum arquivo.</div></div>
+          <div id="asi-arq-lista-wrap" style="display:none;margin-top:10px">
+            <div id="asi-arq-lista"><div class="vazio">Nenhum arquivo.</div></div>
+          </div>
         </div>
 
         <!-- Signatários -->
@@ -8668,7 +8671,7 @@ initTheme();
 init();
 
 // ══ ASSINATURAS ══
-let _asiTipo='funcionario', _asiEnvelopeId=null, _asiFuncionarios=[], _asiEnvelopeArquivos=[], _asiPreviewArqId=null;
+let _asiTipo='funcionario', _asiEnvelopeId=null, _asiFuncionarios=[], _asiEnvelopeArquivos=[], _asiPreviewArqId=null, _asiArquivosExpanded=false;
 let _asiNomeAssinadoPadrao='documento ASSINADO.pdf';
 
 function initAssinaturas(){
@@ -8771,6 +8774,7 @@ async function recarregarDetalheEnvelope(){
       ativarDragArquivosEnvelope();
     }
     _asiEnvelopeArquivos=Array.isArray(env.arquivos)?env.arquivos:[];
+    atualizarToggleAsiArquivos();
     renderAsiArquivoPreview();
     // Signatários
     const sigBox=document.getElementById('asi-sig-lista');
@@ -8849,9 +8853,26 @@ async function salvarNomeDocumentoAssinado(){
 function fecharDetalheEnvelope(){
   _asiEnvelopeId=null;
   _asiPreviewArqId=null;
+  _asiArquivosExpanded=false;
   document.getElementById('asi-list-panel').style.display='';
   document.getElementById('asi-detail-panel').style.display='none';
   document.getElementById('asi-sig-form').style.display='none';
+}
+
+function atualizarToggleAsiArquivos(){
+  const wrap=document.getElementById('asi-arq-lista-wrap');
+  const btn=document.getElementById('asi-toggle-arq-lista');
+  const hasArquivos=Array.isArray(_asiEnvelopeArquivos) && _asiEnvelopeArquivos.length>0;
+  if(wrap) wrap.style.display=(hasArquivos && _asiArquivosExpanded)?'block':'none';
+  if(btn){
+    btn.style.display=hasArquivos?'':'none';
+    btn.textContent=_asiArquivosExpanded?'Ocultar tabela de arquivos':'Mostrar tabela de arquivos';
+  }
+}
+
+function toggleAsiArquivosLista(){
+  _asiArquivosExpanded=!_asiArquivosExpanded;
+  atualizarToggleAsiArquivos();
 }
 
 function abrirNovoEnvelope(){
