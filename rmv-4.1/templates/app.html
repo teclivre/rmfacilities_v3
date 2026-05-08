@@ -2474,7 +2474,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
       <div class="brow" style="margin-top:6px">
         <button class="btn b-ci" onclick="closeModal('func')">Cancelar</button>
-        <button class="btn b-az" onclick="salvarFuncionario()">Salvar funcionário</button>
+        <span style="font-size:12px;color:#5f7590;align-self:center">Auto save ativo nesta tela</span>
       </div>
     </div>
   </div>
@@ -3105,6 +3105,7 @@ async function init(){
   const ass1=document.getElementById('ass1');
   if(ass1) ass1.value=(typeof N==='string' ? N : '');
   try{ await loadProxNum(); }catch(e){ console.error('Falha ao carregar próximo número',e); }
+  rhFuncionarioBindAutoSave();
   montarSubAbasBloco();
   ativarSubAbaPagina('dashboard');
 }
@@ -4190,6 +4191,9 @@ async function openModal(modo,id){
 }
 
 function closeModal(t,force=false){
+  if(t==='func'){
+    if(_rhFuncAutoTimer){ clearTimeout(_rhFuncAutoTimer); _rhFuncAutoTimer=null; }
+  }
   if(!force && MODAL_FORM_IDS.includes(t) && _modalDirty[t]){
     const ok=confirm('Existem alterações não salvas. Deseja fechar mesmo assim?');
     if(!ok) return;
@@ -4796,11 +4800,151 @@ function areaChecksUsuario(sel){
     const row=document.createElement('label');
     row.className='areas-item';
     row.innerHTML=`<input type="checkbox" id="${id}" ${sel.includes(a)?'checked':''}><span>${a.toUpperCase()}</span>`;
+    const cb=row.querySelector('input');
+    if(cb) cb.addEventListener('change',rhFuncionarioAutoSaveSchedule);
     box.appendChild(row);
   });
 }
 
+let _rhFuncAutoTimer=null;
+let _rhFuncAutoInflight=false;
+let _rhFuncAutoHydrating=false;
+let _rhFuncAutoLastHash='';
+let _rhFuncAutoBound=false;
+
+function rhFuncionarioHashPayload(id,payload){
+  return JSON.stringify({id:id||'',payload:payload||{}});
+}
+
+function rhFuncionarioMontarPayload(requireNome=false){
+  const nome=document.getElementById('fnome').value.trim();
+  if(requireNome && !nome) return null;
+  const areas=AREAS.filter(a=>document.getElementById('fa-'+a)?.checked);
+  return {
+    re:parseInt(document.getElementById('fre').value)||null,
+    nome,
+    cpf:document.getElementById('fcpf').value,
+    email:document.getElementById('femail').value,
+    telefone:composeIntlPhone(),
+    cargo:document.getElementById('fcargo').value,
+    funcao:document.getElementById('ffuncao').value,
+    cbo:document.getElementById('fcbo').value,
+    setor:document.getElementById('fsetor').value,
+    empresa_id:parseInt(document.getElementById('femp').value)||null,
+    data_admissao:document.getElementById('fadmissao').value,
+    tipo_contrato:document.getElementById('ftipo-contrato').value,
+    jornada:document.getElementById('fjornada').value,
+    status:document.getElementById('fstatus').value,
+    posto_operacional:(document.getElementById('fposto').value||'').trim(),
+    banco_codigo:(document.getElementById('fbanco-codigo').value||'').replace(/\D/g,'').slice(0,3),
+    banco_nome:(document.getElementById('fbanco-nome').value||'').trim(),
+    banco_agencia:(document.getElementById('fbanco-agencia').value||'').trim(),
+    banco_conta:(document.getElementById('fbanco-conta').value||'').trim(),
+    banco_tipo_conta:(document.getElementById('fbanco-tipo').value||'').trim(),
+    banco_pix:(document.getElementById('fbanco-pix').value||'').trim(),
+    cep:document.getElementById('fcep').value,
+    endereco:(document.getElementById('fend').value||'').trim(),
+    endereco_numero:(document.getElementById('fnum-end').value||'').trim(),
+    endereco_complemento:(document.getElementById('fcompl').value||'').trim(),
+    endereco_bairro:(document.getElementById('fbairro').value||'').trim(),
+    cidade:(document.getElementById('fcidade').value||'').trim(),
+    estado:(document.getElementById('festado').value||'').trim().toUpperCase().slice(0,2),
+    rg:document.getElementById('frg').value,
+    orgao_emissor:document.getElementById('forgao').value,
+    pis:document.getElementById('fpis').value,
+    ctps:document.getElementById('fctps').value,
+    titulo_eleitor:document.getElementById('ftitulo-eleitor').value,
+    cert_reservista:document.getElementById('freservista').value,
+    cnh:document.getElementById('fcnh').value,
+    exame_admissional_data:document.getElementById('fexame-adm').value,
+    docs_admissao_ok:document.getElementById('fdocs-ok').value==='1',
+    docs_admissao_obs:document.getElementById('fdocs-obs').value,
+    obs:document.getElementById('fobs').value,
+    opta_vt:document.getElementById('fopta-vt').checked,
+    opta_vr:document.getElementById('fopta-vr').checked,
+    opta_va:document.getElementById('fopta-va').checked,
+    opta_premio_prod:document.getElementById('fopta-pp').checked,
+    opta_vale_gasolina:document.getElementById('fopta-vg').checked,
+    opta_cesta_natal:document.getElementById('fopta-cn').checked,
+    areas
+  };
+}
+
+function rhFuncionarioBindAutoSave(){
+  if(_rhFuncAutoBound) return;
+  const root=document.getElementById('mod-func');
+  if(!root) return;
+  _rhFuncAutoBound=true;
+  root.querySelectorAll('input,select,textarea').forEach(el=>{
+    if(el.id==='fid' || el.type==='file') return;
+    el.addEventListener('input',rhFuncionarioAutoSaveSchedule);
+    el.addEventListener('change',rhFuncionarioAutoSaveSchedule);
+  });
+}
+
+function rhFuncionarioAutoSaveSchedule(){
+  if(_rhFuncAutoHydrating) return;
+  const modal=document.getElementById('mod-func');
+  if(!modal || !modal.classList.contains('on')) return;
+  if(_rhFuncAutoTimer) clearTimeout(_rhFuncAutoTimer);
+  _rhFuncAutoTimer=setTimeout(()=>{
+    _rhFuncAutoTimer=null;
+    rhFuncionarioAutoSaveFlush(false,false);
+  },900);
+}
+
+async function rhFuncionarioAutoSaveFlush(force=false,closeAfter=false){
+  const nome=(document.getElementById('fnome').value||'').trim();
+  if(!nome){
+    if(force) alert('Nome é obrigatório.');
+    return false;
+  }
+  if(_rhFuncAutoInflight) return false;
+  const id=(document.getElementById('fid').value||'').trim();
+  const payload=rhFuncionarioMontarPayload(true);
+  if(!payload) return false;
+  const hash=rhFuncionarioHashPayload(id,payload);
+  if(!force && hash===_rhFuncAutoLastHash) return true;
+
+  _rhFuncAutoInflight=true;
+  const r=id ? await api('/api/funcionarios/'+id,'PUT',payload) : await api('/api/funcionarios','POST',payload);
+  _rhFuncAutoInflight=false;
+
+  if(r?.erro){
+    showSt('st-rh','Auto save falhou: '+r.erro,true);
+    if(force) alert(r.erro);
+    return false;
+  }
+
+  if(!id && r?.id){
+    document.getElementById('fid').value=r.id;
+    document.getElementById('mod-func-tit').textContent='Editar funcionário';
+  }
+
+  const fid=parseInt(document.getElementById('fid').value||r?.id||0,10)||0;
+  if(fid){
+    const idx=funcs.findIndex(x=>parseInt(x.id,10)===fid);
+    if(idx>=0) funcs[idx]=r;
+    else funcs.push(r);
+    pontoFuncs=[...funcs];
+    fillSSTFuncionarios();
+    renderFuncionarios();
+  }
+
+  _rhFuncAutoLastHash=rhFuncionarioHashPayload(document.getElementById('fid').value||'',payload);
+  setModalClean('func');
+  showSt('st-rh','Funcionário salvo automaticamente.',false);
+
+  if(closeAfter){
+    closeModal('func',true);
+  }
+  return true;
+}
+
 function openModalFunc(modo,id){
+  _rhFuncAutoHydrating=true;
+  if(_rhFuncAutoTimer){ clearTimeout(_rhFuncAutoTimer); _rhFuncAutoTimer=null; }
+  _rhFuncAutoLastHash='';
   document.getElementById('fid').value='';
   ['fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fposto','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
   document.getElementById('fbanco-tipo').value='';
@@ -4816,7 +4960,11 @@ function openModalFunc(modo,id){
   if(!bancosBR.length) carregarBancosBR();
   areaChecks([]);
   if(modo==='editar'&&id){
-    const f=funcs.find(x=>x.id===id); if(!f)return;
+    const f=funcs.find(x=>x.id===id);
+    if(!f){
+      _rhFuncAutoHydrating=false;
+      return;
+    }
     preencherFormFuncionario(f,'Editar funcionário');
   } else {
     document.getElementById('mod-func-tit').textContent='Novo funcionário';
@@ -4826,6 +4974,8 @@ function openModalFunc(modo,id){
   }
   setModalClean('func');
   document.getElementById('mod-func').classList.add('on');
+  _rhFuncAutoHydrating=false;
+  _rhFuncAutoLastHash=rhFuncionarioHashPayload(document.getElementById('fid').value||'',rhFuncionarioMontarPayload(false));
 }
 
 function preencherFormFuncionario(f,titulo='Editar funcionário'){ 
@@ -5098,70 +5248,7 @@ async function buscarFuncionarioPorCPF(){
 }
 
 async function salvarFuncionario(){
-  const nome=document.getElementById('fnome').value.trim();
-  if(!nome){alert('Nome é obrigatório.');return;}
-  const id=document.getElementById('fid').value;
-  const areas=AREAS.filter(a=>document.getElementById('fa-'+a)?.checked);
-  const d={
-    re:parseInt(document.getElementById('fre').value)||null,
-    nome,
-    cpf:document.getElementById('fcpf').value,
-    email:document.getElementById('femail').value,
-    telefone:composeIntlPhone(),
-    cargo:document.getElementById('fcargo').value,
-    funcao:document.getElementById('ffuncao').value,
-    cbo:document.getElementById('fcbo').value,
-    setor:document.getElementById('fsetor').value,
-    empresa_id:parseInt(document.getElementById('femp').value)||null,
-    data_admissao:document.getElementById('fadmissao').value,
-    tipo_contrato:document.getElementById('ftipo-contrato').value,
-    jornada:document.getElementById('fjornada').value,
-    status:document.getElementById('fstatus').value,
-    posto_operacional:(document.getElementById('fposto').value||'').trim(),
-    banco_codigo:(document.getElementById('fbanco-codigo').value||'').replace(/\D/g,'').slice(0,3),
-    banco_nome:(document.getElementById('fbanco-nome').value||'').trim(),
-    banco_agencia:(document.getElementById('fbanco-agencia').value||'').trim(),
-    banco_conta:(document.getElementById('fbanco-conta').value||'').trim(),
-    banco_tipo_conta:(document.getElementById('fbanco-tipo').value||'').trim(),
-    banco_pix:(document.getElementById('fbanco-pix').value||'').trim(),
-    cep:document.getElementById('fcep').value,
-    endereco:(document.getElementById('fend').value||'').trim(),
-    endereco_numero:(document.getElementById('fnum-end').value||'').trim(),
-    endereco_complemento:(document.getElementById('fcompl').value||'').trim(),
-    endereco_bairro:(document.getElementById('fbairro').value||'').trim(),
-    cidade:(document.getElementById('fcidade').value||'').trim(),
-    estado:(document.getElementById('festado').value||'').trim().toUpperCase().slice(0,2),
-    rg:document.getElementById('frg').value,
-    orgao_emissor:document.getElementById('forgao').value,
-    pis:document.getElementById('fpis').value,
-    ctps:document.getElementById('fctps').value,
-    titulo_eleitor:document.getElementById('ftitulo-eleitor').value,
-    cert_reservista:document.getElementById('freservista').value,
-    cnh:document.getElementById('fcnh').value,
-    exame_admissional_data:document.getElementById('fexame-adm').value,
-    docs_admissao_ok:document.getElementById('fdocs-ok').value==='1',
-    docs_admissao_obs:document.getElementById('fdocs-obs').value,
-    obs:document.getElementById('fobs').value,
-    opta_vt:document.getElementById('fopta-vt').checked,
-    opta_vr:document.getElementById('fopta-vr').checked,
-    opta_va:document.getElementById('fopta-va').checked,
-    opta_premio_prod:document.getElementById('fopta-pp').checked,
-    opta_vale_gasolina:document.getElementById('fopta-vg').checked,
-    opta_cesta_natal:document.getElementById('fopta-cn').checked,
-    areas
-  };
-  const r=id ? await api('/api/funcionarios/'+id,'PUT',d) : await api('/api/funcionarios','POST',d);
-  if(r?.erro){
-    showSt('st-rh',r.erro,true);
-    alert(r.erro);
-    return;
-  }
-  funcs=await api('/api/funcionarios');
-  pontoFuncs=[...funcs];
-  fillSSTFuncionarios();
-  closeModal('func',true);
-  renderFuncionarios();
-  showSt('st-rh','Funcionário salvo com sucesso.',false);
+  await rhFuncionarioAutoSaveFlush(true,true);
 }
 
 function rhJornadaFmtMin(min){
