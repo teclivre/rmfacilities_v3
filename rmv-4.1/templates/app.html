@@ -1929,7 +1929,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               </div>
               <div class="f" style="display:flex;align-items:flex-end;gap:8px">
                 <button class="btn b-gh b-sm" onclick="ferCarregar()">&#128269; Carregar</button>
-                <button class="btn b-az b-sm" onclick="ferImportarNacionais()">&#11015; Importar nacionais do ano</button>
+                <button class="btn b-az b-sm" onclick="ferAtualizarNacionais()">&#10227; Atualizar nacionais do ano</button>
               </div>
             </div>
             <!-- Formulário de adição -->
@@ -1947,6 +1947,13 @@ document.addEventListener('DOMContentLoaded',()=>{
                 <div class="f"><label>Município (se municipal)</label><input id="fer-municipio" placeholder="Ex: São Paulo" maxlength="100"></div>
                 <div class="f"><label>Estado (UF)</label><input id="fer-estado" placeholder="SP" maxlength="2" style="width:60px"></div>
               </div>
+              <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px;flex-wrap:wrap">
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#9fb3c8">
+                  <input id="fer-aplicar-selecionados" type="checkbox" checked>
+                  Municipal: aplicar aos funcionários selecionados na aba "Colaboradores Ativos"
+                </label>
+                <span id="fer-sel-info" style="font-size:12px;color:#7ecfff">Nenhum funcionário selecionado</span>
+              </div>
               <div class="brow" style="justify-content:flex-start;margin-top:8px">
                 <button class="btn b-vd b-sm" onclick="ferSalvar()">&#128190; Salvar feriado</button>
               </div>
@@ -1955,7 +1962,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div class="tbl-wrap">
               <table class="tbl">
                 <thead><tr>
-                  <th>Data</th><th>Descrição</th><th>Tipo</th><th>Município</th><th>Estado</th><th style="width:60px">Ações</th>
+                  <th>Data</th><th>Descrição</th><th>Tipo</th><th>Município</th><th>Estado</th><th>Aplicação</th><th style="width:60px">Ações</th>
                 </tr></thead>
                 <tbody id="tb-feriados"></tbody>
               </table>
@@ -7335,6 +7342,7 @@ function atualizarContadorSel(){
     chkAll.checked=lista.length>0&&lista.every(it=>benSelecionados.has(it.funcionario_id));
     chkAll.indeterminate=!chkAll.checked&&lista.some(it=>benSelecionados.has(it.funcionario_id));
   }
+  ferAtualizarInfoSelecionados();
 }
 
 function toggleBenSel(fid,checked){
@@ -7444,14 +7452,22 @@ async function ferCarregar(){
   const j=await r.json();
   if(!j.ok){showSt('st-benef',j.erro||'Erro ao carregar feriados.',true);return;}
   _feriadosData=j.itens||[];
+  ferAtualizarInfoSelecionados();
   ferRenderTabela();
+}
+
+function ferAtualizarInfoSelecionados(){
+  const el=document.getElementById('fer-sel-info');
+  if(!el) return;
+  const qtd=benSelecionados?.size||0;
+  el.textContent=qtd>0?`${qtd} funcionário(s) selecionado(s)`:'Nenhum funcionário selecionado';
 }
 
 function ferRenderTabela(){
   const tb=document.getElementById('tb-feriados');
   if(!tb) return;
   if(!_feriadosData.length){
-    tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#7a8fa6;padding:18px">Nenhum feriado cadastrado. Use "Importar nacionais" ou adicione manualmente.</td></tr>';
+    tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:#7a8fa6;padding:18px">Nenhum feriado cadastrado. Use "Atualizar nacionais do ano" ou adicione manualmente.</td></tr>';
     return;
   }
   tb.innerHTML=_feriadosData.map(f=>`
@@ -7461,6 +7477,7 @@ function ferRenderTabela(){
       <td><span style="background:${f.tipo==='nacional'?'#1a4a7a':'#3a1a5a'};color:#bde;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700">${f.tipo||''}</span></td>
       <td>${escHtml(f.municipio||'')}</td>
       <td>${escHtml(f.estado||'')}</td>
+      <td>${f.tipo==='municipal' ? ((f.qtd_funcionarios||0)+ ' funcionário(s)') : 'Nacional (todos)'}</td>
       <td><button class="btn b-sm" style="background:#6b1212;color:#ffb3b3;border:1px solid #c0392b;padding:2px 8px" onclick="ferExcluir(${f.id})">&#128465;</button></td>
     </tr>`).join('');
 }
@@ -7471,15 +7488,29 @@ async function ferSalvar(){
   const tipo=document.getElementById('fer-tipo').value;
   const municipio=document.getElementById('fer-municipio').value.trim();
   const estado=document.getElementById('fer-estado').value.trim();
+  const aplicarSelecionados=document.getElementById('fer-aplicar-selecionados')?.checked!==false;
+  const funcionariosSelecionados=[...(benSelecionados||new Set())];
   const st=document.getElementById('fer-status');
   if(!data){st.textContent='Informe a data.';st.style.color='#ffb3b3';return;}
   if(!desc){st.textContent='Informe a descrição.';st.style.color='#ffb3b3';return;}
   if(tipo==='municipal'&&!municipio){st.textContent='Informe o município.';st.style.color='#ffb3b3';return;}
+  if(tipo==='municipal' && aplicarSelecionados && !funcionariosSelecionados.length){
+    st.textContent='Selecione ao menos 1 funcionário na aba Colaboradores Ativos para feriado municipal.';
+    st.style.color='#ffb3b3';
+    return;
+  }
   // converte YYYY-MM-DD -> DD/MM/YYYY para envio
   const [y,m,d]=data.split('-');
   const dataEnvio=`${d}/${m}/${y}`;
   const r=await fetch('/api/feriados',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({data:dataEnvio,descricao:desc,tipo,municipio,estado})});
+    body:JSON.stringify({
+      data:dataEnvio,
+      descricao:desc,
+      tipo,
+      municipio,
+      estado,
+      funcionario_ids:(tipo==='municipal' && aplicarSelecionados) ? funcionariosSelecionados : []
+    })});
   const j=await r.json();
   if(j.ok){
     st.textContent='Feriado salvo com sucesso!';st.style.color='#7ecfff';
@@ -7504,18 +7535,18 @@ async function ferExcluir(id){
   }
 }
 
-async function ferImportarNacionais(){
+async function ferAtualizarNacionais(){
   const ano=document.getElementById('fer-ano').value||new Date().getFullYear();
   const st=document.getElementById('fer-status');
-  st.textContent='Importando...';st.style.color='#7ecfff';
-  const r=await fetch('/api/feriados/importar-nacionais',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({ano:parseInt(ano)})});
+  st.textContent='Atualizando feriados nacionais...';st.style.color='#7ecfff';
+  const r=await fetch('/api/feriados/atualizar-nacionais',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ano:parseInt(ano),substituir:true,incluir_facultativos:true})});
   const j=await r.json();
   if(j.ok){
-    st.textContent=`Importação concluída: ${j.inseridos} inseridos, ${j.ignorados} já existentes.`;
+    st.textContent=`Atualização concluída: ${j.inseridos} inseridos, ${j.atualizados||0} atualizados, ${j.ignorados} sem mudanças.`;
     ferCarregar();
   } else {
-    st.textContent=j.erro||'Erro na importação.';st.style.color='#ffb3b3';
+    st.textContent=j.erro||'Erro na atualização.';st.style.color='#ffb3b3';
   }
 }
 
@@ -7611,7 +7642,7 @@ async function benSalvarResultadoPeriodo(){
   const j=await r.json();
   if(j.ok){
     showSt('st-benef',`Lançamentos salvos para ${j.salvos||0} colaboradores na competência ${j.competencia||''}.`);
-    benCarregarBeneficiosMensais();
+    carregarBeneficiosMensais();
   } else {
     showSt('st-benef',j.erro||'Erro ao salvar.',true);
   }

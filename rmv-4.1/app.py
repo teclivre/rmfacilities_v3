@@ -1206,6 +1206,13 @@ class Feriado(db.Model):
             d['data_fmt']=self.data or ''
         return d
 
+class FeriadoFuncionario(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    feriado_id=db.Column(db.Integer,db.ForeignKey('feriado.id'),nullable=False,index=True)
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False,index=True)
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    __table_args__=(db.UniqueConstraint('feriado_id','funcionario_id',name='uq_feriado_funcionario'),)
+
 class FuncionarioAppSessao(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False)
@@ -11235,7 +11242,19 @@ def api_feriados_listar():
         q=q.filter_by(tipo=tipo)
     q=q.order_by(Feriado.data.asc())
     itens=q.all()
-    return jsonify({'ok':True,'itens':[f.to_dict() for f in itens]})
+    ids=[f.id for f in itens if f.id]
+    mapa_func={}
+    if ids:
+        for vinc in FeriadoFuncionario.query.filter(FeriadoFuncionario.feriado_id.in_(ids)).all():
+            mapa_func.setdefault(vinc.feriado_id,[]).append(vinc.funcionario_id)
+    out=[]
+    for f in itens:
+        d=f.to_dict()
+        fids=mapa_func.get(f.id,[])
+        d['funcionario_ids']=fids
+        d['qtd_funcionarios']=len(fids)
+        out.append(d)
+    return jsonify({'ok':True,'itens':out})
 
 @app.route('/api/feriados',methods=['POST'])
 @lr
@@ -11247,12 +11266,15 @@ def api_feriados_criar():
     municipio=(d.get('municipio') or '').strip()
     estado=(d.get('estado') or '').strip().upper()[:2]
     empresa_id=to_num(d.get('empresa_id')) or None
+    funcionario_ids={int(x) for x in (d.get('funcionario_ids') or []) if str(x).isdigit()}
     if not data_raw:
         return jsonify({'erro':'Data é obrigatória.'}),400
     if not descricao:
         return jsonify({'erro':'Descrição é obrigatória.'}),400
     if tipo not in ('nacional','municipal'):
         return jsonify({'erro':'Tipo inválido. Use nacional ou municipal.'}),400
+    if tipo=='municipal' and not funcionario_ids:
+        return jsonify({'erro':'Para feriado municipal, selecione ao menos 1 funcionário.'}),400
     # normaliza para YYYY-MM-DD
     data_norm=None
     for fmt in ('%d/%m/%Y','%Y-%m-%d','%d-%m-%Y'):
@@ -11270,8 +11292,16 @@ def api_feriados_criar():
     f=Feriado(data=data_norm,descricao=descricao,tipo=tipo,municipio=municipio,estado=estado,
               empresa_id=empresa_id,criado_por=session.get('nome',''))
     db.session.add(f)
+    db.session.flush()
+    if tipo=='municipal':
+        funcs_validos={x.id for x in Funcionario.query.filter(Funcionario.id.in_(list(funcionario_ids))).all()}
+        for fid in funcs_validos:
+            db.session.add(FeriadoFuncionario(feriado_id=f.id,funcionario_id=fid))
     db.session.commit()
-    return jsonify({'ok':True,'feriado':f.to_dict()}),201
+    fd=f.to_dict()
+    fd['funcionario_ids']=sorted(list(funcionario_ids)) if tipo=='municipal' else []
+    fd['qtd_funcionarios']=len(fd['funcionario_ids'])
+    return jsonify({'ok':True,'feriado':fd}),201
 
 @app.route('/api/feriados/<int:fid>',methods=['PUT'])
 @lr
@@ -11283,6 +11313,7 @@ def api_feriados_editar(fid):
     tipo=(d.get('tipo') or f.tipo or 'nacional').strip().lower()
     municipio=(d.get('municipio') or '').strip()
     estado=(d.get('estado') or '').strip().upper()[:2]
+    funcionario_ids={int(x) for x in (d.get('funcionario_ids') or []) if str(x).isdigit()}
     if data_raw:
         data_norm=None
         for fmt in ('%d/%m/%Y','%Y-%m-%d','%d-%m-%Y'):
@@ -11303,49 +11334,112 @@ def api_feriados_editar(fid):
     f.estado=estado
     if 'empresa_id' in d:
         f.empresa_id=to_num(d.get('empresa_id')) or None
+    if f.tipo=='municipal':
+        if not funcionario_ids:
+            return jsonify({'erro':'Para feriado municipal, selecione ao menos 1 funcionário.'}),400
+        FeriadoFuncionario.query.filter_by(feriado_id=f.id).delete()
+        funcs_validos={x.id for x in Funcionario.query.filter(Funcionario.id.in_(list(funcionario_ids))).all()}
+        for func_id in funcs_validos:
+            db.session.add(FeriadoFuncionario(feriado_id=f.id,funcionario_id=func_id))
+    else:
+        FeriadoFuncionario.query.filter_by(feriado_id=f.id).delete()
     db.session.commit()
-    return jsonify({'ok':True,'feriado':f.to_dict()})
+    fd=f.to_dict()
+    fids=[x.funcionario_id for x in FeriadoFuncionario.query.filter_by(feriado_id=f.id).all()]
+    fd['funcionario_ids']=fids
+    fd['qtd_funcionarios']=len(fids)
+    return jsonify({'ok':True,'feriado':fd})
 
 @app.route('/api/feriados/<int:fid>',methods=['DELETE'])
 @lr
 def api_feriados_excluir(fid):
     f=Feriado.query.get_or_404(fid)
+    FeriadoFuncionario.query.filter_by(feriado_id=f.id).delete()
     db.session.delete(f)
     db.session.commit()
     return jsonify({'ok':True})
 
-@app.route('/api/feriados/importar-nacionais',methods=['POST'])
+def _feriados_nacionais_ano(ano,incluir_facultativos=True):
+    from datetime import date,timedelta
+    def _pascoa(y):
+        a=y%19
+        b=y//100
+        c=y%100
+        d=b//4
+        e=b%4
+        f=(b+8)//25
+        g=(b-f+1)//3
+        h=(19*a+b-d-g+15)%30
+        i=c//4
+        k=c%4
+        l=(32+2*e+2*i-h-k)%7
+        m=(a+11*h+22*l)//451
+        mes=(h+l-7*m+114)//31
+        dia=((h+l-7*m+114)%31)+1
+        return date(y,mes,dia)
+
+    base=[
+        (f'{ano}-01-01','Confraternização Universal'),
+        (f'{ano}-04-21','Tiradentes'),
+        (f'{ano}-05-01','Dia do Trabalhador'),
+        (f'{ano}-09-07','Independência do Brasil'),
+        (f'{ano}-10-12','Nossa Senhora Aparecida'),
+        (f'{ano}-11-02','Finados'),
+        (f'{ano}-11-15','Proclamação da República'),
+        (f'{ano}-11-20','Dia da Consciência Negra'),
+        (f'{ano}-12-25','Natal'),
+    ]
+    pascoa=_pascoa(ano)
+    moveis=[
+        ((pascoa-timedelta(days=47)).isoformat(),'Carnaval'),
+        ((pascoa-timedelta(days=2)).isoformat(),'Sexta-feira Santa'),
+    ]
+    if incluir_facultativos:
+        moveis.extend([
+            ((pascoa-timedelta(days=48)).isoformat(),'Carnaval (segunda)'),
+            ((pascoa+timedelta(days=60)).isoformat(),'Corpus Christi'),
+        ])
+    return base+moveis
+
+@app.route('/api/feriados/atualizar-nacionais',methods=['POST'])
 @lr
-def api_feriados_importar_nacionais():
-    """Importa os feriados nacionais fixos do Brasil para o ano informado."""
+def api_feriados_atualizar_nacionais():
+    """Atualiza os feriados nacionais do ano informado (fixos e móveis)."""
     d=request.json or {}
     ano=to_num(d.get('ano'))
+    substituir=to_bool(d.get('substituir',True))
+    incluir_facultativos=to_bool(d.get('incluir_facultativos',True))
     if not ano or ano<2020 or ano>2099:
         from datetime import datetime as _dt
         ano=_dt.now().year
-    feriados_fixos=[
-        ('01-01','Confraternização Universal'),
-        ('04-21','Tiradentes'),
-        ('05-01','Dia do Trabalhador'),
-        ('09-07','Independência do Brasil'),
-        ('10-12','Nossa Senhora Aparecida'),
-        ('11-02','Finados'),
-        ('11-15','Proclamação da República'),
-        ('12-25','Natal'),
-    ]
+
+    if substituir:
+        antigos=Feriado.query.filter(
+            Feriado.tipo=='nacional',
+            Feriado.data.like(f'{ano}-%')
+        ).all()
+        for antigo in antigos:
+            FeriadoFuncionario.query.filter_by(feriado_id=antigo.id).delete()
+            db.session.delete(antigo)
+
+    novos=_feriados_nacionais_ano(ano,incluir_facultativos=incluir_facultativos)
     inseridos=0
     ignorados=0
-    for mes_dia,desc in feriados_fixos:
-        data_norm=f'{ano}-{mes_dia}'
+    atualizados=0
+    for data_norm,desc in novos:
         existente=Feriado.query.filter_by(data=data_norm,tipo='nacional',municipio='').first()
         if existente:
-            ignorados+=1
+            if (existente.descricao or '').strip()!=desc:
+                existente.descricao=desc
+                atualizados+=1
+            else:
+                ignorados+=1
             continue
         f=Feriado(data=data_norm,descricao=desc,tipo='nacional',municipio='',estado='',criado_por=session.get('nome',''))
         db.session.add(f)
         inseridos+=1
     db.session.commit()
-    return jsonify({'ok':True,'ano':ano,'inseridos':inseridos,'ignorados':ignorados})
+    return jsonify({'ok':True,'ano':ano,'inseridos':inseridos,'atualizados':atualizados,'ignorados':ignorados,'substituir':substituir})
 
 # ══════════════════════════════════════════════════════════════
 #  BENEFÍCIOS — CÁLCULO POR PERÍODO
@@ -11395,19 +11489,27 @@ def api_beneficios_calcular_por_periodo():
     # competência = mês da data_inicio
     comp=dt_ini.strftime('%Y-%m')
 
-    # Feriados no período (nacional + municipal)
-    feriados_periodo={
-        row.data for row in Feriado.query.filter(
-            Feriado.data>=dt_ini.isoformat(),
-            Feriado.data<=dt_fim.isoformat()
-        ).all()
-    }
+    feriados_rows=Feriado.query.filter(
+        Feriado.data>=dt_ini.isoformat(),
+        Feriado.data<=dt_fim.isoformat()
+    ).all()
+    feriados_nacionais={f.data for f in feriados_rows if (f.tipo or '').lower()=='nacional'}
+    mun_ids=[f.id for f in feriados_rows if (f.tipo or '').lower()=='municipal']
+    feriados_municipais_por_func={}
+    if mun_ids:
+        vincs=FeriadoFuncionario.query.filter(FeriadoFuncionario.feriado_id.in_(mun_ids)).all()
+        mapa_data={f.id:f.data for f in feriados_rows}
+        for v in vincs:
+            data_ref=mapa_data.get(v.feriado_id)
+            if not data_ref:
+                continue
+            feriados_municipais_por_func.setdefault(v.funcionario_id,set()).add(data_ref)
 
     # Dias do período
     todos_dias=[dt_ini+timedelta(days=i) for i in range(delta)]
 
     # Monta conjunto de dias uteis (seg-sex, excluindo feriados)
-    def _is_util(dt,dias_semana_set=None):
+    def _is_util(dt,funcionario_id,dias_semana_set=None):
         # dt.weekday(): 0=seg,1=ter,...,4=sex,5=sab,6=dom
         if dias_semana_set:
             # dias_semana_set = conjunto de ints 0-6 (weekday)
@@ -11416,7 +11518,10 @@ def api_beneficios_calcular_por_periodo():
         else:
             if dt.weekday()>=5:
                 return False
-        if dt.isoformat() in feriados_periodo:
+        data_iso=dt.isoformat()
+        if data_iso in feriados_nacionais:
+            return False
+        if data_iso in feriados_municipais_por_func.get(funcionario_id,set()):
             return False
         return True
 
@@ -11476,7 +11581,7 @@ def api_beneficios_calcular_por_periodo():
             except Exception:
                 dias_semana_set=None
 
-        dias_calendario=sum(1 for dt in todos_dias if _is_util(dt,dias_semana_set))
+        dias_calendario=sum(1 for dt in todos_dias if _is_util(dt,f.id,dias_semana_set))
 
         # Dias reais de ponto (fechamento ou marcação)
         dias_ponto=0
@@ -11567,7 +11672,9 @@ def api_beneficios_calcular_por_periodo():
         'data_fim':dt_fim.isoformat(),
         'competencia':comp,
         'total_dias':delta,
-        'feriados_periodo':len(feriados_periodo),
+        'feriados_periodo':len(feriados_nacionais),
+        'feriados_nacionais_periodo':len(feriados_nacionais),
+        'feriados_municipais_vinculados':sum(len(v) for v in feriados_municipais_por_func.values()),
         'fonte_usada':fonte,
         'itens':itens,
         'salvos': len(itens) if salvar else 0,
