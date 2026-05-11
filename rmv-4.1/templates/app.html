@@ -1177,22 +1177,24 @@ document.addEventListener('DOMContentLoaded',()=>{
             <label style="margin-top:8px">Descrição</label>
             <input id="rh-jor-desc" placeholder="Ex.: Jornada administrativa com 1h de refeição">
 
-            <label style="margin-top:8px">Dias da semana</label>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px">
-              <label><input type="checkbox" id="rh-jor-dia-1" checked> Seg</label>
-              <label><input type="checkbox" id="rh-jor-dia-2" checked> Ter</label>
-              <label><input type="checkbox" id="rh-jor-dia-3" checked> Qua</label>
-              <label><input type="checkbox" id="rh-jor-dia-4" checked> Qui</label>
-              <label><input type="checkbox" id="rh-jor-dia-5" checked> Sex</label>
-              <label><input type="checkbox" id="rh-jor-dia-6"> Sáb</label>
-              <label><input type="checkbox" id="rh-jor-dia-0"> Dom</label>
+            <label style="margin-top:8px">Grade semanal (totalmente maleável)</label>
+            <div class="brow" style="justify-content:flex-start;gap:8px;margin:6px 0 8px 0">
+              <button class="btn b-gh b-sm" type="button" onclick="rhJornadaAplicarPadraoSegSex()">Padrão seg-sex</button>
+              <button class="btn b-gh b-sm" type="button" onclick="rhJornadaAplicarExemplo6x1()">Exemplo 6x1</button>
             </div>
-
-            <div class="g4" style="margin-top:8px">
-              <div class="f"><label>Entrada</label><input id="rh-jor-ent" type="time" value="08:00"></div>
-              <div class="f"><label>Saída</label><input id="rh-jor-sai" type="time" value="17:48"></div>
-              <div class="f"><label>Início refeição</label><input id="rh-jor-int-ini" type="time" value="12:00"></div>
-              <div class="f"><label>Fim refeição</label><input id="rh-jor-int-fim" type="time" value="13:00"></div>
+            <div class="tbl-wrap" style="max-height:220px;overflow:auto">
+              <table class="tbl" style="min-width:620px">
+                <thead><tr><th>Dia</th><th>Trabalha?</th><th>Entrada</th><th>Saída</th><th>Intervalo (min)</th></tr></thead>
+                <tbody>
+                  <tr><td>Domingo</td><td><input id="rh-jor-d0-ativo" type="checkbox"></td><td><input id="rh-jor-d0-ent" type="time" value="08:00"></td><td><input id="rh-jor-d0-sai" type="time" value="17:48"></td><td><input id="rh-jor-d0-int" type="number" min="0" max="240" value="60"></td></tr>
+                  <tr><td>Segunda</td><td><input id="rh-jor-d1-ativo" type="checkbox" checked></td><td><input id="rh-jor-d1-ent" type="time" value="08:00"></td><td><input id="rh-jor-d1-sai" type="time" value="17:48"></td><td><input id="rh-jor-d1-int" type="number" min="0" max="240" value="60"></td></tr>
+                  <tr><td>Terça</td><td><input id="rh-jor-d2-ativo" type="checkbox" checked></td><td><input id="rh-jor-d2-ent" type="time" value="08:00"></td><td><input id="rh-jor-d2-sai" type="time" value="17:48"></td><td><input id="rh-jor-d2-int" type="number" min="0" max="240" value="60"></td></tr>
+                  <tr><td>Quarta</td><td><input id="rh-jor-d3-ativo" type="checkbox" checked></td><td><input id="rh-jor-d3-ent" type="time" value="08:00"></td><td><input id="rh-jor-d3-sai" type="time" value="17:48"></td><td><input id="rh-jor-d3-int" type="number" min="0" max="240" value="60"></td></tr>
+                  <tr><td>Quinta</td><td><input id="rh-jor-d4-ativo" type="checkbox" checked></td><td><input id="rh-jor-d4-ent" type="time" value="08:00"></td><td><input id="rh-jor-d4-sai" type="time" value="17:48"></td><td><input id="rh-jor-d4-int" type="number" min="0" max="240" value="60"></td></tr>
+                  <tr><td>Sexta</td><td><input id="rh-jor-d5-ativo" type="checkbox" checked></td><td><input id="rh-jor-d5-ent" type="time" value="08:00"></td><td><input id="rh-jor-d5-sai" type="time" value="17:48"></td><td><input id="rh-jor-d5-int" type="number" min="0" max="240" value="60"></td></tr>
+                  <tr><td>Sábado</td><td><input id="rh-jor-d6-ativo" type="checkbox"></td><td><input id="rh-jor-d6-ent" type="time" value="08:00"></td><td><input id="rh-jor-d6-sai" type="time" value="12:00"></td><td><input id="rh-jor-d6-int" type="number" min="0" max="240" value="0"></td></tr>
+                </tbody>
+              </table>
             </div>
 
             <div class="g3" style="margin-top:8px">
@@ -5666,33 +5668,86 @@ function rhJornadaFmtMin(min){
   return `${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;
 }
 
+function rhJornadaGradeLer(){
+  const grade={};
+  for(let d=0; d<=6; d++){
+    grade[String(d)]={
+      ativo:!!document.getElementById(`rh-jor-d${d}-ativo`)?.checked,
+      entrada:(document.getElementById(`rh-jor-d${d}-ent`)?.value||'08:00').trim(),
+      saida:(document.getElementById(`rh-jor-d${d}-sai`)?.value||'17:48').trim(),
+      intervalo_min:Math.max(0,parseInt(document.getElementById(`rh-jor-d${d}-int`)?.value||'0',10)||0),
+    };
+  }
+  return grade;
+}
+
+function rhJornadaGradeAplicar(grade){
+  const g=(grade && typeof grade==='object')?grade:{};
+  for(let d=0; d<=6; d++){
+    const di=g[String(d)]||g[d]||{};
+    const ativo=!!di.ativo;
+    const ent=(di.entrada||'08:00').toString();
+    const sai=(di.saida||'17:48').toString();
+    const inte=Math.max(0,parseInt(di.intervalo_min||0,10)||0);
+    const cb=document.getElementById(`rh-jor-d${d}-ativo`);
+    const iEnt=document.getElementById(`rh-jor-d${d}-ent`);
+    const iSai=document.getElementById(`rh-jor-d${d}-sai`);
+    const iInt=document.getElementById(`rh-jor-d${d}-int`);
+    if(cb) cb.checked=ativo;
+    if(iEnt) iEnt.value=ent;
+    if(iSai) iSai.value=sai;
+    if(iInt) iInt.value=String(inte);
+  }
+}
+
 function rhJornadaDiasSelecionados(){
-  const dias=[];
-  [0,1,2,3,4,5,6].forEach(d=>{
-    if(document.getElementById(`rh-jor-dia-${d}`)?.checked) dias.push(d);
-  });
-  return dias.sort((a,b)=>a-b);
+  const grade=rhJornadaGradeLer();
+  return Object.keys(grade).map(x=>parseInt(x,10)).filter(x=>grade[String(x)]?.ativo).sort((a,b)=>a-b);
 }
 
 function rhJornadaAplicarDias(csv){
   const set=new Set(String(csv||'').split(',').map(x=>parseInt(x,10)).filter(x=>!Number.isNaN(x)));
-  [0,1,2,3,4,5,6].forEach(d=>{
-    const el=document.getElementById(`rh-jor-dia-${d}`);
-    if(el) el.checked=set.has(d);
-  });
+  const grade=rhJornadaGradeLer();
+  for(let d=0; d<=6; d++){
+    if(!grade[String(d)]) grade[String(d)]={entrada:'08:00',saida:'17:48',intervalo_min:60};
+    grade[String(d)].ativo=set.has(d);
+  }
+  rhJornadaGradeAplicar(grade);
+}
+
+function rhJornadaAplicarPadraoSegSex(){
+  const grade={
+    '0':{ativo:false,entrada:'08:00',saida:'17:48',intervalo_min:60},
+    '1':{ativo:true,entrada:'08:00',saida:'17:48',intervalo_min:60},
+    '2':{ativo:true,entrada:'08:00',saida:'17:48',intervalo_min:60},
+    '3':{ativo:true,entrada:'08:00',saida:'17:48',intervalo_min:60},
+    '4':{ativo:true,entrada:'08:00',saida:'17:48',intervalo_min:60},
+    '5':{ativo:true,entrada:'08:00',saida:'17:48',intervalo_min:60},
+    '6':{ativo:false,entrada:'08:00',saida:'12:00',intervalo_min:0},
+  };
+  rhJornadaGradeAplicar(grade);
+}
+
+function rhJornadaAplicarExemplo6x1(){
+  const grade={
+    '0':{ativo:false,entrada:'08:00',saida:'17:48',intervalo_min:60},
+    '1':{ativo:true,entrada:'08:00',saida:'17:00',intervalo_min:60},
+    '2':{ativo:true,entrada:'08:00',saida:'17:00',intervalo_min:60},
+    '3':{ativo:true,entrada:'08:00',saida:'17:00',intervalo_min:60},
+    '4':{ativo:true,entrada:'08:00',saida:'17:00',intervalo_min:60},
+    '5':{ativo:true,entrada:'08:00',saida:'17:00',intervalo_min:60},
+    '6':{ativo:true,entrada:'08:00',saida:'12:00',intervalo_min:0},
+  };
+  rhJornadaGradeAplicar(grade);
 }
 
 function rhJornadaLimparForm(){
   document.getElementById('rh-jor-id').value='';
   document.getElementById('rh-jor-nome').value='';
   document.getElementById('rh-jor-desc').value='';
-  document.getElementById('rh-jor-ent').value='08:00';
-  document.getElementById('rh-jor-sai').value='17:48';
-  document.getElementById('rh-jor-int-ini').value='12:00';
-  document.getElementById('rh-jor-int-fim').value='13:00';
   document.getElementById('rh-jor-tol').value='10';
   document.getElementById('rh-jor-ativo').value='1';
-  rhJornadaAplicarDias('1,2,3,4,5');
+  rhJornadaAplicarPadraoSegSex();
 }
 
 function rhJornadaRenderTabela(){
@@ -5743,13 +5798,30 @@ function rhJornadaEditar(id){
   document.getElementById('rh-jor-id').value=String(j.id||'');
   document.getElementById('rh-jor-nome').value=j.nome||'';
   document.getElementById('rh-jor-desc').value=j.descricao||'';
-  document.getElementById('rh-jor-ent').value=j.hora_entrada||'08:00';
-  document.getElementById('rh-jor-sai').value=j.hora_saida||'17:48';
-  document.getElementById('rh-jor-int-ini').value=j.hora_intervalo_inicio||'12:00';
-  document.getElementById('rh-jor-int-fim').value=j.hora_intervalo_fim||'13:00';
   document.getElementById('rh-jor-tol').value=String(j.tolerancia_min??10);
   document.getElementById('rh-jor-ativo').value=j.ativo?'1':'0';
-  rhJornadaAplicarDias(j.dias_semana||'1,2,3,4,5');
+  if(j.grade_semanal && typeof j.grade_semanal==='object'){
+    rhJornadaGradeAplicar(j.grade_semanal);
+  }else{
+    const diasAtivos=String(j.dias_semana||'1,2,3,4,5').split(',').map(x=>parseInt(x,10)).filter(x=>!Number.isNaN(x));
+    const set=new Set(diasAtivos);
+    const intIni=(j.hora_intervalo_inicio||'12:00').split(':');
+    const intFim=(j.hora_intervalo_fim||'13:00').split(':');
+    let intervalo=60;
+    try{
+      intervalo=Math.max(0,(parseInt(intFim[0],10)*60+parseInt(intFim[1],10))-(parseInt(intIni[0],10)*60+parseInt(intIni[1],10)));
+    }catch(_){ intervalo=60; }
+    const grade={};
+    for(let d=0; d<=6; d++){
+      grade[String(d)]={
+        ativo:set.has(d),
+        entrada:j.hora_entrada||'08:00',
+        saida:j.hora_saida||'17:48',
+        intervalo_min:intervalo,
+      };
+    }
+    rhJornadaGradeAplicar(grade);
+  }
 }
 
 async function rhJornadaSalvar(){
@@ -5759,19 +5831,25 @@ async function rhJornadaSalvar(){
     showSt('rh-jornada-st','Informe o nome da jornada.',true);
     return;
   }
+  const grade=rhJornadaGradeLer();
   const dias=rhJornadaDiasSelecionados();
   if(!dias.length){
     showSt('rh-jornada-st','Selecione ao menos um dia da semana.',true);
     return;
   }
+  const primeiroDiaCfg=grade[String(dias[0])]||{entrada:'08:00',saida:'17:48',intervalo_min:60};
+  const he=(primeiroDiaCfg.entrada||'08:00').split(':');
+  const iniBrk=(parseInt(he[0],10)||8)*60+(parseInt(he[1],10)||0)+(Math.floor((parseInt(primeiroDiaCfg.intervalo_min||60,10)||60)/2));
+  const fimBrk=Math.min(24*60,iniBrk+(parseInt(primeiroDiaCfg.intervalo_min||60,10)||60));
   const payload={
     nome,
     descricao:(document.getElementById('rh-jor-desc')?.value||'').trim(),
+    grade_semanal:grade,
     dias_semana:dias.join(','),
-    hora_entrada:document.getElementById('rh-jor-ent')?.value||'08:00',
-    hora_saida:document.getElementById('rh-jor-sai')?.value||'17:48',
-    hora_intervalo_inicio:document.getElementById('rh-jor-int-ini')?.value||'12:00',
-    hora_intervalo_fim:document.getElementById('rh-jor-int-fim')?.value||'13:00',
+    hora_entrada:primeiroDiaCfg.entrada||'08:00',
+    hora_saida:primeiroDiaCfg.saida||'17:48',
+    hora_intervalo_inicio:`${String(Math.floor(iniBrk/60)%24).padStart(2,'0')}:${String(iniBrk%60).padStart(2,'0')}`,
+    hora_intervalo_fim:`${String(Math.floor(fimBrk/60)%24).padStart(2,'0')}:${String(fimBrk%60).padStart(2,'0')}`,
     tolerancia_min:parseInt(document.getElementById('rh-jor-tol')?.value||'10',10)||10,
     ativo:document.getElementById('rh-jor-ativo')?.value==='1',
   };

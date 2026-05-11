@@ -283,22 +283,139 @@ class JornadaTrabalho(db.Model):
     tolerancia_min = db.Column(db.Integer, default=10)            # minutos de tolerância
     ativo = db.Column(db.Boolean, default=True)
     criado_em = db.Column(db.DateTime, default=utcnow)
-    def carga_horaria_min(self):
+
+    def grade_semanal(self):
+        return _jornada_extrair_grade(self)
+
+    def minutos_esperados_weekday(self, weekday_python):
         try:
-            he=list(map(int,self.hora_entrada.split(':'))); hs=list(map(int,self.hora_saida.split(':')))
-            hi=list(map(int,self.hora_intervalo_inicio.split(':'))); hf=list(map(int,self.hora_intervalo_fim.split(':')))
-            trabalho=(hs[0]*60+hs[1])-(he[0]*60+he[1])
-            intervalo=(hf[0]*60+hf[1])-(hi[0]*60+hi[1])
-            return max(0, trabalho-intervalo)
+            wd=int(weekday_python)
         except Exception:
-            return 480
+            wd=0
+        dom_idx=(wd+1)%7  # weekday python (0=seg..6=dom) -> dom_idx (0=dom..6=sab)
+        dia=self.grade_semanal().get(str(dom_idx),{})
+        if not bool(dia.get('ativo',False)):
+            return 0
+        return _jornada_minutos_dia_cfg(dia)
+
+    def weekdays_ativos_python(self):
+        wds=set()
+        for k,v in (self.grade_semanal() or {}).items():
+            try:
+                dom_idx=int(k)
+            except Exception:
+                continue
+            if bool((v or {}).get('ativo',False)):
+                wds.add((dom_idx+6)%7)  # dom_idx (0=dom..6=sab) -> weekday python (0=seg..6=dom)
+        return wds
+
+    def carga_horaria_min(self):
+        mins=[]
+        for dia in (self.grade_semanal() or {}).values():
+            if bool((dia or {}).get('ativo',False)):
+                mins.append(_jornada_minutos_dia_cfg(dia))
+        if mins:
+            return max(0,int(round(sum(mins)/float(len(mins)))))
+        return 0
+
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
-        try: d['dias_semana_list']=[int(x) for x in (self.dias_semana or '').split(',') if x.strip().isdigit()]
-        except: d['dias_semana_list']=[1,2,3,4,5]
+        grade=self.grade_semanal()
+        d['grade_semanal']=grade
+        try:
+            d['dias_semana_list']=[int(k) for k,v in grade.items() if bool((v or {}).get('ativo',False))]
+        except Exception:
+            d['dias_semana_list']=[1,2,3,4,5]
         d['carga_horaria_min']=self.carga_horaria_min()
         d['funcionarios_count']=Funcionario.query.filter_by(jornada_id=self.id).count() if self.id else 0
         return d
+
+
+def _jornada_hhmm_valido(s):
+    return bool(re.match(r'^\d{2}:\d{2}$',str(s or '').strip()))
+
+
+def _jornada_minutos_dia_cfg(dia_cfg):
+    try:
+        ent=(dia_cfg or {}).get('entrada','08:00')
+        sai=(dia_cfg or {}).get('saida','17:00')
+        intervalo=max(0,int((dia_cfg or {}).get('intervalo_min',0) or 0))
+        he=list(map(int,str(ent).split(':')))
+        hs=list(map(int,str(sai).split(':')))
+        entrada_min=he[0]*60+he[1]
+        saida_min=hs[0]*60+hs[1]
+        if saida_min<=entrada_min:
+            saida_min+=24*60
+        return max(0,saida_min-entrada_min-intervalo)
+    except Exception:
+        return 0
+
+
+def _jornada_grade_padrao(jornada_obj=None):
+    he='08:00'; hs='17:48'; hi='12:00'; hf='13:00'
+    if jornada_obj is not None:
+        he=(getattr(jornada_obj,'hora_entrada',None) or he)
+        hs=(getattr(jornada_obj,'hora_saida',None) or hs)
+        hi=(getattr(jornada_obj,'hora_intervalo_inicio',None) or hi)
+        hf=(getattr(jornada_obj,'hora_intervalo_fim',None) or hf)
+    intervalo=60
+    try:
+        if _jornada_hhmm_valido(hi) and _jornada_hhmm_valido(hf):
+            hi_p=list(map(int,str(hi).split(':')))
+            hf_p=list(map(int,str(hf).split(':')))
+            intervalo=max(0,(hf_p[0]*60+hf_p[1])-(hi_p[0]*60+hi_p[1]))
+    except Exception:
+        intervalo=60
+    out={}
+    for dom_idx in range(7):
+        out[str(dom_idx)]={
+            'ativo':dom_idx in (1,2,3,4,5),
+            'entrada':he if _jornada_hhmm_valido(he) else '08:00',
+            'saida':hs if _jornada_hhmm_valido(hs) else '17:48',
+            'intervalo_min':intervalo,
+        }
+    return out
+
+
+def _jornada_normalizar_grade(grade_in,jornada_obj=None):
+    base=_jornada_grade_padrao(jornada_obj)
+    if not isinstance(grade_in,dict):
+        return base
+    for dom_idx in range(7):
+        chave=str(dom_idx)
+        di=grade_in.get(chave,grade_in.get(dom_idx,{}))
+        if not isinstance(di,dict):
+            continue
+        atual=base[chave]
+        atual['ativo']=bool(di.get('ativo',atual['ativo']))
+        ent=(di.get('entrada',atual['entrada']) or '').strip()
+        sai=(di.get('saida',atual['saida']) or '').strip()
+        if _jornada_hhmm_valido(ent):
+            atual['entrada']=ent
+        if _jornada_hhmm_valido(sai):
+            atual['saida']=sai
+        try:
+            atual['intervalo_min']=max(0,min(240,int(di.get('intervalo_min',atual['intervalo_min']) or 0)))
+        except Exception:
+            pass
+    return base
+
+
+def _jornada_extrair_grade(jornada_obj):
+    ds=(getattr(jornada_obj,'dias_semana','') or '').strip()
+    if ds.startswith('{'):
+        try:
+            payload=json.loads(ds)
+            grade=_jornada_normalizar_grade(payload.get('dias',{}),jornada_obj)
+            return grade
+        except Exception:
+            pass
+    grade=_jornada_grade_padrao(jornada_obj)
+    ativos={int(x) for x in ds.split(',') if x.strip().isdigit() and 0<=int(x)<=6}
+    if ativos:
+        for dom_idx in range(7):
+            grade[str(dom_idx)]['ativo']=dom_idx in ativos
+    return grade
 
 class Escala(db.Model):
     """
@@ -7717,6 +7834,21 @@ def _app_ponto_min_esperado_jornada(funcionario):
         return h*60
     return 8*60
 
+
+def _app_ponto_min_esperado_jornada_data(funcionario,data_ref):
+    if getattr(funcionario,'jornada_id',None):
+        j=JornadaTrabalho.query.get(funcionario.jornada_id)
+        if j:
+            try:
+                if isinstance(data_ref,str):
+                    dt_ref=datetime.strptime(data_ref,'%Y-%m-%d').date()
+                else:
+                    dt_ref=data_ref
+                return j.minutos_esperados_weekday(dt_ref.weekday())
+            except Exception:
+                return j.carga_horaria_min()
+    return _app_ponto_min_esperado_jornada(funcionario)
+
 def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
     """Retorna minutos esperados para um funcionário em uma data específica.
     Se tem escala ativa nessa data, usa turno da escala; senão usa jornada fixa."""
@@ -7756,8 +7888,8 @@ def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
     except Exception:
         pass
     
-    # Se não tem escala ou erro, usa jornada fixa
-    return _app_ponto_min_esperado_jornada(funcionario)
+    # Se não tem escala ou erro, usa jornada fixa no dia
+    return _app_ponto_min_esperado_jornada_data(funcionario,data_obj if 'data_obj' in locals() else data_str)
 
 def _calcular_horas_noturnas(hora_entrada_min, hora_saida_min, periodo_noturno_ini_min, periodo_noturno_fim_min):
     """
@@ -7865,7 +7997,7 @@ def _app_ponto_resumo_dia(funcionario,data_ref):
         inconsistencias.append('Jornada em aberto (faltou batida de fechamento).')
 
     min_trab=int(round(segundos_total/60.0))
-    min_esp=0 if data_ref.weekday()>=5 else _app_ponto_min_esperado_jornada(funcionario)
+    min_esp=_app_ponto_min_esperado_jornada_em_data(funcionario,data_ref.strftime('%Y-%m-%d'))
     saldo=min_trab-min_esp
 
     itens=[]
@@ -8050,14 +8182,30 @@ def api_jornadas_criar():
     nome=(d.get('nome') or '').strip()
     if not nome:
         return jsonify({'erro':'Nome é obrigatório'}),400
+    grade_norm=_jornada_normalizar_grade(d.get('grade_semanal') or {},None)
+    dias_ativos=[int(k) for k,v in grade_norm.items() if bool((v or {}).get('ativo',False))]
+    primeira_cfg=grade_norm.get(str(dias_ativos[0] if dias_ativos else 1),grade_norm.get('1',{}))
+    intervalo_prim=max(0,min(240,int((primeira_cfg or {}).get('intervalo_min',60) or 0)))
+    ent_prim=(primeira_cfg or {}).get('entrada','08:00')
+    sai_prim=(primeira_cfg or {}).get('saida','17:48')
+    int_ini='12:00'
+    int_fim='13:00'
+    try:
+        he=list(map(int,str(ent_prim).split(':')))
+        ini=he[0]*60+he[1]+max(0,min(240,int(intervalo_prim//2)))
+        fim=min(24*60,ini+intervalo_prim)
+        int_ini=f'{(ini//60)%24:02d}:{ini%60:02d}'
+        int_fim=f'{(fim//60)%24:02d}:{fim%60:02d}'
+    except Exception:
+        pass
     j=JornadaTrabalho(
         nome=nome,
         descricao=(d.get('descricao') or '').strip()[:255],
-        dias_semana=(d.get('dias_semana') or '1,2,3,4,5').strip(),
-        hora_entrada=(d.get('hora_entrada') or '08:00').strip()[:5],
-        hora_saida=(d.get('hora_saida') or '17:48').strip()[:5],
-        hora_intervalo_inicio=(d.get('hora_intervalo_inicio') or '12:00').strip()[:5],
-        hora_intervalo_fim=(d.get('hora_intervalo_fim') or '13:00').strip()[:5],
+        dias_semana=json.dumps({'v':1,'dias':grade_norm},ensure_ascii=False),
+        hora_entrada=str(ent_prim or '08:00').strip()[:5],
+        hora_saida=str(sai_prim or '17:48').strip()[:5],
+        hora_intervalo_inicio=int_ini,
+        hora_intervalo_fim=int_fim,
         tolerancia_min=max(0,min(60,int(d.get('tolerancia_min') or 10))),
         ativo=bool(d.get('ativo',True)),
     )
@@ -8083,11 +8231,28 @@ def api_jornada_editar(id):
         if not n: return jsonify({'erro':'Nome não pode ser vazio'}),400
         j.nome=n
     if 'descricao' in d: j.descricao=(d['descricao'] or '').strip()[:255]
-    if 'dias_semana' in d: j.dias_semana=(d['dias_semana'] or '1,2,3,4,5').strip()
-    if 'hora_entrada' in d: j.hora_entrada=(d['hora_entrada'] or '08:00').strip()[:5]
-    if 'hora_saida' in d: j.hora_saida=(d['hora_saida'] or '17:48').strip()[:5]
-    if 'hora_intervalo_inicio' in d: j.hora_intervalo_inicio=(d['hora_intervalo_inicio'] or '12:00').strip()[:5]
-    if 'hora_intervalo_fim' in d: j.hora_intervalo_fim=(d['hora_intervalo_fim'] or '13:00').strip()[:5]
+    if 'grade_semanal' in d and isinstance(d.get('grade_semanal'),dict):
+        grade_norm=_jornada_normalizar_grade(d.get('grade_semanal') or {},j)
+        j.dias_semana=json.dumps({'v':1,'dias':grade_norm},ensure_ascii=False)
+        dias_ativos=[int(k) for k,v in grade_norm.items() if bool((v or {}).get('ativo',False))]
+        primeira_cfg=grade_norm.get(str(dias_ativos[0] if dias_ativos else 1),grade_norm.get('1',{}))
+        j.hora_entrada=str((primeira_cfg or {}).get('entrada','08:00')).strip()[:5]
+        j.hora_saida=str((primeira_cfg or {}).get('saida','17:48')).strip()[:5]
+        intervalo_prim=max(0,min(240,int((primeira_cfg or {}).get('intervalo_min',60) or 0)))
+        try:
+            he=list(map(int,j.hora_entrada.split(':')))
+            ini=he[0]*60+he[1]+max(0,min(240,int(intervalo_prim//2)))
+            fim=min(24*60,ini+intervalo_prim)
+            j.hora_intervalo_inicio=f'{(ini//60)%24:02d}:{ini%60:02d}'
+            j.hora_intervalo_fim=f'{(fim//60)%24:02d}:{fim%60:02d}'
+        except Exception:
+            pass
+    else:
+        if 'dias_semana' in d: j.dias_semana=(d['dias_semana'] or '1,2,3,4,5').strip()
+        if 'hora_entrada' in d: j.hora_entrada=(d['hora_entrada'] or '08:00').strip()[:5]
+        if 'hora_saida' in d: j.hora_saida=(d['hora_saida'] or '17:48').strip()[:5]
+        if 'hora_intervalo_inicio' in d: j.hora_intervalo_inicio=(d['hora_intervalo_inicio'] or '12:00').strip()[:5]
+        if 'hora_intervalo_fim' in d: j.hora_intervalo_fim=(d['hora_intervalo_fim'] or '13:00').strip()[:5]
     if 'tolerancia_min' in d:
         try: j.tolerancia_min=max(0,min(60,int(d['tolerancia_min'])))
         except (ValueError,TypeError): pass
@@ -12229,14 +12394,10 @@ def api_beneficios_calcular_por_periodo():
         # Resolve dias da semana da jornada
         dias_semana_set=None
         jt=jornadas_map.get(f.jornada_id) if f.jornada_id else None
-        if jt and (jt.dias_semana or '').strip():
+        if jt:
             try:
-                raw=[int(x.strip())-1 for x in str(jt.dias_semana).split(',') if x.strip().isdigit()]
-                # jornada armazena 1=Dom,2=Seg,...,7=Sab (Brasil) — ajusta para weekday()
-                # Convencao no sistema: 1=Dom,2=Seg,3=Ter,4=Qua,5=Qui,6=Sex,7=Sab
-                # weekday(): 0=Seg,1=Ter,2=Qua,3=Qui,4=Sex,5=Sab,6=Dom
-                mapa_wd={1:6,2:0,3:1,4:2,5:3,6:4,7:5}
-                dias_semana_set={mapa_wd.get(x+1,x) for x in raw}
+                dset=jt.weekdays_ativos_python()
+                dias_semana_set=dset if dset else None
             except Exception:
                 dias_semana_set=None
 
