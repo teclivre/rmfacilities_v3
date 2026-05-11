@@ -5776,6 +5776,7 @@ function rhJornadaRenderTabela(){
       </td>
       <td>
         <button class="btn b-gh b-sm" onclick="rhJornadaEditar(${j.id})">Editar</button>
+        <button class="btn b-ghv b-sm" onclick="rhJornadaDuplicar(${j.id})">Duplicar</button>
         <button class="btn b-ghr b-sm" onclick="rhJornadaExcluir(${j.id})">Excluir</button>
       </td>
     </tr>`;
@@ -5822,6 +5823,16 @@ function rhJornadaEditar(id){
     }
     rhJornadaGradeAplicar(grade);
   }
+}
+
+function rhJornadaDuplicar(id){
+  const j=rhJornadas.find(x=>String(x.id)===String(id));
+  if(!j) return;
+  rhJornadaEditar(id);
+  document.getElementById('rh-jor-id').value='';
+  const nomeBase=(j.nome||'Jornada').trim();
+  document.getElementById('rh-jor-nome').value=`Cópia - ${nomeBase}`;
+  showSt('rh-jornada-st','Jornada duplicada no formulário. Ajuste o que quiser e clique em Salvar.',false);
 }
 
 async function rhJornadaSalvar(){
