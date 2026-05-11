@@ -1887,12 +1887,12 @@ document.addEventListener('DOMContentLoaded',()=>{
               </div>
             </div>
             <div class="g4" style="margin-top:8px">
-              <div class="f"><label>Horário início</label><input id="ben-per-hini" type="time" value="08:00"></div>
-              <div class="f"><label>Horário fim</label><input id="ben-per-hfim" type="time" value="17:00"></div>
-              <div class="f"><label>Intervalo (min)</label><input id="ben-per-intervalo" type="number" min="0" max="240" value="60"></div>
+              <div class="f"><label>Horário início (opcional)</label><input id="ben-per-hini" type="time"></div>
+              <div class="f"><label>Horário fim (opcional)</label><input id="ben-per-hfim" type="time"></div>
+              <div class="f"><label>Intervalo (min, opcional)</label><input id="ben-per-intervalo" type="number" min="0" max="240" value="60"></div>
               <div class="f"><label>Regra VT/VR (horas mín.)</label><input id="ben-per-minh" type="number" min="1" max="16" value="8"></div>
             </div>
-            <div style="margin-top:6px;font-size:12px;color:#9fb3c8">Regra aplicada: VT/VR só são pagos em dias com 8h ou mais trabalhadas. Vale combustível é pago pelos dias trabalhados. Faltas informadas na grade são descontadas.</div>
+            <div style="margin-top:6px;font-size:12px;color:#9fb3c8">Regra aplicada: VT/VR só são pagos em dias com 8h ou mais trabalhadas. Vale combustível é pago pelos dias trabalhados. Faltas informadas na grade são descontadas. Se horário início/fim ficar em branco, o sistema usa a jornada individual de cada funcionário.</div>
             <div class="brow" style="justify-content:flex-start;margin-top:10px;gap:8px;flex-wrap:wrap">
               <button class="btn b-az b-sm" onclick="benCalcularPorPeriodo(false)">&#128269; Calcular (prévia)</button>
               <button class="btn b-vd b-sm" onclick="benCalcularPorPeriodo(true)">&#128190; Calcular e salvar lançamentos</button>
@@ -7602,7 +7602,7 @@ async function benCalcularPorPeriodo(salvar){
   const empId=benPerEmpId();
   const st=document.getElementById('ben-per-status');
   if(!ini||!fim){st.textContent='Informe data início e data fim.';st.style.color='#ffb3b3';return;}
-  if(!hIni||!hFim){st.textContent='Informe horário de início e fim da jornada.';st.style.color='#ffb3b3';return;}
+  if((hIni&&!hFim)||(!hIni&&hFim)){st.textContent='Preencha horário início e fim juntos, ou deixe ambos em branco para usar a jornada individual.';st.style.color='#ffb3b3';return;}
   st.textContent='Calculando...';st.style.color='#7ecfff';
   // Converte YYYY-MM-DD -> DD/MM/YYYY
   const fmtDt=s=>{const[y,m,d]=s.split('-');return`${d}/${m}/${y}`;};
@@ -7613,11 +7613,13 @@ async function benCalcularPorPeriodo(salvar){
     data_fim:fmtDt(fim),
     fonte,
     salvar,
-    horario_inicio:hIni,
-    horario_fim:hFim,
-    intervalo_min:intervalo,
     min_horas_vrvt:minHoras
   };
+  if(hIni&&hFim){
+    body.horario_inicio=hIni;
+    body.horario_fim=hFim;
+    body.intervalo_min=intervalo;
+  }
   const faltas=benPerColetarFaltas();
   if(faltas.length) body.faltas=faltas;
   if(empId) body.empresa_id=parseInt(empId)||0;
@@ -7629,7 +7631,8 @@ async function benCalcularPorPeriodo(salvar){
   _benPerResultado=j;
   const total=j.total_dias||0;
   const feriados=j.feriados_periodo||0;
-  st.textContent=`Período: ${fmtDt(ini)} a ${fmtDt(fim)} — ${total} dias, ${feriados} feriados excluídos. Regra VT/VR: ${j.min_horas_vrvt||minHoras}h mín. Competência: ${j.competencia||''}${salvar?' — Lançamentos salvos!':''}.`;
+  const modoHorario=(hIni&&hFim)?`horário fixo ${hIni}-${hFim}`:'jornada individual por colaborador';
+  st.textContent=`Período: ${fmtDt(ini)} a ${fmtDt(fim)} — ${total} dias, ${feriados} feriados excluídos. Regra VT/VR: ${j.min_horas_vrvt||minHoras}h mín. Base de horário: ${modoHorario}. Competência: ${j.competencia||''}${salvar?' — Lançamentos salvos!':''}.`;
   st.style.color='#7ecfff';
   benRenderPeriodoResultado(j,salvar);
 }
@@ -7738,6 +7741,7 @@ async function benSalvarResultadoPeriodo(){
   const intervalo=parseInt(document.getElementById('ben-per-intervalo').value||'60',10)||0;
   const minHoras=parseInt(document.getElementById('ben-per-minh').value||'8',10)||8;
   const empId=benPerEmpId();
+  if((hIni&&!hFim)||(!hIni&&hFim)){showSt('st-benef','Preencha horário início e fim juntos, ou deixe ambos em branco para usar a jornada individual.',true);return;}
   const fmtDt=s=>{const[y,m,d]=s.split('-');return`${d}/${m}/${y}`;};
   const body={
     data_inicio:fmtDt(ini),
@@ -7745,11 +7749,13 @@ async function benSalvarResultadoPeriodo(){
     fonte,
     salvar:true,
     funcionarios:selecionados,
-    horario_inicio:hIni,
-    horario_fim:hFim,
-    intervalo_min:intervalo,
     min_horas_vrvt:minHoras
   };
+  if(hIni&&hFim){
+    body.horario_inicio=hIni;
+    body.horario_fim=hFim;
+    body.intervalo_min=intervalo;
+  }
   const faltas=[];
   document.querySelectorAll('.ben-per-check').forEach((c,i)=>{
     if(!c.checked||!_benPerResultado.itens[i]) return;
