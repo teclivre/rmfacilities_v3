@@ -1,7 +1,23 @@
-from flask import Flask
+from flask import Flask, request, jsonify, redirect, url_for, session
+from functools import wraps
 
 # Inicialização do Flask app deve vir antes de qualquer uso de @app.route
 app = Flask(__name__)
+
+def _lr_unauth_response():
+    if (request.path or '').startswith('/api/'):
+        return jsonify({'erro':'Sessao expirada. Faca login novamente.'}),401
+    return redirect(url_for('login'))
+
+def lr(f):
+    @wraps(f)
+    def w(*a,**k):
+        if 'uid' not in session: return _lr_unauth_response()
+        if not can_access_request(request.path,request.method): return jsonify({'erro':'Acesso negado'}),403
+        if request.method in ('POST','PUT','PATCH','DELETE') and not _same_origin_request(request):
+            return jsonify({'erro':'Origem da requisição não permitida'}),403
+        return f(*a,**k)
+    return w
 
 @app.route('/api/app/funcionario/ultimo-pagamento', methods=['GET'])
 @lr
