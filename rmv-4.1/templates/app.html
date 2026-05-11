@@ -1886,6 +1886,13 @@ document.addEventListener('DOMContentLoaded',()=>{
                 </select>
               </div>
             </div>
+            <div class="g4" style="margin-top:8px">
+              <div class="f"><label>Horário início</label><input id="ben-per-hini" type="time" value="08:00"></div>
+              <div class="f"><label>Horário fim</label><input id="ben-per-hfim" type="time" value="17:00"></div>
+              <div class="f"><label>Intervalo (min)</label><input id="ben-per-intervalo" type="number" min="0" max="240" value="60"></div>
+              <div class="f"><label>Regra VT/VR (horas mín.)</label><input id="ben-per-minh" type="number" min="1" max="16" value="8"></div>
+            </div>
+            <div style="margin-top:6px;font-size:12px;color:#9fb3c8">Regra aplicada: VT/VR só são pagos em dias com 8h ou mais trabalhadas. Vale combustível é pago pelos dias trabalhados.</div>
             <div class="brow" style="justify-content:flex-start;margin-top:10px;gap:8px;flex-wrap:wrap">
               <button class="btn b-az b-sm" onclick="benCalcularPorPeriodo(false)">&#128269; Calcular (prévia)</button>
               <button class="btn b-vd b-sm" onclick="benCalcularPorPeriodo(true)">&#128190; Calcular e salvar lançamentos</button>
@@ -1903,7 +1910,7 @@ document.addEventListener('DOMContentLoaded',()=>{
                   <thead><tr>
                     <th style="width:32px"><input type="checkbox" id="ben-per-check-all" onchange="toggleAllBenPerSel(this.checked)" title="Marcar todos"></th>
                     <th>Matrícula</th><th>Colaborador</th><th>Empresa</th>
-                    <th>Dias calendário</th><th>Dias com ponto</th><th>Dias a lançar</th>
+                    <th>Dias calendário</th><th>Dias com ponto</th><th>Dias com 8h+</th><th>Dias VT</th><th>Dias VR</th><th>Dias combustível</th>
                     <th>Fonte</th>
                   </tr></thead>
                   <tbody id="tb-ben-periodo"></tbody>
@@ -2579,11 +2586,11 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
       <div class="g3" style="margin-top:4px">
         <div class="f" style="display:flex;align-items:center;gap:8px;padding-top:22px">
-          <input type="checkbox" id="fopta-vt" checked style="width:16px;height:16px">
+          <input type="checkbox" id="fopta-vt" checked style="width:16px;height:16px" onchange="rhBenefAberturaDiasSugestao()">
           <label for="fopta-vt" style="margin:0;font-weight:500">Optante VT</label>
         </div>
         <div class="f" style="display:flex;align-items:center;gap:8px;padding-top:22px">
-          <input type="checkbox" id="fopta-vr" checked style="width:16px;height:16px">
+          <input type="checkbox" id="fopta-vr" checked style="width:16px;height:16px" onchange="rhBenefAberturaDiasSugestao()">
           <label for="fopta-vr" style="margin:0;font-weight:500">Optante VR</label>
         </div>
         <div class="f" style="display:flex;align-items:center;gap:8px;padding-top:22px">
@@ -2595,13 +2602,16 @@ document.addEventListener('DOMContentLoaded',()=>{
           <label for="fopta-pp" style="margin:0;font-weight:500">Prêmio Produtividade</label>
         </div>
         <div class="f" style="display:flex;align-items:center;gap:8px;padding-top:22px">
-          <input type="checkbox" id="fopta-vg" style="width:16px;height:16px">
+          <input type="checkbox" id="fopta-vg" style="width:16px;height:16px" onchange="rhBenefAberturaDiasSugestao()">
           <label for="fopta-vg" style="margin:0;font-weight:500">Vale Gasolina</label>
         </div>
         <div class="f" style="display:flex;align-items:center;gap:8px;padding-top:22px">
           <input type="checkbox" id="fopta-cn" style="width:16px;height:16px">
           <label for="fopta-cn" style="margin:0;font-weight:500">Cesta de Natal</label>
         </div>
+      </div>
+      <div id="f-benef-dias-hint" style="display:none;margin:6px 0 2px 0;padding:8px;border:1px solid #2a5375;border-radius:8px;background:#102a44;color:#b9d9f5;font-size:12px">
+        VT/VR/Vale combustível habilitados: calcule os dias pagos em RH > Benefícios > Calcular por Período.
       </div>
       <div class="f"><label>Áreas com acesso</label>
         <div id="fareas" class="areas-grid"></div>
@@ -5253,6 +5263,7 @@ function openModalFunc(modo,id){
   }
   setModalClean('func');
   document.getElementById('mod-func').classList.add('on');
+  rhBenefAberturaDiasSugestao();
   _rhFuncAutoHydrating=false;
   _rhFuncAutoLastHash=rhFuncionarioHashPayload(document.getElementById('fid').value||'',rhFuncionarioMontarPayload(false));
 }
@@ -5326,7 +5337,17 @@ function preencherFormFuncionario(f,titulo='Editar funcionário'){
   document.getElementById('fopta-pp').checked=!!f.opta_premio_prod;
   document.getElementById('fopta-vg').checked=!!f.opta_vale_gasolina;
   document.getElementById('fopta-cn').checked=!!f.opta_cesta_natal;
+  rhBenefAberturaDiasSugestao();
   areaChecks(f.areas||[]);
+}
+
+function rhBenefAberturaDiasSugestao(){
+  const el=document.getElementById('f-benef-dias-hint');
+  if(!el) return;
+  const vt=!!document.getElementById('fopta-vt')?.checked;
+  const vr=!!document.getElementById('fopta-vr')?.checked;
+  const vg=!!document.getElementById('fopta-vg')?.checked;
+  el.style.display=(vt||vr||vg)?'block':'none';
 }
 
 function maskCPF(el){
@@ -7574,15 +7595,29 @@ async function benCalcularPorPeriodo(salvar){
   const ini=document.getElementById('ben-per-ini').value;
   const fim=document.getElementById('ben-per-fim').value;
   const fonte=document.getElementById('ben-per-fonte').value;
+  const hIni=document.getElementById('ben-per-hini').value;
+  const hFim=document.getElementById('ben-per-hfim').value;
+  const intervalo=parseInt(document.getElementById('ben-per-intervalo').value||'60',10)||0;
+  const minHoras=parseInt(document.getElementById('ben-per-minh').value||'8',10)||8;
   const empId=benPerEmpId();
   const st=document.getElementById('ben-per-status');
   if(!ini||!fim){st.textContent='Informe data início e data fim.';st.style.color='#ffb3b3';return;}
+  if(!hIni||!hFim){st.textContent='Informe horário de início e fim da jornada.';st.style.color='#ffb3b3';return;}
   st.textContent='Calculando...';st.style.color='#7ecfff';
   // Converte YYYY-MM-DD -> DD/MM/YYYY
   const fmtDt=s=>{const[y,m,d]=s.split('-');return`${d}/${m}/${y}`;};
   // Coleta funcionários selecionados (se houver seleção ativa)
   const funcs=[...benSelecionados];
-  const body={data_inicio:fmtDt(ini),data_fim:fmtDt(fim),fonte,salvar};
+  const body={
+    data_inicio:fmtDt(ini),
+    data_fim:fmtDt(fim),
+    fonte,
+    salvar,
+    horario_inicio:hIni,
+    horario_fim:hFim,
+    intervalo_min:intervalo,
+    min_horas_vrvt:minHoras
+  };
   if(empId) body.empresa_id=parseInt(empId)||0;
   if(funcs.length) body.funcionarios=funcs;
   const r=await fetch('/api/beneficios/calcular-por-periodo',{method:'POST',
@@ -7592,7 +7627,7 @@ async function benCalcularPorPeriodo(salvar){
   _benPerResultado=j;
   const total=j.total_dias||0;
   const feriados=j.feriados_periodo||0;
-  st.textContent=`Período: ${fmtDt(ini)} a ${fmtDt(fim)} — ${total} dias, ${feriados} feriados excluídos. Competência: ${j.competencia||''}${salvar?' — Lançamentos salvos!':''}.`;
+  st.textContent=`Período: ${fmtDt(ini)} a ${fmtDt(fim)} — ${total} dias, ${feriados} feriados excluídos. Regra VT/VR: ${j.min_horas_vrvt||minHoras}h mín. Competência: ${j.competencia||''}${salvar?' — Lançamentos salvos!':''}.`;
   st.style.color='#7ecfff';
   benRenderPeriodoResultado(j,salvar);
 }
@@ -7612,7 +7647,10 @@ function benRenderPeriodoResultado(j,salvos){
       <td style="font-size:12px">${escHtml(it.empresa_nome||'')}</td>
       <td style="text-align:center">${it.dias_uteis_calendario||0}</td>
       <td style="text-align:center">${it.dias_ponto_registrado||0}</td>
-      <td style="text-align:center;font-weight:700;color:#7ecfff">${it.dias_trabalhados||0}</td>
+      <td style="text-align:center">${it.dias_com_8h_ou_mais||0}</td>
+      <td style="text-align:center;font-weight:700;color:#7ecfff">${it.dias_vt_sugerido||0}</td>
+      <td style="text-align:center;font-weight:700;color:#7ecfff">${it.dias_vr_sugerido||0}</td>
+      <td style="text-align:center;font-weight:700;color:#5ec97a">${it.dias_vg_sugerido||0}</td>
       <td style="font-size:11px">${it.tem_ponto?'<span style="color:#5ec97a">ponto</span>':'<span style="color:#9fb3c8">calendário</span>'}</td>
     </tr>`).join('');
   painel.style.display='block';
@@ -7633,9 +7671,23 @@ async function benSalvarResultadoPeriodo(){
   const ini=document.getElementById('ben-per-ini').value;
   const fim=document.getElementById('ben-per-fim').value;
   const fonte=document.getElementById('ben-per-fonte').value;
+  const hIni=document.getElementById('ben-per-hini').value;
+  const hFim=document.getElementById('ben-per-hfim').value;
+  const intervalo=parseInt(document.getElementById('ben-per-intervalo').value||'60',10)||0;
+  const minHoras=parseInt(document.getElementById('ben-per-minh').value||'8',10)||8;
   const empId=benPerEmpId();
   const fmtDt=s=>{const[y,m,d]=s.split('-');return`${d}/${m}/${y}`;};
-  const body={data_inicio:fmtDt(ini),data_fim:fmtDt(fim),fonte,salvar:true,funcionarios:selecionados};
+  const body={
+    data_inicio:fmtDt(ini),
+    data_fim:fmtDt(fim),
+    fonte,
+    salvar:true,
+    funcionarios:selecionados,
+    horario_inicio:hIni,
+    horario_fim:hFim,
+    intervalo_min:intervalo,
+    min_horas_vrvt:minHoras
+  };
   if(empId) body.empresa_id=parseInt(empId)||0;
   const r=await fetch('/api/beneficios/calcular-por-periodo',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});

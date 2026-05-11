@@ -11458,6 +11458,10 @@ def api_beneficios_calcular_por_periodo():
       salvar        bool se True grava em BeneficioMensal
       fonte         str  'ponto' | 'calendario'  (default: 'ponto' com fallback para 'calendario')
       funcionarios  list[int] (opcional; filtra por IDs)
+            horario_inicio str HH:MM (opcional)
+            horario_fim    str HH:MM (opcional)
+            intervalo_min  int minutos (opcional, default 60)
+            min_horas_vrvt int horas mínimas para pagar VT/VR por dia (default 8)
     """
     from datetime import date,timedelta
     d=request.json or {}
@@ -11465,6 +11469,32 @@ def api_beneficios_calcular_por_periodo():
     salvar=to_bool(d.get('salvar'))
     fonte=(d.get('fonte') or 'ponto').strip().lower()
     func_ids_filter={int(x) for x in (d.get('funcionarios') or []) if str(x).isdigit()}
+    min_horas_vrvt=max(1,min(16,to_num(d.get('min_horas_vrvt')) or 8))
+    min_minutos_vrvt=int(min_horas_vrvt*60)
+
+    def _parse_hhmm(s):
+        s=(s or '').strip()
+        if not s:
+            return None
+        m=re.match(r'^(\d{1,2}):(\d{2})$',s)
+        if not m:
+            return None
+        hh=int(m.group(1)); mm=int(m.group(2))
+        if hh<0 or hh>23 or mm<0 or mm>59:
+            return None
+        return hh*60+mm
+
+    horario_inicio=(d.get('horario_inicio') or '').strip()
+    horario_fim=(d.get('horario_fim') or '').strip()
+    intervalo_min=max(0,min(240,to_num(d.get('intervalo_min')) or 60))
+    horario_ini_min=_parse_hhmm(horario_inicio)
+    horario_fim_min=_parse_hhmm(horario_fim)
+    carga_diaria_informada_min=None
+    if horario_ini_min is not None and horario_fim_min is not None:
+        bruto=horario_fim_min-horario_ini_min
+        if bruto<=0:
+            bruto+=24*60
+        carga_diaria_informada_min=max(0,bruto-intervalo_min)
 
     def _parse_date(s):
         s=(s or '').strip()
@@ -11540,6 +11570,7 @@ def api_beneficios_calcular_por_periodo():
 
     # Pré-carrega registros de ponto (PontoFechamentoDia) no período por funcionário
     ponto_map={}  # {func_id: set(date_str)}
+    ponto_min_map={}  # {func_id: {date_str: minutos_trabalhados}}
     if fonte in ('ponto','auto'):
         pfds=PontoFechamentoDia.query.filter(
             PontoFechamentoDia.data_ref>=dt_ini.isoformat(),
@@ -11548,22 +11579,47 @@ def api_beneficios_calcular_por_periodo():
         ).all()
         for pfd in pfds:
             ponto_map.setdefault(pfd.funcionario_id,set()).add(pfd.data_ref)
+            min_trab=0
+            try:
+                resumo=json.loads(pfd.resumo_json or '{}') if (pfd.resumo_json or '').strip() else {}
+                min_trab=max(0,int(resumo.get('horas_trabalhadas_min') or 0)) if isinstance(resumo,dict) else 0
+            except Exception:
+                min_trab=0
+            ponto_min_map.setdefault(pfd.funcionario_id,{})[pfd.data_ref]=min_trab
 
-    # Também verifica PontoMarcacao para dias com pelo menos 1 marcação de entrada
+    # Também verifica PontoMarcacao e calcula minutos quando não houver fechamento diário.
     ponto_marc_map={}  # {func_id: set(date_str)}
+    ponto_marc_min_map={}  # {func_id: {date_str: minutos_trabalhados}}
     if fonte in ('ponto','auto'):
-        from sqlalchemy import func as sqlfunc
         mcs=PontoMarcacao.query.filter(
             PontoMarcacao.data_hora>=str(dt_ini)+' 00:00:00',
             PontoMarcacao.data_hora<=str(dt_fim)+' 23:59:59',
-            PontoMarcacao.tipo.in_(['entrada','saida'])
+            PontoMarcacao.tipo.in_(['entrada','saida_intervalo','retorno_intervalo','saida'])
         ).all()
+        blocos={}
         for mc in mcs:
             try:
                 dia=str(mc.data_hora)[:10]
                 ponto_marc_map.setdefault(mc.funcionario_id,set()).add(dia)
+                blocos.setdefault((mc.funcionario_id,dia),[]).append(mc)
             except Exception:
                 pass
+
+        for (fid,dia),lista in blocos.items():
+            lista=sorted(lista,key=lambda x:(x.data_hora or utcnow(),x.id or 0))
+            aberta_em=None
+            seg_total=0
+            for m in lista:
+                dh=m.data_hora
+                if not dh:
+                    continue
+                if m.tipo in ('entrada','retorno_intervalo'):
+                    aberta_em=dh
+                elif m.tipo in ('saida_intervalo','saida') and aberta_em is not None:
+                    seg_total+=max(0,int((dh-aberta_em).total_seconds()))
+                    aberta_em=None
+            minutos=max(0,int(round(seg_total/60.0)))
+            ponto_marc_min_map.setdefault(fid,{})[dia]=minutos
 
     itens=[]
     for f in funcs:
@@ -11583,40 +11639,35 @@ def api_beneficios_calcular_por_periodo():
 
         dias_calendario=sum(1 for dt in todos_dias if _is_util(dt,f.id,dias_semana_set))
 
-        # Dias reais de ponto (fechamento ou marcação)
-        dias_ponto=0
-        tem_ponto=False
-        if f.id in ponto_map and ponto_map[f.id]:
-            dias_ponto_set=set()
-            for dia_str in ponto_map[f.id]:
-                try:
-                    from datetime import datetime as _dt2
-                    dt_d=_dt2.strptime(dia_str,'%Y-%m-%d').date()
-                    if dt_ini<=dt_d<=dt_fim:
-                        dias_ponto_set.add(dia_str)
-                except Exception:
-                    pass
-            dias_ponto=len(dias_ponto_set)
-            tem_ponto=True
-        elif f.id in ponto_marc_map and ponto_marc_map[f.id]:
-            dias_ponto_set=set()
-            for dia_str in ponto_marc_map[f.id]:
-                try:
-                    from datetime import datetime as _dt2
-                    dt_d=_dt2.strptime(dia_str,'%Y-%m-%d').date()
-                    if dt_ini<=dt_d<=dt_fim:
-                        dias_ponto_set.add(dia_str)
-                except Exception:
-                    pass
-            dias_ponto=len(dias_ponto_set)
-            tem_ponto=bool(dias_ponto)
+        # Dias reais de ponto com minutos apurados por dia.
+        minutos_por_dia={}
+        for dia_str,mins in (ponto_min_map.get(f.id,{}) or {}).items():
+            minutos_por_dia[dia_str]=max(0,int(mins or 0))
+        for dia_str,mins in (ponto_marc_min_map.get(f.id,{}) or {}).items():
+            if dia_str not in minutos_por_dia:
+                minutos_por_dia[dia_str]=max(0,int(mins or 0))
+        dias_ponto_set=set(d for d in minutos_por_dia.keys())
+        dias_ponto=len(dias_ponto_set)
+        tem_ponto=bool(dias_ponto)
+
+        carga_diaria_ref_min=max(0,int(carga_diaria_informada_min if carga_diaria_informada_min is not None else (_app_ponto_min_esperado_jornada(f) or 0)))
+        dias_vrvt_por_horas=0
+        for mins in minutos_por_dia.values():
+            if int(mins or 0)>=min_minutos_vrvt:
+                dias_vrvt_por_horas+=1
 
         if fonte=='ponto':
             dias_trab=dias_ponto if tem_ponto else dias_calendario
+            dias_vt_vr=(dias_vrvt_por_horas if tem_ponto else (dias_calendario if carga_diaria_ref_min>=min_minutos_vrvt else 0))
+            dias_vg_calc=(dias_ponto if tem_ponto else dias_calendario)
         elif fonte=='calendario':
             dias_trab=dias_calendario
+            dias_vt_vr=(dias_calendario if carga_diaria_ref_min>=min_minutos_vrvt else 0)
+            dias_vg_calc=dias_calendario
         else:  # auto
             dias_trab=dias_ponto if tem_ponto else dias_calendario
+            dias_vt_vr=(dias_vrvt_por_horas if tem_ponto else (dias_calendario if carga_diaria_ref_min>=min_minutos_vrvt else 0))
+            dias_vg_calc=(dias_ponto if tem_ponto else dias_calendario)
 
         emp=Empresa.query.get(f.empresa_id) if f.empresa_id else None
         itens.append({
@@ -11628,8 +11679,13 @@ def api_beneficios_calcular_por_periodo():
             'empresa_nome':(emp.nome if emp else ''),
             'competencia':comp,
             'dias_trabalhados':dias_trab,
+            'dias_vt_sugerido':(dias_vt_vr if (f.opta_vt is not False) else 0),
+            'dias_vr_sugerido':(dias_vt_vr if (f.opta_vr is not False) else 0),
+            'dias_vg_sugerido':(dias_vg_calc if bool(f.opta_vale_gasolina) else 0),
             'dias_uteis_calendario':dias_calendario,
             'dias_ponto_registrado':dias_ponto,
+            'dias_com_8h_ou_mais':dias_vrvt_por_horas,
+            'carga_diaria_referencia_min':carga_diaria_ref_min,
             'tem_ponto':tem_ponto,
             'opta_vt': True if f.opta_vt is None else bool(f.opta_vt),
             'opta_vr': True if f.opta_vr is None else bool(f.opta_vr),
@@ -11659,10 +11715,10 @@ def api_beneficios_calcular_por_periodo():
             b.empresa_id=f.empresa_id
             dt=it['dias_trabalhados']
             b.dias_trabalhados=dt
-            if it['opta_vt']: b.dias_vt=dt
-            if it['opta_vr']: b.dias_vr=dt
+            if it['opta_vt']: b.dias_vt=max(0,to_num(it.get('dias_vt_sugerido')))
+            if it['opta_vr']: b.dias_vr=max(0,to_num(it.get('dias_vr_sugerido')))
             if it['opta_va']: b.dias_va=dt
-            if it['opta_vale_gasolina']: b.dias_vg=dt
+            if it['opta_vale_gasolina']: b.dias_vg=max(0,to_num(it.get('dias_vg_sugerido')))
             if b.salario is None: b.salario=it['salario']
         db.session.commit()
 
@@ -11675,6 +11731,8 @@ def api_beneficios_calcular_por_periodo():
         'feriados_periodo':len(feriados_nacionais),
         'feriados_nacionais_periodo':len(feriados_nacionais),
         'feriados_municipais_vinculados':sum(len(v) for v in feriados_municipais_por_func.values()),
+        'min_horas_vrvt':min_horas_vrvt,
+        'regra_vrvt':'VT e VR pagos apenas em dias com 8h ou mais trabalhadas. Vale gasolina pago por dia trabalhado.',
         'fonte_usada':fonte,
         'itens':itens,
         'salvos': len(itens) if salvar else 0,
