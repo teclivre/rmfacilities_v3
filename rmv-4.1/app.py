@@ -303,7 +303,7 @@ class JornadaTrabalho(db.Model):
 class Escala(db.Model):
     """
     Modelo de Escala de Turnos:
-    - tipo: '6x2' (6 dias trabalho, 2 folga), '4x2' (4 dias trabalho, 2 folga), '12x36' (12h turno, 36h folga), 'folguista' (customizado), 'noturna'
+    - tipo: '6x2' (6 dias trabalho, 2 folga), '6x1' (seg-sab trabalho, dom folga), '4x2' (4 dias trabalho, 2 folga), '12x36' (12h turno, 36h folga), 'folguista' (customizado), 'noturna'
     - ciclo_json: JSON com estrutura de dias/turnos e folgas
       Ex 6x2: {"dias": [{"tipo": "trabalho"}, ...6x..., {"tipo": "folga"}, {"tipo": "folga"}]}
       Ex 12x36: {"dias": [{"tipo": "trabalho", "horas": 12}, {"tipo": "folga"}, {"tipo": "folga"}]}
@@ -312,7 +312,7 @@ class Escala(db.Model):
     """
     id=db.Column(db.Integer,primary_key=True)
     nome=db.Column(db.String(120),nullable=False)
-    tipo=db.Column(db.String(30),nullable=False)  # '6x2', '4x2', '12x36', 'folguista', 'noturna'
+    tipo=db.Column(db.String(30),nullable=False)  # '6x2', '6x1', '4x2', '12x36', 'folguista', 'noturna'
     ciclo_json=db.Column(db.Text,default='{}')  # JSON com dias/turnos/folgas
     descricao=db.Column(db.String(255))
     periodo_noturno_ini=db.Column(db.String(5),default='22:00')  # HH:MM (início do período noturno)
@@ -8203,8 +8203,8 @@ def api_escalas_criar():
     tipo=(d.get('tipo') or '').strip()
     if not nome:
         return jsonify({'erro':'Nome obrigatório'}),400
-    if tipo not in ('6x2','4x2','12x36','folguista','noturna'):
-        return jsonify({'erro':"Tipo deve ser '6x2', '4x2', '12x36', 'folguista' ou 'noturna'"}),400
+    if tipo not in ('6x2','6x1','4x2','12x36','folguista','noturna'):
+        return jsonify({'erro':"Tipo deve ser '6x2', '6x1', '4x2', '12x36', 'folguista' ou 'noturna'"}),400
     
     ciclo_json=d.get('ciclo_json') or '{}'
     if isinstance(ciclo_json,dict):
@@ -8259,7 +8259,7 @@ def api_escala_editar(id):
     d=request.json or {}
     if 'nome' in d:
         e.nome=(d.get('nome') or '').strip() or e.nome
-    if 'tipo' in d and d.get('tipo') in ('6x2','4x2','12x36','folguista','noturna'):
+    if 'tipo' in d and d.get('tipo') in ('6x2','6x1','4x2','12x36','folguista','noturna'):
         e.tipo=d.get('tipo')
     if 'ciclo_json' in d:
         ciclo=d.get('ciclo_json')
