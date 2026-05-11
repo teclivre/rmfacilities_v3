@@ -1072,6 +1072,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-ferias-gestao" class="subaba-bloco" onclick="rhSetSubAba('ferias-gestao',this)">Gestão de Férias</button>
         <button type="button" id="rh-subtab-exportar" class="subaba-bloco" onclick="rhSetSubAba('exportar',this)">Exportar colaboradores ativos</button>
         <button type="button" id="rh-subtab-jornada" class="subaba-bloco" onclick="rhSetSubAba('jornada',this)">Jornadas e Geofence</button>
+        <button type="button" id="rh-subtab-escalas" class="subaba-bloco" onclick="rhSetSubAba('escalas',this)">Escalas de Turnos</button>
         <button type="button" id="rh-subtab-ponto" class="subaba-bloco" onclick="rhSetSubAba('ponto',this)">Gestão de Ponto por Funcionário</button>
         <button type="button" id="rh-subtab-painel-dia" class="subaba-bloco" onclick="rhSetSubAba('painel-dia',this)">Painel do dia</button>
         <button type="button" id="rh-subtab-envio" class="subaba-bloco" onclick="rhSetSubAba('envio',this)">Envio de arquivo</button>
@@ -1252,6 +1253,68 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
         </div>
         <div id="rh-jornada-st" class="st" style="margin-top:8px"></div>
+      </div>
+
+      <div class="card rh-pane" id="rh-pane-escalas" data-rh-pane="escalas">
+        <div class="card-header"><span class="card-title">Escalas de Turnos (6x2, 12x36, Folguista)</span></div>
+        <div class="g2" style="margin-top:8px">
+          <div class="f" style="border:1px solid var(--borda);border-radius:10px;padding:10px;background:var(--cinza-cl)">
+            <input id="rh-esc-id" type="hidden">
+            <label>Nome da escala</label>
+            <input id="rh-esc-nome" placeholder="Ex.: Escala 12x36 - Turno A">
+
+            <label style="margin-top:8px">Tipo de escala</label>
+            <select id="rh-esc-tipo" onchange="rhEscalaAtualizarCicloTemplate()">
+              <option value="">-- Selecione --</option>
+              <option value="6x2">6x2 (6 dias trabalho, 2 folga)</option>
+              <option value="12x36">12x36 (12h trabalho, 36h folga)</option>
+              <option value="folguista">Folguista (customizado)</option>
+            </select>
+
+            <label style="margin-top:8px">Descrição</label>
+            <input id="rh-esc-desc" placeholder="Ex.: Escala com turnos alternados">
+
+            <label style="margin-top:8px">Ciclo de turnos (JSON)</label>
+            <textarea id="rh-esc-ciclo" placeholder='{"dias":[{"tipo":"trabalho"},{"tipo":"folga"}]}' style="font-family:monospace;min-height:100px;width:100%"></textarea>
+            <div class="hint" style="margin-top:4px">Ex 6x2: 6 dias com {"tipo":"trabalho"}, 2 com {"tipo":"folga"}. Ex 12x36: 1 dia {"tipo":"trabalho","horas":12}, 3 dias {"tipo":"folga"}.</div>
+
+            <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
+              <button class="btn b-az b-sm" onclick="rhEscalaSalvar()">Salvar escala</button>
+              <button class="btn b-gh b-sm" onclick="rhEscalaLimparForm()">Limpar</button>
+            </div>
+          </div>
+
+          <div class="f" style="border:1px solid var(--borda);border-radius:10px;padding:10px;background:var(--cinza-cl)">
+            <label>Escalas cadastradas</label>
+            <div class="tbl-wrap" style="margin-top:6px;max-height:240px;overflow:auto">
+              <table class="tbl">
+                <thead><tr><th>Escala</th><th>Tipo</th><th>Funcionários</th><th>Ações</th></tr></thead>
+                <tbody id="rh-esc-tb"></tbody>
+              </table>
+            </div>
+
+            <label style="margin-top:10px">Vincular funcionários à escala</label>
+            <div class="g2" style="margin-top:6px">
+              <div class="f">
+                <label>Escala</label>
+                <select id="rh-esc-vinc-escala" onchange="rhEscalaCarregarFuncsParaVinc()"></select>
+              </div>
+              <div class="f">
+                <label>Data de início</label>
+                <input id="rh-esc-vinc-data-ini" type="date" value="">
+              </div>
+            </div>
+            <div class="f" style="margin-top:6px">
+              <label>Funcionários ativos (disponíveis)</label>
+              <select id="rh-esc-vinc-funcs" multiple size="7"></select>
+            </div>
+            <div class="hint" style="margin-top:4px">Use Ctrl/Cmd para selecionar múltiplos funcionários. Data de início define quando a escala começa a valer.</div>
+            <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
+              <button class="btn b-ghv b-sm" onclick="rhEscalaVincularSelecionados()">Vincular selecionados</button>
+            </div>
+          </div>
+        </div>
+        <div id="rh-escala-st" class="st" style="margin-top:8px"></div>
       </div>
 
       <div class="rh-pane" id="rh-pane-ponto" data-rh-pane="ponto">
@@ -2973,6 +3036,7 @@ function rbacLimpar(){
 }
 let todos=[], emps=[], funcs=[], pontoFuncs=[], bancosBR=[], beneficiosMensais=[], benTab='ativos', rhFuncTab='ativos', rhSubAba='funcionarios', acIdx=-1, svcId=0, cliAtual=null, empAtual=null;
 let rhJornadas=[], rhJornadaInitDone=false;
+let rhEscalas=[], rhEscalaInitDone=false;
 let rhExportFuncsAtivos=[];
 let rhSalAutoTimer=null, rhSalAutoInflight=false, rhSalAutoLastHash='', rhSalFolhaStatus='aberta';
 let rhSalariosPreviewWin=null;
@@ -3541,6 +3605,7 @@ function nav(id,el,force=false){
     painelAssInicializar();
     rhExportCarregarFiltros();
     rhJornadaInit();
+    rhEscalaInit();
     rhSetSubAba(rhSubAba || 'funcionarios');
   }
   if(targetId==='operacional'){renderOperDocs();renderOperPostos();}
@@ -3650,7 +3715,7 @@ function rhSalariosIniciarPagina(){
 }
 
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','ferias-gestao','exportar','jornada','ponto','painel-dia','envio','assinaturas'];
+  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','ponto','painel-dia','envio','assinaturas'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
     p.style.display=(p.dataset.rhPane===rhSubAba)?'block':'none';
@@ -3661,6 +3726,9 @@ function rhSetSubAba(tab,btn){
   if(rhSubAba==='ferias-gestao'){
     rhFeriasEnsurePeriodoPadrao();
     renderRhFerias();
+  }
+  if(rhSubAba==='escalas'){
+    rhEscalaInit();
   }
 }
 
@@ -5839,7 +5907,194 @@ async function rhJornadaInit(force=false){
 function pontoFmtStatus(st){
   if(st==='ok') return '<span class="pill p-vd">OK</span>';
   if(st==='inconsistente') return '<span class="pill p-vm">Inconsistente</span>';
-  return `<span class="pill p-ci">${st||'—'}</span>`;
+  return `<span class="pill p_ci">${st||'—'}</span>`;
+}
+
+// ══════════════════════════════════════════════
+//  ESCALAS DE TURNOS
+// ══════════════════════════════════════════════
+
+async function rhEscalaInit(force=false){
+  if(rhEscalaInitDone && !force) return;
+  try{
+    if(!Array.isArray(funcs) || !funcs.length) funcs=await api('/api/funcionarios');
+    await rhEscalaCarregar();
+    rhEscalaCarregarFuncsParaVinc();
+    rhEscalaLimparForm();
+    rhEscalaInitDone=true;
+  }catch(e){
+    showSt('rh-escala-st','Falha ao carregar escalas.',true);
+  }
+}
+
+async function rhEscalaCarregar(){
+  const r=await api('/api/escalas');
+  rhEscalas=Array.isArray(r)?r:[];
+  rhEscalaRenderTabela();
+  rhEscalaPopularSeletor();
+}
+
+function rhEscalaRenderTabela(){
+  const tb=document.getElementById('rh-esc-tb');
+  if(!tb) return;
+  tb.innerHTML=rhEscalas.map(e=>`
+    <tr>
+      <td>${esc(e.nome||'')}</td>
+      <td>${esc(e.tipo||'')}</td>
+      <td>${e.funcionarios_count||0}</td>
+      <td>
+        <button class="btn b-az b-xs" onclick="rhEscalaEditar(${e.id})">Editar</button>
+        <button class="btn b-vh b-xs" onclick="rhEscalaExcluir(${e.id})">Excluir</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function rhEscalaPopularSeletor(){
+  const sel=document.getElementById('rh-esc-vinc-escala');
+  if(!sel) return;
+  const atual=sel.value||'';
+  sel.innerHTML='<option value="">Selecione a escala...</option>'+rhEscalas.map(e=>`<option value="${e.id}">${esc(e.nome||'')} (${e.tipo||''})</option>`).join('');
+  if(atual && rhEscalas.some(e=>String(e.id)===String(atual))) sel.value=atual;
+}
+
+function rhEscalaAtualizarCicloTemplate(){
+  const tipo=document.getElementById('rh-esc-tipo')?.value||'';
+  const cicloArea=document.getElementById('rh-esc-ciclo');
+  if(!cicloArea) return;
+  const templates={
+    '6x2':JSON.stringify({"dias":[{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"folga"},{"tipo":"folga"}]},null,2),
+    '12x36':JSON.stringify({"dias":[{"tipo":"trabalho","horas":12},{"tipo":"folga"},{"tipo":"folga"}]},null,2),
+    'folguista':JSON.stringify({"dias":[{"tipo":"trabalho","horas":8},{"tipo":"trabalho","horas":8}]},null,2)
+  };
+  cicloArea.value=templates[tipo]||'{}';
+}
+
+function rhEscalaEditar(id){
+  const e=rhEscalas.find(x=>String(x.id)===String(id));
+  if(!e) return;
+  document.getElementById('rh-esc-id').value=String(e.id||'');
+  document.getElementById('rh-esc-nome').value=e.nome||'';
+  document.getElementById('rh-esc-tipo').value=e.tipo||'';
+  document.getElementById('rh-esc-desc').value=e.descricao||'';
+  document.getElementById('rh-esc-ciclo').value=JSON.stringify(e.ciclo||{},null,2);
+  rhEscalaAtualizarCicloTemplate();
+}
+
+function rhEscalaLimparForm(){
+  document.getElementById('rh-esc-id').value='';
+  document.getElementById('rh-esc-nome').value='';
+  document.getElementById('rh-esc-tipo').value='';
+  document.getElementById('rh-esc-desc').value='';
+  document.getElementById('rh-esc-ciclo').value='{}';
+  document.getElementById('rh-esc-vinc-escala').value='';
+  document.getElementById('rh-esc-vinc-data-ini').value=new Date().toISOString().split('T')[0];
+  rhEscalaCarregarFuncsParaVinc();
+}
+
+async function rhEscalaSalvar(){
+  const id=(document.getElementById('rh-esc-id')?.value||'').trim();
+  const nome=(document.getElementById('rh-esc-nome')?.value||'').trim();
+  const tipo=(document.getElementById('rh-esc-tipo')?.value||'').trim();
+  if(!nome){
+    showSt('rh-escala-st','Informe o nome da escala.',true);
+    return;
+  }
+  if(!tipo){
+    showSt('rh-escala-st','Selecione o tipo de escala.',true);
+    return;
+  }
+  let cicloStr=(document.getElementById('rh-esc-ciclo')?.value||'{}').trim();
+  let cicloObj;
+  try{
+    cicloObj=JSON.parse(cicloStr);
+  }catch(e){
+    showSt('rh-escala-st','Ciclo JSON inválido.',true);
+    return;
+  }
+  const payload={
+    nome,
+    tipo,
+    ciclo_json:cicloObj,
+    descricao:(document.getElementById('rh-esc-desc')?.value||'').trim()
+  };
+  const r=id ? await api('/api/escalas/'+id,'PUT',payload) : await api('/api/escalas','POST',payload);
+  if(r?.erro){
+    showSt('rh-escala-st',r.erro,true);
+    return;
+  }
+  await rhEscalaCarregar();
+  rhEscalaLimparForm();
+  showSt('rh-escala-st','Escala salva com sucesso.',false);
+}
+
+async function rhEscalaExcluir(id){
+  if(!confirm('Deseja excluir esta escala?')) return;
+  const r=await api('/api/escalas/'+id,'DELETE');
+  if(r?.erro){
+    showSt('rh-escala-st',r.erro,true);
+    return;
+  }
+  await rhEscalaCarregar();
+  showSt('rh-escala-st','Escala excluída com sucesso.',false);
+}
+
+function rhEscalaCarregarFuncsParaVinc(){
+  const eid=(document.getElementById('rh-esc-vinc-escala')?.value||'').trim();
+  const sel=document.getElementById('rh-esc-vinc-funcs');
+  if(!sel) return;
+  
+  // Se não selecionou escala, mostrar todos os ativos que não estão em escala
+  if(!eid){
+    const sel2=document.getElementById('rh-esc-vinc-funcs');
+    if(!sel2) return;
+    const ativos=(Array.isArray(funcs)?funcs:[])
+      .filter(f=>String((f.status||'').toLowerCase())==='ativo')
+      .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
+    sel2.innerHTML=ativos.map(f=>`<option value="${f.id}">${esc(f.nome||'Sem nome')} (${f.matricula||'—'})</option>`).join('');
+    return;
+  }
+  
+  // Escala selecionada: mostrar funcs que não estão em outra escala
+  const escalaAtual=rhEscalas.find(x=>String(x.id)===String(eid));
+  if(!escalaAtual) return;
+  const idsJaVincs=new Set((escalaAtual.funcionarios||[]).map(f=>f.id));
+  const ativos=(Array.isArray(funcs)?funcs:[])
+    .filter(f=>String((f.status||'').toLowerCase())==='ativo' && !idsJaVincs.has(f.id))
+    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
+  sel.innerHTML=ativos.map(f=>`<option value="${f.id}">${esc(f.nome||'Sem nome')} (${f.matricula||'—'})</option>`).join('');
+}
+
+async function rhEscalaVincularSelecionados(){
+  const eid=(document.getElementById('rh-esc-vinc-escala')?.value||'').trim();
+  if(!eid){
+    showSt('rh-escala-st','Selecione a escala para vincular.',true);
+    return;
+  }
+  const dataIni=(document.getElementById('rh-esc-vinc-data-ini')?.value||'').trim();
+  if(!dataIni){
+    showSt('rh-escala-st','Informe a data de início.',true);
+    return;
+  }
+  const sel=document.getElementById('rh-esc-vinc-funcs');
+  const ids=Array.from(sel?.selectedOptions||[]).map(o=>parseInt(o.value,10)).filter(x=>!Number.isNaN(x));
+  if(!ids.length){
+    showSt('rh-escala-st','Selecione ao menos um funcionário.',true);
+    return;
+  }
+  
+  const funcionarios=ids.map(fid=>({funcionario_id:fid,data_inicio:dataIni,data_fim:null}));
+  const r=await api('/api/escalas/'+eid+'/funcionarios','POST',{funcionarios});
+  if(r?.erro){
+    showSt('rh-escala-st',r.erro,true);
+    return;
+  }
+  funcs=await api('/api/funcionarios');
+  pontoFuncs=[...funcs];
+  await rhEscalaCarregar();
+  rhEscalaCarregarFuncsParaVinc();
+  renderFuncionarios();
+  showSt('rh-escala-st','Funcionários vinculados à escala.',false);
 }
 
 // ══════════════════════════════════════════════

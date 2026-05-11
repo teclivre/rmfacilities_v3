@@ -300,6 +300,69 @@ class JornadaTrabalho(db.Model):
         d['funcionarios_count']=Funcionario.query.filter_by(jornada_id=self.id).count() if self.id else 0
         return d
 
+class Escala(db.Model):
+    """
+    Modelo de Escala de Turnos:
+    - tipo: '6x2' (6 dias trabalho, 2 folga), '12x36' (12h turno, 36h folga), 'folguista' (customizado)
+    - ciclo_json: JSON com estrutura de dias/turnos e folgas
+      Ex 6x2: {"dias": [{"tipo": "trabalho"}, ...6x..., {"tipo": "folga"}, {"tipo": "folga"}]}
+      Ex 12x36: {"dias": [{"tipo": "trabalho", "horas": 12}, {"tipo": "folga"}, {"tipo": "folga"}]}
+    """
+    id=db.Column(db.Integer,primary_key=True)
+    nome=db.Column(db.String(120),nullable=False)
+    tipo=db.Column(db.String(30),nullable=False)  # '6x2', '12x36', 'folguista'
+    ciclo_json=db.Column(db.Text,default='{}')  # JSON com dias/turnos/folgas
+    descricao=db.Column(db.String(255))
+    ativo=db.Column(db.Boolean,default=True)
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    def carga_horaria_min_dia(self, dia_ciclo_indice):
+        """Retorna minutos de trabalho para um dia do ciclo (0-indexed)"""
+        try:
+            ciclo=json.loads(self.ciclo_json or '{}')
+            dias=ciclo.get('dias',[])
+            if dia_ciclo_indice<0 or dia_ciclo_indice>=len(dias):
+                return 0
+            dia_info=dias[dia_ciclo_indice]
+            if dia_info.get('tipo')=='folga':
+                return 0
+            # Se especificou horas, converter para minutos; senão usar padrão 8h
+            horas=dia_info.get('horas',8)
+            return int(horas*60)
+        except Exception:
+            return 0
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        try:
+            d['ciclo']=json.loads(self.ciclo_json or '{}')
+        except Exception:
+            d['ciclo']={}
+        d['funcionarios_count']=EscalaFuncionario.query.filter_by(escala_id=self.id,ativo=True).count() if self.id else 0
+        return d
+
+class EscalaFuncionario(db.Model):
+    """Vínculo entre Funcionário e Escala de turnos"""
+    id=db.Column(db.Integer,primary_key=True)
+    escala_id=db.Column(db.Integer,db.ForeignKey('escala.id'),nullable=False,index=True)
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False,index=True)
+    data_inicio=db.Column(db.String(10),nullable=False)  # YYYY-MM-DD
+    data_fim=db.Column(db.String(10),nullable=True)  # YYYY-MM-DD (NULL = sem término, ainda ativa)
+    ativo=db.Column(db.Boolean,default=True)
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    __table_args__=(
+        db.UniqueConstraint('funcionario_id','escala_id','data_inicio',name='uq_escala_func_data'),
+    )
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        escala=Escala.query.get(self.escala_id)
+        if escala:
+            d['escala_nome']=escala.nome
+            d['escala_tipo']=escala.tipo
+        funcionario=Funcionario.query.get(self.funcionario_id)
+        if funcionario:
+            d['funcionario_nome']=funcionario.nome
+            d['funcionario_matricula']=funcionario.matricula
+        return d
+
 class Despesa(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     descricao = db.Column(db.String(200), nullable=False)
@@ -7603,6 +7666,48 @@ def _app_ponto_min_esperado_jornada(funcionario):
         return h*60
     return 8*60
 
+def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
+    """Retorna minutos esperados para um funcionário em uma data específica.
+    Se tem escala ativa nessa data, usa turno da escala; senão usa jornada fixa."""
+    try:
+        # Verificar se tem escala ativa nessa data
+        data_obj=datetime.strptime(data_str,'%Y-%m-%d').date() if isinstance(data_str,str) else data_str
+        
+        # Procura escala ativa para esse funcionário e data
+        esc_func=EscalaFuncionario.query.filter(
+            EscalaFuncionario.funcionario_id==funcionario.id,
+            EscalaFuncionario.data_inicio<=data_str,
+            EscalaFuncionario.ativo==True
+        ).all()
+        
+        for ef in esc_func:
+            # Se tem data_fim, verifica se data_str está dentro do range
+            if ef.data_fim and ef.data_fim<data_str:
+                continue
+            # Encontrou escala ativa; calcular índice no ciclo
+            esc=Escala.query.get(ef.escala_id)
+            if not esc:
+                continue
+            
+            # Calcular quantos dias desde data_inicio
+            data_inicio_obj=datetime.strptime(ef.data_inicio,'%Y-%m-%d').date()
+            dias_decorridos=(data_obj-data_inicio_obj).days
+            
+            # Obter tamanho do ciclo
+            try:
+                ciclo=json.loads(esc.ciclo_json or '{}')
+                dias_ciclo=len(ciclo.get('dias',[]))
+                if dias_ciclo>0:
+                    indice_ciclo=dias_decorridos%dias_ciclo
+                    return esc.carga_horaria_min_dia(indice_ciclo)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    
+    # Se não tem escala ou erro, usa jornada fixa
+    return _app_ponto_min_esperado_jornada(funcionario)
+
 def _app_ponto_fmt_minutos(total,signed=False):
     try:
         minutos=int(total or 0)
@@ -7973,6 +8078,178 @@ def api_funcionario_definir_jornada(id):
         f.jornada_id=j.id
     db.session.commit()
     return jsonify({'ok':True,'jornada_id':f.jornada_id})
+
+# ============================================================
+# ESCALAS DE TURNOS - WEB RH (gestão)
+# ============================================================
+
+@app.route('/api/escalas',methods=['GET'])
+@lr
+def api_escalas_listar():
+    escalas=Escala.query.filter_by(ativo=True).order_by(Escala.criado_em.desc()).all()
+    return jsonify([e.to_dict() for e in escalas])
+
+@app.route('/api/escalas',methods=['POST'])
+@lr
+def api_escalas_criar():
+    d=request.json or {}
+    nome=(d.get('nome') or '').strip()
+    tipo=(d.get('tipo') or '').strip()
+    if not nome:
+        return jsonify({'erro':'Nome obrigatório'}),400
+    if tipo not in ('6x2','12x36','folguista'):
+        return jsonify({'erro':"Tipo deve ser '6x2', '12x36' ou 'folguista'"}),400
+    
+    ciclo_json=d.get('ciclo_json') or '{}'
+    if isinstance(ciclo_json,dict):
+        ciclo_json=json.dumps(ciclo_json,ensure_ascii=False)
+    
+    e=Escala(
+        nome=nome,
+        tipo=tipo,
+        ciclo_json=ciclo_json,
+        descricao=d.get('descricao',''),
+        ativo=True
+    )
+    db.session.add(e)
+    db.session.commit()
+    audit_event('escala_criar','usuario',session.get('uid'),'escala',e.id,True,{'nome':nome,'tipo':tipo})
+    return jsonify(e.to_dict()),201
+
+@app.route('/api/escalas/<int:id>',methods=['GET'])
+@lr
+def api_escala_detalhe(id):
+    e=Escala.query.get_or_404(id)
+    d=e.to_dict()
+    # Incluir funcionários vinculados
+    d['funcionarios']=[]
+    for ef in EscalaFuncionario.query.filter_by(escala_id=id,ativo=True).all():
+        f=Funcionario.query.get(ef.funcionario_id)
+        if f:
+            d['funcionarios'].append({
+                'id':f.id,
+                'nome':f.nome,
+                'matricula':f.matricula,
+                'data_inicio':ef.data_inicio,
+                'data_fim':ef.data_fim,
+                'ativo':ef.ativo
+            })
+    return jsonify(d)
+
+@app.route('/api/escalas/<int:id>',methods=['PUT'])
+@lr
+def api_escala_editar(id):
+    e=Escala.query.get_or_404(id)
+    d=request.json or {}
+    if 'nome' in d:
+        e.nome=(d.get('nome') or '').strip() or e.nome
+    if 'tipo' in d and d.get('tipo') in ('6x2','12x36','folguista'):
+        e.tipo=d.get('tipo')
+    if 'ciclo_json' in d:
+        ciclo=d.get('ciclo_json')
+        e.ciclo_json=json.dumps(ciclo,ensure_ascii=False) if isinstance(ciclo,dict) else (ciclo or '{}')
+    if 'descricao' in d:
+        e.descricao=d.get('descricao','')
+    if 'ativo' in d:
+        e.ativo=bool(d.get('ativo',True))
+    db.session.commit()
+    audit_event('escala_editar','usuario',session.get('uid'),'escala',id,True,{'nome':e.nome})
+    return jsonify(e.to_dict())
+
+@app.route('/api/escalas/<int:id>',methods=['DELETE'])
+@lr
+def api_escala_excluir(id):
+    e=Escala.query.get_or_404(id)
+    e.ativo=False
+    db.session.commit()
+    audit_event('escala_excluir','usuario',session.get('uid'),'escala',id,True,{'nome':e.nome})
+    return jsonify({'ok':True})
+
+@app.route('/api/escalas/<int:id>/funcionarios',methods=['POST'])
+@lr
+def api_escala_vincular_funcionarios(id):
+    e=Escala.query.get_or_404(id)
+    d=request.json or {}
+    pares=d.get('funcionarios') or []  # [{'funcionario_id': 1, 'data_inicio': '2026-05-11', 'data_fim': None}, ...]
+    if not isinstance(pares,list):
+        return jsonify({'erro':'funcionarios deve ser lista'}),400
+    
+    vinculados=[]
+    for par in pares:
+        if not isinstance(par,dict):
+            continue
+        fid=par.get('funcionario_id')
+        data_ini=par.get('data_inicio')
+        data_fim=par.get('data_fim')
+        
+        if not fid or not data_ini:
+            continue
+        
+        f=Funcionario.query.get(fid)
+        if not f:
+            continue
+        
+        # Validar se funcionário já está em outra escala na mesma data
+        conflito=EscalaFuncionario.query.filter(
+            EscalaFuncionario.funcionario_id==fid,
+            EscalaFuncionario.escala_id!=id,
+            EscalaFuncionario.data_inicio<=data_ini,
+            EscalaFuncionario.ativo==True
+        ).first()
+        
+        if conflito:
+            esc_atual=Escala.query.get(conflito.escala_id)
+            return jsonify({
+                'erro':f'Funcionário {f.nome} já está em outra escala ({esc_atual.nome if esc_atual else f"escala #{conflito.escala_id}"})',
+                'conflito_funcionario_id':fid,
+                'conflito_escala_id':conflito.escala_id
+            }),409
+        
+        # Criar vínculo
+        ef=EscalaFuncionario(
+            escala_id=id,
+            funcionario_id=fid,
+            data_inicio=data_ini,
+            data_fim=data_fim,
+            ativo=True
+        )
+        db.session.add(ef)
+        vinculados.append(fid)
+    
+    db.session.commit()
+    audit_event('escala_vincular','usuario',session.get('uid'),'escala',id,True,{'funcionarios':vinculados})
+    return jsonify({'ok':True,'vinculados':len(vinculados)})
+
+@app.route('/api/escalas/<int:id>/funcionarios/<int:fid>',methods=['DELETE'])
+@lr
+def api_escala_desvincular_funcionario(id,fid):
+    ef=EscalaFuncionario.query.filter_by(escala_id=id,funcionario_id=fid).first_or_404()
+    ef.ativo=False
+    db.session.commit()
+    return jsonify({'ok':True})
+
+@app.route('/api/escalas/<int:id>/turno-do-dia/<data>',methods=['GET'])
+@lr
+def api_escala_turno_do_dia(id,data):
+    """Retorna info do turno para uma data específica dentro do ciclo da escala"""
+    e=Escala.query.get_or_404(id)
+    # Assumindo que data é a data_inicio de alguma EscalaFuncionario ativa
+    # Aqui retornamos apenas a info do turno do dia no ciclo
+    try:
+        ciclo=json.loads(e.ciclo_json or '{}')
+        dias=ciclo.get('dias',[])
+        if not dias:
+            return jsonify({'erro':'Escala sem ciclo definido'}),400
+        # Necessita data_inicio para calcular índice; aqui retornamos apenas a estrutura
+        return jsonify({
+            'escala_id':id,
+            'escala_nome':e.nome,
+            'escala_tipo':e.tipo,
+            'ciclo_dias':len(dias),
+            'ciclo':ciclo
+        })
+    except Exception as ex:
+        return jsonify({'erro':str(ex)}),400
 
 # ============================================================
 # COMUNICADOS - WEB RH (gestão)
