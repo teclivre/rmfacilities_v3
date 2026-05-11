@@ -21,6 +21,7 @@ class ConfiguracoesActivity : AppCompatActivity() {
     private lateinit var session: SessionManager
     private lateinit var api: ApiClient
     private var internalBiometricChange = false
+    private var internalThemeChange = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,6 +35,7 @@ class ConfiguracoesActivity : AppCompatActivity() {
         val tvBiometriaStatus = findViewById<TextView>(R.id.tvBiometriaStatusConfig)
         val rgCanal = findViewById<RadioGroup>(R.id.rgCanalOtp)
         val rgTimeout = findViewById<RadioGroup>(R.id.rgTimeoutSessao)
+        val rgTema = findViewById<RadioGroup>(R.id.rgTemaApp)
         val tvCanalStatus = findViewById<TextView>(R.id.tvCanalOtpStatus)
         val tvFeedback = findViewById<TextView>(R.id.tvFeedbackConfig)
 
@@ -57,6 +59,14 @@ class ConfiguracoesActivity : AppCompatActivity() {
             in 11..15 -> rgTimeout.check(R.id.rbTimeout15)
             else -> rgTimeout.check(R.id.rbTimeout30)
         }
+
+        internalThemeChange = true
+        when (AppThemeManager.getMode(this)) {
+            AppThemeManager.MODE_DARK -> rgTema.check(R.id.rbTemaEscuro)
+            AppThemeManager.MODE_SYSTEM -> rgTema.check(R.id.rbTemaSistema)
+            else -> rgTema.check(R.id.rbTemaClaro)
+        }
+        internalThemeChange = false
 
         switchBiometria.setOnCheckedChangeListener { _, checked ->
             if (internalBiometricChange) return@setOnCheckedChangeListener
@@ -128,6 +138,24 @@ class ConfiguracoesActivity : AppCompatActivity() {
             tvFeedback.text = "Bloqueio por inatividade ajustado para $minutes minutos."
             tvFeedback.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_info))
             Toast.makeText(this, "Bloqueio configurado para $minutes min.", Toast.LENGTH_SHORT).show()
+        }
+
+        rgTema.setOnCheckedChangeListener { _, checkedId ->
+            if (internalThemeChange) return@setOnCheckedChangeListener
+            window.decorView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            val mode = when (checkedId) {
+                R.id.rbTemaEscuro -> AppThemeManager.MODE_DARK
+                R.id.rbTemaSistema -> AppThemeManager.MODE_SYSTEM
+                else -> AppThemeManager.MODE_LIGHT
+            }
+            AppThemeManager.setMode(this, mode)
+            val msg = when (mode) {
+                AppThemeManager.MODE_DARK -> "Tema escuro ativado."
+                AppThemeManager.MODE_SYSTEM -> "Tema seguindo o sistema."
+                else -> "Tema claro ativado."
+            }
+            tvFeedback.text = msg
+            tvFeedback.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_info))
         }
 
         findViewById<MaterialButton>(R.id.btnRevogarDispositivo).setOnClickListener {

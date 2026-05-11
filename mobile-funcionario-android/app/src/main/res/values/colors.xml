@@ -1,31 +1,31 @@
 <resources>
-    <!-- Paleta premium dark -->
-    <color name="primary">#0d2e4d</color>
-    <color name="primary_variant">#0a2037</color>
-    <color name="background">#0a1929</color>
-    <color name="surface">#0f1f35</color>
-    <color name="surface_elevated">#142840</color>
-    <color name="accent">#ff9f4a</color>
-    <color name="accent_dark">#e88930</color>
-    <color name="accent_blue">#4da6ff</color>
-    <color name="accent_purple">#9b59ff</color>
-    <color name="accent_green">#00d49a</color>
-    <color name="text_primary">#e8f0f8</color>
-    <color name="text_secondary">#7a9ab8</color>
-    <color name="text_hint">#3d5f7a</color>
-    <color name="divider">#142840</color>
-    <color name="error">#ff5f6d</color>
-    <color name="success">#00d49a</color>
-    <color name="primary_light">#1a3a58</color>
-    <color name="white">#ffffff</color>
-    <color name="border">#1e3a5f</color>
+    <!-- Paleta padrão clara -->
+    <color name="primary">#1D4ED8</color>
+    <color name="primary_variant">#123CA7</color>
+    <color name="background">#F2F6FC</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_elevated">#F7FAFF</color>
+    <color name="accent">#2B7FFF</color>
+    <color name="accent_dark">#1E63D3</color>
+    <color name="accent_blue">#2B7FFF</color>
+    <color name="accent_purple">#7053E6</color>
+    <color name="accent_green">#1FAE75</color>
+    <color name="text_primary">#10233A</color>
+    <color name="text_secondary">#5E738D</color>
+    <color name="text_hint">#8195AE</color>
+    <color name="divider">#DCE7FA</color>
+    <color name="error">#D54848</color>
+    <color name="success">#1FAE75</color>
+    <color name="primary_light">#DDE9FF</color>
+    <color name="white">#FFFFFF</color>
+    <color name="border">#DCE7FA</color>
     <!-- Icon colors para quick action cards -->
     <color name="icon_blue">#4da6ff</color>
     <color name="icon_purple">#9b59ff</color>
     <color name="icon_orange">#ff8c1a</color>
     <color name="icon_green">#00d49a</color>
 
-    <!-- Redesign mobile (light + semantic) -->
+    <!-- Mobile tokens -->
     <color name="mobile_bg_top">#EEF4FF</color>
     <color name="mobile_bg_bottom">#F8FBFF</color>
     <color name="mobile_surface">#FFFFFF</color>
@@ -38,4 +38,20 @@
     <color name="mobile_tab_active">#1D4ED8</color>
     <color name="mobile_tab_inactive">#6B7E97</color>
     <color name="mobile_card_border">#DCE7FA</color>
+    <color name="mobile_glass_surface">#D9FFFFFF</color>
+    <color name="mobile_glass_stroke">#8FD7E6FF</color>
+    <color name="mobile_nav_surface">#F8FFFFFF</color>
+    <color name="mobile_nav_stroke">#BFD7E8FF</color>
+    <color name="mobile_input_bg">#FFFFFF</color>
+    <color name="mobile_input_stroke">#DCE7FA</color>
+    <color name="mobile_sheet_surface">#F3F8FF</color>
+    <color name="mobile_card_surface">#FFFFFF</color>
+    <color name="mobile_card_surface_alt">#F6FAFF</color>
+    <color name="mobile_card_stroke">#D6E4FA</color>
+    <color name="mobile_otp_bg">#EEF4FF</color>
+    <color name="mobile_otp_stroke">#A9C4EC</color>
+    <color name="mobile_success_bg">#E8F8F0</color>
+    <color name="mobile_success_stroke">#9FD9BE</color>
+    <color name="mobile_bubble_func_bg">#1F7A53</color>
+    <color name="mobile_bubble_rh_bg">#2A6DB3</color>
 </resources>

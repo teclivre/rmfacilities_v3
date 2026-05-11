@@ -1,0 +1,58 @@
+<resources>
+    <!-- Paleta escura -->
+    <color name="primary">#0D2E4D</color>
+    <color name="primary_variant">#0A2037</color>
+    <color name="background">#0A1929</color>
+    <color name="surface">#0F1F35</color>
+    <color name="surface_elevated">#142840</color>
+    <color name="accent">#FF9F4A</color>
+    <color name="accent_dark">#E88930</color>
+    <color name="accent_blue">#4DA6FF</color>
+    <color name="accent_purple">#9B59FF</color>
+    <color name="accent_green">#00D49A</color>
+    <color name="text_primary">#E8F0F8</color>
+    <color name="text_secondary">#7A9AB8</color>
+    <color name="text_hint">#3D5F7A</color>
+    <color name="divider">#21374D</color>
+    <color name="error">#FF5F6D</color>
+    <color name="success">#00D49A</color>
+    <color name="primary_light">#1A3A58</color>
+    <color name="white">#FFFFFF</color>
+    <color name="border">#1E3A5F</color>
+
+    <!-- Icon colors -->
+    <color name="icon_blue">#4DA6FF</color>
+    <color name="icon_purple">#9B59FF</color>
+    <color name="icon_orange">#FF8C1A</color>
+    <color name="icon_green">#00D49A</color>
+
+    <!-- Mobile tokens (dark) -->
+    <color name="mobile_bg_top">#0A2340</color>
+    <color name="mobile_bg_bottom">#061526</color>
+    <color name="mobile_surface">#0F1F35</color>
+    <color name="mobile_surface_soft">#132742</color>
+    <color name="mobile_text_primary">#E8F0F8</color>
+    <color name="mobile_text_secondary">#9EB3C9</color>
+    <color name="mobile_semantic_success">#2CCF95</color>
+    <color name="mobile_semantic_pending">#F3C05B</color>
+    <color name="mobile_semantic_info">#67B8FF</color>
+    <color name="mobile_tab_active">#67B8FF</color>
+    <color name="mobile_tab_inactive">#7E97B3</color>
+    <color name="mobile_card_border">#1F3A58</color>
+    <color name="mobile_glass_surface">#1A2436</color>
+    <color name="mobile_glass_stroke">#304A69</color>
+    <color name="mobile_nav_surface">#13233A</color>
+    <color name="mobile_nav_stroke">#2A4463</color>
+    <color name="mobile_input_bg">#0D1E2D</color>
+    <color name="mobile_input_stroke">#2A4463</color>
+    <color name="mobile_sheet_surface">#0F1F35</color>
+    <color name="mobile_card_surface">#12263E</color>
+    <color name="mobile_card_surface_alt">#152C46</color>
+    <color name="mobile_card_stroke">#284767</color>
+    <color name="mobile_otp_bg">#12203A</color>
+    <color name="mobile_otp_stroke">#365B89</color>
+    <color name="mobile_success_bg">#103729</color>
+    <color name="mobile_success_stroke">#1D5040</color>
+    <color name="mobile_bubble_func_bg">#1E3D2F</color>
+    <color name="mobile_bubble_rh_bg">#1A3F6F</color>
+</resources>
