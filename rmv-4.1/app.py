@@ -1186,6 +1186,26 @@ class FolhaBeneficios(db.Model):
             d['dados']={}
         return d
 
+class Feriado(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    data=db.Column(db.String(10),nullable=False,index=True)  # YYYY-MM-DD
+    descricao=db.Column(db.String(200),nullable=False)
+    tipo=db.Column(db.String(20),default='nacional',nullable=False)  # 'nacional' ou 'municipal'
+    municipio=db.Column(db.String(100),default='')
+    estado=db.Column(db.String(2),default='')
+    empresa_id=db.Column(db.Integer,db.ForeignKey('empresa.id'),nullable=True)
+    criado_por=db.Column(db.String(100),default='')
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    __table_args__=(db.UniqueConstraint('data','tipo','municipio',name='uq_feriado_data_tipo_mun'),)
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        try:
+            from datetime import datetime as _dt
+            d['data_fmt']=_dt.strptime(self.data,'%Y-%m-%d').strftime('%d/%m/%Y') if self.data else ''
+        except Exception:
+            d['data_fmt']=self.data or ''
+        return d
+
 class FuncionarioAppSessao(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False)
@@ -11197,6 +11217,361 @@ def api_beneficios_folhas():
         q=q.filter_by(empresa_ref_id=empresa_id or 0)
     folhas=q.order_by(FolhaBeneficios.salvo_em.desc()).limit(24).all()
     return jsonify({'ok':True,'itens':[f.to_dict() for f in folhas]})
+
+# ══════════════════════════════════════════════════════════════
+#  FERIADOS
+# ══════════════════════════════════════════════════════════════
+
+@app.route('/api/feriados',methods=['GET'])
+@lr
+def api_feriados_listar():
+    ano=(request.args.get('ano') or '').strip()
+    tipo=(request.args.get('tipo') or '').strip().lower()
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    q=Feriado.query
+    if ano:
+        q=q.filter(Feriado.data.like(f'{ano}-%'))
+    if tipo in ('nacional','municipal'):
+        q=q.filter_by(tipo=tipo)
+    q=q.order_by(Feriado.data.asc())
+    itens=q.all()
+    return jsonify({'ok':True,'itens':[f.to_dict() for f in itens]})
+
+@app.route('/api/feriados',methods=['POST'])
+@lr
+def api_feriados_criar():
+    d=request.json or {}
+    data_raw=(d.get('data') or '').strip()
+    descricao=(d.get('descricao') or '').strip()
+    tipo=(d.get('tipo') or 'nacional').strip().lower()
+    municipio=(d.get('municipio') or '').strip()
+    estado=(d.get('estado') or '').strip().upper()[:2]
+    empresa_id=to_num(d.get('empresa_id')) or None
+    if not data_raw:
+        return jsonify({'erro':'Data é obrigatória.'}),400
+    if not descricao:
+        return jsonify({'erro':'Descrição é obrigatória.'}),400
+    if tipo not in ('nacional','municipal'):
+        return jsonify({'erro':'Tipo inválido. Use nacional ou municipal.'}),400
+    # normaliza para YYYY-MM-DD
+    data_norm=None
+    for fmt in ('%d/%m/%Y','%Y-%m-%d','%d-%m-%Y'):
+        try:
+            from datetime import datetime as _dt
+            data_norm=_dt.strptime(data_raw,fmt).strftime('%Y-%m-%d')
+            break
+        except Exception:
+            pass
+    if not data_norm:
+        return jsonify({'erro':'Data inválida. Use DD/MM/AAAA.'}),400
+    existente=Feriado.query.filter_by(data=data_norm,tipo=tipo,municipio=municipio).first()
+    if existente:
+        return jsonify({'erro':'Feriado já cadastrado nessa data/tipo/município.'}),409
+    f=Feriado(data=data_norm,descricao=descricao,tipo=tipo,municipio=municipio,estado=estado,
+              empresa_id=empresa_id,criado_por=session.get('nome',''))
+    db.session.add(f)
+    db.session.commit()
+    return jsonify({'ok':True,'feriado':f.to_dict()}),201
+
+@app.route('/api/feriados/<int:fid>',methods=['PUT'])
+@lr
+def api_feriados_editar(fid):
+    f=Feriado.query.get_or_404(fid)
+    d=request.json or {}
+    data_raw=(d.get('data') or '').strip()
+    descricao=(d.get('descricao') or '').strip()
+    tipo=(d.get('tipo') or f.tipo or 'nacional').strip().lower()
+    municipio=(d.get('municipio') or '').strip()
+    estado=(d.get('estado') or '').strip().upper()[:2]
+    if data_raw:
+        data_norm=None
+        for fmt in ('%d/%m/%Y','%Y-%m-%d','%d-%m-%Y'):
+            try:
+                from datetime import datetime as _dt
+                data_norm=_dt.strptime(data_raw,fmt).strftime('%Y-%m-%d')
+                break
+            except Exception:
+                pass
+        if not data_norm:
+            return jsonify({'erro':'Data inválida. Use DD/MM/AAAA.'}),400
+        f.data=data_norm
+    if descricao:
+        f.descricao=descricao
+    if tipo in ('nacional','municipal'):
+        f.tipo=tipo
+    f.municipio=municipio
+    f.estado=estado
+    if 'empresa_id' in d:
+        f.empresa_id=to_num(d.get('empresa_id')) or None
+    db.session.commit()
+    return jsonify({'ok':True,'feriado':f.to_dict()})
+
+@app.route('/api/feriados/<int:fid>',methods=['DELETE'])
+@lr
+def api_feriados_excluir(fid):
+    f=Feriado.query.get_or_404(fid)
+    db.session.delete(f)
+    db.session.commit()
+    return jsonify({'ok':True})
+
+@app.route('/api/feriados/importar-nacionais',methods=['POST'])
+@lr
+def api_feriados_importar_nacionais():
+    """Importa os feriados nacionais fixos do Brasil para o ano informado."""
+    d=request.json or {}
+    ano=to_num(d.get('ano'))
+    if not ano or ano<2020 or ano>2099:
+        from datetime import datetime as _dt
+        ano=_dt.now().year
+    feriados_fixos=[
+        ('01-01','Confraternização Universal'),
+        ('04-21','Tiradentes'),
+        ('05-01','Dia do Trabalhador'),
+        ('09-07','Independência do Brasil'),
+        ('10-12','Nossa Senhora Aparecida'),
+        ('11-02','Finados'),
+        ('11-15','Proclamação da República'),
+        ('12-25','Natal'),
+    ]
+    inseridos=0
+    ignorados=0
+    for mes_dia,desc in feriados_fixos:
+        data_norm=f'{ano}-{mes_dia}'
+        existente=Feriado.query.filter_by(data=data_norm,tipo='nacional',municipio='').first()
+        if existente:
+            ignorados+=1
+            continue
+        f=Feriado(data=data_norm,descricao=desc,tipo='nacional',municipio='',estado='',criado_por=session.get('nome',''))
+        db.session.add(f)
+        inseridos+=1
+    db.session.commit()
+    return jsonify({'ok':True,'ano':ano,'inseridos':inseridos,'ignorados':ignorados})
+
+# ══════════════════════════════════════════════════════════════
+#  BENEFÍCIOS — CÁLCULO POR PERÍODO
+# ══════════════════════════════════════════════════════════════
+
+@app.route('/api/beneficios/calcular-por-periodo',methods=['POST'])
+@lr
+def api_beneficios_calcular_por_periodo():
+    """Calcula dias trabalhados por funcionário num intervalo de datas
+    e retorna (ou salva) nos campos de BeneficioMensal.
+
+    Body JSON:
+      data_inicio   str  DD/MM/AAAA ou AAAA-MM-DD
+      data_fim      str  DD/MM/AAAA ou AAAA-MM-DD
+      empresa_id    int  (opcional)
+      salvar        bool se True grava em BeneficioMensal
+      fonte         str  'ponto' | 'calendario'  (default: 'ponto' com fallback para 'calendario')
+      funcionarios  list[int] (opcional; filtra por IDs)
+    """
+    from datetime import date,timedelta
+    d=request.json or {}
+    empresa_id=to_num(d.get('empresa_id')) or None
+    salvar=to_bool(d.get('salvar'))
+    fonte=(d.get('fonte') or 'ponto').strip().lower()
+    func_ids_filter={int(x) for x in (d.get('funcionarios') or []) if str(x).isdigit()}
+
+    def _parse_date(s):
+        s=(s or '').strip()
+        for fmt in ('%d/%m/%Y','%Y-%m-%d','%d-%m-%Y'):
+            try:
+                from datetime import datetime as _dt
+                return _dt.strptime(s,fmt).date()
+            except Exception:
+                pass
+        return None
+
+    dt_ini=_parse_date(d.get('data_inicio'))
+    dt_fim=_parse_date(d.get('data_fim'))
+    if not dt_ini or not dt_fim:
+        return jsonify({'erro':'Informe data_inicio e data_fim válidos (DD/MM/AAAA).'}),400
+    if dt_fim<dt_ini:
+        return jsonify({'erro':'data_fim deve ser >= data_inicio.'}),400
+    delta=(dt_fim-dt_ini).days+1
+    if delta>185:
+        return jsonify({'erro':'Período máximo de 6 meses (185 dias).'}),400
+
+    # competência = mês da data_inicio
+    comp=dt_ini.strftime('%Y-%m')
+
+    # Feriados no período (nacional + municipal)
+    feriados_periodo={
+        row.data for row in Feriado.query.filter(
+            Feriado.data>=dt_ini.isoformat(),
+            Feriado.data<=dt_fim.isoformat()
+        ).all()
+    }
+
+    # Dias do período
+    todos_dias=[dt_ini+timedelta(days=i) for i in range(delta)]
+
+    # Monta conjunto de dias uteis (seg-sex, excluindo feriados)
+    def _is_util(dt,dias_semana_set=None):
+        # dt.weekday(): 0=seg,1=ter,...,4=sex,5=sab,6=dom
+        if dias_semana_set:
+            # dias_semana_set = conjunto de ints 0-6 (weekday)
+            if dt.weekday() not in dias_semana_set:
+                return False
+        else:
+            if dt.weekday()>=5:
+                return False
+        if dt.isoformat() in feriados_periodo:
+            return False
+        return True
+
+    # Funcionários ativos
+    qf=Funcionario.query.filter_by(status='Ativo')
+    if empresa_id:
+        qf=qf.filter_by(empresa_id=empresa_id)
+    funcs=qf.order_by(Funcionario.nome).all()
+    if func_ids_filter:
+        funcs=[f for f in funcs if f.id in func_ids_filter]
+
+    # Pré-carrega jornadas
+    jornadas_map={}
+    for jt in JornadaTrabalho.query.all():
+        jornadas_map[jt.id]=jt
+
+    # Pré-carrega registros de ponto (PontoFechamentoDia) no período por funcionário
+    ponto_map={}  # {func_id: set(date_str)}
+    if fonte in ('ponto','auto'):
+        pfds=PontoFechamentoDia.query.filter(
+            PontoFechamentoDia.data_ref>=dt_ini.isoformat(),
+            PontoFechamentoDia.data_ref<=dt_fim.isoformat(),
+            PontoFechamentoDia.status.in_(['ok','ajuste'])
+        ).all()
+        for pfd in pfds:
+            ponto_map.setdefault(pfd.funcionario_id,set()).add(pfd.data_ref)
+
+    # Também verifica PontoMarcacao para dias com pelo menos 1 marcação de entrada
+    ponto_marc_map={}  # {func_id: set(date_str)}
+    if fonte in ('ponto','auto'):
+        from sqlalchemy import func as sqlfunc
+        mcs=PontoMarcacao.query.filter(
+            PontoMarcacao.data_hora>=str(dt_ini)+' 00:00:00',
+            PontoMarcacao.data_hora<=str(dt_fim)+' 23:59:59',
+            PontoMarcacao.tipo.in_(['entrada','saida'])
+        ).all()
+        for mc in mcs:
+            try:
+                dia=str(mc.data_hora)[:10]
+                ponto_marc_map.setdefault(mc.funcionario_id,set()).add(dia)
+            except Exception:
+                pass
+
+    itens=[]
+    for f in funcs:
+        # Resolve dias da semana da jornada
+        dias_semana_set=None
+        jt=jornadas_map.get(f.jornada_id) if f.jornada_id else None
+        if jt and (jt.dias_semana or '').strip():
+            try:
+                raw=[int(x.strip())-1 for x in str(jt.dias_semana).split(',') if x.strip().isdigit()]
+                # jornada armazena 1=Dom,2=Seg,...,7=Sab (Brasil) — ajusta para weekday()
+                # Convencao no sistema: 1=Dom,2=Seg,3=Ter,4=Qua,5=Qui,6=Sex,7=Sab
+                # weekday(): 0=Seg,1=Ter,2=Qua,3=Qui,4=Sex,5=Sab,6=Dom
+                mapa_wd={1:6,2:0,3:1,4:2,5:3,6:4,7:5}
+                dias_semana_set={mapa_wd.get(x+1,x) for x in raw}
+            except Exception:
+                dias_semana_set=None
+
+        dias_calendario=sum(1 for dt in todos_dias if _is_util(dt,dias_semana_set))
+
+        # Dias reais de ponto (fechamento ou marcação)
+        dias_ponto=0
+        tem_ponto=False
+        if f.id in ponto_map and ponto_map[f.id]:
+            dias_ponto_set=set()
+            for dia_str in ponto_map[f.id]:
+                try:
+                    from datetime import datetime as _dt2
+                    dt_d=_dt2.strptime(dia_str,'%Y-%m-%d').date()
+                    if dt_ini<=dt_d<=dt_fim:
+                        dias_ponto_set.add(dia_str)
+                except Exception:
+                    pass
+            dias_ponto=len(dias_ponto_set)
+            tem_ponto=True
+        elif f.id in ponto_marc_map and ponto_marc_map[f.id]:
+            dias_ponto_set=set()
+            for dia_str in ponto_marc_map[f.id]:
+                try:
+                    from datetime import datetime as _dt2
+                    dt_d=_dt2.strptime(dia_str,'%Y-%m-%d').date()
+                    if dt_ini<=dt_d<=dt_fim:
+                        dias_ponto_set.add(dia_str)
+                except Exception:
+                    pass
+            dias_ponto=len(dias_ponto_set)
+            tem_ponto=bool(dias_ponto)
+
+        if fonte=='ponto':
+            dias_trab=dias_ponto if tem_ponto else dias_calendario
+        elif fonte=='calendario':
+            dias_trab=dias_calendario
+        else:  # auto
+            dias_trab=dias_ponto if tem_ponto else dias_calendario
+
+        emp=Empresa.query.get(f.empresa_id) if f.empresa_id else None
+        itens.append({
+            'funcionario_id':f.id,
+            'matricula':f.matricula or '',
+            're':f.re or '',
+            'nome':f.nome or '',
+            'empresa_id':f.empresa_id,
+            'empresa_nome':(emp.nome if emp else ''),
+            'competencia':comp,
+            'dias_trabalhados':dias_trab,
+            'dias_uteis_calendario':dias_calendario,
+            'dias_ponto_registrado':dias_ponto,
+            'tem_ponto':tem_ponto,
+            'opta_vt': True if f.opta_vt is None else bool(f.opta_vt),
+            'opta_vr': True if f.opta_vr is None else bool(f.opta_vr),
+            'opta_va': True if f.opta_va is None else bool(f.opta_va),
+            'opta_premio_prod': bool(f.opta_premio_prod),
+            'opta_vale_gasolina': bool(f.opta_vale_gasolina),
+            'opta_cesta_natal': bool(f.opta_cesta_natal),
+            'vale_refeicao': float(f.vale_refeicao or 0),
+            'vale_alimentacao': float(f.vale_alimentacao or 0),
+            'vale_transporte': float(f.vale_transporte or 0),
+            'premio_produtividade': float(f.premio_produtividade or 0),
+            'vale_gasolina': float(f.vale_gasolina or 0),
+            'cesta_natal': float(f.cesta_natal or 0),
+            'salario': float(f.salario or 0),
+        })
+
+    if salvar:
+        for it in itens:
+            fid=it['funcionario_id']
+            f=Funcionario.query.get(fid)
+            if not f:
+                continue
+            b=BeneficioMensal.query.filter_by(funcionario_id=fid,competencia=comp).first()
+            if not b:
+                b=BeneficioMensal(funcionario_id=fid,competencia=comp)
+                db.session.add(b)
+            b.empresa_id=f.empresa_id
+            dt=it['dias_trabalhados']
+            b.dias_trabalhados=dt
+            if it['opta_vt']: b.dias_vt=dt
+            if it['opta_vr']: b.dias_vr=dt
+            if it['opta_va']: b.dias_va=dt
+            if it['opta_vale_gasolina']: b.dias_vg=dt
+            if b.salario is None: b.salario=it['salario']
+        db.session.commit()
+
+    return jsonify({
+        'ok':True,
+        'data_inicio':dt_ini.isoformat(),
+        'data_fim':dt_fim.isoformat(),
+        'competencia':comp,
+        'total_dias':delta,
+        'feriados_periodo':len(feriados_periodo),
+        'fonte_usada':fonte,
+        'itens':itens,
+        'salvos': len(itens) if salvar else 0,
+    })
 
 @app.route('/beneficios/relatorio')
 @lr

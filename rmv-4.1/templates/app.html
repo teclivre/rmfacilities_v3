@@ -1755,6 +1755,8 @@ document.addEventListener('DOMContentLoaded',()=>{
           <button id="ben-tab-vg" class="btn b-gh b-sm" onclick="switchBenTab('vg',this)">Vale Gasolina</button>
           <button id="ben-tab-cn" class="btn b-gh b-sm" onclick="switchBenTab('cn',this)">Cesta de Natal</button>
           <button id="ben-tab-relatorios" class="btn b-gh b-sm" onclick="switchBenTab('relatorios',this)">Relatórios</button>
+          <button id="ben-tab-periodo" class="btn b-gh b-sm" onclick="switchBenTab('periodo',this)">&#128197; Calcular por Período</button>
+          <button id="ben-tab-feriados" class="btn b-gh b-sm" onclick="switchBenTab('feriados',this)">&#127970; Feriados</button>
         </div>
 
         <div class="brow" style="justify-content:flex-start;margin-top:10px;flex-wrap:wrap;gap:6px;align-items:center">
@@ -1865,6 +1867,99 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div class="card-header"><span class="card-title" style="color:#ff9999">&#128465; Excluir lançamentos da competência</span></div>
             <p style="margin:8px 0 14px 0;font-size:13px;color:#c0a0a0">Exclui <strong>todos</strong> os lançamentos de benefícios da competência/empresa selecionada. Esta ação não pode ser desfeita.</p>
             <button class="btn b-sm" style="background:#6b1212;color:#ffb3b3;border:1px solid #c0392b" onclick="excluirRelatorioCompetencia()">&#128465; Excluir todos os lançamentos desta competência</button>
+          </div>
+        </div>
+
+        <!-- ── Pane: Calcular por Período ── -->
+        <div id="ben-pane-periodo" class="tbl-wrap" style="margin-top:10px;display:none">
+          <div class="card" style="padding:14px">
+            <div class="card-header"><span class="card-title">&#128197; Calcular dias trabalhados por período</span></div>
+            <p style="font-size:13px;color:#7a8fa6;margin:6px 0 14px 0">Defina o período de competência (ex: 10/03 a 09/04), escolha a fonte de dados e o sistema calculará automaticamente os dias trabalhados de cada colaborador para preencher os benefícios.</p>
+            <div class="g4">
+              <div class="f"><label>Data início</label><input id="ben-per-ini" type="date"></div>
+              <div class="f"><label>Data fim</label><input id="ben-per-fim" type="date"></div>
+              <div class="f"><label>Empresa</label><select id="ben-per-emp"><option value="">Todas</option></select></div>
+              <div class="f"><label>Fonte de dados</label>
+                <select id="ben-per-fonte">
+                  <option value="ponto">Ponto registrado (usa calendário se sem ponto)</option>
+                  <option value="calendario">Somente calendário (dias úteis)</option>
+                </select>
+              </div>
+            </div>
+            <div class="brow" style="justify-content:flex-start;margin-top:10px;gap:8px;flex-wrap:wrap">
+              <button class="btn b-az b-sm" onclick="benCalcularPorPeriodo(false)">&#128269; Calcular (prévia)</button>
+              <button class="btn b-vd b-sm" onclick="benCalcularPorPeriodo(true)">&#128190; Calcular e salvar lançamentos</button>
+            </div>
+            <div id="ben-per-status" style="margin-top:8px;font-size:13px;color:#7ecfff"></div>
+          </div>
+          <div id="ben-per-resultado" style="margin-top:14px;display:none">
+            <div class="card" style="padding:12px">
+              <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:10px">
+                <span id="ben-per-resumo" style="font-size:13px;color:#5d6f82"></span>
+                <button class="btn b-vd b-sm" onclick="benSalvarResultadoPeriodo()">&#128190; Salvar lançamentos calculados</button>
+              </div>
+              <div class="tbl-wrap">
+                <table class="tbl">
+                  <thead><tr>
+                    <th style="width:32px"><input type="checkbox" id="ben-per-check-all" onchange="toggleAllBenPerSel(this.checked)" title="Marcar todos"></th>
+                    <th>Matrícula</th><th>Colaborador</th><th>Empresa</th>
+                    <th>Dias calendário</th><th>Dias com ponto</th><th>Dias a lançar</th>
+                    <th>Fonte</th>
+                  </tr></thead>
+                  <tbody id="tb-ben-periodo"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Pane: Feriados ── -->
+        <div id="ben-pane-feriados" class="tbl-wrap" style="margin-top:10px;display:none">
+          <div class="card" style="padding:14px">
+            <div class="card-header"><span class="card-title">&#127970; Cadastro de Feriados</span></div>
+            <p style="font-size:13px;color:#7a8fa6;margin:4px 0 12px 0">Cadastre feriados nacionais e municipais. Eles serão descontados automaticamente no cálculo por período.</p>
+            <div class="g4" style="margin-bottom:10px">
+              <div class="f"><label>Ano</label><input id="fer-ano" type="number" min="2020" max="2099" placeholder="2026" style="width:100px"></div>
+              <div class="f"><label>Tipo</label>
+                <select id="fer-filtro-tipo">
+                  <option value="">Todos</option>
+                  <option value="nacional">Nacionais</option>
+                  <option value="municipal">Municipais</option>
+                </select>
+              </div>
+              <div class="f" style="display:flex;align-items:flex-end;gap:8px">
+                <button class="btn b-gh b-sm" onclick="ferCarregar()">&#128269; Carregar</button>
+                <button class="btn b-az b-sm" onclick="ferImportarNacionais()">&#11015; Importar nacionais do ano</button>
+              </div>
+            </div>
+            <!-- Formulário de adição -->
+            <details id="fer-form-novo" style="margin-bottom:14px">
+              <summary style="cursor:pointer;font-size:13px;font-weight:700;color:#7ecfff;padding:6px 0">&#43; Adicionar feriado</summary>
+              <div class="g4" style="margin-top:10px">
+                <div class="f"><label>Data</label><input id="fer-data" type="date"></div>
+                <div class="f"><label>Descrição</label><input id="fer-desc" placeholder="Ex: Carnaval" maxlength="200"></div>
+                <div class="f"><label>Tipo</label>
+                  <select id="fer-tipo">
+                    <option value="nacional">Nacional</option>
+                    <option value="municipal">Municipal</option>
+                  </select>
+                </div>
+                <div class="f"><label>Município (se municipal)</label><input id="fer-municipio" placeholder="Ex: São Paulo" maxlength="100"></div>
+                <div class="f"><label>Estado (UF)</label><input id="fer-estado" placeholder="SP" maxlength="2" style="width:60px"></div>
+              </div>
+              <div class="brow" style="justify-content:flex-start;margin-top:8px">
+                <button class="btn b-vd b-sm" onclick="ferSalvar()">&#128190; Salvar feriado</button>
+              </div>
+            </details>
+            <div id="fer-status" style="font-size:13px;color:#7ecfff;margin-bottom:8px"></div>
+            <div class="tbl-wrap">
+              <table class="tbl">
+                <thead><tr>
+                  <th>Data</th><th>Descrição</th><th>Tipo</th><th>Município</th><th>Estado</th><th style="width:60px">Ações</th>
+                </tr></thead>
+                <tbody id="tb-feriados"></tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -3177,7 +3272,7 @@ async function verificarNumeroMed(val){
 
 async function loadEmps(){
   emps=await api('/api/empresas');
-  ['emp-sel','fe','memp','femp','oc-emp','op-emp','op-posto-emp','ben-emp'].forEach(id=>{
+  ['emp-sel','fe','memp','femp','oc-emp','op-emp','op-posto-emp','ben-emp','ben-per-emp'].forEach(id=>{
     const el=document.getElementById(id); if(!el)return;
     const keep=el.options[0]; el.innerHTML=''; el.appendChild(keep);
     emps.forEach(e=>{const o=new Option(e.nome,e.id); el.appendChild(o);});
@@ -7294,7 +7389,7 @@ function limparSelecaoBen(){
 
 function switchBenTab(tab,btn){
   benTab=tab;
-  ['ativos','vt','vr','va','pp','vg','cn','relatorios'].forEach(t=>{
+  ['ativos','vt','vr','va','pp','vg','cn','relatorios','periodo','feriados'].forEach(t=>{
     const pane=document.getElementById('ben-pane-'+t);
     const b=document.getElementById('ben-tab-'+t);
     if(pane)pane.style.display=t===tab?'block':'none';
@@ -7307,6 +7402,7 @@ function switchBenTab(tab,btn){
   else if(tab==='vg') renderBeneficioPorTipo('vg','tb-benef-vg');
   else if(tab==='cn') renderBeneficioPorTipo('cn','tb-benef-cn');
   else if(tab==='ativos') renderBeneficiosAtivos();
+  else if(tab==='feriados') ferCarregar();
   if(btn && btn.scrollIntoView) btn.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});
 }
 
@@ -7334,7 +7430,194 @@ async function abrirPreviaBeneficio(tab){
   _benPrevWin=window.open(url,'_ben-prev');
 }
 
-function benNotificarPrevia(){
+// ════════════════════════════════════════════════════════════
+//  FERIADOS
+// ════════════════════════════════════════════════════════════
+let _feriadosData=[];
+
+async function ferCarregar(){
+  const ano=document.getElementById('fer-ano').value||new Date().getFullYear();
+  const tipo=document.getElementById('fer-filtro-tipo').value||'';
+  let url=`/api/feriados?ano=${ano}`;
+  if(tipo) url+=`&tipo=${encodeURIComponent(tipo)}`;
+  const r=await fetch(url);
+  const j=await r.json();
+  if(!j.ok){showSt('st-benef',j.erro||'Erro ao carregar feriados.',true);return;}
+  _feriadosData=j.itens||[];
+  ferRenderTabela();
+}
+
+function ferRenderTabela(){
+  const tb=document.getElementById('tb-feriados');
+  if(!tb) return;
+  if(!_feriadosData.length){
+    tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#7a8fa6;padding:18px">Nenhum feriado cadastrado. Use "Importar nacionais" ou adicione manualmente.</td></tr>';
+    return;
+  }
+  tb.innerHTML=_feriadosData.map(f=>`
+    <tr>
+      <td>${f.data_fmt||f.data||''}</td>
+      <td>${escHtml(f.descricao||'')}</td>
+      <td><span style="background:${f.tipo==='nacional'?'#1a4a7a':'#3a1a5a'};color:#bde;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700">${f.tipo||''}</span></td>
+      <td>${escHtml(f.municipio||'')}</td>
+      <td>${escHtml(f.estado||'')}</td>
+      <td><button class="btn b-sm" style="background:#6b1212;color:#ffb3b3;border:1px solid #c0392b;padding:2px 8px" onclick="ferExcluir(${f.id})">&#128465;</button></td>
+    </tr>`).join('');
+}
+
+async function ferSalvar(){
+  const data=document.getElementById('fer-data').value;
+  const desc=document.getElementById('fer-desc').value.trim();
+  const tipo=document.getElementById('fer-tipo').value;
+  const municipio=document.getElementById('fer-municipio').value.trim();
+  const estado=document.getElementById('fer-estado').value.trim();
+  const st=document.getElementById('fer-status');
+  if(!data){st.textContent='Informe a data.';st.style.color='#ffb3b3';return;}
+  if(!desc){st.textContent='Informe a descrição.';st.style.color='#ffb3b3';return;}
+  if(tipo==='municipal'&&!municipio){st.textContent='Informe o município.';st.style.color='#ffb3b3';return;}
+  // converte YYYY-MM-DD -> DD/MM/YYYY para envio
+  const [y,m,d]=data.split('-');
+  const dataEnvio=`${d}/${m}/${y}`;
+  const r=await fetch('/api/feriados',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({data:dataEnvio,descricao:desc,tipo,municipio,estado})});
+  const j=await r.json();
+  if(j.ok){
+    st.textContent='Feriado salvo com sucesso!';st.style.color='#7ecfff';
+    document.getElementById('fer-data').value='';
+    document.getElementById('fer-desc').value='';
+    document.getElementById('fer-municipio').value='';
+    document.getElementById('fer-estado').value='';
+    ferCarregar();
+  } else {
+    st.textContent=j.erro||'Erro ao salvar.';st.style.color='#ffb3b3';
+  }
+}
+
+async function ferExcluir(id){
+  if(!confirm('Excluir este feriado?')) return;
+  const r=await fetch(`/api/feriados/${id}`,{method:'DELETE'});
+  const j=await r.json();
+  if(j.ok){
+    const st=document.getElementById('fer-status');
+    st.textContent='Feriado excluído.';st.style.color='#7ecfff';
+    ferCarregar();
+  }
+}
+
+async function ferImportarNacionais(){
+  const ano=document.getElementById('fer-ano').value||new Date().getFullYear();
+  const st=document.getElementById('fer-status');
+  st.textContent='Importando...';st.style.color='#7ecfff';
+  const r=await fetch('/api/feriados/importar-nacionais',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ano:parseInt(ano)})});
+  const j=await r.json();
+  if(j.ok){
+    st.textContent=`Importação concluída: ${j.inseridos} inseridos, ${j.ignorados} já existentes.`;
+    ferCarregar();
+  } else {
+    st.textContent=j.erro||'Erro na importação.';st.style.color='#ffb3b3';
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  BENEFÍCIOS — CALCULAR POR PERÍODO
+// ════════════════════════════════════════════════════════════
+let _benPerResultado=null;
+
+function benPerEmpId(){
+  const el=document.getElementById('ben-per-emp');
+  return el?el.value:'';
+}
+
+async function benCarregarEmpresasPeriodo(){
+  const sel=document.getElementById('ben-per-emp');
+  if(!sel) return;
+  // Reusa o mesmo select de empresas do painel principal
+  const selMain=document.getElementById('ben-emp');
+  if(selMain){
+    sel.innerHTML=selMain.innerHTML;
+  }
+}
+
+async function benCalcularPorPeriodo(salvar){
+  const ini=document.getElementById('ben-per-ini').value;
+  const fim=document.getElementById('ben-per-fim').value;
+  const fonte=document.getElementById('ben-per-fonte').value;
+  const empId=benPerEmpId();
+  const st=document.getElementById('ben-per-status');
+  if(!ini||!fim){st.textContent='Informe data início e data fim.';st.style.color='#ffb3b3';return;}
+  st.textContent='Calculando...';st.style.color='#7ecfff';
+  // Converte YYYY-MM-DD -> DD/MM/YYYY
+  const fmtDt=s=>{const[y,m,d]=s.split('-');return`${d}/${m}/${y}`;};
+  // Coleta funcionários selecionados (se houver seleção ativa)
+  const funcs=[...benSelecionados];
+  const body={data_inicio:fmtDt(ini),data_fim:fmtDt(fim),fonte,salvar};
+  if(empId) body.empresa_id=parseInt(empId)||0;
+  if(funcs.length) body.funcionarios=funcs;
+  const r=await fetch('/api/beneficios/calcular-por-periodo',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json();
+  if(!j.ok){st.textContent=j.erro||'Erro no cálculo.';st.style.color='#ffb3b3';return;}
+  _benPerResultado=j;
+  const total=j.total_dias||0;
+  const feriados=j.feriados_periodo||0;
+  st.textContent=`Período: ${fmtDt(ini)} a ${fmtDt(fim)} — ${total} dias, ${feriados} feriados excluídos. Competência: ${j.competencia||''}${salvar?' — Lançamentos salvos!':''}.`;
+  st.style.color='#7ecfff';
+  benRenderPeriodoResultado(j,salvar);
+}
+
+function benRenderPeriodoResultado(j,salvos){
+  const painel=document.getElementById('ben-per-resultado');
+  const tb=document.getElementById('tb-ben-periodo');
+  const resumo=document.getElementById('ben-per-resumo');
+  if(!painel||!tb) return;
+  const itens=j.itens||[];
+  resumo.textContent=`${itens.length} colaboradores — competência ${j.competencia||''}${salvos?' — lançamentos salvos':''}`;
+  tb.innerHTML=itens.map((it,idx)=>`
+    <tr>
+      <td><input type="checkbox" class="ben-per-check" data-idx="${idx}" checked></td>
+      <td>${escHtml(it.matricula||'')}</td>
+      <td>${escHtml(it.nome||'')}</td>
+      <td style="font-size:12px">${escHtml(it.empresa_nome||'')}</td>
+      <td style="text-align:center">${it.dias_uteis_calendario||0}</td>
+      <td style="text-align:center">${it.dias_ponto_registrado||0}</td>
+      <td style="text-align:center;font-weight:700;color:#7ecfff">${it.dias_trabalhados||0}</td>
+      <td style="font-size:11px">${it.tem_ponto?'<span style="color:#5ec97a">ponto</span>':'<span style="color:#9fb3c8">calendário</span>'}</td>
+    </tr>`).join('');
+  painel.style.display='block';
+}
+
+function toggleAllBenPerSel(checked){
+  document.querySelectorAll('.ben-per-check').forEach(c=>c.checked=checked);
+}
+
+async function benSalvarResultadoPeriodo(){
+  if(!_benPerResultado||!_benPerResultado.itens) return;
+  // Coleta os IDs selecionados
+  const selecionados=[];
+  document.querySelectorAll('.ben-per-check').forEach((c,i)=>{
+    if(c.checked&&_benPerResultado.itens[i]) selecionados.push(_benPerResultado.itens[i].funcionario_id);
+  });
+  if(!selecionados.length){showSt('st-benef','Selecione ao menos um colaborador.',true);return;}
+  const ini=document.getElementById('ben-per-ini').value;
+  const fim=document.getElementById('ben-per-fim').value;
+  const fonte=document.getElementById('ben-per-fonte').value;
+  const empId=benPerEmpId();
+  const fmtDt=s=>{const[y,m,d]=s.split('-');return`${d}/${m}/${y}`;};
+  const body={data_inicio:fmtDt(ini),data_fim:fmtDt(fim),fonte,salvar:true,funcionarios:selecionados};
+  if(empId) body.empresa_id=parseInt(empId)||0;
+  const r=await fetch('/api/beneficios/calcular-por-periodo',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json();
+  if(j.ok){
+    showSt('st-benef',`Lançamentos salvos para ${j.salvos||0} colaboradores na competência ${j.competencia||''}.`);
+    benCarregarBeneficiosMensais();
+  } else {
+    showSt('st-benef',j.erro||'Erro ao salvar.',true);
+  }
+}
+
+
   if(_benPrevWin && !_benPrevWin.closed){ _benPrevWin.location.reload(); }
 }
 
