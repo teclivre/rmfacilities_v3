@@ -11360,6 +11360,8 @@ def api_beneficios_lancamentos():
     if empresa_id:
         qf=qf.filter_by(empresa_id=empresa_id)
     funcs_ativos=qf.order_by(Funcionario.nome).all()
+    # Filtra apenas optantes de VT ou VR
+    funcs_ativos = [f for f in funcs_ativos if (f.opta_vt or f.opta_vr)]
     qb=BeneficioMensal.query.filter_by(competencia=comp)
     if empresa_id:
         qb=qb.filter_by(empresa_id=empresa_id)
