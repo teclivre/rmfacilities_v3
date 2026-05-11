@@ -7811,7 +7811,26 @@ def api_jornadas_listar():
     q=JornadaTrabalho.query
     if ativas=='1':
         q=q.filter_by(ativo=True)
-    return jsonify([j.to_dict() for j in q.order_by(JornadaTrabalho.nome).all()])
+    jornadas=q.order_by(JornadaTrabalho.nome).all()
+    ids=[j.id for j in jornadas if j.id]
+    mapa_funcs={}
+    if ids:
+        for f in Funcionario.query.filter(Funcionario.jornada_id.in_(ids)).order_by(Funcionario.nome.asc()).all():
+            mapa_funcs.setdefault(f.jornada_id,[]).append({
+                'id':f.id,
+                'nome':f.nome or '',
+                'matricula':f.matricula or '',
+                're':f.re or '',
+                'status':f.status or '',
+            })
+    out=[]
+    for j in jornadas:
+        d=j.to_dict()
+        funcs=mapa_funcs.get(j.id,[])
+        d['funcionarios']=funcs
+        d['funcionarios_count']=len(funcs)
+        out.append(d)
+    return jsonify(out)
 
 @app.route('/api/jornadas',methods=['POST'])
 @lr
@@ -7883,13 +7902,49 @@ def api_jornada_vincular_funcionarios(id):
     j=JornadaTrabalho.query.get_or_404(id)
     d=request.json or {}
     ids=d.get('funcionario_ids') or []
-    if not isinstance(ids,list): return jsonify({'erro':'funcionario_ids deve ser lista'}),400
-    vinculados=[]
-    for fid in ids:
+    if not isinstance(ids,list):
+        return jsonify({'erro':'funcionario_ids deve ser lista'}),400
+    ids_ok=[]
+    for x in ids:
+        try:
+            ids_ok.append(int(x))
+        except Exception:
+            pass
+    ids_ok=sorted(set(ids_ok))
+    if not ids_ok:
+        return jsonify({'erro':'Selecione ao menos 1 funcionário válido.'}),400
+
+    conflitos=[]
+    for fid in ids_ok:
         f=Funcionario.query.get(fid)
-        if f:
-            f.jornada_id=id
-            vinculados.append(fid)
+        if not f:
+            continue
+        if f.jornada_id and int(f.jornada_id)!=int(id):
+            j_atual=JornadaTrabalho.query.get(f.jornada_id)
+            conflitos.append({
+                'funcionario_id':f.id,
+                'nome':f.nome or '',
+                'jornada_atual_id':f.jornada_id,
+                'jornada_atual_nome':(j_atual.nome if j_atual else f'Jornada #{f.jornada_id}')
+            })
+
+    if conflitos:
+        nomes=', '.join([(c.get('nome') or str(c.get('funcionario_id'))) for c in conflitos[:6]])
+        sufixo='...' if len(conflitos)>6 else ''
+        return jsonify({
+            'erro':f'Não é permitido funcionário em 2 jornadas. Desvincule antes de vincular: {nomes}{sufixo}',
+            'conflitos':conflitos,
+            'jornada_destino_id':j.id,
+            'jornada_destino_nome':j.nome or ''
+        }),409
+
+    vinculados=[]
+    for fid in ids_ok:
+        f=Funcionario.query.get(fid)
+        if not f:
+            continue
+        f.jornada_id=id
+        vinculados.append(fid)
     db.session.commit()
     audit_event('jornada_vincular','usuario',session.get('uid'),'jornada_trabalho',id,True,{'funcionarios':vinculados})
     return jsonify({'ok':True,'vinculados':len(vinculados)})
