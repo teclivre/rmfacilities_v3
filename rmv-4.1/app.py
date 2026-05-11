@@ -1100,6 +1100,7 @@ class BeneficioMensal(db.Model):
     dias_vr=db.Column(db.Integer,default=0)
     dias_va=db.Column(db.Integer,default=0)
     dias_vg=db.Column(db.Integer,default=0)
+    faltas=db.Column(db.Integer,default=0)
     salario=db.Column(db.Float,default=0)
     vale_refeicao=db.Column(db.Float,default=0)
     vale_alimentacao=db.Column(db.Float,default=0)
@@ -10796,6 +10797,7 @@ def api_beneficios_lancamentos():
             'dias_vr':(b.dias_vr if b else 0),
             'dias_va':(b.dias_va if b else 0),
             'dias_vg':(b.dias_vg if b else 0),
+            'faltas':(b.faltas if b and (b.faltas is not None) else 0),
             'salario':(b.salario if b else (f.salario or 0)),
             'vale_refeicao':_benef_val(b,b_prev,f,'vale_refeicao'),
             'vale_alimentacao':_benef_val(b,b_prev,f,'vale_alimentacao'),
@@ -10921,6 +10923,8 @@ def api_beneficios_lancamentos_limpar():
             if b.vale_gasolina is not None: b.vale_gasolina=None; changed=True
         if tipo in {'cn','todos'}:
             if b.cesta_natal is not None: b.cesta_natal=None; changed=True
+        if tipo=='todos':
+            if (b.faltas or 0)!=0: b.faltas=0; changed=True
         if changed:
             alterados+=1
 
@@ -10958,14 +10962,16 @@ def api_beneficios_lancamentos_salvar():
         dias_vr=max(0,to_num(it.get('dias_vr')))
         dias_va=max(0,to_num(it.get('dias_va')))
         dias_vg=max(0,to_num(it.get('dias_vg')))
+        faltas=(max(0,to_num(it.get('faltas'))) if ('faltas' in it and it.get('faltas') is not None) else (b.faltas if b and (b.faltas is not None) else 0))
         pp_falta=to_bool(it.get('pp_falta')) if pp_optante else False
 
         b.dias_vt=dias_vt if vt_optante else 0
         b.dias_vr=dias_vr if vr_optante else 0
         b.dias_va=dias_va if va_optante else 0
         b.dias_vg=dias_vg if vg_optante else 0
+        b.faltas=faltas
         b.pp_falta=pp_falta
-        b.dias_trabalhados=max(b.dias_vt,b.dias_vr)
+        b.dias_trabalhados=max(0,max(b.dias_vt,b.dias_vr,b.dias_vg))
 
         b.salario=to_num(it.get('salario'),dec=True)
         vale_transporte=to_num(it.get('vale_transporte'),dec=True)
@@ -11469,6 +11475,23 @@ def api_beneficios_calcular_por_periodo():
     salvar=to_bool(d.get('salvar'))
     fonte=(d.get('fonte') or 'ponto').strip().lower()
     func_ids_filter={int(x) for x in (d.get('funcionarios') or []) if str(x).isdigit()}
+    faltas_map={}
+    faltas_raw=d.get('faltas')
+    if isinstance(faltas_raw,dict):
+        for k,v in faltas_raw.items():
+            try:
+                fid=int(k)
+            except Exception:
+                continue
+            faltas_map[fid]=max(0,to_num(v))
+    elif isinstance(faltas_raw,list):
+        for itf in faltas_raw:
+            if not isinstance(itf,dict):
+                continue
+            fid=to_num(itf.get('funcionario_id'))
+            if not fid:
+                continue
+            faltas_map[fid]=max(0,to_num(itf.get('faltas')))
     min_horas_vrvt=max(1,min(16,to_num(d.get('min_horas_vrvt')) or 8))
     min_minutos_vrvt=int(min_horas_vrvt*60)
 
@@ -11669,6 +11692,13 @@ def api_beneficios_calcular_por_periodo():
             dias_vt_vr=(dias_vrvt_por_horas if tem_ponto else (dias_calendario if carga_diaria_ref_min>=min_minutos_vrvt else 0))
             dias_vg_calc=(dias_ponto if tem_ponto else dias_calendario)
 
+        faltas_informadas=max(0,to_num(faltas_map.get(f.id,0)))
+        faltas_aplicadas=min(faltas_informadas,max(0,dias_trab))
+        dias_trab_liq=max(0,dias_trab-faltas_aplicadas)
+        dias_vt_liq=max(0,dias_vt_vr-faltas_aplicadas)
+        dias_vr_liq=max(0,dias_vt_vr-faltas_aplicadas)
+        dias_vg_liq=max(0,dias_vg_calc-faltas_aplicadas)
+
         emp=Empresa.query.get(f.empresa_id) if f.empresa_id else None
         itens.append({
             'funcionario_id':f.id,
@@ -11678,10 +11708,16 @@ def api_beneficios_calcular_por_periodo():
             'empresa_id':f.empresa_id,
             'empresa_nome':(emp.nome if emp else ''),
             'competencia':comp,
-            'dias_trabalhados':dias_trab,
-            'dias_vt_sugerido':(dias_vt_vr if (f.opta_vt is not False) else 0),
-            'dias_vr_sugerido':(dias_vt_vr if (f.opta_vr is not False) else 0),
-            'dias_vg_sugerido':(dias_vg_calc if bool(f.opta_vale_gasolina) else 0),
+            'dias_trabalhados':dias_trab_liq,
+            'dias_trabalhados_base':dias_trab,
+            'dias_vt_base':dias_vt_vr,
+            'dias_vr_base':dias_vt_vr,
+            'dias_vg_base':dias_vg_calc,
+            'dias_faltas_informadas':faltas_informadas,
+            'dias_faltas':faltas_aplicadas,
+            'dias_vt_sugerido':(dias_vt_liq if (f.opta_vt is not False) else 0),
+            'dias_vr_sugerido':(dias_vr_liq if (f.opta_vr is not False) else 0),
+            'dias_vg_sugerido':(dias_vg_liq if bool(f.opta_vale_gasolina) else 0),
             'dias_uteis_calendario':dias_calendario,
             'dias_ponto_registrado':dias_ponto,
             'dias_com_8h_ou_mais':dias_vrvt_por_horas,
@@ -11715,6 +11751,7 @@ def api_beneficios_calcular_por_periodo():
             b.empresa_id=f.empresa_id
             dt=it['dias_trabalhados']
             b.dias_trabalhados=dt
+            b.faltas=max(0,to_num(it.get('dias_faltas')))
             if it['opta_vt']: b.dias_vt=max(0,to_num(it.get('dias_vt_sugerido')))
             if it['opta_vr']: b.dias_vr=max(0,to_num(it.get('dias_vr_sugerido')))
             if it['opta_va']: b.dias_va=dt
@@ -11732,7 +11769,7 @@ def api_beneficios_calcular_por_periodo():
         'feriados_nacionais_periodo':len(feriados_nacionais),
         'feriados_municipais_vinculados':sum(len(v) for v in feriados_municipais_por_func.values()),
         'min_horas_vrvt':min_horas_vrvt,
-        'regra_vrvt':'VT e VR pagos apenas em dias com 8h ou mais trabalhadas. Vale gasolina pago por dia trabalhado.',
+        'regra_vrvt':'VT e VR pagos apenas em dias com 8h ou mais trabalhadas. Vale gasolina pago por dia trabalhado. Faltas informadas são descontadas dos dias pagos.',
         'fonte_usada':fonte,
         'itens':itens,
         'salvos': len(itens) if salvar else 0,
@@ -15003,6 +15040,7 @@ with app.app_context():
         'dias_vr INTEGER DEFAULT 0',
         'dias_va INTEGER DEFAULT 0',
         'dias_vg INTEGER DEFAULT 0',
+        'faltas INTEGER DEFAULT 0',
         'pp_falta BOOLEAN DEFAULT 0',
         'premio_produtividade FLOAT DEFAULT 0',
         'vale_gasolina FLOAT DEFAULT 0',

@@ -1874,7 +1874,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div id="ben-pane-periodo" class="tbl-wrap" style="margin-top:10px;display:none">
           <div class="card" style="padding:14px">
             <div class="card-header"><span class="card-title">&#128197; Calcular dias trabalhados por período</span></div>
-            <p style="font-size:13px;color:#7a8fa6;margin:6px 0 14px 0">Defina o período de competência (ex: 10/03 a 09/04), escolha a fonte de dados e o sistema calculará automaticamente os dias trabalhados de cada colaborador para preencher os benefícios.</p>
+            <p style="font-size:13px;color:#7a8fa6;margin:6px 0 14px 0">Defina o período de competência (ex: 10/03 a 09/04), escolha a fonte de dados e o sistema calculará automaticamente os dias trabalhados de cada colaborador para preencher os benefícios. Você pode informar faltas na prévia para descontar os dias pagos.</p>
             <div class="g4">
               <div class="f"><label>Data início</label><input id="ben-per-ini" type="date"></div>
               <div class="f"><label>Data fim</label><input id="ben-per-fim" type="date"></div>
@@ -1892,7 +1892,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               <div class="f"><label>Intervalo (min)</label><input id="ben-per-intervalo" type="number" min="0" max="240" value="60"></div>
               <div class="f"><label>Regra VT/VR (horas mín.)</label><input id="ben-per-minh" type="number" min="1" max="16" value="8"></div>
             </div>
-            <div style="margin-top:6px;font-size:12px;color:#9fb3c8">Regra aplicada: VT/VR só são pagos em dias com 8h ou mais trabalhadas. Vale combustível é pago pelos dias trabalhados.</div>
+            <div style="margin-top:6px;font-size:12px;color:#9fb3c8">Regra aplicada: VT/VR só são pagos em dias com 8h ou mais trabalhadas. Vale combustível é pago pelos dias trabalhados. Faltas informadas na grade são descontadas.</div>
             <div class="brow" style="justify-content:flex-start;margin-top:10px;gap:8px;flex-wrap:wrap">
               <button class="btn b-az b-sm" onclick="benCalcularPorPeriodo(false)">&#128269; Calcular (prévia)</button>
               <button class="btn b-vd b-sm" onclick="benCalcularPorPeriodo(true)">&#128190; Calcular e salvar lançamentos</button>
@@ -1910,7 +1910,7 @@ document.addEventListener('DOMContentLoaded',()=>{
                   <thead><tr>
                     <th style="width:32px"><input type="checkbox" id="ben-per-check-all" onchange="toggleAllBenPerSel(this.checked)" title="Marcar todos"></th>
                     <th>Matrícula</th><th>Colaborador</th><th>Empresa</th>
-                    <th>Dias calendário</th><th>Dias com ponto</th><th>Dias com 8h+</th><th>Dias VT</th><th>Dias VR</th><th>Dias combustível</th>
+                    <th>Dias calendário</th><th>Dias com ponto</th><th>Dias com 8h+</th><th>Faltas</th><th>Dias úteis finais</th><th>Dias VT</th><th>Dias VR</th><th>Dias combustível</th>
                     <th>Fonte</th>
                   </tr></thead>
                   <tbody id="tb-ben-periodo"></tbody>
@@ -7618,6 +7618,8 @@ async function benCalcularPorPeriodo(salvar){
     intervalo_min:intervalo,
     min_horas_vrvt:minHoras
   };
+  const faltas=benPerColetarFaltas();
+  if(faltas.length) body.faltas=faltas;
   if(empId) body.empresa_id=parseInt(empId)||0;
   if(funcs.length) body.funcionarios=funcs;
   const r=await fetch('/api/beneficios/calcular-por-periodo',{method:'POST',
@@ -7630,6 +7632,57 @@ async function benCalcularPorPeriodo(salvar){
   st.textContent=`Período: ${fmtDt(ini)} a ${fmtDt(fim)} — ${total} dias, ${feriados} feriados excluídos. Regra VT/VR: ${j.min_horas_vrvt||minHoras}h mín. Competência: ${j.competencia||''}${salvar?' — Lançamentos salvos!':''}.`;
   st.style.color='#7ecfff';
   benRenderPeriodoResultado(j,salvar);
+}
+
+function benPerNormalizarFaltas(v){
+  return Math.max(0,parseInt(v||'0',10)||0);
+}
+
+function benPerColetarFaltas(){
+  if(!_benPerResultado||!Array.isArray(_benPerResultado.itens)) return [];
+  const faltas=[];
+  document.querySelectorAll('.ben-per-faltas').forEach(inp=>{
+    const idx=parseInt(inp.dataset.idx||'-1',10);
+    if(Number.isNaN(idx)||idx<0) return;
+    const it=_benPerResultado.itens[idx];
+    if(!it||!it.funcionario_id) return;
+    faltas.push({funcionario_id:it.funcionario_id,faltas:benPerNormalizarFaltas(inp.value)});
+  });
+  return faltas;
+}
+
+function benPerRecalcularLinha(idx){
+  if(!_benPerResultado||!_benPerResultado.itens||!_benPerResultado.itens[idx]) return;
+  const it=_benPerResultado.itens[idx];
+  const inp=document.getElementById(`ben-per-faltas-${idx}`);
+  if(!inp) return;
+  const faltasInformadas=benPerNormalizarFaltas(inp.value);
+  inp.value=String(faltasInformadas);
+  const baseTrab=Math.max(0,parseInt(it.dias_trabalhados_base??it.dias_trabalhados??0,10)||0);
+  const baseVt=Math.max(0,parseInt(it.dias_vt_base??it.dias_vt_sugerido??0,10)||0);
+  const baseVr=Math.max(0,parseInt(it.dias_vr_base??it.dias_vr_sugerido??0,10)||0);
+  const baseVg=Math.max(0,parseInt(it.dias_vg_base??it.dias_vg_sugerido??0,10)||0);
+  const faltasAplicadas=Math.min(faltasInformadas,baseTrab);
+
+  it.dias_faltas_informadas=faltasInformadas;
+  it.dias_faltas=faltasAplicadas;
+  it.dias_trabalhados=Math.max(0,baseTrab-faltasAplicadas);
+  it.dias_vt_sugerido=(it.opta_vt!==false)?Math.max(0,baseVt-faltasAplicadas):0;
+  it.dias_vr_sugerido=(it.opta_vr!==false)?Math.max(0,baseVr-faltasAplicadas):0;
+  it.dias_vg_sugerido=(it.opta_vale_gasolina===true)?Math.max(0,baseVg-faltasAplicadas):0;
+
+  const elTrab=document.getElementById(`ben-per-dtrab-${idx}`);
+  const elVt=document.getElementById(`ben-per-vt-${idx}`);
+  const elVr=document.getElementById(`ben-per-vr-${idx}`);
+  const elVg=document.getElementById(`ben-per-vg-${idx}`);
+  if(elTrab) elTrab.textContent=String(it.dias_trabalhados||0);
+  if(elVt) elVt.textContent=String(it.dias_vt_sugerido||0);
+  if(elVr) elVr.textContent=String(it.dias_vr_sugerido||0);
+  if(elVg) elVg.textContent=String(it.dias_vg_sugerido||0);
+}
+
+function benPerFaltaEdit(idx,val){
+  benPerRecalcularLinha(idx);
 }
 
 function benRenderPeriodoResultado(j,salvos){
@@ -7648,11 +7701,20 @@ function benRenderPeriodoResultado(j,salvos){
       <td style="text-align:center">${it.dias_uteis_calendario||0}</td>
       <td style="text-align:center">${it.dias_ponto_registrado||0}</td>
       <td style="text-align:center">${it.dias_com_8h_ou_mais||0}</td>
-      <td style="text-align:center;font-weight:700;color:#7ecfff">${it.dias_vt_sugerido||0}</td>
-      <td style="text-align:center;font-weight:700;color:#7ecfff">${it.dias_vr_sugerido||0}</td>
-      <td style="text-align:center;font-weight:700;color:#5ec97a">${it.dias_vg_sugerido||0}</td>
+      <td style="text-align:center"><input class="ben-per-faltas" id="ben-per-faltas-${idx}" data-idx="${idx}" type="number" min="0" step="1" value="${it.dias_faltas_informadas??it.dias_faltas??0}" style="width:70px" oninput="benPerFaltaEdit(${idx},this.value)" onchange="benPerFaltaEdit(${idx},this.value)"></td>
+      <td id="ben-per-dtrab-${idx}" style="text-align:center;font-weight:700;color:#f6c90e">${it.dias_trabalhados||0}</td>
+      <td id="ben-per-vt-${idx}" style="text-align:center;font-weight:700;color:#7ecfff">${it.dias_vt_sugerido||0}</td>
+      <td id="ben-per-vr-${idx}" style="text-align:center;font-weight:700;color:#7ecfff">${it.dias_vr_sugerido||0}</td>
+      <td id="ben-per-vg-${idx}" style="text-align:center;font-weight:700;color:#5ec97a">${it.dias_vg_sugerido||0}</td>
       <td style="font-size:11px">${it.tem_ponto?'<span style="color:#5ec97a">ponto</span>':'<span style="color:#9fb3c8">calendário</span>'}</td>
     </tr>`).join('');
+  itens.forEach((it,idx)=>{
+    it.dias_trabalhados_base=Math.max(0,parseInt(it.dias_trabalhados_base??it.dias_trabalhados??0,10)||0);
+    it.dias_vt_base=Math.max(0,parseInt(it.dias_vt_base??it.dias_vt_sugerido??0,10)||0);
+    it.dias_vr_base=Math.max(0,parseInt(it.dias_vr_base??it.dias_vr_sugerido??0,10)||0);
+    it.dias_vg_base=Math.max(0,parseInt(it.dias_vg_base??it.dias_vg_sugerido??0,10)||0);
+    benPerRecalcularLinha(idx);
+  });
   painel.style.display='block';
 }
 
@@ -7688,6 +7750,15 @@ async function benSalvarResultadoPeriodo(){
     intervalo_min:intervalo,
     min_horas_vrvt:minHoras
   };
+  const faltas=[];
+  document.querySelectorAll('.ben-per-check').forEach((c,i)=>{
+    if(!c.checked||!_benPerResultado.itens[i]) return;
+    const fid=_benPerResultado.itens[i].funcionario_id;
+    if(!fid) return;
+    const faltasInp=document.getElementById(`ben-per-faltas-${i}`);
+    faltas.push({funcionario_id:fid,faltas:benPerNormalizarFaltas(faltasInp?.value||0)});
+  });
+  if(faltas.length) body.faltas=faltas;
   if(empId) body.empresa_id=parseInt(empId)||0;
   const r=await fetch('/api/beneficios/calcular-por-periodo',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
