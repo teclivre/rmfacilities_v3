@@ -303,7 +303,7 @@ class JornadaTrabalho(db.Model):
 class Escala(db.Model):
     """
     Modelo de Escala de Turnos:
-    - tipo: '6x2' (6 dias trabalho, 2 folga), '12x36' (12h turno, 36h folga), 'folguista' (customizado), 'noturna'
+    - tipo: '6x2' (6 dias trabalho, 2 folga), '4x2' (4 dias trabalho, 2 folga), '12x36' (12h turno, 36h folga), 'folguista' (customizado), 'noturna'
     - ciclo_json: JSON com estrutura de dias/turnos e folgas
       Ex 6x2: {"dias": [{"tipo": "trabalho"}, ...6x..., {"tipo": "folga"}, {"tipo": "folga"}]}
       Ex 12x36: {"dias": [{"tipo": "trabalho", "horas": 12}, {"tipo": "folga"}, {"tipo": "folga"}]}
@@ -312,7 +312,7 @@ class Escala(db.Model):
     """
     id=db.Column(db.Integer,primary_key=True)
     nome=db.Column(db.String(120),nullable=False)
-    tipo=db.Column(db.String(30),nullable=False)  # '6x2', '12x36', 'folguista', 'noturna'
+    tipo=db.Column(db.String(30),nullable=False)  # '6x2', '4x2', '12x36', 'folguista', 'noturna'
     ciclo_json=db.Column(db.Text,default='{}')  # JSON com dias/turnos/folgas
     descricao=db.Column(db.String(255))
     periodo_noturno_ini=db.Column(db.String(5),default='22:00')  # HH:MM (início do período noturno)
@@ -8203,8 +8203,8 @@ def api_escalas_criar():
     tipo=(d.get('tipo') or '').strip()
     if not nome:
         return jsonify({'erro':'Nome obrigatório'}),400
-    if tipo not in ('6x2','12x36','folguista','noturna'):
-        return jsonify({'erro':"Tipo deve ser '6x2', '12x36', 'folguista' ou 'noturna'"}),400
+    if tipo not in ('6x2','4x2','12x36','folguista','noturna'):
+        return jsonify({'erro':"Tipo deve ser '6x2', '4x2', '12x36', 'folguista' ou 'noturna'"}),400
     
     ciclo_json=d.get('ciclo_json') or '{}'
     if isinstance(ciclo_json,dict):
@@ -8259,7 +8259,7 @@ def api_escala_editar(id):
     d=request.json or {}
     if 'nome' in d:
         e.nome=(d.get('nome') or '').strip() or e.nome
-    if 'tipo' in d and d.get('tipo') in ('6x2','12x36','folguista','noturna'):
+    if 'tipo' in d and d.get('tipo') in ('6x2','4x2','12x36','folguista','noturna'):
         e.tipo=d.get('tipo')
     if 'ciclo_json' in d:
         ciclo=d.get('ciclo_json')
@@ -11935,13 +11935,39 @@ def _calcular_horas_noturnas_funcionario(funcionario_id, data_inicio_str, data_f
             EscalaFuncionario.ativo == True
         ).all()
         
-        # Se tem escala e é noturna, calcular horas
+        # Se tem escala com dias noturnos (ou tipo noturna), calcular horas
         for ef in esc_func:
-            if ef.data_fim and ef.data_fim < dt_ini.isoformat():
+            data_ini_ef = dt_ini
+            data_fim_ef = dt_fim
+            try:
+                if ef.data_inicio:
+                    di_ef = _dt_calc.strptime(ef.data_inicio, '%Y-%m-%d').date()
+                    if di_ef > data_ini_ef:
+                        data_ini_ef = di_ef
+            except Exception:
+                pass
+            try:
+                if ef.data_fim:
+                    df_ef = _dt_calc.strptime(ef.data_fim, '%Y-%m-%d').date()
+                    if df_ef < data_fim_ef:
+                        data_fim_ef = df_ef
+            except Exception:
+                pass
+
+            if data_fim_ef < data_ini_ef:
                 continue
             
             esc = Escala.query.get(ef.escala_id)
-            if not esc or esc.tipo != 'noturna':
+            if not esc:
+                continue
+
+            # Tamanho do ciclo para identificar se o dia é noturno
+            try:
+                ciclo = json.loads(esc.ciclo_json or '{}')
+                dias_ciclo = len(ciclo.get('dias', []))
+            except Exception:
+                dias_ciclo = 0
+            if dias_ciclo <= 0:
                 continue
             
             # Período noturno
@@ -11955,9 +11981,23 @@ def _calcular_horas_noturnas_funcionario(funcionario_id, data_inicio_str, data_f
                 p_fim_min = 5*60
             
             # Iterar dias do período
-            dia_atual = dt_ini
-            while dia_atual <= dt_fim:
+            dia_atual = data_ini_ef
+            while dia_atual <= data_fim_ef:
                 data_str = dia_atual.isoformat()
+
+                # Respeita o ciclo: só calcula para dia marcado como noturno
+                dia_inicio_esc = dia_atual
+                try:
+                    inicio_base = _dt_calc.strptime(ef.data_inicio, '%Y-%m-%d').date() if ef.data_inicio else data_ini_ef
+                    dia_inicio_esc = inicio_base
+                except Exception:
+                    pass
+                dias_decorridos = (dia_atual - dia_inicio_esc).days
+                indice_ciclo = dias_decorridos % dias_ciclo if dias_decorridos >= 0 else 0
+                eh_noturno_no_ciclo = esc.is_noturno_dia(indice_ciclo) or esc.tipo == 'noturna'
+                if not eh_noturno_no_ciclo:
+                    dia_atual += timedelta(days=1)
+                    continue
                 
                 # Verificar se tem pontuações nesse dia
                 marcacoes = PontoMarcacao.query.filter(

@@ -1267,9 +1267,16 @@ document.addEventListener('DOMContentLoaded',()=>{
             <select id="rh-esc-tipo" onchange="rhEscalaAtualizarCicloTemplate()">
               <option value="">-- Selecione --</option>
               <option value="6x2">6x2 (6 dias trabalho, 2 folga)</option>
+              <option value="4x2">4x2 (4 dias trabalho, 2 folga)</option>
               <option value="12x36">12x36 (12h trabalho, 36h folga)</option>
               <option value="folguista">Folguista (customizado)</option>
               <option value="noturna">Noturna (com cálculo de horas noturnas)</option>
+            </select>
+
+            <label style="margin-top:8px">Turno</label>
+            <select id="rh-esc-turno" onchange="rhEscalaAtualizarCicloTemplate()">
+              <option value="diurno">Diurno</option>
+              <option value="noturno">Noturno</option>
             </select>
 
             <label style="margin-top:8px">Descrição</label>
@@ -1286,7 +1293,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
             <label style="margin-top:8px">Ciclo de turnos (JSON)</label>
             <textarea id="rh-esc-ciclo" placeholder='{"dias":[{"tipo":"trabalho"},{"tipo":"folga"}]}' style="font-family:monospace;min-height:100px;width:100%"></textarea>
-            <div class="hint" style="margin-top:4px">Ex 6x2: 6 dias com {"tipo":"trabalho"}, 2 com {"tipo":"folga"}. Ex 12x36: 1 dia {"tipo":"trabalho","horas":12}, 3 dias {"tipo":"folga"}. Ex noturna: 1 dia {"tipo":"trabalho","hora_entrada":"22:00","hora_saida":"06:00","noturno":true}.</div>
+            <div class="hint" style="margin-top:4px">Ex 6x2: 6 dias com {"tipo":"trabalho"}, 2 com {"tipo":"folga"}. Ex 4x2: 4 dias trabalho e 2 folga. Ex 12x36: 1 dia {"tipo":"trabalho","horas":12}, 3 dias {"tipo":"folga"}. Para turno noturno, use o campo "Turno" e o sistema marca os dias de trabalho como noturnos.</div>
 
             <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
               <button class="btn b-az b-sm" onclick="rhEscalaSalvar()">Salvar escala</button>
@@ -5970,19 +5977,29 @@ function rhEscalaPopularSeletor(){
 
 function rhEscalaAtualizarCicloTemplate(){
   const tipo=document.getElementById('rh-esc-tipo')?.value||'';
+  const turno=document.getElementById('rh-esc-turno')?.value||'diurno';
   const cicloArea=document.getElementById('rh-esc-ciclo');
   const noturnoConfig=document.getElementById('rh-esc-noturno-config');
   if(!cicloArea) return;
-  const templates={
-    '6x2':JSON.stringify({"dias":[{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"folga"},{"tipo":"folga"}]},null,2),
-    '12x36':JSON.stringify({"dias":[{"tipo":"trabalho","horas":12},{"tipo":"folga"},{"tipo":"folga"}]},null,2),
-    'folguista':JSON.stringify({"dias":[{"tipo":"trabalho","horas":8},{"tipo":"trabalho","horas":8}]},null,2),
-    'noturna':JSON.stringify({"dias":[{"tipo":"trabalho","hora_entrada":"22:00","hora_saida":"06:00","intervalo_min":0,"noturno":true}]},null,2)
+  const templatesDiurnos={
+    '6x2':{"dias":[{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"folga"},{"tipo":"folga"}]},
+    '4x2':{"dias":[{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"trabalho"},{"tipo":"folga"},{"tipo":"folga"}]},
+    '12x36':{"dias":[{"tipo":"trabalho","horas":12},{"tipo":"folga"},{"tipo":"folga"}]},
+    'folguista':{"dias":[{"tipo":"trabalho","horas":8},{"tipo":"trabalho","horas":8}]},
+    'noturna':{"dias":[{"tipo":"trabalho","hora_entrada":"22:00","hora_saida":"06:00","intervalo_min":0,"noturno":true}]}
   };
-  cicloArea.value=templates[tipo]||'{}';
+  const templatesNoturnos={
+    '6x2':{"dias":[{"tipo":"trabalho","hora_entrada":"22:00","hora_saida":"06:00","intervalo_min":60,"noturno":true},{"tipo":"trabalho","hora_entrada":"22:00","hora_saida":"06:00","intervalo_min":60,"noturno":true},{"tipo":"trabalho","hora_entrada":"22:00","hora_saida":"06:00","intervalo_min":60,"noturno":true},{"tipo":"trabalho","hora_entrada":"22:00","hora_saida":"06:00","intervalo_min":60,"noturno":true},{"tipo":"trabalho","hora_entrada":"22:00","hora_saida":"06:00","intervalo_min":60,"noturno":true},{"tipo":"trabalho","hora_entrada":"22:00","hora_saida":"06:00","intervalo_min":60,"noturno":true},{"tipo":"folga"},{"tipo":"folga"}]},
+    '4x2':{"dias":[{"tipo":"trabalho","hora_entrada":"22:00","hora_saida":"06:00","intervalo_min":60,"noturno":true},{"tipo":"trabalho","hora_entrada":"22:00","hora_saida":"06:00","intervalo_min":60,"noturno":true},{"tipo":"trabalho","hora_entrada":"22:00","hora_saida":"06:00","intervalo_min":60,"noturno":true},{"tipo":"trabalho","hora_entrada":"22:00","hora_saida":"06:00","intervalo_min":60,"noturno":true},{"tipo":"folga"},{"tipo":"folga"}]},
+    '12x36':{"dias":[{"tipo":"trabalho","hora_entrada":"19:00","hora_saida":"07:00","intervalo_min":60,"noturno":true},{"tipo":"folga"},{"tipo":"folga"}]},
+    'folguista':{"dias":[{"tipo":"trabalho","hora_entrada":"22:00","hora_saida":"06:00","intervalo_min":60,"noturno":true},{"tipo":"trabalho","hora_entrada":"22:00","hora_saida":"06:00","intervalo_min":60,"noturno":true}]},
+    'noturna':{"dias":[{"tipo":"trabalho","hora_entrada":"22:00","hora_saida":"06:00","intervalo_min":0,"noturno":true}]}
+  };
+  const templateObj=(turno==='noturno' ? templatesNoturnos[tipo] : templatesDiurnos[tipo]) || {};
+  cicloArea.value=JSON.stringify(templateObj,null,2);
   // Mostrar/esconder painel de configuração noturna
   if(noturnoConfig){
-    noturnoConfig.style.display=(tipo==='noturna')?'block':'none';
+    noturnoConfig.style.display=(turno==='noturno' || tipo==='noturna')?'block':'none';
   }
 }
 
@@ -5994,10 +6011,14 @@ function rhEscalaEditar(id){
   document.getElementById('rh-esc-tipo').value=e.tipo||'';
   document.getElementById('rh-esc-desc').value=e.descricao||'';
   document.getElementById('rh-esc-ciclo').value=JSON.stringify(e.ciclo||{},null,2);
+  const dias=(e?.ciclo?.dias||[]);
+  const ehNoturno=(e.tipo==='noturna') || dias.some(d=>d && d.tipo==='trabalho' && d.noturno===true);
+  document.getElementById('rh-esc-turno').value=ehNoturno?'noturno':'diurno';
   // Popular campos noturnos se disponíveis
   if(e.periodo_noturno_ini) document.getElementById('rh-esc-noturno-ini').value=e.periodo_noturno_ini;
   if(e.periodo_noturno_fim) document.getElementById('rh-esc-noturno-fim').value=e.periodo_noturno_fim;
-  rhEscalaAtualizarCicloTemplate();
+  const noturnoConfig=document.getElementById('rh-esc-noturno-config');
+  if(noturnoConfig) noturnoConfig.style.display=ehNoturno?'block':'none';
 }
 
 function rhEscalaLimparForm(){
@@ -6005,6 +6026,7 @@ function rhEscalaLimparForm(){
   document.getElementById('rh-esc-nome').value='';
   document.getElementById('rh-esc-tipo').value='';
   document.getElementById('rh-esc-desc').value='';
+  document.getElementById('rh-esc-turno').value='diurno';
   document.getElementById('rh-esc-ciclo').value='{}';
   document.getElementById('rh-esc-noturno-ini').value='22:00';
   document.getElementById('rh-esc-noturno-fim').value='05:00';
@@ -6035,6 +6057,17 @@ async function rhEscalaSalvar(){
     showSt('rh-escala-st','Ciclo JSON inválido.',true);
     return;
   }
+  const turno=(document.getElementById('rh-esc-turno')?.value||'diurno').trim();
+  if(turno==='noturno' && Array.isArray(cicloObj?.dias)){
+    cicloObj.dias=cicloObj.dias.map(dia=>{
+      if(!dia || dia.tipo==='folga') return dia;
+      const novo={...dia,noturno:true};
+      if(!novo.hora_entrada) novo.hora_entrada='22:00';
+      if(!novo.hora_saida) novo.hora_saida='06:00';
+      if(novo.intervalo_min===undefined || novo.intervalo_min===null || novo.intervalo_min==='') novo.intervalo_min=60;
+      return novo;
+    });
+  }
   const payload={
     nome,
     tipo,
@@ -6042,7 +6075,7 @@ async function rhEscalaSalvar(){
     descricao:(document.getElementById('rh-esc-desc')?.value||'').trim()
   };
   // Adicionar campos noturnos se for escala noturna
-  if(tipo==='noturna'){
+  if(tipo==='noturna' || turno==='noturno'){
     const noturnoIni=(document.getElementById('rh-esc-noturno-ini')?.value||'22:00').trim();
     const noturnoFim=(document.getElementById('rh-esc-noturno-fim')?.value||'05:00').trim();
     payload.periodo_noturno_ini=noturnoIni;
