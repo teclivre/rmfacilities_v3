@@ -303,16 +303,20 @@ class JornadaTrabalho(db.Model):
 class Escala(db.Model):
     """
     Modelo de Escala de Turnos:
-    - tipo: '6x2' (6 dias trabalho, 2 folga), '12x36' (12h turno, 36h folga), 'folguista' (customizado)
+    - tipo: '6x2' (6 dias trabalho, 2 folga), '12x36' (12h turno, 36h folga), 'folguista' (customizado), 'noturna'
     - ciclo_json: JSON com estrutura de dias/turnos e folgas
       Ex 6x2: {"dias": [{"tipo": "trabalho"}, ...6x..., {"tipo": "folga"}, {"tipo": "folga"}]}
       Ex 12x36: {"dias": [{"tipo": "trabalho", "horas": 12}, {"tipo": "folga"}, {"tipo": "folga"}]}
+      Ex noturna: {"dias": [{"tipo": "trabalho", "hora_entrada": "22:00", "hora_saida": "06:00", "noturno": true}]}
+    - periodo_noturno_ini/fim: horários de início e fim do turno noturno (padrão 22:00-05:00)
     """
     id=db.Column(db.Integer,primary_key=True)
     nome=db.Column(db.String(120),nullable=False)
-    tipo=db.Column(db.String(30),nullable=False)  # '6x2', '12x36', 'folguista'
+    tipo=db.Column(db.String(30),nullable=False)  # '6x2', '12x36', 'folguista', 'noturna'
     ciclo_json=db.Column(db.Text,default='{}')  # JSON com dias/turnos/folgas
     descricao=db.Column(db.String(255))
+    periodo_noturno_ini=db.Column(db.String(5),default='22:00')  # HH:MM (início do período noturno)
+    periodo_noturno_fim=db.Column(db.String(5),default='05:00')  # HH:MM (fim do período noturno)
     ativo=db.Column(db.Boolean,default=True)
     criado_em=db.Column(db.DateTime,default=utcnow)
     def carga_horaria_min_dia(self, dia_ciclo_indice):
@@ -325,9 +329,55 @@ class Escala(db.Model):
             dia_info=dias[dia_ciclo_indice]
             if dia_info.get('tipo')=='folga':
                 return 0
-            # Se especificou horas, converter para minutos; senão usar padrão 8h
+            # Se tem horários específicos (entrada/saída)
+            if 'hora_entrada' in dia_info and 'hora_saida' in dia_info:
+                try:
+                    he=list(map(int,dia_info['hora_entrada'].split(':')))
+                    hs=list(map(int,dia_info['hora_saida'].split(':')))
+                    entrada_min=he[0]*60+he[1]
+                    saida_min=hs[0]*60+hs[1]
+                    # Se saída < entrada, cruza meia-noite (adiciona 24h)
+                    if saida_min<=entrada_min:
+                        saida_min+=24*60
+                    intervalo=dia_info.get('intervalo_min',0)
+                    return max(0,saida_min-entrada_min-intervalo)
+                except Exception:
+                    pass
+            # Senão, usar horas ou padrão 8h
             horas=dia_info.get('horas',8)
             return int(horas*60)
+        except Exception:
+            return 0
+    
+    def is_noturno_dia(self, dia_ciclo_indice):
+        """Verifica se um dia do ciclo é noturno"""
+        try:
+            ciclo=json.loads(self.ciclo_json or '{}')
+            dias=ciclo.get('dias',[])
+            if dia_ciclo_indice<0 or dia_ciclo_indice>=len(dias):
+                return False
+            return dias[dia_ciclo_indice].get('noturno',False)
+        except Exception:
+            return False
+    
+    def get_horarios_dia(self, dia_ciclo_indice):
+        """Retorna entrada/saída/intervalo para um dia do ciclo"""
+        try:
+            ciclo=json.loads(self.ciclo_json or '{}')
+            dias=ciclo.get('dias',[])
+            if dia_ciclo_indice<0 or dia_ciclo_indice>=len(dias):
+                return None
+            dia_info=dias[dia_ciclo_indice]
+            if dia_info.get('tipo')=='folga':
+                return None
+            return {
+                'hora_entrada':dia_info.get('hora_entrada','08:00'),
+                'hora_saida':dia_info.get('hora_saida','17:00'),
+                'intervalo_min':dia_info.get('intervalo_min',0),
+                'noturno':dia_info.get('noturno',False)
+            }
+        except Exception:
+            return None
         except Exception:
             return 0
     def to_dict(self):
@@ -1164,6 +1214,7 @@ class BeneficioMensal(db.Model):
     dias_va=db.Column(db.Integer,default=0)
     dias_vg=db.Column(db.Integer,default=0)
     faltas=db.Column(db.Integer,default=0)
+    horas_noturnas_min=db.Column(db.Integer,default=0)  # minutos de trabalho noturno
     salario=db.Column(db.Float,default=0)
     vale_refeicao=db.Column(db.Float,default=0)
     vale_alimentacao=db.Column(db.Float,default=0)
@@ -7708,6 +7759,61 @@ def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
     # Se não tem escala ou erro, usa jornada fixa
     return _app_ponto_min_esperado_jornada(funcionario)
 
+def _calcular_horas_noturnas(hora_entrada_min, hora_saida_min, periodo_noturno_ini_min, periodo_noturno_fim_min):
+    """
+    Calcula quantos minutos de trabalho ocorrem no período noturno.
+    
+    Args:
+      hora_entrada_min: minutos desde 00:00 (ex: 22*60+0 = 1320 para 22:00)
+      hora_saida_min: minutos desde 00:00 (se > entrada, cruza meia-noite; adicione 24*60)
+      periodo_noturno_ini_min: início do período noturno (ex: 22:00 = 1320)
+      periodo_noturno_fim_min: fim do período noturno (ex: 05:00 = 300)
+    
+    Returns:
+      Minutos trabalhados no período noturno
+    """
+    if hora_saida_min <= hora_entrada_min:
+        # Cruza meia-noite
+        hora_saida_min += 24*60
+    
+    total_noturno = 0
+    
+    # Se período noturno NÃO cruza meia-noite (ex: 22:00-05:00 na verdade cruza)
+    # Assumir que período noturno pode cruzar meia-noite: 22:00 (dia N) até 05:00 (dia N+1)
+    if periodo_noturno_ini_min > periodo_noturno_fim_min:
+        # Período noturno cruza meia-noite (ex: 22:00-05:00)
+        # Calcular interseção com turno
+        
+        # Parte 1: fim do dia (22:00-23:59)
+        inicio_parte1 = periodo_noturno_ini_min
+        fim_parte1 = 24*60  # 00:00 do dia seguinte
+        if hora_entrada_min < fim_parte1 and hora_saida_min > inicio_parte1:
+            inicio_intersec = max(hora_entrada_min, inicio_parte1)
+            fim_intersec = min(hora_saida_min, fim_parte1)
+            total_noturno += max(0, fim_intersec - inicio_intersec)
+        
+        # Parte 2: início do dia (00:00-05:00)
+        inicio_parte2 = 0
+        fim_parte2 = periodo_noturno_fim_min
+        # Turno que cruza meia-noite já tem saida_min >= 24*60
+        if hora_entrada_min < 24*60 <= hora_saida_min:
+            # Turno cruza para o próximo dia
+            nova_entrada_min = 0
+            nova_saida_min = hora_saida_min - 24*60
+            if nova_entrada_min < fim_parte2 and nova_saida_min > inicio_parte2:
+                inicio_intersec = max(nova_entrada_min, inicio_parte2)
+                fim_intersec = min(nova_saida_min, fim_parte2)
+                total_noturno += max(0, fim_intersec - inicio_intersec)
+    else:
+        # Período noturno NÃO cruza meia-noite (ex: 06:00-22:00 não é noturno)
+        # Interseção simples
+        if hora_entrada_min < periodo_noturno_fim_min and hora_saida_min > periodo_noturno_ini_min:
+            inicio_intersec = max(hora_entrada_min, periodo_noturno_ini_min)
+            fim_intersec = min(hora_saida_min, periodo_noturno_fim_min)
+            total_noturno = max(0, fim_intersec - inicio_intersec)
+    
+    return total_noturno
+
 def _app_ponto_fmt_minutos(total,signed=False):
     try:
         minutos=int(total or 0)
@@ -8097,18 +8203,28 @@ def api_escalas_criar():
     tipo=(d.get('tipo') or '').strip()
     if not nome:
         return jsonify({'erro':'Nome obrigatório'}),400
-    if tipo not in ('6x2','12x36','folguista'):
-        return jsonify({'erro':"Tipo deve ser '6x2', '12x36' ou 'folguista'"}),400
+    if tipo not in ('6x2','12x36','folguista','noturna'):
+        return jsonify({'erro':"Tipo deve ser '6x2', '12x36', 'folguista' ou 'noturna'"}),400
     
     ciclo_json=d.get('ciclo_json') or '{}'
     if isinstance(ciclo_json,dict):
         ciclo_json=json.dumps(ciclo_json,ensure_ascii=False)
+    
+    periodo_ini=(d.get('periodo_noturno_ini') or '22:00').strip()
+    periodo_fim=(d.get('periodo_noturno_fim') or '05:00').strip()
+    # Validar formato HH:MM
+    if not re.match(r'^\d{2}:\d{2}$',periodo_ini):
+        periodo_ini='22:00'
+    if not re.match(r'^\d{2}:\d{2}$',periodo_fim):
+        periodo_fim='05:00'
     
     e=Escala(
         nome=nome,
         tipo=tipo,
         ciclo_json=ciclo_json,
         descricao=d.get('descricao',''),
+        periodo_noturno_ini=periodo_ini,
+        periodo_noturno_fim=periodo_fim,
         ativo=True
     )
     db.session.add(e)
@@ -8143,13 +8259,21 @@ def api_escala_editar(id):
     d=request.json or {}
     if 'nome' in d:
         e.nome=(d.get('nome') or '').strip() or e.nome
-    if 'tipo' in d and d.get('tipo') in ('6x2','12x36','folguista'):
+    if 'tipo' in d and d.get('tipo') in ('6x2','12x36','folguista','noturna'):
         e.tipo=d.get('tipo')
     if 'ciclo_json' in d:
         ciclo=d.get('ciclo_json')
         e.ciclo_json=json.dumps(ciclo,ensure_ascii=False) if isinstance(ciclo,dict) else (ciclo or '{}')
     if 'descricao' in d:
         e.descricao=d.get('descricao','')
+    if 'periodo_noturno_ini' in d:
+        periodo_ini=(d.get('periodo_noturno_ini') or '22:00').strip()
+        if re.match(r'^\d{2}:\d{2}$',periodo_ini):
+            e.periodo_noturno_ini=periodo_ini
+    if 'periodo_noturno_fim' in d:
+        periodo_fim=(d.get('periodo_noturno_fim') or '05:00').strip()
+        if re.match(r'^\d{2}:\d{2}$',periodo_fim):
+            e.periodo_noturno_fim=periodo_fim
     if 'ativo' in d:
         e.ativo=bool(d.get('ativo',True))
     db.session.commit()
@@ -11783,6 +11907,90 @@ def api_feriados_atualizar_nacionais():
 #  BENEFÍCIOS — CÁLCULO POR PERÍODO
 # ══════════════════════════════════════════════════════════════
 
+def _calcular_horas_noturnas_funcionario(funcionario_id, data_inicio_str, data_fim_str):
+    """
+    Calcula total de horas noturnas trabalhadas por um funcionário em um período.
+    Usa escala se ativa, senão usa jornada fixa.
+    
+    Returns:
+      int (minutos noturnos)
+    """
+    from datetime import timedelta, datetime as _dt_calc
+    
+    total_noturno_min = 0
+    
+    try:
+        # Parse datas
+        dt_ini = _dt_calc.strptime(data_inicio_str, '%Y-%m-%d').date() if isinstance(data_inicio_str, str) else data_inicio_str
+        dt_fim = _dt_calc.strptime(data_fim_str, '%Y-%m-%d').date() if isinstance(data_fim_str, str) else data_fim_str
+        
+        f = Funcionario.query.get(funcionario_id)
+        if not f:
+            return 0
+        
+        # Procurar escala ativa nesse período
+        esc_func = EscalaFuncionario.query.filter(
+            EscalaFuncionario.funcionario_id == funcionario_id,
+            EscalaFuncionario.data_inicio <= dt_fim.isoformat(),
+            EscalaFuncionario.ativo == True
+        ).all()
+        
+        # Se tem escala e é noturna, calcular horas
+        for ef in esc_func:
+            if ef.data_fim and ef.data_fim < dt_ini.isoformat():
+                continue
+            
+            esc = Escala.query.get(ef.escala_id)
+            if not esc or esc.tipo != 'noturna':
+                continue
+            
+            # Período noturno
+            try:
+                p_ini = list(map(int, esc.periodo_noturno_ini.split(':')))
+                p_fim = list(map(int, esc.periodo_noturno_fim.split(':')))
+                p_ini_min = p_ini[0]*60 + p_ini[1]  # ex: 22:00 = 1320
+                p_fim_min = p_fim[0]*60 + p_fim[1]  # ex: 05:00 = 300
+            except Exception:
+                p_ini_min = 22*60
+                p_fim_min = 5*60
+            
+            # Iterar dias do período
+            dia_atual = dt_ini
+            while dia_atual <= dt_fim:
+                data_str = dia_atual.isoformat()
+                
+                # Verificar se tem pontuações nesse dia
+                marcacoes = PontoMarcacao.query.filter(
+                    PontoMarcacao.funcionario_id == funcionario_id,
+                    PontoMarcacao.data_hora >= _dt_calc.fromisoformat(data_str + 'T00:00:00'),
+                    PontoMarcacao.data_hora < _dt_calc.fromisoformat(data_str + 'T23:59:59')
+                ).order_by(PontoMarcacao.data_hora).all()
+                
+                if marcacoes and len(marcacoes) >= 2:
+                    # Calcular de entrada a saída
+                    entrada_dh = marcacoes[0].data_hora
+                    saida_dh = marcacoes[-1].data_hora
+                    
+                    # Converter para minutos desde 00:00 do dia
+                    entrada_min = entrada_dh.hour * 60 + entrada_dh.minute
+                    saida_min = saida_dh.hour * 60 + saida_dh.minute
+                    
+                    # Se saída é de outro dia, adiciona 24h
+                    if saida_dh.date() > entrada_dh.date():
+                        saida_min += 24*60
+                    
+                    # Calcular horas noturnas
+                    horas_noturnas_dia = _calcular_horas_noturnas(entrada_min, saida_min, p_ini_min, p_fim_min)
+                    total_noturno_min += horas_noturnas_dia
+                
+                dia_atual += timedelta(days=1)
+    
+    except Exception as e:
+        # Log silencioso em caso de erro
+        pass
+    
+    return total_noturno_min
+
 @app.route('/api/beneficios/calcular-por-periodo',methods=['POST'])
 @lr
 def api_beneficios_calcular_por_periodo():
@@ -12089,6 +12297,9 @@ def api_beneficios_calcular_por_periodo():
             if it['opta_va']: b.dias_va=dt
             if it['opta_vale_gasolina']: b.dias_vg=max(0,to_num(it.get('dias_vg_sugerido')))
             if b.salario is None: b.salario=it['salario']
+            # Calcular horas noturnas
+            horas_not_min=_calcular_horas_noturnas_funcionario(fid,dt_ini.isoformat(),dt_fim.isoformat())
+            b.horas_noturnas_min=max(0,int(horas_not_min))
         db.session.commit()
 
     return jsonify({
