@@ -1,3 +1,26 @@
+@app.route('/api/app/funcionario/ultimo-pagamento', methods=['GET'])
+@lr
+def api_funcionario_ultimo_pagamento():
+    # Recupera o funcionário autenticado
+    funcionario_id = session.get('uid')
+    if not funcionario_id:
+        return {'erro': 'Não autenticado.'}, 401
+    # Busca o último registro de pagamento (BeneficioMensal) do funcionário
+    reg = (
+        BeneficioMensal.query
+        .filter_by(funcionario_id=funcionario_id)
+        .order_by(BeneficioMensal.competencia.desc())
+        .first()
+    )
+    if not reg:
+        return {'ok': True, 'valor_liquido': None, 'competencia': None}
+    valor = reg.salario or 0
+    competencia = reg.competencia
+    return {
+        'ok': True,
+        'valor_liquido': valor,
+        'competencia': competencia
+    }
 import io
 import urllib.request
 import urllib.error
