@@ -23,8 +23,8 @@
             android:orientation="vertical"
             android:paddingStart="18dp"
             android:paddingEnd="18dp"
-            android:paddingTop="52dp"
-            android:paddingBottom="16dp">
+            android:paddingTop="20dp"
+            android:paddingBottom="10dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -198,21 +198,25 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnMarcarPonto"
                 android:layout_width="match_parent"
-                android:layout_height="56dp"
+                android:layout_height="48dp"
                 android:layout_marginTop="14dp"
                 android:text="Registrar ponto agora"
-                android:textSize="16sp"
-                android:textStyle="bold" />
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:maxLines="2"
+                android:ellipsize="end" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnAtualizarPonto"
                 style="@style/Widget.App.Button.Outlined"
                 android:layout_width="match_parent"
-                android:layout_height="56dp"
+                android:layout_height="48dp"
                 android:layout_marginTop="8dp"
                 android:text="Atualizar dados"
                 android:textColor="@color/mobile_semantic_info"
-                app:strokeColor="@color/mobile_card_border" />
+                app:strokeColor="@color/mobile_card_border"
+                android:maxLines="2"
+                android:ellipsize="end" />
 
             <TextView
                 android:id="@+id/tvPontoStatus"

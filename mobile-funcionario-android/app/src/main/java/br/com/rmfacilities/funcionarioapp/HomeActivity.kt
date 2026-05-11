@@ -46,6 +46,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var tvResumoAvisos: TextView
     private lateinit var tvMsgBadge: TextView
     private lateinit var tvDocsBadge: TextView
+    private lateinit var tvUltimoPagamento: TextView
     private lateinit var retryQueue: ActionRetryQueue
     private lateinit var connectivityManager: ConnectivityManager
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -93,6 +94,7 @@ class HomeActivity : AppCompatActivity() {
         tvResumoAvisos = findViewById(R.id.tvResumoAvisos)
         tvMsgBadge = findViewById(R.id.tvMsgBadge)
         tvDocsBadge = findViewById(R.id.tvDocsBadge)
+        tvUltimoPagamento = findViewById(R.id.tvUltimoPagamento)
         swipeRefresh = findViewById(R.id.swipeRefreshHome)
 
         swipeRefresh.setColorSchemeResources(R.color.accent)
@@ -301,6 +303,7 @@ class HomeActivity : AppCompatActivity() {
             val pontoDia = try { api.getPontoDia() } catch (_: Exception) { PontoDiaResponse(ok = false) }
             val versao = try { api.getVersaoApp() } catch (_: Exception) { null }
             val pendentesCount = try { api.pendentesAssinatura().itens.size } catch (_: Exception) { 0 }
+            val ultimoPagamento = try { api.ultimoPagamento() } catch (_: Exception) { null }
             withContext(Dispatchers.Main) {
                 swipeRefresh.isRefreshing = false
                 val nome = me.funcionario?.nome ?: "colaborador"
@@ -333,6 +336,14 @@ class HomeActivity : AppCompatActivity() {
                         if (naoLidas > 0) R.color.mobile_semantic_pending else R.color.mobile_semantic_success
                     )
                 )
+
+                // Atualiza o valor do último pagamento
+                if (ultimoPagamento != null && ultimoPagamento.ok && ultimoPagamento.valor_liquido != null && ultimoPagamento.competencia != null) {
+                    val valorFmt = "R$ %.2f".format(ultimoPagamento.valor_liquido)
+                    tvUltimoPagamento.text = "Último pagamento: $valorFmt (${ultimoPagamento.competencia})"
+                } else {
+                    tvUltimoPagamento.text = "Último pagamento: --"
+                }
 
                 // Salva timestamp de última sincronização para a tela Sobre
                 getSharedPreferences("rm_funcionario_app", MODE_PRIVATE)

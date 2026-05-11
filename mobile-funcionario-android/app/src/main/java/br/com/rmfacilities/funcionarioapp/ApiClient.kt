@@ -1,3 +1,5 @@
+
+
 package br.com.rmfacilities.funcionarioapp
 
 import com.google.gson.Gson
@@ -19,6 +21,30 @@ class ApiClient(private val session: SessionManager) {
             authRetryRequest(response)
         })
         .build()
+
+    data class UltimoPagamentoResponse(
+        val ok: Boolean = false,
+        val valor_liquido: Double? = null,
+        val competencia: String? = null,
+        val erro: String? = null
+    )
+
+    fun ultimoPagamento(): UltimoPagamentoResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/ultimo-pagamento"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, UltimoPagamentoResponse::class.java)
+            } catch (_: Exception) {
+                UltimoPagamentoResponse(ok = false, erro = "Falha ao buscar pagamento.")
+            }
+        }
+    }
 
     private fun parseErro(raw: String, fallback: String): String {
         return try {

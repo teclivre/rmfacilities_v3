@@ -261,12 +261,18 @@
                                 android:layout_weight="1" />
 
                             <TextView
-                                android:layout_width="wrap_content"
+                                android:layout_width="0dp"
                                 android:layout_height="wrap_content"
+                                android:layout_weight="1"
                                 android:text="Bater ponto"
                                 android:textColor="@color/mobile_text_primary"
                                 android:textStyle="bold"
-                                android:textSize="15sp" />
+                                android:textSize="15sp"
+                                android:paddingStart="8dp"
+                                android:paddingEnd="8dp"
+                                android:minWidth="100dp"
+                                android:ellipsize="end"
+                                android:maxLines="1" />
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -605,6 +611,15 @@
                                 android:text="Pagamento"
                                 android:textColor="@color/mobile_text_primary"
                                 android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvUltimoPagamento"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Último pagamento: --"
+                                android:textColor="@color/mobile_text_secondary"
+                                android:textSize="13sp"
                                 android:textStyle="bold" />
 
                             <TextView
