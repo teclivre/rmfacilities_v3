@@ -1206,6 +1206,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
             <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
               <button class="btn b-az b-sm" onclick="rhJornadaSalvar()">Salvar jornada</button>
+              <button class="btn b-ghv b-sm" type="button" onclick="rhJornadaDuplicarAtual()">Duplicar atual</button>
               <button class="btn b-gh b-sm" onclick="rhJornadaLimparForm()">Limpar</button>
             </div>
           </div>
@@ -5833,6 +5834,15 @@ function rhJornadaDuplicar(id){
   const nomeBase=(j.nome||'Jornada').trim();
   document.getElementById('rh-jor-nome').value=`Cópia - ${nomeBase}`;
   showSt('rh-jornada-st','Jornada duplicada no formulário. Ajuste o que quiser e clique em Salvar.',false);
+}
+
+function rhJornadaDuplicarAtual(){
+  const idAtual=(document.getElementById('rh-jor-id')?.value||'').trim();
+  if(!idAtual){
+    showSt('rh-jornada-st','Abra uma jornada existente para duplicar.',true);
+    return;
+  }
+  rhJornadaDuplicar(idAtual);
 }
 
 async function rhJornadaSalvar(){
