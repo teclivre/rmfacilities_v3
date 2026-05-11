@@ -1,3 +1,8 @@
+from flask import Flask
+
+# Inicialização do Flask app deve vir antes de qualquer uso de @app.route
+app = Flask(__name__)
+
 @app.route('/api/app/funcionario/ultimo-pagamento', methods=['GET'])
 @lr
 def api_funcionario_ultimo_pagamento():
