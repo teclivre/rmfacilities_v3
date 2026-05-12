@@ -1020,13 +1020,13 @@ document.addEventListener('DOMContentLoaded',()=>{
     <!-- ══ CLIENTES ══ -->
     <div id="pg-clientes" class="pg">
       <div id="st-cli" class="st"></div>
-      <div class="card" style="margin-bottom:10px;padding:10px 12px">
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn b-az b-sm" id="cli-subtab-cadastro" onclick="switchCliSubtab('cadastro',this)">Cadastro de clientes</button>
-          <button class="btn b-gh b-sm" id="cli-subtab-contratos" onclick="switchCliSubtab('contratos',this)">Contratos</button>
-        </div>
-      </div>
       <div class="card">
+        <div class="card-header">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn b-az b-sm" id="cli-subtab-cadastro" onclick="switchCliSubtab('cadastro',this)">Cadastro de clientes</button>
+            <button class="btn b-gh b-sm" id="cli-subtab-contratos" onclick="switchCliSubtab('contratos',this)">Contratos</button>
+          </div>
+        </div>
         <div id="cli-pane-cadastro">
         <div class="card-header">
           <span class="card-title">Base de clientes</span>
