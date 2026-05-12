@@ -57,6 +57,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var btnOfflineHome: View
     private lateinit var btnConfiguracoesHome: View
     private lateinit var btnSalarioHome: View
+    private lateinit var btnBeneficiosHome: View
 
     private val logoutReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -107,10 +108,16 @@ class HomeActivity : AppCompatActivity() {
         btnOfflineHome = findViewById(R.id.btnOfflineHome)
         btnConfiguracoesHome = findViewById(R.id.btnConfiguracoesHome)
         btnSalarioHome = findViewById(R.id.btnSalarioHome)
+        btnBeneficiosHome = findViewById(R.id.btnBeneficiosHome)
 
         btnSalarioHome.setOnClickListener {
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             abrirHistoricoPagamentos()
+        }
+
+        btnBeneficiosHome.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            abrirHistoricoBeneficios()
         }
 
         btnPerfil.setOnClickListener {
@@ -388,8 +395,8 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun abrirPersonalizacaoAtalhos() {
-        val labels = arrayOf("Documentos", "Perfil", "Ponto", "Mensagens", "Offline", "Configurações", "Pagamento")
-        val keys = listOf("documentos", "perfil", "ponto", "mensagens", "offline", "config", "pagamento")
+        val labels = arrayOf("Documentos", "Perfil", "Ponto", "Mensagens", "Offline", "Configurações", "Pagamento", "Benefícios")
+        val keys = listOf("documentos", "perfil", "ponto", "mensagens", "offline", "config", "pagamento", "beneficios")
         val enabled = carregarAtalhosHabilitados().toMutableSet()
         val checks = keys.map { enabled.contains(it) }.toBooleanArray()
         MaterialAlertDialogBuilder(this)
@@ -410,7 +417,7 @@ class HomeActivity : AppCompatActivity() {
         val prefs = getSharedPreferences(PREF_SHORTCUTS, MODE_PRIVATE)
         val raw = prefs.getString(KEY_ENABLED, "") ?: ""
         if (raw.isBlank()) {
-            return setOf("documentos", "perfil", "ponto", "mensagens", "pagamento")
+            return setOf("documentos", "perfil", "ponto", "mensagens", "pagamento", "beneficios")
         }
         return raw.split(',').map { it.trim() }.filter { it.isNotBlank() }.toSet()
     }
@@ -431,6 +438,7 @@ class HomeActivity : AppCompatActivity() {
         btnOfflineHome.visibility = if (enabled.contains("offline")) View.VISIBLE else View.GONE
         btnConfiguracoesHome.visibility = if (enabled.contains("config")) View.VISIBLE else View.GONE
         btnSalarioHome.visibility = if (enabled.contains("pagamento")) View.VISIBLE else View.GONE
+        btnBeneficiosHome.visibility = if (enabled.contains("beneficios")) View.VISIBLE else View.GONE
     }
 
     private fun mostrarDialogAtualizar(downloadUrl: String?) {
@@ -449,72 +457,73 @@ class HomeActivity : AppCompatActivity() {
         if (!isFinishing && !isDestroyed) dialog.show()
     }
 
+    private fun compFmt(comp: String): String {
+        if (comp.length != 7) return comp
+        val mes = comp.substring(5).toIntOrNull() ?: 0
+        val ano = comp.substring(0, 4)
+        return listOf("","Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez").getOrElse(mes) { comp } + "/$ano"
+    }
+
     private fun abrirHistoricoPagamentos() {
         val loading = MaterialAlertDialogBuilder(this)
-            .setTitle("Histórico financeiro")
-            .setMessage("Carregando...")
+            .setTitle("Histórico de pagamento")
+            .setMessage("Buscando...")
             .setCancelable(false)
             .create()
         loading.show()
         CoroutineScope(Dispatchers.IO).launch {
-            val pagResp = try { api.historicoPagamentos() } catch (_: Exception) { null }
-            val benResp = try { api.historicoBeneficios() } catch (_: Exception) { null }
+            val resp = try { api.historicoPagamentos() } catch (_: Exception) { null }
             withContext(Dispatchers.Main) {
                 loading.dismiss()
-                mostrarDialogFinanceiro(pagResp?.historico ?: emptyList(), benResp?.historico ?: emptyList(), mostrarSalario = true)
+                val historico = resp?.historico ?: emptyList()
+                val texto = if (historico.isEmpty()) "Nenhum pagamento registrado."
+                else historico.joinToString("\n") { p ->
+                    val valor = "R$ %,.2f".format(p.valor_liquido)
+                    if (p.obs.isNotBlank()) "• ${compFmt(p.competencia)}  →  $valor\n  (${p.obs})"
+                    else "• ${compFmt(p.competencia)}  →  $valor"
+                }
+                MaterialAlertDialogBuilder(this@HomeActivity)
+                    .setTitle("💰 Histórico de Salário")
+                    .setMessage(texto)
+                    .setPositiveButton("Fechar", null)
+                    .setNeutralButton("Holerites") { _, _ ->
+                        startActivity(Intent(this@HomeActivity, DocumentosActivity::class.java).apply {
+                            putExtra("preset_categoria", "holerite")
+                        })
+                    }
+                    .show()
             }
         }
     }
 
-    private fun mostrarDialogFinanceiro(
-        salarios: List<ApiClient.PagamentoItem>,
-        beneficios: List<ApiClient.BeneficioItem>,
-        mostrarSalario: Boolean
-    ) {
-        fun compFmt(comp: String): String {
-            if (comp.length != 7) return comp
-            val mes = comp.substring(5).toIntOrNull() ?: 0
-            val ano = comp.substring(0, 4)
-            val nomeMes = listOf("","Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez").getOrElse(mes) { comp }
-            return "$nomeMes/$ano"
-        }
-
-        val titulo = if (mostrarSalario) "💰 Histórico de Salário" else "🎁 Histórico de Benefícios"
-
-        val texto = if (mostrarSalario) {
-            if (salarios.isEmpty()) "Nenhum pagamento registrado."
-            else salarios.joinToString("\n") { p ->
-                val valor = "R$ %,.2f".format(p.valor_liquido)
-                if (p.obs.isNotBlank()) "• ${compFmt(p.competencia)}  →  $valor\n  (${p.obs})"
-                else "• ${compFmt(p.competencia)}  →  $valor"
-            }
-        } else {
-            if (beneficios.isEmpty()) "Nenhum benefício registrado."
-            else beneficios.joinToString("\n") { b ->
-                val total = "R$ %,.2f".format(b.total)
-                buildString {
-                    append("• ${compFmt(b.competencia)}  →  $total")
-                    if (b.detalhes.isNotBlank()) append("\n  ${b.detalhes}")
-                    if (b.obs.isNotBlank()) append("\n  (${b.obs})")
+    private fun abrirHistoricoBeneficios() {
+        val loading = MaterialAlertDialogBuilder(this)
+            .setTitle("Histórico de benefícios")
+            .setMessage("Buscando...")
+            .setCancelable(false)
+            .create()
+        loading.show()
+        CoroutineScope(Dispatchers.IO).launch {
+            val resp = try { api.historicoBeneficios() } catch (_: Exception) { null }
+            withContext(Dispatchers.Main) {
+                loading.dismiss()
+                val historico = resp?.historico ?: emptyList()
+                val texto = if (historico.isEmpty()) "Nenhum benefício registrado."
+                else historico.joinToString("\n") { b ->
+                    val total = "R$ %,.2f".format(b.total)
+                    buildString {
+                        append("• ${compFmt(b.competencia)}  →  $total")
+                        if (b.detalhes.isNotBlank()) append("\n  ${b.detalhes}")
+                        if (b.obs.isNotBlank()) append("\n  (${b.obs})")
+                    }
                 }
+                MaterialAlertDialogBuilder(this@HomeActivity)
+                    .setTitle("🎁 Histórico de Benefícios")
+                    .setMessage(texto)
+                    .setPositiveButton("Fechar", null)
+                    .show()
             }
         }
-
-        val altBotao = if (mostrarSalario) "🎁 Ver Benefícios" else "💰 Ver Salário"
-
-        MaterialAlertDialogBuilder(this)
-            .setTitle(titulo)
-            .setMessage(texto)
-            .setPositiveButton("Fechar", null)
-            .setNeutralButton(altBotao) { _, _ ->
-                mostrarDialogFinanceiro(salarios, beneficios, !mostrarSalario)
-            }
-            .setNegativeButton("Holerites") { _, _ ->
-                startActivity(Intent(this, DocumentosActivity::class.java).apply {
-                    putExtra("preset_categoria", "holerite")
-                })
-            }
-            .show()
     }
 
     private fun goLogin() {
