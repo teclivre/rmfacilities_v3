@@ -1141,7 +1141,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div id="rh-ferias-res" class="hint" style="margin:0 12px 8px 12px"></div>
         <div class="tbl-wrap">
           <table class="tbl">
-            <thead><tr><th>RE</th><th>Colaborador</th><th>Função</th><th>Empresa</th><th>Período de férias</th><th>Status</th></tr></thead>
+            <thead><tr><th>RE</th><th>Colaborador</th><th>Função</th><th>Empresa</th><th>Período de férias</th><th>Dias</th><th>Faltas/ano</th><th>Direito CLT</th><th>Status</th></tr></thead>
             <tbody id="rh-ferias-tb"></tbody>
           </table>
         </div>
@@ -2647,8 +2647,26 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
       <div class="g3">
         <div class="f"><label>Início das férias</label><input id="fferias-inicio" type="date" onchange="rhFuncionarioAoAlterarFerias()"></div>
-        <div class="f"><label>Fim das férias</label><input id="fferias-fim" type="date" onchange="rhFuncionarioAoAlterarFerias()"></div>
+        <div class="f">
+          <label>Dias de férias <span style="font-size:10px;color:#888;font-weight:400">(fim calculado automaticamente)</span></label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input id="fferias-dias" type="number" min="1" max="30" value="30" style="width:80px" oninput="rhFuncionarioAoAlterarFerias()">
+            <span id="fferias-fim-preview" style="font-size:12px;color:var(--azul);font-weight:700"></span>
+          </div>
+        </div>
+        <div class="f"><label>Fim das férias <span style="font-size:10px;color:#888;font-weight:400">(ou ajuste manual)</span></label><input id="fferias-fim" type="date" onchange="rhFuncionarioAoAlterarFeriasManual()"></div>
+      </div>
+      <div class="g3">
         <div class="f"><label>Obs. férias</label><input id="fferias-obs" placeholder="Ex: férias coletivas"></div>
+        <div class="f">
+          <label>Faltas no ano <span style="font-size:10px;color:#888;font-weight:400">(CLT: impacta direito)</span></label>
+          <input id="ffaltas-ano" type="number" min="0" value="0" oninput="rhFuncionarioDireitoFerias()">
+        </div>
+        <div class="f" style="justify-content:flex-end">
+          <label style="font-size:11px;color:#888">Direito de férias (CLT)</label>
+          <div id="fferias-direito" style="font-size:15px;font-weight:700;color:var(--azul);padding:6px 0">30 dias</div>
+          <div id="fferias-direito-obs" style="font-size:11px;color:#c88"></div>
+        </div>
       </div>
       <div class="g4">
         <div class="f"><label>Cargo</label><input id="fcargo"></div>
@@ -3846,7 +3864,7 @@ async function renderRhFerias(){
   }).sort((a,b)=>((a.nome||'').localeCompare((b.nome||''),'pt-BR')));
 
   if(!lista.length){
-    tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:24px;color:#999">Nenhum colaborador em férias para os filtros selecionados.</td></tr>';
+    tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:#999">Nenhum colaborador em férias para os filtros selecionados.</td></tr>';
     if(res) res.textContent='0 colaborador(es) em férias.';
     return;
   }
@@ -3856,12 +3874,19 @@ async function renderRhFerias(){
     const perIni=rhFeriasFmtBr(f.ferias_inicio||'');
     const perFim=rhFeriasFmtBr(f.ferias_fim||'');
     const perTxt=(perIni!=='—' && perFim!=='—') ? `${perIni} até ${perFim}` : 'Período não informado';
+    const diasTxt=(f.ferias_dias||30)+' dias';
+    const faltasTxt=f.faltas_ano||0;
+    const direito=rhFeriasDireitoCLT(faltasTxt);
+    const direitoColor=direito.dias===30?'#4caf50':(direito.dias===0?'#c33':'#f0a020');
     return `<tr class="row-clickable" onclick="openModalFunc('editar',${f.id})">
       <td style="font-weight:700">${f.re||'—'}</td>
       <td><div style="font-weight:700">${esc(f.nome||'—')}</div><div style="font-size:11px;color:#888">${fmtDoc(f.cpf)||''}</div></td>
       <td>${esc(f.funcao||f.cargo||'—')}</td>
       <td>${esc(emp?.nome||'—')}</td>
       <td>${perTxt}${f.ferias_obs?`<div style="font-size:11px;color:#888">${esc(f.ferias_obs)}</div>`:''}</td>
+      <td style="text-align:center;font-weight:700">${diasTxt}</td>
+      <td style="text-align:center">${faltasTxt}</td>
+      <td style="text-align:center;font-weight:700;color:${direitoColor}">${direito.dias} dias${direito.obs?`<div style="font-size:10px;font-weight:400;color:#888">${direito.obs}</div>`:''}</td>
       <td><span class="pill p-az">${esc(f.status||'Férias')}</span></td>
     </tr>`;
   }).join('');
@@ -5202,6 +5227,8 @@ function rhFuncionarioMontarPayload(requireNome=false){
     ferias_inicio:document.getElementById('fferias-inicio').value,
     ferias_fim:document.getElementById('fferias-fim').value,
     ferias_obs:(document.getElementById('fferias-obs').value||'').trim(),
+    ferias_dias:parseInt(document.getElementById('fferias-dias')?.value)||30,
+    faltas_ano:parseInt(document.getElementById('ffaltas-ano')?.value)||0,
     posto_operacional:(document.getElementById('fposto').value||'').trim(),
     banco_codigo:(document.getElementById('fbanco-codigo').value||'').replace(/\D/g,'').slice(0,3),
     banco_nome:(document.getElementById('fbanco-nome').value||'').trim(),
@@ -5249,18 +5276,77 @@ function rhFuncionarioBindAutoSave(){
   });
 }
 
+// Tabela CLT de dias de férias conforme faltas no período aquisitivo
+function rhFeriasDireitoCLT(faltas){
+  const f=parseInt(faltas)||0;
+  if(f<=5) return {dias:30,obs:''};
+  if(f<=14) return {dias:24,obs:'6–14 faltas: 24 dias'};
+  if(f<=23) return {dias:18,obs:'15–23 faltas: 18 dias'};
+  if(f<=32) return {dias:12,obs:'24–32 faltas: 12 dias'};
+  return {dias:0,obs:'Acima de 32 faltas: perde o direito'};
+}
+
+function rhFuncionarioDireitoFerias(){
+  const faltas=parseInt(document.getElementById('ffaltas-ano')?.value)||0;
+  const r=rhFeriasDireitoCLT(faltas);
+  const el=document.getElementById('fferias-direito');
+  const elObs=document.getElementById('fferias-direito-obs');
+  if(el) el.textContent=r.dias+' dias';
+  if(elObs) elObs.textContent=r.obs;
+  // Limitar campo dias ao máximo do direito
+  const diasEl=document.getElementById('fferias-dias');
+  if(diasEl){
+    diasEl.max=r.dias;
+    if(parseInt(diasEl.value)>r.dias) diasEl.value=r.dias;
+  }
+  rhFuncionarioAoAlterarFerias();
+}
+
 function rhFuncionarioAoAlterarFerias(){
+  const ini=(document.getElementById('fferias-inicio')?.value||'').trim();
+  const diasEl=document.getElementById('fferias-dias');
+  const dias=parseInt(diasEl?.value)||30;
+  const st=document.getElementById('fstatus');
+  // Calcula fim automaticamente a partir do início + dias
+  if(ini && dias>0){
+    const dtIni=new Date(ini+'T12:00:00');
+    const dtFim=new Date(dtIni.getTime()+(dias-1)*86400000);
+    const fimStr=dtFim.toISOString().slice(0,10);
+    const fimEl=document.getElementById('fferias-fim');
+    if(fimEl) fimEl.value=fimStr;
+    const prev=document.getElementById('fferias-fim-preview');
+    if(prev) prev.textContent='Até '+dtFim.toLocaleDateString('pt-BR');
+    if(st) st.value='Férias';
+  } else {
+    const prev=document.getElementById('fferias-fim-preview');
+    if(prev) prev.textContent='';
+    const fim=(document.getElementById('fferias-fim')?.value||'').trim();
+    if(st && !ini && !fim && st.value==='Férias') st.value='Ativo';
+  }
+  rhFuncionarioAutoSaveSchedule();
+}
+
+function rhFuncionarioAoAlterarFeriasManual(){
+  // Quando usuário ajusta o fim manualmente, atualiza o campo dias
   const ini=(document.getElementById('fferias-inicio')?.value||'').trim();
   const fim=(document.getElementById('fferias-fim')?.value||'').trim();
   const st=document.getElementById('fstatus');
-  if(!st) return;
   if(ini && fim){
-    st.value='Férias';
-  } else if(st.value==='Férias'){
+    const dtIni=new Date(ini+'T12:00:00');
+    const dtFim=new Date(fim+'T12:00:00');
+    const diff=Math.round((dtFim-dtIni)/86400000)+1;
+    const diasEl=document.getElementById('fferias-dias');
+    if(diasEl && diff>0) diasEl.value=diff;
+    const prev=document.getElementById('fferias-fim-preview');
+    if(prev) prev.textContent='Até '+dtFim.toLocaleDateString('pt-BR');
+    if(st) st.value='Férias';
+  } else if(st && st.value==='Férias'){
     st.value='Ativo';
   }
   rhFuncionarioAutoSaveSchedule();
 }
+
+
 
 function rhFuncionarioHasUnsavedChanges(){
   if(_rhFuncAutoInflight) return true;
@@ -5393,6 +5479,14 @@ function preencherFormFuncionario(f,titulo='Editar funcionário'){
   document.getElementById('fferias-inicio').value=f.ferias_inicio||'';
   document.getElementById('fferias-fim').value=f.ferias_fim||'';
   document.getElementById('fferias-obs').value=f.ferias_obs||'';
+  document.getElementById('fferias-dias').value=f.ferias_dias||30;
+  document.getElementById('ffaltas-ano').value=f.faltas_ano||0;
+  rhFuncionarioDireitoFerias();
+  // Atualizar preview de fim
+  if(f.ferias_fim){
+    const prev=document.getElementById('fferias-fim-preview');
+    if(prev){const d=new Date(f.ferias_fim+'T12:00:00');prev.textContent='Até '+d.toLocaleDateString('pt-BR');}
+  }
   document.getElementById('fposto').value=f.posto_operacional||'Reserva tecnica';
   document.getElementById('fbanco-codigo').value=f.banco_codigo||'';
   document.getElementById('fbanco-nome').value=f.banco_nome||'';
