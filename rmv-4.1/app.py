@@ -6338,9 +6338,44 @@ def api_assinatura_confirmar(token):
         codigo=(m.assinatura_codigo or '')
     )
 
+def _sync_ferias_status():
+    """Atualiza status de funcionários com base nas datas de férias: 
+    - Se hoje >= ferias_inicio E hoje <= ferias_fim → Férias
+    - Se ferias_fim preenchido e hoje > ferias_fim e status==Férias → Ativo
+    Ignora funcionários Demitidos/Inativos."""
+    from datetime import date as _date
+    hoje=_date.today().isoformat()
+    alterados=0
+    for f in Funcionario.query.all():
+        if f.status in ('Demitido','Inativo'): continue
+        ini=(f.ferias_inicio or '').strip()
+        fim=(f.ferias_fim or '').strip()
+        status_atual=(f.status or 'Ativo')
+        if ini and fim:
+            if hoje>=ini and hoje<=fim:
+                if status_atual!='Férias':
+                    f.status='Férias'
+                    alterados+=1
+            elif hoje>fim and status_atual=='Férias':
+                f.status='Ativo'
+                alterados+=1
+        elif not ini and not fim and status_atual=='Férias':
+            f.status='Ativo'
+            alterados+=1
+    if alterados:
+        db.session.commit()
+    return alterados
+
+@app.route('/api/funcionarios/sync-ferias',methods=['POST'])
+@lr
+def api_funcionarios_sync_ferias():
+    n=_sync_ferias_status()
+    return jsonify({'ok':True,'alterados':n})
+
 @app.route('/api/funcionarios',methods=['GET'])
 @lr
 def api_funcionarios():
+    _sync_ferias_status()
     cpf=only_digits(request.args.get('cpf',''))
     if cpf:
         ex_id=to_num(request.args.get('exclude_id'))
