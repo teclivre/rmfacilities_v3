@@ -1,47 +1,3 @@
-from flask import Flask, request, jsonify, redirect, url_for, session
-from functools import wraps
-
-# Inicialização do Flask app deve vir antes de qualquer uso de @app.route
-app = Flask(__name__)
-
-def _lr_unauth_response():
-    if (request.path or '').startswith('/api/'):
-        return jsonify({'erro':'Sessao expirada. Faca login novamente.'}),401
-    return redirect(url_for('login'))
-
-def lr(f):
-    @wraps(f)
-    def w(*a,**k):
-        if 'uid' not in session: return _lr_unauth_response()
-        if not can_access_request(request.path,request.method): return jsonify({'erro':'Acesso negado'}),403
-        if request.method in ('POST','PUT','PATCH','DELETE') and not _same_origin_request(request):
-            return jsonify({'erro':'Origem da requisição não permitida'}),403
-        return f(*a,**k)
-    return w
-
-@app.route('/api/app/funcionario/ultimo-pagamento', methods=['GET'])
-@lr
-def api_funcionario_ultimo_pagamento():
-    # Recupera o funcionário autenticado
-    funcionario_id = session.get('uid')
-    if not funcionario_id:
-        return {'erro': 'Não autenticado.'}, 401
-    # Busca o último registro de pagamento (BeneficioMensal) do funcionário
-    reg = (
-        BeneficioMensal.query
-        .filter_by(funcionario_id=funcionario_id)
-        .order_by(BeneficioMensal.competencia.desc())
-        .first()
-    )
-    if not reg:
-        return {'ok': True, 'valor_liquido': None, 'competencia': None}
-    valor = reg.salario or 0
-    competencia = reg.competencia
-    return {
-        'ok': True,
-        'valor_liquido': valor,
-        'competencia': competencia
-    }
 import io
 import urllib.request
 import urllib.error
@@ -180,6 +136,7 @@ if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite'):
         finally:
             cur.close()
 
+
 from functools import wraps
 from flask import session, url_for, g
 
@@ -188,6 +145,7 @@ def _lr_unauth_response():
         return jsonify({'erro':'Sessao expirada. Faca login novamente.'}),401
     return redirect(url_for('login'))
 
+# Definição do decorador lr movida para o topo para evitar NameError
 def lr(f):
     @wraps(f)
     def w(*a,**k):
@@ -5253,15 +5211,7 @@ def prox_num():
     prox=max(base,ultima_cfg,ultima_db)+1
     return f"{prox}/{localnow().year}"
 
-def lr(f):
-    @wraps(f)
-    def w(*a,**k):
-        if 'uid' not in session: return _lr_unauth_response()
-        if not can_access_request(request.path,request.method): return jsonify({'erro':'Acesso negado'}),403
-        if request.method in ('POST','PUT','PATCH','DELETE') and not _same_origin_request(request):
-            return jsonify({'erro':'Origem da requisição não permitida'}),403
-        return f(*a,**k)
-    return w
+
 
 def dr(f):
     @wraps(f)
@@ -11404,8 +11354,6 @@ def api_beneficios_lancamentos():
     if empresa_id:
         qf=qf.filter_by(empresa_id=empresa_id)
     funcs_ativos=qf.order_by(Funcionario.nome).all()
-    # Filtra apenas optantes de VT ou VR
-    funcs_ativos = [f for f in funcs_ativos if (f.opta_vt or f.opta_vr)]
     qb=BeneficioMensal.query.filter_by(competencia=comp)
     if empresa_id:
         qb=qb.filter_by(empresa_id=empresa_id)
