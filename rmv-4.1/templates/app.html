@@ -3447,6 +3447,7 @@ function filtrarSSTFuncionarios(){
 
 async function loadDash(){
   const d=await api('/api/dashboard');
+  console.log('[DEBUG] Resposta /api/dashboard:', d);
   if(d?.erro){
     const al=document.getElementById('dash-alertas');
     if(al) al.style.display='none';
