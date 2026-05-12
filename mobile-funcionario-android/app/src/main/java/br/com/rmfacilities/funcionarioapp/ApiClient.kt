@@ -639,16 +639,17 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
-    fun marcarPonto(tipo: String = "", observacao: String = "", lat: Double? = null, lon: Double? = null, precisao: Float? = null): PontoDiaResponse =
-        marcarPontoInternal(tipo, observacao, lat, lon, precisao, tentarRefresh = true)
+    fun marcarPonto(tipo: String = "", observacao: String = "", lat: Double? = null, lon: Double? = null, precisao: Float? = null, dataHoraIso: String? = null): PontoDiaResponse =
+        marcarPontoInternal(tipo, observacao, lat, lon, precisao, dataHoraIso, tentarRefresh = true)
 
-    private fun marcarPontoInternal(tipo: String, observacao: String, lat: Double?, lon: Double?, precisao: Float?, tentarRefresh: Boolean): PontoDiaResponse {
+    private fun marcarPontoInternal(tipo: String, observacao: String, lat: Double?, lon: Double?, precisao: Float?, dataHoraIso: String?, tentarRefresh: Boolean): PontoDiaResponse {
         val payload = gson.toJson(buildMap {
             if (tipo.isNotBlank()) put("tipo", tipo)
             if (observacao.isNotBlank()) put("observacao", observacao)
             if (lat != null) put("lat", lat)
             if (lon != null) put("lon", lon)
             if (precisao != null) put("precisao", precisao)
+            if (!dataHoraIso.isNullOrBlank()) put("data_hora_cliente", dataHoraIso)
         })
         val req = Request.Builder()
             .url(url("/api/app/funcionario/me/ponto/marcar"))
@@ -659,7 +660,7 @@ class ApiClient(private val session: SessionManager) {
         http.newCall(req).execute().use { resp ->
             if (resp.code == 401) {
                 if (tentarRefresh && tentarRenovarSessao()) {
-                    return marcarPontoInternal(tipo, observacao, lat, lon, precisao, tentarRefresh = false)
+                    return marcarPontoInternal(tipo, observacao, lat, lon, precisao, dataHoraIso, tentarRefresh = false)
                 }
                 handleUnauthorized()
                 return PontoDiaResponse(ok = false, erro = "Sessão expirada.")

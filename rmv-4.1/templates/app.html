@@ -1150,15 +1150,29 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
 
       <div class="card rh-pane" id="rh-pane-exportar" data-rh-pane="exportar">
-        <div class="card-header"><span class="card-title">Exportar colaboradores ativos</span></div>
+        <div class="card-header"><span class="card-title">Exportar colaboradores</span></div>
         <div class="g3" style="margin-top:8px">
+          <div class="f">
+            <label>Buscar por nome ou RE</label>
+            <input id="rh-exp-busca" placeholder="Nome ou nº RE" oninput="rhExportRenderPreview()" style="width:100%">
+          </div>
           <div class="f">
             <label>Empresa</label>
             <select id="rh-exp-empresa" onchange="rhExportOnEmpresaChange()">
               <option value="">Todas as empresas</option>
             </select>
           </div>
-          <div class="f s2">
+          <div class="f">
+            <label>Status</label>
+            <select id="rh-exp-status" onchange="rhExportRenderPreview()">
+              <option value="ativo">Ativos</option>
+              <option value="todos">Todos</option>
+              <option value="ferias">Férias</option>
+              <option value="afastado">Afastados</option>
+              <option value="demitido">Demitidos / Inativos</option>
+            </select>
+          </div>
+          <div class="f s3">
             <label>Postos (selecione um ou mais)</label>
             <select id="rh-exp-postos" multiple size="6" onchange="rhExportRenderPreview()" style="min-height:130px"></select>
             <div class="hint" style="margin-top:4px">Dica: use Ctrl/Cmd para selecionar múltiplos postos.</div>
@@ -6640,12 +6654,22 @@ function rhExportSelectedPostos(){
 function rhExportFilteredList(){
   const empresaId=(document.getElementById('rh-exp-empresa')?.value||'').trim();
   const postosSel=rhExportSelectedPostos().map(p=>p.toLowerCase());
+  const busca=(document.getElementById('rh-exp-busca')?.value||'').trim().toLowerCase();
+  const status=(document.getElementById('rh-exp-status')?.value||'ativo').trim().toLowerCase();
   const all=Array.isArray(rhExportFuncsAtivos)?rhExportFuncsAtivos:[];
   return all.filter(f=>{
+    const st=(f.status||'').toLowerCase();
+    const okStatus= status==='todos' ||
+      (status==='ativo' && st==='ativo') ||
+      (status==='ferias' && st==='férias') ||
+      (status==='afastado' && st==='afastado') ||
+      (status==='demitido' && (st==='demitido'||st==='inativo'));
+    if(!okStatus) return false;
     const okEmpresa=!empresaId || String(f.empresa_id||'')===String(empresaId);
     const posto=(f.posto_operacional||'Reserva tecnica').toString().trim();
     const okPosto=!postosSel.length || postosSel.includes(posto.toLowerCase());
-    return okEmpresa && okPosto;
+    const okBusca=!busca || (f.nome||'').toLowerCase().includes(busca) || String(f.re||'').includes(busca);
+    return okEmpresa && okPosto && okBusca;
   });
 }
 
@@ -6673,8 +6697,18 @@ function rhExportPopularPostos(){
   const el=document.getElementById('rh-exp-postos');
   if(!el) return;
   const empresaId=(document.getElementById('rh-exp-empresa')?.value||'').trim();
+  const status=(document.getElementById('rh-exp-status')?.value||'ativo').toLowerCase();
   const atuais=new Set(rhExportSelectedPostos());
-  const base=(Array.isArray(rhExportFuncsAtivos)?rhExportFuncsAtivos:[]).filter(f=>!empresaId || String(f.empresa_id||'')===String(empresaId));
+  const base=(Array.isArray(rhExportFuncsAtivos)?rhExportFuncsAtivos:[]).filter(f=>{
+    if(empresaId && String(f.empresa_id||'')!==String(empresaId)) return false;
+    if(status==='todos') return true;
+    const st=(f.status||'').toLowerCase();
+    if(status==='ativo') return st==='ativo';
+    if(status==='ferias') return st==='férias';
+    if(status==='afastado') return st==='afastado';
+    if(status==='demitido') return st==='demitido'||st==='inativo';
+    return true;
+  });
   const postos=[...new Set(base.map(f=>(f.posto_operacional||'Reserva tecnica').toString().trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   el.innerHTML='';
   postos.forEach(p=>{
@@ -6699,17 +6733,21 @@ function rhExportMarcarTodosPostos(mark){
 function rhExportMontarUrl(formato){
   const empresaId=(document.getElementById('rh-exp-empresa')?.value||'').trim();
   const postos=rhExportSelectedPostos();
+  const busca=(document.getElementById('rh-exp-busca')?.value||'').trim();
+  const status=(document.getElementById('rh-exp-status')?.value||'ativo').trim();
   const p=new URLSearchParams();
   p.set('formato',formato);
+  p.set('status',status);
   if(empresaId) p.set('empresa_id',empresaId);
   if(postos.length) p.set('postos',postos.join(','));
+  if(busca) p.set('busca',busca);
   return '/api/funcionarios/ativos/exportar?'+p.toString();
 }
 
 function rhExportar(formato){
   const lista=rhExportFilteredList();
   if(!lista.length){
-    showSt('rh-exp-st','Nenhum colaborador ativo para exportar com os filtros atuais.',true);
+    showSt('rh-exp-st','Nenhum colaborador para exportar com os filtros atuais.',true);
     return;
   }
   window.open(rhExportMontarUrl(formato),'_blank');
@@ -6720,9 +6758,9 @@ async function rhExportCarregarFiltros(){
   const st=document.getElementById('rh-exp-st');
   const selEmp=document.getElementById('rh-exp-empresa');
   if(!selEmp) return;
-  if(st) showSt('rh-exp-st','Carregando colaboradores ativos...',false);
+  if(st) showSt('rh-exp-st','Carregando colaboradores...',false);
   const all=await api('/api/funcionarios');
-  rhExportFuncsAtivos=(Array.isArray(all)?all:[]).filter(f=>((f?.status||'').toString().trim().toLowerCase()==='ativo'));
+  rhExportFuncsAtivos=(Array.isArray(all)?all:[]);
   const empAtual=selEmp.value||'';
   selEmp.innerHTML='<option value="">Todas as empresas</option>'+(emps||[]).map(e=>`<option value="${e.id}">${esc(e.nome||'Empresa')}</option>`).join('');
   if(Array.from(selEmp.options).some(o=>o.value===empAtual)) selEmp.value=empAtual;

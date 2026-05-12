@@ -50,17 +50,27 @@ class PontoMapaActivity : AppCompatActivity() {
         webView.settings.loadWithOverviewMode = true
         webView.webViewClient = WebViewClient()
 
-        // Embed OSM: bbox=left,bottom,right,top (lon_min,lat_min,lon_max,lat_max)
-        // mlat/mlon colocam o marcador vermelho na posição exata
-        val delta = 0.0015
-        val bboxLonMin = lon - delta
-        val bboxLatMin = lat - delta
-        val bboxLonMax = lon + delta
-        val bboxLatMax = lat + delta
-        val embedUrl = "https://www.openstreetmap.org/export/embed.html" +
-            "?bbox=$bboxLonMin,$bboxLatMin,$bboxLonMax,$bboxLatMax" +
-            "&layer=mapnik&mlat=$lat&mlon=$lon"
+        // Leaflet com tiles OSM e marcador vermelho preciso
+        val html = """
+<!DOCTYPE html><html>
+<head><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>* { margin:0; padding:0; box-sizing:border-box; } body { background:#e8e8e8; } #map { width:100vw; height:100vh; }</style>
+</head>
+<body><div id="map"></div>
+<script>
+var map = L.map('map', {zoomControl:true}).setView([$lat,$lon], 17);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom:19, attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+}).addTo(map);
+var marker = L.marker([$lat,$lon]).addTo(map);
+marker.bindPopup('<b>${tipo.replace("'","\\'")}</b><br>${hora}').openPopup();
+</script>
+</body></html>
+        """.trimIndent()
 
-        webView.loadUrl(embedUrl)
+        // baseURL = tile.openstreetmap.org garante que os tiles carregam sem bloqueio
+        webView.loadDataWithBaseURL("https://tile.openstreetmap.org", html, "text/html", "UTF-8", null)
     }
 }

@@ -6401,6 +6401,8 @@ def api_funcionarios():
 
 def _funcionarios_ativos_filtrados_export():
     empresa_id=to_num(request.args.get('empresa_id')) or None
+    status_filtro=(request.args.get('status') or 'ativo').strip().lower()
+    busca=(request.args.get('busca') or '').strip().lower()
 
     postos_raw=[]
     csv_postos=(request.args.get('postos') or '').strip()
@@ -6416,7 +6418,16 @@ def _funcionarios_ativos_filtrados_export():
             seen.add(k)
             postos_norm.append(k)
 
-    q=Funcionario.query.filter_by(status='Ativo')
+    q=Funcionario.query
+    if status_filtro=='ativo':
+        q=q.filter_by(status='Ativo')
+    elif status_filtro=='ferias':
+        q=q.filter_by(status='Férias')
+    elif status_filtro=='afastado':
+        q=q.filter_by(status='Afastado')
+    elif status_filtro=='demitido':
+        q=q.filter(Funcionario.status.in_(['Demitido','Inativo']))
+    # 'todos': sem filtro de status
     if empresa_id:
         q=q.filter_by(empresa_id=empresa_id)
     lst=q.order_by(Funcionario.nome).all()
@@ -6424,6 +6435,9 @@ def _funcionarios_ativos_filtrados_export():
     if postos_norm:
         set_postos=set(postos_norm)
         lst=[f for f in lst if ((f.posto_operacional or 'Reserva tecnica').strip().lower() in set_postos)]
+
+    if busca:
+        lst=[f for f in lst if busca in (f.nome or '').lower() or busca in str(f.re or '')]
 
     return lst
 
@@ -6587,7 +6601,7 @@ def api_funcionarios_ativos_exportar():
 
     funcs=_funcionarios_ativos_filtrados_export()
     if not funcs:
-        return jsonify({'erro':'Nenhum colaborador ativo encontrado para os filtros informados.'}),404
+        return jsonify({'erro':'Nenhum colaborador encontrado para os filtros informados.'}),404
 
     if formato=='pdf':
         return _export_funcionarios_ativos_pdf(funcs,include_salario=include_salario)
@@ -8182,8 +8196,21 @@ def api_app_ponto_marcar_me():
     dados=request.json or {}
     tipo=(dados.get('tipo') or '').strip().lower()
     observacao=(dados.get('observacao') or '').strip()[:500]
+    # Suporte a ponto offline: aceita data_hora_cliente (ISO UTC) enviado pelo app
+    # quando batido sem internet e sincronizado depois. Limite: até 24h no passado.
     data_hora=utcnow()
-    if data_hora>(utcnow()+timedelta(minutes=1)):
+    dh_cliente_raw=(dados.get('data_hora_cliente') or '').strip()
+    if dh_cliente_raw:
+        try:
+            from datetime import timezone
+            dh_c=datetime.fromisoformat(dh_cliente_raw.replace('Z','+00:00'))
+            dh_c=dh_c.astimezone(timezone.utc).replace(tzinfo=None)
+            agora=utcnow()
+            if dh_c<=agora+timedelta(minutes=2) and dh_c>=agora-timedelta(hours=24):
+                data_hora=dh_c
+        except (ValueError,TypeError):
+            pass
+    if data_hora>(utcnow()+timedelta(minutes=2)):
         return jsonify({'erro':'Não é permitido registrar ponto em horário futuro.'}),400
     data_ref=data_hora.date()
     marcacoes_dia=_app_ponto_marcacoes_dia(f.id,data_ref)

@@ -8,6 +8,9 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.location.Location
 import android.location.LocationManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -116,6 +119,7 @@ class PontoActivity : AppCompatActivity() {
         super.onResume()
         // Atualiza data caso o app ficou aberto após meia-noite
         tvData.text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+        atualizarBadgePendentes()
     }
 
     private fun obterLocalizacao(): Location? {
@@ -132,6 +136,25 @@ class PontoActivity : AppCompatActivity() {
         return try { lm.getLastKnownLocation(provider) } catch (_: Exception) { null }
     }
 
+    private fun isOnline(): Boolean {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val nc = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+            return nc.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        }
+        @Suppress("DEPRECATION")
+        return cm.activeNetworkInfo?.isConnected == true
+    }
+
+    private fun atualizarBadgePendentes() {
+        val count = retryQueue.pendingCount()
+        val badge = tvPontoStatus
+        if (count > 0) {
+            badge.text = "⏳ $count ponto(s) offline aguardando sincronização"
+            badge.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_pending))
+        }
+    }
+
     private fun registrarComLocalizacao() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -139,6 +162,21 @@ class PontoActivity : AppCompatActivity() {
             return
         }
         btnMarcarPonto.isEnabled = false
+
+        // Verifica conectividade antes de tentar API
+        if (!isOnline()) {
+            val loc = obterLocalizacao()
+            if (loc != null && (loc.latitude != 0.0 || loc.longitude != 0.0)) {
+                retryQueue.enqueuePonto(loc.latitude, loc.longitude, loc.accuracy, System.currentTimeMillis())
+                updateStatus("Sem internet. Ponto salvo offline — será sincronizado automaticamente.", R.color.mobile_semantic_pending)
+            } else {
+                updateStatus("Sem internet e sem localização disponível. Ative o GPS e tente novamente.", R.color.mobile_semantic_pending)
+            }
+            btnMarcarPonto.isEnabled = true
+            atualizarBadgePendentes()
+            return
+        }
+
         updateStatus("Obtendo localização...", R.color.mobile_semantic_info)
 
         CoroutineScope(Dispatchers.IO).launch {
@@ -168,9 +206,10 @@ class PontoActivity : AppCompatActivity() {
                     updateStatus("Ponto registrado com localização.", R.color.mobile_semantic_success)
                 } else {
                     if (loc.latitude != 0.0 || loc.longitude != 0.0) {
-                        retryQueue.enqueuePonto(loc.latitude, loc.longitude, loc.accuracy)
+                        retryQueue.enqueuePonto(loc.latitude, loc.longitude, loc.accuracy, System.currentTimeMillis())
                     }
-                    updateStatus(resp.erro ?: "Falha ao registrar ponto.", R.color.mobile_semantic_pending)
+                    updateStatus("Sem conexão. Ponto salvo offline — será sincronizado automaticamente.", R.color.mobile_semantic_pending)
+                    atualizarBadgePendentes()
                 }
             }
         }

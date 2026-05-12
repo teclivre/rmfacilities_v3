@@ -48,11 +48,12 @@ class ActionRetryQueue(context: Context) {
         save(items)
     }
 
-    fun enqueuePonto(lat: Double, lon: Double, precisao: Float?) {
+    fun enqueuePonto(lat: Double, lon: Double, precisao: Float?, timestampMs: Long = System.currentTimeMillis()) {
         val items = load()
         val payload = mutableMapOf(
             "lat" to lat.toString(),
-            "lon" to lon.toString()
+            "lon" to lon.toString(),
+            "timestamp_ms" to timestampMs.toString()
         )
         if (precisao != null) payload["precisao"] = precisao.toString()
         items.add(
@@ -60,7 +61,7 @@ class ActionRetryQueue(context: Context) {
                 id = UUID.randomUUID().toString(),
                 type = "ponto",
                 payload = payload,
-                createdAt = System.currentTimeMillis()
+                createdAt = timestampMs
             )
         )
         save(items)
@@ -127,7 +128,12 @@ class ActionRetryQueue(context: Context) {
                         val lat = action.payload["lat"]?.toDoubleOrNull()
                         val lon = action.payload["lon"]?.toDoubleOrNull()
                         val precisao = action.payload["precisao"]?.toFloatOrNull()
-                        if (lat == null || lon == null) false else api.marcarPonto(lat = lat, lon = lon, precisao = precisao).ok
+                        val tsMs = action.payload["timestamp_ms"]?.toLongOrNull() ?: action.createdAt
+                        // Converte ms → ISO 8601 UTC para enviar ao backend
+                        val dataHoraIso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply {
+                            timeZone = java.util.TimeZone.getTimeZone("UTC")
+                        }.format(java.util.Date(tsMs))
+                        if (lat == null || lon == null) false else api.marcarPonto(lat = lat, lon = lon, precisao = precisao, dataHoraIso = dataHoraIso).ok
                     }
                     "foto" -> {
                         val b64 = action.payload["data"].orEmpty()
