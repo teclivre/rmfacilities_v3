@@ -7592,6 +7592,36 @@ def api_app_funcionario_historico_pagamentos():
                 break
     return jsonify({'ok':True,'historico':resultado})
 
+@app.route('/api/app/funcionario/historico-beneficios')
+@app_func_required
+def api_app_funcionario_historico_beneficios():
+    f=g.app_funcionario
+    registros=BeneficioMensal.query.filter_by(funcionario_id=f.id)\
+        .order_by(BeneficioMensal.competencia.desc()).limit(24).all()
+    resultado=[]
+    for r in registros:
+        vr=r.vale_refeicao or 0
+        va=r.vale_alimentacao or 0
+        vt=r.vale_transporte or 0
+        vg=r.vale_gasolina or 0
+        cn=r.cesta_natal or 0
+        pp=r.premio_produtividade or 0
+        total=vr+va+vt+vg+cn+pp
+        detalhes=[]
+        if vr>0: detalhes.append('VR: R$%.2f'%vr)
+        if va>0: detalhes.append('VA: R$%.2f'%va)
+        if vt>0: detalhes.append('VT: R$%.2f'%vt)
+        if vg>0: detalhes.append('VG: R$%.2f'%vg)
+        if cn>0: detalhes.append('Cesta: R$%.2f'%cn)
+        if pp>0: detalhes.append('PP: R$%.2f'%pp)
+        resultado.append({
+            'competencia':r.competencia,
+            'total':round(total,2),
+            'detalhes':' | '.join(detalhes),
+            'obs':r.salario_obs or ''
+        })
+    return jsonify({'ok':True,'historico':resultado})
+
 @app.route('/api/app/funcionario/arquivos/<int:id>/download')
 @app_func_required
 def api_app_funcionario_download_arquivo(id):

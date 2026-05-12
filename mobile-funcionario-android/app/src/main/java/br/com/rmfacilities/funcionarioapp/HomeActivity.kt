@@ -451,49 +451,70 @@ class HomeActivity : AppCompatActivity() {
 
     private fun abrirHistoricoPagamentos() {
         val loading = MaterialAlertDialogBuilder(this)
-            .setTitle("Histórico de pagamentos")
+            .setTitle("Histórico financeiro")
             .setMessage("Carregando...")
             .setCancelable(false)
             .create()
         loading.show()
         CoroutineScope(Dispatchers.IO).launch {
-            val resp = try { api.historicoPagamentos() } catch (_: Exception) { null }
+            val pagResp = try { api.historicoPagamentos() } catch (_: Exception) { null }
+            val benResp = try { api.historicoBeneficios() } catch (_: Exception) { null }
             withContext(Dispatchers.Main) {
                 loading.dismiss()
-                val historico = resp?.historico ?: emptyList()
-                if (historico.isEmpty()) {
-                    MaterialAlertDialogBuilder(this@HomeActivity)
-                        .setTitle("Histórico de pagamentos")
-                        .setMessage("Nenhum pagamento registrado.")
-                        .setPositiveButton("Fechar", null)
-                        .show()
-                    return@withContext
-                }
-                val linhas = historico.joinToString("\n") { p ->
-                    val comp = p.competencia.let {
-                        if (it.length == 7) {
-                            val mes = it.substring(5).toIntOrNull() ?: 0
-                            val ano = it.substring(0, 4)
-                            val nomeMes = listOf("","Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez").getOrElse(mes) { it }
-                            "$nomeMes/$ano"
-                        } else it
-                    }
-                    val valor = "R$ %,.2f".format(p.valor_liquido)
-                    if (p.obs.isNotBlank()) "• $comp  →  $valor\n  (${p.obs})"
-                    else "• $comp  →  $valor"
-                }
-                MaterialAlertDialogBuilder(this@HomeActivity)
-                    .setTitle("Histórico de pagamentos")
-                    .setMessage(linhas)
-                    .setPositiveButton("Fechar", null)
-                    .setNeutralButton("Ver holerites") { _, _ ->
-                        startActivity(Intent(this@HomeActivity, DocumentosActivity::class.java).apply {
-                            putExtra("preset_categoria", "holerite")
-                        })
-                    }
-                    .show()
+                mostrarDialogFinanceiro(pagResp?.historico ?: emptyList(), benResp?.historico ?: emptyList(), mostrarSalario = true)
             }
         }
+    }
+
+    private fun mostrarDialogFinanceiro(
+        salarios: List<ApiClient.PagamentoItem>,
+        beneficios: List<ApiClient.BeneficioItem>,
+        mostrarSalario: Boolean
+    ) {
+        fun compFmt(comp: String): String {
+            if (comp.length != 7) return comp
+            val mes = comp.substring(5).toIntOrNull() ?: 0
+            val ano = comp.substring(0, 4)
+            val nomeMes = listOf("","Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez").getOrElse(mes) { comp }
+            return "$nomeMes/$ano"
+        }
+
+        val titulo = if (mostrarSalario) "💰 Histórico de Salário" else "🎁 Histórico de Benefícios"
+
+        val texto = if (mostrarSalario) {
+            if (salarios.isEmpty()) "Nenhum pagamento registrado."
+            else salarios.joinToString("\n") { p ->
+                val valor = "R$ %,.2f".format(p.valor_liquido)
+                if (p.obs.isNotBlank()) "• ${compFmt(p.competencia)}  →  $valor\n  (${p.obs})"
+                else "• ${compFmt(p.competencia)}  →  $valor"
+            }
+        } else {
+            if (beneficios.isEmpty()) "Nenhum benefício registrado."
+            else beneficios.joinToString("\n") { b ->
+                val total = "R$ %,.2f".format(b.total)
+                buildString {
+                    append("• ${compFmt(b.competencia)}  →  $total")
+                    if (b.detalhes.isNotBlank()) append("\n  ${b.detalhes}")
+                    if (b.obs.isNotBlank()) append("\n  (${b.obs})")
+                }
+            }
+        }
+
+        val altBotao = if (mostrarSalario) "🎁 Ver Benefícios" else "💰 Ver Salário"
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(titulo)
+            .setMessage(texto)
+            .setPositiveButton("Fechar", null)
+            .setNeutralButton(altBotao) { _, _ ->
+                mostrarDialogFinanceiro(salarios, beneficios, !mostrarSalario)
+            }
+            .setNegativeButton("Holerites") { _, _ ->
+                startActivity(Intent(this, DocumentosActivity::class.java).apply {
+                    putExtra("preset_categoria", "holerite")
+                })
+            }
+            .show()
     }
 
     private fun goLogin() {
