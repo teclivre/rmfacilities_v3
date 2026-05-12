@@ -20,15 +20,21 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.coroutines.resume
 
 class PontoActivity : AppCompatActivity() {
 
@@ -122,18 +128,22 @@ class PontoActivity : AppCompatActivity() {
         atualizarBadgePendentes()
     }
 
-    private fun obterLocalizacao(): Location? {
+    /** Solicita localização atual via FusedLocationProviderClient (alta precisão, até 15s). */
+    private suspend fun obterLocalizacaoAtual(): Location? {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             return null
         }
-        val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        val provider = when {
-            lm.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
-            lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
-            else -> return null
+        return withTimeoutOrNull(15_000L) {
+            suspendCancellableCoroutine { cont ->
+                val client = LocationServices.getFusedLocationProviderClient(this@PontoActivity)
+                val cts = com.google.android.gms.tasks.CancellationTokenSource()
+                cont.invokeOnCancellation { cts.cancel() }
+                client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cts.token)
+                    .addOnSuccessListener { loc -> cont.resume(loc) }
+                    .addOnFailureListener { cont.resume(null) }
+            }
         }
-        return try { lm.getLastKnownLocation(provider) } catch (_: Exception) { null }
     }
 
     private fun isOnline(): Boolean {
@@ -163,54 +173,43 @@ class PontoActivity : AppCompatActivity() {
         }
         btnMarcarPonto.isEnabled = false
 
-        // Verifica conectividade antes de tentar API
-        if (!isOnline()) {
-            val loc = obterLocalizacao()
-            if (loc != null && (loc.latitude != 0.0 || loc.longitude != 0.0)) {
-                retryQueue.enqueuePonto(loc.latitude, loc.longitude, loc.accuracy, System.currentTimeMillis())
-                updateStatus("Sem internet. Ponto salvo offline — será sincronizado automaticamente.", R.color.mobile_semantic_pending)
-            } else {
-                updateStatus("Sem internet e sem localização disponível. Ative o GPS e tente novamente.", R.color.mobile_semantic_pending)
-            }
-            btnMarcarPonto.isEnabled = true
-            atualizarBadgePendentes()
-            return
-        }
+        updateStatus("Obtendo localização atual...", R.color.mobile_semantic_info)
 
-        updateStatus("Obtendo localização...", R.color.mobile_semantic_info)
-
-        CoroutineScope(Dispatchers.IO).launch {
-            val loc = withContext(Dispatchers.Main) { obterLocalizacao() }
+        CoroutineScope(Dispatchers.Main).launch {
+            val loc = obterLocalizacaoAtual()
             if (loc == null) {
-                withContext(Dispatchers.Main) {
-                    btnMarcarPonto.isEnabled = true
-                    updateStatus("Não foi possível identificar sua localização. Ative GPS/rede e tente novamente.", R.color.mobile_semantic_pending)
-                }
+                btnMarcarPonto.isEnabled = true
+                updateStatus("Não foi possível obter localização. Ative o GPS e tente novamente.", R.color.mobile_semantic_pending)
                 return@launch
             }
-            withContext(Dispatchers.Main) {
-                updateStatus("Localização obtida. Registrando ponto...", R.color.mobile_semantic_info)
-            }
+            updateStatus("Localização obtida. Registrando ponto...", R.color.mobile_semantic_info)
 
-            val resp = try {
-                api.marcarPonto(lat = loc.latitude, lon = loc.longitude, precisao = loc.accuracy)
-            } catch (e: Exception) {
-                PontoDiaResponse(ok = false, erro = e.message)
-            }
-
-            withContext(Dispatchers.Main) {
+            // Verifica conectividade após obter localização
+            if (!isOnline()) {
+                retryQueue.enqueuePonto(loc.latitude, loc.longitude, loc.accuracy, System.currentTimeMillis())
+                updateStatus("Sem internet. Ponto salvo offline — será sincronizado automaticamente.", R.color.mobile_semantic_pending)
                 btnMarcarPonto.isEnabled = true
-                if (resp.ok) {
-                    renderResumo(resp.resumo)
-                    btnMarcarPonto.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                    updateStatus("Ponto registrado com localização.", R.color.mobile_semantic_success)
-                } else {
-                    if (loc.latitude != 0.0 || loc.longitude != 0.0) {
-                        retryQueue.enqueuePonto(loc.latitude, loc.longitude, loc.accuracy, System.currentTimeMillis())
-                    }
-                    updateStatus("Sem conexão. Ponto salvo offline — será sincronizado automaticamente.", R.color.mobile_semantic_pending)
-                    atualizarBadgePendentes()
+                atualizarBadgePendentes()
+                return@launch
+            }
+
+            val resp = withContext(Dispatchers.IO) {
+                try {
+                    api.marcarPonto(lat = loc.latitude, lon = loc.longitude, precisao = loc.accuracy)
+                } catch (e: Exception) {
+                    PontoDiaResponse(ok = false, erro = e.message)
                 }
+            }
+
+            btnMarcarPonto.isEnabled = true
+            if (resp.ok) {
+                renderResumo(resp.resumo)
+                btnMarcarPonto.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                updateStatus("Ponto registrado com localização.", R.color.mobile_semantic_success)
+            } else {
+                retryQueue.enqueuePonto(loc.latitude, loc.longitude, loc.accuracy, System.currentTimeMillis())
+                updateStatus("Sem conexão. Ponto salvo offline — será sincronizado automaticamente.", R.color.mobile_semantic_pending)
+                atualizarBadgePendentes()
             }
         }
     }
