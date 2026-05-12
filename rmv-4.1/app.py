@@ -1197,6 +1197,7 @@ class Funcionario(db.Model):
     ferias_obs=db.Column(db.String(255))
     ferias_dias=db.Column(db.Integer,default=30)
     faltas_ano=db.Column(db.Integer,default=0)
+    data_demissao=db.Column(db.String(10))
     salario=db.Column(db.Float,default=0)
     vale_refeicao=db.Column(db.Float,default=0)
     vale_alimentacao=db.Column(db.Float,default=0)
@@ -6686,7 +6687,7 @@ def api_criar_funcionario():
 @lr
 def api_atualizar_funcionario(id):
     f=Funcionario.query.get_or_404(id); d=request.json or {}
-    for k in ['re','nome','cpf','email','telefone','cargo','funcao','cbo','setor','empresa_id','data_admissao','tipo_contrato','jornada','status','ferias_inicio','ferias_fim','ferias_obs','ferias_dias','faltas_ano','endereco','endereco_numero','endereco_complemento','endereco_bairro','cidade','estado','cep','banco_codigo','banco_nome','banco_agencia','banco_conta','banco_tipo_conta','banco_pix','rg','orgao_emissor','pis','ctps','titulo_eleitor','cert_reservista','cnh','exame_admissional_data','docs_admissao_obs','obs']:
+    for k in ['re','nome','cpf','email','telefone','cargo','funcao','cbo','setor','empresa_id','data_admissao','data_demissao','tipo_contrato','jornada','status','ferias_inicio','ferias_fim','ferias_obs','ferias_dias','faltas_ano','endereco','endereco_numero','endereco_complemento','endereco_bairro','cidade','estado','cep','banco_codigo','banco_nome','banco_agencia','banco_conta','banco_tipo_conta','banco_pix','rg','orgao_emissor','pis','ctps','titulo_eleitor','cert_reservista','cnh','exame_admissional_data','docs_admissao_obs','obs']:
         if k in d:
             if k=='cpf': setattr(f,k,norm_cpf(d.get(k)))
             elif k=='re': setattr(f,k,to_num(d.get(k)))
@@ -6697,6 +6698,10 @@ def api_atualizar_funcionario(id):
             else: setattr(f,k,d[k])
     if 'ferias_dias' in d: f.ferias_dias=max(0,int(to_num(d.get('ferias_dias')) or 30))
     if 'faltas_ano' in d: f.faltas_ano=max(0,int(to_num(d.get('faltas_ano')) or 0))
+    # Se data de demissão preenchida → bloquear acesso ao app e mudar status para Demitido
+    if d.get('data_demissao','').strip():
+        f.status='Demitido'
+        f.app_ativo=False
     if 'salario' in d: f.salario=to_num(d.get('salario'),dec=True)
     if 'vale_refeicao' in d: f.vale_refeicao=to_num(d.get('vale_refeicao'),dec=True)
     if 'vale_alimentacao' in d: f.vale_alimentacao=to_num(d.get('vale_alimentacao'),dec=True)
@@ -15713,6 +15718,7 @@ with app.app_context():
     ensure_cols('funcionario',[
         'ferias_dias INTEGER DEFAULT 30',
         'faltas_ano INTEGER DEFAULT 0',
+        'data_demissao VARCHAR(10)',
         're INTEGER',
         'matricula VARCHAR(30)',
         'funcao VARCHAR(150)',
