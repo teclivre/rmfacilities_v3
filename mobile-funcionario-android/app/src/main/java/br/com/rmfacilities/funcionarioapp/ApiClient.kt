@@ -29,6 +29,17 @@ class ApiClient(private val session: SessionManager) {
         val erro: String? = null
     )
 
+    data class PagamentoItem(
+        val competencia: String = "",
+        val valor_liquido: Double = 0.0,
+        val obs: String = ""
+    )
+
+    data class HistoricoPagamentosResponse(
+        val ok: Boolean = false,
+        val historico: List<PagamentoItem> = emptyList()
+    )
+
     fun ultimoPagamento(): UltimoPagamentoResponse {
         val req = Request.Builder()
             .url(url("/api/app/funcionario/ultimo-pagamento"))
@@ -42,6 +53,23 @@ class ApiClient(private val session: SessionManager) {
                 gson.fromJson(raw, UltimoPagamentoResponse::class.java)
             } catch (_: Exception) {
                 UltimoPagamentoResponse(ok = false, erro = "Falha ao buscar pagamento.")
+            }
+        }
+    }
+
+    fun historicoPagamentos(): HistoricoPagamentosResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/historico-pagamentos"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, HistoricoPagamentosResponse::class.java)
+            } catch (_: Exception) {
+                HistoricoPagamentosResponse(ok = false)
             }
         }
     }

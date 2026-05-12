@@ -108,6 +108,11 @@ class HomeActivity : AppCompatActivity() {
         btnConfiguracoesHome = findViewById(R.id.btnConfiguracoesHome)
         btnSalarioHome = findViewById(R.id.btnSalarioHome)
 
+        btnSalarioHome.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            abrirHistoricoPagamentos()
+        }
+
         btnPerfil.setOnClickListener {
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             startActivity(Intent(this, PerfilActivity::class.java))
@@ -140,13 +145,7 @@ class HomeActivity : AppCompatActivity() {
             startActivity(Intent(this, ConfiguracoesActivity::class.java))
         }
 
-        btnSalarioHome.setOnClickListener {
-            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            startActivity(Intent(this, DocumentosActivity::class.java).apply {
-                putExtra("preset_categoria", "holerite")
-                putExtra("preset_busca", "")
-            })
-        }
+        // click duplicado removido — tratado acima com abrirHistoricoPagamentos()
 
         findViewById<BottomNavigationView>(R.id.bottomNavHome).apply {
             selectedItemId = R.id.nav_home
@@ -448,6 +447,53 @@ class HomeActivity : AppCompatActivity() {
             }
             .create()
         if (!isFinishing && !isDestroyed) dialog.show()
+    }
+
+    private fun abrirHistoricoPagamentos() {
+        val loading = MaterialAlertDialogBuilder(this)
+            .setTitle("Histórico de pagamentos")
+            .setMessage("Carregando...")
+            .setCancelable(false)
+            .create()
+        loading.show()
+        CoroutineScope(Dispatchers.IO).launch {
+            val resp = try { api.historicoPagamentos() } catch (_: Exception) { null }
+            withContext(Dispatchers.Main) {
+                loading.dismiss()
+                val historico = resp?.historico ?: emptyList()
+                if (historico.isEmpty()) {
+                    MaterialAlertDialogBuilder(this@HomeActivity)
+                        .setTitle("Histórico de pagamentos")
+                        .setMessage("Nenhum pagamento registrado.")
+                        .setPositiveButton("Fechar", null)
+                        .show()
+                    return@withContext
+                }
+                val linhas = historico.joinToString("\n") { p ->
+                    val comp = p.competencia.let {
+                        if (it.length == 7) {
+                            val mes = it.substring(5).toIntOrNull() ?: 0
+                            val ano = it.substring(0, 4)
+                            val nomeMes = listOf("","Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez").getOrElse(mes) { it }
+                            "$nomeMes/$ano"
+                        } else it
+                    }
+                    val valor = "R$ %,.2f".format(p.valor_liquido)
+                    if (p.obs.isNotBlank()) "• $comp  →  $valor\n  (${p.obs})"
+                    else "• $comp  →  $valor"
+                }
+                MaterialAlertDialogBuilder(this@HomeActivity)
+                    .setTitle("Histórico de pagamentos")
+                    .setMessage(linhas)
+                    .setPositiveButton("Fechar", null)
+                    .setNeutralButton("Ver holerites") { _, _ ->
+                        startActivity(Intent(this@HomeActivity, DocumentosActivity::class.java).apply {
+                            putExtra("preset_categoria", "holerite")
+                        })
+                    }
+                    .show()
+            }
+        }
     }
 
     private fun goLogin() {
