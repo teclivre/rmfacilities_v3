@@ -15779,6 +15779,7 @@ with app.app_context():
         'dias_va INTEGER DEFAULT 0',
         'dias_vg INTEGER DEFAULT 0',
         'faltas INTEGER DEFAULT 0',
+        'horas_noturnas_min INTEGER DEFAULT 0',
         'pp_falta BOOLEAN DEFAULT 0',
         'premio_produtividade FLOAT DEFAULT 0',
         'vale_gasolina FLOAT DEFAULT 0',
