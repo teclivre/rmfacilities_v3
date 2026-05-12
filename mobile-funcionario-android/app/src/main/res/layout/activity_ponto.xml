@@ -198,16 +198,15 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnMarcarPonto"
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
+                android:layout_height="52dp"
                 android:layout_marginTop="14dp"
                 android:text="Registrar ponto agora"
                 android:textSize="14sp"
                 android:textStyle="bold"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:minWidth="240dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp" />
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnAtualizarPonto"
@@ -218,11 +217,10 @@
                 android:text="Atualizar dados"
                 android:textColor="@color/mobile_semantic_info"
                 app:strokeColor="@color/mobile_card_border"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:minWidth="180dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp" />
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp" />
 
             <TextView
                 android:id="@+id/tvPontoStatus"

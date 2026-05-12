@@ -7540,6 +7540,32 @@ def api_app_funcionario_me_documentos():
     resp,status=build_func_docs_response(g.app_funcionario.id)
     return jsonify(resp),status
 
+@app.route('/api/app/funcionario/ultimo-pagamento')
+@app_func_required
+def api_app_funcionario_ultimo_pagamento():
+    f=g.app_funcionario
+    # Busca folhas fechadas ordenadas pela competência mais recente
+    folhas=FolhaPagamentoMensal.query.filter(
+        FolhaPagamentoMensal.status.in_(['fechada','pago'])
+    ).order_by(FolhaPagamentoMensal.competencia.desc()).all()
+    for folha in folhas:
+        try:
+            dados=json.loads(folha.dados_json or '{}')
+        except Exception:
+            continue
+        items=dados.get('items') or dados.get('funcionarios') or []
+        for item in items:
+            func_id=item.get('funcionario_id') or item.get('id')
+            if func_id and int(func_id)==f.id:
+                valor=item.get('valor_liquido') or item.get('salario')
+                if valor is not None:
+                    return jsonify({
+                        'ok':True,
+                        'competencia':folha.competencia,
+                        'valor_liquido':float(valor)
+                    })
+    return jsonify({'ok':False,'erro':'Nenhum pagamento encontrado'})
+
 @app.route('/api/app/funcionario/arquivos/<int:id>/download')
 @app_func_required
 def api_app_funcionario_download_arquivo(id):

@@ -331,7 +331,7 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun goHome() {
-        startActivity(Intent(this, HomeActivity::class.java))
+        startActivity(Intent(this, PontoActivity::class.java))
         finish()
     }
 
@@ -346,7 +346,7 @@ class LoginActivity : AppCompatActivity() {
             tipo == "chat" || tipo == "chat_broadcast" ->
                 Intent(this, MensagensActivity::class.java)
             else ->
-                Intent(this, HomeActivity::class.java)
+                Intent(this, PontoActivity::class.java)
         }
         startActivity(target)
         finish()
