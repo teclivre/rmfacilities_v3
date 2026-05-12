@@ -13950,6 +13950,13 @@ def api_dashboard():
                                       'dias': (_dv - hoje).days, 'vencido': True})
     alertas_contratos.sort(key=lambda x: x['dias'])
 
+    # RH: funcionários ativos e em férias
+    funcionarios_ativos = Funcionario.query.filter_by(status='Ativo').count()
+    funcionarios_ferias = Funcionario.query.filter_by(status='Férias').count()
+    funcionarios_demitidos = Funcionario.query.filter(
+        Funcionario.status.in_(['Demitido','Inativo'])
+    ).count()
+
     return jsonify({'ativos':len(ativos),'receita':receita,'total_med':Medicao.query.count(),
         'med_mes':Medicao.query.filter_by(mes_ref=mes).count(),
         'pendentes':len(pendentes_clientes),
@@ -13957,6 +13964,9 @@ def api_dashboard():
         'ticket_medio':round(ticket_medio,2),
         'faturamento_mensal':fat_mensal,
         'total_vencidas':len(venc_itens), 'valor_vencidas':round(total_vencidas,2),
+        'funcionarios_ativos':funcionarios_ativos,
+        'funcionarios_ferias':funcionarios_ferias,
+        'funcionarios_demitidos':funcionarios_demitidos,
         'alerta_inadimplencia':{'qtd':len(inad_itens),'total':round(total_inadimplencia,2),'itens':inad_itens[:8]},
         'alerta_faturamento':{'qtd':len(alertas_faturamento),'itens':alertas_faturamento[:8]},
         'alerta_calculo_beneficios':{'qtd':len(alertas_calculo),'itens':alertas_calculo},

@@ -452,26 +452,39 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div style="font-size:13px;color:#888" id="dash-data"></div>
       </div>
       <div class="dash-grid">
+        <button class="metric metric-btn vd" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Abrir RH - funcionários ativos"><div class="n" id="d-func-ativos">—</div><div class="l">Funcionários ativos <span class="metric-go">Abrir</span></div></button>
+        <button class="metric metric-btn lj" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Abrir RH - em férias"><div class="n" id="d-ferias">—</div><div class="l">Em férias <span class="metric-go">Abrir</span></div></button>
+        <button class="metric metric-btn vm" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Sem ASO válido"><div class="n" id="d-sem-aso">—</div><div class="l">Sem ASO válido <span class="metric-go">Ver</span></div></button>
+        <button class="metric metric-btn vm" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="ASO vencendo em 30 dias"><div class="n" id="d-aso-venc">—</div><div class="l">ASO vencendo (30d) <span class="metric-go">Ver</span></div></button>
+        <button class="metric metric-btn" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Benefícios pendentes"><div class="n" id="d-benef-pend">—</div><div class="l">Benefícios pendentes <span class="metric-go">Ver</span></div></button>
         <button class="metric metric-btn" type="button" onclick="abrirDashboardDestino('clientes')" aria-label="Abrir clientes ativos"><div class="n" id="d-at">—</div><div class="l">Clientes ativos <span class="metric-go">Abrir</span></div></button>
-        <button class="metric metric-btn lj" type="button" onclick="abrirDashboardDestino('historico')" aria-label="Abrir histórico de faturamento"><div class="n" id="d-rec">—</div><div class="l">Receita mensal <span class="metric-go">Abrir</span></div></button>
-        <button class="metric metric-btn vd" type="button" onclick="abrirDashboardDestino('nova-medicao')" aria-label="Abrir medição do mês"><div class="n" id="d-med">—</div><div class="l">Medições este mês <span class="metric-go">Abrir</span></div></button>
-        <button class="metric metric-btn vm" type="button" onclick="abrirDashboardDestino('nova-medicao')" aria-label="Abrir pendências de emissão"><div class="n" id="d-pen">—</div><div class="l">Sem emissão <span class="metric-go">Abrir</span></div></button>
-        <button class="metric metric-btn vm" type="button" onclick="abrirDashboardDestino('historico')" aria-label="Abrir inadimplência"><div class="n" id="d-inad">—</div><div class="l">Inadimplência <span class="metric-go">Abrir</span></div></button>
-        <button class="metric metric-btn" style="--metric-c:#c33" type="button" onclick="abrirDashboardDestino('historico')" aria-label="Faturas vencidas"><div class="n" id="d-venc" style="color:#c33">—</div><div class="l">Faturas vencidas <span class="metric-go">Ver</span></div></button>
-        <button class="metric metric-btn" type="button" onclick="abrirDashboardDestino('historico')" aria-label="Abrir taxa de emissão"><div class="n" id="d-tx">—</div><div class="l">Taxa de emissão <span class="metric-go">Abrir</span></div></button>
-        <button class="metric metric-btn lj" type="button" onclick="abrirDashboardDestino('clientes')" aria-label="Abrir ticket médio"><div class="n" id="d-tm">—</div><div class="l">Ticket médio <span class="metric-go">Abrir</span></div></button>
+        <button class="metric metric-btn" style="--metric-c:#c33" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Contratos vencendo"><div class="n" id="d-contratos" style="color:#c33">—</div><div class="l">Contratos vencendo <span class="metric-go">Ver</span></div></button>
+        <button class="metric metric-btn lj" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Cálculo de benefícios pendente"><div class="n" id="d-calc-benef">—</div><div class="l">Cálculos pendentes <span class="metric-go">Ver</span></div></button>
       </div>
       <div id="dash-alertas" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px"></div>
       <div class="card" style="margin-bottom:12px">
-        <div class="card-header"><span class="card-title">Faturamento mensal</span></div>
-        <div style="position:relative;height:180px;padding:0 4px"><canvas id="chart-fat-mensal"></canvas></div>
+        <div class="card-header"><span class="card-title">Resumo de colaboradores</span></div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding:12px 0;text-align:center">
+          <div>
+            <div style="font-size:28px;font-weight:700;color:var(--azul)" id="dash-resumo-ativos">—</div>
+            <div style="font-size:12px;color:#888;margin-top:4px">Ativos</div>
+          </div>
+          <div>
+            <div style="font-size:28px;font-weight:700;color:#4caf50" id="dash-resumo-ferias">—</div>
+            <div style="font-size:12px;color:#888;margin-top:4px">Em férias</div>
+          </div>
+          <div>
+            <div style="font-size:28px;font-weight:700;color:#888" id="dash-resumo-demitidos">—</div>
+            <div style="font-size:12px;color:#888;margin-top:4px">Demitidos/Inativos</div>
+          </div>
+        </div>
       </div>
       <div class="card">
         <div class="card-header"><span class="card-title">Acesso rápido</span></div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
-          <button class="btn b-az b-lg" style="justify-content:center" onclick="nav('faturamento',document.querySelector('.nav-item[data-nav=\'faturamento\']'))">+ Nova Medição</button>
+          <button class="btn b-az b-lg" style="justify-content:center" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))">RH</button>
           <button class="btn b-gh b-lg" style="justify-content:center" onclick="nav('clientes',document.querySelector('[onclick*=clientes]'))">Clientes</button>
-          <button class="btn b-ghl b-lg" style="justify-content:center" onclick="nav('historico',document.querySelector('.nav-item[data-nav=\'faturamento\']'),true)">Histórico</button>
+          <button class="btn b-ghl b-lg" style="justify-content:center" onclick="nav('operacional',document.querySelector('.nav-item[data-nav=\'operacional\']'))">Operacional</button>
         </div>
       </div>
       <div id="dash-empresas" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"></div>
@@ -3447,32 +3460,37 @@ function filtrarSSTFuncionarios(){
 
 async function loadDash(){
   const d=await api('/api/dashboard');
-  console.log('[DEBUG] Resposta /api/dashboard:', d);
   if(d?.erro){
     const al=document.getElementById('dash-alertas');
     if(al) al.style.display='none';
     console.error('Falha em /api/dashboard:', d.erro);
     return;
   }
-  const receitaNum=Number(d?.receita);
-  const receitaSafe=Number.isFinite(receitaNum)?receitaNum:0;
-  document.getElementById('d-at').textContent=d.ativos;
-  document.getElementById('d-rec').textContent='R$'+receitaSafe.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-  document.getElementById('d-med').textContent=d.med_mes;
-  document.getElementById('d-pen').textContent=d.pendentes;
-  const inad=document.getElementById('d-inad');
-  if(inad){
-    const inadData=d.alerta_inadimplencia||{qtd:0,total:0};
-    inad.textContent='R$'+parseFloat(inadData.total||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-  }
-  const dvenc=document.getElementById('d-venc');
-  if(dvenc){
-    dvenc.textContent=(d.total_vencidas||0)+' ('+brl(d.valor_vencidas||0)+')';
-  }
-  const tx=document.getElementById('d-tx');
-  const tm=document.getElementById('d-tm');
-  if(tx) tx.textContent=((d.taxa_emissao??0).toString().replace('.',','))+'%';
-  if(tm) tm.textContent='R$'+parseFloat(d.ticket_medio||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  // Cards RH/Operacional
+  const elFuncAtivos=document.getElementById('d-func-ativos');
+  if(elFuncAtivos) elFuncAtivos.textContent=d.funcionarios_ativos??'—';
+  const elFerias=document.getElementById('d-ferias');
+  if(elFerias) elFerias.textContent=d.funcionarios_ferias??'—';
+  const elSemAso=document.getElementById('d-sem-aso');
+  if(elSemAso) elSemAso.textContent=(d.alerta_sem_aso_valido?.qtd??0);
+  const elAsoVenc=document.getElementById('d-aso-venc');
+  if(elAsoVenc) elAsoVenc.textContent=(d.alerta_aso?.qtd??0);
+  const elBenefPend=document.getElementById('d-benef-pend');
+  if(elBenefPend) elBenefPend.textContent=(d.alerta_beneficios_pendentes?.qtd??0);
+  const elAt=document.getElementById('d-at');
+  if(elAt) elAt.textContent=d.ativos;
+  const elContratos=document.getElementById('d-contratos');
+  if(elContratos) elContratos.textContent=(d.alerta_contratos?.qtd??0);
+  const elCalcBenef=document.getElementById('d-calc-benef');
+  if(elCalcBenef) elCalcBenef.textContent=(d.alerta_calculo_beneficios?.qtd??0);
+  // Resumo colaboradores
+  const rAtivos=document.getElementById('dash-resumo-ativos');
+  if(rAtivos) rAtivos.textContent=d.funcionarios_ativos??'—';
+  const rFerias=document.getElementById('dash-resumo-ferias');
+  if(rFerias) rFerias.textContent=d.funcionarios_ferias??'—';
+  const rDemit=document.getElementById('dash-resumo-demitidos');
+  if(rDemit) rDemit.textContent=d.funcionarios_demitidos??'—';
+  // Saudação e data
   const nomeBase=(typeof N==='string' && N.trim()) ? N.trim() : 'usuário';
   document.getElementById('dash-saudacao').textContent='Olá, '+nomeBase.split(' ')[0]+'!';
   document.getElementById('dash-data').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
@@ -3482,7 +3500,6 @@ async function loadDash(){
     const calc=d.alerta_calculo_beneficios||{qtd:0,itens:[]};
     const benPend=d.alerta_beneficios_pendentes||{qtd:0,itens:[]};
     const asoInval=d.alerta_sem_aso_valido||{qtd:0,itens:[]};
-    const inad=d.alerta_inadimplencia||{qtd:0,total:0,itens:[]};
     const certs=d.alerta_certificados||{qtd:0,itens:[]};
     const contratos=d.alerta_contratos||{qtd:0,itens:[]};
     const calcItens=(calc.itens||[]).length
@@ -3497,25 +3514,15 @@ async function loadDash(){
     const asoItens=(aso.itens||[]).length
       ? aso.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.funcionario_nome||'—'} ${it.matricula?`<span style="opacity:.7">(${it.matricula})</span>`:''}</div><div style="font-size:11px;color:#8aa">Vence em ${it.validade||'—'} · faltam ${it.dias_restantes} dia(s)</div></div>`).join('')
       : '';
-    const inadItens=(inad.itens||[]).length
-      ? inad.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.numero||'—'} · ${it.cliente_nome||'Sem cliente'}</div><div style="font-size:11px;color:#8aa">Venc. ${it.vencimento||'—'} · atraso ${it.dias_atraso||0} dia(s) · ${brl(it.valor||0)}</div></div>`).join('')
-      : '';
     const certItens=(certs.itens||[]).length
       ? certs.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.nome||'—'} <span style="opacity:.7">(${it.origem||it.tipo||'certificado'})</span></div><div style="font-size:11px;color:#8aa">Vence em ${it.validade||'—'} · faltam ${it.dias_restantes} dia(s)</div></div>`).join('')
       : '';
     const contratosItens=(contratos.itens||[]).length
       ? contratos.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.cliente_nome||'—'}</div><div style="font-size:11px;color:#8aa">${it.vencido?'Vencido em':'Vence em'} ${it.vencimento||'—'} · ${it.vencido?'vencido há '+Math.abs(it.dias)+' dia(s)':'faltam '+it.dias+' dia(s)'}</div></div>`).join('')
       : '';
-    if((aso.itens||[]).length || (calc.itens||[]).length || (benPend.itens||[]).length || (asoInval.itens||[]).length || (inad.itens||[]).length || (certs.itens||[]).length || (contratos.itens||[]).length){
+    if((aso.itens||[]).length || (calc.itens||[]).length || (benPend.itens||[]).length || (asoInval.itens||[]).length || (certs.itens||[]).length || (contratos.itens||[]).length){
       al.style.display='grid';
       const cards=[];
-      if((inad.itens||[]).length){
-        cards.push(`<button type="button" class="card dash-alert-btn" style="margin-bottom:0;text-align:left" onclick="abrirDashboardDestino('historico')">
-          <div class="card-header" style="margin-bottom:8px"><span class="card-title">Inadimplência</span><div style="display:flex;align-items:center;gap:8px"><span class="pill p-vm">${inad.qtd||0}</span><span class="metric-go" style="font-size:9px">Ir</span></div></div>
-          <div style="font-size:12px;color:#b03;margin-bottom:6px;font-weight:700">Total em atraso: ${brl(inad.total||0)}</div>
-          <div>${inadItens}</div>
-        </button>`);
-      }
       if((contratos.itens||[]).length){
         cards.push(`<button type="button" class="card dash-alert-btn" style="margin-bottom:0;text-align:left" onclick="abrirDashboardDestino('clientes')">
           <div class="card-header" style="margin-bottom:8px"><span class="card-title">Contratos vencendo / vencidos</span><div style="display:flex;align-items:center;gap:8px"><span class="pill p-vm">${contratos.qtd||0}</span><span class="metric-go" style="font-size:9px">Ver</span></div></div>
@@ -3564,23 +3571,6 @@ async function loadDash(){
     de.innerHTML=d.empresas.map(e=>`<button type="button" class="card dash-company-btn" style="margin-bottom:0" onclick="abrirDashboardDestino('clientes',${e.id})"><div style="font-size:13px;font-weight:700;color:var(--azul);margin-bottom:8px">${e.nome}</div><div style="font-size:24px;font-weight:700;color:var(--laranja)">${e.cli}</div><div style="font-size:11px;color:#888">clientes ativos · tocar para abrir</div></button>`).join('');
   } else {
     de.innerHTML='';
-  }
-  // Gráfico faturamento mensal
-  const fatMensal=d.faturamento_mensal||[];
-  const chartCtx=document.getElementById('chart-fat-mensal');
-  if(chartCtx&&fatMensal.length&&typeof Chart!=='undefined'){
-    const mNomes=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-    const labels=fatMensal.map(f=>{const[yr,mo]=f.mes.split('-');return mNomes[parseInt(mo)-1]+'/'+yr.slice(2);});
-    const vals=fatMensal.map(f=>f.total);
-    if(window._chartFat)window._chartFat.destroy();
-    window._chartFat=new Chart(chartCtx,{
-      type:'bar',
-      data:{labels,datasets:[{label:'Faturamento',data:vals,backgroundColor:'rgba(29,155,240,0.7)',borderRadius:4}]},
-      options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>'R$ '+parseFloat(ctx.raw||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}}},
-        scales:{y:{ticks:{callback:v=>'R$'+v.toLocaleString('pt-BR')},grid:{color:'rgba(128,128,128,0.08)'}},x:{grid:{display:false}}}
-      }
-    });
   }
 }
 
