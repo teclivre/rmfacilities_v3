@@ -8692,6 +8692,16 @@ def api_rh_comunicado_criar():
     )
     db.session.add(c)
     db.session.commit()
+    # Enviar push para os destinatários
+    push_data={'tipo':'aviso_geral','comunicado_id':str(c.id)}
+    if fid:
+        _push_notify_funcionario(int(fid), titulo, conteudo[:160], data=push_data)
+    else:
+        q=Funcionario.query.filter_by(status='Ativo', app_ativo=True)
+        if posto:
+            q=q.filter(Funcionario.posto_operacional==posto)
+        for func in q.all():
+            _push_notify_funcionario(func.id, titulo, conteudo[:160], data=push_data)
     return jsonify(c.to_dict()),201
 
 @app.route('/api/comunicados-app/<int:cid>',methods=['PUT'])

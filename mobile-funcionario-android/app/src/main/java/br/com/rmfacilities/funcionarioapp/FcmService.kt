@@ -46,6 +46,7 @@ class FcmService : FirebaseMessagingService() {
             "documento_assinar" -> "📄 Novo documento para assinar"
             "novo_documento" -> "📁 Novo documento disponível"
             "chat", "chat_broadcast" -> "💬 Nova mensagem"
+            "aviso_geral" -> "📢 Comunicado do RH"
             else -> "RM Funcionário"
         }
         val corpo = message.notification?.body ?: data["corpo"] ?: when (tipo) {
@@ -53,6 +54,7 @@ class FcmService : FirebaseMessagingService() {
             "novo_documento" -> "Um novo documento foi adicionado ao seu perfil."
             "chat" -> "Você recebeu uma nova mensagem."
             "chat_broadcast" -> "Há um aviso novo para você."
+            "aviso_geral" -> "Toque para ver o comunicado."
             else -> "Toque para abrir o aplicativo."
         }
 
@@ -72,6 +74,11 @@ class FcmService : FirebaseMessagingService() {
                 Intent(this, MensagensActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 }
+            tipo == "aviso_geral" ->
+                Intent(this, MensagensActivity::class.java).apply {
+                    putExtra("open_tab", "avisos")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
             else ->
                 Intent(this, HomeActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -83,6 +90,7 @@ class FcmService : FirebaseMessagingService() {
             "documento_assinar" -> "Assinar agora"
             "novo_documento" -> "Abrir documento"
             "chat", "chat_broadcast" -> "Abrir chat"
+            "aviso_geral" -> "Ver comunicado"
             else -> "Abrir"
         }
 

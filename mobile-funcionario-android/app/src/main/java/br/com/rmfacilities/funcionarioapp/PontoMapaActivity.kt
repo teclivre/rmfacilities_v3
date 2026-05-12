@@ -46,37 +46,21 @@ class PontoMapaActivity : AppCompatActivity() {
         val webView = findViewById<WebView>(R.id.webViewMapa)
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
+        webView.settings.useWideViewPort = true
+        webView.settings.loadWithOverviewMode = true
         webView.webViewClient = WebViewClient()
 
-        // Mapa com CartoDB Voyager (tiles livres para apps)
-        val html = """
-            <!DOCTYPE html>
-            <html>
-            <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-            <style>
-              body { margin:0; padding:0; }
-              #map { width:100vw; height:100vh; }
-            </style>
-            </head>
-            <body>
-            <div id="map"></div>
-            <script>
-              var map = L.map('map').setView([$lat, $lon], 17);
-              L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-                attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://openstreetmap.org">OSM</a>',
-                subdomains: 'abcd',
-                maxZoom: 20
-              }).addTo(map);
-              var marker = L.marker([$lat, $lon]).addTo(map);
-              marker.bindPopup('<b>$tipo</b><br>$hora').openPopup();
-            </script>
-            </body>
-            </html>
-        """.trimIndent()
+        // Embed OSM via iframe (permitido pela política de uso do OSM para embeds)
+        // bbox: lon_min, lat_min, lon_max, lat_max
+        val delta = 0.002
+        val bboxLonMin = lon - delta
+        val bboxLatMin = lat - delta
+        val bboxLonMax = lon + delta
+        val bboxLatMax = lat + delta
+        val embedUrl = "https://www.openstreetmap.org/export/embed.html" +
+            "?bbox=$bboxLonMin,$bboxLatMin,$bboxLonMax,$bboxLatMax" +
+            "&layer=mapnik&marker=$lat,$lon"
 
-        webView.loadDataWithBaseURL("https://openstreetmap.org", html, "text/html", "UTF-8", null)
+        webView.loadUrl(embedUrl)
     }
 }
