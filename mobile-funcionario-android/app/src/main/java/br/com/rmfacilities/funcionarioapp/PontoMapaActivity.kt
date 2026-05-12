@@ -50,16 +50,16 @@ class PontoMapaActivity : AppCompatActivity() {
         webView.settings.loadWithOverviewMode = true
         webView.webViewClient = WebViewClient()
 
-        // Embed OSM via iframe (permitido pela política de uso do OSM para embeds)
-        // bbox: lon_min, lat_min, lon_max, lat_max
-        val delta = 0.002
+        // Embed OSM: bbox=left,bottom,right,top (lon_min,lat_min,lon_max,lat_max)
+        // mlat/mlon colocam o marcador vermelho na posição exata
+        val delta = 0.0015
         val bboxLonMin = lon - delta
         val bboxLatMin = lat - delta
         val bboxLonMax = lon + delta
         val bboxLatMax = lat + delta
         val embedUrl = "https://www.openstreetmap.org/export/embed.html" +
             "?bbox=$bboxLonMin,$bboxLatMin,$bboxLonMax,$bboxLatMax" +
-            "&layer=mapnik&marker=$lat,$lon"
+            "&layer=mapnik&mlat=$lat&mlon=$lon"
 
         webView.loadUrl(embedUrl)
     }
