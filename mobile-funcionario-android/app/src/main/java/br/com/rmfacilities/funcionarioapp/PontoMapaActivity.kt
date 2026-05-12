@@ -48,7 +48,7 @@ class PontoMapaActivity : AppCompatActivity() {
         webView.settings.domStorageEnabled = true
         webView.webViewClient = WebViewClient()
 
-        // OpenStreetMap com marcador no local
+        // Mapa com CartoDB Voyager (tiles livres para apps)
         val html = """
             <!DOCTYPE html>
             <html>
@@ -65,8 +65,10 @@ class PontoMapaActivity : AppCompatActivity() {
             <div id="map"></div>
             <script>
               var map = L.map('map').setView([$lat, $lon], 17);
-              L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap contributors'
+              L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://openstreetmap.org">OSM</a>',
+                subdomains: 'abcd',
+                maxZoom: 20
               }).addTo(map);
               var marker = L.marker([$lat, $lon]).addTo(map);
               marker.bindPopup('<b>$tipo</b><br>$hora').openPopup();

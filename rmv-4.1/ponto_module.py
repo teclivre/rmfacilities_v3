@@ -491,8 +491,8 @@ def register_ponto_routes(
                 funcionario_id=funcionario.id,
                 data_ref=data_nova.strftime('%Y-%m-%d'),
                 motivo=motivo,
-                antes_json=json.dumps(antes, ensure_ascii=False),
-                depois_json=json.dumps(depois, ensure_ascii=False),
+                antes_json=json.dumps(antes, ensure_ascii=False, default=str),
+                depois_json=json.dumps(depois, ensure_ascii=False, default=str),
                 criado_por=session.get('nome', ''),
             )
             db.session.add(ajuste)
