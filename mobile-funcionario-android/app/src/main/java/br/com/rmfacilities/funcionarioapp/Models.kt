@@ -158,7 +158,9 @@ data class PontoMarcacaoItem(
     val data_hora: String? = null,
     val hora_fmt: String? = null,
     val origem: String? = null,
-    val observacao: String? = null
+    val observacao: String? = null,
+    val lat: Double? = null,
+    val lon: Double? = null
 )
 
 data class PontoResumo(

@@ -4,9 +4,12 @@ import android.Manifest
 import android.content.Intent
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.Typeface
 import android.location.Location
 import android.location.LocationManager
 import android.os.Bundle
+import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.View
 import android.widget.LinearLayout
@@ -211,7 +214,7 @@ class PontoActivity : AppCompatActivity() {
         if (items.isEmpty()) {
             val empty = TextView(this).apply {
                 text = "Nenhuma marcação hoje."
-                setTextColor(resources.getColor(R.color.mobile_text_secondary, theme))
+                setTextColor(ContextCompat.getColor(this@PontoActivity, R.color.mobile_text_secondary))
                 textSize = 12f
                 setPadding(0, 8, 0, 0)
             }
@@ -219,21 +222,79 @@ class PontoActivity : AppCompatActivity() {
             return
         }
 
+        val dp = resources.displayMetrics.density
+
         for (m in items) {
-            val row = TextView(this).apply {
-                text = "${m.hora_fmt ?: "--:--"} • ${m.tipo_label ?: m.tipo ?: "Marcação"}"
-                setTextColor(resources.getColor(R.color.mobile_text_primary, theme))
-                textSize = 14f
-                background = resources.getDrawable(R.drawable.bg_home_card_soft, theme)
+            // Card row
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = ContextCompat.getDrawable(this@PontoActivity, R.drawable.bg_home_card_soft)
+                setPadding((14 * dp).toInt(), (14 * dp).toInt(), (14 * dp).toInt(), (14 * dp).toInt())
             }
-            val params = LinearLayout.LayoutParams(
+            val cardParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            params.bottomMargin = 8
-            row.layoutParams = params
-            row.setPadding(20, 16, 20, 16)
-            containerMarcacoes.addView(row)
+            ).apply { bottomMargin = (8 * dp).toInt() }
+            card.layoutParams = cardParams
+
+            // Ícone tipo (emoji por tipo)
+            val tipoEmoji = when (m.tipo) {
+                "entrada" -> "🟢"
+                "saida_intervalo" -> "☕"
+                "retorno_intervalo" -> "🔵"
+                "saida" -> "🔴"
+                else -> "🕐"
+            }
+            val tvEmoji = TextView(this).apply {
+                text = tipoEmoji
+                textSize = 20f
+                setPadding(0, 0, (10 * dp).toInt(), 0)
+            }
+            card.addView(tvEmoji)
+
+            // Hora + label
+            val infoCol = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            val tvHora = TextView(this).apply {
+                text = m.hora_fmt ?: "--:--"
+                setTextColor(ContextCompat.getColor(this@PontoActivity, R.color.mobile_text_primary))
+                textSize = 18f
+                setTypeface(null, Typeface.BOLD)
+            }
+            val tvLabel = TextView(this).apply {
+                text = m.tipo_label ?: m.tipo ?: "Marcação"
+                setTextColor(ContextCompat.getColor(this@PontoActivity, R.color.mobile_text_secondary))
+                textSize = 11f
+            }
+            infoCol.addView(tvHora)
+            infoCol.addView(tvLabel)
+            card.addView(infoCol)
+
+            // Botão mapa (se tiver localização)
+            if (m.lat != null && m.lon != null && (m.lat != 0.0 || m.lon != 0.0)) {
+                val btnMapa = TextView(this).apply {
+                    text = "📍"
+                    textSize = 20f
+                    setPadding((8 * dp).toInt(), 0, 0, 0)
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener {
+                        performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        startActivity(Intent(this@PontoActivity, PontoMapaActivity::class.java).apply {
+                            putExtra(PontoMapaActivity.EXTRA_LAT, m.lat)
+                            putExtra(PontoMapaActivity.EXTRA_LON, m.lon)
+                            putExtra(PontoMapaActivity.EXTRA_HORA, m.hora_fmt ?: "--:--")
+                            putExtra(PontoMapaActivity.EXTRA_TIPO, m.tipo_label ?: "Marcação")
+                        })
+                    }
+                }
+                card.addView(btnMapa)
+            }
+
+            containerMarcacoes.addView(card)
         }
     }
 

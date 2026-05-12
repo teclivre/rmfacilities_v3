@@ -48,6 +48,9 @@
             android:name=".PontoActivity"
             android:exported="false" />
         <activity
+            android:name=".PontoMapaActivity"
+            android:exported="false" />
+        <activity
             android:name=".AboutActivity"
             android:exported="false" />
         <activity

@@ -198,13 +198,15 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnMarcarPonto"
                 android:layout_width="match_parent"
-                android:layout_height="52dp"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
                 android:text="Registrar ponto agora"
-                android:textSize="14sp"
+                android:textSize="15sp"
                 android:textStyle="bold"
                 android:minWidth="0dp"
                 android:minHeight="0dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp"
                 android:paddingStart="12dp"
                 android:paddingEnd="12dp" />
 
@@ -212,7 +214,7 @@
                 android:id="@+id/btnAtualizarPonto"
                 style="@style/Widget.App.Button.Outlined"
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:text="Atualizar dados"
                 android:textColor="@color/mobile_semantic_info"

@@ -8131,6 +8131,8 @@ def _app_ponto_resumo_dia(funcionario,data_ref):
             'hora_fmt':dt.strftime('%H:%M') if dt else '',
             'origem':(m.origem or 'app'),
             'observacao':m.observacao or '',
+            'lat':m.latitude,
+            'lon':m.longitude,
         })
 
     prox=_app_ponto_tipo_esperado(marcacoes)
