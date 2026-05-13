@@ -54,7 +54,7 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId "rmfacilities.funcionario"
+        applicationId "rm.funcionario"
         minSdk 24
         targetSdk 35
         versionCode verCode
