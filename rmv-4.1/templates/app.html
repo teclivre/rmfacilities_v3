@@ -464,7 +464,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div id="dash-alertas" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px"></div>
       <div class="card" style="margin-bottom:12px">
         <div class="card-header"><span class="card-title">Resumo de colaboradores</span></div>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding:12px 0;text-align:center">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:12px 0;text-align:center">
           <div>
             <div style="font-size:28px;font-weight:700;color:var(--azul)" id="dash-resumo-ativos">—</div>
             <div style="font-size:12px;color:#888;margin-top:4px">Ativos</div>
@@ -474,8 +474,25 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div style="font-size:12px;color:#888;margin-top:4px">Em férias</div>
           </div>
           <div>
-            <div style="font-size:28px;font-weight:700;color:#888" id="dash-resumo-demitidos">—</div>
-            <div style="font-size:12px;color:#888;margin-top:4px">Demitidos/Inativos</div>
+            <div style="font-size:28px;font-weight:700;color:#ff9800" id="dash-resumo-afastados">—</div>
+            <div style="font-size:12px;color:#888;margin-top:4px">Afastados</div>
+          </div>
+          <div>
+            <div style="font-size:28px;font-weight:700;color:#888" id="dash-resumo-ponto-hoje">—</div>
+            <div style="font-size:12px;color:#888;margin-top:4px">Ponto hoje</div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-header"><span class="card-title">Ponto do dia</span><span style="font-size:11px;color:#888" id="dash-ponto-data"></span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:12px 0;text-align:center">
+          <div>
+            <div style="font-size:36px;font-weight:700;color:#4caf50" id="dash-ponto-bateram">—</div>
+            <div style="font-size:13px;color:#888;margin-top:4px">✅ Bateram ponto</div>
+          </div>
+          <div>
+            <div style="font-size:36px;font-weight:700;color:#e53935" id="dash-ponto-falta">—</div>
+            <div style="font-size:13px;color:#888;margin-top:4px">❌ Falta / sem registro</div>
           </div>
         </div>
       </div>
@@ -3523,8 +3540,17 @@ async function loadDash(){
   if(rAtivos) rAtivos.textContent=d.funcionarios_ativos??'—';
   const rFerias=document.getElementById('dash-resumo-ferias');
   if(rFerias) rFerias.textContent=d.funcionarios_ferias??'—';
-  const rDemit=document.getElementById('dash-resumo-demitidos');
-  if(rDemit) rDemit.textContent=d.funcionarios_demitidos??'—';
+  const rAfastados=document.getElementById('dash-resumo-afastados');
+  if(rAfastados) rAfastados.textContent=d.funcionarios_afastados??'—';
+  const rPontoHoje=document.getElementById('dash-resumo-ponto-hoje');
+  if(rPontoHoje) rPontoHoje.textContent=d.ponto_bateram_hoje??'—';
+  // Ponto do dia
+  const pBateram=document.getElementById('dash-ponto-bateram');
+  if(pBateram) pBateram.textContent=d.ponto_bateram_hoje??'—';
+  const pFalta=document.getElementById('dash-ponto-falta');
+  if(pFalta) pFalta.textContent=d.ponto_falta_folga??'—';
+  const pData=document.getElementById('dash-ponto-data');
+  if(pData) pData.textContent=new Date().toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'});
   // Saudação e data
   const nomeBase=(typeof N==='string' && N.trim()) ? N.trim() : 'usuário';
   document.getElementById('dash-saudacao').textContent='Olá, '+nomeBase.split(' ')[0]+'!';

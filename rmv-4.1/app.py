@@ -14117,12 +14117,25 @@ def api_dashboard():
                                       'dias': (_dv - hoje).days, 'vencido': True})
     alertas_contratos.sort(key=lambda x: x['dias'])
 
-    # RH: funcionários ativos e em férias
+    # RH: funcionários por status
     funcionarios_ativos = Funcionario.query.filter_by(status='Ativo').count()
     funcionarios_ferias = Funcionario.query.filter_by(status='Férias').count()
-    funcionarios_demitidos = Funcionario.query.filter(
-        Funcionario.status.in_(['Demitido','Inativo'])
-    ).count()
+    funcionarios_afastados = Funcionario.query.filter_by(status='Afastado').count()
+
+    # Ponto do dia: quem bateu e quem está em falta/folga (só ativos)
+    hoje_str = hoje.strftime('%Y-%m-%d')
+    inicio_dia = datetime.combine(hoje, __import__('datetime').time.min)
+    fim_dia = datetime.combine(hoje, __import__('datetime').time.max)
+    ids_bateram = set(
+        r[0] for r in db.session.query(PontoMarcacao.funcionario_id)
+        .filter(PontoMarcacao.data_hora >= inicio_dia,
+                PontoMarcacao.data_hora <= fim_dia)
+        .distinct().all()
+    )
+    # Filtra só funcionários ativos
+    ids_ativos = set(funcs_ativos.keys())
+    ponto_bateram_hoje = len(ids_bateram & ids_ativos)
+    ponto_falta_folga = len(ids_ativos - ids_bateram)
 
     return jsonify({'ativos':len(ativos),'receita':receita,'total_med':Medicao.query.count(),
         'med_mes':Medicao.query.filter_by(mes_ref=mes).count(),
@@ -14133,7 +14146,9 @@ def api_dashboard():
         'total_vencidas':len(venc_itens), 'valor_vencidas':round(total_vencidas,2),
         'funcionarios_ativos':funcionarios_ativos,
         'funcionarios_ferias':funcionarios_ferias,
-        'funcionarios_demitidos':funcionarios_demitidos,
+        'funcionarios_afastados':funcionarios_afastados,
+        'ponto_bateram_hoje':ponto_bateram_hoje,
+        'ponto_falta_folga':ponto_falta_folga,
         'alerta_inadimplencia':{'qtd':len(inad_itens),'total':round(total_inadimplencia,2),'itens':inad_itens[:8]},
         'alerta_faturamento':{'qtd':len(alertas_faturamento),'itens':alertas_faturamento[:8]},
         'alerta_calculo_beneficios':{'qtd':len(alertas_calculo),'itens':alertas_calculo},
