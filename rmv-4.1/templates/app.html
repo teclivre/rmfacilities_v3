@@ -1,14 +1,14 @@
 <!-- Modal Ponto do Dia -->
-<div id="modal-ponto-dia" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1100;overflow-y:auto;padding:24px 16px">
-  <div style="background:var(--bg,#fff);color:var(--txt,#222);border-radius:12px;max-width:700px;margin:40px auto;padding:0;position:relative;box-shadow:0 8px 32px rgba(0,0,0,.25)">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--borda,#e0e0e0)">
+<div id="modal-ponto-dia" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;overflow-y:auto;padding:24px 16px">
+  <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:700px;margin:40px auto;padding:0;position:relative;box-shadow:var(--shadow-md);border:1px solid var(--borda)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--borda)">
       <div>
-        <div style="font-size:16px;font-weight:700" id="modal-ponto-titulo">Ponto do dia</div>
-        <div style="font-size:12px;color:#888;margin-top:2px" id="modal-ponto-subtitulo"></div>
+        <div style="font-size:16px;font-weight:700;color:var(--preto)" id="modal-ponto-titulo">Ponto do dia</div>
+        <div style="font-size:12px;color:var(--cinza);margin-top:2px" id="modal-ponto-subtitulo"></div>
       </div>
-      <button type="button" onclick="document.getElementById('modal-ponto-dia').style.display='none'" style="background:none;border:none;font-size:22px;cursor:pointer;color:#888;line-height:1">&times;</button>
+      <button type="button" onclick="document.getElementById('modal-ponto-dia').style.display='none'" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--cinza);line-height:1">&times;</button>
     </div>
-    <div style="padding:4px 12px 8px">
+    <div style="padding:4px 12px 8px;border-bottom:1px solid var(--borda)">
       <input type="text" id="modal-ponto-busca" placeholder="Buscar por nome, posto ou empresa..." oninput="_pontoDiaFiltrar()" style="width:100%;margin:10px 0;box-sizing:border-box">
     </div>
     <div id="modal-ponto-body" style="padding:0 12px 20px;max-height:60vh;overflow-y:auto">Carregando...</div>
@@ -4016,24 +4016,24 @@ function _pontoDiaRenderizar() {
           marcacoes.map(m => {
             const icon = _tipoIcon[m.tipo] || '⏱';
             const label = _tipoLabel[m.tipo] || m.tipo;
-            return `<div style="display:flex;align-items:center;gap:4px;background:var(--cinza-cl,#f5f5f5);border-radius:8px;padding:4px 8px">
+            return `<div style="display:flex;align-items:center;gap:4px;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:8px;padding:4px 8px">
               <span style="font-size:12px">${icon}</span>
-              <div><div style="font-size:10px;color:#888;line-height:1.1">${label}</div><div style="font-size:12px;font-weight:600;line-height:1.2">${m.hora}</div></div>
+              <div><div style="font-size:10px;color:var(--cinza);line-height:1.1">${label}</div><div style="font-size:12px;font-weight:600;color:var(--preto);line-height:1.2">${m.hora}</div></div>
             </div>`;
           }).join('')
         }</div>`
       : '';
     const initials = (f.nome||'?').split(' ').slice(0,2).map(p=>p[0]).join('').toUpperCase();
-    const avatarBg = isBateram ? '#d0f0d8' : '#fde0e0';
-    const avatarColor = isBateram ? '#2e7d32' : '#c62828';
-    return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 4px;border-bottom:1px solid var(--borda,#eee)">
+    const avatarBg = isBateram ? 'var(--verde-cl)' : 'var(--verm-cl)';
+    const avatarColor = isBateram ? 'var(--verde)' : 'var(--verm)';
+    return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 4px;border-bottom:1px solid var(--borda)">
       <div style="width:40px;height:40px;border-radius:50%;background:${avatarBg};color:${avatarColor};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0">${initials}</div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
-          <div style="font-weight:600;font-size:13px">${esc(f.nome)}</div>
-          <div style="font-size:11px;color:#aaa;flex-shrink:0">RE ${f.re || '—'}</div>
+          <div style="font-weight:600;font-size:13px;color:var(--preto)">${esc(f.nome)}</div>
+          <div style="font-size:11px;color:var(--cinza);flex-shrink:0">RE ${f.re || '—'}</div>
         </div>
-        <div style="font-size:11px;color:#888;margin-top:1px">${esc(f.posto||'—')}${f.empresa ? ' &middot; ' + esc(f.empresa) : ''}</div>
+        <div style="font-size:11px;color:var(--cinza);margin-top:1px">${esc(f.posto||'—')}${f.empresa ? ' &middot; ' + esc(f.empresa) : ''}</div>
         ${marcStr}
       </div>
     </div>`;
