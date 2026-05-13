@@ -3610,12 +3610,7 @@ async function loadDash(){
     if((aso.itens||[]).length || (calc.itens||[]).length || (benPend.itens||[]).length || (asoInval.itens||[]).length || (certs.itens||[]).length || (contratos.itens||[]).length){
       al.style.display='grid';
       const cards=[];
-      if((contratos.itens||[]).length){
-        cards.push(`<button type="button" class="card dash-alert-btn" style="margin-bottom:0;text-align:left" onclick="abrirDashboardDestino('clientes')">
-          <div class="card-header" style="margin-bottom:8px"><span class="card-title">Contratos vencendo / vencidos</span><div style="display:flex;align-items:center;gap:8px"><span class="pill p-vm">${contratos.qtd||0}</span><span class="metric-go" style="font-size:9px">Ver</span></div></div>
-          <div>${contratosItens}</div>
-        </button>`);
-      }
+      // cards de contratos removidos do dashboard (ver seção RH)
       if((calc.itens||[]).length){
         cards.push(`<button type="button" class="card dash-alert-btn" style="margin-bottom:0;text-align:left" onclick="abrirDashboardDestino('beneficios')">
           <div class="card-header" style="margin-bottom:8px"><span class="card-title">Alertas de cálculo de benefícios</span><div style="display:flex;align-items:center;gap:8px"><span class="pill p-vm">${calc.qtd||0}</span><span class="metric-go" style="font-size:9px">Ir</span></div></div>
@@ -3628,12 +3623,7 @@ async function loadDash(){
           <div>${benPendItens}</div>
         </button>`);
       }
-      if((asoInval.itens||[]).length){
-        cards.push(`<button type="button" class="card dash-alert-btn" style="margin-bottom:0;text-align:left" onclick="abrirDashboardDestino('sst')">
-          <div class="card-header" style="margin-bottom:8px"><span class="card-title">Colaboradores sem ASO válido</span><div style="display:flex;align-items:center;gap:8px"><span class="pill p-vm">${asoInval.qtd||0}</span><span class="metric-go" style="font-size:9px">Ir</span></div></div>
-          <div>${asoInvalItens}</div>
-        </button>`);
-      }
+      // card ASO inválido removido do dashboard (ver seção SST)
       if((aso.itens||[]).length){
         cards.push(`<button type="button" class="card dash-alert-btn" style="margin-bottom:0;text-align:left" onclick="abrirDashboardDestino('sst')">
           <div class="card-header" style="margin-bottom:8px"><span class="card-title">Eventos vencendo (ASO até 30 dias)</span><div style="display:flex;align-items:center;gap:8px"><span class="pill p-lj">${aso.qtd||0}</span><span class="metric-go" style="font-size:9px">Ir</span></div></div>
@@ -4015,18 +4005,37 @@ function _pontoDiaRenderizar() {
     return;
   }
 
+  // Mapa de ícones por tipo de marcação
+  const _tipoIcon = {entrada:'🟢',saida:'🔴',saida_intervalo:'🟡',retorno_intervalo:'🔵',extra:'🟠'};
+  const _tipoLabel = {entrada:'Entrada',saida:'Saída',saida_intervalo:'Saída intervalo',retorno_intervalo:'Retorno intervalo',extra:'Extra'};
+
   body.innerHTML = filtrada.map(f => {
-    const marcStr = isBateram
-      ? (f.marcacoes || []).map(m => `<span style="display:inline-block;background:#e8f5e9;color:#2e7d32;border-radius:4px;padding:1px 6px;font-size:11px;margin:1px">${m.tipo} ${m.hora}</span>`).join(' ')
+    const marcacoes = isBateram ? (f.marcacoes || []) : [];
+    const marcStr = marcacoes.length
+      ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${
+          marcacoes.map(m => {
+            const icon = _tipoIcon[m.tipo] || '⏱';
+            const label = _tipoLabel[m.tipo] || m.tipo;
+            return `<div style="display:flex;align-items:center;gap:4px;background:var(--cinza-cl,#f5f5f5);border-radius:8px;padding:4px 8px">
+              <span style="font-size:12px">${icon}</span>
+              <div><div style="font-size:10px;color:#888;line-height:1.1">${label}</div><div style="font-size:12px;font-weight:600;line-height:1.2">${m.hora}</div></div>
+            </div>`;
+          }).join('')
+        }</div>`
       : '';
-    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--borda,#eee)">
-      <div style="width:36px;height:36px;border-radius:50%;background:${isBateram ? '#e8f5e9' : '#ffebee'};display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${isBateram ? '✅' : '❌'}</div>
+    const initials = (f.nome||'?').split(' ').slice(0,2).map(p=>p[0]).join('').toUpperCase();
+    const avatarBg = isBateram ? '#d0f0d8' : '#fde0e0';
+    const avatarColor = isBateram ? '#2e7d32' : '#c62828';
+    return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 4px;border-bottom:1px solid var(--borda,#eee)">
+      <div style="width:40px;height:40px;border-radius:50%;background:${avatarBg};color:${avatarColor};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0">${initials}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:13px">${esc(f.nome)}</div>
-        <div style="font-size:11px;color:#888;margin-top:2px">${esc(f.posto)}${f.empresa ? ' · ' + esc(f.empresa) : ''}</div>
-        ${marcStr ? `<div style="margin-top:4px">${marcStr}</div>` : ''}
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+          <div style="font-weight:600;font-size:13px">${esc(f.nome)}</div>
+          <div style="font-size:11px;color:#aaa;flex-shrink:0">RE ${f.re || '—'}</div>
+        </div>
+        <div style="font-size:11px;color:#888;margin-top:1px">${esc(f.posto||'—')}${f.empresa ? ' &middot; ' + esc(f.empresa) : ''}</div>
+        ${marcStr}
       </div>
-      <div style="font-size:11px;color:#888;flex-shrink:0">RE ${f.re || '—'}</div>
     </div>`;
   }).join('');
 }
