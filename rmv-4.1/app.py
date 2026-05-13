@@ -105,6 +105,22 @@ def _load_app_secret_key():
     key=(os.environ.get('SECRET_KEY') or '').strip()
     if key:
         return key
+    # Tenta persistir a chave no volume de dados (Railway /data) para sobreviver a restarts
+    data_dir=(os.environ.get('DATA_DIR') or '').strip()
+    if data_dir:
+        key_file=os.path.join(data_dir,'.secret_key')
+        try:
+            if os.path.exists(key_file):
+                stored=open(key_file,'r').read().strip()
+                if len(stored)>=32:
+                    return stored
+            new_key=secrets.token_urlsafe(48)
+            os.makedirs(data_dir,exist_ok=True)
+            with open(key_file,'w') as f:
+                f.write(new_key)
+            return new_key
+        except Exception:
+            pass
     if _is_production_env():
         raise RuntimeError('SECRET_KEY obrigatoria em producao. Configure a variavel de ambiente SECRET_KEY.')
     # Em ambiente local, usa chave efemera para evitar segredo padrao hardcoded no repositorio.
@@ -113,12 +129,16 @@ def _load_app_secret_key():
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
 app.secret_key = _load_app_secret_key()
+app.config['PERMANENT_SESSION_LIFETIME'] = __import__('datetime').timedelta(days=30)
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', DEFAULT_DB_URI)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite'):
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'connect_args': {'timeout': 30},
+        'connect_args': {'timeout': 30, 'check_same_thread': False},
         'pool_pre_ping': True,
+        'pool_size': 1,
+        'max_overflow': 4,
     }
 db = SQLAlchemy(app)
 
