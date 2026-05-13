@@ -3453,7 +3453,63 @@ async function init(){
   rhFuncionarioBindAutoSave();
   montarSubAbasBloco();
   ativarSubAbaPagina('dashboard');
+  _initSSE();
 }
+
+// ── Auto-update via SSE ───────────────────────────────────────────────────────
+let _sseConn = null;
+let _sseReconnectTimer = null;
+// Funções que cada tipo de evento deve chamar para atualizar o dado na tela
+const _sseHandlers = {
+  ponto: async () => {
+    _pontoDiaData = null; // invalida cache do modal
+    await loadDash();
+    // Se o modal de ponto estiver aberto, recarrega silenciosamente
+    const modal = document.getElementById('modal-ponto-dia');
+    if (modal && modal.style.display !== 'none') {
+      const d = await api('/api/dashboard/ponto-dia');
+      if (d && !d.erro) { _pontoDiaData = d; _pontoDiaRenderizar(); }
+    }
+  },
+  funcionario: async () => {
+    funcs = await api('/api/funcionarios');
+    renderFuncionarios?.();
+    await loadDash();
+  },
+  cliente: async () => {
+    todos = await api('/api/clientes');
+    renderCli?.();
+    await loadDash();
+  },
+  dash: async () => { await loadDash(); },
+};
+
+function _initSSE() {
+  if (!window.EventSource) return; // navegador não suporta
+  if (_sseConn) { _sseConn.close(); _sseConn = null; }
+  clearTimeout(_sseReconnectTimer);
+
+  const es = new EventSource('/api/eventos');
+  _sseConn = es;
+
+  // handler genérico para qualquer evento com nome
+  const _handle = async (tipo) => {
+    const fn = _sseHandlers[tipo];
+    if (fn) { try { await fn(); } catch(e) { console.warn('SSE handler error', tipo, e); } }
+  };
+
+  ['ponto','funcionario','cliente','dash'].forEach(ev => {
+    es.addEventListener(ev, () => _handle(ev));
+  });
+
+  es.onerror = () => {
+    es.close();
+    _sseConn = null;
+    // reconecta após 5s
+    _sseReconnectTimer = setTimeout(_initSSE, 5000);
+  };
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 function tick(){
   const n=new Date();
@@ -4016,9 +4072,9 @@ function _pontoDiaRenderizar() {
           marcacoes.map(m => {
             const icon = _tipoIcon[m.tipo] || '⏱';
             const label = _tipoLabel[m.tipo] || m.tipo;
-            return `<div style="display:flex;align-items:center;gap:4px;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:8px;padding:4px 8px">
+            return `<div style="display:flex;align-items:center;gap:4px;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:8px;padding:4px 8px${m.lat && m.lon ? ';cursor:pointer' : ''}" ${m.lat && m.lon ? `onclick="window.open('https://www.google.com/maps?q=${m.lat},${m.lon}','_blank')" title="Ver no mapa"` : ''}>
               <span style="font-size:12px">${icon}</span>
-              <div><div style="font-size:10px;opacity:.55;color:var(--preto);line-height:1.1">${label}</div><div style="font-size:12px;font-weight:600;color:var(--preto);line-height:1.2">${m.hora}</div></div>
+              <div><div style="font-size:10px;opacity:.55;color:var(--preto);line-height:1.1">${label}</div><div style="font-size:12px;font-weight:600;color:var(--preto);line-height:1.2">${m.hora}${m.lat && m.lon ? ' 📍' : ''}</div></div>
             </div>`;
           }).join('')
         }</div>`

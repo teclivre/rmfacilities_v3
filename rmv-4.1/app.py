@@ -8282,6 +8282,17 @@ def api_app_ponto_marcar_me():
         'localizacao_status':localizacao.get('status'),
         'distancia_m':localizacao.get('distancia_m'),
     })
+    # Notificar clientes SSE sobre novo ponto
+    try:
+        import json as _json
+        _sse_broadcast('ponto', _json.dumps({
+            'funcionario_id': f.id,
+            'nome': f.nome,
+            'tipo': m.tipo,
+            'hora': m.data_hora.strftime('%H:%M'),
+        }))
+    except Exception:
+        pass
     return jsonify({
         'ok':True,
         'marcacao':{
@@ -13884,6 +13895,82 @@ def api_financeiro_salarios_export_pdf():
     nome=f"pagamento_salarios_{comp_nome}{sufixo_versao}.pdf"
     return send_file(buf,mimetype='application/pdf',as_attachment=False,download_name=nome)
 
+# ── SSE: auto-update ──────────────────────────────────────────────────────────
+import queue as _queue
+import threading as _threading
+
+_sse_clients: list = []
+_sse_lock = _threading.Lock()
+
+def _sse_broadcast(event: str, data: str):
+    """Envia um evento SSE para todos os clientes conectados."""
+    msg = f"event: {event}\ndata: {data}\n\n"
+    with _sse_lock:
+        dead = []
+        for q in _sse_clients:
+            try:
+                q.put_nowait(msg)
+            except Exception:
+                dead.append(q)
+        for q in dead:
+            _sse_clients.remove(q)
+
+@app.route('/api/eventos')
+@lr
+def api_eventos():
+    """SSE endpoint: emite eventos quando dados mudam no servidor."""
+    q: _queue.Queue = _queue.Queue(maxsize=50)
+    with _sse_lock:
+        _sse_clients.append(q)
+
+    def generate():
+        # heartbeat inicial
+        yield "event: ping\ndata: ok\n\n"
+        try:
+            while True:
+                try:
+                    msg = q.get(timeout=25)
+                    yield msg
+                except _queue.Empty:
+                    yield "event: ping\ndata: ok\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            with _sse_lock:
+                try:
+                    _sse_clients.remove(q)
+                except ValueError:
+                    pass
+
+    return Response(generate(), mimetype='text/event-stream',
+                    headers={'Cache-Control': 'no-cache',
+                             'X-Accel-Buffering': 'no',
+                             'Connection': 'keep-alive'})
+
+# after_request: broadcast automático para endpoints que alteram dados
+@app.after_request
+def _sse_after(response):
+    if request.method not in ('POST', 'PUT', 'DELETE', 'PATCH'):
+        return response
+    if response.status_code not in (200, 201):
+        return response
+    path = request.path
+    # Mapeamento endpoint → tipo de evento SSE
+    _map = [
+        ('/api/funcionarios', 'funcionario'),
+        ('/api/clientes', 'cliente'),
+        ('/api/app/funcionario/me/ponto', None),  # já emitido no endpoint
+    ]
+    for prefix, evento in _map:
+        if path.startswith(prefix) and evento:
+            try:
+                _sse_broadcast(evento, '{}')
+            except Exception:
+                pass
+            break
+    return response
+# ─────────────────────────────────────────────────────────────────────────────
+
 @app.route('/api/dashboard/ponto-dia')
 @lr
 def api_dashboard_ponto_dia():
@@ -13926,7 +14013,8 @@ def api_dashboard_ponto_dia():
         if marcacoes:
             marcacoes_sorted = sorted(marcacoes, key=lambda m: m.data_hora)
             info['marcacoes'] = [
-                {'tipo': m.tipo, 'hora': m.data_hora.strftime('%H:%M')}
+                {'tipo': m.tipo, 'hora': m.data_hora.strftime('%H:%M'),
+                 'lat': m.latitude, 'lon': m.longitude}
                 for m in marcacoes_sorted
             ]
             info['ultima_hora'] = marcacoes_sorted[-1].data_hora.strftime('%H:%M')
