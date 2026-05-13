@@ -176,6 +176,15 @@ app.config['COMPRESS_LEVEL'] = 6
 app.config['COMPRESS_MIN_SIZE'] = 500
 _compress.init_app(app)
 
+# Cache em memória (ou Redis se disponível) — evita recalcular rotas pesadas repetidamente
+from flask_caching import Cache as _Cache
+_cache_cfg = {
+    'CACHE_TYPE': 'RedisCache' if os.environ.get('REDIS_URL') else 'SimpleCache',
+    'CACHE_DEFAULT_TIMEOUT': 300,
+    'CACHE_REDIS_URL': os.environ.get('REDIS_URL', ''),
+}
+cache = _Cache(app, config=_cache_cfg)
+
 from functools import wraps
 from flask import session, url_for, g
 
@@ -7425,9 +7434,22 @@ def api_app_funcionario_foto_upload():
         return jsonify({'erro':'Foto muito grande. Máximo 5MB.'}),400
     dir_path=os.path.join(UPLOAD_ROOT,'funcionarios',str(f.id),'foto')
     os.makedirs(dir_path,exist_ok=True)
-    filename=f'perfil{ext}'
-    abs_path=os.path.join(dir_path,filename)
-    file.save(abs_path)
+    # Comprime e redimensiona com Pillow antes de salvar (5MB → ~30-50KB)
+    try:
+        from PIL import Image as _PIL_Image
+        img=_PIL_Image.open(file)
+        if img.mode not in ('RGB','L'):
+            img=img.convert('RGB')
+        img.thumbnail((800,800),_PIL_Image.LANCZOS)
+        filename='perfil.jpg'
+        abs_path=os.path.join(dir_path,filename)
+        img.save(abs_path,format='JPEG',quality=75,optimize=True)
+    except Exception:
+        # Fallback: salva arquivo original se Pillow falhar
+        file.seek(0)
+        filename=f'perfil{ext}'
+        abs_path=os.path.join(dir_path,filename)
+        file.save(abs_path)
     rel_path=os.path.relpath(abs_path,UPLOAD_ROOT).replace('\\','/')
     f.foto_perfil=rel_path
     db.session.commit()
@@ -14026,6 +14048,14 @@ def _sse_after(response):
             except Exception:
                 pass
             break
+    # Invalida cache do dashboard quando dados financeiros/funcionários/clientes mudam
+    _dashboard_invalidating = ('/api/clientes', '/api/medicoes', '/api/contratos',
+                                '/api/despesas', '/api/funcionarios')
+    if any(path.startswith(p) for p in _dashboard_invalidating):
+        try:
+            cache.delete('api_dashboard')
+        except Exception:
+            pass
     return response
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -14089,6 +14119,7 @@ def api_dashboard_ponto_dia():
 
 @app.route('/api/dashboard')
 @lr
+@cache.cached(timeout=15, key_prefix='api_dashboard')
 def api_dashboard():
     ativos=Cliente.query.filter_by(status='Ativo').all()
     # sum revenue from Contrato table; fall back to Cliente fields for clients without contracts
