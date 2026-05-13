@@ -3664,8 +3664,7 @@ const _sseHandlers = {
     }
   },
   funcionario: async () => {
-    funcs = await api('/api/funcionarios');
-    renderFuncionarios?.();
+    await renderFuncionarios();
     await loadDash();
   },
   cliente: async () => {
@@ -7597,10 +7596,22 @@ function rhSalariosRenderPainel(res){
   rhSalariosCarregarGrafico();
 }
 
+let _renderFuncsInflight=false, _renderFuncsPending=false;
 async function renderFuncionarios(){
+  if(_renderFuncsInflight){ _renderFuncsPending=true; return; }
+  _renderFuncsInflight=true;
+  try{ await _renderFuncionariosImpl(); } finally{
+    _renderFuncsInflight=false;
+    if(_renderFuncsPending){ _renderFuncsPending=false; renderFuncionarios(); }
+  }
+}
+async function _renderFuncionariosImpl(){
   const q=(document.getElementById('rh-busca')?.value||'').toLowerCase();
-  funcs=await api('/api/funcionarios?q='+encodeURIComponent(q));
-  const allFuncs=q ? await api('/api/funcionarios') : funcs;
+  const _fetched=await api('/api/funcionarios?q='+encodeURIComponent(q));
+  if(Array.isArray(_fetched)) funcs=_fetched;
+  const _localFuncs=Array.isArray(_fetched)?_fetched:(Array.isArray(funcs)?funcs:[]);
+  const allFuncs=q ? (()=>{ const _a=api('/api/funcionarios'); _a.then(r=>{ if(Array.isArray(r)) funcs=r; }); return _a; })() : Promise.resolve(_localFuncs);
+  const allFuncsResolved=await allFuncs;
   const tb=document.getElementById('tb-func');
   const totEl=document.getElementById('rh-total-ativos');
   const folhaEl=document.getElementById('rh-total-folha');
@@ -7611,7 +7622,7 @@ async function renderFuncionarios(){
   const isAfastado=f=>(normStatus(f)==='afastado');
   const isAviso=f=>(normStatus(f)==='aviso prévio' || normStatus(f)==='aviso previo');
   const isDemitidoOuInativo=f=>(normStatus(f)==='demitido' || normStatus(f)==='inativo');
-  const ativosTotal=(Array.isArray(allFuncs)?allFuncs:[]).filter(isAtivo).length;
+  const ativosTotal=(Array.isArray(allFuncsResolved)?allFuncsResolved:[]).filter(isAtivo).length;
   if(totEl) totEl.textContent='Ativos: '+ativosTotal;
 
   const tabAt=document.getElementById('rh-tab-ativos');
@@ -7625,7 +7636,7 @@ async function renderFuncionarios(){
   if(tabAv) tabAv.className=rhFuncTab==='aviso'?'btn b-az b-sm':'btn b-gh b-sm';
   if(tabIn) tabIn.className=rhFuncTab==='inativos'?'btn b-az b-sm':'btn b-gh b-sm';
 
-  const lista=(Array.isArray(funcs)?funcs:[]).filter(f=>{
+  const lista=_localFuncs.filter(f=>{
     if(rhFuncTab==='ferias') return isFerias(f);
     if(rhFuncTab==='afastado') return isAfastado(f);
     if(rhFuncTab==='aviso') return isAviso(f);
