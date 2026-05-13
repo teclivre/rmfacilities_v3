@@ -165,6 +165,17 @@ _limiter = Limiter(
     storage_uri=os.environ.get('REDIS_URL', 'memory://'),
 )
 
+# Compressão HTTP (Gzip/Brotli) — reduz app.html de ~700KB para ~80KB
+from flask_compress import Compress as _Compress
+_compress = _Compress()
+app.config['COMPRESS_MIMETYPES'] = [
+    'text/html', 'text/css', 'text/javascript',
+    'application/json', 'application/javascript',
+]
+app.config['COMPRESS_LEVEL'] = 6
+app.config['COMPRESS_MIN_SIZE'] = 500
+_compress.init_app(app)
+
 from functools import wraps
 from flask import session, url_for, g
 
@@ -2430,7 +2441,23 @@ def _app_issue_session_tokens(funcionario):
         'sessao_id':sessao.id,
     }
 
-def gc(k,dv=''): c=Config.query.filter_by(chave=k).first(); return c.valor if c else dv
+# Cache TTL para gc() — evita N+1 queries ao banco (ex: smtp_cfg fazia 6 SELECTs separados)
+_gc_cache: dict = {}
+_gc_cache_ts: float = 0.0
+_GC_TTL = 60.0  # segundos
+
+def _gc_reload():
+    global _gc_cache, _gc_cache_ts
+    try:
+        _gc_cache = {c.chave: c.valor for c in Config.query.all()}
+        _gc_cache_ts = time.time()
+    except Exception:
+        pass
+
+def gc(k, dv=''):
+    if time.time() - _gc_cache_ts > _GC_TTL:
+        _gc_reload()
+    return _gc_cache.get(k, dv)
 
 def smtp_cfg():
     return {'host':gc('smtp_host',''),'port':gc('smtp_port','587'),'user':gc('smtp_user',''),'senha':gc('smtp_senha',''),'de':gc('smtp_de',''),'tls':gc('smtp_tls','1')}
@@ -5226,10 +5253,13 @@ def ensure_cols(table,defs):
     if changed: db.session.commit()
 
 def sc_cfg(k,v):
+    global _gc_cache, _gc_cache_ts
     c=Config.query.filter_by(chave=k).first()
     if c: c.valor=str(v)
     else: db.session.add(Config(chave=k,valor=str(v)))
     db.session.commit()
+    _gc_cache[k]=str(v)  # atualiza cache imediatamente sem esperar TTL
+    _gc_cache_ts=0.0     # força reload completo na próxima leitura
 
 def prox_num():
     try: base=int(gc('num_base','100'))
