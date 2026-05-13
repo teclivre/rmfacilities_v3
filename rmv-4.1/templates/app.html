@@ -1,19 +1,4 @@
-<!-- Modal Detalhe Faturamento -->
-<div id="modal-ponto-dia" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1100;overflow-y:auto;padding:24px 16px">
-  <div style="background:var(--bg,#fff);color:var(--txt,#222);border-radius:12px;max-width:700px;margin:40px auto;padding:0;position:relative;box-shadow:0 8px 32px rgba(0,0,0,.25)">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--borda,#e0e0e0)">
-      <div>
-        <div style="font-size:16px;font-weight:700" id="modal-ponto-titulo">Ponto do dia</div>
-        <div style="font-size:12px;color:#888;margin-top:2px" id="modal-ponto-subtitulo"></div>
-      </div>
-      <button type="button" onclick="document.getElementById('modal-ponto-dia').style.display='none'" style="background:none;border:none;font-size:22px;cursor:pointer;color:#888;line-height:1">&times;</button>
-    </div>
-    <div style="padding:4px 12px 8px">
-      <input type="text" id="modal-ponto-busca" placeholder="Buscar por nome, posto ou empresa..." oninput="_pontoDiaFiltrar()" style="width:100%;margin:10px 0;box-sizing:border-box">
-    </div>
-    <div id="modal-ponto-body" style="padding:0 12px 20px;max-height:60vh;overflow-y:auto">Carregando...</div>
-  </div>
-</div>
+<!-- Modal Ponto do Dia -->
 <div id="modal-ponto-dia" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1100;overflow-y:auto;padding:24px 16px">
   <div style="background:var(--bg,#fff);color:var(--txt,#222);border-radius:12px;max-width:700px;margin:40px auto;padding:0;position:relative;box-shadow:0 8px 32px rgba(0,0,0,.25)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--borda,#e0e0e0)">
@@ -1321,12 +1306,22 @@ document.addEventListener('DOMContentLoaded',()=>{
                 <label>Posto / Cliente</label>
                 <select id="rh-geo-cliente" onchange="rhGeoCarregarCliente()"></select>
               </div>
-              <div class="f"><label>Latitude</label><input id="rh-geo-lat" placeholder="-23.123456"></div>
-              <div class="f"><label>Longitude</label><input id="rh-geo-lon" placeholder="-46.123456"></div>
               <div class="f"><label>Raio (metros)</label><input id="rh-geo-raio" type="number" min="10" max="2000" value="150"></div>
             </div>
+            <div class="f" style="margin-top:6px">
+              <label>Endereço</label>
+              <div style="display:flex;gap:6px">
+                <input id="rh-geo-endereco" placeholder="Ex.: Rua das Flores, 123, São Paulo" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();rhGeoBuscarEndereco();}">  
+                <button class="btn b-gh b-sm" type="button" onclick="rhGeoBuscarEndereco()" style="white-space:nowrap">🔍 Buscar</button>
+              </div>
+              <div id="rh-geo-sugestoes" style="display:none;border:1px solid var(--borda);border-radius:6px;background:var(--bg,#fff);max-height:160px;overflow-y:auto;margin-top:2px;z-index:10;position:relative"></div>
+            </div>
+            <div class="g2" style="margin-top:6px">
+              <div class="f"><label>Latitude</label><input id="rh-geo-lat" placeholder="-23.123456" readonly></div>
+              <div class="f"><label>Longitude</label><input id="rh-geo-lon" placeholder="-46.123456" readonly></div>
+            </div>
             <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
-              <button class="btn b-gh b-sm" onclick="rhGeoUsarLocalAtual()">Usar localização atual</button>
+              <button class="btn b-gh b-sm" onclick="rhGeoUsarLocalAtual()">📍 Usar minha localização</button>
               <button class="btn b-az b-sm" onclick="rhGeoSalvarCliente()">Salvar geofence</button>
             </div>
           </div>
@@ -4039,6 +4034,12 @@ function _pontoDiaRenderizar() {
 document.getElementById('modal-ponto-dia').addEventListener('click', function(e) {
   if (e.target === this) this.style.display = 'none';
 });
+// Fechar sugestões de geocodificação ao clicar fora
+document.addEventListener('click', function(e) {
+  const sug = document.getElementById('rh-geo-sugestoes');
+  const inp = document.getElementById('rh-geo-endereco');
+  if (sug && inp && !sug.contains(e.target) && e.target !== inp) sug.style.display = 'none';
+});
 // ────────────────────────────────────────────────────────────────────────────
 
 async function abrirDashboardDestino(destino,empresaId=null){
@@ -6241,6 +6242,35 @@ function rhGeoCarregarCliente(){
   document.getElementById('rh-geo-lat').value=(c?.geo_lat??'')!==''?String(c.geo_lat):'';
   document.getElementById('rh-geo-lon').value=(c?.geo_lon??'')!==''?String(c.geo_lon):'';
   document.getElementById('rh-geo-raio').value=String(c?.geofence_raio_m??150);
+}
+
+async function rhGeoBuscarEndereco(){
+  const q=(document.getElementById('rh-geo-endereco')?.value||'').trim();
+  if(!q){showSt('rh-jornada-st','Digite um endereço para buscar.',true);return;}
+  const sug=document.getElementById('rh-geo-sugestoes');
+  sug.innerHTML='<div style="padding:8px;color:#888">Buscando...</div>';
+  sug.style.display='block';
+  try{
+    const url='https://nominatim.openstreetmap.org/search?format=json&limit=5&q='+encodeURIComponent(q);
+    const r=await fetch(url,{headers:{'Accept-Language':'pt-BR,pt;q=0.9'}});
+    const lista=await r.json();
+    if(!lista.length){sug.innerHTML='<div style="padding:8px;color:#c33">Nenhum resultado encontrado.</div>';return;}
+    sug.innerHTML=lista.map((item,i)=>`
+      <div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--borda,#eee);font-size:13px"
+           onmouseover="this.style.background='var(--cinza-cl,#f5f5f5)'"
+           onmouseout="this.style.background=''"
+           onclick="rhGeoSelecionarSugestao(${item.lat},${item.lon},${JSON.stringify(item.display_name)})">
+        ${esc(item.display_name)}
+      </div>`).join('');
+  }catch(e){sug.innerHTML='<div style="padding:8px;color:#c33">Erro ao buscar endereço.</div>';}
+}
+
+function rhGeoSelecionarSugestao(lat,lon,label){
+  document.getElementById('rh-geo-lat').value=parseFloat(lat).toFixed(6);
+  document.getElementById('rh-geo-lon').value=parseFloat(lon).toFixed(6);
+  document.getElementById('rh-geo-endereco').value=label;
+  document.getElementById('rh-geo-sugestoes').style.display='none';
+  showSt('rh-jornada-st','Endereço localizado. Confirme e salve o geofence.',false);
 }
 
 function rhGeoUsarLocalAtual(){
