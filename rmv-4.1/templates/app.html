@@ -1,3 +1,98 @@
+<!-- ════ MODAIS UTILITÁRIOS ════════════════════════════════════════════ -->
+<!-- Modal Confirmação Genérica -->
+<div id="modal-rm-confirm" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:420px;width:100%;padding:28px 24px;box-shadow:var(--shadow-md);border:1px solid var(--borda)">
+    <div id="modal-rm-confirm-titulo" style="font-size:16px;font-weight:700;margin-bottom:10px"></div>
+    <div id="modal-rm-confirm-msg" style="font-size:14px;margin-bottom:24px;line-height:1.5;opacity:.85"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button id="modal-rm-confirm-cancel" class="btn b-gh b-sm">Cancelar</button>
+      <button id="modal-rm-confirm-ok" class="btn b-ci b-sm">Confirmar</button>
+    </div>
+  </div>
+</div>
+<!-- Modal Marcar como Paga -->
+<div id="modal-marcar-paga" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:380px;width:100%;padding:28px 24px;box-shadow:var(--shadow-md);border:1px solid var(--borda)">
+    <div id="modal-paga-titulo" style="font-size:16px;font-weight:700;margin-bottom:20px">Confirmar Pagamento</div>
+    <div style="margin-bottom:14px">
+      <label style="font-size:13px;font-weight:600;display:block;margin-bottom:5px">Data do pagamento</label>
+      <input type="date" id="modal-paga-dt" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--borda);border-radius:var(--r);background:var(--cinza-cl);color:var(--preto);font-size:13px">
+    </div>
+    <div style="margin-bottom:24px">
+      <label style="font-size:13px;font-weight:600;display:block;margin-bottom:5px">Forma de pagamento</label>
+      <input type="text" id="modal-paga-forma" placeholder="PIX, Transferência, Boleto..." style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--borda);border-radius:var(--r);background:var(--cinza-cl);color:var(--preto);font-size:13px">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button id="modal-paga-cancel" class="btn b-gh b-sm">Cancelar</button>
+      <button id="modal-paga-ok" class="btn b-sm" style="background:#28a745;color:#fff">✓ Confirmar pagamento</button>
+    </div>
+  </div>
+</div>
+<!-- Modal Enviar por E-mail -->
+<div id="modal-enviar-email-fat" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:380px;width:100%;padding:28px 24px;box-shadow:var(--shadow-md);border:1px solid var(--borda)">
+    <div style="font-size:16px;font-weight:700;margin-bottom:8px">Enviar Fatura por E-mail</div>
+    <div id="modal-email-fat-sub" style="font-size:13px;opacity:.6;margin-bottom:20px"></div>
+    <div style="margin-bottom:24px">
+      <label style="font-size:13px;font-weight:600;display:block;margin-bottom:5px">E-mail do destinatário</label>
+      <input type="email" id="modal-email-fat-input" placeholder="Deixe em branco para usar o e-mail do cliente" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--borda);border-radius:var(--r);background:var(--cinza-cl);color:var(--preto);font-size:13px">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button id="modal-email-fat-cancel" class="btn b-gh b-sm">Cancelar</button>
+      <button id="modal-email-fat-ok" class="btn b-az b-sm">✉ Enviar</button>
+    </div>
+  </div>
+</div>
+<!-- Modal Editar Despesa -->
+<div id="modal-editar-desp" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:440px;width:100%;padding:28px 24px;box-shadow:var(--shadow-md);border:1px solid var(--borda)">
+    <div style="font-size:16px;font-weight:700;margin-bottom:20px">Editar Despesa</div>
+    <div style="display:grid;gap:12px">
+      <div>
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Descrição *</label>
+        <input type="text" id="desp-edit-descricao" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--borda);border-radius:var(--r);background:var(--cinza-cl);color:var(--preto);font-size:13px">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Valor *</label>
+          <input type="text" id="desp-edit-valor" placeholder="0.00" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--borda);border-radius:var(--r);background:var(--cinza-cl);color:var(--preto);font-size:13px">
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Data</label>
+          <input type="date" id="desp-edit-data" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--borda);border-radius:var(--r);background:var(--cinza-cl);color:var(--preto);font-size:13px">
+        </div>
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Categoria</label>
+        <input type="text" id="desp-edit-categoria" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--borda);border-radius:var(--r);background:var(--cinza-cl);color:var(--preto);font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Observações</label>
+        <textarea id="desp-edit-obs" rows="2" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--borda);border-radius:var(--r);background:var(--cinza-cl);color:var(--preto);font-size:13px;resize:vertical"></textarea>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+      <button id="desp-edit-cancel" class="btn b-gh b-sm">Cancelar</button>
+      <button id="desp-edit-ok" class="btn b-az b-sm">Salvar alterações</button>
+    </div>
+  </div>
+</div>
+<!-- Modal Vincular Conciliação -->
+<div id="modal-vincular-conc" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:380px;width:100%;padding:28px 24px;box-shadow:var(--shadow-md);border:1px solid var(--borda)">
+    <div id="modal-vinc-titulo" style="font-size:16px;font-weight:700;margin-bottom:8px">Vincular Fatura</div>
+    <div id="modal-vinc-subtitle" style="font-size:13px;opacity:.6;margin-bottom:18px"></div>
+    <div style="margin-bottom:24px">
+      <label style="font-size:13px;font-weight:600;display:block;margin-bottom:5px">Nº da Fatura</label>
+      <input type="text" id="modal-vinc-num" placeholder="Ex: FAT-2025-001" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--borda);border-radius:var(--r);background:var(--cinza-cl);color:var(--preto);font-size:13px">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button id="modal-vinc-cancel" class="btn b-gh b-sm">Cancelar</button>
+      <button id="modal-vinc-ok" class="btn b-az b-sm">Vincular</button>
+    </div>
+  </div>
+</div>
+<!-- ════ FIM MODAIS UTILITÁRIOS ═══════════════════════════════════════ -->
 <!-- Modal Ponto do Dia -->
 <div id="modal-ponto-dia" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;overflow-y:auto;padding:24px 16px">
   <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:700px;margin:40px auto;padding:0;position:relative;box-shadow:var(--shadow-md);border:1px solid var(--borda)">
@@ -21,6 +116,96 @@
   </div>
 </div>
 <script>
+// ── Funções utilitárias de modal (substitutos de prompt/confirm) ──────────────
+function _rmConfirm(titulo, msg, {okLabel='Confirmar', okStyle='background:#bf2e2e;color:#fff'}={}) {
+  return new Promise(resolve => {
+    const modal = document.getElementById('modal-rm-confirm');
+    document.getElementById('modal-rm-confirm-titulo').textContent = titulo;
+    document.getElementById('modal-rm-confirm-msg').textContent = msg;
+    const okBtn = document.getElementById('modal-rm-confirm-ok');
+    okBtn.textContent = okLabel;
+    okBtn.style.cssText = okStyle;
+    modal.style.display = 'flex';
+    function onOk()  { modal.style.display='none'; resolve(true);  }
+    function onCan() { modal.style.display='none'; resolve(false); }
+    okBtn.addEventListener('click', onOk, {once:true});
+    document.getElementById('modal-rm-confirm-cancel').addEventListener('click', onCan, {once:true});
+  });
+}
+function _rmMarcarPaga(numero) {
+  return new Promise((resolve, reject) => {
+    const modal = document.getElementById('modal-marcar-paga');
+    document.getElementById('modal-paga-titulo').textContent = 'Confirmar pagamento — ' + numero;
+    document.getElementById('modal-paga-dt').value = new Date().toISOString().split('T')[0];
+    document.getElementById('modal-paga-forma').value = 'PIX';
+    modal.style.display = 'flex';
+    function onOk() {
+      const dt = document.getElementById('modal-paga-dt').value;
+      const forma = document.getElementById('modal-paga-forma').value || '';
+      if (!dt) return;
+      modal.style.display = 'none';
+      resolve({dt, forma});
+    }
+    function onCan() { modal.style.display='none'; reject(); }
+    document.getElementById('modal-paga-ok').addEventListener('click', onOk, {once:true});
+    document.getElementById('modal-paga-cancel').addEventListener('click', onCan, {once:true});
+  });
+}
+function _rmEnviarEmail(numero) {
+  return new Promise((resolve, reject) => {
+    const modal = document.getElementById('modal-enviar-email-fat');
+    document.getElementById('modal-email-fat-sub').textContent = 'Fatura ' + numero;
+    document.getElementById('modal-email-fat-input').value = '';
+    modal.style.display = 'flex';
+    setTimeout(()=>document.getElementById('modal-email-fat-input').focus(), 80);
+    function onOk()  { modal.style.display='none'; resolve(document.getElementById('modal-email-fat-input').value.trim()); }
+    function onCan() { modal.style.display='none'; reject(); }
+    document.getElementById('modal-email-fat-ok').addEventListener('click', onOk, {once:true});
+    document.getElementById('modal-email-fat-cancel').addEventListener('click', onCan, {once:true});
+  });
+}
+function _rmEditarDespesa(d) {
+  return new Promise((resolve, reject) => {
+    const modal = document.getElementById('modal-editar-desp');
+    document.getElementById('desp-edit-descricao').value = d.descricao||'';
+    document.getElementById('desp-edit-valor').value = d.valor??'';
+    document.getElementById('desp-edit-data').value = d.data||'';
+    document.getElementById('desp-edit-categoria').value = d.categoria||'Outras';
+    document.getElementById('desp-edit-obs').value = d.observacoes||'';
+    modal.style.display = 'flex';
+    setTimeout(()=>document.getElementById('desp-edit-descricao').focus(), 80);
+    function onOk() {
+      const descricao = document.getElementById('desp-edit-descricao').value.trim();
+      if (!descricao) { alert('Descrição é obrigatória.'); return; }
+      const valorTxt = document.getElementById('desp-edit-valor').value.trim();
+      const valor = parseFloat(valorTxt.replace(',','.'));
+      if (!isFinite(valor) || valor < 0) { alert('Valor inválido.'); return; }
+      const categoria = document.getElementById('desp-edit-categoria').value.trim()||'Outras';
+      const data = document.getElementById('desp-edit-data').value.trim();
+      const observacoes = document.getElementById('desp-edit-obs').value.trim();
+      modal.style.display = 'none';
+      resolve({descricao, valor, categoria, data, observacoes});
+    }
+    function onCan() { modal.style.display='none'; reject(); }
+    document.getElementById('desp-edit-ok').addEventListener('click', onOk, {once:true});
+    document.getElementById('desp-edit-cancel').addEventListener('click', onCan, {once:true});
+  });
+}
+function _rmVincularConc(valor) {
+  return new Promise((resolve, reject) => {
+    const modal = document.getElementById('modal-vincular-conc');
+    document.getElementById('modal-vinc-titulo').textContent = 'Vincular Fatura';
+    document.getElementById('modal-vinc-subtitle').textContent = 'Transação de ' + (typeof brl==='function'?brl(valor):valor);
+    document.getElementById('modal-vinc-num').value = '';
+    modal.style.display = 'flex';
+    setTimeout(()=>document.getElementById('modal-vinc-num').focus(), 80);
+    function onOk()  { const v=document.getElementById('modal-vinc-num').value.trim(); if(!v)return; modal.style.display='none'; resolve(v); }
+    function onCan() { modal.style.display='none'; reject(); }
+    document.getElementById('modal-vinc-ok').addEventListener('click', onOk, {once:true});
+    document.getElementById('modal-vinc-cancel').addEventListener('click', onCan, {once:true});
+  });
+}
+// ─────────────────────────────────────────────────────────────────────────────
 const FAT_STATE={page:1,per_page:20,order_by:'dt_emissao',order_dir:'desc'};
 
 function _fatQueryString(includePage=true){
@@ -72,16 +257,16 @@ function abrirModalFatDetalhe(id){
 function fecharModalFatDetalhe(){document.getElementById('modal-fat-detalhe').style.display='none';}
 function editarFatura(id){fecharModalFatDetalhe();abrirMedicao(id);}
 async function cancelarFatura(id,numero){
-  if(!confirm('Cancelar a fatura '+numero+'? Ela ficará marcada como cancelada.'))return;
+  const ok = await _rmConfirm('Cancelar Fatura', 'Cancelar a fatura '+numero+'? Ela ficará marcada como cancelada.', {okLabel:'Cancelar Fatura'});
+  if(!ok)return;
   const r=await api('/api/medicoes/'+id+'/status','PUT',{status:'cancelada'});
   if(r&&r.erro){alert(r.erro);return;}
   fecharModalFatDetalhe();
   carregarFaturamento();
 }
 async function marcarComoPaga(id,numero){
-  const dt=prompt('Data do pagamento (AAAA-MM-DD):',new Date().toISOString().split('T')[0]);
-  if(!dt)return;
-  const forma=prompt('Forma de pagamento (ex: PIX, Transferência, Boleto):', 'PIX') || '';
+  let dt, forma;
+  try { const r = await _rmMarcarPaga(numero); dt=r.dt; forma=r.forma; } catch(e){ return; }
   const r=await api('/api/medicoes/'+id+'/status','PUT',{status:'paga',dt_pagamento:dt,forma_pagamento:forma});
   if(r&&r.erro){alert(r.erro);return;}
   fecharModalFatDetalhe();
@@ -91,8 +276,8 @@ async function marcarComoPaga(id,numero){
   toast('Fatura '+numero+' marcada como paga!','ok');
 }
 async function enviarFaturaPorEmail(id,numero){
-  const email=prompt('E-mail do destinatário (deixe em branco para usar o do cliente):','');
-  if(email===null)return;
+  let email;
+  try { email = await _rmEnviarEmail(numero); } catch(e){ return; }
   const body2=email?{email}:{};
   const r=await api('/api/medicoes/'+id+'/enviar-email','POST',body2);
   if(r&&r.erro){alert('Erro: '+r.erro);return;}
@@ -206,8 +391,8 @@ async function concAuto(){
   concCarregar(_concPage);
 }
 async function concVincular(txId,valor){
-  const num=prompt(`Vincular transação de ${brl(valor)} com qual Nº de fatura?`,'');
-  if(!num)return;
+  let num;
+  try { num = await _rmVincularConc(valor); } catch(e){ return; }
   const lista=await api('/api/medicoes?per_page=0');
   const m=(lista||[]).find(x=>x.numero&&x.numero.trim()===num.trim());
   if(!m){alert('Fatura não encontrada com número: '+num);return;}
@@ -216,7 +401,8 @@ async function concVincular(txId,valor){
   concCarregar(_concPage);
 }
 async function concDesvincular(txId){
-  if(!confirm('Remover vínculo desta transação?'))return;
+  const ok = await _rmConfirm('Remover Vínculo', 'Remover vínculo desta transação?', {okLabel:'Remover'});
+  if(!ok)return;
   const r=await api('/api/conciliacao/'+txId+'/conciliar','POST',{medicao_id:null});
   if(r&&r.ok)toast('Desvinculado.','ok');
   concCarregar(_concPage);
@@ -779,21 +965,17 @@ document.addEventListener('DOMContentLoaded',()=>{
     async function editarDespesa(id){
       const d=DESP_CACHE.find(x=>parseInt(x.id,10)===parseInt(id,10));
       if(!d){ alert('Despesa não encontrada na página atual.'); return; }
-      const descricao=(prompt('Descrição:',d.descricao||'')||'').trim();
-      if(!descricao){ alert('Descrição é obrigatória.'); return; }
-      const valorTxt=(prompt('Valor (ex: 123.45):',String(d.valor??''))||'').trim();
-      const valor=parseFloat(valorTxt.replace(',','.'));
-      if(!isFinite(valor) || valor<0){ alert('Valor inválido.'); return; }
-      const categoria=(prompt('Categoria:',d.categoria||'Outras')||'').trim()||'Outras';
-      const data=(prompt('Data (YYYY-MM-DD):',d.data||'')||'').trim();
-      const observacoes=(prompt('Observações:',d.observacoes||'')||'').trim();
+      let campos;
+      try { campos = await _rmEditarDespesa(d); } catch(e){ return; }
+      const {descricao,valor,categoria,data,observacoes}=campos;
       const r=await api('/api/despesas/'+id,'PUT',{descricao,valor,categoria,data,observacoes});
       if(r?.erro){ alert(r.erro); return; }
       carregarDespesas();
     }
 
     async function excluirDespesa(id){
-      if(!confirm('Excluir esta despesa?')) return;
+      const ok = await _rmConfirm('Excluir Despesa', 'Excluir esta despesa? A ação não pode ser desfeita.', {okLabel:'Excluir'});
+      if(!ok) return;
       const r=await api('/api/despesas/'+id,'DELETE');
       if(r?.erro){ alert(r.erro); return; }
       carregarDespesas();
@@ -3441,15 +3623,25 @@ async function init(){
   const v=new Date(h); v.setDate(v.getDate()+20);
   document.getElementById('dtvenc').value=v.toISOString().split('T')[0];
   document.getElementById('ben-comp').value=h.toISOString().slice(0,7);
-  try{ await loadEmps(); }catch(e){ console.error('Falha ao carregar empresas',e); }
-  try{ await carregarConfigAlertaBeneficios(); }catch(e){ console.error('Falha ao carregar config benefícios',e); }
-  try{ await loadDash(); }catch(e){ console.error('Falha ao carregar dashboard',e); }
-  try{ await carregarBancosBR(); }catch(e){ console.error('Falha ao carregar bancos',e); }
-  try{ todos=await api('/api/clientes'); }catch(e){ console.error('Falha ao carregar clientes',e); todos=[]; }
-  try{ funcs=await api('/api/funcionarios'); }catch(e){ console.error('Falha ao carregar funcionários',e); funcs=[]; }
+  // Carregamento paralelo — todas as chamadas independentes simultâneas
+  const [_ri1,_ri2,_ri3,_ri4,_ri5,_ri6,_ri7] = await Promise.allSettled([
+    loadEmps(),
+    carregarConfigAlertaBeneficios(),
+    loadDash(),
+    carregarBancosBR(),
+    api('/api/clientes'),
+    api('/api/funcionarios'),
+    loadProxNum(),
+  ]);
+  if(_ri1.status==='rejected') console.error('Falha ao carregar empresas',_ri1.reason);
+  if(_ri2.status==='rejected') console.error('Falha ao carregar config benefícios',_ri2.reason);
+  if(_ri3.status==='rejected') console.error('Falha ao carregar dashboard',_ri3.reason);
+  if(_ri4.status==='rejected') console.error('Falha ao carregar bancos',_ri4.reason);
+  if(_ri7.status==='rejected') console.error('Falha ao carregar próximo número',_ri7.reason);
+  todos = _ri5.status==='fulfilled' ? (_ri5.value||[]) : (console.error('Falha ao carregar clientes',_ri5.reason), []);
+  funcs = _ri6.status==='fulfilled' ? (_ri6.value||[]) : (console.error('Falha ao carregar funcionários',_ri6.reason), []);
   const ass1=document.getElementById('ass1');
   if(ass1) ass1.value=(typeof N==='string' ? N : '');
-  try{ await loadProxNum(); }catch(e){ console.error('Falha ao carregar próximo número',e); }
   rhFuncionarioBindAutoSave();
   montarSubAbasBloco();
   ativarSubAbaPagina('dashboard');

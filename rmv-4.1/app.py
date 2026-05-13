@@ -23,7 +23,6 @@ _strict_origin_check = True
 from flask import Flask, request, jsonify, redirect, render_template, send_file, Response, url_for, has_request_context
 
 import io
-_strict_origin_check = False
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from flask_sqlalchemy import SQLAlchemy
@@ -137,6 +136,15 @@ if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite'):
             cur.close()
 
 
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+_limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=[],
+    storage_uri=os.environ.get('REDIS_URL', 'memory://'),
+)
+
 from functools import wraps
 from flask import session, url_for, g
 
@@ -228,8 +236,7 @@ def api_bancos_br():
     return jsonify({'bancos': bancos})
 
 
-_strict_origin_check = False  # Corrige NameError para _strict_origin_check
-
+_strict_origin_check = True  # Controle de origem habilitado (CSRF)
 
 # === MODELOS E ROTAS QUE DEVEM VIR APÓS CRIAÇÃO DO APP E DB ===
 
@@ -5305,6 +5312,7 @@ register_ponto_routes(
 )
 
 @app.route('/login',methods=['GET','POST'])
+@_limiter.limit('10 per minute', methods=['POST'])
 def login():
     recuperar=request.args.get('recuperar')=='1'
     if request.method=='GET' and request.args.get('cancel2fa'):

@@ -3,6 +3,7 @@ flask-sqlalchemy==3.1.1
 reportlab==4.2.2
 gunicorn==22.0.0
 gevent==24.11.1
+flask-limiter==3.9.0
 pypdf==4.3.1
 openpyxl==3.1.5
 pyHanko==0.26.0

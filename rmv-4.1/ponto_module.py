@@ -134,8 +134,8 @@ def register_ponto_routes(
             .all()
         )
 
-    def _ponto_resumo_func_dia(funcionario, data_ref):
-        marcacoes = _ponto_marcacoes_dia(funcionario.id, data_ref)
+    def _ponto_resumo_func_dia(funcionario, data_ref, _marcacoes=None):
+        marcacoes = _marcacoes if _marcacoes is not None else _ponto_marcacoes_dia(funcionario.id, data_ref)
         inconsistencias = []
         esperado = 'entrada'
         segundos_total = 0
@@ -201,9 +201,26 @@ def register_ponto_routes(
         total_esperado = 0
         total_saldo = 0
         inconsistencias = 0
+        # Batch load: 1 query para todo o período da competência
+        inicio_dt = datetime.combine(inicio, datetime.min.time())
+        fim_dt = datetime.combine(fim + timedelta(days=1), datetime.min.time())
+        todas_marc_comp = (
+            PontoMarcacao.query
+            .filter(
+                PontoMarcacao.funcionario_id == funcionario.id,
+                PontoMarcacao.data_hora >= inicio_dt,
+                PontoMarcacao.data_hora < fim_dt,
+            )
+            .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
+            .all()
+        )
+        marc_por_data_comp = {}
+        for _mc in todas_marc_comp:
+            _dc = _mc.data_hora.date()
+            marc_por_data_comp.setdefault(_dc, []).append(_mc)
         dia = inicio
         while dia <= fim:
-            resumo = _ponto_resumo_func_dia(funcionario, dia)
+            resumo = _ponto_resumo_func_dia(funcionario, dia, _marcacoes=marc_por_data_comp.get(dia, []))
             dias.append({
                 'data_ref': resumo['data_ref'],
                 'horas_trabalhadas_fmt': resumo['horas_trabalhadas_fmt'],
@@ -310,13 +327,33 @@ def register_ponto_routes(
             if empresa_id:
                 query = query.filter(Funcionario.empresa_id == empresa_id)
             funcionarios = query.order_by(Funcionario.nome).all()
+            # Batch load: 1 query para TODAS as marcações do dia (elimina N+1)
+            ids_ativos = [f.id for f in funcionarios]
+            if ids_ativos:
+                inicio_dia = datetime.combine(data_ref, datetime.min.time())
+                fim_dia = inicio_dia + timedelta(days=1)
+                todas_marc_dia = (
+                    PontoMarcacao.query
+                    .filter(
+                        PontoMarcacao.funcionario_id.in_(ids_ativos),
+                        PontoMarcacao.data_hora >= inicio_dia,
+                        PontoMarcacao.data_hora < fim_dia,
+                    )
+                    .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
+                    .all()
+                )
+            else:
+                todas_marc_dia = []
+            marc_batch = {}
+            for _mb in todas_marc_dia:
+                marc_batch.setdefault(_mb.funcionario_id, []).append(_mb)
             itens = []
             total_ok = 0
             total_inconsistente = 0
             erros = []
             for funcionario in funcionarios:
                 try:
-                    resumo = _ponto_resumo_func_dia(funcionario, data_ref)
+                    resumo = _ponto_resumo_func_dia(funcionario, data_ref, _marcacoes=marc_batch.get(funcionario.id, []))
                     if resumo['status'] == 'ok':
                         total_ok += 1
                     else:
