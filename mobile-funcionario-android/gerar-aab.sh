@@ -21,24 +21,13 @@ echo "Diretório: $SCRIPT_DIR"
 echo ""
 
 # Verifica se keystore existe
-if [ ! -f "app/rmfacilities-release.keystore" ]; then
-  echo "ERRO: Keystore não encontrado em app/rmfacilities-release.keystore"
+if [ ! -f "app/rmfacilities-v2.keystore" ]; then
+  echo "ERRO: Keystore não encontrado em app/rmfacilities-v2.keystore"
   exit 1
 fi
 
-# Lê a senha em runtime (não fica salva no histórico do terminal)
-read -rsp "🔑 Senha do keystore (rmfacilities-release.keystore): " KS_PASS
-echo ""
-read -rsp "🔑 Senha da chave (Key password, mesma se não souber diferença): " KEY_PASS
-echo ""
-echo ""
-
 echo "▶ Executando bundleRelease..."
-./gradlew bundleRelease \
-  -Pandroid.injected.signing.store.file="$(pwd)/app/rmfacilities-release.keystore" \
-  -Pandroid.injected.signing.store.password="$KS_PASS" \
-  -Pandroid.injected.signing.key.alias="$(grep keyAlias keystore.properties | cut -d= -f2)" \
-  -Pandroid.injected.signing.key.password="$KEY_PASS"
+./gradlew bundleRelease
 
 AAB_PATH="app/build/outputs/bundle/release/app-release.aab"
 
