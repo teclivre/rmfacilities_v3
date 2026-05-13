@@ -4,12 +4,12 @@
     <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--borda)">
       <div>
         <div style="font-size:16px;font-weight:700;color:var(--preto)" id="modal-ponto-titulo">Ponto do dia</div>
-        <div style="font-size:12px;color:var(--cinza);margin-top:2px" id="modal-ponto-subtitulo"></div>
+        <div style="font-size:12px;opacity:.55;color:var(--preto);margin-top:2px" id="modal-ponto-subtitulo"></div>
       </div>
-      <button type="button" onclick="document.getElementById('modal-ponto-dia').style.display='none'" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--cinza);line-height:1">&times;</button>
+      <button type="button" onclick="document.getElementById('modal-ponto-dia').style.display='none'" style="background:none;border:none;font-size:22px;cursor:pointer;opacity:.5;color:var(--preto);line-height:1">&times;</button>
     </div>
     <div style="padding:4px 12px 8px;border-bottom:1px solid var(--borda)">
-      <input type="text" id="modal-ponto-busca" placeholder="Buscar por nome, posto ou empresa..." oninput="_pontoDiaFiltrar()" style="width:100%;margin:10px 0;box-sizing:border-box">
+      <input type="text" id="modal-ponto-busca" placeholder="Buscar por nome, posto ou empresa..." oninput="_pontoDiaFiltrar()" style="width:100%;margin:10px 0;box-sizing:border-box;background:var(--cinza-cl);color:var(--preto);border:1.5px solid var(--borda);border-radius:var(--r);padding:8px 10px;font-size:13px">
     </div>
     <div id="modal-ponto-body" style="padding:0 12px 20px;max-height:60vh;overflow-y:auto">Carregando...</div>
   </div>
@@ -4018,7 +4018,7 @@ function _pontoDiaRenderizar() {
             const label = _tipoLabel[m.tipo] || m.tipo;
             return `<div style="display:flex;align-items:center;gap:4px;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:8px;padding:4px 8px">
               <span style="font-size:12px">${icon}</span>
-              <div><div style="font-size:10px;color:var(--cinza);line-height:1.1">${label}</div><div style="font-size:12px;font-weight:600;color:var(--preto);line-height:1.2">${m.hora}</div></div>
+              <div><div style="font-size:10px;opacity:.55;color:var(--preto);line-height:1.1">${label}</div><div style="font-size:12px;font-weight:600;color:var(--preto);line-height:1.2">${m.hora}</div></div>
             </div>`;
           }).join('')
         }</div>`
@@ -4031,9 +4031,9 @@ function _pontoDiaRenderizar() {
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
           <div style="font-weight:600;font-size:13px;color:var(--preto)">${esc(f.nome)}</div>
-          <div style="font-size:11px;color:var(--cinza);flex-shrink:0">RE ${f.re || '—'}</div>
+          <div style="font-size:11px;opacity:.55;flex-shrink:0">RE ${f.re || '—'}</div>
         </div>
-        <div style="font-size:11px;color:var(--cinza);margin-top:1px">${esc(f.posto||'—')}${f.empresa ? ' &middot; ' + esc(f.empresa) : ''}</div>
+        <div style="font-size:11px;opacity:.55;color:var(--preto);margin-top:1px">${esc(f.posto||'—')}${f.empresa ? ' &middot; ' + esc(f.empresa) : ''}</div>
         ${marcStr}
       </div>
     </div>`;
