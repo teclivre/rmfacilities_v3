@@ -1,4 +1,34 @@
 <!-- Modal Detalhe Faturamento -->
+<div id="modal-ponto-dia" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1100;overflow-y:auto;padding:24px 16px">
+  <div style="background:var(--bg,#fff);color:var(--txt,#222);border-radius:12px;max-width:700px;margin:40px auto;padding:0;position:relative;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--borda,#e0e0e0)">
+      <div>
+        <div style="font-size:16px;font-weight:700" id="modal-ponto-titulo">Ponto do dia</div>
+        <div style="font-size:12px;color:#888;margin-top:2px" id="modal-ponto-subtitulo"></div>
+      </div>
+      <button type="button" onclick="document.getElementById('modal-ponto-dia').style.display='none'" style="background:none;border:none;font-size:22px;cursor:pointer;color:#888;line-height:1">&times;</button>
+    </div>
+    <div style="padding:4px 12px 8px">
+      <input type="text" id="modal-ponto-busca" placeholder="Buscar por nome, posto ou empresa..." oninput="_pontoDiaFiltrar()" style="width:100%;margin:10px 0;box-sizing:border-box">
+    </div>
+    <div id="modal-ponto-body" style="padding:0 12px 20px;max-height:60vh;overflow-y:auto">Carregando...</div>
+  </div>
+</div>
+<div id="modal-ponto-dia" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1100;overflow-y:auto;padding:24px 16px">
+  <div style="background:var(--bg,#fff);color:var(--txt,#222);border-radius:12px;max-width:700px;margin:40px auto;padding:0;position:relative;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--borda,#e0e0e0)">
+      <div>
+        <div style="font-size:16px;font-weight:700" id="modal-ponto-titulo">Ponto do dia</div>
+        <div style="font-size:12px;color:#888;margin-top:2px" id="modal-ponto-subtitulo"></div>
+      </div>
+      <button type="button" onclick="document.getElementById('modal-ponto-dia').style.display='none'" style="background:none;border:none;font-size:22px;cursor:pointer;color:#888;line-height:1">&times;</button>
+    </div>
+    <div style="padding:4px 12px 8px">
+      <input type="text" id="modal-ponto-busca" placeholder="Buscar por nome, posto ou empresa..." oninput="_pontoDiaFiltrar()" style="width:100%;margin:10px 0;box-sizing:border-box">
+    </div>
+    <div id="modal-ponto-body" style="padding:0 12px 20px;max-height:60vh;overflow-y:auto">Carregando...</div>
+  </div>
+</div>
 <div id="modal-fat-detalhe" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:24px 16px">
   <div style="background:#fff;color:#222;border-radius:10px;max-width:600px;margin:40px auto;padding:24px;position:relative">
     <span class="close" style="color:#666" onclick="fecharModalFatDetalhe()">&times;</span>
@@ -486,14 +516,14 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div class="card" style="margin-bottom:12px">
         <div class="card-header"><span class="card-title">Ponto do dia</span><span style="font-size:11px;color:#888" id="dash-ponto-data"></span></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:12px 0;text-align:center">
-          <div>
+          <button type="button" class="metric metric-btn" style="background:none;border:2px solid #4caf50;border-radius:10px;padding:16px 8px;cursor:pointer" onclick="abrirModalPontoDia('bateram')">
             <div style="font-size:36px;font-weight:700;color:#4caf50" id="dash-ponto-bateram">—</div>
             <div style="font-size:13px;color:#888;margin-top:4px">✅ Bateram ponto</div>
-          </div>
-          <div>
+          </button>
+          <button type="button" class="metric metric-btn" style="background:none;border:2px solid #e53935;border-radius:10px;padding:16px 8px;cursor:pointer" onclick="abrirModalPontoDia('falta')">
             <div style="font-size:36px;font-weight:700;color:#e53935" id="dash-ponto-falta">—</div>
             <div style="font-size:13px;color:#888;margin-top:4px">❌ Falta / sem registro</div>
-          </div>
+          </button>
         </div>
       </div>
       <div class="card">
@@ -3511,6 +3541,7 @@ function filtrarSSTFuncionarios(){
 }
 
 async function loadDash(){
+  _pontoDiaData = null; // invalidar cache ao recarregar dashboard
   const d=await api('/api/dashboard');
   if(d?.erro){
     const al=document.getElementById('dash-alertas');
@@ -3935,6 +3966,80 @@ async function renderRhFerias(){
   }).join('');
   if(res) res.textContent=`${lista.length} colaborador(es) em férias.`;
 }
+
+// ── Modal Ponto do Dia ───────────────────────────────────────────────────────
+let _pontoDiaData = null;
+let _pontoDiaFiltro = 'bateram';
+
+async function abrirModalPontoDia(filtro) {
+  _pontoDiaFiltro = filtro || 'bateram';
+  const modal = document.getElementById('modal-ponto-dia');
+  const body = document.getElementById('modal-ponto-body');
+  const busca = document.getElementById('modal-ponto-busca');
+  if (busca) busca.value = '';
+  modal.style.display = 'block';
+  body.innerHTML = '<div style="padding:24px;text-align:center;color:#888">Carregando...</div>';
+
+  if (!_pontoDiaData) {
+    const d = await api('/api/dashboard/ponto-dia');
+    if (!d || d.erro) {
+      body.innerHTML = '<div style="padding:24px;text-align:center;color:#c33">Erro ao carregar dados.</div>';
+      return;
+    }
+    _pontoDiaData = d;
+  }
+  _pontoDiaRenderizar();
+}
+
+function _pontoDiaFiltrar() {
+  _pontoDiaRenderizar();
+}
+
+function _pontoDiaRenderizar() {
+  const body = document.getElementById('modal-ponto-body');
+  const tituloEl = document.getElementById('modal-ponto-titulo');
+  const subtituloEl = document.getElementById('modal-ponto-subtitulo');
+  const busca = (document.getElementById('modal-ponto-busca')?.value || '').trim().toLowerCase();
+  if (!_pontoDiaData) return;
+
+  const lista = _pontoDiaFiltro === 'bateram' ? _pontoDiaData.bateram : _pontoDiaData.nao_bateram;
+  const filtrada = busca
+    ? lista.filter(f =>
+        (f.nome || '').toLowerCase().includes(busca) ||
+        (f.posto || '').toLowerCase().includes(busca) ||
+        (f.empresa || '').toLowerCase().includes(busca)
+      )
+    : lista;
+
+  const isBateram = _pontoDiaFiltro === 'bateram';
+  tituloEl.textContent = isBateram ? '✅ Bateram ponto hoje' : '❌ Falta / sem registro hoje';
+  subtituloEl.textContent = `${filtrada.length} funcionário(s) · ${_pontoDiaData.data}`;
+
+  if (!filtrada.length) {
+    body.innerHTML = `<div style="padding:24px;text-align:center;color:#888">${isBateram ? 'Nenhum funcionário bateu ponto ainda hoje.' : 'Todos os funcionários já bateram ponto hoje! 🎉'}</div>`;
+    return;
+  }
+
+  body.innerHTML = filtrada.map(f => {
+    const marcStr = isBateram
+      ? (f.marcacoes || []).map(m => `<span style="display:inline-block;background:#e8f5e9;color:#2e7d32;border-radius:4px;padding:1px 6px;font-size:11px;margin:1px">${m.tipo} ${m.hora}</span>`).join(' ')
+      : '';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--borda,#eee)">
+      <div style="width:36px;height:36px;border-radius:50%;background:${isBateram ? '#e8f5e9' : '#ffebee'};display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${isBateram ? '✅' : '❌'}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px">${esc(f.nome)}</div>
+        <div style="font-size:11px;color:#888;margin-top:2px">${esc(f.posto)}${f.empresa ? ' · ' + esc(f.empresa) : ''}</div>
+        ${marcStr ? `<div style="margin-top:4px">${marcStr}</div>` : ''}
+      </div>
+      <div style="font-size:11px;color:#888;flex-shrink:0">RE ${f.re || '—'}</div>
+    </div>`;
+  }).join('');
+}
+
+document.getElementById('modal-ponto-dia').addEventListener('click', function(e) {
+  if (e.target === this) this.style.display = 'none';
+});
+// ────────────────────────────────────────────────────────────────────────────
 
 async function abrirDashboardDestino(destino,empresaId=null){
   if(destino==='clientes'){

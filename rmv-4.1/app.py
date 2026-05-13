@@ -13884,6 +13884,63 @@ def api_financeiro_salarios_export_pdf():
     nome=f"pagamento_salarios_{comp_nome}{sufixo_versao}.pdf"
     return send_file(buf,mimetype='application/pdf',as_attachment=False,download_name=nome)
 
+@app.route('/api/dashboard/ponto-dia')
+@lr
+def api_dashboard_ponto_dia():
+    """Retorna lista de funcionários ativos que bateram e não bateram ponto hoje."""
+    hoje = localnow().date()
+    inicio_dia = datetime.combine(hoje, __import__('datetime').time.min)
+    fim_dia = datetime.combine(hoje, __import__('datetime').time.max)
+
+    # Funcionários ativos
+    funcs_ativos = Funcionario.query.filter_by(status='Ativo').order_by(Funcionario.nome).all()
+    emps_map = {e.id: e.nome for e in Empresa.query.all()}
+
+    # Quem bateu ponto hoje e quantas marcações
+    marcacoes_hoje = PontoMarcacao.query.filter(
+        PontoMarcacao.data_hora >= inicio_dia,
+        PontoMarcacao.data_hora <= fim_dia
+    ).all()
+
+    from collections import defaultdict
+    marc_por_func = defaultdict(list)
+    for m in marcacoes_hoje:
+        marc_por_func[m.funcionario_id].append(m)
+
+    ids_ativos = {f.id for f in funcs_ativos}
+
+    bateram = []
+    nao_bateram = []
+    for f in funcs_ativos:
+        emp_nome = emps_map.get(f.empresa_id, '') if f.empresa_id else ''
+        info = {
+            'id': f.id,
+            'nome': f.nome or '',
+            're': f.re or '',
+            'matricula': f.matricula or '',
+            'cargo': f.cargo or '',
+            'posto': f.posto_operacional or 'Reserva técnica',
+            'empresa': emp_nome,
+        }
+        marcacoes = marc_por_func.get(f.id, [])
+        if marcacoes:
+            marcacoes_sorted = sorted(marcacoes, key=lambda m: m.data_hora)
+            info['marcacoes'] = [
+                {'tipo': m.tipo, 'hora': m.data_hora.strftime('%H:%M')}
+                for m in marcacoes_sorted
+            ]
+            info['ultima_hora'] = marcacoes_sorted[-1].data_hora.strftime('%H:%M')
+            bateram.append(info)
+        else:
+            nao_bateram.append(info)
+
+    return jsonify({
+        'ok': True,
+        'data': hoje.strftime('%d/%m/%Y'),
+        'bateram': bateram,
+        'nao_bateram': nao_bateram,
+    })
+
 @app.route('/api/dashboard')
 @lr
 def api_dashboard():
