@@ -8204,10 +8204,12 @@ def api_app_ponto_marcar_me():
         try:
             from datetime import timezone
             dh_c=datetime.fromisoformat(dh_cliente_raw.replace('Z','+00:00'))
-            dh_c=dh_c.astimezone(timezone.utc).replace(tzinfo=None)
+            # utcnow() retorna hora local (Brasília/APP_TZ), não UTC.
+            # Convertemos o timestamp do cliente para APP_TZ antes de comparar.
+            dh_c_local=dh_c.astimezone(APP_TZ).replace(tzinfo=None)
             agora=utcnow()
-            if dh_c<=agora+timedelta(minutes=2) and dh_c>=agora-timedelta(hours=24):
-                data_hora=dh_c
+            if dh_c_local<=agora+timedelta(minutes=2) and dh_c_local>=agora-timedelta(hours=24):
+                data_hora=dh_c_local
         except (ValueError,TypeError):
             pass
     if data_hora>(utcnow()+timedelta(minutes=2)):
