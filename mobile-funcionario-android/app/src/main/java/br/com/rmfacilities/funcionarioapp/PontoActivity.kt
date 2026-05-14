@@ -39,6 +39,16 @@ import androidx.lifecycle.lifecycleScope
 
 class PontoActivity : AppCompatActivity() {
 
+    // Marcações registradas localmente (offline ou com erro) ainda não confirmadas pelo servidor
+    enum class LocalStatus { PENDING, ERROR }
+    data class LocalMarcacao(
+        val hora: String,
+        val tipoLabel: String,
+        val status: LocalStatus,
+        val timestamp: Long = System.currentTimeMillis()
+    )
+    private val localPendentes = mutableListOf<LocalMarcacao>()
+
     private lateinit var api: ApiClient
     private lateinit var retryQueue: ActionRetryQueue
     private lateinit var tvData: TextView
@@ -197,6 +207,10 @@ class PontoActivity : AppCompatActivity() {
                 retryQueue.enqueuePonto(loc.latitude, loc.longitude, loc.accuracy, System.currentTimeMillis())
                 updateStatus("Sem internet. Ponto salvo offline — será sincronizado automaticamente.", R.color.mobile_semantic_pending)
                 btnMarcarPonto.isEnabled = true
+                val hora = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                val tipoLabel = tvProximoTipo.text?.toString()?.removePrefix("Próxima marcação: ") ?: "Marcação"
+                localPendentes.add(LocalMarcacao(hora, tipoLabel, LocalStatus.PENDING))
+                renderMarcacoesComLocais(null)
                 atualizarBadgePendentes()
                 return@launch
             }
@@ -211,12 +225,17 @@ class PontoActivity : AppCompatActivity() {
 
             btnMarcarPonto.isEnabled = true
             if (resp.ok) {
+                localPendentes.clear() // servidor confirmou, limpa locais
                 renderResumo(resp.resumo)
                 btnMarcarPonto.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
                 updateStatus("Ponto registrado com localização.", R.color.mobile_semantic_success)
             } else {
+                val hora = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                val tipoLabel = tvProximoTipo.text?.toString()?.removePrefix("Próxima marcação: ") ?: "Marcação"
+                localPendentes.add(LocalMarcacao(hora, tipoLabel, LocalStatus.ERROR))
+                renderMarcacoesComLocais(null)
                 retryQueue.enqueuePonto(loc.latitude, loc.longitude, loc.accuracy, System.currentTimeMillis())
-                updateStatus("Sem conexão. Ponto salvo offline — será sincronizado automaticamente.", R.color.mobile_semantic_pending)
+                updateStatus("Falha ao enviar. Ponto salvo — será sincronizado automaticamente.", R.color.mobile_semantic_pending)
                 atualizarBadgePendentes()
             }
         }
@@ -228,6 +247,7 @@ class PontoActivity : AppCompatActivity() {
             val resp = try { api.getPontoDia() } catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message) }
             withContext(Dispatchers.Main) {
                 if (resp.ok) {
+                    localPendentes.clear() // servidor confirmou todas as marcações
                     renderResumo(resp.resumo)
                     updateStatus("Atualizado agora.", R.color.mobile_semantic_info)
                 } else {
@@ -255,9 +275,15 @@ class PontoActivity : AppCompatActivity() {
             tvInconsistencia.visibility = View.GONE
         }
 
+        renderMarcacoesComLocais(resumo)
+    }
+
+    private fun renderMarcacoesComLocais(resumo: PontoResumo?) {
         containerMarcacoes.removeAllViews()
+        val dp = resources.displayMetrics.density
         val items = resumo?.marcacoes ?: emptyList()
-        if (items.isEmpty()) {
+
+        if (items.isEmpty() && localPendentes.isEmpty()) {
             val empty = TextView(this).apply {
                 text = "Nenhuma marcação hoje."
                 setTextColor(ContextCompat.getColor(this@PontoActivity, R.color.mobile_text_secondary))
@@ -268,80 +294,128 @@ class PontoActivity : AppCompatActivity() {
             return
         }
 
-        val dp = resources.displayMetrics.density
-
+        // Marcações confirmadas pelo servidor (verde via emoji)
         for (m in items) {
-            // Card row
-            val card = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                background = ContextCompat.getDrawable(this@PontoActivity, R.drawable.bg_home_card_soft)
-                setPadding((14 * dp).toInt(), (14 * dp).toInt(), (14 * dp).toInt(), (14 * dp).toInt())
-            }
-            val cardParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = (8 * dp).toInt() }
-            card.layoutParams = cardParams
-
-            // Ícone tipo (emoji por tipo)
-            val tipoEmoji = when (m.tipo) {
-                "entrada" -> "🟢"
-                "saida_intervalo" -> "☕"
-                "retorno_intervalo" -> "🔵"
-                "saida" -> "🔴"
-                else -> "🕐"
-            }
-            val tvEmoji = TextView(this).apply {
-                text = tipoEmoji
-                textSize = 20f
-                setPadding(0, 0, (10 * dp).toInt(), 0)
-            }
-            card.addView(tvEmoji)
-
-            // Hora + label
-            val infoCol = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            }
-            val tvHora = TextView(this).apply {
-                text = m.hora_fmt ?: "--:--"
-                setTextColor(ContextCompat.getColor(this@PontoActivity, R.color.mobile_text_primary))
-                textSize = 18f
-                setTypeface(null, Typeface.BOLD)
-            }
-            val tvLabel = TextView(this).apply {
-                text = m.tipo_label ?: m.tipo ?: "Marcação"
-                setTextColor(ContextCompat.getColor(this@PontoActivity, R.color.mobile_text_secondary))
-                textSize = 11f
-            }
-            infoCol.addView(tvHora)
-            infoCol.addView(tvLabel)
-            card.addView(infoCol)
-
-            // Botão mapa (se tiver localização)
-            if (m.lat != null && m.lon != null && (m.lat != 0.0 || m.lon != 0.0)) {
-                val btnMapa = TextView(this).apply {
-                    text = "📍"
-                    textSize = 20f
-                    setPadding((8 * dp).toInt(), 0, 0, 0)
-                    isClickable = true
-                    isFocusable = true
-                    setOnClickListener {
-                        performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        startActivity(Intent(this@PontoActivity, PontoMapaActivity::class.java).apply {
-                            putExtra(PontoMapaActivity.EXTRA_LAT, m.lat)
-                            putExtra(PontoMapaActivity.EXTRA_LON, m.lon)
-                            putExtra(PontoMapaActivity.EXTRA_HORA, m.hora_fmt ?: "--:--")
-                            putExtra(PontoMapaActivity.EXTRA_TIPO, m.tipo_label ?: "Marcação")
-                        })
-                    }
-                }
-                card.addView(btnMapa)
-            }
-
-            containerMarcacoes.addView(card)
+            adicionarCardMarcacao(
+                hora = m.hora_fmt ?: "--:--",
+                tipoLabel = m.tipo_label ?: m.tipo ?: "Marcação",
+                tipoEmoji = when (m.tipo) {
+                    "entrada" -> "🟢"
+                    "saida_intervalo" -> "☕"
+                    "retorno_intervalo" -> "🔵"
+                    "saida" -> "🔴"
+                    else -> "🕐"
+                },
+                statusColor = ContextCompat.getColor(this, R.color.mobile_text_primary),
+                statusBadge = null,
+                lat = m.lat,
+                lon = m.lon,
+                dp = dp
+            )
         }
+
+        // Marcações locais pendentes (azul = offline, vermelho = erro)
+        for (local in localPendentes) {
+            val (badgeText, badgeColor) = when (local.status) {
+                LocalStatus.PENDING -> Pair("⏳ offline", ContextCompat.getColor(this, R.color.mobile_semantic_info))
+                LocalStatus.ERROR   -> Pair("❌ erro ao enviar", ContextCompat.getColor(this, R.color.error))
+            }
+            adicionarCardMarcacao(
+                hora = local.hora,
+                tipoLabel = local.tipoLabel,
+                tipoEmoji = when (local.status) {
+                    LocalStatus.PENDING -> "🔵"
+                    LocalStatus.ERROR   -> "🔴"
+                },
+                statusColor = badgeColor,
+                statusBadge = badgeText,
+                lat = null,
+                lon = null,
+                dp = dp
+            )
+        }
+    }
+
+    private fun adicionarCardMarcacao(
+        hora: String,
+        tipoLabel: String,
+        tipoEmoji: String,
+        statusColor: Int,
+        statusBadge: String?,
+        lat: Double?,
+        lon: Double?,
+        dp: Float
+    ) {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = ContextCompat.getDrawable(this@PontoActivity, R.drawable.bg_home_card_soft)
+            setPadding((14 * dp).toInt(), (14 * dp).toInt(), (14 * dp).toInt(), (14 * dp).toInt())
+        }
+        val cardParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = (8 * dp).toInt() }
+        card.layoutParams = cardParams
+
+        val tvEmoji = TextView(this).apply {
+            text = tipoEmoji
+            textSize = 20f
+            setPadding(0, 0, (10 * dp).toInt(), 0)
+        }
+        card.addView(tvEmoji)
+
+        val infoCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val tvHora = TextView(this).apply {
+            text = hora
+            setTextColor(statusColor)
+            textSize = 18f
+            setTypeface(null, Typeface.BOLD)
+        }
+        val tvLabel = TextView(this).apply {
+            text = tipoLabel
+            setTextColor(ContextCompat.getColor(this@PontoActivity, R.color.mobile_text_secondary))
+            textSize = 11f
+        }
+        infoCol.addView(tvHora)
+        infoCol.addView(tvLabel)
+
+        if (statusBadge != null) {
+            val tvBadge = TextView(this).apply {
+                text = statusBadge
+                setTextColor(statusColor)
+                textSize = 10f
+                setPadding(0, 2, 0, 0)
+            }
+            infoCol.addView(tvBadge)
+        }
+
+        card.addView(infoCol)
+
+        if (lat != null && lon != null && (lat != 0.0 || lon != 0.0)) {
+            val btnMapa = TextView(this).apply {
+                text = "📍"
+                textSize = 20f
+                setPadding((8 * dp).toInt(), 0, 0, 0)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    startActivity(Intent(this@PontoActivity, PontoMapaActivity::class.java).apply {
+                        putExtra(PontoMapaActivity.EXTRA_LAT, lat)
+                        putExtra(PontoMapaActivity.EXTRA_LON, lon)
+                        putExtra(PontoMapaActivity.EXTRA_HORA, hora)
+                        putExtra(PontoMapaActivity.EXTRA_TIPO, tipoLabel)
+                    })
+                }
+            }
+            card.addView(btnMapa)
+        }
+
+        containerMarcacoes.addView(card)
     }
 
     private fun updateStatus(message: String, colorRes: Int) {
