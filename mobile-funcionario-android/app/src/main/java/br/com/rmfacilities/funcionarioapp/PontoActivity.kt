@@ -9,7 +9,9 @@ import android.graphics.Typeface
 import android.location.Location
 import android.location.LocationManager
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -61,6 +63,8 @@ class PontoActivity : AppCompatActivity() {
     private lateinit var containerMarcacoes: LinearLayout
     private lateinit var btnMarcarPonto: MaterialButton
     private lateinit var btnAtualizarPonto: MaterialButton
+
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -144,6 +148,54 @@ class PontoActivity : AppCompatActivity() {
         // Atualiza data caso o app ficou aberto após meia-noite
         tvData.text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
         atualizarBadgePendentes()
+        registrarCallbackRede()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        desregistrarCallbackRede()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        desregistrarCallbackRede()
+    }
+
+    private fun registrarCallbackRede() {
+        if (networkCallback != null) return
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                // Voltou a internet: processa fila e atualiza marcações
+                lifecycleScope.launch(Dispatchers.IO) {
+                    try {
+                        retryQueue.process(ApiClient(SessionManager(this@PontoActivity)))
+                    } catch (_: Exception) {}
+                    withContext(Dispatchers.Main) {
+                        if (retryQueue.pendingCount() == 0 && localPendentes.isNotEmpty()) {
+                            // Todos sincronizados — recarrega do servidor para mostrar verde
+                            carregarDia()
+                        } else {
+                            atualizarBadgePendentes()
+                        }
+                    }
+                }
+            }
+        }
+        try {
+            cm.registerNetworkCallback(NetworkRequest.Builder().build(), networkCallback!!)
+        } catch (_: Exception) {
+            networkCallback = null
+        }
+    }
+
+    private fun desregistrarCallbackRede() {
+        val cb = networkCallback ?: return
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            cm.unregisterNetworkCallback(cb)
+        } catch (_: Exception) {}
+        networkCallback = null
     }
 
     /** Solicita localização atual via FusedLocationProviderClient (alta precisão, até 15s). */
