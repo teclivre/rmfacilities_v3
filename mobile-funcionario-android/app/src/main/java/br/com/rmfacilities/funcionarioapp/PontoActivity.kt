@@ -369,6 +369,8 @@ class PontoActivity : AppCompatActivity() {
             btnMarcarPonto.isEnabled = true
             if (resp.ok) {
                 localPendentes.clear() // servidor confirmou, limpa locais
+                val marcacoesResp = resp.resumo?.marcacoes
+                if (!marcacoesResp.isNullOrEmpty()) salvarCacheMarcacoes(marcacoesResp)
                 renderResumo(resp.resumo)
                 btnMarcarPonto.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
                 // Animação de pulso de confirmação
@@ -392,14 +394,19 @@ class PontoActivity : AppCompatActivity() {
 
     // ── Cache de marcações (SharedPreferences) ──────────────────────────────────
 
+    private fun cacheKeyHoje(): String {
+        val hoje = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+        return "marcacoes_$hoje"
+    }
+
     private fun salvarCacheMarcacoes(marcacoes: List<PontoMarcacaoItem>) {
         val prefs = getSharedPreferences("ponto_cache", Context.MODE_PRIVATE)
-        prefs.edit().putString("marcacoes_hoje", gson.toJson(marcacoes)).apply()
+        prefs.edit().putString(cacheKeyHoje(), gson.toJson(marcacoes)).apply()
     }
 
     private fun carregarCacheMarcacoes(): List<PontoMarcacaoItem> {
         val prefs = getSharedPreferences("ponto_cache", Context.MODE_PRIVATE)
-        val json = prefs.getString("marcacoes_hoje", null) ?: return emptyList()
+        val json = prefs.getString(cacheKeyHoje(), null) ?: return emptyList()
         return try {
             val type = object : TypeToken<List<PontoMarcacaoItem>>() {}.type
             gson.fromJson(json, type) ?: emptyList()
