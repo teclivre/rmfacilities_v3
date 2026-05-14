@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.Context
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.location.Location
@@ -143,57 +144,63 @@ class PontoActivity : AppCompatActivity() {
             carregarDia()
         }
 
-        // Botão Histórico 3 dias
+        // Linha de atalhos: Histórico e Folha de Ponto lado a lado
+        val dpF = resources.displayMetrics.density
+
         val btnHistorico = MaterialButton(this).apply {
-            text = "Ver últimos 3 dias"
+            text = "📅  Ver Histórico"
             textSize = 13f
-            setBackgroundColor(android.graphics.Color.TRANSPARENT)
-            setTextColor(ContextCompat.getColor(this@PontoActivity, R.color.mobile_semantic_info))
-            strokeColor = android.content.res.ColorStateList.valueOf(
-                ContextCompat.getColor(this@PontoActivity, R.color.mobile_card_border)
-            )
-            strokeWidth = 2
-            setPadding(12, 0, 12, 0)
+            letterSpacing = 0.01f
+            cornerRadius = (14 * dpF).toInt()
+            backgroundTintList = ColorStateList.valueOf(0xFF1565C0.toInt())
+            setTextColor(Color.WHITE)
+            iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
+            elevation = 4f
+            stateListAnimator = null
             minWidth = 0
             minimumWidth = 0
+            setPadding((10 * dpF).toInt(), (10 * dpF).toInt(), (10 * dpF).toInt(), (10 * dpF).toInt())
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { marginEnd = (6 * dpF).toInt() }
         }
-        val btnHistoricoParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = (8 * resources.displayMetrics.density).toInt() }
-        btnHistorico.layoutParams = btnHistoricoParams
         btnHistorico.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             startActivity(Intent(this, PontoHistoricoActivity::class.java))
         }
 
-        // Botão Folha de Ponto
         val btnEspelho = MaterialButton(this).apply {
-            text = "Folha de ponto"
+            text = "📄  Folha de Ponto"
             textSize = 13f
-            setBackgroundColor(android.graphics.Color.TRANSPARENT)
-            setTextColor(ContextCompat.getColor(this@PontoActivity, R.color.mobile_semantic_info))
-            strokeColor = android.content.res.ColorStateList.valueOf(
-                ContextCompat.getColor(this@PontoActivity, R.color.mobile_card_border)
-            )
-            strokeWidth = 2
-            setPadding(12, 0, 12, 0)
+            letterSpacing = 0.01f
+            cornerRadius = (14 * dpF).toInt()
+            backgroundTintList = ColorStateList.valueOf(0xFF1B5E20.toInt())
+            setTextColor(Color.WHITE)
+            iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
+            elevation = 4f
+            stateListAnimator = null
             minWidth = 0
             minimumWidth = 0
+            setPadding((10 * dpF).toInt(), (10 * dpF).toInt(), (10 * dpF).toInt(), (10 * dpF).toInt())
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val btnEspelhoParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = (4 * resources.displayMetrics.density).toInt() }
-        btnEspelho.layoutParams = btnEspelhoParams
         btnEspelho.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             startActivity(Intent(this, PontoEspelhoActivity::class.java))
         }
 
-        // Insere botões extras no container principal (após btnAtualizarPonto)
+        val rowBtns = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = (10 * dpF).toInt() }
+            addView(btnHistorico)
+            addView(btnEspelho)
+        }
+
         val scrollContent = (findViewById<android.widget.ScrollView>(R.id.scrollPonto)
             .getChildAt(0) as? LinearLayout)
-        scrollContent?.addView(btnHistorico, scrollContent.indexOfChild(btnAtualizarPonto) + 1)
-        scrollContent?.addView(btnEspelho, scrollContent.indexOfChild(btnAtualizarPonto) + 2)
+        scrollContent?.addView(rowBtns, scrollContent.indexOfChild(btnAtualizarPonto) + 1)
 
         findViewById<BottomNavigationView>(R.id.bottomNavPonto).apply {
             selectedItemId = R.id.nav_ponto
