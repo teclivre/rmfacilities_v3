@@ -185,11 +185,32 @@ data class PontoResumo(
     val horas_esperadas_fmt: String? = null,
     val saldo_fmt: String? = null,
     val status: String? = null,
-    val inconsistencias: List<String> = emptyList()
+    val inconsistencias: List<String> = emptyList(),
+    val fechado: Boolean = false,
+    val fechado_por: String? = null
 )
 
 data class PontoDiaResponse(
     val ok: Boolean = false,
     val erro: String? = null,
     val resumo: PontoResumo? = null
+)
+
+data class PontoHistoricoResponse(
+    val ok: Boolean = false,
+    val erro: String? = null,
+    val dias: List<PontoResumo> = emptyList()
+)
+
+data class PontoEspelhoCompetencia(
+    val competencia: String = "",
+    val label: String = "",
+    val pode_baixar: Boolean = false,
+    val fechamentos_dias: Int = 0
+)
+
+data class PontoEspelhoStatusResponse(
+    val ok: Boolean = false,
+    val erro: String? = null,
+    val competencias: List<PontoEspelhoCompetencia> = emptyList()
 )

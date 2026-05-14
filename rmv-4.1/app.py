@@ -8385,6 +8385,181 @@ def api_app_ponto_marcar_me():
         'resumo':_app_ponto_resumo_dia(f,data_ref)
     })
 
+@app.route('/api/app/funcionario/me/ponto/historico')
+@app_func_required
+def api_app_ponto_historico_me():
+    """Retorna resumo de ponto dos últimos N dias (padrão 3, máx 7)."""
+    f=g.app_funcionario
+    try:
+        dias=max(1,min(7,int(request.args.get('dias',3))))
+    except (ValueError,TypeError):
+        dias=3
+    hoje=localnow().date()
+    resultado=[]
+    for i in range(dias):
+        data_ref=hoje-timedelta(days=i)
+        resumo=_app_ponto_resumo_dia(f,data_ref)
+        fd=PontoFechamentoDia.query.filter_by(
+            funcionario_id=f.id,
+            data_ref=data_ref.isoformat()
+        ).first()
+        resumo['fechado']=fd is not None
+        resumo['fechado_por']=(fd.fechado_por or '') if fd else ''
+        resultado.append(resumo)
+    return jsonify({'ok':True,'dias':resultado})
+
+@app.route('/api/app/funcionario/me/ponto/espelho/status')
+@app_func_required
+def api_app_ponto_espelho_status_me():
+    """Retorna lista de competências com status de fechamento para download."""
+    import calendar as _cal
+    f=g.app_funcionario
+    hoje=localnow().date()
+    competencias=[]
+    for i in range(12):
+        ano=hoje.year
+        mes=hoje.month-i
+        while mes<=0:
+            mes+=12
+            ano-=1
+        ultimo_dia=_cal.monthrange(ano,mes)[1]
+        dt_ini=date(ano,mes,1)
+        dt_fim=date(ano,mes,ultimo_dia)
+        comp=f'{ano}-{mes:02d}'
+        fechamentos=PontoFechamentoDia.query.filter(
+            PontoFechamentoDia.funcionario_id==f.id,
+            PontoFechamentoDia.data_ref>=dt_ini.isoformat(),
+            PontoFechamentoDia.data_ref<=dt_fim.isoformat(),
+        ).count()
+        pode_baixar=fechamentos>0
+        meses_pt=['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                  'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+        competencias.append({
+            'competencia':comp,
+            'label':f'{meses_pt[mes-1]}/{ano}',
+            'pode_baixar':pode_baixar,
+            'fechamentos_dias':fechamentos,
+        })
+    return jsonify({'ok':True,'competencias':competencias})
+
+@app.route('/api/app/funcionario/me/ponto/espelho/pdf')
+@app_func_required
+def api_app_ponto_espelho_pdf_me():
+    """Gera e retorna PDF da folha de ponto somente se fechada pelo gestor."""
+    import calendar as _cal
+    f=g.app_funcionario
+    competencia=(request.args.get('competencia') or '').strip()
+    if not re.match(r'^\d{4}-\d{2}$',competencia):
+        return jsonify({'erro':'Competência inválida.'}),400
+    try:
+        ano,mes=int(competencia[:4]),int(competencia[5:7])
+        if not (1<=mes<=12 and 2000<=ano<=2100):
+            raise ValueError()
+    except (ValueError,TypeError):
+        return jsonify({'erro':'Competência inválida.'}),400
+    ultimo_dia=_cal.monthrange(ano,mes)[1]
+    dt_ini=date(ano,mes,1)
+    dt_fim=date(ano,mes,ultimo_dia)
+    fechamentos_count=PontoFechamentoDia.query.filter(
+        PontoFechamentoDia.funcionario_id==f.id,
+        PontoFechamentoDia.data_ref>=dt_ini.isoformat(),
+        PontoFechamentoDia.data_ref<=dt_fim.isoformat(),
+    ).count()
+    if fechamentos_count==0:
+        return jsonify({'erro':'Folha ainda não fechada pelo gestor. Aguarde o fechamento para baixar o PDF.'}),403
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors as rl_colors
+        from reportlab.lib.units import cm
+        from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.enums import TA_LEFT,TA_CENTER
+        buf=io.BytesIO()
+        doc=SimpleDocTemplate(buf,pagesize=A4,
+                              leftMargin=1.5*cm,rightMargin=1.5*cm,
+                              topMargin=1.5*cm,bottomMargin=1.5*cm)
+        meses_pt=['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                  'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+        comp_label=f'{meses_pt[mes-1]}/{ano}'
+        st_title=ParagraphStyle('t',fontSize=13,leading=17,fontName='Helvetica-Bold',alignment=TA_CENTER)
+        st_sub=ParagraphStyle('s',fontSize=10,leading=14,fontName='Helvetica',alignment=TA_CENTER)
+        st_small=ParagraphStyle('sm',fontSize=8,leading=12,fontName='Helvetica',alignment=TA_LEFT)
+        empresa=Empresa.query.first()
+        empresa_nome=(empresa.nome if empresa else '') or 'RM Facilities'
+        elementos=[
+            Paragraph(empresa_nome,st_title),
+            Paragraph(f'Folha de Ponto — {comp_label}',st_sub),
+            Spacer(1,4),
+            Paragraph(
+                f'Funcionário: {f.nome or ""}  |  Cargo: {f.cargo or "-"}  |  Matrícula: {f.matricula or "-"}',
+                st_small
+            ),
+            Spacer(1,10),
+        ]
+        header=['Data','Entrada','S.Int.','R.Int.','Saída','Trabalhadas','Status']
+        rows=[header]
+        total_min=0
+        dias_semana=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom']
+        for dia in range(1,ultimo_dia+1):
+            data_ref=date(ano,mes,dia)
+            resumo=_app_ponto_resumo_dia(f,data_ref)
+            marcacoes=resumo.get('marcacoes',[])
+            def _get_hora(tipo_):
+                for _m in marcacoes:
+                    if _m.get('tipo')==tipo_:
+                        return _m.get('hora_fmt','')
+                return ''
+            dds=dias_semana[data_ref.weekday()]
+            data_str=f'{dds} {data_ref.strftime("%d/%m")}'
+            trab=resumo.get('horas_trabalhadas_fmt','00:00')
+            trab_min=resumo.get('horas_trabalhadas_min',0) or 0
+            total_min+=trab_min
+            status_val='OK' if resumo.get('status')=='ok' else ('Inconsist.' if marcacoes else '-')
+            rows.append([
+                data_str,
+                _get_hora('entrada') or '-',
+                _get_hora('saida_intervalo') or '-',
+                _get_hora('retorno_intervalo') or '-',
+                _get_hora('saida') or '-',
+                trab if marcacoes else '-',
+                status_val,
+            ])
+        total_fmt=f'{total_min//60:02d}:{total_min%60:02d}'
+        rows.append(['','','','','Total:',total_fmt,''])
+        col_widths=[2.5*cm,2.1*cm,2.1*cm,2.1*cm,2.1*cm,2.5*cm,2.6*cm]
+        tbl=Table(rows,colWidths=col_widths)
+        tbl.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),rl_colors.HexColor('#1a1a2e')),
+            ('TEXTCOLOR',(0,0),(-1,0),rl_colors.white),
+            ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+            ('FONTSIZE',(0,0),(-1,-1),8),
+            ('ALIGN',(0,0),(-1,-1),'CENTER'),
+            ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+            ('ROWBACKGROUNDS',(0,1),(-1,-2),[rl_colors.white,rl_colors.HexColor('#f5f5f5')]),
+            ('GRID',(0,0),(-1,-1),0.5,rl_colors.HexColor('#cccccc')),
+            ('FONTNAME',(0,-1),(-1,-1),'Helvetica-Bold'),
+            ('TOPPADDING',(0,0),(-1,-1),4),
+            ('BOTTOMPADDING',(0,0),(-1,-1),4),
+        ]))
+        elementos.append(tbl)
+        elementos.append(Spacer(1,16))
+        ass_tbl=Table([[
+            Paragraph('_________________________<br/>Funcionário',st_small),
+            Paragraph('_________________________<br/>Gestor / RH',st_small),
+        ]],colWidths=[8*cm,8*cm])
+        ass_tbl.setStyle(TableStyle([
+            ('ALIGN',(0,0),(-1,-1),'CENTER'),
+            ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ]))
+        elementos.append(ass_tbl)
+        doc.build(elementos)
+        buf.seek(0)
+        nome_func=(f.nome or 'funcionario').replace(' ','_')
+        return send_file(buf,mimetype='application/pdf',as_attachment=True,
+                         download_name=f'folha_ponto_{nome_func}_{competencia}.pdf')
+    except Exception as e:
+        return jsonify({'erro':f'Erro ao gerar PDF: {str(e)}'}),500
+
 # ============================================================
 # JORNADAS DE TRABALHO
 # ============================================================

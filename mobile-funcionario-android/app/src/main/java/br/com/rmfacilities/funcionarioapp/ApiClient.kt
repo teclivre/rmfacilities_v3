@@ -666,6 +666,48 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    fun getPontoHistorico(dias: Int = 3): PontoHistoricoResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ponto/historico?dias=$dias"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try { gson.fromJson(raw, PontoHistoricoResponse::class.java) }
+            catch (_: Exception) { PontoHistoricoResponse(ok = false, erro = "Falha ao carregar histórico.") }
+        }
+    }
+
+    fun getPontoEspelhoStatus(): PontoEspelhoStatusResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ponto/espelho/status"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try { gson.fromJson(raw, PontoEspelhoStatusResponse::class.java) }
+            catch (_: Exception) { PontoEspelhoStatusResponse(ok = false, erro = "Falha ao carregar competências.") }
+        }
+    }
+
+    fun baixarEspelhoPdf(competencia: String): Pair<ByteArray?, String?> {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ponto/espelho/pdf?competencia=${android.net.Uri.encode(competencia)}"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.bytes() ?: return Pair(null, "Resposta vazia do servidor.")
+            if (!resp.isSuccessful) {
+                val msg = try { gson.fromJson(String(raw), Map::class.java)["erro"] as? String } catch (_: Exception) { null }
+                return Pair(null, msg ?: "Erro ao baixar PDF (${resp.code}).")
+            }
+            return Pair(raw, null)
+        }
+    }
+
     fun marcarPonto(tipo: String = "", observacao: String = "", lat: Double? = null, lon: Double? = null, precisao: Float? = null, dataHoraIso: String? = null): PontoDiaResponse =
         marcarPontoInternal(tipo, observacao, lat, lon, precisao, dataHoraIso, tentarRefresh = true)
 

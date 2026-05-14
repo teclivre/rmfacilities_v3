@@ -55,6 +55,12 @@
             android:name=".PontoMapaActivity"
             android:exported="false" />
         <activity
+            android:name=".PontoHistoricoActivity"
+            android:exported="false" />
+        <activity
+            android:name=".PontoEspelhoActivity"
+            android:exported="false" />
+        <activity
             android:name=".AboutActivity"
             android:exported="false" />
         <activity

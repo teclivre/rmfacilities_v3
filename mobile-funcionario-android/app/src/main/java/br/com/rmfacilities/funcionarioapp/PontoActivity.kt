@@ -27,6 +27,8 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -50,6 +52,11 @@ class PontoActivity : AppCompatActivity() {
         val timestamp: Long = System.currentTimeMillis()
     )
     private val localPendentes = mutableListOf<LocalMarcacao>()
+    // IDs das marcações confirmadas pelo servidor na última sincronização bem-sucedida
+    private val idsMarcacoesConfirmadas = mutableSetOf<Int>()
+    // Marcações excluídas pelo admin (estavam no cache mas sumiram do servidor)
+    data class MarcacaoExcluida(val id: Int, val hora: String, val tipoLabel: String)
+    private val marcacoesExcluidas = mutableListOf<MarcacaoExcluida>()
 
     private lateinit var api: ApiClient
     private lateinit var retryQueue: ActionRetryQueue
@@ -65,6 +72,8 @@ class PontoActivity : AppCompatActivity() {
     private lateinit var btnAtualizarPonto: MaterialButton
 
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var primeiraCarregada = false
+    private val gson = Gson()
 
     private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -114,6 +123,58 @@ class PontoActivity : AppCompatActivity() {
             carregarDia()
         }
 
+        // Botão Histórico 3 dias
+        val btnHistorico = MaterialButton(this).apply {
+            text = "Ver últimos 3 dias"
+            textSize = 13f
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            setTextColor(ContextCompat.getColor(this@PontoActivity, R.color.mobile_semantic_info))
+            strokeColor = android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(this@PontoActivity, R.color.mobile_card_border)
+            )
+            strokeWidth = 2
+            setPadding(12, 0, 12, 0)
+            minWidth = 0
+            minimumWidth = 0
+        }
+        val btnHistoricoParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = (8 * resources.displayMetrics.density).toInt() }
+        btnHistorico.layoutParams = btnHistoricoParams
+        btnHistorico.setOnClickListener {
+            startActivity(Intent(this, PontoHistoricoActivity::class.java))
+        }
+
+        // Botão Folha de Ponto
+        val btnEspelho = MaterialButton(this).apply {
+            text = "Folha de ponto"
+            textSize = 13f
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            setTextColor(ContextCompat.getColor(this@PontoActivity, R.color.mobile_semantic_info))
+            strokeColor = android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(this@PontoActivity, R.color.mobile_card_border)
+            )
+            strokeWidth = 2
+            setPadding(12, 0, 12, 0)
+            minWidth = 0
+            minimumWidth = 0
+        }
+        val btnEspelhoParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = (4 * resources.displayMetrics.density).toInt() }
+        btnEspelho.layoutParams = btnEspelhoParams
+        btnEspelho.setOnClickListener {
+            startActivity(Intent(this, PontoEspelhoActivity::class.java))
+        }
+
+        // Insere botões extras no container principal (após btnAtualizarPonto)
+        val scrollContent = (findViewById<android.widget.ScrollView>(R.id.scrollPonto)
+            .getChildAt(0) as? LinearLayout)
+        scrollContent?.addView(btnHistorico, scrollContent.indexOfChild(btnAtualizarPonto) + 1)
+        scrollContent?.addView(btnEspelho, scrollContent.indexOfChild(btnAtualizarPonto) + 2)
+
         findViewById<BottomNavigationView>(R.id.bottomNavPonto).apply {
             selectedItemId = R.id.nav_ponto
             setOnItemSelectedListener { item ->
@@ -140,7 +201,10 @@ class PontoActivity : AppCompatActivity() {
             }
         }
 
+        // Mostra cache imediatamente antes de carregar do servidor
+        restaurarCacheMarcacoes()
         carregarDia()
+        primeiraCarregada = true
     }
 
     override fun onResume() {
@@ -149,6 +213,10 @@ class PontoActivity : AppCompatActivity() {
         tvData.text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
         atualizarBadgePendentes()
         registrarCallbackRede()
+        // Recarrega dados ao voltar para a tela (caso marcações tenham sido alteradas)
+        if (primeiraCarregada) {
+            carregarDia()
+        }
     }
 
     override fun onPause() {
@@ -293,6 +361,50 @@ class PontoActivity : AppCompatActivity() {
         }
     }
 
+    // ── Cache de marcações (SharedPreferences) ──────────────────────────────────
+
+    private fun salvarCacheMarcacoes(marcacoes: List<PontoMarcacaoItem>) {
+        val prefs = getSharedPreferences("ponto_cache", Context.MODE_PRIVATE)
+        prefs.edit().putString("marcacoes_hoje", gson.toJson(marcacoes)).apply()
+    }
+
+    private fun carregarCacheMarcacoes(): List<PontoMarcacaoItem> {
+        val prefs = getSharedPreferences("ponto_cache", Context.MODE_PRIVATE)
+        val json = prefs.getString("marcacoes_hoje", null) ?: return emptyList()
+        return try {
+            val type = object : TypeToken<List<PontoMarcacaoItem>>() {}.type
+            gson.fromJson(json, type) ?: emptyList()
+        } catch (_: Exception) { emptyList() }
+    }
+
+    private fun restaurarCacheMarcacoes() {
+        val cached = carregarCacheMarcacoes()
+        if (cached.isNotEmpty()) {
+            containerMarcacoes.removeAllViews()
+            val dp = resources.displayMetrics.density
+            for (m in cached) {
+                adicionarCardMarcacao(
+                    hora = m.hora_fmt ?: "--:--",
+                    tipoLabel = m.tipo_label ?: m.tipo ?: "Marcação",
+                    tipoEmoji = emojiPorTipo(m.tipo),
+                    statusColor = ContextCompat.getColor(this, R.color.mobile_text_primary),
+                    statusBadge = null,
+                    lat = m.lat, lon = m.lon, dp = dp
+                )
+            }
+        }
+    }
+
+    private fun emojiPorTipo(tipo: String?) = when (tipo) {
+        "entrada" -> "🟢"
+        "saida_intervalo" -> "☕"
+        "retorno_intervalo" -> "🔵"
+        "saida" -> "🔴"
+        else -> "🕐"
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+
     private fun carregarDia() {
         updateStatus("Atualizando...", R.color.mobile_semantic_info)
         lifecycleScope.launch {
@@ -300,12 +412,31 @@ class PontoActivity : AppCompatActivity() {
             withContext(Dispatchers.Main) {
                 if (resp.ok) {
                     localPendentes.clear() // servidor confirmou todas as marcações
+                    // Detectar marcações excluídas pelo admin
+                    val novosIds = resp.resumo?.marcacoes?.map { it.id }?.toSet() ?: emptySet()
+                    val excluidas = idsMarcacoesConfirmadas.filter { it !in novosIds }
+                    if (excluidas.isNotEmpty()) {
+                        val cache = carregarCacheMarcacoes()
+                        excluidas.forEach { id ->
+                            val mExcl = cache.find { it.id == id }
+                            if (mExcl != null && marcacoesExcluidas.none { it.id == id }) {
+                                marcacoesExcluidas.add(
+                                    MarcacaoExcluida(id, mExcl.hora_fmt ?: "", mExcl.tipo_label ?: mExcl.tipo ?: "Marcação")
+                                )
+                            }
+                        }
+                    }
+                    idsMarcacoesConfirmadas.clear()
+                    resp.resumo?.marcacoes?.forEach { idsMarcacoesConfirmadas.add(it.id) }
+                    // Atualizar cache com as marcações atuais
+                    salvarCacheMarcacoes(resp.resumo?.marcacoes ?: emptyList())
                     renderResumo(resp.resumo)
                     updateStatus("Atualizado agora.", R.color.mobile_semantic_info)
                 } else {
                     if (!resp.erro.isNullOrBlank()) {
                         TelemetryLogger.logHandled(this@PontoActivity, "ponto_carregar", IllegalStateException(resp.erro))
                     }
+                    // Mantém marcações em cache visíveis, apenas mostra status de erro
                     updateStatus(resp.erro ?: "Falha ao carregar ponto.", R.color.mobile_semantic_pending)
                 }
             }
@@ -351,18 +482,24 @@ class PontoActivity : AppCompatActivity() {
             adicionarCardMarcacao(
                 hora = m.hora_fmt ?: "--:--",
                 tipoLabel = m.tipo_label ?: m.tipo ?: "Marcação",
-                tipoEmoji = when (m.tipo) {
-                    "entrada" -> "🟢"
-                    "saida_intervalo" -> "☕"
-                    "retorno_intervalo" -> "🔵"
-                    "saida" -> "🔴"
-                    else -> "🕐"
-                },
+                tipoEmoji = emojiPorTipo(m.tipo),
                 statusColor = ContextCompat.getColor(this, R.color.mobile_text_primary),
                 statusBadge = null,
                 lat = m.lat,
                 lon = m.lon,
                 dp = dp
+            )
+        }
+
+        // Marcações excluídas pelo admin (vermelho com aviso)
+        for (excl in marcacoesExcluidas) {
+            adicionarCardMarcacao(
+                hora = excl.hora,
+                tipoLabel = excl.tipoLabel,
+                tipoEmoji = "🔴",
+                statusColor = ContextCompat.getColor(this, R.color.error),
+                statusBadge = "❌ Excluída pelo RH",
+                lat = null, lon = null, dp = dp
             )
         }
 
