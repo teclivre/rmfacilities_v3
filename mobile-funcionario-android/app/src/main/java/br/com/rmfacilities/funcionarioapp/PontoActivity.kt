@@ -348,6 +348,12 @@ class PontoActivity : AppCompatActivity() {
                 localPendentes.clear() // servidor confirmou, limpa locais
                 renderResumo(resp.resumo)
                 btnMarcarPonto.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                // Animação de pulso de confirmação
+                btnMarcarPonto.animate()
+                    .scaleX(1.18f).scaleY(1.18f).setDuration(140)
+                    .withEndAction {
+                        btnMarcarPonto.animate().scaleX(1f).scaleY(1f).setDuration(140).start()
+                    }.start()
                 updateStatus("Ponto registrado com localização.", R.color.mobile_semantic_success)
             } else {
                 val hora = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())

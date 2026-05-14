@@ -342,6 +342,15 @@ class HomeActivity : AppCompatActivity() {
                 }
 
                 tvResumoPonto.text = pontoDia.resumo?.horas_trabalhadas_fmt ?: "--:--"
+                // Alerta visual se já passou das 9h e o ponto ainda não foi iniciado hoje
+                val horaAtual = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+                val semMarcacoes = pontoDia.resumo?.marcacoes.isNullOrEmpty()
+                if (semMarcacoes && horaAtual >= 9) {
+                    tvResumoPonto.text = "⚠️ Ponto não iniciado"
+                    tvResumoPonto.setTextColor(ContextCompat.getColor(this@HomeActivity, R.color.mobile_semantic_pending))
+                } else {
+                    tvResumoPonto.setTextColor(ContextCompat.getColor(this@HomeActivity, R.color.mobile_text_primary))
+                }
                 tvResumoTarefas.text = if (pendentesCount > 0) "$pendentesCount pendente(s)" else "Sem pendências"
                 tvResumoAvisos.text = if (naoLidas > 0) "$naoLidas aviso(s)" else "Sem alertas"
                 tvResumoAvisos.setTextColor(

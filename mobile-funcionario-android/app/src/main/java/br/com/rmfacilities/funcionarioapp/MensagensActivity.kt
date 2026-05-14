@@ -5,10 +5,15 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.KeyEvent
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.webkit.MimeTypeMap
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,6 +22,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -42,6 +48,9 @@ class MensagensActivity : AppCompatActivity() {
     private lateinit var btnTabChat: MaterialButton
     private lateinit var btnTabAvisos: MaterialButton
     private lateinit var retryQueue: ActionRetryQueue
+    private lateinit var swipeChat: SwipeRefreshLayout
+    private lateinit var progressEnvio: ProgressBar
+    private lateinit var tvCharCount: TextView
 
     private var cameraPhotoUri: Uri? = null
     private val pollingHandler = Handler(Looper.getMainLooper())
@@ -81,6 +90,9 @@ class MensagensActivity : AppCompatActivity() {
         panelAvisos = findViewById(R.id.panelAvisos)
         btnTabChat = findViewById(R.id.btnTabChat)
         btnTabAvisos = findViewById(R.id.btnTabAvisos)
+        swipeChat = findViewById(R.id.swipeChat)
+        progressEnvio = findViewById(R.id.progressEnvio)
+        tvCharCount = findViewById(R.id.tvCharCount)
 
         adapter = MensagemAdapter(onAbrirArquivo = { item -> abrirArquivoMensagem(item) })
         rvMensagens.layoutManager = LinearLayoutManager(this).also { it.stackFromEnd = true }
@@ -96,6 +108,32 @@ class MensagensActivity : AppCompatActivity() {
 
         btnTabChat.setOnClickListener { mostrarAba("chat") }
         btnTabAvisos.setOnClickListener { mostrarAba("avisos") }
+
+        // Swipe-to-refresh do chat
+        swipeChat.setColorSchemeResources(R.color.mobile_tab_active)
+        swipeChat.setOnRefreshListener {
+            carregarMensagens(silently = false, aoTerminar = { swipeChat.isRefreshing = false })
+        }
+
+        // Contador de caracteres + Enter para enviar
+        etMensagem.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                val len = s?.length ?: 0
+                tvCharCount.visibility = if (len > 0) View.VISIBLE else View.GONE
+                tvCharCount.text = "$len/1000"
+                tvCharCount.setTextColor(
+                    if (len >= 900) 0xFFFF6B6B.toInt() else getColor(R.color.mobile_text_secondary)
+                )
+            }
+        })
+        etMensagem.setOnEditorActionListener { _, actionId, event ->
+            val isEnter = event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN
+            if (actionId == EditorInfo.IME_ACTION_SEND || isEnter) {
+                enviar(); true
+            } else false
+        }
 
         findViewById<MaterialButton>(R.id.btnVoltar).setOnClickListener { finish() }
         findViewById<MaterialButton>(R.id.btnEnviar).setOnClickListener { enviar() }
@@ -168,7 +206,7 @@ class MensagensActivity : AppCompatActivity() {
         takePhoto.launch(uri)
     }
 
-    private fun carregarMensagens(silently: Boolean = false) {
+    private fun carregarMensagens(silently: Boolean = false, aoTerminar: (() -> Unit)? = null) {
         lifecycleScope.launch(Dispatchers.IO) {
             val msgs = try { api.getMensagens() } catch (_: Exception) { emptyList() }
             withContext(Dispatchers.Main) {
@@ -177,10 +215,11 @@ class MensagensActivity : AppCompatActivity() {
                     llm.findLastCompletelyVisibleItemPosition() >= adapter.itemCount - 2
                 adapter.replaceAll(msgs)
                 if (msgs.isNotEmpty() && (!silently || atBottom)) {
-                    rvMensagens.scrollToPosition(msgs.size - 1)
+                    rvMensagens.scrollToPosition(adapter.itemCount - 1)
                 }
                 if (!silently) tvBadge.visibility = View.GONE
                 atualizarStatusRh(msgs)
+                aoTerminar?.invoke()
             }
         }
     }
@@ -218,6 +257,13 @@ class MensagensActivity : AppCompatActivity() {
                     tvAvisosVazio.visibility = View.GONE
                     avisoAdapter.replaceAll(avisos)
                 }
+                // Badge na aba "Avisos" com quantidade de comunicados não lidos
+                val naoLidos = avisos.count { it.lido != true }
+                if (naoLidos > 0) {
+                    btnTabAvisos.text = "📢 Avisos ($naoLidos)"
+                } else {
+                    btnTabAvisos.text = "📢 Avisos"
+                }
             }
         }
     }
@@ -229,10 +275,12 @@ class MensagensActivity : AppCompatActivity() {
             return
         }
         etMensagem.isEnabled = false
+        progressEnvio.visibility = View.VISIBLE
         lifecycleScope.launch(Dispatchers.IO) {
             val nova = try { api.enviarMensagem(texto) } catch (_: Exception) { null }
             withContext(Dispatchers.Main) {
                 etMensagem.isEnabled = true
+                progressEnvio.visibility = View.GONE
                 if (nova != null) {
                     etMensagem.setText("")
                     adapter.addMensagem(nova)
