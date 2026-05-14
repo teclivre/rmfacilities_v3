@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.lifecycle.lifecycleScope
 
 class LoginActivity : AppCompatActivity() {
     private lateinit var session: SessionManager
@@ -123,7 +124,7 @@ class LoginActivity : AppCompatActivity() {
         setLoading(true)
         hideErro()
 
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val resp = try {
                 api.iniciarOtp(cpf)
             } catch (e: Exception) {
@@ -177,7 +178,7 @@ class LoginActivity : AppCompatActivity() {
         setLoading(true)
         hideErro()
 
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val resp = try {
                 api.confirmarOtp(cpf, codigo)
             } catch (e: Exception) {
@@ -197,7 +198,7 @@ class LoginActivity : AppCompatActivity() {
                     }
                     // Registrar token FCM imediatamente após login
                     FirebaseMessaging.getInstance().token.addOnSuccessListener { fcmToken ->
-                        CoroutineScope(Dispatchers.IO).launch {
+                        lifecycleScope.launch(Dispatchers.IO) {
                             try { ApiClient(session).registrarPushToken(fcmToken) } catch (_: Exception) {}
                         }
                     }
@@ -282,7 +283,7 @@ class LoginActivity : AppCompatActivity() {
 
         setLoading(true)
         hideErro()
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val resp = try {
                 api.renovarSessao(session.refreshToken)
             } catch (e: Exception) {

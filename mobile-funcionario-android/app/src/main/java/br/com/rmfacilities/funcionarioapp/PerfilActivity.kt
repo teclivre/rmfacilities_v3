@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.lifecycle.lifecycleScope
 
 class PerfilActivity : AppCompatActivity() {
 
@@ -36,7 +37,7 @@ class PerfilActivity : AppCompatActivity() {
     private val pickMedia = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri == null) return@registerForActivityResult
         tvFeedback.text = "Enviando foto..."
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val inputStream = contentResolver.openInputStream(uri) ?: return@launch
                 val bytes = inputStream.readBytes()
@@ -120,7 +121,7 @@ class PerfilActivity : AppCompatActivity() {
             tvFeedback.text = "Registrando token do app..."
             FirebaseMessaging.getInstance().token
                 .addOnSuccessListener { fcmToken ->
-                    CoroutineScope(Dispatchers.IO).launch {
+                    lifecycleScope.launch(Dispatchers.IO) {
                         val reg = try {
                             api.registrarPushToken(fcmToken)
                         } catch (e: Exception) {
@@ -153,7 +154,7 @@ class PerfilActivity : AppCompatActivity() {
         }
 
         fun carregarPerfil() {
-            CoroutineScope(Dispatchers.IO).launch {
+            lifecycleScope.launch(Dispatchers.IO) {
                 val me = try { api.me() } catch (_: Exception) { MeResponse(ok = false) }
                 withContext(Dispatchers.Main) {
                     val f = me.funcionario
@@ -255,7 +256,7 @@ class PerfilActivity : AppCompatActivity() {
     }
 
     private fun carregarFotoUrl(fotoUrl: String) {
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val bytes = api.downloadFile(fotoUrl)
                 withContext(Dispatchers.Main) { exibirFotoDosBytes(bytes) }

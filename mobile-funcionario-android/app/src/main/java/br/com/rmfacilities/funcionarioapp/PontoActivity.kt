@@ -108,14 +108,20 @@ class PontoActivity : AppCompatActivity() {
         tvData.text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
 
         btnMarcarPonto.setOnClickListener {
+            it.isEnabled = false  // bloqueia duplo toque imediatamente, antes do dialog
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             val tipo = tvProximoTipo.text?.toString()?.ifBlank { "ponto" } ?: "ponto"
             val hora = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+            var confirmado = false
             com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle("Confirmar ponto")
                 .setMessage("Registrar $tipo às $hora?")
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Confirmar") { _, _ -> registrarComLocalizacao() }
+                .setNegativeButton("Cancelar") { _, _ -> it.isEnabled = true }
+                .setPositiveButton("Confirmar") { _, _ ->
+                    confirmado = true
+                    registrarComLocalizacao()
+                }
+                .setOnDismissListener { if (!confirmado) it.isEnabled = true }
                 .show()
         }
         btnAtualizarPonto.setOnClickListener {

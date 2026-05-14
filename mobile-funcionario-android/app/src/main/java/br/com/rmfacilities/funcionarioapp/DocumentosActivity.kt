@@ -33,6 +33,7 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import java.util.Locale
+import androidx.lifecycle.lifecycleScope
 
 class DocumentosActivity : AppCompatActivity() {
     private lateinit var session: SessionManager
@@ -140,7 +141,7 @@ class DocumentosActivity : AppCompatActivity() {
     }
 
     private fun carregarUltimoAso() {
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val me = try { api.me() } catch (_: Exception) { MeResponse(ok = false) }
             withContext(Dispatchers.Main) {
                 val comp = me.funcionario?.ultimo_aso_competencia?.trim().orEmpty()
@@ -180,7 +181,7 @@ class DocumentosActivity : AppCompatActivity() {
     }
 
     private fun carregarComFiltros(scrollToArquivoId: Int = -1) {
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val docs = try { api.documentos(q = filtroQ, categoria = filtroCategoria, ano = filtroAno) }
                        catch (e: Exception) { DocsResponse(ok = false, erro = e.message) }
             val pendentes = try { api.pendentesAssinatura() }
@@ -277,7 +278,7 @@ class DocumentosActivity : AppCompatActivity() {
 
     private fun solicitarOtpEAssinar(item: DocumentoItem) {
         swipe.isRefreshing = true
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val resp = try {
                 api.solicitarStepupOtp(item.id)
             } catch (e: Exception) {
@@ -350,7 +351,7 @@ class DocumentosActivity : AppCompatActivity() {
         }
 
         swipe.isRefreshing = true
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val bytes = api.downloadFile(path)
                 val file = offlineStore.saveDownloaded(item, bytes)
@@ -388,7 +389,7 @@ class DocumentosActivity : AppCompatActivity() {
             return
         }
         swipe.isRefreshing = true
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val result = try { retryQueue.process(api) } catch (_: Exception) { null }
             withContext(Dispatchers.Main) {
                 swipe.isRefreshing = false
@@ -443,7 +444,7 @@ class DocumentosActivity : AppCompatActivity() {
 
     private fun abrirPendentesOrdenados(ordem: Int) {
         swipe.isRefreshing = true
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val sorted = when (ordem) {
                 1 -> pendentesAssinatura.sortedBy { (it.competencia ?: "").trim() }
                 2 -> pendentesAssinatura.sortedBy { (it.nome_arquivo ?: "").lowercase(Locale.getDefault()) }
@@ -488,7 +489,7 @@ class DocumentosActivity : AppCompatActivity() {
 
     private fun assinarDocumento(item: DocumentoItem, stepupOtp: String? = null, stepupBiometria: Boolean = false) {
         swipe.isRefreshing = true
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val resp = try {
                 api.assinarDocumento(item.id, stepupOtp = stepupOtp, stepupBiometria = stepupBiometria)
             } catch (e: Exception) {

@@ -26,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import androidx.lifecycle.lifecycleScope
 
 class PdfPreviewActivity : AppCompatActivity() {
 
@@ -99,7 +100,7 @@ class PdfPreviewActivity : AppCompatActivity() {
         tvLoading.text = "Preparando prévia..."
         rvPages.visibility = View.GONE
 
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val displayWidth = resources.displayMetrics.widthPixels
                 val widths = listOf(minOf(displayWidth, 960), minOf(displayWidth, 720), minOf(displayWidth, 560))
@@ -227,7 +228,7 @@ class PdfPreviewActivity : AppCompatActivity() {
     }
 
     private fun salvarNoDownloads(file: File, title: String) {
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val rawName = title.ifBlank { file.name }
                 val finalName = if (rawName.lowercase().endsWith(".pdf")) rawName else "$rawName.pdf"

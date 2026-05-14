@@ -16,6 +16,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.lifecycle.lifecycleScope
 
 class ConfiguracoesActivity : AppCompatActivity() {
     private lateinit var session: SessionManager
@@ -104,7 +105,7 @@ class ConfiguracoesActivity : AppCompatActivity() {
             session.canalOtp = canal
             tvCanalStatus.text = "Salvando..."
             tvCanalStatus.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_info))
-            CoroutineScope(Dispatchers.IO).launch {
+            lifecycleScope.launch(Dispatchers.IO) {
                 val resp = try {
                     api.salvarPreferenciaCanalOtp(canal)
                 } catch (e: Exception) {

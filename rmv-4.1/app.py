@@ -127,7 +127,7 @@ def _load_app_secret_key():
     return secrets.token_urlsafe(48)
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
+app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024  # 25MB (reduzido para mitigar DoS por upload)
 app.secret_key = _load_app_secret_key()
 app.config['PERMANENT_SESSION_LIFETIME'] = __import__('datetime').timedelta(days=30)
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
@@ -1758,6 +1758,7 @@ def _short_link_criar(destino):
     return None
 
 @app.route('/s/<codigo>')
+@_limiter.limit('30 per minute')
 def short_link_redirect(codigo):
     sl=ShortLink.query.filter_by(codigo=codigo).first_or_404()
     return redirect(sl.destino)
@@ -5245,21 +5246,32 @@ def norm_url(v):
     if u.startswith(('http://','https://')): return u
     return f'https://{u}'
 
-def ensure_cols(table,defs):
-    cols={r[1] for r in db.session.execute(text(f'PRAGMA table_info({table})')).fetchall()}
-    changed=False
+_VALID_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+def _assert_safe_identifier(name, label='identifier'):
+    """Valida que 'name' é um identificador SQL seguro (whitelist de caracteres).
+    Levanta ValueError se inválido — evita SQL injection via nome de tabela/coluna."""
+    if not _VALID_IDENTIFIER_RE.match(name or ''):
+        raise ValueError(f'Nome de {label} inválido ou não permitido: {name!r}')
+
+def ensure_cols(table, defs):
+    _assert_safe_identifier(table, 'tabela')
+    cols = {r[1] for r in db.session.execute(text(f'PRAGMA table_info({table})')).fetchall()}
+    changed = False
     for d in defs:
-        name=d.split(' ',1)[0]
-        if name not in cols:
+        col_name = d.split(' ', 1)[0]
+        _assert_safe_identifier(col_name, 'coluna')
+        if col_name not in cols:
             try:
                 db.session.execute(text(f'ALTER TABLE {table} ADD COLUMN {d}'))
-                changed=True
+                changed = True
             except Exception as e:
                 if 'duplicate column' in str(e).lower():
                     pass  # coluna já existe, ignorar
                 else:
                     raise
-    if changed: db.session.commit()
+    if changed:
+        db.session.commit()
 
 def sc_cfg(k,v):
     global _gc_cache, _gc_cache_ts
@@ -7141,6 +7153,7 @@ def api_funcionario_push_teste(id):
     })
 
 @app.route('/api/app/versao')
+@_limiter.limit('60 per minute')
 def api_app_versao():
     """Retorna versão mínima e atual do app. Configurável por variável de ambiente APP_VERSION_CODE."""
     import os
@@ -7149,7 +7162,8 @@ def api_app_versao():
     download_url=os.environ.get('APP_DOWNLOAD_URL','')
     return jsonify({'versao_minima':versao_minima,'versao_atual':versao_atual,'download_url':download_url})
 
-@app.route('/api/app/funcionario/login',methods=['POST'])
+@app.route('/api/app/funcionario/login', methods=['POST'])
+@_limiter.limit('10 per minute')
 def api_app_funcionario_login():
     d=request.json or {}
     cpf=norm_cpf(d.get('cpf'))
@@ -7184,7 +7198,8 @@ def api_app_funcionario_login():
     audit_event('auth_app_sucesso','funcionario',f.id,'funcionario',f.id,True,{'sessao_id':sess['sessao_id'],'modo':'senha'})
     return jsonify({'ok':True,**sess,'funcionario':{'id':f.id,'nome':f.nome,'cpf':f.cpf,'cargo':f.cargo,'setor':f.setor,'status':f.status}})
 
-@app.route('/api/app/funcionario/auth/iniciar',methods=['POST'])
+@app.route('/api/app/funcionario/auth/iniciar', methods=['POST'])
+@_limiter.limit('10 per minute')
 def api_app_funcionario_auth_iniciar():
     d=request.json or {}
     cpf=norm_cpf(d.get('cpf'))
@@ -7237,7 +7252,8 @@ def api_app_funcionario_auth_iniciar():
     msg_ok='Codigo enviado com sucesso.' if envio.get('canal')!='email' else 'Codigo enviado para o e-mail cadastrado.'
     return jsonify({'ok':True,'mensagem':msg_ok,'destino':envio.get('destino'),'canal':envio.get('canal')})
 
-@app.route('/api/app/funcionario/auth/confirmar',methods=['POST'])
+@app.route('/api/app/funcionario/auth/confirmar', methods=['POST'])
+@_limiter.limit('10 per minute')
 def api_app_funcionario_auth_confirmar():
     d=request.json or {}
     cpf=norm_cpf(d.get('cpf'))
@@ -14202,6 +14218,31 @@ def api_eventos():
                              'X-Accel-Buffering': 'no',
                              'Connection': 'keep-alive'})
 
+# after_request: security headers em todas as respostas
+@app.after_request
+def _add_security_headers(response):
+    # Impede que a página seja carregada em iframe de outro domínio (clickjacking)
+    response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+    # Impede que o browser tente detectar o Content-Type (MIME sniffing)
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    # Controla quais informações de referenciador são enviadas
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    # Limita permissões de API do browser
+    response.headers.setdefault('Permissions-Policy', 'geolocation=(), microphone=(), camera=()')
+    # Content-Security-Policy básico (ajuste conforme CDNs/fontes externas usadas)
+    if response.content_type and response.content_type.startswith('text/html'):
+        response.headers.setdefault(
+            'Content-Security-Policy',
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
+            "img-src 'self' data: blob:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'self';"
+        )
+    return response
+
 # after_request: broadcast automático para endpoints que alteram dados
 @app.after_request
 def _sse_after(response):
@@ -14730,10 +14771,11 @@ def api_backup_restore():
 
             return val
 
-        def add_rows(model,rows,conv=None):
-            cols_map={c.name:c for c in model.__table__.columns}
-            table_name=model.__table__.name
-            db_cols={r[1] for r in db.session.execute(text(f'PRAGMA table_info({table_name})')).fetchall()}
+        def add_rows(model, rows, conv=None):
+            cols_map = {c.name: c for c in model.__table__.columns}
+            table_name = model.__table__.name
+            _assert_safe_identifier(table_name, 'tabela')
+            db_cols = {r[1] for r in db.session.execute(text(f'PRAGMA table_info({table_name})')).fetchall()}
             for r in rows:
                 d={}
                 for k,v in r.items():

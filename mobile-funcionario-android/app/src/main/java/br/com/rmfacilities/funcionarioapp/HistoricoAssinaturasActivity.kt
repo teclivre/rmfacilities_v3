@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.lifecycle.lifecycleScope
 
 class HistoricoAssinaturasActivity : AppCompatActivity() {
     private lateinit var session: SessionManager
@@ -54,7 +55,7 @@ class HistoricoAssinaturasActivity : AppCompatActivity() {
     }
 
     private fun carregar() {
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val resp = try { api.historicoAssinaturas() }
                        catch (e: Exception) { HistoricoAssinaturasResponse(ok = false, erro = e.message) }
             withContext(Dispatchers.Main) {
@@ -93,7 +94,7 @@ class HistoricoAssinaturasActivity : AppCompatActivity() {
             Toast.makeText(this, "Nada para exportar.", Toast.LENGTH_SHORT).show()
             return
         }
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val doc = PdfDocument()
                 val pageWidth = 595
