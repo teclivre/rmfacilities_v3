@@ -28,7 +28,8 @@
 
         <activity
             android:name=".DocumentosActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:launchMode="singleTop" />
         <activity
             android:name=".PrivacyPolicyActivity"
             android:exported="false" />
@@ -40,13 +41,16 @@
             android:exported="false" />
         <activity
             android:name=".PerfilActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:launchMode="singleTop" />
         <activity
             android:name=".MensagensActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:launchMode="singleTop" />
         <activity
             android:name=".PontoActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:launchMode="singleTop" />
         <activity
             android:name=".PontoMapaActivity"
             android:exported="false" />

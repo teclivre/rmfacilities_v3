@@ -3,7 +3,8 @@ package br.com.rmfacilities.funcionarioapp
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.webkit.MimeTypeMap
 import android.widget.EditText
@@ -13,10 +14,10 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -35,6 +36,7 @@ class MensagensActivity : AppCompatActivity() {
     private lateinit var etMensagem: EditText
     private lateinit var tvBadge: TextView
     private lateinit var tvAvisosVazio: TextView
+    private lateinit var tvStatusRh: TextView
     private lateinit var panelChat: LinearLayout
     private lateinit var panelAvisos: LinearLayout
     private lateinit var btnTabChat: MaterialButton
@@ -42,6 +44,16 @@ class MensagensActivity : AppCompatActivity() {
     private lateinit var retryQueue: ActionRetryQueue
 
     private var cameraPhotoUri: Uri? = null
+    private val pollingHandler = Handler(Looper.getMainLooper())
+    private var isInChatTab = true
+    private val pollingRunnable = object : Runnable {
+        override fun run() {
+            if (isInChatTab) {
+                carregarMensagens(silently = true)
+                pollingHandler.postDelayed(this, 5_000)
+            }
+        }
+    }
 
     private val pickFile = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) enviarArquivo(uri)
@@ -64,6 +76,7 @@ class MensagensActivity : AppCompatActivity() {
         etMensagem = findViewById(R.id.etMensagem)
         tvBadge = findViewById(R.id.tvBadge)
         tvAvisosVazio = findViewById(R.id.tvAvisosVazio)
+        tvStatusRh = findViewById(R.id.tvStatusRh)
         panelChat = findViewById(R.id.panelChat)
         panelAvisos = findViewById(R.id.panelAvisos)
         btnTabChat = findViewById(R.id.btnTabChat)
@@ -107,10 +120,34 @@ class MensagensActivity : AppCompatActivity() {
         carregarAvisos()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (isInChatTab) pollingHandler.postDelayed(pollingRunnable, 5_000)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        pollingHandler.removeCallbacks(pollingRunnable)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        pollingHandler.removeCallbacks(pollingRunnable)
+    }
+
     private fun mostrarAba(aba: String) {
-        val isChat = aba == "chat"
+        isInChatTab = aba == "chat"
+        val isChat = isInChatTab
         panelChat.visibility = if (isChat) View.VISIBLE else View.GONE
         panelAvisos.visibility = if (isChat) View.GONE else View.VISIBLE
+        tvStatusRh.visibility = if (isChat) View.VISIBLE else View.GONE
+
+        if (isChat) {
+            pollingHandler.removeCallbacks(pollingRunnable)
+            pollingHandler.postDelayed(pollingRunnable, 5_000)
+        } else {
+            pollingHandler.removeCallbacks(pollingRunnable)
+        }
 
         val colorAtivo = getColor(R.color.mobile_tab_active)
         val colorInativo = getColor(R.color.mobile_surface_soft)
@@ -125,25 +162,52 @@ class MensagensActivity : AppCompatActivity() {
 
     private fun abrirCamera() {
         val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val imgFile = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "foto_chat_$ts.jpg")
+        val imgFile = File(getExternalFilesDir(null), "foto_chat_$ts.jpg")
         val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", imgFile)
         cameraPhotoUri = uri
         takePhoto.launch(uri)
     }
 
-    private fun carregarMensagens() {
-        CoroutineScope(Dispatchers.IO).launch {
+    private fun carregarMensagens(silently: Boolean = false) {
+        lifecycleScope.launch(Dispatchers.IO) {
             val msgs = try { api.getMensagens() } catch (_: Exception) { emptyList() }
             withContext(Dispatchers.Main) {
+                val llm = rvMensagens.layoutManager as? LinearLayoutManager
+                val atBottom = llm != null &&
+                    llm.findLastCompletelyVisibleItemPosition() >= adapter.itemCount - 2
                 adapter.replaceAll(msgs)
-                if (msgs.isNotEmpty()) rvMensagens.scrollToPosition(msgs.size - 1)
-                tvBadge.visibility = View.GONE
+                if (msgs.isNotEmpty() && (!silently || atBottom)) {
+                    rvMensagens.scrollToPosition(msgs.size - 1)
+                }
+                if (!silently) tvBadge.visibility = View.GONE
+                atualizarStatusRh(msgs)
+            }
+        }
+    }
+
+    private fun atualizarStatusRh(msgs: List<MensagemItem>) {
+        val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+        val ultimaRh = msgs.lastOrNull { it.de_rh == true }
+        val ultimaFunc = msgs.lastOrNull { it.de_rh != true }
+        when {
+            ultimaRh == null -> {
+                tvStatusRh.text = "Nenhuma resposta do RH ainda."
+                tvStatusRh.visibility = View.VISIBLE
+            }
+            ultimaFunc != null && (ultimaFunc.id ?: 0) > (ultimaRh.id ?: 0) -> {
+                tvStatusRh.text = "⏳ Aguardando resposta do RH…"
+                tvStatusRh.visibility = View.VISIBLE
+            }
+            else -> {
+                val hora = ultimaRh.criado_fmt?.takeLast(5) ?: sdf.format(Date())
+                tvStatusRh.text = "✅ RH respondeu às $hora"
+                tvStatusRh.visibility = View.VISIBLE
             }
         }
     }
 
     private fun carregarAvisos() {
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val avisos = try { api.getComunicados() } catch (_: Exception) { emptyList() }
             withContext(Dispatchers.Main) {
                 if (avisos.isEmpty()) {

@@ -35,6 +35,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.coroutines.resume
+import androidx.lifecycle.lifecycleScope
 
 class PontoActivity : AppCompatActivity() {
 
@@ -85,7 +86,14 @@ class PontoActivity : AppCompatActivity() {
 
         btnMarcarPonto.setOnClickListener {
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            registrarComLocalizacao()
+            val tipo = tvProximoTipo.text?.toString()?.ifBlank { "ponto" } ?: "ponto"
+            val hora = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle("Confirmar ponto")
+                .setMessage("Registrar $tipo às $hora?")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Confirmar") { _, _ -> registrarComLocalizacao() }
+                .show()
         }
         btnAtualizarPonto.setOnClickListener {
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -97,20 +105,20 @@ class PontoActivity : AppCompatActivity() {
             setOnItemSelectedListener { item ->
                 when (item.itemId) {
                     R.id.nav_home -> {
-                        startActivity(Intent(this@PontoActivity, HomeActivity::class.java))
+                        startActivity(Intent(this@PontoActivity, HomeActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT) })
                         true
                     }
                     R.id.nav_tarefas -> {
-                        startActivity(Intent(this@PontoActivity, DocumentosActivity::class.java))
+                        startActivity(Intent(this@PontoActivity, DocumentosActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT) })
                         true
                     }
                     R.id.nav_ponto -> true
                     R.id.nav_mensagens -> {
-                        startActivity(Intent(this@PontoActivity, MensagensActivity::class.java))
+                        startActivity(Intent(this@PontoActivity, MensagensActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT) })
                         true
                     }
                     R.id.nav_perfil -> {
-                        startActivity(Intent(this@PontoActivity, PerfilActivity::class.java))
+                        startActivity(Intent(this@PontoActivity, PerfilActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT) })
                         true
                     }
                     else -> false
@@ -175,7 +183,7 @@ class PontoActivity : AppCompatActivity() {
 
         updateStatus("Obtendo localização atual...", R.color.mobile_semantic_info)
 
-        CoroutineScope(Dispatchers.Main).launch {
+        lifecycleScope.launch {
             val loc = obterLocalizacaoAtual()
             if (loc == null) {
                 btnMarcarPonto.isEnabled = true
@@ -216,7 +224,7 @@ class PontoActivity : AppCompatActivity() {
 
     private fun carregarDia() {
         updateStatus("Atualizando...", R.color.mobile_semantic_info)
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch {
             val resp = try { api.getPontoDia() } catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message) }
             withContext(Dispatchers.Main) {
                 if (resp.ok) {

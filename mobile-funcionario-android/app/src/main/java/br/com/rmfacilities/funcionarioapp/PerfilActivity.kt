@@ -50,7 +50,7 @@ class PerfilActivity : AppCompatActivity() {
                         exibirFotoDosBytes(bytes)
                     } else {
                         val queue = ActionRetryQueue(this@PerfilActivity)
-                        queue.enqueueFoto(android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP), mimeType)
+                        queue.enqueueFoto(bytes, mimeType)
                         tvFeedback.text = r.erro ?: "Falha ao enviar foto."
                     }
                 }
@@ -108,6 +108,12 @@ class PerfilActivity : AppCompatActivity() {
 
         btnAlterarFoto.setOnClickListener {
             pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        }
+
+        findViewById<MaterialButton>(R.id.btnVerHolerite).setOnClickListener {
+            startActivity(Intent(this, DocumentosActivity::class.java).apply {
+                putExtra("preset_categoria", "holerite")
+            })
         }
 
         btnTestarNotificacao.setOnClickListener {

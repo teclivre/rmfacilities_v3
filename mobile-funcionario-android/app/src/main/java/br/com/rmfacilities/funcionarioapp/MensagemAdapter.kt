@@ -62,6 +62,13 @@ class MensagemAdapter(
         } else if (holder is FuncViewHolder) {
             holder.tvConteudo.text = item.conteudo
             holder.tvHora.text = item.enviado_fmt ?: ""
+            if (item.lida == true) {
+                holder.tvCheck.text = "✓✓"
+                holder.tvCheck.setTextColor(0xFF4DA6FF.toInt()) // azul = lida
+            } else {
+                holder.tvCheck.text = "✓"
+                holder.tvCheck.setTextColor(0xFF5E7FA0.toInt()) // cinza = entregue
+            }
             bindArquivo(holder.layoutArquivo, holder.tvArquivoNome, item, temArquivo)
         }
     }
@@ -87,6 +94,7 @@ class MensagemAdapter(
     inner class FuncViewHolder(v: View) : RecyclerView.ViewHolder(v) {
         val tvConteudo: TextView = v.findViewById(R.id.tvConteudo)
         val tvHora: TextView = v.findViewById(R.id.tvHora)
+        val tvCheck: TextView = v.findViewById(R.id.tvCheck)
         val layoutArquivo: LinearLayout = v.findViewById(R.id.layoutArquivo)
         val tvArquivoNome: TextView = v.findViewById(R.id.tvArquivoNome)
     }

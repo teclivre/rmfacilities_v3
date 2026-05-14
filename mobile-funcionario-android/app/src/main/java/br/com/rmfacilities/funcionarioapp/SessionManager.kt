@@ -1,10 +1,29 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.content.Context
+import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import kotlin.math.max
 
 class SessionManager(private val context: Context) {
-    private val prefs = context.getSharedPreferences("rm_funcionario_app", Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences = run {
+        try {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                context,
+                "rm_funcionario_app",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (_: Exception) {
+            // Fallback para dispositivos sem suporte ao Keystore (emuladores antigos, etc.)
+            context.getSharedPreferences("rm_funcionario_app", Context.MODE_PRIVATE)
+        }
+    }
 
     var apiBaseUrl: String
         get() = prefs.getString("api_base_url", BuildConfig.DEFAULT_API_BASE_URL) ?: BuildConfig.DEFAULT_API_BASE_URL

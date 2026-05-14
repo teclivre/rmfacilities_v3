@@ -26,8 +26,10 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.lifecycle.lifecycleScope
 
 class HomeActivity : AppCompatActivity() {
     companion object {
@@ -160,19 +162,19 @@ class HomeActivity : AppCompatActivity() {
                 when (item.itemId) {
                     R.id.nav_home -> true
                     R.id.nav_tarefas -> {
-                        startActivity(Intent(this@HomeActivity, DocumentosActivity::class.java))
+                        startActivity(Intent(this@HomeActivity, DocumentosActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT) })
                         true
                     }
                     R.id.nav_ponto -> {
-                        startActivity(Intent(this@HomeActivity, PontoActivity::class.java))
+                        startActivity(Intent(this@HomeActivity, PontoActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT) })
                         true
                     }
                     R.id.nav_mensagens -> {
-                        startActivity(Intent(this@HomeActivity, MensagensActivity::class.java))
+                        startActivity(Intent(this@HomeActivity, MensagensActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT) })
                         true
                     }
                     R.id.nav_perfil -> {
-                        startActivity(Intent(this@HomeActivity, PerfilActivity::class.java))
+                        startActivity(Intent(this@HomeActivity, PerfilActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT) })
                         true
                     }
                     else -> false
@@ -241,7 +243,7 @@ class HomeActivity : AppCompatActivity() {
             else -> return
         }
         val loc = lm.getLastKnownLocation(provider) ?: return
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch {
             try { api.enviarLocalizacao(loc.latitude, loc.longitude, loc.accuracy) } catch (_: Exception) {}
         }
     }
@@ -289,7 +291,7 @@ class HomeActivity : AppCompatActivity() {
         FirebaseMessaging.getInstance().token
             .addOnSuccessListener { token ->
                 if (token.isNullOrBlank()) return@addOnSuccessListener
-                CoroutineScope(Dispatchers.IO).launch {
+                lifecycleScope.launch {
                     try {
                         api.registrarPushToken(token)
                     } catch (_: Exception) {
@@ -303,13 +305,19 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun carregarDados() {
-        CoroutineScope(Dispatchers.IO).launch {
-            val me = try { api.me() } catch (_: Exception) { MeResponse(ok = false) }
-            val naoLidas = try { api.getNaoLidas() } catch (_: Exception) { 0 }
-            val pontoDia = try { api.getPontoDia() } catch (_: Exception) { PontoDiaResponse(ok = false) }
-            val versao = try { api.getVersaoApp() } catch (_: Exception) { null }
-            val pendentesCount = try { api.pendentesAssinatura().itens.size } catch (_: Exception) { 0 }
-            val ultimoPagamento = try { api.ultimoPagamento() } catch (_: Exception) { null }
+        lifecycleScope.launch {
+            val meD = async(Dispatchers.IO) { try { api.me() } catch (_: Exception) { MeResponse(ok = false) } }
+            val naoLidasD = async(Dispatchers.IO) { try { api.getNaoLidas() } catch (_: Exception) { 0 } }
+            val pontoDiaD = async(Dispatchers.IO) { try { api.getPontoDia() } catch (_: Exception) { PontoDiaResponse(ok = false) } }
+            val versaoD = async(Dispatchers.IO) { try { api.getVersaoApp() } catch (_: Exception) { null } }
+            val pendentesD = async(Dispatchers.IO) { try { api.pendentesAssinatura().itens.size } catch (_: Exception) { 0 } }
+            val pagamentoD = async(Dispatchers.IO) { try { api.ultimoPagamento() } catch (_: Exception) { null } }
+            val me = meD.await()
+            val naoLidas = naoLidasD.await()
+            val pontoDia = pontoDiaD.await()
+            val versao = versaoD.await()
+            val pendentesCount = pendentesD.await()
+            val ultimoPagamento = pagamentoD.await()
             withContext(Dispatchers.Main) {
                 swipeRefresh.isRefreshing = false
                 val nome = me.funcionario?.nome ?: "colaborador"
@@ -362,7 +370,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun processarFilaPendente() {
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch {
             try {
                 val result = retryQueue.process(api)
                 if (result.enviados > 0) {
@@ -471,7 +479,7 @@ class HomeActivity : AppCompatActivity() {
             .setCancelable(false)
             .create()
         loading.show()
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch {
             val resp = try { api.historicoPagamentos() } catch (_: Exception) { null }
             withContext(Dispatchers.Main) {
                 loading.dismiss()
@@ -503,7 +511,7 @@ class HomeActivity : AppCompatActivity() {
             .setCancelable(false)
             .create()
         loading.show()
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch {
             val resp = try { api.historicoBeneficios() } catch (_: Exception) { null }
             withContext(Dispatchers.Main) {
                 loading.dismiss()

@@ -55,13 +55,28 @@
                 android:ellipsize="middle" />
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/tvHora"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:orientation="horizontal"
             android:layout_gravity="end"
-            android:layout_marginTop="4dp"
-            android:textColor="#5E7FA0"
-            android:textSize="10sp" />
+            android:gravity="center_vertical"
+            android:layout_marginTop="4dp">
+
+            <TextView
+                android:id="@+id/tvHora"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#5E7FA0"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/tvCheck"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="3dp"
+                android:textSize="10sp"
+                android:text="✓" />
+        </LinearLayout>
     </LinearLayout>
 </LinearLayout>

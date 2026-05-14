@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Base64
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import java.io.File
 import java.util.UUID
 
 data class PendingAction(
@@ -18,6 +19,19 @@ class ActionRetryQueue(context: Context) {
     private val prefs = context.getSharedPreferences("rm_funcionario_retry_queue", Context.MODE_PRIVATE)
     private val gson = Gson()
     private val key = "pending_actions"
+
+    companion object {
+        private const val MAX_QUEUE_SIZE = 50
+        // Pontos expiram em 24h — um ponto offline com mais de 24h tem GPS/hora inválidos
+        private const val PONTO_TTL_MS = 24 * 60 * 60 * 1000L
+        // Outros tipos expiram em 7 dias
+        private const val DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000L
+    }
+
+    private fun isExpired(action: PendingAction): Boolean {
+        val ttl = if (action.type == "ponto") PONTO_TTL_MS else DEFAULT_TTL_MS
+        return (System.currentTimeMillis() - action.createdAt) > ttl
+    }
 
     private fun load(): MutableList<PendingAction> {
         val raw = prefs.getString(key, "[]") ?: "[]"
@@ -49,7 +63,12 @@ class ActionRetryQueue(context: Context) {
     }
 
     fun enqueuePonto(lat: Double, lon: Double, precisao: Float?, timestampMs: Long = System.currentTimeMillis()) {
+        // Rejeita ponto offline com mais de 24h (GPS/timestamp inválido para o backend)
+        if ((System.currentTimeMillis() - timestampMs) > PONTO_TTL_MS) return
         val items = load()
+        // Descarta itens expirados antes de verificar o limite de tamanho
+        items.removeAll { it.type == "ponto" && isExpired(it) }
+        if (items.size >= MAX_QUEUE_SIZE) return
         val payload = mutableMapOf(
             "lat" to lat.toString(),
             "lon" to lon.toString(),
@@ -67,13 +86,19 @@ class ActionRetryQueue(context: Context) {
         save(items)
     }
 
-    fun enqueueFoto(base64Data: String, mimeType: String) {
+    fun enqueueFoto(bytes: ByteArray, mimeType: String) {
+        // Salva os bytes em filesDir para evitar ANR com SharedPreferences
+        val ext = when (mimeType) { "image/png" -> "png"; "image/webp" -> "webp"; else -> "jpg" }
+        val fileName = "foto_pending_${UUID.randomUUID()}.$ext"
+        val fotoDir = File(appContext.filesDir, "pending_fotos").also { it.mkdirs() }
+        val file = File(fotoDir, fileName)
+        try { file.writeBytes(bytes) } catch (_: Exception) { return }
         val items = load()
         items.add(
             PendingAction(
                 id = UUID.randomUUID().toString(),
                 type = "foto",
-                payload = mapOf("data" to base64Data, "mime" to mimeType),
+                payload = mapOf("file_path" to file.absolutePath, "mime" to mimeType),
                 createdAt = System.currentTimeMillis()
             )
         )
@@ -118,6 +143,11 @@ class ActionRetryQueue(context: Context) {
         var sent = 0
 
         for (action in items) {
+            // Descarta silenciosamente itens expirados (não retenta)
+            if (isExpired(action)) {
+                sent++ // conta como "enviado" para limpeza da fila
+                continue
+            }
             val ok = try {
                 when (action.type) {
                     "mensagem" -> {
@@ -136,12 +166,18 @@ class ActionRetryQueue(context: Context) {
                         if (lat == null || lon == null) false else api.marcarPonto(lat = lat, lon = lon, precisao = precisao, dataHoraIso = dataHoraIso).ok
                     }
                     "foto" -> {
-                        val b64 = action.payload["data"].orEmpty()
+                        val filePath = action.payload["file_path"].orEmpty()
                         val mime = action.payload["mime"].orEmpty().ifBlank { "image/jpeg" }
-                        if (b64.isBlank()) false
+                        if (filePath.isBlank()) false
                         else {
-                            val bytes = Base64.decode(b64, Base64.DEFAULT)
-                            api.uploadFoto(bytes, mime).ok
+                            val file = File(filePath)
+                            if (!file.exists()) true // arquivo perdido — descarta sem retentar
+                            else {
+                                val fotoBytes = file.readBytes()
+                                val uploaded = api.uploadFoto(fotoBytes, mime).ok
+                                if (uploaded) file.delete()
+                                uploaded
+                            }
                         }
                     }
                     "documento_download" -> {

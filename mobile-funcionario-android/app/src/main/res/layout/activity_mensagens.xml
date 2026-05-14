@@ -81,6 +81,19 @@
             android:textColor="@color/mobile_text_primary" />
     </LinearLayout>
 
+    <!-- Status última resposta RH -->
+    <TextView
+        android:id="@+id/tvStatusRh"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="4dp"
+        android:textColor="@color/mobile_text_secondary"
+        android:textSize="11sp"
+        android:gravity="center"
+        android:visibility="gone" />
+
     <!-- Painel Chat -->
     <LinearLayout
         android:id="@+id/panelChat"

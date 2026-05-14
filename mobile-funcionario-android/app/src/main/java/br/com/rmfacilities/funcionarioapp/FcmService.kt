@@ -11,9 +11,18 @@ import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 class FcmService : FirebaseMessagingService() {
+
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    override fun onDestroy() {
+        super.onDestroy()
+        serviceScope.cancel()
+    }
 
     companion object {
         const val CHANNEL_DOCS = "rmf_documentos"
@@ -25,7 +34,7 @@ class FcmService : FirebaseMessagingService() {
         super.onNewToken(token)
         val session = SessionManager(applicationContext)
         if (session.notificationsEnabled && session.accessToken.isNotBlank()) {
-            CoroutineScope(Dispatchers.IO).launch {
+            serviceScope.launch {
                 try {
                     ApiClient(session).registrarPushToken(token)
                 } catch (_: Exception) {}
@@ -122,6 +131,9 @@ class FcmService : FirebaseMessagingService() {
 
         ensureChannels()
 
+        val notifId = System.currentTimeMillis().toInt()
+        val badgeNumber = (data["badge"]?.toIntOrNull() ?: 1).coerceAtLeast(1)
+
         val notif = NotificationCompat.Builder(this, channelId)
             .setSmallIcon(R.drawable.ic_fenix_round)
             .setContentTitle(titulo)
@@ -130,12 +142,13 @@ class FcmService : FirebaseMessagingService() {
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setNumber(badgeNumber)
             .addAction(0, openLabel, openNowPendingIntent)
             .addAction(0, "Marcar para depois", laterPendingIntent)
             .build()
 
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(System.currentTimeMillis().toInt(), notif)
+        nm.notify(notifId, notif)
     }
 
     private fun ensureChannels() {

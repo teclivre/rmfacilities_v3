@@ -52,7 +52,21 @@
         android:textColor="@color/mobile_text_secondary"
         android:textSize="13sp"
         android:lineSpacingExtra="2dp"
-        android:layout_marginTop="6dp" />
+        android:layout_marginTop="6dp"
+        android:maxLines="3"
+        android:ellipsize="end" />
+
+    <!-- Botão expandir/recolher -->
+    <TextView
+        android:id="@+id/tvVerMais"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Ver mais ↓"
+        android:textColor="@color/mobile_tab_active"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:layout_marginTop="4dp"
+        android:visibility="gone" />
 
     <!-- Data -->
     <TextView
