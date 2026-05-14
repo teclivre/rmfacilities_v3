@@ -701,6 +701,19 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    fun getPontoEspelhoDados(competencia: String): PontoEspelhoDadosResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ponto/espelho/dados?competencia=${android.net.Uri.encode(competencia)}"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try { gson.fromJson(raw, PontoEspelhoDadosResponse::class.java) }
+            catch (_: Exception) { PontoEspelhoDadosResponse(ok = false, erro = "Falha ao carregar dados.") }
+        }
+    }
+
     fun baixarEspelhoPdf(competencia: String): Pair<ByteArray?, String?> {
         val req = Request.Builder()
             .url(url("/api/app/funcionario/me/ponto/espelho/pdf?competencia=${android.net.Uri.encode(competencia)}"))

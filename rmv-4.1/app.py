@@ -1285,6 +1285,7 @@ class Funcionario(db.Model):
     docs_admissao_obs=db.Column(db.Text,default='')
     obs=db.Column(db.Text,default='')
     areas=db.Column(db.Text,default='[]')
+    data_nascimento=db.Column(db.Date,nullable=True)
     app_senha=db.Column(db.String(256))
     app_ativo=db.Column(db.Boolean,default=True)
     app_ultimo_acesso=db.Column(db.DateTime)
@@ -1306,6 +1307,8 @@ class Funcionario(db.Model):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         try: d['areas']=json.loads(self.areas or '[]')
         except: d['areas']=[]
+        if self.data_nascimento:
+            d['data_nascimento']=self.data_nascimento.isoformat()
         return d
 
 class FuncionarioArquivo(db.Model):
@@ -6796,6 +6799,14 @@ def api_criar_funcionario():
         obs=d.get('obs','').strip(),
         areas=json.dumps(ars,ensure_ascii=False)
     )
+    # data_nascimento opcional
+    _dn=d.get('data_nascimento','')
+    if _dn:
+        try:
+            from datetime import date as _date
+            f.data_nascimento=_date.fromisoformat(_dn[:10])
+        except (ValueError,TypeError):
+            pass
     try:
         db.session.add(f)
         db.session.commit()
@@ -6844,6 +6855,16 @@ def api_atualizar_funcionario(id):
     if 'vale_gasolina' in d: f.vale_gasolina=to_num(d.get('vale_gasolina'),dec=True)
     if 'cesta_natal' in d: f.cesta_natal=to_num(d.get('cesta_natal'),dec=True)
     if 'docs_admissao_ok' in d: f.docs_admissao_ok=to_bool(d.get('docs_admissao_ok'))
+    if 'data_nascimento' in d:
+        _dn=d.get('data_nascimento','')
+        if _dn:
+            try:
+                from datetime import date as _date
+                f.data_nascimento=_date.fromisoformat(_dn[:10])
+            except (ValueError,TypeError):
+                pass
+        else:
+            f.data_nascimento=None
     if 'areas' in d:
         ars=[a for a in d.get('areas',[]) if a in ALLOWED_AREAS]
         f.areas=json.dumps(ars,ensure_ascii=False)
@@ -8472,6 +8493,58 @@ def api_app_ponto_espelho_status_me():
             'fechamentos_dias':fechamentos,
         })
     return jsonify({'ok':True,'competencias':competencias})
+
+@app.route('/api/app/funcionario/me/ponto/espelho/dados')
+@app_func_required
+def api_app_ponto_espelho_dados_me():
+    """Retorna dados JSON da folha de ponto para visualização (sem restrição de fechamento)."""
+    import calendar as _cal
+    f=g.app_funcionario
+    competencia=(request.args.get('competencia') or '').strip()
+    if not re.match(r'^\d{4}-\d{2}$',competencia):
+        return jsonify({'erro':'Competência inválida.'}),400
+    try:
+        ano,mes=int(competencia[:4]),int(competencia[5:7])
+        if not (1<=mes<=12 and 2000<=ano<=2100):
+            raise ValueError()
+    except (ValueError,TypeError):
+        return jsonify({'erro':'Competência inválida.'}),400
+    ultimo_dia=_cal.monthrange(ano,mes)[1]
+    meses_pt=['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+              'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+    dias=[]
+    total_min=0
+    for dia in range(1,ultimo_dia+1):
+        data_ref=date(ano,mes,dia)
+        resumo=_app_ponto_resumo_dia(f,data_ref)
+        marcacoes=resumo.get('marcacoes',[])
+        def _get_hora(tipo_):
+            for _m in marcacoes:
+                if _m.get('tipo')==tipo_: return _m.get('hora_fmt','')
+            return ''
+        dias_semana=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom']
+        trab_min=resumo.get('horas_trabalhadas_min',0) or 0
+        total_min+=trab_min
+        dias.append({
+            'data':data_ref.isoformat(),
+            'data_fmt':f"{dias_semana[data_ref.weekday()]} {data_ref.strftime('%d/%m')}",
+            'entrada':_get_hora('entrada'),
+            'saida_intervalo':_get_hora('saida_intervalo'),
+            'retorno_intervalo':_get_hora('retorno_intervalo'),
+            'saida':_get_hora('saida'),
+            'horas_trabalhadas_fmt':resumo.get('horas_trabalhadas_fmt','00:00'),
+            'horas_trabalhadas_min':trab_min,
+            'status':resumo.get('status',''),
+            'tem_marcacoes':bool(marcacoes),
+        })
+    return jsonify({
+        'ok':True,
+        'competencia':competencia,
+        'label':f'{meses_pt[mes-1]}/{ano}',
+        'total_horas':f'{total_min//60:02d}:{total_min%60:02d}',
+        'funcionario':f.nome,
+        'dias':dias,
+    })
 
 @app.route('/api/app/funcionario/me/ponto/espelho/pdf')
 @app_func_required
@@ -16415,7 +16488,8 @@ with app.app_context():
         'premio_produtividade FLOAT DEFAULT 0',
         'vale_gasolina FLOAT DEFAULT 0',
         'cesta_natal FLOAT DEFAULT 0',
-        'foto_perfil VARCHAR(500)'
+        'foto_perfil VARCHAR(500)',
+        'data_nascimento DATE',
     ])
     ensure_cols('comunicado_app',[
         'posto_operacional VARCHAR(150)'

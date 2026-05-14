@@ -2948,8 +2948,10 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="f"><label>Órgão emissor</label><input id="forgao"></div>
       </div>
       <div class="g3">
+        <div class="f"><label>Data de nascimento 🎂 <span style="font-size:10px;color:#5f7590;font-weight:400">(usada para notificação no app)</span></label><input id="fnascimento" type="date"></div>
         <div class="f"><label>PIS</label><input id="fpis"></div>
         <div class="f"><label>CTPS</label><input id="fctps"></div>
+      </div>
         <div class="f"><label>Título de eleitor</label><input id="ftitulo-eleitor"></div>
       </div>
       <div class="g3">
@@ -5651,6 +5653,7 @@ function rhFuncionarioMontarPayload(requireNome=false){
     estado:(document.getElementById('festado').value||'').trim().toUpperCase().slice(0,2),
     rg:document.getElementById('frg').value,
     orgao_emissor:document.getElementById('forgao').value,
+    data_nascimento:document.getElementById('fnascimento').value,
     pis:document.getElementById('fpis').value,
     ctps:document.getElementById('fctps').value,
     titulo_eleitor:document.getElementById('ftitulo-eleitor').value,
@@ -5844,7 +5847,7 @@ function openModalFunc(modo,id){
   if(_rhFuncAutoTimer){ clearTimeout(_rhFuncAutoTimer); _rhFuncAutoTimer=null; }
   _rhFuncAutoLastHash='';
   document.getElementById('fid').value='';
-  ['fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fferias-inicio','fferias-fim','fferias-obs','fposto','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
+  ['fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fferias-inicio','fferias-fim','fferias-obs','fposto','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fnascimento','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
   document.getElementById('fbanco-tipo').value='';
   document.getElementById('fddi').value='55';
   const st=document.getElementById('fcpf-st'); if(st){st.style.display='none';st.textContent='';}
@@ -5940,6 +5943,7 @@ function preencherFormFuncionario(f,titulo='Editar funcionário'){
   document.getElementById('festado').value=(f.estado||end.estado||'').toUpperCase();
   document.getElementById('frg').value=f.rg||'';
   document.getElementById('forgao').value=f.orgao_emissor||'';
+  document.getElementById('fnascimento').value=f.data_nascimento||'';
   document.getElementById('fpis').value=f.pis||'';
   document.getElementById('fctps').value=f.ctps||'';
   document.getElementById('ftitulo-eleitor').value=f.titulo_eleitor||'';

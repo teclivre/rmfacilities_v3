@@ -162,7 +162,8 @@ class HomeActivity : AppCompatActivity() {
 
         // click duplicado removido — tratado acima com abrirHistoricoPagamentos()
 
-        findViewById<BottomNavigationView>(R.id.bottomNavHome).apply {
+        val bottomNav = findViewById<BottomNavigationView>(R.id.bottomNavHome)
+        bottomNav.apply {
             selectedItemId = R.id.nav_home
             setOnItemSelectedListener { item ->
                 when (item.itemId) {
@@ -186,6 +187,12 @@ class HomeActivity : AppCompatActivity() {
                     else -> false
                 }
             }
+        }
+        // Destaca a aba Ponto com um badge pulsante para chamar a atenção do colaborador
+        bottomNav.getOrCreateBadge(R.id.nav_ponto).apply {
+            isVisible = true
+            clearNumber()
+            backgroundColor = ContextCompat.getColor(this@HomeActivity, R.color.accent)
         }
 
         findViewById<MaterialButton>(R.id.btnAtalhos).setOnClickListener {
