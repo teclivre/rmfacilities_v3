@@ -87,7 +87,7 @@ class MensagensActivity : AppCompatActivity() {
         rvMensagens.adapter = adapter
 
         avisoAdapter = AvisoAdapter(onLido = { aviso ->
-            CoroutineScope(Dispatchers.IO).launch {
+            lifecycleScope.launch(Dispatchers.IO) {
                 api.marcarComunicadoLido(aviso.id)
             }
         })
@@ -199,7 +199,7 @@ class MensagensActivity : AppCompatActivity() {
                 tvStatusRh.visibility = View.VISIBLE
             }
             else -> {
-                val hora = ultimaRh.criado_fmt?.takeLast(5) ?: sdf.format(Date())
+                val hora = ultimaRh.enviado_fmt?.takeLast(5) ?: sdf.format(Date())
                 tvStatusRh.text = "✅ RH respondeu às $hora"
                 tvStatusRh.visibility = View.VISIBLE
             }
@@ -229,7 +229,7 @@ class MensagensActivity : AppCompatActivity() {
             return
         }
         etMensagem.isEnabled = false
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val nova = try { api.enviarMensagem(texto) } catch (_: Exception) { null }
             withContext(Dispatchers.Main) {
                 etMensagem.isEnabled = true
@@ -258,7 +258,7 @@ class MensagensActivity : AppCompatActivity() {
         val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
         val fileName = obterNomeArquivo(uri)
         Toast.makeText(this, "Enviando $fileName...", Toast.LENGTH_SHORT).show()
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val bytes = contentResolver.openInputStream(uri)?.readBytes()
                     ?: throw IllegalStateException("Não foi possível ler o arquivo")
@@ -286,7 +286,7 @@ class MensagensActivity : AppCompatActivity() {
     private fun abrirArquivoMensagem(item: MensagemItem) {
         val arquivoUrl = item.arquivo_url ?: return
         Toast.makeText(this, "Baixando ${item.arquivo_nome ?: "arquivo"}...", Toast.LENGTH_SHORT).show()
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val bytes = api.downloadMensagemArquivo(arquivoUrl)
                 val fileName = item.arquivo_nome ?: "arquivo_${item.id}"
