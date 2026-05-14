@@ -219,7 +219,7 @@ class PontoEspelhoActivity : AppCompatActivity() {
                 // Linha de cabeçalho da tabela
                 fun makeRow(cols: List<String>, isHeader: Boolean) = LinearLayout(this@PontoEspelhoActivity).apply {
                     orientation = LinearLayout.HORIZONTAL
-                    val weights = listOf(2.5f, 1.5f, 1.5f, 1.5f, 1.5f, 1.8f)
+                    val weights = listOf(2.0f, 5.0f, 1.8f)
                     val bg = if (isHeader) 0xFF1D3A5C.toInt() else Color.TRANSPARENT
                     setBackgroundColor(bg)
                     setPadding(0, (2 * dp).toInt(), 0, (2 * dp).toInt())
@@ -230,26 +230,35 @@ class PontoEspelhoActivity : AppCompatActivity() {
                             setTypeface(null, if (isHeader) Typeface.BOLD else Typeface.NORMAL)
                             setTextColor(if (isHeader) Color.WHITE else
                                 ContextCompat.getColor(this@PontoEspelhoActivity, R.color.mobile_text_primary))
-                            gravity = Gravity.CENTER
+                            gravity = if (i == 1) Gravity.START or Gravity.CENTER_VERTICAL else Gravity.CENTER
+                            setPadding(if (i == 1) (4 * dp).toInt() else 0, 0, 0, 0)
                             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT,
                                 weights.getOrElse(i) { 1f })
                         })
                     }
                 }
 
-                container.addView(makeRow(listOf("Data", "Entrada", "S.Int.", "R.Int.", "Saída", "Horas"), true))
+                container.addView(makeRow(listOf("Data", "Batidas", "Horas"), true))
 
                 for (dia in resp.dias) {
                     if (!dia.tem_marcacoes) continue
+                    val marcStr = if (dia.marcacoes.isNotEmpty())
+                        dia.marcacoes.joinToString("  ·  ") { m ->
+                            val lbl = when (m.tipo) {
+                                "entrada" -> "E"
+                                "saida_intervalo" -> "SI"
+                                "retorno_intervalo" -> "RI"
+                                "saida" -> "S"
+                                else -> m.tipo_label ?: m.tipo ?: "?"
+                            }
+                            "${m.hora_fmt ?: "-"} $lbl"
+                        }
+                    else "-"
                     val row = makeRow(listOf(
                         dia.data_fmt ?: "",
-                        dia.entrada ?: "-",
-                        dia.saida_intervalo ?: "-",
-                        dia.retorno_intervalo ?: "-",
-                        dia.saida ?: "-",
+                        marcStr,
                         dia.horas_trabalhadas_fmt ?: "-"
                     ), false)
-                    // Linha alternada
                     container.addView(row)
                     // Separador
                     container.addView(View(this@PontoEspelhoActivity).apply {

@@ -670,12 +670,7 @@ def register_ponto_routes(
         dia = inicio
         while dia <= fim:
             marcacoes = _ponto_marcacoes_dia(funcionario.id, dia)
-            tempos = sorted([item.data_hora for item in marcacoes if getattr(item, 'data_hora', None)])[:4]
-
-            entrada1 = hhmm_from_dt(tempos[0]) if len(tempos) > 0 else ''
-            saida1 = hhmm_from_dt(tempos[1]) if len(tempos) > 1 else ''
-            entrada2 = hhmm_from_dt(tempos[2]) if len(tempos) > 2 else ''
-            saida2 = hhmm_from_dt(tempos[3]) if len(tempos) > 3 else ''
+            tempos = sorted([item.data_hora for item in marcacoes if getattr(item, 'data_hora', None)])
 
             resumo = _ponto_resumo_func_dia(funcionario, dia)
             previstas = int(resumo.get('horas_esperadas_min', 0) or 0)
@@ -687,11 +682,13 @@ def register_ponto_routes(
 
             faltas = ''
             extras = ''
+            marcacoes_str = ''
             if previstas > 0 and not tempos:
-                entrada1 = saida1 = entrada2 = saida2 = 'Falta'
+                marcacoes_str = 'Falta'
                 faltas = '-' + _ponto_fmt_minutos(previstas)
                 total_faltas += previstas
             else:
+                marcacoes_str = '  '.join(hhmm_from_dt(t) for t in tempos) if tempos else ''
                 if saldo < 0:
                     faltas = '-' + _ponto_fmt_minutos(abs(saldo))
                     total_faltas += abs(saldo)
@@ -705,10 +702,7 @@ def register_ponto_routes(
 
             linhas.append([
                 dia.strftime('%d/%m') + ' ' + weekdays[dia.weekday()],
-                entrada1,
-                saida1,
-                entrada2,
-                saida2,
+                marcacoes_str,
                 _ponto_fmt_minutos(previstas),
                 _ponto_fmt_minutos(diurnas),
                 _ponto_fmt_minutos(intervalo) if intervalo else '',
@@ -783,9 +777,9 @@ def register_ponto_routes(
         elementos.append(tabela_cab)
         elementos.append(Spacer(1, (4 if compact_mode else 6)))
 
-        tabela_dias = [['Data', 'Ent. 1', 'Sai. 1', 'Ent. 2', 'Sai. 2', 'Previstas', 'Diurnas', 'Intervalo', 'Faltas', 'Ext. 100']]
+        tabela_dias = [['Data', 'Marcações', 'Previstas', 'Diurnas', 'Intervalo', 'Faltas', 'Ext. 100']]
         tabela_dias.extend(linhas)
-        tabela_main = Table(tabela_dias, colWidths=[largura * 0.10, largura * 0.11, largura * 0.11, largura * 0.11, largura * 0.11, largura * 0.09, largura * 0.09, largura * 0.09, largura * 0.09, largura * 0.10], repeatRows=1)
+        tabela_main = Table(tabela_dias, colWidths=[largura * 0.11, largura * 0.35, largura * 0.09, largura * 0.09, largura * 0.09, largura * 0.09, largura * 0.10], repeatRows=1)
         tabela_main.setStyle(TableStyle([
             ('GRID', (0, 0), (-1, -1), 0.35, colors.HexColor('#aaaaaa')),
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e8e8e8')),

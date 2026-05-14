@@ -8518,20 +8518,13 @@ def api_app_ponto_espelho_dados_me():
         data_ref=date(ano,mes,dia)
         resumo=_app_ponto_resumo_dia(f,data_ref)
         marcacoes=resumo.get('marcacoes',[])
-        def _get_hora(tipo_):
-            for _m in marcacoes:
-                if _m.get('tipo')==tipo_: return _m.get('hora_fmt','')
-            return ''
         dias_semana=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom']
         trab_min=resumo.get('horas_trabalhadas_min',0) or 0
         total_min+=trab_min
         dias.append({
             'data':data_ref.isoformat(),
             'data_fmt':f"{dias_semana[data_ref.weekday()]} {data_ref.strftime('%d/%m')}",
-            'entrada':_get_hora('entrada'),
-            'saida_intervalo':_get_hora('saida_intervalo'),
-            'retorno_intervalo':_get_hora('retorno_intervalo'),
-            'saida':_get_hora('saida'),
+            'marcacoes':[{'tipo':m.get('tipo'),'tipo_label':m.get('tipo_label'),'hora_fmt':m.get('hora_fmt')} for m in marcacoes],
             'horas_trabalhadas_fmt':resumo.get('horas_trabalhadas_fmt','00:00'),
             'horas_trabalhadas_min':trab_min,
             'status':resumo.get('status',''),
@@ -8600,7 +8593,7 @@ def api_app_ponto_espelho_pdf_me():
             ),
             Spacer(1,10),
         ]
-        header=['Data','Entrada','S.Int.','R.Int.','Saída','Trabalhadas','Status']
+        header=['Data','Marcações','Trabalhadas','Status']
         rows=[header]
         total_min=0
         dias_semana=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom']
@@ -8608,29 +8601,22 @@ def api_app_ponto_espelho_pdf_me():
             data_ref=date(ano,mes,dia)
             resumo=_app_ponto_resumo_dia(f,data_ref)
             marcacoes=resumo.get('marcacoes',[])
-            def _get_hora(tipo_):
-                for _m in marcacoes:
-                    if _m.get('tipo')==tipo_:
-                        return _m.get('hora_fmt','')
-                return ''
             dds=dias_semana[data_ref.weekday()]
             data_str=f'{dds} {data_ref.strftime("%d/%m")}'
             trab=resumo.get('horas_trabalhadas_fmt','00:00')
             trab_min=resumo.get('horas_trabalhadas_min',0) or 0
             total_min+=trab_min
             status_val='OK' if resumo.get('status')=='ok' else ('Inconsist.' if marcacoes else '-')
+            marc_str='  '.join(m.get('hora_fmt','') for m in marcacoes) if marcacoes else 'Falta' if resumo.get('horas_esperadas_min',0) else '-'
             rows.append([
                 data_str,
-                _get_hora('entrada') or '-',
-                _get_hora('saida_intervalo') or '-',
-                _get_hora('retorno_intervalo') or '-',
-                _get_hora('saida') or '-',
+                marc_str,
                 trab if marcacoes else '-',
                 status_val,
             ])
         total_fmt=f'{total_min//60:02d}:{total_min%60:02d}'
-        rows.append(['','','','','Total:',total_fmt,''])
-        col_widths=[2.5*cm,2.1*cm,2.1*cm,2.1*cm,2.1*cm,2.5*cm,2.6*cm]
+        rows.append(['','Total:',total_fmt,''])
+        col_widths=[2.5*cm,9.0*cm,2.5*cm,2.5*cm]
         tbl=Table(rows,colWidths=col_widths)
         tbl.setStyle(TableStyle([
             ('BACKGROUND',(0,0),(-1,0),rl_colors.HexColor('#1a1a2e')),

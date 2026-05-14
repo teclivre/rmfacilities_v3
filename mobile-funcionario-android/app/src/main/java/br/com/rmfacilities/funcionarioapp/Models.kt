@@ -219,10 +219,7 @@ data class PontoEspelhoStatusResponse(
 data class PontoEspelhoDia(
     val data: String? = null,
     val data_fmt: String? = null,
-    val entrada: String? = null,
-    val saida_intervalo: String? = null,
-    val retorno_intervalo: String? = null,
-    val saida: String? = null,
+    val marcacoes: List<PontoMarcacaoItem> = emptyList(),
     val horas_trabalhadas_fmt: String? = null,
     val horas_trabalhadas_min: Int = 0,
     val status: String? = null,
