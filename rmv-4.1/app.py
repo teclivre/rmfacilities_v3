@@ -7412,6 +7412,7 @@ def api_app_funcionario_me():
         'posto_operacional':f.posto_operacional,
         'status':f.status,
         'foto_url':foto_url,
+        'data_nascimento':f.data_nascimento.isoformat() if getattr(f,'data_nascimento',None) else None,
         'ultimo_aso_competencia':(ultimo_aso.competencia if ultimo_aso else None),
         'ultimo_aso_enviado_em':(ultimo_aso.criado_em.isoformat() if (ultimo_aso and ultimo_aso.criado_em) else None),
         'jornada':f.jornada,
@@ -7997,6 +7998,20 @@ def api_app_mensagens_nao_lidas():
     f=g.app_funcionario
     count=MensagemApp.query.filter_by(funcionario_id=f.id,de_rh=True,lida=False).count()
     return jsonify({'nao_lidas':count})
+
+@app.route('/api/app/funcionario/mensagens/<int:mid>',methods=['DELETE'])
+@app_func_required
+def api_app_mensagem_apagar(mid):
+    """Funcionário apaga uma mensagem PRÓPRIA (de_rh=False) da sua conversa."""
+    f=g.app_funcionario
+    m=MensagemApp.query.get_or_404(mid)
+    if m.funcionario_id!=f.id:
+        return jsonify({'erro':'Acesso negado'}),403
+    if m.de_rh:
+        return jsonify({'erro':'Não é possível apagar mensagens do RH'}),400
+    db.session.delete(m)
+    db.session.commit()
+    return jsonify({'ok':True})
 
 # ============================================================
 # PONTO - APP (funcionário autenticado)

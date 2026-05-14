@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import java.text.SimpleDateFormat
@@ -22,7 +23,8 @@ sealed class ChatItem {
 }
 
 class MensagemAdapter(
-    private val onAbrirArquivo: (MensagemItem) -> Unit = {}
+    private val onAbrirArquivo: (MensagemItem) -> Unit = {},
+    private val onApagarMensagem: ((MensagemItem) -> Unit)? = null
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     /** Lista visível (inclui cabeçalhos de data inseridos automaticamente). */
@@ -135,14 +137,42 @@ class MensagemAdapter(
                         holder.tvCheck.setTextColor(0xFF5E7FA0.toInt()) // cinza = entregue
                     }
                     bindArquivo(holder.layoutArquivo, holder.tvArquivoNome, item, temArquivo)
-                    // Long-press → copiar texto
+                    // Long-press → menu: Copiar ou Apagar
                     holder.itemView.setOnLongClickListener {
-                        copiarTexto(holder.itemView.context, item.conteudo)
+                        mostrarMenuMensagem(holder.itemView.context, item)
                         true
                     }
                 }
             }
         }
+    }
+
+    fun removeMensagem(id: Int) {
+        val novas = msgsPuras.filter { it.id != id }
+        replaceAll(novas)
+    }
+
+    private fun mostrarMenuMensagem(context: Context, item: MensagemItem) {
+        val opcoes = if (onApagarMensagem != null)
+            arrayOf("📋 Copiar", "🗑️ Apagar mensagem")
+        else
+            arrayOf("📋 Copiar")
+
+        AlertDialog.Builder(context)
+            .setItems(opcoes) { _, which ->
+                when (which) {
+                    0 -> copiarTexto(context, item.conteudo)
+                    1 -> {
+                        AlertDialog.Builder(context)
+                            .setTitle("Apagar mensagem")
+                            .setMessage("Esta mensagem será removida. Deseja continuar?")
+                            .setPositiveButton("Apagar") { _, _ -> onApagarMensagem?.invoke(item) }
+                            .setNegativeButton("Cancelar", null)
+                            .show()
+                    }
+                }
+            }
+            .show()
     }
 
     private fun copiarTexto(context: Context, texto: String?) {

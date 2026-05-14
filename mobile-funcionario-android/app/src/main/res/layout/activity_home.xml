@@ -60,15 +60,29 @@
                             android:textSize="13sp" />
                     </LinearLayout>
 
-                    <TextView
-                        android:id="@+id/tvAvatar"
+                    <FrameLayout
                         android:layout_width="52dp"
-                        android:layout_height="52dp"
-                        android:background="@drawable/bg_avatar_gradient"
-                        android:gravity="center"
-                        android:textStyle="bold"
-                        android:textColor="@android:color/white"
-                        android:textSize="18sp" />
+                        android:layout_height="52dp">
+
+                        <TextView
+                            android:id="@+id/tvAvatar"
+                            android:layout_width="52dp"
+                            android:layout_height="52dp"
+                            android:background="@drawable/bg_avatar_gradient"
+                            android:gravity="center"
+                            android:textStyle="bold"
+                            android:textColor="@android:color/white"
+                            android:textSize="18sp" />
+
+                        <ImageView
+                            android:id="@+id/ivAvatarHome"
+                            android:layout_width="52dp"
+                            android:layout_height="52dp"
+                            android:scaleType="centerCrop"
+                            android:clipToOutline="true"
+                            android:background="@drawable/bg_avatar_gradient"
+                            android:visibility="gone" />
+                    </FrameLayout>
                 </LinearLayout>
 
                 <LinearLayout

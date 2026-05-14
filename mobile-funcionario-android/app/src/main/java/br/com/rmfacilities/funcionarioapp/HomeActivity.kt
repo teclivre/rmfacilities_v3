@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
+import android.graphics.drawable.BitmapDrawable
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkRequest
@@ -15,6 +17,7 @@ import android.os.Bundle
 import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.animation.DecelerateInterpolator
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -44,6 +47,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var tvBoasVindas: TextView
     private lateinit var tvCargo: TextView
     private lateinit var tvAvatar: TextView
+    private lateinit var ivAvatarHome: ImageView
     private lateinit var tvResumoPonto: TextView
     private lateinit var tvResumoTarefas: TextView
     private lateinit var tvResumoAvisos: TextView
@@ -93,6 +97,7 @@ class HomeActivity : AppCompatActivity() {
         tvBoasVindas = findViewById(R.id.tvBoasVindas)
         tvCargo = findViewById(R.id.tvCargo)
         tvAvatar = findViewById(R.id.tvAvatar)
+        ivAvatarHome = findViewById(R.id.ivAvatarHome)
         tvResumoPonto = findViewById(R.id.tvResumoPonto)
         tvResumoTarefas = findViewById(R.id.tvResumoTarefas)
         tvResumoAvisos = findViewById(R.id.tvResumoAvisos)
@@ -335,6 +340,31 @@ class HomeActivity : AppCompatActivity() {
                 tvCargo.text = listOf(me.funcionario?.cargo, me.funcionario?.setor)
                     .filter { !it.isNullOrBlank() }
                     .joinToString(" • ")
+                // Verificar aniversário
+                BirthdayNotifier.verificar(
+                    this@HomeActivity,
+                    me.funcionario?.data_nascimento,
+                    nome
+                )
+                // Carregar foto de perfil se disponível
+                val fotoUrl = me.funcionario?.foto_url
+                if (!fotoUrl.isNullOrBlank()) {
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        try {
+                            val bytes = api.downloadFile(fotoUrl)
+                            val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            withContext(Dispatchers.Main) {
+                                if (bmp != null) {
+                                    ivAvatarHome.setImageBitmap(bmp)
+                                    ivAvatarHome.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+                                    ivAvatarHome.clipToOutline = true
+                                    ivAvatarHome.visibility = View.VISIBLE
+                                    tvAvatar.visibility = View.GONE
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
                 if (naoLidas > 0) {
                     tvMsgBadge.text = if (naoLidas > 9) "9+" else naoLidas.toString()
                     tvMsgBadge.visibility = View.VISIBLE

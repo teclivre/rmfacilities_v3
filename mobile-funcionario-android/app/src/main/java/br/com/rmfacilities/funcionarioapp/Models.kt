@@ -42,6 +42,7 @@ data class FuncionarioPerfil(
     val posto_operacional: String? = null,
     val status: String? = null,
     val foto_url: String? = null,
+    val data_nascimento: String? = null,
     val ultimo_aso_competencia: String? = null,
     val ultimo_aso_enviado_em: String? = null,
     val canal_otp: String? = null

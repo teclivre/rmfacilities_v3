@@ -462,6 +462,15 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    fun deletarMensagem(id: Int): Boolean {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/mensagens/$id"))
+            .delete()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp -> return resp.isSuccessful }
+    }
+
     fun enviarArquivoMensagem(bytes: ByteArray, mimeType: String, fileName: String, legenda: String = ""): MensagemItem? {
         val body = MultipartBody.Builder()
             .setType(MultipartBody.FORM)

@@ -94,7 +94,22 @@ class MensagensActivity : AppCompatActivity() {
         progressEnvio = findViewById(R.id.progressEnvio)
         tvCharCount = findViewById(R.id.tvCharCount)
 
-        adapter = MensagemAdapter(onAbrirArquivo = { item -> abrirArquivoMensagem(item) })
+        adapter = MensagemAdapter(
+            onAbrirArquivo = { item -> abrirArquivoMensagem(item) },
+            onApagarMensagem = { item ->
+                lifecycleScope.launch(Dispatchers.IO) {
+                    val ok = api.deletarMensagem(item.id)
+                    withContext(Dispatchers.Main) {
+                        if (ok) adapter.removeMensagem(item.id)
+                        else android.widget.Toast.makeText(
+                            this@MensagensActivity,
+                            "Não foi possível apagar a mensagem.",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }
+        )
         rvMensagens.layoutManager = LinearLayoutManager(this).also { it.stackFromEnd = true }
         rvMensagens.adapter = adapter
 

@@ -234,8 +234,9 @@ class PontoActivity : AppCompatActivity() {
         tvData.text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
         atualizarBadgePendentes()
         registrarCallbackRede()
-        // Recarrega dados ao voltar para a tela (caso marcações tenham sido alteradas)
+        // Mostra cache imediatamente enquanto carrega do servidor
         if (primeiraCarregada) {
+            restaurarCacheMarcacoes()
             carregarDia()
         }
     }
@@ -456,15 +457,20 @@ class PontoActivity : AppCompatActivity() {
                     }
                     idsMarcacoesConfirmadas.clear()
                     resp.resumo?.marcacoes?.forEach { idsMarcacoesConfirmadas.add(it.id) }
-                    // Atualizar cache com as marcações atuais
-                    salvarCacheMarcacoes(resp.resumo?.marcacoes ?: emptyList())
+                    // Só sobrescreve o cache se o servidor devolveu marcações
+                    // Evita apagar cache válido com lista vazia por erro de resposta
+                    val marcacoesServidor = resp.resumo?.marcacoes
+                    if (!marcacoesServidor.isNullOrEmpty()) {
+                        salvarCacheMarcacoes(marcacoesServidor)
+                    }
                     renderResumo(resp.resumo)
                     updateStatus("Atualizado agora.", R.color.mobile_semantic_info)
                 } else {
                     if (!resp.erro.isNullOrBlank()) {
                         TelemetryLogger.logHandled(this@PontoActivity, "ponto_carregar", IllegalStateException(resp.erro))
                     }
-                    // Mantém marcações em cache visíveis, apenas mostra status de erro
+                    // Em caso de falha: restaura do cache para não sumir as marcações
+                    restaurarCacheMarcacoes()
                     updateStatus(resp.erro ?: "Falha ao carregar ponto.", R.color.mobile_semantic_pending)
                 }
             }
