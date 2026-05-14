@@ -120,6 +120,17 @@ data class NaoLidasResponse(
     val nao_lidas: Int = 0
 )
 
+data class ComunicadoItem(
+    val id: Int,
+    val titulo: String = "",
+    val conteudo: String = "",
+    val criado_fmt: String? = null,
+    val lido: Boolean = false,
+    val lidos_count: Int = 0,
+    val funcionario_id: Int? = null,
+    val posto_operacional: String? = null
+)
+
 data class ApiSimpleResponse(
     val ok: Boolean = false,
     val erro: String? = null,

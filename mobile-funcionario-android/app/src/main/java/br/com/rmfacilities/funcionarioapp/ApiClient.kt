@@ -503,6 +503,33 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    fun getComunicados(): List<ComunicadoItem> {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/comunicados"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                val type = object : com.google.gson.reflect.TypeToken<List<ComunicadoItem>>() {}.type
+                gson.fromJson(raw, type) ?: emptyList()
+            } catch (_: Exception) { emptyList() }
+        }
+    }
+
+    fun marcarComunicadoLido(id: Int) {
+        try {
+            val req = Request.Builder()
+                .url(url("/api/app/funcionario/comunicados/$id/lido"))
+                .post("{}".toRequestBody("application/json".toMediaType()))
+                .addHeader("Authorization", "Bearer ${session.accessToken}")
+                .addHeader("Content-Type", "application/json")
+                .build()
+            http.newCall(req).execute().use { }
+        } catch (_: Exception) { }
+    }
+
     fun uploadFoto(bytes: ByteArray, mimeType: String): FotoUploadResponse {
         val ext = when {
             mimeType.contains("png") -> "foto.png"

@@ -4,8 +4,10 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.view.View
 import android.webkit.MimeTypeMap
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,9 +29,16 @@ class MensagensActivity : AppCompatActivity() {
     private lateinit var session: SessionManager
     private lateinit var api: ApiClient
     private lateinit var adapter: MensagemAdapter
+    private lateinit var avisoAdapter: AvisoAdapter
     private lateinit var rvMensagens: RecyclerView
+    private lateinit var rvAvisos: RecyclerView
     private lateinit var etMensagem: EditText
     private lateinit var tvBadge: TextView
+    private lateinit var tvAvisosVazio: TextView
+    private lateinit var panelChat: LinearLayout
+    private lateinit var panelAvisos: LinearLayout
+    private lateinit var btnTabChat: MaterialButton
+    private lateinit var btnTabAvisos: MaterialButton
     private lateinit var retryQueue: ActionRetryQueue
 
     private var cameraPhotoUri: Uri? = null
@@ -51,12 +60,29 @@ class MensagensActivity : AppCompatActivity() {
         retryQueue = ActionRetryQueue(this)
 
         rvMensagens = findViewById(R.id.rvMensagens)
+        rvAvisos = findViewById(R.id.rvAvisos)
         etMensagem = findViewById(R.id.etMensagem)
         tvBadge = findViewById(R.id.tvBadge)
+        tvAvisosVazio = findViewById(R.id.tvAvisosVazio)
+        panelChat = findViewById(R.id.panelChat)
+        panelAvisos = findViewById(R.id.panelAvisos)
+        btnTabChat = findViewById(R.id.btnTabChat)
+        btnTabAvisos = findViewById(R.id.btnTabAvisos)
 
         adapter = MensagemAdapter(onAbrirArquivo = { item -> abrirArquivoMensagem(item) })
         rvMensagens.layoutManager = LinearLayoutManager(this).also { it.stackFromEnd = true }
         rvMensagens.adapter = adapter
+
+        avisoAdapter = AvisoAdapter(onLido = { aviso ->
+            CoroutineScope(Dispatchers.IO).launch {
+                api.marcarComunicadoLido(aviso.id)
+            }
+        })
+        rvAvisos.layoutManager = LinearLayoutManager(this)
+        rvAvisos.adapter = avisoAdapter
+
+        btnTabChat.setOnClickListener { mostrarAba("chat") }
+        btnTabAvisos.setOnClickListener { mostrarAba("avisos") }
 
         findViewById<MaterialButton>(R.id.btnVoltar).setOnClickListener { finish() }
         findViewById<MaterialButton>(R.id.btnEnviar).setOnClickListener { enviar() }
@@ -69,7 +95,32 @@ class MensagensActivity : AppCompatActivity() {
                 .show()
         }
 
+        // Abre na aba correta se vier de notificação de aviso
+        val openTab = intent.getStringExtra("open_tab")
+        if (openTab == "avisos") {
+            mostrarAba("avisos")
+        } else {
+            mostrarAba("chat")
+        }
+
         carregarMensagens()
+        carregarAvisos()
+    }
+
+    private fun mostrarAba(aba: String) {
+        val isChat = aba == "chat"
+        panelChat.visibility = if (isChat) View.VISIBLE else View.GONE
+        panelAvisos.visibility = if (isChat) View.GONE else View.VISIBLE
+
+        val colorAtivo = getColor(R.color.mobile_tab_active)
+        val colorInativo = getColor(R.color.mobile_surface_soft)
+        val colorTextoAtivo = getColor(R.color.white)
+        val colorTextoInativo = getColor(R.color.mobile_text_primary)
+
+        btnTabChat.backgroundTintList = android.content.res.ColorStateList.valueOf(if (isChat) colorAtivo else colorInativo)
+        btnTabChat.setTextColor(if (isChat) colorTextoAtivo else colorTextoInativo)
+        btnTabAvisos.backgroundTintList = android.content.res.ColorStateList.valueOf(if (!isChat) colorAtivo else colorInativo)
+        btnTabAvisos.setTextColor(if (!isChat) colorTextoAtivo else colorTextoInativo)
     }
 
     private fun abrirCamera() {
@@ -86,7 +137,23 @@ class MensagensActivity : AppCompatActivity() {
             withContext(Dispatchers.Main) {
                 adapter.replaceAll(msgs)
                 if (msgs.isNotEmpty()) rvMensagens.scrollToPosition(msgs.size - 1)
-                tvBadge.visibility = android.view.View.GONE
+                tvBadge.visibility = View.GONE
+            }
+        }
+    }
+
+    private fun carregarAvisos() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val avisos = try { api.getComunicados() } catch (_: Exception) { emptyList() }
+            withContext(Dispatchers.Main) {
+                if (avisos.isEmpty()) {
+                    rvAvisos.visibility = View.GONE
+                    tvAvisosVazio.visibility = View.VISIBLE
+                } else {
+                    rvAvisos.visibility = View.VISIBLE
+                    tvAvisosVazio.visibility = View.GONE
+                    avisoAdapter.replaceAll(avisos)
+                }
             }
         }
     }
@@ -115,7 +182,6 @@ class MensagensActivity : AppCompatActivity() {
     }
 
     private fun enviarArquivo(uri: Uri) {
-        // Validar tamanho máximo (20 MB)
         val sizeLimit = 20 * 1024 * 1024L
         val fileSize = contentResolver.query(
             uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null
