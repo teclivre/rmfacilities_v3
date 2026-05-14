@@ -64,6 +64,17 @@
                         android:textColor="@color/mobile_text_secondary"
                         android:textSize="12sp" />
                 </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvRelogio"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="4dp"
+                    android:text="00:00:00"
+                    android:textColor="@color/accent_blue"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:fontFamily="monospace" />
             </LinearLayout>
 
             <LinearLayout
@@ -197,18 +208,22 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnMarcarPonto"
+                style="@style/Widget.MaterialComponents.Button.UnelevatedButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
                 android:text="Registrar ponto agora"
                 android:textSize="15sp"
                 android:textStyle="bold"
+                android:textColor="@color/white"
                 android:minWidth="0dp"
                 android:minHeight="0dp"
                 android:paddingTop="14dp"
                 android:paddingBottom="14dp"
                 android:paddingStart="12dp"
-                android:paddingEnd="12dp" />
+                android:paddingEnd="12dp"
+                app:backgroundTint="@null"
+                android:background="@drawable/bg_btn_ponto_gradient" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnAtualizarPonto"

@@ -251,6 +251,7 @@
                                 android:layout_width="36dp"
                                 android:layout_height="36dp"
                                 android:background="@drawable/bg_icon_chip"
+                                android:backgroundTint="#1F3A7A"
                                 android:gravity="center"
                                 android:text="⏱"
                                 android:textSize="16sp" />
@@ -311,6 +312,7 @@
                                     android:layout_width="36dp"
                                     android:layout_height="36dp"
                                     android:background="@drawable/bg_icon_chip"
+                                    android:backgroundTint="#1A3D2F"
                                     android:gravity="center"
                                     android:text="📄"
                                     android:textSize="16sp" />
@@ -386,10 +388,7 @@
                                     android:layout_width="36dp"
                                     android:layout_height="36dp"
                                     android:background="@drawable/bg_icon_chip"
-                                    android:gravity="center"
-                                    android:text="💬"
-                                    android:textSize="16sp" />
-
+                                    android:backgroundTint="#2D1F5E" />
                                 <TextView
                                     android:id="@+id/tvMsgBadge"
                                     android:layout_width="18dp"
@@ -449,6 +448,7 @@
                                 android:layout_width="36dp"
                                 android:layout_height="36dp"
                                 android:background="@drawable/bg_icon_chip"
+                                android:backgroundTint="#3D2010"
                                 android:gravity="center"
                                 android:text="👤"
                                 android:textSize="16sp" />

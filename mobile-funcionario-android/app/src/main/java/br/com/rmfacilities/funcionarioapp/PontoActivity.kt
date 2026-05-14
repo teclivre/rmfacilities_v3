@@ -35,6 +35,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import android.os.Handler
+import android.os.Looper
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -70,6 +72,17 @@ class PontoActivity : AppCompatActivity() {
     private lateinit var containerMarcacoes: LinearLayout
     private lateinit var btnMarcarPonto: MaterialButton
     private lateinit var btnAtualizarPonto: MaterialButton
+    private lateinit var tvRelogio: TextView
+
+    private val relogioHandler = Handler(Looper.getMainLooper())
+    private val relogioRunnable = object : Runnable {
+        override fun run() {
+            if (::tvRelogio.isInitialized) {
+                tvRelogio.text = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+            }
+            relogioHandler.postDelayed(this, 1000)
+        }
+    }
 
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var primeiraCarregada = false
@@ -104,6 +117,7 @@ class PontoActivity : AppCompatActivity() {
         containerMarcacoes = findViewById(R.id.containerMarcacoes)
         btnMarcarPonto = findViewById(R.id.btnMarcarPonto)
         btnAtualizarPonto = findViewById(R.id.btnAtualizarPonto)
+        tvRelogio = findViewById(R.id.tvRelogio)
 
         tvData.text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
 
@@ -215,6 +229,7 @@ class PontoActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        relogioHandler.post(relogioRunnable)
         // Atualiza data caso o app ficou aberto após meia-noite
         tvData.text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
         atualizarBadgePendentes()
@@ -227,6 +242,7 @@ class PontoActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        relogioHandler.removeCallbacks(relogioRunnable)
         desregistrarCallbackRede()
     }
 

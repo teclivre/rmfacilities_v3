@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.HapticFeedbackConstants
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -323,7 +324,13 @@ class HomeActivity : AppCompatActivity() {
                 val nome = me.funcionario?.nome ?: "colaborador"
                 val primeiroNome = nome.split(" ").firstOrNull() ?: nome
                 val inicial = nome.firstOrNull()?.uppercaseChar()?.toString() ?: "U"
-                tvBoasVindas.text = "Olá, $primeiroNome"
+                val hora = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+                val saudacao = when {
+                    hora < 12 -> "Bom dia"
+                    hora < 18 -> "Boa tarde"
+                    else -> "Boa noite"
+                }
+                tvBoasVindas.text = "$saudacao, $primeiroNome 👋"
                 tvAvatar.text = inicial
                 tvCargo.text = listOf(me.funcionario?.cargo, me.funcionario?.setor)
                     .filter { !it.isNullOrBlank() }
@@ -374,6 +381,8 @@ class HomeActivity : AppCompatActivity() {
                 if (versao != null && versao.versao_minima > 0 && BuildConfig.VERSION_CODE < versao.versao_minima) {
                     mostrarDialogAtualizar(versao.download_url)
                 }
+                // Animação stagger de entrada nos cards principais
+                animarCardsHome()
             }
         }
     }
@@ -546,6 +555,24 @@ class HomeActivity : AppCompatActivity() {
     private fun goLogin() {
         startActivity(Intent(this, LoginActivity::class.java))
         finish()
+    }
+
+    private fun animarCardsHome() {
+        val cardIds = listOf(R.id.btnPonto, R.id.btnDocumentos, R.id.btnMensagens, R.id.btnPerfil,
+            R.id.btnOfflineHome, R.id.btnConfiguracoesHome, R.id.btnSalarioHome, R.id.btnBeneficiosHome)
+        val interp = DecelerateInterpolator()
+        cardIds.forEachIndexed { i, id ->
+            val v = findViewById<View>(id) ?: return@forEachIndexed
+            v.alpha = 0f
+            v.translationY = 48f
+            v.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setStartDelay(i * 70L)
+                .setDuration(320)
+                .setInterpolator(interp)
+                .start()
+        }
     }
 
     override fun onStart() {
