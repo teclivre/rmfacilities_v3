@@ -107,7 +107,10 @@ class MensagemAdapter(
 
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
         when (val chatItem = itens[position]) {
-            is ChatItem.DataHeader -> (holder as DataViewHolder).tvData.text = chatItem.rotulo
+            is ChatItem.DataHeader -> {
+                (holder as? DataViewHolder)?.tvData?.text = chatItem.rotulo
+                return
+            }
             is ChatItem.Msg -> {
                 val item = chatItem.item
                 val temArquivo = item.tipo == "arquivo" && !item.arquivo_url.isNullOrBlank()

@@ -348,17 +348,6 @@
                 app:strokeColor="@color/border" />
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnVerHolerite"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="50dp"
-                android:layout_marginTop="12dp"
-                android:text="📄 Ver último holerite"
-                android:textColor="@color/mobile_semantic_success"
-                android:textSize="14sp"
-                app:strokeColor="@color/mobile_semantic_success" />
-
-            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnConfiguracoes"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                 android:layout_width="match_parent"

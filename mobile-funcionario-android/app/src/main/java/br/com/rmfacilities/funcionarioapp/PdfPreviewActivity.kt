@@ -309,7 +309,7 @@ class PdfPageAdapter(
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
         when (val item = items[position]) {
             is PreviewItem.Header -> {
-                val h = holder as HH
+                val h = holder as? HH ?: return
                 h.tv.text = "Documento: ${item.title}"
                 h.tv.setTextColor(android.graphics.Color.parseColor("#9EC5F7"))
                 h.tv.setBackgroundColor(android.graphics.Color.parseColor("#1A2235"))
@@ -317,7 +317,7 @@ class PdfPageAdapter(
                 h.tv.textSize = 14f
             }
             is PreviewItem.Page -> {
-                val p = holder as PH
+                val p = holder as? PH ?: return
                 p.ivPage.setImageBitmap(item.bitmap)
             }
         }

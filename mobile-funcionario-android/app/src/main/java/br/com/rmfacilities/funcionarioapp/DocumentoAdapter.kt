@@ -80,20 +80,20 @@ class DocumentoAdapter(
         when (val entry = listItems[position]) {
             is DocListItem.PendentesHeader -> { /* static header */ }
             is DocListItem.CategoryHeader -> {
-                val vh = holder as CategoryHeaderVH
+                val vh = holder as? CategoryHeaderVH ?: return
                 vh.tvLabel.text = entry.label
                 vh.tvCount.text = "${entry.count}"
                 vh.tvArrow.text = if (entry.expanded) "▼" else "▶"
                 vh.itemView.setOnClickListener { toggleCategory(entry.label) }
             }
             is DocListItem.YearHeader -> {
-                val vh = holder as YearHeaderVH
+                val vh = holder as? YearHeaderVH ?: return
                 vh.tvYear.text = entry.year
                 vh.tvCount.text = "${entry.count} arquivo${if (entry.count != 1) "s" else ""}"
                 vh.tvArrow.text = if (entry.expanded) "▼" else "▶"
                 vh.itemView.setOnClickListener { toggleYear(entry.categoria, entry.year) }
             }
-            is DocListItem.Doc -> bindDoc(holder as ItemVH, entry.item)
+            is DocListItem.Doc -> bindDoc(holder as? ItemVH ?: return, entry.item)
         }
     }
 

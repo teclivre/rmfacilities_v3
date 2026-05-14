@@ -111,12 +111,6 @@ class PerfilActivity : AppCompatActivity() {
             pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
         }
 
-        findViewById<MaterialButton>(R.id.btnVerHolerite).setOnClickListener {
-            startActivity(Intent(this, DocumentosActivity::class.java).apply {
-                putExtra("preset_categoria", "holerite")
-            })
-        }
-
         btnTestarNotificacao.setOnClickListener {
             tvFeedback.text = "Registrando token do app..."
             FirebaseMessaging.getInstance().token
