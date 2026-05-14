@@ -24,8 +24,7 @@ else
     VCODE="?"
 fi
 
-APK_SRC="app/build/outputs/apk/debug/app-debug.apk"
-APK_FINAL="app/build/outputs/apk/debug/rmfacilities-v${VERSION_NAME}-debug.apk"
+APK_DIR="app/build/outputs/apk/debug"
 
 echo ""
 echo "============================================"
@@ -45,9 +44,10 @@ echo "▶ Gerando APK debug..."
 ./gradlew assembleDebug
 
 echo ""
-if [ -f "$APK_SRC" ]; then
-    cp "$APK_SRC" "$APK_FINAL"
+APK_FINAL=$(find "$APK_DIR" -name "*.apk" 2>/dev/null | head -1)
+if [ -n "$APK_FINAL" ] && [ -f "$APK_FINAL" ]; then
     SIZE=$(du -sh "$APK_FINAL" | cut -f1)
+    APK_NAME=$(basename "$APK_FINAL")
     echo "✅ APK gerado com sucesso!"
     echo "   Arquivo : $SCRIPT_DIR/$APK_FINAL"
     echo "   Tamanho : $SIZE"
@@ -57,7 +57,7 @@ if [ -f "$APK_SRC" ]; then
     echo "    adb install -r \"$SCRIPT_DIR/$APK_FINAL\""
     echo ""
     echo "  • Copiar para o Desktop:"
-    echo "    cp \"$SCRIPT_DIR/$APK_FINAL\" ~/Desktop/rmfacilities-v${VERSION_NAME}-debug.apk"
+    echo "    cp \"$SCRIPT_DIR/$APK_FINAL\" ~/Desktop/$APK_NAME"
     echo "──────────────────────────────────────────────"
 else
     echo "❌ APK não encontrado. Verifique os erros acima."
