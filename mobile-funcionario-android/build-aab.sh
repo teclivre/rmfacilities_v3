@@ -35,10 +35,26 @@ echo ""
 echo "▶ Executando bundleRelease..."
 ./gradlew bundleRelease
 
-AAB="app/build/outputs/bundle/release/app-release.aab"
+# Após o build, a versão pode ter sido incrementada pelo build.gradle
+# Relê o version.properties para obter os valores reais do build
+REAL_CODE=$(grep "VERSION_CODE" "$PROPS" | cut -d= -f2)
+REAL_MAJOR=$(grep "VERSION_MAJOR" "$PROPS" | cut -d= -f2)
+REAL_MINOR=$(grep "VERSION_MINOR" "$PROPS" | cut -d= -f2)
+REAL_PATCH=$(grep "VERSION_PATCH" "$PROPS" | cut -d= -f2)
+REAL_VERSION="$REAL_MAJOR.$REAL_MINOR.$REAL_PATCH"
 
-if [[ ! -f "$AAB" ]]; then
-    echo "❌ AAB não encontrado em: $AAB"
+AAB_DIR="app/build/outputs/bundle/release"
+
+# Procura o AAB com o nome versionado gerado pelo build.gradle
+AAB=$(find "$AAB_DIR" -name "rmfuncionario-release-v${REAL_VERSION}-${REAL_CODE}.aab" 2>/dev/null | head -1)
+
+# Fallback: qualquer .aab na pasta
+if [[ -z "$AAB" ]]; then
+    AAB=$(find "$AAB_DIR" -name "*.aab" 2>/dev/null | head -1)
+fi
+
+if [[ -z "$AAB" ]] || [[ ! -f "$AAB" ]]; then
+    echo "❌ AAB não encontrado em: $AAB_DIR"
     exit 1
 fi
 
@@ -49,7 +65,7 @@ echo "========================================"
 echo "  ✅ AAB gerado com sucesso!"
 echo "  Arquivo : $AAB"
 echo "  Tamanho : $SIZE"
-echo "  Versão  : $VERSION_NAME (code $CURRENT_CODE)"
+echo "  Versão  : $REAL_VERSION (code $REAL_CODE)"
 echo "========================================"
 echo ""
 echo "📤 Próximos passos para publicar na Google Play:"

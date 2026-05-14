@@ -96,6 +96,27 @@ android {
     kotlinOptions {
         jvmTarget = '17'
     }
+
+    // ── Nomear APK e AAB com versão ──────────────────────────────────────────
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            def flavor = variant.flavorName ? "${variant.flavorName}-" : ""
+            outputFileName = "rmfuncionario-${flavor}${variant.buildType.name}-v${buildVersionName}-${verCode}.apk"
+        }
+    }
+    // Para AAB (bundle), o rename é feito via task no script; o Gradle não expõe
+    // bundleVariants.outputs diretamente, então usamos a task de finalização.
+    tasks.whenTaskAdded { task ->
+        if (task.name == 'bundleRelease') {
+            task.doLast {
+                def aabDir = file("${buildDir}/outputs/bundle/release")
+                def src = new File(aabDir, 'app-release.aab')
+                def dst = new File(aabDir, "rmfuncionario-release-v${buildVersionName}-${verCode}.aab")
+                if (src.exists()) src.renameTo(dst)
+            }
+        }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 }
 
 dependencies {
