@@ -7471,7 +7471,9 @@ def api_admin_logs_app():
     logs=q.order_by(AppLog.id.desc()).limit(limit).all()
     return jsonify({'logs':[l.to_dict() for l in logs]})
 
-
+@app.route('/api/app/funcionario/me')
+@app_func_required
+def api_app_funcionario_me():
     f=g.app_funcionario
     ultimo_aso=FuncionarioArquivo.query.filter_by(funcionario_id=f.id,categoria='aso').order_by(
         FuncionarioArquivo.criado_em.desc(),FuncionarioArquivo.id.desc()
