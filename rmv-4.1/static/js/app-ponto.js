@@ -184,7 +184,10 @@ async function pontoCarregarDia(){
     <td style="font-weight:700">${m.hora_fmt||''}</td>
     <td>${m.origem||'web'}</td>
     <td>${m.observacao||'—'}</td>
-    <td><button class="btn b-gh b-sm" onclick="pontoEditarMarcacao(${m.id})">Editar</button></td>
+    <td style="display:flex;gap:4px">
+      <button class="btn b-gh b-sm" onclick="pontoEditarMarcacao(${m.id})">Editar</button>
+      <button class="btn b-vm b-sm" onclick="pontoExcluirMarcacao(${m.id})">Excluir</button>
+    </td>
   </tr>`).join('');
   await pontoCarregarFechamentoDia();
 }
@@ -244,6 +247,26 @@ async function salvarEdicaoMarcacaoPonto(){
   }
   closeModal('ponto-edit',true);
   showSt('ponto-st','Marcação editada com sucesso.',false);
+  await pontoCarregarDia();
+  await pontoCarregarPainelDia();
+}
+
+async function pontoExcluirMarcacao(marcacaoId){
+  const m=(pontoMarcacoesDiaAtual||[]).find(x=>String(x.id)===String(marcacaoId));
+  const label=m?(m.tipo_label||m.tipo)+' às '+(m.hora_fmt||''):'marcação #'+marcacaoId;
+  const motivo=prompt(`Excluir "${label}".\n\nInforme o motivo da exclusão:`,'');
+  if(motivo===null) return; // cancelou
+  if(!motivo.trim()){
+    showSt('ponto-st','Informe o motivo para excluir a marcação.',true);
+    return;
+  }
+  if(!confirm(`Confirma a EXCLUSÃO permanente de "${label}"?\nMotivo: ${motivo}`)) return;
+  const r=await api('/api/ponto/marcacao/'+marcacaoId,'DELETE',{motivo:motivo.trim()});
+  if(r.erro){
+    showSt('ponto-st',r.erro,true);
+    return;
+  }
+  showSt('ponto-st','Marcação excluída com sucesso.',false);
   await pontoCarregarDia();
   await pontoCarregarPainelDia();
 }

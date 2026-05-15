@@ -463,6 +463,52 @@ def register_ponto_routes(
                 app.logger.exception('Falha ao aplicar ajuste de ponto')
                 return jsonify({'erro': 'Falha ao aplicar ajuste de ponto.', 'detalhe': str(exc)[:220]}), 500
 
+    @app.route('/api/ponto/marcacao/<int:id>', methods=['DELETE'])
+    @lr
+    def api_ponto_excluir_marcacao(id):
+        dados = request.json or {}
+        motivo = (dados.get('motivo') or '').strip()
+        if not motivo:
+            return jsonify({'erro': 'Informe o motivo da exclusão.'}), 400
+        marcacao = PontoMarcacao.query.get(id)
+        if not marcacao:
+            return jsonify({'erro': 'Marcação não encontrada.'}), 404
+        funcionario = Funcionario.query.get(marcacao.funcionario_id)
+        if not funcionario:
+            return jsonify({'erro': 'Funcionário da marcação não encontrado.'}), 404
+        data_ref = marcacao.data_hora.date() if marcacao.data_hora else None
+        snap_antes = [m.to_dict() for m in _ponto_marcacoes_dia(funcionario.id, data_ref)] if data_ref else []
+        try:
+            antes = {'marcacao_id': marcacao.id, 'marcacao': marcacao.to_dict(), 'dia': snap_antes}
+            db.session.delete(marcacao)
+            db.session.flush()
+            snap_depois = [m.to_dict() for m in _ponto_marcacoes_dia(funcionario.id, data_ref)] if data_ref else []
+            ajuste = PontoAjuste(
+                funcionario_id=funcionario.id,
+                data_ref=data_ref.strftime('%Y-%m-%d') if data_ref else '',
+                motivo=motivo,
+                antes_json=json.dumps(antes, ensure_ascii=False, default=str),
+                depois_json=json.dumps({'dia': snap_depois}, ensure_ascii=False, default=str),
+                criado_por=session.get('nome', ''),
+            )
+            db.session.add(ajuste)
+            db.session.commit()
+            audit_event(
+                'ponto_exclusao_marcacao',
+                'usuario',
+                session.get('uid'),
+                'funcionario',
+                funcionario.id,
+                True,
+                {'marcacao_id': id, 'data_ref': data_ref.strftime('%Y-%m-%d') if data_ref else '', 'motivo': motivo[:200]},
+            )
+            resumo = _ponto_resumo_func_dia(funcionario, data_ref) if data_ref else {}
+            return jsonify({'ok': True, 'resumo': resumo})
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception('Falha ao excluir marcação de ponto')
+            return jsonify({'erro': 'Falha ao excluir marcação de ponto.', 'detalhe': str(exc)[:220]}), 500
+
     @app.route('/api/ponto/marcacao/<int:id>', methods=['PUT'])
     @lr
     def api_ponto_editar_marcacao(id):
