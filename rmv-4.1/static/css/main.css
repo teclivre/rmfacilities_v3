@@ -215,7 +215,7 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 #pg-beneficios .card{background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(236,246,255,.9));border:1px solid rgba(31,110,176,.2)}
 #pg-beneficios .tbl-wrap{border:1px solid rgba(31,110,176,.22);border-radius:12px;background:linear-gradient(180deg,rgba(241,248,255,.92),rgba(233,244,255,.88))}
 #pg-beneficios .tbl{min-width:920px}
-#pg-beneficios .tbl th{background:linear-gradient(90deg,#1f6eb0,#3f95dd);font-size:10.5px;letter-spacing:.35px}
+#pg-beneficios .tbl th{background:linear-gradient(90deg,#205d8a,#2d7ab5);font-size:10.5px;letter-spacing:.35px}
 #pg-beneficios .tbl td{border-bottom:1px solid rgba(31,110,176,.14)}
 #pg-beneficios .tbl tbody tr{transition:transform .16s ease,background .2s ease}
 #pg-beneficios .tbl tbody tr:hover td{background:rgba(79,153,220,.16)}
@@ -315,7 +315,7 @@ mark{background:#FFF3A0;border-radius:2px;padding:0 1px}
 .ponto-side{border:1px solid var(--borda);border-radius:12px;padding:10px;background:linear-gradient(180deg,var(--cinza-cl) 0%,#fff 100%)}
 .ponto-side-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .ponto-lista{margin-top:8px;max-height:560px;overflow:auto;display:flex;flex-direction:column;gap:7px;padding-right:2px}
-.ponto-item{width:100%;text-align:left;border:1px solid #d6e0ea;background:#fff;border-radius:10px;padding:9px 10px;cursor:pointer;transition:transform .12s ease,box-shadow .18s ease,border-color .18s ease}
+.ponto-item{width:100%;text-align:left;border:1px solid #d3d3d3;background:#fff;border-radius:10px;padding:9px 10px;cursor:pointer;transition:transform .12s ease,box-shadow .18s ease,border-color .18s ease}
 .ponto-item:hover{border-color:var(--azul);box-shadow:0 8px 20px rgba(31,110,176,.12)}
 .ponto-item.on{border-color:var(--azul);background:var(--azul-cc);box-shadow:0 8px 20px rgba(31,110,176,.14)}
 .ponto-item-main{display:flex;flex-direction:column;gap:2px}
@@ -326,7 +326,7 @@ mark{background:#FFF3A0;border-radius:2px;padding:0 1px}
 .ponto-kpis{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:8px;margin-top:10px}
 .ponto-kpi{border:1px solid var(--borda);border-radius:10px;padding:8px 10px;background:var(--cinza-cl)}
 .ponto-kpi .l{font-size:11px;color:#7a8b9a}
-.ponto-kpi .v{font-size:16px;color:#193f5e;font-weight:700}
+.ponto-kpi .v{font-size:16px;color:#205d8a;font-weight:700}
 .ponto-acoes{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 
 /* Gestão Fácil - Calendário */

@@ -2368,31 +2368,31 @@ document.addEventListener('DOMContentLoaded',()=>{
         #pg-assinaturas .asi-shell{display:grid;grid-template-columns:250px minmax(0,1fr);gap:16px;align-items:start}
         #pg-assinaturas .asi-side{position:sticky;top:8px}
         #pg-assinaturas .asi-side .subaba-bloco{width:100%;text-align:left}
-        #pg-assinaturas .asi-upload-drop{border:2px dashed #9ec4e8;border-radius:12px;padding:20px;background:#f5faff;cursor:pointer;transition:.15s}
-        #pg-assinaturas .asi-upload-drop.drag{border-color:#1f6eb0;background:#eaf4ff;box-shadow:0 0 0 3px rgba(31,110,176,.12)}
-        #pg-assinaturas .asi-preview-scroll{width:100%;overflow-y:auto;max-height:min(82vh,960px);border:1px solid #d7e6f7;border-radius:10px;background:#f5f8fc;margin-top:12px}
-        #pg-assinaturas .asi-preview-scroll-item+.asi-preview-scroll-item{border-top:2px solid #d0e4f5}
-        #pg-assinaturas .asi-preview-scroll-title{font-size:12px;font-weight:700;color:#1e3450;padding:8px 12px;background:#e8f1fb;display:flex;align-items:center;gap:6px}
+        #pg-assinaturas .asi-upload-drop{border:2px dashed #d3d3d3;border-radius:12px;padding:20px;background:#f5f0f6;cursor:pointer;transition:.15s}
+        #pg-assinaturas .asi-upload-drop.drag{border-color:#205d8a;background:#f5f0f6;box-shadow:0 0 0 3px rgba(31,110,176,.12)}
+        #pg-assinaturas .asi-preview-scroll{width:100%;overflow-y:auto;max-height:min(82vh,960px);border:1px solid #d3d3d3;border-radius:10px;background:#f5f0f6;margin-top:12px}
+        #pg-assinaturas .asi-preview-scroll-item+.asi-preview-scroll-item{border-top:2px solid #d3d3d3}
+        #pg-assinaturas .asi-preview-scroll-title{font-size:12px;font-weight:700;color:#020202;padding:8px 12px;background:#d0e4f0;display:flex;align-items:center;gap:6px}
         #pg-assinaturas .asi-preview-scroll iframe{width:100%;height:min(78vh,900px);border:none;display:block}
         /* Wizard stepper */
         #pg-assinaturas .asi-wizard{display:flex;flex-direction:column;gap:0;padding:4px 0}
         #pg-assinaturas .asi-wz-step{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;border-radius:10px;padding:9px 8px;cursor:pointer;text-align:left;transition:all .18s ease;font-family:'Manrope',sans-serif}
-        #pg-assinaturas .asi-wz-step:hover{background:#f0f7ff}
-        #pg-assinaturas .asi-wz-step.active{background:#e8f3ff}
+        #pg-assinaturas .asi-wz-step:hover{background:#f5f0f6}
+        #pg-assinaturas .asi-wz-step.active{background:#d0e4f0}
         #pg-assinaturas .asi-wz-step.done .wz-num{background:#22a95b!important;color:#fff!important;border-color:#22a95b!important}
-        #pg-assinaturas .asi-wz-step.active .wz-num{background:#1f6eb0;color:#fff;border-color:#1f6eb0}
-        #pg-assinaturas .wz-num{width:28px;height:28px;border-radius:50%;border:2px solid #c5d9f0;background:#f8fbff;color:#1e3450;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .18s}
+        #pg-assinaturas .asi-wz-step.active .wz-num{background:#205d8a;color:#fff;border-color:#205d8a}
+        #pg-assinaturas .wz-num{width:28px;height:28px;border-radius:50%;border:2px solid #d3d3d3;background:#f5f0f6;color:#020202;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .18s}
         #pg-assinaturas .wz-info{display:flex;flex-direction:column;gap:2px;min-width:0}
-        #pg-assinaturas .wz-label{font-size:12px;font-weight:700;color:#1e3450;white-space:nowrap}
-        #pg-assinaturas .asi-wz-step.active .wz-label{color:#1f6eb0}
+        #pg-assinaturas .wz-label{font-size:12px;font-weight:700;color:#020202;white-space:nowrap}
+        #pg-assinaturas .asi-wz-step.active .wz-label{color:#205d8a}
         #pg-assinaturas .wz-badge{font-size:10px;color:#7a8fa6;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
         #pg-assinaturas .asi-wz-step.done .wz-badge{color:#22a95b}
         #pg-assinaturas .wz-line{width:2px;height:12px;background:#e0eaf5;margin-left:22px}
         /* Audit position selector */
-        #pg-assinaturas .asi-audit-pos-btn{display:inline-flex;align-items:center;gap:5px;border:1.5px solid #c5d9f0;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;color:#1e3450;cursor:pointer;background:#f8fbff;transition:.15s;user-select:none}
-        #pg-assinaturas .asi-audit-pos-btn:hover{border-color:#7ab8e8;background:#eef6ff}
+        #pg-assinaturas .asi-audit-pos-btn{display:inline-flex;align-items:center;gap:5px;border:1.5px solid #d3d3d3;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;color:#020202;cursor:pointer;background:#f5f0f6;transition:.15s;user-select:none}
+        #pg-assinaturas .asi-audit-pos-btn:hover{border-color:#205d8a;background:#eef6ff}
         #pg-assinaturas .asi-audit-pos-btn input{display:none}
-        #pg-assinaturas .asi-audit-pos-btn.on{border-color:#1f6eb0;background:#e8f3ff;color:#1f6eb0}
+        #pg-assinaturas .asi-audit-pos-btn.on{border-color:#205d8a;background:#d0e4f0;color:#205d8a}
         @media (min-width:1500px){
           #pg-assinaturas .asi-shell{grid-template-columns:265px minmax(0,1fr)}
         }
@@ -2431,7 +2431,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               <div class="card-header" style="margin-bottom:10px">
                 <span class="card-title">Preparar Documento</span>
               </div>
-              <div style="font-size:12px;font-weight:700;color:#1e3450;margin-bottom:10px;padding:6px 8px;background:#f0f6ff;border-radius:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="wz-doc-titulo">—</div>
+              <div style="font-size:12px;font-weight:700;color:#020202;margin-bottom:10px;padding:6px 8px;background:#f0f6ff;border-radius:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="wz-doc-titulo">—</div>
               <div class="asi-wizard">
                 <button type="button" class="asi-wz-step active" id="wz-1" onclick="asiWizardGo(1)">
                   <span class="wz-num">1</span>
@@ -2523,7 +2523,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <iframe id="asi-audit-iframe" src="" style="width:100%;height:min(70vh,700px);border:1px solid #c8e6c9;border-top:none;border-radius:0 0 10px 10px;display:block" loading="lazy" title="Página de Auditoria"></iframe>
           </div>
           <div style="margin-top:10px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
-            <button class="btn b-sm" id="asi-toggle-arq-lista" style="background:#eef6ff;color:#205d8a;border:1px solid #c5d9f0" onclick="toggleAsiArquivosLista()">Mostrar tabela de arquivos</button>
+            <button class="btn b-sm" id="asi-toggle-arq-lista" style="background:#eef6ff;color:#205d8a;border:1px solid #d3d3d3" onclick="toggleAsiArquivosLista()">Mostrar tabela de arquivos</button>
             <button class="btn b-sm b-az" onclick="document.getElementById('inp-arq-upload').click()">+ Anexar mais arquivos</button>
           </div>
           <div id="asi-arq-lista-wrap" style="display:none;margin-top:10px">
@@ -2538,7 +2538,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-sm b-az" onclick="abrirFormSignatario()">+ Adicionar signatário</button>
           </div>
           <div style="margin:0 0 10px 0;display:flex;justify-content:flex-start">
-            <button class="btn b-sm" id="asi-toggle-sig-lista" style="background:#eef6ff;color:#205d8a;border:1px solid #c5d9f0" onclick="toggleAsiSignatariosLista()">Mostrar signatários</button>
+            <button class="btn b-sm" id="asi-toggle-sig-lista" style="background:#eef6ff;color:#205d8a;border:1px solid #d3d3d3" onclick="toggleAsiSignatariosLista()">Mostrar signatários</button>
           </div>
           <div id="asi-sig-lista-wrap" style="display:none">
             <div id="asi-sig-lista"><div class="vazio">Nenhum signatário.</div></div>
@@ -2639,7 +2639,7 @@ document.addEventListener('DOMContentLoaded',()=>{
                 <input type="hidden" id="stamp-x-pct" value="60">
                 <input type="hidden" id="stamp-y-pct" value="10">
                 <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-                  <button class="btn b-sm" style="background:#eef6ff;color:#205d8a;border:1px solid #c5d9f0" onclick="carregarPreviewCarimbo()">Atualizar prévia</button>
+                  <button class="btn b-sm" style="background:#eef6ff;color:#205d8a;border:1px solid #d3d3d3" onclick="carregarPreviewCarimbo()">Atualizar prévia</button>
                   <button class="btn b-sm b-az" onclick="salvarStampConfig()">Salvar posição</button>
                 </div>
               </div>
@@ -10826,7 +10826,7 @@ async function recarregarDetalheEnvelope(){
             <td><span class="pill ${statusCss[s.status]||''}">${statusLbl[s.status]||s.status}</span></td>
             <td>${s.ass_em_fmt||'-'}</td>
             <td>
-              ${s.status!=='assinado'?`<button class="btn b-sm" style="background:#eef6ff;color:#205d8a;border:1px solid #c5d9f0;cursor:pointer" onclick="copiarLinkSignatario(${s.id})">Link</button>`:''}
+              ${s.status!=='assinado'?`<button class="btn b-sm" style="background:#eef6ff;color:#205d8a;border:1px solid #d3d3d3;cursor:pointer" onclick="copiarLinkSignatario(${s.id})">Link</button>`:''}
               ${s.status!=='assinado'?`<button class="btn b-sm" style="background:#fff0f0;color:#c0392b;border:1px solid #f5c5c5;cursor:pointer" onclick="remSigEnvelope(${s.id})">✕</button>`:''}
             </td>
           </tr>`).join('')}
@@ -10873,7 +10873,7 @@ function atualizarPreviewNomeAssinado(){
   const customizado=!!valor;
   prev.textContent='Nome final do arquivo: '+nomeFinal+' · '+(customizado?'Personalizado':'Automático');
   prev.style.background=customizado?'#ecf8f0':'#f5f9ff';
-  prev.style.border='1px solid '+(customizado?'#9ed3b1':'#c5d9f0');
+  prev.style.border='1px solid '+(customizado?'#9ed3b1':'#d3d3d3');
   prev.style.color=customizado?'#1a7a45':'#205d8a';
 }
 

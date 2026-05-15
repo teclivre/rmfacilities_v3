@@ -7419,6 +7419,20 @@ def api_app_funcionario_logout():
     audit_event('auth_app_logout','funcionario',f.id,'funcionario',f.id,True,{'all_devices':all_devices})
     return jsonify({'ok':True})
 
+@app.route('/api/app/funcionario/logout',methods=['POST'])
+@app_func_required
+def api_app_funcionario_logout():
+    f=g.app_funcionario
+    d=request.json or {}
+    all_devices=bool(d.get('all_devices'))
+    if all_devices:
+        FuncionarioAppSessao.query.filter_by(funcionario_id=f.id,revogado=False).update({'revogado':True})
+    else:
+        g.app_sessao.revogado=True
+    db.session.commit()
+    audit_event('auth_app_logout','funcionario',f.id,'funcionario',f.id,True,{'all_devices':all_devices})
+    return jsonify({'ok':True})
+
 @app.route('/api/app/log', methods=['POST'])
 @app_func_required
 def api_app_log():
