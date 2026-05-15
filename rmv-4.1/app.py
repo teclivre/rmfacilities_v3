@@ -16881,7 +16881,8 @@ def _lembrete_assinatura_loop():
                             continue
                     try:
                         if a.funcionario_id not in func_cache:
-                            func_cache[a.funcionario_id] = Funcionario.query.get(a.funcionario_id)
+                            with db.session.no_autoflush:
+                                func_cache[a.funcionario_id] = Funcionario.query.get(a.funcionario_id)
                         f = func_cache[a.funcionario_id]
                         if not f:
                             continue
@@ -16905,6 +16906,10 @@ def _lembrete_assinatura_loop():
                         db.session.rollback()
         except Exception as e:
             app.logger.error(f'[lembrete-assinatura] erro geral: {e}')
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
         time.sleep(intervalo_seg)
 
 threading.Thread(target=_lembrete_assinatura_loop, daemon=True, name='lembrete-assinatura').start()
