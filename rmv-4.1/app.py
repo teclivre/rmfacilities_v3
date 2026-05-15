@@ -16455,7 +16455,7 @@ def seed():
 with app.app_context():
     os.makedirs(DATA_DIR,exist_ok=True)
     os.makedirs(UPLOAD_ROOT,exist_ok=True)
-    db.create_all()
+    db.metadata.create_all(bind=db.engine, checkfirst=True)
     ensure_cols('usuario',[
         'areas TEXT',
         'permissoes TEXT DEFAULT "{}"',
