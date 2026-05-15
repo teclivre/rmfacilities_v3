@@ -4080,7 +4080,7 @@ function rhSalariosIniciarPagina(){
 }
 
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','ponto','painel-dia','envio','assinaturas'];
+  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','ponto','painel-dia','envio','assinaturas','gestao-facil'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
     p.style.display=(p.dataset.rhPane===rhSubAba)?'block':'none';

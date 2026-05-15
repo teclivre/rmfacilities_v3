@@ -717,8 +717,6 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-            </LinearLayout>
-
                 <TextView
                     android:id="@+id/tvAppVersion"
                     android:layout_width="match_parent"
@@ -729,6 +727,8 @@
                     android:textColor="@color/mobile_text_secondary"
                     android:textSize="10sp"
                     android:alpha="0.5" />
+
+            </LinearLayout>
 
         </androidx.core.widget.NestedScrollView>
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
