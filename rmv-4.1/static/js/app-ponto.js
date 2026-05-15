@@ -203,7 +203,7 @@ async function pontoEditarMarcacao(marcacaoId){
   document.getElementById('pe-id').value=String(m.id);
   document.getElementById('pe-func').value=f?.nome||'Colaborador';
   document.getElementById('pe-tipo').value=(m.tipo||'entrada').trim();
-  document.getElementById('pe-datahora').value=(m.data_hora||'').slice(0,16) || pontoAgoraLocalInput();
+  document.getElementById('pe-datahora').value=(m.data_hora||'').replace(' ','T').slice(0,16) || pontoAgoraLocalInput();
   document.getElementById('pe-obs').value=(m.observacao||'').trim();
   document.getElementById('pe-motivo').value='';
   showSt('pe-st','',false);
@@ -412,7 +412,7 @@ async function pontoAbrirEditDia(){
   }
 
   document.getElementById('ped-marcacoes-wrap').innerHTML=
-    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),(m.data_hora||'').slice(0,16),m.observacao||'',false)).join('')+
+    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),(m.data_hora||'').replace(' ','T').slice(0,16),m.observacao||'',false)).join('')+
     `<button type="button" class="btn b-vd b-sm" style="width:100%;margin-top:4px" onclick="pedAdicionarLinha()">＋ Adicionar marcação</button>`;
 
   document.getElementById('ped-motivo').value='';
