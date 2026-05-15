@@ -442,8 +442,8 @@ function pedAdicionarLinha(){
           <option value="saida">Saída</option>
         </select>
       </div>
-      <div class="f" style="margin:0"><label style="font-size:11px">Data/hora</label>
-        <input class="ped-dh" data-id="${seq}" type="datetime-local" value="${data}T00:00">
+      <div class="f" style="margin:0"><label style="font-size:11px">${_pedCtx?.isGf?'Hora':'Data/hora'}</label>
+        <input class="ped-dh" data-id="${seq}" type="${_pedCtx?.isGf?'time':'datetime-local'}" value="${_pedCtx?.isGf?'00:00':data+'T00:00'}">
       </div>
       <div class="f" style="margin:0"><label style="font-size:11px">Observação</label>
         <input class="ped-obs" data-id="${seq}" placeholder="Opcional" value="">
@@ -481,7 +481,8 @@ async function salvarEdicaoDiaCompleto(){
   wrap.querySelectorAll('[data-marc-id]:not([data-nova="1"])').forEach(card=>{
     const id=card.dataset.marcId;
     const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
-    const dh=(card.querySelector('.ped-dh')?.value||'').trim();
+    const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
+    const dh=/^\d{2}:\d{2}$/.test(dhRaw)?data+'T'+dhRaw:dhRaw;
     const obs=(card.querySelector('.ped-obs')?.value||'').trim();
     if(id && tipo && dh) itensEditar.push({id,tipo,data_hora:dh,observacao:obs});
   });
@@ -490,7 +491,8 @@ async function salvarEdicaoDiaCompleto(){
   const itensNovos=[];
   wrap.querySelectorAll('[data-marc-id][data-nova="1"]').forEach(card=>{
     const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
-    const dh=(card.querySelector('.ped-dh')?.value||'').trim();
+    const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
+    const dh=/^\d{2}:\d{2}$/.test(dhRaw)?data+'T'+dhRaw:dhRaw;
     const obs=(card.querySelector('.ped-obs')?.value||'').trim();
     if(tipo && dh) itensNovos.push({tipo,data_hora:dh,observacao:obs,funcionario_id:fid,origem:'admin'});
   });
@@ -700,8 +702,8 @@ function gfAbrirEditDia(dataRef){
         <div class="f" style="margin:0"><label style="font-size:11px">Tipo</label>
           <select class="ped-tipo" data-id="${id}">${tiposOpts.replace(`value="${tipo}"`,`value="${tipo}" selected`)}</select>
         </div>
-        <div class="f" style="margin:0"><label style="font-size:11px">Data/hora</label>
-          <input class="ped-dh" data-id="${id}" type="datetime-local" value="${dh}">
+        <div class="f" style="margin:0"><label style="font-size:11px">Hora</label>
+          <input class="ped-dh" data-id="${id}" type="time" value="${dh}">
         </div>
         <div class="f" style="margin:0"><label style="font-size:11px">Observação</label>
           <input class="ped-obs" data-id="${id}" placeholder="Opcional" value="${obs}">
@@ -712,7 +714,7 @@ function gfAbrirEditDia(dataRef){
   }
 
   document.getElementById('ped-marcacoes-wrap').innerHTML=
-    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),toDtLocal(m.data_hora),m.observacao||'',false)).join('')+
+    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),toDtLocal(m.data_hora).slice(11),m.observacao||'',false)).join('')+
     `<button type="button" class="btn b-vd b-sm" style="width:100%;margin-top:4px" onclick="pedAdicionarLinha()">＋ Adicionar marcação</button>`;
 
   document.getElementById('ped-motivo').value='';
