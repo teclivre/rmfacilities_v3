@@ -230,7 +230,16 @@ class MensagensActivity : AppCompatActivity() {
                     llm.findLastCompletelyVisibleItemPosition() >= adapter.itemCount - 2
                 adapter.replaceAll(msgs)
                 if (msgs.isNotEmpty() && (!silently || atBottom)) {
-                    rvMensagens.scrollToPosition(adapter.itemCount - 1)
+                    // Se o RH respondeu depois da última mensagem do funcionário,
+                    // rola para a primeira mensagem não respondida do RH
+                    val ultimaRhIdx = msgs.indexOfLast { it.de_rh == true }
+                    val ultimaFuncIdx = msgs.indexOfLast { it.de_rh != true }
+                    val scrollTarget = if (!silently && ultimaRhIdx >= 0 && ultimaRhIdx > ultimaFuncIdx) {
+                        ultimaRhIdx
+                    } else {
+                        adapter.itemCount - 1
+                    }
+                    rvMensagens.scrollToPosition(scrollTarget)
                 }
                 if (!silently) tvBadge.visibility = View.GONE
                 atualizarStatusRh(msgs)

@@ -843,3 +843,45 @@ def register_ponto_routes(
         doc.build(elementos)
         saida.seek(0)
         return send_file(saida, mimetype='application/pdf', as_attachment=False, download_name=nome_arquivo)
+
+    # ── GESTÃO FÁCIL: calendário mensal ──────────────────────────────────────
+    @app.route('/api/ponto/gestao-facil/calendario')
+    @lr
+    def api_ponto_gestao_facil_calendario():
+        funcionario_id = to_num(request.args.get('funcionario_id'))
+        competencia = (request.args.get('competencia') or '').strip()
+        if not funcionario_id:
+            return jsonify({'erro': 'funcionario_id é obrigatório.'}), 400
+        if not re.match(r'^\d{4}-\d{2}$', competencia):
+            return jsonify({'erro': 'competencia inválida. Use YYYY-MM.'}), 400
+        funcionario = Funcionario.query.get(funcionario_id)
+        if not funcionario:
+            return jsonify({'erro': 'Funcionário não encontrado.'}), 404
+
+        resumo_comp = _ponto_resumo_competencia(funcionario, competencia)
+        if not resumo_comp:
+            return jsonify({'erro': 'Não foi possível gerar o calendário para a competência informada.'}), 400
+
+        # Enriquecer cada dia com os horários de cada marcação para a folha
+        inicio, fim = _ponto_competencia_bounds(competencia)
+        inicio_dt = datetime.combine(inicio, datetime.min.time())
+        fim_dt = datetime.combine(fim + timedelta(days=1), datetime.min.time())
+        todas_marc = (
+            PontoMarcacao.query
+            .filter(
+                PontoMarcacao.funcionario_id == funcionario.id,
+                PontoMarcacao.data_hora >= inicio_dt,
+                PontoMarcacao.data_hora < fim_dt,
+            )
+            .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
+            .all()
+        )
+        marc_por_data = {}
+        for mc in todas_marc:
+            dc = mc.data_hora.date().strftime('%Y-%m-%d')
+            marc_por_data.setdefault(dc, []).append(mc.to_dict())
+
+        for dia in resumo_comp['dias']:
+            dia['marcacoes'] = marc_por_data.get(dia['data_ref'], [])
+
+        return jsonify({'ok': True, 'resumo': resumo_comp})

@@ -1304,6 +1304,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-painel-dia" class="subaba-bloco" onclick="rhSetSubAba('painel-dia',this)">Painel do dia</button>
         <button type="button" id="rh-subtab-envio" class="subaba-bloco" onclick="rhSetSubAba('envio',this)">Envio de arquivo</button>
         <button type="button" id="rh-subtab-assinaturas" class="subaba-bloco" onclick="rhSetSubAba('assinaturas',this)">Painel de Assinaturas</button>
+        <button type="button" id="rh-subtab-gestao-facil" class="subaba-bloco" onclick="rhSetSubAba('gestao-facil',this);gfCarregar()">⚡ Gestão Fácil</button>
       </div>
       <div class="card rh-pane" id="rh-pane-funcionarios" data-rh-pane="funcionarios">
         <div class="card-header">
@@ -1675,6 +1676,11 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div id="rh-lote-prev-list" style="display:flex;flex-direction:column;gap:7px;max-height:220px;overflow:auto"></div>
           <div id="rh-lote-prev-debug"></div>
         </div>
+      </div>
+
+      <!-- ══ GESTÃO FÁCIL ══ -->
+      <div class="rh-pane" id="rh-pane-gestao-facil" data-rh-pane="gestao-facil">
+        {% include 'partials/rh_gestao_facil.html' %}
       </div>
 
       <!-- ══ PAINEL DE ASSINATURAS ══ -->
@@ -4835,7 +4841,7 @@ async function verFaturasCliente(clienteId, clienteNome){
   body.innerHTML=html;
 }
 
-const MODAL_FORM_IDS=['cli','contrato','func','emp','usr','ponto-edit'];
+const MODAL_FORM_IDS=['cli','contrato','func','emp','usr','ponto-edit','ponto-edit-dia'];
 const _modalDirty={};
 let _pageDirty=false;
 

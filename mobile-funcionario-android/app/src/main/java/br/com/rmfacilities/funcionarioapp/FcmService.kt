@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope
@@ -135,7 +136,8 @@ class FcmService : FirebaseMessagingService() {
         val badgeNumber = (data["badge"]?.toIntOrNull() ?: 1).coerceAtLeast(1)
 
         val notif = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.drawable.ic_fenix_round)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(ContextCompat.getColor(this, R.color.accent))
             .setContentTitle(titulo)
             .setContentText(corpo)
             .setStyle(NotificationCompat.BigTextStyle().bigText(corpo))
