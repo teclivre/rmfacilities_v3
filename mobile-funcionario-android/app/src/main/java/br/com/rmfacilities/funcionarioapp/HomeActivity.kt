@@ -90,6 +90,7 @@ class HomeActivity : AppCompatActivity() {
         retryQueue = ActionRetryQueue(this)
         connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         TelemetryLogger.init(this)
+        TelemetryLogger.flush()
 
         if (session.accessToken.isBlank()) {
             goLogin(); return

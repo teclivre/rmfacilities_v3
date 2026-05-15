@@ -600,6 +600,81 @@ def register_ponto_routes(
             app.logger.exception('Falha ao editar marcação de ponto')
             return jsonify({'erro': 'Falha ao editar marcação de ponto.', 'detalhe': str(exc)[:220]}), 500
 
+    @app.route('/api/ponto/marcacao', methods=['POST'])
+    @lr
+    def api_ponto_criar_marcacao():
+        """Criar nova marcação de ponto via painel admin (sem checar ordem esperada)."""
+        dados = request.json or {}
+        funcionario_id = to_num(dados.get('funcionario_id'))
+        if not funcionario_id:
+            return jsonify({'erro': 'funcionario_id é obrigatório.'}), 400
+        funcionario = Funcionario.query.get(funcionario_id)
+        if not funcionario:
+            return jsonify({'erro': 'Funcionário não encontrado.'}), 404
+
+        tipo = (dados.get('tipo') or '').strip().lower()
+        if tipo not in ponto_tipos:
+            return jsonify({'erro': 'Tipo de marcação inválido.'}), 400
+
+        data_hora = _ponto_parse_data_hora(dados.get('data_hora'))
+        if not data_hora:
+            return jsonify({'erro': 'Data/hora inválida.'}), 400
+
+        motivo = (dados.get('motivo') or '').strip()
+        if not motivo:
+            return jsonify({'erro': 'Informe o motivo da inclusão da marcação.'}), 400
+
+        observacao = (dados.get('observacao') or '').strip()[:500]
+        data_ref = data_hora.date()
+
+        marcacoes_dia_antes = [m.to_dict() for m in _ponto_marcacoes_dia(funcionario.id, data_ref)]
+        conflito = PontoMarcacao.query.filter(
+            PontoMarcacao.funcionario_id == funcionario.id,
+            PontoMarcacao.data_hora >= datetime.combine(data_ref, datetime.min.time()),
+            PontoMarcacao.data_hora < datetime.combine(data_ref, datetime.min.time()) + timedelta(days=1),
+        ).all()
+        if any(abs((data_hora - m.data_hora).total_seconds()) < 60 for m in conflito if m.data_hora):
+            return jsonify({'erro': 'Já existe marcação neste minuto para este funcionário.'}), 400
+
+        try:
+            ip = (request.headers.get('X-Forwarded-For', '') or request.remote_addr or '').split(',')[0].strip()[:60]
+            marcacao = PontoMarcacao(
+                funcionario_id=funcionario.id,
+                tipo=tipo,
+                data_hora=data_hora,
+                origem='admin',
+                observacao=observacao,
+                criado_por=session.get('nome', ''),
+                ip=ip,
+            )
+            db.session.add(marcacao)
+            db.session.flush()
+            marcacoes_dia_depois = [m.to_dict() for m in _ponto_marcacoes_dia(funcionario.id, data_ref)]
+            ajuste = PontoAjuste(
+                funcionario_id=funcionario.id,
+                data_ref=data_ref.strftime('%Y-%m-%d'),
+                motivo=motivo,
+                antes_json=json.dumps({'dia': marcacoes_dia_antes}, ensure_ascii=False, default=str),
+                depois_json=json.dumps({'dia': marcacoes_dia_depois}, ensure_ascii=False, default=str),
+                criado_por=session.get('nome', ''),
+            )
+            db.session.add(ajuste)
+            db.session.commit()
+            audit_event(
+                'ponto_nova_marcacao_admin',
+                'usuario',
+                session.get('uid'),
+                'funcionario',
+                funcionario.id,
+                True,
+                {'marcacao_id': marcacao.id, 'tipo': tipo, 'data_ref': data_ref.strftime('%Y-%m-%d'), 'motivo': motivo[:200]},
+            )
+            return jsonify({'ok': True, 'marcacao': marcacao.to_dict()})
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception('Falha ao criar marcação de ponto via admin')
+            return jsonify({'erro': 'Falha ao criar marcação.', 'detalhe': str(exc)[:220]}), 500
+
     @app.route('/api/ponto/fechar-dia', methods=['POST'])
     @lr
     def api_ponto_fechar_dia():

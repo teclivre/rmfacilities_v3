@@ -1588,6 +1588,24 @@ class CobrangaLog(db.Model):
         d['enviado_fmt']=self.enviado_em.strftime('%d/%m/%Y %H:%M') if self.enviado_em else ''
         return d
 
+class AppLog(db.Model):
+    __tablename__='app_log'
+    id=db.Column(db.Integer,primary_key=True)
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=True)
+    nivel=db.Column(db.String(10))   # DEBUG, INFO, WARN, ERROR, FATAL
+    tag=db.Column(db.String(80))
+    mensagem=db.Column(db.Text)
+    stack=db.Column(db.Text)
+    versao_app=db.Column(db.String(20))
+    dispositivo=db.Column(db.String(120))
+    ts_dispositivo=db.Column(db.DateTime)
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M:%S') if self.criado_em else ''
+        d['ts_fmt']=self.ts_dispositivo.strftime('%d/%m/%Y %H:%M:%S') if self.ts_dispositivo else ''
+        return d
+
 class ConciliacaoLote(db.Model):
     __tablename__='conciliacao_lote'
     id=db.Column(db.Integer,primary_key=True)
@@ -7401,9 +7419,73 @@ def api_app_funcionario_logout():
     audit_event('auth_app_logout','funcionario',f.id,'funcionario',f.id,True,{'all_devices':all_devices})
     return jsonify({'ok':True})
 
-@app.route('/api/app/funcionario/me')
+@app.route('/api/app/funcionario/logout',methods=['POST'])
 @app_func_required
-def api_app_funcionario_me():
+def api_app_funcionario_logout():
+    f=g.app_funcionario
+    d=request.json or {}
+    all_devices=bool(d.get('all_devices'))
+    if all_devices:
+        FuncionarioAppSessao.query.filter_by(funcionario_id=f.id,revogado=False).update({'revogado':True})
+    else:
+        g.app_sessao.revogado=True
+    db.session.commit()
+    audit_event('auth_app_logout','funcionario',f.id,'funcionario',f.id,True,{'all_devices':all_devices})
+    return jsonify({'ok':True})
+
+@app.route('/api/app/log', methods=['POST'])
+@app_func_required
+def api_app_log():
+    """Recebe lote de logs enviados pelo app mobile."""
+    f=g.app_funcionario
+    payload=request.json or {}
+    entradas=payload.get('logs') or [payload]
+    salvos=0
+    for ent in entradas[:200]:
+        nivel=(ent.get('nivel') or ent.get('level') or 'INFO').upper()[:10]
+        tag=(ent.get('tag') or '')[:80]
+        mensagem=(ent.get('mensagem') or ent.get('message') or '')
+        stack=(ent.get('stack') or ent.get('stackTrace') or '')
+        versao_app=(ent.get('versao') or ent.get('version') or '')[:20]
+        dispositivo=(ent.get('dispositivo') or ent.get('device') or '')[:120]
+        ts_raw=ent.get('timestamp') or ent.get('ts')
+        ts_disp=None
+        if ts_raw:
+            try:
+                from datetime import timezone
+                ts_disp=datetime.fromtimestamp(int(ts_raw)/1000, tz=timezone.utc).replace(tzinfo=None)
+            except Exception:
+                pass
+        log=AppLog(
+            funcionario_id=f.id,
+            nivel=nivel,
+            tag=tag,
+            mensagem=str(mensagem)[:2000],
+            stack=str(stack)[:4000] if stack else None,
+            versao_app=versao_app,
+            dispositivo=dispositivo,
+            ts_dispositivo=ts_disp,
+        )
+        db.session.add(log)
+        salvos+=1
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    return jsonify({'ok':True,'salvos':salvos})
+
+@app.route('/api/admin/logs/app')
+@lr
+def api_admin_logs_app():
+    nivel=(request.args.get('nivel') or '').upper()
+    limit=min(int(request.args.get('limit') or 200),500)
+    q=AppLog.query
+    if nivel:
+        q=q.filter_by(nivel=nivel)
+    logs=q.order_by(AppLog.id.desc()).limit(limit).all()
+    return jsonify({'logs':[l.to_dict() for l in logs]})
+
+
     f=g.app_funcionario
     ultimo_aso=FuncionarioArquivo.query.filter_by(funcionario_id=f.id,categoria='aso').order_by(
         FuncionarioArquivo.criado_em.desc(),FuncionarioArquivo.id.desc()

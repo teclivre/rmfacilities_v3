@@ -389,32 +389,31 @@ async function pontoAbrirEditDia(){
   const f=(pontoFuncs||[]).find(x=>String(x.id)===String(fid));
   const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
   if(!fid){showSt('ponto-st','Selecione um colaborador ativo.',true);return;}
-  if(!marcacoes.length){showSt('ponto-st','Nenhuma marcação neste dia para editar.',true);return;}
 
-  const tiposOpts='<option value="entrada">Entrada</option><option value="saida_intervalo">Saída intervalo</option><option value="retorno_intervalo">Retorno intervalo</option><option value="saida">Saída</option>';
+  const tiposOpts=`<option value="entrada">Entrada</option><option value="saida_intervalo">Saída intervalo</option><option value="retorno_intervalo">Retorno intervalo</option><option value="saida">Saída</option>`;
 
   document.getElementById('ped-info').textContent=`Editando marcações de ${f?.nome||'Colaborador'} em ${data}`;
-  document.getElementById('ped-marcacoes-wrap').innerHTML=marcacoes.map(m=>`
-    <div class="card" style="margin:0 0 8px;padding:10px" data-marc-id="${m.id}">
+
+  function buildRow(id,tipo,dh,obs,isNova){
+    return `<div class="card" style="margin:0 0 8px;padding:10px;position:relative" data-marc-id="${id}" data-nova="${isNova?'1':''}">
       <div class="g3" style="align-items:flex-end;gap:8px">
         <div class="f" style="margin:0"><label style="font-size:11px">Tipo</label>
-          <select class="ped-tipo" data-id="${m.id}">${tiposOpts}</select>
+          <select class="ped-tipo" data-id="${id}">${tiposOpts.replace(`value="${tipo}"`,`value="${tipo}" selected`)}</select>
         </div>
         <div class="f" style="margin:0"><label style="font-size:11px">Data/hora</label>
-          <input class="ped-dh" data-id="${m.id}" type="datetime-local" value="${(m.data_hora||'').slice(0,16)}">
+          <input class="ped-dh" data-id="${id}" type="datetime-local" value="${dh}">
         </div>
         <div class="f" style="margin:0"><label style="font-size:11px">Observação</label>
-          <input class="ped-obs" data-id="${m.id}" placeholder="Opcional" value="${m.observacao||''}">
+          <input class="ped-obs" data-id="${id}" placeholder="Opcional" value="${obs}">
         </div>
+        <button type="button" class="btn b-vm b-sm" style="flex-shrink:0;margin-bottom:1px" onclick="pedRemoverRow(this)" title="Excluir esta marcação">🗑</button>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }
 
-  // Pre-selecionar tipo em cada select
-  marcacoes.forEach(m=>{
-    const sel=document.querySelector(`.ped-tipo[data-id="${m.id}"]`);
-    if(sel) sel.value=(m.tipo||'entrada').trim().toLowerCase();
-  });
+  document.getElementById('ped-marcacoes-wrap').innerHTML=
+    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),(m.data_hora||'').slice(0,16),m.observacao||'',false)).join('')+
+    `<button type="button" class="btn b-vd b-sm" style="width:100%;margin-top:4px" onclick="pedAdicionarLinha()">＋ Adicionar marcação</button>`;
 
   document.getElementById('ped-motivo').value='';
   showSt('ped-st','',false);
@@ -423,42 +422,105 @@ async function pontoAbrirEditDia(){
   setTimeout(()=>document.getElementById('ped-motivo').focus(),120);
 }
 
+let _pedNovaSeq=0;
+function pedAdicionarLinha(){
+  const wrap=document.getElementById('ped-marcacoes-wrap');
+  const addBtn=wrap.querySelector('button[onclick="pedAdicionarLinha()"]');
+  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
+  const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
+  const seq='new_'+(++_pedNovaSeq);
+  const div=document.createElement('div');
+  div.innerHTML=`<div class="card" style="margin:0 0 8px;padding:10px;position:relative" data-marc-id="${seq}" data-nova="1">
+    <div class="g3" style="align-items:flex-end;gap:8px">
+      <div class="f" style="margin:0"><label style="font-size:11px">Tipo</label>
+        <select class="ped-tipo" data-id="${seq}">
+          <option value="entrada">Entrada</option>
+          <option value="saida_intervalo">Saída intervalo</option>
+          <option value="retorno_intervalo">Retorno intervalo</option>
+          <option value="saida">Saída</option>
+        </select>
+      </div>
+      <div class="f" style="margin:0"><label style="font-size:11px">Data/hora</label>
+        <input class="ped-dh" data-id="${seq}" type="datetime-local" value="${data}T00:00">
+      </div>
+      <div class="f" style="margin:0"><label style="font-size:11px">Observação</label>
+        <input class="ped-obs" data-id="${seq}" placeholder="Opcional" value="">
+      </div>
+      <input type="hidden" class="ped-fid" value="${fid}">
+      <button type="button" class="btn b-vm b-sm" style="flex-shrink:0;margin-bottom:1px" onclick="pedRemoverRow(this)" title="Remover">🗑</button>
+    </div>
+  </div>`;
+  wrap.insertBefore(div.firstElementChild, addBtn);
+}
+
+function pedRemoverRow(btn){
+  const card=btn.closest('[data-marc-id]');
+  if(card) card.remove();
+}
+
 async function salvarEdicaoDiaCompleto(){
   const motivo=(document.getElementById('ped-motivo')?.value||'').trim();
   if(!motivo){showSt('ped-st','Informe o motivo das edições.',true);return;}
 
+  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
+  const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
   const wrap=document.getElementById('ped-marcacoes-wrap');
-  const itens=[];
-  wrap.querySelectorAll('[data-marc-id]').forEach(card=>{
+
+  // Coletar o que está no DOM agora
+  const idsPresentes=new Set(
+    Array.from(wrap.querySelectorAll('[data-marc-id]:not([data-nova="1"])')).map(c=>c.dataset.marcId)
+  );
+  // Marcações que estavam no início e foram removidas do DOM = excluir
+  const idsOriginais=(pontoMarcacoesDiaAtual||[]).map(m=>String(m.id));
+  const idsExcluir=idsOriginais.filter(id=>!idsPresentes.has(id));
+
+  // Marcações existentes que continuam = editar
+  const itensEditar=[];
+  wrap.querySelectorAll('[data-marc-id]:not([data-nova="1"])').forEach(card=>{
     const id=card.dataset.marcId;
     const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
     const dh=(card.querySelector('.ped-dh')?.value||'').trim();
     const obs=(card.querySelector('.ped-obs')?.value||'').trim();
-    if(id && tipo && dh) itens.push({id,tipo,data_hora:dh,observacao:obs});
+    if(id && tipo && dh) itensEditar.push({id,tipo,data_hora:dh,observacao:obs});
   });
 
-  if(!itens.length){showSt('ped-st','Nenhuma marcação encontrada.',true);return;}
-  if(!confirm(`Confirma salvar as edições de ${itens.length} marcação(ões)?`)) return;
+  // Linhas novas = criar
+  const itensNovos=[];
+  wrap.querySelectorAll('[data-marc-id][data-nova="1"]').forEach(card=>{
+    const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
+    const dh=(card.querySelector('.ped-dh')?.value||'').trim();
+    const obs=(card.querySelector('.ped-obs')?.value||'').trim();
+    if(tipo && dh) itensNovos.push({tipo,data_hora:dh,observacao:obs,funcionario_id:fid,origem:'admin'});
+  });
 
-  showSt('ped-st','Salvando edições…',false);
+  const totalOps=idsExcluir.length+itensEditar.length+itensNovos.length;
+  if(!totalOps){showSt('ped-st','Nenhuma alteração detectada.',true);return;}
+  const resumo=[
+    itensEditar.length?`${itensEditar.length} edição(ões)`:'',
+    idsExcluir.length?`${idsExcluir.length} exclusão(ões)`:'',
+    itensNovos.length?`${itensNovos.length} nova(s) marcação(ões)`:'',
+  ].filter(Boolean).join(', ');
+  if(!confirm(`Confirma: ${resumo}?`)) return;
+
+  showSt('ped-st','Salvando…',false);
   let erros=[];
-  for(const it of itens){
-    const r=await api('/api/ponto/marcacao/'+it.id,'PUT',{
-      tipo:it.tipo,
-      data_hora:it.data_hora,
-      observacao:it.observacao,
-      motivo:motivo
-    });
-    if(r.erro) erros.push(`#${it.id}: ${r.erro}`);
+
+  for(const id of idsExcluir){
+    const r=await api('/api/ponto/marcacao/'+id,'DELETE',{motivo});
+    if(r.erro) erros.push(`Excluir #${id}: ${r.erro}`);
+  }
+  for(const it of itensEditar){
+    const r=await api('/api/ponto/marcacao/'+it.id,'PUT',{tipo:it.tipo,data_hora:it.data_hora,observacao:it.observacao,motivo});
+    if(r.erro) erros.push(`Editar #${it.id}: ${r.erro}`);
+  }
+  for(const it of itensNovos){
+    const r=await api('/api/ponto/marcacao','POST',{...it,motivo});
+    if(r.erro) erros.push(`Nova marcação: ${r.erro}`);
   }
 
-  if(erros.length){
-    showSt('ped-st','Erros: '+erros.join(' | '),true);
-    return;
-  }
-
+  if(erros.length){showSt('ped-st','Erros: '+erros.join(' | '),true);return;}
   closeModal('ponto-edit-dia',true);
-  showSt('ponto-st',`${itens.length} marcação(ões) editada(s) com sucesso.`,false);
+  showSt('ponto-st',`${resumo} salva(s) com sucesso.`,false);
   await pontoCarregarDia();
   await pontoCarregarPainelDia();
 }

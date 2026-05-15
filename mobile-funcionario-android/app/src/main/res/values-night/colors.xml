@@ -5,8 +5,8 @@
     <color name="background">#0A1929</color>
     <color name="surface">#0F1F35</color>
     <color name="surface_elevated">#142840</color>
-    <color name="accent">#FF9F4A</color>
-    <color name="accent_dark">#E88930</color>
+    <color name="accent">#f28e34</color>
+    <color name="accent_dark">#d4761c</color>
     <color name="accent_blue">#4DA6FF</color>
     <color name="accent_purple">#9B59FF</color>
     <color name="accent_green">#00D49A</color>

@@ -2812,6 +2812,38 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
         </div>
       </div>
+      <div class="card">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <span class="card-title">📋 Logs do Sistema</span>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="logs-nivel" onchange="logsCarregar()" style="padding:6px 10px;border:1px solid var(--borda);border-radius:6px;font-size:12px">
+              <option value="">Todos</option>
+              <option value="FATAL">FATAL</option>
+              <option value="ERROR">ERROR</option>
+              <option value="WARN">WARN</option>
+              <option value="INFO">INFO</option>
+              <option value="DEBUG">DEBUG</option>
+            </select>
+            <button class="btn b-az b-sm" onclick="logsCarregar()">↻ Atualizar</button>
+            <button class="btn b-vm b-sm" id="logs-limpar-btn" onclick="logsLimpar()" style="display:none">🗑 Limpar todos</button>
+          </div>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Logs enviados pelo app mobile dos funcionários. Útil para diagnosticar problemas remotamente.</p>
+        <div id="logs-st" class="st" style="display:none"></div>
+        <div style="overflow-x:auto">
+          <table id="logs-tb" style="width:100%;font-size:12px;border-collapse:collapse">
+            <thead><tr style="border-bottom:2px solid var(--borda);text-align:left">
+              <th style="padding:6px 8px;white-space:nowrap">Nível</th>
+              <th style="padding:6px 8px;white-space:nowrap">Quando</th>
+              <th style="padding:6px 8px;white-space:nowrap">Funcionário</th>
+              <th style="padding:6px 8px;white-space:nowrap">Tag</th>
+              <th style="padding:6px 8px">Mensagem</th>
+              <th style="padding:6px 8px;white-space:nowrap">Versão</th>
+            </tr></thead>
+            <tbody id="logs-tb-body"><tr><td colspan="6" style="padding:16px;text-align:center;color:var(--text-muted)">Clique em "Atualizar" para carregar os logs</td></tr></tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
   </main>
@@ -5484,6 +5516,41 @@ async function salvarConfig(){
   await loadProxNum();
   alert('Configurações salvas! Próxima medição: '+document.getElementById('prox-num').textContent);
 }
+
+const _logsNivelCores={FATAL:'#bf2e2e',ERROR:'#d54848',WARN:'#d49a2a',INFO:'#205d8a',DEBUG:'#6b7e97'};
+async function logsCarregar(){
+  const nivel=(document.getElementById('logs-nivel')?.value||'').trim();
+  const st=document.getElementById('logs-st');
+  const body=document.getElementById('logs-tb-body');
+  if(st){st.textContent='Carregando…';st.style.display='';}
+  try{
+    const params=nivel?`?nivel=${encodeURIComponent(nivel)}&limit=200`:'?limit=200';
+    const r=await api('/api/admin/logs/app'+params);
+    if(r.erro){if(st){st.textContent=r.erro;st.style.display='';}return;}
+    const logs=r.logs||[];
+    if(st){st.style.display='none';}
+    if(!logs.length){body.innerHTML='<tr><td colspan="6" style="padding:16px;text-align:center;color:var(--text-muted)">Nenhum log encontrado.</td></tr>';return;}
+    body.innerHTML=logs.map(l=>{
+      const cor=_logsNivelCores[l.nivel]||'#666';
+      const badge=`<span style="background:${cor};color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">${esc(l.nivel||'')}</span>`;
+      const stack=l.stack?`<details style="margin-top:4px"><summary style="cursor:pointer;color:var(--text-muted);font-size:11px">Stack trace</summary><pre style="font-size:10px;overflow-x:auto;max-height:120px;white-space:pre-wrap">${esc(l.stack)}</pre></details>`:'';
+      return `<tr style="border-bottom:1px solid var(--borda)">
+        <td style="padding:6px 8px">${badge}</td>
+        <td style="padding:6px 8px;white-space:nowrap;color:var(--text-muted)">${esc(l.criado_fmt||'')}</td>
+        <td style="padding:6px 8px;white-space:nowrap">${esc(l.funcionario_id?'#'+l.funcionario_id:'—')}</td>
+        <td style="padding:6px 8px;white-space:nowrap;font-size:11px">${esc(l.tag||'')}</td>
+        <td style="padding:6px 8px">${esc(l.mensagem||'')}${stack}</td>
+        <td style="padding:6px 8px;white-space:nowrap;font-size:11px">${esc(l.versao_app||'')}</td>
+      </tr>`;
+    }).join('');
+  }catch(e){if(st){st.textContent='Erro ao carregar logs: '+e;st.style.display='';}}
+}
+async function logsLimpar(){
+  if(!confirm('Excluir TODOS os logs do app? Esta ação é irreversível.'))return;
+  await api('/api/admin/logs/app','DELETE');
+  await logsCarregar();
+}
+
 
 async function importarClientesPlanilha(ev){
   const f=ev.target.files?.[0];

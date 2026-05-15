@@ -6,5 +6,7 @@ class RMFuncionarioApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         AppThemeManager.apply(this)
+        val session = SessionManager(this)
+        TelemetryLogger.init(this, session)
     }
 }
