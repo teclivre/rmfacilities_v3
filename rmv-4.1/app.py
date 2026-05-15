@@ -294,7 +294,10 @@ class PontoMarcacao(db.Model):
     longitude = db.Column(db.Float)
     precisao_gps = db.Column(db.Float)
     def to_dict(self):
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        if d.get('data_hora') is not None and not isinstance(d['data_hora'], str):
+            d['data_hora'] = d['data_hora'].strftime('%Y-%m-%d %H:%M:%S')
+        return d
 
 class PontoFechamentoDia(db.Model):
     id = db.Column(db.Integer, primary_key=True)

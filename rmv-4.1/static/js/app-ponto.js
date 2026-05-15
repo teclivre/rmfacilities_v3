@@ -625,7 +625,7 @@ function gfRenderCalendario(resumo,comp){
     const saldo=dayData?.saldo_fmt||'';
     const horas=dayData?.horas_trabalhadas_fmt||'';
     const marc=dayData?.marcacoes||[];
-    const getT=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);return m?(m.data_hora||'').replace(' ','T').slice(11,16):null;};
+    const getT=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);if(!m)return null;const s=String(m.data_hora||'');const mt=s.match(/(\d{2}:\d{2})(?::\d{2})?/);return mt?mt[1]:null;};
     const timesHtml=[['entrada','gf-t-e','E'],['saida_intervalo','gf-t-si','SI'],['retorno_intervalo','gf-t-ri','RI'],['saida','gf-t-s','S']]
       .map(([tipo,cls,lb])=>{const t=getT(tipo);return t?`<span class="gf-t ${cls}">${lb} ${t}</span>`:'';})
       .filter(Boolean).join('');
@@ -687,6 +687,13 @@ function gfAbrirEditDia(dataRef){
   const tiposOpts=`<option value="entrada">Entrada</option><option value="saida_intervalo">Saída intervalo</option><option value="retorno_intervalo">Retorno intervalo</option><option value="saida">Saída</option>`;
   document.getElementById('ped-info').textContent=`Editando marcações de ${f?.nome||'Colaborador'} em ${dataRef}`;
 
+  function toDtLocal(dh){
+    const s=String(dh||'');
+    const m=s.match(/(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+    if(m) return m[1]+'T'+m[2];
+    return '';
+  }
+
   function buildRow(id,tipo,dh,obs,isNova){
     return `<div class="card" style="margin:0 0 8px;padding:10px;position:relative" data-marc-id="${id}" data-nova="${isNova?'1':''}">
       <div class="g3" style="align-items:flex-end;gap:8px">
@@ -705,7 +712,7 @@ function gfAbrirEditDia(dataRef){
   }
 
   document.getElementById('ped-marcacoes-wrap').innerHTML=
-    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),(m.data_hora||'').replace(' ','T').slice(0,16),m.observacao||'',false)).join('')+
+    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),toDtLocal(m.data_hora),m.observacao||'',false)).join('')+
     `<button type="button" class="btn b-vd b-sm" style="width:100%;margin-top:4px" onclick="pedAdicionarLinha()">＋ Adicionar marcação</button>`;
 
   document.getElementById('ped-motivo').value='';
