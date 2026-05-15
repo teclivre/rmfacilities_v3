@@ -142,6 +142,17 @@ class PontoEspelhoActivity : AppCompatActivity() {
             }
             topRow.addView(tvLabel)
 
+            // Contador de dias registrados
+            if (comp.fechamentos_dias > 0) {
+                val tvDias = TextView(this).apply {
+                    text = "${comp.fechamentos_dias} dias"
+                    setTextColor(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.mobile_text_secondary))
+                    textSize = 11f
+                    setPadding(0, 0, (8 * dp).toInt(), 0)
+                }
+                topRow.addView(tvDias, 1)
+            }
+
             // Badge de status
             val badgeBg = if (comp.pode_baixar) 0xFF2E7D32.toInt() else 0xFF1565C0.toInt()
             val badgeText = if (comp.pode_baixar)

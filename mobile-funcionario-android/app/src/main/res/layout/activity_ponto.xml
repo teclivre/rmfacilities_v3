@@ -251,6 +251,19 @@
                 android:textSize="12sp" />
 
             <TextView
+                android:id="@+id/tvTrabalhando"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:padding="8dp"
+                android:text=""
+                android:textColor="@color/mobile_semantic_success"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="18dp"

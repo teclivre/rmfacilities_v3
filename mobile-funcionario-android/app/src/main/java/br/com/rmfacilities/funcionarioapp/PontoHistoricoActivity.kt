@@ -10,6 +10,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -21,6 +22,7 @@ class PontoHistoricoActivity : AppCompatActivity() {
     private lateinit var api: ApiClient
     private lateinit var tvStatus: TextView
     private lateinit var containerHistorico: LinearLayout
+    private lateinit var swipeRefreshHistorico: SwipeRefreshLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,6 +31,10 @@ class PontoHistoricoActivity : AppCompatActivity() {
         api = ApiClient(SessionManager(this))
         tvStatus = findViewById(R.id.tvStatus)
         containerHistorico = findViewById(R.id.containerHistorico)
+        swipeRefreshHistorico = findViewById(R.id.swipeRefreshHistorico)
+
+        swipeRefreshHistorico.setColorSchemeResources(R.color.accent)
+        swipeRefreshHistorico.setOnRefreshListener { carregarHistorico() }
 
         findViewById<TextView>(R.id.btnVoltar).setOnClickListener { finish() }
 
@@ -42,10 +48,11 @@ class PontoHistoricoActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             val resp = withContext(Dispatchers.IO) {
-                try { api.getPontoHistorico(3) }
+                try { api.getPontoHistorico(7) }
                 catch (e: Exception) { PontoHistoricoResponse(ok = false, erro = e.message) }
             }
             withContext(Dispatchers.Main) {
+                swipeRefreshHistorico.isRefreshing = false
                 if (resp.ok) {
                     tvStatus.visibility = View.GONE
                     renderHistorico(resp.dias)

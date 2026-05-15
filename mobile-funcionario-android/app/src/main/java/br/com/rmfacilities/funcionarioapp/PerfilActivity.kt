@@ -1,11 +1,15 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.graphics.BitmapFactory
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.activity.result.PickVisualMediaRequest
@@ -169,6 +173,16 @@ class PerfilActivity : AppCompatActivity() {
                     // Sincronizar canal OTP do servidor
                     if (!f?.canal_otp.isNullOrBlank()) session.canalOtp = f!!.canal_otp!!
                     atualizarBiometriaUi()
+
+                    // Toque longo para copiar dados (nome, CPF, cargo)
+                    fun copiarParaClipboard(label: String, texto: String) {
+                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText(label, texto))
+                        Toast.makeText(this@PerfilActivity, "$label copiado!", Toast.LENGTH_SHORT).show()
+                    }
+                    tvNome.setOnLongClickListener { copiarParaClipboard("Nome", nome); true }
+                    tvCpf.setOnLongClickListener { copiarParaClipboard("CPF", f?.cpf.orEmpty()); true }
+                    tvCargo.setOnLongClickListener { copiarParaClipboard("Cargo", f?.cargo.orEmpty()); true }
                 }
             }
         }

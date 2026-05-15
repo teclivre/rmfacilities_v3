@@ -74,12 +74,24 @@ class PontoActivity : AppCompatActivity() {
     private lateinit var btnMarcarPonto: MaterialButton
     private lateinit var btnAtualizarPonto: MaterialButton
     private lateinit var tvRelogio: TextView
+    private lateinit var tvTrabalhando: TextView
+    private var entradaTimestamp: Long? = null
 
     private val relogioHandler = Handler(Looper.getMainLooper())
     private val relogioRunnable = object : Runnable {
         override fun run() {
             if (::tvRelogio.isInitialized) {
                 tvRelogio.text = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+            }
+            entradaTimestamp?.let { ts ->
+                if (::tvTrabalhando.isInitialized) {
+                    val elapsed = (System.currentTimeMillis() - ts) / 1000
+                    val h = elapsed / 3600
+                    val m = (elapsed % 3600) / 60
+                    val s = elapsed % 60
+                    tvTrabalhando.text = "🕐 Trabalhando há %02d:%02d:%02d".format(h, m, s)
+                    tvTrabalhando.visibility = View.VISIBLE
+                }
             }
             relogioHandler.postDelayed(this, 1000)
         }
@@ -119,6 +131,7 @@ class PontoActivity : AppCompatActivity() {
         btnMarcarPonto = findViewById(R.id.btnMarcarPonto)
         btnAtualizarPonto = findViewById(R.id.btnAtualizarPonto)
         tvRelogio = findViewById(R.id.tvRelogio)
+        tvTrabalhando = findViewById(R.id.tvTrabalhando)
 
         tvData.text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
 
@@ -386,6 +399,17 @@ class PontoActivity : AppCompatActivity() {
                     .withEndAction {
                         btnMarcarPonto.animate().scaleX(1f).scaleY(1f).setDuration(140).start()
                     }.start()
+                // Flash verde no fundo
+                val flashView = View(this@PontoActivity).apply {
+                    setBackgroundColor(0x4400C853.toInt())
+                    layoutParams = android.view.ViewGroup.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                }
+                val root = window.decorView.findViewById<android.view.ViewGroup>(android.R.id.content)
+                root.addView(flashView)
+                flashView.animate().alpha(0f).setDuration(500).withEndAction { root.removeView(flashView) }.start()
                 updateStatus("Ponto registrado com localização.", R.color.mobile_semantic_success)
             } else {
                 val hora = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
@@ -393,6 +417,12 @@ class PontoActivity : AppCompatActivity() {
                 localPendentes.add(LocalMarcacao(hora, tipoLabel, LocalStatus.ERROR))
                 renderMarcacoesComLocais(null)
                 retryQueue.enqueuePonto(loc.latitude, loc.longitude, loc.accuracy, System.currentTimeMillis())
+                @Suppress("DEPRECATION")
+                val hapticError = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+                    HapticFeedbackConstants.REJECT
+                else
+                    HapticFeedbackConstants.LONG_PRESS
+                btnMarcarPonto.performHapticFeedback(hapticError)
                 updateStatus("Falha ao enviar. Ponto salvo — será sincronizado automaticamente.", R.color.mobile_semantic_pending)
                 atualizarBadgePendentes()
             }
@@ -497,6 +527,24 @@ class PontoActivity : AppCompatActivity() {
         tvSaldo.text = resumo?.saldo_fmt ?: "00:00"
         tvProximoTipo.text = "Próxima marcação: ${resumo?.proximo_tipo_label ?: "Entrada"}"
         tvProximoTipo.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_info))
+
+        // Timer "Trabalhando há..." — ativo quando há entrada e sem saída
+        val marcacoesLista = resumo?.marcacoes ?: emptyList()
+        val primeiroTipo = marcacoesLista.firstOrNull()?.tipo
+        val ultimoTipo = marcacoesLista.lastOrNull()?.tipo
+        if (primeiroTipo == "entrada" && ultimoTipo != "saida") {
+            val entradaHora = marcacoesLista.first().hora_fmt ?: ""
+            if (entradaHora.isNotBlank()) {
+                val hoje = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                try {
+                    val sdfFull = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+                    entradaTimestamp = sdfFull.parse("$hoje $entradaHora")?.time
+                } catch (_: Exception) { entradaTimestamp = null }
+            }
+        } else {
+            entradaTimestamp = null
+            tvTrabalhando.visibility = View.GONE
+        }
 
         val inconsistencias = resumo?.inconsistencias ?: emptyList()
         if (inconsistencias.isNotEmpty()) {

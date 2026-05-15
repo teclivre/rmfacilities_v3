@@ -5,17 +5,22 @@
     android:layout_height="match_parent"
     android:background="@drawable/bg_mobile_gradient">
 
-    <ScrollView
-        android:id="@+id/scrollHistorico"
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/swipeRefreshHistorico"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:clipToPadding="false"
-        android:fillViewport="true"
-        android:paddingBottom="14dp"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
+
+    <ScrollView
+        android:id="@+id/scrollHistorico"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:fillViewport="true"
+        android:paddingBottom="14dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -51,7 +56,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Últimos 3 dias"
+                        android:text="Últimos 7 dias"
                         android:textColor="@color/mobile_text_primary"
                         android:textSize="22sp"
                         android:textStyle="bold" />
@@ -61,7 +66,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="Histórico de marcações"
+                        android:text="Histórico de marcações · puxe para atualizar"
                         android:textColor="@color/mobile_text_secondary"
                         android:textSize="12sp" />
                 </LinearLayout>
@@ -87,5 +92,7 @@
 
         </LinearLayout>
     </ScrollView>
+
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

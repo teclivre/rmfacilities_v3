@@ -1,6 +1,7 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.content.Intent
+import android.content.Context
 import android.os.Bundle
 import android.os.CountDownTimer
 import android.text.Editable
@@ -104,6 +105,13 @@ class LoginActivity : AppCompatActivity() {
         }
 
         inicializarBiometriaUI()
+
+        // Pré-preencher CPF salvo (se biometria não fez isso)
+        if (etCpf.text.isNullOrBlank()) {
+            val savedCpf = getSharedPreferences("rm_funcionario_app", Context.MODE_PRIVATE)
+                .getString("ultimo_cpf", null)
+            if (!savedCpf.isNullOrBlank()) etCpf.setText(savedCpf)
+        }
     }
 
     override fun onResume() {
@@ -135,6 +143,9 @@ class LoginActivity : AppCompatActivity() {
                 if (resp.ok) {
                     tvOtpMsg.text = resp.mensagem ?: "Código enviado! Verifique seu celular."
                     layoutOtp.visibility = View.VISIBLE
+                    layoutOtp.alpha = 0f
+                    layoutOtp.translationY = 24f
+                    layoutOtp.animate().alpha(1f).translationY(0f).setDuration(300).start()
                     btnEnviarCodigo.text = "Reenviar código"
                     etCodigo.requestFocus()
                     iniciarCooldownReenvio()
@@ -193,6 +204,9 @@ class LoginActivity : AppCompatActivity() {
                     if (session.biometricCpf.isBlank()) {
                         session.biometricCpf = cpf
                     }
+                    // Salvar CPF para pré-preencher no próximo acesso
+                    getSharedPreferences("rm_funcionario_app", Context.MODE_PRIVATE)
+                        .edit().putString("ultimo_cpf", cpf).apply()
                     if (!session.biometricEnabled) {
                         perguntarAtivarBiometria(cpf)
                     }

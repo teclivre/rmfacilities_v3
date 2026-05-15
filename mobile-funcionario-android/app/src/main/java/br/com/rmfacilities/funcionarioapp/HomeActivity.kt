@@ -49,6 +49,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var tvAvatar: TextView
     private lateinit var ivAvatarHome: ImageView
     private lateinit var tvResumoPonto: TextView
+    private lateinit var tvProximoPontoHome: TextView
     private lateinit var tvResumoTarefas: TextView
     private lateinit var tvResumoAvisos: TextView
     private lateinit var tvMsgBadge: TextView
@@ -99,12 +100,16 @@ class HomeActivity : AppCompatActivity() {
         tvAvatar = findViewById(R.id.tvAvatar)
         ivAvatarHome = findViewById(R.id.ivAvatarHome)
         tvResumoPonto = findViewById(R.id.tvResumoPonto)
+        tvProximoPontoHome = findViewById(R.id.tvProximoPontoHome)
         tvResumoTarefas = findViewById(R.id.tvResumoTarefas)
         tvResumoAvisos = findViewById(R.id.tvResumoAvisos)
         tvMsgBadge = findViewById(R.id.tvMsgBadge)
         tvDocsBadge = findViewById(R.id.tvDocsBadge)
         tvUltimoPagamento = findViewById(R.id.tvUltimoPagamento)
         swipeRefresh = findViewById(R.id.swipeRefreshHome)
+
+        // Versão do app no rodapé
+        findViewById<TextView>(R.id.tvAppVersion).text = "v${BuildConfig.VERSION_NAME}"
 
         swipeRefresh.setColorSchemeResources(R.color.accent)
         swipeRefresh.setProgressBackgroundColorSchemeResource(R.color.surface)
@@ -389,12 +394,20 @@ class HomeActivity : AppCompatActivity() {
                 // Alerta visual se já passou das 9h e o ponto ainda não foi iniciado hoje
                 val horaAtual = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
                 val semMarcacoes = pontoDia.resumo?.marcacoes.isNullOrEmpty()
+                val saldoFmt = pontoDia.resumo?.saldo_fmt ?: ""
+                val corPonto = when {
+                    semMarcacoes && horaAtual >= 9 -> R.color.mobile_semantic_pending
+                    saldoFmt.startsWith("-") -> R.color.mobile_semantic_pending
+                    saldoFmt.startsWith("+") -> R.color.mobile_semantic_success
+                    else -> R.color.mobile_text_primary
+                }
                 if (semMarcacoes && horaAtual >= 9) {
                     tvResumoPonto.text = "⚠️ Ponto não iniciado"
-                    tvResumoPonto.setTextColor(ContextCompat.getColor(this@HomeActivity, R.color.mobile_semantic_pending))
-                } else {
-                    tvResumoPonto.setTextColor(ContextCompat.getColor(this@HomeActivity, R.color.mobile_text_primary))
                 }
+                tvResumoPonto.setTextColor(ContextCompat.getColor(this@HomeActivity, corPonto))
+                // Próximo tipo de marcação
+                val proximoLabel = pontoDia.resumo?.proximo_tipo_label
+                tvProximoPontoHome.text = if (!proximoLabel.isNullOrBlank() && !semMarcacoes) "Próx: $proximoLabel" else ""
                 tvResumoTarefas.text = if (pendentesCount > 0) "$pendentesCount pendente(s)" else "Sem pendências"
                 tvResumoAvisos.text = if (naoLidas > 0) "$naoLidas aviso(s)" else "Sem alertas"
                 tvResumoAvisos.setTextColor(
