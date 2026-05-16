@@ -20,7 +20,7 @@
             android:layout_height="44dp"
             android:gravity="center"
             android:text="‹"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/white"
             android:textSize="30sp" />
 
         <LinearLayout
@@ -35,7 +35,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Local da marcação"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/white"
                 android:textSize="16sp"
                 android:textStyle="bold" />
 
@@ -43,7 +43,7 @@
                 android:id="@+id/tvMapaSubtitulo"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="#CCE0FF"
+                android:textColor="@color/primary_light"
                 android:textSize="12sp" />
         </LinearLayout>
 
@@ -53,7 +53,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Abrir Maps"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/white"
             android:textSize="12sp"
             android:textAllCaps="false"
             android:minWidth="0dp"

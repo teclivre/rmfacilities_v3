@@ -42,7 +42,7 @@
             android:layout_height="36dp"
             android:minWidth="0dp"
             android:text="Exportar"
-            android:textColor="#4da6ff"
+            android:textColor="@color/accent_blue"
             android:textSize="12sp" />
     </LinearLayout>
 

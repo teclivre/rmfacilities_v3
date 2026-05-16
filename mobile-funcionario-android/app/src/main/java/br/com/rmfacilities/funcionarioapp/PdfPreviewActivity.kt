@@ -311,8 +311,8 @@ class PdfPageAdapter(
             is PreviewItem.Header -> {
                 val h = holder as? HH ?: return
                 h.tv.text = "Documento: ${item.title}"
-                h.tv.setTextColor(android.graphics.Color.parseColor("#9EC5F7"))
-                h.tv.setBackgroundColor(android.graphics.Color.parseColor("#1A2235"))
+                h.tv.setTextColor(androidx.core.content.ContextCompat.getColor(h.tv.context, R.color.pdf_page_num_text))
+                h.tv.setBackgroundColor(androidx.core.content.ContextCompat.getColor(h.tv.context, R.color.pdf_page_num_bg))
                 h.tv.setPadding(20, 18, 20, 14)
                 h.tv.textSize = 14f
             }

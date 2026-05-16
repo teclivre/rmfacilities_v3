@@ -274,7 +274,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="portal.grupormfacilities.com.br"
-                android:textColor="#4da6ff"
+                android:textColor="@color/accent_blue"
                 android:textSize="12sp"
                 android:gravity="center" />
 

@@ -112,7 +112,10 @@ class PontoEspelhoActivity : AppCompatActivity() {
 
             // Barra colorida à esquerda
             val accentBar = View(this).apply {
-                val barColor = if (comp.pode_baixar) 0xFF2E7D32.toInt() else 0xFF1565C0.toInt()
+                val barColor = if (comp.pode_baixar)
+                    ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_badge_download)
+                else
+                    ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_accent_btn)
                 setBackgroundColor(barColor)
                 layoutParams = FrameLayout.LayoutParams((4 * dp).toInt(), FrameLayout.LayoutParams.MATCH_PARENT)
             }
@@ -154,7 +157,10 @@ class PontoEspelhoActivity : AppCompatActivity() {
             }
 
             // Badge de status
-            val badgeBg = if (comp.pode_baixar) 0xFF2E7D32.toInt() else 0xFF1565C0.toInt()
+            val badgeBg = if (comp.pode_baixar)
+                ContextCompat.getColor(this, R.color.espelho_badge_download)
+            else
+                ContextCompat.getColor(this, R.color.espelho_accent_btn)
             val badgeText = if (comp.pode_baixar)
                 "✓ Fechada"
             else
@@ -184,7 +190,7 @@ class PontoEspelhoActivity : AppCompatActivity() {
                 textSize = 12.5f
                 letterSpacing = 0.01f
                 cornerRadius = (10 * dp).toInt()
-                backgroundTintList = ColorStateList.valueOf(0xFF1565C0.toInt())
+                backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_accent_btn))
                 setTextColor(Color.WHITE)
                 elevation = 2f
                 stateListAnimator = null
@@ -206,7 +212,7 @@ class PontoEspelhoActivity : AppCompatActivity() {
                     textSize = 12.5f
                     letterSpacing = 0.01f
                     cornerRadius = (10 * dp).toInt()
-                    backgroundTintList = ColorStateList.valueOf(0xFF2E7D32.toInt())
+                    backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_badge_download))
                     setTextColor(Color.WHITE)
                     elevation = 2f
                     stateListAnimator = null
@@ -252,18 +258,18 @@ class PontoEspelhoActivity : AppCompatActivity() {
                 }
 
                 val dp = resources.displayMetrics.density
-                val colorHeader = 0xFF0D2137.toInt()
-                val colorRowEven = 0xFFF5F8FF.toInt()
-                val colorRowOdd = 0xFFFFFFFF.toInt()
-                val colorSeparator = 0xFFDDE3F0.toInt()
-                val colorTextPrimary = 0xFF1A1A2E.toInt()
-                val colorTextMuted = 0xFF6B7280.toInt()
-                val colorAccent = 0xFF1565C0.toInt()
-                val colorSuccess = 0xFF2E7D32.toInt()
+                val colorHeader = ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_header_bg)
+                val colorRowEven = ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_row_even)
+                val colorRowOdd = ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_row_odd)
+                val colorSeparator = ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_separator)
+                val colorTextPrimary = ContextCompat.getColor(this@PontoEspelhoActivity, R.color.text_primary)
+                val colorTextMuted = ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_text_muted)
+                val colorAccent = ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_accent_btn)
+                val colorSuccess = ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_ok)
 
                 val root = LinearLayout(this@PontoEspelhoActivity).apply {
                     orientation = LinearLayout.VERTICAL
-                    setBackgroundColor(0xFFF0F4FF.toInt())
+                    setBackgroundColor(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_row_highlight))
                 }
 
                 // ── Cabeçalho do dialog ─────────────────────────────────
@@ -280,13 +286,13 @@ class PontoEspelhoActivity : AppCompatActivity() {
                 }
                 val tvSubtitulo = TextView(this@PontoEspelhoActivity).apply {
                     text = label
-                    setTextColor(0xFFB0C4DE.toInt())
+                    setTextColor(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_text_muted))
                     textSize = 13f
                     setPadding(0, (2 * dp).toInt(), 0, (8 * dp).toInt())
                 }
                 val tvTotalHoras = TextView(this@PontoEspelhoActivity).apply {
                     text = "Total trabalhado: ${resp.total_horas ?: "--:--"}"
-                    setTextColor(0xFF7FFF7F.toInt())
+                    setTextColor(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_ok))
                     textSize = 13f
                     setTypeface(null, Typeface.BOLD)
                 }
@@ -307,7 +313,7 @@ class PontoEspelhoActivity : AppCompatActivity() {
                     }
                     val graficoContainer = LinearLayout(this@PontoEspelhoActivity).apply {
                         orientation = LinearLayout.HORIZONTAL
-                        setBackgroundColor(0xFF0A1929.toInt())
+                        setBackgroundColor(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.background))
                         setPadding((12 * dp).toInt(), (10 * dp).toInt(), (12 * dp).toInt(), (10 * dp).toInt())
                         gravity = Gravity.BOTTOM
                     }
@@ -325,16 +331,19 @@ class PontoEspelhoActivity : AppCompatActivity() {
                         val propTrab = dia.horas_trabalhadas_min.toFloat() / maxMin
                         val propEsp = if (dia.horas_esperadas_min > 0) dia.horas_esperadas_min.toFloat() / maxMin else 1f
                         val barColor = when {
-                            dia.horas_esperadas_min > 0 && dia.horas_trabalhadas_min >= dia.horas_esperadas_min -> 0xFF2E7D32.toInt()
-                            dia.horas_trabalhadas_min >= 240 -> 0xFFE65100.toInt()
-                            else -> 0xFFB71C1C.toInt()
+                            dia.horas_esperadas_min > 0 && dia.horas_trabalhadas_min >= dia.horas_esperadas_min ->
+                                ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_ok)
+                            dia.horas_trabalhadas_min >= 240 ->
+                                ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_parcial)
+                            else ->
+                                ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_falta)
                         }
                         // Barra de fundo (esperado)
                         val barWrapper = FrameLayout(this@PontoEspelhoActivity).apply {
                             layoutParams = LinearLayout.LayoutParams(barW, (barMaxH * propEsp).toInt().coerceAtLeast((4 * dp).toInt()))
                         }
                         val barBg = View(this@PontoEspelhoActivity).apply {
-                            setBackgroundColor(0xFF1E3A5F.toInt())
+                            setBackgroundColor(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_separator))
                             layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
                         }
                         val barFill = View(this@PontoEspelhoActivity).apply {
@@ -350,7 +359,7 @@ class PontoEspelhoActivity : AppCompatActivity() {
                         col.addView(TextView(this@PontoEspelhoActivity).apply {
                             text = (dia.data_fmt ?: "").take(5)
                             textSize = 7f
-                            setTextColor(0xFF90A4AE.toInt())
+                            setTextColor(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_text_muted))
                             gravity = Gravity.CENTER
                             layoutParams = LinearLayout.LayoutParams(barW + (4 * dp).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
                         })
@@ -378,7 +387,7 @@ class PontoEspelhoActivity : AppCompatActivity() {
                         text = txt
                         textSize = if (isHeader) 10f else 11.5f
                         setTypeface(null, if (isHeader) Typeface.BOLD else Typeface.NORMAL)
-                        setTextColor(if (isHeader) 0xFFCFD8DC.toInt() else colorTextPrimary)
+                        setTextColor(if (isHeader) ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_header_text) else colorTextPrimary)
                         gravity = if (alignEnd) Gravity.END or Gravity.CENTER_VERTICAL
                                   else if (weight > 2f) Gravity.START or Gravity.CENTER_VERTICAL
                                   else Gravity.CENTER
@@ -400,7 +409,7 @@ class PontoEspelhoActivity : AppCompatActivity() {
 
                 // Separador abaixo do header
                 table.addView(View(this@PontoEspelhoActivity).apply {
-                    setBackgroundColor(0xFF1565C0.toInt())
+                    setBackgroundColor(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_accent_btn))
                     layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (2 * dp).toInt())
                 })
 
@@ -439,11 +448,11 @@ class PontoEspelhoActivity : AppCompatActivity() {
                     if (dia.marcacoes.isNotEmpty()) {
                         dia.marcacoes.forEach { m ->
                             val chipColor = when (m.tipo) {
-                                "entrada" -> 0xFF1B5E20.toInt()
-                                "saida_intervalo" -> 0xFFE65100.toInt()
-                                "retorno_intervalo" -> 0xFF0D47A1.toInt()
-                                "saida" -> 0xFFB71C1C.toInt()
-                                else -> 0xFF37474F.toInt()
+                                "entrada" -> ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_entrada)
+                                "saida_intervalo" -> ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_saida_int)
+                                "retorno_intervalo" -> ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_retorno_int)
+                                "saida" -> ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_saida)
+                                else -> ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_outro)
                             }
                             val chip = TextView(this@PontoEspelhoActivity).apply {
                                 text = "${m.hora_fmt ?: "-"}"
@@ -502,10 +511,10 @@ class PontoEspelhoActivity : AppCompatActivity() {
                     setPadding((12 * dp).toInt(), (8 * dp).toInt(), (12 * dp).toInt(), (8 * dp).toInt())
                 }
                 listOf(
-                    "E" to 0xFF1B5E20.toInt(),
-                    "SI" to 0xFFE65100.toInt(),
-                    "RI" to 0xFF0D47A1.toInt(),
-                    "S" to 0xFFB71C1C.toInt()
+                    "E" to ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_entrada),
+                    "SI" to ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_saida_int),
+                    "RI" to ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_retorno_int),
+                    "S" to ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_saida)
                 ).forEach { (lbl, cor) ->
                     val chip = TextView(this@PontoEspelhoActivity).apply {
                         text = lbl
@@ -525,7 +534,7 @@ class PontoEspelhoActivity : AppCompatActivity() {
                         text = when (lbl) {
                             "E" -> "Entrada"; "SI" -> "Saída Int."; "RI" -> "Retorno"; else -> "Saída"
                         } + "   "
-                        setTextColor(0xFFB0C4DE.toInt())
+                        setTextColor(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_text_muted))
                         textSize = 9f
                     })
                 }
@@ -547,14 +556,14 @@ class PontoEspelhoActivity : AppCompatActivity() {
                 val shareRow = LinearLayout(this@PontoEspelhoActivity).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.END
-                    setBackgroundColor(0xFF0D2137.toInt())
+                    setBackgroundColor(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_header_bg))
                     setPadding((12 * dp).toInt(), (6 * dp).toInt(), (12 * dp).toInt(), (8 * dp).toInt())
                 }
                 val btnShare = MaterialButton(this@PontoEspelhoActivity).apply {
                     text = "📤 Compartilhar"
                     textSize = 12f
                     cornerRadius = (10 * dp).toInt()
-                    backgroundTintList = ColorStateList.valueOf(0xFF1565C0.toInt())
+                    backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_accent_btn))
                     setTextColor(Color.WHITE)
                     stateListAnimator = null
                     minWidth = 0; minimumWidth = 0; insetTop = 0; insetBottom = 0

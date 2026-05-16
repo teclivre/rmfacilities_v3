@@ -309,7 +309,7 @@ class DocumentosActivity : AppCompatActivity() {
             setPadding(dp16 * 2, dp16, dp16 * 2, dp16 / 2)
             addView(android.widget.TextView(this@DocumentosActivity).apply {
                 text = infoEnvio
-                setTextColor(android.graphics.Color.GRAY)
+                setTextColor(androidx.core.content.ContextCompat.getColor(this@DocumentosActivity, R.color.text_hint))
                 textSize = 13f
                 setPadding(0, 0, 0, (8 * resources.displayMetrics.density).toInt())
             })

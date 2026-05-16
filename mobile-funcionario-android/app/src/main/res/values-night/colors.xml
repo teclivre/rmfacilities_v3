@@ -55,4 +55,37 @@
     <color name="mobile_success_stroke">#1D5040</color>
     <color name="mobile_bubble_func_bg">#1E3D2F</color>
     <color name="mobile_bubble_rh_bg">#1A3F6F</color>
+
+    <!-- Dialog / Alert (dark) -->
+    <color name="dialog_btn_positive">#f28e34</color>
+    <color name="dialog_btn_negative">#93b5d0</color>
+    <color name="dialog_surface">#142840</color>
+    <color name="dialog_text_title">#E8F0F8</color>
+    <color name="dialog_text_body">#9EB3C9</color>
+
+    <!-- Ponto Espelho table (dark) -->
+    <color name="espelho_header_bg">#0D2137</color>
+    <color name="espelho_header_text">#E8F0F8</color>
+    <color name="espelho_row_even">#132742</color>
+    <color name="espelho_row_odd">#0A1929</color>
+    <color name="espelho_row_highlight">#0F1F35</color>
+    <color name="espelho_separator">#1E3A5F</color>
+    <color name="espelho_text_muted">#90A4AE</color>
+    <color name="espelho_accent_btn">#1565C0</color>
+    <color name="espelho_badge_download">#2E7D32</color>
+    <color name="espelho_badge_pending">#1565C0</color>
+
+    <!-- Ponto Espelho status (dark) -->
+    <color name="espelho_ok">#2CCF95</color>
+    <color name="espelho_parcial">#f28e34</color>
+    <color name="espelho_falta">#FF5F6D</color>
+    <color name="espelho_entrada">#2CCF95</color>
+    <color name="espelho_saida_int">#f28e34</color>
+    <color name="espelho_retorno_int">#67B8FF</color>
+    <color name="espelho_saida">#FF5F6D</color>
+    <color name="espelho_outro">#7E97B3</color>
+
+    <!-- PDF preview overlay (dark) -->
+    <color name="pdf_page_num_text">#9EC5F7</color>
+    <color name="pdf_page_num_bg">#1A2235</color>
 </resources>

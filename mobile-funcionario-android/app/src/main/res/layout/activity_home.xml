@@ -296,7 +296,7 @@
                                 android:layout_width="36dp"
                                 android:layout_height="36dp"
                                 android:background="@drawable/bg_icon_chip"
-                                android:backgroundTint="#1F3A7A"
+                                android:backgroundTint="@color/mobile_bubble_rh_bg"
                                 android:gravity="center"
                                 android:text="⏱"
                                 android:textSize="16sp" />
@@ -357,7 +357,7 @@
                                     android:layout_width="36dp"
                                     android:layout_height="36dp"
                                     android:background="@drawable/bg_icon_chip"
-                                    android:backgroundTint="#1A3D2F"
+                                    android:backgroundTint="@color/mobile_bubble_func_bg"
                                     android:gravity="center"
                                     android:text="📄"
                                     android:textSize="16sp" />
@@ -433,7 +433,7 @@
                                     android:layout_width="36dp"
                                     android:layout_height="36dp"
                                     android:background="@drawable/bg_icon_chip"
-                                    android:backgroundTint="#2D1F5E" />
+                                    android:backgroundTint="@color/icon_purple" />
                                 <TextView
                                     android:id="@+id/tvMsgBadge"
                                     android:layout_width="18dp"
@@ -493,7 +493,7 @@
                                 android:layout_width="36dp"
                                 android:layout_height="36dp"
                                 android:background="@drawable/bg_icon_chip"
-                                android:backgroundTint="#3D2010"
+                                android:backgroundTint="@color/accent_dark"
                                 android:gravity="center"
                                 android:text="👤"
                                 android:textSize="16sp" />
@@ -763,7 +763,7 @@
                             android:layout_width="40dp"
                             android:layout_height="40dp"
                             android:background="@drawable/bg_icon_chip"
-                            android:backgroundTint="#1A3D3A"
+                            android:backgroundTint="@color/mobile_semantic_success"
                             android:gravity="center"
                             android:text="🏖️"
                             android:textSize="16sp" />
