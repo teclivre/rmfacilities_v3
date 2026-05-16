@@ -172,6 +172,12 @@ class PerfilActivity : AppCompatActivity() {
                                 if (r.ok) R.color.success else R.color.mobile_semantic_pending))
                             tvFeedback.text = if (r.ok) "✅ Solicitação enviada! O RH analisará em breve."
                             else "❌ ${r.erro ?: "Erro ao enviar solicitação."}"
+                            if (r.ok) {
+                                tvFeedback.text = "${tvFeedback.text}\n→ Ver histórico de solicitações"
+                                tvFeedback.setOnClickListener {
+                                    startActivity(android.content.Intent(this@PerfilActivity, AlteracoesCadastraisActivity::class.java))
+                                }
+                            }
                         }
                     }
                 }

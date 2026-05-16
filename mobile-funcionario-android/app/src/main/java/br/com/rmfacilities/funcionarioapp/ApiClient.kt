@@ -276,6 +276,22 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    fun getAlteracoesCadastrais(): AlteracaoListResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/solicitacoes-alteracao"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, AlteracaoListResponse::class.java)
+            } catch (_: Exception) {
+                AlteracaoListResponse(ok = false, erro = "Falha ao carregar histórico.")
+            }
+        }
+    }
+
     fun solicitarAlteracao(campos: Map<String,String>, observacao: String): SolicitacaoResponse {
         val payload = gson.toJson(mapOf("campos" to campos, "observacao" to observacao))
         val req = Request.Builder()

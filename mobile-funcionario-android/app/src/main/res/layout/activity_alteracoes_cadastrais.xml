@@ -6,7 +6,7 @@
     android:background="@drawable/bg_mobile_gradient">
 
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-        android:id="@+id/swipeRefreshCorrecoes"
+        android:id="@+id/swipeRefreshAlteracoes"
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
@@ -32,7 +32,7 @@
                     android:layout_marginBottom="16dp">
 
                     <TextView
-                        android:id="@+id/btnVoltarCorrecoes"
+                        android:id="@+id/btnVoltarAlteracoes"
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:gravity="center"
@@ -46,13 +46,13 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Solicitações de Correção"
+                        android:text="Histórico de Solicitações"
                         android:textSize="18sp"
                         android:textStyle="bold"
                         android:textColor="@color/mobile_text_primary" />
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnNovaCorrecao"
+                        android:id="@+id/btnNovaSolicitacao"
                         android:layout_width="wrap_content"
                         android:layout_height="36dp"
                         android:text="+ Nova"
@@ -64,7 +64,7 @@
                 </LinearLayout>
 
                 <TextView
-                    android:id="@+id/tvStatusCorrecoes"
+                    android:id="@+id/tvStatusAlteracoes"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="8dp"
@@ -72,22 +72,8 @@
                     android:gravity="center"
                     android:visibility="gone" />
 
-                <HorizontalScrollView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="12dp"
-                    android:scrollbars="none">
-
-                    <LinearLayout
-                        android:id="@+id/chipFiltrosCorrecoes"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:paddingEnd="4dp" />
-                </HorizontalScrollView>
-
                 <LinearLayout
-                    android:id="@+id/containerCorrecoes"
+                    android:id="@+id/containerAlteracoes"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical" />

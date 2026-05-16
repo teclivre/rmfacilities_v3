@@ -4,7 +4,10 @@ import android.content.Intent
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.view.Gravity
 import android.view.View
+import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -22,6 +25,10 @@ class CorrecoesPontoActivity : AppCompatActivity() {
     private lateinit var tvStatus: TextView
     private lateinit var container: LinearLayout
     private lateinit var swipeRefresh: SwipeRefreshLayout
+    private lateinit var chipContainer: LinearLayout
+
+    private var todosItens: List<CorrecaoPontoItem> = emptyList()
+    private var filtroAtual: String = "todos" // todos | pendente | resolvido | rejeitado
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,6 +38,7 @@ class CorrecoesPontoActivity : AppCompatActivity() {
         tvStatus = findViewById(R.id.tvStatusCorrecoes)
         container = findViewById(R.id.containerCorrecoes)
         swipeRefresh = findViewById(R.id.swipeRefreshCorrecoes)
+        chipContainer = findViewById(R.id.chipFiltrosCorrecoes)
 
         swipeRefresh.setColorSchemeResources(R.color.accent)
         swipeRefresh.setOnRefreshListener { carregar() }
@@ -39,12 +47,60 @@ class CorrecoesPontoActivity : AppCompatActivity() {
             startActivity(Intent(this, SolicitacaoCorrecaoPontoActivity::class.java))
         }
 
+        montarChips()
         carregar()
     }
 
     override fun onResume() {
         super.onResume()
         carregar()
+    }
+
+    private fun montarChips() {
+        val dp = resources.displayMetrics.density
+        val opcoes = listOf("todos" to "Todas", "pendente" to "Pendentes", "resolvido" to "Resolvidas", "rejeitado" to "Rejeitadas")
+        chipContainer.removeAllViews()
+        for ((key, label) in opcoes) {
+            val chip = TextView(this).apply {
+                text = label
+                textSize = 12f
+                setTypeface(null, Typeface.BOLD)
+                setPadding((12 * dp).toInt(), (5 * dp).toInt(), (12 * dp).toInt(), (5 * dp).toInt())
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = (8 * dp).toInt() }
+                tag = key
+            }
+            atualizarChipVisual(chip, key == filtroAtual)
+            chip.setOnClickListener {
+                filtroAtual = key
+                for (i in 0 until chipContainer.childCount) {
+                    val c = chipContainer.getChildAt(i) as? TextView ?: continue
+                    atualizarChipVisual(c, c.tag == filtroAtual)
+                }
+                aplicarFiltro()
+            }
+            chipContainer.addView(chip)
+        }
+    }
+
+    private fun atualizarChipVisual(chip: TextView, ativo: Boolean) {
+        val dp = resources.displayMetrics.density
+        chip.background = GradientDrawable().apply {
+            cornerRadius = 20 * dp
+            setColor(if (ativo) ContextCompat.getColor(this@CorrecoesPontoActivity, R.color.accent) else 0x22FFFFFF)
+            setStroke(1, if (ativo) ContextCompat.getColor(this@CorrecoesPontoActivity, R.color.accent) else 0x44FFFFFF)
+        }
+        chip.setTextColor(if (ativo) android.graphics.Color.WHITE else ContextCompat.getColor(this, R.color.mobile_text_secondary))
+    }
+
+    private fun aplicarFiltro() {
+        val filtrado = when (filtroAtual) {
+            "todos" -> todosItens
+            else -> todosItens.filter { it.status == filtroAtual }
+        }
+        render(filtrado)
     }
 
     private fun carregar() {
@@ -61,7 +117,8 @@ class CorrecoesPontoActivity : AppCompatActivity() {
                 swipeRefresh.isRefreshing = false
                 if (resp.ok) {
                     tvStatus.visibility = View.GONE
-                    render(resp.itens)
+                    todosItens = resp.itens
+                    aplicarFiltro()
                 } else {
                     tvStatus.text = resp.erro ?: "Erro ao carregar solicitações."
                     tvStatus.setTextColor(ContextCompat.getColor(this@CorrecoesPontoActivity, R.color.mobile_semantic_pending))

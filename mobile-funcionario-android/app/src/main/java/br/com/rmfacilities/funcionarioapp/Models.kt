@@ -289,3 +289,19 @@ data class ResumoMesResponse(
     val saldo_min: Int = 0,
     val saldo_fmt: String? = null
 )
+
+data class AlteracaoSolicitacaoItem(
+    val id: Int = 0,
+    val status: String? = null,
+    val observacao: String? = null,
+    val motivo_admin: String? = null,
+    val solicitado_fmt: String? = null,
+    val analisado_fmt: String? = null,
+    val payload: Map<String, String> = emptyMap()
+)
+
+data class AlteracaoListResponse(
+    val ok: Boolean = false,
+    val erro: String? = null,
+    val items: List<AlteracaoSolicitacaoItem> = emptyList()
+)

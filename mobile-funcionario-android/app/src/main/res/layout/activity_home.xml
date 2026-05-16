@@ -184,6 +184,18 @@
                                 android:textColor="@color/mobile_text_secondary"
                                 android:textSize="10sp"
                                 android:visibility="gone" />
+
+                            <ProgressBar
+                                android:id="@+id/pbHorasDia"
+                                style="@style/Widget.AppCompat.ProgressBar.Horizontal"
+                                android:layout_width="match_parent"
+                                android:layout_height="4dp"
+                                android:layout_marginTop="6dp"
+                                android:max="480"
+                                android:progress="0"
+                                android:progressTint="@color/mobile_semantic_success"
+                                android:progressBackgroundTint="@color/border"
+                                android:visibility="gone" />
                         </LinearLayout>
 
                         <LinearLayout
@@ -772,6 +784,7 @@
                                 android:textStyle="bold" />
 
                             <TextView
+                                android:id="@+id/tvStatusFerias"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="Período e status de férias"
@@ -785,12 +798,23 @@
                     android:id="@+id/tvAppVersion"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="20dp"
+                    android:layout_marginTop="12dp"
                     android:gravity="center"
                     android:text=""
                     android:textColor="@color/mobile_text_secondary"
                     android:textSize="10sp"
                     android:alpha="0.5" />
+
+                <TextView
+                    android:id="@+id/tvUltimaAtualizacao"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:gravity="center"
+                    android:text=""
+                    android:textColor="@color/mobile_text_secondary"
+                    android:textSize="10sp"
+                    android:alpha="0.4" />
 
             </LinearLayout>
 

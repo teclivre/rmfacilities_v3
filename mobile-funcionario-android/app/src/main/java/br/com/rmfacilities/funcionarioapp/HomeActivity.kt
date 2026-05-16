@@ -51,6 +51,9 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var tvResumoPonto: TextView
     private lateinit var tvProximoPontoHome: TextView
     private lateinit var tvSaldoMes: TextView
+    private lateinit var pbHorasDia: android.widget.ProgressBar
+    private lateinit var tvStatusFerias: TextView
+    private lateinit var tvUltimaAtualizacao: TextView
     private lateinit var tvResumoTarefas: TextView
     private lateinit var tvResumoAvisos: TextView
     private lateinit var tvMsgBadge: TextView
@@ -105,6 +108,9 @@ class HomeActivity : AppCompatActivity() {
         tvResumoPonto = findViewById(R.id.tvResumoPonto)
         tvProximoPontoHome = findViewById(R.id.tvProximoPontoHome)
         tvSaldoMes = findViewById(R.id.tvSaldoMes)
+        pbHorasDia = findViewById(R.id.pbHorasDia)
+        tvStatusFerias = findViewById(R.id.tvStatusFerias)
+        tvUltimaAtualizacao = findViewById(R.id.tvUltimaAtualizacao)
         tvResumoTarefas = findViewById(R.id.tvResumoTarefas)
         tvResumoAvisos = findViewById(R.id.tvResumoAvisos)
         tvMsgBadge = findViewById(R.id.tvMsgBadge)
@@ -341,6 +347,7 @@ class HomeActivity : AppCompatActivity() {
             val pendentesD = async(Dispatchers.IO) { try { api.pendentesAssinatura().itens.size } catch (_: Exception) { 0 } }
             val pagamentoD = async(Dispatchers.IO) { try { api.ultimoPagamento() } catch (_: Exception) { null } }
             val saldoMesD = async(Dispatchers.IO) { try { api.getResumoMes() } catch (_: Exception) { null } }
+            val feriasD = async(Dispatchers.IO) { try { api.getFeriasFuncionario() } catch (_: Exception) { null } }
             val me = meD.await()
             val naoLidas = naoLidasD.await()
             val pontoDia = pontoDiaD.await()
@@ -348,6 +355,7 @@ class HomeActivity : AppCompatActivity() {
             val pendentesCount = pendentesD.await()
             val ultimoPagamento = pagamentoD.await()
             val saldoMes = saldoMesD.await()
+            val ferias = feriasD.await()
             withContext(Dispatchers.Main) {
                 swipeRefresh.isRefreshing = false
                 val nome = me.funcionario?.nome ?: "colaborador"
@@ -431,7 +439,36 @@ class HomeActivity : AppCompatActivity() {
                     tvSaldoMes.visibility = View.GONE
                 }
 
-                tvResumoTarefas.text = if (pendentesCount > 0) "$pendentesCount pendente(s)" else "Sem pendências"
+                // ProgressBar horas do dia
+                val minTrabalhados = pontoDia.resumo?.horas_trabalhadas_min ?: 0
+                if (minTrabalhados > 0) {
+                    pbHorasDia.max = 480
+                    pbHorasDia.progress = minTrabalhados.coerceAtMost(480)
+                    val corProgress = when {
+                        minTrabalhados >= 480 -> ContextCompat.getColor(this@HomeActivity, R.color.mobile_semantic_success)
+                        minTrabalhados >= 240 -> 0xFFE65100.toInt()
+                        else -> ContextCompat.getColor(this@HomeActivity, R.color.mobile_semantic_pending)
+                    }
+                    pbHorasDia.progressTintList = android.content.res.ColorStateList.valueOf(corProgress)
+                    pbHorasDia.visibility = View.VISIBLE
+                } else {
+                    pbHorasDia.visibility = View.GONE
+                }
+
+                // Status de férias
+                if (ferias != null && ferias.ok) {
+                    tvStatusFerias.text = when {
+                        ferias.em_ferias -> "🏖️ Em férias${if ((ferias.dias_restantes ?: 0) > 0) " · ${ferias.dias_restantes}d restantes" else ""}"
+                        ferias.proximas?.dias_para_inicio != null -> "Inicia em ${ferias.proximas.dias_para_inicio}d · ${ferias.ferias_dias}d total"
+                        else -> "${ferias.ferias_dias} dias disponíveis"
+                    }
+                    tvStatusFerias.setTextColor(ContextCompat.getColor(this@HomeActivity,
+                        if (ferias.em_ferias) R.color.mobile_semantic_success else R.color.mobile_text_secondary))
+                }
+
+                // Timestamp de última atualização
+                val hora = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+                tvUltimaAtualizacao.text = "Atualizado às $hora" = if (pendentesCount > 0) "$pendentesCount pendente(s)" else "Sem pendências"
                 tvResumoAvisos.text = if (naoLidas > 0) "$naoLidas aviso(s)" else "Sem alertas"
                 tvResumoAvisos.setTextColor(
                     ContextCompat.getColor(

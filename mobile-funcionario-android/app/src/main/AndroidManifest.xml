@@ -36,6 +36,9 @@
             android:name=".CorrecoesPontoActivity"
             android:exported="false" />
         <activity
+            android:name=".AlteracoesCadastraisActivity"
+            android:exported="false" />
+        <activity
             android:name=".DocumentosActivity"
             android:exported="false"
             android:launchMode="singleTop" />
