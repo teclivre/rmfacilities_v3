@@ -14680,8 +14680,9 @@ def _add_security_headers(response):
             f"script-src 'self' 'nonce-{nonce}' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
             f"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
             f"font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
-            f"img-src 'self' data: blob:; "
+            f"img-src 'self' data: blob: https:; "
             f"connect-src 'self'; "
+            f"worker-src 'self' blob:; "
             f"frame-ancestors 'self';"
         )
     # Loga requisições lentas (> 2 s) para diagnóstico de performance
