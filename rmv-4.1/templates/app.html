@@ -537,9 +537,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 </head>
 <body>
 
-<div id="autosave-global-badge" class="autosave-global-badge state-ok" aria-live="polite" title="Status do autosave">
+<div id="autosave-global-badge" class="autosave-global-badge state-ok" aria-live="polite" title="Sincronizado">
   <span class="dot"></span>
-  <span id="autosave-global-text">Autosave sincronizado</span>
 </div>
 
 <div class="mobile-nav" id="mobile-nav">
@@ -4915,22 +4914,21 @@ function autosaveGlobalState(){
 
 function updateAutosaveGlobalBadge(){
   const el=document.getElementById('autosave-global-badge');
-  const txt=document.getElementById('autosave-global-text');
-  if(!el || !txt) return;
+  if(!el) return;
   const state=autosaveGlobalState();
   el.classList.remove('state-saving','state-pending','state-ok');
   if(state==='saving'){
     el.classList.add('state-saving');
-    txt.textContent='Autosave salvando...';
+    el.title='Sincronizando...';
     return;
   }
   if(state==='pending'){
     el.classList.add('state-pending');
-    txt.textContent='Autosave pendente';
+    el.title='Aguardando sincronização';
     return;
   }
   el.classList.add('state-ok');
-  txt.textContent='Autosave sincronizado';
+  el.title='Sincronizado';
 }
 
 function setupModalDirtyTracking(){

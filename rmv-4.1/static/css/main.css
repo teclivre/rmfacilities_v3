@@ -53,14 +53,15 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;ba
 .nav-sep{border:none;border-top:1px solid rgba(255,255,255,.08);margin:6px 0}
 .content{flex:1;padding:20px 22px;overflow:auto;min-width:0}
 
-.autosave-global-badge{position:fixed;right:14px;bottom:14px;z-index:1200;display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid rgba(126,194,255,.28);background:rgba(10,26,41,.84);backdrop-filter:blur(6px);font-size:11px;font-weight:700;color:#a9d7ff;box-shadow:0 10px 24px rgba(0,0,0,.26)}
-.autosave-global-badge .dot{width:8px;height:8px;border-radius:50%;background:#7ee5bf;box-shadow:0 0 0 3px rgba(126,229,191,.18)}
-.autosave-global-badge.state-saving{color:#ffd59c;border-color:rgba(255,178,90,.42)}
-.autosave-global-badge.state-saving .dot{background:#ffb25a;box-shadow:0 0 0 3px rgba(255,178,90,.22)}
-.autosave-global-badge.state-pending{color:#9fd4ff;border-color:rgba(126,194,255,.42)}
-.autosave-global-badge.state-pending .dot{background:#67b8ff;box-shadow:0 0 0 3px rgba(103,184,255,.20)}
-.autosave-global-badge.state-ok{color:#b8f3da;border-color:rgba(126,229,191,.36)}
-.autosave-global-badge.state-ok .dot{background:#7ee5bf;box-shadow:0 0 0 3px rgba(126,229,191,.20)}
+.autosave-global-badge{position:fixed;right:16px;bottom:16px;z-index:1200;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:2px solid rgba(126,229,191,.38);background:rgba(10,26,41,.80);backdrop-filter:blur(6px);box-shadow:0 4px 14px rgba(0,0,0,.28);cursor:default;transition:border-color .3s}
+.autosave-global-badge .dot{width:11px;height:11px;border-radius:50%;background:var(--verde);box-shadow:0 0 0 3px rgba(22,131,87,.22);transition:background .3s,box-shadow .3s}
+.autosave-global-badge.state-saving{border-color:rgba(242,142,52,.44)}
+.autosave-global-badge.state-saving .dot{background:var(--laranja);box-shadow:0 0 0 3px rgba(242,142,52,.24);animation:dot-pulse .9s ease-in-out infinite}
+.autosave-global-badge.state-pending{border-color:rgba(242,142,52,.34)}
+.autosave-global-badge.state-pending .dot{background:var(--laranja);box-shadow:0 0 0 3px rgba(242,142,52,.18)}
+.autosave-global-badge.state-ok{border-color:rgba(22,131,87,.40)}
+.autosave-global-badge.state-ok .dot{background:var(--verde);box-shadow:0 0 0 3px rgba(22,131,87,.22)}
+@keyframes dot-pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
 body.sidebar-collapsed .sidebar{width:78px}
 body.sidebar-collapsed .brand-label,
@@ -113,7 +114,7 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 .g4{display:grid;grid-template-columns:repeat(4,1fr);gap:11px}
 .s2{grid-column:span 2}
 @media(max-width:768px){.g2,.g3,.g4{grid-template-columns:1fr}.s2{grid-column:span 1}.layout{display:block;height:auto;overflow:visible}.sidebar{display:none}.mobile-nav{display:block}.content{height:auto;overflow:visible;padding:12px}}
-@media(max-width:768px){.autosave-global-badge{right:10px;bottom:10px;font-size:10px;padding:7px 10px}}
+@media(max-width:768px){.autosave-global-badge{right:12px;bottom:12px;width:22px;height:22px}.autosave-global-badge .dot{width:9px;height:9px}}
 .f{display:flex;flex-direction:column;gap:4px;position:relative}
 .f label{font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
 .f input,.f select,.f textarea{border:1.5px solid var(--borda);border-radius:var(--r);padding:8px 10px;font-size:13px;font-family:'Manrope',sans-serif;background:rgba(255,255,255,.95);color:var(--preto);transition:all .2s ease;width:100%}
