@@ -14668,22 +14668,22 @@ def _add_security_headers(response):
     rid = getattr(g, 'request_id', '')
     if rid:
         response.headers['X-Request-ID'] = rid
-    # Content-Security-Policy com nonce por requisição.
-    # 'unsafe-inline' é necessário para os event handlers HTML (onclick, onchange, etc. — >500 no app).
-    # Em navegadores CSP Level 2+, quando um nonce está presente, 'unsafe-inline' é ignorado
-    # para <script> tags, portanto os blocos protegidos por nonce continuam seguros.
+    # Content-Security-Policy — sem nonce no script-src.
+    # IMPORTANTE: quando 'nonce-xyz' está presente em script-src, os browsers (CSP Level 2+)
+    # ignoram 'unsafe-inline' para TODOS os inline scripts e event handlers (onclick, onchange, etc.).
+    # O app usa >500 event handlers inline; removendo o nonce do script-src o 'unsafe-inline'
+    # passa a valer para blocos <script> e handlers, restaurando o funcionamento dos menus.
     if response.content_type and response.content_type.startswith('text/html'):
-        nonce = getattr(g, 'csp_nonce', '')
         response.headers.setdefault(
             'Content-Security-Policy',
-            f"default-src 'self'; "
-            f"script-src 'self' 'nonce-{nonce}' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
-            f"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
-            f"font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
-            f"img-src 'self' data: blob: https:; "
-            f"connect-src 'self'; "
-            f"worker-src 'self' blob:; "
-            f"frame-ancestors 'self';"
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
+            "img-src 'self' data: blob: https:; "
+            "connect-src 'self'; "
+            "worker-src 'self' blob:; "
+            "frame-ancestors 'self';"
         )
     # Loga requisições lentas (> 2 s) para diagnóstico de performance
     t0 = getattr(g, 't0', None)
