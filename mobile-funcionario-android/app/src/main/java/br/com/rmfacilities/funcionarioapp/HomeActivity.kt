@@ -433,7 +433,7 @@ class HomeActivity : AppCompatActivity() {
                 if (saldoMes != null && saldoMes.ok && saldoMes.saldo_fmt != null) {
                     tvSaldoMes.text = "Mês: ${saldoMes.saldo_fmt}"
                     tvSaldoMes.setTextColor(ContextCompat.getColor(this@HomeActivity,
-                        if ((saldoMes.saldo_min ?: 0) >= 0) R.color.mobile_semantic_success else R.color.mobile_semantic_pending))
+                        if (saldoMes.saldo_min >= 0) R.color.mobile_semantic_success else R.color.mobile_semantic_pending))
                     tvSaldoMes.visibility = View.VISIBLE
                 } else {
                     tvSaldoMes.visibility = View.GONE
@@ -467,8 +467,9 @@ class HomeActivity : AppCompatActivity() {
                 }
 
                 // Timestamp de última atualização
-                val hora = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
-                tvUltimaAtualizacao.text = "Atualizado às $hora" = if (pendentesCount > 0) "$pendentesCount pendente(s)" else "Sem pendências"
+                val horaFmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+                tvUltimaAtualizacao.text = "Atualizado às $horaFmt"
+                tvResumoTarefas.text = if (pendentesCount > 0) "$pendentesCount pendente(s)" else "Sem pendências"
                 tvResumoAvisos.text = if (naoLidas > 0) "$naoLidas aviso(s)" else "Sem alertas"
                 tvResumoAvisos.setTextColor(
                     ContextCompat.getColor(
