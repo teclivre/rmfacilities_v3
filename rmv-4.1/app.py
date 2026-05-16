@@ -14668,13 +14668,16 @@ def _add_security_headers(response):
     rid = getattr(g, 'request_id', '')
     if rid:
         response.headers['X-Request-ID'] = rid
-    # Content-Security-Policy com nonce por requisição (sem unsafe-inline para scripts)
+    # Content-Security-Policy com nonce por requisição.
+    # 'unsafe-inline' é necessário para os event handlers HTML (onclick, onchange, etc. — >500 no app).
+    # Em navegadores CSP Level 2+, quando um nonce está presente, 'unsafe-inline' é ignorado
+    # para <script> tags, portanto os blocos protegidos por nonce continuam seguros.
     if response.content_type and response.content_type.startswith('text/html'):
         nonce = getattr(g, 'csp_nonce', '')
         response.headers.setdefault(
             'Content-Security-Policy',
             f"default-src 'self'; "
-            f"script-src 'self' 'nonce-{nonce}' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+            f"script-src 'self' 'nonce-{nonce}' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
             f"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
             f"font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
             f"img-src 'self' data: blob:; "
