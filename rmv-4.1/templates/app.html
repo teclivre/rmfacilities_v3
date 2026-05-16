@@ -115,7 +115,7 @@
     <div id="fat-detalhe-body">Carregando...</div>
   </div>
 </div>
-<script>
+<script nonce="{{ g.csp_nonce }}">
 // ── Funções utilitárias de modal (substitutos de prompt/confirm) ──────────────
 function _rmConfirm(titulo, msg, {okLabel='Confirmar', okStyle='background:#bf2e2e;color:#fff'}={}) {
   return new Promise(resolve => {
