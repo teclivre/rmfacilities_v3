@@ -24,7 +24,7 @@
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end">
       <button id="modal-paga-cancel" class="btn b-gh b-sm">Cancelar</button>
-      <button id="modal-paga-ok" class="btn b-sm" style="background:#28a745;color:#fff">✓ Confirmar pagamento</button>
+      <button id="modal-paga-ok" class="btn b-sm" style="background:var(--verde);color:#fff">✓ Confirmar pagamento</button>
     </div>
   </div>
 </div>
@@ -110,14 +110,14 @@
   </div>
 </div>
 <div id="modal-fat-detalhe" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:24px 16px">
-  <div style="background:#fff;color:#222;border-radius:10px;max-width:600px;margin:40px auto;padding:24px;position:relative">
-    <span class="close" style="color:#666" onclick="fecharModalFatDetalhe()">&times;</span>
+  <div style="background:var(--branco);color:var(--preto);border-radius:10px;max-width:600px;margin:40px auto;padding:24px;position:relative">
+    <span class="close" style="color:var(--text-muted)" onclick="fecharModalFatDetalhe()">&times;</span>
     <div id="fat-detalhe-body">Carregando...</div>
   </div>
 </div>
 <script nonce="{{ g.csp_nonce }}">
 // ── Funções utilitárias de modal (substitutos de prompt/confirm) ──────────────
-function _rmConfirm(titulo, msg, {okLabel='Confirmar', okStyle='background:#bf2e2e;color:#fff'}={}) {
+function _rmConfirm(titulo, msg, {okLabel='Confirmar', okStyle='background:var(--verm);color:#fff'}={}) {
   return new Promise(resolve => {
     const modal = document.getElementById('modal-rm-confirm');
     document.getElementById('modal-rm-confirm-titulo').textContent = titulo;
@@ -246,9 +246,9 @@ function abrirModalFatDetalhe(id){
     if(m.observacoes){html+=`<div style='margin-top:10px'><b>Observações:</b> ${m.observacoes}</div>`;}
     html+=`<div style='margin-top:14px;display:flex;flex-wrap:wrap;gap:6px'>
       <button class='btn b-az b-sm' onclick='editarFatura(${m.id})'>Editar</button>
-      <button class='btn b-sm' style='background:#28a745;color:#fff' onclick='marcarComoPaga(${m.id},"${(m.numero||'').replace(/"/g,"&quot;")}")' ${(m.status==='paga'||m.status==='cancelada')?'disabled':''}>✓ Marcar como paga</button>
+      <button class='btn b-sm' style='background:var(--verde);color:#fff' onclick='marcarComoPaga(${m.id},"${(m.numero||'').replace(/"/g,"&quot;")}")' ${(m.status==='paga'||m.status==='cancelada')?'disabled':''}>✓ Marcar como paga</button>
       <button class='btn b-gh b-sm' onclick='enviarFaturaPorEmail(${m.id},"${(m.numero||'').replace(/"/g,"&quot;")}")'>✉ Enviar por e-mail</button>
-      <button class='btn b-sm' style='background:#e67e22;color:#fff' onclick='verEncargos(${m.id},"${(m.numero||'').replace(/"/g,"&quot;")}")' ${(m.status==='paga'||m.status==='cancelada')?'disabled':''}>⚡ Encargos/Multa</button>
+      <button class='btn b-sm' style='background:var(--laranja);color:#fff' onclick='verEncargos(${m.id},"${(m.numero||'').replace(/"/g,"&quot;")}")' ${(m.status==='paga'||m.status==='cancelada')?'disabled':''}>⚡ Encargos/Multa</button>
       <button class='btn b-ci b-sm' onclick='cancelarFatura(${m.id},"${(m.numero||'').replace(/"/g,"&quot;")}")' ${m.status==='cancelada'?'disabled':''}>Cancelar Fatura</button>
     </div>`;
     body.innerHTML=html;
@@ -352,11 +352,11 @@ async function concCarregar(page){
   const r=await api('/api/conciliacao/transacoes?'+qs);
   const tb=document.getElementById('tb-conciliacao');
   if(!tb)return;
-  if(!r||!r.items||!r.items.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:20px;color:#aaa">Nenhuma transação.</td></tr>';concRenderPag(0,1,50);return;}
+  if(!r||!r.items||!r.items.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-muted)">Nenhuma transação.</td></tr>';concRenderPag(0,1,50);return;}
   tb.innerHTML=r.items.map(t=>{
-    const pago=t.medicao_id?`<span style='color:var(--verde)'>✓ ${t.medicao_numero} — ${t.medicao_cliente}</span>`:'<span style="color:#aaa">—</span>';
+    const pago=t.medicao_id?`<span style='color:var(--verde)'>✓ ${t.medicao_numero} — ${t.medicao_cliente}</span>`:'<span style="color:var(--text-muted)">—</span>';
     const btnConc=t.medicao_id?
-      `<button class='btn b-sm' style='background:#c33;color:#fff;padding:2px 7px' onclick='concDesvincular(${t.id})'>Desvincular</button>`:
+      `<button class='btn b-sm' style='background:var(--verm);color:#fff;padding:2px 7px' onclick='concDesvincular(${t.id})'>Desvincular</button>`:
       `<button class='btn b-az b-sm' style='padding:2px 7px' onclick='concVincular(${t.id},${t.valor})'>Vincular</button>`;
     return `<tr>
       <td>${t.data_mov||''}</td>
@@ -421,7 +421,7 @@ async function cobrancarProcessar(){
   const el=document.getElementById('cob-res');
   if(el){
     el.style.display='block';
-    el.innerHTML=`<div style='padding:10px;background:#f0fff0;border-radius:6px;color:#1a5c1a'>
+    el.innerHTML=`<div style='padding:10px;background:var(--verde-cl);border-radius:6px;color:var(--verde)'>
       Enviados: <b>${r.processadas||0}</b> &nbsp;|&nbsp; Erros: <b>${r.erros||0}</b>
       ${(r.detalhes||[]).length?'<ul style="margin:8px 0 0 18px">'+r.detalhes.map(d=>`<li>${d.numero} [${d.tipo}] ${d.ok?'✓':'✗ '+d.erro}</li>`).join('')+'</ul>':''}
     </div>`;
@@ -433,14 +433,14 @@ async function cobLogCarregar(){
   const tb=document.getElementById('tb-cob-log');
   if(!tb)return;
   const items=r&&r.items?r.items:[];
-  if(!items.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:20px;color:#aaa">Nenhum envio registrado.</td></tr>';return;}
+  if(!items.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-muted)">Nenhum envio registrado.</td></tr>';return;}
   tb.innerHTML=items.map(l=>`<tr>
     <td>${l.enviado_fmt||''}</td>
     <td>${l.numero||''}</td>
     <td>${l.cliente||''}</td>
     <td><span class='pill'>${l.tipo||''}</span></td>
     <td>${l.dest_email||''}</td>
-    <td><span class='pill ${l.status==='ok'?'p-vd':'p-vm'}'>${l.status||''}</span>${l.erro?`<span style='color:#c33;font-size:11px'> ${l.erro}</span>`:''}</td>
+    <td><span class='pill ${l.status==='ok'?'p-vd':'p-vm'}'>${l.status||''}</span>${l.erro?`<span style='color:var(--verm);font-size:11px'> ${l.erro}</span>`:''}</td>
   </tr>`).join('');
 }
 
@@ -454,13 +454,13 @@ async function carregarFaturamento(){
   const tb=document.getElementById('tb-faturamento');
   const pag=document.getElementById('fat-pag');
   if(r?.erro){
-    tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:28px;color:#c33">Erro ao carregar faturamento.</td></tr>';
+    tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:28px;color:var(--verm)">Erro ao carregar faturamento.</td></tr>';
     document.getElementById('fat-res').textContent=r.erro;
     if(pag) pag.innerHTML='';
     return;
   }
   const lista=r.itens||[];
-  if(!lista.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:28px;color:#bbb">Nenhum faturamento encontrado.</td></tr>';document.getElementById('fat-res').textContent='';return;}
+  if(!lista.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:28px;color:var(--text-muted)">Nenhum faturamento encontrado.</td></tr>';document.getElementById('fat-res').textContent='';return;}
   tb.innerHTML=lista.map(m=>{
     const st=m.status||'emitida';
     const hoje2=new Date().toISOString().split('T')[0];
@@ -473,10 +473,10 @@ async function carregarFaturamento(){
     else if(st==='cancelada')pc='p-ghr';
     else if(isVenc)pc='p-ci';
     else pc='p-gh';
-    const rowStyle=isVenc?'border-left:3px solid #c33':'';
+    const rowStyle=isVenc?'border-left:3px solid var(--verm)':'';
     return `<tr class='row-clickable' onclick='abrirModalFatDetalhe(${m.id})' style='${rowStyle}'>
       <td>${m.numero||''}</td>
-      <td><div style="font-weight:700;font-size:13px">${m.cliente_nome||''}</div><div style="font-size:11px;color:#999">${fmtDoc(m.cliente_cnpj)||''}</div></td>
+      <td><div style="font-weight:700;font-size:13px">${m.cliente_nome||''}</div><div style="font-size:11px;color:var(--text-muted)">${fmtDoc(m.cliente_cnpj)||''}</div></td>
       <td style="font-size:12px">${m.empresa_nome||'—'}</td>
       <td style="font-size:12px">${m.mes_ref||'—'}</td>
       <td style="font-size:12px">${m.dt_emissao||'—'}</td>
@@ -490,7 +490,7 @@ async function carregarFaturamento(){
   document.getElementById('fat-res').textContent=(r.total||0)+' registro(s) · Página '+(r.page||1)+'/'+(r.total_paginas||1)+' · Total da página: '+brl(tot);
   if(pag){
     pag.innerHTML=`<button class="btn b-sm" ${r.tem_anterior?'':'disabled'} onclick="fatGo(${(r.page||1)-1})">Anterior</button>
-      <span style="font-size:12px;color:#6d7a8c">Página ${(r.page||1)} de ${(r.total_paginas||1)}</span>
+      <span style="font-size:12px;color:var(--text-muted)">Página ${(r.page||1)} de ${(r.total_paginas||1)}</span>
       <button class="btn b-sm" ${r.tem_proxima?'':'disabled'} onclick="fatGo(${(r.page||1)+1})">Próxima</button>`;
   }
 }
@@ -650,7 +650,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div id="pg-dashboard" class="pg on">
       <div style="margin-bottom:20px">
         <div style="font-size:22px;font-weight:700;color:var(--azul)" id="dash-saudacao">Olá!</div>
-        <div style="font-size:13px;color:#888" id="dash-data"></div>
+        <div style="font-size:13px;color:var(--text-muted)" id="dash-data"></div>
       </div>
       <div class="dash-grid">
         <button class="metric metric-btn vd" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Abrir RH - funcionários ativos"><div class="n" id="d-func-ativos">—</div><div class="l">Funcionários ativos <span class="metric-go">Abrir</span></div></button>
@@ -659,7 +659,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button class="metric metric-btn vm" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="ASO vencendo em 30 dias"><div class="n" id="d-aso-venc">—</div><div class="l">ASO vencendo (30d) <span class="metric-go">Ver</span></div></button>
         <button class="metric metric-btn" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Benefícios pendentes"><div class="n" id="d-benef-pend">—</div><div class="l">Benefícios pendentes <span class="metric-go">Ver</span></div></button>
         <button class="metric metric-btn" type="button" onclick="abrirDashboardDestino('clientes')" aria-label="Abrir clientes ativos"><div class="n" id="d-at">—</div><div class="l">Clientes ativos <span class="metric-go">Abrir</span></div></button>
-        <button class="metric metric-btn" style="--metric-c:#c33" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Contratos vencendo"><div class="n" id="d-contratos" style="color:#c33">—</div><div class="l">Contratos vencendo <span class="metric-go">Ver</span></div></button>
+        <button class="metric metric-btn" style="--metric-c:var(--verm)" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Contratos vencendo"><div class="n" id="d-contratos" style="color:var(--verm)">—</div><div class="l">Contratos vencendo <span class="metric-go">Ver</span></div></button>
         <button class="metric metric-btn lj" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Cálculo de benefícios pendente"><div class="n" id="d-calc-benef">—</div><div class="l">Cálculos pendentes <span class="metric-go">Ver</span></div></button>
       </div>
       <div id="dash-alertas" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px"></div>
@@ -668,32 +668,32 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:12px 0;text-align:center">
           <div>
             <div style="font-size:28px;font-weight:700;color:var(--azul)" id="dash-resumo-ativos">—</div>
-            <div style="font-size:12px;color:#888;margin-top:4px">Ativos</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ativos</div>
           </div>
           <div>
-            <div style="font-size:28px;font-weight:700;color:#4caf50" id="dash-resumo-ferias">—</div>
-            <div style="font-size:12px;color:#888;margin-top:4px">Em férias</div>
+            <div style="font-size:28px;font-weight:700;color:var(--verde)" id="dash-resumo-ferias">—</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Em férias</div>
           </div>
           <div>
-            <div style="font-size:28px;font-weight:700;color:#ff9800" id="dash-resumo-afastados">—</div>
-            <div style="font-size:12px;color:#888;margin-top:4px">Afastados</div>
+            <div style="font-size:28px;font-weight:700;color:var(--laranja)" id="dash-resumo-afastados">—</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Afastados</div>
           </div>
           <div>
-            <div style="font-size:28px;font-weight:700;color:#888" id="dash-resumo-ponto-hoje">—</div>
-            <div style="font-size:12px;color:#888;margin-top:4px">Ponto hoje</div>
+            <div style="font-size:28px;font-weight:700;color:var(--text-muted)" id="dash-resumo-ponto-hoje">—</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ponto hoje</div>
           </div>
         </div>
       </div>
       <div class="card" style="margin-bottom:12px">
-        <div class="card-header"><span class="card-title">Ponto do dia</span><span style="font-size:11px;color:#888" id="dash-ponto-data"></span></div>
+        <div class="card-header"><span class="card-title">Ponto do dia</span><span style="font-size:11px;color:var(--text-muted)" id="dash-ponto-data"></span></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:12px 0;text-align:center">
-          <button type="button" class="metric metric-btn" style="background:none;border:2px solid #4caf50;border-radius:10px;padding:16px 8px;cursor:pointer" onclick="abrirModalPontoDia('bateram')">
-            <div style="font-size:36px;font-weight:700;color:#4caf50" id="dash-ponto-bateram">—</div>
-            <div style="font-size:13px;color:#888;margin-top:4px">✅ Bateram ponto</div>
+          <button type="button" class="metric metric-btn" style="background:none;border:2px solid var(--verde);border-radius:10px;padding:16px 8px;cursor:pointer" onclick="abrirModalPontoDia('bateram')">
+            <div style="font-size:36px;font-weight:700;color:var(--verde)" id="dash-ponto-bateram">—</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:4px">✅ Bateram ponto</div>
           </button>
-          <button type="button" class="metric metric-btn" style="background:none;border:2px solid #e53935;border-radius:10px;padding:16px 8px;cursor:pointer" onclick="abrirModalPontoDia('falta')">
-            <div style="font-size:36px;font-weight:700;color:#e53935" id="dash-ponto-falta">—</div>
-            <div style="font-size:13px;color:#888;margin-top:4px">❌ Falta / sem registro</div>
+          <button type="button" class="metric metric-btn" style="background:none;border:2px solid var(--verm);border-radius:10px;padding:16px 8px;cursor:pointer" onclick="abrirModalPontoDia('falta')">
+            <div style="font-size:36px;font-weight:700;color:var(--verm)" id="dash-ponto-falta">—</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:4px">❌ Falta / sem registro</div>
           </button>
         </div>
       </div>
@@ -756,11 +756,11 @@ document.addEventListener('DOMContentLoaded',()=>{
               </tr>
             </thead>
             <tbody id="tb-faturamento">
-              <tr><td colspan="9" style="text-align:center;padding:28px;color:#bbb">Nenhum faturamento encontrado.</td></tr>
+              <tr><td colspan="9" style="text-align:center;padding:28px;color:var(--text-muted)">Nenhum faturamento encontrado.</td></tr>
             </tbody>
           </table>
         </div>
-        <div id="fat-res" style="margin-top:10px;color:#888;font-size:13px"></div>
+        <div id="fat-res" style="margin-top:10px;color:var(--text-muted);font-size:13px"></div>
         <div id="fat-pag" style="display:flex;gap:8px;align-items:center;margin-top:8px"></div>
       </div>
     </div>
@@ -801,11 +801,11 @@ document.addEventListener('DOMContentLoaded',()=>{
               </tr>
             </thead>
             <tbody id="tb-despesas">
-              <tr><td colspan="8" style="text-align:center;padding:28px;color:#bbb">Nenhuma despesa cadastrada.</td></tr>
+              <tr><td colspan="8" style="text-align:center;padding:28px;color:var(--text-muted)">Nenhuma despesa cadastrada.</td></tr>
             </tbody>
           </table>
         </div>
-        <div id="desp-res" style="margin-top:10px;color:#888;font-size:13px"></div>
+        <div id="desp-res" style="margin-top:10px;color:var(--text-muted);font-size:13px"></div>
         <div id="desp-pag" style="display:flex;gap:8px;align-items:center;margin-top:8px"></div>
       </div>
     </div>
@@ -848,13 +848,13 @@ document.addEventListener('DOMContentLoaded',()=>{
           <a class="btn b-gh b-sm" href="/api/financeiro/salarios/modelo" target="_blank">Modelo importação</a>
           <label class="btn b-gh b-sm" for="rh-sal-import-file" style="cursor:pointer">Importar planilha</label>
           <input type="file" id="rh-sal-import-file" accept=".csv,.xlsx" style="display:none" onchange="rhSalariosImportarPlanilha(event)">
-          <span id="rh-sal-auto-hint" style="font-size:11px;color:#9fb3c8;margin-left:2px">Auto-save ativo</span>
+          <span id="rh-sal-auto-hint" style="font-size:11px;color:var(--text-muted);margin-left:2px">Auto-save ativo</span>
         </div>
-        <div id="rh-sal-res" style="margin:0 0 10px 0;color:#6d7a8c;font-size:13px"></div>
+        <div id="rh-sal-res" style="margin:0 0 10px 0;color:var(--text-muted);font-size:13px"></div>
         <div id="rh-sal-painel" style="margin:0 0 12px 0">
           <div class="g3" style="margin-top:0">
-            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Histórico e versões</span></div><div id="rh-sal-historico" style="padding:8px 12px 12px 12px;color:#5d6f82;font-size:13px"></div></div>
-            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Alertas</span></div><div id="rh-sal-alertas" style="padding:8px 12px 12px 12px;color:#5d6f82;font-size:13px"></div></div>
+            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Histórico e versões</span></div><div id="rh-sal-historico" style="padding:8px 12px 12px 12px;color:var(--text-muted);font-size:13px"></div></div>
+            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Alertas</span></div><div id="rh-sal-alertas" style="padding:8px 12px 12px 12px;color:var(--text-muted);font-size:13px"></div></div>
             <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Evolução mensal</span></div><div style="position:relative;height:180px;padding:4px 8px 12px 8px"><canvas id="chart-rh-salarios"></canvas></div></div>
           </div>
         </div>
@@ -912,14 +912,14 @@ document.addEventListener('DOMContentLoaded',()=>{
       const tb=document.getElementById('tb-despesas');
       const pag=document.getElementById('desp-pag');
       if(r?.erro){
-        tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:28px;color:#c33">Erro ao carregar despesas.</td></tr>';
+        tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:28px;color:var(--verm)">Erro ao carregar despesas.</td></tr>';
         document.getElementById('desp-res').textContent=r.erro;
         if(pag) pag.innerHTML='';
         return;
       }
       const lista=r.itens||[];
       DESP_CACHE=lista;
-      if(!lista.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:28px;color:#bbb">Nenhuma despesa cadastrada.</td></tr>';document.getElementById('desp-res').textContent='';if(pag) pag.innerHTML='';return;}
+      if(!lista.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:28px;color:var(--text-muted)">Nenhuma despesa cadastrada.</td></tr>';document.getElementById('desp-res').textContent='';if(pag) pag.innerHTML='';return;}
       tb.innerHTML=lista.map(d=>{
         let comp='';
         if(d.comprovante){
@@ -947,7 +947,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       document.getElementById('desp-res').textContent=(r.total||0)+' despesa(s) · Página '+(r.page||1)+'/'+(r.total_paginas||1)+' · Total da página: '+brl(tot);
       if(pag){
         pag.innerHTML=`<button class="btn b-sm" ${(r.tem_anterior)?'':'disabled'} onclick="despGo(${(r.page||1)-1})">Anterior</button>
-          <span style="font-size:12px;color:#6d7a8c">Página ${(r.page||1)} de ${(r.total_paginas||1)}</span>
+          <span style="font-size:12px;color:var(--text-muted)">Página ${(r.page||1)} de ${(r.total_paginas||1)}</span>
           <button class="btn b-sm" ${(r.tem_proxima)?'':'disabled'} onclick="despGo(${(r.page||1)+1})">Próxima</button>`;
       }
     }
@@ -1030,7 +1030,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div style="overflow-x:auto">
           <table class="t" style="font-size:13px">
             <thead><tr><th>Data</th><th>Histórico</th><th>Doc</th><th>Tipo</th><th>Valor</th><th>Medição</th><th></th></tr></thead>
-            <tbody id="tb-conciliacao"><tr><td colspan="7" style="text-align:center;padding:20px;color:#aaa">Importe um arquivo OFX para começar.</td></tr></tbody>
+            <tbody id="tb-conciliacao"><tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-muted)">Importe um arquivo OFX para começar.</td></tr></tbody>
           </table>
         </div>
         <div id="conc-pag" style="display:flex;gap:6px;padding:10px;justify-content:center"></div>
@@ -1042,7 +1042,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div class="card" style="margin-bottom:12px">
         <div class="card-header"><span class="card-title">Régua de Cobrança Automática</span></div>
         <div style="padding:12px">
-          <p style="margin:0 0 10px;color:#555">Enviar lembretes de vencimento e cobrança de faturas em atraso com base nas datas de vencimento.</p>
+          <p style="margin:0 0 10px;color:var(--text-muted)">Enviar lembretes de vencimento e cobrança de faturas em atraso com base nas datas de vencimento.</p>
           <div class="f" style="flex-wrap:wrap;gap:8px;align-items:center">
             <label><input type="checkbox" id="rg-d5" checked> D-5 (5 dias antes)</label>
             <label><input type="checkbox" id="rg-d1" checked> D-1 (dia anterior)</label>
@@ -1057,7 +1057,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div style="overflow-x:auto">
           <table class="t" style="font-size:13px">
             <thead><tr><th>Data/Hora</th><th>Nº Fatura</th><th>Cliente</th><th>Tipo</th><th>Destino</th><th>Status</th></tr></thead>
-            <tbody id="tb-cob-log"><tr><td colspan="6" style="text-align:center;padding:20px;color:#aaa">Clique em Atualizar para carregar.</td></tr></tbody>
+            <tbody id="tb-cob-log"><tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-muted)">Clique em Atualizar para carregar.</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1080,7 +1080,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="card-header">
           <span class="card-title">Identificação</span>
           <div style="display:flex;gap:8px;align-items:center">
-            <span style="font-size:12px;color:#888">Próximo nº:</span>
+            <span style="font-size:12px;color:var(--text-muted)">Próximo nº:</span>
             <span id="prox-num" style="font-weight:700;color:var(--azul)">—</span>
           </div>
         </div>
@@ -1094,7 +1094,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               <option>Orçamento</option>
             </select>
           </div>
-          <div class="f"><label>Nº do documento</label><input id="nmed" placeholder="Auto" oninput="verificarNumeroMed(this.value)" style="font-weight:700;color:var(--azul)"><span id="nmed-warn" style="display:none;font-size:11px;color:#c33;margin-top:2px">&#9888; Número já utilizado</span></div>
+          <div class="f"><label>Nº do documento</label><input id="nmed" placeholder="Auto" oninput="verificarNumeroMed(this.value)" style="font-weight:700;color:var(--azul)"><span id="nmed-warn" style="display:none;font-size:11px;color:var(--verm);margin-top:2px">&#9888; Número já utilizado</span></div>
           <div class="f"><label>Mês de referência</label><input type="month" id="mesref"></div>
           <div class="f"><label>Vencimento</label><input type="date" id="dtvenc"></div>
         </div>
@@ -1111,7 +1111,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
       <!-- Dados de pagamento — somente leitura -->
       <div class="card" id="pag-card" style="display:none">
-        <div class="card-header"><span class="card-title">Dados de pagamento</span><span style="font-size:11px;color:#aaa">Preenchido automaticamente da empresa</span></div>
+        <div class="card-header"><span class="card-title">Dados de pagamento</span><span style="font-size:11px;color:var(--text-muted)">Preenchido automaticamente da empresa</span></div>
         <div class="pag-box" id="pag-info"></div>
       </div>
 
@@ -1267,7 +1267,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <tbody id="tb-cli"></tbody>
           </table>
         </div>
-        <div style="margin-top:8px;font-size:11px;color:#aaa" id="tb-res"></div>
+        <div style="margin-top:8px;font-size:11px;color:var(--text-muted)" id="tb-res"></div>
         </div>
 
         <div id="cli-pane-contratos" style="display:none">
@@ -1286,7 +1286,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               <tbody id="tb-cli-contratos"></tbody>
             </table>
           </div>
-          <div style="margin-top:8px;font-size:11px;color:#aaa" id="tb-contr-res"></div>
+          <div style="margin-top:8px;font-size:11px;color:var(--text-muted)" id="tb-contr-res"></div>
         </div>
       </div>
     </div>
@@ -1405,7 +1405,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="tbl-wrap" style="margin-top:8px">
           <table class="tbl">
             <thead><tr><th>RE</th><th>Nome</th><th>Posto</th><th>Empresa</th></tr></thead>
-            <tbody id="rh-exp-tb"><tr><td colspan="4" style="text-align:center;color:#999;padding:16px">Carregando colaboradores ativos...</td></tr></tbody>
+            <tbody id="rh-exp-tb"><tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:16px">Carregando colaboradores ativos...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1540,8 +1540,8 @@ document.addEventListener('DOMContentLoaded',()=>{
             <label style="margin-top:8px">Descrição</label>
             <input id="rh-esc-desc" placeholder="Ex.: Escala com turnos alternados">
 
-            <div id="rh-esc-noturno-config" style="display:none;border:1px solid #ffa500;border-radius:8px;padding:10px;margin:8px 0;background:#fffacd">
-              <label style="color:#ff6600;font-weight:bold">⚠ Configuração de Período Noturno</label>
+            <div id="rh-esc-noturno-config" style="display:none;border:1px solid var(--laranja);border-radius:8px;padding:10px;margin:8px 0;background:var(--laranja-cl)">
+              <label style="color:var(--laranja-esc);font-weight:bold">⚠ Configuração de Período Noturno</label>
               <div class="g2" style="margin-top:8px">
                 <div class="f"><label>Período noturno - Início (HH:MM)</label><input id="rh-esc-noturno-ini" type="time" value="22:00"></div>
                 <div class="f"><label>Período noturno - Fim (HH:MM)</label><input id="rh-esc-noturno-fim" type="time" value="05:00"></div>
@@ -1666,13 +1666,13 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div id="rh-lote-prev-box" style="display:none;margin-top:10px;border:1px solid var(--borda);border-radius:10px;background:var(--cinza-cl);padding:10px">
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <strong style="font-size:12px;color:#1a2b3c">Pré-visualização de destinatários</strong>
+            <strong style="font-size:12px;color:var(--azul-esc)">Pré-visualização de destinatários</strong>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button class="btn b-gh b-sm" type="button" onclick="toggleAllRHLotePreview(true)">Selecionar todos</button>
               <button class="btn b-gh b-sm" type="button" onclick="toggleAllRHLotePreview(false)">Limpar seleção</button>
             </div>
           </div>
-          <div id="rh-lote-prev-meta" style="font-size:12px;color:#5f7386;margin-bottom:8px"></div>
+          <div id="rh-lote-prev-meta" style="font-size:12px;color:var(--text-muted);margin-bottom:8px"></div>
           <div id="rh-lote-prev-list" style="display:flex;flex-direction:column;gap:7px;max-height:220px;overflow:auto"></div>
           <div id="rh-lote-prev-debug"></div>
         </div>
@@ -1695,11 +1695,11 @@ document.addEventListener('DOMContentLoaded',()=>{
 
         <!-- Contadores -->
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin:0 12px 12px 12px" id="painel-ass-counters">
-          <span class="pill" id="pac-total" style="background:#e8f0fe;color:#1a3c6b">Total: –</span>
-          <span class="pill" id="pac-pendente" style="background:#fff3cd;color:#856404;cursor:pointer" onclick="painelAssSetStatus('pendente')">Pendentes: –</span>
-          <span class="pill" id="pac-concluida" style="background:#d1e7dd;color:#0a3622;cursor:pointer" onclick="painelAssSetStatus('concluida')">Assinados: –</span>
-          <span class="pill" id="pac-cancelada" style="background:#f8d7da;color:#58151c;cursor:pointer" onclick="painelAssSetStatus('cancelada')">Cancelados: –</span>
-          <span class="pill" id="pac-expirado" style="background:#ffe5d0;color:#7b3a00;cursor:pointer" onclick="painelAssSetStatus('expirado')">Expirados: –</span>
+          <span class="pill" id="pac-total" style="background:var(--azul-cc);color:var(--azul)">Total: –</span>
+          <span class="pill" id="pac-pendente" style="background:var(--laranja-cl);color:var(--laranja-esc);cursor:pointer" onclick="painelAssSetStatus('pendente')">Pendentes: –</span>
+          <span class="pill" id="pac-concluida" style="background:var(--verde-cl);color:var(--verde);cursor:pointer" onclick="painelAssSetStatus('concluida')">Assinados: –</span>
+          <span class="pill" id="pac-cancelada" style="background:var(--verm-cl);color:var(--verm);cursor:pointer" onclick="painelAssSetStatus('cancelada')">Cancelados: –</span>
+          <span class="pill" id="pac-expirado" style="background:var(--laranja-cl);color:var(--laranja-esc);cursor:pointer" onclick="painelAssSetStatus('expirado')">Expirados: –</span>
         </div>
 
         <!-- Filtros -->
@@ -1769,7 +1769,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <tbody id="tb-painel-ass"></tbody>
           </table>
         </div>
-        <div id="painel-ass-empty" style="display:none;text-align:center;color:#8a9fb5;padding:24px;font-size:13px">Nenhum registro encontrado para os filtros selecionados.</div>
+        <div id="painel-ass-empty" style="display:none;text-align:center;color:var(--text-muted);padding:24px;font-size:13px">Nenhum registro encontrado para os filtros selecionados.</div>
       </div>
     </div>
 
@@ -1778,7 +1778,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div id="st-rhd" class="st"></div>
       <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap" id="rhd-tabs">
         <button class="btn b-az b-sm" onclick="switchTab('rhd','conversas',this)">Envio ativos</button>
-        <button class="btn b-gh b-sm" onclick="switchTab('rhd','mensagens-app',this)">💬 Chat App <span id="badge-msgs-app" style="display:none;background:#e55;color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>
+        <button class="btn b-gh b-sm" onclick="switchTab('rhd','mensagens-app',this)">💬 Chat App <span id="badge-msgs-app" style="display:none;background:var(--verm);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>
         <button class="btn b-gh b-sm" onclick="switchTab('rhd','cfg-email',this)">Config E-mail</button>
         <button class="btn b-gh b-sm" onclick="switchTab('rhd','cfg-wa',this)">Config WhatsApp</button>
       </div>
@@ -1796,7 +1796,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-gh b-sm" onclick="waSelTodosColab(true)">Selecionar visíveis</button>
             <button class="btn b-gh b-sm" onclick="waSelTodosColab(false)">Desmarcar</button>
             <button class="btn b-gh b-sm" onclick="waCarregarDisparoColaboradores()">Atualizar lista</button>
-            <span id="wa-colab-count" style="font-size:12px;color:#6a7d8f;margin-left:4px">0 selecionado(s)</span>
+            <span id="wa-colab-count" style="font-size:12px;color:var(--text-muted);margin-left:4px">0 selecionado(s)</span>
           </div>
           <div id="wa-colab-list" style="margin-top:8px;max-height:220px;overflow:auto;border:1px solid var(--borda);border-radius:10px;padding:8px;background:var(--cinza-cl)"><div class="vazio">Carregando colaboradores...</div></div>
           <div class="f" style="margin-top:10px"><label>Mensagem para envio</label><textarea id="wa-colab-msg" placeholder="Digite a mensagem que será enviada aos colaboradores selecionados" style="min-height:84px"></textarea></div>
@@ -1831,7 +1831,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div style="flex:1;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
               <div style="padding:10px 14px;border-bottom:1px solid var(--borda);display:flex;align-items:center;gap:8px">
                 <span id="wa-chat-titulo" style="font-weight:600;font-size:13px;flex:1">Selecione uma conversa</span>
-                <span id="wa-pausa-info" style="display:none;font-size:11px;background:#fff3cd;color:#856404;padding:2px 8px;border-radius:8px"></span>
+                <span id="wa-pausa-info" style="display:none;font-size:11px;background:var(--laranja-cl);color:var(--laranja-esc);padding:2px 8px;border-radius:8px"></span>
                 <button id="wa-pausar-btn" class="btn b-gh b-sm" style="display:none;padding:2px 10px;font-size:11px" onclick="waPausarIA()">⏸ Pausar IA</button>
                 <button id="wa-retomar-btn" class="btn b-az b-sm" style="display:none;padding:2px 10px;font-size:11px" onclick="waRetomarIA()">▶ Reativar IA</button>
               </div>
@@ -1983,7 +1983,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div class="f" style="display:flex;align-items:flex-end"><button class="btn b-az" onclick="restaurarWABackup()">Restaurar backup</button></div>
           </div>
           <div id="wa-cfg-st" class="st"></div>
-          <p style="font-size:12px;color:#888;margin-top:8px">Configure o webhook em sua instância Evolution API para: <code>POST /webhook/whatsapp</code></p>
+          <p style="font-size:12px;color:var(--text-muted);margin-top:8px">Configure o webhook em sua instância Evolution API para: <code>POST /webhook/whatsapp</code></p>
         </div>
         <div class="card" style="margin-top:10px">
           <div class="card-header"><span class="card-title">Agente IA no WhatsApp (Gemini/OpenAI)</span></div>
@@ -2001,7 +2001,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div class="f"><label>Número para teste (com DDI)</label><input id="iawa-numero-teste" placeholder="5511999998888"></div>
           </div>
           <div class="f"><label>Prompt do agente</label><textarea id="iawa-prompt" placeholder="Você é atendente da RM Facilities. Seja objetivo, cordial e comercial."></textarea></div>
-          <p style="font-size:12px;color:#888;margin-top:6px">
+          <p style="font-size:12px;color:var(--text-muted);margin-top:6px">
             Dica: inclua no prompt que funcionário identificado por telefone não deve informar nome novamente, que documentos exigem CPF e que pedidos como "maio e junho" devem considerar o ano corrente quando não informado.
           </p>
           <div class="brow" style="justify-content:flex-start">
@@ -2009,13 +2009,13 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-ghv" onclick="testarIAWA()">Testar IA</button>
           </div>
           <div id="iawa-st" class="st"></div>
-          <div id="iawa-resp" style="font-size:12px;color:#444;margin-top:8px;white-space:pre-wrap"></div>
+          <div id="iawa-resp" style="font-size:12px;color:var(--text-muted);margin-top:8px;white-space:pre-wrap"></div>
 
           <!-- Status de pausa e botão global de despausar -->
           <div style="margin-top:14px;padding:12px 14px;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
             <span style="font-size:13px;font-weight:600">Agente IA:</span>
-            <span id="iawa-status-badge" style="font-size:12px;padding:3px 10px;border-radius:8px;background:#d1e7dd;color:#0a3622">● Ativo</span>
-            <span id="iawa-status-info" style="font-size:12px;color:#6a7d8f;flex:1"></span>
+            <span id="iawa-status-badge" style="font-size:12px;padding:3px 10px;border-radius:8px;background:var(--verde-cl);color:var(--verde)">● Ativo</span>
+            <span id="iawa-status-info" style="font-size:12px;color:var(--text-muted);flex:1"></span>
             <button class="btn b-az b-sm" id="iawa-retomar-btn" style="display:none" onclick="waRetomarIAGlobal()">▶ Reativar agente agora</button>
             <button class="btn b-gh b-sm" onclick="iawaSincronizarStatus()">↻ Verificar status</button>
           </div>
@@ -2129,10 +2129,10 @@ document.addEventListener('DOMContentLoaded',()=>{
           <button class="btn b-ghl b-sm" onclick="abrirPreviaBeneficioAtivo()">Prévia + downloads</button>
           <button class="btn b-az b-sm" onclick="selecionarTodosBen()">Selecionar todos</button>
           <button class="btn b-gh b-sm" onclick="limparSelecaoBen()">Limpar seleção</button>
-          <span id="ben-sel-count" style="font-size:12px;color:#7ecfff;align-self:center"></span>
+          <span id="ben-sel-count" style="font-size:12px;color:var(--azul);align-self:center"></span>
           <span style="display:inline-block;width:1px;height:24px;background:rgba(255,255,255,.18);margin:0 4px;align-self:center"></span>
-          <button class="btn b-sm" style="background:#7c5c00;color:#ffe066;border:1px solid #c49a00" title="Zera dias/valores da aba atual (dados podem ser reinseridos)" onclick="limparLancamentosBeneficioAbaAtual()">&#129529; Limpar dados da aba</button>
-          <button class="btn b-sm" style="background:#6b1212;color:#ffb3b3;border:1px solid #c0392b" title="Exclui permanentemente os lançamentos da aba atual" onclick="excluirLancamentosBeneficioAbaAtual()">&#128465; Excluir lançamentos</button>
+          <button class="btn b-sm" style="background:var(--laranja-esc);color:var(--branco);border:1px solid var(--laranja)" title="Zera dias/valores da aba atual (dados podem ser reinseridos)" onclick="limparLancamentosBeneficioAbaAtual()">&#129529; Limpar dados da aba</button>
+          <button class="btn b-sm" style="background:var(--verm);color:#fff;border:1px solid var(--verm)" title="Exclui permanentemente os lançamentos da aba atual" onclick="excluirLancamentosBeneficioAbaAtual()">&#128465; Excluir lançamentos</button>
         </div>
 
         <div class="brow" id="ben-folha-toolbar" style="justify-content:flex-start;margin-top:6px;flex-wrap:wrap;gap:6px;border-top:1px solid var(--borda);padding-top:8px">
@@ -2141,12 +2141,12 @@ document.addEventListener('DOMContentLoaded',()=>{
           <button class="btn b-gh b-sm" id="btn-ben-reabrir" onclick="benReabrirFolha()" style="display:none">Reabrir folha</button>
           <button class="btn b-gh b-sm" id="btn-ben-assinar" onclick="benAssinarFolha()" style="display:none">Assinar fechamento</button>
           <button class="btn b-gh b-sm" onclick="benAbrirHistorico()">Consultar histórico</button>
-          <span id="ben-auto-hint" style="font-size:11px;color:#9fb3c8;margin-left:4px;align-self:center">Auto-save ativo</span>
+          <span id="ben-auto-hint" style="font-size:11px;color:var(--text-muted);margin-left:4px;align-self:center">Auto-save ativo</span>
         </div>
         <div id="ben-sal-painel" style="margin:8px 0 12px 0;display:none">
           <div class="g3" style="margin-top:0">
-            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Histórico de versões</span></div><div id="ben-sal-historico" style="padding:8px 12px 12px 12px;color:#5d6f82;font-size:13px"></div></div>
-            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Alertas</span></div><div id="ben-sal-alertas" style="padding:8px 12px 12px 12px;color:#5d6f82;font-size:13px"></div></div>
+            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Histórico de versões</span></div><div id="ben-sal-historico" style="padding:8px 12px 12px 12px;color:var(--text-muted);font-size:13px"></div></div>
+            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Alertas</span></div><div id="ben-sal-alertas" style="padding:8px 12px 12px 12px;color:var(--text-muted);font-size:13px"></div></div>
             <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Evolução mensal</span></div><div style="position:relative;height:180px;padding:4px 8px 12px 8px"><canvas id="chart-ben-beneficios"></canvas></div></div>
           </div>
         </div>
@@ -2198,39 +2198,39 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div class="g3">
             <div class="card" style="padding:12px">
               <div class="card-header"><span class="card-title">Vale Transporte</span></div>
-              <p style="margin:8px 0 12px 0;font-size:13px;color:#5d6f82">Visualize cálculos e depois baixe PDF/XLSX.</p>
+              <p style="margin:8px 0 12px 0;font-size:13px;color:var(--text-muted)">Visualize cálculos e depois baixe PDF/XLSX.</p>
               <button class="btn b-ghv b-sm" onclick="abrirPreviaBeneficio('vt')">Abrir prévia VT</button>
             </div>
             <div class="card" style="padding:12px">
               <div class="card-header"><span class="card-title">Vale Refeição</span></div>
-              <p style="margin:8px 0 12px 0;font-size:13px;color:#5d6f82">Visualize cálculos e depois baixe PDF/XLSX.</p>
+              <p style="margin:8px 0 12px 0;font-size:13px;color:var(--text-muted)">Visualize cálculos e depois baixe PDF/XLSX.</p>
               <button class="btn b-ghv b-sm" onclick="abrirPreviaBeneficio('vr')">Abrir prévia VR</button>
             </div>
             <div class="card" style="padding:12px">
               <div class="card-header"><span class="card-title">Vale Alimentação</span></div>
-              <p style="margin:8px 0 12px 0;font-size:13px;color:#5d6f82">Visualize cálculos e depois baixe PDF/XLSX.</p>
+              <p style="margin:8px 0 12px 0;font-size:13px;color:var(--text-muted)">Visualize cálculos e depois baixe PDF/XLSX.</p>
               <button class="btn b-ghv b-sm" onclick="abrirPreviaBeneficio('va')">Abrir prévia VA</button>
             </div>
             <div class="card" style="padding:12px">
               <div class="card-header"><span class="card-title">Prêmio Produtividade</span></div>
-              <p style="margin:8px 0 12px 0;font-size:13px;color:#5d6f82">Visualize cálculos e depois baixe PDF/XLSX.</p>
+              <p style="margin:8px 0 12px 0;font-size:13px;color:var(--text-muted)">Visualize cálculos e depois baixe PDF/XLSX.</p>
               <button class="btn b-ghv b-sm" onclick="abrirPreviaBeneficio('pp')">Abrir prévia PP</button>
             </div>
             <div class="card" style="padding:12px">
               <div class="card-header"><span class="card-title">Vale Gasolina</span></div>
-              <p style="margin:8px 0 12px 0;font-size:13px;color:#5d6f82">Visualize cálculos e depois baixe PDF/XLSX.</p>
+              <p style="margin:8px 0 12px 0;font-size:13px;color:var(--text-muted)">Visualize cálculos e depois baixe PDF/XLSX.</p>
               <button class="btn b-ghv b-sm" onclick="abrirPreviaBeneficio('vg')">Abrir prévia VG</button>
             </div>
             <div class="card" style="padding:12px">
               <div class="card-header"><span class="card-title">Cesta de Natal</span></div>
-              <p style="margin:8px 0 12px 0;font-size:13px;color:#5d6f82">Visualize cálculos e depois baixe PDF/XLSX.</p>
+              <p style="margin:8px 0 12px 0;font-size:13px;color:var(--text-muted)">Visualize cálculos e depois baixe PDF/XLSX.</p>
               <button class="btn b-ghv b-sm" onclick="abrirPreviaBeneficio('cn')">Abrir prévia CN</button>
             </div>
           </div>
-          <div class="card" style="margin-top:14px;border:1px solid #8b1a1a;background:rgba(80,0,0,.25);padding:14px">
-            <div class="card-header"><span class="card-title" style="color:#ff9999">&#128465; Excluir lançamentos da competência</span></div>
-            <p style="margin:8px 0 14px 0;font-size:13px;color:#c0a0a0">Exclui <strong>todos</strong> os lançamentos de benefícios da competência/empresa selecionada. Esta ação não pode ser desfeita.</p>
-            <button class="btn b-sm" style="background:#6b1212;color:#ffb3b3;border:1px solid #c0392b" onclick="excluirRelatorioCompetencia()">&#128465; Excluir todos os lançamentos desta competência</button>
+          <div class="card" style="margin-top:14px;border:1px solid var(--verm);background:var(--verm-cl);padding:14px">
+            <div class="card-header"><span class="card-title" style="color:var(--verm)">&#128465; Excluir lançamentos da competência</span></div>
+            <p style="margin:8px 0 14px 0;font-size:13px;color:var(--text-muted)">Exclui <strong>todos</strong> os lançamentos de benefícios da competência/empresa selecionada. Esta ação não pode ser desfeita.</p>
+            <button class="btn b-sm" style="background:var(--verm);color:#fff;border:1px solid var(--verm)" onclick="excluirRelatorioCompetencia()">&#128465; Excluir todos os lançamentos desta competência</button>
           </div>
         </div>
 
@@ -2238,7 +2238,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div id="ben-pane-periodo" class="tbl-wrap" style="margin-top:10px;display:none">
           <div class="card" style="padding:14px">
             <div class="card-header"><span class="card-title">&#128197; Calcular dias trabalhados por período</span></div>
-            <p style="font-size:13px;color:#7a8fa6;margin:6px 0 14px 0">Defina o período de competência (ex: 10/03 a 09/04), escolha a fonte de dados e o sistema calculará automaticamente os dias trabalhados de cada colaborador para preencher os benefícios. Você pode informar faltas na prévia para descontar os dias pagos.</p>
+            <p style="font-size:13px;color:var(--text-muted);margin:6px 0 14px 0">Defina o período de competência (ex: 10/03 a 09/04), escolha a fonte de dados e o sistema calculará automaticamente os dias trabalhados de cada colaborador para preencher os benefícios. Você pode informar faltas na prévia para descontar os dias pagos.</p>
             <div class="g4">
               <div class="f"><label>Data início</label><input id="ben-per-ini" type="date"></div>
               <div class="f"><label>Data fim</label><input id="ben-per-fim" type="date"></div>
@@ -2256,17 +2256,17 @@ document.addEventListener('DOMContentLoaded',()=>{
               <div class="f"><label>Intervalo (min, opcional)</label><input id="ben-per-intervalo" type="number" min="0" max="240" value="60"></div>
               <div class="f"><label>Regra VT/VR (horas mín.)</label><input id="ben-per-minh" type="number" min="1" max="16" value="8"></div>
             </div>
-            <div style="margin-top:6px;font-size:12px;color:#9fb3c8">Regra aplicada: VT/VR só são pagos em dias com 8h ou mais trabalhadas. Vale combustível é pago pelos dias trabalhados. Faltas informadas na grade são descontadas. Se horário início/fim ficar em branco, o sistema usa a jornada individual de cada funcionário.</div>
+            <div style="margin-top:6px;font-size:12px;color:var(--text-muted)">Regra aplicada: VT/VR só são pagos em dias com 8h ou mais trabalhadas. Vale combustível é pago pelos dias trabalhados. Faltas informadas na grade são descontadas. Se horário início/fim ficar em branco, o sistema usa a jornada individual de cada funcionário.</div>
             <div class="brow" style="justify-content:flex-start;margin-top:10px;gap:8px;flex-wrap:wrap">
               <button class="btn b-az b-sm" onclick="benCalcularPorPeriodo(false)">&#128269; Calcular (prévia)</button>
               <button class="btn b-vd b-sm" onclick="benCalcularPorPeriodo(true)">&#128190; Calcular e salvar lançamentos</button>
             </div>
-            <div id="ben-per-status" style="margin-top:8px;font-size:13px;color:#7ecfff"></div>
+            <div id="ben-per-status" style="margin-top:8px;font-size:13px;color:var(--azul)"></div>
           </div>
           <div id="ben-per-resultado" style="margin-top:14px;display:none">
             <div class="card" style="padding:12px">
               <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:10px">
-                <span id="ben-per-resumo" style="font-size:13px;color:#5d6f82"></span>
+                <span id="ben-per-resumo" style="font-size:13px;color:var(--text-muted)"></span>
                 <button class="btn b-vd b-sm" onclick="benSalvarResultadoPeriodo()">&#128190; Salvar lançamentos calculados</button>
               </div>
               <div class="tbl-wrap">
@@ -2288,7 +2288,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div id="ben-pane-feriados" class="tbl-wrap" style="margin-top:10px;display:none">
           <div class="card" style="padding:14px">
             <div class="card-header"><span class="card-title">&#127970; Cadastro de Feriados</span></div>
-            <p style="font-size:13px;color:#7a8fa6;margin:4px 0 12px 0">Cadastre feriados nacionais e municipais. Eles serão descontados automaticamente no cálculo por período.</p>
+            <p style="font-size:13px;color:var(--text-muted);margin:4px 0 12px 0">Cadastre feriados nacionais e municipais. Eles serão descontados automaticamente no cálculo por período.</p>
             <div class="g4" style="margin-bottom:10px">
               <div class="f"><label>Ano</label><input id="fer-ano" type="number" min="2020" max="2099" placeholder="2026" style="width:100px"></div>
               <div class="f"><label>Tipo</label>
@@ -2305,7 +2305,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
             <!-- Formulário de adição -->
             <details id="fer-form-novo" style="margin-bottom:14px">
-              <summary style="cursor:pointer;font-size:13px;font-weight:700;color:#7ecfff;padding:6px 0">&#43; Adicionar feriado</summary>
+              <summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--azul);padding:6px 0">&#43; Adicionar feriado</summary>
               <div class="g4" style="margin-top:10px">
                 <div class="f"><label>Data</label><input id="fer-data" type="date"></div>
                 <div class="f"><label>Descrição</label><input id="fer-desc" placeholder="Ex: Carnaval" maxlength="200"></div>
@@ -2319,17 +2319,17 @@ document.addEventListener('DOMContentLoaded',()=>{
                 <div class="f"><label>Estado (UF)</label><input id="fer-estado" placeholder="SP" maxlength="2" style="width:60px"></div>
               </div>
               <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px;flex-wrap:wrap">
-                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#9fb3c8">
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted)">
                   <input id="fer-aplicar-selecionados" type="checkbox" checked>
                   Municipal: aplicar aos funcionários selecionados na aba "Colaboradores Ativos"
                 </label>
-                <span id="fer-sel-info" style="font-size:12px;color:#7ecfff">Nenhum funcionário selecionado</span>
+                <span id="fer-sel-info" style="font-size:12px;color:var(--azul)">Nenhum funcionário selecionado</span>
               </div>
               <div class="brow" style="justify-content:flex-start;margin-top:8px">
                 <button class="btn b-vd b-sm" onclick="ferSalvar()">&#128190; Salvar feriado</button>
               </div>
             </details>
-            <div id="fer-status" style="font-size:13px;color:#7ecfff;margin-bottom:8px"></div>
+            <div id="fer-status" style="font-size:13px;color:var(--azul);margin-bottom:8px"></div>
             <div class="tbl-wrap">
               <table class="tbl">
                 <thead><tr>
@@ -2348,7 +2348,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div id="st-sst" class="st"></div>
       <div class="card">
         <div class="card-header"><span class="card-title">Segurança do Trabalho</span></div>
-        <p style="font-size:13px;color:#666">Nesta aba você pode anexar ASO, ficha de EPI e documentos relacionados direto no cadastro do funcionário.</p>
+        <p style="font-size:13px;color:var(--text-muted)">Nesta aba você pode anexar ASO, ficha de EPI e documentos relacionados direto no cadastro do funcionário.</p>
         <div class="g3" style="margin-top:8px">
           <div class="f"><label>Buscar colaborador</label><input id="sst-func-busca" placeholder="Digite nome, matrícula ou RE" oninput="filtrarSSTFuncionarios()"></div>
           <div class="f"><label>Funcionário</label><select id="sst-func"><option value="">Selecione...</option></select></div>
@@ -2368,31 +2368,31 @@ document.addEventListener('DOMContentLoaded',()=>{
         #pg-assinaturas .asi-shell{display:grid;grid-template-columns:250px minmax(0,1fr);gap:16px;align-items:start}
         #pg-assinaturas .asi-side{position:sticky;top:8px}
         #pg-assinaturas .asi-side .subaba-bloco{width:100%;text-align:left}
-        #pg-assinaturas .asi-upload-drop{border:2px dashed #d3d3d3;border-radius:12px;padding:20px;background:#f5f0f6;cursor:pointer;transition:.15s}
-        #pg-assinaturas .asi-upload-drop.drag{border-color:#205d8a;background:#f5f0f6;box-shadow:0 0 0 3px rgba(31,110,176,.12)}
-        #pg-assinaturas .asi-preview-scroll{width:100%;overflow-y:auto;max-height:min(82vh,960px);border:1px solid #d3d3d3;border-radius:10px;background:#f5f0f6;margin-top:12px}
-        #pg-assinaturas .asi-preview-scroll-item+.asi-preview-scroll-item{border-top:2px solid #d3d3d3}
-        #pg-assinaturas .asi-preview-scroll-title{font-size:12px;font-weight:700;color:#020202;padding:8px 12px;background:#d0e4f0;display:flex;align-items:center;gap:6px}
+        #pg-assinaturas .asi-upload-drop{border:2px dashed var(--borda);border-radius:12px;padding:20px;background:var(--branco);cursor:pointer;transition:.15s}
+        #pg-assinaturas .asi-upload-drop.drag{border-color:var(--azul);background:var(--branco);box-shadow:0 0 0 3px rgba(32,93,138,.12)}
+        #pg-assinaturas .asi-preview-scroll{width:100%;overflow-y:auto;max-height:min(82vh,960px);border:1px solid var(--borda);border-radius:10px;background:var(--branco);margin-top:12px}
+        #pg-assinaturas .asi-preview-scroll-item+.asi-preview-scroll-item{border-top:2px solid var(--borda)}
+        #pg-assinaturas .asi-preview-scroll-title{font-size:12px;font-weight:700;color:var(--preto);padding:8px 12px;background:var(--azul-cl);display:flex;align-items:center;gap:6px}
         #pg-assinaturas .asi-preview-scroll iframe{width:100%;height:min(78vh,900px);border:none;display:block}
         /* Wizard stepper */
         #pg-assinaturas .asi-wizard{display:flex;flex-direction:column;gap:0;padding:4px 0}
         #pg-assinaturas .asi-wz-step{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;border-radius:10px;padding:9px 8px;cursor:pointer;text-align:left;transition:all .18s ease;font-family:'Manrope',sans-serif}
-        #pg-assinaturas .asi-wz-step:hover{background:#f5f0f6}
-        #pg-assinaturas .asi-wz-step.active{background:#d0e4f0}
-        #pg-assinaturas .asi-wz-step.done .wz-num{background:#22a95b!important;color:#fff!important;border-color:#22a95b!important}
-        #pg-assinaturas .asi-wz-step.active .wz-num{background:#205d8a;color:#fff;border-color:#205d8a}
-        #pg-assinaturas .wz-num{width:28px;height:28px;border-radius:50%;border:2px solid #d3d3d3;background:#f5f0f6;color:#020202;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .18s}
+        #pg-assinaturas .asi-wz-step:hover{background:var(--branco)}
+        #pg-assinaturas .asi-wz-step.active{background:var(--azul-cl)}
+        #pg-assinaturas .asi-wz-step.done .wz-num{background:var(--verde)!important;color:#fff!important;border-color:var(--verde)!important}
+        #pg-assinaturas .asi-wz-step.active .wz-num{background:var(--azul);color:#fff;border-color:var(--azul)}
+        #pg-assinaturas .wz-num{width:28px;height:28px;border-radius:50%;border:2px solid var(--borda);background:var(--branco);color:var(--preto);font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .18s}
         #pg-assinaturas .wz-info{display:flex;flex-direction:column;gap:2px;min-width:0}
-        #pg-assinaturas .wz-label{font-size:12px;font-weight:700;color:#020202;white-space:nowrap}
-        #pg-assinaturas .asi-wz-step.active .wz-label{color:#205d8a}
-        #pg-assinaturas .wz-badge{font-size:10px;color:#7a8fa6;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
-        #pg-assinaturas .asi-wz-step.done .wz-badge{color:#22a95b}
-        #pg-assinaturas .wz-line{width:2px;height:12px;background:#e0eaf5;margin-left:22px}
+        #pg-assinaturas .wz-label{font-size:12px;font-weight:700;color:var(--preto);white-space:nowrap}
+        #pg-assinaturas .asi-wz-step.active .wz-label{color:var(--azul)}
+        #pg-assinaturas .wz-badge{font-size:10px;color:var(--text-muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+        #pg-assinaturas .asi-wz-step.done .wz-badge{color:var(--verde)}
+        #pg-assinaturas .wz-line{width:2px;height:12px;background:var(--azul-cl);margin-left:22px}
         /* Audit position selector */
-        #pg-assinaturas .asi-audit-pos-btn{display:inline-flex;align-items:center;gap:5px;border:1.5px solid #d3d3d3;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;color:#020202;cursor:pointer;background:#f5f0f6;transition:.15s;user-select:none}
-        #pg-assinaturas .asi-audit-pos-btn:hover{border-color:#205d8a;background:#eef6ff}
+        #pg-assinaturas .asi-audit-pos-btn{display:inline-flex;align-items:center;gap:5px;border:1.5px solid var(--borda);border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;color:var(--preto);cursor:pointer;background:var(--branco);transition:.15s;user-select:none}
+        #pg-assinaturas .asi-audit-pos-btn:hover{border-color:var(--azul);background:var(--azul-cc)}
         #pg-assinaturas .asi-audit-pos-btn input{display:none}
-        #pg-assinaturas .asi-audit-pos-btn.on{border-color:#205d8a;background:#d0e4f0;color:#205d8a}
+        #pg-assinaturas .asi-audit-pos-btn.on{border-color:var(--azul);background:var(--azul-cl);color:var(--azul)}
         @media (min-width:1500px){
           #pg-assinaturas .asi-shell{grid-template-columns:265px minmax(0,1fr)}
         }
@@ -2431,7 +2431,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               <div class="card-header" style="margin-bottom:10px">
                 <span class="card-title">Preparar Documento</span>
               </div>
-              <div style="font-size:12px;font-weight:700;color:#020202;margin-bottom:10px;padding:6px 8px;background:#f0f6ff;border-radius:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="wz-doc-titulo">—</div>
+              <div style="font-size:12px;font-weight:700;color:var(--preto);margin-bottom:10px;padding:6px 8px;background:var(--azul-cc);border-radius:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="wz-doc-titulo">—</div>
               <div class="asi-wizard">
                 <button type="button" class="asi-wz-step active" id="wz-1" onclick="asiWizardGo(1)">
                   <span class="wz-num">1</span>
@@ -2473,7 +2473,7 @@ document.addEventListener('DOMContentLoaded',()=>{
                   </div>
                 </button>
               </div>
-              <button class="btn b-sm" style="margin-top:12px;width:100%;background:#e8eef5;color:#205d8a;border:none;cursor:pointer" onclick="fecharDetalheEnvelope()">← Voltar à lista</button>
+          <button class="btn b-sm" style="background:var(--azul-cc);color:var(--azul);border:none;cursor:pointer" onclick="fecharDetalheEnvelope()">← Voltar à lista</button>
             </div>
           </div>
 
@@ -2494,8 +2494,8 @@ document.addEventListener('DOMContentLoaded',()=>{
       <!-- painel detalhe -->
       <div id="asi-detail-panel" style="display:none">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-          <button class="btn b-sm" style="background:#e8eef5;color:#205d8a;border:none;cursor:pointer" onclick="fecharDetalheEnvelope()">← Voltar</button>
-          <h3 id="asi-detail-titulo" style="font-size:16px;color:#1a2b3c;font-weight:700"></h3>
+          <button class="btn b-sm" style="background:var(--azul-cc);color:var(--azul);border:none;cursor:pointer" onclick="fecharDetalheEnvelope()">← Voltar</button>
+          <h3 id="asi-detail-titulo" style="font-size:16px;color:var(--azul-esc);font-weight:700"></h3>
           <span id="asi-detail-status-pill" class="pill" style="margin-left:auto"></span>
         </div>
 
@@ -2505,25 +2505,25 @@ document.addEventListener('DOMContentLoaded',()=>{
             <span class="card-title">📎 Arquivos do documento</span>
             <div style="display:flex;gap:8px">
               <button class="btn b-sm b-az" onclick="abrirPickerArqSistema()">+ Do sistema</button>
-              <label class="btn b-sm" style="background:#1a7a45;color:#fff;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:4px">
+              <label class="btn b-sm" style="background:var(--verde);color:#fff;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:4px">
                 + Upload <input type="file" id="inp-arq-upload" accept="application/pdf,image/*" style="display:none" multiple onchange="uploadArqEnvelope()">
               </label>
             </div>
           </div>
           <div id="asi-dropzone" class="asi-upload-drop">
             Arraste e solte arquivos PDF/Imagem aqui ou clique para anexar.
-            <div style="font-size:12px;color:#5f7590;margin-top:4px">Você pode anexar vários arquivos e continuar adicionando mais depois.</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Você pode anexar vários arquivos e continuar adicionando mais depois.</div>
           </div>
           <div id="asi-preview-scroll" class="asi-preview-scroll">
             <div class="vazio" style="padding:16px;text-align:center">Nenhum arquivo para pré-visualizar.</div>
           </div>
           <!-- Prévia da página de auditoria -->
           <div id="asi-audit-preview" style="display:none;margin-top:14px" id="sec-auditoria">
-            <div class="asi-preview-scroll-title" style="background:#eef7e8;border-radius:10px 10px 0 0;border:1px solid #c8e6c9;font-size:13px">📋 Página de Auditoria — prévia em tempo real</div>
-            <iframe id="asi-audit-iframe" src="" style="width:100%;height:min(70vh,700px);border:1px solid #c8e6c9;border-top:none;border-radius:0 0 10px 10px;display:block" loading="lazy" title="Página de Auditoria"></iframe>
+            <div class="asi-preview-scroll-title" style="background:var(--verde-cl);border-radius:10px 10px 0 0;border:1px solid var(--verde);font-size:13px">📋 Página de Auditoria — prévia em tempo real</div>
+            <iframe id="asi-audit-iframe" src="" style="width:100%;height:min(70vh,700px);border:1px solid var(--verde);border-top:none;border-radius:0 0 10px 10px;display:block" loading="lazy" title="Página de Auditoria"></iframe>
           </div>
           <div style="margin-top:10px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
-            <button class="btn b-sm" id="asi-toggle-arq-lista" style="background:#eef6ff;color:#205d8a;border:1px solid #d3d3d3" onclick="toggleAsiArquivosLista()">Mostrar tabela de arquivos</button>
+            <button class="btn b-sm" id="asi-toggle-arq-lista" style="background:var(--azul-cc);color:var(--azul);border:1px solid var(--borda)" onclick="toggleAsiArquivosLista()">Mostrar tabela de arquivos</button>
             <button class="btn b-sm b-az" onclick="document.getElementById('inp-arq-upload').click()">+ Anexar mais arquivos</button>
           </div>
           <div id="asi-arq-lista-wrap" style="display:none;margin-top:10px">
@@ -2538,13 +2538,13 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-sm b-az" onclick="abrirFormSignatario()">+ Adicionar signatário</button>
           </div>
           <div style="margin:0 0 10px 0;display:flex;justify-content:flex-start">
-            <button class="btn b-sm" id="asi-toggle-sig-lista" style="background:#eef6ff;color:#205d8a;border:1px solid #d3d3d3" onclick="toggleAsiSignatariosLista()">Mostrar signatários</button>
+            <button class="btn b-sm" id="asi-toggle-sig-lista" style="background:var(--azul-cc);color:var(--azul);border:1px solid var(--borda)" onclick="toggleAsiSignatariosLista()">Mostrar signatários</button>
           </div>
           <div id="asi-sig-lista-wrap" style="display:none">
             <div id="asi-sig-lista"><div class="vazio">Nenhum signatário.</div></div>
           </div>
           <!-- form add signatário inline -->
-          <div id="asi-sig-form" style="display:none;background:#f5f9ff;border-top:1px solid #e0eaf5;padding:14px">
+          <div id="asi-sig-form" style="display:none;background:var(--branco);border-top:1px solid var(--borda);padding:14px">
             <div class="g3">
               <div class="f"><label>Nome (opcional se telefone já tiver cadastro)</label><input id="sigf-nome" placeholder="Nome completo"></div>
               <div class="f"><label>Cargo</label><input id="sigf-cargo" placeholder="Cargo/Função"></div>
@@ -2556,7 +2556,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
             <div class="brow" style="gap:8px;justify-content:flex-start;margin-top:6px">
               <button class="btn b-az b-sm" onclick="salvarSignatario()">Salvar signatário</button>
-              <button class="btn b-sm" style="background:#e8eef5;color:#555;border:none;cursor:pointer" onclick="document.getElementById('asi-sig-form').style.display='none'">Cancelar</button>
+              <button class="btn b-sm" style="background:var(--cinza-cl);color:var(--text-muted);border:none;cursor:pointer" onclick="document.getElementById('asi-sig-form').style.display='none'">Cancelar</button>
             </div>
           </div>
         </div>
@@ -2564,12 +2564,12 @@ document.addEventListener('DOMContentLoaded',()=>{
         <!-- Carimbo de Assinatura -->
         <div class="card" id="sec-carimbo" style="margin-bottom:14px">
           <div class="card-header"><span class="card-title">🔏 Carimbo de assinatura no PDF</span></div>
-          <div id="asi-stamp-gate" style="display:none;margin:8px 0 10px 0;padding:10px;border-radius:8px;background:#fff9e7;border:1px solid #f0d994;color:#8a6d1f;font-size:12px">
+          <div id="asi-stamp-gate" style="display:none;margin:8px 0 10px 0;padding:10px;border-radius:8px;background:var(--laranja-cl);border:1px solid var(--laranja);color:var(--laranja-esc);font-size:12px">
             Adicione ao menos um signatário para habilitar o carimbo de assinatura.
           </div>
           <!-- Posição do carimbo de auditoria -->
           <div style="margin-bottom:14px">
-            <div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Posição do carimbo nos documentos</div>
+            <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Posição do carimbo nos documentos</div>
             <div style="display:flex;gap:7px;flex-wrap:wrap">
               <label class="asi-audit-pos-btn" id="auditpos-rodape" onclick="onAuditPosChange('rodape')">
                 <input type="radio" name="audit-pos" value="rodape"> ⬇ Rodapé
@@ -2585,7 +2585,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               </label>
             </div>
           </div>
-          <p style="font-size:12px;color:#666;margin:4px 0 10px 0">Quando habilitado, um carimbo visual com nome, data e código será inserido no PDF gerado na posição configurada.</p>
+          <p style="font-size:12px;color:var(--text-muted);margin:4px 0 10px 0">Quando habilitado, um carimbo visual com nome, data e código será inserido no PDF gerado na posição configurada.</p>
           <style>
             #stamp-layout{display:grid;grid-template-columns:minmax(620px,1fr) 360px;gap:16px;align-items:start}
             #stamp-preview-wrap{max-height:74vh}
@@ -2602,13 +2602,13 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div id="stamp-pos-area" style="margin-top:8px">
             <div id="stamp-layout">
               <div id="stamp-preview-col" style="min-width:340px">
-                <p style="font-size:12px;color:#555;margin:0 0 6px 0">Prévia completa em sequência (ordem definida nos arquivos). Clique no ponto exato onde o carimbo deve aparecer:</p>
-                <div id="stamp-preview-wrap" style="position:relative;display:block;width:100%;max-height:760px;overflow-y:auto;border:1px solid #c8d8f0;border-radius:8px;background:#f0f4fa;padding:8px">
+                <p style="font-size:12px;color:var(--text-muted);margin:0 0 6px 0">Prévia completa em sequência (ordem definida nos arquivos). Clique no ponto exato onde o carimbo deve aparecer:</p>
+                <div id="stamp-preview-wrap" style="position:relative;display:block;width:100%;max-height:760px;overflow-y:auto;border:1px solid var(--borda);border-radius:8px;background:var(--cinza-cl);padding:8px">
                   <div id="stamp-pages-container" style="position:relative"></div>
-                  <div id="stamp-loading" style="display:flex;align-items:center;justify-content:center;padding:40px;color:#6b7a90;font-size:13px">Carregando prévia dos documentos...</div>
+                  <div id="stamp-loading" style="display:flex;align-items:center;justify-content:center;padding:40px;color:var(--text-muted);font-size:13px">Carregando prévia dos documentos...</div>
                 </div>
               </div>
-              <div id="stamp-controls-col" style="min-width:280px;background:#f7fbff;border:1px solid #d8e5f7;border-radius:10px;padding:10px">
+              <div id="stamp-controls-col" style="min-width:280px;background:var(--branco);border:1px solid var(--borda);border-radius:10px;padding:10px">
                 <div class="f" style="margin-bottom:8px">
                   <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
                     <input type="checkbox" id="stamp-hab" onchange="previewStampPos()" style="width:16px;height:16px">
@@ -2639,12 +2639,12 @@ document.addEventListener('DOMContentLoaded',()=>{
                 <input type="hidden" id="stamp-x-pct" value="60">
                 <input type="hidden" id="stamp-y-pct" value="10">
                 <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-                  <button class="btn b-sm" style="background:#eef6ff;color:#205d8a;border:1px solid #d3d3d3" onclick="carregarPreviewCarimbo()">Atualizar prévia</button>
+                  <button class="btn b-sm" style="background:var(--azul-cc);color:var(--azul);border:1px solid var(--borda)" onclick="carregarPreviewCarimbo()">Atualizar prévia</button>
                   <button class="btn b-sm b-az" onclick="salvarStampConfig()">Salvar posição</button>
                 </div>
               </div>
             </div>
-            <div id="stamp-preview-msg" style="margin-top:6px;font-size:12px;color:#6b7a90"></div>
+            <div id="stamp-preview-msg" style="margin-top:6px;font-size:12px;color:var(--text-muted)"></div>
           </div>
         </div>
 
@@ -2663,10 +2663,10 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
           <div class="brow" style="gap:10px;padding:8px 0">
             <button class="btn b-az" onclick="enviarEnvelopeAtual()" id="btn-enviar-envelope">📨 Enviar para assinar</button>
-            <button class="btn" style="background:#1a7a45;color:#fff;border:none;cursor:pointer" onclick="abrirValidacaoEnvelope()">🔍 Página de validação</button>
-            <button class="btn" id="btn-cancelar-envelope" style="background:#e67e22;color:#fff;border:none;cursor:pointer;display:none" onclick="cancelarEnvelopeAtual()">🚫 Bloquear</button>
-            <button class="btn" id="btn-reativar-envelope" style="background:#2980b9;color:#fff;border:none;cursor:pointer;display:none" onclick="reativarEnvelopeAtual()">▶ Reativar</button>
-            <button class="btn" id="btn-excluir-envelope" style="background:#c0392b;color:#fff;border:none;cursor:pointer" onclick="excluirEnvelopeAtual()">🗑 Excluir</button>
+            <button class="btn" style="background:var(--verde);color:var(--branco);border:none;cursor:pointer" onclick="abrirValidacaoEnvelope()">🔍 Página de validação</button>
+            <button class="btn" id="btn-cancelar-envelope" style="background:var(--laranja);color:#fff;border:none;cursor:pointer;display:none" onclick="cancelarEnvelopeAtual()">🚫 Bloquear</button>
+            <button class="btn" id="btn-reativar-envelope" style="background:var(--azul);color:var(--branco);border:none;cursor:pointer;display:none" onclick="reativarEnvelopeAtual()">▶ Reativar</button>
+            <button class="btn" id="btn-excluir-envelope" style="background:var(--verm);color:var(--branco);border:none;cursor:pointer" onclick="excluirEnvelopeAtual()">🗑 Excluir</button>
           </div>
         </div>
       </div>
@@ -2675,10 +2675,10 @@ document.addEventListener('DOMContentLoaded',()=>{
 
       <!-- picker arquivos do sistema (funcionário) -->
       <div id="asi-picker-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;overflow-y:auto">
-        <div style="background:#fff;max-width:560px;margin:40px auto;border-radius:12px;padding:24px;box-shadow:0 8px 40px rgba(0,0,0,.2)">
+        <div style="background:var(--branco);max-width:560px;margin:40px auto;border-radius:12px;padding:24px;box-shadow:0 8px 40px rgba(0,0,0,.2)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-            <h3 style="font-size:16px;color:#1a2b3c">Selecionar arquivo do sistema</h3>
-            <button onclick="document.getElementById('asi-picker-modal').style.display='none'" style="background:none;border:none;font-size:20px;cursor:pointer;color:#888">×</button>
+            <h3 style="font-size:16px;color:var(--azul-esc)">Selecionar arquivo do sistema</h3>
+            <button onclick="document.getElementById('asi-picker-modal').style.display='none'" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">×</button>
           </div>
           <div class="f"><label>Tipo de referência</label>
             <select id="picker-tipo-ref" onchange="onPickerTipoChange()">
@@ -2699,10 +2699,10 @@ document.addEventListener('DOMContentLoaded',()=>{
 
       <!-- modal novo documento -->
       <div id="asi-novo-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:998;overflow-y:auto;padding:16px">
-        <div style="background:#fff;max-width:500px;max-height:calc(100vh - 32px);overflow-y:auto;margin:12px auto;border-radius:12px;padding:24px;box-shadow:0 8px 40px rgba(0,0,0,.2)">
+        <div style="background:var(--branco);max-width:500px;max-height:calc(100vh - 32px);overflow-y:auto;margin:12px auto;border-radius:12px;padding:24px;box-shadow:0 8px 40px rgba(0,0,0,.2)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-            <h3 style="font-size:16px;color:#1a2b3c">Novo Documento</h3>
-            <button onclick="document.getElementById('asi-novo-modal').style.display='none'" style="background:none;border:none;font-size:20px;cursor:pointer;color:#888">×</button>
+            <h3 style="font-size:16px;color:var(--azul-esc)">Novo Documento</h3>
+            <button onclick="document.getElementById('asi-novo-modal').style.display='none'" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">×</button>
           </div>
           <div class="f"><label>Título *</label><input id="nenv-titulo" placeholder="Ex: Contrato de Trabalho — João Silva"></div>
           <div class="f"><label>Empresa responsável pelo envio *</label>
@@ -2713,7 +2713,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div class="f"><label>Validade (deixe em branco para sem prazo)</label><input type="date" id="nenv-expira"></div>
           <div class="brow" style="gap:8px;margin-top:14px">
             <button class="btn b-az" onclick="salvarNovoEnvelope()">Criar documento</button>
-            <button class="btn b-sm" style="background:#e8eef5;color:#555;border:none;cursor:pointer" onclick="document.getElementById('asi-novo-modal').style.display='none'">Cancelar</button>
+            <button class="btn b-sm" style="background:var(--cinza-cl);color:var(--text-muted);border:none;cursor:pointer" onclick="document.getElementById('asi-novo-modal').style.display='none'">Cancelar</button>
           </div>
         </div>
       </div>
@@ -2772,29 +2772,29 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
       <div class="card">
         <div class="card-header"><span class="card-title">🔒 Backup & Recuperação Completa do Sistema</span></div>
-        <p style="font-size:13px;color:#666;margin-bottom:14px">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">
           <strong>Backup completo incluindo:</strong> Empresas, Clientes, Funcionários, Medições, Configurações, Chaves de API, Evolution WhatsApp, Conversas e Mensagens, Ordens de Compra, Documentos Operacionais, e todos os arquivos anexados.
         </p>
         
-        <div style="background:#f0f9ff;border-left:4px solid #0066cc;padding:10px;margin-bottom:14px;border-radius:4px">
-          <div style="font-size:12px;color:#003366">
+        <div style="background:var(--azul-cc);border-left:4px solid var(--azul);padding:10px;margin-bottom:14px;border-radius:4px">
+          <div style="font-size:12px;color:var(--azul)">
             <strong>⚠️ Importante:</strong> Use esta ferramenta regularmente para proteger seus dados. Em caso de problema ou atualização do sistema, terá tudo pronto para restaurar.
           </div>
         </div>
 
         <div style="margin-bottom:16px">
-          <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:8px">Fazer Backup Agora:</div>
+          <div style="font-size:12px;font-weight:600;color:var(--preto);margin-bottom:8px">Fazer Backup Agora:</div>
           <button class="btn b-vd" style="font-weight:600;font-size:14px" onclick="confirmarBackupCompleto()">⬇ Baixar Backup Completo</button>
-          <div style="font-size:11px;color:#666;margin-top:4px">Baixa um arquivo ZIP com tudo do sistema pronto para salvar</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Baixa um arquivo ZIP com tudo do sistema pronto para salvar</div>
         </div>
 
-        <div style="margin-bottom:14px;border-top:1px solid #ddd;padding-top:14px">
-          <div style="font-size:12px;font-weight:600;color:#333;margin-bottom:8px">Restaurar Backup:</div>
+        <div style="margin-bottom:14px;border-top:1px solid var(--borda);padding-top:14px">
+          <div style="font-size:12px;font-weight:600;color:var(--preto);margin-bottom:8px">Restaurar Backup:</div>
           <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
-            <input type="file" id="bk-restore" accept=".zip" style="flex:1;min-width:200px;padding:8px;border:1px solid #ddd;border-radius:3px">
+            <input type="file" id="bk-restore" accept=".zip" style="flex:1;min-width:200px;padding:8px;border:1px solid var(--borda);border-radius:3px">
             <button class="btn b-ghr" onclick="restaurarBackup()" style="white-space:nowrap">Restaurar</button>
           </div>
-          <div style="font-size:11px;color:#666;margin-top:4px">
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">
             ⚠️ Aviso: Restauração substituirá TODOS os dados atuais. Faça backup antes!
           </div>
         </div>
@@ -2803,11 +2803,11 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
       <div class="card">
         <div class="card-header"><span class="card-title">📧 Backups Automáticos WhatsApp</span></div>
-        <p style="font-size:13px;color:#666;margin-bottom:14px">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">
           O sistema realiza automaticamente backups das conversas e configurações do WhatsApp a cada 2 horas e envia por e-mail. Para configurar horário, intervalo e e-mail de destino, acesse a aba <strong>Comunicação → Configurações → Config WhatsApp</strong>.
         </p>
-        <div style="background:#f0fff0;border-left:4px solid #00cc00;padding:10px;border-radius:4px">
-          <div style="font-size:12px;color:#003300">
+        <div style="background:var(--verde-cl);border-left:4px solid var(--verde);padding:10px;border-radius:4px">
+          <div style="font-size:12px;color:var(--verde)">
             <strong>✅ Proteção contínua:</strong> Seus dados de WhatsApp são protegidos automaticamente enquanto você trabalha.
           </div>
         </div>
@@ -2922,29 +2922,29 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="f"><label>Telefone</label><div style="display:flex;gap:8px;align-items:center"><select id="fddi" style="flex:0 0 132px;max-width:132px"><option value="55">🇧🇷 +55 Brasil</option><option value="1">🇺🇸 +1 EUA/Canadá</option><option value="351">🇵🇹 +351 Portugal</option><option value="34">🇪🇸 +34 Espanha</option><option value="44">🇬🇧 +44 Reino Unido</option><option value="49">🇩🇪 +49 Alemanha</option><option value="39">🇮🇹 +39 Itália</option><option value="54">🇦🇷 +54 Argentina</option><option value="56">🇨🇱 +56 Chile</option><option value="57">🇨🇴 +57 Colômbia</option><option value="58">🇻🇪 +58 Venezuela</option><option value="52">🇲🇽 +52 México</option><option value="593">🇪🇨 +593 Equador</option><option value="595">🇵🇾 +595 Paraguai</option><option value="598">🇺🇾 +598 Uruguai</option><option value="591">🇧🇴 +591 Bolívia</option></select><input id="ftel" placeholder="(00) 00000-0000" oninput="maskTelefone(this)" style="flex:1 1 auto;min-width:0"></div></div>
         <div class="f"><label>Admissão</label><input id="fadmissao" type="date"></div>
         <div class="f"><label>Status</label><select id="fstatus"><option>Ativo</option><option>Férias</option><option>Afastado</option><option>Aviso prévio</option><option>Demitido</option><option>Inativo</option></select></div>
-        <div class="f"><label>Data de demissão <span style="font-size:10px;color:#c88;font-weight:400">(preencher ao demitir)</span></label><input id="fdemissao" type="date" onchange="rhFuncionarioAoAlterarDemissao()"><div style="font-size:11px;color:#c88;margin-top:3px" id="fdemissao-st"></div></div>
+        <div class="f"><label>Data de demissão <span style="font-size:10px;color:var(--verm);font-weight:400">(preencher ao demitir)</span></label><input id="fdemissao" type="date" onchange="rhFuncionarioAoAlterarDemissao()"><div style="font-size:11px;color:var(--verm);margin-top:3px" id="fdemissao-st"></div></div>
       </div>
       <div class="g3">
         <div class="f"><label>Início das férias</label><input id="fferias-inicio" type="date" onchange="rhFuncionarioAoAlterarFerias()"></div>
         <div class="f">
-          <label>Dias de férias <span style="font-size:10px;color:#888;font-weight:400">(fim calculado automaticamente)</span></label>
+          <label>Dias de férias <span style="font-size:10px;color:var(--text-muted);font-weight:400">(fim calculado automaticamente)</span></label>
           <div style="display:flex;gap:6px;align-items:center">
             <input id="fferias-dias" type="number" min="1" max="30" value="30" style="width:80px" oninput="rhFuncionarioAoAlterarFerias()">
             <span id="fferias-fim-preview" style="font-size:12px;color:var(--azul);font-weight:700"></span>
           </div>
         </div>
-        <div class="f"><label>Fim das férias <span style="font-size:10px;color:#888;font-weight:400">(calculado automaticamente)</span></label><input id="fferias-fim" type="date" readonly style="opacity:.7;cursor:default"></div>
+        <div class="f"><label>Fim das férias <span style="font-size:10px;color:var(--text-muted);font-weight:400">(calculado automaticamente)</span></label><input id="fferias-fim" type="date" readonly style="opacity:.7;cursor:default"></div>
       </div>
       <div class="g3">
         <div class="f"><label>Obs. férias</label><input id="fferias-obs" placeholder="Ex: férias coletivas"></div>
         <div class="f">
-          <label>Faltas no ano <span style="font-size:10px;color:#888;font-weight:400">(CLT: impacta direito)</span></label>
+          <label>Faltas no ano <span style="font-size:10px;color:var(--text-muted);font-weight:400">(CLT: impacta direito)</span></label>
           <input id="ffaltas-ano" type="number" min="0" value="0" oninput="rhFuncionarioDireitoFerias()">
         </div>
         <div class="f" style="justify-content:flex-end">
-          <label style="font-size:11px;color:#888">Direito de férias (CLT)</label>
+          <label style="font-size:11px;color:var(--text-muted)">Direito de férias (CLT)</label>
           <div id="fferias-direito" style="font-size:15px;font-weight:700;color:var(--azul);padding:6px 0">30 dias</div>
-          <div id="fferias-direito-obs" style="font-size:11px;color:#c88"></div>
+          <div id="fferias-direito-obs" style="font-size:11px;color:var(--verm)"></div>
         </div>
       </div>
       <div class="g4">
@@ -2986,7 +2986,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="f"><label>Órgão emissor</label><input id="forgao"></div>
       </div>
       <div class="g3">
-        <div class="f"><label>Data de nascimento 🎂 <span style="font-size:10px;color:#5f7590;font-weight:400">(usada para notificação no app)</span></label><input id="fnascimento" type="date"></div>
+        <div class="f"><label>Data de nascimento 🎂 <span style="font-size:10px;color:var(--text-muted);font-weight:400">(usada para notificação no app)</span></label><input id="fnascimento" type="date"></div>
         <div class="f"><label>PIS</label><input id="fpis"></div>
         <div class="f"><label>CTPS</label><input id="fctps"></div>
       </div>
@@ -3027,7 +3027,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <label for="fopta-cn" style="margin:0;font-weight:500">Cesta de Natal</label>
         </div>
       </div>
-      <div id="f-benef-dias-hint" style="display:none;margin:6px 0 2px 0;padding:8px;border:1px solid #2a5375;border-radius:8px;background:#102a44;color:#b9d9f5;font-size:12px">
+      <div id="f-benef-dias-hint" style="display:none;margin:6px 0 2px 0;padding:8px;border:1px solid var(--azul);border-radius:8px;background:var(--azul-cc);color:var(--azul-esc);font-size:12px">
         VT/VR/Vale combustível habilitados: calcule os dias pagos em RH > Benefícios > Calcular por Período.
       </div>
       <div class="f"><label>Áreas com acesso</label>
@@ -3036,11 +3036,11 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div class="f"><label>Observações</label><textarea id="fobs"></textarea></div>
       <div class="f" id="f-localizacao-row" style="display:none">
         <label>📍 Última localização do app</label>
-        <div id="f-localizacao-info" style="font-size:13px;color:#555"></div>
+        <div id="f-localizacao-info" style="font-size:13px;color:var(--text-muted)"></div>
       </div>
       <div class="brow" style="margin-top:6px">
         <button class="btn b-ci" onclick="closeModal('func')">Cancelar</button>
-        <span style="font-size:12px;color:#5f7590;align-self:center">Auto save ativo nesta tela</span>
+        <span style="font-size:12px;color:var(--text-muted);align-self:center">Auto save ativo nesta tela</span>
       </div>
     </div>
   </div>
@@ -3152,7 +3152,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <input type="number" id="mdias-fat" min="0" placeholder="21" oninput="calcVencimentoContrato()">
         </div>
       </div>
-      <div id="prev-vencimento" style="font-size:12px;color:#7ecfff;margin:-6px 0 6px 2px;display:none"></div>
+      <div id="prev-vencimento" style="font-size:12px;color:var(--azul);margin:-6px 0 6px 2px;display:none"></div>
       <div class="f"><label>Observação</label><textarea id="mct-obs" rows="2" placeholder="Observações sobre o contrato..."></textarea></div>
       <div class="brow" style="margin-top:6px">
         <button class="btn b-ci" onclick="closeModal('contrato')">Cancelar</button>
@@ -3277,17 +3277,17 @@ document.addEventListener('DOMContentLoaded',()=>{
           <button type="button" class="btn b-az b-sm" onclick="rbacPreset('total')">Acesso total</button>
           <button type="button" class="btn b-ci b-sm" onclick="rbacLimpar()">Limpar tudo</button>
         </div>
-        <div style="overflow-x:auto;max-height:300px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:4px;background:#ffffff">
-          <table id="perm-matrix" style="font-size:11px;border-collapse:collapse;width:100%;min-width:380px;color:#1f2937">
-            <thead style="position:sticky;top:0;background:#f5f5f5;z-index:1;color:#1f2937">
+        <div style="overflow-x:auto;max-height:300px;overflow-y:auto;border:1px solid var(--borda);border-radius:4px;background:var(--branco)">
+          <table id="perm-matrix" style="font-size:11px;border-collapse:collapse;width:100%;min-width:380px;color:var(--preto)">
+            <thead style="position:sticky;top:0;background:var(--cinza-cl);z-index:1;color:var(--preto)">
               <tr>
-                <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #ddd;min-width:100px;color:#374151">Área</th>
-                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center;color:#374151">Ver</th>
-                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center;color:#374151">Criar</th>
-                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center;color:#374151">Editar</th>
-                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center;color:#374151">Excluir</th>
-                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center;color:#374151">Aprovar</th>
-                <th style="padding:3px 6px;border-bottom:1px solid #ddd;text-align:center;color:#374151">Export.</th>
+                <th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--borda);min-width:100px;color:var(--preto)">.Área</th>
+                <th style="padding:3px 6px;border-bottom:1px solid var(--borda);text-align:center;color:var(--preto)">Ver</th>
+                <th style="padding:3px 6px;border-bottom:1px solid var(--borda);text-align:center;color:var(--preto)">Criar</th>
+                <th style="padding:3px 6px;border-bottom:1px solid var(--borda);text-align:center;color:var(--preto)">Editar</th>
+                <th style="padding:3px 6px;border-bottom:1px solid var(--borda);text-align:center;color:var(--preto)">Excluir</th>
+                <th style="padding:3px 6px;border-bottom:1px solid var(--borda);text-align:center;color:var(--preto)">Aprovar</th>
+                <th style="padding:3px 6px;border-bottom:1px solid var(--borda);text-align:center;color:var(--preto)">Export.</th>
               </tr>
             </thead>
             <tbody id="perm-matrix-body"></tbody>
@@ -3331,10 +3331,10 @@ function rbacInicializarMatrix(){
   if(!tb||tb.children.length>0) return;
   AREAS.forEach((area,i)=>{
     const tr=document.createElement('tr');
-    tr.style.background=i%2===0?'#fff':'#fafafa';
-    let html=`<td style="padding:3px 8px;border-bottom:1px solid #f0f0f0;white-space:nowrap;color:#374151">${AREA_LABELS[area]||area}</td>`;
+    tr.style.background=i%2===0?'var(--branco)':'var(--cinza-cl)';
+    let html=`<td style="padding:3px 8px;border-bottom:1px solid var(--borda);white-space:nowrap;color:var(--preto)">${AREA_LABELS[area]||area}</td>`;
     RBAC_ACTIONS.forEach(act=>{
-      html+=`<td style="text-align:center;border-bottom:1px solid #f0f0f0;padding:2px"><input type="checkbox" id="rbac-${area}-${act}" data-area="${area}" data-act="${act}" style="width:auto;margin:0"></td>`;
+      html+=`<td style="text-align:center;border-bottom:1px solid var(--borda);padding:2px"><input type="checkbox" id="rbac-${area}-${act}" data-area="${area}" data-act="${act}" style="width:auto;margin:0"></td>`;
     });
     tr.innerHTML=html;
     tb.appendChild(tr);
@@ -3877,22 +3877,22 @@ async function loadDash(){
     const certs=d.alerta_certificados||{qtd:0,itens:[]};
     const contratos=d.alerta_contratos||{qtd:0,itens:[]};
     const calcItens=(calc.itens||[]).length
-      ? calc.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.titulo||'—'}</div><div style="font-size:11px;color:#8aa">${it.descricao||''}</div></div>`).join('')
+      ? calc.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.titulo||'—'}</div><div style="font-size:11px;color:var(--text-muted)">${it.descricao||''}</div></div>`).join('')
       : '';
     const benPendItens=(benPend.itens||[]).length
-      ? benPend.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.funcionario_nome||'—'} ${it.matricula?`<span style="opacity:.7">(${it.matricula})</span>`:''}</div><div style="font-size:11px;color:#8aa">${it.empresa_nome||'Sem empresa'}</div></div>`).join('')
+      ? benPend.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.funcionario_nome||'—'} ${it.matricula?`<span style="opacity:.7">(${it.matricula})</span>`:''}</div><div style="font-size:11px;color:var(--text-muted)">${it.empresa_nome||'Sem empresa'}</div></div>`).join('')
       : '';
     const asoInvalItens=(asoInval.itens||[]).length
-      ? asoInval.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.funcionario_nome||'—'} ${it.matricula?`<span style="opacity:.7">(${it.matricula})</span>`:''}</div><div style="font-size:11px;color:#8aa">${it.status||'Sem ASO válido'}${it.validade&&it.validade!=='—'?` · validade ${it.validade}`:''}${it.dias_vencido!==null&&it.dias_vencido!==undefined?` · vencido há ${it.dias_vencido} dia(s)`:''}</div></div>`).join('')
+      ? asoInval.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.funcionario_nome||'—'} ${it.matricula?`<span style="opacity:.7">(${it.matricula})</span>`:''}</div><div style="font-size:11px;color:var(--text-muted)">${it.status||'Sem ASO válido'}${it.validade&&it.validade!=='—'?` · validade ${it.validade}`:''}${it.dias_vencido!==null&&it.dias_vencido!==undefined?` · vencido há ${it.dias_vencido} dia(s)`:''}</div></div>`).join('')
       : '';
     const asoItens=(aso.itens||[]).length
-      ? aso.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.funcionario_nome||'—'} ${it.matricula?`<span style="opacity:.7">(${it.matricula})</span>`:''}</div><div style="font-size:11px;color:#8aa">Vence em ${it.validade||'—'} · faltam ${it.dias_restantes} dia(s)</div></div>`).join('')
+      ? aso.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.funcionario_nome||'—'} ${it.matricula?`<span style="opacity:.7">(${it.matricula})</span>`:''}</div><div style="font-size:11px;color:var(--text-muted)">Vence em ${it.validade||'—'} · faltam ${it.dias_restantes} dia(s)</div></div>`).join('')
       : '';
     const certItens=(certs.itens||[]).length
-      ? certs.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.nome||'—'} <span style="opacity:.7">(${it.origem||it.tipo||'certificado'})</span></div><div style="font-size:11px;color:#8aa">Vence em ${it.validade||'—'} · faltam ${it.dias_restantes} dia(s)</div></div>`).join('')
+      ? certs.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.nome||'—'} <span style="opacity:.7">(${it.origem||it.tipo||'certificado'})</span></div><div style="font-size:11px;color:var(--text-muted)">Vence em ${it.validade||'—'} · faltam ${it.dias_restantes} dia(s)</div></div>`).join('')
       : '';
     const contratosItens=(contratos.itens||[]).length
-      ? contratos.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.cliente_nome||'—'}</div><div style="font-size:11px;color:#8aa">${it.vencido?'Vencido em':'Vence em'} ${it.vencimento||'—'} · ${it.vencido?'vencido há '+Math.abs(it.dias)+' dia(s)':'faltam '+it.dias+' dia(s)'}</div></div>`).join('')
+      ? contratos.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.cliente_nome||'—'}</div><div style="font-size:11px;color:var(--text-muted)">${it.vencido?'Vencido em':'Vence em'} ${it.vencimento||'—'} · ${it.vencido?'vencido há '+Math.abs(it.dias)+' dia(s)':'faltam '+it.dias+' dia(s)'}</div></div>`).join('')
       : '';
     if((aso.itens||[]).length || (calc.itens||[]).length || (benPend.itens||[]).length || (asoInval.itens||[]).length || (certs.itens||[]).length || (contratos.itens||[]).length){
       al.style.display='grid';
@@ -3920,7 +3920,7 @@ async function loadDash(){
       if((certs.itens||[]).length){
         cards.push(`<button type="button" class="card dash-alert-btn" style="margin-bottom:0;text-align:left" onclick="abrirDashboardDestino('config')">
           <div class="card-header" style="margin-bottom:8px"><span class="card-title">Certificados próximos do vencimento</span><div style="display:flex;align-items:center;gap:8px"><span class="pill p-lj">${certs.qtd||0}</span><span class="metric-go" style="font-size:9px">Ir</span></div></div>
-          <div style="font-size:11px;color:#8aa;margin-bottom:6px">Avisos em 30 dias e depois a cada 5 dias.</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Avisos em 30 dias e depois a cada 5 dias.</div>
           <div>${certItens}</div>
         </button>`);
       }
@@ -3932,7 +3932,7 @@ async function loadDash(){
   }
   const de=document.getElementById('dash-empresas');
   if(d.empresas && d.empresas.length){
-    de.innerHTML=d.empresas.map(e=>`<button type="button" class="card dash-company-btn" style="margin-bottom:0" onclick="abrirDashboardDestino('clientes',${e.id})"><div style="font-size:13px;font-weight:700;color:var(--azul);margin-bottom:8px">${e.nome}</div><div style="font-size:24px;font-weight:700;color:var(--laranja)">${e.cli}</div><div style="font-size:11px;color:#888">clientes ativos · tocar para abrir</div></button>`).join('');
+    de.innerHTML=d.empresas.map(e=>`<button type="button" class="card dash-company-btn" style="margin-bottom:0" onclick="abrirDashboardDestino('clientes',${e.id})"><div style="font-size:13px;font-weight:700;color:var(--azul);margin-bottom:8px">${e.nome}</div><div style="font-size:24px;font-weight:700;color:var(--laranja)">${e.cli}</div><div style="font-size:11px;color:var(--text-muted)">clientes ativos · tocar para abrir</div></button>`).join('');
   } else {
     de.innerHTML='';
   }
@@ -3952,7 +3952,7 @@ async function loadFaturamentoAlert(){
     return;
   }
   qtd.textContent=String(fat.qtd||fat.itens.length||0);
-  list.innerHTML=(fat.itens||[]).map(it=>`<div style="padding:7px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.cliente_nome||'—'}</div><div style="font-size:11px;color:#8aa">${it.empresa_nome||'Sem empresa'}</div></div>`).join('');
+  list.innerHTML=(fat.itens||[]).map(it=>`<div style="padding:7px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.cliente_nome||'—'}</div><div style="font-size:11px;color:var(--text-muted)">${it.empresa_nome||'Sem empresa'}</div></div>`).join('');
   card.style.display='block';
 }
 
@@ -4210,7 +4210,7 @@ async function renderRhFerias(){
   }).sort((a,b)=>((a.nome||'').localeCompare((b.nome||''),'pt-BR')));
 
   if(!lista.length){
-    tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:#999">Nenhum colaborador em férias para os filtros selecionados.</td></tr>';
+    tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted)">Nenhum colaborador em férias para os filtros selecionados.</td></tr>';
     if(res) res.textContent='0 colaborador(es) em férias.';
     return;
   }
@@ -4223,16 +4223,16 @@ async function renderRhFerias(){
     const diasTxt=(f.ferias_dias||30)+' dias';
     const faltasTxt=f.faltas_ano||0;
     const direito=rhFeriasDireitoCLT(faltasTxt);
-    const direitoColor=direito.dias===30?'#4caf50':(direito.dias===0?'#c33':'#f0a020');
+    const direitoColor=direito.dias===30?'var(--verde)':(direito.dias===0?'var(--verm)':'var(--laranja)');
     return `<tr class="row-clickable" onclick="openModalFunc('editar',${f.id})">
       <td style="font-weight:700">${f.re||'—'}</td>
-      <td><div style="font-weight:700">${esc(f.nome||'—')}</div><div style="font-size:11px;color:#888">${fmtDoc(f.cpf)||''}</div></td>
+      <td><div style="font-weight:700">${esc(f.nome||'—')}</div><div style="font-size:11px;color:var(--text-muted)">${fmtDoc(f.cpf)||''}</div></td>
       <td>${esc(f.funcao||f.cargo||'—')}</td>
       <td>${esc(emp?.nome||'—')}</td>
-      <td>${perTxt}${f.ferias_obs?`<div style="font-size:11px;color:#888">${esc(f.ferias_obs)}</div>`:''}</td>
+      <td>${perTxt}${f.ferias_obs?`<div style="font-size:11px;color:var(--text-muted)">${esc(f.ferias_obs)}</div>`:''}</td>
       <td style="text-align:center;font-weight:700">${diasTxt}</td>
       <td style="text-align:center">${faltasTxt}</td>
-      <td style="text-align:center;font-weight:700;color:${direitoColor}">${direito.dias} dias${direito.obs?`<div style="font-size:10px;font-weight:400;color:#888">${direito.obs}</div>`:''}</td>
+      <td style="text-align:center;font-weight:700;color:${direitoColor}">${direito.dias} dias${direito.obs?`<div style="font-size:10px;font-weight:400;color:var(--text-muted)">${direito.obs}</div>`:''}</td>
       <td><span class="pill p-az">${esc(f.status||'Férias')}</span></td>
     </tr>`;
   }).join('');
@@ -4250,12 +4250,12 @@ async function abrirModalPontoDia(filtro) {
   const busca = document.getElementById('modal-ponto-busca');
   if (busca) busca.value = '';
   modal.style.display = 'block';
-  body.innerHTML = '<div style="padding:24px;text-align:center;color:#888">Carregando...</div>';
+  body.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted)">Carregando...</div>';
 
   if (!_pontoDiaData) {
     const d = await api('/api/dashboard/ponto-dia');
     if (!d || d.erro) {
-      body.innerHTML = '<div style="padding:24px;text-align:center;color:#c33">Erro ao carregar dados.</div>';
+      body.innerHTML = '<div style="padding:24px;text-align:center;color:var(--verm)">Erro ao carregar dados.</div>';
       return;
     }
     _pontoDiaData = d;
@@ -4288,7 +4288,7 @@ function _pontoDiaRenderizar() {
   subtituloEl.textContent = `${filtrada.length} funcionário(s) · ${_pontoDiaData.data}`;
 
   if (!filtrada.length) {
-    body.innerHTML = `<div style="padding:24px;text-align:center;color:#888">${isBateram ? 'Nenhum funcionário bateu ponto ainda hoje.' : 'Todos os funcionários já bateram ponto hoje! 🎉'}</div>`;
+    body.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-muted)">${isBateram ? 'Nenhum funcionário bateu ponto ainda hoje.' : 'Todos os funcionários já bateram ponto hoje! 🎉'}</div>`;
     return;
   }
 
@@ -4461,7 +4461,7 @@ function editCliAtual(){if(cliAtual)openModal('editar',cliAtual.id);}
 function addS(desc,unid,qtd,vun,fornMat=false,fornEqp=false){
   const id=++svcId; const n=document.getElementById('svcs').children.length+1;
   const tr=document.createElement('tr'); tr.id='s'+id;
-  tr.innerHTML=`<td style="color:#bbb;font-size:11px;text-align:center">${n}</td>
+  tr.innerHTML=`<td style="color:var(--text-muted);font-size:11px;text-align:center">${n}</td>
     <td><input type="text" class="svc-desc" value="${desc}" placeholder="Descreva o serviço..." oninput="calc()"></td>
     <td><input type="text" class="svc-unid" value="${unid}" style="text-align:center" oninput="calc()"></td>
     <td><input type="number" class="r svc-qtd" value="${qtd}" min="0" step="0.01" oninput="calc()" style="width:60px"></td>
@@ -4622,12 +4622,12 @@ async function renderHist(page){
     const assCor=m.assinatura_status==='assinado'?'p-vd':m.assinatura_status==='pendente'?'p-lj':'p-ci';
     const assLabel=m.assinatura_status==='assinado'?'Assinado':m.assinatura_status==='pendente'?'Assinatura pendente':'Sem assinatura';
     const isVencHist=m.dt_vencimento&&m.dt_vencimento<hoje2&&m.status==='emitida';
-    return`<div class="hist-item row-clickable${isVencHist?' hist-vencida':''}" onclick="abrirMedicao(${m.id})" style="${isVencHist?'border-left:3px solid #c33':''}">
+    return`<div class="hist-item row-clickable${isVencHist?' hist-vencida':''}" onclick="abrirMedicao(${m.id})" style="${isVencHist?'border-left:3px solid var(--verm)':''}">
     <div>
       <div class="hist-tit">${m.tipo||'Medição'} ${m.numero} — ${m.cliente_nome}</div>
       <div class="hist-sub">${m.empresa_nome||'Empresa não informada'} · Ref.: ${fmtMes(m.mes_ref)} · Emitida em ${m.criado_fmt}</div>
-      ${isVencHist?`<div style="font-size:11px;color:#c33;font-weight:700">Vencida em ${m.dt_vencimento}</div>`:''}
-      ${m.dt_pagamento?`<div style="font-size:11px;color:#28a745">Pago em ${m.dt_pagamento}${m.forma_pagamento?' ('+m.forma_pagamento+')':''}</div>`:''}
+      ${isVencHist?`<div style="font-size:11px;color:var(--verm);font-weight:700">Vencida em ${m.dt_vencimento}</div>`:''}
+      ${m.dt_pagamento?`<div style="font-size:11px;color:var(--verde)">Pago em ${m.dt_pagamento}${m.forma_pagamento?' ('+m.forma_pagamento+')':''}</div>`:''}
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <span class="pill ${stCor}">${stLabel}</span>
@@ -4661,7 +4661,7 @@ function _renderHistPag(total,pages){
   if(!total&&!pages){pag.innerHTML='';return;}
   const p=_histPage; const pg=pages||1;
   pag.innerHTML=`<button class="btn b-sm" ${p<=1?'disabled':''} onclick="renderHist(${p-1})">Anterior</button>
-    <span style="font-size:12px;color:#6d7a8c">Página ${p} de ${pg} · ${total||0} registros</span>
+    <span style="font-size:12px;color:var(--text-muted)">Página ${p} de ${pg} · ${total||0} registros</span>
     <button class="btn b-sm" ${p>=pg?'disabled':''} onclick="renderHist(${p+1})">Próxima</button>`;
 }
 
@@ -4767,14 +4767,14 @@ async function renderCli(){
   const lista=await api('/api/clientes?emp='+ef+'&status='+sf+'&q='+encodeURIComponent(q));
   todos=await api('/api/clientes');
   const tb=document.getElementById('tb-cli');
-  if(!lista.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:28px;color:#bbb">Nenhum cliente encontrado.</td></tr>';return;}
+  if(!lista.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:28px;color:var(--text-muted)">Nenhum cliente encontrado.</td></tr>';return;}
   tb.innerHTML=lista.map(c=>{
     const emp=emps.find(e=>e.id===c.empresa_id);
     const st=(c.status||'').toLowerCase();
     const pc=st==='ativo'?'p-vd':(st==='inativo'?'p-ci':(st==='demitido'?'p-ci':'p-vm'));
     return`<tr class="row-clickable" onclick="openModal('editar',${c.id})">
-      <td style="color:#bbb;font-size:11px">${c.numero||''}</td>
-      <td><div style="font-weight:700;font-size:13px">${c.nome}</div><div style="font-size:11px;color:#999">${fmtDoc(c.cnpj)||''}</div></td>
+      <td style="color:var(--text-muted);font-size:11px">${c.numero||''}</td>
+      <td><div style="font-weight:700;font-size:13px">${c.nome}</div><div style="font-size:11px;color:var(--text-muted)">${fmtDoc(c.cnpj)||''}</div></td>
       <td style="font-size:12px">${emp?emp.nome:'—'}</td>
       <td style="font-size:11px">${[c.responsavel,fmtTelefone(c.telefone),c.email].filter(Boolean).join(' · ')||'—'}</td>
       <td><span class="pill ${pc}">${c.status}</span></td>
@@ -4815,7 +4815,7 @@ async function renderContratosCli(){
   const cliIds=new Set(clientes.map(c=>c.id));
   const lista=contratos.filter(ct=>cliIds.has(ct.cliente_id));
   if(!lista.length){
-    tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:28px;color:#bbb">Nenhum contrato encontrado.</td></tr>';
+    tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:28px;color:var(--text-muted)">Nenhum contrato encontrado.</td></tr>';
     const res=document.getElementById('tb-contr-res');
     if(res) res.textContent='';
     return;
@@ -4826,7 +4826,7 @@ async function renderContratosCli(){
     const total=(ct.limpeza||0)+(ct.jardinagem||0)+(ct.portaria||0)+(ct.materiais_equip_locacao||0);
     const pc=ct.status==='Ativo'?'p-vd':ct.status==='Inativo'?'p-ci':'p-vm';
     return `<tr class="row-clickable" onclick="openModalContrato(${ct.cliente_id},${ct.id})">
-      <td><div style="font-weight:700;font-size:13px">${c.nome||'—'}</div><div style="font-size:11px;color:#999">${emp?emp.nome:'—'}</div></td>
+      <td><div style="font-weight:700;font-size:13px">${c.nome||'—'}</div><div style="font-size:11px;color:var(--text-muted)">${emp?emp.nome:'—'}</div></td>
       <td style="font-size:11px">${ct.numero||'—'}</td>
       <td style="font-size:12px">${Math.max(0,parseInt(ct.qtd_funcionarios_posto||0,10)||0)}</td>
       <td style="font-size:11px">Limpeza ${brl(ct.limpeza||0)} · Jardinagem ${brl(ct.jardinagem||0)} · Portaria ${brl(ct.portaria||0)} · Mat/Equip/Loc ${brl(ct.materiais_equip_locacao||0)}<br><strong style="color:var(--verde)">Total: ${brl(total)}</strong></td>
@@ -4855,17 +4855,17 @@ async function verFaturasCliente(clienteId, clienteNome){
   const resp=await api('/api/medicoes?cliente_id='+clienteId+'&per_page=50&page=1');
   const lista=resp.items||resp||[];
   const hoje2=new Date().toISOString().split('T')[0];
-  if(!lista.length){body.innerHTML=`<div style='font-size:16px;font-weight:700;margin-bottom:12px'>Faturas — ${clienteNome}</div><div style='color:#999'>Nenhuma fatura encontrada.</div>`;return;}
+  if(!lista.length){body.innerHTML=`<div style='font-size:16px;font-weight:700;margin-bottom:12px'>Faturas — ${clienteNome}</div><div style='color:var(--text-muted)'>Nenhuma fatura encontrada.</div>`;return;}
   let html=`<div style='font-size:16px;font-weight:700;margin-bottom:12px'>Faturas — ${clienteNome}</div>`;
   html+='<div style="max-height:70vh;overflow-y:auto">';
   html+=lista.map(m=>{
     const st=m.status||'emitida';
     const isV=m.dt_vencimento&&m.dt_vencimento<hoje2&&st==='emitida';
-    const cor=st==='paga'?'#28a745':st==='cancelada'?'#888':isV?'#c33':'#205d8a';
+    const cor=st==='paga'?'var(--verde)':st==='cancelada'?'var(--text-muted)':isV?'var(--verm)':'var(--azul)';
     const label=st==='paga'?'Paga':st==='cancelada'?'Cancelada':isV?'VENCIDA':st.charAt(0).toUpperCase()+st.slice(1);
-    return`<div style="padding:8px 0;border-bottom:1px solid #eee;cursor:pointer" onclick="fecharModalFatDetalhe();abrirMedicao(${m.id})">
+    return`<div style="padding:8px 0;border-bottom:1px solid var(--borda);cursor:pointer" onclick="fecharModalFatDetalhe();abrirMedicao(${m.id})">
       <div style="font-weight:700">${m.tipo||'Medição'} Nº ${m.numero||'—'} — ${fmtMes(m.mes_ref)}</div>
-      <div style="font-size:12px;color:#888">${m.empresa_nome||'—'} · Emit. ${m.dt_emissao||'—'} · Venc. ${m.dt_vencimento||'—'}</div>
+      <div style="font-size:12px;color:var(--text-muted)">${m.empresa_nome||'—'} · Emit. ${m.dt_emissao||'—'} · Venc. ${m.dt_vencimento||'—'}</div>
       <div style="font-size:13px;font-weight:700;color:var(--verde)">${brl(m.valor_bruto)} <span style="font-size:11px;color:${cor};font-weight:600">[${label}]</span></div>
     </div>`;
   }).join('');
@@ -5220,9 +5220,9 @@ async function renderEmps(){
   el.innerHTML=lista.map(e=>`<div class="row-clickable" onclick="openModalEmp('editar',${e.id})" style="background:var(--azul-cc);border:1.5px solid var(--azul-cl);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
     <div>
       <div style="font-weight:700;font-size:15px;color:var(--azul)">${e.nome}</div>
-      <div style="font-size:12px;color:#666;margin-top:2px">${e.razao||''} ${e.cnpj?'· CNPJ: '+fmtDoc(e.cnpj):''}</div>
-      <div style="font-size:11px;color:#888;margin-top:2px">${e.end_fmt||''} ${e.site?'| <a onclick="event.stopPropagation()" href="'+normUrl(e.site)+'" target="_blank" rel="noopener noreferrer">'+e.site+'</a>':''}</div>
-      <div style="font-size:11px;color:#4b5563;margin-top:4px">Certificado: ${e.cert_configurado?(e.cert_ativo?'ativo na empresa':'cadastrado e inativo'):'não cadastrado'} · Política atual: ${certPolicyLabel(document.getElementById('cfg-pdf-cert-policy')?.value||'prefer_empresa')}</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${e.razao||''} ${e.cnpj?'· CNPJ: '+fmtDoc(e.cnpj):''}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${e.end_fmt||''} ${e.site?'| <a onclick="event.stopPropagation()" href="'+normUrl(e.site)+'" target="_blank" rel="noopener noreferrer">'+e.site+'</a>':''}</div>
+      <div style="font-size:11px;color:var(--preto);opacity:.8;margin-top:4px">Certificado: ${e.cert_configurado?(e.cert_ativo?'ativo na empresa':'cadastrado e inativo'):'não cadastrado'} · Política atual: ${certPolicyLabel(document.getElementById('cfg-pdf-cert-policy')?.value||'prefer_empresa')}</div>
     </div>
     <div style="display:flex;gap:7px">
       <button class="btn b-gh b-sm" onclick="event.stopPropagation();openModalEmp('editar',${e.id})">Editar</button>
@@ -5383,7 +5383,7 @@ async function renderUsr(){
     <td>${u.email}</td>
     <td>${u.telefone?fmtTelefone(u.telefone):'—'}</td>
     <td><span class="pill ${u.perfil==='dono'?'p-lj':u.perfil==='admin'?'p-az':'p-ci'}">${u.perfil}</span></td>
-    <td><span class="pill ${u.ativo?'p-vd':'p-ci'}">${u.ativo?'Ativo':'Inativo'}</span><div style="font-size:10px;color:#6b7280;margin-top:4px">Certificado: ${u.cert_configurado?(u.cert_ativo?'ativo':'inativo'):'não cadastrado'}</div></td>
+    <td><span class="pill ${u.ativo?'p-vd':'p-ci'}">${u.ativo?'Ativo':'Inativo'}</span><div style="font-size:10px;color:var(--text-muted);margin-top:4px">Certificado: ${u.cert_configurado?(u.cert_ativo?'ativo':'inativo'):'não cadastrado'}</div></td>
     <td><div class="tac">
       <button class="btn b-gh b-sm" onclick="event.stopPropagation();openModalUsr('editar',${u.id})">Editar</button>
       <button class="btn b-ghr b-sm" onclick="event.stopPropagation();excluirUsr(${u.id},'${u.nome.replace(/'/g,"\\'")}')">Excluir</button>
@@ -6153,7 +6153,7 @@ async function atualizarBancosBR(){
   const st=document.getElementById('fbanco-st');
   if(st){
     st.style.display='block';
-    st.style.color='#888';
+    st.style.color='var(--text-muted)';
     st.textContent='Atualizando lista de bancos...';
   }
   await carregarBancosBR(true);
@@ -6204,7 +6204,7 @@ async function buscarFuncionarioPorCPF(){
   const cpf=(document.getElementById('fcpf').value||'').replace(/\D/g,'');
   if(cpf.length!==11){ if(st) st.style.display='none'; return; }
   const ex=document.getElementById('fid').value||'';
-  if(st){ st.style.display='block'; st.style.color='#888'; st.textContent='Buscando CPF...'; }
+  if(st){ st.style.display='block'; st.style.color='var(--text-muted)'; st.textContent='Buscando CPF...'; }
   const r=await api('/api/funcionarios/cpf-lookup?cpf='+cpf+'&exclude_id='+ex);
   if(r?.origem==='interno' && r?.funcionario?.id){
     preencherFormFuncionario(r.funcionario,'Editar funcionário (encontrado por CPF)');
@@ -6352,22 +6352,22 @@ function rhJornadaRenderTabela(){
   const sel=document.getElementById('rh-jor-vinc-jornada');
   if(!tb || !sel) return;
   if(!rhJornadas.length){
-    tb.innerHTML='<tr><td colspan="4" style="text-align:center;color:#999;padding:16px">Nenhuma jornada cadastrada.</td></tr>';
+    tb.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:16px">Nenhuma jornada cadastrada.</td></tr>';
     sel.innerHTML='<option value="">Selecione...</option>';
     return;
   }
   tb.innerHTML=rhJornadas.map(j=>{
     const funcs=Array.isArray(j.funcionarios)?j.funcionarios:[];
     const listaHtml=funcs.length
-      ? funcs.map(f=>`<div style="font-size:12px;line-height:1.4">${esc(f.nome||'Sem nome')} <span style="color:#8a9fb5">(${esc(f.matricula||f.re||'sem matrícula')})</span></div>`).join('')
-      : '<div style="font-size:12px;color:#8a9fb5">Sem funcionários vinculados.</div>';
+      ? funcs.map(f=>`<div style="font-size:12px;line-height:1.4">${esc(f.nome||'Sem nome')} <span style="color:var(--text-muted)">(${esc(f.matricula||f.re||'sem matrícula')})</span></div>`).join('')
+      : '<div style="font-size:12px;color:var(--text-muted)">Sem funcionários vinculados.</div>';
     return `<tr>
-      <td><div style="font-weight:700">${esc(j.nome||'—')}</div><div style="font-size:11px;color:#8a9fb5">${esc(j.descricao||'')}</div></td>
+      <td><div style="font-weight:700">${esc(j.nome||'—')}</div><div style="font-size:11px;color:var(--text-muted)">${esc(j.descricao||'')}</div></td>
       <td>${rhJornadaFmtMin(j.carga_horaria_min)}</td>
       <td>
         <div style="font-weight:700">${j.funcionarios_count||0}</div>
         <details style="margin-top:4px">
-          <summary style="cursor:pointer;font-size:12px;color:#7ecfff">Ver lista</summary>
+          <summary style="cursor:pointer;font-size:12px;color:var(--azul)">Ver lista</summary>
           <div style="margin-top:6px;max-width:320px;max-height:140px;overflow:auto">${listaHtml}</div>
         </details>
       </td>
@@ -6581,13 +6581,13 @@ async function rhGeoBuscarEndereco(){
   const q=(document.getElementById('rh-geo-endereco')?.value||'').trim();
   if(!q){showSt('rh-jornada-st','Digite um endereço para buscar.',true);return;}
   const sug=document.getElementById('rh-geo-sugestoes');
-  sug.innerHTML='<div style="padding:8px;color:#888">Buscando...</div>';
+  sug.innerHTML='<div style="padding:8px;color:var(--text-muted)">Buscando...</div>';
   sug.style.display='block';
   try{
     const url='https://nominatim.openstreetmap.org/search?format=json&limit=5&q='+encodeURIComponent(q);
     const r=await fetch(url,{headers:{'Accept-Language':'pt-BR,pt;q=0.9'}});
     const lista=await r.json();
-    if(!lista.length){sug.innerHTML='<div style="padding:8px;color:#c33">Nenhum resultado encontrado.</div>';return;}
+    if(!lista.length){sug.innerHTML='<div style="padding:8px;color:var(--verm)">Nenhum resultado encontrado.</div>';return;}
     sug.innerHTML=lista.map((item,i)=>`
       <div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--borda,#eee);font-size:13px"
            onmouseover="this.style.background='var(--cinza-cl,#f5f5f5)'"
@@ -6595,7 +6595,7 @@ async function rhGeoBuscarEndereco(){
            onclick="rhGeoSelecionarSugestao(${item.lat},${item.lon},${JSON.stringify(item.display_name)})">
         ${esc(item.display_name)}
       </div>`).join('');
-  }catch(e){sug.innerHTML='<div style="padding:8px;color:#c33">Erro ao buscar endereço.</div>';}
+  }catch(e){sug.innerHTML='<div style="padding:8px;color:var(--verm)">Erro ao buscar endereço.</div>';}
 }
 
 function rhGeoSelecionarSugestao(lat,lon,label){
@@ -7002,7 +7002,7 @@ async function painelAssCarregar(){
   const tb=document.getElementById('tb-painel-ass');
   const empty=document.getElementById('painel-ass-empty');
   const st=document.getElementById('st-painel-ass');
-  if(tb) tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#8a9fb5;padding:16px">Carregando…</td></tr>';
+  if(tb) tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:16px">Carregando…</td></tr>';
   if(empty) empty.style.display='none';
 
   try{
@@ -7046,13 +7046,13 @@ async function painelAssCarregar(){
       const canal=_painelAssCanal(it.ass_canal);
       const acoes=_painelAssAcoes(it);
       return `<tr>
-        <td><div style="font-weight:600;font-size:13px">${esc(it.funcionario_nome)}</div><div style="font-size:11px;color:#7a8fa0">${esc(it.funcionario_cargo)}</div></td>
+        <td><div style="font-weight:600;font-size:13px">${esc(it.funcionario_nome)}</div><div style="font-size:11px;color:var(--text-muted)">${esc(it.funcionario_cargo)}</div></td>
         <td style="font-size:12px;max-width:160px;word-break:break-word">${esc(it.nome_arquivo)}</td>
-        <td><span class="pill" style="background:#f0f4ff;color:#2a4a8f;font-size:11px">${esc(it.categoria_label)}</span></td>
+        <td><span class="pill" style="background:var(--azul-cc);color:var(--azul-esc);font-size:11px">${esc(it.categoria_label)}</span></td>
         <td style="font-size:12px">${esc(it.competencia)||'—'}</td>
         <td style="font-size:12px">${canal}</td>
         <td style="font-size:12px">${esc(it.criado_fmt)||'—'}</td>
-        <td style="font-size:12px">${it.prazo_fmt?`<span style="color:${it.vencido?'#c0392b':'#555'}">${esc(it.prazo_fmt)}</span>`:'—'}</td>
+        <td style="font-size:12px">${it.prazo_fmt?`<span style="color:${it.vencido?'var(--verm)':'var(--text-muted)'}">${esc(it.prazo_fmt)}</span>`:'—'}</td>
         <td>${stBadge}</td>
         <td style="font-size:12px">${it.ass_em_fmt||'—'}</td>
         <td style="white-space:nowrap">${acoes}</td>
@@ -7066,9 +7066,9 @@ async function painelAssCarregar(){
 function _painelAssStatusBadge(st,vencido){
   if(st==='concluida') return '<span class="pill p-vd" style="font-size:11px">✔ Assinado</span>';
   if(st==='cancelada') return '<span class="pill p-vm" style="font-size:11px">✖ Cancelado</span>';
-  if(st==='expirado') return '<span class="pill" style="background:#ffe5d0;color:#7b3a00;font-size:11px">⌛ Expirado</span>';
+  if(st==='expirado') return '<span class="pill" style="background:var(--laranja-cl);color:var(--laranja-esc);font-size:11px">⌛ Expirado</span>';
   if(st==='pendente'&&vencido) return '<span class="pill p-ci" style="font-size:11px">⚠ Vencido</span>';
-  if(st==='pendente') return '<span class="pill" style="background:#fff3cd;color:#856404;font-size:11px">⏳ Pendente</span>';
+  if(st==='pendente') return '<span class="pill" style="background:var(--laranja-cl);color:var(--laranja-esc);font-size:11px">⏳ Pendente</span>';
   return `<span class="pill" style="font-size:11px">${st||'—'}</span>`;
 }
 function _painelAssCanal(c){
@@ -7178,7 +7178,7 @@ function rhExportRenderPreview(){
     resumo.textContent=`${lista.length} colaborador(es) filtrado(s) de ${totalAtivos} ativo(s)${postosSel?` · ${postosSel} posto(s) selecionado(s)`:''}.`;
   }
   if(!lista.length){
-    tb.innerHTML='<tr><td colspan="4" style="text-align:center;color:#999;padding:16px">Nenhum colaborador ativo para os filtros selecionados.</td></tr>';
+    tb.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:16px">Nenhum colaborador ativo para os filtros selecionados.</td></tr>';
     return;
   }
   tb.innerHTML=lista.slice(0,300).map(f=>{
@@ -7319,7 +7319,7 @@ async function rhSalariosOnEmpresaChange(){
   const cargoFiltro=rhSalariosCargoAtual();
   const postoFiltro=rhSalariosPostoAtual();
   if(!/^\d{4}-\d{2}$/.test(comp)){
-    tbSal.innerHTML='<tr><td colspan="10" style="text-align:center;padding:24px;color:#c33">Competência inválida. Use AAAA-MM.</td></tr>';
+    tbSal.innerHTML='<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--verm)">Competência inválida. Use AAAA-MM.</td></tr>';
     if(salResumo) salResumo.textContent='';
     return;
   }
@@ -7328,7 +7328,7 @@ async function rhSalariosOnEmpresaChange(){
   if(empresaId) p.set('empresa_id',empresaId);
   const rSal=await api('/api/financeiro/salarios?'+p.toString());
   if(rSal?.erro){
-    tbSal.innerHTML='<tr><td colspan="10" style="text-align:center;padding:24px;color:#c33">Erro ao carregar pagamentos mensais.</td></tr>';
+    tbSal.innerHTML='<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--verm)">Erro ao carregar pagamentos mensais.</td></tr>';
     if(salResumo) salResumo.textContent=rSal.erro;
     return;
   }
@@ -7349,7 +7349,7 @@ async function rhSalariosOnEmpresaChange(){
   rhSalariosRenderPainel(rSal);
   const canEdit=rhPayrollCan('edit') && (rSal.folha_status||'aberta')!=='fechada';
   if(!listaSal.length){
-    tbSal.innerHTML='<tr><td colspan="10" style="text-align:center;padding:24px;color:#999">Nenhum colaborador ativo encontrado para o filtro selecionado.</td></tr>';
+    tbSal.innerHTML='<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-muted)">Nenhum colaborador ativo encontrado para o filtro selecionado.</td></tr>';
     return;
   }
   tbSal.innerHTML=listaSal.map(f=>{
@@ -7357,15 +7357,15 @@ async function rhSalariosOnEmpresaChange(){
     const anterior=Number(f?.valor_anterior)||0;
     const totalAnual=Number(f?.total_anual_funcionario)||0;
     const linhaStyle=f.inconsistente?' style="background:rgba(195,55,55,.06)"':'';
-    const deltaInfo=f.inconsistente?`<div style="font-size:11px;color:#c33">${brl(f.delta_valor||0)} · ${Number(f.delta_pct||0).toFixed(1)}%</div>`:'';
+    const deltaInfo=f.inconsistente?`<div style="font-size:11px;color:var(--verm)">${brl(f.delta_valor||0)} · ${Number(f.delta_pct||0).toFixed(1)}%</div>`:'';
     return `<tr data-fid="${f.funcionario_id}"${linhaStyle}>
       <td style="font-weight:700">${f.re||f.matricula||'—'}</td>
-      <td><div style="font-weight:700">${f.nome}</div><div style="font-size:11px;color:#888">${fmtDoc(f.cpf)||''}</div></td>
+      <td><div style="font-weight:700">${f.nome}</div><div style="font-size:11px;color:var(--text-muted)">${fmtDoc(f.cpf)||''}</div></td>
       <td>${f.cargo||'—'}</td>
       <td style="font-size:11px">${f.posto_operacional||'Reserva tecnica'}</td>
       <td>${f.empresa_nome||'—'}</td>
       <td style="text-align:right"><input class="rh-sal-valor" data-fid="${f.funcionario_id}" type="number" min="0" step="0.01" value="${valor.toFixed(2)}" style="width:150px;text-align:right" oninput="rhSalariosAtualizarTotalTela();rhSalariosAutoSaveSchedule()" ${canEdit?'':'disabled'}></td>
-      <td style="text-align:right;font-weight:700;color:${f.inconsistente?'#c33':'var(--azul)'}">${brl(anterior)}${deltaInfo}</td>
+      <td style="text-align:right;font-weight:700;color:${f.inconsistente?'var(--verm)':'var(--azul)'}">${brl(anterior)}${deltaInfo}</td>
       <td><input class="rh-sal-obs" type="text" value="${esc(f.salario_obs||'')}" placeholder="Observação do ajuste" style="min-width:180px" oninput="rhSalariosAutoSaveSchedule()" ${canEdit?'':'disabled'}></td>
       <td style="text-align:right;font-weight:700;color:var(--azul)">${brl(totalAnual)}</td>
       <td><button class="btn b-gh b-sm" onclick="openModalFunc('editar',${f.funcionario_id})">Editar funcionário</button></td>
@@ -7668,7 +7668,7 @@ function rhSalariosRenderPainel(res){
   }
   if(alerts){
     const qtd=Number(res?.qtd_inconsistencias||0);
-    alerts.innerHTML=qtd?`<div style="color:#c33;font-weight:700;margin-bottom:6px">${qtd} inconsistência(s) detectada(s)</div><div>Linhas destacadas em vermelho indicam variação relevante em relação ao mês anterior.</div>`:'<div>Nenhuma inconsistência relevante detectada.</div>';
+    alerts.innerHTML=qtd?`<div style="color:var(--verm);font-weight:700;margin-bottom:6px">${qtd} inconsistência(s) detectada(s)</div><div>Linhas destacadas em vermelho indicam variação relevante em relação ao mês anterior.</div>`:'<div>Nenhuma inconsistência relevante detectada.</div>';
   }
   rhSalariosCarregarGrafico();
 }
@@ -7726,7 +7726,7 @@ async function _renderFuncionariosImpl(){
     const vazioMsg=rhFuncTab==='ativos'
       ? 'Nenhum colaborador ativo encontrado.'
       : (rhFuncTab==='ferias'?'Nenhum colaborador em férias encontrado.':'Nenhum colaborador demitido/inativo encontrado.');
-    tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:#999">'+vazioMsg+'</td></tr>';
+    tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">'+vazioMsg+'</td></tr>';
     return;
   }
   tb.innerHTML=lista.map(f=>{
@@ -7734,8 +7734,8 @@ async function _renderFuncionariosImpl(){
     const ativo=isAtivo(f);
     return `<tr class="row-clickable" onclick="openModalFunc('editar',${f.id})">
       <td style="font-weight:700">${f.re||'—'}</td>
-      <td><div style="font-weight:700">${f.nome}</div><div style="font-size:11px;color:#888">${fmtDoc(f.cpf)||''}</div></td>
-      <td><div>${f.cargo||'—'}</div><div style="font-size:11px;color:#888">${f.funcao||''}</div></td>
+      <td><div style="font-weight:700">${f.nome}</div><div style="font-size:11px;color:var(--text-muted)">${fmtDoc(f.cpf)||''}</div></td>
+      <td><div>${f.cargo||'—'}</div><div style="font-size:11px;color:var(--text-muted)">${f.funcao||''}</div></td>
       <td style="font-size:11px">${f.posto_operacional||'Reserva tecnica'}</td>
       <td>${emp?emp.nome:'—'}</td>
       <td>${[f.email,fmtTelefone(f.telefone)].filter(Boolean).join(' · ')||'—'}</td>
@@ -7819,7 +7819,7 @@ function renderArquivoTree(categorias){
         <span style="font-size:16px;transition:transform 0.2s" id="cat-arrow-${cat.categoria}">${isOpen?'▼':'▶'}</span>
         <span style="font-size:16px">${emoji}</span>
         <span style="font-weight:600;flex:1;color:var(--preto)">${cat.categoria_label}</span>
-        <span style="font-size:12px;background:#3b82f6;color:white;padding:2px 8px;border-radius:12px;font-weight:600">${calcularTotalArquivos(cat.anos)}</span>
+        <span style="font-size:12px;background:var(--azul);color:var(--branco);padding:2px 8px;border-radius:12px;font-weight:600">${calcularTotalArquivos(cat.anos)}</span>
       </div>
       <div id="cat-content-${cat.categoria}" style="display:${isOpen?'block':'none'};animation:${isOpen?'slideDown':'slideUp'} 0.2s ease;margin-left:16px;border-left:2px solid var(--borda);padding-left:8px;margin-top:4px">
         ${cat.anos.map(ano=>`
@@ -7828,7 +7828,7 @@ function renderArquivoTree(categorias){
               <span style="font-size:14px;transition:transform 0.2s" id="ano-arrow-${cat.categoria}-${ano.ano}">▼</span>
               <span style="font-size:14px">📅</span>
               <span style="font-weight:500;flex:1;color:var(--preto)">${ano.ano}</span>
-              <span style="font-size:11px;background:#10b981;color:white;padding:2px 6px;border-radius:8px">${ano.itens.length}</span>
+              <span style="font-size:11px;background:var(--verde);color:var(--branco);padding:2px 6px;border-radius:8px">${ano.itens.length}</span>
             </div>
             <div id="ano-content-${cat.categoria}-${ano.ano}" style="display:block;margin-top:4px;padding:8px;background:var(--cinza-cl);border-radius:6px;border:1px solid var(--borda)">
               ${ano.itens.map((item,idx)=>`
@@ -7836,11 +7836,11 @@ function renderArquivoTree(categorias){
                   <span style="font-size:16px">📄</span>
                   <div style="flex:1">
                     <div style="font-weight:500;color:var(--preto);font-size:13px">${item.nome_arquivo}</div>
-                    <div style="font-size:11px;color:var(--preto);opacity:.7">${item.criado_fmt}${item.competencia?' · '+item.competencia:''}${item.ass_status==='pendente'?` · <span style="color:#d97706">⏳ Assinatura pendente no app</span>`:''}${item.ass_status==='concluida'?` · <span style="color:#16a34a">✅ Assinado</span>`:''}${item.ass_status==='cancelada'?` · <span style="color:#6b7280">🚫 Assinatura cancelada</span>`:''}</div>
+                    <div style="font-size:11px;color:var(--preto);opacity:.7">${item.criado_fmt}${item.competencia?' · '+item.competencia:''}${item.ass_status==='pendente'?` · <span style="color:var(--laranja)">⏳ Assinatura pendente no app</span>`:''}${item.ass_status==='concluida'?` · <span style="color:var(--verde)">✅ Assinado</span>`:''}${item.ass_status==='cancelada'?` · <span style="color:var(--text-muted)">🚫 Assinatura cancelada</span>`:''}</div>
                   </div>
                   <div style="display:flex;gap:4px">
                     <button class="btn b-gh b-sm" onclick="downloadArquivoFuncionario('${item.download_url}')" style="padding:4px 8px;font-size:11px">⬇️</button>
-                    ${item.ass_status==='pendente'?`<button class="btn b-sm" onclick="cancelarAssinaturaArquivo(${item.id})" style="padding:4px 8px;font-size:11px;background:#fef3c7;color:#92400e;border:1px solid #f59e0b" title="Cancelar solicitação de assinatura">🚫</button>`:''}
+                    ${item.ass_status==='pendente'?`<button class="btn b-sm" onclick="cancelarAssinaturaArquivo(${item.id})" style="padding:4px 8px;font-size:11px;background:var(--laranja-cl);color:var(--laranja-esc);border:1px solid var(--laranja)" title="Cancelar solicitação de assinatura">🚫</button>`:''}
                     <button class="btn b-ghr b-sm" onclick="delArquivoFuncionario(${item.id})" style="padding:4px 8px;font-size:11px">🗑️</button>
                   </div>
                 </div>
@@ -7873,9 +7873,9 @@ function renderArquivoTree(categorias){
         50% { opacity:0.5 }
       }
       .farq-drag-over {
-        background: #dbeafe !important;
-        border: 2px dashed #3b82f6 !important;
-        box-shadow: 0 0 8px rgba(59,130,246,0.3) !important;
+        background: var(--azul-cc) !important;
+        border: 2px dashed var(--azul) !important;
+        box-shadow: 0 0 8px rgba(32,93,138,0.3) !important;
       }
     `;
     document.head.appendChild(style);
@@ -7940,7 +7940,7 @@ function previewFileUpload(input){
   const preview=document.getElementById('farq-preview');
   if(input.files&&input.files[0]){
     preview.textContent='✓ '+input.files[0].name+' ('+formatBytes(input.files[0].size)+')';
-    preview.style.color='#10b981';
+    preview.style.color='var(--verde)';
   }else{
     preview.textContent='';
   }
@@ -8040,37 +8040,37 @@ async function cancelarAssinaturaArquivo(id){
 async function abrirDashboardAssinaturas(){
   const modal=document.createElement('div');
   modal.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center';
-  modal.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;max-width:700px;width:95%;max-height:85vh;overflow-y:auto">
+  modal.innerHTML=`<div style="background:var(--branco);border-radius:12px;padding:24px;max-width:700px;width:95%;max-height:85vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <strong style="font-size:16px">📋 Pendentes de Assinatura</strong>
       <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;font-size:20px;cursor:pointer">✕</button>
     </div>
-    <div id="dash-ass-content"><span style="color:#888">Carregando...</span></div>
+    <div id="dash-ass-content"><span style="color:var(--text-muted)">Carregando...</span></div>
   </div>`;
   document.body.appendChild(modal);
   modal.addEventListener('click',e=>{if(e.target===modal)modal.remove();});
   try{
     const d=await api('/api/rh/dashboard/assinaturas-pendentes','GET');
     const el=document.getElementById('dash-ass-content');
-    if(!d.ok||!d.funcionarios?.length){el.innerHTML='<div style="color:#888;text-align:center;padding:24px">Nenhum documento pendente de assinatura.</div>';return;}
-    el.innerHTML=`<div style="font-size:13px;color:#666;margin-bottom:12px">Total: <strong>${d.total_pendentes}</strong> documento(s) pendente(s)</div>`+
-    d.funcionarios.map(f=>`<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:10px">
+    if(!d.ok||!d.funcionarios?.length){el.innerHTML='<div style="color:var(--text-muted);text-align:center;padding:24px">Nenhum documento pendente de assinatura.</div>';return;}
+    el.innerHTML=`<div style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Total: <strong>${d.total_pendentes}</strong> documento(s) pendente(s)</div>`+
+    d.funcionarios.map(f=>`<div style="border:1px solid var(--borda);border-radius:8px;padding:12px;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div>
           <strong>${f.funcionario_nome}</strong>
-          ${f.funcionario_cargo?`<span style="font-size:11px;color:#888;margin-left:6px">${f.funcionario_cargo}</span>`:''}
+          ${f.funcionario_cargo?`<span style="font-size:11px;color:var(--text-muted);margin-left:6px">${f.funcionario_cargo}</span>`:''}
         </div>
         <div style="display:flex;gap:6px">
-          <span style="background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:12px;font-size:11px">${f.total} pendente(s)</span>
-          ${f.vencidos>0?`<span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:12px;font-size:11px">${f.vencidos} vencido(s)</span>`:''}
+          <span style="background:var(--azul-cc);color:var(--azul-esc);padding:2px 8px;border-radius:12px;font-size:11px">${f.total} pendente(s)</span>
+          ${f.vencidos>0?`<span style="background:var(--verm-cl);color:var(--verm);padding:2px 8px;border-radius:12px;font-size:11px">${f.vencidos} vencido(s)</span>`:''}
         </div>
       </div>
-      ${f.itens.map(it=>`<div style="font-size:12px;padding:6px 8px;background:${it.vencido?'#fff7ed':'#f9fafb'};border-radius:4px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center">
+      ${f.itens.map(it=>`<div style="font-size:12px;padding:6px 8px;background:${it.vencido?'var(--laranja-cl)':'var(--cinza-cl)'};border-radius:4px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center">
         <div>
           <strong>${it.nome_arquivo}</strong> · ${it.categoria}${it.competencia?' · '+it.competencia:''}
-          <div style="color:#888;margin-top:1px">Pendente há ${it.dias_pendente} dia(s)${it.prazo_fmt?' · Prazo: '+it.prazo_fmt:''}${it.lembretes_enviados>0?' · '+it.lembretes_enviados+' lembrete(s) enviado(s)':''}</div>
+          <div style="color:var(--text-muted);margin-top:1px">Pendente há ${it.dias_pendente} dia(s)${it.prazo_fmt?' · Prazo: '+it.prazo_fmt:''}${it.lembretes_enviados>0?' · '+it.lembretes_enviados+' lembrete(s) enviado(s)':''}</div>
         </div>
-        <button onclick="cancelarAssinaturaArquivo(${it.arquivo_id})" style="font-size:10px;padding:3px 7px;background:#fef3c7;color:#92400e;border:1px solid #f59e0b;border-radius:4px;cursor:pointer;white-space:nowrap">🚫 Cancelar</button>
+        <button onclick="cancelarAssinaturaArquivo(${it.arquivo_id})" style="font-size:10px;padding:3px 7px;background:var(--laranja-cl);color:var(--laranja-esc);border:1px solid var(--laranja);border-radius:4px;cursor:pointer;white-space:nowrap">🚫 Cancelar</button>
       </div>`).join('')}
     </div>`).join('');
   }catch(e){
@@ -8193,7 +8193,7 @@ function renderRHLotePreview(){
   box.style.display='';
   const semMatch=(_rhLotePreview.paginasSemFuncionario||[]).length;
   meta.textContent=`Destinatários: ${itens.length} · Páginas do PDF: ${_rhLotePreview.totalPaginas||0}`+(semMatch?` · Páginas sem identificação: ${semMatch}`:'');
-  meta.style.color='#dce9f8';
+  meta.style.color='var(--azul-cl)';
   if(!itens.length){
     list.innerHTML='<div class="vazio">Nenhum destinatário identificado no arquivo.</div>';
     return;
@@ -8209,14 +8209,14 @@ function renderRHLotePreview(){
     const confColor=conf==='alta'?'#1f7a3f':(conf==='media'?'#8a6400':(conf==='manual'?'#1d4ed8':'#a52828'));
     const scoreTxt=(typeof it.match_score==='number')?` · Score: ${it.match_score}`:'';
     const detalhe=it.match_detalhe?` · ${it.match_detalhe}`:'';
-    return `<label style="display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid var(--borda);border-radius:8px;background:#fff;cursor:pointer;color:#1f2937">
+    return `<label style="display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid var(--borda);border-radius:8px;background:var(--branco);cursor:pointer;color:var(--preto)">
       <input type="checkbox" class="rh-lote-prev-sel" data-fid="${it.funcionario_id}" ${checked} onchange="syncRHLotePreviewSelection()">
       <div style="flex:1">
-        <div style="font-weight:700;font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:#1f2937">
+        <div style="font-weight:700;font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--preto)">
           <span>${it.nome||'Funcionário'}</span>
           <span style="font-size:10px;padding:2px 8px;border-radius:999px;background:${confBg};color:${confColor};font-weight:700;border:1px solid rgba(0,0,0,.08)">Match ${confTxt}</span>
         </div>
-        <div style="font-size:11px;color:#334155">${it.matricula||'Matrícula não informada'}${tel}${em}${pgs}${scoreTxt}${detalhe}</div>
+        <div style="font-size:11px;color:var(--preto)">${it.matricula||'Matrícula não informada'}${tel}${em}${pgs}${scoreTxt}${detalhe}</div>
       </div>
     </label>`;
   }).join('');
@@ -8227,7 +8227,7 @@ function renderRHLotePreview(){
       dbg.innerHTML='';
     }else{
       dbg.innerHTML=`<details style="margin-top:10px;border:1px solid var(--borda);border-radius:8px;background:#0f1b2d;padding:8px">
-        <summary style="cursor:pointer;font-weight:700;color:#dce9f8">Diagnóstico das páginas sem identificação (${logs.length})</summary>
+        <summary style="cursor:pointer;font-weight:700;color:var(--azul-cl)">Diagnóstico das páginas sem identificação (${logs.length})</summary>
         <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
           ${logs.map(log=>{
             const inds=log.indicadores||{};
@@ -8235,12 +8235,12 @@ function renderRHLotePreview(){
             const topTxt=top.length?top.map(t=>`${t.nome||'?' } [${t.score||0}]${t.matricula?` mat ${t.matricula}`:''}${t.motivos?.length?` · ${t.motivos.join(', ')}`:''}`).join('<br>'):'Nenhum candidato ranqueado';
             const cods=(inds.codigos_holerite?.length||inds.codigos_pdf?.length)?`Códigos: ${(inds.codigos_holerite||[]).join(', ')||'-'}${inds.codigos_pdf?.length?` | PDF: ${(inds.codigos_pdf||[]).join(', ')}`:''}`:'Códigos: nenhum';
             const nomes=(inds.nomes_candidatos||[]).join(' | ')||'Nenhum nome candidato';
-            return `<div style="background:#fff;border-radius:8px;padding:10px;color:#1f2937;border:1px solid #d6e2ee">
+            return `<div style="background:var(--branco);border-radius:8px;padding:10px;color:var(--preto);border:1px solid var(--borda)">
               <div style="font-weight:700">Página ${log.pagina} · ${log.motivo||'sem_match'}</div>
-              <div style="font-size:12px;color:#334155;margin-top:4px">${cods}</div>
-              <div style="font-size:12px;color:#334155;margin-top:4px">Nomes candidatos: ${nomes}</div>
-              <div style="font-size:12px;color:#334155;margin-top:4px">Texto: ${(log.snippet||'').replace(/</g,'&lt;')}</div>
-              <div style="font-size:12px;color:#0f172a;margin-top:6px"><strong>Top candidatos</strong><br>${topTxt}</div>
+              <div style="font-size:12px;color:var(--preto);margin-top:4px">${cods}</div>
+              <div style="font-size:12px;color:var(--preto);margin-top:4px">Nomes candidatos: ${nomes}</div>
+              <div style="font-size:12px;color:var(--preto);margin-top:4px">Texto: ${(log.snippet||'').replace(/</g,'&lt;')}</div>
+              <div style="font-size:12px;color:var(--preto);margin-top:6px"><strong>Top candidatos</strong><br>${topTxt}</div>
             </div>`;
           }).join('')}
         </div>
@@ -8442,7 +8442,7 @@ function filtrarOpPostos(){
   const itens=_opPostosItens;
   const clientes=_opPostosClientes;
   if(!itens.length){
-    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;color:#999">Nenhum colaborador ativo encontrado.</td></tr>';
+    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--text-muted)">Nenhum colaborador ativo encontrado.</td></tr>';
     return;
   }
   function opcoesClienteFiltro(empresaId,selId){
@@ -8475,7 +8475,7 @@ function filtrarOpPostos(){
     return true;
   });
   if(!filtrados.length){
-    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;color:#999">Nenhum resultado encontrado.</td></tr>';
+    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--text-muted)">Nenhum resultado encontrado.</td></tr>';
     return;
   }
   tb.innerHTML=filtrados.map(it=>`<tr class="row-clickable" onclick="openModalFunc('editar',${it.funcionario_id})">
@@ -8504,7 +8504,7 @@ async function renderOperPostos(){
   }
   document.getElementById('op-posto-busca').value='';
   if(!itens.length){
-    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;color:#999">Nenhum colaborador ativo encontrado.</td></tr>';
+    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--text-muted)">Nenhum colaborador ativo encontrado.</td></tr>';
     return;
   }
   filtrarOpPostos();
@@ -8689,18 +8689,18 @@ function ferRenderTabela(){
   const tb=document.getElementById('tb-feriados');
   if(!tb) return;
   if(!_feriadosData.length){
-    tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:#7a8fa6;padding:18px">Nenhum feriado cadastrado. Use "Atualizar nacionais do ano" ou adicione manualmente.</td></tr>';
+    tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:18px">Nenhum feriado cadastrado. Use "Atualizar nacionais do ano" ou adicione manualmente.</td></tr>';
     return;
   }
   tb.innerHTML=_feriadosData.map(f=>`
     <tr>
       <td>${f.data_fmt||f.data||''}</td>
       <td>${escHtml(f.descricao||'')}</td>
-      <td><span style="background:${f.tipo==='nacional'?'#1a4a7a':'#3a1a5a'};color:#bde;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700">${f.tipo||''}</span></td>
+      <td><span style="background:${f.tipo==='nacional'?'var(--azul-esc)':'var(--azul)'};color:var(--branco);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700">${f.tipo||''}</span></td>
       <td>${escHtml(f.municipio||'')}</td>
       <td>${escHtml(f.estado||'')}</td>
       <td>${f.tipo==='municipal' ? ((f.qtd_funcionarios||0)+ ' funcionário(s)') : 'Nacional (todos)'}</td>
-      <td><button class="btn b-sm" style="background:#6b1212;color:#ffb3b3;border:1px solid #c0392b;padding:2px 8px" onclick="ferExcluir(${f.id})">&#128465;</button></td>
+      <td><button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);border:1px solid var(--verm);padding:2px 8px" onclick="ferExcluir(${f.id})">&#128465;</button></td>
     </tr>`).join('');
 }
 
@@ -8713,12 +8713,12 @@ async function ferSalvar(){
   const aplicarSelecionados=document.getElementById('fer-aplicar-selecionados')?.checked!==false;
   const funcionariosSelecionados=[...(benSelecionados||new Set())];
   const st=document.getElementById('fer-status');
-  if(!data){st.textContent='Informe a data.';st.style.color='#ffb3b3';return;}
-  if(!desc){st.textContent='Informe a descrição.';st.style.color='#ffb3b3';return;}
-  if(tipo==='municipal'&&!municipio){st.textContent='Informe o município.';st.style.color='#ffb3b3';return;}
+  if(!data){st.textContent='Informe a data.';st.style.color='var(--verm-cl)';return;}
+  if(!desc){st.textContent='Informe a descrição.';st.style.color='var(--verm-cl)';return;}
+  if(tipo==='municipal'&&!municipio){st.textContent='Informe o município.';st.style.color='var(--verm-cl)';return;}
   if(tipo==='municipal' && aplicarSelecionados && !funcionariosSelecionados.length){
     st.textContent='Selecione ao menos 1 funcionário na aba Colaboradores Ativos para feriado municipal.';
-    st.style.color='#ffb3b3';
+    st.style.color='var(--verm-cl)';
     return;
   }
   // converte YYYY-MM-DD -> DD/MM/YYYY para envio
@@ -8735,14 +8735,14 @@ async function ferSalvar(){
     })});
   const j=await r.json();
   if(j.ok){
-    st.textContent='Feriado salvo com sucesso!';st.style.color='#7ecfff';
+    st.textContent='Feriado salvo com sucesso!';st.style.color='var(--azul)';
     document.getElementById('fer-data').value='';
     document.getElementById('fer-desc').value='';
     document.getElementById('fer-municipio').value='';
     document.getElementById('fer-estado').value='';
     ferCarregar();
   } else {
-    st.textContent=j.erro||'Erro ao salvar.';st.style.color='#ffb3b3';
+    st.textContent=j.erro||'Erro ao salvar.';st.style.color='var(--verm-cl)';
   }
 }
 
@@ -8752,7 +8752,7 @@ async function ferExcluir(id){
   const j=await r.json();
   if(j.ok){
     const st=document.getElementById('fer-status');
-    st.textContent='Feriado excluído.';st.style.color='#7ecfff';
+    st.textContent='Feriado excluído.';st.style.color='var(--azul)';
     ferCarregar();
   }
 }
@@ -8760,7 +8760,7 @@ async function ferExcluir(id){
 async function ferAtualizarNacionais(){
   const ano=document.getElementById('fer-ano').value||new Date().getFullYear();
   const st=document.getElementById('fer-status');
-  st.textContent='Atualizando feriados nacionais...';st.style.color='#7ecfff';
+  st.textContent='Atualizando feriados nacionais...';st.style.color='var(--azul)';
   const r=await fetch('/api/feriados/atualizar-nacionais',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({ano:parseInt(ano),substituir:true,incluir_facultativos:true})});
   const j=await r.json();
@@ -8768,7 +8768,7 @@ async function ferAtualizarNacionais(){
     st.textContent=`Atualização concluída: ${j.inseridos} inseridos, ${j.atualizados||0} atualizados, ${j.ignorados} sem mudanças.`;
     ferCarregar();
   } else {
-    st.textContent=j.erro||'Erro na atualização.';st.style.color='#ffb3b3';
+    st.textContent=j.erro||'Erro na atualização.';st.style.color='var(--verm-cl)';
   }
 }
 
@@ -8802,9 +8802,9 @@ async function benCalcularPorPeriodo(salvar){
   const minHoras=parseInt(document.getElementById('ben-per-minh').value||'8',10)||8;
   const empId=benPerEmpId();
   const st=document.getElementById('ben-per-status');
-  if(!ini||!fim){st.textContent='Informe data início e data fim.';st.style.color='#ffb3b3';return;}
-  if((hIni&&!hFim)||(!hIni&&hFim)){st.textContent='Preencha horário início e fim juntos, ou deixe ambos em branco para usar a jornada individual.';st.style.color='#ffb3b3';return;}
-  st.textContent='Calculando...';st.style.color='#7ecfff';
+  if(!ini||!fim){st.textContent='Informe data início e data fim.';st.style.color='var(--verm-cl)';return;}
+  if((hIni&&!hFim)||(!hIni&&hFim)){st.textContent='Preencha horário início e fim juntos, ou deixe ambos em branco para usar a jornada individual.';st.style.color='var(--verm-cl)';return;}
+  st.textContent='Calculando...';st.style.color='var(--azul)';
   // Converte YYYY-MM-DD -> DD/MM/YYYY
   const fmtDt=s=>{const[y,m,d]=s.split('-');return`${d}/${m}/${y}`;};
   // Coleta funcionários selecionados (se houver seleção ativa)
@@ -8828,13 +8828,13 @@ async function benCalcularPorPeriodo(salvar){
   const r=await fetch('/api/beneficios/calcular-por-periodo',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const j=await r.json();
-  if(!j.ok){st.textContent=j.erro||'Erro no cálculo.';st.style.color='#ffb3b3';return;}
+  if(!j.ok){st.textContent=j.erro||'Erro no cálculo.';st.style.color='var(--verm-cl)';return;}
   _benPerResultado=j;
   const total=j.total_dias||0;
   const feriados=j.feriados_periodo||0;
   const modoHorario=(hIni&&hFim)?`horário fixo ${hIni}-${hFim}`:'jornada individual por colaborador';
   st.textContent=`Período: ${fmtDt(ini)} a ${fmtDt(fim)} — ${total} dias, ${feriados} feriados excluídos. Regra VT/VR: ${j.min_horas_vrvt||minHoras}h mín. Base de horário: ${modoHorario}. Competência: ${j.competencia||''}${salvar?' — Lançamentos salvos!':''}.`;
-  st.style.color='#7ecfff';
+  st.style.color='var(--azul)';
   benRenderPeriodoResultado(j,salvar);
 }
 
@@ -8906,11 +8906,11 @@ function benRenderPeriodoResultado(j,salvos){
       <td style="text-align:center">${it.dias_ponto_registrado||0}</td>
       <td style="text-align:center">${it.dias_com_8h_ou_mais||0}</td>
       <td style="text-align:center"><input class="ben-per-faltas" id="ben-per-faltas-${idx}" data-idx="${idx}" type="number" min="0" step="1" value="${it.dias_faltas_informadas??it.dias_faltas??0}" style="width:70px" oninput="benPerFaltaEdit(${idx},this.value)" onchange="benPerFaltaEdit(${idx},this.value)"></td>
-      <td id="ben-per-dtrab-${idx}" style="text-align:center;font-weight:700;color:#f6c90e">${it.dias_trabalhados||0}</td>
-      <td id="ben-per-vt-${idx}" style="text-align:center;font-weight:700;color:#7ecfff">${it.dias_vt_sugerido||0}</td>
-      <td id="ben-per-vr-${idx}" style="text-align:center;font-weight:700;color:#7ecfff">${it.dias_vr_sugerido||0}</td>
-      <td id="ben-per-vg-${idx}" style="text-align:center;font-weight:700;color:#5ec97a">${it.dias_vg_sugerido||0}</td>
-      <td style="font-size:11px">${it.tem_ponto?'<span style="color:#5ec97a">ponto</span>':'<span style="color:#9fb3c8">calendário</span>'}</td>
+      <td id="ben-per-dtrab-${idx}" style="text-align:center;font-weight:700;color:var(--laranja)">${it.dias_trabalhados||0}</td>
+      <td id="ben-per-vt-${idx}" style="text-align:center;font-weight:700;color:var(--azul)">${it.dias_vt_sugerido||0}</td>
+      <td id="ben-per-vr-${idx}" style="text-align:center;font-weight:700;color:var(--azul)">${it.dias_vr_sugerido||0}</td>
+      <td id="ben-per-vg-${idx}" style="text-align:center;font-weight:700;color:var(--verde)">${it.dias_vg_sugerido||0}</td>
+      <td style="font-size:11px">${it.tem_ponto?'<span style="color:var(--verde)">ponto</span>':'<span style="color:var(--text-muted)">calendário</span>'}</td>
     </tr>`).join('');
   itens.forEach((it,idx)=>{
     it.dias_trabalhados_base=Math.max(0,parseInt(it.dias_trabalhados_base??it.dias_trabalhados??0,10)||0);
@@ -9063,18 +9063,18 @@ function confirmarDuplo(titulo,mensagem,labelConfirmar){
     const md=document.createElement('div');
     md.id='modal-confirmar-duplo';
     md.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center';
-    md.innerHTML=`<div style="background:#1a1a2e;border:1px solid #8b1a1a;border-radius:14px;padding:28px 32px;max-width:480px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,.6)">
-      <div style="font-size:17px;font-weight:700;color:#ff9999;margin-bottom:14px">${titulo}</div>
-      <div style="font-size:13px;color:#c0a0a0;margin-bottom:20px;line-height:1.6">${mensagem}</div>
+    md.innerHTML=`<div style="background:var(--preto);border:1px solid var(--verm);border-radius:14px;padding:28px 32px;max-width:480px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,.6)">
+      <div style="font-size:17px;font-weight:700;color:var(--verm-cl);margin-bottom:14px">${titulo}</div>
+      <div style="font-size:13px;color:var(--cinza);margin-bottom:20px;line-height:1.6">${mensagem}</div>
       <div style="display:flex;gap:10px;justify-content:flex-end">
         <button id="md-cancel" class="btn b-gh b-sm">Cancelar</button>
-        <button id="md-confirm1" class="btn b-sm" style="background:#6b1212;color:#ffb3b3;border:1px solid #c0392b">${labelConfirmar}</button>
+        <button id="md-confirm1" class="btn b-sm" style="background:var(--verm);color:var(--verm-cl);border:1px solid var(--verm)">${labelConfirmar}</button>
       </div>
-      <div id="md-step2" style="display:none;margin-top:16px;padding-top:14px;border-top:1px solid #4a1010">
-        <div style="font-size:13px;color:#ffb3b3;margin-bottom:10px">&#9888; Confirme novamente para prosseguir:</div>
+      <div id="md-step2" style="display:none;margin-top:16px;padding-top:14px;border-top:1px solid var(--verm)">
+        <div style="font-size:13px;color:var(--verm-cl);margin-bottom:10px">&#9888; Confirme novamente para prosseguir:</div>
         <div style="display:flex;gap:10px;justify-content:flex-end">
           <button id="md-cancel2" class="btn b-gh b-sm">Cancelar</button>
-          <button id="md-confirm2" class="btn b-sm" style="background:#8b0000;color:#fff;border:1px solid #ff4444">Sim, excluir definitivamente</button>
+          <button id="md-confirm2" class="btn b-sm" style="background:var(--verm);color:var(--branco);border:1px solid var(--verm)">Sim, excluir definitivamente</button>
         </div>
       </div>
     </div>`;
@@ -9296,7 +9296,7 @@ function benSalariosRenderPainel(res){
     hist.innerHTML=log.length?log.slice(-5).reverse().map(h=>`<div style="padding:2px 0;border-bottom:1px solid var(--borda)">${h.data||''} — <b>v${h.versao||0}</b> por ${h.usuario||''}: ${h.acao||''}</div>`).join(''):'<em>Sem histórico</em>';
   }
   const alertas=document.getElementById('ben-sal-alertas');
-  if(alertas) alertas.innerHTML=res.folha_status==='fechada'||res.folha_status==='assinada'?'<span style="color:#f6c90e">Folha fechada — edições pausadas.</span>':'<span style="color:#44cf9a">Folha aberta para edição.</span>';
+  if(alertas) alertas.innerHTML=res.folha_status==='fechada'||res.folha_status==='assinada'?'<span style="color:var(--laranja)">Folha fechada — edições pausadas.</span>':'<span style="color:var(--verde)">Folha aberta para edição.</span>';
 }
 
 async function benSalvarFolha(){
@@ -9360,7 +9360,7 @@ async function benAbrirHistorico(){
   const itens=Array.isArray(r?.itens)?r.itens:[];
   if(!itens.length){
     if(hist) hist.innerHTML='<em>Nenhum fechamento encontrado para os filtros informados.</em>';
-    if(alertas) alertas.innerHTML='<span style="color:#9fb3c8">Sem registros de fechamento.</span>';
+    if(alertas) alertas.innerHTML='<span style="color:var(--text-muted)">Sem registros de fechamento.</span>';
     showSt('st-benef','Nenhum histórico encontrado.',false);
     return;
   }
@@ -9371,9 +9371,9 @@ async function benAbrirHistorico(){
     return isNaN(dt.getTime()) ? String(d) : dt.toLocaleString('pt-BR');
   };
   const statusTag=(s)=>{
-    if(s==='assinada' || s==='assinado') return '<span style="color:#44cf9a;font-weight:700">Assinada</span>';
-    if(s==='fechada') return '<span style="color:#f6c90e;font-weight:700">Fechada</span>';
-    return '<span style="color:#7ecfff;font-weight:700">Aberta</span>';
+    if(s==='assinada' || s==='assinado') return '<span style="color:var(--verde);font-weight:700">Assinada</span>';
+    if(s==='fechada') return '<span style="color:var(--laranja);font-weight:700">Fechada</span>';
+    return '<span style="color:var(--azul);font-weight:700">Aberta</span>';
   };
 
   const rows=itens.map(it=>{
@@ -9385,17 +9385,17 @@ async function benAbrirHistorico(){
       <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
         <b>${it?.competencia||'—'}</b>
         <span>${statusTag(it?.status||'aberta')}</span>
-        <span style="color:#8aa0b8">Versão ${it?.versao_atual||0}</span>
+        <span style="color:var(--text-muted)">Versão ${it?.versao_atual||0}</span>
       </div>
-      <div style="margin-top:4px;color:#5d6f82;font-size:12px">${empresa} · ${it?.total_funcionarios||0} colaborador(es) · Total ${brl(it?.total_competencia||0)}</div>
-      <div style="margin-top:4px;color:#5d6f82;font-size:12px">Fechado em: ${fmt(it?.fechado_em)} · Por: ${it?.fechado_por||'—'}</div>
-      <div style="margin-top:2px;color:#5d6f82;font-size:12px">Assinatura: ${it?.assinatura_status||'pendente'}${it?.assinatura_por?` · ${it.assinatura_por}`:''}${it?.assinatura_em?` · ${fmt(it.assinatura_em)}`:''}</div>
-      ${ult?`<div style="margin-top:2px;color:#5d6f82;font-size:12px">Última revisão: v${ult.versao||0} em ${fmt(ult.salvo_em)} por ${ult.salvo_por||'—'}</div>`:''}
+      <div style="margin-top:4px;color:var(--text-muted);font-size:12px">${empresa} · ${it?.total_funcionarios||0} colaborador(es) · Total ${brl(it?.total_competencia||0)}</div>
+      <div style="margin-top:4px;color:var(--text-muted);font-size:12px">Fechado em: ${fmt(it?.fechado_em)} · Por: ${it?.fechado_por||'—'}</div>
+      <div style="margin-top:2px;color:var(--text-muted);font-size:12px">Assinatura: ${it?.assinatura_status||'pendente'}${it?.assinatura_por?` · ${it.assinatura_por}`:''}${it?.assinatura_em?` · ${fmt(it.assinatura_em)}`:''}</div>
+      ${ult?`<div style="margin-top:2px;color:var(--text-muted);font-size:12px">Última revisão: v${ult.versao||0} em ${fmt(ult.salvo_em)} por ${ult.salvo_por||'—'}</div>`:''}
     </div>`;
   }).join('');
 
   if(hist) hist.innerHTML=rows;
-  if(alertas) alertas.innerHTML=`<span style="color:#44cf9a">${itens.length} registro(s) de fechamento carregado(s).</span>`;
+  if(alertas) alertas.innerHTML=`<span style="color:var(--verde)">${itens.length} registro(s) de fechamento carregado(s).</span>`;
   benAtualizarToolbar(itens[0]?.status||'aberta');
   showSt('st-benef',`Histórico carregado (${itens.length} registro(s)).`,false);
 }
@@ -9405,18 +9405,18 @@ function renderBeneficiosAtivos(){
   if(!tb)return;
   const lista=beneficiosFiltrados();
   if(!lista.length){
-    tb.innerHTML='<tr><td colspan="11" style="text-align:center;padding:16px;color:#999">Nenhum colaborador ativo para os filtros selecionados.</td></tr>';
+    tb.innerHTML='<tr><td colspan="11" style="text-align:center;padding:16px;color:var(--text-muted)">Nenhum colaborador ativo para os filtros selecionados.</td></tr>';
     atualizarContadorSel();
     return;
   }
   tb.innerHTML=lista.map(it=>{
     const chk=benSelecionados.has(it.funcionario_id)?'checked':'';
-    const vtTag=it.opta_vt===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
-    const vrTag=it.opta_vr===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
-    const vaTag=it.opta_va===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
-    const ppTag=it.opta_premio_prod===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
-    const vgTag=it.opta_vale_gasolina===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
-    const cnTag=it.opta_cesta_natal===false?'<span style="font-size:10px;color:#e55;background:#fee;border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
+    const vtTag=it.opta_vt===false?'<span style="font-size:10px;color:var(--verm);background:var(--verm-cl);border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
+    const vrTag=it.opta_vr===false?'<span style="font-size:10px;color:var(--verm);background:var(--verm-cl);border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
+    const vaTag=it.opta_va===false?'<span style="font-size:10px;color:var(--verm);background:var(--verm-cl);border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
+    const ppTag=it.opta_premio_prod===false?'<span style="font-size:10px;color:var(--verm);background:var(--verm-cl);border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
+    const vgTag=it.opta_vale_gasolina===false?'<span style="font-size:10px;color:var(--verm);background:var(--verm-cl);border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
+    const cnTag=it.opta_cesta_natal===false?'<span style="font-size:10px;color:var(--verm);background:var(--verm-cl);border-radius:4px;padding:1px 4px;margin-left:2px">N/O</span>':'';
     const vtDis=it.opta_vt===false?'disabled':'';
     const vrDis=it.opta_vr===false?'disabled':'';
     const vaDis=it.opta_va===false?'disabled':'';
@@ -9445,7 +9445,7 @@ function renderBeneficioPorTipo(tipo,tbId){
   if(!tb)return;
   const lista=beneficiosFiltrados(tipo);
   if(!lista.length){
-    tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:16px;color:#999">Nenhum colaborador ativo para os filtros selecionados.</td></tr>';
+    tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:16px;color:var(--text-muted)">Nenhum colaborador ativo para os filtros selecionados.</td></tr>';
     return;
   }
   if(tipo==='va'){
@@ -9685,7 +9685,7 @@ async function buscarCEPFuncionario(){
   }
   _fCepLastLookup=cep;
   st.style.display='block';
-  st.style.color='#888';
+  st.style.color='var(--text-muted)';
   st.textContent='Buscando CEP...';
   try{
     const d=await api('/api/cep/'+cep);
@@ -9711,7 +9711,7 @@ async function buscarCNPJ(){
   if(cnpj.length!==14){alert('CNPJ deve ter 14 dígitos.');return;}
   const btn=document.getElementById('btn-bcnpj'); const st=document.getElementById('cnpj-st');
   btn.textContent='...'; btn.disabled=true;
-  st.style.display='block'; st.style.color='#888'; st.textContent='Consultando Receita Federal...';
+  st.style.display='block'; st.style.color='var(--text-muted)'; st.textContent='Consultando Receita Federal...';
   try{
     const d=await api('/api/cnpj/'+cnpj);
     if(d.erro){st.style.color='var(--verm)';st.textContent=d.erro;return;}
@@ -9738,7 +9738,7 @@ async function buscarCEP(){
   const cep=document.getElementById('mcep').value.replace(/\D/g,'');
   if(cep.length!==8)return;
   const st=document.getElementById('cep-st');
-  st.style.display='block'; st.style.color='#888'; st.textContent='Buscando...';
+  st.style.display='block'; st.style.color='var(--text-muted)'; st.textContent='Buscando...';
   try{
     const d=await api('/api/cep/'+cep);
     if(d.erro){st.style.color='var(--verm)';st.textContent=d.erro;return;}
@@ -9851,12 +9851,12 @@ async function mapsCarregarFuncionarios(){
     const lista=await api('/api/mensagens-app/funcionarios');
     if(!lista.length){el.innerHTML='<div class="vazio" style="padding:8px;font-size:12px">Nenhuma conversa ainda.</div>';return;}
     el.innerHTML=lista.map(f=>{
-      const badge=f.nao_lidas>0?`<span style="background:#e55;color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:auto">${f.nao_lidas}</span>`:'';
+      const badge=f.nao_lidas>0?`<span style="background:var(--verm);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:auto">${f.nao_lidas}</span>`:'';
       const ativo=_mapsFidAtual===f.funcionario_id?'background:var(--az);color:#fff;':'';
       return `<div onclick="mapsAbrirChat(${f.funcionario_id},${JSON.stringify(f.nome)})" style="cursor:pointer;padding:8px 10px;border-radius:8px;margin:2px 4px;display:flex;align-items:center;gap:6px;${ativo}">
         <div style="flex:1;overflow:hidden">
           <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${f.nome}</div>
-          <div style="font-size:10px;color:#888">${f.ultima||''}</div>
+          <div style="font-size:10px;color:var(--text-muted)">${f.ultima||''}</div>
         </div>${badge}</div>`;
     }).join('');
   }catch(e){el.innerHTML='<div class="vazio" style="padding:8px">Erro ao carregar.</div>';}
@@ -9890,9 +9890,9 @@ async function mapsCarregarChat(silencioso=false){
       const cor=deRh?'#fff':'var(--text)';
       const label=deRh?'RH':_mapsNomeAtual;
       return `<div style="display:flex;flex-direction:column;align-items:${align}">
-        <div style="font-size:10px;color:#888;margin-bottom:2px">${label}</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">${label}</div>
         <div style="background:${bg};color:${cor};padding:8px 12px;border-radius:12px;max-width:78%;font-size:13px;line-height:1.4;word-break:break-word">${escHtml(m.conteudo)}</div>
-        <div style="font-size:10px;color:#888;margin-top:2px">${m.enviado_fmt||''}</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${m.enviado_fmt||''}</div>
       </div>`;
     }).join('');
     if(era)el.scrollTop=el.scrollHeight;
@@ -9949,14 +9949,14 @@ async function mapsCarregarListaComunicados(){
       <div style="border:1px solid var(--borda);border-radius:8px;padding:8px 12px;margin-bottom:6px;${c.ativo?'':'opacity:.5'}">
         <div style="display:flex;align-items:center;gap:8px">
           <strong style="font-size:13px;flex:1">${escHtml(c.titulo)}</strong>
-          <span style="font-size:10px;color:#888">${c.criado_em_fmt||''}</span>
+          <span style="font-size:10px;color:var(--text-muted)">${c.criado_em_fmt||''}</span>
           <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsToggleComunicado(${c.id},${!c.ativo})">${c.ativo?'Desativar':'Ativar'}</button>
           <button class="btn b-er b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsExcluirComunicado(${c.id})">✕</button>
         </div>
-        <div style="font-size:12px;color:#aaa;margin-top:4px">${escHtml(c.conteudo)}</div>
-        ${c.funcionario_id?`<div style="font-size:10px;color:#67b8ff;margin-top:2px">Para: funcionário #${c.funcionario_id}</div>`:
-         c.posto_operacional?`<div style="font-size:10px;color:#f0a830;margin-top:2px">Para: posto "${c.posto_operacional}"</div>`:
-         '<div style="font-size:10px;color:#36d09a;margin-top:2px">Para: todos</div>'}
+        <div style="font-size:12px;color:var(--text-muted);margin-top:4px">${escHtml(c.conteudo)}</div>
+        ${c.funcionario_id?`<div style="font-size:10px;color:var(--azul);margin-top:2px">Para: funcionário #${c.funcionario_id}</div>`:
+         c.posto_operacional?`<div style="font-size:10px;color:var(--laranja);margin-top:2px">Para: posto "${c.posto_operacional}"</div>`:
+         '<div style="font-size:10px;color:var(--verde);margin-top:2px">Para: todos</div>'}
       </div>`).join('');
   }catch(e){el.innerHTML='<div class="vazio">Erro ao carregar comunicados.</div>';}
 }
@@ -10086,17 +10086,17 @@ function renderRHDPreview(data){
       <div style="flex:1">
         <div class="hist-tit">${item.funcionario_nome}</div>
         <div class="hist-sub">Pág. ${item.pagina} · ${item.nome_arquivo}${item.email?' · 📧 '+item.email:''}${item.whatsapp?' · 📱 '+fmtTelefone(item.whatsapp):''}</div>
-        ${item.assinatura_auto_status==='solicitada'?`<div style="font-size:11px;color:#1a7a45;margin-top:2px">✍ Assinatura automática solicitada.</div>`:''}
-        ${item.assinatura_auto_status==='app_pendente'?`<div style="font-size:11px;color:#1a7a45;margin-top:2px">📲 Assinatura pendente no app do funcionário.</div>`:''}
-        ${item.assinatura_auto_status==='link_gerado'?`<div style="font-size:11px;color:#1a7a45;margin-top:2px">🔗 Link de assinatura gerado.</div>`:''}
-        ${item.assinatura_auto_status==='sem_telefone'?`<div style="font-size:11px;color:#8a5c00;margin-top:2px">⚠ Sem telefone cadastrado para assinatura automática.</div>`:''}
-        ${item.assinatura_auto_status==='telefone_invalido'?`<div style="font-size:11px;color:#8a5c00;margin-top:2px">⚠ Telefone cadastrado inválido para WhatsApp.</div>`:''}
+        ${item.assinatura_auto_status==='solicitada'?`<div style="font-size:11px;color:var(--verde);margin-top:2px">✍ Assinatura automática solicitada.</div>`:''}
+        ${item.assinatura_auto_status==='app_pendente'?`<div style="font-size:11px;color:var(--verde);margin-top:2px">📲 Assinatura pendente no app do funcionário.</div>`:''}
+        ${item.assinatura_auto_status==='link_gerado'?`<div style="font-size:11px;color:var(--verde);margin-top:2px">🔗 Link de assinatura gerado.</div>`:''}
+        ${item.assinatura_auto_status==='sem_telefone'?`<div style="font-size:11px;color:var(--laranja-esc);margin-top:2px">⚠ Sem telefone cadastrado para assinatura automática.</div>`:''}
+        ${item.assinatura_auto_status==='telefone_invalido'?`<div style="font-size:11px;color:var(--laranja-esc);margin-top:2px">⚠ Telefone cadastrado inválido para WhatsApp.</div>`:''}
         ${item.assinatura_auto_status==='erro'&&item.assinatura_auto_erro?`<div style="font-size:11px;color:var(--verm);margin-top:2px">Erro assinatura automática: ${item.assinatura_auto_erro}</div>`:''}
-        ${item.folha_ponto_nome?`<div style="font-size:11px;color:#6a7d8f;margin-top:2px">🕒 Folha de ponto encontrada: ${item.folha_ponto_nome}</div>`:''}
-        ${item.status_envio==='enviado_email'&&item.email?`<div style="font-size:11px;color:#1a7a45;margin-top:2px">✅ Enviado para e-mail: ${item.email}</div>`:''}
-        ${item.status_envio==='enviado_wa'&&item.whatsapp?`<div style="font-size:11px;color:#1a7a45;margin-top:2px">✅ Enviado para WhatsApp: ${fmtTelefone(item.whatsapp)}</div>`:''}
-        ${item.status_envio==='enviado_ambos'?`<div style="font-size:11px;color:#1a7a45;margin-top:2px">✅ Enviado para: ${item.email?('e-mail '+item.email):'e-mail não informado'}${item.whatsapp?(' · WhatsApp '+fmtTelefone(item.whatsapp)):' · WhatsApp não informado'}</div>`:''}
-        ${item.status_envio==='sem_contato'?`<div style="font-size:11px;color:#8a5c00;margin-top:2px">⚠️ Não enviado: sem contato válido (e-mail/WhatsApp).</div>`:''}
+        ${item.folha_ponto_nome?`<div style="font-size:11px;color:var(--text-muted);margin-top:2px">🕒 Folha de ponto encontrada: ${item.folha_ponto_nome}</div>`:''}
+        ${item.status_envio==='enviado_email'&&item.email?`<div style="font-size:11px;color:var(--verde);margin-top:2px">✅ Enviado para e-mail: ${item.email}</div>`:''}
+        ${item.status_envio==='enviado_wa'&&item.whatsapp?`<div style="font-size:11px;color:var(--verde);margin-top:2px">✅ Enviado para WhatsApp: ${fmtTelefone(item.whatsapp)}</div>`:''}
+        ${item.status_envio==='enviado_ambos'?`<div style="font-size:11px;color:var(--verde);margin-top:2px">✅ Enviado para: ${item.email?('e-mail '+item.email):'e-mail não informado'}${item.whatsapp?(' · WhatsApp '+fmtTelefone(item.whatsapp)):' · WhatsApp não informado'}</div>`:''}
+        ${item.status_envio==='sem_contato'?`<div style="font-size:11px;color:var(--laranja-esc);margin-top:2px">⚠️ Não enviado: sem contato válido (e-mail/WhatsApp).</div>`:''}
         ${item.status_envio==='erro'&&item.erro_envio?`<div style="font-size:11px;color:var(--verm);margin-top:2px">Erro: ${item.erro_envio}</div>`:''}
       </div>
     </div>
@@ -10135,20 +10135,20 @@ function rhdEnsureResumoPainel(){
   panel.id='rhd-resumo-painel';
   panel.style.cssText='display:none;margin-top:10px;border:1px solid var(--borda);border-radius:10px;background:var(--cinza-cl);padding:10px';
   panel.innerHTML=`
-    <div style="font-size:12px;font-weight:700;color:#1a2b3c;margin-bottom:8px">Resumo de envio</div>
-    <div id="rhd-resumo-contadores" style="font-size:12px;color:#4c6072;margin-bottom:8px"></div>
+    <div style="font-size:12px;font-weight:700;color:var(--azul-esc);margin-bottom:8px">Resumo de envio</div>
+    <div id="rhd-resumo-contadores" style="font-size:12px;color:var(--text-muted);margin-bottom:8px"></div>
     <div style="display:grid;grid-template-columns:1fr;gap:8px">
-      <div style="background:#f6fbf8;border:1px solid #cfe8d8;border-radius:8px;padding:8px">
-        <div style="font-size:11px;font-weight:700;color:#1a7a45;margin-bottom:4px">Enviados com sucesso</div>
-        <pre id="rhd-resumo-ok" style="margin:0;font-size:11px;white-space:pre-wrap;color:#2b4a3a"></pre>
+      <div style="background:var(--verde-cl);border:1px solid var(--verde);border-radius:8px;padding:8px">
+        <div style="font-size:11px;font-weight:700;color:var(--verde);margin-bottom:4px">Enviados com sucesso</div>
+        <pre id="rhd-resumo-ok" style="margin:0;font-size:11px;white-space:pre-wrap;color:var(--verde)"></pre>
       </div>
-      <div style="background:#fffaf1;border:1px solid #f0dfb6;border-radius:8px;padding:8px">
-        <div style="font-size:11px;font-weight:700;color:#8a5c00;margin-bottom:4px">Sem contato</div>
-        <pre id="rhd-resumo-sem" style="margin:0;font-size:11px;white-space:pre-wrap;color:#6a5626"></pre>
+      <div style="background:var(--laranja-cl);border:1px solid var(--laranja);border-radius:8px;padding:8px">
+        <div style="font-size:11px;font-weight:700;color:var(--laranja-esc);margin-bottom:4px">Sem contato</div>
+        <pre id="rhd-resumo-sem" style="margin:0;font-size:11px;white-space:pre-wrap;color:var(--laranja-esc)"></pre>
       </div>
-      <div style="background:#fff4f4;border:1px solid #efc9c9;border-radius:8px;padding:8px">
-        <div style="font-size:11px;font-weight:700;color:#a52b2b;margin-bottom:4px">Erros</div>
-        <pre id="rhd-resumo-err" style="margin:0;font-size:11px;white-space:pre-wrap;color:#7d3030"></pre>
+      <div style="background:var(--verm-cl);border:1px solid var(--verm);border-radius:8px;padding:8px">
+        <div style="font-size:11px;font-weight:700;color:var(--verm);margin-bottom:4px">Erros</div>
+        <pre id="rhd-resumo-err" style="margin:0;font-size:11px;white-space:pre-wrap;color:var(--verm)"></pre>
       </div>
     </div>`;
   st.parentElement.appendChild(panel);
@@ -10264,7 +10264,7 @@ function waRenderConversas(){
   if(!lista||!lista.length){el.innerHTML='<div class="vazio">Nenhuma conversa ainda.</div>';return;}
   el.innerHTML=lista.map(c=>`<div class="hist-item" style="cursor:pointer;padding:10px 12px;border-bottom:1px solid var(--borda)" onclick="abrirWAConversa('${c.numero}','${(c.nome||c.numero).replace(/'/g,"\\'")}')">
     <div style="font-weight:700;font-size:13px">${c.nome||c.numero}</div>
-    <div style="font-size:11px;color:#888">${fmtTelefone(c.numero)} · ${c.ultima_msg_fmt||''}</div>
+    <div style="font-size:11px;color:var(--text-muted)">${fmtTelefone(c.numero)} · ${c.ultima_msg_fmt||''}</div>
   </div>`).join('');
 }
 
@@ -10346,7 +10346,7 @@ function waRenderListaColab(){
       <input type="checkbox" class="wa-colab-sel" data-id="${f.id}" ${semTel?'disabled':''}>
       <div style="flex:1">
         <div style="font-weight:700;font-size:13px">${f.nome||'-'}</div>
-        <div style="font-size:11px;color:#6a7d8f">${empTxt} · ${postoTxt} · ${tel||'Sem telefone cadastrado'}</div>
+        <div style="font-size:11px;color:var(--text-muted)">${empTxt} · ${postoTxt} · ${tel||'Sem telefone cadastrado'}</div>
       </div>
     </label>`;
   }).join('');
@@ -10453,14 +10453,14 @@ async function iawaSincronizarStatus(){
   if(!badge)return;
   if(d.pausados && d.pausados.length>0){
     badge.textContent='⏸ Pausado';
-    badge.style.background='#fff3cd';badge.style.color='#856404';
+    badge.style.background='var(--laranja-cl)';badge.style.color='var(--laranja-esc)';
     const nomes=d.pausados.map(p=>p.nome||p.numero).join(', ');
     const ates=d.pausados.map(p=>p.pausado_ate?'até '+new Date(p.pausado_ate).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'').filter(Boolean).join('; ');
     if(info) info.textContent=`Pausado para: ${nomes}${ates?' ('+ates+')':''}`;
     if(btn) btn.style.display='inline-flex';
   } else {
     badge.textContent='● Ativo';
-    badge.style.background='#d1e7dd';badge.style.color='#0a3622';
+    badge.style.background='var(--verde-cl)';badge.style.color='var(--verde)';
     if(info) info.textContent='';
     if(btn) btn.style.display='none';
   }
@@ -10747,11 +10747,11 @@ async function loadEnvelopes(tipo){
           <td><span class="pill ${statusCls[e.status]||''}">${statusLabel[e.status]||e.status}</span></td>
           <td>
             <button class="btn b-sm b-az" onclick="abrirEnvelope(${e.id})">Abrir</button>
-            ${e.status==='rascunho'?`<button class="btn b-sm" style="background:#e8eef5;color:#c0392b;border:none;cursor:pointer" onclick="deletarEnvelope(${e.id})">Excluir</button>`:''}
+            ${e.status==='rascunho'?`<button class="btn b-sm" style="background:var(--azul-cc);color:var(--verm);border:none;cursor:pointer" onclick="deletarEnvelope(${e.id})">Excluir</button>`:''}
           </td>
         </tr>`).join('')}
       </tbody></table></div>`;
-  }catch(e){ box.innerHTML='<div class="vazio" style="color:#c00">Erro ao carregar.</div>'; }
+  }catch(e){ box.innerHTML='<div class="vazio" style="color:var(--verm)">Erro ao carregar.</div>'; }
 }
 
 async function abrirEnvelope(id){
@@ -10795,12 +10795,12 @@ async function recarregarDetalheEnvelope(){
             <td>${a.criado_fmt||''}</td>
             <td>
               <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end">
-                <span title="Arraste para reordenar" style="font-size:14px;color:#6b7a90;cursor:grab;user-select:none">↕</span>
+                <span title="Arraste para reordenar" style="font-size:14px;color:var(--text-muted);cursor:grab;user-select:none">↕</span>
                 <button class="btn b-sm" style="padding:2px 7px" onclick="moverArqEnvelope(${a.id},-1)" ${idx===0?'disabled':''}>↑</button>
                 <button class="btn b-sm" style="padding:2px 7px" onclick="moverArqEnvelope(${a.id},1)" ${idx===env.arquivos.length-1?'disabled':''}>↓</button>
               </div>
             </td>
-            <td><button class="btn b-sm" style="background:#fff0f0;color:#c0392b;border:1px solid #f5c5c5;cursor:pointer" onclick="remArqEnvelope(${a.id})">✕</button></td>
+            <td><button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);border:1px solid var(--verm);cursor:pointer" onclick="remArqEnvelope(${a.id})">✕</button></td>
           </tr>`).join('')}
         </tbody></table></div>`;
       ativarDragArquivosEnvelope();
@@ -10826,8 +10826,8 @@ async function recarregarDetalheEnvelope(){
             <td><span class="pill ${statusCss[s.status]||''}">${statusLbl[s.status]||s.status}</span></td>
             <td>${s.ass_em_fmt||'-'}</td>
             <td>
-              ${s.status!=='assinado'?`<button class="btn b-sm" style="background:#eef6ff;color:#205d8a;border:1px solid #d3d3d3;cursor:pointer" onclick="copiarLinkSignatario(${s.id})">Link</button>`:''}
-              ${s.status!=='assinado'?`<button class="btn b-sm" style="background:#fff0f0;color:#c0392b;border:1px solid #f5c5c5;cursor:pointer" onclick="remSigEnvelope(${s.id})">✕</button>`:''}
+              ${s.status!=='assinado'?`<button class="btn b-sm" style="background:var(--azul-cc);color:var(--azul);border:1px solid var(--borda);cursor:pointer" onclick="copiarLinkSignatario(${s.id})">Link</button>`:''}
+              ${s.status!=='assinado'?`<button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);border:1px solid var(--verm);cursor:pointer" onclick="remSigEnvelope(${s.id})">✕</button>`:''}
             </td>
           </tr>`).join('')}
         </tbody></table></div>`;
@@ -11190,11 +11190,11 @@ async function loadPickerArquivos(){
     const lista=await r.json();
     if(!lista.length){ box.innerHTML='<div class="vazio" style="font-size:13px">Nenhum arquivo encontrado.</div>'; return; }
     box.innerHTML=lista.map(a=>`
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 4px;border-bottom:1px solid #e8eef5;font-size:13px">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 4px;border-bottom:1px solid var(--borda);font-size:13px">
         <span>📄 ${a.nome} ${a.competencia?'('+a.competencia+')':''}</span>
         <button class="btn b-sm b-az" onclick="adicionarArqSistema(${a.id})">Adicionar</button>
       </div>`).join('');
-  }catch(e){ box.innerHTML='<div class="vazio" style="color:#c00;font-size:13px">Erro.</div>'; }
+  }catch(e){ box.innerHTML='<div class="vazio" style="color:var(--verm);font-size:13px">Erro.</div>'; }
 }
 
 async function adicionarArqSistema(funcArquivoId){
@@ -11376,7 +11376,7 @@ function setStampPosFromClick(e,canvasEl,pageNum){
   const ind=document.createElement('div');
   ind.className='stamp-page-indicator';
   ind.style.cssText=`position:absolute;left:${xClamped}%;bottom:${yClamped}%;transform:translate(-50%,50%);background:rgba(30,60,120,0.15);border:2px dashed #3060c0;border-radius:4px;width:68px;height:28px;pointer-events:none;display:flex;align-items:center;justify-content:center;z-index:10`;
-  ind.innerHTML='<span style="font-size:9px;color:#3060c0;font-weight:700">CARIMBO</span>';
+  ind.innerHTML='<span style="font-size:9px;color:var(--azul);font-weight:700">CARIMBO</span>';
   const wrapper=canvasEl.closest('.stamp-page-wrap');
   if(wrapper) wrapper.style.position='relative', wrapper.appendChild(ind);
 }
@@ -11446,7 +11446,7 @@ async function carregarPreviewCarimbo(){
         wrap.className='stamp-page-wrap';
         wrap.style.cssText='position:relative;display:block;margin:0 0 6px 0;cursor:crosshair;user-select:none;padding:0 4px 6px';
         const lbl=document.createElement('div');
-        lbl.style.cssText='font-size:11px;color:#6b7a90;padding:4px 2px';
+        lbl.style.cssText='font-size:11px;color:var(--text-muted);padding:4px 2px';
         lbl.textContent=`Página ${pgNum} de ${pdfDoc.numPages}`;
         wrap.appendChild(lbl);
         const canvas=document.createElement('canvas');
