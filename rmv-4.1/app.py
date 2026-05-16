@@ -180,6 +180,8 @@ _compress.init_app(app)
 
 # Cache em memória (ou Redis se disponível) — evita recalcular rotas pesadas repetidamente
 from flask_caching import Cache as _Cache
+_ferias_sync_ts: float = 0.0  # throttle: sync de férias no máximo 1x/hora
+
 _cache_cfg = {
     'CACHE_TYPE': 'RedisCache' if os.environ.get('REDIS_URL') else 'SimpleCache',
     'CACHE_DEFAULT_TIMEOUT': 300,
@@ -609,11 +611,11 @@ class EscalaFuncionario(db.Model):
     )
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
-        escala=Escala.query.get(self.escala_id)
+        escala=db.session.get(Escala, self.escala_id)
         if escala:
             d['escala_nome']=escala.nome
             d['escala_tipo']=escala.tipo
-        funcionario=Funcionario.query.get(self.funcionario_id)
+        funcionario=db.session.get(Funcionario, self.funcionario_id)
         if funcionario:
             d['funcionario_nome']=funcionario.nome
             d['funcionario_matricula']=funcionario.matricula
@@ -749,7 +751,7 @@ def api_despesas_add():
 @app.route('/api/despesas/<int:id>', methods=['PUT'])
 @lr
 def api_despesas_edit(id):
-    desp=Despesa.query.get_or_404(id)
+    desp=db.get_or_404(Despesa, id)
     d=request.get_json(silent=True) or request.form or {}
     descricao=(d.get('descricao') if 'descricao' in d else desp.descricao) or ''
     categoria=(d.get('categoria') if 'categoria' in d else desp.categoria) or 'Outras'
@@ -783,7 +785,7 @@ def api_despesas_edit(id):
 @app.route('/api/despesas/<int:id>', methods=['DELETE'])
 @lr
 def api_despesas_delete(id):
-    desp=Despesa.query.get_or_404(id)
+    desp=db.get_or_404(Despesa, id)
     try:
         if (desp.comprovante or '').strip():
             abs_path=os.path.join(UPLOAD_ROOT,desp.comprovante)
@@ -835,7 +837,7 @@ def api_check_numero():
 @app.route('/api/medicoes/<int:id>',methods=['GET','DELETE','PUT'])
 @lr
 def api_medicao_detalhe(id):
-    m = Medicao.query.get_or_404(id)
+    m = db.get_or_404(Medicao, id)
     if request.method=='DELETE':
         # remove anexos do disco antes de deletar
         for a in MedicaoAnexo.query.filter_by(medicao_id=id).all():
@@ -2153,7 +2155,7 @@ def _cert_inspect_pkcs12(abs_path,senha=''):
 
 def _get_cert_context(empresa_id=None,usuario_id=None):
     if empresa_id:
-        emp=Empresa.query.get(empresa_id)
+        emp=db.session.get(Empresa, empresa_id)
         if emp and bool(emp.cert_ativo if emp.cert_ativo is not None else False):
             abs_cert=_cert_rel_to_abs(emp.cert_arquivo)
             if abs_cert and (emp.cert_senha or '').strip():
@@ -2164,7 +2166,7 @@ def _get_cert_context(empresa_id=None,usuario_id=None):
                     'source':'empresa',
                 }
     if usuario_id:
-        usr=Usuario.query.get(usuario_id)
+        usr=db.session.get(Usuario, usuario_id)
         if usr and bool(usr.cert_ativo if usr.cert_ativo is not None else False):
             abs_cert=_cert_rel_to_abs(usr.cert_arquivo)
             if abs_cert and (usr.cert_senha or '').strip():
@@ -2473,10 +2475,10 @@ def app_func_required(f):
         payload=app_parse_token(tok)
         if not payload or payload.get('typ')!='access': return jsonify({'erro':'Token invalido ou expirado'}),401
         sid=to_num(payload.get('sid'))
-        sessao=FuncionarioAppSessao.query.get(sid)
+        sessao=db.session.get(FuncionarioAppSessao, sid)
         if not sessao or sessao.revogado: return jsonify({'erro':'Sessao invalida'}),401
         if sessao.exp_refresh < utcnow(): return jsonify({'erro':'Sessao expirada'}),401
-        func=Funcionario.query.get(sessao.funcionario_id)
+        func=db.session.get(Funcionario, sessao.funcionario_id)
         if not func: return jsonify({'erro':'Funcionario nao encontrado'}),404
         if to_num(payload.get('fid'))!=func.id: return jsonify({'erro':'Token invalido'}),401
         if func.app_ativo is False: return jsonify({'erro':'Acesso do aplicativo desativado'}),403
@@ -3253,7 +3255,7 @@ def _fcm_send_to_token(token,titulo,corpo,data=None):
         return False
 
 def _push_notify_funcionario(fid,titulo,corpo,data=None):
-    f=Funcionario.query.get(fid)
+    f=db.session.get(Funcionario, fid)
     if not f or not (f.app_push_token or '').strip():
         if f:
             app.logger.info(f'[fcm] funcionario {fid} sem app_push_token salvo')
@@ -3942,7 +3944,7 @@ def _extract_pdf_competencia_text(reader,max_pages=30):
 
 def _processa_dialogo_holerite(conversa_id,numero,texto):
     """Processa o diálogo de busca e envio de holerite."""
-    conversa=WhatsAppConversa.query.get(conversa_id)
+    conversa=db.session.get(WhatsAppConversa, conversa_id)
     if not conversa:
         return None
     
@@ -3978,7 +3980,7 @@ def _processa_dialogo_holerite(conversa_id,numero,texto):
     # Validação de CPF antes de informar competência
     if estado=='aguardando_cpf':
         func_id=ctx.get('holerite_funcionario_id')
-        funcionario=Funcionario.query.get(func_id) if func_id else None
+        funcionario=db.session.get(Funcionario, func_id) if func_id else None
         cpf_informado=only_digits(texto)
         if len(cpf_informado)!=11 or not _valida_cpf(cpf_informado):
             ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
@@ -4091,7 +4093,7 @@ def _processa_dialogo_holerite(conversa_id,numero,texto):
             return "Formato inválido. Informe mês/ano (ex: 04/2026) ou nomes de meses (ex: maio e junho). Se não informar o ano, usarei o ano corrente."
 
         func_id=ctx.get('holerite_funcionario_id')
-        funcionario=Funcionario.query.get(func_id) if func_id else None
+        funcionario=db.session.get(Funcionario, func_id) if func_id else None
         
         if not funcionario:
             ctx['holerite_estado']=None
@@ -4925,7 +4927,7 @@ def is_owner_user():
     if not uid:
         return False
     try:
-        u=Usuario.query.get(int(uid))
+        u=db.session.get(Usuario, int(uid))
         if u and (u.perfil or '').strip().lower()=='dono':
             session['perfil']='dono'
             return True
@@ -5542,7 +5544,7 @@ def login():
             if not uid:
                 erro='Sessão de verificação expirada. Faça login novamente.'
                 return render_template('login.html',erro=erro)
-            u=Usuario.query.get(uid)
+            u=db.session.get(Usuario, uid)
             if not u or not u.ativo:
                 erro='Usuário inválido para verificação.'
                 return render_template('login.html',erro=erro)
@@ -5700,7 +5702,7 @@ def recuperar_acesso():
         rec_uid=session.get('rec_uid')
         if not rec_uid:
             return render_template('login.html',recuperar=True,erro='Sessão de recuperação expirada. Solicite novo código.')
-        u=Usuario.query.get(rec_uid)
+        u=db.session.get(Usuario, rec_uid)
         if not u or not u.ativo:
             session.pop('rec_uid',None); session.pop('rec_code_hash',None); session.pop('rec_exp',None); session.pop('rec_attempts',None)
             return render_template('login.html',recuperar=True,erro='Usuário inválido. Solicite novo código.')
@@ -5793,7 +5795,7 @@ def api_empresas():
 
 @app.route('/api/empresas/<int:id>',methods=['GET'])
 @lr
-def api_empresa(id): return jsonify(Empresa.query.get_or_404(id).to_dict())
+def api_empresa(id): return jsonify(db.get_or_404(Empresa, id).to_dict())
 
 @app.route('/api/empresas',methods=['POST'])
 @lr
@@ -5814,7 +5816,7 @@ def api_criar_empresa():
 @app.route('/api/empresas/<int:id>',methods=['PUT'])
 @lr
 def api_editar_empresa(id):
-    e=Empresa.query.get_or_404(id)
+    e=db.get_or_404(Empresa, id)
     d=request.json or {}
     if 'site' in d: d['site']=norm_url(d.get('site'))
     if 'logo_url' in d: d['logo_url']=norm_url(d.get('logo_url'))
@@ -5831,7 +5833,7 @@ def api_editar_empresa(id):
 @app.route('/api/empresas/<int:id>',methods=['DELETE'])
 @lr
 def api_remover_empresa(id):
-    e=Empresa.query.get_or_404(id)
+    e=db.get_or_404(Empresa, id)
     db.session.delete(e)
     db.session.commit()
     return jsonify({'ok':True})
@@ -5839,7 +5841,7 @@ def api_remover_empresa(id):
 @app.route('/api/empresas/<int:id>/certificado',methods=['DELETE'])
 @lr
 def api_empresa_cert_delete(id):
-    e=Empresa.query.get_or_404(id)
+    e=db.get_or_404(Empresa, id)
     abs_old=_cert_rel_to_abs(e.cert_arquivo)
     e.cert_arquivo=None
     e.cert_nome_arquivo=None
@@ -5905,7 +5907,7 @@ def api_criar_usuario():
 @app.route('/api/usuarios/<int:id>',methods=['PUT'])
 @lr
 def api_atualizar_usuario(id):
-    u=Usuario.query.get_or_404(id); d=request.json or {}
+    u=db.get_or_404(Usuario, id); d=request.json or {}
     perfil_novo=(d.get('perfil',u.perfil) or u.perfil or '').strip().lower()
     perfil_atual=(u.perfil or '').strip().lower()
     if (not is_owner_user()) and (perfil_atual=='dono' or perfil_novo=='dono'):
@@ -5940,7 +5942,7 @@ def api_atualizar_usuario(id):
 @app.route('/api/usuarios/<int:id>',methods=['DELETE'])
 @lr
 def api_deletar_usuario(id):
-    u=Usuario.query.get_or_404(id)
+    u=db.get_or_404(Usuario, id)
     if (u.perfil or '').strip().lower()=='dono' and (not is_owner_user()):
         return jsonify({'erro':'Apenas dono pode excluir usuário dono.'}),403
     if u.perfil=='dono' and Usuario.query.filter_by(perfil='dono').count()<=1: return jsonify({'erro':'Não é possível excluir o único dono'}),400
@@ -5949,7 +5951,7 @@ def api_deletar_usuario(id):
 @app.route('/api/usuarios/<int:id>/certificado',methods=['POST'])
 @lr
 def api_usuario_cert_upload(id):
-    u=Usuario.query.get_or_404(id)
+    u=db.get_or_404(Usuario, id)
     fs=request.files.get('arquivo')
     senha=(request.form.get('senha') or '').strip()
     ativo=str(request.form.get('ativo','1')).strip().lower() in ('1','true','yes','on')
@@ -6002,7 +6004,7 @@ def _is_missing_medicao_stamp_error(err):
 @app.route('/api/usuarios/<int:id>/certificado',methods=['DELETE'])
 @lr
 def api_usuario_cert_delete(id):
-    u=Usuario.query.get_or_404(id)
+    u=db.get_or_404(Usuario, id)
     abs_old=_cert_rel_to_abs(u.cert_arquivo)
     u.cert_arquivo=None
     u.cert_nome_arquivo=None
@@ -6051,7 +6053,7 @@ def api_criar_cliente():
 @app.route('/api/clientes/<int:id>',methods=['PUT'])
 @lr
 def api_atualizar_cliente(id):
-    c=Cliente.query.get_or_404(id)
+    c=db.get_or_404(Cliente, id)
     d=request.json or {}
     d['cnpj']=norm_doc(d.get('cnpj'))
     d['telefone']=norm_phone(d.get('telefone'))
@@ -6070,7 +6072,7 @@ def api_atualizar_cliente(id):
 @app.route('/api/clientes/<int:id>/reajuste',methods=['POST'])
 @lr
 def api_cliente_reajuste(id):
-    c=Cliente.query.get_or_404(id)
+    c=db.get_or_404(Cliente, id)
     d=request.json or {}
     pct=to_num(d.get('percentual'),dec=True)
     if pct is None:
@@ -6114,7 +6116,7 @@ def api_cliente_reajuste(id):
 @app.route('/api/clientes/<int:id>',methods=['DELETE'])
 @lr
 def api_deletar_cliente(id):
-    c=Cliente.query.get_or_404(id)
+    c=db.get_or_404(Cliente, id)
     db.session.delete(c)
     db.session.commit()
     return jsonify({'ok':True})
@@ -6134,7 +6136,7 @@ def api_listar_contratos():
 @app.route('/api/clientes/<int:cid>/contratos',methods=['POST'])
 @lr
 def api_criar_contrato(cid):
-    Cliente.query.get_or_404(cid)
+    db.get_or_404(Cliente, cid)
     d=request.json or {}
     skip=['id','criado_em']
     cols=[c.name for c in Contrato.__table__.columns if c.name not in skip]
@@ -6147,12 +6149,12 @@ def api_criar_contrato(cid):
 @app.route('/api/contratos/<int:id>',methods=['GET'])
 @lr
 def api_get_contrato(id):
-    return jsonify(Contrato.query.get_or_404(id).to_dict())
+    return jsonify(db.get_or_404(Contrato, id).to_dict())
 
 @app.route('/api/contratos/<int:id>',methods=['PUT'])
 @lr
 def api_atualizar_contrato(id):
-    ct=Contrato.query.get_or_404(id)
+    ct=db.get_or_404(Contrato, id)
     d=request.json or {}
     skip={'id','cliente_id','criado_em'}
     cols={col.name for col in Contrato.__table__.columns}
@@ -6165,14 +6167,14 @@ def api_atualizar_contrato(id):
 @app.route('/api/contratos/<int:id>',methods=['DELETE'])
 @lr
 def api_deletar_contrato(id):
-    ct=Contrato.query.get_or_404(id)
+    ct=db.get_or_404(Contrato, id)
     db.session.delete(ct); db.session.commit()
     return jsonify({'ok':True})
 
 @app.route('/api/contratos/<int:id>/reajuste',methods=['POST'])
 @lr
 def api_contrato_reajuste(id):
-    ct=Contrato.query.get_or_404(id)
+    ct=db.get_or_404(Contrato, id)
     d=request.json or {}
     pct=to_num(d.get('percentual'),dec=True)
     if pct is None:
@@ -6448,7 +6450,7 @@ def api_assinatura_enviar_otp(token):
         return _assinatura_json_erro('Documento já assinado.',400)
     if m.assinatura_expira_em and m.assinatura_expira_em<utcnow():
         return _assinatura_json_erro('Link expirado.',400)
-    cli=Cliente.query.get(m.cliente_id) if m.cliente_id else None
+    cli=db.session.get(Cliente, m.cliente_id) if m.cliente_id else None
     tel=wa_norm_number((cli.telefone if cli else '') or '')
     email=((getattr(cli,'email','') or '').strip() if cli else '')
     if not tel and not email:
@@ -6505,7 +6507,7 @@ def api_assinatura_confirmar(token):
     if not aceite:
         return _assinatura_json_erro('Confirme o aceite para concluir a assinatura.',400)
 
-    cli=Cliente.query.get(m.cliente_id) if m.cliente_id else None
+    cli=db.session.get(Cliente, m.cliente_id) if m.cliente_id else None
     tel=wa_norm_number((cli.telefone if cli else '') or '')
     email=((getattr(cli,'email','') or '').strip() if cli else '')
 
@@ -6556,10 +6558,10 @@ def api_assinatura_confirmar(token):
     # Envia cópia da medição assinada para o assinante via WhatsApp, quando houver telefone válido.
     enviado_wa=False
     try:
-        cli=Cliente.query.get(m.cliente_id) if m.cliente_id else None
+        cli=db.session.get(Cliente, m.cliente_id) if m.cliente_id else None
         tel=wa_norm_number((cli.telefone if cli else '') or '')
         if tel and wa_is_valid_number(tel):
-            emp=Empresa.query.get(m.empresa_id) if m.empresa_id else None
+            emp=db.session.get(Empresa, m.empresa_id) if m.empresa_id else None
             d=m.to_dict()
             d['empresa']=emp.to_dict() if emp else {}
             pdf_resp=_build_pdf(d)
@@ -6633,13 +6635,28 @@ def api_funcionarios_sync_ferias():
 @app.route('/api/funcionarios',methods=['GET'])
 @lr
 def api_funcionarios():
-    _sync_ferias_status()
+    # Throttle: sync de férias no máximo 1x/hora para não sobrecarregar em listagens frequentes
+    global _ferias_sync_ts
+    _agora = time.monotonic()
+    if _agora - _ferias_sync_ts > 3600:
+        _ferias_sync_ts = _agora
+        _sync_ferias_status()
     cpf=only_digits(request.args.get('cpf',''))
     if cpf:
         ex_id=to_num(request.args.get('exclude_id'))
-        for f in Funcionario.query.all():
-            if f.id==ex_id: continue
-            if only_digits(f.cpf)==cpf: return jsonify(f.to_dict())
+        # Filtro SQL: remove formatação de CPF via REPLACE no SQLite
+        from sqlalchemy import func as sqla_func
+        cpf_norm = sqla_func.replace(
+            sqla_func.replace(
+                sqla_func.replace(Funcionario.cpf, '.', ''),
+                '-', ''),
+            '/', '')
+        q = Funcionario.query.filter(cpf_norm == cpf)
+        if ex_id:
+            q = q.filter(Funcionario.id != ex_id)
+        f = q.first()
+        if f:
+            return jsonify(f.to_dict())
         return jsonify({})
     q=(request.args.get('q','') or '').lower()
     lst=Funcionario.query.order_by(Funcionario.nome).all()
@@ -7001,7 +7018,7 @@ def api_criar_funcionario():
 @app.route('/api/funcionarios/<int:id>',methods=['PUT'])
 @lr
 def api_atualizar_funcionario(id):
-    f=Funcionario.query.get_or_404(id); d=request.json or {}
+    f=db.get_or_404(Funcionario, id); d=request.json or {}
     for k in ['re','nome','cpf','email','telefone','cargo','funcao','cbo','setor','empresa_id','data_admissao','data_demissao','tipo_contrato','jornada','status','ferias_inicio','ferias_fim','ferias_obs','ferias_dias','faltas_ano','endereco','endereco_numero','endereco_complemento','endereco_bairro','cidade','estado','cep','banco_codigo','banco_nome','banco_agencia','banco_conta','banco_tipo_conta','banco_pix','rg','orgao_emissor','pis','ctps','titulo_eleitor','cert_reservista','cnh','exame_admissional_data','docs_admissao_obs','obs']:
         if k in d:
             if k=='cpf': setattr(f,k,norm_cpf(d.get(k)))
@@ -7061,7 +7078,7 @@ def api_atualizar_funcionario(id):
 @app.route('/api/funcionarios/<int:id>',methods=['DELETE'])
 @lr
 def api_deletar_funcionario(id):
-    f=Funcionario.query.get_or_404(id)
+    f=db.get_or_404(Funcionario, id)
     arqs=FuncionarioArquivo.query.filter_by(funcionario_id=id).all()
     for a in arqs:
         try: os.remove(os.path.join(UPLOAD_ROOT,a.caminho))
@@ -7075,13 +7092,13 @@ def api_deletar_funcionario(id):
 @app.route('/api/funcionarios/<int:id>/arquivos',methods=['GET'])
 @lr
 def api_funcionario_arquivos(id):
-    Funcionario.query.get_or_404(id)
+    db.get_or_404(Funcionario, id)
     return jsonify([a.to_dict() for a in FuncionarioArquivo.query.filter_by(funcionario_id=id).order_by(FuncionarioArquivo.criado_em.desc()).all()])
 
 @app.route('/api/funcionarios/<int:id>/arquivos',methods=['POST'])
 @lr
 def api_funcionario_upload_arquivo(id):
-    f=Funcionario.query.get_or_404(id)
+    f=db.get_or_404(Funcionario, id)
     fs=request.files.get('arquivo')
     if not fs: return jsonify({'erro':'Arquivo nao enviado'}),400
     cat=(request.form.get('categoria') or 'outros').strip().lower()
@@ -7174,7 +7191,7 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
     if not arquivo:
         return {'ok':False,'erro':'Arquivo invalido.'}
     if not funcionario:
-        funcionario=Funcionario.query.get(arquivo.funcionario_id)
+        funcionario=db.session.get(Funcionario, arquivo.funcionario_id)
     if (arquivo.ass_status or '')=='assinado':
         return {'ok':False,'erro':'Documento ja assinado.'}
     canal=(canal or 'link').strip().lower()
@@ -7291,7 +7308,7 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
 @app.route('/api/funcionarios/<int:id>/documentos/preparar',methods=['POST'])
 @lr
 def api_preparar_pastas_funcionario(id):
-    Funcionario.query.get_or_404(id)
+    db.get_or_404(Funcionario, id)
     d=request.json or {}
     ano=str((d.get('ano') or request.args.get('ano') or localnow().year)).strip()
     if not re.fullmatch(r'(19|20)\d{2}',ano):
@@ -7302,14 +7319,14 @@ def api_preparar_pastas_funcionario(id):
 @app.route('/api/funcionarios/<int:id>/documentos/arvore')
 @lr
 def api_funcionario_documentos_arvore(id):
-    Funcionario.query.get_or_404(id)
+    db.get_or_404(Funcionario, id)
     resp,status=build_func_docs_response(id)
     return jsonify(resp),status
 
 @app.route('/api/funcionarios/<int:id>/app-acesso',methods=['PUT'])
 @lr
 def api_funcionario_app_acesso(id):
-    f=Funcionario.query.get_or_404(id)
+    f=db.get_or_404(Funcionario, id)
     d=request.json or {}
     if 'ativo_app' in d:
         f.app_ativo=bool(d.get('ativo_app'))
@@ -7325,7 +7342,7 @@ def api_funcionario_app_acesso(id):
 @app.route('/api/funcionarios/<int:id>/push-validar',methods=['POST'])
 @lr
 def api_funcionario_push_teste(id):
-    f=Funcionario.query.get_or_404(id)
+    f=db.get_or_404(Funcionario, id)
     token_antes=(f.app_push_token or '').strip()
     tem_token=bool(token_antes)
     if not token_antes:
@@ -7336,7 +7353,7 @@ def api_funcionario_push_teste(id):
         'Se voce recebeu esta mensagem, o push de documentos esta funcionando.',
         {'tipo':'documento_assinar','arquivo_id':'0','origem':'teste_push_admin'}
     )
-    f2=Funcionario.query.get(f.id)
+    f2=db.session.get(Funcionario, f.id)
     token_depois=((f2.app_push_token or '').strip() if f2 else '')
     token_removido=bool(token_antes and not token_depois)
     status='enviado' if ok else ('token_invalido_removido' if token_removido else 'falha_envio')
@@ -7505,7 +7522,7 @@ def api_app_funcionario_stepup_solicitar():
     try: arquivo_id=int(arquivo_id)
     except: return jsonify({'erro':'arquivo_id invalido'}),400
 
-    a=FuncionarioArquivo.query.get(arquivo_id)
+    a=db.session.get(FuncionarioArquivo, arquivo_id)
     if not a or a.funcionario_id!=f.id:
         return jsonify({'erro':'Acesso negado'}),403
     if (a.ass_status or '').strip().lower()=='concluida':
@@ -7554,7 +7571,7 @@ def api_app_funcionario_refresh():
     if not refresh: return jsonify({'erro':'refresh_token obrigatorio'}),400
     sessao=FuncionarioAppSessao.query.filter_by(refresh_hash=token_hash(refresh),revogado=False).first()
     if not sessao or sessao.exp_refresh<utcnow(): return jsonify({'erro':'Refresh token invalido ou expirado'}),401
-    f=Funcionario.query.get(sessao.funcionario_id)
+    f=db.session.get(Funcionario, sessao.funcionario_id)
     if not f or f.app_ativo is False: return jsonify({'erro':'Acesso desativado'}),403
     novo_refresh=app_issue_refresh_token()
     sessao.refresh_hash=token_hash(novo_refresh)
@@ -7640,7 +7657,7 @@ def api_app_funcionario_me():
     foto_url='/api/app/funcionario/me/foto' if f.foto_perfil else None
     jornada_info=None
     if getattr(f,'jornada_id',None):
-        j=JornadaTrabalho.query.get(f.jornada_id)
+        j=db.session.get(JornadaTrabalho, f.jornada_id)
         if j:
             jornada_info={
                 'id':j.id,'nome':j.nome,
@@ -7924,7 +7941,7 @@ def api_app_ponto_solicitar_correcao():
 @app.route('/api/funcionarios/<int:fid>/ponto/solicitacoes-correcao',methods=['GET'])
 @lr
 def api_rh_ponto_solicitacoes_correcao(fid):
-    Funcionario.query.get_or_404(fid)
+    db.get_or_404(Funcionario, fid)
     itens=PontoCorrecaoSolicitacao.query.filter_by(funcionario_id=fid).order_by(
         PontoCorrecaoSolicitacao.criado_em.desc()
     ).all()
@@ -7933,7 +7950,7 @@ def api_rh_ponto_solicitacoes_correcao(fid):
 @app.route('/api/funcionarios/ponto/solicitacao-correcao/<int:id>/decidir',methods=['POST'])
 @lr
 def api_rh_decidir_correcao_ponto(id):
-    it=PontoCorrecaoSolicitacao.query.get_or_404(id)
+    it=db.get_or_404(PontoCorrecaoSolicitacao, id)
     if it.status!='pendente':
         return jsonify({'erro':'Solicitação já foi analisada.'}),400
     d=request.json or {}
@@ -7971,7 +7988,7 @@ def api_rh_todas_correcoes_pendentes():
 @app.route('/api/funcionarios/<int:id>/solicitacoes-alteracao',methods=['GET'])
 @lr
 def api_funcionario_solicitacoes_alteracao(id):
-    Funcionario.query.get_or_404(id)
+    db.get_or_404(Funcionario, id)
     itens=FuncionarioAlteracaoSolicitacao.query.filter_by(funcionario_id=id).order_by(
         FuncionarioAlteracaoSolicitacao.solicitado_em.desc(),FuncionarioAlteracaoSolicitacao.id.desc()
     ).all()
@@ -7980,7 +7997,7 @@ def api_funcionario_solicitacoes_alteracao(id):
 @app.route('/api/funcionarios/solicitacoes-alteracao/<int:id>/decidir',methods=['POST'])
 @lr
 def api_decidir_solicitacao_alteracao(id):
-    it=FuncionarioAlteracaoSolicitacao.query.get_or_404(id)
+    it=db.get_or_404(FuncionarioAlteracaoSolicitacao, id)
     if (it.status or '')!='pendente':
         return jsonify({'erro':'Solicitacao ja foi analisada.'}),400
     d=request.json or {}
@@ -7988,7 +8005,7 @@ def api_decidir_solicitacao_alteracao(id):
     motivo=(d.get('motivo') or '').strip()
     if acao not in ('aprovar','rejeitar'):
         return jsonify({'erro':'Acao invalida. Use aprovar ou rejeitar.'}),400
-    f=Funcionario.query.get_or_404(it.funcionario_id)
+    f=db.get_or_404(Funcionario, it.funcionario_id)
     if acao=='aprovar':
         payload=jloads(it.payload,{})
         for k,v in (payload.items() if isinstance(payload,dict) else []):
@@ -8103,7 +8120,7 @@ def api_app_funcionario_historico_beneficios():
 @app.route('/api/app/funcionario/arquivos/<int:id>/download')
 @app_func_required
 def api_app_funcionario_download_arquivo(id):
-    a=FuncionarioArquivo.query.get_or_404(id)
+    a=db.get_or_404(FuncionarioArquivo, id)
     if a.funcionario_id!=g.app_funcionario.id:
         return jsonify({'erro':'Acesso negado'}),403
     abs_p=os.path.join(UPLOAD_ROOT,a.caminho)
@@ -8115,7 +8132,7 @@ def api_app_funcionario_download_arquivo(id):
 @app_func_required
 def api_app_funcionario_assinar_arquivo(id):
     f=g.app_funcionario
-    a=FuncionarioArquivo.query.get_or_404(id)
+    a=db.get_or_404(FuncionarioArquivo, id)
     if a.funcionario_id!=f.id:
         return jsonify({'erro':'Acesso negado'}),403
     status_atual=(a.ass_status or '').strip().lower()
@@ -8270,7 +8287,7 @@ def api_app_comunicados_lista():
 @app_func_required
 def api_app_comunicado_marcar_lido(cid):
     f=g.app_funcionario
-    c=ComunicadoApp.query.get_or_404(cid)
+    c=db.get_or_404(ComunicadoApp, cid)
     c.marcar_lido(f.id)
     db.session.commit()
     return jsonify({'ok':True})
@@ -8351,7 +8368,7 @@ def api_app_mensagem_enviar_arquivo():
 @app_func_required
 def api_app_mensagem_download_arquivo(mid):
     f=g.app_funcionario
-    m=MensagemApp.query.get_or_404(mid)
+    m=db.get_or_404(MensagemApp, mid)
     if m.funcionario_id!=f.id:
         return jsonify({'erro':'Acesso negado'}),403
     if not m.arquivo_caminho: return jsonify({'erro':'Mensagem sem arquivo'}),404
@@ -8361,6 +8378,7 @@ def api_app_mensagem_download_arquivo(mid):
 
 @app.route('/api/app/funcionario/mensagens/nao-lidas')
 @app_func_required
+@cache.cached(timeout=5, key_prefix=lambda: f'app_msg_nao_lidas_{g.app_funcionario.id}')
 def api_app_mensagens_nao_lidas():
     f=g.app_funcionario
     count=MensagemApp.query.filter_by(funcionario_id=f.id,de_rh=True,lida=False).count()
@@ -8371,7 +8389,7 @@ def api_app_mensagens_nao_lidas():
 def api_app_mensagem_apagar(mid):
     """Funcionário apaga uma mensagem PRÓPRIA (de_rh=False) da sua conversa."""
     f=g.app_funcionario
-    m=MensagemApp.query.get_or_404(mid)
+    m=db.get_or_404(MensagemApp, mid)
     if m.funcionario_id!=f.id:
         return jsonify({'erro':'Acesso negado'}),403
     if m.de_rh:
@@ -8428,7 +8446,7 @@ def _app_ponto_marcacoes_dia(funcionario_id,data_ref):
 def _app_ponto_min_esperado_jornada(funcionario):
     # Preferir jornada estruturada (JornadaTrabalho)
     if getattr(funcionario,'jornada_id',None):
-        j=JornadaTrabalho.query.get(funcionario.jornada_id)
+        j=db.session.get(JornadaTrabalho, funcionario.jornada_id)
         if j:
             return j.carga_horaria_min()
     # Fallback: campo texto legado
@@ -8449,7 +8467,7 @@ def _app_ponto_min_esperado_jornada(funcionario):
 
 def _app_ponto_min_esperado_jornada_data(funcionario,data_ref):
     if getattr(funcionario,'jornada_id',None):
-        j=JornadaTrabalho.query.get(funcionario.jornada_id)
+        j=db.session.get(JornadaTrabalho, funcionario.jornada_id)
         if j:
             try:
                 if isinstance(data_ref,str):
@@ -8480,7 +8498,7 @@ def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
             if ef.data_fim and ef.data_fim<data_str:
                 continue
             # Encontrou escala ativa; calcular índice no ciclo
-            esc=Escala.query.get(ef.escala_id)
+            esc=db.session.get(Escala, ef.escala_id)
             if not esc:
                 continue
             
@@ -8725,7 +8743,7 @@ def api_app_ponto_marcar_me():
         'posto_cliente_id':f.posto_cliente_id,
     }
     if f.posto_cliente_id:
-        cli=Cliente.query.get(f.posto_cliente_id)
+        cli=db.session.get(Cliente, f.posto_cliente_id)
         if cli and cli.geo_lat is not None and cli.geo_lon is not None:
             distancia=_geo_haversine_m(lat,lon,cli.geo_lat,cli.geo_lon)
             raio=float(cli.geofence_raio_m or 150)
@@ -9112,7 +9130,7 @@ def api_jornadas_criar():
 @app.route('/api/jornadas/<int:id>',methods=['GET'])
 @lr
 def api_jornada_detalhe(id):
-    j=JornadaTrabalho.query.get_or_404(id)
+    j=db.get_or_404(JornadaTrabalho, id)
     d=j.to_dict()
     d['funcionarios']=[{'id':f.id,'nome':f.nome,'cargo':f.cargo,'status':f.status} for f in Funcionario.query.filter_by(jornada_id=id).order_by(Funcionario.nome).all()]
     return jsonify(d)
@@ -9120,7 +9138,7 @@ def api_jornada_detalhe(id):
 @app.route('/api/jornadas/<int:id>',methods=['PUT'])
 @lr
 def api_jornada_editar(id):
-    j=JornadaTrabalho.query.get_or_404(id)
+    j=db.get_or_404(JornadaTrabalho, id)
     d=request.json or {}
     if 'nome' in d:
         n=(d['nome'] or '').strip()
@@ -9160,7 +9178,7 @@ def api_jornada_editar(id):
 @app.route('/api/jornadas/<int:id>',methods=['DELETE'])
 @lr
 def api_jornada_excluir(id):
-    j=JornadaTrabalho.query.get_or_404(id)
+    j=db.get_or_404(JornadaTrabalho, id)
     count=Funcionario.query.filter_by(jornada_id=id).count()
     if count>0:
         return jsonify({'erro':f'Jornada está vinculada a {count} funcionário(s). Desvincule antes de excluir.'}),400
@@ -9171,7 +9189,7 @@ def api_jornada_excluir(id):
 @app.route('/api/jornadas/<int:id>/funcionarios',methods=['POST'])
 @lr
 def api_jornada_vincular_funcionarios(id):
-    j=JornadaTrabalho.query.get_or_404(id)
+    j=db.get_or_404(JornadaTrabalho, id)
     d=request.json or {}
     ids=d.get('funcionario_ids') or []
     if not isinstance(ids,list):
@@ -9188,11 +9206,11 @@ def api_jornada_vincular_funcionarios(id):
 
     conflitos=[]
     for fid in ids_ok:
-        f=Funcionario.query.get(fid)
+        f=db.session.get(Funcionario, fid)
         if not f:
             continue
         if f.jornada_id and int(f.jornada_id)!=int(id):
-            j_atual=JornadaTrabalho.query.get(f.jornada_id)
+            j_atual=db.session.get(JornadaTrabalho, f.jornada_id)
             conflitos.append({
                 'funcionario_id':f.id,
                 'nome':f.nome or '',
@@ -9212,7 +9230,7 @@ def api_jornada_vincular_funcionarios(id):
 
     vinculados=[]
     for fid in ids_ok:
-        f=Funcionario.query.get(fid)
+        f=db.session.get(Funcionario, fid)
         if not f:
             continue
         f.jornada_id=id
@@ -9224,7 +9242,7 @@ def api_jornada_vincular_funcionarios(id):
 @app.route('/api/jornadas/<int:id>/funcionarios/<int:fid>',methods=['DELETE'])
 @lr
 def api_jornada_desvincular_funcionario(id,fid):
-    f=Funcionario.query.get_or_404(fid)
+    f=db.get_or_404(Funcionario, fid)
     if f.jornada_id!=id:
         return jsonify({'erro':'Funcionário não está nesta jornada'}),400
     f.jornada_id=None
@@ -9234,13 +9252,13 @@ def api_jornada_desvincular_funcionario(id,fid):
 @app.route('/api/funcionarios/<int:id>/jornada',methods=['PUT'])
 @lr
 def api_funcionario_definir_jornada(id):
-    f=Funcionario.query.get_or_404(id)
+    f=db.get_or_404(Funcionario, id)
     d=request.json or {}
     jid=d.get('jornada_id')
     if jid is None or jid=='':
         f.jornada_id=None
     else:
-        j=JornadaTrabalho.query.get(int(jid))
+        j=db.session.get(JornadaTrabalho, int(jid))
         if not j: return jsonify({'erro':'Jornada não encontrada'}),404
         f.jornada_id=j.id
     db.session.commit()
@@ -9296,12 +9314,12 @@ def api_escalas_criar():
 @app.route('/api/escalas/<int:id>',methods=['GET'])
 @lr
 def api_escala_detalhe(id):
-    e=Escala.query.get_or_404(id)
+    e=db.get_or_404(Escala, id)
     d=e.to_dict()
     # Incluir funcionários vinculados
     d['funcionarios']=[]
     for ef in EscalaFuncionario.query.filter_by(escala_id=id,ativo=True).all():
-        f=Funcionario.query.get(ef.funcionario_id)
+        f=db.session.get(Funcionario, ef.funcionario_id)
         if f:
             d['funcionarios'].append({
                 'id':f.id,
@@ -9316,7 +9334,7 @@ def api_escala_detalhe(id):
 @app.route('/api/escalas/<int:id>',methods=['PUT'])
 @lr
 def api_escala_editar(id):
-    e=Escala.query.get_or_404(id)
+    e=db.get_or_404(Escala, id)
     d=request.json or {}
     if 'nome' in d:
         e.nome=(d.get('nome') or '').strip() or e.nome
@@ -9344,7 +9362,7 @@ def api_escala_editar(id):
 @app.route('/api/escalas/<int:id>',methods=['DELETE'])
 @lr
 def api_escala_excluir(id):
-    e=Escala.query.get_or_404(id)
+    e=db.get_or_404(Escala, id)
     e.ativo=False
     db.session.commit()
     audit_event('escala_excluir','usuario',session.get('uid'),'escala',id,True,{'nome':e.nome})
@@ -9353,7 +9371,7 @@ def api_escala_excluir(id):
 @app.route('/api/escalas/<int:id>/funcionarios',methods=['POST'])
 @lr
 def api_escala_vincular_funcionarios(id):
-    e=Escala.query.get_or_404(id)
+    e=db.get_or_404(Escala, id)
     d=request.json or {}
     pares=d.get('funcionarios') or []  # [{'funcionario_id': 1, 'data_inicio': '2026-05-11', 'data_fim': None}, ...]
     if not isinstance(pares,list):
@@ -9370,7 +9388,7 @@ def api_escala_vincular_funcionarios(id):
         if not fid or not data_ini:
             continue
         
-        f=Funcionario.query.get(fid)
+        f=db.session.get(Funcionario, fid)
         if not f:
             continue
         
@@ -9383,7 +9401,7 @@ def api_escala_vincular_funcionarios(id):
         ).first()
         
         if conflito:
-            esc_atual=Escala.query.get(conflito.escala_id)
+            esc_atual=db.session.get(Escala, conflito.escala_id)
             return jsonify({
                 'erro':f'Funcionário {f.nome} já está em outra escala ({esc_atual.nome if esc_atual else f"escala #{conflito.escala_id}"})',
                 'conflito_funcionario_id':fid,
@@ -9417,7 +9435,7 @@ def api_escala_desvincular_funcionario(id,fid):
 @lr
 def api_escala_turno_do_dia(id,data):
     """Retorna info do turno para uma data específica dentro do ciclo da escala"""
-    e=Escala.query.get_or_404(id)
+    e=db.get_or_404(Escala, id)
     # Assumindo que data é a data_inicio de alguma EscalaFuncionario ativa
     # Aqui retornamos apenas a info do turno do dia no ciclo
     try:
@@ -9481,7 +9499,7 @@ def api_rh_comunicado_criar():
 @app.route('/api/comunicados-app/<int:cid>',methods=['PUT'])
 @lr
 def api_rh_comunicado_editar(cid):
-    c=ComunicadoApp.query.get_or_404(cid)
+    c=db.get_or_404(ComunicadoApp, cid)
     d=request.json or {}
     if 'titulo' in d: c.titulo=(d['titulo'] or '').strip()
     if 'conteudo' in d: c.conteudo=(d['conteudo'] or '').strip()
@@ -9492,7 +9510,7 @@ def api_rh_comunicado_editar(cid):
 @app.route('/api/comunicados-app/<int:cid>',methods=['DELETE'])
 @lr
 def api_rh_comunicado_excluir(cid):
-    c=ComunicadoApp.query.get_or_404(cid)
+    c=db.get_or_404(ComunicadoApp, cid)
     c.ativo=False
     db.session.commit()
     return jsonify({'ok':True})
@@ -9514,7 +9532,7 @@ def api_rh_mensagens_funcionarios():
     ).group_by(MensagemApp.funcionario_id).all()
     result=[]
     for row in subq:
-        f=Funcionario.query.get(row.funcionario_id)
+        f=db.session.get(Funcionario, row.funcionario_id)
         if not f: continue
         result.append({
             'funcionario_id':f.id,
@@ -9530,7 +9548,7 @@ def api_rh_mensagens_funcionarios():
 @app.route('/api/mensagens-app/<int:fid>')
 @lr
 def api_rh_mensagens_chat(fid):
-    Funcionario.query.get_or_404(fid)
+    db.get_or_404(Funcionario, fid)
     msgs=MensagemApp.query.filter_by(funcionario_id=fid).order_by(MensagemApp.enviado_em.asc()).all()
     # Marcar mensagens do funcionário como lidas
     for m in msgs:
@@ -9542,7 +9560,7 @@ def api_rh_mensagens_chat(fid):
 @app.route('/api/mensagens-app/<int:fid>',methods=['POST'])
 @lr
 def api_rh_mensagem_responder(fid):
-    Funcionario.query.get_or_404(fid)
+    db.get_or_404(Funcionario, fid)
     d=request.json or {}
     conteudo=(d.get('conteudo') or '').strip()
     if not conteudo: return jsonify({'erro':'Mensagem nao pode ser vazia'}),400
@@ -9589,7 +9607,7 @@ def api_rh_mensagens_broadcast():
 @app.route('/api/funcionarios/arquivos/<int:id>',methods=['DELETE'])
 @lr
 def api_funcionario_delete_arquivo(id):
-    a=FuncionarioArquivo.query.get_or_404(id)
+    a=db.get_or_404(FuncionarioArquivo, id)
     fid=a.funcionario_id
     cam=a.caminho
     try: os.remove(os.path.join(UPLOAD_ROOT,a.caminho))
@@ -9601,7 +9619,7 @@ def api_funcionario_delete_arquivo(id):
 @app.route('/api/funcionarios/arquivos/<int:id>/download')
 @lr
 def api_funcionario_download_arquivo(id):
-    a=FuncionarioArquivo.query.get_or_404(id)
+    a=db.get_or_404(FuncionarioArquivo, id)
     abs_p=os.path.join(UPLOAD_ROOT,a.caminho)
     if not os.path.exists(abs_p): return jsonify({'erro':'Arquivo nao encontrado'}),404
     ator_tipo='funcionario_app' if getattr(g,'app_funcionario',None) else 'usuario'
@@ -9612,8 +9630,8 @@ def api_funcionario_download_arquivo(id):
 @app.route('/api/funcionarios/arquivos/<int:id>/assinatura/solicitar',methods=['POST'])
 @lr
 def api_func_arquivo_solicitar_assinatura(id):
-    a=FuncionarioArquivo.query.get_or_404(id)
-    f=Funcionario.query.get_or_404(a.funcionario_id)
+    a=db.get_or_404(FuncionarioArquivo, id)
+    f=db.get_or_404(Funcionario, a.funcionario_id)
     d=request.json or {}
     canal_req=(d.get('canal') or '').strip().lower()
     canal_padrao=(a.ass_canal_envio or '').strip().lower()
@@ -9648,7 +9666,7 @@ def api_func_arquivo_solicitar_assinatura(id):
 @app.route('/api/funcionarios/arquivos/<int:id>/assinatura/rastreio')
 @lr
 def api_func_arquivo_assinatura_rastreio(id):
-    a=FuncionarioArquivo.query.get_or_404(id)
+    a=db.get_or_404(FuncionarioArquivo, id)
     return jsonify({
         'ok':True,
         'arquivo_id':a.id,
@@ -9674,7 +9692,7 @@ def api_func_arquivo_assinatura_rastreio(id):
 @app.route('/api/funcionarios/arquivos/<int:id>/assinatura/cancelar',methods=['POST'])
 @lr
 def api_func_arquivo_cancelar_assinatura(id):
-    a=FuncionarioArquivo.query.get_or_404(id)
+    a=db.get_or_404(FuncionarioArquivo, id)
     status_atual=(a.ass_status or '').strip().lower()
     if status_atual not in ('pendente','nao_solicitada','expirado',''):
         return jsonify({'erro':'Não é possível cancelar: assinatura já concluída ou em status inválido.'}),400
@@ -9699,7 +9717,7 @@ def api_rh_dashboard_assinaturas_pendentes():
     for a in pendentes:
         fid=a.funcionario_id
         if fid not in por_func:
-            f=Funcionario.query.get(fid)
+            f=db.session.get(Funcionario, fid)
             por_func[fid]={
                 'funcionario_id':fid,
                 'funcionario_nome':(f.nome if f else f'ID {fid}'),
@@ -9762,7 +9780,7 @@ def api_rh_assinaturas_painel():
     func_cache={}
     def _get_func(fid):
         if fid not in func_cache:
-            func_cache[fid]=Funcionario.query.get(fid)
+            func_cache[fid]=db.session.get(Funcionario, fid)
         return func_cache[fid]
 
     itens=[]
@@ -9846,7 +9864,7 @@ def api_rh_assinaturas_lembrete_pendentes():
     for a in registros:
         try:
             if a.funcionario_id not in func_cache:
-                func_cache[a.funcionario_id]=Funcionario.query.get(a.funcionario_id)
+                func_cache[a.funcionario_id]=db.session.get(Funcionario, a.funcionario_id)
             f=func_cache[a.funcionario_id]
             canal=_ass_track_channel('',_canal_padrao_arquivo(a))
             rs=_solicitar_assinatura_arquivo_funcionario(
@@ -9902,14 +9920,14 @@ def func_doc_assinar_publica(token):
     if not a:
         return render_template('doc_assinatura.html',ok=False,mensagem='Link de assinatura inválido.',arquivo=None,funcionario=None)
     if (a.ass_status or '')=='assinado':
-        return render_template('doc_assinatura.html',ok=False,mensagem='Este documento já foi assinado.',arquivo=a,funcionario=Funcionario.query.get(a.funcionario_id))
+        return render_template('doc_assinatura.html',ok=False,mensagem='Este documento já foi assinado.',arquivo=a,funcionario=db.session.get(Funcionario, a.funcionario_id))
     if a.ass_expira_em and a.ass_expira_em<utcnow():
         a.ass_status='expirado'; _db_commit_retry('doc_assinar_expirado', swallow_locked=True)
-        return render_template('doc_assinatura.html',ok=False,mensagem='Link expirado. Solicite um novo link ao RH.',arquivo=a,funcionario=Funcionario.query.get(a.funcionario_id))
+        return render_template('doc_assinatura.html',ok=False,mensagem='Link expirado. Solicite um novo link ao RH.',arquivo=a,funcionario=db.session.get(Funcionario, a.funcionario_id))
     src=request.args.get('src','')
     if _ass_track_mark_received(a,src):
         _db_commit_retry('doc_assinar_recebido', swallow_locked=True)
-    return render_template('doc_assinatura.html',ok=True,mensagem='',arquivo=a,funcionario=Funcionario.query.get(a.funcionario_id))
+    return render_template('doc_assinatura.html',ok=True,mensagem='',arquivo=a,funcionario=db.session.get(Funcionario, a.funcionario_id))
 
 @app.route('/doc/assinar/<token>/arquivo')
 def func_doc_assinar_visualizar_arquivo(token):
@@ -9933,7 +9951,7 @@ def api_func_doc_assinatura_enviar_otp(token):
         return _assinatura_json_erro('Documento já assinado.',400)
     if a.ass_expira_em and a.ass_expira_em<utcnow():
         return _assinatura_json_erro('Link expirado.',400)
-    f=Funcionario.query.get(a.funcionario_id)
+    f=db.session.get(Funcionario, a.funcionario_id)
     tel=(f.telefone if f else '') or ''
     email=(f.email if f else '') or ''
     if not (wa_norm_number(tel) or (email or '').strip()):
@@ -9977,7 +9995,7 @@ def api_func_doc_assinatura_confirmar(token):
 
     # Regra RH: se CPF digitado for igual ao CPF cadastrado do funcionário, não bloquear.
     # Só bloquear por divergência quando existir CPF cadastrado diferente.
-    f=Funcionario.query.get(a.funcionario_id)
+    f=db.session.get(Funcionario, a.funcionario_id)
     cpf_cadastrado=''
     if f and f.cpf:
         cpf_cadastrado=only_digits(f.cpf or '')
@@ -10034,7 +10052,7 @@ def api_func_doc_assinatura_confirmar(token):
     if copia_assinada and copia_assinada.get('ok') and copia_assinada.get('abs_path'):
         rs_crypto=_try_sign_pdf_file_crypto(copia_assinada.get('abs_path'),empresa_id=(f.empresa_id if f else None),usuario_id=session.get('uid'))
         hash_final=_sha256_file(copia_assinada.get('abs_path'))
-        novo=FuncionarioArquivo.query.get(copia_assinada.get('arquivo_id')) if copia_assinada.get('arquivo_id') else None
+        novo=db.session.get(FuncionarioArquivo, copia_assinada.get('arquivo_id')) if copia_assinada.get('arquivo_id') else None
         if novo:
             novo.ass_doc_hash=hash_final
             novo.ass_crypto_ok=bool(rs_crypto.get('ok'))
@@ -10122,7 +10140,7 @@ def func_doc_validar_publica(codigo):
     a=FuncionarioArquivo.query.filter_by(ass_codigo=cod).first()
     if not a:
         return render_template('doc_validacao.html',ok=False,mensagem='Assinatura não encontrada para o código informado.',arquivo=None,funcionario=None)
-    f=Funcionario.query.get(a.funcionario_id)
+    f=db.session.get(Funcionario, a.funcionario_id)
     ok=(a.ass_status or '').strip().lower()=='assinado'
     msg='Assinatura válida.' if ok else ('Assinatura pendente ou não concluída.' if (a.ass_status or '')=='pendente' else 'Assinatura expirada ou inválida.')
     return render_template('doc_validacao.html',ok=ok,mensagem=msg,arquivo=a,funcionario=f)
@@ -10155,7 +10173,7 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
 
     emp=None
     if funcionario and funcionario.empresa_id:
-        emp=Empresa.query.get(funcionario.empresa_id)
+        emp=db.session.get(Empresa, funcionario.empresa_id)
     if not emp:
         emp=Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
     empresa_nome=(emp.nome if emp and emp.nome else 'RM Facilities')
@@ -10454,10 +10472,10 @@ def _salvar_pdf_assinado_em_arquivos_funcionario(arquivo,funcionario,url_root):
 @app.route('/api/funcionarios/arquivos/<int:id>/assinatura/pdf-auditoria')
 @lr
 def api_func_arquivo_assinatura_pdf(id):
-    a=FuncionarioArquivo.query.get_or_404(id)
+    a=db.get_or_404(FuncionarioArquivo, id)
     if (a.ass_status or '')!='assinado':
         return jsonify({'erro':'Documento ainda não foi assinado.'}),400
-    f=Funcionario.query.get(a.funcionario_id)
+    f=db.session.get(Funcionario, a.funcionario_id)
     buf=_build_doc_assinatura_pdf(a,f,request.url_root.rstrip('/'))
     return send_file(io.BytesIO(buf),mimetype='application/pdf',as_attachment=True,
                      download_name=f'auditoria_assinatura_{a.ass_codigo or a.id}.pdf')
@@ -10486,7 +10504,7 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
         b=dict(fontName='Helvetica',fontSize=10,leading=14,textColor=colors.HexColor('#020202'),spaceAfter=0,spaceBefore=0)
         b.update(kw); return ParagraphStyle(nm,**b)
 
-    emp=Empresa.query.get(envelope.empresa_id) if envelope.empresa_id else None
+    emp=db.session.get(Empresa, envelope.empresa_id) if envelope.empresa_id else None
     if not emp:
         emp=Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
     empresa_nome=(emp.nome if emp and emp.nome else 'RM Facilities')
@@ -10979,7 +10997,7 @@ def _salvar_pdf_assinado_destino_envelope(envelope,abs_pdf_path,fname):
     if not fid:
         return {'ok':False,'destino':'funcionario','erro':'Destino funcionário selecionado, mas nenhum funcionário foi definido.'}
 
-    func=Funcionario.query.get(fid)
+    func=db.session.get(Funcionario, fid)
     if not func:
         return {'ok':False,'destino':'funcionario','erro':'Funcionário de destino não encontrado.'}
 
@@ -11074,9 +11092,9 @@ def api_envelopes_criar():
 @app.route('/api/envelopes/<int:id>',methods=['GET'])
 @lr
 def api_envelope_detalhe(id):
-    env=AssinaturaEnvelope.query.get_or_404(id)
+    env=db.get_or_404(AssinaturaEnvelope, id)
     d=env.to_dict()
-    emp=Empresa.query.get(env.empresa_id) if env.empresa_id else None
+    emp=db.session.get(Empresa, env.empresa_id) if env.empresa_id else None
     d['empresa_nome']=(emp.nome if emp else '')
     d['empresa_razao']=(emp.razao if emp else '')
     d['arquivos']=[a.to_dict() for a in AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).order_by(AssinaturaEnvelopeArquivo.ordem,AssinaturaEnvelopeArquivo.id).all()]
@@ -11087,7 +11105,7 @@ def api_envelope_detalhe(id):
 @app.route('/api/envelopes/<int:id>',methods=['PUT'])
 @lr
 def api_envelope_atualizar(id):
-    env=AssinaturaEnvelope.query.get_or_404(id)
+    env=db.get_or_404(AssinaturaEnvelope, id)
     data=request.get_json() or {}
     if 'titulo' in data: env.titulo=(data['titulo'] or '').strip() or env.titulo
     if 'descricao' in data: env.descricao=(data['descricao'] or '').strip() or None
@@ -11113,7 +11131,7 @@ def api_envelope_atualizar(id):
 @lr
 def api_envelope_deletar(id):
     try:
-        env=AssinaturaEnvelope.query.get_or_404(id)
+        env=db.get_or_404(AssinaturaEnvelope, id)
         # Permite excluir em qualquer status (inclusive concluído/assinado).
         # Remove também arquivos físicos para evitar órfãos em disco.
         arqs=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).all()
@@ -11152,7 +11170,7 @@ def api_envelope_deletar(id):
 @app.route('/api/envelopes/<int:id>/cancelar',methods=['POST'])
 @lr
 def api_envelope_cancelar(id):
-    env=AssinaturaEnvelope.query.get_or_404(id)
+    env=db.get_or_404(AssinaturaEnvelope, id)
     if env.status=='concluido':
         return jsonify({'erro':'Não é possível cancelar um envelope já concluído.'}),400
     env.status='cancelado'
@@ -11163,7 +11181,7 @@ def api_envelope_cancelar(id):
 @app.route('/api/envelopes/<int:id>/reativar',methods=['POST'])
 @lr
 def api_envelope_reativar(id):
-    env=AssinaturaEnvelope.query.get_or_404(id)
+    env=db.get_or_404(AssinaturaEnvelope, id)
     if env.status!='cancelado':
         return jsonify({'erro':'Só é possível reativar envelopes cancelados.'}),400
     # Verifica se ainda há signatários pendentes
@@ -11176,7 +11194,7 @@ def api_envelope_reativar(id):
 @app.route('/api/envelopes/<int:id>/stamp',methods=['PUT'])
 @lr
 def api_envelope_stamp(id):
-    env=AssinaturaEnvelope.query.get_or_404(id)
+    env=db.get_or_404(AssinaturaEnvelope, id)
     data=request.get_json() or {}
     env.stamp_habilitado=bool(data.get('stamp_habilitado',False))
     env.stamp_pagina=max(1,int(data.get('stamp_pagina',1) or 1))
@@ -11194,12 +11212,12 @@ def api_envelope_stamp(id):
 @app.route('/api/envelopes/<int:id>/arquivos',methods=['POST'])
 @lr
 def api_envelope_add_arquivo(id):
-    env=AssinaturaEnvelope.query.get_or_404(id)
+    env=db.get_or_404(AssinaturaEnvelope, id)
     # Se for arquivo do sistema (func_arquivo_id)
     data_json=request.get_json(silent=True) or {}
     func_arquivo_id=request.form.get('func_arquivo_id') or data_json.get('func_arquivo_id')
     if func_arquivo_id:
-        fa=FuncionarioArquivo.query.get(int(func_arquivo_id))
+        fa=db.session.get(FuncionarioArquivo, int(func_arquivo_id))
         if not fa:
             return jsonify({'erro':'Arquivo não encontrado'}),404
         ordem_top=(db.session.query(db.func.max(AssinaturaEnvelopeArquivo.ordem))
@@ -11258,7 +11276,7 @@ def api_envelope_del_arquivo(id,arq_id):
 @app.route('/api/envelopes/<int:id>/arquivos/ordem',methods=['PUT'])
 @lr
 def api_envelope_reordenar_arquivos(id):
-    AssinaturaEnvelope.query.get_or_404(id)
+    db.get_or_404(AssinaturaEnvelope, id)
     data=request.get_json(silent=True) or {}
     ordem_ids=data.get('ordem') or []
     if not isinstance(ordem_ids,list) or not ordem_ids:
@@ -11285,7 +11303,7 @@ def api_envelope_reordenar_arquivos(id):
 @app.route('/api/envelopes/<int:id>/arquivos/<int:arq_id>/visualizar',methods=['GET'])
 @lr
 def api_envelope_visualizar_arquivo_admin(id,arq_id):
-    AssinaturaEnvelope.query.get_or_404(id)
+    db.get_or_404(AssinaturaEnvelope, id)
     arq=AssinaturaEnvelopeArquivo.query.filter_by(id=arq_id,envelope_id=id).first_or_404()
     raw=(arq.caminho or '').strip()
     cands=[raw]
@@ -11328,7 +11346,7 @@ def _ass_buscar_cadastro_por_telefone(telefone):
 @app.route('/api/envelopes/<int:id>/signatarios',methods=['POST'])
 @lr
 def api_envelope_add_signatario(id):
-    AssinaturaEnvelope.query.get_or_404(id)
+    db.get_or_404(AssinaturaEnvelope, id)
     data=request.get_json() or {}
     nome=(data.get('nome') or '').strip()
     tel_in=(data.get('telefone') or '').strip()
@@ -11375,7 +11393,7 @@ def api_envelope_del_signatario(id,sig_id):
 @app.route('/api/envelopes/<int:id>/enviar',methods=['POST'])
 @lr
 def api_envelope_enviar(id):
-    env=AssinaturaEnvelope.query.get_or_404(id)
+    env=db.get_or_404(AssinaturaEnvelope, id)
     data=request.get_json(silent=True) or {}
     canal=(data.get('canal') or 'whatsapp').strip().lower()
     if canal not in ('whatsapp','email','link'):
@@ -11388,7 +11406,7 @@ def api_envelope_enviar(id):
         return jsonify({'erro':'Adicione ao menos um arquivo antes de enviar'}),400
     if not env.codigo:
         env.codigo=secrets.token_urlsafe(12)
-    emp=Empresa.query.get(env.empresa_id) if env.empresa_id else None
+    emp=db.session.get(Empresa, env.empresa_id) if env.empresa_id else None
     empresa_nome=(emp.razao or emp.nome) if emp else 'RM Facilities'
     url_root=request.url_root.rstrip('/')
     enviados=[]
@@ -11509,9 +11527,9 @@ def envelope_assinar_visualizar_arquivo(token,arq_id):
 @app.route('/envelope/assinar/<token>')
 def envelope_assinar_publica(token):
     sig=AssinaturaEnvelopeSignatario.query.filter_by(token=token).first_or_404()
-    env=AssinaturaEnvelope.query.get_or_404(sig.envelope_id)
+    env=db.get_or_404(AssinaturaEnvelope, sig.envelope_id)
     arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=env.id).order_by(AssinaturaEnvelopeArquivo.ordem,AssinaturaEnvelopeArquivo.id).all()
-    empresa=Empresa.query.get(env.empresa_id) if env.empresa_id else Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
+    empresa=db.session.get(Empresa, env.empresa_id) if env.empresa_id else Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
     empresas=[empresa] if empresa else []
     src=request.args.get('src','')
     if _ass_track_mark_received(sig,src):
@@ -11523,7 +11541,7 @@ def api_envelope_assinatura_enviar_otp(token):
     sig=AssinaturaEnvelopeSignatario.query.filter_by(token=token).first_or_404()
     if sig.status=='assinado':
         return _assinatura_json_erro('Você já assinou este documento.',400)
-    env=AssinaturaEnvelope.query.get_or_404(sig.envelope_id)
+    env=db.get_or_404(AssinaturaEnvelope, sig.envelope_id)
     if env.expira_em and datetime.utcnow() > env.expira_em:
         return _assinatura_json_erro('O prazo para assinatura deste documento expirou.',400)
     if not (wa_norm_number(sig.telefone or '') or (sig.email or '').strip()):
@@ -11551,7 +11569,7 @@ def api_envelope_assinatura_confirmar(token):
     sig=AssinaturaEnvelopeSignatario.query.filter_by(token=token).first_or_404()
     if sig.status=='assinado':
         return _assinatura_json_erro('Você já assinou este documento.',400)
-    env=AssinaturaEnvelope.query.get_or_404(sig.envelope_id)
+    env=db.get_or_404(AssinaturaEnvelope, sig.envelope_id)
     if env.expira_em and datetime.utcnow() > env.expira_em:
         return _assinatura_json_erro('O prazo para assinatura deste documento expirou.',400)
     if not env.codigo:
@@ -11638,7 +11656,7 @@ def api_envelope_assinatura_confirmar(token):
     sig.token=None  # invalida o token após uso
     url_root=request.url_root.rstrip('/')
     signed_pdf_link=''
-    emp=Empresa.query.get(env.empresa_id) if env.empresa_id else None
+    emp=db.session.get(Empresa, env.empresa_id) if env.empresa_id else None
     empresa_nome=(emp.razao or emp.nome) if emp else 'RM Facilities'
     # Verifica se todos assinaram
     todos=AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=env.id).all()
@@ -11716,7 +11734,7 @@ def envelope_validar_publica(codigo):
     signatarios=AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=env.id).order_by(
         AssinaturaEnvelopeSignatario.ordem,AssinaturaEnvelopeSignatario.id).all()
     arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=env.id).order_by(AssinaturaEnvelopeArquivo.ordem,AssinaturaEnvelopeArquivo.id).all()
-    empresa=Empresa.query.get(env.empresa_id) if env.empresa_id else Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
+    empresa=db.session.get(Empresa, env.empresa_id) if env.empresa_id else Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
     empresas=[empresa] if empresa else []
     return render_template('envelope_validar.html',env=env,signatarios=signatarios,arquivos=arquivos,empresas=empresas)
 
@@ -12028,7 +12046,7 @@ def api_rh_preview_destinatarios():
         return jsonify({'erro':'Dependencia pypdf nao instalada'}),500
 
     if funcionario_id:
-        f=Funcionario.query.get(funcionario_id)
+        f=db.session.get(Funcionario, funcionario_id)
         if not f:
             return jsonify({'erro':'Funcionario selecionado nao encontrado.'}),404
         tel=wa_norm_number(f.telefone or '')
@@ -12145,7 +12163,7 @@ def api_criar_ordem_compra():
 @app.route('/api/ordens-compra/<int:id>',methods=['PUT'])
 @lr
 def api_atualizar_ordem_compra(id):
-    o=OrdemCompra.query.get_or_404(id); d=request.json or {}
+    o=db.get_or_404(OrdemCompra, id); d=request.json or {}
     for k in ['numero','empresa_id','solicitante','fornecedor','descricao','status','data_emissao']:
         if k in d: setattr(o,k,d[k])
     if 'valor' in d: o.valor=to_num(d.get('valor'),dec=True)
@@ -12154,7 +12172,7 @@ def api_atualizar_ordem_compra(id):
 @app.route('/api/ordens-compra/<int:id>',methods=['DELETE'])
 @lr
 def api_deletar_ordem_compra(id):
-    db.session.delete(OrdemCompra.query.get_or_404(id)); db.session.commit(); return jsonify({'ok':True})
+    db.session.delete(db.get_or_404(OrdemCompra, id)); db.session.commit(); return jsonify({'ok':True})
 
 @app.route('/api/operacional/documentos',methods=['GET'])
 @lr
@@ -12176,7 +12194,7 @@ def api_criar_oper_doc():
 @app.route('/api/operacional/documentos/<int:id>',methods=['DELETE'])
 @lr
 def api_del_oper_doc(id):
-    d=OperacionalDocumento.query.get_or_404(id)
+    d=db.get_or_404(OperacionalDocumento, id)
     if d.caminho:
         try: os.remove(os.path.join(UPLOAD_ROOT,d.caminho))
         except: pass
@@ -12185,7 +12203,7 @@ def api_del_oper_doc(id):
 @app.route('/api/operacional/documentos/<int:id>/download')
 @lr
 def api_download_oper_doc(id):
-    d=OperacionalDocumento.query.get_or_404(id)
+    d=db.get_or_404(OperacionalDocumento, id)
     if not d.caminho: return jsonify({'erro':'Documento sem arquivo'}),404
     abs_p=os.path.join(UPLOAD_ROOT,d.caminho)
     if not os.path.exists(abs_p): return jsonify({'erro':'Arquivo nao encontrado'}),404
@@ -12213,7 +12231,7 @@ def api_operacional_postos():
     cli_map={c.id:c for c in cls}
     itens=[]
     for f in q.order_by(Funcionario.nome).all():
-        emp=Empresa.query.get(f.empresa_id) if f.empresa_id else None
+        emp=db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
         cli=cli_map.get(f.posto_cliente_id) if f.posto_cliente_id else None
         posto_label=(f.posto_operacional or 'Reserva tecnica')
         if cli:
@@ -12237,10 +12255,10 @@ def api_operacional_postos_salvar():
     fid=to_num(d.get('funcionario_id'))
     if not fid:
         return jsonify({'erro':'Funcionario obrigatorio'}),400
-    f=Funcionario.query.get_or_404(fid)
+    f=db.get_or_404(Funcionario, fid)
     posto_cliente_id=to_num(d.get('posto_cliente_id')) or None
     if posto_cliente_id:
-        cli=Cliente.query.get_or_404(posto_cliente_id)
+        cli=db.get_or_404(Cliente, posto_cliente_id)
         if f.empresa_id and cli.empresa_id and f.empresa_id!=cli.empresa_id:
             return jsonify({'erro':'O posto selecionado pertence a outra empresa.'}),400
         cap=max(0,to_num(cli.qtd_funcionarios_posto))
@@ -12304,8 +12322,8 @@ def api_beneficios_lancamentos():
             return 0
         return val_func
     for f in funcs_ativos:
-        emp=Empresa.query.get(f.empresa_id) if f.empresa_id else None
-        cli=Cliente.query.get(f.posto_cliente_id) if f.posto_cliente_id else None
+        emp=db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
+        cli=db.session.get(Cliente, f.posto_cliente_id) if f.posto_cliente_id else None
         posto_nome=(cli.nome.strip() if cli and (cli.nome or '').strip() else (f.posto_operacional or 'Reserva tecnica'))
         b=mapa.get(f.id)
         b_prev=mapa_prev.get(f.id)
@@ -12470,7 +12488,7 @@ def api_beneficios_lancamentos_salvar():
         fid=to_num(it.get('funcionario_id'))
         if not fid:
             continue
-        f=Funcionario.query.get(fid)
+        f=db.session.get(Funcionario, fid)
         if not f:
             continue
         b=BeneficioMensal.query.filter_by(funcionario_id=fid,competencia=comp).first()
@@ -12625,8 +12643,8 @@ def _beneficios_folha_resumo(comp,empresa_id=None):
     itens_snap=[]
     for f in funcs_ativos:
         b=mapa.get(f.id)
-        emp=Empresa.query.get(f.empresa_id) if f.empresa_id else None
-        cli=Cliente.query.get(f.posto_cliente_id) if f.posto_cliente_id else None
+        emp=db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
+        cli=db.session.get(Cliente, f.posto_cliente_id) if f.posto_cliente_id else None
         posto_nome=(cli.nome.strip() if cli and (cli.nome or '').strip() else (f.posto_operacional or 'Reserva tecnica'))
         vt=float((b.vale_transporte if b and b.vale_transporte is not None else f.vale_transporte) or 0)
         vr=float((b.vale_refeicao if b and b.vale_refeicao is not None else f.vale_refeicao) or 0)
@@ -12651,7 +12669,7 @@ def _beneficios_salvar_snapshot(comp,empresa_id=None,usuario=''):
     resumo=_beneficios_folha_resumo(comp,empresa_id)
     emp_nome='Todas as empresas'
     if empresa_ref_id:
-        emp=Empresa.query.get(empresa_ref_id)
+        emp=db.session.get(Empresa, empresa_ref_id)
         if emp and (emp.nome or '').strip():
             emp_nome=emp.nome.strip()
     folha=FolhaBeneficios.query.filter_by(competencia=comp,empresa_ref_id=empresa_ref_id).first()
@@ -12839,7 +12857,7 @@ def api_feriados_criar():
 @app.route('/api/feriados/<int:fid>',methods=['PUT'])
 @lr
 def api_feriados_editar(fid):
-    f=Feriado.query.get_or_404(fid)
+    f=db.get_or_404(Feriado, fid)
     d=request.json or {}
     data_raw=(d.get('data') or '').strip()
     descricao=(d.get('descricao') or '').strip()
@@ -12886,7 +12904,7 @@ def api_feriados_editar(fid):
 @app.route('/api/feriados/<int:fid>',methods=['DELETE'])
 @lr
 def api_feriados_excluir(fid):
-    f=Feriado.query.get_or_404(fid)
+    f=db.get_or_404(Feriado, fid)
     FeriadoFuncionario.query.filter_by(feriado_id=f.id).delete()
     db.session.delete(f)
     db.session.commit()
@@ -12995,7 +13013,7 @@ def _calcular_horas_noturnas_funcionario(funcionario_id, data_inicio_str, data_f
         dt_ini = _dt_calc.strptime(data_inicio_str, '%Y-%m-%d').date() if isinstance(data_inicio_str, str) else data_inicio_str
         dt_fim = _dt_calc.strptime(data_fim_str, '%Y-%m-%d').date() if isinstance(data_fim_str, str) else data_fim_str
         
-        f = Funcionario.query.get(funcionario_id)
+        f = db.session.get(Funcionario, funcionario_id)
         if not f:
             return 0
         
@@ -13028,7 +13046,7 @@ def _calcular_horas_noturnas_funcionario(funcionario_id, data_inicio_str, data_f
             if data_fim_ef < data_ini_ef:
                 continue
             
-            esc = Escala.query.get(ef.escala_id)
+            esc = db.session.get(Escala, ef.escala_id)
             if not esc:
                 continue
 
@@ -13346,7 +13364,7 @@ def api_beneficios_calcular_por_periodo():
         dias_vr_liq=max(0,dias_vt_vr-faltas_aplicadas)
         dias_vg_liq=max(0,dias_vg_calc-faltas_aplicadas)
 
-        emp=Empresa.query.get(f.empresa_id) if f.empresa_id else None
+        emp=db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
         itens.append({
             'funcionario_id':f.id,
             'matricula':f.matricula or '',
@@ -13388,7 +13406,7 @@ def api_beneficios_calcular_por_periodo():
     if salvar:
         for it in itens:
             fid=it['funcionario_id']
-            f=Funcionario.query.get(fid)
+            f=db.session.get(Funcionario, fid)
             if not f:
                 continue
             b=BeneficioMensal.query.filter_by(funcionario_id=fid,competencia=comp).first()
@@ -13876,8 +13894,8 @@ def _financeiro_salarios_competencia(comp, empresa_id=None):
     cargos=set()
     postos=set()
     for f in funcs_ativos:
-        emp=Empresa.query.get(f.empresa_id) if f.empresa_id else None
-        cli=Cliente.query.get(f.posto_cliente_id) if f.posto_cliente_id else None
+        emp=db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
+        cli=db.session.get(Cliente, f.posto_cliente_id) if f.posto_cliente_id else None
         posto_nome=(cli.nome.strip() if cli and (cli.nome or '').strip() else (f.posto_operacional or 'Reserva tecnica'))
         reg=mapa_comp.get(f.id)
         valor_liquido=float(reg.salario if reg and reg.salario is not None else (f.salario or 0) or 0)
@@ -13948,7 +13966,7 @@ def _financeiro_salarios_aplicar_valores(comp,empresa_id,valores):
         fid=to_num(it.get('funcionario_id'))
         if not fid:
             continue
-        f=Funcionario.query.get(fid)
+        f=db.session.get(Funcionario, fid)
         if not f or (str(f.status or 'Ativo').strip().lower()!='ativo'):
             continue
         if empresa_id and int(f.empresa_id or 0)!=int(empresa_id):
@@ -13982,7 +14000,7 @@ def _financeiro_salarios_salvar_snapshot(comp,empresa_id=None,resumo=None,usuari
     empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)
     emp_nome='Todas as empresas'
     if empresa_ref_id:
-        emp=Empresa.query.get(empresa_ref_id)
+        emp=db.session.get(Empresa, empresa_ref_id)
         if emp and (emp.nome or '').strip():
             emp_nome=emp.nome.strip()
 
@@ -14793,6 +14811,22 @@ def _err_500(exc):
         'request_id': getattr(g, 'request_id', ''),
     }), 500
 
+@app.errorhandler(429)
+def _err_429(exc):
+    return jsonify({
+        'erro': 'Muitas requisições. Aguarde alguns instantes e tente novamente.',
+        'request_id': getattr(g, 'request_id', ''),
+    }), 429
+
+@app.errorhandler(413)
+def _err_413(exc):
+    limite = app.config.get('MAX_CONTENT_LENGTH', 25 * 1024 * 1024)
+    mb = round(limite / (1024 * 1024))
+    return jsonify({
+        'erro': f'Arquivo muito grande. O tamanho máximo permitido é {mb} MB.',
+        'request_id': getattr(g, 'request_id', ''),
+    }), 413
+
 @app.route('/api/dashboard/ponto-dia')
 @lr
 def api_dashboard_ponto_dia():
@@ -14858,7 +14892,8 @@ def api_dashboard():
     ativos=Cliente.query.filter_by(status='Ativo').all()
     # sum revenue from Contrato table; fall back to Cliente fields for clients without contracts
     contratos_ativos=Contrato.query.filter_by(status='Ativo').all()
-    clientes_com_contrato={ct.cliente_id for ct in Contrato.query.all()}
+    # Reutilizar contratos_ativos para IDs — evita segundo Contrato.query.all()
+    clientes_com_contrato={ct.cliente_id for ct in contratos_ativos}
     receita_contratos=sum(
         (ct.limpeza or 0)+(ct.jardinagem or 0)+(ct.portaria or 0)+(ct.materiais_equip_locacao or 0)
         for ct in contratos_ativos
@@ -14872,14 +14907,24 @@ def api_dashboard():
     mes=localnow().strftime('%Y-%m')
     try:
         medicoes_mes=Medicao.query.filter_by(mes_ref=mes).all()
-        medicoes_validas=Medicao.query.filter(Medicao.status!='cancelada').all()
+        medicoes_validas=Medicao.query.filter(
+            Medicao.status!='cancelada',
+            Medicao.dt_vencimento.isnot(None),
+            Medicao.dt_vencimento != '',
+            Medicao.dt_vencimento < date.today().isoformat()
+        ).all()
     except OperationalError as e:
         if not _is_missing_medicao_stamp_error(e):
             raise
         db.session.rollback()
         _ensure_medicao_stamp_cols_runtime(force=True)
         medicoes_mes=Medicao.query.filter_by(mes_ref=mes).all()
-        medicoes_validas=Medicao.query.filter(Medicao.status!='cancelada').all()
+        medicoes_validas=Medicao.query.filter(
+            Medicao.status!='cancelada',
+            Medicao.dt_vencimento.isnot(None),
+            Medicao.dt_vencimento != '',
+            Medicao.dt_vencimento < date.today().isoformat()
+        ).all()
     emitidos={m.cliente_id for m in medicoes_mes if m.cliente_id}
     emps_all={e.id:e for e in Empresa.query.all()}
 
@@ -15339,8 +15384,8 @@ def api_backup_restore():
 @app.route('/api/pdf/<int:id>')
 @lr
 def api_pdf(id):
-    m=Medicao.query.get_or_404(id)
-    emp=Empresa.query.get(m.empresa_id) if m.empresa_id else None
+    m=db.get_or_404(Medicao, id)
+    emp=db.session.get(Empresa, m.empresa_id) if m.empresa_id else None
     d=m.to_dict(); d['empresa']=emp.to_dict() if emp else {}
     return _build_pdf(d)
 
@@ -15349,7 +15394,7 @@ def api_pdf(id):
 def api_pdf_preview():
     d=request.json
     if d.get('empresa_id'):
-        emp=Empresa.query.get(d['empresa_id'])
+        emp=db.session.get(Empresa, d['empresa_id'])
         d['empresa']=emp.to_dict() if emp else {}
     else: d['empresa']={}
     return _build_pdf(d)
@@ -15714,7 +15759,7 @@ def _build_pdf(d):
         cert_subject=(rs_crypto.get('cert_subject') or '')[:255] if crypto_ok else ''
         mid=to_num(d.get('id'))
         if mid:
-            med=Medicao.query.get(mid)
+            med=db.session.get(Medicao, mid)
             if med:
                 med.assinatura_doc_hash=_sha256_bytes(pdf_bytes)
                 med.assinatura_crypto_ok=crypto_ok
@@ -16214,7 +16259,7 @@ def api_wa_send_colaboradores():
     enviados=[]
     falhas=[]
     for func_id in ids:
-        f=Funcionario.query.get(func_id)
+        f=db.session.get(Funcionario, func_id)
         if not f:
             falhas.append({'funcionario_id':func_id,'erro':'Colaborador não encontrado.'})
             continue
@@ -16423,7 +16468,7 @@ def webhook_whatsapp():
 @app.route('/api/medicoes/<int:id>/status',methods=['PUT'])
 @lr
 def api_medicao_status(id):
-    m=Medicao.query.get_or_404(id)
+    m=db.get_or_404(Medicao, id)
     d=request.json or {}
     novo=(d.get('status') or '').strip().lower()
     validos=['rascunho','emitida','cancelada','paga']
@@ -16439,7 +16484,7 @@ def api_medicao_status(id):
 @app.route('/api/medicoes/<int:id>/duplicar',methods=['POST'])
 @lr
 def api_medicao_duplicar(id):
-    orig=Medicao.query.get_or_404(id)
+    orig=db.get_or_404(Medicao, id)
     novo_num=prox_num()
     copia=Medicao(
         numero=novo_num, tipo=orig.tipo,
@@ -16463,14 +16508,14 @@ def api_medicao_duplicar(id):
 @app.route('/api/medicoes/<int:id>/enviar-email',methods=['POST'])
 @lr
 def api_medicao_enviar_email(id):
-    m=Medicao.query.get_or_404(id)
+    m=db.get_or_404(Medicao, id)
     d=request.json or {}
     destino=(d.get('email') or '').strip()
     if not destino:
-        cli=Cliente.query.get(m.cliente_id) if m.cliente_id else None
+        cli=db.session.get(Cliente, m.cliente_id) if m.cliente_id else None
         destino=(cli.email or '').strip() if cli else ''
     if not destino: return jsonify({'erro':'E-mail do destinatário não informado e cliente não possui e-mail cadastrado.'}),400
-    emp=Empresa.query.get(m.empresa_id) if m.empresa_id else None
+    emp=db.session.get(Empresa, m.empresa_id) if m.empresa_id else None
     md=m.to_dict(); md['empresa']=emp.to_dict() if emp else {}
     try:
         from flask import current_app
@@ -16509,7 +16554,7 @@ def api_medicao_enviar_email(id):
 @app.route('/api/medicoes/<int:id>/calcular-encargos',methods=['POST'])
 @lr
 def api_medicao_calcular_encargos(id):
-    m=Medicao.query.get_or_404(id)
+    m=db.get_or_404(Medicao, id)
     if m.status not in ('emitida','rascunho'): return jsonify({'erro':'Somente medições emitidas podem ter encargos calculados.'}),400
     if not m.dt_vencimento: return jsonify({'erro':'Medição sem data de vencimento.'}),400
     from datetime import date as _date
@@ -16537,7 +16582,7 @@ def api_medicao_calcular_encargos(id):
 @app.route('/api/medicoes/<int:id>/encargos',methods=['GET'])
 @lr
 def api_medicao_encargos(id):
-    m=Medicao.query.get_or_404(id)
+    m=db.get_or_404(Medicao, id)
     from datetime import date as _date
     venc=None
     if m.dt_vencimento:
@@ -16554,10 +16599,10 @@ def api_medicao_encargos(id):
 # ============================================================
 def _cobranca_enviar_lembrete(m,tipo,emp=None):
     """Envia e-mail de cobrança e registra no log. Retorna (ok, erro_msg)."""
-    cli=Cliente.query.get(m.cliente_id) if m.cliente_id else None
+    cli=db.session.get(Cliente, m.cliente_id) if m.cliente_id else None
     dest=(cli.email or '').strip() if cli else ''
     if not dest: return False,'Cliente sem e-mail'
-    if not emp and m.empresa_id: emp=Empresa.query.get(m.empresa_id)
+    if not emp and m.empresa_id: emp=db.session.get(Empresa, m.empresa_id)
     remetente=emp.nome if emp else 'RM Facilities'
     if tipo in ('D-5','D-1'):
         assunto=f'Lembrete de vencimento — {m.tipo or "Medição"} Nº {m.numero}'
@@ -16632,7 +16677,7 @@ def api_cobrancas_logs():
 @app.route('/api/cobrancas/<int:medicao_id>/manual',methods=['POST'])
 @lr
 def api_cobranca_manual(medicao_id):
-    m=Medicao.query.get_or_404(medicao_id)
+    m=db.get_or_404(Medicao, medicao_id)
     ok,erro=_cobranca_enviar_lembrete(m,'manual')
     return jsonify({'ok':ok,'erro':erro})
 
@@ -16730,11 +16775,11 @@ def api_conciliacao_transacoes():
 @app.route('/api/conciliacao/<int:transacao_id>/conciliar',methods=['POST'])
 @lr
 def api_conciliacao_conciliar(transacao_id):
-    t=ConciliacaoTransacao.query.get_or_404(transacao_id)
+    t=db.get_or_404(ConciliacaoTransacao, transacao_id)
     d=request.json or {}
     medicao_id=to_num(d.get('medicao_id'))
     if medicao_id:
-        m=Medicao.query.get_or_404(medicao_id)
+        m=db.get_or_404(Medicao, medicao_id)
         t.medicao_id=medicao_id; t.conciliado_em=utcnow()
         audit_event('conciliacao_conciliada','usuario',session.get('uid'),'conciliacao_transacao',t.id,True,
                     {'medicao_id':medicao_id,'numero':m.numero})
@@ -16780,13 +16825,13 @@ def api_conciliacao_auto():
 @app.route('/api/medicoes/<int:id>/anexos',methods=['GET'])
 @lr
 def api_medicao_anexos(id):
-    Medicao.query.get_or_404(id)
+    db.get_or_404(Medicao, id)
     return jsonify([a.to_dict() for a in MedicaoAnexo.query.filter_by(medicao_id=id).order_by(MedicaoAnexo.criado_em.desc()).all()])
 
 @app.route('/api/medicoes/<int:id>/anexos',methods=['POST'])
 @lr
 def api_medicao_add_anexo(id):
-    Medicao.query.get_or_404(id)
+    db.get_or_404(Medicao, id)
     fs=request.files.get('arquivo')
     if not fs: return jsonify({'erro':'Arquivo nao enviado'}),400
     rel,_=save_upload(fs,f'medicoes/{id}')
@@ -16797,7 +16842,7 @@ def api_medicao_add_anexo(id):
 @app.route('/api/medicoes/anexos/<int:id>',methods=['DELETE'])
 @lr
 def api_medicao_del_anexo(id):
-    a=MedicaoAnexo.query.get_or_404(id)
+    a=db.get_or_404(MedicaoAnexo, id)
     try: os.remove(os.path.join(UPLOAD_ROOT,a.caminho))
     except: pass
     db.session.delete(a); db.session.commit()
@@ -16806,7 +16851,7 @@ def api_medicao_del_anexo(id):
 @app.route('/api/medicoes/anexos/<int:id>/download')
 @lr
 def api_medicao_download_anexo(id):
-    a=MedicaoAnexo.query.get_or_404(id)
+    a=db.get_or_404(MedicaoAnexo, id)
     abs_p=os.path.join(UPLOAD_ROOT,a.caminho)
     if not os.path.exists(abs_p): return jsonify({'erro':'Arquivo nao encontrado'}),404
     return send_file(abs_p,as_attachment=True,download_name=a.nome_arquivo)
@@ -17141,6 +17186,19 @@ with app.app_context():
         'arquivo_nome VARCHAR(300)',
         'arquivo_caminho VARCHAR(500)',
     ])
+    # Índices compostos para performance de queries frequentes
+    _idx_defs = [
+        'CREATE INDEX IF NOT EXISTS ix_ponto_marcacao_func_data ON ponto_marcacao (funcionario_id, data_hora)',
+        'CREATE INDEX IF NOT EXISTS ix_ponto_fechamento_func_data ON ponto_fechamento_dia (funcionario_id, data_ref)',
+        'CREATE INDEX IF NOT EXISTS ix_funcionario_status ON funcionario (status)',
+    ]
+    for _idx_sql in _idx_defs:
+        try:
+            db.session.execute(text(_idx_sql))
+        except Exception as _idx_exc:
+            app.logger.warning(f'[startup] índice falhou: {_idx_exc}')
+    db.session.commit()
+
     seed(); get_logo()
     # Warm-up: pré-carrega cache de configurações e invalida cache antigo
     try:
@@ -17265,7 +17323,7 @@ def _lembrete_assinatura_loop():
                     try:
                         if a.funcionario_id not in func_cache:
                             with db.session.no_autoflush:
-                                func_cache[a.funcionario_id] = Funcionario.query.get(a.funcionario_id)
+                                func_cache[a.funcionario_id] = db.session.get(Funcionario, a.funcionario_id)
                         f = func_cache[a.funcionario_id]
                         if not f:
                             continue
