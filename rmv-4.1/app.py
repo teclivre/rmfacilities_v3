@@ -17244,11 +17244,14 @@ def _lembrete_assinatura_loop():
                         )
                     except Exception as ex:
                         app.logger.error(f'[lembrete-auto] arquivo={a.id} erro={ex}')
-                        db.session.rollback()
+                        try:
+                            db.session.remove()  # descarta sessão corrompida; próxima iteração cria nova
+                        except Exception:
+                            pass
         except Exception as e:
             app.logger.error(f'[lembrete-assinatura] erro geral: {e}')
             try:
-                db.session.rollback()
+                db.session.remove()  # sessão pode estar em rolled-back; remove para garantir sessão limpa
             except Exception:
                 pass
         time.sleep(intervalo_seg)
@@ -17311,15 +17314,18 @@ _signal.signal(_signal.SIGTERM, _graceful_shutdown)
 # WAL CHECKPOINT PERIÓDICO (a cada 30 min) — evita crescimento do WAL
 # ============================================================
 def _wal_checkpoint_loop():
-    """Executa PRAGMA wal_checkpoint(PASSIVE) periodicamente para manter o WAL compacto."""
+    """Executa PRAGMA wal_checkpoint(PASSIVE) periodicamente para manter o WAL compacto.
+    Usa PASSIVE para nunca bloquear escritores ativos."""
     while True:
         time.sleep(1800)  # 30 minutos
         try:
             with app.app_context():
                 db.session.execute(text('PRAGMA wal_checkpoint(PASSIVE)'))
-                db.session.commit()
+                # Não faz commit (pragma não precisa); remove a sessão para não manter lock
+                db.session.remove()
         except Exception as exc:
             try:
+                db.session.remove()
                 app.logger.warning(f'[wal-checkpoint] falhou: {exc}')
             except Exception:
                 pass
