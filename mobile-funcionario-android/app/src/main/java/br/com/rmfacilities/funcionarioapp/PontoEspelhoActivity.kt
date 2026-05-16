@@ -295,6 +295,71 @@ class PontoEspelhoActivity : AppCompatActivity() {
                 header.addView(tvTotalHoras)
                 root.addView(header)
 
+                // ── Mini-gráfico de barras horizontais ───────────────────
+                val diasComHoras = resp.dias.filter { it.horas_trabalhadas_min > 0 || it.horas_esperadas_min > 0 }
+                if (diasComHoras.isNotEmpty()) {
+                    val maxMin = diasComHoras.maxOf { maxOf(it.horas_trabalhadas_min, it.horas_esperadas_min, 1) }
+                    val graficoScroll = android.widget.HorizontalScrollView(this@PontoEspelhoActivity).apply {
+                        isHorizontalScrollBarEnabled = false
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                        )
+                    }
+                    val graficoContainer = LinearLayout(this@PontoEspelhoActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        setBackgroundColor(0xFF0A1929.toInt())
+                        setPadding((12 * dp).toInt(), (10 * dp).toInt(), (12 * dp).toInt(), (10 * dp).toInt())
+                        gravity = Gravity.BOTTOM
+                    }
+                    val barW = (16 * dp).toInt()
+                    val barMaxH = (60 * dp).toInt()
+                    val margin = (3 * dp).toInt()
+                    for (dia in diasComHoras) {
+                        val col = LinearLayout(this@PontoEspelhoActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                            ).apply { marginEnd = margin }
+                        }
+                        val propTrab = dia.horas_trabalhadas_min.toFloat() / maxMin
+                        val propEsp = if (dia.horas_esperadas_min > 0) dia.horas_esperadas_min.toFloat() / maxMin else 1f
+                        val barColor = when {
+                            dia.horas_esperadas_min > 0 && dia.horas_trabalhadas_min >= dia.horas_esperadas_min -> 0xFF2E7D32.toInt()
+                            dia.horas_trabalhadas_min >= 240 -> 0xFFE65100.toInt()
+                            else -> 0xFFB71C1C.toInt()
+                        }
+                        // Barra de fundo (esperado)
+                        val barWrapper = FrameLayout(this@PontoEspelhoActivity).apply {
+                            layoutParams = LinearLayout.LayoutParams(barW, (barMaxH * propEsp).toInt().coerceAtLeast((4 * dp).toInt()))
+                        }
+                        val barBg = View(this@PontoEspelhoActivity).apply {
+                            setBackgroundColor(0xFF1E3A5F.toInt())
+                            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+                        }
+                        val barFill = View(this@PontoEspelhoActivity).apply {
+                            setBackgroundColor(barColor)
+                            layoutParams = FrameLayout.LayoutParams(
+                                FrameLayout.LayoutParams.MATCH_PARENT,
+                                ((barMaxH * propEsp) * propTrab / propEsp).toInt().coerceAtLeast(0)
+                            ).apply { gravity = Gravity.BOTTOM }
+                        }
+                        barWrapper.addView(barBg)
+                        barWrapper.addView(barFill)
+                        col.addView(barWrapper)
+                        col.addView(TextView(this@PontoEspelhoActivity).apply {
+                            text = (dia.data_fmt ?: "").take(5)
+                            textSize = 7f
+                            setTextColor(0xFF90A4AE.toInt())
+                            gravity = Gravity.CENTER
+                            layoutParams = LinearLayout.LayoutParams(barW + (4 * dp).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+                        })
+                        graficoContainer.addView(col)
+                    }
+                    graficoScroll.addView(graficoContainer)
+                    root.addView(graficoScroll)
+                }
+
                 // ── Tabela com scroll ────────────────────────────────────
                 val scroll = ScrollView(this@PontoEspelhoActivity).apply {
                     layoutParams = LinearLayout.LayoutParams(
@@ -465,6 +530,49 @@ class PontoEspelhoActivity : AppCompatActivity() {
                     })
                 }
                 root.addView(legenda)
+
+                // ── Botão Compartilhar ───────────────────────────────────
+                val shareText = buildString {
+                    appendLine("📋 FOLHA DE PONTO — $label")
+                    appendLine("Funcionário: ${resp.funcionario ?: "-"}")
+                    appendLine("Total trabalhado: ${resp.total_horas ?: "--:--"}")
+                    appendLine("─".repeat(36))
+                    resp.dias.filter { it.tem_marcacoes }.forEach { dia ->
+                        val batidas = dia.marcacoes.joinToString("  ") { it.hora_fmt ?: "-" }
+                        appendLine("${dia.data_fmt ?: ""}  |  $batidas  |  ${dia.horas_trabalhadas_fmt ?: "-"}")
+                    }
+                    appendLine("─".repeat(36))
+                    append("Exportado pelo RMFacilities App")
+                }
+                val shareRow = LinearLayout(this@PontoEspelhoActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.END
+                    setBackgroundColor(0xFF0D2137.toInt())
+                    setPadding((12 * dp).toInt(), (6 * dp).toInt(), (12 * dp).toInt(), (8 * dp).toInt())
+                }
+                val btnShare = MaterialButton(this@PontoEspelhoActivity).apply {
+                    text = "📤 Compartilhar"
+                    textSize = 12f
+                    cornerRadius = (10 * dp).toInt()
+                    backgroundTintList = ColorStateList.valueOf(0xFF1565C0.toInt())
+                    setTextColor(Color.WHITE)
+                    stateListAnimator = null
+                    minWidth = 0; minimumWidth = 0; insetTop = 0; insetBottom = 0
+                    setPadding((10 * dp).toInt(), (5 * dp).toInt(), (10 * dp).toInt(), (5 * dp).toInt())
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                }
+                btnShare.setOnClickListener {
+                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_TEXT, shareText)
+                        putExtra(android.content.Intent.EXTRA_SUBJECT, "Folha de Ponto — $label")
+                    }
+                    startActivity(android.content.Intent.createChooser(intent, "Compartilhar folha"))
+                }
+                shareRow.addView(btnShare)
+                root.addView(shareRow)
 
                 MaterialAlertDialogBuilder(this@PontoEspelhoActivity)
                     .setView(root)

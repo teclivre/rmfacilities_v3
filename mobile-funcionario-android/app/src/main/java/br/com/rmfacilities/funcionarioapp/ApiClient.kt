@@ -349,6 +349,22 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    fun getResumoMes(): ResumoMesResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ponto/resumo-mes"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, ResumoMesResponse::class.java)
+            } catch (_: Exception) {
+                ResumoMesResponse(ok = false, erro = "Falha ao carregar saldo.")
+            }
+        }
+    }
+
     fun me(): MeResponse = meInternal(tentarRefresh = true)
 
     private fun meInternal(tentarRefresh: Boolean): MeResponse {

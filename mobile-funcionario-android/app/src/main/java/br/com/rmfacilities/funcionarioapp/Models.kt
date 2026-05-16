@@ -222,6 +222,7 @@ data class PontoEspelhoDia(
     val marcacoes: List<PontoMarcacaoItem> = emptyList(),
     val horas_trabalhadas_fmt: String? = null,
     val horas_trabalhadas_min: Int = 0,
+    val horas_esperadas_min: Int = 0,
     val status: String? = null,
     val tem_marcacoes: Boolean = false
 )
@@ -277,4 +278,14 @@ data class CorrecaoPontoListResponse(
     val ok: Boolean = false,
     val erro: String? = null,
     val itens: List<CorrecaoPontoItem> = emptyList()
+)
+
+data class ResumoMesResponse(
+    val ok: Boolean = false,
+    val erro: String? = null,
+    val total_trabalhado_fmt: String? = null,
+    val total_trabalhado_min: Int = 0,
+    val total_esperado_min: Int = 0,
+    val saldo_min: Int = 0,
+    val saldo_fmt: String? = null
 )

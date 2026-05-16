@@ -58,6 +58,21 @@ class SolicitacaoCorrecaoPontoActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.btnVoltarCorrecao).setOnClickListener { finish() }
 
         btnEnviar.setOnClickListener { enviarSolicitacao() }
+
+        // Link para ver histórico
+        try {
+            val tvHistorico = android.widget.TextView(this).apply {
+                text = "Ver histórico de solicitações →"
+                textSize = 13f
+                setTextColor(androidx.core.content.ContextCompat.getColor(this@SolicitacaoCorrecaoPontoActivity, R.color.mobile_semantic_info))
+                setPadding(0, (16 * resources.displayMetrics.density).toInt(), 0, 0)
+                gravity = android.view.Gravity.CENTER
+                setOnClickListener {
+                    startActivity(android.content.Intent(this@SolicitacaoCorrecaoPontoActivity, CorrecoesPontoActivity::class.java))
+                }
+            }
+            (btnEnviar.parent as? android.view.ViewGroup)?.addView(tvHistorico)
+        } catch (_: Exception) {}
     }
 
     private fun enviarSolicitacao() {

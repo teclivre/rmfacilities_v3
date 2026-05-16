@@ -33,6 +33,9 @@
             android:name=".SolicitacaoCorrecaoPontoActivity"
             android:exported="false" />
         <activity
+            android:name=".CorrecoesPontoActivity"
+            android:exported="false" />
+        <activity
             android:name=".DocumentosActivity"
             android:exported="false"
             android:launchMode="singleTop" />

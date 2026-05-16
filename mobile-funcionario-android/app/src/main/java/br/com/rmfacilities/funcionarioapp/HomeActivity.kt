@@ -50,6 +50,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var ivAvatarHome: ImageView
     private lateinit var tvResumoPonto: TextView
     private lateinit var tvProximoPontoHome: TextView
+    private lateinit var tvSaldoMes: TextView
     private lateinit var tvResumoTarefas: TextView
     private lateinit var tvResumoAvisos: TextView
     private lateinit var tvMsgBadge: TextView
@@ -103,6 +104,7 @@ class HomeActivity : AppCompatActivity() {
         ivAvatarHome = findViewById(R.id.ivAvatarHome)
         tvResumoPonto = findViewById(R.id.tvResumoPonto)
         tvProximoPontoHome = findViewById(R.id.tvProximoPontoHome)
+        tvSaldoMes = findViewById(R.id.tvSaldoMes)
         tvResumoTarefas = findViewById(R.id.tvResumoTarefas)
         tvResumoAvisos = findViewById(R.id.tvResumoAvisos)
         tvMsgBadge = findViewById(R.id.tvMsgBadge)
@@ -338,12 +340,14 @@ class HomeActivity : AppCompatActivity() {
             val versaoD = async(Dispatchers.IO) { try { api.getVersaoApp() } catch (_: Exception) { null } }
             val pendentesD = async(Dispatchers.IO) { try { api.pendentesAssinatura().itens.size } catch (_: Exception) { 0 } }
             val pagamentoD = async(Dispatchers.IO) { try { api.ultimoPagamento() } catch (_: Exception) { null } }
+            val saldoMesD = async(Dispatchers.IO) { try { api.getResumoMes() } catch (_: Exception) { null } }
             val me = meD.await()
             val naoLidas = naoLidasD.await()
             val pontoDia = pontoDiaD.await()
             val versao = versaoD.await()
             val pendentesCount = pendentesD.await()
             val ultimoPagamento = pagamentoD.await()
+            val saldoMes = saldoMesD.await()
             withContext(Dispatchers.Main) {
                 swipeRefresh.isRefreshing = false
                 val nome = me.funcionario?.nome ?: "colaborador"
@@ -416,6 +420,17 @@ class HomeActivity : AppCompatActivity() {
                 // Próximo tipo de marcação
                 val proximoLabel = pontoDia.resumo?.proximo_tipo_label
                 tvProximoPontoHome.text = if (!proximoLabel.isNullOrBlank() && !semMarcacoes) "Próx: $proximoLabel" else ""
+
+                // Saldo mensal
+                if (saldoMes != null && saldoMes.ok && saldoMes.saldo_fmt != null) {
+                    tvSaldoMes.text = "Mês: ${saldoMes.saldo_fmt}"
+                    tvSaldoMes.setTextColor(ContextCompat.getColor(this@HomeActivity,
+                        if ((saldoMes.saldo_min ?: 0) >= 0) R.color.mobile_semantic_success else R.color.mobile_semantic_pending))
+                    tvSaldoMes.visibility = View.VISIBLE
+                } else {
+                    tvSaldoMes.visibility = View.GONE
+                }
+
                 tvResumoTarefas.text = if (pendentesCount > 0) "$pendentesCount pendente(s)" else "Sem pendências"
                 tvResumoAvisos.text = if (naoLidas > 0) "$naoLidas aviso(s)" else "Sem alertas"
                 tvResumoAvisos.setTextColor(
@@ -479,8 +494,8 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun abrirPersonalizacaoAtalhos() {
-        val labels = arrayOf("Documentos", "Perfil", "Ponto", "Mensagens", "Offline", "Configurações", "Pagamento", "Benefícios")
-        val keys = listOf("documentos", "perfil", "ponto", "mensagens", "offline", "config", "pagamento", "beneficios")
+        val labels = arrayOf("Documentos", "Perfil", "Ponto", "Mensagens", "Offline", "Configurações", "Pagamento", "Benefícios", "Férias")
+        val keys = listOf("documentos", "perfil", "ponto", "mensagens", "offline", "config", "pagamento", "beneficios", "ferias")
         val enabled = carregarAtalhosHabilitados().toMutableSet()
         val checks = keys.map { enabled.contains(it) }.toBooleanArray()
         MaterialAlertDialogBuilder(this)

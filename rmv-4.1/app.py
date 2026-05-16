@@ -8744,6 +8744,7 @@ def api_app_ponto_espelho_dados_me():
         marcacoes=resumo.get('marcacoes',[])
         dias_semana=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom']
         trab_min=resumo.get('horas_trabalhadas_min',0) or 0
+        esp_min=resumo.get('horas_esperadas_min',0) or 0
         total_min+=trab_min
         dias.append({
             'data':data_ref.isoformat(),
@@ -8751,6 +8752,7 @@ def api_app_ponto_espelho_dados_me():
             'marcacoes':[{'tipo':m.get('tipo'),'tipo_label':m.get('tipo_label'),'hora_fmt':m.get('hora_fmt')} for m in marcacoes],
             'horas_trabalhadas_fmt':resumo.get('horas_trabalhadas_fmt','00:00'),
             'horas_trabalhadas_min':trab_min,
+            'horas_esperadas_min':esp_min,
             'status':resumo.get('status',''),
             'tem_marcacoes':bool(marcacoes),
         })
@@ -8761,6 +8763,32 @@ def api_app_ponto_espelho_dados_me():
         'total_horas':f'{total_min//60:02d}:{total_min%60:02d}',
         'funcionario':f.nome,
         'dias':dias,
+    })
+
+@app.route('/api/app/funcionario/me/ponto/resumo-mes')
+@app_func_required
+def api_app_ponto_resumo_mes():
+    """Retorna saldo de horas trabalhadas no mês corrente (endpoint leve)."""
+    import calendar as _cal
+    f=g.app_funcionario
+    hoje=utcnow().date()
+    ano,mes=hoje.year,hoje.month
+    total_trab=0
+    total_esp=0
+    for dia in range(1,hoje.day+1):
+        data_ref=date(ano,mes,dia)
+        resumo=_app_ponto_resumo_dia(f,data_ref)
+        total_trab+=(resumo.get('horas_trabalhadas_min') or 0)
+        total_esp+=(resumo.get('horas_esperadas_min') or 0)
+    saldo=total_trab-total_esp
+    sinal='+' if saldo>=0 else '-'
+    return jsonify({
+        'ok':True,
+        'total_trabalhado_fmt':f'{total_trab//60:02d}:{total_trab%60:02d}',
+        'total_trabalhado_min':total_trab,
+        'total_esperado_min':total_esp,
+        'saldo_min':saldo,
+        'saldo_fmt':f"{sinal}{abs(saldo)//60:02d}:{abs(saldo)%60:02d}",
     })
 
 @app.route('/api/app/funcionario/me/ponto/espelho/pdf')
