@@ -280,7 +280,7 @@ class PontoActivity : AppCompatActivity() {
                 // Voltou a internet: processa fila e atualiza marcações
                 lifecycleScope.launch(Dispatchers.IO) {
                     try {
-                        retryQueue.process(ApiClient(SessionManager(this@PontoActivity)))
+                        retryQueue.process(api) // reutiliza instância existente — evita vazamento de threads
                     } catch (_: Exception) {}
                     withContext(Dispatchers.Main) {
                         if (retryQueue.pendingCount() == 0 && localPendentes.isNotEmpty()) {

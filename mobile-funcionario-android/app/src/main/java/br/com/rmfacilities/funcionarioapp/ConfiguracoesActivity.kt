@@ -169,7 +169,7 @@ class ConfiguracoesActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.btnLogoutRemoto).setOnClickListener {
             window.decorView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            session.clear()
+            session.logout() // envia ACTION_LOGOUT broadcast antes de encerrar todas as Activities
             startActivity(Intent(this, LoginActivity::class.java))
             finishAffinity()
         }

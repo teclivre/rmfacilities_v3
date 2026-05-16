@@ -15,6 +15,11 @@ import okhttp3.Response
 class ApiClient(private val session: SessionManager) {
     private val gson = Gson()
 
+    companion object {
+        private const val MAX_DOWNLOAD_MB = 50
+        private const val MAX_DOWNLOAD_BYTES = MAX_DOWNLOAD_MB * 1024 * 1024
+    }
+
     private fun buildHttpClient(withAuthenticator: Boolean = false): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
@@ -203,28 +208,6 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
-    private fun tentarRenovarSessao(): Boolean {
-        val refresh = session.refreshToken.trim()
-        if (refresh.isBlank()) return false
-        synchronized(this) {
-            val novamente = session.refreshToken.trim()
-            if (novamente.isBlank()) return false
-            val resp = try {
-                renovarSessao(novamente)
-            } catch (_: Exception) {
-                return false
-            }
-            if (resp.ok && !resp.access_token.isNullOrBlank()) {
-                session.accessToken = resp.access_token
-                if (!resp.refresh_token.isNullOrBlank()) {
-                    session.refreshToken = resp.refresh_token
-                }
-                return true
-            }
-            return false
-        }
-    }
-
     private fun url(path: String): String {
         val base = session.apiBaseUrl.trim().trimEnd('/')
         // Garante que a URL final usa HTTPS — rejeita qualquer esquema não seguro
@@ -406,20 +389,15 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
-    fun me(): MeResponse = meInternal(tentarRefresh = true)
-
-    private fun meInternal(tentarRefresh: Boolean): MeResponse {
+    fun me(): MeResponse {
         val req = Request.Builder()
             .url(url("/api/app/funcionario/me"))
             .get()
             .addHeader("Authorization", "Bearer ${session.accessToken}")
             .build()
-
         http.newCall(req).execute().use { resp ->
             if (resp.code == 401) {
-                if (tentarRefresh && tentarRenovarSessao()) {
-                    return meInternal(tentarRefresh = false)
-                }
+                // O OkHttp Authenticator já tentou renovar a sessão e falhou
                 handleUnauthorized()
                 return MeResponse(ok = false, erro = "Sessão expirada.")
             }
@@ -483,7 +461,16 @@ class ApiClient(private val session: SessionManager) {
             if (!resp.isSuccessful) {
                 throw IllegalStateException("Falha no download: HTTP ${resp.code}")
             }
-            return resp.body?.bytes() ?: throw IllegalStateException("Arquivo vazio")
+            val body = resp.body ?: throw IllegalStateException("Arquivo vazio")
+            val contentLength = body.contentLength()
+            if (contentLength > MAX_DOWNLOAD_BYTES) {
+                throw IllegalStateException("Arquivo muito grande (máximo ${MAX_DOWNLOAD_MB} MB).")
+            }
+            val bytes = body.bytes()
+            if (bytes.size > MAX_DOWNLOAD_BYTES) {
+                throw IllegalStateException("Arquivo muito grande (máximo ${MAX_DOWNLOAD_MB} MB).")
+            }
+            return bytes
         }
     }
 
@@ -608,7 +595,16 @@ class ApiClient(private val session: SessionManager) {
             .build()
         http.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) throw IllegalStateException("Falha no download: HTTP ${resp.code}")
-            return resp.body?.bytes() ?: throw IllegalStateException("Arquivo vazio")
+            val body = resp.body ?: throw IllegalStateException("Arquivo vazio")
+            val contentLength = body.contentLength()
+            if (contentLength > MAX_DOWNLOAD_BYTES) {
+                throw IllegalStateException("Arquivo muito grande (máximo ${MAX_DOWNLOAD_MB} MB).")
+            }
+            val bytes = body.bytes()
+            if (bytes.size > MAX_DOWNLOAD_BYTES) {
+                throw IllegalStateException("Arquivo muito grande (máximo ${MAX_DOWNLOAD_MB} MB).")
+            }
+            return bytes
         }
     }
 
@@ -691,10 +687,7 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
-    fun enviarLocalizacao(lat: Double, lon: Double, precisao: Float?): ApiSimpleResponse =
-        enviarLocalizacaoInternal(lat, lon, precisao, tentarRefresh = true)
-
-    private fun enviarLocalizacaoInternal(lat: Double, lon: Double, precisao: Float?, tentarRefresh: Boolean): ApiSimpleResponse {
+    fun enviarLocalizacao(lat: Double, lon: Double, precisao: Float?): ApiSimpleResponse {
         val payload = gson.toJson(buildMap {
             put("lat", lat); put("lon", lon)
             if (precisao != null) put("precisao", precisao)
@@ -707,9 +700,6 @@ class ApiClient(private val session: SessionManager) {
             .build()
         http.newCall(req).execute().use { resp ->
             if (resp.code == 401) {
-                if (tentarRefresh && tentarRenovarSessao()) {
-                    return enviarLocalizacaoInternal(lat, lon, precisao, tentarRefresh = false)
-                }
                 handleUnauthorized()
                 return ApiSimpleResponse(ok = false, erro = "Sessão expirada.")
             }
@@ -764,9 +754,7 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
-    fun getPontoDia(data: String = ""): PontoDiaResponse = getPontoDiaInternal(data, tentarRefresh = true)
-
-    private fun getPontoDiaInternal(data: String, tentarRefresh: Boolean): PontoDiaResponse {
+    fun getPontoDia(data: String = ""): PontoDiaResponse {
         val q = if (data.isNotBlank()) "?data=${android.net.Uri.encode(data)}" else ""
         val req = Request.Builder()
             .url(url("/api/app/funcionario/me/ponto/dia$q"))
@@ -775,9 +763,6 @@ class ApiClient(private val session: SessionManager) {
             .build()
         http.newCall(req).execute().use { resp ->
             if (resp.code == 401) {
-                if (tentarRefresh && tentarRenovarSessao()) {
-                    return getPontoDiaInternal(data, tentarRefresh = false)
-                }
                 handleUnauthorized()
                 return PontoDiaResponse(ok = false, erro = "Sessão expirada.")
             }
@@ -842,10 +827,7 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
-    fun marcarPonto(tipo: String = "", observacao: String = "", lat: Double? = null, lon: Double? = null, precisao: Float? = null, dataHoraIso: String? = null): PontoDiaResponse =
-        marcarPontoInternal(tipo, observacao, lat, lon, precisao, dataHoraIso, tentarRefresh = true)
-
-    private fun marcarPontoInternal(tipo: String, observacao: String, lat: Double?, lon: Double?, precisao: Float?, dataHoraIso: String?, tentarRefresh: Boolean): PontoDiaResponse {
+    fun marcarPonto(tipo: String = "", observacao: String = "", lat: Double? = null, lon: Double? = null, precisao: Float? = null, dataHoraIso: String? = null): PontoDiaResponse {
         val payload = gson.toJson(buildMap {
             if (tipo.isNotBlank()) put("tipo", tipo)
             if (observacao.isNotBlank()) put("observacao", observacao)
@@ -862,9 +844,6 @@ class ApiClient(private val session: SessionManager) {
             .build()
         http.newCall(req).execute().use { resp ->
             if (resp.code == 401) {
-                if (tentarRefresh && tentarRenovarSessao()) {
-                    return marcarPontoInternal(tipo, observacao, lat, lon, precisao, dataHoraIso, tentarRefresh = false)
-                }
                 handleUnauthorized()
                 return PontoDiaResponse(ok = false, erro = "Sessão expirada.")
             }

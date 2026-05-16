@@ -227,7 +227,7 @@ class HomeActivity : AppCompatActivity() {
                 .setMessage("Deseja realmente sair da sua conta?")
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Sair") { _dialog, _ ->
-                    session.clear()
+                    session.logout() // envia ACTION_LOGOUT broadcast para todas as Activities
                     goLogin()
                 }
                 .show()
