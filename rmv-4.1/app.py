@@ -5664,30 +5664,68 @@ def login():
         erro='E-mail ou senha incorretos.'
     return render_template('login.html',erro=erro,recuperar=recuperar)
 
-
-    return render_template('login.html',recuperar=True,erro='Sessão de recuperação expirada. Solicite novo código.')
-    codigo=(request.form.get('codigo') or '').strip()
-    nova_senha=(request.form.get('nova_senha') or '').strip()
-    if not re.fullmatch(r'\d{6}',codigo):
-        return render_template('login.html',recuperar=True,rec_etapa='codigo',email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),erro='Código inválido. Use 6 dígitos.')
-    if len(nova_senha)<8:
-        return render_template('login.html',recuperar=True,rec_etapa='codigo',email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),erro='A nova senha deve ter ao menos 8 caracteres.')
-    if int(session.get('rec_exp',0) or 0)<int(time.time()):
+@app.route('/recuperar-acesso',methods=['POST'])
+@_limiter.limit('6 per minute')
+def recuperar_acesso():
+    etapa=(request.form.get('etapa') or '').strip().lower()
+    if etapa=='solicitar':
+        identificador=(request.form.get('identificador') or '').strip().lower()
+        if not identificador:
+            return render_template('login.html',recuperar=True,erro='Informe o e-mail ou telefone cadastrado.')
+        # busca por email ou telefone normalizado
+        u=Usuario.query.filter_by(email=identificador,ativo=True).first()
+        if not u:
+            norm=norm_phone(identificador)
+            if norm:
+                u=Usuario.query.filter(Usuario.ativo==True).filter(
+                    db.func.replace(db.func.replace(db.func.replace(Usuario.telefone,' ',''),'-',''),'(','').like('%'+norm[-8:]+'%')
+                ).first()
+        if not u:
+            # resposta genérica para não revelar existência do usuário
+            return render_template('login.html',recuperar=True,ok='Se o e-mail/telefone estiver cadastrado, você receberá um código em breve.')
+        codigo=f'{secrets.randbelow(1000000):06d}'
+        try:
+            _send_admin_2fa_code(u,codigo,'recuperacao')
+        except Exception as ex:
+            return render_template('login.html',recuperar=True,erro=f'Não foi possível enviar o código: {str(ex)}')
+        session['rec_uid']=u.id
+        session['rec_code_hash']=token_hash(codigo)
+        session['rec_exp']=int(time.time())+600
+        session['rec_attempts']=0
+        audit_event('auth_recuperacao_solicitada','usuario',u.id,'usuario',u.id,True,{})
+        return render_template('login.html',recuperar=True,rec_etapa='codigo',
+            email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),
+            ok='Código enviado. Verifique seu celular ou e-mail.')
+    if etapa=='codigo':
+        rec_uid=session.get('rec_uid')
+        if not rec_uid:
+            return render_template('login.html',recuperar=True,erro='Sessão de recuperação expirada. Solicite novo código.')
+        u=Usuario.query.get(rec_uid)
+        if not u or not u.ativo:
+            session.pop('rec_uid',None); session.pop('rec_code_hash',None); session.pop('rec_exp',None); session.pop('rec_attempts',None)
+            return render_template('login.html',recuperar=True,erro='Usuário inválido. Solicite novo código.')
+        codigo=(request.form.get('codigo') or '').strip()
+        nova_senha=(request.form.get('nova_senha') or '').strip()
+        if not re.fullmatch(r'\d{6}',codigo):
+            return render_template('login.html',recuperar=True,rec_etapa='codigo',email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),erro='Código inválido. Use 6 dígitos.')
+        if len(nova_senha)<8:
+            return render_template('login.html',recuperar=True,rec_etapa='codigo',email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),erro='A nova senha deve ter ao menos 8 caracteres.')
+        if int(session.get('rec_exp',0) or 0)<int(time.time()):
+            session.pop('rec_uid',None); session.pop('rec_code_hash',None); session.pop('rec_exp',None); session.pop('rec_attempts',None)
+            return render_template('login.html',recuperar=True,erro='Código expirado. Solicite outro.')
+        tent=int(session.get('rec_attempts',0) or 0)
+        if tent>=5:
+            session.pop('rec_uid',None); session.pop('rec_code_hash',None); session.pop('rec_exp',None); session.pop('rec_attempts',None)
+            return render_template('login.html',recuperar=True,erro='Muitas tentativas inválidas. Solicite novo código.')
+        if not hmac.compare_digest(token_hash(codigo),str(session.get('rec_code_hash') or '')):
+            session['rec_attempts']=tent+1
+            return render_template('login.html',recuperar=True,rec_etapa='codigo',email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),erro='Código incorreto.')
+        u.senha=pw_hash(nova_senha)
+        db.session.commit()
+        audit_event('auth_recuperacao_senha','usuario',u.id,'usuario',u.id,True,{})
         session.pop('rec_uid',None); session.pop('rec_code_hash',None); session.pop('rec_exp',None); session.pop('rec_attempts',None)
-        return render_template('login.html',recuperar=True,erro='Código expirado. Solicite outro.')
-    tent=int(session.get('rec_attempts',0) or 0)
-    if tent>=5:
-        session.pop('rec_uid',None); session.pop('rec_code_hash',None); session.pop('rec_exp',None); session.pop('rec_attempts',None)
-        return render_template('login.html',recuperar=True,erro='Muitas tentativas inválidas. Solicite novo código.')
-    if not hmac.compare_digest(token_hash(codigo),str(session.get('rec_code_hash') or '')):
-        session['rec_attempts']=tent+1
-        return render_template('login.html',recuperar=True,rec_etapa='codigo',email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),erro='Código incorreto.')
-
-    u.senha=pw_hash(nova_senha)
-    db.session.commit()
-    audit_event('auth_recuperacao_senha','usuario',u.id,'usuario',u.id,True,{})
-    session.pop('rec_uid',None); session.pop('rec_code_hash',None); session.pop('rec_exp',None); session.pop('rec_attempts',None)
-    return render_template('login.html',ok=f'Acesso recuperado. Usuário: {_mask_email(u.email)}. Faça login com a nova senha.')
+        return render_template('login.html',ok=f'Acesso recuperado. Usuário: {_mask_email(u.email)}. Faça login com a nova senha.')
+    return render_template('login.html',recuperar=True,erro='Requisição inválida.')
 
 @app.route('/logout')
 def logout():
