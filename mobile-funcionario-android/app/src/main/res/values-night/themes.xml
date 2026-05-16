@@ -20,7 +20,7 @@
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.App.MaterialAlertDialog</item>
     </style>
 
-    <style name="ThemeOverlay.App.MaterialAlertDialog" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog.Dark">
+    <style name="ThemeOverlay.App.MaterialAlertDialog" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
         <item name="colorSurface">@color/dialog_surface</item>
         <item name="colorOnSurface">@color/dialog_text_title</item>
         <item name="android:textColorPrimary">@color/dialog_text_title</item>
