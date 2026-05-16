@@ -431,7 +431,7 @@ class HomeActivity : AppCompatActivity() {
 
                 // Saldo mensal
                 if (saldoMes != null && saldoMes.ok && saldoMes.saldo_fmt != null) {
-                    tvSaldoMes.text = "Mês: ${saldoMes.saldo_fmt}"
+                    tvSaldoMes.text = "Saldo do mês: ${saldoMes.saldo_fmt}"
                     tvSaldoMes.setTextColor(ContextCompat.getColor(this@HomeActivity,
                         if (saldoMes.saldo_min >= 0) R.color.mobile_semantic_success else R.color.mobile_semantic_pending))
                     tvSaldoMes.visibility = View.VISIBLE
