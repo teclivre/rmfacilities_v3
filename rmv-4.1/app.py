@@ -280,6 +280,41 @@ def api_bancos_br():
 
 _strict_origin_check = True  # Controle de origem habilitado (CSRF)
 
+# ─── Marcador de tempo de inicialização (usado pelo /api/health) ─────────────
+_APP_START_TIME = time.time()
+
+# === ENDPOINT DE SAÚDE ===
+@app.route('/api/health')
+def api_health():
+    """Health-check para load balancers e monitoramento. Não exige autenticação."""
+    status: dict = {}
+    http_code = 200
+
+    # 1. Conectividade com o banco
+    try:
+        db.session.execute(text('SELECT 1'))
+        status['db'] = 'ok'
+    except Exception as exc:
+        status['db'] = f'error: {exc}'
+        http_code = 503
+
+    # 2. Espaço em disco
+    try:
+        usage = shutil.disk_usage(DATA_DIR if os.path.exists(DATA_DIR) else '/')
+        free_mb = usage.free // (1024 * 1024)
+        status['disk_free_mb'] = free_mb
+        status['disk'] = 'low' if free_mb < 100 else 'ok'
+        if free_mb < 100:
+            http_code = 503
+    except Exception as exc:
+        status['disk'] = f'error: {exc}'
+
+    # 3. Clientes SSE conectados e uptime
+    status['sse_clients'] = len(_sse_clients)
+    status['uptime_sec'] = int(time.time() - _APP_START_TIME)
+    status['status'] = 'ok' if http_code == 200 else 'degraded'
+    return jsonify(status), http_code
+
 # === MODELOS E ROTAS QUE DEVEM VIR APÓS CRIAÇÃO DO APP E DB ===
 
 # Modelo de marcação de ponto
@@ -2723,6 +2758,32 @@ def _wa_backup_store_txt(payload):
         f.write('\n'.join(linhas))
     return caminho
 
+def _smtp_exec_with_retry(send_fn, attempts=3):
+    """Executa send_fn (sem args) com retry e backoff exponencial em erros transientes SMTP.
+    Erros de autenticação/configuração são propagados imediatamente sem retry."""
+    _transient = (
+        smtplib.SMTPServerDisconnected,
+        smtplib.SMTPConnectError,
+        smtplib.SMTPHeloError,
+        ConnectionError,
+        OSError,
+        TimeoutError,
+    )
+    last_exc: Exception | None = None
+    for attempt in range(max(1, attempts)):
+        try:
+            send_fn()
+            return
+        except smtplib.SMTPAuthenticationError:
+            raise  # erro de config/auth: não faz sentido repetir
+        except _transient as exc:
+            last_exc = exc
+            if attempt < attempts - 1:
+                time.sleep(0.5 * (2 ** attempt))  # 0.5s, 1s, 2s …
+        except Exception:
+            raise
+    raise last_exc  # type: ignore[misc]
+
 def smtp_send_text(dest,assunto,corpo,anexos=None):
     cfg=smtp_cfg()
     if not cfg['host'] or not cfg['user']: raise ValueError('SMTP nao configurado')
@@ -2743,12 +2804,14 @@ def smtp_send_text(dest,assunto,corpo,anexos=None):
         part.add_header('Content-Disposition',f'attachment; filename="{nome}"')
         msg.attach(part)
     port=int(cfg['port'] or 587)
-    if str(cfg['tls']) in ('1','true','True','yes'):
-        with smtplib.SMTP(cfg['host'],port,timeout=20) as s:
-            s.starttls(); s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
-    else:
-        with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s:
-            s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+    def _do_send():
+        if str(cfg['tls']) in ('1','true','True','yes'):
+            with smtplib.SMTP(cfg['host'],port,timeout=20) as s:
+                s.starttls(); s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+        else:
+            with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s:
+                s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+    _smtp_exec_with_retry(_do_send)
 
 def wa_backup_maybe_send(force=False):
     cfg=wa_backup_cfg()
@@ -4338,10 +4401,12 @@ def smtp_send_pdf(dest,nome_dest,caminho_abs,nome_arquivo,competencia='',remeten
         part=MIMEBase('application','octet-stream'); part.set_payload(f.read())
     encoders.encode_base64(part); part.add_header('Content-Disposition',f'attachment; filename="{nome_arquivo}"'); msg.attach(part)
     port=int(cfg['port'] or 587)
-    if str(cfg['tls']) in ('1','true','True','yes'):
-        with smtplib.SMTP(cfg['host'],port,timeout=20) as s: s.starttls(); s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
-    else:
-        with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s: s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+    def _do_send():
+        if str(cfg['tls']) in ('1','true','True','yes'):
+            with smtplib.SMTP(cfg['host'],port,timeout=20) as s: s.starttls(); s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+        else:
+            with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s: s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+    _smtp_exec_with_retry(_do_send)
 
 
 def smtp_send_link_assinatura(dest, nome_dest, titulo_envelope, link, remetente='RM Facilities', eh_lembrete=False):
@@ -4389,10 +4454,12 @@ def smtp_send_link_assinatura(dest, nome_dest, titulo_envelope, link, remetente=
     msg.attach(MIMEText(corpo_txt,'plain','utf-8'))
     msg.attach(MIMEText(corpo_html,'html','utf-8'))
     port=int(cfg['port'] or 587)
-    if str(cfg['tls']) in ('1','true','True','yes'):
-        with smtplib.SMTP(cfg['host'],port,timeout=20) as s: s.starttls(); s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
-    else:
-        with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s: s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+    def _do_send():
+        if str(cfg['tls']) in ('1','true','True','yes'):
+            with smtplib.SMTP(cfg['host'],port,timeout=20) as s: s.starttls(); s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+        else:
+            with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s: s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+    _smtp_exec_with_retry(_do_send)
 
 ALLOWED_AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','compras','sst','rh-digital','documentos']
 ALLOWED_ACTIONS=['view','create','edit','delete','approve','export']
@@ -4501,6 +4568,14 @@ def save_upload(fs,subdir):
     if not _upload_content_safe(fs):
         from flask import abort
         abort(400,'Tipo de arquivo n\u00e3o permitido.')
+    # Guarda redundância: rejeita upload se disco livre < 100 MB
+    try:
+        _root = UPLOAD_ROOT if os.path.exists(UPLOAD_ROOT) else DATA_DIR
+        if shutil.disk_usage(_root).free < 100 * 1024 * 1024:
+            from flask import abort
+            abort(507, 'Espaco em disco insuficiente. Contate o administrador.')
+    except OSError:
+        pass
     os.makedirs(os.path.join(UPLOAD_ROOT,subdir),exist_ok=True)
     base=secure_filename(fs.filename or 'arquivo.bin')
     nome=f"{localnow().strftime('%Y%m%d_%H%M%S')}_{base}"
@@ -14568,10 +14643,13 @@ def api_eventos():
                              'X-Accel-Buffering': 'no',
                              'Connection': 'keep-alive'})
 
-# before_request: gera nonce único por requisição para o CSP
+# before_request: gera nonce único por requisição para o CSP + request-id + cronômetro
 @app.before_request
 def _gen_csp_nonce():
     g.csp_nonce = secrets.token_urlsafe(16)
+    # Aceita X-Request-ID externo (e.g. load balancer) ou gera um novo
+    g.request_id = (request.headers.get('X-Request-ID') or '').strip() or secrets.token_hex(8)
+    g.t0 = time.monotonic()
 
 # after_request: security headers em todas as respostas
 @app.after_request
@@ -14586,6 +14664,10 @@ def _add_security_headers(response):
     response.headers.setdefault('Permissions-Policy', 'geolocation=(), microphone=(), camera=()')
     # HSTS: força HTTPS por 1 ano, incluindo subdomínios
     response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    # Ecoa o Request-ID para rastreamento de logs (cliente ↔ servidor)
+    rid = getattr(g, 'request_id', '')
+    if rid:
+        response.headers['X-Request-ID'] = rid
     # Content-Security-Policy com nonce por requisição (sem unsafe-inline para scripts)
     if response.content_type and response.content_type.startswith('text/html'):
         nonce = getattr(g, 'csp_nonce', '')
@@ -14599,6 +14681,15 @@ def _add_security_headers(response):
             f"connect-src 'self'; "
             f"frame-ancestors 'self';"
         )
+    # Loga requisições lentas (> 2 s) para diagnóstico de performance
+    t0 = getattr(g, 't0', None)
+    if t0 is not None:
+        elapsed = time.monotonic() - t0
+        if elapsed > 2.0:
+            app.logger.warning(
+                f'[slow-req] {request.method} {request.path} {elapsed:.2f}s '
+                f'status={response.status_code} rid={getattr(g, "request_id", "")}'
+            )
     return response
 
 # after_request: broadcast automático para endpoints que alteram dados
@@ -14632,6 +14723,33 @@ def _sse_after(response):
             pass
     return response
 # ─────────────────────────────────────────────────────────────────────────────
+
+# === HANDLERS GLOBAIS DE ERRO (JSON) ===
+@app.errorhandler(404)
+def _err_404(exc):
+    return jsonify({
+        'erro': 'Recurso não encontrado',
+        'request_id': getattr(g, 'request_id', ''),
+    }), 404
+
+@app.errorhandler(405)
+def _err_405(exc):
+    return jsonify({
+        'erro': 'Método não permitido',
+        'request_id': getattr(g, 'request_id', ''),
+    }), 405
+
+@app.errorhandler(500)
+def _err_500(exc):
+    app.logger.error(
+        f'[500] rid={getattr(g, "request_id", "")} '
+        f'path={request.path} error={exc}',
+        exc_info=True,
+    )
+    return jsonify({
+        'erro': 'Erro interno do servidor',
+        'request_id': getattr(g, 'request_id', ''),
+    }), 500
 
 @app.route('/api/dashboard/ponto-dia')
 @lr
@@ -16982,6 +17100,13 @@ with app.app_context():
         'arquivo_caminho VARCHAR(500)',
     ])
     seed(); get_logo()
+    # Warm-up: pré-carrega cache de configurações e invalida cache antigo
+    try:
+        gc('__warmup__', None)  # força população de _gc_cache
+        cache.delete('api_dashboard')
+        app.logger.info('[startup] cache warm-up concluído')
+    except Exception as _wup_exc:
+        app.logger.warning(f'[startup] cache warm-up falhou: {_wup_exc}')
 
 if __name__=='__main__':
     app.run(host='0.0.0.0',port=5000,debug=False)
@@ -17159,4 +17284,67 @@ def api_auto_backup_download(nome):
     if not os.path.exists(p): return jsonify({'erro': 'Arquivo não encontrado'}), 404
     return send_file(p, mimetype='application/zip', as_attachment=True, download_name=nome)
 
+# ============================================================
+# SIGTERM — desligamento gracioso
+# ============================================================
+import signal as _signal
+
+def _graceful_shutdown(signum, frame):
+    """Captura SIGTERM/SIGINT para fechar clientes SSE e fazer flush do DB antes de sair."""
+    app.logger.info('[shutdown] sinal recebido — encerrando graciosamente...')
+    # Avisa clientes SSE que o servidor vai encerrar
+    try:
+        _sse_broadcast('server_shutdown', '{"motivo":"restart"}')
+    except Exception:
+        pass
+    # Tenta fechar a sessão do SQLAlchemy limpa
+    try:
+        db.session.remove()
+    except Exception:
+        pass
+    app.logger.info('[shutdown] encerrado')
+    raise SystemExit(0)
+
+_signal.signal(_signal.SIGTERM, _graceful_shutdown)
+
+# ============================================================
+# WAL CHECKPOINT PERIÓDICO (a cada 30 min) — evita crescimento do WAL
+# ============================================================
+def _wal_checkpoint_loop():
+    """Executa PRAGMA wal_checkpoint(PASSIVE) periodicamente para manter o WAL compacto."""
+    while True:
+        time.sleep(1800)  # 30 minutos
+        try:
+            with app.app_context():
+                db.session.execute(text('PRAGMA wal_checkpoint(PASSIVE)'))
+                db.session.commit()
+        except Exception as exc:
+            try:
+                app.logger.warning(f'[wal-checkpoint] falhou: {exc}')
+            except Exception:
+                pass
+
+threading.Thread(target=_wal_checkpoint_loop, daemon=True, name='wal-checkpoint').start()
+
+# ============================================================
+# SSE — limpeza periódica de clientes mortos (a cada 5 min)
+# ============================================================
+def _sse_cleanup_loop():
+    """Remove fila de clientes SSE que não consomem mensagens (queue cheia = cliente morto)."""
+    while True:
+        time.sleep(300)  # 5 minutos
+        try:
+            with _sse_lock:
+                mortos = [q for q in _sse_clients if q.full()]
+                for q in mortos:
+                    _sse_clients.remove(q)
+            if mortos:
+                app.logger.info(f'[sse-cleanup] {len(mortos)} cliente(s) removido(s)')
+        except Exception as exc:
+            try:
+                app.logger.warning(f'[sse-cleanup] erro: {exc}')
+            except Exception:
+                pass
+
+threading.Thread(target=_sse_cleanup_loop, daemon=True, name='sse-cleanup').start()
 # ============================================================
