@@ -14,13 +14,33 @@ import okhttp3.Response
 
 class ApiClient(private val session: SessionManager) {
     private val gson = Gson()
-    private val refreshHttp = OkHttpClient.Builder().build()
+
+    private fun buildHttpClient(withAuthenticator: Boolean = false): OkHttpClient {
+        val builder = OkHttpClient.Builder()
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        // Certificate Pinning — ativo quando BuildConfig.CERT_PIN está preenchido
+        val pin = BuildConfig.CERT_PIN.trim()
+        if (pin.isNotBlank()) {
+            val hostname = java.net.URI(BuildConfig.DEFAULT_API_BASE_URL).host
+            builder.certificatePinner(
+                okhttp3.CertificatePinner.Builder()
+                    .add(hostname, pin)
+                    .build()
+            )
+        }
+        if (withAuthenticator) {
+            builder.authenticator(okhttp3.Authenticator { _, response ->
+                authRetryRequest(response)
+            })
+        }
+        return builder.build()
+    }
+
+    private val refreshHttp = buildHttpClient(withAuthenticator = false)
     private val refreshLock = Any()
-    private val http = OkHttpClient.Builder()
-        .authenticator(Authenticator { _, response ->
-            authRetryRequest(response)
-        })
-        .build()
+    private val http = buildHttpClient(withAuthenticator = true)
 
     data class UltimoPagamentoResponse(
         val ok: Boolean = false,
@@ -207,7 +227,12 @@ class ApiClient(private val session: SessionManager) {
 
     private fun url(path: String): String {
         val base = session.apiBaseUrl.trim().trimEnd('/')
-        return if (path.startsWith("http")) path else "$base$path"
+        // Garante que a URL final usa HTTPS — rejeita qualquer esquema não seguro
+        val resolved = if (path.startsWith("http")) path else "$base$path"
+        require(resolved.startsWith("https://", ignoreCase = true)) {
+            "URL da requisição não usa HTTPS: $resolved"
+        }
+        return resolved
     }
 
     fun iniciarOtp(cpf: String): OtpStartResponse {

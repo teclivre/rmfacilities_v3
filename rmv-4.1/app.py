@@ -131,6 +131,8 @@ app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024  # 25MB (reduzido para mitig
 app.secret_key = _load_app_secret_key()
 app.config['PERMANENT_SESSION_LIFETIME'] = __import__('datetime').timedelta(days=30)
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = not app.debug   # Envia cookie apenas via HTTPS em produção
+app.config['SESSION_COOKIE_HTTPONLY'] = True           # Bloqueia acesso via JavaScript ao cookie
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', DEFAULT_DB_URI)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite'):
@@ -4476,7 +4478,29 @@ def next_cli_num():
         except: pass
     return str(max_n+1).zfill(3)
 
+# Assinaturas de magic bytes de tipos perigosos a bloquear em uploads gen\u00e9ricos
+_UPLOAD_BLOCKED_MAGIC = (
+    b'<?php', b'<?=',          # PHP
+    b'#!/',                    # shell scripts (bash, python, perl, etc.)
+    b'\x7fELF',                # ELF binaries (Linux executables/libs)
+    b'MZ',                     # PE/DOS executables (Windows .exe/.dll)
+    b'<script',                # HTML com script embutido
+)
+
+def _upload_content_safe(fs) -> bool:
+    """Verifica se os primeiros bytes do arquivo n\u00e3o correspondem a tipos execut\u00e1veis perigosos."""
+    header = fs.stream.read(16)
+    fs.stream.seek(0)
+    h_lower = header.lower()
+    for sig in _UPLOAD_BLOCKED_MAGIC:
+        if h_lower[:len(sig)] == sig.lower():
+            return False
+    return True
+
 def save_upload(fs,subdir):
+    if not _upload_content_safe(fs):
+        from flask import abort
+        abort(400,'Tipo de arquivo n\u00e3o permitido.')
     os.makedirs(os.path.join(UPLOAD_ROOT,subdir),exist_ok=True)
     base=secure_filename(fs.filename or 'arquivo.bin')
     nome=f"{localnow().strftime('%Y%m%d_%H%M%S')}_{base}"
@@ -7241,10 +7265,10 @@ def api_app_funcionario_login():
     if f.app_ativo is False:
         reg_auth_attempt('app',cpf,False,'app_desativado')
         audit_event('auth_app_falha','funcionario',f.id,'funcionario',f.id,False,{'motivo':'app_desativado'})
-        return jsonify({'erro':'Acesso do aplicativo desativado'}),403
+        return jsonify({'erro':'Credenciais invalidas'}),401  # Não vazar estado da conta
     if not f.app_senha:
         reg_auth_attempt('app',cpf,False,'app_nao_configurado')
-        return jsonify({'erro':'Acesso do aplicativo ainda nao configurado para este funcionario'}),403
+        return jsonify({'erro':'Credenciais invalidas'}),401  # Não vazar estado da conta
     if not pw_check(f.app_senha,senha):
         reg_auth_attempt('app',cpf,False,'credenciais_invalidas')
         audit_event('auth_app_falha','funcionario',f.id,'funcionario',f.id,False,{'motivo':'senha_invalida'})
@@ -14544,6 +14568,11 @@ def api_eventos():
                              'X-Accel-Buffering': 'no',
                              'Connection': 'keep-alive'})
 
+# before_request: gera nonce único por requisição para o CSP
+@app.before_request
+def _gen_csp_nonce():
+    g.csp_nonce = secrets.token_urlsafe(16)
+
 # after_request: security headers em todas as respostas
 @app.after_request
 def _add_security_headers(response):
@@ -14555,17 +14584,20 @@ def _add_security_headers(response):
     response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
     # Limita permissões de API do browser
     response.headers.setdefault('Permissions-Policy', 'geolocation=(), microphone=(), camera=()')
-    # Content-Security-Policy básico (ajuste conforme CDNs/fontes externas usadas)
+    # HSTS: força HTTPS por 1 ano, incluindo subdomínios
+    response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    # Content-Security-Policy com nonce por requisição (sem unsafe-inline para scripts)
     if response.content_type and response.content_type.startswith('text/html'):
+        nonce = getattr(g, 'csp_nonce', '')
         response.headers.setdefault(
             'Content-Security-Policy',
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
-            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
-            "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
-            "img-src 'self' data: blob:; "
-            "connect-src 'self'; "
-            "frame-ancestors 'self';"
+            f"default-src 'self'; "
+            f"script-src 'self' 'nonce-{nonce}' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+            f"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
+            f"font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
+            f"img-src 'self' data: blob:; "
+            f"connect-src 'self'; "
+            f"frame-ancestors 'self';"
         )
     return response
 

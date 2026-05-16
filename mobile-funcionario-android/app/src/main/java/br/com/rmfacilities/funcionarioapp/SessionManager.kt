@@ -7,8 +7,13 @@ import androidx.security.crypto.MasterKey
 import kotlin.math.max
 
 class SessionManager(private val context: Context) {
-    private val prefs: SharedPreferences = run {
-        try {
+    /** True quando o Keystore falhou; dados foram apagados e o app deve pedir novo login. */
+    val keystoreFailed: Boolean
+    private val prefs: SharedPreferences
+
+    init {
+        var failed = false
+        val resolved: SharedPreferences = try {
             val masterKey = MasterKey.Builder(context)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
                 .build()
@@ -20,14 +25,26 @@ class SessionManager(private val context: Context) {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
         } catch (_: Exception) {
-            // Fallback para dispositivos sem suporte ao Keystore (emuladores antigos, etc.)
+            // Keystore inacessivel: apaga TODOS os dados sensiveis e usa prefs vazia
+            context.getSharedPreferences("rm_funcionario_app", Context.MODE_PRIVATE)
+                .edit().clear().apply()
+            failed = true
             context.getSharedPreferences("rm_funcionario_app", Context.MODE_PRIVATE)
         }
+        prefs = resolved
+        keystoreFailed = failed
     }
 
     var apiBaseUrl: String
         get() = prefs.getString("api_base_url", BuildConfig.DEFAULT_API_BASE_URL) ?: BuildConfig.DEFAULT_API_BASE_URL
-        set(value) = prefs.edit().putString("api_base_url", value.trim().trimEnd('/')).apply()
+        set(value) {
+            val normalized = value.trim().trimEnd('/')
+            // Só aceita HTTPS para evitar transmissão de credenciais por HTTP
+            if (normalized.startsWith("https://", ignoreCase = true)) {
+                prefs.edit().putString("api_base_url", normalized).apply()
+            }
+            // URL não-HTTPS é silenciosamente ignorada; o valor anterior é mantido
+        }
 
     var accessToken: String
         get() = prefs.getString("access_token", "") ?: ""

@@ -3,6 +3,7 @@ package br.com.rmfacilities.funcionarioapp
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.WindowManager
 import android.os.Handler
 import android.os.Looper
 import android.text.Editable
@@ -64,6 +65,7 @@ class DocumentosActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         setContentView(R.layout.activity_documentos)
 
         session = SessionManager(this)

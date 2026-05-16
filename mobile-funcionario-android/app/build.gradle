@@ -63,6 +63,13 @@ android {
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField "String", "DEFAULT_API_BASE_URL", '"https://portal.grupormfacilities.com.br"'
+        // Certificate Pinning: defina o pin SHA-256 em keystore.properties (CERT_PIN=sha256/HASH)
+        // Deixe vazio para desabilitar (ex.: debug builds). Para obter o hash:
+        //   openssl s_client -connect portal.grupormfacilities.com.br:443 2>/dev/null \
+        //     | openssl x509 -pubkey | openssl pkey -pubin -outform der \
+        //     | openssl dgst -sha256 -binary | base64
+        def certPin = keystoreProps.containsKey('CERT_PIN') ? keystoreProps['CERT_PIN'] : ''
+        buildConfigField "String", "CERT_PIN", "\"${certPin}\""
     }
 
     signingConfigs {

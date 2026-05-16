@@ -67,6 +67,12 @@ class LoginActivity : AppCompatActivity() {
         tvErro = findViewById(R.id.tvErro)
         val tvPrivacidade: TextView = findViewById(R.id.tvPrivacidade)
 
+        // Se o Keystore falhou, dados foram apagados por seguran\u00e7a — avisar o usu\u00e1rio
+        if (session.keystoreFailed) {
+            tvErro.visibility = android.view.View.VISIBLE
+            tvErro.text = "Armazenamento seguro indispon\u00edvel. Seus dados foram apagados. Fa\u00e7a login novamente."
+        }
+
         btnEnviarCodigo.setOnClickListener { enviarCodigo() }
         btnBiometria.setOnClickListener { autenticarComBiometria() }
         btnEntrar.setOnClickListener { confirmarOtp() }

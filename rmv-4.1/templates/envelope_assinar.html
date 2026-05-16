@@ -215,7 +215,7 @@
   </div>
 
   <script src="/static/js/assinatura-common.js"></script>
-  <script>
+  <script nonce="{{ g.csp_nonce }}">
 const TOKEN='{{ sig.token or "" }}';
 const ENV_COD='{{ env.codigo }}';
 const SRC='{{ request.args.get("src","link") }}';

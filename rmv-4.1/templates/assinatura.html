@@ -71,7 +71,7 @@
   </div>
 
   <script src="/static/js/assinatura-common.js"></script>
-  <script>
+  <script nonce="{{ g.csp_nonce }}">
     const ASS_TOKEN='{{ medicao.assinatura_token if medicao else "" }}';
     const otpCooldownCtrl=SignatureCommon.makeCooldown('btn-resend',60);
 

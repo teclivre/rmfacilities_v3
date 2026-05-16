@@ -5,6 +5,7 @@ import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
@@ -29,6 +30,7 @@ class HistoricoAssinaturasActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         setContentView(R.layout.activity_historico_assinaturas)
 
         session = SessionManager(this)

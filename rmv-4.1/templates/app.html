@@ -446,7 +446,7 @@ async function cobLogCarregar(){
 
 // === FATURAMENTO (Financeiro) ===
 </script>
-<script>
+<script nonce="{{ g.csp_nonce }}">
 async function carregarFaturamento(){
   const perSel=document.getElementById('fat-per-page');
   if(perSel) FAT_STATE.per_page=parseInt(perSel.value||'20',10)||20;
@@ -866,7 +866,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
     </div>
-    <script>
+    <script nonce="{{ g.csp_nonce }}">
     // === DESPESAS ===
     const DESP_STATE={page:1,per_page:20,order_by:'data',order_dir:'desc'};
     let DESP_CACHE=[];
@@ -3317,7 +3317,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
 {% include 'partials/ponto_edit_modal.html' %}
 
-<script>
+<script nonce="{{ g.csp_nonce }}">
 const N='{{ nome }}', P='{{ perfil }}';
 const USER_AREAS={{ areas|safe }};
 const USER_PERMISSIONS={{ permissoes|safe }};
@@ -11568,7 +11568,7 @@ function _carregarStampConfig(env){
 }
 </script>
 <script src="/static/js/app-ponto.js"></script>
-<script>
+<script nonce="{{ g.csp_nonce }}">
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", function () {
     navigator.serviceWorker.register("/static/sw.js").catch(function () {
