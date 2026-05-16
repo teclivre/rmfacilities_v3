@@ -27,6 +27,12 @@
         </provider>
 
         <activity
+            android:name=".FeriasActivity"
+            android:exported="false" />
+        <activity
+            android:name=".SolicitacaoCorrecaoPontoActivity"
+            android:exported="false" />
+        <activity
             android:name=".DocumentosActivity"
             android:exported="false"
             android:launchMode="singleTop" />

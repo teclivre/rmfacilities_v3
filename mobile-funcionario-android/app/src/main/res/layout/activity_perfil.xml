@@ -337,11 +337,22 @@
                 android:visibility="gone" />
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnTestarNotificacao"
+                android:id="@+id/btnSolicitarAlteracao"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                 android:layout_width="match_parent"
                 android:layout_height="50dp"
                 android:layout_marginTop="16dp"
+                android:text="✏️ Solicitar alteração de dados"
+                android:textColor="@color/accent_blue"
+                android:textSize="14sp"
+                app:strokeColor="@color/border" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnTestarNotificacao"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:layout_marginTop="10dp"
                 android:text="🔔 Testar notificação push"
                 android:textColor="@color/accent_blue"
                 android:textSize="14sp"

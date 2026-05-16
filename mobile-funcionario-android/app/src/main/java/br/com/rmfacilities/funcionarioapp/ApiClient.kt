@@ -294,6 +294,61 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    fun getFeriasFuncionario(): FeriasResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ferias"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, FeriasResponse::class.java)
+            } catch (_: Exception) {
+                FeriasResponse(ok = false, erro = "Falha ao carregar férias.")
+            }
+        }
+    }
+
+    fun solicitarCorrecaoPonto(dataRef: String, tipoProbema: String, horarioEsperado: String, observacao: String): CorrecaoPontoResponse {
+        val payload = gson.toJson(mapOf(
+            "data_ref" to dataRef,
+            "tipo_problema" to tipoProbema,
+            "horario_esperado" to horarioEsperado,
+            "observacao" to observacao
+        ))
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ponto/solicitacao-correcao"))
+            .post(payload.toRequestBody("application/json".toMediaType()))
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .addHeader("Content-Type", "application/json")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, CorrecaoPontoResponse::class.java)
+            } catch (_: Exception) {
+                CorrecaoPontoResponse(ok = false, erro = "Falha ao enviar solicitação.")
+            }
+        }
+    }
+
+    fun getCorrecoesPonto(): CorrecaoPontoListResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ponto/solicitacao-correcao"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, CorrecaoPontoListResponse::class.java)
+            } catch (_: Exception) {
+                CorrecaoPontoListResponse(ok = false, erro = "Falha ao carregar solicitações.")
+            }
+        }
+    }
+
     fun me(): MeResponse = meInternal(tentarRefresh = true)
 
     private fun meInternal(tentarRefresh: Boolean): MeResponse {

@@ -235,3 +235,46 @@ data class PontoEspelhoDadosResponse(
     val funcionario: String? = null,
     val dias: List<PontoEspelhoDia> = emptyList()
 )
+
+data class FeriasResponse(
+    val ok: Boolean = false,
+    val erro: String? = null,
+    val ferias_inicio: String? = null,
+    val ferias_fim: String? = null,
+    val ferias_obs: String? = null,
+    val ferias_dias: Int = 30,
+    val em_ferias: Boolean = false,
+    val dias_restantes: Int? = null,
+    val proximas: FeriasProximas? = null
+)
+
+data class FeriasProximas(
+    val inicio: String? = null,
+    val fim: String? = null,
+    val dias_para_inicio: Int? = null
+)
+
+data class CorrecaoPontoResponse(
+    val ok: Boolean = false,
+    val erro: String? = null,
+    val mensagem: String? = null,
+    val id: Int? = null
+)
+
+data class CorrecaoPontoItem(
+    val id: Int = 0,
+    val data_ref: String? = null,
+    val tipo_problema: String? = null,
+    val horario_esperado: String? = null,
+    val observacao: String? = null,
+    val status: String? = null,
+    val motivo_admin: String? = null,
+    val criado_fmt: String? = null,
+    val resolvido_fmt: String? = null
+)
+
+data class CorrecaoPontoListResponse(
+    val ok: Boolean = false,
+    val erro: String? = null,
+    val itens: List<CorrecaoPontoItem> = emptyList()
+)

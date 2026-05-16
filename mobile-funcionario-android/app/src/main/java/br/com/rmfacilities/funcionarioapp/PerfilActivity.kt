@@ -99,6 +99,7 @@ class PerfilActivity : AppCompatActivity() {
         val tvStatus = findViewById<TextView>(R.id.tvStatus)
         val btnAlterarFoto = findViewById<MaterialButton>(R.id.btnAlterarFoto)
         val btnTestarNotificacao = findViewById<MaterialButton>(R.id.btnTestarNotificacao)
+        val btnSolicitarAlteracao = findViewById<MaterialButton>(R.id.btnSolicitarAlteracao)
 
         atualizarBiometriaUi()
         switchBiometria.setOnCheckedChangeListener { _, checked ->
@@ -113,6 +114,69 @@ class PerfilActivity : AppCompatActivity() {
 
         btnAlterarFoto.setOnClickListener {
             pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        }
+
+        btnSolicitarAlteracao.setOnClickListener {
+            val campos = linkedMapOf(
+                "nome" to "",
+                "banco_nome" to "",
+                "banco_agencia" to "",
+                "banco_conta" to "",
+                "banco_pix" to "",
+                "endereco" to ""
+            )
+            val labels = listOf("Nome completo", "Banco (nome)", "Agência", "Conta", "PIX", "Endereço")
+            val inputs = labels.mapIndexed { i, label ->
+                android.widget.EditText(this).apply {
+                    hint = label
+                    setSingleLine(true)
+                    textSize = 14f
+                    setPadding(24, 16, 24, 16)
+                }
+            }
+            val container = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(24, 8, 24, 8)
+                inputs.forEach { addView(it) }
+                val etObs = android.widget.EditText(this@PerfilActivity).apply {
+                    hint = "Observação (opcional)"
+                    setSingleLine(false)
+                    minLines = 2
+                    textSize = 14f
+                    setPadding(24, 16, 24, 16)
+                    tag = "obs"
+                }
+                addView(etObs)
+            }
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle("Solicitar alteração de dados")
+                .setView(container)
+                .setPositiveButton("Enviar") { _, _ ->
+                    val camposPreenchidos = campos.keys.zip(inputs).filter { (_, et) ->
+                        et.text.toString().isNotBlank()
+                    }.associate { (key, et) -> key to et.text.toString().trim() }
+                    val obs = (container.findViewWithTag<android.widget.EditText>("obs"))?.text?.toString()?.trim() ?: ""
+                    if (camposPreenchidos.isEmpty()) {
+                        tvFeedback.visibility = View.VISIBLE
+                        tvFeedback.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_pending))
+                        tvFeedback.text = "Preencha ao menos um campo para solicitar alteração."
+                        return@setPositiveButton
+                    }
+                    tvFeedback.visibility = View.VISIBLE
+                    tvFeedback.text = "Enviando solicitação..."
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        val r = try { api.solicitarAlteracao(camposPreenchidos, obs) }
+                        catch (e: Exception) { SolicitacaoResponse(ok = false, erro = e.message) }
+                        withContext(Dispatchers.Main) {
+                            tvFeedback.setTextColor(ContextCompat.getColor(this@PerfilActivity,
+                                if (r.ok) R.color.success else R.color.mobile_semantic_pending))
+                            tvFeedback.text = if (r.ok) "✅ Solicitação enviada! O RH analisará em breve."
+                            else "❌ ${r.erro ?: "Erro ao enviar solicitação."}"
+                        }
+                    }
+                }
+                .setNegativeButton("Cancelar", null)
+                .show()
         }
 
         btnTestarNotificacao.setOnClickListener {

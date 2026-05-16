@@ -1,6 +1,7 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
@@ -239,13 +240,34 @@ class PontoHistoricoActivity : AppCompatActivity() {
                 }
             }
 
-            // Espaço entre dias
-            val spacer = View(this).apply {
+            // Espaço entre dias + botão solicitar correção
+            val bottomRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.END
                 layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, (12 * dp).toInt()
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    marginStart = (8 * dp).toInt()
+                    bottomMargin = (12 * dp).toInt()
+                }
+            }
+            val btnCorrecao = android.widget.Button(this).apply {
+                text = "📋 Solicitar correção"
+                textSize = 11f
+                setTextColor(ContextCompat.getColor(this@PontoHistoricoActivity, R.color.mobile_semantic_info))
+                background = null
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 )
             }
-            containerHistorico.addView(spacer)
+            val dataRefFinal = dataRef
+            btnCorrecao.setOnClickListener {
+                val intent = Intent(this, SolicitacaoCorrecaoPontoActivity::class.java)
+                intent.putExtra("data_ref", dataRefFinal)
+                startActivity(intent)
+            }
+            bottomRow.addView(btnCorrecao)
+            containerHistorico.addView(bottomRow)
         }
     }
 }

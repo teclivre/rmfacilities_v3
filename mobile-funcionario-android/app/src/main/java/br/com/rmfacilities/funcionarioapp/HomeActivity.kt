@@ -66,6 +66,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var btnConfiguracoesHome: View
     private lateinit var btnSalarioHome: View
     private lateinit var btnBeneficiosHome: View
+    private lateinit var btnFeriasHome: View
 
     private val logoutReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -123,6 +124,12 @@ class HomeActivity : AppCompatActivity() {
         btnConfiguracoesHome = findViewById(R.id.btnConfiguracoesHome)
         btnSalarioHome = findViewById(R.id.btnSalarioHome)
         btnBeneficiosHome = findViewById(R.id.btnBeneficiosHome)
+        btnFeriasHome = findViewById(R.id.btnFeriasHome)
+
+        btnFeriasHome.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            startActivity(Intent(this, FeriasActivity::class.java))
+        }
 
         btnSalarioHome.setOnClickListener {
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -494,7 +501,7 @@ class HomeActivity : AppCompatActivity() {
         val prefs = getSharedPreferences(PREF_SHORTCUTS, MODE_PRIVATE)
         val raw = prefs.getString(KEY_ENABLED, "") ?: ""
         if (raw.isBlank()) {
-            return setOf("documentos", "perfil", "ponto", "mensagens", "pagamento", "beneficios")
+            return setOf("documentos", "perfil", "ponto", "mensagens", "pagamento", "beneficios", "ferias")
         }
         return raw.split(',').map { it.trim() }.filter { it.isNotBlank() }.toSet()
     }
@@ -516,6 +523,7 @@ class HomeActivity : AppCompatActivity() {
         btnConfiguracoesHome.visibility = if (enabled.contains("config")) View.VISIBLE else View.GONE
         btnSalarioHome.visibility = if (enabled.contains("pagamento")) View.VISIBLE else View.GONE
         btnBeneficiosHome.visibility = if (enabled.contains("beneficios")) View.VISIBLE else View.GONE
+        btnFeriasHome.visibility = if (enabled.contains("ferias")) View.VISIBLE else View.GONE
     }
 
     private fun mostrarDialogAtualizar(downloadUrl: String?) {
@@ -610,7 +618,7 @@ class HomeActivity : AppCompatActivity() {
 
     private fun animarCardsHome() {
         val cardIds = listOf(R.id.btnPonto, R.id.btnDocumentos, R.id.btnMensagens, R.id.btnPerfil,
-            R.id.btnOfflineHome, R.id.btnConfiguracoesHome, R.id.btnSalarioHome, R.id.btnBeneficiosHome)
+            R.id.btnOfflineHome, R.id.btnConfiguracoesHome, R.id.btnSalarioHome, R.id.btnBeneficiosHome, R.id.btnFeriasHome)
         val interp = DecelerateInterpolator()
         cardIds.forEachIndexed { i, id ->
             val v = findViewById<View>(id) ?: return@forEachIndexed

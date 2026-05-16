@@ -1531,6 +1531,24 @@ class FuncionarioAlteracaoSolicitacao(db.Model):
         d['payload']=jloads(self.payload,{})
         return d
 
+class PontoCorrecaoSolicitacao(db.Model):
+    __tablename__='ponto_correcao_solicitacao'
+    id=db.Column(db.Integer,primary_key=True)
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False,index=True)
+    data_ref=db.Column(db.String(10),nullable=False)
+    tipo_problema=db.Column(db.String(40),default='horario_errado')
+    horario_esperado=db.Column(db.String(5))
+    observacao=db.Column(db.Text,default='')
+    status=db.Column(db.String(20),default='pendente')
+    motivo_admin=db.Column(db.Text,default='')
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    resolvido_em=db.Column(db.DateTime)
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
+        d['resolvido_fmt']=self.resolvido_em.strftime('%d/%m/%Y %H:%M') if self.resolvido_em else ''
+        return d
+
 class AuthTentativa(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     tipo=db.Column(db.String(30),nullable=False)
@@ -7695,6 +7713,124 @@ def api_app_funcionario_solicitar_alteracao():
     audit_event('funcionario_app_solicitou_alteracao','funcionario',g.app_funcionario.id,'funcionario',g.app_funcionario.id,True,{'solicitacao_id':it.id})
     return jsonify({'ok':True,'item':it.to_dict()}),201
 
+@app.route('/api/app/funcionario/me/ferias',methods=['GET'])
+@app_func_required
+def api_app_funcionario_ferias():
+    from datetime import date as _date
+    f=g.app_funcionario
+    hoje=_date.today().isoformat()
+    ini=(f.ferias_inicio or '').strip()
+    fim=(f.ferias_fim or '').strip()
+    dias=f.ferias_dias or 30
+    em_ferias=bool(ini and fim and ini<=hoje<=fim)
+    dias_restantes=None
+    if em_ferias and fim:
+        try:
+            dias_restantes=(_date.fromisoformat(fim)-_date.fromisoformat(hoje)).days+1
+        except (ValueError,TypeError):
+            pass
+    proximas=None
+    if not em_ferias and ini and ini>hoje:
+        try:
+            dias_proximas=(_date.fromisoformat(ini)-_date.fromisoformat(hoje)).days
+            proximas={'inicio':ini,'fim':fim,'dias_para_inicio':dias_proximas}
+        except (ValueError,TypeError):
+            pass
+    return jsonify({
+        'ok':True,
+        'ferias_inicio':ini or None,
+        'ferias_fim':fim or None,
+        'ferias_obs':(f.ferias_obs or '').strip() or None,
+        'ferias_dias':dias,
+        'em_ferias':em_ferias,
+        'dias_restantes':dias_restantes,
+        'proximas':proximas,
+    })
+
+@app.route('/api/app/funcionario/me/ponto/solicitacao-correcao',methods=['GET'])
+@app_func_required
+def api_app_ponto_solicitacoes_correcao():
+    f=g.app_funcionario
+    itens=PontoCorrecaoSolicitacao.query.filter_by(funcionario_id=f.id).order_by(
+        PontoCorrecaoSolicitacao.criado_em.desc()
+    ).limit(30).all()
+    return jsonify({'ok':True,'itens':[it.to_dict() for it in itens]})
+
+@app.route('/api/app/funcionario/me/ponto/solicitacao-correcao',methods=['POST'])
+@app_func_required
+def api_app_ponto_solicitar_correcao():
+    f=g.app_funcionario
+    d=request.json or {}
+    data_ref=(d.get('data_ref') or '').strip()
+    observacao=(d.get('observacao') or '').strip()[:1000]
+    tipo_problema=(d.get('tipo_problema') or 'horario_errado').strip()
+    horario_esperado=(d.get('horario_esperado') or '').strip()[:5]
+    if not data_ref:
+        return jsonify({'erro':'O campo data_ref é obrigatório.'}),400
+    if not observacao:
+        return jsonify({'erro':'Descreva o problema no campo observacao.'}),400
+    if tipo_problema not in ('horario_errado','marcacao_faltando','marcacao_extra','outro'):
+        tipo_problema='outro'
+    it=PontoCorrecaoSolicitacao(
+        funcionario_id=f.id,
+        data_ref=data_ref,
+        tipo_problema=tipo_problema,
+        horario_esperado=horario_esperado or None,
+        observacao=observacao,
+        status='pendente',
+    )
+    db.session.add(it)
+    db.session.commit()
+    audit_event('app_ponto_solicitacao_correcao','funcionario',f.id,'funcionario',f.id,True,{'solicitacao_id':it.id,'data_ref':data_ref})
+    return jsonify({'ok':True,'mensagem':'Solicitação enviada. O RH analisará em breve.','id':it.id}),201
+
+@app.route('/api/funcionarios/<int:fid>/ponto/solicitacoes-correcao',methods=['GET'])
+@lr
+def api_rh_ponto_solicitacoes_correcao(fid):
+    Funcionario.query.get_or_404(fid)
+    itens=PontoCorrecaoSolicitacao.query.filter_by(funcionario_id=fid).order_by(
+        PontoCorrecaoSolicitacao.criado_em.desc()
+    ).all()
+    return jsonify([it.to_dict() for it in itens])
+
+@app.route('/api/funcionarios/ponto/solicitacao-correcao/<int:id>/decidir',methods=['POST'])
+@lr
+def api_rh_decidir_correcao_ponto(id):
+    it=PontoCorrecaoSolicitacao.query.get_or_404(id)
+    if it.status!='pendente':
+        return jsonify({'erro':'Solicitação já foi analisada.'}),400
+    d=request.json or {}
+    acao=(d.get('acao') or '').strip().lower()
+    motivo=(d.get('motivo') or '').strip()
+    if acao not in ('aprovar','rejeitar'):
+        return jsonify({'erro':'Ação inválida. Use aprovar ou rejeitar.'}),400
+    it.status='resolvido' if acao=='aprovar' else 'rejeitado'
+    it.motivo_admin=motivo
+    it.resolvido_em=utcnow()
+    db.session.commit()
+    status_label='aprovada' if acao=='aprovar' else 'rejeitada'
+    _push_notify_funcionario(it.funcionario_id,'📋 Solicitação de correção '+status_label,
+        f'Sua solicitação de correção de ponto em {it.data_ref} foi {status_label}.'+(' Motivo: '+motivo if motivo else ''),
+        data={'tipo':'correcao_ponto_'+acao,'solicitacao_id':str(it.id)})
+    audit_event('rh_decidiu_correcao_ponto','usuario',current_user.id,'ponto_correcao_solicitacao',it.id,True,{'acao':acao,'funcionario_id':it.funcionario_id})
+    return jsonify({'ok':True,'item':it.to_dict()})
+
+@app.route('/api/funcionarios/<int:fid>/ponto/solicitacoes-correcao/pendentes',methods=['GET'])
+@lr
+def api_rh_ponto_correcoes_pendentes(fid):
+    itens=PontoCorrecaoSolicitacao.query.filter_by(funcionario_id=fid,status='pendente').order_by(
+        PontoCorrecaoSolicitacao.criado_em.desc()
+    ).all()
+    return jsonify([it.to_dict() for it in itens])
+
+@app.route('/api/funcionarios/ponto/solicitacoes-correcao/todas-pendentes',methods=['GET'])
+@lr
+def api_rh_todas_correcoes_pendentes():
+    itens=PontoCorrecaoSolicitacao.query.filter_by(status='pendente').order_by(
+        PontoCorrecaoSolicitacao.criado_em.asc()
+    ).all()
+    return jsonify([it.to_dict() for it in itens])
+
 @app.route('/api/funcionarios/<int:id>/solicitacoes-alteracao',methods=['GET'])
 @lr
 def api_funcionario_solicitacoes_alteracao(id):
@@ -8498,6 +8634,21 @@ def api_app_ponto_marcar_me():
         }))
     except Exception:
         pass
+    # Push de alerta: se hoje é entrada, verificar se ontem houve entrada sem saída
+    if tipo == 'entrada':
+        try:
+            data_ant = (data_ref - timedelta(days=1))
+            marcacoes_ant = _app_ponto_marcacoes_dia(f.id, data_ant)
+            tipos_ant = [mc.tipo for mc in marcacoes_ant]
+            if 'entrada' in tipos_ant and 'saida' not in tipos_ant:
+                _push_notify_funcionario(
+                    f.id,
+                    '⚠️ Ponto incompleto',
+                    f'Ontem ({data_ant.strftime("%d/%m")}) você não registrou a saída. Solicite correção no app.',
+                    data={'tipo': 'alerta_ponto_incompleto', 'data_ref': str(data_ant)}
+                )
+        except Exception:
+            pass
     return jsonify({
         'ok':True,
         'marcacao':{
