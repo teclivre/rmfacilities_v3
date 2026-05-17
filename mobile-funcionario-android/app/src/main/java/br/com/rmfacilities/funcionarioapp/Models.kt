@@ -125,6 +125,7 @@ data class ComunicadoItem(
     val id: Int,
     val titulo: String = "",
     val conteudo: String = "",
+    val url: String? = null,
     val criado_fmt: String? = null,
     val lido: Boolean = false,
     val lidos_count: Int = 0,

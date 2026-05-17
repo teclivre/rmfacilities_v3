@@ -1860,6 +1860,8 @@ class ComunicadoApp(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     titulo=db.Column(db.String(200),nullable=False)
     conteudo=db.Column(db.Text,nullable=False)
+    # URL opcional: se preenchida, o app abre o link ao invés de exibir o texto
+    url=db.Column(db.String(2000),nullable=True)
     # None = para todos; int = para funcionario específico
     funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=True)
     # None = todos os postos; string = apenas esse posto
@@ -9573,13 +9575,18 @@ def api_rh_comunicado_criar():
     d=request.json or {}
     titulo=(d.get('titulo') or '').strip()
     conteudo=(d.get('conteudo') or '').strip()
+    url=(d.get('url') or '').strip() or None
     if not titulo: return jsonify({'erro':'Titulo obrigatorio'}),400
     if not conteudo: return jsonify({'erro':'Conteudo obrigatorio'}),400
+    # Validar URL se fornecida
+    if url and not url.startswith(('http://','https://')):
+        return jsonify({'erro':'URL inválida. Use http:// ou https://'}),400
     fid=d.get('funcionario_id')
     posto=(d.get('posto_operacional') or '').strip() or None
     c=ComunicadoApp(
         titulo=titulo,
         conteudo=conteudo,
+        url=url,
         funcionario_id=int(fid) if fid else None,
         posto_operacional=posto,
         criado_por=session.get('nome') or session.get('email') or 'RH',
@@ -9589,14 +9596,16 @@ def api_rh_comunicado_criar():
     db.session.commit()
     # Enviar push para os destinatários
     push_data={'tipo':'aviso_geral','comunicado_id':str(c.id)}
+    if url: push_data['url']=url
+    corpo_push=url if url else conteudo[:160]
     if fid:
-        _push_notify_funcionario(int(fid), titulo, conteudo[:160], data=push_data)
+        _push_notify_funcionario(int(fid), titulo, corpo_push, data=push_data)
     else:
         q=Funcionario.query.filter_by(status='Ativo', app_ativo=True)
         if posto:
             q=q.filter(Funcionario.posto_operacional==posto)
         for func in q.all():
-            _push_notify_funcionario(func.id, titulo, conteudo[:160], data=push_data)
+            _push_notify_funcionario(func.id, titulo, corpo_push, data=push_data)
     return jsonify(c.to_dict()),201
 
 @app.route('/api/comunicados-app/<int:cid>',methods=['PUT'])
@@ -9606,6 +9615,11 @@ def api_rh_comunicado_editar(cid):
     d=request.json or {}
     if 'titulo' in d: c.titulo=(d['titulo'] or '').strip()
     if 'conteudo' in d: c.conteudo=(d['conteudo'] or '').strip()
+    if 'url' in d:
+        url=(d['url'] or '').strip() or None
+        if url and not url.startswith(('http://','https://')):
+            return jsonify({'erro':'URL inválida. Use http:// ou https://'}),400
+        c.url=url
     if 'ativo' in d: c.ativo=bool(d['ativo'])
     db.session.commit()
     return jsonify(c.to_dict())
@@ -17071,7 +17085,8 @@ with app.app_context():
         'data_nascimento DATE',
     ])
     ensure_cols('comunicado_app',[
-        'posto_operacional VARCHAR(150)'
+        'posto_operacional VARCHAR(150)',
+        'url VARCHAR(2000)',
     ])
     ensure_cols('cliente',[
         'numero_contrato VARCHAR(60)',

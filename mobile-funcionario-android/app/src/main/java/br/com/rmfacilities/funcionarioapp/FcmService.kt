@@ -84,6 +84,13 @@ class FcmService : FirebaseMessagingService() {
                 Intent(this, MensagensActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 }
+            tipo == "aviso_geral" && !data["url"].isNullOrBlank() ->
+                // Comunicado com link: abre o artigo direto no WebView
+                Intent(this, WebViewActivity::class.java).apply {
+                    putExtra(WebViewActivity.EXTRA_URL, data["url"])
+                    putExtra(WebViewActivity.EXTRA_TITULO, titulo)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
             tipo == "aviso_geral" ->
                 Intent(this, MensagensActivity::class.java).apply {
                     putExtra("open_tab", "avisos")

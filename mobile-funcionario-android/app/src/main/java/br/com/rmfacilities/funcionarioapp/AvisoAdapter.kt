@@ -1,10 +1,12 @@
 package br.com.rmfacilities.funcionarioapp
 
+import android.content.Intent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.button.MaterialButton
 
 class AvisoAdapter(
     private val onLido: (ComunicadoItem) -> Unit
@@ -26,6 +28,7 @@ class AvisoAdapter(
         val tvData: TextView = view.findViewById(R.id.tvData)
         val tvNovo: TextView = view.findViewById(R.id.tvNovo)
         val tvVerMais: TextView = view.findViewById(R.id.tvVerMais)
+        val btnAbrirArtigo: MaterialButton = view.findViewById(R.id.btnAbrirArtigo)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
@@ -75,6 +78,26 @@ class AvisoAdapter(
                 notifyItemChanged(position)
                 onLido(item)
             }
+        }
+
+        // Botão "Abrir artigo" — visível apenas quando o comunicado tem URL
+        if (!item.url.isNullOrBlank()) {
+            holder.btnAbrirArtigo.visibility = View.VISIBLE
+            holder.btnAbrirArtigo.setOnClickListener {
+                val ctx = holder.itemView.context
+                val intent = Intent(ctx, WebViewActivity::class.java).apply {
+                    putExtra(WebViewActivity.EXTRA_URL, item.url)
+                    putExtra(WebViewActivity.EXTRA_TITULO, item.titulo)
+                }
+                ctx.startActivity(intent)
+                if (!item.lido) {
+                    items[position] = item.copy(lido = true)
+                    notifyItemChanged(position)
+                    onLido(item)
+                }
+            }
+        } else {
+            holder.btnAbrirArtigo.visibility = View.GONE
         }
     }
 
