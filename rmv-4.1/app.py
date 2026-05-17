@@ -8654,6 +8654,23 @@ def _app_ponto_fmt_minutos(total,signed=False):
     minutos=abs(minutos)
     return f'{sinal}{minutos//60:02d}:{minutos%60:02d}'
 
+def _app_ponto_max_marcacoes_dia(funcionario):
+    """Retorna quantas marcações são esperadas em um dia completo para este funcionário.
+    4 se a jornada tem intervalo, 2 se não tem, 4 por padrão."""
+    try:
+        jid=getattr(funcionario,'jornada_id',None)
+        if jid:
+            jornada=db.session.get(JornadaTrabalho,jid)
+            if jornada:
+                hi=(jornada.hora_intervalo_inicio or '').strip()
+                hf=(jornada.hora_intervalo_fim or '').strip()
+                if hi and hf and re.match(r'^\d{2}:\d{2}$',hi) and re.match(r'^\d{2}:\d{2}$',hf):
+                    return 4
+                return 2
+    except Exception:
+        pass
+    return 4
+
 def _app_ponto_resumo_dia(funcionario,data_ref):
     marcacoes=_app_ponto_marcacoes_dia(funcionario.id,data_ref)
     inconsistencias=[]
@@ -8713,6 +8730,18 @@ def _app_ponto_resumo_dia(funcionario,data_ref):
         })
 
     prox=_app_ponto_tipo_esperado(marcacoes)
+    # Calcular limite de marcações e pendentes de faltando
+    max_marc=_app_ponto_max_marcacoes_dia(funcionario)
+    data_ref_str=data_ref.strftime('%Y-%m-%d')
+    try:
+        correcoes_faltando_pendentes=PontoCorrecaoSolicitacao.query.filter_by(
+            funcionario_id=funcionario.id,
+            data_ref=data_ref_str,
+            tipo_problema='marcacao_faltando',
+            status='pendente'
+        ).count()
+    except Exception:
+        correcoes_faltando_pendentes=0
     return {
         'funcionario_id':funcionario.id,
         'funcionario_nome':funcionario.nome,
@@ -8728,6 +8757,8 @@ def _app_ponto_resumo_dia(funcionario,data_ref):
         'saldo_fmt':_app_ponto_fmt_minutos(saldo,signed=True),
         'status':'ok' if not inconsistencias else 'inconsistente',
         'inconsistencias':inconsistencias,
+        'max_marcacoes_dia':max_marc,
+        'correcoes_faltando_pendentes':correcoes_faltando_pendentes,
     }
 
 def _geo_haversine_m(lat1,lon1,lat2,lon2):

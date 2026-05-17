@@ -191,7 +191,9 @@ data class PontoResumo(
     val status: String? = null,
     val inconsistencias: List<String> = emptyList(),
     val fechado: Boolean = false,
-    val fechado_por: String? = null
+    val fechado_por: String? = null,
+    val max_marcacoes_dia: Int = 4,
+    val correcoes_faltando_pendentes: Int = 0
 )
 
 data class PontoDiaResponse(

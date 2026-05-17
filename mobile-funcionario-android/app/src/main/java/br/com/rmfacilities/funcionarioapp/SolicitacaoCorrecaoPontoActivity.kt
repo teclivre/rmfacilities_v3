@@ -43,6 +43,10 @@ class SolicitacaoCorrecaoPontoActivity : AppCompatActivity() {
     private var horarioOriginal: String = ""
     private var horarioCorreto: String = ""
     private var tipoMarcacao: String = ""
+    // Controle de limite de marcações faltando
+    private var maxMarcacoesDia: Int = 4
+    private var marcacoesDia: Int = 0          // marcações já existentes no dia
+    private var correcoesFaltandoPendentes: Int = 0  // pendentes enviadas nesta sessão
 
     private val sdfBr = SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR"))
     private val sdfIso = SimpleDateFormat("yyyy-MM-dd", Locale("pt", "BR"))
@@ -92,10 +96,13 @@ class SolicitacaoCorrecaoPontoActivity : AppCompatActivity() {
         } catch (_: Exception) {
             tvData.text = iso
         }
-        // Limpar seleção de marcação
+        // Limpar seleção de marcação e contadores ao trocar de data
         marcacaoId = null
         horarioOriginal = ""
         horarioCorreto = ""
+        correcoesFaltandoPendentes = 0
+        maxMarcacoesDia = 4
+        marcacoesDia = 0
         layoutCorrecao.visibility = View.GONE
         layoutMarcacoes.visibility = View.GONE
         tvMarcacoesHint.visibility = View.VISIBLE
@@ -136,7 +143,11 @@ class SolicitacaoCorrecaoPontoActivity : AppCompatActivity() {
                 tvMarcacoesHint.text = "❌ ${resp.erro ?: "Falha ao carregar marcações"}"
                 return@launch
             }
+            // Salvar limites do servidor
+            maxMarcacoesDia = resp.resumo.max_marcacoes_dia
+            correcoesFaltandoPendentes = resp.resumo.correcoes_faltando_pendentes
             val marcacoes = resp.resumo.marcacoes
+            marcacoesDia = marcacoes.size
             if (marcacoes.isEmpty()) {
                 tvMarcacoesHint.text = "Nenhuma marcação neste dia.\nSe precisar adicionar uma marcação, selecione \"Marcação faltando\" abaixo."
                 layoutMarcacoes.visibility = View.GONE
@@ -181,11 +192,19 @@ class SolicitacaoCorrecaoPontoActivity : AppCompatActivity() {
     }
 
     private fun mostrarPainelSemMarcacao() {
-        // Solicitar "marcação faltando" direto
+        val enviadas = marcacoesDia + correcoesFaltandoPendentes
+        if (enviadas >= maxMarcacoesDia) {
+            tvMarcacoesHint.text = "✅ Todas as $maxMarcacoesDia marcações já foram solicitadas ou existem para este dia. Aguarde a aprovação do RH."
+            layoutCorrecao.visibility = View.GONE
+            return
+        }
+        // Solicitar "marcação faltando"
         marcacaoId = null
         horarioOriginal = ""
+        horarioCorreto = ""
         tipoMarcacao = "marcacao_faltando"
-        tvMarcacaoSelecionada.text = "Sem marcação neste dia"
+        val num = enviadas + 1
+        tvMarcacaoSelecionada.text = "Marcação $num de $maxMarcacoesDia — adicionar horário faltante"
         tvHorarioOriginal.text = "Horário original: —"
         tvHorarioNovo.text = "Horário correto: não definido"
         layoutCorrecao.visibility = View.VISIBLE
@@ -273,14 +292,34 @@ class SolicitacaoCorrecaoPontoActivity : AppCompatActivity() {
             }
             btnEnviar.isEnabled = true
             if (resp.ok) {
-                tvStatus.text = "✅ Solicitação enviada! O RH analisará em breve."
-                tvStatus.setTextColor(ContextCompat.getColor(this@SolicitacaoCorrecaoPontoActivity, R.color.mobile_semantic_success))
-                etObservacao.text?.clear()
-                layoutCorrecao.visibility = View.GONE
-                layoutMarcacoes.visibility = View.GONE
-                marcacaoId = null
-                horarioCorreto = ""
                 Toast.makeText(this@SolicitacaoCorrecaoPontoActivity, "Solicitação enviada!", Toast.LENGTH_SHORT).show()
+                if (tipoFinal == "marcacao_faltando") {
+                    correcoesFaltandoPendentes++
+                    val enviadas = marcacoesDia + correcoesFaltandoPendentes
+                    val restantes = maxMarcacoesDia - enviadas
+                    etObservacao.text?.clear()
+                    if (restantes > 0) {
+                        tvStatus.text = "✅ Marcação $correcoesFaltandoPendentes/${maxMarcacoesDia - marcacoesDia} solicitada! Você pode adicionar mais $restantes marcação(ões) para este dia abaixo."
+                        tvStatus.setTextColor(ContextCompat.getColor(this@SolicitacaoCorrecaoPontoActivity, R.color.mobile_semantic_success))
+                        // Reabrir painel para próxima marcação
+                        mostrarPainelSemMarcacao()
+                    } else {
+                        tvStatus.text = "✅ Todas as ${maxMarcacoesDia - marcacoesDia} marcações solicitadas! O RH analisará em breve."
+                        tvStatus.setTextColor(ContextCompat.getColor(this@SolicitacaoCorrecaoPontoActivity, R.color.mobile_semantic_success))
+                        layoutCorrecao.visibility = View.GONE
+                        layoutMarcacoes.visibility = View.GONE
+                        marcacaoId = null
+                        horarioCorreto = ""
+                    }
+                } else {
+                    tvStatus.text = "✅ Solicitação enviada! O RH analisará em breve."
+                    tvStatus.setTextColor(ContextCompat.getColor(this@SolicitacaoCorrecaoPontoActivity, R.color.mobile_semantic_success))
+                    etObservacao.text?.clear()
+                    layoutCorrecao.visibility = View.GONE
+                    layoutMarcacoes.visibility = View.GONE
+                    marcacaoId = null
+                    horarioCorreto = ""
+                }
             } else {
                 tvStatus.text = "❌ ${resp.erro ?: "Erro ao enviar"}"
                 tvStatus.setTextColor(ContextCompat.getColor(this@SolicitacaoCorrecaoPontoActivity, R.color.mobile_semantic_pending))
