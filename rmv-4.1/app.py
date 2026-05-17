@@ -3247,17 +3247,23 @@ def _fcm_send_to_token(token,titulo,corpo,data=None):
         visibility_enum=getattr(messaging,'AndroidNotificationVisibility',None)
         if visibility_enum is not None and hasattr(visibility_enum,'PUBLIC'):
             android_notification_kwargs['visibility']=visibility_enum.PUBLIC
+        # Monta payload de dados incluindo título e corpo para que FcmService
+        # possa exibir a notificação com o PendingIntent correto (toque abre a
+        # tela certa mesmo com app em background/morto).
+        # Enviamos SOMENTE data (sem campo notification) para garantir que
+        # onMessageReceived seja sempre invocado pelo FCM SDK.
+        all_data={k:str(v) for k,v in (data or {}).items()}
+        all_data.setdefault('titulo',titulo)
+        all_data.setdefault('corpo',corpo)
         msg=messaging.Message(
             token=token,
-            notification=messaging.Notification(title=titulo,body=corpo),
-            data={k:str(v) for k,v in (data or {}).items()},
+            data=all_data,
             android=messaging.AndroidConfig(
                 priority='high',
-                notification=messaging.AndroidNotification(**android_notification_kwargs)
             ),
             apns=messaging.APNSConfig(
                 payload=messaging.APNSPayload(
-                    aps=messaging.Aps(badge=1,sound='default')
+                    aps=messaging.Aps(badge=1,sound='default',content_available=True)
                 )
             ),
         )
