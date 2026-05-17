@@ -50,7 +50,7 @@ class PontoHistoricoActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val resp = withContext(Dispatchers.IO) {
                 try { api.getPontoHistorico(7) }
-                catch (e: Exception) { PontoHistoricoResponse(ok = false, erro = e.message) }
+                catch (e: Exception) { PontoHistoricoResponse(ok = false, erro = e.message ?: "Falha de conexão com o servidor.") }
             }
             withContext(Dispatchers.Main) {
                 swipeRefreshHistorico.isRefreshing = false

@@ -8516,7 +8516,10 @@ def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
             except Exception:
                 pass
     except Exception:
-        pass
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
     
     # Se não tem escala ou erro, usa jornada fixa no dia
     return _app_ponto_min_esperado_jornada_data(funcionario,data_obj if 'data_obj' in locals() else data_str)
@@ -17393,7 +17396,9 @@ def api_auto_backup_download(nome):
 import signal as _signal
 
 def _graceful_shutdown(signum, frame):
-    """Captura SIGTERM/SIGINT para fechar clientes SSE e fazer flush do DB antes de sair."""
+    """Captura SIGTERM/SIGINT para fechar clientes SSE e fazer flush do DB antes de sair.
+    Restaura o handler padrão e re-propaga o sinal para que o gunicorn termine os
+    workers de forma controlada sem abortar requests em andamento."""
     app.logger.info('[shutdown] sinal recebido — encerrando graciosamente...')
     # Avisa clientes SSE que o servidor vai encerrar
     try:
@@ -17406,7 +17411,10 @@ def _graceful_shutdown(signum, frame):
     except Exception:
         pass
     app.logger.info('[shutdown] encerrado')
-    raise SystemExit(0)
+    # Restaura o handler padrão e re-propaga para o gunicorn tratar o desligamento
+    # Evita substituir permanentemente o handler do gunicorn (que aborta workers mid-request)
+    _signal.signal(signum, _signal.SIG_DFL)
+    _signal.raise_signal(signum)
 
 _signal.signal(_signal.SIGTERM, _graceful_shutdown)
 

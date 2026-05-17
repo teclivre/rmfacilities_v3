@@ -382,12 +382,8 @@ class PontoActivity : AppCompatActivity() {
                 try {
                     api.marcarPonto(lat = loc.latitude, lon = loc.longitude, precisao = loc.accuracy)
                 } catch (e: Exception) {
-                    PontoDiaResponse(ok = false, erro = e.message)
+                    PontoDiaResponse(ok = false, erro = e.message ?: "Falha de conexão com o servidor.")
                 }
-            }
-
-            btnMarcarPonto.isEnabled = true
-            if (resp.ok) {
                 localPendentes.clear() // servidor confirmou, limpa locais
                 val marcacoesResp = resp.resumo?.marcacoes
                 if (!marcacoesResp.isNullOrEmpty()) salvarCacheMarcacoes(marcacoesResp)
@@ -481,7 +477,7 @@ class PontoActivity : AppCompatActivity() {
     private fun carregarDia() {
         updateStatus("Atualizando...", R.color.mobile_semantic_info)
         lifecycleScope.launch {
-            val resp = try { api.getPontoDia() } catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message) }
+            val resp = try { api.getPontoDia() } catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message ?: "Falha de conexão com o servidor.") }
             withContext(Dispatchers.Main) {
                 if (resp.ok) {
                     localPendentes.clear() // servidor confirmou todas as marcações

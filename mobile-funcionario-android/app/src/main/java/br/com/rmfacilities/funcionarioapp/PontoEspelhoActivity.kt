@@ -52,7 +52,7 @@ class PontoEspelhoActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val resp = withContext(Dispatchers.IO) {
                 try { api.getPontoEspelhoStatus() }
-                catch (e: Exception) { PontoEspelhoStatusResponse(ok = false, erro = e.message) }
+                catch (e: Exception) { PontoEspelhoStatusResponse(ok = false, erro = e.message ?: "Falha de conexão com o servidor.") }
             }
             withContext(Dispatchers.Main) {
                 if (resp.ok) {

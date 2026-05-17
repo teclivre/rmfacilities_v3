@@ -342,7 +342,7 @@ class HomeActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val meD = async(Dispatchers.IO) { try { api.me() } catch (_: Exception) { MeResponse(ok = false) } }
             val naoLidasD = async(Dispatchers.IO) { try { api.getNaoLidas() } catch (_: Exception) { 0 } }
-            val pontoDiaD = async(Dispatchers.IO) { try { api.getPontoDia() } catch (_: Exception) { PontoDiaResponse(ok = false) } }
+            val pontoDiaD = async(Dispatchers.IO) { try { api.getPontoDia() } catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message ?: "Falha de conexão.") } }
             val versaoD = async(Dispatchers.IO) { try { api.getVersaoApp() } catch (_: Exception) { null } }
             val pendentesD = async(Dispatchers.IO) { try { api.pendentesAssinatura().itens.size } catch (_: Exception) { 0 } }
             val pagamentoD = async(Dispatchers.IO) { try { api.ultimoPagamento() } catch (_: Exception) { null } }
@@ -431,7 +431,7 @@ class HomeActivity : AppCompatActivity() {
 
                 // Saldo mensal
                 if (saldoMes != null && saldoMes.ok && saldoMes.saldo_fmt != null) {
-                    tvSaldoMes.text = "Saldo do mês: ${saldoMes.saldo_fmt}"
+                    tvSaldoMes.text = "Mês: ${saldoMes.saldo_fmt}"
                     tvSaldoMes.setTextColor(ContextCompat.getColor(this@HomeActivity,
                         if (saldoMes.saldo_min >= 0) R.color.mobile_semantic_success else R.color.mobile_semantic_pending))
                     tvSaldoMes.visibility = View.VISIBLE
