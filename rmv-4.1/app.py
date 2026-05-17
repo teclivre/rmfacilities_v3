@@ -7992,15 +7992,18 @@ def api_rh_decidir_correcao_ponto(id):
     it.resolvido_em=utcnow()
     # Se aprovado e há marcação + horário correto → alterar automaticamente
     if acao=='aprovar' and it.marcacao_id and it.horario_correto:
-        marc=PontoMarcacao.query.get(it.marcacao_id)
-        if marc:
+        marc=db.session.get(PontoMarcacao, it.marcacao_id)
+        if marc and marc.data_hora:
             try:
                 h,m=it.horario_correto.split(':')
                 nova_dh=marc.data_hora.replace(hour=int(h),minute=int(m),second=0,microsecond=0)
                 marc.data_hora=nova_dh
                 marc.observacao=(marc.observacao or '')+f' [corrigido pelo RH em {utcnow().strftime("%d/%m/%Y %H:%M")}]'
+                app.logger.info(f'[correcao-ponto] marcacao {it.marcacao_id} atualizada para {it.horario_correto}')
             except Exception as ex:
-                app.logger.warning(f'[correcao-ponto] falha ao alterar marcacao {it.marcacao_id}: {ex}')
+                app.logger.error(f'[correcao-ponto] ERRO ao alterar marcacao {it.marcacao_id}: {ex}',exc_info=True)
+        elif not marc:
+            app.logger.error(f'[correcao-ponto] marcacao {it.marcacao_id} nao encontrada no banco')
     db.session.commit()
     status_label='aprovada' if acao=='aprovar' else 'rejeitada'
     _push_notify_funcionario(it.funcionario_id,'📋 Solicitação de correção '+status_label,
@@ -8724,7 +8727,12 @@ def _geo_haversine_m(lat1,lon1,lat2,lon2):
 def api_app_ponto_dia_me():
     f=g.app_funcionario
     data_ref=_app_ponto_parse_data_ref(request.args.get('data'))
-    return jsonify({'ok':True,'resumo':_app_ponto_resumo_dia(f,data_ref)})
+    try:
+        resumo=_app_ponto_resumo_dia(f,data_ref)
+        return jsonify({'ok':True,'resumo':resumo})
+    except Exception as ex:
+        app.logger.error(f'[ponto-dia] erro ao gerar resumo fid={f.id} data={data_ref}: {ex}',exc_info=True)
+        return jsonify({'ok':False,'erro':'Erro interno ao carregar dados de ponto. Tente novamente.'}),500
 
 @app.route('/api/app/funcionario/me/ponto/marcar',methods=['POST'])
 @app_func_required
