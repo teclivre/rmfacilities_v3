@@ -109,6 +109,29 @@
     <div id="modal-ponto-body" style="padding:0 12px 20px;max-height:60vh;overflow-y:auto">Carregando...</div>
   </div>
 </div>
+
+<!-- Modal Correções de Ponto (Solicitações do App) -->
+<div id="modal-correcoes-ponto" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;overflow-y:auto;padding:24px 16px">
+  <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:720px;margin:40px auto;padding:0;position:relative;box-shadow:var(--shadow-md);border:1px solid var(--borda)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--borda)">
+      <div>
+        <div style="font-size:16px;font-weight:700;color:var(--preto)">📋 Solicitações de Correção de Ponto</div>
+        <div style="font-size:12px;opacity:.55;color:var(--preto);margin-top:2px" id="modal-correcoes-subtitulo">Enviadas pelo app pelos funcionários</div>
+      </div>
+      <button type="button" onclick="document.getElementById('modal-correcoes-ponto').style.display='none'" style="background:none;border:none;font-size:22px;cursor:pointer;opacity:.5;color:var(--preto);line-height:1">&times;</button>
+    </div>
+    <div style="padding:12px 20px;border-bottom:1px solid var(--borda);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <select id="modal-correcoes-filtro" onchange="renderCorrecoesPonto()" style="font-size:13px;padding:4px 8px;border:1px solid var(--borda);border-radius:var(--r);background:var(--branco);color:var(--preto)">
+        <option value="pendente">Pendentes</option>
+        <option value="todas">Todas</option>
+      </select>
+      <button class="btn b-gh b-sm" onclick="carregarCorrecoesPonto()">🔄 Atualizar</button>
+      <span id="modal-correcoes-count" style="font-size:12px;opacity:.6"></span>
+    </div>
+    <div id="modal-correcoes-body" style="padding:12px 20px 24px;max-height:65vh;overflow-y:auto">Carregando...</div>
+    <div id="st-correcoes-ponto" class="st" style="margin:0 20px 16px"></div>
+  </div>
+</div>
 <div id="modal-fat-detalhe" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:24px 16px">
   <div style="background:var(--branco);color:var(--preto);border-radius:10px;max-width:600px;margin:40px auto;padding:24px;position:relative">
     <span class="close" style="color:var(--text-muted)" onclick="fecharModalFatDetalhe()">&times;</span>
@@ -4126,6 +4149,9 @@ function rhSetSubAba(tab,btn){
   if(rhSubAba==='escalas'){
     rhEscalaInit();
   }
+  if(rhSubAba==='ponto'){
+    carregarCorrecoesPonto();
+  }
 }
 
 function rhFeriasFmtBr(v){
@@ -7751,6 +7777,7 @@ async function _renderFuncionariosImpl(){
   if(document.getElementById('pg-rh')?.classList.contains('on')){
     pontoCarregarDia();
     pontoCarregarPainelDia();
+    carregarCorrecoesPonto();
   }
 }
 

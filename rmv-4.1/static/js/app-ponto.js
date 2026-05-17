@@ -723,3 +723,133 @@ function gfAbrirEditDia(dataRef){
   document.getElementById('mod-ponto-edit-dia').classList.add('on');
   setTimeout(()=>document.getElementById('ped-motivo').focus(),120);
 }
+
+// ── Correções de Ponto (Solicitações do App) ─────────────────────────────────
+
+let _correcoesPontoTodas=[];
+
+const _CORRECAO_TIPO_LABEL={
+  horario_errado:'Horário errado',
+  marcacao_faltando:'Marcação faltando',
+  marcacao_extra:'Marcação extra',
+  outro:'Outro',
+};
+const _CORRECAO_STATUS_LABEL={
+  pendente:'🟡 Pendente',
+  resolvido:'✅ Aprovada',
+  rejeitado:'❌ Rejeitada',
+};
+
+async function carregarCorrecoesPonto(){
+  try{
+    const data=await api('/api/funcionarios/ponto/solicitacoes-correcao/todas-pendentes');
+    _correcoesPontoTodas=Array.isArray(data)?data:[];
+  }catch(_){
+    _correcoesPontoTodas=[];
+  }
+  _atualizarBadgeCorrecoes();
+  renderCorrecoesPonto();
+}
+
+function _atualizarBadgeCorrecoes(){
+  const badge=document.getElementById('badge-correcoes-ponto');
+  if(!badge)return;
+  const pendentes=_correcoesPontoTodas.filter(c=>c.status==='pendente').length;
+  if(pendentes>0){
+    badge.textContent=pendentes;
+    badge.style.display='inline';
+  }else{
+    badge.style.display='none';
+  }
+}
+
+function renderCorrecoesPonto(){
+  const body=document.getElementById('modal-correcoes-body');
+  const filtro=document.getElementById('modal-correcoes-filtro')?.value||'pendente';
+  const count=document.getElementById('modal-correcoes-count');
+  if(!body)return;
+  const lista=filtro==='pendente'?_correcoesPontoTodas.filter(c=>c.status==='pendente'):_correcoesPontoTodas;
+  if(count)count.textContent=lista.length+' registro(s)';
+  if(!lista.length){
+    body.innerHTML=`<div style="text-align:center;padding:32px;opacity:.5;font-size:14px">${filtro==='pendente'?'Nenhuma solicitação pendente 🎉':'Nenhuma solicitação encontrada'}</div>`;
+    return;
+  }
+  body.innerHTML=lista.map(c=>{
+    const func=(funcs||[]).find(f=>String(f.id)===String(c.funcionario_id));
+    const nomeFunc=func?func.nome:(c.funcionario_nome||`Funcionário #${c.funcionario_id}`);
+    const statusLabel=_CORRECAO_STATUS_LABEL[c.status]||c.status;
+    const tipoLabel=_CORRECAO_TIPO_LABEL[c.tipo_problema]||c.tipo_problema;
+    const dataFmt=c.data_ref?c.data_ref.split('-').reverse().join('/'):'-';
+    const criadoFmt=c.criado_em?(new Date(c.criado_em+'Z')).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'-';
+    const isPendente=c.status==='pendente';
+    return `<div style="border:1px solid var(--borda);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;background:${isPendente?'var(--cinza-cl)':'var(--branco)'}">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <div>
+          <div style="font-weight:700;font-size:14px">${nomeFunc}</div>
+          <div style="font-size:12px;opacity:.6;margin-top:2px">Enviado em ${criadoFmt}</div>
+        </div>
+        <span style="font-size:12px;padding:3px 10px;border-radius:8px;background:${isPendente?'var(--laranja-cl)':'var(--cinza-cl)'};color:${isPendente?'var(--laranja-esc)':'var(--text-muted)'};">${statusLabel}</span>
+      </div>
+      <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px 16px;font-size:13px">
+        <div><span style="opacity:.6">Data do problema:</span> <strong>${dataFmt}</strong></div>
+        <div><span style="opacity:.6">Tipo:</span> <strong>${tipoLabel}</strong></div>
+        ${c.horario_esperado?`<div><span style="opacity:.6">Horário correto:</span> <strong>${c.horario_esperado}</strong></div>`:''}
+      </div>
+      <div style="margin-top:8px;font-size:13px;background:var(--branco);border:1px solid var(--borda);border-radius:6px;padding:8px 10px;white-space:pre-wrap">${c.observacao||'-'}</div>
+      ${c.motivo_admin?`<div style="margin-top:6px;font-size:12px;opacity:.65">💬 RH: ${c.motivo_admin}</div>`:''}
+      ${isPendente?`
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="motivo-${c.id}" placeholder="Motivo (opcional)" style="flex:1;min-width:160px;font-size:13px;padding:6px 10px;border:1px solid var(--borda);border-radius:var(--r);background:var(--branco);color:var(--preto)">
+        <button class="btn b-vd b-sm" onclick="decidirCorrecaoPonto(${c.id},'aprovar')">✅ Aprovar</button>
+        <button class="btn b-vm b-sm" onclick="decidirCorrecaoPonto(${c.id},'rejeitar')">❌ Rejeitar</button>
+      </div>`:''}
+    </div>`;
+  }).join('');
+}
+
+async function abrirModalCorrecoesPonto(){
+  const modal=document.getElementById('modal-correcoes-ponto');
+  if(!modal)return;
+  modal.style.display='flex';
+  document.getElementById('modal-correcoes-body').innerHTML='<div style="text-align:center;padding:32px;opacity:.5">Carregando...</div>';
+  // Busca todas para o modal (pendentes + resolvidas recentes)
+  try{
+    const pendentes=await api('/api/funcionarios/ponto/solicitacoes-correcao/todas-pendentes');
+    _correcoesPontoTodas=Array.isArray(pendentes)?pendentes:[];
+  }catch(_){}
+  _atualizarBadgeCorrecoes();
+  renderCorrecoesPonto();
+}
+
+async function decidirCorrecaoPonto(id,acao){
+  const motivo=document.getElementById('motivo-'+id)?.value?.trim()||'';
+  showSt('st-correcoes-ponto','Processando...',false);
+  try{
+    const r=await api('/api/funcionarios/ponto/solicitacao-correcao/'+id+'/decidir','POST',{acao,motivo});
+    if(r&&r.ok){
+      showSt('st-correcoes-ponto',acao==='aprovar'?'✅ Solicitação aprovada.':'❌ Solicitação rejeitada.',false);
+      // Atualiza localmente
+      const idx=_correcoesPontoTodas.findIndex(c=>c.id===id);
+      if(idx>=0){
+        _correcoesPontoTodas[idx].status=acao==='aprovar'?'resolvido':'rejeitado';
+        _correcoesPontoTodas[idx].motivo_admin=motivo;
+      }
+      _atualizarBadgeCorrecoes();
+      renderCorrecoesPonto();
+    }else{
+      showSt('st-correcoes-ponto',r?.erro||'Erro ao processar.',true);
+    }
+  }catch(e){
+    showSt('st-correcoes-ponto','Erro: '+e.message,true);
+  }
+}
+
+// Polling periódico: atualiza badge a cada 60s quando a aba de ponto está visível
+setInterval(()=>{
+  const secPonto=document.getElementById('pg-ponto');
+  if(secPonto&&secPonto.style.display!=='none'){
+    api('/api/funcionarios/ponto/solicitacoes-correcao/todas-pendentes')
+      .then(d=>{if(Array.isArray(d)){_correcoesPontoTodas=d;_atualizarBadgeCorrecoes();}})
+      .catch(()=>{});
+  }
+},60000);
