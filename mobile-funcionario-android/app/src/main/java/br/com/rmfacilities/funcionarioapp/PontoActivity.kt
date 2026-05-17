@@ -384,6 +384,10 @@ class PontoActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     PontoDiaResponse(ok = false, erro = e.message ?: "Falha de conexão com o servidor.")
                 }
+            }
+
+            btnMarcarPonto.isEnabled = true
+            if (resp.ok) {
                 localPendentes.clear() // servidor confirmou, limpa locais
                 val marcacoesResp = resp.resumo?.marcacoes
                 if (!marcacoesResp.isNullOrEmpty()) salvarCacheMarcacoes(marcacoesResp)
