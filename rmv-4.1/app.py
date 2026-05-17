@@ -1576,6 +1576,12 @@ class PontoCorrecaoSolicitacao(db.Model):
     funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False,index=True)
     data_ref=db.Column(db.String(10),nullable=False)
     tipo_problema=db.Column(db.String(40),default='horario_errado')
+    # marcacao_id: marcação específica a corrigir (None = adicionar nova)
+    marcacao_id=db.Column(db.Integer,db.ForeignKey('ponto_marcacao.id'),nullable=True)
+    # horario_correto: novo horário desejado HH:MM
+    horario_correto=db.Column(db.String(5),nullable=True)
+    # horario_original: horário original da marcação no momento da solicitação (audit)
+    horario_original=db.Column(db.String(5),nullable=True)
     horario_esperado=db.Column(db.String(5))
     observacao=db.Column(db.Text,default='')
     status=db.Column(db.String(20),default='pendente')
@@ -1586,6 +1592,11 @@ class PontoCorrecaoSolicitacao(db.Model):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
         d['resolvido_fmt']=self.resolvido_em.strftime('%d/%m/%Y %H:%M') if self.resolvido_em else ''
+        try:
+            func=Funcionario.query.get(self.funcionario_id)
+            d['funcionario_nome']=func.nome if func else None
+        except Exception:
+            d['funcionario_nome']=None
         return d
 
 class AuthTentativa(db.Model):
@@ -7919,23 +7930,41 @@ def api_app_ponto_solicitar_correcao():
     observacao=(d.get('observacao') or '').strip()[:1000]
     tipo_problema=(d.get('tipo_problema') or 'horario_errado').strip()
     horario_esperado=(d.get('horario_esperado') or '').strip()[:5]
+    # Novos campos: marcacao_id e horario_correto
+    marcacao_id=d.get('marcacao_id')
+    horario_correto=(d.get('horario_correto') or '').strip()[:5] or None
     if not data_ref:
         return jsonify({'erro':'O campo data_ref é obrigatório.'}),400
     if not observacao:
         return jsonify({'erro':'Descreva o problema no campo observacao.'}),400
     if tipo_problema not in ('horario_errado','marcacao_faltando','marcacao_extra','outro'):
         tipo_problema='outro'
+    # Validar marcacao_id pertence ao funcionário
+    horario_original=None
+    marc_obj=None
+    if marcacao_id:
+        try: marcacao_id=int(marcacao_id)
+        except (TypeError,ValueError): marcacao_id=None
+    if marcacao_id:
+        marc_obj=PontoMarcacao.query.filter_by(id=marcacao_id,funcionario_id=f.id).first()
+        if not marc_obj:
+            return jsonify({'erro':'Marcação não encontrada.'}),404
+        if marc_obj.data_hora:
+            horario_original=marc_obj.data_hora.strftime('%H:%M')
     it=PontoCorrecaoSolicitacao(
         funcionario_id=f.id,
         data_ref=data_ref,
         tipo_problema=tipo_problema,
+        marcacao_id=marcacao_id or None,
+        horario_correto=horario_correto,
+        horario_original=horario_original,
         horario_esperado=horario_esperado or None,
         observacao=observacao,
         status='pendente',
     )
     db.session.add(it)
     db.session.commit()
-    audit_event('app_ponto_solicitacao_correcao','funcionario',f.id,'funcionario',f.id,True,{'solicitacao_id':it.id,'data_ref':data_ref})
+    audit_event('app_ponto_solicitacao_correcao','funcionario',f.id,'funcionario',f.id,True,{'solicitacao_id':it.id,'data_ref':data_ref,'marcacao_id':marcacao_id})
     return jsonify({'ok':True,'mensagem':'Solicitação enviada. O RH analisará em breve.','id':it.id}),201
 
 @app.route('/api/funcionarios/<int:fid>/ponto/solicitacoes-correcao',methods=['GET'])
@@ -7961,12 +7990,23 @@ def api_rh_decidir_correcao_ponto(id):
     it.status='resolvido' if acao=='aprovar' else 'rejeitado'
     it.motivo_admin=motivo
     it.resolvido_em=utcnow()
+    # Se aprovado e há marcação + horário correto → alterar automaticamente
+    if acao=='aprovar' and it.marcacao_id and it.horario_correto:
+        marc=PontoMarcacao.query.get(it.marcacao_id)
+        if marc:
+            try:
+                h,m=it.horario_correto.split(':')
+                nova_dh=marc.data_hora.replace(hour=int(h),minute=int(m),second=0,microsecond=0)
+                marc.data_hora=nova_dh
+                marc.observacao=(marc.observacao or '')+f' [corrigido pelo RH em {utcnow().strftime("%d/%m/%Y %H:%M")}]'
+            except Exception as ex:
+                app.logger.warning(f'[correcao-ponto] falha ao alterar marcacao {it.marcacao_id}: {ex}')
     db.session.commit()
     status_label='aprovada' if acao=='aprovar' else 'rejeitada'
     _push_notify_funcionario(it.funcionario_id,'📋 Solicitação de correção '+status_label,
         f'Sua solicitação de correção de ponto em {it.data_ref} foi {status_label}.'+(' Motivo: '+motivo if motivo else ''),
         data={'tipo':'correcao_ponto_'+acao,'solicitacao_id':str(it.id)})
-    audit_event('rh_decidiu_correcao_ponto','usuario',session.get('uid'),'ponto_correcao_solicitacao',it.id,True,{'acao':acao,'funcionario_id':it.funcionario_id})
+    audit_event('rh_decidiu_correcao_ponto','usuario',session.get('uid'),'ponto_correcao_solicitacao',it.id,True,{'acao':acao,'funcionario_id':it.funcionario_id,'marcacao_id':it.marcacao_id,'horario_correto':it.horario_correto})
     return jsonify({'ok':True,'item':it.to_dict()})
 
 @app.route('/api/funcionarios/<int:fid>/ponto/solicitacoes-correcao/pendentes',methods=['GET'])
@@ -17034,6 +17074,11 @@ with app.app_context():
         'latitude FLOAT',
         'longitude FLOAT',
         'precisao_gps FLOAT',
+    ])
+    ensure_cols('ponto_correcao_solicitacao',[
+        'marcacao_id INTEGER',
+        'horario_correto VARCHAR(5)',
+        'horario_original VARCHAR(5)',
     ])
     ensure_cols('jornada_trabalho',[
         'descricao VARCHAR(255)',

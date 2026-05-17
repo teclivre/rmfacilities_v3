@@ -334,16 +334,25 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
-    fun solicitarCorrecaoPonto(dataRef: String, tipoProbema: String, horarioEsperado: String, observacao: String): CorrecaoPontoResponse {
-        val payload = gson.toJson(mapOf(
+    fun solicitarCorrecaoPonto(
+        dataRef: String,
+        tipoProbema: String,
+        horarioEsperado: String,
+        observacao: String,
+        marcacaoId: Int? = null,
+        horarioCorreto: String? = null
+    ): CorrecaoPontoResponse {
+        val payload = mutableMapOf<String, Any?>(
             "data_ref" to dataRef,
             "tipo_problema" to tipoProbema,
             "horario_esperado" to horarioEsperado,
             "observacao" to observacao
-        ))
+        )
+        if (marcacaoId != null) payload["marcacao_id"] = marcacaoId
+        if (!horarioCorreto.isNullOrBlank()) payload["horario_correto"] = horarioCorreto
         val req = Request.Builder()
             .url(url("/api/app/funcionario/me/ponto/solicitacao-correcao"))
-            .post(payload.toRequestBody("application/json".toMediaType()))
+            .post(gson.toJson(payload).toRequestBody("application/json".toMediaType()))
             .addHeader("Authorization", "Bearer ${session.accessToken}")
             .addHeader("Content-Type", "application/json")
             .build()

@@ -782,6 +782,18 @@ function renderCorrecoesPonto(){
     const dataFmt=c.data_ref?c.data_ref.split('-').reverse().join('/'):'-';
     const criadoFmt=c.criado_em?(new Date(c.criado_em+'Z')).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'-';
     const isPendente=c.status==='pendente';
+    // Bloco de alteração automática de marcação
+    const temMarcacao=c.marcacao_id&&c.horario_correto;
+    const blocoAlteracao=temMarcacao
+      ?`<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:var(--verde-cl,#e8f5e9);border:1px solid var(--verde,#4caf50);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:20px">🔄</span>
+          <div style="font-size:13px">
+            <div style="font-weight:700;color:var(--verde-esc,#2e7d32)">Alteração automática ao aprovar</div>
+            <div style="color:var(--preto);margin-top:2px">Marcação #${c.marcacao_id} &nbsp;·&nbsp; ${c.horario_original?`<span style="text-decoration:line-through;opacity:.6">${c.horario_original}</span> → `:''}
+              <strong>${c.horario_correto}</strong></div>
+          </div>
+        </div>`
+      :`<div style="margin-top:8px;font-size:12px;opacity:.55;font-style:italic">ℹ️ Sem marcação vinculada — aprovação apenas registra a decisão, sem alteração automática.</div>`;
     return `<div style="border:1px solid var(--borda);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;background:${isPendente?'var(--cinza-cl)':'var(--branco)'}">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap">
         <div>
@@ -791,16 +803,16 @@ function renderCorrecoesPonto(){
         <span style="font-size:12px;padding:3px 10px;border-radius:8px;background:${isPendente?'var(--laranja-cl)':'var(--cinza-cl)'};color:${isPendente?'var(--laranja-esc)':'var(--text-muted)'};">${statusLabel}</span>
       </div>
       <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px 16px;font-size:13px">
-        <div><span style="opacity:.6">Data do problema:</span> <strong>${dataFmt}</strong></div>
+        <div><span style="opacity:.6">Data:</span> <strong>${dataFmt}</strong></div>
         <div><span style="opacity:.6">Tipo:</span> <strong>${tipoLabel}</strong></div>
-        ${c.horario_esperado?`<div><span style="opacity:.6">Horário correto:</span> <strong>${c.horario_esperado}</strong></div>`:''}
       </div>
-      <div style="margin-top:8px;font-size:13px;background:var(--branco);border:1px solid var(--borda);border-radius:6px;padding:8px 10px;white-space:pre-wrap">${c.observacao||'-'}</div>
+      ${blocoAlteracao}
+      <div style="margin-top:10px;font-size:13px;background:var(--branco);border:1px solid var(--borda);border-radius:6px;padding:8px 10px;white-space:pre-wrap">${c.observacao||'-'}</div>
       ${c.motivo_admin?`<div style="margin-top:6px;font-size:12px;opacity:.65">💬 RH: ${c.motivo_admin}</div>`:''}
       ${isPendente?`
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <input id="motivo-${c.id}" placeholder="Motivo (opcional)" style="flex:1;min-width:160px;font-size:13px;padding:6px 10px;border:1px solid var(--borda);border-radius:var(--r);background:var(--branco);color:var(--preto)">
-        <button class="btn b-vd b-sm" onclick="decidirCorrecaoPonto(${c.id},'aprovar')">✅ Aprovar</button>
+        <input id="motivo-${c.id}" placeholder="Motivo (opcional para aprovação)" style="flex:1;min-width:160px;font-size:13px;padding:6px 10px;border:1px solid var(--borda);border-radius:var(--r);background:var(--branco);color:var(--preto)">
+        <button class="btn b-vd b-sm" onclick="decidirCorrecaoPonto(${c.id},'aprovar')">✅ Aprovar${temMarcacao?' e alterar':''}</button>
         <button class="btn b-vm b-sm" onclick="decidirCorrecaoPonto(${c.id},'rejeitar')">❌ Rejeitar</button>
       </div>`:''}
     </div>`;
