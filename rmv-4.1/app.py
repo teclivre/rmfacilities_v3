@@ -7966,7 +7966,7 @@ def api_rh_decidir_correcao_ponto(id):
     _push_notify_funcionario(it.funcionario_id,'📋 Solicitação de correção '+status_label,
         f'Sua solicitação de correção de ponto em {it.data_ref} foi {status_label}.'+(' Motivo: '+motivo if motivo else ''),
         data={'tipo':'correcao_ponto_'+acao,'solicitacao_id':str(it.id)})
-    audit_event('rh_decidiu_correcao_ponto','usuario',current_user.id,'ponto_correcao_solicitacao',it.id,True,{'acao':acao,'funcionario_id':it.funcionario_id})
+    audit_event('rh_decidiu_correcao_ponto','usuario',session.get('uid'),'ponto_correcao_solicitacao',it.id,True,{'acao':acao,'funcionario_id':it.funcionario_id})
     return jsonify({'ok':True,'item':it.to_dict()})
 
 @app.route('/api/funcionarios/<int:fid>/ponto/solicitacoes-correcao/pendentes',methods=['GET'])
