@@ -7990,7 +7990,7 @@ def api_rh_decidir_correcao_ponto(id):
     it.status='resolvido' if acao=='aprovar' else 'rejeitado'
     it.motivo_admin=motivo
     it.resolvido_em=utcnow()
-    # Se aprovado e há marcação + horário correto → alterar automaticamente
+    # Se aprovado e há marcação existente + horário correto → alterar horário
     if acao=='aprovar' and it.marcacao_id and it.horario_correto:
         marc=db.session.get(PontoMarcacao, it.marcacao_id)
         if marc and marc.data_hora:
@@ -8004,6 +8004,27 @@ def api_rh_decidir_correcao_ponto(id):
                 app.logger.error(f'[correcao-ponto] ERRO ao alterar marcacao {it.marcacao_id}: {ex}',exc_info=True)
         elif not marc:
             app.logger.error(f'[correcao-ponto] marcacao {it.marcacao_id} nao encontrada no banco')
+    # Se aprovado e dia sem marcação (marcacao_faltando) com horário definido → criar nova marcação
+    elif acao=='aprovar' and it.tipo_problema=='marcacao_faltando' and it.horario_correto and it.data_ref:
+        try:
+            data_obj=datetime.strptime(it.data_ref,'%Y-%m-%d').date()
+            marcacoes_dia=_app_ponto_marcacoes_dia(it.funcionario_id, data_obj)
+            tipo_novo=_app_ponto_tipo_esperado(marcacoes_dia)
+            h,m=it.horario_correto.split(':')
+            nova_dh=datetime.combine(data_obj, datetime.min.time()).replace(hour=int(h),minute=int(m),second=0,microsecond=0)
+            nova_marc=PontoMarcacao(
+                funcionario_id=it.funcionario_id,
+                data_hora=nova_dh,
+                tipo=tipo_novo,
+                origem='correcao_rh',
+                observacao=f'Criado por correção #{it.id} aprovada em {utcnow().strftime("%d/%m/%Y %H:%M")}',
+            )
+            db.session.add(nova_marc)
+            db.session.flush()  # gera o ID antes do commit
+            it.marcacao_id=nova_marc.id
+            app.logger.info(f'[correcao-ponto] nova marcacao criada id={nova_marc.id} funcionario={it.funcionario_id} data={it.data_ref} hora={it.horario_correto} tipo={tipo_novo}')
+        except Exception as ex:
+            app.logger.error(f'[correcao-ponto] ERRO ao criar marcacao faltando: {ex}',exc_info=True)
     db.session.commit()
     status_label='aprovada' if acao=='aprovar' else 'rejeitada'
     _push_notify_funcionario(it.funcionario_id,'📋 Solicitação de correção '+status_label,

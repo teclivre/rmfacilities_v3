@@ -784,6 +784,7 @@ function renderCorrecoesPonto(){
     const isPendente=c.status==='pendente';
     // Bloco de alteração automática de marcação
     const temMarcacao=c.marcacao_id&&c.horario_correto;
+    const temFaltando=!c.marcacao_id&&c.tipo_problema==='marcacao_faltando'&&c.horario_correto;
     const blocoAlteracao=temMarcacao
       ?`<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:var(--verde-cl,#e8f5e9);border:1px solid var(--verde,#4caf50);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span style="font-size:20px">🔄</span>
@@ -791,6 +792,14 @@ function renderCorrecoesPonto(){
             <div style="font-weight:700;color:var(--verde-esc,#2e7d32)">Alteração automática ao aprovar</div>
             <div style="color:var(--preto);margin-top:2px">Marcação #${c.marcacao_id} &nbsp;·&nbsp; ${c.horario_original?`<span style="text-decoration:line-through;opacity:.6">${c.horario_original}</span> → `:''}
               <strong>${c.horario_correto}</strong></div>
+          </div>
+        </div>`
+      :temFaltando
+      ?`<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:#e3f2fd;border:1px solid #1565C0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:20px">➕</span>
+          <div style="font-size:13px">
+            <div style="font-weight:700;color:#1565C0">Nova marcação será criada ao aprovar</div>
+            <div style="color:var(--preto);margin-top:2px">Data: <strong>${dataFmt}</strong> &nbsp;·&nbsp; Horário: <strong>${c.horario_correto}</strong></div>
           </div>
         </div>`
       :`<div style="margin-top:8px;font-size:12px;opacity:.55;font-style:italic">ℹ️ Sem marcação vinculada — aprovação apenas registra a decisão, sem alteração automática.</div>`;
@@ -812,7 +821,7 @@ function renderCorrecoesPonto(){
       ${isPendente?`
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <input id="motivo-${c.id}" placeholder="Motivo (opcional para aprovação)" style="flex:1;min-width:160px;font-size:13px;padding:6px 10px;border:1px solid var(--borda);border-radius:var(--r);background:var(--branco);color:var(--preto)">
-        <button class="btn b-vd b-sm" onclick="decidirCorrecaoPonto(${c.id},'aprovar')">✅ Aprovar${temMarcacao?' e alterar':''}</button>
+        <button class="btn b-vd b-sm" onclick="decidirCorrecaoPonto(${c.id},'aprovar')">✅ Aprovar${temMarcacao?' e alterar':temFaltando?' e criar':''}</button>
         <button class="btn b-vm b-sm" onclick="decidirCorrecaoPonto(${c.id},'rejeitar')">❌ Rejeitar</button>
       </div>`:''}
     </div>`;
