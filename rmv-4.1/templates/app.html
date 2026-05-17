@@ -681,7 +681,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button class="metric metric-btn vm" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="ASO vencendo em 30 dias"><div class="n" id="d-aso-venc">—</div><div class="l">ASO vencendo (30d) <span class="metric-go">Ver</span></div></button>
         <button class="metric metric-btn" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Benefícios pendentes"><div class="n" id="d-benef-pend">—</div><div class="l">Benefícios pendentes <span class="metric-go">Ver</span></div></button>
         <button class="metric metric-btn" type="button" onclick="abrirDashboardDestino('clientes')" aria-label="Abrir clientes ativos"><div class="n" id="d-at">—</div><div class="l">Clientes ativos <span class="metric-go">Abrir</span></div></button>
-        <button class="metric metric-btn" style="--metric-c:var(--verm)" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Contratos vencendo"><div class="n" id="d-contratos" style="color:var(--verm)">—</div><div class="l">Contratos vencendo <span class="metric-go">Ver</span></div></button>
+        <button class="metric metric-btn" style="--metric-c:var(--laranja)" type="button" onclick="abrirModalCorrecoesPonto()" aria-label="Correções de ponto pendentes"><div class="n" id="d-correcoes-ponto" style="color:var(--laranja)">—</div><div class="l">Correções de ponto <span class="metric-go">Ver</span></div></button>
         <button class="metric metric-btn lj" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Cálculo de benefícios pendente"><div class="n" id="d-calc-benef">—</div><div class="l">Cálculos pendentes <span class="metric-go">Ver</span></div></button>
       </div>
       <div id="dash-alertas" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px"></div>
@@ -3868,6 +3868,13 @@ async function loadDash(){
   if(elAt) elAt.textContent=d.ativos;
   const elContratos=document.getElementById('d-contratos');
   if(elContratos) elContratos.textContent=(d.alerta_contratos?.qtd??0);
+  const elCorrecoesPonto=document.getElementById('d-correcoes-ponto');
+  if(elCorrecoesPonto){
+    const nCorrecoes=d.correcoes_ponto_pendentes??0;
+    elCorrecoesPonto.textContent=nCorrecoes;
+    elCorrecoesPonto.closest('.metric')?.classList.toggle('vm',nCorrecoes>0);
+    elCorrecoesPonto.closest('.metric')?.style.setProperty('--metric-c',nCorrecoes>0?'var(--verm)':'var(--laranja)');
+  }
   const elCalcBenef=document.getElementById('d-calc-benef');
   if(elCalcBenef) elCalcBenef.textContent=(d.alerta_calculo_beneficios?.qtd??0);
   // Resumo colaboradores

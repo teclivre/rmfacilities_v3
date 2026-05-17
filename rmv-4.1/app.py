@@ -15172,6 +15172,7 @@ def api_dashboard():
         'alerta_sem_aso_valido':{'qtd':len(alertas_sem_aso),'itens':alertas_sem_aso[:8]},
         'alerta_aso':{'qtd':len(alertas_aso),'itens':alertas_aso[:8],'janela_dias':30},
         'alerta_contratos':{'qtd':len(alertas_contratos),'itens':alertas_contratos[:8]},
+        'correcoes_ponto_pendentes':PontoCorrecaoSolicitacao.query.filter_by(status='pendente').count(),
         'total_cli':Cliente.query.count(),'proximo_num':prox_num(),
         'empresas':[{'id':e.id,'nome':e.nome,'cli':Cliente.query.filter_by(empresa_id=e.id,status='Ativo').count()} for e in Empresa.query.filter_by(ativa=True).all()]})
 
