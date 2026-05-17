@@ -3,24 +3,90 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+def hasGoogleServices =
+        file('google-services.json').exists() ||
+        file('src/debug/google-services.json').exists() ||
+        file('src/release/google-services.json').exists()
+if (hasGoogleServices) {
+    apply plugin: 'com.google.gms.google-services'
+}
+
+// ── Auto-versioning ──────────────────────────────────────────────────────────
+def versionPropsFile = file('version.properties')
+def versionProps = new Properties()
+versionPropsFile.withInputStream { versionProps.load(it) }
+
+def verCode = versionProps['VERSION_CODE'].toInteger()
+def verMajor = versionProps['VERSION_MAJOR'].toInteger()
+def verMinor = versionProps['VERSION_MINOR'].toInteger()
+def verPatch = versionProps['VERSION_PATCH'].toInteger()
+
+// Incrementa versionCode e patch antes da configuração do Android para que o
+// mesmo build já saia com a nova versão.
+def requestedTasks = gradle.startParameter.taskNames.join(' ')
+def isBuild = requestedTasks ==~ /(?s).*(assemble|bundle).*/
+if (isBuild) {
+    verCode += 1
+    verPatch += 1
+    if (verPatch >= 100) { verPatch = 0; verMinor += 1 }
+    if (verMinor >= 100) { verMinor = 0; verMajor += 1 }
+    versionProps['VERSION_CODE'] = verCode.toString()
+    versionProps['VERSION_MAJOR'] = verMajor.toString()
+    versionProps['VERSION_MINOR'] = verMinor.toString()
+    versionProps['VERSION_PATCH'] = verPatch.toString()
+    versionPropsFile.withOutputStream { versionProps.store(it, null) }
+    println "▶ Version bumped to ${verMajor}.${verMinor}.${verPatch} (code ${verCode})"
+}
+
+def buildVersionName = "${verMajor}.${verMinor}.${verPatch}"
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Signing ──────────────────────────────────────────────────────────────────
+def keystorePropsFile = rootProject.file("keystore.properties")
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 android {
     namespace 'br.com.rmfacilities.funcionarioapp'
-    compileSdk 34
+    compileSdk 35
 
     defaultConfig {
-        applicationId "br.com.rmfacilities.funcionarioapp"
+        applicationId "rm.funcionario"
         minSdk 24
-        targetSdk 34
-        versionCode 5
-        versionName "1.5.0"
+        targetSdk 35
+        versionCode verCode
+        versionName buildVersionName
+        resValue "string", "app_name_version", "RM Funcionário"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField "String", "DEFAULT_API_BASE_URL", '"https://portal.grupormfacilities.com.br"'
+        // Certificate Pinning: defina o pin SHA-256 em keystore.properties (CERT_PIN=sha256/HASH)
+        // Deixe vazio para desabilitar (ex.: debug builds). Para obter o hash:
+        //   openssl s_client -connect portal.grupormfacilities.com.br:443 2>/dev/null \
+        //     | openssl x509 -pubkey | openssl pkey -pubin -outform der \
+        //     | openssl dgst -sha256 -binary | base64
+        def certPin = keystoreProps.containsKey('CERT_PIN') ? keystoreProps['CERT_PIN'] : ''
+        buildConfigField "String", "CERT_PIN", "\"${certPin}\""
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePropsFile.exists()) {
+                storeFile rootProject.file("app/" + keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
     }
 
     buildTypes {
         release {
-            minifyEnabled false
+            signingConfig signingConfigs.release
+            minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -37,20 +103,47 @@ android {
     kotlinOptions {
         jvmTarget = '17'
     }
+
+    // ── Nomear APK e AAB com versão ──────────────────────────────────────────
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            def flavor = variant.flavorName ? "${variant.flavorName}-" : ""
+            outputFileName = "rmfuncionario-${flavor}${variant.buildType.name}-v${buildVersionName}-${verCode}.apk"
+        }
+    }
+    // Para AAB (bundle), o rename é feito via task no script; o Gradle não expõe
+    // bundleVariants.outputs diretamente, então usamos a task de finalização.
+    tasks.whenTaskAdded { task ->
+        if (task.name == 'bundleRelease') {
+            task.doLast {
+                def aabDir = file("${buildDir}/outputs/bundle/release")
+                def src = new File(aabDir, 'app-release.aab')
+                def dst = new File(aabDir, "rmfuncionario-release-v${buildVersionName}-${verCode}.aab")
+                if (src.exists()) src.renameTo(dst)
+            }
+        }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 }
 
 dependencies {
     implementation 'androidx.core:core-ktx:1.13.1'
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.6'
+    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
     implementation 'androidx.activity:activity-ktx:1.9.2'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
     implementation 'androidx.recyclerview:recyclerview:1.3.2'
     implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
 
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'com.google.code.gson:gson:2.11.0'
     implementation 'androidx.cardview:cardview:1.0.0'
+    implementation 'androidx.biometric:biometric:1.1.0'
 
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
     implementation 'com.google.firebase:firebase-messaging-ktx:24.0.1'
+    implementation 'com.facebook.shimmer:shimmer:0.5.0'
+    implementation 'com.google.android.gms:play-services-location:21.3.0'
 }

@@ -1,32 +1,47 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.graphics.BitmapFactory
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.Toast
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import com.google.firebase.messaging.FirebaseMessaging
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.switchmaterial.SwitchMaterial
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.lifecycle.lifecycleScope
 
 class PerfilActivity : AppCompatActivity() {
 
+    private lateinit var session: SessionManager
     private lateinit var api: ApiClient
     private lateinit var tvAvatar: TextView
     private lateinit var ivFoto: ImageView
     private lateinit var tvFeedback: TextView
+    private lateinit var switchBiometria: SwitchMaterial
+    private lateinit var tvBiometriaStatus: TextView
     private var fotoUrlAtual: String? = null
+    private var cpfPerfilAtual: String = ""
+    private var atualizandoBiometriaUi = false
 
     private val pickMedia = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri == null) return@registerForActivityResult
         tvFeedback.text = "Enviando foto..."
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val inputStream = contentResolver.openInputStream(uri) ?: return@launch
                 val bytes = inputStream.readBytes()
@@ -39,11 +54,14 @@ class PerfilActivity : AppCompatActivity() {
                         fotoUrlAtual = r.foto_url
                         exibirFotoDosBytes(bytes)
                     } else {
+                        val queue = ActionRetryQueue(this@PerfilActivity)
+                        queue.enqueueFoto(bytes, mimeType)
                         tvFeedback.text = r.erro ?: "Falha ao enviar foto."
                     }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    TelemetryLogger.logHandled(this@PerfilActivity, "perfil_upload_foto", e)
                     tvFeedback.text = "Erro ao processar foto."
                 }
             }
@@ -54,14 +72,23 @@ class PerfilActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_perfil)
 
-        val session = SessionManager(this)
+        session = SessionManager(this)
         api = ApiClient(session)
 
         findViewById<TextView>(R.id.btnVoltar).setOnClickListener { finish() }
 
+        findViewById<com.google.android.material.button.MaterialButton>(R.id.btnSobre).setOnClickListener {
+            startActivity(android.content.Intent(this, AboutActivity::class.java))
+        }
+        findViewById<com.google.android.material.button.MaterialButton>(R.id.btnConfiguracoes).setOnClickListener {
+            startActivity(Intent(this, ConfiguracoesActivity::class.java))
+        }
+
         tvAvatar = findViewById(R.id.tvAvatar)
         ivFoto = findViewById(R.id.ivFoto)
         tvFeedback = findViewById(R.id.tvFeedbackPerfil)
+        switchBiometria = findViewById(R.id.switchBiometria)
+        tvBiometriaStatus = findViewById(R.id.tvBiometriaStatus)
         val tvNome = findViewById<TextView>(R.id.tvNome)
         val tvCpf = findViewById<TextView>(R.id.tvCpf)
         val tvCargo = findViewById<TextView>(R.id.tvCargo)
@@ -70,28 +97,140 @@ class PerfilActivity : AppCompatActivity() {
         val tvPosto = findViewById<TextView>(R.id.tvPosto)
         val tvSetor = findViewById<TextView>(R.id.tvSetor)
         val tvStatus = findViewById<TextView>(R.id.tvStatus)
-        val etEmail = findViewById<TextInputEditText>(R.id.etEmail)
-        val etTelefone = findViewById<TextInputEditText>(R.id.etTelefone)
-        val etNovoCargo = findViewById<TextInputEditText>(R.id.etNovoCargo)
-        val etNovoSetor = findViewById<TextInputEditText>(R.id.etNovoSetor)
-        val etObsSolicitacao = findViewById<TextInputEditText>(R.id.etObsSolicitacao)
-        val btnSalvarContato = findViewById<MaterialButton>(R.id.btnSalvarContato)
-        val btnSolicitar = findViewById<MaterialButton>(R.id.btnSolicitarAlteracao)
         val btnAlterarFoto = findViewById<MaterialButton>(R.id.btnAlterarFoto)
+        val btnTestarNotificacao = findViewById<MaterialButton>(R.id.btnTestarNotificacao)
+        val btnSolicitarAlteracao = findViewById<MaterialButton>(R.id.btnSolicitarAlteracao)
+
+        atualizarBiometriaUi()
+        switchBiometria.setOnCheckedChangeListener { _, checked ->
+            if (atualizandoBiometriaUi) return@setOnCheckedChangeListener
+            if (checked) {
+                ativarBiometriaComValidacao()
+            } else {
+                session.biometricEnabled = false
+                atualizarBiometriaUi("Biometria desativada para este aparelho.")
+            }
+        }
 
         btnAlterarFoto.setOnClickListener {
             pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
         }
 
+        btnSolicitarAlteracao.setOnClickListener {
+            val campos = linkedMapOf(
+                "nome" to "",
+                "banco_nome" to "",
+                "banco_agencia" to "",
+                "banco_conta" to "",
+                "banco_pix" to "",
+                "endereco" to ""
+            )
+            val labels = listOf("Nome completo", "Banco (nome)", "Agência", "Conta", "PIX", "Endereço")
+            val inputs = labels.mapIndexed { i, label ->
+                android.widget.EditText(this).apply {
+                    hint = label
+                    setSingleLine(true)
+                    textSize = 14f
+                    setPadding(24, 16, 24, 16)
+                }
+            }
+            val container = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(24, 8, 24, 8)
+                inputs.forEach { addView(it) }
+                val etObs = android.widget.EditText(this@PerfilActivity).apply {
+                    hint = "Observação (opcional)"
+                    setSingleLine(false)
+                    minLines = 2
+                    textSize = 14f
+                    setPadding(24, 16, 24, 16)
+                    tag = "obs"
+                }
+                addView(etObs)
+            }
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle("Solicitar alteração de dados")
+                .setView(container)
+                .setPositiveButton("Enviar") { _, _ ->
+                    val camposPreenchidos = campos.keys.zip(inputs).filter { (_, et) ->
+                        et.text.toString().isNotBlank()
+                    }.associate { (key, et) -> key to et.text.toString().trim() }
+                    val obs = (container.findViewWithTag<android.widget.EditText>("obs"))?.text?.toString()?.trim() ?: ""
+                    if (camposPreenchidos.isEmpty()) {
+                        tvFeedback.visibility = View.VISIBLE
+                        tvFeedback.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_pending))
+                        tvFeedback.text = "Preencha ao menos um campo para solicitar alteração."
+                        return@setPositiveButton
+                    }
+                    tvFeedback.visibility = View.VISIBLE
+                    tvFeedback.text = "Enviando solicitação..."
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        val r = try { api.solicitarAlteracao(camposPreenchidos, obs) }
+                        catch (e: Exception) { SolicitacaoResponse(ok = false, erro = e.message) }
+                        withContext(Dispatchers.Main) {
+                            tvFeedback.setTextColor(ContextCompat.getColor(this@PerfilActivity,
+                                if (r.ok) R.color.success else R.color.mobile_semantic_pending))
+                            tvFeedback.text = if (r.ok) "✅ Solicitação enviada! O RH analisará em breve."
+                            else "❌ ${r.erro ?: "Erro ao enviar solicitação."}"
+                            if (r.ok) {
+                                tvFeedback.text = "${tvFeedback.text}\n→ Ver histórico de solicitações"
+                                tvFeedback.setOnClickListener {
+                                    startActivity(android.content.Intent(this@PerfilActivity, AlteracoesCadastraisActivity::class.java))
+                                }
+                            }
+                        }
+                    }
+                }
+                .setNegativeButton("Cancelar", null)
+                .show()
+        }
+
+        btnTestarNotificacao.setOnClickListener {
+            tvFeedback.text = "Registrando token do app..."
+            FirebaseMessaging.getInstance().token
+                .addOnSuccessListener { fcmToken ->
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        val reg = try {
+                            api.registrarPushToken(fcmToken)
+                        } catch (e: Exception) {
+                            ApiSimpleResponse(ok = false, erro = e.message)
+                        }
+                        if (!reg.ok) {
+                            withContext(Dispatchers.Main) {
+                                tvFeedback.text = "❌ Falha ao registrar token: ${reg.erro ?: "erro desconhecido"}"
+                            }
+                            return@launch
+                        }
+
+                        val result = try {
+                            api.testarPushToken()
+                        } catch (e: Exception) {
+                            ApiSimpleResponse(ok = false, erro = e.message)
+                        }
+                        withContext(Dispatchers.Main) {
+                            tvFeedback.text = if (result.ok) {
+                                "✅ Notificação enviada! Verifique o celular."
+                            } else {
+                                "❌ Falha: ${result.erro ?: "sem token registrado"}"
+                            }
+                        }
+                    }
+                }
+                .addOnFailureListener { ex ->
+                    tvFeedback.text = "❌ Não foi possível obter token FCM: ${ex.message ?: "erro desconhecido"}"
+                }
+        }
+
         fun carregarPerfil() {
-            CoroutineScope(Dispatchers.IO).launch {
+            lifecycleScope.launch(Dispatchers.IO) {
                 val me = try { api.me() } catch (_: Exception) { MeResponse(ok = false) }
                 withContext(Dispatchers.Main) {
                     val f = me.funcionario
                     val nome = f?.nome.orEmpty()
                     tvNome.text = nome
                     tvAvatar.text = nome.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
-                    tvCpf.text = f?.cpf.orEmpty()
+                    tvCpf.text = formatCpf(f?.cpf)
+                    cpfPerfilAtual = f?.cpf.orEmpty().replace("\\D".toRegex(), "")
                     tvCargo.text = f?.cargo.orEmpty()
                     val empresa = f?.empresa_nome.orEmpty()
                     tvEmpresaHeader.text = if (empresa.isNotBlank()) empresa else ""
@@ -99,56 +238,21 @@ class PerfilActivity : AppCompatActivity() {
                     tvPosto.text = f?.posto_operacional.orEmpty().ifBlank { "—" }
                     tvSetor.text = f?.setor.orEmpty()
                     tvStatus.text = f?.status.orEmpty()
-                    etEmail.setText(f?.email.orEmpty())
-                    etTelefone.setText(telefoneSemPais(f?.telefone))
                     fotoUrlAtual = f?.foto_url
                     if (f?.foto_url != null) carregarFotoUrl(f.foto_url)
-                }
-            }
-        }
+                    // Sincronizar canal OTP do servidor
+                    if (!f?.canal_otp.isNullOrBlank()) session.canalOtp = f!!.canal_otp!!
+                    atualizarBiometriaUi()
 
-        btnSalvarContato.setOnClickListener {
-            val email = etEmail.text?.toString()?.trim().orEmpty()
-            val telefone = telefoneSemPais(etTelefone.text?.toString())
-            tvFeedback.text = "Salvando contato..."
-            CoroutineScope(Dispatchers.IO).launch {
-                val r = try {
-                    api.atualizarContato(email, telefone)
-                } catch (e: Exception) {
-                    ContatoUpdateResponse(ok = false, erro = e.message)
-                }
-                withContext(Dispatchers.Main) {
-                    tvFeedback.text = if (r.ok) "Contato atualizado com sucesso." else (r.erro ?: "Falha ao atualizar contato.")
-                    if (r.ok) carregarPerfil()
-                }
-            }
-        }
-
-        btnSolicitar.setOnClickListener {
-            val campos = mutableMapOf<String, String>()
-            val novoCargo = etNovoCargo.text?.toString()?.trim().orEmpty()
-            val novoSetor = etNovoSetor.text?.toString()?.trim().orEmpty()
-            if (novoCargo.isNotBlank()) campos["cargo"] = novoCargo
-            if (novoSetor.isNotBlank()) campos["setor"] = novoSetor
-            if (campos.isEmpty()) {
-                tvFeedback.text = "Informe ao menos cargo ou setor para solicitar alteracao."
-                return@setOnClickListener
-            }
-            val obs = etObsSolicitacao.text?.toString()?.trim().orEmpty()
-            tvFeedback.text = "Enviando solicitacao para aprovacao..."
-            CoroutineScope(Dispatchers.IO).launch {
-                val r = try {
-                    api.solicitarAlteracao(campos, obs)
-                } catch (e: Exception) {
-                    SolicitacaoResponse(ok = false, erro = e.message)
-                }
-                withContext(Dispatchers.Main) {
-                    tvFeedback.text = if (r.ok) "Solicitacao enviada ao administrador." else (r.erro ?: "Falha ao registrar solicitacao.")
-                    if (r.ok) {
-                        etNovoCargo.setText("")
-                        etNovoSetor.setText("")
-                        etObsSolicitacao.setText("")
+                    // Toque longo para copiar dados (nome, CPF, cargo)
+                    fun copiarParaClipboard(label: String, texto: String) {
+                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText(label, texto))
+                        Toast.makeText(this@PerfilActivity, "$label copiado!", Toast.LENGTH_SHORT).show()
                     }
+                    tvNome.setOnLongClickListener { copiarParaClipboard("Nome", nome); true }
+                    tvCpf.setOnLongClickListener { copiarParaClipboard("CPF", f?.cpf.orEmpty()); true }
+                    tvCargo.setOnLongClickListener { copiarParaClipboard("Cargo", f?.cargo.orEmpty()); true }
                 }
             }
         }
@@ -156,9 +260,75 @@ class PerfilActivity : AppCompatActivity() {
         carregarPerfil()
     }
 
-    private fun telefoneSemPais(v: String?): String {
-        val digits = (v ?: "").filter { it.isDigit() }
-        return if (digits.startsWith("55") && digits.length in 12..13) digits.substring(2) else digits
+    private fun atualizarBiometriaUi(msgExtra: String? = null) {
+        atualizandoBiometriaUi = true
+        switchBiometria.isChecked = session.biometricEnabled
+        atualizandoBiometriaUi = false
+
+        val status = when {
+            !canUseBiometric() -> "Biometria indisponível neste aparelho."
+            session.biometricEnabled && session.biometricCpf.isNotBlank() -> "Biometria ativa para o CPF final ${session.biometricCpf.takeLast(3)}."
+            session.biometricEnabled -> "Biometria ativa."
+            else -> "Biometria desativada."
+        }
+        tvBiometriaStatus.text = msgExtra ?: status
+    }
+
+    private fun canUseBiometric(): Boolean {
+        val manager = BiometricManager.from(this)
+        return manager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
+    }
+
+    private fun ativarBiometriaComValidacao() {
+        if (!canUseBiometric()) {
+            atualizandoBiometriaUi = true
+            switchBiometria.isChecked = false
+            atualizandoBiometriaUi = false
+            atualizarBiometriaUi("Biometria não disponível neste aparelho.")
+            return
+        }
+
+        val cpfBase = (cpfPerfilAtual.ifBlank { session.biometricCpf }).replace("\\D".toRegex(), "")
+        if (cpfBase.length != 11) {
+            atualizandoBiometriaUi = true
+            switchBiometria.isChecked = false
+            atualizandoBiometriaUi = false
+            atualizarBiometriaUi("Faça login com CPF/código para habilitar a biometria.")
+            return
+        }
+
+        val executor = ContextCompat.getMainExecutor(this)
+        val prompt = BiometricPrompt(this, executor, object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                super.onAuthenticationSucceeded(result)
+                session.biometricEnabled = true
+                session.biometricCpf = cpfBase
+                atualizarBiometriaUi("Biometria habilitada com sucesso.")
+            }
+
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                super.onAuthenticationError(errorCode, errString)
+                atualizandoBiometriaUi = true
+                switchBiometria.isChecked = false
+                atualizandoBiometriaUi = false
+                atualizarBiometriaUi(errString.toString())
+            }
+        })
+
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Ativar biometria")
+            .setSubtitle("Confirme sua digital para habilitar login biométrico")
+            .setNegativeButtonText("Cancelar")
+            .build()
+
+        prompt.authenticate(promptInfo)
+    }
+
+    private fun formatCpf(cpf: String?): String {
+        val digits = (cpf ?: "").filter { it.isDigit() }
+        return if (digits.length == 11)
+            "${digits.substring(0, 3)}.${digits.substring(3, 6)}.${digits.substring(6, 9)}-${digits.substring(9)}"
+        else digits
     }
 
     private fun exibirFotoDosBytes(bytes: ByteArray) {
@@ -171,7 +341,7 @@ class PerfilActivity : AppCompatActivity() {
     }
 
     private fun carregarFotoUrl(fotoUrl: String) {
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val bytes = api.downloadFile(fotoUrl)
                 withContext(Dispatchers.Main) { exibirFotoDosBytes(bytes) }

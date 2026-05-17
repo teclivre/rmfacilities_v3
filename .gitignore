@@ -15,6 +15,9 @@
 instance/
 **/instance/uploads/
 
+# Firebase credentials (must NOT be committed)
+google-services.json
+
 # Build and artifacts
 *.zip
 

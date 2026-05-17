@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Historico de Folhas de Pagamento</title>
+  <style>
+    :root{
+      --bg:#f4f8fc;
+      --card:#ffffff;
+      --line:#d7e3ef;
+      --ink:#1c2a36;
+      --muted:#5d6e80;
+      --brand:#205d8a;
+      --ok:#198754;
+      --warn:#cc4f1a;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(180deg,#eaf2f9,#f8fbff);font:14px/1.45 "Segoe UI",Tahoma,sans-serif;color:var(--ink)}
+    .wrap{max-width:1240px;margin:20px auto;padding:0 14px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;box-shadow:0 8px 28px rgba(28,61,92,.08)}
+    h1{margin:0 0 8px 0;font-size:22px;color:var(--brand)}
+    .muted{color:var(--muted)}
+    .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px}
+    .f{display:flex;flex-direction:column;gap:4px}
+    .f label{font-size:12px;color:var(--muted)}
+    .f input,.f select{height:36px;padding:0 10px;border:1px solid #c8d8ea;border-radius:10px;min-width:170px}
+    .btn{height:36px;padding:0 14px;border:1px solid #bcd1e7;border-radius:10px;background:#eef5fd;color:#205d8a;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+    .btn:hover{filter:brightness(.98)}
+    .btn-main{background:#205d8a;color:#fff;border-color:#205d8a}
+    .tbl-wrap{margin-top:12px;overflow:auto;border:1px solid var(--line);border-radius:12px}
+    table{width:100%;border-collapse:collapse;min-width:980px}
+    th,td{padding:9px 10px;border-bottom:1px solid #edf2f7;vertical-align:top}
+    th{background:#edf5ff;color:#294f6c;font-size:12px;text-transform:uppercase;letter-spacing:.02em}
+    td small{color:var(--muted)}
+    tr:last-child td{border-bottom:none}
+    .chip{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700}
+    .chip-open{background:#e8f4ff;color:#1e5d90;border:1px solid #c8e0f8}
+    .chip-close{background:#ecfff2;color:#166b3d;border:1px solid #c9f0d8}
+    .vlist{display:flex;flex-direction:column;gap:7px}
+    .vitem{padding:8px;border:1px dashed #d7e2ee;border-radius:10px;background:#fbfdff}
+    .actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+    .btn-sm{height:30px;padding:0 10px;font-size:12px}
+    .empty{padding:24px;text-align:center;color:#6f8193}
+    @media (max-width:760px){
+      .toolbar{flex-direction:column;align-items:stretch}
+      .f input,.f select,.btn{width:100%}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <h1>Historico de Folhas de Pagamento</h1>
+      <div class="muted">Consulta de competencias salvas, com acesso a pre-visualizacao e exportacao por versao. Gerado em {{ gerar_em }}.</div>
+
+      <form method="get" action="/financeiro/salarios/historico" class="toolbar">
+        <div class="f">
+          <label>Competencia</label>
+          <input type="month" name="competencia" value="{{ competencia_filtro }}">
+        </div>
+        <div class="f">
+          <label>Empresa</label>
+          <select name="empresa_id">
+            <option value="">Todas as empresas</option>
+            {% for e in empresas %}
+            <option value="{{ e.id }}" {% if empresa_id_filtro is not none and e.id==empresa_id_filtro %}selected{% endif %}>{{ e.nome }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="f">
+          <label>Limite</label>
+          <input type="number" name="limite" min="1" max="200" value="{{ limite }}">
+        </div>
+        <button class="btn btn-main" type="submit">Filtrar</button>
+        <a class="btn" href="/financeiro/salarios/historico">Limpar</a>
+      </form>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Competencia</th>
+              <th>Empresa</th>
+              <th>Status</th>
+              <th>Versao atual</th>
+              <th>Total</th>
+              <th>Ultimo salvamento</th>
+              <th>Versoes disponiveis</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if itens %}
+              {% for it in itens %}
+              {% set folha=it.folha %}
+              <tr>
+                <td><strong>{{ folha.competencia }}</strong></td>
+                <td>{{ folha.empresa_nome }}</td>
+                <td>
+                  {% if (folha.status or 'aberta')=='fechada' %}
+                  <span class="chip chip-close">Fechada</span>
+                  {% else %}
+                  <span class="chip chip-open">Aberta</span>
+                  {% endif %}
+                </td>
+                <td><strong>v{{ folha.versao_atual or 0 }}</strong></td>
+                <td><strong>{{ 'R$ {:,.2f}'.format(folha.total_competencia or 0).replace(',', 'X').replace('.', ',').replace('X', '.') }}</strong><br><small>{{ folha.total_funcionarios or 0 }} colaborador(es)</small></td>
+                <td>
+                  {% if folha.salvo_em %}
+                    {{ folha.salvo_em.strftime('%d/%m/%Y %H:%M') }}<br><small>{{ folha.salvo_por or '' }}</small>
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+                <td>
+                  {% if it.versoes %}
+                  <div class="vlist">
+                    {% for v in it.versoes %}
+                    <div class="vitem">
+                      <div><strong>v{{ v.versao }}</strong> - {{ v.salvo_em or '-' }}{% if v.salvo_por %} · {{ v.salvo_por }}{% endif %}</div>
+                      <div><small>Total: {{ 'R$ {:,.2f}'.format(v.total_competencia or 0).replace(',', 'X').replace('.', ',').replace('X', '.') }}</small></div>
+                      <div class="actions">
+                        <a class="btn btn-sm" target="_blank" href="/financeiro/salarios/preview?modo=salva&competencia={{ folha.competencia }}{% if folha.empresa_ref_id and folha.empresa_ref_id>0 %}&empresa_id={{ folha.empresa_ref_id }}{% endif %}&versao={{ v.versao }}">Previa</a>
+                        <a class="btn btn-sm" target="_blank" href="/api/financeiro/salarios/export.xlsx?modo=salva&competencia={{ folha.competencia }}{% if folha.empresa_ref_id and folha.empresa_ref_id>0 %}&empresa_id={{ folha.empresa_ref_id }}{% endif %}&versao={{ v.versao }}">Planilha</a>
+                        <a class="btn btn-sm" target="_blank" href="/api/financeiro/salarios/export.pdf?modo=salva&competencia={{ folha.competencia }}{% if folha.empresa_ref_id and folha.empresa_ref_id>0 %}&empresa_id={{ folha.empresa_ref_id }}{% endif %}&versao={{ v.versao }}">PDF</a>
+                      </div>
+                    </div>
+                    {% endfor %}
+                  </div>
+                  {% else %}
+                  <small>Nenhuma versao registrada no historico.</small>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr><td colspan="7" class="empty">Nenhuma folha encontrada para os filtros informados.</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

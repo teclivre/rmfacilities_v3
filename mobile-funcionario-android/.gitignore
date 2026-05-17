@@ -4,3 +4,8 @@ build/
 local.properties
 *.iml
 .idea/
+
+# Assinatura release — NÃO commitar
+keystore.properties
+app/rmfacilities-release.keystore
+

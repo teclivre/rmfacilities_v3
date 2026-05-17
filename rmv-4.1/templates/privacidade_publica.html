@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Política de Privacidade — RM Facilities</title>
+  <meta name="description" content="Política de Privacidade do aplicativo RM Funcionário e dos serviços digitais da RM Facilities.">
+  <style>
+    :root{
+      --bg:#0a1624;
+      --card:#0f2237;
+      --line:#1f3d5b;
+      --text:#e8f0f8;
+      --muted:#9ab1c7;
+      --accent:#67b7ff;
+      --ok:#70d6a5;
+      --warn:#f28e34;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:radial-gradient(1200px 600px at 20% -10%, #163457 0%, var(--bg) 45%), var(--bg);
+      color:var(--text);
+      font:15px/1.7 "Segoe UI", Tahoma, Arial, sans-serif;
+    }
+    .wrap{max-width:900px;margin:0 auto;padding:32px 18px 56px}
+    .hero{margin-bottom:20px}
+    h1{margin:0 0 8px;font-size:28px;line-height:1.2}
+    .sub{color:var(--muted);font-size:14px;margin-top:4px}
+    .card{
+      background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,0));
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:22px 22px 18px;
+      margin-top:14px;
+      box-shadow:0 8px 24px rgba(0,0,0,.25);
+    }
+    h2{margin:0 0 10px;font-size:18px;color:var(--accent)}
+    p{margin:0 0 10px}
+    p:last-child{margin-bottom:0}
+    ul{margin:6px 0 6px 20px;padding:0}
+    li{margin:0 0 7px}
+    strong{color:var(--text)}
+    .tag{
+      display:inline-block;
+      padding:4px 10px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      font-size:12px;
+      color:var(--ok);
+      background:rgba(112,214,165,.08);
+      margin-bottom:10px;
+    }
+    .tag-warn{
+      color:var(--warn);
+      border-color:rgba(242,142,52,.3);
+      background:rgba(242,142,52,.07);
+    }
+    .contact-box{
+      margin-top:10px;
+      padding:14px 16px;
+      background:rgba(103,183,255,.05);
+      border:1px solid rgba(103,183,255,.2);
+      border-radius:10px;
+      font-size:14px;
+      color:var(--muted);
+    }
+    .contact-box strong{color:var(--accent)}
+    .foot{margin-top:18px;color:var(--muted);font-size:13px;line-height:1.6}
+    a{color:#9ccfff}
+    @media(max-width:600px){.wrap{padding:20px 12px 40px}.card{padding:16px 14px 14px}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="hero">
+      <div class="tag">Documento público</div>
+      <h1>Política de Privacidade</h1>
+      <div class="sub">Aplicativo <strong>RM Funcionário</strong> e serviços digitais da <strong>RM Facilities</strong>.</div>
+      <div class="sub">Última atualização: {{ atualizado_em }}</div>
+    </header>
+
+    <section class="card">
+      <h2>1. Quem somos</h2>
+      <p>A <strong>RM Facilities</strong> é responsável pelo tratamento dos dados pessoais coletados por meio do aplicativo <strong>RM Funcionário</strong> e dos sistemas digitais associados, utilizados para gestão de documentos, comunicação interna, registro de ponto e demais funcionalidades de RH.</p>
+      <p>Esta Política de Privacidade descreve quais dados coletamos, por que os coletamos, como os utilizamos, por quanto tempo os armazenamos e quais direitos você possui como titular dos dados, em conformidade com a <strong>Lei Geral de Proteção de Dados Pessoais (LGPD — Lei nº 13.709/2018)</strong>.</p>
+    </section>
+
+    <section class="card">
+      <h2>2. Dados que coletamos</h2>
+      <p>Coletamos e tratamos as seguintes categorias de dados pessoais, de acordo com as funcionalidades utilizadas:</p>
+      <ul>
+        <li><strong>Dados cadastrais e profissionais:</strong> nome completo, CPF, matrícula, cargo, empresa, posto e unidade de trabalho.</li>
+        <li><strong>Dados de contato:</strong> endereço de e-mail e número de telefone.</li>
+        <li><strong>Dados de autenticação e segurança:</strong> tokens de sessão, histórico de acessos, registros de tentativas de login, dados técnicos do dispositivo (modelo, sistema operacional, identificador de instalação do app) e informações de biometria local (processadas exclusivamente no dispositivo, sem armazenamento em servidores).</li>
+        <li><strong>Dados de documentos:</strong> arquivos enviados pelo RH ou pela empresa, status de leitura e assinatura, registros de download e histórico de ações associadas.</li>
+        <li><strong>Dados de mensagens e notificações:</strong> conteúdo de mensagens corporativas enviadas pela plataforma, status de envio e leitura, e token de notificações push (FCM).</li>
+        <li><strong>Dados de ponto e localização:</strong> data e hora das marcações de ponto, coordenadas geográficas (latitude/longitude) coletadas no momento da batida, precisão do GPS e dados de comparação com o geofence do posto de trabalho.</li>
+        <li><strong>Dados de perfil (opcionais):</strong> foto de perfil e informações complementares inseridas pelo próprio colaborador ou pelo setor de RH.</li>
+      </ul>
+      <p><strong>Dados que não coletamos:</strong> não acessamos câmera, microfone, contatos, arquivos do dispositivo, histórico de navegação nem qualquer dado não listado acima.</p>
+    </section>
+
+    <section class="card">
+      <h2>3. Como e por que usamos os dados</h2>
+      <p>Os dados são utilizados exclusivamente para finalidades legítimas de gestão da relação de trabalho:</p>
+      <ul>
+        <li>Autenticar o colaborador e garantir acesso seguro ao aplicativo;</li>
+        <li>Disponibilizar documentos, contracheques, holerites e outros arquivos do colaborador;</li>
+        <li>Gerenciar o fluxo de leitura e assinatura eletrônica de documentos;</li>
+        <li>Enviar notificações sobre novos documentos, mensagens e alertas operacionais;</li>
+        <li>Registrar, auditar e armazenar marcações de ponto do colaborador;</li>
+        <li>Verificar, quando configurado pela empresa, se a marcação de ponto ocorreu dentro do raio georreferenciado do posto de trabalho;</li>
+        <li>Manter trilha de auditoria para segurança, compliance trabalhista e prevenção de fraude;</li>
+        <li>Prestar suporte técnico e melhorar continuamente as funcionalidades do sistema.</li>
+      </ul>
+      <p>Não utilizamos os dados para fins publicitários, venda a terceiros, criação de perfis comportamentais ou qualquer finalidade alheia à relação de trabalho e à prestação do serviço.</p>
+    </section>
+
+    <section class="card">
+      <h2>4. Permissões do dispositivo</h2>
+      <p>O aplicativo solicita apenas as permissões estritamente necessárias para o funcionamento das funcionalidades descritas:</p>
+      <ul>
+        <li><strong>Localização (precisa e aproximada):</strong> utilizada para registrar o contexto geográfico das marcações de ponto e verificar, quando habilitado pelo empregador, se a marcação ocorreu dentro do raio do posto de trabalho. A localização é coletada pontualmente no momento da batida e não é monitorada em segundo plano de forma contínua.</li>
+        <li><strong>Notificações (POST_NOTIFICATIONS):</strong> utilizada para informar o colaborador sobre novos documentos disponíveis, mensagens corporativas e eventos operacionais importantes.</li>
+        <li><strong>Acesso à internet:</strong> necessário para comunicação com os servidores da plataforma e carregamento de dados.</li>
+      </ul>
+      <p>O colaborador pode gerenciar ou revogar permissões a qualquer momento nas <strong>Configurações do dispositivo</strong>. A revogação de determinadas permissões pode tornar funcionalidades específicas indisponíveis (ex.: marcação de ponto com geolocalização).</p>
+    </section>
+
+    <section class="card">
+      <h2>5. Base legal (LGPD)</h2>
+      <p>O tratamento dos dados pessoais realizados pela RM Facilities fundamenta-se nas seguintes bases legais previstas na LGPD:</p>
+      <ul>
+        <li><strong>Execução de contrato de trabalho</strong> (art. 7º, V): dados necessários ao cumprimento das obrigações trabalhistas, como registro de ponto e entrega de documentos;</li>
+        <li><strong>Cumprimento de obrigação legal ou regulatória</strong> (art. 7º, II): dados exigidos pela legislação trabalhista, previdenciária e fiscal;</li>
+        <li><strong>Legítimo interesse</strong> (art. 7º, IX): segurança, auditoria, prevenção a fraudes e melhoria dos serviços, observados os limites da lei;</li>
+        <li><strong>Consentimento</strong> (art. 7º, I): para funcionalidades opcionais, como foto de perfil, quando aplicável.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>6. Compartilhamento de dados</h2>
+      <p>Os dados pessoais podem ser compartilhados apenas nas seguintes hipóteses:</p>
+      <ul>
+        <li><strong>Operadores de tecnologia:</strong> provedores de hospedagem, infraestrutura de servidores e serviços de notificações push (Google Firebase), sob contratos de confidencialidade e instrução contratual, sem permissão para uso próprio dos dados;</li>
+        <li><strong>Empregador/empresa contratante:</strong> dados de ponto, documentos e informações profissionais são acessíveis ao setor de RH da empresa em que o colaborador está alocado;</li>
+        <li><strong>Obrigação legal:</strong> quando exigido por autoridade competente, ordem judicial ou requisição legal.</li>
+      </ul>
+      <p>Não vendemos, cedemos nem comercializamos dados pessoais a terceiros para qualquer finalidade.</p>
+    </section>
+
+    <section class="card">
+      <h2>7. Retenção e exclusão de dados</h2>
+      <p>Os dados são armazenados pelo período necessário ao atendimento das finalidades informadas e ao cumprimento das obrigações legais e trabalhistas aplicáveis. Em regra:</p>
+      <ul>
+        <li>Dados de ponto e documentos trabalhistas: retidos conforme os prazos legais previstos pela CLT e legislação previdenciária (mínimo de 5 anos);</li>
+        <li>Dados de sessão e logs de acesso: retidos por até 12 meses para fins de segurança e auditoria;</li>
+        <li>Dados de perfil e cadastro: mantidos durante a vigência da relação de trabalho e pelo prazo legal subsequente.</li>
+      </ul>
+      <p>Encerrado o prazo de retenção ou a necessidade de tratamento, os dados são eliminados ou anonimizados de forma segura, ressalvadas as hipóteses legais de conservação.</p>
+    </section>
+
+    <section class="card">
+      <h2>8. Segurança da informação</h2>
+      <p>Adotamos medidas técnicas e administrativas apropriadas para proteger os dados pessoais contra acesso não autorizado, perda acidental, alteração, divulgação indevida ou destruição, incluindo:</p>
+      <ul>
+        <li>Comunicação cifrada via HTTPS/TLS em todas as requisições;</li>
+        <li>Autenticação por token com expiração e controle de sessão;</li>
+        <li>Acesso restrito aos dados por perfil de usuário e nível hierárquico;</li>
+        <li>Trilha de auditoria de ações críticas (acesso, download e assinatura de documentos).</li>
+      </ul>
+      <p>Em caso de incidente de segurança que possa gerar risco ou dano relevante aos titulares, notificaremos as partes afetadas e a Autoridade Nacional de Proteção de Dados (ANPD) nos prazos e formas previstos na LGPD.</p>
+    </section>
+
+    <section class="card">
+      <h2>9. Direitos do titular</h2>
+      <p>Nos termos da LGPD, o titular dos dados tem direito a:</p>
+      <ul>
+        <li><strong>Confirmação</strong> da existência de tratamento;</li>
+        <li><strong>Acesso</strong> aos dados tratados;</li>
+        <li><strong>Correção</strong> de dados incompletos, inexatos ou desatualizados;</li>
+        <li><strong>Anonimização, bloqueio ou eliminação</strong> de dados desnecessários ou tratados em desconformidade com a lei;</li>
+        <li><strong>Portabilidade</strong> dos dados a outro fornecedor, nos termos regulamentados pela ANPD;</li>
+        <li><strong>Informação</strong> sobre entidades com as quais os dados foram compartilhados;</li>
+        <li><strong>Revogação do consentimento</strong>, quando o tratamento se basear nessa hipótese;</li>
+        <li><strong>Oposição</strong> ao tratamento realizado com base em legítimo interesse, quando em desconformidade com a lei.</li>
+      </ul>
+      <p>O exercício desses direitos pode estar sujeito a limitações decorrentes de obrigações legais, regulatórias ou contratuais da relação de trabalho.</p>
+    </section>
+
+    <section class="card">
+      <h2>10. Encarregado (DPO) e contato</h2>
+      <p>Para dúvidas, solicitações relacionadas à privacidade ou exercício de direitos como titular de dados, entre em contato pelos canais oficiais da RM Facilities:</p>
+      <div class="contact-box">
+        <strong>RM Facilities — Encarregado de Proteção de Dados</strong><br>
+        Atendimento via portal corporativo ou e-mail institucional disponibilizado pelo setor de RH.<br>
+        Responderemos sua solicitação em até <strong>15 dias úteis</strong>, conforme previsto na LGPD.
+      </div>
+      <p class="foot">Esta política pode ser revisada periodicamente para refletir mudanças nas funcionalidades do sistema, na legislação aplicável ou nas práticas de tratamento de dados. A data de última atualização, indicada no topo desta página, sempre refletirá a versão vigente.</p>
+    </section>
+  </main>
+</body>
+</html>
+  <style>
+    :root{
+      --bg:#0a1624;
+      --card:#0f2237;
+      --line:#1f3d5b;
+      --text:#e8f0f8;
+      --muted:#9ab1c7;
+      --accent:#67b7ff;
+      --ok:#70d6a5;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:radial-gradient(1200px 600px at 20% -10%, #163457 0%, var(--bg) 45%), var(--bg);
+      color:var(--text);
+      font:15px/1.6 "Segoe UI", Tahoma, Arial, sans-serif;
+    }
+    .wrap{max-width:980px;margin:0 auto;padding:28px 18px 44px}
+    .hero{margin-bottom:16px}
+    h1{margin:0 0 8px;font-size:30px;line-height:1.15}
+    .sub{color:var(--muted);font-size:14px}
+    .card{
+      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.00));
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:18px;
+      margin-top:12px;
+      box-shadow:0 8px 24px rgba(0,0,0,0.25);
+    }
+    h2{margin:0 0 8px;font-size:20px;color:var(--accent)}
+    p{margin:0 0 10px}
+    ul{margin:6px 0 0 18px;padding:0}
+    li{margin:0 0 6px}
+    .tag{
+      display:inline-block;
+      padding:4px 9px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      font-size:12px;
+      color:var(--ok);
+      background:rgba(112,214,165,0.08);
+      margin-bottom:8px;
+    }
+    .foot{margin-top:14px;color:var(--muted);font-size:13px}
+    a{color:#9ccfff}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="hero">
+      <div class="tag">Documento publico</div>
+      <h1>Politica de Privacidade</h1>
+      <div class="sub">Aplicativo RM Funcionario e servicos relacionados da RM Facilities.</div>
+      <div class="sub">Ultima atualizacao: {{ atualizado_em }}</div>
+    </header>
+
+    <section class="card">
+      <h2>1. Quem somos</h2>
+      <p>Esta Politica de Privacidade descreve como a RM Facilities trata dados pessoais no aplicativo RM Funcionario e em sistemas relacionados para gestao de documentos, comunicacao interna e registro de ponto.</p>
+    </section>
+
+    <section class="card">
+      <h2>2. Dados que coletamos</h2>
+      <p>Podemos coletar e tratar as seguintes categorias de dados:</p>
+      <ul>
+        <li>Dados cadastrais e profissionais: nome, CPF, matricula, cargo, empresa e posto.</li>
+        <li>Dados de contato: e-mail e telefone.</li>
+        <li>Dados de autenticacao e seguranca: token de sessao, historico de acesso, dados de confirmacao de login e dados tecnicos de dispositivo.</li>
+        <li>Dados de documentos: arquivos enviados, status de leitura/assinatura, registros de download e historico associado.</li>
+        <li>Dados de mensagens e notificacoes: conteudo de mensagens corporativas, status de envio e leitura, token de push.</li>
+        <li>Dados de ponto e localizacao: data/hora das marcacoes de ponto, coordenadas geograficas no momento da batida, precisao de GPS e dados de comparacao com geofence do posto de trabalho.</li>
+        <li>Dados opcionais de perfil: foto de perfil e informacoes complementares inseridas pelo usuario ou RH.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>3. Como usamos os dados</h2>
+      <p>Os dados sao utilizados para finalidades legitimas de gestao de relacao de trabalho, incluindo:</p>
+      <ul>
+        <li>permitir autenticacao e acesso seguro ao aplicativo;</li>
+        <li>disponibilizar documentos do colaborador e fluxo de assinatura;</li>
+        <li>enviar notificacoes de novos documentos, mensagens e alertas operacionais;</li>
+        <li>registrar e auditar marcacoes de ponto;</li>
+        <li>verificar, quando configurado, se a marcacao ocorreu dentro do raio georreferenciado do posto de trabalho;</li>
+        <li>manter trilha de auditoria para seguranca, compliance e prevencao de fraude.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>4. Base legal e compartilhamento</h2>
+      <p>O tratamento de dados pessoais segue a Lei Geral de Protecao de Dados Pessoais (LGPD - Lei no 13.709/2018), com base em obrigacoes legais/regulatorias, execucao de contrato e legitimo interesse, conforme aplicavel. Os dados podem ser compartilhados com operadores e provedores de tecnologia estritamente necessarios para prestacao do servico (hospedagem, notificacoes push e infraestrutura de comunicacao), sempre sob deveres de confidencialidade, seguranca e instrucao contratual.</p>
+    </section>
+
+    <section class="card">
+      <h2>5. Permissoes do dispositivo</h2>
+      <ul>
+        <li>Localizacao: usada para registro de ponto com contexto geografico e verificacao de geofence quando habilitada.</li>
+        <li>Notificacoes: usada para informar novos documentos, mensagens e eventos importantes.</li>
+        <li>Biometria (quando ativada): usada apenas para facilitar o login no proprio dispositivo do usuario.</li>
+      </ul>
+      <p>O usuario pode gerenciar permissoes nas configuracoes do aparelho, observando que algumas funcionalidades podem ficar indisponiveis.</p>
+    </section>
+
+    <section class="card">
+      <h2>6. Retencao e seguranca</h2>
+      <p>Adotamos medidas tecnicas e administrativas para proteger os dados contra acesso nao autorizado, perda, alteracao ou divulgacao indevida. Os dados sao armazenados e guardados conforme a LGPD e demais normas aplicaveis, pelo periodo necessario ao atendimento das finalidades informadas, exigencias legais, obrigacoes trabalhistas e necessidades de auditoria.</p>
+      <p>Encerrado o prazo legal de retencao ou a necessidade de tratamento, os dados sao eliminados ou anonimizados de forma segura, ressalvadas hipoteses legais de conservacao.</p>
+    </section>
+
+    <section class="card">
+      <h2>7. Direitos do titular</h2>
+      <p>Nos termos da LGPD e da legislacao aplicavel, o titular pode solicitar confirmacao de tratamento, acesso, correcao, anonimização, bloqueio, eliminacao e demais direitos previstos em lei, conforme cabivel ao contexto da relacao de trabalho e obrigacoes legais da empresa.</p>
+    </section>
+
+    <section class="card">
+      <h2>8. Contato</h2>
+      <p>Para solicitacoes relacionadas a privacidade e protecao de dados, utilize os canais oficiais da RM Facilities no portal corporativo.</p>
+      <p class="foot">Esta politica pode ser atualizada periodicamente. Recomendamos consulta regular desta pagina.</p>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,18 +1,27 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.content.Intent
+import android.content.Context
 import android.os.Bundle
+import android.os.CountDownTimer
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
+import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.lifecycle.lifecycleScope
 
 class LoginActivity : AppCompatActivity() {
     private lateinit var session: SessionManager
@@ -21,6 +30,7 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var etCpf: TextInputEditText
     private lateinit var etCodigo: TextInputEditText
     private lateinit var btnEnviarCodigo: MaterialButton
+    private lateinit var btnBiometria: MaterialButton
     private lateinit var btnEntrar: MaterialButton
     private lateinit var tvReenviar: TextView
     private lateinit var layoutOtp: LinearLayout
@@ -29,44 +39,106 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var tvErro: TextView
 
     private var cpfAtual = ""
+    private var biometricPromptShown = false
+    private var otpCooldownTimer: CountDownTimer? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        TelemetryLogger.init(this)
         setContentView(R.layout.activity_login)
 
         session = SessionManager(this)
         api = ApiClient(session)
 
         if (session.accessToken.isNotBlank()) {
-            goHome()
+            goHomeOrDeepLink()
             return
         }
 
         etCpf = findViewById(R.id.etCpf)
         etCodigo = findViewById(R.id.etCodigo)
         btnEnviarCodigo = findViewById(R.id.btnEnviarCodigo)
+        btnBiometria = findViewById(R.id.btnBiometria)
         btnEntrar = findViewById(R.id.btnEntrar)
         tvReenviar = findViewById(R.id.tvReenviar)
         layoutOtp = findViewById(R.id.layoutOtp)
         tvOtpMsg = findViewById(R.id.tvOtpMsg)
         progress = findViewById(R.id.progressLogin)
         tvErro = findViewById(R.id.tvErro)
+        val tvPrivacidade: TextView = findViewById(R.id.tvPrivacidade)
+
+        // Se o Keystore falhou, dados foram apagados por seguran\u00e7a — avisar o usu\u00e1rio
+        if (session.keystoreFailed) {
+            tvErro.visibility = android.view.View.VISIBLE
+            tvErro.text = "Armazenamento seguro indispon\u00edvel. Seus dados foram apagados. Fa\u00e7a login novamente."
+        }
 
         btnEnviarCodigo.setOnClickListener { enviarCodigo() }
+        btnBiometria.setOnClickListener { autenticarComBiometria() }
         btnEntrar.setOnClickListener { confirmarOtp() }
         tvReenviar.setOnClickListener { enviarCodigo() }
+
+        // Máscara CPF: 000.000.000-00
+        etCpf.addTextChangedListener(object : TextWatcher {
+            private var isFormatting = false
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                if (isFormatting || s == null) return
+                isFormatting = true
+                val digits = s.toString().replace("\\D".toRegex(), "").take(11)
+                val formatted = buildString {
+                    digits.forEachIndexed { i, c ->
+                        if (i == 3 || i == 6) append('.')
+                        if (i == 9) append('-')
+                        append(c)
+                    }
+                }
+                s.replace(0, s.length, formatted)
+                isFormatting = false
+            }
+        })
+        tvPrivacidade.setOnClickListener {
+            val base = (session.apiBaseUrl.ifBlank { BuildConfig.DEFAULT_API_BASE_URL }).trimEnd('/')
+            val url = "$base/politica-de-privacidade"
+            try {
+                startActivity(Intent(this, PrivacyPolicyActivity::class.java).apply {
+                    putExtra(PrivacyPolicyActivity.EXTRA_URL, url)
+                })
+            } catch (_: Exception) {
+                showErro("Não foi possível abrir a Política de Privacidade.")
+            }
+        }
+
+        inicializarBiometriaUI()
+
+        // Pré-preencher CPF salvo (se biometria não fez isso)
+        if (etCpf.text.isNullOrBlank()) {
+            val savedCpf = getSharedPreferences("rm_funcionario_app", Context.MODE_PRIVATE)
+                .getString("ultimo_cpf", null)
+            if (!savedCpf.isNullOrBlank()) etCpf.setText(savedCpf)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!biometricPromptShown && shouldOfferBiometric()) {
+            biometricPromptShown = true
+            autenticarComBiometria()
+        }
     }
 
     private fun enviarCodigo() {
         val cpf = etCpf.text?.toString()?.replace("\\D".toRegex(), "").orEmpty()
 
         if (cpf.length != 11) { showErro("Informe o CPF com 11 dígitos."); return }
+        if (!btnEnviarCodigo.isEnabled) return  // evita duplo clique
 
         cpfAtual = cpf
         setLoading(true)
         hideErro()
 
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val resp = try {
                 api.iniciarOtp(cpf)
             } catch (e: Exception) {
@@ -77,8 +149,12 @@ class LoginActivity : AppCompatActivity() {
                 if (resp.ok) {
                     tvOtpMsg.text = resp.mensagem ?: "Código enviado! Verifique seu celular."
                     layoutOtp.visibility = View.VISIBLE
+                    layoutOtp.alpha = 0f
+                    layoutOtp.translationY = 24f
+                    layoutOtp.animate().alpha(1f).translationY(0f).setDuration(300).start()
                     btnEnviarCodigo.text = "Reenviar código"
                     etCodigo.requestFocus()
+                    iniciarCooldownReenvio()
                     hideErro()
                 } else {
                     showErro(resp.erro ?: "Erro ao enviar código.")
@@ -87,7 +163,27 @@ class LoginActivity : AppCompatActivity() {
         }
     }
 
+    private fun iniciarCooldownReenvio() {
+        otpCooldownTimer?.cancel()
+        tvReenviar.isEnabled = false
+        btnEnviarCodigo.isEnabled = false
+        otpCooldownTimer = object : CountDownTimer(45_000L, 1_000L) {
+            override fun onTick(ms: Long) {
+                val s = ms / 1000
+                tvReenviar.text = "Reenviar em ${String.format("%02d", s)}s"
+            }
+
+            override fun onFinish() {
+                tvReenviar.text = "Reenviar código"
+                tvReenviar.isEnabled = true
+                btnEnviarCodigo.isEnabled = true
+                otpCooldownTimer = null
+            }
+        }.start()
+    }
+
     private fun confirmarOtp() {
+        if (!btnEntrar.isEnabled) return  // evita duplo clique
         val cpf = cpfAtual.ifBlank {
             etCpf.text?.toString()?.replace("\\D".toRegex(), "").orEmpty()
         }
@@ -99,7 +195,7 @@ class LoginActivity : AppCompatActivity() {
         setLoading(true)
         hideErro()
 
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val resp = try {
                 api.confirmarOtp(cpf, codigo)
             } catch (e: Exception) {
@@ -110,7 +206,23 @@ class LoginActivity : AppCompatActivity() {
                 if (resp.ok && !resp.access_token.isNullOrBlank()) {
                     session.accessToken = resp.access_token
                     session.refreshToken = resp.refresh_token ?: ""
-                    goHome()
+                    session.markLoginSuccess(label = android.os.Build.MODEL)
+                    if (session.biometricCpf.isBlank()) {
+                        session.biometricCpf = cpf
+                    }
+                    // Salvar CPF para pré-preencher no próximo acesso
+                    getSharedPreferences("rm_funcionario_app", Context.MODE_PRIVATE)
+                        .edit().putString("ultimo_cpf", cpf).apply()
+                    if (!session.biometricEnabled) {
+                        perguntarAtivarBiometria(cpf)
+                    }
+                    // Registrar token FCM imediatamente após login
+                    FirebaseMessaging.getInstance().token.addOnSuccessListener { fcmToken ->
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            try { ApiClient(session).registrarPushToken(fcmToken) } catch (_: Exception) {}
+                        }
+                    }
+                    goHomeOrDeepLink()
                 } else {
                     showErro(resp.erro ?: "Código inválido ou expirado.")
                 }
@@ -120,9 +232,114 @@ class LoginActivity : AppCompatActivity() {
 
     private fun setLoading(loading: Boolean) {
         progress.visibility = if (loading) View.VISIBLE else View.GONE
-        btnEnviarCodigo.isEnabled = !loading
+        if (loading) {
+            btnEnviarCodigo.isEnabled = false
+            tvReenviar.isEnabled = false
+        } else if (otpCooldownTimer == null) {
+            btnEnviarCodigo.isEnabled = true
+            tvReenviar.isEnabled = true
+        }
+        btnBiometria.isEnabled = !loading
         btnEntrar.isEnabled = !loading
-        tvReenviar.isEnabled = !loading
+    }
+
+    private fun inicializarBiometriaUI() {
+        val canBio = canUseBiometric()
+        btnBiometria.visibility = if (canBio && session.biometricEnabled && session.biometricCpf.isNotBlank()) View.VISIBLE else View.GONE
+        if (session.biometricCpf.isNotBlank() && etCpf.text.isNullOrBlank()) {
+            etCpf.setText(session.biometricCpf)
+        }
+    }
+
+    private fun autenticarComBiometria() {
+        if (!canUseBiometric()) {
+            showErro("Biometria não disponível neste aparelho.")
+            return
+        }
+        val executor = ContextCompat.getMainExecutor(this)
+        val prompt = BiometricPrompt(this, executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    loginComBiometria()
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    showErro(errString.toString())
+                }
+            })
+
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Entrar com biometria")
+            .setSubtitle("Confirme sua identidade para continuar")
+            .setNegativeButtonText("Cancelar")
+            .build()
+
+        prompt.authenticate(promptInfo)
+    }
+
+    private fun shouldOfferBiometric(): Boolean {
+        return canUseBiometric() && session.biometricEnabled && session.biometricCpf.isNotBlank()
+    }
+
+    private fun canUseBiometric(): Boolean {
+        val biometricManager = BiometricManager.from(this)
+        return biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
+    }
+
+    private fun loginComBiometria() {
+        val cpf = session.biometricCpf
+        if (cpf.length != 11) {
+            showErro("CPF biométrico não configurado. Faça login com código uma vez.")
+            return
+        }
+        etCpf.setText(cpf)
+
+        if (session.refreshToken.isBlank()) {
+            enviarCodigo()
+            return
+        }
+
+        setLoading(true)
+        hideErro()
+        lifecycleScope.launch(Dispatchers.IO) {
+            val resp = try {
+                api.renovarSessao(session.refreshToken)
+            } catch (e: Exception) {
+                LoginResponse(ok = false, erro = "Erro de conexão: ${e.message}")
+            }
+            withContext(Dispatchers.Main) {
+                setLoading(false)
+                if (resp.ok && !resp.access_token.isNullOrBlank()) {
+                    session.accessToken = resp.access_token
+                    if (!resp.refresh_token.isNullOrBlank()) {
+                        session.refreshToken = resp.refresh_token
+                    }
+                    session.touchActivity()
+                    goHomeOrDeepLink()
+                } else {
+                    // Se refresh expirou, mantém biometria, mas volta para o fluxo OTP.
+                    session.refreshToken = ""
+                    enviarCodigo()
+                }
+            }
+        }
+    }
+
+    private fun perguntarAtivarBiometria(cpf: String) {
+        val canBio = canUseBiometric()
+        if (!canBio) return
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Ativar biometria?")
+            .setMessage("Deseja usar biometria nos próximos acessos deste colaborador?")
+            .setPositiveButton("Ativar") { _, _ ->
+                session.biometricEnabled = true
+                session.biometricCpf = cpf
+                btnBiometria.visibility = View.VISIBLE
+            }
+            .setNegativeButton("Agora não", null)
+            .show()
     }
 
     private fun showErro(msg: String) {
@@ -135,7 +352,30 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun goHome() {
-        startActivity(Intent(this, HomeActivity::class.java))
+        startActivity(Intent(this, PontoActivity::class.java))
         finish()
+    }
+
+    private fun goHomeOrDeepLink() {
+        val tipo = intent?.getStringExtra("tipo") ?: intent?.extras?.getString("tipo") ?: ""
+        val arquivoId = intent?.getStringExtra("arquivo_id")?.toIntOrNull() ?: -1
+        val target: Intent = when {
+            tipo == "documento_assinar" && arquivoId > 0 ->
+                Intent(this, DocumentosActivity::class.java).apply {
+                    putExtra(FcmService.EXTRA_ARQUIVO_ID, arquivoId)
+                }
+            tipo == "chat" || tipo == "chat_broadcast" ->
+                Intent(this, MensagensActivity::class.java)
+            else ->
+                Intent(this, PontoActivity::class.java)
+        }
+        startActivity(target)
+        finish()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        otpCooldownTimer?.cancel()
+        otpCooldownTimer = null
     }
 }

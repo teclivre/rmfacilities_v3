@@ -1,13 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
-<TextView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/tvYearHeader"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:paddingStart="4dp"
-    android:paddingEnd="4dp"
-    android:paddingTop="20dp"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="32dp"
+    android:paddingEnd="12dp"
+    android:paddingTop="10dp"
     android:paddingBottom="6dp"
-    android:textColor="@color/accent_blue"
-    android:textSize="13sp"
-    android:textStyle="bold"
-    android:letterSpacing="0.08" />
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="@drawable/ripple_card">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="📂"
+        android:textSize="15sp"
+        android:layout_marginEnd="8dp" />
+
+    <TextView
+        android:id="@+id/tvYearHeader"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textColor="@color/accent_blue"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.08" />
+
+    <TextView
+        android:id="@+id/tvYearCount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="@color/text_secondary"
+        android:textSize="11sp"
+        android:layout_marginEnd="10dp" />
+
+    <TextView
+        android:id="@+id/tvYearArrow"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="▶"
+        android:textColor="@color/accent_blue"
+        android:textSize="11sp" />
+
+</LinearLayout>

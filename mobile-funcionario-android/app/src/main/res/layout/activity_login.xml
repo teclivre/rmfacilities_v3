@@ -1,87 +1,87 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/primary">
+    android:background="@color/background">
 
+    <!-- Área do logo com gradiente -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="@drawable/bg_header_gradient"
         android:orientation="vertical"
         android:gravity="center_horizontal"
-        android:paddingTop="52dp"
-        android:paddingBottom="32dp"
+        android:paddingTop="64dp"
+        android:paddingBottom="36dp"
         android:paddingStart="32dp"
         android:paddingEnd="32dp">
 
         <ImageView
-            android:layout_width="160dp"
-            android:layout_height="64dp"
+            android:layout_width="200dp"
+            android:layout_height="wrap_content"
             android:adjustViewBounds="true"
+            android:scaleType="fitCenter"
             android:contentDescription="Logo RM Facilities"
             android:src="@drawable/logo_rm_facilities" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:text="RM Facilities"
+            android:layout_marginTop="16dp"
+            android:text="Portal do Funcionário"
             android:textColor="@color/white"
-            android:textSize="22sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="Portal do Funcionario"
-            android:textColor="#93B5D4"
-            android:textSize="13sp" />
+            android:textSize="14sp"
+            android:letterSpacing="0.06" android:alpha="0.85" />
     </LinearLayout>
 
+    <!-- Formulário com sheet arredondado -->
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="@drawable/bg_card_top_rounded"
+        android:background="@drawable/bg_sheet_rounded"
         android:fillViewport="true">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="28dp">
+            android:paddingStart="28dp"
+            android:paddingEnd="28dp"
+            android:paddingTop="32dp"
+            android:paddingBottom="32dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Entrar"
                 android:textColor="@color/text_primary"
-                android:textSize="22sp"
+                android:textSize="26sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Use seu CPF para acessar"
+                android:layout_marginTop="6dp"
+                android:text="Informe seu CPF para continuar"
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp" />
 
             <com.google.android.material.textfield.TextInputLayout
-                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                style="@style/Widget.App.TextInputLayout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:hint="CPF (somente numeros)">
+                android:layout_marginTop="28dp"
+                android:hint="CPF">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/etCpf"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:inputType="number"
-                    android:maxLength="11" />
+                    android:maxLength="14" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <com.google.android.material.button.MaterialButton
@@ -89,9 +89,25 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
-                android:text="Receber codigo no celular"
-                android:textSize="15sp" />
+                android:minHeight="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="Receber código no celular"
+                android:textSize="15sp"
+                android:textStyle="bold" />
 
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnBiometria"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Entrar com biometria"
+                android:textColor="@color/accent_blue"
+                app:strokeColor="@color/border"
+                android:visibility="gone" />
+
+            <!-- Seção OTP (oculta inicialmente) -->
             <LinearLayout
                 android:id="@+id/layoutOtp"
                 android:layout_width="match_parent"
@@ -110,11 +126,11 @@
                     android:textSize="13sp" />
 
                 <com.google.android.material.textfield.TextInputLayout
-                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                    style="@style/Widget.App.TextInputLayout"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:hint="Codigo de verificacao (6 digitos)">
+                    android:layout_marginTop="16dp"
+                    android:hint="Código de verificação (6 dígitos)">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/etCodigo"
@@ -128,21 +144,34 @@
                     android:id="@+id/btnEntrar"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
+                    android:layout_marginTop="16dp"
+                    android:minHeight="0dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
                     android:text="Confirmar e entrar"
-                    android:textSize="15sp" />
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
 
                 <TextView
                     android:id="@+id/tvReenviar"
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_gravity="center_horizontal"
-                    android:layout_marginTop="12dp"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center"
                     android:padding="8dp"
-                    android:text="Reenviar codigo"
-                    android:textColor="@color/primary"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
+                    android:text="Reenviar código"
+                    android:textColor="@color/accent_blue"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/tvDicaSeguranca"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center"
+                    android:text="Dica: nunca compartilhe seu código de acesso."
+                    android:textColor="@color/text_hint"
+                    android:textSize="12sp" />
             </LinearLayout>
 
             <ProgressBar
@@ -150,20 +179,29 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center_horizontal"
-                android:layout_marginTop="20dp"
-                android:indeterminateTint="@color/primary"
+                android:layout_marginTop="16dp"
                 android:visibility="gone" />
 
             <TextView
                 android:id="@+id/tvErro"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="16dp"
                 android:background="@drawable/bg_info_error"
                 android:padding="14dp"
                 android:textColor="@color/error"
                 android:textSize="13sp"
                 android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tvPrivacidade"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:gravity="center"
+                android:text="Política de Privacidade"
+                android:textColor="@color/accent_blue"
+                android:textSize="13sp" />
 
         </LinearLayout>
     </ScrollView>

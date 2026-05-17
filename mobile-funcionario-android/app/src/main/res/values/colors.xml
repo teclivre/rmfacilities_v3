@@ -1,19 +1,90 @@
 <resources>
-    <!-- Paleta escura - identica ao sistema web -->
-    <color name="primary">#0d2e4d</color>
-    <color name="primary_variant">#0a2037</color>
-    <color name="background">#08111d</color>
-    <color name="surface">#172538</color>
-    <color name="accent">#ff9f4a</color>
-    <color name="accent_dark">#e88930</color>
-    <color name="accent_blue">#67b8ff</color>
-    <color name="text_primary">#e6eef7</color>
-    <color name="text_secondary">#8fa8bf</color>
-    <color name="text_hint">#4d6b84</color>
-    <color name="divider">#21374d</color>
-    <color name="error">#f57575</color>
-    <color name="success">#36d09a</color>
-    <color name="primary_light">#1a3a58</color>
-    <color name="white">#ffffff</color>
-    <color name="border">#21374d</color>
+    <!-- Paleta padrão clara -->
+    <color name="primary">#205d8a</color>
+    <color name="primary_variant">#164a73</color>
+    <color name="background">#f5f0f6</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_elevated">#FDFBFE</color>
+    <color name="accent">#f28e34</color>
+    <color name="accent_dark">#d4761c</color>
+    <color name="accent_blue">#2d7ab5</color>
+    <color name="accent_purple">#7053E6</color>
+    <color name="accent_green">#1FAE75</color>
+    <color name="text_primary">#020202</color>
+    <color name="text_secondary">#4a6b85</color>
+    <color name="text_hint">#8090a0</color>
+    <color name="divider">#d3d3d3</color>
+    <color name="error">#D54848</color>
+    <color name="success">#1FAE75</color>
+    <color name="primary_light">#d0e4f0</color>
+    <color name="white">#FFFFFF</color>
+    <color name="border">#d3d3d3</color>
+    <!-- Icon colors para quick action cards -->
+    <color name="icon_blue">#205d8a</color>
+    <color name="icon_purple">#7053E6</color>
+    <color name="icon_orange">#f28e34</color>
+    <color name="icon_green">#1FAE75</color>
+
+    <!-- Mobile tokens -->
+    <color name="mobile_bg_top">#f5f0f6</color>
+    <color name="mobile_bg_bottom">#f5f0f6</color>
+    <color name="mobile_surface">#FFFFFF</color>
+    <color name="mobile_surface_soft">#ede8ee</color>
+    <color name="mobile_text_primary">#020202</color>
+    <color name="mobile_text_secondary">#4a6b85</color>
+    <color name="mobile_semantic_success">#2CB67D</color>
+    <color name="mobile_semantic_pending">#D49A2A</color>
+    <color name="mobile_semantic_info">#205d8a</color>
+    <color name="mobile_tab_active">#205d8a</color>
+    <color name="mobile_tab_inactive">#6B7E97</color>
+    <color name="mobile_card_border">#d3d3d3</color>
+    <color name="mobile_glass_surface">#D9FFFFFF</color>
+    <color name="mobile_glass_stroke">#8FC7D8FF</color>
+    <color name="mobile_nav_surface">#F8F6F9FF</color>
+    <color name="mobile_nav_stroke">#BFC8D0FF</color>
+    <color name="mobile_input_bg">#FFFFFF</color>
+    <color name="mobile_input_stroke">#d3d3d3</color>
+    <color name="mobile_sheet_surface">#f0edf2</color>
+    <color name="mobile_card_surface">#FFFFFF</color>
+    <color name="mobile_card_surface_alt">#F9F7FA</color>
+    <color name="mobile_card_stroke">#d3d3d3</color>
+    <color name="mobile_otp_bg">#ede8ee</color>
+    <color name="mobile_otp_stroke">#b0a8b5</color>
+    <color name="mobile_success_bg">#E8F8F0</color>
+    <color name="mobile_success_stroke">#9FD9BE</color>
+    <color name="mobile_bubble_func_bg">#1F7A53</color>
+    <color name="mobile_bubble_rh_bg">#205d8a</color>
+
+    <!-- Dialog / Alert -->
+    <color name="dialog_btn_positive">#f28e34</color>
+    <color name="dialog_btn_negative">#4a6b85</color>
+    <color name="dialog_surface">#FFFFFF</color>
+    <color name="dialog_text_title">#020202</color>
+    <color name="dialog_text_body">#4a6b85</color>
+
+    <!-- Ponto Espelho table -->
+    <color name="espelho_header_bg">#205d8a</color>
+    <color name="espelho_header_text">#FFFFFF</color>
+    <color name="espelho_row_even">#f5f0f6</color>
+    <color name="espelho_row_odd">#FFFFFF</color>
+    <color name="espelho_row_highlight">#d0e4f0</color>
+    <color name="espelho_separator">#d3d3d3</color>
+    <color name="espelho_text_muted">#6b7e97</color>
+    <color name="espelho_accent_btn">#205d8a</color>
+    <color name="espelho_badge_download">#168357</color>
+    <color name="espelho_badge_pending">#205d8a</color>
+
+    <!-- Ponto Espelho status -->
+    <color name="espelho_ok">#168357</color>
+    <color name="espelho_parcial">#d4761c</color>
+    <color name="espelho_falta">#bf2e2e</color>
+    <color name="espelho_entrada">#168357</color>
+    <color name="espelho_saida_int">#d4761c</color>
+    <color name="espelho_retorno_int">#205d8a</color>
+    <color name="espelho_saida">#bf2e2e</color>
+    <color name="espelho_outro">#6b7e97</color>
+
+    <!-- PDF preview overlay -->
+    <color name="pdf_page_num_text">#205d8a</color>
+    <color name="pdf_page_num_bg">#d0e4f0</color>
 </resources>

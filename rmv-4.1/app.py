@@ -20,17 +20,20 @@ _strict_origin_check = True
 
 
 
-from flask import Flask, request, jsonify, redirect, render_template, send_file, Response, url_for
+from flask import Flask, request, jsonify, redirect, render_template, send_file, Response, url_for, has_request_context
 
 import io
-_strict_origin_check = False
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import text
+from sqlalchemy import text, event
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError, IntegrityError
 import os
 import re
+import math
+import logging
+import sqlite3
 import unicodedata
 import os, json, hashlib, hmac, secrets
 from datetime import datetime, timedelta, date
@@ -41,7 +44,25 @@ from ponto_module import register_ponto_routes
 # Flask app and DB initialization must come first
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.abspath(os.environ.get('DATA_DIR', os.path.join(BASE_DIR, 'instance')))
+
+def _is_prod_hint():
+    env = (os.environ.get('APP_ENV') or os.environ.get('FLASK_ENV') or '').strip().lower()
+    return env in ('prod', 'production')
+
+def _resolve_data_dir():
+    configured = (os.environ.get('DATA_DIR') or '').strip()
+    if configured:
+        return os.path.abspath(configured)
+    # In production we strongly prefer /data (persistent volume in containers).
+    if _is_prod_hint():
+        try:
+            os.makedirs('/data', exist_ok=True)
+            return '/data'
+        except Exception:
+            pass
+    return os.path.join(BASE_DIR, 'instance')
+
+DATA_DIR = os.path.abspath(_resolve_data_dir())
 os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, 'rmfacilities.db')
 DEFAULT_DB_URI = f"sqlite:///{DB_PATH}"
@@ -52,13 +73,24 @@ def _migrate_legacy_data_dir():
     if os.environ.get('DATABASE_URL'):
         return
     if not os.path.exists(DB_PATH):
-        for old_db in (
+        old_candidates = [
             os.path.join(BASE_DIR, 'instance', 'rmfacilities.db'),
+            os.path.join(BASE_DIR, 'instance', 'app.db'),
             os.path.join(BASE_DIR, 'app.db'),
-        ):
-            if os.path.exists(old_db):
-                shutil.copy2(old_db, DB_PATH)
-                break
+            os.path.join(os.path.dirname(BASE_DIR), 'instance', 'rmfacilities.db'),
+            os.path.join(os.path.dirname(BASE_DIR), 'instance', 'app.db'),
+        ]
+        existing = [p for p in old_candidates if os.path.exists(p) and os.path.abspath(p) != os.path.abspath(DB_PATH)]
+        if existing:
+            # Prefer rmfacilities.db over app.db, then bigger/newer files.
+            existing.sort(
+                key=lambda p: (
+                    os.path.basename(p) != 'rmfacilities.db',
+                    -os.path.getsize(p),
+                    -os.path.getmtime(p),
+                )
+            )
+            shutil.copy2(existing[0], DB_PATH)
     legacy_uploads = os.path.join(BASE_DIR, 'instance', 'uploads')
     if not os.path.isdir(UPLOAD_ROOT) and os.path.isdir(legacy_uploads):
         shutil.copytree(legacy_uploads, UPLOAD_ROOT, dirs_exist_ok=True)
@@ -73,25 +105,103 @@ def _load_app_secret_key():
     key=(os.environ.get('SECRET_KEY') or '').strip()
     if key:
         return key
+    # Tenta persistir a chave no volume de dados (Railway /data) para sobreviver a restarts
+    data_dir=(os.environ.get('DATA_DIR') or '').strip()
+    if data_dir:
+        key_file=os.path.join(data_dir,'.secret_key')
+        try:
+            if os.path.exists(key_file):
+                stored=open(key_file,'r').read().strip()
+                if len(stored)>=32:
+                    return stored
+            new_key=secrets.token_urlsafe(48)
+            os.makedirs(data_dir,exist_ok=True)
+            with open(key_file,'w') as f:
+                f.write(new_key)
+            return new_key
+        except Exception:
+            pass
     if _is_production_env():
         raise RuntimeError('SECRET_KEY obrigatoria em producao. Configure a variavel de ambiente SECRET_KEY.')
     # Em ambiente local, usa chave efemera para evitar segredo padrao hardcoded no repositorio.
     return secrets.token_urlsafe(48)
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
+app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024  # 25MB (reduzido para mitigar DoS por upload)
 app.secret_key = _load_app_secret_key()
+app.config['PERMANENT_SESSION_LIFETIME'] = __import__('datetime').timedelta(days=30)
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = not app.debug   # Envia cookie apenas via HTTPS em produção
+app.config['SESSION_COOKIE_HTTPONLY'] = True           # Bloqueia acesso via JavaScript ao cookie
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', DEFAULT_DB_URI)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite'):
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'connect_args': {'timeout': 30, 'check_same_thread': False},
+        'pool_pre_ping': True,
+        'pool_size': 1,
+        'max_overflow': 4,
+    }
 db = SQLAlchemy(app)
+
+if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite'):
+    @event.listens_for(Engine, 'connect')
+    def _sqlite_configure_connection(dbapi_connection, _connection_record):
+        if not isinstance(dbapi_connection, sqlite3.Connection):
+            return
+        cur = dbapi_connection.cursor()
+        try:
+            cur.execute('PRAGMA journal_mode=WAL')
+            cur.execute('PRAGMA busy_timeout=30000')
+            cur.execute('PRAGMA synchronous=NORMAL')
+        finally:
+            cur.close()
+
+
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+_limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=[],
+    storage_uri=os.environ.get('REDIS_URL', 'memory://'),
+)
+
+# Compressão HTTP (Gzip/Brotli) — reduz app.html de ~700KB para ~80KB
+from flask_compress import Compress as _Compress
+_compress = _Compress()
+app.config['COMPRESS_MIMETYPES'] = [
+    'text/html', 'text/css', 'text/javascript',
+    'application/json', 'application/javascript',
+]
+app.config['COMPRESS_LEVEL'] = 6
+app.config['COMPRESS_MIN_SIZE'] = 500
+_compress.init_app(app)
+
+# Cache em memória (ou Redis se disponível) — evita recalcular rotas pesadas repetidamente
+from flask_caching import Cache as _Cache
+_ferias_sync_ts: float = 0.0  # throttle: sync de férias no máximo 1x/hora
+
+_cache_cfg = {
+    'CACHE_TYPE': 'RedisCache' if os.environ.get('REDIS_URL') else 'SimpleCache',
+    'CACHE_DEFAULT_TIMEOUT': 300,
+    'CACHE_REDIS_URL': os.environ.get('REDIS_URL', ''),
+}
+cache = _Cache(app, config=_cache_cfg)
 
 from functools import wraps
 from flask import session, url_for, g
 
+def _lr_unauth_response():
+    if (request.path or '').startswith('/api/'):
+        return jsonify({'erro':'Sessao expirada. Faca login novamente.'}),401
+    return redirect(url_for('login'))
+
+# Definição do decorador lr movida para o topo para evitar NameError
 def lr(f):
     @wraps(f)
     def w(*a,**k):
-        if 'uid' not in session: return redirect(url_for('login'))
+        if 'uid' not in session: return _lr_unauth_response()
         if not can_access_request(request.path,request.method): return jsonify({'erro':'Acesso negado'}),403
         if request.method in ('POST','PUT','PATCH','DELETE') and not _same_origin_request(request):
             return jsonify({'erro':'Origem da requisição não permitida'}),403
@@ -124,6 +234,41 @@ def utcnow():
     # mas o valor correto para o negócio é o horário de Brasília.
     return localnow()
 
+_SENSITIVE_EMAIL_RE=re.compile(r'\b([A-Za-z0-9._%+-]{1,64})@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b')
+_SENSITIVE_CPF_RE=re.compile(r'\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b')
+_SENSITIVE_PHONE_RE=re.compile(r'(?<!\d)(?:\+?55)?\d{10,13}(?!\d)')
+
+def _mask_sensitive_text(v):
+    s=str(v or '')
+    s=_SENSITIVE_EMAIL_RE.sub(lambda m: _mask_email(m.group(0)) if '_mask_email' in globals() else '***@***', s)
+    s=_SENSITIVE_CPF_RE.sub('***.***.***-**', s)
+    s=_SENSITIVE_PHONE_RE.sub(lambda m: _mask_phone(m.group(0)) if '_mask_phone' in globals() else '*** *** ****', s)
+    return s
+
+class _SensitiveLogFilter(logging.Filter):
+    def filter(self, record):
+        try:
+            record.msg=_mask_sensitive_text(record.getMessage())
+            record.args=()
+        except Exception:
+            pass
+        return True
+
+def _install_sensitive_log_filter(logger_obj):
+    try:
+        if getattr(logger_obj,'_rm_sensitive_filter_installed',False):
+            return
+        f=_SensitiveLogFilter()
+        logger_obj.addFilter(f)
+        for h in (logger_obj.handlers or []):
+            h.addFilter(f)
+        logger_obj._rm_sensitive_filter_installed=True
+    except Exception:
+        pass
+
+_install_sensitive_log_filter(app.logger)
+_install_sensitive_log_filter(logging.getLogger('werkzeug'))
+
 
 
 # === ENDPOINT BANCOS-BR ===
@@ -135,8 +280,42 @@ def api_bancos_br():
     return jsonify({'bancos': bancos})
 
 
-_strict_origin_check = False  # Corrige NameError para _strict_origin_check
+_strict_origin_check = True  # Controle de origem habilitado (CSRF)
 
+# ─── Marcador de tempo de inicialização (usado pelo /api/health) ─────────────
+_APP_START_TIME = time.time()
+
+# === ENDPOINT DE SAÚDE ===
+@app.route('/api/health')
+def api_health():
+    """Health-check para load balancers e monitoramento. Não exige autenticação."""
+    status: dict = {}
+    http_code = 200
+
+    # 1. Conectividade com o banco
+    try:
+        db.session.execute(text('SELECT 1'))
+        status['db'] = 'ok'
+    except Exception as exc:
+        status['db'] = f'error: {exc}'
+        http_code = 503
+
+    # 2. Espaço em disco
+    try:
+        usage = shutil.disk_usage(DATA_DIR if os.path.exists(DATA_DIR) else '/')
+        free_mb = usage.free // (1024 * 1024)
+        status['disk_free_mb'] = free_mb
+        status['disk'] = 'low' if free_mb < 100 else 'ok'
+        if free_mb < 100:
+            http_code = 503
+    except Exception as exc:
+        status['disk'] = f'error: {exc}'
+
+    # 3. Clientes SSE conectados e uptime
+    status['sse_clients'] = len(_sse_clients)
+    status['uptime_sec'] = int(time.time() - _APP_START_TIME)
+    status['status'] = 'ok' if http_code == 200 else 'degraded'
+    return jsonify(status), http_code
 
 # === MODELOS E ROTAS QUE DEVEM VIR APÓS CRIAÇÃO DO APP E DB ===
 
@@ -150,8 +329,14 @@ class PontoMarcacao(db.Model):
     observacao = db.Column(db.String(255))
     criado_por = db.Column(db.String(100))
     ip = db.Column(db.String(60))
+    latitude = db.Column(db.Float)
+    longitude = db.Column(db.Float)
+    precisao_gps = db.Column(db.Float)
     def to_dict(self):
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        if d.get('data_hora') is not None and not isinstance(d['data_hora'], str):
+            d['data_hora'] = d['data_hora'].strftime('%Y-%m-%d %H:%M:%S')
+        return d
 
 class PontoFechamentoDia(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -176,6 +361,265 @@ class PontoAjuste(db.Model):
     criado_em = db.Column(db.DateTime, default=utcnow)
     def to_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
+class JornadaTrabalho(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(120), nullable=False)
+    descricao = db.Column(db.String(255))
+    dias_semana = db.Column(db.String(30), default='1,2,3,4,5')  # 0=dom 1=seg ... 6=sab
+    hora_entrada = db.Column(db.String(5), default='08:00')       # HH:MM
+    hora_saida = db.Column(db.String(5), default='17:48')         # HH:MM
+    hora_intervalo_inicio = db.Column(db.String(5), default='12:00')
+    hora_intervalo_fim = db.Column(db.String(5), default='13:00')
+    tolerancia_min = db.Column(db.Integer, default=10)            # minutos de tolerância
+    ativo = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=utcnow)
+
+    def grade_semanal(self):
+        return _jornada_extrair_grade(self)
+
+    def minutos_esperados_weekday(self, weekday_python):
+        try:
+            wd=int(weekday_python)
+        except Exception:
+            wd=0
+        dom_idx=(wd+1)%7  # weekday python (0=seg..6=dom) -> dom_idx (0=dom..6=sab)
+        dia=self.grade_semanal().get(str(dom_idx),{})
+        if not bool(dia.get('ativo',False)):
+            return 0
+        return _jornada_minutos_dia_cfg(dia)
+
+    def weekdays_ativos_python(self):
+        wds=set()
+        for k,v in (self.grade_semanal() or {}).items():
+            try:
+                dom_idx=int(k)
+            except Exception:
+                continue
+            if bool((v or {}).get('ativo',False)):
+                wds.add((dom_idx+6)%7)  # dom_idx (0=dom..6=sab) -> weekday python (0=seg..6=dom)
+        return wds
+
+    def carga_horaria_min(self):
+        mins=[]
+        for dia in (self.grade_semanal() or {}).values():
+            if bool((dia or {}).get('ativo',False)):
+                mins.append(_jornada_minutos_dia_cfg(dia))
+        if mins:
+            return max(0,int(round(sum(mins)/float(len(mins)))))
+        return 0
+
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        grade=self.grade_semanal()
+        d['grade_semanal']=grade
+        try:
+            d['dias_semana_list']=[int(k) for k,v in grade.items() if bool((v or {}).get('ativo',False))]
+        except Exception:
+            d['dias_semana_list']=[1,2,3,4,5]
+        d['carga_horaria_min']=self.carga_horaria_min()
+        d['funcionarios_count']=Funcionario.query.filter_by(jornada_id=self.id).count() if self.id else 0
+        return d
+
+
+def _jornada_hhmm_valido(s):
+    return bool(re.match(r'^\d{2}:\d{2}$',str(s or '').strip()))
+
+
+def _jornada_minutos_dia_cfg(dia_cfg):
+    try:
+        ent=(dia_cfg or {}).get('entrada','08:00')
+        sai=(dia_cfg or {}).get('saida','17:00')
+        intervalo=max(0,int((dia_cfg or {}).get('intervalo_min',0) or 0))
+        he=list(map(int,str(ent).split(':')))
+        hs=list(map(int,str(sai).split(':')))
+        entrada_min=he[0]*60+he[1]
+        saida_min=hs[0]*60+hs[1]
+        if saida_min<=entrada_min:
+            saida_min+=24*60
+        return max(0,saida_min-entrada_min-intervalo)
+    except Exception:
+        return 0
+
+
+def _jornada_grade_padrao(jornada_obj=None):
+    he='08:00'; hs='17:48'; hi='12:00'; hf='13:00'
+    if jornada_obj is not None:
+        he=(getattr(jornada_obj,'hora_entrada',None) or he)
+        hs=(getattr(jornada_obj,'hora_saida',None) or hs)
+        hi=(getattr(jornada_obj,'hora_intervalo_inicio',None) or hi)
+        hf=(getattr(jornada_obj,'hora_intervalo_fim',None) or hf)
+    intervalo=60
+    try:
+        if _jornada_hhmm_valido(hi) and _jornada_hhmm_valido(hf):
+            hi_p=list(map(int,str(hi).split(':')))
+            hf_p=list(map(int,str(hf).split(':')))
+            intervalo=max(0,(hf_p[0]*60+hf_p[1])-(hi_p[0]*60+hi_p[1]))
+    except Exception:
+        intervalo=60
+    out={}
+    for dom_idx in range(7):
+        out[str(dom_idx)]={
+            'ativo':dom_idx in (1,2,3,4,5),
+            'entrada':he if _jornada_hhmm_valido(he) else '08:00',
+            'saida':hs if _jornada_hhmm_valido(hs) else '17:48',
+            'intervalo_min':intervalo,
+        }
+    return out
+
+
+def _jornada_normalizar_grade(grade_in,jornada_obj=None):
+    base=_jornada_grade_padrao(jornada_obj)
+    if not isinstance(grade_in,dict):
+        return base
+    for dom_idx in range(7):
+        chave=str(dom_idx)
+        di=grade_in.get(chave,grade_in.get(dom_idx,{}))
+        if not isinstance(di,dict):
+            continue
+        atual=base[chave]
+        atual['ativo']=bool(di.get('ativo',atual['ativo']))
+        ent=(di.get('entrada',atual['entrada']) or '').strip()
+        sai=(di.get('saida',atual['saida']) or '').strip()
+        if _jornada_hhmm_valido(ent):
+            atual['entrada']=ent
+        if _jornada_hhmm_valido(sai):
+            atual['saida']=sai
+        try:
+            atual['intervalo_min']=max(0,min(240,int(di.get('intervalo_min',atual['intervalo_min']) or 0)))
+        except Exception:
+            pass
+    return base
+
+
+def _jornada_extrair_grade(jornada_obj):
+    ds=(getattr(jornada_obj,'dias_semana','') or '').strip()
+    if ds.startswith('{'):
+        try:
+            payload=json.loads(ds)
+            grade=_jornada_normalizar_grade(payload.get('dias',{}),jornada_obj)
+            return grade
+        except Exception:
+            pass
+    grade=_jornada_grade_padrao(jornada_obj)
+    ativos={int(x) for x in ds.split(',') if x.strip().isdigit() and 0<=int(x)<=6}
+    if ativos:
+        for dom_idx in range(7):
+            grade[str(dom_idx)]['ativo']=dom_idx in ativos
+    return grade
+
+class Escala(db.Model):
+    """
+    Modelo de Escala de Turnos:
+    - tipo: '6x2' (6 dias trabalho, 2 folga), '6x1' (seg-sab trabalho, dom folga), '4x2' (4 dias trabalho, 2 folga), '12x36' (12h turno, 36h folga), 'folguista' (customizado), 'noturna'
+    - ciclo_json: JSON com estrutura de dias/turnos e folgas
+      Ex 6x2: {"dias": [{"tipo": "trabalho"}, ...6x..., {"tipo": "folga"}, {"tipo": "folga"}]}
+      Ex 12x36: {"dias": [{"tipo": "trabalho", "horas": 12}, {"tipo": "folga"}, {"tipo": "folga"}]}
+      Ex noturna: {"dias": [{"tipo": "trabalho", "hora_entrada": "22:00", "hora_saida": "06:00", "noturno": true}]}
+    - periodo_noturno_ini/fim: horários de início e fim do turno noturno (padrão 22:00-05:00)
+    """
+    id=db.Column(db.Integer,primary_key=True)
+    nome=db.Column(db.String(120),nullable=False)
+    tipo=db.Column(db.String(30),nullable=False)  # '6x2', '6x1', '4x2', '12x36', 'folguista', 'noturna'
+    ciclo_json=db.Column(db.Text,default='{}')  # JSON com dias/turnos/folgas
+    descricao=db.Column(db.String(255))
+    periodo_noturno_ini=db.Column(db.String(5),default='22:00')  # HH:MM (início do período noturno)
+    periodo_noturno_fim=db.Column(db.String(5),default='05:00')  # HH:MM (fim do período noturno)
+    ativo=db.Column(db.Boolean,default=True)
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    def carga_horaria_min_dia(self, dia_ciclo_indice):
+        """Retorna minutos de trabalho para um dia do ciclo (0-indexed)"""
+        try:
+            ciclo=json.loads(self.ciclo_json or '{}')
+            dias=ciclo.get('dias',[])
+            if dia_ciclo_indice<0 or dia_ciclo_indice>=len(dias):
+                return 0
+            dia_info=dias[dia_ciclo_indice]
+            if dia_info.get('tipo')=='folga':
+                return 0
+            # Se tem horários específicos (entrada/saída)
+            if 'hora_entrada' in dia_info and 'hora_saida' in dia_info:
+                try:
+                    he=list(map(int,dia_info['hora_entrada'].split(':')))
+                    hs=list(map(int,dia_info['hora_saida'].split(':')))
+                    entrada_min=he[0]*60+he[1]
+                    saida_min=hs[0]*60+hs[1]
+                    # Se saída < entrada, cruza meia-noite (adiciona 24h)
+                    if saida_min<=entrada_min:
+                        saida_min+=24*60
+                    intervalo=dia_info.get('intervalo_min',0)
+                    return max(0,saida_min-entrada_min-intervalo)
+                except Exception:
+                    pass
+            # Senão, usar horas ou padrão 8h
+            horas=dia_info.get('horas',8)
+            return int(horas*60)
+        except Exception:
+            return 0
+    
+    def is_noturno_dia(self, dia_ciclo_indice):
+        """Verifica se um dia do ciclo é noturno"""
+        try:
+            ciclo=json.loads(self.ciclo_json or '{}')
+            dias=ciclo.get('dias',[])
+            if dia_ciclo_indice<0 or dia_ciclo_indice>=len(dias):
+                return False
+            return dias[dia_ciclo_indice].get('noturno',False)
+        except Exception:
+            return False
+    
+    def get_horarios_dia(self, dia_ciclo_indice):
+        """Retorna entrada/saída/intervalo para um dia do ciclo"""
+        try:
+            ciclo=json.loads(self.ciclo_json or '{}')
+            dias=ciclo.get('dias',[])
+            if dia_ciclo_indice<0 or dia_ciclo_indice>=len(dias):
+                return None
+            dia_info=dias[dia_ciclo_indice]
+            if dia_info.get('tipo')=='folga':
+                return None
+            return {
+                'hora_entrada':dia_info.get('hora_entrada','08:00'),
+                'hora_saida':dia_info.get('hora_saida','17:00'),
+                'intervalo_min':dia_info.get('intervalo_min',0),
+                'noturno':dia_info.get('noturno',False)
+            }
+        except Exception:
+            return None
+        except Exception:
+            return 0
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        try:
+            d['ciclo']=json.loads(self.ciclo_json or '{}')
+        except Exception:
+            d['ciclo']={}
+        d['funcionarios_count']=EscalaFuncionario.query.filter_by(escala_id=self.id,ativo=True).count() if self.id else 0
+        return d
+
+class EscalaFuncionario(db.Model):
+    """Vínculo entre Funcionário e Escala de turnos"""
+    id=db.Column(db.Integer,primary_key=True)
+    escala_id=db.Column(db.Integer,db.ForeignKey('escala.id'),nullable=False,index=True)
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False,index=True)
+    data_inicio=db.Column(db.String(10),nullable=False)  # YYYY-MM-DD
+    data_fim=db.Column(db.String(10),nullable=True)  # YYYY-MM-DD (NULL = sem término, ainda ativa)
+    ativo=db.Column(db.Boolean,default=True)
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    __table_args__=(
+        db.UniqueConstraint('funcionario_id','escala_id','data_inicio',name='uq_escala_func_data'),
+    )
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        escala=db.session.get(Escala, self.escala_id)
+        if escala:
+            d['escala_nome']=escala.nome
+            d['escala_tipo']=escala.tipo
+        funcionario=db.session.get(Funcionario, self.funcionario_id)
+        if funcionario:
+            d['funcionario_nome']=funcionario.nome
+            d['funcionario_matricula']=funcionario.matricula
+        return d
 
 class Despesa(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -307,7 +751,7 @@ def api_despesas_add():
 @app.route('/api/despesas/<int:id>', methods=['PUT'])
 @lr
 def api_despesas_edit(id):
-    desp=Despesa.query.get_or_404(id)
+    desp=db.get_or_404(Despesa, id)
     d=request.get_json(silent=True) or request.form or {}
     descricao=(d.get('descricao') if 'descricao' in d else desp.descricao) or ''
     categoria=(d.get('categoria') if 'categoria' in d else desp.categoria) or 'Outras'
@@ -341,7 +785,7 @@ def api_despesas_edit(id):
 @app.route('/api/despesas/<int:id>', methods=['DELETE'])
 @lr
 def api_despesas_delete(id):
-    desp=Despesa.query.get_or_404(id)
+    desp=db.get_or_404(Despesa, id)
     try:
         if (desp.comprovante or '').strip():
             abs_path=os.path.join(UPLOAD_ROOT,desp.comprovante)
@@ -393,7 +837,7 @@ def api_check_numero():
 @app.route('/api/medicoes/<int:id>',methods=['GET','DELETE','PUT'])
 @lr
 def api_medicao_detalhe(id):
-    m = Medicao.query.get_or_404(id)
+    m = db.get_or_404(Medicao, id)
     if request.method=='DELETE':
         # remove anexos do disco antes de deletar
         for a in MedicaoAnexo.query.filter_by(medicao_id=id).all():
@@ -711,6 +1155,9 @@ class Cliente(db.Model):
     reajuste_percentual=db.Column(db.Float,default=0)
     reajuste_data_base=db.Column(db.String(10))
     ultimo_reajuste_em=db.Column(db.String(10))
+    geo_lat=db.Column(db.Float)
+    geo_lon=db.Column(db.Float)
+    geofence_raio_m=db.Column(db.Float,default=150)
     obs=db.Column(db.Text,default='')
     criado_em=db.Column(db.DateTime,default=utcnow)
     def end_fmt(self):
@@ -832,7 +1279,14 @@ class Funcionario(db.Model):
     data_admissao=db.Column(db.String(10))
     tipo_contrato=db.Column(db.String(60))
     jornada=db.Column(db.String(80))
+    jornada_id=db.Column(db.Integer,db.ForeignKey('jornada_trabalho.id'),nullable=True)
     status=db.Column(db.String(20),default='Ativo')
+    ferias_inicio=db.Column(db.String(10))
+    ferias_fim=db.Column(db.String(10))
+    ferias_obs=db.Column(db.String(255))
+    ferias_dias=db.Column(db.Integer,default=30)
+    faltas_ano=db.Column(db.Integer,default=0)
+    data_demissao=db.Column(db.String(10))
     salario=db.Column(db.Float,default=0)
     vale_refeicao=db.Column(db.Float,default=0)
     vale_alimentacao=db.Column(db.Float,default=0)
@@ -873,19 +1327,30 @@ class Funcionario(db.Model):
     docs_admissao_obs=db.Column(db.Text,default='')
     obs=db.Column(db.Text,default='')
     areas=db.Column(db.Text,default='[]')
+    data_nascimento=db.Column(db.Date,nullable=True)
     app_senha=db.Column(db.String(256))
     app_ativo=db.Column(db.Boolean,default=True)
     app_ultimo_acesso=db.Column(db.DateTime)
     app_otp_hash=db.Column(db.String(256))
     app_otp_expira_em=db.Column(db.DateTime)
     app_otp_tentativas=db.Column(db.Integer,default=0)
+    app_canal_otp=db.Column(db.String(20),default='whatsapp')
+    app_stepup_hash=db.Column(db.String(256))
+    app_stepup_expira_em=db.Column(db.DateTime)
+    app_stepup_tentativas=db.Column(db.Integer,default=0)
+    app_stepup_arquivo_id=db.Column(db.Integer)
     app_push_token=db.Column(db.String(300))
+    app_lat=db.Column(db.Float)
+    app_lon=db.Column(db.Float)
+    app_localizacao_em=db.Column(db.DateTime)
     foto_perfil=db.Column(db.String(500))
     criado_em=db.Column(db.DateTime,default=utcnow)
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         try: d['areas']=json.loads(self.areas or '[]')
         except: d['areas']=[]
+        if self.data_nascimento:
+            d['data_nascimento']=self.data_nascimento.isoformat()
         return d
 
 class FuncionarioArquivo(db.Model):
@@ -920,6 +1385,9 @@ class FuncionarioArquivo(db.Model):
     ass_email_status=db.Column(db.String(20),default='nao_enviado')
     ass_email_enviado_em=db.Column(db.DateTime)
     ass_email_recebido_em=db.Column(db.DateTime)
+    ass_lembretes_enviados=db.Column(db.Integer,default=0)
+    ass_ultimo_lembrete_em=db.Column(db.DateTime)
+    ass_prazo_em=db.Column(db.DateTime)
     criado_em=db.Column(db.DateTime,default=utcnow)
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
@@ -959,6 +1427,8 @@ class BeneficioMensal(db.Model):
     dias_vr=db.Column(db.Integer,default=0)
     dias_va=db.Column(db.Integer,default=0)
     dias_vg=db.Column(db.Integer,default=0)
+    faltas=db.Column(db.Integer,default=0)
+    horas_noturnas_min=db.Column(db.Integer,default=0)  # minutos de trabalho noturno
     salario=db.Column(db.Float,default=0)
     vale_refeicao=db.Column(db.Float,default=0)
     vale_alimentacao=db.Column(db.Float,default=0)
@@ -967,6 +1437,9 @@ class BeneficioMensal(db.Model):
     premio_produtividade=db.Column(db.Float)
     vale_gasolina=db.Column(db.Float)
     cesta_natal=db.Column(db.Float)
+    salario_obs=db.Column(db.Text,default='')
+    salario_editado_por=db.Column(db.String(100))
+    salario_editado_em=db.Column(db.DateTime)
     criado_em=db.Column(db.DateTime,default=utcnow)
     atualizado_em=db.Column(db.DateTime,default=utcnow,onupdate=utcnow)
     __table_args__=(db.UniqueConstraint('funcionario_id','competencia',name='uq_beneficio_func_comp'),)
@@ -975,6 +1448,99 @@ class BeneficioMensal(db.Model):
         d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
         d['atualizado_fmt']=self.atualizado_em.strftime('%d/%m/%Y %H:%M') if self.atualizado_em else ''
         return d
+
+class FolhaPagamentoMensal(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    competencia=db.Column(db.String(7),nullable=False,index=True)
+    empresa_ref_id=db.Column(db.Integer,nullable=False,default=0,index=True)
+    empresa_nome=db.Column(db.String(200),default='Todas as empresas')
+    status=db.Column(db.String(20),default='aberta',index=True)
+    versao_atual=db.Column(db.Integer,default=0)
+    total_funcionarios=db.Column(db.Integer,default=0)
+    total_competencia=db.Column(db.Float,default=0)
+    dados_json=db.Column(db.Text,default='{}')
+    historico_json=db.Column(db.Text,default='[]')
+    fechamento_obs=db.Column(db.Text,default='')
+    salvo_por=db.Column(db.String(100))
+    salvo_em=db.Column(db.DateTime,default=utcnow,index=True)
+    fechado_em=db.Column(db.DateTime)
+    fechado_por=db.Column(db.String(100))
+    reaberto_em=db.Column(db.DateTime)
+    reaberto_por=db.Column(db.String(100))
+    assinatura_status=db.Column(db.String(20),default='pendente')
+    assinatura_hash=db.Column(db.String(128))
+    assinatura_por=db.Column(db.String(100))
+    assinatura_em=db.Column(db.DateTime)
+    __table_args__=(db.UniqueConstraint('competencia','empresa_ref_id',name='uq_folha_pagto_comp_emp'),)
+
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['salvo_fmt']=self.salvo_em.strftime('%d/%m/%Y %H:%M') if self.salvo_em else ''
+        try:
+            d['dados']=json.loads(self.dados_json or '{}')
+        except Exception:
+            d['dados']={}
+        return d
+
+class FolhaBeneficios(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    competencia=db.Column(db.String(7),nullable=False,index=True)
+    empresa_ref_id=db.Column(db.Integer,nullable=False,default=0,index=True)
+    empresa_nome=db.Column(db.String(200),default='Todas as empresas')
+    status=db.Column(db.String(20),default='aberta',index=True)
+    versao_atual=db.Column(db.Integer,default=0)
+    total_funcionarios=db.Column(db.Integer,default=0)
+    total_competencia=db.Column(db.Float,default=0)
+    dados_json=db.Column(db.Text,default='{}')
+    historico_json=db.Column(db.Text,default='[]')
+    fechamento_obs=db.Column(db.Text,default='')
+    salvo_por=db.Column(db.String(100))
+    salvo_em=db.Column(db.DateTime,default=utcnow,index=True)
+    fechado_em=db.Column(db.DateTime)
+    fechado_por=db.Column(db.String(100))
+    reaberto_em=db.Column(db.DateTime)
+    reaberto_por=db.Column(db.String(100))
+    assinatura_status=db.Column(db.String(20),default='pendente')
+    assinatura_hash=db.Column(db.String(128))
+    assinatura_por=db.Column(db.String(100))
+    assinatura_em=db.Column(db.DateTime)
+    __table_args__=(db.UniqueConstraint('competencia','empresa_ref_id',name='uq_folha_benef_comp_emp'),)
+
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['salvo_fmt']=self.salvo_em.strftime('%d/%m/%Y %H:%M') if self.salvo_em else ''
+        try:
+            d['dados']=json.loads(self.dados_json or '{}')
+        except Exception:
+            d['dados']={}
+        return d
+
+class Feriado(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    data=db.Column(db.String(10),nullable=False,index=True)  # YYYY-MM-DD
+    descricao=db.Column(db.String(200),nullable=False)
+    tipo=db.Column(db.String(20),default='nacional',nullable=False)  # 'nacional' ou 'municipal'
+    municipio=db.Column(db.String(100),default='')
+    estado=db.Column(db.String(2),default='')
+    empresa_id=db.Column(db.Integer,db.ForeignKey('empresa.id'),nullable=True)
+    criado_por=db.Column(db.String(100),default='')
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    __table_args__=(db.UniqueConstraint('data','tipo','municipio',name='uq_feriado_data_tipo_mun'),)
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        try:
+            from datetime import datetime as _dt
+            d['data_fmt']=_dt.strptime(self.data,'%Y-%m-%d').strftime('%d/%m/%Y') if self.data else ''
+        except Exception:
+            d['data_fmt']=self.data or ''
+        return d
+
+class FeriadoFuncionario(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    feriado_id=db.Column(db.Integer,db.ForeignKey('feriado.id'),nullable=False,index=True)
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False,index=True)
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    __table_args__=(db.UniqueConstraint('feriado_id','funcionario_id',name='uq_feriado_funcionario'),)
 
 class FuncionarioAppSessao(db.Model):
     id=db.Column(db.Integer,primary_key=True)
@@ -1004,6 +1570,24 @@ class FuncionarioAlteracaoSolicitacao(db.Model):
         d['payload']=jloads(self.payload,{})
         return d
 
+class PontoCorrecaoSolicitacao(db.Model):
+    __tablename__='ponto_correcao_solicitacao'
+    id=db.Column(db.Integer,primary_key=True)
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False,index=True)
+    data_ref=db.Column(db.String(10),nullable=False)
+    tipo_problema=db.Column(db.String(40),default='horario_errado')
+    horario_esperado=db.Column(db.String(5))
+    observacao=db.Column(db.Text,default='')
+    status=db.Column(db.String(20),default='pendente')
+    motivo_admin=db.Column(db.Text,default='')
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    resolvido_em=db.Column(db.DateTime)
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
+        d['resolvido_fmt']=self.resolvido_em.strftime('%d/%m/%Y %H:%M') if self.resolvido_em else ''
+        return d
+
 class AuthTentativa(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     tipo=db.Column(db.String(30),nullable=False)
@@ -1012,6 +1596,18 @@ class AuthTentativa(db.Model):
     ok=db.Column(db.Boolean,default=False)
     motivo=db.Column(db.String(250))
     criado_em=db.Column(db.DateTime,default=utcnow)
+
+class UsuarioDispositivoConfiavel(db.Model):
+    __tablename__='usuario_dispositivo_confiavel'
+    id=db.Column(db.Integer,primary_key=True)
+    usuario_id=db.Column(db.Integer,db.ForeignKey('usuario.id'),nullable=False,index=True)
+    token_hash=db.Column(db.String(256),nullable=False,index=True)
+    ip_bucket=db.Column(db.String(80))
+    ua_hash=db.Column(db.String(256))
+    revogado=db.Column(db.Boolean,default=False)
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    ultimo_uso_em=db.Column(db.DateTime,default=utcnow)
+    expira_em=db.Column(db.DateTime,nullable=False)
 
 class AuditoriaEvento(db.Model):
     id=db.Column(db.Integer,primary_key=True)
@@ -1050,6 +1646,24 @@ class CobrangaLog(db.Model):
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         d['enviado_fmt']=self.enviado_em.strftime('%d/%m/%Y %H:%M') if self.enviado_em else ''
+        return d
+
+class AppLog(db.Model):
+    __tablename__='app_log'
+    id=db.Column(db.Integer,primary_key=True)
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=True)
+    nivel=db.Column(db.String(10))   # DEBUG, INFO, WARN, ERROR, FATAL
+    tag=db.Column(db.String(80))
+    mensagem=db.Column(db.Text)
+    stack=db.Column(db.Text)
+    versao_app=db.Column(db.String(20))
+    dispositivo=db.Column(db.String(120))
+    ts_dispositivo=db.Column(db.DateTime)
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M:%S') if self.criado_em else ''
+        d['ts_fmt']=self.ts_dispositivo.strftime('%d/%m/%Y %H:%M:%S') if self.ts_dispositivo else ''
         return d
 
 class ConciliacaoLote(db.Model):
@@ -1111,6 +1725,7 @@ class AssinaturaEnvelopeArquivo(db.Model):
     __tablename__='assinatura_envelope_arquivo'
     id=db.Column(db.Integer,primary_key=True)
     envelope_id=db.Column(db.Integer,db.ForeignKey('assinatura_envelope.id'),nullable=False)
+    ordem=db.Column(db.Integer,default=0)
     origem=db.Column(db.String(10),default='upload')  # sistema|upload
     func_arquivo_id=db.Column(db.Integer)
     nome_arquivo=db.Column(db.String(250),nullable=False)
@@ -1224,6 +1839,7 @@ def _short_link_criar(destino):
     return None
 
 @app.route('/s/<codigo>')
+@_limiter.limit('30 per minute')
 def short_link_redirect(codigo):
     sl=ShortLink.query.filter_by(codigo=codigo).first_or_404()
     return redirect(sl.destino)
@@ -1266,9 +1882,16 @@ class MensagemApp(db.Model):
     enviado_em=db.Column(db.DateTime,default=utcnow)
     lida=db.Column(db.Boolean,default=False)
     enviado_por=db.Column(db.String(100))  # nome do usuário RH ou 'funcionario'
+    tipo=db.Column(db.String(20),default='texto')  # 'texto' | 'arquivo'
+    arquivo_nome=db.Column(db.String(300))
+    arquivo_caminho=db.Column(db.String(500))
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         d['enviado_fmt']=self.enviado_em.strftime('%d/%m/%Y %H:%M') if self.enviado_em else ''
+        if self.arquivo_caminho:
+            d['arquivo_url']=f'/api/app/funcionario/mensagens/{self.id}/arquivo'
+        else:
+            d['arquivo_url']=None
         return d
 
 _holerite_jobs={}
@@ -1295,6 +1918,8 @@ def token_hash(v):
 LOGIN_WINDOW_MIN=15
 LOGIN_FAIL_MAX=5
 LOGIN_BLOCK_MIN=15
+ADMIN_TRUST_DAYS=max(1,min(90,int((os.environ.get('ADMIN_TRUST_DAYS') or '30').strip() or 30)))
+ADMIN_TRUST_COOKIE='rm_admin_trust'
 
 def auth_blocked(tipo,ident,ip):
     lim=utcnow()-timedelta(minutes=LOGIN_WINDOW_MIN)
@@ -1333,6 +1958,109 @@ def _admin_needs_2fa(u):
     if (u.perfil or '').strip().lower() not in ('admin','dono'):
         return False
     return bool(u.twofa_ativo)
+
+def _client_ip_addr():
+    return (request.headers.get('X-Forwarded-For') or request.remote_addr or '').split(',')[0].strip()
+
+def _ip_bucket(v):
+    ip=(v or '').strip().lower()
+    if not ip:
+        return ''
+    if ':' in ip:
+        parts=[p for p in ip.split(':') if p]
+        return ':'.join(parts[:4])
+    nums=ip.split('.')
+    if len(nums)==4 and all(n.isdigit() for n in nums):
+        return '.'.join(nums[:3])
+    return ip
+
+def _ua_hash_for_trust():
+    ua=(request.headers.get('User-Agent') or '').strip().lower()
+    return token_hash(ua[:240]) if ua else ''
+
+def _trust_cookie_secure():
+    proto=(request.headers.get('X-Forwarded-Proto') or '').strip().lower()
+    return bool(request.is_secure or proto=='https')
+
+def _admin_trust_cookie_opts():
+    return {
+        'max_age':ADMIN_TRUST_DAYS*24*3600,
+        'httponly':True,
+        'samesite':'Lax',
+        'secure':_trust_cookie_secure(),
+        'path':'/',
+    }
+
+def _admin_is_trusted_device(u):
+    if not u:
+        return False
+    raw=(request.cookies.get(ADMIN_TRUST_COOKIE) or '').strip()
+    if not raw:
+        return False
+    now=utcnow()
+    rec=UsuarioDispositivoConfiavel.query.filter_by(
+        usuario_id=u.id,
+        token_hash=token_hash(raw),
+        revogado=False,
+    ).first()
+    if not rec:
+        return False
+    if (not rec.expira_em) or rec.expira_em<now:
+        rec.revogado=True
+        db.session.commit()
+        return False
+    if (rec.ua_hash or '')!=(_ua_hash_for_trust() or ''):
+        return False
+    if (rec.ip_bucket or '')!=(_ip_bucket(_client_ip_addr()) or ''):
+        return False
+    rec.ultimo_uso_em=now
+    rec.expira_em=now+timedelta(days=ADMIN_TRUST_DAYS)
+    return True
+
+def _admin_bind_trusted_device(resp,u,reuse_cookie=False):
+    if not u or not resp:
+        return resp
+    raw=''
+    if reuse_cookie:
+        raw=(request.cookies.get(ADMIN_TRUST_COOKIE) or '').strip()
+    if not raw:
+        raw=secrets.token_urlsafe(36)
+    now=utcnow()
+    th=token_hash(raw)
+    rec=UsuarioDispositivoConfiavel.query.filter_by(usuario_id=u.id,token_hash=th).first()
+    if not rec:
+        rec=UsuarioDispositivoConfiavel(usuario_id=u.id,token_hash=th)
+        db.session.add(rec)
+    rec.revogado=False
+    rec.ua_hash=_ua_hash_for_trust()
+    rec.ip_bucket=_ip_bucket(_client_ip_addr())
+    rec.ultimo_uso_em=now
+    rec.expira_em=now+timedelta(days=ADMIN_TRUST_DAYS)
+    # Limpa vínculos antigos para reduzir superfície e manter apenas os mais recentes.
+    antigos=UsuarioDispositivoConfiavel.query.filter(
+        UsuarioDispositivoConfiavel.usuario_id==u.id,
+        UsuarioDispositivoConfiavel.id!=(rec.id or 0),
+        UsuarioDispositivoConfiavel.expira_em<now,
+    ).all()
+    for a in antigos:
+        db.session.delete(a)
+    db.session.commit()
+    resp.set_cookie(ADMIN_TRUST_COOKIE,raw,**_admin_trust_cookie_opts())
+    return resp
+
+def _admin_revoke_current_trusted_device():
+    raw=(request.cookies.get(ADMIN_TRUST_COOKIE) or '').strip()
+    uid=session.get('uid')
+    if not raw or not uid:
+        return
+    rec=UsuarioDispositivoConfiavel.query.filter_by(
+        usuario_id=uid,
+        token_hash=token_hash(raw),
+        revogado=False,
+    ).first()
+    if rec:
+        rec.revogado=True
+        db.session.commit()
 
 def _send_admin_2fa_code(u,codigo,contexto='login'):
     tel=norm_phone(getattr(u,'telefone','') or '')
@@ -1427,7 +2155,7 @@ def _cert_inspect_pkcs12(abs_path,senha=''):
 
 def _get_cert_context(empresa_id=None,usuario_id=None):
     if empresa_id:
-        emp=Empresa.query.get(empresa_id)
+        emp=db.session.get(Empresa, empresa_id)
         if emp and bool(emp.cert_ativo if emp.cert_ativo is not None else False):
             abs_cert=_cert_rel_to_abs(emp.cert_arquivo)
             if abs_cert and (emp.cert_senha or '').strip():
@@ -1438,7 +2166,7 @@ def _get_cert_context(empresa_id=None,usuario_id=None):
                     'source':'empresa',
                 }
     if usuario_id:
-        usr=Usuario.query.get(usuario_id)
+        usr=db.session.get(Usuario, usuario_id)
         if usr and bool(usr.cert_ativo if usr.cert_ativo is not None else False):
             abs_cert=_cert_rel_to_abs(usr.cert_arquivo)
             if abs_cert and (usr.cert_senha or '').strip():
@@ -1499,35 +2227,36 @@ def _send_signature_otp(codigo,nome_dest='',telefone='',email='',contexto='assin
             ultimo_erro=str(ex)
     raise ValueError(ultimo_erro or 'Não foi possível enviar o código OTP para confirmação da assinatura.')
 
-def _send_app_login_otp(codigo,funcionario):
-    """Tenta enviar OTP de login por WhatsApp e faz fallback para e-mail."""
+def _send_app_login_otp(codigo, funcionario, canal_override=None):
+    """Envia OTP de login/step-up pelo canal preferido do funcionário (whatsapp, sms, email)."""
     f=funcionario
     nome=(f.nome or 'funcionario').strip()
     msg=(
-        'RM Facilities - Codigo de acesso do aplicativo\n'
+        'RM Facilities - Codigo de acesso\n'
         f'Funcionario: {nome}\n'
-        f'Codigo OTP: {codigo}\n'
+        f'Codigo: {codigo}\n'
         'Validade: 10 minutos. Nao compartilhe este codigo.'
     )
+    canal=(canal_override or f.app_canal_otp or 'whatsapp').strip().lower()
+
+    if canal=='sms':
+        # SMS desabilitado (Twilio não configurado). Redirecionar para WhatsApp.
+        canal='whatsapp'
+
+    if canal=='email':
+        email=(f.email or '').strip()
+        if not email:
+            raise ValueError('E-mail nao cadastrado para este funcionario.')
+        smtp_send_text(email,'Código de acesso RM Facilities',msg)
+        return {'canal':'email','destino':_mask_email(email)}
+
+    # padrão: whatsapp
     tel=wa_norm_number(f.telefone or '')
-    ultimo_erro=''
-    if wa_is_valid_number(tel):
-        try:
-            wa_send_text(tel,msg)
-            return {'canal':'whatsapp','destino':_mask_phone(tel)}
-        except Exception as ex:
-            ultimo_erro=str(ex)
-    if (f.email or '').strip():
-        try:
-            smtp_send_text(
-                (f.email or '').strip(),
-                'Codigo de acesso ao app RM Facilities',
-                msg
-            )
-            return {'canal':'email','destino':_mask_email(f.email)}
-        except Exception as ex:
-            ultimo_erro=str(ex)
-    raise ValueError(ultimo_erro or 'Nao foi possivel enviar OTP por WhatsApp ou e-mail.')
+    if not wa_is_valid_number(tel):
+        raise ValueError('Telefone WhatsApp invalido ou nao cadastrado para este funcionario.')
+    wa_send_text(tel, msg)
+    return {'canal':'whatsapp','destino':_mask_phone(tel)}
+
 
 def _assinatura_json_base(**extra):
     base={
@@ -1561,6 +2290,8 @@ def _ass_track_channel(src,default='link'):
         return 'whatsapp'
     if s in ('mail','email','e-mail'):
         return 'email'
+    if s in ('app','aplicativo','push'):
+        return 'app'
     if s in ('link','manual','direto'):
         return 'link'
     return (default or 'link')
@@ -1621,6 +2352,25 @@ def _ass_track_mark_opened(obj,channel):
         obj.ass_aberto_em=now
         changed=True
     return changed
+
+def _db_commit_retry(context='', attempts=3, base_delay=0.2, swallow_locked=False):
+    for idx in range(max(1, int(attempts))):
+        try:
+            db.session.commit()
+            return True
+        except OperationalError as ex:
+            db.session.rollback()
+            msg=(str(ex) or '').lower()
+            is_locked='database is locked' in msg or 'sqlite busy' in msg
+            last_try=idx >= max(1, int(attempts)) - 1
+            if not is_locked:
+                raise
+            if last_try:
+                if swallow_locked:
+                    app.logger.warning(f'[db] commit ignorado por lock em {context or "contexto_desconhecido"}: {ex}')
+                    return False
+                raise
+            time.sleep(base_delay * (idx + 1))
 
 def _try_sign_pdf_bytes_crypto(pdf_bytes,empresa_id=None,usuario_id=None):
     cert_ctx=_get_cert_context(empresa_id=empresa_id,usuario_id=usuario_id)
@@ -1725,10 +2475,10 @@ def app_func_required(f):
         payload=app_parse_token(tok)
         if not payload or payload.get('typ')!='access': return jsonify({'erro':'Token invalido ou expirado'}),401
         sid=to_num(payload.get('sid'))
-        sessao=FuncionarioAppSessao.query.get(sid)
+        sessao=db.session.get(FuncionarioAppSessao, sid)
         if not sessao or sessao.revogado: return jsonify({'erro':'Sessao invalida'}),401
         if sessao.exp_refresh < utcnow(): return jsonify({'erro':'Sessao expirada'}),401
-        func=Funcionario.query.get(sessao.funcionario_id)
+        func=db.session.get(Funcionario, sessao.funcionario_id)
         if not func: return jsonify({'erro':'Funcionario nao encontrado'}),404
         if to_num(payload.get('fid'))!=func.id: return jsonify({'erro':'Token invalido'}),401
         if func.app_ativo is False: return jsonify({'erro':'Acesso do aplicativo desativado'}),403
@@ -1782,13 +2532,108 @@ def _app_issue_session_tokens(funcionario):
         'sessao_id':sessao.id,
     }
 
-def gc(k,dv=''): c=Config.query.filter_by(chave=k).first(); return c.valor if c else dv
+# Cache TTL para gc() — evita N+1 queries ao banco (ex: smtp_cfg fazia 6 SELECTs separados)
+_gc_cache: dict = {}
+_gc_cache_ts: float = 0.0
+_GC_TTL = 60.0  # segundos
+
+def _gc_reload():
+    global _gc_cache, _gc_cache_ts
+    try:
+        _gc_cache = {c.chave: c.valor for c in Config.query.all()}
+        _gc_cache_ts = time.time()
+    except Exception:
+        pass
+
+def gc(k, dv=''):
+    if time.time() - _gc_cache_ts > _GC_TTL:
+        _gc_reload()
+    return _gc_cache.get(k, dv)
 
 def smtp_cfg():
     return {'host':gc('smtp_host',''),'port':gc('smtp_port','587'),'user':gc('smtp_user',''),'senha':gc('smtp_senha',''),'de':gc('smtp_de',''),'tls':gc('smtp_tls','1')}
 
+def sms_cfg():
+    return {
+        'account_sid':os.environ.get('TWILIO_ACCOUNT_SID') or gc('sms_account_sid',''),
+        'auth_token':os.environ.get('TWILIO_AUTH_TOKEN') or gc('sms_auth_token',''),
+        'from_number':os.environ.get('TWILIO_FROM_NUMBER') or gc('sms_from_number',''),
+    }
+
+def sms_send(numero, mensagem):
+    """Envia SMS via Twilio. Requer TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER."""
+    cfg=sms_cfg()
+    if not cfg['account_sid'] or not cfg['auth_token'] or not cfg['from_number']:
+        raise ValueError('SMS nao configurado. Configure TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN e TWILIO_FROM_NUMBER.')
+    tel=wa_norm_number(numero or '')
+    if not wa_is_valid_number(tel):
+        raise ValueError('Numero de telefone invalido para envio de SMS.')
+    url=f'https://api.twilio.com/2010-04-01/Accounts/{cfg["account_sid"]}/Messages.json'
+    import urllib.request, urllib.parse, base64
+    payload=urllib.parse.urlencode({'From':cfg['from_number'],'To':f'+{tel}','Body':mensagem}).encode()
+    creds=base64.b64encode(f'{cfg["account_sid"]}:{cfg["auth_token"]}'.encode()).decode()
+    req=urllib.request.Request(url,data=payload,headers={'Authorization':f'Basic {creds}','Content-Type':'application/x-www-form-urlencoded'})
+    try:
+        with urllib.request.urlopen(req,timeout=20) as resp:
+            result=json.loads(resp.read().decode())
+            if result.get('status') in ('queued','sent','delivered','undelivered','failed',None):
+                if result.get('status')=='failed':
+                    raise ValueError(f'SMS falhou: {result.get("error_message","erro desconhecido")}')
+    except urllib.error.HTTPError as e:
+        body=e.read().decode() if hasattr(e,'read') else ''
+        raise ValueError(f'Erro ao enviar SMS (HTTP {e.code}): {body[:200]}')
+
 def wa_cfg():
     return {'url':gc('wa_url',''),'instancia':gc('wa_instancia',''),'token':gc('wa_token','')}
+
+def wa_webhook_secret():
+    # Segredo dedicado do webhook com fallback no token já existente de integração.
+    return (
+        (os.environ.get('WA_WEBHOOK_SECRET') or '').strip() or
+        (gc('wa_webhook_secret','') or '').strip() or
+        (gc('wa_token','') or '').strip()
+    )
+
+def wa_webhook_authorized(payload=None):
+    expected=(wa_webhook_secret() or '').strip()
+    if not expected:
+        return False
+
+    presented=[]
+    auth=(request.headers.get('Authorization') or '').strip()
+    if auth:
+        if auth.lower().startswith('bearer '):
+            presented.append(auth[7:].strip())
+        else:
+            presented.append(auth)
+
+    for h in ('X-Webhook-Token','X-Webhook-Secret','X-Api-Key','apikey'):
+        v=(request.headers.get(h) or '').strip()
+        if v:
+            presented.append(v)
+
+    for q in ('token','secret','key'):
+        v=(request.args.get(q) or '').strip()
+        if v:
+            presented.append(v)
+
+    if isinstance(payload,dict):
+        for k in ('token','secret','apiKey','apikey'):
+            v=(payload.get(k) or '')
+            if isinstance(v,str) and v.strip():
+                presented.append(v.strip())
+
+    for cand in presented:
+        if hmac.compare_digest(cand,expected):
+            return True
+
+    sig=(request.headers.get('X-Hub-Signature-256') or request.headers.get('X-Signature-256') or '').strip()
+    if sig:
+        raw=request.get_data(cache=True) or b''
+        dig='sha256='+hmac.new(expected.encode('utf-8'),raw,hashlib.sha256).hexdigest()
+        return hmac.compare_digest(sig,dig)
+
+    return False
 
 def wa_backup_cfg():
     return {
@@ -1915,6 +2760,32 @@ def _wa_backup_store_txt(payload):
         f.write('\n'.join(linhas))
     return caminho
 
+def _smtp_exec_with_retry(send_fn, attempts=3):
+    """Executa send_fn (sem args) com retry e backoff exponencial em erros transientes SMTP.
+    Erros de autenticação/configuração são propagados imediatamente sem retry."""
+    _transient = (
+        smtplib.SMTPServerDisconnected,
+        smtplib.SMTPConnectError,
+        smtplib.SMTPHeloError,
+        ConnectionError,
+        OSError,
+        TimeoutError,
+    )
+    last_exc: Exception | None = None
+    for attempt in range(max(1, attempts)):
+        try:
+            send_fn()
+            return
+        except smtplib.SMTPAuthenticationError:
+            raise  # erro de config/auth: não faz sentido repetir
+        except _transient as exc:
+            last_exc = exc
+            if attempt < attempts - 1:
+                time.sleep(0.5 * (2 ** attempt))  # 0.5s, 1s, 2s …
+        except Exception:
+            raise
+    raise last_exc  # type: ignore[misc]
+
 def smtp_send_text(dest,assunto,corpo,anexos=None):
     cfg=smtp_cfg()
     if not cfg['host'] or not cfg['user']: raise ValueError('SMTP nao configurado')
@@ -1935,12 +2806,14 @@ def smtp_send_text(dest,assunto,corpo,anexos=None):
         part.add_header('Content-Disposition',f'attachment; filename="{nome}"')
         msg.attach(part)
     port=int(cfg['port'] or 587)
-    if str(cfg['tls']) in ('1','true','True','yes'):
-        with smtplib.SMTP(cfg['host'],port,timeout=20) as s:
-            s.starttls(); s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
-    else:
-        with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s:
-            s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+    def _do_send():
+        if str(cfg['tls']) in ('1','true','True','yes'):
+            with smtplib.SMTP(cfg['host'],port,timeout=20) as s:
+                s.starttls(); s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+        else:
+            with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s:
+                s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+    _smtp_exec_with_retry(_do_send)
 
 def wa_backup_maybe_send(force=False):
     cfg=wa_backup_cfg()
@@ -2119,7 +2992,9 @@ Responda sempre em português do Brasil, com tom cordial, objetivo e profissiona
 
 REGRAS DE COMUNICAÇÃO
 Formato WhatsApp: sempre uma linha em branco entre blocos.
-Use negrito com um asterisco em cada lado da palavra.
+Use negrito com um asterisco em cada lado: *palavra*.
+Nunca use itálico (underline como _palavra_). Proibido.
+Nunca use markdown como ##, **, __, ``` ou similares fora do padrão WhatsApp.
 Áudios entram como texto; a resposta deve ser sempre por texto.
 Nunca invente dados, políticas, valores ou prazos.
 Faça apenas uma pergunta por mensagem.
@@ -2263,12 +3138,22 @@ ENCERRAMENTO
 Ao finalizar fluxos com coleta, gerar resumo técnico em tópicos e encerrar cordialmente."""
 
 def wa_send_text(numero,mensagem):
+    def _sanitize_whatsapp_text(raw_text):
+        t=str(raw_text or '').replace('\r\n','\n').replace('\r','\n')
+        # Remove marcacoes markdown que costumam quebrar no WhatsApp.
+        t=re.sub(r'(?m)^\s*#{1,6}\s*','',t)
+        t=t.replace('**','*').replace('__','')
+        # Evita itálico por underscore (_texto_) que pode aparecer truncado em alguns clientes.
+        t=re.sub(r'(?<!\w)_([^_\n]{1,160})_(?!\w)',r'\1',t)
+        t=re.sub(r'\n{3,}','\n\n',t)
+        return t.strip()
+
     cfg=wa_cfg()
     if not cfg['url'] or not cfg['instancia']: raise ValueError('WhatsApp nao configurado')
     num=wa_norm_number(numero)
     if not wa_is_valid_number(num): raise ValueError(f'Numero WhatsApp invalido: {num or "vazio"}')
     url=f"{cfg['url'].rstrip('/')}/message/sendText/{cfg['instancia']}"
-    data=json.dumps({'number':num,'text':mensagem}).encode()
+    data=json.dumps({'number':num,'text':_sanitize_whatsapp_text(mensagem)}).encode()
     req=urllib.request.Request(url,data=data,headers={'Content-Type':'application/json','apikey':cfg['token']})
     try:
         with urllib.request.urlopen(req,timeout=15) as r: return json.loads(r.read().decode())
@@ -2280,37 +3165,130 @@ def _fcm_send_to_token(token,titulo,corpo,data=None):
     """Envio opcional via FCM. Se firebase-admin nao estiver configurado, ignora com segurança."""
     if not token:
         return False
-    cred_path=(os.environ.get('FIREBASE_CREDENTIALS_JSON') or '').strip()
-    if not cred_path or not os.path.exists(cred_path):
-        return False
+    cred_val=(os.environ.get('FIREBASE_CREDENTIALS_JSON') or '').strip()
+    cred_b64=(os.environ.get('FIREBASE_CREDENTIALS_B64') or '').strip()
+    cred_path=(os.environ.get('FIREBASE_CREDENTIALS_FILE') or '').strip()
+    if not cred_val:
+        if cred_b64:
+            try:
+                cred_val=base64.b64decode(cred_b64).decode('utf-8').strip()
+            except Exception as e:
+                app.logger.error(f'[fcm] FIREBASE_CREDENTIALS_B64 inválido: {e}')
+                return False
+        elif cred_path:
+            cred_val=cred_path
+        else:
+            app.logger.warning('[fcm] FIREBASE_CREDENTIALS_JSON ausente; push ignorado')
+            return False
     try:
         import firebase_admin
         from firebase_admin import credentials, messaging
-    except Exception:
+    except Exception as e:
+        app.logger.exception(f'[fcm] falha ao importar firebase_admin: {e}')
         return False
     try:
         firebase_admin.get_app()
     except Exception:
         try:
-            firebase_admin.initialize_app(credentials.Certificate(cred_path))
-        except Exception:
+            # Aceita JSON inline (string) ou caminho de arquivo
+            if cred_val.startswith('{'):
+                import json as _json
+                import ast as _ast
+                import tempfile, atexit
+                payload=cred_val
+                # Remove aspas externas extras comuns em variáveis mal copiadas
+                if (payload.startswith('"') and payload.endswith('"')) or (payload.startswith("'") and payload.endswith("'")):
+                    payload=payload[1:-1].strip()
+                try:
+                    _json.loads(payload)
+                except Exception:
+                    # Suporta dicionário em formato Python com aspas simples
+                    try:
+                        parsed=_ast.literal_eval(payload)
+                        if isinstance(parsed,dict):
+                            payload=_json.dumps(parsed)
+                        else:
+                            raise ValueError('Formato de credencial inválido (não é objeto JSON).')
+                    except Exception as pe:
+                        raise ValueError(f'JSON de credencial inválido: {pe}')
+                _tmp=tempfile.NamedTemporaryFile(mode='w',suffix='.json',delete=False)
+                _tmp.write(payload); _tmp.flush(); _tmp.close()
+                atexit.register(lambda p=_tmp.name: os.path.exists(p) and os.remove(p))
+                firebase_admin.initialize_app(credentials.Certificate(_tmp.name))
+            else:
+                if not os.path.exists(cred_val):
+                    app.logger.warning(f'[fcm] arquivo de credencial nao encontrado: {cred_val}')
+                    return False
+                firebase_admin.initialize_app(credentials.Certificate(cred_val))
+        except Exception as e:
+            app.logger.error(f'[fcm] falha ao inicializar firebase app: {e}')
             return False
     try:
+        android_notification_kwargs=dict(
+            channel_id='rmf_documentos',
+            sound='default',
+            default_vibrate_timings=True,
+            default_sound=True,
+            default_light_settings=True,
+        )
+        visibility_enum=getattr(messaging,'AndroidNotificationVisibility',None)
+        if visibility_enum is not None and hasattr(visibility_enum,'PUBLIC'):
+            android_notification_kwargs['visibility']=visibility_enum.PUBLIC
         msg=messaging.Message(
             token=token,
             notification=messaging.Notification(title=titulo,body=corpo),
-            data={k:str(v) for k,v in (data or {}).items()}
+            data={k:str(v) for k,v in (data or {}).items()},
+            android=messaging.AndroidConfig(
+                priority='high',
+                notification=messaging.AndroidNotification(**android_notification_kwargs)
+            ),
+            apns=messaging.APNSConfig(
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(badge=1,sound='default')
+                )
+            ),
         )
         messaging.send(msg)
         return True
-    except Exception:
+    except Exception as e:
+        app.logger.exception(f'[fcm] falha ao enviar para token: {e}')
         return False
 
 def _push_notify_funcionario(fid,titulo,corpo,data=None):
-    f=Funcionario.query.get(fid)
+    f=db.session.get(Funcionario, fid)
     if not f or not (f.app_push_token or '').strip():
+        if f:
+            app.logger.info(f'[fcm] funcionario {fid} sem app_push_token salvo')
         return False
-    return _fcm_send_to_token(f.app_push_token.strip(),titulo,corpo,data=data)
+    token=f.app_push_token.strip()
+    ok=_fcm_send_to_token(token,titulo,corpo,data=data)
+    if ok:
+        return True
+    try:
+        import firebase_admin
+        from firebase_admin import messaging
+        try:
+            firebase_admin.get_app()
+        except Exception:
+            return False
+        msg=messaging.Message(
+            token=token,
+            data={k:str(v) for k,v in (data or {}).items()},
+        )
+        messaging.send(msg)
+        return True
+    except Exception as e:
+        msg=(str(e) or '').lower()
+        app.logger.exception(f'[fcm] segunda tentativa falhou para funcionario {fid}: {e}')
+        if (
+            'unregistered' in msg or
+            'registration-token-not-registered' in msg or
+            'requested entity was not found' in msg
+        ):
+            f.app_push_token=None
+            db.session.commit()
+            app.logger.warning(f'[fcm] token invalido removido para funcionario {fid}')
+        return False
 
 def wa_media_meta(nome_arquivo,mimetype=''):
     mime=(mimetype or '').split(';')[0].strip().lower()
@@ -2354,7 +3332,7 @@ def ai_wa_cfg():
         'model':gc('ia_wa_model',''),
         'prompt':gc('ia_wa_prompt',''),
         'temperature':gc('ia_wa_temperature','0.3'),
-        'max_tokens':gc('ia_wa_max_tokens','350'),
+        'max_tokens':gc('ia_wa_max_tokens','800'),
     }
 
 def ai_provider_norm(v):
@@ -2966,7 +3944,7 @@ def _extract_pdf_competencia_text(reader,max_pages=30):
 
 def _processa_dialogo_holerite(conversa_id,numero,texto):
     """Processa o diálogo de busca e envio de holerite."""
-    conversa=WhatsAppConversa.query.get(conversa_id)
+    conversa=db.session.get(WhatsAppConversa, conversa_id)
     if not conversa:
         return None
     
@@ -3002,7 +3980,7 @@ def _processa_dialogo_holerite(conversa_id,numero,texto):
     # Validação de CPF antes de informar competência
     if estado=='aguardando_cpf':
         func_id=ctx.get('holerite_funcionario_id')
-        funcionario=Funcionario.query.get(func_id) if func_id else None
+        funcionario=db.session.get(Funcionario, func_id) if func_id else None
         cpf_informado=only_digits(texto)
         if len(cpf_informado)!=11 or not _valida_cpf(cpf_informado):
             ctx['holerite_tentativas']=ctx.get('holerite_tentativas',0)+1
@@ -3115,7 +4093,7 @@ def _processa_dialogo_holerite(conversa_id,numero,texto):
             return "Formato inválido. Informe mês/ano (ex: 04/2026) ou nomes de meses (ex: maio e junho). Se não informar o ano, usarei o ano corrente."
 
         func_id=ctx.get('holerite_funcionario_id')
-        funcionario=Funcionario.query.get(func_id) if func_id else None
+        funcionario=db.session.get(Funcionario, func_id) if func_id else None
         
         if not funcionario:
             ctx['holerite_estado']=None
@@ -3251,8 +4229,26 @@ def ai_wa_reply(numero,texto,historico=None):
         system+=extra
     try: temp=float(cfg.get('temperature') or 0.3)
     except Exception: temp=0.3
-    try: max_tk=int(float(cfg.get('max_tokens') or 350))
-    except Exception: max_tk=350
+    try: max_tk=max(800,min(2000,int(float(cfg.get('max_tokens') or 800))))
+    except Exception: max_tk=800
+
+    numero_mask=_mask_phone(numero)
+    def _log_wa_ai_diag(etapa, finish='', resp_len=0, continuacao=False):
+        try:
+            app.logger.info(
+                '[wa-ai-diag] numero=%s provider=%s model=%s etapa=%s finish=%s max_tokens=%s resp_len=%s continuacao=%s',
+                numero_mask,
+                provider,
+                model,
+                etapa,
+                (finish or 'n/a'),
+                max_tk,
+                int(resp_len or 0),
+                '1' if continuacao else '0'
+            )
+        except Exception:
+            pass
+
     hist=[m for m in (historico or []) if (m.conteudo or '').strip() and m.tipo!='erro']
     if provider=='openai':
         if key.startswith('AIza'):
@@ -3266,7 +4262,9 @@ def ai_wa_reply(numero,texto,historico=None):
             msgs=[{'role':'system','content':system},{'role':'user','content':f'Número: {numero}\nMensagem: {txt}'}]
         payload={'model':mdl,'messages':msgs,'temperature':temp,'max_tokens':max_tk}
         out=_post_json(url,payload,headers={'Authorization':f'Bearer {key}'},timeout=45)
-        msg=((out.get('choices') or [{}])[0].get('message') or {})
+        choice=(out.get('choices') or [{}])[0] or {}
+        msg=(choice.get('message') or {})
+        finish=(choice.get('finish_reason') or '').strip().lower()
         resp=msg.get('content') or ''
         if isinstance(resp,list):
             # Newer OpenAI payloads may return content blocks instead of a plain string.
@@ -3278,7 +4276,37 @@ def ai_wa_reply(numero,texto,historico=None):
                         txt_blocks.append(t)
             resp='\n'.join(txt_blocks)
         resp=str(resp).strip()
-        if resp:
+        _log_wa_ai_diag('openai-primeira', finish=finish, resp_len=len(resp), continuacao=False)
+        if resp and finish!='length':
+            return resp
+        if resp and finish=='length':
+            app.logger.warning('[wa-ai-diag] truncamento_detectado numero=%s provider=openai finish=%s',numero_mask,finish)
+            payload_cont={
+                'model':mdl,
+                'messages':msgs+[
+                    {'role':'assistant','content':resp},
+                    {'role':'user','content':'Continue exatamente de onde parou, sem repetir o texto anterior e sem reiniciar.'}
+                ],
+                'temperature':temp,
+                'max_tokens':max_tk
+            }
+            out_cont=_post_json(url,payload_cont,headers={'Authorization':f'Bearer {key}'},timeout=45)
+            choice_cont=(out_cont.get('choices') or [{}])[0] or {}
+            msg_cont=(choice_cont.get('message') or {})
+            finish_cont=(choice_cont.get('finish_reason') or '').strip().lower()
+            resp_cont=msg_cont.get('content') or ''
+            if isinstance(resp_cont,list):
+                txt_blocks=[]
+                for b in resp_cont:
+                    if isinstance(b,dict):
+                        t=(b.get('text') or '').strip()
+                        if t:
+                            txt_blocks.append(t)
+                resp_cont='\n'.join(txt_blocks)
+            resp_cont=str(resp_cont).strip()
+            _log_wa_ai_diag('openai-continuacao', finish=finish_cont, resp_len=len(resp_cont), continuacao=True)
+            if resp_cont:
+                return (resp.rstrip()+'\n'+resp_cont.lstrip()).strip()
             return resp
         # Fallback sem historico quando o provider retorna escolha vazia.
         payload_fb={
@@ -3299,6 +4327,7 @@ def ai_wa_reply(numero,texto,historico=None):
                         txt_blocks.append(t)
             resp_fb='\n'.join(txt_blocks)
         resp_fb=str(resp_fb).strip()
+        _log_wa_ai_diag('openai-fallback', finish='', resp_len=len(resp_fb), continuacao=False)
         if resp_fb:
             return resp_fb
         raise ValueError('IA retornou resposta vazia (OpenAI). Verifique modelo/chave e tente novamente.')
@@ -3320,7 +4349,28 @@ def ai_wa_reply(numero,texto,historico=None):
         parts=((cand.get('content') or {}).get('parts') or [])
         resp='\n'.join((p.get('text') or '').strip() for p in parts if (p.get('text') or '').strip())
         resp=resp.strip()
-        if resp:
+        finish=(cand.get('finishReason') or '').strip().upper()
+        _log_wa_ai_diag('gemini-primeira', finish=finish, resp_len=len(resp), continuacao=False)
+        if resp and finish!='MAX_TOKENS':
+            return resp
+        if resp and finish=='MAX_TOKENS':
+            app.logger.warning('[wa-ai-diag] truncamento_detectado numero=%s provider=gemini finish=%s',numero_mask,finish)
+            payload_cont={
+                'system_instruction':{'parts':[{'text':system}]},
+                'contents':contents+[
+                    {'role':'model','parts':[{'text':resp}]},
+                    {'role':'user','parts':[{'text':'Continue exatamente de onde parou, sem repetir o texto anterior e sem reiniciar.'}]}
+                ],
+                'generationConfig':{'temperature':temp,'maxOutputTokens':max_tk}
+            }
+            out_cont=_post_json(url,payload_cont,timeout=45)
+            cand_cont=(out_cont.get('candidates') or [{}])[0]
+            parts_cont=((cand_cont.get('content') or {}).get('parts') or [])
+            resp_cont='\n'.join((p.get('text') or '').strip() for p in parts_cont if (p.get('text') or '').strip()).strip()
+            finish_cont=(cand_cont.get('finishReason') or '').strip().upper()
+            _log_wa_ai_diag('gemini-continuacao', finish=finish_cont, resp_len=len(resp_cont), continuacao=True)
+            if resp_cont:
+                return (resp.rstrip()+'\n'+resp_cont.lstrip()).strip()
             return resp
         # Fallback sem historico quando Gemini nao devolve parts/texto.
         payload_fb={
@@ -3332,6 +4382,7 @@ def ai_wa_reply(numero,texto,historico=None):
         cand_fb=(out_fb.get('candidates') or [{}])[0]
         parts_fb=((cand_fb.get('content') or {}).get('parts') or [])
         resp_fb='\n'.join((p.get('text') or '').strip() for p in parts_fb if (p.get('text') or '').strip()).strip()
+        _log_wa_ai_diag('gemini-fallback', finish=(cand_fb.get('finishReason') or ''), resp_len=len(resp_fb), continuacao=False)
         if resp_fb:
             return resp_fb
         finish=(cand_fb.get('finishReason') or cand.get('finishReason') or '').strip()
@@ -3352,22 +4403,32 @@ def smtp_send_pdf(dest,nome_dest,caminho_abs,nome_arquivo,competencia='',remeten
         part=MIMEBase('application','octet-stream'); part.set_payload(f.read())
     encoders.encode_base64(part); part.add_header('Content-Disposition',f'attachment; filename="{nome_arquivo}"'); msg.attach(part)
     port=int(cfg['port'] or 587)
-    if str(cfg['tls']) in ('1','true','True','yes'):
-        with smtplib.SMTP(cfg['host'],port,timeout=20) as s: s.starttls(); s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
-    else:
-        with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s: s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+    def _do_send():
+        if str(cfg['tls']) in ('1','true','True','yes'):
+            with smtplib.SMTP(cfg['host'],port,timeout=20) as s: s.starttls(); s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+        else:
+            with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s: s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+    _smtp_exec_with_retry(_do_send)
 
 
-def smtp_send_link_assinatura(dest, nome_dest, titulo_envelope, link, remetente='RM Facilities'):
+def smtp_send_link_assinatura(dest, nome_dest, titulo_envelope, link, remetente='RM Facilities', eh_lembrete=False):
     """Envia link de assinatura de documento por e-mail."""
     cfg=smtp_cfg()
     if not cfg['host'] or not cfg['user']: raise ValueError('SMTP não configurado')
     msg=MIMEMultipart('alternative')
     msg['From']=f"{remetente} <{cfg['de'] or cfg['user']}>"
     msg['To']=dest
-    msg['Subject']=f"Documento para assinar — {titulo_envelope}"
+    assunto_prefixo='Lembrete: ' if eh_lembrete else ''
+    texto_intro='Este e um lembrete de um envio anterior.\n\n' if eh_lembrete else ''
+    html_intro=(
+        "<p style='color:#8a5c00;font-size:13px;font-weight:700;margin-top:8px'>"
+        "🔔 Este e um lembrete de um envio anterior.</p>"
+        if eh_lembrete else ''
+    )
+    msg['Subject']=f"{assunto_prefixo}Documento para assinar — {titulo_envelope}"
     corpo_txt=(
         f"Olá {nome_dest},\n\n"
+        f"{texto_intro}"
         f"Você recebeu um documento para assinar eletronicamente.\n\n"
         f"Documento: {titulo_envelope}\n\n"
         f"Acesse o link abaixo para assinar:\n{link}\n\n"
@@ -3380,6 +4441,7 @@ def smtp_send_link_assinatura(dest, nome_dest, titulo_envelope, link, remetente=
         f"<span style='color:#fff;font-size:18px;font-weight:700'>✍ {remetente}</span></div>"
         f"<div style='background:#fff;border:1px solid #dde5f0;border-top:none;padding:24px;border-radius:0 0 8px 8px'>"
         f"<p style='color:#333;font-size:15px'>Olá <strong>{nome_dest}</strong>,</p>"
+        f"{html_intro}"
         f"<p style='color:#555;font-size:14px;margin-top:10px'>Você recebeu um documento para assinar eletronicamente.</p>"
         f"<div style='background:#f5f9ff;border:1px solid #c5d9f0;border-radius:8px;padding:14px;margin:18px 0'>"
         f"<span style='font-size:13px;color:#205d8a;font-weight:600'>📄 Documento:</span><br>"
@@ -3394,10 +4456,12 @@ def smtp_send_link_assinatura(dest, nome_dest, titulo_envelope, link, remetente=
     msg.attach(MIMEText(corpo_txt,'plain','utf-8'))
     msg.attach(MIMEText(corpo_html,'html','utf-8'))
     port=int(cfg['port'] or 587)
-    if str(cfg['tls']) in ('1','true','True','yes'):
-        with smtplib.SMTP(cfg['host'],port,timeout=20) as s: s.starttls(); s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
-    else:
-        with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s: s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+    def _do_send():
+        if str(cfg['tls']) in ('1','true','True','yes'):
+            with smtplib.SMTP(cfg['host'],port,timeout=20) as s: s.starttls(); s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+        else:
+            with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s: s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
+    _smtp_exec_with_retry(_do_send)
 
 ALLOWED_AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','compras','sst','rh-digital','documentos']
 ALLOWED_ACTIONS=['view','create','edit','delete','approve','export']
@@ -3483,7 +4547,37 @@ def next_cli_num():
         except: pass
     return str(max_n+1).zfill(3)
 
+# Assinaturas de magic bytes de tipos perigosos a bloquear em uploads gen\u00e9ricos
+_UPLOAD_BLOCKED_MAGIC = (
+    b'<?php', b'<?=',          # PHP
+    b'#!/',                    # shell scripts (bash, python, perl, etc.)
+    b'\x7fELF',                # ELF binaries (Linux executables/libs)
+    b'MZ',                     # PE/DOS executables (Windows .exe/.dll)
+    b'<script',                # HTML com script embutido
+)
+
+def _upload_content_safe(fs) -> bool:
+    """Verifica se os primeiros bytes do arquivo n\u00e3o correspondem a tipos execut\u00e1veis perigosos."""
+    header = fs.stream.read(16)
+    fs.stream.seek(0)
+    h_lower = header.lower()
+    for sig in _UPLOAD_BLOCKED_MAGIC:
+        if h_lower[:len(sig)] == sig.lower():
+            return False
+    return True
+
 def save_upload(fs,subdir):
+    if not _upload_content_safe(fs):
+        from flask import abort
+        abort(400,'Tipo de arquivo n\u00e3o permitido.')
+    # Guarda redundância: rejeita upload se disco livre < 100 MB
+    try:
+        _root = UPLOAD_ROOT if os.path.exists(UPLOAD_ROOT) else DATA_DIR
+        if shutil.disk_usage(_root).free < 100 * 1024 * 1024:
+            from flask import abort
+            abort(507, 'Espaco em disco insuficiente. Contate o administrador.')
+    except OSError:
+        pass
     os.makedirs(os.path.join(UPLOAD_ROOT,subdir),exist_ok=True)
     base=secure_filename(fs.filename or 'arquivo.bin')
     nome=f"{localnow().strftime('%Y%m%d_%H%M%S')}_{base}"
@@ -3833,7 +4927,7 @@ def is_owner_user():
     if not uid:
         return False
     try:
-        u=Usuario.query.get(int(uid))
+        u=db.session.get(Usuario, int(uid))
         if u and (u.perfil or '').strip().lower()=='dono':
             session['perfil']='dono'
             return True
@@ -3886,12 +4980,26 @@ def can_access_scope(area,action='view'):
     return chk
 
 def can_access_request(path,method='GET'):
+    p=(path or '').lower()
+    m=(method or 'GET').upper()
+    if p.startswith('/api/financeiro/salarios/modelo'):
+        return can_access_scope('rh','export') or can_access_scope('rh','view')
+    if p.startswith('/api/financeiro/salarios/importar'):
+        return can_access_scope('rh','edit')
+    if p.startswith('/api/financeiro/salarios/fechar') or p.startswith('/api/financeiro/salarios/reabrir') or p.startswith('/api/financeiro/salarios/assinar'):
+        return can_access_scope('rh','approve')
+    if p.startswith('/api/financeiro/salarios/export'):
+        return can_access_scope('rh','export') or can_access_scope('rh','view')
+    if p.startswith('/api/financeiro/salarios'):
+        return can_access_scope('rh',('view' if m=='GET' else 'edit'))
+    if p.startswith('/financeiro/salarios/historico'):
+        return can_access_scope('rh','view')
+    if p.startswith('/financeiro/salarios/preview'):
+        return can_access_scope('rh','view')
     area=area_from_path(path)
     if not area: return True
     action=action_from_request(path,method)
     if can_access_scope(area,action): return True
-    p=(path or '').lower()
-    m=(method or 'GET').upper()
     if p.startswith('/api/config/whatsapp') or p.startswith('/api/config/ia-whatsapp') or p.startswith('/api/whatsapp/ia/'):
         if can_access_scope('config',action):
             return True
@@ -3937,7 +5045,11 @@ def build_func_docs_response(funcionario_id):
     if formato not in ['arvore','lista']:
         return {'erro':'Formato invalido. Use arvore ou lista'},400
 
-    regs=FuncionarioArquivo.query.filter_by(funcionario_id=funcionario_id).order_by(FuncionarioArquivo.criado_em.desc()).all()
+    from sqlalchemy import or_ as _or_
+    regs=FuncionarioArquivo.query.filter(
+        FuncionarioArquivo.funcionario_id==funcionario_id,
+        _or_(FuncionarioArquivo.ass_status==None,FuncionarioArquivo.ass_status!='pendente')
+    ).order_by(FuncionarioArquivo.criado_em.desc()).all()
     itens=[]
     for a in regs:
         cat=norm_cat(a.categoria)
@@ -3956,6 +5068,9 @@ def build_func_docs_response(funcionario_id):
             'ano':ano,
             'nome_arquivo':a.nome_arquivo,
             'competencia':a.competencia,
+            'ass_status':a.ass_status or 'nao_solicitada',
+            'ass_em_fmt':a.ass_em.strftime('%d/%m/%Y %H:%M') if a.ass_em else '',
+            'can_assinar':(a.ass_status or '').lower()!='concluida',
             'caminho':a.caminho,
             'criado_em':a.criado_em.isoformat() if a.criado_em else '',
             'criado_fmt':a.criado_em.strftime('%d/%m/%Y %H:%M') if a.criado_em else '',
@@ -4274,27 +5389,41 @@ def norm_url(v):
     if u.startswith(('http://','https://')): return u
     return f'https://{u}'
 
-def ensure_cols(table,defs):
-    cols={r[1] for r in db.session.execute(text(f'PRAGMA table_info({table})')).fetchall()}
-    changed=False
+_VALID_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+def _assert_safe_identifier(name, label='identifier'):
+    """Valida que 'name' é um identificador SQL seguro (whitelist de caracteres).
+    Levanta ValueError se inválido — evita SQL injection via nome de tabela/coluna."""
+    if not _VALID_IDENTIFIER_RE.match(name or ''):
+        raise ValueError(f'Nome de {label} inválido ou não permitido: {name!r}')
+
+def ensure_cols(table, defs):
+    _assert_safe_identifier(table, 'tabela')
+    cols = {r[1] for r in db.session.execute(text(f'PRAGMA table_info({table})')).fetchall()}
+    changed = False
     for d in defs:
-        name=d.split(' ',1)[0]
-        if name not in cols:
+        col_name = d.split(' ', 1)[0]
+        _assert_safe_identifier(col_name, 'coluna')
+        if col_name not in cols:
             try:
                 db.session.execute(text(f'ALTER TABLE {table} ADD COLUMN {d}'))
-                changed=True
+                changed = True
             except Exception as e:
                 if 'duplicate column' in str(e).lower():
                     pass  # coluna já existe, ignorar
                 else:
                     raise
-    if changed: db.session.commit()
+    if changed:
+        db.session.commit()
 
 def sc_cfg(k,v):
+    global _gc_cache, _gc_cache_ts
     c=Config.query.filter_by(chave=k).first()
     if c: c.valor=str(v)
     else: db.session.add(Config(chave=k,valor=str(v)))
     db.session.commit()
+    _gc_cache[k]=str(v)  # atualiza cache imediatamente sem esperar TTL
+    _gc_cache_ts=0.0     # força reload completo na próxima leitura
 
 def prox_num():
     try: base=int(gc('num_base','100'))
@@ -4306,15 +5435,7 @@ def prox_num():
     prox=max(base,ultima_cfg,ultima_db)+1
     return f"{prox}/{localnow().year}"
 
-def lr(f):
-    @wraps(f)
-    def w(*a,**k):
-        if 'uid' not in session: return redirect(url_for('login'))
-        if not can_access_request(request.path,request.method): return jsonify({'erro':'Acesso negado'}),403
-        if request.method in ('POST','PUT','PATCH','DELETE') and not _same_origin_request(request):
-            return jsonify({'erro':'Origem da requisição não permitida'}),403
-        return f(*a,**k)
-    return w
+
 
 def dr(f):
     @wraps(f)
@@ -4405,6 +5526,7 @@ register_ponto_routes(
 )
 
 @app.route('/login',methods=['GET','POST'])
+@_limiter.limit('10 per minute', methods=['POST'])
 def login():
     recuperar=request.args.get('recuperar')=='1'
     if request.method=='GET' and request.args.get('cancel2fa'):
@@ -4422,7 +5544,7 @@ def login():
             if not uid:
                 erro='Sessão de verificação expirada. Faça login novamente.'
                 return render_template('login.html',erro=erro)
-            u=Usuario.query.get(uid)
+            u=db.session.get(Usuario, uid)
             if not u or not u.ativo:
                 erro='Usuário inválido para verificação.'
                 return render_template('login.html',erro=erro)
@@ -4474,7 +5596,12 @@ def login():
             session.pop('login_2fa_code_hash',None)
             session.pop('login_2fa_exp',None)
             session.pop('login_2fa_attempts',None)
-            return redirect(url_for('index'))
+            resp=redirect(url_for('index'))
+            try:
+                resp=_admin_bind_trusted_device(resp,u,reuse_cookie=False)
+            except Exception as ex:
+                app.logger.warning(f'[auth_admin_trust] falha ao gravar dispositivo confiavel: {ex}')
+            return resp
 
         email=request.form.get('email','').lower().strip()
         senha=request.form.get('senha','')
@@ -4487,6 +5614,28 @@ def login():
             if not pw_is_modern(u.senha):
                 u.senha=pw_hash(senha)
             if _admin_needs_2fa(u):
+                trusted=False
+                try:
+                    trusted=_admin_is_trusted_device(u)
+                except Exception as ex:
+                    app.logger.warning(f'[auth_admin_trust] falha ao validar dispositivo confiavel: {ex}')
+                if trusted:
+                    session.permanent=True
+                    session['uid']=u.id; session['nome']=u.nome; session['perfil']=u.perfil
+                    session['areas']=jloads(u.areas,[])
+                    perms=jloads(getattr(u,'permissoes','{}'),{})
+                    if not isinstance(perms,dict): perms={}
+                    session['permissoes']=perms
+                    session['rbac_actions_ativo']=bool(perms)
+                    u.ultimo_acesso=utcnow(); db.session.commit()
+                    reg_auth_attempt('admin',email,True,'ok_dispositivo_confiavel')
+                    audit_event('auth_admin_sucesso_dispositivo_confiavel','usuario',u.id,'usuario',u.id,True,{})
+                    resp=redirect(url_for('index'))
+                    try:
+                        resp=_admin_bind_trusted_device(resp,u,reuse_cookie=True)
+                    except Exception as ex:
+                        app.logger.warning(f'[auth_admin_trust] falha ao renovar dispositivo confiavel: {ex}')
+                    return resp
                 codigo=f'{secrets.randbelow(1000000):06d}'
                 try:
                     _send_admin_2fa_code(u,codigo,'login')
@@ -4517,37 +5666,92 @@ def login():
         erro='E-mail ou senha incorretos.'
     return render_template('login.html',erro=erro,recuperar=recuperar)
 
-
-    return render_template('login.html',recuperar=True,erro='Sessão de recuperação expirada. Solicite novo código.')
-    codigo=(request.form.get('codigo') or '').strip()
-    nova_senha=(request.form.get('nova_senha') or '').strip()
-    if not re.fullmatch(r'\d{6}',codigo):
-        return render_template('login.html',recuperar=True,rec_etapa='codigo',email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),erro='Código inválido. Use 6 dígitos.')
-    if len(nova_senha)<8:
-        return render_template('login.html',recuperar=True,rec_etapa='codigo',email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),erro='A nova senha deve ter ao menos 8 caracteres.')
-    if int(session.get('rec_exp',0) or 0)<int(time.time()):
+@app.route('/recuperar-acesso',methods=['POST'])
+@_limiter.limit('6 per minute')
+def recuperar_acesso():
+    etapa=(request.form.get('etapa') or '').strip().lower()
+    if etapa=='solicitar':
+        identificador=(request.form.get('identificador') or '').strip().lower()
+        if not identificador:
+            return render_template('login.html',recuperar=True,erro='Informe o e-mail ou telefone cadastrado.')
+        # busca por email ou telefone normalizado
+        u=Usuario.query.filter_by(email=identificador,ativo=True).first()
+        if not u:
+            norm=norm_phone(identificador)
+            if norm:
+                u=Usuario.query.filter(Usuario.ativo==True).filter(
+                    db.func.replace(db.func.replace(db.func.replace(Usuario.telefone,' ',''),'-',''),'(','').like('%'+norm[-8:]+'%')
+                ).first()
+        if not u:
+            # resposta genérica para não revelar existência do usuário
+            return render_template('login.html',recuperar=True,ok='Se o e-mail/telefone estiver cadastrado, você receberá um código em breve.')
+        codigo=f'{secrets.randbelow(1000000):06d}'
+        try:
+            _send_admin_2fa_code(u,codigo,'recuperacao')
+        except Exception as ex:
+            return render_template('login.html',recuperar=True,erro=f'Não foi possível enviar o código: {str(ex)}')
+        session['rec_uid']=u.id
+        session['rec_code_hash']=token_hash(codigo)
+        session['rec_exp']=int(time.time())+600
+        session['rec_attempts']=0
+        audit_event('auth_recuperacao_solicitada','usuario',u.id,'usuario',u.id,True,{})
+        return render_template('login.html',recuperar=True,rec_etapa='codigo',
+            email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),
+            ok='Código enviado. Verifique seu celular ou e-mail.')
+    if etapa=='codigo':
+        rec_uid=session.get('rec_uid')
+        if not rec_uid:
+            return render_template('login.html',recuperar=True,erro='Sessão de recuperação expirada. Solicite novo código.')
+        u=db.session.get(Usuario, rec_uid)
+        if not u or not u.ativo:
+            session.pop('rec_uid',None); session.pop('rec_code_hash',None); session.pop('rec_exp',None); session.pop('rec_attempts',None)
+            return render_template('login.html',recuperar=True,erro='Usuário inválido. Solicite novo código.')
+        codigo=(request.form.get('codigo') or '').strip()
+        nova_senha=(request.form.get('nova_senha') or '').strip()
+        if not re.fullmatch(r'\d{6}',codigo):
+            return render_template('login.html',recuperar=True,rec_etapa='codigo',email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),erro='Código inválido. Use 6 dígitos.')
+        if len(nova_senha)<8:
+            return render_template('login.html',recuperar=True,rec_etapa='codigo',email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),erro='A nova senha deve ter ao menos 8 caracteres.')
+        if int(session.get('rec_exp',0) or 0)<int(time.time()):
+            session.pop('rec_uid',None); session.pop('rec_code_hash',None); session.pop('rec_exp',None); session.pop('rec_attempts',None)
+            return render_template('login.html',recuperar=True,erro='Código expirado. Solicite outro.')
+        tent=int(session.get('rec_attempts',0) or 0)
+        if tent>=5:
+            session.pop('rec_uid',None); session.pop('rec_code_hash',None); session.pop('rec_exp',None); session.pop('rec_attempts',None)
+            return render_template('login.html',recuperar=True,erro='Muitas tentativas inválidas. Solicite novo código.')
+        if not hmac.compare_digest(token_hash(codigo),str(session.get('rec_code_hash') or '')):
+            session['rec_attempts']=tent+1
+            return render_template('login.html',recuperar=True,rec_etapa='codigo',email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),erro='Código incorreto.')
+        u.senha=pw_hash(nova_senha)
+        db.session.commit()
+        audit_event('auth_recuperacao_senha','usuario',u.id,'usuario',u.id,True,{})
         session.pop('rec_uid',None); session.pop('rec_code_hash',None); session.pop('rec_exp',None); session.pop('rec_attempts',None)
-        return render_template('login.html',recuperar=True,erro='Código expirado. Solicite outro.')
-    tent=int(session.get('rec_attempts',0) or 0)
-    if tent>=5:
-        session.pop('rec_uid',None); session.pop('rec_code_hash',None); session.pop('rec_exp',None); session.pop('rec_attempts',None)
-        return render_template('login.html',recuperar=True,erro='Muitas tentativas inválidas. Solicite novo código.')
-    if not hmac.compare_digest(token_hash(codigo),str(session.get('rec_code_hash') or '')):
-        session['rec_attempts']=tent+1
-        return render_template('login.html',recuperar=True,rec_etapa='codigo',email_mask=_mask_email(u.email),telefone_mask=_mask_phone(u.telefone),erro='Código incorreto.')
-
-    u.senha=pw_hash(nova_senha)
-    db.session.commit()
-    audit_event('auth_recuperacao_senha','usuario',u.id,'usuario',u.id,True,{})
-    session.pop('rec_uid',None); session.pop('rec_code_hash',None); session.pop('rec_exp',None); session.pop('rec_attempts',None)
-    return render_template('login.html',ok=f'Acesso recuperado. Usuário: {_mask_email(u.email)}. Faça login com a nova senha.')
+        return render_template('login.html',ok=f'Acesso recuperado. Usuário: {_mask_email(u.email)}. Faça login com a nova senha.')
+    return render_template('login.html',recuperar=True,erro='Requisição inválida.')
 
 @app.route('/logout')
-def logout(): session.clear(); return redirect(url_for('login'))
+def logout():
+    try:
+        _admin_revoke_current_trusted_device()
+    except Exception as ex:
+        app.logger.warning(f'[auth_admin_trust] falha ao revogar dispositivo no logout: {ex}')
+    session.clear()
+    resp=redirect(url_for('login'))
+    try:
+        resp.set_cookie(ADMIN_TRUST_COOKIE,'',max_age=0,expires=0,path='/',httponly=True,samesite='Lax',secure=_trust_cookie_secure())
+    except Exception:
+        pass
+    return resp
+
+@app.route('/privacidade')
+@app.route('/politica-de-privacidade')
+@app.route('/privacy-policy')
+def pagina_privacidade_publica():
+    return render_template('privacidade_publica.html',atualizado_em='16/05/2026')
 
 @app.route('/')
 @lr
-def index(): return render_template('app.html',nome=session['nome'],perfil=session['perfil'],areas=json.dumps(session.get('areas',[]),ensure_ascii=False))
+def index(): return render_template('app.html',nome=session['nome'],perfil=session['perfil'],areas=json.dumps(session.get('areas',[]),ensure_ascii=False),permissoes=json.dumps(session.get('permissoes',{}),ensure_ascii=False))
 
 @app.route('/api/cnpj/<cnpj>')
 @lr
@@ -4591,7 +5795,7 @@ def api_empresas():
 
 @app.route('/api/empresas/<int:id>',methods=['GET'])
 @lr
-def api_empresa(id): return jsonify(Empresa.query.get_or_404(id).to_dict())
+def api_empresa(id): return jsonify(db.get_or_404(Empresa, id).to_dict())
 
 @app.route('/api/empresas',methods=['POST'])
 @lr
@@ -4612,7 +5816,7 @@ def api_criar_empresa():
 @app.route('/api/empresas/<int:id>',methods=['PUT'])
 @lr
 def api_editar_empresa(id):
-    e=Empresa.query.get_or_404(id)
+    e=db.get_or_404(Empresa, id)
     d=request.json or {}
     if 'site' in d: d['site']=norm_url(d.get('site'))
     if 'logo_url' in d: d['logo_url']=norm_url(d.get('logo_url'))
@@ -4629,7 +5833,7 @@ def api_editar_empresa(id):
 @app.route('/api/empresas/<int:id>',methods=['DELETE'])
 @lr
 def api_remover_empresa(id):
-    e=Empresa.query.get_or_404(id)
+    e=db.get_or_404(Empresa, id)
     db.session.delete(e)
     db.session.commit()
     return jsonify({'ok':True})
@@ -4637,7 +5841,7 @@ def api_remover_empresa(id):
 @app.route('/api/empresas/<int:id>/certificado',methods=['DELETE'])
 @lr
 def api_empresa_cert_delete(id):
-    e=Empresa.query.get_or_404(id)
+    e=db.get_or_404(Empresa, id)
     abs_old=_cert_rel_to_abs(e.cert_arquivo)
     e.cert_arquivo=None
     e.cert_nome_arquivo=None
@@ -4703,7 +5907,7 @@ def api_criar_usuario():
 @app.route('/api/usuarios/<int:id>',methods=['PUT'])
 @lr
 def api_atualizar_usuario(id):
-    u=Usuario.query.get_or_404(id); d=request.json or {}
+    u=db.get_or_404(Usuario, id); d=request.json or {}
     perfil_novo=(d.get('perfil',u.perfil) or u.perfil or '').strip().lower()
     perfil_atual=(u.perfil or '').strip().lower()
     if (not is_owner_user()) and (perfil_atual=='dono' or perfil_novo=='dono'):
@@ -4738,7 +5942,7 @@ def api_atualizar_usuario(id):
 @app.route('/api/usuarios/<int:id>',methods=['DELETE'])
 @lr
 def api_deletar_usuario(id):
-    u=Usuario.query.get_or_404(id)
+    u=db.get_or_404(Usuario, id)
     if (u.perfil or '').strip().lower()=='dono' and (not is_owner_user()):
         return jsonify({'erro':'Apenas dono pode excluir usuário dono.'}),403
     if u.perfil=='dono' and Usuario.query.filter_by(perfil='dono').count()<=1: return jsonify({'erro':'Não é possível excluir o único dono'}),400
@@ -4747,7 +5951,7 @@ def api_deletar_usuario(id):
 @app.route('/api/usuarios/<int:id>/certificado',methods=['POST'])
 @lr
 def api_usuario_cert_upload(id):
-    u=Usuario.query.get_or_404(id)
+    u=db.get_or_404(Usuario, id)
     fs=request.files.get('arquivo')
     senha=(request.form.get('senha') or '').strip()
     ativo=str(request.form.get('ativo','1')).strip().lower() in ('1','true','yes','on')
@@ -4800,7 +6004,7 @@ def _is_missing_medicao_stamp_error(err):
 @app.route('/api/usuarios/<int:id>/certificado',methods=['DELETE'])
 @lr
 def api_usuario_cert_delete(id):
-    u=Usuario.query.get_or_404(id)
+    u=db.get_or_404(Usuario, id)
     abs_old=_cert_rel_to_abs(u.cert_arquivo)
     u.cert_arquivo=None
     u.cert_nome_arquivo=None
@@ -4849,7 +6053,7 @@ def api_criar_cliente():
 @app.route('/api/clientes/<int:id>',methods=['PUT'])
 @lr
 def api_atualizar_cliente(id):
-    c=Cliente.query.get_or_404(id)
+    c=db.get_or_404(Cliente, id)
     d=request.json or {}
     d['cnpj']=norm_doc(d.get('cnpj'))
     d['telefone']=norm_phone(d.get('telefone'))
@@ -4868,7 +6072,7 @@ def api_atualizar_cliente(id):
 @app.route('/api/clientes/<int:id>/reajuste',methods=['POST'])
 @lr
 def api_cliente_reajuste(id):
-    c=Cliente.query.get_or_404(id)
+    c=db.get_or_404(Cliente, id)
     d=request.json or {}
     pct=to_num(d.get('percentual'),dec=True)
     if pct is None:
@@ -4912,7 +6116,7 @@ def api_cliente_reajuste(id):
 @app.route('/api/clientes/<int:id>',methods=['DELETE'])
 @lr
 def api_deletar_cliente(id):
-    c=Cliente.query.get_or_404(id)
+    c=db.get_or_404(Cliente, id)
     db.session.delete(c)
     db.session.commit()
     return jsonify({'ok':True})
@@ -4932,7 +6136,7 @@ def api_listar_contratos():
 @app.route('/api/clientes/<int:cid>/contratos',methods=['POST'])
 @lr
 def api_criar_contrato(cid):
-    Cliente.query.get_or_404(cid)
+    db.get_or_404(Cliente, cid)
     d=request.json or {}
     skip=['id','criado_em']
     cols=[c.name for c in Contrato.__table__.columns if c.name not in skip]
@@ -4945,12 +6149,12 @@ def api_criar_contrato(cid):
 @app.route('/api/contratos/<int:id>',methods=['GET'])
 @lr
 def api_get_contrato(id):
-    return jsonify(Contrato.query.get_or_404(id).to_dict())
+    return jsonify(db.get_or_404(Contrato, id).to_dict())
 
 @app.route('/api/contratos/<int:id>',methods=['PUT'])
 @lr
 def api_atualizar_contrato(id):
-    ct=Contrato.query.get_or_404(id)
+    ct=db.get_or_404(Contrato, id)
     d=request.json or {}
     skip={'id','cliente_id','criado_em'}
     cols={col.name for col in Contrato.__table__.columns}
@@ -4963,14 +6167,14 @@ def api_atualizar_contrato(id):
 @app.route('/api/contratos/<int:id>',methods=['DELETE'])
 @lr
 def api_deletar_contrato(id):
-    ct=Contrato.query.get_or_404(id)
+    ct=db.get_or_404(Contrato, id)
     db.session.delete(ct); db.session.commit()
     return jsonify({'ok':True})
 
 @app.route('/api/contratos/<int:id>/reajuste',methods=['POST'])
 @lr
 def api_contrato_reajuste(id):
-    ct=Contrato.query.get_or_404(id)
+    ct=db.get_or_404(Contrato, id)
     d=request.json or {}
     pct=to_num(d.get('percentual'),dec=True)
     if pct is None:
@@ -5246,7 +6450,7 @@ def api_assinatura_enviar_otp(token):
         return _assinatura_json_erro('Documento já assinado.',400)
     if m.assinatura_expira_em and m.assinatura_expira_em<utcnow():
         return _assinatura_json_erro('Link expirado.',400)
-    cli=Cliente.query.get(m.cliente_id) if m.cliente_id else None
+    cli=db.session.get(Cliente, m.cliente_id) if m.cliente_id else None
     tel=wa_norm_number((cli.telefone if cli else '') or '')
     email=((getattr(cli,'email','') or '').strip() if cli else '')
     if not tel and not email:
@@ -5303,7 +6507,7 @@ def api_assinatura_confirmar(token):
     if not aceite:
         return _assinatura_json_erro('Confirme o aceite para concluir a assinatura.',400)
 
-    cli=Cliente.query.get(m.cliente_id) if m.cliente_id else None
+    cli=db.session.get(Cliente, m.cliente_id) if m.cliente_id else None
     tel=wa_norm_number((cli.telefone if cli else '') or '')
     email=((getattr(cli,'email','') or '').strip() if cli else '')
 
@@ -5354,10 +6558,10 @@ def api_assinatura_confirmar(token):
     # Envia cópia da medição assinada para o assinante via WhatsApp, quando houver telefone válido.
     enviado_wa=False
     try:
-        cli=Cliente.query.get(m.cliente_id) if m.cliente_id else None
+        cli=db.session.get(Cliente, m.cliente_id) if m.cliente_id else None
         tel=wa_norm_number((cli.telefone if cli else '') or '')
         if tel and wa_is_valid_number(tel):
-            emp=Empresa.query.get(m.empresa_id) if m.empresa_id else None
+            emp=db.session.get(Empresa, m.empresa_id) if m.empresa_id else None
             d=m.to_dict()
             d['empresa']=emp.to_dict() if emp else {}
             pdf_resp=_build_pdf(d)
@@ -5394,15 +6598,65 @@ def api_assinatura_confirmar(token):
         codigo=(m.assinatura_codigo or '')
     )
 
+def _sync_ferias_status():
+    """Atualiza status de funcionários com base nas datas de férias: 
+    - Se hoje >= ferias_inicio E hoje <= ferias_fim → Férias
+    - Se ferias_fim preenchido e hoje > ferias_fim e status==Férias → Ativo
+    Ignora funcionários Demitidos/Inativos."""
+    from datetime import date as _date
+    hoje=_date.today().isoformat()
+    alterados=0
+    for f in Funcionario.query.all():
+        if f.status in ('Demitido','Inativo'): continue
+        ini=(f.ferias_inicio or '').strip()
+        fim=(f.ferias_fim or '').strip()
+        status_atual=(f.status or 'Ativo')
+        if ini and fim:
+            if hoje>=ini and hoje<=fim:
+                if status_atual!='Férias':
+                    f.status='Férias'
+                    alterados+=1
+            elif hoje>fim and status_atual=='Férias':
+                f.status='Ativo'
+                alterados+=1
+        elif not ini and not fim and status_atual=='Férias':
+            f.status='Ativo'
+            alterados+=1
+    if alterados:
+        db.session.commit()
+    return alterados
+
+@app.route('/api/funcionarios/sync-ferias',methods=['POST'])
+@lr
+def api_funcionarios_sync_ferias():
+    n=_sync_ferias_status()
+    return jsonify({'ok':True,'alterados':n})
+
 @app.route('/api/funcionarios',methods=['GET'])
 @lr
 def api_funcionarios():
+    # Throttle: sync de férias no máximo 1x/hora para não sobrecarregar em listagens frequentes
+    global _ferias_sync_ts
+    _agora = time.monotonic()
+    if _agora - _ferias_sync_ts > 3600:
+        _ferias_sync_ts = _agora
+        _sync_ferias_status()
     cpf=only_digits(request.args.get('cpf',''))
     if cpf:
         ex_id=to_num(request.args.get('exclude_id'))
-        for f in Funcionario.query.all():
-            if f.id==ex_id: continue
-            if only_digits(f.cpf)==cpf: return jsonify(f.to_dict())
+        # Filtro SQL: remove formatação de CPF via REPLACE no SQLite
+        from sqlalchemy import func as sqla_func
+        cpf_norm = sqla_func.replace(
+            sqla_func.replace(
+                sqla_func.replace(Funcionario.cpf, '.', ''),
+                '-', ''),
+            '/', '')
+        q = Funcionario.query.filter(cpf_norm == cpf)
+        if ex_id:
+            q = q.filter(Funcionario.id != ex_id)
+        f = q.first()
+        if f:
+            return jsonify(f.to_dict())
         return jsonify({})
     q=(request.args.get('q','') or '').lower()
     lst=Funcionario.query.order_by(Funcionario.nome).all()
@@ -5419,6 +6673,214 @@ def api_funcionarios():
             (qdig and (qdig in only_digits(f.matricula) or qdig in only_digits(f.cpf) or qdig in only_digits(f.telefone)))
         )]
     return jsonify([f.to_dict() for f in lst])
+
+def _funcionarios_ativos_filtrados_export():
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    status_filtro=(request.args.get('status') or 'ativo').strip().lower()
+    busca=(request.args.get('busca') or '').strip().lower()
+
+    postos_raw=[]
+    csv_postos=(request.args.get('postos') or '').strip()
+    if csv_postos:
+        postos_raw.extend([x.strip() for x in csv_postos.split(',') if x.strip()])
+    postos_raw.extend([(x or '').strip() for x in request.args.getlist('posto') if (x or '').strip()])
+
+    postos_norm=[]
+    seen=set()
+    for p in postos_raw:
+        k=p.lower()
+        if k and k not in seen:
+            seen.add(k)
+            postos_norm.append(k)
+
+    q=Funcionario.query
+    if status_filtro=='ativo':
+        q=q.filter_by(status='Ativo')
+    elif status_filtro=='ferias':
+        q=q.filter_by(status='Férias')
+    elif status_filtro=='afastado':
+        q=q.filter_by(status='Afastado')
+    elif status_filtro=='demitido':
+        q=q.filter(Funcionario.status.in_(['Demitido','Inativo']))
+    # 'todos': sem filtro de status
+    if empresa_id:
+        q=q.filter_by(empresa_id=empresa_id)
+    lst=q.order_by(Funcionario.nome).all()
+
+    if postos_norm:
+        set_postos=set(postos_norm)
+        lst=[f for f in lst if ((f.posto_operacional or 'Reserva tecnica').strip().lower() in set_postos)]
+
+    if busca:
+        lst=[f for f in lst if busca in (f.nome or '').lower() or busca in str(f.re or '')]
+
+    return lst
+
+def _export_funcionarios_ativos_xlsx(funcs,include_salario=False):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb=Workbook()
+    ws=wb.active
+    ws.title='Colaboradores ativos'
+
+    headers=['RE','Matrícula','Nome','CPF','Telefone','Cargo','Função','Posto','Empresa','Status']
+    if include_salario:
+        headers.append('Salário')
+    ws.append(['Relatório de colaboradores ativos'])
+    ws.append([f'Gerado em: {localnow().strftime("%d/%m/%Y %H:%M") }'])
+    ws.append([])
+    ws.append(headers)
+
+    emps_map={e.id:e.nome for e in Empresa.query.all()}
+    total_salario=0.0
+    for f in funcs:
+        row=[
+            f.re or '',
+            f.matricula or '',
+            f.nome or '',
+            f.cpf or '',
+            f.telefone or '',
+            f.cargo or '',
+            f.funcao or '',
+            f.posto_operacional or 'Reserva tecnica',
+            emps_map.get(f.empresa_id,'') if f.empresa_id else '',
+            f.status or 'Ativo',
+        ]
+        if include_salario:
+            sal=float(f.salario or 0)
+            total_salario+=sal
+            row.append(sal)
+        ws.append(row)
+
+    header_fill=PatternFill('solid',fgColor='205D8A')
+    header_font=Font(bold=True,color='FFFFFF')
+    center=Alignment(horizontal='center',vertical='center')
+    left=Alignment(horizontal='left',vertical='center')
+    thin=Side(style='thin',color='D0D7DE')
+    border=Border(left=thin,right=thin,top=thin,bottom=thin)
+
+    hrow=4
+    for c in range(1,len(headers)+1):
+        cell=ws.cell(row=hrow,column=c)
+        cell.fill=header_fill
+        cell.font=header_font
+        cell.alignment=center
+        cell.border=border
+
+    for r in range(hrow+1,ws.max_row+1):
+        for c in range(1,len(headers)+1):
+            cell=ws.cell(row=r,column=c)
+            cell.border=border
+            cell.alignment=left
+
+    if include_salario:
+        col_sal=len(headers)
+        for r in range(hrow+1,ws.max_row+1):
+            c=ws.cell(row=r,column=col_sal)
+            c.number_format='R$ #,##0.00'
+            c.alignment=Alignment(horizontal='right',vertical='center')
+        total_row=ws.max_row+2
+        ws.cell(row=total_row,column=col_sal-1,value='Total da folha').font=Font(bold=True)
+        ws.cell(row=total_row,column=col_sal,value=total_salario)
+        ws.cell(row=total_row,column=col_sal).number_format='R$ #,##0.00'
+        ws.cell(row=total_row,column=col_sal).font=Font(bold=True)
+        ws.cell(row=total_row,column=col_sal).alignment=Alignment(horizontal='right',vertical='center')
+
+    widths=[10,12,34,18,16,20,20,24,26,10] + ([14] if include_salario else [])
+    for i,w in enumerate(widths,1):
+        ws.column_dimensions[get_column_letter(i)].width=w
+
+    buf=io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    nome=f'colaboradores_ativos_{localnow().strftime("%Y%m%d_%H%M")}.xlsx'
+    return send_file(buf,mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',as_attachment=True,download_name=nome)
+
+def _export_funcionarios_ativos_pdf(funcs,include_salario=False):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer
+    from reportlab.lib.styles import ParagraphStyle
+
+    buf=io.BytesIO()
+    doc=SimpleDocTemplate(buf,pagesize=A4,leftMargin=1.2*cm,rightMargin=1.2*cm,topMargin=1.2*cm,bottomMargin=1.2*cm)
+    st_t=ParagraphStyle('t',fontName='Helvetica-Bold',fontSize=12,leading=14,textColor=colors.HexColor('#123B60'))
+    st_s=ParagraphStyle('s',fontName='Helvetica',fontSize=9,leading=11,textColor=colors.HexColor('#4A5A6A'))
+    st_c=ParagraphStyle('c',fontName='Helvetica',fontSize=8,leading=10)
+
+    def _br_money(v):
+        try:
+            n=float(v or 0)
+        except Exception:
+            n=0.0
+        return ('R$ {:,.2f}'.format(n)).replace(',', 'X').replace('.', ',').replace('X', '.')
+
+    emps_map={e.id:e.nome for e in Empresa.query.all()}
+    if include_salario:
+        data=[[Paragraph('<b>RE</b>',st_c),Paragraph('<b>Nome</b>',st_c),Paragraph('<b>Posto</b>',st_c),Paragraph('<b>Empresa</b>',st_c),Paragraph('<b>Telefone</b>',st_c),Paragraph('<b>Salário</b>',st_c)]]
+    else:
+        data=[[Paragraph('<b>RE</b>',st_c),Paragraph('<b>Nome</b>',st_c),Paragraph('<b>Posto</b>',st_c),Paragraph('<b>Empresa</b>',st_c),Paragraph('<b>Telefone</b>',st_c)]]
+    total_salario=0.0
+    for f in funcs:
+        row=[
+            Paragraph(str(f.re or '—'),st_c),
+            Paragraph((f.nome or '—')[:80],st_c),
+            Paragraph((f.posto_operacional or 'Reserva tecnica')[:60],st_c),
+            Paragraph((emps_map.get(f.empresa_id,'') if f.empresa_id else '—')[:60],st_c),
+            Paragraph(str(f.telefone or '—'),st_c),
+        ]
+        if include_salario:
+            sal=float(f.salario or 0)
+            total_salario+=sal
+            row.append(Paragraph(_br_money(sal),st_c))
+        data.append(row)
+
+    col_widths=[1.8*cm,5.9*cm,4.6*cm,4.7*cm,3.0*cm] + ([2.6*cm] if include_salario else [])
+    table=Table(data,colWidths=col_widths,repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#205D8A')),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('GRID',(0,0),(-1,-1),0.25,colors.HexColor('#D0D7DE')),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('FONTNAME',(0,1),(-1,-1),'Helvetica'),
+        ('FONTSIZE',(0,1),(-1,-1),8),
+        ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#F8FBFF')]),
+        ('LEFTPADDING',(0,0),(-1,-1),4),
+        ('RIGHTPADDING',(0,0),(-1,-1),4),
+        ('TOPPADDING',(0,0),(-1,-1),3),
+        ('BOTTOMPADDING',(0,0),(-1,-1),3),
+    ]))
+
+    elementos=[
+        Paragraph('Relatório de colaboradores ativos',st_t),
+        Paragraph(f'Gerado em {localnow().strftime("%d/%m/%Y %H:%M")} · Total: {len(funcs)} colaborador(es)',st_s),
+        Paragraph(f'Total da folha: {_br_money(total_salario)}',st_s) if include_salario else Spacer(1,0),
+        Spacer(1,0.3*cm),
+        table
+    ]
+    doc.build(elementos)
+    buf.seek(0)
+    nome=f'colaboradores_ativos_{localnow().strftime("%Y%m%d_%H%M")}.pdf'
+    return send_file(buf,mimetype='application/pdf',as_attachment=False,download_name=nome)
+
+@app.route('/api/funcionarios/ativos/exportar')
+@lr
+def api_funcionarios_ativos_exportar():
+    formato=(request.args.get('formato') or 'xlsx').strip().lower()
+    include_salario=(request.args.get('include_salario') or '').strip().lower() in ('1','true','sim','yes')
+    if formato not in ('xlsx','pdf'):
+        return jsonify({'erro':'Formato inválido. Use xlsx ou pdf.'}),400
+
+    funcs=_funcionarios_ativos_filtrados_export()
+    if not funcs:
+        return jsonify({'erro':'Nenhum colaborador encontrado para os filtros informados.'}),404
+
+    if formato=='pdf':
+        return _export_funcionarios_ativos_pdf(funcs,include_salario=include_salario)
+    return _export_funcionarios_ativos_xlsx(funcs,include_salario=include_salario)
 
 @app.route('/api/funcionarios/proxima-matricula')
 @lr
@@ -5496,6 +6958,9 @@ def api_criar_funcionario():
         tipo_contrato=d.get('tipo_contrato','').strip(),
         jornada=d.get('jornada','').strip(),
         status=d.get('status','Ativo'),
+        ferias_inicio=(d.get('ferias_inicio') or '').strip(),
+        ferias_fim=(d.get('ferias_fim') or '').strip(),
+        ferias_obs=(d.get('ferias_obs') or '').strip(),
         posto_operacional='Reserva tecnica',
         salario=to_num(d.get('salario'),dec=True),
         vale_refeicao=to_num(d.get('vale_refeicao'),dec=True),
@@ -5527,6 +6992,14 @@ def api_criar_funcionario():
         obs=d.get('obs','').strip(),
         areas=json.dumps(ars,ensure_ascii=False)
     )
+    # data_nascimento opcional
+    _dn=d.get('data_nascimento','')
+    if _dn:
+        try:
+            from datetime import date as _date
+            f.data_nascimento=_date.fromisoformat(_dn[:10])
+        except (ValueError,TypeError):
+            pass
     try:
         db.session.add(f)
         db.session.commit()
@@ -5545,8 +7018,8 @@ def api_criar_funcionario():
 @app.route('/api/funcionarios/<int:id>',methods=['PUT'])
 @lr
 def api_atualizar_funcionario(id):
-    f=Funcionario.query.get_or_404(id); d=request.json or {}
-    for k in ['re','nome','cpf','email','telefone','cargo','funcao','cbo','setor','empresa_id','data_admissao','tipo_contrato','jornada','status','endereco','endereco_numero','endereco_complemento','endereco_bairro','cidade','estado','cep','banco_codigo','banco_nome','banco_agencia','banco_conta','banco_tipo_conta','banco_pix','rg','orgao_emissor','pis','ctps','titulo_eleitor','cert_reservista','cnh','exame_admissional_data','docs_admissao_obs','obs']:
+    f=db.get_or_404(Funcionario, id); d=request.json or {}
+    for k in ['re','nome','cpf','email','telefone','cargo','funcao','cbo','setor','empresa_id','data_admissao','data_demissao','tipo_contrato','jornada','status','ferias_inicio','ferias_fim','ferias_obs','ferias_dias','faltas_ano','endereco','endereco_numero','endereco_complemento','endereco_bairro','cidade','estado','cep','banco_codigo','banco_nome','banco_agencia','banco_conta','banco_tipo_conta','banco_pix','rg','orgao_emissor','pis','ctps','titulo_eleitor','cert_reservista','cnh','exame_admissional_data','docs_admissao_obs','obs']:
         if k in d:
             if k=='cpf': setattr(f,k,norm_cpf(d.get(k)))
             elif k=='re': setattr(f,k,to_num(d.get(k)))
@@ -5555,6 +7028,12 @@ def api_atualizar_funcionario(id):
             elif k=='estado': setattr(f,k,norm_uf(d.get(k)))
             elif k=='banco_codigo': setattr(f,k,norm_bank_code(d.get(k)))
             else: setattr(f,k,d[k])
+    if 'ferias_dias' in d: f.ferias_dias=max(0,int(to_num(d.get('ferias_dias')) or 30))
+    if 'faltas_ano' in d: f.faltas_ano=max(0,int(to_num(d.get('faltas_ano')) or 0))
+    # Se data de demissão preenchida → bloquear acesso ao app e mudar status para Demitido
+    if d.get('data_demissao','').strip():
+        f.status='Demitido'
+        f.app_ativo=False
     if 'salario' in d: f.salario=to_num(d.get('salario'),dec=True)
     if 'vale_refeicao' in d: f.vale_refeicao=to_num(d.get('vale_refeicao'),dec=True)
     if 'vale_alimentacao' in d: f.vale_alimentacao=to_num(d.get('vale_alimentacao'),dec=True)
@@ -5569,6 +7048,16 @@ def api_atualizar_funcionario(id):
     if 'vale_gasolina' in d: f.vale_gasolina=to_num(d.get('vale_gasolina'),dec=True)
     if 'cesta_natal' in d: f.cesta_natal=to_num(d.get('cesta_natal'),dec=True)
     if 'docs_admissao_ok' in d: f.docs_admissao_ok=to_bool(d.get('docs_admissao_ok'))
+    if 'data_nascimento' in d:
+        _dn=d.get('data_nascimento','')
+        if _dn:
+            try:
+                from datetime import date as _date
+                f.data_nascimento=_date.fromisoformat(_dn[:10])
+            except (ValueError,TypeError):
+                pass
+        else:
+            f.data_nascimento=None
     if 'areas' in d:
         ars=[a for a in d.get('areas',[]) if a in ALLOWED_AREAS]
         f.areas=json.dumps(ars,ensure_ascii=False)
@@ -5589,7 +7078,7 @@ def api_atualizar_funcionario(id):
 @app.route('/api/funcionarios/<int:id>',methods=['DELETE'])
 @lr
 def api_deletar_funcionario(id):
-    f=Funcionario.query.get_or_404(id)
+    f=db.get_or_404(Funcionario, id)
     arqs=FuncionarioArquivo.query.filter_by(funcionario_id=id).all()
     for a in arqs:
         try: os.remove(os.path.join(UPLOAD_ROOT,a.caminho))
@@ -5603,20 +7092,25 @@ def api_deletar_funcionario(id):
 @app.route('/api/funcionarios/<int:id>/arquivos',methods=['GET'])
 @lr
 def api_funcionario_arquivos(id):
-    Funcionario.query.get_or_404(id)
+    db.get_or_404(Funcionario, id)
     return jsonify([a.to_dict() for a in FuncionarioArquivo.query.filter_by(funcionario_id=id).order_by(FuncionarioArquivo.criado_em.desc()).all()])
 
 @app.route('/api/funcionarios/<int:id>/arquivos',methods=['POST'])
 @lr
 def api_funcionario_upload_arquivo(id):
-    f=Funcionario.query.get_or_404(id)
+    f=db.get_or_404(Funcionario, id)
     fs=request.files.get('arquivo')
     if not fs: return jsonify({'erro':'Arquivo nao enviado'}),400
     cat=(request.form.get('categoria') or 'outros').strip().lower()
     comp_in=(request.form.get('competencia') or '').strip()
     canal_ass=(request.form.get('canal_assinatura') or 'whatsapp').strip().lower()
-    if canal_ass not in ('whatsapp','link','nao'):
+    if canal_ass not in ('whatsapp','link','nao','app'):
         canal_ass='whatsapp'
+    prazo_dias_raw=request.form.get('prazo_dias') or ''
+    try:
+        prazo_dias=max(1,min(90,int(prazo_dias_raw))) if prazo_dias_raw.strip() else None
+    except (ValueError, TypeError):
+        prazo_dias=None
     texto=''
     if not comp_in and str((fs.filename or '')).lower().endswith('.pdf') and _upload_is_pdf(fs):
         try:
@@ -5639,7 +7133,22 @@ def api_funcionario_upload_arquivo(id):
     a=FuncionarioArquivo(funcionario_id=id,categoria=cat,competencia=comp,nome_arquivo=fs.filename,caminho=rel)
     db.session.add(a); db.session.commit()
     assinatura_auto={'status':'nao_solicitada'}
-    if canal_ass in ('whatsapp','link'):
+    cat_label=DOC_CAT_LABEL.get(norm_cat(a.categoria),a.categoria or 'Documento')
+    doc_desc=cat_label + (f' ({a.competencia})' if (a.competencia or '').strip() else '')
+    if canal_ass=='app':
+        a.ass_status='pendente'
+        if prazo_dias:
+            a.ass_prazo_em=utcnow()+timedelta(days=prazo_dias)
+        _ass_track_mark_sent(a,'app')
+        db.session.commit()
+        _push_notify_funcionario(
+            f.id,
+            f'{cat_label} para assinar',
+            f'Seu {doc_desc} aguarda assinatura no app. Arquivo: {a.nome_arquivo}.',
+            {'tipo':'documento_assinar','arquivo_id':str(a.id)}
+        )
+        assinatura_auto={'status':'app_pendente','canal':'app'}
+    elif canal_ass in ('whatsapp','link'):
         try:
             rs=_solicitar_assinatura_arquivo_funcionario(a,f,canal=canal_ass,commit_now=True)
             if rs.get('ok'):
@@ -5652,26 +7161,55 @@ def api_funcionario_upload_arquivo(id):
                 assinatura_auto={'status':'erro','erro':rs.get('erro',''),'link':rs.get('link','')}
         except Exception as e:
             assinatura_auto={'status':'erro','erro':str(e)}
+        # Notificar funcionário de novo documento (quando não é 'app', pois 'app' já notifica acima)
+        try:
+            _push_notify_funcionario(
+                f.id,
+                'Novo documento disponível',
+                f'{a.nome_arquivo} foi adicionado ao seu perfil.',
+                {'tipo':'novo_documento','arquivo_id':str(a.id)}
+            )
+        except Exception:
+            pass
+    elif canal_ass=='nao':
+        # Sem assinatura — apenas notificar sobre o novo documento
+        try:
+            _push_notify_funcionario(
+                f.id,
+                'Novo documento disponível',
+                f'{a.nome_arquivo} foi adicionado ao seu perfil.',
+                {'tipo':'novo_documento','arquivo_id':str(a.id)}
+            )
+        except Exception:
+            pass
     audit_event('funcionario_arquivo_upload','usuario',session.get('uid'),'funcionario',id,True,{'arquivo_id':a.id,'categoria':cat,'caminho':rel})
     out=a.to_dict(); out['assinatura_auto']=assinatura_auto; out['competencia_origem']=comp_origem
     return jsonify(out),201
 
 
-def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',dias_validade=7,commit_now=True,forcar_novo_token=True):
+def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',dias_validade=7,commit_now=True,forcar_novo_token=True,eh_lembrete=False):
     if not arquivo:
         return {'ok':False,'erro':'Arquivo invalido.'}
     if not funcionario:
-        funcionario=Funcionario.query.get(arquivo.funcionario_id)
+        funcionario=db.session.get(Funcionario, arquivo.funcionario_id)
     if (arquivo.ass_status or '')=='assinado':
         return {'ok':False,'erro':'Documento ja assinado.'}
     canal=(canal or 'link').strip().lower()
-    if canal not in ('link','whatsapp'):
+    if canal not in ('link','whatsapp','email','app'):
         canal='link'
     tel=''
+    email=''
     if canal=='whatsapp':
         tel=wa_norm_number((funcionario.telefone if funcionario else '') or '')
         if not wa_is_valid_number(tel):
             return {'ok':False,'erro':'Funcionario sem WhatsApp valido cadastrado.'}
+    if canal=='email':
+        email=((funcionario.email if funcionario else '') or '').strip()
+        if not email or '@' not in email:
+            return {'ok':False,'erro':'Funcionario sem e-mail valido cadastrado.'}
+    if canal=='app':
+        if not funcionario:
+            return {'ok':False,'erro':'Funcionario invalido para envio no app.'}
     if not arquivo.ass_codigo:
         arquivo.ass_codigo=secrets.token_urlsafe(10)
     if forcar_novo_token or not (arquivo.ass_token or '').strip():
@@ -5681,23 +7219,74 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
     _ass_track_mark_sent(arquivo,canal)
 
     src_q=_ass_track_channel(canal)
-    link=f"{request.url_root.rstrip('/')}/doc/assinar/{arquivo.ass_token}?src={src_q}"
+    if has_request_context():
+        base_url=request.url_root.rstrip('/')
+    else:
+        base_url=(
+            (os.environ.get('PUBLIC_BASE_URL') or '').strip() or
+            (gc('public_base_url','') or '').strip() or
+            (os.environ.get('APP_BASE_URL') or '').strip() or
+            'https://portal.grupormfacilities.com.br'
+        ).rstrip('/')
+    link=f"{base_url}/doc/assinar/{arquivo.ass_token}?src={src_q}"
     try:
         sc=_short_link_criar(link)
-        link_curto=(f"{request.url_root.rstrip('/')}/s/{sc}" if sc else link)
+        link_curto=(f"{base_url}/s/{sc}" if sc else link)
     except Exception:
         link_curto=link
+    cat_label=DOC_CAT_LABEL.get(norm_cat(arquivo.categoria),arquivo.categoria or 'Documento')
+    doc_desc=cat_label + (f' ({arquivo.competencia})' if (arquivo.competencia or '').strip() else '')
     enviado_wa=False
+    enviado_email=False
+    enviado_app=False
     erro_envio=''
     if canal=='whatsapp':
         nome_func=(funcionario.nome if funcionario else 'colaborador')
-        msg=(f"Olá, {nome_func}! Segue o link para assinatura do documento "
-             f"'{arquivo.nome_arquivo}'. O link expira em 7 dias: {link_curto}")
+        if eh_lembrete:
+            msg=(f"🔔 Lembrete de envio anterior\n"
+                 f"Olá, {nome_func}! Este e um lembrete para assinatura do seu {doc_desc}.\n"
+                 f"Arquivo: {arquivo.nome_arquivo}\n"
+                 f"O link expira em 7 dias: {link_curto}")
+        else:
+            msg=(f"Olá, {nome_func}! Segue o link para assinatura do seu {doc_desc}.\n"
+                 f"Arquivo: {arquivo.nome_arquivo}\n"
+                 f"O link expira em 7 dias: {link_curto}")
         try:
             wa_send_text(tel,msg)
             enviado_wa=True
         except Exception as ex:
             # Mantem assinatura pendente com link ativo mesmo se o WhatsApp falhar.
+            erro_envio=str(ex)
+    elif canal=='email':
+        nome_func=(funcionario.nome if funcionario else 'colaborador')
+        try:
+            smtp_send_link_assinatura(
+                email,
+                nome_func,
+                f'{doc_desc} - {arquivo.nome_arquivo or "Documento"}',
+                link_curto,
+                eh_lembrete=eh_lembrete,
+            )
+            enviado_email=True
+        except Exception as ex:
+            erro_envio=str(ex)
+    elif canal=='app':
+        try:
+            titulo_push=(f'Lembrete: {cat_label} para assinar' if eh_lembrete else f'{cat_label} para assinar')
+            corpo_push=(
+                f"Lembrete: seu {doc_desc} ainda aguarda assinatura no app. Arquivo: {arquivo.nome_arquivo}."
+                if eh_lembrete else
+                f"Seu {doc_desc} aguarda assinatura no app. Arquivo: {arquivo.nome_arquivo}."
+            )
+            enviado_app=bool(_push_notify_funcionario(
+                funcionario.id,
+                titulo_push,
+                corpo_push,
+                {'tipo':'documento_assinar','arquivo_id':str(arquivo.id)}
+            ))
+            if not enviado_app:
+                erro_envio='Falha ao enviar notificacao push para o aplicativo.'
+        except Exception as ex:
             erro_envio=str(ex)
 
     if commit_now:
@@ -5708,16 +7297,18 @@ def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',d
         'ok':True,
         'link':link,
         'link_curto':link_curto,
-        'canal':('whatsapp' if enviado_wa else 'link'),
+        'canal':canal,
         'expira_em':(arquivo.ass_expira_em.isoformat() if arquivo.ass_expira_em else ''),
         'enviado_wa':enviado_wa,
+        'enviado_email':enviado_email,
+        'enviado_app':enviado_app,
         'erro_envio':erro_envio,
     }
 
 @app.route('/api/funcionarios/<int:id>/documentos/preparar',methods=['POST'])
 @lr
 def api_preparar_pastas_funcionario(id):
-    Funcionario.query.get_or_404(id)
+    db.get_or_404(Funcionario, id)
     d=request.json or {}
     ano=str((d.get('ano') or request.args.get('ano') or localnow().year)).strip()
     if not re.fullmatch(r'(19|20)\d{2}',ano):
@@ -5728,14 +7319,14 @@ def api_preparar_pastas_funcionario(id):
 @app.route('/api/funcionarios/<int:id>/documentos/arvore')
 @lr
 def api_funcionario_documentos_arvore(id):
-    Funcionario.query.get_or_404(id)
+    db.get_or_404(Funcionario, id)
     resp,status=build_func_docs_response(id)
     return jsonify(resp),status
 
 @app.route('/api/funcionarios/<int:id>/app-acesso',methods=['PUT'])
 @lr
 def api_funcionario_app_acesso(id):
-    f=Funcionario.query.get_or_404(id)
+    f=db.get_or_404(Funcionario, id)
     d=request.json or {}
     if 'ativo_app' in d:
         f.app_ativo=bool(d.get('ativo_app'))
@@ -5747,7 +7338,46 @@ def api_funcionario_app_acesso(id):
     audit_event('funcionario_app_acesso_alterado','usuario',session.get('uid'),'funcionario',f.id,True,{'ativo_app':f.app_ativo,'senha_alterada':bool(senha)})
     return jsonify({'ok':True,'funcionario':f.to_dict()})
 
-@app.route('/api/app/funcionario/login',methods=['POST'])
+@app.route('/api/funcionarios/<int:id>/push-teste',methods=['POST'])
+@app.route('/api/funcionarios/<int:id>/push-validar',methods=['POST'])
+@lr
+def api_funcionario_push_teste(id):
+    f=db.get_or_404(Funcionario, id)
+    token_antes=(f.app_push_token or '').strip()
+    tem_token=bool(token_antes)
+    if not token_antes:
+        return jsonify({'ok':False,'erro':'Funcionario sem token push salvo'}),400
+    ok=_push_notify_funcionario(
+        f.id,
+        'Teste de notificacao',
+        'Se voce recebeu esta mensagem, o push de documentos esta funcionando.',
+        {'tipo':'documento_assinar','arquivo_id':'0','origem':'teste_push_admin'}
+    )
+    f2=db.session.get(Funcionario, f.id)
+    token_depois=((f2.app_push_token or '').strip() if f2 else '')
+    token_removido=bool(token_antes and not token_depois)
+    status='enviado' if ok else ('token_invalido_removido' if token_removido else 'falha_envio')
+    return jsonify({
+        'ok':ok,
+        'status':status,
+        'funcionario_id':f.id,
+        'tem_token':tem_token,
+        'token_valido':bool(token_depois),
+        'token_removido':token_removido,
+    })
+
+@app.route('/api/app/versao')
+@_limiter.limit('60 per minute')
+def api_app_versao():
+    """Retorna versão mínima e atual do app. Configurável por variável de ambiente APP_VERSION_CODE."""
+    import os
+    versao_minima=int(os.environ.get('APP_VERSION_MINIMA','14'))
+    versao_atual=int(os.environ.get('APP_VERSION_ATUAL','14'))
+    download_url=os.environ.get('APP_DOWNLOAD_URL','')
+    return jsonify({'versao_minima':versao_minima,'versao_atual':versao_atual,'download_url':download_url})
+
+@app.route('/api/app/funcionario/login', methods=['POST'])
+@_limiter.limit('10 per minute')
 def api_app_funcionario_login():
     d=request.json or {}
     cpf=norm_cpf(d.get('cpf'))
@@ -5765,10 +7395,10 @@ def api_app_funcionario_login():
     if f.app_ativo is False:
         reg_auth_attempt('app',cpf,False,'app_desativado')
         audit_event('auth_app_falha','funcionario',f.id,'funcionario',f.id,False,{'motivo':'app_desativado'})
-        return jsonify({'erro':'Acesso do aplicativo desativado'}),403
+        return jsonify({'erro':'Credenciais invalidas'}),401  # Não vazar estado da conta
     if not f.app_senha:
         reg_auth_attempt('app',cpf,False,'app_nao_configurado')
-        return jsonify({'erro':'Acesso do aplicativo ainda nao configurado para este funcionario'}),403
+        return jsonify({'erro':'Credenciais invalidas'}),401  # Não vazar estado da conta
     if not pw_check(f.app_senha,senha):
         reg_auth_attempt('app',cpf,False,'credenciais_invalidas')
         audit_event('auth_app_falha','funcionario',f.id,'funcionario',f.id,False,{'motivo':'senha_invalida'})
@@ -5782,7 +7412,8 @@ def api_app_funcionario_login():
     audit_event('auth_app_sucesso','funcionario',f.id,'funcionario',f.id,True,{'sessao_id':sess['sessao_id'],'modo':'senha'})
     return jsonify({'ok':True,**sess,'funcionario':{'id':f.id,'nome':f.nome,'cpf':f.cpf,'cargo':f.cargo,'setor':f.setor,'status':f.status}})
 
-@app.route('/api/app/funcionario/auth/iniciar',methods=['POST'])
+@app.route('/api/app/funcionario/auth/iniciar', methods=['POST'])
+@_limiter.limit('10 per minute')
 def api_app_funcionario_auth_iniciar():
     d=request.json or {}
     cpf=norm_cpf(d.get('cpf'))
@@ -5803,19 +7434,40 @@ def api_app_funcionario_auth_iniciar():
     f.app_otp_hash=token_hash(codigo)
     f.app_otp_expira_em=utcnow()+timedelta(minutes=10)
     f.app_otp_tentativas=0
+
+    # Atualiza canal preferido se o app enviou
+    canal_req=(d.get('canal') or '').strip().lower()
+    if canal_req in ('whatsapp','email'):
+        f.app_canal_otp=canal_req
+
+    # Persistimos o OTP antes do envio para evitar falso-erro quando o código
+    # já foi entregue no canal, mas um commit/auditoria posterior falha.
     try:
-        envio=_send_app_login_otp(codigo,f)
-        db.session.commit()
-        reg_auth_attempt('app_otp',cpf,True,'desafio_enviado')
-        audit_event('auth_app_otp_enviado','funcionario',f.id,'funcionario',f.id,True,{'canal':envio.get('canal')})
-        msg_ok='Codigo enviado com sucesso.' if envio.get('canal')!='email' else 'Codigo enviado para o e-mail cadastrado.'
-        return jsonify({'ok':True,'mensagem':msg_ok,'destino':envio.get('destino'),'canal':envio.get('canal')})
+        _db_commit_retry('app_auth_otp_persist', attempts=4)
     except Exception as ex:
         db.session.rollback()
-        reg_auth_attempt('app_otp',cpf,False,'envio_falha')
-        return jsonify({'erro':'Nao foi possivel enviar o codigo OTP. Verifique telefone/e-mail com o RH e as configuracoes de envio.','detalhe':str(ex)}),503
+        reg_auth_attempt('app_otp',cpf,False,'persist_falha')
+        return jsonify({'erro':'Nao foi possivel preparar o codigo OTP no momento. Tente novamente.','detalhe':str(ex)}),503
 
-@app.route('/api/app/funcionario/auth/confirmar',methods=['POST'])
+    try:
+        envio=_send_app_login_otp(codigo,f)
+    except Exception as ex:
+        # O OTP já ficou persistido; em caso de falha de envio, apenas retornamos erro.
+        reg_auth_attempt('app_otp',cpf,False,'envio_falha')
+        return jsonify({'erro':'Nao foi possivel enviar o codigo OTP. Verifique suas informacoes de contato no RH.','detalhe':str(ex)}),503
+
+    # Telemetria não deve bloquear a resposta de sucesso ao app.
+    try:
+        reg_auth_attempt('app_otp',cpf,True,'desafio_enviado')
+        audit_event('auth_app_otp_enviado','funcionario',f.id,'funcionario',f.id,True,{'canal':envio.get('canal')})
+    except Exception as ex:
+        app.logger.warning(f'[auth_app_otp] falha em auditoria pos-envio: {ex}')
+
+    msg_ok='Codigo enviado com sucesso.' if envio.get('canal')!='email' else 'Codigo enviado para o e-mail cadastrado.'
+    return jsonify({'ok':True,'mensagem':msg_ok,'destino':envio.get('destino'),'canal':envio.get('canal')})
+
+@app.route('/api/app/funcionario/auth/confirmar', methods=['POST'])
+@_limiter.limit('10 per minute')
 def api_app_funcionario_auth_confirmar():
     d=request.json or {}
     cpf=norm_cpf(d.get('cpf'))
@@ -5856,6 +7508,62 @@ def api_app_funcionario_auth_confirmar():
     audit_event('auth_app_sucesso','funcionario',f.id,'funcionario',f.id,True,{'sessao_id':sess['sessao_id'],'modo':'otp'})
     return jsonify({'ok':True,**sess,'funcionario':{'id':f.id,'nome':f.nome,'cpf':f.cpf,'cargo':f.cargo,'setor':f.setor,'status':f.status}})
 
+@app.route('/api/app/funcionario/stepup/solicitar',methods=['POST'])
+@app_func_required
+def api_app_funcionario_stepup_solicitar():
+    f=g.app_funcionario
+    d=request.json or {}
+    ident=norm_cpf(getattr(f,'cpf',None)) or str(f.id)
+    if auth_blocked('app_stepup',ident,(request.remote_addr or '')):
+        return jsonify({'erro':'Muitas tentativas. Aguarde alguns minutos.'}),429
+    arquivo_id=d.get('arquivo_id')
+    if not arquivo_id:
+        return jsonify({'erro':'arquivo_id obrigatorio'}),400
+    try: arquivo_id=int(arquivo_id)
+    except: return jsonify({'erro':'arquivo_id invalido'}),400
+
+    a=db.session.get(FuncionarioArquivo, arquivo_id)
+    if not a or a.funcionario_id!=f.id:
+        return jsonify({'erro':'Acesso negado'}),403
+    if (a.ass_status or '').strip().lower()=='concluida':
+        return jsonify({'erro':'Documento ja assinado.'}),400
+
+    codigo=_otp_new_code()
+    f.app_stepup_hash=token_hash(codigo)
+    f.app_stepup_expira_em=utcnow()+timedelta(minutes=5)
+    f.app_stepup_tentativas=0
+    f.app_stepup_arquivo_id=arquivo_id
+
+    # Atualiza canal preferido se enviado
+    canal_req=(d.get('canal') or '').strip().lower()
+    if canal_req in ('whatsapp','email'):
+        f.app_canal_otp=canal_req
+
+    try:
+        _db_commit_retry('app_stepup_persist',attempts=4)
+    except Exception as ex:
+        db.session.rollback()
+        reg_auth_attempt('app_stepup',ident,False,'persist_falha')
+        return jsonify({'erro':'Nao foi possivel preparar o codigo OTP.','detalhe':str(ex)}),503
+
+    try:
+        envio=_send_app_login_otp(codigo,f)
+    except Exception as ex:
+        reg_auth_attempt('app_stepup',ident,False,'envio_falha')
+        return jsonify({'erro':'Nao foi possivel enviar o codigo OTP.','detalhe':str(ex)}),503
+
+    reg_auth_attempt('app_stepup',ident,True,'desafio_enviado')
+
+    try:
+        audit_event('app_stepup_otp_enviado','funcionario',f.id,'arquivo',arquivo_id,True,{'canal':envio.get('canal')})
+    except Exception as ex:
+        app.logger.warning(f'[stepup] auditoria pos-envio: {ex}')
+
+    canal_label={'whatsapp':'WhatsApp','sms':'SMS','email':'e-mail'}
+    label=canal_label.get(envio.get('canal',''),'canal')
+    msg_ok=f'Código enviado via {label}.'
+    return jsonify({'ok':True,'mensagem':msg_ok,'destino':envio.get('destino'),'canal':envio.get('canal')})
+
 @app.route('/api/app/funcionario/refresh',methods=['POST'])
 def api_app_funcionario_refresh():
     d=request.json or {}
@@ -5863,7 +7571,7 @@ def api_app_funcionario_refresh():
     if not refresh: return jsonify({'erro':'refresh_token obrigatorio'}),400
     sessao=FuncionarioAppSessao.query.filter_by(refresh_hash=token_hash(refresh),revogado=False).first()
     if not sessao or sessao.exp_refresh<utcnow(): return jsonify({'erro':'Refresh token invalido ou expirado'}),401
-    f=Funcionario.query.get(sessao.funcionario_id)
+    f=db.session.get(Funcionario, sessao.funcionario_id)
     if not f or f.app_ativo is False: return jsonify({'erro':'Acesso desativado'}),403
     novo_refresh=app_issue_refresh_token()
     sessao.refresh_hash=token_hash(novo_refresh)
@@ -5886,6 +7594,58 @@ def api_app_funcionario_logout():
     audit_event('auth_app_logout','funcionario',f.id,'funcionario',f.id,True,{'all_devices':all_devices})
     return jsonify({'ok':True})
 
+@app.route('/api/app/log', methods=['POST'])
+@app_func_required
+def api_app_log():
+    """Recebe lote de logs enviados pelo app mobile."""
+    f=g.app_funcionario
+    payload=request.json or {}
+    entradas=payload.get('logs') or [payload]
+    salvos=0
+    for ent in entradas[:200]:
+        nivel=(ent.get('nivel') or ent.get('level') or 'INFO').upper()[:10]
+        tag=(ent.get('tag') or '')[:80]
+        mensagem=(ent.get('mensagem') or ent.get('message') or '')
+        stack=(ent.get('stack') or ent.get('stackTrace') or '')
+        versao_app=(ent.get('versao') or ent.get('version') or '')[:20]
+        dispositivo=(ent.get('dispositivo') or ent.get('device') or '')[:120]
+        ts_raw=ent.get('timestamp') or ent.get('ts')
+        ts_disp=None
+        if ts_raw:
+            try:
+                from datetime import timezone
+                ts_disp=datetime.fromtimestamp(int(ts_raw)/1000, tz=timezone.utc).replace(tzinfo=None)
+            except Exception:
+                pass
+        log=AppLog(
+            funcionario_id=f.id,
+            nivel=nivel,
+            tag=tag,
+            mensagem=str(mensagem)[:2000],
+            stack=str(stack)[:4000] if stack else None,
+            versao_app=versao_app,
+            dispositivo=dispositivo,
+            ts_dispositivo=ts_disp,
+        )
+        db.session.add(log)
+        salvos+=1
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    return jsonify({'ok':True,'salvos':salvos})
+
+@app.route('/api/admin/logs/app')
+@lr
+def api_admin_logs_app():
+    nivel=(request.args.get('nivel') or '').upper()
+    limit=min(int(request.args.get('limit') or 200),500)
+    q=AppLog.query
+    if nivel:
+        q=q.filter_by(nivel=nivel)
+    logs=q.order_by(AppLog.id.desc()).limit(limit).all()
+    return jsonify({'logs':[l.to_dict() for l in logs]})
+
 @app.route('/api/app/funcionario/me')
 @app_func_required
 def api_app_funcionario_me():
@@ -5895,6 +7655,16 @@ def api_app_funcionario_me():
     ).first()
     emp=db.session.get(Empresa,f.empresa_id) if f.empresa_id else None
     foto_url='/api/app/funcionario/me/foto' if f.foto_perfil else None
+    jornada_info=None
+    if getattr(f,'jornada_id',None):
+        j=db.session.get(JornadaTrabalho, f.jornada_id)
+        if j:
+            jornada_info={
+                'id':j.id,'nome':j.nome,
+                'hora_entrada':j.hora_entrada,'hora_saida':j.hora_saida,
+                'hora_intervalo_inicio':j.hora_intervalo_inicio,'hora_intervalo_fim':j.hora_intervalo_fim,
+                'dias_semana':j.dias_semana,'tolerancia_min':j.tolerancia_min,
+            }
     return jsonify({'ok':True,'funcionario':{
         'id':f.id,
         'nome':f.nome,
@@ -5908,9 +7678,27 @@ def api_app_funcionario_me():
         'posto_operacional':f.posto_operacional,
         'status':f.status,
         'foto_url':foto_url,
+        'data_nascimento':f.data_nascimento.isoformat() if getattr(f,'data_nascimento',None) else None,
         'ultimo_aso_competencia':(ultimo_aso.competencia if ultimo_aso else None),
-        'ultimo_aso_enviado_em':(ultimo_aso.criado_em.isoformat() if (ultimo_aso and ultimo_aso.criado_em) else None)
+        'ultimo_aso_enviado_em':(ultimo_aso.criado_em.isoformat() if (ultimo_aso and ultimo_aso.criado_em) else None),
+        'jornada':f.jornada,
+        'jornada_info':jornada_info,
+        'canal_otp':f.app_canal_otp or 'whatsapp',
     }})
+
+@app.route('/api/app/funcionario/me/preferencias',methods=['PUT'])
+@app_func_required
+def api_app_funcionario_preferencias():
+    f=g.app_funcionario
+    d=request.json or {}
+    canal=(d.get('canal_otp') or '').strip().lower()
+    if canal and canal not in ('whatsapp','sms','email'):
+        return jsonify({'erro':'Canal invalido. Use: whatsapp, sms ou email.'}),400
+    if canal:
+        f.app_canal_otp=canal
+        db.session.commit()
+        audit_event('app_preferencia_canal_otp','funcionario',f.id,'funcionario',f.id,True,{'canal':canal})
+    return jsonify({'ok':True,'canal_otp':f.app_canal_otp or 'whatsapp'})
 
 @app.route('/api/app/funcionario/me/foto',methods=['POST'])
 @app_func_required
@@ -5929,9 +7717,22 @@ def api_app_funcionario_foto_upload():
         return jsonify({'erro':'Foto muito grande. Máximo 5MB.'}),400
     dir_path=os.path.join(UPLOAD_ROOT,'funcionarios',str(f.id),'foto')
     os.makedirs(dir_path,exist_ok=True)
-    filename=f'perfil{ext}'
-    abs_path=os.path.join(dir_path,filename)
-    file.save(abs_path)
+    # Comprime e redimensiona com Pillow antes de salvar (5MB → ~30-50KB)
+    try:
+        from PIL import Image as _PIL_Image
+        img=_PIL_Image.open(file)
+        if img.mode not in ('RGB','L'):
+            img=img.convert('RGB')
+        img.thumbnail((800,800),_PIL_Image.LANCZOS)
+        filename='perfil.jpg'
+        abs_path=os.path.join(dir_path,filename)
+        img.save(abs_path,format='JPEG',quality=75,optimize=True)
+    except Exception:
+        # Fallback: salva arquivo original se Pillow falhar
+        file.seek(0)
+        filename=f'perfil{ext}'
+        abs_path=os.path.join(dir_path,filename)
+        file.save(abs_path)
     rel_path=os.path.relpath(abs_path,UPLOAD_ROOT).replace('\\','/')
     f.foto_perfil=rel_path
     db.session.commit()
@@ -5959,6 +7760,42 @@ def api_app_funcionario_push_token():
     if len(token)>300:
         return jsonify({'erro':'Token invalido'}),400
     f.app_push_token=token
+    db.session.commit()
+    return jsonify({'ok':True})
+
+@app.route('/api/app/funcionario/me/push-token/teste',methods=['POST'])
+@app_func_required
+def api_app_funcionario_push_token_teste():
+    f=g.app_funcionario
+    tem_token=bool((f.app_push_token or '').strip())
+    if not tem_token:
+        return jsonify({'ok':False,'erro':'Funcionario sem token push salvo'}),400
+    ok=_push_notify_funcionario(
+        f.id,
+        'Teste de notificacao',
+        'Se voce recebeu esta mensagem, o push do app esta funcionando.',
+        {'tipo':'documento_assinar','arquivo_id':'0','origem':'teste_push'}
+    )
+    return jsonify({'ok':ok,'tem_token':tem_token})
+
+@app.route('/api/app/funcionario/me/localizacao',methods=['POST'])
+@app_func_required
+def api_app_funcionario_me_localizacao():
+    f=g.app_funcionario
+    d=request.json or {}
+    lat=d.get('lat')
+    lon=d.get('lon')
+    if lat is None or lon is None:
+        return jsonify({'erro':'lat e lon obrigatorios'}),400
+    try:
+        lat=float(lat); lon=float(lon)
+    except Exception:
+        return jsonify({'erro':'lat/lon invalidos'}),400
+    if not (-90<=lat<=90) or not (-180<=lon<=180):
+        return jsonify({'erro':'coordenadas fora do intervalo'}),400
+    f.app_lat=lat
+    f.app_lon=lon
+    f.app_localizacao_em=utcnow()
     db.session.commit()
     return jsonify({'ok':True})
 
@@ -6030,10 +7867,128 @@ def api_app_funcionario_solicitar_alteracao():
     audit_event('funcionario_app_solicitou_alteracao','funcionario',g.app_funcionario.id,'funcionario',g.app_funcionario.id,True,{'solicitacao_id':it.id})
     return jsonify({'ok':True,'item':it.to_dict()}),201
 
+@app.route('/api/app/funcionario/me/ferias',methods=['GET'])
+@app_func_required
+def api_app_funcionario_ferias():
+    from datetime import date as _date
+    f=g.app_funcionario
+    hoje=_date.today().isoformat()
+    ini=(f.ferias_inicio or '').strip()
+    fim=(f.ferias_fim or '').strip()
+    dias=f.ferias_dias or 30
+    em_ferias=bool(ini and fim and ini<=hoje<=fim)
+    dias_restantes=None
+    if em_ferias and fim:
+        try:
+            dias_restantes=(_date.fromisoformat(fim)-_date.fromisoformat(hoje)).days+1
+        except (ValueError,TypeError):
+            pass
+    proximas=None
+    if not em_ferias and ini and ini>hoje:
+        try:
+            dias_proximas=(_date.fromisoformat(ini)-_date.fromisoformat(hoje)).days
+            proximas={'inicio':ini,'fim':fim,'dias_para_inicio':dias_proximas}
+        except (ValueError,TypeError):
+            pass
+    return jsonify({
+        'ok':True,
+        'ferias_inicio':ini or None,
+        'ferias_fim':fim or None,
+        'ferias_obs':(f.ferias_obs or '').strip() or None,
+        'ferias_dias':dias,
+        'em_ferias':em_ferias,
+        'dias_restantes':dias_restantes,
+        'proximas':proximas,
+    })
+
+@app.route('/api/app/funcionario/me/ponto/solicitacao-correcao',methods=['GET'])
+@app_func_required
+def api_app_ponto_solicitacoes_correcao():
+    f=g.app_funcionario
+    itens=PontoCorrecaoSolicitacao.query.filter_by(funcionario_id=f.id).order_by(
+        PontoCorrecaoSolicitacao.criado_em.desc()
+    ).limit(30).all()
+    return jsonify({'ok':True,'itens':[it.to_dict() for it in itens]})
+
+@app.route('/api/app/funcionario/me/ponto/solicitacao-correcao',methods=['POST'])
+@app_func_required
+def api_app_ponto_solicitar_correcao():
+    f=g.app_funcionario
+    d=request.json or {}
+    data_ref=(d.get('data_ref') or '').strip()
+    observacao=(d.get('observacao') or '').strip()[:1000]
+    tipo_problema=(d.get('tipo_problema') or 'horario_errado').strip()
+    horario_esperado=(d.get('horario_esperado') or '').strip()[:5]
+    if not data_ref:
+        return jsonify({'erro':'O campo data_ref é obrigatório.'}),400
+    if not observacao:
+        return jsonify({'erro':'Descreva o problema no campo observacao.'}),400
+    if tipo_problema not in ('horario_errado','marcacao_faltando','marcacao_extra','outro'):
+        tipo_problema='outro'
+    it=PontoCorrecaoSolicitacao(
+        funcionario_id=f.id,
+        data_ref=data_ref,
+        tipo_problema=tipo_problema,
+        horario_esperado=horario_esperado or None,
+        observacao=observacao,
+        status='pendente',
+    )
+    db.session.add(it)
+    db.session.commit()
+    audit_event('app_ponto_solicitacao_correcao','funcionario',f.id,'funcionario',f.id,True,{'solicitacao_id':it.id,'data_ref':data_ref})
+    return jsonify({'ok':True,'mensagem':'Solicitação enviada. O RH analisará em breve.','id':it.id}),201
+
+@app.route('/api/funcionarios/<int:fid>/ponto/solicitacoes-correcao',methods=['GET'])
+@lr
+def api_rh_ponto_solicitacoes_correcao(fid):
+    db.get_or_404(Funcionario, fid)
+    itens=PontoCorrecaoSolicitacao.query.filter_by(funcionario_id=fid).order_by(
+        PontoCorrecaoSolicitacao.criado_em.desc()
+    ).all()
+    return jsonify([it.to_dict() for it in itens])
+
+@app.route('/api/funcionarios/ponto/solicitacao-correcao/<int:id>/decidir',methods=['POST'])
+@lr
+def api_rh_decidir_correcao_ponto(id):
+    it=db.get_or_404(PontoCorrecaoSolicitacao, id)
+    if it.status!='pendente':
+        return jsonify({'erro':'Solicitação já foi analisada.'}),400
+    d=request.json or {}
+    acao=(d.get('acao') or '').strip().lower()
+    motivo=(d.get('motivo') or '').strip()
+    if acao not in ('aprovar','rejeitar'):
+        return jsonify({'erro':'Ação inválida. Use aprovar ou rejeitar.'}),400
+    it.status='resolvido' if acao=='aprovar' else 'rejeitado'
+    it.motivo_admin=motivo
+    it.resolvido_em=utcnow()
+    db.session.commit()
+    status_label='aprovada' if acao=='aprovar' else 'rejeitada'
+    _push_notify_funcionario(it.funcionario_id,'📋 Solicitação de correção '+status_label,
+        f'Sua solicitação de correção de ponto em {it.data_ref} foi {status_label}.'+(' Motivo: '+motivo if motivo else ''),
+        data={'tipo':'correcao_ponto_'+acao,'solicitacao_id':str(it.id)})
+    audit_event('rh_decidiu_correcao_ponto','usuario',current_user.id,'ponto_correcao_solicitacao',it.id,True,{'acao':acao,'funcionario_id':it.funcionario_id})
+    return jsonify({'ok':True,'item':it.to_dict()})
+
+@app.route('/api/funcionarios/<int:fid>/ponto/solicitacoes-correcao/pendentes',methods=['GET'])
+@lr
+def api_rh_ponto_correcoes_pendentes(fid):
+    itens=PontoCorrecaoSolicitacao.query.filter_by(funcionario_id=fid,status='pendente').order_by(
+        PontoCorrecaoSolicitacao.criado_em.desc()
+    ).all()
+    return jsonify([it.to_dict() for it in itens])
+
+@app.route('/api/funcionarios/ponto/solicitacoes-correcao/todas-pendentes',methods=['GET'])
+@lr
+def api_rh_todas_correcoes_pendentes():
+    itens=PontoCorrecaoSolicitacao.query.filter_by(status='pendente').order_by(
+        PontoCorrecaoSolicitacao.criado_em.asc()
+    ).all()
+    return jsonify([it.to_dict() for it in itens])
+
 @app.route('/api/funcionarios/<int:id>/solicitacoes-alteracao',methods=['GET'])
 @lr
 def api_funcionario_solicitacoes_alteracao(id):
-    Funcionario.query.get_or_404(id)
+    db.get_or_404(Funcionario, id)
     itens=FuncionarioAlteracaoSolicitacao.query.filter_by(funcionario_id=id).order_by(
         FuncionarioAlteracaoSolicitacao.solicitado_em.desc(),FuncionarioAlteracaoSolicitacao.id.desc()
     ).all()
@@ -6042,7 +7997,7 @@ def api_funcionario_solicitacoes_alteracao(id):
 @app.route('/api/funcionarios/solicitacoes-alteracao/<int:id>/decidir',methods=['POST'])
 @lr
 def api_decidir_solicitacao_alteracao(id):
-    it=FuncionarioAlteracaoSolicitacao.query.get_or_404(id)
+    it=db.get_or_404(FuncionarioAlteracaoSolicitacao, id)
     if (it.status or '')!='pendente':
         return jsonify({'erro':'Solicitacao ja foi analisada.'}),400
     d=request.json or {}
@@ -6050,7 +8005,7 @@ def api_decidir_solicitacao_alteracao(id):
     motivo=(d.get('motivo') or '').strip()
     if acao not in ('aprovar','rejeitar'):
         return jsonify({'erro':'Acao invalida. Use aprovar ou rejeitar.'}),400
-    f=Funcionario.query.get_or_404(it.funcionario_id)
+    f=db.get_or_404(Funcionario, it.funcionario_id)
     if acao=='aprovar':
         payload=jloads(it.payload,{})
         for k,v in (payload.items() if isinstance(payload,dict) else []):
@@ -6080,16 +8035,221 @@ def api_app_funcionario_me_documentos():
     resp,status=build_func_docs_response(g.app_funcionario.id)
     return jsonify(resp),status
 
+@app.route('/api/app/funcionario/ultimo-pagamento')
+@app_func_required
+def api_app_funcionario_ultimo_pagamento():
+    f=g.app_funcionario
+    folhas=FolhaPagamentoMensal.query.filter(
+        FolhaPagamentoMensal.status=='fechada'
+    ).order_by(FolhaPagamentoMensal.competencia.desc()).all()
+    for folha in folhas:
+        try:
+            dados=json.loads(folha.dados_json or '{}')
+        except Exception:
+            continue
+        items=dados.get('items') or dados.get('funcionarios') or []
+        for item in items:
+            func_id=item.get('funcionario_id') or item.get('id')
+            if func_id and int(func_id)==f.id:
+                valor=item.get('valor_liquido') or item.get('salario')
+                if valor is not None:
+                    return jsonify({
+                        'ok':True,
+                        'competencia':folha.competencia,
+                        'valor_liquido':float(valor)
+                    })
+    return jsonify({'ok':False,'erro':'Nenhum pagamento encontrado'})
+
+@app.route('/api/app/funcionario/historico-pagamentos')
+@app_func_required
+def api_app_funcionario_historico_pagamentos():
+    f=g.app_funcionario
+    folhas=FolhaPagamentoMensal.query.filter(
+        FolhaPagamentoMensal.status=='fechada'
+    ).order_by(FolhaPagamentoMensal.competencia.desc()).limit(24).all()
+    resultado=[]
+    for folha in folhas:
+        try:
+            dados=json.loads(folha.dados_json or '{}')
+        except Exception:
+            continue
+        items=dados.get('items') or dados.get('funcionarios') or []
+        for item in items:
+            func_id=item.get('funcionario_id') or item.get('id')
+            if func_id and int(func_id)==f.id:
+                valor=item.get('valor_liquido') or item.get('salario')
+                if valor is not None:
+                    resultado.append({
+                        'competencia':folha.competencia,
+                        'valor_liquido':float(valor),
+                        'obs':item.get('salario_obs') or item.get('obs') or ''
+                    })
+                break
+    return jsonify({'ok':True,'historico':resultado})
+
+@app.route('/api/app/funcionario/historico-beneficios')
+@app_func_required
+def api_app_funcionario_historico_beneficios():
+    f=g.app_funcionario
+    registros=BeneficioMensal.query.filter_by(funcionario_id=f.id)\
+        .order_by(BeneficioMensal.competencia.desc()).limit(24).all()
+    resultado=[]
+    for r in registros:
+        vr=r.vale_refeicao or 0
+        va=r.vale_alimentacao or 0
+        vt=r.vale_transporte or 0
+        vg=r.vale_gasolina or 0
+        cn=r.cesta_natal or 0
+        pp=r.premio_produtividade or 0
+        total=vr+va+vt+vg+cn+pp
+        detalhes=[]
+        if vr>0: detalhes.append('VR: R$%.2f'%vr)
+        if va>0: detalhes.append('VA: R$%.2f'%va)
+        if vt>0: detalhes.append('VT: R$%.2f'%vt)
+        if vg>0: detalhes.append('VG: R$%.2f'%vg)
+        if cn>0: detalhes.append('Cesta: R$%.2f'%cn)
+        if pp>0: detalhes.append('PP: R$%.2f'%pp)
+        resultado.append({
+            'competencia':r.competencia,
+            'total':round(total,2),
+            'detalhes':' | '.join(detalhes),
+            'obs':r.salario_obs or ''
+        })
+    return jsonify({'ok':True,'historico':resultado})
+
 @app.route('/api/app/funcionario/arquivos/<int:id>/download')
 @app_func_required
 def api_app_funcionario_download_arquivo(id):
-    a=FuncionarioArquivo.query.get_or_404(id)
+    a=db.get_or_404(FuncionarioArquivo, id)
     if a.funcionario_id!=g.app_funcionario.id:
         return jsonify({'erro':'Acesso negado'}),403
     abs_p=os.path.join(UPLOAD_ROOT,a.caminho)
     if not os.path.exists(abs_p): return jsonify({'erro':'Arquivo nao encontrado'}),404
     audit_event('funcionario_app_arquivo_download','funcionario',g.app_funcionario.id,'funcionario',a.funcionario_id,True,{'arquivo_id':a.id,'caminho':a.caminho})
     return send_file(abs_p,as_attachment=True,download_name=a.nome_arquivo)
+
+@app.route('/api/app/funcionario/arquivos/<int:id>/assinar',methods=['POST'])
+@app_func_required
+def api_app_funcionario_assinar_arquivo(id):
+    f=g.app_funcionario
+    a=db.get_or_404(FuncionarioArquivo, id)
+    if a.funcionario_id!=f.id:
+        return jsonify({'erro':'Acesso negado'}),403
+    status_atual=(a.ass_status or '').strip().lower()
+    if status_atual=='concluida':
+        return jsonify({'ok':True,'mensagem':'Documento ja assinado.','item':a.to_dict()})
+
+    d=request.json or {}
+    stepup_otp=only_digits(d.get('stepup_otp') or '')
+    stepup_biometria=bool(d.get('stepup_biometria'))
+    ident=norm_cpf(getattr(f,'cpf',None)) or str(f.id)
+
+    if not stepup_biometria:
+        if auth_blocked('app_stepup_confirm',ident,(request.remote_addr or '')):
+            return jsonify({'erro':'Muitas tentativas. Aguarde alguns minutos.'}),429
+        if not stepup_otp:
+            return jsonify({'erro':'step_up_required','mensagem':'Confirme sua identidade antes de assinar.'}),403
+        if not (f.app_stepup_hash or '').strip() or not f.app_stepup_expira_em:
+            return jsonify({'erro':'Solicite um codigo de confirmacao antes de assinar.'}),400
+        if f.app_stepup_expira_em<utcnow():
+            return jsonify({'erro':'Codigo expirado. Solicite um novo codigo de confirmacao.'}),400
+        if int(f.app_stepup_arquivo_id or 0)!=id:
+            return jsonify({'erro':'Codigo de confirmacao invalido para este documento.'}),400
+        tent=int(f.app_stepup_tentativas or 0)
+        if tent>=5:
+            reg_auth_attempt('app_stepup_confirm',ident,False,'limite_tentativas')
+            return jsonify({'erro':'Limite de tentativas excedido. Solicite novo codigo.'}),400
+        if not hmac.compare_digest(token_hash(stepup_otp),str(f.app_stepup_hash or '')):
+            f.app_stepup_tentativas=tent+1
+            db.session.commit()
+            reg_auth_attempt('app_stepup_confirm',ident,False,'codigo_invalido')
+            return jsonify({'erro':'Codigo de confirmacao invalido.'}),401
+
+    f.app_stepup_hash=None
+    f.app_stepup_expira_em=None
+    f.app_stepup_tentativas=0
+    f.app_stepup_arquivo_id=None
+
+    a.ass_status='concluida'
+    a.ass_nome=(f.nome or '').strip()
+    a.ass_cpf=norm_cpf(f.cpf)
+    a.ass_cargo=(f.cargo or '').strip()
+    a.ass_ip=(request.remote_addr or '')[:60]
+    a.ass_em=utcnow()
+    a.ass_token=''
+    a.ass_expira_em=None
+    a.ass_otp_hash=''
+    a.ass_otp_expira_em=None
+    a.ass_otp_tentativas=0
+    a.ass_codigo=(a.ass_codigo or secrets.token_urlsafe(16))
+
+    db.session.commit()
+    if not stepup_biometria:
+        reg_auth_attempt('app_stepup_confirm',ident,True,'ok')
+    modo='biometria' if stepup_biometria else 'otp'
+    audit_event(
+        'funcionario_app_arquivo_assinado',
+        'funcionario',f.id,
+        'arquivo',a.id,
+        True,
+        {'arquivo_id':a.id,'categoria':a.categoria,'competencia':a.competencia,'origem':'app','stepup':modo}
+    )
+    return jsonify({'ok':True,'mensagem':'Documento assinado com sucesso.','item':a.to_dict()})
+
+@app.route('/api/app/funcionario/pendentes-assinatura')
+@app_func_required
+def api_app_funcionario_pendentes_assinatura():
+    f=g.app_funcionario
+    regs=FuncionarioArquivo.query.filter_by(funcionario_id=f.id,ass_status='pendente').order_by(FuncionarioArquivo.criado_em.desc()).all()
+    itens=[]
+    for a in regs:
+        prazo_em=getattr(a,'ass_prazo_em',None)
+        cat=norm_cat(a.categoria)
+        itens.append({
+            'id':a.id,
+            'categoria':cat,
+            'categoria_label':DOC_CAT_LABEL.get(cat,cat),
+            'ano':arq_year_from_path(a.caminho),
+            'nome_arquivo':a.nome_arquivo,
+            'competencia':a.competencia,
+            'ass_status':'pendente',
+            'ass_em_fmt':'',
+            'ass_prazo_em':prazo_em.isoformat() if prazo_em else None,
+            'ass_prazo_fmt':prazo_em.strftime('%d/%m/%Y') if prazo_em else None,
+            'can_assinar':True,
+            'criado_em':a.criado_em.isoformat() if a.criado_em else '',
+            'criado_fmt':a.criado_em.strftime('%d/%m/%Y %H:%M') if a.criado_em else '',
+            'download_url':f'/api/funcionarios/arquivos/{a.id}/download',
+            'app_download_url':f'/api/app/funcionario/arquivos/{a.id}/download',
+        })
+    return jsonify({'ok':True,'itens':itens})
+
+@app.route('/api/app/funcionario/historico-assinaturas')
+@app_func_required
+def api_app_funcionario_historico_assinaturas():
+    f=g.app_funcionario
+    regs=FuncionarioArquivo.query.filter_by(funcionario_id=f.id,ass_status='concluida').order_by(FuncionarioArquivo.ass_em.desc()).all()
+    itens=[]
+    for a in regs:
+        cat=norm_cat(a.categoria)
+        ip_raw=a.ass_ip or ''
+        # mask last octet for privacy: 192.168.1.100 -> 192.168.1.xxx
+        ip_parts=ip_raw.split('.')
+        ip_mask='.'.join(ip_parts[:-1]+['xxx']) if len(ip_parts)==4 else ip_raw
+        itens.append({
+            'id':a.id,
+            'categoria':cat,
+            'categoria_label':DOC_CAT_LABEL.get(cat,cat),
+            'ano':arq_year_from_path(a.caminho),
+            'nome_arquivo':a.nome_arquivo,
+            'competencia':a.competencia or '',
+            'ass_em':a.ass_em.isoformat() if a.ass_em else '',
+            'ass_em_fmt':a.ass_em.strftime('%d/%m/%Y %H:%M') if a.ass_em else '',
+            'ass_ip_mask':ip_mask,
+            'ass_codigo':a.ass_codigo or '',
+            'app_download_url':f'/api/app/funcionario/arquivos/{a.id}/download',
+        })
+    return jsonify({'ok':True,'itens':itens})
 
 @app.route('/api/app/funcionario/me/senha',methods=['PUT'])
 @app_func_required
@@ -6127,7 +8287,7 @@ def api_app_comunicados_lista():
 @app_func_required
 def api_app_comunicado_marcar_lido(cid):
     f=g.app_funcionario
-    c=ComunicadoApp.query.get_or_404(cid)
+    c=db.get_or_404(ComunicadoApp, cid)
     c.marcar_lido(f.id)
     db.session.commit()
     return jsonify({'ok':True})
@@ -6170,17 +8330,1132 @@ def api_app_mensagem_enviar():
     conteudo=(d.get('conteudo') or '').strip()
     if not conteudo: return jsonify({'erro':'Mensagem nao pode ser vazia'}),400
     if len(conteudo)>2000: return jsonify({'erro':'Mensagem muito longa'}),400
-    m=MensagemApp(funcionario_id=f.id,de_rh=False,conteudo=conteudo,lida=False,enviado_por='funcionario')
+    m=MensagemApp(funcionario_id=f.id,de_rh=False,conteudo=conteudo,lida=False,enviado_por='funcionario',tipo='texto')
     db.session.add(m)
     db.session.commit()
     return jsonify(m.to_dict()),201
 
+@app.route('/api/app/funcionario/mensagens/arquivo',methods=['POST'])
+@app_func_required
+def api_app_mensagem_enviar_arquivo():
+    f=g.app_funcionario
+    arq=request.files.get('arquivo')
+    if not arq: return jsonify({'erro':'Nenhum arquivo enviado'}),400
+    nome_orig=secure_filename(arq.filename or 'arquivo')
+    if not nome_orig: return jsonify({'erro':'Nome de arquivo invalido'}),400
+    ext=os.path.splitext(nome_orig)[1].lower()
+    exts_permitidas={'.pdf','.jpg','.jpeg','.png','.doc','.docx','.xls','.xlsx','.txt','.zip'}
+    if ext not in exts_permitidas:
+        return jsonify({'erro':'Tipo de arquivo nao permitido'}),400
+    conteudo=(request.form.get('conteudo') or '').strip()[:500]
+    pasta=os.path.join(UPLOAD_ROOT,'funcionarios',str(f.id),'chat')
+    os.makedirs(pasta,exist_ok=True)
+    ts=datetime.utcnow().strftime('%Y%m%d%H%M%S')
+    nome_final=f'{ts}_{nome_orig}'
+    abs_p=os.path.join(pasta,nome_final)
+    arq.save(abs_p)
+    rel=os.path.relpath(abs_p,UPLOAD_ROOT)
+    texto_msg=conteudo if conteudo else f'[Arquivo: {nome_orig}]'
+    m=MensagemApp(
+        funcionario_id=f.id,de_rh=False,conteudo=texto_msg,
+        lida=False,enviado_por='funcionario',
+        tipo='arquivo',arquivo_nome=nome_orig,arquivo_caminho=rel
+    )
+    db.session.add(m); db.session.commit()
+    return jsonify(m.to_dict()),201
+
+@app.route('/api/app/funcionario/mensagens/<int:mid>/arquivo')
+@app_func_required
+def api_app_mensagem_download_arquivo(mid):
+    f=g.app_funcionario
+    m=db.get_or_404(MensagemApp, mid)
+    if m.funcionario_id!=f.id:
+        return jsonify({'erro':'Acesso negado'}),403
+    if not m.arquivo_caminho: return jsonify({'erro':'Mensagem sem arquivo'}),404
+    abs_p=os.path.join(UPLOAD_ROOT,m.arquivo_caminho)
+    if not os.path.exists(abs_p): return jsonify({'erro':'Arquivo nao encontrado'}),404
+    return send_file(abs_p,as_attachment=True,download_name=m.arquivo_nome or 'arquivo')
+
 @app.route('/api/app/funcionario/mensagens/nao-lidas')
 @app_func_required
+@cache.cached(timeout=5, key_prefix=lambda: f'app_msg_nao_lidas_{g.app_funcionario.id}')
 def api_app_mensagens_nao_lidas():
     f=g.app_funcionario
     count=MensagemApp.query.filter_by(funcionario_id=f.id,de_rh=True,lida=False).count()
     return jsonify({'nao_lidas':count})
+
+@app.route('/api/app/funcionario/mensagens/<int:mid>',methods=['DELETE'])
+@app_func_required
+def api_app_mensagem_apagar(mid):
+    """Funcionário apaga uma mensagem PRÓPRIA (de_rh=False) da sua conversa."""
+    f=g.app_funcionario
+    m=db.get_or_404(MensagemApp, mid)
+    if m.funcionario_id!=f.id:
+        return jsonify({'erro':'Acesso negado'}),403
+    if m.de_rh:
+        return jsonify({'erro':'Não é possível apagar mensagens do RH'}),400
+    db.session.delete(m)
+    db.session.commit()
+    return jsonify({'ok':True})
+
+# ============================================================
+# PONTO - APP (funcionário autenticado)
+# ============================================================
+
+_APP_PONTO_TIPOS=['entrada','saida_intervalo','retorno_intervalo','saida']
+
+def _app_ponto_label(tipo):
+    return {
+        'entrada':'Entrada',
+        'saida_intervalo':'Saída intervalo',
+        'retorno_intervalo':'Retorno intervalo',
+        'saida':'Saída',
+    }.get((tipo or '').strip().lower(),(tipo or '').strip())
+
+def _app_ponto_next_tipo(tipo):
+    t=(tipo or '').strip().lower()
+    if t not in _APP_PONTO_TIPOS:
+        return 'entrada'
+    return _APP_PONTO_TIPOS[(_APP_PONTO_TIPOS.index(t)+1)%len(_APP_PONTO_TIPOS)]
+
+def _app_ponto_tipo_esperado(marcacoes):
+    if not marcacoes:
+        return 'entrada'
+    return _app_ponto_next_tipo(marcacoes[-1].tipo)
+
+def _app_ponto_parse_data_ref(v):
+    s=(v or '').strip()
+    if not s:
+        return localnow().date()
+    try:
+        return datetime.strptime(s,'%Y-%m-%d').date()
+    except Exception:
+        return localnow().date()
+
+def _app_ponto_marcacoes_dia(funcionario_id,data_ref):
+    inicio=datetime.combine(data_ref,datetime.min.time())
+    fim=inicio+timedelta(days=1)
+    return (
+        PontoMarcacao.query.filter(PontoMarcacao.funcionario_id==funcionario_id)
+        .filter(PontoMarcacao.data_hora>=inicio)
+        .filter(PontoMarcacao.data_hora<fim)
+        .order_by(PontoMarcacao.data_hora.asc(),PontoMarcacao.id.asc())
+        .all()
+    )
+
+def _app_ponto_min_esperado_jornada(funcionario):
+    # Preferir jornada estruturada (JornadaTrabalho)
+    if getattr(funcionario,'jornada_id',None):
+        j=db.session.get(JornadaTrabalho, funcionario.jornada_id)
+        if j:
+            return j.carga_horaria_min()
+    # Fallback: campo texto legado
+    jornada=str(funcionario.jornada or '').strip().lower()
+    if not jornada:
+        return 8*60
+    m=re.search(r'(\d{1,2})\s*[:h]\s*(\d{1,2})',jornada)
+    if m:
+        h=max(0,min(16,int(m.group(1))))
+        mm=max(0,min(59,int(m.group(2))))
+        return h*60+mm
+    m=re.search(r'\b(\d{1,2})\b',jornada)
+    if m:
+        h=max(0,min(16,int(m.group(1))))
+        return h*60
+    return 8*60
+
+
+def _app_ponto_min_esperado_jornada_data(funcionario,data_ref):
+    if getattr(funcionario,'jornada_id',None):
+        j=db.session.get(JornadaTrabalho, funcionario.jornada_id)
+        if j:
+            try:
+                if isinstance(data_ref,str):
+                    dt_ref=datetime.strptime(data_ref,'%Y-%m-%d').date()
+                else:
+                    dt_ref=data_ref
+                return j.minutos_esperados_weekday(dt_ref.weekday())
+            except Exception:
+                return j.carga_horaria_min()
+    return _app_ponto_min_esperado_jornada(funcionario)
+
+def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
+    """Retorna minutos esperados para um funcionário em uma data específica.
+    Se tem escala ativa nessa data, usa turno da escala; senão usa jornada fixa."""
+    try:
+        # Verificar se tem escala ativa nessa data
+        data_obj=datetime.strptime(data_str,'%Y-%m-%d').date() if isinstance(data_str,str) else data_str
+        
+        # Procura escala ativa para esse funcionário e data
+        esc_func=EscalaFuncionario.query.filter(
+            EscalaFuncionario.funcionario_id==funcionario.id,
+            EscalaFuncionario.data_inicio<=data_str,
+            EscalaFuncionario.ativo==True
+        ).all()
+        
+        for ef in esc_func:
+            # Se tem data_fim, verifica se data_str está dentro do range
+            if ef.data_fim and ef.data_fim<data_str:
+                continue
+            # Encontrou escala ativa; calcular índice no ciclo
+            esc=db.session.get(Escala, ef.escala_id)
+            if not esc:
+                continue
+            
+            # Calcular quantos dias desde data_inicio
+            data_inicio_obj=datetime.strptime(ef.data_inicio,'%Y-%m-%d').date()
+            dias_decorridos=(data_obj-data_inicio_obj).days
+            
+            # Obter tamanho do ciclo
+            try:
+                ciclo=json.loads(esc.ciclo_json or '{}')
+                dias_ciclo=len(ciclo.get('dias',[]))
+                if dias_ciclo>0:
+                    indice_ciclo=dias_decorridos%dias_ciclo
+                    return esc.carga_horaria_min_dia(indice_ciclo)
+            except Exception:
+                pass
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+    
+    # Se não tem escala ou erro, usa jornada fixa no dia
+    return _app_ponto_min_esperado_jornada_data(funcionario,data_obj if 'data_obj' in locals() else data_str)
+
+def _calcular_horas_noturnas(hora_entrada_min, hora_saida_min, periodo_noturno_ini_min, periodo_noturno_fim_min):
+    """
+    Calcula quantos minutos de trabalho ocorrem no período noturno.
+    
+    Args:
+      hora_entrada_min: minutos desde 00:00 (ex: 22*60+0 = 1320 para 22:00)
+      hora_saida_min: minutos desde 00:00 (se > entrada, cruza meia-noite; adicione 24*60)
+      periodo_noturno_ini_min: início do período noturno (ex: 22:00 = 1320)
+      periodo_noturno_fim_min: fim do período noturno (ex: 05:00 = 300)
+    
+    Returns:
+      Minutos trabalhados no período noturno
+    """
+    if hora_saida_min <= hora_entrada_min:
+        # Cruza meia-noite
+        hora_saida_min += 24*60
+    
+    total_noturno = 0
+    
+    # Se período noturno NÃO cruza meia-noite (ex: 22:00-05:00 na verdade cruza)
+    # Assumir que período noturno pode cruzar meia-noite: 22:00 (dia N) até 05:00 (dia N+1)
+    if periodo_noturno_ini_min > periodo_noturno_fim_min:
+        # Período noturno cruza meia-noite (ex: 22:00-05:00)
+        # Calcular interseção com turno
+        
+        # Parte 1: fim do dia (22:00-23:59)
+        inicio_parte1 = periodo_noturno_ini_min
+        fim_parte1 = 24*60  # 00:00 do dia seguinte
+        if hora_entrada_min < fim_parte1 and hora_saida_min > inicio_parte1:
+            inicio_intersec = max(hora_entrada_min, inicio_parte1)
+            fim_intersec = min(hora_saida_min, fim_parte1)
+            total_noturno += max(0, fim_intersec - inicio_intersec)
+        
+        # Parte 2: início do dia (00:00-05:00)
+        inicio_parte2 = 0
+        fim_parte2 = periodo_noturno_fim_min
+        # Turno que cruza meia-noite já tem saida_min >= 24*60
+        if hora_entrada_min < 24*60 <= hora_saida_min:
+            # Turno cruza para o próximo dia
+            nova_entrada_min = 0
+            nova_saida_min = hora_saida_min - 24*60
+            if nova_entrada_min < fim_parte2 and nova_saida_min > inicio_parte2:
+                inicio_intersec = max(nova_entrada_min, inicio_parte2)
+                fim_intersec = min(nova_saida_min, fim_parte2)
+                total_noturno += max(0, fim_intersec - inicio_intersec)
+    else:
+        # Período noturno NÃO cruza meia-noite (ex: 06:00-22:00 não é noturno)
+        # Interseção simples
+        if hora_entrada_min < periodo_noturno_fim_min and hora_saida_min > periodo_noturno_ini_min:
+            inicio_intersec = max(hora_entrada_min, periodo_noturno_ini_min)
+            fim_intersec = min(hora_saida_min, periodo_noturno_fim_min)
+            total_noturno = max(0, fim_intersec - inicio_intersec)
+    
+    return total_noturno
+
+def _app_ponto_fmt_minutos(total,signed=False):
+    try:
+        minutos=int(total or 0)
+    except Exception:
+        minutos=0
+    sinal=''
+    if signed and minutos<0:
+        sinal='-'
+    minutos=abs(minutos)
+    return f'{sinal}{minutos//60:02d}:{minutos%60:02d}'
+
+def _app_ponto_resumo_dia(funcionario,data_ref):
+    marcacoes=_app_ponto_marcacoes_dia(funcionario.id,data_ref)
+    inconsistencias=[]
+    esperado='entrada'
+    segundos_total=0
+    aberta_em=None
+    for m in marcacoes:
+        if not getattr(m,'data_hora',None):
+            inconsistencias.append('Marcação sem data/hora válida foi ignorada no cálculo.')
+            esperado=_app_ponto_next_tipo(m.tipo)
+            continue
+        if m.tipo!=esperado:
+            inconsistencias.append(
+                f'Sequência inesperada: recebido {_app_ponto_label(m.tipo)}; esperado {_app_ponto_label(esperado)}.'
+            )
+        if m.tipo=='entrada':
+            if aberta_em is not None:
+                inconsistencias.append('Existe uma entrada sem fechamento antes desta nova entrada.')
+            aberta_em=m.data_hora
+        elif m.tipo=='saida_intervalo':
+            if aberta_em is None:
+                inconsistencias.append('Saída para intervalo sem entrada anterior.')
+            else:
+                segundos_total+=max(0,int((m.data_hora-aberta_em).total_seconds()))
+                aberta_em=None
+        elif m.tipo=='retorno_intervalo':
+            if aberta_em is not None:
+                inconsistencias.append('Retorno de intervalo sem saída anterior.')
+            aberta_em=m.data_hora
+        elif m.tipo=='saida':
+            if aberta_em is None:
+                inconsistencias.append('Saída final sem entrada anterior.')
+            else:
+                segundos_total+=max(0,int((m.data_hora-aberta_em).total_seconds()))
+                aberta_em=None
+        esperado=_app_ponto_next_tipo(m.tipo)
+    if aberta_em is not None:
+        inconsistencias.append('Jornada em aberto (faltou batida de fechamento).')
+
+    min_trab=int(round(segundos_total/60.0))
+    min_esp=_app_ponto_min_esperado_jornada_em_data(funcionario,data_ref.strftime('%Y-%m-%d'))
+    saldo=min_trab-min_esp
+
+    itens=[]
+    for m in marcacoes:
+        dt=m.data_hora
+        itens.append({
+            'id':m.id,
+            'tipo':m.tipo,
+            'tipo_label':_app_ponto_label(m.tipo),
+            'data_hora':dt.isoformat() if dt else '',
+            'hora_fmt':dt.strftime('%H:%M') if dt else '',
+            'origem':(m.origem or 'app'),
+            'observacao':m.observacao or '',
+            'lat':m.latitude,
+            'lon':m.longitude,
+        })
+
+    prox=_app_ponto_tipo_esperado(marcacoes)
+    return {
+        'funcionario_id':funcionario.id,
+        'funcionario_nome':funcionario.nome,
+        'data_ref':data_ref.strftime('%Y-%m-%d'),
+        'marcacoes':itens,
+        'proximo_tipo':prox,
+        'proximo_tipo_label':_app_ponto_label(prox),
+        'horas_trabalhadas_min':min_trab,
+        'horas_trabalhadas_fmt':_app_ponto_fmt_minutos(min_trab),
+        'horas_esperadas_min':min_esp,
+        'horas_esperadas_fmt':_app_ponto_fmt_minutos(min_esp),
+        'saldo_min':saldo,
+        'saldo_fmt':_app_ponto_fmt_minutos(saldo,signed=True),
+        'status':'ok' if not inconsistencias else 'inconsistente',
+        'inconsistencias':inconsistencias,
+    }
+
+def _geo_haversine_m(lat1,lon1,lat2,lon2):
+    try:
+        lat1=float(lat1); lon1=float(lon1); lat2=float(lat2); lon2=float(lon2)
+    except (ValueError,TypeError):
+        return None
+    if not (-90<=lat1<=90 and -90<=lat2<=90 and -180<=lon1<=180 and -180<=lon2<=180):
+        return None
+    r=6371000.0
+    p1=math.radians(lat1); p2=math.radians(lat2)
+    dp=math.radians(lat2-lat1); dl=math.radians(lon2-lon1)
+    a=math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
+    return 2*r*math.atan2(math.sqrt(a),math.sqrt(1-a))
+
+@app.route('/api/app/funcionario/me/ponto/dia')
+@app_func_required
+def api_app_ponto_dia_me():
+    f=g.app_funcionario
+    data_ref=_app_ponto_parse_data_ref(request.args.get('data'))
+    return jsonify({'ok':True,'resumo':_app_ponto_resumo_dia(f,data_ref)})
+
+@app.route('/api/app/funcionario/me/ponto/marcar',methods=['POST'])
+@app_func_required
+def api_app_ponto_marcar_me():
+    f=g.app_funcionario
+    if (f.status or '').strip().lower()!='ativo':
+        return jsonify({'erro':'Somente funcionários ativos podem registrar ponto.'}),400
+    dados=request.json or {}
+    tipo=(dados.get('tipo') or '').strip().lower()
+    observacao=(dados.get('observacao') or '').strip()[:500]
+    # Suporte a ponto offline: aceita data_hora_cliente (ISO UTC) enviado pelo app
+    # quando batido sem internet e sincronizado depois. Limite: até 24h no passado.
+    data_hora=utcnow()
+    dh_cliente_raw=(dados.get('data_hora_cliente') or '').strip()
+    if dh_cliente_raw:
+        try:
+            from datetime import timezone
+            dh_c=datetime.fromisoformat(dh_cliente_raw.replace('Z','+00:00'))
+            # utcnow() retorna hora local (Brasília/APP_TZ), não UTC.
+            # Convertemos o timestamp do cliente para APP_TZ antes de comparar.
+            dh_c_local=dh_c.astimezone(APP_TZ).replace(tzinfo=None)
+            agora=utcnow()
+            if dh_c_local<=agora+timedelta(minutes=2) and dh_c_local>=agora-timedelta(hours=24):
+                data_hora=dh_c_local
+        except (ValueError,TypeError):
+            pass
+    if data_hora>(utcnow()+timedelta(minutes=2)):
+        return jsonify({'erro':'Não é permitido registrar ponto em horário futuro.'}),400
+    data_ref=data_hora.date()
+    marcacoes_dia=_app_ponto_marcacoes_dia(f.id,data_ref)
+    tipo=tipo or _app_ponto_tipo_esperado(marcacoes_dia)
+    if tipo not in _APP_PONTO_TIPOS:
+        return jsonify({'erro':'Tipo de marcação inválido.'}),400
+    esperado=_app_ponto_tipo_esperado(marcacoes_dia)
+    if tipo!=esperado:
+        return jsonify({'erro':f'Ordem de marcação inválida. Agora é esperado: {_app_ponto_label(esperado)}.'}),400
+    if any(abs((data_hora-m.data_hora).total_seconds())<60 for m in marcacoes_dia if getattr(m,'data_hora',None)):
+        return jsonify({'erro':'Já existe marcação neste minuto para este funcionário.'}),400
+
+    ip=(request.headers.get('X-Forwarded-For','') or request.remote_addr or '').split(',')[0].strip()[:60]
+    lat=dados.get('lat')
+    lon=dados.get('lon')
+    precisao=dados.get('precisao')
+    try: lat=float(lat) if lat is not None else None
+    except (ValueError,TypeError): lat=None
+    try: lon=float(lon) if lon is not None else None
+    except (ValueError,TypeError): lon=None
+    try: precisao=float(precisao) if precisao is not None else None
+    except (ValueError,TypeError): precisao=None
+    if lat is None or lon is None:
+        return jsonify({'erro':'Localização obrigatória para registrar ponto. Ative o GPS e tente novamente.'}),400
+    if not (-90<=lat<=90 and -180<=lon<=180):
+        return jsonify({'erro':'Coordenadas de localização inválidas.'}),400
+
+    localizacao={
+        'status':'sem_referencia_posto',
+        'distancia_m':None,
+        'raio_m':None,
+        'posto_cliente_id':f.posto_cliente_id,
+    }
+    if f.posto_cliente_id:
+        cli=db.session.get(Cliente, f.posto_cliente_id)
+        if cli and cli.geo_lat is not None and cli.geo_lon is not None:
+            distancia=_geo_haversine_m(lat,lon,cli.geo_lat,cli.geo_lon)
+            raio=float(cli.geofence_raio_m or 150)
+            localizacao={
+                'status':('no_posto' if (distancia is not None and distancia<=raio) else 'fora_posto'),
+                'distancia_m':(round(distancia,1) if distancia is not None else None),
+                'raio_m':raio,
+                'posto_cliente_id':f.posto_cliente_id,
+            }
+        else:
+            localizacao['status']='posto_sem_coordenada'
+    m=PontoMarcacao(
+        funcionario_id=f.id,
+        tipo=tipo,
+        data_hora=data_hora,
+        origem='app',
+        observacao=observacao,
+        criado_por='funcionario-app',
+        ip=ip,
+        latitude=lat,
+        longitude=lon,
+        precisao_gps=precisao,
+    )
+    db.session.add(m)
+    db.session.commit()
+    audit_event('ponto_marcacao_app','funcionario',f.id,'funcionario',f.id,True,{
+        'tipo':tipo,
+        'data_ref':data_ref.strftime('%Y-%m-%d'),
+        'origem':'app',
+        'lat':lat,
+        'lon':lon,
+        'localizacao_status':localizacao.get('status'),
+        'distancia_m':localizacao.get('distancia_m'),
+    })
+    # Notificar clientes SSE sobre novo ponto
+    try:
+        import json as _json
+        _sse_broadcast('ponto', _json.dumps({
+            'funcionario_id': f.id,
+            'nome': f.nome,
+            'tipo': m.tipo,
+            'hora': m.data_hora.strftime('%H:%M'),
+        }))
+    except Exception:
+        pass
+    # Push de alerta: se hoje é entrada, verificar se ontem houve entrada sem saída
+    if tipo == 'entrada':
+        try:
+            data_ant = (data_ref - timedelta(days=1))
+            marcacoes_ant = _app_ponto_marcacoes_dia(f.id, data_ant)
+            tipos_ant = [mc.tipo for mc in marcacoes_ant]
+            if 'entrada' in tipos_ant and 'saida' not in tipos_ant:
+                _push_notify_funcionario(
+                    f.id,
+                    '⚠️ Ponto incompleto',
+                    f'Ontem ({data_ant.strftime("%d/%m")}) você não registrou a saída. Solicite correção no app.',
+                    data={'tipo': 'alerta_ponto_incompleto', 'data_ref': str(data_ant)}
+                )
+        except Exception:
+            pass
+    return jsonify({
+        'ok':True,
+        'marcacao':{
+            'id':m.id,
+            'tipo':m.tipo,
+            'tipo_label':_app_ponto_label(m.tipo),
+            'hora_fmt':m.data_hora.strftime('%H:%M') if m.data_hora else '',
+            'localizacao':localizacao,
+        },
+        'resumo':_app_ponto_resumo_dia(f,data_ref)
+    })
+
+@app.route('/api/app/funcionario/me/ponto/historico')
+@app_func_required
+def api_app_ponto_historico_me():
+    """Retorna resumo de ponto dos últimos N dias (padrão 3, máx 7)."""
+    f=g.app_funcionario
+    try:
+        dias=max(1,min(7,int(request.args.get('dias',3))))
+    except (ValueError,TypeError):
+        dias=3
+    hoje=localnow().date()
+    resultado=[]
+    for i in range(dias):
+        data_ref=hoje-timedelta(days=i)
+        resumo=_app_ponto_resumo_dia(f,data_ref)
+        fd=PontoFechamentoDia.query.filter_by(
+            funcionario_id=f.id,
+            data_ref=data_ref.isoformat()
+        ).first()
+        resumo['fechado']=fd is not None
+        resumo['fechado_por']=(fd.fechado_por or '') if fd else ''
+        resultado.append(resumo)
+    return jsonify({'ok':True,'dias':resultado})
+
+@app.route('/api/app/funcionario/me/ponto/espelho/status')
+@app_func_required
+def api_app_ponto_espelho_status_me():
+    """Retorna lista de competências com status de fechamento para download."""
+    import calendar as _cal
+    f=g.app_funcionario
+    hoje=localnow().date()
+    competencias=[]
+    for i in range(12):
+        ano=hoje.year
+        mes=hoje.month-i
+        while mes<=0:
+            mes+=12
+            ano-=1
+        ultimo_dia=_cal.monthrange(ano,mes)[1]
+        dt_ini=date(ano,mes,1)
+        dt_fim=date(ano,mes,ultimo_dia)
+        comp=f'{ano}-{mes:02d}'
+        fechamentos=PontoFechamentoDia.query.filter(
+            PontoFechamentoDia.funcionario_id==f.id,
+            PontoFechamentoDia.data_ref>=dt_ini.isoformat(),
+            PontoFechamentoDia.data_ref<=dt_fim.isoformat(),
+        ).count()
+        pode_baixar=fechamentos>0
+        meses_pt=['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                  'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+        competencias.append({
+            'competencia':comp,
+            'label':f'{meses_pt[mes-1]}/{ano}',
+            'pode_baixar':pode_baixar,
+            'fechamentos_dias':fechamentos,
+        })
+    return jsonify({'ok':True,'competencias':competencias})
+
+@app.route('/api/app/funcionario/me/ponto/espelho/dados')
+@app_func_required
+def api_app_ponto_espelho_dados_me():
+    """Retorna dados JSON da folha de ponto para visualização (sem restrição de fechamento)."""
+    import calendar as _cal
+    f=g.app_funcionario
+    competencia=(request.args.get('competencia') or '').strip()
+    if not re.match(r'^\d{4}-\d{2}$',competencia):
+        return jsonify({'erro':'Competência inválida.'}),400
+    try:
+        ano,mes=int(competencia[:4]),int(competencia[5:7])
+        if not (1<=mes<=12 and 2000<=ano<=2100):
+            raise ValueError()
+    except (ValueError,TypeError):
+        return jsonify({'erro':'Competência inválida.'}),400
+    ultimo_dia=_cal.monthrange(ano,mes)[1]
+    meses_pt=['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+              'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+    dias=[]
+    total_min=0
+    for dia in range(1,ultimo_dia+1):
+        data_ref=date(ano,mes,dia)
+        resumo=_app_ponto_resumo_dia(f,data_ref)
+        marcacoes=resumo.get('marcacoes',[])
+        dias_semana=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom']
+        trab_min=resumo.get('horas_trabalhadas_min',0) or 0
+        esp_min=resumo.get('horas_esperadas_min',0) or 0
+        total_min+=trab_min
+        dias.append({
+            'data':data_ref.isoformat(),
+            'data_fmt':f"{dias_semana[data_ref.weekday()]} {data_ref.strftime('%d/%m')}",
+            'marcacoes':[{'tipo':m.get('tipo'),'tipo_label':m.get('tipo_label'),'hora_fmt':m.get('hora_fmt')} for m in marcacoes],
+            'horas_trabalhadas_fmt':resumo.get('horas_trabalhadas_fmt','00:00'),
+            'horas_trabalhadas_min':trab_min,
+            'horas_esperadas_min':esp_min,
+            'status':resumo.get('status',''),
+            'tem_marcacoes':bool(marcacoes),
+        })
+    return jsonify({
+        'ok':True,
+        'competencia':competencia,
+        'label':f'{meses_pt[mes-1]}/{ano}',
+        'total_horas':f'{total_min//60:02d}:{total_min%60:02d}',
+        'funcionario':f.nome,
+        'dias':dias,
+    })
+
+@app.route('/api/app/funcionario/me/ponto/resumo-mes')
+@app_func_required
+def api_app_ponto_resumo_mes():
+    """Retorna saldo de horas trabalhadas no mês corrente (endpoint leve)."""
+    import calendar as _cal
+    f=g.app_funcionario
+    hoje=utcnow().date()
+    ano,mes=hoje.year,hoje.month
+    total_trab=0
+    total_esp=0
+    for dia in range(1,hoje.day+1):
+        data_ref=date(ano,mes,dia)
+        resumo=_app_ponto_resumo_dia(f,data_ref)
+        total_trab+=(resumo.get('horas_trabalhadas_min') or 0)
+        total_esp+=(resumo.get('horas_esperadas_min') or 0)
+    saldo=total_trab-total_esp
+    sinal='+' if saldo>=0 else '-'
+    return jsonify({
+        'ok':True,
+        'total_trabalhado_fmt':f'{total_trab//60:02d}:{total_trab%60:02d}',
+        'total_trabalhado_min':total_trab,
+        'total_esperado_min':total_esp,
+        'saldo_min':saldo,
+        'saldo_fmt':f"{sinal}{abs(saldo)//60:02d}:{abs(saldo)%60:02d}",
+    })
+
+@app.route('/api/app/funcionario/me/ponto/espelho/pdf')
+@app_func_required
+def api_app_ponto_espelho_pdf_me():
+    """Gera e retorna PDF da folha de ponto somente se fechada pelo gestor."""
+    import calendar as _cal
+    f=g.app_funcionario
+    competencia=(request.args.get('competencia') or '').strip()
+    if not re.match(r'^\d{4}-\d{2}$',competencia):
+        return jsonify({'erro':'Competência inválida.'}),400
+    try:
+        ano,mes=int(competencia[:4]),int(competencia[5:7])
+        if not (1<=mes<=12 and 2000<=ano<=2100):
+            raise ValueError()
+    except (ValueError,TypeError):
+        return jsonify({'erro':'Competência inválida.'}),400
+    ultimo_dia=_cal.monthrange(ano,mes)[1]
+    dt_ini=date(ano,mes,1)
+    dt_fim=date(ano,mes,ultimo_dia)
+    fechamentos_count=PontoFechamentoDia.query.filter(
+        PontoFechamentoDia.funcionario_id==f.id,
+        PontoFechamentoDia.data_ref>=dt_ini.isoformat(),
+        PontoFechamentoDia.data_ref<=dt_fim.isoformat(),
+    ).count()
+    if fechamentos_count==0:
+        return jsonify({'erro':'Folha ainda não fechada pelo gestor. Aguarde o fechamento para baixar o PDF.'}),403
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors as rl_colors
+        from reportlab.lib.units import cm
+        from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.enums import TA_LEFT,TA_CENTER
+        buf=io.BytesIO()
+        doc=SimpleDocTemplate(buf,pagesize=A4,
+                              leftMargin=1.5*cm,rightMargin=1.5*cm,
+                              topMargin=1.5*cm,bottomMargin=1.5*cm)
+        meses_pt=['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                  'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+        comp_label=f'{meses_pt[mes-1]}/{ano}'
+        st_title=ParagraphStyle('t',fontSize=13,leading=17,fontName='Helvetica-Bold',alignment=TA_CENTER)
+        st_sub=ParagraphStyle('s',fontSize=10,leading=14,fontName='Helvetica',alignment=TA_CENTER)
+        st_small=ParagraphStyle('sm',fontSize=8,leading=12,fontName='Helvetica',alignment=TA_LEFT)
+        empresa=Empresa.query.first()
+        empresa_nome=(empresa.nome if empresa else '') or 'RM Facilities'
+        elementos=[
+            Paragraph(empresa_nome,st_title),
+            Paragraph(f'Folha de Ponto — {comp_label}',st_sub),
+            Spacer(1,4),
+            Paragraph(
+                f'Funcionário: {f.nome or ""}  |  Cargo: {f.cargo or "-"}  |  Matrícula: {f.matricula or "-"}',
+                st_small
+            ),
+            Spacer(1,10),
+        ]
+        header=['Data','Marcações','Trabalhadas','Status']
+        rows=[header]
+        total_min=0
+        dias_semana=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom']
+        for dia in range(1,ultimo_dia+1):
+            data_ref=date(ano,mes,dia)
+            resumo=_app_ponto_resumo_dia(f,data_ref)
+            marcacoes=resumo.get('marcacoes',[])
+            dds=dias_semana[data_ref.weekday()]
+            data_str=f'{dds} {data_ref.strftime("%d/%m")}'
+            trab=resumo.get('horas_trabalhadas_fmt','00:00')
+            trab_min=resumo.get('horas_trabalhadas_min',0) or 0
+            total_min+=trab_min
+            status_val='OK' if resumo.get('status')=='ok' else ('Inconsist.' if marcacoes else '-')
+            marc_str='  '.join(m.get('hora_fmt','') for m in marcacoes) if marcacoes else 'Falta' if resumo.get('horas_esperadas_min',0) else '-'
+            rows.append([
+                data_str,
+                marc_str,
+                trab if marcacoes else '-',
+                status_val,
+            ])
+        total_fmt=f'{total_min//60:02d}:{total_min%60:02d}'
+        rows.append(['','Total:',total_fmt,''])
+        col_widths=[2.5*cm,9.0*cm,2.5*cm,2.5*cm]
+        tbl=Table(rows,colWidths=col_widths)
+        tbl.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),rl_colors.HexColor('#1a1a2e')),
+            ('TEXTCOLOR',(0,0),(-1,0),rl_colors.white),
+            ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+            ('FONTSIZE',(0,0),(-1,-1),8),
+            ('ALIGN',(0,0),(-1,-1),'CENTER'),
+            ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+            ('ROWBACKGROUNDS',(0,1),(-1,-2),[rl_colors.white,rl_colors.HexColor('#f5f5f5')]),
+            ('GRID',(0,0),(-1,-1),0.5,rl_colors.HexColor('#cccccc')),
+            ('FONTNAME',(0,-1),(-1,-1),'Helvetica-Bold'),
+            ('TOPPADDING',(0,0),(-1,-1),4),
+            ('BOTTOMPADDING',(0,0),(-1,-1),4),
+        ]))
+        elementos.append(tbl)
+        elementos.append(Spacer(1,16))
+        ass_tbl=Table([[
+            Paragraph('_________________________<br/>Funcionário',st_small),
+            Paragraph('_________________________<br/>Gestor / RH',st_small),
+        ]],colWidths=[8*cm,8*cm])
+        ass_tbl.setStyle(TableStyle([
+            ('ALIGN',(0,0),(-1,-1),'CENTER'),
+            ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ]))
+        elementos.append(ass_tbl)
+        doc.build(elementos)
+        buf.seek(0)
+        nome_func=(f.nome or 'funcionario').replace(' ','_')
+        return send_file(buf,mimetype='application/pdf',as_attachment=True,
+                         download_name=f'folha_ponto_{nome_func}_{competencia}.pdf')
+    except Exception as e:
+        return jsonify({'erro':f'Erro ao gerar PDF: {str(e)}'}),500
+
+# ============================================================
+# JORNADAS DE TRABALHO
+# ============================================================
+
+@app.route('/api/jornadas',methods=['GET'])
+@lr
+def api_jornadas_listar():
+    ativas=request.args.get('ativas','0').strip()
+    q=JornadaTrabalho.query
+    if ativas=='1':
+        q=q.filter_by(ativo=True)
+    jornadas=q.order_by(JornadaTrabalho.nome).all()
+    ids=[j.id for j in jornadas if j.id]
+    mapa_funcs={}
+    if ids:
+        for f in Funcionario.query.filter(Funcionario.jornada_id.in_(ids)).order_by(Funcionario.nome.asc()).all():
+            mapa_funcs.setdefault(f.jornada_id,[]).append({
+                'id':f.id,
+                'nome':f.nome or '',
+                'matricula':f.matricula or '',
+                're':f.re or '',
+                'status':f.status or '',
+            })
+    out=[]
+    for j in jornadas:
+        d=j.to_dict()
+        funcs=mapa_funcs.get(j.id,[])
+        d['funcionarios']=funcs
+        d['funcionarios_count']=len(funcs)
+        out.append(d)
+    return jsonify(out)
+
+@app.route('/api/jornadas',methods=['POST'])
+@lr
+def api_jornadas_criar():
+    d=request.json or {}
+    nome=(d.get('nome') or '').strip()
+    if not nome:
+        return jsonify({'erro':'Nome é obrigatório'}),400
+    grade_norm=_jornada_normalizar_grade(d.get('grade_semanal') or {},None)
+    dias_ativos=[int(k) for k,v in grade_norm.items() if bool((v or {}).get('ativo',False))]
+    primeira_cfg=grade_norm.get(str(dias_ativos[0] if dias_ativos else 1),grade_norm.get('1',{}))
+    intervalo_prim=max(0,min(240,int((primeira_cfg or {}).get('intervalo_min',60) or 0)))
+    ent_prim=(primeira_cfg or {}).get('entrada','08:00')
+    sai_prim=(primeira_cfg or {}).get('saida','17:48')
+    int_ini='12:00'
+    int_fim='13:00'
+    try:
+        he=list(map(int,str(ent_prim).split(':')))
+        ini=he[0]*60+he[1]+max(0,min(240,int(intervalo_prim//2)))
+        fim=min(24*60,ini+intervalo_prim)
+        int_ini=f'{(ini//60)%24:02d}:{ini%60:02d}'
+        int_fim=f'{(fim//60)%24:02d}:{fim%60:02d}'
+    except Exception:
+        pass
+    j=JornadaTrabalho(
+        nome=nome,
+        descricao=(d.get('descricao') or '').strip()[:255],
+        dias_semana=json.dumps({'v':1,'dias':grade_norm},ensure_ascii=False),
+        hora_entrada=str(ent_prim or '08:00').strip()[:5],
+        hora_saida=str(sai_prim or '17:48').strip()[:5],
+        hora_intervalo_inicio=int_ini,
+        hora_intervalo_fim=int_fim,
+        tolerancia_min=max(0,min(60,int(d.get('tolerancia_min') or 10))),
+        ativo=bool(d.get('ativo',True)),
+    )
+    db.session.add(j); db.session.commit()
+    audit_event('jornada_criar','usuario',session.get('uid'),'jornada_trabalho',j.id,True,{'nome':nome})
+    return jsonify(j.to_dict()),201
+
+@app.route('/api/jornadas/<int:id>',methods=['GET'])
+@lr
+def api_jornada_detalhe(id):
+    j=db.get_or_404(JornadaTrabalho, id)
+    d=j.to_dict()
+    d['funcionarios']=[{'id':f.id,'nome':f.nome,'cargo':f.cargo,'status':f.status} for f in Funcionario.query.filter_by(jornada_id=id).order_by(Funcionario.nome).all()]
+    return jsonify(d)
+
+@app.route('/api/jornadas/<int:id>',methods=['PUT'])
+@lr
+def api_jornada_editar(id):
+    j=db.get_or_404(JornadaTrabalho, id)
+    d=request.json or {}
+    if 'nome' in d:
+        n=(d['nome'] or '').strip()
+        if not n: return jsonify({'erro':'Nome não pode ser vazio'}),400
+        j.nome=n
+    if 'descricao' in d: j.descricao=(d['descricao'] or '').strip()[:255]
+    if 'grade_semanal' in d and isinstance(d.get('grade_semanal'),dict):
+        grade_norm=_jornada_normalizar_grade(d.get('grade_semanal') or {},j)
+        j.dias_semana=json.dumps({'v':1,'dias':grade_norm},ensure_ascii=False)
+        dias_ativos=[int(k) for k,v in grade_norm.items() if bool((v or {}).get('ativo',False))]
+        primeira_cfg=grade_norm.get(str(dias_ativos[0] if dias_ativos else 1),grade_norm.get('1',{}))
+        j.hora_entrada=str((primeira_cfg or {}).get('entrada','08:00')).strip()[:5]
+        j.hora_saida=str((primeira_cfg or {}).get('saida','17:48')).strip()[:5]
+        intervalo_prim=max(0,min(240,int((primeira_cfg or {}).get('intervalo_min',60) or 0)))
+        try:
+            he=list(map(int,j.hora_entrada.split(':')))
+            ini=he[0]*60+he[1]+max(0,min(240,int(intervalo_prim//2)))
+            fim=min(24*60,ini+intervalo_prim)
+            j.hora_intervalo_inicio=f'{(ini//60)%24:02d}:{ini%60:02d}'
+            j.hora_intervalo_fim=f'{(fim//60)%24:02d}:{fim%60:02d}'
+        except Exception:
+            pass
+    else:
+        if 'dias_semana' in d: j.dias_semana=(d['dias_semana'] or '1,2,3,4,5').strip()
+        if 'hora_entrada' in d: j.hora_entrada=(d['hora_entrada'] or '08:00').strip()[:5]
+        if 'hora_saida' in d: j.hora_saida=(d['hora_saida'] or '17:48').strip()[:5]
+        if 'hora_intervalo_inicio' in d: j.hora_intervalo_inicio=(d['hora_intervalo_inicio'] or '12:00').strip()[:5]
+        if 'hora_intervalo_fim' in d: j.hora_intervalo_fim=(d['hora_intervalo_fim'] or '13:00').strip()[:5]
+    if 'tolerancia_min' in d:
+        try: j.tolerancia_min=max(0,min(60,int(d['tolerancia_min'])))
+        except (ValueError,TypeError): pass
+    if 'ativo' in d: j.ativo=bool(d['ativo'])
+    db.session.commit()
+    audit_event('jornada_editar','usuario',session.get('uid'),'jornada_trabalho',id,True,{})
+    return jsonify(j.to_dict())
+
+@app.route('/api/jornadas/<int:id>',methods=['DELETE'])
+@lr
+def api_jornada_excluir(id):
+    j=db.get_or_404(JornadaTrabalho, id)
+    count=Funcionario.query.filter_by(jornada_id=id).count()
+    if count>0:
+        return jsonify({'erro':f'Jornada está vinculada a {count} funcionário(s). Desvincule antes de excluir.'}),400
+    db.session.delete(j); db.session.commit()
+    audit_event('jornada_excluir','usuario',session.get('uid'),'jornada_trabalho',id,True,{'nome':j.nome})
+    return jsonify({'ok':True})
+
+@app.route('/api/jornadas/<int:id>/funcionarios',methods=['POST'])
+@lr
+def api_jornada_vincular_funcionarios(id):
+    j=db.get_or_404(JornadaTrabalho, id)
+    d=request.json or {}
+    ids=d.get('funcionario_ids') or []
+    if not isinstance(ids,list):
+        return jsonify({'erro':'funcionario_ids deve ser lista'}),400
+    ids_ok=[]
+    for x in ids:
+        try:
+            ids_ok.append(int(x))
+        except Exception:
+            pass
+    ids_ok=sorted(set(ids_ok))
+    if not ids_ok:
+        return jsonify({'erro':'Selecione ao menos 1 funcionário válido.'}),400
+
+    conflitos=[]
+    for fid in ids_ok:
+        f=db.session.get(Funcionario, fid)
+        if not f:
+            continue
+        if f.jornada_id and int(f.jornada_id)!=int(id):
+            j_atual=db.session.get(JornadaTrabalho, f.jornada_id)
+            conflitos.append({
+                'funcionario_id':f.id,
+                'nome':f.nome or '',
+                'jornada_atual_id':f.jornada_id,
+                'jornada_atual_nome':(j_atual.nome if j_atual else f'Jornada #{f.jornada_id}')
+            })
+
+    if conflitos:
+        nomes=', '.join([(c.get('nome') or str(c.get('funcionario_id'))) for c in conflitos[:6]])
+        sufixo='...' if len(conflitos)>6 else ''
+        return jsonify({
+            'erro':f'Não é permitido funcionário em 2 jornadas. Desvincule antes de vincular: {nomes}{sufixo}',
+            'conflitos':conflitos,
+            'jornada_destino_id':j.id,
+            'jornada_destino_nome':j.nome or ''
+        }),409
+
+    vinculados=[]
+    for fid in ids_ok:
+        f=db.session.get(Funcionario, fid)
+        if not f:
+            continue
+        f.jornada_id=id
+        vinculados.append(fid)
+    db.session.commit()
+    audit_event('jornada_vincular','usuario',session.get('uid'),'jornada_trabalho',id,True,{'funcionarios':vinculados})
+    return jsonify({'ok':True,'vinculados':len(vinculados)})
+
+@app.route('/api/jornadas/<int:id>/funcionarios/<int:fid>',methods=['DELETE'])
+@lr
+def api_jornada_desvincular_funcionario(id,fid):
+    f=db.get_or_404(Funcionario, fid)
+    if f.jornada_id!=id:
+        return jsonify({'erro':'Funcionário não está nesta jornada'}),400
+    f.jornada_id=None
+    db.session.commit()
+    return jsonify({'ok':True})
+
+@app.route('/api/funcionarios/<int:id>/jornada',methods=['PUT'])
+@lr
+def api_funcionario_definir_jornada(id):
+    f=db.get_or_404(Funcionario, id)
+    d=request.json or {}
+    jid=d.get('jornada_id')
+    if jid is None or jid=='':
+        f.jornada_id=None
+    else:
+        j=db.session.get(JornadaTrabalho, int(jid))
+        if not j: return jsonify({'erro':'Jornada não encontrada'}),404
+        f.jornada_id=j.id
+    db.session.commit()
+    return jsonify({'ok':True,'jornada_id':f.jornada_id})
+
+# ============================================================
+# ESCALAS DE TURNOS - WEB RH (gestão)
+# ============================================================
+
+@app.route('/api/escalas',methods=['GET'])
+@lr
+def api_escalas_listar():
+    escalas=Escala.query.filter_by(ativo=True).order_by(Escala.criado_em.desc()).all()
+    return jsonify([e.to_dict() for e in escalas])
+
+@app.route('/api/escalas',methods=['POST'])
+@lr
+def api_escalas_criar():
+    d=request.json or {}
+    nome=(d.get('nome') or '').strip()
+    tipo=(d.get('tipo') or '').strip()
+    if not nome:
+        return jsonify({'erro':'Nome obrigatório'}),400
+    if tipo not in ('6x2','6x1','4x2','12x36','folguista','noturna'):
+        return jsonify({'erro':"Tipo deve ser '6x2', '6x1', '4x2', '12x36', 'folguista' ou 'noturna'"}),400
+    
+    ciclo_json=d.get('ciclo_json') or '{}'
+    if isinstance(ciclo_json,dict):
+        ciclo_json=json.dumps(ciclo_json,ensure_ascii=False)
+    
+    periodo_ini=(d.get('periodo_noturno_ini') or '22:00').strip()
+    periodo_fim=(d.get('periodo_noturno_fim') or '05:00').strip()
+    # Validar formato HH:MM
+    if not re.match(r'^\d{2}:\d{2}$',periodo_ini):
+        periodo_ini='22:00'
+    if not re.match(r'^\d{2}:\d{2}$',periodo_fim):
+        periodo_fim='05:00'
+    
+    e=Escala(
+        nome=nome,
+        tipo=tipo,
+        ciclo_json=ciclo_json,
+        descricao=d.get('descricao',''),
+        periodo_noturno_ini=periodo_ini,
+        periodo_noturno_fim=periodo_fim,
+        ativo=True
+    )
+    db.session.add(e)
+    db.session.commit()
+    audit_event('escala_criar','usuario',session.get('uid'),'escala',e.id,True,{'nome':nome,'tipo':tipo})
+    return jsonify(e.to_dict()),201
+
+@app.route('/api/escalas/<int:id>',methods=['GET'])
+@lr
+def api_escala_detalhe(id):
+    e=db.get_or_404(Escala, id)
+    d=e.to_dict()
+    # Incluir funcionários vinculados
+    d['funcionarios']=[]
+    for ef in EscalaFuncionario.query.filter_by(escala_id=id,ativo=True).all():
+        f=db.session.get(Funcionario, ef.funcionario_id)
+        if f:
+            d['funcionarios'].append({
+                'id':f.id,
+                'nome':f.nome,
+                'matricula':f.matricula,
+                'data_inicio':ef.data_inicio,
+                'data_fim':ef.data_fim,
+                'ativo':ef.ativo
+            })
+    return jsonify(d)
+
+@app.route('/api/escalas/<int:id>',methods=['PUT'])
+@lr
+def api_escala_editar(id):
+    e=db.get_or_404(Escala, id)
+    d=request.json or {}
+    if 'nome' in d:
+        e.nome=(d.get('nome') or '').strip() or e.nome
+    if 'tipo' in d and d.get('tipo') in ('6x2','6x1','4x2','12x36','folguista','noturna'):
+        e.tipo=d.get('tipo')
+    if 'ciclo_json' in d:
+        ciclo=d.get('ciclo_json')
+        e.ciclo_json=json.dumps(ciclo,ensure_ascii=False) if isinstance(ciclo,dict) else (ciclo or '{}')
+    if 'descricao' in d:
+        e.descricao=d.get('descricao','')
+    if 'periodo_noturno_ini' in d:
+        periodo_ini=(d.get('periodo_noturno_ini') or '22:00').strip()
+        if re.match(r'^\d{2}:\d{2}$',periodo_ini):
+            e.periodo_noturno_ini=periodo_ini
+    if 'periodo_noturno_fim' in d:
+        periodo_fim=(d.get('periodo_noturno_fim') or '05:00').strip()
+        if re.match(r'^\d{2}:\d{2}$',periodo_fim):
+            e.periodo_noturno_fim=periodo_fim
+    if 'ativo' in d:
+        e.ativo=bool(d.get('ativo',True))
+    db.session.commit()
+    audit_event('escala_editar','usuario',session.get('uid'),'escala',id,True,{'nome':e.nome})
+    return jsonify(e.to_dict())
+
+@app.route('/api/escalas/<int:id>',methods=['DELETE'])
+@lr
+def api_escala_excluir(id):
+    e=db.get_or_404(Escala, id)
+    e.ativo=False
+    db.session.commit()
+    audit_event('escala_excluir','usuario',session.get('uid'),'escala',id,True,{'nome':e.nome})
+    return jsonify({'ok':True})
+
+@app.route('/api/escalas/<int:id>/funcionarios',methods=['POST'])
+@lr
+def api_escala_vincular_funcionarios(id):
+    e=db.get_or_404(Escala, id)
+    d=request.json or {}
+    pares=d.get('funcionarios') or []  # [{'funcionario_id': 1, 'data_inicio': '2026-05-11', 'data_fim': None}, ...]
+    if not isinstance(pares,list):
+        return jsonify({'erro':'funcionarios deve ser lista'}),400
+    
+    vinculados=[]
+    for par in pares:
+        if not isinstance(par,dict):
+            continue
+        fid=par.get('funcionario_id')
+        data_ini=par.get('data_inicio')
+        data_fim=par.get('data_fim')
+        
+        if not fid or not data_ini:
+            continue
+        
+        f=db.session.get(Funcionario, fid)
+        if not f:
+            continue
+        
+        # Validar se funcionário já está em outra escala na mesma data
+        conflito=EscalaFuncionario.query.filter(
+            EscalaFuncionario.funcionario_id==fid,
+            EscalaFuncionario.escala_id!=id,
+            EscalaFuncionario.data_inicio<=data_ini,
+            EscalaFuncionario.ativo==True
+        ).first()
+        
+        if conflito:
+            esc_atual=db.session.get(Escala, conflito.escala_id)
+            return jsonify({
+                'erro':f'Funcionário {f.nome} já está em outra escala ({esc_atual.nome if esc_atual else f"escala #{conflito.escala_id}"})',
+                'conflito_funcionario_id':fid,
+                'conflito_escala_id':conflito.escala_id
+            }),409
+        
+        # Criar vínculo
+        ef=EscalaFuncionario(
+            escala_id=id,
+            funcionario_id=fid,
+            data_inicio=data_ini,
+            data_fim=data_fim,
+            ativo=True
+        )
+        db.session.add(ef)
+        vinculados.append(fid)
+    
+    db.session.commit()
+    audit_event('escala_vincular','usuario',session.get('uid'),'escala',id,True,{'funcionarios':vinculados})
+    return jsonify({'ok':True,'vinculados':len(vinculados)})
+
+@app.route('/api/escalas/<int:id>/funcionarios/<int:fid>',methods=['DELETE'])
+@lr
+def api_escala_desvincular_funcionario(id,fid):
+    ef=EscalaFuncionario.query.filter_by(escala_id=id,funcionario_id=fid).first_or_404()
+    ef.ativo=False
+    db.session.commit()
+    return jsonify({'ok':True})
+
+@app.route('/api/escalas/<int:id>/turno-do-dia/<data>',methods=['GET'])
+@lr
+def api_escala_turno_do_dia(id,data):
+    """Retorna info do turno para uma data específica dentro do ciclo da escala"""
+    e=db.get_or_404(Escala, id)
+    # Assumindo que data é a data_inicio de alguma EscalaFuncionario ativa
+    # Aqui retornamos apenas a info do turno do dia no ciclo
+    try:
+        ciclo=json.loads(e.ciclo_json or '{}')
+        dias=ciclo.get('dias',[])
+        if not dias:
+            return jsonify({'erro':'Escala sem ciclo definido'}),400
+        # Necessita data_inicio para calcular índice; aqui retornamos apenas a estrutura
+        return jsonify({
+            'escala_id':id,
+            'escala_nome':e.nome,
+            'escala_tipo':e.tipo,
+            'ciclo_dias':len(dias),
+            'ciclo':ciclo
+        })
+    except Exception as ex:
+        return jsonify({'erro':str(ex)}),400
 
 # ============================================================
 # COMUNICADOS - WEB RH (gestão)
@@ -6212,12 +9487,22 @@ def api_rh_comunicado_criar():
     )
     db.session.add(c)
     db.session.commit()
+    # Enviar push para os destinatários
+    push_data={'tipo':'aviso_geral','comunicado_id':str(c.id)}
+    if fid:
+        _push_notify_funcionario(int(fid), titulo, conteudo[:160], data=push_data)
+    else:
+        q=Funcionario.query.filter_by(status='Ativo', app_ativo=True)
+        if posto:
+            q=q.filter(Funcionario.posto_operacional==posto)
+        for func in q.all():
+            _push_notify_funcionario(func.id, titulo, conteudo[:160], data=push_data)
     return jsonify(c.to_dict()),201
 
 @app.route('/api/comunicados-app/<int:cid>',methods=['PUT'])
 @lr
 def api_rh_comunicado_editar(cid):
-    c=ComunicadoApp.query.get_or_404(cid)
+    c=db.get_or_404(ComunicadoApp, cid)
     d=request.json or {}
     if 'titulo' in d: c.titulo=(d['titulo'] or '').strip()
     if 'conteudo' in d: c.conteudo=(d['conteudo'] or '').strip()
@@ -6228,7 +9513,7 @@ def api_rh_comunicado_editar(cid):
 @app.route('/api/comunicados-app/<int:cid>',methods=['DELETE'])
 @lr
 def api_rh_comunicado_excluir(cid):
-    c=ComunicadoApp.query.get_or_404(cid)
+    c=db.get_or_404(ComunicadoApp, cid)
     c.ativo=False
     db.session.commit()
     return jsonify({'ok':True})
@@ -6250,7 +9535,7 @@ def api_rh_mensagens_funcionarios():
     ).group_by(MensagemApp.funcionario_id).all()
     result=[]
     for row in subq:
-        f=Funcionario.query.get(row.funcionario_id)
+        f=db.session.get(Funcionario, row.funcionario_id)
         if not f: continue
         result.append({
             'funcionario_id':f.id,
@@ -6266,7 +9551,7 @@ def api_rh_mensagens_funcionarios():
 @app.route('/api/mensagens-app/<int:fid>')
 @lr
 def api_rh_mensagens_chat(fid):
-    Funcionario.query.get_or_404(fid)
+    db.get_or_404(Funcionario, fid)
     msgs=MensagemApp.query.filter_by(funcionario_id=fid).order_by(MensagemApp.enviado_em.asc()).all()
     # Marcar mensagens do funcionário como lidas
     for m in msgs:
@@ -6278,7 +9563,7 @@ def api_rh_mensagens_chat(fid):
 @app.route('/api/mensagens-app/<int:fid>',methods=['POST'])
 @lr
 def api_rh_mensagem_responder(fid):
-    Funcionario.query.get_or_404(fid)
+    db.get_or_404(Funcionario, fid)
     d=request.json or {}
     conteudo=(d.get('conteudo') or '').strip()
     if not conteudo: return jsonify({'erro':'Mensagem nao pode ser vazia'}),400
@@ -6325,7 +9610,7 @@ def api_rh_mensagens_broadcast():
 @app.route('/api/funcionarios/arquivos/<int:id>',methods=['DELETE'])
 @lr
 def api_funcionario_delete_arquivo(id):
-    a=FuncionarioArquivo.query.get_or_404(id)
+    a=db.get_or_404(FuncionarioArquivo, id)
     fid=a.funcionario_id
     cam=a.caminho
     try: os.remove(os.path.join(UPLOAD_ROOT,a.caminho))
@@ -6337,7 +9622,7 @@ def api_funcionario_delete_arquivo(id):
 @app.route('/api/funcionarios/arquivos/<int:id>/download')
 @lr
 def api_funcionario_download_arquivo(id):
-    a=FuncionarioArquivo.query.get_or_404(id)
+    a=db.get_or_404(FuncionarioArquivo, id)
     abs_p=os.path.join(UPLOAD_ROOT,a.caminho)
     if not os.path.exists(abs_p): return jsonify({'erro':'Arquivo nao encontrado'}),404
     ator_tipo='funcionario_app' if getattr(g,'app_funcionario',None) else 'usuario'
@@ -6348,23 +9633,43 @@ def api_funcionario_download_arquivo(id):
 @app.route('/api/funcionarios/arquivos/<int:id>/assinatura/solicitar',methods=['POST'])
 @lr
 def api_func_arquivo_solicitar_assinatura(id):
-    a=FuncionarioArquivo.query.get_or_404(id)
-    f=Funcionario.query.get_or_404(a.funcionario_id)
+    a=db.get_or_404(FuncionarioArquivo, id)
+    f=db.get_or_404(Funcionario, a.funcionario_id)
     d=request.json or {}
-    canal=(d.get('canal') or 'link').strip().lower()
-    rs=_solicitar_assinatura_arquivo_funcionario(a,f,canal=canal,commit_now=True)
+    canal_req=(d.get('canal') or '').strip().lower()
+    canal_padrao=(a.ass_canal_envio or '').strip().lower()
+    if not canal_padrao:
+        if (a.ass_wa_status or '') in ('enviado','recebido') or bool(a.ass_wa_enviado_em):
+            canal_padrao='whatsapp'
+        elif (a.ass_email_status or '') in ('enviado','recebido') or bool(a.ass_email_enviado_em):
+            canal_padrao='email'
+        elif not (a.ass_token or '').strip():
+            canal_padrao='app'
+        else:
+            canal_padrao='link'
+    canal=_ass_track_channel(canal_req,canal_padrao)
+    forcar_novo_token=bool(d.get('forcar_novo_token',True))
+    rs=_solicitar_assinatura_arquivo_funcionario(
+        a,
+        f,
+        canal=canal,
+        commit_now=True,
+        forcar_novo_token=forcar_novo_token,
+        eh_lembrete=(not forcar_novo_token),
+    )
     if not rs.get('ok'):
         return jsonify({'erro':rs.get('erro') or 'Falha ao solicitar assinatura.'}),400
     audit_event('func_arquivo_assinatura_solicitada','usuario',session.get('uid'),'funcionario',f.id,True,
-                {'arquivo_id':id,'nome':a.nome_arquivo,'canal':rs.get('canal','link')})
+                {'arquivo_id':id,'nome':a.nome_arquivo,'canal':rs.get('canal','link'),'lembrete':not forcar_novo_token})
     return jsonify({'ok':True,'arquivo_id':id,'link':rs.get('link',''),'link_curto':rs.get('link_curto',''),
                     'canal':rs.get('canal','link'),
+                    'erro_envio':rs.get('erro_envio',''),
                     'expira_em':rs.get('expira_em','')})
 
 @app.route('/api/funcionarios/arquivos/<int:id>/assinatura/rastreio')
 @lr
 def api_func_arquivo_assinatura_rastreio(id):
-    a=FuncionarioArquivo.query.get_or_404(id)
+    a=db.get_or_404(FuncionarioArquivo, id)
     return jsonify({
         'ok':True,
         'arquivo_id':a.id,
@@ -6374,6 +9679,7 @@ def api_func_arquivo_assinatura_rastreio(id):
         'recebido_em':(a.ass_recebido_em.isoformat() if a.ass_recebido_em else ''),
         'aberto_em':(a.ass_aberto_em.isoformat() if a.ass_aberto_em else ''),
         'assinado_em':(a.ass_em.isoformat() if a.ass_em else ''),
+        'prazo_em':(a.ass_prazo_em.isoformat() if a.ass_prazo_em else ''),
         'whatsapp':{
             'status':a.ass_wa_status or 'nao_enviado',
             'enviado_em':(a.ass_wa_enviado_em.isoformat() if a.ass_wa_enviado_em else ''),
@@ -6386,20 +9692,245 @@ def api_func_arquivo_assinatura_rastreio(id):
         }
     })
 
+@app.route('/api/funcionarios/arquivos/<int:id>/assinatura/cancelar',methods=['POST'])
+@lr
+def api_func_arquivo_cancelar_assinatura(id):
+    a=db.get_or_404(FuncionarioArquivo, id)
+    status_atual=(a.ass_status or '').strip().lower()
+    if status_atual not in ('pendente','nao_solicitada','expirado',''):
+        return jsonify({'erro':'Não é possível cancelar: assinatura já concluída ou em status inválido.'}),400
+    a.ass_status='cancelada'
+    a.ass_token=''
+    a.ass_expira_em=None
+    a.ass_prazo_em=None
+    a.ass_lembretes_enviados=0
+    db.session.commit()
+    audit_event('func_arquivo_assinatura_cancelada','usuario',session.get('uid'),'funcionario',a.funcionario_id,True,
+                {'arquivo_id':id,'nome':a.nome_arquivo})
+    return jsonify({'ok':True,'mensagem':'Solicitação de assinatura cancelada.'})
+
+@app.route('/api/rh/dashboard/assinaturas-pendentes')
+@lr
+def api_rh_dashboard_assinaturas_pendentes():
+    """Dashboard: pendentes de assinatura por funcionário, ordenados por mais antigo."""
+    from sqlalchemy import func as sqlfunc
+    pendentes=FuncionarioArquivo.query.filter_by(ass_status='pendente').order_by(FuncionarioArquivo.criado_em.asc()).all()
+    por_func={}
+    agora=utcnow()
+    for a in pendentes:
+        fid=a.funcionario_id
+        if fid not in por_func:
+            f=db.session.get(Funcionario, fid)
+            por_func[fid]={
+                'funcionario_id':fid,
+                'funcionario_nome':(f.nome if f else f'ID {fid}'),
+                'funcionario_cargo':(f.cargo or '') if f else '',
+                'total':0,
+                'vencidos':0,
+                'itens':[],
+            }
+        dias_pendente=(agora-a.criado_em).days if a.criado_em else 0
+        vencido=bool(a.ass_prazo_em and a.ass_prazo_em<agora)
+        por_func[fid]['total']+=1
+        if vencido: por_func[fid]['vencidos']+=1
+        por_func[fid]['itens'].append({
+            'arquivo_id':a.id,
+            'nome_arquivo':a.nome_arquivo,
+            'categoria':DOC_CAT_LABEL.get(norm_cat(a.categoria),a.categoria),
+            'competencia':a.competencia or '',
+            'dias_pendente':dias_pendente,
+            'prazo_em':(a.ass_prazo_em.isoformat() if a.ass_prazo_em else None),
+            'prazo_fmt':(a.ass_prazo_em.strftime('%d/%m/%Y') if a.ass_prazo_em else None),
+            'vencido':vencido,
+            'lembretes_enviados':a.ass_lembretes_enviados or 0,
+        })
+    lista=sorted(por_func.values(),key=lambda x:x['vencidos'],reverse=True)
+    return jsonify({'ok':True,'total_pendentes':len(pendentes),'funcionarios':lista})
+
+@app.route('/api/rh/assinaturas/painel')
+@lr
+def api_rh_assinaturas_painel():
+    """Painel completo de status de assinaturas com filtros."""
+    status_filtro=(request.args.get('status') or 'todos').strip().lower()
+    fid_filtro=to_num(request.args.get('funcionario_id') or 0)
+    cat_filtro=(request.args.get('categoria') or '').strip().lower()
+    comp_filtro=(request.args.get('competencia') or '').strip()
+    data_ini_str=(request.args.get('data_ini') or '').strip()
+    data_fim_str=(request.args.get('data_fim') or '').strip()
+
+    q=FuncionarioArquivo.query.filter(
+        FuncionarioArquivo.ass_status!='nao_solicitada',
+        FuncionarioArquivo.ass_status!=None
+    )
+    if status_filtro!='todos':
+        q=q.filter(FuncionarioArquivo.ass_status==status_filtro)
+    if fid_filtro:
+        q=q.filter(FuncionarioArquivo.funcionario_id==fid_filtro)
+    if cat_filtro:
+        q=q.filter(FuncionarioArquivo.categoria==cat_filtro)
+    if comp_filtro:
+        q=q.filter(FuncionarioArquivo.competencia==comp_filtro)
+    try:
+        if data_ini_str:
+            q=q.filter(FuncionarioArquivo.criado_em>=datetime.strptime(data_ini_str,'%Y-%m-%d'))
+        if data_fim_str:
+            q=q.filter(FuncionarioArquivo.criado_em<datetime.strptime(data_fim_str,'%Y-%m-%d')+timedelta(days=1))
+    except Exception:
+        pass
+
+    registros=q.order_by(FuncionarioArquivo.criado_em.desc()).limit(500).all()
+    agora=utcnow()
+    func_cache={}
+    def _get_func(fid):
+        if fid not in func_cache:
+            func_cache[fid]=db.session.get(Funcionario, fid)
+        return func_cache[fid]
+
+    itens=[]
+    totais={'pendente':0,'concluida':0,'cancelada':0,'expirado':0,'outros':0}
+    for a in registros:
+        f=_get_func(a.funcionario_id)
+        st=a.ass_status or 'pendente'
+        vencido=bool(st=='pendente' and a.ass_prazo_em and a.ass_prazo_em<agora)
+        if st in totais: totais[st]+=1
+        else: totais['outros']+=1
+        itens.append({
+            'arquivo_id':a.id,
+            'funcionario_id':a.funcionario_id,
+            'funcionario_nome':(f.nome if f else f'ID {a.funcionario_id}'),
+            'funcionario_cargo':(f.cargo or '') if f else '',
+            'nome_arquivo':a.nome_arquivo,
+            'categoria':a.categoria or '',
+            'categoria_label':DOC_CAT_LABEL.get(norm_cat(a.categoria),a.categoria or ''),
+            'competencia':a.competencia or '',
+            'ass_status':st,
+            'ass_canal':a.ass_canal_envio or '',
+            'criado_em':(a.criado_em.isoformat() if a.criado_em else None),
+            'criado_fmt':(a.criado_em.strftime('%d/%m/%Y') if a.criado_em else ''),
+            'ass_em':(a.ass_em.isoformat() if a.ass_em else None),
+            'ass_em_fmt':(a.ass_em.strftime('%d/%m/%Y %H:%M') if a.ass_em else ''),
+            'prazo_em':(a.ass_prazo_em.isoformat() if a.ass_prazo_em else None),
+            'prazo_fmt':(a.ass_prazo_em.strftime('%d/%m/%Y') if a.ass_prazo_em else ''),
+            'vencido':vencido,
+            'lembretes':a.ass_lembretes_enviados or 0,
+        })
+
+    return jsonify({'ok':True,'total':len(itens),'totais':totais,'itens':itens})
+
+@app.route('/api/rh/assinaturas/lembrete-pendentes',methods=['POST'])
+@lr
+def api_rh_assinaturas_lembrete_pendentes():
+    """Reenvia lembrete para todos os documentos pendentes, respeitando o canal original."""
+    fid_filtro=to_num(request.args.get('funcionario_id') or 0)
+    cat_filtro=(request.args.get('categoria') or '').strip().lower()
+    comp_filtro=(request.args.get('competencia') or '').strip()
+    data_ini_str=(request.args.get('data_ini') or '').strip()
+    data_fim_str=(request.args.get('data_fim') or '').strip()
+
+    q=FuncionarioArquivo.query.filter(FuncionarioArquivo.ass_status=='pendente')
+    if fid_filtro:
+        q=q.filter(FuncionarioArquivo.funcionario_id==fid_filtro)
+    if cat_filtro:
+        q=q.filter(FuncionarioArquivo.categoria==cat_filtro)
+    if comp_filtro:
+        q=q.filter(FuncionarioArquivo.competencia==comp_filtro)
+    try:
+        if data_ini_str:
+            q=q.filter(FuncionarioArquivo.criado_em>=datetime.strptime(data_ini_str,'%Y-%m-%d'))
+        if data_fim_str:
+            q=q.filter(FuncionarioArquivo.criado_em<datetime.strptime(data_fim_str,'%Y-%m-%d')+timedelta(days=1))
+    except Exception:
+        pass
+
+    registros=q.order_by(FuncionarioArquivo.criado_em.desc()).limit(500).all()
+    if not registros:
+        return jsonify({'ok':True,'total':0,'enviados':0,'falhas':0,'mensagem':'Nenhum pendente encontrado para lembrete.'})
+
+    enviados=0
+    falhas=0
+    canais={'whatsapp':0,'email':0,'app':0,'link':0}
+    erros=[]
+    func_cache={}
+
+    def _canal_padrao_arquivo(a):
+        ch=(a.ass_canal_envio or '').strip().lower()
+        if ch:
+            return ch
+        if (a.ass_wa_status or '') in ('enviado','recebido') or bool(a.ass_wa_enviado_em):
+            return 'whatsapp'
+        if (a.ass_email_status or '') in ('enviado','recebido') or bool(a.ass_email_enviado_em):
+            return 'email'
+        if not (a.ass_token or '').strip():
+            return 'app'
+        return 'link'
+
+    for a in registros:
+        try:
+            if a.funcionario_id not in func_cache:
+                func_cache[a.funcionario_id]=db.session.get(Funcionario, a.funcionario_id)
+            f=func_cache[a.funcionario_id]
+            canal=_ass_track_channel('',_canal_padrao_arquivo(a))
+            rs=_solicitar_assinatura_arquivo_funcionario(
+                a,
+                f,
+                canal=canal,
+                commit_now=False,
+                forcar_novo_token=False,
+                eh_lembrete=True,
+            )
+            if rs.get('ok'):
+                enviados+=1
+                canal_efetivo=_ass_track_channel(rs.get('canal') or canal,canal)
+                canais[canal_efetivo]=canais.get(canal_efetivo,0)+1
+                a.ass_lembretes_enviados=(a.ass_lembretes_enviados or 0)+1
+                if rs.get('erro_envio'):
+                    falhas+=1
+                    erros.append(f"{a.nome_arquivo}: {rs.get('erro_envio')}")
+            else:
+                falhas+=1
+                erros.append(f"{a.nome_arquivo}: {rs.get('erro') or 'falha no envio'}")
+        except Exception as ex:
+            falhas+=1
+            erros.append(f"{a.nome_arquivo}: {str(ex)}")
+
+    db.session.commit()
+    audit_event(
+        'rh_assinaturas_lembrete_massa',
+        'usuario',
+        session.get('uid'),
+        'rh',
+        0,
+        True,
+        {
+            'total':len(registros),
+            'enviados':enviados,
+            'falhas':falhas,
+            'canais':canais,
+        }
+    )
+    return jsonify({
+        'ok':True,
+        'total':len(registros),
+        'enviados':enviados,
+        'falhas':falhas,
+        'canais':canais,
+        'erros':erros[:20],
+    })
+
 @app.route('/doc/assinar/<token>')
 def func_doc_assinar_publica(token):
     a=FuncionarioArquivo.query.filter_by(ass_token=token).first()
     if not a:
         return render_template('doc_assinatura.html',ok=False,mensagem='Link de assinatura inválido.',arquivo=None,funcionario=None)
     if (a.ass_status or '')=='assinado':
-        return render_template('doc_assinatura.html',ok=False,mensagem='Este documento já foi assinado.',arquivo=a,funcionario=Funcionario.query.get(a.funcionario_id))
+        return render_template('doc_assinatura.html',ok=False,mensagem='Este documento já foi assinado.',arquivo=a,funcionario=db.session.get(Funcionario, a.funcionario_id))
     if a.ass_expira_em and a.ass_expira_em<utcnow():
-        a.ass_status='expirado'; db.session.commit()
-        return render_template('doc_assinatura.html',ok=False,mensagem='Link expirado. Solicite um novo link ao RH.',arquivo=a,funcionario=Funcionario.query.get(a.funcionario_id))
+        a.ass_status='expirado'; _db_commit_retry('doc_assinar_expirado', swallow_locked=True)
+        return render_template('doc_assinatura.html',ok=False,mensagem='Link expirado. Solicite um novo link ao RH.',arquivo=a,funcionario=db.session.get(Funcionario, a.funcionario_id))
     src=request.args.get('src','')
     if _ass_track_mark_received(a,src):
-        db.session.commit()
-    return render_template('doc_assinatura.html',ok=True,mensagem='',arquivo=a,funcionario=Funcionario.query.get(a.funcionario_id))
+        _db_commit_retry('doc_assinar_recebido', swallow_locked=True)
+    return render_template('doc_assinatura.html',ok=True,mensagem='',arquivo=a,funcionario=db.session.get(Funcionario, a.funcionario_id))
 
 @app.route('/doc/assinar/<token>/arquivo')
 def func_doc_assinar_visualizar_arquivo(token):
@@ -6411,7 +9942,7 @@ def func_doc_assinar_visualizar_arquivo(token):
         return 'Arquivo não encontrado.',404
     src=request.args.get('src','')
     if _ass_track_mark_opened(a,src):
-        db.session.commit()
+        _db_commit_retry('doc_assinar_arquivo_aberto', swallow_locked=True)
     return send_file(abs_p,as_attachment=False,download_name=a.nome_arquivo)
 
 @app.route('/api/doc/assinar/<token>/enviar-otp',methods=['GET','POST'])
@@ -6423,7 +9954,7 @@ def api_func_doc_assinatura_enviar_otp(token):
         return _assinatura_json_erro('Documento já assinado.',400)
     if a.ass_expira_em and a.ass_expira_em<utcnow():
         return _assinatura_json_erro('Link expirado.',400)
-    f=Funcionario.query.get(a.funcionario_id)
+    f=db.session.get(Funcionario, a.funcionario_id)
     tel=(f.telefone if f else '') or ''
     email=(f.email if f else '') or ''
     if not (wa_norm_number(tel) or (email or '').strip()):
@@ -6467,7 +9998,7 @@ def api_func_doc_assinatura_confirmar(token):
 
     # Regra RH: se CPF digitado for igual ao CPF cadastrado do funcionário, não bloquear.
     # Só bloquear por divergência quando existir CPF cadastrado diferente.
-    f=Funcionario.query.get(a.funcionario_id)
+    f=db.session.get(Funcionario, a.funcionario_id)
     cpf_cadastrado=''
     if f and f.cpf:
         cpf_cadastrado=only_digits(f.cpf or '')
@@ -6524,7 +10055,7 @@ def api_func_doc_assinatura_confirmar(token):
     if copia_assinada and copia_assinada.get('ok') and copia_assinada.get('abs_path'):
         rs_crypto=_try_sign_pdf_file_crypto(copia_assinada.get('abs_path'),empresa_id=(f.empresa_id if f else None),usuario_id=session.get('uid'))
         hash_final=_sha256_file(copia_assinada.get('abs_path'))
-        novo=FuncionarioArquivo.query.get(copia_assinada.get('arquivo_id')) if copia_assinada.get('arquivo_id') else None
+        novo=db.session.get(FuncionarioArquivo, copia_assinada.get('arquivo_id')) if copia_assinada.get('arquivo_id') else None
         if novo:
             novo.ass_doc_hash=hash_final
             novo.ass_crypto_ok=bool(rs_crypto.get('ok'))
@@ -6612,7 +10143,7 @@ def func_doc_validar_publica(codigo):
     a=FuncionarioArquivo.query.filter_by(ass_codigo=cod).first()
     if not a:
         return render_template('doc_validacao.html',ok=False,mensagem='Assinatura não encontrada para o código informado.',arquivo=None,funcionario=None)
-    f=Funcionario.query.get(a.funcionario_id)
+    f=db.session.get(Funcionario, a.funcionario_id)
     ok=(a.ass_status or '').strip().lower()=='assinado'
     msg='Assinatura válida.' if ok else ('Assinatura pendente ou não concluída.' if (a.ass_status or '')=='pendente' else 'Assinatura expirada ou inválida.')
     return render_template('doc_validacao.html',ok=ok,mensagem=msg,arquivo=a,funcionario=f)
@@ -6645,7 +10176,7 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
 
     emp=None
     if funcionario and funcionario.empresa_id:
-        emp=Empresa.query.get(funcionario.empresa_id)
+        emp=db.session.get(Empresa, funcionario.empresa_id)
     if not emp:
         emp=Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
     empresa_nome=(emp.nome if emp and emp.nome else 'RM Facilities')
@@ -6944,10 +10475,10 @@ def _salvar_pdf_assinado_em_arquivos_funcionario(arquivo,funcionario,url_root):
 @app.route('/api/funcionarios/arquivos/<int:id>/assinatura/pdf-auditoria')
 @lr
 def api_func_arquivo_assinatura_pdf(id):
-    a=FuncionarioArquivo.query.get_or_404(id)
+    a=db.get_or_404(FuncionarioArquivo, id)
     if (a.ass_status or '')!='assinado':
         return jsonify({'erro':'Documento ainda não foi assinado.'}),400
-    f=Funcionario.query.get(a.funcionario_id)
+    f=db.session.get(Funcionario, a.funcionario_id)
     buf=_build_doc_assinatura_pdf(a,f,request.url_root.rstrip('/'))
     return send_file(io.BytesIO(buf),mimetype='application/pdf',as_attachment=True,
                      download_name=f'auditoria_assinatura_{a.ass_codigo or a.id}.pdf')
@@ -6976,7 +10507,7 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
         b=dict(fontName='Helvetica',fontSize=10,leading=14,textColor=colors.HexColor('#020202'),spaceAfter=0,spaceBefore=0)
         b.update(kw); return ParagraphStyle(nm,**b)
 
-    emp=Empresa.query.get(envelope.empresa_id) if envelope.empresa_id else None
+    emp=db.session.get(Empresa, envelope.empresa_id) if envelope.empresa_id else None
     if not emp:
         emp=Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
     empresa_nome=(emp.nome if emp and emp.nome else 'RM Facilities')
@@ -7176,6 +10707,12 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
     stamp_y_pct=float(getattr(envelope,'stamp_y_pct',10.0) or 10.0)
     stamp_todas_paginas=bool(getattr(envelope,'stamp_todas_paginas',False))
     stamp_todos_arquivos=bool(getattr(envelope,'stamp_todos_arquivos',False))
+    audit_pos=(getattr(envelope,'audit_pos',None) or 'personalizado').strip().lower()
+    # Apply preset positions
+    if audit_pos=='rodape':
+        stamp_y_pct=8.0; stamp_x_pct=5.0; stamp_todas_paginas=True; stamp_todos_arquivos=True
+    elif audit_pos in ('lateral-direita','lateral-esquerda'):
+        stamp_todas_paginas=True; stamp_todos_arquivos=True
     stamp_signatarios=[]
     assinatura_img_map={}
     if stamp_habilitado:
@@ -7293,6 +10830,41 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
         c.save(); ov.seek(0)
         return ov.getvalue()
 
+    def _make_stamp_overlay_lateral(w,h,sigs,side='direita'):
+        """Gera faixa lateral rotacionada com info dos signatários."""
+        if not sigs:
+            return None
+        ov=io.BytesIO()
+        c=rl_canvas.Canvas(ov,pagesize=(w,h))
+        strip_h=18.0
+        c.saveState()
+        if side=='direita':
+            c.translate(w,0); c.rotate(90)
+        else:
+            c.translate(0,h); c.rotate(-90)
+        c.setFillColorRGB(0.93,0.96,1.0)
+        c.setStrokeColorRGB(0.55,0.70,0.90)
+        c.setLineWidth(0.5)
+        c.rect(0,0,h,strip_h,fill=1,stroke=0)
+        c.line(0,strip_h,h,strip_h)
+        c.setFillColorRGB(0.13,0.36,0.54)
+        c.setFont('Helvetica-Bold',5.5)
+        x_cur=6.0
+        for sig in sigs:
+            nome=(sig.nome or '').strip()[:26]
+            data_str=sig.ass_em.strftime('%d/%m/%Y %H:%M') if sig.ass_em else ''
+            text=f'✓ {nome}'
+            if data_str: text+=f'  {data_str}'
+            tw=c.stringWidth(text,'Helvetica-Bold',5.5)
+            if x_cur+tw>h-8: break
+            c.drawString(x_cur,6,text)
+            x_cur+=tw+14
+            c.setStrokeColorRGB(0.70,0.76,0.86); c.setLineWidth(0.4)
+            c.line(x_cur-7,3,x_cur-7,15)
+        c.restoreState()
+        c.save(); ov.seek(0)
+        return ov.getvalue()
+
     file_idx=0
     for arq in arquivos:
         abs_path=_resolve_abs_path(arq.caminho)
@@ -7318,7 +10890,11 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
                                 if stamp_todas_paginas or page_idx==stamp_page_idx:
                                     apply_stamp=True
                         if apply_stamp:
-                            stamp_bytes=_make_stamp_overlay(w,h,stamp_signatarios,assinatura_img_map,stamp_x_pct,stamp_y_pct)
+                            if audit_pos in ('lateral-direita','lateral-esquerda'):
+                                side='direita' if audit_pos=='lateral-direita' else 'esquerda'
+                                stamp_bytes=_make_stamp_overlay_lateral(w,h,stamp_signatarios,side)
+                            else:
+                                stamp_bytes=_make_stamp_overlay(w,h,stamp_signatarios,assinatura_img_map,stamp_x_pct,stamp_y_pct)
                             if stamp_bytes:
                                 stamp_page=PdfReader(io.BytesIO(stamp_bytes)).pages[0]
                                 page.merge_page(stamp_page)
@@ -7374,7 +10950,7 @@ def _normalize_signed_pdf_name(name):
 def _default_signed_pdf_name(envelope):
     arq=(AssinaturaEnvelopeArquivo.query
          .filter_by(envelope_id=envelope.id)
-         .order_by(AssinaturaEnvelopeArquivo.id.asc())
+         .order_by(AssinaturaEnvelopeArquivo.ordem.asc(),AssinaturaEnvelopeArquivo.id.asc())
          .first())
     base='documento'
     if arq and (arq.nome_arquivo or '').strip():
@@ -7395,7 +10971,10 @@ def _envelope_signed_pdf_path(envelope):
 
 
 def _gerar_pdf_assinado_envelope(envelope,url_root):
-    arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=envelope.id).all()
+    arquivos=(AssinaturaEnvelopeArquivo.query
+              .filter_by(envelope_id=envelope.id)
+              .order_by(AssinaturaEnvelopeArquivo.ordem.asc(),AssinaturaEnvelopeArquivo.id.asc())
+              .all())
     if not arquivos:
         raise ValueError('Envelope sem arquivos para gerar PDF assinado.')
     footer_text=(f"RM Facilities | Assinatura Eletrônica | Cód: {envelope.codigo} | "
@@ -7421,7 +11000,7 @@ def _salvar_pdf_assinado_destino_envelope(envelope,abs_pdf_path,fname):
     if not fid:
         return {'ok':False,'destino':'funcionario','erro':'Destino funcionário selecionado, mas nenhum funcionário foi definido.'}
 
-    func=Funcionario.query.get(fid)
+    func=db.session.get(Funcionario, fid)
     if not func:
         return {'ok':False,'destino':'funcionario','erro':'Funcionário de destino não encontrado.'}
 
@@ -7516,12 +11095,12 @@ def api_envelopes_criar():
 @app.route('/api/envelopes/<int:id>',methods=['GET'])
 @lr
 def api_envelope_detalhe(id):
-    env=AssinaturaEnvelope.query.get_or_404(id)
+    env=db.get_or_404(AssinaturaEnvelope, id)
     d=env.to_dict()
-    emp=Empresa.query.get(env.empresa_id) if env.empresa_id else None
+    emp=db.session.get(Empresa, env.empresa_id) if env.empresa_id else None
     d['empresa_nome']=(emp.nome if emp else '')
     d['empresa_razao']=(emp.razao if emp else '')
-    d['arquivos']=[a.to_dict() for a in AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).all()]
+    d['arquivos']=[a.to_dict() for a in AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).order_by(AssinaturaEnvelopeArquivo.ordem,AssinaturaEnvelopeArquivo.id).all()]
     d['signatarios']=[s.to_dict() for s in AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=id).order_by(AssinaturaEnvelopeSignatario.ordem,AssinaturaEnvelopeSignatario.id).all()]
     return jsonify(d)
 
@@ -7529,7 +11108,7 @@ def api_envelope_detalhe(id):
 @app.route('/api/envelopes/<int:id>',methods=['PUT'])
 @lr
 def api_envelope_atualizar(id):
-    env=AssinaturaEnvelope.query.get_or_404(id)
+    env=db.get_or_404(AssinaturaEnvelope, id)
     data=request.get_json() or {}
     if 'titulo' in data: env.titulo=(data['titulo'] or '').strip() or env.titulo
     if 'descricao' in data: env.descricao=(data['descricao'] or '').strip() or None
@@ -7555,7 +11134,7 @@ def api_envelope_atualizar(id):
 @lr
 def api_envelope_deletar(id):
     try:
-        env=AssinaturaEnvelope.query.get_or_404(id)
+        env=db.get_or_404(AssinaturaEnvelope, id)
         # Permite excluir em qualquer status (inclusive concluído/assinado).
         # Remove também arquivos físicos para evitar órfãos em disco.
         arqs=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).all()
@@ -7594,7 +11173,7 @@ def api_envelope_deletar(id):
 @app.route('/api/envelopes/<int:id>/cancelar',methods=['POST'])
 @lr
 def api_envelope_cancelar(id):
-    env=AssinaturaEnvelope.query.get_or_404(id)
+    env=db.get_or_404(AssinaturaEnvelope, id)
     if env.status=='concluido':
         return jsonify({'erro':'Não é possível cancelar um envelope já concluído.'}),400
     env.status='cancelado'
@@ -7605,7 +11184,7 @@ def api_envelope_cancelar(id):
 @app.route('/api/envelopes/<int:id>/reativar',methods=['POST'])
 @lr
 def api_envelope_reativar(id):
-    env=AssinaturaEnvelope.query.get_or_404(id)
+    env=db.get_or_404(AssinaturaEnvelope, id)
     if env.status!='cancelado':
         return jsonify({'erro':'Só é possível reativar envelopes cancelados.'}),400
     # Verifica se ainda há signatários pendentes
@@ -7618,7 +11197,7 @@ def api_envelope_reativar(id):
 @app.route('/api/envelopes/<int:id>/stamp',methods=['PUT'])
 @lr
 def api_envelope_stamp(id):
-    env=AssinaturaEnvelope.query.get_or_404(id)
+    env=db.get_or_404(AssinaturaEnvelope, id)
     data=request.get_json() or {}
     env.stamp_habilitado=bool(data.get('stamp_habilitado',False))
     env.stamp_pagina=max(1,int(data.get('stamp_pagina',1) or 1))
@@ -7626,23 +11205,30 @@ def api_envelope_stamp(id):
     env.stamp_y_pct=max(0.0,min(100.0,float(data.get('stamp_y_pct',10.0) or 10.0)))
     env.stamp_todas_paginas=bool(data.get('stamp_todas_paginas',False))
     env.stamp_todos_arquivos=bool(data.get('stamp_todos_arquivos',False))
+    _valid_audit_pos={'rodape','lateral-direita','lateral-esquerda','personalizado'}
+    _ap=(data.get('audit_pos') or 'personalizado').strip().lower()
+    env.audit_pos=_ap if _ap in _valid_audit_pos else 'personalizado'
     db.session.commit()
-    return jsonify({'ok':True,'stamp_habilitado':env.stamp_habilitado,'stamp_pagina':env.stamp_pagina,'stamp_x_pct':env.stamp_x_pct,'stamp_y_pct':env.stamp_y_pct,'stamp_todas_paginas':env.stamp_todas_paginas,'stamp_todos_arquivos':env.stamp_todos_arquivos})
+    return jsonify({'ok':True,'stamp_habilitado':env.stamp_habilitado,'stamp_pagina':env.stamp_pagina,'stamp_x_pct':env.stamp_x_pct,'stamp_y_pct':env.stamp_y_pct,'stamp_todas_paginas':env.stamp_todas_paginas,'stamp_todos_arquivos':env.stamp_todos_arquivos,'audit_pos':env.audit_pos})
 
 
 @app.route('/api/envelopes/<int:id>/arquivos',methods=['POST'])
 @lr
 def api_envelope_add_arquivo(id):
-    env=AssinaturaEnvelope.query.get_or_404(id)
+    env=db.get_or_404(AssinaturaEnvelope, id)
     # Se for arquivo do sistema (func_arquivo_id)
     data_json=request.get_json(silent=True) or {}
     func_arquivo_id=request.form.get('func_arquivo_id') or data_json.get('func_arquivo_id')
     if func_arquivo_id:
-        fa=FuncionarioArquivo.query.get(int(func_arquivo_id))
+        fa=db.session.get(FuncionarioArquivo, int(func_arquivo_id))
         if not fa:
             return jsonify({'erro':'Arquivo não encontrado'}),404
+        ordem_top=(db.session.query(db.func.max(AssinaturaEnvelopeArquivo.ordem))
+                   .filter(AssinaturaEnvelopeArquivo.envelope_id==id)
+                   .scalar() or 0)
         arq=AssinaturaEnvelopeArquivo(
             envelope_id=id, origem='sistema',
+            ordem=int(ordem_top)+1,
             func_arquivo_id=fa.id,
             nome_arquivo=fa.nome_arquivo,
             caminho=fa.caminho,
@@ -7662,8 +11248,12 @@ def api_envelope_add_arquivo(id):
     fname=f'{secrets.token_urlsafe(8)}_{secure_filename(f.filename)}'
     path=os.path.join(base,fname)
     f.save(path)
+    ordem_top=(db.session.query(db.func.max(AssinaturaEnvelopeArquivo.ordem))
+               .filter(AssinaturaEnvelopeArquivo.envelope_id==id)
+               .scalar() or 0)
     arq=AssinaturaEnvelopeArquivo(
         envelope_id=id, origem='upload',
+        ordem=int(ordem_top)+1,
         nome_arquivo=f.filename,
         caminho=path,
     )
@@ -7686,10 +11276,37 @@ def api_envelope_del_arquivo(id,arq_id):
     return jsonify({'ok':True})
 
 
+@app.route('/api/envelopes/<int:id>/arquivos/ordem',methods=['PUT'])
+@lr
+def api_envelope_reordenar_arquivos(id):
+    db.get_or_404(AssinaturaEnvelope, id)
+    data=request.get_json(silent=True) or {}
+    ordem_ids=data.get('ordem') or []
+    if not isinstance(ordem_ids,list) or not ordem_ids:
+        return jsonify({'erro':'Informe a ordem dos arquivos.'}),400
+    try:
+        ordem_ids=[int(x) for x in ordem_ids]
+    except Exception:
+        return jsonify({'erro':'Lista de ordem inválida.'}),400
+    existentes=(AssinaturaEnvelopeArquivo.query
+                .filter_by(envelope_id=id)
+                .order_by(AssinaturaEnvelopeArquivo.ordem,AssinaturaEnvelopeArquivo.id)
+                .all())
+    if not existentes:
+        return jsonify({'erro':'Envelope sem arquivos para ordenar.'}),400
+    by_id={a.id:a for a in existentes}
+    if set(ordem_ids)!=set(by_id.keys()):
+        return jsonify({'erro':'A lista de ordem deve conter todos os arquivos do envelope.'}),400
+    for pos,aid in enumerate(ordem_ids,start=1):
+        by_id[aid].ordem=pos
+    db.session.commit()
+    return jsonify({'ok':True,'ordem':ordem_ids})
+
+
 @app.route('/api/envelopes/<int:id>/arquivos/<int:arq_id>/visualizar',methods=['GET'])
 @lr
 def api_envelope_visualizar_arquivo_admin(id,arq_id):
-    AssinaturaEnvelope.query.get_or_404(id)
+    db.get_or_404(AssinaturaEnvelope, id)
     arq=AssinaturaEnvelopeArquivo.query.filter_by(id=arq_id,envelope_id=id).first_or_404()
     raw=(arq.caminho or '').strip()
     cands=[raw]
@@ -7706,21 +11323,59 @@ def api_envelope_visualizar_arquivo_admin(id,arq_id):
     return send_file(abs_path,as_attachment=False,download_name=arq.nome_arquivo or os.path.basename(abs_path))
 
 
+def _ass_buscar_cadastro_por_telefone(telefone):
+    tel=wa_norm_number(telefone or '')
+    if not tel:
+        return None
+    hist=(AssinaturaEnvelopeSignatario.query
+          .filter(AssinaturaEnvelopeSignatario.status=='assinado')
+          .filter(AssinaturaEnvelopeSignatario.telefone.isnot(None))
+          .order_by(AssinaturaEnvelopeSignatario.ass_em.desc(),AssinaturaEnvelopeSignatario.id.desc())
+          .limit(500)
+          .all())
+    for s in hist:
+        if wa_phone_matches(s.telefone or '',tel):
+            cpf=(only_digits(s.ass_cpf_informado or s.cpf or '') or '').strip()
+            return {
+                'nome':(s.nome or '').strip(),
+                'cpf':cpf,
+                'cargo':(s.cargo or '').strip(),
+                'email':(s.email or '').strip(),
+                'telefone':wa_norm_number(s.telefone or ''),
+            }
+    return None
+
+
 @app.route('/api/envelopes/<int:id>/signatarios',methods=['POST'])
 @lr
 def api_envelope_add_signatario(id):
-    AssinaturaEnvelope.query.get_or_404(id)
+    db.get_or_404(AssinaturaEnvelope, id)
     data=request.get_json() or {}
     nome=(data.get('nome') or '').strip()
+    tel_in=(data.get('telefone') or '').strip()
+    tel_norm=wa_norm_number(tel_in) if tel_in else ''
+    cadastro_tel=_ass_buscar_cadastro_por_telefone(tel_norm) if tel_norm else None
     if not nome:
-        return jsonify({'erro':'Nome obrigatório'}),400
+        nome=((cadastro_tel or {}).get('nome') or '').strip()
+    if not nome:
+        return jsonify({'erro':'Informe o nome do signatário ou use um telefone já assinado anteriormente.'}),400
+    cpf_in=(data.get('cpf') or '').strip()
+    cpf_norm=(only_digits(cpf_in) or '').strip()
+    if not cpf_norm:
+        cpf_norm=((cadastro_tel or {}).get('cpf') or '').strip()
+    cpf_salvar=cpf_norm if len(cpf_norm)==11 else None
+    email_in=(data.get('email') or '').strip()
+    email_salvar=email_in or ((cadastro_tel or {}).get('email') or '').strip() or None
+    cargo_in=(data.get('cargo') or '').strip()
+    cargo_salvar=cargo_in or ((cadastro_tel or {}).get('cargo') or '').strip() or None
+    telefone_salvar=tel_norm or tel_in or None
     sig=AssinaturaEnvelopeSignatario(
         envelope_id=id,
         nome=nome,
-        email=(data.get('email') or '').strip() or None,
-        telefone=(data.get('telefone') or '').strip() or None,
-        cpf=(data.get('cpf') or '').strip() or None,
-        cargo=(data.get('cargo') or '').strip() or None,
+        email=email_salvar,
+        telefone=telefone_salvar,
+        cpf=cpf_salvar,
+        cargo=cargo_salvar,
         tipo=data.get('tipo') or 'externo',
         ref_id=data.get('ref_id') or None,
         ordem=int(data.get('ordem') or 0),
@@ -7741,7 +11396,7 @@ def api_envelope_del_signatario(id,sig_id):
 @app.route('/api/envelopes/<int:id>/enviar',methods=['POST'])
 @lr
 def api_envelope_enviar(id):
-    env=AssinaturaEnvelope.query.get_or_404(id)
+    env=db.get_or_404(AssinaturaEnvelope, id)
     data=request.get_json(silent=True) or {}
     canal=(data.get('canal') or 'whatsapp').strip().lower()
     if canal not in ('whatsapp','email','link'):
@@ -7749,12 +11404,12 @@ def api_envelope_enviar(id):
     signatarios=AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=id).all()
     if not signatarios:
         return jsonify({'erro':'Adicione ao menos um signatário antes de enviar'}),400
-    arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).all()
+    arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=id).order_by(AssinaturaEnvelopeArquivo.ordem,AssinaturaEnvelopeArquivo.id).all()
     if not arquivos:
         return jsonify({'erro':'Adicione ao menos um arquivo antes de enviar'}),400
     if not env.codigo:
         env.codigo=secrets.token_urlsafe(12)
-    emp=Empresa.query.get(env.empresa_id) if env.empresa_id else None
+    emp=db.session.get(Empresa, env.empresa_id) if env.empresa_id else None
     empresa_nome=(emp.razao or emp.nome) if emp else 'RM Facilities'
     url_root=request.url_root.rstrip('/')
     enviados=[]
@@ -7867,7 +11522,7 @@ def envelope_assinar_visualizar_arquivo(token,arq_id):
         return 'Arquivo não encontrado.',404
     src=request.args.get('src','')
     if _ass_track_mark_opened(sig,src):
-        db.session.commit()
+        _db_commit_retry('envelope_assinar_arquivo_aberto', swallow_locked=True)
     return send_file(abs_path,as_attachment=False,download_name=arq.nome_arquivo or os.path.basename(abs_path))
 
 
@@ -7875,13 +11530,13 @@ def envelope_assinar_visualizar_arquivo(token,arq_id):
 @app.route('/envelope/assinar/<token>')
 def envelope_assinar_publica(token):
     sig=AssinaturaEnvelopeSignatario.query.filter_by(token=token).first_or_404()
-    env=AssinaturaEnvelope.query.get_or_404(sig.envelope_id)
-    arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=env.id).all()
-    empresa=Empresa.query.get(env.empresa_id) if env.empresa_id else Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
+    env=db.get_or_404(AssinaturaEnvelope, sig.envelope_id)
+    arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=env.id).order_by(AssinaturaEnvelopeArquivo.ordem,AssinaturaEnvelopeArquivo.id).all()
+    empresa=db.session.get(Empresa, env.empresa_id) if env.empresa_id else Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
     empresas=[empresa] if empresa else []
     src=request.args.get('src','')
     if _ass_track_mark_received(sig,src):
-        db.session.commit()
+        _db_commit_retry('envelope_assinar_recebido', swallow_locked=True)
     return render_template('envelope_assinar.html',sig=sig,env=env,arquivos=arquivos,empresas=empresas)
 
 @app.route('/api/envelope/assinar/<token>/enviar-otp',methods=['GET','POST'])
@@ -7889,7 +11544,7 @@ def api_envelope_assinatura_enviar_otp(token):
     sig=AssinaturaEnvelopeSignatario.query.filter_by(token=token).first_or_404()
     if sig.status=='assinado':
         return _assinatura_json_erro('Você já assinou este documento.',400)
-    env=AssinaturaEnvelope.query.get_or_404(sig.envelope_id)
+    env=db.get_or_404(AssinaturaEnvelope, sig.envelope_id)
     if env.expira_em and datetime.utcnow() > env.expira_em:
         return _assinatura_json_erro('O prazo para assinatura deste documento expirou.',400)
     if not (wa_norm_number(sig.telefone or '') or (sig.email or '').strip()):
@@ -7917,7 +11572,7 @@ def api_envelope_assinatura_confirmar(token):
     sig=AssinaturaEnvelopeSignatario.query.filter_by(token=token).first_or_404()
     if sig.status=='assinado':
         return _assinatura_json_erro('Você já assinou este documento.',400)
-    env=AssinaturaEnvelope.query.get_or_404(sig.envelope_id)
+    env=db.get_or_404(AssinaturaEnvelope, sig.envelope_id)
     if env.expira_em and datetime.utcnow() > env.expira_em:
         return _assinatura_json_erro('O prazo para assinatura deste documento expirou.',400)
     if not env.codigo:
@@ -7968,6 +11623,8 @@ def api_envelope_assinatura_confirmar(token):
     ip=request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
     sig.nome=nome
     sig.cargo=cargo
+    if not (sig.cpf or '').strip():
+        sig.cpf=cpf_inf
     sig.ass_cpf_informado=cpf_inf
     sig.ass_ip=ip
     sig.ass_em=datetime.utcnow()
@@ -7981,10 +11638,28 @@ def api_envelope_assinatura_confirmar(token):
         sig.ass_assinatura_img=assinatura_img[:200000]  # limita a ~150 KB base64
     if not sig.ass_aberto_em:
         sig.ass_aberto_em=utcnow()
+
+    # Cadastro automático por telefone para reaproveitar em assinaturas futuras.
+    tel_sig=wa_norm_number(sig.telefone or '')
+    if tel_sig:
+        sig.telefone=tel_sig
+        pendentes=(AssinaturaEnvelopeSignatario.query
+                   .filter(AssinaturaEnvelopeSignatario.id!=sig.id)
+                   .filter(AssinaturaEnvelopeSignatario.telefone.isnot(None))
+                   .filter(AssinaturaEnvelopeSignatario.status=='pendente')
+                   .all())
+        for p in pendentes:
+            if not wa_phone_matches(p.telefone or '',tel_sig):
+                continue
+            if not (p.nome or '').strip():
+                p.nome=nome
+            if not (p.cpf or '').strip():
+                p.cpf=cpf_inf
+
     sig.token=None  # invalida o token após uso
     url_root=request.url_root.rstrip('/')
     signed_pdf_link=''
-    emp=Empresa.query.get(env.empresa_id) if env.empresa_id else None
+    emp=db.session.get(Empresa, env.empresa_id) if env.empresa_id else None
     empresa_nome=(emp.razao or emp.nome) if emp else 'RM Facilities'
     # Verifica se todos assinaram
     todos=AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=env.id).all()
@@ -8061,8 +11736,8 @@ def envelope_validar_publica(codigo):
     env=AssinaturaEnvelope.query.filter_by(codigo=codigo).first_or_404()
     signatarios=AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=env.id).order_by(
         AssinaturaEnvelopeSignatario.ordem,AssinaturaEnvelopeSignatario.id).all()
-    arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=env.id).all()
-    empresa=Empresa.query.get(env.empresa_id) if env.empresa_id else Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
+    arquivos=AssinaturaEnvelopeArquivo.query.filter_by(envelope_id=env.id).order_by(AssinaturaEnvelopeArquivo.ordem,AssinaturaEnvelopeArquivo.id).all()
+    empresa=db.session.get(Empresa, env.empresa_id) if env.empresa_id else Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem,Empresa.id).first()
     empresas=[empresa] if empresa else []
     return render_template('envelope_validar.html',env=env,signatarios=signatarios,arquivos=arquivos,empresas=empresas)
 
@@ -8103,7 +11778,7 @@ def api_holerites_upload():
     if not fs: return jsonify({'erro':'PDF nao enviado'}),400
     if not _upload_is_pdf(fs): return jsonify({'erro':'Arquivo invalido. Envie um PDF valido.'}),400
     canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
-    if canal_ass not in ('nao','whatsapp','link'):
+    if canal_ass not in ('nao','whatsapp','link','app'):
         canal_ass='nao'
     ids_ass_raw=(request.form.get('assinatura_funcionario_ids') or '').strip()
     ids_ass_sel=set()
@@ -8139,7 +11814,10 @@ def api_holerites_upload():
         a=FuncionarioArquivo(funcionario_id=alvo.id,categoria='holerite',competencia=comp,nome_arquivo=fake_name,caminho=rel)
         db.session.add(a); db.session.commit(); enviados+=1
         solicitar_ass=(canal_ass!='nao') and (not ids_ass_sel or alvo.id in ids_ass_sel)
-        if solicitar_ass and canal_ass=='whatsapp':
+        if solicitar_ass and canal_ass=='app':
+            a.ass_status='pendente'; db.session.commit(); assinaturas_auto+=1
+            _push_notify_funcionario(alvo.id,'Documento para assinar',f'{fake_name} aguarda sua assinatura no app.',{'tipo':'documento_assinar','arquivo_id':str(a.id)})
+        elif solicitar_ass and canal_ass=='whatsapp':
             tel=wa_norm_number(alvo.telefone or '')
             if wa_is_valid_number(tel):
                 rs=_solicitar_assinatura_arquivo_funcionario(a,alvo,canal='whatsapp',commit_now=True)
@@ -8165,7 +11843,7 @@ def api_folhas_ponto_upload():
     if not fs: return jsonify({'erro':'PDF nao enviado'}),400
     if not _upload_is_pdf(fs): return jsonify({'erro':'Arquivo invalido. Envie um PDF valido.'}),400
     canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
-    if canal_ass not in ('nao','whatsapp','link'):
+    if canal_ass not in ('nao','whatsapp','link','app'):
         canal_ass='nao'
     ids_ass_raw=(request.form.get('assinatura_funcionario_ids') or '').strip()
     ids_ass_sel=set()
@@ -8206,7 +11884,10 @@ def api_folhas_ponto_upload():
         a=FuncionarioArquivo(funcionario_id=alvo.id,categoria='folha_ponto',competencia=comp,nome_arquivo=fake_name,caminho=rel)
         db.session.add(a); db.session.commit(); enviados+=1
         solicitar_ass=(canal_ass!='nao') and (not ids_ass_sel or alvo.id in ids_ass_sel)
-        if solicitar_ass and canal_ass=='whatsapp':
+        if solicitar_ass and canal_ass=='app':
+            a.ass_status='pendente'; db.session.commit(); assinaturas_auto+=1
+            _push_notify_funcionario(alvo.id,'Documento para assinar',f'{fake_name} aguarda sua assinatura no app.',{'tipo':'documento_assinar','arquivo_id':str(a.id)})
+        elif solicitar_ass and canal_ass=='whatsapp':
             tel=wa_norm_number(alvo.telefone or '')
             if wa_is_valid_number(tel):
                 rs=_solicitar_assinatura_arquivo_funcionario(a,alvo,canal='whatsapp',commit_now=True)
@@ -8237,7 +11918,7 @@ def api_documentos_rh_upload():
         return jsonify({'erro':'Arquivo invalido. Envie um PDF valido.'}),400
 
     canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
-    if canal_ass not in ('nao','whatsapp','link'):
+    if canal_ass not in ('nao','whatsapp','link','app'):
         canal_ass='nao'
 
     ids_ass_raw=(request.form.get('assinatura_funcionario_ids') or '').strip()
@@ -8317,9 +11998,11 @@ def api_documentos_rh_upload():
         db.session.add(a)
         db.session.commit()
         enviados+=1
-
         solicitar_ass=(canal_ass!='nao') and (not ids_ass_sel or alvo.id in ids_ass_sel)
-        if solicitar_ass and canal_ass=='whatsapp':
+        if solicitar_ass and canal_ass=='app':
+            a.ass_status='pendente'; db.session.commit(); assinaturas_auto+=1
+            _push_notify_funcionario(alvo.id,'Documento para assinar',f'{nome_final} aguarda sua assinatura no app.',{'tipo':'documento_assinar','arquivo_id':str(a.id)})
+        elif solicitar_ass and canal_ass=='whatsapp':
             tel=wa_norm_number(alvo.telefone or '')
             if wa_is_valid_number(tel):
                 rs=_solicitar_assinatura_arquivo_funcionario(a,alvo,canal='whatsapp',commit_now=True)
@@ -8366,7 +12049,7 @@ def api_rh_preview_destinatarios():
         return jsonify({'erro':'Dependencia pypdf nao instalada'}),500
 
     if funcionario_id:
-        f=Funcionario.query.get(funcionario_id)
+        f=db.session.get(Funcionario, funcionario_id)
         if not f:
             return jsonify({'erro':'Funcionario selecionado nao encontrado.'}),404
         tel=wa_norm_number(f.telefone or '')
@@ -8483,7 +12166,7 @@ def api_criar_ordem_compra():
 @app.route('/api/ordens-compra/<int:id>',methods=['PUT'])
 @lr
 def api_atualizar_ordem_compra(id):
-    o=OrdemCompra.query.get_or_404(id); d=request.json or {}
+    o=db.get_or_404(OrdemCompra, id); d=request.json or {}
     for k in ['numero','empresa_id','solicitante','fornecedor','descricao','status','data_emissao']:
         if k in d: setattr(o,k,d[k])
     if 'valor' in d: o.valor=to_num(d.get('valor'),dec=True)
@@ -8492,7 +12175,7 @@ def api_atualizar_ordem_compra(id):
 @app.route('/api/ordens-compra/<int:id>',methods=['DELETE'])
 @lr
 def api_deletar_ordem_compra(id):
-    db.session.delete(OrdemCompra.query.get_or_404(id)); db.session.commit(); return jsonify({'ok':True})
+    db.session.delete(db.get_or_404(OrdemCompra, id)); db.session.commit(); return jsonify({'ok':True})
 
 @app.route('/api/operacional/documentos',methods=['GET'])
 @lr
@@ -8514,7 +12197,7 @@ def api_criar_oper_doc():
 @app.route('/api/operacional/documentos/<int:id>',methods=['DELETE'])
 @lr
 def api_del_oper_doc(id):
-    d=OperacionalDocumento.query.get_or_404(id)
+    d=db.get_or_404(OperacionalDocumento, id)
     if d.caminho:
         try: os.remove(os.path.join(UPLOAD_ROOT,d.caminho))
         except: pass
@@ -8523,7 +12206,7 @@ def api_del_oper_doc(id):
 @app.route('/api/operacional/documentos/<int:id>/download')
 @lr
 def api_download_oper_doc(id):
-    d=OperacionalDocumento.query.get_or_404(id)
+    d=db.get_or_404(OperacionalDocumento, id)
     if not d.caminho: return jsonify({'erro':'Documento sem arquivo'}),404
     abs_p=os.path.join(UPLOAD_ROOT,d.caminho)
     if not os.path.exists(abs_p): return jsonify({'erro':'Arquivo nao encontrado'}),404
@@ -8551,7 +12234,7 @@ def api_operacional_postos():
     cli_map={c.id:c for c in cls}
     itens=[]
     for f in q.order_by(Funcionario.nome).all():
-        emp=Empresa.query.get(f.empresa_id) if f.empresa_id else None
+        emp=db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
         cli=cli_map.get(f.posto_cliente_id) if f.posto_cliente_id else None
         posto_label=(f.posto_operacional or 'Reserva tecnica')
         if cli:
@@ -8575,10 +12258,10 @@ def api_operacional_postos_salvar():
     fid=to_num(d.get('funcionario_id'))
     if not fid:
         return jsonify({'erro':'Funcionario obrigatorio'}),400
-    f=Funcionario.query.get_or_404(fid)
+    f=db.get_or_404(Funcionario, fid)
     posto_cliente_id=to_num(d.get('posto_cliente_id')) or None
     if posto_cliente_id:
-        cli=Cliente.query.get_or_404(posto_cliente_id)
+        cli=db.get_or_404(Cliente, posto_cliente_id)
         if f.empresa_id and cli.empresa_id and f.empresa_id!=cli.empresa_id:
             return jsonify({'erro':'O posto selecionado pertence a outra empresa.'}),400
         cap=max(0,to_num(cli.qtd_funcionarios_posto))
@@ -8608,19 +12291,45 @@ def api_beneficios_lancamentos():
     if empresa_id:
         qb=qb.filter_by(empresa_id=empresa_id)
     mapa={b.funcionario_id:b for b in qb.all()}
+    # Fallback: usa o último lançamento anterior quando não houver registro no mês.
+    # Isso evita recadastro mensal manual dos valores-base.
+    mapa_prev={}
+    func_ids=[f.id for f in funcs_ativos if f.id]
+    if func_ids:
+        qprev=BeneficioMensal.query.filter(
+            BeneficioMensal.funcionario_id.in_(func_ids),
+            BeneficioMensal.competencia < comp
+        )
+        if empresa_id:
+            qprev=qprev.filter_by(empresa_id=empresa_id)
+        qprev=qprev.order_by(
+            BeneficioMensal.funcionario_id.asc(),
+            BeneficioMensal.competencia.desc(),
+            BeneficioMensal.id.desc()
+        )
+        for bp in qprev.all():
+            if bp.funcionario_id not in mapa_prev:
+                mapa_prev[bp.funcionario_id]=bp
     itens=[]
-    def _benef_val(bm,func_obj,attr_name):
-        if not bm:
-            return getattr(func_obj,attr_name) or 0
-        val=getattr(bm,attr_name)
-        if val is None:
-            return getattr(func_obj,attr_name) or 0
-        return val
+    def _benef_val(bm,bm_prev,func_obj,attr_name):
+        if bm is not None:
+            val=getattr(bm,attr_name)
+            if val is not None:
+                return val
+        if bm_prev is not None:
+            val_prev=getattr(bm_prev,attr_name)
+            if val_prev is not None:
+                return val_prev
+        val_func=getattr(func_obj,attr_name)
+        if val_func is None:
+            return 0
+        return val_func
     for f in funcs_ativos:
-        emp=Empresa.query.get(f.empresa_id) if f.empresa_id else None
-        cli=Cliente.query.get(f.posto_cliente_id) if f.posto_cliente_id else None
+        emp=db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
+        cli=db.session.get(Cliente, f.posto_cliente_id) if f.posto_cliente_id else None
         posto_nome=(cli.nome.strip() if cli and (cli.nome or '').strip() else (f.posto_operacional or 'Reserva tecnica'))
         b=mapa.get(f.id)
+        b_prev=mapa_prev.get(f.id)
         itens.append({
             'funcionario_id':f.id,
             'matricula':f.matricula or '',
@@ -8636,10 +12345,11 @@ def api_beneficios_lancamentos():
             'dias_vr':(b.dias_vr if b else 0),
             'dias_va':(b.dias_va if b else 0),
             'dias_vg':(b.dias_vg if b else 0),
+            'faltas':(b.faltas if b and (b.faltas is not None) else 0),
             'salario':(b.salario if b else (f.salario or 0)),
-            'vale_refeicao':_benef_val(b,f,'vale_refeicao'),
-            'vale_alimentacao':_benef_val(b,f,'vale_alimentacao'),
-            'vale_transporte':_benef_val(b,f,'vale_transporte'),
+            'vale_refeicao':_benef_val(b,b_prev,f,'vale_refeicao'),
+            'vale_alimentacao':_benef_val(b,b_prev,f,'vale_alimentacao'),
+            'vale_transporte':_benef_val(b,b_prev,f,'vale_transporte'),
             'opta_vt': True if f.opta_vt is None else bool(f.opta_vt),
             'opta_vr': True if f.opta_vr is None else bool(f.opta_vr),
             'opta_va': True if f.opta_va is None else bool(f.opta_va),
@@ -8647,11 +12357,32 @@ def api_beneficios_lancamentos():
             'opta_vale_gasolina': bool(f.opta_vale_gasolina),
             'opta_cesta_natal': bool(f.opta_cesta_natal),
             'pp_falta': bool(b.pp_falta) if b and (b.pp_falta is not None) else False,
-            'premio_produtividade':_benef_val(b,f,'premio_produtividade'),
-            'vale_gasolina':_benef_val(b,f,'vale_gasolina'),
-            'cesta_natal':_benef_val(b,f,'cesta_natal'),
+            'premio_produtividade':_benef_val(b,b_prev,f,'premio_produtividade'),
+            'vale_gasolina':_benef_val(b,b_prev,f,'vale_gasolina'),
+            'cesta_natal':_benef_val(b,b_prev,f,'cesta_natal'),
         })
-    return jsonify({'ok':True,'competencia':comp,'itens':itens})
+    empresa_ref_id=empresa_id or 0
+    folha=FolhaBeneficios.query.filter_by(competencia=comp,empresa_ref_id=empresa_ref_id).first()
+    folha_status='aberta'
+    folha_versao=0
+    folha_salva_em=None
+    folha_salva_por=''
+    folha_assinatura_status='pendente'
+    folha_historico=[]
+    if folha:
+        folha_status=folha.status or 'aberta'
+        folha_versao=int(folha.versao_atual or 0)
+        folha_salva_em=folha.salvo_em.isoformat() if folha.salvo_em else None
+        folha_salva_por=folha.salvo_por or ''
+        folha_assinatura_status=folha.assinatura_status or 'pendente'
+        try:
+            folha_historico=json.loads(folha.historico_json or '[]')
+        except Exception:
+            folha_historico=[]
+    return jsonify({'ok':True,'competencia':comp,'itens':itens,
+        'folha_status':folha_status,'folha_versao':folha_versao,
+        'folha_salva_em':folha_salva_em,'folha_salva_por':folha_salva_por,
+        'folha_assinatura_status':folha_assinatura_status,'folha_historico':folha_historico})
 
 @app.route('/api/beneficios/lancamentos',methods=['DELETE'])
 @lr
@@ -8740,6 +12471,8 @@ def api_beneficios_lancamentos_limpar():
             if b.vale_gasolina is not None: b.vale_gasolina=None; changed=True
         if tipo in {'cn','todos'}:
             if b.cesta_natal is not None: b.cesta_natal=None; changed=True
+        if tipo=='todos':
+            if (b.faltas or 0)!=0: b.faltas=0; changed=True
         if changed:
             alterados+=1
 
@@ -8752,12 +12485,13 @@ def api_beneficios_lancamentos_salvar():
     d=request.json or {}
     comp=norm_competencia(d.get('competencia'))
     itens=d.get('itens') or []
+    atualizar_base_funcionario=to_bool(d.get('atualizar_base_funcionario'))
     salvos=0
     for it in itens:
         fid=to_num(it.get('funcionario_id'))
         if not fid:
             continue
-        f=Funcionario.query.get(fid)
+        f=db.session.get(Funcionario, fid)
         if not f:
             continue
         b=BeneficioMensal.query.filter_by(funcionario_id=fid,competencia=comp).first()
@@ -8776,22 +12510,40 @@ def api_beneficios_lancamentos_salvar():
         dias_vr=max(0,to_num(it.get('dias_vr')))
         dias_va=max(0,to_num(it.get('dias_va')))
         dias_vg=max(0,to_num(it.get('dias_vg')))
+        faltas=(max(0,to_num(it.get('faltas'))) if ('faltas' in it and it.get('faltas') is not None) else (b.faltas if b and (b.faltas is not None) else 0))
         pp_falta=to_bool(it.get('pp_falta')) if pp_optante else False
 
         b.dias_vt=dias_vt if vt_optante else 0
         b.dias_vr=dias_vr if vr_optante else 0
         b.dias_va=dias_va if va_optante else 0
         b.dias_vg=dias_vg if vg_optante else 0
+        b.faltas=faltas
         b.pp_falta=pp_falta
-        b.dias_trabalhados=max(b.dias_vt,b.dias_vr)
+        b.dias_trabalhados=max(0,max(b.dias_vt,b.dias_vr,b.dias_vg))
 
         b.salario=to_num(it.get('salario'),dec=True)
-        b.vale_transporte=(to_num(it.get('vale_transporte'),dec=True) if vt_optante else 0)
-        b.vale_refeicao=(to_num(it.get('vale_refeicao'),dec=True) if vr_optante else 0)
-        b.vale_alimentacao=(to_num(it.get('vale_alimentacao'),dec=True) if va_optante else 0)
-        b.premio_produtividade=(to_num(it.get('premio_produtividade'),dec=True) if (pp_optante and not pp_falta) else 0)
-        b.vale_gasolina=(to_num(it.get('vale_gasolina'),dec=True) if vg_optante else 0)
-        b.cesta_natal=(to_num(it.get('cesta_natal'),dec=True) if cn_optante else 0)
+        vale_transporte=to_num(it.get('vale_transporte'),dec=True)
+        vale_refeicao=to_num(it.get('vale_refeicao'),dec=True)
+        vale_alimentacao=to_num(it.get('vale_alimentacao'),dec=True)
+        premio_base=to_num(it.get('premio_produtividade'),dec=True)
+        vale_gasolina=to_num(it.get('vale_gasolina'),dec=True)
+        cesta_natal=to_num(it.get('cesta_natal'),dec=True)
+
+        b.vale_transporte=(vale_transporte if vt_optante else 0)
+        b.vale_refeicao=(vale_refeicao if vr_optante else 0)
+        b.vale_alimentacao=(vale_alimentacao if va_optante else 0)
+        b.premio_produtividade=(premio_base if (pp_optante and not pp_falta) else 0)
+        b.vale_gasolina=(vale_gasolina if vg_optante else 0)
+        b.cesta_natal=(cesta_natal if cn_optante else 0)
+
+        if atualizar_base_funcionario:
+            # Persiste valores-base fixos no cadastro do colaborador.
+            f.vale_transporte=(vale_transporte if vt_optante else 0)
+            f.vale_refeicao=(vale_refeicao if vr_optante else 0)
+            f.vale_alimentacao=(vale_alimentacao if va_optante else 0)
+            f.premio_produtividade=(premio_base if pp_optante else 0)
+            f.vale_gasolina=(vale_gasolina if vg_optante else 0)
+            f.cesta_natal=(cesta_natal if cn_optante else 0)
         salvos+=1
     db.session.commit()
     return jsonify({'ok':True,'competencia':comp,'salvos':salvos})
@@ -8878,6 +12630,821 @@ def api_beneficios_vale_gasolina_xlsx():
 @lr
 def api_beneficios_cesta_natal_xlsx():
     return _api_beneficios_xlsx_tipo('cesta_natal')
+
+def _beneficios_folha_resumo(comp,empresa_id=None):
+    empresa_ref_id=empresa_id or 0
+    comp=norm_competencia(comp)
+    qf=Funcionario.query.filter_by(status='Ativo')
+    if empresa_id:
+        qf=qf.filter_by(empresa_id=empresa_id)
+    funcs_ativos=qf.all()
+    qb=BeneficioMensal.query.filter_by(competencia=comp)
+    if empresa_id:
+        qb=qb.filter_by(empresa_id=empresa_id)
+    mapa={b.funcionario_id:b for b in qb.all()}
+    total=0.0
+    itens_snap=[]
+    for f in funcs_ativos:
+        b=mapa.get(f.id)
+        emp=db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
+        cli=db.session.get(Cliente, f.posto_cliente_id) if f.posto_cliente_id else None
+        posto_nome=(cli.nome.strip() if cli and (cli.nome or '').strip() else (f.posto_operacional or 'Reserva tecnica'))
+        vt=float((b.vale_transporte if b and b.vale_transporte is not None else f.vale_transporte) or 0)
+        vr=float((b.vale_refeicao if b and b.vale_refeicao is not None else f.vale_refeicao) or 0)
+        va=float((b.vale_alimentacao if b and b.vale_alimentacao is not None else f.vale_alimentacao) or 0)
+        pp=float((b.premio_produtividade if b and b.premio_produtividade is not None else f.premio_produtividade) or 0)
+        vg=float((b.vale_gasolina if b and b.vale_gasolina is not None else f.vale_gasolina) or 0)
+        cn=float((b.cesta_natal if b and b.cesta_natal is not None else f.cesta_natal) or 0)
+        dias_vt=int((b.dias_vt if b else 0) or 0)
+        dias_vr=int((b.dias_vr if b else 0) or 0)
+        total_func=(vt*dias_vt)+(vr*dias_vr)+va+pp+vg+cn
+        total+=total_func
+        itens_snap.append({
+            'funcionario_id':f.id,'nome':f.nome or '',
+            'empresa_nome':(emp.nome if emp else ''),'posto':posto_nome,
+            'vt':vt,'vr':vr,'va':va,'pp':pp,'vg':vg,'cn':cn,
+            'dias_vt':dias_vt,'dias_vr':dias_vr,'total':total_func,
+        })
+    return {'competencia':comp,'empresa_id':empresa_id,'total_funcionarios':len(itens_snap),'total_competencia':total,'itens':itens_snap}
+
+def _beneficios_salvar_snapshot(comp,empresa_id=None,usuario=''):
+    empresa_ref_id=empresa_id or 0
+    resumo=_beneficios_folha_resumo(comp,empresa_id)
+    emp_nome='Todas as empresas'
+    if empresa_ref_id:
+        emp=db.session.get(Empresa, empresa_ref_id)
+        if emp and (emp.nome or '').strip():
+            emp_nome=emp.nome.strip()
+    folha=FolhaBeneficios.query.filter_by(competencia=comp,empresa_ref_id=empresa_ref_id).first()
+    if not folha:
+        folha=FolhaBeneficios(competencia=comp,empresa_ref_id=empresa_ref_id)
+        db.session.add(folha)
+    try:
+        historico=json.loads(folha.historico_json or '[]')
+    except Exception:
+        historico=[]
+    if not isinstance(historico,list):
+        historico=[]
+    proxima_versao=int(folha.versao_atual or 0)+1
+    historico.append({
+        'versao':proxima_versao,
+        'salvo_em':utcnow().isoformat(),
+        'salvo_por':(usuario or '').strip() or 'sistema',
+        'total_funcionarios':int(resumo.get('total_funcionarios') or 0),
+        'total_competencia':float(resumo.get('total_competencia') or 0),
+        'dados':resumo,
+    })
+    folha.empresa_nome=emp_nome
+    folha.versao_atual=proxima_versao
+    folha.total_funcionarios=int(resumo.get('total_funcionarios') or 0)
+    folha.total_competencia=float(resumo.get('total_competencia') or 0)
+    folha.dados_json=json.dumps(resumo,ensure_ascii=False)
+    folha.historico_json=json.dumps(historico[-24:],ensure_ascii=False)
+    folha.salvo_por=(usuario or '').strip() or 'sistema'
+    folha.salvo_em=utcnow()
+    return folha
+
+@app.route('/api/beneficios/fechar',methods=['POST'])
+@lr
+def api_beneficios_fechar():
+    d=request.json or {}
+    comp=norm_competencia(d.get('competencia'))
+    empresa_id=to_num(d.get('empresa_id')) or None
+    usuario=_financeiro_usuario_atual()
+    folha=_beneficios_salvar_snapshot(comp,empresa_id=empresa_id,usuario=usuario)
+    folha.status='fechada'
+    folha.fechado_em=utcnow()
+    folha.fechado_por=usuario
+    folha.fechamento_obs=(d.get('fechamento_obs') or '').strip()
+    db.session.commit()
+    audit_event('folha_beneficios_fechada','usuario',session.get('uid'),'folha_beneficios',folha.id,True,{'competencia':comp,'empresa_id':empresa_id,'versao':folha.versao_atual})
+    return jsonify({'ok':True,'competencia':comp,'folha_id':folha.id,
+        'total_funcionarios':folha.total_funcionarios,'total_competencia':folha.total_competencia,
+        'salvo_em':(folha.salvo_em.isoformat() if folha.salvo_em else None),'salvo_por':folha.salvo_por or '',
+        'status':folha.status,'versao':int(folha.versao_atual or 0)})
+
+@app.route('/api/beneficios/reabrir',methods=['POST'])
+@lr
+def api_beneficios_reabrir():
+    d=request.json or {}
+    comp=norm_competencia(d.get('competencia'))
+    empresa_id=to_num(d.get('empresa_id')) or None
+    empresa_ref_id=empresa_id or 0
+    folha=FolhaBeneficios.query.filter_by(competencia=comp,empresa_ref_id=empresa_ref_id).first()
+    if not folha:
+        return jsonify({'erro':'Folha não encontrada para esta competência.'}),404
+    folha.status='aberta'
+    folha.reaberto_em=utcnow()
+    folha.reaberto_por=_financeiro_usuario_atual()
+    folha.assinatura_status='pendente'
+    db.session.commit()
+    audit_event('folha_beneficios_reaberta','usuario',session.get('uid'),'folha_beneficios',folha.id,True,{'competencia':comp,'empresa_id':empresa_id})
+    return jsonify({'ok':True,'competencia':comp,'empresa_id':empresa_id,'status':'aberta'})
+
+@app.route('/api/beneficios/assinar',methods=['POST'])
+@lr
+def api_beneficios_assinar():
+    d=request.json or {}
+    comp=norm_competencia(d.get('competencia'))
+    empresa_id=to_num(d.get('empresa_id')) or None
+    empresa_ref_id=empresa_id or 0
+    folha=FolhaBeneficios.query.filter_by(competencia=comp,empresa_ref_id=empresa_ref_id).first()
+    if not folha:
+        return jsonify({'erro':'Salve a folha antes de assinar.'}),404
+    if (folha.status or '')!='fechada':
+        return jsonify({'erro':'A folha precisa estar fechada para assinatura.'}),400
+    try:
+        dados=json.loads(folha.dados_json or '{}')
+    except Exception:
+        dados={}
+    h=hashlib.sha256(json.dumps({'folha_id':folha.id,'competencia':comp,'empresa_id':empresa_id,'dados':dados},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+    folha.assinatura_status='assinado'
+    folha.assinatura_hash=h
+    folha.assinatura_por=_financeiro_usuario_atual()
+    folha.assinatura_em=utcnow()
+    db.session.commit()
+    audit_event('folha_beneficios_assinada','usuario',session.get('uid'),'folha_beneficios',folha.id,True,{'competencia':comp,'empresa_id':empresa_id,'hash':h[:16]})
+    return jsonify({'ok':True,'competencia':comp,'empresa_id':empresa_id,'assinatura_status':'assinado','assinatura_hash':h,'assinatura_por':folha.assinatura_por,'assinatura_em':(folha.assinatura_em.isoformat() if folha.assinatura_em else None)})
+
+@app.route('/api/beneficios/folhas',methods=['GET'])
+@lr
+def api_beneficios_folhas():
+    comp=(request.args.get('competencia') or '').strip()
+    empresa_id=to_num(request.args.get('empresa_id'))
+    q=FolhaBeneficios.query
+    if comp:
+        q=q.filter_by(competencia=norm_competencia(comp))
+    if empresa_id is not None:
+        q=q.filter_by(empresa_ref_id=empresa_id or 0)
+    folhas=q.order_by(FolhaBeneficios.salvo_em.desc()).limit(24).all()
+    return jsonify({'ok':True,'itens':[f.to_dict() for f in folhas]})
+
+# ══════════════════════════════════════════════════════════════
+#  FERIADOS
+# ══════════════════════════════════════════════════════════════
+
+@app.route('/api/feriados',methods=['GET'])
+@lr
+def api_feriados_listar():
+    ano=(request.args.get('ano') or '').strip()
+    tipo=(request.args.get('tipo') or '').strip().lower()
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    q=Feriado.query
+    if ano:
+        q=q.filter(Feriado.data.like(f'{ano}-%'))
+    if tipo in ('nacional','municipal'):
+        q=q.filter_by(tipo=tipo)
+    q=q.order_by(Feriado.data.asc())
+    itens=q.all()
+    ids=[f.id for f in itens if f.id]
+    mapa_func={}
+    if ids:
+        for vinc in FeriadoFuncionario.query.filter(FeriadoFuncionario.feriado_id.in_(ids)).all():
+            mapa_func.setdefault(vinc.feriado_id,[]).append(vinc.funcionario_id)
+    out=[]
+    for f in itens:
+        d=f.to_dict()
+        fids=mapa_func.get(f.id,[])
+        d['funcionario_ids']=fids
+        d['qtd_funcionarios']=len(fids)
+        out.append(d)
+    return jsonify({'ok':True,'itens':out})
+
+@app.route('/api/feriados',methods=['POST'])
+@lr
+def api_feriados_criar():
+    d=request.json or {}
+    data_raw=(d.get('data') or '').strip()
+    descricao=(d.get('descricao') or '').strip()
+    tipo=(d.get('tipo') or 'nacional').strip().lower()
+    municipio=(d.get('municipio') or '').strip()
+    estado=(d.get('estado') or '').strip().upper()[:2]
+    empresa_id=to_num(d.get('empresa_id')) or None
+    funcionario_ids={int(x) for x in (d.get('funcionario_ids') or []) if str(x).isdigit()}
+    if not data_raw:
+        return jsonify({'erro':'Data é obrigatória.'}),400
+    if not descricao:
+        return jsonify({'erro':'Descrição é obrigatória.'}),400
+    if tipo not in ('nacional','municipal'):
+        return jsonify({'erro':'Tipo inválido. Use nacional ou municipal.'}),400
+    if tipo=='municipal' and not funcionario_ids:
+        return jsonify({'erro':'Para feriado municipal, selecione ao menos 1 funcionário.'}),400
+    # normaliza para YYYY-MM-DD
+    data_norm=None
+    for fmt in ('%d/%m/%Y','%Y-%m-%d','%d-%m-%Y'):
+        try:
+            from datetime import datetime as _dt
+            data_norm=_dt.strptime(data_raw,fmt).strftime('%Y-%m-%d')
+            break
+        except Exception:
+            pass
+    if not data_norm:
+        return jsonify({'erro':'Data inválida. Use DD/MM/AAAA.'}),400
+    existente=Feriado.query.filter_by(data=data_norm,tipo=tipo,municipio=municipio).first()
+    if existente:
+        return jsonify({'erro':'Feriado já cadastrado nessa data/tipo/município.'}),409
+    f=Feriado(data=data_norm,descricao=descricao,tipo=tipo,municipio=municipio,estado=estado,
+              empresa_id=empresa_id,criado_por=session.get('nome',''))
+    db.session.add(f)
+    db.session.flush()
+    if tipo=='municipal':
+        funcs_validos={x.id for x in Funcionario.query.filter(Funcionario.id.in_(list(funcionario_ids))).all()}
+        for fid in funcs_validos:
+            db.session.add(FeriadoFuncionario(feriado_id=f.id,funcionario_id=fid))
+    db.session.commit()
+    fd=f.to_dict()
+    fd['funcionario_ids']=sorted(list(funcionario_ids)) if tipo=='municipal' else []
+    fd['qtd_funcionarios']=len(fd['funcionario_ids'])
+    return jsonify({'ok':True,'feriado':fd}),201
+
+@app.route('/api/feriados/<int:fid>',methods=['PUT'])
+@lr
+def api_feriados_editar(fid):
+    f=db.get_or_404(Feriado, fid)
+    d=request.json or {}
+    data_raw=(d.get('data') or '').strip()
+    descricao=(d.get('descricao') or '').strip()
+    tipo=(d.get('tipo') or f.tipo or 'nacional').strip().lower()
+    municipio=(d.get('municipio') or '').strip()
+    estado=(d.get('estado') or '').strip().upper()[:2]
+    funcionario_ids={int(x) for x in (d.get('funcionario_ids') or []) if str(x).isdigit()}
+    if data_raw:
+        data_norm=None
+        for fmt in ('%d/%m/%Y','%Y-%m-%d','%d-%m-%Y'):
+            try:
+                from datetime import datetime as _dt
+                data_norm=_dt.strptime(data_raw,fmt).strftime('%Y-%m-%d')
+                break
+            except Exception:
+                pass
+        if not data_norm:
+            return jsonify({'erro':'Data inválida. Use DD/MM/AAAA.'}),400
+        f.data=data_norm
+    if descricao:
+        f.descricao=descricao
+    if tipo in ('nacional','municipal'):
+        f.tipo=tipo
+    f.municipio=municipio
+    f.estado=estado
+    if 'empresa_id' in d:
+        f.empresa_id=to_num(d.get('empresa_id')) or None
+    if f.tipo=='municipal':
+        if not funcionario_ids:
+            return jsonify({'erro':'Para feriado municipal, selecione ao menos 1 funcionário.'}),400
+        FeriadoFuncionario.query.filter_by(feriado_id=f.id).delete()
+        funcs_validos={x.id for x in Funcionario.query.filter(Funcionario.id.in_(list(funcionario_ids))).all()}
+        for func_id in funcs_validos:
+            db.session.add(FeriadoFuncionario(feriado_id=f.id,funcionario_id=func_id))
+    else:
+        FeriadoFuncionario.query.filter_by(feriado_id=f.id).delete()
+    db.session.commit()
+    fd=f.to_dict()
+    fids=[x.funcionario_id for x in FeriadoFuncionario.query.filter_by(feriado_id=f.id).all()]
+    fd['funcionario_ids']=fids
+    fd['qtd_funcionarios']=len(fids)
+    return jsonify({'ok':True,'feriado':fd})
+
+@app.route('/api/feriados/<int:fid>',methods=['DELETE'])
+@lr
+def api_feriados_excluir(fid):
+    f=db.get_or_404(Feriado, fid)
+    FeriadoFuncionario.query.filter_by(feriado_id=f.id).delete()
+    db.session.delete(f)
+    db.session.commit()
+    return jsonify({'ok':True})
+
+def _feriados_nacionais_ano(ano,incluir_facultativos=True):
+    from datetime import date,timedelta
+    def _pascoa(y):
+        a=y%19
+        b=y//100
+        c=y%100
+        d=b//4
+        e=b%4
+        f=(b+8)//25
+        g=(b-f+1)//3
+        h=(19*a+b-d-g+15)%30
+        i=c//4
+        k=c%4
+        l=(32+2*e+2*i-h-k)%7
+        m=(a+11*h+22*l)//451
+        mes=(h+l-7*m+114)//31
+        dia=((h+l-7*m+114)%31)+1
+        return date(y,mes,dia)
+
+    base=[
+        (f'{ano}-01-01','Confraternização Universal'),
+        (f'{ano}-04-21','Tiradentes'),
+        (f'{ano}-05-01','Dia do Trabalhador'),
+        (f'{ano}-09-07','Independência do Brasil'),
+        (f'{ano}-10-12','Nossa Senhora Aparecida'),
+        (f'{ano}-11-02','Finados'),
+        (f'{ano}-11-15','Proclamação da República'),
+        (f'{ano}-11-20','Dia da Consciência Negra'),
+        (f'{ano}-12-25','Natal'),
+    ]
+    pascoa=_pascoa(ano)
+    moveis=[
+        ((pascoa-timedelta(days=47)).isoformat(),'Carnaval'),
+        ((pascoa-timedelta(days=2)).isoformat(),'Sexta-feira Santa'),
+    ]
+    if incluir_facultativos:
+        moveis.extend([
+            ((pascoa-timedelta(days=48)).isoformat(),'Carnaval (segunda)'),
+            ((pascoa+timedelta(days=60)).isoformat(),'Corpus Christi'),
+        ])
+    return base+moveis
+
+@app.route('/api/feriados/atualizar-nacionais',methods=['POST'])
+@lr
+def api_feriados_atualizar_nacionais():
+    """Atualiza os feriados nacionais do ano informado (fixos e móveis)."""
+    d=request.json or {}
+    ano=to_num(d.get('ano'))
+    substituir=to_bool(d.get('substituir',True))
+    incluir_facultativos=to_bool(d.get('incluir_facultativos',True))
+    if not ano or ano<2020 or ano>2099:
+        from datetime import datetime as _dt
+        ano=_dt.now().year
+
+    if substituir:
+        antigos=Feriado.query.filter(
+            Feriado.tipo=='nacional',
+            Feriado.data.like(f'{ano}-%')
+        ).all()
+        for antigo in antigos:
+            FeriadoFuncionario.query.filter_by(feriado_id=antigo.id).delete()
+            db.session.delete(antigo)
+
+    novos=_feriados_nacionais_ano(ano,incluir_facultativos=incluir_facultativos)
+    inseridos=0
+    ignorados=0
+    atualizados=0
+    for data_norm,desc in novos:
+        existente=Feriado.query.filter_by(data=data_norm,tipo='nacional',municipio='').first()
+        if existente:
+            if (existente.descricao or '').strip()!=desc:
+                existente.descricao=desc
+                atualizados+=1
+            else:
+                ignorados+=1
+            continue
+        f=Feriado(data=data_norm,descricao=desc,tipo='nacional',municipio='',estado='',criado_por=session.get('nome',''))
+        db.session.add(f)
+        inseridos+=1
+    db.session.commit()
+    return jsonify({'ok':True,'ano':ano,'inseridos':inseridos,'atualizados':atualizados,'ignorados':ignorados,'substituir':substituir})
+
+# ══════════════════════════════════════════════════════════════
+#  BENEFÍCIOS — CÁLCULO POR PERÍODO
+# ══════════════════════════════════════════════════════════════
+
+def _calcular_horas_noturnas_funcionario(funcionario_id, data_inicio_str, data_fim_str):
+    """
+    Calcula total de horas noturnas trabalhadas por um funcionário em um período.
+    Usa escala se ativa, senão usa jornada fixa.
+    
+    Returns:
+      int (minutos noturnos)
+    """
+    from datetime import timedelta, datetime as _dt_calc
+    
+    total_noturno_min = 0
+    
+    try:
+        # Parse datas
+        dt_ini = _dt_calc.strptime(data_inicio_str, '%Y-%m-%d').date() if isinstance(data_inicio_str, str) else data_inicio_str
+        dt_fim = _dt_calc.strptime(data_fim_str, '%Y-%m-%d').date() if isinstance(data_fim_str, str) else data_fim_str
+        
+        f = db.session.get(Funcionario, funcionario_id)
+        if not f:
+            return 0
+        
+        # Procurar escala ativa nesse período
+        esc_func = EscalaFuncionario.query.filter(
+            EscalaFuncionario.funcionario_id == funcionario_id,
+            EscalaFuncionario.data_inicio <= dt_fim.isoformat(),
+            EscalaFuncionario.ativo == True
+        ).all()
+        
+        # Se tem escala com dias noturnos (ou tipo noturna), calcular horas
+        for ef in esc_func:
+            data_ini_ef = dt_ini
+            data_fim_ef = dt_fim
+            try:
+                if ef.data_inicio:
+                    di_ef = _dt_calc.strptime(ef.data_inicio, '%Y-%m-%d').date()
+                    if di_ef > data_ini_ef:
+                        data_ini_ef = di_ef
+            except Exception:
+                pass
+            try:
+                if ef.data_fim:
+                    df_ef = _dt_calc.strptime(ef.data_fim, '%Y-%m-%d').date()
+                    if df_ef < data_fim_ef:
+                        data_fim_ef = df_ef
+            except Exception:
+                pass
+
+            if data_fim_ef < data_ini_ef:
+                continue
+            
+            esc = db.session.get(Escala, ef.escala_id)
+            if not esc:
+                continue
+
+            # Tamanho do ciclo para identificar se o dia é noturno
+            try:
+                ciclo = json.loads(esc.ciclo_json or '{}')
+                dias_ciclo = len(ciclo.get('dias', []))
+            except Exception:
+                dias_ciclo = 0
+            if dias_ciclo <= 0:
+                continue
+            
+            # Período noturno
+            try:
+                p_ini = list(map(int, esc.periodo_noturno_ini.split(':')))
+                p_fim = list(map(int, esc.periodo_noturno_fim.split(':')))
+                p_ini_min = p_ini[0]*60 + p_ini[1]  # ex: 22:00 = 1320
+                p_fim_min = p_fim[0]*60 + p_fim[1]  # ex: 05:00 = 300
+            except Exception:
+                p_ini_min = 22*60
+                p_fim_min = 5*60
+            
+            # Iterar dias do período
+            dia_atual = data_ini_ef
+            while dia_atual <= data_fim_ef:
+                data_str = dia_atual.isoformat()
+
+                # Respeita o ciclo: só calcula para dia marcado como noturno
+                dia_inicio_esc = dia_atual
+                try:
+                    inicio_base = _dt_calc.strptime(ef.data_inicio, '%Y-%m-%d').date() if ef.data_inicio else data_ini_ef
+                    dia_inicio_esc = inicio_base
+                except Exception:
+                    pass
+                dias_decorridos = (dia_atual - dia_inicio_esc).days
+                indice_ciclo = dias_decorridos % dias_ciclo if dias_decorridos >= 0 else 0
+                eh_noturno_no_ciclo = esc.is_noturno_dia(indice_ciclo) or esc.tipo == 'noturna'
+                if not eh_noturno_no_ciclo:
+                    dia_atual += timedelta(days=1)
+                    continue
+                
+                # Verificar se tem pontuações nesse dia
+                marcacoes = PontoMarcacao.query.filter(
+                    PontoMarcacao.funcionario_id == funcionario_id,
+                    PontoMarcacao.data_hora >= _dt_calc.fromisoformat(data_str + 'T00:00:00'),
+                    PontoMarcacao.data_hora < _dt_calc.fromisoformat(data_str + 'T23:59:59')
+                ).order_by(PontoMarcacao.data_hora).all()
+                
+                if marcacoes and len(marcacoes) >= 2:
+                    # Calcular de entrada a saída
+                    entrada_dh = marcacoes[0].data_hora
+                    saida_dh = marcacoes[-1].data_hora
+                    
+                    # Converter para minutos desde 00:00 do dia
+                    entrada_min = entrada_dh.hour * 60 + entrada_dh.minute
+                    saida_min = saida_dh.hour * 60 + saida_dh.minute
+                    
+                    # Se saída é de outro dia, adiciona 24h
+                    if saida_dh.date() > entrada_dh.date():
+                        saida_min += 24*60
+                    
+                    # Calcular horas noturnas
+                    horas_noturnas_dia = _calcular_horas_noturnas(entrada_min, saida_min, p_ini_min, p_fim_min)
+                    total_noturno_min += horas_noturnas_dia
+                
+                dia_atual += timedelta(days=1)
+    
+    except Exception as e:
+        # Log silencioso em caso de erro
+        pass
+    
+    return total_noturno_min
+
+@app.route('/api/beneficios/calcular-por-periodo',methods=['POST'])
+@lr
+def api_beneficios_calcular_por_periodo():
+    """Calcula dias trabalhados por funcionário num intervalo de datas
+    e retorna (ou salva) nos campos de BeneficioMensal.
+
+    Body JSON:
+      data_inicio   str  DD/MM/AAAA ou AAAA-MM-DD
+      data_fim      str  DD/MM/AAAA ou AAAA-MM-DD
+      empresa_id    int  (opcional)
+      salvar        bool se True grava em BeneficioMensal
+      fonte         str  'ponto' | 'calendario'  (default: 'ponto' com fallback para 'calendario')
+      funcionarios  list[int] (opcional; filtra por IDs)
+            horario_inicio str HH:MM (opcional)
+            horario_fim    str HH:MM (opcional)
+            intervalo_min  int minutos (opcional, default 60)
+            min_horas_vrvt int horas mínimas para pagar VT/VR por dia (default 8)
+    """
+    from datetime import date,timedelta
+    d=request.json or {}
+    empresa_id=to_num(d.get('empresa_id')) or None
+    salvar=to_bool(d.get('salvar'))
+    fonte=(d.get('fonte') or 'ponto').strip().lower()
+    func_ids_filter={int(x) for x in (d.get('funcionarios') or []) if str(x).isdigit()}
+    faltas_map={}
+    faltas_raw=d.get('faltas')
+    if isinstance(faltas_raw,dict):
+        for k,v in faltas_raw.items():
+            try:
+                fid=int(k)
+            except Exception:
+                continue
+            faltas_map[fid]=max(0,to_num(v))
+    elif isinstance(faltas_raw,list):
+        for itf in faltas_raw:
+            if not isinstance(itf,dict):
+                continue
+            fid=to_num(itf.get('funcionario_id'))
+            if not fid:
+                continue
+            faltas_map[fid]=max(0,to_num(itf.get('faltas')))
+    min_horas_vrvt=max(1,min(16,to_num(d.get('min_horas_vrvt')) or 8))
+    min_minutos_vrvt=int(min_horas_vrvt*60)
+
+    def _parse_hhmm(s):
+        s=(s or '').strip()
+        if not s:
+            return None
+        m=re.match(r'^(\d{1,2}):(\d{2})$',s)
+        if not m:
+            return None
+        hh=int(m.group(1)); mm=int(m.group(2))
+        if hh<0 or hh>23 or mm<0 or mm>59:
+            return None
+        return hh*60+mm
+
+    horario_inicio=(d.get('horario_inicio') or '').strip()
+    horario_fim=(d.get('horario_fim') or '').strip()
+    intervalo_min=max(0,min(240,to_num(d.get('intervalo_min')) or 60))
+    horario_ini_min=_parse_hhmm(horario_inicio)
+    horario_fim_min=_parse_hhmm(horario_fim)
+    carga_diaria_informada_min=None
+    if horario_ini_min is not None and horario_fim_min is not None:
+        bruto=horario_fim_min-horario_ini_min
+        if bruto<=0:
+            bruto+=24*60
+        carga_diaria_informada_min=max(0,bruto-intervalo_min)
+
+    def _parse_date(s):
+        s=(s or '').strip()
+        for fmt in ('%d/%m/%Y','%Y-%m-%d','%d-%m-%Y'):
+            try:
+                from datetime import datetime as _dt
+                return _dt.strptime(s,fmt).date()
+            except Exception:
+                pass
+        return None
+
+    dt_ini=_parse_date(d.get('data_inicio'))
+    dt_fim=_parse_date(d.get('data_fim'))
+    if not dt_ini or not dt_fim:
+        return jsonify({'erro':'Informe data_inicio e data_fim válidos (DD/MM/AAAA).'}),400
+    if dt_fim<dt_ini:
+        return jsonify({'erro':'data_fim deve ser >= data_inicio.'}),400
+    delta=(dt_fim-dt_ini).days+1
+    if delta>185:
+        return jsonify({'erro':'Período máximo de 6 meses (185 dias).'}),400
+
+    # competência = mês da data_inicio
+    comp=dt_ini.strftime('%Y-%m')
+
+    feriados_rows=Feriado.query.filter(
+        Feriado.data>=dt_ini.isoformat(),
+        Feriado.data<=dt_fim.isoformat()
+    ).all()
+    feriados_nacionais={f.data for f in feriados_rows if (f.tipo or '').lower()=='nacional'}
+    mun_ids=[f.id for f in feriados_rows if (f.tipo or '').lower()=='municipal']
+    feriados_municipais_por_func={}
+    if mun_ids:
+        vincs=FeriadoFuncionario.query.filter(FeriadoFuncionario.feriado_id.in_(mun_ids)).all()
+        mapa_data={f.id:f.data for f in feriados_rows}
+        for v in vincs:
+            data_ref=mapa_data.get(v.feriado_id)
+            if not data_ref:
+                continue
+            feriados_municipais_por_func.setdefault(v.funcionario_id,set()).add(data_ref)
+
+    # Dias do período
+    todos_dias=[dt_ini+timedelta(days=i) for i in range(delta)]
+
+    # Monta conjunto de dias uteis (seg-sex, excluindo feriados)
+    def _is_util(dt,funcionario_id,dias_semana_set=None):
+        # dt.weekday(): 0=seg,1=ter,...,4=sex,5=sab,6=dom
+        if dias_semana_set:
+            # dias_semana_set = conjunto de ints 0-6 (weekday)
+            if dt.weekday() not in dias_semana_set:
+                return False
+        else:
+            if dt.weekday()>=5:
+                return False
+        data_iso=dt.isoformat()
+        if data_iso in feriados_nacionais:
+            return False
+        if data_iso in feriados_municipais_por_func.get(funcionario_id,set()):
+            return False
+        return True
+
+    # Funcionários ativos
+    qf=Funcionario.query.filter_by(status='Ativo')
+    if empresa_id:
+        qf=qf.filter_by(empresa_id=empresa_id)
+    funcs=qf.order_by(Funcionario.nome).all()
+    if func_ids_filter:
+        funcs=[f for f in funcs if f.id in func_ids_filter]
+
+    # Pré-carrega jornadas
+    jornadas_map={}
+    for jt in JornadaTrabalho.query.all():
+        jornadas_map[jt.id]=jt
+
+    # Pré-carrega registros de ponto (PontoFechamentoDia) no período por funcionário
+    ponto_map={}  # {func_id: set(date_str)}
+    ponto_min_map={}  # {func_id: {date_str: minutos_trabalhados}}
+    if fonte in ('ponto','auto'):
+        pfds=PontoFechamentoDia.query.filter(
+            PontoFechamentoDia.data_ref>=dt_ini.isoformat(),
+            PontoFechamentoDia.data_ref<=dt_fim.isoformat(),
+            PontoFechamentoDia.status.in_(['ok','ajuste'])
+        ).all()
+        for pfd in pfds:
+            ponto_map.setdefault(pfd.funcionario_id,set()).add(pfd.data_ref)
+            min_trab=0
+            try:
+                resumo=json.loads(pfd.resumo_json or '{}') if (pfd.resumo_json or '').strip() else {}
+                min_trab=max(0,int(resumo.get('horas_trabalhadas_min') or 0)) if isinstance(resumo,dict) else 0
+            except Exception:
+                min_trab=0
+            ponto_min_map.setdefault(pfd.funcionario_id,{})[pfd.data_ref]=min_trab
+
+    # Também verifica PontoMarcacao e calcula minutos quando não houver fechamento diário.
+    ponto_marc_map={}  # {func_id: set(date_str)}
+    ponto_marc_min_map={}  # {func_id: {date_str: minutos_trabalhados}}
+    if fonte in ('ponto','auto'):
+        mcs=PontoMarcacao.query.filter(
+            PontoMarcacao.data_hora>=str(dt_ini)+' 00:00:00',
+            PontoMarcacao.data_hora<=str(dt_fim)+' 23:59:59',
+            PontoMarcacao.tipo.in_(['entrada','saida_intervalo','retorno_intervalo','saida'])
+        ).all()
+        blocos={}
+        for mc in mcs:
+            try:
+                dia=str(mc.data_hora)[:10]
+                ponto_marc_map.setdefault(mc.funcionario_id,set()).add(dia)
+                blocos.setdefault((mc.funcionario_id,dia),[]).append(mc)
+            except Exception:
+                pass
+
+        for (fid,dia),lista in blocos.items():
+            lista=sorted(lista,key=lambda x:(x.data_hora or utcnow(),x.id or 0))
+            aberta_em=None
+            seg_total=0
+            for m in lista:
+                dh=m.data_hora
+                if not dh:
+                    continue
+                if m.tipo in ('entrada','retorno_intervalo'):
+                    aberta_em=dh
+                elif m.tipo in ('saida_intervalo','saida') and aberta_em is not None:
+                    seg_total+=max(0,int((dh-aberta_em).total_seconds()))
+                    aberta_em=None
+            minutos=max(0,int(round(seg_total/60.0)))
+            ponto_marc_min_map.setdefault(fid,{})[dia]=minutos
+
+    itens=[]
+    for f in funcs:
+        # Resolve dias da semana da jornada
+        dias_semana_set=None
+        jt=jornadas_map.get(f.jornada_id) if f.jornada_id else None
+        if jt:
+            try:
+                dset=jt.weekdays_ativos_python()
+                dias_semana_set=dset if dset else None
+            except Exception:
+                dias_semana_set=None
+
+        dias_calendario=sum(1 for dt in todos_dias if _is_util(dt,f.id,dias_semana_set))
+
+        # Dias reais de ponto com minutos apurados por dia.
+        minutos_por_dia={}
+        for dia_str,mins in (ponto_min_map.get(f.id,{}) or {}).items():
+            minutos_por_dia[dia_str]=max(0,int(mins or 0))
+        for dia_str,mins in (ponto_marc_min_map.get(f.id,{}) or {}).items():
+            if dia_str not in minutos_por_dia:
+                minutos_por_dia[dia_str]=max(0,int(mins or 0))
+        dias_ponto_set=set(d for d in minutos_por_dia.keys())
+        dias_ponto=len(dias_ponto_set)
+        tem_ponto=bool(dias_ponto)
+
+        carga_diaria_ref_min=max(0,int(carga_diaria_informada_min if carga_diaria_informada_min is not None else (_app_ponto_min_esperado_jornada(f) or 0)))
+        dias_vrvt_por_horas=0
+        for mins in minutos_por_dia.values():
+            if int(mins or 0)>=min_minutos_vrvt:
+                dias_vrvt_por_horas+=1
+
+        if fonte=='ponto':
+            dias_trab=dias_ponto if tem_ponto else dias_calendario
+            dias_vt_vr=(dias_vrvt_por_horas if tem_ponto else (dias_calendario if carga_diaria_ref_min>=min_minutos_vrvt else 0))
+            dias_vg_calc=(dias_ponto if tem_ponto else dias_calendario)
+        elif fonte=='calendario':
+            dias_trab=dias_calendario
+            dias_vt_vr=(dias_calendario if carga_diaria_ref_min>=min_minutos_vrvt else 0)
+            dias_vg_calc=dias_calendario
+        else:  # auto
+            dias_trab=dias_ponto if tem_ponto else dias_calendario
+            dias_vt_vr=(dias_vrvt_por_horas if tem_ponto else (dias_calendario if carga_diaria_ref_min>=min_minutos_vrvt else 0))
+            dias_vg_calc=(dias_ponto if tem_ponto else dias_calendario)
+
+        faltas_informadas=max(0,to_num(faltas_map.get(f.id,0)))
+        faltas_aplicadas=min(faltas_informadas,max(0,dias_trab))
+        dias_trab_liq=max(0,dias_trab-faltas_aplicadas)
+        dias_vt_liq=max(0,dias_vt_vr-faltas_aplicadas)
+        dias_vr_liq=max(0,dias_vt_vr-faltas_aplicadas)
+        dias_vg_liq=max(0,dias_vg_calc-faltas_aplicadas)
+
+        emp=db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
+        itens.append({
+            'funcionario_id':f.id,
+            'matricula':f.matricula or '',
+            're':f.re or '',
+            'nome':f.nome or '',
+            'empresa_id':f.empresa_id,
+            'empresa_nome':(emp.nome if emp else ''),
+            'competencia':comp,
+            'dias_trabalhados':dias_trab_liq,
+            'dias_trabalhados_base':dias_trab,
+            'dias_vt_base':dias_vt_vr,
+            'dias_vr_base':dias_vt_vr,
+            'dias_vg_base':dias_vg_calc,
+            'dias_faltas_informadas':faltas_informadas,
+            'dias_faltas':faltas_aplicadas,
+            'dias_vt_sugerido':(dias_vt_liq if (f.opta_vt is not False) else 0),
+            'dias_vr_sugerido':(dias_vr_liq if (f.opta_vr is not False) else 0),
+            'dias_vg_sugerido':(dias_vg_liq if bool(f.opta_vale_gasolina) else 0),
+            'dias_uteis_calendario':dias_calendario,
+            'dias_ponto_registrado':dias_ponto,
+            'dias_com_8h_ou_mais':dias_vrvt_por_horas,
+            'carga_diaria_referencia_min':carga_diaria_ref_min,
+            'tem_ponto':tem_ponto,
+            'opta_vt': True if f.opta_vt is None else bool(f.opta_vt),
+            'opta_vr': True if f.opta_vr is None else bool(f.opta_vr),
+            'opta_va': True if f.opta_va is None else bool(f.opta_va),
+            'opta_premio_prod': bool(f.opta_premio_prod),
+            'opta_vale_gasolina': bool(f.opta_vale_gasolina),
+            'opta_cesta_natal': bool(f.opta_cesta_natal),
+            'vale_refeicao': float(f.vale_refeicao or 0),
+            'vale_alimentacao': float(f.vale_alimentacao or 0),
+            'vale_transporte': float(f.vale_transporte or 0),
+            'premio_produtividade': float(f.premio_produtividade or 0),
+            'vale_gasolina': float(f.vale_gasolina or 0),
+            'cesta_natal': float(f.cesta_natal or 0),
+            'salario': float(f.salario or 0),
+        })
+
+    if salvar:
+        for it in itens:
+            fid=it['funcionario_id']
+            f=db.session.get(Funcionario, fid)
+            if not f:
+                continue
+            b=BeneficioMensal.query.filter_by(funcionario_id=fid,competencia=comp).first()
+            if not b:
+                b=BeneficioMensal(funcionario_id=fid,competencia=comp)
+                db.session.add(b)
+            b.empresa_id=f.empresa_id
+            dt=it['dias_trabalhados']
+            b.dias_trabalhados=dt
+            b.faltas=max(0,to_num(it.get('dias_faltas')))
+            if it['opta_vt']: b.dias_vt=max(0,to_num(it.get('dias_vt_sugerido')))
+            if it['opta_vr']: b.dias_vr=max(0,to_num(it.get('dias_vr_sugerido')))
+            if it['opta_va']: b.dias_va=dt
+            if it['opta_vale_gasolina']: b.dias_vg=max(0,to_num(it.get('dias_vg_sugerido')))
+            if b.salario is None: b.salario=it['salario']
+            # Calcular horas noturnas
+            horas_not_min=_calcular_horas_noturnas_funcionario(fid,dt_ini.isoformat(),dt_fim.isoformat())
+            b.horas_noturnas_min=max(0,int(horas_not_min))
+        db.session.commit()
+
+    return jsonify({
+        'ok':True,
+        'data_inicio':dt_ini.isoformat(),
+        'data_fim':dt_fim.isoformat(),
+        'competencia':comp,
+        'total_dias':delta,
+        'feriados_periodo':len(feriados_nacionais),
+        'feriados_nacionais_periodo':len(feriados_nacionais),
+        'feriados_municipais_vinculados':sum(len(v) for v in feriados_municipais_por_func.values()),
+        'min_horas_vrvt':min_horas_vrvt,
+        'regra_vrvt':'VT e VR pagos apenas em dias com 8h ou mais trabalhadas. Vale gasolina pago por dia trabalhado. Faltas informadas são descontadas dos dias pagos.',
+        'fonte_usada':fonte,
+        'itens':itens,
+        'salvos': len(itens) if salvar else 0,
+    })
 
 @app.route('/beneficios/relatorio')
 @lr
@@ -9289,13 +13856,1047 @@ def _api_beneficios_pdf_tipo(tipo):
     nome=f"relatorio_{sigla}_competencia_{comp_nome}.pdf"
     return send_file(buf,mimetype='application/pdf',as_attachment=False,download_name=nome)
 
+def _financeiro_salarios_competencia(comp, empresa_id=None):
+    qf=Funcionario.query.filter_by(status='Ativo')
+    if empresa_id:
+        qf=qf.filter_by(empresa_id=empresa_id)
+    funcs_ativos=qf.order_by(Funcionario.nome).all()
+
+    qb=BeneficioMensal.query.filter_by(competencia=comp)
+    if empresa_id:
+        qb=qb.filter_by(empresa_id=empresa_id)
+    mapa_comp={b.funcionario_id:b for b in qb.all()}
+    comp_ant=''
+    try:
+        ano_ant=int(comp[:4]); mes_ant=int(comp[5:7])
+        if mes_ant==1:
+            comp_ant=f'{ano_ant-1}-12'
+        else:
+            comp_ant=f'{ano_ant}-{str(mes_ant-1).zfill(2)}'
+    except Exception:
+        comp_ant=''
+    mapa_ant={}
+    if comp_ant:
+        qant=BeneficioMensal.query.filter_by(competencia=comp_ant)
+        if empresa_id:
+            qant=qant.filter_by(empresa_id=empresa_id)
+        mapa_ant={b.funcionario_id:b for b in qant.all()}
+
+    ano=(comp[:4] if isinstance(comp,str) and len(comp)>=7 and '-' in comp else '')
+    totais_anuais={}
+    if ano:
+        qa=BeneficioMensal.query.filter(BeneficioMensal.competencia.like(f'{ano}-%'))
+        if empresa_id:
+            qa=qa.filter_by(empresa_id=empresa_id)
+        for reg in qa.all():
+            totais_anuais[reg.funcionario_id]=totais_anuais.get(reg.funcionario_id,0.0)+float(reg.salario or 0)
+
+    itens=[]
+    total_competencia=0.0
+    total_anual=0.0
+    cargos=set()
+    postos=set()
+    for f in funcs_ativos:
+        emp=db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
+        cli=db.session.get(Cliente, f.posto_cliente_id) if f.posto_cliente_id else None
+        posto_nome=(cli.nome.strip() if cli and (cli.nome or '').strip() else (f.posto_operacional or 'Reserva tecnica'))
+        reg=mapa_comp.get(f.id)
+        valor_liquido=float(reg.salario if reg and reg.salario is not None else (f.salario or 0) or 0)
+        valor_anterior=float((mapa_ant.get(f.id).salario if mapa_ant.get(f.id) and mapa_ant.get(f.id).salario is not None else 0) or 0)
+        delta_valor=valor_liquido-valor_anterior
+        delta_pct=((delta_valor/valor_anterior)*100.0) if valor_anterior else (100.0 if valor_liquido else 0.0)
+        inconsistente=bool((valor_anterior>0 and abs(delta_pct)>=25) or (valor_anterior==0 and valor_liquido>0))
+        total_funcionario=float(totais_anuais.get(f.id,0) or 0)
+        total_competencia+=valor_liquido
+        total_anual+=total_funcionario
+        if (f.cargo or '').strip():
+            cargos.add((f.cargo or '').strip())
+        if (posto_nome or '').strip():
+            postos.add((posto_nome or '').strip())
+        itens.append({
+            'funcionario_id':f.id,
+            'matricula':f.matricula or '',
+            're':f.re or '',
+            'nome':f.nome or '',
+            'cpf':f.cpf or '',
+            'cargo':f.cargo or '',
+            'posto_operacional':posto_nome,
+            'empresa_id':f.empresa_id,
+            'empresa_nome':(emp.nome if emp else ''),
+            'competencia':comp,
+            'status':f.status or 'Ativo',
+            'salario_base':float(f.salario or 0),
+            'valor_liquido':valor_liquido,
+            'valor_anterior':valor_anterior,
+            'delta_valor':delta_valor,
+            'delta_pct':delta_pct,
+            'inconsistente':inconsistente,
+            'salario_obs':(reg.salario_obs if reg and getattr(reg,'salario_obs',None) else ''),
+            'salario_editado_por':(reg.salario_editado_por if reg else ''),
+            'salario_editado_em':(reg.salario_editado_em.isoformat() if reg and reg.salario_editado_em else None),
+            'total_anual_funcionario':total_funcionario,
+        })
+    return {
+        'competencia':comp,
+        'empresa_id':empresa_id,
+        'total_funcionarios':len(itens),
+        'total_competencia':total_competencia,
+        'total_anual':total_anual,
+        'qtd_inconsistencias':len([it for it in itens if it.get('inconsistente')]),
+        'cargos':sorted(cargos,key=lambda s:s.lower()),
+        'postos':sorted(postos,key=lambda s:s.lower()),
+        'itens':itens,
+    }
+
+def _financeiro_salarios_chave_empresa(empresa_id=None):
+    try:
+        return int(empresa_id or 0)
+    except Exception:
+        return 0
+
+def _financeiro_usuario_atual():
+    return (session.get('nome') or session.get('email') or 'sistema')
+
+def _financeiro_resumo_hash(resumo):
+    raw=json.dumps(resumo or {},sort_keys=True,ensure_ascii=False,default=str)
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+def _financeiro_salarios_aplicar_valores(comp,empresa_id,valores):
+    alterados=0
+    salvos=0
+    usuario=_financeiro_usuario_atual()
+    for it in (valores or []):
+        fid=to_num(it.get('funcionario_id'))
+        if not fid:
+            continue
+        f=db.session.get(Funcionario, fid)
+        if not f or (str(f.status or 'Ativo').strip().lower()!='ativo'):
+            continue
+        if empresa_id and int(f.empresa_id or 0)!=int(empresa_id):
+            continue
+        reg=BeneficioMensal.query.filter_by(funcionario_id=fid,competencia=comp).first()
+        if not reg:
+            reg=BeneficioMensal(funcionario_id=fid,competencia=comp)
+            db.session.add(reg)
+        valor=to_num(it.get('valor_liquido') if 'valor_liquido' in it else it.get('salario'),dec=True)
+        novo_valor=float(valor or 0)
+        anterior=float(reg.salario or 0)
+        reg.empresa_id=f.empresa_id
+        reg.salario=novo_valor
+        reg.salario_obs=(it.get('salario_obs') or it.get('obs') or '').strip()
+        reg.salario_editado_por=usuario
+        reg.salario_editado_em=utcnow()
+        salvos+=1
+        if abs(anterior-novo_valor)>0.0001:
+            alterados+=1
+            audit_event('folha_salario_editado','usuario',session.get('uid'),'funcionario',fid,True,{
+                'competencia':comp,
+                'empresa_id':f.empresa_id,
+                'anterior':anterior,
+                'novo':novo_valor,
+                'obs':reg.salario_obs[:120]
+            })
+    return salvos,alterados
+
+def _financeiro_salarios_salvar_snapshot(comp,empresa_id=None,resumo=None,usuario=''):
+    resumo=resumo or _financeiro_salarios_competencia(comp,empresa_id=empresa_id)
+    empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)
+    emp_nome='Todas as empresas'
+    if empresa_ref_id:
+        emp=db.session.get(Empresa, empresa_ref_id)
+        if emp and (emp.nome or '').strip():
+            emp_nome=emp.nome.strip()
+
+    folha=FolhaPagamentoMensal.query.filter_by(competencia=comp,empresa_ref_id=empresa_ref_id).first()
+    if not folha:
+        folha=FolhaPagamentoMensal(competencia=comp,empresa_ref_id=empresa_ref_id)
+        db.session.add(folha)
+    try:
+        historico=json.loads(folha.historico_json or '[]')
+    except Exception:
+        historico=[]
+    if not isinstance(historico,list):
+        historico=[]
+    proxima_versao=int(folha.versao_atual or 0)+1
+    historico.append({
+        'versao':proxima_versao,
+        'salvo_em':utcnow().isoformat(),
+        'salvo_por':(usuario or '').strip() or 'sistema',
+        'hash':_financeiro_resumo_hash(resumo),
+        'total_funcionarios':int(resumo.get('total_funcionarios') or 0),
+        'total_competencia':float(resumo.get('total_competencia') or 0),
+        'dados':resumo,
+    })
+    folha.empresa_nome=emp_nome
+    folha.versao_atual=proxima_versao
+    folha.total_funcionarios=int(resumo.get('total_funcionarios') or 0)
+    folha.total_competencia=float(resumo.get('total_competencia') or 0)
+    folha.dados_json=json.dumps(resumo,ensure_ascii=False)
+    folha.historico_json=json.dumps(historico[-24:],ensure_ascii=False)
+    folha.salvo_por=(usuario or '').strip() or 'sistema'
+    folha.salvo_em=utcnow()
+    return folha
+
+def _financeiro_folha_carregar_dados(folha,versao=None):
+    if not folha:
+        return {}
+    if versao:
+        try:
+            historico=json.loads(folha.historico_json or '[]')
+        except Exception:
+            historico=[]
+        for item in historico:
+            if int(item.get('versao') or 0)==int(versao):
+                dados=item.get('dados') or {}
+                return dados if isinstance(dados,dict) else {}
+    try:
+        dados=json.loads(folha.dados_json or '{}')
+    except Exception:
+        dados={}
+    return dados if isinstance(dados,dict) else {}
+
+def _financeiro_salarios_grupos(comp, empresa_id=None):
+    resumo=_financeiro_salarios_competencia(comp,empresa_id=empresa_id)
+    grupos={}
+    for item in resumo['itens']:
+        chave=item.get('empresa_id') or 0
+        grupos.setdefault(chave,[]).append(item)
+    empresas=[]
+    total_geral=0.0
+    for emp_id,items in sorted(grupos.items(),key=lambda kv:((kv[1][0].get('empresa_nome') or 'Sem empresa').lower(),kv[0])):
+        nome_emp=(items[0].get('empresa_nome') or 'Sem empresa')
+        total_emp=sum(float(it.get('valor_liquido') or 0) for it in items)
+        total_geral+=total_emp
+        empresas.append({
+            'empresa_id':emp_id,
+            'empresa_nome':nome_emp,
+            'qtd':len(items),
+            'total':total_emp,
+            'itens':items,
+        })
+    return resumo,empresas,total_geral
+
+def _financeiro_salarios_resumo_para_saida(comp,empresa_id=None,versao=None,modo='atual'):
+    modo_norm=(modo or 'atual').strip().lower()
+    usar_salva=(modo_norm=='salva') or (versao is not None)
+    if usar_salva:
+        folha=FolhaPagamentoMensal.query.filter_by(
+            competencia=comp,
+            empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)
+        ).first()
+        if folha:
+            resumo=_financeiro_folha_carregar_dados(folha,versao=versao)
+            if isinstance(resumo,dict) and isinstance(resumo.get('itens'),list):
+                return resumo,'salva'
+    return _financeiro_salarios_competencia(comp,empresa_id=empresa_id),'atual'
+
+@app.route('/api/financeiro/salarios',methods=['GET'])
+@lr
+def api_financeiro_salarios():
+    comp=norm_competencia(request.args.get('competencia'))
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    resumo=_financeiro_salarios_competencia(comp,empresa_id=empresa_id)
+    folha=FolhaPagamentoMensal.query.filter_by(
+        competencia=comp,
+        empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)
+    ).first()
+    if folha:
+        resumo['folha_salva_id']=folha.id
+        resumo['folha_salva_em']=folha.salvo_em.isoformat() if folha.salvo_em else None
+        resumo['folha_salva_por']=folha.salvo_por or ''
+        resumo['folha_status']=folha.status or 'aberta'
+        resumo['folha_versao']=int(folha.versao_atual or 0)
+        resumo['folha_assinatura_status']=folha.assinatura_status or 'pendente'
+        resumo['folha_fechamento_obs']=folha.fechamento_obs or ''
+        resumo['folha_historico']=json.loads(folha.historico_json or '[]') if (folha.historico_json or '').strip() else []
+    else:
+        resumo['folha_salva_id']=None
+        resumo['folha_salva_em']=None
+        resumo['folha_salva_por']=''
+        resumo['folha_status']='aberta'
+        resumo['folha_versao']=0
+        resumo['folha_assinatura_status']='pendente'
+        resumo['folha_fechamento_obs']=''
+        resumo['folha_historico']=[]
+    return jsonify({'ok':True,**resumo})
+
+@app.route('/api/financeiro/salarios',methods=['POST'])
+@lr
+def api_financeiro_salarios_salvar():
+    d=request.json or {}
+    comp=norm_competencia(d.get('competencia'))
+    empresa_id=to_num(d.get('empresa_id')) or None
+    valores=d.get('valores') or d.get('itens') or []
+    if not isinstance(valores,list):
+        return jsonify({'erro':'Lista de valores inválida.'}),400
+    folha=FolhaPagamentoMensal.query.filter_by(competencia=comp,empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)).first()
+    if folha and (folha.status or '')=='fechada':
+        return jsonify({'erro':'Esta folha está fechada. Reabra a competência para editar.'}),400
+    salvos,alterados=_financeiro_salarios_aplicar_valores(comp,empresa_id,valores)
+
+    db.session.commit()
+    return jsonify({'ok':True,'competencia':comp,'salvos':salvos,'alterados':alterados})
+
+@app.route('/api/financeiro/salarios/fechar',methods=['POST'])
+@lr
+def api_financeiro_salarios_fechar():
+    d=request.json or {}
+    comp=norm_competencia(d.get('competencia'))
+    empresa_id=to_num(d.get('empresa_id')) or None
+    valores=d.get('valores') or []
+    if valores and not isinstance(valores,list):
+        return jsonify({'erro':'Lista de valores inválida.'}),400
+
+    salvos=0
+    alterados=0
+    if isinstance(valores,list) and valores:
+        salvos,alterados=_financeiro_salarios_aplicar_valores(comp,empresa_id,valores)
+
+    resumo=_financeiro_salarios_competencia(comp,empresa_id=empresa_id)
+    usuario=_financeiro_usuario_atual()
+    folha=_financeiro_salarios_salvar_snapshot(comp,empresa_id=empresa_id,resumo=resumo,usuario=usuario)
+    folha.status='fechada'
+    folha.fechado_em=utcnow()
+    folha.fechado_por=usuario
+    folha.fechamento_obs=(d.get('fechamento_obs') or '').strip()
+    db.session.commit()
+    audit_event('folha_fechada','usuario',session.get('uid'),'folha_pagamento',folha.id,True,{'competencia':comp,'empresa_id':empresa_id,'versao':folha.versao_atual})
+
+    return jsonify({
+        'ok':True,
+        'competencia':comp,
+        'salvos':salvos,
+        'alterados':alterados,
+        'folha_id':folha.id,
+        'total_funcionarios':resumo.get('total_funcionarios') or 0,
+        'total_competencia':resumo.get('total_competencia') or 0,
+        'salvo_em':(folha.salvo_em.isoformat() if folha.salvo_em else None),
+        'salvo_por':folha.salvo_por or '',
+        'status':folha.status or 'fechada',
+        'versao':int(folha.versao_atual or 0)
+    })
+
+@app.route('/api/financeiro/salarios/reabrir',methods=['POST'])
+@lr
+def api_financeiro_salarios_reabrir():
+    d=request.json or {}
+    comp=norm_competencia(d.get('competencia'))
+    empresa_id=to_num(d.get('empresa_id')) or None
+    folha=FolhaPagamentoMensal.query.filter_by(competencia=comp,empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)).first()
+    if not folha:
+        return jsonify({'erro':'Folha não encontrada para esta competência.'}),404
+    folha.status='aberta'
+    folha.reaberto_em=utcnow()
+    folha.reaberto_por=_financeiro_usuario_atual()
+    folha.assinatura_status='pendente'
+    db.session.commit()
+    audit_event('folha_reaberta','usuario',session.get('uid'),'folha_pagamento',folha.id,True,{'competencia':comp,'empresa_id':empresa_id})
+    return jsonify({'ok':True,'competencia':comp,'empresa_id':empresa_id,'status':'aberta'})
+
+@app.route('/api/financeiro/salarios/assinar',methods=['POST'])
+@lr
+def api_financeiro_salarios_assinar():
+    d=request.json or {}
+    comp=norm_competencia(d.get('competencia'))
+    empresa_id=to_num(d.get('empresa_id')) or None
+    folha=FolhaPagamentoMensal.query.filter_by(competencia=comp,empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)).first()
+    if not folha:
+        return jsonify({'erro':'Salve a folha antes de assinar.'}),404
+    if (folha.status or '')!='fechada':
+        return jsonify({'erro':'A folha precisa estar fechada para assinatura.'}),400
+    resumo=_financeiro_folha_carregar_dados(folha)
+    assinatura_hash=_financeiro_resumo_hash({'folha_id':folha.id,'competencia':comp,'empresa_id':empresa_id,'dados':resumo})
+    folha.assinatura_status='assinado'
+    folha.assinatura_hash=assinatura_hash
+    folha.assinatura_por=_financeiro_usuario_atual()
+    folha.assinatura_em=utcnow()
+    db.session.commit()
+    audit_event('folha_assinada','usuario',session.get('uid'),'folha_pagamento',folha.id,True,{'competencia':comp,'empresa_id':empresa_id,'hash':assinatura_hash[:16]})
+    return jsonify({'ok':True,'competencia':comp,'empresa_id':empresa_id,'assinatura_status':'assinado','assinatura_hash':assinatura_hash,'assinatura_por':folha.assinatura_por,'assinatura_em':(folha.assinatura_em.isoformat() if folha.assinatura_em else None)})
+
+@app.route('/api/financeiro/salarios/folhas',methods=['GET'])
+@lr
+def api_financeiro_salarios_folhas():
+    comp=(request.args.get('competencia') or '').strip()
+    empresa_id=to_num(request.args.get('empresa_id'))
+    q=FolhaPagamentoMensal.query
+    if comp:
+        q=q.filter_by(competencia=norm_competencia(comp))
+    if empresa_id is not None:
+        q=q.filter_by(empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id))
+    folhas=q.order_by(FolhaPagamentoMensal.salvo_em.desc()).limit(24).all()
+    return jsonify({'ok':True,'itens':[f.to_dict() for f in folhas]})
+
+@app.route('/api/financeiro/salarios/evolucao',methods=['GET'])
+@lr
+def api_financeiro_salarios_evolucao():
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    hoje=localnow()
+    meses=[]
+    ano=hoje.year
+    mes=hoje.month
+    for _ in range(11,-1,-1):
+        meses.append(f'{ano}-{str(mes).zfill(2)}')
+        mes-=1
+        if mes<1:
+            mes=12
+            ano-=1
+    itens=[]
+    for comp in meses:
+        resumo=_financeiro_salarios_competencia(comp,empresa_id=empresa_id)
+        itens.append({'competencia':comp,'total':float(resumo.get('total_competencia') or 0),'qtd':int(resumo.get('total_funcionarios') or 0)})
+    return jsonify({'ok':True,'itens':itens})
+
+@app.route('/api/financeiro/salarios/importar',methods=['POST'])
+@lr
+def api_financeiro_salarios_importar():
+    comp=norm_competencia(request.form.get('competencia'))
+    empresa_id=to_num(request.form.get('empresa_id')) or None
+    folha=FolhaPagamentoMensal.query.filter_by(competencia=comp,empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)).first()
+    if folha and (folha.status or '')=='fechada':
+        return jsonify({'erro':'Esta folha está fechada. Reabra a competência para importar.'}),400
+    fs=request.files.get('arquivo')
+    if not fs:
+        return jsonify({'erro':'Arquivo não enviado.'}),400
+    nome=(fs.filename or 'folha.xlsx').lower()
+    rows=[]
+    if nome.endswith('.csv'):
+        import csv
+        rows=list(csv.DictReader(fs.read().decode('utf-8','replace').splitlines()))
+    elif nome.endswith('.xlsx'):
+        from openpyxl import load_workbook
+        wb=load_workbook(fs,read_only=True,data_only=True)
+        ws=wb.active
+        data=list(ws.iter_rows(values_only=True))
+        if not data:
+            return jsonify({'erro':'Planilha vazia.'}),400
+        headers=[str(v or '').strip().lower() for v in data[0]]
+        rows=[{headers[i]:row[i] for i in range(min(len(headers),len(row)))} for row in data[1:] if any(v not in (None,'') for v in row)]
+    else:
+        return jsonify({'erro':'Formato inválido. Use CSV ou XLSX.'}),400
+    funcs=Funcionario.query.all()
+    by_re={str(f.re):f for f in funcs if f.re is not None}
+    by_matricula={str(f.matricula or '').strip().lower():f for f in funcs if (f.matricula or '').strip()}
+    by_cpf={re.sub(r'\D+','',str(f.cpf or '')):f for f in funcs if (f.cpf or '').strip()}
+    by_nome={str(f.nome or '').strip().lower():f for f in funcs if (f.nome or '').strip()}
+    valores=[]
+    ignorados=0
+    for row in rows:
+        re_key=str(row.get('re') or '').strip()
+        mat_key=str(row.get('matricula') or '').strip().lower()
+        cpf_key=re.sub(r'\D+','',str(row.get('cpf') or ''))
+        nome_key=str(row.get('nome') or row.get('colaborador') or '').strip().lower()
+        f=by_re.get(re_key) or by_matricula.get(mat_key) or by_cpf.get(cpf_key) or by_nome.get(nome_key)
+        if not f:
+            ignorados+=1
+            continue
+        if empresa_id and int(f.empresa_id or 0)!=int(empresa_id):
+            continue
+        valores.append({'funcionario_id':f.id,'valor_liquido':row.get('valor_liquido',row.get('salario')),'salario_obs':row.get('observacao',row.get('obs',''))})
+    salvos,alterados=_financeiro_salarios_aplicar_valores(comp,empresa_id,valores)
+    db.session.commit()
+    return jsonify({'ok':True,'competencia':comp,'importados':len(valores),'salvos':salvos,'alterados':alterados,'ignorados':ignorados})
+
+@app.route('/financeiro/salarios/preview')
+@lr
+def financeiro_salarios_preview():
+    comp=norm_competencia(request.args.get('competencia'))
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    usar_salva=(request.args.get('modo') or 'salva').strip().lower()!='atual'
+    versao=to_num(request.args.get('versao')) or None
+
+    origem='atual'
+    resumo=None
+    folha_salva=None
+    if usar_salva:
+        folha_salva=FolhaPagamentoMensal.query.filter_by(
+            competencia=comp,
+            empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id)
+        ).first()
+        if folha_salva:
+            resumo=_financeiro_folha_carregar_dados(folha_salva,versao=versao)
+            origem='salva'
+
+    if not isinstance(resumo,dict) or not isinstance(resumo.get('itens'),list):
+        resumo=_financeiro_salarios_competencia(comp,empresa_id=empresa_id)
+
+    grupos={}
+    for item in (resumo.get('itens') or []):
+        chave=item.get('empresa_id') or 0
+        grupos.setdefault(chave,[]).append(item)
+    empresas=[]
+    for _,items in sorted(grupos.items(),key=lambda kv:((kv[1][0].get('empresa_nome') or 'Sem empresa').lower(),kv[0])):
+        nome_emp=(items[0].get('empresa_nome') or 'Sem empresa')
+        total_emp=sum(float(it.get('valor_liquido') or 0) for it in items)
+        empresas.append({
+            'empresa_nome':nome_emp,
+            'qtd':len(items),
+            'total_fmt':fmt_brl(total_emp),
+            'itens':items,
+        })
+
+    return render_template(
+        'folha_pagamento_preview.html',
+        competencia=comp,
+        origem=origem,
+        versao=(versao or int(getattr(folha_salva,'versao_atual',0) or 0)),
+        status=(folha_salva.status if folha_salva else 'aberta'),
+        salvo_em=(folha_salva.salvo_em.strftime('%d/%m/%Y %H:%M') if folha_salva and folha_salva.salvo_em else ''),
+        salvo_por=(folha_salva.salvo_por if folha_salva else ''),
+        assinatura_status=(folha_salva.assinatura_status if folha_salva else 'pendente'),
+        assinatura_por=(folha_salva.assinatura_por if folha_salva else ''),
+        assinatura_em=(folha_salva.assinatura_em.strftime('%d/%m/%Y %H:%M') if folha_salva and folha_salva.assinatura_em else ''),
+        empresas=empresas,
+        total_funcionarios=int(resumo.get('total_funcionarios') or 0),
+        total_competencia_fmt=fmt_brl(resumo.get('total_competencia') or 0),
+        total_anual_fmt=fmt_brl(resumo.get('total_anual') or 0),
+        gerar_em=localnow().strftime('%d/%m/%Y %H:%M')
+    )
+
+@app.route('/financeiro/salarios/historico')
+@lr
+def financeiro_salarios_historico():
+    comp_raw=(request.args.get('competencia') or '').strip()
+    empresa_id=to_num(request.args.get('empresa_id'))
+    limite=min(max(to_num(request.args.get('limite')) or 72,1),200)
+
+    q=FolhaPagamentoMensal.query
+    comp=''
+    if comp_raw:
+        comp=norm_competencia(comp_raw)
+        q=q.filter_by(competencia=comp)
+    if empresa_id is not None:
+        q=q.filter_by(empresa_ref_id=_financeiro_salarios_chave_empresa(empresa_id))
+
+    folhas=q.order_by(FolhaPagamentoMensal.salvo_em.desc()).limit(limite).all()
+    empresas=Empresa.query.order_by(Empresa.nome.asc()).all()
+    itens=[]
+    for f in folhas:
+        try:
+            historico=json.loads(f.historico_json or '[]')
+        except Exception:
+            historico=[]
+        if not isinstance(historico,list):
+            historico=[]
+        versoes=[]
+        for h in historico:
+            if not isinstance(h,dict):
+                continue
+            versoes.append({
+                'versao':int(h.get('versao') or 0),
+                'salvo_em':str(h.get('salvo_em') or '').replace('T',' ')[:16],
+                'salvo_por':(h.get('salvo_por') or ''),
+                'total_competencia':float(h.get('total_competencia') or 0),
+            })
+        versoes.sort(key=lambda x:int(x.get('versao') or 0),reverse=True)
+        itens.append({'folha':f,'versoes':versoes})
+
+    return render_template(
+        'folha_pagamento_historico.html',
+        itens=itens,
+        empresas=empresas,
+        competencia_filtro=comp,
+        empresa_id_filtro=empresa_id,
+        limite=limite,
+        gerar_em=localnow().strftime('%d/%m/%Y %H:%M')
+    )
+
+@app.route('/api/financeiro/salarios/modelo')
+@lr
+def api_financeiro_salarios_modelo():
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+
+    wb=Workbook()
+    ws=wb.active
+    ws.title='modelo_importacao'
+    headers=['re','matricula','cpf','nome','valor_liquido','observacao']
+    ws.append(headers)
+    ws.append(['1234','','','','3500.00','Ajuste de competencia'])
+
+    fill=PatternFill('solid',fgColor='205D8A')
+    font=Font(bold=True,color='FFFFFF')
+    for idx,_ in enumerate(headers,1):
+        c=ws.cell(row=1,column=idx)
+        c.fill=fill
+        c.font=font
+
+    ws.column_dimensions['A'].width=12
+    ws.column_dimensions['B'].width=16
+    ws.column_dimensions['C'].width=18
+    ws.column_dimensions['D'].width=28
+    ws.column_dimensions['E'].width=16
+    ws.column_dimensions['F'].width=38
+
+    orient=wb.create_sheet('instrucoes')
+    orient.append(['Campo','Obrigatorio','Descricao'])
+    orient.append(['re','Nao','RE do funcionario (prioridade de identificacao)'])
+    orient.append(['matricula','Nao','Matricula do funcionario'])
+    orient.append(['cpf','Nao','CPF (somente numeros ou formatado)'])
+    orient.append(['nome','Nao','Nome completo do colaborador'])
+    orient.append(['valor_liquido','Sim','Valor liquido do salario na competencia'])
+    orient.append(['observacao','Nao','Observacao do ajuste mensal'])
+    orient.append(['Regra','-','Preencha ao menos um identificador entre RE, matricula, CPF ou nome'])
+    orient.append(['Formato','-','Salvar em .xlsx ou .csv'])
+    orient.column_dimensions['A'].width=20
+    orient.column_dimensions['B'].width=14
+    orient.column_dimensions['C'].width=68
+
+    buf=io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    nome='modelo_importacao_folha_pagamento.xlsx'
+    return send_file(buf,mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',as_attachment=True,download_name=nome)
+
+@app.route('/api/financeiro/salarios/export.xlsx')
+@lr
+def api_financeiro_salarios_export_xlsx():
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    comp=norm_competencia(request.args.get('competencia'))
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    versao=to_num(request.args.get('versao')) or None
+    modo=(request.args.get('modo') or 'atual').strip().lower()
+    resumo_base,origem=_financeiro_salarios_resumo_para_saida(comp,empresa_id=empresa_id,versao=versao,modo=modo)
+    grupos={}
+    for item in (resumo_base.get('itens') or []):
+        chave=item.get('empresa_id') or 0
+        grupos.setdefault(chave,[]).append(item)
+    empresas=[]
+    total_geral=0.0
+    for emp_id,items in sorted(grupos.items(),key=lambda kv:((kv[1][0].get('empresa_nome') or 'Sem empresa').lower(),kv[0])):
+        nome_emp=(items[0].get('empresa_nome') or 'Sem empresa')
+        total_emp=sum(float(it.get('valor_liquido') or 0) for it in items)
+        total_geral+=total_emp
+        empresas.append({'empresa_id':emp_id,'empresa_nome':nome_emp,'qtd':len(items),'total':total_emp,'itens':items})
+    resumo=resumo_base
+    if not empresas:
+        return jsonify({'erro':'Nenhum funcionário ativo encontrado para a competência informada.'}),400
+
+    wb=Workbook()
+    first=True
+    header_fill=PatternFill('solid',fgColor='205D8A')
+    total_fill=PatternFill('solid',fgColor='EAF2FB')
+    header_font=Font(bold=True,color='FFFFFF',size=10)
+    total_font=Font(bold=True,size=10)
+    normal_font=Font(size=10)
+    left=Alignment(horizontal='left',vertical='center')
+    right=Alignment(horizontal='right',vertical='center')
+    center=Alignment(horizontal='center',vertical='center')
+    thin=Side(style='thin',color='D0D7DE')
+    border=Border(left=thin,right=thin,top=thin,bottom=thin)
+    comp_fmt=f"{comp[5:7]}/{comp[:4]}" if isinstance(comp,str) and len(comp)>=7 and '-' in comp else str(comp)
+
+    for grupo in empresas:
+        ws=wb.active if first else wb.create_sheet()
+        first=False
+        nome_emp=(grupo['empresa_nome'] or 'Sem empresa')
+        ws.title=nome_emp[:31].replace('/','_').replace('\\','_').replace('?','').replace('*','').replace('[','').replace(']','').replace(':','')
+        ws.append([f'Pagamento de salário líquido — {nome_emp}'])
+        ws.append([f'Competência: {comp_fmt}'])
+        ws.append([])
+        headers=['RE','Colaborador','CPF','Cargo','Posto','Salário líquido (R$)','Total anual pago (R$)']
+        ws.append(headers)
+        for col_idx,_ in enumerate(headers,1):
+            cell=ws.cell(row=4,column=col_idx)
+            cell.fill=header_fill
+            cell.font=header_font
+            cell.alignment=center
+            cell.border=border
+        for item in grupo['itens']:
+            row=[
+                item.get('re') or item.get('matricula') or '',
+                item.get('nome') or '',
+                item.get('cpf') or '',
+                item.get('cargo') or '',
+                item.get('posto_operacional') or '',
+                float(item.get('valor_liquido') or 0),
+                float(item.get('total_anual_funcionario') or 0),
+            ]
+            ws.append(row)
+            dr=ws.max_row
+            for ci,val in enumerate(row,1):
+                cell=ws.cell(row=dr,column=ci)
+                cell.font=normal_font
+                cell.border=border
+                if ci>=6:
+                    cell.number_format='#,##0.00'
+                    cell.alignment=right
+                else:
+                    cell.alignment=left
+        qr=ws.max_row+1
+        ws.cell(row=qr,column=6,value='Funcionários:').font=total_font
+        ws.cell(row=qr,column=6).alignment=right
+        ws.cell(row=qr,column=6).fill=total_fill
+        ws.cell(row=qr,column=7,value=grupo['qtd']).font=total_font
+        ws.cell(row=qr,column=7).alignment=right
+        ws.cell(row=qr,column=7).fill=total_fill
+
+        tr=ws.max_row+1
+        ws.cell(row=tr,column=6,value='Total da empresa:').font=total_font
+        ws.cell(row=tr,column=6).alignment=right
+        ws.cell(row=tr,column=6).fill=total_fill
+        tc=ws.cell(row=tr,column=7,value=float(grupo['total'] or 0))
+        tc.font=total_font
+        tc.alignment=right
+        tc.number_format='#,##0.00'
+        tc.fill=total_fill
+        widths=[10,34,18,22,26,18,18]
+        for i,w in enumerate(widths,1):
+            ws.column_dimensions[get_column_letter(i)].width=w
+        ws.cell(row=1,column=1).font=Font(bold=True,size=12)
+
+    resumo_ws=wb.create_sheet('Resumo')
+    resumo_ws.append(['Competência',comp_fmt])
+    resumo_ws.append(['Total de funcionários',resumo['total_funcionarios']])
+    resumo_ws.append(['Total da competência',float(resumo['total_competencia'] or 0)])
+    resumo_ws.append(['Total anual pago',float(resumo['total_anual'] or 0)])
+    resumo_ws.append(['Total geral exportado',float(total_geral or 0)])
+    for row in (3,4,5):
+        resumo_ws.cell(row=row,column=2).number_format='#,##0.00'
+    resumo_ws.column_dimensions['A'].width=24
+    resumo_ws.column_dimensions['B'].width=20
+
+    buf=io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    comp_nome=f"{comp[5:7]}-{comp[:4]}" if isinstance(comp,str) and len(comp)>=7 and '-' in comp else str(comp)
+    sufixo_versao=f"_v{versao}" if (origem=='salva' and versao) else ''
+    nome=f"pagamento_salarios_{comp_nome}{sufixo_versao}.xlsx"
+    return send_file(buf,mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',as_attachment=True,download_name=nome)
+
+@app.route('/api/financeiro/salarios/export.pdf')
+@lr
+def api_financeiro_salarios_export_pdf():
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer
+    from reportlab.lib.styles import ParagraphStyle
+
+    comp=norm_competencia(request.args.get('competencia'))
+    empresa_id=to_num(request.args.get('empresa_id')) or None
+    versao=to_num(request.args.get('versao')) or None
+    modo=(request.args.get('modo') or 'atual').strip().lower()
+    resumo_base,origem=_financeiro_salarios_resumo_para_saida(comp,empresa_id=empresa_id,versao=versao,modo=modo)
+    grupos={}
+    for item in (resumo_base.get('itens') or []):
+        chave=item.get('empresa_id') or 0
+        grupos.setdefault(chave,[]).append(item)
+    empresas=[]
+    total_geral=0.0
+    for emp_id,items in sorted(grupos.items(),key=lambda kv:((kv[1][0].get('empresa_nome') or 'Sem empresa').lower(),kv[0])):
+        nome_emp=(items[0].get('empresa_nome') or 'Sem empresa')
+        total_emp=sum(float(it.get('valor_liquido') or 0) for it in items)
+        total_geral+=total_emp
+        empresas.append({'empresa_id':emp_id,'empresa_nome':nome_emp,'qtd':len(items),'total':total_emp,'itens':items})
+    resumo=resumo_base
+    if not empresas:
+        return jsonify({'erro':'Nenhum funcionário ativo encontrado para a competência informada.'}),400
+
+    def _esc(v):
+        s=str(v or '')
+        return s.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+
+    buf=io.BytesIO()
+    doc=SimpleDocTemplate(buf,pagesize=A4,leftMargin=1.2*cm,rightMargin=1.2*cm,topMargin=1.2*cm,bottomMargin=1.2*cm)
+    st_title=ParagraphStyle('t',fontName='Helvetica-Bold',fontSize=12,leading=14,textColor=colors.HexColor('#205d8a'))
+    st_text=ParagraphStyle('n',fontName='Helvetica',fontSize=9,leading=11)
+    st_cell=ParagraphStyle('c',fontName='Helvetica',fontSize=8.2,leading=10)
+    st_num=ParagraphStyle('r',fontName='Helvetica',fontSize=8.2,leading=10,alignment=2)
+    story=[]
+
+    for grupo in empresas:
+        story.append(Paragraph(f"Pagamento de salário líquido — {_esc(grupo['empresa_nome'])}",st_title))
+        story.append(Paragraph(f"Competência: {_esc(comp)}",st_text))
+        story.append(Spacer(1,6))
+        rows=[[Paragraph('<b>RE</b>',st_cell),Paragraph('<b>Colaborador</b>',st_cell),Paragraph('<b>CPF</b>',st_cell),Paragraph('<b>Cargo</b>',st_cell),Paragraph('<b>Posto</b>',st_cell),Paragraph('<b>Salário líquido</b>',st_num),Paragraph('<b>Total anual</b>',st_num)]]
+        for item in grupo['itens']:
+            rows.append([
+                Paragraph(_esc(item.get('re') or item.get('matricula') or ''),st_cell),
+                Paragraph(_esc(item.get('nome') or ''),st_cell),
+                Paragraph(_esc(item.get('cpf') or ''),st_cell),
+                Paragraph(_esc(item.get('cargo') or ''),st_cell),
+                Paragraph(_esc(item.get('posto_operacional') or ''),st_cell),
+                Paragraph(_esc(fmt_brl(item.get('valor_liquido') or 0)),st_num),
+                Paragraph(_esc(fmt_brl(item.get('total_anual_funcionario') or 0)),st_num),
+            ])
+        rows.append(['','','','','',Paragraph('<b>Funcionários:</b>',st_num),Paragraph(_esc(str(grupo['qtd'])),st_num)])
+        rows.append(['','','','','',Paragraph('<b>Total da empresa:</b>',st_num),Paragraph(_esc(fmt_brl(grupo['total'] or 0)),st_num)])
+        tb=Table(rows,colWidths=[1.5*cm,4.4*cm,2.9*cm,3.1*cm,4.0*cm,2.3*cm,2.3*cm])
+        tb.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#205d8a')),
+            ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+            ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+            ('FONTNAME',(0,-2),(-1,-1),'Helvetica-Bold'),
+            ('GRID',(0,0),(-1,-1),0.35,colors.HexColor('#d0d7de')),
+            ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+            ('ALIGN',(5,1),(-1,-1),'RIGHT'),
+            ('TOPPADDING',(0,0),(-1,-1),4),
+            ('BOTTOMPADDING',(0,0),(-1,-1),4),
+        ]))
+        story.append(tb)
+        story.append(Spacer(1,10))
+
+    story.append(Paragraph(f"Total geral da competência: {fmt_brl(resumo['total_competencia'])}",st_text))
+    story.append(Paragraph(f"Total anual pago: {fmt_brl(resumo['total_anual'])}",st_text))
+    story.append(Paragraph(f"Total geral exportado: {fmt_brl(total_geral)}",st_text))
+    doc.build(story)
+    buf.seek(0)
+    comp_nome=f"{comp[5:7]}-{comp[:4]}" if isinstance(comp,str) and len(comp)>=7 and '-' in comp else str(comp)
+    sufixo_versao=f"_v{versao}" if (origem=='salva' and versao) else ''
+    nome=f"pagamento_salarios_{comp_nome}{sufixo_versao}.pdf"
+    return send_file(buf,mimetype='application/pdf',as_attachment=False,download_name=nome)
+
+# ── SSE: auto-update ──────────────────────────────────────────────────────────
+import queue as _queue
+import threading as _threading
+
+_sse_clients: list = []
+_sse_lock = _threading.Lock()
+
+def _sse_broadcast(event: str, data: str):
+    """Envia um evento SSE para todos os clientes conectados."""
+    msg = f"event: {event}\ndata: {data}\n\n"
+    with _sse_lock:
+        dead = []
+        for q in _sse_clients:
+            try:
+                q.put_nowait(msg)
+            except Exception:
+                dead.append(q)
+        for q in dead:
+            _sse_clients.remove(q)
+
+@app.route('/api/eventos')
+@lr
+def api_eventos():
+    """SSE endpoint: emite eventos quando dados mudam no servidor."""
+    q: _queue.Queue = _queue.Queue(maxsize=50)
+    with _sse_lock:
+        _sse_clients.append(q)
+
+    def generate():
+        # heartbeat inicial
+        yield "event: ping\ndata: ok\n\n"
+        try:
+            while True:
+                try:
+                    msg = q.get(timeout=25)
+                    yield msg
+                except _queue.Empty:
+                    yield "event: ping\ndata: ok\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            with _sse_lock:
+                try:
+                    _sse_clients.remove(q)
+                except ValueError:
+                    pass
+
+    return Response(generate(), mimetype='text/event-stream',
+                    headers={'Cache-Control': 'no-cache',
+                             'X-Accel-Buffering': 'no',
+                             'Connection': 'keep-alive'})
+
+# before_request: gera nonce único por requisição para o CSP + request-id + cronômetro
+@app.before_request
+def _gen_csp_nonce():
+    g.csp_nonce = secrets.token_urlsafe(16)
+    # Aceita X-Request-ID externo (e.g. load balancer) ou gera um novo
+    g.request_id = (request.headers.get('X-Request-ID') or '').strip() or secrets.token_hex(8)
+    g.t0 = time.monotonic()
+
+# after_request: security headers em todas as respostas
+@app.after_request
+def _add_security_headers(response):
+    # Impede que a página seja carregada em iframe de outro domínio (clickjacking)
+    response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+    # Impede que o browser tente detectar o Content-Type (MIME sniffing)
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    # Controla quais informações de referenciador são enviadas
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    # Limita permissões de API do browser
+    response.headers.setdefault('Permissions-Policy', 'geolocation=(), microphone=(), camera=()')
+    # HSTS: força HTTPS por 1 ano, incluindo subdomínios
+    response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    # Ecoa o Request-ID para rastreamento de logs (cliente ↔ servidor)
+    rid = getattr(g, 'request_id', '')
+    if rid:
+        response.headers['X-Request-ID'] = rid
+    # Content-Security-Policy — sem nonce no script-src.
+    # IMPORTANTE: quando 'nonce-xyz' está presente em script-src, os browsers (CSP Level 2+)
+    # ignoram 'unsafe-inline' para TODOS os inline scripts e event handlers (onclick, onchange, etc.).
+    # O app usa >500 event handlers inline; removendo o nonce do script-src o 'unsafe-inline'
+    # passa a valer para blocos <script> e handlers, restaurando o funcionamento dos menus.
+    if response.content_type and response.content_type.startswith('text/html'):
+        response.headers.setdefault(
+            'Content-Security-Policy',
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
+            "img-src 'self' data: blob: https:; "
+            "connect-src 'self'; "
+            "worker-src 'self' blob:; "
+            "frame-ancestors 'self';"
+        )
+    # Loga requisições lentas (> 2 s) para diagnóstico de performance
+    t0 = getattr(g, 't0', None)
+    if t0 is not None:
+        elapsed = time.monotonic() - t0
+        if elapsed > 2.0:
+            app.logger.warning(
+                f'[slow-req] {request.method} {request.path} {elapsed:.2f}s '
+                f'status={response.status_code} rid={getattr(g, "request_id", "")}'
+            )
+    return response
+
+# after_request: broadcast automático para endpoints que alteram dados
+@app.after_request
+def _sse_after(response):
+    if request.method not in ('POST', 'PUT', 'DELETE', 'PATCH'):
+        return response
+    if response.status_code not in (200, 201):
+        return response
+    path = request.path
+    # Mapeamento endpoint → tipo de evento SSE
+    _map = [
+        ('/api/funcionarios', 'funcionario'),
+        ('/api/clientes', 'cliente'),
+        ('/api/app/funcionario/me/ponto', None),  # já emitido no endpoint
+    ]
+    for prefix, evento in _map:
+        if path.startswith(prefix) and evento:
+            try:
+                _sse_broadcast(evento, '{}')
+            except Exception:
+                pass
+            break
+    # Invalida cache do dashboard quando dados financeiros/funcionários/clientes mudam
+    _dashboard_invalidating = ('/api/clientes', '/api/medicoes', '/api/contratos',
+                                '/api/despesas', '/api/funcionarios')
+    if any(path.startswith(p) for p in _dashboard_invalidating):
+        try:
+            cache.delete('api_dashboard')
+        except Exception:
+            pass
+    return response
+# ─────────────────────────────────────────────────────────────────────────────
+
+# === HANDLERS GLOBAIS DE ERRO (JSON) ===
+@app.errorhandler(404)
+def _err_404(exc):
+    return jsonify({
+        'erro': 'Recurso não encontrado',
+        'request_id': getattr(g, 'request_id', ''),
+    }), 404
+
+@app.errorhandler(405)
+def _err_405(exc):
+    return jsonify({
+        'erro': 'Método não permitido',
+        'request_id': getattr(g, 'request_id', ''),
+    }), 405
+
+@app.errorhandler(500)
+def _err_500(exc):
+    app.logger.error(
+        f'[500] rid={getattr(g, "request_id", "")} '
+        f'path={request.path} error={exc}',
+        exc_info=True,
+    )
+    return jsonify({
+        'erro': 'Erro interno do servidor',
+        'request_id': getattr(g, 'request_id', ''),
+    }), 500
+
+@app.errorhandler(429)
+def _err_429(exc):
+    return jsonify({
+        'erro': 'Muitas requisições. Aguarde alguns instantes e tente novamente.',
+        'request_id': getattr(g, 'request_id', ''),
+    }), 429
+
+@app.errorhandler(413)
+def _err_413(exc):
+    limite = app.config.get('MAX_CONTENT_LENGTH', 25 * 1024 * 1024)
+    mb = round(limite / (1024 * 1024))
+    return jsonify({
+        'erro': f'Arquivo muito grande. O tamanho máximo permitido é {mb} MB.',
+        'request_id': getattr(g, 'request_id', ''),
+    }), 413
+
+@app.route('/api/dashboard/ponto-dia')
+@lr
+def api_dashboard_ponto_dia():
+    """Retorna lista de funcionários ativos que bateram e não bateram ponto hoje."""
+    hoje = localnow().date()
+    inicio_dia = datetime.combine(hoje, __import__('datetime').time.min)
+    fim_dia = datetime.combine(hoje, __import__('datetime').time.max)
+
+    # Funcionários ativos
+    funcs_ativos = Funcionario.query.filter_by(status='Ativo').order_by(Funcionario.nome).all()
+    emps_map = {e.id: e.nome for e in Empresa.query.all()}
+
+    # Quem bateu ponto hoje e quantas marcações
+    marcacoes_hoje = PontoMarcacao.query.filter(
+        PontoMarcacao.data_hora >= inicio_dia,
+        PontoMarcacao.data_hora <= fim_dia
+    ).all()
+
+    from collections import defaultdict
+    marc_por_func = defaultdict(list)
+    for m in marcacoes_hoje:
+        marc_por_func[m.funcionario_id].append(m)
+
+    ids_ativos = {f.id for f in funcs_ativos}
+
+    bateram = []
+    nao_bateram = []
+    for f in funcs_ativos:
+        emp_nome = emps_map.get(f.empresa_id, '') if f.empresa_id else ''
+        info = {
+            'id': f.id,
+            'nome': f.nome or '',
+            're': f.re or '',
+            'matricula': f.matricula or '',
+            'cargo': f.cargo or '',
+            'posto': f.posto_operacional or 'Reserva técnica',
+            'empresa': emp_nome,
+        }
+        marcacoes = marc_por_func.get(f.id, [])
+        if marcacoes:
+            marcacoes_sorted = sorted(marcacoes, key=lambda m: m.data_hora)
+            info['marcacoes'] = [
+                {'tipo': m.tipo, 'hora': m.data_hora.strftime('%H:%M'),
+                 'lat': m.latitude, 'lon': m.longitude}
+                for m in marcacoes_sorted
+            ]
+            info['ultima_hora'] = marcacoes_sorted[-1].data_hora.strftime('%H:%M')
+            bateram.append(info)
+        else:
+            nao_bateram.append(info)
+
+    return jsonify({
+        'ok': True,
+        'data': hoje.strftime('%d/%m/%Y'),
+        'bateram': bateram,
+        'nao_bateram': nao_bateram,
+    })
+
 @app.route('/api/dashboard')
 @lr
+@cache.cached(timeout=15, key_prefix='api_dashboard')
 def api_dashboard():
     ativos=Cliente.query.filter_by(status='Ativo').all()
     # sum revenue from Contrato table; fall back to Cliente fields for clients without contracts
     contratos_ativos=Contrato.query.filter_by(status='Ativo').all()
-    clientes_com_contrato={ct.cliente_id for ct in Contrato.query.all()}
+    # Reutilizar contratos_ativos para IDs — evita segundo Contrato.query.all()
+    clientes_com_contrato={ct.cliente_id for ct in contratos_ativos}
     receita_contratos=sum(
         (ct.limpeza or 0)+(ct.jardinagem or 0)+(ct.portaria or 0)+(ct.materiais_equip_locacao or 0)
         for ct in contratos_ativos
@@ -9309,14 +14910,24 @@ def api_dashboard():
     mes=localnow().strftime('%Y-%m')
     try:
         medicoes_mes=Medicao.query.filter_by(mes_ref=mes).all()
-        medicoes_validas=Medicao.query.filter(Medicao.status!='cancelada').all()
+        medicoes_validas=Medicao.query.filter(
+            Medicao.status!='cancelada',
+            Medicao.dt_vencimento.isnot(None),
+            Medicao.dt_vencimento != '',
+            Medicao.dt_vencimento < date.today().isoformat()
+        ).all()
     except OperationalError as e:
         if not _is_missing_medicao_stamp_error(e):
             raise
         db.session.rollback()
         _ensure_medicao_stamp_cols_runtime(force=True)
         medicoes_mes=Medicao.query.filter_by(mes_ref=mes).all()
-        medicoes_validas=Medicao.query.filter(Medicao.status!='cancelada').all()
+        medicoes_validas=Medicao.query.filter(
+            Medicao.status!='cancelada',
+            Medicao.dt_vencimento.isnot(None),
+            Medicao.dt_vencimento != '',
+            Medicao.dt_vencimento < date.today().isoformat()
+        ).all()
     emitidos={m.cliente_id for m in medicoes_mes if m.cliente_id}
     emps_all={e.id:e for e in Empresa.query.all()}
 
@@ -9522,6 +15133,26 @@ def api_dashboard():
                                       'dias': (_dv - hoje).days, 'vencido': True})
     alertas_contratos.sort(key=lambda x: x['dias'])
 
+    # RH: funcionários por status
+    funcionarios_ativos = Funcionario.query.filter_by(status='Ativo').count()
+    funcionarios_ferias = Funcionario.query.filter_by(status='Férias').count()
+    funcionarios_afastados = Funcionario.query.filter_by(status='Afastado').count()
+
+    # Ponto do dia: quem bateu e quem está em falta/folga (só ativos)
+    hoje_str = hoje.strftime('%Y-%m-%d')
+    inicio_dia = datetime.combine(hoje, __import__('datetime').time.min)
+    fim_dia = datetime.combine(hoje, __import__('datetime').time.max)
+    ids_bateram = set(
+        r[0] for r in db.session.query(PontoMarcacao.funcionario_id)
+        .filter(PontoMarcacao.data_hora >= inicio_dia,
+                PontoMarcacao.data_hora <= fim_dia)
+        .distinct().all()
+    )
+    # Filtra só funcionários ativos
+    ids_ativos = set(funcs_ativos.keys())
+    ponto_bateram_hoje = len(ids_bateram & ids_ativos)
+    ponto_falta_folga = len(ids_ativos - ids_bateram)
+
     return jsonify({'ativos':len(ativos),'receita':receita,'total_med':Medicao.query.count(),
         'med_mes':Medicao.query.filter_by(mes_ref=mes).count(),
         'pendentes':len(pendentes_clientes),
@@ -9529,6 +15160,11 @@ def api_dashboard():
         'ticket_medio':round(ticket_medio,2),
         'faturamento_mensal':fat_mensal,
         'total_vencidas':len(venc_itens), 'valor_vencidas':round(total_vencidas,2),
+        'funcionarios_ativos':funcionarios_ativos,
+        'funcionarios_ferias':funcionarios_ferias,
+        'funcionarios_afastados':funcionarios_afastados,
+        'ponto_bateram_hoje':ponto_bateram_hoje,
+        'ponto_falta_folga':ponto_falta_folga,
         'alerta_inadimplencia':{'qtd':len(inad_itens),'total':round(total_inadimplencia,2),'itens':inad_itens[:8]},
         'alerta_faturamento':{'qtd':len(alertas_faturamento),'itens':alertas_faturamento[:8]},
         'alerta_calculo_beneficios':{'qtd':len(alertas_calculo),'itens':alertas_calculo},
@@ -9701,10 +15337,11 @@ def api_backup_restore():
 
             return val
 
-        def add_rows(model,rows,conv=None):
-            cols_map={c.name:c for c in model.__table__.columns}
-            table_name=model.__table__.name
-            db_cols={r[1] for r in db.session.execute(text(f'PRAGMA table_info({table_name})')).fetchall()}
+        def add_rows(model, rows, conv=None):
+            cols_map = {c.name: c for c in model.__table__.columns}
+            table_name = model.__table__.name
+            _assert_safe_identifier(table_name, 'tabela')
+            db_cols = {r[1] for r in db.session.execute(text(f'PRAGMA table_info({table_name})')).fetchall()}
             for r in rows:
                 d={}
                 for k,v in r.items():
@@ -9750,8 +15387,8 @@ def api_backup_restore():
 @app.route('/api/pdf/<int:id>')
 @lr
 def api_pdf(id):
-    m=Medicao.query.get_or_404(id)
-    emp=Empresa.query.get(m.empresa_id) if m.empresa_id else None
+    m=db.get_or_404(Medicao, id)
+    emp=db.session.get(Empresa, m.empresa_id) if m.empresa_id else None
     d=m.to_dict(); d['empresa']=emp.to_dict() if emp else {}
     return _build_pdf(d)
 
@@ -9760,7 +15397,7 @@ def api_pdf(id):
 def api_pdf_preview():
     d=request.json
     if d.get('empresa_id'):
-        emp=Empresa.query.get(d['empresa_id'])
+        emp=db.session.get(Empresa, d['empresa_id'])
         d['empresa']=emp.to_dict() if emp else {}
     else: d['empresa']={}
     return _build_pdf(d)
@@ -10125,7 +15762,7 @@ def _build_pdf(d):
         cert_subject=(rs_crypto.get('cert_subject') or '')[:255] if crypto_ok else ''
         mid=to_num(d.get('id'))
         if mid:
-            med=Medicao.query.get(mid)
+            med=db.session.get(Medicao, mid)
             if med:
                 med.assinatura_doc_hash=_sha256_bytes(pdf_bytes)
                 med.assinatura_crypto_ok=crypto_ok
@@ -10143,8 +15780,13 @@ def api_rh_holerites_processar():
     comp=(request.form.get('competencia') or '').strip()
     if not fs: return jsonify({'erro':'PDF nao enviado'}),400
     canal_ass=(request.form.get('canal_assinatura') or 'nao').strip().lower()
-    if canal_ass not in ('nao','whatsapp','link'):
+    if canal_ass not in ('nao','whatsapp','link','app'):
         canal_ass='nao'
+    prazo_dias_lote_raw=request.form.get('prazo_dias') or ''
+    try:
+        prazo_dias_lote=max(1,min(90,int(prazo_dias_lote_raw))) if prazo_dias_lote_raw.strip() else None
+    except (ValueError, TypeError):
+        prazo_dias_lote=None
     nome_arq=(fs.filename or '').strip().lower()
     if nome_arq and not nome_arq.endswith('.pdf'):
         return jsonify({'erro':'Arquivo invalido. Envie um PDF (.pdf).'}),400
@@ -10192,7 +15834,19 @@ def api_rh_holerites_processar():
         a=FuncionarioArquivo(funcionario_id=alvo.id,categoria='holerite',competencia=comp,nome_arquivo=fake_name,caminho=rel)
         db.session.add(a); db.session.flush()
         assinatura_auto={'status':'nao_solicitada','link':'','erro':''}
-        if canal_ass=='whatsapp':
+        if canal_ass=='app':
+            a.ass_status='pendente'
+            if prazo_dias_lote:
+                a.ass_prazo_em=utcnow()+timedelta(days=prazo_dias_lote)
+            db.session.flush()
+            _push_notify_funcionario(
+                alvo.id,
+                'Documento para assinar',
+                f'{fake_name} aguarda sua assinatura no app.',
+                {'tipo':'documento_assinar','arquivo_id':str(a.id)}
+            )
+            assinatura_auto={'status':'app_pendente','link':'','erro':''}
+        elif canal_ass=='whatsapp':
             tel=wa_norm_number(alvo.telefone or '')
             if wa_is_valid_number(tel):
                 rs=_solicitar_assinatura_arquivo_funcionario(a,alvo,canal='whatsapp',commit_now=True)
@@ -10320,11 +15974,14 @@ def api_smtp_testar():
 def api_wa_cfg_get():
     b=wa_backup_cfg()
     token=(gc('wa_token','') or '').strip()
+    webhook_secret=(wa_webhook_secret() or '').strip()
     return jsonify({
         'url':gc('wa_url',''),
         'instancia':gc('wa_instancia',''),
         'token':'',
         'has_token':bool(token),
+        'webhook_secret':'',
+        'has_webhook_secret':bool(webhook_secret),
         'backup_enabled':b.get('enabled','1'),
         'backup_email':b.get('email',''),
         'backup_interval_hours':b.get('interval_hours','2'),
@@ -10342,6 +15999,10 @@ def api_wa_cfg_save():
         sc_cfg('wa_token','')
     elif 'token' in d and str(d.get('token','')).strip():
         sc_cfg('wa_token',str(d.get('token','')).strip())
+    if str(d.get('webhook_secret_clear','0')).strip().lower() in ('1','true','yes','on'):
+        sc_cfg('wa_webhook_secret','')
+    elif 'webhook_secret' in d and str(d.get('webhook_secret','')).strip():
+        sc_cfg('wa_webhook_secret',str(d.get('webhook_secret','')).strip())
     if 'backup_enabled' in d:
         sc_cfg('wa_backup_enabled','1' if str(d.get('backup_enabled','0')).strip().lower() in ('1','true','yes','on') else '0')
     if 'backup_email' in d:
@@ -10433,9 +16094,9 @@ def api_ia_wa_cfg_save():
     except Exception:
         temp=0.3
     try:
-        max_tokens=max(50,min(2000,int(float(d.get('max_tokens',350)))))
+        max_tokens=max(800,min(2000,int(float(d.get('max_tokens',800)))))
     except Exception:
-        max_tokens=350
+        max_tokens=800
     sc_cfg('ia_wa_enabled',enabled)
     sc_cfg('ia_wa_provider',provider)
     if str(d.get('api_key_clear','0')).strip().lower() in ('1','true','yes','on'):
@@ -10476,6 +16137,34 @@ def api_wa_ia_retomar():
         return jsonify({'erro':'numero invalido'}),400
     wa_ai_resume(numero)
     return jsonify({'ok':True,'numero':numero,'ia_pausada':False})
+
+@app.route('/api/whatsapp/ia/retomar-todos',methods=['POST'])
+@lr
+def api_wa_ia_retomar_todos():
+    agora=utcnow()
+    pausados=Config.query.filter(Config.chave.like('wa_ai_pause_until_%')).all()
+    count=0
+    for cfg in pausados:
+        until=_parse_dt_iso(cfg.valor or '')
+        if until and until>agora:
+            numero=cfg.chave.replace('wa_ai_pause_until_','')
+            wa_ai_resume(numero)
+            count+=1
+    return jsonify({'ok':True,'retomados':count,'mensagem':f'{count} número(s) reativado(s).' if count else 'Nenhum agente estava pausado.'})
+
+@app.route('/api/whatsapp/ia/status')
+@lr
+def api_wa_ia_status():
+    agora=utcnow()
+    pausados=Config.query.filter(Config.chave.like('wa_ai_pause_until_%')).all()
+    ativos=[]
+    for cfg in pausados:
+        until=_parse_dt_iso(cfg.valor or '')
+        if until and until>agora:
+            numero=cfg.chave.replace('wa_ai_pause_until_','')
+            c=WhatsAppConversa.query.filter_by(numero=numero).first()
+            ativos.append({'numero':numero,'nome':c.nome if c else numero,'pausado_ate':until.isoformat()})
+    return jsonify({'pausados':ativos,'total_pausados':len(ativos)})
 
 @app.route('/api/whatsapp/ia/pausar',methods=['POST'])
 @lr
@@ -10573,7 +16262,7 @@ def api_wa_send_colaboradores():
     enviados=[]
     falhas=[]
     for func_id in ids:
-        f=Funcionario.query.get(func_id)
+        f=db.session.get(Funcionario, func_id)
         if not f:
             falhas.append({'funcionario_id':func_id,'erro':'Colaborador não encontrado.'})
             continue
@@ -10616,7 +16305,12 @@ def webhook_whatsapp():
         return jsonify({'ok':True,'endpoint':'/webhook/whatsapp','metodos':['POST'],'status':'ativo'})
     debug=str(request.args.get('debug','0')).strip().lower() in ('1','true','yes','on')
     diag={'evento':None,'mensagens_recebidas':0,'mensagens_processadas':0,'ia_ativa':ai_wa_enabled(),'respostas_enviadas':0,'erros':[]}
-    data=request.json or {}
+    data=request.get_json(silent=True) or {}
+    if not wa_webhook_authorized(data):
+        app.logger.warning('[wa-webhook] requisicao nao autorizada ip=%s ua=%s',
+                           (request.headers.get('X-Forwarded-For') or request.remote_addr or ''),
+                           (request.headers.get('User-Agent') or '')[:160])
+        return jsonify({'erro':'Nao autorizado'}),401
     try:
         evento=(data.get('event') or '').lower()
         diag['evento']=evento
@@ -10777,7 +16471,7 @@ def webhook_whatsapp():
 @app.route('/api/medicoes/<int:id>/status',methods=['PUT'])
 @lr
 def api_medicao_status(id):
-    m=Medicao.query.get_or_404(id)
+    m=db.get_or_404(Medicao, id)
     d=request.json or {}
     novo=(d.get('status') or '').strip().lower()
     validos=['rascunho','emitida','cancelada','paga']
@@ -10793,7 +16487,7 @@ def api_medicao_status(id):
 @app.route('/api/medicoes/<int:id>/duplicar',methods=['POST'])
 @lr
 def api_medicao_duplicar(id):
-    orig=Medicao.query.get_or_404(id)
+    orig=db.get_or_404(Medicao, id)
     novo_num=prox_num()
     copia=Medicao(
         numero=novo_num, tipo=orig.tipo,
@@ -10817,14 +16511,14 @@ def api_medicao_duplicar(id):
 @app.route('/api/medicoes/<int:id>/enviar-email',methods=['POST'])
 @lr
 def api_medicao_enviar_email(id):
-    m=Medicao.query.get_or_404(id)
+    m=db.get_or_404(Medicao, id)
     d=request.json or {}
     destino=(d.get('email') or '').strip()
     if not destino:
-        cli=Cliente.query.get(m.cliente_id) if m.cliente_id else None
+        cli=db.session.get(Cliente, m.cliente_id) if m.cliente_id else None
         destino=(cli.email or '').strip() if cli else ''
     if not destino: return jsonify({'erro':'E-mail do destinatário não informado e cliente não possui e-mail cadastrado.'}),400
-    emp=Empresa.query.get(m.empresa_id) if m.empresa_id else None
+    emp=db.session.get(Empresa, m.empresa_id) if m.empresa_id else None
     md=m.to_dict(); md['empresa']=emp.to_dict() if emp else {}
     try:
         from flask import current_app
@@ -10863,7 +16557,7 @@ def api_medicao_enviar_email(id):
 @app.route('/api/medicoes/<int:id>/calcular-encargos',methods=['POST'])
 @lr
 def api_medicao_calcular_encargos(id):
-    m=Medicao.query.get_or_404(id)
+    m=db.get_or_404(Medicao, id)
     if m.status not in ('emitida','rascunho'): return jsonify({'erro':'Somente medições emitidas podem ter encargos calculados.'}),400
     if not m.dt_vencimento: return jsonify({'erro':'Medição sem data de vencimento.'}),400
     from datetime import date as _date
@@ -10891,7 +16585,7 @@ def api_medicao_calcular_encargos(id):
 @app.route('/api/medicoes/<int:id>/encargos',methods=['GET'])
 @lr
 def api_medicao_encargos(id):
-    m=Medicao.query.get_or_404(id)
+    m=db.get_or_404(Medicao, id)
     from datetime import date as _date
     venc=None
     if m.dt_vencimento:
@@ -10908,10 +16602,10 @@ def api_medicao_encargos(id):
 # ============================================================
 def _cobranca_enviar_lembrete(m,tipo,emp=None):
     """Envia e-mail de cobrança e registra no log. Retorna (ok, erro_msg)."""
-    cli=Cliente.query.get(m.cliente_id) if m.cliente_id else None
+    cli=db.session.get(Cliente, m.cliente_id) if m.cliente_id else None
     dest=(cli.email or '').strip() if cli else ''
     if not dest: return False,'Cliente sem e-mail'
-    if not emp and m.empresa_id: emp=Empresa.query.get(m.empresa_id)
+    if not emp and m.empresa_id: emp=db.session.get(Empresa, m.empresa_id)
     remetente=emp.nome if emp else 'RM Facilities'
     if tipo in ('D-5','D-1'):
         assunto=f'Lembrete de vencimento — {m.tipo or "Medição"} Nº {m.numero}'
@@ -10986,7 +16680,7 @@ def api_cobrancas_logs():
 @app.route('/api/cobrancas/<int:medicao_id>/manual',methods=['POST'])
 @lr
 def api_cobranca_manual(medicao_id):
-    m=Medicao.query.get_or_404(medicao_id)
+    m=db.get_or_404(Medicao, medicao_id)
     ok,erro=_cobranca_enviar_lembrete(m,'manual')
     return jsonify({'ok':ok,'erro':erro})
 
@@ -11084,11 +16778,11 @@ def api_conciliacao_transacoes():
 @app.route('/api/conciliacao/<int:transacao_id>/conciliar',methods=['POST'])
 @lr
 def api_conciliacao_conciliar(transacao_id):
-    t=ConciliacaoTransacao.query.get_or_404(transacao_id)
+    t=db.get_or_404(ConciliacaoTransacao, transacao_id)
     d=request.json or {}
     medicao_id=to_num(d.get('medicao_id'))
     if medicao_id:
-        m=Medicao.query.get_or_404(medicao_id)
+        m=db.get_or_404(Medicao, medicao_id)
         t.medicao_id=medicao_id; t.conciliado_em=utcnow()
         audit_event('conciliacao_conciliada','usuario',session.get('uid'),'conciliacao_transacao',t.id,True,
                     {'medicao_id':medicao_id,'numero':m.numero})
@@ -11134,13 +16828,13 @@ def api_conciliacao_auto():
 @app.route('/api/medicoes/<int:id>/anexos',methods=['GET'])
 @lr
 def api_medicao_anexos(id):
-    Medicao.query.get_or_404(id)
+    db.get_or_404(Medicao, id)
     return jsonify([a.to_dict() for a in MedicaoAnexo.query.filter_by(medicao_id=id).order_by(MedicaoAnexo.criado_em.desc()).all()])
 
 @app.route('/api/medicoes/<int:id>/anexos',methods=['POST'])
 @lr
 def api_medicao_add_anexo(id):
-    Medicao.query.get_or_404(id)
+    db.get_or_404(Medicao, id)
     fs=request.files.get('arquivo')
     if not fs: return jsonify({'erro':'Arquivo nao enviado'}),400
     rel,_=save_upload(fs,f'medicoes/{id}')
@@ -11151,7 +16845,7 @@ def api_medicao_add_anexo(id):
 @app.route('/api/medicoes/anexos/<int:id>',methods=['DELETE'])
 @lr
 def api_medicao_del_anexo(id):
-    a=MedicaoAnexo.query.get_or_404(id)
+    a=db.get_or_404(MedicaoAnexo, id)
     try: os.remove(os.path.join(UPLOAD_ROOT,a.caminho))
     except: pass
     db.session.delete(a); db.session.commit()
@@ -11160,7 +16854,7 @@ def api_medicao_del_anexo(id):
 @app.route('/api/medicoes/anexos/<int:id>/download')
 @lr
 def api_medicao_download_anexo(id):
-    a=MedicaoAnexo.query.get_or_404(id)
+    a=db.get_or_404(MedicaoAnexo, id)
     abs_p=os.path.join(UPLOAD_ROOT,a.caminho)
     if not os.path.exists(abs_p): return jsonify({'erro':'Arquivo nao encontrado'}),404
     return send_file(abs_p,as_attachment=True,download_name=a.nome_arquivo)
@@ -11185,7 +16879,7 @@ def seed():
 with app.app_context():
     os.makedirs(DATA_DIR,exist_ok=True)
     os.makedirs(UPLOAD_ROOT,exist_ok=True)
-    db.create_all()
+    db.metadata.create_all(bind=db.engine, checkfirst=True)
     ensure_cols('usuario',[
         'areas TEXT',
         'permissoes TEXT DEFAULT "{}"',
@@ -11212,12 +16906,18 @@ with app.app_context():
         'cert_validade_fim VARCHAR(30)'
     ])
     ensure_cols('funcionario',[
+        'ferias_dias INTEGER DEFAULT 30',
+        'faltas_ano INTEGER DEFAULT 0',
+        'data_demissao VARCHAR(10)',
         're INTEGER',
         'matricula VARCHAR(30)',
         'funcao VARCHAR(150)',
         'cbo VARCHAR(20)',
         'tipo_contrato VARCHAR(60)',
         'jornada VARCHAR(80)',
+        'ferias_inicio VARCHAR(10)',
+        'ferias_fim VARCHAR(10)',
+        'ferias_obs VARCHAR(255)',
         'vale_refeicao FLOAT DEFAULT 0',
         'vale_alimentacao FLOAT DEFAULT 0',
         'vale_transporte FLOAT DEFAULT 0',
@@ -11237,7 +16937,15 @@ with app.app_context():
         'app_otp_hash VARCHAR(256)',
         'app_otp_expira_em DATETIME',
         'app_otp_tentativas INTEGER DEFAULT 0',
+        'app_canal_otp VARCHAR(20) DEFAULT "whatsapp"',
+        'app_stepup_hash VARCHAR(256)',
+        'app_stepup_expira_em DATETIME',
+        'app_stepup_tentativas INTEGER DEFAULT 0',
+        'app_stepup_arquivo_id INTEGER',
         'app_push_token VARCHAR(300)',
+        'app_lat FLOAT',
+        'app_lon FLOAT',
+        'app_localizacao_em DATETIME',
         'endereco_numero VARCHAR(20)',
         'endereco_complemento VARCHAR(120)',
         'endereco_bairro VARCHAR(120)',
@@ -11258,7 +16966,8 @@ with app.app_context():
         'premio_produtividade FLOAT DEFAULT 0',
         'vale_gasolina FLOAT DEFAULT 0',
         'cesta_natal FLOAT DEFAULT 0',
-        'foto_perfil VARCHAR(500)'
+        'foto_perfil VARCHAR(500)',
+        'data_nascimento DATE',
     ])
     ensure_cols('comunicado_app',[
         'posto_operacional VARCHAR(150)'
@@ -11273,16 +16982,65 @@ with app.app_context():
         'reajuste_percentual FLOAT DEFAULT 0',
         'reajuste_data_base VARCHAR(10)',
         'ultimo_reajuste_em VARCHAR(10)',
+        'geo_lat FLOAT',
+        'geo_lon FLOAT',
+        'geofence_raio_m FLOAT DEFAULT 150',
     ])
     ensure_cols('beneficio_mensal',[
         'dias_vt INTEGER DEFAULT 0',
         'dias_vr INTEGER DEFAULT 0',
         'dias_va INTEGER DEFAULT 0',
         'dias_vg INTEGER DEFAULT 0',
+        'faltas INTEGER DEFAULT 0',
+        'horas_noturnas_min INTEGER DEFAULT 0',
         'pp_falta BOOLEAN DEFAULT 0',
         'premio_produtividade FLOAT DEFAULT 0',
         'vale_gasolina FLOAT DEFAULT 0',
-        'cesta_natal FLOAT DEFAULT 0'
+        'cesta_natal FLOAT DEFAULT 0',
+        'salario_obs TEXT DEFAULT ""',
+        'salario_editado_por VARCHAR(100)',
+        'salario_editado_em DATETIME'
+    ])
+    ensure_cols('folha_pagamento_mensal',[
+        'status VARCHAR(20) DEFAULT "aberta"',
+        'versao_atual INTEGER DEFAULT 0',
+        'historico_json TEXT DEFAULT "[]"',
+        'fechamento_obs TEXT DEFAULT ""',
+        'fechado_em DATETIME',
+        'fechado_por VARCHAR(100)',
+        'reaberto_em DATETIME',
+        'reaberto_por VARCHAR(100)',
+        'assinatura_status VARCHAR(20) DEFAULT "pendente"',
+        'assinatura_hash VARCHAR(128)',
+        'assinatura_por VARCHAR(100)',
+        'assinatura_em DATETIME'
+    ])
+    ensure_cols('folha_beneficios',[
+        'status VARCHAR(20) DEFAULT "aberta"',
+        'versao_atual INTEGER DEFAULT 0',
+        'historico_json TEXT DEFAULT "[]"',
+        'fechamento_obs TEXT DEFAULT ""',
+        'fechado_em DATETIME',
+        'fechado_por VARCHAR(100)',
+        'reaberto_em DATETIME',
+        'reaberto_por VARCHAR(100)',
+        'assinatura_status VARCHAR(20) DEFAULT "pendente"',
+        'assinatura_hash VARCHAR(128)',
+        'assinatura_por VARCHAR(100)',
+        'assinatura_em DATETIME'
+    ])
+    ensure_cols('ponto_marcacao',[
+        'latitude FLOAT',
+        'longitude FLOAT',
+        'precisao_gps FLOAT',
+    ])
+    ensure_cols('jornada_trabalho',[
+        'descricao VARCHAR(255)',
+        'tolerancia_min INTEGER DEFAULT 10',
+        'ativo BOOLEAN DEFAULT 1',
+    ])
+    ensure_cols('funcionario',[
+        'jornada_id INTEGER',
     ])
     ensure_cols('funcionario_arquivo',[
         'ass_status VARCHAR(20) DEFAULT "nao_solicitada"',
@@ -11310,6 +17068,9 @@ with app.app_context():
         'ass_email_status VARCHAR(20) DEFAULT "nao_enviado"',
         'ass_email_enviado_em DATETIME',
         'ass_email_recebido_em DATETIME',
+        'ass_lembretes_enviados INTEGER DEFAULT 0',
+        'ass_ultimo_lembrete_em DATETIME',
+        'ass_prazo_em DATETIME',
     ])
     db.session.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ix_funcionario_re ON funcionario(re)'))
     db.session.commit()
@@ -11366,12 +17127,12 @@ with app.app_context():
         'stamp_y_pct REAL DEFAULT 10.0',
         'stamp_todas_paginas BOOLEAN DEFAULT 0',
         'stamp_todos_arquivos BOOLEAN DEFAULT 0',
-        'stamp_todas_paginas BOOLEAN DEFAULT 0',
-        'stamp_todos_arquivos BOOLEAN DEFAULT 0',
+        'audit_pos VARCHAR(20) DEFAULT "personalizado"',
     ])
     ensure_cols('assinatura_envelope_arquivo',[
         'id INTEGER PRIMARY KEY AUTOINCREMENT',
         'envelope_id INTEGER',
+        'ordem INTEGER DEFAULT 0',
         'origem VARCHAR(10) DEFAULT "upload"',
         'func_arquivo_id INTEGER',
         'nome_arquivo VARCHAR(250)',
@@ -11423,7 +17184,32 @@ with app.app_context():
         'criado_em DATETIME',
         'ass_assinatura_img TEXT',
     ])
+    ensure_cols('mensagem_app',[
+        'tipo VARCHAR(20) DEFAULT "texto"',
+        'arquivo_nome VARCHAR(300)',
+        'arquivo_caminho VARCHAR(500)',
+    ])
+    # Índices compostos para performance de queries frequentes
+    _idx_defs = [
+        'CREATE INDEX IF NOT EXISTS ix_ponto_marcacao_func_data ON ponto_marcacao (funcionario_id, data_hora)',
+        'CREATE INDEX IF NOT EXISTS ix_ponto_fechamento_func_data ON ponto_fechamento_dia (funcionario_id, data_ref)',
+        'CREATE INDEX IF NOT EXISTS ix_funcionario_status ON funcionario (status)',
+    ]
+    for _idx_sql in _idx_defs:
+        try:
+            db.session.execute(text(_idx_sql))
+        except Exception as _idx_exc:
+            app.logger.warning(f'[startup] índice falhou: {_idx_exc}')
+    db.session.commit()
+
     seed(); get_logo()
+    # Warm-up: pré-carrega cache de configurações e invalida cache antigo
+    try:
+        gc('__warmup__', None)  # força população de _gc_cache
+        cache.delete('api_dashboard')
+        app.logger.info('[startup] cache warm-up concluído')
+    except Exception as _wup_exc:
+        app.logger.warning(f'[startup] cache warm-up falhou: {_wup_exc}')
 
 if __name__=='__main__':
     app.run(host='0.0.0.0',port=5000,debug=False)
@@ -11494,6 +17280,87 @@ def _auto_backup_loop():
 
 threading.Thread(target=_auto_backup_loop, daemon=True, name='auto-backup').start()
 
+def _lembrete_assinatura_loop():
+    """Envia lembretes automáticos para documentos pendentes de assinatura.
+    Intervalo configurável via env LEMBRETE_ASSINATURA_INTERVALO_HORAS (padrão: 8h).
+    Usa o canal original de cada documento (whatsapp / email / app / link)."""
+    # Garantimos ao menos 8h entre lembretes automáticos para evitar excesso de mensagens.
+    intervalo_horas = max(8, min(168, _to_int(os.environ.get('LEMBRETE_ASSINATURA_INTERVALO_HORAS'), 8)))
+    intervalo_seg = intervalo_horas * 3600
+
+    def _canal_padrao(a):
+        ch = (a.ass_canal_envio or '').strip().lower()
+        if ch:
+            return ch
+        if (a.ass_wa_status or '') in ('enviado', 'recebido') or bool(a.ass_wa_enviado_em):
+            return 'whatsapp'
+        if (a.ass_email_status or '') in ('enviado', 'recebido') or bool(a.ass_email_enviado_em):
+            return 'email'
+        if not (a.ass_token or '').strip():
+            return 'app'
+        return 'link'
+
+    # Aguarda 2 minutos no boot antes do primeiro ciclo
+    time.sleep(120)
+    while True:
+        try:
+            with app.app_context():
+                agora = utcnow()
+                pendentes = FuncionarioArquivo.query.filter_by(ass_status='pendente').all()
+                func_cache = {}
+                for a in pendentes:
+                    if not a.criado_em:
+                        continue
+                    # Só envia se nenhum lembrete foi enviado ainda OU
+                    # se já passaram intervalo_horas desde o último lembrete
+                    ultimo = a.ass_ultimo_lembrete_em
+                    if ultimo is not None:
+                        horas_desde = (agora - ultimo).total_seconds() / 3600
+                        if horas_desde < intervalo_horas:
+                            continue
+                    else:
+                        # Primeiro lembrete: aguarda ao menos intervalo_horas após criação
+                        horas_desde_criacao = (agora - a.criado_em).total_seconds() / 3600
+                        if horas_desde_criacao < intervalo_horas:
+                            continue
+                    try:
+                        if a.funcionario_id not in func_cache:
+                            with db.session.no_autoflush:
+                                func_cache[a.funcionario_id] = db.session.get(Funcionario, a.funcionario_id)
+                        f = func_cache[a.funcionario_id]
+                        if not f:
+                            continue
+                        canal = _canal_padrao(a)
+                        rs = _solicitar_assinatura_arquivo_funcionario(
+                            a, f,
+                            canal=canal,
+                            commit_now=False,
+                            forcar_novo_token=False,
+                            eh_lembrete=True,
+                        )
+                        a.ass_lembretes_enviados = (a.ass_lembretes_enviados or 0) + 1
+                        a.ass_ultimo_lembrete_em = agora
+                        db.session.commit()
+                        app.logger.info(
+                            f'[lembrete-auto] funcionario={a.funcionario_id} arquivo={a.id} '
+                            f'canal={canal} ok={rs.get("ok")}'
+                        )
+                    except Exception as ex:
+                        app.logger.error(f'[lembrete-auto] arquivo={a.id} erro={ex}')
+                        try:
+                            db.session.remove()  # descarta sessão corrompida; próxima iteração cria nova
+                        except Exception:
+                            pass
+        except Exception as e:
+            app.logger.error(f'[lembrete-assinatura] erro geral: {e}')
+            try:
+                db.session.remove()  # sessão pode estar em rolled-back; remove para garantir sessão limpa
+            except Exception:
+                pass
+        time.sleep(intervalo_seg)
+
+threading.Thread(target=_lembrete_assinatura_loop, daemon=True, name='lembrete-assinatura').start()
+
 @app.route('/api/backup/auto/status')
 @lr
 def api_auto_backup_status():
@@ -11523,4 +17390,75 @@ def api_auto_backup_download(nome):
     if not os.path.exists(p): return jsonify({'erro': 'Arquivo não encontrado'}), 404
     return send_file(p, mimetype='application/zip', as_attachment=True, download_name=nome)
 
+# ============================================================
+# SIGTERM — desligamento gracioso
+# ============================================================
+import signal as _signal
+
+def _graceful_shutdown(signum, frame):
+    """Captura SIGTERM/SIGINT para fechar clientes SSE e fazer flush do DB antes de sair.
+    Restaura o handler padrão e re-propaga o sinal para que o gunicorn termine os
+    workers de forma controlada sem abortar requests em andamento."""
+    app.logger.info('[shutdown] sinal recebido — encerrando graciosamente...')
+    # Avisa clientes SSE que o servidor vai encerrar
+    try:
+        _sse_broadcast('server_shutdown', '{"motivo":"restart"}')
+    except Exception:
+        pass
+    # Tenta fechar a sessão do SQLAlchemy limpa
+    try:
+        db.session.remove()
+    except Exception:
+        pass
+    app.logger.info('[shutdown] encerrado')
+    # Restaura o handler padrão e re-propaga para o gunicorn tratar o desligamento
+    # Evita substituir permanentemente o handler do gunicorn (que aborta workers mid-request)
+    _signal.signal(signum, _signal.SIG_DFL)
+    _signal.raise_signal(signum)
+
+_signal.signal(_signal.SIGTERM, _graceful_shutdown)
+
+# ============================================================
+# WAL CHECKPOINT PERIÓDICO (a cada 30 min) — evita crescimento do WAL
+# ============================================================
+def _wal_checkpoint_loop():
+    """Executa PRAGMA wal_checkpoint(PASSIVE) periodicamente para manter o WAL compacto.
+    Usa PASSIVE para nunca bloquear escritores ativos."""
+    while True:
+        time.sleep(1800)  # 30 minutos
+        try:
+            with app.app_context():
+                db.session.execute(text('PRAGMA wal_checkpoint(PASSIVE)'))
+                # Não faz commit (pragma não precisa); remove a sessão para não manter lock
+                db.session.remove()
+        except Exception as exc:
+            try:
+                db.session.remove()
+                app.logger.warning(f'[wal-checkpoint] falhou: {exc}')
+            except Exception:
+                pass
+
+threading.Thread(target=_wal_checkpoint_loop, daemon=True, name='wal-checkpoint').start()
+
+# ============================================================
+# SSE — limpeza periódica de clientes mortos (a cada 5 min)
+# ============================================================
+def _sse_cleanup_loop():
+    """Remove fila de clientes SSE que não consomem mensagens (queue cheia = cliente morto)."""
+    while True:
+        time.sleep(300)  # 5 minutos
+        try:
+            with _sse_lock:
+                mortos = [q for q in _sse_clients if q.full()]
+                for q in mortos:
+                    _sse_clients.remove(q)
+            if mortos:
+                app.logger.info(f'[sse-cleanup] {len(mortos)} cliente(s) removido(s)')
+        except Exception as exc:
+            try:
+                app.logger.warning(f'[sse-cleanup] erro: {exc}')
+            except Exception:
+                pass
+
+threading.Thread(target=_sse_cleanup_loop, daemon=True, name='sse-cleanup').start()
 # ============================================================

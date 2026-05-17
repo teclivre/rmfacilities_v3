@@ -1,0 +1,71 @@
+<!-- ══ GESTÃO FÁCIL ══ -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">⚡ Gestão Fácil</span>
+    <button class="btn b-ghv b-sm" onclick="gfCarregar()">↻ Atualizar</button>
+  </div>
+
+  <div class="ponto-gestao-wrap">
+
+    <!-- LADO ESQUERDO: seletor de funcionário -->
+    <aside class="ponto-side">
+      <div class="ponto-side-head">
+        <div style="font-size:11px;color:var(--text-muted)">Colaboradores ativos</div>
+        <span id="gf-func-qtd" class="pill p-vd">0</span>
+      </div>
+      <div class="f" style="margin-top:8px">
+        <label>Buscar colaborador</label>
+        <input id="gf-busca" placeholder="Nome, matrícula ou cargo" oninput="gfRenderFuncs()">
+      </div>
+      <div id="gf-func-list" class="ponto-lista"></div>
+    </aside>
+
+    <!-- LADO DIREITO: calendário + preview -->
+    <section class="ponto-main">
+      <div class="ponto-main-head">
+        <div>
+          <div id="gf-func-nome" style="font-size:16px;font-weight:700;color:var(--azul)">Selecione um colaborador</div>
+          <div id="gf-func-meta" class="ponto-main-sub">Selecione um colaborador para ver o calendário e a folha do mês.</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end">
+          <div class="f">
+            <label>Competência (YYYY-MM)</label>
+            <input id="gf-competencia" type="month" onchange="gfCarregarMes()">
+          </div>
+          <button class="btn b-az b-sm" onclick="gfCarregarMes()">Ver mês</button>
+        </div>
+      </div>
+
+      <div id="gf-st" class="st" style="margin:8px 0"></div>
+
+      <!-- CALENDÁRIO -->
+      <div id="gf-calendario-wrap" style="margin-top:12px">
+        <div id="gf-calendario" class="gf-calendario"></div>
+      </div>
+
+      <!-- PREVIEW DA FOLHA DE PONTO -->
+      <div id="gf-folha-wrap" style="margin-top:18px;display:none">
+        <div style="font-size:12px;font-weight:700;color:var(--azul);text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px">Resumo da competência</div>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Entrada</th>
+                <th>Saída Int.</th>
+                <th>Retorno Int.</th>
+                <th>Saída</th>
+                <th>Horas</th>
+                <th>Saldo</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="gf-tb-folha"></tbody>
+          </table>
+        </div>
+        <div id="gf-totais" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px"></div>
+      </div>
+
+    </section>
+  </div>
+</div>

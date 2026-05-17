@@ -1,16 +1,132 @@
+
+
 package br.com.rmfacilities.funcionarioapp
 
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import okhttp3.Authenticator
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 
 class ApiClient(private val session: SessionManager) {
     private val gson = Gson()
-    private val http = OkHttpClient.Builder().build()
+
+    companion object {
+        private const val MAX_DOWNLOAD_MB = 50
+        private const val MAX_DOWNLOAD_BYTES = MAX_DOWNLOAD_MB * 1024 * 1024
+    }
+
+    private fun buildHttpClient(withAuthenticator: Boolean = false): OkHttpClient {
+        val builder = OkHttpClient.Builder()
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        // Certificate Pinning — ativo quando BuildConfig.CERT_PIN está preenchido
+        val pin = BuildConfig.CERT_PIN.trim()
+        if (pin.isNotBlank()) {
+            val hostname = java.net.URI(BuildConfig.DEFAULT_API_BASE_URL).host
+            builder.certificatePinner(
+                okhttp3.CertificatePinner.Builder()
+                    .add(hostname, pin)
+                    .build()
+            )
+        }
+        if (withAuthenticator) {
+            builder.authenticator(okhttp3.Authenticator { _, response ->
+                authRetryRequest(response)
+            })
+        }
+        return builder.build()
+    }
+
+    private val refreshHttp = buildHttpClient(withAuthenticator = false)
+    private val refreshLock = Any()
+    private val http = buildHttpClient(withAuthenticator = true)
+
+    data class UltimoPagamentoResponse(
+        val ok: Boolean = false,
+        val valor_liquido: Double? = null,
+        val competencia: String? = null,
+        val erro: String? = null
+    )
+
+    data class PagamentoItem(
+        val competencia: String = "",
+        val valor_liquido: Double = 0.0,
+        val obs: String = ""
+    )
+
+    data class HistoricoPagamentosResponse(
+        val ok: Boolean = false,
+        val historico: List<PagamentoItem> = emptyList()
+    )
+
+    data class BeneficioItem(
+        val competencia: String = "",
+        val total: Double = 0.0,
+        val detalhes: String = "",
+        val obs: String = ""
+    )
+
+    data class HistoricoBeneficiosResponse(
+        val ok: Boolean = false,
+        val historico: List<BeneficioItem> = emptyList()
+    )
+
+    fun ultimoPagamento(): UltimoPagamentoResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/ultimo-pagamento"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, UltimoPagamentoResponse::class.java)
+            } catch (_: Exception) {
+                UltimoPagamentoResponse(ok = false, erro = "Falha ao buscar pagamento.")
+            }
+        }
+    }
+
+    fun historicoPagamentos(): HistoricoPagamentosResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/historico-pagamentos"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, HistoricoPagamentosResponse::class.java)
+            } catch (_: Exception) {
+                HistoricoPagamentosResponse(ok = false)
+            }
+        }
+    }
+
+    fun historicoBeneficios(): HistoricoBeneficiosResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/historico-beneficios"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, HistoricoBeneficiosResponse::class.java)
+            } catch (_: Exception) {
+                HistoricoBeneficiosResponse(ok = false)
+            }
+        }
+    }
 
     private fun parseErro(raw: String, fallback: String): String {
         return try {
@@ -21,13 +137,89 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    private fun handleUnauthorized() {
+        session.logout()
+    }
+
+    private fun responseCount(response: Response): Int {
+        var count = 1
+        var prior = response.priorResponse
+        while (prior != null) {
+            count++
+            prior = prior.priorResponse
+        }
+        return count
+    }
+
+    private fun refreshWithToken(refreshToken: String): LoginResponse {
+        val payload = gson.toJson(mapOf("refresh_token" to refreshToken))
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/refresh"))
+            .post(payload.toRequestBody("application/json".toMediaType()))
+            .addHeader("Content-Type", "application/json")
+            .build()
+
+        refreshHttp.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                return LoginResponse(ok = false, erro = parseErro(raw, "Não foi possível renovar a sessão."))
+            }
+            return try {
+                gson.fromJson(raw, LoginResponse::class.java)
+            } catch (_: Exception) {
+                LoginResponse(ok = false, erro = "Resposta inesperada do servidor.")
+            }
+        }
+    }
+
+    private fun authRetryRequest(response: Response): Request? {
+        val authHeader = response.request.header("Authorization") ?: return null
+        if (!authHeader.startsWith("Bearer ")) return null
+        if (response.request.url.encodedPath.endsWith("/api/app/funcionario/refresh")) return null
+        if (responseCount(response) >= 2) return null
+
+        val tokenUsado = authHeader.removePrefix("Bearer ").trim()
+        synchronized(refreshLock) {
+            val atual = session.accessToken.trim()
+            if (atual.isNotBlank() && atual != tokenUsado) {
+                return response.request.newBuilder()
+                    .header("Authorization", "Bearer $atual")
+                    .build()
+            }
+
+            val refresh = session.refreshToken.trim()
+            if (refresh.isBlank()) return null
+
+            val renovado = try {
+                refreshWithToken(refresh)
+            } catch (_: Exception) {
+                null
+            } ?: return null
+
+            if (!renovado.ok || renovado.access_token.isNullOrBlank()) return null
+            session.accessToken = renovado.access_token
+            if (!renovado.refresh_token.isNullOrBlank()) {
+                session.refreshToken = renovado.refresh_token
+            }
+
+            return response.request.newBuilder()
+                .header("Authorization", "Bearer ${session.accessToken}")
+                .build()
+        }
+    }
+
     private fun url(path: String): String {
         val base = session.apiBaseUrl.trim().trimEnd('/')
-        return if (path.startsWith("http")) path else "$base$path"
+        // Garante que a URL final usa HTTPS — rejeita qualquer esquema não seguro
+        val resolved = if (path.startsWith("http")) path else "$base$path"
+        require(resolved.startsWith("https://", ignoreCase = true)) {
+            "URL da requisição não usa HTTPS: $resolved"
+        }
+        return resolved
     }
 
     fun iniciarOtp(cpf: String): OtpStartResponse {
-        val payload = gson.toJson(mapOf("cpf" to cpf))
+        val payload = gson.toJson(mapOf("cpf" to cpf, "canal" to session.canalOtp))
         val req = Request.Builder()
             .url(url("/api/app/funcionario/auth/iniciar"))
             .post(payload.toRequestBody("application/json".toMediaType()))
@@ -70,6 +262,10 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    fun renovarSessao(refreshToken: String): LoginResponse {
+        return refreshWithToken(refreshToken)
+    }
+
     fun atualizarContato(email: String, telefone: String): ContatoUpdateResponse {
         val payload = gson.toJson(mapOf("email" to email, "telefone" to telefone))
         val req = Request.Builder()
@@ -84,6 +280,22 @@ class ApiClient(private val session: SessionManager) {
                 gson.fromJson(raw, ContatoUpdateResponse::class.java)
             } catch (_: Exception) {
                 ContatoUpdateResponse(ok = false, erro = "Falha ao atualizar contato.")
+            }
+        }
+    }
+
+    fun getAlteracoesCadastrais(): AlteracaoListResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/solicitacoes-alteracao"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, AlteracaoListResponse::class.java)
+            } catch (_: Exception) {
+                AlteracaoListResponse(ok = false, erro = "Falha ao carregar histórico.")
             }
         }
     }
@@ -106,14 +318,89 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    fun getFeriasFuncionario(): FeriasResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ferias"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, FeriasResponse::class.java)
+            } catch (_: Exception) {
+                FeriasResponse(ok = false, erro = "Falha ao carregar férias.")
+            }
+        }
+    }
+
+    fun solicitarCorrecaoPonto(dataRef: String, tipoProbema: String, horarioEsperado: String, observacao: String): CorrecaoPontoResponse {
+        val payload = gson.toJson(mapOf(
+            "data_ref" to dataRef,
+            "tipo_problema" to tipoProbema,
+            "horario_esperado" to horarioEsperado,
+            "observacao" to observacao
+        ))
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ponto/solicitacao-correcao"))
+            .post(payload.toRequestBody("application/json".toMediaType()))
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .addHeader("Content-Type", "application/json")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, CorrecaoPontoResponse::class.java)
+            } catch (_: Exception) {
+                CorrecaoPontoResponse(ok = false, erro = "Falha ao enviar solicitação.")
+            }
+        }
+    }
+
+    fun getCorrecoesPonto(): CorrecaoPontoListResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ponto/solicitacao-correcao"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, CorrecaoPontoListResponse::class.java)
+            } catch (_: Exception) {
+                CorrecaoPontoListResponse(ok = false, erro = "Falha ao carregar solicitações.")
+            }
+        }
+    }
+
+    fun getResumoMes(): ResumoMesResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ponto/resumo-mes"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, ResumoMesResponse::class.java)
+            } catch (_: Exception) {
+                ResumoMesResponse(ok = false, erro = "Falha ao carregar saldo.")
+            }
+        }
+    }
+
     fun me(): MeResponse {
         val req = Request.Builder()
             .url(url("/api/app/funcionario/me"))
             .get()
             .addHeader("Authorization", "Bearer ${session.accessToken}")
             .build()
-
         http.newCall(req).execute().use { resp ->
+            if (resp.code == 401) {
+                // O OkHttp Authenticator já tentou renovar a sessão e falhou
+                handleUnauthorized()
+                return MeResponse(ok = false, erro = "Sessão expirada.")
+            }
             val raw = resp.body?.string().orEmpty()
             return try {
                 gson.fromJson(raw, MeResponse::class.java)
@@ -123,9 +410,15 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
-    fun documentos(): DocsResponse {
+    fun documentos(q: String = "", categoria: String = "", ano: String = ""): DocsResponse {
+        val params = buildList {
+            add("formato=lista&page=1&per_page=200")
+            if (q.isNotBlank()) add("q=${android.net.Uri.encode(q)}")
+            if (categoria.isNotBlank()) add("categoria=${android.net.Uri.encode(categoria)}")
+            if (ano.isNotBlank()) add("ano=${android.net.Uri.encode(ano)}")
+        }.joinToString("&")
         val req = Request.Builder()
-            .url(url("/api/app/funcionario/me/documentos?formato=lista&page=1&per_page=200"))
+            .url(url("/api/app/funcionario/me/documentos?$params"))
             .get()
             .addHeader("Authorization", "Bearer ${session.accessToken}")
             .build()
@@ -136,6 +429,23 @@ class ApiClient(private val session: SessionManager) {
                 gson.fromJson(raw, DocsResponse::class.java)
             } catch (_: Exception) {
                 DocsResponse(ok = false, erro = "Falha ao interpretar documentos.")
+            }
+        }
+    }
+
+    fun pendentesAssinatura(): DocsResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/pendentes-assinatura"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, DocsResponse::class.java)
+            } catch (_: Exception) {
+                DocsResponse(ok = false, erro = "Falha ao carregar pendentes.")
             }
         }
     }
@@ -151,7 +461,74 @@ class ApiClient(private val session: SessionManager) {
             if (!resp.isSuccessful) {
                 throw IllegalStateException("Falha no download: HTTP ${resp.code}")
             }
-            return resp.body?.bytes() ?: throw IllegalStateException("Arquivo vazio")
+            val body = resp.body ?: throw IllegalStateException("Arquivo vazio")
+            val contentLength = body.contentLength()
+            if (contentLength > MAX_DOWNLOAD_BYTES) {
+                throw IllegalStateException("Arquivo muito grande (máximo ${MAX_DOWNLOAD_MB} MB).")
+            }
+            val bytes = body.bytes()
+            if (bytes.size > MAX_DOWNLOAD_BYTES) {
+                throw IllegalStateException("Arquivo muito grande (máximo ${MAX_DOWNLOAD_MB} MB).")
+            }
+            return bytes
+        }
+    }
+
+    fun assinarDocumento(documentoId: Int, stepupOtp: String? = null, stepupBiometria: Boolean = false): ApiSimpleResponse {
+        val body = buildMap<String, Any> {
+            if (stepupBiometria) put("stepup_biometria", true)
+            else if (!stepupOtp.isNullOrBlank()) put("stepup_otp", stepupOtp)
+        }
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/arquivos/$documentoId/assinar"))
+            .post(gson.toJson(body).toRequestBody("application/json".toMediaType()))
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .addHeader("Content-Type", "application/json")
+            .build()
+
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, ApiSimpleResponse::class.java)
+            } catch (_: Exception) {
+                ApiSimpleResponse(ok = resp.isSuccessful, erro = if (resp.isSuccessful) null else parseErro(raw, "Falha ao assinar documento."))
+            }
+        }
+    }
+
+    fun solicitarStepupOtp(arquivoId: Int): ApiSimpleResponse {
+        val payload = gson.toJson(mapOf("arquivo_id" to arquivoId, "canal" to session.canalOtp))
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/stepup/solicitar"))
+            .post(payload.toRequestBody("application/json".toMediaType()))
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .addHeader("Content-Type", "application/json")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, ApiSimpleResponse::class.java)
+            } catch (_: Exception) {
+                ApiSimpleResponse(ok = resp.isSuccessful, erro = if (resp.isSuccessful) null else parseErro(raw, "Falha ao solicitar código."))
+            }
+        }
+    }
+
+    fun salvarPreferenciaCanalOtp(canal: String): ApiSimpleResponse {
+        val payload = gson.toJson(mapOf("canal_otp" to canal))
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/preferencias"))
+            .put(payload.toRequestBody("application/json".toMediaType()))
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .addHeader("Content-Type", "application/json")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, ApiSimpleResponse::class.java)
+            } catch (_: Exception) {
+                ApiSimpleResponse(ok = resp.isSuccessful, erro = if (resp.isSuccessful) null else parseErro(raw, "Falha ao salvar preferência."))
+            }
         }
     }
 
@@ -184,6 +561,53 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    fun deletarMensagem(id: Int): Boolean {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/mensagens/$id"))
+            .delete()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp -> return resp.isSuccessful }
+    }
+
+    fun enviarArquivoMensagem(bytes: ByteArray, mimeType: String, fileName: String, legenda: String = ""): MensagemItem? {
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("arquivo", fileName, bytes.toRequestBody(mimeType.toMediaType()))
+            .apply { if (legenda.isNotBlank()) addFormDataPart("conteudo", legenda) }
+            .build()
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/mensagens/arquivo"))
+            .post(body)
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try { gson.fromJson(raw, MensagemItem::class.java) } catch (_: Exception) { null }
+        }
+    }
+
+    fun downloadMensagemArquivo(arquivoUrl: String): ByteArray {
+        val req = Request.Builder()
+            .url(url(arquivoUrl))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw IllegalStateException("Falha no download: HTTP ${resp.code}")
+            val body = resp.body ?: throw IllegalStateException("Arquivo vazio")
+            val contentLength = body.contentLength()
+            if (contentLength > MAX_DOWNLOAD_BYTES) {
+                throw IllegalStateException("Arquivo muito grande (máximo ${MAX_DOWNLOAD_MB} MB).")
+            }
+            val bytes = body.bytes()
+            if (bytes.size > MAX_DOWNLOAD_BYTES) {
+                throw IllegalStateException("Arquivo muito grande (máximo ${MAX_DOWNLOAD_MB} MB).")
+            }
+            return bytes
+        }
+    }
+
     fun getNaoLidas(): Int {
         val req = Request.Builder()
             .url(url("/api/app/funcionario/mensagens/nao-lidas"))
@@ -194,6 +618,33 @@ class ApiClient(private val session: SessionManager) {
             val raw = resp.body?.string().orEmpty()
             return try { gson.fromJson(raw, NaoLidasResponse::class.java).nao_lidas } catch (_: Exception) { 0 }
         }
+    }
+
+    fun getComunicados(): List<ComunicadoItem> {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/comunicados"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                val type = object : com.google.gson.reflect.TypeToken<List<ComunicadoItem>>() {}.type
+                gson.fromJson(raw, type) ?: emptyList()
+            } catch (_: Exception) { emptyList() }
+        }
+    }
+
+    fun marcarComunicadoLido(id: Int) {
+        try {
+            val req = Request.Builder()
+                .url(url("/api/app/funcionario/comunicados/$id/lido"))
+                .post("{}".toRequestBody("application/json".toMediaType()))
+                .addHeader("Authorization", "Bearer ${session.accessToken}")
+                .addHeader("Content-Type", "application/json")
+                .build()
+            http.newCall(req).execute().use { }
+        } catch (_: Exception) { }
     }
 
     fun uploadFoto(bytes: ByteArray, mimeType: String): FotoUploadResponse {
@@ -233,6 +684,172 @@ class ApiClient(private val session: SessionManager) {
             } catch (_: Exception) {
                 ApiSimpleResponse(ok = resp.isSuccessful, erro = if (resp.isSuccessful) null else "Falha ao registrar notificações")
             }
+        }
+    }
+
+    fun enviarLocalizacao(lat: Double, lon: Double, precisao: Float?): ApiSimpleResponse {
+        val payload = gson.toJson(buildMap {
+            put("lat", lat); put("lon", lon)
+            if (precisao != null) put("precisao", precisao)
+        })
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/localizacao"))
+            .post(payload.toRequestBody("application/json".toMediaType()))
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .addHeader("Content-Type", "application/json")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            if (resp.code == 401) {
+                handleUnauthorized()
+                return ApiSimpleResponse(ok = false, erro = "Sessão expirada.")
+            }
+            val raw = resp.body?.string().orEmpty()
+            return try { gson.fromJson(raw, ApiSimpleResponse::class.java) }
+            catch (_: Exception) { ApiSimpleResponse(ok = resp.isSuccessful) }
+        }
+    }
+
+    fun testarPushToken(): ApiSimpleResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/push-token/teste"))
+            .post("{}".toRequestBody("application/json".toMediaType()))
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, ApiSimpleResponse::class.java)
+            } catch (_: Exception) {
+                ApiSimpleResponse(ok = resp.isSuccessful, erro = if (resp.isSuccessful) null else "Falha no teste de push")
+            }
+        }
+    }
+
+    fun getVersaoApp(): VersaoAppResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/versao"))
+            .get()
+            .build()
+        return try {
+            http.newCall(req).execute().use { resp ->
+                val raw = resp.body?.string().orEmpty()
+                gson.fromJson(raw, VersaoAppResponse::class.java)
+            }
+        } catch (_: Exception) { VersaoAppResponse(versao_minima = 0, versao_atual = 0) }
+    }
+
+    fun historicoAssinaturas(): HistoricoAssinaturasResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/historico-assinaturas"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, HistoricoAssinaturasResponse::class.java)
+            } catch (_: Exception) {
+                HistoricoAssinaturasResponse(ok = false, erro = "Falha ao carregar histórico.")
+            }
+        }
+    }
+
+    fun getPontoDia(data: String = ""): PontoDiaResponse {
+        val q = if (data.isNotBlank()) "?data=${android.net.Uri.encode(data)}" else ""
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ponto/dia$q"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            if (resp.code == 401) {
+                handleUnauthorized()
+                return PontoDiaResponse(ok = false, erro = "Sessão expirada.")
+            }
+            val raw = resp.body?.string().orEmpty()
+            return try { gson.fromJson(raw, PontoDiaResponse::class.java) }
+            catch (_: Exception) { PontoDiaResponse(ok = false, erro = "Falha ao carregar ponto do dia.") }
+        }
+    }
+
+    fun getPontoHistorico(dias: Int = 3): PontoHistoricoResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ponto/historico?dias=$dias"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try { gson.fromJson(raw, PontoHistoricoResponse::class.java) }
+            catch (_: Exception) { PontoHistoricoResponse(ok = false, erro = "Falha ao carregar histórico.") }
+        }
+    }
+
+    fun getPontoEspelhoStatus(): PontoEspelhoStatusResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ponto/espelho/status"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try { gson.fromJson(raw, PontoEspelhoStatusResponse::class.java) }
+            catch (_: Exception) { PontoEspelhoStatusResponse(ok = false, erro = "Falha ao carregar competências.") }
+        }
+    }
+
+    fun getPontoEspelhoDados(competencia: String): PontoEspelhoDadosResponse {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ponto/espelho/dados?competencia=${android.net.Uri.encode(competencia)}"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try { gson.fromJson(raw, PontoEspelhoDadosResponse::class.java) }
+            catch (_: Exception) { PontoEspelhoDadosResponse(ok = false, erro = "Falha ao carregar dados.") }
+        }
+    }
+
+    fun baixarEspelhoPdf(competencia: String): Pair<ByteArray?, String?> {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ponto/espelho/pdf?competencia=${android.net.Uri.encode(competencia)}"))
+            .get()
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.bytes() ?: return Pair(null, "Resposta vazia do servidor.")
+            if (!resp.isSuccessful) {
+                val msg = try { gson.fromJson(String(raw), Map::class.java)["erro"] as? String } catch (_: Exception) { null }
+                return Pair(null, msg ?: "Erro ao baixar PDF (${resp.code}).")
+            }
+            return Pair(raw, null)
+        }
+    }
+
+    fun marcarPonto(tipo: String = "", observacao: String = "", lat: Double? = null, lon: Double? = null, precisao: Float? = null, dataHoraIso: String? = null): PontoDiaResponse {
+        val payload = gson.toJson(buildMap {
+            if (tipo.isNotBlank()) put("tipo", tipo)
+            if (observacao.isNotBlank()) put("observacao", observacao)
+            if (lat != null) put("lat", lat)
+            if (lon != null) put("lon", lon)
+            if (precisao != null) put("precisao", precisao)
+            if (!dataHoraIso.isNullOrBlank()) put("data_hora_cliente", dataHoraIso)
+        })
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ponto/marcar"))
+            .post(payload.toRequestBody("application/json".toMediaType()))
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .addHeader("Content-Type", "application/json")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            if (resp.code == 401) {
+                handleUnauthorized()
+                return PontoDiaResponse(ok = false, erro = "Sessão expirada.")
+            }
+            val raw = resp.body?.string().orEmpty()
+            return try { gson.fromJson(raw, PontoDiaResponse::class.java) }
+            catch (_: Exception) { PontoDiaResponse(ok = false, erro = parseErro(raw, "Falha ao registrar ponto.")) }
         }
     }
 }

@@ -146,7 +146,7 @@ async function pontoCarregarDia(){
   const fid=parseInt(sel.value||'0',10);
   const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
   if(!fid){
-    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:18px;color:#888">Selecione um colaborador ativo.</td></tr>';
+    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text-muted)">Selecione um colaborador ativo.</td></tr>';
     resumoEl.innerHTML='';
     pontoMarcacoesDiaAtual=[];
     if(proxEl) proxEl.textContent='Entrada';
@@ -155,7 +155,7 @@ async function pontoCarregarDia(){
   const r=await api('/api/ponto/dia?funcionario_id='+fid+'&data='+encodeURIComponent(data));
   if(r.erro){
     showSt('ponto-st',r.erro,true);
-    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:18px;color:#888">Não foi possível carregar o ponto do dia.</td></tr>';
+    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text-muted)">Não foi possível carregar o ponto do dia.</td></tr>';
     resumoEl.innerHTML='';
     pontoMarcacoesDiaAtual=[];
     if(proxEl) proxEl.textContent='Entrada';
@@ -167,16 +167,16 @@ async function pontoCarregarDia(){
   if(selTipo && s.proximo_tipo) selTipo.value=s.proximo_tipo;
   const inc=(s.inconsistencias||[]);
   resumoEl.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px">
-    <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:#7b8a97">Horas trabalhadas</div><div style="font-size:19px;font-weight:700">${s.horas_trabalhadas_fmt||'00:00'}</div></div>
-    <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:#7b8a97">Carga esperada</div><div style="font-size:19px;font-weight:700">${s.horas_esperadas_fmt||'08:00'}</div></div>
-    <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:#7b8a97">Saldo</div><div style="font-size:19px;font-weight:700">${s.saldo_fmt||'00:00'}</div></div>
-    <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:#7b8a97">Próxima marcação</div><div style="font-size:19px;font-weight:700">${s.proximo_tipo_label||'Entrada'}</div></div>
+    <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:var(--text-muted)">Horas trabalhadas</div><div style="font-size:19px;font-weight:700">${s.horas_trabalhadas_fmt||'00:00'}</div></div>
+    <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:var(--text-muted)">Carga esperada</div><div style="font-size:19px;font-weight:700">${s.horas_esperadas_fmt||'08:00'}</div></div>
+    <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:var(--text-muted)">Saldo</div><div style="font-size:19px;font-weight:700">${s.saldo_fmt||'00:00'}</div></div>
+    <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:var(--text-muted)">Próxima marcação</div><div style="font-size:19px;font-weight:700">${s.proximo_tipo_label||'Entrada'}</div></div>
   </div>
   ${inc.length?`<div style="margin-top:8px;font-size:12px;color:#8a1c1c;background:#fff3f3;border:1px solid #f2c5c5;border-radius:8px;padding:8px">⚠ ${inc.join(' | ')}</div>`:''}`;
   const marc=s.marcacoes||[];
   pontoMarcacoesDiaAtual=marc;
   if(!marc.length){
-    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:18px;color:#888">Nenhuma marcação neste dia.</td></tr>';
+    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text-muted)">Nenhuma marcação neste dia.</td></tr>';
     return;
   }
   tb.innerHTML=marc.map(m=>`<tr>
@@ -184,7 +184,10 @@ async function pontoCarregarDia(){
     <td style="font-weight:700">${m.hora_fmt||''}</td>
     <td>${m.origem||'web'}</td>
     <td>${m.observacao||'—'}</td>
-    <td><button class="btn b-gh b-sm" onclick="pontoEditarMarcacao(${m.id})">Editar</button></td>
+    <td style="display:flex;gap:4px">
+      <button class="btn b-gh b-sm" onclick="pontoEditarMarcacao(${m.id})">Editar</button>
+      <button class="btn b-vm b-sm" onclick="pontoExcluirMarcacao(${m.id})">Excluir</button>
+    </td>
   </tr>`).join('');
   await pontoCarregarFechamentoDia();
 }
@@ -200,7 +203,7 @@ async function pontoEditarMarcacao(marcacaoId){
   document.getElementById('pe-id').value=String(m.id);
   document.getElementById('pe-func').value=f?.nome||'Colaborador';
   document.getElementById('pe-tipo').value=(m.tipo||'entrada').trim();
-  document.getElementById('pe-datahora').value=(m.data_hora||'').slice(0,16) || pontoAgoraLocalInput();
+  document.getElementById('pe-datahora').value=(m.data_hora||'').replace(' ','T').slice(0,16) || pontoAgoraLocalInput();
   document.getElementById('pe-obs').value=(m.observacao||'').trim();
   document.getElementById('pe-motivo').value='';
   showSt('pe-st','',false);
@@ -248,6 +251,26 @@ async function salvarEdicaoMarcacaoPonto(){
   await pontoCarregarPainelDia();
 }
 
+async function pontoExcluirMarcacao(marcacaoId){
+  const m=(pontoMarcacoesDiaAtual||[]).find(x=>String(x.id)===String(marcacaoId));
+  const label=m?(m.tipo_label||m.tipo)+' às '+(m.hora_fmt||''):'marcação #'+marcacaoId;
+  const motivo=prompt(`Excluir "${label}".\n\nInforme o motivo da exclusão:`,'');
+  if(motivo===null) return; // cancelou
+  if(!motivo.trim()){
+    showSt('ponto-st','Informe o motivo para excluir a marcação.',true);
+    return;
+  }
+  if(!confirm(`Confirma a EXCLUSÃO permanente de "${label}"?\nMotivo: ${motivo}`)) return;
+  const r=await api('/api/ponto/marcacao/'+marcacaoId,'DELETE',{motivo:motivo.trim()});
+  if(r.erro){
+    showSt('ponto-st',r.erro,true);
+    return;
+  }
+  showSt('ponto-st','Marcação excluída com sucesso.',false);
+  await pontoCarregarDia();
+  await pontoCarregarPainelDia();
+}
+
 async function pontoCarregarPainelDia(){
   const tb=document.getElementById('tb-ponto-painel');
   if(!tb)return;
@@ -255,7 +278,7 @@ async function pontoCarregarPainelDia(){
   const r=await api('/api/ponto/resumo-dia?data='+encodeURIComponent(data));
   if(r.erro){
     showSt('ponto-painel-st',r.erro,true);
-    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:18px;color:#888">Erro ao carregar painel do dia.</td></tr>';
+    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:18px;color:var(--text-muted)">Erro ao carregar painel do dia.</td></tr>';
     pontoResumoPainelByFunc={};
     pontoRenderGestaoFuncionarios();
     return;
@@ -266,7 +289,7 @@ async function pontoCarregarPainelDia(){
   itens.forEach(it=>{ pontoResumoPainelByFunc[String(it.funcionario_id)]=it; });
   pontoRenderGestaoFuncionarios();
   if(!itens.length){
-    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:18px;color:#888">Nenhum colaborador ativo encontrado.</td></tr>';
+    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:18px;color:var(--text-muted)">Nenhum colaborador ativo encontrado.</td></tr>';
     return;
   }
   tb.innerHTML=itens.map(it=>`<tr class="row-clickable" onclick="pontoSelecionarFuncionario(${it.funcionario_id},true)">
@@ -358,4 +381,345 @@ function pontoBaixarEspelhoMensal(){
   }
   const url='/api/ponto/espelho-mensal?funcionario_id='+fid+'&competencia='+encodeURIComponent(comp);
   window.open(url, '_blank');
+}
+// ─── EDITAR DIA COMPLETO ───────────────────────────────────────────────────
+let _pedCtx=null;
+async function pontoAbrirEditDia(){
+  const marcacoes=pontoMarcacoesDiaAtual||[];
+  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
+  const f=(pontoFuncs||[]).find(x=>String(x.id)===String(fid));
+  const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
+  if(!fid){showSt('ponto-st','Selecione um colaborador ativo.',true);return;}
+  _pedCtx={fid,data,marcacoes,isGf:false};
+
+  const tiposOpts=`<option value="entrada">Entrada</option><option value="saida_intervalo">Saída intervalo</option><option value="retorno_intervalo">Retorno intervalo</option><option value="saida">Saída</option>`;
+
+  document.getElementById('ped-info').textContent=`Editando marcações de ${f?.nome||'Colaborador'} em ${data}`;
+
+  function buildRow(id,tipo,dh,obs,isNova){
+    return `<div class="card" style="margin:0 0 8px;padding:10px;position:relative" data-marc-id="${id}" data-nova="${isNova?'1':''}">
+      <div class="g3" style="align-items:flex-end;gap:8px">
+        <div class="f" style="margin:0"><label style="font-size:11px">Tipo</label>
+          <select class="ped-tipo" data-id="${id}">${tiposOpts.replace(`value="${tipo}"`,`value="${tipo}" selected`)}</select>
+        </div>
+        <div class="f" style="margin:0"><label style="font-size:11px">Data/hora</label>
+          <input class="ped-dh" data-id="${id}" type="datetime-local" value="${dh}">
+        </div>
+        <div class="f" style="margin:0"><label style="font-size:11px">Observação</label>
+          <input class="ped-obs" data-id="${id}" placeholder="Opcional" value="${obs}">
+        </div>
+        <button type="button" class="btn b-vm b-sm" style="flex-shrink:0;margin-bottom:1px" onclick="pedRemoverRow(this)" title="Excluir esta marcação">🗑</button>
+      </div>
+    </div>`;
+  }
+
+  document.getElementById('ped-marcacoes-wrap').innerHTML=
+    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),(m.data_hora||'').replace(' ','T').slice(0,16),m.observacao||'',false)).join('')+
+    `<button type="button" class="btn b-vd b-sm" style="width:100%;margin-top:4px" onclick="pedAdicionarLinha()">＋ Adicionar marcação</button>`;
+
+  document.getElementById('ped-motivo').value='';
+  showSt('ped-st','',false);
+  setModalClean('ponto-edit-dia');
+  document.getElementById('mod-ponto-edit-dia').classList.add('on');
+  setTimeout(()=>document.getElementById('ped-motivo').focus(),120);
+}
+
+let _pedNovaSeq=0;
+function pedAdicionarLinha(){
+  const wrap=document.getElementById('ped-marcacoes-wrap');
+  const addBtn=wrap.querySelector('button[onclick="pedAdicionarLinha()"]');
+  const fid=(_pedCtx?.fid)||parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
+  const data=(_pedCtx?.data)||document.getElementById('ponto-data')?.value||pontoDataHojeISO();
+  const seq='new_'+(++_pedNovaSeq);
+  const div=document.createElement('div');
+  div.innerHTML=`<div class="card" style="margin:0 0 8px;padding:10px;position:relative" data-marc-id="${seq}" data-nova="1">
+    <div class="g3" style="align-items:flex-end;gap:8px">
+      <div class="f" style="margin:0"><label style="font-size:11px">Tipo</label>
+        <select class="ped-tipo" data-id="${seq}">
+          <option value="entrada">Entrada</option>
+          <option value="saida_intervalo">Saída intervalo</option>
+          <option value="retorno_intervalo">Retorno intervalo</option>
+          <option value="saida">Saída</option>
+        </select>
+      </div>
+      <div class="f" style="margin:0"><label style="font-size:11px">${_pedCtx?.isGf?'Hora':'Data/hora'}</label>
+        <input class="ped-dh" data-id="${seq}" type="${_pedCtx?.isGf?'time':'datetime-local'}" value="${_pedCtx?.isGf?'00:00':data+'T00:00'}">
+      </div>
+      <div class="f" style="margin:0"><label style="font-size:11px">Observação</label>
+        <input class="ped-obs" data-id="${seq}" placeholder="Opcional" value="">
+      </div>
+      <input type="hidden" class="ped-fid" value="${fid}">
+      <button type="button" class="btn b-vm b-sm" style="flex-shrink:0;margin-bottom:1px" onclick="pedRemoverRow(this)" title="Remover">🗑</button>
+    </div>
+  </div>`;
+  wrap.insertBefore(div.firstElementChild, addBtn);
+}
+
+function pedRemoverRow(btn){
+  const card=btn.closest('[data-marc-id]');
+  if(card) card.remove();
+}
+
+async function salvarEdicaoDiaCompleto(){
+  const motivo=(document.getElementById('ped-motivo')?.value||'').trim();
+  if(!motivo){showSt('ped-st','Informe o motivo das edições.',true);return;}
+
+  const fid=(_pedCtx?.fid)||parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
+  const data=(_pedCtx?.data)||document.getElementById('ponto-data')?.value||pontoDataHojeISO();
+  const wrap=document.getElementById('ped-marcacoes-wrap');
+
+  // Coletar o que está no DOM agora
+  const idsPresentes=new Set(
+    Array.from(wrap.querySelectorAll('[data-marc-id]:not([data-nova="1"])')).map(c=>c.dataset.marcId)
+  );
+  // Marcações que estavam no início e foram removidas do DOM = excluir
+  const idsOriginais=(_pedCtx?.marcacoes||pontoMarcacoesDiaAtual||[]).map(m=>String(m.id));
+  const idsExcluir=idsOriginais.filter(id=>!idsPresentes.has(id));
+
+  // Marcações existentes que continuam = editar
+  const itensEditar=[];
+  wrap.querySelectorAll('[data-marc-id]:not([data-nova="1"])').forEach(card=>{
+    const id=card.dataset.marcId;
+    const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
+    const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
+    const dh=/^\d{2}:\d{2}$/.test(dhRaw)?data+'T'+dhRaw:dhRaw;
+    const obs=(card.querySelector('.ped-obs')?.value||'').trim();
+    if(id && tipo && dh) itensEditar.push({id,tipo,data_hora:dh,observacao:obs});
+  });
+
+  // Linhas novas = criar
+  const itensNovos=[];
+  wrap.querySelectorAll('[data-marc-id][data-nova="1"]').forEach(card=>{
+    const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
+    const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
+    const dh=/^\d{2}:\d{2}$/.test(dhRaw)?data+'T'+dhRaw:dhRaw;
+    const obs=(card.querySelector('.ped-obs')?.value||'').trim();
+    if(tipo && dh) itensNovos.push({tipo,data_hora:dh,observacao:obs,funcionario_id:fid,origem:'admin'});
+  });
+
+  const totalOps=idsExcluir.length+itensEditar.length+itensNovos.length;
+  if(!totalOps){showSt('ped-st','Nenhuma alteração detectada.',true);return;}
+  const resumo=[
+    itensEditar.length?`${itensEditar.length} edição(ões)`:'',
+    idsExcluir.length?`${idsExcluir.length} exclusão(ões)`:'',
+    itensNovos.length?`${itensNovos.length} nova(s) marcação(ões)`:'',
+  ].filter(Boolean).join(', ');
+  if(!confirm(`Confirma: ${resumo}?`)) return;
+
+  showSt('ped-st','Salvando…',false);
+  let erros=[];
+
+  for(const id of idsExcluir){
+    const r=await api('/api/ponto/marcacao/'+id,'DELETE',{motivo});
+    if(r.erro) erros.push(`Excluir #${id}: ${r.erro}`);
+  }
+  for(const it of itensEditar){
+    const r=await api('/api/ponto/marcacao/'+it.id,'PUT',{tipo:it.tipo,data_hora:it.data_hora,observacao:it.observacao,motivo});
+    if(r.erro) erros.push(`Editar #${it.id}: ${r.erro}`);
+  }
+  for(const it of itensNovos){
+    const r=await api('/api/ponto/marcacao','POST',{...it,motivo});
+    if(r.erro) erros.push(`Nova marcação: ${r.erro}`);
+  }
+
+  if(erros.length){showSt('ped-st','Erros: '+erros.join(' | '),true);return;}
+  closeModal('ponto-edit-dia',true);
+  if(_pedCtx?.isGf){
+    showSt('gf-st',`${resumo} salva(s) com sucesso.`,false);
+    await gfCarregarMes();
+  } else {
+    showSt('ponto-st',`${resumo} salva(s) com sucesso.`,false);
+    await pontoCarregarDia();
+    await pontoCarregarPainelDia();
+  }
+}
+
+// ─── GESTÃO FÁCIL ─────────────────────────────────────────────────────────
+let gfFuncId = 0;let gfUltimoResumo = null;
+async function gfCarregar(){
+  await pontoSyncFuncionarios(false);
+  gfRenderFuncs();
+  // Pré-preencher competência com mês atual se vazio
+  const inp=document.getElementById('gf-competencia');
+  if(inp && !inp.value) inp.value=pontoCompetenciaAtual();
+}
+
+function gfRenderFuncs(){
+  const box=document.getElementById('gf-func-list');
+  const qtd=document.getElementById('gf-func-qtd');
+  if(!box||!qtd) return;
+  const termo=(document.getElementById('gf-busca')?.value||'').toLowerCase();
+  const ativos=(pontoFuncs||[])
+    .filter(f=>String((f.status||'').toLowerCase())==='ativo')
+    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
+  const filtrados=!termo?ativos:ativos.filter(f=>{
+    const nm=(f.nome||'').toLowerCase();
+    const mat=String(f.matricula||'').toLowerCase();
+    const cargo=(f.cargo||f.funcao||'').toLowerCase();
+    return nm.includes(termo)||mat.includes(termo)||cargo.includes(termo);
+  });
+  qtd.textContent=String(filtrados.length);
+  box.innerHTML=filtrados.map(f=>`
+    <button class="ponto-item${String(f.id)===String(gfFuncId)?' on':''}" onclick="gfSelecionarFunc(${f.id})">
+      <div class="ponto-item-main">
+        <span style="font-size:13px;font-weight:700">${f.nome||'—'}</span>
+        <span class="ponto-item-meta">${f.matricula||''} · ${f.cargo||f.funcao||'—'}</span>
+      </div>
+    </button>`).join('');
+}
+
+async function gfSelecionarFunc(id){
+  gfFuncId=id;
+  const f=(pontoFuncs||[]).find(x=>String(x.id)===String(id));
+  document.getElementById('gf-func-nome').textContent=f?.nome||'Colaborador';
+  document.getElementById('gf-func-meta').textContent=(f?.cargo||f?.funcao||'')+' · Matrícula: '+(f?.matricula||'—');
+  gfRenderFuncs();
+  await gfCarregarMes();
+}
+
+async function gfCarregarMes(){
+  if(!gfFuncId){showSt('gf-st','Selecione um colaborador.',true);return;}
+  const comp=(document.getElementById('gf-competencia')?.value||'').trim();
+  if(!/^\d{4}-\d{2}$/.test(comp)){showSt('gf-st','Competência inválida. Use YYYY-MM.',true);return;}
+  showSt('gf-st','Carregando calendário…',false);
+  const r=await api('/api/ponto/gestao-facil/calendario?funcionario_id='+gfFuncId+'&competencia='+encodeURIComponent(comp));
+  if(r.erro){showSt('gf-st',r.erro,true);return;}
+  showSt('gf-st','',false);
+  gfUltimoResumo=r.resumo;
+  gfRenderCalendario(r.resumo,comp);
+  gfRenderFolha(r.resumo);
+}
+
+function gfRenderCalendario(resumo,comp){
+  const wrap=document.getElementById('gf-calendario');
+  if(!wrap) return;
+  const [ano,mes]=comp.split('-').map(Number);
+  const hoje=new Date();
+  const primeiroDia=new Date(ano,mes-1,1).getDay();// 0=dom
+  const diasNoMes=new Date(ano,mes,0).getDate();
+  const diasSemana=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+  // Construir mapa data→resumo
+  const mapaStatus={};
+  (resumo.dias||[]).forEach(d=>{mapaStatus[d.data_ref]=d;});
+
+  let html=diasSemana.map(d=>`<div class="gf-dia-header">${d}</div>`).join('');
+  // Células vazias no início
+  for(let i=0;i<primeiroDia;i++) html+=`<div class="gf-dia vazio"></div>`;
+
+  for(let d=1;d<=diasNoMes;d++){
+    const dataStr=`${comp}-${String(d).padStart(2,'0')}`;
+    const dayData=mapaStatus[dataStr];
+    const isHoje=hoje.getFullYear()===ano&&hoje.getMonth()+1===mes&&hoje.getDate()===d;
+    const isFuturo=new Date(ano,mes-1,d)>hoje;
+    let cls='gf-dia';
+    if(isFuturo) cls+=' futuro';
+    else if(dayData){
+      const wday=new Date(ano,mes-1,d).getDay();
+      const isWeekend=wday===0||wday===6;
+      if(isWeekend&&!dayData.marcacoes_count) cls+=' folga';
+      else if(dayData.status==='ok'&&dayData.marcacoes_count>0) cls+=' ok';
+      else if(dayData.marcacoes_count>0) cls+=' pendente';
+      else if(!isWeekend) cls+=' falta';
+      else cls+=' folga';
+    }
+    if(isHoje) cls+=' hoje';
+    const saldo=dayData?.saldo_fmt||'';
+    const horas=dayData?.horas_trabalhadas_fmt||'';
+    const marc=dayData?.marcacoes||[];
+    const getT=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);if(!m)return null;const s=String(m.data_hora||'');const mt=s.match(/(\d{2}:\d{2})(?::\d{2})?/);return mt?mt[1]:null;};
+    const timesHtml=[['entrada','gf-t-e','E'],['saida_intervalo','gf-t-si','SI'],['retorno_intervalo','gf-t-ri','RI'],['saida','gf-t-s','S']]
+      .map(([tipo,cls,lb])=>{const t=getT(tipo);return t?`<span class="gf-t ${cls}">${lb} ${t}</span>`:'';})
+      .filter(Boolean).join('');
+    html+=`<div class="${cls}" onclick="gfDiaClick('${dataStr}')">
+      <span class="gf-dn">${d}</span>
+      <div class="gf-times">${timesHtml||`<span class="gf-t">${horas||'—'}</span>`}</div>
+    </div>`;
+  }
+  wrap.innerHTML=html;
+}
+
+function gfRenderFolha(resumo){
+  const wrap=document.getElementById('gf-folha-wrap');
+  const tb=document.getElementById('gf-tb-folha');
+  const totDiv=document.getElementById('gf-totais');
+  if(!wrap||!tb) return;
+
+  const tipos_map={entrada:'E',saida_intervalo:'SI',retorno_intervalo:'RI',saida:'S'};
+
+  const linhas=(resumo.dias||[]).map(dia=>{
+    const marc=dia.marcacoes||[];
+    const get=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);return m?(m.data_hora||'').slice(11,16):'—';};
+    const saldoClass=dia.saldo_fmt?.startsWith('+')?'color:var(--verde)':(dia.saldo_fmt?.startsWith('-')?'color:var(--verm)':'');
+    const statusHtml=dia.status==='ok'?'<span class="pill p-vd" style="font-size:10px">OK</span>':'<span class="pill p-vm" style="font-size:10px">⚠</span>';
+    return `<tr>
+      <td style="font-size:12px">${dia.data_ref}</td>
+      <td>${get('entrada')}</td>
+      <td>${get('saida_intervalo')}</td>
+      <td>${get('retorno_intervalo')}</td>
+      <td>${get('saida')}</td>
+      <td>${dia.horas_trabalhadas_fmt||'00:00'}</td>
+      <td style="${saldoClass}">${dia.saldo_fmt||'00:00'}</td>
+      <td>${statusHtml}</td>
+    </tr>`;
+  }).join('');
+  tb.innerHTML=linhas||'<tr><td colspan="8" style="text-align:center;padding:18px;color:var(--text-muted)">Nenhum dado para esta competência.</td></tr>';
+  wrap.style.display='block';
+
+  const tot=resumo.totais||{};
+  totDiv.innerHTML=`
+    <div class="ponto-kpi"><div class="l">Total trabalhado</div><div class="v">${tot.horas_trabalhadas_fmt||'00:00'}</div></div>
+    <div class="ponto-kpi"><div class="l">Carga esperada</div><div class="v">${tot.horas_esperadas_fmt||'00:00'}</div></div>
+    <div class="ponto-kpi"><div class="l">Saldo total</div><div class="v" style="${(tot.saldo_fmt||'').startsWith('+')?'color:var(--verde)':(tot.saldo_fmt||'').startsWith('-')?'color:var(--verm)':''}">${tot.saldo_fmt||'00:00'}</div></div>
+    <div class="ponto-kpi"><div class="l">Dias inconsistentes</div><div class="v" style="${tot.inconsistencias>0?'color:var(--verm)':''}">${tot.inconsistencias||0}</div></div>
+  `;
+}
+
+function gfDiaClick(dataRef){
+  gfAbrirEditDia(dataRef);
+}
+
+function gfAbrirEditDia(dataRef){
+  if(!gfFuncId||!gfUltimoResumo){showSt('gf-st','Selecione um colaborador.',true);return;}
+  const diaData=(gfUltimoResumo.dias||[]).find(d=>d.data_ref===dataRef);
+  const marcacoes=diaData?.marcacoes||[];
+  const f=(pontoFuncs||[]).find(x=>String(x.id)===String(gfFuncId));
+  _pedCtx={fid:gfFuncId,data:dataRef,marcacoes,isGf:true};
+
+  const tiposOpts=`<option value="entrada">Entrada</option><option value="saida_intervalo">Saída intervalo</option><option value="retorno_intervalo">Retorno intervalo</option><option value="saida">Saída</option>`;
+  document.getElementById('ped-info').textContent=`Editando marcações de ${f?.nome||'Colaborador'} em ${dataRef}`;
+
+  function toDtLocal(dh){
+    const s=String(dh||'');
+    const m=s.match(/(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+    if(m) return m[1]+'T'+m[2];
+    return '';
+  }
+
+  function buildRow(id,tipo,dh,obs,isNova){
+    return `<div class="card" style="margin:0 0 8px;padding:10px;position:relative" data-marc-id="${id}" data-nova="${isNova?'1':''}">
+      <div class="g3" style="align-items:flex-end;gap:8px">
+        <div class="f" style="margin:0"><label style="font-size:11px">Tipo</label>
+          <select class="ped-tipo" data-id="${id}">${tiposOpts.replace(`value="${tipo}"`,`value="${tipo}" selected`)}</select>
+        </div>
+        <div class="f" style="margin:0"><label style="font-size:11px">Hora</label>
+          <input class="ped-dh" data-id="${id}" type="time" value="${dh}">
+        </div>
+        <div class="f" style="margin:0"><label style="font-size:11px">Observação</label>
+          <input class="ped-obs" data-id="${id}" placeholder="Opcional" value="${obs}">
+        </div>
+        <button type="button" class="btn b-vm b-sm" style="flex-shrink:0;margin-bottom:1px" onclick="pedRemoverRow(this)" title="Excluir esta marcação">🗑</button>
+      </div>
+    </div>`;
+  }
+
+  document.getElementById('ped-marcacoes-wrap').innerHTML=
+    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),toDtLocal(m.data_hora).slice(11),m.observacao||'',false)).join('')+
+    `<button type="button" class="btn b-vd b-sm" style="width:100%;margin-top:4px" onclick="pedAdicionarLinha()">＋ Adicionar marcação</button>`;
+
+  document.getElementById('ped-motivo').value='';
+  showSt('ped-st','',false);
+  setModalClean('ponto-edit-dia');
+  document.getElementById('mod-ponto-edit-dia').classList.add('on');
+  setTimeout(()=>document.getElementById('ped-motivo').focus(),120);
 }

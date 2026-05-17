@@ -3,7 +3,7 @@
   <div class="ponto-gestao-wrap">
     <aside class="ponto-side">
       <div class="ponto-side-head">
-        <div style="font-size:11px;color:#6f8091">Colaboradores ativos</div>
+        <div style="font-size:11px;color:var(--text-muted)">Colaboradores ativos</div>
         <span id="ponto-func-qtd" class="pill p-vd">0</span>
       </div>
       <div class="f" style="margin-top:8px">
@@ -82,10 +82,14 @@
         <div class="f" style="display:flex;align-items:flex-end">
           <button class="btn b-az" onclick="pontoBaixarEspelhoMensal()">Baixar espelho mensal (PDF)</button>
         </div>
-        <div class="f"><div style="font-size:11px;color:#6e7f8f">O PDF inclui totais da competência e bloco de assinatura do colaborador e gestor.</div></div>
+        <div class="f"><div style="font-size:11px;color:var(--text-muted)">O PDF inclui totais da competência e bloco de assinatura do colaborador e gestor.</div></div>
       </div>
 
       <div class="tbl-wrap" style="margin-top:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:12px;color:var(--text-muted)">Marcações do dia selecionado</span>
+          <button class="btn b-ghv b-sm" onclick="pontoAbrirEditDia()">✏ Editar dia completo</button>
+        </div>
         <table class="tbl">
           <thead><tr><th>Tipo</th><th>Horário</th><th>Origem</th><th>Observação</th><th>Ações</th></tr></thead>
           <tbody id="tb-ponto-dia"></tbody>

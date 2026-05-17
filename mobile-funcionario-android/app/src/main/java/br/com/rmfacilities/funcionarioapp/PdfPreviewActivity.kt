@@ -1,0 +1,333 @@
+package br.com.rmfacilities.funcionarioapp
+
+import android.content.ContentValues
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.pdf.PdfRenderer
+import android.os.Build
+import android.os.Bundle
+import android.os.Environment
+import android.os.ParcelFileDescriptor
+import android.provider.MediaStore
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
+import android.widget.ImageView
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.button.MaterialButton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import androidx.lifecycle.lifecycleScope
+
+class PdfPreviewActivity : AppCompatActivity() {
+
+    companion object {
+        const val EXTRA_FILE_PATH = "pdf_file_path"
+        const val EXTRA_FILE_PATHS = "pdf_file_paths"
+        const val EXTRA_TITLE = "pdf_title"
+        const val EXTRA_TITLES = "pdf_titles"
+    }
+
+    private lateinit var rvPages: RecyclerView
+    private lateinit var tvLoading: TextView
+    private var pdfRenderer: PdfRenderer? = null
+    private var currentPdfFile: File? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Bloqueia captura e gravação de tela nesta tela sensível.
+        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        setContentView(R.layout.activity_pdf_preview)
+
+        rvPages = findViewById(R.id.rvPages)
+        tvLoading = findViewById(R.id.tvLoading)
+
+        val title = intent.getStringExtra(EXTRA_TITLE) ?: "PDF"
+        supportActionBar?.title = title
+
+        findViewById<MaterialButton>(R.id.btnFechar).setOnClickListener { finish() }
+        findViewById<TextView>(R.id.tvTitle).text = title
+
+        val filePaths = intent.getStringArrayListExtra(EXTRA_FILE_PATHS)
+        val titleList = intent.getStringArrayListExtra(EXTRA_TITLES)
+        val filesToOpen = mutableListOf<Pair<File, String>>()
+        if (!filePaths.isNullOrEmpty()) {
+            filePaths.forEachIndexed { index, p ->
+                val f = File(p)
+                if (f.exists()) {
+                    filesToOpen.add(f to (titleList?.getOrNull(index) ?: f.name))
+                }
+            }
+        } else {
+            val filePath = intent.getStringExtra(EXTRA_FILE_PATH)
+            if (filePath != null) {
+                val f = File(filePath)
+                if (f.exists()) {
+                    filesToOpen.add(f to (intent.getStringExtra(EXTRA_TITLE) ?: f.name))
+                }
+            }
+        }
+        if (filesToOpen.isEmpty()) {
+            Toast.makeText(this, "Arquivo não encontrado", Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        }
+        currentPdfFile = filesToOpen.first().first
+
+        findViewById<MaterialButton>(R.id.btnBaixarPdf).setOnClickListener {
+            val f = currentPdfFile
+            if (f == null || !f.exists()) {
+                Toast.makeText(this, "Arquivo não encontrado", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            salvarNoDownloads(f, title)
+        }
+
+        renderPdfs(filesToOpen)
+    }
+
+    private fun renderPdfs(files: List<Pair<File, String>>) {
+        tvLoading.visibility = View.VISIBLE
+        tvLoading.text = "Preparando prévia..."
+        rvPages.visibility = View.GONE
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val displayWidth = resources.displayMetrics.widthPixels
+                val widths = listOf(minOf(displayWidth, 960), minOf(displayWidth, 720), minOf(displayWidth, 560))
+                var rendered = false
+                var lastError: Throwable? = null
+
+                for ((attempt, width) in widths.withIndex()) {
+                    try {
+                        val adapter = renderAtWidth(files, width)
+                        withContext(Dispatchers.Main) {
+                            rvPages.layoutManager = LinearLayoutManager(this@PdfPreviewActivity)
+                            rvPages.setHasFixedSize(false)
+                            rvPages.adapter = adapter
+                            tvLoading.visibility = View.GONE
+                            rvPages.visibility = View.VISIBLE
+                            (rvPages.itemAnimator as? androidx.recyclerview.widget.SimpleItemAnimator)?.supportsChangeAnimations = false
+                            if (attempt > 0) {
+                                Toast.makeText(this@PdfPreviewActivity, "Prévia otimizada para seu aparelho.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        rendered = true
+                        break
+                    } catch (oom: OutOfMemoryError) {
+                        lastError = oom
+                        TelemetryLogger.logHandled(this@PdfPreviewActivity, "pdf_preview_oom_attempt_${attempt + 1}", Exception("OOM em renderização"))
+                    } catch (e: Exception) {
+                        lastError = e
+                        TelemetryLogger.logHandled(this@PdfPreviewActivity, "pdf_preview_render_attempt_${attempt + 1}", e)
+                    }
+                }
+
+                if (!rendered) throw (lastError ?: IllegalStateException("Falha ao renderizar PDF"))
+            } catch (oom: OutOfMemoryError) {
+                withContext(Dispatchers.Main) {
+                    tvLoading.visibility = View.VISIBLE
+                    rvPages.visibility = View.GONE
+                    tvLoading.text = "Prévia muito grande para este aparelho. Tente abrir um documento por vez."
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    TelemetryLogger.logHandled(this@PdfPreviewActivity, "pdf_preview_fatal", e)
+                    val msg = e.message.orEmpty()
+                    val isPixelFormatError = msg.contains("pixel format", ignoreCase = true) ||
+                        msg.contains("unsupported", ignoreCase = true)
+                    if (isPixelFormatError) {
+                        val f = currentPdfFile
+                        if (f != null && f.exists() && openPdfExternally(f)) {
+                            Toast.makeText(
+                                this@PdfPreviewActivity,
+                                "Prévia interna indisponível neste aparelho. Abrindo no leitor externo.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            finish()
+                        } else {
+                            tvLoading.text = "Erro ao carregar PDF: ${e.message}"
+                        }
+                    } else {
+                        tvLoading.text = "Erro ao carregar PDF: ${e.message}"
+                    }
+                }
+            }
+        }
+    }
+
+    private fun openPdfExternally(file: File): Boolean {
+        return try {
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/pdf")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
+            }
+            startActivity(Intent.createChooser(intent, "Abrir PDF com"))
+            true
+        } catch (e: Exception) {
+            TelemetryLogger.logHandled(this, "pdf_open_external_failed", e)
+            false
+        }
+    }
+
+    private suspend fun renderAtWidth(files: List<Pair<File, String>>, targetWidth: Int): PdfPageAdapter {
+        val adapter = PdfPageAdapter()
+        var totalPages = 0
+        files.forEach { (file, _) ->
+            val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+            val renderer = PdfRenderer(fd)
+            totalPages += renderer.pageCount
+            renderer.close()
+            fd.close()
+        }
+
+        var renderedPages = 0
+        files.forEach { (file, title) ->
+            withContext(Dispatchers.Main) {
+                adapter.append(PreviewItem.Header(title))
+            }
+            val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+            val renderer = PdfRenderer(fd)
+            for (i in 0 until renderer.pageCount) {
+                withContext(Dispatchers.Main) {
+                    tvLoading.text = "Renderizando ${renderedPages + 1}/$totalPages..."
+                }
+                val page = renderer.openPage(i)
+                val scale = targetWidth.toFloat() / page.width
+                val bmpHeight = (page.height * scale).toInt()
+                val bmp = Bitmap.createBitmap(targetWidth, bmpHeight, Bitmap.Config.ARGB_8888)
+                bmp.eraseColor(android.graphics.Color.WHITE)
+                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                page.close()
+                renderedPages += 1
+                withContext(Dispatchers.Main) {
+                    adapter.append(PreviewItem.Page(bmp))
+                }
+            }
+            renderer.close()
+            fd.close()
+        }
+        pdfRenderer = null
+        return adapter
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        pdfRenderer?.close()
+    }
+
+    private fun salvarNoDownloads(file: File, title: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val rawName = title.ifBlank { file.name }
+                val finalName = if (rawName.lowercase().endsWith(".pdf")) rawName else "$rawName.pdf"
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, finalName)
+                    put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                        put(MediaStore.Downloads.IS_PENDING, 1)
+                    }
+                }
+
+                val resolver = contentResolver
+                val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                val uri = resolver.insert(collection, values)
+                    ?: throw IllegalStateException("Não foi possível criar o arquivo no Downloads")
+
+                resolver.openOutputStream(uri).use { out ->
+                    if (out == null) throw IllegalStateException("Falha ao abrir destino no Downloads")
+                    file.inputStream().use { input -> input.copyTo(out) }
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val done = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
+                    resolver.update(uri, done, null, null)
+                }
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@PdfPreviewActivity, "Arquivo salvo em Downloads", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@PdfPreviewActivity, "Erro ao salvar: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+}
+
+sealed class PreviewItem {
+    data class Header(val title: String) : PreviewItem()
+    data class Page(val bitmap: Bitmap) : PreviewItem()
+}
+
+class PdfPageAdapter(
+    private val items: MutableList<PreviewItem> = mutableListOf()
+) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+    companion object {
+        private const val VT_HEADER = 1
+        private const val VT_PAGE = 2
+    }
+
+    inner class PH(v: View) : RecyclerView.ViewHolder(v) {
+        val ivPage: ImageView = v.findViewById(R.id.ivPage)
+    }
+
+    inner class HH(v: View) : RecyclerView.ViewHolder(v) {
+        val tv: TextView = v.findViewById(android.R.id.text1)
+    }
+
+    override fun getItemViewType(position: Int): Int {
+        return when (items[position]) {
+            is PreviewItem.Header -> VT_HEADER
+            is PreviewItem.Page -> VT_PAGE
+        }
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+        return if (viewType == VT_HEADER) {
+            val v = LayoutInflater.from(parent.context).inflate(android.R.layout.simple_list_item_1, parent, false)
+            HH(v)
+        } else {
+            val v = LayoutInflater.from(parent.context).inflate(R.layout.item_pdf_page, parent, false)
+            PH(v)
+        }
+    }
+
+    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+        when (val item = items[position]) {
+            is PreviewItem.Header -> {
+                val h = holder as? HH ?: return
+                h.tv.text = "Documento: ${item.title}"
+                h.tv.setTextColor(androidx.core.content.ContextCompat.getColor(h.tv.context, R.color.pdf_page_num_text))
+                h.tv.setBackgroundColor(androidx.core.content.ContextCompat.getColor(h.tv.context, R.color.pdf_page_num_bg))
+                h.tv.setPadding(20, 18, 20, 14)
+                h.tv.textSize = 14f
+            }
+            is PreviewItem.Page -> {
+                val p = holder as? PH ?: return
+                p.ivPage.setImageBitmap(item.bitmap)
+            }
+        }
+    }
+
+    override fun getItemCount() = items.size
+
+    fun append(item: PreviewItem) {
+        val pos = items.size
+        items.add(item)
+        notifyItemInserted(pos)
+    }
+}

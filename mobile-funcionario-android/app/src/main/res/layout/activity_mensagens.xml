@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/primary">
+    android:background="@drawable/bg_mobile_gradient">
 
     <!-- Header -->
     <LinearLayout
@@ -11,8 +12,8 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingTop="48dp"
-        android:paddingBottom="20dp"
+        android:paddingTop="52dp"
+        android:paddingBottom="12dp"
         android:paddingStart="16dp"
         android:paddingEnd="16dp">
 
@@ -22,7 +23,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="← Voltar"
-            android:textColor="@color/white"
+            android:textColor="@color/mobile_text_primary"
             android:textSize="14sp" />
 
         <TextView
@@ -30,7 +31,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="Mensagens"
-            android:textColor="@color/white"
+            android:textColor="@color/mobile_text_primary"
             android:textSize="18sp"
             android:textStyle="bold"
             android:gravity="center" />
@@ -48,54 +49,189 @@
             android:visibility="gone" />
     </LinearLayout>
 
-    <!-- Lista de mensagens -->
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/rvMensagens"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:background="@color/background"
-        android:clipToPadding="false"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp"
-        android:scrollbars="none" />
-
-    <!-- Caixa de envio -->
+    <!-- Abas: Chat | Avisos -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:background="@color/surface"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:paddingTop="10dp"
-        android:paddingBottom="10dp">
-
-        <EditText
-            android:id="@+id/etMensagem"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:background="@drawable/bg_input"
-            android:hint="Digite sua mensagem..."
-            android:textColorHint="@color/text_hint"
-            android:textColor="@color/text_primary"
-            android:textSize="14sp"
-            android:padding="12dp"
-            android:maxLines="4"
-            android:inputType="textMultiLine|textCapSentences"
-            android:imeOptions="actionNone" />
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="8dp">
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnEnviar"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:text="Enviar"
+            android:id="@+id/btnTabChat"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="4dp"
+            android:text="💬 Chat"
             android:textSize="13sp"
-            app:backgroundTint="@color/accent"
-            android:textColor="#1A1A1A"
-            xmlns:app="http://schemas.android.com/apk/res-auto" />
+            app:cornerRadius="18dp"
+            app:backgroundTint="@color/mobile_tab_active"
+            android:textColor="@color/white" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnTabAvisos"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:text="📢 Avisos"
+            android:textSize="13sp"
+            app:cornerRadius="18dp"
+            app:backgroundTint="@color/mobile_surface_soft"
+            android:textColor="@color/mobile_text_primary" />
     </LinearLayout>
+
+    <!-- Status última resposta RH -->
+    <TextView
+        android:id="@+id/tvStatusRh"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="4dp"
+        android:textColor="@color/mobile_text_secondary"
+        android:textSize="11sp"
+        android:gravity="center"
+        android:visibility="gone" />
+
+    <!-- Painel Chat -->
+    <LinearLayout
+        android:id="@+id/panelChat"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <!-- SwipeRefreshLayout permite puxar para recarregar o chat -->
+        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+            android:id="@+id/swipeChat"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <!-- Lista de mensagens -->
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rvMensagens"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@android:color/transparent"
+                android:clipToPadding="false"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:scrollbars="none" />
+
+        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+        <!-- Barra de progresso: visível durante envio de mensagem -->
+        <ProgressBar
+            android:id="@+id/progressEnvio"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="2dp"
+            android:indeterminate="true"
+            android:visibility="gone"
+            android:progressTint="@color/mobile_tab_active" />
+
+        <!-- Caixa de envio -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_home_card_soft">
+
+            <!-- Contador de caracteres -->
+            <TextView
+                android:id="@+id/tvCharCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:paddingEnd="14dp"
+                android:paddingTop="4dp"
+                android:text="0/1000"
+                android:textSize="10sp"
+                android:textColor="@color/mobile_text_secondary"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="8dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="10dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnAnexar"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:padding="0dp"
+                    android:text="📎"
+                    android:textSize="20sp"
+                    app:backgroundTint="@android:color/transparent" />
+
+                <EditText
+                    android:id="@+id/etMensagem"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/bg_input"
+                    android:hint="Digite sua mensagem..."
+                    android:textColorHint="@color/mobile_text_secondary"
+                    android:textColor="@color/mobile_text_primary"
+                    android:textSize="14sp"
+                    android:padding="12dp"
+                    android:maxLines="4"
+                    android:maxLength="1000"
+                    android:inputType="textMultiLine|textCapSentences"
+                    android:imeOptions="actionSend|flagNoEnterAction" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnEnviar"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="Enviar"
+                    android:textSize="13sp"
+                    app:backgroundTint="@color/mobile_tab_active"
+                    android:textColor="@color/white" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Painel Avisos -->
+    <LinearLayout
+        android:id="@+id/panelAvisos"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvAvisos"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@android:color/transparent"
+            android:clipToPadding="false"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:scrollbars="none" />
+
+        <TextView
+            android:id="@+id/tvAvisosVazio"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="Nenhum comunicado ainda."
+            android:textColor="@color/mobile_text_secondary"
+            android:textSize="14sp"
+            android:visibility="gone" />
+    </LinearLayout>
+
 </LinearLayout>

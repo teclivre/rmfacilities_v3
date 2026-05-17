@@ -134,8 +134,8 @@ def register_ponto_routes(
             .all()
         )
 
-    def _ponto_resumo_func_dia(funcionario, data_ref):
-        marcacoes = _ponto_marcacoes_dia(funcionario.id, data_ref)
+    def _ponto_resumo_func_dia(funcionario, data_ref, _marcacoes=None):
+        marcacoes = _marcacoes if _marcacoes is not None else _ponto_marcacoes_dia(funcionario.id, data_ref)
         inconsistencias = []
         esperado = 'entrada'
         segundos_total = 0
@@ -201,9 +201,26 @@ def register_ponto_routes(
         total_esperado = 0
         total_saldo = 0
         inconsistencias = 0
+        # Batch load: 1 query para todo o período da competência
+        inicio_dt = datetime.combine(inicio, datetime.min.time())
+        fim_dt = datetime.combine(fim + timedelta(days=1), datetime.min.time())
+        todas_marc_comp = (
+            PontoMarcacao.query
+            .filter(
+                PontoMarcacao.funcionario_id == funcionario.id,
+                PontoMarcacao.data_hora >= inicio_dt,
+                PontoMarcacao.data_hora < fim_dt,
+            )
+            .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
+            .all()
+        )
+        marc_por_data_comp = {}
+        for _mc in todas_marc_comp:
+            _dc = _mc.data_hora.date()
+            marc_por_data_comp.setdefault(_dc, []).append(_mc)
         dia = inicio
         while dia <= fim:
-            resumo = _ponto_resumo_func_dia(funcionario, dia)
+            resumo = _ponto_resumo_func_dia(funcionario, dia, _marcacoes=marc_por_data_comp.get(dia, []))
             dias.append({
                 'data_ref': resumo['data_ref'],
                 'horas_trabalhadas_fmt': resumo['horas_trabalhadas_fmt'],
@@ -310,13 +327,33 @@ def register_ponto_routes(
             if empresa_id:
                 query = query.filter(Funcionario.empresa_id == empresa_id)
             funcionarios = query.order_by(Funcionario.nome).all()
+            # Batch load: 1 query para TODAS as marcações do dia (elimina N+1)
+            ids_ativos = [f.id for f in funcionarios]
+            if ids_ativos:
+                inicio_dia = datetime.combine(data_ref, datetime.min.time())
+                fim_dia = inicio_dia + timedelta(days=1)
+                todas_marc_dia = (
+                    PontoMarcacao.query
+                    .filter(
+                        PontoMarcacao.funcionario_id.in_(ids_ativos),
+                        PontoMarcacao.data_hora >= inicio_dia,
+                        PontoMarcacao.data_hora < fim_dia,
+                    )
+                    .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
+                    .all()
+                )
+            else:
+                todas_marc_dia = []
+            marc_batch = {}
+            for _mb in todas_marc_dia:
+                marc_batch.setdefault(_mb.funcionario_id, []).append(_mb)
             itens = []
             total_ok = 0
             total_inconsistente = 0
             erros = []
             for funcionario in funcionarios:
                 try:
-                    resumo = _ponto_resumo_func_dia(funcionario, data_ref)
+                    resumo = _ponto_resumo_func_dia(funcionario, data_ref, _marcacoes=marc_batch.get(funcionario.id, []))
                     if resumo['status'] == 'ok':
                         total_ok += 1
                     else:
@@ -426,6 +463,52 @@ def register_ponto_routes(
                 app.logger.exception('Falha ao aplicar ajuste de ponto')
                 return jsonify({'erro': 'Falha ao aplicar ajuste de ponto.', 'detalhe': str(exc)[:220]}), 500
 
+    @app.route('/api/ponto/marcacao/<int:id>', methods=['DELETE'])
+    @lr
+    def api_ponto_excluir_marcacao(id):
+        dados = request.json or {}
+        motivo = (dados.get('motivo') or '').strip()
+        if not motivo:
+            return jsonify({'erro': 'Informe o motivo da exclusão.'}), 400
+        marcacao = PontoMarcacao.query.get(id)
+        if not marcacao:
+            return jsonify({'erro': 'Marcação não encontrada.'}), 404
+        funcionario = Funcionario.query.get(marcacao.funcionario_id)
+        if not funcionario:
+            return jsonify({'erro': 'Funcionário da marcação não encontrado.'}), 404
+        data_ref = marcacao.data_hora.date() if marcacao.data_hora else None
+        snap_antes = [m.to_dict() for m in _ponto_marcacoes_dia(funcionario.id, data_ref)] if data_ref else []
+        try:
+            antes = {'marcacao_id': marcacao.id, 'marcacao': marcacao.to_dict(), 'dia': snap_antes}
+            db.session.delete(marcacao)
+            db.session.flush()
+            snap_depois = [m.to_dict() for m in _ponto_marcacoes_dia(funcionario.id, data_ref)] if data_ref else []
+            ajuste = PontoAjuste(
+                funcionario_id=funcionario.id,
+                data_ref=data_ref.strftime('%Y-%m-%d') if data_ref else '',
+                motivo=motivo,
+                antes_json=json.dumps(antes, ensure_ascii=False, default=str),
+                depois_json=json.dumps({'dia': snap_depois}, ensure_ascii=False, default=str),
+                criado_por=session.get('nome', ''),
+            )
+            db.session.add(ajuste)
+            db.session.commit()
+            audit_event(
+                'ponto_exclusao_marcacao',
+                'usuario',
+                session.get('uid'),
+                'funcionario',
+                funcionario.id,
+                True,
+                {'marcacao_id': id, 'data_ref': data_ref.strftime('%Y-%m-%d') if data_ref else '', 'motivo': motivo[:200]},
+            )
+            resumo = _ponto_resumo_func_dia(funcionario, data_ref) if data_ref else {}
+            return jsonify({'ok': True, 'resumo': resumo})
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception('Falha ao excluir marcação de ponto')
+            return jsonify({'erro': 'Falha ao excluir marcação de ponto.', 'detalhe': str(exc)[:220]}), 500
+
     @app.route('/api/ponto/marcacao/<int:id>', methods=['PUT'])
     @lr
     def api_ponto_editar_marcacao(id):
@@ -491,8 +574,8 @@ def register_ponto_routes(
                 funcionario_id=funcionario.id,
                 data_ref=data_nova.strftime('%Y-%m-%d'),
                 motivo=motivo,
-                antes_json=json.dumps(antes, ensure_ascii=False),
-                depois_json=json.dumps(depois, ensure_ascii=False),
+                antes_json=json.dumps(antes, ensure_ascii=False, default=str),
+                depois_json=json.dumps(depois, ensure_ascii=False, default=str),
                 criado_por=session.get('nome', ''),
             )
             db.session.add(ajuste)
@@ -516,6 +599,81 @@ def register_ponto_routes(
             db.session.rollback()
             app.logger.exception('Falha ao editar marcação de ponto')
             return jsonify({'erro': 'Falha ao editar marcação de ponto.', 'detalhe': str(exc)[:220]}), 500
+
+    @app.route('/api/ponto/marcacao', methods=['POST'])
+    @lr
+    def api_ponto_criar_marcacao():
+        """Criar nova marcação de ponto via painel admin (sem checar ordem esperada)."""
+        dados = request.json or {}
+        funcionario_id = to_num(dados.get('funcionario_id'))
+        if not funcionario_id:
+            return jsonify({'erro': 'funcionario_id é obrigatório.'}), 400
+        funcionario = Funcionario.query.get(funcionario_id)
+        if not funcionario:
+            return jsonify({'erro': 'Funcionário não encontrado.'}), 404
+
+        tipo = (dados.get('tipo') or '').strip().lower()
+        if tipo not in ponto_tipos:
+            return jsonify({'erro': 'Tipo de marcação inválido.'}), 400
+
+        data_hora = _ponto_parse_data_hora(dados.get('data_hora'))
+        if not data_hora:
+            return jsonify({'erro': 'Data/hora inválida.'}), 400
+
+        motivo = (dados.get('motivo') or '').strip()
+        if not motivo:
+            return jsonify({'erro': 'Informe o motivo da inclusão da marcação.'}), 400
+
+        observacao = (dados.get('observacao') or '').strip()[:500]
+        data_ref = data_hora.date()
+
+        marcacoes_dia_antes = [m.to_dict() for m in _ponto_marcacoes_dia(funcionario.id, data_ref)]
+        conflito = PontoMarcacao.query.filter(
+            PontoMarcacao.funcionario_id == funcionario.id,
+            PontoMarcacao.data_hora >= datetime.combine(data_ref, datetime.min.time()),
+            PontoMarcacao.data_hora < datetime.combine(data_ref, datetime.min.time()) + timedelta(days=1),
+        ).all()
+        if any(abs((data_hora - m.data_hora).total_seconds()) < 60 for m in conflito if m.data_hora):
+            return jsonify({'erro': 'Já existe marcação neste minuto para este funcionário.'}), 400
+
+        try:
+            ip = (request.headers.get('X-Forwarded-For', '') or request.remote_addr or '').split(',')[0].strip()[:60]
+            marcacao = PontoMarcacao(
+                funcionario_id=funcionario.id,
+                tipo=tipo,
+                data_hora=data_hora,
+                origem='admin',
+                observacao=observacao,
+                criado_por=session.get('nome', ''),
+                ip=ip,
+            )
+            db.session.add(marcacao)
+            db.session.flush()
+            marcacoes_dia_depois = [m.to_dict() for m in _ponto_marcacoes_dia(funcionario.id, data_ref)]
+            ajuste = PontoAjuste(
+                funcionario_id=funcionario.id,
+                data_ref=data_ref.strftime('%Y-%m-%d'),
+                motivo=motivo,
+                antes_json=json.dumps({'dia': marcacoes_dia_antes}, ensure_ascii=False, default=str),
+                depois_json=json.dumps({'dia': marcacoes_dia_depois}, ensure_ascii=False, default=str),
+                criado_por=session.get('nome', ''),
+            )
+            db.session.add(ajuste)
+            db.session.commit()
+            audit_event(
+                'ponto_nova_marcacao_admin',
+                'usuario',
+                session.get('uid'),
+                'funcionario',
+                funcionario.id,
+                True,
+                {'marcacao_id': marcacao.id, 'tipo': tipo, 'data_ref': data_ref.strftime('%Y-%m-%d'), 'motivo': motivo[:200]},
+            )
+            return jsonify({'ok': True, 'marcacao': marcacao.to_dict()})
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception('Falha ao criar marcação de ponto via admin')
+            return jsonify({'erro': 'Falha ao criar marcação.', 'detalhe': str(exc)[:220]}), 500
 
     @app.route('/api/ponto/fechar-dia', methods=['POST'])
     @lr
@@ -633,12 +791,7 @@ def register_ponto_routes(
         dia = inicio
         while dia <= fim:
             marcacoes = _ponto_marcacoes_dia(funcionario.id, dia)
-            tempos = sorted([item.data_hora for item in marcacoes if getattr(item, 'data_hora', None)])[:4]
-
-            entrada1 = hhmm_from_dt(tempos[0]) if len(tempos) > 0 else ''
-            saida1 = hhmm_from_dt(tempos[1]) if len(tempos) > 1 else ''
-            entrada2 = hhmm_from_dt(tempos[2]) if len(tempos) > 2 else ''
-            saida2 = hhmm_from_dt(tempos[3]) if len(tempos) > 3 else ''
+            tempos = sorted([item.data_hora for item in marcacoes if getattr(item, 'data_hora', None)])
 
             resumo = _ponto_resumo_func_dia(funcionario, dia)
             previstas = int(resumo.get('horas_esperadas_min', 0) or 0)
@@ -650,11 +803,13 @@ def register_ponto_routes(
 
             faltas = ''
             extras = ''
+            marcacoes_str = ''
             if previstas > 0 and not tempos:
-                entrada1 = saida1 = entrada2 = saida2 = 'Falta'
+                marcacoes_str = 'Falta'
                 faltas = '-' + _ponto_fmt_minutos(previstas)
                 total_faltas += previstas
             else:
+                marcacoes_str = '  '.join(hhmm_from_dt(t) for t in tempos) if tempos else ''
                 if saldo < 0:
                     faltas = '-' + _ponto_fmt_minutos(abs(saldo))
                     total_faltas += abs(saldo)
@@ -668,10 +823,7 @@ def register_ponto_routes(
 
             linhas.append([
                 dia.strftime('%d/%m') + ' ' + weekdays[dia.weekday()],
-                entrada1,
-                saida1,
-                entrada2,
-                saida2,
+                marcacoes_str,
                 _ponto_fmt_minutos(previstas),
                 _ponto_fmt_minutos(diurnas),
                 _ponto_fmt_minutos(intervalo) if intervalo else '',
@@ -682,24 +834,17 @@ def register_ponto_routes(
 
         nome_arquivo = f'espelho_ponto_{funcionario.id}_{competencia}.pdf'
         saida = io.BytesIO()
-        doc = SimpleDocTemplate(saida, pagesize=A4, leftMargin=10 * mm, rightMargin=10 * mm, topMargin=10 * mm, bottomMargin=12 * mm)
+        doc = SimpleDocTemplate(saida, pagesize=A4, leftMargin=8 * mm, rightMargin=8 * mm, topMargin=7 * mm, bottomMargin=7 * mm)
         largura = A4[0] - (doc.leftMargin + doc.rightMargin)  # largura útil dentro das margens
+        compact_mode = len(linhas) >= 30
         styles = getSampleStyleSheet()
-        st_titulo = ParagraphStyle('ptt', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=13, alignment=TA_CENTER)
-        st_small = ParagraphStyle('pts', parent=styles['Normal'], fontName='Helvetica', fontSize=7.4, leading=9.2)
-        st_sign = ParagraphStyle('ptsig', parent=styles['Normal'], fontName='Helvetica', fontSize=7.6, leading=9.6, alignment=TA_CENTER)
+        st_titulo = ParagraphStyle('ptt', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=(12 if compact_mode else 13), alignment=TA_CENTER)
+        st_small = ParagraphStyle('pts', parent=styles['Normal'], fontName='Helvetica', fontSize=(6.8 if compact_mode else 7.4), leading=(8.0 if compact_mode else 9.2))
+        st_sign = ParagraphStyle('ptsig', parent=styles['Normal'], fontName='Helvetica', fontSize=(6.6 if compact_mode else 7.6), leading=(8.0 if compact_mode else 9.6), alignment=TA_CENTER)
 
         elementos = []
         empresa = Empresa.query.get(funcionario.empresa_id) if funcionario.empresa_id else None
         logo_url_padrao = 'https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png'
-        empresas_hdr = []
-        if empresa:
-            empresas_hdr.append(empresa)
-        for e in Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem, Empresa.id).all():
-            if not any((x.id == e.id) for x in empresas_hdr if getattr(x, 'id', None) and getattr(e, 'id', None)):
-                empresas_hdr.append(e)
-            if len(empresas_hdr) >= 2:
-                break
 
         def _logo_flowable(emp_item):
             cands = []
@@ -715,25 +860,14 @@ def register_ponto_routes(
                         req = urllib.request.Request(cand, headers={'User-Agent': 'Mozilla/5.0'})
                         with urllib.request.urlopen(req, timeout=8) as resp:
                             data = resp.read()
-                        return Image(io.BytesIO(data), width=26 * mm, height=11 * mm)
+                        return Image(io.BytesIO(data), width=20 * mm, height=8 * mm)
                     if os.path.exists(cand):
-                        return Image(cand, width=26 * mm, height=11 * mm)
+                        return Image(cand, width=20 * mm, height=8 * mm)
                 except Exception:
                     continue
             return p(f'<b>{(getattr(emp_item, "nome", "") or "RM FACILITIES LTDA")}</b>', st_small, html=True)
 
-        logo_lines = []
-        for emp_item in empresas_hdr[:2]:
-            logo_lines.append([_logo_flowable(emp_item)])
-        if not logo_lines:
-            logo_lines = [[p('<b>RM FACILITIES LTDA</b>', st_small, html=True)]]
-        logo_cell = Table(logo_lines, colWidths=[26 * mm])
-        logo_cell.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('TOPPADDING', (0, 0), (-1, -1), 2),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-        ]))
+        logo_cell = _logo_flowable(empresa)
         inicio_br, fim_br = fmt_comp_br(competencia)
 
         cabecalho = [[
@@ -753,34 +887,34 @@ def register_ponto_routes(
             ('SPAN', (0, 0), (0, 1)),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('ALIGN', (0, 0), (0, 1), 'CENTER'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 6),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 5),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), (3 if compact_mode else 5)),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), (3 if compact_mode else 5)),
         ]))
 
         elementos.append(p('Espelho Ponto', st_titulo))
-        elementos.append(Spacer(1, 6))
+        elementos.append(Spacer(1, (4 if compact_mode else 6)))
         elementos.append(tabela_cab)
-        elementos.append(Spacer(1, 6))
+        elementos.append(Spacer(1, (4 if compact_mode else 6)))
 
-        tabela_dias = [['Data', 'Ent. 1', 'Sai. 1', 'Ent. 2', 'Sai. 2', 'Previstas', 'Diurnas', 'Intervalo', 'Faltas', 'Ext. 100']]
+        tabela_dias = [['Data', 'Marcações', 'Previstas', 'Diurnas', 'Intervalo', 'Faltas', 'Ext. 100']]
         tabela_dias.extend(linhas)
-        tabela_main = Table(tabela_dias, colWidths=[largura * 0.10, largura * 0.11, largura * 0.11, largura * 0.11, largura * 0.11, largura * 0.09, largura * 0.09, largura * 0.09, largura * 0.09, largura * 0.10], repeatRows=1)
+        tabela_main = Table(tabela_dias, colWidths=[largura * 0.11, largura * 0.35, largura * 0.09, largura * 0.09, largura * 0.09, largura * 0.09, largura * 0.10], repeatRows=1)
         tabela_main.setStyle(TableStyle([
             ('GRID', (0, 0), (-1, -1), 0.35, colors.HexColor('#aaaaaa')),
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e8e8e8')),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 6.9),
+            ('FONTSIZE', (0, 0), (-1, -1), (6.2 if compact_mode else 6.9)),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 2.6),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 2.6),
-            ('TOPPADDING', (0, 0), (-1, -1), 2.4),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 2.4),
+            ('LEFTPADDING', (0, 0), (-1, -1), 2.0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 2.0),
+            ('TOPPADDING', (0, 0), (-1, -1), (1.2 if compact_mode else 2.2)),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), (1.2 if compact_mode else 2.2)),
         ]))
         elementos.append(tabela_main)
-        elementos.append(Spacer(1, 8))
+        elementos.append(Spacer(1, (4 if compact_mode else 8)))
 
         resumo_line = (
             f'<b>Previstas:</b> {_ponto_fmt_minutos(total_previstas)}   '
@@ -792,13 +926,13 @@ def register_ponto_routes(
         resumo_tbl = Table([[p(resumo_line, st_small, html=True)]], colWidths=[largura * 1.00])
         resumo_tbl.setStyle(TableStyle([
             ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#888888')),
-            ('LEFTPADDING', (0, 0), (-1, -1), 6),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 5),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), (3 if compact_mode else 5)),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), (3 if compact_mode else 5)),
         ]))
         elementos.append(resumo_tbl)
-        elementos.append(Spacer(1, 14))
+        elementos.append(Spacer(1, (6 if compact_mode else 10)))
 
         assinatura = Table([
             [
@@ -813,26 +947,62 @@ def register_ponto_routes(
                 p('', st_small),
                 p('____________________________________________________________', st_sign),
             ],
-            [
-                p('', st_small),
-                p(' ', st_sign),
-            ],
         ], colWidths=[largura * 0.67, largura * 0.33])
         assinatura.setStyle(TableStyle([
             ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#888888')),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 6),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (1, 2), (1, 2), 18),
-            ('TOPPADDING', (1, 3), (1, 3), 10),
-            ('BOTTOMPADDING', (1, 3), (1, 3), 18),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), (4 if compact_mode else 6)),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), (4 if compact_mode else 6)),
+            ('BOTTOMPADDING', (1, 2), (1, 2), (8 if compact_mode else 14)),
         ]))
         elementos.append(assinatura)
-        elementos.append(Spacer(1, 6))
+        elementos.append(Spacer(1, 3))
         elementos.append(p('Assinado eletronicamente por RM Facilities', st_small))
 
         doc.build(elementos)
         saida.seek(0)
         return send_file(saida, mimetype='application/pdf', as_attachment=False, download_name=nome_arquivo)
+
+    # ── GESTÃO FÁCIL: calendário mensal ──────────────────────────────────────
+    @app.route('/api/ponto/gestao-facil/calendario')
+    @lr
+    def api_ponto_gestao_facil_calendario():
+        funcionario_id = to_num(request.args.get('funcionario_id'))
+        competencia = (request.args.get('competencia') or '').strip()
+        if not funcionario_id:
+            return jsonify({'erro': 'funcionario_id é obrigatório.'}), 400
+        if not re.match(r'^\d{4}-\d{2}$', competencia):
+            return jsonify({'erro': 'competencia inválida. Use YYYY-MM.'}), 400
+        funcionario = Funcionario.query.get(funcionario_id)
+        if not funcionario:
+            return jsonify({'erro': 'Funcionário não encontrado.'}), 404
+
+        resumo_comp = _ponto_resumo_competencia(funcionario, competencia)
+        if not resumo_comp:
+            return jsonify({'erro': 'Não foi possível gerar o calendário para a competência informada.'}), 400
+
+        # Enriquecer cada dia com os horários de cada marcação para a folha
+        inicio, fim = _ponto_competencia_bounds(competencia)
+        inicio_dt = datetime.combine(inicio, datetime.min.time())
+        fim_dt = datetime.combine(fim + timedelta(days=1), datetime.min.time())
+        todas_marc = (
+            PontoMarcacao.query
+            .filter(
+                PontoMarcacao.funcionario_id == funcionario.id,
+                PontoMarcacao.data_hora >= inicio_dt,
+                PontoMarcacao.data_hora < fim_dt,
+            )
+            .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
+            .all()
+        )
+        marc_por_data = {}
+        for mc in todas_marc:
+            dc = mc.data_hora.date().strftime('%Y-%m-%d')
+            marc_por_data.setdefault(dc, []).append(mc.to_dict())
+
+        for dia in resumo_comp['dias']:
+            dia['marcacoes'] = marc_por_data.get(dia['data_ref'], [])
+
+        return jsonify({'ok': True, 'resumo': resumo_comp})
