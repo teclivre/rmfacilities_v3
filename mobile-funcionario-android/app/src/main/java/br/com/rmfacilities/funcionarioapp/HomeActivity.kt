@@ -633,17 +633,28 @@ class HomeActivity : BaseActivity() {
             withContext(Dispatchers.Main) {
                 loading.dismiss()
                 val historico = resp?.historico ?: emptyList()
-                val texto = if (historico.isEmpty()) "Nenhum pagamento registrado."
-                else historico.joinToString("\n") { p ->
-                    val valor = "R$ %,.2f".format(p.valor_liquido)
-                    if (p.obs.isNotBlank()) "• ${compFmt(p.competencia)}  →  $valor\n  (${p.obs})"
-                    else "• ${compFmt(p.competencia)}  →  $valor"
+                val ultimos3 = historico.take(3)
+                val texto = buildString {
+                    if (ultimos3.isEmpty()) {
+                        append("Nenhum pagamento registrado.")
+                    } else {
+                        append("Últimos 3 meses:\n\n")
+                        ultimos3.forEach { p ->
+                            val valor = "R$ %,.2f".format(p.valor_liquido)
+                            append("• ${compFmt(p.competencia)}  →  $valor")
+                            if (p.obs.isNotBlank()) append("\n  (${p.obs})")
+                            append("\n")
+                        }
+                        if (historico.size > 3) {
+                            append("\n(+${historico.size - 3} meses anteriores no histórico completo)")
+                        }
+                    }
                 }
                 MaterialAlertDialogBuilder(this@HomeActivity)
-                    .setTitle("💰 Histórico de Salário")
-                    .setMessage(texto)
+                    .setTitle("💰 Pagamentos")
+                    .setMessage(texto.trim())
                     .setPositiveButton("Fechar", null)
-                    .setNeutralButton("Holerites") { _, _ ->
+                    .setNeutralButton("📄 Holerites") { _, _ ->
                         startActivity(Intent(this@HomeActivity, DocumentosActivity::class.java).apply {
                             putExtra("preset_categoria", "holerite")
                         })

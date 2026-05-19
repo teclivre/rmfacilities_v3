@@ -28,6 +28,7 @@
             android:textSize="26sp" />
 
         <TextView
+            android:id="@+id/tvTituloDocumentos"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -249,6 +250,33 @@
                 android:clipToPadding="false"
                 android:scrollbars="none"
                 android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/layoutEmptyDocs"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="32dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="📄"
+                    android:textSize="48sp"
+                    android:layout_marginBottom="16dp" />
+
+                <TextView
+                    android:id="@+id/tvEmptyDocs"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Nenhum documento encontrado."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="15sp"
+                    android:gravity="center"
+                    android:lineSpacingMultiplier="1.4" />
+            </LinearLayout>
         </FrameLayout>
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 

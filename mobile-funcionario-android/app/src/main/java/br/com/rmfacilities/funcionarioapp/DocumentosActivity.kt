@@ -56,6 +56,8 @@ class DocumentosActivity : BaseActivity() {
     private var anosDisponiveis: List<String> = emptyList()
     private var categoriasDisponiveis: List<String> = emptyList()
     private lateinit var tvUltimoAsoDoc: android.widget.TextView
+    private lateinit var layoutEmptyDocs: android.view.View
+    private lateinit var tvEmptyDocs: android.widget.TextView
     private lateinit var offlineStore: OfflineDocsStore
     private lateinit var retryQueue: ActionRetryQueue
     private var pendentesAssinatura: List<DocumentoItem> = emptyList()
@@ -81,6 +83,8 @@ class DocumentosActivity : BaseActivity() {
         chipGroupCategorias = findViewById(R.id.chipGroupCategorias)
         chipGroupStatus = findViewById(R.id.chipGroupStatus)
         tvUltimoAsoDoc = findViewById(R.id.tvUltimoAsoDoc)
+        layoutEmptyDocs = findViewById(R.id.layoutEmptyDocs)
+        tvEmptyDocs = findViewById(R.id.tvEmptyDocs)
 
         // Botão voltar
         findViewById<android.widget.TextView>(R.id.btnVoltar).setOnClickListener { finish() }
@@ -116,6 +120,12 @@ class DocumentosActivity : BaseActivity() {
                 "holerite", "holerites", "pagamento", "salario", "salário" -> "Holerites"
                 else -> presetCategoria
             }
+            // Atualiza o título da tela de acordo com o filtro aplicado
+            val titulo = when (filtroCategoria) {
+                "Holerites" -> "Holerites"
+                else -> filtroCategoria.replaceFirstChar { it.uppercase() }
+            }
+            findViewById<android.widget.TextView>(R.id.tvTituloDocumentos).text = titulo
         }
         val presetBusca = intent.getStringExtra("preset_busca")?.trim().orEmpty()
         if (presetBusca.isNotBlank()) {
@@ -202,6 +212,14 @@ class DocumentosActivity : BaseActivity() {
                     val docsFiltrados = aplicarFiltrosLocais(docs.itens ?: emptyList())
                     adapter.replaceAll(pendentesFiltrados, docsFiltrados)
                     atualizarChips((pendentes.itens ?: emptyList()) + (docs.itens ?: emptyList()))
+                    val isEmpty = pendentesFiltrados.isEmpty() && docsFiltrados.isEmpty()
+                    layoutEmptyDocs.visibility = if (isEmpty) View.VISIBLE else View.GONE
+                    rv.visibility = if (isEmpty) View.GONE else View.VISIBLE
+                    if (isEmpty) {
+                        tvEmptyDocs.text = if (filtroCategoria.isNotBlank())
+                            "Nenhum documento encontrado\npara a categoria \"$filtroCategoria\"."
+                        else "Nenhum documento encontrado."
+                    }
                     if (scrollToArquivoId > 0) {
                         scrollToArquivo(scrollToArquivoId)
                     }
@@ -209,8 +227,13 @@ class DocumentosActivity : BaseActivity() {
                     val offline = offlineStore.toDocumentoItems()
                     if (offline.isNotEmpty()) {
                         adapter.replaceAll(emptyList(), offline)
+                        layoutEmptyDocs.visibility = View.GONE
+                        rv.visibility = View.VISIBLE
                         Toast.makeText(this@DocumentosActivity, "Sem conexão. Exibindo documentos offline.", Toast.LENGTH_LONG).show()
                     } else {
+                        layoutEmptyDocs.visibility = View.VISIBLE
+                        rv.visibility = View.GONE
+                        tvEmptyDocs.text = docs.erro ?: "Falha ao carregar documentos."
                         Toast.makeText(this@DocumentosActivity, docs.erro ?: "Falha ao carregar", Toast.LENGTH_LONG).show()
                     }
                 }
