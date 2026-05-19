@@ -23,8 +23,8 @@ class ApiClient(private val session: SessionManager) {
     private fun buildHttpClient(withAuthenticator: Boolean = false): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
         // Certificate Pinning — ativo quando BuildConfig.CERT_PIN está preenchido
         val pin = BuildConfig.CERT_PIN.trim()
         if (pin.isNotBlank()) {
@@ -334,25 +334,16 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
-    fun solicitarCorrecaoPonto(
-        dataRef: String,
-        tipoProbema: String,
-        horarioEsperado: String,
-        observacao: String,
-        marcacaoId: Int? = null,
-        horarioCorreto: String? = null
-    ): CorrecaoPontoResponse {
-        val payload = mutableMapOf<String, Any?>(
+    fun solicitarCorrecaoPonto(dataRef: String, tipoProbema: String, horarioEsperado: String, observacao: String): CorrecaoPontoResponse {
+        val payload = gson.toJson(mapOf(
             "data_ref" to dataRef,
             "tipo_problema" to tipoProbema,
             "horario_esperado" to horarioEsperado,
             "observacao" to observacao
-        )
-        if (marcacaoId != null) payload["marcacao_id"] = marcacaoId
-        if (!horarioCorreto.isNullOrBlank()) payload["horario_correto"] = horarioCorreto
+        ))
         val req = Request.Builder()
             .url(url("/api/app/funcionario/me/ponto/solicitacao-correcao"))
-            .post(gson.toJson(payload).toRequestBody("application/json".toMediaType()))
+            .post(payload.toRequestBody("application/json".toMediaType()))
             .addHeader("Authorization", "Bearer ${session.accessToken}")
             .addHeader("Content-Type", "application/json")
             .build()
