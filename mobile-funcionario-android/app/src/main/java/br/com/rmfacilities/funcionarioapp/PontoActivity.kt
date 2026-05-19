@@ -21,7 +21,6 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationServices
@@ -44,7 +43,7 @@ import java.util.Locale
 import kotlin.coroutines.resume
 import androidx.lifecycle.lifecycleScope
 
-class PontoActivity : AppCompatActivity() {
+class PontoActivity : BaseActivity() {
 
     // Marcações registradas localmente (offline ou com erro) ainda não confirmadas pelo servidor
     enum class LocalStatus { PENDING, ERROR }

@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 class FcmService : FirebaseMessagingService() {
 
@@ -116,30 +117,33 @@ class FcmService : FirebaseMessagingService() {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
 
+        // Item 4: requestCodes baseados em hash do tipo + tempo para evitar colisão de PendingIntents
+        val baseId = abs(tipo.hashCode() xor System.currentTimeMillis().hashCode())
+
         val pendingIntent = PendingIntent.getActivity(
             this,
-            System.currentTimeMillis().toInt(),
+            baseId,
             targetIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         val openNowPendingIntent = PendingIntent.getActivity(
             this,
-            (System.currentTimeMillis() + 1).toInt(),
+            baseId + 1,
             targetIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         val laterPendingIntent = PendingIntent.getActivity(
             this,
-            (System.currentTimeMillis() + 2).toInt(),
+            baseId + 2,
             laterIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         ensureChannels()
 
-        val notifId = System.currentTimeMillis().toInt()
+        val notifId = baseId
         val badgeNumber = (data["badge"]?.toIntOrNull() ?: 1).coerceAtLeast(1)
 
         val notif = NotificationCompat.Builder(this, channelId)

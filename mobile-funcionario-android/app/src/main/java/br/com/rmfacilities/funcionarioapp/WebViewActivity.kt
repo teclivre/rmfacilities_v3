@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.View
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.ProgressBar
@@ -24,7 +25,10 @@ class WebViewActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_web_view)
 
-        val url = intent.getStringExtra(EXTRA_URL) ?: run { finish(); return }
+        val rawUrl = intent.getStringExtra(EXTRA_URL) ?: run { finish(); return }
+        // Item 1: rejeitar URLs não-HTTPS para evitar carregamento de conteúdo não confiável
+        if (!rawUrl.startsWith("https://")) { finish(); return }
+        val url = rawUrl
         val titulo = intent.getStringExtra(EXTRA_TITULO) ?: "Artigo"
 
         val tvTitulo = findViewById<TextView>(R.id.tvWebViewTitulo)
@@ -42,6 +46,8 @@ class WebViewActivity : AppCompatActivity() {
             useWideViewPort = true
             builtInZoomControls = true
             displayZoomControls = false
+            // Item 1: bloquear conteúdo misto (HTTP dentro de HTTPS)
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         }
 
         webView.webChromeClient = object : WebChromeClient() {
@@ -59,7 +65,12 @@ class WebViewActivity : AppCompatActivity() {
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
                 request: WebResourceRequest?
-            ): Boolean = false  // abre tudo dentro do WebView
+            ): Boolean {
+                // Item 1: bloquear navegação para URLs não-HTTPS
+                val uri = request?.url?.toString() ?: return true
+                if (!uri.startsWith("https://")) return true
+                return false
+            }
         }
 
         webView.loadUrl(url)
@@ -72,5 +83,12 @@ class WebViewActivity : AppCompatActivity() {
         } else {
             super.onBackPressed()
         }
+    }
+
+    // Item 5: liberar memória do WebView ao destruir a Activity
+    override fun onDestroy() {
+        val webView = findViewById<WebView>(R.id.webView)
+        webView?.destroy()
+        super.onDestroy()
     }
 }

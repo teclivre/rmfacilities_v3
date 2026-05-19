@@ -11,7 +11,6 @@ import android.text.TextWatcher
 import android.webkit.MimeTypeMap
 import android.widget.EditText
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -36,8 +35,9 @@ import androidx.core.content.ContextCompat
 import java.util.Locale
 import androidx.lifecycle.lifecycleScope
 
-class DocumentosActivity : AppCompatActivity() {
+class DocumentosActivity : BaseActivity() {
     private lateinit var session: SessionManager
+    override fun provideSession() = session
     private lateinit var api: ApiClient
     private lateinit var swipe: SwipeRefreshLayout
     private lateinit var adapter: DocumentoAdapter

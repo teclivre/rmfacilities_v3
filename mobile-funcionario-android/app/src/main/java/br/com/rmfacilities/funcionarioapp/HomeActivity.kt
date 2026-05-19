@@ -1,10 +1,8 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.Manifest
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
@@ -20,7 +18,6 @@ import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.bottomnavigation.BottomNavigationView
@@ -35,7 +32,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.lifecycle.lifecycleScope
 
-class HomeActivity : AppCompatActivity() {
+class HomeActivity : BaseActivity() {
     companion object {
         private const val PREF_SHORTCUTS = "home_shortcuts"
         private const val KEY_ENABLED = "enabled"
@@ -43,7 +40,6 @@ class HomeActivity : AppCompatActivity() {
 
     private lateinit var session: SessionManager
     private lateinit var api: ApiClient
-    private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var tvBoasVindas: TextView
     private lateinit var tvCargo: TextView
     private lateinit var tvAvatar: TextView
@@ -62,6 +58,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var retryQueue: ActionRetryQueue
     private lateinit var connectivityManager: ConnectivityManager
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var btnDocumentos: View
     private lateinit var btnPerfil: View
     private lateinit var btnPonto: View
@@ -72,11 +69,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var btnBeneficiosHome: View
     private lateinit var btnFeriasHome: View
 
-    private val logoutReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            goLogin()
-        }
-    }
+    override fun provideSession() = session
 
     private val notifPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -253,13 +246,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     override fun onResume() {
-        super.onResume()
-        if (session.isIdleSessionExpired() && !session.isTrustedDeviceValid()) {
-            session.clear()
-            android.widget.Toast.makeText(this, "Sessão expirada por inatividade.", android.widget.Toast.LENGTH_LONG).show()
-            goLogin()
-            return
-        }
+        super.onResume()  // BaseActivity verifica idle timeout via provideSession()
         session.touchActivity()
     }
 
@@ -696,11 +683,6 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
-    private fun goLogin() {
-        startActivity(Intent(this, LoginActivity::class.java))
-        finish()
-    }
-
     private fun animarCardsHome() {
         val cardIds = listOf(R.id.btnPonto, R.id.btnDocumentos, R.id.btnMensagens, R.id.btnPerfil,
             R.id.btnOfflineHome, R.id.btnConfiguracoesHome, R.id.btnSalarioHome, R.id.btnBeneficiosHome, R.id.btnFeriasHome)
@@ -720,19 +702,12 @@ class HomeActivity : AppCompatActivity() {
     }
 
     override fun onStart() {
-        super.onStart()
-        val filter = IntentFilter(SessionManager.ACTION_LOGOUT)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(logoutReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(logoutReceiver, filter)
-        }
+        super.onStart()  // BaseActivity registra logoutReceiver
         registrarCallbackRede()
     }
 
     override fun onStop() {
-        super.onStop()
-        try { unregisterReceiver(logoutReceiver) } catch (_: Exception) {}
+        super.onStop()  // BaseActivity cancela logoutReceiver
         val cb = networkCallback
         if (cb != null) {
             try { connectivityManager.unregisterNetworkCallback(cb) } catch (_: Exception) {}
