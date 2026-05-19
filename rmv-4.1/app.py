@@ -8469,7 +8469,7 @@ def api_app_funcionario_assinar_arquivo(id):
     if a.funcionario_id!=f.id:
         return jsonify({'erro':'Acesso negado'}),403
     status_atual=(a.ass_status or '').strip().lower()
-    if status_atual=='concluida':
+    if status_atual in ('assinado','concluida'):
         return jsonify({'ok':True,'mensagem':'Documento ja assinado.','item':a.to_dict()})
 
     d=request.json or {}
@@ -8503,7 +8503,7 @@ def api_app_funcionario_assinar_arquivo(id):
     f.app_stepup_tentativas=0
     f.app_stepup_arquivo_id=None
 
-    a.ass_status='concluida'
+    a.ass_status='assinado'
     a.ass_nome=(f.nome or '').strip()
     a.ass_cpf=norm_cpf(f.cpf)
     a.ass_cargo=(f.cargo or '').strip()
@@ -8527,7 +8527,20 @@ def api_app_funcionario_assinar_arquivo(id):
         True,
         {'arquivo_id':a.id,'categoria':a.categoria,'competencia':a.competencia,'origem':'app','stepup':modo}
     )
-    return jsonify({'ok':True,'mensagem':'Documento assinado com sucesso.','item':a.to_dict()})
+    # Gera PDF assinado com carimbo QR code em cada página + página de auditoria
+    url_root=request.url_root.rstrip('/')
+    copia_assinada=_salvar_pdf_assinado_em_arquivos_funcionario(a,f,url_root)
+    if copia_assinada and copia_assinada.get('ok') and copia_assinada.get('abs_path'):
+        rs_crypto=_try_sign_pdf_file_crypto(copia_assinada.get('abs_path'),empresa_id=(f.empresa_id if f else None),usuario_id=None)
+        hash_final=_sha256_file(copia_assinada.get('abs_path'))
+        a.ass_doc_hash=hash_final
+        a.ass_crypto_ok=bool(rs_crypto.get('ok'))
+        a.ass_cert_subject=(rs_crypto.get('cert_subject') or '')[:255] if rs_crypto.get('ok') else None
+        db.session.commit()
+    validacao_link=f"{url_root}/doc/validar/{a.ass_codigo}" if a.ass_codigo else ''
+    signed_pdf_link=f"{url_root}/doc/assinado/{a.ass_codigo}" if a.ass_codigo else ''
+    return jsonify({'ok':True,'mensagem':'Documento assinado com sucesso.','item':a.to_dict(),
+                    'validacao_link':validacao_link,'signed_pdf_link':signed_pdf_link})
 
 @app.route('/api/app/funcionario/pendentes-assinatura')
 @app_func_required
@@ -8561,7 +8574,10 @@ def api_app_funcionario_pendentes_assinatura():
 @app_func_required
 def api_app_funcionario_historico_assinaturas():
     f=g.app_funcionario
-    regs=FuncionarioArquivo.query.filter_by(funcionario_id=f.id,ass_status='concluida').order_by(FuncionarioArquivo.ass_em.desc()).all()
+    regs=FuncionarioArquivo.query.filter(
+        FuncionarioArquivo.funcionario_id==f.id,
+        FuncionarioArquivo.ass_status.in_(['assinado','concluida'])
+    ).order_by(FuncionarioArquivo.ass_em.desc()).all()
     itens=[]
     for a in regs:
         cat=norm_cat(a.categoria)
@@ -10525,7 +10541,7 @@ def func_doc_validar_publica(codigo):
     if not a:
         return render_template('doc_validacao.html',ok=False,mensagem='Assinatura não encontrada para o código informado.',arquivo=None,funcionario=None)
     f=db.session.get(Funcionario, a.funcionario_id)
-    ok=(a.ass_status or '').strip().lower()=='assinado'
+    ok=(a.ass_status or '').strip().lower() in ('assinado','concluida')
     msg='Assinatura válida.' if ok else ('Assinatura pendente ou não concluída.' if (a.ass_status or '')=='pendente' else 'Assinatura expirada ou inválida.')
     return render_template('doc_validacao.html',ok=ok,mensagem=msg,arquivo=a,funcionario=f)
 
