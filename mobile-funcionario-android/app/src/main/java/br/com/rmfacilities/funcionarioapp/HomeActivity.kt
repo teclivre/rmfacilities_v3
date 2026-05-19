@@ -101,6 +101,15 @@ class HomeActivity : AppCompatActivity() {
             goLogin(); return
         }
 
+        // Se veio de notificação push com destino específico, redireciona direto sem montar HomeActivity
+        if (handleNotifDeepLink()) return
+
+        // Ação "Marcar para depois" — abriu HomeActivity sem redirecionar; apenas avisa
+        if (intent?.getBooleanExtra("notif_later", false) == true) {
+            intent?.removeExtra("notif_later")
+            android.widget.Toast.makeText(this, "Notificação marcada para depois.", android.widget.Toast.LENGTH_SHORT).show()
+        }
+
         tvBoasVindas = findViewById(R.id.tvBoasVindas)
         tvCargo = findViewById(R.id.tvCargo)
         tvAvatar = findViewById(R.id.tvAvatar)
@@ -239,7 +248,6 @@ class HomeActivity : AppCompatActivity() {
         ensureNotificationPermission()
         registrarPushToken()
         ensureLocationAndSend()
-        handleDeepLink()
         processarFilaPendente()
         registrarCallbackRede()
     }
@@ -253,6 +261,12 @@ class HomeActivity : AppCompatActivity() {
             return
         }
         session.touchActivity()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNotifDeepLink()
     }
 
     override fun onUserInteraction() {
@@ -282,25 +296,43 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
-    private fun handleDeepLink() {
-        if (intent?.getBooleanExtra("notif_later", false) == true) {
-            intent?.removeExtra("notif_later")
-            android.widget.Toast.makeText(this, "Notificação marcada para depois.", android.widget.Toast.LENGTH_SHORT).show()
-            return
-        }
-        val tipo = intent?.getStringExtra("tipo") ?: return
+    /**
+     * Verifica se o intent veio de uma notificação push com destino específico.
+     * Se sim, abre a tela correta, finaliza HomeActivity e retorna true.
+     * Chamado ANTES de montar a UI para evitar flash do HomeActivity.
+     */
+    private fun handleNotifDeepLink(): Boolean {
+        val tipo = intent?.getStringExtra("tipo") ?: return false
         val arquivoId = intent.getStringExtra("arquivo_id")?.toIntOrNull() ?: -1
+        val url = intent.getStringExtra("url")
+        val titulo = intent.getStringExtra("titulo") ?: "Comunicado"
         intent.removeExtra("tipo")
-        when {
+        val target: Intent? = when {
             tipo == "documento_assinar" && arquivoId > 0 ->
-                startActivity(Intent(this, DocumentosActivity::class.java).apply {
+                Intent(this, DocumentosActivity::class.java).apply {
                     putExtra(FcmService.EXTRA_ARQUIVO_ID, arquivoId)
-                })
+                }
             tipo == "chat" || tipo == "chat_broadcast" ->
-                startActivity(Intent(this, MensagensActivity::class.java))
+                Intent(this, MensagensActivity::class.java)
             tipo == "novo_documento" ->
-                startActivity(Intent(this, DocumentosActivity::class.java))
+                Intent(this, DocumentosActivity::class.java)
+            tipo == "aviso_geral" && !url.isNullOrBlank() ->
+                Intent(this, WebViewActivity::class.java).apply {
+                    putExtra(WebViewActivity.EXTRA_URL, url)
+                    putExtra(WebViewActivity.EXTRA_TITULO, titulo)
+                }
+            tipo == "aviso_geral" ->
+                Intent(this, MensagensActivity::class.java).apply {
+                    putExtra("open_tab", "avisos")
+                }
+            else -> null
         }
+        if (target != null) {
+            startActivity(target)
+            finish()
+            return true
+        }
+        return false
     }
 
     private fun ensureNotificationPermission() {

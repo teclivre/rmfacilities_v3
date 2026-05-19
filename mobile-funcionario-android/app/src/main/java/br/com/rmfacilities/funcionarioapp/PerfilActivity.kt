@@ -229,7 +229,7 @@ class PerfilActivity : AppCompatActivity() {
                     val nome = f?.nome.orEmpty()
                     tvNome.text = nome
                     tvAvatar.text = nome.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
-                    tvCpf.text = f?.cpf.orEmpty()
+                    tvCpf.text = formatCpf(f?.cpf)
                     cpfPerfilAtual = f?.cpf.orEmpty().replace("\\D".toRegex(), "")
                     tvCargo.text = f?.cargo.orEmpty()
                     val empresa = f?.empresa_nome.orEmpty()
@@ -322,6 +322,13 @@ class PerfilActivity : AppCompatActivity() {
             .build()
 
         prompt.authenticate(promptInfo)
+    }
+
+    private fun formatCpf(cpf: String?): String {
+        val digits = (cpf ?: "").filter { it.isDigit() }
+        return if (digits.length == 11)
+            "${digits.substring(0, 3)}.${digits.substring(3, 6)}.${digits.substring(6, 9)}-${digits.substring(9)}"
+        else digits
     }
 
     private fun exibirFotoDosBytes(bytes: ByteArray) {
