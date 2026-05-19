@@ -1576,6 +1576,12 @@ class PontoCorrecaoSolicitacao(db.Model):
     funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False,index=True)
     data_ref=db.Column(db.String(10),nullable=False)
     tipo_problema=db.Column(db.String(40),default='horario_errado')
+    # marcacao_id: marcação específica a corrigir (None = adicionar nova)
+    marcacao_id=db.Column(db.Integer,db.ForeignKey('ponto_marcacao.id'),nullable=True)
+    # horario_correto: novo horário desejado HH:MM
+    horario_correto=db.Column(db.String(5),nullable=True)
+    # horario_original: horário original da marcação no momento da solicitação (audit)
+    horario_original=db.Column(db.String(5),nullable=True)
     horario_esperado=db.Column(db.String(5))
     observacao=db.Column(db.Text,default='')
     status=db.Column(db.String(20),default='pendente')
@@ -1586,6 +1592,11 @@ class PontoCorrecaoSolicitacao(db.Model):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         d['criado_fmt']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
         d['resolvido_fmt']=self.resolvido_em.strftime('%d/%m/%Y %H:%M') if self.resolvido_em else ''
+        try:
+            func=Funcionario.query.get(self.funcionario_id)
+            d['funcionario_nome']=func.nome if func else None
+        except Exception:
+            d['funcionario_nome']=None
         return d
 
 class AuthTentativa(db.Model):
@@ -1849,6 +1860,8 @@ class ComunicadoApp(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     titulo=db.Column(db.String(200),nullable=False)
     conteudo=db.Column(db.Text,nullable=False)
+    # URL opcional: se preenchida, o app abre o link ao invés de exibir o texto
+    url=db.Column(db.String(2000),nullable=True)
     # None = para todos; int = para funcionario específico
     funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=True)
     # None = todos os postos; string = apenas esse posto
@@ -3234,17 +3247,23 @@ def _fcm_send_to_token(token,titulo,corpo,data=None):
         visibility_enum=getattr(messaging,'AndroidNotificationVisibility',None)
         if visibility_enum is not None and hasattr(visibility_enum,'PUBLIC'):
             android_notification_kwargs['visibility']=visibility_enum.PUBLIC
+        # Monta payload de dados incluindo título e corpo para que FcmService
+        # possa exibir a notificação com o PendingIntent correto (toque abre a
+        # tela certa mesmo com app em background/morto).
+        # Enviamos SOMENTE data (sem campo notification) para garantir que
+        # onMessageReceived seja sempre invocado pelo FCM SDK.
+        all_data={k:str(v) for k,v in (data or {}).items()}
+        all_data.setdefault('titulo',titulo)
+        all_data.setdefault('corpo',corpo)
         msg=messaging.Message(
             token=token,
-            notification=messaging.Notification(title=titulo,body=corpo),
-            data={k:str(v) for k,v in (data or {}).items()},
+            data=all_data,
             android=messaging.AndroidConfig(
                 priority='high',
-                notification=messaging.AndroidNotification(**android_notification_kwargs)
             ),
             apns=messaging.APNSConfig(
                 payload=messaging.APNSPayload(
-                    aps=messaging.Aps(badge=1,sound='default')
+                    aps=messaging.Aps(badge=1,sound='default',content_available=True)
                 )
             ),
         )
@@ -7919,23 +7938,41 @@ def api_app_ponto_solicitar_correcao():
     observacao=(d.get('observacao') or '').strip()[:1000]
     tipo_problema=(d.get('tipo_problema') or 'horario_errado').strip()
     horario_esperado=(d.get('horario_esperado') or '').strip()[:5]
+    # Novos campos: marcacao_id e horario_correto
+    marcacao_id=d.get('marcacao_id')
+    horario_correto=(d.get('horario_correto') or '').strip()[:5] or None
     if not data_ref:
         return jsonify({'erro':'O campo data_ref é obrigatório.'}),400
     if not observacao:
         return jsonify({'erro':'Descreva o problema no campo observacao.'}),400
     if tipo_problema not in ('horario_errado','marcacao_faltando','marcacao_extra','outro'):
         tipo_problema='outro'
+    # Validar marcacao_id pertence ao funcionário
+    horario_original=None
+    marc_obj=None
+    if marcacao_id:
+        try: marcacao_id=int(marcacao_id)
+        except (TypeError,ValueError): marcacao_id=None
+    if marcacao_id:
+        marc_obj=PontoMarcacao.query.filter_by(id=marcacao_id,funcionario_id=f.id).first()
+        if not marc_obj:
+            return jsonify({'erro':'Marcação não encontrada.'}),404
+        if marc_obj.data_hora:
+            horario_original=marc_obj.data_hora.strftime('%H:%M')
     it=PontoCorrecaoSolicitacao(
         funcionario_id=f.id,
         data_ref=data_ref,
         tipo_problema=tipo_problema,
+        marcacao_id=marcacao_id or None,
+        horario_correto=horario_correto,
+        horario_original=horario_original,
         horario_esperado=horario_esperado or None,
         observacao=observacao,
         status='pendente',
     )
     db.session.add(it)
     db.session.commit()
-    audit_event('app_ponto_solicitacao_correcao','funcionario',f.id,'funcionario',f.id,True,{'solicitacao_id':it.id,'data_ref':data_ref})
+    audit_event('app_ponto_solicitacao_correcao','funcionario',f.id,'funcionario',f.id,True,{'solicitacao_id':it.id,'data_ref':data_ref,'marcacao_id':marcacao_id})
     return jsonify({'ok':True,'mensagem':'Solicitação enviada. O RH analisará em breve.','id':it.id}),201
 
 @app.route('/api/funcionarios/<int:fid>/ponto/solicitacoes-correcao',methods=['GET'])
@@ -7961,12 +7998,47 @@ def api_rh_decidir_correcao_ponto(id):
     it.status='resolvido' if acao=='aprovar' else 'rejeitado'
     it.motivo_admin=motivo
     it.resolvido_em=utcnow()
+    # Se aprovado e há marcação existente + horário correto → alterar horário
+    if acao=='aprovar' and it.marcacao_id and it.horario_correto:
+        marc=db.session.get(PontoMarcacao, it.marcacao_id)
+        if marc and marc.data_hora:
+            try:
+                h,m=it.horario_correto.split(':')
+                nova_dh=marc.data_hora.replace(hour=int(h),minute=int(m),second=0,microsecond=0)
+                marc.data_hora=nova_dh
+                marc.observacao=(marc.observacao or '')+f' [corrigido pelo RH em {utcnow().strftime("%d/%m/%Y %H:%M")}]'
+                app.logger.info(f'[correcao-ponto] marcacao {it.marcacao_id} atualizada para {it.horario_correto}')
+            except Exception as ex:
+                app.logger.error(f'[correcao-ponto] ERRO ao alterar marcacao {it.marcacao_id}: {ex}',exc_info=True)
+        elif not marc:
+            app.logger.error(f'[correcao-ponto] marcacao {it.marcacao_id} nao encontrada no banco')
+    # Se aprovado e dia sem marcação (marcacao_faltando) com horário definido → criar nova marcação
+    elif acao=='aprovar' and it.tipo_problema=='marcacao_faltando' and it.horario_correto and it.data_ref:
+        try:
+            data_obj=datetime.strptime(it.data_ref,'%Y-%m-%d').date()
+            marcacoes_dia=_app_ponto_marcacoes_dia(it.funcionario_id, data_obj)
+            tipo_novo=_app_ponto_tipo_esperado(marcacoes_dia)
+            h,m=it.horario_correto.split(':')
+            nova_dh=datetime.combine(data_obj, datetime.min.time()).replace(hour=int(h),minute=int(m),second=0,microsecond=0)
+            nova_marc=PontoMarcacao(
+                funcionario_id=it.funcionario_id,
+                data_hora=nova_dh,
+                tipo=tipo_novo,
+                origem='correcao_rh',
+                observacao=f'Criado por correção #{it.id} aprovada em {utcnow().strftime("%d/%m/%Y %H:%M")}',
+            )
+            db.session.add(nova_marc)
+            db.session.flush()  # gera o ID antes do commit
+            it.marcacao_id=nova_marc.id
+            app.logger.info(f'[correcao-ponto] nova marcacao criada id={nova_marc.id} funcionario={it.funcionario_id} data={it.data_ref} hora={it.horario_correto} tipo={tipo_novo}')
+        except Exception as ex:
+            app.logger.error(f'[correcao-ponto] ERRO ao criar marcacao faltando: {ex}',exc_info=True)
     db.session.commit()
     status_label='aprovada' if acao=='aprovar' else 'rejeitada'
     _push_notify_funcionario(it.funcionario_id,'📋 Solicitação de correção '+status_label,
         f'Sua solicitação de correção de ponto em {it.data_ref} foi {status_label}.'+(' Motivo: '+motivo if motivo else ''),
         data={'tipo':'correcao_ponto_'+acao,'solicitacao_id':str(it.id)})
-    audit_event('rh_decidiu_correcao_ponto','usuario',current_user.id,'ponto_correcao_solicitacao',it.id,True,{'acao':acao,'funcionario_id':it.funcionario_id})
+    audit_event('rh_decidiu_correcao_ponto','usuario',session.get('uid'),'ponto_correcao_solicitacao',it.id,True,{'acao':acao,'funcionario_id':it.funcionario_id,'marcacao_id':it.marcacao_id,'horario_correto':it.horario_correto})
     return jsonify({'ok':True,'item':it.to_dict()})
 
 @app.route('/api/funcionarios/<int:fid>/ponto/solicitacoes-correcao/pendentes',methods=['GET'])
@@ -8039,15 +8111,17 @@ def api_app_funcionario_me_documentos():
 @app_func_required
 def api_app_funcionario_ultimo_pagamento():
     f=g.app_funcionario
+    empresa_ref_id=int(f.empresa_id or 0)
     folhas=FolhaPagamentoMensal.query.filter(
-        FolhaPagamentoMensal.status=='fechada'
+        FolhaPagamentoMensal.status=='fechada',
+        FolhaPagamentoMensal.empresa_ref_id==empresa_ref_id
     ).order_by(FolhaPagamentoMensal.competencia.desc()).all()
     for folha in folhas:
         try:
             dados=json.loads(folha.dados_json or '{}')
         except Exception:
             continue
-        items=dados.get('items') or dados.get('funcionarios') or []
+        items=dados.get('itens') or dados.get('items') or dados.get('funcionarios') or []
         for item in items:
             func_id=item.get('funcionario_id') or item.get('id')
             if func_id and int(func_id)==f.id:
@@ -8064,8 +8138,10 @@ def api_app_funcionario_ultimo_pagamento():
 @app_func_required
 def api_app_funcionario_historico_pagamentos():
     f=g.app_funcionario
+    empresa_ref_id=int(f.empresa_id or 0)
     folhas=FolhaPagamentoMensal.query.filter(
-        FolhaPagamentoMensal.status=='fechada'
+        FolhaPagamentoMensal.status=='fechada',
+        FolhaPagamentoMensal.empresa_ref_id==empresa_ref_id
     ).order_by(FolhaPagamentoMensal.competencia.desc()).limit(24).all()
     resultado=[]
     for folha in folhas:
@@ -8073,7 +8149,7 @@ def api_app_funcionario_historico_pagamentos():
             dados=json.loads(folha.dados_json or '{}')
         except Exception:
             continue
-        items=dados.get('items') or dados.get('funcionarios') or []
+        items=dados.get('itens') or dados.get('items') or dados.get('funcionarios') or []
         for item in items:
             func_id=item.get('funcionario_id') or item.get('id')
             if func_id and int(func_id)==f.id:
@@ -8516,7 +8592,10 @@ def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
             except Exception:
                 pass
     except Exception:
-        pass
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
     
     # Se não tem escala ou erro, usa jornada fixa no dia
     return _app_ponto_min_esperado_jornada_data(funcionario,data_obj if 'data_obj' in locals() else data_str)
@@ -8587,6 +8666,23 @@ def _app_ponto_fmt_minutos(total,signed=False):
     minutos=abs(minutos)
     return f'{sinal}{minutos//60:02d}:{minutos%60:02d}'
 
+def _app_ponto_max_marcacoes_dia(funcionario):
+    """Retorna quantas marcações são esperadas em um dia completo para este funcionário.
+    4 se a jornada tem intervalo, 2 se não tem, 4 por padrão."""
+    try:
+        jid=getattr(funcionario,'jornada_id',None)
+        if jid:
+            jornada=db.session.get(JornadaTrabalho,jid)
+            if jornada:
+                hi=(jornada.hora_intervalo_inicio or '').strip()
+                hf=(jornada.hora_intervalo_fim or '').strip()
+                if hi and hf and re.match(r'^\d{2}:\d{2}$',hi) and re.match(r'^\d{2}:\d{2}$',hf):
+                    return 4
+                return 2
+    except Exception:
+        pass
+    return 4
+
 def _app_ponto_resumo_dia(funcionario,data_ref):
     marcacoes=_app_ponto_marcacoes_dia(funcionario.id,data_ref)
     inconsistencias=[]
@@ -8646,6 +8742,18 @@ def _app_ponto_resumo_dia(funcionario,data_ref):
         })
 
     prox=_app_ponto_tipo_esperado(marcacoes)
+    # Calcular limite de marcações e pendentes de faltando
+    max_marc=_app_ponto_max_marcacoes_dia(funcionario)
+    data_ref_str=data_ref.strftime('%Y-%m-%d')
+    try:
+        correcoes_faltando_pendentes=PontoCorrecaoSolicitacao.query.filter_by(
+            funcionario_id=funcionario.id,
+            data_ref=data_ref_str,
+            tipo_problema='marcacao_faltando',
+            status='pendente'
+        ).count()
+    except Exception:
+        correcoes_faltando_pendentes=0
     return {
         'funcionario_id':funcionario.id,
         'funcionario_nome':funcionario.nome,
@@ -8661,6 +8769,8 @@ def _app_ponto_resumo_dia(funcionario,data_ref):
         'saldo_fmt':_app_ponto_fmt_minutos(saldo,signed=True),
         'status':'ok' if not inconsistencias else 'inconsistente',
         'inconsistencias':inconsistencias,
+        'max_marcacoes_dia':max_marc,
+        'correcoes_faltando_pendentes':correcoes_faltando_pendentes,
     }
 
 def _geo_haversine_m(lat1,lon1,lat2,lon2):
@@ -8681,7 +8791,12 @@ def _geo_haversine_m(lat1,lon1,lat2,lon2):
 def api_app_ponto_dia_me():
     f=g.app_funcionario
     data_ref=_app_ponto_parse_data_ref(request.args.get('data'))
-    return jsonify({'ok':True,'resumo':_app_ponto_resumo_dia(f,data_ref)})
+    try:
+        resumo=_app_ponto_resumo_dia(f,data_ref)
+        return jsonify({'ok':True,'resumo':resumo})
+    except Exception as ex:
+        app.logger.error(f'[ponto-dia] erro ao gerar resumo fid={f.id} data={data_ref}: {ex}',exc_info=True)
+        return jsonify({'ok':False,'erro':'Erro interno ao carregar dados de ponto. Tente novamente.'}),500
 
 @app.route('/api/app/funcionario/me/ponto/marcar',methods=['POST'])
 @app_func_required
@@ -9470,13 +9585,18 @@ def api_rh_comunicado_criar():
     d=request.json or {}
     titulo=(d.get('titulo') or '').strip()
     conteudo=(d.get('conteudo') or '').strip()
+    url=(d.get('url') or '').strip() or None
     if not titulo: return jsonify({'erro':'Titulo obrigatorio'}),400
     if not conteudo: return jsonify({'erro':'Conteudo obrigatorio'}),400
+    # Validar URL se fornecida
+    if url and not url.startswith(('http://','https://')):
+        return jsonify({'erro':'URL inválida. Use http:// ou https://'}),400
     fid=d.get('funcionario_id')
     posto=(d.get('posto_operacional') or '').strip() or None
     c=ComunicadoApp(
         titulo=titulo,
         conteudo=conteudo,
+        url=url,
         funcionario_id=int(fid) if fid else None,
         posto_operacional=posto,
         criado_por=session.get('nome') or session.get('email') or 'RH',
@@ -9486,14 +9606,16 @@ def api_rh_comunicado_criar():
     db.session.commit()
     # Enviar push para os destinatários
     push_data={'tipo':'aviso_geral','comunicado_id':str(c.id)}
+    if url: push_data['url']=url
+    corpo_push=url if url else conteudo[:160]
     if fid:
-        _push_notify_funcionario(int(fid), titulo, conteudo[:160], data=push_data)
+        _push_notify_funcionario(int(fid), titulo, corpo_push, data=push_data)
     else:
         q=Funcionario.query.filter_by(status='Ativo', app_ativo=True)
         if posto:
             q=q.filter(Funcionario.posto_operacional==posto)
         for func in q.all():
-            _push_notify_funcionario(func.id, titulo, conteudo[:160], data=push_data)
+            _push_notify_funcionario(func.id, titulo, corpo_push, data=push_data)
     return jsonify(c.to_dict()),201
 
 @app.route('/api/comunicados-app/<int:cid>',methods=['PUT'])
@@ -9503,6 +9625,11 @@ def api_rh_comunicado_editar(cid):
     d=request.json or {}
     if 'titulo' in d: c.titulo=(d['titulo'] or '').strip()
     if 'conteudo' in d: c.conteudo=(d['conteudo'] or '').strip()
+    if 'url' in d:
+        url=(d['url'] or '').strip() or None
+        if url and not url.startswith(('http://','https://')):
+            return jsonify({'erro':'URL inválida. Use http:// ou https://'}),400
+        c.url=url
     if 'ativo' in d: c.ativo=bool(d['ativo'])
     db.session.commit()
     return jsonify(c.to_dict())
@@ -15169,6 +15296,7 @@ def api_dashboard():
         'alerta_sem_aso_valido':{'qtd':len(alertas_sem_aso),'itens':alertas_sem_aso[:8]},
         'alerta_aso':{'qtd':len(alertas_aso),'itens':alertas_aso[:8],'janela_dias':30},
         'alerta_contratos':{'qtd':len(alertas_contratos),'itens':alertas_contratos[:8]},
+        'correcoes_ponto_pendentes':PontoCorrecaoSolicitacao.query.filter_by(status='pendente').count(),
         'total_cli':Cliente.query.count(),'proximo_num':prox_num(),
         'empresas':[{'id':e.id,'nome':e.nome,'cli':Cliente.query.filter_by(empresa_id=e.id,status='Ativo').count()} for e in Empresa.query.filter_by(ativa=True).all()]})
 
@@ -16967,7 +17095,8 @@ with app.app_context():
         'data_nascimento DATE',
     ])
     ensure_cols('comunicado_app',[
-        'posto_operacional VARCHAR(150)'
+        'posto_operacional VARCHAR(150)',
+        'url VARCHAR(2000)',
     ])
     ensure_cols('cliente',[
         'numero_contrato VARCHAR(60)',
@@ -17030,6 +17159,11 @@ with app.app_context():
         'latitude FLOAT',
         'longitude FLOAT',
         'precisao_gps FLOAT',
+    ])
+    ensure_cols('ponto_correcao_solicitacao',[
+        'marcacao_id INTEGER',
+        'horario_correto VARCHAR(5)',
+        'horario_original VARCHAR(5)',
     ])
     ensure_cols('jornada_trabalho',[
         'descricao VARCHAR(255)',
@@ -17328,19 +17462,16 @@ def _lembrete_assinatura_loop():
                         if not f:
                             continue
                         canal = _canal_padrao(a)
-                        # no_autoflush evita que o autoflush do SQLAlchemy tente escrever
-                        # no SQLite enquanto outro worker já tem um write-lock
-                        with db.session.no_autoflush:
-                            rs = _solicitar_assinatura_arquivo_funcionario(
-                                a, f,
-                                canal=canal,
-                                commit_now=False,
-                                forcar_novo_token=False,
-                                eh_lembrete=True,
-                            )
+                        rs = _solicitar_assinatura_arquivo_funcionario(
+                            a, f,
+                            canal=canal,
+                            commit_now=False,
+                            forcar_novo_token=False,
+                            eh_lembrete=True,
+                        )
                         a.ass_lembretes_enviados = (a.ass_lembretes_enviados or 0) + 1
                         a.ass_ultimo_lembrete_em = agora
-                        _db_commit_retry('lembrete-auto', swallow_locked=True)
+                        db.session.commit()
                         app.logger.info(
                             f'[lembrete-auto] funcionario={a.funcionario_id} arquivo={a.id} '
                             f'canal={canal} ok={rs.get("ok")}'
@@ -17348,19 +17479,11 @@ def _lembrete_assinatura_loop():
                     except Exception as ex:
                         app.logger.error(f'[lembrete-auto] arquivo={a.id} erro={ex}')
                         try:
-                            db.session.rollback()
-                        except Exception:
-                            pass
-                        try:
                             db.session.remove()  # descarta sessão corrompida; próxima iteração cria nova
                         except Exception:
                             pass
         except Exception as e:
             app.logger.error(f'[lembrete-assinatura] erro geral: {e}')
-            try:
-                db.session.rollback()
-            except Exception:
-                pass
             try:
                 db.session.remove()  # sessão pode estar em rolled-back; remove para garantir sessão limpa
             except Exception:
@@ -17404,7 +17527,9 @@ def api_auto_backup_download(nome):
 import signal as _signal
 
 def _graceful_shutdown(signum, frame):
-    """Captura SIGTERM/SIGINT para fechar clientes SSE e fazer flush do DB antes de sair."""
+    """Captura SIGTERM/SIGINT para fechar clientes SSE e fazer flush do DB antes de sair.
+    Restaura o handler padrão e re-propaga o sinal para que o gunicorn termine os
+    workers de forma controlada sem abortar requests em andamento."""
     app.logger.info('[shutdown] sinal recebido — encerrando graciosamente...')
     # Avisa clientes SSE que o servidor vai encerrar
     try:
@@ -17417,7 +17542,10 @@ def _graceful_shutdown(signum, frame):
     except Exception:
         pass
     app.logger.info('[shutdown] encerrado')
-    raise SystemExit(0)
+    # Restaura o handler padrão e re-propaga para o gunicorn tratar o desligamento
+    # Evita substituir permanentemente o handler do gunicorn (que aborta workers mid-request)
+    _signal.signal(signum, _signal.SIG_DFL)
+    _signal.raise_signal(signum)
 
 _signal.signal(_signal.SIGTERM, _graceful_shutdown)
 
