@@ -3,55 +3,192 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Validação de Assinatura - RM Facilities</title>
+  <title>Comprovante de Assinatura - RM Facilities</title>
   <link rel="stylesheet" href="/static/css/main.css">
+<style>
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{height:100%;margin:0;padding:0}
+  body.public-page{display:flex;flex-direction:column;min-height:100vh}
+  .public-topbar{flex-shrink:0}
+  .public-main{flex:1 1 auto;padding:0;overflow:hidden;min-height:0}
+  .public-container{max-width:100%;height:100%;min-height:0}
+  .doc-page-wrap{display:flex;height:calc(100vh - 52px);min-height:0}
+  .doc-form-col{
+    width:320px;min-width:260px;max-width:360px;
+    flex-shrink:0;overflow-y:auto;
+    background:#f4f7fb;border-right:1px solid #d7e1f0;
+    padding:16px 14px;display:flex;flex-direction:column;gap:10px
+  }
+  .doc-form-panel{background:#fff;border:1px solid #d8e2ef;border-radius:12px;padding:14px;box-shadow:0 4px 14px rgba(35,66,120,.09)}
+  .doc-form-title{font-size:15px;font-weight:800;color:#1e365f;margin:0 0 6px}
+  .doc-pdf-col{flex:1 1 auto;display:flex;flex-direction:column;overflow:hidden;background:#1a2235;min-height:0}
+  .doc-pdf-wrap{flex:1 1 auto;display:flex;flex-direction:column;padding:10px;gap:6px;min-height:0}
+  .doc-pdf-toolbar{display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+  .doc-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;background:#1a2235;padding:10px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y}
+  .pdf-pages{display:flex;flex-direction:column;gap:10px;align-items:center;width:100%}
+  .pdf-page{background:#fff;border:1px solid #334155;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.35);max-width:100%}
+  .viewer-loading{font-size:13px;color:#9bb;padding:24px;text-align:center}
+  .pdf-fallback-frame{width:100%;min-height:72vh;border:none;border-radius:8px;display:block;background:#fff}
+  .audit-badge-ok{background:#e6f9ee;border:1.5px solid #2ecc71;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;color:#1a7a45;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+  .audit-badge-err{background:#fff0f0;border:1.5px solid #e74c3c;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;color:#c0392b;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+  .audit-info{font-size:12px;color:#334;line-height:1.8}
+  .audit-info strong{color:#1e365f;min-width:120px;display:inline-block}
+  .audit-code{background:#eef3fb;border:1px solid #c5d5ee;border-radius:6px;padding:6px 10px;font-size:11px;color:#1e365f;font-family:monospace;word-break:break-all;margin-top:6px}
+  .btn-download{display:flex;align-items:center;justify-content:center;gap:6px;background:#1e5fa8;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;width:100%;margin-top:6px}
+  .btn-download:hover{background:#174d8c}
+  .btn-download-audit{background:#344;color:#fff}
+  .btn-download-audit:hover{background:#223}
+  @media(max-width:800px){
+    .public-main{overflow:auto}
+    .public-container{height:auto}
+    .doc-page-wrap{flex-direction:column;height:auto}
+    .doc-form-col{order:2;width:100%;max-width:100%;border-right:none;border-bottom:none}
+    .doc-pdf-col{order:1;height:58vh;min-height:380px}
+  }
+</style>
 </head>
 <body class="public-page">
   <div class="public-topbar">
-      <div class="public-topbar-brand">
-        <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
-        <h1>RM Facilities</h1>
-      </div>
-    </div>
-    <div class="public-main">
-      <div class="public-container">
-        <div class="public-card">
-          <h1>Validação de assinatura eletrônica</h1>
-          <p class="sub">Confirme a autenticidade da assinatura eletrônica do documento.</p>
-
-          {% if ok %}
-          <div class="public-alert ok"><strong>✔ ASSINATURA VÁLIDA</strong></div>
-          {% else %}
-          <div class="public-alert err"><strong>✖ ASSINATURA INVÁLIDA OU NÃO ENCONTRADA</strong></div>
-          {% endif %}
-
-          {% if arquivo %}
-          <div class="public-info-box">
-            <strong>Documento:</strong> {{ arquivo.nome_arquivo or '-' }}<br>
-            <strong>Categoria:</strong> {{ arquivo.categoria or '-' }}<br>
-            {% if arquivo.competencia %}<strong>Competência:</strong> {{ arquivo.competencia }}<br>{% endif %}
-            {% if funcionario %}<strong>Funcionário:</strong> {{ funcionario.nome }}<br>{% endif %}
-            <strong>Assinante:</strong> {{ arquivo.ass_nome or '-' }}<br>
-            <strong>Cargo informado:</strong> {{ arquivo.ass_cargo or '-' }}<br>
-            <strong>CPF (mascarado):</strong> 
-            {% if arquivo.ass_cpf and arquivo.ass_cpf|length == 11 %}
-              {{ arquivo.ass_cpf[:3] }}.***.***-{{ arquivo.ass_cpf[-2:] }}
-            {% else %}
-              {{ arquivo.ass_cpf or '-' }}
-            {% endif %}<br>
-            <strong>Data/Hora:</strong> {{ arquivo.ass_em_fmt or '-' }}<br>
-            <strong>IP de origem:</strong> {{ arquivo.ass_ip or '-' }}<br>
-            <strong>Código de validação:</strong> <strong>{{ arquivo.ass_codigo or '-' }}</strong>
-          </div>
-          {% else %}
-          <div class="public-alert err">{{ mensagem }}</div>
-          {% endif %}
-
-          {% if not ok and mensagem %}
-          <div class="public-alert err">{{ mensagem }}</div>
-          {% endif %}
-        </div>
+    <div class="public-topbar-brand">
+      <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
+      <h1>RM Facilities</h1>
     </div>
   </div>
+
+  <div class="public-main">
+    <div class="public-container">
+      {% if arquivo %}
+      <div class="doc-page-wrap">
+
+        <!-- ═══ COLUNA ESQUERDA: Auditoria ═══ -->
+        <aside class="doc-form-col">
+          <div class="doc-form-panel">
+            <h2 class="doc-form-title">Comprovante de assinatura</h2>
+
+            {% if ok %}
+            <div class="audit-badge-ok">✔ ASSINATURA VÁLIDA</div>
+            {% else %}
+            <div class="audit-badge-err">✖ ASSINATURA INVÁLIDA</div>
+            {% if mensagem %}<div style="font-size:12px;color:#c0392b;margin-bottom:8px">{{ mensagem }}</div>{% endif %}
+            {% endif %}
+
+            <div class="audit-info">
+              <strong>Documento:</strong> {{ arquivo.nome_arquivo or '-' }}<br>
+              <strong>Categoria:</strong> {{ arquivo.categoria or '-' }}<br>
+              {% if arquivo.competencia %}<strong>Competência:</strong> {{ arquivo.competencia }}<br>{% endif %}
+              {% if funcionario %}<strong>Funcionário:</strong> {{ funcionario.nome }}<br>{% endif %}
+              <strong>Assinante:</strong> {{ arquivo.ass_nome or '-' }}<br>
+              <strong>Cargo:</strong> {{ arquivo.ass_cargo or '-' }}<br>
+              <strong>CPF:</strong>
+              {% if arquivo.ass_cpf and arquivo.ass_cpf|length == 11 %}
+                {{ arquivo.ass_cpf[:3] }}.***.***-{{ arquivo.ass_cpf[-2:] }}
+              {% else %}
+                {{ arquivo.ass_cpf or '-' }}
+              {% endif %}<br>
+              <strong>Data/Hora:</strong> {{ arquivo.ass_em.strftime('%d/%m/%Y %H:%M') if arquivo.ass_em else '-' }}<br>
+              <strong>IP de origem:</strong> {{ arquivo.ass_ip or '-' }}<br>
+            </div>
+
+            <div class="audit-code">
+              Código de validação:<br>
+              <strong>{{ arquivo.ass_codigo or '-' }}</strong>
+            </div>
+
+            {% if ok and arquivo.ass_codigo %}
+            <a class="btn-download" href="/doc/assinado/{{ arquivo.ass_codigo }}" target="_blank" rel="noopener">
+              ⬇ Baixar documento assinado
+            </a>
+            <a class="btn-download btn-download-audit" href="/api/funcionarios/arquivos/{{ arquivo.id }}/assinatura/pdf-auditoria" target="_blank" rel="noopener">
+              📋 Relatório de auditoria
+            </a>
+            {% endif %}
+          </div>
+
+          <div style="font-size:11px;color:#999;text-align:center;margin-top:auto;padding-top:12px">
+            Assinatura Eletrônica — RM Facilities<br>
+            Validade jurídica conforme Lei nº 14.063/2020
+          </div>
+        </aside>
+
+        <!-- ═══ COLUNA DIREITA: PDF Assinado ═══ -->
+        <section class="doc-pdf-col">
+          <div class="doc-pdf-wrap">
+            <div class="doc-pdf-toolbar">
+              <span style="font-size:12px;color:#9ec5f7;font-weight:600">{{ arquivo.nome_arquivo }}</span>
+              {% if ok and arquivo.ass_codigo %}
+              <a class="public-btn public-btn-secondary" style="font-size:11px;padding:4px 10px" href="/doc/assinado/{{ arquivo.ass_codigo }}" target="_blank" rel="noopener">Abrir em nova guia</a>
+              {% endif %}
+            </div>
+            <div id="doc-viewer-scroll" class="doc-scroll">
+              <div id="doc-viewer-pages" class="pdf-pages">
+                {% if not ok or not arquivo.ass_codigo %}
+                <div class="viewer-loading">Documento não disponível.</div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+      {% else %}
+      <div class="public-card" style="max-width:500px;margin:40px auto">
+        <h1>Validação de assinatura</h1>
+        <div class="public-alert err">
+          <strong>Não encontrado</strong>
+          <p>{{ mensagem or 'Assinatura não encontrada para o código informado.' }}</p>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if arquivo and ok and arquivo.ass_codigo %}
+  <script src="/static/vendor/pdfjs/pdf.min.js"></script>
+  <script>
+    const PDF_URL='/doc/assinado/{{ arquivo.ass_codigo }}';
+    if(window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions){
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc='/static/vendor/pdfjs/pdf.worker.min.js';
+    }
+    async function renderPdf(){
+      const pages=document.getElementById('doc-viewer-pages');
+      const sc=document.getElementById('doc-viewer-scroll');
+      if(!pages||!sc) return;
+      pages.innerHTML='<div class="viewer-loading">Carregando documento assinado...</div>';
+      try{
+        if(window.pdfjsLib){
+          const r=await fetch(PDF_URL,{cache:'no-store'});
+          if(!r.ok) throw new Error('Falha ao carregar.');
+          const blob=await r.blob();
+          const pdf=await window.pdfjsLib.getDocument({data:await blob.arrayBuffer()}).promise;
+          pages.innerHTML='';
+          const gutter=window.innerWidth<=800?12:24;
+          const renderWidth=Math.max(280,Math.min(980,sc.clientWidth-gutter));
+          const outputScale=Math.min(window.devicePixelRatio||1,2);
+          for(let p=1;p<=pdf.numPages;p++){
+            const page=await pdf.getPage(p);
+            const vp=page.getViewport({scale:1});
+            const scale=renderWidth/vp.width;
+            const viewport=page.getViewport({scale});
+            const canvas=document.createElement('canvas');
+            canvas.className='pdf-page';
+            canvas.width=Math.floor(viewport.width*outputScale);
+            canvas.height=Math.floor(viewport.height*outputScale);
+            canvas.style.width=Math.floor(viewport.width)+'px';
+            canvas.style.height=Math.floor(viewport.height)+'px';
+            const ctx=canvas.getContext('2d',{alpha:false});
+            ctx.setTransform(outputScale,0,0,outputScale,0,0);
+            await page.render({canvasContext:ctx,viewport}).promise;
+            pages.appendChild(canvas);
+          }
+          return;
+        }
+        throw new Error('PDF.js indisponível');
+      }catch(e){
+        pages.innerHTML=`<iframe src="${PDF_URL}" class="pdf-fallback-frame" title="Documento assinado"></iframe>`;
+      }
+    }
+    document.addEventListener('DOMContentLoaded', renderPdf);
+  </script>
+  {% endif %}
 </body>
 </html>
