@@ -1809,7 +1809,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               <input id="epi-busca-func" type="text" placeholder="Digite nome, matrícula ou RE..."
                 oninput="epiBuscarFunc(this.value)" autocomplete="off"
                 style="width:100%">
-              <div id="epi-func-sugestoes" style="position:relative"></div>
+              <div id="epi-func-sugestoes" style="position:relative;z-index:200"></div>
             </div>
             <div class="f" style="flex:1">
               <label>Empresa do colaborador</label>
@@ -7352,11 +7352,7 @@ async function gerarFichaEPI() {
   res.style.display = 'none';
 
   try {
-    const r = await api(`/api/funcionarios/${epiFuncSelecionado.id}/gerar-ficha-epi`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ itens, canal, obs })
-    });
+    const r = await api(`/api/funcionarios/${epiFuncSelecionado.id}/gerar-ficha-epi`, 'POST', { itens, canal, obs });
 
     if (r && r.ok) {
       const linkDownload = r.download_url ? `<a href="${r.download_url}" target="_blank" class="btn b-gh b-sm" style="margin-top:8px">⬇️ Baixar PDF</a>` : '';
