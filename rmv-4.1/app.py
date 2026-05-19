@@ -7114,6 +7114,121 @@ def api_funcionario_arquivos(id):
     db.get_or_404(Funcionario, id)
     return jsonify([a.to_dict() for a in FuncionarioArquivo.query.filter_by(funcionario_id=id).order_by(FuncionarioArquivo.criado_em.desc()).all()])
 
+def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario=None,canal='link',commit_now=True,forcar_novo_token=True,eh_lembrete=False,dias_validade=7):
+    if not arquivo:
+        return {'ok':False,'erro':'Arquivo invalido.'}
+    if not funcionario:
+        funcionario=db.session.get(Funcionario, arquivo.funcionario_id)
+    if (arquivo.ass_status or '')=='assinado':
+        return {'ok':False,'erro':'Documento ja assinado.'}
+    canal=(canal or 'link').strip().lower()
+    if canal not in ('link','whatsapp','email','app'):
+        canal='link'
+    tel=''
+    email=''
+    if canal=='whatsapp':
+        tel=wa_norm_number((funcionario.telefone if funcionario else '') or '')
+        if not wa_is_valid_number(tel):
+            return {'ok':False,'erro':'Funcionario sem WhatsApp valido cadastrado.'}
+    if canal=='email':
+        email=((funcionario.email if funcionario else '') or '').strip()
+        if not email or '@' not in email:
+            return {'ok':False,'erro':'Funcionario sem e-mail valido cadastrado.'}
+    if canal=='app':
+        if not funcionario:
+            return {'ok':False,'erro':'Funcionario invalido para envio no app.'}
+    if not arquivo.ass_codigo:
+        arquivo.ass_codigo=secrets.token_urlsafe(10)
+    if forcar_novo_token or not (arquivo.ass_token or '').strip():
+        arquivo.ass_token=secrets.token_urlsafe(24)
+    arquivo.ass_status='pendente'
+    arquivo.ass_expira_em=utcnow()+timedelta(days=max(1,int(dias_validade or 7)))
+    _ass_track_mark_sent(arquivo,canal)
+    src_q=_ass_track_channel(canal)
+    if has_request_context():
+        base_url=request.url_root.rstrip('/')
+    else:
+        base_url=(
+            (os.environ.get('PUBLIC_BASE_URL') or '').strip() or
+            (gc('public_base_url','') or '').strip() or
+            (os.environ.get('APP_BASE_URL') or '').strip() or
+            'https://portal.grupormfacilities.com.br'
+        ).rstrip('/')
+    link=f"{base_url}/doc/assinar/{arquivo.ass_token}?src={src_q}"
+    try:
+        sc=_short_link_criar(link)
+        link_curto=(f"{base_url}/s/{sc}" if sc else link)
+    except Exception:
+        link_curto=link
+    cat_label=DOC_CAT_LABEL.get(norm_cat(arquivo.categoria),arquivo.categoria or 'Documento')
+    doc_desc=cat_label + (f' ({arquivo.competencia})' if (arquivo.competencia or '').strip() else '')
+    enviado_wa=False
+    enviado_email=False
+    enviado_app=False
+    erro_envio=''
+    if canal=='whatsapp':
+        nome_func=(funcionario.nome if funcionario else 'colaborador')
+        if eh_lembrete:
+            msg=(f"🔔 Lembrete de envio anterior\n"
+                 f"Olá, {nome_func}! Este e um lembrete para assinatura do seu {doc_desc}.\n"
+                 f"Arquivo: {arquivo.nome_arquivo}\n"
+                 f"O link expira em 7 dias: {link_curto}")
+        else:
+            msg=(f"Olá, {nome_func}! Segue o link para assinatura do seu {doc_desc}.\n"
+                 f"Arquivo: {arquivo.nome_arquivo}\n"
+                 f"O link expira em 7 dias: {link_curto}")
+        try:
+            wa_send_text(tel,msg)
+            enviado_wa=True
+        except Exception as ex:
+            erro_envio=str(ex)
+    elif canal=='email':
+        nome_func=(funcionario.nome if funcionario else 'colaborador')
+        try:
+            smtp_send_link_assinatura(
+                email,
+                nome_func,
+                f'{doc_desc} - {arquivo.nome_arquivo or "Documento"}',
+                link_curto,
+                eh_lembrete=eh_lembrete,
+            )
+            enviado_email=True
+        except Exception as ex:
+            erro_envio=str(ex)
+    elif canal=='app':
+        try:
+            titulo_push=(f'Lembrete: {cat_label} para assinar' if eh_lembrete else f'{cat_label} para assinar')
+            corpo_push=(
+                f"Lembrete: seu {doc_desc} ainda aguarda assinatura no app. Arquivo: {arquivo.nome_arquivo}."
+                if eh_lembrete else
+                f"Seu {doc_desc} aguarda assinatura no app. Arquivo: {arquivo.nome_arquivo}."
+            )
+            enviado_app=bool(_push_notify_funcionario(
+                funcionario.id,
+                titulo_push,
+                corpo_push,
+                {'tipo':'documento_assinar','arquivo_id':str(arquivo.id)}
+            ))
+            if not enviado_app:
+                erro_envio='Falha ao enviar notificacao push para o aplicativo.'
+        except Exception as ex:
+            erro_envio=str(ex)
+    if commit_now:
+        db.session.commit()
+    else:
+        db.session.flush()
+    return {
+        'ok':True,
+        'link':link,
+        'link_curto':link_curto,
+        'canal':canal,
+        'expira_em':(arquivo.ass_expira_em.isoformat() if arquivo.ass_expira_em else ''),
+        'enviado_wa':enviado_wa,
+        'enviado_email':enviado_email,
+        'enviado_app':enviado_app,
+        'erro_envio':erro_envio,
+    }
+
 @app.route('/api/funcionarios/<int:id>/arquivos',methods=['POST'])
 @lr
 def api_funcionario_upload_arquivo(id):
@@ -7465,125 +7580,6 @@ def api_funcionario_gerar_ficha_epi(id):
         'assinatura':assinatura,
         'download_url':f'/api/funcionarios/arquivos/{a.id}/download',
     }),201
-
-
-
-    if not arquivo:
-        return {'ok':False,'erro':'Arquivo invalido.'}
-    if not funcionario:
-        funcionario=db.session.get(Funcionario, arquivo.funcionario_id)
-    if (arquivo.ass_status or '')=='assinado':
-        return {'ok':False,'erro':'Documento ja assinado.'}
-    canal=(canal or 'link').strip().lower()
-    if canal not in ('link','whatsapp','email','app'):
-        canal='link'
-    tel=''
-    email=''
-    if canal=='whatsapp':
-        tel=wa_norm_number((funcionario.telefone if funcionario else '') or '')
-        if not wa_is_valid_number(tel):
-            return {'ok':False,'erro':'Funcionario sem WhatsApp valido cadastrado.'}
-    if canal=='email':
-        email=((funcionario.email if funcionario else '') or '').strip()
-        if not email or '@' not in email:
-            return {'ok':False,'erro':'Funcionario sem e-mail valido cadastrado.'}
-    if canal=='app':
-        if not funcionario:
-            return {'ok':False,'erro':'Funcionario invalido para envio no app.'}
-    if not arquivo.ass_codigo:
-        arquivo.ass_codigo=secrets.token_urlsafe(10)
-    if forcar_novo_token or not (arquivo.ass_token or '').strip():
-        arquivo.ass_token=secrets.token_urlsafe(24)
-    arquivo.ass_status='pendente'
-    arquivo.ass_expira_em=utcnow()+timedelta(days=max(1,int(dias_validade or 7)))
-    _ass_track_mark_sent(arquivo,canal)
-
-    src_q=_ass_track_channel(canal)
-    if has_request_context():
-        base_url=request.url_root.rstrip('/')
-    else:
-        base_url=(
-            (os.environ.get('PUBLIC_BASE_URL') or '').strip() or
-            (gc('public_base_url','') or '').strip() or
-            (os.environ.get('APP_BASE_URL') or '').strip() or
-            'https://portal.grupormfacilities.com.br'
-        ).rstrip('/')
-    link=f"{base_url}/doc/assinar/{arquivo.ass_token}?src={src_q}"
-    try:
-        sc=_short_link_criar(link)
-        link_curto=(f"{base_url}/s/{sc}" if sc else link)
-    except Exception:
-        link_curto=link
-    cat_label=DOC_CAT_LABEL.get(norm_cat(arquivo.categoria),arquivo.categoria or 'Documento')
-    doc_desc=cat_label + (f' ({arquivo.competencia})' if (arquivo.competencia or '').strip() else '')
-    enviado_wa=False
-    enviado_email=False
-    enviado_app=False
-    erro_envio=''
-    if canal=='whatsapp':
-        nome_func=(funcionario.nome if funcionario else 'colaborador')
-        if eh_lembrete:
-            msg=(f"🔔 Lembrete de envio anterior\n"
-                 f"Olá, {nome_func}! Este e um lembrete para assinatura do seu {doc_desc}.\n"
-                 f"Arquivo: {arquivo.nome_arquivo}\n"
-                 f"O link expira em 7 dias: {link_curto}")
-        else:
-            msg=(f"Olá, {nome_func}! Segue o link para assinatura do seu {doc_desc}.\n"
-                 f"Arquivo: {arquivo.nome_arquivo}\n"
-                 f"O link expira em 7 dias: {link_curto}")
-        try:
-            wa_send_text(tel,msg)
-            enviado_wa=True
-        except Exception as ex:
-            # Mantem assinatura pendente com link ativo mesmo se o WhatsApp falhar.
-            erro_envio=str(ex)
-    elif canal=='email':
-        nome_func=(funcionario.nome if funcionario else 'colaborador')
-        try:
-            smtp_send_link_assinatura(
-                email,
-                nome_func,
-                f'{doc_desc} - {arquivo.nome_arquivo or "Documento"}',
-                link_curto,
-                eh_lembrete=eh_lembrete,
-            )
-            enviado_email=True
-        except Exception as ex:
-            erro_envio=str(ex)
-    elif canal=='app':
-        try:
-            titulo_push=(f'Lembrete: {cat_label} para assinar' if eh_lembrete else f'{cat_label} para assinar')
-            corpo_push=(
-                f"Lembrete: seu {doc_desc} ainda aguarda assinatura no app. Arquivo: {arquivo.nome_arquivo}."
-                if eh_lembrete else
-                f"Seu {doc_desc} aguarda assinatura no app. Arquivo: {arquivo.nome_arquivo}."
-            )
-            enviado_app=bool(_push_notify_funcionario(
-                funcionario.id,
-                titulo_push,
-                corpo_push,
-                {'tipo':'documento_assinar','arquivo_id':str(arquivo.id)}
-            ))
-            if not enviado_app:
-                erro_envio='Falha ao enviar notificacao push para o aplicativo.'
-        except Exception as ex:
-            erro_envio=str(ex)
-
-    if commit_now:
-        db.session.commit()
-    else:
-        db.session.flush()
-    return {
-        'ok':True,
-        'link':link,
-        'link_curto':link_curto,
-        'canal':canal,
-        'expira_em':(arquivo.ass_expira_em.isoformat() if arquivo.ass_expira_em else ''),
-        'enviado_wa':enviado_wa,
-        'enviado_email':enviado_email,
-        'enviado_app':enviado_app,
-        'erro_envio':erro_envio,
-    }
 
 @app.route('/api/funcionarios/<int:id>/documentos/preparar',methods=['POST'])
 @lr

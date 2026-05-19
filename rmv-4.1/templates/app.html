@@ -1869,6 +1869,9 @@ document.addEventListener('DOMContentLoaded',()=>{
               </select>
             </div>
             <div>
+              <button class="btn b-gh" onclick="previaFichaEPI()" id="epi-btn-previa" style="margin-right:8px">
+                🔍 Prévia
+              </button>
               <button class="btn b-az" onclick="gerarFichaEPI()" id="epi-btn-gerar">
                 🦺 Gerar Ficha de EPI
               </button>
@@ -1877,6 +1880,22 @@ document.addEventListener('DOMContentLoaded',()=>{
 
           <!-- Resultado -->
           <div id="epi-resultado" style="display:none"></div>
+        </div>
+      </div>
+
+      <!-- Modal Prévia Ficha de EPI -->
+      <div id="modal-epi-previa" style="display:none;position:fixed;inset:0;z-index:9100;background:rgba(0,0,0,.55);overflow-y:auto">
+        <div style="background:var(--bg);max-width:820px;margin:32px auto 32px;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.25);overflow:hidden">
+          <div style="background:var(--azul);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:16px;font-weight:700">🔍 Prévia — Ficha de EPI</span>
+            <button onclick="document.getElementById('modal-epi-previa').style.display='none'"
+              style="background:transparent;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1">✕</button>
+          </div>
+          <div id="epi-previa-conteudo" style="padding:24px;font-size:13px"></div>
+          <div style="padding:12px 20px 20px;text-align:right;border-top:1px solid var(--borda)">
+            <button class="btn b-gh b-sm" onclick="document.getElementById('modal-epi-previa').style.display='none'" style="margin-right:8px">Fechar</button>
+            <button class="btn b-az b-sm" onclick="document.getElementById('modal-epi-previa').style.display='none';gerarFichaEPI()">🦺 Gerar agora</button>
+          </div>
         </div>
       </div>
 
@@ -7394,6 +7413,69 @@ async function gerarFichaEPI() {
 }
 
 // Inicializa tabela EPI com 3 linhas ao entrar na subaba
+function previaFichaEPI() {
+  if (!epiFuncSelecionado) { alert('Selecione um colaborador para ver a prévia.'); return; }
+  const itens = epiGetItens();
+  const obs = (document.getElementById('epi-obs')?.value || '').trim();
+  const f = epiFuncSelecionado;
+  const hoje = new Date().toLocaleDateString('pt-BR');
+
+  const linhasHTML = itens.length ? itens.map((it, i) => `
+    <tr>
+      <td style="padding:5px 8px;border:1px solid #ccc;text-align:center">${it.data_retirada ? new Date(it.data_retirada+'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
+      <td style="padding:5px 8px;border:1px solid #ccc;text-align:center">${it.data_devolucao ? new Date(it.data_devolucao+'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
+      <td style="padding:5px 8px;border:1px solid #ccc;text-align:center">${esc(it.quantidade)}</td>
+      <td style="padding:5px 8px;border:1px solid #ccc;text-align:center">${esc(it.unidade)}</td>
+      <td style="padding:5px 8px;border:1px solid #ccc">${esc(it.descricao)}</td>
+      <td style="padding:5px 8px;border:1px solid #ccc;text-align:center">${esc(it.ca||'—')}</td>
+      <td style="padding:5px 8px;border:1px solid #ccc;min-width:80px"></td>
+    </tr>`).join('') :
+    `<tr><td colspan="7" style="padding:10px;text-align:center;color:#888;border:1px solid #ccc">Nenhum item adicionado</td></tr>`;
+
+  document.getElementById('epi-previa-conteudo').innerHTML = `
+    <div style="border:2px solid var(--azul);border-radius:8px;padding:16px 20px;margin-bottom:16px">
+      <div style="background:var(--azul);color:#fff;padding:8px 14px;border-radius:5px;margin:-16px -20px 14px;font-size:15px;font-weight:700;text-align:center">
+        FICHA DE CONTROLE DE EPI
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;font-size:12px">
+        <div><strong>Nome:</strong> ${esc(f.nome||'')}</div>
+        <div><strong>Matrícula:</strong> ${esc(f.matricula||f.re||'')}</div>
+        <div><strong>Admissão:</strong> ${esc(f.data_admissao||'')}</div>
+        <div><strong>Cargo:</strong> ${esc(f.cargo||'')}</div>
+        <div><strong>Seção/Posto:</strong> ${esc(f.posto_operacional||'')}</div>
+        <div><strong>Empresa:</strong> ${esc(f.empresa_nome||'')}</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr style="background:var(--azul);color:#fff">
+            <th style="padding:6px 8px;border:1px solid #ccc">Data Retirada</th>
+            <th style="padding:6px 8px;border:1px solid #ccc">Data Devolução</th>
+            <th style="padding:6px 8px;border:1px solid #ccc">Qtd.</th>
+            <th style="padding:6px 8px;border:1px solid #ccc">Unid.</th>
+            <th style="padding:6px 8px;border:1px solid #ccc">Descrição do Equipamento</th>
+            <th style="padding:6px 8px;border:1px solid #ccc">Nº C.A.</th>
+            <th style="padding:6px 8px;border:1px solid #ccc">Assinatura</th>
+          </tr>
+        </thead>
+        <tbody>${linhasHTML}</tbody>
+      </table>
+      ${obs ? `<div style="margin-top:12px;font-size:12px"><strong>Obs.:</strong> ${esc(obs)}</div>` : ''}
+      <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:24px;font-size:12px">
+        <div style="border-top:1px solid #333;padding-top:4px;text-align:center">
+          Assinatura do Colaborador<br><em style="color:#888;font-size:11px">${esc(f.nome||'')}</em>
+        </div>
+        <div style="border-top:1px solid #333;padding-top:4px;text-align:center">
+          Responsável pelo Fornecimento<br><em style="color:#888;font-size:11px">Data: ${hoje}</em>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:11px;color:var(--text-muted);text-align:center">
+      Esta é uma prévia. O PDF gerado pode ter pequenas diferenças de formatação.
+    </p>`;
+
+  document.getElementById('modal-epi-previa').style.display = 'block';
+}
+
 function epiInicializar() {
   const tbody = document.getElementById('epi-itens-body');
   if (!tbody) return;
