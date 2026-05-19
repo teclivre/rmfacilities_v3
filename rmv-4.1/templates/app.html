@@ -1883,22 +1883,6 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
 
-      <!-- Modal Prévia Ficha de EPI -->
-      <div id="modal-epi-previa" style="display:none;position:fixed;inset:0;z-index:9100;background:rgba(0,0,0,.55);overflow-y:auto">
-        <div style="background:var(--bg);max-width:820px;margin:32px auto 32px;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.25);overflow:hidden">
-          <div style="background:var(--azul);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between">
-            <span style="font-size:16px;font-weight:700">🔍 Prévia — Ficha de EPI</span>
-            <button onclick="document.getElementById('modal-epi-previa').style.display='none'"
-              style="background:transparent;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1">✕</button>
-          </div>
-          <div id="epi-previa-conteudo" style="padding:24px;font-size:13px"></div>
-          <div style="padding:12px 20px 20px;text-align:right;border-top:1px solid var(--borda)">
-            <button class="btn b-gh b-sm" onclick="document.getElementById('modal-epi-previa').style.display='none'" style="margin-right:8px">Fechar</button>
-            <button class="btn b-az b-sm" onclick="document.getElementById('modal-epi-previa').style.display='none';gerarFichaEPI()">🦺 Gerar agora</button>
-          </div>
-        </div>
-      </div>
-
     </div>
 
     <!-- ══ COMUNICAÇÃO ══ -->
@@ -7419,61 +7403,126 @@ function previaFichaEPI() {
   const obs = (document.getElementById('epi-obs')?.value || '').trim();
   const f = epiFuncSelecionado;
   const hoje = new Date().toLocaleDateString('pt-BR');
+  const empresa = (document.getElementById('epi-empresa-nome')?.value || f.empresa_nome || 'RM FACILITIES LTDA').trim();
 
-  const linhasHTML = itens.length ? itens.map((it, i) => `
-    <tr>
-      <td style="padding:5px 8px;border:1px solid #ccc;text-align:center">${it.data_retirada ? new Date(it.data_retirada+'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
-      <td style="padding:5px 8px;border:1px solid #ccc;text-align:center">${it.data_devolucao ? new Date(it.data_devolucao+'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
-      <td style="padding:5px 8px;border:1px solid #ccc;text-align:center">${esc(it.quantidade)}</td>
-      <td style="padding:5px 8px;border:1px solid #ccc;text-align:center">${esc(it.unidade)}</td>
-      <td style="padding:5px 8px;border:1px solid #ccc">${esc(it.descricao)}</td>
-      <td style="padding:5px 8px;border:1px solid #ccc;text-align:center">${esc(it.ca||'—')}</td>
-      <td style="padding:5px 8px;border:1px solid #ccc;min-width:80px"></td>
-    </tr>`).join('') :
-    `<tr><td colspan="7" style="padding:10px;text-align:center;color:#888;border:1px solid #ccc">Nenhum item adicionado</td></tr>`;
+  const fmtData = s => s ? new Date(s + 'T12:00:00').toLocaleDateString('pt-BR') : '';
 
-  document.getElementById('epi-previa-conteudo').innerHTML = `
-    <div style="border:2px solid var(--azul);border-radius:8px;padding:16px 20px;margin-bottom:16px">
-      <div style="background:var(--azul);color:#fff;padding:8px 14px;border-radius:5px;margin:-16px -20px 14px;font-size:15px;font-weight:700;text-align:center">
-        FICHA DE CONTROLE DE EPI
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;font-size:12px">
-        <div><strong>Nome:</strong> ${esc(f.nome||'')}</div>
-        <div><strong>Matrícula:</strong> ${esc(f.matricula||f.re||'')}</div>
-        <div><strong>Admissão:</strong> ${esc(f.data_admissao||'')}</div>
-        <div><strong>Cargo:</strong> ${esc(f.cargo||'')}</div>
-        <div><strong>Seção/Posto:</strong> ${esc(f.posto_operacional||'')}</div>
-        <div><strong>Empresa:</strong> ${esc(f.empresa_nome||'')}</div>
-      </div>
-      <table style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead>
-          <tr style="background:var(--azul);color:#fff">
-            <th style="padding:6px 8px;border:1px solid #ccc">Data Retirada</th>
-            <th style="padding:6px 8px;border:1px solid #ccc">Data Devolução</th>
-            <th style="padding:6px 8px;border:1px solid #ccc">Qtd.</th>
-            <th style="padding:6px 8px;border:1px solid #ccc">Unid.</th>
-            <th style="padding:6px 8px;border:1px solid #ccc">Descrição do Equipamento</th>
-            <th style="padding:6px 8px;border:1px solid #ccc">Nº C.A.</th>
-            <th style="padding:6px 8px;border:1px solid #ccc">Assinatura</th>
-          </tr>
-        </thead>
-        <tbody>${linhasHTML}</tbody>
-      </table>
-      ${obs ? `<div style="margin-top:12px;font-size:12px"><strong>Obs.:</strong> ${esc(obs)}</div>` : ''}
-      <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:24px;font-size:12px">
-        <div style="border-top:1px solid #333;padding-top:4px;text-align:center">
-          Assinatura do Colaborador<br><em style="color:#888;font-size:11px">${esc(f.nome||'')}</em>
-        </div>
-        <div style="border-top:1px solid #333;padding-top:4px;text-align:center">
-          Responsável pelo Fornecimento<br><em style="color:#888;font-size:11px">Data: ${hoje}</em>
-        </div>
-      </div>
+  // Gerar linhas da tabela — mínimo 8 linhas (preenche o restante em branco)
+  const minLinhas = Math.max(itens.length, 8);
+  let linhasHTML = '';
+  for (let i = 0; i < minLinhas; i++) {
+    const it = itens[i] || {};
+    linhasHTML += `<tr>
+      <td class="c">${fmtData(it.data_retirada||'')}</td>
+      <td class="c">${fmtData(it.data_devolucao||'')}</td>
+      <td class="c">${it.quantidade||''}</td>
+      <td class="c">${it.unidade||''}</td>
+      <td>${it.descricao ? _escHtml(it.descricao) : ''}</td>
+      <td class="c">${it.ca ? _escHtml(it.ca) : ''}</td>
+      <td class="ass-col"></td>
+    </tr>`;
+  }
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Prévia — Ficha de EPI — ${_escHtml(f.nome||'')}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;font-size:11pt;color:#222;background:#f5f5f5;padding:20px}
+  .page{background:#fff;max-width:210mm;margin:0 auto;padding:16mm 14mm;box-shadow:0 2px 16px rgba(0,0,0,.15)}
+  h1{font-size:13pt;text-align:center;color:#fff;background:#1565C0;padding:9px 12px;letter-spacing:1px;margin-bottom:0}
+  .subtitulo{font-size:9pt;text-align:center;color:#555;border:1px solid #1565C0;border-top:none;padding:4px;margin-bottom:10px}
+  .info-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border:1px solid #888;margin-bottom:10px}
+  .info-grid .cel{padding:4px 8px;border-right:1px solid #bbb;border-bottom:1px solid #bbb;font-size:10pt}
+  .info-grid .cel:nth-child(3n){border-right:none}
+  .info-grid .cel:nth-last-child(-n+3){border-bottom:none}
+  .info-grid .lbl{font-size:8.5pt;color:#555;display:block}
+  .info-grid .val{font-weight:700;font-size:10pt}
+  table.epi{width:100%;border-collapse:collapse;font-size:10pt;margin-bottom:12px}
+  table.epi th{background:#1565C0;color:#fff;padding:5px 6px;border:1px solid #0d47a1;text-align:center;font-size:9.5pt}
+  table.epi td{padding:5px 6px;border:1px solid #aaa;vertical-align:middle;min-height:22px;height:24px}
+  table.epi td.c{text-align:center}
+  table.epi td.ass-col{min-width:90px}
+  .legal{font-size:8.5pt;color:#555;border:1px solid #ccc;padding:7px 10px;margin-bottom:14px;line-height:1.5}
+  .assinaturas{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-top:8px}
+  .ass-bloco{text-align:center}
+  .ass-linha{border-top:1px solid #333;padding-top:5px;margin-top:36px}
+  .ass-nome{font-size:9pt;color:#555;margin-top:2px}
+  .obs{font-size:10pt;margin-bottom:10px}
+  .obs span{font-style:italic;color:#444}
+  .rodape{text-align:center;font-size:8pt;color:#999;margin-top:20px;border-top:1px solid #eee;padding-top:8px}
+  @media print{body{background:#fff;padding:0}.page{box-shadow:none;padding:10mm 12mm}}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>FICHA DE CONTROLE DE EQUIPAMENTO DE PROTEÇÃO INDIVIDUAL — EPI</h1>
+  <div class="subtitulo">${_escHtml(empresa)}</div>
+
+  <div class="info-grid">
+    <div class="cel" style="grid-column:span 2"><span class="lbl">NOME DO COLABORADOR</span><span class="val">${_escHtml(f.nome||'')}</span></div>
+    <div class="cel"><span class="lbl">MATRÍCULA / RE</span><span class="val">${_escHtml(f.matricula||f.re||'')}</span></div>
+    <div class="cel" style="grid-column:span 2"><span class="lbl">CARGO / FUNÇÃO</span><span class="val">${_escHtml(f.cargo||'')}</span></div>
+    <div class="cel"><span class="lbl">DATA DE ADMISSÃO</span><span class="val">${_escHtml(f.data_admissao||'')}</span></div>
+    <div class="cel" style="grid-column:span 2"><span class="lbl">SEÇÃO / POSTO OPERACIONAL</span><span class="val">${_escHtml(f.posto_operacional||'')}</span></div>
+    <div class="cel"><span class="lbl">DATA DE EMISSÃO</span><span class="val">${hoje}</span></div>
+  </div>
+
+  <table class="epi">
+    <thead>
+      <tr>
+        <th style="width:90px">Data Retirada</th>
+        <th style="width:90px">Data Devolução</th>
+        <th style="width:45px">Qtd.</th>
+        <th style="width:55px">Unid.</th>
+        <th>Descrição do Equipamento de Proteção Individual</th>
+        <th style="width:75px">Nº C.A.</th>
+        <th style="width:100px">Assinatura</th>
+      </tr>
+    </thead>
+    <tbody>${linhasHTML}</tbody>
+  </table>
+
+  ${obs ? `<div class="obs"><strong>Observações:</strong> <span>${_escHtml(obs)}</span></div>` : ''}
+
+  <div class="legal">
+    Declaro que recebi os equipamentos de proteção individual (EPI) listados acima, que fui orientado(a) sobre o uso correto,
+    a guarda e a conservação dos mesmos, e que estou ciente da obrigatoriedade de utilizá-los durante a execução das minhas
+    atividades, conforme determina a NR-6 da Portaria MTb nº 3.214/78 e suas atualizações.
+  </div>
+
+  <div class="assinaturas">
+    <div class="ass-bloco">
+      <div class="ass-linha"></div>
+      <div class="ass-nome"><strong>${_escHtml(f.nome||'')}</strong></div>
+      <div class="ass-nome">Assinatura do Colaborador</div>
     </div>
-    <p style="font-size:11px;color:var(--text-muted);text-align:center">
-      Esta é uma prévia. O PDF gerado pode ter pequenas diferenças de formatação.
-    </p>`;
+    <div class="ass-bloco">
+      <div class="ass-linha"></div>
+      <div class="ass-nome">Responsável pelo Fornecimento</div>
+      <div class="ass-nome">Data: ${hoje}</div>
+    </div>
+  </div>
 
-  document.getElementById('modal-epi-previa').style.display = 'block';
+  <div class="rodape">Prévia gerada em ${hoje} · RM Facilities — Gestão de RH</div>
+</div>
+<script>
+  // Abrir diálogo de impressão automaticamente
+  window.onload = function(){ document.title = 'Ficha EPI — ${_escHtml(f.nome||'')}'; };
+</script>
+</body>
+</html>`;
+
+  const blob = new Blob([html], {type: 'text/html;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+function _escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function epiInicializar() {
