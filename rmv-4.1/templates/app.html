@@ -1327,6 +1327,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-envio" class="subaba-bloco" onclick="rhSetSubAba('envio',this)">Envio de arquivo</button>
         <button type="button" id="rh-subtab-assinaturas" class="subaba-bloco" onclick="rhSetSubAba('assinaturas',this)">Painel de Assinaturas</button>
         <button type="button" id="rh-subtab-gestao-facil" class="subaba-bloco" onclick="rhSetSubAba('gestao-facil',this);gfCarregar()">⚡ Gestão Fácil</button>
+        <button type="button" id="rh-subtab-ficha-epi" class="subaba-bloco" onclick="rhSetSubAba('ficha-epi',this)">🦺 Ficha de EPI</button>
       </div>
       <div class="card rh-pane" id="rh-pane-funcionarios" data-rh-pane="funcionarios">
         <div class="card-header">
@@ -1793,6 +1794,92 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div id="painel-ass-empty" style="display:none;text-align:center;color:var(--text-muted);padding:24px;font-size:13px">Nenhum registro encontrado para os filtros selecionados.</div>
       </div>
+
+      <!-- ══ FICHA DE EPI ══ -->
+      <div class="card rh-pane" id="rh-pane-ficha-epi" data-rh-pane="ficha-epi">
+        <div class="card-header">
+          <span class="card-title">🦺 Gerar Ficha de EPI</span>
+        </div>
+        <div style="padding:16px">
+
+          <!-- Seleção de colaborador -->
+          <div class="g4" style="margin-bottom:14px;align-items:flex-end">
+            <div class="f" style="flex:2">
+              <label>Colaborador</label>
+              <input id="epi-busca-func" type="text" placeholder="Digite nome, matrícula ou RE..."
+                oninput="epiBuscarFunc(this.value)" autocomplete="off"
+                style="width:100%">
+              <div id="epi-func-sugestoes" style="position:relative"></div>
+            </div>
+            <div class="f" style="flex:1">
+              <label>Empresa do colaborador</label>
+              <input id="epi-empresa-nome" type="text" placeholder="(preenchido automaticamente)" readonly
+                style="background:var(--bg-alt);width:100%">
+            </div>
+            <div class="f" style="flex:1">
+              <label>Posto / Seção</label>
+              <input id="epi-posto-nome" type="text" placeholder="(preenchido automaticamente)" readonly
+                style="background:var(--bg-alt);width:100%">
+            </div>
+          </div>
+          <div id="epi-func-selecionado" style="display:none;background:var(--azul-cc);border:1px solid var(--azul-borda);border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px">
+            <strong>Colaborador:</strong> <span id="epi-func-nome-sel"></span> &nbsp;|&nbsp;
+            <strong>Matrícula:</strong> <span id="epi-func-mat-sel"></span> &nbsp;|&nbsp;
+            <strong>Cargo:</strong> <span id="epi-func-cargo-sel"></span>
+            <button class="btn b-sm" onclick="epiLimparFunc()" style="float:right;background:transparent;color:var(--text-muted);font-size:12px;padding:0 6px">✕ Limpar</button>
+          </div>
+
+          <!-- Tabela de EPIs -->
+          <div style="overflow-x:auto;margin-bottom:12px">
+            <table class="tbl" id="epi-tabela" style="min-width:800px">
+              <thead>
+                <tr>
+                  <th style="width:110px">Data Retirada</th>
+                  <th style="width:110px">Data Devolução</th>
+                  <th style="width:60px">Qtd.</th>
+                  <th style="width:70px">Unid.</th>
+                  <th>Descrição do Equipamento</th>
+                  <th style="width:90px">Nº C.A.</th>
+                  <th style="width:44px"></th>
+                </tr>
+              </thead>
+              <tbody id="epi-itens-body">
+                <!-- linhas adicionadas pelo JS -->
+              </tbody>
+            </table>
+          </div>
+          <button class="btn b-gh b-sm" onclick="epiAddLinha()" style="margin-bottom:16px">+ Adicionar item</button>
+
+          <!-- Observações -->
+          <div class="f" style="margin-bottom:16px">
+            <label>Observações (opcional)</label>
+            <textarea id="epi-obs" rows="2" placeholder="Ex.: itens entregues em substituição por desgaste normal..."
+              style="width:100%;resize:vertical;font-size:13px"></textarea>
+          </div>
+
+          <!-- Canal de envio -->
+          <div class="g4" style="margin-bottom:18px;align-items:flex-end">
+            <div class="f">
+              <label>Enviar para assinatura via</label>
+              <select id="epi-canal">
+                <option value="nao">Apenas gerar (sem envio)</option>
+                <option value="app">📱 Aplicativo</option>
+                <option value="whatsapp">💬 WhatsApp</option>
+                <option value="link">🔗 Link (copiar)</option>
+              </select>
+            </div>
+            <div>
+              <button class="btn b-az" onclick="gerarFichaEPI()" id="epi-btn-gerar">
+                🦺 Gerar Ficha de EPI
+              </button>
+            </div>
+          </div>
+
+          <!-- Resultado -->
+          <div id="epi-resultado" style="display:none"></div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ══ COMUNICAÇÃO ══ -->
@@ -4142,7 +4229,7 @@ function rhSalariosIniciarPagina(){
 }
 
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','ponto','painel-dia','envio','assinaturas','gestao-facil'];
+  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','ponto','painel-dia','envio','assinaturas','gestao-facil','ficha-epi'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
     p.style.display=(p.dataset.rhPane===rhSubAba)?'block':'none';
@@ -4159,6 +4246,9 @@ function rhSetSubAba(tab,btn){
   }
   if(rhSubAba==='ponto'){
     carregarCorrecoesPonto();
+  }
+  if(rhSubAba==='ficha-epi'){
+    epiInicializar();
   }
 }
 
@@ -7169,6 +7259,150 @@ async function painelAssInicializar(){
     sel.innerHTML='<option value="">Todos</option>'+fs.map(f=>`<option value="${f.id}">${esc(f.nome)}</option>`).join('');
   }
   painelAssCarregar();
+}
+
+// ── FICHA DE EPI ─────────────────────────────────────────────
+let epiFuncSelecionado = null;
+let epiBuscaTimer = null;
+
+function epiAddLinha(vals={}) {
+  const tbody = document.getElementById('epi-itens-body');
+  const idx = tbody.children.length;
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="date" class="epi-data-ret" value="${vals.data_retirada||''}" style="width:100%;font-size:12px"></td>
+    <td><input type="date" class="epi-data-dev" value="${vals.data_devolucao||''}" style="width:100%;font-size:12px"></td>
+    <td><input type="number" class="epi-qtd" value="${vals.quantidade||1}" min="1" style="width:100%;font-size:12px;text-align:center"></td>
+    <td><input type="text" class="epi-unid" value="${esc(vals.unidade||'UN')}" style="width:100%;font-size:12px;text-align:center"></td>
+    <td><input type="text" class="epi-desc" value="${esc(vals.descricao||'')}" placeholder="Ex.: Capacete de segurança classe B" style="width:100%;font-size:12px"></td>
+    <td><input type="text" class="epi-ca" value="${esc(vals.ca||'')}" placeholder="N° CA" style="width:100%;font-size:12px;text-align:center"></td>
+    <td><button class="btn b-sm" style="background:transparent;color:var(--verm);padding:2px 6px;font-size:16px" title="Remover" onclick="this.closest('tr').remove()">✕</button></td>`;
+  tbody.appendChild(tr);
+}
+
+function epiGetItens() {
+  const rows = document.querySelectorAll('#epi-itens-body tr');
+  return Array.from(rows).map(tr => ({
+    data_retirada: tr.querySelector('.epi-data-ret')?.value || '',
+    data_devolucao: tr.querySelector('.epi-data-dev')?.value || '',
+    quantidade: tr.querySelector('.epi-qtd')?.value || '1',
+    unidade: tr.querySelector('.epi-unid')?.value || 'UN',
+    descricao: tr.querySelector('.epi-desc')?.value || '',
+    ca: tr.querySelector('.epi-ca')?.value || '',
+  })).filter(it => (it.descricao||'').trim());
+}
+
+function epiLimparFunc() {
+  epiFuncSelecionado = null;
+  document.getElementById('epi-busca-func').value = '';
+  document.getElementById('epi-empresa-nome').value = '';
+  document.getElementById('epi-posto-nome').value = '';
+  document.getElementById('epi-func-selecionado').style.display = 'none';
+  document.getElementById('epi-func-sugestoes').innerHTML = '';
+}
+
+function epiSelecionarFunc(f) {
+  epiFuncSelecionado = f;
+  document.getElementById('epi-busca-func').value = f.nome || '';
+  document.getElementById('epi-empresa-nome').value = f.empresa_nome || '';
+  document.getElementById('epi-posto-nome').value = f.posto_operacional || '';
+  document.getElementById('epi-func-nome-sel').textContent = f.nome || '';
+  document.getElementById('epi-func-mat-sel').textContent = f.matricula || f.re || f.id || '';
+  document.getElementById('epi-func-cargo-sel').textContent = f.cargo || '—';
+  document.getElementById('epi-func-selecionado').style.display = 'block';
+  document.getElementById('epi-func-sugestoes').innerHTML = '';
+}
+
+function epiBuscarFunc(q) {
+  clearTimeout(epiBuscaTimer);
+  const box = document.getElementById('epi-func-sugestoes');
+  if (!q || q.length < 2) { box.innerHTML = ''; return; }
+  epiBuscaTimer = setTimeout(async () => {
+    const funcs = await api(`/api/funcionarios?q=${encodeURIComponent(q)}&status=Ativo`);
+    if (!Array.isArray(funcs) || !funcs.length) {
+      box.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:6px 10px">Nenhum colaborador encontrado.</div>';
+      return;
+    }
+    box.innerHTML = `<div style="position:absolute;z-index:999;background:var(--bg);border:1px solid var(--borda);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);max-height:220px;overflow-y:auto;width:100%">` +
+      funcs.slice(0,15).map(f =>
+        `<div style="padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--borda-cl)"
+          onmouseover="this.style.background='var(--azul-cc)'" onmouseout="this.style.background=''"
+          onclick='epiSelecionarFunc(${JSON.stringify(f).replace(/'/g,"&#39;")})'>
+          <strong>${esc(f.nome||'')}</strong>
+          <span style="color:var(--text-muted);font-size:11px"> · ${esc(f.re||f.matricula||'')} · ${esc(f.cargo||'')} · ${esc(f.posto_operacional||'')}</span>
+        </div>`
+      ).join('') + '</div>';
+  }, 280);
+}
+
+async function gerarFichaEPI() {
+  if (!epiFuncSelecionado) { alert('Selecione um colaborador.'); return; }
+  const itens = epiGetItens();
+  if (!itens.length) { alert('Adicione ao menos um EPI com descrição preenchida.'); return; }
+  const canal = document.getElementById('epi-canal').value;
+  const obs = document.getElementById('epi-obs').value.trim();
+  const btn = document.getElementById('epi-btn-gerar');
+  const res = document.getElementById('epi-resultado');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Gerando...';
+  res.style.display = 'none';
+
+  try {
+    const r = await api(`/api/funcionarios/${epiFuncSelecionado.id}/gerar-ficha-epi`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ itens, canal, obs })
+    });
+
+    if (r && r.ok) {
+      const linkDownload = r.download_url ? `<a href="${r.download_url}" target="_blank" class="btn b-gh b-sm" style="margin-top:8px">⬇️ Baixar PDF</a>` : '';
+      let envioInfo = '';
+      if (r.assinatura && r.assinatura.canal && r.assinatura.canal !== 'nao') {
+        if (r.assinatura.status === 'solicitada') {
+          envioInfo = `<div style="margin-top:8px;font-size:13px">✅ Enviado via <strong>${r.assinatura.canal}</strong> para assinatura.`;
+          if (r.assinatura.link) {
+            envioInfo += ` <a href="${r.assinatura.link}" target="_blank" style="font-size:12px">🔗 Link direto</a>`;
+          }
+          envioInfo += '</div>';
+        } else if (r.assinatura.status === 'erro') {
+          envioInfo = `<div style="margin-top:8px;font-size:13px;color:var(--laranja-esc)">⚠️ Ficha gerada mas envio falhou: ${esc(r.assinatura.erro||'erro desconhecido')}. Use o link para compartilhar manualmente.</div>`;
+          if (r.assinatura.link) {
+            envioInfo += `<div style="margin-top:4px"><a href="${r.assinatura.link}" target="_blank" class="btn b-gh b-sm">🔗 Copiar link de assinatura</a></div>`;
+          }
+        }
+      } else {
+        envioInfo = '<div style="margin-top:6px;font-size:12px;color:var(--text-muted)">Envio não solicitado. Você pode enviar pelo Painel de Assinaturas.</div>';
+      }
+      res.innerHTML = `<div style="background:var(--verde-cl);border:1px solid var(--verde);border-radius:8px;padding:12px 16px;color:var(--verde)">
+        ✅ <strong>Ficha de EPI gerada com sucesso!</strong><br>
+        <span style="font-size:13px;color:var(--text)">Arquivo: ${esc(r.nome_arquivo||'')}</span>
+        ${linkDownload}
+        ${envioInfo}
+      </div>`;
+    } else {
+      res.innerHTML = `<div style="background:var(--verm-cl);border:1px solid var(--verm);border-radius:8px;padding:12px 16px;color:var(--verm)">
+        ❌ Erro: ${esc(r?.erro||'Falha desconhecida.')}
+      </div>`;
+    }
+  } catch(e) {
+    res.innerHTML = `<div style="background:var(--verm-cl);border:1px solid var(--verm);border-radius:8px;padding:12px 16px;color:var(--verm)">❌ Erro: ${esc(String(e))}</div>`;
+  }
+  res.style.display = 'block';
+  btn.disabled = false;
+  btn.textContent = '🦺 Gerar Ficha de EPI';
+}
+
+// Inicializa tabela EPI com 3 linhas ao entrar na subaba
+function epiInicializar() {
+  const tbody = document.getElementById('epi-itens-body');
+  if (!tbody) return;
+  if (!tbody.children.length) {
+    const hoje = new Date().toISOString().slice(0,10);
+    epiAddLinha({ data_retirada: hoje, quantidade: 1, unidade: 'UN' });
+    epiAddLinha({ data_retirada: hoje, quantidade: 1, unidade: 'UN' });
+    epiAddLinha({ data_retirada: hoje, quantidade: 1, unidade: 'UN' });
+  }
 }
 
 function rhExportSelectedPostos(){

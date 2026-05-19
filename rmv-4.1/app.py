@@ -7206,7 +7206,268 @@ def api_funcionario_upload_arquivo(id):
     return jsonify(out),201
 
 
-def _solicitar_assinatura_arquivo_funcionario(arquivo,funcionario,canal='link',dias_validade=7,commit_now=True,forcar_novo_token=True,eh_lembrete=False):
+# ============================================================
+# FICHA DE EPI — GERAÇÃO DE PDF E ENVIO PARA ASSINATURA
+# ============================================================
+
+def _gerar_ficha_epi_pdf(funcionario,itens_epi,empresa_nome='RM FACILITIES LTDA',obs=''):
+    """Gera PDF da Ficha de Controle e Entrega de EPI usando reportlab."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer,HRFlowable
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER,TA_LEFT
+
+    azul=colors.HexColor('#1A3A5C')
+    azul_claro=colors.HexColor('#205D8A')
+    cinza_cabecalho=colors.HexColor('#F0F4F8')
+    cinza_linha=colors.HexColor('#F8FBFF')
+    branco=colors.white
+
+    st_titulo=ParagraphStyle('titulo',fontName='Helvetica-Bold',fontSize=13,leading=16,textColor=branco,alignment=TA_CENTER)
+    st_subtitulo=ParagraphStyle('sub',fontName='Helvetica',fontSize=8.5,leading=11,textColor=branco,alignment=TA_CENTER)
+    st_label=ParagraphStyle('lbl',fontName='Helvetica-Bold',fontSize=8,leading=10,textColor=azul)
+    st_valor=ParagraphStyle('val',fontName='Helvetica',fontSize=9,leading=11,textColor=colors.HexColor('#222'))
+    st_th=ParagraphStyle('th',fontName='Helvetica-Bold',fontSize=8,leading=10,textColor=branco,alignment=TA_CENTER)
+    st_td=ParagraphStyle('td',fontName='Helvetica',fontSize=8,leading=10,alignment=TA_CENTER)
+    st_tdl=ParagraphStyle('tdl',fontName='Helvetica',fontSize=8,leading=10,alignment=TA_LEFT)
+    st_obs=ParagraphStyle('obs',fontName='Helvetica',fontSize=8,leading=11,textColor=colors.HexColor('#444'))
+    st_rodape=ParagraphStyle('rod',fontName='Helvetica',fontSize=7,leading=9,textColor=colors.HexColor('#888'),alignment=TA_CENTER)
+
+    buf=io.BytesIO()
+    doc=SimpleDocTemplate(buf,pagesize=A4,
+        leftMargin=1.5*cm,rightMargin=1.5*cm,topMargin=1.2*cm,bottomMargin=1.2*cm)
+
+    nome_func=(funcionario.nome or '').strip()
+    matricula=(funcionario.matricula or funcionario.re or str(funcionario.id))
+    cargo=(funcionario.cargo or '').strip()
+    posto=(funcionario.posto_operacional or '').strip()
+    empresa_func=''
+    if funcionario.empresa_id:
+        emp=db.session.get(Empresa,funcionario.empresa_id)
+        empresa_func=(emp.nome if emp else '') or ''
+    admissao=''
+    if getattr(funcionario,'data_admissao',None):
+        try:
+            admissao=funcionario.data_admissao.strftime('%d/%m/%Y')
+        except Exception:
+            admissao=str(funcionario.data_admissao)[:10]
+
+    data_emissao=localnow().strftime('%d/%m/%Y')
+
+    # ── Cabeçalho colorido ─────────────────────────────────────
+    header_data=[[
+        Paragraph('FICHA DE CONTROLE E ENTREGA DE',st_titulo),
+        ''
+    ],[
+        Paragraph('EQUIPAMENTOS DE PROTEÇÃO INDIVIDUAL — EPI',st_titulo),
+        ''
+    ],[
+        Paragraph(empresa_nome,st_subtitulo),
+        ''
+    ]]
+    header_table=Table(header_data,colWidths=[13*cm,5.5*cm])
+    header_table.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,-1),azul),
+        ('SPAN',(0,0),(1,0)),
+        ('SPAN',(0,1),(1,1)),
+        ('SPAN',(0,2),(1,2)),
+        ('TOPPADDING',(0,0),(-1,-1),4),
+        ('BOTTOMPADDING',(0,0),(-1,-1),4),
+        ('LEFTPADDING',(0,0),(-1,-1),8),
+    ]))
+
+    # ── Dados do funcionário ───────────────────────────────────
+    def campo(label,valor):
+        return [Paragraph(label,st_label),Paragraph(valor or '—',st_valor)]
+
+    info_data=[
+        campo('NOME:',nome_func)+campo('MATRÍCULA:',str(matricula))+campo('DATA EMISSÃO:',data_emissao),
+        campo('FUNÇÃO / CARGO:',cargo)+campo('POSTO OPERACIONAL:',posto)+campo('ADMISSÃO:',admissao),
+        campo('EMPRESA:',empresa_func)+['','','',''],
+    ]
+    info_table=Table(info_data,colWidths=[2*cm,4.8*cm,2.2*cm,3*cm,2.5*cm,4.0*cm])
+    info_table.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,-1),cinza_cabecalho),
+        ('BOX',(0,0),(-1,-1),0.5,azul),
+        ('INNERGRID',(0,0),(-1,-1),0.25,colors.HexColor('#D0D7DE')),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('TOPPADDING',(0,0),(-1,-1),4),
+        ('BOTTOMPADDING',(0,0),(-1,-1),4),
+        ('LEFTPADDING',(0,0),(-1,-1),5),
+        ('RIGHTPADDING',(0,0),(-1,-1),5),
+    ]))
+
+    # ── Texto legal ────────────────────────────────────────────
+    texto_legal=(
+        f"Recebi da Empresa {empresa_nome}, para meu uso pessoal e intransferível, "
+        "os Equipamentos de Proteção Individual (EPI) listados abaixo, comprometendo-me a utilizá-los "
+        "adequadamente, conservá-los e devolvê-los quando solicitado, sob pena das sanções legais cabíveis."
+    )
+    st_legal=ParagraphStyle('legal',fontName='Helvetica',fontSize=8,leading=11,
+        textColor=colors.HexColor('#333'),leftIndent=4,rightIndent=4)
+
+    # ── Tabela de EPIs ─────────────────────────────────────────
+    epi_header=[
+        Paragraph('DATA\nRETIRADA',st_th),
+        Paragraph('DATA\nDEVOLUÇÃO',st_th),
+        Paragraph('QTD.',st_th),
+        Paragraph('UNID.',st_th),
+        Paragraph('DESCRIÇÃO DO EQUIPAMENTO',st_th),
+        Paragraph('Nº C.A.',st_th),
+        Paragraph('ASSINATURA',st_th),
+    ]
+    epi_rows=[epi_header]
+    for i,it in enumerate(itens_epi or []):
+        bg=branco if i%2==0 else cinza_linha
+        epi_rows.append([
+            Paragraph(str(it.get('data_retirada') or ''),st_td),
+            Paragraph(str(it.get('data_devolucao') or ''),st_td),
+            Paragraph(str(it.get('quantidade') or ''),st_td),
+            Paragraph(str(it.get('unidade') or ''),st_td),
+            Paragraph(str(it.get('descricao') or ''),st_tdl),
+            Paragraph(str(it.get('ca') or ''),st_td),
+            Paragraph('',st_td),  # assinatura — espaço em branco para assinar
+        ])
+    # Preenche linhas vazias até ter pelo menos 10
+    while len(epi_rows)<11:
+        epi_rows.append([Paragraph('',st_td)]*7)
+
+    epi_table=Table(epi_rows,
+        colWidths=[2.1*cm,2.1*cm,1.4*cm,1.4*cm,5.5*cm,1.8*cm,4.1*cm],
+        rowHeights=[0.8*cm]+[0.75*cm]*(len(epi_rows)-1))
+    style_epi=[
+        ('BACKGROUND',(0,0),(-1,0),azul_claro),
+        ('TEXTCOLOR',(0,0),(-1,0),branco),
+        ('GRID',(0,0),(-1,-1),0.3,colors.HexColor('#BBCBDA')),
+        ('BOX',(0,0),(-1,-1),0.8,azul),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('TOPPADDING',(0,0),(-1,-1),3),
+        ('BOTTOMPADDING',(0,0),(-1,-1),3),
+        ('LEFTPADDING',(0,0),(-1,-1),3),
+        ('RIGHTPADDING',(0,0),(-1,-1),3),
+    ]
+    for i in range(1,len(epi_rows)):
+        if i%2==0:
+            style_epi.append(('BACKGROUND',(0,i),(-1,i),cinza_linha))
+    epi_table.setStyle(TableStyle(style_epi))
+
+    # ── Assinatura do colaborador (rodapé) ──────────────────────
+    ass_data=[[
+        Paragraph('_'*45,st_td),
+        Paragraph('_'*35,st_td),
+    ],[
+        Paragraph('Assinatura do Colaborador',st_td),
+        Paragraph('Data',st_td),
+    ]]
+    ass_table=Table(ass_data,colWidths=[11*cm,7.5*cm])
+    ass_table.setStyle(TableStyle([
+        ('TOPPADDING',(0,0),(-1,-1),4),
+        ('BOTTOMPADDING',(0,0),(-1,-1),2),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+    ]))
+
+    # ── Observações ────────────────────────────────────────────
+    elementos=[]
+    elementos.append(header_table)
+    elementos.append(Spacer(1,0.3*cm))
+    elementos.append(info_table)
+    elementos.append(Spacer(1,0.2*cm))
+    elementos.append(Paragraph(texto_legal,st_legal))
+    elementos.append(Spacer(1,0.25*cm))
+    elementos.append(epi_table)
+    if (obs or '').strip():
+        elementos.append(Spacer(1,0.2*cm))
+        elementos.append(Paragraph(f'<b>Observações:</b> {obs.strip()}',st_obs))
+    elementos.append(Spacer(1,0.5*cm))
+    elementos.append(HRFlowable(width='100%',thickness=0.5,color=azul))
+    elementos.append(Spacer(1,0.3*cm))
+    elementos.append(ass_table)
+    elementos.append(Spacer(1,0.3*cm))
+    elementos.append(Paragraph(
+        f'FO.0321 · Gerado automaticamente em {data_emissao} · {empresa_nome}',
+        st_rodape))
+
+    doc.build(elementos)
+    buf.seek(0)
+    return buf
+
+
+@app.route('/api/funcionarios/<int:id>/gerar-ficha-epi',methods=['POST'])
+@lr
+def api_funcionario_gerar_ficha_epi(id):
+    f=db.get_or_404(Funcionario,id)
+    d=request.json or {}
+    itens=d.get('itens') or []
+    canal=(d.get('canal') or 'nao').strip().lower()
+    obs=(d.get('obs') or '').strip()
+    empresa_nome_param=(d.get('empresa_nome') or 'RM FACILITIES LTDA').strip()
+
+    if not itens:
+        return jsonify({'erro':'Informe ao menos um item de EPI.'}),400
+
+    # Valida canal
+    if canal not in ('whatsapp','app','link','nao'):
+        canal='nao'
+
+    # Gera PDF
+    try:
+        buf=_gerar_ficha_epi_pdf(f,itens,empresa_nome=empresa_nome_param,obs=obs)
+    except Exception as e:
+        app.logger.exception('Erro ao gerar PDF ficha EPI')
+        return jsonify({'erro':f'Erro ao gerar PDF: {str(e)}'}),500
+
+    # Determina nome do arquivo e salva
+    comp=localnow().strftime('%Y-%m')
+    nome_arq=f"Ficha_EPI_{_clean_file_part(f.nome or '',60,'Colaborador')}_{localnow().strftime('%Y%m%d')}.pdf"
+    subdir,cat=func_doc_subdir(id,'epi',comp)
+    ano=infer_doc_year(comp)
+    prepare_func_doc_dirs(id,ano)
+    rel,abs_p,_=unique_rel_filename(subdir,nome_arq)
+    os.makedirs(os.path.dirname(abs_p),exist_ok=True)
+    with open(abs_p,'wb') as fh:
+        fh.write(buf.read())
+
+    # Persiste no banco
+    a=FuncionarioArquivo(funcionario_id=id,categoria='epi',competencia=comp,nome_arquivo=nome_arq,caminho=rel)
+    db.session.add(a)
+    db.session.flush()
+
+    # Solicita assinatura conforme canal escolhido
+    assinatura={}
+    if canal in ('whatsapp','app','link'):
+        rs=_solicitar_assinatura_arquivo_funcionario(a,f,canal=canal,commit_now=False)
+        if rs.get('ok'):
+            assinatura={'canal':canal,'link':rs.get('link_curto') or rs.get('link',''),'status':'solicitada'}
+        else:
+            assinatura={'canal':canal,'status':'erro','erro':rs.get('erro','')}
+    else:
+        # Apenas notifica sobre novo documento
+        db.session.commit()
+        try:
+            _push_notify_funcionario(f.id,'Nova Ficha de EPI',
+                f'Ficha de EPI gerada em {localnow().strftime("%d/%m/%Y")} foi adicionada ao seu perfil.',
+                {'tipo':'novo_documento','arquivo_id':str(a.id)})
+        except Exception:
+            pass
+
+    if canal in ('whatsapp','app','link'):
+        db.session.commit()
+
+    audit_event('ficha_epi_gerada','usuario',session.get('uid'),'funcionario',id,True,
+        {'arquivo_id':a.id,'canal':canal,'qtd_itens':len(itens)})
+
+    return jsonify({
+        'ok':True,
+        'arquivo_id':a.id,
+        'nome_arquivo':nome_arq,
+        'assinatura':assinatura,
+        'download_url':f'/api/funcionarios/arquivos/{a.id}/download',
+    }),201
+
+
+
     if not arquivo:
         return {'ok':False,'erro':'Arquivo invalido.'}
     if not funcionario:
