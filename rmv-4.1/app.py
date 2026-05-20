@@ -8609,6 +8609,7 @@ def _gerar_aviso_previo_pdf(funcionario, tipo='empresa_trabalhado', empresa=None
         'empresa_trabalhado': 'AVISO PRÉVIO TRABALHADO',
         'empresa_indenizado': 'AVISO PRÉVIO INDENIZADO',
         'pedido_demissao':    'PEDIDO DE DEMISSÃO — AVISO PRÉVIO',
+        'termino_contrato':   'TÉRMINO DE CONTRATO POR PRAZO DETERMINADO',
     }
     tipo_label = TIPOS.get(tipo, 'AVISO PRÉVIO TRABALHADO')
 
@@ -8693,6 +8694,22 @@ def _gerar_aviso_previo_pdf(funcionario, tipo='empresa_trabalhado', empresa=None
             f'dispensado(a) de comparecer ao trabalho a partir de <b>{data_aviso_fmt}</b>. '
             f'O valor correspondente aos {total_dias} dias será integrado às verbas rescisórias a serem pagas.'
         )
+    elif tipo == 'termino_contrato':
+        texto_intro = (
+            f'A empresa <b>{emp_nome}</b>, {cnpj_txt}vem por meio deste instrumento comunicar ao(à) '
+            f'colaborador(a) <b>{func_nome}</b>, RE/Mat. <b>{func_re}</b>, portador(a) do CPF nº <b>{func_cpf}</b>, '
+            f'ocupante do cargo de <b>{func_cargo}</b>, admitido(a) em <b>{data_adm_fmt}</b> mediante '
+            f'<b>contrato de trabalho por prazo determinado</b>, que o referido contrato encerrará '
+            f'seu prazo de vigência na data de <b>{data_fim_fmt}</b>, nos termos do art. 443 e seguintes da CLT.'
+        )
+        texto_prazo = (
+            f'Tendo em vista o término natural do prazo contratual estipulado, fica o(a) colaborador(a) '
+            f'comunicado(a) de que, na data de <b>{data_fim_fmt}</b>, ficará rescindido o contrato de trabalho, '
+            f'sem ônus para nenhuma das partes referente a aviso prévio, nos termos do art. 481 da CLT, '
+            f'salvo se houver cláusula assecuratória do direito recíproco de rescisão antes do termo ajustado. '
+            f'As verbas rescisórias devidas (saldo de salário, 13º proporcional, férias proporcionais + 1/3 e FGTS) '
+            f'serão quitadas no prazo legal.'
+        )
     else:  # pedido_demissao
         texto_intro = (
             f'Eu, <b>{func_nome}</b>, RE/Mat. <b>{func_re}</b>, portador(a) do CPF nº <b>{func_cpf}</b>, '
@@ -8709,11 +8726,17 @@ def _gerar_aviso_previo_pdf(funcionario, tipo='empresa_trabalhado', empresa=None
             f'implicará desconto no valor correspondente nas verbas rescisórias, nos termos do art. 487, §2º da CLT.'
         )
 
-    texto_base_legal = (
-        '<b>Base legal:</b> Art. 7º, XXI da Constituição Federal de 1988; Arts. 487 a 491 da Consolidação das '
+    if tipo == 'termino_contrato':
+        texto_base_legal = (
+            '<b>Base legal:</b> Arts. 443 a 481 da Consolidação das Leis do Trabalho (CLT); '
+            'Lei nº 9.601/1998 — o término do contrato por prazo determinado extingue automaticamente o vínculo '
+            'na data acordada, sem necessidade de aviso prévio, exceto se houver cláusula assecuratória recíproca (art. 481 CLT).'
+        )
+    else:
+            '<b>Base legal:</b> Art. 7º, XXI da Constituição Federal de 1988; Arts. 487 a 491 da Consolidação das '
         'Leis do Trabalho (CLT); Lei nº 12.506, de 11 de outubro de 2011 — aviso prévio proporcional ao tempo de serviço: '
         '30 dias + 3 dias por ano completo, limitado a 90 dias no total.'
-    )
+        )
 
     ass_data = [
         [Paragraph('_' * 36, ParagraphStyle('a', fontName='Helvetica', fontSize=9, alignment=TA_CENTER)),
@@ -8780,7 +8803,7 @@ def api_funcionario_gerar_aviso_previo(id):
     f = db.get_or_404(Funcionario, id)
     d = request.json or {}
     tipo = (d.get('tipo') or 'empresa_trabalhado').strip().lower()
-    if tipo not in ('empresa_trabalhado', 'empresa_indenizado', 'pedido_demissao'):
+    if tipo not in ('empresa_trabalhado', 'empresa_indenizado', 'pedido_demissao', 'termino_contrato'):
         tipo = 'empresa_trabalhado'
     obs = (d.get('obs') or '').strip()
     data_aviso = (d.get('data_aviso') or '').strip()
@@ -8800,6 +8823,7 @@ def api_funcionario_gerar_aviso_previo(id):
         'empresa_trabalhado': 'Aviso_Previo_Trabalhado',
         'empresa_indenizado': 'Aviso_Previo_Indenizado',
         'pedido_demissao':    'Pedido_Demissao',
+        'termino_contrato':   'Termino_Contrato_Prazo_Determinado',
     }.get(tipo, 'Aviso_Previo')
     nome_arq = f"{tipo_label_arq}_{_clean_file_part(f.nome or '', 60, 'Colaborador')}_{localnow().strftime('%Y%m%d')}.pdf"
     subdir, cat = func_doc_subdir(id, 'aviso_previo', comp)
