@@ -1125,6 +1125,49 @@ class Config(db.Model):
     chave=db.Column(db.String(100),unique=True,nullable=False)
     valor=db.Column(db.Text,default='')
 
+class PropostaComercial(db.Model):
+    __tablename__ = 'proposta_comercial'
+    id            = db.Column(db.Integer, primary_key=True)
+    numero        = db.Column(db.String(20), unique=True, nullable=False, index=True)
+    empresa       = db.Column(db.String(200))   # destinatária
+    cnpj_dest     = db.Column(db.String(30))
+    funcao        = db.Column(db.String(200))
+    data_proposta = db.Column(db.String(10))
+    cliente_contato = db.Column(db.String(150))
+    email_contato   = db.Column(db.String(150))
+    remetente_id  = db.Column(db.Integer, db.ForeignKey('empresa.id'), nullable=True)
+    itens         = db.Column(db.Text, default='[]')   # JSON
+    total         = db.Column(db.String(50))
+    status        = db.Column(db.String(30), default='emitida')  # emitida|aprovada|recusada|cancelada
+    criado_em     = db.Column(db.DateTime, default=utcnow)
+    criado_por    = db.Column(db.Integer)  # usuario.id
+
+    def to_dict(self):
+        import json as _json
+        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        try:
+            d['itens'] = _json.loads(self.itens or '[]')
+        except Exception:
+            d['itens'] = []
+        if self.criado_em:
+            d['criado_em'] = self.criado_em.strftime('%d/%m/%Y %H:%M')
+        return d
+
+def _gerar_num_proposta():
+    """Retorna o próximo número único de proposta: PC-YYYY-NNNN (thread-safe por DB unique)."""
+    ano = localnow().year
+    last = PropostaComercial.query.filter(
+        PropostaComercial.numero.like(f'PC-{ano}-%')
+    ).order_by(PropostaComercial.id.desc()).first()
+    if last:
+        try:
+            n = int(last.numero.rsplit('-', 1)[-1]) + 1
+        except Exception:
+            n = 1
+    else:
+        n = 1
+    return f'PC-{ano}-{n:04d}'
+
 class Cliente(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     numero=db.Column(db.String(10))
@@ -8919,9 +8962,10 @@ def api_funcionario_gerar_aviso_previo(id):
 
 # ── PROPOSTA COMERCIAL ────────────────────────────────────────────────────────
 
-def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, email, itens=None, remetente=None):
+def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, email, itens=None, remetente=None, ref_num=None):
     """Gera PDF da Proposta Comercial com os campos dinâmicos preenchidos.
-    remetente: dict da empresa remetente (campos do modelo Empresa), ou None para defaults."""
+    remetente: dict da empresa remetente (campos do modelo Empresa), ou None para defaults.
+    ref_num: número sequencial único da proposta (ex: PC-2026-0001)."""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
@@ -8962,7 +9006,8 @@ def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, emai
 
     data_fmt = data_str or localnow().strftime('%d/%m/%Y')
     ano_ref = localnow().strftime('%Y')
-    ref_num = f'PC-{localnow().strftime("%Y%m%d%H%M")}'
+    if not ref_num:
+        ref_num = f'PC-{localnow().strftime("%Y%m%d%H%M")}'
 
     if itens is None:
         itens = [{'cod': '1', 'referencia': 'Limpeza',
@@ -9231,6 +9276,7 @@ def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, emai
 @app.route('/api/proposta-comercial/gerar', methods=['POST'])
 @lr
 def api_gerar_proposta_comercial():
+    import json as _json
     d = request.json or {}
     empresa = (d.get('empresa') or '').strip()
     cnpj    = (d.get('cnpj') or '').strip()
@@ -9254,19 +9300,108 @@ def api_gerar_proposta_comercial():
     if not empresa:
         return jsonify({'erro': 'Informe o nome da empresa destinatária.'}), 400
 
+    # Calcular total a partir dos itens
+    total_val = 0.0
     try:
-        buf = _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, email, itens, remetente=remetente)
+        if itens:
+            for it in itens:
+                try:
+                    total_val += float(it.get('subtotal') or 0)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    total_str = f'R$ {total_val:,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
+
+    # Gerar número sequencial único e salvar no banco
+    try:
+        ref_num = _gerar_num_proposta()
+        proposta_rec = PropostaComercial(
+            numero          = ref_num,
+            empresa         = empresa,
+            cnpj_dest       = cnpj,
+            funcao          = funcao,
+            data_proposta   = data_str,
+            cliente_contato = cliente,
+            email_contato   = email,
+            remetente_id    = int(remetente_id) if remetente_id else None,
+            itens           = _json.dumps(itens or [], ensure_ascii=False),
+            total           = total_str,
+            status          = 'emitida',
+            criado_em       = localnow(),
+            criado_por      = session.get('uid'),
+        )
+        db.session.add(proposta_rec)
+        db.session.commit()
+    except Exception as e:
+        app.logger.exception('Erro ao salvar PropostaComercial no banco')
+        db.session.rollback()
+        # Fallback: usa número por timestamp para não bloquear a geração
+        ref_num = f'PC-{localnow().strftime("%Y%m%d%H%M")}'
+
+    try:
+        buf = _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, email, itens,
+                                            remetente=remetente, ref_num=ref_num)
     except Exception as e:
         app.logger.exception('Erro ao gerar proposta comercial')
         return jsonify({'erro': f'Erro ao gerar PDF: {e}'}), 500
 
     nome_arq = _clean_file_part(empresa) or 'proposta'
-    filename = f'Proposta_Comercial_{nome_arq}_{localnow().strftime("%Y%m%d_%H%M")}.pdf'
+    filename = f'Proposta_Comercial_{ref_num}_{nome_arq}.pdf'
     audit_event('proposta_comercial_gerada', 'usuario', session.get('uid'), None, None, True,
-                {'empresa': empresa, 'funcao': funcao, 'remetente_id': remetente_id})
+                {'empresa': empresa, 'funcao': funcao, 'remetente_id': remetente_id, 'numero': ref_num})
     from flask import send_file
     return send_file(buf, mimetype='application/pdf', as_attachment=True,
-                     download_name=filename)
+                     download_name=filename, headers={'X-Proposta-Numero': ref_num})
+
+
+@app.route('/api/propostas-comerciais', methods=['GET'])
+@lr
+def api_lista_propostas_comerciais():
+    """Lista propostas comerciais com filtros opcionais."""
+    q = request.args.get('q', '').strip()
+    status_f = request.args.get('status', '').strip()
+    page = int(request.args.get('page', 1))
+    per_page = min(int(request.args.get('per_page', 50)), 200)
+
+    query = PropostaComercial.query.order_by(PropostaComercial.id.desc())
+    if q:
+        like = f'%{q}%'
+        query = query.filter(
+            db.or_(
+                PropostaComercial.numero.ilike(like),
+                PropostaComercial.empresa.ilike(like),
+                PropostaComercial.funcao.ilike(like),
+                PropostaComercial.cliente_contato.ilike(like),
+            )
+        )
+    if status_f:
+        query = query.filter(PropostaComercial.status == status_f)
+
+    total = query.count()
+    items = query.offset((page - 1) * per_page).limit(per_page).all()
+    return jsonify({'total': total, 'page': page, 'items': [i.to_dict() for i in items]})
+
+
+@app.route('/api/propostas-comerciais/<int:pid>', methods=['GET'])
+@lr
+def api_get_proposta_comercial(pid):
+    p = db.get_or_404(PropostaComercial, pid)
+    return jsonify(p.to_dict())
+
+
+@app.route('/api/propostas-comerciais/<int:pid>/status', methods=['PATCH'])
+@lr
+def api_atualizar_status_proposta(pid):
+    p = db.get_or_404(PropostaComercial, pid)
+    novo = (request.json or {}).get('status', '').strip()
+    if novo not in ('emitida', 'aprovada', 'recusada', 'cancelada'):
+        return jsonify({'erro': 'Status inválido.'}), 400
+    p.status = novo
+    db.session.commit()
+    audit_event('proposta_status_atualizado', 'proposta', pid, None, None, True,
+                {'numero': p.numero, 'status': novo})
+    return jsonify({'ok': True, 'numero': p.numero, 'status': novo})
 
 # ── FIM PROPOSTA COMERCIAL ────────────────────────────────────────────────────
 

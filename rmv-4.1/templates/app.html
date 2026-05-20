@@ -2887,6 +2887,13 @@ document.addEventListener('DOMContentLoaded',()=>{
               <button class="btn b-az b-sm" onclick="docsAbrirProposta()">Gerar Proposta &rsaquo;</button>
             </div>
 
+            <div class="card" style="padding:16px;border:1px solid var(--verde-borda,#2e7d32);border-radius:10px;display:flex;flex-direction:column;gap:8px">
+              <div style="font-size:22px">📋</div>
+              <div style="font-weight:700;font-size:14px">Histórico de Propostas</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Consulte, filtre e atualize o status de propostas comerciais emitidas.</div>
+              <button class="btn b-sm" style="background:var(--verde,#388e3c);color:#fff" onclick="docsAbrirListaPropostas()">Ver Histórico &rsaquo;</button>
+            </div>
+
             <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
               <div style="font-size:22px">🤝</div>
               <div style="font-weight:700;font-size:14px">Contrato de Prestação de Serviços</div>
@@ -3054,6 +3061,32 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-az" id="pc-btn-gerar" onclick="gerarProposta()">📄 Gerar PDF</button>
           </div>
           <div id="pc-resultado" style="display:none;margin-top:12px"></div>
+        </div>
+      </div>
+
+      <!-- ── Painel: Lista de Propostas ── -->
+      <div id="docs-pane-lista-propostas" class="card" style="display:none">
+        <div class="card-header" style="display:flex;align-items:center;gap:10px">
+          <button class="btn b-sm" style="background:transparent;border:1px solid var(--borda);padding:4px 10px" onclick="docsSetAba('clientes')">← Voltar</button>
+          <span class="card-title" style="margin:0">📋 Histórico de Propostas Comerciais</span>
+        </div>
+        <div style="padding:18px">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center">
+            <input id="lp-busca" type="text" class="inp" style="flex:1;min-width:200px;max-width:340px" placeholder="Buscar por número, empresa, função…" oninput="_lpBuscaDebounce()" />
+            <select id="lp-status" class="inp" style="width:160px" onchange="lpCarregar(1)">
+              <option value="">Todos os status</option>
+              <option value="emitida">Emitida</option>
+              <option value="aprovada">Aprovada</option>
+              <option value="recusada">Recusada</option>
+              <option value="cancelada">Cancelada</option>
+            </select>
+            <button class="btn b-az b-sm" onclick="lpCarregar(1)">🔍 Filtrar</button>
+            <button class="btn b-sm" style="background:var(--verde,#388e3c);color:#fff" onclick="docsAbrirProposta()">+ Nova Proposta</button>
+          </div>
+          <div id="lp-lista">
+            <div style="text-align:center;color:var(--text-muted);padding:30px">Carregando…</div>
+          </div>
+          <div id="lp-paginacao" style="display:flex;gap:8px;margin-top:14px;align-items:center;justify-content:flex-end"></div>
         </div>
       </div>
 
@@ -9084,7 +9117,7 @@ function docsInit() {
 
 function docsSetAba(aba, el) {
   docsAbaAtiva = aba;
-  ['funcionarios','clientes','proposta'].forEach(a => {
+  ['funcionarios','clientes','proposta','lista-propostas'].forEach(a => {
     const pane = document.getElementById('docs-pane-' + a);
     const btn = document.getElementById('docs-subtab-' + a);
     if (pane) pane.style.display = a === aba ? '' : 'none';
@@ -9110,6 +9143,109 @@ async function docsAbrirProposta() {
   }
 }
 // ── FIM DOCUMENTOS ──────────────────────────────────────────────────────────
+
+// ── LISTA DE PROPOSTAS ──────────────────────────────────────────────────────
+let _lpPage = 1;
+let _lpTotal = 0;
+let _lpBuscaTimer = null;
+
+function docsAbrirListaPropostas() {
+  docsSetAba('lista-propostas');
+  lpCarregar(1);
+}
+
+function _lpBuscaDebounce() {
+  clearTimeout(_lpBuscaTimer);
+  _lpBuscaTimer = setTimeout(() => lpCarregar(1), 420);
+}
+
+const _LP_STATUS_LABELS = {
+  emitida: {txt:'Emitida', bg:'#1565c0', col:'#fff'},
+  aprovada: {txt:'Aprovada', bg:'#2e7d32', col:'#fff'},
+  recusada: {txt:'Recusada', bg:'#b71c1c', col:'#fff'},
+  cancelada: {txt:'Cancelada', bg:'#616161', col:'#fff'},
+};
+
+async function lpCarregar(pg) {
+  _lpPage = pg || _lpPage;
+  const q = (document.getElementById('lp-busca')?.value || '').trim();
+  const st = document.getElementById('lp-status')?.value || '';
+  const listaEl = document.getElementById('lp-lista');
+  if (!listaEl) return;
+  listaEl.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted)">Carregando…</div>';
+  try {
+    const params = new URLSearchParams({page: _lpPage, per_page: 50});
+    if (q) params.set('q', q);
+    if (st) params.set('status', st);
+    const res = await api('/api/propostas-comerciais?' + params.toString());
+    _lpTotal = res.total || 0;
+    lpRenderizar(res.items || []);
+    lpRenderPaginacao();
+  } catch(e) {
+    listaEl.innerHTML = '<div style="text-align:center;padding:30px;color:var(--danger)">Erro ao carregar propostas.</div>';
+  }
+}
+
+function lpRenderizar(items) {
+  const el = document.getElementById('lp-lista');
+  if (!items.length) {
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">Nenhuma proposta encontrada.</div>';
+    return;
+  }
+  const rows = items.map(p => {
+    const sl = _LP_STATUS_LABELS[p.status] || {txt: p.status, bg:'#888', col:'#fff'};
+    const badge = `<span style="display:inline-block;background:${sl.bg};color:${sl.col};border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700">${sl.txt}</span>`;
+    const opts = ['emitida','aprovada','recusada','cancelada']
+      .map(s => `<option value="${s}"${p.status===s?' selected':''}>${_LP_STATUS_LABELS[s]?.txt||s}</option>`)
+      .join('');
+    return `<tr>
+      <td style="font-weight:700;white-space:nowrap">${_escHtml(p.numero)}</td>
+      <td>${_escHtml(p.empresa||'')}</td>
+      <td>${_escHtml(p.funcao||'')}</td>
+      <td style="white-space:nowrap">${_escHtml(p.data_proposta||'')}</td>
+      <td style="text-align:right;white-space:nowrap">${_escHtml(p.total||'')}</td>
+      <td>${badge}</td>
+      <td>
+        <select class="inp" style="font-size:11px;padding:2px 6px;width:120px" onchange="lpAtualizarStatus(${p.id}, this.value, this)">
+          ${opts}
+        </select>
+      </td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<table class="tbl" style="width:100%;font-size:13px">
+    <thead><tr>
+      <th>Número</th><th>Empresa</th><th>Função</th><th>Data</th><th style="text-align:right">Total</th><th>Status</th><th>Alterar</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function lpRenderPaginacao() {
+  const pg = document.getElementById('lp-paginacao');
+  if (!pg) return;
+  const totalPg = Math.ceil(_lpTotal / 50);
+  if (totalPg <= 1) { pg.innerHTML = `<span style="color:var(--text-muted);font-size:12px">${_lpTotal} proposta(s)</span>`; return; }
+  let html = `<span style="color:var(--text-muted);font-size:12px;margin-right:6px">${_lpTotal} propostas</span>`;
+  if (_lpPage > 1) html += `<button class="btn b-sm" onclick="lpCarregar(${_lpPage-1})">← Ant.</button>`;
+  html += `<span style="font-size:12px">${_lpPage}/${totalPg}</span>`;
+  if (_lpPage < totalPg) html += `<button class="btn b-sm" onclick="lpCarregar(${_lpPage+1})">Próx. →</button>`;
+  pg.innerHTML = html;
+}
+
+async function lpAtualizarStatus(id, status, selectEl) {
+  try {
+    const res = await api(`/api/propostas-comerciais/${id}/status`, {method:'PATCH', body:{status}});
+    if (res.ok) {
+      const badge = selectEl.closest('tr')?.querySelector('td:nth-child(6)');
+      const sl = _LP_STATUS_LABELS[status] || {txt: status, bg:'#888', col:'#fff'};
+      if (badge) badge.innerHTML = `<span style="display:inline-block;background:${sl.bg};color:${sl.col};border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700">${sl.txt}</span>`;
+    }
+  } catch(e) {
+    alert('Erro ao atualizar status.');
+    lpCarregar(_lpPage);
+  }
+}
+// ── FIM LISTA DE PROPOSTAS ───────────────────────────────────────────────────
 
 // ── PROPOSTA COMERCIAL ────────────────────────────────────────────────────────
 let _pcAcIdx = -1;
@@ -9491,12 +9627,14 @@ async function gerarProposta() {
       body: JSON.stringify({empresa,cnpj,funcao,data:dataFmt,cliente,email,itens,remetente_id:remetenteId})
     });
     if (!resp.ok) { const err=await resp.json().catch(()=>({erro:resp.statusText})); throw new Error(err.erro||resp.statusText); }
+    const numProposta = resp.headers.get('X-Proposta-Numero') || '';
     const blob = await resp.blob();
     const url  = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href=url; a.download=`Proposta_Comercial_${empresa.replace(/\s+/g,'_').slice(0,30)}.pdf`;
     a.click(); setTimeout(()=>URL.revokeObjectURL(url),10000);
-    res.innerHTML=`<div style="background:var(--verde-cl);border:1px solid var(--verde);border-radius:8px;padding:10px 14px;color:var(--verde)">✅ PDF gerado e baixado com sucesso!</div>`;
+    const numBadge = numProposta ? ` &nbsp;<strong>${_escHtml(numProposta)}</strong>` : '';
+    res.innerHTML=`<div style="background:var(--verde-cl);border:1px solid var(--verde);border-radius:8px;padding:10px 14px;color:var(--verde)">✅ PDF gerado com sucesso!${numBadge} &nbsp;<button class="btn b-sm" style="margin-left:8px;font-size:11px;background:#e8f5e9;color:#2e7d32;border:1px solid #2e7d32" onclick="docsAbrirListaPropostas()">Ver histórico</button></div>`;
   } catch(e) {
     res.innerHTML=`<div style="background:var(--verm-cl);border:1px solid var(--verm);border-radius:8px;padding:10px 14px;color:var(--verm)">❌ ${esc(String(e))}</div>`;
   }
