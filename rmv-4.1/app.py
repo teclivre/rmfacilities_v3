@@ -4505,6 +4505,8 @@ DOC_CAT_PATH={
     'vale_transporte':'vale_transporte',
     'requisicao_vale_transporte':'requisicao_vale_transporte',
     'uniforme':'uniforme',
+    'declaracao_acumulo_cargo':'declaracao_acumulo_cargo',
+    'advertencia':'advertencia',
     'outros':'outros',
 }
 DOC_CAT_LABEL={
@@ -4518,7 +4520,9 @@ DOC_CAT_LABEL={
     'contrato_trabalho':'Contrato de Trabalho',
     'vale_transporte':'Vale Transporte',
     'requisicao_vale_transporte':'Requisicao de Vale Transporte',
-    'uniforme':'Uniforme/Fardamento',
+    'uniforme':'Termo de Responsabilidade de Uniforme',
+    'declaracao_acumulo_cargo':'Declaracao de Acumulo de Cargo',
+    'advertencia':'Advertencia / Suspensao Disciplinar',
     'outros':'Outros',
 }
 
@@ -5499,6 +5503,20 @@ def get_logo():
         try: urllib.request.urlretrieve(LOGO_URL,LOGO_PATH)
         except: pass
     return LOGO_PATH if os.path.exists(LOGO_PATH) else None
+
+def _get_logo_path_for_pdf(empresa=None):
+    """Retorna caminho local do logo da empresa, com fallback para logo padrão."""
+    if empresa:
+        logo_url = (getattr(empresa,'logo_url',None) or '').strip()
+        if logo_url:
+            emp_id = getattr(empresa,'id',None) or 0
+            emp_logo = os.path.join(os.path.dirname(__file__), 'static', 'img', f'logo_emp_{emp_id}.png')
+            if not os.path.exists(emp_logo):
+                try: urllib.request.urlretrieve(logo_url, emp_logo)
+                except: pass
+            if os.path.exists(emp_logo):
+                return emp_logo
+    return get_logo()
 
 def _pdf_companies_for_header(empresa_obj=None,empresa_dict=None,limit=2):
     itens=[]
@@ -7334,12 +7352,12 @@ def api_funcionario_upload_arquivo(id):
 # FICHA DE EPI — GERAÇÃO DE PDF E ENVIO PARA ASSINATURA
 # ============================================================
 
-def _gerar_ficha_epi_pdf(funcionario,itens_epi,empresa_nome='RM FACILITIES LTDA',obs=''):
+def _gerar_ficha_epi_pdf(funcionario,itens_epi,empresa_nome='RM FACILITIES LTDA',obs='',empresa=None):
     """Gera PDF da Ficha de Controle e Entrega de EPI usando reportlab."""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
-    from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer,HRFlowable
+    from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer,HRFlowable,Image
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_CENTER,TA_LEFT
 
@@ -7381,25 +7399,30 @@ def _gerar_ficha_epi_pdf(funcionario,itens_epi,empresa_nome='RM FACILITIES LTDA'
     data_emissao=localnow().strftime('%d/%m/%Y')
 
     # ── Cabeçalho colorido ─────────────────────────────────────
+    logo_path = _get_logo_path_for_pdf(empresa)
+    if logo_path and os.path.exists(logo_path):
+        logo_el = Image(logo_path, width=3.8*cm, height=1.4*cm, kind='proportional')
+    else:
+        logo_el = Paragraph(empresa_nome, ParagraphStyle('ln', fontName='Helvetica-Bold', fontSize=8, textColor=branco, alignment=TA_CENTER))
+
     header_data=[[
-        Paragraph('FICHA DE CONTROLE E ENTREGA DE',st_titulo),
-        ''
+        Paragraph('FICHA DE CONTROLE E ENTREGA DE<br/>EQUIPAMENTOS DE PROTEÇÃO INDIVIDUAL — EPI',
+                  ParagraphStyle('t2', fontName='Helvetica-Bold', fontSize=13, leading=17, textColor=branco, alignment=TA_CENTER)),
+        logo_el,
     ],[
-        Paragraph('EQUIPAMENTOS DE PROTEÇÃO INDIVIDUAL — EPI',st_titulo),
-        ''
-    ],[
-        Paragraph(empresa_nome,st_subtitulo),
-        ''
+        Paragraph(empresa_nome, st_subtitulo),
+        '',
     ]]
     header_table=Table(header_data,colWidths=[13*cm,5.5*cm])
     header_table.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,-1),azul),
-        ('SPAN',(0,0),(1,0)),
         ('SPAN',(0,1),(1,1)),
-        ('SPAN',(0,2),(1,2)),
-        ('TOPPADDING',(0,0),(-1,-1),4),
-        ('BOTTOMPADDING',(0,0),(-1,-1),4),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('ALIGN',(1,0),(1,0),'CENTER'),
+        ('TOPPADDING',(0,0),(-1,-1),6),
+        ('BOTTOMPADDING',(0,0),(-1,-1),6),
         ('LEFTPADDING',(0,0),(-1,-1),8),
+        ('RIGHTPADDING',(0,0),(-1,-1),8),
     ]))
 
     # ── Dados do funcionário ───────────────────────────────────
@@ -7536,8 +7559,9 @@ def api_funcionario_gerar_ficha_epi(id):
         canal='nao'
 
     # Gera PDF
+    emp_obj = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
     try:
-        buf=_gerar_ficha_epi_pdf(f,itens,empresa_nome=empresa_nome_param,obs=obs)
+        buf=_gerar_ficha_epi_pdf(f,itens,empresa_nome=empresa_nome_param,obs=obs,empresa=emp_obj)
     except Exception as e:
         app.logger.exception('Erro ao gerar PDF ficha EPI')
         return jsonify({'erro':f'Erro ao gerar PDF: {str(e)}'}),500
@@ -7820,15 +7844,27 @@ def _gerar_requisicao_vt_pdf(funcionario, meios_transporte, empresa=None, opta=T
         ]))
         return titulo_t, t
 
+    from reportlab.platypus import Image as RLImage
+
     # ── Montagem final ──────────────────────────────────────────
     elems = []
-    # Título
-    titulo_bloco = Table([[Paragraph('<b>SOLICITAÇÃO DE VALE-TRANSPORTE</b>', st_titulo)]], colWidths=[W])
-    titulo_bloco.setStyle(TableStyle([
+    # Cabeçalho com logo
+    logo_path = _get_logo_path_for_pdf(empresa)
+    if logo_path and os.path.exists(logo_path):
+        logo_hdr = RLImage(logo_path, width=4*cm, height=1.5*cm, kind='proportional')
+    else:
+        logo_hdr = Paragraph(emp_nome, ParagraphStyle('lhdr', fontName='Helvetica-Bold', fontSize=9, textColor=preto, alignment=TA_CENTER))
+    hdr_data = [[logo_hdr, Paragraph('<b>SOLICITAÇÃO DE VALE-TRANSPORTE</b>', st_titulo)]]
+    hdr_table = Table(hdr_data, colWidths=[4.5*cm, W - 4.5*cm])
+    hdr_table.setStyle(TableStyle([
         ('BOX', (0,0), (-1,-1), BORDA, preto),
-        ('TOPPADDING', (0,0), (-1,-1), 8), ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('LINEBEFORE', (1,0), (1,0), BORDA, preto),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('ALIGN', (1,0), (1,0), 'CENTER'),
+        ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('LEFTPADDING', (0,0), (-1,-1), 6), ('RIGHTPADDING', (0,0), (-1,-1), 6),
     ]))
-    elems.append(titulo_bloco)
+    elems.append(hdr_table)
     elems.append(Spacer(1, 0.1*cm))
     elems.append(row_empresa())
     elems.append(Spacer(1, 0.1*cm))
@@ -7932,7 +7968,549 @@ def api_funcionario_gerar_requisicao_vt(id):
     }), 201
 
 
-@app.route('/api/funcionarios/<int:id>/documentos/preparar',methods=['POST'])
+# ============================================================
+# TERMO DE RESPONSABILIDADE DE UNIFORME — PDF + ENDPOINT
+# ============================================================
+
+def _gerar_termo_uniforme_pdf(funcionario, itens, empresa=None, obs=''):
+    """Gera PDF do Termo de Responsabilidade de Uniforme."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, Image
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+
+    azul = colors.HexColor('#1A3A5C')
+    preto = colors.black
+    cinza = colors.HexColor('#F0F4F8')
+
+    st_titulo = ParagraphStyle('tt', fontName='Helvetica-Bold', fontSize=13, leading=16, textColor=colors.white, alignment=TA_CENTER)
+    st_sub = ParagraphStyle('su', fontName='Helvetica', fontSize=8.5, leading=11, textColor=colors.white, alignment=TA_CENTER)
+    st_label = ParagraphStyle('lb', fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=azul)
+    st_valor = ParagraphStyle('vl', fontName='Helvetica', fontSize=9, leading=11)
+    st_th = ParagraphStyle('th', fontName='Helvetica-Bold', fontSize=8.5, leading=11, textColor=colors.white, alignment=TA_CENTER)
+    st_td = ParagraphStyle('td', fontName='Helvetica', fontSize=8.5, leading=11, alignment=TA_CENTER)
+    st_legal = ParagraphStyle('lg', fontName='Helvetica', fontSize=8.5, leading=12, alignment=TA_JUSTIFY)
+    st_rod = ParagraphStyle('ro', fontName='Helvetica', fontSize=7, leading=9, textColor=colors.HexColor('#888'), alignment=TA_CENTER)
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+        leftMargin=1.5*cm, rightMargin=1.5*cm, topMargin=1.2*cm, bottomMargin=1.2*cm)
+
+    f = funcionario
+    emp_obj = empresa or (db.session.get(Empresa, f.empresa_id) if f.empresa_id else None)
+    emp_nome = (getattr(emp_obj, 'razao', None) or getattr(emp_obj, 'nome', None) or 'RM FACILITIES LTDA').upper() if emp_obj else 'RM FACILITIES LTDA'
+    func_nome = (f.nome or '').strip()
+    func_re = str(f.re or f.matricula or '')
+    func_rg = (f.rg or '')
+    func_cargo = (f.cargo or '').strip()
+    data_hoje = localnow().strftime('%d/%m/%Y')
+
+    logo_path = _get_logo_path_for_pdf(emp_obj)
+    if logo_path and os.path.exists(logo_path):
+        logo_el = Image(logo_path, width=3.8*cm, height=1.4*cm, kind='proportional')
+    else:
+        logo_el = Paragraph(emp_nome, ParagraphStyle('ln', fontName='Helvetica-Bold', fontSize=8, textColor=colors.white, alignment=TA_CENTER))
+
+    hdr_data = [[
+        Paragraph('TERMO DE RESPONSABILIDADE DE<br/>UNIFORME / FARDAMENTO', ParagraphStyle('h2', fontName='Helvetica-Bold', fontSize=13, leading=17, textColor=colors.white, alignment=TA_CENTER)),
+        logo_el,
+    ],[
+        Paragraph(emp_nome, st_sub), '',
+    ]]
+    hdr_table = Table(hdr_data, colWidths=[13*cm, 5.5*cm])
+    hdr_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), azul),
+        ('SPAN', (0,1), (1,1)),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('ALIGN', (1,0), (1,0), 'CENTER'),
+        ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('LEFTPADDING', (0,0), (-1,-1), 8), ('RIGHTPADDING', (0,0), (-1,-1), 8),
+    ]))
+
+    def campo(lbl, val):
+        return [Paragraph(lbl, st_label), Paragraph(val or '—', st_valor)]
+
+    info_data = [
+        campo('NOME:', func_nome) + campo('RE/MAT.:', func_re) + campo('DATA:', data_hoje),
+        campo('RG:', func_rg) + campo('CARGO:', func_cargo) + ['', ''],
+    ]
+    info_table = Table(info_data, colWidths=[2*cm, 4.8*cm, 2.2*cm, 3*cm, 2.5*cm, 4.0*cm])
+    info_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), cinza),
+        ('BOX', (0,0), (-1,-1), 0.5, azul),
+        ('INNERGRID', (0,0), (-1,-1), 0.25, colors.HexColor('#D0D7DE')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 4), ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('LEFTPADDING', (0,0), (-1,-1), 5), ('RIGHTPADDING', (0,0), (-1,-1), 5),
+    ]))
+
+    texto_legal = (
+        'Declaro ter recebido os uniformes/fardamentos relacionados abaixo em perfeito estado de '
+        'conservação, comprometendo-me a utilizá-los exclusivamente no exercício das minhas funções, '
+        'mantê-los limpos, conservados e a devolvê-los à empresa em caso de desligamento. '
+        'Estou ciente de que a perda ou dano ao uniforme por negligência poderá ser descontado '
+        'do meu salário, nos termos da legislação vigente e do contrato de trabalho.'
+    )
+
+    W_tab = 18.5*cm
+    cols_itens = [1.5*cm, 6*cm, 5*cm, 3*cm, 3*cm]
+    header_row = [
+        Paragraph('<b>Nº</b>', st_th),
+        Paragraph('<b>DESCRIÇÃO DO ITEM</b>', st_th),
+        Paragraph('<b>TIPO / COR</b>', st_th),
+        Paragraph('<b>QTDE</b>', st_th),
+        Paragraph('<b>TAMANHO</b>', st_th),
+    ]
+    rows_tab = [header_row]
+    for i, item in enumerate(itens or [], start=1):
+        rows_tab.append([
+            Paragraph(str(i), st_td),
+            Paragraph(str(item.get('descricao') or ''), st_td),
+            Paragraph(str(item.get('tipo_cor') or ''), st_td),
+            Paragraph(str(item.get('quantidade') or ''), st_td),
+            Paragraph(str(item.get('tamanho') or ''), st_td),
+        ])
+    while len(rows_tab) < 8:
+        rows_tab.append([Paragraph('', st_td)]*5)
+
+    tab_itens = Table(rows_tab, colWidths=cols_itens, repeatRows=1)
+    tab_itens.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), azul),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#D0D7DE')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F8FBFF')]),
+        ('TOPPADDING', (0,0), (-1,-1), 4), ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('LEFTPADDING', (0,0), (-1,-1), 4), ('RIGHTPADDING', (0,0), (-1,-1), 4),
+    ]))
+
+    ass_data = [
+        ['', Paragraph('_' * 40, ParagraphStyle('a', fontName='Helvetica', fontSize=9, alignment=TA_CENTER))],
+        ['', Paragraph(func_nome, ParagraphStyle('a2', fontName='Helvetica-Bold', fontSize=9, alignment=TA_CENTER))],
+        ['', Paragraph('Assinatura do colaborador', ParagraphStyle('a3', fontName='Helvetica', fontSize=8, textColor=colors.HexColor('#555'), alignment=TA_CENTER))],
+    ]
+    ass_table = Table(ass_data, colWidths=[9.5*cm, 9*cm])
+    ass_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 3), ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+    ]))
+
+    elems = [hdr_table, Spacer(1, 0.3*cm), info_table, Spacer(1, 0.25*cm),
+             Paragraph(texto_legal, st_legal), Spacer(1, 0.25*cm),
+             tab_itens]
+    if (obs or '').strip():
+        elems.append(Spacer(1, 0.2*cm))
+        elems.append(Paragraph(f'<b>Observações:</b> {obs.strip()}', ParagraphStyle('ob', fontName='Helvetica', fontSize=8.5, leading=11)))
+    elems += [Spacer(1, 0.6*cm), HRFlowable(width='100%', thickness=0.5, color=azul),
+              Spacer(1, 0.3*cm), ass_table, Spacer(1, 0.3*cm),
+              Paragraph(f'Gerado automaticamente em {data_hoje} · {emp_nome}', st_rod)]
+    doc.build(elems)
+    buf.seek(0)
+    return buf
+
+
+@app.route('/api/funcionarios/<int:id>/gerar-termo-uniforme', methods=['POST'])
+@lr
+def api_funcionario_gerar_termo_uniforme(id):
+    f = db.get_or_404(Funcionario, id)
+    d = request.json or {}
+    itens = d.get('itens') or []
+    canal = (d.get('canal') or 'nao').strip().lower()
+    obs = (d.get('obs') or '').strip()
+    if not itens:
+        return jsonify({'erro': 'Informe ao menos um item de uniforme.'}), 400
+    if canal not in ('whatsapp', 'app', 'link', 'nao'):
+        canal = 'nao'
+    emp_obj = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
+    try:
+        buf = _gerar_termo_uniforme_pdf(f, itens, empresa=emp_obj, obs=obs)
+    except Exception as e:
+        app.logger.exception('Erro ao gerar PDF termo uniforme')
+        return jsonify({'erro': f'Erro ao gerar PDF: {str(e)}'}), 500
+    comp = localnow().strftime('%Y-%m')
+    nome_arq = f"Termo_Uniforme_{_clean_file_part(f.nome or '', 60, 'Colaborador')}_{localnow().strftime('%Y%m%d')}.pdf"
+    subdir, cat = func_doc_subdir(id, 'uniforme', comp)
+    ano = infer_doc_year(comp)
+    prepare_func_doc_dirs(id, ano)
+    rel, abs_p, _ = unique_rel_filename(subdir, nome_arq)
+    os.makedirs(os.path.dirname(abs_p), exist_ok=True)
+    with open(abs_p, 'wb') as fh:
+        fh.write(buf.read())
+    a = FuncionarioArquivo(funcionario_id=id, categoria='uniforme', competencia=comp, nome_arquivo=nome_arq, caminho=rel)
+    db.session.add(a)
+    db.session.flush()
+    assinatura = {}
+    if canal in ('whatsapp', 'app', 'link'):
+        rs = _solicitar_assinatura_arquivo_funcionario(a, f, canal=canal, commit_now=False)
+        assinatura = {'canal': canal, 'link': rs.get('link_curto') or rs.get('link', ''), 'status': ('solicitada' if rs.get('ok') else 'erro'), 'erro': rs.get('erro', '')}
+    db.session.commit()
+    audit_event('termo_uniforme_gerado', 'usuario', session.get('uid'), 'funcionario', id, True,
+        {'arquivo_id': a.id, 'canal': canal})
+    return jsonify({'ok': True, 'arquivo_id': a.id, 'nome_arquivo': nome_arq, 'assinatura': assinatura,
+                    'download_url': f'/api/funcionarios/arquivos/{a.id}/download'}), 201
+
+
+# ============================================================
+# DECLARAÇÃO DE ACÚMULO DE CARGO — PDF + ENDPOINT
+# ============================================================
+
+def _gerar_declaracao_acumulo_cargo_pdf(funcionario, acumula=False, empresa=None, outro_empregador=''):
+    """Gera PDF da Declaração de Acúmulo de Cargo."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, Image
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+
+    azul = colors.HexColor('#1A3A5C')
+    cinza = colors.HexColor('#F0F4F8')
+
+    st_sub = ParagraphStyle('su', fontName='Helvetica', fontSize=8.5, leading=11, textColor=colors.white, alignment=TA_CENTER)
+    st_label = ParagraphStyle('lb', fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=azul)
+    st_valor = ParagraphStyle('vl', fontName='Helvetica', fontSize=9, leading=11)
+    st_legal = ParagraphStyle('lg', fontName='Helvetica', fontSize=9.5, leading=14, alignment=TA_JUSTIFY)
+    st_rod = ParagraphStyle('ro', fontName='Helvetica', fontSize=7, leading=9, textColor=colors.HexColor('#888'), alignment=TA_CENTER)
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+        leftMargin=2*cm, rightMargin=2*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
+
+    f = funcionario
+    emp_obj = empresa or (db.session.get(Empresa, f.empresa_id) if f.empresa_id else None)
+    emp_nome = (getattr(emp_obj, 'razao', None) or getattr(emp_obj, 'nome', None) or 'RM FACILITIES LTDA').upper() if emp_obj else 'RM FACILITIES LTDA'
+    func_nome = (f.nome or '').strip()
+    func_cpf = (f.cpf or '')
+    func_rg = (f.rg or '')
+    func_re = str(f.re or f.matricula or '')
+    func_cargo = (f.cargo or '').strip()
+    data_hoje = localnow().strftime('%d/%m/%Y')
+
+    logo_path = _get_logo_path_for_pdf(emp_obj)
+    if logo_path and os.path.exists(logo_path):
+        logo_el = Image(logo_path, width=3.8*cm, height=1.4*cm, kind='proportional')
+    else:
+        logo_el = Paragraph(emp_nome, ParagraphStyle('ln', fontName='Helvetica-Bold', fontSize=8, textColor=colors.white, alignment=TA_CENTER))
+
+    hdr_data = [[
+        Paragraph('DECLARAÇÃO DE ACÚMULO DE CARGO', ParagraphStyle('h2', fontName='Helvetica-Bold', fontSize=14, leading=18, textColor=colors.white, alignment=TA_CENTER)),
+        logo_el,
+    ],[
+        Paragraph(emp_nome, st_sub), '',
+    ]]
+    hdr_table = Table(hdr_data, colWidths=[13*cm, 5.5*cm])
+    hdr_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), azul),
+        ('SPAN', (0,1), (1,1)),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('ALIGN', (1,0), (1,0), 'CENTER'),
+        ('TOPPADDING', (0,0), (-1,-1), 8), ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('LEFTPADDING', (0,0), (-1,-1), 8), ('RIGHTPADDING', (0,0), (-1,-1), 8),
+    ]))
+
+    def campo(lbl, val):
+        return [Paragraph(lbl, st_label), Paragraph(val or '—', st_valor)]
+
+    info_data = [
+        campo('NOME:', func_nome) + campo('CPF:', func_cpf) + campo('DATA:', data_hoje),
+        campo('RG:', func_rg) + campo('RE/MAT.:', func_re) + campo('CARGO:', func_cargo),
+    ]
+    info_table = Table(info_data, colWidths=[2*cm, 4.8*cm, 2.2*cm, 3*cm, 2.5*cm, 4.0*cm])
+    info_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), cinza),
+        ('BOX', (0,0), (-1,-1), 0.5, azul),
+        ('INNERGRID', (0,0), (-1,-1), 0.25, colors.HexColor('#D0D7DE')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 4), ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('LEFTPADDING', (0,0), (-1,-1), 5), ('RIGHTPADDING', (0,0), (-1,-1), 5),
+    ]))
+
+    W_doc = A4[0] - 4*cm
+    intro = (
+        f'Eu, <b>{func_nome}</b>, portador(a) do RG <b>{func_rg}</b>, CPF <b>{func_cpf}</b>, '
+        f'ocupante do cargo de <b>{func_cargo}</b> na empresa <b>{emp_nome}</b>, '
+        f'DECLARO, para os devidos fins, que:'
+    )
+
+    if not acumula:
+        declaracao = (
+            '☑  <b>NÃO</b> possuo outro vínculo empregatício, não exerço cargo, emprego ou função '
+            'remunerada em outra empresa, órgão público ou privado, nos termos do art. 482, alínea "c" da CLT '
+            'e demais legislações vigentes.'
+        )
+    else:
+        declaracao = (
+            f'☑  <b>POSSUO</b> vínculo empregatício com outro empregador, conforme identificado abaixo:<br/><br/>'
+            f'<b>Outro empregador:</b> {outro_empregador or "—"}<br/><br/>'
+            'Declaro ciência de que o acúmulo de empregos deve ser comunicado à empresa, '
+            'especialmente quando houver incompatibilidade de horários ou restrições legais.'
+        )
+
+    compromisso = (
+        'Comprometo-me a informar imediatamente qualquer alteração na situação acima declarada. '
+        'Estou ciente de que a prestação de informação falsa configura falta grave, podendo ensejar '
+        'a rescisão motivada do contrato de trabalho.'
+    )
+
+    ass_data = [
+        ['', Paragraph('_' * 40, ParagraphStyle('a', fontName='Helvetica', fontSize=9, alignment=TA_CENTER))],
+        ['', Paragraph(func_nome, ParagraphStyle('a2', fontName='Helvetica-Bold', fontSize=9, alignment=TA_CENTER))],
+        ['', Paragraph('Assinatura do colaborador', ParagraphStyle('a3', fontName='Helvetica', fontSize=8, textColor=colors.HexColor('#555'), alignment=TA_CENTER))],
+    ]
+    ass_table = Table(ass_data, colWidths=[9.5*cm, 9*cm])
+    ass_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 3), ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+    ]))
+
+    meses_pt = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+    hoje = localnow()
+    cidade_empresa = getattr(emp_obj, 'cidade', '') or 'São José dos Campos'
+    data_extensa = f'{cidade_empresa}, {hoje.day} de {meses_pt[hoje.month-1]} de {hoje.year}.'
+
+    elems = [
+        hdr_table, Spacer(1, 0.35*cm), info_table, Spacer(1, 0.4*cm),
+        Paragraph(intro, st_legal), Spacer(1, 0.3*cm),
+        Paragraph(declaracao, ParagraphStyle('decl', fontName='Helvetica', fontSize=10, leading=15, alignment=TA_JUSTIFY)),
+        Spacer(1, 0.3*cm),
+        Paragraph(compromisso, st_legal), Spacer(1, 0.4*cm),
+        Paragraph(data_extensa, ParagraphStyle('de', fontName='Helvetica', fontSize=9, leading=12)),
+        Spacer(1, 0.8*cm),
+        HRFlowable(width='100%', thickness=0.5, color=azul),
+        Spacer(1, 0.3*cm), ass_table, Spacer(1, 0.3*cm),
+        Paragraph(f'Gerado automaticamente em {data_hoje} · {emp_nome}', st_rod),
+    ]
+    doc.build(elems)
+    buf.seek(0)
+    return buf
+
+
+@app.route('/api/funcionarios/<int:id>/gerar-declaracao-acumulo', methods=['POST'])
+@lr
+def api_funcionario_gerar_declaracao_acumulo(id):
+    f = db.get_or_404(Funcionario, id)
+    d = request.json or {}
+    acumula = bool(d.get('acumula', False))
+    outro_empregador = (d.get('outro_empregador') or '').strip()
+    canal = (d.get('canal') or 'nao').strip().lower()
+    if canal not in ('whatsapp', 'app', 'link', 'nao'):
+        canal = 'nao'
+    emp_obj = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
+    try:
+        buf = _gerar_declaracao_acumulo_cargo_pdf(f, acumula=acumula, empresa=emp_obj, outro_empregador=outro_empregador)
+    except Exception as e:
+        app.logger.exception('Erro ao gerar PDF declaração acúmulo')
+        return jsonify({'erro': f'Erro ao gerar PDF: {str(e)}'}), 500
+    comp = localnow().strftime('%Y-%m')
+    nome_arq = f"Declaracao_Acumulo_{_clean_file_part(f.nome or '', 60, 'Colaborador')}_{localnow().strftime('%Y%m%d')}.pdf"
+    subdir, cat = func_doc_subdir(id, 'declaracao_acumulo_cargo', comp)
+    ano = infer_doc_year(comp)
+    prepare_func_doc_dirs(id, ano)
+    rel, abs_p, _ = unique_rel_filename(subdir, nome_arq)
+    os.makedirs(os.path.dirname(abs_p), exist_ok=True)
+    with open(abs_p, 'wb') as fh:
+        fh.write(buf.read())
+    a = FuncionarioArquivo(funcionario_id=id, categoria='declaracao_acumulo_cargo', competencia=comp, nome_arquivo=nome_arq, caminho=rel)
+    db.session.add(a)
+    db.session.flush()
+    assinatura = {}
+    if canal in ('whatsapp', 'app', 'link'):
+        rs = _solicitar_assinatura_arquivo_funcionario(a, f, canal=canal, commit_now=False)
+        assinatura = {'canal': canal, 'link': rs.get('link_curto') or rs.get('link', ''), 'status': ('solicitada' if rs.get('ok') else 'erro'), 'erro': rs.get('erro', '')}
+    db.session.commit()
+    audit_event('declaracao_acumulo_gerada', 'usuario', session.get('uid'), 'funcionario', id, True,
+        {'arquivo_id': a.id, 'canal': canal, 'acumula': acumula})
+    return jsonify({'ok': True, 'arquivo_id': a.id, 'nome_arquivo': nome_arq, 'assinatura': assinatura,
+                    'download_url': f'/api/funcionarios/arquivos/{a.id}/download'}), 201
+
+
+# ============================================================
+# ADVERTÊNCIA / SUSPENSÃO DISCIPLINAR — PDF + ENDPOINT
+# ============================================================
+
+def _gerar_advertencia_pdf(funcionario, tipo='advertencia_escrita', descricao='', empresa=None, obs='', dias_suspensao=0):
+    """Gera PDF de Advertência ou Suspensão Disciplinar."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, Image
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+
+    vermelho = colors.HexColor('#8B1A1A')
+    azul = colors.HexColor('#1A3A5C')
+    cinza = colors.HexColor('#F0F4F8')
+
+    st_sub = ParagraphStyle('su', fontName='Helvetica', fontSize=8.5, leading=11, textColor=colors.white, alignment=TA_CENTER)
+    st_label = ParagraphStyle('lb', fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=azul)
+    st_valor = ParagraphStyle('vl', fontName='Helvetica', fontSize=9, leading=11)
+    st_legal = ParagraphStyle('lg', fontName='Helvetica', fontSize=9.5, leading=14, alignment=TA_JUSTIFY)
+    st_rod = ParagraphStyle('ro', fontName='Helvetica', fontSize=7, leading=9, textColor=colors.HexColor('#888'), alignment=TA_CENTER)
+
+    TIPOS = {
+        'advertencia_verbal': 'ADVERTÊNCIA VERBAL',
+        'advertencia_escrita': 'ADVERTÊNCIA ESCRITA',
+        'suspensao': 'SUSPENSÃO DISCIPLINAR',
+    }
+    tipo_label = TIPOS.get(tipo, 'ADVERTÊNCIA ESCRITA')
+    cor_header = vermelho if 'suspensao' in tipo else azul
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+        leftMargin=2*cm, rightMargin=2*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
+
+    f = funcionario
+    emp_obj = empresa or (db.session.get(Empresa, f.empresa_id) if f.empresa_id else None)
+    emp_nome = (getattr(emp_obj, 'razao', None) or getattr(emp_obj, 'nome', None) or 'RM FACILITIES LTDA').upper() if emp_obj else 'RM FACILITIES LTDA'
+    func_nome = (f.nome or '').strip()
+    func_re = str(f.re or f.matricula or '')
+    func_rg = (f.rg or '')
+    func_cargo = (f.cargo or '').strip()
+    data_hoje = localnow().strftime('%d/%m/%Y')
+
+    logo_path = _get_logo_path_for_pdf(emp_obj)
+    if logo_path and os.path.exists(logo_path):
+        logo_el = Image(logo_path, width=3.8*cm, height=1.4*cm, kind='proportional')
+    else:
+        logo_el = Paragraph(emp_nome, ParagraphStyle('ln', fontName='Helvetica-Bold', fontSize=8, textColor=colors.white, alignment=TA_CENTER))
+
+    hdr_data = [[
+        Paragraph(tipo_label, ParagraphStyle('h2', fontName='Helvetica-Bold', fontSize=14, leading=18, textColor=colors.white, alignment=TA_CENTER)),
+        logo_el,
+    ],[
+        Paragraph(emp_nome, st_sub), '',
+    ]]
+    hdr_table = Table(hdr_data, colWidths=[13*cm, 5.5*cm])
+    hdr_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), cor_header),
+        ('SPAN', (0,1), (1,1)),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('ALIGN', (1,0), (1,0), 'CENTER'),
+        ('TOPPADDING', (0,0), (-1,-1), 8), ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('LEFTPADDING', (0,0), (-1,-1), 8), ('RIGHTPADDING', (0,0), (-1,-1), 8),
+    ]))
+
+    def campo(lbl, val):
+        return [Paragraph(lbl, st_label), Paragraph(val or '—', st_valor)]
+
+    info_data = [
+        campo('NOME:', func_nome) + campo('RE/MAT.:', func_re) + campo('DATA:', data_hoje),
+        campo('RG:', func_rg) + campo('CARGO:', func_cargo) + campo('TIPO:', tipo_label),
+    ]
+    info_table = Table(info_data, colWidths=[2*cm, 4.8*cm, 2.2*cm, 3*cm, 2.5*cm, 4.0*cm])
+    info_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), cinza),
+        ('BOX', (0,0), (-1,-1), 0.5, cor_header),
+        ('INNERGRID', (0,0), (-1,-1), 0.25, colors.HexColor('#D0D7DE')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 4), ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('LEFTPADDING', (0,0), (-1,-1), 5), ('RIGHTPADDING', (0,0), (-1,-1), 5),
+    ]))
+
+    texto_intro = (
+        f'A empresa <b>{emp_nome}</b> vem, por meio deste instrumento, comunicar ao(à) colaborador(a) '
+        f'<b>{func_nome}</b>, RE/Mat. <b>{func_re}</b>, cargo <b>{func_cargo}</b>, '
+        f'a aplicação de <b>{tipo_label}</b> pelo(s) seguinte(s) motivo(s):'
+    )
+
+    texto_descricao = (descricao or '(Descrição da infração não informada.)').strip()
+
+    if tipo == 'suspensao' and dias_suspensao > 0:
+        texto_suspensao = (
+            f'Em razão dos fatos acima narrados, o colaborador ficará suspenso por <b>{dias_suspensao} dia(s)</b>, '
+            f'sem remuneração, nos termos do art. 474 da CLT.'
+        )
+    else:
+        texto_suspensao = None
+
+    texto_ciencia = (
+        'O(A) colaborador(a) declara estar ciente da presente comunicação e de suas implicações. '
+        'A reincidência na prática de infrações disciplinares poderá ensejar a aplicação de penalidades '
+        'mais severas, inclusive a rescisão motivada do contrato de trabalho por justa causa, '
+        'nos termos do art. 482 da CLT.'
+    )
+
+    meses_pt = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+    hoje = localnow()
+    cidade_empresa = getattr(emp_obj, 'cidade', '') or 'São José dos Campos'
+    data_extensa = f'{cidade_empresa}, {hoje.day} de {meses_pt[hoje.month-1]} de {hoje.year}.'
+
+    ass_data = [
+        [Paragraph('_' * 36, ParagraphStyle('a', fontName='Helvetica', fontSize=9, alignment=TA_CENTER)),
+         Paragraph('_' * 36, ParagraphStyle('a', fontName='Helvetica', fontSize=9, alignment=TA_CENTER))],
+        [Paragraph('Representante da Empresa', ParagraphStyle('a3', fontName='Helvetica', fontSize=8, textColor=colors.HexColor('#555'), alignment=TA_CENTER)),
+         Paragraph(f'{func_nome}<br/>Assinatura do colaborador', ParagraphStyle('a3', fontName='Helvetica', fontSize=8, textColor=colors.HexColor('#555'), alignment=TA_CENTER))],
+    ]
+    ass_table = Table(ass_data, colWidths=[9*cm, 9.5*cm])
+    ass_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 4), ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ]))
+
+    elems = [hdr_table, Spacer(1, 0.35*cm), info_table, Spacer(1, 0.4*cm),
+             Paragraph(texto_intro, st_legal), Spacer(1, 0.3*cm),
+             Paragraph(texto_descricao, ParagraphStyle('desc', fontName='Helvetica', fontSize=10, leading=15, alignment=TA_JUSTIFY))]
+    if texto_suspensao:
+        elems += [Spacer(1, 0.25*cm), Paragraph(texto_suspensao, ParagraphStyle('susp', fontName='Helvetica-Bold', fontSize=9.5, leading=14, textColor=vermelho, alignment=TA_JUSTIFY))]
+    if (obs or '').strip():
+        elems += [Spacer(1, 0.2*cm), Paragraph(f'<b>Observações adicionais:</b> {obs.strip()}', ParagraphStyle('ob', fontName='Helvetica', fontSize=9, leading=13, alignment=TA_JUSTIFY))]
+    elems += [Spacer(1, 0.3*cm), Paragraph(texto_ciencia, st_legal),
+              Spacer(1, 0.4*cm), Paragraph(data_extensa, ParagraphStyle('de', fontName='Helvetica', fontSize=9, leading=12)),
+              Spacer(1, 0.8*cm), HRFlowable(width='100%', thickness=0.5, color=cor_header),
+              Spacer(1, 0.3*cm), ass_table, Spacer(1, 0.3*cm),
+              Paragraph(f'Gerado automaticamente em {data_hoje} · {emp_nome}', st_rod)]
+    doc.build(elems)
+    buf.seek(0)
+    return buf
+
+
+@app.route('/api/funcionarios/<int:id>/gerar-advertencia', methods=['POST'])
+@lr
+def api_funcionario_gerar_advertencia(id):
+    f = db.get_or_404(Funcionario, id)
+    d = request.json or {}
+    tipo = (d.get('tipo') or 'advertencia_escrita').strip().lower()
+    if tipo not in ('advertencia_verbal', 'advertencia_escrita', 'suspensao'):
+        tipo = 'advertencia_escrita'
+    descricao = (d.get('descricao') or '').strip()
+    obs = (d.get('obs') or '').strip()
+    dias_suspensao = int(d.get('dias_suspensao') or 0)
+    canal = (d.get('canal') or 'nao').strip().lower()
+    if canal not in ('whatsapp', 'app', 'link', 'nao'):
+        canal = 'nao'
+    if not descricao:
+        return jsonify({'erro': 'Informe a descrição da infração.'}), 400
+    emp_obj = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
+    try:
+        buf = _gerar_advertencia_pdf(f, tipo=tipo, descricao=descricao, empresa=emp_obj, obs=obs, dias_suspensao=dias_suspensao)
+    except Exception as e:
+        app.logger.exception('Erro ao gerar PDF advertência')
+        return jsonify({'erro': f'Erro ao gerar PDF: {str(e)}'}), 500
+    comp = localnow().strftime('%Y-%m')
+    tipo_label = {'advertencia_verbal': 'Advertencia_Verbal', 'advertencia_escrita': 'Advertencia_Escrita', 'suspensao': 'Suspensao'}.get(tipo, 'Advertencia')
+    nome_arq = f"{tipo_label}_{_clean_file_part(f.nome or '', 60, 'Colaborador')}_{localnow().strftime('%Y%m%d')}.pdf"
+    subdir, cat = func_doc_subdir(id, 'advertencia', comp)
+    ano = infer_doc_year(comp)
+    prepare_func_doc_dirs(id, ano)
+    rel, abs_p, _ = unique_rel_filename(subdir, nome_arq)
+    os.makedirs(os.path.dirname(abs_p), exist_ok=True)
+    with open(abs_p, 'wb') as fh:
+        fh.write(buf.read())
+    a = FuncionarioArquivo(funcionario_id=id, categoria='advertencia', competencia=comp, nome_arquivo=nome_arq, caminho=rel)
+    db.session.add(a)
+    db.session.flush()
+    assinatura = {}
+    if canal in ('whatsapp', 'app', 'link'):
+        rs = _solicitar_assinatura_arquivo_funcionario(a, f, canal=canal, commit_now=False)
+        assinatura = {'canal': canal, 'link': rs.get('link_curto') or rs.get('link', ''), 'status': ('solicitada' if rs.get('ok') else 'erro'), 'erro': rs.get('erro', '')}
+    db.session.commit()
+    audit_event('advertencia_gerada', 'usuario', session.get('uid'), 'funcionario', id, True,
+        {'arquivo_id': a.id, 'canal': canal, 'tipo': tipo})
+    return jsonify({'ok': True, 'arquivo_id': a.id, 'nome_arquivo': nome_arq, 'assinatura': assinatura,
+                    'download_url': f'/api/funcionarios/arquivos/{a.id}/download'}), 201
+
+
 @lr
 def api_preparar_pastas_funcionario(id):
     db.get_or_404(Funcionario, id)
