@@ -8853,8 +8853,335 @@ def api_funcionario_gerar_aviso_previo(id):
                     'download_url': f'/api/funcionarios/arquivos/{a.id}/download'}), 201
 
 
+# ── PROPOSTA COMERCIAL ────────────────────────────────────────────────────────
+
+def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, email, itens=None):
+    """Gera PDF da Proposta Comercial RM Facilities com os campos dinâmicos preenchidos."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, PageBreak
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY, TA_RIGHT
+    import io as _io
+
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=2*cm, rightMargin=2*cm,
+                            topMargin=1.5*cm, bottomMargin=2*cm)
+
+    NAVY = colors.HexColor('#1A3A5C')
+    GRAY = colors.HexColor('#555555')
+    LGRAY = colors.HexColor('#f5f7fa')
+    BORDER = colors.HexColor('#cccccc')
+    WHITE = colors.white
+
+    def st(name, **kw):
+        base = dict(fontName='Helvetica', fontSize=10, leading=15, textColor=colors.black)
+        base.update(kw)
+        return ParagraphStyle(name, **base)
+
+    s_normal   = st('n', fontSize=10, leading=15, alignment=TA_JUSTIFY)
+    s_bold     = st('b', fontName='Helvetica-Bold', fontSize=10, leading=15)
+    s_h1       = st('h1', fontName='Helvetica-Bold', fontSize=13, textColor=NAVY, leading=18, spaceBefore=14, spaceAfter=6)
+    s_h4       = st('h4', fontName='Helvetica-Bold', fontSize=10, leading=14, leftIndent=12)
+    s_small    = st('sm', fontSize=8.5, textColor=GRAY)
+    s_center   = st('c', alignment=TA_CENTER)
+    s_right    = st('r', alignment=TA_RIGHT, fontSize=9, textColor=GRAY)
+
+    logo_path = None
+    try:
+        logo_path = _get_logo_path_for_pdf(None)
+    except Exception:
+        pass
+
+    data_fmt = data_str or localnow().strftime('%d/%m/%Y')
+    ano_ref = localnow().strftime('%Y')
+    ref_num = f'PC-{localnow().strftime("%Y%m%d%H%M")}'
+
+    if itens is None:
+        itens = [{'cod': '1', 'referencia': 'Limpeza',
+                  'funcao_item': f'AGENTES DE {(funcao or "LIMPEZA").upper()} 44 HORAS SEMANAIS',
+                  'valor_unit': 'A definir', 'subtotal': 'A definir'}]
+
+    elems = []
+
+    # ── CABEÇALHO ─────────────────────────────────────────────────────────────
+    hdr_data = [[
+        Paragraph('<b>RM CONSERVAÇÃO E SERVIÇOS</b><br/>'
+                  '<font size=8>CNPJ: 61.337.803/0001-20</font>',
+                  st('hd', fontName='Helvetica-Bold', fontSize=12, textColor=WHITE, leading=16)),
+        Paragraph(f'<font size=8>Ref.: {ref_num}</font><br/>'
+                  f'<font size=8>Data: {data_fmt}</font>',
+                  st('hd2', fontSize=8, textColor=WHITE, alignment=TA_RIGHT, leading=12)),
+    ]]
+    hdr_t = Table(hdr_data, colWidths=[13*cm, 5*cm])
+    hdr_t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), NAVY),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 10), ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+        ('LEFTPADDING', (0,0), (0,-1), 14), ('RIGHTPADDING', (-1,0), (-1,-1), 14),
+    ]))
+    elems.append(hdr_t)
+    elems.append(Spacer(1, 0.5*cm))
+
+    # ── DESTINATÁRIO ──────────────────────────────────────────────────────────
+    dest_data = [
+        [Paragraph('<b>Empresa Destinatária</b>', st('lbl', fontSize=8, textColor=GRAY)),
+         Paragraph('<b>CNPJ</b>', st('lbl', fontSize=8, textColor=GRAY)),
+         Paragraph('<b>Serviço / Função</b>', st('lbl', fontSize=8, textColor=GRAY))],
+        [Paragraph(empresa or '—', s_bold),
+         Paragraph(cnpj or '—', s_bold),
+         Paragraph(funcao or '—', s_bold)],
+    ]
+    dest_t = Table(dest_data, colWidths=[7*cm, 5*cm, 6*cm])
+    dest_t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), LGRAY),
+        ('BACKGROUND', (0,1), (-1,1), WHITE),
+        ('BOX', (0,0), (-1,-1), 0.5, BORDER),
+        ('INNERGRID', (0,0), (-1,-1), 0.3, BORDER),
+        ('TOPPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('LEFTPADDING', (0,0), (-1,-1), 8), ('RIGHTPADDING', (0,0), (-1,-1), 8),
+    ]))
+    elems.append(dest_data and dest_t)
+    elems.append(Spacer(1, 0.5*cm))
+
+    # ── Para / Data / Email ───────────────────────────────────────────────────
+    elems.append(Paragraph(f'<b>Data:</b> {data_fmt}', s_normal))
+    elems.append(Spacer(1, 0.2*cm))
+    elems.append(Paragraph('Para,', s_normal))
+    elems.append(Paragraph(f'<b>{cliente or "—"}</b>', s_normal))
+    elems.append(Paragraph(email or '', st('em', fontSize=9, textColor=GRAY)))
+    elems.append(Spacer(1, 0.5*cm))
+
+    # ── CORPO CARTA ───────────────────────────────────────────────────────────
+    intro = (
+        f'É com satisfação que apresentamos a V. Sa. nossa proposta comercial para a prestação de em '
+        f'<b>{funcao or "nossos serviços"}</b> para empresa <b>{empresa or "V. Sa."}</b> resposta ao processo a sua '
+        f'necessidade. Nossa equipe avaliou cuidadosamente suas necessidades e considerou várias opções para apresentar '
+        f'a solução ideal para este projeto; contudo, sinta-se à vontade para revisar a proposta e indicar eventuais ajustes.'
+    )
+    elems.append(Paragraph(intro, s_normal))
+    elems.append(Spacer(1, 0.3*cm))
+    elems.append(Paragraph('Por favor, entre em contato conosco caso seja necessário algum esclarecimento ou informações adicionais.', s_normal))
+    elems.append(Spacer(1, 0.6*cm))
+    elems.append(Paragraph('Atenciosamente,', s_normal))
+    elems.append(Spacer(1, 0.2*cm))
+    elems.append(Paragraph('<b>Roberio Figueiredo</b>', s_bold))
+    elems.append(Paragraph('Administrador', s_small))
+    elems.append(Paragraph('Tel. (12) 3042-1799 &nbsp;&nbsp; Cel. (12) 99775-2283', s_small))
+    elems.append(Paragraph('roberio.figueiredo@rmfacilities.com.br', s_small))
+    elems.append(PageBreak())
+
+    # ── SEÇÃO 1: Apresentação Institucional ──────────────────────────────────
+    elems.append(Paragraph('Apresentação Institucional', s_h1))
+    elems.append(HRFlowable(width='100%', thickness=1, color=NAVY))
+    elems.append(Spacer(1, 0.3*cm))
+    elems.append(Paragraph(
+        'RM FACILITIES LTDA - Somos uma empresa pronta para oferecer soluções integradas de tecnologia e facility services. '
+        'Estamos buscando sempre atender nossos clientes parceiros, cumprindo os mais rígidos critérios de compliance. '
+        'Compreendemos a demanda de cada cliente para desenhar a proposta mais eficiente.',
+        s_normal))
+    elems.append(Spacer(1, 0.3*cm))
+    elems.append(Paragraph(
+        'SECURITY SERVICES - A solidez e a expertise dos fundadores permitem a operação com escala e de maneira customizada. '
+        'A RM FACILITIES LTDA oferece soluções completas para os cenários mais complexos, tem um portfólios que compreende '
+        'serviços como portaria e controle de acesso.',
+        s_normal))
+    elems.append(Spacer(1, 0.3*cm))
+    elems.append(Paragraph(
+        'FACILITY SERVICES - A empresa acredita na combinação entre as melhores pessoas e a tecnologia para atender com '
+        'excelência à demanda de serviços de limpeza, multisserviços e serviços auxiliares.',
+        s_normal))
+    elems.append(Spacer(1, 0.5*cm))
+
+    # ── SEÇÃO 2: Escopo e Valores dos Serviços ───────────────────────────────
+    elems.append(Paragraph('Escopo e Valores dos Serviços', s_h1))
+    elems.append(HRFlowable(width='100%', thickness=1, color=NAVY))
+    elems.append(Spacer(1, 0.3*cm))
+    elems.append(Paragraph('Escopo Operacional', st('eo', fontName='Helvetica-Bold', fontSize=11, leading=15)))
+    elems.append(Spacer(1, 0.2*cm))
+    elems.append(Paragraph('Planilha de custo', st('pc', fontName='Helvetica-Bold', fontSize=10, leading=14)))
+    elems.append(Spacer(1, 0.2*cm))
+
+    # Cabeçalho da planilha
+    plan_header = ['Cod.', 'Referência', 'Função', 'Valor unit.', 'Subtotal']
+    plan_rows = [plan_header]
+    total_rows = 5
+    for i, it in enumerate(itens[:total_rows]):
+        plan_rows.append([
+            str(it.get('cod', str(i+1))),
+            it.get('referencia', ''),
+            it.get('funcao_item', ''),
+            it.get('valor_unit', ''),
+            it.get('subtotal', ''),
+        ])
+    # Preencher linhas vazias até 5
+    while len(plan_rows) < total_rows + 1:
+        plan_rows.append(['', '', '', '', ''])
+
+    # Calcular total
+    total_val = ''
+    for it in itens:
+        if it.get('subtotal') and it['subtotal'] not in ('', 'A definir', '-'):
+            total_val = it['subtotal']
+            break
+
+    plan_rows.append(['Total Mensal:', '', '', '', total_val or '-'])
+
+    plan_t = Table(plan_rows, colWidths=[1.2*cm, 3.5*cm, 8*cm, 3*cm, 3.3*cm])
+    plan_style = [
+        ('BACKGROUND', (0,0), (-1,0), NAVY),
+        ('TEXTCOLOR', (0,0), (-1,0), WHITE),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,-1), 9),
+        ('BACKGROUND', (0,1), (-1,-2), WHITE),
+        ('ROWBACKGROUNDS', (0,1), (-1,-2), [WHITE, LGRAY]),
+        ('BACKGROUND', (0,-1), (-1,-1), LGRAY),
+        ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
+        ('SPAN', (0,-1), (3,-1)),
+        ('ALIGN', (3,0), (-1,-1), 'RIGHT'),
+        ('ALIGN', (0,-1), (3,-1), 'LEFT'),
+        ('BOX', (0,0), (-1,-1), 0.5, BORDER),
+        ('INNERGRID', (0,0), (-1,-1), 0.3, BORDER),
+        ('TOPPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('LEFTPADDING', (0,0), (-1,-1), 6), ('RIGHTPADDING', (0,0), (-1,-1), 6),
+    ]
+    plan_t.setStyle(TableStyle(plan_style))
+    elems.append(plan_t)
+    elems.append(Spacer(1, 0.5*cm))
+
+    # ── SEÇÃO 3: Incluso na Proposta ─────────────────────────────────────────
+    elems.append(Paragraph('Incluso na Proposta', s_h1))
+    elems.append(HRFlowable(width='100%', thickness=1, color=NAVY))
+    elems.append(Spacer(1, 0.3*cm))
+    elems.append(Paragraph(
+        'Proposta de acordo com escopo fornecido contemplando os seguinte benefícios aos colaboradores;', s_normal))
+    elems.append(Spacer(1, 0.2*cm))
+    elems.append(Paragraph(
+        'Os valores informados contemplam todos os benefícios, treinamentos, administração e supervisão dos serviços '
+        'e/ou funcionários e uniformes para o andamento da operação. Estão incluídos também todos os custos como, '
+        'encargos sociais, trabalhistas e fiscais de responsabilidade da RM FACILITIES LTDA;', s_normal))
+    elems.append(Spacer(1, 0.2*cm))
+    for txt in ['PPRA – Programa de Prevenção e Riscos Ambientais;',
+                'PCMSO – Programa de Controle Médico e Saúde Ocupacional;',
+                'Todos os funcionários da RM FACILITIES LTDA possuem os seguintes benefícios de acordo com a convenção coletiva;']:
+        elems.append(Paragraph(txt, s_normal))
+    for txt in ['Seguro de Vida em grupo;', 'Vale Transporte;', 'Vale Alimentação', '20% Insalubridade',
+                'Uniforme;', "EPI's;"]:
+        elems.append(Paragraph(f'• {txt}', s_h4))
+    elems.append(Paragraph('Nr35 para trabalho em altura;', s_normal))
+    elems.append(Spacer(1, 0.2*cm))
+    elems.append(Paragraph(
+        'Todos os funcionários RM FACILITIES LTDA devem estar identificados através de crachás, '
+        'devidamente uniformizados e munidos de EPI´s;', s_normal))
+    elems.append(Spacer(1, 0.5*cm))
+
+    # ── SEÇÃO 4: Treinamento ─────────────────────────────────────────────────
+    elems.append(Paragraph('Treinamento', s_h1))
+    elems.append(HRFlowable(width='100%', thickness=1, color=NAVY))
+    elems.append(Spacer(1, 0.3*cm))
+    elems.append(Paragraph(
+        'Os profissionais da RM FACILITIES LTDA recebem treinamento semestral de Normas Regulamentadoras (NRs) '
+        'inerentes à função desempenhada.', s_normal))
+    elems.append(Spacer(1, 0.5*cm))
+
+    # ── SEÇÃO 5: Considerações Comerciais ────────────────────────────────────
+    elems.append(Paragraph('Considerações Comerciais', s_h1))
+    elems.append(HRFlowable(width='100%', thickness=1, color=NAVY))
+    elems.append(Spacer(1, 0.3*cm))
+    consideracoes = [
+        'Forma de Pagamento: Os serviços propostos serão faturados mensalmente, com prazo de vencimento conforme Termo de Referência.',
+        'Prazo Contratual: Indeterminado.',
+        'Rescisão Imotivada: Poderá ser rescindido por qualquer das partes, em qualquer momento, sem que haja qualquer tipo de motivo relevante, respeitando-se um período mínimo de 30 dias.',
+        f'Data Base: Os preços foram elaborados nas bases do acordo da categoria: 01 de janeiro de {ano_ref}.',
+        'Próximo Reajuste: O contrato será reajustado anualmente, conforme contrato.',
+        'Forma de Reajuste: Caso ocorram alterações no valor do piso salarial da categoria, bem como a criação de novos benefícios sociais advindos de acordos e/ou dissídios coletivos, o preço da mão de obra será reajustado nas mesmas proporções. Os demais insumos componentes do preço não relacionados à mão de obra direta serão reajustados nas mesmas proporções. Se durante a vigência dos serviços forem criados novos tributos ou modificadas as alíquotas atuais, ou se houver reconhecida e comprovada alteração nos custos dos serviços e/ou insumos de forma a majorar ou diminuir o ônus, o preço contratado poderá ser revisto a fim de adequá-lo às modificações, de forma a restabelecer o equilíbrio econômico-financeiro.',
+        'Todas as ocorrências verificadas nos serviços ou que envolvam os empregados alocados em sua execução deverão ser imediatamente comunicados à RM FACILITIES LTDA para que sejam tomadas as providências cabíveis;',
+        f'Os serviços serão executados respeitando-se o escopo descrito no item 2, sendo certo que qualquer alteração no mesmo será objeto de uma nova negociação para revalidação das atividades e valores propostos, conforme necessidade e solicitação da <b>{empresa or "CONTRATANTE"}</b>;',
+        'Faltas eventuais: será realizada coberturas pela RM FACILITIES LTDA em até 2 horas.',
+        'Todos os serviços extras deverão ser informados à supervisão com antecedência mínima de 72 (setenta e duas horas) úteis, para a tomada das providências necessárias;',
+        'Consideramos em nossos custos os exames médicos relativos ao PCMSO de acordo com as normas legais de saúde;',
+        'Todos os benefícios e direitos são rigorosamente contemplados, bem como todos os encargos sociais de nossa responsabilidade.',
+        'De acordo com a (Lei 13.467/17), o § 4o do artigo 71 da CLT deverá ser concedida 01 hora de intervalo para refeições e descanso aos funcionários que prestarão os serviços ou pagamento de intrajornada.',
+        f'A <b>{empresa or "CONTRATANTE"}</b> deverá fornecer locais adequados onde possa ser guardados os equipamentos e fornecer condições de trabalho e permanência dos colaboradores no local de trabalho durante sua jornada de trabalho como, água, banheiro.',
+        f'A <b>{empresa or "CONTRATANTE"}</b> poderá, a qualquer momento, solicitar e auditar os documentos relativos à regularização da RM FACILITIES LTDA. Mensalmente serão disponibilizadas cópias dos documentos abaixo listados:',
+    ]
+    for c in consideracoes:
+        elems.append(Paragraph(c, s_normal))
+        elems.append(Spacer(1, 0.15*cm))
+    for txt in ['Folha de pagamento analítica;', 'GRF – Guia de Pagamento de Fundo de Garantia;',
+                'Analítico GRF – Relatório Analítico de Fundo de Garantia;',
+                'GPS – Guia de Pagamento da Previdência Social e de Terceiros;',
+                'Analítico GPS – Relatório Analítico da Guia da Previdência Social;',
+                'Conectividade Social – Protocolo de Envio;',
+                'RET – Relação de Empregados por Tomador;',
+                'CAGED – Cadastro Geral de Empregados e Desempregados;']:
+        elems.append(Paragraph(f'• {txt}', s_h4))
+    elems.append(Spacer(1, 0.2*cm))
+    elems.append(Paragraph(
+        f'Caso a <b>{empresa or "CONTRATANTE"}</b> necessite de documentação extra esta deverá ser solicitada previamente à celebração contratual.',
+        s_normal))
+    elems.append(Spacer(1, 0.2*cm))
+    elems.append(Paragraph('A presente proposta tem validade de 30 dias.', s_bold))
+    elems.append(Spacer(1, 0.8*cm))
+    elems.append(Paragraph(data_fmt, s_right))
+    elems.append(Spacer(1, 1.5*cm))
+
+    # ── ASSINATURAS ──────────────────────────────────────────────────────────
+    ass_data = [
+        [Paragraph('_' * 40, st('al', fontSize=9, alignment=TA_CENTER)),
+         Paragraph('_' * 40, st('al', fontSize=9, alignment=TA_CENTER))],
+        [Paragraph('RM FACILITIES LTDA<br/>Representante Legal', st('al2', fontSize=8, textColor=GRAY, alignment=TA_CENTER)),
+         Paragraph(f'{empresa or "CONTRATANTE"}<br/>Representante Legal', st('al2', fontSize=8, textColor=GRAY, alignment=TA_CENTER))],
+    ]
+    ass_t = Table(ass_data, colWidths=[9*cm, 9*cm])
+    ass_t.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 4), ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ]))
+    elems.append(ass_t)
+
+    doc.build(elems)
+    buf.seek(0)
+    return buf
+
+
+@app.route('/api/proposta-comercial/gerar', methods=['POST'])
+@lr
+def api_gerar_proposta_comercial():
+    d = request.json or {}
+    empresa = (d.get('empresa') or '').strip()
+    cnpj    = (d.get('cnpj') or '').strip()
+    funcao  = (d.get('funcao') or '').strip()
+    data_str = (d.get('data') or localnow().strftime('%d/%m/%Y')).strip()
+    cliente = (d.get('cliente') or '').strip()
+    email   = (d.get('email') or '').strip()
+    itens   = d.get('itens') or None
+
+    if not empresa:
+        return jsonify({'erro': 'Informe o nome da empresa destinatária.'}), 400
+
+    try:
+        buf = _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, email, itens)
+    except Exception as e:
+        app.logger.exception('Erro ao gerar proposta comercial')
+        return jsonify({'erro': f'Erro ao gerar PDF: {e}'}), 500
+
+    nome_arq = _clean_file_part(empresa) or 'proposta'
+    filename = f'Proposta_Comercial_{nome_arq}_{localnow().strftime("%Y%m%d_%H%M")}.pdf'
+    audit_event('proposta_comercial_gerada', 'usuario', session.get('uid'), None, None, True,
+                {'empresa': empresa, 'funcao': funcao})
+    from flask import send_file
+    return send_file(buf, mimetype='application/pdf', as_attachment=True,
+                     download_name=filename)
+
+# ── FIM PROPOSTA COMERCIAL ────────────────────────────────────────────────────
+
+
 @lr
 def api_preparar_pastas_funcionario(id):
+
     db.get_or_404(Funcionario, id)
     d=request.json or {}
     ano=str((d.get('ano') or request.args.get('ano') or localnow().year)).strip()

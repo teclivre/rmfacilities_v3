@@ -2880,11 +2880,11 @@ document.addEventListener('DOMContentLoaded',()=>{
 
           <div class="g3" style="gap:14px">
 
-            <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
+            <div class="card" style="padding:16px;border:1px solid var(--azul-borda);border-radius:10px;display:flex;flex-direction:column;gap:8px">
               <div style="font-size:22px">📝</div>
               <div style="font-weight:700;font-size:14px">Proposta Comercial</div>
-              <div style="font-size:12px;color:var(--text-muted);flex:1">Proposta formal de prestação de serviços com escopo, valores, vigencia e condições de pagamento.</div>
-              <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Proposta formal de prestação de serviços com escopo, valores, vigência e condições de pagamento.</div>
+              <button class="btn b-az b-sm" onclick="docsAbrirProposta()">Gerar Proposta &rsaquo;</button>
             </div>
 
             <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
@@ -2923,6 +2923,86 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
 
           </div>
+        </div>
+      </div>
+      <!-- ── Painel: Proposta Comercial ── -->
+      <div id="docs-pane-proposta" class="card" style="display:none">
+        <div class="card-header" style="display:flex;align-items:center;gap:10px">
+          <button class="btn b-sm" style="background:transparent;color:var(--text-muted);font-size:12px;padding:2px 8px" onclick="docsSetAba('clientes')">&larr; Voltar</button>
+          <span class="card-title">📝 Gerar Proposta Comercial</span>
+        </div>
+        <div style="padding:18px;max-width:820px">
+
+          <div class="g2" style="margin-bottom:14px;gap:14px">
+            <div class="f">
+              <label>Empresa destinatária *</label>
+              <input id="pc-empresa" type="text" placeholder="Nome da empresa cliente" style="width:100%">
+            </div>
+            <div class="f">
+              <label>CNPJ da empresa destinatária</label>
+              <input id="pc-cnpj" type="text" placeholder="00.000.000/0000-00" style="width:100%" maxlength="18">
+            </div>
+          </div>
+
+          <div class="g3" style="margin-bottom:14px;gap:14px">
+            <div class="f" style="flex:2">
+              <label>Serviço / Função</label>
+              <input id="pc-funcao" type="text" placeholder="Ex: limpeza, portaria, conservação..." style="width:100%">
+            </div>
+            <div class="f">
+              <label>Data da proposta</label>
+              <input id="pc-data" type="date" style="width:100%">
+            </div>
+          </div>
+
+          <div class="g2" style="margin-bottom:14px;gap:14px">
+            <div class="f">
+              <label>Nome do contato / destinatário</label>
+              <input id="pc-cliente" type="text" placeholder="Nome do responsável na empresa" style="width:100%">
+            </div>
+            <div class="f">
+              <label>E-mail do contato</label>
+              <input id="pc-email" type="email" placeholder="email@empresa.com.br" style="width:100%">
+            </div>
+          </div>
+
+          <!-- Planilha de custo -->
+          <div style="margin-bottom:14px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <label style="margin:0;font-weight:600">Planilha de Custo</label>
+              <button class="btn b-sm b-az" onclick="pcAddLinha()">+ Adicionar linha</button>
+            </div>
+            <div style="overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse;font-size:13px">
+                <thead>
+                  <tr style="background:var(--azul);color:#fff">
+                    <th style="padding:6px 8px;text-align:left;min-width:50px">Cód.</th>
+                    <th style="padding:6px 8px;text-align:left;min-width:110px">Referência</th>
+                    <th style="padding:6px 8px;text-align:left">Função</th>
+                    <th style="padding:6px 8px;text-align:right;min-width:110px">Valor unit.</th>
+                    <th style="padding:6px 8px;text-align:right;min-width:110px">Subtotal</th>
+                    <th style="padding:6px 8px;width:36px"></th>
+                  </tr>
+                </thead>
+                <tbody id="pc-itens-body">
+                  <tr>
+                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="1" style="width:40px;text-align:center"></td>
+                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="Limpeza" placeholder="Referência" style="width:100px"></td>
+                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="AGENTES DE LIMPEZA 44 HORAS SEMANAIS" placeholder="Descrição do serviço" style="width:100%"></td>
+                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="R$ 0,00" style="width:100px;text-align:right"></td>
+                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="R$ 0,00" style="width:100px;text-align:right"></td>
+                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda);text-align:center"><button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);padding:2px 7px" onclick="this.closest('tr').remove()">✕</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+            <button class="btn b-gh" onclick="previaProposta()">👁️ Prévia</button>
+            <button class="btn b-az" id="pc-btn-gerar" onclick="gerarProposta()">📄 Gerar PDF</button>
+          </div>
+          <div id="pc-resultado" style="display:none;margin-top:12px"></div>
         </div>
       </div>
 
@@ -8953,14 +9033,241 @@ function docsInit() {
 
 function docsSetAba(aba, el) {
   docsAbaAtiva = aba;
-  ['funcionarios','clientes'].forEach(a => {
+  ['funcionarios','clientes','proposta'].forEach(a => {
     const pane = document.getElementById('docs-pane-' + a);
     const btn = document.getElementById('docs-subtab-' + a);
     if (pane) pane.style.display = a === aba ? '' : 'none';
     if (btn) btn.classList.toggle('on', a === aba);
   });
 }
+
+function docsAbrirProposta() {
+  docsSetAba('proposta');
+  // Inicializa data com hoje
+  const pcData = document.getElementById('pc-data');
+  if (pcData && !pcData.value) {
+    const hoje = new Date();
+    pcData.value = hoje.toISOString().split('T')[0];
+  }
+}
 // ── FIM DOCUMENTOS ──────────────────────────────────────────────────────────
+
+// ── PROPOSTA COMERCIAL ────────────────────────────────────────────────────────
+function pcAddLinha() {
+  const tbody = document.getElementById('pc-itens-body');
+  const idx = tbody.rows.length + 1;
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="${idx}" style="width:40px;text-align:center"></td>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="Referência" style="width:100px"></td>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="Descrição do serviço" style="width:100%"></td>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="R$ 0,00" style="width:100px;text-align:right"></td>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="R$ 0,00" style="width:100px;text-align:right"></td>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--borda);text-align:center"><button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);padding:2px 7px" onclick="this.closest('tr').remove()">✕</button></td>`;
+  tbody.appendChild(tr);
+}
+
+function pcGetItens() {
+  const rows = document.querySelectorAll('#pc-itens-body tr');
+  return Array.from(rows).map(tr => {
+    const inputs = tr.querySelectorAll('input');
+    return {
+      cod: inputs[0]?.value || '',
+      referencia: inputs[1]?.value || '',
+      funcao_item: inputs[2]?.value || '',
+      valor_unit: inputs[3]?.value || '',
+      subtotal: inputs[4]?.value || '',
+    };
+  }).filter(it => it.funcao_item || it.referencia);
+}
+
+function previaProposta() {
+  const empresa = document.getElementById('pc-empresa').value.trim();
+  const cnpj = document.getElementById('pc-cnpj').value.trim();
+  const funcao = document.getElementById('pc-funcao').value.trim();
+  const dataVal = document.getElementById('pc-data').value;
+  const cliente = document.getElementById('pc-cliente').value.trim();
+  const email = document.getElementById('pc-email').value.trim();
+  const itens = pcGetItens();
+  if (!empresa) { alert('Informe o nome da empresa destinatária.'); return; }
+
+  const dataFmt = dataVal ? new Date(dataVal + 'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
+  const refNum = 'PC-' + new Date().toISOString().replace(/[-:T.Z]/g,'').slice(0,12);
+  const anoRef = new Date().getFullYear();
+
+  const tabelaItens = itens.length ? itens.map((it,i) => `
+    <tr style="background:${i%2===0?'#fff':'#f8f9fa'}">
+      <td style="padding:5px 8px;border:1px solid #ddd">${_escHtml(it.cod||String(i+1))}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd">${_escHtml(it.referencia)}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd">${_escHtml(it.funcao_item)}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${_escHtml(it.valor_unit)}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${_escHtml(it.subtotal)}</td>
+    </tr>`).join('') :
+    `<tr><td colspan="5" style="padding:8px;text-align:center;color:#888;border:1px solid #ddd">Nenhum item informado</td></tr>`;
+
+  const totalVal = itens.find(it => it.subtotal)?.subtotal || '—';
+
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>Prévia — Proposta Comercial — ${_escHtml(empresa)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:10.5pt;color:#222;background:#f0f4f8;padding:20px}
+.page{background:#fff;max-width:210mm;margin:0 auto;padding:16mm 14mm;box-shadow:0 2px 16px rgba(0,0,0,.15)}
+.hdr{background:#1A3A5C;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.hdr h1{font-size:13pt;font-weight:700}
+.hdr .ref{font-size:8pt;text-align:right;opacity:.85}
+.dest-grid{display:grid;grid-template-columns:1fr 1fr 1fr;border:1px solid #ccc;margin-bottom:14px}
+.dest-cell{padding:6px 10px;border-right:1px solid #ccc}.dest-cell:last-child{border-right:none}
+.dest-lbl{font-size:8pt;color:#666;display:block}.dest-val{font-weight:700;font-size:10.5pt}
+.para-bloco{margin-bottom:14px;font-size:10pt;line-height:1.6}
+.sec-title{font-size:13pt;font-weight:700;color:#1A3A5C;border-bottom:2px solid #1A3A5C;padding-bottom:4px;margin:20px 0 10px}
+.body-text{font-size:10pt;line-height:1.7;text-align:justify;margin-bottom:8px}
+.bullet{font-size:10pt;padding-left:16px;margin-bottom:4px;line-height:1.6}
+table.custo{width:100%;border-collapse:collapse;font-size:9.5pt;margin-bottom:14px}
+table.custo th{background:#1A3A5C;color:#fff;padding:6px 8px;text-align:left}
+table.custo th:last-child,table.custo th:nth-child(4){text-align:right}
+table.custo .total-row td{font-weight:700;background:#f0f4f8;border-top:2px solid #1A3A5C}
+.assinaturas{display:flex;gap:24px;margin-top:28px}
+.ass-bloco{flex:1;text-align:center}
+.ass-linha{border-top:1px solid #333;margin:28px auto 4px;width:90%}
+.ass-nome{font-size:8.5pt;color:#555}
+.rodape{text-align:center;font-size:7.5pt;color:#aaa;margin-top:16px;border-top:1px solid #eee;padding-top:6px}
+.no-print{text-align:center;margin-bottom:16px}
+.no-print button{padding:7px 22px;background:#1A3A5C;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11pt}
+@media print{body{background:#fff;padding:0}.page{box-shadow:none;padding:10mm 12mm}.no-print{display:none}}
+</style></head><body>
+<div class="no-print"><button onclick="window.print()">🖨️ Imprimir / Salvar PDF</button></div>
+<div class="page">
+  <div class="hdr">
+    <div><h1>RM CONSERVAÇÃO E SERVIÇOS</h1><div style="font-size:8pt;opacity:.8">CNPJ: 61.337.803/0001-20</div></div>
+    <div class="ref">Ref.: ${_escHtml(refNum)}<br>Data: ${_escHtml(dataFmt)}</div>
+  </div>
+
+  <div class="dest-grid">
+    <div class="dest-cell"><span class="dest-lbl">EMPRESA DESTINATÁRIA</span><span class="dest-val">${_escHtml(empresa)}</span></div>
+    <div class="dest-cell"><span class="dest-lbl">CNPJ</span><span class="dest-val">${_escHtml(cnpj||'—')}</span></div>
+    <div class="dest-cell"><span class="dest-lbl">SERVIÇO / FUNÇÃO</span><span class="dest-val">${_escHtml(funcao||'—')}</span></div>
+  </div>
+
+  <div class="para-bloco">
+    <strong>Data:</strong> ${_escHtml(dataFmt)}<br>
+    Para,<br>
+    <strong>${_escHtml(cliente||'—')}</strong><br>
+    <span style="font-size:9pt;color:#666">${_escHtml(email||'')}</span>
+  </div>
+
+  <p class="body-text">É com satisfação que apresentamos a V. Sa. nossa proposta comercial para a prestação de em
+  <strong>${_escHtml(funcao||'nossos serviços')}</strong> para empresa <strong>${_escHtml(empresa)}</strong> resposta ao processo a sua
+  necessidade. Nossa equipe avaliou cuidadosamente suas necessidades e considerou várias opções para apresentar
+  a solução ideal para este projeto; contudo, sinta-se à vontade para revisar a proposta e indicar eventuais ajustes.</p>
+  <p class="body-text">Por favor, entre em contato conosco caso seja necessário algum esclarecimento ou informações adicionais.</p>
+
+  <p class="body-text" style="margin-top:14px">Atenciosamente,</p>
+  <p style="font-weight:700;font-size:10.5pt">Roberio Figueiredo</p>
+  <p style="font-size:9pt;color:#555">Administrador · Tel. (12) 3042-1799 · Cel. (12) 99775-2283<br>roberio.figueiredo@rmfacilities.com.br</p>
+
+  <div class="sec-title">Apresentação Institucional</div>
+  <p class="body-text">RM FACILITIES LTDA - Somos uma empresa pronta para oferecer soluções integradas de tecnologia e facility services. Estamos buscando sempre atender nossos clientes parceiros, cumprindo os mais rígidos critérios de compliance. Compreendemos a demanda de cada cliente para desenhar a proposta mais eficiente.</p>
+  <p class="body-text">SECURITY SERVICES - A solidez e a expertise dos fundadores permitem a operação com escala e de maneira customizada. A RM FACILITIES LTDA oferece soluções completas para os cenários mais complexos, tem um portfólios que compreende serviços como portaria e controle de acesso.</p>
+  <p class="body-text">FACILITY SERVICES - A empresa acredita na combinação entre as melhores pessoas e a tecnologia para atender com excelência à demanda de serviços de limpeza, multisserviços e serviços auxiliares.</p>
+
+  <div class="sec-title">Escopo e Valores dos Serviços</div>
+  <p style="font-weight:700;font-size:11pt;margin-bottom:6px">Escopo Operacional</p>
+  <p style="font-weight:700;font-size:10pt;margin-bottom:6px">Planilha de custo</p>
+  <table class="custo">
+    <thead><tr><th>Cod.</th><th>Referência</th><th>Função</th><th>Valor unit.</th><th>Subtotal</th></tr></thead>
+    <tbody>${tabelaItens}</tbody>
+    <tfoot><tr class="total-row"><td colspan="4" style="padding:5px 8px;border:1px solid #ddd">Total Mensal:</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${_escHtml(totalVal)}</td></tr></tfoot>
+  </table>
+
+  <div class="sec-title">Incluso na Proposta</div>
+  <p class="body-text">Proposta de acordo com escopo fornecido contemplando os seguinte benefícios aos colaboradores;</p>
+  <p class="body-text">Os valores informados contemplam todos os benefícios, treinamentos, administração e supervisão dos serviços e/ou funcionários e uniformes para o andamento da operação. Estão incluídos também todos os custos como, encargos sociais, trabalhistas e fiscais de responsabilidade da RM FACILITIES LTDA;</p>
+  <p class="body-text">PPRA – Programa de Prevenção e Riscos Ambientais;<br>PCMSO – Programa de Controle Médico e Saúde Ocupacional;<br>Todos os funcionários da RM FACILITIES LTDA possuem os seguintes benefícios de acordo com a convenção coletiva;</p>
+  ${['Seguro de Vida em grupo;','Vale Transporte;','Vale Alimentação','20% Insalubridade','Uniforme;',"EPI's;"].map(t=>`<div class="bullet">• ${_escHtml(t)}</div>`).join('')}
+  <p class="body-text">Nr35 para trabalho em altura;</p>
+  <p class="body-text">Todos os funcionários RM FACILITIES LTDA devem estar identificados através de crachás, devidamente uniformizados e munidos de EPI´s;</p>
+
+  <div class="sec-title">Treinamento</div>
+  <p class="body-text">Os profissionais da RM FACILITIES LTDA recebem treinamento semestral de Normas Regulamentadoras (NRs) inerentes à função desempenhada.</p>
+
+  <div class="sec-title">Considerações Comerciais</div>
+  <p class="body-text">Forma de Pagamento: Os serviços propostos serão faturados mensalmente, com prazo de vencimento conforme Termo de Referência.</p>
+  <p class="body-text">Prazo Contratual: Indeterminado.</p>
+  <p class="body-text">Rescisão Imotivada: Poderá ser rescindido por qualquer das partes, em qualquer momento, sem que haja qualquer tipo de motivo relevante, respeitando-se um período mínimo de 30 dias.</p>
+  <p class="body-text">Data Base: Os preços foram elaborados nas bases do acordo da categoria: 01 de janeiro de ${anoRef}.</p>
+  <p class="body-text">Próximo Reajuste: O contrato será reajustado anualmente, conforme contrato.</p>
+  <p class="body-text">Forma de Reajuste: Caso ocorram alterações no valor do piso salarial da categoria, bem como a criação de novos benefícios sociais advindos de acordos e/ou dissídios coletivos, o preço da mão de obra será reajustado nas mesmas proporções. Os demais insumos componentes do preço não relacionados à mão de obra direta serão reajustados nas mesmas proporções. Se durante a vigência dos serviços forem criados novos tributos ou modificadas as alíquotas atuais, ou se houver reconhecida e comprovada alteração nos custos dos serviços e/ou insumos de forma a majorar ou diminuir o ônus, o preço contratado poderá ser revisto a fim de adequá-lo às modificações, de forma a restabelecer o equilíbrio econômico-financeiro.</p>
+  <p class="body-text">Todas as ocorrências verificadas nos serviços ou que envolvam os empregados alocados em sua execução deverão ser imediatamente comunicados à RM FACILITIES LTDA para que sejam tomadas as providências cabíveis;</p>
+  <p class="body-text">Os serviços serão executados respeitando-se o escopo descrito no item 2, sendo certo que qualquer alteração no mesmo será objeto de uma nova negociação para revalidação das atividades e valores propostos, conforme necessidade e solicitação da <strong>${_escHtml(empresa)}</strong>;</p>
+  <p class="body-text">Faltas eventuais: será realizada coberturas pela RM FACILITIES LTDA em até 2 horas.</p>
+  <p class="body-text">Todos os serviços extras deverão ser informados à supervisão com antecedência mínima de 72 (setenta e duas horas) úteis, para a tomada das providências necessárias;</p>
+  <p class="body-text">Consideramos em nossos custos os exames médicos relativos ao PCMSO de acordo com as normas legais de saúde;</p>
+  <p class="body-text">Todos os benefícios e direitos são rigorosamente contemplados, bem como todos os encargos sociais de nossa responsabilidade.</p>
+  <p class="body-text">De acordo com a (Lei 13.467/17), o § 4o do artigo 71 da CLT deverá ser concedida 01 hora de intervalo para refeições e descanso aos funcionários que prestarão os serviços ou pagamento de intrajornada.</p>
+  <p class="body-text">A <strong>${_escHtml(empresa)}</strong> deverá fornecer locais adequados onde possa ser guardados os equipamentos e fornecer condições de trabalho e permanência dos colaboradores no local de trabalho durante sua jornada de trabalho como, água, banheiro.</p>
+  <p class="body-text">A <strong>${_escHtml(empresa)}</strong> poderá, a qualquer momento, solicitar e auditar os documentos relativos à regularização da RM FACILITIES LTDA. Mensalmente serão disponibilizadas cópias dos documentos abaixo listados:</p>
+  ${['Folha de pagamento analítica;','GRF – Guia de Pagamento de Fundo de Garantia;','Analítico GRF – Relatório Analítico de Fundo de Garantia;','GPS – Guia de Pagamento da Previdência Social e de Terceiros;','Analítico GPS – Relatório Analítico da Guia da Previdência Social;','Conectividade Social – Protocolo de Envio;','RET – Relação de Empregados por Tomador;','CAGED – Cadastro Geral de Empregados e Desempregados;'].map(t=>`<div class="bullet">• ${_escHtml(t)}</div>`).join('')}
+  <p class="body-text" style="margin-top:8px">Caso a <strong>${_escHtml(empresa)}</strong> necessite de documentação extra esta deverá ser solicitada previamente à celebração contratual.</p>
+  <p class="body-text"><strong>A presente proposta tem validade de 30 dias.</strong></p>
+
+  <div style="text-align:right;font-size:9pt;color:#555;margin-top:20px">${_escHtml(dataFmt)}</div>
+
+  <div class="assinaturas">
+    <div class="ass-bloco"><div class="ass-linha"></div><div class="ass-nome">RM FACILITIES LTDA<br>Representante Legal</div></div>
+    <div class="ass-bloco"><div class="ass-linha"></div><div class="ass-nome">${_escHtml(empresa)}<br>Representante Legal</div></div>
+  </div>
+  <div class="rodape">Proposta gerada em ${_escHtml(dataFmt)} · RM FACILITIES LTDA — Comercial</div>
+</div></body></html>`;
+
+  const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+async function gerarProposta() {
+  const empresa = document.getElementById('pc-empresa').value.trim();
+  if (!empresa) { alert('Informe o nome da empresa destinatária.'); return; }
+  const cnpj = document.getElementById('pc-cnpj').value.trim();
+  const funcao = document.getElementById('pc-funcao').value.trim();
+  const dataVal = document.getElementById('pc-data').value;
+  const dataFmt = dataVal ? new Date(dataVal + 'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
+  const cliente = document.getElementById('pc-cliente').value.trim();
+  const email = document.getElementById('pc-email').value.trim();
+  const itens = pcGetItens();
+
+  const btn = document.getElementById('pc-btn-gerar');
+  const res = document.getElementById('pc-resultado');
+  btn.disabled = true; btn.textContent = '⏳ Gerando...';
+  res.style.display = 'none';
+
+  try {
+    const resp = await fetch('/api/proposta-comercial/gerar', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({empresa, cnpj, funcao, data: dataFmt, cliente, email, itens})
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({erro: resp.statusText}));
+      throw new Error(err.erro || resp.statusText);
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const nome = `Proposta_Comercial_${empresa.replace(/\s+/g,'_').slice(0,30)}.pdf`;
+    a.download = nome;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    res.innerHTML = `<div style="background:var(--verde-cl);border:1px solid var(--verde);border-radius:8px;padding:10px 14px;color:var(--verde)">✅ PDF gerado e baixado: <strong>${esc(nome)}</strong></div>`;
+  } catch(e) {
+    res.innerHTML = `<div style="background:var(--verm-cl);border:1px solid var(--verm);border-radius:8px;padding:10px 14px;color:var(--verm)">❌ ${esc(String(e))}</div>`;
+  }
+  res.style.display = 'block';
+  btn.disabled = false; btn.textContent = '📄 Gerar PDF';
+}
+// ── FIM PROPOSTA COMERCIAL ────────────────────────────────────────────────────
 
 function rhExportSelectedPostos(){
   const el=document.getElementById('rh-exp-postos');
