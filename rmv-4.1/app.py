@@ -7647,7 +7647,7 @@ def _gerar_requisicao_vt_pdf(funcionario, meios_transporte, empresa=None, opta=T
     func_nome = (f.nome or '').upper()
     func_rg = (f.rg or '')
     func_cargo = (f.cargo or f.funcao or '').upper()
-    func_ctps = (f.ctps or '')
+    func_re = str(f.re or f.matricula or '')
     func_end = (f.endereco or '').upper()
     func_num = (f.endereco_numero or '')
     func_comp = (f.endereco_complemento or '')
@@ -7706,8 +7706,8 @@ def _gerar_requisicao_vt_pdf(funcionario, meios_transporte, empresa=None, opta=T
              Paragraph(func_rg, st_valor)],
             [Paragraph('<b>Função......:</b>', st_label),
              Paragraph(func_cargo, st_valor),
-             Paragraph('<b>Ctps:</b>', st_label),
-             Paragraph(func_ctps, st_valor)],
+             Paragraph('<b>RE/Mat.:</b>', st_label),
+             Paragraph(func_re, st_valor)],
         ]
         t = Table(data, colWidths=[2.2*cm, 8.3*cm, 1.5*cm, 3.5*cm])
         t.setStyle(TableStyle([

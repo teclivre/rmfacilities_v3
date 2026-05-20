@@ -7812,8 +7812,11 @@ function vtBuscarFunc(q) {
   }, 280);
 }
 
+let vtEmpresaSelecionada = null;
+
 function vtSelecionarFunc(f) {
   vtFuncSelecionado = f;
+  vtEmpresaSelecionada = null;
   document.getElementById('vt-busca-func').value = f.nome || '';
   document.getElementById('vt-func-sugestoes').innerHTML = '';
   document.getElementById('vt-func-selecionado').style.display = 'block';
@@ -7823,6 +7826,12 @@ function vtSelecionarFunc(f) {
     document.getElementById('vt-opta').value = 'nao';
   } else {
     document.getElementById('vt-opta').value = 'sim';
+  }
+  // Busca dados de endereço da empresa em background
+  if (f.empresa_id) {
+    api(`/api/empresas/${f.empresa_id}`).then(emp => {
+      if (emp && emp.id) vtEmpresaSelecionada = emp;
+    }).catch(() => {});
   }
 }
 
@@ -7881,6 +7890,7 @@ async function gerarRequisicaoVT() {
 function previaRequisicaoVT() {
   if (!vtFuncSelecionado) { alert('Selecione um colaborador para ver a prévia.'); return; }
   const f = vtFuncSelecionado;
+  const emp = vtEmpresaSelecionada || {};
   const meios = vtGetMeios();
   const opta = document.getElementById('vt-opta').value === 'sim';
   const hoje = new Date();
@@ -7888,7 +7898,18 @@ function previaRequisicaoVT() {
   const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
   const mes = meses[hoje.getMonth()];
   const ano = hoje.getFullYear();
-  const cidade = 'São Paulo';
+  const cidade = emp.cidade || f.cidade || 'São Paulo';
+
+  // Endereço da empresa
+  const empNome = emp.razao || emp.nome || f.empresa_nome || 'RM CONSERVAÇÃO E SERVIÇOS LTDA';
+  const empEnd = emp.logradouro || '';
+  const empNum = emp.numero || '';
+  const empComp = emp.complemento || '';
+  const empBairro = emp.bairro || '';
+  const empCidade = emp.cidade || '';
+  const empUf = emp.estado || '';
+  const empCep = emp.cep || '';
+  const empCidadeUfCep = [empCidade, empUf, empCep].filter(Boolean).join(' / ');
 
   const minLinhas = Math.max(meios.length, 7);
   let linhasHTML = '';
@@ -7938,15 +7959,15 @@ function previaRequisicaoVT() {
 
   <p style="font-size:10.5pt;margin-bottom:4px"><strong>À:</strong></p>
   <div class="f grid2">
-    <div><span class="sec-label">Empresa</span><span class="campo" style="width:100%">${_escHtml(f.empresa_nome||'RM CONSERVAÇÃO E SERVIÇOS LTDA')}</span></div>
-    <div><span class="sec-label">Endereço</span><span class="campo" style="width:100%"></span></div>
+    <div><span class="sec-label">Empresa</span><span class="campo" style="width:100%">${_escHtml(empNome)}</span></div>
+    <div><span class="sec-label">Endereço</span><span class="campo" style="width:100%">${_escHtml(empEnd)}</span></div>
   </div>
   <div class="f grid5">
-    <div><span class="sec-label">Logradouro</span><span class="campo" style="width:100%"></span></div>
-    <div><span class="sec-label">No.</span><span class="campo" style="width:100%"></span></div>
-    <div><span class="sec-label">Compl.</span><span class="campo" style="width:100%"></span></div>
-    <div><span class="sec-label">Bairro</span><span class="campo" style="width:100%"></span></div>
-    <div><span class="sec-label">Cidade / UF / CEP</span><span class="campo" style="width:100%"></span></div>
+    <div><span class="sec-label">Logradouro</span><span class="campo" style="width:100%">${_escHtml(empEnd)}</span></div>
+    <div><span class="sec-label">No.</span><span class="campo" style="width:100%">${_escHtml(empNum)}</span></div>
+    <div><span class="sec-label">Compl.</span><span class="campo" style="width:100%">${_escHtml(empComp)}</span></div>
+    <div><span class="sec-label">Bairro</span><span class="campo" style="width:100%">${_escHtml(empBairro)}</span></div>
+    <div><span class="sec-label">Cidade / UF / CEP</span><span class="campo" style="width:100%">${_escHtml(empCidadeUfCep)}</span></div>
   </div>
 
   <p style="font-size:10pt;margin:10px 0 6px"><strong>O(A) empregado(a):</strong></p>
@@ -7955,7 +7976,7 @@ function previaRequisicaoVT() {
     <div class="grid3">
       <div><span class="sec-label">RG</span><span class="campo" style="width:100%">${_escHtml(f.rg||'')}</span></div>
       <div><span class="sec-label">Função</span><span class="campo" style="width:100%">${_escHtml(f.cargo||'')}</span></div>
-      <div><span class="sec-label">CTPS</span><span class="campo" style="width:100%">${_escHtml(f.ctps||'')}</span></div>
+      <div><span class="sec-label">RE / Matrícula</span><span class="campo" style="width:100%">${_escHtml(String(f.re||f.matricula||''))}</span></div>
     </div>
   </div>
 
