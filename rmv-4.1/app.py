@@ -7590,6 +7590,348 @@ def api_funcionario_gerar_ficha_epi(id):
         'download_url':f'/api/funcionarios/arquivos/{a.id}/download',
     }),201
 
+
+# ============================================================
+# REQUISIÇÃO DE VALE-TRANSPORTE — GERAÇÃO DE PDF E ENVIO
+# ============================================================
+
+def _gerar_requisicao_vt_pdf(funcionario, meios_transporte, empresa=None, opta=True):
+    """Gera PDF fiel ao modelo de Solicitação de Vale-Transporte."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+
+    preto = colors.black
+    cinza_leve = colors.HexColor('#F5F5F5')
+    st_titulo = ParagraphStyle('titulo', fontName='Helvetica-Bold', fontSize=14, leading=18,
+                               textColor=preto, alignment=TA_CENTER)
+    st_normal = ParagraphStyle('normal', fontName='Helvetica', fontSize=9, leading=12, textColor=preto)
+    st_bold = ParagraphStyle('bold', fontName='Helvetica-Bold', fontSize=9, leading=12, textColor=preto)
+    st_label = ParagraphStyle('lbl', fontName='Helvetica-Bold', fontSize=8.5, leading=11, textColor=preto)
+    st_valor = ParagraphStyle('val', fontName='Helvetica', fontSize=8.5, leading=11, textColor=preto)
+    st_legal = ParagraphStyle('legal', fontName='Helvetica', fontSize=8.5, leading=12,
+                              textColor=preto, alignment=TA_JUSTIFY)
+    st_th = ParagraphStyle('th', fontName='Helvetica-Bold', fontSize=9, leading=11,
+                           textColor=preto, alignment=TA_CENTER)
+    st_td = ParagraphStyle('td', fontName='Helvetica', fontSize=8.5, leading=11, textColor=preto, alignment=TA_CENTER)
+    st_ass = ParagraphStyle('ass', fontName='Helvetica', fontSize=9, leading=12,
+                            textColor=preto, alignment=TA_CENTER)
+    st_cidade = ParagraphStyle('cid', fontName='Helvetica', fontSize=9, leading=12, textColor=preto)
+    BORDA = 0.6
+
+    # Dados da empresa (pode ser Empresa model ou parâmetro)
+    if empresa:
+        emp_nome = (empresa.razao or empresa.nome or 'RM CONSERVAÇÃO E SERVIÇOS LTDA').upper()
+        emp_end = (empresa.logradouro or '').upper()
+        emp_num = (empresa.numero or '')
+        emp_comp = (empresa.complemento or '')
+        emp_bairro = (empresa.bairro or '').upper()
+        emp_cidade = (empresa.cidade or 'SAO JOSE DOS CAMPOS').upper()
+        emp_uf = (empresa.estado or 'SP').upper()
+        emp_cep = (empresa.cep or '')
+    else:
+        emp_nome = 'RM CONSERVAÇÃO E SERVIÇOS LTDA'
+        emp_end = 'R OTAVIO MORAES LOPES'
+        emp_num = '330'
+        emp_comp = ''
+        emp_bairro = 'JARDIM AMERICANO'
+        emp_cidade = 'SAO JOSE DOS CAMPOS'
+        emp_uf = 'SP'
+        emp_cep = '12250-40'
+
+    # Dados do funcionário
+    f = funcionario
+    func_nome = (f.nome or '').upper()
+    func_rg = (f.rg or '')
+    func_cargo = (f.cargo or f.funcao or '').upper()
+    func_ctps = (f.ctps or '')
+    func_end = (f.endereco or '').upper()
+    func_num = (f.endereco_numero or '')
+    func_comp = (f.endereco_complemento or '')
+    func_bairro = (f.endereco_bairro or '').upper()
+    func_cidade = (f.cidade or '').upper()
+    func_uf = (f.estado or '').upper()
+    func_cep = (f.cep or '')
+
+    # Data para rodapé
+    hoje = localnow()
+    meses_pt = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+    data_ext = f'{emp_cidade}, {hoje.day} de {meses_pt[hoje.month-1]} de {hoje.year}.'
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+        leftMargin=1.8*cm, rightMargin=1.8*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
+
+    W = A4[0] - 3.6*cm  # largura útil
+
+    def row_empresa():
+        """Bloco 'À Empresa'"""
+        data = [
+            [Paragraph('<b>À</b>', st_normal),'','',''],
+            [Paragraph('<b>Empresa.:</b>', st_label),
+             Paragraph(emp_nome, st_valor), '', ''],
+            [Paragraph('<b>Endereço:</b>', st_label),
+             Paragraph(emp_end, st_valor),
+             Paragraph('<b>No.:</b>', st_label),
+             Paragraph(emp_num, st_valor)],
+            [Paragraph('<b>Compl....:</b>', st_label),
+             Paragraph(emp_comp, st_valor),
+             Paragraph('<b>Bairro:</b>', st_label),
+             Paragraph(emp_bairro, st_valor)],
+            [Paragraph('<b>Cidade...:</b>', st_label),
+             Paragraph(emp_cidade, st_valor),
+             Paragraph('<b>UF.:</b> ' + emp_uf + '   <b>Cep:</b>', st_label),
+             Paragraph(emp_cep, st_valor)],
+        ]
+        t = Table(data, colWidths=[2.2*cm, 8.3*cm, 2.5*cm, 2.5*cm])
+        t.setStyle(TableStyle([
+            ('SPAN', (1,1), (3,1)),
+            ('BOX', (0,0), (-1,-1), BORDA, preto),
+            ('LINEBELOW', (0,0), (-1,-2), 0.3, colors.HexColor('#CCCCCC')),
+            ('TOPPADDING', (0,0), (-1,-1), 3), ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+            ('LEFTPADDING', (0,0), (-1,-1), 4), ('RIGHTPADDING', (0,0), (-1,-1), 4),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
+        return t
+
+    def row_empregado():
+        data = [
+            [Paragraph('<b>Empregado:</b>', st_label),
+             Paragraph(func_nome, st_valor),
+             Paragraph('<b>Rg:</b>', st_label),
+             Paragraph(func_rg, st_valor)],
+            [Paragraph('<b>Função......:</b>', st_label),
+             Paragraph(func_cargo, st_valor),
+             Paragraph('<b>Ctps:</b>', st_label),
+             Paragraph(func_ctps, st_valor)],
+        ]
+        t = Table(data, colWidths=[2.2*cm, 8.3*cm, 1.5*cm, 3.5*cm])
+        t.setStyle(TableStyle([
+            ('BOX', (0,0), (-1,-1), BORDA, preto),
+            ('LINEBELOW', (0,0), (-1,-2), 0.3, colors.HexColor('#CCCCCC')),
+            ('TOPPADDING', (0,0), (-1,-1), 3), ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+            ('LEFTPADDING', (0,0), (-1,-1), 4), ('RIGHTPADDING', (0,0), (-1,-1), 4),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
+        return t
+
+    def row_opcao():
+        sim = '(X)' if opta else '(__)'
+        nao = '(X)' if not opta else '(__)'
+        txt = (f'<b>{sim} - Opto pela Utilização do Vale Transporte</b>'
+               f'        '
+               f'<b>{nao} - Não opto pela Utilização do Vale Transporte</b>')
+        t = Table([[Paragraph(txt, st_bold)]], colWidths=[W])
+        t.setStyle(TableStyle([
+            ('BOX', (0,0), (-1,-1), BORDA, preto),
+            ('TOPPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('LEFTPADDING', (0,0), (-1,-1), 6),
+        ]))
+        return t
+
+    def row_texto_legal():
+        txt_intro = ('Nos termos do artigo 7º do Dec. Nº. 95247 de 17 de Novembro de 1987, solicito receber o '
+                     'Vale-Transporte e comprometo-me:')
+        clausulas = [
+            'A - )Utilizá-lo exclusivamente para meu efetivo deslocamento residência - trabalho e vice-versa;',
+            ('B - ) A renovar anualmente ou sempre que ocorrer alteração em meu endereço residencial ou dos serviços e meios '
+             'de transportes mais adequados ao meu deslocamento residência-trabalho e vice-versa;'),
+            ('C - ) Autorizo a descontar até 6% (seis por cento) do meu salário básico mensal para ocorrer o custeio do '
+             'Vale - Transporte (conforme o artigo 9º do Decreto Nº. 95.247/87);'),
+            ('D - )Declaro estar ciente de que a declaração falsa ou o uso indevido do Vale - Transporte constituem '
+             'falta grave (Conforme o inciso 3º do Artigo 7º do Decreto Nº 95.247/87);'),
+        ]
+        rows = [[Paragraph(txt_intro, st_legal)]]
+        for c in clausulas:
+            rows.append([Paragraph(c, st_legal)])
+        rows.append([Paragraph('Minha residência atual:', st_bold)])
+        t = Table(rows, colWidths=[W])
+        t.setStyle(TableStyle([
+            ('BOX', (0,0), (-1,-1), BORDA, preto),
+            ('TOPPADDING', (0,0), (-1,-1), 3), ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+            ('LEFTPADDING', (0,0), (-1,-1), 6), ('RIGHTPADDING', (0,0), (-1,-1), 6),
+        ]))
+        return t
+
+    def row_residencia():
+        data = [
+            [Paragraph('<b>Endereço:</b>', st_label),
+             Paragraph(func_end, st_valor),
+             Paragraph('<b>No.:</b>', st_label),
+             Paragraph(func_num, st_valor)],
+            [Paragraph('<b>Compl....:</b>', st_label),
+             Paragraph(func_comp, st_valor),
+             Paragraph('<b>Bairro:</b>', st_label),
+             Paragraph(func_bairro, st_valor)],
+            [Paragraph('<b>Cidade...:</b>', st_label),
+             Paragraph(func_cidade, st_valor),
+             Paragraph('<b>UF.:</b> ' + func_uf + '   <b>Cep:</b>', st_label),
+             Paragraph(func_cep, st_valor)],
+        ]
+        t = Table(data, colWidths=[2.2*cm, 8.3*cm, 2.5*cm, 2.5*cm])
+        t.setStyle(TableStyle([
+            ('BOX', (0,0), (-1,-1), BORDA, preto),
+            ('LINEBELOW', (0,0), (-1,-2), 0.3, colors.HexColor('#CCCCCC')),
+            ('TOPPADDING', (0,0), (-1,-1), 3), ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+            ('LEFTPADDING', (0,0), (-1,-1), 4), ('RIGHTPADDING', (0,0), (-1,-1), 4),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
+        return t
+
+    def tabela_meios():
+        header = [
+            Paragraph('<b>TIPO</b>', st_th),
+            Paragraph('<b>QUANTIDADE IDA E VOLTA</b>', st_th),
+            Paragraph('<b>VALOR UNITÁRIO</b>', st_th),
+        ]
+        rows = [header]
+        for mt in (meios_transporte or []):
+            rows.append([
+                Paragraph(str(mt.get('tipo') or ''), st_td),
+                Paragraph(str(mt.get('quantidade_ida_volta') or ''), st_td),
+                Paragraph(str(mt.get('valor_unitario') or ''), st_td),
+            ])
+        # Preenche até ter 7 linhas de dados
+        while len(rows) < 8:
+            rows.append([Paragraph('', st_td), Paragraph('', st_td), Paragraph('', st_td)])
+        col_w = [W * 0.38, W * 0.36, W * 0.26]
+        t = Table(rows, colWidths=col_w, rowHeights=[0.75*cm] + [0.65*cm]*(len(rows)-1))
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), cinza_leve),
+            ('GRID', (0,0), (-1,-1), BORDA, preto),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING', (0,0), (-1,-1), 3),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+            ('LEFTPADDING', (0,0), (-1,-1), 4),
+            ('RIGHTPADDING', (0,0), (-1,-1), 4),
+        ]))
+        # Título "Meio de Transporte" acima da tabela
+        titulo_t = Table([[Paragraph('<b>Meio de Transporte</b>', ParagraphStyle('vt', fontName='Helvetica-Bold',
+                           fontSize=11, leading=14, textColor=preto, alignment=TA_CENTER))]],
+                         colWidths=[W])
+        titulo_t.setStyle(TableStyle([
+            ('BOX', (0,0), (-1,-1), BORDA, preto),
+            ('TOPPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('BACKGROUND', (0,0), (-1,-1), cinza_leve),
+        ]))
+        return titulo_t, t
+
+    # ── Montagem final ──────────────────────────────────────────
+    elems = []
+    # Título
+    titulo_bloco = Table([[Paragraph('<b>SOLICITAÇÃO DE VALE-TRANSPORTE</b>', st_titulo)]], colWidths=[W])
+    titulo_bloco.setStyle(TableStyle([
+        ('BOX', (0,0), (-1,-1), BORDA, preto),
+        ('TOPPADDING', (0,0), (-1,-1), 8), ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+    ]))
+    elems.append(titulo_bloco)
+    elems.append(Spacer(1, 0.1*cm))
+    elems.append(row_empresa())
+    elems.append(Spacer(1, 0.1*cm))
+    elems.append(row_empregado())
+    elems.append(Spacer(1, 0.1*cm))
+    elems.append(row_opcao())
+    elems.append(Spacer(1, 0.1*cm))
+    elems.append(row_texto_legal())
+    elems.append(Spacer(1, 0.1*cm))
+    elems.append(row_residencia())
+    elems.append(Spacer(1, 0.2*cm))
+    titulo_mt, tabela_mt = tabela_meios()
+    elems.append(titulo_mt)
+    elems.append(tabela_mt)
+    elems.append(Spacer(1, 0.3*cm))
+    # Rodapé — cidade, data e assinatura
+    rodape = Table([
+        [Paragraph(data_ext, st_cidade), ''],
+        ['', ''],
+        ['', Paragraph('_' * 40, st_ass)],
+        ['', Paragraph(func_nome or funcionario.nome, st_ass)],
+    ], colWidths=[W * 0.45, W * 0.55])
+    rodape.setStyle(TableStyle([
+        ('BOX', (0,0), (-1,-1), BORDA, preto),
+        ('TOPPADDING', (0,0), (-1,-1), 4), ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('LEFTPADDING', (0,0), (-1,-1), 8), ('RIGHTPADDING', (0,0), (-1,-1), 8),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    elems.append(rodape)
+
+    doc.build(elems)
+    buf.seek(0)
+    return buf
+
+
+@app.route('/api/funcionarios/<int:id>/gerar-requisicao-vt', methods=['POST'])
+@lr
+def api_funcionario_gerar_requisicao_vt(id):
+    f = db.get_or_404(Funcionario, id)
+    d = request.json or {}
+    meios = d.get('meios_transporte') or []
+    canal = (d.get('canal') or 'nao').strip().lower()
+    opta = bool(d.get('opta', True))
+    empresa_id = d.get('empresa_id') or f.empresa_id
+
+    if canal not in ('whatsapp', 'app', 'link', 'nao'):
+        canal = 'nao'
+
+    # Carrega empresa para endereço
+    empresa = db.session.get(Empresa, empresa_id) if empresa_id else None
+
+    try:
+        buf = _gerar_requisicao_vt_pdf(f, meios, empresa=empresa, opta=opta)
+    except Exception as e:
+        app.logger.exception('Erro ao gerar PDF requisição VT')
+        return jsonify({'erro': f'Erro ao gerar PDF: {str(e)}'}), 500
+
+    comp = localnow().strftime('%Y-%m')
+    nome_arq = f"Requisicao_VT_{_clean_file_part(f.nome or '', 60, 'Colaborador')}_{localnow().strftime('%Y%m%d')}.pdf"
+    subdir, cat = func_doc_subdir(id, 'requisicao_vale_transporte', comp)
+    ano = infer_doc_year(comp)
+    prepare_func_doc_dirs(id, ano)
+    rel, abs_p, _ = unique_rel_filename(subdir, nome_arq)
+    os.makedirs(os.path.dirname(abs_p), exist_ok=True)
+    with open(abs_p, 'wb') as fh:
+        fh.write(buf.read())
+
+    a = FuncionarioArquivo(funcionario_id=id, categoria='requisicao_vale_transporte',
+                           competencia=comp, nome_arquivo=nome_arq, caminho=rel)
+    db.session.add(a)
+    db.session.flush()
+
+    assinatura = {}
+    if canal in ('whatsapp', 'app', 'link'):
+        rs = _solicitar_assinatura_arquivo_funcionario(a, f, canal=canal, commit_now=False)
+        if rs.get('ok'):
+            assinatura = {'canal': canal, 'link': rs.get('link_curto') or rs.get('link', ''), 'status': 'solicitada'}
+        else:
+            assinatura = {'canal': canal, 'status': 'erro', 'erro': rs.get('erro', ''), 'link': rs.get('link', '')}
+    else:
+        db.session.commit()
+        try:
+            _push_notify_funcionario(f.id, 'Requisição de Vale-Transporte',
+                f'Requisição VT gerada em {localnow().strftime("%d/%m/%Y")} adicionada ao seu perfil.',
+                {'tipo': 'novo_documento', 'arquivo_id': str(a.id)})
+        except Exception:
+            pass
+
+    if canal in ('whatsapp', 'app', 'link'):
+        db.session.commit()
+
+    audit_event('requisicao_vt_gerada', 'usuario', session.get('uid'), 'funcionario', id, True,
+        {'arquivo_id': a.id, 'canal': canal, 'opta': opta, 'qtd_meios': len(meios)})
+
+    return jsonify({
+        'ok': True,
+        'arquivo_id': a.id,
+        'nome_arquivo': nome_arq,
+        'assinatura': assinatura,
+        'download_url': f'/api/funcionarios/arquivos/{a.id}/download',
+    }), 201
+
+
 @app.route('/api/funcionarios/<int:id>/documentos/preparar',methods=['POST'])
 @lr
 def api_preparar_pastas_funcionario(id):

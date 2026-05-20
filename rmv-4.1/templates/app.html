@@ -1328,6 +1328,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-assinaturas" class="subaba-bloco" onclick="rhSetSubAba('assinaturas',this)">Painel de Assinaturas</button>
         <button type="button" id="rh-subtab-gestao-facil" class="subaba-bloco" onclick="rhSetSubAba('gestao-facil',this);gfCarregar()">⚡ Gestão Fácil</button>
         <button type="button" id="rh-subtab-ficha-epi" class="subaba-bloco" onclick="rhSetSubAba('ficha-epi',this)">🦺 Ficha de EPI</button>
+        <button type="button" id="rh-subtab-req-vt" class="subaba-bloco" onclick="rhSetSubAba('req-vt',this)">🚌 Requisição VT</button>
       </div>
       <div class="card rh-pane" id="rh-pane-funcionarios" data-rh-pane="funcionarios">
         <div class="card-header">
@@ -1880,6 +1881,76 @@ document.addEventListener('DOMContentLoaded',()=>{
 
           <!-- Resultado -->
           <div id="epi-resultado" style="display:none"></div>
+        </div>
+      </div>
+
+      <!-- ══ REQUISIÇÃO DE VALE-TRANSPORTE ══ -->
+      <div class="card rh-pane" id="rh-pane-req-vt" data-rh-pane="req-vt">
+        <div class="card-header">
+          <span class="card-title">🚌 Gerar Requisição de Vale-Transporte</span>
+        </div>
+        <div style="padding:16px">
+
+          <!-- Seleção de colaborador -->
+          <div class="g4" style="margin-bottom:14px;align-items:flex-end">
+            <div class="f" style="flex:2">
+              <label>Colaborador</label>
+              <input id="vt-busca-func" type="text" placeholder="Digite nome, matrícula ou RE..."
+                oninput="vtBuscarFunc(this.value)" autocomplete="off" style="width:100%">
+              <div id="vt-func-sugestoes" style="position:relative;z-index:200"></div>
+            </div>
+          </div>
+          <div id="vt-func-selecionado" style="display:none;background:var(--azul-cc);border:1px solid var(--azul-borda);border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px">
+            <strong>Colaborador:</strong> <span id="vt-func-nome-sel"></span> &nbsp;|&nbsp;
+            <strong>Cargo:</strong> <span id="vt-func-cargo-sel"></span>
+            <button class="btn b-sm" onclick="vtLimparFunc()" style="float:right;background:transparent;color:var(--text-muted);font-size:12px;padding:0 6px">✕ Limpar</button>
+          </div>
+
+          <!-- Opção de utilização -->
+          <div class="f" style="margin-bottom:14px">
+            <label>Opção do colaborador</label>
+            <select id="vt-opta">
+              <option value="sim">Opta pela Utilização do Vale Transporte</option>
+              <option value="nao">Não opta pela Utilização do Vale Transporte</option>
+            </select>
+          </div>
+
+          <!-- Tabela meios de transporte -->
+          <div style="overflow-x:auto;margin-bottom:8px">
+            <table class="tbl" id="vt-tabela" style="min-width:560px">
+              <thead>
+                <tr>
+                  <th>Tipo (Ex: Ônibus, VEM, Metrô...)</th>
+                  <th style="width:190px">Qtd. Ida e Volta</th>
+                  <th style="width:160px">Valor Unitário (R$)</th>
+                  <th style="width:40px"></th>
+                </tr>
+              </thead>
+              <tbody id="vt-meios-body"></tbody>
+            </table>
+          </div>
+          <button class="btn b-gh b-sm" onclick="vtAddLinha()" style="margin-bottom:16px">+ Adicionar linha</button>
+
+          <!-- Canal de envio -->
+          <div class="g4" style="margin-bottom:18px;align-items:flex-end">
+            <div class="f">
+              <label>Enviar para assinatura via</label>
+              <select id="vt-canal">
+                <option value="nao">Apenas gerar (sem envio)</option>
+                <option value="app">📱 Aplicativo</option>
+                <option value="whatsapp">💬 WhatsApp</option>
+                <option value="link">🔗 Link (copiar)</option>
+              </select>
+            </div>
+            <div>
+              <button class="btn b-az" onclick="gerarRequisicaoVT()" id="vt-btn-gerar">
+                🚌 Gerar Requisição VT
+              </button>
+            </div>
+          </div>
+
+          <!-- Resultado -->
+          <div id="vt-resultado" style="display:none"></div>
         </div>
       </div>
 
@@ -4232,7 +4303,7 @@ function rhSalariosIniciarPagina(){
 }
 
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','ponto','painel-dia','envio','assinaturas','gestao-facil','ficha-epi'];
+  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','ponto','painel-dia','envio','assinaturas','gestao-facil','ficha-epi','req-vt'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
     p.style.display=(p.dataset.rhPane===rhSubAba)?'block':'none';
@@ -4252,6 +4323,9 @@ function rhSetSubAba(tab,btn){
   }
   if(rhSubAba==='ficha-epi'){
     epiInicializar();
+  }
+  if(rhSubAba==='req-vt'){
+    vtInicializar();
   }
 }
 
@@ -7527,6 +7601,132 @@ function epiInicializar() {
     epiAddLinha({ data_retirada: hoje, quantidade: 1, unidade: 'UN' });
   }
 }
+
+// ── REQUISIÇÃO DE VALE-TRANSPORTE ────────────────────────────────────────────
+let vtFuncSelecionado = null;
+
+function vtInicializar() {
+  const tbody = document.getElementById('vt-meios-body');
+  if (!tbody) return;
+  if (!tbody.children.length) vtAddLinha();
+}
+
+function vtAddLinha(mt) {
+  mt = mt || {};
+  const tbody = document.getElementById('vt-meios-body');
+  if (!tbody) return;
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="text" value="${esc(mt.tipo||'')}" placeholder="Ex: Ônibus, VEM, Metrô..." style="width:100%"></td>
+    <td><input type="number" value="${esc(mt.quantidade_ida_volta||'')}" placeholder="Ex: 2" min="0" style="width:100%"></td>
+    <td><input type="text" value="${esc(mt.valor_unitario||'')}" placeholder="Ex: 4,70" style="width:100%"></td>
+    <td style="text-align:center"><button class="btn b-sm" onclick="this.closest('tr').remove()" style="background:transparent;color:var(--verm);padding:2px 6px">✕</button></td>`;
+  tbody.appendChild(tr);
+}
+
+function vtGetMeios() {
+  const rows = document.querySelectorAll('#vt-meios-body tr');
+  const meios = [];
+  rows.forEach(tr => {
+    const cols = tr.querySelectorAll('input');
+    const tipo = (cols[0]?.value || '').trim();
+    const qtd = (cols[1]?.value || '').trim();
+    const valor = (cols[2]?.value || '').trim();
+    if (tipo || qtd || valor) meios.push({ tipo, quantidade_ida_volta: qtd, valor_unitario: valor });
+  });
+  return meios;
+}
+
+function vtBuscarFunc(q) {
+  const sug = document.getElementById('vt-func-sugestoes');
+  if (!sug) return;
+  if (!q || q.length < 2) { sug.innerHTML = ''; return; }
+  const funcs = Array.isArray(rhFuncionarios) ? rhFuncionarios : [];
+  const ql = q.toLowerCase();
+  const found = funcs.filter(f =>
+    (f.nome||'').toLowerCase().includes(ql) ||
+    (f.re||'').toLowerCase().includes(ql) ||
+    (f.matricula||'').toLowerCase().includes(ql)
+  );
+  if (!found.length) { sug.innerHTML = ''; return; }
+  sug.innerHTML = '<div style="position:absolute;width:100%;background:var(--bg);border:1px solid var(--borda);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);max-height:240px;overflow-y:auto;z-index:300">' +
+    found.slice(0,15).map(f =>
+      `<div style="padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--borda-cl)"
+        onmouseover="this.style.background='var(--azul-cc)'" onmouseout="this.style.background=''"
+        onclick='vtSelecionarFunc(${JSON.stringify(f).replace(/'/g,"&#39;")})'>
+        <strong>${esc(f.nome||'')}</strong>
+        <span style="color:var(--text-muted);font-size:11px"> · ${esc(f.re||f.matricula||'')} · ${esc(f.cargo||'')}</span>
+      </div>`
+    ).join('') + '</div>';
+}
+
+function vtSelecionarFunc(f) {
+  vtFuncSelecionado = f;
+  document.getElementById('vt-busca-func').value = f.nome || '';
+  document.getElementById('vt-func-sugestoes').innerHTML = '';
+  document.getElementById('vt-func-selecionado').style.display = 'block';
+  document.getElementById('vt-func-nome-sel').textContent = f.nome || '';
+  document.getElementById('vt-func-cargo-sel').textContent = f.cargo || '';
+  if (f.opta_vt === false) {
+    document.getElementById('vt-opta').value = 'nao';
+  } else {
+    document.getElementById('vt-opta').value = 'sim';
+  }
+}
+
+function vtLimparFunc() {
+  vtFuncSelecionado = null;
+  document.getElementById('vt-busca-func').value = '';
+  document.getElementById('vt-func-selecionado').style.display = 'none';
+}
+
+async function gerarRequisicaoVT() {
+  if (!vtFuncSelecionado) { alert('Selecione um colaborador.'); return; }
+  const meios = vtGetMeios();
+  const canal = document.getElementById('vt-canal').value;
+  const opta = document.getElementById('vt-opta').value === 'sim';
+  const btn = document.getElementById('vt-btn-gerar');
+  const res = document.getElementById('vt-resultado');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Gerando...';
+  res.style.display = 'none';
+
+  try {
+    const r = await api(`/api/funcionarios/${vtFuncSelecionado.id}/gerar-requisicao-vt`, 'POST',
+      { meios_transporte: meios, canal, opta });
+    if (r && r.ok) {
+      const linkDownload = r.download_url
+        ? `<a href="${r.download_url}" target="_blank" class="btn b-gh b-sm" style="margin-top:8px">⬇️ Baixar PDF</a>` : '';
+      let envioInfo = '';
+      if (r.assinatura && r.assinatura.canal && r.assinatura.canal !== 'nao') {
+        if (r.assinatura.status === 'solicitada') {
+          envioInfo = `<div style="margin-top:8px;font-size:13px">✅ Enviado via <strong>${r.assinatura.canal}</strong> para assinatura.`;
+          if (r.assinatura.link) envioInfo += ` <a href="${r.assinatura.link}" target="_blank" style="font-size:12px">🔗 Link direto</a>`;
+          envioInfo += '</div>';
+        } else if (r.assinatura.status === 'erro') {
+          envioInfo = `<div style="margin-top:8px;font-size:13px;color:var(--laranja-esc)">⚠️ Gerado mas envio falhou: ${esc(r.assinatura.erro||'')}.</div>`;
+          if (r.assinatura.link) envioInfo += `<div style="margin-top:4px"><a href="${r.assinatura.link}" target="_blank" class="btn b-gh b-sm">🔗 Link de assinatura</a></div>`;
+        }
+      } else {
+        envioInfo = '<div style="margin-top:6px;font-size:12px;color:var(--text-muted)">Sem envio automático. Use o Painel de Assinaturas para enviar.</div>';
+      }
+      res.innerHTML = `<div style="background:var(--verde-cl);border:1px solid var(--verde);border-radius:8px;padding:12px 16px;color:var(--verde)">
+        ✅ <strong>Requisição de VT gerada com sucesso!</strong><br>
+        <span style="font-size:13px;color:var(--text)">Arquivo: ${esc(r.nome_arquivo||'')}</span>
+        ${linkDownload}${envioInfo}</div>`;
+    } else {
+      res.innerHTML = `<div style="background:var(--verm-cl);border:1px solid var(--verm);border-radius:8px;padding:12px 16px;color:var(--verm)">
+        ❌ Erro: ${esc(r?.erro||'Falha desconhecida.')}</div>`;
+    }
+  } catch(e) {
+    res.innerHTML = `<div style="background:var(--verm-cl);border:1px solid var(--verm);border-radius:8px;padding:12px 16px;color:var(--verm)">❌ Erro: ${esc(String(e))}</div>`;
+  }
+  res.style.display = 'block';
+  btn.disabled = false;
+  btn.textContent = '🚌 Gerar Requisição VT';
+}
+// ── FIM REQUISIÇÃO VT ────────────────────────────────────────────────────────
 
 function rhExportSelectedPostos(){
   const el=document.getElementById('rh-exp-postos');
