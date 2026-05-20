@@ -9413,8 +9413,8 @@ table.custo .total-row td{font-weight:700;background:#f0f4f8;border-top:2px soli
   <p class="body-text" style="margin-top:14px">Atenciosamente,<br><strong>${_escHtml(remContato)}</strong><br><span style="font-size:9pt;color:#555">${_escHtml(remCargo)}${_escHtml(remTel)}${remEmail?'<br>'+_escHtml(remEmail):''}</span></p>
 
   <div class="sec-title">Apresentação Institucional</div>
-  <p class="body-text">RM FACILITIES LTDA - Somos uma empresa pronta para oferecer soluções integradas de tecnologia e facility services. Estamos buscando sempre atender nossos clientes parceiros, cumprindo os mais rígidos critérios de compliance. Compreendemos a demanda de cada cliente para desenhar a proposta mais eficiente.</p>
-  <p class="body-text">SECURITY SERVICES - A solidez e a expertise dos fundadores permitem a operação com escala e de maneira customizada. A RM FACILITIES LTDA oferece soluções completas para os cenários mais complexos, tem um portfólios que compreende serviços como portaria e controle de acesso.</p>
+  <p class="body-text">${_escHtml(remNome)} - Somos uma empresa pronta para oferecer soluções integradas de tecnologia e facility services. Estamos buscando sempre atender nossos clientes parceiros, cumprindo os mais rígidos critérios de compliance. Compreendemos a demanda de cada cliente para desenhar a proposta mais eficiente.</p>
+  <p class="body-text">SECURITY SERVICES - A solidez e a expertise dos fundadores permitem a operação com escala e de maneira customizada. A ${_escHtml(remNome)} oferece soluções completas para os cenários mais complexos, tem um portfólios que compreende serviços como portaria e controle de acesso.</p>
   <p class="body-text">FACILITY SERVICES - A empresa acredita na combinação entre as melhores pessoas e a tecnologia para atender com excelência à demanda de serviços de limpeza, multisserviços e serviços auxiliares.</p>
 
   <div class="sec-title">Escopo e Valores dos Serviços</div>
@@ -9428,14 +9428,14 @@ table.custo .total-row td{font-weight:700;background:#f0f4f8;border-top:2px soli
 
   <div class="sec-title">Incluso na Proposta</div>
   <p class="body-text">Proposta de acordo com escopo fornecido contemplando os seguinte benefícios aos colaboradores;</p>
-  <p class="body-text">Os valores informados contemplam todos os benefícios, treinamentos, administração e supervisão dos serviços e/ou funcionários e uniformes para o andamento da operação. Estão incluídos também todos os custos como, encargos sociais, trabalhistas e fiscais de responsabilidade da RM FACILITIES LTDA;</p>
-  <p class="body-text">PPRA – Programa de Prevenção e Riscos Ambientais;<br>PCMSO – Programa de Controle Médico e Saúde Ocupacional;<br>Todos os funcionários da RM FACILITIES LTDA possuem os seguintes benefícios de acordo com a convenção coletiva;</p>
+  <p class="body-text">Os valores informados contemplam todos os benefícios, treinamentos, administração e supervisão dos serviços e/ou funcionários e uniformes para o andamento da operação. Estão incluídos também todos os custos como, encargos sociais, trabalhistas e fiscais de responsabilidade da ${_escHtml(remNome)};</p>
+  <p class="body-text">PPRA – Programa de Prevenção e Riscos Ambientais;<br>PCMSO – Programa de Controle Médico e Saúde Ocupacional;<br>Todos os funcionários da ${_escHtml(remNome)} possuem os seguintes benefícios de acordo com a convenção coletiva;</p>
   ${['Seguro de Vida em grupo;','Vale Transporte;','Vale Alimentação','20% Insalubridade','Uniforme;',"EPI's;"].map(t=>`<div class="bullet">• ${_escHtml(t)}</div>`).join('')}
   <p class="body-text">Nr35 para trabalho em altura;</p>
-  <p class="body-text">Todos os funcionários RM FACILITIES LTDA devem estar identificados através de crachás, devidamente uniformizados e munidos de EPI´s;</p>
+  <p class="body-text">Todos os funcionários ${_escHtml(remNome)} devem estar identificados através de crachás, devidamente uniformizados e munidos de EPI´s;</p>
 
   <div class="sec-title">Treinamento</div>
-  <p class="body-text">Os profissionais da RM FACILITIES LTDA recebem treinamento semestral de Normas Regulamentadoras (NRs) inerentes à função desempenhada.</p>
+  <p class="body-text">Os profissionais da ${_escHtml(remNome)} recebem treinamento semestral de Normas Regulamentadoras (NRs) inerentes à função desempenhada.</p>
 
   <div class="sec-title">Considerações Comerciais</div>
   <p class="body-text">Forma de Pagamento: Os serviços propostos serão faturados mensalmente, com prazo de vencimento conforme Termo de Referência.</p>
@@ -9444,15 +9444,15 @@ table.custo .total-row td{font-weight:700;background:#f0f4f8;border-top:2px soli
   <p class="body-text">Data Base: Os preços foram elaborados nas bases do acordo da categoria: 01 de janeiro de ${anoRef}.</p>
   <p class="body-text">Próximo Reajuste: O contrato será reajustado anualmente, conforme contrato.</p>
   <p class="body-text">Forma de Reajuste: Caso ocorram alterações no valor do piso salarial da categoria, bem como a criação de novos benefícios sociais advindos de acordos e/ou dissídios coletivos, o preço da mão de obra será reajustado nas mesmas proporções. Os demais insumos componentes do preço não relacionados à mão de obra direta serão reajustados nas mesmas proporções. Se durante a vigência dos serviços forem criados novos tributos ou modificadas as alíquotas atuais, ou se houver reconhecida e comprovada alteração nos custos dos serviços e/ou insumos de forma a majorar ou diminuir o ônus, o preço contratado poderá ser revisto a fim de adequá-lo às modificações, de forma a restabelecer o equilíbrio econômico-financeiro.</p>
-  <p class="body-text">Todas as ocorrências verificadas nos serviços ou que envolvam os empregados alocados em sua execução deverão ser imediatamente comunicados à RM FACILITIES LTDA para que sejam tomadas as providências cabíveis;</p>
+  <p class="body-text">Todas as ocorrências verificadas nos serviços ou que envolvam os empregados alocados em sua execução deverão ser imediatamente comunicados à ${_escHtml(remNome)} para que sejam tomadas as providências cabíveis;</p>
   <p class="body-text">Os serviços serão executados respeitando-se o escopo descrito no item 2, sendo certo que qualquer alteração no mesmo será objeto de uma nova negociação para revalidação das atividades e valores propostos, conforme necessidade e solicitação da <strong>${_escHtml(empresa)}</strong>;</p>
-  <p class="body-text">Faltas eventuais: será realizada coberturas pela RM FACILITIES LTDA em até 2 horas.</p>
+  <p class="body-text">Faltas eventuais: será realizada coberturas pela ${_escHtml(remNome)} em até 2 horas.</p>
   <p class="body-text">Todos os serviços extras deverão ser informados à supervisão com antecedência mínima de 72 (setenta e duas horas) úteis, para a tomada das providências necessárias;</p>
   <p class="body-text">Consideramos em nossos custos os exames médicos relativos ao PCMSO de acordo com as normas legais de saúde;</p>
   <p class="body-text">Todos os benefícios e direitos são rigorosamente contemplados, bem como todos os encargos sociais de nossa responsabilidade.</p>
   <p class="body-text">De acordo com a (Lei 13.467/17), o § 4o do artigo 71 da CLT deverá ser concedida 01 hora de intervalo para refeições e descanso aos funcionários que prestarão os serviços ou pagamento de intrajornada.</p>
   <p class="body-text">A <strong>${_escHtml(empresa)}</strong> deverá fornecer locais adequados onde possa ser guardados os equipamentos e fornecer condições de trabalho e permanência dos colaboradores no local de trabalho durante sua jornada de trabalho como, água, banheiro.</p>
-  <p class="body-text">A <strong>${_escHtml(empresa)}</strong> poderá, a qualquer momento, solicitar e auditar os documentos relativos à regularização da RM FACILITIES LTDA. Mensalmente serão disponibilizadas cópias dos documentos abaixo listados:</p>
+  <p class="body-text">A <strong>${_escHtml(empresa)}</strong> poderá, a qualquer momento, solicitar e auditar os documentos relativos à regularização da ${_escHtml(remNome)}. Mensalmente serão disponibilizadas cópias dos documentos abaixo listados:</p>
   ${['Folha de pagamento analítica;','GRF – Guia de Pagamento de Fundo de Garantia;','Analítico GRF – Relatório Analítico de Fundo de Garantia;','GPS – Guia de Pagamento da Previdência Social e de Terceiros;','Analítico GPS – Relatório Analítico da Guia da Previdência Social;','Conectividade Social – Protocolo de Envio;','RET – Relação de Empregados por Tomador;','CAGED – Cadastro Geral de Empregados e Desempregados;'].map(t=>`<div class="bullet">• ${_escHtml(t)}</div>`).join('')}
   <p class="body-text" style="margin-top:8px">Caso a <strong>${_escHtml(empresa)}</strong> necessite de documentação extra esta deverá ser solicitada previamente à celebração contratual.</p>
   <p class="body-text"><strong>A presente proposta tem validade de 30 dias.</strong></p>

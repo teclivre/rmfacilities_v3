@@ -9051,14 +9051,14 @@ def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, emai
     elems.append(HRFlowable(width='100%', thickness=1, color=NAVY))
     elems.append(Spacer(1, 0.3*cm))
     elems.append(Paragraph(
-        'RM FACILITIES LTDA - Somos uma empresa pronta para oferecer soluções integradas de tecnologia e facility services. '
+        f'{rem_nome} - Somos uma empresa pronta para oferecer soluções integradas de tecnologia e facility services. '
         'Estamos buscando sempre atender nossos clientes parceiros, cumprindo os mais rígidos critérios de compliance. '
         'Compreendemos a demanda de cada cliente para desenhar a proposta mais eficiente.',
         s_normal))
     elems.append(Spacer(1, 0.3*cm))
     elems.append(Paragraph(
         'SECURITY SERVICES - A solidez e a expertise dos fundadores permitem a operação com escala e de maneira customizada. '
-        'A RM FACILITIES LTDA oferece soluções completas para os cenários mais complexos, tem um portfólios que compreende '
+        f'A {rem_nome} oferece soluções completas para os cenários mais complexos, tem um portfólios que compreende '
         'serviços como portaria e controle de acesso.',
         s_normal))
     elems.append(Spacer(1, 0.3*cm))
@@ -9142,11 +9142,11 @@ def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, emai
     elems.append(Paragraph(
         'Os valores informados contemplam todos os benefícios, treinamentos, administração e supervisão dos serviços '
         'e/ou funcionários e uniformes para o andamento da operação. Estão incluídos também todos os custos como, '
-        'encargos sociais, trabalhistas e fiscais de responsabilidade da RM FACILITIES LTDA;', s_normal))
+        f'encargos sociais, trabalhistas e fiscais de responsabilidade da {rem_nome};', s_normal))
     elems.append(Spacer(1, 0.2*cm))
     for txt in ['PPRA – Programa de Prevenção e Riscos Ambientais;',
                 'PCMSO – Programa de Controle Médico e Saúde Ocupacional;',
-                'Todos os funcionários da RM FACILITIES LTDA possuem os seguintes benefícios de acordo com a convenção coletiva;']:
+                f'Todos os funcionários da {rem_nome} possuem os seguintes benefícios de acordo com a convenção coletiva;']:
         elems.append(Paragraph(txt, s_normal))
     for txt in ['Seguro de Vida em grupo;', 'Vale Transporte;', 'Vale Alimentação', '20% Insalubridade',
                 'Uniforme;', "EPI's;"]:
@@ -9154,7 +9154,7 @@ def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, emai
     elems.append(Paragraph('Nr35 para trabalho em altura;', s_normal))
     elems.append(Spacer(1, 0.2*cm))
     elems.append(Paragraph(
-        'Todos os funcionários RM FACILITIES LTDA devem estar identificados através de crachás, '
+        f'Todos os funcionários {rem_nome} devem estar identificados através de crachás, '
         'devidamente uniformizados e munidos de EPI´s;', s_normal))
     elems.append(Spacer(1, 0.5*cm))
 
@@ -9163,7 +9163,7 @@ def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, emai
     elems.append(HRFlowable(width='100%', thickness=1, color=NAVY))
     elems.append(Spacer(1, 0.3*cm))
     elems.append(Paragraph(
-        'Os profissionais da RM FACILITIES LTDA recebem treinamento semestral de Normas Regulamentadoras (NRs) '
+        f'Os profissionais da {rem_nome} recebem treinamento semestral de Normas Regulamentadoras (NRs) '
         'inerentes à função desempenhada.', s_normal))
     elems.append(Spacer(1, 0.5*cm))
 
@@ -9178,15 +9178,15 @@ def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, emai
         f'Data Base: Os preços foram elaborados nas bases do acordo da categoria: 01 de janeiro de {ano_ref}.',
         'Próximo Reajuste: O contrato será reajustado anualmente, conforme contrato.',
         'Forma de Reajuste: Caso ocorram alterações no valor do piso salarial da categoria, bem como a criação de novos benefícios sociais advindos de acordos e/ou dissídios coletivos, o preço da mão de obra será reajustado nas mesmas proporções. Os demais insumos componentes do preço não relacionados à mão de obra direta serão reajustados nas mesmas proporções. Se durante a vigência dos serviços forem criados novos tributos ou modificadas as alíquotas atuais, ou se houver reconhecida e comprovada alteração nos custos dos serviços e/ou insumos de forma a majorar ou diminuir o ônus, o preço contratado poderá ser revisto a fim de adequá-lo às modificações, de forma a restabelecer o equilíbrio econômico-financeiro.',
-        'Todas as ocorrências verificadas nos serviços ou que envolvam os empregados alocados em sua execução deverão ser imediatamente comunicados à RM FACILITIES LTDA para que sejam tomadas as providências cabíveis;',
+        f'Todas as ocorrências verificadas nos serviços ou que envolvam os empregados alocados em sua execução deverão ser imediatamente comunicados à {rem_nome} para que sejam tomadas as providências cabíveis;',
         f'Os serviços serão executados respeitando-se o escopo descrito no item 2, sendo certo que qualquer alteração no mesmo será objeto de uma nova negociação para revalidação das atividades e valores propostos, conforme necessidade e solicitação da <b>{empresa or "CONTRATANTE"}</b>;',
-        'Faltas eventuais: será realizada coberturas pela RM FACILITIES LTDA em até 2 horas.',
+        f'Faltas eventuais: será realizada coberturas pela {rem_nome} em até 2 horas.',
         'Todos os serviços extras deverão ser informados à supervisão com antecedência mínima de 72 (setenta e duas horas) úteis, para a tomada das providências necessárias;',
         'Consideramos em nossos custos os exames médicos relativos ao PCMSO de acordo com as normas legais de saúde;',
         'Todos os benefícios e direitos são rigorosamente contemplados, bem como todos os encargos sociais de nossa responsabilidade.',
         'De acordo com a (Lei 13.467/17), o § 4o do artigo 71 da CLT deverá ser concedida 01 hora de intervalo para refeições e descanso aos funcionários que prestarão os serviços ou pagamento de intrajornada.',
         f'A <b>{empresa or "CONTRATANTE"}</b> deverá fornecer locais adequados onde possa ser guardados os equipamentos e fornecer condições de trabalho e permanência dos colaboradores no local de trabalho durante sua jornada de trabalho como, água, banheiro.',
-        f'A <b>{empresa or "CONTRATANTE"}</b> poderá, a qualquer momento, solicitar e auditar os documentos relativos à regularização da RM FACILITIES LTDA. Mensalmente serão disponibilizadas cópias dos documentos abaixo listados:',
+        f'A <b>{empresa or "CONTRATANTE"}</b> poderá, a qualquer momento, solicitar e auditar os documentos relativos à regularização da {rem_nome}. Mensalmente serão disponibilizadas cópias dos documentos abaixo listados:',
     ]
     for c in consideracoes:
         elems.append(Paragraph(c, s_normal))
