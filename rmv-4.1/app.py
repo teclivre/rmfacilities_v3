@@ -5500,6 +5500,70 @@ LOGO_PATH=os.path.join(os.path.dirname(__file__),'static','img','logo.png')
 LOGO_URL='https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png'
 LOGO_URL_SECUNDARIO='https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png'
 
+# ── Marca d'água em PDFs ──────────────────────────────────────────────────────
+try:
+    from reportlab.pdfgen import canvas as _rl_canvas_mod
+    class _WatermarkCanvas(_rl_canvas_mod.Canvas):
+        """Canvas ReportLab que desenha a logo RM Facilities como marca d'água
+        com 30 % de transparência, centralizada, atrás do conteúdo de cada página."""
+        _wm_buf = None          # cache do PNG com alpha aplicado
+        _wm_buf_lock = False    # flag simples para evitar recursão
+
+        @classmethod
+        def _build_wm(cls):
+            if cls._wm_buf is not None:
+                return cls._wm_buf
+            if cls._wm_buf_lock:
+                return None
+            cls._wm_buf_lock = True
+            try:
+                from PIL import Image
+                import io as _io
+                logo = get_logo()
+                if not logo or not os.path.exists(logo):
+                    return None
+                img = Image.open(logo).convert('RGBA')
+                r, g, b, a = img.split()
+                a = a.point(lambda x: int(x * 0.30))
+                img.putalpha(a)
+                buf = _io.BytesIO()
+                img.save(buf, format='PNG')
+                buf.seek(0)
+                cls._wm_buf = buf
+                return cls._wm_buf
+            except Exception:
+                return None
+            finally:
+                cls._wm_buf_lock = False
+
+        def _draw_watermark(self):
+            try:
+                from reportlab.lib.utils import ImageReader
+                buf = self.__class__._build_wm()
+                if buf is None:
+                    return
+                buf.seek(0)
+                pw, ph = self._pagesize
+                wm_size = min(pw, ph) * 0.52
+                x = (pw - wm_size) / 2
+                y = (ph - wm_size) / 2
+                self.saveState()
+                self.drawImage(ImageReader(buf), x, y, wm_size, wm_size, mask='auto')
+                self.restoreState()
+            except Exception:
+                pass
+
+        def showPage(self):
+            self._draw_watermark()
+            super().showPage()
+
+        def save(self):
+            self._draw_watermark()
+            super().save()
+except Exception:
+    _WatermarkCanvas = None  # type: ignore
+# ─────────────────────────────────────────────────────────────────────────────
+
 def get_logo():
     if not os.path.exists(LOGO_PATH):
         try: urllib.request.urlretrieve(LOGO_URL,LOGO_PATH)
@@ -6909,7 +6973,7 @@ def _export_funcionarios_ativos_pdf(funcs,include_salario=False):
         Spacer(1,0.3*cm),
         table
     ]
-    doc.build(elementos)
+    doc.build(elementos, canvasmaker=(_WatermarkCanvas or None))
     buf.seek(0)
     nome=f'colaboradores_ativos_{localnow().strftime("%Y%m%d_%H%M")}.pdf'
     return send_file(buf,mimetype='application/pdf',as_attachment=False,download_name=nome)
@@ -7538,7 +7602,7 @@ def _gerar_ficha_epi_pdf(funcionario,itens_epi,empresa_nome='RM FACILITIES LTDA'
         f'FO.0321 · Gerado automaticamente em {data_emissao} · {empresa_nome}',
         st_rodape))
 
-    doc.build(elementos)
+    doc.build(elementos, canvasmaker=(_WatermarkCanvas or None))
     buf.seek(0)
     return buf
 
@@ -7897,7 +7961,7 @@ def _gerar_requisicao_vt_pdf(funcionario, meios_transporte, empresa=None, opta=T
     ]))
     elems.append(rodape)
 
-    doc.build(elems)
+    doc.build(elems, canvasmaker=(_WatermarkCanvas or None))
     buf.seek(0)
     return buf
 
@@ -8107,7 +8171,7 @@ def _gerar_termo_uniforme_pdf(funcionario, itens, empresa=None, obs=''):
     elems += [Spacer(1, 0.6*cm), HRFlowable(width='100%', thickness=0.5, color=azul),
               Spacer(1, 0.3*cm), ass_table, Spacer(1, 0.3*cm),
               Paragraph(f'Gerado automaticamente em {data_hoje} · {emp_nome}', st_rod)]
-    doc.build(elems)
+    doc.build(elems, canvasmaker=(_WatermarkCanvas or None))
     buf.seek(0)
     return buf
 
@@ -8283,7 +8347,7 @@ def _gerar_declaracao_acumulo_cargo_pdf(funcionario, acumula=False, empresa=None
         Spacer(1, 0.3*cm), ass_table, Spacer(1, 0.3*cm),
         Paragraph(f'Gerado automaticamente em {data_hoje} · {emp_nome}', st_rod),
     ]
-    doc.build(elems)
+    doc.build(elems, canvasmaker=(_WatermarkCanvas or None))
     buf.seek(0)
     return buf
 
@@ -8462,7 +8526,7 @@ def _gerar_advertencia_pdf(funcionario, tipo='advertencia_escrita', descricao=''
               Spacer(1, 0.8*cm), HRFlowable(width='100%', thickness=0.5, color=cor_header),
               Spacer(1, 0.3*cm), ass_table, Spacer(1, 0.3*cm),
               Paragraph(f'Gerado automaticamente em {data_hoje} · {emp_nome}', st_rod)]
-    doc.build(elems)
+    doc.build(elems, canvasmaker=(_WatermarkCanvas or None))
     buf.seek(0)
     return buf
 
@@ -8766,7 +8830,7 @@ def _gerar_aviso_previo_pdf(funcionario, tipo='empresa_trabalhado', empresa=None
               Spacer(1, 0.8*cm), HRFlowable(width='100%', thickness=0.5, color=azul_esc),
               Spacer(1, 0.3*cm), ass_table, Spacer(1, 0.3*cm),
               Paragraph(f'Gerado automaticamente em {data_hoje} · {emp_nome}', st_rod)]
-    doc.build(elems)
+    doc.build(elems, canvasmaker=(_WatermarkCanvas or None))
     buf.seek(0)
     return buf
 
@@ -9005,31 +9069,39 @@ def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, emai
     elems.append(Spacer(1, 0.2*cm))
 
     # Cabeçalho da planilha
-    plan_header = ['Cod.', 'Referência', 'Função', 'Valor unit.', 'Subtotal']
+    plan_header = ['Cod.', 'Referência', 'Função', 'Qtd', 'Valor unit.', 'Subtotal']
     plan_rows = [plan_header]
-    total_rows = 5
-    for i, it in enumerate(itens[:total_rows]):
+    for i, it in enumerate(itens):
         plan_rows.append([
             str(it.get('cod', str(i+1))),
             it.get('referencia', ''),
             it.get('funcao_item', ''),
+            str(it.get('qtd', '1')),
             it.get('valor_unit', ''),
             it.get('subtotal', ''),
         ])
-    # Preencher linhas vazias até 5
-    while len(plan_rows) < total_rows + 1:
-        plan_rows.append(['', '', '', '', ''])
 
-    # Calcular total
-    total_val = ''
+    # Calcular total somando subtotais numéricos
+    def _parse_brl(v):
+        try:
+            return float(str(v).replace('.','').replace(',','.').strip())
+        except Exception:
+            return None
+
+    total_num = None
     for it in itens:
-        if it.get('subtotal') and it['subtotal'] not in ('', 'A definir', '-'):
-            total_val = it['subtotal']
-            break
+        v = _parse_brl(it.get('subtotal',''))
+        if v is not None:
+            total_num = (total_num or 0) + v
 
-    plan_rows.append(['Total Mensal:', '', '', '', total_val or '-'])
+    if total_num is not None:
+        total_val = f'R$ {total_num:,.2f}'.replace(',','X').replace('.',',').replace('X','.')
+    else:
+        total_val = '-'
 
-    plan_t = Table(plan_rows, colWidths=[1.2*cm, 3.5*cm, 8*cm, 3*cm, 3.3*cm])
+    plan_rows.append(['Total Mensal:', '', '', '', '', total_val])
+
+    plan_t = Table(plan_rows, colWidths=[1.2*cm, 3.5*cm, 6.5*cm, 1.5*cm, 3*cm, 3.3*cm])
     plan_style = [
         ('BACKGROUND', (0,0), (-1,0), NAVY),
         ('TEXTCOLOR', (0,0), (-1,0), WHITE),
@@ -9039,9 +9111,9 @@ def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, emai
         ('ROWBACKGROUNDS', (0,1), (-1,-2), [WHITE, LGRAY]),
         ('BACKGROUND', (0,-1), (-1,-1), LGRAY),
         ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
-        ('SPAN', (0,-1), (3,-1)),
+        ('SPAN', (0,-1), (4,-1)),
         ('ALIGN', (3,0), (-1,-1), 'RIGHT'),
-        ('ALIGN', (0,-1), (3,-1), 'LEFT'),
+        ('ALIGN', (0,-1), (4,-1), 'LEFT'),
         ('BOX', (0,0), (-1,-1), 0.5, BORDER),
         ('INNERGRID', (0,0), (-1,-1), 0.3, BORDER),
         ('TOPPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 5),
@@ -9142,7 +9214,7 @@ def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, emai
     ]))
     elems.append(ass_t)
 
-    doc.build(elems)
+    doc.build(elems, canvasmaker=(_WatermarkCanvas or None))
     buf.seek(0)
     return buf
 
@@ -11106,7 +11178,7 @@ def api_app_ponto_espelho_pdf_me():
             ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
         ]))
         elementos.append(ass_tbl)
-        doc.build(elementos)
+        doc.build(elementos, canvasmaker=(_WatermarkCanvas or None))
         buf.seek(0)
         nome_func=(f.nome or 'funcionario').replace(' ','_')
         return send_file(buf,mimetype='application/pdf',as_attachment=True,
@@ -12405,7 +12477,7 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
     bar.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),LJ),('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2)]))
     story.append(bar); story.append(Spacer(1,4))
     story.append(Paragraph(f'Gerado em {localnow().strftime("%d/%m/%Y %H:%M")} — RM Facilities',ps('rod',fontSize=7,textColor=colors.HexColor('#999'),alignment=TA_CENTER)))
-    doc.build(story); return buf.getvalue()
+    doc.build(story, canvasmaker=(_WatermarkCanvas or None)); return buf.getvalue()
 
 
 def _montar_pdf_assinado_funcionario(arquivo,funcionario,url_root):
@@ -12751,7 +12823,7 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     bar.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),LJ),('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2)]))
     story.append(bar); story.append(Spacer(1,4))
     story.append(Paragraph(f'Gerado em {localnow().strftime("%d/%m/%Y %H:%M")} — RM Facilities',ps('rod',fontSize=7,textColor=colors.HexColor('#999'),alignment=TA_CENTER)))
-    doc.build(story); return buf.getvalue()
+    doc.build(story, canvasmaker=(_WatermarkCanvas or None)); return buf.getvalue()
 
 
 def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
@@ -15918,7 +15990,7 @@ def _api_beneficios_pdf_tipo(tipo):
         story.append(tb)
         story.append(Spacer(1,10))
 
-    doc.build(story)
+    doc.build(story, canvasmaker=(_WatermarkCanvas or None))
     buf.seek(0)
     comp_nome=f"{comp[5:7]}-{comp[:4]}" if isinstance(comp,str) and len(comp)>=7 and '-' in comp else str(comp)
     sigla={'vale_transporte':'vt','vale_refeicao':'vr','vale_alimentacao':'va','premio_produtividade':'pp','vale_gasolina':'vg','cesta_natal':'cn'}.get(tipo,'beneficio')
@@ -16712,7 +16784,7 @@ def api_financeiro_salarios_export_pdf():
     story.append(Paragraph(f"Total geral da competência: {fmt_brl(resumo['total_competencia'])}",st_text))
     story.append(Paragraph(f"Total anual pago: {fmt_brl(resumo['total_anual'])}",st_text))
     story.append(Paragraph(f"Total geral exportado: {fmt_brl(total_geral)}",st_text))
-    doc.build(story)
+    doc.build(story, canvasmaker=(_WatermarkCanvas or None))
     buf.seek(0)
     comp_nome=f"{comp[5:7]}-{comp[:4]}" if isinstance(comp,str) and len(comp)>=7 and '-' in comp else str(comp)
     sufixo_versao=f"_v{versao}" if (origem=='salva' and versao) else ''
@@ -17821,7 +17893,7 @@ def _build_pdf(d):
             except Exception:
                 story.append(Paragraph(f'Link de validacao: {validacao_link}',ps('aud_qrf',fontSize=8,textColor=colors.HexColor('#4c6072'))))
 
-    doc.build(story)
+    doc.build(story, canvasmaker=(_WatermarkCanvas or None))
     pdf_bytes=buf.getvalue()
     crypto_ok=False
     cert_subject=''

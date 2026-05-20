@@ -2931,16 +2931,34 @@ document.addEventListener('DOMContentLoaded',()=>{
           <button class="btn b-sm" style="background:transparent;color:var(--text-muted);font-size:12px;padding:2px 8px" onclick="docsSetAba('clientes')">&larr; Voltar</button>
           <span class="card-title">📝 Gerar Proposta Comercial</span>
         </div>
-        <div style="padding:18px;max-width:820px">
+        <div style="padding:18px;max-width:860px">
 
+          <!-- Busca de cliente no cadastro -->
+          <div class="f" style="margin-bottom:16px;position:relative">
+            <label>Buscar empresa no cadastro (nome ou CNPJ)</label>
+            <div style="position:relative">
+              <input id="pc-busca" type="text" placeholder="Digite o nome ou CNPJ da empresa cadastrada..." autocomplete="off"
+                style="width:100%" oninput="pcBuscarAC(this.value)" onkeydown="pcAcKey(event)">
+              <div id="pc-ac" style="position:absolute;top:100%;left:0;right:0;background:var(--branco);border:1px solid var(--borda);border-top:none;border-radius:0 0 8px 8px;z-index:200;display:none;max-height:220px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>
+            </div>
+            <div id="pc-cli-sel" style="display:none;background:var(--azul-cc);border:1px solid var(--azul-borda);border-radius:8px;padding:8px 14px;margin-top:8px;flex-direction:row;align-items:center;justify-content:space-between;gap:10px">
+              <div>
+                <div id="pc-cli-nm" style="font-weight:700;font-size:14px"></div>
+                <div id="pc-cli-sb" style="font-size:12px;color:var(--text-muted)"></div>
+              </div>
+              <button class="btn b-sm" style="background:transparent;color:var(--text-muted);flex-shrink:0" onclick="pcLimparCliente()">✕ Limpar</button>
+            </div>
+          </div>
+
+          <!-- CNPJ primeiro, depois empresa -->
           <div class="g2" style="margin-bottom:14px;gap:14px">
+            <div class="f">
+              <label>CNPJ da empresa destinatária</label>
+              <input id="pc-cnpj" type="text" placeholder="00.000.000/0000-00" style="width:100%" maxlength="18" oninput="maskCNPJ(this)">
+            </div>
             <div class="f">
               <label>Empresa destinatária *</label>
               <input id="pc-empresa" type="text" placeholder="Nome da empresa cliente" style="width:100%">
-            </div>
-            <div class="f">
-              <label>CNPJ da empresa destinatária</label>
-              <input id="pc-cnpj" type="text" placeholder="00.000.000/0000-00" style="width:100%" maxlength="18">
             </div>
           </div>
 
@@ -2976,9 +2994,10 @@ document.addEventListener('DOMContentLoaded',()=>{
               <table style="width:100%;border-collapse:collapse;font-size:13px">
                 <thead>
                   <tr style="background:var(--azul);color:#fff">
-                    <th style="padding:6px 8px;text-align:left;min-width:50px">Cód.</th>
-                    <th style="padding:6px 8px;text-align:left;min-width:110px">Referência</th>
+                    <th style="padding:6px 8px;text-align:left;min-width:46px">Cód.</th>
+                    <th style="padding:6px 8px;text-align:left;min-width:100px">Referência</th>
                     <th style="padding:6px 8px;text-align:left">Função</th>
+                    <th style="padding:6px 8px;text-align:center;min-width:54px">Qtd</th>
                     <th style="padding:6px 8px;text-align:right;min-width:110px">Valor unit.</th>
                     <th style="padding:6px 8px;text-align:right;min-width:110px">Subtotal</th>
                     <th style="padding:6px 8px;width:36px"></th>
@@ -2986,14 +3005,22 @@ document.addEventListener('DOMContentLoaded',()=>{
                 </thead>
                 <tbody id="pc-itens-body">
                   <tr>
-                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="1" style="width:40px;text-align:center"></td>
-                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="Limpeza" placeholder="Referência" style="width:100px"></td>
+                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="1" style="width:38px;text-align:center"></td>
+                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="Limpeza" placeholder="Referência" style="width:98px"></td>
                     <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="AGENTES DE LIMPEZA 44 HORAS SEMANAIS" placeholder="Descrição do serviço" style="width:100%"></td>
-                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="R$ 0,00" style="width:100px;text-align:right"></td>
-                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="R$ 0,00" style="width:100px;text-align:right"></td>
-                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda);text-align:center"><button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);padding:2px 7px" onclick="this.closest('tr').remove()">✕</button></td>
+                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="number" min="1" value="1" style="width:52px;text-align:center" oninput="pcRecalcRow(this.closest('tr'))"></td>
+                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="0,00" style="width:100px;text-align:right" oninput="pcRecalcRow(this.closest('tr'))"></td>
+                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" readonly tabindex="-1" placeholder="0,00" style="width:100px;text-align:right;background:var(--azul-cc);cursor:default"></td>
+                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda);text-align:center"><button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);padding:2px 7px" onclick="this.closest('tr').remove();pcRecalcTotal()">✕</button></td>
                   </tr>
                 </tbody>
+                <tfoot>
+                  <tr style="background:var(--azul-cc);font-weight:700">
+                    <td colspan="5" style="padding:7px 8px;border-top:2px solid var(--azul-borda);text-align:right;font-size:13px">Total Mensal:</td>
+                    <td id="pc-total-row" style="padding:7px 8px;border-top:2px solid var(--azul-borda);text-align:right;font-size:13px">—</td>
+                    <td style="border-top:2px solid var(--azul-borda)"></td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
@@ -9041,71 +9068,175 @@ function docsSetAba(aba, el) {
   });
 }
 
-function docsAbrirProposta() {
+async function docsAbrirProposta() {
   docsSetAba('proposta');
-  // Inicializa data com hoje
   const pcData = document.getElementById('pc-data');
   if (pcData && !pcData.value) {
-    const hoje = new Date();
-    pcData.value = hoje.toISOString().split('T')[0];
+    pcData.value = new Date().toISOString().split('T')[0];
   }
+  // Garante que os clientes estão carregados para o autocomplete
+  if (!Array.isArray(todos) || !todos.length) todos = await api('/api/clientes');
 }
 // ── FIM DOCUMENTOS ──────────────────────────────────────────────────────────
 
 // ── PROPOSTA COMERCIAL ────────────────────────────────────────────────────────
+let _pcAcIdx = -1;
+
+// ─ Autocomplete de cliente ───────────────────────────────────────────────────
+function pcBuscarAC(q) {
+  const box = document.getElementById('pc-ac');
+  if (!q || q.length < 2) { box.style.display='none'; return; }
+  const t = q.toLowerCase();
+  const td = q.replace(/\D/g,'');
+  const res = (todos||[]).filter(c => {
+    const cn = (c.cnpj||'').replace(/\D/g,'');
+    return c.nome.toLowerCase().includes(t) || (c.cnpj||'').toLowerCase().includes(t) || (td && cn.includes(td));
+  });
+  if (!res.length) { box.style.display='none'; return; }
+  box.innerHTML = res.slice(0,10).map((c,i) => `
+    <div class="ac-item" data-idx="${i}" onmousedown="pcSelecionarCliente(${c.id})">
+      <div class="ac-nm">${esc(c.nome)}</div>
+      <div class="ac-sb">${esc(fmtDoc(c.cnpj)||'')}${c.responsavel?' · '+esc(c.responsavel):''}</div>
+    </div>`).join('');
+  box.style.display='block'; _pcAcIdx=-1;
+}
+
+function pcAcKey(e) {
+  const box = document.getElementById('pc-ac');
+  if (box.style.display==='none') return;
+  const its = box.querySelectorAll('.ac-item');
+  if (e.key==='ArrowDown') { _pcAcIdx=Math.min(_pcAcIdx+1,its.length-1); _pcHighlight(its); e.preventDefault(); }
+  else if (e.key==='ArrowUp') { _pcAcIdx=Math.max(_pcAcIdx-1,0); _pcHighlight(its); e.preventDefault(); }
+  else if (e.key==='Enter' && _pcAcIdx>=0) { its[_pcAcIdx].dispatchEvent(new MouseEvent('mousedown')); e.preventDefault(); }
+  else if (e.key==='Escape') box.style.display='none';
+}
+function _pcHighlight(its) {
+  its.forEach((el,i)=>el.classList.toggle('sel',i===_pcAcIdx));
+  if (_pcAcIdx>=0) its[_pcAcIdx].scrollIntoView({block:'nearest'});
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#pc-busca') && !e.target.closest('#pc-ac'))
+    document.getElementById('pc-ac').style.display='none';
+});
+
+function pcSelecionarCliente(id) {
+  const c = (todos||[]).find(x=>x.id===id); if (!c) return;
+  document.getElementById('pc-ac').style.display='none';
+  document.getElementById('pc-busca').value='';
+  // Preenche campos
+  document.getElementById('pc-cnpj').value = fmtDoc(c.cnpj)||'';
+  document.getElementById('pc-empresa').value = c.nome||'';
+  document.getElementById('pc-cliente').value = c.responsavel||'';
+  document.getElementById('pc-email').value = c.email||'';
+  // Exibe caixa de selecionado
+  const sel = document.getElementById('pc-cli-sel');
+  document.getElementById('pc-cli-nm').textContent = c.nome||'';
+  document.getElementById('pc-cli-sb').textContent = [fmtDoc(c.cnpj), c.responsavel, c.email].filter(Boolean).join(' · ');
+  sel.style.display='flex';
+}
+
+function pcLimparCliente() {
+  document.getElementById('pc-cnpj').value='';
+  document.getElementById('pc-empresa').value='';
+  document.getElementById('pc-cliente').value='';
+  document.getElementById('pc-email').value='';
+  document.getElementById('pc-busca').value='';
+  document.getElementById('pc-cli-sel').style.display='none';
+}
+
+// ─ Planilha de custo ─────────────────────────────────────────────────────────
 function pcAddLinha() {
   const tbody = document.getElementById('pc-itens-body');
   const idx = tbody.rows.length + 1;
   const tr = document.createElement('tr');
   tr.innerHTML = `
-    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="${idx}" style="width:40px;text-align:center"></td>
-    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="Referência" style="width:100px"></td>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="${idx}" style="width:38px;text-align:center"></td>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="Referência" style="width:98px"></td>
     <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="Descrição do serviço" style="width:100%"></td>
-    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="R$ 0,00" style="width:100px;text-align:right"></td>
-    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="R$ 0,00" style="width:100px;text-align:right"></td>
-    <td style="padding:4px 6px;border-bottom:1px solid var(--borda);text-align:center"><button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);padding:2px 7px" onclick="this.closest('tr').remove()">✕</button></td>`;
+    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="number" min="1" value="1" style="width:52px;text-align:center" oninput="pcRecalcRow(this.closest('tr'))"></td>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="0,00" style="width:100px;text-align:right" oninput="pcRecalcRow(this.closest('tr'))"></td>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" readonly tabindex="-1" placeholder="0,00" style="width:100px;text-align:right;background:var(--azul-cc);cursor:default"></td>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--borda);text-align:center"><button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);padding:2px 7px" onclick="this.closest('tr').remove();pcRecalcTotal()">✕</button></td>`;
   tbody.appendChild(tr);
 }
 
-function pcGetItens() {
+function _pcParseNum(v) {
+  // Aceita "1.234,56" ou "1234.56" ou "1234,56"
+  if (!v) return NaN;
+  const s = v.replace(/[^\d,.]/g,'').replace('.','').replace(',','.');
+  return parseFloat(s);
+}
+
+function _pcFmtBRL(n) {
+  if (isNaN(n)) return '';
+  return n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+function pcRecalcRow(tr) {
+  const inputs = tr.querySelectorAll('input');
+  // índices: 0=cod, 1=ref, 2=funcao, 3=qtd, 4=valor_unit, 5=subtotal(readonly)
+  const qtd = parseFloat(inputs[3]?.value) || 0;
+  const vu = _pcParseNum(inputs[4]?.value);
+  if (!isNaN(vu) && qtd > 0 && inputs[5]) {
+    inputs[5].value = _pcFmtBRL(qtd * vu);
+  } else if (inputs[5] && isNaN(vu)) {
+    inputs[5].value = '';
+  }
+  pcRecalcTotal();
+}
+
+function pcRecalcTotal() {
   const rows = document.querySelectorAll('#pc-itens-body tr');
-  return Array.from(rows).map(tr => {
+  let total = 0; let hasAny = false;
+  rows.forEach(tr => {
+    const inputs = tr.querySelectorAll('input');
+    const v = _pcParseNum(inputs[5]?.value);
+    if (!isNaN(v)) { total += v; hasAny = true; }
+  });
+  const td = document.getElementById('pc-total-row');
+  if (td) td.textContent = hasAny ? 'R$ ' + _pcFmtBRL(total) : '—';
+}
+
+function pcGetItens() {
+  return Array.from(document.querySelectorAll('#pc-itens-body tr')).map((tr, i) => {
     const inputs = tr.querySelectorAll('input');
     return {
-      cod: inputs[0]?.value || '',
+      cod: inputs[0]?.value || String(i+1),
       referencia: inputs[1]?.value || '',
       funcao_item: inputs[2]?.value || '',
-      valor_unit: inputs[3]?.value || '',
-      subtotal: inputs[4]?.value || '',
+      qtd: inputs[3]?.value || '1',
+      valor_unit: inputs[4]?.value || '',
+      subtotal: inputs[5]?.value || '',
     };
   }).filter(it => it.funcao_item || it.referencia);
 }
 
+// ─ Prévia HTML ───────────────────────────────────────────────────────────────
 function previaProposta() {
   const empresa = document.getElementById('pc-empresa').value.trim();
+  if (!empresa) { alert('Informe o nome da empresa destinatária.'); return; }
   const cnpj = document.getElementById('pc-cnpj').value.trim();
   const funcao = document.getElementById('pc-funcao').value.trim();
   const dataVal = document.getElementById('pc-data').value;
   const cliente = document.getElementById('pc-cliente').value.trim();
   const email = document.getElementById('pc-email').value.trim();
   const itens = pcGetItens();
-  if (!empresa) { alert('Informe o nome da empresa destinatária.'); return; }
-
-  const dataFmt = dataVal ? new Date(dataVal + 'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
-  const refNum = 'PC-' + new Date().toISOString().replace(/[-:T.Z]/g,'').slice(0,12);
+  const dataFmt = dataVal ? new Date(dataVal+'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
+  const refNum = 'PC-'+new Date().toISOString().replace(/[-:T.Z]/g,'').slice(0,12);
   const anoRef = new Date().getFullYear();
 
-  const tabelaItens = itens.length ? itens.map((it,i) => `
+  const totalTxt = document.getElementById('pc-total-row')?.textContent || '—';
+
+  const tabelaItens = itens.length ? itens.map((it,i)=>`
     <tr style="background:${i%2===0?'#fff':'#f8f9fa'}">
-      <td style="padding:5px 8px;border:1px solid #ddd">${_escHtml(it.cod||String(i+1))}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd">${_escHtml(it.cod)}</td>
       <td style="padding:5px 8px;border:1px solid #ddd">${_escHtml(it.referencia)}</td>
       <td style="padding:5px 8px;border:1px solid #ddd">${_escHtml(it.funcao_item)}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;text-align:center">${_escHtml(it.qtd||'1')}</td>
       <td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${_escHtml(it.valor_unit)}</td>
       <td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${_escHtml(it.subtotal)}</td>
     </tr>`).join('') :
-    `<tr><td colspan="5" style="padding:8px;text-align:center;color:#888;border:1px solid #ddd">Nenhum item informado</td></tr>`;
-
-  const totalVal = itens.find(it => it.subtotal)?.subtotal || '—';
+    `<tr><td colspan="6" style="padding:8px;text-align:center;color:#888;border:1px solid #ddd">Nenhum item</td></tr>`;
 
   const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
 <title>Prévia — Proposta Comercial — ${_escHtml(empresa)}</title>
@@ -9114,22 +9245,18 @@ function previaProposta() {
 body{font-family:Arial,sans-serif;font-size:10.5pt;color:#222;background:#f0f4f8;padding:20px}
 .page{background:#fff;max-width:210mm;margin:0 auto;padding:16mm 14mm;box-shadow:0 2px 16px rgba(0,0,0,.15)}
 .hdr{background:#1A3A5C;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
-.hdr h1{font-size:13pt;font-weight:700}
-.hdr .ref{font-size:8pt;text-align:right;opacity:.85}
+.hdr h1{font-size:13pt;font-weight:700}.hdr .ref{font-size:8pt;text-align:right;opacity:.85}
 .dest-grid{display:grid;grid-template-columns:1fr 1fr 1fr;border:1px solid #ccc;margin-bottom:14px}
 .dest-cell{padding:6px 10px;border-right:1px solid #ccc}.dest-cell:last-child{border-right:none}
 .dest-lbl{font-size:8pt;color:#666;display:block}.dest-val{font-weight:700;font-size:10.5pt}
-.para-bloco{margin-bottom:14px;font-size:10pt;line-height:1.6}
 .sec-title{font-size:13pt;font-weight:700;color:#1A3A5C;border-bottom:2px solid #1A3A5C;padding-bottom:4px;margin:20px 0 10px}
 .body-text{font-size:10pt;line-height:1.7;text-align:justify;margin-bottom:8px}
 .bullet{font-size:10pt;padding-left:16px;margin-bottom:4px;line-height:1.6}
 table.custo{width:100%;border-collapse:collapse;font-size:9.5pt;margin-bottom:14px}
 table.custo th{background:#1A3A5C;color:#fff;padding:6px 8px;text-align:left}
-table.custo th:last-child,table.custo th:nth-child(4){text-align:right}
 table.custo .total-row td{font-weight:700;background:#f0f4f8;border-top:2px solid #1A3A5C}
 .assinaturas{display:flex;gap:24px;margin-top:28px}
-.ass-bloco{flex:1;text-align:center}
-.ass-linha{border-top:1px solid #333;margin:28px auto 4px;width:90%}
+.ass-bloco{flex:1;text-align:center}.ass-linha{border-top:1px solid #333;margin:28px auto 4px;width:90%}
 .ass-nome{font-size:8.5pt;color:#555}
 .rodape{text-align:center;font-size:7.5pt;color:#aaa;margin-top:16px;border-top:1px solid #eee;padding-top:6px}
 .no-print{text-align:center;margin-bottom:16px}
@@ -9142,29 +9269,17 @@ table.custo .total-row td{font-weight:700;background:#f0f4f8;border-top:2px soli
     <div><h1>RM CONSERVAÇÃO E SERVIÇOS</h1><div style="font-size:8pt;opacity:.8">CNPJ: 61.337.803/0001-20</div></div>
     <div class="ref">Ref.: ${_escHtml(refNum)}<br>Data: ${_escHtml(dataFmt)}</div>
   </div>
-
   <div class="dest-grid">
     <div class="dest-cell"><span class="dest-lbl">EMPRESA DESTINATÁRIA</span><span class="dest-val">${_escHtml(empresa)}</span></div>
     <div class="dest-cell"><span class="dest-lbl">CNPJ</span><span class="dest-val">${_escHtml(cnpj||'—')}</span></div>
     <div class="dest-cell"><span class="dest-lbl">SERVIÇO / FUNÇÃO</span><span class="dest-val">${_escHtml(funcao||'—')}</span></div>
   </div>
-
-  <div class="para-bloco">
-    <strong>Data:</strong> ${_escHtml(dataFmt)}<br>
-    Para,<br>
-    <strong>${_escHtml(cliente||'—')}</strong><br>
-    <span style="font-size:9pt;color:#666">${_escHtml(email||'')}</span>
-  </div>
-
-  <p class="body-text">É com satisfação que apresentamos a V. Sa. nossa proposta comercial para a prestação de em
-  <strong>${_escHtml(funcao||'nossos serviços')}</strong> para empresa <strong>${_escHtml(empresa)}</strong> resposta ao processo a sua
-  necessidade. Nossa equipe avaliou cuidadosamente suas necessidades e considerou várias opções para apresentar
-  a solução ideal para este projeto; contudo, sinta-se à vontade para revisar a proposta e indicar eventuais ajustes.</p>
+  <p class="body-text"><strong>Data:</strong> ${_escHtml(dataFmt)}</p>
+  <p class="body-text">Para,<br><strong>${_escHtml(cliente||'—')}</strong><br><span style="font-size:9pt;color:#666">${_escHtml(email||'')}</span></p>
+  <br>
+  <p class="body-text">É com satisfação que apresentamos a V. Sa. nossa proposta comercial para a prestação de em <strong>${_escHtml(funcao||'nossos serviços')}</strong> para empresa <strong>${_escHtml(empresa)}</strong> resposta ao processo a sua necessidade. Nossa equipe avaliou cuidadosamente suas necessidades e considerou várias opções para apresentar a solução ideal para este projeto; contudo, sinta-se à vontade para revisar a proposta e indicar eventuais ajustes.</p>
   <p class="body-text">Por favor, entre em contato conosco caso seja necessário algum esclarecimento ou informações adicionais.</p>
-
-  <p class="body-text" style="margin-top:14px">Atenciosamente,</p>
-  <p style="font-weight:700;font-size:10.5pt">Roberio Figueiredo</p>
-  <p style="font-size:9pt;color:#555">Administrador · Tel. (12) 3042-1799 · Cel. (12) 99775-2283<br>roberio.figueiredo@rmfacilities.com.br</p>
+  <p class="body-text" style="margin-top:14px">Atenciosamente,<br><strong>Roberio Figueiredo</strong><br><span style="font-size:9pt;color:#555">Administrador · Tel. (12) 3042-1799 · Cel. (12) 99775-2283<br>roberio.figueiredo@rmfacilities.com.br</span></p>
 
   <div class="sec-title">Apresentação Institucional</div>
   <p class="body-text">RM FACILITIES LTDA - Somos uma empresa pronta para oferecer soluções integradas de tecnologia e facility services. Estamos buscando sempre atender nossos clientes parceiros, cumprindo os mais rígidos critérios de compliance. Compreendemos a demanda de cada cliente para desenhar a proposta mais eficiente.</p>
@@ -9175,9 +9290,9 @@ table.custo .total-row td{font-weight:700;background:#f0f4f8;border-top:2px soli
   <p style="font-weight:700;font-size:11pt;margin-bottom:6px">Escopo Operacional</p>
   <p style="font-weight:700;font-size:10pt;margin-bottom:6px">Planilha de custo</p>
   <table class="custo">
-    <thead><tr><th>Cod.</th><th>Referência</th><th>Função</th><th>Valor unit.</th><th>Subtotal</th></tr></thead>
+    <thead><tr><th>Cod.</th><th>Referência</th><th>Função</th><th style="text-align:center">Qtd</th><th style="text-align:right">Valor unit.</th><th style="text-align:right">Subtotal</th></tr></thead>
     <tbody>${tabelaItens}</tbody>
-    <tfoot><tr class="total-row"><td colspan="4" style="padding:5px 8px;border:1px solid #ddd">Total Mensal:</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${_escHtml(totalVal)}</td></tr></tfoot>
+    <tfoot><tr class="total-row"><td colspan="5" style="padding:5px 8px;border:1px solid #ddd;text-align:right">Total Mensal:</td><td style="padding:5px 8px;border:1px solid #ddd;text-align:right">${_escHtml(totalTxt)}</td></tr></tfoot>
   </table>
 
   <div class="sec-title">Incluso na Proposta</div>
@@ -9210,64 +9325,54 @@ table.custo .total-row td{font-weight:700;background:#f0f4f8;border-top:2px soli
   ${['Folha de pagamento analítica;','GRF – Guia de Pagamento de Fundo de Garantia;','Analítico GRF – Relatório Analítico de Fundo de Garantia;','GPS – Guia de Pagamento da Previdência Social e de Terceiros;','Analítico GPS – Relatório Analítico da Guia da Previdência Social;','Conectividade Social – Protocolo de Envio;','RET – Relação de Empregados por Tomador;','CAGED – Cadastro Geral de Empregados e Desempregados;'].map(t=>`<div class="bullet">• ${_escHtml(t)}</div>`).join('')}
   <p class="body-text" style="margin-top:8px">Caso a <strong>${_escHtml(empresa)}</strong> necessite de documentação extra esta deverá ser solicitada previamente à celebração contratual.</p>
   <p class="body-text"><strong>A presente proposta tem validade de 30 dias.</strong></p>
-
   <div style="text-align:right;font-size:9pt;color:#555;margin-top:20px">${_escHtml(dataFmt)}</div>
-
   <div class="assinaturas">
     <div class="ass-bloco"><div class="ass-linha"></div><div class="ass-nome">RM FACILITIES LTDA<br>Representante Legal</div></div>
     <div class="ass-bloco"><div class="ass-linha"></div><div class="ass-nome">${_escHtml(empresa)}<br>Representante Legal</div></div>
   </div>
   <div class="rodape">Proposta gerada em ${_escHtml(dataFmt)} · RM FACILITIES LTDA — Comercial</div>
 </div></body></html>`;
-
-  const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+  const blob = new Blob([html],{type:'text/html;charset=utf-8'});
   const url = URL.createObjectURL(blob);
-  window.open(url, '_blank');
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  window.open(url,'_blank');
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
 }
 
+// ─ Gerar PDF via servidor ────────────────────────────────────────────────────
 async function gerarProposta() {
   const empresa = document.getElementById('pc-empresa').value.trim();
   if (!empresa) { alert('Informe o nome da empresa destinatária.'); return; }
-  const cnpj = document.getElementById('pc-cnpj').value.trim();
-  const funcao = document.getElementById('pc-funcao').value.trim();
+  const cnpj    = document.getElementById('pc-cnpj').value.trim();
+  const funcao  = document.getElementById('pc-funcao').value.trim();
   const dataVal = document.getElementById('pc-data').value;
-  const dataFmt = dataVal ? new Date(dataVal + 'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
+  const dataFmt = dataVal ? new Date(dataVal+'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
   const cliente = document.getElementById('pc-cliente').value.trim();
-  const email = document.getElementById('pc-email').value.trim();
-  const itens = pcGetItens();
-
+  const email   = document.getElementById('pc-email').value.trim();
+  const itens   = pcGetItens();
   const btn = document.getElementById('pc-btn-gerar');
   const res = document.getElementById('pc-resultado');
-  btn.disabled = true; btn.textContent = '⏳ Gerando...';
-  res.style.display = 'none';
-
+  btn.disabled=true; btn.textContent='⏳ Gerando...';
+  res.style.display='none';
   try {
-    const resp = await fetch('/api/proposta-comercial/gerar', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({empresa, cnpj, funcao, data: dataFmt, cliente, email, itens})
+    const resp = await fetch('/api/proposta-comercial/gerar',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({empresa,cnpj,funcao,data:dataFmt,cliente,email,itens})
     });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({erro: resp.statusText}));
-      throw new Error(err.erro || resp.statusText);
-    }
+    if (!resp.ok) { const err=await resp.json().catch(()=>({erro:resp.statusText})); throw new Error(err.erro||resp.statusText); }
     const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
+    const url  = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    const nome = `Proposta_Comercial_${empresa.replace(/\s+/g,'_').slice(0,30)}.pdf`;
-    a.download = nome;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-    res.innerHTML = `<div style="background:var(--verde-cl);border:1px solid var(--verde);border-radius:8px;padding:10px 14px;color:var(--verde)">✅ PDF gerado e baixado: <strong>${esc(nome)}</strong></div>`;
+    a.href=url; a.download=`Proposta_Comercial_${empresa.replace(/\s+/g,'_').slice(0,30)}.pdf`;
+    a.click(); setTimeout(()=>URL.revokeObjectURL(url),10000);
+    res.innerHTML=`<div style="background:var(--verde-cl);border:1px solid var(--verde);border-radius:8px;padding:10px 14px;color:var(--verde)">✅ PDF gerado e baixado com sucesso!</div>`;
   } catch(e) {
-    res.innerHTML = `<div style="background:var(--verm-cl);border:1px solid var(--verm);border-radius:8px;padding:10px 14px;color:var(--verm)">❌ ${esc(String(e))}</div>`;
+    res.innerHTML=`<div style="background:var(--verm-cl);border:1px solid var(--verm);border-radius:8px;padding:10px 14px;color:var(--verm)">❌ ${esc(String(e))}</div>`;
   }
-  res.style.display = 'block';
-  btn.disabled = false; btn.textContent = '📄 Gerar PDF';
+  res.style.display='block';
+  btn.disabled=false; btn.textContent='📄 Gerar PDF';
 }
 // ── FIM PROPOSTA COMERCIAL ────────────────────────────────────────────────────
+
 
 function rhExportSelectedPostos(){
   const el=document.getElementById('rh-exp-postos');
