@@ -2206,7 +2206,7 @@ def _sha256_file(path):
 def _otp_new_code():
     return ''.join(secrets.choice('0123456789') for _ in range(6))
 
-def _send_signature_otp(codigo,nome_dest='',telefone='',email='',contexto='assinatura'):
+def _send_signature_otp(codigo,nome_dest='',telefone='',email='',contexto='assinatura',funcionario_id=None):
     nome=(nome_dest or 'assinante').strip()
     if contexto=='medicao':
         assunto='Código de confirmação de assinatura da medição'
@@ -2236,6 +2236,15 @@ def _send_signature_otp(codigo,nome_dest='',telefone='',email='',contexto='assin
         try:
             smtp_send_text((email or '').strip(),assunto,msg)
             return {'canal':'email','destino':_mask_email(email)}
+        except Exception as ex:
+            ultimo_erro=str(ex)
+    # Web #3: fallback via push notification no app (quando sem telefone/email)
+    if funcionario_id:
+        try:
+            push_msg=f'RM Facilities - Código OTP: {codigo}\nValidade: 10 minutos. Não compartilhe.'
+            ok=_push_notify_funcionario(funcionario_id,f'Código de {titulo}',push_msg,data={'tipo':'otp_assinatura','otp_code':codigo})
+            if ok:
+                return {'canal':'push','destino':'aplicativo móvel'}
         except Exception as ex:
             ultimo_erro=str(ex)
     raise ValueError(ultimo_erro or 'Não foi possível enviar o código OTP para confirmação da assinatura.')
@@ -7801,12 +7810,12 @@ def api_app_funcionario_stepup_solicitar():
     a=db.session.get(FuncionarioArquivo, arquivo_id)
     if not a or a.funcionario_id!=f.id:
         return jsonify({'erro':'Acesso negado'}),403
-    if (a.ass_status or '').strip().lower()=='concluida':
+    if (a.ass_status or '').strip().lower() in ('assinado','concluida'):
         return jsonify({'erro':'Documento ja assinado.'}),400
 
     codigo=_otp_new_code()
     f.app_stepup_hash=token_hash(codigo)
-    f.app_stepup_expira_em=utcnow()+timedelta(minutes=5)
+    f.app_stepup_expira_em=utcnow()+timedelta(minutes=10)
     f.app_stepup_tentativas=0
     f.app_stepup_arquivo_id=arquivo_id
 
@@ -7838,7 +7847,7 @@ def api_app_funcionario_stepup_solicitar():
     canal_label={'whatsapp':'WhatsApp','sms':'SMS','email':'e-mail'}
     label=canal_label.get(envio.get('canal',''),'canal')
     msg_ok=f'Código enviado via {label}.'
-    return jsonify({'ok':True,'mensagem':msg_ok,'destino':envio.get('destino'),'canal':envio.get('canal')})
+    return jsonify({'ok':True,'mensagem':msg_ok,'destino':envio.get('destino'),'canal':envio.get('canal'),'expira_em':f.app_stepup_expira_em.isoformat()})
 
 @app.route('/api/app/funcionario/refresh',methods=['POST'])
 def api_app_funcionario_refresh():
@@ -8477,6 +8486,10 @@ def api_app_funcionario_assinar_arquivo(id):
     stepup_biometria=bool(d.get('stepup_biometria'))
     ident=norm_cpf(getattr(f,'cpf',None)) or str(f.id)
 
+    # App #1: biometria exige device registrado (push token confirma dispositivo ativo)
+    if stepup_biometria and not (f.app_push_token or '').strip():
+        return jsonify({'erro':'Autenticação biométrica não disponível para este dispositivo. Use código OTP.'}),403
+
     if not stepup_biometria:
         if auth_blocked('app_stepup_confirm',ident,(request.remote_addr or '')):
             return jsonify({'erro':'Muitas tentativas. Aguarde alguns minutos.'}),429
@@ -8539,8 +8552,75 @@ def api_app_funcionario_assinar_arquivo(id):
         db.session.commit()
     validacao_link=f"{url_root}/doc/validar/{a.ass_codigo}" if a.ass_codigo else ''
     signed_pdf_link=f"{url_root}/doc/assinado/{a.ass_codigo}" if a.ass_codigo else ''
+    # App #3: notificação push pós-assinatura
+    try:
+        _push_notify_funcionario(f.id,'Documento assinado ✔',
+            f'{a.nome_arquivo or "Documento"} foi assinado com sucesso.',
+            {'tipo':'documento_assinado','arquivo_id':str(a.id),'validacao_link':validacao_link})
+    except Exception:
+        pass
     return jsonify({'ok':True,'mensagem':'Documento assinado com sucesso.','item':a.to_dict(),
                     'validacao_link':validacao_link,'signed_pdf_link':signed_pdf_link})
+
+@app.route('/api/app/funcionario/arquivos/assinar-lote',methods=['POST'])
+@app_func_required
+def api_app_funcionario_assinar_lote():
+    """App #2: Assina múltiplos documentos com um único código OTP de step-up."""
+    f=g.app_funcionario
+    d=request.json or {}
+    stepup_otp=only_digits(d.get('stepup_otp') or '')
+    ids_raw=d.get('ids') or []
+    ident=norm_cpf(getattr(f,'cpf',None)) or str(f.id)
+    if not stepup_otp:
+        return jsonify({'erro':'stepup_otp obrigatorio para assinatura em lote.'}),400
+    if not ids_raw or not isinstance(ids_raw,list):
+        return jsonify({'erro':'ids deve ser uma lista de IDs de documentos.'}),400
+    if len(ids_raw)>50:
+        return jsonify({'erro':'Limite de 50 documentos por lote.'}),400
+    if auth_blocked('app_stepup_confirm',ident,(request.remote_addr or '')):
+        return jsonify({'erro':'Muitas tentativas. Aguarde alguns minutos.'}),429
+    if not (f.app_stepup_hash or '').strip() or not f.app_stepup_expira_em:
+        return jsonify({'erro':'Solicite um codigo de confirmacao antes de assinar.'}),400
+    if f.app_stepup_expira_em<utcnow():
+        return jsonify({'erro':'Codigo expirado. Solicite um novo codigo de confirmacao.'}),400
+    if not hmac.compare_digest(token_hash(stepup_otp),str(f.app_stepup_hash or '')):
+        f.app_stepup_tentativas=int(f.app_stepup_tentativas or 0)+1
+        db.session.commit()
+        reg_auth_attempt('app_stepup_confirm',ident,False,'codigo_invalido_lote')
+        return jsonify({'erro':'Codigo de confirmacao invalido.'}),401
+    reg_auth_attempt('app_stepup_confirm',ident,True,'ok_lote')
+    f.app_stepup_hash=None; f.app_stepup_expira_em=None; f.app_stepup_tentativas=0; f.app_stepup_arquivo_id=None
+    url_root=request.url_root.rstrip('/')
+    assinados=[]; erros=[]
+    for raw_id in ids_raw:
+        try: doc_id=int(raw_id)
+        except Exception: erros.append({'id':raw_id,'erro':'ID invalido'}); continue
+        a=db.session.get(FuncionarioArquivo, doc_id)
+        if not a or a.funcionario_id!=f.id:
+            erros.append({'id':doc_id,'erro':'Acesso negado ou documento nao encontrado'}); continue
+        if (a.ass_status or '').strip().lower() in ('assinado','concluida'):
+            erros.append({'id':doc_id,'erro':'Documento ja assinado'}); continue
+        a.ass_status='assinado'; a.ass_nome=(f.nome or '').strip()
+        a.ass_cpf=norm_cpf(f.cpf); a.ass_cargo=(f.cargo or '').strip()
+        a.ass_ip=(request.remote_addr or '')[:60]; a.ass_em=utcnow()
+        a.ass_token=''; a.ass_expira_em=None; a.ass_otp_hash=''; a.ass_otp_expira_em=None; a.ass_otp_tentativas=0
+        a.ass_codigo=(a.ass_codigo or secrets.token_urlsafe(16))
+        db.session.commit()
+        audit_event('funcionario_app_arquivo_assinado','funcionario',f.id,'arquivo',a.id,True,
+            {'arquivo_id':a.id,'categoria':a.categoria,'competencia':a.competencia,'origem':'app_lote','stepup':'otp'})
+        copia=_salvar_pdf_assinado_em_arquivos_funcionario(a,f,url_root)
+        if copia and copia.get('ok') and copia.get('abs_path'):
+            rs_crypto=_try_sign_pdf_file_crypto(copia.get('abs_path'),empresa_id=(f.empresa_id if f else None),usuario_id=None)
+            a.ass_doc_hash=_sha256_file(copia.get('abs_path')); a.ass_crypto_ok=bool(rs_crypto.get('ok')); db.session.commit()
+        validacao_link=f"{url_root}/doc/validar/{a.ass_codigo}"
+        assinados.append({'id':a.id,'nome_arquivo':a.nome_arquivo,'validacao_link':validacao_link,'signed_pdf_link':f"{url_root}/doc/assinado/{a.ass_codigo}"})
+    if assinados:
+        try:
+            _push_notify_funcionario(f.id,f'{len(assinados)} documento(s) assinado(s) ✔',
+                'Assinatura em lote concluída com sucesso.',
+                {'tipo':'assinatura_lote','total':str(len(assinados))})
+        except Exception: pass
+    return jsonify({'ok':True,'assinados':assinados,'erros':erros,'total_assinados':len(assinados),'total_erros':len(erros)})
 
 @app.route('/api/app/funcionario/pendentes-assinatura')
 @app_func_required
@@ -10210,6 +10290,8 @@ def api_rh_assinaturas_painel():
             'prazo_fmt':(a.ass_prazo_em.strftime('%d/%m/%Y') if a.ass_prazo_em else ''),
             'vencido':vencido,
             'lembretes':a.ass_lembretes_enviados or 0,
+            'aberto_em':(a.ass_aberto_em.isoformat() if a.ass_aberto_em else None),
+            'aberto_fmt':(a.ass_aberto_em.strftime('%d/%m/%Y %H:%M') if a.ass_aberto_em else ''),
         })
 
     return jsonify({'ok':True,'total':len(itens),'totais':totais,'itens':itens})
@@ -10319,8 +10401,9 @@ def func_doc_assinar_publica(token):
     a=FuncionarioArquivo.query.filter_by(ass_token=token).first()
     if not a:
         return render_template('doc_assinatura.html',ok=False,mensagem='Link de assinatura inválido.',arquivo=None,funcionario=None)
-    if (a.ass_status or '')=='assinado':
-        return render_template('doc_assinatura.html',ok=False,mensagem='Este documento já foi assinado.',arquivo=a,funcionario=db.session.get(Funcionario, a.funcionario_id))
+    if (a.ass_status or '') in ('assinado','concluida'):
+        comprovante_url=f"/doc/validar/{a.ass_codigo}" if (a.ass_codigo or '').strip() else ''
+        return render_template('doc_assinatura.html',ok=False,mensagem='Este documento já foi assinado.',arquivo=a,funcionario=db.session.get(Funcionario, a.funcionario_id),comprovante_url=comprovante_url)
     if a.ass_expira_em and a.ass_expira_em<utcnow():
         a.ass_status='expirado'; _db_commit_retry('doc_assinar_expirado', swallow_locked=True)
         return render_template('doc_assinatura.html',ok=False,mensagem='Link expirado. Solicite um novo link ao RH.',arquivo=a,funcionario=db.session.get(Funcionario, a.funcionario_id))
@@ -10354,14 +10437,14 @@ def api_func_doc_assinatura_enviar_otp(token):
     f=db.session.get(Funcionario, a.funcionario_id)
     tel=(f.telefone if f else '') or ''
     email=(f.email if f else '') or ''
-    if not (wa_norm_number(tel) or (email or '').strip()):
-        return _assinatura_json_erro('Nenhum telefone ou e-mail cadastrado para envio do OTP.',400)
+    if not (wa_norm_number(tel) or (email or '').strip() or (f and getattr(f,'app_push_token',None))):
+        return _assinatura_json_erro('Nenhum telefone, e-mail ou dispositivo móvel cadastrado para envio do OTP.',400)
     codigo=_otp_new_code()
     a.ass_otp_hash=token_hash(codigo)
     a.ass_otp_expira_em=utcnow()+timedelta(minutes=10)
     a.ass_otp_tentativas=0
     try:
-        envio=_send_signature_otp(codigo,nome_dest=(f.nome if f else ''),telefone=tel,email=email,contexto='documento')
+        envio=_send_signature_otp(codigo,nome_dest=(f.nome if f else ''),telefone=tel,email=email,contexto='documento',funcionario_id=(f.id if f else None))
         db.session.commit()
         return _assinatura_json_ok(
             mensagem=f"Código OTP enviado via {envio.get('canal','canal')} para {envio.get('destino','destino mascarado')}",
@@ -10415,7 +10498,7 @@ def api_func_doc_assinatura_confirmar(token):
         a.ass_otp_expira_em=utcnow()+timedelta(minutes=10)
         a.ass_otp_tentativas=0
         try:
-            envio=_send_signature_otp(codigo,nome_dest=nome,telefone=(f.telefone if f else ''),email=(f.email if f else ''),contexto='documento')
+            envio=_send_signature_otp(codigo,nome_dest=nome,telefone=(f.telefone if f else ''),email=(f.email if f else ''),contexto='documento',funcionario_id=(f.id if f else None))
         except Exception as ex:
             db.session.rollback()
             return _assinatura_json_erro(f'Falha ao enviar OTP de confirmação: {str(ex)}',400)
