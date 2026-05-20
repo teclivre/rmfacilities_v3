@@ -2078,7 +2078,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               <div id="adv-func-sugestoes" style="position:relative;z-index:200"></div>
             </div>
           </div>
-          <div id="adv-func-selecionado" style="display:none;background:#fff3f3;border:1px solid #f5c6cb;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px">
+          <div id="adv-func-selecionado" style="display:none;background:var(--azul-cc);border:1px solid var(--azul-borda);border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px">
             <strong>Colaborador:</strong> <span id="adv-func-nome-sel"></span> &nbsp;|&nbsp;
             <strong>Cargo:</strong> <span id="adv-func-cargo-sel"></span>
             <button class="btn b-sm" onclick="advLimparFunc()" style="float:right;background:transparent;color:var(--text-muted);font-size:12px;padding:0 6px">✕ Limpar</button>
@@ -2138,15 +2138,15 @@ document.addEventListener('DOMContentLoaded',()=>{
               <div id="ap-func-sugestoes" style="position:relative;z-index:200"></div>
             </div>
           </div>
-          <div id="ap-func-selecionado" style="display:none;background:#e8f4f8;border:1px solid #90cfe0;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px">
+          <div id="ap-func-selecionado" style="display:none;background:var(--azul-cc);border:1px solid var(--azul-borda);border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px">
             <strong>Colaborador:</strong> <span id="ap-func-nome-sel"></span> &nbsp;|&nbsp;
             <strong>Cargo:</strong> <span id="ap-func-cargo-sel"></span>
             <button class="btn b-sm" onclick="apLimparFunc()" style="float:right;background:transparent;color:var(--text-muted);font-size:12px;padding:0 6px">✕ Limpar</button>
-            <div id="ap-calc-aviso" style="display:none;margin-top:10px;padding:8px 12px;background:#fff;border-radius:6px;border:1px solid #90cfe0;font-size:12.5px">
+            <div id="ap-calc-aviso" style="display:none;margin-top:10px;padding:8px 12px;background:var(--bg-card);border-radius:6px;border:1px solid var(--azul-borda);font-size:12.5px">
               📊 <strong>Cálculo CLT — Lei 12.506/2011:</strong><br>
               Admissão: <strong><span id="ap-calc-adm">—</span></strong> &nbsp;|&nbsp;
               Tempo de serviço: <strong><span id="ap-calc-anos">—</span></strong> &nbsp;|&nbsp;
-              Prazo: <strong style="color:#1A3A5C"><span id="ap-calc-dias">—</span> dias</strong>
+              Prazo: <strong style="color:var(--azul)"><span id="ap-calc-dias">—</span> dias</strong>
               (30 base + <span id="ap-calc-extras">0</span> proporcionais, máx. 90 dias)
             </div>
           </div>
