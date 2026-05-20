@@ -8733,9 +8733,10 @@ def _gerar_aviso_previo_pdf(funcionario, tipo='empresa_trabalhado', empresa=None
             'na data acordada, sem necessidade de aviso prévio, exceto se houver cláusula assecuratória recíproca (art. 481 CLT).'
         )
     else:
+        texto_base_legal = (
             '<b>Base legal:</b> Art. 7º, XXI da Constituição Federal de 1988; Arts. 487 a 491 da Consolidação das '
-        'Leis do Trabalho (CLT); Lei nº 12.506, de 11 de outubro de 2011 — aviso prévio proporcional ao tempo de serviço: '
-        '30 dias + 3 dias por ano completo, limitado a 90 dias no total.'
+            'Leis do Trabalho (CLT); Lei nº 12.506, de 11 de outubro de 2011 — aviso prévio proporcional ao tempo de serviço: '
+            '30 dias + 3 dias por ano completo, limitado a 90 dias no total.'
         )
 
     ass_data = [
