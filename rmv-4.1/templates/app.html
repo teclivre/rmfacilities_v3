@@ -578,6 +578,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       <button type="button" class="mobile-nav-btn" data-nav="beneficios" onclick="navFromMobile('beneficios')">Benefícios</button>
       <button type="button" class="mobile-nav-btn" data-nav="sst" onclick="navFromMobile('sst')">SST</button>
       <button type="button" class="mobile-nav-btn" data-nav="assinaturas" onclick="navFromMobile('assinaturas')">Assinaturas</button>
+      <button type="button" class="mobile-nav-btn" data-nav="documentos" onclick="navFromMobile('documentos')">📄 Documentos</button>
       <button type="button" class="mobile-nav-btn" data-nav="empresas" onclick="navFromMobile('empresas')">Empresas</button>
       <button type="button" class="mobile-nav-btn" data-nav="usuarios" onclick="navFromMobile('usuarios')">Usuários</button>
       <button type="button" class="mobile-nav-btn" data-nav="config" onclick="navFromMobile('config')">Configurações</button>
@@ -630,6 +631,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <a class="nav-item lv2" data-nav="pagamento-salario" onclick="nav('pagamento-salario',this)"><span class="nav-label">Pagamento de Salário</span></a>
           <a class="nav-item lv2" onclick="nav('sst',this)"><span class="nav-label">Seguranca do Trabalho</span></a>
           <a class="nav-item lv2" onclick="nav('assinaturas',this)"><span class="nav-label">Assinaturas</span></a>
+          <a class="nav-item lv2" onclick="nav('documentos',this)"><span class="nav-label">📄 Documentos</span></a>
         </div>
       </div>
 
@@ -1942,10 +1944,9 @@ document.addEventListener('DOMContentLoaded',()=>{
                 <option value="link">🔗 Link (copiar)</option>
               </select>
             </div>
-            <div>
-              <button class="btn b-az" onclick="gerarRequisicaoVT()" id="vt-btn-gerar">
-                🚌 Gerar Requisição VT
-              </button>
+            <div style="display:flex;gap:8px">
+              <button class="btn b-gh" onclick="previaRequisicaoVT()" id="vt-btn-previa">👁️ Prévia</button>
+              <button class="btn b-az" onclick="gerarRequisicaoVT()" id="vt-btn-gerar">🚌 Gerar Requisição VT</button>
             </div>
           </div>
 
@@ -2542,6 +2543,156 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="f" style="margin-top:10px"><label>Arquivo</label><input type="file" id="sst-arq" onchange="autoPreencherCompetencia(this,'sst-comp')"></div>
         <div class="brow" style="justify-content:flex-start"><button class="btn b-az" onclick="uploadSSTArquivo()">Anexar ao funcionário</button></div>
       </div>
+    </div>
+
+    <!-- ══ DOCUMENTOS ══ -->
+    <div id="pg-documentos" class="pg">
+      <div class="st">
+        <span class="st-titulo">📄 Documentos</span>
+        <span class="st-desc">Gere e envie documentos para colaboradores e clientes</span>
+      </div>
+
+      <!-- Subabas -->
+      <div class="subaba-blocos" id="docs-subabas" style="margin-bottom:18px;flex-wrap:wrap">
+        <button type="button" id="docs-subtab-funcionarios" class="subaba-bloco" onclick="docsSetAba('funcionarios',this)">👤 Funcionarios</button>
+        <button type="button" id="docs-subtab-clientes" class="subaba-bloco" onclick="docsSetAba('clientes',this)">🏢 Clientes</button>
+      </div>
+
+      <!-- ── Painel: Funcionários ── -->
+      <div id="docs-pane-funcionarios" class="card">
+        <div class="card-header"><span class="card-title">👤 Documentos para Funcionários</span></div>
+        <div style="padding:18px">
+
+          <p style="font-size:13.5px;color:var(--text-muted);margin-bottom:18px">
+            Selecione o tipo de documento e gere diretamente pelo painel.
+          </p>
+
+          <div class="g3" style="gap:14px">
+
+            <div class="card" style="padding:16px;border:1px solid var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px">
+              <div style="font-size:22px">🚌</div>
+              <div style="font-weight:700;font-size:14px">Requisição de Vale-Transporte</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Solicitação formal de benefício de transporte coletivo, com declaração de percurso e meios utilizados.</div>
+              <button class="btn b-az b-sm" onclick="nav('rh',null);setTimeout(()=>rhSetSubAba('req-vt'),300)">Abrir no RH &rsaquo;</button>
+            </div>
+
+            <div class="card" style="padding:16px;border:1px solid var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px">
+              <div style="font-size:22px">🦺</div>
+              <div style="font-weight:700;font-size:14px">Ficha de EPI</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Controle de entrega de Equipamentos de Proteção Individual com registro de assinatura do colaborador.</div>
+              <button class="btn b-az b-sm" onclick="nav('rh',null);setTimeout(()=>rhSetSubAba('ficha-epi'),300)">Abrir no RH &rsaquo;</button>
+            </div>
+
+            <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
+              <div style="font-size:22px">📋</div>
+              <div style="font-weight:700;font-size:14px">Termo de Responsabilidade de Uniforme</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Registro da entrega de uniformes com descrição das peças, tamanhos e assinatura do colaborador.</div>
+              <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
+            </div>
+
+            <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
+              <div style="font-size:22px">📋</div>
+              <div style="font-weight:700;font-size:14px">Declaração de Acumulo de Cargo</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Declaração do colaborador informando ou negando o acúmulo de outro emprego, para controle de jornada.</div>
+              <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
+            </div>
+
+            <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
+              <div style="font-size:22px">📧</div>
+              <div style="font-weight:700;font-size:14px">Autorização de Débito em Conta (Salário)</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Autoriza o depósito do salário em conta bancária informada, com dados do banco e titularidade.</div>
+              <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
+            </div>
+
+            <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
+              <div style="font-size:22px">🔍</div>
+              <div style="font-weight:700;font-size:14px">Atestado de Saúde Ocupacional (ASO)</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Registro do exame médico admissional, periódico ou demissional, com parecer médico e aptidão.</div>
+              <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
+            </div>
+
+            <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
+              <div style="font-size:22px">⚠️</div>
+              <div style="font-weight:700;font-size:14px">Advertencia / Suspensão Disciplinar</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Documento formal de advertência escrita ou suspensão com descrição da infração e assinatura.</div>
+              <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
+            </div>
+
+            <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
+              <div style="font-size:22px">👨‍💼</div>
+              <div style="font-weight:700;font-size:14px">Contrato de Trabalho (CLT)</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Contrato padrão de empregó com cláusulas de cargo, salário, jornada e benefícios.</div>
+              <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
+            </div>
+
+            <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
+              <div style="font-size:22px">📅</div>
+              <div style="font-weight:700;font-size:14px">Aviso Prévio</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Comunicação formal de desligamento com prazo de aviso trabalhado ou indenizado.</div>
+              <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Painel: Clientes ── -->
+      <div id="docs-pane-clientes" class="card" style="display:none">
+        <div class="card-header"><span class="card-title">🏢 Documentos para Clientes</span></div>
+        <div style="padding:18px">
+
+          <p style="font-size:13.5px;color:var(--text-muted);margin-bottom:18px">
+            Gere e envie documentos contratuais e operacionais para seus clientes.
+          </p>
+
+          <div class="g3" style="gap:14px">
+
+            <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
+              <div style="font-size:22px">📝</div>
+              <div style="font-weight:700;font-size:14px">Proposta Comercial</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Proposta formal de prestação de serviços com escopo, valores, vigencia e condições de pagamento.</div>
+              <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
+            </div>
+
+            <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
+              <div style="font-size:22px">🤝</div>
+              <div style="font-weight:700;font-size:14px">Contrato de Prestação de Serviços</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Contrato com cláusulas de escopo, prazo, responsabilidades e penalidades entre as partes.</div>
+              <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
+            </div>
+
+            <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
+              <div style="font-size:22px">🔄</div>
+              <div style="font-weight:700;font-size:14px">Aditivo de Contrato</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Alteração ou renovação de contrato existente com novo escopo, valor ou vigencia.</div>
+              <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
+            </div>
+
+            <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
+              <div style="font-size:22px">📈</div>
+              <div style="font-weight:700;font-size:14px">Relatório de Visita Operacional</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Relatório de vistoria do posto de trabalho com registros fotográficos e ocorrências.</div>
+              <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
+            </div>
+
+            <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
+              <div style="font-size:22px">💳</div>
+              <div style="font-weight:700;font-size:14px">Comprovante de Pagamento / Recibo</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Recibo formal de pagamento de serviços prestados, com discriminação e assinatura.</div>
+              <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
+            </div>
+
+            <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
+              <div style="font-size:22px">❗</div>
+              <div style="font-weight:700;font-size:14px">Notificação / Comunicação Formal</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Documento formal de comunicação para irregularidades, solicitações ou avisos contratuais.</div>
+              <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ══ ASSINATURAS ══ -->
@@ -4203,6 +4354,7 @@ function nav(id,el,force=false){
   if(targetId==='sst')fillSSTFuncionarios();
   if(targetId==='rh-digital')initRHDigital();
   if(targetId==='assinaturas')initAssinaturas();
+  if(targetId==='documentos')docsInit();
   sidebarSyncActiveContext(id);
 }
 
@@ -4222,7 +4374,7 @@ function _subAbaLabel(item,idx){
 function montarSubAbasBloco(){
   document.querySelectorAll('.pg').forEach(pg=>{
     if(pg.dataset.subabaReady==='1') return;
-    if(['pg-rh','pg-rh-digital','pg-assinaturas'].includes(pg.id)) return;
+    if(['pg-rh','pg-rh-digital','pg-assinaturas','pg-documentos'].includes(pg.id)) return;
 
     const itens=Array.from(pg.children).filter(el=>{
       if(!el) return false;
@@ -7637,27 +7789,27 @@ function vtGetMeios() {
   return meios;
 }
 
+let vtBuscaTimer;
 function vtBuscarFunc(q) {
-  const sug = document.getElementById('vt-func-sugestoes');
-  if (!sug) return;
-  if (!q || q.length < 2) { sug.innerHTML = ''; return; }
-  const funcs = Array.isArray(rhFuncionarios) ? rhFuncionarios : [];
-  const ql = q.toLowerCase();
-  const found = funcs.filter(f =>
-    (f.nome||'').toLowerCase().includes(ql) ||
-    (f.re||'').toLowerCase().includes(ql) ||
-    (f.matricula||'').toLowerCase().includes(ql)
-  );
-  if (!found.length) { sug.innerHTML = ''; return; }
-  sug.innerHTML = '<div style="position:absolute;width:100%;background:var(--bg);border:1px solid var(--borda);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);max-height:240px;overflow-y:auto;z-index:300">' +
-    found.slice(0,15).map(f =>
-      `<div style="padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--borda-cl)"
-        onmouseover="this.style.background='var(--azul-cc)'" onmouseout="this.style.background=''"
-        onclick='vtSelecionarFunc(${JSON.stringify(f).replace(/'/g,"&#39;")})'>
-        <strong>${esc(f.nome||'')}</strong>
-        <span style="color:var(--text-muted);font-size:11px"> · ${esc(f.re||f.matricula||'')} · ${esc(f.cargo||'')}</span>
-      </div>`
-    ).join('') + '</div>';
+  clearTimeout(vtBuscaTimer);
+  const box = document.getElementById('vt-func-sugestoes');
+  if (!q || q.length < 2) { box.innerHTML = ''; return; }
+  vtBuscaTimer = setTimeout(async () => {
+    const funcs = await api(`/api/funcionarios?q=${encodeURIComponent(q)}&status=Ativo`);
+    if (!Array.isArray(funcs) || !funcs.length) {
+      box.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:6px 10px">Nenhum colaborador encontrado.</div>';
+      return;
+    }
+    box.innerHTML = `<div style="position:absolute;z-index:999;background:var(--bg);border:1px solid var(--borda);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);max-height:220px;overflow-y:auto;width:100%">` +
+      funcs.slice(0,15).map(f =>
+        `<div style="padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--borda-cl)"
+          onmouseover="this.style.background='var(--azul-cc)'" onmouseout="this.style.background=''"
+          onclick='vtSelecionarFunc(${JSON.stringify(f).replace(/'/g,"&#39;")})'>
+          <strong>${esc(f.nome||'')}</strong>
+          <span style="color:var(--text-muted);font-size:11px"> · ${esc(f.re||f.matricula||'')} · ${esc(f.cargo||'')} · ${esc(f.posto_operacional||'')}</span>
+        </div>`
+      ).join('') + '</div>';
+  }, 280);
 }
 
 function vtSelecionarFunc(f) {
@@ -7726,7 +7878,152 @@ async function gerarRequisicaoVT() {
   btn.disabled = false;
   btn.textContent = '🚌 Gerar Requisição VT';
 }
+function previaRequisicaoVT() {
+  if (!vtFuncSelecionado) { alert('Selecione um colaborador para ver a prévia.'); return; }
+  const f = vtFuncSelecionado;
+  const meios = vtGetMeios();
+  const opta = document.getElementById('vt-opta').value === 'sim';
+  const hoje = new Date();
+  const dia = String(hoje.getDate()).padStart(2,'0');
+  const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  const mes = meses[hoje.getMonth()];
+  const ano = hoje.getFullYear();
+  const cidade = 'São Paulo';
+
+  const minLinhas = Math.max(meios.length, 7);
+  let linhasHTML = '';
+  for (let i = 0; i < minLinhas; i++) {
+    const m = meios[i] || {};
+    linhasHTML += `<tr>
+      <td style="padding:5px 8px;border:1px solid #aaa">${_escHtml(m.tipo||'')}</td>
+      <td style="padding:5px 8px;border:1px solid #aaa;text-align:center">${_escHtml(m.quantidade_ida_volta||'')}</td>
+      <td style="padding:5px 8px;border:1px solid #aaa;text-align:center">${_escHtml(m.valor_unitario||'')}</td>
+    </tr>`;
+  }
+
+  const checkOpta  = opta  ? '(X)' : '(&nbsp;&nbsp;)';
+  const checkNOpta = !opta ? '(X)' : '(&nbsp;&nbsp;)';
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Prévia — Requisição de VT — ${_escHtml(f.nome||'')}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;font-size:10.5pt;color:#222;background:#f5f5f5;padding:20px}
+  .page{background:#fff;max-width:210mm;margin:0 auto;padding:16mm 14mm;box-shadow:0 2px 16px rgba(0,0,0,.15)}
+  .titulo-box{border:2px solid #000;padding:8px;text-align:center;font-size:14pt;font-weight:700;letter-spacing:1px;margin-bottom:14px}
+  .sec-label{font-size:9pt;color:#555;display:block;margin-bottom:1px}
+  .campo{border-bottom:1px solid #444;min-height:18px;padding:1px 2px;font-size:10pt;display:inline-block}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 20px;margin-bottom:6px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 14px;margin-bottom:6px}
+  .grid4{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:0 14px;margin-bottom:6px}
+  .grid5{display:grid;grid-template-columns:3fr 1fr 1fr 1fr 1fr;gap:0 12px;margin-bottom:6px}
+  .f{margin-bottom:7px}
+  p.legal{font-size:9.5pt;text-align:justify;margin-bottom:6px;line-height:1.55}
+  p.clausula{font-size:9.5pt;text-align:justify;margin-bottom:4px;padding-left:16px;line-height:1.5}
+  table.meios{width:100%;border-collapse:collapse;font-size:10pt;margin:10px 0 14px}
+  table.meios th{background:#333;color:#fff;padding:5px 8px;border:1px solid #000;text-align:center}
+  table.meios td{padding:5px 8px;border:1px solid #aaa;min-height:22px}
+  .assinatura{margin-top:24px;text-align:center}
+  .ass-linha{border-top:1px solid #333;width:60%;margin:32px auto 4px}
+  .rodape{text-align:center;font-size:8pt;color:#999;margin-top:20px;border-top:1px solid #eee;padding-top:8px}
+  @media print{body{background:#fff;padding:0}.page{box-shadow:none;padding:10mm 12mm}}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="titulo-box">SOLICITAÇÃO DE VALE-TRANSPORTE</div>
+
+  <p style="font-size:10.5pt;margin-bottom:4px"><strong>À:</strong></p>
+  <div class="f grid2">
+    <div><span class="sec-label">Empresa</span><span class="campo" style="width:100%">${_escHtml(f.empresa_nome||'RM CONSERVAÇÃO E SERVIÇOS LTDA')}</span></div>
+    <div><span class="sec-label">Endereço</span><span class="campo" style="width:100%"></span></div>
+  </div>
+  <div class="f grid5">
+    <div><span class="sec-label">Logradouro</span><span class="campo" style="width:100%"></span></div>
+    <div><span class="sec-label">No.</span><span class="campo" style="width:100%"></span></div>
+    <div><span class="sec-label">Compl.</span><span class="campo" style="width:100%"></span></div>
+    <div><span class="sec-label">Bairro</span><span class="campo" style="width:100%"></span></div>
+    <div><span class="sec-label">Cidade / UF / CEP</span><span class="campo" style="width:100%"></span></div>
+  </div>
+
+  <p style="font-size:10pt;margin:10px 0 6px"><strong>O(A) empregado(a):</strong></p>
+  <div class="f grid2">
+    <div><span class="sec-label">Nome</span><span class="campo" style="width:100%">${_escHtml(f.nome||'')}</span></div>
+    <div class="grid3">
+      <div><span class="sec-label">RG</span><span class="campo" style="width:100%">${_escHtml(f.rg||'')}</span></div>
+      <div><span class="sec-label">Função</span><span class="campo" style="width:100%">${_escHtml(f.cargo||'')}</span></div>
+      <div><span class="sec-label">CTPS</span><span class="campo" style="width:100%">${_escHtml(f.ctps||'')}</span></div>
+    </div>
+  </div>
+
+  <p style="margin:12px 0 8px;font-size:10pt">
+    ${checkOpta} - <strong>Opto pela Utilização do Vale Transporte</strong>&nbsp;&nbsp;&nbsp;&nbsp;
+    ${checkNOpta} - <strong>Não opto pela Utilização do Vale Transporte</strong>
+  </p>
+
+  <p class="legal">Nos termos do artigo 7º do Dec. Nº. 95247 de 17 de Novembro de 1987, que regulamenta a Lei Nº 7418/85, que institui o Vale-Transporte, venho requerer a V.Sas. a concessão do referido benefício, declarando para os devidos fins que:</p>
+  <p class="clausula"><strong>A)</strong> Utilizo o(s) seguinte(s) meio(s) de transporte coletivo no percurso residência/trabalho/residência;</p>
+  <p class="clausula"><strong>B)</strong> Comprometo-me a comunicar a empresa qualquer alteração nos dados fornecidos relativos ao percurso, bem como ao valor das passagens utilizadas, nos termos do artigo 9º do Decreto acima mencionado;</p>
+  <p class="clausula"><strong>C)</strong> Autorizo o desconto em folha de pagamento de 6% (seis por cento) do meu salário-base, para a cobertura parcial das despesas com deslocamento;</p>
+  <p class="clausula"><strong>D)</strong> Assumo inteira responsabilidade pela veracidade das informações prestadas, sujeitando-me às penalidades legais aplicáveis.</p>
+  <p style="font-size:10pt;margin-top:8px"><strong>Minha residência atual:</strong></p>
+  <div class="f grid5" style="margin-top:6px">
+    <div><span class="sec-label">Endereço</span><span class="campo" style="width:100%">${_escHtml(f.endereco||'')}</span></div>
+    <div><span class="sec-label">No.</span><span class="campo" style="width:100%"></span></div>
+    <div><span class="sec-label">Compl.</span><span class="campo" style="width:100%"></span></div>
+    <div><span class="sec-label">Bairro</span><span class="campo" style="width:100%">${_escHtml(f.bairro||'')}</span></div>
+    <div><span class="sec-label">Cidade / UF / CEP</span><span class="campo" style="width:100%">${_escHtml((f.cidade||'')+(f.uf?' - '+f.uf:'')+(f.cep?' · '+f.cep:''))}</span></div>
+  </div>
+
+  <table class="meios">
+    <thead><tr>
+      <th style="width:50%">TIPO</th>
+      <th>QUANTIDADE IDA E VOLTA</th>
+      <th>VALOR UNITÁRIO</th>
+    </tr></thead>
+    <tbody>${linhasHTML}</tbody>
+  </table>
+
+  <p style="font-size:10pt;margin-bottom:28px">${_escHtml(cidade)}, ${dia} de ${mes} de ${ano}.</p>
+
+  <div class="assinatura">
+    <div class="ass-linha"></div>
+    <div style="font-size:10pt">${_escHtml(f.nome||'')}</div>
+    <div style="font-size:9pt;color:#555">Assinatura do Colaborador</div>
+  </div>
+
+  <div class="rodape">Prévia gerada em ${String(dia).padStart(2,'0')}/${String(hoje.getMonth()+1).padStart(2,'0')}/${ano} · RM Facilities — Gestão de RH</div>
+</div>
+</body>
+</html>`;
+
+  const blob = new Blob([html], {type: 'text/html;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
 // ── FIM REQUISIÇÃO VT ────────────────────────────────────────────────────────
+
+// ── DOCUMENTOS ───────────────────────────────────────────────────────────────
+let docsAbaAtiva = 'funcionarios';
+
+function docsInit() {
+  docsSetAba(docsAbaAtiva);
+}
+
+function docsSetAba(aba, el) {
+  docsAbaAtiva = aba;
+  ['funcionarios','clientes'].forEach(a => {
+    const pane = document.getElementById('docs-pane-' + a);
+    const btn = document.getElementById('docs-subtab-' + a);
+    if (pane) pane.style.display = a === aba ? '' : 'none';
+    if (btn) btn.classList.toggle('on', a === aba);
+  });
+}
+// ── FIM DOCUMENTOS ──────────────────────────────────────────────────────────
 
 function rhExportSelectedPostos(){
   const el=document.getElementById('rh-exp-postos');
