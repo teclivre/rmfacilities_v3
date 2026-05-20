@@ -8278,15 +8278,15 @@ function unifBuscarFunc(q) {
   if (!q || q.length < 2) { box.innerHTML = ''; return; }
   unifBuscarTimer = setTimeout(async () => {
     const lst = await api(`/api/funcionarios?q=${encodeURIComponent(q)}&status=Ativo`);
-    if (!lst || !lst.length) { box.innerHTML = '<div style="padding:8px 12px;font-size:13px;color:var(--text-muted)">Nenhum resultado.</div>'; return; }
-    box.innerHTML = '<div class="sugestoes-lista">' + lst.slice(0,8).map(f =>
-      `<div class="sugestao-item" onclick="unifSelecionarFunc(${f.id})" style="padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--borda)">${_escHtml(f.nome||'')} <span style="color:var(--text-muted);font-size:11px">RE:${f.re||''} · ${f.cargo||''}</span></div>`
+    const lista = Array.isArray(lst) ? lst : (lst?.funcionarios || []);
+    if (!lista.length) { box.innerHTML = '<div style="padding:8px 12px;font-size:13px;color:var(--text-muted)">Nenhum resultado.</div>'; return; }
+    box.innerHTML = '<div class="sugestoes-lista">' + lista.slice(0,8).map(f =>
+      `<div class="sugestao-item" onclick='unifSelecionarFunc(${JSON.stringify(f).replace(/'/g,"&#39;")})' style="padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--borda)">${_escHtml(f.nome||'')} <span style="color:var(--text-muted);font-size:11px">RE:${f.re||''} · ${f.cargo||''}</span></div>`
     ).join('') + '</div>';
   }, 280);
 }
 
-async function unifSelecionarFunc(id) {
-  const f = await api(`/api/funcionarios/${id}`);
+function unifSelecionarFunc(f) {
   if (!f) return;
   unifFuncSelecionado = f;
   document.getElementById('unif-func-sugestoes').innerHTML = '';
@@ -8447,15 +8447,15 @@ function declBuscarFunc(q) {
   if (!q || q.length < 2) { box.innerHTML = ''; return; }
   declBuscarTimer = setTimeout(async () => {
     const lst = await api(`/api/funcionarios?q=${encodeURIComponent(q)}&status=Ativo`);
-    if (!lst || !lst.length) { box.innerHTML = '<div style="padding:8px 12px;font-size:13px;color:var(--text-muted)">Nenhum resultado.</div>'; return; }
-    box.innerHTML = '<div class="sugestoes-lista">' + lst.slice(0,8).map(f =>
-      `<div class="sugestao-item" onclick="declSelecionarFunc(${f.id})" style="padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--borda)">${_escHtml(f.nome||'')} <span style="color:var(--text-muted);font-size:11px">RE:${f.re||''} · ${f.cargo||''}</span></div>`
+    const lista = Array.isArray(lst) ? lst : (lst?.funcionarios || []);
+    if (!lista.length) { box.innerHTML = '<div style="padding:8px 12px;font-size:13px;color:var(--text-muted)">Nenhum resultado.</div>'; return; }
+    box.innerHTML = '<div class="sugestoes-lista">' + lista.slice(0,8).map(f =>
+      `<div class="sugestao-item" onclick='declSelecionarFunc(${JSON.stringify(f).replace(/'/g,"&#39;")})' style="padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--borda)">${_escHtml(f.nome||'')} <span style="color:var(--text-muted);font-size:11px">RE:${f.re||''} · ${f.cargo||''}</span></div>`
     ).join('') + '</div>';
   }, 280);
 }
 
-async function declSelecionarFunc(id) {
-  const f = await api(`/api/funcionarios/${id}`);
+function declSelecionarFunc(f) {
   if (!f) return;
   declFuncSelecionado = f;
   document.getElementById('decl-func-sugestoes').innerHTML = '';
@@ -8586,15 +8586,15 @@ function advBuscarFunc(q) {
   if (!q || q.length < 2) { box.innerHTML = ''; return; }
   advBuscarTimer = setTimeout(async () => {
     const lst = await api(`/api/funcionarios?q=${encodeURIComponent(q)}&status=Ativo`);
-    if (!lst || !lst.length) { box.innerHTML = '<div style="padding:8px 12px;font-size:13px;color:var(--text-muted)">Nenhum resultado.</div>'; return; }
-    box.innerHTML = '<div class="sugestoes-lista">' + lst.slice(0,8).map(f =>
-      `<div class="sugestao-item" onclick="advSelecionarFunc(${f.id})" style="padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--borda)">${_escHtml(f.nome||'')} <span style="color:var(--text-muted);font-size:11px">RE:${f.re||''} · ${f.cargo||''}</span></div>`
+    const listaAdv = Array.isArray(lst) ? lst : (lst?.funcionarios || []);
+    if (!listaAdv.length) { box.innerHTML = '<div style="padding:8px 12px;font-size:13px;color:var(--text-muted)">Nenhum resultado.</div>'; return; }
+    box.innerHTML = '<div class="sugestoes-lista">' + listaAdv.slice(0,8).map(f =>
+      `<div class="sugestao-item" onclick='advSelecionarFunc(${JSON.stringify(f).replace(/'/g,"&#39;")})' style="padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--borda)">${_escHtml(f.nome||'')} <span style="color:var(--text-muted);font-size:11px">RE:${f.re||''} · ${f.cargo||''}</span></div>`
     ).join('') + '</div>';
   }, 280);
 }
 
-async function advSelecionarFunc(id) {
-  const f = await api(`/api/funcionarios/${id}`);
+function advSelecionarFunc(f) {
   if (!f) return;
   advFuncSelecionado = f;
   document.getElementById('adv-func-sugestoes').innerHTML = '';
@@ -8738,25 +8738,25 @@ function apBuscarFunc(q) {
         sug.innerHTML = '<div style="padding:8px 12px;font-size:13px;color:var(--text-muted)">Nenhum resultado</div>';
         return;
       }
-      sug.innerHTML = '<div style="position:absolute;top:0;left:0;width:100%;background:#fff;border:1px solid var(--borda);border-radius:8px;box-shadow:var(--shadow);z-index:300;max-height:200px;overflow:auto">' +
+      sug.innerHTML = '<div style="position:absolute;top:0;left:0;width:100%;background:var(--bg);border:1px solid var(--borda);border-radius:8px;box-shadow:var(--shadow);z-index:300;max-height:200px;overflow:auto">' +
         lista.slice(0,10).map(f =>
-          `<div onclick="apSelecionarFunc(${f.id})" style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--borda)" onmouseover="this.style.background='var(--cinza-cl)'" onmouseout="this.style.background=''">${esc(f.nome||'')} <span style="color:var(--text-muted);font-size:12px">${esc(f.cargo||'')} · RE:${esc(String(f.re||f.matricula||''))}</span></div>`
+          `<div onclick='apSelecionarFunc(${JSON.stringify(f).replace(/'/g,"&#39;")})' style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--borda)" onmouseover="this.style.background='var(--cinza-cl)'" onmouseout="this.style.background=''">${esc(f.nome||'')} <span style="color:var(--text-muted);font-size:12px">${esc(f.cargo||'')} · RE:${esc(String(f.re||f.matricula||''))}</span></div>`
         ).join('') + '</div>';
     } catch(e) {}
   }, 280);
 }
 
-async function apSelecionarFunc(id) {
-  const r = await api(`/api/funcionarios/${id}`);
-  apFuncSelecionado = r;
-  document.getElementById('ap-busca-func').value = r.nome || '';
+async function apSelecionarFunc(f) {
+  if (!f) return;
+  apFuncSelecionado = f;
+  document.getElementById('ap-busca-func').value = f.nome || '';
   document.getElementById('ap-func-sugestoes').innerHTML = '';
-  document.getElementById('ap-func-nome-sel').textContent = r.nome || '';
-  document.getElementById('ap-func-cargo-sel').textContent = r.cargo || '';
+  document.getElementById('ap-func-nome-sel').textContent = f.nome || '';
+  document.getElementById('ap-func-cargo-sel').textContent = f.cargo || '';
   document.getElementById('ap-func-selecionado').style.display = 'block';
   // Busca e exibe o cálculo CLT
   try {
-    const calc = await api(`/api/funcionarios/${id}/calcular-aviso-previo`);
+    const calc = await api(`/api/funcionarios/${f.id}/calcular-aviso-previo`);
     if (calc && calc.ok) {
       document.getElementById('ap-calc-adm').textContent = calc.data_admissao || '—';
       document.getElementById('ap-calc-anos').textContent = calc.anos_servico + ' ano(s)';
