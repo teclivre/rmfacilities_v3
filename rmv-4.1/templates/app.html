@@ -1334,6 +1334,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-uniforme" class="subaba-bloco" onclick="rhSetSubAba('uniforme',this)">👕 Termo Uniforme</button>
         <button type="button" id="rh-subtab-decl-acumulo" class="subaba-bloco" onclick="rhSetSubAba('decl-acumulo',this)">📋 Decl. Acúmulo</button>
         <button type="button" id="rh-subtab-advertencia" class="subaba-bloco" onclick="rhSetSubAba('advertencia',this)">⚠️ Advertência</button>
+        <button type="button" id="rh-subtab-aviso-previo" class="subaba-bloco" onclick="rhSetSubAba('aviso-previo',this)">📅 Aviso Prévio</button>
       </div>
       <div class="card rh-pane" id="rh-pane-funcionarios" data-rh-pane="funcionarios">
         <div class="card-header">
@@ -2120,6 +2121,68 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
 
+      <!-- ── AVISO PRÉVIO ── -->
+      <div class="card rh-pane" id="rh-pane-aviso-previo" data-rh-pane="aviso-previo">
+        <div class="card-header">
+          <span class="card-title">📅 Gerar Aviso Prévio</span>
+        </div>
+        <div style="padding:16px">
+          <div class="g4" style="margin-bottom:14px;align-items:flex-end">
+            <div class="f" style="flex:2">
+              <label>Colaborador</label>
+              <input id="ap-busca-func" type="text" placeholder="Digite nome, matrícula ou RE..."
+                oninput="apBuscarFunc(this.value)" autocomplete="off" style="width:100%">
+              <div id="ap-func-sugestoes" style="position:relative;z-index:200"></div>
+            </div>
+          </div>
+          <div id="ap-func-selecionado" style="display:none;background:#e8f4f8;border:1px solid #90cfe0;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px">
+            <strong>Colaborador:</strong> <span id="ap-func-nome-sel"></span> &nbsp;|&nbsp;
+            <strong>Cargo:</strong> <span id="ap-func-cargo-sel"></span>
+            <button class="btn b-sm" onclick="apLimparFunc()" style="float:right;background:transparent;color:var(--text-muted);font-size:12px;padding:0 6px">✕ Limpar</button>
+            <div id="ap-calc-aviso" style="display:none;margin-top:10px;padding:8px 12px;background:#fff;border-radius:6px;border:1px solid #90cfe0;font-size:12.5px">
+              📊 <strong>Cálculo CLT — Lei 12.506/2011:</strong><br>
+              Admissão: <strong><span id="ap-calc-adm">—</span></strong> &nbsp;|&nbsp;
+              Tempo de serviço: <strong><span id="ap-calc-anos">—</span></strong> &nbsp;|&nbsp;
+              Prazo: <strong style="color:#1A3A5C"><span id="ap-calc-dias">—</span> dias</strong>
+              (30 base + <span id="ap-calc-extras">0</span> proporcionais, máx. 90 dias)
+            </div>
+          </div>
+          <div class="g3" style="margin-bottom:14px">
+            <div class="f" style="flex:2">
+              <label>Tipo de aviso prévio</label>
+              <select id="ap-tipo">
+                <option value="empresa_trabalhado">Empresa demite → Aviso Trabalhado (funcionário cumpre o período)</option>
+                <option value="empresa_indenizado">Empresa demite → Aviso Indenizado (empresa paga sem trabalho)</option>
+                <option value="pedido_demissao">Funcionário pede demissão (cumpre aviso ou paga indenização)</option>
+              </select>
+            </div>
+            <div class="f">
+              <label>Data do aviso</label>
+              <input id="ap-data-aviso" type="date" style="width:170px">
+            </div>
+          </div>
+          <div class="f" style="margin-bottom:14px">
+            <label>Observações adicionais</label>
+            <input id="ap-obs" type="text" placeholder="Observações opcionais">
+          </div>
+          <div class="g4" style="margin-bottom:18px;align-items:flex-end">
+            <div class="f">
+              <label>Enviar para assinatura via</label>
+              <select id="ap-canal">
+                <option value="nao">Apenas gerar (sem envio)</option>
+                <option value="app">📱 Aplicativo</option>
+                <option value="whatsapp">💬 WhatsApp</option>
+                <option value="link">🔗 Link (copiar)</option>
+              </select>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn b-az" onclick="gerarAvisoPrevio()" id="ap-btn-gerar">📅 Gerar Aviso Prévio</button>
+            </div>
+          </div>
+          <div id="ap-resultado" style="display:none"></div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ══ COMUNICAÇÃO ══ -->
@@ -2790,11 +2853,11 @@ document.addEventListener('DOMContentLoaded',()=>{
               <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
             </div>
 
-            <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
+            <div class="card" style="padding:16px;border:1px solid var(--azul-borda);border-radius:10px;display:flex;flex-direction:column;gap:8px">
               <div style="font-size:22px">📅</div>
               <div style="font-weight:700;font-size:14px">Aviso Prévio</div>
-              <div style="font-size:12px;color:var(--text-muted);flex:1">Comunicação formal de desligamento com prazo de aviso trabalhado ou indenizado.</div>
-              <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Comunicação formal de desligamento com prazo calculado automaticamente pela CLT (Lei 12.506/2011) — trabalhado ou indenizado.</div>
+              <button class="btn b-az b-sm" onclick="nav('rh',null);setTimeout(()=>rhSetSubAba('aviso-previo'),300)">Abrir no RH &rsaquo;</button>
             </div>
 
           </div>
@@ -4620,7 +4683,7 @@ function rhSalariosIniciarPagina(){
 }
 
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','ponto','painel-dia','envio','assinaturas','gestao-facil','ficha-epi','req-vt'];
+  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','ponto','painel-dia','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
     p.style.display=(p.dataset.rhPane===rhSubAba)?'block':'none';
@@ -4643,6 +4706,13 @@ function rhSetSubAba(tab,btn){
   }
   if(rhSubAba==='req-vt'){
     vtInicializar();
+  }
+  if(rhSubAba==='aviso-previo'){
+    // Preenche data do aviso com hoje se ainda não definida
+    const dtInput = document.getElementById('ap-data-aviso');
+    if(dtInput && !dtInput.value){
+      dtInput.value = new Date().toISOString().slice(0,10);
+    }
   }
 }
 
@@ -8420,6 +8490,97 @@ async function gerarAdvertencia() {
   res.style.display = 'block';
   btn.disabled = false; btn.textContent = '⚠️ Gerar Documento';
 }
+
+// ── AVISO PRÉVIO ─────────────────────────────────────────────────────────────
+let apFuncSelecionado = null;
+let apSearchTimer = null;
+
+function apBuscarFunc(q) {
+  clearTimeout(apSearchTimer);
+  const sug = document.getElementById('ap-func-sugestoes');
+  if (!q || q.length < 2) { sug.innerHTML = ''; return; }
+  apSearchTimer = setTimeout(async () => {
+    try {
+      const r = await api(`/api/funcionarios?q=${encodeURIComponent(q)}&status=Ativo`);
+      const lista = Array.isArray(r) ? r : (r?.funcionarios || []);
+      if (!lista.length) {
+        sug.innerHTML = '<div style="padding:8px 12px;font-size:13px;color:var(--text-muted)">Nenhum resultado</div>';
+        return;
+      }
+      sug.innerHTML = '<div style="position:absolute;top:0;left:0;width:100%;background:#fff;border:1px solid var(--borda);border-radius:8px;box-shadow:var(--shadow);z-index:300;max-height:200px;overflow:auto">' +
+        lista.slice(0,10).map(f =>
+          `<div onclick="apSelecionarFunc(${f.id})" style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--borda)" onmouseover="this.style.background='var(--cinza-cl)'" onmouseout="this.style.background=''">${esc(f.nome||'')} <span style="color:var(--text-muted);font-size:12px">${esc(f.cargo||'')} · RE:${esc(String(f.re||f.matricula||''))}</span></div>`
+        ).join('') + '</div>';
+    } catch(e) {}
+  }, 280);
+}
+
+async function apSelecionarFunc(id) {
+  const r = await api(`/api/funcionarios/${id}`);
+  apFuncSelecionado = r;
+  document.getElementById('ap-busca-func').value = r.nome || '';
+  document.getElementById('ap-func-sugestoes').innerHTML = '';
+  document.getElementById('ap-func-nome-sel').textContent = r.nome || '';
+  document.getElementById('ap-func-cargo-sel').textContent = r.cargo || '';
+  document.getElementById('ap-func-selecionado').style.display = 'block';
+  // Busca e exibe o cálculo CLT
+  try {
+    const calc = await api(`/api/funcionarios/${id}/calcular-aviso-previo`);
+    if (calc && calc.ok) {
+      document.getElementById('ap-calc-adm').textContent = calc.data_admissao || '—';
+      document.getElementById('ap-calc-anos').textContent = calc.anos_servico + ' ano(s)';
+      document.getElementById('ap-calc-dias').textContent = calc.total_dias;
+      document.getElementById('ap-calc-extras').textContent = calc.dias_adicionais || 0;
+      document.getElementById('ap-calc-aviso').style.display = 'block';
+    }
+  } catch(e) {}
+}
+
+function apLimparFunc() {
+  apFuncSelecionado = null;
+  document.getElementById('ap-busca-func').value = '';
+  document.getElementById('ap-func-sugestoes').innerHTML = '';
+  document.getElementById('ap-func-selecionado').style.display = 'none';
+  document.getElementById('ap-calc-aviso').style.display = 'none';
+  document.getElementById('ap-resultado').style.display = 'none';
+}
+
+async function gerarAvisoPrevio() {
+  if (!apFuncSelecionado) { alert('Selecione um colaborador.'); return; }
+  const tipo = document.getElementById('ap-tipo').value;
+  const data_aviso = document.getElementById('ap-data-aviso').value;
+  const obs = document.getElementById('ap-obs').value;
+  const canal = document.getElementById('ap-canal').value;
+  const btn = document.getElementById('ap-btn-gerar');
+  const res = document.getElementById('ap-resultado');
+  btn.disabled = true; btn.textContent = '⏳ Gerando...'; res.style.display = 'none';
+  try {
+    const r = await api(`/api/funcionarios/${apFuncSelecionado.id}/gerar-aviso-previo`, 'POST',
+      { tipo, data_aviso, obs, canal });
+    if (r && r.ok) {
+      const dl = r.download_url
+        ? `<a href="${r.download_url}" target="_blank" class="btn b-gh b-sm" style="margin-top:8px">⬇️ Baixar PDF</a>`
+        : '';
+      const diasInfo = r.total_dias
+        ? `<br><span style="font-size:12px;color:var(--text-muted)">Prazo calculado: <strong>${r.total_dias} dias</strong> (Lei 12.506/2011)</span>`
+        : '';
+      let envio = '';
+      if (r.assinatura && r.assinatura.canal && r.assinatura.canal !== 'nao') {
+        envio = r.assinatura.status === 'solicitada'
+          ? `<div style="margin-top:8px;font-size:13px">✅ Enviado via <strong>${r.assinatura.canal}</strong>.${r.assinatura.link ? ` <a href="${r.assinatura.link}" target="_blank">🔗 Link</a>` : ''}</div>`
+          : `<div style="margin-top:8px;font-size:13px;color:var(--laranja-esc)">⚠️ Erro no envio: ${esc(r.assinatura.erro||'')}.</div>`;
+      }
+      res.innerHTML = `<div style="background:var(--verde-cl);border:1px solid var(--verde);border-radius:8px;padding:12px 16px;color:var(--verde)">✅ <strong>Aviso Prévio gerado!</strong>${diasInfo}<br><span style="font-size:13px;color:var(--text)">${esc(r.nome_arquivo||'')}</span>${dl}${envio}</div>`;
+    } else {
+      res.innerHTML = `<div style="background:var(--verm-cl);border:1px solid var(--verm);border-radius:8px;padding:12px 16px;color:var(--verm)">❌ ${esc(r?.erro||'Falha.')}</div>`;
+    }
+  } catch(e) {
+    res.innerHTML = `<div style="background:var(--verm-cl);border:1px solid var(--verm);border-radius:8px;padding:12px 16px;color:var(--verm)">❌ ${esc(String(e))}</div>`;
+  }
+  res.style.display = 'block';
+  btn.disabled = false; btn.textContent = '📅 Gerar Aviso Prévio';
+}
+// ── FIM AVISO PRÉVIO ─────────────────────────────────────────────────────────
 
 // ── DOCUMENTOS ───────────────────────────────────────────────────────────────
 let docsAbaAtiva = 'funcionarios';

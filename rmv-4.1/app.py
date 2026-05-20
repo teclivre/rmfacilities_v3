@@ -4507,6 +4507,7 @@ DOC_CAT_PATH={
     'uniforme':'uniforme',
     'declaracao_acumulo_cargo':'declaracao_acumulo_cargo',
     'advertencia':'advertencia',
+    'aviso_previo':'aviso_previo',
     'outros':'outros',
 }
 DOC_CAT_LABEL={
@@ -4523,6 +4524,7 @@ DOC_CAT_LABEL={
     'uniforme':'Termo de Responsabilidade de Uniforme',
     'declaracao_acumulo_cargo':'Declaracao de Acumulo de Cargo',
     'advertencia':'Advertencia / Suspensao Disciplinar',
+    'aviso_previo':'Aviso Previo',
     'outros':'Outros',
 }
 
@@ -8508,6 +8510,321 @@ def api_funcionario_gerar_advertencia(id):
     audit_event('advertencia_gerada', 'usuario', session.get('uid'), 'funcionario', id, True,
         {'arquivo_id': a.id, 'canal': canal, 'tipo': tipo})
     return jsonify({'ok': True, 'arquivo_id': a.id, 'nome_arquivo': nome_arq, 'assinatura': assinatura,
+                    'download_url': f'/api/funcionarios/arquivos/{a.id}/download'}), 201
+
+
+# ── AVISO PRÉVIO ─────────────────────────────────────────────────────────────
+
+def _calcular_aviso_previo_dias(data_admissao_str, data_ref=None):
+    """Calcula o prazo de aviso prévio proporcional ao tempo de serviço.
+
+    Lei nº 12.506/2011: 30 dias base + 3 dias por ano completo de serviço
+    prestado na mesma empresa, até o máximo de 60 dias adicionais (total máx. 90 dias).
+    """
+    if not data_admissao_str:
+        return 30
+    try:
+        from datetime import date as _date
+        s = str(data_admissao_str)[:10]
+        if '-' in s:
+            dt_adm = _date.fromisoformat(s)
+        else:
+            dd, mm, yyyy = s.split('/')
+            dt_adm = _date(int(yyyy), int(mm), int(dd))
+        ref = data_ref if data_ref else localnow().date()
+        delta_dias = (ref - dt_adm).days
+        if delta_dias < 0:
+            delta_dias = 0
+        anos_completos = delta_dias // 365
+        dias_adicionais = min(anos_completos * 3, 60)
+        return 30 + dias_adicionais
+    except Exception:
+        return 30
+
+
+def _gerar_aviso_previo_pdf(funcionario, tipo='empresa_trabalhado', empresa=None, obs='', data_aviso_str=None):
+    """Gera PDF de Aviso Prévio proporcional (Lei 12.506/2011)."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, Image
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+    from datetime import date as _date, timedelta
+
+    azul_esc = colors.HexColor('#1A3A5C')
+    cinza = colors.HexColor('#F0F4F8')
+
+    f = funcionario
+    emp_obj = empresa or (db.session.get(Empresa, f.empresa_id) if f.empresa_id else None)
+    emp_nome = (getattr(emp_obj, 'razao', None) or getattr(emp_obj, 'nome', None) or 'RM FACILITIES LTDA').upper() if emp_obj else 'RM FACILITIES LTDA'
+    emp_cnpj = (getattr(emp_obj, 'cnpj', None) or '').strip() if emp_obj else ''
+    func_nome = (f.nome or '').strip()
+    func_re = str(f.re or f.matricula or '')
+    func_cpf = (f.cpf or '').strip()
+    func_cargo = (f.cargo or '').strip()
+    func_adm = (f.data_admissao or '')
+
+    # Parseia data de admissão
+    dt_adm = None
+    try:
+        s = str(func_adm)[:10]
+        if '-' in s:
+            dt_adm = _date.fromisoformat(s)
+        elif '/' in s:
+            dd, mm, yyyy = s.split('/')
+            dt_adm = _date(int(yyyy), int(mm), int(dd))
+    except Exception:
+        dt_adm = None
+
+    # Parseia data do aviso
+    dt_aviso = None
+    if data_aviso_str:
+        try:
+            s2 = str(data_aviso_str)[:10]
+            if '-' in s2:
+                dt_aviso = _date.fromisoformat(s2)
+            elif '/' in s2:
+                dd, mm, yyyy = s2.split('/')
+                dt_aviso = _date(int(yyyy), int(mm), int(dd))
+        except Exception:
+            dt_aviso = None
+    if dt_aviso is None:
+        dt_aviso = localnow().date()
+
+    total_dias = _calcular_aviso_previo_dias(func_adm, data_ref=dt_aviso)
+    anos_servico = (dt_aviso - dt_adm).days // 365 if dt_adm else 0
+    dias_adicionais = total_dias - 30
+    dt_fim = dt_aviso + timedelta(days=total_dias)
+
+    data_adm_fmt = dt_adm.strftime('%d/%m/%Y') if dt_adm else str(func_adm)
+    data_aviso_fmt = dt_aviso.strftime('%d/%m/%Y')
+    data_fim_fmt = dt_fim.strftime('%d/%m/%Y')
+    data_hoje = localnow().strftime('%d/%m/%Y')
+    meses_pt = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+    cidade_empresa = getattr(emp_obj, 'cidade', '') or 'São José dos Campos' if emp_obj else 'São José dos Campos'
+    data_extensa = f'{cidade_empresa}, {dt_aviso.day} de {meses_pt[dt_aviso.month-1]} de {dt_aviso.year}.'
+
+    TIPOS = {
+        'empresa_trabalhado': 'AVISO PRÉVIO TRABALHADO',
+        'empresa_indenizado': 'AVISO PRÉVIO INDENIZADO',
+        'pedido_demissao':    'PEDIDO DE DEMISSÃO — AVISO PRÉVIO',
+    }
+    tipo_label = TIPOS.get(tipo, 'AVISO PRÉVIO TRABALHADO')
+
+    st_sub   = ParagraphStyle('su', fontName='Helvetica', fontSize=8.5, leading=11, textColor=colors.white, alignment=TA_CENTER)
+    st_label = ParagraphStyle('lb', fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=azul_esc)
+    st_valor = ParagraphStyle('vl', fontName='Helvetica', fontSize=9, leading=11)
+    st_legal = ParagraphStyle('lg', fontName='Helvetica', fontSize=9.5, leading=14, alignment=TA_JUSTIFY)
+    st_rod   = ParagraphStyle('ro', fontName='Helvetica', fontSize=7, leading=9, textColor=colors.HexColor('#888'), alignment=TA_CENTER)
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+        leftMargin=2*cm, rightMargin=2*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
+
+    logo_path = _get_logo_path_for_pdf(emp_obj)
+    if logo_path and os.path.exists(logo_path):
+        logo_el = Image(logo_path, width=3.8*cm, height=1.4*cm, kind='proportional')
+    else:
+        logo_el = Paragraph(emp_nome, ParagraphStyle('ln', fontName='Helvetica-Bold', fontSize=8, textColor=colors.white, alignment=TA_CENTER))
+
+    hdr_data = [[
+        Paragraph(tipo_label, ParagraphStyle('h2', fontName='Helvetica-Bold', fontSize=13, leading=17, textColor=colors.white, alignment=TA_CENTER)),
+        logo_el,
+    ],[
+        Paragraph(emp_nome, st_sub), '',
+    ]]
+    hdr_table = Table(hdr_data, colWidths=[13*cm, 5.5*cm])
+    hdr_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), azul_esc),
+        ('SPAN', (0,1), (1,1)),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('ALIGN', (1,0), (1,0), 'CENTER'),
+        ('TOPPADDING', (0,0), (-1,-1), 8), ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('LEFTPADDING', (0,0), (-1,-1), 8), ('RIGHTPADDING', (0,0), (-1,-1), 8),
+    ]))
+
+    def campo(lbl, val):
+        return [Paragraph(lbl, st_label), Paragraph(str(val) if val else '—', st_valor)]
+
+    info_data = [
+        campo('NOME:', func_nome) + campo('RE/MAT.:', func_re) + campo('CPF:', func_cpf),
+        campo('CARGO:', func_cargo) + campo('ADMISSÃO:', data_adm_fmt) + campo('TEMPO SERVIÇO:', f'{anos_servico} ano(s)'),
+        campo('DATA DO AVISO:', data_aviso_fmt) + campo(f'PRAZO (CLT):', f'{total_dias} dias') + campo('ÚLTIMO DIA:', data_fim_fmt),
+    ]
+    info_table = Table(info_data, colWidths=[2*cm, 4.5*cm, 2*cm, 3.5*cm, 2.5*cm, 4.0*cm])
+    info_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), cinza),
+        ('BOX', (0,0), (-1,-1), 0.5, azul_esc),
+        ('INNERGRID', (0,0), (-1,-1), 0.25, colors.HexColor('#D0D7DE')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 4), ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('LEFTPADDING', (0,0), (-1,-1), 5), ('RIGHTPADDING', (0,0), (-1,-1), 5),
+    ]))
+
+    cnpj_txt = f'CNPJ nº {emp_cnpj}, ' if emp_cnpj else ''
+    if tipo == 'empresa_trabalhado':
+        texto_intro = (
+            f'A empresa <b>{emp_nome}</b>, {cnpj_txt}vem por meio deste instrumento comunicar ao(à) '
+            f'colaborador(a) <b>{func_nome}</b>, RE/Mat. <b>{func_re}</b>, portador(a) do CPF nº <b>{func_cpf}</b>, '
+            f'ocupante do cargo de <b>{func_cargo}</b>, admitido(a) em <b>{data_adm_fmt}</b>, '
+            f'o aviso prévio proporcional ao tempo de serviço, nos termos do art. 7º, XXI da Constituição Federal '
+            f'c/c Lei nº 12.506/2011 e arts. 487 a 491 da CLT.'
+        )
+        texto_prazo = (
+            f'Considerando <b>{anos_servico} ano(s)</b> de serviço prestado à empresa, o prazo de aviso prévio é de '
+            f'<b>{total_dias} dias</b> (30 dias base + {dias_adicionais} dias proporcionais), contados a partir de '
+            f'<b>{data_aviso_fmt}</b>, encerrando-se em <b>{data_fim_fmt}</b>. '
+            f'O(A) colaborador(a) deverá <b>permanecer trabalhando normalmente</b> durante todo o período do aviso, '
+            f'encerrando seu vínculo empregatício na data supracitada, quando serão processadas as verbas rescisórias cabíveis.'
+        )
+    elif tipo == 'empresa_indenizado':
+        texto_intro = (
+            f'A empresa <b>{emp_nome}</b>, {cnpj_txt}vem por meio deste instrumento comunicar ao(à) '
+            f'colaborador(a) <b>{func_nome}</b>, RE/Mat. <b>{func_re}</b>, portador(a) do CPF nº <b>{func_cpf}</b>, '
+            f'ocupante do cargo de <b>{func_cargo}</b>, admitido(a) em <b>{data_adm_fmt}</b>, '
+            f'o aviso prévio indenizado, nos termos do art. 7º, XXI da Constituição Federal c/c '
+            f'Lei nº 12.506/2011 e arts. 487 a 491 da CLT.'
+        )
+        texto_prazo = (
+            f'Considerando <b>{anos_servico} ano(s)</b> de serviço prestado, o prazo de aviso prévio é de '
+            f'<b>{total_dias} dias</b> (30 dias base + {dias_adicionais} dias proporcionais). '
+            f'A empresa optou pela <b>indenização do período de aviso</b>, ficando o(a) colaborador(a) '
+            f'dispensado(a) de comparecer ao trabalho a partir de <b>{data_aviso_fmt}</b>. '
+            f'O valor correspondente aos {total_dias} dias será integrado às verbas rescisórias a serem pagas.'
+        )
+    else:  # pedido_demissao
+        texto_intro = (
+            f'Eu, <b>{func_nome}</b>, RE/Mat. <b>{func_re}</b>, portador(a) do CPF nº <b>{func_cpf}</b>, '
+            f'ocupante do cargo de <b>{func_cargo}</b> na empresa <b>{emp_nome}</b>, {cnpj_txt}'
+            f'admitido(a) em <b>{data_adm_fmt}</b>, venho por meio deste instrumento manifestar minha '
+            f'decisão de <b>rescindir voluntariamente</b> meu contrato de trabalho, '
+            f'solicitando meu desligamento da empresa a partir desta data.'
+        )
+        texto_prazo = (
+            f'Conforme Lei nº 12.506/2011 e art. 487 da CLT, comprometendo-me a cumprir o aviso prévio de '
+            f'<b>{total_dias} dias</b> (30 dias base + {dias_adicionais} dias proporcionais ao tempo de serviço '
+            f'de {anos_servico} ano(s)), a partir de <b>{data_aviso_fmt}</b>, encerrando-se em <b>{data_fim_fmt}</b>, '
+            f'salvo dispensa expressa e por escrito da empresa. Estou ciente de que a falta de cumprimento do aviso '
+            f'implicará desconto no valor correspondente nas verbas rescisórias, nos termos do art. 487, §2º da CLT.'
+        )
+
+    texto_base_legal = (
+        '<b>Base legal:</b> Art. 7º, XXI da Constituição Federal de 1988; Arts. 487 a 491 da Consolidação das '
+        'Leis do Trabalho (CLT); Lei nº 12.506, de 11 de outubro de 2011 — aviso prévio proporcional ao tempo de serviço: '
+        '30 dias + 3 dias por ano completo, limitado a 90 dias no total.'
+    )
+
+    ass_data = [
+        [Paragraph('_' * 36, ParagraphStyle('a', fontName='Helvetica', fontSize=9, alignment=TA_CENTER)),
+         Paragraph('_' * 36, ParagraphStyle('a', fontName='Helvetica', fontSize=9, alignment=TA_CENTER))],
+        [Paragraph(f'Representante da Empresa<br/>{emp_nome}', ParagraphStyle('a3', fontName='Helvetica', fontSize=8, textColor=colors.HexColor('#555'), alignment=TA_CENTER)),
+         Paragraph(f'{func_nome}<br/>Assinatura do colaborador', ParagraphStyle('a3', fontName='Helvetica', fontSize=8, textColor=colors.HexColor('#555'), alignment=TA_CENTER))],
+    ]
+    ass_table = Table(ass_data, colWidths=[9*cm, 9.5*cm])
+    ass_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 4), ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ]))
+
+    elems = [hdr_table, Spacer(1, 0.35*cm), info_table, Spacer(1, 0.5*cm),
+             Paragraph(texto_intro, st_legal), Spacer(1, 0.35*cm),
+             Paragraph(texto_prazo, ParagraphStyle('pr', fontName='Helvetica', fontSize=10, leading=15, alignment=TA_JUSTIFY)),
+             Spacer(1, 0.35*cm),
+             Paragraph(texto_base_legal, ParagraphStyle('bl', fontName='Helvetica', fontSize=8.5, leading=12,
+                       textColor=colors.HexColor('#444'), alignment=TA_JUSTIFY))]
+    if (obs or '').strip():
+        elems += [Spacer(1, 0.2*cm),
+                  Paragraph(f'<b>Observações:</b> {obs.strip()}',
+                             ParagraphStyle('ob', fontName='Helvetica', fontSize=9, leading=13, alignment=TA_JUSTIFY))]
+    elems += [Spacer(1, 0.4*cm),
+              Paragraph(data_extensa, ParagraphStyle('de', fontName='Helvetica', fontSize=9, leading=12)),
+              Spacer(1, 0.8*cm), HRFlowable(width='100%', thickness=0.5, color=azul_esc),
+              Spacer(1, 0.3*cm), ass_table, Spacer(1, 0.3*cm),
+              Paragraph(f'Gerado automaticamente em {data_hoje} · {emp_nome}', st_rod)]
+    doc.build(elems)
+    buf.seek(0)
+    return buf
+
+
+@app.route('/api/funcionarios/<int:id>/calcular-aviso-previo')
+@lr
+def api_calcular_aviso_previo(id):
+    """Retorna o prazo de aviso prévio calculado pela CLT para exibição na UI."""
+    f = db.get_or_404(Funcionario, id)
+    total_dias = _calcular_aviso_previo_dias(f.data_admissao)
+    anos = 0
+    data_adm_fmt = ''
+    try:
+        from datetime import date as _date
+        s = str(f.data_admissao or '')[:10]
+        if '-' in s:
+            dt_adm = _date.fromisoformat(s)
+        elif '/' in s:
+            dd, mm, yyyy = s.split('/')
+            dt_adm = _date(int(yyyy), int(mm), int(dd))
+        else:
+            dt_adm = None
+        if dt_adm:
+            anos = (localnow().date() - dt_adm).days // 365
+            data_adm_fmt = dt_adm.strftime('%d/%m/%Y')
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'total_dias': total_dias, 'anos_servico': anos,
+                    'data_admissao': data_adm_fmt, 'dias_adicionais': total_dias - 30})
+
+
+@app.route('/api/funcionarios/<int:id>/gerar-aviso-previo', methods=['POST'])
+@lr
+def api_funcionario_gerar_aviso_previo(id):
+    f = db.get_or_404(Funcionario, id)
+    d = request.json or {}
+    tipo = (d.get('tipo') or 'empresa_trabalhado').strip().lower()
+    if tipo not in ('empresa_trabalhado', 'empresa_indenizado', 'pedido_demissao'):
+        tipo = 'empresa_trabalhado'
+    obs = (d.get('obs') or '').strip()
+    data_aviso = (d.get('data_aviso') or '').strip()
+    canal = (d.get('canal') or 'nao').strip().lower()
+    if canal not in ('whatsapp', 'app', 'link', 'nao'):
+        canal = 'nao'
+    emp_obj = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
+    total_dias = _calcular_aviso_previo_dias(f.data_admissao)
+    try:
+        buf = _gerar_aviso_previo_pdf(f, tipo=tipo, empresa=emp_obj, obs=obs,
+                                      data_aviso_str=data_aviso or None)
+    except Exception as e:
+        app.logger.exception('Erro ao gerar PDF aviso prévio')
+        return jsonify({'erro': f'Erro ao gerar PDF: {str(e)}'}), 500
+    comp = localnow().strftime('%Y-%m')
+    tipo_label_arq = {
+        'empresa_trabalhado': 'Aviso_Previo_Trabalhado',
+        'empresa_indenizado': 'Aviso_Previo_Indenizado',
+        'pedido_demissao':    'Pedido_Demissao',
+    }.get(tipo, 'Aviso_Previo')
+    nome_arq = f"{tipo_label_arq}_{_clean_file_part(f.nome or '', 60, 'Colaborador')}_{localnow().strftime('%Y%m%d')}.pdf"
+    subdir, cat = func_doc_subdir(id, 'aviso_previo', comp)
+    ano = infer_doc_year(comp)
+    prepare_func_doc_dirs(id, ano)
+    rel, abs_p, _ = unique_rel_filename(subdir, nome_arq)
+    os.makedirs(os.path.dirname(abs_p), exist_ok=True)
+    with open(abs_p, 'wb') as fh:
+        fh.write(buf.read())
+    a = FuncionarioArquivo(funcionario_id=id, categoria='aviso_previo', competencia=comp,
+                           nome_arquivo=nome_arq, caminho=rel)
+    db.session.add(a)
+    db.session.flush()
+    assinatura = {}
+    if canal in ('whatsapp', 'app', 'link'):
+        rs = _solicitar_assinatura_arquivo_funcionario(a, f, canal=canal, commit_now=False)
+        assinatura = {'canal': canal,
+                      'link': rs.get('link_curto') or rs.get('link', ''),
+                      'status': ('solicitada' if rs.get('ok') else 'erro'),
+                      'erro': rs.get('erro', '')}
+    db.session.commit()
+    audit_event('aviso_previo_gerado', 'usuario', session.get('uid'), 'funcionario', id, True,
+        {'arquivo_id': a.id, 'canal': canal, 'tipo': tipo, 'total_dias': total_dias})
+    return jsonify({'ok': True, 'arquivo_id': a.id, 'nome_arquivo': nome_arq,
+                    'total_dias': total_dias, 'assinatura': assinatura,
                     'download_url': f'/api/funcionarios/arquivos/{a.id}/download'}), 201
 
 
