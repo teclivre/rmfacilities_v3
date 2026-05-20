@@ -8919,8 +8919,9 @@ def api_funcionario_gerar_aviso_previo(id):
 
 # ── PROPOSTA COMERCIAL ────────────────────────────────────────────────────────
 
-def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, email, itens=None):
-    """Gera PDF da Proposta Comercial RM Facilities com os campos dinâmicos preenchidos."""
+def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, email, itens=None, remetente=None):
+    """Gera PDF da Proposta Comercial com os campos dinâmicos preenchidos.
+    remetente: dict da empresa remetente (campos do modelo Empresa), ou None para defaults."""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
@@ -8968,12 +8969,19 @@ def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, emai
                   'funcao_item': f'AGENTES DE {(funcao or "LIMPEZA").upper()} 44 HORAS SEMANAIS',
                   'valor_unit': 'A definir', 'subtotal': 'A definir'}]
 
+    # ── Dados do remetente ─────────────────────────────────────────────────────
+    rem_nome    = (remetente or {}).get('nome') or (remetente or {}).get('razao') or 'RM CONSERVAÇÃO E SERVIÇOS'
+    rem_cnpj    = (remetente or {}).get('cnpj') or '61.337.803/0001-20'
+    rem_contato = (remetente or {}).get('contato_nome') or 'Roberio Figueiredo'
+    rem_tel     = (remetente or {}).get('contato_telefone') or (remetente or {}).get('telefone') or 'Tel. (12) 3042-1799 · Cel. (12) 99775-2283'
+    rem_email   = (remetente or {}).get('contato_email') or (remetente or {}).get('email') or 'roberio.figueiredo@rmfacilities.com.br'
+
     elems = []
 
     # ── CABEÇALHO ─────────────────────────────────────────────────────────────
     hdr_data = [[
-        Paragraph('<b>RM CONSERVAÇÃO E SERVIÇOS</b><br/>'
-                  '<font size=8>CNPJ: 61.337.803/0001-20</font>',
+        Paragraph(f'<b>{rem_nome}</b><br/>'
+                  f'<font size=8>CNPJ: {rem_cnpj}</font>',
                   st('hd', fontName='Helvetica-Bold', fontSize=12, textColor=WHITE, leading=16)),
         Paragraph(f'<font size=8>Ref.: {ref_num}</font><br/>'
                   f'<font size=8>Data: {data_fmt}</font>',
@@ -9031,10 +9039,11 @@ def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, emai
     elems.append(Spacer(1, 0.6*cm))
     elems.append(Paragraph('Atenciosamente,', s_normal))
     elems.append(Spacer(1, 0.2*cm))
-    elems.append(Paragraph('<b>Roberio Figueiredo</b>', s_bold))
-    elems.append(Paragraph('Administrador', s_small))
-    elems.append(Paragraph('Tel. (12) 3042-1799 &nbsp;&nbsp; Cel. (12) 99775-2283', s_small))
-    elems.append(Paragraph('roberio.figueiredo@rmfacilities.com.br', s_small))
+    elems.append(Paragraph(f'<b>{rem_contato}</b>', s_bold))
+    if rem_tel:
+        elems.append(Paragraph(rem_tel, s_small))
+    if rem_email:
+        elems.append(Paragraph(rem_email, s_small))
     elems.append(PageBreak())
 
     # ── SEÇÃO 1: Apresentação Institucional ──────────────────────────────────
@@ -9204,7 +9213,7 @@ def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, emai
     ass_data = [
         [Paragraph('_' * 40, st('al', fontSize=9, alignment=TA_CENTER)),
          Paragraph('_' * 40, st('al', fontSize=9, alignment=TA_CENTER))],
-        [Paragraph('RM FACILITIES LTDA<br/>Representante Legal', st('al2', fontSize=8, textColor=GRAY, alignment=TA_CENTER)),
+        [Paragraph(f'{rem_nome}<br/>Representante Legal', st('al2', fontSize=8, textColor=GRAY, alignment=TA_CENTER)),
          Paragraph(f'{empresa or "CONTRATANTE"}<br/>Representante Legal', st('al2', fontSize=8, textColor=GRAY, alignment=TA_CENTER))],
     ]
     ass_t = Table(ass_data, colWidths=[9*cm, 9*cm])
@@ -9231,11 +9240,22 @@ def api_gerar_proposta_comercial():
     email   = (d.get('email') or '').strip()
     itens   = d.get('itens') or None
 
+    # Empresa remetente — carrega do banco se informado
+    remetente = None
+    remetente_id = d.get('remetente_id')
+    if remetente_id:
+        try:
+            emp = db.session.get(Empresa, int(remetente_id))
+            if emp:
+                remetente = emp.to_dict()
+        except Exception:
+            pass
+
     if not empresa:
         return jsonify({'erro': 'Informe o nome da empresa destinatária.'}), 400
 
     try:
-        buf = _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, email, itens)
+        buf = _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, email, itens, remetente=remetente)
     except Exception as e:
         app.logger.exception('Erro ao gerar proposta comercial')
         return jsonify({'erro': f'Erro ao gerar PDF: {e}'}), 500
@@ -9243,7 +9263,7 @@ def api_gerar_proposta_comercial():
     nome_arq = _clean_file_part(empresa) or 'proposta'
     filename = f'Proposta_Comercial_{nome_arq}_{localnow().strftime("%Y%m%d_%H%M")}.pdf'
     audit_event('proposta_comercial_gerada', 'usuario', session.get('uid'), None, None, True,
-                {'empresa': empresa, 'funcao': funcao})
+                {'empresa': empresa, 'funcao': funcao, 'remetente_id': remetente_id})
     from flask import send_file
     return send_file(buf, mimetype='application/pdf', as_attachment=True,
                      download_name=filename)

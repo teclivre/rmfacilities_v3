@@ -2933,9 +2933,28 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div style="padding:18px;max-width:860px">
 
-          <!-- Busca de cliente no cadastro -->
+          <!-- ── Empresa Remetente ── -->
+          <div style="background:var(--azul-cc);border:1px solid var(--azul-borda);border-radius:10px;padding:14px 16px;margin-bottom:18px">
+            <div style="font-weight:700;font-size:13px;margin-bottom:10px;color:var(--azul)">🏢 Empresa Remetente (quem emite a proposta)</div>
+            <div class="f" style="position:relative;margin-bottom:0">
+              <div style="position:relative">
+                <input id="pc-rem-busca" type="text" placeholder="Selecione a empresa remetente..." autocomplete="off"
+                  style="width:100%" oninput="pcBuscarACRem(this.value)" onkeydown="pcAcKeyRem(event)">
+                <div id="pc-rem-ac" style="position:absolute;top:100%;left:0;right:0;background:var(--branco);border:1px solid var(--borda);border-top:none;border-radius:0 0 8px 8px;z-index:210;display:none;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>
+              </div>
+              <div id="pc-rem-sel" style="display:none;margin-top:8px;background:var(--branco);border:1px solid var(--azul-borda);border-radius:8px;padding:8px 14px;flex-direction:row;align-items:center;justify-content:space-between;gap:10px">
+                <div>
+                  <div id="pc-rem-nm" style="font-weight:700;font-size:14px"></div>
+                  <div id="pc-rem-sb" style="font-size:12px;color:var(--text-muted)"></div>
+                </div>
+                <button class="btn b-sm" style="background:transparent;color:var(--text-muted);flex-shrink:0" onclick="pcLimparRemetente()">✕ Limpar</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Busca de cliente no cadastro (destinatária) ── -->
           <div class="f" style="margin-bottom:16px;position:relative">
-            <label>Buscar empresa no cadastro (nome ou CNPJ)</label>
+            <label>Buscar empresa destinatária no cadastro (nome ou CNPJ)</label>
             <div style="position:relative">
               <input id="pc-busca" type="text" placeholder="Digite o nome ou CNPJ da empresa cadastrada..." autocomplete="off"
                 style="width:100%" oninput="pcBuscarAC(this.value)" onkeydown="pcAcKey(event)">
@@ -2954,7 +2973,12 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div class="g2" style="margin-bottom:14px;gap:14px">
             <div class="f">
               <label>CNPJ da empresa destinatária</label>
-              <input id="pc-cnpj" type="text" placeholder="00.000.000/0000-00" style="width:100%" maxlength="18" oninput="maskCNPJ(this)">
+              <div style="display:flex;gap:6px;align-items:center">
+                <input id="pc-cnpj" type="text" placeholder="00.000.000/0000-00" style="flex:1" maxlength="18"
+                  oninput="maskCNPJ(this);pcCNPJDestAuto(this)">
+                <button class="btn b-sm b-gh" id="pc-cnpj-btn" onclick="pcCNPJDestBuscar()" title="Buscar CNPJ na Receita Federal">🔍</button>
+              </div>
+              <div id="pc-cnpj-st" style="display:none;font-size:11px;margin-top:3px"></div>
             </div>
             <div class="f">
               <label>Empresa destinatária *</label>
@@ -9074,15 +9098,113 @@ async function docsAbrirProposta() {
   if (pcData && !pcData.value) {
     pcData.value = new Date().toISOString().split('T')[0];
   }
-  // Garante que os clientes estão carregados para o autocomplete
+  // Garante que os clientes estão carregados para o autocomplete de destinatária
   if (!Array.isArray(todos) || !todos.length) todos = await api('/api/clientes');
+  // Carrega empresas remetentes
+  if (!Array.isArray(_pcRemEmpresas) || !_pcRemEmpresas.length) {
+    _pcRemEmpresas = await api('/api/empresas').catch(()=>[]);
+  }
+  // Se só há uma empresa registrada, seleciona automaticamente
+  if (!_pcEmpresaRemSel && Array.isArray(_pcRemEmpresas) && _pcRemEmpresas.length === 1) {
+    pcSelecionarRemetente(_pcRemEmpresas[0].id);
+  }
 }
 // ── FIM DOCUMENTOS ──────────────────────────────────────────────────────────
 
 // ── PROPOSTA COMERCIAL ────────────────────────────────────────────────────────
 let _pcAcIdx = -1;
+let _pcRemEmpresas = [];     // empresas remetentes cadastradas
+let _pcRemAcIdx = -1;        // índice no autocomplete de remetente
+let _pcEmpresaRemSel = null; // empresa remetente selecionada
+let _pcCNPJTimer = null;     // debounce timer para lookup de CNPJ
 
-// ─ Autocomplete de cliente ───────────────────────────────────────────────────
+// ─ Autocomplete empresa REMETENTE ────────────────────────────────────────────
+function pcBuscarACRem(q) {
+  const box = document.getElementById('pc-rem-ac');
+  if (!q || q.length < 1) { box.style.display='none'; return; }
+  const t = q.toLowerCase();
+  const td = q.replace(/\D/g,'');
+  const res = (_pcRemEmpresas||[]).filter(e => {
+    const cn = (e.cnpj||'').replace(/\D/g,'');
+    return (e.nome||'').toLowerCase().includes(t) || (e.razao||'').toLowerCase().includes(t)
+        || (e.cnpj||'').toLowerCase().includes(t) || (td && cn.includes(td));
+  });
+  if (!res.length) { box.style.display='none'; return; }
+  box.innerHTML = res.slice(0,8).map((e,i) => `
+    <div class="ac-item" data-idx="${i}" onmousedown="pcSelecionarRemetente(${e.id})">
+      <div class="ac-nm">${esc(e.nome||e.razao||'')}</div>
+      <div class="ac-sb">${esc(fmtDoc(e.cnpj)||'')}${e.razao&&e.razao!==e.nome?' · '+esc(e.razao):''}</div>
+    </div>`).join('');
+  box.style.display='block'; _pcRemAcIdx=-1;
+}
+
+function pcAcKeyRem(event) {
+  const box = document.getElementById('pc-rem-ac');
+  if (box.style.display==='none') return;
+  const its = box.querySelectorAll('.ac-item');
+  if (event.key==='ArrowDown') { _pcRemAcIdx=Math.min(_pcRemAcIdx+1,its.length-1); _pcHighlightRem(its); event.preventDefault(); }
+  else if (event.key==='ArrowUp') { _pcRemAcIdx=Math.max(_pcRemAcIdx-1,0); _pcHighlightRem(its); event.preventDefault(); }
+  else if (event.key==='Enter' && _pcRemAcIdx>=0) { its[_pcRemAcIdx].dispatchEvent(new MouseEvent('mousedown')); event.preventDefault(); }
+  else if (event.key==='Escape') box.style.display='none';
+}
+function _pcHighlightRem(its) {
+  its.forEach((el,i)=>el.classList.toggle('sel',i===_pcRemAcIdx));
+  if (_pcRemAcIdx>=0) its[_pcRemAcIdx].scrollIntoView({block:'nearest'});
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#pc-rem-busca') && !e.target.closest('#pc-rem-ac'))
+    document.getElementById('pc-rem-ac').style.display='none';
+});
+
+function pcSelecionarRemetente(id) {
+  const e = (_pcRemEmpresas||[]).find(x=>x.id===id); if (!e) return;
+  _pcEmpresaRemSel = e;
+  document.getElementById('pc-rem-ac').style.display='none';
+  document.getElementById('pc-rem-busca').value='';
+  const sel = document.getElementById('pc-rem-sel');
+  document.getElementById('pc-rem-nm').textContent = e.nome || e.razao || '';
+  const cnpjFmt = fmtDoc(e.cnpj)||'';
+  const sub = [cnpjFmt, e.razao&&e.razao!==e.nome?e.razao:'', e.email].filter(Boolean).join(' · ');
+  document.getElementById('pc-rem-sb').textContent = sub;
+  sel.style.display='flex';
+}
+
+function pcLimparRemetente() {
+  _pcEmpresaRemSel = null;
+  document.getElementById('pc-rem-busca').value='';
+  document.getElementById('pc-rem-sel').style.display='none';
+}
+
+// ─ Lookup de CNPJ da empresa destinatária ────────────────────────────────────
+function pcCNPJDestAuto(input) {
+  const digits = input.value.replace(/\D/g,'');
+  if (digits.length !== 14) return;
+  clearTimeout(_pcCNPJTimer);
+  _pcCNPJTimer = setTimeout(() => pcCNPJDestBuscar(), 600);
+}
+
+async function pcCNPJDestBuscar() {
+  const input = document.getElementById('pc-cnpj');
+  const st = document.getElementById('pc-cnpj-st');
+  const btn = document.getElementById('pc-cnpj-btn');
+  const cnpj = (input?.value||'').replace(/\D/g,'');
+  if (cnpj.length !== 14) { st.style.display='block'; st.style.color='var(--verm)'; st.textContent='CNPJ deve ter 14 dígitos.'; return; }
+  btn.disabled=true; btn.textContent='⏳';
+  st.style.display='block'; st.style.color='var(--text-muted)'; st.textContent='Consultando Receita Federal...';
+  try {
+    const d = await api('/api/cnpj/'+cnpj);
+    if (d.erro) { st.style.color='var(--verm)'; st.textContent=d.erro; return; }
+    // Preenche nome da empresa destinatária se vazio
+    const nomeEl = document.getElementById('pc-empresa');
+    if (nomeEl && !nomeEl.value.trim()) nomeEl.value = d.nome||d.razao||'';
+    // Preenche contato se vazio
+    if (d.email) { const em=document.getElementById('pc-email'); if(em&&!em.value.trim()) em.value=d.email; }
+    st.style.color='var(--verde)'; st.textContent='✅ '+(d.nome||d.razao||'Empresa encontrada!')+(d.situacao?' — '+d.situacao:'');
+  } catch(err) {
+    st.style.color='var(--verm)'; st.textContent='Erro ao consultar.';
+  }
+  btn.disabled=false; btn.textContent='🔍';
+}
 function pcBuscarAC(q) {
   const box = document.getElementById('pc-ac');
   if (!q || q.length < 2) { box.style.display='none'; return; }
@@ -9227,6 +9349,15 @@ function previaProposta() {
 
   const totalTxt = document.getElementById('pc-total-row')?.textContent || '—';
 
+  // Dados do remetente
+  const rem = _pcEmpresaRemSel;
+  const remNome = rem ? (rem.nome||rem.razao||'RM CONSERVAÇÃO E SERVIÇOS') : 'RM CONSERVAÇÃO E SERVIÇOS';
+  const remCNPJ = rem ? (fmtDoc(rem.cnpj)||rem.cnpj||'') : '61.337.803/0001-20';
+  const remContato = rem ? (rem.contato_nome||'Representante Legal') : 'Roberio Figueiredo';
+  const remTel = rem ? (rem.telefone||rem.contato_telefone||'') : 'Tel. (12) 3042-1799 · Cel. (12) 99775-2283';
+  const remEmail = rem ? (rem.contato_email||rem.email||'') : 'roberio.figueiredo@rmfacilities.com.br';
+  const remCargo = rem ? '' : 'Administrador · ';
+
   const tabelaItens = itens.length ? itens.map((it,i)=>`
     <tr style="background:${i%2===0?'#fff':'#f8f9fa'}">
       <td style="padding:5px 8px;border:1px solid #ddd">${_escHtml(it.cod)}</td>
@@ -9266,7 +9397,7 @@ table.custo .total-row td{font-weight:700;background:#f0f4f8;border-top:2px soli
 <div class="no-print"><button onclick="window.print()">🖨️ Imprimir / Salvar PDF</button></div>
 <div class="page">
   <div class="hdr">
-    <div><h1>RM CONSERVAÇÃO E SERVIÇOS</h1><div style="font-size:8pt;opacity:.8">CNPJ: 61.337.803/0001-20</div></div>
+    <div><h1>${_escHtml(remNome)}</h1><div style="font-size:8pt;opacity:.8">CNPJ: ${_escHtml(remCNPJ)}</div></div>
     <div class="ref">Ref.: ${_escHtml(refNum)}<br>Data: ${_escHtml(dataFmt)}</div>
   </div>
   <div class="dest-grid">
@@ -9279,7 +9410,7 @@ table.custo .total-row td{font-weight:700;background:#f0f4f8;border-top:2px soli
   <br>
   <p class="body-text">É com satisfação que apresentamos a V. Sa. nossa proposta comercial para a prestação de em <strong>${_escHtml(funcao||'nossos serviços')}</strong> para empresa <strong>${_escHtml(empresa)}</strong> resposta ao processo a sua necessidade. Nossa equipe avaliou cuidadosamente suas necessidades e considerou várias opções para apresentar a solução ideal para este projeto; contudo, sinta-se à vontade para revisar a proposta e indicar eventuais ajustes.</p>
   <p class="body-text">Por favor, entre em contato conosco caso seja necessário algum esclarecimento ou informações adicionais.</p>
-  <p class="body-text" style="margin-top:14px">Atenciosamente,<br><strong>Roberio Figueiredo</strong><br><span style="font-size:9pt;color:#555">Administrador · Tel. (12) 3042-1799 · Cel. (12) 99775-2283<br>roberio.figueiredo@rmfacilities.com.br</span></p>
+  <p class="body-text" style="margin-top:14px">Atenciosamente,<br><strong>${_escHtml(remContato)}</strong><br><span style="font-size:9pt;color:#555">${_escHtml(remCargo)}${_escHtml(remTel)}${remEmail?'<br>'+_escHtml(remEmail):''}</span></p>
 
   <div class="sec-title">Apresentação Institucional</div>
   <p class="body-text">RM FACILITIES LTDA - Somos uma empresa pronta para oferecer soluções integradas de tecnologia e facility services. Estamos buscando sempre atender nossos clientes parceiros, cumprindo os mais rígidos critérios de compliance. Compreendemos a demanda de cada cliente para desenhar a proposta mais eficiente.</p>
@@ -9327,10 +9458,10 @@ table.custo .total-row td{font-weight:700;background:#f0f4f8;border-top:2px soli
   <p class="body-text"><strong>A presente proposta tem validade de 30 dias.</strong></p>
   <div style="text-align:right;font-size:9pt;color:#555;margin-top:20px">${_escHtml(dataFmt)}</div>
   <div class="assinaturas">
-    <div class="ass-bloco"><div class="ass-linha"></div><div class="ass-nome">RM FACILITIES LTDA<br>Representante Legal</div></div>
+    <div class="ass-bloco"><div class="ass-linha"></div><div class="ass-nome">${_escHtml(remNome)}<br>Representante Legal</div></div>
     <div class="ass-bloco"><div class="ass-linha"></div><div class="ass-nome">${_escHtml(empresa)}<br>Representante Legal</div></div>
   </div>
-  <div class="rodape">Proposta gerada em ${_escHtml(dataFmt)} · RM FACILITIES LTDA — Comercial</div>
+  <div class="rodape">Proposta gerada em ${_escHtml(dataFmt)} · ${_escHtml(remNome)} — Comercial</div>
 </div></body></html>`;
   const blob = new Blob([html],{type:'text/html;charset=utf-8'});
   const url = URL.createObjectURL(blob);
@@ -9349,6 +9480,7 @@ async function gerarProposta() {
   const cliente = document.getElementById('pc-cliente').value.trim();
   const email   = document.getElementById('pc-email').value.trim();
   const itens   = pcGetItens();
+  const remetenteId = _pcEmpresaRemSel ? _pcEmpresaRemSel.id : null;
   const btn = document.getElementById('pc-btn-gerar');
   const res = document.getElementById('pc-resultado');
   btn.disabled=true; btn.textContent='⏳ Gerando...';
@@ -9356,7 +9488,7 @@ async function gerarProposta() {
   try {
     const resp = await fetch('/api/proposta-comercial/gerar',{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({empresa,cnpj,funcao,data:dataFmt,cliente,email,itens})
+      body: JSON.stringify({empresa,cnpj,funcao,data:dataFmt,cliente,email,itens,remetente_id:remetenteId})
     });
     if (!resp.ok) { const err=await resp.json().catch(()=>({erro:resp.statusText})); throw new Error(err.erro||resp.statusText); }
     const blob = await resp.blob();
