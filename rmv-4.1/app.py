@@ -9565,11 +9565,8 @@ def api_enviar_proposta_comercial(pid):
         return jsonify({'ok': True, 'canal': 'email', 'dest': dest_email})
 
     elif canal == 'whatsapp':
-        # Registra que o usuário iniciou envio via WhatsApp (link wa.me)
-        p.whatsapp_enviado_em = localnow()
-        db.session.commit()
-        audit_event('proposta_whatsapp_enviado', 'proposta', pid, None, None, True,
-                    {'numero': p.numero, 'telefone': telefone})
+        if not telefone:
+            return jsonify({'erro': 'Informe o número de WhatsApp do destinatário.'}), 400
         tipo_label = 'SPOT' if (p.tipo or '').lower() == 'spot' else 'Mensal'
         texto = (
             f"Olá{' ' + dest_nome if dest_nome else ''}! 👋\n\n"
@@ -9578,11 +9575,36 @@ def api_enviar_proposta_comercial(pid):
             f"Empresa: {p.empresa or ''}\nData: {p.data_proposta or ''}\nValor Total: {p.total or ''}\n\n"
             f"Qualquer dúvida estamos à disposição! 😊\n— {rem_nome} Comercial"
         )
-        import urllib.parse
-        fone_limpo = ''.join(c for c in (telefone or '') if c.isdigit())
-        wa_url = f"https://wa.me/{fone_limpo}?text={urllib.parse.quote(texto)}" if fone_limpo else \
-                 f"https://wa.me/?text={urllib.parse.quote(texto)}"
-        return jsonify({'ok': True, 'canal': 'whatsapp', 'wa_url': wa_url})
+        # Gera o PDF para anexar via Evolution API
+        try:
+            itens = _json.loads(p.itens or '[]')
+        except Exception:
+            itens = []
+        try:
+            pdf_buf = _gerar_proposta_comercial_pdf(
+                p.empresa, p.cnpj_dest, p.funcao, p.data_proposta,
+                p.cliente_contato, p.email_contato, itens,
+                remetente=remetente, ref_num=p.numero, tipo=p.tipo
+            )
+            pdf_buf.seek(0)
+            pdf_bytes = pdf_buf.read()
+        except Exception as e:
+            app.logger.exception('Erro ao gerar PDF para WhatsApp')
+            return jsonify({'erro': f'Erro ao gerar PDF: {e}'}), 500
+        try:
+            nome_pdf = f'Proposta_{p.numero}_{(p.empresa or "")[:30].replace(" ","_")}.pdf'
+            # Envia texto primeiro, depois o PDF como documento
+            wa_send_text(telefone, texto)
+            wa_send_media_bytes(telefone, pdf_bytes, nome_pdf, 'application/pdf',
+                                caption=f'Proposta {p.numero} — {p.empresa or ""}')
+        except Exception as e:
+            app.logger.exception('Erro ao enviar WhatsApp da proposta')
+            return jsonify({'erro': f'Erro ao enviar WhatsApp: {e}'}), 500
+        p.whatsapp_enviado_em = localnow()
+        db.session.commit()
+        audit_event('proposta_whatsapp_enviado', 'proposta', pid, None, None, True,
+                    {'numero': p.numero, 'telefone': telefone})
+        return jsonify({'ok': True, 'canal': 'whatsapp', 'dest': telefone})
 
     return jsonify({'erro': 'Canal inválido. Use "email" ou "whatsapp".'}), 400
 

@@ -9370,9 +9370,8 @@ async function pcEnviarProposta() {
   try {
     const body = {canal, email, telefone, mensagem};
     const res  = await api(`/api/propostas-comerciais/${_mepPropostaId}/enviar`, {method:'POST', body});
-    if (canal === 'whatsapp' && res.wa_url) {
-      window.open(res.wa_url, '_blank');
-      _showFb('💬 WhatsApp aberto em nova aba. Confirme o envio na conversa.', true);
+    if (canal === 'whatsapp') {
+      _showFb(`✅ Proposta enviada via WhatsApp para <strong>${_escHtml(res.dest || telefone)}</strong>!`, true);
     } else {
       _showFb(`✅ E-mail enviado com sucesso para <strong>${_escHtml(email)}</strong>!`, true);
     }
