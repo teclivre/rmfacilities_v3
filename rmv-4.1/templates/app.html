@@ -9369,8 +9369,9 @@ async function pcEnviarProposta() {
   btn.disabled = true; btn.textContent = '⏳ Enviando…';
   try {
     const body = {canal, email, telefone, mensagem};
-    const res  = await api(`/api/propostas-comerciais/${_mepPropostaId}/enviar`, {method:'POST', body});
-    if (canal === 'whatsapp') {
+    const res  = await api(`/api/propostas-comerciais/${_mepPropostaId}/enviar`, 'POST', body);
+    if (res.erro) { _showFb(`❌ ${_escHtml(res.erro)}`, false); }
+    else if (canal === 'whatsapp') {
       _showFb(`✅ Proposta enviada via WhatsApp para <strong>${_escHtml(res.dest || telefone)}</strong>!`, true);
     } else {
       _showFb(`✅ E-mail enviado com sucesso para <strong>${_escHtml(email)}</strong>!`, true);
