@@ -18043,7 +18043,8 @@ def api_folhas_funcionarios_disponiveis():
     folha_id = request.args.get('folha_id', type=int)
     emp = request.args.get('empresa_id', type=int)
     q_str = (request.args.get('q') or '').strip().lower()
-    q = Funcionario.query.filter(or_(Funcionario.ativo == True, Funcionario.ativo.is_(None)))
+    from sqlalchemy import or_ as _or_
+    q = Funcionario.query.filter(_or_(Funcionario.ativo == True, Funcionario.ativo.is_(None)))
     if emp:
         q = q.filter(Funcionario.empresa_id == emp)
     ja = set()
