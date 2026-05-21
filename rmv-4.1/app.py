@@ -10851,7 +10851,26 @@ def api_app_funcionario_me_documentos():
 @app_func_required
 def api_app_funcionario_ultimo_pagamento():
     f=g.app_funcionario
-    # Fonte primária: BeneficioMensal (salário individual)
+    # Fonte primária: nova FolhaPagamento (status=paga)
+    try:
+        item=(FolhaPagamentoItem.query.join(FolhaPagamento, FolhaPagamentoItem.folha_id==FolhaPagamento.id)
+              .filter(FolhaPagamentoItem.funcionario_id==f.id, FolhaPagamento.status=='paga')
+              .order_by(FolhaPagamento.competencia.desc(), FolhaPagamento.id.desc()).first())
+    except Exception:
+        item=None
+    if item:
+        folha=db.session.get(FolhaPagamento, item.folha_id)
+        return jsonify({
+            'ok':True,
+            'competencia':folha.competencia if folha else '',
+            'valor_liquido':float(item.salario_base or 0),
+            'total_adicional':float(item.total_adicional or 0),
+            'total_desconto':float(item.total_desconto or 0),
+            'total_pagar':float(item.total_pagar or 0),
+            'folha_nome':(folha.nome if folha else ''),
+            'data_pagamento':(folha.data_pagamento if folha else ''),
+        })
+    # Fonte secundária: BeneficioMensal (salário individual)
     reg=BeneficioMensal.query.filter_by(funcionario_id=f.id)\
         .filter(BeneficioMensal.salario.isnot(None))\
         .order_by(BeneficioMensal.competencia.desc()).first()
@@ -10868,7 +10887,7 @@ def api_app_funcionario_ultimo_pagamento():
             'total_desconto':total_desconto,
             'total_pagar':round(valor_liquido+total_adicional-total_desconto,2)
         })
-    # Fallback: folhas fechadas
+    # Fallback: folhas legadas (FolhaPagamentoMensal)
     empresa_ref_id=int(f.empresa_id or 0)
     folhas=FolhaPagamentoMensal.query.filter(
         FolhaPagamentoMensal.status=='fechada',
@@ -10893,21 +10912,51 @@ def api_app_funcionario_ultimo_pagamento():
 @app_func_required
 def api_app_funcionario_historico_pagamentos():
     f=g.app_funcionario
-    # Fonte primária: BeneficioMensal
+    resultado=[]
+    competencias_vistas=set()
+    # 1) Itens de FolhaPagamento (nova) com status=paga
+    try:
+        itens=(FolhaPagamentoItem.query.join(FolhaPagamento, FolhaPagamentoItem.folha_id==FolhaPagamento.id)
+               .filter(FolhaPagamentoItem.funcionario_id==f.id, FolhaPagamento.status=='paga')
+               .order_by(FolhaPagamento.competencia.desc(), FolhaPagamento.id.desc()).limit(40).all())
+    except Exception:
+        itens=[]
+    for it in itens:
+        folha=db.session.get(FolhaPagamento, it.folha_id)
+        if not folha: continue
+        key=(folha.competencia, folha.id)
+        if key in competencias_vistas: continue
+        competencias_vistas.add(key)
+        # busca lançamentos para detalhamento
+        lans=LancamentoAvulso.query.filter_by(funcionario_id=f.id, competencia=folha.competencia).all()
+        resultado.append({
+            'competencia':folha.competencia,
+            'folha_id':folha.id,
+            'folha_nome':folha.nome,
+            'data_pagamento':folha.data_pagamento or '',
+            'valor_liquido':float(it.salario_base or 0),
+            'total_adicional':float(it.total_adicional or 0),
+            'total_desconto':float(it.total_desconto or 0),
+            'total_pagar':float(it.total_pagar or 0),
+            'obs':it.obs or '',
+            'lancamentos':[{'tipo':l.tipo,'natureza':l.natureza,'valor':float(l.valor or 0),'descricao':l.descricao or ''} for l in lans],
+        })
+    # 2) BeneficioMensal — adiciona competências ainda não cobertas
     registros=BeneficioMensal.query.filter_by(funcionario_id=f.id)\
         .filter(BeneficioMensal.salario.isnot(None))\
         .order_by(BeneficioMensal.competencia.desc()).limit(24).all()
+    comps_no_resultado={r['competencia'] for r in resultado}
     if registros:
-        comps=[r.competencia for r in registros]
+        comps=[r.competencia for r in registros if r.competencia not in comps_no_resultado]
         lans_todos=LancamentoAvulso.query.filter(
             LancamentoAvulso.funcionario_id==f.id,
             LancamentoAvulso.competencia.in_(comps)
-        ).all()
+        ).all() if comps else []
         mapa_lan={}
         for lan in lans_todos:
             mapa_lan.setdefault(lan.competencia,[]).append(lan)
-        resultado=[]
         for reg in registros:
+            if reg.competencia in comps_no_resultado: continue
             lans=mapa_lan.get(reg.competencia,[])
             total_adicional=sum(float(l.valor or 0) for l in lans if l.natureza=='adicional')
             total_desconto=sum(float(l.valor or 0) for l in lans if l.natureza=='desconto')
@@ -10921,14 +10970,15 @@ def api_app_funcionario_historico_pagamentos():
                 'obs':reg.salario_obs or '',
                 'lancamentos':[{'tipo':l.tipo,'natureza':l.natureza,'valor':float(l.valor or 0),'descricao':l.descricao or ''} for l in lans]
             })
-        return jsonify({'ok':True,'historico':resultado})
-    # Fallback: folhas fechadas
+    if resultado:
+        resultado.sort(key=lambda x: (x.get('competencia') or '', x.get('folha_id') or 0), reverse=True)
+        return jsonify({'ok':True,'historico':resultado[:30]})
+    # 3) Fallback: folhas legadas
     empresa_ref_id=int(f.empresa_id or 0)
     folhas=FolhaPagamentoMensal.query.filter(
         FolhaPagamentoMensal.status=='fechada',
         FolhaPagamentoMensal.empresa_ref_id==empresa_ref_id
     ).order_by(FolhaPagamentoMensal.competencia.desc()).limit(24).all()
-    resultado=[]
     for folha in folhas:
         try:
             dados=json.loads(folha.dados_json or '{}')
