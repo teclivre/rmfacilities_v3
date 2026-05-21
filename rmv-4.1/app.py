@@ -3587,6 +3587,39 @@ def wa_ai_resume(numero):
 def wa_ai_pause_set(numero,hours=8):
     return wa_ai_pause_for(numero,hours)
 
+# Circuit-breaker global para falhas upstream da IA (ex.: 403 PERMISSION_DENIED / billing)
+# Evita repetir a chamada em cada mensagem e enche o log com stack traces.
+_AI_UPSTREAM_BLOCK={'until':None,'reason':''}
+
+def _ai_upstream_block_active():
+    until=_AI_UPSTREAM_BLOCK.get('until')
+    if not until:
+        return False
+    try:
+        return until>utcnow()
+    except Exception:
+        return False
+
+def _ai_upstream_block_reason():
+    return _AI_UPSTREAM_BLOCK.get('reason') or ''
+
+def _ai_upstream_block_set(reason,minutes=30):
+    try:
+        _AI_UPSTREAM_BLOCK['until']=utcnow()+timedelta(minutes=max(1,int(minutes)))
+        _AI_UPSTREAM_BLOCK['reason']=(reason or '')[:255]
+    except Exception:
+        pass
+
+def _ai_error_is_upstream_block(msg):
+    s=(msg or '').lower()
+    if not s:
+        return False
+    # Tipicamente: 'IA API 403', 'permission_denied', 'dunning', 'billing', '401', 'quota', '429'
+    keys=('ia api 403','ia api 401','ia api 402','ia api 429',
+          'permission_denied','dunning','billing','quota','exceeded',
+          'insufficient_quota','project disabled','invalid api key','api key not valid')
+    return any(k in s for k in keys)
+
 def _post_json(url,payload,headers=None,timeout=30):
     h={'Content-Type':'application/json'}
     if headers: h.update(headers)
@@ -19959,7 +19992,12 @@ def webhook_whatsapp():
                         diag['erros'].append(msg_cfg)
                     app.logger.warning('Auto-reply WhatsApp inativo para %s: configuracao incompleta',numero)
                 if ai_wa_enabled() and wa_ready and not wa_ai_pause_active(numero):
-                    try:
+                    if _ai_upstream_block_active():
+                        msg_bl=f'Auto-reply em pausa temporaria (falha upstream IA): {_ai_upstream_block_reason()}'
+                        if msg_bl not in diag['erros']:
+                            diag['erros'].append(msg_bl)
+                    else:
+                      try:
                         resposta=ai_wa_reply(numero,conteudo,historico=historico_db)
                         if resposta:
                             wa_send_text(numero,resposta)
@@ -19971,13 +20009,18 @@ def webhook_whatsapp():
                             diag['erros'].append('IA nao retornou resposta')
                             db.session.add(WhatsAppMensagem(conversa_id=c.id,numero=numero,direcao='out',tipo='erro',conteudo='IA nao retornou resposta.'))
                             db.session.commit()
-                    except Exception as e:
-                        diag['erros'].append(str(e))
+                      except Exception as e:
+                        err_str=str(e)
+                        diag['erros'].append(err_str)
                         db.session.rollback()
                         try:
-                            app.logger.exception('Falha no auto-reply WhatsApp para %s',numero)
-                            db.session.add(WhatsAppMensagem(conversa_id=c.id,numero=numero,direcao='out',tipo='erro',conteudo=('Falha auto-reply: '+str(e))[:700]))
-                            db.session.commit()
+                            if _ai_error_is_upstream_block(err_str):
+                                _ai_upstream_block_set(err_str,minutes=30)
+                                app.logger.warning('Auto-reply WhatsApp upstream bloqueado (%s) - pausando 30min: %s',numero,err_str[:300])
+                            else:
+                                app.logger.exception('Falha no auto-reply WhatsApp para %s',numero)
+                                db.session.add(WhatsAppMensagem(conversa_id=c.id,numero=numero,direcao='out',tipo='erro',conteudo=('Falha auto-reply: '+err_str)[:700]))
+                                db.session.commit()
                         except Exception:
                             db.session.rollback()
         elif debug:
