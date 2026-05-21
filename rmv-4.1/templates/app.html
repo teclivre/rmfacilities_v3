@@ -10776,11 +10776,10 @@ async function fpAdicionarFuncionarios(ids){
   if(!f) return;
   if(f.status !== 'rascunho'){ toast('Folha fechada não aceita alterações.','e'); return; }
   const r = await api(`/api/folhas/${f.id}/funcionarios`, 'POST', {funcionario_ids: ids});
-  if(!r || r.error){ toast(r?.error||'Erro ao adicionar.','e'); return; }
+  if(!r || r.error || r.erro){ toast(r?.error||r?.erro||'Erro ao adicionar.','e'); return; }
   toast(`${r.adicionados||0} funcionário(s) adicionado(s).`,'s');
-  FP_STATE.folhaSelecionada = r.folha;
-  fpRenderFolhaPainel();
-  await fpCarregarDisponiveis();
+  // Recarrega tudo do servidor para garantir UI consistente (folha + disponíveis + lista)
+  await fpSelecionarFolha(f.id);
   await fpCarregarFolhas();
 }
 
@@ -10789,10 +10788,8 @@ async function fpRemoverItem(funcId){
   if(!f) return;
   if(!confirm('Remover este funcionário da folha?')) return;
   const r = await api(`/api/folhas/${f.id}/funcionarios/${funcId}`, 'DELETE');
-  if(!r || r.error){ toast(r?.error||'Erro ao remover.','e'); return; }
-  FP_STATE.folhaSelecionada = r.folha;
-  fpRenderFolhaPainel();
-  await fpCarregarDisponiveis();
+  if(!r || r.error || r.erro){ toast(r?.error||r?.erro||'Erro ao remover.','e'); return; }
+  await fpSelecionarFolha(f.id);
   await fpCarregarFolhas();
 }
 
