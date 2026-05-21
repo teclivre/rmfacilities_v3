@@ -9441,12 +9441,14 @@ def api_gerar_proposta_comercial():
     filename = f'Proposta_Comercial_{ref_num}_{nome_arq}.pdf'
     audit_event('proposta_comercial_gerada', 'usuario', session.get('uid'), None, None, True,
                 {'empresa': empresa, 'funcao': funcao, 'remetente_id': remetente_id, 'numero': ref_num})
-    from flask import send_file
-    hdrs = {'X-Proposta-Numero': ref_num}
+    from flask import send_file, make_response
+    resp = make_response(send_file(buf, mimetype='application/pdf', as_attachment=True,
+                                   download_name=filename))
+    resp.headers['X-Proposta-Numero'] = ref_num
     if proposta_id:
-        hdrs['X-Proposta-Id'] = str(proposta_id)
-    return send_file(buf, mimetype='application/pdf', as_attachment=True,
-                     download_name=filename, headers=hdrs)
+        resp.headers['X-Proposta-Id'] = str(proposta_id)
+    resp.headers['Access-Control-Expose-Headers'] = 'X-Proposta-Numero, X-Proposta-Id'
+    return resp
 
 
 @app.route('/api/propostas-comerciais', methods=['GET'])
