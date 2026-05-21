@@ -887,9 +887,36 @@ document.addEventListener('DOMContentLoaded',()=>{
     </div>
     <div id="pg-pagamento-salario" class="pg" data-subaba-ready="1">
       <div id="sal-st" class="st"></div>
+      <!-- Cards de resumo financeiro -->
+      <div class="g4" style="margin-bottom:14px" id="sal-resumo-cards">
+        <div class="card" style="padding:14px 16px">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Total da Folha (salários)</div>
+          <div style="font-size:22px;font-weight:800;color:var(--azul)" id="sal-card-folha">R$ 0,00</div>
+          <div style="font-size:11px;color:var(--text-muted)" id="sal-card-funcionarios">0 colaboradores</div>
+        </div>
+        <div class="card" style="padding:14px 16px">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">+ Lançamentos Adicionais</div>
+          <div style="font-size:22px;font-weight:800;color:var(--verd)" id="sal-card-adicionais">R$ 0,00</div>
+          <div style="font-size:11px;color:var(--text-muted)" id="sal-card-adicionais-qtd">0 lançamentos</div>
+        </div>
+        <div class="card" style="padding:14px 16px">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">− Descontos Avulsos</div>
+          <div style="font-size:22px;font-weight:800;color:var(--verm)" id="sal-card-descontos">R$ 0,00</div>
+          <div style="font-size:11px;color:var(--text-muted)" id="sal-card-descontos-qtd">0 lançamentos</div>
+        </div>
+        <div class="card" style="padding:14px 16px;border:2px solid var(--azul)">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Total a Pagar</div>
+          <div style="font-size:22px;font-weight:800;color:var(--azul)" id="sal-card-total-pagar">R$ 0,00</div>
+          <div id="rh-total-folha" style="font-size:11px;color:var(--text-muted)"></div>
+        </div>
+      </div>
       <div class="card">
-        <div class="card-header"><span class="card-title">Pagamento de Salário</span></div>
-        <div id="rh-sal-toolbar" class="brow" style="justify-content:flex-start;gap:8px;flex-wrap:wrap;margin:0 0 10px 0">
+        <div class="card-header" style="gap:12px;flex-wrap:wrap">
+          <span class="card-title">Pagamento de Salário</span>
+          <button class="btn b-az b-sm" type="button" onclick="salLanAbrirModal(null,null)">+ Lançamento Avulso</button>
+        </div>
+        <!-- Toolbar de filtros -->
+        <div id="rh-sal-toolbar" class="brow" style="justify-content:flex-start;gap:8px;flex-wrap:wrap;margin:0 0 10px 0;padding:10px 16px;border-bottom:1px solid var(--borda)">
           <div class="f" style="min-width:180px;margin:0">
             <label style="font-size:11px">Competência</label>
             <input id="rh-sal-comp" type="month" onchange="rhSalariosOnEmpresaChange()" style="min-width:160px">
@@ -912,22 +939,50 @@ document.addEventListener('DOMContentLoaded',()=>{
               <option value="">Todos os postos</option>
             </select>
           </div>
-          <button class="btn b-gh b-sm" type="button" onclick="rhSalariosOnEmpresaChange()">Carregar</button>
-          <button class="btn b-az b-sm" type="button" onclick="rhSalariosSalvar()">Salvar valores</button>
-          <button class="btn b-vd b-sm" type="button" onclick="rhSalariosSalvarFolha()">Salvar folha do mês</button>
-          <button class="btn b-gh b-sm" type="button" onclick="rhSalariosReabrirFolha()">Reabrir folha</button>
-          <button class="btn b-gh b-sm" type="button" onclick="rhSalariosAssinarFolha()">Assinar fechamento</button>
-          <button class="btn b-gh b-sm" type="button" onclick="rhSalariosPrevia()">Prévia</button>
-          <button class="btn b-gh b-sm" type="button" onclick="rhSalariosAbrirHistorico()">Consultar histórico</button>
-          <button class="btn b-az b-sm" type="button" onclick="rhSalariosExportar('xlsx')">Exportar planilha</button>
-          <button class="btn b-gh b-sm" type="button" onclick="rhSalariosExportar('pdf')">Exportar PDF</button>
-          <a class="btn b-gh b-sm" href="/api/financeiro/salarios/modelo" target="_blank">Modelo importação</a>
-          <label class="btn b-gh b-sm" for="rh-sal-import-file" style="cursor:pointer">Importar planilha</label>
-          <input type="file" id="rh-sal-import-file" accept=".csv,.xlsx" style="display:none" onchange="rhSalariosImportarPlanilha(event)">
-          <span id="rh-sal-auto-hint" style="font-size:11px;color:var(--text-muted);margin-left:2px">Auto-save ativo</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">
+            <button class="btn b-gh b-sm" type="button" onclick="rhSalariosOnEmpresaChange()">Carregar</button>
+            <button class="btn b-az b-sm" type="button" onclick="rhSalariosSalvar()">Salvar valores</button>
+            <button class="btn b-az b-sm" type="button" onclick="rhSalariosExportar('xlsx')">Exportar planilha</button>
+            <button class="btn b-gh b-sm" type="button" onclick="rhSalariosExportar('pdf')">Exportar PDF</button>
+            <button class="btn b-gh b-sm" type="button" onclick="rhSalariosPrevia()">Prévia PDF</button>
+            <button class="btn b-gh b-sm" type="button" onclick="rhSalariosAbrirHistorico()">Histórico</button>
+            <a class="btn b-gh b-sm" href="/api/financeiro/salarios/modelo" target="_blank">Modelo</a>
+            <label class="btn b-gh b-sm" for="rh-sal-import-file" style="cursor:pointer">Importar</label>
+            <input type="file" id="rh-sal-import-file" accept=".csv,.xlsx" style="display:none" onchange="rhSalariosImportarPlanilha(event)">
+            <span id="rh-sal-auto-hint" style="font-size:11px;color:var(--text-muted);margin-left:2px">Auto-save ativo</span>
+          </div>
         </div>
-        <div id="rh-sal-res" style="margin:0 0 10px 0;color:var(--text-muted);font-size:13px"></div>
-        <div id="rh-sal-painel" style="margin:0 0 12px 0">
+        <!-- Stepper de etapas -->
+        <div id="sal-stepper" style="display:flex;align-items:stretch;gap:0;padding:12px 16px;border-bottom:1px solid var(--borda);background:var(--bg-card);flex-wrap:wrap;gap:6px">
+          <div id="sal-step-1" style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-radius:8px;border:2px solid var(--azul);background:var(--azul-light,rgba(0,100,220,.07));flex:1;min-width:200px">
+            <div style="width:28px;height:28px;border-radius:50%;background:var(--azul);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0">1</div>
+            <div>
+              <div style="font-weight:700;font-size:13px">Rascunho</div>
+              <div style="font-size:11px;color:var(--text-muted)">Edite salários e lançamentos</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;padding:0 4px;color:var(--text-muted)">▶</div>
+          <div id="sal-step-2" style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-radius:8px;border:2px solid var(--borda);flex:1;min-width:200px">
+            <div style="width:28px;height:28px;border-radius:50%;background:var(--borda);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0">2</div>
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:13px">Fechar Folha</div>
+              <div style="font-size:11px;color:var(--text-muted)">Registra versão oficial</div>
+            </div>
+            <button class="btn b-vd b-sm" type="button" onclick="rhSalariosSalvarFolha()" id="btn-sal-fechar">Fechar</button>
+          </div>
+          <div style="display:flex;align-items:center;padding:0 4px;color:var(--text-muted)">▶</div>
+          <div id="sal-step-3" style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-radius:8px;border:2px solid var(--borda);flex:1;min-width:200px">
+            <div style="width:28px;height:28px;border-radius:50%;background:var(--borda);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0">3</div>
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:13px">Assinar</div>
+              <div style="font-size:11px;color:var(--text-muted)">Registra assinatura digital</div>
+            </div>
+            <button class="btn b-gh b-sm" type="button" onclick="rhSalariosReabrirFolha()" id="btn-sal-reabrir" style="display:none">Reabrir</button>
+            <button class="btn b-az b-sm" type="button" onclick="rhSalariosAssinarFolha()" id="btn-sal-assinar">Assinar</button>
+          </div>
+        </div>
+        <div id="rh-sal-res" style="margin:8px 16px;color:var(--text-muted);font-size:13px"></div>
+        <div id="rh-sal-painel" style="margin:0 16px 12px 16px">
           <div class="g3" style="margin-top:0">
             <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Histórico e versões</span></div><div id="rh-sal-historico" style="padding:8px 12px 12px 12px;color:var(--text-muted);font-size:13px"></div></div>
             <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Alertas</span></div><div id="rh-sal-alertas" style="padding:8px 12px 12px 12px;color:var(--text-muted);font-size:13px"></div></div>
@@ -936,9 +991,71 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div class="tbl-wrap" id="rh-salarios-wrap">
           <table class="tbl">
-            <thead><tr><th>RE</th><th>Nome</th><th>Cargo</th><th>Posto</th><th>Empresa</th><th style="text-align:right">Salário líquido</th><th style="text-align:right">Mês anterior</th><th>Observação</th><th style="text-align:right">Total anual</th><th>Ações</th></tr></thead>
+            <thead><tr>
+              <th>RE</th><th>Nome</th><th>Cargo</th><th>Posto</th><th>Empresa</th>
+              <th style="text-align:right">Salário líquido</th>
+              <th style="text-align:right">Mês anterior</th>
+              <th style="text-align:right;color:var(--verd)">+ Adicionais</th>
+              <th style="text-align:right;color:var(--verm)">− Descontos</th>
+              <th style="text-align:right;border-left:2px solid var(--azul);font-weight:800">Total a Pagar</th>
+              <th>Obs</th>
+              <th>Ações</th>
+            </tr></thead>
             <tbody id="tb-func-salarios"></tbody>
           </table>
+        </div>
+      </div>
+      <!-- Modal: Lançamento Avulso -->
+      <div id="mod-lan-avulso" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+        <div class="modal-box" style="max-width:520px;width:95vw">
+          <div class="modal-header">
+            <span id="mod-lan-titulo" style="font-weight:700">Lançamentos Avulsos</span>
+            <button class="btn b-ghost b-sm" onclick="document.getElementById('mod-lan-avulso').style.display='none'">✕</button>
+          </div>
+          <div style="padding:16px">
+            <div id="mod-lan-nome" style="font-size:13px;color:var(--text-muted);margin-bottom:12px"></div>
+            <div class="g2" style="gap:8px">
+              <div class="f" style="margin:0">
+                <label style="font-size:12px">Tipo de Lançamento</label>
+                <select id="lan-tipo" onchange="salLanTipoChange()" style="width:100%">
+                  <option value="adiantamento">Adiantamento de salário</option>
+                  <option value="decimo_terceiro">13º Salário</option>
+                  <option value="ferias">Férias</option>
+                  <option value="hora_extra">Hora extra</option>
+                  <option value="bonus">Bônus / Gratificação</option>
+                  <option value="rescisao">Rescisão</option>
+                  <option value="desconto_avulso">Desconto avulso</option>
+                </select>
+              </div>
+              <div class="f" style="margin:0">
+                <label style="font-size:12px">Natureza</label>
+                <select id="lan-natureza" style="width:100%">
+                  <option value="adicional">Adicional (soma)</option>
+                  <option value="desconto">Desconto (deduz)</option>
+                </select>
+              </div>
+            </div>
+            <div class="g2" style="gap:8px;margin-top:8px">
+              <div class="f" style="margin:0">
+                <label style="font-size:12px">Valor (R$)</label>
+                <input type="number" id="lan-valor" min="0.01" step="0.01" placeholder="0,00" style="width:100%">
+              </div>
+              <div class="f" style="margin:0">
+                <label style="font-size:12px">Descrição (opcional)</label>
+                <input type="text" id="lan-descricao" placeholder="Descrição do lançamento" style="width:100%">
+              </div>
+            </div>
+            <div class="f" style="margin-top:8px">
+              <label style="font-size:12px">Observação interna</label>
+              <textarea id="lan-obs" rows="2" style="width:100%;resize:vertical"></textarea>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button class="btn b-az" onclick="salLanSalvar()" id="btn-lan-salvar">+ Adicionar Lançamento</button>
+              <button class="btn b-ghost" onclick="document.getElementById('mod-lan-avulso').style.display='none'">Fechar</button>
+            </div>
+            <!-- Lista de lançamentos existentes -->
+            <div id="mod-lan-lista" style="margin-top:16px;border-top:1px solid var(--borda);padding-top:12px"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -9297,18 +9414,27 @@ async function docsAbrirProposta() {
 
 // ── CONTRATOS ───────────────────────────────────────────────────────────────
 let _ctrEmpresas = [];
+let _ctrClientes = [];
 
 async function _ctrCarregarEmpresas() {
-  if (!_ctrEmpresas.length) {
-    _ctrEmpresas = await api('/api/empresas').catch(() => []);
-  }
+  const [emps, clis] = await Promise.all([
+    _ctrEmpresas.length ? Promise.resolve(_ctrEmpresas) : api('/api/empresas').catch(() => []),
+    _ctrClientes.length ? Promise.resolve(_ctrClientes) : api('/api/clientes').catch(() => []),
+  ]);
+  _ctrEmpresas = emps;
+  _ctrClientes = clis;
+
   const pSel = document.getElementById('ctr-prestadora');
   const tSel = document.getElementById('ctr-tomadora');
   if (!pSel || !tSel) return;
-  const opts = '<option value="">— Selecione —</option>' +
+
+  // Prestadora = empresas próprias
+  pSel.innerHTML = '<option value="">— Selecione a empresa prestadora —</option>' +
     _ctrEmpresas.map(e => `<option value="${e.id}">${_escHtml(e.razao || e.nome)}</option>`).join('');
-  pSel.innerHTML = opts;
-  tSel.innerHTML = opts;
+
+  // Tomadora = clientes cadastrados
+  tSel.innerHTML = '<option value="">— Selecione o cliente tomador —</option>' +
+    _ctrClientes.map(c => `<option value="cli_${c.id}">${_escHtml(c.nome)}${c.cnpj ? ' — ' + _escHtml(c.cnpj) : ''}</option>`).join('');
 }
 
 async function docsAbrirContrato(tipo) {
@@ -10248,49 +10374,190 @@ async function rhSalariosOnEmpresaChange(){
   let listaSal=Array.isArray(rSal?.itens)?rSal.itens:[];
   if(cargoFiltro) listaSal=listaSal.filter(f=>String(f.cargo||'').trim().toLowerCase()===cargoFiltro);
   if(postoFiltro) listaSal=listaSal.filter(f=>String(f.posto_operacional||'').trim().toLowerCase()===postoFiltro);
-  const folhaTotal=listaSal.reduce((acc,f)=>acc+(Number(f?.valor_liquido)||0),0);
-  const folhaEl=document.getElementById('rh-total-folha');
-  if(folhaEl) folhaEl.textContent='Folha: '+brl(folhaTotal || rSal.total_competencia || 0);
+  // Resumo cards
+  const totalFolha=listaSal.reduce((acc,f)=>acc+(Number(f?.valor_liquido)||0),0);
+  const totalAdicionais=listaSal.reduce((acc,f)=>acc+(Number(f?.total_adicional)||0),0);
+  const totalDescontos=listaSal.reduce((acc,f)=>acc+(Number(f?.total_desconto)||0),0);
+  const totalPagar=listaSal.reduce((acc,f)=>acc+(Number(f?.total_pagar)||0),0);
+  const qtdLanAdicionais=listaSal.reduce((acc,f)=>acc+((f.lancamentos||[]).filter(l=>l.natureza==='adicional').length),0);
+  const qtdLanDescontos=listaSal.reduce((acc,f)=>acc+((f.lancamentos||[]).filter(l=>l.natureza==='desconto').length),0);
+  const cardFolha=document.getElementById('sal-card-folha');
+  const cardFuncionarios=document.getElementById('sal-card-funcionarios');
+  const cardAdicionais=document.getElementById('sal-card-adicionais');
+  const cardAdicionaisQtd=document.getElementById('sal-card-adicionais-qtd');
+  const cardDescontos=document.getElementById('sal-card-descontos');
+  const cardDescontosQtd=document.getElementById('sal-card-descontos-qtd');
+  const cardTotalPagar=document.getElementById('sal-card-total-pagar');
+  if(cardFolha) cardFolha.textContent=brl(totalFolha);
+  if(cardFuncionarios) cardFuncionarios.textContent=`${listaSal.length} colaborador(es)`;
+  if(cardAdicionais) cardAdicionais.textContent=brl(totalAdicionais);
+  if(cardAdicionaisQtd) cardAdicionaisQtd.textContent=`${qtdLanAdicionais} lançamento(s)`;
+  if(cardDescontos) cardDescontos.textContent=brl(totalDescontos);
+  if(cardDescontosQtd) cardDescontosQtd.textContent=`${qtdLanDescontos} lançamento(s)`;
+  if(cardTotalPagar) cardTotalPagar.textContent=brl(totalPagar);
   const empNome=empresaId?((emps||[]).find(e=>String(e.id)===String(empresaId))?.nome||'Empresa selecionada'):'Todas as empresas';
   if(salResumo){
     const metaSalvar=(rSal.folha_salva_em?` · folha salva em ${new Date(rSal.folha_salva_em).toLocaleString('pt-BR')}${rSal.folha_salva_por?(' por '+rSal.folha_salva_por):''}`:' · folha ainda não salva no histórico');
     salResumo.textContent=`${listaSal.length} colaborador(es) · ${empNome} · Competência ${comp} · status ${rSal.folha_status||'aberta'}${metaSalvar}`;
   }
   rhSalFolhaStatus=rSal.folha_status||'aberta';
+  rhSalStepUpdate(rSal.folha_status||'aberta', rSal.assinatura_status||'pendente');
   rhSalariosRenderPainel(rSal);
   const canEdit=rhPayrollCan('edit') && (rSal.folha_status||'aberta')!=='fechada';
   if(!listaSal.length){
-    tbSal.innerHTML='<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-muted)">Nenhum colaborador ativo encontrado para o filtro selecionado.</td></tr>';
+    tbSal.innerHTML='<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text-muted)">Nenhum colaborador ativo encontrado para o filtro selecionado.</td></tr>';
     return;
   }
   tbSal.innerHTML=listaSal.map(f=>{
     const valor=Number(f?.valor_liquido)||0;
     const anterior=Number(f?.valor_anterior)||0;
-    const totalAnual=Number(f?.total_anual_funcionario)||0;
+    const adicional=Number(f?.total_adicional)||0;
+    const desconto=Number(f?.total_desconto)||0;
+    const totalPagarFun=Number(f?.total_pagar)||0;
+    const lancamentos=Array.isArray(f.lancamentos)?f.lancamentos:[];
     const linhaStyle=f.inconsistente?' style="background:rgba(195,55,55,.06)"':'';
     const deltaInfo=f.inconsistente?`<div style="font-size:11px;color:var(--verm)">${brl(f.delta_valor||0)} · ${Number(f.delta_pct||0).toFixed(1)}%</div>`:'';
+    // Status icon
+    const statusIcon=f.inconsistente?'⚠️':lancamentos.length?'📋':'✅';
+    const lanBadge=lancamentos.length?`<span style="font-size:11px;background:rgba(0,100,220,.1);color:var(--azul);border-radius:10px;padding:2px 7px;margin-left:4px">${lancamentos.length} lan.</span>`:'';
     return `<tr data-fid="${f.funcionario_id}"${linhaStyle}>
-      <td style="font-weight:700">${f.re||f.matricula||'—'}</td>
-      <td><div style="font-weight:700">${f.nome}</div><div style="font-size:11px;color:var(--text-muted)">${fmtDoc(f.cpf)||''}</div></td>
+      <td style="font-weight:700">${statusIcon} ${f.re||f.matricula||'—'}</td>
+      <td><div style="font-weight:700">${f.nome}${lanBadge}</div><div style="font-size:11px;color:var(--text-muted)">${fmtDoc(f.cpf)||''}</div></td>
       <td>${f.cargo||'—'}</td>
       <td style="font-size:11px">${f.posto_operacional||'Reserva tecnica'}</td>
       <td>${f.empresa_nome||'—'}</td>
-      <td style="text-align:right"><input class="rh-sal-valor" data-fid="${f.funcionario_id}" type="number" min="0" step="0.01" value="${valor.toFixed(2)}" style="width:150px;text-align:right" oninput="rhSalariosAtualizarTotalTela();rhSalariosAutoSaveSchedule()" ${canEdit?'':'disabled'}></td>
+      <td style="text-align:right"><input class="rh-sal-valor" data-fid="${f.funcionario_id}" type="number" min="0" step="0.01" value="${valor.toFixed(2)}" style="width:130px;text-align:right" oninput="rhSalariosAtualizarTotalTela();rhSalariosAutoSaveSchedule()" ${canEdit?'':'disabled'}></td>
       <td style="text-align:right;font-weight:700;color:${f.inconsistente?'var(--verm)':'var(--azul)'}">${brl(anterior)}${deltaInfo}</td>
-      <td><input class="rh-sal-obs" type="text" value="${esc(f.salario_obs||'')}" placeholder="Observação do ajuste" style="min-width:180px" oninput="rhSalariosAutoSaveSchedule()" ${canEdit?'':'disabled'}></td>
-      <td style="text-align:right;font-weight:700;color:var(--azul)">${brl(totalAnual)}</td>
-      <td><button class="btn b-gh b-sm" onclick="openModalFunc('editar',${f.funcionario_id})">Editar funcionário</button></td>
+      <td style="text-align:right;color:var(--verd);font-weight:${adicional?'700':'400'}">${adicional?'+'+brl(adicional):'—'}</td>
+      <td style="text-align:right;color:var(--verm);font-weight:${desconto?'700':'400'}">${desconto?'−'+brl(desconto):'—'}</td>
+      <td style="text-align:right;font-weight:800;color:var(--azul);border-left:2px solid var(--azul)">${brl(totalPagarFun)}</td>
+      <td><input class="rh-sal-obs" type="text" value="${esc(f.salario_obs||'')}" placeholder="Obs do ajuste" style="min-width:160px" oninput="rhSalariosAutoSaveSchedule()" ${canEdit?'':'disabled'}></td>
+      <td style="white-space:nowrap">
+        <button class="btn b-az b-sm" onclick="salLanAbrirModal(${f.funcionario_id},'${esc(f.nome)}')" title="Lançamentos avulsos">📋 Lançar</button>
+        <button class="btn b-gh b-sm" onclick="openModalFunc('editar',${f.funcionario_id})" title="Editar funcionário">Editar</button>
+      </td>
     </tr>`;
   }).join('');
   rhSalariosAtualizarTotalTela();
   rhSalariosMarcarEstadoSalvo();
 }
 
+function rhSalStepUpdate(folhaStatus, assinaturaStatus){
+  const s1=document.getElementById('sal-step-1');
+  const s2=document.getElementById('sal-step-2');
+  const s3=document.getElementById('sal-step-3');
+  const btnFechar=document.getElementById('btn-sal-fechar');
+  const btnReabrir=document.getElementById('btn-sal-reabrir');
+  const btnAssinar=document.getElementById('btn-sal-assinar');
+  const AZUL='var(--azul)';
+  const VERDE='var(--verd)';
+  const MUTED='var(--borda)';
+  function setStep(el,numEl,ativo,cor){
+    if(!el) return;
+    el.style.border=`2px solid ${ativo?cor:MUTED}`;
+    el.style.background=ativo?`rgba(0,100,220,.07)`:'';
+    if(numEl){
+      numEl.style.background=ativo?cor:MUTED;
+      numEl.style.color=ativo?'#fff':'var(--text-muted)';
+    }
+  }
+  const isFechada=(folhaStatus==='fechada'||folhaStatus==='assinada');
+  const isAssinada=(assinaturaStatus==='assinada'||folhaStatus==='assinada');
+  setStep(s1,s1?.querySelector('div[style*="border-radius:50%"]'),!isFechada,AZUL);
+  setStep(s2,s2?.querySelector('div[style*="border-radius:50%"]'),isFechada&&!isAssinada,AZUL);
+  setStep(s3,s3?.querySelector('div[style*="border-radius:50%"]'),isAssinada,VERDE);
+  if(btnFechar) btnFechar.style.display=isFechada?'none':'';
+  if(btnReabrir) btnReabrir.style.display=isFechada?'':'none';
+  if(btnAssinar) btnAssinar.style.display=isAssinada?'none':'';
+}
+
+// ── Lançamentos Avulsos ───────────────────────────────────────────────────────
+let _salLanFid=null;
+let _salLanNome='';
+
+function salLanTipoChange(){
+  const tipo=document.getElementById('lan-tipo')?.value||'';
+  const natSel=document.getElementById('lan-natureza');
+  if(!natSel) return;
+  natSel.value=(tipo==='desconto_avulso')?'desconto':'adicional';
+}
+
+async function salLanAbrirModal(fid,nome){
+  _salLanFid=fid;
+  _salLanNome=nome||'Todos os colaboradores';
+  const titulo=document.getElementById('mod-lan-titulo');
+  const nomeEl=document.getElementById('mod-lan-nome');
+  if(titulo) titulo.textContent=fid?`Lançamentos: ${nome}`:'Lançamentos Avulsos';
+  if(nomeEl) nomeEl.textContent=fid?`Competência: ${rhSalariosCompetenciaAtual()}`:'Selecione um colaborador na tabela';
+  document.getElementById('lan-tipo').value='adiantamento';
+  document.getElementById('lan-natureza').value='adicional';
+  document.getElementById('lan-valor').value='';
+  document.getElementById('lan-descricao').value='';
+  document.getElementById('lan-obs').value='';
+  document.getElementById('mod-lan-avulso').style.display='flex';
+  await salLanCarregar();
+}
+
+async function salLanCarregar(){
+  const lista=document.getElementById('mod-lan-lista');
+  if(!lista) return;
+  const comp=rhSalariosCompetenciaAtual();
+  const p=new URLSearchParams({competencia:comp});
+  if(_salLanFid) p.set('funcionario_id',_salLanFid);
+  const r=await api('/api/financeiro/lancamentos?'+p.toString());
+  if(!r?.ok){lista.innerHTML='<div style="color:var(--verm)">Erro ao carregar lançamentos.</div>';return;}
+  const itens=r.itens||[];
+  if(!itens.length){lista.innerHTML='<div style="color:var(--text-muted);font-size:13px">Nenhum lançamento avulso nesta competência.</div>';return;}
+  lista.innerHTML=`<div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:6px">Lançamentos existentes (${itens.length})</div>`+itens.map(l=>{
+    const corNat=l.natureza==='adicional'?'var(--verd)':'var(--verm)';
+    const sinal=l.natureza==='adicional'?'+':'−';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:var(--bg-hover);margin-bottom:4px">
+      <span style="font-size:18px">${l.natureza==='adicional'?'✚':'✖'}</span>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:700">${esc(l.descricao||l.tipo)} <span style="color:${corNat};font-weight:800">${sinal}${brl(l.valor)}</span></div>
+        <div style="font-size:11px;color:var(--text-muted)">${l.tipo} · ${l.criado_por||''} · ${l.criado_em||''}</div>
+      </div>
+      <button class="btn b-ghost b-sm" style="color:var(--verm)" onclick="salLanExcluir(${l.id})" title="Excluir lançamento">🗑</button>
+    </div>`;
+  }).join('');
+}
+
+async function salLanSalvar(){
+  if(!_salLanFid){toast('Selecione um colaborador na tabela antes de adicionar um lançamento.','e');return;}
+  const comp=rhSalariosCompetenciaAtual();
+  const tipo=document.getElementById('lan-tipo')?.value||'';
+  const natureza=document.getElementById('lan-natureza')?.value||'adicional';
+  const valor=parseFloat(document.getElementById('lan-valor')?.value||0);
+  const descricao=(document.getElementById('lan-descricao')?.value||'').trim();
+  const obs=(document.getElementById('lan-obs')?.value||'').trim();
+  if(!valor||valor<=0){toast('Informe um valor maior que zero.','e');return;}
+  const btn=document.getElementById('btn-lan-salvar');
+  if(btn){btn.disabled=true;btn.textContent='Salvando...';}
+  const r=await api('/api/financeiro/lancamentos','POST',{funcionario_id:_salLanFid,competencia:comp,tipo,natureza,valor,descricao,obs});
+  if(btn){btn.disabled=false;btn.textContent='+ Adicionar Lançamento';}
+  if(!r?.ok){toast(r?.erro||'Erro ao salvar lançamento.','e');return;}
+  toast('Lançamento adicionado!','s');
+  document.getElementById('lan-valor').value='';
+  document.getElementById('lan-descricao').value='';
+  document.getElementById('lan-obs').value='';
+  await salLanCarregar();
+  await rhSalariosOnEmpresaChange();
+}
+
+async function salLanExcluir(lid){
+  if(!confirm('Excluir este lançamento?')) return;
+  const r=await api(`/api/financeiro/lancamentos/${lid}`,'DELETE');
+  if(!r?.ok){toast(r?.erro||'Erro ao excluir lançamento.','e');return;}
+  toast('Lançamento excluído.','s');
+  await salLanCarregar();
+  await rhSalariosOnEmpresaChange();
+}
+
 function rhSalariosAtualizarTotalTela(){
-  const folhaEl=document.getElementById('rh-total-folha');
-  if(!folhaEl) return;
+  const cardFolha=document.getElementById('sal-card-folha');
+  if(!cardFolha) return;
   const total=Array.from(document.querySelectorAll('#tb-func-salarios .rh-sal-valor')).reduce((acc,el)=>acc+(parseFloat((el.value||'').replace(',','.'))||0),0);
-  folhaEl.textContent='Folha: '+brl(total);
+  cardFolha.textContent=brl(total);
 }
 
 function _salSt(){ return 'sal-st'; }

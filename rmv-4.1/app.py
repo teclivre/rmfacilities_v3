@@ -1601,6 +1601,24 @@ class FolhaBeneficios(db.Model):
             d['dados']={}
         return d
 
+class LancamentoAvulso(db.Model):
+    __tablename__='lancamento_avulso'
+    id=db.Column(db.Integer,primary_key=True)
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False,index=True)
+    empresa_id=db.Column(db.Integer,index=True)
+    competencia=db.Column(db.String(7),nullable=False,index=True)
+    tipo=db.Column(db.String(40),nullable=False)  # adiantamento|rescisao|decimo_terceiro|ferias|hora_extra|bonus|desconto_avulso
+    natureza=db.Column(db.String(10),default='adicional')  # adicional | desconto
+    valor=db.Column(db.Float,default=0)
+    descricao=db.Column(db.String(200),default='')
+    obs=db.Column(db.Text,default='')
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    criado_por=db.Column(db.String(100))
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['criado_em']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
+        return d
+
 class Feriado(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     data=db.Column(db.String(10),nullable=False,index=True)  # YYYY-MM-DD
@@ -5227,6 +5245,8 @@ def can_access_scope(area,action='view'):
 def can_access_request(path,method='GET'):
     p=(path or '').lower()
     m=(method or 'GET').upper()
+    if p.startswith('/api/financeiro/lancamentos'):
+        return can_access_scope('rh',('view' if m=='GET' else 'edit'))
     if p.startswith('/api/financeiro/salarios/modelo'):
         return can_access_scope('rh','export') or can_access_scope('rh','view')
     if p.startswith('/api/financeiro/salarios/importar'):
@@ -16751,6 +16771,13 @@ def _financeiro_salarios_competencia(comp, empresa_id=None):
             qant=qant.filter_by(empresa_id=empresa_id)
         mapa_ant={b.funcionario_id:b for b in qant.all()}
 
+    qlan=LancamentoAvulso.query.filter_by(competencia=comp)
+    if empresa_id:
+        qlan=qlan.filter_by(empresa_id=empresa_id)
+    mapa_lan={}
+    for lan in qlan.all():
+        mapa_lan.setdefault(lan.funcionario_id,[]).append(lan)
+
     ano=(comp[:4] if isinstance(comp,str) and len(comp)>=7 and '-' in comp else '')
     totais_anuais={}
     if ano:
@@ -16776,6 +16803,10 @@ def _financeiro_salarios_competencia(comp, empresa_id=None):
         delta_pct=((delta_valor/valor_anterior)*100.0) if valor_anterior else (100.0 if valor_liquido else 0.0)
         inconsistente=bool((valor_anterior>0 and abs(delta_pct)>=25) or (valor_anterior==0 and valor_liquido>0))
         total_funcionario=float(totais_anuais.get(f.id,0) or 0)
+        lans=mapa_lan.get(f.id,[])
+        total_adicional=sum(float(l.valor or 0) for l in lans if l.natureza=='adicional')
+        total_desconto=sum(float(l.valor or 0) for l in lans if l.natureza=='desconto')
+        total_pagar=valor_liquido+total_adicional-total_desconto
         total_competencia+=valor_liquido
         total_anual+=total_funcionario
         if (f.cargo or '').strip():
@@ -16804,6 +16835,10 @@ def _financeiro_salarios_competencia(comp, empresa_id=None):
             'salario_editado_por':(reg.salario_editado_por if reg else ''),
             'salario_editado_em':(reg.salario_editado_em.isoformat() if reg and reg.salario_editado_em else None),
             'total_anual_funcionario':total_funcionario,
+            'lancamentos':[{'id':l.id,'tipo':l.tipo,'natureza':l.natureza,'valor':float(l.valor or 0),'descricao':l.descricao or '','criado_por':l.criado_por or ''} for l in lans],
+            'total_adicional':total_adicional,
+            'total_desconto':total_desconto,
+            'total_pagar':total_pagar,
         })
     return {
         'competencia':comp,
@@ -16811,6 +16846,9 @@ def _financeiro_salarios_competencia(comp, empresa_id=None):
         'total_funcionarios':len(itens),
         'total_competencia':total_competencia,
         'total_anual':total_anual,
+        'total_adicional':sum(it.get('total_adicional',0) for it in itens),
+        'total_desconto':sum(it.get('total_desconto',0) for it in itens),
+        'total_pagar':sum(it.get('total_pagar',0) for it in itens),
         'qtd_inconsistencias':len([it for it in itens if it.get('inconsistente')]),
         'cargos':sorted(cargos,key=lambda s:s.lower()),
         'postos':sorted(postos,key=lambda s:s.lower()),
@@ -17518,6 +17556,71 @@ def api_financeiro_salarios_export_pdf():
     sufixo_versao=f"_v{versao}" if (origem=='salva' and versao) else ''
     nome=f"pagamento_salarios_{comp_nome}{sufixo_versao}.pdf"
     return send_file(buf,mimetype='application/pdf',as_attachment=False,download_name=nome)
+
+# ── Lançamentos Avulsos ───────────────────────────────────────────────────────
+
+@app.route('/api/financeiro/lancamentos', methods=['GET'])
+@lr
+def api_financeiro_lancamentos_listar():
+    comp=norm_competencia(request.args.get('competencia'))
+    fid=to_num(request.args.get('funcionario_id'))
+    emp_id=to_num(request.args.get('empresa_id'))
+    q=LancamentoAvulso.query
+    if comp:
+        q=q.filter_by(competencia=comp)
+    if fid:
+        q=q.filter_by(funcionario_id=fid)
+    if emp_id:
+        q=q.filter_by(empresa_id=emp_id)
+    lans=q.order_by(LancamentoAvulso.criado_em.desc()).all()
+    return jsonify({'ok':True,'itens':[l.to_dict() for l in lans]})
+
+@app.route('/api/financeiro/lancamentos', methods=['POST'])
+@lr
+def api_financeiro_lancamentos_criar():
+    d=request.json or {}
+    fid=to_num(d.get('funcionario_id'))
+    if not fid:
+        return jsonify({'erro':'Funcionário não informado.'}),400
+    f=db.session.get(Funcionario,fid)
+    if not f:
+        return jsonify({'erro':'Funcionário não encontrado.'}),404
+    comp=norm_competencia(d.get('competencia'))
+    tipo=(d.get('tipo') or '').strip()
+    if not tipo:
+        return jsonify({'erro':'Tipo de lançamento obrigatório.'}),400
+    natureza=(d.get('natureza') or 'adicional').strip().lower()
+    if natureza not in ('adicional','desconto'):
+        natureza='adicional'
+    valor=float(to_num(d.get('valor'),dec=True) or 0)
+    if valor<=0:
+        return jsonify({'erro':'Valor deve ser maior que zero.'}),400
+    lan=LancamentoAvulso(
+        funcionario_id=fid,empresa_id=f.empresa_id,competencia=comp,
+        tipo=tipo,natureza=natureza,valor=valor,
+        descricao=(d.get('descricao') or tipo).strip()[:200],
+        obs=(d.get('obs') or '').strip(),
+        criado_por=_financeiro_usuario_atual(),
+    )
+    db.session.add(lan)
+    db.session.commit()
+    audit_event('lancamento_criado','usuario',session.get('uid'),'funcionario',fid,True,
+                {'competencia':comp,'tipo':tipo,'natureza':natureza,'valor':valor})
+    return jsonify({'ok':True,'id':lan.id,'lancamento':lan.to_dict()})
+
+@app.route('/api/financeiro/lancamentos/<int:lid>', methods=['DELETE'])
+@lr
+def api_financeiro_lancamentos_excluir(lid):
+    lan=db.get_or_404(LancamentoAvulso,lid)
+    fid=lan.funcionario_id
+    comp=lan.competencia
+    tipo=lan.tipo
+    valor=lan.valor
+    db.session.delete(lan)
+    db.session.commit()
+    audit_event('lancamento_excluido','usuario',session.get('uid'),'funcionario',fid,True,
+                {'id':lid,'competencia':comp,'tipo':tipo,'valor':valor})
+    return jsonify({'ok':True})
 
 # ── SSE: auto-update ──────────────────────────────────────────────────────────
 import queue as _queue
@@ -19770,6 +19873,11 @@ with app.app_context():
     # Cria tabela contrato se não existir (ensure_cols não cria tabelas novas)
     try:
         db.engine.execute('SELECT 1 FROM contrato LIMIT 1')
+    except Exception:
+        db.create_all()
+    # Cria tabela lancamento_avulso se não existir
+    try:
+        db.engine.execute('SELECT 1 FROM lancamento_avulso LIMIT 1')
     except Exception:
         db.create_all()
     ensure_cols('empresa',[
