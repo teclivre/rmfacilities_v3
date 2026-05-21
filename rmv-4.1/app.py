@@ -1173,6 +1173,44 @@ def _gerar_num_proposta():
         n = 1
     return f'PC-{ano}-{n:04d}'
 
+
+class Contrato(db.Model):
+    __tablename__ = 'contrato'
+    id              = db.Column(db.Integer, primary_key=True)
+    numero          = db.Column(db.String(20), unique=True, nullable=False, index=True)
+    tipo            = db.Column(db.String(20), default='servico')  # servico | aditivo
+    prestadora_id   = db.Column(db.Integer, db.ForeignKey('empresa.id'), nullable=True)
+    tomadora_id     = db.Column(db.Integer, db.ForeignKey('empresa.id'), nullable=True)
+    objeto          = db.Column(db.Text)
+    texto_corpo     = db.Column(db.Text)
+    contrato_pai_id = db.Column(db.Integer, db.ForeignKey('contrato.id'), nullable=True)
+    data_inicio     = db.Column(db.String(10))
+    data_fim        = db.Column(db.String(10))
+    valor           = db.Column(db.String(50))
+    status          = db.Column(db.String(30), default='ativo')
+    criado_em       = db.Column(db.DateTime, default=utcnow)
+    criado_por      = db.Column(db.Integer)
+
+    def to_dict(self):
+        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        d['criado_em'] = self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
+        return d
+
+
+def _gerar_num_contrato(tipo='servico'):
+    ano = localnow().year
+    prefix = 'TA' if (tipo or '').lower() == 'aditivo' else 'CT'
+    ultimo = db.session.query(db.func.max(Contrato.numero)).filter(
+        Contrato.numero.like(f'{prefix}-{ano}-%')
+    ).scalar()
+    seq = 1
+    if ultimo:
+        try:
+            seq = int(ultimo.split('-')[-1]) + 1
+        except Exception:
+            seq = 1
+    return f'{prefix}-{ano}-{seq:04d}'
+
 class Cliente(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     numero=db.Column(db.String(10))
@@ -4466,6 +4504,51 @@ def ai_wa_reply(numero,texto,historico=None):
             raise ValueError(f'IA retornou resposta vazia (Gemini: {finish}).')
         raise ValueError('IA retornou resposta vazia (Gemini). Verifique modelo/chave e tente novamente.')
     raise ValueError('Provedor de IA inválido. Use gemini ou openai.')
+
+
+def _ia_gerar_texto(instrucao, system_prompt=None, max_tokens=4000):
+    """Gera texto livre usando a IA configurada (Gemini ou OpenAI). Sem contexto de WhatsApp."""
+    cfg = ai_wa_cfg()
+    key = (cfg.get('api_key') or '').strip()
+    if not key:
+        raise ValueError('API Key da IA não configurada. Acesse Comunicação → IA WhatsApp.')
+    provider = ai_provider_norm(cfg.get('provider') or 'gemini')
+    model = ai_model_norm(provider, cfg.get('model') or '')
+    sp = (system_prompt or '').strip() or 'Você é assistente jurídico da RM Facilities. Responda em português do Brasil. Seja preciso, claro e formal.'
+    try:
+        temp = float(cfg.get('temperature') or 0.3)
+    except Exception:
+        temp = 0.3
+    if provider == 'openai':
+        url = (gc('ia_openai_url', '') or 'https://api.openai.com/v1/chat/completions').strip()
+        payload = {
+            'model': model or 'gpt-4o-mini',
+            'messages': [{'role': 'system', 'content': sp}, {'role': 'user', 'content': instrucao}],
+            'temperature': temp, 'max_tokens': max_tokens,
+        }
+        out = _post_json(url, payload, headers={'Authorization': f'Bearer {key}'}, timeout=60)
+        resp = ((out.get('choices') or [{}])[0].get('message') or {}).get('content') or ''
+        if isinstance(resp, list):
+            resp = '\n'.join(b.get('text', '') for b in resp if isinstance(b, dict))
+        return str(resp).strip()
+    # Gemini
+    mdl = model or 'gemini-1.5-flash'
+    base = (gc('ia_gemini_url', '') or '').strip()
+    url = base or f'https://generativelanguage.googleapis.com/v1beta/models/{mdl}:generateContent?key={key}'
+    payload = {
+        'system_instruction': {'parts': [{'text': sp}]},
+        'contents': [{'role': 'user', 'parts': [{'text': instrucao}]}],
+        'generationConfig': {'temperature': temp, 'maxOutputTokens': max_tokens},
+    }
+    out = _post_json(url, payload, timeout=60)
+    cand = (out.get('candidates') or [{}])[0]
+    parts = ((cand.get('content') or {}).get('parts') or [])
+    resp = '\n'.join((p.get('text') or '').strip() for p in parts if (p.get('text') or '').strip())
+    if not resp.strip():
+        finish = (cand.get('finishReason') or '').strip()
+        raise ValueError(f'IA retornou resposta vazia{(": " + finish) if finish else ""}.')
+    return resp.strip()
+
 
 def smtp_send_pdf(dest,nome_dest,caminho_abs,nome_arquivo,competencia='',remetente='RM Facilities'):
     cfg=smtp_cfg()
@@ -9594,22 +9677,306 @@ def api_enviar_proposta_comercial(pid):
             return jsonify({'erro': f'Erro ao gerar PDF: {e}'}), 500
         try:
             nome_pdf = f'Proposta_{p.numero}_{(p.empresa or "")[:30].replace(" ","_")}.pdf'
-            # Envia texto primeiro, depois o PDF como documento
-            wa_send_text(telefone, texto)
-            wa_send_media_bytes(telefone, pdf_bytes, nome_pdf, 'application/pdf',
-                                caption=f'Proposta {p.numero} — {p.empresa or ""}')
+            # Usa Evolution API se configurada, senão gera link wa.me
+            cfg_ev = wa_cfg()
+            if cfg_ev.get('url') and cfg_ev.get('instancia'):
+                wa_send_text(telefone, texto)
+                wa_send_media_bytes(telefone, pdf_bytes, nome_pdf, 'application/pdf',
+                                    caption=f'Proposta {p.numero} — {p.empresa or ""}')
+                p.whatsapp_enviado_em = localnow()
+                db.session.commit()
+                audit_event('proposta_whatsapp_enviado', 'proposta', pid, None, None, True,
+                            {'numero': p.numero, 'telefone': telefone})
+                return jsonify({'ok': True, 'canal': 'whatsapp', 'dest': telefone})
+            else:
+                # Fallback: link wa.me (Evolution API não configurada)
+                import urllib.parse
+                fone_limpo = ''.join(c for c in (telefone or '') if c.isdigit())
+                wa_url = (f"https://wa.me/{fone_limpo}?text={urllib.parse.quote(texto)}"
+                          if fone_limpo else f"https://wa.me/?text={urllib.parse.quote(texto)}")
+                p.whatsapp_enviado_em = localnow()
+                db.session.commit()
+                audit_event('proposta_whatsapp_enviado', 'proposta', pid, None, None, True,
+                            {'numero': p.numero, 'telefone': telefone})
+                return jsonify({'ok': True, 'canal': 'whatsapp', 'wa_url': wa_url, 'dest': telefone})
         except Exception as e:
             app.logger.exception('Erro ao enviar WhatsApp da proposta')
             return jsonify({'erro': f'Erro ao enviar WhatsApp: {e}'}), 500
-        p.whatsapp_enviado_em = localnow()
-        db.session.commit()
-        audit_event('proposta_whatsapp_enviado', 'proposta', pid, None, None, True,
-                    {'numero': p.numero, 'telefone': telefone})
-        return jsonify({'ok': True, 'canal': 'whatsapp', 'dest': telefone})
 
     return jsonify({'erro': 'Canal inválido. Use "email" ou "whatsapp".'}), 400
 
 # ── FIM PROPOSTA COMERCIAL ────────────────────────────────────────────────────
+
+
+# ── CONTRATOS DE SERVIÇO / TERMOS ADITIVOS ───────────────────────────────────
+
+def _gerar_contrato_pdf(contrato, prestadora, tomadora):
+    """Gera PDF de Contrato de Prestação de Serviços ou Termo Aditivo."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.lib.colors import HexColor, black, white
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, Table, TableStyle
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+
+    buf = BytesIO()
+    try:
+        canvas_cls = _WatermarkCanvas
+    except Exception:
+        canvas_cls = None
+
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            rightMargin=2*cm, leftMargin=2*cm,
+                            topMargin=2.5*cm, bottomMargin=2*cm)
+
+    cor_azul  = HexColor('#205d8a')
+    cor_cinza = HexColor('#666666')
+    cor_fundo = HexColor('#f0f6ff')
+
+    s_tit   = ParagraphStyle('Tit',   fontName='Helvetica-Bold', fontSize=14, textColor=cor_azul,  alignment=TA_CENTER, spaceAfter=4)
+    s_sub   = ParagraphStyle('Sub',   fontName='Helvetica',      fontSize=10, textColor=cor_cinza, alignment=TA_CENTER, spaceAfter=14)
+    s_sec   = ParagraphStyle('Sec',   fontName='Helvetica-Bold', fontSize=11, textColor=cor_azul,  spaceBefore=14, spaceAfter=6)
+    s_corp  = ParagraphStyle('Corp',  fontName='Helvetica',      fontSize=10, textColor=black,     alignment=TA_JUSTIFY, spaceAfter=6, leading=15)
+    s_ctr   = ParagraphStyle('Ctr',   fontName='Helvetica',      fontSize=9,  alignment=TA_CENTER)
+
+    tipo_label = 'TERMO ADITIVO' if (contrato.tipo or '') == 'aditivo' else 'CONTRATO DE PRESTAÇÃO DE SERVIÇOS'
+
+    elems = []
+    elems.append(Paragraph(tipo_label, s_tit))
+    elems.append(Paragraph(f'N° {contrato.numero}', s_sub))
+    elems.append(HRFlowable(width='100%', color=cor_azul, thickness=1.5, spaceAfter=14))
+
+    def _qualif(emp_dict, papel):
+        if not emp_dict:
+            return ''
+        nome = emp_dict.get('razao') or emp_dict.get('nome') or ''
+        cnpj = emp_dict.get('cnpj') or ''
+        parts_end = [emp_dict.get('logradouro',''), emp_dict.get('numero','')]
+        end = ', '.join(filter(None, parts_end))
+        if emp_dict.get('bairro'): end += f", {emp_dict['bairro']}"
+        if emp_dict.get('cidade'): end += f", {emp_dict['cidade']}/{emp_dict.get('estado','')}"
+        txt = f"<b>{papel}:</b> <b>{nome}</b>"
+        if cnpj: txt += f", inscrita no CNPJ sob n° <b>{cnpj}</b>"
+        if end:  txt += f", com sede em {end}"
+        return txt + '.'
+
+    elems.append(Paragraph('DAS PARTES', s_sec))
+    prest_d = prestadora.to_dict() if prestadora else {}
+    toma_d  = tomadora.to_dict()  if tomadora  else {}
+    if prest_d: elems.append(Paragraph(_qualif(prest_d, 'CONTRATADA (Prestadora)'), s_corp))
+    if toma_d:  elems.append(Paragraph(_qualif(toma_d,  'CONTRATANTE (Tomadora)'), s_corp))
+
+    if contrato.objeto:
+        elems.append(Paragraph('DO OBJETO', s_sec))
+        elems.append(Paragraph(contrato.objeto, s_corp))
+
+    info_rows = []
+    if contrato.data_inicio or contrato.data_fim:
+        info_rows.append(['Vigência', f"{contrato.data_inicio or '—'} a {contrato.data_fim or 'Indeterminado'}"])
+    if contrato.valor:
+        info_rows.append(['Valor', contrato.valor])
+    if info_rows:
+        elems.append(Paragraph('DA VIGÊNCIA E VALOR', s_sec))
+        t = Table(info_rows, colWidths=[5*cm, None])
+        t.setStyle(TableStyle([
+            ('FONTNAME',    (0,0),(-1,-1), 'Helvetica'),
+            ('FONTNAME',    (0,0),(0,-1),  'Helvetica-Bold'),
+            ('FONTSIZE',    (0,0),(-1,-1), 10),
+            ('TEXTCOLOR',   (0,0),(0,-1),  cor_azul),
+            ('ROWBACKGROUNDS',(0,0),(-1,-1),[cor_fundo, white]),
+            ('GRID',        (0,0),(-1,-1), 0.5, HexColor('#c5d9f0')),
+            ('PADDING',     (0,0),(-1,-1), 6),
+        ]))
+        elems.append(t)
+
+    if contrato.texto_corpo:
+        elems.append(Paragraph('DAS CONDIÇÕES', s_sec))
+        for para in contrato.texto_corpo.split('\n\n'):
+            p = para.strip()
+            if p:
+                elems.append(Paragraph(p.replace('\n', '<br/>'), s_corp))
+
+    elems.append(Spacer(1, 1.5*cm))
+    cidade = (prestadora.cidade if prestadora else '') or ''
+    data_ext = (contrato.data_inicio or localnow().strftime('%d/%m/%Y'))
+    elems.append(Paragraph(f"{cidade + ', ' if cidade else ''}{data_ext}", s_ctr))
+    elems.append(Spacer(1, 1.2*cm))
+
+    prest_nome = (prestadora.razao or prestadora.nome) if prestadora else 'CONTRATADA'
+    toma_nome  = (tomadora.razao  or tomadora.nome)  if tomadora  else 'CONTRATANTE'
+    sig = Table(
+        [['_'*42, '', '_'*42],
+         [prest_nome, '', toma_nome],
+         ['CONTRATADA (Prestadora)', '', 'CONTRATANTE (Tomadora)']],
+        colWidths=[7.5*cm, 2*cm, 7.5*cm]
+    )
+    sig.setStyle(TableStyle([
+        ('FONTNAME',  (0,0),(-1,-1), 'Helvetica'),
+        ('FONTNAME',  (0,1),(-1,1),  'Helvetica-Bold'),
+        ('FONTSIZE',  (0,0),(-1,-1), 9),
+        ('FONTSIZE',  (0,2),(-1,2),  8),
+        ('TEXTCOLOR', (0,2),(-1,2),  cor_cinza),
+        ('ALIGN',     (0,0),(-1,-1), 'CENTER'),
+        ('TOPPADDING',(0,1),(-1,1),  4),
+        ('TOPPADDING',(0,2),(-1,2),  2),
+    ]))
+    elems.append(sig)
+
+    def _footer(canvas, doc):
+        canvas.saveState()
+        canvas.setFont('Helvetica', 8)
+        canvas.setFillColor(cor_cinza)
+        canvas.drawCentredString(A4[0]/2, 0.8*cm, f'{tipo_label} — N° {contrato.numero}')
+        canvas.restoreState()
+
+    if canvas_cls:
+        doc.build(elems, canvasmaker=canvas_cls, onFirstPage=_footer, onLaterPages=_footer)
+    else:
+        doc.build(elems, onFirstPage=_footer, onLaterPages=_footer)
+
+    buf.seek(0)
+    return buf
+
+
+@app.route('/api/contratos', methods=['POST'])
+@lr
+def api_criar_contrato():
+    d = request.json or {}
+    tipo = (d.get('tipo') or 'servico').strip().lower()
+    if tipo not in ('servico', 'aditivo'):
+        return jsonify({'erro': 'Tipo inválido.'}), 400
+    numero = _gerar_num_contrato(tipo)
+    c = Contrato(
+        numero=numero, tipo=tipo,
+        prestadora_id=d.get('prestadora_id') or None,
+        tomadora_id=d.get('tomadora_id') or None,
+        objeto=(d.get('objeto') or '').strip(),
+        texto_corpo=(d.get('texto_corpo') or '').strip(),
+        contrato_pai_id=d.get('contrato_pai_id') or None,
+        data_inicio=(d.get('data_inicio') or '').strip(),
+        data_fim=(d.get('data_fim') or '').strip(),
+        valor=(d.get('valor') or '').strip(),
+        criado_em=localnow(), criado_por=session.get('uid'),
+    )
+    db.session.add(c)
+    db.session.commit()
+    audit_event('contrato_criado', 'contrato', c.id, None, None, True, {'numero': numero, 'tipo': tipo})
+    return jsonify({'ok': True, 'id': c.id, 'numero': numero})
+
+
+@app.route('/api/contratos', methods=['GET'])
+@lr
+def api_listar_contratos():
+    q     = request.args.get('q', '').strip()
+    tipo  = request.args.get('tipo', '').strip()
+    status= request.args.get('status', '').strip()
+    page  = max(1, int(request.args.get('page', 1)))
+    per   = 20
+    qr = Contrato.query
+    if q:
+        like = f'%{q}%'
+        qr = qr.filter(db.or_(Contrato.numero.ilike(like), Contrato.objeto.ilike(like)))
+    if tipo:   qr = qr.filter(Contrato.tipo == tipo)
+    if status: qr = qr.filter(Contrato.status == status)
+    total = qr.count()
+    rows  = qr.order_by(Contrato.criado_em.desc()).offset((page-1)*per).limit(per).all()
+    emp_cache = {}
+    def _en(eid):
+        if not eid: return ''
+        if eid not in emp_cache:
+            e = db.session.get(Empresa, eid)
+            emp_cache[eid] = (e.razao or e.nome) if e else ''
+        return emp_cache[eid]
+    items = []
+    for c in rows:
+        dd = c.to_dict()
+        dd['prestadora_nome'] = _en(c.prestadora_id)
+        dd['tomadora_nome']   = _en(c.tomadora_id)
+        items.append(dd)
+    return jsonify({'items': items, 'total': total, 'page': page,
+                    'pages': math.ceil(total/per) if total else 1})
+
+
+@app.route('/api/contratos/<int:cid>', methods=['GET'])
+@lr
+def api_get_contrato(cid):
+    c = db.get_or_404(Contrato, cid)
+    dd = c.to_dict()
+    if c.prestadora_id:
+        e = db.session.get(Empresa, c.prestadora_id)
+        dd['prestadora_nome'] = (e.razao or e.nome) if e else ''
+    if c.tomadora_id:
+        e = db.session.get(Empresa, c.tomadora_id)
+        dd['tomadora_nome'] = (e.razao or e.nome) if e else ''
+    return jsonify(dd)
+
+
+@app.route('/api/contratos/<int:cid>/pdf')
+@lr
+def api_contrato_pdf(cid):
+    c = db.get_or_404(Contrato, cid)
+    prestadora = db.session.get(Empresa, c.prestadora_id) if c.prestadora_id else None
+    tomadora   = db.session.get(Empresa, c.tomadora_id)   if c.tomadora_id   else None
+    buf = _gerar_contrato_pdf(c, prestadora, tomadora)
+    from flask import make_response, send_file as _sf
+    resp = make_response(_sf(buf, mimetype='application/pdf', as_attachment=True,
+                              download_name=f'Contrato_{c.numero}.pdf'))
+    return resp
+
+
+@app.route('/api/contratos/<int:cid>/status', methods=['PATCH'])
+@lr
+def api_contrato_status(cid):
+    c = db.get_or_404(Contrato, cid)
+    s = ((request.json or {}).get('status') or '').strip().lower()
+    if s not in ('ativo', 'encerrado', 'suspenso', 'cancelado'):
+        return jsonify({'erro': 'Status inválido.'}), 400
+    c.status = s
+    db.session.commit()
+    return jsonify({'ok': True, 'status': s})
+
+
+@app.route('/api/contratos/ia-gerar', methods=['POST'])
+@lr
+def api_contrato_ia_gerar():
+    """Gera corpo de contrato ou aditivo via IA."""
+    d = request.json or {}
+    instrucao    = (d.get('instrucao') or '').strip()
+    tipo         = (d.get('tipo') or 'servico').strip().lower()
+    prestadora_id = d.get('prestadora_id')
+    tomadora_id   = d.get('tomadora_id')
+    if not instrucao:
+        return jsonify({'erro': 'Informe a instrução para a IA.'}), 400
+
+    prest_info = toma_info = ''
+    if prestadora_id:
+        e = db.session.get(Empresa, int(prestadora_id))
+        if e: prest_info = f"Prestadora: {e.razao or e.nome}, CNPJ {e.cnpj or 'não informado'}, {e.end_fmt()}"
+    if tomadora_id:
+        e = db.session.get(Empresa, int(tomadora_id))
+        if e: toma_info  = f"Tomadora: {e.razao or e.nome}, CNPJ {e.cnpj or 'não informado'}, {e.end_fmt()}"
+
+    tipo_doc = 'Termo Aditivo de Contrato' if tipo == 'aditivo' else 'Contrato de Prestação de Serviços'
+    system_prompt = (
+        f"Você é assistente jurídico especializado em contratos empresariais brasileiros. "
+        f"Redija {tipo_doc}s completos e corretos conforme a legislação brasileira. "
+        f"Responda APENAS com o texto das cláusulas (sem introdução, sem comentários). "
+        f"Use linguagem formal e jurídica. Organize em cláusulas numeradas em português do Brasil."
+    )
+    ctx_partes = f"\n\nDados das partes:\n{prest_info}\n{toma_info}" if (prest_info or toma_info) else ''
+    prompt = (
+        f"Redija um {tipo_doc} com as seguintes características:\n{instrucao}{ctx_partes}\n\n"
+        f"Gere apenas o corpo do contrato (cláusulas). A qualificação das partes será gerada separadamente."
+    )
+    try:
+        texto = _ia_gerar_texto(prompt, system_prompt, max_tokens=4000)
+    except Exception as e:
+        app.logger.exception('Erro ao gerar texto de contrato com IA')
+        return jsonify({'erro': f'Erro na IA: {e}'}), 500
+    return jsonify({'ok': True, 'texto': texto})
+
+
+# ── FIM CONTRATOS ─────────────────────────────────────────────────────────────
 
 
 @lr
@@ -19400,6 +19767,11 @@ with app.app_context():
         'email_enviado_em DATETIME',
         'whatsapp_enviado_em DATETIME',
     ])
+    # Cria tabela contrato se não existir (ensure_cols não cria tabelas novas)
+    try:
+        db.engine.execute('SELECT 1 FROM contrato LIMIT 1')
+    except Exception:
+        db.create_all()
     ensure_cols('empresa',[
         'contato_nome VARCHAR(150)',
         'contato_email VARCHAR(150)',

@@ -2946,18 +2946,24 @@ document.addEventListener('DOMContentLoaded',()=>{
               <button class="btn b-sm" style="background:var(--verde,#388e3c);color:#fff" onclick="docsAbrirListaPropostas()">Ver Histórico &rsaquo;</button>
             </div>
 
-            <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
+            <div class="card" style="padding:16px;border:1px solid var(--azul-borda);border-radius:10px;display:flex;flex-direction:column;gap:8px">
               <div style="font-size:22px">🤝</div>
               <div style="font-weight:700;font-size:14px">Contrato de Prestação de Serviços</div>
               <div style="font-size:12px;color:var(--text-muted);flex:1">Contrato com cláusulas de escopo, prazo, responsabilidades e penalidades entre as partes.</div>
-              <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="btn b-az b-sm" onclick="docsAbrirContrato('servico')">Novo Contrato &rsaquo;</button>
+                <button class="btn b-sm" style="background:var(--verde,#388e3c);color:#fff" onclick="docsAbrirListaContratos('servico')">Histórico</button>
+              </div>
             </div>
 
-            <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
+            <div class="card" style="padding:16px;border:1px solid #7b1fa2;border-radius:10px;display:flex;flex-direction:column;gap:8px">
               <div style="font-size:22px">🔄</div>
-              <div style="font-weight:700;font-size:14px">Aditivo de Contrato</div>
-              <div style="font-size:12px;color:var(--text-muted);flex:1">Alteração ou renovação de contrato existente com novo escopo, valor ou vigencia.</div>
-              <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
+              <div style="font-weight:700;font-size:14px">Termo Aditivo</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Gerado pelo agente de IA — descreva o que precisa e o agente redige o termo automaticamente.</div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="btn b-sm" style="background:#7b1fa2;color:#fff" onclick="docsAbrirContrato('aditivo')">Gerar com IA &rsaquo;</button>
+                <button class="btn b-sm" style="background:var(--verde,#388e3c);color:#fff" onclick="docsAbrirListaContratos('aditivo')">Histórico</button>
+              </div>
             </div>
 
             <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
@@ -3150,6 +3156,88 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div style="text-align:center;color:var(--text-muted);padding:30px">Carregando…</div>
           </div>
           <div id="lp-paginacao" style="display:flex;gap:8px;margin-top:14px;align-items:center;justify-content:flex-end"></div>
+        </div>
+      </div>
+
+    </div>
+
+      <!-- ── Painel: Novo Contrato / Termo Aditivo ── -->
+      <div id="docs-pane-contrato" class="card" style="display:none">
+        <div class="card-header" style="display:flex;align-items:center;gap:10px">
+          <button class="btn b-sm" style="background:transparent;border:1px solid var(--borda);padding:4px 10px" onclick="docsSetAba('clientes')">← Voltar</button>
+          <span class="card-title" style="margin:0" id="ctr-pane-titulo">📑 Novo Contrato</span>
+        </div>
+        <div style="padding:18px">
+          <input type="hidden" id="ctr-tipo" value="servico">
+          <div class="g3" style="margin-bottom:14px">
+            <div class="f s2"><label>Prestadora (Contratada)</label>
+              <select id="ctr-prestadora" class="inp">
+                <option value="">— Selecione —</option>
+              </select>
+            </div>
+            <div class="f s2"><label>Tomadora (Contratante)</label>
+              <select id="ctr-tomadora" class="inp">
+                <option value="">— Selecione —</option>
+              </select>
+            </div>
+            <div class="f"><label>Data Início</label><input type="date" id="ctr-data-inicio" class="inp"></div>
+            <div class="f"><label>Data Fim</label><input type="date" id="ctr-data-fim" class="inp"></div>
+            <div class="f"><label>Valor</label><input type="text" id="ctr-valor" class="inp" placeholder="R$ 0.000,00 / mês"></div>
+          </div>
+          <div class="f" style="margin-bottom:14px">
+            <label>Objeto do Contrato</label>
+            <textarea id="ctr-objeto" class="inp" rows="3" placeholder="Descreva o objeto do contrato (serviços prestados, escopo, local…)"></textarea>
+          </div>
+
+          <!-- IA (só aparece para aditivo ou sempre como opção) -->
+          <div id="ctr-ia-area" style="border:1px solid #7b1fa2;border-radius:10px;padding:14px;margin-bottom:14px;background:#f9f0ff">
+            <div style="font-weight:700;font-size:13px;color:#7b1fa2;margin-bottom:8px">🤖 Gerar corpo com IA</div>
+            <textarea id="ctr-ia-instrucao" class="inp" rows="3" placeholder="Descreva o que precisa (ex: contrato de limpeza predial por 12 meses, com cláusula de reajuste anual pelo IPCA…)"></textarea>
+            <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+              <button class="btn b-sm" style="background:#7b1fa2;color:#fff" onclick="ctrGerarIA()">✨ Gerar com IA</button>
+              <span id="ctr-ia-spin" style="display:none;font-size:12px;color:#7b1fa2">⏳ Gerando…</span>
+            </div>
+          </div>
+
+          <div class="f" style="margin-bottom:14px">
+            <label>Cláusulas / Corpo do Contrato</label>
+            <textarea id="ctr-corpo" class="inp" rows="14" placeholder="Cole ou edite o texto do contrato aqui. A IA pode preencher automaticamente acima."></textarea>
+          </div>
+
+          <div id="ctr-st" class="st" style="margin-bottom:10px"></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn b-az" onclick="ctrSalvar()">💾 Salvar e Baixar PDF</button>
+            <button class="btn b-sm" style="background:var(--verde,#388e3c);color:#fff" onclick="docsAbrirListaContratos()">Ver Histórico</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Painel: Histórico de Contratos ── -->
+      <div id="docs-pane-lista-contratos" class="card" style="display:none">
+        <div class="card-header" style="display:flex;align-items:center;gap:10px">
+          <button class="btn b-sm" style="background:transparent;border:1px solid var(--borda);padding:4px 10px" onclick="docsSetAba('clientes')">← Voltar</button>
+          <span class="card-title" style="margin:0">📋 Histórico de Contratos</span>
+        </div>
+        <div style="padding:18px">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center">
+            <input id="cl-busca" type="text" class="inp" style="flex:1;min-width:200px;max-width:300px" placeholder="Buscar número, objeto…" oninput="clCarregar(1)"/>
+            <select id="cl-tipo" class="inp" style="width:150px" onchange="clCarregar(1)">
+              <option value="">Todos os tipos</option>
+              <option value="servico">Contrato</option>
+              <option value="aditivo">Aditivo</option>
+            </select>
+            <select id="cl-status" class="inp" style="width:140px" onchange="clCarregar(1)">
+              <option value="">Todos os status</option>
+              <option value="ativo">Ativo</option>
+              <option value="encerrado">Encerrado</option>
+              <option value="suspenso">Suspenso</option>
+              <option value="cancelado">Cancelado</option>
+            </select>
+            <button class="btn b-az b-sm" onclick="clCarregar(1)">🔍</button>
+            <button class="btn b-sm" style="background:var(--verde,#388e3c);color:#fff" onclick="docsAbrirContrato()">+ Novo</button>
+          </div>
+          <div id="cl-lista"><div style="text-align:center;color:var(--text-muted);padding:30px">Carregando…</div></div>
+          <div id="cl-paginacao" style="display:flex;gap:8px;margin-top:14px;align-items:center;justify-content:flex-end"></div>
         </div>
       </div>
 
@@ -9180,7 +9268,7 @@ function docsInit() {
 
 function docsSetAba(aba, el) {
   docsAbaAtiva = aba;
-  ['funcionarios','clientes','proposta','lista-propostas'].forEach(a => {
+  ['funcionarios','clientes','proposta','lista-propostas','contrato','lista-contratos'].forEach(a => {
     const pane = document.getElementById('docs-pane-' + a);
     const btn = document.getElementById('docs-subtab-' + a);
     if (pane) pane.style.display = a === aba ? '' : 'none';
@@ -9206,6 +9294,159 @@ async function docsAbrirProposta() {
   }
 }
 // ── FIM DOCUMENTOS ──────────────────────────────────────────────────────────
+
+// ── CONTRATOS ───────────────────────────────────────────────────────────────
+let _ctrEmpresas = [];
+
+async function _ctrCarregarEmpresas() {
+  if (!_ctrEmpresas.length) {
+    _ctrEmpresas = await api('/api/empresas').catch(() => []);
+  }
+  const pSel = document.getElementById('ctr-prestadora');
+  const tSel = document.getElementById('ctr-tomadora');
+  if (!pSel || !tSel) return;
+  const opts = '<option value="">— Selecione —</option>' +
+    _ctrEmpresas.map(e => `<option value="${e.id}">${_escHtml(e.razao || e.nome)}</option>`).join('');
+  pSel.innerHTML = opts;
+  tSel.innerHTML = opts;
+}
+
+async function docsAbrirContrato(tipo) {
+  tipo = tipo || 'servico';
+  document.getElementById('ctr-tipo').value = tipo;
+  const titulo = tipo === 'aditivo' ? '🤖 Novo Termo Aditivo (IA)' : '📑 Novo Contrato de Prestação de Serviços';
+  document.getElementById('ctr-pane-titulo').textContent = titulo;
+  // IA area sempre visível
+  document.getElementById('ctr-ia-area').style.display = '';
+  // Limpa campos
+  ['ctr-objeto','ctr-corpo','ctr-ia-instrucao','ctr-valor'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('ctr-data-inicio').value = new Date().toISOString().split('T')[0];
+  document.getElementById('ctr-data-fim').value = '';
+  document.getElementById('ctr-st').innerHTML = '';
+  await _ctrCarregarEmpresas();
+  docsSetAba('contrato');
+}
+
+async function ctrGerarIA() {
+  const instrucao = document.getElementById('ctr-ia-instrucao').value.trim();
+  if (!instrucao) { alert('Descreva o que precisa gerar.'); return; }
+  const tipo = document.getElementById('ctr-tipo').value;
+  const prestadora_id = document.getElementById('ctr-prestadora').value || null;
+  const tomadora_id   = document.getElementById('ctr-tomadora').value   || null;
+  const spin = document.getElementById('ctr-ia-spin');
+  spin.style.display = '';
+  try {
+    const res = await api('/api/contratos/ia-gerar', 'POST', {instrucao, tipo, prestadora_id, tomadora_id});
+    if (res.erro) { alert('Erro da IA: ' + res.erro); return; }
+    document.getElementById('ctr-corpo').value = res.texto || '';
+  } catch(e) {
+    alert('Erro ao comunicar com a IA: ' + e);
+  } finally {
+    spin.style.display = 'none';
+  }
+}
+
+async function ctrSalvar() {
+  const st = document.getElementById('ctr-st');
+  const tipo         = document.getElementById('ctr-tipo').value;
+  const prestadora_id = document.getElementById('ctr-prestadora').value || null;
+  const tomadora_id   = document.getElementById('ctr-tomadora').value   || null;
+  const objeto       = document.getElementById('ctr-objeto').value.trim();
+  const texto_corpo  = document.getElementById('ctr-corpo').value.trim();
+  const data_inicio  = document.getElementById('ctr-data-inicio').value;
+  const data_fim     = document.getElementById('ctr-data-fim').value;
+  const valor        = document.getElementById('ctr-valor').value.trim();
+  if (!objeto && !texto_corpo) {
+    st.innerHTML = '<span style="color:#c62828">Preencha o objeto ou o corpo do contrato.</span>';
+    return;
+  }
+  st.innerHTML = '<span style="color:#205d8a">⏳ Salvando…</span>';
+  const res = await api('/api/contratos', 'POST', {tipo, prestadora_id, tomadora_id, objeto, texto_corpo, data_inicio, data_fim, valor});
+  if (res.erro) { st.innerHTML = `<span style="color:#c62828">❌ ${_escHtml(res.erro)}</span>`; return; }
+  st.innerHTML = `<span style="color:#2e7d32">✅ Contrato ${_escHtml(res.numero)} salvo!</span>`;
+  // Baixa o PDF automaticamente
+  window.open(`/api/contratos/${res.id}/pdf`, '_blank');
+}
+
+async function docsAbrirListaContratos(tipo) {
+  if (tipo) document.getElementById('cl-tipo').value = tipo;
+  docsSetAba('lista-contratos');
+  await clCarregar(1);
+}
+
+let _clPage = 1;
+async function clCarregar(page) {
+  _clPage = page || _clPage;
+  const q      = (document.getElementById('cl-busca')?.value  || '').trim();
+  const tipo   = document.getElementById('cl-tipo')?.value    || '';
+  const status = document.getElementById('cl-status')?.value  || '';
+  const params = new URLSearchParams({page: _clPage});
+  if (q)      params.set('q', q);
+  if (tipo)   params.set('tipo', tipo);
+  if (status) params.set('status', status);
+  const res = await api('/api/contratos?' + params.toString()).catch(() => ({items:[],total:0,pages:1}));
+  const lista = document.getElementById('cl-lista');
+  const pag   = document.getElementById('cl-paginacao');
+  if (!res.items || !res.items.length) {
+    lista.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:30px">Nenhum contrato encontrado.</div>';
+    pag.innerHTML = ''; return;
+  }
+  const _status_badge = s => {
+    const c = {ativo:'#2e7d32',encerrado:'#555',suspenso:'#f57f17',cancelado:'#b71c1c'}[s] || '#555';
+    return `<span style="background:${c};color:#fff;border-radius:4px;padding:1px 7px;font-size:11px">${s}</span>`;
+  };
+  const _tipo_badge = t => {
+    if (t === 'aditivo') return '<span style="background:#7b1fa2;color:#fff;border-radius:4px;padding:1px 7px;font-size:11px">Aditivo</span>';
+    return '<span style="background:#205d8a;color:#fff;border-radius:4px;padding:1px 7px;font-size:11px">Contrato</span>';
+  };
+  lista.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead><tr style="background:var(--azul-cl)">
+      <th style="padding:8px;text-align:left">Número</th>
+      <th style="padding:8px;text-align:left">Tipo</th>
+      <th style="padding:8px;text-align:left">Prestadora</th>
+      <th style="padding:8px;text-align:left">Tomadora</th>
+      <th style="padding:8px;text-align:left">Vigência</th>
+      <th style="padding:8px;text-align:left">Status</th>
+      <th style="padding:8px;text-align:left">Ações</th>
+    </tr></thead>
+    <tbody>${res.items.map(c => `<tr style="border-top:1px solid var(--borda)">
+      <td style="padding:8px;font-weight:700">${_escHtml(c.numero)}</td>
+      <td style="padding:8px">${_tipo_badge(c.tipo)}</td>
+      <td style="padding:8px">${_escHtml(c.prestadora_nome || '—')}</td>
+      <td style="padding:8px">${_escHtml(c.tomadora_nome  || '—')}</td>
+      <td style="padding:8px;font-size:12px">${_escHtml((c.data_inicio||''))} ${c.data_fim ? '→ ' + _escHtml(c.data_fim) : ''}</td>
+      <td style="padding:8px">${_status_badge(c.status)}</td>
+      <td style="padding:8px">
+        <a href="/api/contratos/${c.id}/pdf" target="_blank" class="btn b-az b-sm" title="Baixar PDF">📄</a>
+        <select style="border:1px solid var(--borda);border-radius:4px;padding:2px 4px;font-size:11px;margin-left:4px" onchange="clAtualizarStatus(${c.id}, this.value, this)">
+          <option value="ativo" ${c.status==='ativo'?'selected':''}>Ativo</option>
+          <option value="encerrado" ${c.status==='encerrado'?'selected':''}>Encerrado</option>
+          <option value="suspenso" ${c.status==='suspenso'?'selected':''}>Suspenso</option>
+          <option value="cancelado" ${c.status==='cancelado'?'selected':''}>Cancelado</option>
+        </select>
+      </td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+  // Paginação
+  const total_pages = res.pages || 1;
+  let html_pag = `<span style="font-size:13px;color:var(--text-muted)">${res.total} registro(s)</span>`;
+  if (total_pages > 1) {
+    for (let i = 1; i <= total_pages; i++) {
+      html_pag += `<button class="btn b-sm ${i===_clPage?'b-az':''}" onclick="clCarregar(${i})">${i}</button>`;
+    }
+  }
+  pag.innerHTML = html_pag;
+}
+
+async function clAtualizarStatus(id, status, sel) {
+  const res = await api(`/api/contratos/${id}/status`, 'PATCH', {status});
+  if (res.erro) { alert(res.erro); sel.value = sel.dataset.prev || 'ativo'; }
+  else sel.dataset.prev = status;
+}
+// ── FIM CONTRATOS ────────────────────────────────────────────────────────────
 
 // ── LISTA DE PROPOSTAS ──────────────────────────────────────────────────────
 let _lpPage = 1;
@@ -9372,7 +9613,12 @@ async function pcEnviarProposta() {
     const res  = await api(`/api/propostas-comerciais/${_mepPropostaId}/enviar`, 'POST', body);
     if (res.erro) { _showFb(`❌ ${_escHtml(res.erro)}`, false); }
     else if (canal === 'whatsapp') {
-      _showFb(`✅ Proposta enviada via WhatsApp para <strong>${_escHtml(res.dest || telefone)}</strong>!`, true);
+      if (res.wa_url) {
+        window.open(res.wa_url, '_blank');
+        _showFb('💬 Evolution API não configurada. WhatsApp aberto em nova aba para envio manual.', true);
+      } else {
+        _showFb(`✅ Proposta enviada via WhatsApp para <strong>${_escHtml(res.dest || telefone)}</strong>!`, true);
+      }
     } else {
       _showFb(`✅ E-mail enviado com sucesso para <strong>${_escHtml(email)}</strong>!`, true);
     }
