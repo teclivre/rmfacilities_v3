@@ -4546,12 +4546,14 @@ def smtp_send_proposta_comercial(dest_email, dest_nome, numero, empresa_dest, ti
         raise ValueError('SMTP não configurado. Acesse Configurações → E-mail e preencha os dados SMTP.')
 
     tipo_label = 'SPOT' if (tipo or '').lower() == 'spot' else 'Mensal'
-    remetente_display = f'{remetente_nome} Comercial <comercial@rmfacilities.com.br>'
+    # Usa o e-mail configurado no SMTP para evitar rejeição por mismatch de From
+    smtp_email = (cfg.get('de') or cfg.get('user') or '').strip()
+    remetente_display = f'{remetente_nome} Comercial <{smtp_email}>'
 
     msg = MIMEMultipart('mixed')
     msg['From'] = remetente_display
     msg['To'] = dest_email
-    msg['Reply-To'] = 'comercial@rmfacilities.com.br'
+    msg['Reply-To'] = smtp_email
     msg['Subject'] = f'Proposta Comercial {tipo_label} — {numero} | {remetente_nome}'
 
     # Corpo HTML
@@ -4578,7 +4580,7 @@ def smtp_send_proposta_comercial(dest_email, dest_nome, numero, empresa_dest, ti
         f"<td>"
         f"<strong style='color:#205d8a;font-size:13px'>{remetente_nome}</strong><br>"
         f"Equipe Comercial<br>"
-        f"📧 <a href='mailto:comercial@rmfacilities.com.br' style='color:#205d8a'>comercial@rmfacilities.com.br</a><br>"
+        f"📧 <a href='mailto:{smtp_email}' style='color:#205d8a'>{smtp_email}</a><br>"
         f"🌐 <a href='https://www.rmfacilities.com.br' style='color:#205d8a'>www.rmfacilities.com.br</a>"
         f"</td></tr></table>"
         f"</div></div>"
@@ -4588,7 +4590,7 @@ def smtp_send_proposta_comercial(dest_email, dest_nome, numero, empresa_dest, ti
         + (f"{mensagem_extra}\n\n" if mensagem_extra else '')
         + f"Segue em anexo a Proposta Comercial {tipo_label} n° {numero}.\n"
         f"Empresa: {empresa_dest}\nData: {data_str}\nValor Total: {total}\n\n"
-        f"Atenciosamente,\n{remetente_nome} — Equipe Comercial\ncomerciall@rmfacilities.com.br"
+        f"Atenciosamente,\n{remetente_nome} — Equipe Comercial\n{smtp_email}"
     )
     alt = MIMEMultipart('alternative')
     alt.attach(MIMEText(corpo_txt, 'plain', 'utf-8'))
@@ -4605,7 +4607,6 @@ def smtp_send_proposta_comercial(dest_email, dest_nome, numero, empresa_dest, ti
     msg.attach(part)
 
     port = int(cfg['port'] or 587)
-    # Usa cfg['user'] para autenticação SMTP, mas envia como comercial@rmfacilities.com.br no From
     def _do_send():
         if str(cfg['tls']) in ('1', 'true', 'True', 'yes'):
             with smtplib.SMTP(cfg['host'], port, timeout=20) as s:
