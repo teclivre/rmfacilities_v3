@@ -1,4 +1,56 @@
 <!-- ════ MODAIS UTILITÁRIOS ════════════════════════════════════════════ -->
+<!-- Modal Enviar Proposta Comercial -->
+<div id="modal-enviar-proposta" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:4000;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:520px;width:100%;padding:28px 24px;box-shadow:var(--shadow-md);border:1px solid var(--borda)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+      <span style="font-size:16px;font-weight:700">📨 Enviar Proposta</span>
+      <button class="btn b-sm" style="background:transparent;font-size:18px;padding:0 8px" onclick="pcFecharModalEnvio()">✕</button>
+    </div>
+    <div id="mep-numero" style="background:#f0f6ff;border:1px solid #c5d9f0;border-radius:6px;padding:8px 12px;font-size:13px;margin-bottom:16px;font-weight:600;color:#205d8a"></div>
+
+    <!-- Canal -->
+    <div class="f" style="margin-bottom:14px">
+      <label>Canal de envio</label>
+      <div style="display:flex;gap:10px;margin-top:6px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px">
+          <input type="radio" name="mep-canal" value="email" checked onchange="_mepToggleCanal(this.value)"> 📧 E-mail
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px">
+          <input type="radio" name="mep-canal" value="whatsapp" onchange="_mepToggleCanal(this.value)"> 💬 WhatsApp
+        </label>
+      </div>
+    </div>
+
+    <!-- Campos Email -->
+    <div id="mep-campos-email">
+      <div class="f" style="margin-bottom:12px">
+        <label>Para (e-mail do destinatário)</label>
+        <input id="mep-email" type="email" class="inp" placeholder="contato@empresa.com.br" style="width:100%">
+      </div>
+    </div>
+    <!-- Campos WhatsApp -->
+    <div id="mep-campos-whatsapp" style="display:none">
+      <div class="f" style="margin-bottom:12px">
+        <label>WhatsApp do destinatário (com DDD e código do país)</label>
+        <input id="mep-telefone" type="tel" class="inp" placeholder="5511912345678" style="width:100%">
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Formato internacional: 55 + DDD + número. Ex: 5511912345678</div>
+      </div>
+    </div>
+
+    <!-- Mensagem personalizada -->
+    <div class="f" style="margin-bottom:18px">
+      <label>Mensagem personalizada (opcional)</label>
+      <textarea id="mep-mensagem" class="inp" rows="4" placeholder="Escreva uma mensagem personalizada para o cliente…" style="width:100%;resize:vertical"></textarea>
+    </div>
+
+    <div id="mep-feedback" style="display:none;margin-bottom:12px"></div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn b-gh b-sm" onclick="pcFecharModalEnvio()">Cancelar</button>
+      <button id="mep-btn-enviar" class="btn b-sm" style="background:#205d8a;color:#fff" onclick="pcEnviarProposta()">Enviar</button>
+    </div>
+  </div>
+</div>
 <!-- Modal Confirmação Genérica -->
 <div id="modal-rm-confirm" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;align-items:center;justify-content:center;padding:16px">
   <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:420px;width:100%;padding:28px 24px;box-shadow:var(--shadow-md);border:1px solid var(--borda)">
@@ -3002,9 +3054,16 @@ document.addEventListener('DOMContentLoaded',()=>{
               <label>Data da proposta</label>
               <input id="pc-data" type="date" style="width:100%">
             </div>
+            <div class="f">
+              <label>Tipo de Proposta</label>
+              <select id="pc-tipo" style="width:100%" class="inp">
+                <option value="mensal">Mensal</option>
+                <option value="spot">SPOT (pontual)</option>
+              </select>
+            </div>
           </div>
 
-          <div class="g2" style="margin-bottom:14px;gap:14px">
+          <div class="g3" style="margin-bottom:14px;gap:14px">
             <div class="f">
               <label>Nome do contato / destinatário</label>
               <input id="pc-cliente" type="text" placeholder="Nome do responsável na empresa" style="width:100%">
@@ -3012,6 +3071,10 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div class="f">
               <label>E-mail do contato</label>
               <input id="pc-email" type="email" placeholder="email@empresa.com.br" style="width:100%">
+            </div>
+            <div class="f">
+              <label>WhatsApp do contato</label>
+              <input id="pc-telefone" type="tel" placeholder="(11) 9 1234-5678" style="width:100%">
             </div>
           </div>
 
@@ -9194,27 +9257,34 @@ function lpRenderizar(items) {
   }
   const rows = items.map(p => {
     const sl = _LP_STATUS_LABELS[p.status] || {txt: p.status, bg:'#888', col:'#fff'};
+    const tipoLabel = (p.tipo||'').toLowerCase()==='spot' ? '<span style="background:#e65100;color:#fff;border-radius:3px;padding:1px 5px;font-size:10px;font-weight:700">SPOT</span>' : '<span style="background:#1565c0;color:#fff;border-radius:3px;padding:1px 5px;font-size:10px;font-weight:700">Mensal</span>';
     const badge = `<span style="display:inline-block;background:${sl.bg};color:${sl.col};border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700">${sl.txt}</span>`;
     const opts = ['emitida','aprovada','recusada','cancelada']
       .map(s => `<option value="${s}"${p.status===s?' selected':''}>${_LP_STATUS_LABELS[s]?.txt||s}</option>`)
       .join('');
+    const emailOk = p.email_enviado_em ? `<span title="E-mail enviado em ${_escHtml(p.email_enviado_em)}" style="color:#2e7d32">✉️</span>` : '';
+    const waOk    = p.whatsapp_enviado_em ? `<span title="WhatsApp em ${_escHtml(p.whatsapp_enviado_em)}" style="color:#2e7d32">💬</span>` : '';
     return `<tr>
-      <td style="font-weight:700;white-space:nowrap">${_escHtml(p.numero)}</td>
+      <td style="font-weight:700;white-space:nowrap">${_escHtml(p.numero)} ${tipoLabel}</td>
       <td>${_escHtml(p.empresa||'')}</td>
       <td>${_escHtml(p.funcao||'')}</td>
       <td style="white-space:nowrap">${_escHtml(p.data_proposta||'')}</td>
       <td style="text-align:right;white-space:nowrap">${_escHtml(p.total||'')}</td>
-      <td>${badge}</td>
-      <td>
-        <select class="inp" style="font-size:11px;padding:2px 6px;width:120px" onchange="lpAtualizarStatus(${p.id}, this.value, this)">
+      <td>${badge} ${emailOk}${waOk}</td>
+      <td style="white-space:nowrap">
+        <select class="inp" style="font-size:11px;padding:2px 6px;width:110px" onchange="lpAtualizarStatus(${p.id}, this.value, this)">
           ${opts}
         </select>
+      </td>
+      <td>
+        <button class="btn b-sm" style="font-size:11px;background:#205d8a;color:#fff;white-space:nowrap"
+          onclick="pcAbrirModalEnvio(${p.id}, ${JSON.stringify(p.numero)}, ${JSON.stringify(p.email_contato||'')}, '')">📨 Enviar</button>
       </td>
     </tr>`;
   }).join('');
   el.innerHTML = `<table class="tbl" style="width:100%;font-size:13px">
     <thead><tr>
-      <th>Número</th><th>Empresa</th><th>Função</th><th>Data</th><th style="text-align:right">Total</th><th>Status</th><th>Alterar</th>
+      <th>Número</th><th>Empresa</th><th>Função</th><th>Data</th><th style="text-align:right">Total</th><th>Status</th><th>Alterar</th><th></th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
@@ -9246,6 +9316,80 @@ async function lpAtualizarStatus(id, status, selectEl) {
   }
 }
 // ── FIM LISTA DE PROPOSTAS ───────────────────────────────────────────────────
+
+// ── MODAL ENVIO DE PROPOSTA ──────────────────────────────────────────────────
+let _mepPropostaId = null;
+
+function pcAbrirModalEnvio(propostaId, numero, emailPre, telPre) {
+  _mepPropostaId = propostaId;
+  const modal = document.getElementById('modal-enviar-proposta');
+  const num   = document.getElementById('mep-numero');
+  if (num) num.textContent = `Proposta: ${numero || ''}`;
+  const mepEmail = document.getElementById('mep-email');
+  if (mepEmail) mepEmail.value = emailPre || '';
+  const mepTel = document.getElementById('mep-telefone');
+  if (mepTel) mepTel.value = telPre || '';
+  const mepMsg = document.getElementById('mep-mensagem');
+  if (mepMsg) mepMsg.value = '';
+  const fb = document.getElementById('mep-feedback');
+  if (fb) fb.style.display = 'none';
+  // Reset canal para email
+  document.querySelectorAll('input[name="mep-canal"]').forEach(r => r.checked = r.value === 'email');
+  _mepToggleCanal('email');
+  if (modal) { modal.style.display = 'flex'; }
+}
+
+function pcFecharModalEnvio() {
+  const modal = document.getElementById('modal-enviar-proposta');
+  if (modal) modal.style.display = 'none';
+  _mepPropostaId = null;
+}
+
+function _mepToggleCanal(canal) {
+  document.getElementById('mep-campos-email').style.display = canal === 'email' ? '' : 'none';
+  document.getElementById('mep-campos-whatsapp').style.display = canal === 'whatsapp' ? '' : 'none';
+  const btn = document.getElementById('mep-btn-enviar');
+  if (btn) btn.textContent = canal === 'whatsapp' ? '💬 Abrir WhatsApp' : '📧 Enviar e-mail';
+}
+
+async function pcEnviarProposta() {
+  if (!_mepPropostaId) return;
+  const canal = document.querySelector('input[name="mep-canal"]:checked')?.value || 'email';
+  const email = document.getElementById('mep-email')?.value?.trim() || '';
+  const telefone = document.getElementById('mep-telefone')?.value?.trim() || '';
+  const mensagem = document.getElementById('mep-mensagem')?.value?.trim() || '';
+  const fb = document.getElementById('mep-feedback');
+  const btn = document.getElementById('mep-btn-enviar');
+
+  const _showFb = (html, ok) => {
+    fb.innerHTML = `<div style="border-radius:6px;padding:10px 12px;font-size:13px;${ok ? 'background:#e8f5e9;border:1px solid #2e7d32;color:#1b5e20' : 'background:#ffebee;border:1px solid #c62828;color:#b71c1c'}">${html}</div>`;
+    fb.style.display = '';
+  };
+
+  btn.disabled = true; btn.textContent = '⏳ Enviando…';
+  try {
+    const body = {canal, email, telefone, mensagem};
+    const res  = await api(`/api/propostas-comerciais/${_mepPropostaId}/enviar`, {method:'POST', body});
+    if (canal === 'whatsapp' && res.wa_url) {
+      window.open(res.wa_url, '_blank');
+      _showFb('💬 WhatsApp aberto em nova aba. Confirme o envio na conversa.', true);
+    } else {
+      _showFb(`✅ E-mail enviado com sucesso para <strong>${_escHtml(email)}</strong>!`, true);
+    }
+    lpCarregar(_lpPage);  // Atualiza ícones de envio na lista
+  } catch(e) {
+    _showFb(`❌ ${_escHtml(String(e))}`, false);
+  }
+  btn.disabled = false;
+  _mepToggleCanal(canal);
+}
+
+// Fechar modal ao clicar fora
+document.addEventListener('click', function(e) {
+  const modal = document.getElementById('modal-enviar-proposta');
+  if (modal && modal.style.display !== 'none' && e.target === modal) pcFecharModalEnvio();
+});
+// ── FIM MODAL ENVIO DE PROPOSTA ───────────────────────────────────────────────
 
 // ── PROPOSTA COMERCIAL ────────────────────────────────────────────────────────
 let _pcAcIdx = -1;
@@ -9481,6 +9625,8 @@ function previaProposta() {
   const itens = pcGetItens();
   const dataFmt = dataVal ? new Date(dataVal+'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
   const refNum = 'PC-'+new Date().toISOString().replace(/[-:T.Z]/g,'').slice(0,12);
+  const tipoVal   = document.getElementById('pc-tipo')?.value || 'mensal';
+  const tipoLabel = tipoVal === 'spot' ? 'SPOT' : 'Mensal';
   const anoRef = new Date().getFullYear();
 
   const totalTxt = document.getElementById('pc-total-row')?.textContent || '—';
@@ -9534,7 +9680,7 @@ table.custo .total-row td{font-weight:700;background:#f0f4f8;border-top:2px soli
 <div class="page">
   <div class="hdr">
     <div><h1>${_escHtml(remNome)}</h1><div style="font-size:8pt;opacity:.8">CNPJ: ${_escHtml(remCNPJ)}</div></div>
-    <div class="ref">Ref.: ${_escHtml(refNum)}<br>Data: ${_escHtml(dataFmt)}</div>
+    <div class="ref">Ref.: ${_escHtml(refNum)}<br>Tipo: ${_escHtml(tipoLabel)}<br>Data: ${_escHtml(dataFmt)}</div>
   </div>
   <div class="dest-grid">
     <div class="dest-cell"><span class="dest-lbl">EMPRESA DESTINATÁRIA</span><span class="dest-val">${_escHtml(empresa)}</span></div>
@@ -9624,17 +9770,26 @@ async function gerarProposta() {
   try {
     const resp = await fetch('/api/proposta-comercial/gerar',{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({empresa,cnpj,funcao,data:dataFmt,cliente,email,itens,remetente_id:remetenteId})
+      body: JSON.stringify({empresa,cnpj,funcao,data:dataFmt,cliente,email,
+                            itens, remetente_id:remetenteId,
+                            tipo: document.getElementById('pc-tipo')?.value || 'mensal'})
     });
     if (!resp.ok) { const err=await resp.json().catch(()=>({erro:resp.statusText})); throw new Error(err.erro||resp.statusText); }
     const numProposta = resp.headers.get('X-Proposta-Numero') || '';
+    const propostaId  = resp.headers.get('X-Proposta-Id') || null;
     const blob = await resp.blob();
     const url  = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href=url; a.download=`Proposta_Comercial_${empresa.replace(/\s+/g,'_').slice(0,30)}.pdf`;
     a.click(); setTimeout(()=>URL.revokeObjectURL(url),10000);
     const numBadge = numProposta ? ` &nbsp;<strong>${_escHtml(numProposta)}</strong>` : '';
-    res.innerHTML=`<div style="background:var(--verde-cl);border:1px solid var(--verde);border-radius:8px;padding:10px 14px;color:var(--verde)">✅ PDF gerado com sucesso!${numBadge} &nbsp;<button class="btn b-sm" style="margin-left:8px;font-size:11px;background:#e8f5e9;color:#2e7d32;border:1px solid #2e7d32" onclick="docsAbrirListaPropostas()">Ver histórico</button></div>`;
+    const emailDest = document.getElementById('pc-email')?.value?.trim() || '';
+    const telDest   = document.getElementById('pc-telefone')?.value?.trim() || '';
+    res.innerHTML=`<div style="background:var(--verde-cl);border:1px solid var(--verde);border-radius:8px;padding:10px 14px;color:var(--verde);display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+      <span>✅ PDF gerado com sucesso!${numBadge}</span>
+      ${propostaId ? `<button class="btn b-sm" style="font-size:11px;background:#e8f5e9;color:#2e7d32;border:1px solid #2e7d32" onclick="pcAbrirModalEnvio(${propostaId}, ${JSON.stringify(numProposta)}, ${JSON.stringify(emailDest)}, ${JSON.stringify(telDest)})">📨 Enviar ao cliente</button>` : ''}
+      <button class="btn b-sm" style="font-size:11px;background:#e3f2fd;color:#1565c0;border:1px solid #1565c0" onclick="docsAbrirListaPropostas()">📋 Ver histórico</button>
+    </div>`;
   } catch(e) {
     res.innerHTML=`<div style="background:var(--verm-cl);border:1px solid var(--verm);border-radius:8px;padding:10px 14px;color:var(--verm)">❌ ${esc(String(e))}</div>`;
   }

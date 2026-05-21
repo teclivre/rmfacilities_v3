@@ -1138,7 +1138,10 @@ class PropostaComercial(db.Model):
     remetente_id  = db.Column(db.Integer, db.ForeignKey('empresa.id'), nullable=True)
     itens         = db.Column(db.Text, default='[]')   # JSON
     total         = db.Column(db.String(50))
+    tipo          = db.Column(db.String(20), default='mensal')  # mensal|spot
     status        = db.Column(db.String(30), default='emitida')  # emitida|aprovada|recusada|cancelada
+    email_enviado_em = db.Column(db.DateTime)
+    whatsapp_enviado_em = db.Column(db.DateTime)
     criado_em     = db.Column(db.DateTime, default=utcnow)
     criado_por    = db.Column(db.Integer)  # usuario.id
 
@@ -1151,6 +1154,8 @@ class PropostaComercial(db.Model):
             d['itens'] = []
         if self.criado_em:
             d['criado_em'] = self.criado_em.strftime('%d/%m/%Y %H:%M')
+        d['email_enviado_em'] = self.email_enviado_em.strftime('%d/%m/%Y %H:%M') if self.email_enviado_em else ''
+        d['whatsapp_enviado_em'] = self.whatsapp_enviado_em.strftime('%d/%m/%Y %H:%M') if self.whatsapp_enviado_em else ''
         return d
 
 def _gerar_num_proposta():
@@ -4533,6 +4538,85 @@ def smtp_send_link_assinatura(dest, nome_dest, titulo_envelope, link, remetente=
         else:
             with smtplib.SMTP_SSL(cfg['host'],port,timeout=20) as s: s.login(cfg['user'],cfg['senha']); s.sendmail(cfg['de'] or cfg['user'],dest,msg.as_string())
     _smtp_exec_with_retry(_do_send)
+
+def smtp_send_proposta_comercial(dest_email, dest_nome, numero, empresa_dest, tipo, data_str, total, mensagem_extra, pdf_buf, remetente_nome='RM Facilities'):
+    """Envia proposta comercial por e-mail com assinatura da equipe comercial e PDF anexado."""
+    cfg = smtp_cfg()
+    if not cfg['host'] or not cfg['user']:
+        raise ValueError('SMTP não configurado. Acesse Configurações → E-mail e preencha os dados SMTP.')
+
+    tipo_label = 'SPOT' if (tipo or '').lower() == 'spot' else 'Mensal'
+    remetente_display = f'{remetente_nome} Comercial <comercial@rmfacilities.com.br>'
+
+    msg = MIMEMultipart('mixed')
+    msg['From'] = remetente_display
+    msg['To'] = dest_email
+    msg['Reply-To'] = 'comercial@rmfacilities.com.br'
+    msg['Subject'] = f'Proposta Comercial {tipo_label} — {numero} | {remetente_nome}'
+
+    # Corpo HTML
+    msg_extra_html = f"<p style='margin:14px 0 0;font-size:14px;color:#333;white-space:pre-wrap'>{mensagem_extra}</p>" if mensagem_extra else ''
+    corpo_html = (
+        f"<div style='font-family:Arial,sans-serif;max-width:560px;margin:0 auto'>"
+        f"<div style='background:#205d8a;padding:18px 28px;border-radius:8px 8px 0 0;display:flex;align-items:center;gap:12px'>"
+        f"<span style='color:#fff;font-size:18px;font-weight:700'>📄 {remetente_nome}</span>"
+        f"</div>"
+        f"<div style='background:#fff;border:1px solid #dde5f0;border-top:none;padding:28px;border-radius:0 0 8px 8px'>"
+        f"<p style='color:#333;font-size:15px'>Prezado(a) <strong>{dest_nome or empresa_dest}</strong>,</p>"
+        f"{msg_extra_html}"
+        f"<div style='background:#f0f6ff;border:1px solid #c5d9f0;border-radius:8px;padding:16px;margin:20px 0'>"
+        f"<table style='font-size:13px;color:#333;width:100%'>"
+        f"<tr><td style='padding:3px 0;color:#666;width:120px'>Número:</td><td><strong>{numero}</strong></td></tr>"
+        f"<tr><td style='padding:3px 0;color:#666'>Tipo:</td><td><strong>{tipo_label}</strong></td></tr>"
+        f"<tr><td style='padding:3px 0;color:#666'>Empresa:</td><td>{empresa_dest}</td></tr>"
+        f"<tr><td style='padding:3px 0;color:#666'>Data:</td><td>{data_str}</td></tr>"
+        f"<tr><td style='padding:3px 0;color:#666'>Valor Total:</td><td><strong>{total}</strong></td></tr>"
+        f"</table></div>"
+        f"<p style='color:#555;font-size:13px'>O documento com a proposta completa está em anexo neste e-mail.</p>"
+        f"<hr style='border:none;border-top:1px solid #eee;margin:24px 0'>"
+        f"<table style='font-size:12px;color:#666;width:100%'><tr>"
+        f"<td>"
+        f"<strong style='color:#205d8a;font-size:13px'>{remetente_nome}</strong><br>"
+        f"Equipe Comercial<br>"
+        f"📧 <a href='mailto:comercial@rmfacilities.com.br' style='color:#205d8a'>comercial@rmfacilities.com.br</a><br>"
+        f"🌐 <a href='https://www.rmfacilities.com.br' style='color:#205d8a'>www.rmfacilities.com.br</a>"
+        f"</td></tr></table>"
+        f"</div></div>"
+    )
+    corpo_txt = (
+        f"Prezado(a) {dest_nome or empresa_dest},\n\n"
+        + (f"{mensagem_extra}\n\n" if mensagem_extra else '')
+        + f"Segue em anexo a Proposta Comercial {tipo_label} n° {numero}.\n"
+        f"Empresa: {empresa_dest}\nData: {data_str}\nValor Total: {total}\n\n"
+        f"Atenciosamente,\n{remetente_nome} — Equipe Comercial\ncomerciall@rmfacilities.com.br"
+    )
+    alt = MIMEMultipart('alternative')
+    alt.attach(MIMEText(corpo_txt, 'plain', 'utf-8'))
+    alt.attach(MIMEText(corpo_html, 'html', 'utf-8'))
+    msg.attach(alt)
+
+    # PDF em anexo a partir de BytesIO
+    pdf_data = pdf_buf.read() if hasattr(pdf_buf, 'read') else pdf_buf
+    part = MIMEBase('application', 'pdf')
+    part.set_payload(pdf_data)
+    encoders.encode_base64(part)
+    nome_anexo = f'Proposta_{numero}_{empresa_dest[:30].replace(" ","_")}.pdf'
+    part.add_header('Content-Disposition', f'attachment; filename="{nome_anexo}"')
+    msg.attach(part)
+
+    port = int(cfg['port'] or 587)
+    # Usa cfg['user'] para autenticação SMTP, mas envia como comercial@rmfacilities.com.br no From
+    def _do_send():
+        if str(cfg['tls']) in ('1', 'true', 'True', 'yes'):
+            with smtplib.SMTP(cfg['host'], port, timeout=20) as s:
+                s.starttls(); s.login(cfg['user'], cfg['senha'])
+                s.sendmail(cfg['user'], dest_email, msg.as_string())
+        else:
+            with smtplib.SMTP_SSL(cfg['host'], port, timeout=20) as s:
+                s.login(cfg['user'], cfg['senha'])
+                s.sendmail(cfg['user'], dest_email, msg.as_string())
+    _smtp_exec_with_retry(_do_send)
+
 
 ALLOWED_AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','compras','sst','rh-digital','documentos']
 ALLOWED_ACTIONS=['view','create','edit','delete','approve','export']
@@ -8962,10 +9046,11 @@ def api_funcionario_gerar_aviso_previo(id):
 
 # ── PROPOSTA COMERCIAL ────────────────────────────────────────────────────────
 
-def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, email, itens=None, remetente=None, ref_num=None):
+def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, email, itens=None, remetente=None, ref_num=None, tipo=None):
     """Gera PDF da Proposta Comercial com os campos dinâmicos preenchidos.
     remetente: dict da empresa remetente (campos do modelo Empresa), ou None para defaults.
-    ref_num: número sequencial único da proposta (ex: PC-2026-0001)."""
+    ref_num: número sequencial único da proposta (ex: PC-2026-0001).
+    tipo: 'mensal' ou 'spot'."""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
@@ -9008,6 +9093,7 @@ def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, emai
     ano_ref = localnow().strftime('%Y')
     if not ref_num:
         ref_num = f'PC-{localnow().strftime("%Y%m%d%H%M")}'
+    tipo_label = 'SPOT' if (tipo or '').lower() == 'spot' else 'Mensal'
 
     if itens is None:
         itens = [{'cod': '1', 'referencia': 'Limpeza',
@@ -9029,6 +9115,7 @@ def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, emai
                   f'<font size=8>CNPJ: {rem_cnpj}</font>',
                   st('hd', fontName='Helvetica-Bold', fontSize=12, textColor=WHITE, leading=16)),
         Paragraph(f'<font size=8>Ref.: {ref_num}</font><br/>'
+                  f'<font size=8>Tipo: {tipo_label}</font><br/>'
                   f'<font size=8>Data: {data_fmt}</font>',
                   st('hd2', fontSize=8, textColor=WHITE, alignment=TA_RIGHT, leading=12)),
     ]]
@@ -9285,6 +9372,7 @@ def api_gerar_proposta_comercial():
     cliente = (d.get('cliente') or '').strip()
     email   = (d.get('email') or '').strip()
     itens   = d.get('itens') or None
+    tipo    = (d.get('tipo') or 'mensal').strip().lower()
 
     # Empresa remetente — carrega do banco se informado
     remetente = None
@@ -9327,21 +9415,24 @@ def api_gerar_proposta_comercial():
             remetente_id    = int(remetente_id) if remetente_id else None,
             itens           = _json.dumps(itens or [], ensure_ascii=False),
             total           = total_str,
+            tipo            = tipo,
             status          = 'emitida',
             criado_em       = localnow(),
             criado_por      = session.get('uid'),
         )
         db.session.add(proposta_rec)
         db.session.commit()
+        proposta_id = proposta_rec.id
     except Exception as e:
         app.logger.exception('Erro ao salvar PropostaComercial no banco')
         db.session.rollback()
         # Fallback: usa número por timestamp para não bloquear a geração
         ref_num = f'PC-{localnow().strftime("%Y%m%d%H%M")}'
+        proposta_id = None
 
     try:
         buf = _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, email, itens,
-                                            remetente=remetente, ref_num=ref_num)
+                                            remetente=remetente, ref_num=ref_num, tipo=tipo)
     except Exception as e:
         app.logger.exception('Erro ao gerar proposta comercial')
         return jsonify({'erro': f'Erro ao gerar PDF: {e}'}), 500
@@ -9351,8 +9442,11 @@ def api_gerar_proposta_comercial():
     audit_event('proposta_comercial_gerada', 'usuario', session.get('uid'), None, None, True,
                 {'empresa': empresa, 'funcao': funcao, 'remetente_id': remetente_id, 'numero': ref_num})
     from flask import send_file
+    hdrs = {'X-Proposta-Numero': ref_num}
+    if proposta_id:
+        hdrs['X-Proposta-Id'] = str(proposta_id)
     return send_file(buf, mimetype='application/pdf', as_attachment=True,
-                     download_name=filename, headers={'X-Proposta-Numero': ref_num})
+                     download_name=filename, headers=hdrs)
 
 
 @app.route('/api/propostas-comerciais', methods=['GET'])
@@ -9402,6 +9496,93 @@ def api_atualizar_status_proposta(pid):
     audit_event('proposta_status_atualizado', 'proposta', pid, None, None, True,
                 {'numero': p.numero, 'status': novo})
     return jsonify({'ok': True, 'numero': p.numero, 'status': novo})
+
+
+@app.route('/api/propostas-comerciais/<int:pid>/enviar', methods=['POST'])
+@lr
+def api_enviar_proposta_comercial(pid):
+    """Envia a proposta por email (com PDF regenerado) ou registra envio por WhatsApp."""
+    import json as _json
+    p = db.get_or_404(PropostaComercial, pid)
+    d = request.json or {}
+    canal = (d.get('canal') or 'email').strip().lower()   # email | whatsapp
+    dest_email = (d.get('email') or p.email_contato or '').strip()
+    dest_nome  = (d.get('nome') or p.cliente_contato or p.empresa or '').strip()
+    mensagem   = (d.get('mensagem') or '').strip()
+    telefone   = (d.get('telefone') or '').strip()
+
+    # Carrega remetente
+    remetente = None
+    if p.remetente_id:
+        try:
+            emp = db.session.get(Empresa, p.remetente_id)
+            if emp:
+                remetente = emp.to_dict()
+        except Exception:
+            pass
+    rem_nome = (remetente or {}).get('nome') or (remetente or {}).get('razao') or 'RM Facilities'
+
+    if canal == 'email':
+        if not dest_email:
+            return jsonify({'erro': 'Informe o e-mail do destinatário.'}), 400
+        # Carrega itens para regenerar o PDF
+        try:
+            itens = _json.loads(p.itens or '[]')
+        except Exception:
+            itens = []
+        try:
+            pdf_buf = _gerar_proposta_comercial_pdf(
+                p.empresa, p.cnpj_dest, p.funcao, p.data_proposta,
+                p.cliente_contato, p.email_contato, itens,
+                remetente=remetente, ref_num=p.numero, tipo=p.tipo
+            )
+            pdf_buf.seek(0)
+        except Exception as e:
+            app.logger.exception('Erro ao regenerar PDF para envio')
+            return jsonify({'erro': f'Erro ao gerar PDF: {e}'}), 500
+        try:
+            smtp_send_proposta_comercial(
+                dest_email=dest_email,
+                dest_nome=dest_nome,
+                numero=p.numero,
+                empresa_dest=p.empresa or '',
+                tipo=p.tipo or 'mensal',
+                data_str=p.data_proposta or '',
+                total=p.total or '',
+                mensagem_extra=mensagem,
+                pdf_buf=pdf_buf,
+                remetente_nome=rem_nome,
+            )
+        except Exception as e:
+            app.logger.exception('Erro ao enviar e-mail da proposta')
+            return jsonify({'erro': f'Erro ao enviar e-mail: {e}'}), 500
+        p.email_enviado_em = localnow()
+        db.session.commit()
+        audit_event('proposta_email_enviado', 'proposta', pid, None, None, True,
+                    {'numero': p.numero, 'dest': dest_email})
+        return jsonify({'ok': True, 'canal': 'email', 'dest': dest_email})
+
+    elif canal == 'whatsapp':
+        # Registra que o usuário iniciou envio via WhatsApp (link wa.me)
+        p.whatsapp_enviado_em = localnow()
+        db.session.commit()
+        audit_event('proposta_whatsapp_enviado', 'proposta', pid, None, None, True,
+                    {'numero': p.numero, 'telefone': telefone})
+        tipo_label = 'SPOT' if (p.tipo or '').lower() == 'spot' else 'Mensal'
+        texto = (
+            f"Olá{' ' + dest_nome if dest_nome else ''}! 👋\n\n"
+            + (f"{mensagem}\n\n" if mensagem else '')
+            + f"Segue nossa Proposta Comercial {tipo_label} *{p.numero}*.\n"
+            f"Empresa: {p.empresa or ''}\nData: {p.data_proposta or ''}\nValor Total: {p.total or ''}\n\n"
+            f"Qualquer dúvida estamos à disposição! 😊\n— {rem_nome} Comercial"
+        )
+        import urllib.parse
+        fone_limpo = ''.join(c for c in (telefone or '') if c.isdigit())
+        wa_url = f"https://wa.me/{fone_limpo}?text={urllib.parse.quote(texto)}" if fone_limpo else \
+                 f"https://wa.me/?text={urllib.parse.quote(texto)}"
+        return jsonify({'ok': True, 'canal': 'whatsapp', 'wa_url': wa_url})
+
+    return jsonify({'erro': 'Canal inválido. Use "email" ou "whatsapp".'}), 400
 
 # ── FIM PROPOSTA COMERCIAL ────────────────────────────────────────────────────
 
@@ -19188,6 +19369,11 @@ with app.app_context():
         'cert_ativo BOOLEAN DEFAULT 0',
         'cert_assunto VARCHAR(255)',
         'cert_validade_fim VARCHAR(30)'
+    ])
+    ensure_cols('proposta_comercial',[
+        'tipo VARCHAR(20) DEFAULT "mensal"',
+        'email_enviado_em DATETIME',
+        'whatsapp_enviado_em DATETIME',
     ])
     ensure_cols('empresa',[
         'contato_nome VARCHAR(150)',
