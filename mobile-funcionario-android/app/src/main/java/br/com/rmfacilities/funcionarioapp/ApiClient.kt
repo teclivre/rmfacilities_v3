@@ -50,14 +50,28 @@ class ApiClient(private val session: SessionManager) {
     data class UltimoPagamentoResponse(
         val ok: Boolean = false,
         val valor_liquido: Double? = null,
+        val total_adicional: Double? = null,
+        val total_desconto: Double? = null,
+        val total_pagar: Double? = null,
         val competencia: String? = null,
         val erro: String? = null
+    )
+
+    data class LancamentoItem(
+        val tipo: String = "",
+        val natureza: String = "adicional",
+        val valor: Double = 0.0,
+        val descricao: String = ""
     )
 
     data class PagamentoItem(
         val competencia: String = "",
         val valor_liquido: Double = 0.0,
-        val obs: String = ""
+        val total_adicional: Double = 0.0,
+        val total_desconto: Double = 0.0,
+        val total_pagar: Double = 0.0,
+        val obs: String = "",
+        val lancamentos: List<LancamentoItem> = emptyList()
     )
 
     data class HistoricoPagamentosResponse(

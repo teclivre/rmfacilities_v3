@@ -498,8 +498,9 @@ class HomeActivity : BaseActivity() {
                 )
 
                 // Atualiza o valor do último pagamento
-                if (ultimoPagamento != null && ultimoPagamento.ok && ultimoPagamento.valor_liquido != null && ultimoPagamento.competencia != null) {
-                    val valorFmt = "R$ %.2f".format(ultimoPagamento.valor_liquido)
+                if (ultimoPagamento != null && ultimoPagamento.ok && ultimoPagamento.competencia != null) {
+                    val valor = ultimoPagamento.total_pagar ?: ultimoPagamento.valor_liquido ?: 0.0
+                    val valorFmt = "R$ %,.2f".format(valor)
                     tvUltimoPagamento.text = "Último pagamento: $valorFmt (${ultimoPagamento.competencia})"
                 } else {
                     tvUltimoPagamento.text = "Último pagamento: --"
@@ -622,46 +623,7 @@ class HomeActivity : BaseActivity() {
     }
 
     private fun abrirHistoricoPagamentos() {
-        val loading = MaterialAlertDialogBuilder(this)
-            .setTitle("Histórico de pagamento")
-            .setMessage("Buscando...")
-            .setCancelable(false)
-            .create()
-        loading.show()
-        lifecycleScope.launch {
-            val resp = try { api.historicoPagamentos() } catch (_: Exception) { null }
-            withContext(Dispatchers.Main) {
-                loading.dismiss()
-                val historico = resp?.historico ?: emptyList()
-                val ultimos3 = historico.take(3)
-                val texto = buildString {
-                    if (ultimos3.isEmpty()) {
-                        append("Nenhum pagamento registrado.")
-                    } else {
-                        append("Últimos 3 meses:\n\n")
-                        ultimos3.forEach { p ->
-                            val valor = "R$ %,.2f".format(p.valor_liquido)
-                            append("• ${compFmt(p.competencia)}  →  $valor")
-                            if (p.obs.isNotBlank()) append("\n  (${p.obs})")
-                            append("\n")
-                        }
-                        if (historico.size > 3) {
-                            append("\n(+${historico.size - 3} meses anteriores no histórico completo)")
-                        }
-                    }
-                }
-                MaterialAlertDialogBuilder(this@HomeActivity)
-                    .setTitle("💰 Pagamentos")
-                    .setMessage(texto.trim())
-                    .setPositiveButton("Fechar", null)
-                    .setNeutralButton("📄 Holerites") { _, _ ->
-                        startActivity(Intent(this@HomeActivity, DocumentosActivity::class.java).apply {
-                            putExtra("preset_categoria", "holerite")
-                        })
-                    }
-                    .show()
-            }
-        }
+        startActivity(Intent(this, PagamentosActivity::class.java))
     }
 
     private fun abrirHistoricoBeneficios() {

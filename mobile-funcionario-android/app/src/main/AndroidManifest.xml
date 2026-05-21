@@ -27,6 +27,9 @@
         </provider>
 
         <activity
+            android:name=".PagamentosActivity"
+            android:exported="false" />
+        <activity
             android:name=".FeriasActivity"
             android:exported="false" />
         <activity

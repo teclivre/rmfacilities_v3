@@ -10786,6 +10786,24 @@ def api_app_funcionario_me_documentos():
 @app_func_required
 def api_app_funcionario_ultimo_pagamento():
     f=g.app_funcionario
+    # Fonte primária: BeneficioMensal (salário individual)
+    reg=BeneficioMensal.query.filter_by(funcionario_id=f.id)\
+        .filter(BeneficioMensal.salario.isnot(None))\
+        .order_by(BeneficioMensal.competencia.desc()).first()
+    if reg:
+        lans=LancamentoAvulso.query.filter_by(funcionario_id=f.id,competencia=reg.competencia).all()
+        total_adicional=sum(float(l.valor or 0) for l in lans if l.natureza=='adicional')
+        total_desconto=sum(float(l.valor or 0) for l in lans if l.natureza=='desconto')
+        valor_liquido=float(reg.salario or 0)
+        return jsonify({
+            'ok':True,
+            'competencia':reg.competencia,
+            'valor_liquido':valor_liquido,
+            'total_adicional':total_adicional,
+            'total_desconto':total_desconto,
+            'total_pagar':round(valor_liquido+total_adicional-total_desconto,2)
+        })
+    # Fallback: folhas fechadas
     empresa_ref_id=int(f.empresa_id or 0)
     folhas=FolhaPagamentoMensal.query.filter(
         FolhaPagamentoMensal.status=='fechada',
@@ -10802,17 +10820,44 @@ def api_app_funcionario_ultimo_pagamento():
             if func_id and int(func_id)==f.id:
                 valor=item.get('valor_liquido') or item.get('salario')
                 if valor is not None:
-                    return jsonify({
-                        'ok':True,
-                        'competencia':folha.competencia,
-                        'valor_liquido':float(valor)
-                    })
+                    v=float(valor)
+                    return jsonify({'ok':True,'competencia':folha.competencia,'valor_liquido':v,'total_adicional':0.0,'total_desconto':0.0,'total_pagar':v})
     return jsonify({'ok':False,'erro':'Nenhum pagamento encontrado'})
 
 @app.route('/api/app/funcionario/historico-pagamentos')
 @app_func_required
 def api_app_funcionario_historico_pagamentos():
     f=g.app_funcionario
+    # Fonte primária: BeneficioMensal
+    registros=BeneficioMensal.query.filter_by(funcionario_id=f.id)\
+        .filter(BeneficioMensal.salario.isnot(None))\
+        .order_by(BeneficioMensal.competencia.desc()).limit(24).all()
+    if registros:
+        comps=[r.competencia for r in registros]
+        lans_todos=LancamentoAvulso.query.filter(
+            LancamentoAvulso.funcionario_id==f.id,
+            LancamentoAvulso.competencia.in_(comps)
+        ).all()
+        mapa_lan={}
+        for lan in lans_todos:
+            mapa_lan.setdefault(lan.competencia,[]).append(lan)
+        resultado=[]
+        for reg in registros:
+            lans=mapa_lan.get(reg.competencia,[])
+            total_adicional=sum(float(l.valor or 0) for l in lans if l.natureza=='adicional')
+            total_desconto=sum(float(l.valor or 0) for l in lans if l.natureza=='desconto')
+            valor_liquido=float(reg.salario or 0)
+            resultado.append({
+                'competencia':reg.competencia,
+                'valor_liquido':valor_liquido,
+                'total_adicional':total_adicional,
+                'total_desconto':total_desconto,
+                'total_pagar':round(valor_liquido+total_adicional-total_desconto,2),
+                'obs':reg.salario_obs or '',
+                'lancamentos':[{'tipo':l.tipo,'natureza':l.natureza,'valor':float(l.valor or 0),'descricao':l.descricao or ''} for l in lans]
+            })
+        return jsonify({'ok':True,'historico':resultado})
+    # Fallback: folhas fechadas
     empresa_ref_id=int(f.empresa_id or 0)
     folhas=FolhaPagamentoMensal.query.filter(
         FolhaPagamentoMensal.status=='fechada',
@@ -10830,11 +10875,8 @@ def api_app_funcionario_historico_pagamentos():
             if func_id and int(func_id)==f.id:
                 valor=item.get('valor_liquido') or item.get('salario')
                 if valor is not None:
-                    resultado.append({
-                        'competencia':folha.competencia,
-                        'valor_liquido':float(valor),
-                        'obs':item.get('salario_obs') or item.get('obs') or ''
-                    })
+                    v=float(valor)
+                    resultado.append({'competencia':folha.competencia,'valor_liquido':v,'total_adicional':0.0,'total_desconto':0.0,'total_pagar':v,'obs':item.get('salario_obs') or item.get('obs') or '','lancamentos':[]})
                 break
     return jsonify({'ok':True,'historico':resultado})
 
