@@ -10638,20 +10638,23 @@ async function fpSalvarFolha(){
   let r;
   if(id){ r = await api('/api/folhas/'+id, 'PUT', body); }
   else { r = await api('/api/folhas', 'POST', body); }
-  if(!r || r.error){ toast(r?.error || 'Erro ao salvar folha.','e'); return; }
+  if(!r || r.error || r.erro){ toast(r?.error || r?.erro || 'Erro ao salvar folha.','e'); return; }
   document.getElementById('fp-mod-folha').style.display='none';
   toast(id?'Folha atualizada.':'Folha criada.','s');
   // Se mudou de competência, refresh do filtro
   if(body.competencia !== fpCompetenciaAtual()){
     document.getElementById('fp-comp').value = body.competencia;
   }
+  // Limpa selecao para evitar restaurar selecao antiga em fpCarregarFolhas
+  FP_STATE.folhaSelecionada = null;
+  const novoId = r.id || (id ? parseInt(id) : null);
   await fpCarregarFolhas();
-  if(r.id){ await fpSelecionarFolha(r.id); }
+  if(novoId){ await fpSelecionarFolha(novoId); }
 }
 
 async function fpSelecionarFolha(fid){
   const r = await api('/api/folhas/'+fid);
-  if(!r || r.error){ toast(r?.error||'Erro ao carregar folha.','e'); return; }
+  if(!r || r.error || r.erro){ toast(r?.error||r?.erro||'Erro ao carregar folha.','e'); return; }
   FP_STATE.folhaSelecionada = r;
   document.getElementById('fp-workspace').style.display = 'grid';
   fpRenderListaFolhas();
@@ -10797,7 +10800,7 @@ async function fpAtualizarSalarioBase(itemId, valor){
   const f = FP_STATE.folhaSelecionada;
   if(!f) return;
   const r = await api(`/api/folhas/${f.id}/itens/${itemId}`, 'PUT', {salario_base: parseFloat(valor)||0});
-  if(!r || r.error){ toast(r?.error||'Erro ao atualizar.','e'); return; }
+  if(!r || r.error || r.erro){ toast(r?.error||r?.erro||'Erro ao atualizar.','e'); return; }
   await fpRecarregarFolhaAtual();
 }
 
@@ -10813,10 +10816,9 @@ async function fpFecharFolha(){
   if(!f) return;
   if(!confirm(`Fechar a folha "${f.nome}"? Após fechar, ela não poderá ser editada (só reaberta).`)) return;
   const r = await api(`/api/folhas/${f.id}/fechar`, 'POST');
-  if(!r || r.error){ toast(r?.error||'Erro ao fechar.','e'); return; }
+  if(!r || r.error || r.erro){ toast(r?.error||r?.erro||'Erro ao fechar.','e'); return; }
   toast('Folha fechada.','s');
-  FP_STATE.folhaSelecionada = r;
-  fpRenderFolhaPainel();
+  await fpSelecionarFolha(f.id);
   await fpCarregarFolhas();
 }
 
@@ -10825,12 +10827,10 @@ async function fpReabrirFolha(){
   if(!f) return;
   if(!confirm('Reabrir esta folha? Ela voltará para rascunho e poderá ser editada.')) return;
   const r = await api(`/api/folhas/${f.id}/reabrir`, 'POST');
-  if(!r || r.error){ toast(r?.error||'Erro ao reabrir.','e'); return; }
+  if(!r || r.error || r.erro){ toast(r?.error||r?.erro||'Erro ao reabrir.','e'); return; }
   toast('Folha reaberta.','s');
-  FP_STATE.folhaSelecionada = r;
-  fpRenderFolhaPainel();
+  await fpSelecionarFolha(f.id);
   await fpCarregarFolhas();
-  await fpCarregarDisponiveis();
 }
 
 async function fpMarcarPaga(){
@@ -10840,10 +10840,9 @@ async function fpMarcarPaga(){
   const dt = prompt('Data do pagamento (AAAA-MM-DD):', hoje);
   if(!dt) return;
   const r = await api(`/api/folhas/${f.id}/marcar-paga`, 'POST', {data_pagamento: dt});
-  if(!r || r.error){ toast(r?.error||'Erro.','e'); return; }
+  if(!r || r.error || r.erro){ toast(r?.error||r?.erro||'Erro.','e'); return; }
   toast('Folha marcada como paga.','s');
-  FP_STATE.folhaSelecionada = r;
-  fpRenderFolhaPainel();
+  await fpSelecionarFolha(f.id);
   await fpCarregarFolhas();
 }
 
@@ -10852,7 +10851,7 @@ async function fpExcluirFolha(){
   if(!f) return;
   if(!confirm(`Excluir definitivamente a folha "${f.nome}"? Esta ação não pode ser desfeita.`)) return;
   const r = await api(`/api/folhas/${f.id}`, 'DELETE');
-  if(!r || r.error){ toast(r?.error||'Erro ao excluir.','e'); return; }
+  if(!r || r.error || r.erro){ toast(r?.error||r?.erro||'Erro ao excluir.','e'); return; }
   toast('Folha excluída.','s');
   FP_STATE.folhaSelecionada = null;
   document.getElementById('fp-workspace').style.display = 'none';
