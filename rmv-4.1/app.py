@@ -1619,6 +1619,62 @@ class LancamentoAvulso(db.Model):
         d['criado_em']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
         return d
 
+# ── Folhas de pagamento customizáveis (múltiplas por competência) ─────────────
+class FolhaPagamento(db.Model):
+    __tablename__='folha_pagamento'
+    id=db.Column(db.Integer,primary_key=True)
+    nome=db.Column(db.String(160),nullable=False)
+    tipo=db.Column(db.String(30),default='mensal')  # mensal|quinzenal|adiantamento|13o|ferias|rescisao|extra
+    competencia=db.Column(db.String(7),nullable=False,index=True)
+    empresa_id=db.Column(db.Integer,index=True)
+    status=db.Column(db.String(20),default='rascunho',index=True)  # rascunho|fechada|paga
+    data_pagamento=db.Column(db.String(10))  # AAAA-MM-DD
+    obs=db.Column(db.Text,default='')
+    total_valor=db.Column(db.Float,default=0)
+    criado_em=db.Column(db.DateTime,default=utcnow)
+    criado_por=db.Column(db.String(100))
+    fechado_em=db.Column(db.DateTime)
+    fechado_por=db.Column(db.String(100))
+    pago_em=db.Column(db.DateTime)
+    pago_por=db.Column(db.String(100))
+    itens=db.relationship('FolhaPagamentoItem',backref='folha',cascade='all, delete-orphan',lazy='dynamic')
+    def to_dict(self, with_items=False):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['criado_em']=self.criado_em.strftime('%d/%m/%Y %H:%M') if self.criado_em else ''
+        d['fechado_em']=self.fechado_em.strftime('%d/%m/%Y %H:%M') if self.fechado_em else ''
+        d['pago_em']=self.pago_em.strftime('%d/%m/%Y %H:%M') if self.pago_em else ''
+        emp=db.session.get(Empresa, self.empresa_id) if self.empresa_id else None
+        d['empresa_nome']=(emp.nome if emp else '')
+        d['qtd_funcionarios']=self.itens.count()
+        if with_items:
+            d['itens']=[it.to_dict() for it in self.itens.order_by(FolhaPagamentoItem.id.asc()).all()]
+        return d
+
+class FolhaPagamentoItem(db.Model):
+    __tablename__='folha_pagamento_item'
+    id=db.Column(db.Integer,primary_key=True)
+    folha_id=db.Column(db.Integer,db.ForeignKey('folha_pagamento.id'),nullable=False,index=True)
+    funcionario_id=db.Column(db.Integer,db.ForeignKey('funcionario.id'),nullable=False,index=True)
+    salario_base=db.Column(db.Float,default=0)
+    total_adicional=db.Column(db.Float,default=0)
+    total_desconto=db.Column(db.Float,default=0)
+    total_pagar=db.Column(db.Float,default=0)
+    obs=db.Column(db.String(300),default='')
+    incluido_em=db.Column(db.DateTime,default=utcnow)
+    __table_args__=(db.UniqueConstraint('folha_id','funcionario_id',name='uq_folha_item_func'),)
+    def to_dict(self):
+        d={c.name:getattr(self,c.name) for c in self.__table__.columns}
+        d['incluido_em']=self.incluido_em.strftime('%d/%m/%Y %H:%M') if self.incluido_em else ''
+        f=db.session.get(Funcionario, self.funcionario_id)
+        if f:
+            d['nome']=f.nome or ''
+            d['re']=f.re or f.matricula or ''
+            d['cargo']=f.cargo or ''
+            d['cpf']=f.cpf or ''
+            emp=db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
+            d['empresa_nome']=(emp.nome if emp else '')
+        return d
+
 class Feriado(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     data=db.Column(db.String(10),nullable=False,index=True)  # YYYY-MM-DD
@@ -5247,6 +5303,15 @@ def can_access_request(path,method='GET'):
     m=(method or 'GET').upper()
     if p.startswith('/api/financeiro/lancamentos'):
         return can_access_scope('rh',('view' if m=='GET' else 'edit'))
+    if p.startswith('/api/folhas'):
+        # GET = view; ações específicas (fechar/reabrir/marcar-paga) exigem approve; demais POST/PUT/DELETE = edit
+        if m == 'GET':
+            return can_access_scope('rh', 'view')
+        if any(s in p for s in ('/fechar', '/reabrir', '/marcar-paga')):
+            return can_access_scope('rh', 'approve')
+        if '/export' in p:
+            return can_access_scope('rh', 'export') or can_access_scope('rh', 'view')
+        return can_access_scope('rh', 'edit')
     if p.startswith('/api/financeiro/salarios/modelo'):
         return can_access_scope('rh','export') or can_access_scope('rh','view')
     if p.startswith('/api/financeiro/salarios/importar'):
@@ -17664,6 +17729,403 @@ def api_financeiro_lancamentos_excluir(lid):
                 {'id':lid,'competencia':comp,'tipo':tipo,'valor':valor})
     return jsonify({'ok':True})
 
+# ─────────────────────────────────────────────────────────────────────────────
+# FOLHAS DE PAGAMENTO (múltiplas folhas livres por competência)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _folha_salario_base_atual(func, competencia):
+    """Salário base inicial do funcionário (usa BeneficioMensal da competência se existir)."""
+    try:
+        bm = BeneficioMensal.query.filter_by(funcionario_id=func.id, competencia=competencia).first()
+        if bm and bm.salario:
+            return float(bm.salario or 0)
+    except Exception:
+        pass
+    return float(getattr(func, 'salario', 0) or 0)
+
+def _folha_lancamentos_func(funcionario_id, competencia):
+    """Soma de adicionais e descontos de lançamentos avulsos para o funcionário/competência."""
+    adi = 0.0
+    des = 0.0
+    try:
+        for l in LancamentoAvulso.query.filter_by(funcionario_id=funcionario_id, competencia=competencia).all():
+            v = float(l.valor or 0)
+            if (l.natureza or 'adicional') == 'desconto':
+                des += v
+            else:
+                adi += v
+    except Exception:
+        pass
+    return adi, des
+
+def _folha_recalcular_item(item, competencia):
+    """Recalcula totais de um item baseado no salário base + lançamentos avulsos da competência."""
+    adi, des = _folha_lancamentos_func(item.funcionario_id, competencia)
+    item.total_adicional = round(adi, 2)
+    item.total_desconto = round(des, 2)
+    item.total_pagar = round(float(item.salario_base or 0) + adi - des, 2)
+
+def _folha_recalcular_total(folha):
+    total = 0.0
+    for it in folha.itens.all():
+        _folha_recalcular_item(it, folha.competencia)
+        total += float(it.total_pagar or 0)
+    folha.total_valor = round(total, 2)
+
+def _folha_pode_editar(folha):
+    return (folha.status or 'rascunho') == 'rascunho'
+
+@app.route('/api/folhas', methods=['GET'])
+@lr
+def api_folhas_list():
+    comp = (request.args.get('competencia') or '').strip()
+    emp = request.args.get('empresa_id', type=int)
+    status = (request.args.get('status') or '').strip()
+    q = FolhaPagamento.query
+    if comp:
+        q = q.filter(FolhaPagamento.competencia == comp)
+    if emp:
+        q = q.filter(FolhaPagamento.empresa_id == emp)
+    if status:
+        q = q.filter(FolhaPagamento.status == status)
+    folhas = q.order_by(FolhaPagamento.competencia.desc(), FolhaPagamento.id.desc()).all()
+    return jsonify([f.to_dict() for f in folhas])
+
+@app.route('/api/folhas', methods=['POST'])
+@lr
+def api_folhas_criar():
+    d = request.get_json(silent=True) or {}
+    nome = (d.get('nome') or '').strip()
+    comp = (d.get('competencia') or '').strip()
+    if not nome or not comp:
+        return jsonify({'error': 'nome e competencia obrigatórios'}), 400
+    tipo = (d.get('tipo') or 'mensal').strip()
+    emp = d.get('empresa_id')
+    try:
+        emp = int(emp) if emp not in (None, '', 0, '0') else None
+    except Exception:
+        emp = None
+    f = FolhaPagamento(
+        nome=nome, tipo=tipo, competencia=comp,
+        empresa_id=emp, obs=(d.get('obs') or '').strip(),
+        status='rascunho',
+        criado_por=session.get('user') or session.get('username') or '',
+    )
+    db.session.add(f)
+    db.session.commit()
+    audit_event('folha_criada', 'folha_pagamento', f.id, 'folha_pagamento', f.id, True,
+                {'nome': nome, 'competencia': comp, 'tipo': tipo})
+    return jsonify(f.to_dict(with_items=True)), 201
+
+@app.route('/api/folhas/<int:fid>', methods=['GET'])
+@lr
+def api_folhas_get(fid):
+    f = db.get_or_404(FolhaPagamento, fid)
+    _folha_recalcular_total(f)
+    db.session.commit()
+    return jsonify(f.to_dict(with_items=True))
+
+@app.route('/api/folhas/<int:fid>', methods=['PUT'])
+@lr
+def api_folhas_atualizar(fid):
+    f = db.get_or_404(FolhaPagamento, fid)
+    if not _folha_pode_editar(f):
+        return jsonify({'error': 'folha fechada não pode ser editada'}), 400
+    d = request.get_json(silent=True) or {}
+    for k in ('nome', 'tipo', 'obs'):
+        if k in d:
+            setattr(f, k, (d.get(k) or '').strip())
+    if 'empresa_id' in d:
+        try:
+            f.empresa_id = int(d.get('empresa_id')) if d.get('empresa_id') else None
+        except Exception:
+            pass
+    if 'competencia' in d and d.get('competencia'):
+        f.competencia = d.get('competencia').strip()
+    db.session.commit()
+    return jsonify(f.to_dict(with_items=True))
+
+@app.route('/api/folhas/<int:fid>', methods=['DELETE'])
+@lr
+def api_folhas_excluir(fid):
+    f = db.get_or_404(FolhaPagamento, fid)
+    if not _folha_pode_editar(f):
+        return jsonify({'error': 'somente folhas em rascunho podem ser excluídas'}), 400
+    db.session.delete(f)
+    db.session.commit()
+    audit_event('folha_excluida', 'folha_pagamento', fid, 'folha_pagamento', fid, True, {})
+    return jsonify({'ok': True})
+
+@app.route('/api/folhas/<int:fid>/funcionarios', methods=['POST'])
+@lr
+def api_folhas_add_funcionarios(fid):
+    f = db.get_or_404(FolhaPagamento, fid)
+    if not _folha_pode_editar(f):
+        return jsonify({'error': 'folha fechada'}), 400
+    d = request.get_json(silent=True) or {}
+    ids = d.get('funcionario_ids') or d.get('ids') or []
+    if not isinstance(ids, list):
+        ids = [ids]
+    add_count = 0
+    skipped = []
+    for fid_func in ids:
+        try:
+            fid_func = int(fid_func)
+        except Exception:
+            continue
+        existing = FolhaPagamentoItem.query.filter_by(folha_id=f.id, funcionario_id=fid_func).first()
+        if existing:
+            skipped.append(fid_func)
+            continue
+        func = db.session.get(Funcionario, fid_func)
+        if not func:
+            continue
+        sb = _folha_salario_base_atual(func, f.competencia)
+        item = FolhaPagamentoItem(folha_id=f.id, funcionario_id=fid_func, salario_base=sb)
+        _folha_recalcular_item(item, f.competencia)
+        db.session.add(item)
+        add_count += 1
+    _folha_recalcular_total(f)
+    db.session.commit()
+    return jsonify({'ok': True, 'adicionados': add_count, 'ignorados': skipped, 'folha': f.to_dict(with_items=True)})
+
+@app.route('/api/folhas/<int:fid>/funcionarios/<int:func_id>', methods=['DELETE'])
+@lr
+def api_folhas_remove_funcionario(fid, func_id):
+    f = db.get_or_404(FolhaPagamento, fid)
+    if not _folha_pode_editar(f):
+        return jsonify({'error': 'folha fechada'}), 400
+    it = FolhaPagamentoItem.query.filter_by(folha_id=f.id, funcionario_id=func_id).first()
+    if not it:
+        return jsonify({'error': 'funcionário não está nesta folha'}), 404
+    db.session.delete(it)
+    db.session.flush()
+    _folha_recalcular_total(f)
+    db.session.commit()
+    return jsonify({'ok': True, 'folha': f.to_dict(with_items=True)})
+
+@app.route('/api/folhas/<int:fid>/itens/<int:item_id>', methods=['PUT'])
+@lr
+def api_folhas_editar_item(fid, item_id):
+    f = db.get_or_404(FolhaPagamento, fid)
+    if not _folha_pode_editar(f):
+        return jsonify({'error': 'folha fechada'}), 400
+    it = db.get_or_404(FolhaPagamentoItem, item_id)
+    if it.folha_id != f.id:
+        return jsonify({'error': 'item de outra folha'}), 400
+    d = request.get_json(silent=True) or {}
+    if 'salario_base' in d:
+        try:
+            it.salario_base = float(d.get('salario_base') or 0)
+        except Exception:
+            pass
+    if 'obs' in d:
+        it.obs = (d.get('obs') or '')[:300]
+    _folha_recalcular_item(it, f.competencia)
+    _folha_recalcular_total(f)
+    db.session.commit()
+    return jsonify({'ok': True, 'item': it.to_dict(), 'total_folha': f.total_valor})
+
+@app.route('/api/folhas/<int:fid>/recalcular', methods=['POST'])
+@lr
+def api_folhas_recalcular(fid):
+    f = db.get_or_404(FolhaPagamento, fid)
+    _folha_recalcular_total(f)
+    db.session.commit()
+    return jsonify(f.to_dict(with_items=True))
+
+@app.route('/api/folhas/<int:fid>/fechar', methods=['POST'])
+@lr
+def api_folhas_fechar(fid):
+    f = db.get_or_404(FolhaPagamento, fid)
+    if f.status not in ('rascunho',):
+        return jsonify({'error': 'folha não está em rascunho'}), 400
+    if f.itens.count() == 0:
+        return jsonify({'error': 'folha sem funcionários'}), 400
+    _folha_recalcular_total(f)
+    f.status = 'fechada'
+    f.fechado_em = utcnow()
+    f.fechado_por = session.get('user') or session.get('username') or ''
+    db.session.commit()
+    audit_event('folha_fechada', 'folha_pagamento', f.id, 'folha_pagamento', f.id, True,
+                {'total': f.total_valor, 'qtd': f.itens.count()})
+    return jsonify(f.to_dict(with_items=True))
+
+@app.route('/api/folhas/<int:fid>/reabrir', methods=['POST'])
+@lr
+def api_folhas_reabrir(fid):
+    f = db.get_or_404(FolhaPagamento, fid)
+    if f.status not in ('fechada', 'paga'):
+        return jsonify({'error': 'folha não pode ser reaberta'}), 400
+    f.status = 'rascunho'
+    f.fechado_em = None
+    f.fechado_por = None
+    f.pago_em = None
+    f.pago_por = None
+    f.data_pagamento = None
+    db.session.commit()
+    audit_event('folha_reaberta', 'folha_pagamento', f.id, 'folha_pagamento', f.id, True, {})
+    return jsonify(f.to_dict(with_items=True))
+
+@app.route('/api/folhas/<int:fid>/marcar-paga', methods=['POST'])
+@lr
+def api_folhas_marcar_paga(fid):
+    f = db.get_or_404(FolhaPagamento, fid)
+    if f.status not in ('fechada',):
+        return jsonify({'error': 'folha precisa estar fechada antes de marcar como paga'}), 400
+    d = request.get_json(silent=True) or {}
+    dp = (d.get('data_pagamento') or '').strip()
+    if not dp:
+        dp = datetime.now().strftime('%Y-%m-%d')
+    f.data_pagamento = dp
+    f.status = 'paga'
+    f.pago_em = utcnow()
+    f.pago_por = session.get('user') or session.get('username') or ''
+    db.session.commit()
+    audit_event('folha_paga', 'folha_pagamento', f.id, 'folha_pagamento', f.id, True,
+                {'data_pagamento': dp, 'total': f.total_valor})
+    return jsonify(f.to_dict(with_items=True))
+
+@app.route('/api/folhas/disponiveis-funcionarios', methods=['GET'])
+@lr
+def api_folhas_funcionarios_disponiveis():
+    """Lista funcionários ativos que podem ser adicionados a uma folha (não inclusos ainda)."""
+    folha_id = request.args.get('folha_id', type=int)
+    emp = request.args.get('empresa_id', type=int)
+    q_str = (request.args.get('q') or '').strip().lower()
+    q = Funcionario.query.filter(or_(Funcionario.ativo == True, Funcionario.ativo.is_(None)))
+    if emp:
+        q = q.filter(Funcionario.empresa_id == emp)
+    ja = set()
+    if folha_id:
+        f = db.session.get(FolhaPagamento, folha_id)
+        if f:
+            ja = {it.funcionario_id for it in f.itens.all()}
+    out = []
+    for func in q.order_by(Funcionario.nome.asc()).all():
+        if func.id in ja:
+            continue
+        if q_str:
+            hay = f"{func.nome or ''} {func.re or ''} {func.matricula or ''} {func.cargo or ''} {func.cpf or ''}".lower()
+            if q_str not in hay:
+                continue
+        emp_o = db.session.get(Empresa, func.empresa_id) if func.empresa_id else None
+        out.append({
+            'id': func.id,
+            'nome': func.nome or '',
+            're': func.re or func.matricula or '',
+            'cargo': func.cargo or '',
+            'cpf': func.cpf or '',
+            'empresa_id': func.empresa_id,
+            'empresa_nome': (emp_o.nome if emp_o else ''),
+            'salario': float(func.salario or 0),
+        })
+    return jsonify(out)
+
+@app.route('/api/folhas/<int:fid>/export.xlsx', methods=['GET'])
+@lr
+def api_folhas_export_xlsx(fid):
+    f = db.get_or_404(FolhaPagamento, fid)
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, Alignment, PatternFill
+    except Exception:
+        return jsonify({'error': 'openpyxl não instalado'}), 500
+    wb = Workbook()
+    ws = wb.active
+    ws.title = (f.nome or 'Folha')[:30]
+    header_fill = PatternFill('solid', fgColor='1f4e78')
+    header_font = Font(bold=True, color='FFFFFF')
+    ws.append([f.nome])
+    ws.append([f'Competência: {f.competencia}  |  Tipo: {f.tipo}  |  Status: {f.status}'])
+    ws.append([])
+    headers = ['#', 'RE', 'Nome', 'Cargo', 'Salário Base', 'Adicionais', 'Descontos', 'Total a Pagar']
+    ws.append(headers)
+    for col in range(1, len(headers) + 1):
+        c = ws.cell(row=4, column=col)
+        c.fill = header_fill
+        c.font = header_font
+        c.alignment = Alignment(horizontal='center')
+    _folha_recalcular_total(f)
+    total = 0.0
+    for i, it in enumerate(f.itens.order_by(FolhaPagamentoItem.id.asc()).all(), 1):
+        func = db.session.get(Funcionario, it.funcionario_id)
+        ws.append([
+            i, (func.re or func.matricula or '') if func else '',
+            (func.nome or '') if func else '',
+            (func.cargo or '') if func else '',
+            float(it.salario_base or 0),
+            float(it.total_adicional or 0),
+            float(it.total_desconto or 0),
+            float(it.total_pagar or 0),
+        ])
+        total += float(it.total_pagar or 0)
+    ws.append([])
+    ws.append(['', '', '', 'TOTAL', '', '', '', round(total, 2)])
+    for col_letter, width in [('A', 6), ('B', 10), ('C', 36), ('D', 24), ('E', 14), ('F', 14), ('G', 14), ('H', 16)]:
+        ws.column_dimensions[col_letter].width = width
+    import io as _io
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"folha_{f.id}_{(f.nome or '').replace(' ', '_')}.xlsx"
+    return send_file(buf, as_attachment=True, download_name=fname,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+@app.route('/api/folhas/<int:fid>/export.pdf', methods=['GET'])
+@lr
+def api_folhas_export_pdf(fid):
+    f = db.get_or_404(FolhaPagamento, fid)
+    try:
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib import colors
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+    except Exception:
+        return jsonify({'error': 'reportlab não instalado'}), 500
+    import io as _io
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), title=f.nome or 'Folha')
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph(f'<b>{f.nome or "Folha"}</b>', styles['Title']),
+        Paragraph(f'Competência: {f.competencia} &nbsp;|&nbsp; Tipo: {f.tipo} &nbsp;|&nbsp; Status: {f.status}', styles['Normal']),
+        Spacer(1, 8),
+    ]
+    _folha_recalcular_total(f)
+    data = [['#', 'RE', 'Nome', 'Cargo', 'Salário', 'Adic.', 'Desc.', 'Total']]
+    total = 0.0
+    for i, it in enumerate(f.itens.order_by(FolhaPagamentoItem.id.asc()).all(), 1):
+        func = db.session.get(Funcionario, it.funcionario_id)
+        data.append([
+            i, (func.re or func.matricula or '') if func else '',
+            (func.nome or '')[:40] if func else '',
+            (func.cargo or '')[:24] if func else '',
+            f"R$ {float(it.salario_base or 0):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'),
+            f"R$ {float(it.total_adicional or 0):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'),
+            f"R$ {float(it.total_desconto or 0):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'),
+            f"R$ {float(it.total_pagar or 0):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'),
+        ])
+        total += float(it.total_pagar or 0)
+    data.append(['', '', '', 'TOTAL', '', '', '',
+                 f"R$ {total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')])
+    t = Table(data, repeatRows=1)
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4e78')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('GRID', (0, 0), (-1, -1), 0.4, colors.grey),
+        ('ALIGN', (4, 1), (-1, -1), 'RIGHT'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e7e9ec')),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+    ]))
+    story.append(t)
+    doc.build(story)
+    buf.seek(0)
+    fname = f"folha_{f.id}.pdf"
+    return send_file(buf, as_attachment=True, download_name=fname, mimetype='application/pdf')
+
 # ── SSE: auto-update ──────────────────────────────────────────────────────────
 import queue as _queue
 import threading as _threading
@@ -19920,6 +20382,12 @@ with app.app_context():
     # Cria tabela lancamento_avulso se não existir
     try:
         db.engine.execute('SELECT 1 FROM lancamento_avulso LIMIT 1')
+    except Exception:
+        db.create_all()
+    # Cria tabelas folha_pagamento e folha_pagamento_item se não existirem
+    try:
+        db.engine.execute('SELECT 1 FROM folha_pagamento LIMIT 1')
+        db.engine.execute('SELECT 1 FROM folha_pagamento_item LIMIT 1')
     except Exception:
         db.create_all()
     ensure_cols('empresa',[

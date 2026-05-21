@@ -887,125 +887,132 @@ document.addEventListener('DOMContentLoaded',()=>{
     </div>
     <div id="pg-pagamento-salario" class="pg" data-subaba-ready="1">
       <div id="sal-st" class="st"></div>
-      <!-- Cards de resumo financeiro -->
-      <div class="g4" style="margin-bottom:14px" id="sal-resumo-cards">
-        <div class="card" style="padding:14px 16px">
-          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Total da Folha (salários)</div>
-          <div style="font-size:22px;font-weight:800;color:var(--azul)" id="sal-card-folha">R$ 0,00</div>
-          <div style="font-size:11px;color:var(--text-muted)" id="sal-card-funcionarios">0 colaboradores</div>
-        </div>
-        <div class="card" style="padding:14px 16px">
-          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">+ Lançamentos Adicionais</div>
-          <div style="font-size:22px;font-weight:800;color:var(--verd)" id="sal-card-adicionais">R$ 0,00</div>
-          <div style="font-size:11px;color:var(--text-muted)" id="sal-card-adicionais-qtd">0 lançamentos</div>
-        </div>
-        <div class="card" style="padding:14px 16px">
-          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">− Descontos Avulsos</div>
-          <div style="font-size:22px;font-weight:800;color:var(--verm)" id="sal-card-descontos">R$ 0,00</div>
-          <div style="font-size:11px;color:var(--text-muted)" id="sal-card-descontos-qtd">0 lançamentos</div>
-        </div>
-        <div class="card" style="padding:14px 16px;border:2px solid var(--azul)">
-          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Total a Pagar</div>
-          <div style="font-size:22px;font-weight:800;color:var(--azul)" id="sal-card-total-pagar">R$ 0,00</div>
-          <div id="rh-total-folha" style="font-size:11px;color:var(--text-muted)"></div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-header" style="gap:12px;flex-wrap:wrap">
-          <span class="card-title">Pagamento de Salário</span>
-          <button class="btn b-az b-sm" type="button" onclick="salLanAbrirModal(null,null)">+ Lançamento Avulso</button>
-        </div>
-        <!-- Toolbar de filtros -->
-        <div id="rh-sal-toolbar" class="brow" style="justify-content:flex-start;gap:8px;flex-wrap:wrap;margin:0 0 10px 0;padding:10px 16px;border-bottom:1px solid var(--borda)">
-          <div class="f" style="min-width:180px;margin:0">
+      <!-- Toolbar superior -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-header" style="gap:12px;flex-wrap:wrap;align-items:center">
+          <span class="card-title">Folhas de Pagamento</span>
+          <div class="f" style="margin:0;min-width:160px">
             <label style="font-size:11px">Competência</label>
-            <input id="rh-sal-comp" type="month" onchange="rhSalariosOnEmpresaChange()" style="min-width:160px">
+            <input id="fp-comp" type="month" onchange="fpCarregarFolhas()" style="min-width:150px">
           </div>
-          <div class="f" style="min-width:260px;margin:0">
+          <div class="f" style="margin:0;min-width:220px">
             <label style="font-size:11px">Empresa</label>
-            <select id="rh-sal-empresa" onchange="rhSalariosOnEmpresaChange()" style="min-width:240px">
+            <select id="fp-empresa" onchange="fpCarregarFolhas()" style="min-width:220px">
               <option value="">Todas as empresas</option>
             </select>
           </div>
-          <div class="f" style="min-width:220px;margin:0">
-            <label style="font-size:11px">Cargo</label>
-            <select id="rh-sal-cargo" onchange="rhSalariosOnEmpresaChange()" style="min-width:200px">
-              <option value="">Todos os cargos</option>
-            </select>
-          </div>
-          <div class="f" style="min-width:220px;margin:0">
-            <label style="font-size:11px">Posto</label>
-            <select id="rh-sal-posto" onchange="rhSalariosOnEmpresaChange()" style="min-width:200px">
-              <option value="">Todos os postos</option>
-            </select>
-          </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">
-            <button class="btn b-gh b-sm" type="button" onclick="rhSalariosOnEmpresaChange()">Carregar</button>
-            <button class="btn b-az b-sm" type="button" onclick="rhSalariosSalvar()">Salvar valores</button>
-            <button class="btn b-az b-sm" type="button" onclick="rhSalariosExportar('xlsx')">Exportar planilha</button>
-            <button class="btn b-gh b-sm" type="button" onclick="rhSalariosExportar('pdf')">Exportar PDF</button>
-            <button class="btn b-gh b-sm" type="button" onclick="rhSalariosPrevia()">Prévia PDF</button>
-            <button class="btn b-gh b-sm" type="button" onclick="rhSalariosAbrirHistorico()">Histórico</button>
-            <a class="btn b-gh b-sm" href="/api/financeiro/salarios/modelo" target="_blank">Modelo</a>
-            <label class="btn b-gh b-sm" for="rh-sal-import-file" style="cursor:pointer">Importar</label>
-            <input type="file" id="rh-sal-import-file" accept=".csv,.xlsx" style="display:none" onchange="rhSalariosImportarPlanilha(event)">
-            <span id="rh-sal-auto-hint" style="font-size:11px;color:var(--text-muted);margin-left:2px">Auto-save ativo</span>
-          </div>
+          <div style="flex:1"></div>
+          <button class="btn b-az" type="button" onclick="fpNovaFolha()">+ Nova folha</button>
         </div>
-        <!-- Stepper de etapas -->
-        <div id="sal-stepper" style="display:flex;align-items:stretch;gap:0;padding:12px 16px;border-bottom:1px solid var(--borda);background:var(--bg-card);flex-wrap:wrap;gap:6px">
-          <div id="sal-step-1" style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-radius:8px;border:2px solid var(--azul);background:var(--azul-light,rgba(0,100,220,.07));flex:1;min-width:200px">
-            <div style="width:28px;height:28px;border-radius:50%;background:var(--azul);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0">1</div>
-            <div>
-              <div style="font-weight:700;font-size:13px">Rascunho</div>
-              <div style="font-size:11px;color:var(--text-muted)">Edite salários e lançamentos</div>
-            </div>
-          </div>
-          <div style="display:flex;align-items:center;padding:0 4px;color:var(--text-muted)">▶</div>
-          <div id="sal-step-2" style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-radius:8px;border:2px solid var(--borda);flex:1;min-width:200px">
-            <div style="width:28px;height:28px;border-radius:50%;background:var(--borda);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0">2</div>
-            <div style="flex:1">
-              <div style="font-weight:700;font-size:13px">Fechar Folha</div>
-              <div style="font-size:11px;color:var(--text-muted)">Registra versão oficial</div>
-            </div>
-            <button class="btn b-vd b-sm" type="button" onclick="rhSalariosSalvarFolha()" id="btn-sal-fechar">Fechar</button>
-          </div>
-          <div style="display:flex;align-items:center;padding:0 4px;color:var(--text-muted)">▶</div>
-          <div id="sal-step-3" style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-radius:8px;border:2px solid var(--borda);flex:1;min-width:200px">
-            <div style="width:28px;height:28px;border-radius:50%;background:var(--borda);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0">3</div>
-            <div style="flex:1">
-              <div style="font-weight:700;font-size:13px">Assinar</div>
-              <div style="font-size:11px;color:var(--text-muted)">Registra assinatura digital</div>
-            </div>
-            <button class="btn b-gh b-sm" type="button" onclick="rhSalariosReabrirFolha()" id="btn-sal-reabrir" style="display:none">Reabrir</button>
-            <button class="btn b-az b-sm" type="button" onclick="rhSalariosAssinarFolha()" id="btn-sal-assinar">Assinar</button>
-          </div>
-        </div>
-        <div id="rh-sal-res" style="margin:8px 16px;color:var(--text-muted);font-size:13px"></div>
-        <div id="rh-sal-painel" style="margin:0 16px 12px 16px">
-          <div class="g3" style="margin-top:0">
-            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Histórico e versões</span></div><div id="rh-sal-historico" style="padding:8px 12px 12px 12px;color:var(--text-muted);font-size:13px"></div></div>
-            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Alertas</span></div><div id="rh-sal-alertas" style="padding:8px 12px 12px 12px;color:var(--text-muted);font-size:13px"></div></div>
-            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Evolução mensal</span></div><div style="position:relative;height:180px;padding:4px 8px 12px 8px"><canvas id="chart-rh-salarios"></canvas></div></div>
-          </div>
-        </div>
-        <div class="tbl-wrap" id="rh-salarios-wrap">
-          <table class="tbl">
-            <thead><tr>
-              <th>RE</th><th>Nome</th><th>Cargo</th><th>Posto</th><th>Empresa</th>
-              <th style="text-align:right">Salário líquido</th>
-              <th style="text-align:right">Mês anterior</th>
-              <th style="text-align:right;color:var(--verd)">+ Adicionais</th>
-              <th style="text-align:right;color:var(--verm)">− Descontos</th>
-              <th style="text-align:right;border-left:2px solid var(--azul);font-weight:800">Total a Pagar</th>
-              <th>Obs</th>
-              <th>Ações</th>
-            </tr></thead>
-            <tbody id="tb-func-salarios"></tbody>
-          </table>
+        <!-- Lista de folhas da competência -->
+        <div id="fp-lista-folhas" style="padding:12px 16px;display:flex;gap:10px;flex-wrap:wrap;min-height:60px">
+          <div style="color:var(--text-muted);font-size:13px">Selecione uma competência para listar as folhas…</div>
         </div>
       </div>
-      <!-- Modal: Lançamento Avulso -->
+
+      <!-- Workspace: lado esquerdo (funcionários disponíveis) + lado direito (folha selecionada) -->
+      <div id="fp-workspace" style="display:none;grid-template-columns:340px 1fr;gap:12px">
+        <!-- Coluna esquerda: funcionários disponíveis -->
+        <div class="card" style="margin:0;display:flex;flex-direction:column;max-height:78vh">
+          <div class="card-header" style="flex-direction:column;align-items:stretch;gap:6px">
+            <span class="card-title">Funcionários disponíveis</span>
+            <input id="fp-busca-func" type="text" placeholder="Buscar por nome, RE, cargo…" oninput="fpFiltrarDisponiveis()" style="width:100%;padding:6px 8px;font-size:13px">
+            <div style="font-size:11px;color:var(--text-muted)">Arraste para a folha à direita para incluir.</div>
+          </div>
+          <div id="fp-lista-disponiveis" style="overflow-y:auto;padding:8px 12px;flex:1"></div>
+        </div>
+
+        <!-- Coluna direita: folha selecionada -->
+        <div class="card" id="fp-folha-painel" style="margin:0">
+          <div class="card-header" style="gap:10px;flex-wrap:wrap;align-items:center">
+            <div style="display:flex;flex-direction:column">
+              <span id="fp-folha-nome" class="card-title">—</span>
+              <span id="fp-folha-meta" style="font-size:11px;color:var(--text-muted)"></span>
+            </div>
+            <div style="flex:1"></div>
+            <span id="fp-folha-status-badge" style="padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;background:var(--borda);color:var(--text-muted)">—</span>
+          </div>
+          <div style="padding:10px 16px;display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--borda)">
+            <button class="btn b-gh b-sm" type="button" onclick="fpEditarFolha()">✎ Editar</button>
+            <button class="btn b-az b-sm" type="button" onclick="fpAbrirLancamentoModal()">📋 Lançamento avulso</button>
+            <button class="btn b-vd b-sm" type="button" id="fp-btn-fechar" onclick="fpFecharFolha()">✓ Fechar folha</button>
+            <button class="btn b-gh b-sm" type="button" id="fp-btn-reabrir" style="display:none" onclick="fpReabrirFolha()">↺ Reabrir</button>
+            <button class="btn b-vd b-sm" type="button" id="fp-btn-pagar" style="display:none" onclick="fpMarcarPaga()">💰 Marcar como paga</button>
+            <button class="btn b-gh b-sm" type="button" onclick="fpExportar('xlsx')">⬇ XLSX</button>
+            <button class="btn b-gh b-sm" type="button" onclick="fpExportar('pdf')">⬇ PDF</button>
+            <div style="flex:1"></div>
+            <button class="btn b-gh b-sm" type="button" id="fp-btn-excluir" onclick="fpExcluirFolha()" style="color:var(--verm)">🗑 Excluir</button>
+          </div>
+          <!-- Resumo da folha -->
+          <div class="g4" style="padding:12px 16px;border-bottom:1px solid var(--borda)">
+            <div><div style="font-size:11px;color:var(--text-muted)">Funcionários</div><div id="fp-resumo-qtd" style="font-size:18px;font-weight:800">0</div></div>
+            <div><div style="font-size:11px;color:var(--text-muted)">Salários base</div><div id="fp-resumo-base" style="font-size:18px;font-weight:800">R$ 0,00</div></div>
+            <div><div style="font-size:11px;color:var(--text-muted)">+ Adicionais</div><div id="fp-resumo-adic" style="font-size:18px;font-weight:800;color:var(--verd)">R$ 0,00</div></div>
+            <div><div style="font-size:11px;color:var(--text-muted)">− Descontos</div><div id="fp-resumo-desc" style="font-size:18px;font-weight:800;color:var(--verm)">R$ 0,00</div></div>
+          </div>
+          <div style="padding:8px 16px;background:var(--azul-light,rgba(0,100,220,.06));border-bottom:1px solid var(--borda);display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:700">Total a pagar</span>
+            <span id="fp-resumo-total" style="font-size:22px;font-weight:800;color:var(--azul)">R$ 0,00</span>
+          </div>
+          <!-- Drop zone + tabela de itens -->
+          <div id="fp-drop-zone" class="tbl-wrap" style="max-height:55vh;overflow:auto;border:2px dashed transparent;transition:border-color .15s">
+            <table class="tbl">
+              <thead><tr>
+                <th style="width:60px">#</th>
+                <th>Nome</th>
+                <th>RE</th>
+                <th>Cargo</th>
+                <th style="text-align:right">Salário base</th>
+                <th style="text-align:right;color:var(--verd)">+ Adicionais</th>
+                <th style="text-align:right;color:var(--verm)">− Descontos</th>
+                <th style="text-align:right;border-left:2px solid var(--azul);font-weight:800">Total</th>
+                <th style="width:120px">Ações</th>
+              </tr></thead>
+              <tbody id="fp-tb-itens">
+                <tr><td colspan="9" style="text-align:center;padding:30px;color:var(--text-muted)">Selecione ou crie uma folha para começar.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: criar/editar folha -->
+      <div id="fp-mod-folha" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+        <div class="modal-box" style="max-width:480px;width:95vw">
+          <div class="modal-header">
+            <span id="fp-mod-folha-titulo" style="font-weight:700">Nova folha</span>
+            <button class="btn b-ghost b-sm" onclick="document.getElementById('fp-mod-folha').style.display='none'">✕</button>
+          </div>
+          <div style="padding:16px">
+            <input type="hidden" id="fp-mod-folha-id">
+            <div class="f"><label>Nome da folha *</label><input id="fp-mod-folha-nome" type="text" placeholder="Ex.: Folha Mensal Outubro/2026, 13º Salário, Adiantamento Quinzenal" style="width:100%"></div>
+            <div class="g2" style="gap:8px">
+              <div class="f" style="margin:0"><label>Competência *</label><input id="fp-mod-folha-comp" type="month" style="width:100%"></div>
+              <div class="f" style="margin:0"><label>Tipo</label>
+                <select id="fp-mod-folha-tipo" style="width:100%">
+                  <option value="mensal">Mensal</option>
+                  <option value="quinzenal">Quinzenal</option>
+                  <option value="adiantamento">Adiantamento</option>
+                  <option value="13o">13º Salário</option>
+                  <option value="ferias">Férias</option>
+                  <option value="rescisao">Rescisão</option>
+                  <option value="extra">Extra</option>
+                </select>
+              </div>
+            </div>
+            <div class="f"><label>Empresa</label>
+              <select id="fp-mod-folha-empresa" style="width:100%"><option value="">Todas / sem filtro</option></select>
+            </div>
+            <div class="f"><label>Observação</label><textarea id="fp-mod-folha-obs" rows="2" style="width:100%;resize:vertical"></textarea></div>
+            <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+              <button class="btn b-ghost" onclick="document.getElementById('fp-mod-folha').style.display='none'">Cancelar</button>
+              <button class="btn b-az" onclick="fpSalvarFolha()">Salvar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: Lançamento Avulso (preservado) -->
       <div id="mod-lan-avulso" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
         <div class="modal-box" style="max-width:520px;width:95vw">
           <div class="modal-header">
@@ -5108,6 +5115,7 @@ function abrirRhSalarios(){
 }
 
 function rhSalariosIniciarPagina(){
+  if(typeof fpInicializar==='function'){ fpInicializar(); return; }
   rhSalariosPopularEmpresas();
   const comp=rhSalariosCompetenciaAtual();
   if(!/^\d{4}-\d{2}$/.test(comp)){
@@ -10482,6 +10490,395 @@ function salLanTipoChange(){
   natSel.value=(tipo==='desconto_avulso')?'desconto':'adicional';
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// FOLHAS DE PAGAMENTO (novo módulo) — múltiplas folhas livres + drag-and-drop
+// ═════════════════════════════════════════════════════════════════════════════
+const FP_STATE = {
+  folhaSelecionada: null,   // objeto folha completo (com itens)
+  folhas: [],
+  disponiveis: [],
+  filtroDispText: '',
+};
+
+function fpFmtMoeda(v){
+  v = Number(v||0);
+  return 'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function fpEsc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+function fpCompetenciaAtual(){
+  const el=document.getElementById('fp-comp');
+  let v=(el?.value||'').trim();
+  if(!/^\d{4}-\d{2}$/.test(v)){
+    const h=new Date(); v=h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0');
+    if(el) el.value=v;
+  }
+  return v;
+}
+function fpEmpresaFiltro(){
+  const v=document.getElementById('fp-empresa')?.value||'';
+  return v ? parseInt(v) : null;
+}
+
+async function fpInicializar(){
+  await fpPopularEmpresas();
+  fpCompetenciaAtual();
+  await fpCarregarFolhas();
+}
+
+async function fpPopularEmpresas(){
+  try{
+    const r = await api('/api/empresas');
+    const lista = Array.isArray(r) ? r : (r?.empresas||[]);
+    const sels = ['fp-empresa','fp-mod-folha-empresa'];
+    sels.forEach(id=>{
+      const el = document.getElementById(id); if(!el) return;
+      const curr = el.value;
+      const first = el.querySelector('option');
+      el.innerHTML = '';
+      if(first) el.appendChild(first);
+      lista.forEach(e=>{
+        const o=document.createElement('option');
+        o.value=e.id; o.textContent=e.nome||('Empresa #'+e.id);
+        el.appendChild(o);
+      });
+      if(curr) el.value=curr;
+    });
+  }catch(_){}
+}
+
+async function fpCarregarFolhas(){
+  const comp = fpCompetenciaAtual();
+  const emp = fpEmpresaFiltro();
+  const p = new URLSearchParams();
+  if(comp) p.set('competencia', comp);
+  if(emp) p.set('empresa_id', emp);
+  const r = await api('/api/folhas?'+p.toString());
+  FP_STATE.folhas = Array.isArray(r) ? r : [];
+  fpRenderListaFolhas();
+  // mantém seleção se ainda existir
+  if(FP_STATE.folhaSelecionada){
+    const ex = FP_STATE.folhas.find(f=>f.id===FP_STATE.folhaSelecionada.id);
+    if(ex){ await fpSelecionarFolha(ex.id); return; }
+    FP_STATE.folhaSelecionada = null;
+    document.getElementById('fp-workspace').style.display = 'none';
+  }
+}
+
+function fpStatusBadge(status){
+  const map = {
+    'rascunho':  {bg:'#fff7e0', fg:'#a06b00', txt:'Rascunho'},
+    'fechada':   {bg:'#dde7ff', fg:'#1e3aa6', txt:'Fechada'},
+    'paga':      {bg:'#dff5e3', fg:'#1e6b34', txt:'Paga'},
+  };
+  const s = map[status] || {bg:'var(--borda)', fg:'var(--text-muted)', txt:status||'—'};
+  return `<span style="padding:3px 8px;border-radius:999px;font-size:11px;font-weight:700;background:${s.bg};color:${s.fg}">${s.txt}</span>`;
+}
+
+function fpTipoLabel(t){
+  return ({mensal:'Mensal',quinzenal:'Quinzenal',adiantamento:'Adiantamento','13o':'13º',ferias:'Férias',rescisao:'Rescisão',extra:'Extra'})[t]||t;
+}
+
+function fpRenderListaFolhas(){
+  const cont = document.getElementById('fp-lista-folhas');
+  if(!cont) return;
+  if(!FP_STATE.folhas.length){
+    cont.innerHTML = '<div style="color:var(--text-muted);font-size:13px">Nenhuma folha nesta competência. Clique em <b>+ Nova folha</b> para criar.</div>';
+    return;
+  }
+  cont.innerHTML = FP_STATE.folhas.map(f=>{
+    const sel = (FP_STATE.folhaSelecionada && FP_STATE.folhaSelecionada.id===f.id) ? 'border:2px solid var(--azul);background:var(--azul-light,rgba(0,100,220,.06))' : 'border:1px solid var(--borda)';
+    return `<div onclick="fpSelecionarFolha(${f.id})" style="cursor:pointer;${sel};border-radius:10px;padding:10px 12px;min-width:200px;max-width:280px">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+        <span style="font-weight:700;flex:1">${fpEsc(f.nome)}</span>
+        ${fpStatusBadge(f.status)}
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">${fpTipoLabel(f.tipo)} • ${fpEsc(f.competencia)}${f.empresa_nome?' • '+fpEsc(f.empresa_nome):''}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px">
+        <span>👥 ${f.qtd_funcionarios||0}</span>
+        <span style="font-weight:700;color:var(--azul)">${fpFmtMoeda(f.total_valor||0)}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function fpNovaFolha(){
+  document.getElementById('fp-mod-folha-titulo').textContent = 'Nova folha';
+  document.getElementById('fp-mod-folha-id').value = '';
+  document.getElementById('fp-mod-folha-nome').value = '';
+  document.getElementById('fp-mod-folha-comp').value = fpCompetenciaAtual();
+  document.getElementById('fp-mod-folha-tipo').value = 'mensal';
+  document.getElementById('fp-mod-folha-empresa').value = fpEmpresaFiltro() || '';
+  document.getElementById('fp-mod-folha-obs').value = '';
+  document.getElementById('fp-mod-folha').style.display = 'flex';
+}
+
+function fpEditarFolha(){
+  const f = FP_STATE.folhaSelecionada;
+  if(!f){ toast('Selecione uma folha.','e'); return; }
+  document.getElementById('fp-mod-folha-titulo').textContent = 'Editar folha';
+  document.getElementById('fp-mod-folha-id').value = f.id;
+  document.getElementById('fp-mod-folha-nome').value = f.nome || '';
+  document.getElementById('fp-mod-folha-comp').value = f.competencia || '';
+  document.getElementById('fp-mod-folha-tipo').value = f.tipo || 'mensal';
+  document.getElementById('fp-mod-folha-empresa').value = f.empresa_id || '';
+  document.getElementById('fp-mod-folha-obs').value = f.obs || '';
+  document.getElementById('fp-mod-folha').style.display = 'flex';
+}
+
+async function fpSalvarFolha(){
+  const id = document.getElementById('fp-mod-folha-id').value;
+  const body = {
+    nome: document.getElementById('fp-mod-folha-nome').value.trim(),
+    competencia: document.getElementById('fp-mod-folha-comp').value.trim(),
+    tipo: document.getElementById('fp-mod-folha-tipo').value,
+    empresa_id: document.getElementById('fp-mod-folha-empresa').value || null,
+    obs: document.getElementById('fp-mod-folha-obs').value.trim(),
+  };
+  if(!body.nome || !body.competencia){ toast('Nome e competência são obrigatórios.','e'); return; }
+  let r;
+  if(id){ r = await api('/api/folhas/'+id, 'PUT', body); }
+  else { r = await api('/api/folhas', 'POST', body); }
+  if(!r || r.error){ toast(r?.error || 'Erro ao salvar folha.','e'); return; }
+  document.getElementById('fp-mod-folha').style.display='none';
+  toast(id?'Folha atualizada.':'Folha criada.','s');
+  // Se mudou de competência, refresh do filtro
+  if(body.competencia !== fpCompetenciaAtual()){
+    document.getElementById('fp-comp').value = body.competencia;
+  }
+  await fpCarregarFolhas();
+  if(r.id){ await fpSelecionarFolha(r.id); }
+}
+
+async function fpSelecionarFolha(fid){
+  const r = await api('/api/folhas/'+fid);
+  if(!r || r.error){ toast(r?.error||'Erro ao carregar folha.','e'); return; }
+  FP_STATE.folhaSelecionada = r;
+  document.getElementById('fp-workspace').style.display = 'grid';
+  fpRenderListaFolhas();
+  fpRenderFolhaPainel();
+  await fpCarregarDisponiveis();
+}
+
+function fpRenderFolhaPainel(){
+  const f = FP_STATE.folhaSelecionada;
+  if(!f) return;
+  document.getElementById('fp-folha-nome').textContent = f.nome;
+  const meta = `${fpTipoLabel(f.tipo)} • Competência ${f.competencia}${f.empresa_nome?' • '+f.empresa_nome:''}${f.data_pagamento?' • Pago em '+f.data_pagamento:''}`;
+  document.getElementById('fp-folha-meta').textContent = meta;
+  document.getElementById('fp-folha-status-badge').outerHTML = `<span id="fp-folha-status-badge">${fpStatusBadge(f.status)}</span>`;
+  // botões conforme status
+  const btnFechar = document.getElementById('fp-btn-fechar');
+  const btnReabrir = document.getElementById('fp-btn-reabrir');
+  const btnPagar = document.getElementById('fp-btn-pagar');
+  const btnExcluir = document.getElementById('fp-btn-excluir');
+  if(f.status === 'rascunho'){
+    btnFechar.style.display=''; btnReabrir.style.display='none'; btnPagar.style.display='none'; btnExcluir.style.display='';
+  } else if(f.status === 'fechada'){
+    btnFechar.style.display='none'; btnReabrir.style.display=''; btnPagar.style.display=''; btnExcluir.style.display='none';
+  } else { // paga
+    btnFechar.style.display='none'; btnReabrir.style.display=''; btnPagar.style.display='none'; btnExcluir.style.display='none';
+  }
+  // resumo
+  const itens = f.itens || [];
+  let base=0, adi=0, des=0, tot=0;
+  itens.forEach(it=>{ base+=Number(it.salario_base||0); adi+=Number(it.total_adicional||0); des+=Number(it.total_desconto||0); tot+=Number(it.total_pagar||0); });
+  document.getElementById('fp-resumo-qtd').textContent = itens.length;
+  document.getElementById('fp-resumo-base').textContent = fpFmtMoeda(base);
+  document.getElementById('fp-resumo-adic').textContent = fpFmtMoeda(adi);
+  document.getElementById('fp-resumo-desc').textContent = fpFmtMoeda(des);
+  document.getElementById('fp-resumo-total').textContent = fpFmtMoeda(tot);
+  // tabela itens
+  const tb = document.getElementById('fp-tb-itens');
+  const editavel = f.status === 'rascunho';
+  if(!itens.length){
+    tb.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--text-muted)">${editavel?'Arraste funcionários da coluna esquerda para incluir nesta folha.':'Folha sem funcionários.'}</td></tr>`;
+  } else {
+    tb.innerHTML = itens.map((it,idx)=>{
+      const baseCell = editavel
+        ? `<input type="number" step="0.01" value="${Number(it.salario_base||0).toFixed(2)}" onchange="fpAtualizarSalarioBase(${it.id}, this.value)" style="width:110px;text-align:right;padding:4px 6px">`
+        : fpFmtMoeda(it.salario_base);
+      const acao = editavel
+        ? `<button class="btn b-az b-sm" onclick="salLanAbrirModal(${it.funcionario_id}, ${JSON.stringify(it.nome||'').replace(/\"/g,'&quot;')})" title="Lançamentos avulsos">📋</button>
+           <button class="btn b-gh b-sm" onclick="fpRemoverItem(${it.funcionario_id})" style="color:var(--verm)" title="Remover">🗑</button>`
+        : `<button class="btn b-gh b-sm" onclick="salLanAbrirModal(${it.funcionario_id}, ${JSON.stringify(it.nome||'').replace(/\"/g,'&quot;')})" title="Ver lançamentos">📋</button>`;
+      return `<tr>
+        <td>${idx+1}</td>
+        <td><b>${fpEsc(it.nome)}</b>${it.empresa_nome?'<br><small style="color:var(--text-muted)">'+fpEsc(it.empresa_nome)+'</small>':''}</td>
+        <td>${fpEsc(it.re)}</td>
+        <td>${fpEsc(it.cargo)}</td>
+        <td style="text-align:right">${baseCell}</td>
+        <td style="text-align:right;color:var(--verd)">${fpFmtMoeda(it.total_adicional)}</td>
+        <td style="text-align:right;color:var(--verm)">${fpFmtMoeda(it.total_desconto)}</td>
+        <td style="text-align:right;border-left:2px solid var(--azul);font-weight:700">${fpFmtMoeda(it.total_pagar)}</td>
+        <td>${acao}</td>
+      </tr>`;
+    }).join('');
+  }
+  // drop zone (somente se rascunho)
+  const dz = document.getElementById('fp-drop-zone');
+  dz.ondragover = null; dz.ondragleave = null; dz.ondrop = null;
+  if(editavel){
+    dz.ondragover = (e)=>{ e.preventDefault(); dz.style.borderColor='var(--azul)'; };
+    dz.ondragleave = ()=>{ dz.style.borderColor='transparent'; };
+    dz.ondrop = async (e)=>{
+      e.preventDefault(); dz.style.borderColor='transparent';
+      const fid = e.dataTransfer.getData('text/funcionario-id');
+      if(fid) await fpAdicionarFuncionarios([parseInt(fid)]);
+    };
+  }
+}
+
+async function fpCarregarDisponiveis(){
+  const f = FP_STATE.folhaSelecionada;
+  if(!f) return;
+  const p = new URLSearchParams();
+  p.set('folha_id', f.id);
+  if(f.empresa_id) p.set('empresa_id', f.empresa_id);
+  if(FP_STATE.filtroDispText) p.set('q', FP_STATE.filtroDispText);
+  const r = await api('/api/folhas/disponiveis-funcionarios?'+p.toString());
+  FP_STATE.disponiveis = Array.isArray(r) ? r : [];
+  fpRenderDisponiveis();
+}
+
+function fpRenderDisponiveis(){
+  const cont = document.getElementById('fp-lista-disponiveis');
+  if(!cont) return;
+  const editavel = FP_STATE.folhaSelecionada && FP_STATE.folhaSelecionada.status === 'rascunho';
+  if(!FP_STATE.disponiveis.length){
+    cont.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:10px">Nenhum funcionário disponível.</div>';
+    return;
+  }
+  cont.innerHTML = FP_STATE.disponiveis.map(f=>`
+    <div ${editavel?'draggable="true"':''} ondragstart="fpOnDragStart(event, ${f.id})"
+         style="border:1px solid var(--borda);border-radius:8px;padding:8px 10px;margin-bottom:6px;${editavel?'cursor:grab':'cursor:default;opacity:.7'};display:flex;align-items:center;gap:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fpEsc(f.nome)}</div>
+        <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fpEsc(f.re)} ${f.cargo?'• '+fpEsc(f.cargo):''}</div>
+        ${f.empresa_nome?'<div style="font-size:10px;color:var(--text-muted)">'+fpEsc(f.empresa_nome)+'</div>':''}
+      </div>
+      ${editavel?`<button class="btn b-az b-sm" onclick="fpAdicionarFuncionarios([${f.id}])" title="Adicionar">+</button>`:''}
+    </div>
+  `).join('');
+}
+
+function fpFiltrarDisponiveis(){
+  FP_STATE.filtroDispText = (document.getElementById('fp-busca-func')?.value||'').trim();
+  fpCarregarDisponiveis();
+}
+
+function fpOnDragStart(ev, fid){
+  ev.dataTransfer.effectAllowed = 'copy';
+  ev.dataTransfer.setData('text/funcionario-id', String(fid));
+}
+
+async function fpAdicionarFuncionarios(ids){
+  const f = FP_STATE.folhaSelecionada;
+  if(!f) return;
+  if(f.status !== 'rascunho'){ toast('Folha fechada não aceita alterações.','e'); return; }
+  const r = await api(`/api/folhas/${f.id}/funcionarios`, 'POST', {funcionario_ids: ids});
+  if(!r || r.error){ toast(r?.error||'Erro ao adicionar.','e'); return; }
+  toast(`${r.adicionados||0} funcionário(s) adicionado(s).`,'s');
+  FP_STATE.folhaSelecionada = r.folha;
+  fpRenderFolhaPainel();
+  await fpCarregarDisponiveis();
+  await fpCarregarFolhas();
+}
+
+async function fpRemoverItem(funcId){
+  const f = FP_STATE.folhaSelecionada;
+  if(!f) return;
+  if(!confirm('Remover este funcionário da folha?')) return;
+  const r = await api(`/api/folhas/${f.id}/funcionarios/${funcId}`, 'DELETE');
+  if(!r || r.error){ toast(r?.error||'Erro ao remover.','e'); return; }
+  FP_STATE.folhaSelecionada = r.folha;
+  fpRenderFolhaPainel();
+  await fpCarregarDisponiveis();
+  await fpCarregarFolhas();
+}
+
+async function fpAtualizarSalarioBase(itemId, valor){
+  const f = FP_STATE.folhaSelecionada;
+  if(!f) return;
+  const r = await api(`/api/folhas/${f.id}/itens/${itemId}`, 'PUT', {salario_base: parseFloat(valor)||0});
+  if(!r || r.error){ toast(r?.error||'Erro ao atualizar.','e'); return; }
+  await fpRecarregarFolhaAtual();
+}
+
+async function fpRecarregarFolhaAtual(){
+  const f = FP_STATE.folhaSelecionada;
+  if(!f) return;
+  await fpSelecionarFolha(f.id);
+  await fpCarregarFolhas();
+}
+
+async function fpFecharFolha(){
+  const f = FP_STATE.folhaSelecionada;
+  if(!f) return;
+  if(!confirm(`Fechar a folha "${f.nome}"? Após fechar, ela não poderá ser editada (só reaberta).`)) return;
+  const r = await api(`/api/folhas/${f.id}/fechar`, 'POST');
+  if(!r || r.error){ toast(r?.error||'Erro ao fechar.','e'); return; }
+  toast('Folha fechada.','s');
+  FP_STATE.folhaSelecionada = r;
+  fpRenderFolhaPainel();
+  await fpCarregarFolhas();
+}
+
+async function fpReabrirFolha(){
+  const f = FP_STATE.folhaSelecionada;
+  if(!f) return;
+  if(!confirm('Reabrir esta folha? Ela voltará para rascunho e poderá ser editada.')) return;
+  const r = await api(`/api/folhas/${f.id}/reabrir`, 'POST');
+  if(!r || r.error){ toast(r?.error||'Erro ao reabrir.','e'); return; }
+  toast('Folha reaberta.','s');
+  FP_STATE.folhaSelecionada = r;
+  fpRenderFolhaPainel();
+  await fpCarregarFolhas();
+  await fpCarregarDisponiveis();
+}
+
+async function fpMarcarPaga(){
+  const f = FP_STATE.folhaSelecionada;
+  if(!f) return;
+  const hoje = new Date().toISOString().slice(0,10);
+  const dt = prompt('Data do pagamento (AAAA-MM-DD):', hoje);
+  if(!dt) return;
+  const r = await api(`/api/folhas/${f.id}/marcar-paga`, 'POST', {data_pagamento: dt});
+  if(!r || r.error){ toast(r?.error||'Erro.','e'); return; }
+  toast('Folha marcada como paga.','s');
+  FP_STATE.folhaSelecionada = r;
+  fpRenderFolhaPainel();
+  await fpCarregarFolhas();
+}
+
+async function fpExcluirFolha(){
+  const f = FP_STATE.folhaSelecionada;
+  if(!f) return;
+  if(!confirm(`Excluir definitivamente a folha "${f.nome}"? Esta ação não pode ser desfeita.`)) return;
+  const r = await api(`/api/folhas/${f.id}`, 'DELETE');
+  if(!r || r.error){ toast(r?.error||'Erro ao excluir.','e'); return; }
+  toast('Folha excluída.','s');
+  FP_STATE.folhaSelecionada = null;
+  document.getElementById('fp-workspace').style.display = 'none';
+  await fpCarregarFolhas();
+}
+
+function fpExportar(fmt){
+  const f = FP_STATE.folhaSelecionada;
+  if(!f){ toast('Selecione uma folha.','e'); return; }
+  const url = `/api/folhas/${f.id}/export.${fmt==='pdf'?'pdf':'xlsx'}`;
+  window.open(url, '_blank');
+}
+
+function fpAbrirLancamentoModal(){
+  if(typeof salLanAbrirModal==='function') salLanAbrirModal(null, null);
+}
+
+// Hook: quando lançamento avulso for criado/excluído, recarregar folha
+window._fpOnLancamentoChange = function(){
+  if(FP_STATE.folhaSelecionada) fpRecarregarFolhaAtual();
+};
+// ═════════════════════════════════════════════════════════════════════════════
+
 async function salLanAbrirModal(fid,nome){
   _salLanFid=fid;
   _salLanNome=nome||'Todos os colaboradores';
@@ -10541,7 +10938,7 @@ async function salLanSalvar(){
   document.getElementById('lan-descricao').value='';
   document.getElementById('lan-obs').value='';
   await salLanCarregar();
-  await rhSalariosOnEmpresaChange();
+  try{ if(typeof window._fpOnLancamentoChange==='function') window._fpOnLancamentoChange(); else if(typeof rhSalariosOnEmpresaChange==='function') await rhSalariosOnEmpresaChange(); }catch(_){}
 }
 
 async function salLanExcluir(lid){
@@ -10550,6 +10947,7 @@ async function salLanExcluir(lid){
   if(!r?.ok){toast(r?.erro||'Erro ao excluir lançamento.','e');return;}
   toast('Lançamento excluído.','s');
   await salLanCarregar();
+  try{ if(typeof window._fpOnLancamentoChange==='function') window._fpOnLancamentoChange(); }catch(_){}
   await rhSalariosOnEmpresaChange();
 }
 
