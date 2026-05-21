@@ -9339,7 +9339,7 @@ async function ctrGerarIA() {
   const spin = document.getElementById('ctr-ia-spin');
   spin.style.display = '';
   try {
-    const res = await api('/api/contratos/ia-gerar', 'POST', {instrucao, tipo, prestadora_id, tomadora_id});
+    const res = await api('/api/contratos-ps/ia-gerar', 'POST', {instrucao, tipo, prestadora_id, tomadora_id});
     if (res.erro) { alert('Erro da IA: ' + res.erro); return; }
     document.getElementById('ctr-corpo').value = res.texto || '';
   } catch(e) {
@@ -9364,11 +9364,11 @@ async function ctrSalvar() {
     return;
   }
   st.innerHTML = '<span style="color:#205d8a">⏳ Salvando…</span>';
-  const res = await api('/api/contratos', 'POST', {tipo, prestadora_id, tomadora_id, objeto, texto_corpo, data_inicio, data_fim, valor});
+  const res = await api('/api/contratos-ps', 'POST', {tipo, prestadora_id, tomadora_id, objeto, texto_corpo, data_inicio, data_fim, valor});
   if (res.erro) { st.innerHTML = `<span style="color:#c62828">❌ ${_escHtml(res.erro)}</span>`; return; }
   st.innerHTML = `<span style="color:#2e7d32">✅ Contrato ${_escHtml(res.numero)} salvo!</span>`;
   // Baixa o PDF automaticamente
-  window.open(`/api/contratos/${res.id}/pdf`, '_blank');
+  window.open(`/api/contratos-ps/${res.id}/pdf`, '_blank');
 }
 
 async function docsAbrirListaContratos(tipo) {
@@ -9387,7 +9387,7 @@ async function clCarregar(page) {
   if (q)      params.set('q', q);
   if (tipo)   params.set('tipo', tipo);
   if (status) params.set('status', status);
-  const res = await api('/api/contratos?' + params.toString()).catch(() => ({items:[],total:0,pages:1}));
+  const res = await api('/api/contratos-ps?' + params.toString()).catch(() => ({items:[],total:0,pages:1}));
   const lista = document.getElementById('cl-lista');
   const pag   = document.getElementById('cl-paginacao');
   if (!res.items || !res.items.length) {
@@ -9420,8 +9420,13 @@ async function clCarregar(page) {
       <td style="padding:8px;font-size:12px">${_escHtml((c.data_inicio||''))} ${c.data_fim ? '→ ' + _escHtml(c.data_fim) : ''}</td>
       <td style="padding:8px">${_status_badge(c.status)}</td>
       <td style="padding:8px">
-        <a href="/api/contratos/${c.id}/pdf" target="_blank" class="btn b-az b-sm" title="Baixar PDF">📄</a>
+        <a href="/api/contratos-ps/${c.id}/pdf" target="_blank" class="btn b-az b-sm" title="Baixar PDF">📄</a>
         <select style="border:1px solid var(--borda);border-radius:4px;padding:2px 4px;font-size:11px;margin-left:4px" onchange="clAtualizarStatus(${c.id}, this.value, this)">
+          <option value="ativo" ${c.status==='ativo'?'selected':''}>Ativo</option>
+          <option value="encerrado" ${c.status==='encerrado'?'selected':''}>Encerrado</option>
+          <option value="suspenso" ${c.status==='suspenso'?'selected':''}>Suspenso</option>
+          <option value="cancelado" ${c.status==='cancelado'?'selected':''}>Cancelado</option>
+        </select>
           <option value="ativo" ${c.status==='ativo'?'selected':''}>Ativo</option>
           <option value="encerrado" ${c.status==='encerrado'?'selected':''}>Encerrado</option>
           <option value="suspenso" ${c.status==='suspenso'?'selected':''}>Suspenso</option>
@@ -9442,7 +9447,7 @@ async function clCarregar(page) {
 }
 
 async function clAtualizarStatus(id, status, sel) {
-  const res = await api(`/api/contratos/${id}/status`, 'PATCH', {status});
+  const res = await api(`/api/contratos-ps/${id}/status`, 'PATCH', {status});
   if (res.erro) { alert(res.erro); sel.value = sel.dataset.prev || 'ativo'; }
   else sel.dataset.prev = status;
 }

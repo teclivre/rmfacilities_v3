@@ -1174,8 +1174,8 @@ def _gerar_num_proposta():
     return f'PC-{ano}-{n:04d}'
 
 
-class Contrato(db.Model):
-    __tablename__ = 'contrato'
+class ContratoServico(db.Model):
+    __tablename__ = 'contrato_servico'
     id              = db.Column(db.Integer, primary_key=True)
     numero          = db.Column(db.String(20), unique=True, nullable=False, index=True)
     tipo            = db.Column(db.String(20), default='servico')  # servico | aditivo
@@ -1183,7 +1183,7 @@ class Contrato(db.Model):
     tomadora_id     = db.Column(db.Integer, db.ForeignKey('empresa.id'), nullable=True)
     objeto          = db.Column(db.Text)
     texto_corpo     = db.Column(db.Text)
-    contrato_pai_id = db.Column(db.Integer, db.ForeignKey('contrato.id'), nullable=True)
+    contrato_pai_id = db.Column(db.Integer, db.ForeignKey('contrato_servico.id'), nullable=True)
     data_inicio     = db.Column(db.String(10))
     data_fim        = db.Column(db.String(10))
     valor           = db.Column(db.String(50))
@@ -1200,8 +1200,8 @@ class Contrato(db.Model):
 def _gerar_num_contrato(tipo='servico'):
     ano = localnow().year
     prefix = 'TA' if (tipo or '').lower() == 'aditivo' else 'CT'
-    ultimo = db.session.query(db.func.max(Contrato.numero)).filter(
-        Contrato.numero.like(f'{prefix}-{ano}-%')
+    ultimo = db.session.query(db.func.max(ContratoServico.numero)).filter(
+        ContratoServico.numero.like(f'{prefix}-{ano}-%')
     ).scalar()
     seq = 1
     if ultimo:
@@ -9838,15 +9838,15 @@ def _gerar_contrato_pdf(contrato, prestadora, tomadora):
     return buf
 
 
-@app.route('/api/contratos', methods=['POST'])
+@app.route('/api/contratos-ps', methods=['POST'])
 @lr
-def api_criar_contrato():
+def api_ps_criar_contrato():
     d = request.json or {}
     tipo = (d.get('tipo') or 'servico').strip().lower()
     if tipo not in ('servico', 'aditivo'):
         return jsonify({'erro': 'Tipo inválido.'}), 400
     numero = _gerar_num_contrato(tipo)
-    c = Contrato(
+    c = ContratoServico(
         numero=numero, tipo=tipo,
         prestadora_id=d.get('prestadora_id') or None,
         tomadora_id=d.get('tomadora_id') or None,
@@ -9864,22 +9864,22 @@ def api_criar_contrato():
     return jsonify({'ok': True, 'id': c.id, 'numero': numero})
 
 
-@app.route('/api/contratos', methods=['GET'])
+@app.route('/api/contratos-ps', methods=['GET'])
 @lr
-def api_listar_contratos():
+def api_ps_listar_contratos():
     q     = request.args.get('q', '').strip()
     tipo  = request.args.get('tipo', '').strip()
     status= request.args.get('status', '').strip()
     page  = max(1, int(request.args.get('page', 1)))
     per   = 20
-    qr = Contrato.query
+    qr = ContratoServico.query
     if q:
         like = f'%{q}%'
-        qr = qr.filter(db.or_(Contrato.numero.ilike(like), Contrato.objeto.ilike(like)))
-    if tipo:   qr = qr.filter(Contrato.tipo == tipo)
-    if status: qr = qr.filter(Contrato.status == status)
+        qr = qr.filter(db.or_(ContratoServico.numero.ilike(like), ContratoServico.objeto.ilike(like)))
+    if tipo:   qr = qr.filter(ContratoServico.tipo == tipo)
+    if status: qr = qr.filter(ContratoServico.status == status)
     total = qr.count()
-    rows  = qr.order_by(Contrato.criado_em.desc()).offset((page-1)*per).limit(per).all()
+    rows  = qr.order_by(ContratoServico.criado_em.desc()).offset((page-1)*per).limit(per).all()
     emp_cache = {}
     def _en(eid):
         if not eid: return ''
@@ -9897,10 +9897,10 @@ def api_listar_contratos():
                     'pages': math.ceil(total/per) if total else 1})
 
 
-@app.route('/api/contratos/<int:cid>', methods=['GET'])
+@app.route('/api/contratos-ps/<int:cid>', methods=['GET'])
 @lr
-def api_get_contrato(cid):
-    c = db.get_or_404(Contrato, cid)
+def api_ps_get_contrato(cid):
+    c = db.get_or_404(ContratoServico, cid)
     dd = c.to_dict()
     if c.prestadora_id:
         e = db.session.get(Empresa, c.prestadora_id)
@@ -9911,10 +9911,10 @@ def api_get_contrato(cid):
     return jsonify(dd)
 
 
-@app.route('/api/contratos/<int:cid>/pdf')
+@app.route('/api/contratos-ps/<int:cid>/pdf')
 @lr
-def api_contrato_pdf(cid):
-    c = db.get_or_404(Contrato, cid)
+def api_ps_contrato_pdf(cid):
+    c = db.get_or_404(ContratoServico, cid)
     prestadora = db.session.get(Empresa, c.prestadora_id) if c.prestadora_id else None
     tomadora   = db.session.get(Empresa, c.tomadora_id)   if c.tomadora_id   else None
     buf = _gerar_contrato_pdf(c, prestadora, tomadora)
@@ -9924,10 +9924,10 @@ def api_contrato_pdf(cid):
     return resp
 
 
-@app.route('/api/contratos/<int:cid>/status', methods=['PATCH'])
+@app.route('/api/contratos-ps/<int:cid>/status', methods=['PATCH'])
 @lr
-def api_contrato_status(cid):
-    c = db.get_or_404(Contrato, cid)
+def api_ps_contrato_status(cid):
+    c = db.get_or_404(ContratoServico, cid)
     s = ((request.json or {}).get('status') or '').strip().lower()
     if s not in ('ativo', 'encerrado', 'suspenso', 'cancelado'):
         return jsonify({'erro': 'Status inválido.'}), 400
@@ -9936,9 +9936,9 @@ def api_contrato_status(cid):
     return jsonify({'ok': True, 'status': s})
 
 
-@app.route('/api/contratos/ia-gerar', methods=['POST'])
+@app.route('/api/contratos-ps/ia-gerar', methods=['POST'])
 @lr
-def api_contrato_ia_gerar():
+def api_ps_contrato_ia_gerar():
     """Gera corpo de contrato ou aditivo via IA."""
     d = request.json or {}
     instrucao    = (d.get('instrucao') or '').strip()
