@@ -2411,7 +2411,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <select id="ap-reducao">
               <option value="nenhuma">Sem redução (cumprimento integral)</option>
               <option value="2h_diarias">Redução de 2 horas diárias durante todo o aviso</option>
-              <option value="7_dias_corridos">Faltar 7 dias corridos ao final do aviso</option>
+              <option value="7_dias_indenizados">Redução de 7 dias indenizados ao final do aviso</option>
             </select>
           </div>
           <div class="f" style="margin-bottom:14px">
@@ -3485,7 +3485,9 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div id="st-assinaturas" class="st"></div>
 
       <style>
-        #pg-assinaturas .asi-shell{display:grid;grid-template-columns:250px minmax(0,1fr);gap:16px;align-items:start}
+        #pg-assinaturas{align-self:flex-start}
+        #pg-assinaturas .asi-shell{display:grid;grid-template-columns:250px minmax(0,1fr);gap:16px;align-items:start;align-content:start}
+        #pg-assinaturas .asi-shell > *{align-self:start;min-width:0}
         #pg-assinaturas .asi-side{position:sticky;top:8px}
         #pg-assinaturas .asi-side .subaba-bloco{width:100%;text-align:left}
         #pg-assinaturas .asi-upload-drop{border:2px dashed var(--borda);border-radius:12px;padding:20px;background:var(--branco);cursor:pointer;transition:.15s}
@@ -9394,10 +9396,10 @@ function previaAvisoPrevio() {
       textoPrazo += ` <strong>Redução de jornada (art. 488, parágrafo único, alínea "a", da CLT):</strong>
         durante o cumprimento do aviso prévio o(a) colaborador(a) optou pela <strong>redução de 2 (duas) horas diárias</strong>
         de sua jornada de trabalho, sem prejuízo do salário integral.`;
-    } else if (reducao === '7_dias_corridos') {
+    } else if (reducao === '7_dias_indenizados') {
       textoPrazo += ` <strong>Redução do aviso (art. 488, parágrafo único, alínea "b", da CLT):</strong>
-        o(a) colaborador(a) optou por <strong>faltar 7 (sete) dias corridos</strong> ao final do período do aviso,
-        sem prejuízo do salário integral.`;
+        o(a) colaborador(a) optou pela <strong>redução de 7 (sete) dias indenizados</strong> ao final do período do aviso,
+        sem prejuízo do salário integral — os 7 dias finais não serão trabalhados e serão integrados às verbas rescisórias.`;
     }
     textoBaseLegal = 'Art. 7º, XXI CF/1988; Arts. 487–491 CLT; Art. 488 CLT (redução de jornada); Lei 12.506/2011 — 30 dias + 3 dias por ano, máx. 90 dias.';
   } else if (tipo === 'empresa_indenizado') {

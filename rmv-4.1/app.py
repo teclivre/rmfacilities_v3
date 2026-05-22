@@ -12933,11 +12933,11 @@ def _gerar_aviso_previo_pdf(
                 "durante o cumprimento do aviso prévio o(a) colaborador(a) optou pela <b>redução de 2 (duas) horas diárias</b> "
                 "de sua jornada de trabalho, sem prejuízo do salário integral."
             )
-        elif reducao == "7_dias_corridos":
+        elif reducao == "7_dias_indenizados":
             texto_prazo += (
                 " <b>Redução do aviso (art. 488, parágrafo único, alínea 'b', da CLT):</b> "
-                "o(a) colaborador(a) optou por <b>faltar 7 (sete) dias corridos</b> ao final do período do aviso, "
-                "sem prejuízo do salário integral."
+                "o(a) colaborador(a) optou pela <b>redução de 7 (sete) dias indenizados</b> ao final do período do aviso, "
+                "sem prejuízo do salário integral — os 7 dias finais não serão trabalhados e serão integrados às verbas rescisórias."
             )
     elif tipo == "empresa_indenizado":
         texto_intro = (
@@ -13164,7 +13164,7 @@ def api_funcionario_gerar_aviso_previo(id):
     obs = (d.get("obs") or "").strip()
     data_aviso = (d.get("data_aviso") or "").strip()
     reducao = (d.get("reducao") or "nenhuma").strip().lower()
-    if reducao not in ("nenhuma", "2h_diarias", "7_dias_corridos"):
+    if reducao not in ("nenhuma", "2h_diarias", "7_dias_indenizados"):
         reducao = "nenhuma"
     canal = (d.get("canal") or "nao").strip().lower()
     if canal not in ("whatsapp", "app", "link", "nao"):
