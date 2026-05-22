@@ -41,10 +41,6 @@ class SessionManager(private val context: Context) {
         keystoreFailed = failed
     }
 
-    companion object {
-        private const val TAG = "SessionManager"
-    }
-
     var apiBaseUrl: String
         get() = prefs.getString("api_base_url", BuildConfig.DEFAULT_API_BASE_URL) ?: BuildConfig.DEFAULT_API_BASE_URL
         set(value) {
@@ -153,6 +149,7 @@ class SessionManager(private val context: Context) {
     }
 
     companion object {
+        private const val TAG = "SessionManager"
         const val ACTION_LOGOUT = "br.com.rmfacilities.funcionarioapp.LOGOUT"
     }
 }
