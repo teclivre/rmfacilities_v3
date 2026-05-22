@@ -2776,6 +2776,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <button id="ben-tab-pp" class="btn b-gh b-sm" onclick="switchBenTab('pp',this)">Prêmio Produtividade</button>
           <button id="ben-tab-vg" class="btn b-gh b-sm" onclick="switchBenTab('vg',this)">Vale Gasolina</button>
           <button id="ben-tab-cn" class="btn b-gh b-sm" onclick="switchBenTab('cn',this)">Cesta de Natal</button>
+          <button id="ben-tab-avulso" class="btn b-gh b-sm" onclick="switchBenTab('avulso',this)">&#128176; Pagar Avulso</button>
           <button id="ben-tab-relatorios" class="btn b-gh b-sm" onclick="switchBenTab('relatorios',this)">Relatórios</button>
           <button id="ben-tab-periodo" class="btn b-gh b-sm" onclick="switchBenTab('periodo',this)">&#128197; Calcular por Período</button>
           <button id="ben-tab-feriados" class="btn b-gh b-sm" onclick="switchBenTab('feriados',this)">&#127970; Feriados</button>
@@ -2852,6 +2853,45 @@ document.addEventListener('DOMContentLoaded',()=>{
             <tbody id="tb-benef-cn"></tbody>
           </table>
         </div>
+
+        <!-- ── Pagar Avulso ────────────────────────────────────────────── -->
+        <div id="ben-pane-avulso" style="margin-top:10px;display:none">
+          <div style="margin-bottom:10px;color:var(--text-muted);font-size:13px">
+            Pague benefícios a funcionários específicos nesta competência sem alterar a folha mensal completa.
+            Busque pelo nome ou matrícula, selecione o tipo de benefício, ajuste os valores e salve.
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:flex-end">
+            <div class="f" style="flex:1;min-width:200px">
+              <label>Buscar funcionário (nome / RE)</label>
+              <input id="ben-avulso-busca" type="text" placeholder="Ex: João ou 395" oninput="benAvulsoFiltrar()">
+            </div>
+            <div class="f" style="min-width:180px">
+              <label>Tipo de benefício</label>
+              <select id="ben-avulso-tipo" onchange="benAvulsoFiltrar()">
+                <option value="vt">Vale Transporte</option>
+                <option value="vr">Vale Refeição</option>
+                <option value="va">Vale Alimentação</option>
+                <option value="pp">Prêmio Produtividade</option>
+                <option value="vg">Vale Gasolina</option>
+                <option value="cn">Cesta de Natal</option>
+              </select>
+            </div>
+          </div>
+          <!-- Resultados da busca -->
+          <div id="ben-avulso-resultados" style="max-height:260px;overflow:auto;border:1px solid var(--borda);border-radius:6px;margin-bottom:12px">
+            <div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Digite pelo menos 1 caractere para buscar funcionários.</div>
+          </div>
+          <!-- Lista de lançamentos a salvar -->
+          <div id="ben-avulso-selecionados-wrap" style="display:none">
+            <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:var(--azul)">Lançamentos a salvar:</div>
+            <div id="ben-avulso-selecionados" style="max-height:320px;overflow:auto;border:1px solid var(--borda);border-radius:6px;margin-bottom:12px"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn b-az" onclick="benAvulsoSalvar()">&#128190; Salvar lançamentos avulsos</button>
+              <button class="btn b-gh b-sm" onclick="benAvulsoLimpar()">&#10005; Limpar lista</button>
+            </div>
+          </div>
+        </div>
+
         <div id="ben-pane-relatorios" class="tbl-wrap" style="margin-top:10px;display:none">
           <div class="g3">
             <div class="card" style="padding:12px">
@@ -12459,7 +12499,7 @@ function limparSelecaoBen(){
 
 function switchBenTab(tab,btn){
   benTab=tab;
-  ['ativos','vt','vr','va','pp','vg','cn','relatorios','periodo','feriados'].forEach(t=>{
+  ['ativos','vt','vr','va','pp','vg','cn','avulso','relatorios','periodo','feriados'].forEach(t=>{
     const pane=document.getElementById('ben-pane-'+t);
     const b=document.getElementById('ben-tab-'+t);
     if(pane)pane.style.display=t===tab?'block':'none';
@@ -12472,6 +12512,7 @@ function switchBenTab(tab,btn){
   else if(tab==='vg') renderBeneficioPorTipo('vg','tb-benef-vg');
   else if(tab==='cn') renderBeneficioPorTipo('cn','tb-benef-cn');
   else if(tab==='ativos') renderBeneficiosAtivos();
+  else if(tab==='avulso'){ if(!beneficiosMensais.length) carregarBeneficiosMensais(); benAvulsoFiltrar(); }
   else if(tab==='feriados') ferCarregar();
   if(btn && btn.scrollIntoView) btn.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});
 }
@@ -13176,6 +13217,149 @@ async function benAssinarFolha(){
   if(r?.erro){ showSt('st-benef',r.erro,true); return; }
   showSt('st-benef',`Folha assinada por ${r.assinatura_por||'usuário'} em ${new Date(r.assinatura_em).toLocaleString('pt-BR')}.`,false);
   benAtualizarToolbar('assinada');
+}
+
+// ── Benefício Avulso ──────────────────────────────────────────────────────────
+let benAvulsoSelecionados = [];
+
+function benAvulsoFiltrar(){
+  const q = (document.getElementById('ben-avulso-busca')?.value||'').trim().toLowerCase();
+  const tipo = document.getElementById('ben-avulso-tipo')?.value || 'vt';
+  const res = document.getElementById('ben-avulso-resultados');
+  if(!res) return;
+  if(!q){
+    res.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Digite pelo menos 1 caractere para buscar funcionários.</div>';
+    return;
+  }
+  const lista = (beneficiosMensais||[]).filter(it =>
+    (it.nome||'').toLowerCase().includes(q) || (it.re||'').toLowerCase().includes(q) || (it.matricula||'').toLowerCase().includes(q)
+  ).slice(0,30);
+  if(!lista.length){
+    res.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Nenhum funcionário encontrado.</div>';
+    return;
+  }
+  const tipoLabel = {vt:'Vale Transporte',vr:'Vale Refeição',va:'Vale Alimentação',pp:'Prêmio Produtividade',vg:'Vale Gasolina',cn:'Cesta de Natal'};
+  res.innerHTML = lista.map(it => {
+    const jaAdicionado = benAvulsoSelecionados.some(x => x.funcionario_id===it.funcionario_id && x.tipo===tipo);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--borda);flex-wrap:wrap">
+      <div style="flex:1;min-width:160px">
+        <b>${fpEsc(it.nome)}</b>
+        <span style="color:var(--text-muted);font-size:11px"> · RE: ${fpEsc(it.re||'—')} · ${fpEsc(it.posto_operacional||'')}</span>
+      </div>
+      <span style="font-size:11px;color:var(--azul)">${tipoLabel[tipo]||tipo}</span>
+      ${jaAdicionado
+        ? `<span style="font-size:11px;color:var(--verd);font-weight:700">✓ Adicionado</span>`
+        : `<button class="btn b-az b-sm" onclick="benAvulsoAdicionar(${it.funcionario_id})">+ Adicionar</button>`}
+    </div>`;
+  }).join('');
+}
+
+function benAvulsoAdicionar(funcId){
+  const func = (beneficiosMensais||[]).find(x => x.funcionario_id===funcId);
+  if(!func){ toast('Funcionário não encontrado.','e'); return; }
+  const tipo = document.getElementById('ben-avulso-tipo')?.value || 'vt';
+  if(benAvulsoSelecionados.some(x => x.funcionario_id===funcId && x.tipo===tipo)){
+    toast('Já adicionado para este benefício.','w'); return;
+  }
+  const diasPadrao = {'vt': func.dias_vt||0, 'vr': func.dias_vr||0, 'vg': func.dias_vg||0};
+  const valorPadrao = {'vt': func.vale_transporte||0, 'vr': func.vale_refeicao||0, 'va': func.vale_alimentacao||0, 'pp': func.premio_produtividade||0, 'vg': func.vale_gasolina||0, 'cn': func.cesta_natal||0};
+  benAvulsoSelecionados.push({
+    funcionario_id: funcId,
+    nome: func.nome||'',
+    re: func.re||'',
+    posto: func.posto_operacional||'',
+    tipo,
+    dias: diasPadrao[tipo]||0,
+    valor: valorPadrao[tipo]||0,
+  });
+  benAvulsoRenderSelecionados();
+  benAvulsoFiltrar(); // atualiza botão para "✓ Adicionado"
+}
+
+function benAvulsoRenderSelecionados(){
+  const wrap = document.getElementById('ben-avulso-selecionados-wrap');
+  const cont = document.getElementById('ben-avulso-selecionados');
+  if(!wrap||!cont) return;
+  if(!benAvulsoSelecionados.length){ wrap.style.display='none'; return; }
+  wrap.style.display='block';
+  const tipoLabel = {vt:'Vale Transporte',vr:'Vale Refeição',va:'Vale Alimentação',pp:'Prêmio Produtividade',vg:'Vale Gasolina',cn:'Cesta de Natal'};
+  const temDias = t => ['vt','vr','vg'].includes(t);
+  cont.innerHTML = benAvulsoSelecionados.map((it,i) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--borda);flex-wrap:wrap">
+      <div style="min-width:180px;flex:1">
+        <b>${fpEsc(it.nome)}</b>
+        <span style="font-size:11px;color:var(--text-muted)"> · ${fpEsc(it.re)}</span>
+        <br><small style="color:var(--azul)">${tipoLabel[it.tipo]||it.tipo}</small>
+        ${it.posto?`<small style="color:var(--text-muted)"> · ${fpEsc(it.posto)}</small>`:''}
+      </div>
+      ${temDias(it.tipo)?`
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <label style="font-size:10px;color:var(--text-muted)">Dias</label>
+        <input type="number" min="0" max="31" value="${it.dias}" onchange="benAvulsoSelecionados[${i}].dias=Math.max(0,parseInt(this.value)||0)" style="width:64px;text-align:center;padding:4px">
+      </div>`:''}
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <label style="font-size:10px;color:var(--text-muted)">Valor R$</label>
+        <input type="number" step="0.01" min="0" value="${Number(it.valor).toFixed(2)}" onchange="benAvulsoSelecionados[${i}].valor=Math.max(0,parseFloat(this.value)||0)" style="width:100px;text-align:right;padding:4px">
+      </div>
+      <button class="btn b-gh b-sm" style="color:var(--verm)" onclick="benAvulsoRemover(${i})">🗑</button>
+    </div>
+  `).join('');
+}
+
+function benAvulsoRemover(idx){
+  benAvulsoSelecionados.splice(idx,1);
+  benAvulsoRenderSelecionados();
+  benAvulsoFiltrar();
+}
+
+function benAvulsoLimpar(){
+  benAvulsoSelecionados = [];
+  benAvulsoRenderSelecionados();
+  benAvulsoFiltrar();
+}
+
+async function benAvulsoSalvar(){
+  if(!benAvulsoSelecionados.length){ toast('Nenhum funcionário adicionado.','e'); return; }
+  const comp = benComp();
+  if(!/^\d{4}-\d{2}$/.test(comp)){ toast('Competência inválida.','e'); return; }
+  // Agrupa por funcionário (um func pode ter vários tipos)
+  const byFunc = {};
+  for(const it of benAvulsoSelecionados){
+    const fid = it.funcionario_id;
+    if(!byFunc[fid]){
+      const orig = (beneficiosMensais||[]).find(x => x.funcionario_id===fid) || {};
+      byFunc[fid] = {
+        funcionario_id: fid,
+        dias_trabalhados: orig.dias_trabalhados||0,
+        dias_vt: orig.dias_vt||0,
+        dias_vr: orig.dias_vr||0,
+        dias_va: orig.dias_va||0,
+        dias_vg: orig.dias_vg||0,
+        faltas: orig.faltas||0,
+        salario: orig.salario||0,
+        vale_refeicao: orig.vale_refeicao||0,
+        vale_alimentacao: orig.vale_alimentacao||0,
+        vale_transporte: orig.vale_transporte||0,
+        pp_falta: orig.pp_falta||false,
+        premio_produtividade: orig.premio_produtividade||0,
+        vale_gasolina: orig.vale_gasolina||0,
+        cesta_natal: orig.cesta_natal||0,
+      };
+    }
+    const item = byFunc[fid];
+    if(it.tipo==='vt'){ item.dias_vt=it.dias; item.vale_transporte=it.valor; }
+    else if(it.tipo==='vr'){ item.dias_vr=it.dias; item.vale_refeicao=it.valor; }
+    else if(it.tipo==='va'){ item.vale_alimentacao=it.valor; }
+    else if(it.tipo==='pp'){ item.premio_produtividade=it.valor; }
+    else if(it.tipo==='vg'){ item.dias_vg=it.dias; item.vale_gasolina=it.valor; }
+    else if(it.tipo==='cn'){ item.cesta_natal=it.valor; }
+  }
+  const itens = Object.values(byFunc);
+  const r = await api('/api/beneficios/lancamentos','POST',{competencia:comp, itens});
+  if(r?.erro){ toast(r.erro,'e'); return; }
+  toast(`${itens.length} lançamento(s) avulso(s) salvo(s) para ${comp}.`,'s');
+  benAvulsoLimpar();
+  await carregarBeneficiosMensais();
 }
 
 async function benAbrirHistorico(){
