@@ -19948,9 +19948,9 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
                     ps(
                         f"asn{i}",
                         fontName="Times-Italic",
-                        fontSize=18,
+                        fontSize=12,
                         textColor=colors.HexColor("#1a2e42"),
-                        leading=20,
+                        leading=14,
                     ),
                 ),
                 Paragraph(
