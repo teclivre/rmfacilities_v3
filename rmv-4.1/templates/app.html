@@ -10990,51 +10990,11 @@ function fpRenderItensTbody(itens, editavel){
   }).join('');
 }
 
-// ── Prévia da folha ──────────────────────────────────────────────────────────
+// ── Prévia da folha (nova aba) ───────────────────────────────────────────────
 function fpAbrirPrevia(){
   const f = FP_STATE.folhaSelecionada;
   if(!f){ toast('Selecione uma folha.','e'); return; }
-  const itens = f.itens||[];
-  document.getElementById('fp-previa-titulo').textContent = `Prévia: ${f.nome}`;
-  document.getElementById('fp-previa-info').innerHTML =
-    `<b>Competência:</b> ${fpEsc(f.competencia)} &nbsp;|&nbsp; <b>Tipo:</b> ${fpTipoLabel(f.tipo)} &nbsp;|&nbsp; <b>Status:</b> ${fpEsc(f.status)}${f.empresa_nome?' &nbsp;|&nbsp; <b>Empresa:</b> '+fpEsc(f.empresa_nome):''}${f.data_pagamento?' &nbsp;|&nbsp; <b>Pago em:</b> '+fpEsc(f.data_pagamento):''}`;
-  const postoFiltro = (document.getElementById('fp-filtro-posto')?.value||'').toLowerCase();
-  const nomeFiltro = (document.getElementById('fp-filtro-nome')?.value||'').trim().toLowerCase();
-  const lista = itens.filter(it=>{
-    const okNome = !nomeFiltro || (it.nome||'').toLowerCase().includes(nomeFiltro) || (it.re||'').toLowerCase().includes(nomeFiltro);
-    const okPosto = !postoFiltro || (it.posto_operacional||'').toLowerCase()===postoFiltro;
-    return okNome && okPosto;
-  });
-  let base=0,adi=0,des=0,tot=0;
-  lista.forEach(it=>{ base+=Number(it.salario_base||0); adi+=Number(it.total_adicional||0); des+=Number(it.total_desconto||0); tot+=Number(it.total_pagar||0); });
-  const rows = lista.map((it,i)=>`<tr>
-    <td>${i+1}</td>
-    <td><b>${fpEsc(it.nome)}</b>${it.posto_operacional?`<br><small style="color:var(--text-muted)">${fpEsc(it.posto_operacional)}</small>`:''}</td>
-    <td>${fpEsc(it.re)}</td>
-    <td>${fpEsc(it.cargo)}</td>
-    <td style="text-align:right">${fpFmtMoeda(it.salario_base)}</td>
-    <td style="text-align:right;color:var(--verd)">${fpFmtMoeda(it.total_adicional)}</td>
-    <td style="text-align:right;color:var(--verm)">${fpFmtMoeda(it.total_desconto)}</td>
-    <td style="text-align:right;font-weight:700">${fpFmtMoeda(it.total_pagar)}</td>
-  </tr>`).join('');
-  document.getElementById('fp-previa-tb').innerHTML = `
-    <thead><tr>
-      <th>#</th><th>Nome / Posto</th><th>RE</th><th>Cargo</th>
-      <th style="text-align:right">Salário base</th>
-      <th style="text-align:right;color:var(--verd)">+ Adicionais</th>
-      <th style="text-align:right;color:var(--verm)">− Descontos</th>
-      <th style="text-align:right">Total</th>
-    </tr></thead>
-    <tbody>${rows || '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted)">Nenhum item com o filtro atual.</td></tr>'}</tbody>
-    <tfoot><tr style="background:var(--azul-light,rgba(0,100,220,.06));font-weight:800">
-      <td colspan="4" style="text-align:right">TOTAL (${lista.length} func.)</td>
-      <td style="text-align:right">${fpFmtMoeda(base)}</td>
-      <td style="text-align:right;color:var(--verd)">${fpFmtMoeda(adi)}</td>
-      <td style="text-align:right;color:var(--verm)">${fpFmtMoeda(des)}</td>
-      <td style="text-align:right;color:var(--azul)">${fpFmtMoeda(tot)}</td>
-    </tr></tfoot>`;
-  document.getElementById('fp-previa-total').textContent = `Total a pagar: ${fpFmtMoeda(tot)}`;
-  document.getElementById('fp-mod-previa').style.display='flex';
+  window.open(`/api/folhas/${f.id}/preview`, '_blank');
 }
 
 // ── Gráfico evolução mensal ──────────────────────────────────────────────────

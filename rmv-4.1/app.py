@@ -18256,6 +18256,132 @@ def api_folhas_export_pdf(fid):
     fname = f"folha_{f.id}.pdf"
     return send_file(buf, as_attachment=True, download_name=fname, mimetype='application/pdf')
 
+@app.route('/api/folhas/<int:fid>/preview', methods=['GET'])
+@lr
+def api_folhas_preview(fid):
+    """Prévia HTML da folha em nova aba, com opção de imprimir."""
+    f = db.get_or_404(FolhaPagamento, fid)
+    _folha_recalcular_total(f)
+    tipo_labels = {'mensal':'Mensal','quinzenal':'Quinzenal','adiantamento':'Adiantamento',
+                   '13o':'13º Salário','ferias':'Férias','rescisao':'Rescisão','extra':'Extra'}
+    tipo_label = tipo_labels.get(f.tipo or '', f.tipo or '')
+    emp = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
+    emp_nome = emp.nome if emp else ''
+    itens = f.itens.order_by(FolhaPagamentoItem.id.asc()).all()
+    total_base = total_adic = total_desc = total_pagar = 0.0
+    def brl(v):
+        return f"R$\u00a0{float(v):,.2f}".replace(',','X').replace('.',',').replace('X','.')
+    rows_html = ''
+    for i, it in enumerate(itens, 1):
+        func = db.session.get(Funcionario, it.funcionario_id)
+        nome = (func.nome or '') if func else ''
+        re = (func.re or func.matricula or '') if func else ''
+        cargo = (func.cargo or '') if func else ''
+        posto = (func.posto_operacional or '') if func else ''
+        s_base = float(it.salario_base or 0)
+        s_adic = float(it.total_adicional or 0)
+        s_desc = float(it.total_desconto or 0)
+        s_tot = float(it.total_pagar or 0)
+        total_base += s_base; total_adic += s_adic; total_desc += s_desc; total_pagar += s_tot
+        posto_line = f'<div style="font-size:10px;color:#777">{posto}</div>' if posto else ''
+        rows_html += f'''<tr>
+          <td style="text-align:center;color:#666">{i}</td>
+          <td>{re}</td>
+          <td><b>{nome}</b>{posto_line}</td>
+          <td>{cargo}</td>
+          <td style="text-align:right">{brl(s_base)}</td>
+          <td style="text-align:right;color:#1a7a3a">{brl(s_adic)}</td>
+          <td style="text-align:right;color:#c0392b">{brl(s_desc)}</td>
+          <td style="text-align:right;font-weight:700;border-left:2px solid #1f4e78">{brl(s_tot)}</td>
+        </tr>'''
+    status_colors = {'rascunho':('#fff7e0','#a06b00'),'fechada':('#dde7ff','#1e3aa6'),'paga':('#dff5e3','#1e6b34')}
+    sc = status_colors.get(f.status or '', ('#eee','#333'))
+    data_pag = f.data_pagamento or ''
+    html = f'''<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Prévia – {f.nome or "Folha"}</title>
+  <style>
+    *{{box-sizing:border-box;margin:0;padding:0}}
+    body{{font-family:system-ui,Arial,sans-serif;font-size:13px;color:#222;background:#f5f5f5;padding:24px}}
+    .wrap{{max-width:1100px;margin:0 auto;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.1);overflow:hidden}}
+    .header{{background:#1f4e78;color:#fff;padding:20px 28px}}
+    .header h1{{font-size:20px;font-weight:800;margin-bottom:4px}}
+    .header .meta{{font-size:12px;opacity:.85;display:flex;gap:18px;flex-wrap:wrap}}
+    .badge{{display:inline-block;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700;background:{sc[0]};color:{sc[1]}}}
+    .resumo{{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0;border-bottom:1px solid #e0e0e0}}
+    .resumo-item{{padding:14px 20px;border-right:1px solid #e0e0e0}}
+    .resumo-item:last-child{{border-right:none}}
+    .resumo-label{{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px}}
+    .resumo-val{{font-size:18px;font-weight:800;margin-top:2px}}
+    .tbl-wrap{{overflow-x:auto;padding:0 4px 16px 4px}}
+    table{{width:100%;border-collapse:collapse;font-size:12px}}
+    thead th{{background:#1f4e78;color:#fff;padding:8px 10px;text-align:left;white-space:nowrap}}
+    tbody tr:nth-child(even){{background:#f7f9fc}}
+    tbody td{{padding:7px 10px;border-bottom:1px solid #eee;vertical-align:top}}
+    tfoot td{{background:#e7edf6;padding:8px 10px;font-weight:800;border-top:2px solid #1f4e78}}
+    .no-print{{display:flex;gap:10px;padding:16px 28px;border-top:1px solid #e0e0e0;background:#fafafa}}
+    button{{padding:8px 18px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600}}
+    .btn-print{{background:#1f4e78;color:#fff}}
+    .btn-close{{background:#eee;color:#333}}
+    @media print{{
+      body{{background:#fff;padding:0}}
+      .wrap{{box-shadow:none;border-radius:0}}
+      .no-print{{display:none!important}}
+    }}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <h1>{f.nome or "Folha"} &nbsp;<span class="badge">{(f.status or "").capitalize()}</span></h1>
+    <div class="meta">
+      <span>📅 Competência: <b>{f.competencia}</b></span>
+      <span>📋 Tipo: <b>{tipo_label}</b></span>
+      {f'<span>🏢 Empresa: <b>{emp_nome}</b></span>' if emp_nome else ''}
+      {f'<span>💰 Pago em: <b>{data_pag}</b></span>' if data_pag else ''}
+    </div>
+  </div>
+  <div class="resumo">
+    <div class="resumo-item"><div class="resumo-label">Funcionários</div><div class="resumo-val" style="color:#1f4e78">{len(itens)}</div></div>
+    <div class="resumo-item"><div class="resumo-label">Salários base</div><div class="resumo-val">{brl(total_base)}</div></div>
+    <div class="resumo-item"><div class="resumo-label">+ Adicionais</div><div class="resumo-val" style="color:#1a7a3a">{brl(total_adic)}</div></div>
+    <div class="resumo-item"><div class="resumo-label">− Descontos</div><div class="resumo-val" style="color:#c0392b">{brl(total_desc)}</div></div>
+    <div class="resumo-item" style="background:#e8f0fb"><div class="resumo-label">Total a pagar</div><div class="resumo-val" style="color:#1f4e78;font-size:22px">{brl(total_pagar)}</div></div>
+  </div>
+  <div class="tbl-wrap" style="padding:16px 20px">
+    <table>
+      <thead><tr>
+        <th style="width:40px;text-align:center">#</th>
+        <th style="width:80px">RE</th>
+        <th>Nome / Posto</th>
+        <th>Cargo</th>
+        <th style="text-align:right">Salário base</th>
+        <th style="text-align:right">+ Adicionais</th>
+        <th style="text-align:right">− Descontos</th>
+        <th style="text-align:right;border-left:2px solid #fff">Total</th>
+      </tr></thead>
+      <tbody>{rows_html or '<tr><td colspan="8" style="text-align:center;padding:24px;color:#999">Nenhum funcionário nesta folha.</td></tr>'}</tbody>
+      <tfoot><tr>
+        <td colspan="4" style="text-align:right">TOTAL ({len(itens)} funcionário{"s" if len(itens)!=1 else ""})</td>
+        <td style="text-align:right">{brl(total_base)}</td>
+        <td style="text-align:right;color:#1a7a3a">{brl(total_adic)}</td>
+        <td style="text-align:right;color:#c0392b">{brl(total_desc)}</td>
+        <td style="text-align:right;color:#1f4e78;border-left:2px solid #1f4e78;font-size:15px">{brl(total_pagar)}</td>
+      </tr></tfoot>
+    </table>
+  </div>
+  <div class="no-print">
+    <button class="btn-print" onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
+    <button class="btn-close" onclick="window.close()">Fechar</button>
+  </div>
+</div>
+</body>
+</html>'''
+    return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
+
 # ── SSE: auto-update ──────────────────────────────────────────────────────────
 import queue as _queue
 import threading as _threading
