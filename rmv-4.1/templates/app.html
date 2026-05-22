@@ -4440,6 +4440,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
 {% include 'partials/ponto_edit_modal.html' %}
 
+<script src="/static/js/app-ponto.js"></script>
 <script nonce="{{ g.csp_nonce }}">
 const N='{{ nome }}', P='{{ perfil }}';
 const USER_AREAS={{ areas|safe }};
@@ -15710,7 +15711,6 @@ function _carregarStampConfig(env){
   previewStampPos();
 }
 </script>
-<script src="/static/js/app-ponto.js"></script>
 <script nonce="{{ g.csp_nonce }}">
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", function () {
