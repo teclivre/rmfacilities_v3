@@ -11119,7 +11119,7 @@ async function fpHistCarregar(){
       <td style="text-align:center">${f.qtd_funcionarios||0}</td>
       <td style="text-align:right;font-weight:700;color:var(--azul)">${fpFmtMoeda(f.total_valor||0)}</td>
       <td>${fpEsc(f.data_pagamento||f.pago_em||'—')}</td>
-      <td><button class="btn b-az b-sm" onclick="fpSelecionarFolha(${f.id})">Ver</button></td>
+      <td><button class="btn b-az b-sm" onclick="window.open('/api/folhas/${f.id}/preview','_blank')">Ver</button></td>
     </tr>`).join('')}
     </tbody>
   </table></div>`;
