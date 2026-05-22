@@ -9352,6 +9352,11 @@ function previaAvisoPrevio() {
   };
   const tipoLabel = TIPOS_AP[tipo] || 'AVISO PRÉVIO TRABALHADO';
   const corHdr = '#1A3A5C';
+  const _fmtCpfPv = (v) => {
+    const d = String(v||'').replace(/\D/g,'');
+    return d.length === 11 ? `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9,11)}` : String(v||'');
+  };
+  const cpfFmt = _fmtCpfPv(f.cpf||'');
 
   let textoIntro = '', textoPrazo = '', textoBaseLegal = '';
   const anos = calcAnos || '—';
@@ -9400,41 +9405,43 @@ function previaAvisoPrevio() {
 <title>Prévia — ${_escHtml(tipoLabel)} — ${_escHtml(f.nome||'')}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,sans-serif;font-size:10.5pt;color:#222;background:#f0f4f8;padding:20px}
-.page{background:#fff;max-width:210mm;margin:0 auto;padding:16mm 14mm;box-shadow:0 2px 16px rgba(0,0,0,.15)}
-.hdr{background:${corHdr};margin-bottom:0}
-.hdr-titulo{font-size:13pt;font-weight:700;color:#fff;letter-spacing:.5px;padding:10px 14px;text-align:center}
-.hdr-sub{font-size:8.5pt;color:#ddd;text-align:center;background:${corHdr};padding:4px 14px;margin-bottom:14px}
-.info-grid{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid #888;margin-bottom:14px}
-.cel{padding:4px 8px;border-right:1px solid #ccc;border-bottom:1px solid #ccc;font-size:9.5pt}
+body{font-family:'Times New Roman',Times,serif;font-size:11pt;color:#1a1a1a;background:#e8eef4;padding:20px}
+.page{background:#fff;max-width:210mm;margin:0 auto;padding:22mm 20mm;box-shadow:0 1px 6px rgba(0,0,0,.1)}
+.hdr{border-top:3px double ${corHdr};border-bottom:3px double ${corHdr};margin-bottom:14px;padding:10px 0}
+.hdr-titulo{font-size:14pt;font-weight:700;color:${corHdr};letter-spacing:1px;text-align:center;text-transform:uppercase}
+.hdr-sub{font-size:10pt;color:#333;text-align:center;margin-top:4px;font-weight:600}
+.info-grid{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid #444;margin-bottom:16px}
+.cel{padding:6px 10px;border-right:1px solid #777;border-bottom:1px solid #777;font-size:10pt}
 .cel:nth-child(3n){border-right:none}.cel:nth-last-child(-n+3){border-bottom:none}
-.lbl{font-size:8pt;color:#666;display:block}.val{font-weight:700}
-.corpo{font-size:10.5pt;line-height:1.7;text-align:justify;margin-bottom:10px}
-.prazo{font-size:10.5pt;line-height:1.7;text-align:justify;margin:10px 0;padding:10px 14px;background:#f0f4f8;border-left:3px solid ${corHdr}}
-.base-legal{font-size:8.5pt;color:#555;border:1px solid #ccc;padding:8px 12px;margin-bottom:16px;line-height:1.5}
-.assinaturas{display:flex;gap:24px;margin-top:20px}
+.lbl{font-size:8pt;color:#444;display:block;text-transform:uppercase;letter-spacing:.3px}.val{font-weight:700}
+.corpo{font-size:11pt;line-height:1.7;text-align:justify;margin-bottom:10px;text-indent:2em}
+.prazo{font-size:11pt;line-height:1.7;text-align:justify;margin:10px 0;padding:10px 14px;border:1px solid #999;background:#fafafa}
+.base-legal{font-size:9pt;color:#333;border-top:1px solid #999;border-bottom:1px solid #999;padding:8px 0;margin:18px 0;line-height:1.5;text-align:center}
+.assinaturas{display:flex;gap:32px;margin-top:48px}
 .ass-bloco{flex:1;text-align:center}
-.ass-linha{border-top:1px solid #333;margin:30px auto 4px;width:90%}
-.ass-nome{font-size:9pt;color:#444}
-.rodape{text-align:center;font-size:8pt;color:#999;margin-top:20px;border-top:1px solid #eee;padding-top:8px}
+.ass-linha{border-top:1px solid #000;margin:0 auto 4px;width:92%}
+.ass-nome{font-size:9.5pt;color:#222}
+.rodape{text-align:center;font-size:8pt;color:#666;margin-top:24px;border-top:1px solid #ccc;padding-top:8px}
 .no-print{text-align:center;margin-bottom:16px}
-.no-print button{padding:7px 22px;background:${corHdr};color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11pt}
-@media print{body{background:#fff;padding:0}.page{box-shadow:none;padding:10mm 12mm}.no-print{display:none}}
+.no-print button{padding:8px 22px;background:${corHdr};color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:11pt;font-family:Arial,sans-serif}
+@media print{body{background:#fff;padding:0;font-family:'Times New Roman',Times,serif}.page{box-shadow:none;padding:14mm 16mm}.no-print{display:none}}
 </style></head><body>
-<div class="no-print"><button onclick="window.print()">🖨️ Imprimir / Salvar PDF</button></div>
+<div class="no-print"><button onclick="window.print()">Imprimir / Salvar PDF</button></div>
 <div class="page">
-  <div class="hdr"><div class="hdr-titulo">📅 ${_escHtml(tipoLabel)}</div></div>
-  <div class="hdr-sub">${_escHtml(empNome)}</div>
+  <div class="hdr">
+    <div class="hdr-titulo">${_escHtml(tipoLabel)}</div>
+    <div class="hdr-sub">${_escHtml(empNome)}</div>
+  </div>
   <div class="info-grid">
-    <div class="cel"><span class="lbl">COLABORADOR</span><span class="val">${_escHtml(f.nome||'')}</span></div>
-    <div class="cel"><span class="lbl">RE / MATRÍCULA</span><span class="val">${_escHtml(String(f.re||f.matricula||''))}</span></div>
-    <div class="cel"><span class="lbl">CPF</span><span class="val">${_escHtml(f.cpf||'')}</span></div>
-    <div class="cel"><span class="lbl">CARGO</span><span class="val">${_escHtml(f.cargo||'')}</span></div>
-    <div class="cel"><span class="lbl">DATA ADMISSÃO</span><span class="val">${admFmt}</span></div>
-    <div class="cel"><span class="lbl">DATA DO AVISO</span><span class="val">${dataAvisoFmt}</span></div>
-    ${tipo !== 'termino_contrato' ? `<div class="cel"><span class="lbl">TEMPO SERVIÇO</span><span class="val">${anos}</span></div>
-    <div class="cel"><span class="lbl">PRAZO (CLT)</span><span class="val">${totalDias} dias</span></div>` : ''}
-    <div class="cel"><span class="lbl">ÚLTIMO DIA</span><span class="val">${dataFimFmt||'—'}</span></div>
+    <div class="cel"><span class="lbl">Colaborador</span><span class="val">${_escHtml(f.nome||'')}</span></div>
+    <div class="cel"><span class="lbl">RE / Matrícula</span><span class="val">${_escHtml(String(f.re||f.matricula||''))}</span></div>
+    <div class="cel"><span class="lbl">CPF</span><span class="val">${_escHtml(cpfFmt)}</span></div>
+    <div class="cel"><span class="lbl">Cargo</span><span class="val">${_escHtml(f.cargo||'')}</span></div>
+    <div class="cel"><span class="lbl">Data de Admissão</span><span class="val">${admFmt}</span></div>
+    <div class="cel"><span class="lbl">Data do Aviso</span><span class="val">${dataAvisoFmt}</span></div>
+    ${tipo !== 'termino_contrato' ? `<div class="cel"><span class="lbl">Tempo de Serviço</span><span class="val">${anos}</span></div>
+    <div class="cel"><span class="lbl">Prazo (CLT)</span><span class="val">${totalDias} dias</span></div>` : ''}
+    <div class="cel"><span class="lbl">Último Dia</span><span class="val">${dataFimFmt||'—'}</span></div>
   </div>
   <p class="corpo">${textoIntro}</p>
   <div class="prazo">${textoPrazo}</div>

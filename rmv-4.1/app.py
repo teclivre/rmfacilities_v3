@@ -7492,6 +7492,16 @@ def fmt_data(s):
         return s
 
 
+def fmt_cpf(v):
+    """Formata CPF no padrão 123.456.789-10. Retorna string vazia se v vazio."""
+    if not v:
+        return ""
+    d = re.sub(r"\D", "", str(v))
+    if len(d) != 11:
+        return str(v).strip()
+    return f"{d[:3]}.{d[3:6]}.{d[6:9]}-{d[9:11]}"
+
+
 def fmt_mes(s):
     if not s:
         return ""
@@ -11931,7 +11941,7 @@ def _gerar_declaracao_acumulo_cargo_pdf(
         else "RM FACILITIES LTDA"
     )
     func_nome = (f.nome or "").strip()
-    func_cpf = f.cpf or ""
+    func_cpf = fmt_cpf(f.cpf or "")
     func_rg = f.rg or ""
     func_re = str(f.re or f.matricula or "")
     func_cargo = (f.cargo or "").strip()
@@ -12697,7 +12707,7 @@ def _gerar_aviso_previo_pdf(
     emp_cnpj = (getattr(emp_obj, "cnpj", None) or "").strip() if emp_obj else ""
     func_nome = (f.nome or "").strip()
     func_re = str(f.re or f.matricula or "")
-    func_cpf = (f.cpf or "").strip()
+    func_cpf = fmt_cpf((f.cpf or "").strip())
     func_cargo = (f.cargo or "").strip()
     func_adm = f.data_admissao or ""
 
@@ -19250,7 +19260,7 @@ def _build_doc_assinatura_pdf(arquivo, funcionario, url_root):
     story.append(Spacer(1, 5))
 
     fn_nome = funcionario.nome if funcionario else "-"
-    fn_cpf = funcionario.cpf if funcionario else "-"
+    fn_cpf = fmt_cpf(funcionario.cpf) if funcionario else "-"
     fn_emp = emp.nome if emp else ""
     detalhes = [
         ("Documento", arquivo.nome_arquivo or "-"),
