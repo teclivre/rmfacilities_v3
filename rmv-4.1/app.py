@@ -17860,6 +17860,36 @@ def _folha_recalcular_total(folha):
 def _folha_pode_editar(folha):
     return (folha.status or 'rascunho') == 'rascunho'
 
+@app.route('/api/folhas/evolucao', methods=['GET'])
+@lr
+def api_folhas_evolucao():
+    """Retorna totais de folhas agrupados por competência (últimos 13 meses)."""
+    emp = request.args.get('empresa_id', type=int)
+    tipo = (request.args.get('tipo') or '').strip()
+    hoje = localnow()
+    meses = []
+    ano, mes = hoje.year, hoje.month
+    for _ in range(12, -1, -1):
+        meses.append(f'{ano}-{str(mes).zfill(2)}')
+        mes -= 1
+        if mes < 1:
+            mes = 12
+            ano -= 1
+    meses.sort()
+    itens = []
+    for comp in meses:
+        q = FolhaPagamento.query.filter(FolhaPagamento.competencia == comp)
+        if emp:
+            q = q.filter(FolhaPagamento.empresa_id == emp)
+        if tipo:
+            q = q.filter(FolhaPagamento.tipo == tipo)
+        folhas = q.all()
+        total = sum(float(f.total_valor or 0) for f in folhas)
+        qtd_folhas = len(folhas)
+        qtd_func = sum(f.itens.count() for f in folhas)
+        itens.append({'competencia': comp, 'total': round(total, 2), 'qtd_folhas': qtd_folhas, 'qtd_func': qtd_func})
+    return jsonify({'ok': True, 'itens': itens})
+
 @app.route('/api/folhas', methods=['GET'])
 @lr
 def api_folhas_list():

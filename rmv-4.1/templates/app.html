@@ -984,6 +984,28 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
 
+      <!-- Gráfico mês a mês -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header" style="gap:10px;flex-wrap:wrap;align-items:center">
+          <span class="card-title">📈 Evolução de Pagamentos (mês a mês)</span>
+          <div class="f" style="margin:0;min-width:220px"><label style="font-size:11px">Empresa</label><select id="fp-graf-empresa" onchange="fpCarregarGrafico()" style="min-width:180px"><option value="">Todas</option></select></div>
+          <div class="f" style="margin:0;min-width:180px"><label style="font-size:11px">Tipo</label><select id="fp-graf-tipo" onchange="fpCarregarGrafico()" style="min-width:140px">
+            <option value="">Todos os tipos</option>
+            <option value="mensal">Mensal</option>
+            <option value="quinzenal">Quinzenal</option>
+            <option value="adiantamento">Adiantamento</option>
+            <option value="13o">13º</option>
+            <option value="ferias">Férias</option>
+            <option value="rescisao">Rescisão</option>
+            <option value="extra">Extra</option>
+          </select></div>
+          <button class="btn b-ghost b-sm" onclick="fpCarregarGrafico()">↺</button>
+        </div>
+        <div style="position:relative;height:220px;padding:8px 16px 16px 16px">
+          <canvas id="fp-chart-evolucao"></canvas>
+        </div>
+      </div>
+
       <!-- Histórico de Pagamento -->
       <div class="card" style="margin-top:16px">
         <div class="card-header" style="gap:10px;flex-wrap:wrap;align-items:center">
@@ -10566,13 +10588,14 @@ async function fpInicializar(){
   await fpPopularEmpresas();
   fpCompetenciaAtual();
   await fpCarregarFolhas();
+  fpCarregarGrafico();
 }
 
 async function fpPopularEmpresas(){
   try{
     const r = await api('/api/empresas');
     const lista = Array.isArray(r) ? r : (r?.empresas||[]);
-    const sels = ['fp-empresa','fp-mod-folha-empresa','fp-hist-empresa'];
+    const sels = ['fp-empresa','fp-mod-folha-empresa','fp-hist-empresa','fp-graf-empresa'];
     sels.forEach(id=>{
       const el = document.getElementById(id); if(!el) return;
       const curr = el.value;
@@ -11012,6 +11035,83 @@ function fpAbrirPrevia(){
     </tr></tfoot>`;
   document.getElementById('fp-previa-total').textContent = `Total a pagar: ${fpFmtMoeda(tot)}`;
   document.getElementById('fp-mod-previa').style.display='flex';
+}
+
+// ── Gráfico evolução mensal ──────────────────────────────────────────────────
+async function fpCarregarGrafico(){
+  const canvas = document.getElementById('fp-chart-evolucao');
+  if(!canvas || typeof Chart==='undefined') return;
+  const emp = (document.getElementById('fp-graf-empresa')?.value||'').trim();
+  const tipo = (document.getElementById('fp-graf-tipo')?.value||'').trim();
+  const p = new URLSearchParams();
+  if(emp) p.set('empresa_id', emp);
+  if(tipo) p.set('tipo', tipo);
+  const r = await api('/api/folhas/evolucao'+(p.toString()?'?'+p.toString():''));
+  if(!r?.itens) return;
+  const labels = r.itens.map(it=>{
+    const [a,m] = (it.competencia||'').split('-');
+    return `${m}/${(a||'').slice(2)}`;
+  });
+  const vals = r.itens.map(it=>Number(it.total||0));
+  const qtds = r.itens.map(it=>Number(it.qtd_func||0));
+  if(window._fpChartEvolucao) window._fpChartEvolucao.destroy();
+  window._fpChartEvolucao = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Total pago (R$)',
+          data: vals,
+          backgroundColor: 'rgba(32,93,138,.75)',
+          borderColor: '#205d8a',
+          borderWidth: 1,
+          yAxisID: 'y',
+        },
+        {
+          label: 'Funcionários',
+          data: qtds,
+          type: 'line',
+          borderColor: '#e67e22',
+          backgroundColor: 'rgba(230,126,34,.12)',
+          fill: false,
+          tension: .3,
+          yAxisID: 'y2',
+          pointRadius: 4,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: (ctx)=>{
+              if(ctx.datasetIndex===0) return ' R$ '+Number(ctx.raw).toLocaleString('pt-BR',{minimumFractionDigits:2});
+              return ` ${ctx.raw} func.`;
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          type: 'linear',
+          position: 'left',
+          ticks: { callback: (v)=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:0}), font:{size:10} },
+          grid: { color: 'rgba(0,0,0,.06)' }
+        },
+        y2: {
+          type: 'linear',
+          position: 'right',
+          ticks: { callback: (v)=>v+' f', font:{size:10} },
+          grid: { drawOnChartArea: false }
+        }
+      }
+    }
+  });
 }
 
 // ── Histórico de Pagamento ───────────────────────────────────────────────────
