@@ -4,6 +4,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 
@@ -173,11 +174,12 @@ class DocumentoAdapter(
     }
 
     private fun buildAndNotify() {
-        listItems.clear()
+        val oldItems = listItems.toList()
+        val newItems = mutableListOf<DocListItem>()
         // Pendentes (always visible, flat)
         if (pendentesData.isNotEmpty()) {
-            listItems.add(DocListItem.PendentesHeader)
-            pendentesData.forEach { listItems.add(DocListItem.Doc(it)) }
+            newItems.add(DocListItem.PendentesHeader)
+            pendentesData.forEach { newItems.add(DocListItem.Doc(it)) }
         }
         // Categorias (collapsible)
         val sortedCats = rawByCategoria.keys.sortedWith(
@@ -187,21 +189,47 @@ class DocumentoAdapter(
             val byYear = rawByCategoria[cat] ?: continue
             val totalCount = byYear.values.sumOf { it.size }
             val catExpanded = expandedCategories.contains(cat)
-            listItems.add(DocListItem.CategoryHeader(cat, totalCount, catExpanded))
+            newItems.add(DocListItem.CategoryHeader(cat, totalCount, catExpanded))
             if (catExpanded) {
                 val sortedYears = byYear.keys.sortedDescending()
                 for (year in sortedYears) {
                     val yearDocs = byYear[year] ?: continue
                     val yearKey = "$cat::$year"
                     val yearExpanded = expandedYears.contains(yearKey)
-                    listItems.add(DocListItem.YearHeader(cat, year, yearDocs.size, yearExpanded))
+                    newItems.add(DocListItem.YearHeader(cat, year, yearDocs.size, yearExpanded))
                     if (yearExpanded) {
-                        yearDocs.forEach { listItems.add(DocListItem.Doc(it)) }
+                        yearDocs.forEach { newItems.add(DocListItem.Doc(it)) }
                     }
                 }
             }
         }
-        notifyDataSetChanged()
+        val diff = DiffUtil.calculateDiff(DocListDiffCallback(oldItems, newItems), false)
+        listItems.clear()
+        listItems.addAll(newItems)
+        diff.dispatchUpdatesTo(this)
+    }
+
+    private class DocListDiffCallback(
+        private val old: List<DocListItem>,
+        private val new: List<DocListItem>
+    ) : DiffUtil.Callback() {
+        override fun getOldListSize() = old.size
+        override fun getNewListSize() = new.size
+
+        override fun areItemsTheSame(oldPos: Int, newPos: Int): Boolean {
+            val a = old[oldPos]; val b = new[newPos]
+            return when {
+                a is DocListItem.PendentesHeader && b is DocListItem.PendentesHeader -> true
+                a is DocListItem.CategoryHeader && b is DocListItem.CategoryHeader -> a.label == b.label
+                a is DocListItem.YearHeader && b is DocListItem.YearHeader -> a.categoria == b.categoria && a.year == b.year
+                a is DocListItem.Doc && b is DocListItem.Doc -> a.item.id == b.item.id
+                else -> false
+            }
+        }
+
+        override fun areContentsTheSame(oldPos: Int, newPos: Int): Boolean {
+            return old[oldPos] == new[newPos]
+        }
     }
 
     private fun categoryLabel(item: DocumentoItem): String {
