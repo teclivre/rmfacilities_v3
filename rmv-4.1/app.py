@@ -1671,6 +1671,8 @@ class FolhaPagamentoItem(db.Model):
             d['re']=f.re or f.matricula or ''
             d['cargo']=f.cargo or ''
             d['cpf']=f.cpf or ''
+            d['posto_operacional']=f.posto_operacional or ''
+            d['status_funcionario']=f.status or 'Ativo'
             emp=db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
             d['empresa_nome']=(emp.nome if emp else '')
         return d
