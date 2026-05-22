@@ -1,41 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Separador de data entre mensagens de dias diferentes -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  Separador de data (Hoje / Ontem / dd/MM/yyyy) — chip centralizado Material 3.
+  IDs preservados: tvDataSeparador.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:gravity="center_vertical"
-    android:paddingTop="12dp"
-    android:paddingBottom="8dp"
-    android:paddingStart="16dp"
-    android:paddingEnd="16dp">
+    android:paddingTop="14dp"
+    android:paddingBottom="10dp">
 
-    <View
-        android:layout_width="0dp"
-        android:layout_height="1dp"
-        android:layout_weight="1"
-        android:background="#22FFFFFF" />
-
-    <TextView
-        android:id="@+id/tvDataSeparador"
+    <com.google.android.material.card.MaterialCardView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="12dp"
-        android:layout_marginEnd="12dp"
-        android:paddingStart="10dp"
-        android:paddingEnd="10dp"
-        android:paddingTop="3dp"
-        android:paddingBottom="3dp"
-        android:background="@drawable/bg_home_card_soft"
-        android:textSize="11sp"
-        android:textColor="@color/mobile_text_secondary"
-        android:textStyle="bold"
-        android:letterSpacing="0.06" />
+        android:layout_gravity="center"
+        app:cardBackgroundColor="@color/mobile_surface_soft"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="0dp"
+        app:strokeColor="@color/mobile_card_stroke"
+        app:strokeWidth="1dp">
 
-    <View
-        android:layout_width="0dp"
-        android:layout_height="1dp"
-        android:layout_weight="1"
-        android:background="#22FFFFFF" />
-
-</LinearLayout>
+        <TextView
+            android:id="@+id/tvDataSeparador"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:textColor="@color/mobile_text_secondary"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08"
+            android:textAllCaps="true" />
+    </com.google.android.material.card.MaterialCardView>
+</FrameLayout>

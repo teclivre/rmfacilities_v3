@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Activity Mensagens (Chat + Avisos) — redesign Material 3.
+  IDs preservados para compatibilidade com MensagensActivity.kt.
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -6,15 +10,15 @@
     android:orientation="vertical"
     android:background="@drawable/bg_mobile_gradient">
 
-    <!-- Header -->
+    <!-- ── Header (status-bar safe) ─────────────────────────────────────── -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:paddingTop="52dp"
-        android:paddingBottom="12dp"
-        android:paddingStart="16dp"
+        android:paddingBottom="10dp"
+        android:paddingStart="8dp"
         android:paddingEnd="16dp">
 
         <com.google.android.material.button.MaterialButton
@@ -22,6 +26,10 @@
             style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:minHeight="40dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
             android:text="← Voltar"
             android:textColor="@color/mobile_text_primary"
             android:textSize="14sp" />
@@ -32,98 +40,117 @@
             android:layout_weight="1"
             android:text="Mensagens"
             android:textColor="@color/mobile_text_primary"
-            android:textSize="18sp"
+            android:textSize="19sp"
             android:textStyle="bold"
-            android:gravity="center" />
+            android:gravity="center"
+            android:letterSpacing="0.01" />
 
-        <!-- Badge de não lidas (visibilidade GONE quando zero) -->
         <TextView
             android:id="@+id/tvBadge"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
             android:background="@drawable/bg_badge_error"
             android:gravity="center"
-            android:textColor="@color/white"
+            android:textColor="@android:color/white"
             android:textSize="11sp"
             android:textStyle="bold"
             android:visibility="gone" />
     </LinearLayout>
 
-    <!-- Abas: Chat | Avisos -->
-    <LinearLayout
+    <!-- ── Abas Chat / Avisos (segmented Material 3) ───────────────────── -->
+    <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingBottom="8dp">
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="10dp"
+        app:cardBackgroundColor="@color/mobile_surface_soft"
+        app:cardCornerRadius="14dp"
+        app:cardElevation="0dp"
+        app:strokeColor="@color/mobile_card_stroke"
+        app:strokeWidth="1dp">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnTabChat"
-            android:layout_width="0dp"
-            android:layout_height="36dp"
-            android:layout_weight="1"
-            android:layout_marginEnd="4dp"
-            android:text="💬 Chat"
-            android:textSize="13sp"
-            app:cornerRadius="18dp"
-            app:backgroundTint="@color/mobile_tab_active"
-            android:textColor="@color/white" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="4dp">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnTabAvisos"
-            android:layout_width="0dp"
-            android:layout_height="36dp"
-            android:layout_weight="1"
-            android:layout_marginStart="4dp"
-            android:text="📢 Avisos"
-            android:textSize="13sp"
-            app:cornerRadius="18dp"
-            app:backgroundTint="@color/mobile_surface_soft"
-            android:textColor="@color/mobile_text_primary" />
-    </LinearLayout>
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnTabChat"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_weight="1"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="💬 Chat"
+                android:textSize="13sp"
+                android:textAllCaps="false"
+                app:cornerRadius="11dp"
+                app:elevation="0dp"
+                app:backgroundTint="@color/mobile_tab_active"
+                android:textColor="@android:color/white" />
 
-    <!-- Status última resposta RH -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnTabAvisos"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="📢 Avisos"
+                android:textSize="13sp"
+                android:textAllCaps="false"
+                app:cornerRadius="11dp"
+                app:elevation="0dp"
+                app:backgroundTint="@android:color/transparent"
+                android:textColor="@color/mobile_text_primary" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- ── Status última resposta RH (pílula sutil) ───────────────────── -->
     <TextView
         android:id="@+id/tvStatusRh"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="6dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="4dp"
         android:paddingBottom="4dp"
-        android:textColor="@color/mobile_text_secondary"
+        android:background="@drawable/bg_chat_file_chip_rh"
+        android:textColor="@color/mobile_tab_active"
         android:textSize="11sp"
+        android:textStyle="bold"
         android:gravity="center"
         android:visibility="gone" />
 
-    <!-- Painel Chat -->
+    <!-- ── Painel Chat ─────────────────────────────────────────────────── -->
     <LinearLayout
         android:id="@+id/panelChat"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical">
 
-        <!-- SwipeRefreshLayout permite puxar para recarregar o chat -->
         <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
             android:id="@+id/swipeChat"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1">
 
-            <!-- Lista de mensagens -->
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rvMensagens"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:background="@android:color/transparent"
                 android:clipToPadding="false"
-                android:paddingTop="8dp"
+                android:paddingTop="4dp"
                 android:paddingBottom="8dp"
                 android:scrollbars="none" />
-
         </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
-        <!-- Barra de progresso: visível durante envio de mensagem -->
         <ProgressBar
             android:id="@+id/progressEnvio"
             style="?android:attr/progressBarStyleHorizontal"
@@ -133,77 +160,100 @@
             android:visibility="gone"
             android:progressTint="@color/mobile_tab_active" />
 
-        <!-- Caixa de envio -->
-        <LinearLayout
+        <!-- Composer card -->
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="@drawable/bg_home_card_soft">
-
-            <!-- Contador de caracteres -->
-            <TextView
-                android:id="@+id/tvCharCount"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="end"
-                android:paddingEnd="14dp"
-                android:paddingTop="4dp"
-                android:text="0/1000"
-                android:textSize="10sp"
-                android:textColor="@color/mobile_text_secondary"
-                android:visibility="gone" />
+            android:layout_marginStart="10dp"
+            android:layout_marginEnd="10dp"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="10dp"
+            app:cardBackgroundColor="@color/mobile_card_surface"
+            app:cardCornerRadius="22dp"
+            app:cardElevation="2dp"
+            app:strokeColor="@color/mobile_card_stroke"
+            app:strokeWidth="1dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingStart="8dp"
-                android:paddingEnd="12dp"
-                android:paddingTop="6dp"
-                android:paddingBottom="10dp">
+                android:orientation="vertical">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnAnexar"
-                    style="@style/Widget.MaterialComponents.Button.TextButton"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:padding="0dp"
-                    android:text="📎"
-                    android:textSize="20sp"
-                    app:backgroundTint="@android:color/transparent" />
-
-                <EditText
-                    android:id="@+id/etMensagem"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="4dp"
-                    android:background="@drawable/bg_input"
-                    android:hint="Digite sua mensagem..."
-                    android:textColorHint="@color/mobile_text_secondary"
-                    android:textColor="@color/mobile_text_primary"
-                    android:textSize="14sp"
-                    android:padding="12dp"
-                    android:maxLines="4"
-                    android:maxLength="1000"
-                    android:inputType="textMultiLine|textCapSentences"
-                    android:imeOptions="actionSend|flagNoEnterAction" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnEnviar"
+                <TextView
+                    android:id="@+id/tvCharCount"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:text="Enviar"
-                    android:textSize="13sp"
-                    app:backgroundTint="@color/mobile_tab_active"
-                    android:textColor="@color/white" />
+                    android:layout_gravity="end"
+                    android:paddingEnd="16dp"
+                    android:paddingTop="6dp"
+                    android:text="0/1000"
+                    android:textSize="10sp"
+                    android:textColor="@color/mobile_text_secondary"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="6dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnAnexar"
+                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        android:layout_width="44dp"
+                        android:minWidth="0dp"
+                        android:layout_height="44dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:padding="0dp"
+                        android:text="📎"
+                        android:textSize="20sp"
+                        android:textColor="@color/mobile_text_secondary"
+                        app:backgroundTint="@android:color/transparent"
+                        app:cornerRadius="22dp" />
+
+                    <EditText
+                        android:id="@+id/etMensagem"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:background="@android:color/transparent"
+                        android:hint="Digite sua mensagem…"
+                        android:textColorHint="@color/mobile_text_secondary"
+                        android:textColor="@color/mobile_text_primary"
+                        android:textSize="14.5sp"
+                        android:padding="10dp"
+                        android:minHeight="44dp"
+                        android:maxLines="4"
+                        android:maxLength="1000"
+                        android:inputType="textMultiLine|textCapSentences"
+                        android:imeOptions="actionSend|flagNoEnterAction" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnEnviar"
+                        style="@style/Widget.MaterialComponents.Button.UnelevatedButton"
+                        android:layout_width="44dp"
+                        android:minWidth="0dp"
+                        android:layout_height="44dp"
+                        android:layout_marginStart="6dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:padding="0dp"
+                        android:text="➤"
+                        android:textSize="18sp"
+                        android:textColor="@android:color/white"
+                        app:backgroundTint="@color/mobile_tab_active"
+                        app:cornerRadius="22dp" />
+                </LinearLayout>
             </LinearLayout>
-        </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
     </LinearLayout>
 
-    <!-- Painel Avisos -->
+    <!-- ── Painel Avisos ───────────────────────────────────────────────── -->
     <LinearLayout
         android:id="@+id/panelAvisos"
         android:layout_width="match_parent"
@@ -218,7 +268,7 @@
             android:layout_weight="1"
             android:background="@android:color/transparent"
             android:clipToPadding="false"
-            android:paddingTop="8dp"
+            android:paddingTop="4dp"
             android:paddingBottom="8dp"
             android:scrollbars="none" />
 
@@ -233,5 +283,4 @@
             android:textSize="14sp"
             android:visibility="gone" />
     </LinearLayout>
-
 </LinearLayout>
