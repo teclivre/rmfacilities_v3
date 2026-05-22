@@ -26320,6 +26320,7 @@ def api_folhas_export_xlsx(fid):
         "#",
         "RE",
         "Nome",
+        "CPF",
         "Cargo",
         "Salário Base",
         "Adicionais",
@@ -26341,6 +26342,7 @@ def api_folhas_export_xlsx(fid):
                 i,
                 (func.re or func.matricula or "") if func else "",
                 (func.nome or "") if func else "",
+                (func.cpf or "") if func else "",
                 (func.cargo or "") if func else "",
                 float(it.salario_base or 0),
                 float(it.total_adicional or 0),
@@ -26350,16 +26352,17 @@ def api_folhas_export_xlsx(fid):
         )
         total += float(it.total_pagar or 0)
     ws.append([])
-    ws.append(["", "", "", "TOTAL", "", "", "", round(total, 2)])
+    ws.append(["", "", "", "", "TOTAL", "", "", "", round(total, 2)])
     for col_letter, width in [
         ("A", 6),
         ("B", 10),
         ("C", 36),
-        ("D", 24),
-        ("E", 14),
+        ("D", 16),
+        ("E", 24),
         ("F", 14),
         ("G", 14),
-        ("H", 16),
+        ("H", 14),
+        ("I", 16),
     ]:
         ws.column_dimensions[col_letter].width = width
     import io as _io
