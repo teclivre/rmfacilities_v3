@@ -3491,7 +3491,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           display:block!important;
           position:fixed!important;
           top:0!important;
-          left:78px!important; /* largura sidebar colapsada */
+          left:290px!important; /* largura sidebar expandida */
           right:0!important;
           bottom:0!important;
           overflow-y:auto;
@@ -3502,6 +3502,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           animation:none!important;
         }
         @media(max-width:768px){ #pg-assinaturas.on{left:0;top:52px}}
+        body.sidebar-collapsed #pg-assinaturas.on{left:78px!important}
         #pg-assinaturas .asi-shell{display:flex;flex-direction:row;align-items:flex-start;gap:16px;width:100%;margin:0}
         #pg-assinaturas .asi-side{flex:0 0 250px;min-width:0}
         #pg-assinaturas .asi-main{flex:1 1 auto;min-width:0}
