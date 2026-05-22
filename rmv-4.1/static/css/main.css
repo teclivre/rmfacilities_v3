@@ -51,7 +51,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;ba
 .nav-item.sub{opacity:.94}
 .nav-label{white-space:nowrap}
 .nav-sep{border:none;border-top:1px solid rgba(255,255,255,.08);margin:6px 0}
-.content{flex:1;padding:20px 22px;overflow:auto;min-width:0}
+.content{flex:1;padding:20px 22px;overflow:auto;min-width:0;overflow-anchor:none}
 
 .autosave-global-badge{position:fixed;right:16px;bottom:16px;z-index:1200;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:2px solid rgba(126,229,191,.38);background:rgba(10,26,41,.80);backdrop-filter:blur(6px);box-shadow:0 4px 14px rgba(0,0,0,.28);cursor:default;transition:border-color .3s}
 .autosave-global-badge .dot{width:11px;height:11px;border-radius:50%;background:var(--verde);box-shadow:0 0 0 3px rgba(22,131,87,.22);transition:background .3s,box-shadow .3s}
