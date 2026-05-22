@@ -3485,12 +3485,26 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div id="st-assinaturas" class="st"></div>
 
       <style>
-        /* LAYOUT LIMPO — reescrito do zero */
-        #pg-assinaturas{margin:0;padding:0}
-        #pg-assinaturas.on{display:flex!important;flex-direction:column;gap:0;align-items:stretch;min-height:0}
+        /* LAYOUT: position:fixed — ignora scroll da .content completamente */
+        #pg-assinaturas{display:none;margin:0;padding:0}
+        #pg-assinaturas.on{
+          display:block!important;
+          position:fixed!important;
+          top:0!important;
+          left:78px!important; /* largura sidebar colapsada */
+          right:0!important;
+          bottom:0!important;
+          overflow-y:auto;
+          overflow-x:hidden;
+          overflow-anchor:none;
+          padding:20px 22px;
+          z-index:10;
+          animation:none!important;
+        }
+        @media(max-width:768px){#pg-assinaturas.on{left:0;top:52px}}
         #pg-assinaturas .asi-shell{display:flex;flex-direction:row;align-items:flex-start;gap:16px;width:100%;margin:0}
-        #pg-assinaturas .asi-side{flex:0 0 250px;min-width:0;align-self:flex-start;position:static}
-        #pg-assinaturas .asi-main{flex:1 1 auto;min-width:0;align-self:flex-start}
+        #pg-assinaturas .asi-side{flex:0 0 250px;min-width:0}
+        #pg-assinaturas .asi-main{flex:1 1 auto;min-width:0}
         #pg-assinaturas .asi-side .subaba-bloco{width:100%;text-align:left}
         #pg-assinaturas .asi-upload-drop{border:2px dashed var(--borda);border-radius:12px;padding:20px;background:var(--branco);cursor:pointer;transition:.15s}
         #pg-assinaturas .asi-upload-drop.drag{border-color:var(--azul);background:var(--branco);box-shadow:0 0 0 3px rgba(32,93,138,.12)}
