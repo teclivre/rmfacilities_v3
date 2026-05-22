@@ -18072,12 +18072,21 @@ def api_folhas_marcar_paga(fid):
 @app.route('/api/folhas/disponiveis-funcionarios', methods=['GET'])
 @lr
 def api_folhas_funcionarios_disponiveis():
-    """Lista funcionários ativos que podem ser adicionados a uma folha (não inclusos ainda)."""
+    """Lista funcionários que podem ser adicionados a uma folha (não inclusos ainda)."""
     folha_id = request.args.get('folha_id', type=int)
     emp = request.args.get('empresa_id', type=int)
+    tipo_folha = (request.args.get('tipo') or '').strip().lower()
+    posto_filtro = (request.args.get('posto') or '').strip().lower()
     q_str = (request.args.get('q') or '').strip().lower()
     from sqlalchemy import or_ as _or_
-    q = Funcionario.query.filter(_or_(Funcionario.status == 'Ativo', Funcionario.status.is_(None), Funcionario.status == ''))
+    # Rescisão: inclui demitidos; demais tipos: apenas ativos
+    if tipo_folha == 'rescisao':
+        q = Funcionario.query.filter(_or_(
+            Funcionario.status == 'Ativo', Funcionario.status.is_(None), Funcionario.status == '',
+            Funcionario.status == 'Demitido'
+        ))
+    else:
+        q = Funcionario.query.filter(_or_(Funcionario.status == 'Ativo', Funcionario.status.is_(None), Funcionario.status == ''))
     if emp:
         q = q.filter(Funcionario.empresa_id == emp)
     ja = set()
@@ -18093,6 +18102,9 @@ def api_folhas_funcionarios_disponiveis():
             hay = f"{func.nome or ''} {func.re or ''} {func.matricula or ''} {func.cargo or ''} {func.cpf or ''}".lower()
             if q_str not in hay:
                 continue
+        posto_func = (func.posto_operacional or '').strip()
+        if posto_filtro and posto_func.lower() != posto_filtro:
+            continue
         emp_o = db.session.get(Empresa, func.empresa_id) if func.empresa_id else None
         out.append({
             'id': func.id,
@@ -18103,6 +18115,8 @@ def api_folhas_funcionarios_disponiveis():
             'empresa_id': func.empresa_id,
             'empresa_nome': (emp_o.nome if emp_o else ''),
             'salario': float(func.salario or 0),
+            'posto_operacional': posto_func,
+            'status': func.status or 'Ativo',
         })
     return jsonify(out)
 

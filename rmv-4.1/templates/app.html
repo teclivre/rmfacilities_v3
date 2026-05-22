@@ -917,6 +917,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div class="card-header" style="flex-direction:column;align-items:stretch;gap:6px">
             <span class="card-title">Funcionários disponíveis</span>
             <input id="fp-busca-func" type="text" placeholder="Buscar por nome, RE, cargo…" oninput="fpFiltrarDisponiveis()" style="width:100%;padding:6px 8px;font-size:13px">
+            <select id="fp-posto-func" onchange="fpFiltrarDisponiveis()" style="width:100%;padding:6px 8px;font-size:13px"><option value="">Todos os postos</option></select>
             <div style="font-size:11px;color:var(--text-muted)">Arraste para a folha à direita para incluir.</div>
           </div>
           <div id="fp-lista-disponiveis" style="overflow-y:auto;padding:8px 12px;flex:1"></div>
@@ -10498,6 +10499,7 @@ const FP_STATE = {
   folhas: [],
   disponiveis: [],
   filtroDispText: '',
+  filtroDispPosto: '',
 };
 
 function fpFmtMoeda(v){
@@ -10737,9 +10739,18 @@ async function fpCarregarDisponiveis(){
   const p = new URLSearchParams();
   p.set('folha_id', f.id);
   if(f.empresa_id) p.set('empresa_id', f.empresa_id);
+  if(f.tipo) p.set('tipo', f.tipo);
   if(FP_STATE.filtroDispText) p.set('q', FP_STATE.filtroDispText);
   const r = await api('/api/folhas/disponiveis-funcionarios?'+p.toString());
   FP_STATE.disponiveis = Array.isArray(r) ? r : [];
+  // Popula select de posto preservando seleção atual
+  const sel = document.getElementById('fp-posto-func');
+  if(sel){
+    const curr = sel.value;
+    const postos = [...new Set(FP_STATE.disponiveis.map(x=>(x.posto_operacional||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+    sel.innerHTML = '<option value="">Todos os postos</option>' + postos.map(p=>`<option value="${p}">${p}</option>`).join('');
+    if(postos.includes(curr)) sel.value = curr;
+  }
   fpRenderDisponiveis();
 }
 
@@ -10747,26 +10758,34 @@ function fpRenderDisponiveis(){
   const cont = document.getElementById('fp-lista-disponiveis');
   if(!cont) return;
   const editavel = FP_STATE.folhaSelecionada && FP_STATE.folhaSelecionada.status === 'rascunho';
-  if(!FP_STATE.disponiveis.length){
+  const postoFiltro = (FP_STATE.filtroDispPosto||'').toLowerCase();
+  const lista = postoFiltro
+    ? FP_STATE.disponiveis.filter(x=>(x.posto_operacional||'').toLowerCase()===postoFiltro)
+    : FP_STATE.disponiveis;
+  if(!lista.length){
     cont.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:10px">Nenhum funcionário disponível.</div>';
     return;
   }
-  cont.innerHTML = FP_STATE.disponiveis.map(f=>`
+  cont.innerHTML = lista.map(f=>{
+    const isDemitido = (f.status||'').toLowerCase()==='demitido';
+    const statusBadge = isDemitido ? '<span style="font-size:10px;background:#fde8e8;color:#c0392b;padding:1px 6px;border-radius:99px;font-weight:700;margin-left:4px">Demitido</span>' : '';
+    return `
     <div ${editavel?'draggable="true"':''} ondragstart="fpOnDragStart(event, ${f.id})"
          style="border:1px solid var(--borda);border-radius:8px;padding:8px 10px;margin-bottom:6px;${editavel?'cursor:grab':'cursor:default;opacity:.7'};display:flex;align-items:center;gap:8px">
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fpEsc(f.nome)}</div>
-        <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fpEsc(f.re)} ${f.cargo?'• '+fpEsc(f.cargo):''}</div>
+        <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fpEsc(f.nome)}${statusBadge}</div>
+        <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fpEsc(f.re)} ${f.cargo?'• '+fpEsc(f.cargo):''}${f.posto_operacional?' • '+fpEsc(f.posto_operacional):''}</div>
         ${f.empresa_nome?'<div style="font-size:10px;color:var(--text-muted)">'+fpEsc(f.empresa_nome)+'</div>':''}
       </div>
       ${editavel?`<button class="btn b-az b-sm" onclick="fpAdicionarFuncionarios([${f.id}])" title="Adicionar">+</button>`:''}
     </div>
-  `).join('');
+  `}).join('');
 }
 
 function fpFiltrarDisponiveis(){
   FP_STATE.filtroDispText = (document.getElementById('fp-busca-func')?.value||'').trim();
-  fpCarregarDisponiveis();
+  FP_STATE.filtroDispPosto = (document.getElementById('fp-posto-func')?.value||'').trim().toLowerCase();
+  fpRenderDisponiveis();
 }
 
 function fpOnDragStart(ev, fid){
