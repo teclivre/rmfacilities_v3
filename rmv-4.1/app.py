@@ -209,7 +209,6 @@ def lr(f):
 APP_TZ=ZoneInfo('America/Sao_Paulo')
 
 def _same_origin_request(req):
-    global _strict_origin_check
     if not _strict_origin_check:
         return True
     host=(req.host_url or '').rstrip('/').lower()
@@ -1048,9 +1047,9 @@ class Usuario(db.Model):
         return pw_check(self.senha, s)
     def to_dict(self):
         try: a=json.loads(self.areas or '[]')
-        except: a=[]
+        except Exception: a=[]
         try: p=json.loads(self.permissoes or '{}')
-        except: p={}
+        except Exception: p={}
         if not isinstance(p,dict): p={}
         return {
             'id':self.id,
@@ -1432,7 +1431,7 @@ class Funcionario(db.Model):
     def to_dict(self):
         d={c.name:getattr(self,c.name) for c in self.__table__.columns}
         try: d['areas']=json.loads(self.areas or '[]')
-        except: d['areas']=[]
+        except Exception: d['areas']=[]
         if self.data_nascimento:
             d['data_nascimento']=self.data_nascimento.isoformat()
         return d
@@ -1966,7 +1965,7 @@ class WhatsAppConversa(db.Model):
         d['ultima_msg_fmt']=self.ultima_msg.strftime('%d/%m/%Y %H:%M') if self.ultima_msg else ''
         try:
             d['contexto']=json.loads(self.contexto or '{}')
-        except:
+        except Exception:
             d['contexto']={}
         return d
 
@@ -2033,7 +2032,7 @@ class ComunicadoApp(db.Model):
     lidos_por_json=db.Column(db.Text,default='[]')
     def lidos_por(self):
         try: return json.loads(self.lidos_por_json or '[]')
-        except: return []
+        except Exception: return []
     def marcar_lido(self,fid):
         lst=self.lidos_por()
         if fid not in lst:
@@ -4171,7 +4170,7 @@ def _processa_dialogo_holerite(conversa_id,numero,texto):
     
     try:
         ctx=json.loads(conversa.contexto or '{}')
-    except:
+    except Exception:
         ctx={}
     
     estado=ctx.get('holerite_estado')
@@ -4392,11 +4391,12 @@ def _processa_dialogo_holerite(conversa_id,numero,texto):
             if erros:
                 msg+=f"\n\nHouve falha no envio para: {', '.join(erros)}."
             return msg
-        except Exception as e:
+        except Exception:
+            app.logger.exception('Erro ao processar envio de holerite via assistente')
             ctx['holerite_estado']=None
             conversa.contexto=json.dumps(ctx,ensure_ascii=False)
             db.session.commit()
-            return f"Desculpe, houve um erro ao enviar seu holerite. Tente novamente mais tarde."
+            return "Desculpe, houve um erro ao enviar seu holerite. Tente novamente mais tarde."
     
     # Padrão: reinicia o diálogo
     ctx['holerite_estado']=None
@@ -4422,7 +4422,7 @@ def ai_wa_reply(numero,texto,historico=None):
                 resposta_holerite=_processa_dialogo_holerite(conversa.id,numero,txt)
                 if resposta_holerite is not None:
                     return resposta_holerite
-        except:
+        except Exception:
             pass
     
     cfg=ai_wa_cfg()
@@ -4848,7 +4848,7 @@ DOC_CAT_LABEL={
 
 def jloads(v,dv):
     try: return json.loads(v) if v else dv
-    except: return dv
+    except Exception: return dv
 
 def to_num(s,dec=False):
     if s is None:
@@ -4896,7 +4896,7 @@ def next_cli_num():
     max_n=0
     for (n,) in db.session.query(Cliente.numero).all():
         try: max_n=max(max_n,int(str(n or '').strip()))
-        except: pass
+        except Exception: pass
     return str(max_n+1).zfill(3)
 
 # Assinaturas de magic bytes de tipos perigosos a bloquear em uploads gen\u00e9ricos
@@ -5780,7 +5780,7 @@ def ensure_cols(table, defs):
         db.session.commit()
 
 def sc_cfg(k,v):
-    global _gc_cache, _gc_cache_ts
+    global _gc_cache_ts
     c=Config.query.filter_by(chave=k).first()
     if c: c.valor=str(v)
     else: db.session.add(Config(chave=k,valor=str(v)))
@@ -5790,9 +5790,9 @@ def sc_cfg(k,v):
 
 def prox_num():
     try: base=int(gc('num_base','100'))
-    except: base=100
+    except Exception: base=100
     try: ultima_cfg=int(gc('num_ultima','0'))
-    except: ultima_cfg=0
+    except Exception: ultima_cfg=0
     ul=Medicao.query.order_by(Medicao.id.desc()).first()
     ultima_db=parse_doc_num(ul.numero) if ul and ul.numero else 0
     prox=max(base,ultima_cfg,ultima_db)+1
@@ -5812,18 +5812,18 @@ def dr(f):
 
 def fmt_brl(v):
     try: return 'R$ {:,.2f}'.format(float(v or 0)).replace(',','X').replace('.',',').replace('X','.')
-    except: return 'R$ 0,00'
+    except Exception: return 'R$ 0,00'
 
 def fmt_data(s):
     if not s: return ''
     try: p=s.split('-'); return f"{p[2]}/{p[1]}/{p[0]}"
-    except: return s
+    except Exception: return s
 
 def fmt_mes(s):
     if not s: return ''
     ms=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
     try: y,m=s.split('-'); return f"{ms[int(m)-1]}/{y}"
-    except: return s
+    except Exception: return s
 
 LOGO_PATH=os.path.join(os.path.dirname(__file__),'static','img','logo.png')
 LOGO_URL='https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png'
@@ -5896,7 +5896,7 @@ except Exception:
 def get_logo():
     if not os.path.exists(LOGO_PATH):
         try: urllib.request.urlretrieve(LOGO_URL,LOGO_PATH)
-        except: pass
+        except Exception: pass
     return LOGO_PATH if os.path.exists(LOGO_PATH) else None
 
 def _get_logo_path_for_pdf(empresa=None):
@@ -5908,7 +5908,7 @@ def _get_logo_path_for_pdf(empresa=None):
             emp_logo = os.path.join(os.path.dirname(__file__), 'static', 'img', f'logo_emp_{emp_id}.png')
             if not os.path.exists(emp_logo):
                 try: urllib.request.urlretrieve(logo_url, emp_logo)
-                except: pass
+                except Exception: pass
             if os.path.exists(emp_logo):
                 return emp_logo
     return get_logo()
@@ -7523,7 +7523,7 @@ def api_deletar_funcionario(id):
     arqs=FuncionarioArquivo.query.filter_by(funcionario_id=id).all()
     for a in arqs:
         try: os.remove(os.path.join(UPLOAD_ROOT,a.caminho))
-        except: pass
+        except Exception: pass
         db.session.delete(a)
     PontoMarcacao.query.filter_by(funcionario_id=id).delete()
     PontoAjuste.query.filter_by(funcionario_id=id).delete()
@@ -9044,7 +9044,7 @@ def _gerar_aviso_previo_pdf(funcionario, tipo='empresa_trabalhado', empresa=None
     info_data = [
         campo('NOME:', func_nome) + campo('RE/MAT.:', func_re) + campo('CPF:', func_cpf),
         campo('CARGO:', func_cargo) + campo('ADMISSÃO:', data_adm_fmt) + campo('TEMPO SERVIÇO:', f'{anos_servico} ano(s)'),
-        campo('DATA DO AVISO:', data_aviso_fmt) + campo(f'PRAZO (CLT):', f'{total_dias} dias') + campo('ÚLTIMO DIA:', data_fim_fmt),
+        campo('DATA DO AVISO:', data_aviso_fmt) + campo('PRAZO (CLT):', f'{total_dias} dias') + campo('ÚLTIMO DIA:', data_fim_fmt),
     ]
     info_table = Table(info_data, colWidths=[2*cm, 4.5*cm, 2*cm, 3.5*cm, 2.5*cm, 4.0*cm])
     info_table.setStyle(TableStyle([
@@ -9625,7 +9625,7 @@ def api_gerar_proposta_comercial():
         db.session.add(proposta_rec)
         db.session.commit()
         proposta_id = proposta_rec.id
-    except Exception as e:
+    except Exception:
         app.logger.exception('Erro ao salvar PropostaComercial no banco')
         db.session.rollback()
         # Fallback: usa número por timestamp para não bloquear a geração
@@ -10313,7 +10313,7 @@ def api_app_funcionario_stepup_solicitar():
     if not arquivo_id:
         return jsonify({'erro':'arquivo_id obrigatorio'}),400
     try: arquivo_id=int(arquivo_id)
-    except: return jsonify({'erro':'arquivo_id invalido'}),400
+    except Exception: return jsonify({'erro':'arquivo_id invalido'}),400
 
     a=db.session.get(FuncionarioArquivo, arquivo_id)
     if not a or a.funcionario_id!=f.id:
@@ -12691,7 +12691,7 @@ def api_funcionario_delete_arquivo(id):
     fid=a.funcionario_id
     cam=a.caminho
     try: os.remove(os.path.join(UPLOAD_ROOT,a.caminho))
-    except: pass
+    except Exception: pass
     db.session.delete(a); db.session.commit()
     audit_event('funcionario_arquivo_delete','usuario',session.get('uid'),'funcionario',fid,True,{'arquivo_id':id,'caminho':cam})
     return jsonify({'ok':True})
@@ -13168,7 +13168,7 @@ def api_func_doc_assinatura_confirmar(token):
                     wa_send_pdf(tel,tmp_file,pdf_nome,
                         f"✅ Documento assinado: {a.nome_arquivo}\nCódigo: {a.ass_codigo}\nValidar: {validacao_link}")
                     try: os.remove(tmp_file)
-                    except: pass
+                    except Exception: pass
                 enviado_wa=True
             except Exception:
                 pass
@@ -13252,7 +13252,7 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
         t=(v or '').strip()
         if not t: return '-'
         try: return datetime.fromisoformat(t.replace('Z','+00:00')).strftime('%d/%m/%Y %H:%M')
-        except: return t
+        except Exception: return t
 
     emp=None
     if funcionario and funcionario.empresa_id:
@@ -15280,7 +15280,7 @@ def api_del_oper_doc(id):
     d=db.get_or_404(OperacionalDocumento, id)
     if d.caminho:
         try: os.remove(os.path.join(UPLOAD_ROOT,d.caminho))
-        except: pass
+        except Exception: pass
     db.session.delete(d); db.session.commit(); return jsonify({'ok':True})
 
 @app.route('/api/operacional/documentos/<int:id>/download')
@@ -16197,9 +16197,8 @@ def _calcular_horas_noturnas_funcionario(funcionario_id, data_inicio_str, data_f
                 
                 dia_atual += timedelta(days=1)
     
-    except Exception as e:
-        # Log silencioso em caso de erro
-        pass
+    except Exception:
+        app.logger.exception('Erro ao calcular horas noturnas no período')
     
     return total_noturno_min
 
@@ -19168,7 +19167,7 @@ def _build_pdf(d):
     svcs=d.get('svcs',d.get('servicos',[]));
     if isinstance(svcs,str):
         try: svcs=json.loads(svcs)
-        except: svcs=[]
+        except Exception: svcs=[]
     sub=sum(float(s.get('vtot',0)) for s in svcs)
     por=d.get('criado_por',session.get('nome','')); now=localnow()
 
@@ -19222,7 +19221,7 @@ def _build_pdf(d):
 
     if ass_status=='assinado':
         ass_quando='' if not ass_em else (ass_em.strftime('%d/%m/%Y %H:%M') if isinstance(ass_em,datetime) else str(ass_em))
-        selo_txt=f'<b>ASSINADO DIGITALMENTE</b>'
+        selo_txt='<b>ASSINADO DIGITALMENTE</b>'
         if ass_quando:
             selo_txt+=f' · {ass_quando}'
         if ass_codigo:
@@ -19368,7 +19367,7 @@ def _build_pdf(d):
             ass_quem=f'{ass_quem} - {ass_cargo}'
         ass_quando=_fmt_dt(ass_em)
         linhas=[
-            f'<b>Documento assinado eletronicamente</b>',
+            '<b>Documento assinado eletronicamente</b>',
             f'Assinante: {ass_quem}',
             f'CPF: {ass_cpf or "-"}',
             f'Data/hora: {ass_quando or "-"}',
@@ -20287,7 +20286,7 @@ def api_medicao_enviar_email(id):
                f'Em caso de dúvidas, entre em contato conosco.\n\nAtenciosamente,\n{emp.nome if emp else "RM Facilities"}')
         smtp_send_text(destino, assunto, corpo, anexos=[{'path':tmp_path,'name':nome_arq}])
         try: os.remove(tmp_path)
-        except: pass
+        except Exception: pass
         audit_event('medicao_email_enviado','usuario',session.get('uid'),'medicao',m.id,True,{'dest':destino,'numero':numero})
         return jsonify({'ok':True,'enviado_para':destino})
     except Exception as ex:
@@ -20332,7 +20331,7 @@ def api_medicao_encargos(id):
     venc=None
     if m.dt_vencimento:
         try: venc=_date.fromisoformat(m.dt_vencimento)
-        except: pass
+        except Exception: pass
     dias_atraso=max(0,(_date.today()-venc).days) if venc else 0
     return jsonify({'valor_juros':m.valor_juros or 0,'valor_multa':m.valor_multa or 0,
                     'total_encargos':(m.valor_juros or 0)+(m.valor_multa or 0),
@@ -20388,7 +20387,7 @@ def api_cobrancas_processar():
     for m in medicoes_emitidas:
         if not m.dt_vencimento: continue
         try: venc=_date.fromisoformat(m.dt_vencimento)
-        except: continue
+        except Exception: continue
         dias=(hoje-venc).days  # positivo = atrasado
         tipo=None
         if 'D-5' in tipos_solicitados and (venc-hoje).days==5: tipo='D-5'
@@ -20457,9 +20456,9 @@ def _parse_ofx(texto):
     for t in transacoes:
         dtraw=t.get('DTPOSTED','')[:8]
         try: dt=f'{dtraw[:4]}-{dtraw[4:6]}-{dtraw[6:8]}'
-        except: dt=''
+        except Exception: dt=''
         try: valor=float(t.get('TRNAMT','0').replace(',','.'))
-        except: valor=0.0
+        except Exception: valor=0.0
         tipo='C' if valor>=0 else 'D'
         resultado.append({'data_mov':dt,'valor':abs(valor),'historico':t.get('MEMO',t.get('NAME','')),'num_doc':t.get('FITID',''),'tipo':tipo})
     return resultado
@@ -20553,14 +20552,14 @@ def api_conciliacao_auto():
         melhor=None
         if t.data_mov:
             try: dt_mov=_d.fromisoformat(t.data_mov)
-            except: dt_mov=None
+            except Exception: dt_mov=None
             if dt_mov:
                 for c in candidatas:
                     if c.dt_vencimento:
                         try:
                             venc=_d.fromisoformat(c.dt_vencimento)
                             if abs((dt_mov-venc).days)<=15: melhor=c; break
-                        except: pass
+                        except Exception: pass
         if melhor is None and len(candidatas)==1: melhor=candidatas[0]
         if melhor:
             t.medicao_id=melhor.id; t.conciliado_em=utcnow(); conciliadas+=1
@@ -20589,7 +20588,7 @@ def api_medicao_add_anexo(id):
 def api_medicao_del_anexo(id):
     a=db.get_or_404(MedicaoAnexo, id)
     try: os.remove(os.path.join(UPLOAD_ROOT,a.caminho))
-    except: pass
+    except Exception: pass
     db.session.delete(a); db.session.commit()
     return jsonify({'ok':True})
 
@@ -21023,7 +21022,7 @@ def _auto_backup_gerar():
     arqs = sorted([a for a in os.listdir(AUTO_BACKUP_DIR) if a.startswith('auto_backup_') and a.endswith('.zip')], reverse=True)
     for antigo in arqs[AUTO_BACKUP_KEEP:]:
         try: os.remove(os.path.join(AUTO_BACKUP_DIR, antigo))
-        except: pass
+        except Exception: pass
     return dest
 
 def _auto_backup_segundos_ate_proxima():
