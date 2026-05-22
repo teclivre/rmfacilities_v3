@@ -89,4 +89,13 @@
     <!-- PDF preview overlay -->
     <color name="pdf_page_num_text">#205d8a</color>
     <color name="pdf_page_num_bg">#d0e4f0</color>
+
+    <!-- Ponto buttons -->
+    <color name="ponto_btn_historico">#1565C0</color>
+    <color name="ponto_btn_espelho">#1B5E20</color>
+    <color name="ponto_flash_success">#4400C853</color>
+
+    <!-- Chat status checks -->
+    <color name="chat_check_read">#1565C0</color>
+    <color name="chat_check_delivered">#5E7FA0</color>
 </resources>

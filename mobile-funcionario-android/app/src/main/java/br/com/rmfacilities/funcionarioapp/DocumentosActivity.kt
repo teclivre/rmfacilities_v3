@@ -183,6 +183,12 @@ class DocumentosActivity : BaseActivity() {
         }
     }
 
+    override fun onDestroy() {
+        // Evita vazamento de Activity via Runnable pendente do debounce
+        debounceHandler.removeCallbacks(debounceRunnable)
+        super.onDestroy()
+    }
+
     override fun onUserInteraction() {
         super.onUserInteraction()
         session.touchActivity()

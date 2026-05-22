@@ -48,9 +48,17 @@ class SolicitacaoCorrecaoPontoActivity : BaseActivity() {
     private var marcacoesDia: Int = 0          // marcações já existentes no dia
     private var correcoesFaltandoPendentes: Int = 0  // pendentes enviadas nesta sessão
 
-    private val sdfBr = SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR"))
-    private val sdfIso = SimpleDateFormat("yyyy-MM-dd", Locale("pt", "BR"))
-    private val sdfHora = SimpleDateFormat("HH:mm", Locale("pt", "BR"))
+    // SimpleDateFormat nao e thread-safe; usar via ThreadLocal evita races se
+    // qualquer caminho de chamada ocorrer fora da UI thread (coroutines IO/Default).
+    private val sdfBr: SimpleDateFormat get() = TL_SDF_BR.get()!!
+    private val sdfIso: SimpleDateFormat get() = TL_SDF_ISO.get()!!
+    private val sdfHora: SimpleDateFormat get() = TL_SDF_HORA.get()!!
+
+    companion object {
+        private val TL_SDF_BR = ThreadLocal.withInitial { SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")) }
+        private val TL_SDF_ISO = ThreadLocal.withInitial { SimpleDateFormat("yyyy-MM-dd", Locale("pt", "BR")) }
+        private val TL_SDF_HORA = ThreadLocal.withInitial { SimpleDateFormat("HH:mm", Locale("pt", "BR")) }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

@@ -5,4 +5,8 @@
     <string name="senha">Senha</string>
     <string name="entrar">Entrar</string>
     <string name="sair">Sair</string>
+    <!-- Acessibilidade (contentDescription) -->
+    <string name="cd_avatar_usuario">Foto do usuário</string>
+    <string name="cd_logo_app">Logo do aplicativo</string>
+    <string name="cd_pagina_pdf">Página do documento PDF</string>
 </resources>

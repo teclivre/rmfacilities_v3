@@ -164,7 +164,7 @@ class PontoActivity : BaseActivity() {
             textSize = 13f
             letterSpacing = 0.01f
             cornerRadius = (14 * dpF).toInt()
-            backgroundTintList = ColorStateList.valueOf(0xFF1565C0.toInt())
+            backgroundTintList = ColorStateList.valueOf(androidx.core.content.ContextCompat.getColor(this@PontoActivity, R.color.ponto_btn_historico))
             setTextColor(Color.WHITE)
             iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
             elevation = 4f
@@ -185,7 +185,7 @@ class PontoActivity : BaseActivity() {
             textSize = 13f
             letterSpacing = 0.01f
             cornerRadius = (14 * dpF).toInt()
-            backgroundTintList = ColorStateList.valueOf(0xFF1B5E20.toInt())
+            backgroundTintList = ColorStateList.valueOf(androidx.core.content.ContextCompat.getColor(this@PontoActivity, R.color.ponto_btn_espelho))
             setTextColor(Color.WHITE)
             iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
             elevation = 4f
@@ -400,7 +400,7 @@ class PontoActivity : BaseActivity() {
                     }.start()
                 // Flash verde no fundo
                 val flashView = View(this@PontoActivity).apply {
-                    setBackgroundColor(0x4400C853.toInt())
+                    setBackgroundColor(androidx.core.content.ContextCompat.getColor(this@PontoActivity, R.color.ponto_flash_success))
                     layoutParams = android.view.ViewGroup.LayoutParams(
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT

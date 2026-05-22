@@ -81,6 +81,7 @@
                             android:scaleType="centerCrop"
                             android:clipToOutline="true"
                             android:background="@drawable/bg_avatar_gradient"
+                            android:contentDescription="@string/cd_avatar_usuario"
                             android:visibility="gone" />
                     </FrameLayout>
                 </LinearLayout>

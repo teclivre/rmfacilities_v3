@@ -63,6 +63,7 @@
                     android:layout_width="96dp"
                     android:layout_height="96dp"
                     android:src="@mipmap/ic_launcher"
+                    android:contentDescription="@string/cd_logo_app"
                     android:scaleType="fitCenter" />
 
                 <TextView

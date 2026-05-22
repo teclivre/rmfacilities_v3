@@ -80,6 +80,7 @@
                         android:scaleType="centerCrop"
                         android:background="@drawable/bg_avatar_gradient"
                         android:visibility="gone"
+                        android:contentDescription="@string/cd_avatar_usuario"
                         android:clipToOutline="true" />
                 </FrameLayout>
 
