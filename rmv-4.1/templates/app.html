@@ -3485,11 +3485,12 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div id="st-assinaturas" class="st"></div>
 
       <style>
-        #pg-assinaturas{align-self:flex-start;margin-top:0!important;padding-top:0!important;min-height:0!important}
-        #pg-assinaturas.on{display:block!important}
-        #pg-assinaturas .asi-shell{display:grid;grid-template-columns:250px minmax(0,1fr);gap:16px;align-items:start;align-content:start;margin-top:0}
-        #pg-assinaturas .asi-shell > *{align-self:start;min-width:0;margin-top:0}
-        #pg-assinaturas .asi-side{position:sticky;top:8px}
+        /* LAYOUT LIMPO — reescrito do zero */
+        #pg-assinaturas{margin:0;padding:0}
+        #pg-assinaturas.on{display:flex!important;flex-direction:column;gap:0;align-items:stretch;min-height:0}
+        #pg-assinaturas .asi-shell{display:flex;flex-direction:row;align-items:flex-start;gap:16px;width:100%;margin:0}
+        #pg-assinaturas .asi-side{flex:0 0 250px;min-width:0;align-self:flex-start;position:static}
+        #pg-assinaturas .asi-main{flex:1 1 auto;min-width:0;align-self:flex-start}
         #pg-assinaturas .asi-side .subaba-bloco{width:100%;text-align:left}
         #pg-assinaturas .asi-upload-drop{border:2px dashed var(--borda);border-radius:12px;padding:20px;background:var(--branco);cursor:pointer;transition:.15s}
         #pg-assinaturas .asi-upload-drop.drag{border-color:var(--azul);background:var(--branco);box-shadow:0 0 0 3px rgba(32,93,138,.12)}
@@ -3517,15 +3518,15 @@ document.addEventListener('DOMContentLoaded',()=>{
         #pg-assinaturas .asi-audit-pos-btn input{display:none}
         #pg-assinaturas .asi-audit-pos-btn.on{border-color:var(--azul);background:var(--azul-cl);color:var(--azul)}
         @media (min-width:1500px){
-          #pg-assinaturas .asi-shell{grid-template-columns:265px minmax(0,1fr)}
+          #pg-assinaturas .asi-side{flex:0 0 265px}
         }
         @media (max-width:1380px){
-          #pg-assinaturas .asi-shell{grid-template-columns:230px minmax(0,1fr)}
+          #pg-assinaturas .asi-side{flex:0 0 230px}
           #pg-assinaturas .asi-preview-scroll iframe{height:min(68vh,760px)}
         }
         @media (max-width:1100px){
-          #pg-assinaturas .asi-shell{grid-template-columns:1fr}
-          #pg-assinaturas .asi-side{position:static}
+          #pg-assinaturas .asi-shell{flex-direction:column}
+          #pg-assinaturas .asi-side{flex:0 0 auto;width:100%}
           #pg-assinaturas .asi-preview-scroll iframe{height:420px}
         }
       </style>
@@ -3602,7 +3603,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
         </div>
 
-        <div>
+        <div class="asi-main">
 
       <!-- painel lista -->
       <div id="asi-list-panel">
@@ -14840,13 +14841,19 @@ function initAssinaturas(){
   document.body.dataset.asiSidebarWas=document.body.classList.contains('sidebar-collapsed')?'1':'0';
   document.body.classList.add('sidebar-collapsed');
   // Garantir scroll no topo da area de conteudo (corrige espaco vazio acima dos cards)
-  try{
-    const contentEl=document.querySelector('.content');
-    if(contentEl){ contentEl.scrollTop=0; }
-    const pg=document.getElementById('pg-assinaturas');
-    if(pg){ pg.scrollIntoView({block:'start',behavior:'instant'}); }
-    window.scrollTo(0,0);
-  }catch(_){ }
+  const _resetScrollAsi=()=>{
+    try{
+      const contentEl=document.querySelector('main.content')||document.querySelector('.content');
+      if(contentEl){ contentEl.scrollTop=0; }
+      window.scrollTo(0,0);
+      document.documentElement.scrollTop=0;
+      document.body.scrollTop=0;
+    }catch(_){ }
+  };
+  _resetScrollAsi();
+  requestAnimationFrame(_resetScrollAsi);
+  setTimeout(_resetScrollAsi,80);
+  setTimeout(_resetScrollAsi,400);
   loadEnvelopes(_asiTipo);
   setupAsiDropzone();
   // load funcionários para picker
