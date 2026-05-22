@@ -71,6 +71,12 @@ class FcmService : FirebaseMessagingService() {
 
         val isChat = tipo == "chat" || tipo == "chat_broadcast"
 
+        // Push de chat: sinaliza MensagensActivity (se aberta) para refresh imediato.
+        // Isso evita depender do polling 30s.
+        if (isChat) {
+            try { ChatPushBus.notifyNewMessage() } catch (_: Throwable) {}
+        }
+
         val targetIntent = when {
             tipo == "documento_assinar" && arquivoId > 0 ->
                 Intent(this, DocumentosActivity::class.java).apply {

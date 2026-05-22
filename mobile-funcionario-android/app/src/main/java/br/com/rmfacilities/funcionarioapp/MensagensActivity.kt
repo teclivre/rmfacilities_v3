@@ -18,7 +18,9 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -55,13 +57,19 @@ class MensagensActivity : BaseActivity() {
     private var cameraPhotoUri: Uri? = null
     private val pollingHandler = Handler(Looper.getMainLooper())
     private var isInChatTab = true
+    // Polling como FALLBACK do FCM push. Em condicoes normais, ChatPushBus dispara
+    // refresh imediato quando chega push tipo=chat. 30s e suficiente caso FCM falhe.
     private val pollingRunnable = object : Runnable {
         override fun run() {
             if (isInChatTab) {
                 carregarMensagens(silently = true)
-                pollingHandler.postDelayed(this, 5_000)
+                pollingHandler.postDelayed(this, POLLING_INTERVAL_MS)
             }
         }
+    }
+
+    companion object {
+        private const val POLLING_INTERVAL_MS = 30_000L
     }
 
     private val pickFile = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -171,11 +179,21 @@ class MensagensActivity : BaseActivity() {
 
         carregarMensagens()
         carregarAvisos()
+
+        // Refresh imediato quando chega push FCM tipo=chat (substitui polling agressivo)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                ChatPushBus.events.collect {
+                    if (isInChatTab) carregarMensagens(silently = true)
+                    else carregarAvisos()
+                }
+            }
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        if (isInChatTab) pollingHandler.postDelayed(pollingRunnable, 5_000)
+        if (isInChatTab) pollingHandler.postDelayed(pollingRunnable, POLLING_INTERVAL_MS)
     }
 
     override fun onPause() {
@@ -197,7 +215,7 @@ class MensagensActivity : BaseActivity() {
 
         if (isChat) {
             pollingHandler.removeCallbacks(pollingRunnable)
-            pollingHandler.postDelayed(pollingRunnable, 5_000)
+            pollingHandler.postDelayed(pollingRunnable, POLLING_INTERVAL_MS)
         } else {
             pollingHandler.removeCallbacks(pollingRunnable)
         }
