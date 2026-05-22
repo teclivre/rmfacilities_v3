@@ -1,91 +1,155 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:background="@drawable/bg_home_card_soft"
-    android:padding="14dp"
     android:layout_marginStart="12dp"
     android:layout_marginEnd="12dp"
-    android:layout_marginTop="4dp"
-    android:layout_marginBottom="4dp">
+    android:layout_marginTop="6dp"
+    android:layout_marginBottom="6dp"
+    app:cardBackgroundColor="@color/mobile_card_surface"
+    app:cardCornerRadius="14dp"
+    app:cardElevation="2dp"
+    app:strokeColor="@color/mobile_card_stroke"
+    app:strokeWidth="1dp"
+    android:foreground="?attr/selectableItemBackground">
 
-    <!-- Linha de título + badge "Novo" -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:orientation="horizontal">
 
-        <TextView
-            android:id="@+id/tvTitulo"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:textColor="@color/mobile_text_primary"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:lineSpacingExtra="1dp" />
+        <!-- Faixa lateral colorida indicando tipo do aviso -->
+        <View
+            android:id="@+id/vStripe"
+            android:layout_width="4dp"
+            android:layout_height="match_parent"
+            android:background="@drawable/bg_stripe_aviso" />
 
-        <TextView
-            android:id="@+id/tvNovo"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@drawable/bg_badge_error"
-            android:paddingStart="6dp"
-            android:paddingEnd="6dp"
-            android:paddingTop="2dp"
-            android:paddingBottom="2dp"
-            android:text="Novo"
-            android:textColor="@color/white"
-            android:textSize="10sp"
-            android:textStyle="bold"
-            android:layout_marginStart="8dp"
-            android:visibility="gone" />
+            android:orientation="vertical"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="14dp"
+            android:paddingBottom="12dp">
+
+            <!-- Header: ícone + título + badge Novo -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <FrameLayout
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="@drawable/bg_icon_aviso_circle"
+                    android:layout_marginEnd="10dp">
+
+                    <ImageView
+                        android:id="@+id/ivIcone"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_megaphone"
+                        android:contentDescription="@null" />
+                </FrameLayout>
+
+                <TextView
+                    android:id="@+id/tvTitulo"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:textColor="@color/mobile_text_primary"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:maxLines="2"
+                    android:ellipsize="end"
+                    android:lineSpacingExtra="1dp" />
+
+                <TextView
+                    android:id="@+id/tvNovo"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_badge_error"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:paddingTop="3dp"
+                    android:paddingBottom="3dp"
+                    android:text="NOVO"
+                    android:textColor="@color/white"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.05"
+                    android:layout_marginStart="8dp"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <!-- Conteúdo -->
+            <TextView
+                android:id="@+id/tvConteudo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/mobile_text_primary"
+                android:textSize="14sp"
+                android:lineSpacingExtra="3dp"
+                android:layout_marginTop="10dp"
+                android:maxLines="3"
+                android:ellipsize="end" />
+
+            <!-- Ver mais / Ver menos -->
+            <TextView
+                android:id="@+id/tvVerMais"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Ver mais ↓"
+                android:textColor="@color/mobile_tab_active"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:paddingTop="6dp"
+                android:paddingBottom="2dp"
+                android:visibility="gone" />
+
+            <!-- Rodapé: data com ícone de relógio -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="10dp">
+
+                <ImageView
+                    android:layout_width="14dp"
+                    android:layout_height="14dp"
+                    android:src="@drawable/ic_clock_small"
+                    android:layout_marginEnd="4dp"
+                    android:contentDescription="@null" />
+
+                <TextView
+                    android:id="@+id/tvData"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:textColor="@color/mobile_text_secondary"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <!-- Botão abrir artigo -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAbrirArtigo"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Abrir artigo"
+                android:textSize="13sp"
+                android:layout_marginTop="12dp"
+                app:icon="@drawable/ic_link"
+                app:iconGravity="textStart"
+                app:iconPadding="8dp"
+                android:visibility="gone" />
+        </LinearLayout>
     </LinearLayout>
-
-    <!-- Conteúdo do comunicado -->
-    <TextView
-        android:id="@+id/tvConteudo"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textColor="@color/mobile_text_secondary"
-        android:textSize="13sp"
-        android:lineSpacingExtra="2dp"
-        android:layout_marginTop="6dp"
-        android:maxLines="3"
-        android:ellipsize="end" />
-
-    <!-- Botão expandir/recolher -->
-    <TextView
-        android:id="@+id/tvVerMais"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Ver mais ↓"
-        android:textColor="@color/mobile_tab_active"
-        android:textSize="12sp"
-        android:textStyle="bold"
-        android:layout_marginTop="4dp"
-        android:visibility="gone" />
-
-    <!-- Data -->
-    <TextView
-        android:id="@+id/tvData"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textColor="@color/mobile_text_secondary"
-        android:textSize="11sp"
-        android:layout_marginTop="6dp"
-        android:alpha="0.6" />
-
-    <!-- Botão abrir artigo (visível apenas quando o comunicado tem URL) -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnAbrirArtigo"
-        style="@style/Widget.Material3.Button.OutlinedButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="🔗 Abrir artigo"
-        android:textSize="13sp"
-        android:layout_marginTop="10dp"
-        android:visibility="gone" />
-</LinearLayout>
+</com.google.android.material.card.MaterialCardView>

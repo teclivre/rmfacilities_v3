@@ -1,10 +1,13 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.content.Intent
+import android.graphics.PorterDuff
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 
@@ -29,6 +32,8 @@ class AvisoAdapter(
         val tvNovo: TextView = view.findViewById(R.id.tvNovo)
         val tvVerMais: TextView = view.findViewById(R.id.tvVerMais)
         val btnAbrirArtigo: MaterialButton = view.findViewById(R.id.btnAbrirArtigo)
+        val ivIcone: ImageView? = view.findViewById(R.id.ivIcone)
+        val vStripe: View? = view.findViewById(R.id.vStripe)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
@@ -43,6 +48,19 @@ class AvisoAdapter(
         holder.tvConteudo.text = item.conteudo
         holder.tvData.text = item.criado_fmt ?: ""
         holder.tvNovo.visibility = if (!item.lido) View.VISIBLE else View.GONE
+
+        // Ícone + faixa lateral conforme tipo do aviso
+        val ctx = holder.itemView.context
+        val temArtigo = !item.url.isNullOrBlank()
+        val iconRes = if (temArtigo) R.drawable.ic_article else R.drawable.ic_megaphone
+        val corStripe = when {
+            temArtigo -> ContextCompat.getColor(ctx, R.color.mobile_semantic_info)
+            !item.lido -> ContextCompat.getColor(ctx, R.color.mobile_semantic_pending)
+            else -> ContextCompat.getColor(ctx, R.color.mobile_tab_inactive)
+        }
+        holder.ivIcone?.setImageResource(iconRes)
+        holder.ivIcone?.setColorFilter(corStripe, PorterDuff.Mode.SRC_IN)
+        holder.vStripe?.background?.mutate()?.setColorFilter(corStripe, PorterDuff.Mode.SRC_IN)
 
         val expanded = expandedPositions.contains(position)
         val needsExpansion = item.conteudo.length > 120 || item.conteudo.contains('\n')
