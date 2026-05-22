@@ -2685,8 +2685,8 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div class="card">
         <div class="card-header"><span class="card-title">Lançamento mensal de benefícios (ativos)</span></div>
         <div class="g4">
-          <div class="f"><label>Competência</label><input id="ben-comp" type="month"></div>
-          <div class="f"><label>Empresa</label><select id="ben-emp"><option value="">Todas</option></select></div>
+          <div class="f"><label>Competência</label><input id="ben-comp" type="month" onchange="carregarBeneficiosMensais()"></div>
+          <div class="f"><label>Empresa</label><select id="ben-emp" onchange="carregarBeneficiosMensais()"><option value="">Todas</option></select></div>
           <div class="f"><label>Buscar colaborador / matrícula</label><input id="ben-busca" placeholder="Ex: Joana ou 395" oninput="renderBeneficiosAtivos();renderBeneficioPorTipo('vt','tb-benef-vt');renderBeneficioPorTipo('vr','tb-benef-vr');renderBeneficioPorTipo('va','tb-benef-va');renderBeneficioPorTipo('pp','tb-benef-pp');renderBeneficioPorTipo('vg','tb-benef-vg');renderBeneficioPorTipo('cn','tb-benef-cn')"></div>
           <div class="f"><label>Posto</label><select id="ben-posto" onchange="renderBeneficiosAtivos();renderBeneficioPorTipo('vt','tb-benef-vt');renderBeneficioPorTipo('vr','tb-benef-vr');renderBeneficioPorTipo('va','tb-benef-va');renderBeneficioPorTipo('pp','tb-benef-pp');renderBeneficioPorTipo('vg','tb-benef-vg');renderBeneficioPorTipo('cn','tb-benef-cn')"><option value="">Todos os postos</option></select></div>
           <div class="f"><label>Optante</label><select id="ben-opta" onchange="renderBeneficiosAtivos();renderBeneficioPorTipo('vt','tb-benef-vt');renderBeneficioPorTipo('vr','tb-benef-vr');renderBeneficioPorTipo('va','tb-benef-va');renderBeneficioPorTipo('pp','tb-benef-pp');renderBeneficioPorTipo('vg','tb-benef-vg');renderBeneficioPorTipo('cn','tb-benef-cn')">
