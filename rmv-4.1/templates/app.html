@@ -2394,7 +2394,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div class="g3" style="margin-bottom:14px">
             <div class="f" style="flex:2">
               <label>Tipo de aviso prévio</label>
-              <select id="ap-tipo">
+              <select id="ap-tipo" onchange="apToggleReducao()">
                 <option value="empresa_trabalhado">Empresa demite → Aviso Trabalhado (funcionário cumpre o período)</option>
                 <option value="empresa_indenizado">Empresa demite → Aviso Indenizado (empresa paga sem trabalho)</option>
                 <option value="pedido_demissao">Funcionário pede demissão (cumpre aviso ou paga indenização)</option>
@@ -2405,6 +2405,14 @@ document.addEventListener('DOMContentLoaded',()=>{
               <label>Data do aviso</label>
               <input id="ap-data-aviso" type="date" style="width:170px">
             </div>
+          </div>
+          <div class="f" id="ap-reducao-wrap" style="margin-bottom:14px">
+            <label>Redução da jornada (art. 488 CLT) — somente Aviso Trabalhado</label>
+            <select id="ap-reducao">
+              <option value="nenhuma">Sem redução (cumprimento integral)</option>
+              <option value="2h_diarias">Redução de 2 horas diárias durante todo o aviso</option>
+              <option value="7_dias_corridos">Faltar 7 dias corridos ao final do aviso</option>
+            </select>
           </div>
           <div class="f" style="margin-bottom:14px">
             <label>Observações adicionais</label>
@@ -9321,12 +9329,24 @@ function apLimparFunc() {
   document.getElementById('ap-resultado').style.display = 'none';
 }
 
+function apToggleReducao() {
+  const tipo = document.getElementById('ap-tipo')?.value || '';
+  const wrap = document.getElementById('ap-reducao-wrap');
+  const sel = document.getElementById('ap-reducao');
+  if (!wrap || !sel) return;
+  const habilita = (tipo === 'empresa_trabalhado');
+  wrap.style.opacity = habilita ? '1' : '0.5';
+  sel.disabled = !habilita;
+  if (!habilita) sel.value = 'nenhuma';
+}
+
 function previaAvisoPrevio() {
   if (!apFuncSelecionado) { alert('Selecione um colaborador para ver a prévia.'); return; }
   const f = apFuncSelecionado;
   const tipo = document.getElementById('ap-tipo').value;
   const dataAviso = document.getElementById('ap-data-aviso').value;
   const obs = (document.getElementById('ap-obs')?.value || '').trim();
+  const reducao = document.getElementById('ap-reducao')?.value || 'nenhuma';
   const hoje = new Date().toLocaleDateString('pt-BR');
   const empNome = f.empresa_nome || 'RM FACILITIES LTDA';
   // Dados do cálculo (se já carregados no painel)
@@ -9370,7 +9390,16 @@ function previaAvisoPrevio() {
     textoPrazo = `Considerando <strong>${anos}</strong> de serviço, o prazo é de <strong>${totalDias} dias</strong>
       (30 base + ${diasAdic} proporcionais), de <strong>${dataAvisoFmt}</strong> a <strong>${dataFimFmt||'—'}</strong>.
       O(A) colaborador(a) deverá <strong>permanecer trabalhando normalmente</strong> durante todo o período.`;
-    textoBaseLegal = 'Art. 7º, XXI CF/1988; Arts. 487–491 CLT; Lei 12.506/2011 — 30 dias + 3 dias por ano, máx. 90 dias.';
+    if (reducao === '2h_diarias') {
+      textoPrazo += ` <strong>Redução de jornada (art. 488, parágrafo único, alínea "a", da CLT):</strong>
+        durante o cumprimento do aviso prévio o(a) colaborador(a) optou pela <strong>redução de 2 (duas) horas diárias</strong>
+        de sua jornada de trabalho, sem prejuízo do salário integral.`;
+    } else if (reducao === '7_dias_corridos') {
+      textoPrazo += ` <strong>Redução do aviso (art. 488, parágrafo único, alínea "b", da CLT):</strong>
+        o(a) colaborador(a) optou por <strong>faltar 7 (sete) dias corridos</strong> ao final do período do aviso,
+        sem prejuízo do salário integral.`;
+    }
+    textoBaseLegal = 'Art. 7º, XXI CF/1988; Arts. 487–491 CLT; Art. 488 CLT (redução de jornada); Lei 12.506/2011 — 30 dias + 3 dias por ano, máx. 90 dias.';
   } else if (tipo === 'empresa_indenizado') {
     textoIntro = `A empresa <strong>${_escHtml(empNome)}</strong> comunica ao(à) colaborador(a)
       <strong>${_escHtml(f.nome||'')}</strong>, RE <strong>${_escHtml(String(f.re||''))}</strong>,
@@ -9465,12 +9494,13 @@ async function gerarAvisoPrevio() {
   const data_aviso = document.getElementById('ap-data-aviso').value;
   const obs = document.getElementById('ap-obs').value;
   const canal = document.getElementById('ap-canal').value;
+  const reducao = document.getElementById('ap-reducao')?.value || 'nenhuma';
   const btn = document.getElementById('ap-btn-gerar');
   const res = document.getElementById('ap-resultado');
   btn.disabled = true; btn.textContent = '⏳ Gerando...'; res.style.display = 'none';
   try {
     const r = await api(`/api/funcionarios/${apFuncSelecionado.id}/gerar-aviso-previo`, 'POST',
-      { tipo, data_aviso, obs, canal });
+      { tipo, data_aviso, obs, canal, reducao });
     if (r && r.ok) {
       const dl = r.download_url
         ? `<a href="${r.download_url}" target="_blank" class="btn b-gh b-sm" style="margin-top:8px">⬇️ Baixar PDF</a>`

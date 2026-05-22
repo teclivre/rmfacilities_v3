@@ -12669,7 +12669,12 @@ def _calcular_aviso_previo_dias(data_admissao_str, data_ref=None):
 
 
 def _gerar_aviso_previo_pdf(
-    funcionario, tipo="empresa_trabalhado", empresa=None, obs="", data_aviso_str=None
+    funcionario,
+    tipo="empresa_trabalhado",
+    empresa=None,
+    obs="",
+    data_aviso_str=None,
+    reducao="nenhuma",
 ):
     """Gera PDF de Aviso Prévio proporcional (Lei 12.506/2011)."""
     from reportlab.lib.pagesizes import A4
@@ -12922,6 +12927,18 @@ def _gerar_aviso_previo_pdf(
                 f"O(A) colaborador(a) deverá <b>permanecer trabalhando normalmente</b> durante todo o período do aviso, "
                 f"encerrando seu vínculo empregatício na data supracitada, quando serão processadas as verbas rescisórias cabíveis."
             )
+        if reducao == "2h_diarias":
+            texto_prazo += (
+                " <b>Redução de jornada (art. 488, parágrafo único, alínea 'a', da CLT):</b> "
+                "durante o cumprimento do aviso prévio o(a) colaborador(a) optou pela <b>redução de 2 (duas) horas diárias</b> "
+                "de sua jornada de trabalho, sem prejuízo do salário integral."
+            )
+        elif reducao == "7_dias_corridos":
+            texto_prazo += (
+                " <b>Redução do aviso (art. 488, parágrafo único, alínea 'b', da CLT):</b> "
+                "o(a) colaborador(a) optou por <b>faltar 7 (sete) dias corridos</b> ao final do período do aviso, "
+                "sem prejuízo do salário integral."
+            )
     elif tipo == "empresa_indenizado":
         texto_intro = (
             f"A empresa <b>{emp_nome}</b>, {cnpj_txt}vem por meio deste instrumento comunicar ao(à) "
@@ -13146,6 +13163,9 @@ def api_funcionario_gerar_aviso_previo(id):
         tipo = "empresa_trabalhado"
     obs = (d.get("obs") or "").strip()
     data_aviso = (d.get("data_aviso") or "").strip()
+    reducao = (d.get("reducao") or "nenhuma").strip().lower()
+    if reducao not in ("nenhuma", "2h_diarias", "7_dias_corridos"):
+        reducao = "nenhuma"
     canal = (d.get("canal") or "nao").strip().lower()
     if canal not in ("whatsapp", "app", "link", "nao"):
         canal = "nao"
@@ -13153,7 +13173,12 @@ def api_funcionario_gerar_aviso_previo(id):
     total_dias = _calcular_aviso_previo_dias(f.data_admissao)
     try:
         buf = _gerar_aviso_previo_pdf(
-            f, tipo=tipo, empresa=emp_obj, obs=obs, data_aviso_str=data_aviso or None
+            f,
+            tipo=tipo,
+            empresa=emp_obj,
+            obs=obs,
+            data_aviso_str=data_aviso or None,
+            reducao=reducao,
         )
     except Exception as e:
         app.logger.exception("Erro ao gerar PDF aviso prévio")
