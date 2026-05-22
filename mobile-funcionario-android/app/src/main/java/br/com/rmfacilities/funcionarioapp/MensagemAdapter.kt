@@ -10,6 +10,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import java.text.SimpleDateFormat
@@ -129,12 +130,13 @@ class MensagemAdapter(
                 } else if (holder is FuncViewHolder) {
                     holder.tvConteudo.text = item.conteudo
                     holder.tvHora.text = item.enviado_fmt?.takeLast(5) ?: ""
+                    val ctxCheck = holder.itemView.context
                     if (item.lida == true) {
                         holder.tvCheck.text = "✓✓"
-                        holder.tvCheck.setTextColor(0xFF4DA6FF.toInt()) // azul = lida
+                        holder.tvCheck.setTextColor(ContextCompat.getColor(ctxCheck, R.color.chat_check_read))
                     } else {
                         holder.tvCheck.text = "✓"
-                        holder.tvCheck.setTextColor(0xFF5E7FA0.toInt()) // cinza = entregue
+                        holder.tvCheck.setTextColor(ContextCompat.getColor(ctxCheck, R.color.chat_check_delivered))
                     }
                     bindArquivo(holder.layoutArquivo, holder.tvArquivoNome, item, temArquivo)
                     // Long-press → menu: Copiar ou Apagar

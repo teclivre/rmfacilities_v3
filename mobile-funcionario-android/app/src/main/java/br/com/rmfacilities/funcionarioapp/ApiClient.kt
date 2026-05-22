@@ -50,14 +50,28 @@ class ApiClient(private val session: SessionManager) {
     data class UltimoPagamentoResponse(
         val ok: Boolean = false,
         val valor_liquido: Double? = null,
+        val total_adicional: Double? = null,
+        val total_desconto: Double? = null,
+        val total_pagar: Double? = null,
         val competencia: String? = null,
         val erro: String? = null
+    )
+
+    data class LancamentoItem(
+        val tipo: String = "",
+        val natureza: String = "adicional",
+        val valor: Double = 0.0,
+        val descricao: String = ""
     )
 
     data class PagamentoItem(
         val competencia: String = "",
         val valor_liquido: Double = 0.0,
-        val obs: String = ""
+        val total_adicional: Double = 0.0,
+        val total_desconto: Double = 0.0,
+        val total_pagar: Double = 0.0,
+        val obs: String = "",
+        val lancamentos: List<LancamentoItem> = emptyList()
     )
 
     data class HistoricoPagamentosResponse(
@@ -334,16 +348,25 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
-    fun solicitarCorrecaoPonto(dataRef: String, tipoProbema: String, horarioEsperado: String, observacao: String): CorrecaoPontoResponse {
-        val payload = gson.toJson(mapOf(
+    fun solicitarCorrecaoPonto(
+        dataRef: String,
+        tipoProbema: String,
+        horarioEsperado: String,
+        observacao: String,
+        marcacaoId: Int? = null,
+        horarioCorreto: String? = null
+    ): CorrecaoPontoResponse {
+        val payload = mutableMapOf<String, Any?>(
             "data_ref" to dataRef,
             "tipo_problema" to tipoProbema,
             "horario_esperado" to horarioEsperado,
             "observacao" to observacao
-        ))
+        )
+        if (marcacaoId != null) payload["marcacao_id"] = marcacaoId
+        if (!horarioCorreto.isNullOrBlank()) payload["horario_correto"] = horarioCorreto
         val req = Request.Builder()
             .url(url("/api/app/funcionario/me/ponto/solicitacao-correcao"))
-            .post(payload.toRequestBody("application/json".toMediaType()))
+            .post(gson.toJson(payload).toRequestBody("application/json".toMediaType()))
             .addHeader("Authorization", "Bearer ${session.accessToken}")
             .addHeader("Content-Type", "application/json")
             .build()

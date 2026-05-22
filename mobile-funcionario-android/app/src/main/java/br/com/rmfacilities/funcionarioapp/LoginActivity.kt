@@ -1,7 +1,6 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.content.Intent
-import android.content.Context
 import android.os.Bundle
 import android.os.CountDownTimer
 import android.text.Editable
@@ -114,8 +113,8 @@ class LoginActivity : AppCompatActivity() {
 
         // Pré-preencher CPF salvo (se biometria não fez isso)
         if (etCpf.text.isNullOrBlank()) {
-            val savedCpf = getSharedPreferences("rm_funcionario_app", Context.MODE_PRIVATE)
-                .getString("ultimo_cpf", null)
+            // Item 2: ler CPF de EncryptedSharedPreferences via SessionManager
+            val savedCpf = session.biometricCpf.takeIf { it.isNotBlank() }
             if (!savedCpf.isNullOrBlank()) etCpf.setText(savedCpf)
         }
     }
@@ -210,9 +209,6 @@ class LoginActivity : AppCompatActivity() {
                     if (session.biometricCpf.isBlank()) {
                         session.biometricCpf = cpf
                     }
-                    // Salvar CPF para pré-preencher no próximo acesso
-                    getSharedPreferences("rm_funcionario_app", Context.MODE_PRIVATE)
-                        .edit().putString("ultimo_cpf", cpf).apply()
                     if (!session.biometricEnabled) {
                         perguntarAtivarBiometria(cpf)
                     }

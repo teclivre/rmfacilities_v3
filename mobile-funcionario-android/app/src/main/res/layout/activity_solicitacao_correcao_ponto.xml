@@ -9,7 +9,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:clipToPadding="false"
-        android:paddingBottom="24dp">
+        android:paddingBottom="32dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -19,6 +19,7 @@
             android:paddingEnd="18dp"
             android:paddingTop="52dp">
 
+            <!-- Header: voltar + título -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -47,94 +48,169 @@
                     android:textColor="@color/mobile_text_primary" />
             </LinearLayout>
 
+            <!-- Card 1: Selecionar data -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:background="@drawable/bg_glass_widget"
-                android:padding="16dp">
+                android:padding="16dp"
+                android:layout_marginBottom="14dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Data do problema *"
+                    android:text="1. Selecione o dia"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
                     android:textColor="@color/mobile_text_secondary"
-                    android:textSize="12sp"
+                    android:layout_marginBottom="10dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:baselineAligned="false">
+
+                    <TextView
+                        android:id="@+id/tvDataSelecionada"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/mobile_text_primary"
+                        android:text="Hoje" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSelecionarData"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Alterar"
+                        android:textAllCaps="false"
+                        android:textSize="13sp"
+                        app:cornerRadius="8dp"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Card 2: Lista de marcações do dia -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_glass_widget"
+                android:padding="16dp"
+                android:layout_marginBottom="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="2. Toque na marcação a corrigir"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/mobile_text_secondary"
+                    android:layout_marginBottom="10dp" />
+
+                <TextView
+                    android:id="@+id/tvMarcacoesHint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Selecione o dia acima para carregar as marcações."
+                    android:textSize="13sp"
+                    android:textColor="@color/mobile_text_secondary"
                     android:layout_marginBottom="4dp" />
 
-                <EditText
-                    android:id="@+id/etDataCorrecao"
+                <LinearLayout
+                    android:id="@+id/layoutMarcacoes"
                     android:layout_width="match_parent"
-                    android:layout_height="50dp"
-                    android:background="@drawable/bg_home_card_soft"
-                    android:hint="dd/MM/aaaa"
-                    android:inputType="datetime"
-                    android:paddingStart="12dp"
-                    android:paddingEnd="12dp"
-                    android:textColor="@color/mobile_text_primary"
-                    android:textColorHint="@color/mobile_text_secondary"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <!-- Card 3: Painel de correção (aparece após selecionar marcação) -->
+            <LinearLayout
+                android:id="@+id/layoutCorrecao"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_glass_widget"
+                android:padding="16dp"
+                android:layout_marginBottom="14dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="3. Informe o horário correto e o motivo"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/mobile_text_secondary"
+                    android:layout_marginBottom="12dp" />
+
+                <TextView
+                    android:id="@+id/tvMarcacaoSelecionada"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="—"
                     android:textSize="14sp"
-                    android:layout_marginBottom="12dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Tipo do problema *"
-                    android:textColor="@color/mobile_text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginBottom="4dp" />
-
-                <Spinner
-                    android:id="@+id/spinnerTipoProblema"
-                    android:layout_width="match_parent"
-                    android:layout_height="50dp"
-                    android:background="@drawable/bg_home_card_soft"
-                    android:paddingStart="12dp"
-                    android:paddingEnd="12dp"
-                    android:layout_marginBottom="12dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Horário correto (opcional)"
-                    android:textColor="@color/mobile_text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginBottom="4dp" />
-
-                <EditText
-                    android:id="@+id/etHorarioEsperado"
-                    android:layout_width="match_parent"
-                    android:layout_height="50dp"
-                    android:background="@drawable/bg_home_card_soft"
-                    android:hint="HH:MM"
-                    android:inputType="time"
-                    android:paddingStart="12dp"
-                    android:paddingEnd="12dp"
+                    android:textStyle="bold"
                     android:textColor="@color/mobile_text_primary"
-                    android:textColorHint="@color/mobile_text_secondary"
-                    android:textSize="14sp"
-                    android:layout_marginBottom="12dp" />
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:id="@+id/tvHorarioOriginal"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Horário original: —"
+                    android:textSize="13sp"
+                    android:textColor="@color/mobile_text_secondary"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:id="@+id/tvHorarioNovo"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Horário correto: não definido"
+                    android:textSize="13sp"
+                    android:textColor="@color/mobile_semantic_info"
+                    android:layout_marginBottom="10dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnEscolherHorario"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Escolher horário correto"
+                    android:textAllCaps="false"
+                    android:textSize="13sp"
+                    android:layout_marginBottom="16dp"
+                    app:cornerRadius="8dp"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Descrição do problema *"
+                    android:text="Motivo da correção *"
                     android:textColor="@color/mobile_text_secondary"
                     android:textSize="12sp"
-                    android:layout_marginBottom="4dp" />
+                    android:layout_marginBottom="6dp" />
 
                 <EditText
                     android:id="@+id/etObservacaoCorrecao"
                     android:layout_width="match_parent"
-                    android:layout_height="100dp"
+                    android:layout_height="wrap_content"
+                    android:minHeight="90dp"
                     android:background="@drawable/bg_home_card_soft"
-                    android:hint="Descreva o que precisa ser corrigido..."
+                    android:hint="Ex: Esqueci de bater o ponto de saída, saí às 17h30."
                     android:inputType="textMultiLine"
                     android:gravity="top|start"
                     android:maxLines="5"
                     android:paddingStart="12dp"
                     android:paddingEnd="12dp"
-                    android:paddingTop="8dp"
+                    android:paddingTop="10dp"
+                    android:paddingBottom="10dp"
                     android:textColor="@color/mobile_text_primary"
                     android:textColorHint="@color/mobile_text_secondary"
                     android:textSize="14sp"
@@ -145,19 +221,23 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:textSize="13sp"
-                    android:layout_marginBottom="8dp"
+                    android:layout_marginBottom="10dp"
                     android:visibility="gone" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnEnviarCorrecao"
                     android:layout_width="match_parent"
-                    android:layout_height="50dp"
+                    android:layout_height="wrap_content"
+                    android:minHeight="52dp"
                     android:text="Enviar Solicitação"
                     android:textAllCaps="false"
                     android:textSize="15sp"
+                    android:paddingTop="14dp"
+                    android:paddingBottom="14dp"
                     app:cornerRadius="12dp" />
             </LinearLayout>
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
+

@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 class FcmService : FirebaseMessagingService() {
 
@@ -70,6 +71,12 @@ class FcmService : FirebaseMessagingService() {
 
         val isChat = tipo == "chat" || tipo == "chat_broadcast"
 
+        // Push de chat: sinaliza MensagensActivity (se aberta) para refresh imediato.
+        // Isso evita depender do polling 30s.
+        if (isChat) {
+            try { ChatPushBus.notifyNewMessage() } catch (_: Throwable) {}
+        }
+
         val targetIntent = when {
             tipo == "documento_assinar" && arquivoId > 0 ->
                 Intent(this, DocumentosActivity::class.java).apply {
@@ -82,6 +89,13 @@ class FcmService : FirebaseMessagingService() {
                 }
             isChat ->
                 Intent(this, MensagensActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+            tipo == "aviso_geral" && !data["url"].isNullOrBlank() ->
+                // Comunicado com link: abre o artigo direto no WebView
+                Intent(this, WebViewActivity::class.java).apply {
+                    putExtra(WebViewActivity.EXTRA_URL, data["url"])
+                    putExtra(WebViewActivity.EXTRA_TITULO, titulo)
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 }
             tipo == "aviso_geral" ->
@@ -109,30 +123,33 @@ class FcmService : FirebaseMessagingService() {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
 
+        // Item 4: requestCodes baseados em hash do tipo + tempo para evitar colisão de PendingIntents
+        val baseId = abs(tipo.hashCode() xor System.currentTimeMillis().hashCode())
+
         val pendingIntent = PendingIntent.getActivity(
             this,
-            System.currentTimeMillis().toInt(),
+            baseId,
             targetIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         val openNowPendingIntent = PendingIntent.getActivity(
             this,
-            (System.currentTimeMillis() + 1).toInt(),
+            baseId + 1,
             targetIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         val laterPendingIntent = PendingIntent.getActivity(
             this,
-            (System.currentTimeMillis() + 2).toInt(),
+            baseId + 2,
             laterIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         ensureChannels()
 
-        val notifId = System.currentTimeMillis().toInt()
+        val notifId = baseId
         val badgeNumber = (data["badge"]?.toIntOrNull() ?: 1).coerceAtLeast(1)
 
         val notif = NotificationCompat.Builder(this, channelId)

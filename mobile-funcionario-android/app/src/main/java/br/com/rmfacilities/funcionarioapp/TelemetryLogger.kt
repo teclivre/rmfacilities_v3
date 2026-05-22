@@ -9,6 +9,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingDeque
+import java.util.concurrent.TimeUnit
 
 object TelemetryLogger {
     private const val PREF = "rm_funcionario_telemetry"
@@ -18,7 +19,12 @@ object TelemetryLogger {
     private val queue = LinkedBlockingDeque<Map<String, Any>>(500)
     private val executor = Executors.newSingleThreadExecutor()
     private val gson = Gson()
-    private val http = OkHttpClient()
+    // Item 3: timeouts explícitos para evitar threads presas indefinidamente
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
+        .writeTimeout(10, TimeUnit.SECONDS)
+        .build()
     @Volatile private var session: SessionManager? = null
 
     fun init(context: Context, sessionManager: SessionManager? = null) {
@@ -91,6 +97,11 @@ object TelemetryLogger {
         if (batch.isEmpty()) return
         try {
             val base = sess.apiBaseUrl.trim().trimEnd('/')
+            // Item 3: rejeitar silenciosamente se o endpoint não for HTTPS
+            if (!base.startsWith("https://")) {
+                batch.forEach { queue.offerFirst(it) }
+                return
+            }
             val body = gson.toJson(mapOf("logs" to batch))
                 .toRequestBody("application/json".toMediaType())
             val req = Request.Builder()

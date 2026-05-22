@@ -27,6 +27,9 @@
         </provider>
 
         <activity
+            android:name=".PagamentosActivity"
+            android:exported="false" />
+        <activity
             android:name=".FeriasActivity"
             android:exported="false" />
         <activity
@@ -77,6 +80,9 @@
             android:exported="false" />
         <activity
             android:name=".ConfiguracoesActivity"
+            android:exported="false" />
+        <activity
+            android:name=".WebViewActivity"
             android:exported="false" />
         <activity
             android:name=".HomeActivity"

@@ -74,6 +74,12 @@
 
             <span class="public-tag">AGUARDANDO ASSINATURA</span>
 
+            {% if arquivo.ass_expira_em %}
+            <div style="margin:8px 0 4px;padding:6px 10px;font-size:12px;background:#fff8e1;border-left:3px solid #f9a825;border-radius:4px;color:#6d4c00">
+              &#9888; Link expira em {{ arquivo.ass_expira_em.strftime('%d/%m/%Y \u00e0s %H:%M') }} UTC
+            </div>
+            {% endif %}
+
             <div class="public-form" style="margin-top:10px">
               <div class="public-form-group">
                 <label>Nome completo *</label>
@@ -87,19 +93,30 @@
                 <label>Cargo (opcional)</label>
                 <input id="cargo" type="text" placeholder="Ex: Auxiliar de limpeza">
               </div>
-              <div class="public-form-group">
-                <label>Código OTP (6 dígitos)</label>
-                <input id="otp" type="text" placeholder="Informe o código recebido" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
-              </div>
-              <label class="public-check">
-                <input type="checkbox" id="aceite">
-                Declaro que li e aceito as informações do documento apresentado, confirmando minha assinatura eletrônica.
-              </label>
             </div>
+
             <div class="doc-actions-sticky">
               <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
-                <button class="public-btn public-btn-primary" id="btn-confirmar" onclick="confirmar('{{ arquivo.ass_token }}')">Confirmar assinatura</button>
-                <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()">Reenviar código</button>
+                <button class="public-btn public-btn-primary" id="btn-solicitar-otp" type="button" onclick="solicitarOtp()">Solicitar código OTP</button>
+              </div>
+            </div>
+
+            <div id="otp-step" style="display:none">
+              <div class="public-form" style="margin-top:6px">
+                <div class="public-form-group">
+                  <label>Código OTP (6 dígitos)</label>
+                  <input id="otp" type="text" placeholder="Informe o código recebido" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
+                </div>
+                <label class="public-check">
+                  <input type="checkbox" id="aceite">
+                  Declaro que li e aceito as informações do documento apresentado, confirmando minha assinatura eletrônica.
+                </label>
+              </div>
+              <div class="doc-actions-sticky">
+                <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+                  <button class="public-btn public-btn-primary" id="btn-confirmar" onclick="confirmar('{{ arquivo.ass_token }}')">Confirmar assinatura</button>
+                  <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()">Reenviar código</button>
+                </div>
               </div>
             </div>
 
@@ -132,6 +149,11 @@
           <strong>Link indisponível</strong>
           <p>{{ mensagem or 'Este link não está disponível.' }}</p>
         </div>
+        {% if comprovante_url %}
+        <div style="margin-top:16px;text-align:center">
+          <a class="public-btn public-btn-primary" href="{{ comprovante_url }}">&#128196; Ver comprovante de assinatura</a>
+        </div>
+        {% endif %}
       </div>
       {% endif %}
     </div>
@@ -191,6 +213,36 @@
       }
     }
 
+    async function solicitarOtp(){
+      const nome=(document.getElementById('nome').value||'').trim();
+      const cpf=(document.getElementById('cpf').value||'').replace(/[^0-9]/g,'');
+      const msg=document.getElementById('msg');
+      const btn=document.getElementById('btn-solicitar-otp');
+      if(!nome){ msg.className='public-msg err'; msg.textContent='Informe seu nome completo.'; return; }
+      if(!cpf||cpf.length!==11){ msg.className='public-msg err'; msg.textContent='CPF inválido. Confira se digitou os 11 números corretamente.'; return; }
+      try{
+        SignatureCommon.buttonState(btn,'Enviando código...',true);
+        const r=await fetch('/api/doc/assinar/'+DOC_ASS_TOKEN+'/enviar-otp',{method:'GET'});
+        const d=await r.json();
+        if(!r.ok||d.erro){
+          msg.className='public-msg err';
+          msg.textContent=erroAmigavel(d.erro||'Não foi possível enviar o OTP.');
+          SignatureCommon.buttonState(btn,'Solicitar código OTP',false);
+          return;
+        }
+        msg.className='public-msg ok';
+        msg.textContent=d.mensagem||'Código OTP enviado.';
+        btn.style.display='none';
+        document.getElementById('otp-step').style.display='';
+        document.getElementById('otp').focus();
+        startOtpCooldown(60);
+      }catch(e){
+        msg.className='public-msg err';
+        msg.textContent='Falha de conexão ao enviar OTP.';
+        SignatureCommon.buttonState(btn,'Solicitar código OTP',false);
+      }
+    }
+
     async function reenviarOtp(){
       if((otpCooldownCtrl && otpCooldownCtrl.remaining)>0) return;
       await enviarOtpAutomaticoDoc();
@@ -227,6 +279,11 @@
         if(d.otp_required){
           msg.className='public-msg ok';
           msg.textContent=d.mensagem||'Código OTP enviado. Informe o código para concluir a assinatura.';
+          // Mostrar etapa OTP se ainda estiver oculta
+          const otpStep=document.getElementById('otp-step');
+          if(otpStep) otpStep.style.display='';
+          const solBtn=document.getElementById('btn-solicitar-otp');
+          if(solBtn) solBtn.style.display='none';
           const otpEl=document.getElementById('otp');
           if(otpEl) otpEl.focus();
           startOtpCooldown(60);

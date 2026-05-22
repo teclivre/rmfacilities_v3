@@ -1,5 +1,11 @@
 <div class="card">
-  <div class="card-header"><span class="card-title">Gestão de Ponto por Funcionário</span></div>
+  <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <span class="card-title">Gestão de Ponto por Funcionário</span>
+    <button class="btn b-gh b-sm" onclick="abrirModalCorrecoesPonto()" id="btn-correcoes-ponto" style="display:flex;align-items:center;gap:6px">
+      📋 Correções de Ponto
+      <span id="badge-correcoes-ponto" style="display:none;background:var(--verm);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;font-weight:700">0</span>
+    </button>
+  </div>
   <div class="ponto-gestao-wrap">
     <aside class="ponto-side">
       <div class="ponto-side-head">

@@ -11,6 +11,41 @@ Sistema web de gestão operacional, RH e comunicação da RM Facilities, constru
 - Integração de IA para respostas automáticas no WhatsApp.
 - Backup e restauração de dados e arquivos.
 - Controle de usuários com áreas de acesso.
+- **App mobile Android** para funcionários: ponto eletrônico, documentos, mensagens, avisos, holerites e assinatura digital.
+
+## App Mobile — Funcionário (Android)
+
+Pasta: `mobile-funcionario-android/`
+
+### Recursos do app
+
+- Registro de ponto (entrada/saída/intervalo) com geolocalização.
+- Visualização e assinatura de documentos/holerites.
+- Chat com o RH.
+- Avisos e comunicados do RH com suporte a **artigos via link** (abertos no WebView interno).
+- Solicitação de correção de ponto (múltiplas marcações por dia, até o limite da jornada).
+- Histórico e espelho de ponto.
+- Notificações push via Firebase (FCM).
+
+### Notificações push — Comunicados com artigo
+
+Ao criar um comunicado no painel web, o campo **URL** é opcional.
+
+- **Com URL**: a notificação push abre diretamente o artigo no WebView interno do app.
+- **Sem URL**: a notificação abre a aba "Avisos" normalmente para o funcionário ler o texto.
+
+Na aba Avisos, comunicados com URL exibem o botão **🔗 Abrir artigo**.
+
+### Build
+
+```bash
+cd mobile-funcionario-android
+./gradlew assembleRelease
+# ou para AAB:
+./gradlew bundleRelease
+```
+
+A versão é gerenciada em `app/version.properties` (VERSION_CODE, MAJOR, MINOR, PATCH).
 
 ## Stack
 

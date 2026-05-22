@@ -1,10 +1,8 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.Manifest
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
@@ -20,7 +18,6 @@ import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.bottomnavigation.BottomNavigationView
@@ -35,7 +32,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.lifecycle.lifecycleScope
 
-class HomeActivity : AppCompatActivity() {
+class HomeActivity : BaseActivity() {
     companion object {
         private const val PREF_SHORTCUTS = "home_shortcuts"
         private const val KEY_ENABLED = "enabled"
@@ -43,7 +40,6 @@ class HomeActivity : AppCompatActivity() {
 
     private lateinit var session: SessionManager
     private lateinit var api: ApiClient
-    private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var tvBoasVindas: TextView
     private lateinit var tvCargo: TextView
     private lateinit var tvAvatar: TextView
@@ -62,6 +58,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var retryQueue: ActionRetryQueue
     private lateinit var connectivityManager: ConnectivityManager
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var btnDocumentos: View
     private lateinit var btnPerfil: View
     private lateinit var btnPonto: View
@@ -72,11 +69,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var btnBeneficiosHome: View
     private lateinit var btnFeriasHome: View
 
-    private val logoutReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            goLogin()
-        }
-    }
+    override fun provideSession() = session
 
     private val notifPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -99,6 +92,15 @@ class HomeActivity : AppCompatActivity() {
 
         if (session.accessToken.isBlank()) {
             goLogin(); return
+        }
+
+        // Se veio de notificação push com destino específico, redireciona direto sem montar HomeActivity
+        if (handleNotifDeepLink()) return
+
+        // Ação "Marcar para depois" — abriu HomeActivity sem redirecionar; apenas avisa
+        if (intent?.getBooleanExtra("notif_later", false) == true) {
+            intent?.removeExtra("notif_later")
+            android.widget.Toast.makeText(this, "Notificação marcada para depois.", android.widget.Toast.LENGTH_SHORT).show()
         }
 
         tvBoasVindas = findViewById(R.id.tvBoasVindas)
@@ -239,20 +241,19 @@ class HomeActivity : AppCompatActivity() {
         ensureNotificationPermission()
         registrarPushToken()
         ensureLocationAndSend()
-        handleDeepLink()
         processarFilaPendente()
         registrarCallbackRede()
     }
 
     override fun onResume() {
-        super.onResume()
-        if (session.isIdleSessionExpired() && !session.isTrustedDeviceValid()) {
-            session.clear()
-            android.widget.Toast.makeText(this, "Sessão expirada por inatividade.", android.widget.Toast.LENGTH_LONG).show()
-            goLogin()
-            return
-        }
+        super.onResume()  // BaseActivity verifica idle timeout via provideSession()
         session.touchActivity()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNotifDeepLink()
     }
 
     override fun onUserInteraction() {
@@ -282,25 +283,43 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
-    private fun handleDeepLink() {
-        if (intent?.getBooleanExtra("notif_later", false) == true) {
-            intent?.removeExtra("notif_later")
-            android.widget.Toast.makeText(this, "Notificação marcada para depois.", android.widget.Toast.LENGTH_SHORT).show()
-            return
-        }
-        val tipo = intent?.getStringExtra("tipo") ?: return
+    /**
+     * Verifica se o intent veio de uma notificação push com destino específico.
+     * Se sim, abre a tela correta, finaliza HomeActivity e retorna true.
+     * Chamado ANTES de montar a UI para evitar flash do HomeActivity.
+     */
+    private fun handleNotifDeepLink(): Boolean {
+        val tipo = intent?.getStringExtra("tipo") ?: return false
         val arquivoId = intent.getStringExtra("arquivo_id")?.toIntOrNull() ?: -1
+        val url = intent.getStringExtra("url")
+        val titulo = intent.getStringExtra("titulo") ?: "Comunicado"
         intent.removeExtra("tipo")
-        when {
+        val target: Intent? = when {
             tipo == "documento_assinar" && arquivoId > 0 ->
-                startActivity(Intent(this, DocumentosActivity::class.java).apply {
+                Intent(this, DocumentosActivity::class.java).apply {
                     putExtra(FcmService.EXTRA_ARQUIVO_ID, arquivoId)
-                })
+                }
             tipo == "chat" || tipo == "chat_broadcast" ->
-                startActivity(Intent(this, MensagensActivity::class.java))
+                Intent(this, MensagensActivity::class.java)
             tipo == "novo_documento" ->
-                startActivity(Intent(this, DocumentosActivity::class.java))
+                Intent(this, DocumentosActivity::class.java)
+            tipo == "aviso_geral" && !url.isNullOrBlank() ->
+                Intent(this, WebViewActivity::class.java).apply {
+                    putExtra(WebViewActivity.EXTRA_URL, url)
+                    putExtra(WebViewActivity.EXTRA_TITULO, titulo)
+                }
+            tipo == "aviso_geral" ->
+                Intent(this, MensagensActivity::class.java).apply {
+                    putExtra("open_tab", "avisos")
+                }
+            else -> null
         }
+        if (target != null) {
+            startActivity(target)
+            finish()
+            return true
+        }
+        return false
     }
 
     private fun ensureNotificationPermission() {
@@ -479,8 +498,9 @@ class HomeActivity : AppCompatActivity() {
                 )
 
                 // Atualiza o valor do último pagamento
-                if (ultimoPagamento != null && ultimoPagamento.ok && ultimoPagamento.valor_liquido != null && ultimoPagamento.competencia != null) {
-                    val valorFmt = "R$ %.2f".format(ultimoPagamento.valor_liquido)
+                if (ultimoPagamento != null && ultimoPagamento.ok && ultimoPagamento.competencia != null) {
+                    val valor = ultimoPagamento.total_pagar ?: ultimoPagamento.valor_liquido ?: 0.0
+                    val valorFmt = "R$ %,.2f".format(valor)
                     tvUltimoPagamento.text = "Último pagamento: $valorFmt (${ultimoPagamento.competencia})"
                 } else {
                     tvUltimoPagamento.text = "Último pagamento: --"
@@ -603,35 +623,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun abrirHistoricoPagamentos() {
-        val loading = MaterialAlertDialogBuilder(this)
-            .setTitle("Histórico de pagamento")
-            .setMessage("Buscando...")
-            .setCancelable(false)
-            .create()
-        loading.show()
-        lifecycleScope.launch {
-            val resp = try { api.historicoPagamentos() } catch (_: Exception) { null }
-            withContext(Dispatchers.Main) {
-                loading.dismiss()
-                val historico = resp?.historico ?: emptyList()
-                val texto = if (historico.isEmpty()) "Nenhum pagamento registrado."
-                else historico.joinToString("\n") { p ->
-                    val valor = "R$ %,.2f".format(p.valor_liquido)
-                    if (p.obs.isNotBlank()) "• ${compFmt(p.competencia)}  →  $valor\n  (${p.obs})"
-                    else "• ${compFmt(p.competencia)}  →  $valor"
-                }
-                MaterialAlertDialogBuilder(this@HomeActivity)
-                    .setTitle("💰 Histórico de Salário")
-                    .setMessage(texto)
-                    .setPositiveButton("Fechar", null)
-                    .setNeutralButton("Holerites") { _, _ ->
-                        startActivity(Intent(this@HomeActivity, DocumentosActivity::class.java).apply {
-                            putExtra("preset_categoria", "holerite")
-                        })
-                    }
-                    .show()
-            }
-        }
+        startActivity(Intent(this, PagamentosActivity::class.java))
     }
 
     private fun abrirHistoricoBeneficios() {
@@ -664,11 +656,6 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
-    private fun goLogin() {
-        startActivity(Intent(this, LoginActivity::class.java))
-        finish()
-    }
-
     private fun animarCardsHome() {
         val cardIds = listOf(R.id.btnPonto, R.id.btnDocumentos, R.id.btnMensagens, R.id.btnPerfil,
             R.id.btnOfflineHome, R.id.btnConfiguracoesHome, R.id.btnSalarioHome, R.id.btnBeneficiosHome, R.id.btnFeriasHome)
@@ -688,19 +675,12 @@ class HomeActivity : AppCompatActivity() {
     }
 
     override fun onStart() {
-        super.onStart()
-        val filter = IntentFilter(SessionManager.ACTION_LOGOUT)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(logoutReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(logoutReceiver, filter)
-        }
+        super.onStart()  // BaseActivity registra logoutReceiver
         registrarCallbackRede()
     }
 
     override fun onStop() {
-        super.onStop()
-        try { unregisterReceiver(logoutReceiver) } catch (_: Exception) {}
+        super.onStop()  // BaseActivity cancela logoutReceiver
         val cb = networkCallback
         if (cb != null) {
             try { connectivityManager.unregisterNetworkCallback(cb) } catch (_: Exception) {}

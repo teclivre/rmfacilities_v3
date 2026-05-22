@@ -6,7 +6,6 @@ import android.view.HapticFeedbackConstants
 import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
@@ -18,8 +17,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.lifecycle.lifecycleScope
 
-class ConfiguracoesActivity : AppCompatActivity() {
+class ConfiguracoesActivity : BaseActivity() {
     private lateinit var session: SessionManager
+    override fun provideSession() = session
     private lateinit var api: ApiClient
     private var internalBiometricChange = false
     private var internalThemeChange = false

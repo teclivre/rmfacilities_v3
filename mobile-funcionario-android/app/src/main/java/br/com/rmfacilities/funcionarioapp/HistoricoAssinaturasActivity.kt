@@ -9,7 +9,6 @@ import android.view.WindowManager
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -21,8 +20,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.lifecycle.lifecycleScope
 
-class HistoricoAssinaturasActivity : AppCompatActivity() {
+class HistoricoAssinaturasActivity : BaseActivity() {
     private lateinit var session: SessionManager
+    override fun provideSession() = session
     private lateinit var api: ApiClient
     private lateinit var swipe: SwipeRefreshLayout
     private lateinit var adapter: HistoricoAssinaturasAdapter

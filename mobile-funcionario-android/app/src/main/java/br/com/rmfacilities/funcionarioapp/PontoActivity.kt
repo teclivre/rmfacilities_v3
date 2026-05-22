@@ -21,7 +21,6 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationServices
@@ -44,7 +43,7 @@ import java.util.Locale
 import kotlin.coroutines.resume
 import androidx.lifecycle.lifecycleScope
 
-class PontoActivity : AppCompatActivity() {
+class PontoActivity : BaseActivity() {
 
     // Marcações registradas localmente (offline ou com erro) ainda não confirmadas pelo servidor
     enum class LocalStatus { PENDING, ERROR }
@@ -165,7 +164,7 @@ class PontoActivity : AppCompatActivity() {
             textSize = 13f
             letterSpacing = 0.01f
             cornerRadius = (14 * dpF).toInt()
-            backgroundTintList = ColorStateList.valueOf(0xFF1565C0.toInt())
+            backgroundTintList = ColorStateList.valueOf(androidx.core.content.ContextCompat.getColor(this@PontoActivity, R.color.ponto_btn_historico))
             setTextColor(Color.WHITE)
             iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
             elevation = 4f
@@ -186,7 +185,7 @@ class PontoActivity : AppCompatActivity() {
             textSize = 13f
             letterSpacing = 0.01f
             cornerRadius = (14 * dpF).toInt()
-            backgroundTintList = ColorStateList.valueOf(0xFF1B5E20.toInt())
+            backgroundTintList = ColorStateList.valueOf(androidx.core.content.ContextCompat.getColor(this@PontoActivity, R.color.ponto_btn_espelho))
             setTextColor(Color.WHITE)
             iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
             elevation = 4f
@@ -382,8 +381,12 @@ class PontoActivity : AppCompatActivity() {
                 try {
                     api.marcarPonto(lat = loc.latitude, lon = loc.longitude, precisao = loc.accuracy)
                 } catch (e: Exception) {
-                    PontoDiaResponse(ok = false, erro = e.message ?: "Falha de conexão com o servidor.")
+                    PontoDiaResponse(ok = false, erro = e.message)
                 }
+            }
+
+            btnMarcarPonto.isEnabled = true
+            if (resp.ok) {
                 localPendentes.clear() // servidor confirmou, limpa locais
                 val marcacoesResp = resp.resumo?.marcacoes
                 if (!marcacoesResp.isNullOrEmpty()) salvarCacheMarcacoes(marcacoesResp)
@@ -397,7 +400,7 @@ class PontoActivity : AppCompatActivity() {
                     }.start()
                 // Flash verde no fundo
                 val flashView = View(this@PontoActivity).apply {
-                    setBackgroundColor(0x4400C853.toInt())
+                    setBackgroundColor(androidx.core.content.ContextCompat.getColor(this@PontoActivity, R.color.ponto_flash_success))
                     layoutParams = android.view.ViewGroup.LayoutParams(
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -477,7 +480,7 @@ class PontoActivity : AppCompatActivity() {
     private fun carregarDia() {
         updateStatus("Atualizando...", R.color.mobile_semantic_info)
         lifecycleScope.launch {
-            val resp = try { api.getPontoDia() } catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message ?: "Falha de conexão com o servidor.") }
+            val resp = try { api.getPontoDia() } catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message) }
             withContext(Dispatchers.Main) {
                 if (resp.ok) {
                     localPendentes.clear() // servidor confirmou todas as marcações

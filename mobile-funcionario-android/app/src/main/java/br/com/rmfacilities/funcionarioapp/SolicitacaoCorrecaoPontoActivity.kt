@@ -1,133 +1,341 @@
 package br.com.rmfacilities.funcionarioapp
 
+import android.app.TimePickerDialog
 import android.os.Bundle
 import android.view.View
-import android.widget.ArrayAdapter
+import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
-class SolicitacaoCorrecaoPontoActivity : AppCompatActivity() {
+class SolicitacaoCorrecaoPontoActivity : BaseActivity() {
 
     private lateinit var api: ApiClient
-    private lateinit var etData: EditText
-    private lateinit var etHorario: EditText
+
+    // Views
+    private lateinit var tvData: TextView
+    private lateinit var btnSelecionarData: MaterialButton
+    private lateinit var layoutMarcacoes: LinearLayout
+    private lateinit var tvMarcacoesHint: TextView
+    private lateinit var layoutCorrecao: LinearLayout
+    private lateinit var tvMarcacaoSelecionada: TextView
+    private lateinit var tvHorarioOriginal: TextView
+    private lateinit var tvHorarioNovo: TextView
+    private lateinit var btnEscolherHorario: MaterialButton
     private lateinit var etObservacao: EditText
-    private lateinit var spinnerTipo: Spinner
     private lateinit var btnEnviar: MaterialButton
-    private lateinit var tvStatusCorrecao: TextView
+    private lateinit var tvStatus: TextView
+
+    // Estado
+    private var dataRef: String = "" // yyyy-MM-dd
+    private var marcacaoId: Int? = null
+    private var horarioOriginal: String = ""
+    private var horarioCorreto: String = ""
+    private var tipoMarcacao: String = ""
+    // Controle de limite de marcações faltando
+    private var maxMarcacoesDia: Int = 4
+    private var marcacoesDia: Int = 0          // marcações já existentes no dia
+    private var correcoesFaltandoPendentes: Int = 0  // pendentes enviadas nesta sessão
+
+    // SimpleDateFormat nao e thread-safe; usar via ThreadLocal evita races se
+    // qualquer caminho de chamada ocorrer fora da UI thread (coroutines IO/Default).
+    private val sdfBr: SimpleDateFormat get() = TL_SDF_BR.get()!!
+    private val sdfIso: SimpleDateFormat get() = TL_SDF_ISO.get()!!
+    private val sdfHora: SimpleDateFormat get() = TL_SDF_HORA.get()!!
+
+    companion object {
+        private val TL_SDF_BR = ThreadLocal.withInitial { SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")) }
+        private val TL_SDF_ISO = ThreadLocal.withInitial { SimpleDateFormat("yyyy-MM-dd", Locale("pt", "BR")) }
+        private val TL_SDF_HORA = ThreadLocal.withInitial { SimpleDateFormat("HH:mm", Locale("pt", "BR")) }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_solicitacao_correcao_ponto)
 
         api = ApiClient(SessionManager(this))
-        etData = findViewById(R.id.etDataCorrecao)
-        etHorario = findViewById(R.id.etHorarioEsperado)
-        etObservacao = findViewById(R.id.etObservacaoCorrecao)
-        spinnerTipo = findViewById(R.id.spinnerTipoProblema)
-        btnEnviar = findViewById(R.id.btnEnviarCorrecao)
-        tvStatusCorrecao = findViewById(R.id.tvStatusCorrecao)
 
-        // Preencher data se passada pelo intent
+        tvData = findViewById(R.id.tvDataSelecionada)
+        btnSelecionarData = findViewById(R.id.btnSelecionarData)
+        layoutMarcacoes = findViewById(R.id.layoutMarcacoes)
+        tvMarcacoesHint = findViewById(R.id.tvMarcacoesHint)
+        layoutCorrecao = findViewById(R.id.layoutCorrecao)
+        tvMarcacaoSelecionada = findViewById(R.id.tvMarcacaoSelecionada)
+        tvHorarioOriginal = findViewById(R.id.tvHorarioOriginal)
+        tvHorarioNovo = findViewById(R.id.tvHorarioNovo)
+        btnEscolherHorario = findViewById(R.id.btnEscolherHorario)
+        etObservacao = findViewById(R.id.etObservacaoCorrecao)
+        btnEnviar = findViewById(R.id.btnEnviarCorrecao)
+        tvStatus = findViewById(R.id.tvStatusCorrecao)
+
+        // Data inicial: hoje
+        val cal = Calendar.getInstance()
+        definirData(sdfIso.format(cal.time))
+
+        // Intent pode passar data pré-selecionada
         val dataIntent = intent.getStringExtra("data_ref")
         if (!dataIntent.isNullOrBlank()) {
-            // Converter yyyy-MM-dd para dd/MM/yyyy
-            try {
-                val parts = dataIntent.split("-")
-                if (parts.size == 3) etData.setText("${parts[2]}/${parts[1]}/${parts[0]}")
-                else etData.setText(dataIntent)
-            } catch (_: Exception) {
-                etData.setText(dataIntent)
-            }
+            definirData(dataIntent)
+            carregarMarcacoes()
         }
 
-        // Spinner de tipo
-        val tipos = arrayOf("Horário errado", "Marcação faltando", "Marcação extra", "Outro")
-        spinnerTipo.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, tipos)
-
-        findViewById<TextView>(R.id.btnVoltarCorrecao).setOnClickListener { finish() }
-
+        btnSelecionarData.setOnClickListener { abrirDatePicker() }
+        btnEscolherHorario.setOnClickListener { abrirTimePicker() }
         btnEnviar.setOnClickListener { enviarSolicitacao() }
-
-        // Link para ver histórico
-        try {
-            val tvHistorico = android.widget.TextView(this).apply {
-                text = "Ver histórico de solicitações →"
-                textSize = 13f
-                setTextColor(androidx.core.content.ContextCompat.getColor(this@SolicitacaoCorrecaoPontoActivity, R.color.mobile_semantic_info))
-                setPadding(0, (16 * resources.displayMetrics.density).toInt(), 0, 0)
-                gravity = android.view.Gravity.CENTER
-                setOnClickListener {
-                    startActivity(android.content.Intent(this@SolicitacaoCorrecaoPontoActivity, CorrecoesPontoActivity::class.java))
-                }
-            }
-            (btnEnviar.parent as? android.view.ViewGroup)?.addView(tvHistorico)
-        } catch (_: Exception) {}
+        findViewById<View>(R.id.btnVoltarCorrecao).setOnClickListener { finish() }
     }
 
-    private fun enviarSolicitacao() {
-        val dataRaw = etData.text.toString().trim()
-        val horario = etHorario.text.toString().trim()
-        val obs = etObservacao.text.toString().trim()
-
-        if (dataRaw.isBlank()) {
-            etData.error = "Informe a data"
-            return
+    private fun definirData(iso: String) {
+        dataRef = iso
+        try {
+            val d = sdfIso.parse(iso)
+            tvData.text = if (d != null) sdfBr.format(d) else iso
+        } catch (_: Exception) {
+            tvData.text = iso
         }
-        if (obs.isBlank()) {
-            etObservacao.error = "Descreva o problema"
-            return
-        }
+        // Limpar seleção de marcação e contadores ao trocar de data
+        marcacaoId = null
+        horarioOriginal = ""
+        horarioCorreto = ""
+        correcoesFaltandoPendentes = 0
+        maxMarcacoesDia = 4
+        marcacoesDia = 0
+        layoutCorrecao.visibility = View.GONE
+        layoutMarcacoes.visibility = View.GONE
+        tvMarcacoesHint.visibility = View.VISIBLE
+    }
 
-        // Converter dd/MM/yyyy para yyyy-MM-dd
-        val dataRef = try {
-            val parts = dataRaw.split("/")
-            if (parts.size == 3) "${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}"
-            else dataRaw
-        } catch (_: Exception) { dataRaw }
+    private fun abrirDatePicker() {
+        val cal = Calendar.getInstance()
+        try { sdfIso.parse(dataRef)?.let { cal.time = it } } catch (_: Exception) {}
+        android.app.DatePickerDialog(
+            this,
+            { _, year, month, day ->
+                val iso = "%04d-%02d-%02d".format(year, month + 1, day)
+                definirData(iso)
+                carregarMarcacoes()
+            },
+            cal.get(Calendar.YEAR),
+            cal.get(Calendar.MONTH),
+            cal.get(Calendar.DAY_OF_MONTH)
+        ).also { picker ->
+            // Não permite datas futuras
+            picker.datePicker.maxDate = System.currentTimeMillis()
+        }.show()
+    }
 
-        val tipoMap = mapOf(
-            0 to "horario_errado",
-            1 to "marcacao_faltando",
-            2 to "marcacao_extra",
-            3 to "outro"
-        )
-        val tipoProblema = tipoMap[spinnerTipo.selectedItemPosition] ?: "outro"
-
-        btnEnviar.isEnabled = false
-        tvStatusCorrecao.text = "Enviando solicitação..."
-        tvStatusCorrecao.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_info))
-        tvStatusCorrecao.visibility = View.VISIBLE
+    private fun carregarMarcacoes() {
+        tvMarcacoesHint.text = "Carregando marcações..."
+        tvMarcacoesHint.visibility = View.VISIBLE
+        layoutMarcacoes.removeAllViews()
+        layoutMarcacoes.visibility = View.GONE
+        layoutCorrecao.visibility = View.GONE
 
         lifecycleScope.launch {
             val resp = withContext(Dispatchers.IO) {
-                try { api.solicitarCorrecaoPonto(dataRef, tipoProblema, horario, obs) }
-                catch (e: Exception) { CorrecaoPontoResponse(ok = false, erro = e.message) }
+                try { api.getPontoDia(dataRef) }
+                catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message ?: "Erro de conexão") }
             }
-            withContext(Dispatchers.Main) {
-                btnEnviar.isEnabled = true
-                if (resp.ok) {
-                    tvStatusCorrecao.text = "✅ ${resp.mensagem ?: "Solicitação enviada com sucesso!"}"
-                    tvStatusCorrecao.setTextColor(ContextCompat.getColor(this@SolicitacaoCorrecaoPontoActivity, R.color.mobile_semantic_success))
-                    etData.text.clear()
-                    etHorario.text.clear()
-                    etObservacao.text.clear()
-                    Toast.makeText(this@SolicitacaoCorrecaoPontoActivity, "Solicitação enviada!", Toast.LENGTH_SHORT).show()
-                } else {
-                    tvStatusCorrecao.text = "❌ ${resp.erro ?: "Erro ao enviar solicitação."}"
-                    tvStatusCorrecao.setTextColor(ContextCompat.getColor(this@SolicitacaoCorrecaoPontoActivity, R.color.mobile_semantic_pending))
+            if (!resp.ok || resp.resumo == null) {
+                tvMarcacoesHint.text = "❌ ${resp.erro ?: "Falha ao carregar marcações"}"
+                return@launch
+            }
+            // Salvar limites do servidor
+            maxMarcacoesDia = resp.resumo.max_marcacoes_dia
+            correcoesFaltandoPendentes = resp.resumo.correcoes_faltando_pendentes
+            val marcacoes = resp.resumo.marcacoes
+            marcacoesDia = marcacoes.size
+            if (marcacoes.isEmpty()) {
+                tvMarcacoesHint.text = "Nenhuma marcação neste dia.\nSe precisar adicionar uma marcação, selecione \"Marcação faltando\" abaixo."
+                layoutMarcacoes.visibility = View.GONE
+                // Mostrar painel para solicitar adição de marcação
+                mostrarPainelSemMarcacao()
+                return@launch
+            }
+            tvMarcacoesHint.text = "Toque na marcação que deseja corrigir:"
+            layoutMarcacoes.visibility = View.VISIBLE
+            marcacoes.forEach { m ->
+                val horaFmt = m.hora_fmt ?: m.data_hora?.substringAfter(" ")?.take(5) ?: "—"
+                val tipoLabel = m.tipo_label ?: m.tipo ?: "Marcação"
+                val btn = MaterialButton(this@SolicitacaoCorrecaoPontoActivity).apply {
+                    text = "$tipoLabel  ·  $horaFmt"
+                    textSize = 14f
+                    isAllCaps = false
+                    strokeWidth = 2
+                    setStrokeColorResource(R.color.mobile_border)
+                    setBackgroundColor(ContextCompat.getColor(context, R.color.mobile_surface))
+                    setTextColor(ContextCompat.getColor(context, R.color.mobile_text_primary))
+                    val dp8 = (8 * resources.displayMetrics.density).toInt()
+                    val dp12 = (12 * resources.displayMetrics.density).toInt()
+                    setPadding(dp12, dp8, dp12, dp8)
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).also { it.bottomMargin = dp8 }
+                    setOnClickListener {
+                        selecionarMarcacao(m.id, horaFmt, tipoLabel)
+                        // Destacar botão selecionado
+                        layoutMarcacoes.children.forEach { v ->
+                            (v as? MaterialButton)?.setBackgroundColor(
+                                ContextCompat.getColor(context, R.color.mobile_surface)
+                            )
+                        }
+                        setBackgroundColor(ContextCompat.getColor(context, R.color.mobile_primary_light))
+                    }
                 }
+                layoutMarcacoes.addView(btn)
             }
         }
     }
+
+    private fun mostrarPainelSemMarcacao() {
+        val enviadas = marcacoesDia + correcoesFaltandoPendentes
+        if (enviadas >= maxMarcacoesDia) {
+            tvMarcacoesHint.text = "✅ Todas as $maxMarcacoesDia marcações já foram solicitadas ou existem para este dia. Aguarde a aprovação do RH."
+            layoutCorrecao.visibility = View.GONE
+            return
+        }
+        // Solicitar "marcação faltando"
+        marcacaoId = null
+        horarioOriginal = ""
+        horarioCorreto = ""
+        tipoMarcacao = "marcacao_faltando"
+        val num = enviadas + 1
+        tvMarcacaoSelecionada.text = "Marcação $num de $maxMarcacoesDia — adicionar horário faltante"
+        tvHorarioOriginal.text = "Horário original: —"
+        tvHorarioNovo.text = "Horário correto: não definido"
+        layoutCorrecao.visibility = View.VISIBLE
+        btnEscolherHorario.text = "Definir horário que deveria ter"
+    }
+
+    private fun selecionarMarcacao(id: Int, hora: String, tipo: String) {
+        marcacaoId = id
+        horarioOriginal = hora
+        tipoMarcacao = "horario_errado"
+        tvMarcacaoSelecionada.text = "$tipo · $hora"
+        tvHorarioOriginal.text = "Horário original: $hora"
+        tvHorarioNovo.text = "Horário correto: não definido"
+        horarioCorreto = ""
+        layoutCorrecao.visibility = View.VISIBLE
+        btnEscolherHorario.text = "Escolher horário correto"
+    }
+
+    private fun abrirTimePicker() {
+        val cal = Calendar.getInstance()
+        // Pré-preencher com o horário original se disponível
+        if (horarioOriginal.isNotBlank()) {
+            try {
+                val parts = horarioOriginal.split(":")
+                cal.set(Calendar.HOUR_OF_DAY, parts[0].toInt())
+                cal.set(Calendar.MINUTE, parts[1].toInt())
+            } catch (_: Exception) {}
+        }
+        TimePickerDialog(
+            this,
+            { _, hour, minute ->
+                horarioCorreto = "%02d:%02d".format(hour, minute)
+                tvHorarioNovo.text = "Horário correto: $horarioCorreto"
+            },
+            cal.get(Calendar.HOUR_OF_DAY),
+            cal.get(Calendar.MINUTE),
+            true
+        ).show()
+    }
+
+    private fun enviarSolicitacao() {
+        val obs = etObservacao.text?.toString()?.trim() ?: ""
+        if (dataRef.isBlank()) {
+            Toast.makeText(this, "Selecione a data", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (marcacaoId == null && horarioCorreto.isBlank() && tipoMarcacao != "marcacao_faltando") {
+            Toast.makeText(this, "Selecione a marcação a corrigir", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (horarioCorreto.isBlank() && tipoMarcacao != "marcacao_extra") {
+            Toast.makeText(this, "Informe o horário correto", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (obs.isBlank()) {
+            etObservacao.error = "Descreva o motivo da correção"
+            return
+        }
+
+        val tipoFinal = when {
+            marcacaoId != null -> "horario_errado"
+            tipoMarcacao == "marcacao_faltando" -> "marcacao_faltando"
+            else -> "outro"
+        }
+
+        btnEnviar.isEnabled = false
+        tvStatus.text = "Enviando..."
+        tvStatus.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_info))
+        tvStatus.visibility = View.VISIBLE
+
+        lifecycleScope.launch {
+            val resp = withContext(Dispatchers.IO) {
+                try {
+                    api.solicitarCorrecaoPonto(
+                        dataRef = dataRef,
+                        tipoProbema = tipoFinal,
+                        horarioEsperado = horarioOriginal,
+                        observacao = obs,
+                        marcacaoId = marcacaoId,
+                        horarioCorreto = horarioCorreto.ifBlank { null }
+                    )
+                } catch (e: Exception) {
+                    CorrecaoPontoResponse(ok = false, erro = e.message ?: "Falha de conexão")
+                }
+            }
+            btnEnviar.isEnabled = true
+            if (resp.ok) {
+                Toast.makeText(this@SolicitacaoCorrecaoPontoActivity, "Solicitação enviada!", Toast.LENGTH_SHORT).show()
+                if (tipoFinal == "marcacao_faltando") {
+                    correcoesFaltandoPendentes++
+                    val enviadas = marcacoesDia + correcoesFaltandoPendentes
+                    val restantes = maxMarcacoesDia - enviadas
+                    etObservacao.text?.clear()
+                    if (restantes > 0) {
+                        tvStatus.text = "✅ Marcação $correcoesFaltandoPendentes/${maxMarcacoesDia - marcacoesDia} solicitada! Você pode adicionar mais $restantes marcação(ões) para este dia abaixo."
+                        tvStatus.setTextColor(ContextCompat.getColor(this@SolicitacaoCorrecaoPontoActivity, R.color.mobile_semantic_success))
+                        // Reabrir painel para próxima marcação
+                        mostrarPainelSemMarcacao()
+                    } else {
+                        tvStatus.text = "✅ Todas as ${maxMarcacoesDia - marcacoesDia} marcações solicitadas! O RH analisará em breve."
+                        tvStatus.setTextColor(ContextCompat.getColor(this@SolicitacaoCorrecaoPontoActivity, R.color.mobile_semantic_success))
+                        layoutCorrecao.visibility = View.GONE
+                        layoutMarcacoes.visibility = View.GONE
+                        marcacaoId = null
+                        horarioCorreto = ""
+                    }
+                } else {
+                    tvStatus.text = "✅ Solicitação enviada! O RH analisará em breve."
+                    tvStatus.setTextColor(ContextCompat.getColor(this@SolicitacaoCorrecaoPontoActivity, R.color.mobile_semantic_success))
+                    etObservacao.text?.clear()
+                    layoutCorrecao.visibility = View.GONE
+                    layoutMarcacoes.visibility = View.GONE
+                    marcacaoId = null
+                    horarioCorreto = ""
+                }
+            } else {
+                tvStatus.text = "❌ ${resp.erro ?: "Erro ao enviar"}"
+                tvStatus.setTextColor(ContextCompat.getColor(this@SolicitacaoCorrecaoPontoActivity, R.color.mobile_semantic_pending))
+            }
+        }
+    }
+
+    // Extensão para iterar views filhas de LinearLayout
+    private val ViewGroup.children: Sequence<View>
+        get() = sequence { for (i in 0 until childCount) yield(getChildAt(i)) }
 }

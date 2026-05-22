@@ -125,6 +125,7 @@ data class ComunicadoItem(
     val id: Int,
     val titulo: String = "",
     val conteudo: String = "",
+    val url: String? = null,
     val criado_fmt: String? = null,
     val lido: Boolean = false,
     val lidos_count: Int = 0,
@@ -191,7 +192,9 @@ data class PontoResumo(
     val status: String? = null,
     val inconsistencias: List<String> = emptyList(),
     val fechado: Boolean = false,
-    val fechado_por: String? = null
+    val fechado_por: String? = null,
+    val max_marcacoes_dia: Int = 4,
+    val correcoes_faltando_pendentes: Int = 0
 )
 
 data class PontoDiaResponse(
@@ -270,6 +273,9 @@ data class CorrecaoPontoItem(
     val data_ref: String? = null,
     val tipo_problema: String? = null,
     val horario_esperado: String? = null,
+    val horario_correto: String? = null,
+    val horario_original: String? = null,
+    val marcacao_id: Int? = null,
     val observacao: String? = null,
     val status: String? = null,
     val motivo_admin: String? = null,
