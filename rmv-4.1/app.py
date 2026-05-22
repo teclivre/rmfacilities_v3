@@ -6275,8 +6275,10 @@ def api_editar_empresa(id):
 @lr
 def api_remover_empresa(id):
     e=db.get_or_404(Empresa, id)
+    nome=e.nome
     db.session.delete(e)
     db.session.commit()
+    audit_event('empresa_excluir','usuario',session.get('uid'),'empresa',id,True,{'nome':nome})
     return jsonify({'ok':True})
 
 @app.route('/api/empresas/<int:id>/certificado',methods=['DELETE'])
@@ -6387,7 +6389,10 @@ def api_deletar_usuario(id):
     if (u.perfil or '').strip().lower()=='dono' and (not is_owner_user()):
         return jsonify({'erro':'Apenas dono pode excluir usuário dono.'}),403
     if u.perfil=='dono' and Usuario.query.filter_by(perfil='dono').count()<=1: return jsonify({'erro':'Não é possível excluir o único dono'}),400
-    db.session.delete(u); db.session.commit(); return jsonify({'ok':True})
+    info={'email':u.email,'nome':u.nome,'perfil':u.perfil}
+    db.session.delete(u); db.session.commit()
+    audit_event('usuario_excluir','usuario',session.get('uid'),'usuario',id,True,info)
+    return jsonify({'ok':True})
 
 @app.route('/api/usuarios/<int:id>/certificado',methods=['POST'])
 @lr
@@ -6558,8 +6563,10 @@ def api_cliente_reajuste(id):
 @lr
 def api_deletar_cliente(id):
     c=db.get_or_404(Cliente, id)
+    nome=c.nome
     db.session.delete(c)
     db.session.commit()
+    audit_event('cliente_excluir','usuario',session.get('uid'),'cliente',id,True,{'nome':nome})
     return jsonify({'ok':True})
 
 # ── CONTRATOS ────────────────────────────────────────────────────────────────
@@ -6609,7 +6616,9 @@ def api_atualizar_contrato(id):
 @lr
 def api_deletar_contrato(id):
     ct=db.get_or_404(Contrato, id)
+    info={'numero':getattr(ct,'numero',None),'cliente_id':ct.cliente_id}
     db.session.delete(ct); db.session.commit()
+    audit_event('contrato_excluir','usuario',session.get('uid'),'contrato',id,True,info)
     return jsonify({'ok':True})
 
 @app.route('/api/contratos/<int:id>/reajuste',methods=['POST'])
@@ -7520,6 +7529,7 @@ def api_atualizar_funcionario(id):
 @lr
 def api_deletar_funcionario(id):
     f=db.get_or_404(Funcionario, id)
+    info={'nome':f.nome,'cpf':getattr(f,'cpf',None)}
     arqs=FuncionarioArquivo.query.filter_by(funcionario_id=id).all()
     for a in arqs:
         try: os.remove(os.path.join(UPLOAD_ROOT,a.caminho))
@@ -7528,7 +7538,9 @@ def api_deletar_funcionario(id):
     PontoMarcacao.query.filter_by(funcionario_id=id).delete()
     PontoAjuste.query.filter_by(funcionario_id=id).delete()
     PontoFechamentoDia.query.filter_by(funcionario_id=id).delete()
-    db.session.delete(f); db.session.commit(); return jsonify({'ok':True})
+    db.session.delete(f); db.session.commit()
+    audit_event('funcionario_excluir','usuario',session.get('uid'),'funcionario',id,True,info)
+    return jsonify({'ok':True})
 
 @app.route('/api/funcionarios/<int:id>/arquivos',methods=['GET'])
 @lr
@@ -8019,9 +8031,9 @@ def _gerar_requisicao_vt_pdf(funcionario, meios_transporte, empresa=None, opta=T
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 
     preto = colors.black
     cinza_leve = colors.HexColor('#F5F5F5')
@@ -8374,7 +8386,7 @@ def _gerar_termo_uniforme_pdf(funcionario, itens, empresa=None, obs=''):
     from reportlab.lib.units import cm
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, Image
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 
     azul = colors.HexColor('#1A3A5C')
     preto = colors.black
@@ -8557,7 +8569,7 @@ def _gerar_declaracao_acumulo_cargo_pdf(funcionario, acumula=False, empresa=None
     from reportlab.lib.units import cm
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, Image
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 
     azul = colors.HexColor('#1A3A5C')
     cinza = colors.HexColor('#F0F4F8')
@@ -8731,7 +8743,7 @@ def _gerar_advertencia_pdf(funcionario, tipo='advertencia_escrita', descricao=''
     from reportlab.lib.units import cm
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, Image
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 
     vermelho = colors.HexColor('#8B1A1A')
     azul = colors.HexColor('#1A3A5C')
@@ -9258,7 +9270,7 @@ def _gerar_proposta_comercial_pdf(empresa, cnpj, funcao, data_str, cliente, emai
     from reportlab.lib.units import cm
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, PageBreak
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY, TA_RIGHT
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_RIGHT
     import io as _io
 
     buf = _io.BytesIO()
@@ -11766,7 +11778,6 @@ def api_app_ponto_marcar_me():
     dh_cliente_raw=(dados.get('data_hora_cliente') or '').strip()
     if dh_cliente_raw:
         try:
-            from datetime import timezone
             dh_c=datetime.fromisoformat(dh_cliente_raw.replace('Z','+00:00'))
             # utcnow() retorna hora local (Brasília/APP_TZ), não UTC.
             # Convertemos o timestamp do cliente para APP_TZ antes de comparar.
@@ -11992,7 +12003,6 @@ def api_app_ponto_espelho_dados_me():
 @app_func_required
 def api_app_ponto_resumo_mes():
     """Retorna saldo de horas trabalhadas no mês corrente (endpoint leve)."""
-    import calendar as _cal
     f=g.app_funcionario
     hoje=utcnow().date()
     ano,mes=hoje.year,hoje.month
@@ -12593,6 +12603,7 @@ def api_rh_comunicado_excluir(cid):
     c=db.get_or_404(ComunicadoApp, cid)
     c.ativo=False
     db.session.commit()
+    audit_event('comunicado_excluir','usuario',session.get('uid'),'comunicado',cid,True,{'titulo':getattr(c,'titulo',None)})
     return jsonify({'ok':True})
 
 # ============================================================
@@ -12790,7 +12801,6 @@ def api_func_arquivo_cancelar_assinatura(id):
 @lr
 def api_rh_dashboard_assinaturas_pendentes():
     """Dashboard: pendentes de assinatura por funcionário, ordenados por mais antigo."""
-    from sqlalchemy import func as sqlfunc
     pendentes=FuncionarioArquivo.query.filter_by(ass_status='pendente').order_by(FuncionarioArquivo.criado_em.asc()).all()
     por_func={}
     agora=utcnow()
@@ -13235,7 +13245,7 @@ def _build_doc_assinatura_pdf(arquivo,funcionario,url_root):
     from reportlab.lib.units import cm
     from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer,Image
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_LEFT,TA_RIGHT,TA_CENTER
+    from reportlab.lib.enums import TA_CENTER
     from reportlab.graphics.barcode import qr as qr_code
     from reportlab.graphics.shapes import Drawing
 
@@ -13574,7 +13584,7 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     from reportlab.lib.units import cm
     from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer,Image
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_LEFT,TA_RIGHT,TA_CENTER
+    from reportlab.lib.enums import TA_CENTER
     from reportlab.graphics.barcode import qr as qr_code
     from reportlab.graphics.shapes import Drawing
 
@@ -15255,7 +15265,11 @@ def api_atualizar_ordem_compra(id):
 @app.route('/api/ordens-compra/<int:id>',methods=['DELETE'])
 @lr
 def api_deletar_ordem_compra(id):
-    db.session.delete(db.get_or_404(OrdemCompra, id)); db.session.commit(); return jsonify({'ok':True})
+    oc=db.get_or_404(OrdemCompra, id)
+    info={'numero':getattr(oc,'numero',None),'valor':float(getattr(oc,'valor',0) or 0)}
+    db.session.delete(oc); db.session.commit()
+    audit_event('ordem_compra_excluir','usuario',session.get('uid'),'ordem_compra',id,True,info)
+    return jsonify({'ok':True})
 
 @app.route('/api/operacional/documentos',methods=['GET'])
 @lr
@@ -16220,7 +16234,7 @@ def api_beneficios_calcular_por_periodo():
             intervalo_min  int minutos (opcional, default 60)
             min_horas_vrvt int horas mínimas para pagar VT/VR por dia (default 8)
     """
-    from datetime import date,timedelta
+    from datetime import timedelta
     d=request.json or {}
     empresa_id=to_num(d.get('empresa_id')) or None
     salvar=to_bool(d.get('salvar'))
@@ -18015,6 +18029,7 @@ def api_folhas_remove_funcionario(fid, func_id):
     db.session.flush()
     _folha_recalcular_total(f)
     db.session.commit()
+    audit_event('folha_remover_funcionario','usuario',session.get('uid'),'folha',fid,True,{'funcionario_id':func_id})
     return jsonify({'ok': True, 'folha': f.to_dict(with_items=True)})
 
 @app.route('/api/folhas/<int:fid>/itens/<int:item_id>', methods=['PUT'])
@@ -19137,7 +19152,7 @@ def _build_pdf(d):
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
-    from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer,HRFlowable,Image,PageBreak
+    from reportlab.platypus import SimpleDocTemplate,Table,TableStyle,Paragraph,Spacer,Image,PageBreak
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_LEFT,TA_RIGHT,TA_CENTER
     from reportlab.graphics.barcode import qr as qr_code
@@ -20262,8 +20277,6 @@ def api_medicao_enviar_email(id):
     emp=db.session.get(Empresa, m.empresa_id) if m.empresa_id else None
     md=m.to_dict(); md['empresa']=emp.to_dict() if emp else {}
     try:
-        from flask import current_app
-        from reportlab.lib.pagesizes import A4
         import io as _io
         # gera PDF em memória
         buf=_io.BytesIO()
@@ -20378,7 +20391,7 @@ def _cobranca_enviar_lembrete(m,tipo,emp=None):
 @app.route('/api/cobrancas/processar',methods=['POST'])
 @lr
 def api_cobrancas_processar():
-    from datetime import date as _date, timedelta as _td
+    from datetime import date as _date
     hoje=_date.today()
     d=request.json or {}
     tipos_solicitados=d.get('tipos',['D-5','D-1','D+3'])
@@ -20548,7 +20561,7 @@ def api_conciliacao_auto():
         candidatas=Medicao.query.filter(Medicao.status=='emitida',
             db.func.abs(Medicao.valor_bruto-t.valor)<0.02).all()
         # refina por data próxima ao vencimento (±15 dias)
-        from datetime import date as _d, timedelta as _td
+        from datetime import date as _d
         melhor=None
         if t.data_mov:
             try: dt_mov=_d.fromisoformat(t.data_mov)
@@ -20603,10 +20616,21 @@ def api_medicao_download_anexo(id):
 def seed():
     from werkzeug.security import generate_password_hash
     if Usuario.query.count()==0:
+        admin_pwd = (os.environ.get('ADMIN_DEFAULT_PASSWORD') or '').strip()
+        if not admin_pwd:
+            admin_pwd = secrets.token_urlsafe(18)
+            try:
+                app.logger.warning(
+                    '[SEED] Usuário admin criado com senha aleatória: %s '
+                    '(altere imediatamente após o primeiro login ou defina ADMIN_DEFAULT_PASSWORD)',
+                    admin_pwd,
+                )
+            except Exception:
+                print(f'[SEED] Senha admin inicial: {admin_pwd}')
         db.session.add(Usuario(
             nome='Administrador',
             email='admin@rmfacilities.com.br',
-            senha=generate_password_hash('naoseinao', method='scrypt'),
+            senha=generate_password_hash(admin_pwd, method='scrypt'),
             perfil='admin',
             ativo=True,
             twofa_ativo=False
