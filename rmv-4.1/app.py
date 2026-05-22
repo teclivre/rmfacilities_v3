@@ -150,6 +150,58 @@ def _load_app_secret_key():
     return secrets.token_urlsafe(48)
 
 
+# ── Observabilidade: Sentry + structlog ──────────────────────────────────────
+# Inicializados ANTES do Flask para capturar erros de bootstrap.
+try:
+    import sentry_sdk
+    from sentry_sdk.integrations.flask import FlaskIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+
+    _sentry_dsn = (os.environ.get("SENTRY_DSN") or "").strip()
+    if _sentry_dsn:
+        sentry_sdk.init(
+            dsn=_sentry_dsn,
+            integrations=[FlaskIntegration(), SqlalchemyIntegration()],
+            environment=(
+                os.environ.get("APP_ENV")
+                or os.environ.get("FLASK_ENV")
+                or "production"
+            ),
+            release=os.environ.get("APP_RELEASE") or None,
+            traces_sample_rate=float(os.environ.get("SENTRY_TRACES_RATE", "0.05")),
+            profiles_sample_rate=float(os.environ.get("SENTRY_PROFILES_RATE", "0.0")),
+            send_default_pii=False,
+            max_breadcrumbs=50,
+        )
+except Exception:
+    # Falha ao inicializar Sentry não pode quebrar o app.
+    pass
+
+try:
+    import structlog
+
+    _structlog_processors = [
+        structlog.contextvars.merge_contextvars,
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso", utc=False),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+    ]
+    if _is_prod_hint():
+        _structlog_processors.append(structlog.processors.JSONRenderer())
+    else:
+        _structlog_processors.append(structlog.dev.ConsoleRenderer(colors=False))
+    structlog.configure(
+        processors=_structlog_processors,
+        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+        logger_factory=structlog.PrintLoggerFactory(),
+        cache_logger_on_first_use=True,
+    )
+    slog = structlog.get_logger("rmfacilities")
+except Exception:
+    slog = None
+
+
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = (
     25 * 1024 * 1024
