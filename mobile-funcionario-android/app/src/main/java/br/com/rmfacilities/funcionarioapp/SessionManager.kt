@@ -2,6 +2,7 @@ package br.com.rmfacilities.funcionarioapp
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import kotlin.math.max
@@ -24,8 +25,13 @@ class SessionManager(private val context: Context) {
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
-        } catch (_: Exception) {
-            // Keystore inacessivel: apaga TODOS os dados sensiveis e usa prefs vazia
+        } catch (e: Exception) {
+            // Keystore inacessivel: apaga TODOS os dados sensiveis e usa prefs vazia.
+            // Loga o erro como CRITICO via Logcat + telemetria local para diagnostico.
+            Log.e(TAG, "Keystore/EncryptedSharedPreferences indisponivel - dados apagados, login forcado", e)
+            try {
+                TelemetryLogger.e(TAG, "keystore_failed: " + (e.message ?: e.javaClass.simpleName), e)
+            } catch (_: Throwable) { /* nao deixar falha de telemetria quebrar init */ }
             context.getSharedPreferences("rm_funcionario_app", Context.MODE_PRIVATE)
                 .edit().clear().apply()
             failed = true
@@ -33,6 +39,10 @@ class SessionManager(private val context: Context) {
         }
         prefs = resolved
         keystoreFailed = failed
+    }
+
+    companion object {
+        private const val TAG = "SessionManager"
     }
 
     var apiBaseUrl: String

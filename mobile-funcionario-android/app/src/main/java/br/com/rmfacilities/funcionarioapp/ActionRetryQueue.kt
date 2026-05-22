@@ -1,9 +1,14 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.content.Context
-import android.util.Base64
+import android.content.SharedPreferences
+import android.util.Log
+import androidx.security.crypto.EncryptedFile
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
 
@@ -16,16 +21,58 @@ data class PendingAction(
 
 class ActionRetryQueue(context: Context) {
     private val appContext = context.applicationContext
-    private val prefs = context.getSharedPreferences("rm_funcionario_retry_queue", Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences = createEncryptedPrefs(appContext)
     private val gson = Gson()
     private val key = "pending_actions"
 
     companion object {
+        private const val TAG = "ActionRetryQueue"
         private const val MAX_QUEUE_SIZE = 50
         // Pontos expiram em 24h — um ponto offline com mais de 24h tem GPS/hora inválidos
         private const val PONTO_TTL_MS = 24 * 60 * 60 * 1000L
         // Outros tipos expiram em 7 dias
         private const val DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000L
+        private const val PREFS_NAME = "rm_funcionario_retry_queue"
+
+        private fun createEncryptedPrefs(ctx: Context): SharedPreferences {
+            return try {
+                val masterKey = MasterKey.Builder(ctx)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build()
+                EncryptedSharedPreferences.create(
+                    ctx,
+                    PREFS_NAME,
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+            } catch (e: Exception) {
+                // Keystore indisponivel: apaga a fila (pode conter dados pessoais em plain
+                // de uma versao antiga) e usa prefs comum como fallback degradado.
+                Log.e(TAG, "EncryptedSharedPreferences indisponivel - fila offline operara sem cifra", e)
+                try { TelemetryLogger.e(TAG, "retry_queue_keystore_failed: " + (e.message ?: ""), e) } catch (_: Throwable) {}
+                ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit().clear().apply()
+                ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            }
+        }
+
+        private fun masterKeyOrNull(ctx: Context): MasterKey? = try {
+            MasterKey.Builder(ctx).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
+        } catch (_: Exception) { null }
+    }
+
+    init {
+        // Migracao one-shot: se existir prefs antiga em plain text com a chave conhecida,
+        // tenta importar e remover o blob antigo. Em caso de falha, descarta silenciosamente.
+        try {
+            val legacy = appContext.getSharedPreferences(PREFS_NAME + "_legacy_plain", Context.MODE_PRIVATE)
+            val raw = legacy.getString(key, null)
+            if (raw != null) {
+                prefs.edit().putString(key, raw).apply()
+                legacy.edit().clear().apply()
+            }
+        } catch (_: Exception) { /* ignore */ }
     }
 
     private fun isExpired(action: PendingAction): Boolean {
@@ -87,18 +134,39 @@ class ActionRetryQueue(context: Context) {
     }
 
     fun enqueueFoto(bytes: ByteArray, mimeType: String) {
-        // Salva os bytes em filesDir para evitar ANR com SharedPreferences
+        // Salva os bytes em filesDir cifrados com EncryptedFile (AES256_GCM via Keystore).
+        // Se EncryptedFile falhar (Keystore indisponivel), grava em plain como fallback degradado.
         val ext = when (mimeType) { "image/png" -> "png"; "image/webp" -> "webp"; else -> "jpg" }
-        val fileName = "foto_pending_${UUID.randomUUID()}.$ext"
+        val fileName = "foto_pending_${UUID.randomUUID()}.$ext.enc"
         val fotoDir = File(appContext.filesDir, "pending_fotos").also { it.mkdirs() }
         val file = File(fotoDir, fileName)
-        try { file.writeBytes(bytes) } catch (_: Exception) { return }
+        var encrypted = false
+        try {
+            val mk = masterKeyOrNull(appContext)
+            if (mk != null) {
+                val ef = EncryptedFile.Builder(
+                    appContext, file, mk,
+                    EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB
+                ).build()
+                ef.openFileOutput().use { it.write(bytes); it.flush() }
+                encrypted = true
+            } else {
+                file.writeBytes(bytes)
+            }
+        } catch (e: Exception) {
+            try { TelemetryLogger.e(TAG, "enqueueFoto encrypt fail: " + (e.message ?: ""), e) } catch (_: Throwable) {}
+            try { file.writeBytes(bytes) } catch (_: Exception) { return }
+        }
         val items = load()
         items.add(
             PendingAction(
                 id = UUID.randomUUID().toString(),
                 type = "foto",
-                payload = mapOf("file_path" to file.absolutePath, "mime" to mimeType),
+                payload = mapOf(
+                    "file_path" to file.absolutePath,
+                    "mime" to mimeType,
+                    "enc" to if (encrypted) "1" else "0"
+                ),
                 createdAt = System.currentTimeMillis()
             )
         )
@@ -168,15 +236,36 @@ class ActionRetryQueue(context: Context) {
                     "foto" -> {
                         val filePath = action.payload["file_path"].orEmpty()
                         val mime = action.payload["mime"].orEmpty().ifBlank { "image/jpeg" }
+                        val isEnc = action.payload["enc"] == "1"
                         if (filePath.isBlank()) false
                         else {
                             val file = File(filePath)
                             if (!file.exists()) true // arquivo perdido — descarta sem retentar
                             else {
-                                val fotoBytes = file.readBytes()
-                                val uploaded = api.uploadFoto(fotoBytes, mime).ok
-                                if (uploaded) file.delete()
-                                uploaded
+                                val fotoBytes: ByteArray = if (isEnc) {
+                                    val mk = masterKeyOrNull(appContext)
+                                    if (mk == null) ByteArray(0) else try {
+                                        val ef = EncryptedFile.Builder(
+                                            appContext, file, mk,
+                                            EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB
+                                        ).build()
+                                        val bos = ByteArrayOutputStream()
+                                        ef.openFileInput().use { it.copyTo(bos) }
+                                        bos.toByteArray()
+                                    } catch (e: Exception) {
+                                        try { TelemetryLogger.e(TAG, "decrypt foto fail: " + (e.message ?: ""), e) } catch (_: Throwable) {}
+                                        ByteArray(0)
+                                    }
+                                } else file.readBytes()
+                                if (fotoBytes.isEmpty()) {
+                                    // nao consegue decifrar — descarta para nao loopar
+                                    try { file.delete() } catch (_: Exception) {}
+                                    true
+                                } else {
+                                    val uploaded = api.uploadFoto(fotoBytes, mime).ok
+                                    if (uploaded) file.delete()
+                                    uploaded
+                                }
                             }
                         }
                     }
