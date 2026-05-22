@@ -12732,10 +12732,14 @@ def _gerar_aviso_previo_pdf(
     anos_servico = (dt_aviso - dt_adm).days // 365 if dt_adm else 0
     dias_adicionais = total_dias - 30
     dt_fim = dt_aviso + timedelta(days=total_dias)
+    # Empregado trabalha SEMPRE no maximo 30 dias (base CLT). Os dias proporcionais
+    # da Lei 12.506/2011 sao INDENIZADOS nas verbas rescisorias (jurisprudencia TST).
+    dt_fim_trabalho = dt_aviso + timedelta(days=30)
 
     data_adm_fmt = dt_adm.strftime("%d/%m/%Y") if dt_adm else str(func_adm)
     data_aviso_fmt = dt_aviso.strftime("%d/%m/%Y")
     data_fim_fmt = dt_fim.strftime("%d/%m/%Y")
+    data_fim_trab_fmt = dt_fim_trabalho.strftime("%d/%m/%Y")
     data_hoje = localnow().strftime("%d/%m/%Y")
     meses_pt = [
         "Janeiro",
@@ -12892,13 +12896,22 @@ def _gerar_aviso_previo_pdf(
             f"o aviso prévio proporcional ao tempo de serviço, nos termos do art. 7º, XXI da Constituição Federal "
             f"c/c Lei nº 12.506/2011 e arts. 487 a 491 da CLT."
         )
-        texto_prazo = (
-            f"Considerando <b>{anos_servico} ano(s)</b> de serviço prestado à empresa, o prazo de aviso prévio é de "
-            f"<b>{total_dias} dias</b> (30 dias base + {dias_adicionais} dias proporcionais), contados a partir de "
-            f"<b>{data_aviso_fmt}</b>, encerrando-se em <b>{data_fim_fmt}</b>. "
-            f"O(A) colaborador(a) deverá <b>permanecer trabalhando normalmente</b> durante todo o período do aviso, "
-            f"encerrando seu vínculo empregatício na data supracitada, quando serão processadas as verbas rescisórias cabíveis."
-        )
+        if dias_adicionais > 0:
+            texto_prazo = (
+                f"Considerando <b>{anos_servico} ano(s)</b> de serviço prestado à empresa, o prazo total de aviso prévio é de "
+                f"<b>{total_dias} dias</b> (30 dias base + {dias_adicionais} dias proporcionais — Lei nº 12.506/2011). "
+                f"O(A) colaborador(a) deverá <b>cumprir efetivamente 30 (trinta) dias de trabalho</b>, a partir de "
+                f"<b>{data_aviso_fmt}</b> até <b>{data_fim_trab_fmt}</b>. Os <b>{dias_adicionais} dias proporcionais adicionais"
+                f"</b> serão <b>INDENIZADOS</b> e integrados às verbas rescisórias, encerrando-se o vínculo empregatício "
+                f"em <b>{data_fim_fmt}</b>."
+            )
+        else:
+            texto_prazo = (
+                f"Considerando <b>{anos_servico} ano(s)</b> de serviço prestado à empresa, o prazo de aviso prévio é de "
+                f"<b>30 dias</b>, contados a partir de <b>{data_aviso_fmt}</b>, encerrando-se em <b>{data_fim_fmt}</b>. "
+                f"O(A) colaborador(a) deverá <b>permanecer trabalhando normalmente</b> durante todo o período do aviso, "
+                f"encerrando seu vínculo empregatício na data supracitada, quando serão processadas as verbas rescisórias cabíveis."
+            )
     elif tipo == "empresa_indenizado":
         texto_intro = (
             f"A empresa <b>{emp_nome}</b>, {cnpj_txt}vem por meio deste instrumento comunicar ao(à) "
@@ -13094,13 +13107,16 @@ def api_calcular_aviso_previo(id):
             data_adm_fmt = dt_adm.strftime("%d/%m/%Y")
     except Exception:
         pass
+    dias_adicionais = max(0, total_dias - 30)
     return jsonify(
         {
             "ok": True,
             "total_dias": total_dias,
             "anos_servico": anos,
             "data_admissao": data_adm_fmt,
-            "dias_adicionais": total_dias - 30,
+            "dias_adicionais": dias_adicionais,
+            "dias_trabalhados": 30,
+            "dias_indenizados": dias_adicionais,
         }
     )
 
