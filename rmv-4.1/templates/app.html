@@ -10841,9 +10841,15 @@ async function fpAdicionarFuncionarios(ids){
   const r = await api(`/api/folhas/${f.id}/funcionarios`, 'POST', {funcionario_ids: ids});
   if(!r || r.error || r.erro){ toast(r?.error||r?.erro||'Erro ao adicionar.','e'); return; }
   toast(`${r.adicionados||0} funcionário(s) adicionado(s).`,'s');
-  // Recarrega tudo do servidor para garantir UI consistente (folha + disponíveis + lista)
-  await fpSelecionarFolha(f.id);
-  await fpCarregarFolhas();
+  // Usa folha já retornada pelo POST — sem roundtrip extra, evita render fora de ordem
+  if(r.folha){
+    FP_STATE.folhaSelecionada = r.folha;
+    const idx = FP_STATE.folhas.findIndex(x => x.id === r.folha.id);
+    if(idx >= 0) FP_STATE.folhas[idx] = r.folha;
+  }
+  fpRenderFolhaPainel();
+  fpRenderListaFolhas();
+  await fpCarregarDisponiveis();
 }
 
 async function fpRemoverItem(funcId){
