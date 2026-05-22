@@ -5116,6 +5116,14 @@ function nav(id,el,force=false){
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));
   document.getElementById('pg-'+targetId).classList.add('on');
+  // Sempre resetar scroll ao trocar de página
+  try{
+    const _c=document.querySelector('main.content')||document.querySelector('.content');
+    if(_c) _c.scrollTop=0;
+    window.scrollTo(0,0);
+    document.documentElement.scrollTop=0;
+    document.body.scrollTop=0;
+  }catch(_){}
   ativarSubAbaPagina(targetId);
   if(el)el.classList.add('on');
   const navMobile=id;
@@ -14840,20 +14848,6 @@ function initAssinaturas(){
   // Ocultar sidebar principal para tela cheia
   document.body.dataset.asiSidebarWas=document.body.classList.contains('sidebar-collapsed')?'1':'0';
   document.body.classList.add('sidebar-collapsed');
-  // Garantir scroll no topo da area de conteudo (corrige espaco vazio acima dos cards)
-  const _resetScrollAsi=()=>{
-    try{
-      const contentEl=document.querySelector('main.content')||document.querySelector('.content');
-      if(contentEl){ contentEl.scrollTop=0; }
-      window.scrollTo(0,0);
-      document.documentElement.scrollTop=0;
-      document.body.scrollTop=0;
-    }catch(_){ }
-  };
-  _resetScrollAsi();
-  requestAnimationFrame(_resetScrollAsi);
-  setTimeout(_resetScrollAsi,80);
-  setTimeout(_resetScrollAsi,400);
   loadEnvelopes(_asiTipo);
   setupAsiDropzone();
   // load funcionários para picker
