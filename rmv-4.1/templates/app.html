@@ -609,6 +609,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 <link rel="stylesheet" href="/static/css/main.css">
 <script src="/static/vendor/pdfjs/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 </head>
 <body>
 
@@ -10629,6 +10630,45 @@ async function fpInicializar(){
   fpCompetenciaAtual();
   await fpCarregarFolhas();
   fpCarregarGrafico();
+  fpStartAutoRefresh();
+}
+
+// ── Auto-refresh: polling a cada 30s para detectar mudanças de outros usuários ──
+let _fpAutoTimer = null;
+function fpStartAutoRefresh(){
+  if(_fpAutoTimer) clearInterval(_fpAutoTimer);
+  _fpAutoTimer = setInterval(async ()=>{
+    // só atualiza se a aba estiver visível e a página de pagamento ativa
+    if(document.hidden) return;
+    const pg = document.getElementById('pg-pagamento-salario');
+    if(!pg || !pg.classList.contains('on')) return;
+    try{
+      // Refresh leve: lista de folhas e (se houver selecionada) seus itens
+      const comp = fpCompetenciaAtual();
+      const emp = fpEmpresaFiltro();
+      const p = new URLSearchParams();
+      if(comp) p.set('competencia', comp);
+      if(emp) p.set('empresa_id', emp);
+      const r = await api('/api/folhas?'+p.toString());
+      if(Array.isArray(r)){
+        FP_STATE.folhas = r;
+        fpRenderListaFolhas();
+        // Se há folha selecionada, recarrega itens se atualizado_em mudou
+        if(FP_STATE.folhaSelecionada){
+          const atual = r.find(x => x.id === FP_STATE.folhaSelecionada.id);
+          if(atual && atual.atualizado_em && atual.atualizado_em !== FP_STATE.folhaSelecionada.atualizado_em){
+            // Mudou no servidor — recarrega
+            const det = await api('/api/folhas/'+atual.id);
+            if(det && !det.error && !det.erro){
+              FP_STATE.folhaSelecionada = det;
+              fpRenderFolhaPainel();
+              toast('Folha atualizada por outro usuário.','i');
+            }
+          }
+        }
+      }
+    }catch(_){/* silencioso */}
+  }, 30000);
 }
 
 async function fpPopularEmpresas(){
@@ -10800,18 +10840,30 @@ function fpRenderFolhaPainel(){
   const editavel = f.status === 'rascunho';
   fpPopularFiltroPostoItens(itens);
   fpFiltrarItens();
-  // drop zone (somente se rascunho)
+  // drop zone — SortableJS (conectada com a lista de disponíveis)
+  fpSetupDropZone(editavel);
+}
+
+// ── SortableJS: drop zone (recebe arrastes da lista de disponíveis) ──────────
+let _fpSortableDropZone = null;
+function fpSetupDropZone(editavel){
   const dz = document.getElementById('fp-drop-zone');
-  dz.ondragover = null; dz.ondragleave = null; dz.ondrop = null;
-  if(editavel){
-    dz.ondragover = (e)=>{ e.preventDefault(); dz.style.borderColor='var(--azul)'; };
-    dz.ondragleave = ()=>{ dz.style.borderColor='transparent'; };
-    dz.ondrop = async (e)=>{
-      e.preventDefault(); dz.style.borderColor='transparent';
-      const fid = e.dataTransfer.getData('text/funcionario-id');
-      if(fid) await fpAdicionarFuncionarios([parseInt(fid)]);
-    };
-  }
+  if(!dz || typeof Sortable === 'undefined') return;
+  if(_fpSortableDropZone){ try{ _fpSortableDropZone.destroy(); }catch(_){} _fpSortableDropZone = null; }
+  if(!editavel) return;
+  // O drop zone aceita itens do grupo 'fp-func' (clone vindo da lista de disponíveis)
+  _fpSortableDropZone = new Sortable(dz, {
+    group: { name: 'fp-func', pull: false, put: true },
+    animation: 150,
+    ghostClass: 'fp-sortable-ghost',
+    onAdd: async (evt) => {
+      const el = evt.item;
+      const fid = el?.dataset?.funcId ? parseInt(el.dataset.funcId, 10) : null;
+      // Remove o elemento clonado (a tabela vai ser repintada pelo refresh)
+      try{ el.parentNode && el.parentNode.removeChild(el); }catch(_){}
+      if(fid) await fpAdicionarFuncionarios([fid]);
+    }
+  });
 }
 
 async function fpCarregarDisponiveis(){
@@ -10835,6 +10887,7 @@ async function fpCarregarDisponiveis(){
   fpRenderDisponiveis();
 }
 
+let _fpSortableDisp = null;
 function fpRenderDisponiveis(){
   const cont = document.getElementById('fp-lista-disponiveis');
   if(!cont) return;
@@ -10851,8 +10904,8 @@ function fpRenderDisponiveis(){
     const isDemitido = (f.status||'').toLowerCase()==='demitido';
     const statusBadge = isDemitido ? '<span style="font-size:10px;background:#fde8e8;color:#c0392b;padding:1px 6px;border-radius:99px;font-weight:700;margin-left:4px">Demitido</span>' : '';
     return `
-    <div ${editavel?'draggable="true"':''} ondragstart="fpOnDragStart(event, ${f.id})"
-         style="border:1px solid var(--borda);border-radius:8px;padding:8px 10px;margin-bottom:6px;${editavel?'cursor:grab':'cursor:default;opacity:.7'};display:flex;align-items:center;gap:8px">
+    <div class="fp-disp-item" data-func-id="${f.id}"
+         style="border:1px solid var(--borda);border-radius:8px;padding:8px 10px;margin-bottom:6px;${editavel?'cursor:grab':'cursor:default;opacity:.7'};display:flex;align-items:center;gap:8px;background:var(--cinza-bg,#fff);transition:transform .12s,box-shadow .12s">
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fpEsc(f.nome)}${statusBadge}</div>
         <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fpEsc(f.re)} ${f.cargo?'• '+fpEsc(f.cargo):''}${f.posto_operacional?' • '+fpEsc(f.posto_operacional):''}</div>
@@ -10861,6 +10914,21 @@ function fpRenderDisponiveis(){
       ${editavel?`<button class="btn b-az b-sm" onclick="fpAdicionarFuncionarios([${f.id}])" title="Adicionar">+</button>`:''}
     </div>
   `}).join('');
+  // (Re)inicializa SortableJS na lista de disponíveis — clone pull para o drop-zone
+  if(typeof Sortable !== 'undefined'){
+    if(_fpSortableDisp){ try{ _fpSortableDisp.destroy(); }catch(_){} _fpSortableDisp = null; }
+    if(editavel){
+      _fpSortableDisp = new Sortable(cont, {
+        group: { name: 'fp-func', pull: 'clone', put: false },
+        sort: false,
+        animation: 150,
+        ghostClass: 'fp-sortable-ghost',
+        dragClass: 'fp-sortable-drag',
+        forceFallback: true,
+        fallbackOnBody: true,
+      });
+    }
+  }
 }
 
 function fpFiltrarDisponiveis(){

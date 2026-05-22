@@ -554,3 +554,8 @@ html[data-theme='dark'] .public-form select{background:#0b1627;border-color:var(
 html[data-theme='dark'] .public-form input:focus,
 html[data-theme='dark'] .public-form select:focus{border-color:var(--azul);box-shadow:0 0 0 1px rgba(103,184,255,.25),0 16px 36px rgba(6,24,44,.55)}
 html[data-theme='dark'] .public-check label{color:var(--preto)}
+
+/* ── SortableJS — drag-and-drop da Folha de Pagamento ─────────── */
+.fp-sortable-ghost{opacity:.4;background:rgba(0,100,220,.10);border:2px dashed var(--azul) !important}
+.fp-sortable-drag{box-shadow:0 8px 22px rgba(0,0,0,.25);transform:rotate(-1deg);background:var(--branco)}
+#fp-drop-zone.sortable-over,#fp-drop-zone[data-over="1"]{border-color:var(--azul) !important;background:rgba(0,100,220,.04)}
