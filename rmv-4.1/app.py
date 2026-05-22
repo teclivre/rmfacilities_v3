@@ -22,14 +22,12 @@ _strict_origin_check = True
 
 from flask import Flask, request, jsonify, redirect, render_template, send_file, Response, url_for, has_request_context
 
-import io
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError, IntegrityError
-import os
 import re
 import math
 import logging
@@ -190,7 +188,7 @@ _cache_cfg = {
 cache = _Cache(app, config=_cache_cfg)
 
 from functools import wraps
-from flask import session, url_for, g
+from flask import session, g
 
 def _lr_unauth_response():
     if (request.path or '').startswith('/api/'):
@@ -9832,6 +9830,7 @@ def api_enviar_proposta_comercial(pid):
 
 def _gerar_contrato_pdf(contrato, prestadora, tomadora):
     """Gera PDF de Contrato de Prestação de Serviços ou Termo Aditivo."""
+    from io import BytesIO
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import cm
