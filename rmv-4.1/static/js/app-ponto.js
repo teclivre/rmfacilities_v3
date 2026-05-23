@@ -880,8 +880,13 @@ let _gfPollTimer=null;
 let _gfLastRefresh=null;
 
 function _gfPaneVisible(){
+  // Verifica (1) que a página RH está ativa e (2) que o painel Gestão Fácil
+  // está explicitamente em display:block (não apenas "não-none", pois a div
+  // não tem display:none inicial e isso causava false-positives).
+  const pg=document.getElementById('pg-rh');
+  if(!pg||!pg.classList.contains('on')) return false;
   const pane=document.getElementById('rh-pane-gestao-facil');
-  return !!(pane&&pane.style.display!=='none');
+  return !!(pane&&pane.style.display==='block');
 }
 
 function _gfUpdateTimestamp(){
@@ -909,6 +914,7 @@ async function _gfPollSilent(){
       gfRenderCalendario(r.resumo,comp);
       gfRenderFolha(r.resumo);
     }
+    // Atualiza timestamp sempre que poll retorna dados válidos
     _gfLastRefresh=new Date();
     _gfUpdateTimestamp();
   }catch(_){}
