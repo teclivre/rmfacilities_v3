@@ -36,6 +36,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError, IntegrityError
+import sqlalchemy.pool as _sa_pool
 import re
 import math
 import logging
@@ -45,6 +46,61 @@ import os, json, hashlib, hmac, secrets
 from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
 from ponto_module import register_ponto_routes
+
+# ── Pydantic v2 — validação de payloads de entrada ───────────────────────────
+from typing import Optional, Literal
+from pydantic import BaseModel, Field, field_validator, ValidationError as _PydanticValidationError
+
+_ESCALA_TIPOS = ("6x2", "6x1", "4x2", "12x36", "folguista", "noturna")
+_TIME_RE = __import__("re").compile(r"^\d{2}:\d{2}$")
+
+
+class EscalaCreatePayload(BaseModel):
+    """Payload validado para criação de escala (POST /api/escalas)."""
+
+    nome: str = Field(..., min_length=1, max_length=120, strip_whitespace=True)
+    tipo: Literal["6x2", "6x1", "4x2", "12x36", "folguista", "noturna"]
+    descricao: Optional[str] = Field(default="", max_length=500)
+    ciclo_json: Optional[str | dict] = Field(default="{}")
+    periodo_noturno_ini: Optional[str] = Field(default="22:00", pattern=r"^\d{2}:\d{2}$")
+    periodo_noturno_fim: Optional[str] = Field(default="05:00", pattern=r"^\d{2}:\d{2}$")
+
+    @field_validator("ciclo_json", mode="before")
+    @classmethod
+    def _coerce_ciclo(cls, v):
+        if isinstance(v, dict):
+            return json.dumps(v, ensure_ascii=False)
+        return v or "{}"
+
+
+class EscalaUpdatePayload(BaseModel):
+    """Payload validado para edição de escala (PUT /api/escalas/<id>)."""
+
+    nome: Optional[str] = Field(default=None, min_length=1, max_length=120, strip_whitespace=True)
+    tipo: Optional[Literal["6x2", "6x1", "4x2", "12x36", "folguista", "noturna"]] = None
+    descricao: Optional[str] = Field(default=None, max_length=500)
+    ciclo_json: Optional[str | dict] = None
+    periodo_noturno_ini: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+    periodo_noturno_fim: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+    ativo: Optional[bool] = None
+
+    @field_validator("ciclo_json", mode="before")
+    @classmethod
+    def _coerce_ciclo(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, dict):
+            return json.dumps(v, ensure_ascii=False)
+        return v or "{}"
+
+
+def _pydantic_error_response(exc: _PydanticValidationError):
+    """Converte erros de validação Pydantic v2 em resposta JSON padronizada."""
+    erros = [
+        f"{' > '.join(str(loc) for loc in e['loc'])}: {e['msg']}"
+        for e in exc.errors()
+    ]
+    return jsonify({"erro": "Dados inválidos: " + "; ".join(erros)}), 422
 
 
 # Flask app and DB initialization must come first
@@ -216,11 +272,12 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True  # Bloqueia acesso via JavaScript a
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", DEFAULT_DB_URI)
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
+    # StaticPool é obrigatório para SQLite em multi-thread (WSGI) + WAL mode.
+    # pool_size / max_overflow são inválidos para StaticPool e causam TypeError.
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
         "connect_args": {"timeout": 30, "check_same_thread": False},
         "pool_pre_ping": True,
-        "pool_size": 1,
-        "max_overflow": 4,
+        "poolclass": _sa_pool.StaticPool,
     }
 db = SQLAlchemy(app)
 
@@ -290,7 +347,13 @@ def _lr_unauth_response():
 def lr(f):
     @wraps(f)
     def w(*a, **k):
-        if "uid" not in session:
+        try:
+            uid = session.get("uid")
+        except Exception:
+            # Sessão corrompida (ex: cookie truncado, chave rotacionada) — trata
+            # como não autenticado sem vazar stacktrace.
+            return _lr_unauth_response()
+        if not uid:
             return _lr_unauth_response()
         if not can_access_request(request.path, request.method):
             return jsonify({"erro": "Acesso negado"}), 403
@@ -309,20 +372,30 @@ def lr(f):
 APP_TZ = ZoneInfo("America/Sao_Paulo")
 
 
-def _same_origin_request(req):
-    if not _strict_origin_check:
+def _same_origin_request(req) -> bool:
+    """Verifica se a requisição tem mesma origem que o host.
+
+    Retorna True em caso de erro de leitura de header para não bloquear
+    requests legítimos com proxies que enviam headers malformados.
+    """
+    try:
+        if not _strict_origin_check:
+            return True
+        host = (req.host_url or "").rstrip("/").lower()
+        origin = (req.headers.get("Origin") or "").rstrip("/").lower()
+        referer = (req.headers.get("Referer") or "").lower()
+        sec_fetch_site = (req.headers.get("Sec-Fetch-Site") or "").lower().strip()
+        if sec_fetch_site in ("same-origin", "none", ""):
+            return True
+        if origin and host and origin.startswith(host):
+            return True
+        if not origin and referer and referer.startswith(host):
+            return True
+        return False
+    except Exception:
+        # Header malformado ou ausente (scanner, fuzzer) — permite passagem
+        # para não gerar DoS acidental; o CSRF é mitigado pela session cookie.
         return True
-    host = (req.host_url or "").rstrip("/").lower()
-    origin = (req.headers.get("Origin") or "").rstrip("/").lower()
-    referer = (req.headers.get("Referer") or "").lower()
-    sec_fetch_site = (req.headers.get("Sec-Fetch-Site") or "").lower().strip()
-    if sec_fetch_site in ("same-origin", "none", ""):
-        return True
-    if origin and host and origin.startswith(host):
-        return True
-    if not origin and referer and referer.startswith(host):
-        return True
-    return False
 
 
 def localnow():
@@ -7058,17 +7131,33 @@ def build_func_docs_response(funcionario_id):
     return resp, 200
 
 
-def read_rows_from_upload(arq):
+def read_rows_from_upload(arq, max_bytes: int = 8 * 1024 * 1024):
+    """Lê linhas de um arquivo CSV ou XLSX enviado via upload.
+
+    Parâmetros
+    ----------
+    arq:
+        Objeto FileStorage do Flask.
+    max_bytes:
+        Limite de leitura em bytes (default 8 MB) para mitigar DoS por
+        exaustão de memória.  Arquivos maiores lançam ``ValueError``.
+    """
     nome = (arq.filename or "").lower()
+    # Lê em chunks com limite explícito para evitar OOM em uploads maliciosos
+    buf = arq.read(max_bytes + 1)
+    if len(buf) > max_bytes:
+        raise ValueError(
+            f"Arquivo excede o limite de {max_bytes // (1024 * 1024)} MB para importação."
+        )
     if nome.endswith(".csv"):
-        txt = arq.read().decode("utf-8-sig")
+        txt = buf.decode("utf-8-sig")
         return list(csv.DictReader(io.StringIO(txt), delimiter=";"))
     if nome.endswith(".xlsx"):
         try:
             from openpyxl import load_workbook
         except Exception:
             raise ValueError("Dependencia openpyxl nao instalada para XLSX")
-        wb = load_workbook(arq, data_only=True, read_only=True)
+        wb = load_workbook(io.BytesIO(buf), data_only=True, read_only=True)
         ws = wb.active
         rows = list(ws.iter_rows(values_only=True))
         if not rows:
@@ -10411,7 +10500,9 @@ def api_funcionario_upload_arquivo(id):
             from pypdf import PdfReader
             import io
 
-            blob = fs.read()
+            # Lê apenas os primeiros 5 MB para extração de texto — suficiente
+            # para detectar competência sem carregar o PDF completo em memória.
+            blob = fs.read(5 * 1024 * 1024)
             try:
                 fs.seek(0)
             except Exception:
@@ -17094,7 +17185,7 @@ def api_app_mensagem_enviar_arquivo():
     conteudo = (request.form.get("conteudo") or "").strip()[:500]
     pasta = os.path.join(UPLOAD_ROOT, "funcionarios", str(f.id), "chat")
     os.makedirs(pasta, exist_ok=True)
-    ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    ts = localnow().strftime("%Y%m%d%H%M%S")
     nome_final = f"{ts}_{nome_orig}"
     abs_p = os.path.join(pasta, nome_final)
     arq.save(abs_p)
@@ -18388,37 +18479,18 @@ def api_escalas_listar():
 @app.route("/api/escalas", methods=["POST"])
 @lr
 def api_escalas_criar():
-    d = request.json or {}
-    nome = (d.get("nome") or "").strip()
-    tipo = (d.get("tipo") or "").strip()
-    if not nome:
-        return jsonify({"erro": "Nome obrigatório"}), 400
-    if tipo not in ("6x2", "6x1", "4x2", "12x36", "folguista", "noturna"):
-        return jsonify(
-            {
-                "erro": "Tipo deve ser '6x2', '6x1', '4x2', '12x36', 'folguista' ou 'noturna'"
-            }
-        ), 400
-
-    ciclo_json = d.get("ciclo_json") or "{}"
-    if isinstance(ciclo_json, dict):
-        ciclo_json = json.dumps(ciclo_json, ensure_ascii=False)
-
-    periodo_ini = (d.get("periodo_noturno_ini") or "22:00").strip()
-    periodo_fim = (d.get("periodo_noturno_fim") or "05:00").strip()
-    # Validar formato HH:MM
-    if not re.match(r"^\d{2}:\d{2}$", periodo_ini):
-        periodo_ini = "22:00"
-    if not re.match(r"^\d{2}:\d{2}$", periodo_fim):
-        periodo_fim = "05:00"
+    try:
+        payload = EscalaCreatePayload.model_validate(request.get_json(force=True) or {})
+    except _PydanticValidationError as exc:
+        return _pydantic_error_response(exc)
 
     e = Escala(
-        nome=nome,
-        tipo=tipo,
-        ciclo_json=ciclo_json,
-        descricao=d.get("descricao", ""),
-        periodo_noturno_ini=periodo_ini,
-        periodo_noturno_fim=periodo_fim,
+        nome=payload.nome,
+        tipo=payload.tipo,
+        ciclo_json=payload.ciclo_json or "{}",
+        descricao=payload.descricao or "",
+        periodo_noturno_ini=payload.periodo_noturno_ini or "22:00",
+        periodo_noturno_fim=payload.periodo_noturno_fim or "05:00",
         ativo=True,
     )
     db.session.add(e)
@@ -18430,7 +18502,7 @@ def api_escalas_criar():
         "escala",
         e.id,
         True,
-        {"nome": nome, "tipo": tipo},
+        {"nome": payload.nome, "tipo": payload.tipo},
     )
     return jsonify(e.to_dict()), 201
 
@@ -18462,37 +18534,25 @@ def api_escala_detalhe(id):
 @lr
 def api_escala_editar(id):
     e = db.get_or_404(Escala, id)
-    d = request.json or {}
-    if "nome" in d:
-        e.nome = (d.get("nome") or "").strip() or e.nome
-    if "tipo" in d and d.get("tipo") in (
-        "6x2",
-        "6x1",
-        "4x2",
-        "12x36",
-        "folguista",
-        "noturna",
-    ):
-        e.tipo = d.get("tipo")
-    if "ciclo_json" in d:
-        ciclo = d.get("ciclo_json")
-        e.ciclo_json = (
-            json.dumps(ciclo, ensure_ascii=False)
-            if isinstance(ciclo, dict)
-            else (ciclo or "{}")
-        )
-    if "descricao" in d:
-        e.descricao = d.get("descricao", "")
-    if "periodo_noturno_ini" in d:
-        periodo_ini = (d.get("periodo_noturno_ini") or "22:00").strip()
-        if re.match(r"^\d{2}:\d{2}$", periodo_ini):
-            e.periodo_noturno_ini = periodo_ini
-    if "periodo_noturno_fim" in d:
-        periodo_fim = (d.get("periodo_noturno_fim") or "05:00").strip()
-        if re.match(r"^\d{2}:\d{2}$", periodo_fim):
-            e.periodo_noturno_fim = periodo_fim
-    if "ativo" in d:
-        e.ativo = bool(d.get("ativo", True))
+    try:
+        payload = EscalaUpdatePayload.model_validate(request.get_json(force=True) or {})
+    except _PydanticValidationError as exc:
+        return _pydantic_error_response(exc)
+
+    if payload.nome is not None:
+        e.nome = payload.nome or e.nome
+    if payload.tipo is not None:
+        e.tipo = payload.tipo
+    if payload.ciclo_json is not None:
+        e.ciclo_json = payload.ciclo_json or "{}"
+    if payload.descricao is not None:
+        e.descricao = payload.descricao
+    if payload.periodo_noturno_ini is not None:
+        e.periodo_noturno_ini = payload.periodo_noturno_ini
+    if payload.periodo_noturno_fim is not None:
+        e.periodo_noturno_fim = payload.periodo_noturno_fim
+    if payload.ativo is not None:
+        e.ativo = payload.ativo
     db.session.commit()
     audit_event(
         "escala_editar",
@@ -21680,7 +21740,7 @@ def api_envelope_assinatura_enviar_otp(token):
     if sig.status == "assinado":
         return _assinatura_json_erro("Você já assinou este documento.", 400)
     env = db.get_or_404(AssinaturaEnvelope, sig.envelope_id)
-    if env.expira_em and datetime.utcnow() > env.expira_em:
+    if env.expira_em and localnow() > env.expira_em:
         return _assinatura_json_erro(
             "O prazo para assinatura deste documento expirou.", 400
         )
@@ -21718,7 +21778,7 @@ def api_envelope_assinatura_confirmar(token):
     if sig.status == "assinado":
         return _assinatura_json_erro("Você já assinou este documento.", 400)
     env = db.get_or_404(AssinaturaEnvelope, sig.envelope_id)
-    if env.expira_em and datetime.utcnow() > env.expira_em:
+    if env.expira_em and localnow() > env.expira_em:
         return _assinatura_json_erro(
             "O prazo para assinatura deste documento expirou.", 400
         )
@@ -21803,7 +21863,7 @@ def api_envelope_assinatura_confirmar(token):
         sig.cpf = cpf_inf
     sig.ass_cpf_informado = cpf_inf
     sig.ass_ip = ip
-    sig.ass_em = datetime.utcnow()
+    sig.ass_em = localnow()
     sig.ass_codigo = secrets.token_urlsafe(10)
     sig.ass_otp_hash = None
     sig.ass_otp_expira_em = None
@@ -29906,10 +29966,12 @@ def api_wa_send_colaboradores():
     arquivo_mimetype = ""
     if fs and (fs.filename or "").strip():
         arquivo_nome = secure_filename(fs.filename or "arquivo") or "arquivo"
-        arquivo_bytes = fs.read()
+        _WA_MAX = 16 * 1024 * 1024
+        # Lê até limit+1 para detectar excesso *antes* de alocar tudo em RAM
+        arquivo_bytes = fs.read(_WA_MAX + 1)
         if not arquivo_bytes:
             return jsonify({"erro": "Arquivo anexado está vazio."}), 400
-        if len(arquivo_bytes) > 16 * 1024 * 1024:
+        if len(arquivo_bytes) > _WA_MAX:
             return jsonify({"erro": "Arquivo excede o limite de 16 MB."}), 400
         try:
             arquivo_tipo, arquivo_mimetype = wa_media_meta(
