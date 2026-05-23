@@ -559,3 +559,138 @@ html[data-theme='dark'] .public-check label{color:var(--preto)}
 .fp-sortable-ghost{opacity:.4;background:rgba(0,100,220,.10);border:2px dashed var(--azul) !important}
 .fp-sortable-drag{box-shadow:0 8px 22px rgba(0,0,0,.25);transform:rotate(-1deg);background:var(--branco)}
 #fp-drop-zone.sortable-over,#fp-drop-zone[data-over="1"]{border-color:var(--azul) !important;background:rgba(0,100,220,.04)}
+
+/* ══════════════════════════════════════════════════════════════
+   TOAST NOTIFICATION SYSTEM
+   ══════════════════════════════════════════════════════════════ */
+.rm-toast-wrap{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column-reverse;gap:10px;pointer-events:none}
+.rm-toast{
+  display:flex;align-items:flex-start;gap:12px;
+  min-width:280px;max-width:380px;
+  padding:14px 16px;
+  border-radius:14px;
+  border:1px solid transparent;
+  backdrop-filter:blur(14px);
+  box-shadow:0 8px 32px rgba(0,0,0,.18),0 1px 0 rgba(255,255,255,.12) inset;
+  font-size:13px;font-weight:600;line-height:1.45;
+  pointer-events:all;cursor:default;
+  animation:toastIn .32s cubic-bezier(.22,.78,.2,1) both;
+  transition:opacity .28s ease,transform .28s ease;
+}
+.rm-toast.dismiss{animation:toastOut .28s ease forwards}
+.rm-toast-icon{font-size:18px;flex-shrink:0;margin-top:1px}
+.rm-toast-body{flex:1}
+.rm-toast-title{font-weight:800;font-size:13px;margin-bottom:2px}
+.rm-toast-msg{opacity:.82;font-size:12px}
+.rm-toast-close{background:none;border:none;opacity:.45;cursor:pointer;font-size:15px;padding:0 0 0 6px;color:inherit;transition:opacity .15s;flex-shrink:0}
+.rm-toast-close:hover{opacity:.9}
+.rm-toast.t-ok{background:rgba(10,52,33,.88);border-color:rgba(54,208,154,.32);color:#a7f3d0}
+.rm-toast.t-er{background:rgba(52,10,10,.88);border-color:rgba(245,117,117,.32);color:#fca5a5}
+.rm-toast.t-in{background:rgba(10,32,58,.88);border-color:rgba(100,180,255,.32);color:#bae0ff}
+.rm-toast.t-wn{background:rgba(52,36,10,.88);border-color:rgba(242,163,56,.32);color:#fed7aa}
+html[data-theme='dark'] .rm-toast.t-ok{background:rgba(6,30,20,.94)}
+html[data-theme='dark'] .rm-toast.t-er{background:rgba(30,6,6,.94)}
+html[data-theme='dark'] .rm-toast.t-in{background:rgba(6,18,38,.94)}
+html[data-theme='dark'] .rm-toast.t-wn{background:rgba(30,20,6,.94)}
+
+/* ── Modal animations ─────────────────────────────────────────── */
+.rm-modal-overlay{
+  position:fixed;inset:0;z-index:3000;
+  display:flex;align-items:center;justify-content:center;padding:16px;
+  background:rgba(0,0,0,.6);backdrop-filter:blur(4px);
+  animation:overlayIn .22s ease both;
+}
+.rm-modal-box{
+  background:var(--branco);color:var(--preto);
+  border-radius:var(--r2);
+  box-shadow:var(--shadow-md),0 0 0 1px rgba(255,255,255,.06) inset;
+  border:1px solid var(--borda);
+  animation:modalIn .28s cubic-bezier(.22,.78,.2,1) both;
+}
+.rm-modal-overlay.closing{animation:overlayOut .2s ease forwards}
+.rm-modal-overlay.closing .rm-modal-box{animation:modalOut .2s cubic-bezier(.4,0,1,.6) forwards}
+
+/* ── Skeleton loader ──────────────────────────────────────────── */
+.skeleton{
+  background:linear-gradient(90deg,var(--cinza-cl) 25%,rgba(200,210,220,.4) 50%,var(--cinza-cl) 75%);
+  background-size:400% 100%;
+  border-radius:8px;
+  animation:shimmer 1.5s infinite linear;
+}
+.skeleton-line{height:14px;border-radius:6px;margin:6px 0}
+.skeleton-line.w-full{width:100%}
+.skeleton-line.w-3q{width:75%}
+.skeleton-line.w-half{width:50%}
+.skeleton-line.w-q{width:25%}
+.skeleton-row{display:flex;flex-direction:column;gap:4px;padding:12px 0;border-bottom:.5px solid var(--borda)}
+
+/* ── Progress bar thin (top) ──────────────────────────────────── */
+.rm-progress-bar{
+  position:fixed;top:0;left:0;right:0;height:3px;z-index:9998;
+  background:linear-gradient(90deg,var(--azul),var(--laranja));
+  transform:scaleX(0);transform-origin:left;
+  transition:transform .3s ease,opacity .4s ease;
+  border-radius:0 2px 2px 0;
+  opacity:0;
+}
+.rm-progress-bar.loading{opacity:1;transform:scaleX(.8);transition:transform 2s cubic-bezier(.1,0,.2,1),opacity .1s}
+.rm-progress-bar.done{transform:scaleX(1);transition:transform .2s ease}
+
+/* ── Button loading spinner ───────────────────────────────────── */
+.btn-loading{position:relative;pointer-events:none;opacity:.75}
+.btn-loading::after{
+  content:'';position:absolute;
+  width:14px;height:14px;
+  border:2px solid rgba(255,255,255,.35);
+  border-top-color:#fff;
+  border-radius:50%;
+  animation:spin .7s linear infinite;
+  right:10px;top:50%;transform:translateY(-50%);
+}
+.btn-loading.b-gh::after,.btn-loading.b-ci::after{border-color:rgba(0,0,0,.2);border-top-color:var(--preto)}
+
+/* ── Custom scrollbars ────────────────────────────────────────── */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(32,93,138,.22);border-radius:99px}
+::-webkit-scrollbar-thumb:hover{background:rgba(32,93,138,.4)}
+html[data-theme='dark'] ::-webkit-scrollbar-thumb{background:rgba(103,184,255,.2)}
+html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover{background:rgba(103,184,255,.38)}
+
+/* ── Table row animation on load ──────────────────────────────── */
+.tbl tbody tr{animation:rowIn .24s ease both}
+.tbl tbody tr:nth-child(1){animation-delay:.03s}
+.tbl tbody tr:nth-child(2){animation-delay:.06s}
+.tbl tbody tr:nth-child(3){animation-delay:.09s}
+.tbl tbody tr:nth-child(4){animation-delay:.12s}
+.tbl tbody tr:nth-child(5){animation-delay:.15s}
+.tbl tbody tr:nth-child(n+6){animation-delay:.17s}
+
+/* ── Floating label effect (opt-in class .fl on .f) ──────────── */
+.f.fl{position:relative}
+.f.fl label{position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:13px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--text-muted);pointer-events:none;transition:all .18s ease;z-index:1}
+.f.fl input:focus ~ label,.f.fl input:not(:placeholder-shown) ~ label,.f.fl select:focus ~ label{top:6px;transform:none;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--azul)}
+.f.fl input,.f.fl select{padding-top:18px;padding-bottom:6px}
+
+/* ── Chip/badge ───────────────────────────────────────────────── */
+.chip{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:700;border:1px solid transparent}
+.chip-az{background:var(--azul-cl);color:var(--azul);border-color:rgba(32,93,138,.2)}
+.chip-vd{background:var(--verde-cl);color:var(--verde);border-color:rgba(22,131,87,.2)}
+.chip-lj{background:var(--laranja-cl);color:var(--laranja-esc);border-color:rgba(242,142,52,.2)}
+.chip-vm{background:var(--verm-cl);color:var(--verm);border-color:rgba(191,46,46,.2)}
+.chip-ci{background:var(--cinza-cl);color:var(--text-muted);border-color:var(--borda)}
+
+/* ── Keyframes ────────────────────────────────────────────────── */
+@keyframes toastIn{from{opacity:0;transform:translateX(40px) scale(.9)}to{opacity:1;transform:none}}
+@keyframes toastOut{to{opacity:0;transform:translateX(60px) scale(.88)}}
+@keyframes overlayIn{from{opacity:0}to{opacity:1}}
+@keyframes overlayOut{to{opacity:0}}
+@keyframes modalIn{from{opacity:0;transform:scale(.88) translateY(16px)}to{opacity:1;transform:none}}
+@keyframes modalOut{to{opacity:0;transform:scale(.9) translateY(-8px)}}
+@keyframes shimmer{to{background-position:-400% 0}}
+@keyframes spin{to{transform:translateY(-50%) rotate(360deg)}}
+@keyframes rowIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+@keyframes popIn{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(32,93,138,.4)}70%{box-shadow:0 0 0 8px rgba(32,93,138,0)}}
+@keyframes floatY{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes gradShift{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}

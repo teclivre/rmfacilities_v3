@@ -613,6 +613,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 </head>
 <body>
 
+<div class="rm-progress-bar" id="rm-progress-bar-top"></div>
+
 <div id="autosave-global-badge" class="autosave-global-badge state-ok" aria-live="polite" title="Sincronizado">
   <span class="dot"></span>
 </div>
@@ -4718,6 +4720,54 @@ async function api(url,m='GET',b=null){
     return {erro:'Falha de conexao com o servidor. Verifique sua rede e tente novamente.'};
   }
 }
+
+// ── Toast notification system ────────────────────────────────────────────────
+(function(){
+  let _wrap = null;
+  function _getWrap(){
+    if(!_wrap){
+      _wrap = document.createElement('div');
+      _wrap.className = 'rm-toast-wrap';
+      document.body.appendChild(_wrap);
+    }
+    return _wrap;
+  }
+  window.rmToast = function(msg, type='in', title='', duration=4000){
+    const icons = {ok:'✅', er:'❌', in:'ℹ️', wn:'⚠️'};
+    const wrap = _getWrap();
+    const t = document.createElement('div');
+    t.className = `rm-toast t-${type}`;
+    t.innerHTML = `<span class="rm-toast-icon">${icons[type]||'ℹ️'}</span>
+      <div class="rm-toast-body">${title ? `<div class="rm-toast-title">${title}</div>` : ''}
+      <div class="rm-toast-msg">${msg}</div></div>
+      <button class="rm-toast-close" onclick="rmDismissToast(this.closest('.rm-toast'))">✕</button>`;
+    wrap.appendChild(t);
+    if(duration > 0){
+      setTimeout(()=>rmDismissToast(t), duration);
+    }
+    return t;
+  };
+  window.rmDismissToast = function(t){
+    if(!t || t._dismissing) return;
+    t._dismissing = true;
+    t.classList.add('dismiss');
+    t.addEventListener('animationend', ()=>t.remove(), {once:true});
+    setTimeout(()=>{ if(t.parentNode) t.remove(); }, 500);
+  };
+})();
+
+// ── Progress bar (top) ───────────────────────────────────────────────────────
+(function(){
+  let _bar = null, _tid = null;
+  function _getBar(){
+    if(!_bar){ _bar=document.createElement('div'); _bar.className='rm-progress-bar'; document.body.appendChild(_bar); }
+    return _bar;
+  }
+  window.rmProgress = {
+    start(){ const b=_getBar(); b.classList.remove('done'); b.classList.add('loading'); },
+    done(){ const b=_getBar(); b.classList.add('done'); clearTimeout(_tid); _tid=setTimeout(()=>{ b.classList.remove('loading','done'); },500); },
+  };
+})();
 
 async function apiForm(url,fd,m='POST'){
   const r=await fetch(url,{method:m,body:fd,credentials:'same-origin'});

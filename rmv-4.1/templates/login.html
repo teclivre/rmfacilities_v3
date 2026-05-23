@@ -1,92 +1,291 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>RM Facilities — Acesso</title>
-<link rel="stylesheet" href="/static/css/main.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap">
 <style>
-body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#eef1f6}
-.box{background:#fff;border-radius:16px;padding:40px 36px;width:100%;max-width:400px;box-shadow:0 4px 24px rgba(0,0,0,.08)}
-.logo{text-align:center;margin-bottom:28px}
-.logo img{height:54px;width:auto;object-fit:contain}
-.logo-txt{font-size:22px;font-weight:700;color:var(--azul)}
-h2{font-size:18px;font-weight:700;color:var(--azul);text-align:center;margin-bottom:6px}
-.sub{font-size:13px;color:#888;text-align:center;margin-bottom:28px}
-.erro{background:var(--verm-cl);color:var(--verm);border-radius:var(--r);padding:10px 14px;font-size:13px;font-weight:700;margin-bottom:16px;text-align:center}
-.ok{background:#eaf8ef;color:#1a6a3a;border-radius:var(--r);padding:10px 14px;font-size:13px;font-weight:700;margin-bottom:16px;text-align:center;border:1px solid #b8e2c4}
-.btn-login{width:100%;background:var(--azul);color:#fff;border:none;border-radius:var(--r);padding:13px;font-size:15px;font-weight:700;cursor:pointer;margin-top:8px;transition:opacity .15s}
-.btn-login:hover{opacity:.88}
-.lnk{display:inline-block;margin-top:10px;font-size:12px;color:var(--azul);text-decoration:none;cursor:pointer}
-.lnk:hover{text-decoration:underline}
-.rodape{text-align:center;margin-top:24px;font-size:12px;color:#bbb}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --azul:#205d8a;--azul-esc:#0d3050;--azul-cl:#d0e4f0;
+  --verm:#bf2e2e;--verm-cl:#fde7e7;--verde:#168357;
+  --r:12px;--r2:20px;
+  --shadow:0 24px 60px rgba(0,0,0,.25);
+  --glow:0 0 0 3px rgba(32,93,138,.28);
+}
+html,body{height:100%;font-family:'Manrope',sans-serif}
+body{
+  display:flex;align-items:center;justify-content:center;
+  min-height:100vh;overflow:hidden;background:#060f1e;
+}
+.bg-gradient{position:fixed;inset:0;z-index:0;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 10%,rgba(32,93,138,.55) 0%,transparent 60%),
+    radial-gradient(ellipse 60% 50% at 85% 90%,rgba(13,48,80,.7) 0%,transparent 55%),
+    radial-gradient(ellipse 50% 70% at 55% 50%,rgba(22,131,87,.12) 0%,transparent 60%),
+    linear-gradient(135deg,#050d1a 0%,#071422 50%,#061019 100%);
+}
+.orb{position:fixed;border-radius:50%;filter:blur(70px);animation:floatOrb linear infinite;pointer-events:none;z-index:0}
+.orb-1{width:420px;height:420px;background:rgba(32,93,138,.28);top:-80px;left:-100px;animation-duration:18s}
+.orb-2{width:300px;height:300px;background:rgba(13,48,80,.35);bottom:-60px;right:-80px;animation-duration:22s;animation-delay:-8s}
+.orb-3{width:200px;height:200px;background:rgba(22,131,87,.15);top:45%;left:60%;animation-duration:26s;animation-delay:-13s}
+body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);
+  background-size:40px 40px}
+.wrap{position:relative;z-index:1;width:100%;max-width:420px;padding:16px}
+.box{
+  background:rgba(12,26,46,.84);backdrop-filter:blur(22px) saturate(1.5);
+  -webkit-backdrop-filter:blur(22px) saturate(1.5);
+  border:1px solid rgba(100,160,220,.18);border-radius:var(--r2);
+  padding:44px 38px 36px;
+  box-shadow:var(--shadow),0 1px 0 rgba(255,255,255,.06) inset;
+  animation:boxIn .55s cubic-bezier(.22,.78,.2,1) both;
+}
+.logo{text-align:center;margin-bottom:32px;animation:fadeDown .5s .1s both}
+.logo img{height:52px;width:auto;object-fit:contain;filter:drop-shadow(0 4px 16px rgba(32,93,138,.5))}
+.logo-txt{font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;color:#fff}
+.logo-badge{display:inline-block;background:rgba(32,93,138,.35);border:1px solid rgba(100,160,220,.3);color:rgba(180,210,240,.8);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;padding:3px 10px;margin-top:6px}
+.login-title{font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700;color:#fff;text-align:center;margin-bottom:4px;animation:fadeDown .5s .15s both}
+.login-sub{font-size:12px;color:rgba(160,195,230,.65);text-align:center;margin-bottom:28px;animation:fadeDown .5s .2s both}
+.alert{border-radius:10px;padding:10px 14px;font-size:12px;font-weight:700;margin-bottom:18px;display:flex;align-items:center;gap:8px;animation:slideAlert .3s ease both}
+.alert-er{background:rgba(191,46,46,.2);border:1px solid rgba(191,46,46,.45);color:#fca5a5}
+.alert-ok{background:rgba(22,131,87,.2);border:1px solid rgba(22,131,87,.45);color:#6ee7b7}
+.form{display:flex;flex-direction:column;gap:14px;animation:fadeUp .4s .25s both}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:10px;font-weight:700;color:rgba(140,175,210,.7);text-transform:uppercase;letter-spacing:.6px}
+.field-wrap{position:relative}
+.field input{
+  width:100%;padding:12px 14px;
+  background:rgba(255,255,255,.07);border:1.5px solid rgba(100,160,220,.2);
+  border-radius:var(--r);color:#fff;font-size:13px;font-family:'Manrope',sans-serif;
+  transition:all .22s ease;outline:none;
+}
+.field input::placeholder{color:rgba(255,255,255,.3)}
+.field input:focus{border-color:rgba(100,160,220,.55);background:rgba(255,255,255,.1);box-shadow:var(--glow)}
+.field input[readonly]{background:rgba(255,255,255,.04);color:rgba(255,255,255,.45);cursor:not-allowed;border-style:dashed}
+.eye-btn{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:rgba(160,195,230,.5);cursor:pointer;padding:4px;transition:color .15s;font-size:16px;line-height:1}
+.eye-btn:hover{color:rgba(160,195,230,.9)}
+.btn-login{
+  width:100%;border:none;border-radius:var(--r);padding:13px;
+  font-size:14px;font-weight:800;font-family:'Manrope',sans-serif;cursor:pointer;
+  background:linear-gradient(135deg,#2a7fc0 0%,var(--azul) 50%,#1a4e72 100%);
+  background-size:200% 200%;color:#fff;margin-top:4px;position:relative;overflow:hidden;
+  transition:all .22s ease;box-shadow:0 6px 20px rgba(32,93,138,.45);
+  animation:gradShift 4s ease infinite;
+}
+.btn-login:hover{box-shadow:0 10px 28px rgba(32,93,138,.65);transform:translateY(-1px)}
+.btn-login:active{transform:translateY(0) scale(.99)}
+.btn-login.loading{pointer-events:none;opacity:.8}
+.btn-login.loading .btn-txt{opacity:0}
+.btn-login.loading::after{
+  content:'';position:absolute;width:18px;height:18px;
+  border:2.5px solid rgba(255,255,255,.3);border-top-color:#fff;
+  border-radius:50%;top:50%;left:50%;transform:translate(-50%,-50%);
+  animation:spin .65s linear infinite;
+}
+.btn-secondary{
+  width:100%;border:1.5px solid rgba(100,160,220,.22);border-radius:var(--r);
+  padding:11px;font-size:13px;font-weight:700;font-family:'Manrope',sans-serif;
+  cursor:pointer;background:rgba(255,255,255,.06);color:rgba(200,225,245,.85);
+  transition:all .2s ease;margin-top:4px;
+}
+.btn-secondary:hover{background:rgba(255,255,255,.12);border-color:rgba(100,160,220,.4)}
+.links-row{display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:14px;animation:fadeUp .4s .35s both}
+.lnk{font-size:12px;color:rgba(100,160,220,.7);text-decoration:none;transition:color .15s}
+.lnk:hover{color:rgba(100,200,255,.95);text-decoration:underline}
+.code-wrap{display:flex;gap:8px;justify-content:center}
+.code-digit{
+  width:46px;height:54px;text-align:center;font-size:22px;font-weight:700;
+  background:rgba(255,255,255,.07);border:1.5px solid rgba(100,160,220,.25);
+  border-radius:var(--r);color:#fff;font-family:'Space Grotesk',sans-serif;
+  transition:all .2s ease;outline:none;caret-color:transparent;
+}
+.code-digit:focus{border-color:rgba(100,160,220,.6);background:rgba(255,255,255,.12);box-shadow:var(--glow)}
+.code-digit.filled{border-color:rgba(100,200,120,.55);background:rgba(22,131,87,.12)}
+.info-row{background:rgba(255,255,255,.05);border:1px solid rgba(100,160,220,.14);border-radius:var(--r);padding:10px 14px;display:flex;flex-direction:column;gap:3px}
+.info-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:rgba(140,175,210,.55)}
+.info-val{font-size:13px;font-weight:700;color:rgba(200,230,255,.9)}
+.rodape{text-align:center;margin-top:20px;font-size:11px;color:rgba(255,255,255,.2);animation:fadeUp .4s .5s both}
+.rodape a{color:rgba(100,160,220,.45);text-decoration:none;transition:color .15s}
+.rodape a:hover{color:rgba(100,200,255,.75)}
+@keyframes boxIn{from{opacity:0;transform:translateY(28px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes floatOrb{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-30px) scale(1.06)}}
+@keyframes fadeDown{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes slideAlert{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+@keyframes gradShift{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+@keyframes spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+@media(max-width:480px){.box{padding:32px 24px 28px}.wrap{padding:12px}}
 </style>
 </head>
 <body>
-<div class="box">
-  <div class="logo">
-    <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities"
-         onerror="this.style.display='none';document.getElementById('ltxt').style.display='block'">
-    <div id="ltxt" class="logo-txt" style="display:none">RM Facilities</div>
-  </div>
-  <h2>Acesso ao sistema</h2>
-  <p class="sub">
+<div class="bg-gradient"></div>
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+<div class="wrap">
+  <div class="box">
+    <div class="logo">
+      <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png"
+           alt="RM Facilities"
+           onerror="this.style.display='none';document.getElementById('ltxt').style.display='block'">
+      <div id="ltxt" class="logo-txt" style="display:none">RM Facilities</div>
+      <div class="logo-badge">Sistema de Gestão</div>
+    </div>
+
+    <h1 class="login-title">
+      {% if recuperar %}Recuperar Acesso
+      {% elif etapa=='2fa' %}Verificação em Duas Etapas
+      {% else %}Bem-vindo de volta{% endif %}
+    </h1>
+    <p class="login-sub">
+      {% if recuperar %}Informe seus dados para recuperar o acesso
+      {% elif etapa=='2fa' %}Confirme sua identidade com o código enviado
+      {% else %}Entre com seu e-mail e senha para continuar{% endif %}
+    </p>
+
+    {% if ok %}<div class="alert alert-ok"><span>✅</span><span>{{ ok }}</span></div>{% endif %}
+    {% if erro %}<div class="alert alert-er"><span>⚠</span><span>{{ erro }}</span></div>{% endif %}
+
     {% if recuperar %}
-      Recuperar usuário e senha
+      {% if rec_etapa=='codigo' %}
+        <form method="POST" action="/recuperar-acesso" class="form" onsubmit="btnLoad(this)">
+          <input type="hidden" name="etapa" value="codigo">
+          <div class="info-row"><span class="info-lbl">Usuário</span><span class="info-val">{{ email_mask or '' }}</span></div>
+          <div class="info-row"><span class="info-lbl">Código enviado para</span><span class="info-val">{{ telefone_mask or '' }}</span></div>
+          <div class="field">
+            <label>Código (6 dígitos)</label>
+            <div class="code-wrap" id="code-boxes">
+              <input class="code-digit" maxlength="1" inputmode="numeric" autofocus>
+              <input class="code-digit" maxlength="1" inputmode="numeric">
+              <input class="code-digit" maxlength="1" inputmode="numeric">
+              <input class="code-digit" maxlength="1" inputmode="numeric">
+              <input class="code-digit" maxlength="1" inputmode="numeric">
+              <input class="code-digit" maxlength="1" inputmode="numeric">
+              <input type="hidden" name="codigo" id="codigo-hidden">
+            </div>
+          </div>
+          <div class="field">
+            <label>Nova senha</label>
+            <div class="field-wrap">
+              <input type="password" name="nova_senha" id="nova-senha" placeholder="mínimo 8 caracteres" required>
+              <button type="button" class="eye-btn" onclick="toggleEye('nova-senha',this)" tabindex="-1">👁</button>
+            </div>
+          </div>
+          <button type="submit" class="btn-login"><span class="btn-txt">Salvar nova senha</span></button>
+        </form>
+      {% else %}
+        <form method="POST" action="/recuperar-acesso" class="form" onsubmit="btnLoad(this)">
+          <input type="hidden" name="etapa" value="solicitar">
+          <div class="field">
+            <label>E-mail ou telefone cadastrado</label>
+            <input name="identificador" placeholder="seu@email.com.br ou (11) 99999-9999" required autofocus>
+          </div>
+          <button type="submit" class="btn-login"><span class="btn-txt">Enviar código de recuperação</span></button>
+        </form>
+      {% endif %}
+      <div class="links-row"><a class="lnk" href="/login">← Voltar ao login</a></div>
+
     {% elif etapa=='2fa' %}
-      Verificação em duas etapas
-    {% else %}
-      Entre com seu e-mail e senha
-    {% endif %}
-  </p>
-  {% if ok %}<div class="ok">{{ ok }}</div>{% endif %}
-  {% if erro %}<div class="erro">{{ erro }}</div>{% endif %}
-
-  {% if recuperar %}
-    {% if rec_etapa=='codigo' %}
-      <form method="POST" action="/recuperar-acesso">
-        <input type="hidden" name="etapa" value="codigo">
-        <div class="f" style="margin-bottom:10px"><label>Usuário</label><input value="{{ email_mask or '' }}" readonly></div>
-        <div class="f" style="margin-bottom:10px"><label>Destino do código</label><input value="{{ telefone_mask or '' }}" readonly></div>
-        <div class="f" style="margin-bottom:10px"><label>Código (6 dígitos)</label><input name="codigo" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus></div>
-        <div class="f" style="margin-bottom:12px"><label>Nova senha</label><input type="password" name="nova_senha" placeholder="mínimo 8 caracteres" required></div>
-        <button type="submit" class="btn-login">Salvar nova senha</button>
+      <form method="POST" action="/login" class="form" onsubmit="btnLoad(this)">
+        <input type="hidden" name="etapa" value="2fa">
+        <div class="info-row"><span class="info-lbl">Usuário</span><span class="info-val">{{ email_mask or email or '' }}</span></div>
+        <div class="info-row"><span class="info-lbl">Código enviado para</span><span class="info-val">{{ telefone_mask or '' }}</span></div>
+        <div class="field">
+          <label>Código de verificação</label>
+          <div class="code-wrap" id="code-boxes">
+            <input class="code-digit" maxlength="1" inputmode="numeric" autofocus>
+            <input class="code-digit" maxlength="1" inputmode="numeric">
+            <input class="code-digit" maxlength="1" inputmode="numeric">
+            <input class="code-digit" maxlength="1" inputmode="numeric">
+            <input class="code-digit" maxlength="1" inputmode="numeric">
+            <input class="code-digit" maxlength="1" inputmode="numeric">
+            <input type="hidden" name="codigo" id="codigo-hidden">
+          </div>
+        </div>
+        <button type="submit" class="btn-login"><span class="btn-txt">Confirmar código</span></button>
       </form>
-      <a class="lnk" href="/login">Voltar ao login</a>
-    {% else %}
-      <form method="POST" action="/recuperar-acesso">
-        <input type="hidden" name="etapa" value="solicitar">
-        <div class="f" style="margin-bottom:14px"><label>E-mail ou telefone cadastrado</label><input name="identificador" placeholder="seu@email.com.br ou (11) 99999-9999" required autofocus></div>
-        <button type="submit" class="btn-login">Enviar código de recuperação</button>
+      <form method="POST" action="/login" style="margin-top:8px" onsubmit="btnLoad(this)">
+        <input type="hidden" name="etapa" value="2fa">
+        <input type="hidden" name="acao" value="reenviar">
+        <button type="submit" class="btn-secondary">Reenviar código</button>
       </form>
-      <a class="lnk" href="/login">Voltar ao login</a>
+      <div class="links-row"><a class="lnk" href="/login?cancel2fa=1">← Usar outro usuário</a></div>
+
+    {% else %}
+      <form method="POST" action="/login" class="form" onsubmit="btnLoad(this)">
+        <div class="field">
+          <label>E-mail</label>
+          <input type="email" name="email" placeholder="seu@email.com.br" required autofocus autocomplete="email">
+        </div>
+        <div class="field">
+          <label>Senha</label>
+          <div class="field-wrap">
+            <input type="password" name="senha" id="senha" placeholder="••••••••" required autocomplete="current-password">
+            <button type="button" class="eye-btn" onclick="toggleEye('senha',this)" tabindex="-1">👁</button>
+          </div>
+        </div>
+        <button type="submit" class="btn-login"><span class="btn-txt">Entrar</span></button>
+      </form>
+      <div class="links-row">
+        <a class="lnk" href="/login?recuperar=1">Esqueci meu usuário ou senha</a>
+        <a class="lnk" href="/politica-de-privacidade" target="_blank" rel="noopener">Política de Privacidade</a>
+      </div>
     {% endif %}
 
-  {% elif etapa=='2fa' %}
-    <form method="POST" action="/login">
-      <input type="hidden" name="etapa" value="2fa">
-      <div class="f" style="margin-bottom:10px"><label>Usuário</label><input value="{{ email_mask or email or '' }}" readonly></div>
-      <div class="f" style="margin-bottom:10px"><label>Código enviado para</label><input value="{{ telefone_mask or '' }}" readonly></div>
-      <div class="f" style="margin-bottom:12px"><label>Código (6 dígitos)</label><input name="codigo" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus></div>
-      <button type="submit" class="btn-login">Validar código</button>
-    </form>
-    <form method="POST" action="/login" style="margin-top:8px">
-      <input type="hidden" name="etapa" value="2fa">
-      <input type="hidden" name="acao" value="reenviar">
-      <button type="submit" class="btn-login" style="background:#4d6f8f">Reenviar código</button>
-    </form>
-    <a class="lnk" href="/login?cancel2fa=1">Usar outro usuário</a>
-
-  {% else %}
-    <form method="POST" action="/login">
-      <div class="f" style="margin-bottom:14px"><label>E-mail</label><input type="email" name="email" placeholder="seu@email.com.br" required autofocus></div>
-      <div class="f" style="margin-bottom:14px"><label>Senha</label><input type="password" name="senha" placeholder="••••••••" required></div>
-      <button type="submit" class="btn-login">Entrar</button>
-    </form>
-    <a class="lnk" href="/login?recuperar=1" onclick="event.preventDefault(); window.location='/login?recuperar=1';">Esqueci meu usuário/senha</a>
-    <br>
-    <a class="lnk" href="/politica-de-privacidade" target="_blank" rel="noopener">Política de Privacidade</a>
-  {% endif %}
-  <div class="rodape">RM Facilities · Sistema de Gestão v3.0 · <a href="/politica-de-privacidade" target="_blank" rel="noopener">Privacidade</a></div>
+    <div class="rodape">RM Facilities · v3.0 · <a href="/politica-de-privacidade" target="_blank" rel="noopener">Privacidade</a></div>
+  </div>
 </div>
+
+<script>
+function toggleEye(id, btn) {
+  const inp = document.getElementById(id);
+  if (!inp) return;
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  btn.textContent = inp.type === 'password' ? '👁' : '🙈';
+}
+function btnLoad(form) {
+  const btn = form.querySelector('.btn-login');
+  if (btn) btn.classList.add('loading');
+}
+(function() {
+  const wrap = document.getElementById('code-boxes');
+  if (!wrap) return;
+  const digits = wrap.querySelectorAll('.code-digit');
+  const hidden = document.getElementById('codigo-hidden');
+  function sync() {
+    let v = '';
+    digits.forEach(d => { v += d.value || ''; d.classList.toggle('filled', !!d.value); });
+    if (hidden) hidden.value = v;
+  }
+  digits.forEach((d, i) => {
+    d.addEventListener('input', () => {
+      d.value = d.value.replace(/\D/g,'').slice(-1);
+      sync();
+      if (d.value && i < digits.length - 1) digits[i+1].focus();
+      if ([...digits].every(x => x.value)) {
+        const f = wrap.closest('form');
+        if (f) { btnLoad(f); f.submit(); }
+      }
+    });
+    d.addEventListener('keydown', e => {
+      if (e.key==='Backspace' && !d.value && i>0) { digits[i-1].value=''; digits[i-1].focus(); sync(); }
+      if (e.key==='ArrowLeft' && i>0) digits[i-1].focus();
+      if (e.key==='ArrowRight' && i<digits.length-1) digits[i+1].focus();
+    });
+    d.addEventListener('paste', e => {
+      e.preventDefault();
+      const txt = (e.clipboardData||window.clipboardData).getData('text').replace(/\D/g,'');
+      txt.split('').forEach((c,j)=>{ if(digits[j]) digits[j].value=c; });
+      sync();
+      digits[Math.min(txt.length, digits.length-1)].focus();
+    });
+  });
+})();
+</script>
 </body>
 </html>
