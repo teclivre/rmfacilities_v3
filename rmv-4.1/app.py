@@ -13271,49 +13271,72 @@ def _gerar_proposta_comercial_pdf(
         Spacer,
         HRFlowable,
         PageBreak,
+        KeepTogether,
     )
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_RIGHT
+    from reportlab.pdfgen import canvas as _rl_canvas_mod2
     import io as _io
 
+    # Canvas ABNT: herda marca d'água e adiciona número de página
+    _base_cls = _WatermarkCanvas if _WatermarkCanvas else _rl_canvas_mod2.Canvas
+
+    class _PropostaCanvas(_base_cls):
+        def showPage(self):
+            self._draw_pg_num()
+            super().showPage()
+
+        def save(self):
+            self._draw_pg_num()
+            super().save()
+
+        def _draw_pg_num(self):
+            try:
+                pw, _ph = self._pagesize
+                self.saveState()
+                self.setFont("Helvetica", 8)
+                self.setFillColorRGB(0.55, 0.55, 0.55)
+                self.drawRightString(pw - 2 * cm, 1.4 * cm, f"Página {self._pageNumber}")
+                self.restoreState()
+            except Exception:
+                pass
+
     buf = _io.BytesIO()
+    # Margens ABNT NBR 14724: sup 3 cm, inf 2 cm, esq 3 cm, dir 2 cm
     doc = SimpleDocTemplate(
         buf,
         pagesize=A4,
-        leftMargin=2 * cm,
+        leftMargin=3 * cm,
         rightMargin=2 * cm,
-        topMargin=1.5 * cm,
-        bottomMargin=2 * cm,
+        topMargin=3 * cm,
+        bottomMargin=2.5 * cm,
     )
 
+    PW, _PH = A4
+    W = PW - 5 * cm
     NAVY = colors.HexColor("#1A3A5C")
-    GRAY = colors.HexColor("#555555")
-    LGRAY = colors.HexColor("#f5f7fa")
+    GRAY = colors.HexColor("#666666")
+    LGRAY = colors.HexColor("#f4f6f8")
     BORDER = colors.HexColor("#cccccc")
+    BLACK = colors.HexColor("#111111")
     WHITE = colors.white
 
     def st(name, **kw):
-        base = dict(
-            fontName="Helvetica", fontSize=10, leading=15, textColor=colors.black
-        )
+        base = dict(fontName="Times-Roman", fontSize=12, leading=18, textColor=BLACK)
         base.update(kw)
         return ParagraphStyle(name, **base)
 
-    s_normal = st("n", fontSize=10, leading=15, alignment=TA_JUSTIFY)
-    s_bold = st("b", fontName="Helvetica-Bold", fontSize=10, leading=15)
-    s_h1 = st(
-        "h1",
-        fontName="Helvetica-Bold",
-        fontSize=13,
-        textColor=NAVY,
-        leading=18,
-        spaceBefore=8,
-        spaceAfter=4,
-    )
-    s_h4 = st("h4", fontName="Helvetica-Bold", fontSize=10, leading=14, leftIndent=12)
-    s_small = st("sm", fontSize=8.5, textColor=GRAY)
-    s_center = st("c", alignment=TA_CENTER)
-    s_right = st("r", alignment=TA_RIGHT, fontSize=9, textColor=GRAY)
+    s_body   = st("bd",  alignment=TA_JUSTIFY, firstLineIndent=1.25 * cm)
+    s_body_ni= st("bni", alignment=TA_JUSTIFY)
+    s_h1     = st("h1",  fontName="Times-Bold", fontSize=12, leading=18,
+                  spaceBefore=14, spaceAfter=6, textColor=BLACK)
+    s_bold   = st("bo",  fontName="Times-Bold")
+    s_small  = st("sm",  fontSize=9, leading=13, textColor=GRAY, fontName="Helvetica")
+    s_right  = st("ri",  alignment=TA_RIGHT)
+    s_tbl    = st("tb",  fontSize=9, leading=12, fontName="Helvetica")
+    s_tbl_hdr= st("tbh", fontSize=9, leading=12, fontName="Helvetica-Bold",
+                  textColor=WHITE)
+    s_tbl_tot= st("tbt", fontSize=9, leading=12, fontName="Helvetica-Bold")
 
     logo_path = None
     try:
@@ -13321,12 +13344,12 @@ def _gerar_proposta_comercial_pdf(
     except Exception:
         pass
 
-    data_fmt = data_str or localnow().strftime("%d/%m/%Y")
-    ano_ref = localnow().strftime("%Y")
+    data_fmt  = data_str or localnow().strftime("%d/%m/%Y")
+    ano_ref   = localnow().strftime("%Y")
     if not ref_num:
         ref_num = f"PC-{localnow().strftime('%Y%m%d%H%M')}"
-    tipo_label = "SPOT" if (tipo or "").lower() == "spot" else "Mensal"
-    is_spot = (tipo or "").lower() == "spot"
+    tipo_label = "SPOT" if (tipo or "").lower() == "spot" else "MENSAL"
+    is_spot    = (tipo or "").lower() == "spot"
 
     if itens is None:
         itens = [
@@ -13339,196 +13362,175 @@ def _gerar_proposta_comercial_pdf(
             }
         ]
 
-    # ── Dados do remetente ─────────────────────────────────────────────────────
-    rem_nome = (
-        (remetente or {}).get("nome")
-        or (remetente or {}).get("razao")
-        or "RM CONSERVAÇÃO E SERVIÇOS"
-    )
-    rem_cnpj = (remetente or {}).get("cnpj") or "61.337.803/0001-20"
+    rem_nome    = ((remetente or {}).get("nome") or (remetente or {}).get("razao")
+                   or "RM CONSERVAÇÃO E SERVIÇOS")
+    rem_cnpj    = (remetente or {}).get("cnpj") or "61.337.803/0001-20"
     rem_contato = (remetente or {}).get("contato_nome") or "Roberio Figueiredo"
-    rem_tel = (
-        (remetente or {}).get("contato_telefone")
-        or (remetente or {}).get("telefone")
-        or "Tel. (12) 3042-1799 · Cel. (12) 99775-2283"
-    )
-    rem_email = (
-        (remetente or {}).get("contato_email")
-        or (remetente or {}).get("email")
-        or "roberio.figueiredo@rmfacilities.com.br"
-    )
+    rem_tel     = ((remetente or {}).get("contato_telefone")
+                   or (remetente or {}).get("telefone")
+                   or "Tel. (12) 3042-1799 · Cel. (12) 99775-2283")
+    rem_email   = ((remetente or {}).get("contato_email")
+                   or (remetente or {}).get("email")
+                   or "roberio.figueiredo@rmfacilities.com.br")
+
+    def _hr():
+        return HRFlowable(width="100%", thickness=0.6, color=NAVY,
+                          spaceBefore=2, spaceAfter=6)
+
+    def _sec(num, titulo):
+        return Paragraph(
+            f"{num}&nbsp;&nbsp;{titulo.upper()}",
+            st(f"sec{num}", fontName="Times-Bold", fontSize=12, leading=18,
+               spaceBefore=16, spaceAfter=6, textColor=BLACK),
+        )
 
     elems = []
 
-    # ── CABEÇALHO ─────────────────────────────────────────────────────────────
-    hdr_data = [
-        [
-            Paragraph(
-                f"<b>{rem_nome}</b><br/><font size=8>CNPJ: {rem_cnpj}</font>",
-                st(
-                    "hd",
-                    fontName="Helvetica-Bold",
-                    fontSize=12,
-                    textColor=WHITE,
-                    leading=16,
-                ),
-            ),
-            Paragraph(
-                f"<font size=8>Ref.: {ref_num}</font><br/>"
-                f"<font size=8>Tipo: {tipo_label}</font><br/>"
-                f"<font size=8>Data: {data_fmt}</font>",
-                st("hd2", fontSize=8, textColor=WHITE, alignment=TA_RIGHT, leading=12),
-            ),
-        ]
-    ]
-    hdr_t = Table(hdr_data, colWidths=[13 * cm, 5 * cm])
-    hdr_t.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -1), NAVY),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("TOPPADDING", (0, 0), (-1, -1), 10),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-                ("LEFTPADDING", (0, 0), (0, -1), 14),
-                ("RIGHTPADDING", (-1, 0), (-1, -1), 14),
-            ]
-        )
-    )
-    elems.append(hdr_t)
-    elems.append(Spacer(1, 0.5 * cm))
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CAPA  (NBR 14724 — elementos pré-textuais)
+    # ═══════════════════════════════════════════════════════════════════════════
+    if logo_path:
+        try:
+            from reportlab.platypus import Image as _Img
+            _li = _Img(logo_path, width=4.5 * cm, height=2 * cm)
+            _li.hAlign = "CENTER"
+            elems.append(_li)
+        except Exception:
+            elems.append(Paragraph(
+                f"<b>{rem_nome}</b>",
+                st("lgcap", fontName="Times-Bold", fontSize=14, alignment=TA_CENTER)))
+    else:
+        elems.append(Paragraph(
+            f"<b>{rem_nome}</b>",
+            st("lgcap", fontName="Times-Bold", fontSize=14, alignment=TA_CENTER)))
 
-    # ── DESTINATÁRIO ──────────────────────────────────────────────────────────
-    dest_data = [
-        [
-            Paragraph(
-                "<b>Empresa Destinatária</b>", st("lbl", fontSize=8, textColor=GRAY)
-            ),
-            Paragraph("<b>CNPJ</b>", st("lbl", fontSize=8, textColor=GRAY)),
-            Paragraph("<b>Serviço / Função</b>", st("lbl", fontSize=8, textColor=GRAY)),
-        ],
-        [
-            Paragraph(empresa or "—", s_bold),
-            Paragraph(cnpj or "—", s_bold),
-            Paragraph(funcao or "—", s_bold),
-        ],
-    ]
-    dest_t = Table(dest_data, colWidths=[7 * cm, 5 * cm, 6 * cm])
-    dest_t.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), LGRAY),
-                ("BACKGROUND", (0, 1), (-1, 1), WHITE),
-                ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
-                ("INNERGRID", (0, 0), (-1, -1), 0.3, BORDER),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-            ]
-        )
-    )
-    elems.append(dest_data and dest_t)
-    elems.append(Spacer(1, 0.5 * cm))
+    elems.append(Spacer(1, 0.25 * cm))
+    elems.append(Paragraph(rem_nome,
+        st("rcap", fontName="Helvetica", fontSize=10, textColor=GRAY,
+           alignment=TA_CENTER)))
+    elems.append(Paragraph(f"CNPJ: {rem_cnpj}",
+        st("cncap", fontName="Helvetica", fontSize=9, textColor=GRAY,
+           alignment=TA_CENTER)))
 
-    # ── Para / Data / Email ───────────────────────────────────────────────────
-    elems.append(Paragraph(f"<b>Data:</b> {data_fmt}", s_normal))
-    elems.append(Spacer(1, 0.2 * cm))
-    elems.append(Paragraph("Para,", s_normal))
-    elems.append(Paragraph(f"<b>{cliente or '—'}</b>", s_normal))
-    elems.append(Paragraph(email or "", st("em", fontSize=9, textColor=GRAY)))
-    elems.append(Spacer(1, 0.5 * cm))
-
-    # ── CORPO CARTA ───────────────────────────────────────────────────────────
-    intro = (
-        f"É com satisfação que apresentamos a V. Sa. nossa proposta comercial para a prestação de em "
-        f"<b>{funcao or 'nossos serviços'}</b> para empresa <b>{empresa or 'V. Sa.'}</b> resposta ao processo a sua "
-        f"necessidade. Nossa equipe avaliou cuidadosamente suas necessidades e considerou várias opções para apresentar "
-        f"a solução ideal para este projeto; contudo, sinta-se à vontade para revisar a proposta e indicar eventuais ajustes."
-    )
-    elems.append(Paragraph(intro, s_normal))
+    elems.append(Spacer(1, 3.5 * cm))
+    elems.append(_hr())
     elems.append(Spacer(1, 0.3 * cm))
-    elems.append(
-        Paragraph(
-            "Por favor, entre em contato conosco caso seja necessário algum esclarecimento ou informações adicionais.",
-            s_normal,
-        )
-    )
-    elems.append(Spacer(1, 0.6 * cm))
-    elems.append(Paragraph("Atenciosamente,", s_normal))
+    elems.append(Paragraph("PROPOSTA COMERCIAL",
+        st("titp", fontName="Times-Bold", fontSize=22, textColor=NAVY,
+           leading=28, alignment=TA_CENTER)))
     elems.append(Spacer(1, 0.2 * cm))
-    elems.append(Paragraph(f"<b>{rem_contato}</b>", s_bold))
+    elems.append(Paragraph(
+        f"Contratação de Serviços — Modalidade {tipo_label}",
+        st("subt", fontName="Helvetica", fontSize=11, textColor=GRAY,
+           alignment=TA_CENTER)))
+    elems.append(Spacer(1, 0.3 * cm))
+    elems.append(_hr())
+
+    elems.append(Spacer(1, 2.5 * cm))
+
+    capa_info = [
+        ["Empresa Destinatária:", empresa or "—"],
+        ["CNPJ:", cnpj or "—"],
+        ["Serviço / Função:", funcao or "—"],
+        ["Referência:", ref_num],
+        ["Data:", data_fmt],
+        ["Validade:", "30 (trinta) dias"],
+    ]
+    capa_tbl = Table(capa_info, colWidths=[5 * cm, W - 5 * cm])
+    capa_tbl.setStyle(TableStyle([
+        ("FONTNAME",      (0, 0), (0, -1),  "Helvetica-Bold"),
+        ("FONTNAME",      (1, 0), (1, -1),  "Helvetica"),
+        ("FONTSIZE",      (0, 0), (-1, -1), 10),
+        ("LEADING",       (0, 0), (-1, -1), 15),
+        ("TEXTCOLOR",     (0, 0), (0, -1),  NAVY),
+        ("LINEBELOW",     (0, 0), (-1, -2), 0.3, BORDER),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+    ]))
+    elems.append(capa_tbl)
+
+    elems.append(Spacer(1, 2.5 * cm))
+    elems.append(Paragraph(f"São José dos Campos, {data_fmt}",
+        st("ctdt", fontName="Helvetica", fontSize=10, textColor=GRAY,
+           alignment=TA_RIGHT)))
+    elems.append(PageBreak())
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CARTA DE APRESENTAÇÃO
+    # ═══════════════════════════════════════════════════════════════════════════
+    elems.append(Spacer(1, 0.5 * cm))
+    elems.append(Paragraph(f"São José dos Campos, {data_fmt}", s_right))
+    elems.append(Spacer(1, 0.8 * cm))
+    elems.append(Paragraph(
+        f"A/C: <b>{cliente or 'Prezado(a) Senhor(a)'}</b>", s_body_ni))
+    if email:
+        elems.append(Paragraph(email, s_small))
+    elems.append(Spacer(1, 0.6 * cm))
+    elems.append(Paragraph("Prezado(a) Senhor(a),", s_body_ni))
+    elems.append(Spacer(1, 0.3 * cm))
+    elems.append(Paragraph(
+        f"É com satisfação que apresentamos a V.&#160;Sa. nossa proposta comercial para a "
+        f"prestação de <b>{funcao or 'nossos serviços'}</b> para a empresa "
+        f"<b>{empresa or 'V. Sa.'}</b>. Nossa equipe avaliou cuidadosamente suas "
+        f"necessidades e elaborou a solução mais eficiente para este projeto, conforme "
+        f"detalhado nas seções seguintes.", s_body))
+    elems.append(Paragraph(
+        "Colocamo-nos à disposição para quaisquer esclarecimentos ou informações "
+        "adicionais que se façam necessários.", s_body))
+    elems.append(Spacer(1, 0.8 * cm))
+    elems.append(Paragraph("Atenciosamente,", s_body_ni))
+    elems.append(Spacer(1, 0.4 * cm))
+    elems.append(Paragraph(f"<b>{rem_contato}</b>", s_body_ni))
     if rem_tel:
         elems.append(Paragraph(rem_tel, s_small))
     if rem_email:
         elems.append(Paragraph(rem_email, s_small))
     elems.append(PageBreak())
 
-    # ── SEÇÃO 1: Apresentação Institucional ──────────────────────────────────
-    elems.append(Paragraph("Apresentação Institucional", s_h1))
-    elems.append(HRFlowable(width="100%", thickness=1, color=NAVY))
-    elems.append(Spacer(1, 0.3 * cm))
-    elems.append(
-        Paragraph(
-            f"{rem_nome} - Somos uma empresa pronta para oferecer soluções integradas de tecnologia e facility services. "
-            "Estamos buscando sempre atender nossos clientes parceiros, cumprindo os mais rígidos critérios de compliance. "
-            "Compreendemos a demanda de cada cliente para desenhar a proposta mais eficiente.",
-            s_normal,
-        )
-    )
-    elems.append(Spacer(1, 0.3 * cm))
-    elems.append(
-        Paragraph(
-            "SECURITY SERVICES - A solidez e a expertise dos fundadores permitem a operação com escala e de maneira customizada. "
-            f"A {rem_nome} oferece soluções completas para os cenários mais complexos, tem um portfólios que compreende "
-            "serviços como portaria e controle de acesso.",
-            s_normal,
-        )
-    )
-    elems.append(Spacer(1, 0.3 * cm))
-    elems.append(
-        Paragraph(
-            "FACILITY SERVICES - A empresa acredita na combinação entre as melhores pessoas e a tecnologia para atender com "
-            "excelência à demanda de serviços de limpeza, multisserviços e serviços auxiliares.",
-            s_normal,
-        )
-    )
-    elems.append(Spacer(1, 0.5 * cm))
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 1  APRESENTAÇÃO INSTITUCIONAL
+    # ═══════════════════════════════════════════════════════════════════════════
+    elems.append(_sec("1", "Apresentação Institucional"))
+    elems.append(_hr())
+    elems.append(Paragraph(
+        f"{rem_nome} é uma empresa especializada em soluções integradas de "
+        "facility services e tecnologia, comprometida com os mais rígidos "
+        "critérios de compliance e qualidade. Nossa metodologia compreende "
+        "o diagnóstico individualizado de cada cliente para propor a solução "
+        "mais eficiente.", s_body_ni))
+    elems.append(Paragraph(
+        "<b>Security Services —</b> A solidez e a expertise dos fundadores "
+        "permitem operações com escala e de forma customizada, oferecendo "
+        "soluções completas de portaria, controle de acesso e vigilância "
+        "patrimonial.", s_body))
+    elems.append(Paragraph(
+        "<b>Facility Services —</b> Acreditamos na combinação entre "
+        "profissionais qualificados e tecnologia para atender com excelência "
+        "serviços de limpeza, conservação, multisserviços e serviços auxiliares.",
+        s_body))
 
-    # ── SEÇÃO 2: Escopo e Valores dos Serviços ───────────────────────────────
-    elems.append(Paragraph("Escopo e Valores dos Serviços", s_h1))
-    elems.append(HRFlowable(width="100%", thickness=1, color=NAVY))
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 2  ESCOPO E VALORES DOS SERVIÇOS
+    # ═══════════════════════════════════════════════════════════════════════════
+    elems.append(_sec("2", "Escopo e Valores dos Serviços"))
+    elems.append(_hr())
+    # 2.1
+    elems.append(Paragraph("2.1&#160;&#160;Escopo Operacional",
+        st("h21", fontName="Times-Bold", fontSize=12, leading=18,
+           spaceBefore=8, spaceAfter=4)))
+    elems.append(Paragraph(
+        "Os serviços serão prestados conforme escopo descrito na planilha abaixo, "
+        "por profissionais devidamente uniformizados, treinados e habilitados para "
+        "a função.", s_body_ni))
     elems.append(Spacer(1, 0.3 * cm))
-    elems.append(
-        Paragraph(
-            "Escopo Operacional",
-            st("eo", fontName="Helvetica-Bold", fontSize=11, leading=15),
-        )
-    )
-    elems.append(Spacer(1, 0.2 * cm))
-    elems.append(
-        Paragraph(
-            "Planilha de custo",
-            st("pc", fontName="Helvetica-Bold", fontSize=10, leading=14),
-        )
-    )
+    # 2.2
+    elems.append(Paragraph("2.2&#160;&#160;Planilha de Custo",
+        st("h22", fontName="Times-Bold", fontSize=12, leading=18,
+           spaceBefore=8, spaceAfter=4)))
     elems.append(Spacer(1, 0.2 * cm))
 
-    # Cabeçalho da planilha
-    plan_header = ["Cod.", "Referência", "Função", "Qtd", "Valor unit.", "Subtotal"]
-    plan_rows = [plan_header]
-    for i, it in enumerate(itens):
-        plan_rows.append(
-            [
-                str(it.get("cod", str(i + 1))),
-                it.get("referencia", ""),
-                it.get("funcao_item", ""),
-                str(it.get("qtd", "1")),
-                it.get("valor_unit", ""),
-                it.get("subtotal", ""),
-            ]
-        )
-
-    # Calcular total somando subtotais numéricos
     def _parse_brl(v):
         try:
             return float(str(v).replace(".", "").replace(",", ".").strip())
@@ -13540,194 +13542,229 @@ def _gerar_proposta_comercial_pdf(
         v = _parse_brl(it.get("subtotal", ""))
         if v is not None:
             total_num = (total_num or 0) + v
-
     if total_num is not None:
-        total_val = (
-            f"R$ {total_num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        )
+        total_val = (f"R$ {total_num:,.2f}"
+                     .replace(",", "X").replace(".", ",").replace("X", "."))
     else:
-        total_val = "-"
+        total_val = "—"
 
-    plan_rows.append(["Total:" if is_spot else "Total Mensal:", "", "", "", "", total_val])
-
-    plan_t = Table(
-        plan_rows, colWidths=[1.2 * cm, 3.5 * cm, 6.5 * cm, 1.5 * cm, 3 * cm, 3.3 * cm]
-    )
-    plan_style = [
-        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
-        ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("BACKGROUND", (0, 1), (-1, -2), WHITE),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [WHITE, LGRAY]),
-        ("BACKGROUND", (0, -1), (-1, -1), LGRAY),
-        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-        ("SPAN", (0, -1), (4, -1)),
-        ("ALIGN", (3, 0), (-1, -1), "RIGHT"),
-        ("ALIGN", (0, -1), (4, -1), "LEFT"),
-        ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
-        ("INNERGRID", (0, 0), (-1, -1), 0.3, BORDER),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-    ]
-    plan_t.setStyle(TableStyle(plan_style))
+    plan_hdr = [Paragraph(x, s_tbl_hdr)
+                for x in ["Cód.", "Referência", "Função / Descrição",
+                           "Qtd.", "Valor Unit.", "Subtotal"]]
+    plan_rows = [plan_hdr]
+    for i, it in enumerate(itens):
+        plan_rows.append([
+            Paragraph(str(it.get("cod", str(i + 1))), s_tbl),
+            Paragraph(it.get("referencia", ""), s_tbl),
+            Paragraph(it.get("funcao_item", ""), s_tbl),
+            Paragraph(str(it.get("qtd", "1")),
+                      st(f"qt{i}", fontSize=9, leading=12, fontName="Helvetica",
+                         alignment=TA_RIGHT)),
+            Paragraph(it.get("valor_unit", ""),
+                      st(f"vu{i}", fontSize=9, leading=12, fontName="Helvetica",
+                         alignment=TA_RIGHT)),
+            Paragraph(it.get("subtotal", ""),
+                      st(f"sb{i}", fontSize=9, leading=12, fontName="Helvetica",
+                         alignment=TA_RIGHT)),
+        ])
+    lbl_total = "Total:" if is_spot else "Total Mensal:"
+    plan_rows.append([
+        Paragraph(lbl_total, s_tbl_tot),
+        Paragraph("", s_tbl), Paragraph("", s_tbl),
+        Paragraph("", s_tbl), Paragraph("", s_tbl),
+        Paragraph(total_val,
+                  st("tv", fontSize=9, leading=12, fontName="Helvetica-Bold",
+                     alignment=TA_RIGHT)),
+    ])
+    plan_t = Table(plan_rows,
+                   colWidths=[1.2*cm, 2.8*cm, 6.8*cm, 1.2*cm, 2.8*cm, 3.2*cm])
+    plan_t.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0),  (-1, 0),  NAVY),
+        ("FONTSIZE",      (0, 0),  (-1, -1), 9),
+        ("ROWBACKGROUNDS",(0, 1),  (-1, -2), [WHITE, LGRAY]),
+        ("BACKGROUND",    (0, -1), (-1, -1), colors.HexColor("#eef2f6")),
+        ("SPAN",          (0, -1), (4, -1)),
+        ("ALIGN",         (3, 0),  (-1, -1), "RIGHT"),
+        ("ALIGN",         (0, -1), (4, -1),  "LEFT"),
+        ("LINEBELOW",     (0, 0),  (-1, -1), 0.3, BORDER),
+        ("BOX",           (0, 0),  (-1, -1), 0.7, BORDER),
+        ("TOPPADDING",    (0, 0),  (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0),  (-1, -1), 4),
+        ("LEFTPADDING",   (0, 0),  (-1, -1), 5),
+        ("RIGHTPADDING",  (0, 0),  (-1, -1), 5),
+    ]))
     elems.append(plan_t)
-    elems.append(Spacer(1, 0.3 * cm))
 
-    # ── SEÇÃO 3: Incluso na Proposta ─────────────────────────────────────────
-    elems.append(Paragraph("Incluso na Proposta", s_h1))
-    elems.append(HRFlowable(width="100%", thickness=1, color=NAVY))
-    elems.append(Spacer(1, 0.2 * cm))
-    elems.append(
-        Paragraph(
-            "Proposta de acordo com escopo fornecido contemplando os seguinte benefícios aos colaboradores;",
-            s_normal,
-        )
-    )
-    elems.append(Spacer(1, 0.2 * cm))
-    elems.append(
-        Paragraph(
-            "Os valores informados contemplam todos os benefícios, treinamentos, administração e supervisão dos serviços "
-            "e/ou funcionários e uniformes para o andamento da operação. Estão incluídos também todos os custos como, "
-            f"encargos sociais, trabalhistas e fiscais de responsabilidade da {rem_nome};",
-            s_normal,
-        )
-    )
-    elems.append(Spacer(1, 0.2 * cm))
-    for txt in [
-        "PPRA – Programa de Prevenção e Riscos Ambientais;",
-        "PCMSO – Programa de Controle Médico e Saúde Ocupacional;",
-        f"Todos os funcionários da {rem_nome} possuem os seguintes benefícios de acordo com a convenção coletiva;",
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 3  INCLUSO NA PROPOSTA
+    # ═══════════════════════════════════════════════════════════════════════════
+    elems.append(_sec("3", "Incluso na Proposta"))
+    elems.append(_hr())
+    elems.append(Paragraph(
+        "Os valores informados contemplam todos os benefícios, treinamentos, "
+        "administração e supervisão dos serviços, uniformes e equipamentos, bem "
+        f"como todos os encargos sociais, trabalhistas e fiscais de "
+        f"responsabilidade da {rem_nome}.", s_body_ni))
+    elems.append(Paragraph(
+        "Estão incluídos os seguintes programas obrigatórios:", s_body))
+    for letra, txt in [
+        ("a)", "PPRA – Programa de Prevenção de Riscos Ambientais;"),
+        ("b)", "PCMSO – Programa de Controle Médico e Saúde Ocupacional;"),
+        ("c)", "NR35 – Trabalho em altura (quando aplicável)."),
     ]:
-        elems.append(Paragraph(txt, s_normal))
-    for txt in [
-        "Seguro de Vida em grupo;",
-        "Vale Transporte;",
-        "Vale Alimentação",
-        "20% Insalubridade",
-        "Uniforme;",
-        "EPI's;",
-    ]:
-        elems.append(Paragraph(f"• {txt}", s_h4))
-    elems.append(Paragraph("Nr35 para trabalho em altura;", s_normal))
-    elems.append(Spacer(1, 0.15 * cm))
-    elems.append(
-        Paragraph(
-            f"Todos os funcionários {rem_nome} devem estar identificados através de crachás, "
-            "devidamente uniformizados e munidos de EPI´s;",
-            s_normal,
-        )
-    )
-    elems.append(Spacer(1, 0.3 * cm))
+        elems.append(Paragraph(
+            f"{letra}&#160;&#160;{txt}",
+            st(f"bi{letra}", fontName="Times-Roman", fontSize=12, leading=18,
+               leftIndent=1.25 * cm)))
+    elems.append(Paragraph(
+        "Os colaboradores alocados possuem os seguintes benefícios, conforme "
+        "convenção coletiva da categoria:", s_body))
+    for txt in ["Seguro de vida em grupo;", "Vale-transporte;",
+                "Vale-alimentação;", "Adicional de insalubridade (20%);",
+                "Uniformes e EPIs."]:
+        elems.append(Paragraph(
+            f"•&#160;&#160;{txt}",
+            st(f"bl{txt[:4]}", fontName="Helvetica", fontSize=10, leading=14,
+               leftIndent=1.25 * cm)))
+    elems.append(Paragraph(
+        f"Todos os colaboradores da {rem_nome} deverão estar devidamente "
+        "identificados por meio de crachás e uniformes padronizados.", s_body))
 
-    # ── SEÇÃO 4: Treinamento ─────────────────────────────────────────────────
-    elems.append(Paragraph("Treinamento", s_h1))
-    elems.append(HRFlowable(width="100%", thickness=1, color=NAVY))
-    elems.append(Spacer(1, 0.2 * cm))
-    elems.append(
-        Paragraph(
-            f"Os profissionais da {rem_nome} recebem treinamento semestral de Normas Regulamentadoras (NRs) "
-            "inerentes à função desempenhada.",
-            s_normal,
-        )
-    )
-    elems.append(Spacer(1, 0.3 * cm))
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 4  TREINAMENTO E QUALIFICAÇÃO
+    # ═══════════════════════════════════════════════════════════════════════════
+    elems.append(_sec("4", "Treinamento e Qualificação"))
+    elems.append(_hr())
+    elems.append(Paragraph(
+        f"Os profissionais da {rem_nome} recebem treinamento periódico das "
+        "Normas Regulamentadoras (NRs) inerentes às funções desempenhadas, "
+        "garantindo a conformidade legal e a segurança no ambiente de trabalho.",
+        s_body_ni))
 
-    # ── SEÇÃO 5: Considerações Comerciais ────────────────────────────────────
-    elems.append(Paragraph("Considerações Comerciais", s_h1))
-    elems.append(HRFlowable(width="100%", thickness=1, color=NAVY))
-    elems.append(Spacer(1, 0.2 * cm))
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 5  CONSIDERAÇÕES COMERCIAIS
+    # ═══════════════════════════════════════════════════════════════════════════
+    elems.append(_sec("5", "Considerações Comerciais"))
+    elems.append(_hr())
+
     if is_spot:
-        consideracoes_spot = [
-            "Forma de Pagamento: Conforme negociação entre as partes, previamente acordada.",
-            f"Data Base: Preços elaborados com base nos valores vigentes em {ano_ref}.",
-            f"Todos as ocorrências verificadas nos serviços ou que envolvam os empregados deverão ser imediatamente comunicadas à {rem_nome};",
-            f"Os serviços serão executados conforme escopo descrito no item 2. Qualquer alteração será objeto de nova negociação, conforme solicitação da <b>{empresa or 'CONTRATANTE'}</b>;",
-            "Serviços extras deverão ser informados com antecedência mínima de 48 horas úteis;",
-            f"A <b>{empresa or 'CONTRATANTE'}</b> deverá fornecer local adequado para guarda de equipamentos e condições de permanência dos colaboradores (água, banheiro).",
+        cons_rows = [
+            ("Modalidade:",       "Serviço avulso (SPOT), conforme escopo da Seção 2."),
+            ("Forma de Pagamento:",
+             "Conforme negociação prévia entre as partes."),
+            ("Base de Preços:",   f"Valores elaborados com referência em {ano_ref}."),
+            ("Serviços Extras:",
+             "Solicitados com antecedência mínima de 48 horas úteis."),
+            ("Responsabilidade:",
+             f"Ocorrências deverão ser comunicadas imediatamente à {rem_nome}."),
+            ("Infraestrutura:",
+             f"A {empresa or 'CONTRATANTE'} disponibilizará local para guarda "
+             "de equipamentos, água e acesso a banheiros."),
+            ("Validade:",         "30 (trinta) dias a partir da data de emissão."),
         ]
-        for c in consideracoes_spot:
-            elems.append(Paragraph(c, s_normal))
-            elems.append(Spacer(1, 0.12 * cm))
     else:
-        consideracoes = [
-            "Forma de Pagamento: Os serviços propostos serão faturados mensalmente, com prazo de vencimento conforme Termo de Referência.",
-            "Prazo Contratual: Indeterminado.",
-            "Rescisão Imotivada: Poderá ser rescindido por qualquer das partes, em qualquer momento, sem que haja qualquer tipo de motivo relevante, respeitando-se um período mínimo de 30 dias.",
-            f"Data Base: Os preços foram elaborados nas bases do acordo da categoria: 01 de janeiro de {ano_ref}.",
-            "Próximo Reajuste: O contrato será reajustado anualmente, conforme contrato.",
-            "Forma de Reajuste: Caso ocorram alterações no valor do piso salarial da categoria, bem como a criação de novos benefícios sociais advindos de acordos e/ou dissídios coletivos, o preço da mão de obra será reajustado nas mesmas proporções. Os demais insumos componentes do preço não relacionados à mão de obra direta serão reajustados nas mesmas proporções. Se durante a vigência dos serviços forem criados novos tributos ou modificadas as alíquotas atuais, ou se houver reconhecida e comprovada alteração nos custos dos serviços e/ou insumos de forma a majorar ou diminuir o ônus, o preço contratado poderá ser revisto a fim de adequá-lo às modificações, de forma a restabelecer o equilíbrio econômico-financeiro.",
-            f"Todas as ocorrências verificadas nos serviços ou que envolvam os empregados alocados em sua execução deverão ser imediatamente comunicados à {rem_nome} para que sejam tomadas as providências cabíveis;",
-            f"Os serviços serão executados respeitando-se o escopo descrito no item 2, sendo certo que qualquer alteração no mesmo será objeto de uma nova negociação para revalidação das atividades e valores propostos, conforme necessidade e solicitação da <b>{empresa or 'CONTRATANTE'}</b>;",
-            f"Faltas eventuais: será realizada coberturas pela {rem_nome} em até 2 horas.",
-            "Todos os serviços extras deverão ser informados à supervisão com antecedência mínima de 72 (setenta e duas horas) úteis, para a tomada das providências necessárias;",
-            "Consideramos em nossos custos os exames médicos relativos ao PCMSO de acordo com as normas legais de saúde;",
-            "Todos os benefícios e direitos são rigorosamente contemplados, bem como todos os encargos sociais de nossa responsabilidade.",
-            "De acordo com a (Lei 13.467/17), o § 4o do artigo 71 da CLT deverá ser concedida 01 hora de intervalo para refeições e descanso aos funcionários que prestarão os serviços ou pagamento de intrajornada.",
-            f"A <b>{empresa or 'CONTRATANTE'}</b> deverá fornecer locais adequados onde possa ser guardados os equipamentos e fornecer condições de trabalho e permanência dos colaboradores no local de trabalho durante sua jornada de trabalho como, água, banheiro.",
-            f"A <b>{empresa or 'CONTRATANTE'}</b> poderá, a qualquer momento, solicitar e auditar os documentos relativos à regularização da {rem_nome}. Mensalmente serão disponibilizadas cópias dos documentos abaixo listados:",
+        cons_rows = [
+            ("Forma de Pagamento:",
+             "Faturamento mensal, com prazo de vencimento conforme Termo de Referência."),
+            ("Prazo Contratual:", "Indeterminado."),
+            ("Rescisão:",
+             "Qualquer das partes poderá rescindir o contrato, sem justo motivo, "
+             "mediante aviso prévio de 30 (trinta) dias."),
+            ("Base de Preços:",
+             f"Valores elaborados com referência em 01 de janeiro de {ano_ref}."),
+            ("Reajuste:",
+             "Anual, conforme variação do piso salarial da categoria e/ou índice "
+             "contratual. Novos tributos ou alterações legais ensejarão revisão "
+             "para reequilíbrio econômico-financeiro."),
+            ("Cobertura de Faltas:",
+             f"Realizada pela {rem_nome} em até 2 (duas) horas."),
+            ("Serviços Extras:",
+             "Solicitados com antecedência mínima de 72 (setenta e duas) horas úteis."),
+            ("Responsabilidade:",
+             f"A {empresa or 'CONTRATANTE'} poderá auditar mensalmente os documentos "
+             "trabalhistas e previdenciários dos colaboradores alocados."),
+            ("Infraestrutura:",
+             f"A {empresa or 'CONTRATANTE'} disponibilizará local para guarda de "
+             "equipamentos, água e acesso a banheiros."),
+            ("Validade:",         "30 (trinta) dias a partir da data de emissão."),
         ]
-        for c in consideracoes:
-            elems.append(Paragraph(c, s_normal))
-            elems.append(Spacer(1, 0.12 * cm))
-        for txt in [
+
+    cons_tbl = Table(cons_rows, colWidths=[4.5 * cm, W - 4.5 * cm])
+    cons_tbl.setStyle(TableStyle([
+        ("FONTNAME",      (0, 0), (0, -1),  "Helvetica-Bold"),
+        ("FONTNAME",      (1, 0), (1, -1),  "Helvetica"),
+        ("FONTSIZE",      (0, 0), (-1, -1), 10),
+        ("LEADING",       (0, 0), (-1, -1), 14),
+        ("TEXTCOLOR",     (0, 0), (0, -1),  NAVY),
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ("LINEBELOW",     (0, 0), (-1, -2), 0.3, BORDER),
+        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+    ]))
+    elems.append(cons_tbl)
+
+    if not is_spot:
+        elems.append(Spacer(1, 0.3 * cm))
+        elems.append(Paragraph(
+            f"Para fins de auditoria, a {empresa or 'CONTRATANTE'} poderá solicitar "
+            "mensalmente cópias dos seguintes documentos:", s_body_ni))
+        for d in [
             "Folha de pagamento analítica;",
-            "GRF – Guia de Pagamento de Fundo de Garantia;",
-            "Analítico GRF – Relatório Analítico de Fundo de Garantia;",
-            "GPS – Guia de Pagamento da Previdência Social e de Terceiros;",
-            "Analítico GPS – Relatório Analítico da Guia da Previdência Social;",
+            "GRF – Guia de Pagamento do FGTS;",
+            "GPS – Guia da Previdência Social;",
             "Conectividade Social – Protocolo de Envio;",
             "RET – Relação de Empregados por Tomador;",
-            "CAGED – Cadastro Geral de Empregados e Desempregados;",
+            "CAGED – Cadastro Geral de Empregados e Desempregados.",
         ]:
-            elems.append(Paragraph(f"• {txt}", s_h4))
-        elems.append(Spacer(1, 0.15 * cm))
-        elems.append(
-            Paragraph(
-                f"Caso a <b>{empresa or 'CONTRATANTE'}</b> necessite de documentação extra esta deverá ser solicitada previamente à celebração contratual.",
-                s_normal,
-            )
-        )
-    elems.append(Spacer(1, 0.2 * cm))
-    elems.append(Paragraph("A presente proposta tem validade de 30 dias.", s_bold))
-    elems.append(Spacer(1, 0.5 * cm))
-    elems.append(Paragraph(data_fmt, s_right))
-    elems.append(Spacer(1, 1.2 * cm))
+            elems.append(Paragraph(
+                f"•&#160;&#160;{d}",
+                st(f"dl{d[:4]}", fontName="Helvetica", fontSize=10, leading=14,
+                   leftIndent=1.25 * cm)))
+
+    elems.append(Spacer(1, 1 * cm))
+    elems.append(_hr())
+    elems.append(Spacer(1, 0.6 * cm))
+    elems.append(Paragraph(f"São José dos Campos, {data_fmt}", s_right))
+    elems.append(Spacer(1, 1.8 * cm))
 
     # ── ASSINATURAS ──────────────────────────────────────────────────────────
+    col_w = (W - 1 * cm) / 2
     ass_data = [
         [
-            Paragraph("_" * 40, st("al", fontSize=9, alignment=TA_CENTER)),
-            Paragraph("_" * 40, st("al", fontSize=9, alignment=TA_CENTER)),
+            Paragraph("_" * 45,
+                      st("al",  fontSize=10, alignment=TA_CENTER)),
+            Paragraph("_" * 45,
+                      st("al2", fontSize=10, alignment=TA_CENTER)),
         ],
         [
             Paragraph(
-                f"{rem_nome}<br/>Representante Legal",
-                st("al2", fontSize=8, textColor=GRAY, alignment=TA_CENTER),
-            ),
+                f"<b>{rem_nome}</b><br/>"
+                "<font size='9' color='#666666'>Representante Legal — Contratada</font>",
+                st("alnm", fontName="Times-Bold", fontSize=10, leading=14,
+                   alignment=TA_CENTER)),
             Paragraph(
-                f"{empresa or 'CONTRATANTE'}<br/>Representante Legal",
-                st("al2", fontSize=8, textColor=GRAY, alignment=TA_CENTER),
-            ),
+                f"<b>{empresa or 'CONTRATANTE'}</b><br/>"
+                "<font size='9' color='#666666'>Representante Legal — Contratante</font>",
+                st("alnm2", fontName="Times-Bold", fontSize=10, leading=14,
+                   alignment=TA_CENTER)),
         ],
     ]
-    ass_t = Table(ass_data, colWidths=[9 * cm, 9 * cm])
-    ass_t.setStyle(
-        TableStyle(
-            [
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ]
-        )
-    )
+    ass_t = Table(ass_data, colWidths=[col_w, col_w], hAlign="CENTER")
+    ass_t.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
     elems.append(ass_t)
 
-    doc.build(elems, canvasmaker=(_WatermarkCanvas or None))
+    doc.build(elems, canvasmaker=_PropostaCanvas)
     buf.seek(0)
     return buf
+
+
 
 
 @app.route("/api/proposta-comercial/gerar", methods=["POST"])
@@ -19638,7 +19675,7 @@ def api_func_arquivo_assinatura_pdf(id):
 
 
 def _build_envelope_audit_pdf(envelope, signatarios, url_root):
-    """Gera página de auditoria final do envelope (ReportLab)."""
+    """Gera página de auditoria do envelope — design minimalista profissional."""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
@@ -19648,10 +19685,11 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
         TableStyle,
         Paragraph,
         Spacer,
+        HRFlowable,
         Image,
     )
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
     from reportlab.graphics.barcode import qr as qr_code
     from reportlab.graphics.shapes import Drawing
 
@@ -19659,58 +19697,35 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     doc = SimpleDocTemplate(
         buf,
         pagesize=A4,
-        leftMargin=1.2 * cm,
-        rightMargin=1.2 * cm,
-        topMargin=1.2 * cm,
-        bottomMargin=1.2 * cm,
+        leftMargin=2.2 * cm,
+        rightMargin=2.2 * cm,
+        topMargin=2 * cm,
+        bottomMargin=2 * cm,
     )
-    W = A4[0] - 2.4 * cm
-    AZ = colors.HexColor("#205d8a")
-    VD = colors.HexColor("#1a7a45")
-    CI = colors.HexColor("#f5f5f5")
-    LJ = colors.HexColor("#f28e34")
+    PW, _PH = A4
+    W = PW - 4.4 * cm
+
+    NAVY  = colors.HexColor("#1a3a5c")
+    GRAY  = colors.HexColor("#6b7a8d")
+    LGRAY = colors.HexColor("#f7f9fb")
+    LINE  = colors.HexColor("#dde3ea")
+    BLACK = colors.HexColor("#111827")
+    GREEN = colors.HexColor("#166534")
+    AMBER = colors.HexColor("#92400e")
+    WHITE = colors.white
 
     def ps(nm, **kw):
-        b = dict(
-            fontName="Helvetica",
-            fontSize=10,
-            leading=14,
-            textColor=colors.HexColor("#020202"),
-            spaceAfter=0,
-            spaceBefore=0,
-        )
+        b = dict(fontName="Helvetica", fontSize=10, leading=14,
+                 textColor=BLACK, spaceAfter=0, spaceBefore=0)
         b.update(kw)
         return ParagraphStyle(nm, **b)
 
+    # ── dados empresa / logo ──────────────────────────────────────────────────
     emp = db.session.get(Empresa, envelope.empresa_id) if envelope.empresa_id else None
     if not emp:
-        emp = (
-            Empresa.query.filter_by(ativa=True)
-            .order_by(Empresa.ordem, Empresa.id)
-            .first()
-        )
+        emp = (Empresa.query.filter_by(ativa=True)
+               .order_by(Empresa.ordem, Empresa.id).first())
     empresa_nome = emp.nome if emp and emp.nome else "RM Facilities"
-    empresas_hdr = _pdf_companies_for_header(empresa_obj=emp, limit=2)
-
-    def _logo_flowable(item):
-        for cand in item.get("logos") or []:
-            try:
-                if str(cand).lower().startswith("http"):
-                    with urllib.request.urlopen(cand, timeout=8) as resp:
-                        data = resp.read()
-                    img = Image(io.BytesIO(data), width=3.2 * cm, height=1.45 * cm)
-                    img.hAlign = "LEFT"
-                    return img
-                if os.path.exists(cand):
-                    img = Image(cand, width=3.2 * cm, height=1.45 * cm)
-                    img.hAlign = "LEFT"
-                    return img
-            except Exception:
-                continue
-            return Paragraph(
-                f"<b>{item.get('nome') or empresa_nome}</b>",
-                ps("lgfb2", fontSize=11, textColor=colors.HexColor("#0f2b47")),
-            )
 
     validacao_link = (
         f"{url_root}/envelope/validar/{envelope.codigo}" if envelope.codigo else ""
@@ -19724,352 +19739,182 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
         except Exception:
             hash_comp = ""
     if not hash_comp:
-        trilha_base = "|".join(
-            [
-                str(envelope.id),
-                envelope.titulo or "",
-                envelope.codigo or "",
-                "|".join(
-                    [
-                        f"{s.nome}|{s.cpf or ''}|{s.ass_em.isoformat() if s.ass_em else ''}"
-                        for s in signatarios
-                    ]
-                ),
-            ]
-        )
+        trilha_base = "|".join([
+            str(envelope.id), envelope.titulo or "", envelope.codigo or "",
+            "|".join([
+                f"{s.nome}|{s.cpf or ''}|{s.ass_em.isoformat() if s.ass_em else ''}"
+                for s in signatarios
+            ]),
+        ])
         hash_comp = hashlib.sha256(trilha_base.encode("utf-8")).hexdigest().upper()
 
-    story = []
-    logo = _logo_flowable(empresas_hdr[0])
-    hdr_right = Paragraph(
-        f"<b>AUDITORIA E VALIDAÇÃO DE ASSINATURA ELETRÔNICA</b><br/>"
-        f'<font size="9" color="#49607a">{empresa_nome}</font><br/>'
-        f'<font size="8" color="#6f8093">Documento: {envelope.titulo or "-"}</font>',
-        ps("htr2", fontSize=11, leading=13, textColor=colors.white),
-    )
-    hdr = Table([[logo, hdr_right]], colWidths=[W * 0.26, W * 0.74])
-    hdr.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -1), AZ),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 10),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                ("TOPPADDING", (0, 0), (-1, -1), 8),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-            ]
-        )
-    )
-    story.append(hdr)
-    story.append(Spacer(1, 5))
-
-    emp_cells = []
-    for i, item in enumerate(empresas_hdr[:2]):
-        cell = Table(
-            [
-                [_logo_flowable(item)],
-                [
-                    Paragraph(
-                        f'<b>{item.get("nome") or "-"}</b><br/><font size="8" color="#4c6072">CNPJ: {item.get("cnpj") or "-"}</font>',
-                        ps(f"empe{i}", fontSize=8.2, leading=10),
-                    )
-                ],
-            ],
-            colWidths=[W * 0.49],
-        )
-        cell.setStyle(
-            TableStyle(
-                [
-                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7df")),
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fbff")),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                ]
-            )
-        )
-        emp_cells.append(cell)
-    while len(emp_cells) < 2:
-        emp_cells.append(Paragraph("", ps("empemptye", fontSize=1)))
-    emp_tbl = Table([emp_cells], colWidths=[W * 0.495, W * 0.495])
-    emp_tbl.setStyle(
-        TableStyle(
-            [
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ("TOPPADDING", (0, 0), (-1, -1), 0),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-            ]
-        )
-    )
-    story.append(emp_tbl)
-    story.append(Spacer(1, 6))
     assinados = [s for s in signatarios if s.status == "assinado"]
     pendentes = [s for s in signatarios if s.status != "assinado"]
-    if len(pendentes) == 0:
-        badge_cor = colors.HexColor("#ecf8f0")
-        badge_txt = VD
-        badge_label = "✔ TODOS OS SIGNATÁRIOS ASSINARAM O DOCUMENTO"
+    tudo_assinado = len(pendentes) == 0
+
+    def _papel_lbl_fn(p):
+        return {
+            "assinante": "Assinante", "testemunha": "Testemunha",
+            "aprovador": "Aprovador", "endossante": "Endossante",
+            "observador": "Observador",
+        }.get(p or "assinante", (p or "Assinante").capitalize())
+
+    story = []
+
+    # ── CABEÇALHO ─────────────────────────────────────────────────────────────
+    hdr = Table([[
+        Paragraph(empresa_nome.upper(),
+                  ps("hn", fontName="Helvetica-Bold", fontSize=10, textColor=NAVY)),
+        Paragraph("CERTIFICADO DE ASSINATURA ELETRÔNICA",
+                  ps("ht", fontSize=8.5, textColor=GRAY, alignment=TA_RIGHT)),
+    ]], colWidths=[W * 0.55, W * 0.45])
+    hdr.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "BOTTOM"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+    ]))
+    story.append(hdr)
+    story.append(HRFlowable(width="100%", thickness=1.2, color=NAVY,
+                             spaceBefore=0, spaceAfter=10))
+
+    # ── TÍTULO + STATUS ───────────────────────────────────────────────────────
+    story.append(Paragraph(
+        envelope.titulo or "Documento",
+        ps("dt", fontName="Helvetica-Bold", fontSize=15, textColor=NAVY,
+           leading=20, spaceAfter=4)))
+    if tudo_assinado:
+        story.append(Paragraph(
+            "&#x2714;&#160; Todas as assinaturas foram coletadas",
+            ps("stok", fontSize=9, textColor=GREEN)))
     else:
-        badge_cor = colors.HexColor("#fff8ec")
-        badge_txt = LJ
-        badge_label = f"⏳ {len(assinados)} de {len(signatarios)} SIGNATÁRIOS ASSINARAM"
-    st = Table(
-        [
-            [
-                Paragraph(
-                    f"<b>{badge_label}</b>", ps("bs", fontSize=10, textColor=badge_txt)
-                )
-            ]
-        ],
-        colWidths=[W],
-    )
-    st.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -1), badge_cor),
-                ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#9ed3b1")),
-                ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-            ]
-        )
-    )
-    story.append(st)
-    story.append(Spacer(1, 5))
+        story.append(Paragraph(
+            f"&#x25CB;&#160; {len(assinados)} de {len(signatarios)} assinatura(s) coletada(s)",
+            ps("stpd", fontSize=9, textColor=AMBER)))
+    story.append(Spacer(1, 14))
 
+    # ── DETALHES DO ENVELOPE ──────────────────────────────────────────────────
+    tipo_map = {"funcionario": "Funcionário", "cliente": "Cliente", "avulso": "Avulso"}
+    hash_disp = (hash_comp[:52] + "…") if len(hash_comp) > 52 else hash_comp
     detalhes = [
-        ("Título do Documento", envelope.titulo or "-"),
-        (
-            "Tipo",
-            {
-                "funcionario": "Funcionário",
-                "cliente": "Cliente",
-                "avulso": "Avulso",
-            }.get(envelope.tipo, envelope.tipo or "-"),
-        ),
-        ("Status", envelope.status or "-"),
-        ("Código de Validação", envelope.codigo or "-"),
-        ("Criado por", envelope.criado_por or "-"),
-        (
-            "Data de Criação",
-            envelope.criado_em.strftime("%d/%m/%Y %H:%M")
-            if envelope.criado_em
-            else "-",
-        ),
-        (
-            "Validade",
-            envelope.expira_em.strftime("%d/%m/%Y")
-            if envelope.expira_em
-            else "Sem prazo",
-        ),
-        ("Hash SHA-256", hash_comp[:32] + "..."),
+        ("Código de Validação", envelope.codigo or "—"),
+        ("Tipo",               tipo_map.get(envelope.tipo, envelope.tipo or "—")),
+        ("Status",             (envelope.status or "—").capitalize()),
+        ("Criado por",         envelope.criado_por or "—"),
+        ("Data de Criação",    envelope.criado_em.strftime("%d/%m/%Y %H:%M")
+                               if envelope.criado_em else "—"),
+        ("Validade",           envelope.expira_em.strftime("%d/%m/%Y")
+                               if envelope.expira_em else "Sem prazo"),
+        ("Hash SHA-256",       hash_disp),
     ]
-    rows = [
+    det_rows = [
         [
-            Paragraph(f"<b>{k}</b>", ps("dk", fontSize=8, textColor=AZ)),
-            Paragraph(v, ps("dv", fontSize=8, leading=11)),
+            Paragraph(k, ps(f"dk{i}", fontSize=8.5, textColor=GRAY,
+                            fontName="Helvetica-Bold")),
+            Paragraph(v, ps(f"dv{i}", fontSize=8.5, textColor=BLACK)),
         ]
-        for k, v in detalhes
+        for i, (k, v) in enumerate(detalhes)
     ]
-    det = Table(rows, colWidths=[W * 0.32, W * 0.68])
-    det.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (0, -1), CI),
-                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#d0d7df")),
-                ("LINEBELOW", (0, 0), (-1, -2), 0.3, colors.HexColor("#e3e8ef")),
-                ("LEFTPADDING", (0, 0), (-1, -1), 5),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-                ("TOPPADDING", (0, 0), (-1, -1), 3),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-            ]
-        )
-    )
+    det = Table(det_rows, colWidths=[W * 0.28, W * 0.72])
+    det.setStyle(TableStyle([
+        ("LINEBELOW",     (0, 0), (-1, -2), 0.3, LINE),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+    ]))
     story.append(det)
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 16))
 
-    # Tabela de signatários
-    story.append(
-        Paragraph(
-            "<b>Signatários</b>", ps("sh", fontSize=10, textColor=AZ, spaceAfter=6)
-        )
-    )
-    sig_header = [
-        Paragraph(
-            x,
-            ps(f"sh{i}", fontSize=8, textColor=colors.white, fontName="Helvetica-Bold"),
-        )
-        for i, x in enumerate(["Nome", "Papel", "Cargo", "CPF", "Data/Hora", "IP", "Status"])
+    # ── TABELA DE SIGNATÁRIOS ─────────────────────────────────────────────────
+    story.append(Paragraph("Signatários",
+        ps("sh", fontName="Helvetica-Bold", fontSize=10, textColor=NAVY,
+           spaceAfter=6)))
+    sig_hdr = [
+        Paragraph(x, ps(f"shd{i}", fontSize=8, fontName="Helvetica-Bold",
+                        textColor=WHITE))
+        for i, x in enumerate(["Nome", "Papel", "Cargo", "CPF", "Data/Hora", "Status"])
     ]
-    sig_rows = [sig_header]
+    sig_rows = [sig_hdr]
     for s in signatarios:
-        cpf_m = ""
+        cpf_m = "—"
         if s.ass_cpf_informado and len(s.ass_cpf_informado) >= 11:
             c = s.ass_cpf_informado.replace(".", "").replace("-", "").replace(" ", "")
             cpf_m = f"***{c[3:6]}***" if len(c) == 11 else s.ass_cpf_informado
         elif s.cpf and len(s.cpf) >= 3:
             cpf_m = "***" + s.cpf[-3:]
-        sc = VD if s.status == "assinado" else LJ
-        _papel_lbl = {
-            "assinante": "Assinante",
-            "testemunha": "Testemunha",
-            "aprovador": "Aprovador",
-            "endossante": "Endossante",
-            "observador": "Observador",
-        }
-        papel_txt = _papel_lbl.get(s.papel or "assinante", (s.papel or "Assinante").capitalize())
+        papel_txt = _papel_lbl_fn(s.papel)
         if s.status == "assinado":
-            status_txt = f"Assinou como {papel_txt}"
+            st_txt = f"Assinou como {papel_txt}"
+            st_col = GREEN
         else:
-            status_txt = f"Pendente ({papel_txt})"
-        sig_rows.append(
-            [
-                Paragraph(s.nome or "-", ps("sn", fontSize=8)),
-                Paragraph(papel_txt, ps("spap", fontSize=8, fontName="Helvetica-Bold")),
-                Paragraph(s.cargo or "-", ps("sc", fontSize=8)),
-                Paragraph(cpf_m or "-", ps("scpf", fontSize=8)),
-                Paragraph(
-                    s.ass_em.strftime("%d/%m/%Y %H:%M") if s.ass_em else "-",
-                    ps("sem", fontSize=8),
-                ),
-                Paragraph(s.ass_ip or "-", ps("sip", fontSize=8)),
-                Paragraph(
-                    status_txt,
-                    ps("sst", fontSize=7.5, textColor=sc, fontName="Helvetica-Bold"),
-                ),
-            ]
-        )
-    sig_tbl = Table(
-        sig_rows, colWidths=[W * 0.19, W * 0.12, W * 0.12, W * 0.12, W * 0.16, W * 0.13, W * 0.16]
-    )
-    sig_tbl.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), AZ),
-                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7df")),
-                ("LINEBELOW", (0, 0), (-1, -1), 0.3, colors.HexColor("#e3e8ef")),
-                ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ("TOPPADDING", (0, 0), (-1, -1), 3),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, CI]),
-            ]
-        )
-    )
+            st_txt = "Pendente"
+            st_col = AMBER
+        sig_rows.append([
+            Paragraph(s.nome or "—",   ps(f"sn{s.id}", fontSize=8)),
+            Paragraph(papel_txt,        ps(f"sp{s.id}", fontSize=8)),
+            Paragraph(s.cargo or "—",  ps(f"sc{s.id}", fontSize=8)),
+            Paragraph(cpf_m,           ps(f"sf{s.id}", fontSize=8)),
+            Paragraph(s.ass_em.strftime("%d/%m/%Y %H:%M") if s.ass_em else "—",
+                      ps(f"se{s.id}", fontSize=8)),
+            Paragraph(st_txt,          ps(f"ss{s.id}", fontSize=7.5,
+                                          textColor=st_col,
+                                          fontName="Helvetica-Bold")),
+        ])
+    sig_tbl = Table(sig_rows,
+                    colWidths=[W*0.22, W*0.13, W*0.13, W*0.12, W*0.17, W*0.23])
+    sig_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0),  (-1, 0),  NAVY),
+        ("ROWBACKGROUNDS",(0, 1),  (-1, -1), [WHITE, LGRAY]),
+        ("BOX",           (0, 0),  (-1, -1), 0.5, LINE),
+        ("LINEBELOW",     (0, 0),  (-1, -1), 0.3, LINE),
+        ("LEFTPADDING",   (0, 0),  (-1, -1), 5),
+        ("RIGHTPADDING",  (0, 0),  (-1, -1), 5),
+        ("TOPPADDING",    (0, 0),  (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0),  (-1, -1), 4),
+    ]))
     story.append(sig_tbl)
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 16))
 
-    def _papel_lbl_fn(p):
-        return {"assinante": "Assinante", "testemunha": "Testemunha", "aprovador": "Aprovador", "endossante": "Endossante", "observador": "Observador"}.get(p or "assinante", (p or "Assinante").capitalize())
-
-    if assinados:
-        story.append(
-            Paragraph(
-                "<b>ASSINATURAS REGISTRADAS</b>",
-                ps("asg1", fontSize=8, textColor=AZ, spaceAfter=3),
-            )
-        )
-        sig_rows_cursive = [
-            [
-                Paragraph(
-                    f"<i>{s.nome or '-'}</i>",
-                    ps(
-                        f"asn{i}",
-                        fontName="Times-Italic",
-                        fontSize=12,
-                        textColor=colors.HexColor("#1a2e42"),
-                        leading=14,
-                    ),
-                ),
-                Paragraph(
-                    f'{_papel_lbl_fn(s.papel)} — {s.cargo or "Signatário"}<br/><font color="#5d6f82">{s.ass_em.strftime("%d/%m/%Y %H:%M") if s.ass_em else "-"}</font>',
-                    ps(f"asd{i}", fontSize=7.5, leading=10),
-                ),
-            ]
-            for i, s in enumerate(assinados)
-        ]
-        sig_curs = Table(sig_rows_cursive, colWidths=[W * 0.52, W * 0.48])
-        sig_curs.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fbff")),
-                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7df")),
-                    ("LINEBELOW", (0, 0), (-1, -2), 0.3, colors.HexColor("#e3e8ef")),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ]
-            )
-        )
-        story.append(sig_curs)
-    story.append(Spacer(1, 6))
-
+    # ── QR CODE + LINK DE VALIDAÇÃO ───────────────────────────────────────────
     if validacao_link:
         try:
             qr_widget = qr_code.QrCodeWidget(validacao_link)
             b = qr_widget.getBounds()
             bw = max(1, b[2] - b[0])
             bh = max(1, b[3] - b[1])
-            sz = 75
+            sz = 58
             qr_draw = Drawing(sz, sz, transform=[sz / bw, 0, 0, sz / bh, 0, 0])
             qr_draw.add(qr_widget)
-            qr_tbl = Table(
-                [
-                    [
-                        qr_draw,
-                        Paragraph(
-                            "Escaneie para validar esta assinatura no portal RM Facilities.",
-                            ps(
-                                "qrp",
-                                fontSize=9,
-                                leading=13,
-                                textColor=colors.HexColor("#4c6072"),
-                            ),
-                        ),
-                    ]
-                ],
-                colWidths=[W * 0.20, W * 0.80],
-            )
-            qr_tbl.setStyle(
-                TableStyle(
-                    [
-                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                    ]
-                )
-            )
-            story.append(qr_tbl)
+            qr_row = Table([[
+                qr_draw,
+                Paragraph(
+                    "<b>Verificar autenticidade</b><br/>"
+                    f"<font color='#6b7a8d' size='8'>Acesse o QR code ou o link "
+                    f"abaixo para validar este documento.<br/>{validacao_link}</font>",
+                    ps("qrp", fontSize=9, leading=13)),
+            ]], colWidths=[sz + 8, W - sz - 8])
+            qr_row.setStyle(TableStyle([
+                ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ]))
+            story.append(qr_row)
         except Exception:
-            story.append(Paragraph(f"Link: {validacao_link}", ps("ql", fontSize=8)))
-    story.append(Spacer(1, 10))
-    bar = Table([[" "]], colWidths=[W])
-    bar.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -1), LJ),
-                ("TOPPADDING", (0, 0), (-1, -1), 2),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-            ]
-        )
-    )
-    story.append(bar)
-    story.append(Spacer(1, 4))
-    story.append(
-        Paragraph(
-            f"Gerado em {localnow().strftime('%d/%m/%Y %H:%M')} — RM Facilities",
-            ps(
-                "rod",
-                fontSize=7,
-                textColor=colors.HexColor("#999"),
-                alignment=TA_CENTER,
-            ),
-        )
-    )
+            story.append(Paragraph(
+                f"Validação: {validacao_link}",
+                ps("ql", fontSize=8, textColor=GRAY)))
+    story.append(Spacer(1, 14))
+
+    # ── RODAPÉ ────────────────────────────────────────────────────────────────
+    story.append(HRFlowable(width="100%", thickness=0.5, color=LINE,
+                             spaceBefore=0, spaceAfter=5))
+    story.append(Paragraph(
+        f"Gerado em {localnow().strftime('%d/%m/%Y às %H:%M')} · {empresa_nome} · "
+        "Este certificado é válido como comprovante de assinatura eletrônica.",
+        ps("rod", fontSize=7, textColor=GRAY, alignment=TA_CENTER)))
+
     doc.build(story, canvasmaker=(_WatermarkCanvas or None))
     return buf.getvalue()
 
