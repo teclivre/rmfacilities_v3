@@ -31008,6 +31008,13 @@ with app.app_context():
             "whatsapp_enviado_em DATETIME",
         ],
     )
+    ensure_cols(
+        "contrato_servico",
+        [
+            "cliente_id INTEGER REFERENCES cliente(id)",
+            "proposta_id INTEGER REFERENCES proposta_comercial(id)",
+        ],
+    )
     # Cria tabela contrato se não existir (ensure_cols não cria tabelas novas)
     try:
         db.engine.execute("SELECT 1 FROM contrato LIMIT 1")
