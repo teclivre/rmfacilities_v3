@@ -19888,7 +19888,7 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
             x,
             ps(f"sh{i}", fontSize=8, textColor=colors.white, fontName="Helvetica-Bold"),
         )
-        for i, x in enumerate(["Nome", "Cargo", "CPF", "Data/Hora", "IP", "Status"])
+        for i, x in enumerate(["Nome", "Papel", "Cargo", "CPF", "Data/Hora", "IP", "Status"])
     ]
     sig_rows = [sig_header]
     for s in signatarios:
@@ -19899,9 +19899,22 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
         elif s.cpf and len(s.cpf) >= 3:
             cpf_m = "***" + s.cpf[-3:]
         sc = VD if s.status == "assinado" else LJ
+        _papel_lbl = {
+            "assinante": "Assinante",
+            "testemunha": "Testemunha",
+            "aprovador": "Aprovador",
+            "endossante": "Endossante",
+            "observador": "Observador",
+        }
+        papel_txt = _papel_lbl.get(s.papel or "assinante", (s.papel or "Assinante").capitalize())
+        if s.status == "assinado":
+            status_txt = f"Assinou como {papel_txt}"
+        else:
+            status_txt = f"Pendente ({papel_txt})"
         sig_rows.append(
             [
                 Paragraph(s.nome or "-", ps("sn", fontSize=8)),
+                Paragraph(papel_txt, ps("spap", fontSize=8, fontName="Helvetica-Bold")),
                 Paragraph(s.cargo or "-", ps("sc", fontSize=8)),
                 Paragraph(cpf_m or "-", ps("scpf", fontSize=8)),
                 Paragraph(
@@ -19910,13 +19923,13 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
                 ),
                 Paragraph(s.ass_ip or "-", ps("sip", fontSize=8)),
                 Paragraph(
-                    s.status.upper(),
-                    ps("sst", fontSize=8, textColor=sc, fontName="Helvetica-Bold"),
+                    status_txt,
+                    ps("sst", fontSize=7.5, textColor=sc, fontName="Helvetica-Bold"),
                 ),
             ]
         )
     sig_tbl = Table(
-        sig_rows, colWidths=[W * 0.22, W * 0.15, W * 0.14, W * 0.18, W * 0.16, W * 0.15]
+        sig_rows, colWidths=[W * 0.19, W * 0.12, W * 0.12, W * 0.12, W * 0.16, W * 0.13, W * 0.16]
     )
     sig_tbl.setStyle(
         TableStyle(
@@ -19934,6 +19947,9 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     )
     story.append(sig_tbl)
     story.append(Spacer(1, 6))
+
+    def _papel_lbl_fn(p):
+        return {"assinante": "Assinante", "testemunha": "Testemunha", "aprovador": "Aprovador", "endossante": "Endossante", "observador": "Observador"}.get(p or "assinante", (p or "Assinante").capitalize())
 
     if assinados:
         story.append(
@@ -19955,7 +19971,7 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
                     ),
                 ),
                 Paragraph(
-                    f'{s.cargo or "Signatário"}<br/><font color="#5d6f82">{s.ass_em.strftime("%d/%m/%Y %H:%M") if s.ass_em else "-"}</font>',
+                    f'{_papel_lbl_fn(s.papel)} — {s.cargo or "Signatário"}<br/><font color="#5d6f82">{s.ass_em.strftime("%d/%m/%Y %H:%M") if s.ass_em else "-"}</font>',
                     ps(f"asd{i}", fontSize=7.5, leading=10),
                 ),
             ]
