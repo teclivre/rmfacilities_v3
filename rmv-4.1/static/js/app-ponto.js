@@ -874,3 +874,46 @@ setInterval(()=>{
       .catch(()=>{});
   }
 },60000);
+
+// ── Gestão Fácil: auto-refresh a cada 30s quando a aba está visível ──────────
+let _gfPollTimer=null;
+let _gfLastRefresh=null;
+
+function _gfPaneVisible(){
+  const pane=document.getElementById('rh-pane-gestao-facil');
+  return !!(pane&&pane.style.display!=='none');
+}
+
+function _gfUpdateTimestamp(){
+  const el=document.getElementById('gf-live-ts');
+  if(!el) return;
+  if(!_gfLastRefresh){el.textContent='ao vivo · 30s';return;}
+  const hh=String(_gfLastRefresh.getHours()).padStart(2,'0');
+  const mm=String(_gfLastRefresh.getMinutes()).padStart(2,'0');
+  const ss=String(_gfLastRefresh.getSeconds()).padStart(2,'0');
+  el.textContent=`atualizado ${hh}:${mm}:${ss}`;
+}
+
+async function _gfPollSilent(){
+  if(!_gfPaneVisible()||!gfFuncId) return;
+  const comp=(document.getElementById('gf-competencia')?.value||'').trim();
+  if(!/^\d{4}-\d{2}$/.test(comp)) return;
+  try{
+    const r=await api('/api/ponto/gestao-facil/calendario?funcionario_id='+gfFuncId+'&competencia='+encodeURIComponent(comp));
+    if(r.erro||!r.resumo) return;
+    // Só re-renderiza se os dados mudaram (evita piscar sem motivo)
+    const novoHash=JSON.stringify(r.resumo?.dias||[]);
+    const velhoHash=JSON.stringify(gfUltimoResumo?.dias||[]);
+    if(novoHash!==velhoHash){
+      gfUltimoResumo=r.resumo;
+      gfRenderCalendario(r.resumo,comp);
+      gfRenderFolha(r.resumo);
+    }
+    _gfLastRefresh=new Date();
+    _gfUpdateTimestamp();
+  }catch(_){}
+}
+
+// Inicia o polling ao carregar o script
+_gfPollTimer=setInterval(_gfPollSilent,30000);
+
