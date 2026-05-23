@@ -1498,6 +1498,7 @@ class ContratoServico(db.Model):
     tipo = db.Column(db.String(20), default="servico")  # servico | aditivo
     prestadora_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
     tomadora_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
+    cliente_id = db.Column(db.Integer, db.ForeignKey("cliente.id"), nullable=True)
     objeto = db.Column(db.Text)
     texto_corpo = db.Column(db.Text)
     contrato_pai_id = db.Column(
@@ -14134,8 +14135,13 @@ def api_enviar_proposta_comercial(pid):
 
 
 def _gerar_contrato_pdf(contrato, prestadora, tomadora):
-    """Gera PDF de Contrato de Prestação de Serviços ou Termo Aditivo."""
+    """Gera PDF em formato ABNT jurídico para Contrato de Prestação de Serviços.
+
+    prestadora : Empresa  (CONTRATADA)
+    tomadora   : Empresa | Cliente | None  (CONTRATANTE)
+    """
     from io import BytesIO
+    from datetime import datetime as _dt
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import cm
@@ -14147,189 +14153,689 @@ def _gerar_contrato_pdf(contrato, prestadora, tomadora):
         HRFlowable,
         Table,
         TableStyle,
+        PageBreak,
     )
-    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_RIGHT
 
     buf = BytesIO()
+    PW, PH = A4
+    LMARGIN, RMARGIN, TMARGIN, BMARGIN = 3 * cm, 2 * cm, 3 * cm, 2.5 * cm
+    W = PW - LMARGIN - RMARGIN
+
+    NAVY = HexColor("#1a3a5c")
+    GRAY = HexColor("#555555")
+    LGRAY = HexColor("#f4f6f9")
+    LINE = HexColor("#c8d0db")
+
+    def ps(nm, **kw):
+        b = dict(
+            fontName="Times-Roman", fontSize=12, leading=18,
+            textColor=black, spaceAfter=6, spaceBefore=0,
+        )
+        b.update(kw)
+        return ParagraphStyle(nm, **b)
+
+    s_body  = ps("body",  alignment=TA_JUSTIFY, firstLineIndent=1.25 * cm, spaceAfter=8)
+    s_bni   = ps("bni",   alignment=TA_JUSTIFY, spaceAfter=8)
+    s_cla   = ps("cla",   fontName="Times-Bold", fontSize=12,
+                          spaceBefore=20, spaceAfter=8, alignment=TA_CENTER)
+    s_tit   = ps("tit",   fontName="Times-Bold", fontSize=16, textColor=NAVY,
+                          alignment=TA_CENTER, spaceAfter=6, leading=22)
+    s_sub   = ps("sub",   fontSize=12, alignment=TA_CENTER, spaceAfter=4)
+    s_ctr   = ps("ctr",   alignment=TA_CENTER)
+    s_right = ps("right", alignment=TA_RIGHT)
+
+    def _hr(thick=0.5, clr=LINE):
+        return HRFlowable(width="100%", thickness=thick, color=clr,
+                          spaceBefore=4, spaceAfter=4)
+
+    def _esc(v):
+        return str(v or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    def _p(txt, sty=None):
+        return Paragraph(txt, sty or s_body)
+
+    def _cl(ordinal, titulo):
+        return _p(f"CLÁUSULA {ordinal} – {titulo.upper()}", s_cla)
+
+    # ── extrai dict unificado de Empresa ou Cliente ───────────────────────────
+    def _extr(obj):
+        if obj is None:
+            return {}
+        return {
+            "nome":       _esc(getattr(obj, "razao", None) or getattr(obj, "nome", None) or ""),
+            "cnpj":       _esc(getattr(obj, "cnpj", None) or ""),
+            "logradouro": _esc(getattr(obj, "logradouro", None) or ""),
+            "num_end":    _esc(getattr(obj, "numero_end", None) or getattr(obj, "numero", None) or ""),
+            "bairro":     _esc(getattr(obj, "bairro", None) or ""),
+            "cidade":     _esc(getattr(obj, "cidade", None) or ""),
+            "estado":     _esc(getattr(obj, "estado", None) or ""),
+            "resp":       _esc(getattr(obj, "responsavel", None) or
+                               getattr(obj, "contato_nome", None) or ""),
+            "email":      _esc(getattr(obj, "email", None) or ""),
+        }
+
+    prest = _extr(prestadora)
+    toma  = _extr(tomadora)
+
+    def _qualif(d, papel, sigla):
+        txt = f"<b>{_esc(papel)}:</b> <b>{d['nome'] or '???'}</b>"
+        if d["cnpj"]:
+            txt += f", pessoa jurídica de direito privado, inscrita no CNPJ/MF sob o n.° <b>{d['cnpj']}</b>"
+        parts = [d["logradouro"], d["num_end"]]
+        end = ", ".join(p for p in parts if p)
+        if d["bairro"]: end += f", {d['bairro']}"
+        if d["cidade"]: end += f", {d['cidade']}/{d['estado']}"
+        if end: txt += f", com sede na {end}"
+        if d["resp"]: txt += f", neste ato representada por <b>{d['resp']}</b>"
+        txt += f", doravante denominada simplesmente <b>{sigla}</b>;"
+        return txt
+
+    is_indef  = not (contrato.data_fim or "").strip()
+    is_aditivo = (contrato.tipo or "").lower() == "aditivo"
+    tipo_label = "TERMO ADITIVO" if is_aditivo else "CONTRATO DE PRESTAÇÃO DE SERVIÇOS"
+
+    def _fmt(s):
+        if not s: return ""
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+            try: return _dt.strptime(s, fmt).strftime("%d/%m/%Y")
+            except: pass
+        return s
+
+    data_ini  = _fmt(contrato.data_inicio) or localnow().strftime("%d/%m/%Y")
+    data_fim  = _fmt(contrato.data_fim) if contrato.data_fim else ""
+    hoje      = localnow()
+    MESES = ["janeiro","fevereiro","março","abril","maio","junho",
+             "julho","agosto","setembro","outubro","novembro","dezembro"]
+    data_ext  = f"{hoje.day} de {MESES[hoje.month-1]} de {hoje.year}"
+    cidade_pr = (getattr(prestadora, "cidade", "") or "")
+    estado_pr = (getattr(prestadora, "estado", "") or "SP")
+
+    if is_indef:
+        vigencia_txt = f"a partir de {data_ini}, por prazo indeterminado"
+    else:
+        vigencia_txt = f"de {data_ini} a {data_fim}"
+
+    # ─── INÍCIO DOS ELEMENTOS ─────────────────────────────────────────────────
+    E = []
+
+    # ── CAPA ──────────────────────────────────────────────────────────────────
+    # logo
+    if prestadora and getattr(prestadora, "logo_url", None):
+        try:
+            import os as _os
+            from reportlab.platypus import Image as _RLImg
+            logo_path = _os.path.join(
+                app.root_path, "static",
+                (prestadora.logo_url or "").lstrip("/")
+            )
+            if _os.path.exists(logo_path):
+                E.append(_RLImg(logo_path, width=4 * cm, height=2 * cm, kind="bound"))
+                E.append(Spacer(1, 0.4 * cm))
+        except Exception:
+            pass
+
+    E.append(_p(tipo_label, s_tit))
+    E.append(_p(f"N.° {_esc(contrato.numero)}", s_sub))
+    E.append(Spacer(1, 0.3 * cm))
+    E.append(_hr(1.5, NAVY))
+    E.append(Spacer(1, 0.4 * cm))
+
+    # Quadro resumo
+    def _qrow(k, v):
+        return [
+            Paragraph(k, ps(f"qk{k[:4]}", fontName="Times-Bold", fontSize=10, textColor=NAVY)),
+            Paragraph(v, ps(f"qv{k[:4]}", fontSize=10)),
+        ]
+
+    resumo = [
+        ("N.° do Contrato",           _esc(contrato.numero)),
+        ("CONTRATADA (Prestadora)",   prest.get("nome") or "—"),
+        ("CNPJ da CONTRATADA",        prest.get("cnpj") or "—"),
+        ("CONTRATANTE (Tomadora)",    toma.get("nome") or "—"),
+        ("CNPJ da CONTRATANTE",       toma.get("cnpj") or "—"),
+        ("Objeto",                    _esc(contrato.objeto) or "Prestação de Serviços"),
+        ("Valor",                     _esc(contrato.valor) or "—"),
+        ("Vigência",                  vigencia_txt.capitalize()),
+        ("Foro",                      f"Comarca de {cidade_pr or 'São Paulo'}/{estado_pr}"),
+    ]
+    qt = Table([_qrow(k, v) for k, v in resumo],
+               colWidths=[5.2 * cm, W - 5.2 * cm])
+    qt.setStyle(TableStyle([
+        ("LINEBELOW",     (0, 0), (-1, -1), 0.3, LINE),
+        ("BACKGROUND",    (0, 0), (0, -1), LGRAY),
+        ("BOX",           (0, 0), (-1, -1), 0.5, LINE),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+    ]))
+    E.append(qt)
+    E.append(PageBreak())
+
+    # ── PREÂMBULO ─────────────────────────────────────────────────────────────
+    E.append(Spacer(1, 0.5 * cm))
+    E.append(_p(tipo_label, s_tit))
+    E.append(_p(f"N.° {_esc(contrato.numero)}", s_sub))
+    E.append(_hr(1.2, NAVY))
+    E.append(Spacer(1, 0.3 * cm))
+
+    if not is_aditivo:
+        if prest:
+            E.append(_p(_qualif(prest, "CONTRATADA – Prestadora de Serviços", "CONTRATADA"), s_bni))
+        if toma:
+            E.append(_p(_qualif(toma, "CONTRATANTE – Tomadora de Serviços", "CONTRATANTE"), s_bni))
+        E.append(Spacer(1, 0.3 * cm))
+        E.append(_p(
+            "As partes acima identificadas têm entre si, como justo e contratado, o presente "
+            "<b>Contrato de Prestação de Serviços</b>, que se regerá pelas cláusulas e condições "
+            "a seguir estipuladas, em consonância com os artigos 593 e seguintes do "
+            "<b>Código Civil Brasileiro (Lei n.° 10.406/2002)</b> e demais normas aplicáveis.",
+            s_bni,
+        ))
+    else:
+        pai_ref = ""
+        if contrato.contrato_pai_id:
+            pai = db.session.get(ContratoServico, contrato.contrato_pai_id)
+            if pai:
+                pai_ref = f" ao Contrato de Prestação de Serviços N.° {pai.numero}"
+        if prest:
+            E.append(_p(_qualif(prest, "CONTRATADA", "CONTRATADA"), s_bni))
+        if toma:
+            E.append(_p(_qualif(toma, "CONTRATANTE", "CONTRATANTE"), s_bni))
+        E.append(Spacer(1, 0.3 * cm))
+        E.append(_p(
+            f"As partes celebram o presente <b>Termo Aditivo</b>{_esc(pai_ref)}, "
+            "regendo-se pelas cláusulas a seguir e mantendo em vigor as demais "
+            "disposições do instrumento original não expressamente alteradas.",
+            s_bni,
+        ))
+
+    E.append(Spacer(1, 0.5 * cm))
+
+    # ══ CLÁUSULAS PRINCIPAIS (apenas para contrato, não aditivo) ══════════════
+    if not is_aditivo:
+
+        # ── CLÁUSULA PRIMEIRA – DO OBJETO ──────────────────────────────────────
+        E.append(_cl("PRIMEIRA", "DO OBJETO"))
+        E.append(_p(
+            f"O presente Contrato tem por objeto a prestação, pela CONTRATADA à CONTRATANTE, "
+            f"dos seguintes serviços: <b>{_esc(contrato.objeto) or 'serviços especializados conforme proposta técnica e comercial acordada entre as partes'}</b>."
+        ))
+        E.append(_p(
+            "§ 1.° Eventuais serviços adicionais não previstos neste instrumento somente "
+            "poderão ser executados após formalização por Termo Aditivo, assinado por "
+            "representantes legais de ambas as partes."
+        ))
+        E.append(_p(
+            "§ 2.° A CONTRATADA declara possuir plena capacidade técnica, operacional e "
+            "jurídica para a execução do objeto, responsabilizando-se integralmente pela "
+            "qualidade dos serviços, incluindo mão de obra, equipamentos e materiais."
+        ))
+
+        # ── CLÁUSULA SEGUNDA – OBRIGAÇÕES DA CONTRATADA ────────────────────────
+        E.append(_cl("SEGUNDA", "DAS OBRIGAÇÕES DA CONTRATADA"))
+        for i, ob in enumerate([
+            "Executar os serviços com mão de obra qualificada, dentro dos padrões técnicos "
+            "e de qualidade exigidos, respeitando os prazos acordados;",
+
+            "Fornecer, por sua conta e risco, toda a mão de obra necessária, arcando com "
+            "todos os encargos trabalhistas, previdenciários, fiscais e securitários de seus "
+            "empregados, incluindo FGTS, INSS e demais contribuições legais;",
+
+            "Manter seus empregados devidamente identificados, uniformizados e com os "
+            "equipamentos de proteção individual (EPI) exigidos pelas normas vigentes;",
+
+            "Responsabilizar-se por todos os danos causados à CONTRATANTE ou a terceiros, "
+            "decorrentes de culpa ou dolo de seus empregados ou prepostos;",
+
+            "Comunicar por escrito, com antecedência mínima de 48 (quarenta e oito) horas, "
+            "qualquer fato relevante que possa interferir na execução dos serviços;",
+
+            "Manter, durante toda a vigência do Contrato, regularidade fiscal, trabalhista "
+            "e previdenciária, apresentando as certidões quando solicitado;",
+
+            "Abster-se de subcontratar total ou parcialmente os serviços sem prévia "
+            "autorização escrita da CONTRATANTE.",
+        ], 1):
+            E.append(_p(f"{i}.° {ob}", s_bni))
+
+        # ── CLÁUSULA TERCEIRA – OBRIGAÇÕES DA CONTRATANTE ──────────────────────
+        E.append(_cl("TERCEIRA", "DAS OBRIGAÇÕES DA CONTRATANTE"))
+        for i, ob in enumerate([
+            "Remunerar a CONTRATADA na forma e condições estabelecidas neste Contrato;",
+
+            "Fornecer, em tempo hábil, todas as informações, dados técnicos e acessos "
+            "necessários à perfeita execução dos serviços;",
+
+            "Designar responsável para acompanhamento, fiscalização e aprovação dos serviços;",
+
+            "Comunicar à CONTRATADA, por escrito e com razoável antecedência, qualquer "
+            "irregularidade verificada na execução dos serviços;",
+
+            "Arcar com custos de taxas, licenças e autorizações municipais relativas ao "
+            "local de prestação dos serviços, salvo quando expressamente atribuídos à CONTRATADA;",
+
+            "Não contratar, direta ou indiretamente, durante a vigência deste Contrato e "
+            "nos 12 (doze) meses subsequentes ao seu término, empregados ou prepostos "
+            "da CONTRATADA que tenham atuado na execução deste instrumento, salvo com "
+            "consentimento escrito prévio da CONTRATADA.",
+        ], 1):
+            E.append(_p(f"{i}.° {ob}", s_bni))
+
+        # ── CLÁUSULA QUARTA – PREÇO E FORMA DE PAGAMENTO ───────────────────────
+        E.append(_cl("QUARTA", "DO PREÇO E DA FORMA DE PAGAMENTO"))
+        valor_txt = _esc(contrato.valor) or "valor a ser definido conforme proposta comercial em anexo"
+        E.append(_p(
+            f"Pelos serviços objeto deste Contrato, a CONTRATANTE pagará à CONTRATADA "
+            f"o valor de <b>{valor_txt}</b>, nas condições estabelecidas nesta cláusula."
+        ))
+        E.append(_p(
+            "§ 1.° O pagamento será realizado mensalmente, mediante apresentação prévia de "
+            "Nota Fiscal/Fatura, até o 10.° (décimo) dia do mês subsequente à competência "
+            "dos serviços, salvo condição diversa acordada por escrito."
+        ))
+        E.append(_p(
+            "§ 2.° No valor contratado estão incluídas todas as despesas diretas e indiretas "
+            "necessárias à execução dos serviços, inclusive mão de obra, materiais, "
+            "equipamentos, EPI, transporte, tributos e encargos sociais, salvo quando "
+            "convencionado de forma diversa em planilha de custos anexa ao presente instrumento."
+        ))
+        E.append(_p(
+            "§ 3.° O pagamento será efetuado por meio de transferência bancária, PIX ou "
+            "boleto bancário, conforme dados indicados pela CONTRATADA na Nota Fiscal. "
+            "Faturas em duplicidade ou com irregularidade fiscal serão devolvidas para "
+            "regularização sem implicar atraso de pagamento."
+        ))
+
+        # ── CLÁUSULA QUINTA – INADIMPLEMENTO E MORA ────────────────────────────
+        E.append(_cl("QUINTA", "DO INADIMPLEMENTO E DA MORA"))
+        E.append(_p(
+            "O atraso no pagamento por parte da CONTRATANTE sujeitará o valor em aberto à "
+            "incidência de <b>multa moratória de 2% (dois por cento)</b> sobre o montante "
+            "em atraso, acrescida de <b>juros de mora de 1% (um por cento) ao mês</b>, "
+            "calculados pro rata die a partir da data de vencimento até o efetivo pagamento, "
+            "sem prejuízo da correção monetária pelo IPCA/IBGE."
+        ))
+        E.append(_p(
+            "§ 1.° Caracterizado o inadimplemento — ausência de pagamento por mais de "
+            "<b>20 (vinte) dias</b> corridos da data de vencimento —, a CONTRATADA poderá "
+            "suspender a prestação dos serviços, mediante comunicação escrita com "
+            "antecedência mínima de 48 (quarenta e oito) horas. A suspensão não exime a "
+            "CONTRATANTE das obrigações financeiras, que permanecerão vigentes até a "
+            "quitação integral do débito, incluindo principal, multa, juros e correção."
+        ))
+        E.append(_p(
+            "§ 2.° Após regularização integral do débito, os serviços serão restabelecidos "
+            "em até 5 (cinco) dias úteis, podendo ser cobrados os custos de remobilização "
+            "e reinstalação, se houver."
+        ))
+        E.append(_p(
+            "§ 3.° O inadimplemento superior a <b>60 (sessenta) dias</b> autoriza a "
+            "CONTRATADA a rescindir o Contrato de pleno direito, sem aviso prévio adicional, "
+            "e a adotar as medidas extrajudiciais e judiciais cabíveis para cobrança, incluindo "
+            "negativação do nome da CONTRATANTE em cadastros de proteção ao crédito "
+            "(SPC/SERASA/SCPC), após regular notificação com prazo mínimo de 10 (dez) dias."
+        ))
+        E.append(_p(
+            "§ 4.° Não configuram inadimplemento os atrasos comprovadamente decorrentes de "
+            "força maior ou caso fortuito, desde que notificados por escrito no prazo de "
+            "5 (cinco) dias úteis contados do evento."
+        ))
+
+        # ── CLÁUSULA SEXTA – REAJUSTE ──────────────────────────────────────────
+        E.append(_cl("SEXTA", "DO REAJUSTE DE PREÇO"))
+        E.append(_p(
+            "O valor contratual será reajustado anualmente, na data de aniversário "
+            "do Contrato, com base na variação acumulada do <b>Índice Nacional de Preços "
+            "ao Consumidor Amplo (IPCA)</b>, apurado pelo IBGE nos 12 (doze) meses "
+            "imediatamente anteriores à data de reajuste."
+        ))
+        E.append(_p(
+            "§ 1.° Na hipótese de extinção ou substituição oficial do IPCA, as partes "
+            "se comprometem a negociar, de boa-fé, a adoção de índice substituto que "
+            "melhor reflita a variação dos custos dos serviços, no prazo de 30 (trinta) "
+            "dias contados da comunicação do fato."
+        ))
+        E.append(_p(
+            "§ 2.° O reajuste não depende de prévia notificação ou aditivo contratual, "
+            "salvo quando importe variação superior a 20% (vinte por cento) em relação ao "
+            "valor vigente, caso em que deverá ser formalizado por escrito."
+        ))
+        E.append(_p(
+            "§ 3.° Além do reajuste anual, em caso de alteração significativa nos custos "
+            "de mão de obra decorrente de acordo ou convenção coletiva de trabalho da "
+            "categoria, as partes se comprometem a renegociar o valor contratual no prazo "
+            "de 30 (trinta) dias, a fim de manter o equilíbrio econômico-financeiro do Contrato."
+        ))
+
+        # ── CLÁUSULA SÉTIMA – VIGÊNCIA ─────────────────────────────────────────
+        E.append(_cl("SÉTIMA", "DA VIGÊNCIA"))
+        if is_indef:
+            E.append(_p(
+                f"O presente Contrato entra em vigor na data de sua assinatura, "
+                f"fixada em <b>{data_ini}</b>, por prazo <b>indeterminado</b>, "
+                "mantendo-se vigente até que qualquer das partes manifeste, formalmente, "
+                "a intenção de rescindi-lo, observado o disposto na cláusula seguinte."
+            ))
+        else:
+            E.append(_p(
+                f"O presente Contrato entra em vigor em <b>{data_ini}</b> e vigorará até "
+                f"<b>{data_fim}</b>, podendo ser prorrogado por igual período mediante "
+                "Termo Aditivo assinado por ambas as partes antes do término."
+            ))
+            E.append(_p(
+                "Parágrafo único. Caso nenhuma das partes manifeste intenção de não renovar "
+                "com antecedência mínima de 30 (trinta) dias do término, as partes poderão "
+                "negociar a prorrogação mediante Termo Aditivo."
+            ))
+
+        # ── CLÁUSULA OITAVA – RESCISÃO ─────────────────────────────────────────
+        E.append(_cl("OITAVA", "DA RESCISÃO"))
+        E.append(_p(
+            "O presente Contrato poderá ser rescindido por qualquer das partes, mediante "
+            "notificação escrita com antecedência mínima de <b>30 (trinta) dias</b>, sem "
+            "prejuízo das obrigações financeiras já vencidas e dos serviços em andamento "
+            "na data da comunicação."
+        ))
+        if is_indef:
+            E.append(_p(
+                "§ 1.° <b>MULTA POR RESCISÃO ANTECIPADA:</b> Em razão dos custos de "
+                "mobilização, treinamento e estruturação operacional incorridos pela "
+                "CONTRATADA, caso a CONTRATANTE rescinda imotivadamente este Contrato de "
+                "prazo indeterminado antes de decorridos <b>90 (noventa) dias</b> contados "
+                "da data de início, ficará sujeita ao pagamento de multa compensatória "
+                "correspondente a <b>30% (trinta por cento)</b> do valor mensal contratado, "
+                "multiplicado pelo número de meses inteiros restantes para completar os "
+                "3 (três) meses iniciais de vigência, a título de ressarcimento pelos "
+                "investimentos realizados."
+            ))
+            E.append(_p(
+                "§ 2.° A multa prevista no § 1.° não será exigível se a rescisão decorrer "
+                "de descumprimento comprovado de obrigação contratual pela CONTRATADA, "
+                "de caso fortuito ou força maior devidamente documentados."
+            ))
+            E.append(_p(
+                "§ 3.° A rescisão imotivada pela CONTRATADA antes de completados 90 (noventa) "
+                "dias de vigência sujeita a CONTRATADA ao pagamento de multa de igual valor "
+                "em favor da CONTRATANTE."
+            ))
+            p_rescisao = 4
+        else:
+            E.append(_p(
+                "§ 1.° A rescisão antecipada imotivada, antes do término do prazo contratual, "
+                "sujeitará a parte infratora ao pagamento de multa compensatória equivalente "
+                "ao valor das mensalidades remanescentes, limitada a 3 (três) mensalidades."
+            ))
+            p_rescisao = 2
+
+        E.append(_p(
+            f"§ {p_rescisao}.° Constituem motivos para rescisão imediata, independentemente "
+            "de aviso prévio: (i) falência, insolvência ou recuperação judicial de qualquer "
+            "das partes; (ii) descumprimento reiterado de obrigações contratuais; (iii) "
+            "prática de atos dolosos, fraudulentos ou criminosos; (iv) cessão ou "
+            "subcontratação não autorizada."
+        ))
+        E.append(_p(
+            f"§ {p_rescisao + 1}.° A paralisação ou atraso injustificado dos serviços pela "
+            "CONTRATADA, por período superior a 5 (cinco) dias úteis sem justa causa comunicada "
+            "por escrito, configura descumprimento contratual grave e autoriza a rescisão "
+            "imediata, com direito da CONTRATANTE a perdas e danos."
+        ))
+
+        # ── CLÁUSULA NONA – GARANTIA ───────────────────────────────────────────
+        E.append(_cl("NONA", "DA GARANTIA E DA RESPONSABILIDADE"))
+        E.append(_p(
+            "A CONTRATADA garante que todos os serviços executados estarão isentos de "
+            "vícios, defeitos ou imperfeições, sendo utilizados materiais e mão de obra "
+            "adequados às especificações técnicas vigentes."
+        ))
+        E.append(_p(
+            "§ 1.° Identificado qualquer vício ou defeito nos serviços, a CONTRATADA "
+            "obriga-se a providenciar o reparo ou reexecução no prazo máximo de "
+            "<b>10 (dez) dias úteis</b> contados da notificação, sem custo adicional "
+            "para a CONTRATANTE."
+        ))
+        E.append(_p(
+            "§ 2.° Para serviços de natureza pontual (não contínuos), a garantia aplica-se "
+            "pelo prazo de <b>12 (doze) meses</b> após a conclusão e aceite do serviço."
+        ))
+
+        # ── CLÁUSULA DÉCIMA – CONFIDENCIALIDADE ───────────────────────────────
+        E.append(_cl("DÉCIMA", "DA CONFIDENCIALIDADE E DO SIGILO"))
+        E.append(_p(
+            "As partes comprometem-se a manter em absoluto sigilo todas as informações "
+            "confidenciais a que tiverem acesso em razão deste Contrato, incluindo dados "
+            "comerciais, financeiros, administrativos, técnicos, contábeis, fiscais e "
+            "trabalhistas, de qualquer das partes ou de seus clientes e parceiros."
+        ))
+        E.append(_p(
+            "§ 1.° A obrigação de confidencialidade estende-se a empregados, prepostos "
+            "e subcontratados de ambas as partes, que deverão firmar termos de não "
+            "divulgação com cláusulas equivalentes ou mais rigorosas."
+        ))
+        E.append(_p(
+            "§ 2.° É vedado à CONTRATADA utilizar o nome, marca ou logotipo da CONTRATANTE "
+            "em publicidade, marketing ou referências comerciais sem autorização escrita prévia."
+        ))
+        E.append(_p(
+            "§ 3.° As obrigações de sigilo subsistirão por <b>5 (cinco) anos</b> após o "
+            "término ou rescisão deste Contrato, independentemente do motivo."
+        ))
+        E.append(_p(
+            "§ 4.° Não configura violação de confidencialidade a divulgação exigida por "
+            "autoridade judicial ou administrativa competente, desde que a parte obrigada "
+            "notifique a outra previamente, se legalmente possível."
+        ))
+
+        # ── CLÁUSULA DÉCIMA PRIMEIRA – LGPD ───────────────────────────────────
+        E.append(_cl("DÉCIMA PRIMEIRA", "DA PROTEÇÃO DE DADOS PESSOAIS — LGPD"))
+        E.append(_p(
+            "As partes declaram conhecer e observar integralmente a "
+            "<b>Lei n.° 13.709/2018 — Lei Geral de Proteção de Dados Pessoais (LGPD)</b> "
+            "e seus regulamentos, comprometendo-se a adotar as medidas técnicas e "
+            "organizacionais necessárias para proteger os dados pessoais tratados no "
+            "contexto deste Contrato."
+        ))
+        E.append(_p(
+            "§ 1.° Os dados pessoais de empregados, prepostos e representantes serão "
+            "tratados exclusivamente para as finalidades inerentes à execução deste "
+            "Contrato, sendo vedado qualquer tratamento para finalidade diversa sem "
+            "o consentimento expresso do titular ou amparo legal."
+        ))
+        E.append(_p(
+            "§ 2.° A CONTRATADA, na qualidade de operadora de dados ao tratar dados "
+            "pessoais fornecidos pela CONTRATANTE, obriga-se a: (i) tratar os dados "
+            "somente conforme instruções documentadas da CONTRATANTE (controladora); "
+            "(ii) adotar medidas de segurança adequadas ao risco; (iii) notificar a "
+            "CONTRATANTE sobre incidente de segurança com dados pessoais em até "
+            "24 (vinte e quatro) horas do conhecimento do fato; (iv) devolver ou "
+            "eliminar os dados pessoais ao término do contrato, conforme instrução da "
+            "CONTRATANTE e nos termos da LGPD."
+        ))
+        E.append(_p(
+            "§ 3.° A parte que der causa a incidente de segurança ou violação de dados "
+            "responderá pelos danos causados ao titular e à outra parte, nos termos da "
+            "LGPD e da legislação civil vigente."
+        ))
+
+        # ── CLÁUSULA DÉCIMA SEGUNDA – DISPOSIÇÕES GERAIS ─────────────────────
+        E.append(_cl("DÉCIMA SEGUNDA", "DAS DISPOSIÇÕES GERAIS"))
+        for i, d in enumerate([
+            "O presente Contrato é celebrado em caráter <i>intuitu personae</i>. Os direitos "
+            "e obrigações aqui previstos não poderão ser cedidos ou transferidos, no todo ou "
+            "em parte, sem consentimento prévio e expresso por escrito da outra parte.",
+
+            "Qualquer alteração deste Contrato somente produzirá efeitos se formalizada por "
+            "escrito e assinada pelos representantes legais de ambas as partes, por meio de "
+            "Termo Aditivo devidamente numerado e datado.",
+
+            "A tolerância de qualquer das partes quanto ao descumprimento de obrigação pela "
+            "outra não implica novação, renúncia ou alteração contratual, podendo a parte "
+            "tolerante exigir seu cumprimento a qualquer tempo.",
+
+            "Este Contrato não gera vínculo empregatício, societário ou de qualquer outra "
+            "natureza entre os empregados da CONTRATADA e a CONTRATANTE. A CONTRATADA é a "
+            "exclusiva empregadora de seu pessoal.",
+
+            "A CONTRATADA compromete-se, nas ações trabalhistas de seus empregados em que a "
+            "CONTRATANTE figure como litisconsorte, a requerer expressamente a exclusão da "
+            "CONTRATANTE da lide, em todos os graus de jurisdição.",
+
+            "Todos os tributos, contribuições e encargos incidentes sobre os serviços são de "
+            "responsabilidade exclusiva da CONTRATADA, nos termos da legislação vigente, sem "
+            "direito a qualquer reembolso pela CONTRATANTE.",
+
+            "O presente instrumento constitui o acordo integral entre as partes relativamente "
+            "ao seu objeto, substituindo todos os entendimentos anteriores, verbais ou "
+            "escritos, sobre a mesma matéria.",
+        ], 1):
+            E.append(_p(f"{i}.° {d}", s_bni))
+
+        # ── CLÁUSULA DÉCIMA TERCEIRA – FORO ────────────────────────────────────
+        E.append(_cl("DÉCIMA TERCEIRA", "DO FORO"))
+        E.append(_p(
+            f"Fica eleito o foro da <b>Comarca de {_esc(cidade_pr) or 'São Paulo'}, "
+            f"Estado de {_esc(estado_pr)}</b>, com exclusão de qualquer outro, por mais "
+            "privilegiado que seja, para dirimir quaisquer dúvidas ou litígios oriundos "
+            "deste Contrato."
+        ))
+        E.append(_p(
+            "Parágrafo único. Previamente ao ajuizamento de qualquer demanda, as partes "
+            "poderão buscar resolução amigável por meio de mediação ou câmara de "
+            "arbitragem, nos termos da Lei n.° 9.307/1996 e da Lei n.° 13.140/2015."
+        ))
+
+        # ── texto_corpo extra (DISPOSIÇÕES ESPECÍFICAS) ────────────────────────
+        if (contrato.texto_corpo or "").strip():
+            E.append(_cl("DÉCIMA QUARTA", "DISPOSIÇÕES ESPECÍFICAS"))
+            for para in contrato.texto_corpo.split("\n\n"):
+                p = para.strip()
+                if p:
+                    E.append(_p(p.replace("\n", "<br/>"), s_bni))
+
+    else:
+        # ── ADITIVO: cláusulas simplificadas ──────────────────────────────────
+        E.append(_cl("PRIMEIRA", "DAS ALTERAÇÕES"))
+        if (contrato.objeto or "").strip():
+            E.append(_p(
+                "Em razão do acordado entre as partes, ficam alteradas as seguintes "
+                "condições do Contrato original:"
+            ))
+            E.append(_p(_esc(contrato.objeto), s_bni))
+        if (contrato.texto_corpo or "").strip():
+            for para in contrato.texto_corpo.split("\n\n"):
+                p = para.strip()
+                if p:
+                    E.append(_p(p.replace("\n", "<br/>"), s_bni))
+
+        E.append(_cl("SEGUNDA", "DA RATIFICAÇÃO"))
+        E.append(_p(
+            "Ficam ratificadas todas as demais cláusulas e condições do Contrato original "
+            "não expressamente alteradas por este Termo Aditivo."
+        ))
+
+        E.append(_cl("TERCEIRA", "DO FORO"))
+        E.append(_p(
+            "Permanece eleito o foro da Comarca de "
+            f"{_esc(cidade_pr) or 'São Paulo'}/{_esc(estado_pr)} para dirimir eventuais "
+            "litígios oriundos do presente instrumento."
+        ))
+
+    # ── ASSINATURAS ────────────────────────────────────────────────────────────
+    E.append(Spacer(1, 0.8 * cm))
+    E.append(_hr(0.5, LINE))
+    E.append(Spacer(1, 0.5 * cm))
+    E.append(_p(
+        f"{(cidade_pr + ', ') if cidade_pr else ''}{data_ext}.",
+        s_ctr,
+    ))
+    E.append(Spacer(1, 1.5 * cm))
+
+    col_w = (W - 1 * cm) / 2
+    pn = prest.get("nome") or "CONTRATADA"
+    tn = toma.get("nome") or "CONTRATANTE"
+    pr = prest.get("resp") or ""
+    tr = toma.get("resp") or ""
+
+    sig = Table([
+        ["_" * 42, "", "_" * 42],
+        [pn,       "", tn],
+        [pr,       "", tr],
+        ["CONTRATADA",  "", "CONTRATANTE"],
+    ], colWidths=[col_w, 1 * cm, col_w])
+    sig.setStyle(TableStyle([
+        ("FONTNAME",     (0, 0), (-1, -1), "Times-Roman"),
+        ("FONTNAME",     (0, 1), (-1, 1),  "Times-Bold"),
+        ("FONTNAME",     (0, 3), (-1, 3),  "Times-Bold"),
+        ("FONTSIZE",     (0, 0), (-1, -1), 10),
+        ("FONTSIZE",     (0, 2), (-1, 2),  9),
+        ("ALIGN",        (0, 0), (-1, -1), "CENTER"),
+        ("TEXTCOLOR",    (0, 3), (-1, 3),  NAVY),
+        ("TOPPADDING",   (0, 1), (-1, 1),  6),
+        ("TOPPADDING",   (0, 2), (-1, 2),  2),
+        ("TOPPADDING",   (0, 3), (-1, 3),  2),
+    ]))
+    E.append(sig)
+
+    E.append(Spacer(1, 1.5 * cm))
+    E.append(_p("Testemunhas:", ps("th", fontName="Times-Bold", fontSize=10, spaceAfter=8)))
+    tes = Table([
+        ["_" * 35, "", "_" * 35],
+        ["1.ª Testemunha — Nome / CPF", "", "2.ª Testemunha — Nome / CPF"],
+    ], colWidths=[col_w, 1 * cm, col_w])
+    tes.setStyle(TableStyle([
+        ("FONTNAME",   (0, 0), (-1, -1), "Times-Roman"),
+        ("FONTSIZE",   (0, 0), (-1, -1), 9),
+        ("ALIGN",      (0, 0), (-1, -1), "CENTER"),
+        ("TOPPADDING", (0, 1), (-1, 1),  4),
+    ]))
+    E.append(tes)
+
+    # ── CABEÇALHO/RODAPÉ em cada página ───────────────────────────────────────
+    _GRAY_C = GRAY
+    _LINE_C = LINE
+    _NAVY_C = NAVY
+
+    def _hf(canvas, doc):
+        canvas.saveState()
+        if doc.page > 1:
+            canvas.setFont("Times-Roman", 8)
+            canvas.setFillColor(_GRAY_C)
+            canvas.drawString(LMARGIN, PH - 1.8 * cm,
+                              f"{tipo_label}  –  N.° {contrato.numero}")
+        canvas.setFont("Times-Roman", 8)
+        canvas.setFillColor(_GRAY_C)
+        canvas.drawCentredString(PW / 2, 1.5 * cm, f"Página {doc.page}")
+        canvas.setStrokeColor(_LINE_C)
+        canvas.setLineWidth(0.4)
+        canvas.line(LMARGIN, 1.8 * cm, PW - RMARGIN, 1.8 * cm)
+        canvas.restoreState()
+
+    # ── BUILD ─────────────────────────────────────────────────────────────────
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=LMARGIN,
+        rightMargin=RMARGIN,
+        topMargin=TMARGIN,
+        bottomMargin=BMARGIN,
+    )
+
     try:
         canvas_cls = _WatermarkCanvas
     except Exception:
         canvas_cls = None
 
-    doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        rightMargin=2 * cm,
-        leftMargin=2 * cm,
-        topMargin=2.5 * cm,
-        bottomMargin=2 * cm,
-    )
-
-    cor_azul = HexColor("#205d8a")
-    cor_cinza = HexColor("#666666")
-    cor_fundo = HexColor("#f0f6ff")
-
-    s_tit = ParagraphStyle(
-        "Tit",
-        fontName="Helvetica-Bold",
-        fontSize=14,
-        textColor=cor_azul,
-        alignment=TA_CENTER,
-        spaceAfter=4,
-    )
-    s_sub = ParagraphStyle(
-        "Sub",
-        fontName="Helvetica",
-        fontSize=10,
-        textColor=cor_cinza,
-        alignment=TA_CENTER,
-        spaceAfter=14,
-    )
-    s_sec = ParagraphStyle(
-        "Sec",
-        fontName="Helvetica-Bold",
-        fontSize=11,
-        textColor=cor_azul,
-        spaceBefore=14,
-        spaceAfter=6,
-    )
-    s_corp = ParagraphStyle(
-        "Corp",
-        fontName="Helvetica",
-        fontSize=10,
-        textColor=black,
-        alignment=TA_JUSTIFY,
-        spaceAfter=6,
-        leading=15,
-    )
-    s_ctr = ParagraphStyle("Ctr", fontName="Helvetica", fontSize=9, alignment=TA_CENTER)
-
-    tipo_label = (
-        "TERMO ADITIVO"
-        if (contrato.tipo or "") == "aditivo"
-        else "CONTRATO DE PRESTAÇÃO DE SERVIÇOS"
-    )
-
-    elems = []
-    elems.append(Paragraph(tipo_label, s_tit))
-    elems.append(Paragraph(f"N° {contrato.numero}", s_sub))
-    elems.append(HRFlowable(width="100%", color=cor_azul, thickness=1.5, spaceAfter=14))
-
-    def _qualif(emp_dict, papel):
-        if not emp_dict:
-            return ""
-        nome = emp_dict.get("razao") or emp_dict.get("nome") or ""
-        cnpj = emp_dict.get("cnpj") or ""
-        parts_end = [emp_dict.get("logradouro", ""), emp_dict.get("numero", "")]
-        end = ", ".join(filter(None, parts_end))
-        if emp_dict.get("bairro"):
-            end += f", {emp_dict['bairro']}"
-        if emp_dict.get("cidade"):
-            end += f", {emp_dict['cidade']}/{emp_dict.get('estado', '')}"
-        txt = f"<b>{papel}:</b> <b>{nome}</b>"
-        if cnpj:
-            txt += f", inscrita no CNPJ sob n° <b>{cnpj}</b>"
-        if end:
-            txt += f", com sede em {end}"
-        return txt + "."
-
-    elems.append(Paragraph("DAS PARTES", s_sec))
-    prest_d = prestadora.to_dict() if prestadora else {}
-    toma_d = tomadora.to_dict() if tomadora else {}
-    if prest_d:
-        elems.append(Paragraph(_qualif(prest_d, "CONTRATADA (Prestadora)"), s_corp))
-    if toma_d:
-        elems.append(Paragraph(_qualif(toma_d, "CONTRATANTE (Tomadora)"), s_corp))
-
-    if contrato.objeto:
-        elems.append(Paragraph("DO OBJETO", s_sec))
-        elems.append(Paragraph(contrato.objeto, s_corp))
-
-    info_rows = []
-    if contrato.data_inicio or contrato.data_fim:
-        info_rows.append(
-            [
-                "Vigência",
-                f"{contrato.data_inicio or '—'} a {contrato.data_fim or 'Indeterminado'}",
-            ]
-        )
-    if contrato.valor:
-        info_rows.append(["Valor", contrato.valor])
-    if info_rows:
-        elems.append(Paragraph("DA VIGÊNCIA E VALOR", s_sec))
-        t = Table(info_rows, colWidths=[5 * cm, None])
-        t.setStyle(
-            TableStyle(
-                [
-                    ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
-                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 10),
-                    ("TEXTCOLOR", (0, 0), (0, -1), cor_azul),
-                    ("ROWBACKGROUNDS", (0, 0), (-1, -1), [cor_fundo, white]),
-                    ("GRID", (0, 0), (-1, -1), 0.5, HexColor("#c5d9f0")),
-                    ("PADDING", (0, 0), (-1, -1), 6),
-                ]
-            )
-        )
-        elems.append(t)
-
-    if contrato.texto_corpo:
-        elems.append(Paragraph("DAS CONDIÇÕES", s_sec))
-        for para in contrato.texto_corpo.split("\n\n"):
-            p = para.strip()
-            if p:
-                elems.append(Paragraph(p.replace("\n", "<br/>"), s_corp))
-
-    elems.append(Spacer(1, 1.5 * cm))
-    cidade = (prestadora.cidade if prestadora else "") or ""
-    data_ext = contrato.data_inicio or localnow().strftime("%d/%m/%Y")
-    elems.append(Paragraph(f"{cidade + ', ' if cidade else ''}{data_ext}", s_ctr))
-    elems.append(Spacer(1, 1.2 * cm))
-
-    prest_nome = (prestadora.razao or prestadora.nome) if prestadora else "CONTRATADA"
-    toma_nome = (tomadora.razao or tomadora.nome) if tomadora else "CONTRATANTE"
-    sig = Table(
-        [
-            ["_" * 42, "", "_" * 42],
-            [prest_nome, "", toma_nome],
-            ["CONTRATADA (Prestadora)", "", "CONTRATANTE (Tomadora)"],
-        ],
-        colWidths=[7.5 * cm, 2 * cm, 7.5 * cm],
-    )
-    sig.setStyle(
-        TableStyle(
-            [
-                ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
-                ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("FONTSIZE", (0, 2), (-1, 2), 8),
-                ("TEXTCOLOR", (0, 2), (-1, 2), cor_cinza),
-                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                ("TOPPADDING", (0, 1), (-1, 1), 4),
-                ("TOPPADDING", (0, 2), (-1, 2), 2),
-            ]
-        )
-    )
-    elems.append(sig)
-
-    def _footer(canvas, doc):
-        canvas.saveState()
-        canvas.setFont("Helvetica", 8)
-        canvas.setFillColor(cor_cinza)
-        canvas.drawCentredString(
-            A4[0] / 2, 0.8 * cm, f"{tipo_label} — N° {contrato.numero}"
-        )
-        canvas.restoreState()
-
     if canvas_cls:
-        doc.build(
-            elems, canvasmaker=canvas_cls, onFirstPage=_footer, onLaterPages=_footer
-        )
+        doc.build(E, canvasmaker=canvas_cls, onFirstPage=_hf, onLaterPages=_hf)
     else:
-        doc.build(elems, onFirstPage=_footer, onLaterPages=_footer)
+        doc.build(E, onFirstPage=_hf, onLaterPages=_hf)
 
     buf.seek(0)
     return buf
+
+
 
 
 @app.route("/api/contratos-ps", methods=["POST"])
@@ -14339,12 +14845,21 @@ def api_ps_criar_contrato():
     tipo = (d.get("tipo") or "servico").strip().lower()
     if tipo not in ("servico", "aditivo"):
         return jsonify({"erro": "Tipo inválido."}), 400
+
+    # Valida client registrado quando informado
+    cliente_id = d.get("cliente_id") or None
+    if cliente_id:
+        cli = db.session.get(Cliente, int(cliente_id))
+        if not cli:
+            return jsonify({"erro": "Cliente não encontrado. Cadastre o cliente antes de gerar o contrato."}), 400
+
     numero = _gerar_num_contrato(tipo)
     c = ContratoServico(
         numero=numero,
         tipo=tipo,
         prestadora_id=d.get("prestadora_id") or None,
         tomadora_id=d.get("tomadora_id") or None,
+        cliente_id=cliente_id,
         objeto=(d.get("objeto") or "").strip(),
         texto_corpo=(d.get("texto_corpo") or "").strip(),
         contrato_pai_id=d.get("contrato_pai_id") or None,
@@ -14405,11 +14920,22 @@ def api_ps_listar_contratos():
             emp_cache[eid] = (e.razao or e.nome) if e else ""
         return emp_cache[eid]
 
+    cli_cache = {}
+
+    def _cn(cid):
+        if not cid:
+            return ""
+        if cid not in cli_cache:
+            cl = db.session.get(Cliente, cid)
+            cli_cache[cid] = cl.nome if cl else ""
+        return cli_cache[cid]
+
     items = []
     for c in rows:
         dd = c.to_dict()
         dd["prestadora_nome"] = _en(c.prestadora_id)
-        dd["tomadora_nome"] = _en(c.tomadora_id)
+        dd["tomadora_nome"] = _en(c.tomadora_id) or _cn(c.cliente_id)
+        dd["cliente_nome"] = _cn(c.cliente_id)
         items.append(dd)
     return jsonify(
         {
@@ -14432,6 +14958,11 @@ def api_ps_get_contrato(cid):
     if c.tomadora_id:
         e = db.session.get(Empresa, c.tomadora_id)
         dd["tomadora_nome"] = (e.razao or e.nome) if e else ""
+    if c.cliente_id:
+        cl = db.session.get(Cliente, c.cliente_id)
+        if cl:
+            dd["cliente_nome"] = cl.nome
+            dd["tomadora_nome"] = dd.get("tomadora_nome") or cl.nome
     return jsonify(dd)
 
 
@@ -14440,7 +14971,13 @@ def api_ps_get_contrato(cid):
 def api_ps_contrato_pdf(cid):
     c = db.get_or_404(ContratoServico, cid)
     prestadora = db.session.get(Empresa, c.prestadora_id) if c.prestadora_id else None
-    tomadora = db.session.get(Empresa, c.tomadora_id) if c.tomadora_id else None
+    # Tomadora: prefer Cliente registrado; fallback Empresa
+    if c.cliente_id:
+        tomadora = db.session.get(Cliente, c.cliente_id)
+    elif c.tomadora_id:
+        tomadora = db.session.get(Empresa, c.tomadora_id)
+    else:
+        tomadora = None
     buf = _gerar_contrato_pdf(c, prestadora, tomadora)
     from flask import make_response, send_file as _sf
 
