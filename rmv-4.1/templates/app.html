@@ -610,6 +610,55 @@ document.addEventListener('DOMContentLoaded',()=>{
 <script src="/static/vendor/pdfjs/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<style>
+/* ── Caret de módulo: indica estado fechado/aberto ─────────────────── */
+.nav-module:not(.open) .module-caret{transform:rotate(-90deg)}
+.nav-module.open .module-caret{transform:rotate(0deg)}
+
+/* ── Overlay / Modal base reutilizável ─────────────────────────────── */
+.rm-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.62);
+  z-index:3000;align-items:center;justify-content:center;padding:16px;
+  backdrop-filter:blur(3px)}
+.rm-overlay.show{display:flex}
+@keyframes rm-modal-in{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:none}}
+.rm-modal-box{background:var(--branco);color:var(--preto);border-radius:var(--r2);
+  width:100%;padding:28px 24px;box-shadow:var(--shadow-md);border:1px solid var(--borda);
+  animation:rm-modal-in .2s ease}
+.rm-modal-title{font-size:16px;font-weight:700;margin-bottom:18px;
+  display:flex;align-items:center;justify-content:space-between;gap:10px}
+.rm-modal-title .rm-close{background:transparent;border:none;font-size:18px;
+  cursor:pointer;padding:0 6px;color:var(--text-muted);line-height:1;border-radius:6px;
+  transition:background .15s,color .15s}
+.rm-modal-title .rm-close:hover{background:var(--verm-cl);color:var(--verm)}
+.rm-modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:22px;flex-wrap:wrap}
+.rm-form-row{margin-bottom:14px}
+.rm-form-row>label{font-size:11px;font-weight:700;display:block;margin-bottom:5px;
+  color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px}
+.rm-form-row input,.rm-form-row select,.rm-form-row textarea{width:100%;
+  box-sizing:border-box;padding:9px 11px;border:1.5px solid var(--borda);
+  border-radius:var(--r);background:var(--cinza-cl);color:var(--preto);
+  font-size:13px;font-family:inherit;transition:border-color .18s,box-shadow .18s}
+.rm-form-row input:focus,.rm-form-row select:focus,.rm-form-row textarea:focus{
+  outline:none;border-color:var(--azul);box-shadow:var(--shadow-glow)}
+.rm-form-row .hint{font-size:11px;color:var(--text-muted);margin-top:3px}
+.rm-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:520px){.rm-grid-2{grid-template-columns:1fr}}
+
+/* ── Módulos nav: destaque de módulo com item ativo ────────────────── */
+.nav-module.active{border-color:rgba(240,141,56,.55)!important;
+  box-shadow:0 0 0 1px rgba(240,141,56,.22)!important}
+.nav-module.active>.module-toggle{color:#fff}
+
+/* ── Sidebar scrollbar fina ─────────────────────────────────────────── */
+.sidebar-main{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent}
+.sidebar-main::-webkit-scrollbar{width:4px}
+.sidebar-main::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:4px}
+
+/* ── Mobile nav: chip de categoria ──────────────────────────────────── */
+.mobile-nav-sep{font-size:9px;font-weight:800;color:var(--text-muted);
+  text-transform:uppercase;letter-spacing:.6px;padding:0 4px;
+  align-self:center;white-space:nowrap;flex-shrink:0}
+</style>
 </head>
 <body>
 
@@ -623,17 +672,38 @@ document.addEventListener('DOMContentLoaded',()=>{
   <div class="mobile-nav-inner">
     <label>Navegação rápida</label>
     <div class="mobile-nav-scroller" id="mobile-nav-scroller">
+      <!-- Principal -->
       <button type="button" class="mobile-nav-btn on" data-nav="dashboard" onclick="navFromMobile('dashboard')">Dashboard</button>
-      <button type="button" class="mobile-nav-btn" data-nav="pagamento-salario" onclick="navFromMobile('pagamento-salario')">Salarios</button>
+      <!-- Comercial -->
+      <span class="mobile-nav-sep">|</span>
       <button type="button" class="mobile-nav-btn" data-nav="clientes" onclick="navFromMobile('clientes')">Clientes</button>
+      <button type="button" class="mobile-nav-btn" data-nav="faturamento" onclick="navFromMobile('faturamento')">Faturamento</button>
+      <button type="button" class="mobile-nav-btn" data-nav="nova-medicao" onclick="navFromMobile('nova-medicao')">Nova Medição</button>
+      <button type="button" class="mobile-nav-btn" data-nav="historico" onclick="navFromMobile('historico')">Histórico</button>
+      <button type="button" class="mobile-nav-btn" data-nav="cobrancas" onclick="navFromMobile('cobrancas')">Cobranças</button>
+      <!-- Financeiro -->
+      <span class="mobile-nav-sep">|</span>
+      <button type="button" class="mobile-nav-btn" data-nav="financeiro" onclick="navFromMobile('financeiro')">Financeiro</button>
+      <button type="button" class="mobile-nav-btn" data-nav="despesas" onclick="navFromMobile('despesas')">Despesas</button>
+      <button type="button" class="mobile-nav-btn" data-nav="fluxo-caixa" onclick="navFromMobile('fluxo-caixa')">Fluxo de Caixa</button>
+      <button type="button" class="mobile-nav-btn" data-nav="contas" onclick="navFromMobile('contas')">Contas</button>
+      <button type="button" class="mobile-nav-btn" data-nav="conciliacao" onclick="navFromMobile('conciliacao')">Conciliação</button>
+      <button type="button" class="mobile-nav-btn" data-nav="relatorios" onclick="navFromMobile('relatorios')">Relatórios</button>
+      <!-- RH -->
+      <span class="mobile-nav-sep">|</span>
       <button type="button" class="mobile-nav-btn" data-nav="rh" onclick="navFromMobile('rh')">RH</button>
+      <button type="button" class="mobile-nav-btn" data-nav="pagamento-salario" onclick="navFromMobile('pagamento-salario')">Salários</button>
       <button type="button" class="mobile-nav-btn" data-nav="rh-digital" onclick="navFromMobile('rh-digital')">Comunicação</button>
-      <button type="button" class="mobile-nav-btn" data-nav="operacional" onclick="navFromMobile('operacional')">Operacional</button>
-      <button type="button" class="mobile-nav-btn" data-nav="compras" onclick="navFromMobile('compras')">Compras</button>
       <button type="button" class="mobile-nav-btn" data-nav="beneficios" onclick="navFromMobile('beneficios')">Benefícios</button>
       <button type="button" class="mobile-nav-btn" data-nav="sst" onclick="navFromMobile('sst')">SST</button>
       <button type="button" class="mobile-nav-btn" data-nav="assinaturas" onclick="navFromMobile('assinaturas')">Assinaturas</button>
       <button type="button" class="mobile-nav-btn" data-nav="documentos" onclick="navFromMobile('documentos')">📄 Documentos</button>
+      <!-- Operacional -->
+      <span class="mobile-nav-sep">|</span>
+      <button type="button" class="mobile-nav-btn" data-nav="operacional" onclick="navFromMobile('operacional')">Operacional</button>
+      <button type="button" class="mobile-nav-btn" data-nav="compras" onclick="navFromMobile('compras')">Compras</button>
+      <!-- Admin -->
+      <span class="mobile-nav-sep">|</span>
       <button type="button" class="mobile-nav-btn" data-nav="empresas" onclick="navFromMobile('empresas')">Empresas</button>
       <button type="button" class="mobile-nav-btn" data-nav="usuarios" onclick="navFromMobile('usuarios')">Usuários</button>
       <button type="button" class="mobile-nav-btn" data-nav="config" onclick="navFromMobile('config')">Configurações</button>
@@ -654,62 +724,88 @@ document.addEventListener('DOMContentLoaded',()=>{
     </div>
 
     <div class="sidebar-main">
+
+      <!-- ── Principal ──────────────────────────────────────────────── -->
       <div class="nav-module open" id="mod-principal">
         <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-principal')">
           <span class="mod-icon">🏠</span><span class="module-label">Principal</span><span class="module-caret">▾</span>
         </button>
         <div class="module-panel">
           <a class="nav-item lv2 on" data-nav="dashboard" onclick="nav('dashboard',this)">
-            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
             <span class="nav-label">Dashboard</span>
           </a>
         </div>
       </div>
 
+      <!-- ── Comercial ───────────────────────────────────────────────── -->
       <div class="nav-module" id="mod-comercial">
         <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-comercial')">
           <span class="mod-icon">🧾</span><span class="module-label">Comercial</span><span class="module-caret">▾</span>
         </button>
         <div class="module-panel">
-          <a class="nav-item lv2" onclick="nav('clientes',this)"><span class="nav-label">Clientes</span></a>
+          <a class="nav-item lv2" data-nav="clientes" onclick="nav('clientes',this)"><span class="nav-label">Clientes</span></a>
+          <a class="nav-item lv2" data-nav="faturamento" onclick="nav('faturamento',this)"><span class="nav-label">Faturamento</span></a>
+          <a class="nav-item lv2" data-nav="nova-medicao" onclick="nav('nova-medicao',this)"><span class="nav-label">Nova Medição</span></a>
+          <a class="nav-item lv2" data-nav="historico" onclick="nav('historico',this)"><span class="nav-label">Histórico</span></a>
+          <a class="nav-item lv2" data-nav="cobrancas" onclick="nav('cobrancas',this)"><span class="nav-label">Cobranças</span></a>
         </div>
       </div>
 
+      <!-- ── Financeiro ──────────────────────────────────────────────── -->
+      <div class="nav-module" id="mod-financeiro">
+        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-financeiro')">
+          <span class="mod-icon">💰</span><span class="module-label">Financeiro</span><span class="module-caret">▾</span>
+        </button>
+        <div class="module-panel">
+          <a class="nav-item lv2" data-nav="financeiro" onclick="nav('financeiro',this)"><span class="nav-label">Visão Geral</span></a>
+          <a class="nav-item lv2" data-nav="despesas" onclick="nav('despesas',this)"><span class="nav-label">Despesas</span></a>
+          <a class="nav-item lv2" data-nav="fluxo-caixa" onclick="nav('fluxo-caixa',this)"><span class="nav-label">Fluxo de Caixa</span></a>
+          <a class="nav-item lv2" data-nav="contas" onclick="nav('contas',this)"><span class="nav-label">Contas</span></a>
+          <a class="nav-item lv2" data-nav="conciliacao" onclick="nav('conciliacao',this)"><span class="nav-label">Conciliação Bancária</span></a>
+          <a class="nav-item lv2" data-nav="relatorios" onclick="nav('relatorios',this)"><span class="nav-label">Relatórios</span></a>
+        </div>
+      </div>
+
+      <!-- ── RH ─────────────────────────────────────────────────────── -->
       <div class="nav-module" id="mod-rh">
         <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-rh')">
           <span class="mod-icon">👥</span><span class="module-label">RH</span><span class="module-caret">▾</span>
         </button>
         <div class="module-panel">
-          <a class="nav-item lv2" onclick="nav('rh',this)"><span class="nav-label">RH</span></a>
-          <a class="nav-item lv2" onclick="nav('rh-digital',this)"><span class="nav-label">Comunicacao</span></a>
-          <a class="nav-item lv2" onclick="nav('beneficios',this)"><span class="nav-label">Beneficios</span></a>
+          <a class="nav-item lv2" data-nav="rh" onclick="nav('rh',this)"><span class="nav-label">Colaboradores</span></a>
+          <a class="nav-item lv2" data-nav="rh-digital" onclick="nav('rh-digital',this)"><span class="nav-label">Comunicação</span></a>
+          <a class="nav-item lv2" data-nav="beneficios" onclick="nav('beneficios',this)"><span class="nav-label">Benefícios</span></a>
           <a class="nav-item lv2" data-nav="pagamento-salario" onclick="nav('pagamento-salario',this)"><span class="nav-label">Pagamento de Salário</span></a>
-          <a class="nav-item lv2" onclick="nav('sst',this)"><span class="nav-label">Seguranca do Trabalho</span></a>
-          <a class="nav-item lv2" onclick="nav('assinaturas',this)"><span class="nav-label">Assinaturas</span></a>
-          <a class="nav-item lv2" onclick="nav('documentos',this)"><span class="nav-label">📄 Documentos</span></a>
+          <a class="nav-item lv2" data-nav="sst" onclick="nav('sst',this)"><span class="nav-label">Segurança do Trabalho</span></a>
+          <a class="nav-item lv2" data-nav="assinaturas" onclick="nav('assinaturas',this)"><span class="nav-label">Assinaturas</span></a>
+          <a class="nav-item lv2" data-nav="documentos" onclick="nav('documentos',this)"><span class="nav-label">📄 Documentos</span></a>
         </div>
       </div>
 
+      <!-- ── Operacional ────────────────────────────────────────────── -->
       <div class="nav-module" id="mod-operacional">
         <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-operacional')">
           <span class="mod-icon">🏭</span><span class="module-label">Operacional</span><span class="module-caret">▾</span>
         </button>
         <div class="module-panel">
-          <a class="nav-item lv2" onclick="nav('operacional',this)"><span class="nav-label">Operacional</span></a>
-          <a class="nav-item lv2" onclick="nav('compras',this)"><span class="nav-label">Compras</span></a>
+          <a class="nav-item lv2" data-nav="operacional" onclick="nav('operacional',this)"><span class="nav-label">Operacional</span></a>
+          <a class="nav-item lv2" data-nav="compras" onclick="nav('compras',this)"><span class="nav-label">Compras</span></a>
         </div>
       </div>
 
+      <!-- ── Administração ──────────────────────────────────────────── -->
       <div class="nav-module" id="mod-admin">
         <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-admin')">
-          <span class="mod-icon">⚙️</span><span class="module-label">Administracao</span><span class="module-caret">▾</span>
+          <span class="mod-icon">⚙️</span><span class="module-label">Administração</span><span class="module-caret">▾</span>
         </button>
         <div class="module-panel">
-          <a class="nav-item lv2" onclick="nav('empresas',this)"><span class="nav-label">Empresas</span></a>
-          <a class="nav-item lv2" onclick="nav('usuarios',this)"><span class="nav-label">Usuarios</span></a>
-          <a class="nav-item lv2" onclick="nav('config',this)"><span class="nav-label">Configuracoes</span></a>
+          <a class="nav-item lv2" data-nav="empresas" onclick="nav('empresas',this)"><span class="nav-label">Empresas</span></a>
+          <a class="nav-item lv2" data-nav="usuarios" onclick="nav('usuarios',this)"><span class="nav-label">Usuários</span></a>
+          <a class="nav-item lv2" data-nav="config" onclick="nav('config',this)"><span class="nav-label">Configurações</span></a>
         </div>
       </div>
+
     </div>
 
     <div class="sidebar-bottom">
