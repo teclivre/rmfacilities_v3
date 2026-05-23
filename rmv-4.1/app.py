@@ -13578,8 +13578,10 @@ def _gerar_proposta_comercial_pdf(
                   st("tv", fontSize=9, leading=12, fontName="Helvetica-Bold",
                      alignment=TA_RIGHT)),
     ])
+    # Proporções originais [1.2, 2.8, 6.8, 1.2, 2.8, 3.2] = 18 cm; escalar para W
+    _plan_props = [1.2, 2.8, 6.8, 1.2, 2.8, 3.2]
     plan_t = Table(plan_rows,
-                   colWidths=[1.2*cm, 2.8*cm, 6.8*cm, 1.2*cm, 2.8*cm, 3.2*cm])
+                   colWidths=[W * p / sum(_plan_props) for p in _plan_props])
     plan_t.setStyle(TableStyle([
         ("BACKGROUND",    (0, 0),  (-1, 0),  NAVY),
         ("FONTSIZE",      (0, 0),  (-1, -1), 9),
@@ -13649,61 +13651,58 @@ def _gerar_proposta_comercial_pdf(
     elems.append(_sec("5", "Considerações Comerciais"))
     elems.append(_hr())
 
+    _s_ck = st("csk", fontName="Helvetica-Bold", fontSize=10, leading=14, textColor=NAVY)
+    _s_cv = st("csv", fontName="Helvetica",      fontSize=10, leading=14)
+
+    def _ck(t):
+        return Paragraph(t, _s_ck)
+
+    def _cv(t):
+        return Paragraph(t, _s_cv)
+
     if is_spot:
         cons_rows = [
-            ("Modalidade:",       "Serviço avulso (SPOT), conforme escopo da Seção 2."),
-            ("Forma de Pagamento:",
-             "Conforme negociação prévia entre as partes."),
-            ("Base de Preços:",   f"Valores elaborados com referência em {ano_ref}."),
-            ("Serviços Extras:",
-             "Solicitados com antecedência mínima de 48 horas úteis."),
-            ("Responsabilidade:",
-             f"Ocorrências deverão ser comunicadas imediatamente à {rem_nome}."),
-            ("Infraestrutura:",
-             f"A {empresa or 'CONTRATANTE'} disponibilizará local para guarda "
-             "de equipamentos, água e acesso a banheiros."),
-            ("Validade:",         "30 (trinta) dias a partir da data de emissão."),
+            (_ck("Modalidade:"),        _cv("Serviço avulso (SPOT), conforme escopo da Seção 2.")),
+            (_ck("Forma de Pagamento:"),_cv("Conforme negociação prévia entre as partes.")),
+            (_ck("Base de Preços:"),    _cv(f"Valores elaborados com referência em {ano_ref}.")),
+            (_ck("Serviços Extras:"),   _cv("Solicitados com antecedência mínima de 48 horas úteis.")),
+            (_ck("Responsabilidade:"),  _cv(f"Ocorrências deverão ser comunicadas imediatamente à {rem_nome}.")),
+            (_ck("Infraestrutura:"),    _cv(
+                f"A {empresa or 'CONTRATANTE'} disponibilizará local para guarda "
+                "de equipamentos, água e acesso a banheiros.")),
+            (_ck("Validade:"),          _cv("30 (trinta) dias a partir da data de emissão.")),
         ]
     else:
         cons_rows = [
-            ("Forma de Pagamento:",
-             "Faturamento mensal, com prazo de vencimento conforme Termo de Referência."),
-            ("Prazo Contratual:", "Indeterminado."),
-            ("Rescisão:",
-             "Qualquer das partes poderá rescindir o contrato, sem justo motivo, "
-             "mediante aviso prévio de 30 (trinta) dias."),
-            ("Base de Preços:",
-             f"Valores elaborados com referência em 01 de janeiro de {ano_ref}."),
-            ("Reajuste:",
-             "Anual, conforme variação do piso salarial da categoria e/ou índice "
-             "contratual. Novos tributos ou alterações legais ensejarão revisão "
-             "para reequilíbrio econômico-financeiro."),
-            ("Cobertura de Faltas:",
-             f"Realizada pela {rem_nome} em até 2 (duas) horas."),
-            ("Serviços Extras:",
-             "Solicitados com antecedência mínima de 72 (setenta e duas) horas úteis."),
-            ("Responsabilidade:",
-             f"A {empresa or 'CONTRATANTE'} poderá auditar mensalmente os documentos "
-             "trabalhistas e previdenciários dos colaboradores alocados."),
-            ("Infraestrutura:",
-             f"A {empresa or 'CONTRATANTE'} disponibilizará local para guarda de "
-             "equipamentos, água e acesso a banheiros."),
-            ("Validade:",         "30 (trinta) dias a partir da data de emissão."),
+            (_ck("Forma de Pagamento:"),_cv("Faturamento mensal, com prazo de vencimento conforme Termo de Referência.")),
+            (_ck("Prazo Contratual:"),  _cv("Indeterminado.")),
+            (_ck("Rescisão:"),          _cv(
+                "Qualquer das partes poderá rescindir o contrato, sem justo motivo, "
+                "mediante aviso prévio de 30 (trinta) dias.")),
+            (_ck("Base de Preços:"),    _cv(f"Valores elaborados com referência em 01 de janeiro de {ano_ref}.")),
+            (_ck("Reajuste:"),          _cv(
+                "Anual, conforme variação do piso salarial da categoria e/ou índice "
+                "contratual. Novos tributos ou alterações legais ensejarão revisão "
+                "para reequilíbrio econômico-financeiro.")),
+            (_ck("Cobertura de Faltas:"),_cv(f"Realizada pela {rem_nome} em até 2 (duas) horas.")),
+            (_ck("Serviços Extras:"),   _cv("Solicitados com antecedência mínima de 72 (setenta e duas) horas úteis.")),
+            (_ck("Responsabilidade:"),  _cv(
+                f"A {empresa or 'CONTRATANTE'} poderá auditar mensalmente os documentos "
+                "trabalhistas e previdenciários dos colaboradores alocados.")),
+            (_ck("Infraestrutura:"),    _cv(
+                f"A {empresa or 'CONTRATANTE'} disponibilizará local para guarda de "
+                "equipamentos, água e acesso a banheiros.")),
+            (_ck("Validade:"),          _cv("30 (trinta) dias a partir da data de emissão.")),
         ]
 
     cons_tbl = Table(cons_rows, colWidths=[4.5 * cm, W - 4.5 * cm])
     cons_tbl.setStyle(TableStyle([
-        ("FONTNAME",      (0, 0), (0, -1),  "Helvetica-Bold"),
-        ("FONTNAME",      (1, 0), (1, -1),  "Helvetica"),
-        ("FONTSIZE",      (0, 0), (-1, -1), 10),
-        ("LEADING",       (0, 0), (-1, -1), 14),
-        ("TEXTCOLOR",     (0, 0), (0, -1),  NAVY),
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
         ("LINEBELOW",     (0, 0), (-1, -2), 0.3, BORDER),
         ("TOPPADDING",    (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
         ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
     ]))
     elems.append(cons_tbl)
 

@@ -3412,9 +3412,19 @@ document.addEventListener('DOMContentLoaded',()=>{
                 <option value="">— Selecione —</option>
               </select>
             </div>
-            <div class="f s2"><label>Tomadora (Contratante)</label>
+            <div class="f s2"><label>Tomadora PJ (Empresa contratante)</label>
               <select id="ctr-tomadora" class="inp">
-                <option value="">— Selecione —</option>
+                <option value="">— Empresa contratante (opcional) —</option>
+              </select>
+            </div>
+            <div class="f s2"><label>Cliente Cadastrado (Contratante)</label>
+              <select id="ctr-cliente" class="inp">
+                <option value="">— Cliente cadastrado (opcional) —</option>
+              </select>
+            </div>
+            <div class="f s2"><label>Proposta Comercial Vinculada</label>
+              <select id="ctr-proposta" class="inp" onchange="ctrPropostaSelecionada()">
+                <option value="">— Vincular proposta (opcional) —</option>
               </select>
             </div>
             <div class="f"><label>Data Início</label><input type="date" id="ctr-data-inicio" class="inp"></div>
@@ -9603,26 +9613,57 @@ async function docsAbrirProposta() {
 // ── CONTRATOS ───────────────────────────────────────────────────────────────
 let _ctrEmpresas = [];
 let _ctrClientes = [];
+let _ctrPropostas = [];
 
 async function _ctrCarregarEmpresas() {
-  const [emps, clis] = await Promise.all([
-    _ctrEmpresas.length ? Promise.resolve(_ctrEmpresas) : api('/api/empresas').catch(() => []),
-    _ctrClientes.length ? Promise.resolve(_ctrClientes) : api('/api/clientes').catch(() => []),
+  const [emps, clis, propsRes] = await Promise.all([
+    _ctrEmpresas.length  ? Promise.resolve(_ctrEmpresas)  : api('/api/empresas').catch(() => []),
+    _ctrClientes.length  ? Promise.resolve(_ctrClientes)  : api('/api/clientes').catch(() => []),
+    _ctrPropostas.length ? Promise.resolve({items: _ctrPropostas}) : api('/api/propostas-comerciais?per_page=200').catch(() => ({items:[]})),
   ]);
-  _ctrEmpresas = emps;
-  _ctrClientes = clis;
+  _ctrEmpresas  = emps;
+  _ctrClientes  = clis;
+  _ctrPropostas = propsRes.items || propsRes || [];
 
-  const pSel = document.getElementById('ctr-prestadora');
-  const tSel = document.getElementById('ctr-tomadora');
-  if (!pSel || !tSel) return;
+  const pSel    = document.getElementById('ctr-prestadora');
+  const tSel    = document.getElementById('ctr-tomadora');
+  const cliSel  = document.getElementById('ctr-cliente');
+  const propSel = document.getElementById('ctr-proposta');
+  if (!pSel) return;
 
   // Prestadora = empresas próprias
-  pSel.innerHTML = '<option value="">— Selecione a empresa prestadora —</option>' +
+  pSel.innerHTML = '<option value="">— Selecione a prestadora —</option>' +
     _ctrEmpresas.map(e => `<option value="${e.id}">${_escHtml(e.razao || e.nome)}</option>`).join('');
 
-  // Tomadora = clientes cadastrados
-  tSel.innerHTML = '<option value="">— Selecione o cliente tomador —</option>' +
-    _ctrClientes.map(c => `<option value="cli_${c.id}">${_escHtml(c.nome)}${c.cnpj ? ' — ' + _escHtml(c.cnpj) : ''}</option>`).join('');
+  // Tomadora = empresas (contratante PJ)
+  if (tSel) {
+    tSel.innerHTML = '<option value="">— Empresa contratante (opcional) —</option>' +
+      _ctrEmpresas.map(e => `<option value="${e.id}">${_escHtml(e.razao || e.nome)}</option>`).join('');
+  }
+
+  // Cliente cadastrado (contratante PF/PJ registrado)
+  if (cliSel) {
+    cliSel.innerHTML = '<option value="">— Cliente cadastrado (opcional) —</option>' +
+      _ctrClientes.map(c => `<option value="${c.id}">${_escHtml(c.nome)}${c.cnpj ? ' — ' + _escHtml(c.cnpj) : ''}</option>`).join('');
+  }
+
+  // Proposta Comercial
+  if (propSel) {
+    propSel.innerHTML = '<option value="">— Vincular proposta (opcional) —</option>' +
+      _ctrPropostas.map(p => `<option value="${p.id}" data-empresa="${_escHtml(p.empresa||'')}" data-funcao="${_escHtml(p.funcao||'')}" data-total="${_escHtml(p.total||'')}">${_escHtml(p.numero)} — ${_escHtml(p.empresa||'')}${p.funcao ? ' | '+_escHtml(p.funcao) : ''}</option>`).join('');
+  }
+}
+
+function ctrPropostaSelecionada() {
+  const sel = document.getElementById('ctr-proposta');
+  if (!sel || !sel.value) return;
+  const opt = sel.options[sel.selectedIndex];
+  const funcao = opt.getAttribute('data-funcao') || '';
+  const total  = opt.getAttribute('data-total')  || '';
+  const objEl  = document.getElementById('ctr-objeto');
+  const valEl  = document.getElementById('ctr-valor');
+  if (objEl && !objEl.value && funcao) objEl.value = funcao;
+  if (valEl && !valEl.value && total)  valEl.value = total;
 }
 
 async function docsAbrirContrato(tipo) {
@@ -9634,6 +9675,10 @@ async function docsAbrirContrato(tipo) {
   document.getElementById('ctr-ia-area').style.display = '';
   // Limpa campos
   ['ctr-objeto','ctr-corpo','ctr-ia-instrucao','ctr-valor'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  ['ctr-tomadora','ctr-cliente','ctr-proposta'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -9665,23 +9710,28 @@ async function ctrGerarIA() {
 
 async function ctrSalvar() {
   const st = document.getElementById('ctr-st');
-  const tipo         = document.getElementById('ctr-tipo').value;
+  const tipo          = document.getElementById('ctr-tipo').value;
   const prestadora_id = document.getElementById('ctr-prestadora').value || null;
-  const tomadora_id   = document.getElementById('ctr-tomadora').value   || null;
-  const objeto       = document.getElementById('ctr-objeto').value.trim();
-  const texto_corpo  = document.getElementById('ctr-corpo').value.trim();
-  const data_inicio  = document.getElementById('ctr-data-inicio').value;
-  const data_fim     = document.getElementById('ctr-data-fim').value;
-  const valor        = document.getElementById('ctr-valor').value.trim();
-  if (!objeto && !texto_corpo) {
-    st.innerHTML = '<span style="color:#c62828">Preencha o objeto ou o corpo do contrato.</span>';
+  const tomadora_id   = document.getElementById('ctr-tomadora')?.value  || null;
+  const cliente_id    = document.getElementById('ctr-cliente')?.value   || null;
+  const proposta_id   = document.getElementById('ctr-proposta')?.value  || null;
+  const objeto        = document.getElementById('ctr-objeto').value.trim();
+  const texto_corpo   = document.getElementById('ctr-corpo').value.trim();
+  const data_inicio   = document.getElementById('ctr-data-inicio').value;
+  const data_fim      = document.getElementById('ctr-data-fim').value;
+  const valor         = document.getElementById('ctr-valor').value.trim();
+  if (!objeto && !texto_corpo && !proposta_id) {
+    st.innerHTML = '<span style="color:#c62828">Preencha o objeto, o corpo do contrato ou vincule uma proposta.</span>';
     return;
   }
   st.innerHTML = '<span style="color:#205d8a">⏳ Salvando…</span>';
-  const res = await api('/api/contratos-ps', 'POST', {tipo, prestadora_id, tomadora_id, objeto, texto_corpo, data_inicio, data_fim, valor});
+  const res = await api('/api/contratos-ps', 'POST', {
+    tipo, prestadora_id, tomadora_id, cliente_id, proposta_id,
+    objeto, texto_corpo, data_inicio, data_fim, valor,
+  });
   if (res.erro) { st.innerHTML = `<span style="color:#c62828">❌ ${_escHtml(res.erro)}</span>`; return; }
-  st.innerHTML = `<span style="color:#2e7d32">✅ Contrato ${_escHtml(res.numero)} salvo!</span>`;
-  // Baixa o PDF automaticamente
+  const infoP = res.proposta ? ` (Proposta ${_escHtml(res.proposta)})` : '';
+  st.innerHTML = `<span style="color:#2e7d32">✅ Contrato ${_escHtml(res.numero)} salvo!${infoP}</span>`;
   window.open(`/api/contratos-ps/${res.id}/pdf`, '_blank');
 }
 
