@@ -2453,6 +2453,7 @@ class AssinaturaEnvelopeSignatario(db.Model):
     cpf = db.Column(db.String(20))
     cargo = db.Column(db.String(120))
     tipo = db.Column(db.String(20), default="externo")  # funcionario|cliente|externo
+    papel = db.Column(db.String(30), default="assinante")  # assinante|testemunha|aprovador|endossante|observador
     ref_id = db.Column(db.Integer)
     token = db.Column(db.String(120))
     status = db.Column(db.String(20), default="pendente")  # pendente|assinado
@@ -20931,6 +20932,10 @@ def api_envelope_add_signatario(id):
     cargo_in = (data.get("cargo") or "").strip()
     cargo_salvar = cargo_in or ((cadastro_tel or {}).get("cargo") or "").strip() or None
     telefone_salvar = tel_norm or tel_in or None
+    papel_in = (data.get("papel") or "assinante").strip().lower()
+    PAPEIS_VALIDOS = {"assinante", "testemunha", "aprovador", "endossante", "observador"}
+    if papel_in not in PAPEIS_VALIDOS:
+        papel_in = "assinante"
     sig = AssinaturaEnvelopeSignatario(
         envelope_id=id,
         nome=nome,
@@ -20939,6 +20944,7 @@ def api_envelope_add_signatario(id):
         cpf=cpf_salvar,
         cargo=cargo_salvar,
         tipo=data.get("tipo") or "externo",
+        papel=papel_in,
         ref_id=data.get("ref_id") or None,
         ordem=int(data.get("ordem") or 0),
         status="pendente",
@@ -21381,10 +21387,11 @@ def api_envelope_assinatura_confirmar(token):
     signed_pdf_link = ""
     emp = db.session.get(Empresa, env.empresa_id) if env.empresa_id else None
     empresa_nome = (emp.razao or emp.nome) if emp else "RM Facilities"
-    # Verifica se todos assinaram
+    # Verifica se todos assinaram (observadores não precisam assinar)
     todos = AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=env.id).all()
     destino_info = {"ok": True, "destino": (env.destino_salvar_tipo or "envelope")}
-    if all(s.status == "assinado" for s in todos):
+    signatarios_ativos = [s for s in todos if (s.papel or "assinante") != "observador"]
+    if signatarios_ativos and all(s.status == "assinado" for s in signatarios_ativos):
         env.status = "concluido"
         try:
             abs_pdf, fname = _gerar_pdf_assinado_envelope(env, url_root)
@@ -30896,6 +30903,7 @@ with app.app_context():
             "ordem INTEGER DEFAULT 0",
             "criado_em DATETIME",
             "ass_assinatura_img TEXT",
+            'papel VARCHAR(30) DEFAULT "assinante"',
         ],
     )
     ensure_cols(

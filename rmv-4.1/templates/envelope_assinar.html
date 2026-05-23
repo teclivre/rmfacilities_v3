@@ -148,7 +148,7 @@
                   <label>CPF *</label>
                   <input id="inp-cpf" type="text" placeholder="000.000.000-00" maxlength="14" oninput="fmtCpf(this)">
                 </div>
-                <div class="public-form-group">
+                <div class="public-form-group" id="otp-group" style="display:none">
                   <label>Código OTP (6 dígitos)</label>
                   <input id="inp-otp" type="text" placeholder="Informe o código recebido" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
                 </div>
@@ -160,7 +160,7 @@
                 <div class="signer-actions-sticky">
                   <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
                     <button class="public-btn public-btn-primary" id="btn-assinar" onclick="confirmarAssinatura()" disabled>Visualize os documentos para assinar</button>
-                    <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()">Reenviar código</button>
+                    <button class="public-btn public-btn-secondary" id="btn-resend" type="button" onclick="reenviarOtp()" style="display:none">Reenviar código</button>
                   </div>
               </div>
             </div>
@@ -260,7 +260,7 @@ function atualizarProgressoDocs(){
   if(btn){
     if(total>0 && vistos>=total){
       btn.disabled=false;
-      btn.textContent='Confirmar assinatura';
+      btn.textContent='Assinar documento';
       showViewerMsg('Todos os documentos foram visualizados. Agora você pode assinar.','ok');
     }else{
       btn.disabled=true;
@@ -511,9 +511,14 @@ async function confirmarAssinatura(){
     }
     if(d.otp_required){
       showMsg(d.mensagem||'Código OTP enviado. Informe o código para concluir.','ok');
+      const otpGrp=document.getElementById('otp-group');
+      if(otpGrp) otpGrp.style.display='';
+      const btnResend=document.getElementById('btn-resend');
+      if(btnResend) btnResend.style.display='';
       const otpEl=document.getElementById('inp-otp');
       if(otpEl) otpEl.focus();
       startOtpCooldown(60);
+      if(btn){ btn.textContent='Confirmar assinatura'; btn.disabled=false; }
       SignatureCommon.buttonState(btn,'Confirmar assinatura',false);
       return;
     }

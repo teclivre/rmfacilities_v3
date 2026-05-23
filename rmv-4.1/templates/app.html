@@ -3693,6 +3693,16 @@ document.addEventListener('DOMContentLoaded',()=>{
               <div class="f"><label>Telefone WhatsApp</label><input id="sigf-tel" placeholder="(11) 99999-9999"></div>
               <div class="f"><label>E-mail</label><input id="sigf-email" type="email" placeholder="email@exemplo.com"></div>
             </div>
+            <div class="f" style="margin-top:8px">
+              <label>Papel no documento</label>
+              <select id="sigf-papel">
+                <option value="assinante">✍ Assinante</option>
+                <option value="testemunha">👁 Testemunha</option>
+                <option value="aprovador">✅ Aprovador</option>
+                <option value="endossante">🔏 Endossante</option>
+                <option value="observador">📋 Somente acompanhar (não precisa assinar)</option>
+              </select>
+            </div>
             <div class="brow" style="gap:8px;justify-content:flex-start;margin-top:6px">
               <button class="btn b-az b-sm" onclick="salvarSignatario()">Salvar signatário</button>
               <button class="btn b-sm" style="background:var(--cinza-cl);color:var(--text-muted);border:none;cursor:pointer" onclick="document.getElementById('asi-sig-form').style.display='none'">Cancelar</button>
@@ -14975,21 +14985,25 @@ async function recarregarDetalheEnvelope(){
     }else{
       const statusLbl={'pendente':'⏳ Pendente','assinado':'✔ Assinado'};
       const statusCss={'pendente':'pill-warn','assinado':'pill-ok'};
+      const papelLbl={assinante:'✍ Assinante',testemunha:'👁 Testemunha',aprovador:'✅ Aprovador',endossante:'🔏 Endossante',observador:'📋 Observador'};
       sigBox.innerHTML=`<div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Nome</th><th>Cargo</th><th>Telefone</th><th>E-mail</th><th>Status</th><th>Assinado em</th><th></th></tr></thead>
-        <tbody>${env.signatarios.map(s=>`
+        <thead><tr><th>Nome</th><th>Papel</th><th>Cargo</th><th>Telefone</th><th>E-mail</th><th>Status</th><th>Assinado em</th><th></th></tr></thead>
+        <tbody>${env.signatarios.map(s=>{
+          const pTxt=papelLbl[s.papel||'assinante']||(s.papel||'Assinante');
+          return `
           <tr>
             <td>${s.nome||'-'}</td>
+            <td><span style="font-size:11px;font-weight:600">${pTxt}</span></td>
             <td>${s.cargo||'-'}</td>
             <td>${s.telefone||'-'}</td>
             <td>${s.email||'-'}</td>
             <td><span class="pill ${statusCss[s.status]||''}">${statusLbl[s.status]||s.status}</span></td>
             <td>${s.ass_em_fmt||'-'}</td>
             <td>
-              ${s.status!=='assinado'?`<button class="btn b-sm" style="background:var(--azul-cc);color:var(--azul);border:1px solid var(--borda);cursor:pointer" onclick="copiarLinkSignatario(${s.id})">Link</button>`:''}
+              ${s.status!=='assinado'&&(s.papel||'assinante')!=='observador'?`<button class="btn b-sm" style="background:var(--azul-cc);color:var(--azul);border:1px solid var(--borda);cursor:pointer" onclick="copiarLinkSignatario(${s.id})">Link</button>`:''}
               ${s.status!=='assinado'?`<button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);border:1px solid var(--verm);cursor:pointer" onclick="remSigEnvelope(${s.id})">✕</button>`:''}
             </td>
-          </tr>`).join('')}
+          </tr>`}).join('')}
         </tbody></table></div>`;
     }
       atualizarToggleAsiSignatarios();
@@ -15181,6 +15195,7 @@ async function salvarSignatario(){
   const cpf=(document.getElementById('sigf-cpf').value||'').trim();
   const telefone=(document.getElementById('sigf-tel').value||'').trim();
   const email=(document.getElementById('sigf-email').value||'').trim();
+  const papel=(document.getElementById('sigf-papel')?.value||'assinante');
   if(!telefone && !email){
     alert('Informe ao menos telefone WhatsApp ou e-mail para envio.');
     return;
@@ -15189,7 +15204,7 @@ async function salvarSignatario(){
     const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/signatarios`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({nome,cargo,cpf,telefone,email,tipo:'externo'})
+      body:JSON.stringify({nome,cargo,cpf,telefone,email,papel,tipo:'externo'})
     });
     const j=await r.json();
     if(!r.ok){ alert(j.erro||'Erro ao salvar signatário.'); return; }
