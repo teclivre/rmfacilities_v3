@@ -1499,6 +1499,7 @@ class ContratoServico(db.Model):
     prestadora_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
     tomadora_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
     cliente_id = db.Column(db.Integer, db.ForeignKey("cliente.id"), nullable=True)
+    proposta_id = db.Column(db.Integer, db.ForeignKey("proposta_comercial.id"), nullable=True)
     objeto = db.Column(db.Text)
     texto_corpo = db.Column(db.Text)
     contrato_pai_id = db.Column(
@@ -14288,6 +14289,13 @@ def _gerar_contrato_pdf(contrato, prestadora, tomadora):
             Paragraph(v, ps(f"qv{k[:4]}", fontSize=10)),
         ]
 
+    # Proposta referenciada
+    proposta_num = ""
+    if contrato.proposta_id:
+        prop = db.session.get(PropostaComercial, contrato.proposta_id)
+        if prop:
+            proposta_num = prop.numero or ""
+
     resumo = [
         ("N.° do Contrato",           _esc(contrato.numero)),
         ("CONTRATADA (Prestadora)",   prest.get("nome") or "—"),
@@ -14299,6 +14307,8 @@ def _gerar_contrato_pdf(contrato, prestadora, tomadora):
         ("Vigência",                  vigencia_txt.capitalize()),
         ("Foro",                      f"Comarca de {cidade_pr or 'São Paulo'}/{estado_pr}"),
     ]
+    if proposta_num:
+        resumo.insert(1, ("Proposta Comercial", _esc(proposta_num)))
     qt = Table([_qrow(k, v) for k, v in resumo],
                colWidths=[5.2 * cm, W - 5.2 * cm])
     qt.setStyle(TableStyle([
@@ -14326,9 +14336,11 @@ def _gerar_contrato_pdf(contrato, prestadora, tomadora):
         if toma:
             E.append(_p(_qualif(toma, "CONTRATANTE – Tomadora de Serviços", "CONTRATANTE"), s_bni))
         E.append(Spacer(1, 0.3 * cm))
+        prop_ref = (f", decorrente da Proposta Comercial N.° <b>{_esc(proposta_num)}</b>,"
+                    if proposta_num else "")
         E.append(_p(
-            "As partes acima identificadas têm entre si, como justo e contratado, o presente "
-            "<b>Contrato de Prestação de Serviços</b>, que se regerá pelas cláusulas e condições "
+            f"As partes acima identificadas têm entre si, como justo e contratado, o presente "
+            f"<b>Contrato de Prestação de Serviços</b>{prop_ref}, que se regerá pelas cláusulas e condições "
             "a seguir estipuladas, em consonância com os artigos 593 e seguintes do "
             "<b>Código Civil Brasileiro (Lei n.° 10.406/2002)</b> e demais normas aplicáveis.",
             s_bni,
@@ -14853,13 +14865,28 @@ def api_ps_criar_contrato():
         if not cli:
             return jsonify({"erro": "Cliente não encontrado. Cadastre o cliente antes de gerar o contrato."}), 400
 
+    # Valida proposta quando informada
+    proposta_id = d.get("proposta_id") or None
+    proposta_num_ref = ""
+    if proposta_id:
+        prop = db.session.get(PropostaComercial, int(proposta_id))
+        if not prop:
+            return jsonify({"erro": "Proposta não encontrada."}), 400
+        proposta_num_ref = prop.numero or ""
+        # Preenche campos da proposta se não enviados
+        if not d.get("objeto") and prop.funcao:
+            d["objeto"] = prop.funcao
+        if not d.get("valor") and prop.total:
+            d["valor"] = prop.total
+
     numero = _gerar_num_contrato(tipo)
     c = ContratoServico(
         numero=numero,
         tipo=tipo,
-        prestadora_id=d.get("prestadora_id") or None,
+        prestadora_id=d.get("prestadora_id") or (prop.remetente_id if proposta_id and prop else None),
         tomadora_id=d.get("tomadora_id") or None,
         cliente_id=cliente_id,
+        proposta_id=proposta_id,
         objeto=(d.get("objeto") or "").strip(),
         texto_corpo=(d.get("texto_corpo") or "").strip(),
         contrato_pai_id=d.get("contrato_pai_id") or None,
@@ -14878,9 +14905,9 @@ def api_ps_criar_contrato():
         None,
         None,
         True,
-        {"numero": numero, "tipo": tipo},
+        {"numero": numero, "tipo": tipo, "proposta": proposta_num_ref},
     )
-    return jsonify({"ok": True, "id": c.id, "numero": numero})
+    return jsonify({"ok": True, "id": c.id, "numero": numero, "proposta": proposta_num_ref})
 
 
 @app.route("/api/contratos-ps", methods=["GET"])
@@ -14930,12 +14957,23 @@ def api_ps_listar_contratos():
             cli_cache[cid] = cl.nome if cl else ""
         return cli_cache[cid]
 
+    prop_cache = {}
+
+    def _pn(pid):
+        if not pid:
+            return ""
+        if pid not in prop_cache:
+            p = db.session.get(PropostaComercial, pid)
+            prop_cache[pid] = p.numero if p else ""
+        return prop_cache[pid]
+
     items = []
     for c in rows:
         dd = c.to_dict()
         dd["prestadora_nome"] = _en(c.prestadora_id)
         dd["tomadora_nome"] = _en(c.tomadora_id) or _cn(c.cliente_id)
         dd["cliente_nome"] = _cn(c.cliente_id)
+        dd["proposta_numero"] = _pn(c.proposta_id)
         items.append(dd)
     return jsonify(
         {
@@ -14963,6 +15001,10 @@ def api_ps_get_contrato(cid):
         if cl:
             dd["cliente_nome"] = cl.nome
             dd["tomadora_nome"] = dd.get("tomadora_nome") or cl.nome
+    if c.proposta_id:
+        prop = db.session.get(PropostaComercial, c.proposta_id)
+        if prop:
+            dd["proposta_numero"] = prop.numero or ""
     return jsonify(dd)
 
 
