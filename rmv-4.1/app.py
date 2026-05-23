@@ -29795,7 +29795,17 @@ def api_wa_ia_testar():
             return jsonify({"erro": "A IA nao retornou resposta"}), 400
         return jsonify({"ok": True, "resposta": resp})
     except Exception as e:
-        return jsonify({"erro": str(e)}), 500
+        msg = str(e)
+        if _ai_error_is_upstream_block(msg):
+            friendly = (
+                "Acesso bloqueado pelo provedor de IA (403 / billing). "
+                "Verifique se há fatura pendente ou pagamento recusado em "
+                "console.cloud.google.com/billing (projeto indicado no erro). "
+                "Após regularizar, o acesso é restaurado automaticamente. "
+                f"Detalhe técnico: {msg}"
+            )
+            return jsonify({"erro": friendly}), 402
+        return jsonify({"erro": msg}), 500
 
 
 @app.route("/api/whatsapp/ia/retomar", methods=["POST"])
