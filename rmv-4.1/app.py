@@ -13307,8 +13307,8 @@ def _gerar_proposta_comercial_pdf(
         fontSize=13,
         textColor=NAVY,
         leading=18,
-        spaceBefore=14,
-        spaceAfter=6,
+        spaceBefore=8,
+        spaceAfter=4,
     )
     s_h4 = st("h4", fontName="Helvetica-Bold", fontSize=10, leading=14, leftIndent=12)
     s_small = st("sm", fontSize=8.5, textColor=GRAY)
@@ -13326,6 +13326,7 @@ def _gerar_proposta_comercial_pdf(
     if not ref_num:
         ref_num = f"PC-{localnow().strftime('%Y%m%d%H%M')}"
     tipo_label = "SPOT" if (tipo or "").lower() == "spot" else "Mensal"
+    is_spot = (tipo or "").lower() == "spot"
 
     if itens is None:
         itens = [
@@ -13547,7 +13548,7 @@ def _gerar_proposta_comercial_pdf(
     else:
         total_val = "-"
 
-    plan_rows.append(["Total Mensal:", "", "", "", "", total_val])
+    plan_rows.append(["Total:" if is_spot else "Total Mensal:", "", "", "", "", total_val])
 
     plan_t = Table(
         plan_rows, colWidths=[1.2 * cm, 3.5 * cm, 6.5 * cm, 1.5 * cm, 3 * cm, 3.3 * cm]
@@ -13573,12 +13574,12 @@ def _gerar_proposta_comercial_pdf(
     ]
     plan_t.setStyle(TableStyle(plan_style))
     elems.append(plan_t)
-    elems.append(Spacer(1, 0.5 * cm))
+    elems.append(Spacer(1, 0.3 * cm))
 
     # ── SEÇÃO 3: Incluso na Proposta ─────────────────────────────────────────
     elems.append(Paragraph("Incluso na Proposta", s_h1))
     elems.append(HRFlowable(width="100%", thickness=1, color=NAVY))
-    elems.append(Spacer(1, 0.3 * cm))
+    elems.append(Spacer(1, 0.2 * cm))
     elems.append(
         Paragraph(
             "Proposta de acordo com escopo fornecido contemplando os seguinte benefícios aos colaboradores;",
@@ -13611,7 +13612,7 @@ def _gerar_proposta_comercial_pdf(
     ]:
         elems.append(Paragraph(f"• {txt}", s_h4))
     elems.append(Paragraph("Nr35 para trabalho em altura;", s_normal))
-    elems.append(Spacer(1, 0.2 * cm))
+    elems.append(Spacer(1, 0.15 * cm))
     elems.append(
         Paragraph(
             f"Todos os funcionários {rem_nome} devem estar identificados através de crachás, "
@@ -13619,12 +13620,12 @@ def _gerar_proposta_comercial_pdf(
             s_normal,
         )
     )
-    elems.append(Spacer(1, 0.5 * cm))
+    elems.append(Spacer(1, 0.3 * cm))
 
     # ── SEÇÃO 4: Treinamento ─────────────────────────────────────────────────
     elems.append(Paragraph("Treinamento", s_h1))
     elems.append(HRFlowable(width="100%", thickness=1, color=NAVY))
-    elems.append(Spacer(1, 0.3 * cm))
+    elems.append(Spacer(1, 0.2 * cm))
     elems.append(
         Paragraph(
             f"Os profissionais da {rem_nome} recebem treinamento semestral de Normas Regulamentadoras (NRs) "
@@ -13632,55 +13633,68 @@ def _gerar_proposta_comercial_pdf(
             s_normal,
         )
     )
-    elems.append(Spacer(1, 0.5 * cm))
+    elems.append(Spacer(1, 0.3 * cm))
 
     # ── SEÇÃO 5: Considerações Comerciais ────────────────────────────────────
     elems.append(Paragraph("Considerações Comerciais", s_h1))
     elems.append(HRFlowable(width="100%", thickness=1, color=NAVY))
-    elems.append(Spacer(1, 0.3 * cm))
-    consideracoes = [
-        "Forma de Pagamento: Os serviços propostos serão faturados mensalmente, com prazo de vencimento conforme Termo de Referência.",
-        "Prazo Contratual: Indeterminado.",
-        "Rescisão Imotivada: Poderá ser rescindido por qualquer das partes, em qualquer momento, sem que haja qualquer tipo de motivo relevante, respeitando-se um período mínimo de 30 dias.",
-        f"Data Base: Os preços foram elaborados nas bases do acordo da categoria: 01 de janeiro de {ano_ref}.",
-        "Próximo Reajuste: O contrato será reajustado anualmente, conforme contrato.",
-        "Forma de Reajuste: Caso ocorram alterações no valor do piso salarial da categoria, bem como a criação de novos benefícios sociais advindos de acordos e/ou dissídios coletivos, o preço da mão de obra será reajustado nas mesmas proporções. Os demais insumos componentes do preço não relacionados à mão de obra direta serão reajustados nas mesmas proporções. Se durante a vigência dos serviços forem criados novos tributos ou modificadas as alíquotas atuais, ou se houver reconhecida e comprovada alteração nos custos dos serviços e/ou insumos de forma a majorar ou diminuir o ônus, o preço contratado poderá ser revisto a fim de adequá-lo às modificações, de forma a restabelecer o equilíbrio econômico-financeiro.",
-        f"Todas as ocorrências verificadas nos serviços ou que envolvam os empregados alocados em sua execução deverão ser imediatamente comunicados à {rem_nome} para que sejam tomadas as providências cabíveis;",
-        f"Os serviços serão executados respeitando-se o escopo descrito no item 2, sendo certo que qualquer alteração no mesmo será objeto de uma nova negociação para revalidação das atividades e valores propostos, conforme necessidade e solicitação da <b>{empresa or 'CONTRATANTE'}</b>;",
-        f"Faltas eventuais: será realizada coberturas pela {rem_nome} em até 2 horas.",
-        "Todos os serviços extras deverão ser informados à supervisão com antecedência mínima de 72 (setenta e duas horas) úteis, para a tomada das providências necessárias;",
-        "Consideramos em nossos custos os exames médicos relativos ao PCMSO de acordo com as normas legais de saúde;",
-        "Todos os benefícios e direitos são rigorosamente contemplados, bem como todos os encargos sociais de nossa responsabilidade.",
-        "De acordo com a (Lei 13.467/17), o § 4o do artigo 71 da CLT deverá ser concedida 01 hora de intervalo para refeições e descanso aos funcionários que prestarão os serviços ou pagamento de intrajornada.",
-        f"A <b>{empresa or 'CONTRATANTE'}</b> deverá fornecer locais adequados onde possa ser guardados os equipamentos e fornecer condições de trabalho e permanência dos colaboradores no local de trabalho durante sua jornada de trabalho como, água, banheiro.",
-        f"A <b>{empresa or 'CONTRATANTE'}</b> poderá, a qualquer momento, solicitar e auditar os documentos relativos à regularização da {rem_nome}. Mensalmente serão disponibilizadas cópias dos documentos abaixo listados:",
-    ]
-    for c in consideracoes:
-        elems.append(Paragraph(c, s_normal))
-        elems.append(Spacer(1, 0.15 * cm))
-    for txt in [
-        "Folha de pagamento analítica;",
-        "GRF – Guia de Pagamento de Fundo de Garantia;",
-        "Analítico GRF – Relatório Analítico de Fundo de Garantia;",
-        "GPS – Guia de Pagamento da Previdência Social e de Terceiros;",
-        "Analítico GPS – Relatório Analítico da Guia da Previdência Social;",
-        "Conectividade Social – Protocolo de Envio;",
-        "RET – Relação de Empregados por Tomador;",
-        "CAGED – Cadastro Geral de Empregados e Desempregados;",
-    ]:
-        elems.append(Paragraph(f"• {txt}", s_h4))
     elems.append(Spacer(1, 0.2 * cm))
-    elems.append(
-        Paragraph(
-            f"Caso a <b>{empresa or 'CONTRATANTE'}</b> necessite de documentação extra esta deverá ser solicitada previamente à celebração contratual.",
-            s_normal,
+    if is_spot:
+        consideracoes_spot = [
+            "Forma de Pagamento: Conforme negociação entre as partes, previamente acordada.",
+            f"Data Base: Preços elaborados com base nos valores vigentes em {ano_ref}.",
+            f"Todos as ocorrências verificadas nos serviços ou que envolvam os empregados deverão ser imediatamente comunicadas à {rem_nome};",
+            f"Os serviços serão executados conforme escopo descrito no item 2. Qualquer alteração será objeto de nova negociação, conforme solicitação da <b>{empresa or 'CONTRATANTE'}</b>;",
+            "Serviços extras deverão ser informados com antecedência mínima de 48 horas úteis;",
+            f"A <b>{empresa or 'CONTRATANTE'}</b> deverá fornecer local adequado para guarda de equipamentos e condições de permanência dos colaboradores (água, banheiro).",
+        ]
+        for c in consideracoes_spot:
+            elems.append(Paragraph(c, s_normal))
+            elems.append(Spacer(1, 0.12 * cm))
+    else:
+        consideracoes = [
+            "Forma de Pagamento: Os serviços propostos serão faturados mensalmente, com prazo de vencimento conforme Termo de Referência.",
+            "Prazo Contratual: Indeterminado.",
+            "Rescisão Imotivada: Poderá ser rescindido por qualquer das partes, em qualquer momento, sem que haja qualquer tipo de motivo relevante, respeitando-se um período mínimo de 30 dias.",
+            f"Data Base: Os preços foram elaborados nas bases do acordo da categoria: 01 de janeiro de {ano_ref}.",
+            "Próximo Reajuste: O contrato será reajustado anualmente, conforme contrato.",
+            "Forma de Reajuste: Caso ocorram alterações no valor do piso salarial da categoria, bem como a criação de novos benefícios sociais advindos de acordos e/ou dissídios coletivos, o preço da mão de obra será reajustado nas mesmas proporções. Os demais insumos componentes do preço não relacionados à mão de obra direta serão reajustados nas mesmas proporções. Se durante a vigência dos serviços forem criados novos tributos ou modificadas as alíquotas atuais, ou se houver reconhecida e comprovada alteração nos custos dos serviços e/ou insumos de forma a majorar ou diminuir o ônus, o preço contratado poderá ser revisto a fim de adequá-lo às modificações, de forma a restabelecer o equilíbrio econômico-financeiro.",
+            f"Todas as ocorrências verificadas nos serviços ou que envolvam os empregados alocados em sua execução deverão ser imediatamente comunicados à {rem_nome} para que sejam tomadas as providências cabíveis;",
+            f"Os serviços serão executados respeitando-se o escopo descrito no item 2, sendo certo que qualquer alteração no mesmo será objeto de uma nova negociação para revalidação das atividades e valores propostos, conforme necessidade e solicitação da <b>{empresa or 'CONTRATANTE'}</b>;",
+            f"Faltas eventuais: será realizada coberturas pela {rem_nome} em até 2 horas.",
+            "Todos os serviços extras deverão ser informados à supervisão com antecedência mínima de 72 (setenta e duas horas) úteis, para a tomada das providências necessárias;",
+            "Consideramos em nossos custos os exames médicos relativos ao PCMSO de acordo com as normas legais de saúde;",
+            "Todos os benefícios e direitos são rigorosamente contemplados, bem como todos os encargos sociais de nossa responsabilidade.",
+            "De acordo com a (Lei 13.467/17), o § 4o do artigo 71 da CLT deverá ser concedida 01 hora de intervalo para refeições e descanso aos funcionários que prestarão os serviços ou pagamento de intrajornada.",
+            f"A <b>{empresa or 'CONTRATANTE'}</b> deverá fornecer locais adequados onde possa ser guardados os equipamentos e fornecer condições de trabalho e permanência dos colaboradores no local de trabalho durante sua jornada de trabalho como, água, banheiro.",
+            f"A <b>{empresa or 'CONTRATANTE'}</b> poderá, a qualquer momento, solicitar e auditar os documentos relativos à regularização da {rem_nome}. Mensalmente serão disponibilizadas cópias dos documentos abaixo listados:",
+        ]
+        for c in consideracoes:
+            elems.append(Paragraph(c, s_normal))
+            elems.append(Spacer(1, 0.12 * cm))
+        for txt in [
+            "Folha de pagamento analítica;",
+            "GRF – Guia de Pagamento de Fundo de Garantia;",
+            "Analítico GRF – Relatório Analítico de Fundo de Garantia;",
+            "GPS – Guia de Pagamento da Previdência Social e de Terceiros;",
+            "Analítico GPS – Relatório Analítico da Guia da Previdência Social;",
+            "Conectividade Social – Protocolo de Envio;",
+            "RET – Relação de Empregados por Tomador;",
+            "CAGED – Cadastro Geral de Empregados e Desempregados;",
+        ]:
+            elems.append(Paragraph(f"• {txt}", s_h4))
+        elems.append(Spacer(1, 0.15 * cm))
+        elems.append(
+            Paragraph(
+                f"Caso a <b>{empresa or 'CONTRATANTE'}</b> necessite de documentação extra esta deverá ser solicitada previamente à celebração contratual.",
+                s_normal,
+            )
         )
-    )
     elems.append(Spacer(1, 0.2 * cm))
     elems.append(Paragraph("A presente proposta tem validade de 30 dias.", s_bold))
-    elems.append(Spacer(1, 0.8 * cm))
+    elems.append(Spacer(1, 0.5 * cm))
     elems.append(Paragraph(data_fmt, s_right))
-    elems.append(Spacer(1, 1.5 * cm))
+    elems.append(Spacer(1, 1.2 * cm))
 
     # ── ASSINATURAS ──────────────────────────────────────────────────────────
     ass_data = [
