@@ -68,7 +68,7 @@
 
     {% for emp in empresas %}
     <section class="sec">
-      <h2>{{ emp.empresa_nome }}</h2>
+      <h2>{{ emp.empresa_nome }}{% if emp.empresa_cnpj %} <span style="font-size:.85em;font-weight:normal;">CNPJ: {{ emp.empresa_cnpj | fmt_cnpj }}</span>{% endif %}</h2>
       <p class="sum">{{ emp.qtd }} colaborador(es) · Total {{ emp.total_fmt }}</p>
       <div class="table-wrap">
         <table>

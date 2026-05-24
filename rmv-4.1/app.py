@@ -321,6 +321,16 @@ app.config["COMPRESS_LEVEL"] = 6
 app.config["COMPRESS_MIN_SIZE"] = 500
 _compress.init_app(app)
 
+
+@app.template_filter("fmt_cnpj")
+def _tpl_fmt_cnpj(value):
+    """Formata CNPJ para exibição: 12.345.678/0001-00"""
+    d = re.sub(r"\D", "", str(value or ""))
+    if len(d) == 14:
+        return f"{d[:2]}.{d[2:5]}.{d[5:8]}/{d[8:12]}-{d[12:14]}"
+    return str(value or "")
+
+
 # Cache em memória (ou Redis se disponível) — evita recalcular rotas pesadas repetidamente
 from flask_caching import Cache as _Cache
 
@@ -25410,6 +25420,7 @@ def _financeiro_salarios_competencia(comp, empresa_id=None):
                 "posto_operacional": posto_nome,
                 "empresa_id": f.empresa_id,
                 "empresa_nome": (emp.nome if emp else ""),
+                "empresa_cnpj": (emp.cnpj if emp else ""),
                 "competencia": comp,
                 "status": f.status or "Ativo",
                 "salario_base": float(f.salario or 0),
@@ -25994,10 +26005,12 @@ def financeiro_salarios_preview():
         key=lambda kv: ((kv[1][0].get("empresa_nome") or "Sem empresa").lower(), kv[0]),
     ):
         nome_emp = items[0].get("empresa_nome") or "Sem empresa"
+        cnpj_emp = items[0].get("empresa_cnpj") or ""
         total_emp = sum(float(it.get("valor_liquido") or 0) for it in items)
         empresas.append(
             {
                 "empresa_nome": nome_emp,
+                "empresa_cnpj": cnpj_emp,
                 "qtd": len(items),
                 "total_fmt": fmt_brl(total_emp),
                 "itens": items,
