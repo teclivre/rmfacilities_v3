@@ -31353,6 +31353,7 @@ with app.app_context():
             "geo_lat FLOAT",
             "geo_lon FLOAT",
             "geofence_raio_m FLOAT DEFAULT 150",
+            "he_autorizada INTEGER DEFAULT 1",
         ],
     )
     ensure_cols(
