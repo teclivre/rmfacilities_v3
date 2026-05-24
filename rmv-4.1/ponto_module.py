@@ -139,6 +139,53 @@ def register_ponto_routes(
             .all()
         )
 
+    def _calc_intersec_noturno(ini_dt, fim_dt):
+        """Minutos trabalhados no período noturno 22:00-05:00 para um trecho de trabalho."""
+        if not ini_dt or not fim_dt or fim_dt <= ini_dt:
+            return 0
+        ini_m = ini_dt.hour * 60 + ini_dt.minute
+        fim_m = fim_dt.hour * 60 + fim_dt.minute
+        total = 0
+        if fim_m <= ini_m:
+            fim_m += 1440  # turno cruza meia-noite
+        # Segmento B: 22:00-00:00 → [1320, 1440]
+        total += max(0, min(fim_m, 1440) - max(ini_m, 1320))
+        # Segmento A: 00:00-05:00 → [0, 300]; só se o turno cruzou meia-noite
+        if fim_m > 1440:
+            total += max(0, min(fim_m - 1440, 300))
+        # Turno que começa e termina dentro de 00:00-05:00 sem cruzar meia-noite
+        elif ini_m < 300:
+            total += max(0, min(fim_m, 300) - ini_m)
+        return max(0, total)
+
+    def _calc_noturno_min_marcacoes(marcacoes):
+        """Total de minutos de adicional noturno (22:00-05:00) a partir das marcações."""
+        total = 0
+        aberta_em = None
+        for m in marcacoes:
+            if not getattr(m, "data_hora", None):
+                continue
+            if m.tipo in ("entrada", "retorno_intervalo"):
+                aberta_em = m.data_hora
+            elif m.tipo in ("saida_intervalo", "saida") and aberta_em:
+                total += _calc_intersec_noturno(aberta_em, m.data_hora)
+                aberta_em = None
+        return total
+
+    def _calc_intrajornada_min(marcacoes):
+        """Total de minutos de intervalo intrajornada efetivamente gozado."""
+        total = 0
+        saida_int_em = None
+        for m in marcacoes:
+            if not getattr(m, "data_hora", None):
+                continue
+            if m.tipo == "saida_intervalo":
+                saida_int_em = m.data_hora
+            elif m.tipo == "retorno_intervalo" and saida_int_em:
+                total += max(0, int((m.data_hora - saida_int_em).total_seconds() / 60))
+                saida_int_em = None
+        return total
+
     def _ponto_resumo_func_dia(funcionario, data_ref, _marcacoes=None):
         marcacoes = (
             _marcacoes
@@ -192,6 +239,21 @@ def register_ponto_routes(
         minutos_trabalhados = int(round(segundos_total / 60.0))
         minutos_esperados = _ponto_min_esperado_data(funcionario, data_ref)
         saldo = minutos_trabalhados - minutos_esperados
+        # ── Horas extras 50% e 100% ──────────────────────────────────────────
+        # Dom (weekday==6) → tudo a 100%; demais dias → 50% até 2h, 100% além
+        if saldo > 0:
+            if data_ref.weekday() == 6:
+                he_50_min = 0
+                he_100_min = saldo
+            else:
+                he_50_min = min(saldo, 120)
+                he_100_min = max(0, saldo - 120)
+        else:
+            he_50_min = 0
+            he_100_min = 0
+        # ── Adicional noturno e intrajornada ─────────────────────────────────
+        noturno_min = _calc_noturno_min_marcacoes(marcacoes)
+        intrajornada_min = _calc_intrajornada_min(marcacoes)
         return {
             "funcionario_id": funcionario.id,
             "funcionario_nome": funcionario.nome,
@@ -205,6 +267,14 @@ def register_ponto_routes(
             "horas_esperadas_fmt": _ponto_fmt_minutos(minutos_esperados),
             "saldo_min": saldo,
             "saldo_fmt": _ponto_fmt_minutos(saldo, signed=True),
+            "he_50_min": he_50_min,
+            "he_50_fmt": _ponto_fmt_minutos(he_50_min),
+            "he_100_min": he_100_min,
+            "he_100_fmt": _ponto_fmt_minutos(he_100_min),
+            "noturno_min": noturno_min,
+            "noturno_fmt": _ponto_fmt_minutos(noturno_min),
+            "intrajornada_min": intrajornada_min,
+            "intrajornada_fmt": _ponto_fmt_minutos(intrajornada_min),
             "status": "ok" if not inconsistencias else "inconsistente",
             "inconsistencias": inconsistencias,
         }
@@ -217,6 +287,10 @@ def register_ponto_routes(
         total_trabalhado = 0
         total_esperado = 0
         total_saldo = 0
+        total_he_50 = 0
+        total_he_100 = 0
+        total_noturno = 0
+        total_intrajornada = 0
         inconsistencias = 0
         # Batch load: 1 query para todo o período da competência
         inicio_dt = datetime.combine(inicio, datetime.min.time())
@@ -245,6 +319,14 @@ def register_ponto_routes(
                     "horas_trabalhadas_fmt": resumo["horas_trabalhadas_fmt"],
                     "horas_esperadas_fmt": resumo["horas_esperadas_fmt"],
                     "saldo_fmt": resumo["saldo_fmt"],
+                    "he_50_min": resumo["he_50_min"],
+                    "he_50_fmt": resumo["he_50_fmt"],
+                    "he_100_min": resumo["he_100_min"],
+                    "he_100_fmt": resumo["he_100_fmt"],
+                    "noturno_min": resumo["noturno_min"],
+                    "noturno_fmt": resumo["noturno_fmt"],
+                    "intrajornada_min": resumo["intrajornada_min"],
+                    "intrajornada_fmt": resumo["intrajornada_fmt"],
                     "status": resumo["status"],
                     "marcacoes_count": len(resumo["marcacoes"]),
                     "inconsistencias": resumo["inconsistencias"],
@@ -253,6 +335,10 @@ def register_ponto_routes(
             total_trabalhado += resumo["horas_trabalhadas_min"]
             total_esperado += resumo["horas_esperadas_min"]
             total_saldo += resumo["saldo_min"]
+            total_he_50 += resumo["he_50_min"]
+            total_he_100 += resumo["he_100_min"]
+            total_noturno += resumo["noturno_min"]
+            total_intrajornada += resumo["intrajornada_min"]
             if resumo["status"] != "ok":
                 inconsistencias += 1
             dia += timedelta(days=1)
@@ -268,6 +354,14 @@ def register_ponto_routes(
                 "horas_esperadas_fmt": _ponto_fmt_minutos(total_esperado),
                 "saldo_min": total_saldo,
                 "saldo_fmt": _ponto_fmt_minutos(total_saldo, signed=True),
+                "he_50_min": total_he_50,
+                "he_50_fmt": _ponto_fmt_minutos(total_he_50),
+                "he_100_min": total_he_100,
+                "he_100_fmt": _ponto_fmt_minutos(total_he_100),
+                "noturno_min": total_noturno,
+                "noturno_fmt": _ponto_fmt_minutos(total_noturno),
+                "intrajornada_min": total_intrajornada,
+                "intrajornada_fmt": _ponto_fmt_minutos(total_intrajornada),
                 "inconsistencias": inconsistencias,
                 "dias": len(dias),
             },

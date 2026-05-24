@@ -652,6 +652,8 @@ function gfRenderFolha(resumo){
     const get=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);return m?(m.data_hora||'').slice(11,16):'—';};
     const saldoClass=dia.saldo_fmt?.startsWith('+')?'color:var(--verde)':(dia.saldo_fmt?.startsWith('-')?'color:var(--verm)':'');
     const statusHtml=dia.status==='ok'?'<span class="pill p-vd" style="font-size:10px">OK</span>':'<span class="pill p-vm" style="font-size:10px">⚠</span>';
+    const he50=dia.he_50_fmt||'00:00'; const he100=dia.he_100_fmt||'00:00';
+    const not=dia.noturno_fmt||'00:00'; const intra=dia.intrajornada_fmt||'00:00';
     return `<tr>
       <td style="font-size:12px">${dia.data_ref}</td>
       <td>${get('entrada')}</td>
@@ -660,6 +662,10 @@ function gfRenderFolha(resumo){
       <td>${get('saida')}</td>
       <td>${dia.horas_trabalhadas_fmt||'00:00'}</td>
       <td style="${saldoClass}">${dia.saldo_fmt||'00:00'}</td>
+      <td style="${he50!=='00:00'?'color:var(--laranja)':''}">${he50}</td>
+      <td style="${he100!=='00:00'?'color:var(--verm)':''}">${he100}</td>
+      <td style="${not!=='00:00'?'color:var(--azul)':''}">${not}</td>
+      <td>${intra}</td>
       <td>${statusHtml}</td>
     </tr>`;
   }).join('');
@@ -667,10 +673,15 @@ function gfRenderFolha(resumo){
   wrap.style.display='block';
 
   const tot=resumo.totais||{};
+  const saldoStyle=(tot.saldo_fmt||'').startsWith('+')?'color:var(--verde)':(tot.saldo_fmt||'').startsWith('-')?'color:var(--verm)':'';
   totDiv.innerHTML=`
     <div class="ponto-kpi"><div class="l">Total trabalhado</div><div class="v">${tot.horas_trabalhadas_fmt||'00:00'}</div></div>
     <div class="ponto-kpi"><div class="l">Carga esperada</div><div class="v">${tot.horas_esperadas_fmt||'00:00'}</div></div>
-    <div class="ponto-kpi"><div class="l">Saldo total</div><div class="v" style="${(tot.saldo_fmt||'').startsWith('+')?'color:var(--verde)':(tot.saldo_fmt||'').startsWith('-')?'color:var(--verm)':''}">${tot.saldo_fmt||'00:00'}</div></div>
+    <div class="ponto-kpi"><div class="l">Saldo total</div><div class="v" style="${saldoStyle}">${tot.saldo_fmt||'00:00'}</div></div>
+    <div class="ponto-kpi"><div class="l">HE 50%</div><div class="v" style="${tot.he_50_min>0?'color:var(--laranja)':''}">${tot.he_50_fmt||'00:00'}</div></div>
+    <div class="ponto-kpi"><div class="l">HE 100%</div><div class="v" style="${tot.he_100_min>0?'color:var(--verm)':''}">${tot.he_100_fmt||'00:00'}</div></div>
+    <div class="ponto-kpi"><div class="l">Adicional noturno</div><div class="v" style="${tot.noturno_min>0?'color:var(--azul)':''}">${tot.noturno_fmt||'00:00'}</div></div>
+    <div class="ponto-kpi"><div class="l">Intrajornada</div><div class="v">${tot.intrajornada_fmt||'00:00'}</div></div>
     <div class="ponto-kpi"><div class="l">Dias inconsistentes</div><div class="v" style="${tot.inconsistencias>0?'color:var(--verm)':''}">${tot.inconsistencias||0}</div></div>
   `;
 }
