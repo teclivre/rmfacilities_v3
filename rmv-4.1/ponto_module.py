@@ -23,6 +23,8 @@ def register_ponto_routes(
     PontoFechamentoDia,
     Empresa,
     Cliente,
+    Feriado,
+    SolicitacaoHoraExtra,
     get_logo,
 ):
     if "api_ponto_marcar" in app.view_functions:
@@ -187,7 +189,7 @@ def register_ponto_routes(
                 saida_int_em = None
         return total
 
-    def _ponto_resumo_func_dia(funcionario, data_ref, _marcacoes=None):
+    def _ponto_resumo_func_dia(funcionario, data_ref, _marcacoes=None, _feriados=None):
         marcacoes = (
             _marcacoes
             if _marcacoes is not None
@@ -284,6 +286,15 @@ def register_ponto_routes(
         inicio, fim = _ponto_competencia_bounds(competencia)
         if not inicio:
             return None
+        # Carregar feriados do período para calcular HE 100% correto
+        try:
+            feriados_rows = Feriado.query.filter(
+                Feriado.data >= inicio.strftime("%Y-%m-%d"),
+                Feriado.data <= fim.strftime("%Y-%m-%d"),
+            ).all()
+            _feriados_set = {f.data for f in feriados_rows}
+        except Exception:
+            _feriados_set = set()
         dias = []
         total_trabalhado = 0
         total_esperado = 0
@@ -312,7 +323,8 @@ def register_ponto_routes(
         dia = inicio
         while dia <= fim:
             resumo = _ponto_resumo_func_dia(
-                funcionario, dia, _marcacoes=marc_por_data_comp.get(dia, [])
+                funcionario, dia, _marcacoes=marc_por_data_comp.get(dia, []),
+                _feriados=_feriados_set
             )
             dias.append(
                 {
@@ -1497,4 +1509,94 @@ def register_ponto_routes(
         )
         resumo_comp["posto_nome"] = (cli.nome or "") if cli else (funcionario.posto_operacional or "")
 
+        # Incluir status de solicitação HE se existir
+        comp_str = competencia
+        sol = SolicitacaoHoraExtra.query.filter_by(
+            funcionario_id=funcionario.id, competencia=comp_str
+        ).first()
+        resumo_comp["he_solicitacao"] = sol.to_dict() if sol else None
+
         return jsonify({"ok": True, "resumo": resumo_comp})
+
+    # ── Solicitações de aprovação de hora extra ───────────────────────────────
+
+    @app.route("/api/ponto/he/solicitacoes", methods=["GET"])
+    @lr
+    def api_ponto_he_solicitacoes_list():
+        status_q = request.args.get("status") or "pendente"
+        empresa_id = to_num(request.args.get("empresa_id")) or None
+        q = SolicitacaoHoraExtra.query
+        if status_q != "todos":
+            q = q.filter_by(status=status_q)
+        if empresa_id:
+            q = q.filter_by(empresa_id=empresa_id)
+        itens = q.order_by(SolicitacaoHoraExtra.criado_em.desc()).all()
+        return jsonify({"ok": True, "itens": [s.to_dict() for s in itens], "total": len(itens)})
+
+    @app.route("/api/ponto/he/solicitacoes", methods=["POST"])
+    @lr
+    def api_ponto_he_solicitacoes_criar():
+        d = request.json or {}
+        func_id = to_num(d.get("funcionario_id"))
+        competencia = (d.get("competencia") or "").strip()
+        if not func_id or not competencia:
+            return jsonify({"erro": "funcionario_id e competencia são obrigatórios."}), 400
+        func = Funcionario.query.get(func_id)
+        if not func:
+            return jsonify({"erro": "Funcionário não encontrado."}), 404
+        # Calcular HE do período
+        resumo = _ponto_resumo_competencia(func, competencia)
+        if not resumo:
+            return jsonify({"erro": "Competência inválida."}), 400
+        he_50 = resumo["totais"]["he_50_min"]
+        he_100 = resumo["totais"]["he_100_min"]
+        if he_50 == 0 and he_100 == 0:
+            return jsonify({"erro": "Não há horas extras registradas nesta competência."}), 400
+        # Criar ou atualizar solicitação
+        sol = SolicitacaoHoraExtra.query.filter_by(
+            funcionario_id=func_id, competencia=competencia
+        ).first()
+        if sol and sol.status not in ("recusado",):
+            # Atualizar valores (HE pode ter mudado)
+            sol.he_50_min = he_50
+            sol.he_100_min = he_100
+            sol.he_50_fmt = resumo["totais"]["he_50_fmt"]
+            sol.he_100_fmt = resumo["totais"]["he_100_fmt"]
+            sol.status = "pendente"
+            sol.criado_em = utcnow()
+        else:
+            sol = SolicitacaoHoraExtra(
+                funcionario_id=func_id,
+                empresa_id=func.empresa_id,
+                competencia=competencia,
+                he_50_min=he_50,
+                he_100_min=he_100,
+                he_50_fmt=resumo["totais"]["he_50_fmt"],
+                he_100_fmt=resumo["totais"]["he_100_fmt"],
+                status="pendente",
+                motivo=d.get("motivo") or "",
+            )
+            db.session.add(sol)
+        db.session.commit()
+        return jsonify({"ok": True, "solicitacao": sol.to_dict()}), 201
+
+    @app.route("/api/ponto/he/solicitacoes/<int:sid>/decidir", methods=["POST"])
+    @lr
+    def api_ponto_he_solicitacoes_decidir(sid):
+        from flask import session as flask_session
+        sol = SolicitacaoHoraExtra.query.get_or_404(sid)
+        d = request.json or {}
+        acao = (d.get("acao") or "").strip()
+        if acao not in ("aprovar", "recusar"):
+            return jsonify({"erro": "acao deve ser 'aprovar' ou 'recusar'."}), 400
+        sol.status = "aprovado" if acao == "aprovar" else "recusado"
+        sol.motivo = d.get("motivo") or ""
+        sol.decidido_em = utcnow()
+        sol.decidido_por = flask_session.get("usuario_nome") or flask_session.get("email") or "gestor"
+        db.session.commit()
+        audit_event(
+            f"he_solicitacao_{sol.status}",
+            alvo_tipo="solicitacao_he",
+            alvo_id=str(sol.id),
+        )
+        return jsonify({"ok": True, "solicitacao": sol.to_dict()})

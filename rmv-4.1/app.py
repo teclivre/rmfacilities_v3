@@ -2334,6 +2334,42 @@ class AuthTentativa(db.Model):
     criado_em = db.Column(db.DateTime, default=utcnow)
 
 
+class SolicitacaoHoraExtra(db.Model):
+    """Solicitação de aprovação de hora extra por competência/funcionário."""
+    __tablename__ = "solicitacao_hora_extra"
+    id = db.Column(db.Integer, primary_key=True)
+    funcionario_id = db.Column(db.Integer, db.ForeignKey("funcionario.id"), nullable=False, index=True)
+    empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
+    competencia = db.Column(db.String(7), nullable=False)   # YYYY-MM
+    he_50_min = db.Column(db.Integer, default=0)
+    he_100_min = db.Column(db.Integer, default=0)
+    he_50_fmt = db.Column(db.String(10))
+    he_100_fmt = db.Column(db.String(10))
+    status = db.Column(db.String(20), default="pendente")   # pendente/aprovado/recusado
+    motivo = db.Column(db.Text, default="")
+    criado_em = db.Column(db.DateTime, default=utcnow)
+    decidido_em = db.Column(db.DateTime)
+    decidido_por = db.Column(db.String(150))
+    __table_args__ = (
+        db.UniqueConstraint("funcionario_id", "competencia", name="uq_solicitacao_he_func_comp"),
+    )
+
+    def to_dict(self):
+        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        d["criado_fmt"] = self.criado_em.strftime("%d/%m/%Y %H:%M") if self.criado_em else ""
+        d["decidido_fmt"] = self.decidido_em.strftime("%d/%m/%Y %H:%M") if self.decidido_em else ""
+        try:
+            func = Funcionario.query.get(self.funcionario_id)
+            d["funcionario_nome"] = func.nome if func else ""
+            d["funcionario_matricula"] = func.matricula if func else ""
+            d["posto_label"] = func.posto_operacional or "" if func else ""
+        except Exception:
+            d["funcionario_nome"] = ""
+            d["funcionario_matricula"] = ""
+            d["posto_label"] = ""
+        return d
+
+
 class UsuarioDispositivoConfiavel(db.Model):
     __tablename__ = "usuario_dispositivo_confiavel"
     id = db.Column(db.Integer, primary_key=True)
@@ -7801,6 +7837,8 @@ register_ponto_routes(
     PontoFechamentoDia=PontoFechamentoDia,
     Empresa=Empresa,
     Cliente=Cliente,
+    Feriado=Feriado,
+    SolicitacaoHoraExtra=SolicitacaoHoraExtra,
     get_logo=get_logo,
 )
 
@@ -17586,11 +17624,12 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
     saldo = min_trab - min_esp
     # ── HE 50% / 100%, noturno e intrajornada ────────────────────────────────
     if saldo > 0:
-        if data_ref.weekday() == 6:  # Domingo → 100%
+        _data_str = data_ref.strftime("%Y-%m-%d")
+        _feriado = Feriado.query.filter_by(data=_data_str).first()
+        if data_ref.weekday() == 6 or _feriado:  # Domingo ou feriado → 100%
             he_50_min, he_100_min = 0, saldo
-        else:
-            he_50_min = min(saldo, 120)
-            he_100_min = max(0, saldo - 120)
+        else:  # Seg-Sáb → 50% inteiro
+            he_50_min, he_100_min = saldo, 0
     else:
         he_50_min = he_100_min = 0
     noturno_min = _app_calc_noturno_min(marcacoes)
@@ -27952,6 +27991,9 @@ def api_dashboard():
                 "itens": alertas_contratos[:8],
             },
             "correcoes_ponto_pendentes": PontoCorrecaoSolicitacao.query.filter_by(
+                status="pendente"
+            ).count(),
+            "he_pendentes": SolicitacaoHoraExtra.query.filter_by(
                 status="pendente"
             ).count(),
             "total_cli": Cliente.query.count(),

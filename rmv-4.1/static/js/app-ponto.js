@@ -577,6 +577,27 @@ async function gfSelecionarFunc(id){
   await gfCarregarMes();
 }
 
+async function gfSolicitarAprovacaoHE(resumo){
+  const btn=document.getElementById('gf-btn-solicitar-he');
+  if(btn){btn.disabled=true;btn.textContent='Enviando...';}
+  try{
+    const r=await api('/api/ponto/he/solicitacoes','POST',{
+      funcionario_id:resumo.funcionario_id||gfFuncId,
+      competencia:resumo.competencia||document.getElementById('gf-comp-sel')?.value
+    });
+    if(r&&r.ok){
+      if(btn){btn.textContent='⏳ Aguardando aprovação';btn.disabled=true;}
+      showSt('gf-st','✅ Solicitação enviada para aprovação do gestor.',false);
+    }else{
+      if(btn){btn.disabled=false;btn.textContent='⏱ Solicitar aprovação de HE';}
+      showSt('gf-st',r?.erro||'Erro ao enviar solicitação.',true);
+    }
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='⏱ Solicitar aprovação de HE';}
+    showSt('gf-st','Erro: '+e.message,true);
+  }
+}
+
 async function gfCarregarMes(){
   if(!gfFuncId){showSt('gf-st','Selecione um colaborador.',true);return;}
   const comp=(document.getElementById('gf-competencia')?.value||'').trim();
@@ -650,7 +671,27 @@ function gfRenderFolha(resumo){
   if(avisoEl){
     const heAutorizada=resumo.he_autorizada===undefined||resumo.he_autorizada===null?true:!!resumo.he_autorizada;
     const temHE=(resumo.totais?.he_50_min||0)+(resumo.totais?.he_100_min||0)>0;
-    avisoEl.style.display=(!heAutorizada&&temHE)?'':'none';
+    const heVisible=(!heAutorizada&&temHE);
+    avisoEl.style.display=heVisible?'':'none';
+    // Botão solicitar aprovação HE
+    let btnSolHE=document.getElementById('gf-btn-solicitar-he');
+    if(heVisible){
+      const sol=resumo.he_solicitacao;
+      const btnLabel=!sol?'⏱ Solicitar aprovação de HE':sol.status==='pendente'?'⏳ Aguardando aprovação':sol.status==='aprovado'?'✅ HE aprovada':'🔁 Re-solicitar aprovação';
+      const btnDisabled=sol&&sol.status==='pendente'?'disabled':sol&&sol.status==='aprovado'?'disabled':'';
+      if(!btnSolHE){
+        btnSolHE=document.createElement('button');
+        btnSolHE.id='gf-btn-solicitar-he';
+        btnSolHE.className='btn b-az b-sm';
+        btnSolHE.style.marginTop='8px';
+        avisoEl.appendChild(btnSolHE);
+      }
+      btnSolHE.textContent=btnLabel;
+      btnSolHE.disabled=!!btnDisabled;
+      btnSolHE.onclick=()=>gfSolicitarAprovacaoHE(resumo);
+    }else{
+      if(btnSolHE)btnSolHE.remove();
+    }
   }
 
   const tipos_map={entrada:'E',saida_intervalo:'SI',retorno_intervalo:'RI',saida:'S'};
@@ -893,6 +934,85 @@ setInterval(()=>{
       .catch(()=>{});
   }
 },60000);
+
+// ── Aprovação de Hora Extra ───────────────────────────────────────────────────
+let _heSolicitacoes=[];
+
+async function abrirModalHEPendentes(){
+  const modal=document.getElementById('modal-he-pendentes');
+  if(!modal)return;
+  modal.style.display='flex';
+  document.getElementById('modal-he-body').innerHTML='<div style="text-align:center;padding:32px;opacity:.5">Carregando...</div>';
+  await carregarHEPendentes();
+}
+
+async function carregarHEPendentes(){
+  const filtro=document.getElementById('modal-he-filtro')?.value||'pendente';
+  try{
+    const r=await api('/api/ponto/he/solicitacoes?status='+filtro);
+    _heSolicitacoes=Array.isArray(r?.itens)?r.itens:[];
+  }catch(_){_heSolicitacoes=[];}
+  renderHESolicitacoes();
+}
+
+function renderHESolicitacoes(){
+  const body=document.getElementById('modal-he-body');
+  const cntEl=document.getElementById('modal-he-count');
+  if(!body)return;
+  const items=_heSolicitacoes;
+  if(cntEl)cntEl.textContent=items.length+' registro(s)';
+  if(!items.length){body.innerHTML='<div style="text-align:center;padding:32px;opacity:.5">Nenhum registro.</div>';return;}
+  const rows=items.map(s=>{
+    const statusStyle=s.status==='pendente'?'color:#b45309':s.status==='aprovado'?'color:var(--verd)':'color:var(--verm)';
+    const btns=s.status==='pendente'?`
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <textarea id="he-motivo-${s.id}" placeholder="Motivo (opcional)" style="flex:1;font-size:12px;padding:4px 6px;border:1px solid var(--borda);border-radius:var(--r);background:var(--branco);color:var(--preto);resize:vertical;min-height:40px"></textarea>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <button class="btn b-vd b-sm" onclick="decidirHE(${s.id},'aprovar')">✅ Aprovar</button>
+          <button class="btn b-rm b-sm" onclick="decidirHE(${s.id},'recusar')">❌ Recusar</button>
+        </div>
+      </div>`:'<div style="font-size:12px;opacity:.6;margin-top:4px">Decidido em: '+(s.decidido_fmt||'—')+(s.decidido_por?' por '+s.decidido_por:'')+'</div>';
+    return `<div style="padding:12px 0;border-bottom:1px solid var(--borda)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-weight:600">${s.funcionario_nome||'—'} <span style="font-size:12px;opacity:.6">${s.funcionario_matricula?'Mat '+s.funcionario_matricula:''}</span></div>
+          <div style="font-size:13px;opacity:.7">Competência: ${s.competencia} · HE 50%: ${s.he_50_fmt||'0h'} · HE 100%: ${s.he_100_fmt||'0h'}</div>
+          <div style="font-size:12px;opacity:.5">Solicitado em: ${s.criado_fmt||'—'} · Posto: ${s.posto_label||'—'}</div>
+        </div>
+        <span style="font-size:12px;font-weight:700;${statusStyle}">${s.status.toUpperCase()}</span>
+      </div>
+      ${btns}
+    </div>`;
+  }).join('');
+  body.innerHTML=rows;
+}
+
+async function decidirHE(id,acao){
+  const motivo=document.getElementById('he-motivo-'+id)?.value?.trim()||'';
+  showSt('st-he','Processando...',false);
+  try{
+    const r=await api('/api/ponto/he/solicitacoes/'+id+'/decidir','POST',{acao,motivo});
+    if(r&&r.ok){
+      showSt('st-he',acao==='aprovar'?'✅ HE aprovada.':'❌ HE recusada.',false);
+      const idx=_heSolicitacoes.findIndex(s=>s.id===id);
+      if(idx>=0)_heSolicitacoes[idx]=r.solicitacao;
+      renderHESolicitacoes();
+      // Atualizar badge no dashboard
+      const elHePend=document.getElementById('d-he-pendentes');
+      if(elHePend){
+        const atual=parseInt(elHePend.textContent)||0;
+        const novo=Math.max(0,atual-1);
+        elHePend.textContent=novo;
+        elHePend.closest('.metric')?.classList.toggle('vm',novo>0);
+        elHePend.closest('.metric')?.style.setProperty('--metric-c',novo>0?'var(--verm)':'#b45309');
+      }
+    }else{
+      showSt('st-he',r?.erro||'Erro ao processar.',true);
+    }
+  }catch(e){
+    showSt('st-he','Erro: '+e.message,true);
+  }
+}
 
 // ── Gestão Fácil: auto-refresh instantâneo via SSE + fallback 60s ─────────────
 let _gfSseSource=null;

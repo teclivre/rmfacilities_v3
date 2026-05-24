@@ -184,6 +184,30 @@
     <div id="st-correcoes-ponto" class="st" style="margin:0 20px 16px"></div>
   </div>
 </div>
+<!-- Modal aprovação de HE -->
+<div id="modal-he-pendentes" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;overflow-y:auto;padding:24px 16px">
+  <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:760px;margin:40px auto;padding:0;position:relative;box-shadow:var(--shadow-md);border:1px solid var(--borda)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--borda)">
+      <div>
+        <div style="font-size:16px;font-weight:700;color:var(--preto)">⏱ Solicitações de Hora Extra</div>
+        <div style="font-size:12px;opacity:.55;color:var(--preto);margin-top:2px">Aprovação por gestor</div>
+      </div>
+      <button type="button" onclick="document.getElementById('modal-he-pendentes').style.display='none'" style="background:none;border:none;font-size:22px;cursor:pointer;opacity:.5;color:var(--preto);line-height:1">&times;</button>
+    </div>
+    <div style="padding:12px 20px;border-bottom:1px solid var(--borda);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <select id="modal-he-filtro" onchange="carregarHEPendentes()" style="font-size:13px;padding:4px 8px;border:1px solid var(--borda);border-radius:var(--r);background:var(--branco);color:var(--preto)">
+        <option value="pendente">Pendentes</option>
+        <option value="aprovado">Aprovadas</option>
+        <option value="recusado">Recusadas</option>
+        <option value="todos">Todas</option>
+      </select>
+      <button class="btn b-gh b-sm" onclick="carregarHEPendentes()">🔄 Atualizar</button>
+      <span id="modal-he-count" style="font-size:12px;opacity:.6"></span>
+    </div>
+    <div id="modal-he-body" style="padding:12px 20px 24px;max-height:65vh;overflow-y:auto">Carregando...</div>
+    <div id="st-he" class="st" style="margin:0 20px 16px"></div>
+  </div>
+</div>
 <div id="modal-fat-detalhe" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:24px 16px">
   <div style="background:var(--branco);color:var(--preto);border-radius:10px;max-width:600px;margin:40px auto;padding:24px;position:relative">
     <span class="close" style="color:var(--text-muted)" onclick="fecharModalFatDetalhe()">&times;</span>
@@ -835,11 +859,18 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button class="metric metric-btn" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Benefícios pendentes"><div class="n" id="d-benef-pend">—</div><div class="l">Benefícios pendentes <span class="metric-go">Ver</span></div></button>
         <button class="metric metric-btn" type="button" onclick="abrirDashboardDestino('clientes')" aria-label="Abrir clientes ativos"><div class="n" id="d-at">—</div><div class="l">Clientes ativos <span class="metric-go">Abrir</span></div></button>
         <button class="metric metric-btn" style="--metric-c:var(--laranja)" type="button" onclick="abrirModalCorrecoesPonto()" aria-label="Correções de ponto pendentes"><div class="n" id="d-correcoes-ponto" style="color:var(--laranja)">—</div><div class="l">Correções de ponto <span class="metric-go">Ver</span></div></button>
+        <button class="metric metric-btn" style="--metric-c:#b45309" type="button" onclick="abrirModalHEPendentes()" aria-label="Horas extras pendentes de aprovação"><div class="n" id="d-he-pendentes" style="color:#b45309">—</div><div class="l">HE pendentes <span class="metric-go">Aprovar</span></div></button>
         <button class="metric metric-btn lj" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Cálculo de benefícios pendente"><div class="n" id="d-calc-benef">—</div><div class="l">Cálculos pendentes <span class="metric-go">Ver</span></div></button>
       </div>
       <div id="dash-alertas" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px"></div>
+      <!-- Card Gestão Fácil de Ponto -->
       <div class="card" style="margin-bottom:12px">
-        <div class="card-header"><span class="card-title">Resumo de colaboradores</span></div>
+        <div class="card-header">
+          <span class="card-title">⚡ Gestão Fácil de Ponto</span>
+          <button class="btn b-az b-sm" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'));setTimeout(()=>{rhSetSubAba&&rhSetSubAba('gestao-facil',null);gfCarregar&&gfCarregar()},200)">Abrir</button>
+        </div>
+        <div style="font-size:13px;color:var(--text-muted);padding:8px 0 4px">Monitore e gerencie o ponto dos colaboradores em tempo real.</div>
+      </div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:12px 0;text-align:center">
           <div>
             <div style="font-size:28px;font-weight:700;color:var(--azul)" id="dash-resumo-ativos">—</div>
@@ -5165,6 +5196,13 @@ async function loadDash(){
     elCorrecoesPonto.textContent=nCorrecoes;
     elCorrecoesPonto.closest('.metric')?.classList.toggle('vm',nCorrecoes>0);
     elCorrecoesPonto.closest('.metric')?.style.setProperty('--metric-c',nCorrecoes>0?'var(--verm)':'var(--laranja)');
+  }
+  const elHePend=document.getElementById('d-he-pendentes');
+  if(elHePend){
+    const nHe=d.he_pendentes??0;
+    elHePend.textContent=nHe;
+    elHePend.closest('.metric')?.classList.toggle('vm',nHe>0);
+    elHePend.closest('.metric')?.style.setProperty('--metric-c',nHe>0?'var(--verm)':'#b45309');
   }
   const elCalcBenef=document.getElementById('d-calc-benef');
   if(elCalcBenef) elCalcBenef.textContent=(d.alerta_calculo_beneficios?.qtd??0);
