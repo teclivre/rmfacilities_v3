@@ -645,6 +645,14 @@ function gfRenderFolha(resumo){
   const totDiv=document.getElementById('gf-totais');
   if(!wrap||!tb) return;
 
+  // Aviso de HE não autorizada
+  const avisoEl=document.getElementById('gf-he-aviso');
+  if(avisoEl){
+    const heAutorizada=resumo.he_autorizada===undefined||resumo.he_autorizada===null?true:!!resumo.he_autorizada;
+    const temHE=(resumo.totais?.he_50_min||0)+(resumo.totais?.he_100_min||0)>0;
+    avisoEl.style.display=(!heAutorizada&&temHE)?'':'none';
+  }
+
   const tipos_map={entrada:'E',saida_intervalo:'SI',retorno_intervalo:'RI',saida:'S'};
 
   const linhas=(resumo.dias||[]).map(dia=>{

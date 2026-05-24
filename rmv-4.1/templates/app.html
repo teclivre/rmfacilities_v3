@@ -4356,6 +4356,13 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
       <div class="f"><label>Observação interna</label><input id="mob"></div>
+      <div class="f" style="display:flex;align-items:center;gap:10px;padding:6px 0">
+        <label class="toggle-label" style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:0">
+          <span style="font-size:13px;color:var(--c-txt)">Autoriza hora extra neste posto?</span>
+          <input type="checkbox" id="mhe-aut" style="width:18px;height:18px;cursor:pointer" checked>
+        </label>
+        <span id="mhe-aut-hint" style="font-size:11px;color:var(--c-warn)"></span>
+      </div>
       <div class="brow" style="margin-top:6px">
         <button class="btn b-ci" onclick="closeModal('cli')">Cancelar</button>
         <button class="btn b-az" onclick="salvarCliente()">Salvar cliente</button>
@@ -6348,7 +6355,12 @@ async function openModal(modo,id){
     document.getElementById('memp').value=c.empresa_id||'';
     document.getElementById('mst').value=c.status||'Ativo';
     document.getElementById('mob').value=c.obs||'';
+    const heAut=c.he_autorizada===undefined||c.he_autorizada===null?true:!!c.he_autorizada;
+    document.getElementById('mhe-aut').checked=heAut;
+    document.getElementById('mhe-aut-hint').textContent=heAut?'':'⚠ Horas extras NÃO autorizadas neste posto';
   } else {
+    document.getElementById('mhe-aut').checked=true;
+    document.getElementById('mhe-aut-hint').textContent='';
     document.getElementById('mod-cli-tit').textContent='Novo cliente';
   }
   setModalClean('cli');
@@ -6409,7 +6421,8 @@ async function salvarCliente(){
     estado:document.getElementById('mestado').value,
     empresa_id:parseInt(document.getElementById('memp').value)||null,
     status:document.getElementById('mst').value,
-    obs:document.getElementById('mob').value
+    obs:document.getElementById('mob').value,
+    he_autorizada:document.getElementById('mhe-aut').checked
   };
   const resp=id ? await api('/api/clientes/'+id,'PUT',d) : await api('/api/clientes','POST',d);
   if(resp?.erro){

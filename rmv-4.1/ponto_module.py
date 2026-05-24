@@ -22,6 +22,7 @@ def register_ponto_routes(
     PontoAjuste,
     PontoFechamentoDia,
     Empresa,
+    Cliente,
     get_logo,
 ):
     if "api_ponto_marcar" in app.view_functions:
@@ -1486,5 +1487,14 @@ def register_ponto_routes(
 
         for dia in resumo_comp["dias"]:
             dia["marcacoes"] = marc_por_data.get(dia["data_ref"], [])
+
+        # Incluir flag he_autorizada do posto do funcionário
+        cli = None
+        if funcionario.posto_cliente_id:
+            cli = Cliente.query.get(funcionario.posto_cliente_id)
+        resumo_comp["he_autorizada"] = (
+            cli.he_autorizada if cli and cli.he_autorizada is not None else True
+        )
+        resumo_comp["posto_nome"] = (cli.nome or "") if cli else (funcionario.posto_operacional or "")
 
         return jsonify({"ok": True, "resumo": resumo_comp})

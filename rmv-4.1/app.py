@@ -1643,6 +1643,7 @@ class Cliente(db.Model):
     geo_lat = db.Column(db.Float)
     geo_lon = db.Column(db.Float)
     geofence_raio_m = db.Column(db.Float, default=150)
+    he_autorizada = db.Column(db.Boolean, default=True)
     obs = db.Column(db.Text, default="")
     criado_em = db.Column(db.DateTime, default=utcnow)
 
@@ -7799,6 +7800,7 @@ register_ponto_routes(
     PontoAjuste=PontoAjuste,
     PontoFechamentoDia=PontoFechamentoDia,
     Empresa=Empresa,
+    Cliente=Cliente,
     get_logo=get_logo,
 )
 
@@ -22892,6 +22894,7 @@ def api_operacional_postos():
                 posto_cliente_id=c.id, status="Ativo"
             ).count(),
             "posto_label": (c.nome or "").strip(),
+            "he_autorizada": c.he_autorizada if c.he_autorizada is not None else True,
         }
         for c in cls
     ]
@@ -22913,6 +22916,7 @@ def api_operacional_postos():
                 "posto_operacional": f.posto_operacional or "",
                 "posto_cliente_id": f.posto_cliente_id,
                 "posto_label": posto_label,
+                "he_autorizada": cli.he_autorizada if cli and cli.he_autorizada is not None else True,
             }
         )
     return jsonify({"ok": True, "itens": itens, "clientes": clientes})
