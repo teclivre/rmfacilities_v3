@@ -7533,24 +7533,21 @@ def _assert_safe_identifier(name, label="identifier"):
 
 def ensure_cols(table, defs):
     _assert_safe_identifier(table, "tabela")
-    cols = {
-        r[1] for r in db.session.execute(text(f"PRAGMA table_info({table})")).fetchall()
-    }
-    changed = False
-    for d in defs:
-        col_name = d.split(" ", 1)[0]
-        _assert_safe_identifier(col_name, "coluna")
-        if col_name not in cols:
-            try:
-                db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN {d}"))
-                changed = True
-            except Exception as e:
-                if "duplicate column" in str(e).lower():
-                    pass  # coluna já existe, ignorar
-                else:
-                    raise
-    if changed:
-        db.session.commit()
+    with db.engine.begin() as conn:
+        cols = {
+            r[1] for r in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+        }
+        for d in defs:
+            col_name = d.split(" ", 1)[0]
+            _assert_safe_identifier(col_name, "coluna")
+            if col_name not in cols:
+                try:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {d}"))
+                except Exception as e:
+                    if "duplicate column" in str(e).lower():
+                        pass  # coluna já existe, ignorar
+                    else:
+                        raise
 
 
 def sc_cfg(k, v):
@@ -8440,6 +8437,39 @@ def api_remover_empresa(id):
         {"nome": nome},
     )
     return jsonify({"ok": True})
+
+
+@app.route("/api/empresas/<int:id>/certificado", methods=["POST"])
+@lr
+def api_empresa_cert_upload(id):
+    e = db.get_or_404(Empresa, id)
+    fs = request.files.get("arquivo")
+    senha = (request.form.get("senha") or "").strip()
+    ativo = str(request.form.get("ativo", "1")).strip().lower() in ("1", "true", "yes", "on")
+    if not fs:
+        return jsonify({"erro": "Arquivo do certificado não enviado."}), 400
+    if not senha:
+        return jsonify({"erro": "Informe a senha do certificado."}), 400
+    old_abs = _cert_rel_to_abs(e.cert_arquivo)
+    try:
+        rel, name = _cert_store_file(fs, "empresa", id)
+        abs_path = _cert_rel_to_abs(rel)
+        info = _cert_inspect_pkcs12(abs_path, senha)
+    except Exception as ex:
+        return jsonify({"erro": str(ex)}), 400
+    e.cert_arquivo = rel
+    e.cert_nome_arquivo = name
+    e.cert_senha = senha
+    e.cert_ativo = ativo
+    e.cert_assunto = info.get("assunto", "")
+    e.cert_validade_fim = info.get("validade_fim", "")
+    db.session.commit()
+    if old_abs and old_abs != abs_path and os.path.exists(old_abs):
+        try:
+            os.remove(old_abs)
+        except Exception:
+            pass
+    return jsonify({"ok": True, "empresa": e.to_dict()})
 
 
 @app.route("/api/empresas/<int:id>/certificado", methods=["DELETE"])
