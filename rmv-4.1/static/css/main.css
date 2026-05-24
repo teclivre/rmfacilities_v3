@@ -312,8 +312,8 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 mark{background:#FFF3A0;border-radius:2px;padding:0 1px}
 .relogio{font-size:11px;opacity:.75;text-align:right;line-height:1.5}
 
-.ponto-gestao-wrap{display:grid;grid-template-columns:minmax(240px,290px) 1fr;gap:12px}
-.ponto-side{border:1px solid var(--borda);border-radius:12px;padding:10px;background:linear-gradient(180deg,var(--cinza-cl) 0%,var(--branco) 100%)}
+.ponto-gestao-wrap{display:grid;grid-template-columns:minmax(240px,290px) 1fr;gap:12px;align-items:start}
+.ponto-side{border:1px solid var(--borda);border-radius:12px;padding:10px;background:linear-gradient(180deg,var(--cinza-cl) 0%,var(--branco) 100%);position:sticky;top:8px;align-self:start}
 .ponto-side-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .ponto-lista{margin-top:8px;max-height:560px;overflow:auto;display:flex;flex-direction:column;gap:7px;padding-right:2px}
 .ponto-item{width:100%;text-align:left;border:1px solid var(--borda);background:var(--branco);border-radius:10px;padding:9px 10px;cursor:pointer;transition:transform .12s ease,box-shadow .18s ease,border-color .18s ease}
