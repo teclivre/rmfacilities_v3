@@ -2875,9 +2875,9 @@ document.addEventListener('DOMContentLoaded',()=>{
     <!-- ══ BENEFÍCIOS ══ -->
     <div id="pg-beneficios" class="pg">
       <div id="st-benef" class="st"></div>
-      <div class="card">
-        <div class="card-header"><span class="card-title">Lançamento mensal de benefícios (ativos)</span></div>
-        <div class="g4">
+      <div class="card" style="padding:12px 16px">
+        <div class="card-header" style="margin-bottom:8px;padding-bottom:6px"><span class="card-title">Lançamento mensal de benefícios (ativos)</span></div>
+        <div class="g4" style="gap:8px">
           <div class="f"><label>Competência</label><input id="ben-comp" type="month" onchange="carregarBeneficiosMensais()"></div>
           <div class="f"><label>Empresa</label><select id="ben-emp" onchange="carregarBeneficiosMensais()"><option value="">Todas</option></select></div>
           <div class="f"><label>Buscar colaborador / matrícula</label><input id="ben-busca" placeholder="Ex: Joana ou 395" oninput="renderBeneficiosAtivos();renderBeneficioPorTipo('vt','tb-benef-vt');renderBeneficioPorTipo('vr','tb-benef-vr');renderBeneficioPorTipo('va','tb-benef-va');renderBeneficioPorTipo('pp','tb-benef-pp');renderBeneficioPorTipo('vg','tb-benef-vg');renderBeneficioPorTipo('cn','tb-benef-cn')"></div>
@@ -2888,7 +2888,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <option value="nao_optantes">Somente não-optantes</option>
           </select></div>
         </div>
-        <div class="g4" style="margin-top:8px">
+        <div class="g4" style="margin-top:6px;gap:8px">
           <div class="f" style="display:flex;align-items:flex-end"><button class="btn b-gh b-sm" onclick="carregarBeneficiosMensais()">Carregar colaboradores</button></div>
           <div class="f" style="display:flex;align-items:flex-end"><button class="btn b-az b-sm" onclick="salvarBeneficiosValoresBase()">Salvar valores-base</button></div>
           <div class="f"><label>Dia alerta VT</label><input id="ben-alerta-vt-dia" type="number" min="1" max="31" placeholder="25"></div>
@@ -2897,7 +2897,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="brow" style="justify-content:flex-start;margin-top:6px">
           <button class="btn b-ghl b-sm" onclick="salvarConfigAlertaBeneficios()">Salvar dias de alerta</button>
         </div>
-        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;background:linear-gradient(90deg,rgba(35,93,138,.22),rgba(9,35,74,.55));padding:10px;border-radius:12px;border:1px solid rgba(120,180,240,.35)">
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;background:linear-gradient(90deg,rgba(35,93,138,.22),rgba(9,35,74,.55));padding:8px 10px;border-radius:10px;border:1px solid rgba(120,180,240,.35);position:sticky;top:52px;z-index:99">
           <button id="ben-tab-ativos" class="btn b-az b-sm" onclick="switchBenTab('ativos',this)">Colaboradores Ativos</button>
           <button id="ben-tab-vt" class="btn b-gh b-sm" onclick="switchBenTab('vt',this)">Vale Transporte</button>
           <button id="ben-tab-vr" class="btn b-gh b-sm" onclick="switchBenTab('vr',this)">Vale Refeição</button>
@@ -2933,9 +2933,9 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div id="ben-sal-painel" style="margin:8px 0 12px 0;display:none">
           <div class="g3" style="margin-top:0">
-            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Histórico de versões</span></div><div id="ben-sal-historico" style="padding:8px 12px 12px 12px;color:var(--text-muted);font-size:13px"></div></div>
-            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Alertas</span></div><div id="ben-sal-alertas" style="padding:8px 12px 12px 12px;color:var(--text-muted);font-size:13px"></div></div>
-            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Evolução mensal</span></div><div style="position:relative;height:180px;padding:4px 8px 12px 8px"><canvas id="chart-ben-beneficios"></canvas></div></div>
+            <div class="card" style="margin:0"><div class="card-header" style="margin-bottom:6px;padding-bottom:4px"><span class="card-title">Histórico de versões</span></div><div id="ben-sal-historico" style="padding:4px 10px 8px;color:var(--text-muted);font-size:12px;max-height:90px;overflow:auto"></div></div>
+            <div class="card" style="margin:0"><div class="card-header" style="margin-bottom:6px;padding-bottom:4px"><span class="card-title">Alertas</span></div><div id="ben-sal-alertas" style="padding:4px 10px 8px;color:var(--text-muted);font-size:12px;max-height:90px;overflow:auto"></div></div>
+            <div class="card" style="margin:0"><div class="card-header" style="margin-bottom:6px;padding-bottom:4px"><span class="card-title">Evolução mensal</span></div><div style="position:relative;height:110px;padding:4px 8px 8px 8px"><canvas id="chart-ben-beneficios"></canvas></div></div>
           </div>
         </div>
 
