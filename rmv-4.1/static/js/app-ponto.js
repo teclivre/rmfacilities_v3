@@ -875,8 +875,9 @@ setInterval(()=>{
   }
 },60000);
 
-// ── Gestão Fácil: auto-refresh a cada 30s quando a aba está visível ──────────
-let _gfPollTimer=null;
+// ── Gestão Fácil: auto-refresh instantâneo via SSE + fallback 60s ─────────────
+let _gfSseSource=null;
+let _gfFallbackTimer=null;
 let _gfLastRefresh=null;
 
 function _gfPaneVisible(){
@@ -892,7 +893,7 @@ function _gfPaneVisible(){
 function _gfUpdateTimestamp(){
   const el=document.getElementById('gf-live-ts');
   if(!el) return;
-  if(!_gfLastRefresh){el.textContent='ao vivo · 30s';return;}
+  if(!_gfLastRefresh){el.textContent='ao vivo';return;}
   const hh=String(_gfLastRefresh.getHours()).padStart(2,'0');
   const mm=String(_gfLastRefresh.getMinutes()).padStart(2,'0');
   const ss=String(_gfLastRefresh.getSeconds()).padStart(2,'0');
@@ -914,12 +915,30 @@ async function _gfPollSilent(){
       gfRenderCalendario(r.resumo,comp);
       gfRenderFolha(r.resumo);
     }
-    // Atualiza timestamp sempre que poll retorna dados válidos
     _gfLastRefresh=new Date();
     _gfUpdateTimestamp();
   }catch(_){}
 }
 
-// Inicia o polling ao carregar o script
-_gfPollTimer=setInterval(_gfPollSilent,30000);
+function _gfSseConnect(){
+  if(_gfSseSource){_gfSseSource.close();_gfSseSource=null;}
+  const src=new EventSource('/api/eventos');
+  _gfSseSource=src;
+  // Evento 'ponto': disparado imediatamente quando funcionário bate ponto no app
+  src.addEventListener('ponto',function(e){
+    try{
+      const d=JSON.parse(e.data||'{}');
+      // Só recarrega se o funcionário exibido é o que bateu o ponto
+      if(gfFuncId&&d.funcionario_id&&Number(d.funcionario_id)===Number(gfFuncId)){
+        _gfPollSilent();
+      }
+    }catch(_){}
+  });
+  // EventSource reconecta automaticamente em caso de erro (nativo do browser)
+}
+
+// Inicia SSE ao carregar o script
+_gfSseConnect();
+// Fallback: polling a cada 60s para cobrir eventuais gaps do SSE
+_gfFallbackTimer=setInterval(_gfPollSilent,60000);
 
