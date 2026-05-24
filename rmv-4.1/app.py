@@ -17485,6 +17485,55 @@ def _app_ponto_max_marcacoes_dia(funcionario):
     return 4
 
 
+def _app_calc_intersec_noturno(ini_dt, fim_dt):
+    """Minutos trabalhados no período noturno 22:00-05:00 para um trecho de trabalho."""
+    if not ini_dt or not fim_dt or fim_dt <= ini_dt:
+        return 0
+    ini_m = ini_dt.hour * 60 + ini_dt.minute
+    fim_m = fim_dt.hour * 60 + fim_dt.minute
+    total = 0
+    if fim_m <= ini_m:
+        fim_m += 1440  # turno cruza meia-noite
+    # Segmento B: 22:00-00:00 → [1320, 1440]
+    total += max(0, min(fim_m, 1440) - max(ini_m, 1320))
+    # Segmento A: 00:00-05:00 → [0, 300]; só se cruzou meia-noite
+    if fim_m > 1440:
+        total += max(0, min(fim_m - 1440, 300))
+    elif ini_m < 300:
+        total += max(0, min(fim_m, 300) - ini_m)
+    return max(0, total)
+
+
+def _app_calc_noturno_min(marcacoes):
+    """Total de minutos no período noturno (22:00-05:00) a partir das marcações."""
+    total = 0
+    aberta_em = None
+    for m in marcacoes:
+        if not getattr(m, "data_hora", None):
+            continue
+        if m.tipo in ("entrada", "retorno_intervalo"):
+            aberta_em = m.data_hora
+        elif m.tipo in ("saida_intervalo", "saida") and aberta_em:
+            total += _app_calc_intersec_noturno(aberta_em, m.data_hora)
+            aberta_em = None
+    return total
+
+
+def _app_calc_intrajornada_min(marcacoes):
+    """Total de minutos de intervalo intrajornada gozado."""
+    total = 0
+    saida_int_em = None
+    for m in marcacoes:
+        if not getattr(m, "data_hora", None):
+            continue
+        if m.tipo == "saida_intervalo":
+            saida_int_em = m.data_hora
+        elif m.tipo == "retorno_intervalo" and saida_int_em:
+            total += max(0, int((m.data_hora - saida_int_em).total_seconds() / 60))
+            saida_int_em = None
+    return total
+
+
 def _app_ponto_resumo_dia(funcionario, data_ref):
     marcacoes = _app_ponto_marcacoes_dia(funcionario.id, data_ref)
     inconsistencias = []
@@ -17533,6 +17582,17 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
         funcionario, data_ref.strftime("%Y-%m-%d")
     )
     saldo = min_trab - min_esp
+    # ── HE 50% / 100%, noturno e intrajornada ────────────────────────────────
+    if saldo > 0:
+        if data_ref.weekday() == 6:  # Domingo → 100%
+            he_50_min, he_100_min = 0, saldo
+        else:
+            he_50_min = min(saldo, 120)
+            he_100_min = max(0, saldo - 120)
+    else:
+        he_50_min = he_100_min = 0
+    noturno_min = _app_calc_noturno_min(marcacoes)
+    intrajornada_min = _app_calc_intrajornada_min(marcacoes)
 
     itens = []
     for m in marcacoes:
@@ -17577,6 +17637,14 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
         "horas_esperadas_fmt": _app_ponto_fmt_minutos(min_esp),
         "saldo_min": saldo,
         "saldo_fmt": _app_ponto_fmt_minutos(saldo, signed=True),
+        "he_50_min": he_50_min,
+        "he_50_fmt": _app_ponto_fmt_minutos(he_50_min),
+        "he_100_min": he_100_min,
+        "he_100_fmt": _app_ponto_fmt_minutos(he_100_min),
+        "noturno_min": noturno_min,
+        "noturno_fmt": _app_ponto_fmt_minutos(noturno_min),
+        "intrajornada_min": intrajornada_min,
+        "intrajornada_fmt": _app_ponto_fmt_minutos(intrajornada_min),
         "status": "ok" if not inconsistencias else "inconsistente",
         "inconsistencias": inconsistencias,
         "max_marcacoes_dia": max_marc,
@@ -17918,6 +17986,10 @@ def api_app_ponto_espelho_dados_me():
     ]
     dias = []
     total_min = 0
+    total_he_50 = 0
+    total_he_100 = 0
+    total_noturno = 0
+    total_intrajornada = 0
     for dia in range(1, ultimo_dia + 1):
         data_ref = date(ano, mes, dia)
         resumo = _app_ponto_resumo_dia(f, data_ref)
@@ -17926,6 +17998,10 @@ def api_app_ponto_espelho_dados_me():
         trab_min = resumo.get("horas_trabalhadas_min", 0) or 0
         esp_min = resumo.get("horas_esperadas_min", 0) or 0
         total_min += trab_min
+        total_he_50 += resumo.get("he_50_min", 0) or 0
+        total_he_100 += resumo.get("he_100_min", 0) or 0
+        total_noturno += resumo.get("noturno_min", 0) or 0
+        total_intrajornada += resumo.get("intrajornada_min", 0) or 0
         dias.append(
             {
                 "data": data_ref.isoformat(),
@@ -17941,17 +18017,40 @@ def api_app_ponto_espelho_dados_me():
                 "horas_trabalhadas_fmt": resumo.get("horas_trabalhadas_fmt", "00:00"),
                 "horas_trabalhadas_min": trab_min,
                 "horas_esperadas_min": esp_min,
+                "he_50_min": resumo.get("he_50_min", 0) or 0,
+                "he_50_fmt": resumo.get("he_50_fmt", "00:00"),
+                "he_100_min": resumo.get("he_100_min", 0) or 0,
+                "he_100_fmt": resumo.get("he_100_fmt", "00:00"),
+                "noturno_min": resumo.get("noturno_min", 0) or 0,
+                "noturno_fmt": resumo.get("noturno_fmt", "00:00"),
+                "intrajornada_min": resumo.get("intrajornada_min", 0) or 0,
+                "intrajornada_fmt": resumo.get("intrajornada_fmt", "00:00"),
                 "status": resumo.get("status", ""),
+                "inconsistencias": resumo.get("inconsistencias", []),
                 "tem_marcacoes": bool(marcacoes),
             }
         )
+    def _fmt(m):
+        return f"{m // 60:02d}:{m % 60:02d}"
+    saldo_total = total_min - sum(d["horas_esperadas_min"] for d in dias)
     return jsonify(
         {
             "ok": True,
             "competencia": competencia,
             "label": f"{meses_pt[mes - 1]}/{ano}",
-            "total_horas": f"{total_min // 60:02d}:{total_min % 60:02d}",
+            "total_horas": _fmt(total_min),
             "funcionario": f.nome,
+            "totais": {
+                "horas_trabalhadas_fmt": _fmt(total_min),
+                "he_50_fmt": _fmt(total_he_50),
+                "he_50_min": total_he_50,
+                "he_100_fmt": _fmt(total_he_100),
+                "he_100_min": total_he_100,
+                "noturno_fmt": _fmt(total_noturno),
+                "noturno_min": total_noturno,
+                "intrajornada_fmt": _fmt(total_intrajornada),
+                "intrajornada_min": total_intrajornada,
+            },
             "dias": dias,
         }
     )
