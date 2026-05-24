@@ -149,7 +149,7 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 .f input[readonly]{background:var(--cinza-cl);color:var(--text-muted)}
 .f textarea{resize:vertical;min-height:60px}
 .hint{font-size:11px;color:var(--text-muted);margin-top:2px}
-.btn{border:none;border-radius:12px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;transition:transform .18s ease,box-shadow .2s ease,filter .2s ease;display:inline-flex;align-items:center;gap:5px;text-decoration:none;white-space:nowrap}
+.btn{border:none;border-radius:8px;padding:6px 13px;font-size:12px;font-weight:700;cursor:pointer;transition:transform .18s ease,box-shadow .2s ease,filter .2s ease;display:inline-flex;align-items:center;gap:5px;text-decoration:none;white-space:nowrap}
 .btn:hover{filter:brightness(1.03);transform:translateY(-1px)}
 .btn:active{transform:translateY(0) scale(.98)}
 .b-az{background:var(--azul);color:#fff}
@@ -161,8 +161,8 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 .b-ghl{background:var(--laranja-cl);color:var(--laranja-esc)}
 .b-ghv{background:var(--verde-cl);color:var(--verde)}
 .b-ghr{background:var(--verm-cl);color:var(--verm)}
-.b-lg{padding:11px 26px;font-size:15px}
-.b-sm{padding:5px 11px;font-size:11px}
+.b-lg{padding:10px 22px;font-size:14px}
+.b-sm{padding:4px 10px;font-size:11px}
 .brow{display:flex;gap:9px;flex-wrap:wrap;justify-content:flex-end;margin-top:14px}
 .arow{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:9px}
 .st{border-radius:var(--r);padding:9px 14px;font-size:13px;font-weight:700;margin-bottom:12px;display:none;align-items:center;gap:7px}
@@ -172,7 +172,7 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 @media(max-width:768px){.dash-grid{grid-template-columns:1fr 1fr}}
 .metric{background:linear-gradient(180deg,var(--branco),var(--cinza-cl));border:1px solid var(--borda);border-radius:var(--r2);padding:16px;text-align:center;border-top:3px solid var(--azul);box-shadow:var(--shadow-sm);transition:transform .22s ease,box-shadow .22s ease}
 .metric:hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}
-.metric.metric-btn{width:100%;border-left:1px solid var(--borda);border-right:1px solid var(--borda);border-bottom:1px solid var(--borda);text-align:left;cursor:pointer;position:relative;display:flex;flex-direction:column;gap:6px;align-items:flex-start;padding:16px 14px 14px;background:linear-gradient(180deg,var(--branco),var(--azul-cc))}
+.metric.metric-btn{width:100%;border-left:1px solid var(--borda);border-right:1px solid var(--borda);border-bottom:1px solid var(--borda);text-align:left;cursor:pointer;position:relative;display:flex;flex-direction:column;gap:4px;align-items:flex-start;padding:11px 12px 10px;background:linear-gradient(180deg,var(--branco),var(--azul-cc))}
 .metric.metric-btn .l{display:flex;align-items:center;justify-content:space-between;width:100%;gap:10px}
 .metric-go{font-size:10px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;border:1px solid rgba(31,110,176,.24);background:rgba(31,110,176,.11);color:var(--azul);padding:3px 8px;border-radius:999px}
 .metric.metric-btn:active{transform:scale(.985)}
@@ -182,10 +182,12 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 .dash-alert-btn:hover{border-color:rgba(31,110,176,.38);box-shadow:var(--shadow-md);transform:translateY(-2px)}
 .dash-alert-btn:active{transform:scale(.985)}
 .dash-alert-btn .card-header{pointer-events:none}
+#pg-clientes>.card>.card-header:first-child{position:sticky;top:52px;z-index:99;background:var(--branco);border-radius:var(--r2) var(--r2) 0 0}
+html[data-theme='dark'] #pg-clientes>.card>.card-header:first-child{background:#0d1e35}
 .metric.lj{border-top-color:var(--laranja)}
 .metric.vd{border-top-color:var(--verde)}
 .metric.vm{border-top-color:var(--verm)}
-.metric .n{font-size:26px;font-weight:700;color:var(--azul)}
+.metric .n{font-size:21px;font-weight:700;color:var(--azul)}
 .metric.lj .n{color:var(--laranja-esc)}
 .metric.vd .n{color:var(--verde)}
 .metric.vm .n{color:var(--verm)}
@@ -467,10 +469,10 @@ html[data-theme='dark'] .ponto-kpi .v{color:#cfe6fb}
 @media(max-width:768px){
 	#dash-alertas{grid-template-columns:1fr!important}
 	#dash-empresas{grid-template-columns:1fr!important}
-	.metric.metric-btn{min-height:96px;padding:16px}
-	.metric .n{font-size:28px}
-	.metric .l{font-size:12px}
-	.metric-go{padding:4px 9px}
+	.metric.metric-btn{min-height:72px;padding:11px}
+	.metric .n{font-size:21px}
+	.metric .l{font-size:11px}
+	.metric-go{padding:3px 8px}
 }
 
 @media (prefers-reduced-motion:reduce){

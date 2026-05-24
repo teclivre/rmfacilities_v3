@@ -869,36 +869,36 @@ document.addEventListener('DOMContentLoaded',()=>{
           <span class="card-title">⚡ Gestão Fácil de Ponto</span>
           <button class="btn b-az b-sm" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'));setTimeout(()=>{rhSetSubAba&&rhSetSubAba('gestao-facil',null);gfCarregar&&gfCarregar()},200)">Abrir</button>
         </div>
-        <div style="font-size:13px;color:var(--text-muted);padding:8px 0 4px">Monitore e gerencie o ponto dos colaboradores em tempo real.</div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:12px 0;text-align:center">
+        <div style="font-size:12px;color:var(--text-muted);padding:4px 0 2px">Monitore e gerencie o ponto dos colaboradores em tempo real.</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:6px 0;text-align:center">
           <div>
-            <div style="font-size:28px;font-weight:700;color:var(--azul)" id="dash-resumo-ativos">—</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ativos</div>
+            <div style="font-size:18px;font-weight:700;color:var(--azul)" id="dash-resumo-ativos">—</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Ativos</div>
           </div>
           <div>
-            <div style="font-size:28px;font-weight:700;color:var(--verde)" id="dash-resumo-ferias">—</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Em férias</div>
+            <div style="font-size:18px;font-weight:700;color:var(--verde)" id="dash-resumo-ferias">—</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Em férias</div>
           </div>
           <div>
-            <div style="font-size:28px;font-weight:700;color:var(--laranja)" id="dash-resumo-afastados">—</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Afastados</div>
+            <div style="font-size:18px;font-weight:700;color:var(--laranja)" id="dash-resumo-afastados">—</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Afastados</div>
           </div>
           <div>
-            <div style="font-size:28px;font-weight:700;color:var(--text-muted)" id="dash-resumo-ponto-hoje">—</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ponto hoje</div>
+            <div style="font-size:18px;font-weight:700;color:var(--text-muted)" id="dash-resumo-ponto-hoje">—</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Ponto hoje</div>
           </div>
         </div>
       </div>
       <div class="card" style="margin-bottom:8px">
         <div class="card-header"><span class="card-title">Ponto do dia</span><span style="font-size:11px;color:var(--text-muted)" id="dash-ponto-data"></span></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:6px 0;text-align:center">
-          <button type="button" class="metric metric-btn" style="background:none;border:2px solid var(--verde);border-radius:10px;padding:8px;cursor:pointer" onclick="abrirModalPontoDia('bateram')">
-            <div style="font-size:24px;font-weight:700;color:var(--verde)" id="dash-ponto-bateram">—</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:2px">✅ Bateram ponto</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:4px 0;text-align:center">
+          <button type="button" class="metric metric-btn" style="background:none;border:2px solid var(--verde);border-radius:8px;padding:6px;cursor:pointer" onclick="abrirModalPontoDia('bateram')">
+            <div style="font-size:18px;font-weight:700;color:var(--verde)" id="dash-ponto-bateram">—</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">✅ Bateram ponto</div>
           </button>
-          <button type="button" class="metric metric-btn" style="background:none;border:2px solid var(--verm);border-radius:10px;padding:8px;cursor:pointer" onclick="abrirModalPontoDia('falta')">
-            <div style="font-size:24px;font-weight:700;color:var(--verm)" id="dash-ponto-falta">—</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:2px">❌ Falta / sem registro</div>
+          <button type="button" class="metric metric-btn" style="background:none;border:2px solid var(--verm);border-radius:8px;padding:6px;cursor:pointer" onclick="abrirModalPontoDia('falta')">
+            <div style="font-size:18px;font-weight:700;color:var(--verm)" id="dash-ponto-falta">—</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">❌ Falta / sem registro</div>
           </button>
         </div>
       </div>
