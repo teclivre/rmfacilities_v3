@@ -39,7 +39,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;ba
 .module-caret{font-size:11px;opacity:.78;transition:transform .2s ease}
 .nav-module.open .module-caret{transform:rotate(0deg)}
 .module-panel{display:none;padding:6px;position:absolute;top:100%;left:0;min-width:180px;background:linear-gradient(180deg,#0d2640,#0b2844);border:1px solid rgba(126,194,255,.2);border-top:none;border-radius:0 0 12px 12px;box-shadow:0 14px 36px rgba(0,0,0,.4);z-index:300}
-.nav-module:hover .module-panel{display:block}
+.nav-module.open .module-panel{display:block}
 .subnav-lv3{margin-top:2px;padding-left:8px;border-left:1px dashed rgba(134,190,242,.3);margin-left:10px}
 .nav-item{display:flex;align-items:center;gap:9px;padding:9px 12px;color:rgba(255,255,255,.72);text-decoration:none;font-size:13px;font-weight:600;transition:all .22s ease;border-left:3px solid transparent;cursor:pointer;border-radius:9px;margin:1px 0;border:none;background:transparent;width:100%;text-align:left;font-family:'Manrope',sans-serif}
 .nav-item:hover{background:rgba(255,255,255,.1);color:#fff;transform:translateX(2px)}

@@ -750,7 +750,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div class="sidebar-main">
 
       <!-- ── Principal ──────────────────────────────────────────────── -->
-      <div class="nav-module open" id="mod-principal">
+      <div class="nav-module" id="mod-principal">
         <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-principal')">
           <span class="mod-icon">🏠</span><span class="module-label">Principal</span><span class="module-caret">▾</span>
         </button>
@@ -4947,8 +4947,19 @@ function toggleSidebarModule(moduleId,forceOpen){
   if(!mod) return;
   if(document.body.classList.contains('sidebar-collapsed')) return;
   const open=(typeof forceOpen==='boolean')?forceOpen:!mod.classList.contains('open');
+  // Fechar todos os outros painéis (accordion)
+  document.querySelectorAll('.nav-module').forEach(m=>{
+    if(m.id!==moduleId) m.classList.remove('open');
+  });
   mod.classList.toggle('open',open);
 }
+
+// Fechar painéis do nav ao clicar fora da sidebar
+document.addEventListener('click',function(e){
+  if(!e.target.closest('.sidebar')){
+    document.querySelectorAll('.nav-module').forEach(m=>m.classList.remove('open'));
+  }
+});
 
 function toggleSidebarSublevel(subId,btn){
   const el=document.getElementById(subId);
@@ -5331,6 +5342,8 @@ function nav(id,el,force=false){
   }
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));
+  // Fechar todos os painéis do nav ao navegar
+  document.querySelectorAll('.nav-module').forEach(m=>m.classList.remove('open'));
   document.getElementById('pg-'+targetId).classList.add('on');
   // Sempre resetar scroll ao trocar de página
   try{
