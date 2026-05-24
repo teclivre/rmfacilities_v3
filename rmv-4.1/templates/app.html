@@ -903,15 +903,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           </button>
         </div>
       </div>
-      <div class="card">
-        <div class="card-header"><span class="card-title">Acesso rápido</span></div>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
-          <button class="btn b-az b-lg" style="justify-content:center" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))">RH</button>
-          <button class="btn b-gh b-lg" style="justify-content:center" onclick="nav('clientes',document.querySelector('[onclick*=clientes]'))">Clientes</button>
-          <button class="btn b-ghl b-lg" style="justify-content:center" onclick="nav('operacional',document.querySelector('.nav-item[data-nav=\'operacional\']'))">Operacional</button>
-        </div>
-      </div>
-      <div id="dash-empresas" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"></div>
+
     </div>
 
     <!-- ══ ABA FINANCEIRO (PLACEHOLDER) ══ -->
@@ -5289,9 +5281,9 @@ async function loadDash(){
     }
   }
   const de=document.getElementById('dash-empresas');
-  if(d.empresas && d.empresas.length){
+  if(de && d.empresas && d.empresas.length){
     de.innerHTML=d.empresas.map(e=>`<button type="button" class="card dash-company-btn" style="margin-bottom:0" onclick="abrirDashboardDestino('clientes',${e.id})"><div style="font-size:13px;font-weight:700;color:var(--azul);margin-bottom:8px">${e.nome}</div><div style="font-size:24px;font-weight:700;color:var(--laranja)">${e.cli}</div><div style="font-size:11px;color:var(--text-muted)">clientes ativos · tocar para abrir</div></button>`).join('');
-  } else {
+  } else if(de) {
     de.innerHTML='';
   }
 }
