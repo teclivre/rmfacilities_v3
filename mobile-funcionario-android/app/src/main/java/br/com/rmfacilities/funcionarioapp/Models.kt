@@ -229,8 +229,29 @@ data class PontoEspelhoDia(
     val horas_trabalhadas_fmt: String? = null,
     val horas_trabalhadas_min: Int = 0,
     val horas_esperadas_min: Int = 0,
+    val he_50_fmt: String? = null,
+    val he_50_min: Int = 0,
+    val he_100_fmt: String? = null,
+    val he_100_min: Int = 0,
+    val noturno_fmt: String? = null,
+    val noturno_min: Int = 0,
+    val intrajornada_fmt: String? = null,
+    val intrajornada_min: Int = 0,
+    val inconsistencias: List<String> = emptyList(),
     val status: String? = null,
     val tem_marcacoes: Boolean = false
+)
+
+data class PontoEspelhoTotais(
+    val horas_trabalhadas_fmt: String? = null,
+    val he_50_fmt: String? = null,
+    val he_50_min: Int = 0,
+    val he_100_fmt: String? = null,
+    val he_100_min: Int = 0,
+    val noturno_fmt: String? = null,
+    val noturno_min: Int = 0,
+    val intrajornada_fmt: String? = null,
+    val intrajornada_min: Int = 0
 )
 
 data class PontoEspelhoDadosResponse(
@@ -240,6 +261,7 @@ data class PontoEspelhoDadosResponse(
     val label: String? = null,
     val total_horas: String? = null,
     val funcionario: String? = null,
+    val totais: PontoEspelhoTotais? = null,
     val dias: List<PontoEspelhoDia> = emptyList()
 )
 

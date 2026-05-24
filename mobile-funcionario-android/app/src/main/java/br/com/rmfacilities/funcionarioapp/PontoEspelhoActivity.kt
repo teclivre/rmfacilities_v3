@@ -299,6 +299,50 @@ class PontoEspelhoActivity : AppCompatActivity() {
                 header.addView(tvTitulo)
                 header.addView(tvSubtitulo)
                 header.addView(tvTotalHoras)
+
+                // ── Painel de totais: HE 50%, HE 100%, Noturno, Intrajornada ─
+                val tot = resp.totais
+                if (tot != null) {
+                    val kpiRow = LinearLayout(this@PontoEspelhoActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(0, (10 * dp).toInt(), 0, 0)
+                    }
+                    fun kpiChip(label: String, value: String?, mins: Int, bgColor: Int) {
+                        val v = value ?: "00:00"
+                        val chip = LinearLayout(this@PontoEspelhoActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            gravity = Gravity.CENTER
+                            background = android.graphics.drawable.GradientDrawable().apply {
+                                setColor(if (mins > 0) bgColor else Color.parseColor("#33FFFFFF"))
+                                cornerRadius = 8 * dp
+                            }
+                            setPadding((8 * dp).toInt(), (4 * dp).toInt(), (8 * dp).toInt(), (4 * dp).toInt())
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                            ).apply { marginEnd = (6 * dp).toInt() }
+                        }
+                        chip.addView(TextView(this@PontoEspelhoActivity).apply {
+                            text = v
+                            setTextColor(Color.WHITE)
+                            textSize = 12f
+                            setTypeface(null, Typeface.BOLD)
+                            gravity = Gravity.CENTER
+                        })
+                        chip.addView(TextView(this@PontoEspelhoActivity).apply {
+                            text = label
+                            setTextColor(Color.parseColor("#CCFFFFFF"))
+                            textSize = 9f
+                            gravity = Gravity.CENTER
+                        })
+                        kpiRow.addView(chip)
+                    }
+                    kpiChip("HE 50%",  tot.he_50_fmt,  tot.he_50_min,  Color.parseColor("#E07C00"))
+                    kpiChip("HE 100%", tot.he_100_fmt, tot.he_100_min, Color.parseColor("#C0392B"))
+                    kpiChip("Noturno", tot.noturno_fmt, tot.noturno_min, Color.parseColor("#1A73E8"))
+                    kpiChip("Intrajornada", tot.intrajornada_fmt, tot.intrajornada_min, Color.parseColor("#2E7D32"))
+                    header.addView(kpiRow)
+                }
                 root.addView(header)
 
                 // ── Mini-gráfico de barras horizontais ───────────────────
@@ -481,17 +525,45 @@ class PontoEspelhoActivity : AppCompatActivity() {
                     }
                     row.addView(batidasCell)
 
-                    // Célula total horas
-                    val tvHoras = TextView(this@PontoEspelhoActivity).apply {
+                    // Célula total horas (coluna vertical: horas + extras)
+                    val horasCell = LinearLayout(this@PontoEspelhoActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = Gravity.END
+                        setPadding((4 * dp).toInt(), (6 * dp).toInt(), (12 * dp).toInt(), (6 * dp).toInt())
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.5f)
+                    }
+                    horasCell.addView(TextView(this@PontoEspelhoActivity).apply {
                         text = dia.horas_trabalhadas_fmt ?: "-"
                         textSize = 11f
                         setTextColor(colorSuccess)
                         setTypeface(null, Typeface.BOLD)
-                        gravity = Gravity.END or Gravity.CENTER_VERTICAL
-                        setPadding((4 * dp).toInt(), (9 * dp).toInt(), (12 * dp).toInt(), (9 * dp).toInt())
-                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.5f)
+                        gravity = Gravity.END
+                    })
+                    // Indicadores de extras se houver
+                    val extras = buildList {
+                        if ((dia.he_50_min) > 0) add("HE50 ${dia.he_50_fmt}")
+                        if ((dia.he_100_min) > 0) add("HE100 ${dia.he_100_fmt}")
+                        if ((dia.noturno_min) > 0) add("Not ${dia.noturno_fmt}")
                     }
-                    row.addView(tvHoras)
+                    if (extras.isNotEmpty()) {
+                        horasCell.addView(TextView(this@PontoEspelhoActivity).apply {
+                            text = extras.joinToString(" ")
+                            textSize = 8f
+                            setTextColor(Color.parseColor("#E07C00"))
+                            gravity = Gravity.END
+                            setTypeface(null, Typeface.BOLD)
+                        })
+                    }
+                    // Alerta de inconsistência
+                    if (dia.status == "inconsistente") {
+                        horasCell.addView(TextView(this@PontoEspelhoActivity).apply {
+                            text = "⚠ verificar"
+                            textSize = 8f
+                            setTextColor(Color.parseColor("#C0392B"))
+                            gravity = Gravity.END
+                        })
+                    }
+                    row.addView(horasCell)
 
                     table.addView(row)
 
@@ -545,10 +617,24 @@ class PontoEspelhoActivity : AppCompatActivity() {
                     appendLine("📋 FOLHA DE PONTO — $label")
                     appendLine("Funcionário: ${resp.funcionario ?: "-"}")
                     appendLine("Total trabalhado: ${resp.total_horas ?: "--:--"}")
+                    val t = resp.totais
+                    if (t != null) {
+                        if (t.he_50_min > 0) appendLine("HE 50%: ${t.he_50_fmt}")
+                        if (t.he_100_min > 0) appendLine("HE 100%: ${t.he_100_fmt}")
+                        if (t.noturno_min > 0) appendLine("Adicional noturno: ${t.noturno_fmt}")
+                        if (t.intrajornada_min > 0) appendLine("Intrajornada: ${t.intrajornada_fmt}")
+                    }
                     appendLine("─".repeat(36))
                     resp.dias.filter { it.tem_marcacoes }.forEach { dia ->
                         val batidas = dia.marcacoes.joinToString("  ") { it.hora_fmt ?: "-" }
-                        appendLine("${dia.data_fmt ?: ""}  |  $batidas  |  ${dia.horas_trabalhadas_fmt ?: "-"}")
+                        val extras = buildList {
+                            if (dia.he_50_min > 0) add("HE50:${dia.he_50_fmt}")
+                            if (dia.he_100_min > 0) add("HE100:${dia.he_100_fmt}")
+                            if (dia.noturno_min > 0) add("Not:${dia.noturno_fmt}")
+                            if (dia.status == "inconsistente") add("⚠")
+                        }.joinToString(" ")
+                        val extrasStr = if (extras.isNotEmpty()) "  [$extras]" else ""
+                        appendLine("${dia.data_fmt ?: ""}  |  $batidas  |  ${dia.horas_trabalhadas_fmt ?: "-"}$extrasStr")
                     }
                     appendLine("─".repeat(36))
                     append("Exportado pelo RMFacilities App")
