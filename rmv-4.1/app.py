@@ -403,9 +403,10 @@ def _same_origin_request(req) -> bool:
             return True
         return False
     except Exception:
-        # Header malformado ou ausente (scanner, fuzzer) — permite passagem
-        # para não gerar DoS acidental; o CSRF é mitigado pela session cookie.
-        return True
+        # Fail-closed: para métodos que mudam estado (POST/PUT/PATCH/DELETE),
+        # qualquer falha na leitura dos headers de origem deve bloquear a
+        # requisição. Esta função é chamada apenas para métodos não seguros.
+        return False
 
 
 def localnow():
@@ -8271,6 +8272,13 @@ def pagina_privacidade_publica():
     return render_template("privacidade_publica.html", atualizado_em="16/05/2026")
 
 
+@app.route("/codigo-conduta")
+@app.route("/codigo-de-conduta")
+@app.route("/conduta")
+def pagina_codigo_conduta_publica():
+    return render_template("codigo_conduta.html", atualizado_em="26/05/2026")
+
+
 @app.route("/")
 @lr
 def index():
@@ -8278,8 +8286,8 @@ def index():
         "app.html",
         nome=session["nome"],
         perfil=session["perfil"],
-        areas=json.dumps(session.get("areas", []), ensure_ascii=False),
-        permissoes=json.dumps(session.get("permissoes", {}), ensure_ascii=False),
+        areas=session.get("areas", []),
+        permissoes=session.get("permissoes", {}),
     )
 
 
@@ -8530,6 +8538,111 @@ def api_save_config():
 @lr
 def api_usuarios():
     return jsonify([u.to_dict() for u in Usuario.query.all()])
+
+
+def _audit_admin_required():
+    """Bloqueia acesso aos endpoints de auditoria a quem nao for admin/dono."""
+    perfil = (session.get("perfil") or "").strip().lower()
+    if perfil in ("admin", "dono"):
+        return None
+    return jsonify({"erro": "Acesso restrito"}), 403
+
+
+@app.route("/api/auditoria", methods=["GET"])
+@lr
+def api_auditoria_listar():
+    bloq = _audit_admin_required()
+    if bloq is not None:
+        return bloq
+    try:
+        page = max(1, int(request.args.get("page", "1") or 1))
+    except Exception:
+        page = 1
+    try:
+        per_page = int(request.args.get("per_page", "50") or 50)
+    except Exception:
+        per_page = 50
+    per_page = max(1, min(per_page, 200))
+
+    q = AuditoriaEvento.query
+    evento = (request.args.get("evento") or "").strip()
+    ator_tipo = (request.args.get("ator_tipo") or "").strip()
+    ator_id = (request.args.get("ator_id") or "").strip()
+    alvo_tipo = (request.args.get("alvo_tipo") or "").strip()
+    alvo_id = (request.args.get("alvo_id") or "").strip()
+    ok_param = (request.args.get("ok") or "").strip().lower()
+    ip_filtro = (request.args.get("ip") or "").strip()
+    desde = (request.args.get("desde") or "").strip()
+    ate = (request.args.get("ate") or "").strip()
+
+    if evento:
+        q = q.filter(AuditoriaEvento.evento.ilike(f"%{evento}%"))
+    if ator_tipo:
+        q = q.filter(AuditoriaEvento.ator_tipo == ator_tipo)
+    if ator_id:
+        q = q.filter(AuditoriaEvento.ator_id == ator_id)
+    if alvo_tipo:
+        q = q.filter(AuditoriaEvento.alvo_tipo == alvo_tipo)
+    if alvo_id:
+        q = q.filter(AuditoriaEvento.alvo_id == alvo_id)
+    if ok_param in ("0", "false", "nao", "não"):
+        q = q.filter(AuditoriaEvento.ok.is_(False))
+    elif ok_param in ("1", "true", "sim"):
+        q = q.filter(AuditoriaEvento.ok.is_(True))
+    if ip_filtro:
+        q = q.filter(AuditoriaEvento.ip.ilike(f"%{ip_filtro}%"))
+    try:
+        if desde:
+            dt = datetime.fromisoformat(desde)
+            q = q.filter(AuditoriaEvento.criado_em >= dt)
+        if ate:
+            dt = datetime.fromisoformat(ate)
+            q = q.filter(AuditoriaEvento.criado_em <= dt)
+    except Exception:
+        pass
+
+    total = q.order_by(None).count()
+    rows = (
+        q.order_by(AuditoriaEvento.id.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+
+    def _to_dict(r):
+        return {
+            "id": r.id,
+            "evento": r.evento,
+            "ator_tipo": r.ator_tipo or "",
+            "ator_id": r.ator_id or "",
+            "alvo_tipo": r.alvo_tipo or "",
+            "alvo_id": r.alvo_id or "",
+            "ok": bool(r.ok),
+            "ip": r.ip or "",
+            "ua": (r.ua or "")[:120],
+            "detalhe": r.detalhe or "",
+            "criado_em": (
+                r.criado_em.strftime("%d/%m/%Y %H:%M:%S") if r.criado_em else ""
+            ),
+        }
+
+    return jsonify(
+        {
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "itens": [_to_dict(r) for r in rows],
+        }
+    )
+
+
+@app.route("/admin/auditoria", methods=["GET"])
+@lr
+def pagina_auditoria_admin():
+    perfil = (session.get("perfil") or "").strip().lower()
+    if perfil not in ("admin", "dono"):
+        return "Acesso restrito.", 403
+    return render_template("auditoria_admin.html")
 
 
 @app.route("/api/usuarios", methods=["POST"])

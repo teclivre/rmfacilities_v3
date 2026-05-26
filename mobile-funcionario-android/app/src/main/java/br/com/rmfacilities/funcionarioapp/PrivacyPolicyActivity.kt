@@ -15,6 +15,7 @@ class PrivacyPolicyActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_URL = "privacy_url"
+        const val EXTRA_TITLE = "privacy_title"
     }
 
     private lateinit var webView: WebView
@@ -27,6 +28,10 @@ class PrivacyPolicyActivity : AppCompatActivity() {
 
         findViewById<TextView>(R.id.btnVoltar).setOnClickListener { finish() }
         findViewById<MaterialButton>(R.id.btnRecarregarPolitica).setOnClickListener { webView.reload() }
+
+        intent.getStringExtra(EXTRA_TITLE)?.takeIf { it.isNotBlank() }?.let {
+            findViewById<TextView>(R.id.tvTituloPrivacy).text = it
+        }
 
         webView = findViewById(R.id.webPrivacy)
         tvLoading = findViewById(R.id.tvLoadingPrivacy)

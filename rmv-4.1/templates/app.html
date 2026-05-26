@@ -4605,8 +4605,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 <script src="/static/js/app-ponto.js"></script>
 <script nonce="{{ g.csp_nonce }}">
 const N='{{ nome }}', P='{{ perfil }}';
-const USER_AREAS={{ areas|safe }};
-const USER_PERMISSIONS={{ permissoes|safe }};
+const USER_AREAS={{ areas|tojson }};
+const USER_PERMISSIONS={{ permissoes|tojson }};
 const THEME_KEY='rm_theme';
 const AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','compras','beneficios','sst','rh-digital','documentos'];
 const RBAC_ACTIONS=['view','create','edit','delete','approve','export'];
