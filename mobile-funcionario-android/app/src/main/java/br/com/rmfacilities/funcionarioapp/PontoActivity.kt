@@ -392,11 +392,25 @@ class PontoActivity : BaseActivity() {
     }
 
     private fun registrarPontoViaQr(token: String) {
-        updateStatus("QR lido. Registrando ponto...", R.color.mobile_semantic_info)
+        updateStatus("QR lido. Obtendo localização e registrando ponto...", R.color.mobile_semantic_info)
         lifecycleScope.launch {
+            // Tenta capturar GPS em paralelo (best-effort, ate 4s).
+            // O QR ja comprova a presenca; a localizacao e apenas registrada para auditoria.
+            val temPermLoc = ContextCompat.checkSelfPermission(this@PontoActivity, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(this@PontoActivity, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            val loc: Location? = if (temPermLoc) {
+                withTimeoutOrNull(4000) { obterLocalizacaoAtual() }
+            } else null
+
             val resp = withContext(Dispatchers.IO) {
-                try { api.marcarPontoQr(qrToken = token) }
-                catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message) }
+                try {
+                    api.marcarPontoQr(
+                        qrToken = token,
+                        lat = loc?.latitude,
+                        lon = loc?.longitude,
+                        precisao = loc?.accuracy,
+                    )
+                } catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message) }
             }
             btnPontoQrCode.isEnabled = true
             if (resp.ok) {
