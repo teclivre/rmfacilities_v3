@@ -1,17 +1,61 @@
 # RM Facilities v3
 
-Sistema web de gestão operacional, RH e comunicação da RM Facilities, construído em Flask com banco SQLite e interface web única.
+Sistema web de gestão operacional, RH e comunicação da RM Facilities, construído em Flask com banco SQLite e interface SPA (single-page).
 
-## Principais recursos
+## Principais módulos
 
-- Dashboard com indicadores operacionais.
-- Gestão de clientes, medições e histórico.
-- Gestão de RH com cadastro de funcionários e documentos por categoria/competência.
-- Comunicação integrada via WhatsApp (Evolution API), com envio de mensagens e documentos.
-- Integração de IA para respostas automáticas no WhatsApp.
-- Backup e restauração de dados e arquivos.
-- Controle de usuários com áreas de acesso.
-- **App mobile Android** para funcionários: ponto eletrônico, documentos, mensagens, avisos, holerites e assinatura digital.
+### Comercial e Operacional
+- Gestão de clientes, contratos e postos de trabalho.
+- Propostas comerciais com numeração automática (PC-YYYY-NNNN) e envio via WhatsApp.
+- Medições de serviços com controle de numeração, aprovação e assinatura digital.
+- Ordens de compra com assinatura eletrônica.
+- Documentos operacionais por categoria.
+
+### RH — Funcionários
+- Cadastro completo de colaboradores (dados pessoais, contratuais, bancários, escalas e jornadas).
+- Gestão de documentos por categoria e competência, com envio via WhatsApp e assinatura digital.
+- Benefícios mensais (VT, VR, plano de saúde, etc.) com histórico por competência.
+- Folha de pagamento mensal e relatório de benefícios, com assinatura eletrônica pelo colaborador.
+- Lançamentos avulsos (adiantamentos, descontos, etc.).
+- Horas extras: solicitação, aprovação e histórico por competência.
+- Feriados por empresa, com associação a funcionários.
+- Gestão de escalas e jornadas de trabalho.
+
+### Ponto Eletrônico
+- Registro de marcações (entrada/saída/intervalo) pelo painel web e pelo app mobile.
+- Totem de ponto por QR Code rotativo (`/ponto/totem`).
+- Resumo diário e calendário mensal por funcionário.
+- Ajustes de ponto com trilha de auditoria.
+- Fechamento de dia com cálculo automático de horas.
+- Espelho de ponto mensal em PDF (ReportLab) com cabeçalho personalizado por empresa.
+- Solicitação de correção de ponto pelo colaborador via app.
+- Visão "Gestão Fácil" com calendário de marcações.
+
+### Envelopes e Assinaturas Digitais
+- Envelopes digitais compostos por múltiplos documentos.
+- Assinatura com código OTP via WhatsApp ou e-mail.
+- Verificação criptográfica com hash SHA-256 do documento.
+- Suporte a certificados digitais (pyHanko).
+- Página pública de validação de assinaturas.
+
+### Financeiro
+- Controle de despesas com categorias, status e exportação CSV.
+- Dashboard de faturamento consolidado com exportação CSV.
+- Conciliação bancária: importação de extrato OFX, matching automático e lote de conciliação.
+
+### Comunicação
+- Integração com WhatsApp via Evolution API: envio de mensagens texto, documentos e imagens.
+- Disparo de notificações push via Firebase FCM para o app Android.
+- IA para respostas automáticas no WhatsApp (OpenAI / Gemini, conforme configuração).
+- Backups automáticos agendados enviados via WhatsApp.
+
+### Administração
+- Gestão de usuários com controle de acesso por área.
+- Cadastro de empresas com logotipo.
+- Configurações gerais (numeração de documentos, links úteis, backup, logs, WhatsApp).
+- Auditoria de eventos críticos (acessos, downloads, assinaturas).
+- Backup e restauração via interface (ZIP com banco + uploads).
+- Logs estruturados de erros e eventos do sistema.
 
 ## App Mobile — Funcionário (Android)
 
@@ -19,11 +63,12 @@ Pasta: `mobile-funcionario-android/`
 
 ### Recursos do app
 
-- Registro de ponto (entrada/saída/intervalo) com geolocalização.
-- Visualização e assinatura de documentos/holerites.
+- Registro de ponto (entrada/saída/intervalo) com geolocalização e validação de geofence.
+- Totem de ponto por QR Code rotativo (modo quiosque).
+- Visualização e assinatura digital de documentos e holerites.
 - Chat com o RH.
-- Avisos e comunicados do RH com suporte a **artigos via link** (abertos no WebView interno).
-- Solicitação de correção de ponto (múltiplas marcações por dia, até o limite da jornada).
+- Avisos e comunicados com suporte a artigos via link (WebView interno).
+- Solicitação de correção de ponto.
 - Histórico e espelho de ponto.
 - Notificações push via Firebase (FCM).
 
@@ -32,55 +77,72 @@ Pasta: `mobile-funcionario-android/`
 Ao criar um comunicado no painel web, o campo **URL** é opcional.
 
 - **Com URL**: a notificação push abre diretamente o artigo no WebView interno do app.
-- **Sem URL**: a notificação abre a aba "Avisos" normalmente para o funcionário ler o texto.
+- **Sem URL**: a notificação abre a aba "Avisos" normalmente.
 
 Na aba Avisos, comunicados com URL exibem o botão **🔗 Abrir artigo**.
 
 ### Build
 
+> **Atenção:** nunca executar o build dentro do VS Code (trava o editor). Use um terminal externo.
+
 ```bash
 cd mobile-funcionario-android
-./gradlew assembleRelease
-# ou para AAB:
-./gradlew bundleRelease
+./gradlew assembleRelease   # APK
+./gradlew bundleRelease     # AAB para Play Store
 ```
 
 A versão é gerenciada em `app/version.properties` (VERSION_CODE, MAJOR, MINOR, PATCH).
 
 ## Stack
 
-- Python 3.12
-- Flask 3
-- Flask-SQLAlchemy
-- SQLite
-- Gunicorn
-- HTML/CSS/JS (templates server-side)
+| Camada | Tecnologia |
+|---|---|
+| Linguagem | Python 3.12 |
+| Framework web | Flask 3 |
+| ORM | Flask-SQLAlchemy |
+| Banco de dados | SQLite |
+| Servidor WSGI | Gunicorn + Gevent |
+| PDF | ReportLab, pypdf, pyHanko |
+| Planilhas | openpyxl, XlsxWriter, pandas |
+| Imagens / QR Code | Pillow, qrcode |
+| Push notifications | firebase-admin (FCM) |
+| Rate limiting | Flask-Limiter |
+| Cache | Flask-Caching |
+| Compressão | Flask-Compress |
+| Monitoramento | Sentry SDK, structlog |
+| Validação | Pydantic v2 |
+| Frontend | HTML/CSS/JS (templates server-side, SPA) |
 
 ## Estrutura do projeto
 
 ```text
-rmv3/
-  app.py
+rmv-4.1/
+  app.py                  # Aplicação principal (modelos, rotas, lógica)
+  ponto_module.py         # Módulo de ponto eletrônico
   requirements.txt
   Procfile
   Dockerfile
   nixpacks.toml
-  templates/
+  templates/              # Templates Jinja2
   static/
+    css/main.css
+    js/
+    vendor/
   instance/
+    rmfacilities.db       # Banco SQLite
+    uploads/              # Arquivos enviados
+
+mobile-funcionario-android/
+  app/src/main/           # Código-fonte Android (Kotlin)
+  app/version.properties  # Versionamento do APK/AAB
 ```
-
-## Requisitos
-
-- Python 3.12+
-- pip
 
 ## Rodando localmente
 
 1. Entre na pasta da aplicação:
 
 ```bash
-cd rmv3
+cd rmv-4.1
 ```
 
 2. Crie e ative um ambiente virtual:
@@ -119,7 +181,7 @@ gunicorn --bind 0.0.0.0:${PORT:-5000} app:app
 
 ## Rodando com Docker
 
-Na pasta `rmv3`:
+Na pasta `rmv-4.1`:
 
 ```bash
 docker build -t rmfacilities-v3 .
@@ -132,12 +194,9 @@ docker run --rm -p 5000:5000 \
 
 ## Deploy (Nixpacks / Procfile)
 
-O projeto já inclui:
+O projeto inclui `nixpacks.toml` e `Procfile` prontos para plataformas como Railway, Render e similares.
 
-- `nixpacks.toml` para build e start em plataformas compatíveis.
-- `Procfile` com comando web para Gunicorn.
-
-Comando de start definido:
+Comando de start:
 
 ```bash
 gunicorn --bind 0.0.0.0:${PORT:-5000} app:app
@@ -146,84 +205,48 @@ gunicorn --bind 0.0.0.0:${PORT:-5000} app:app
 ## Banco e arquivos
 
 - Banco padrão: SQLite em `instance/rmfacilities.db`.
-- Uploads e anexos: armazenados em `instance/uploads/`.
+- Uploads e anexos: `instance/uploads/`.
 
-Com `DATA_DIR` definido em produção, os caminhos ficam:
+Com `DATA_DIR` definido em produção:
 
-- Banco SQLite: `${DATA_DIR}/rmfacilities.db`
-- Uploads: `${DATA_DIR}/uploads/`
-- Backups auxiliares: `${DATA_DIR}/wa_backups/`, `${DATA_DIR}/bancos_br.json`
+| Recurso | Caminho |
+|---|---|
+| Banco SQLite | `${DATA_DIR}/rmfacilities.db` |
+| Uploads | `${DATA_DIR}/uploads/` |
+| Backups WA | `${DATA_DIR}/wa_backups/` |
+| Bancos BR | `${DATA_DIR}/bancos_br.json` |
 
 Na primeira inicialização sem `DATABASE_URL`, o app tenta migrar automaticamente dados legados de `instance/rmfacilities.db`, `app.db` e `instance/uploads/` para o `DATA_DIR`.
 
-Importante para produção:
+**Importante para produção:** monte um volume persistente no caminho definido em `DATA_DIR` (ex.: `/data`) e faça backup periódico.
 
-- Use volume persistente para a pasta `instance/`.
-- Em container, monte um volume persistente no caminho definido em `DATA_DIR` (exemplo: `/data`).
-- Faça backup periódico da pasta `instance/`.
+## Variáveis de ambiente
 
-## Configurações importantes
+| Variável | Descrição |
+|---|---|
+| `SECRET_KEY` | Chave de sessão Flask (**obrigatória em produção**) |
+| `PORT` | Porta de execução (padrão: 5000) |
+| `DATA_DIR` | Diretório persistente para banco, uploads e auxiliares |
+| `SENTRY_DSN` | DSN do Sentry para monitoramento de erros (opcional) |
 
-A aplicação usa configurações por variáveis de ambiente e tabela `Config`.
+## Integrações (configuráveis pela tela de Configurações)
 
-### Variáveis de ambiente
-
-- `SECRET_KEY`: chave de sessão Flask (obrigatória em produção).
-- `PORT`: porta de execução.
-- `DATA_DIR`: diretório persistente para banco SQLite, uploads e arquivos auxiliares. Padrão local: `instance/`.
-
-### Integrações (via tela de configuração)
-
-- WhatsApp Evolution API (`wa_url`, `wa_instancia`, `wa_token`).
-- Provedor de IA para respostas automáticas (OpenAI/Gemini, conforme configuração interna).
+- **WhatsApp Evolution API**: `wa_url`, `wa_instancia`, `wa_token`.
+- **Firebase FCM**: configurado via `google-services.json` no app e `serviceAccountKey` no servidor.
+- **IA**: provedor OpenAI ou Gemini para respostas automáticas no WhatsApp.
 
 ## Segurança (obrigatório em produção)
 
 - Nunca use `SECRET_KEY` padrão.
-- Restrinja acesso ao painel administrativo.
+- Restrinja acesso ao painel administrativo por perfil de usuário.
 - Utilize HTTPS no ambiente público.
 - Limite permissões por área para usuários não administradores.
-- Revise periodicamente logs e trilhas de operação.
+- Revise periodicamente logs e trilhas de auditoria.
+- Rate limiting ativo via Flask-Limiter (configure limites conforme necessidade).
 
 ## Backup e restauração
 
-- O sistema possui recursos de backup/restauração via interface.
+- Backup via interface: gera ZIP com banco SQLite + pasta de uploads.
+- Backups automáticos podem ser agendados e enviados via WhatsApp.
 - Em caso de erro na restauração, valide o arquivo ZIP e os logs do servidor.
 - Mantenha cópias externas dos backups críticos.
-
-## Dependências
-
-Arquivo `requirements.txt`:
-
-- flask==3.0.3
-- flask-sqlalchemy==3.1.1
-- reportlab==4.2.2
-- gunicorn==22.0.0
-- pypdf==4.3.1
-- openpyxl==3.1.5
-
-## Troubleshooting rápido
-
-### A aplicação não sobe
-
-- Verifique se o ambiente virtual está ativo.
-- Confirme instalação das dependências.
-- Valide sintaxe do backend:
-
-```bash
-python3 -m py_compile app.py
-```
-
-### Erro 500 em API
-
-- Verifique logs do Gunicorn/servidor.
-- Confira variáveis de ambiente e credenciais de integração.
-
-### Problemas com WhatsApp/IA
-
-- Revise URL/token/instância da Evolution API.
-- Valide configuração do provedor de IA na tela de configurações.
-
-## Licença
-
-Uso interno RM Facilities, salvo definição diferente pelo mantenedor do repositório.

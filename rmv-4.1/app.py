@@ -8340,7 +8340,7 @@ def logout():
 @app.route("/politica-de-privacidade")
 @app.route("/privacy-policy")
 def pagina_privacidade_publica():
-    return render_template("privacidade_publica.html", atualizado_em="16/05/2026")
+    return render_template("privacidade_publica.html", atualizado_em="26/05/2026")
 
 
 @app.route("/codigo-conduta")
