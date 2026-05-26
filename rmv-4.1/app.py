@@ -1864,6 +1864,16 @@ class Funcionario(db.Model):
             d["areas"] = []
         if self.data_nascimento:
             d["data_nascimento"] = self.data_nascimento.isoformat()
+        # Inclui dados da empresa cadastrada para o funcionário (usado em prévias,
+        # geração de documentos e listagens do frontend).
+        emp = db.session.get(Empresa, self.empresa_id) if self.empresa_id else None
+        d["empresa_nome"] = (
+            (getattr(emp, "razao", None) or getattr(emp, "nome", None) or "")
+            if emp
+            else ""
+        )
+        d["empresa_razao"] = getattr(emp, "razao", None) if emp else None
+        d["empresa_cnpj"] = getattr(emp, "cnpj", None) if emp else None
         return d
 
 
