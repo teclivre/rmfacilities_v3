@@ -94,6 +94,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textColor="@color/mobile_text_primary"
+                android:textColorLink="@color/primary"
                 android:textSize="14sp"
                 android:lineSpacingExtra="3dp"
                 android:layout_marginTop="10dp"
