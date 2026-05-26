@@ -19043,11 +19043,18 @@ def api_jornada_vincular_funcionarios(id):
         ), 409
 
     vinculados = []
+    escalas_desvinculadas = 0
     for fid in ids_ok:
         f = db.session.get(Funcionario, fid)
         if not f:
             continue
         f.jornada_id = id
+        # Exclusão mútua: ao vincular jornada fixa, desativa qualquer escala de turno ativa
+        for ef_ativo in EscalaFuncionario.query.filter_by(
+            funcionario_id=fid, ativo=True
+        ).all():
+            ef_ativo.ativo = False
+            escalas_desvinculadas += 1
         vinculados.append(fid)
     db.session.commit()
     audit_event(
@@ -19057,9 +19064,15 @@ def api_jornada_vincular_funcionarios(id):
         "jornada_trabalho",
         id,
         True,
-        {"funcionarios": vinculados},
+        {"funcionarios": vinculados, "escalas_desvinculadas": escalas_desvinculadas},
     )
-    return jsonify({"ok": True, "vinculados": len(vinculados)})
+    return jsonify(
+        {
+            "ok": True,
+            "vinculados": len(vinculados),
+            "escalas_desvinculadas": escalas_desvinculadas,
+        }
+    )
 
 
 @app.route("/api/jornadas/<int:id>/funcionarios/<int:fid>", methods=["DELETE"])
@@ -19086,6 +19099,11 @@ def api_funcionario_definir_jornada(id):
         if not j:
             return jsonify({"erro": "Jornada não encontrada"}), 404
         f.jornada_id = j.id
+        # Exclusão mútua: ao definir jornada fixa, desativa escalas ativas
+        for ef_ativo in EscalaFuncionario.query.filter_by(
+            funcionario_id=f.id, ativo=True
+        ).all():
+            ef_ativo.ativo = False
     db.session.commit()
     return jsonify({"ok": True, "jornada_id": f.jornada_id})
 
@@ -19254,6 +19272,10 @@ def api_escala_vincular_funcionarios(id):
                 }
             ), 409
 
+        # Exclusão mútua: ao vincular escala, remove jornada fixa atual
+        if f.jornada_id:
+            f.jornada_id = None
+
         # Criar vínculo
         ef = EscalaFuncionario(
             escala_id=id,
@@ -19313,6 +19335,493 @@ def api_escala_turno_do_dia(id, data):
         )
     except Exception as ex:
         return jsonify({"erro": str(ex)}), 400
+
+
+# ============================================================
+# REGIMES DE TRABALHO - FACHADA UNIFICADA (Jornadas + Escalas)
+# ============================================================
+# Endpoints novos que tratam JornadaTrabalho ('fixa') e Escala ('escala')
+# como um único conceito "Regime de Trabalho" para a UI. Internamente
+# delegam para os models existentes e garantem EXCLUSÃO MÚTUA: um
+# funcionário só pode estar em UM regime ativo (fixa OU escala) por vez.
+# Os endpoints antigos /api/jornadas/* e /api/escalas/* continuam
+# funcionando (já também aplicam exclusão mútua).
+
+
+def _regime_from_jornada(j, com_funcionarios=False):
+    d = j.to_dict()
+    out = {
+        "regime_id": f"fixa:{j.id}",
+        "tipo": "fixa",
+        "id": j.id,
+        "nome": j.nome or "",
+        "descricao": j.descricao or "",
+        "ativo": bool(j.ativo),
+        "criado_em": d.get("criado_em"),
+        "grade_semanal": d.get("grade_semanal") or {},
+        "dias_semana_list": d.get("dias_semana_list") or [],
+        "tolerancia_min": j.tolerancia_min,
+        "carga_horaria_min": d.get("carga_horaria_min", 0),
+        "funcionarios_count": d.get("funcionarios_count", 0),
+    }
+    if com_funcionarios:
+        out["funcionarios"] = [
+            {
+                "id": f.id,
+                "nome": f.nome or "",
+                "matricula": f.matricula or "",
+                "re": f.re or "",
+                "status": f.status or "",
+            }
+            for f in Funcionario.query.filter_by(jornada_id=j.id)
+            .order_by(Funcionario.nome)
+            .all()
+        ]
+    return out
+
+
+def _regime_from_escala(e, com_funcionarios=False):
+    d = e.to_dict()
+    out = {
+        "regime_id": f"escala:{e.id}",
+        "tipo": "escala",
+        "id": e.id,
+        "nome": e.nome or "",
+        "descricao": e.descricao or "",
+        "ativo": bool(e.ativo),
+        "criado_em": d.get("criado_em"),
+        "escala_tipo": e.tipo,
+        "ciclo": d.get("ciclo") or {},
+        "ciclo_json": e.ciclo_json or "{}",
+        "periodo_noturno_ini": e.periodo_noturno_ini or "22:00",
+        "periodo_noturno_fim": e.periodo_noturno_fim or "05:00",
+        "funcionarios_count": d.get("funcionarios_count", 0),
+    }
+    if com_funcionarios:
+        out["funcionarios"] = []
+        for ef in EscalaFuncionario.query.filter_by(escala_id=e.id, ativo=True).all():
+            f = db.session.get(Funcionario, ef.funcionario_id)
+            if f:
+                out["funcionarios"].append(
+                    {
+                        "id": f.id,
+                        "nome": f.nome or "",
+                        "matricula": f.matricula or "",
+                        "re": f.re or "",
+                        "status": f.status or "",
+                        "data_inicio": ef.data_inicio,
+                        "data_fim": ef.data_fim,
+                    }
+                )
+    return out
+
+
+@app.route("/api/regimes", methods=["GET"])
+@lr
+def api_regimes_listar():
+    """Lista unificada de regimes (jornadas fixas + escalas de turnos)."""
+    apenas_ativos = request.args.get("ativos", "1").strip() == "1"
+    qj = JornadaTrabalho.query
+    qe = Escala.query
+    if apenas_ativos:
+        qj = qj.filter_by(ativo=True)
+        qe = qe.filter_by(ativo=True)
+    out = []
+    for j in qj.order_by(JornadaTrabalho.nome.asc()).all():
+        out.append(_regime_from_jornada(j))
+    for e in qe.order_by(Escala.nome.asc()).all():
+        out.append(_regime_from_escala(e))
+    return jsonify(out)
+
+
+@app.route("/api/regimes/<tipo>/<int:id>", methods=["GET"])
+@lr
+def api_regime_detalhe(tipo, id):
+    if tipo == "fixa":
+        j = db.get_or_404(JornadaTrabalho, id)
+        return jsonify(_regime_from_jornada(j, com_funcionarios=True))
+    if tipo == "escala":
+        e = db.get_or_404(Escala, id)
+        return jsonify(_regime_from_escala(e, com_funcionarios=True))
+    return jsonify({"erro": "Tipo inválido (use 'fixa' ou 'escala')"}), 400
+
+
+@app.route("/api/regimes", methods=["POST"])
+@lr
+def api_regimes_criar():
+    """Cria um regime. Body: {tipo: 'fixa'|'escala', ...campos do tipo}."""
+    d = request.json or {}
+    tipo = (d.get("tipo") or "").strip().lower()
+    nome = (d.get("nome") or "").strip()
+    if tipo not in ("fixa", "escala"):
+        return jsonify({"erro": "tipo deve ser 'fixa' ou 'escala'"}), 400
+    if not nome:
+        return jsonify({"erro": "Nome é obrigatório"}), 400
+
+    if tipo == "fixa":
+        grade_norm = _jornada_normalizar_grade(d.get("grade_semanal") or {}, None)
+        dias_ativos = [
+            int(k)
+            for k, v in grade_norm.items()
+            if bool((v or {}).get("ativo", False))
+        ]
+        primeira_cfg = grade_norm.get(
+            str(dias_ativos[0] if dias_ativos else 1), grade_norm.get("1", {})
+        )
+        ent_prim = (primeira_cfg or {}).get("entrada", "08:00")
+        sai_prim = (primeira_cfg or {}).get("saida", "17:48")
+        intervalo_prim = max(
+            0, min(240, int((primeira_cfg or {}).get("intervalo_min", 60) or 0))
+        )
+        int_ini, int_fim = "12:00", "13:00"
+        try:
+            he = list(map(int, str(ent_prim).split(":")))
+            ini = he[0] * 60 + he[1] + max(0, min(240, int(intervalo_prim // 2)))
+            fim = min(24 * 60, ini + intervalo_prim)
+            int_ini = f"{(ini // 60) % 24:02d}:{ini % 60:02d}"
+            int_fim = f"{(fim // 60) % 24:02d}:{fim % 60:02d}"
+        except Exception:
+            pass
+        j = JornadaTrabalho(
+            nome=nome,
+            descricao=(d.get("descricao") or "").strip()[:255],
+            dias_semana=json.dumps({"v": 1, "dias": grade_norm}, ensure_ascii=False),
+            hora_entrada=str(ent_prim or "08:00").strip()[:5],
+            hora_saida=str(sai_prim or "17:48").strip()[:5],
+            hora_intervalo_inicio=int_ini,
+            hora_intervalo_fim=int_fim,
+            tolerancia_min=max(0, min(60, int(d.get("tolerancia_min") or 10))),
+            ativo=bool(d.get("ativo", True)),
+        )
+        db.session.add(j)
+        db.session.commit()
+        audit_event(
+            "regime_criar",
+            "usuario",
+            session.get("uid"),
+            "jornada_trabalho",
+            j.id,
+            True,
+            {"tipo": "fixa", "nome": nome},
+        )
+        return jsonify(_regime_from_jornada(j)), 201
+
+    # tipo == 'escala'
+    try:
+        payload = EscalaCreatePayload.model_validate(d)
+    except _PydanticValidationError as exc:
+        return _pydantic_error_response(exc)
+    e = Escala(
+        nome=payload.nome,
+        tipo=payload.tipo,
+        ciclo_json=payload.ciclo_json or "{}",
+        descricao=payload.descricao or "",
+        periodo_noturno_ini=payload.periodo_noturno_ini or "22:00",
+        periodo_noturno_fim=payload.periodo_noturno_fim or "05:00",
+        ativo=True,
+    )
+    db.session.add(e)
+    db.session.commit()
+    audit_event(
+        "regime_criar",
+        "usuario",
+        session.get("uid"),
+        "escala",
+        e.id,
+        True,
+        {"tipo": "escala", "nome": payload.nome, "escala_tipo": payload.tipo},
+    )
+    return jsonify(_regime_from_escala(e)), 201
+
+
+@app.route("/api/regimes/<tipo>/<int:id>", methods=["PUT"])
+@lr
+def api_regime_editar(tipo, id):
+    d = request.json or {}
+    if tipo == "fixa":
+        j = db.get_or_404(JornadaTrabalho, id)
+        if "nome" in d:
+            n = (d["nome"] or "").strip()
+            if not n:
+                return jsonify({"erro": "Nome não pode ser vazio"}), 400
+            j.nome = n
+        if "descricao" in d:
+            j.descricao = (d["descricao"] or "").strip()[:255]
+        if "grade_semanal" in d and isinstance(d.get("grade_semanal"), dict):
+            grade_norm = _jornada_normalizar_grade(d.get("grade_semanal") or {}, j)
+            j.dias_semana = json.dumps(
+                {"v": 1, "dias": grade_norm}, ensure_ascii=False
+            )
+            dias_ativos = [
+                int(k)
+                for k, v in grade_norm.items()
+                if bool((v or {}).get("ativo", False))
+            ]
+            primeira_cfg = grade_norm.get(
+                str(dias_ativos[0] if dias_ativos else 1), grade_norm.get("1", {})
+            )
+            j.hora_entrada = str((primeira_cfg or {}).get("entrada", "08:00")).strip()[
+                :5
+            ]
+            j.hora_saida = str((primeira_cfg or {}).get("saida", "17:48")).strip()[:5]
+            intervalo_prim = max(
+                0, min(240, int((primeira_cfg or {}).get("intervalo_min", 60) or 0))
+            )
+            try:
+                he = list(map(int, j.hora_entrada.split(":")))
+                ini = he[0] * 60 + he[1] + max(0, min(240, int(intervalo_prim // 2)))
+                fim = min(24 * 60, ini + intervalo_prim)
+                j.hora_intervalo_inicio = f"{(ini // 60) % 24:02d}:{ini % 60:02d}"
+                j.hora_intervalo_fim = f"{(fim // 60) % 24:02d}:{fim % 60:02d}"
+            except Exception:
+                pass
+        if "tolerancia_min" in d:
+            try:
+                j.tolerancia_min = max(0, min(60, int(d["tolerancia_min"])))
+            except (ValueError, TypeError):
+                pass
+        if "ativo" in d:
+            j.ativo = bool(d["ativo"])
+        db.session.commit()
+        audit_event(
+            "regime_editar",
+            "usuario",
+            session.get("uid"),
+            "jornada_trabalho",
+            id,
+            True,
+            {"tipo": "fixa"},
+        )
+        return jsonify(_regime_from_jornada(j))
+
+    if tipo == "escala":
+        e = db.get_or_404(Escala, id)
+        try:
+            payload = EscalaUpdatePayload.model_validate(d)
+        except _PydanticValidationError as exc:
+            return _pydantic_error_response(exc)
+        if payload.nome is not None:
+            e.nome = payload.nome or e.nome
+        if payload.tipo is not None:
+            e.tipo = payload.tipo
+        if payload.ciclo_json is not None:
+            e.ciclo_json = payload.ciclo_json or "{}"
+        if payload.descricao is not None:
+            e.descricao = payload.descricao
+        if payload.periodo_noturno_ini is not None:
+            e.periodo_noturno_ini = payload.periodo_noturno_ini
+        if payload.periodo_noturno_fim is not None:
+            e.periodo_noturno_fim = payload.periodo_noturno_fim
+        if payload.ativo is not None:
+            e.ativo = payload.ativo
+        db.session.commit()
+        audit_event(
+            "regime_editar",
+            "usuario",
+            session.get("uid"),
+            "escala",
+            id,
+            True,
+            {"tipo": "escala"},
+        )
+        return jsonify(_regime_from_escala(e))
+
+    return jsonify({"erro": "Tipo inválido (use 'fixa' ou 'escala')"}), 400
+
+
+@app.route("/api/regimes/<tipo>/<int:id>", methods=["DELETE"])
+@lr
+def api_regime_excluir(tipo, id):
+    if tipo == "fixa":
+        j = db.get_or_404(JornadaTrabalho, id)
+        count = Funcionario.query.filter_by(jornada_id=id).count()
+        if count > 0:
+            return jsonify(
+                {
+                    "erro": f"Regime vinculado a {count} funcionário(s). Desvincule antes de excluir."
+                }
+            ), 400
+        db.session.delete(j)
+        db.session.commit()
+        audit_event(
+            "regime_excluir",
+            "usuario",
+            session.get("uid"),
+            "jornada_trabalho",
+            id,
+            True,
+            {"tipo": "fixa", "nome": j.nome},
+        )
+        return jsonify({"ok": True})
+    if tipo == "escala":
+        e = db.get_or_404(Escala, id)
+        e.ativo = False
+        db.session.commit()
+        audit_event(
+            "regime_excluir",
+            "usuario",
+            session.get("uid"),
+            "escala",
+            id,
+            True,
+            {"tipo": "escala", "nome": e.nome},
+        )
+        return jsonify({"ok": True})
+    return jsonify({"erro": "Tipo inválido (use 'fixa' ou 'escala')"}), 400
+
+
+@app.route("/api/regimes/<tipo>/<int:id>/funcionarios", methods=["POST"])
+@lr
+def api_regime_vincular_funcionarios(tipo, id):
+    """Vincula funcionários a um regime, garantindo EXCLUSÃO MÚTUA total:
+    o funcionário sai automaticamente de qualquer outro regime ativo (fixa ou escala).
+    Body fixa: {funcionario_ids: [1,2,3]}
+    Body escala: {funcionarios: [{funcionario_id, data_inicio, data_fim?}]}
+    """
+    d = request.json or {}
+
+    if tipo == "fixa":
+        j = db.get_or_404(JornadaTrabalho, id)
+        ids = d.get("funcionario_ids") or []
+        if not isinstance(ids, list):
+            return jsonify({"erro": "funcionario_ids deve ser lista"}), 400
+        ids_ok = sorted({int(x) for x in ids if str(x).isdigit()})
+        if not ids_ok:
+            return jsonify({"erro": "Selecione ao menos 1 funcionário válido."}), 400
+        vinculados = []
+        escalas_desvinculadas = 0
+        for fid in ids_ok:
+            f = db.session.get(Funcionario, fid)
+            if not f:
+                continue
+            f.jornada_id = j.id
+            for ef_ativo in EscalaFuncionario.query.filter_by(
+                funcionario_id=fid, ativo=True
+            ).all():
+                ef_ativo.ativo = False
+                escalas_desvinculadas += 1
+            vinculados.append(fid)
+        db.session.commit()
+        audit_event(
+            "regime_vincular",
+            "usuario",
+            session.get("uid"),
+            "jornada_trabalho",
+            id,
+            True,
+            {"funcionarios": vinculados, "escalas_desvinculadas": escalas_desvinculadas},
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "vinculados": len(vinculados),
+                "escalas_desvinculadas": escalas_desvinculadas,
+            }
+        )
+
+    if tipo == "escala":
+        e = db.get_or_404(Escala, id)
+        pares = d.get("funcionarios") or []
+        if not isinstance(pares, list):
+            return jsonify({"erro": "funcionarios deve ser lista"}), 400
+        vinculados = []
+        jornadas_removidas = 0
+        for par in pares:
+            if not isinstance(par, dict):
+                continue
+            fid = par.get("funcionario_id")
+            data_ini = par.get("data_inicio")
+            data_fim = par.get("data_fim")
+            if not fid or not data_ini:
+                continue
+            f = db.session.get(Funcionario, fid)
+            if not f:
+                continue
+            # Desativa outras escalas ativas do funcionário (qualquer escala diferente desta)
+            for ef_outra in EscalaFuncionario.query.filter(
+                EscalaFuncionario.funcionario_id == fid,
+                EscalaFuncionario.escala_id != e.id,
+                EscalaFuncionario.ativo == True,
+            ).all():
+                ef_outra.ativo = False
+            # Exclusão mútua: remove jornada fixa
+            if f.jornada_id:
+                f.jornada_id = None
+                jornadas_removidas += 1
+            ef = EscalaFuncionario(
+                escala_id=e.id,
+                funcionario_id=fid,
+                data_inicio=data_ini,
+                data_fim=data_fim,
+                ativo=True,
+            )
+            db.session.add(ef)
+            vinculados.append(fid)
+        db.session.commit()
+        audit_event(
+            "regime_vincular",
+            "usuario",
+            session.get("uid"),
+            "escala",
+            id,
+            True,
+            {"funcionarios": vinculados, "jornadas_removidas": jornadas_removidas},
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "vinculados": len(vinculados),
+                "jornadas_removidas": jornadas_removidas,
+            }
+        )
+
+    return jsonify({"erro": "Tipo inválido (use 'fixa' ou 'escala')"}), 400
+
+
+@app.route(
+    "/api/regimes/<tipo>/<int:id>/funcionarios/<int:fid>", methods=["DELETE"]
+)
+@lr
+def api_regime_desvincular_funcionario(tipo, id, fid):
+    if tipo == "fixa":
+        f = db.get_or_404(Funcionario, fid)
+        if f.jornada_id != id:
+            return jsonify({"erro": "Funcionário não está nesta jornada"}), 400
+        f.jornada_id = None
+        db.session.commit()
+        return jsonify({"ok": True})
+    if tipo == "escala":
+        ef = EscalaFuncionario.query.filter_by(
+            escala_id=id, funcionario_id=fid
+        ).first_or_404()
+        ef.ativo = False
+        db.session.commit()
+        return jsonify({"ok": True})
+    return jsonify({"erro": "Tipo inválido (use 'fixa' ou 'escala')"}), 400
+
+
+@app.route("/api/regimes/funcionario/<int:fid>", methods=["GET"])
+@lr
+def api_regime_do_funcionario(fid):
+    """Retorna o regime ativo do funcionário (fixa ou escala) ou null."""
+    f = db.get_or_404(Funcionario, fid)
+    # Prioridade: escala ativa > jornada fixa (mesma precedência do cálculo de ponto)
+    ef = (
+        EscalaFuncionario.query.filter_by(funcionario_id=fid, ativo=True)
+        .order_by(EscalaFuncionario.data_inicio.desc())
+        .first()
+    )
+    if ef:
+        e = db.session.get(Escala, ef.escala_id)
+        if e:
+            out = _regime_from_escala(e)
+            out["vinculo"] = {"data_inicio": ef.data_inicio, "data_fim": ef.data_fim}
+            return jsonify(out)
+    if f.jornada_id:
+        j = db.session.get(JornadaTrabalho, f.jornada_id)
+        if j:
+            return jsonify(_regime_from_jornada(j))
+    return jsonify(None)
 
 
 # ============================================================

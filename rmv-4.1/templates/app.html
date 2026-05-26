@@ -1683,8 +1683,9 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-funcionarios" class="subaba-bloco on" onclick="rhSetSubAba('funcionarios',this)">Funcionários</button>
         <button type="button" id="rh-subtab-ferias-gestao" class="subaba-bloco" onclick="rhSetSubAba('ferias-gestao',this)">Gestão de Férias</button>
         <button type="button" id="rh-subtab-exportar" class="subaba-bloco" onclick="rhSetSubAba('exportar',this)">Exportar colaboradores ativos</button>
-        <button type="button" id="rh-subtab-jornada" class="subaba-bloco" onclick="rhSetSubAba('jornada',this)">Jornadas e Geofence</button>
-        <button type="button" id="rh-subtab-escalas" class="subaba-bloco" onclick="rhSetSubAba('escalas',this)">Escalas de Turnos</button>
+        <button type="button" id="rh-subtab-jornada" class="subaba-bloco" onclick="rhSetSubAba('jornada',this)">Regime: Jornada Fixa</button>
+        <button type="button" id="rh-subtab-escalas" class="subaba-bloco" onclick="rhSetSubAba('escalas',this)">Regime: Escala de Turnos</button>
+        <button type="button" id="rh-subtab-postos-geofence" class="subaba-bloco" onclick="rhSetSubAba('postos-geofence',this)">Postos e Geofence</button>
         <button type="button" id="rh-subtab-ponto" class="subaba-bloco" onclick="rhSetSubAba('ponto',this)">Gestão de Ponto por Funcionário</button>
         <button type="button" id="rh-subtab-painel-dia" class="subaba-bloco" onclick="rhSetSubAba('painel-dia',this)">Painel do dia</button>
         <button type="button" id="rh-subtab-envio" class="subaba-bloco" onclick="rhSetSubAba('envio',this)">Envio de arquivo</button>
@@ -1802,7 +1803,11 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
 
       <div class="card rh-pane" id="rh-pane-jornada" data-rh-pane="jornada">
-        <div class="card-header"><span class="card-title">Jornadas de Trabalho e Geofence de Posto</span></div>
+        <div class="card-header"><span class="card-title">Regime: Jornada Fixa (grade semanal seg-dom)</span></div>
+        <div class="hint" style="margin:4px 0 8px;color:var(--text-muted);font-size:12px">
+          Use este regime para horários <b>fixos por dia da semana</b>. Para ciclos rotativos (6x2, 12x36, etc.) use a aba <b>Regime: Escala de Turnos</b>.
+          <br>Um funcionário pode ter <b>apenas um regime ativo</b> — ao vincular aqui, qualquer escala de turno ativa dele é desativada automaticamente.
+        </div>
         <div class="g2" style="margin-top:8px">
           <div class="f" style="border:1px solid var(--borda);border-radius:10px;padding:10px;background:var(--cinza-cl)">
             <input id="rh-jor-id" type="hidden">
@@ -1871,40 +1876,17 @@ document.addEventListener('DOMContentLoaded',()=>{
               <button class="btn b-ghv b-sm" onclick="rhJornadaVincularSelecionados()">Vincular selecionados</button>
               <button class="btn b-gh b-sm" onclick="rhJornadaDesvincularSelecionados()">Desvincular selecionados</button>
             </div>
-
-            <hr style="margin:12px 0;border:none;border-top:1px solid var(--borda)">
-
-            <label>Geofence do posto (cliente)</label>
-            <div class="g3" style="margin-top:6px">
-              <div class="f s2">
-                <label>Posto / Cliente</label>
-                <select id="rh-geo-cliente" onchange="rhGeoCarregarCliente()"></select>
-              </div>
-              <div class="f"><label>Raio (metros)</label><input id="rh-geo-raio" type="number" min="10" max="2000" value="150"></div>
-            </div>
-            <div class="f" style="margin-top:6px">
-              <label>Endereço</label>
-              <div style="display:flex;gap:6px">
-                <input id="rh-geo-endereco" placeholder="Ex.: Rua das Flores, 123, São Paulo" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();rhGeoBuscarEndereco();}">  
-                <button class="btn b-gh b-sm" type="button" onclick="rhGeoBuscarEndereco()" style="white-space:nowrap">🔍 Buscar</button>
-              </div>
-              <div id="rh-geo-sugestoes" style="display:none;border:1px solid var(--borda);border-radius:6px;background:var(--bg,#fff);max-height:160px;overflow-y:auto;margin-top:2px;z-index:10;position:relative"></div>
-            </div>
-            <div class="g2" style="margin-top:6px">
-              <div class="f"><label>Latitude</label><input id="rh-geo-lat" placeholder="-23.123456" readonly></div>
-              <div class="f"><label>Longitude</label><input id="rh-geo-lon" placeholder="-46.123456" readonly></div>
-            </div>
-            <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
-              <button class="btn b-gh b-sm" onclick="rhGeoUsarLocalAtual()">📍 Usar minha localização</button>
-              <button class="btn b-az b-sm" onclick="rhGeoSalvarCliente()">Salvar geofence</button>
-            </div>
           </div>
         </div>
         <div id="rh-jornada-st" class="st" style="margin-top:8px"></div>
       </div>
 
       <div class="card rh-pane" id="rh-pane-escalas" data-rh-pane="escalas">
-        <div class="card-header"><span class="card-title">Escalas de Turnos (6x1, 6x2, 4x2, 12x36, Folguista)</span></div>
+        <div class="card-header"><span class="card-title">Regime: Escala de Turnos (ciclo rotativo — 6x1, 6x2, 4x2, 12x36, Folguista)</span></div>
+        <div class="hint" style="margin:4px 0 8px;color:var(--text-muted);font-size:12px">
+          Use este regime para <b>ciclos rotativos</b> de trabalho/folga. Para horários fixos seg-dom use a aba <b>Regime: Jornada Fixa</b>.
+          <br>Um funcionário pode ter <b>apenas um regime ativo</b> — ao vincular aqui, qualquer jornada fixa atual dele é removida automaticamente.
+        </div>
         <div class="g2" style="margin-top:8px">
           <div class="f" style="border:1px solid var(--borda);border-radius:10px;padding:10px;background:var(--cinza-cl)">
             <input id="rh-esc-id" type="hidden">
@@ -2002,6 +1984,41 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
         </div>
         <div id="rh-escala-st" class="st" style="margin-top:8px"></div>
+      </div>
+
+      <div class="card rh-pane" id="rh-pane-postos-geofence" data-rh-pane="postos-geofence" style="display:none">
+        <div class="card-header"><span class="card-title">Postos e Geofence (validação de localização do ponto)</span></div>
+        <div class="hint" style="margin:4px 0 8px;color:var(--text-muted);font-size:12px">
+          Configure o <b>raio de geofence</b> de cada posto/cliente. Quando o funcionário bate ponto pelo app, o sistema mede a distância entre a posição GPS e o posto e classifica como <b>no posto</b> ou <b>fora do posto</b>.
+          <br>É independente do <b>Regime</b> (jornada fixa ou escala) — cuida apenas da <b>localização</b>.
+        </div>
+        <div class="f" style="border:1px solid var(--borda);border-radius:10px;padding:10px;background:var(--cinza-cl)">
+          <label>Geofence do posto (cliente)</label>
+          <div class="g3" style="margin-top:6px">
+            <div class="f s2">
+              <label>Posto / Cliente</label>
+              <select id="rh-geo-cliente" onchange="rhGeoCarregarCliente()"></select>
+            </div>
+            <div class="f"><label>Raio (metros)</label><input id="rh-geo-raio" type="number" min="10" max="2000" value="150"></div>
+          </div>
+          <div class="f" style="margin-top:6px">
+            <label>Endereço</label>
+            <div style="display:flex;gap:6px">
+              <input id="rh-geo-endereco" placeholder="Ex.: Rua das Flores, 123, São Paulo" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();rhGeoBuscarEndereco();}">
+              <button class="btn b-gh b-sm" type="button" onclick="rhGeoBuscarEndereco()" style="white-space:nowrap">🔍 Buscar</button>
+            </div>
+            <div id="rh-geo-sugestoes" style="display:none;border:1px solid var(--borda);border-radius:6px;background:var(--bg,#fff);max-height:160px;overflow-y:auto;margin-top:2px;z-index:10;position:relative"></div>
+          </div>
+          <div class="g2" style="margin-top:6px">
+            <div class="f"><label>Latitude</label><input id="rh-geo-lat" placeholder="-23.123456" readonly></div>
+            <div class="f"><label>Longitude</label><input id="rh-geo-lon" placeholder="-46.123456" readonly></div>
+          </div>
+          <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
+            <button class="btn b-gh b-sm" onclick="rhGeoUsarLocalAtual()">📍 Usar minha localização</button>
+            <button class="btn b-az b-sm" onclick="rhGeoSalvarCliente()">Salvar geofence</button>
+          </div>
+        </div>
+        <div id="rh-postos-geofence-st" class="st" style="margin-top:8px"></div>
       </div>
 
       <div class="rh-pane" id="rh-pane-ponto" data-rh-pane="ponto">
@@ -5497,7 +5514,7 @@ function rhSalariosIniciarPagina(){
 }
 
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','ponto','painel-dia','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo'];
+  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','postos-geofence','ponto','painel-dia','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
     p.style.display=(p.dataset.rhPane===rhSubAba)?'block':'none';
@@ -5511,6 +5528,14 @@ function rhSetSubAba(tab,btn){
   }
   if(rhSubAba==='escalas'){
     rhEscalaInit();
+  }
+  if(rhSubAba==='postos-geofence'){
+    (async()=>{
+      try{
+        if(!Array.isArray(todos) || !todos.length) todos=await api('/api/clientes');
+        rhGeoPopularClientes();
+      }catch(_e){ showSt('rh-postos-geofence-st','Falha ao carregar postos.',true); }
+    })();
   }
   if(rhSubAba==='ponto'){
     carregarCorrecoesPonto();
@@ -7985,7 +8010,7 @@ function rhGeoCarregarCliente(){
 
 async function rhGeoBuscarEndereco(){
   const q=(document.getElementById('rh-geo-endereco')?.value||'').trim();
-  if(!q){showSt('rh-jornada-st','Digite um endereço para buscar.',true);return;}
+  if(!q){showSt('rh-postos-geofence-st','Digite um endereço para buscar.',true);return;}
   const sug=document.getElementById('rh-geo-sugestoes');
   sug.innerHTML='<div style="padding:8px;color:var(--text-muted)">Buscando...</div>';
   sug.style.display='block';
@@ -8009,21 +8034,21 @@ function rhGeoSelecionarSugestao(lat,lon,label){
   document.getElementById('rh-geo-lon').value=parseFloat(lon).toFixed(6);
   document.getElementById('rh-geo-endereco').value=label;
   document.getElementById('rh-geo-sugestoes').style.display='none';
-  showSt('rh-jornada-st','Endereço localizado. Confirme e salve o geofence.',false);
+  showSt('rh-postos-geofence-st','Endereço localizado. Confirme e salve o geofence.',false);
 }
 
 function rhGeoUsarLocalAtual(){
   if(!navigator.geolocation){
-    showSt('rh-jornada-st','Navegador não suporta geolocalização.',true);
+    showSt('rh-postos-geofence-st','Navegador não suporta geolocalização.',true);
     return;
   }
   navigator.geolocation.getCurrentPosition(
     pos=>{
       document.getElementById('rh-geo-lat').value=String(pos.coords.latitude.toFixed(6));
       document.getElementById('rh-geo-lon').value=String(pos.coords.longitude.toFixed(6));
-      showSt('rh-jornada-st','Localização atual preenchida.',false);
+      showSt('rh-postos-geofence-st','Localização atual preenchida.',false);
     },
-    _=>showSt('rh-jornada-st','Não foi possível obter sua localização atual.',true),
+    _=>showSt('rh-postos-geofence-st','Não foi possível obter sua localização atual.',true),
     {enableHighAccuracy:true,timeout:12000,maximumAge:0}
   );
 }
@@ -8031,7 +8056,7 @@ function rhGeoUsarLocalAtual(){
 async function rhGeoSalvarCliente(){
   const cid=(document.getElementById('rh-geo-cliente')?.value||'').trim();
   if(!cid){
-    showSt('rh-jornada-st','Selecione um posto/cliente.',true);
+    showSt('rh-postos-geofence-st','Selecione um posto/cliente.',true);
     return;
   }
   const latRaw=(document.getElementById('rh-geo-lat')?.value||'').trim().replace(',','.');
@@ -8039,23 +8064,23 @@ async function rhGeoSalvarCliente(){
   const raioRaw=(document.getElementById('rh-geo-raio')?.value||'150').trim().replace(',','.');
   const lat=parseFloat(latRaw), lon=parseFloat(lonRaw), raio=parseFloat(raioRaw);
   if(!Number.isFinite(lat) || !Number.isFinite(lon) || lat<-90 || lat>90 || lon<-180 || lon>180){
-    showSt('rh-jornada-st','Latitude/longitude inválidas.',true);
+    showSt('rh-postos-geofence-st','Latitude/longitude inválidas.',true);
     return;
   }
   if(!Number.isFinite(raio) || raio<10 || raio>2000){
-    showSt('rh-jornada-st','Raio inválido (use entre 10 e 2000 metros).',true);
+    showSt('rh-postos-geofence-st','Raio inválido (use entre 10 e 2000 metros).',true);
     return;
   }
   const r=await api('/api/clientes/'+cid,'PUT',{geo_lat:lat,geo_lon:lon,geofence_raio_m:raio});
   if(r?.erro){
-    showSt('rh-jornada-st',r.erro,true);
+    showSt('rh-postos-geofence-st',r.erro,true);
     return;
   }
   todos=await api('/api/clientes');
   rhGeoPopularClientes();
   document.getElementById('rh-geo-cliente').value=String(cid);
   rhGeoCarregarCliente();
-  showSt('rh-jornada-st','Geofence do posto salva com sucesso.',false);
+  showSt('rh-postos-geofence-st','Geofence do posto salva com sucesso.',false);
 }
 
 async function rhJornadaInit(force=false){
@@ -8065,11 +8090,10 @@ async function rhJornadaInit(force=false){
     if(!Array.isArray(todos) || !todos.length) todos=await api('/api/clientes');
     await rhJornadaCarregar();
     rhJornadaPopularFuncionariosAtivos();
-    rhGeoPopularClientes();
     rhJornadaLimparForm();
     rhJornadaInitDone=true;
   }catch(e){
-    showSt('rh-jornada-st','Falha ao carregar jornadas/geofence.',true);
+    showSt('rh-jornada-st','Falha ao carregar jornadas.',true);
   }
 }
 
