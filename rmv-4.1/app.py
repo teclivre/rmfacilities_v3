@@ -19276,15 +19276,25 @@ def api_escala_vincular_funcionarios(id):
         if f.jornada_id:
             f.jornada_id = None
 
-        # Criar vínculo
-        ef = EscalaFuncionario(
+        # Reaproveitar vínculo existente (ativo ou inativo) com mesma (fid, eid, data_inicio)
+        # para não violar UNIQUE constraint
+        existente = EscalaFuncionario.query.filter_by(
             escala_id=id,
             funcionario_id=fid,
             data_inicio=data_ini,
-            data_fim=data_fim,
-            ativo=True,
-        )
-        db.session.add(ef)
+        ).first()
+        if existente:
+            existente.ativo = True
+            existente.data_fim = data_fim
+        else:
+            ef = EscalaFuncionario(
+                escala_id=id,
+                funcionario_id=fid,
+                data_inicio=data_ini,
+                data_fim=data_fim,
+                ativo=True,
+            )
+            db.session.add(ef)
         vinculados.append(fid)
 
     db.session.commit()
@@ -19748,14 +19758,24 @@ def api_regime_vincular_funcionarios(tipo, id):
             if f.jornada_id:
                 f.jornada_id = None
                 jornadas_removidas += 1
-            ef = EscalaFuncionario(
+            # Reaproveitar vínculo existente (ativo ou inativo) para não violar UNIQUE
+            existente = EscalaFuncionario.query.filter_by(
                 escala_id=e.id,
                 funcionario_id=fid,
                 data_inicio=data_ini,
-                data_fim=data_fim,
-                ativo=True,
-            )
-            db.session.add(ef)
+            ).first()
+            if existente:
+                existente.ativo = True
+                existente.data_fim = data_fim
+            else:
+                ef = EscalaFuncionario(
+                    escala_id=e.id,
+                    funcionario_id=fid,
+                    data_inicio=data_ini,
+                    data_fim=data_fim,
+                    ativo=True,
+                )
+                db.session.add(ef)
             vinculados.append(fid)
         db.session.commit()
         audit_event(
