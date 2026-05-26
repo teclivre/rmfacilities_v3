@@ -16,3 +16,4 @@ firebase-admin==6.6.0
 sentry-sdk[flask]==2.19.2
 structlog==24.4.0
 pydantic>=2.0,<3
+qrcode[pil]==7.4.2

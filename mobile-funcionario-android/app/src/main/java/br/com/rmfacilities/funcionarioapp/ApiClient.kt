@@ -875,4 +875,30 @@ class ApiClient(private val session: SessionManager) {
             catch (_: Exception) { PontoDiaResponse(ok = false, erro = parseErro(raw, "Falha ao registrar ponto.")) }
         }
     }
+
+    fun marcarPontoQr(qrToken: String, tipo: String = "", observacao: String = "", lat: Double? = null, lon: Double? = null, precisao: Float? = null): PontoDiaResponse {
+        val payload = gson.toJson(buildMap {
+            put("qr_token", qrToken)
+            if (tipo.isNotBlank()) put("tipo", tipo)
+            if (observacao.isNotBlank()) put("observacao", observacao)
+            if (lat != null) put("lat", lat)
+            if (lon != null) put("lon", lon)
+            if (precisao != null) put("precisao", precisao)
+        })
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/ponto/marcar-qr"))
+            .post(payload.toRequestBody("application/json".toMediaType()))
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .addHeader("Content-Type", "application/json")
+            .build()
+        http.newCall(req).execute().use { resp ->
+            if (resp.code == 401) {
+                handleUnauthorized()
+                return PontoDiaResponse(ok = false, erro = "Sessão expirada.")
+            }
+            val raw = resp.body?.string().orEmpty()
+            return try { gson.fromJson(raw, PontoDiaResponse::class.java) }
+            catch (_: Exception) { PontoDiaResponse(ok = false, erro = parseErro(raw, "Falha ao registrar ponto por QR.")) }
+        }
+    }
 }

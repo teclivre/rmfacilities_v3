@@ -27,6 +27,8 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
@@ -72,6 +74,7 @@ class PontoActivity : BaseActivity() {
     private lateinit var containerMarcacoes: LinearLayout
     private lateinit var btnMarcarPonto: MaterialButton
     private lateinit var btnAtualizarPonto: MaterialButton
+    private lateinit var btnPontoQrCode: MaterialButton
     private lateinit var tvRelogio: TextView
     private lateinit var tvTrabalhando: TextView
     private var entradaTimestamp: Long? = null
@@ -110,6 +113,26 @@ class PontoActivity : BaseActivity() {
         }
     }
 
+    private val qrScanLauncher = registerForActivityResult(ScanContract()) { result ->
+        val token = result?.contents
+        if (token.isNullOrBlank()) {
+            btnPontoQrCode.isEnabled = true
+            return@registerForActivityResult
+        }
+        registrarPontoViaQr(token)
+    }
+
+    private val cameraPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            lancarScannerQr()
+        } else {
+            btnPontoQrCode.isEnabled = true
+            updateStatus("Permissão de câmera é obrigatória para ler o QR Code.", R.color.mobile_semantic_pending)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_ponto)
@@ -129,6 +152,7 @@ class PontoActivity : BaseActivity() {
         containerMarcacoes = findViewById(R.id.containerMarcacoes)
         btnMarcarPonto = findViewById(R.id.btnMarcarPonto)
         btnAtualizarPonto = findViewById(R.id.btnAtualizarPonto)
+        btnPontoQrCode = findViewById(R.id.btnPontoQrCode)
         tvRelogio = findViewById(R.id.tvRelogio)
         tvTrabalhando = findViewById(R.id.tvTrabalhando)
 
@@ -154,6 +178,17 @@ class PontoActivity : BaseActivity() {
         btnAtualizarPonto.setOnClickListener {
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             carregarDia()
+        }
+
+        btnPontoQrCode.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            btnPontoQrCode.isEnabled = false
+            val temCamera = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            if (temCamera) {
+                lancarScannerQr()
+            } else {
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            }
         }
 
         // Linha de atalhos: Histórico e Folha de Ponto lado a lado
@@ -342,6 +377,55 @@ class PontoActivity : BaseActivity() {
         if (count > 0) {
             badge.text = "⏳ $count ponto(s) offline aguardando sincronização"
             badge.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_pending))
+        }
+    }
+
+    private fun lancarScannerQr() {
+        val options = ScanOptions().apply {
+            setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+            setPrompt("Aproxime do QR Code do totem")
+            setBeepEnabled(true)
+            setOrientationLocked(false)
+            setBarcodeImageEnabled(false)
+        }
+        qrScanLauncher.launch(options)
+    }
+
+    private fun registrarPontoViaQr(token: String) {
+        updateStatus("QR lido. Registrando ponto...", R.color.mobile_semantic_info)
+        lifecycleScope.launch {
+            val resp = withContext(Dispatchers.IO) {
+                try { api.marcarPontoQr(qrToken = token) }
+                catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message) }
+            }
+            btnPontoQrCode.isEnabled = true
+            if (resp.ok) {
+                localPendentes.clear()
+                val marcacoesResp = resp.resumo?.marcacoes
+                if (!marcacoesResp.isNullOrEmpty()) salvarCacheMarcacoes(marcacoesResp)
+                renderResumo(resp.resumo)
+                btnPontoQrCode.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                val flashView = View(this@PontoActivity).apply {
+                    setBackgroundColor(ContextCompat.getColor(this@PontoActivity, R.color.ponto_flash_success))
+                    layoutParams = android.view.ViewGroup.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                }
+                val root = window.decorView.findViewById<android.view.ViewGroup>(android.R.id.content)
+                root.addView(flashView)
+                flashView.animate().alpha(0f).setDuration(500).withEndAction { root.removeView(flashView) }.start()
+                updateStatus("Ponto registrado via QR Code do totem.", R.color.mobile_semantic_success)
+            } else {
+                @Suppress("DEPRECATION")
+                val hapticError = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+                    HapticFeedbackConstants.REJECT
+                else
+                    HapticFeedbackConstants.LONG_PRESS
+                btnPontoQrCode.performHapticFeedback(hapticError)
+                val msg = (resp.erro ?: "Falha ao registrar ponto via QR.").take(140)
+                updateStatus(msg, R.color.mobile_semantic_pending)
+            }
         }
     }
 

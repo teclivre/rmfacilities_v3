@@ -3540,6 +3540,77 @@ def app_parse_token(token):
         return None
 
 
+# ---- Ponto QR Code (Totem) -----------------------------------------------
+# Token HMAC rotativo de curta duracao, exibido em pagina /ponto/totem.
+# Funcionario escaneia no app -> backend valida assinatura + janela de tempo
+# e registra ponto sem exigir GPS.
+_PONTO_QR_TTL = 10  # segundos de validade de cada token
+_PONTO_QR_NONCE_CACHE = {}  # nonce -> exp_ts (anti-replay)
+
+
+def _ponto_qr_secret():
+    # Deriva chave dedicada para nao reutilizar a mesma do access token.
+    return hmac.new(
+        app_token_secret(), b"ponto-qr-totem-v1", hashlib.sha256
+    ).digest()
+
+
+def ponto_qr_issue_token(totem_id=None, ttl=_PONTO_QR_TTL):
+    now = int(time.time())
+    payload = {
+        "typ": "pqr",
+        "iat": now,
+        "exp": now + int(ttl),
+        "nonce": secrets.token_hex(8),
+        "tid": totem_id,
+    }
+    ptxt = json.dumps(payload, separators=(",", ":")).encode()
+    p64 = b64u_enc(ptxt)
+    sig = hmac.new(_ponto_qr_secret(), p64.encode(), hashlib.sha256).digest()
+    return f"{p64}.{b64u_enc(sig)}", payload
+
+
+def ponto_qr_parse_token(token):
+    try:
+        if not token or "." not in token:
+            return None
+        p64, s64 = token.split(".", 1)
+        expected = b64u_enc(
+            hmac.new(_ponto_qr_secret(), p64.encode(), hashlib.sha256).digest()
+        )
+        if not hmac.compare_digest(expected, s64):
+            return None
+        payload = json.loads(b64u_dec(p64).decode())
+        if payload.get("typ") != "pqr":
+            return None
+        now = int(time.time())
+        # tolera ate 5s de relogio dessincronizado, ja que o token vive ~10s
+        if int(payload.get("exp", 0)) < now - 5:
+            return None
+        if int(payload.get("iat", 0)) > now + 5:
+            return None
+        return payload
+    except Exception:
+        return None
+
+
+def _ponto_qr_nonce_mark(nonce, exp_ts):
+    """Marca o nonce como usado. Retorna False se ja havia sido consumido."""
+    try:
+        now = int(time.time())
+        # GC ocasional
+        if len(_PONTO_QR_NONCE_CACHE) > 2048:
+            for k, v in list(_PONTO_QR_NONCE_CACHE.items()):
+                if v < now:
+                    _PONTO_QR_NONCE_CACHE.pop(k, None)
+        if nonce in _PONTO_QR_NONCE_CACHE:
+            return False
+        _PONTO_QR_NONCE_CACHE[nonce] = int(exp_ts) + 30
+        return True
+    except Exception:
+        return True
+
+
 def app_func_required(f):
     @wraps(f)
     def w(*a, **k):
@@ -18097,6 +18168,230 @@ def api_app_ponto_marcar_me():
                 )
         except Exception:
             pass
+    return jsonify(
+        {
+            "ok": True,
+            "marcacao": {
+                "id": m.id,
+                "tipo": m.tipo,
+                "tipo_label": _app_ponto_label(m.tipo),
+                "hora_fmt": m.data_hora.strftime("%H:%M") if m.data_hora else "",
+                "localizacao": localizacao,
+            },
+            "resumo": _app_ponto_resumo_dia(f, data_ref),
+        }
+    )
+
+
+# ---- Ponto via QR Code (Totem) -------------------------------------------
+
+
+def _ponto_qr_svg(token):
+    """Gera SVG do QR code contendo o token. Retorna string SVG."""
+    try:
+        import qrcode as _qrcode
+        from qrcode.image.svg import SvgPathImage as _SvgPath
+
+        qr = _qrcode.QRCode(
+            version=None,
+            error_correction=_qrcode.constants.ERROR_CORRECT_M,
+            box_size=10,
+            border=2,
+        )
+        qr.add_data(token)
+        qr.make(fit=True)
+        img = qr.make_image(image_factory=_SvgPath)
+        import io as _io
+
+        buf = _io.BytesIO()
+        img.save(buf)
+        return buf.getvalue().decode("utf-8")
+    except Exception:
+        return ""
+
+
+@app.route("/ponto/totem")
+@lr
+def ponto_totem_page():
+    """Pagina kiosk com relogio gigante e QR Code rotativo (1s)."""
+    perfil = (session.get("perfil") or "").strip().lower()
+    if perfil not in ("admin", "rh", "dono"):
+        return _lr_unauth_response()
+    cliente_nome = ""
+    try:
+        cliente_nome = (session.get("empresa_nome") or "").strip()
+    except Exception:
+        pass
+    return render_template("ponto_totem.html", cliente_nome=cliente_nome)
+
+
+@app.route("/api/ponto/qrcode/token")
+@lr
+def api_ponto_qrcode_token():
+    """Emite token QR de curta duracao para o totem (renovado a cada 1s)."""
+    perfil = (session.get("perfil") or "").strip().lower()
+    if perfil not in ("admin", "rh", "dono"):
+        return jsonify({"erro": "Acesso negado"}), 403
+    token, payload = ponto_qr_issue_token()
+    svg = _ponto_qr_svg(token)
+    return jsonify(
+        {
+            "ok": True,
+            "token": token,
+            "exp": payload["exp"],
+            "iat": payload["iat"],
+            "ttl": _PONTO_QR_TTL,
+            "server_time": int(time.time()),
+            "svg": svg,
+        }
+    )
+
+
+@app.route("/api/app/funcionario/me/ponto/marcar-qr", methods=["POST"])
+@app_func_required
+def api_app_ponto_marcar_qr_me():
+    """Registra ponto a partir de QR Code lido do totem. Dispensa GPS."""
+    f = g.app_funcionario
+    if (f.status or "").strip().lower() != "ativo":
+        return jsonify(
+            {"erro": "Somente funcionários ativos podem registrar ponto."}
+        ), 400
+    dados = request.json or {}
+    qr_token = (dados.get("qr_token") or "").strip()
+    if not qr_token:
+        return jsonify({"erro": "QR Code ausente."}), 400
+    payload = ponto_qr_parse_token(qr_token)
+    if not payload:
+        return jsonify(
+            {"erro": "QR Code inválido ou expirado. Aproxime do totem e tente novamente."}
+        ), 400
+    nonce = payload.get("nonce") or ""
+    exp_ts = int(payload.get("exp", 0))
+    if not _ponto_qr_nonce_mark(nonce, exp_ts):
+        return jsonify(
+            {"erro": "Este QR Code já foi utilizado. Aguarde o próximo e tente novamente."}
+        ), 400
+
+    tipo = (dados.get("tipo") or "").strip().lower()
+    observacao = (dados.get("observacao") or "").strip()[:500]
+    data_hora = utcnow()
+    data_ref = data_hora.date()
+    marcacoes_dia = _app_ponto_marcacoes_dia(f.id, data_ref)
+    tipo = tipo or _app_ponto_tipo_esperado(marcacoes_dia)
+    if tipo not in _APP_PONTO_TIPOS:
+        return jsonify({"erro": "Tipo de marcação inválido."}), 400
+    esperado = _app_ponto_tipo_esperado(marcacoes_dia)
+    if tipo != esperado:
+        return jsonify(
+            {
+                "erro": f"Ordem de marcação inválida. Agora é esperado: {_app_ponto_label(esperado)}."
+            }
+        ), 400
+    if any(
+        abs((data_hora - m.data_hora).total_seconds()) < 60
+        for m in marcacoes_dia
+        if getattr(m, "data_hora", None)
+    ):
+        return jsonify(
+            {"erro": "Já existe marcação neste minuto para este funcionário."}
+        ), 400
+
+    ip = (
+        (request.headers.get("X-Forwarded-For", "") or request.remote_addr or "")
+        .split(",")[0]
+        .strip()[:60]
+    )
+    # GPS opcional no fluxo QR (a presenca fisica e comprovada pelo proprio QR).
+    lat = dados.get("lat")
+    lon = dados.get("lon")
+    precisao = dados.get("precisao")
+    try:
+        lat = float(lat) if lat is not None else None
+    except (ValueError, TypeError):
+        lat = None
+    try:
+        lon = float(lon) if lon is not None else None
+    except (ValueError, TypeError):
+        lon = None
+    try:
+        precisao = float(precisao) if precisao is not None else None
+    except (ValueError, TypeError):
+        precisao = None
+    if lat is not None and not (-90 <= lat <= 90):
+        lat = None
+    if lon is not None and not (-180 <= lon <= 180):
+        lon = None
+
+    localizacao = {
+        "status": "qr_totem",
+        "distancia_m": None,
+        "raio_m": None,
+        "posto_cliente_id": f.posto_cliente_id,
+    }
+    if f.posto_cliente_id and lat is not None and lon is not None:
+        cli = db.session.get(Cliente, f.posto_cliente_id)
+        if cli and cli.geo_lat is not None and cli.geo_lon is not None:
+            distancia = _geo_haversine_m(lat, lon, cli.geo_lat, cli.geo_lon)
+            raio = float(cli.geofence_raio_m or 150)
+            localizacao = {
+                "status": (
+                    "no_posto"
+                    if (distancia is not None and distancia <= raio)
+                    else "fora_posto"
+                ),
+                "distancia_m": (round(distancia, 1) if distancia is not None else None),
+                "raio_m": raio,
+                "posto_cliente_id": f.posto_cliente_id,
+            }
+
+    m = PontoMarcacao(
+        funcionario_id=f.id,
+        tipo=tipo,
+        data_hora=data_hora,
+        origem="app_qr",
+        observacao=observacao,
+        criado_por="funcionario-app-qr",
+        ip=ip,
+        latitude=lat,
+        longitude=lon,
+        precisao_gps=precisao,
+    )
+    db.session.add(m)
+    db.session.commit()
+    audit_event(
+        "ponto_marcacao_app_qr",
+        "funcionario",
+        f.id,
+        "funcionario",
+        f.id,
+        True,
+        {
+            "tipo": tipo,
+            "data_ref": data_ref.strftime("%Y-%m-%d"),
+            "origem": "app_qr",
+            "qr_nonce": nonce,
+            "qr_iat": payload.get("iat"),
+            "qr_exp": exp_ts,
+            "localizacao_status": localizacao.get("status"),
+        },
+    )
+    try:
+        import json as _json
+
+        _sse_broadcast(
+            "ponto",
+            _json.dumps(
+                {
+                    "funcionario_id": f.id,
+                    "nome": f.nome,
+                    "tipo": m.tipo,
+                    "hora": m.data_hora.strftime("%H:%M"),
+                    "via": "qr",
+                }
+            ),
+        )
+    except Exception:
+        pass
     return jsonify(
         {
             "ok": True,
