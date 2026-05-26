@@ -12920,10 +12920,10 @@ def _gerar_aviso_previo_pdf(
     total_dias = _calcular_aviso_previo_dias(func_adm, data_ref=dt_aviso)
     anos_servico = (dt_aviso - dt_adm).days // 365 if dt_adm else 0
     dias_adicionais = total_dias - 30
-    dt_fim = dt_aviso + timedelta(days=total_dias)
+    dt_fim = dt_aviso + timedelta(days=total_dias - 1)
     # Empregado trabalha SEMPRE no maximo 30 dias (base CLT). Os dias proporcionais
     # da Lei 12.506/2011 sao INDENIZADOS nas verbas rescisorias (jurisprudencia TST).
-    dt_fim_trabalho = dt_aviso + timedelta(days=30)
+    dt_fim_trabalho = dt_aviso + timedelta(days=29)
 
     data_adm_fmt = dt_adm.strftime("%d/%m/%Y") if dt_adm else str(func_adm)
     data_aviso_fmt = dt_aviso.strftime("%d/%m/%Y")
