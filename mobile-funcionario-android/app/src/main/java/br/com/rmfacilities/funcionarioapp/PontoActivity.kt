@@ -385,7 +385,7 @@ class PontoActivity : BaseActivity() {
             setDesiredBarcodeFormats(ScanOptions.QR_CODE)
             setPrompt("Aproxime do QR Code do totem")
             setBeepEnabled(true)
-            setOrientationLocked(false)
+            setOrientationLocked(true)
             setBarcodeImageEnabled(false)
         }
         qrScanLauncher.launch(options)
