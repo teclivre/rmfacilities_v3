@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Comprovante de Assinatura - RM Facilities</title>
+  <title>Comprovante de Assinatura - {{ empresa.nome if empresa else 'RM Facilities' }}</title>
   <link rel="stylesheet" href="/static/css/main.css">
 <style>
   *,*::before,*::after{box-sizing:border-box}
@@ -50,8 +50,12 @@
 <body class="public-page">
   <div class="public-topbar">
     <div class="public-topbar-brand">
-      <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
-      <h1>RM Facilities</h1>
+      {% if empresa and empresa.logo_url %}
+        <img src="{{ empresa.logo_url }}" alt="{{ empresa.nome }}" onerror="this.src='https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png'">
+      {% else %}
+        <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
+      {% endif %}
+      <h1>{{ empresa.nome if empresa else 'RM Facilities' }}</h1>
     </div>
   </div>
 
@@ -105,7 +109,7 @@
           </div>
 
           <div style="font-size:11px;color:#999;text-align:center;margin-top:auto;padding-top:12px">
-            Assinatura Eletrônica — RM Facilities<br>
+            Assinatura Eletrônica — {{ empresa.nome if empresa else 'RM Facilities' }}<br>
             Validade jurídica conforme Lei nº 14.063/2020
           </div>
         </aside>

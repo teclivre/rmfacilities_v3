@@ -96,8 +96,12 @@
 <body class="public-page">
   <div class="public-topbar">
     <div class="public-topbar-brand">
-      <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
-      <h1>RM Facilities</h1>
+      {% if empresas and empresas[0].logo_url %}
+        <img src="{{ empresas[0].logo_url }}" alt="{{ empresas[0].nome }}" onerror="this.src='https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png'">
+      {% else %}
+        <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
+      {% endif %}
+      <h1>{{ empresas[0].nome if empresas else 'RM Facilities' }}</h1>
     </div>
   </div>
 

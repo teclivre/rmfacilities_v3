@@ -19553,7 +19553,13 @@ def func_doc_assinar_publica(token):
             mensagem="Link de assinatura inválido.",
             arquivo=None,
             funcionario=None,
+            empresa=None,
         )
+    funcionario = db.session.get(Funcionario, a.funcionario_id)
+    empresa = db.session.get(Empresa, funcionario.empresa_id) if funcionario and funcionario.empresa_id else None
+    if not empresa:
+        empresa = Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem, Empresa.id).first()
+    
     if (a.ass_status or "") in ("assinado", "concluida"):
         comprovante_url = (
             f"/doc/validar/{a.ass_codigo}" if (a.ass_codigo or "").strip() else ""
@@ -19563,7 +19569,8 @@ def func_doc_assinar_publica(token):
             ok=False,
             mensagem="Este documento já foi assinado.",
             arquivo=a,
-            funcionario=db.session.get(Funcionario, a.funcionario_id),
+            funcionario=funcionario,
+            empresa=empresa,
             comprovante_url=comprovante_url,
         )
     if a.ass_expira_em and a.ass_expira_em < utcnow():
@@ -19574,7 +19581,8 @@ def func_doc_assinar_publica(token):
             ok=False,
             mensagem="Link expirado. Solicite um novo link ao RH.",
             arquivo=a,
-            funcionario=db.session.get(Funcionario, a.funcionario_id),
+            funcionario=funcionario,
+            empresa=empresa,
         )
     src = request.args.get("src", "")
     if _ass_track_mark_received(a, src):
@@ -19584,7 +19592,8 @@ def func_doc_assinar_publica(token):
         ok=True,
         mensagem="",
         arquivo=a,
-        funcionario=db.session.get(Funcionario, a.funcionario_id),
+        funcionario=funcionario,
+        empresa=empresa,
     )
 
 
@@ -19906,6 +19915,7 @@ def func_doc_validar_publica(codigo):
             mensagem="Código de validação inválido.",
             arquivo=None,
             funcionario=None,
+            empresa=None,
         )
     a = FuncionarioArquivo.query.filter_by(ass_codigo=cod).first()
     if not a:
@@ -19915,8 +19925,13 @@ def func_doc_validar_publica(codigo):
             mensagem="Assinatura não encontrada para o código informado.",
             arquivo=None,
             funcionario=None,
+            empresa=None,
         )
     f = db.session.get(Funcionario, a.funcionario_id)
+    empresa = db.session.get(Empresa, f.empresa_id) if f and f.empresa_id else None
+    if not empresa:
+        empresa = Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem, Empresa.id).first()
+    
     ok = (a.ass_status or "").strip().lower() in ("assinado", "concluida")
     msg = (
         "Assinatura válida."
@@ -19928,7 +19943,7 @@ def func_doc_validar_publica(codigo):
         )
     )
     return render_template(
-        "doc_validacao.html", ok=ok, mensagem=msg, arquivo=a, funcionario=f
+        "doc_validacao.html", ok=ok, mensagem=msg, arquivo=a, funcionario=f, empresa=empresa
     )
 
 
@@ -19993,6 +20008,8 @@ def _build_doc_assinatura_pdf(arquivo, funcionario, url_root):
     emp = None
     if funcionario and funcionario.empresa_id:
         emp = db.session.get(Empresa, funcionario.empresa_id)
+    
+    # Fallback para primeira empresa ativa
     if not emp:
         emp = (
             Empresa.query.filter_by(ativa=True)
@@ -20540,6 +20557,18 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
 
     # ── dados empresa / logo ──────────────────────────────────────────────────
     emp = db.session.get(Empresa, envelope.empresa_id) if envelope.empresa_id else None
+    
+    # Se envelope não tem empresa, buscar do primeiro signatário que seja funcionário
+    if not emp and signatarios:
+        for sig in signatarios:
+            if sig.funcionario_id:
+                func = db.session.get(Funcionario, sig.funcionario_id)
+                if func and func.empresa_id:
+                    emp = db.session.get(Empresa, func.empresa_id)
+                    if emp:
+                        break
+    
+    # Fallback para primeira empresa ativa
     if not emp:
         emp = (Empresa.query.filter_by(ativa=True)
                .order_by(Empresa.ordem, Empresa.id).first())
@@ -21888,7 +21917,6 @@ def envelope_assinar_visualizar_arquivo(token, arq_id):
     )
 
 
-# Página pública de assinatura do envelope
 @app.route("/envelope/assinar/<token>")
 def envelope_assinar_publica(token):
     sig = AssinaturaEnvelopeSignatario.query.filter_by(token=token).first_or_404()
@@ -21898,13 +21926,22 @@ def envelope_assinar_publica(token):
         .order_by(AssinaturaEnvelopeArquivo.ordem, AssinaturaEnvelopeArquivo.id)
         .all()
     )
-    empresa = (
-        db.session.get(Empresa, env.empresa_id)
-        if env.empresa_id
-        else Empresa.query.filter_by(ativa=True)
-        .order_by(Empresa.ordem, Empresa.id)
-        .first()
-    )
+    empresa = None
+    
+    # Tentar obter empresa do envelope
+    if env.empresa_id:
+        empresa = db.session.get(Empresa, env.empresa_id)
+    
+    # Se não tem empresa no envelope, buscar a empresa do signatário (se for funcionário)
+    if not empresa and sig.funcionario_id:
+        func = db.session.get(Funcionario, sig.funcionario_id)
+        if func and func.empresa_id:
+            empresa = db.session.get(Empresa, func.empresa_id)
+    
+    # Fallback para primeira empresa ativa
+    if not empresa:
+        empresa = Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem, Empresa.id).first()
+    
     empresas = [empresa] if empresa else []
     src = request.args.get("src", "")
     if _ass_track_mark_received(sig, src):
@@ -22193,13 +22230,26 @@ def envelope_validar_publica(codigo):
         .order_by(AssinaturaEnvelopeArquivo.ordem, AssinaturaEnvelopeArquivo.id)
         .all()
     )
-    empresa = (
-        db.session.get(Empresa, env.empresa_id)
-        if env.empresa_id
-        else Empresa.query.filter_by(ativa=True)
-        .order_by(Empresa.ordem, Empresa.id)
-        .first()
-    )
+    empresa = None
+    
+    # Tentar obter empresa do envelope
+    if env.empresa_id:
+        empresa = db.session.get(Empresa, env.empresa_id)
+    
+    # Se não tem empresa no envelope, buscar a empresa do primeiro signatário (se for funcionário)
+    if not empresa and signatarios:
+        for sig in signatarios:
+            if sig.funcionario_id:
+                func = db.session.get(Funcionario, sig.funcionario_id)
+                if func and func.empresa_id:
+                    empresa = db.session.get(Empresa, func.empresa_id)
+                    if empresa:
+                        break
+    
+    # Fallback para primeira empresa ativa
+    if not empresa:
+        empresa = Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem, Empresa.id).first()
+    
     empresas = [empresa] if empresa else []
     return render_template(
         "envelope_validar.html",
