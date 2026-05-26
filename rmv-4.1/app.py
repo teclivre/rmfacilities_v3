@@ -51,7 +51,7 @@ from ponto_module import register_ponto_routes
 from typing import Optional, Literal
 from pydantic import BaseModel, Field, field_validator, ValidationError as _PydanticValidationError
 
-_ESCALA_TIPOS = ("6x2", "6x1", "4x2", "12x36", "folguista", "noturna")
+_ESCALA_TIPOS = ("6x2", "6x1", "5x2", "4x2", "12x36", "folguista", "noturna")
 _TIME_RE = __import__("re").compile(r"^\d{2}:\d{2}$")
 
 
@@ -59,7 +59,7 @@ class EscalaCreatePayload(BaseModel):
     """Payload validado para criação de escala (POST /api/escalas)."""
 
     nome: str = Field(..., min_length=1, max_length=120, strip_whitespace=True)
-    tipo: Literal["6x2", "6x1", "4x2", "12x36", "folguista", "noturna"]
+    tipo: Literal["6x2", "6x1", "5x2", "4x2", "12x36", "folguista", "noturna"]
     descricao: Optional[str] = Field(default="", max_length=500)
     ciclo_json: Optional[str | dict] = Field(default="{}")
     periodo_noturno_ini: Optional[str] = Field(default="22:00", pattern=r"^\d{2}:\d{2}$")
@@ -77,7 +77,7 @@ class EscalaUpdatePayload(BaseModel):
     """Payload validado para edição de escala (PUT /api/escalas/<id>)."""
 
     nome: Optional[str] = Field(default=None, min_length=1, max_length=120, strip_whitespace=True)
-    tipo: Optional[Literal["6x2", "6x1", "4x2", "12x36", "folguista", "noturna"]] = None
+    tipo: Optional[Literal["6x2", "6x1", "5x2", "4x2", "12x36", "folguista", "noturna"]] = None
     descricao: Optional[str] = Field(default=None, max_length=500)
     ciclo_json: Optional[str | dict] = None
     periodo_noturno_ini: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")
@@ -738,7 +738,7 @@ def _jornada_extrair_grade(jornada_obj):
 class Escala(db.Model):
     """
     Modelo de Escala de Turnos:
-    - tipo: '6x2' (6 dias trabalho, 2 folga), '6x1' (seg-sab trabalho, dom folga), '4x2' (4 dias trabalho, 2 folga), '12x36' (12h turno, 36h folga), 'folguista' (customizado), 'noturna'
+    - tipo: '6x2' (6 dias trabalho, 2 folga), '6x1' (seg-sab trabalho, dom folga), '5x2' (seg-sex trabalho, sab-dom folga), '4x2' (4 dias trabalho, 2 folga), '12x36' (12h turno, 36h folga), 'folguista' (customizado), 'noturna'
     - ciclo_json: JSON com estrutura de dias/turnos e folgas
       Ex 6x2: {"dias": [{"tipo": "trabalho"}, ...6x..., {"tipo": "folga"}, {"tipo": "folga"}]}
       Ex 12x36: {"dias": [{"tipo": "trabalho", "horas": 12}, {"tipo": "folga"}, {"tipo": "folga"}]}
@@ -750,7 +750,7 @@ class Escala(db.Model):
     nome = db.Column(db.String(120), nullable=False)
     tipo = db.Column(
         db.String(30), nullable=False
-    )  # '6x2', '6x1', '4x2', '12x36', 'folguista', 'noturna'
+    )  # '6x2', '6x1', '5x2', '4x2', '12x36', 'folguista', 'noturna'
     ciclo_json = db.Column(db.Text, default="{}")  # JSON com dias/turnos/folgas
     descricao = db.Column(db.String(255))
     periodo_noturno_ini = db.Column(

@@ -1882,7 +1882,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
 
       <div class="card rh-pane" id="rh-pane-escalas" data-rh-pane="escalas">
-        <div class="card-header"><span class="card-title">Regime: Escala de Turnos (ciclo rotativo — 6x1, 6x2, 4x2, 12x36, Folguista)</span></div>
+        <div class="card-header"><span class="card-title">Regime: Escala de Turnos (ciclo rotativo — 6x1, 6x2, 5x2, 4x2, 12x36, Folguista)</span></div>
         <div class="hint" style="margin:4px 0 8px;color:var(--text-muted);font-size:12px">
           Use este regime para <b>ciclos rotativos</b> de trabalho/folga. Para horários fixos seg-dom use a aba <b>Regime: Jornada Fixa</b>.
           <br>Um funcionário pode ter <b>apenas um regime ativo</b> — ao vincular aqui, qualquer jornada fixa atual dele é removida automaticamente.
@@ -1898,6 +1898,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               <option value="">-- Selecione --</option>
               <option value="6x1">6x1 (seg-sáb trabalho, dom folga)</option>
               <option value="6x2">6x2 (6 dias trabalho, 2 folga)</option>
+              <option value="5x2">5x2 (seg-sex trabalho, sáb-dom folga)</option>
               <option value="4x2">4x2 (4 dias trabalho, 2 folga)</option>
               <option value="12x36">12x36 (12h trabalho, 36h folga)</option>
               <option value="folguista">Folguista (customizado)</option>
@@ -8213,6 +8214,18 @@ function rhEscalaAtualizarCicloTemplate(){
   if(tipo==='6x1'){
     document.getElementById('rh-esc-dias-trabalho').value='6';
     document.getElementById('rh-esc-dias-folga').value='1';
+  }
+  if(tipo==='5x2'){
+    document.getElementById('rh-esc-dias-trabalho').value='5';
+    document.getElementById('rh-esc-dias-folga').value='2';
+  }
+  if(tipo==='6x2'){
+    document.getElementById('rh-esc-dias-trabalho').value='6';
+    document.getElementById('rh-esc-dias-folga').value='2';
+  }
+  if(tipo==='4x2'){
+    document.getElementById('rh-esc-dias-trabalho').value='4';
+    document.getElementById('rh-esc-dias-folga').value='2';
   }
   const templateObj=tipo?rhEscalaMontarCiclo():{};
   cicloArea.value=JSON.stringify(templateObj,null,2);
