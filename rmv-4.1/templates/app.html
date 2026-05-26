@@ -9605,10 +9605,17 @@ function previaAvisoPrevio() {
   const totalDias = parseInt(calcDias) || 30;
   const diasAdic = parseInt(calcExtras) || 0;
   // Data fim
+  // Para término de contrato por prazo determinado: o último dia é a própria data do aviso
+  // (não há aviso prévio — o contrato simplesmente vence no dia acordado).
+  // Para os demais tipos: dataFim = dataAviso + (totalDias - 1), pois o dia do aviso conta como 1º dia.
   let dataFimFmt = '';
   if (dataAviso) {
     const dt = new Date(dataAviso + 'T12:00:00');
-    dt.setDate(dt.getDate() + totalDias);
+    if (tipo === 'termino_contrato') {
+      // último dia = data do aviso
+    } else {
+      dt.setDate(dt.getDate() + (totalDias - 1));
+    }
     dataFimFmt = dt.toLocaleDateString('pt-BR');
   }
   const dataAvisoFmt = dataAviso ? new Date(dataAviso + 'T12:00:00').toLocaleDateString('pt-BR') : hoje;
