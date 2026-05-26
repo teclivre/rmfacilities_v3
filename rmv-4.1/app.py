@@ -11753,6 +11753,12 @@ def _gerar_termo_uniforme_pdf(funcionario, itens, empresa=None, obs=""):
     emp_obj = empresa or (
         db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
     )
+    if not emp_obj:
+        emp_obj = (
+            Empresa.query.filter_by(ativa=True)
+            .order_by(Empresa.ordem, Empresa.id)
+            .first()
+        )
     emp_nome = (
         (
             getattr(emp_obj, "razao", None)
@@ -12105,6 +12111,12 @@ def _gerar_declaracao_acumulo_cargo_pdf(
     emp_obj = empresa or (
         db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
     )
+    if not emp_obj:
+        emp_obj = (
+            Empresa.query.filter_by(ativa=True)
+            .order_by(Empresa.ordem, Empresa.id)
+            .first()
+        )
     emp_nome = (
         (
             getattr(emp_obj, "razao", None)
@@ -12473,6 +12485,12 @@ def _gerar_advertencia_pdf(
     emp_obj = empresa or (
         db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
     )
+    if not emp_obj:
+        emp_obj = (
+            Empresa.query.filter_by(ativa=True)
+            .order_by(Empresa.ordem, Empresa.id)
+            .first()
+        )
     emp_nome = (
         (
             getattr(emp_obj, "razao", None)
@@ -12874,6 +12892,12 @@ def _gerar_aviso_previo_pdf(
     emp_obj = empresa or (
         db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
     )
+    if not emp_obj:
+        emp_obj = (
+            Empresa.query.filter_by(ativa=True)
+            .order_by(Empresa.ordem, Empresa.id)
+            .first()
+        )
     emp_nome = (
         (
             getattr(emp_obj, "razao", None)
@@ -12920,7 +12944,11 @@ def _gerar_aviso_previo_pdf(
     total_dias = _calcular_aviso_previo_dias(func_adm, data_ref=dt_aviso)
     anos_servico = (dt_aviso - dt_adm).days // 365 if dt_adm else 0
     dias_adicionais = total_dias - 30
-    dt_fim = dt_aviso + timedelta(days=total_dias - 1)
+    # Para término de contrato determinado: a data do aviso É a data do término
+    if tipo == "termino_contrato":
+        dt_fim = dt_aviso
+    else:
+        dt_fim = dt_aviso + timedelta(days=total_dias - 1)
     # Empregado trabalha SEMPRE no maximo 30 dias (base CLT). Os dias proporcionais
     # da Lei 12.506/2011 sao INDENIZADOS nas verbas rescisorias (jurisprudencia TST).
     dt_fim_trabalho = dt_aviso + timedelta(days=29)
