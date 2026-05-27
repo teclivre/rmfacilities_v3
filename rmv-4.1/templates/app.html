@@ -4035,8 +4035,14 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
             <div class="f">
               <label>Colaboradores avulsos permitidos (multi-seleção)</label>
-              <select id="kiosk-avulsos" multiple size="6" style="min-height:130px"></select>
-              <div class="hint" style="margin-top:4px">Use Ctrl/Cmd para selecionar vários colaboradores avulsos.</div>
+              <div style="display:flex;gap:6px;margin-bottom:6px">
+                <button class="btn b-gh b-sm" type="button" onclick="kioskSelAvulsos(true)">Marcar todos</button>
+                <button class="btn b-gh b-sm" type="button" onclick="kioskSelAvulsos(false)">Limpar</button>
+              </div>
+              <div id="kiosk-avulsos" style="min-height:130px;max-height:180px;overflow:auto;border:1px solid var(--borda);border-radius:10px;padding:8px;background:var(--cinza-cl)">
+                <div class="vazio">Carregando colaboradores...</div>
+              </div>
+              <div class="hint" style="margin-top:4px">Selecione um ou vários colaboradores avulsos.</div>
             </div>
           </div>
           <div class="hint" style="margin-top:8px">Autenticação do totem: apenas com os 4 primeiros dígitos do CPF.</div>
@@ -6927,6 +6933,18 @@ function _kioskSelectedValues(selId){
   return Array.from(sel.selectedOptions||[]).map(function(o){return (o.value||'').trim();}).filter(Boolean);
 }
 
+function _kioskSelectedAvulsos(){
+  return Array.from(document.querySelectorAll('#kiosk-avulsos .kiosk-avulso-chk:checked'))
+    .map(function(chk){return parseInt(chk.value,10);})
+    .filter(Number.isFinite);
+}
+
+function kioskSelAvulsos(mark){
+  document.querySelectorAll('#kiosk-avulsos .kiosk-avulso-chk').forEach(function(chk){
+    chk.checked=!!mark;
+  });
+}
+
 function kioskRenderColabsPosto(){
   const box=document.getElementById('kiosk-colabs-posto');
   if(!box) return;
@@ -6950,19 +6968,24 @@ function kioskRenderColabsPosto(){
 }
 
 function kioskRenderAvulsos(){
-  const sel=document.getElementById('kiosk-avulsos');
-  if(!sel) return;
-  const atualSel=new Set(_kioskSelectedValues('kiosk-avulsos'));
-  const opts=_kioskOperItens
+  const box=document.getElementById('kiosk-avulsos');
+  if(!box) return;
+  const atualSel=new Set(
+    Array.from(document.querySelectorAll('#kiosk-avulsos .kiosk-avulso-chk:checked')).map(function(chk){return parseInt(chk.value,10);}).filter(Number.isFinite)
+  );
+  const rows=_kioskOperItens
     .slice()
     .sort(function(a,b){return (a.nome||'').localeCompare(b.nome||'', 'pt-BR');})
     .map(function(it){
       const posto=(it.posto_label||it.posto_operacional||'Sem posto');
-      const val=String(it.funcionario_id||'');
-      const selected=atualSel.has(val)?' selected':'';
-      return `<option value="${val}"${selected}>${esc(it.nome||'-')} · ${esc(posto)} · ${esc(it.matricula||'')}</option>`;
+      const val=parseInt(it.funcionario_id||0,10);
+      const checked=atualSel.has(val)?' checked':'';
+      return `<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 4px;border-bottom:1px solid var(--borda)">
+        <input type="checkbox" class="kiosk-avulso-chk" value="${val}"${checked}>
+        <div style="font-size:12px"><strong>${esc(it.nome||'-')}</strong> <span style="color:var(--text-muted)">· ${esc(posto)} · ${esc(it.matricula||'')}</span></div>
+      </label>`;
     });
-  sel.innerHTML=opts.join('');
+  box.innerHTML=rows.length?rows.join(''):'<div class="vazio">Nenhum colaborador ativo disponível para seleção avulsa.</div>';
 }
 
 async function kioskCarregarPostos(){
@@ -7024,7 +7047,7 @@ async function kioskCarregar(){
 async function kioskCriar(){
   const nome=(document.getElementById('kiosk-nome').value||'').trim();
   const postos=_kioskSelectedValues('kiosk-posto');
-  const avulsos=_kioskSelectedValues('kiosk-avulsos').map(function(x){return parseInt(x,10);}).filter(Number.isFinite);
+  const avulsos=_kioskSelectedAvulsos();
   if(!nome){alert('Informe o nome do totem.');return;}
   const d=await api('/api/admin/ponto/kiosks','POST',{
     nome,
@@ -7038,8 +7061,7 @@ async function kioskCriar(){
   document.getElementById('kiosk-nome').value='';
   const selPosto=document.getElementById('kiosk-posto');
   if(selPosto){Array.from(selPosto.options).forEach(function(o){o.selected=false;});}
-  const selAv=document.getElementById('kiosk-avulsos');
-  if(selAv){Array.from(selAv.options).forEach(function(o){o.selected=false;});}
+  kioskSelAvulsos(false);
   kioskRenderColabsPosto();
   kioskCarregar();
 }
