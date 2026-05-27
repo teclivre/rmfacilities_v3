@@ -38,19 +38,26 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .screen.on{display:flex}
 
 /* ── Login ── */
-#scr-login{background:linear-gradient(160deg,#0f1929 0%,#1a2540 60%,#243050 100%);align-items:center;justify-content:center;padding:20px}
+#scr-login{background:linear-gradient(160deg,#0a1e3a 0%,#09234a 60%,#0a3f7a 100%);align-items:center;justify-content:center;padding:20px}
 .login-box{width:100%;max-width:360px}
 .login-logo{text-align:center;margin-bottom:32px}
 .login-logo .brand{font-size:22px;font-weight:700;color:var(--text);letter-spacing:-0.5px}
 .login-logo .sub{font-size:13px;color:var(--text2);margin-top:4px}
-.login-logo .icon-wrap{width:72px;height:72px;background:var(--blue-cl);border:2px solid var(--blue);border-radius:20px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:32px}
+.login-logo .icon-wrap{width:80px;height:80px;border-radius:20px;margin:0 auto 16px;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.login-logo .icon-wrap img{width:100%;height:100%;display:block}
 .lf{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
 .lf label{font-size:13px;color:var(--text2);font-weight:500}
-.lf input{background:var(--bg3);border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-size:16px;padding:13px 14px;outline:none;width:100%;-webkit-appearance:none}
+.lf input{background:rgba(255,255,255,0.08);border:1.5px solid rgba(255,255,255,0.15);border-radius:10px;color:var(--text);font-size:16px;padding:13px 14px;outline:none;width:100%;-webkit-appearance:none}
 .lf input:focus{border-color:var(--blue)}
 .btn-login{width:100%;background:var(--blue);color:#fff;font-size:16px;font-weight:600;border:none;border-radius:12px;padding:15px;cursor:pointer;margin-top:4px}
 .btn-login:active{opacity:0.85}
-.login-err{color:var(--red);font-size:13px;text-align:center;min-height:18px;margin-top:8px}
+.login-err{color:#f97316;font-size:13px;text-align:center;min-height:18px;margin-top:8px}
+.otp-hint{font-size:12px;color:var(--text2);text-align:center;margin-top:10px;line-height:1.5}
+.otp-hint strong{color:var(--text)}
+.btn-back{background:transparent;border:none;color:var(--text2);font-size:13px;cursor:pointer;display:block;margin:10px auto 0;text-decoration:underline}
+.otp-digits{display:flex;gap:8px;justify-content:center;margin:6px 0 12px}
+.otp-digits input{width:44px;height:52px;text-align:center;font-size:22px;font-weight:700;background:rgba(255,255,255,0.08);border:1.5px solid rgba(255,255,255,0.15);border-radius:10px;color:var(--text);outline:none;-webkit-appearance:none}
+.otp-digits input:focus{border-color:var(--blue)}
 
 /* ── App shell ── */
 #scr-app{background:var(--bg)}
@@ -176,20 +183,32 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 <div id="scr-login" class="screen on">
   <div class="login-box">
     <div class="login-logo">
-      <div class="icon-wrap">🏢</div>
+      <div class="icon-wrap"><img src="/static/img/pwa-icon.svg" alt="RM Facilities"></div>
       <div class="brand">RM Facilities</div>
       <div class="sub">Portal do Colaborador</div>
     </div>
-    <div class="lf">
-      <label>CPF</label>
-      <input id="l-cpf" type="tel" inputmode="numeric" placeholder="000.000.000-00" autocomplete="username" maxlength="14">
+
+    <!-- Etapa 1: CPF -->
+    <div id="step-cpf">
+      <div class="lf">
+        <label>CPF</label>
+        <input id="l-cpf" type="tel" inputmode="numeric" placeholder="000.000.000-00" autocomplete="username" maxlength="14">
+      </div>
+      <button class="btn-login" id="btn-enviar-otp" onclick="enviarOtp()">Enviar código via WhatsApp</button>
+      <div class="login-err" id="l-err"></div>
     </div>
-    <div class="lf">
-      <label>Senha</label>
-      <input id="l-senha" type="password" placeholder="Sua senha" autocomplete="current-password">
+
+    <!-- Etapa 2: OTP -->
+    <div id="step-otp" style="display:none">
+      <div class="otp-hint" id="otp-hint">Insira o código enviado via <strong>WhatsApp</strong></div>
+      <div class="lf" style="margin-top:16px">
+        <label style="text-align:center">Código de 6 dígitos</label>
+        <input id="l-otp" type="tel" inputmode="numeric" placeholder="000000" maxlength="6" style="text-align:center;font-size:24px;font-weight:700;letter-spacing:6px">
+      </div>
+      <button class="btn-login" id="btn-confirmar-otp" onclick="confirmarOtp()">Confirmar</button>
+      <div class="login-err" id="l-err2"></div>
+      <button class="btn-back" onclick="voltarCpf()">← Voltar e trocar CPF</button>
     </div>
-    <button class="btn-login" id="btn-login" onclick="doLogin()">Entrar</button>
-    <div class="login-err" id="l-err"></div>
   </div>
 </div>
 
@@ -320,6 +339,9 @@ function lsGet(k){ try{ return localStorage.getItem(k) }catch(e){ return null } 
 function lsSet(k,v){ try{ localStorage.setItem(k,v) }catch(e){} }
 function lsDel(k){ try{ localStorage.removeItem(k) }catch(e){} }
 
+// ── CPF armazenado para o fluxo OTP
+let _otpCpf = '';
+
 // ── Init ──
 (function init(){
   _AT = lsGet('rmf_at') || '';
@@ -335,9 +357,8 @@ function lsDel(k){ try{ localStorage.removeItem(k) }catch(e){} }
     else if(v.length>3) v=v.replace(/(\d{3})(\d{0,3})/,'$1.$2');
     this.value=v;
   });
-  document.getElementById('l-senha').addEventListener('keydown',function(e){
-    if(e.key==='Enter') doLogin();
-  });
+  cpfEl.addEventListener('keydown',function(e){ if(e.key==='Enter') enviarOtp(); });
+  document.getElementById('l-otp').addEventListener('keydown',function(e){ if(e.key==='Enter') confirmarOtp(); });
   if(_AT && _func){
     showApp();
   }
@@ -378,32 +399,67 @@ async function refreshToken(){
   }catch(e){ return false; }
 }
 
-// ── Login ──
-async function doLogin(){
+// ── Login OTP ──
+async function enviarOtp(){
   const cpf = document.getElementById('l-cpf').value.replace(/\D/g,'');
-  const senha = document.getElementById('l-senha').value;
   const errEl = document.getElementById('l-err');
-  const btn = document.getElementById('btn-login');
+  const btn = document.getElementById('btn-enviar-otp');
   errEl.textContent = '';
   if(cpf.length < 11){ errEl.textContent = 'CPF inválido.'; return; }
-  if(!senha){ errEl.textContent = 'Informe a senha.'; return; }
   btn.textContent = '…'; btn.disabled = true;
   try{
-    const r = await fetch('/api/app/funcionario/login',{
+    const r = await fetch('/api/app/funcionario/auth/iniciar',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({cpf, senha})
+      body: JSON.stringify({cpf, canal:'whatsapp'})
     });
     const d = await r.json();
-    if(!r.ok){ errEl.textContent = d.erro || 'Credenciais inválidas.'; return; }
+    if(!r.ok){ errEl.textContent = d.erro || 'Erro ao enviar código.'; return; }
+    _otpCpf = cpf;
+    // Mostrar destino mascarado se disponível
+    const hint = document.getElementById('otp-hint');
+    if(d.destino) hint.innerHTML = 'Código enviado para <strong>'+esc(d.destino)+'</strong> via WhatsApp';
+    document.getElementById('step-cpf').style.display='none';
+    document.getElementById('step-otp').style.display='';
+    document.getElementById('l-otp').value='';
+    document.getElementById('l-err2').textContent='';
+    setTimeout(()=>document.getElementById('l-otp').focus(), 100);
+  }catch(e){
+    errEl.textContent = 'Erro de conexão. Tente novamente.';
+  }finally{
+    btn.textContent = 'Enviar código via WhatsApp'; btn.disabled = false;
+  }
+}
+
+async function confirmarOtp(){
+  const codigo = document.getElementById('l-otp').value.replace(/\D/g,'');
+  const errEl = document.getElementById('l-err2');
+  const btn = document.getElementById('btn-confirmar-otp');
+  errEl.textContent = '';
+  if(codigo.length < 4){ errEl.textContent = 'Informe o código recebido.'; return; }
+  btn.textContent = '…'; btn.disabled = true;
+  try{
+    const r = await fetch('/api/app/funcionario/auth/confirmar',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({cpf: _otpCpf, codigo})
+    });
+    const d = await r.json();
+    if(!r.ok){ errEl.textContent = d.erro || 'Código inválido.'; return; }
     _AT = d.access_token; _RT = d.refresh_token; _func = d.funcionario;
     lsSet('rmf_at', _AT); lsSet('rmf_rt', _RT); lsSet('rmf_func', JSON.stringify(_func));
     showApp();
   }catch(e){
     errEl.textContent = 'Erro de conexão. Tente novamente.';
   }finally{
-    btn.textContent = 'Entrar'; btn.disabled = false;
+    btn.textContent = 'Confirmar'; btn.disabled = false;
   }
+}
+
+function voltarCpf(){
+  document.getElementById('step-otp').style.display='none';
+  document.getElementById('step-cpf').style.display='';
+  document.getElementById('l-err').textContent='';
 }
 
 function logout(){
@@ -414,11 +470,13 @@ function logout(){
 async function doLogout(){
   try{ await api('POST','/api/app/funcionario/logout'); }catch(e){}
   lsDel('rmf_at'); lsDel('rmf_rt'); lsDel('rmf_func');
-  _AT=''; _RT=''; _func=null;
+  _AT=''; _RT=''; _func=null; _otpCpf='';
   clearTimers();
   document.getElementById('scr-app').classList.remove('on');
   document.getElementById('scr-login').classList.add('on');
-  document.getElementById('l-senha').value='';
+  document.getElementById('step-cpf').style.display='';
+  document.getElementById('step-otp').style.display='none';
+  document.getElementById('l-cpf').value='';
   document.getElementById('l-err').textContent='';
 }
 
