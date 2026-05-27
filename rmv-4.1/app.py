@@ -18899,6 +18899,7 @@ def api_app_ponto_espelho_dados_me():
     except (ValueError, TypeError):
         return jsonify({"erro": "Competência inválida."}), 400
     ultimo_dia = _cal.monthrange(ano, mes)[1]
+    data_adm = _parse_date_ymd(str(getattr(f, "data_admissao", "") or "")[:10])
     meses_pt = [
         "Janeiro",
         "Fevereiro",
@@ -18921,16 +18922,17 @@ def api_app_ponto_espelho_dados_me():
     total_intrajornada = 0
     for dia in range(1, ultimo_dia + 1):
         data_ref = date(ano, mes, dia)
+        pre_admissao = bool(data_adm and data_ref < data_adm)
         resumo = _app_ponto_resumo_dia(f, data_ref)
         marcacoes = resumo.get("marcacoes", [])
         dias_semana = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
-        trab_min = resumo.get("horas_trabalhadas_min", 0) or 0
-        esp_min = resumo.get("horas_esperadas_min", 0) or 0
+        trab_min = 0 if pre_admissao else (resumo.get("horas_trabalhadas_min", 0) or 0)
+        esp_min = 0 if pre_admissao else (resumo.get("horas_esperadas_min", 0) or 0)
         total_min += trab_min
-        total_he_50 += resumo.get("he_50_min", 0) or 0
-        total_he_100 += resumo.get("he_100_min", 0) or 0
-        total_noturno += resumo.get("noturno_min", 0) or 0
-        total_intrajornada += resumo.get("intrajornada_min", 0) or 0
+        total_he_50 += 0 if pre_admissao else (resumo.get("he_50_min", 0) or 0)
+        total_he_100 += 0 if pre_admissao else (resumo.get("he_100_min", 0) or 0)
+        total_noturno += 0 if pre_admissao else (resumo.get("noturno_min", 0) or 0)
+        total_intrajornada += 0 if pre_admissao else (resumo.get("intrajornada_min", 0) or 0)
         dias.append(
             {
                 "data": data_ref.isoformat(),
@@ -18946,17 +18948,17 @@ def api_app_ponto_espelho_dados_me():
                 "horas_trabalhadas_fmt": resumo.get("horas_trabalhadas_fmt", "00:00"),
                 "horas_trabalhadas_min": trab_min,
                 "horas_esperadas_min": esp_min,
-                "he_50_min": resumo.get("he_50_min", 0) or 0,
-                "he_50_fmt": resumo.get("he_50_fmt", "00:00"),
-                "he_100_min": resumo.get("he_100_min", 0) or 0,
-                "he_100_fmt": resumo.get("he_100_fmt", "00:00"),
-                "noturno_min": resumo.get("noturno_min", 0) or 0,
-                "noturno_fmt": resumo.get("noturno_fmt", "00:00"),
-                "intrajornada_min": resumo.get("intrajornada_min", 0) or 0,
-                "intrajornada_fmt": resumo.get("intrajornada_fmt", "00:00"),
-                "status": resumo.get("status", ""),
-                "inconsistencias": resumo.get("inconsistencias", []),
-                "tem_marcacoes": bool(marcacoes),
+                "he_50_min": (0 if pre_admissao else (resumo.get("he_50_min", 0) or 0)),
+                "he_50_fmt": ("00:00" if pre_admissao else resumo.get("he_50_fmt", "00:00")),
+                "he_100_min": (0 if pre_admissao else (resumo.get("he_100_min", 0) or 0)),
+                "he_100_fmt": ("00:00" if pre_admissao else resumo.get("he_100_fmt", "00:00")),
+                "noturno_min": (0 if pre_admissao else (resumo.get("noturno_min", 0) or 0)),
+                "noturno_fmt": ("00:00" if pre_admissao else resumo.get("noturno_fmt", "00:00")),
+                "intrajornada_min": (0 if pre_admissao else (resumo.get("intrajornada_min", 0) or 0)),
+                "intrajornada_fmt": ("00:00" if pre_admissao else resumo.get("intrajornada_fmt", "00:00")),
+                "status": ("nao_admitido" if pre_admissao else resumo.get("status", "")),
+                "inconsistencias": ([] if pre_admissao else resumo.get("inconsistencias", [])),
+                "tem_marcacoes": (False if pre_admissao else bool(marcacoes)),
             }
         )
     def _fmt(m):
@@ -19030,6 +19032,7 @@ def api_app_ponto_espelho_pdf_me():
     except (ValueError, TypeError):
         return jsonify({"erro": "Competência inválida."}), 400
     ultimo_dia = _cal.monthrange(ano, mes)[1]
+    data_adm = _parse_date_ymd(str(getattr(f, "data_admissao", "") or "")[:10])
     dt_ini = date(ano, mes, 1)
     dt_fim = date(ano, mes, ultimo_dia)
     fechamentos_count = PontoFechamentoDia.query.filter(
@@ -19108,30 +19111,35 @@ def api_app_ponto_espelho_pdf_me():
         dias_semana = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
         for dia in range(1, ultimo_dia + 1):
             data_ref = date(ano, mes, dia)
+            pre_admissao = bool(data_adm and data_ref < data_adm)
             resumo = _app_ponto_resumo_dia(f, data_ref)
             marcacoes = resumo.get("marcacoes", [])
             dds = dias_semana[data_ref.weekday()]
             data_str = f"{dds} {data_ref.strftime('%d/%m')}"
-            trab = resumo.get("horas_trabalhadas_fmt", "00:00")
-            trab_min = resumo.get("horas_trabalhadas_min", 0) or 0
+            trab = "-" if pre_admissao else resumo.get("horas_trabalhadas_fmt", "00:00")
+            trab_min = 0 if pre_admissao else (resumo.get("horas_trabalhadas_min", 0) or 0)
             total_min += trab_min
-            status_val = (
-                "OK"
-                if resumo.get("status") == "ok"
-                else ("Inconsist." if marcacoes else "-")
-            )
-            marc_str = (
-                "  ".join(m.get("hora_fmt", "") for m in marcacoes)
-                if marcacoes
-                else "Falta"
-                if resumo.get("horas_esperadas_min", 0)
-                else "-"
-            )
+            if pre_admissao:
+                status_val = "-"
+                marc_str = "-"
+            else:
+                status_val = (
+                    "OK"
+                    if resumo.get("status") == "ok"
+                    else ("Inconsist." if marcacoes else "-")
+                )
+                marc_str = (
+                    "  ".join(m.get("hora_fmt", "") for m in marcacoes)
+                    if marcacoes
+                    else "Falta"
+                    if resumo.get("horas_esperadas_min", 0)
+                    else "-"
+                )
             rows.append(
                 [
                     data_str,
                     marc_str,
-                    trab if marcacoes else "-",
+                    (trab if marcacoes else "-") if not pre_admissao else "-",
                     status_val,
                 ]
             )
