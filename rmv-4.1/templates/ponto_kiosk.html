@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0a1624">
+<title>Ponto · {{ kiosk.nome }}</title>
+<style>
+:root{
+  --bg:#0a1624;--bg2:#0f2237;--bg3:#162d48;--card:#112030;--border:#1e3a5f;
+  --text:#e6f1ff;--text2:#7ea7d6;
+  --blue:#3b82f6;--green:#22c55e;--yellow:#eab308;--red:#ef4444;--orange:#f97316;
+  --green-cl:rgba(34,197,94,.12);--red-cl:rgba(239,68,68,.12);
+  --blue-cl:rgba(59,130,246,.12);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overflow:hidden}
+
+.screen{display:none;position:fixed;inset:0;flex-direction:column;align-items:center;justify-content:center;padding:20px}
+.screen.on{display:flex}
+
+/* IDLE SCREEN */
+#scr-idle{background:radial-gradient(ellipse at top,#10243a,var(--bg) 70%);text-align:center}
+.topbar{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);background:rgba(10,22,36,.8);backdrop-filter:blur(8px)}
+.topbar-logo{height:28px;object-fit:contain}
+.topbar-name{font-size:13px;font-weight:600;color:var(--text2)}
+.idle-clock{font-size:clamp(56px,10vw,96px);font-weight:200;letter-spacing:-3px;color:#fff;margin-bottom:4px;font-variant-numeric:tabular-nums}
+.idle-date{font-size:clamp(14px,1.8vw,20px);color:var(--text2);text-transform:capitalize;margin-bottom:40px}
+.idle-kiosk{font-size:13px;color:var(--text2);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.1em}
+.idle-title{font-size:clamp(18px,2.5vw,28px);font-weight:700;margin-bottom:32px}
+.btn-ponto{background:linear-gradient(135deg,#1d6fdb,#3b82f6);color:#fff;font-size:clamp(16px,2vw,22px);font-weight:700;border:none;border-radius:20px;padding:20px 48px;cursor:pointer;box-shadow:0 8px 32px rgba(59,130,246,.35);transition:transform .12s,box-shadow .12s}
+.btn-ponto:active{transform:scale(.97);box-shadow:0 4px 16px rgba(59,130,246,.3)}
+
+/* PIN SCREEN */
+#scr-pin{background:var(--bg)}
+.pin-card{width:100%;max-width:380px;background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:28px 24px}
+.pin-logo{text-align:center;margin-bottom:22px}
+.pin-logo img{height:40px;object-fit:contain}
+.pin-label{font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+.pin-input{width:100%;background:rgba(255,255,255,.06);border:1.5px solid var(--border);border-radius:12px;color:var(--text);font-size:18px;padding:13px 14px;outline:none;-webkit-appearance:none;transition:border-color .2s}
+.pin-input:focus{border-color:var(--blue)}
+.pin-input.lg{font-size:24px;font-weight:700;letter-spacing:4px;text-align:center}
+.pin-err{font-size:13px;color:var(--red);text-align:center;min-height:18px;margin-top:6px}
+.numpad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0 12px}
+.np-btn{background:var(--bg3);border:1px solid var(--border);border-radius:14px;color:var(--text);font-size:22px;font-weight:600;padding:16px;cursor:pointer;text-align:center;user-select:none}
+.np-btn:active{background:var(--blue);color:#fff;transform:scale(.96)}
+.np-btn.del{font-size:16px;color:var(--text2)}
+.np-btn.ok{background:var(--blue);color:#fff;border-color:var(--blue)}
+.np-btn.ok:active{background:#2563eb}
+.btn-back{background:transparent;border:none;color:var(--text2);font-size:13px;cursor:pointer;display:block;margin:8px auto 0;text-decoration:underline}
+.step-ind{display:flex;gap:8px;justify-content:center;margin-bottom:20px}
+.step-dot{width:8px;height:8px;border-radius:50%;background:var(--border)}
+.step-dot.on{background:var(--blue)}
+
+/* CONFIRM SCREEN */
+#scr-confirm{background:var(--bg)}
+.confirm-card{width:100%;max-width:340px;background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:28px 24px;text-align:center}
+.avatar-big{width:80px;height:80px;border-radius:50%;background:var(--blue-cl);border:3px solid var(--blue);display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 14px;overflow:hidden}
+.avatar-big img{width:100%;height:100%;object-fit:cover}
+.func-name{font-size:22px;font-weight:700;margin-bottom:4px}
+.tipo-label{font-size:16px;font-weight:600;padding:6px 18px;border-radius:12px;display:inline-block;margin-bottom:8px}
+.tipo-label.entrada{background:var(--green-cl);color:var(--green)}
+.tipo-label.saida_intervalo,.tipo-label.retorno_intervalo{background:var(--blue-cl);color:var(--blue)}
+.tipo-label.saida{background:var(--red-cl);color:var(--red)}
+.hora-big{font-size:38px;font-weight:200;letter-spacing:-2px;color:#fff;margin-bottom:4px}
+.proximo-hint{font-size:12px;color:var(--text2);margin-bottom:20px}
+.btn-ok{width:100%;background:var(--green);color:#fff;font-size:16px;font-weight:700;border:none;border-radius:14px;padding:15px;cursor:pointer}
+.btn-ok:active{opacity:.85}
+
+/* SUCCESS FLASH */
+#scr-success{background:var(--bg);animation:flash-bg .4s ease}
+@keyframes flash-bg{0%{background:#0f3a1f}100%{background:var(--bg)}}
+.success-icon{font-size:72px;margin-bottom:12px}
+.success-name{font-size:24px;font-weight:700;margin-bottom:4px}
+.success-tipo{font-size:17px;color:var(--green);font-weight:600;margin-bottom:4px}
+.success-hora{font-size:32px;font-weight:200;color:#fff;margin-bottom:8px}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(30,58,95,.97);color:var(--text);font-size:14px;font-weight:500;padding:10px 18px;border-radius:12px;border:1px solid var(--border);z-index:9999;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .25s}
+.toast.on{opacity:1}
+.toast.err{border-color:var(--red);color:#fca5a5}
+
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{display:inline-block;width:20px;height:20px;border:2.5px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
+</style>
+</head>
+<body>
+
+<!-- IDLE -->
+<div id="scr-idle" class="screen on">
+  <div class="topbar">
+    <img class="topbar-logo" src="/static/img/logo-rm-facilities.png" alt="RM Facilities">
+    <span class="topbar-name" id="idle-kiosk-nome">{{ kiosk.nome }}</span>
+  </div>
+  <div id="idle-clock" class="idle-clock">--:--</div>
+  <div id="idle-date" class="idle-date">—</div>
+  <div class="idle-kiosk">Totem de Ponto</div>
+  <div class="idle-title">{{ kiosk.nome }}</div>
+  <button class="btn-ponto" onclick="iniciarRegistro()">▶ Registrar Ponto</button>
+</div>
+
+<!-- PIN -->
+<div id="scr-pin" class="screen">
+  <div class="pin-card">
+    <div class="pin-logo">
+      <img src="/static/img/logo-rm-facilities.png" alt="RM Facilities">
+    </div>
+    <div class="step-ind">
+      <div class="step-dot on" id="dot1"></div>
+      <div class="step-dot" id="dot2"></div>
+    </div>
+    <div id="step-cpf-div">
+      <div class="pin-label">Informe seu CPF</div>
+      <input id="cpf-inp" class="pin-input" type="tel" inputmode="numeric" placeholder="000.000.000-00" maxlength="14" autocomplete="off" oninput="fmtCpf(this)" onkeydown="if(event.key==='Enter')irParaPin()">
+      <div class="numpad" id="np-cpf"></div>
+      <div class="pin-err" id="cpf-err"></div>
+    </div>
+    <div id="step-pin-div" style="display:none">
+      <div class="pin-label" id="pin-user-label">PIN</div>
+      <input id="pin-inp" class="pin-input lg" type="password" inputmode="numeric" placeholder="••••" maxlength="10" autocomplete="off" readonly>
+      <div class="numpad" id="np-pin"></div>
+      <div class="pin-err" id="pin-err"></div>
+    </div>
+    <button class="btn-back" onclick="voltarIdle()">← Cancelar</button>
+  </div>
+</div>
+
+<!-- CONFIRM -->
+<div id="scr-confirm" class="screen">
+  <div class="confirm-card">
+    <div class="avatar-big" id="conf-av">👤</div>
+    <div class="func-name" id="conf-nome">—</div>
+    <div class="tipo-label entrada" id="conf-tipo">—</div>
+    <div class="hora-big" id="conf-hora">--:--</div>
+    <div class="proximo-hint" id="conf-prox"></div>
+    <button class="btn-ok" id="conf-btn-ok" onclick="confirmar()">✓ Confirmar</button>
+    <button class="btn-back" onclick="mostrarPin()">← Corrigir PIN</button>
+    <div class="pin-err" id="conf-err"></div>
+  </div>
+</div>
+
+<!-- SUCCESS -->
+<div id="scr-success" class="screen" style="text-align:center">
+  <div class="success-icon">✅</div>
+  <div class="success-name" id="suc-nome"></div>
+  <div class="success-tipo" id="suc-tipo"></div>
+  <div class="success-hora" id="suc-hora"></div>
+  <div style="font-size:13px;color:var(--text2);margin-top:8px" id="suc-prox"></div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+'use strict';
+var KIOSK_TOKEN = "{{ kiosk.token }}";
+var REQUER_PIN = {{ 'true' if kiosk.requer_pin else 'false' }};
+
+var _cpf = '', _pin = '', _pinDigits = '';
+var _confirmData = null;
+var _clockT = null, _resetT = null;
+
+// CLOCK
+(function startClock(){
+  function tick(){
+    var n = new Date();
+    var h = String(n.getHours()).padStart(2,'0'), m = String(n.getMinutes()).padStart(2,'0'), s = String(n.getSeconds()).padStart(2,'0');
+    var el = document.getElementById('idle-clock'); if(el) el.textContent = h+':'+m+':'+s;
+    var days = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
+    var months = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+    var de = document.getElementById('idle-date');
+    if(de) de.textContent = days[n.getDay()]+', '+n.getDate()+' de '+months[n.getMonth()]+' de '+n.getFullYear();
+  }
+  tick(); _clockT = setInterval(tick, 1000);
+})();
+
+// NUMPAD builder
+function buildNumpad(containerId, onDigit, onDel, onOk){
+  var c = document.getElementById(containerId);
+  if(!c) return;
+  c.innerHTML = '';
+  [1,2,3,4,5,6,7,8,9,'del',0,'ok'].forEach(function(k){
+    var btn = document.createElement('button');
+    btn.className = 'np-btn' + (k==='del'?' del':k==='ok'?' ok':'');
+    btn.textContent = k==='del'?'⌫':k==='ok'?'→':String(k);
+    btn.addEventListener('click', function(){
+      if(k==='del') onDel();
+      else if(k==='ok') onOk();
+      else onDigit(String(k));
+    });
+    c.appendChild(btn);
+  });
+}
+
+// CPF numpad
+buildNumpad('np-cpf',
+  function(d){ var v=document.getElementById('cpf-inp').value.replace(/\D/g,'');if(v.length<11){v+=d;document.getElementById('cpf-inp').value=v;fmtCpf(document.getElementById('cpf-inp'));} },
+  function(){ var el=document.getElementById('cpf-inp'),v=el.value.replace(/\D/g,'');v=v.slice(0,-1);el.value=v;fmtCpf(el); },
+  function(){ irParaPin(); }
+);
+
+// PIN numpad
+buildNumpad('np-pin',
+  function(d){ if(_pinDigits.length<10){_pinDigits+=d;document.getElementById('pin-inp').value='•'.repeat(_pinDigits.length);} },
+  function(){ if(_pinDigits.length>0){_pinDigits=_pinDigits.slice(0,-1);document.getElementById('pin-inp').value='•'.repeat(_pinDigits.length);} },
+  function(){ submeterPonto(); }
+);
+
+function fmtCpf(el){
+  var v = el.value.replace(/\D/g,'').slice(0,11);
+  if(v.length>9) v = v.replace(/(\d{3})(\d{3})(\d{3})(\d{0,2})/,'$1.$2.$3-$4');
+  else if(v.length>6) v = v.replace(/(\d{3})(\d{3})(\d{0,3})/,'$1.$2.$3');
+  else if(v.length>3) v = v.replace(/(\d{3})(\d{0,3})/,'$1.$2');
+  el.value = v;
+}
+
+function show(id){
+  ['scr-idle','scr-pin','scr-confirm','scr-success'].forEach(function(s){
+    var el=document.getElementById(s);if(el)el.classList.remove('on');
+  });
+  var t=document.getElementById(id);if(t)t.classList.add('on');
+  clearTimeout(_resetT);
+  if(id!=='scr-idle') _resetT=setTimeout(voltarIdle, 60000);
+}
+
+function voltarIdle(){
+  show('scr-idle');
+  document.getElementById('cpf-inp').value='';
+  document.getElementById('pin-inp').value='';
+  _pinDigits='';_cpf='';_pin='';
+  document.getElementById('cpf-err').textContent='';
+  document.getElementById('pin-err').textContent='';
+  document.getElementById('step-cpf-div').style.display='';
+  document.getElementById('step-pin-div').style.display='none';
+  document.getElementById('dot1').classList.add('on');
+  document.getElementById('dot2').classList.remove('on');
+}
+
+function iniciarRegistro(){
+  show('scr-pin');
+  mostrarCpf();
+  setTimeout(function(){document.getElementById('cpf-inp').focus();},150);
+}
+
+function mostrarCpf(){
+  document.getElementById('step-cpf-div').style.display='';
+  document.getElementById('step-pin-div').style.display='none';
+  document.getElementById('dot1').classList.add('on');
+  document.getElementById('dot2').classList.remove('on');
+}
+
+function mostrarPin(){
+  if(!REQUER_PIN){submeterPonto();return;}
+  document.getElementById('step-cpf-div').style.display='none';
+  document.getElementById('step-pin-div').style.display='';
+  document.getElementById('dot1').classList.remove('on');
+  document.getElementById('dot2').classList.add('on');
+  _pinDigits='';
+  document.getElementById('pin-inp').value='';
+  document.getElementById('pin-err').textContent='';
+  var cpfRaw = document.getElementById('cpf-inp').value.replace(/\D/g,'');
+  document.getElementById('pin-user-label').textContent = 'PIN (padrão: últimos 4 dígitos do CPF)';
+  setTimeout(function(){document.getElementById('pin-inp').focus();},150);
+}
+
+function irParaPin(){
+  var cpfRaw = document.getElementById('cpf-inp').value.replace(/\D/g,'');
+  document.getElementById('cpf-err').textContent='';
+  if(cpfRaw.length!==11){document.getElementById('cpf-err').textContent='Informe o CPF completo (11 dígitos).';return;}
+  _cpf = cpfRaw;
+  if(REQUER_PIN) mostrarPin();
+  else submeterPonto();
+}
+
+function submeterPonto(){
+  _pin = REQUER_PIN ? _pinDigits : '';
+  var err = REQUER_PIN ? document.getElementById('pin-err') : document.getElementById('cpf-err');
+  if(REQUER_PIN && _pin.length < 4){err.textContent='PIN deve ter ao menos 4 dígitos.';return;}
+  err.textContent='';
+  var btn = REQUER_PIN ? document.querySelectorAll('#np-pin .ok')[0] : null;
+  if(btn) btn.textContent='…';
+
+  fetch('/api/ponto/kiosk/'+KIOSK_TOKEN+'/bater', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({cpf: _cpf, pin: _pin})
+  }).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d};})})
+  .then(function(res){
+    if(btn) btn.textContent='→';
+    if(!res.ok){
+      err.textContent = res.d.erro || 'Erro ao registrar.';
+      return;
+    }
+    var d = res.d;
+    _confirmData = d;
+    // mostrar tela de confirmação
+    var av = document.getElementById('conf-av');
+    if(d.foto_url) av.innerHTML='<img src="'+esc(d.foto_url)+'" alt="foto" onerror="this.parentElement.innerHTML=\'👤\'">';
+    else av.innerHTML='👤';
+    document.getElementById('conf-nome').textContent = d.nome || '';
+    var tl = document.getElementById('conf-tipo');
+    tl.textContent = d.marcacao.tipo_label || '';
+    tl.className = 'tipo-label '+(d.marcacao.tipo||'entrada');
+    document.getElementById('conf-hora').textContent = d.marcacao.hora_fmt || '--:--';
+    var prox = d.proximo || '';
+    document.getElementById('conf-prox').textContent = prox ? 'Próximo: '+prox : 'Jornada concluída';
+    document.getElementById('conf-err').textContent='';
+    document.getElementById('conf-btn-ok').textContent='✓ Confirmado!';
+    document.getElementById('conf-btn-ok').disabled=true;
+    show('scr-confirm');
+    // auto-confirmar em 3s
+    setTimeout(confirmar, 3000);
+  }).catch(function(){
+    if(btn) btn.textContent='→';
+    err.textContent='Sem conexão com o servidor.';
+  });
+}
+
+function confirmar(){
+  if(!_confirmData) return;
+  var d = _confirmData;
+  document.getElementById('suc-nome').textContent = d.nome || '';
+  document.getElementById('suc-tipo').textContent = d.marcacao.tipo_label || '';
+  document.getElementById('suc-hora').textContent = d.marcacao.hora_fmt || '--:--';
+  document.getElementById('suc-prox').textContent = d.proximo ? 'Próximo ponto: '+d.proximo : '';
+  show('scr-success');
+  setTimeout(voltarIdle, 4000);
+}
+
+function esc(s){var d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML;}
+
+// Teclado físico para CPF/PIN
+document.addEventListener('keydown', function(e){
+  var active = document.querySelector('.screen.on');
+  if(!active || active.id==='scr-idle' || active.id==='scr-success') return;
+  if(active.id==='scr-confirm'){if(e.key==='Enter')confirmar();return;}
+  var step = document.getElementById('step-pin-div').style.display!=='none' ? 'pin' : 'cpf';
+  if(step==='cpf'){
+    var el=document.getElementById('cpf-inp');
+    if(e.key==='Enter'){irParaPin();}
+    else if(e.key==='Backspace'){el.value=el.value.slice(0,-1);fmtCpf(el);}
+    else if(/^\d$/.test(e.key)&&el.value.replace(/\D/g,'').length<11){el.value+=e.key;fmtCpf(el);}
+  } else {
+    if(e.key==='Enter'){submeterPonto();}
+    else if(e.key==='Backspace'){if(_pinDigits.length>0){_pinDigits=_pinDigits.slice(0,-1);document.getElementById('pin-inp').value='•'.repeat(_pinDigits.length);}}
+    else if(/^\d$/.test(e.key)&&_pinDigits.length<10){_pinDigits+=e.key;document.getElementById('pin-inp').value='•'.repeat(_pinDigits.length);}
+  }
+});
+</script>
+</body>
+</html>

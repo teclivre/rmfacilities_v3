@@ -575,6 +575,24 @@ class PontoAjuste(db.Model):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
+class PontoKiosk(db.Model):
+    """Totem compartilhado para bater ponto via web sem login individual."""
+    __tablename__ = "ponto_kiosk"
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(150), nullable=False)          # Ex: "Portaria - Sede"
+    token = db.Column(db.String(64), unique=True, nullable=False)  # URL token
+    ativo = db.Column(db.Boolean, default=True)
+    requer_pin = db.Column(db.Boolean, default=True)          # exige PIN por funcionário
+    filtro_tipo = db.Column(db.String(20), default="todos")   # 'todos' ou 'posto'
+    filtro_posto = db.Column(db.String(150))                  # se filtro_tipo='posto'
+    empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
+    criado_em = db.Column(db.DateTime, default=utcnow)
+    criado_por = db.Column(db.String(100))
+
+    def to_dict(self):
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
+
 class JornadaTrabalho(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(120), nullable=False)
@@ -1854,6 +1872,7 @@ class Funcionario(db.Model):
     app_lat = db.Column(db.Float)
     app_lon = db.Column(db.Float)
     app_localizacao_em = db.Column(db.DateTime)
+    kiosk_pin = db.Column(db.String(10))  # PIN para ponto via totem compartilhado
     foto_perfil = db.Column(db.String(500))
     criado_em = db.Column(db.DateTime, default=utcnow)
 
@@ -18079,22 +18098,18 @@ def api_app_ponto_marcar_me():
         precisao = float(precisao) if precisao is not None else None
     except (ValueError, TypeError):
         precisao = None
-    if lat is None or lon is None:
-        return jsonify(
-            {
-                "erro": "Localização obrigatória para registrar ponto. Ative o GPS e tente novamente."
-            }
-        ), 400
-    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+    # GPS é opcional: se fornecido é validado e armazenado; se ausente o ponto
+    # é registrado normalmente (útil para navegadores web que negam permissão).
+    if lat is not None and not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return jsonify({"erro": "Coordenadas de localização inválidas."}), 400
 
     localizacao = {
-        "status": "sem_referencia_posto",
+        "status": "sem_gps" if lat is None else "sem_referencia_posto",
         "distancia_m": None,
         "raio_m": None,
         "posto_cliente_id": f.posto_cliente_id,
     }
-    if f.posto_cliente_id:
+    if lat is not None and f.posto_cliente_id:
         cli = db.session.get(Cliente, f.posto_cliente_id)
         if cli and cli.geo_lat is not None and cli.geo_lon is not None:
             distancia = _geo_haversine_m(lat, lon, cli.geo_lat, cli.geo_lon)
@@ -18411,6 +18426,227 @@ def api_app_ponto_marcar_qr_me():
             "resumo": _app_ponto_resumo_dia(f, data_ref),
         }
     )
+
+
+# ─── KIOSK COMPARTILHADO ──────────────────────────────────────────────────────
+
+import secrets as _secrets
+
+
+def _kiosk_gen_token():
+    return _secrets.token_urlsafe(32)
+
+
+@app.route("/ponto/kiosk/<token>")
+def ponto_kiosk_page(token):
+    """Página totem compartilhado — funcionários batem ponto com CPF + PIN."""
+    kiosk = PontoKiosk.query.filter_by(token=token, ativo=True).first()
+    if not kiosk:
+        return "Totem não encontrado ou inativo.", 404
+    return render_template("ponto_kiosk.html", kiosk=kiosk)
+
+
+@app.route("/api/ponto/kiosk/<token>/bater", methods=["POST"])
+def api_ponto_kiosk_bater(token):
+    """Registra ponto de funcionário via totem compartilhado (sem sessão JWT)."""
+    kiosk = PontoKiosk.query.filter_by(token=token, ativo=True).first()
+    if not kiosk:
+        return jsonify({"erro": "Totem não encontrado ou inativo."}), 404
+
+    dados = request.json or {}
+    cpf_raw = (dados.get("cpf") or "").strip()
+    pin = (dados.get("pin") or "").strip()
+    cpf = "".join(c for c in cpf_raw if c.isdigit())
+    if len(cpf) != 11:
+        return jsonify({"erro": "CPF inválido."}), 400
+
+    # Busca funcionário pelo CPF (aceita com ou sem formatação no banco)
+    f = Funcionario.query.filter(
+        db.or_(
+            Funcionario.cpf == cpf,
+            Funcionario.cpf == f"{cpf[:3]}.{cpf[3:6]}.{cpf[6:9]}-{cpf[9:11]}"
+        )
+    ).first()
+    if not f:
+        return jsonify({"erro": "CPF não encontrado."}), 404
+    if (f.status or "").strip().lower() != "ativo":
+        return jsonify({"erro": "Funcionário inativo."}), 403
+    if not f.app_ativo:
+        return jsonify({"erro": "Acesso bloqueado."}), 403
+
+    # Verificar filtro de posto
+    if kiosk.filtro_tipo == "posto" and kiosk.filtro_posto:
+        posto_f = (f.posto_operacional or "").strip().lower()
+        posto_k = kiosk.filtro_posto.strip().lower()
+        if posto_f != posto_k:
+            return jsonify({"erro": "Funcionário não autorizado neste totem."}), 403
+
+    # Verificar PIN
+    if kiosk.requer_pin:
+        pin_esperado = (f.kiosk_pin or "").strip()
+        if not pin_esperado:
+            # PIN não cadastrado: usa últimos 4 dígitos do CPF
+            pin_esperado = cpf[-4:]
+        if pin != pin_esperado:
+            return jsonify({"erro": "PIN incorreto."}), 401
+
+    data_hora = utcnow()
+    data_ref = data_hora.date()
+    marcacoes_dia = _app_ponto_marcacoes_dia(f.id, data_ref)
+    tipo = _app_ponto_tipo_esperado(marcacoes_dia)
+    if tipo not in _APP_PONTO_TIPOS:
+        return jsonify({"erro": "Jornada já concluída hoje."}), 400
+    if any(
+        abs((data_hora - m.data_hora).total_seconds()) < 60
+        for m in marcacoes_dia
+        if getattr(m, "data_hora", None)
+    ):
+        return jsonify({"erro": "Já existe marcação neste minuto."}), 400
+
+    ip = ((request.headers.get("X-Forwarded-For", "") or request.remote_addr or "").split(",")[0].strip()[:60])
+    m = PontoMarcacao(
+        funcionario_id=f.id,
+        tipo=tipo,
+        data_hora=data_hora,
+        origem="kiosk",
+        observacao="",
+        criado_por=f"kiosk:{kiosk.id}:{kiosk.nome[:40]}",
+        ip=ip,
+        latitude=None,
+        longitude=None,
+        precisao_gps=None,
+    )
+    db.session.add(m)
+    db.session.commit()
+    audit_event(
+        "ponto_marcacao_kiosk",
+        "funcionario",
+        f.id,
+        "funcionario",
+        f.id,
+        True,
+        {"tipo": tipo, "kiosk_id": kiosk.id, "kiosk_nome": kiosk.nome},
+    )
+    try:
+        import json as _json
+        _sse_broadcast("ponto", _json.dumps({
+            "funcionario_id": f.id, "nome": f.nome,
+            "tipo": m.tipo, "hora": m.data_hora.strftime("%H:%M"), "via": "kiosk",
+        }))
+    except Exception:
+        pass
+    return jsonify({
+        "ok": True,
+        "nome": f.nome,
+        "foto_url": f.foto_perfil or "",
+        "marcacao": {
+            "tipo": tipo,
+            "tipo_label": _app_ponto_label(tipo),
+            "hora_fmt": m.data_hora.strftime("%H:%M"),
+        },
+        "proximo": _app_ponto_label(_app_ponto_tipo_esperado(_app_ponto_marcacoes_dia(f.id, data_ref))),
+    })
+
+
+# Admin: gerenciar kiosks
+@app.route("/api/admin/ponto/kiosks", methods=["GET"])
+@login_required
+def api_admin_kiosk_list():
+    items = PontoKiosk.query.order_by(PontoKiosk.criado_em.desc()).all()
+    result = []
+    for k in items:
+        d = k.to_dict()
+        d["url"] = f"/ponto/kiosk/{k.token}"
+        result.append(d)
+    return jsonify({"kiosks": result})
+
+
+@app.route("/api/admin/ponto/kiosks", methods=["POST"])
+@login_required
+def api_admin_kiosk_create():
+    dados = request.json or {}
+    nome = (dados.get("nome") or "").strip()
+    if not nome:
+        return jsonify({"erro": "Nome obrigatório."}), 400
+    k = PontoKiosk(
+        nome=nome,
+        token=_kiosk_gen_token(),
+        ativo=True,
+        requer_pin=bool(dados.get("requer_pin", True)),
+        filtro_tipo=(dados.get("filtro_tipo") or "todos").strip(),
+        filtro_posto=(dados.get("filtro_posto") or "").strip() or None,
+        criado_por=session.get("user", "admin"),
+    )
+    db.session.add(k)
+    db.session.commit()
+    d = k.to_dict()
+    d["url"] = f"/ponto/kiosk/{k.token}"
+    return jsonify({"ok": True, "kiosk": d})
+
+
+@app.route("/api/admin/ponto/kiosks/<int:kid>", methods=["PUT"])
+@login_required
+def api_admin_kiosk_update(kid):
+    k = db.session.get(PontoKiosk, kid)
+    if not k:
+        return jsonify({"erro": "Não encontrado."}), 404
+    dados = request.json or {}
+    if "nome" in dados:
+        k.nome = (dados["nome"] or "").strip() or k.nome
+    if "ativo" in dados:
+        k.ativo = bool(dados["ativo"])
+    if "requer_pin" in dados:
+        k.requer_pin = bool(dados["requer_pin"])
+    if "filtro_tipo" in dados:
+        k.filtro_tipo = (dados["filtro_tipo"] or "todos").strip()
+    if "filtro_posto" in dados:
+        k.filtro_posto = (dados["filtro_posto"] or "").strip() or None
+    db.session.commit()
+    d = k.to_dict()
+    d["url"] = f"/ponto/kiosk/{k.token}"
+    return jsonify({"ok": True, "kiosk": d})
+
+
+@app.route("/api/admin/ponto/kiosks/<int:kid>/regenerar-token", methods=["POST"])
+@login_required
+def api_admin_kiosk_regenerar_token(kid):
+    k = db.session.get(PontoKiosk, kid)
+    if not k:
+        return jsonify({"erro": "Não encontrado."}), 404
+    k.token = _kiosk_gen_token()
+    db.session.commit()
+    return jsonify({"ok": True, "token": k.token, "url": f"/ponto/kiosk/{k.token}"})
+
+
+@app.route("/api/admin/ponto/kiosks/<int:kid>", methods=["DELETE"])
+@login_required
+def api_admin_kiosk_delete(kid):
+    k = db.session.get(PontoKiosk, kid)
+    if not k:
+        return jsonify({"erro": "Não encontrado."}), 404
+    db.session.delete(k)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/funcionarios/kiosk-pin", methods=["POST"])
+@login_required
+def api_admin_func_kiosk_pin_set():
+    """Define PIN de kiosk para um funcionário."""
+    dados = request.json or {}
+    fid = dados.get("funcionario_id")
+    pin = (dados.get("pin") or "").strip()
+    f = db.session.get(Funcionario, fid) if fid else None
+    if not f:
+        return jsonify({"erro": "Funcionário não encontrado."}), 404
+    if pin and not (4 <= len(pin) <= 10 and pin.isdigit()):
+        return jsonify({"erro": "PIN deve ter entre 4 e 10 dígitos."}), 400
+    f.kiosk_pin = pin or None
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+# ─── FIM KIOSK ────────────────────────────────────────────────────────────────
 
 
 @app.route("/api/app/funcionario/me/ponto/historico")

@@ -3934,6 +3934,34 @@ document.addEventListener('DOMContentLoaded',()=>{
           Abre uma tela em modo quiosque com QR Code rotativo (1s). Os funcionários escaneiam pelo app para registrar o ponto.
         </p>
       </div>
+
+      <!-- TOTEM COMPARTILHADO -->
+      <div class="card" id="card-kiosks">
+        <div class="card-header"><span class="card-title">📟 Totens Compartilhados (Ponto por CPF+PIN)</span></div>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">
+          Crie links de totem para tablets/PCs fixos nos postos. O colaborador digita o CPF e seu PIN para bater o ponto sem precisar fazer login.
+        </p>
+        <div style="margin-bottom:14px">
+          <div class="g3" style="align-items:flex-end;gap:10px">
+            <div class="f"><label>Nome do totem</label><input type="text" id="kiosk-nome" placeholder="Ex: Portaria – Sede" maxlength="100"></div>
+            <div class="f"><label>Filtro de posto</label><input type="text" id="kiosk-posto" placeholder="Deixe vazio = todos os funcionários"></div>
+            <div class="f">
+              <label>Requer PIN</label>
+              <select id="kiosk-pin">
+                <option value="1">Sim (recomendado)</option>
+                <option value="0">Não (só CPF)</option>
+              </select>
+            </div>
+          </div>
+          <div class="brow" style="justify-content:flex-start;margin-top:10px">
+            <button class="btn b-az" onclick="kioskCriar()">+ Criar Totem</button>
+          </div>
+        </div>
+        <div id="kiosk-list"><div style="color:var(--text-muted);font-size:13px">Carregando…</div></div>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:10px">
+          <strong>PIN padrão:</strong> se o funcionário não tiver PIN cadastrado, o padrão são os <strong>últimos 4 dígitos do CPF</strong>. Para definir um PIN específico, acesse o cadastro do funcionário → campo "PIN Totem".
+        </p>
+      </div>
       <div class="card">
         <div class="card-header"><span class="card-title">Numeração de documentos</span></div>
         <div class="g2">
@@ -5266,7 +5294,7 @@ function nav(id,el,force=false){
   }
   if(targetId==='empresas')renderEmps();
   if(targetId==='usuarios')renderUsr();
-  if(targetId==='config')loadConfig();
+  if(targetId==='config'){loadConfig();kioskCarregar();}
   if(targetId==='rh'){
     renderFuncionarios();
     painelAssInicializar();
@@ -6801,6 +6829,58 @@ async function excluirUsr(id,nome){
   if(r.erro){alert(r.erro);return;}
   renderUsr();
 }
+
+// ── KIOSKS COMPARTILHADOS ─────────────────────────────────────────────────────
+async function kioskCarregar(){
+  const el=document.getElementById('kiosk-list');
+  if(!el) return;
+  const d=await api('/api/admin/ponto/kiosks');
+  const ks=d.kiosks||[];
+  if(!ks.length){el.innerHTML='<div style="color:var(--text-muted);font-size:13px">Nenhum totem criado ainda.</div>';return;}
+  el.innerHTML=ks.map(function(k){
+    const cor=k.ativo?'var(--azul)':'var(--danger)';
+    const label=k.ativo?'Ativo':'Inativo';
+    return `<div style="background:var(--bg2);border:1px solid var(--borda);border-radius:10px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:600;color:var(--text)">${esc(k.nome)}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px">
+          Posto: ${esc(k.filtro_posto||'Todos')} · PIN: ${k.requer_pin?'Sim':'Não'} · <span style="color:${cor}">${label}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px;word-break:break-all">
+          URL: <a href="${esc(k.url)}" target="_blank" style="color:var(--azul)">${location.origin}${esc(k.url)}</a>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
+        <button class="btn b-az" style="padding:5px 10px;font-size:11px" onclick="kioskCopiar('${location.origin}${esc(k.url)}')">📋 Copiar</button>
+        <button class="btn ${k.ativo?'b-warn':'b-az'}" style="padding:5px 10px;font-size:11px" onclick="kioskToggle(${k.id},${k.ativo})">${k.ativo?'⏸ Pausar':'▶ Ativar'}</button>
+        <button class="btn b-warn" style="padding:5px 10px;font-size:11px" onclick="kioskRegen(${k.id})">🔄 Novo Link</button>
+        <button class="btn b-danger" style="padding:5px 10px;font-size:11px" onclick="kioskExcluir(${k.id},'${esc(k.nome)}')">🗑 Excluir</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+async function kioskCriar(){
+  const nome=(document.getElementById('kiosk-nome').value||'').trim();
+  const posto=(document.getElementById('kiosk-posto').value||'').trim();
+  const pin=document.getElementById('kiosk-pin').value==='1';
+  if(!nome){alert('Informe o nome do totem.');return;}
+  const d=await api('/api/admin/ponto/kiosks','POST',{nome,filtro_tipo:posto?'posto':'todos',filtro_posto:posto,requer_pin:pin});
+  if(d.erro){alert(d.erro);return;}
+  document.getElementById('kiosk-nome').value='';document.getElementById('kiosk-posto').value='';
+  kioskCarregar();
+}
+async function kioskToggle(id,ativo){await api(`/api/admin/ponto/kiosks/${id}`,'PUT',{ativo:!ativo});kioskCarregar();}
+async function kioskRegen(id){
+  if(!confirm('Gerar novo link? O link atual deixará de funcionar imediatamente.')) return;
+  const d=await api(`/api/admin/ponto/kiosks/${id}/regenerar-token`,'POST',{});
+  if(d.ok){alert('Novo link:\n'+location.origin+d.url);kioskCarregar();}
+}
+async function kioskExcluir(id,nome){
+  if(!confirm(`Excluir o totem "${nome}"?`)) return;
+  await api(`/api/admin/ponto/kiosks/${id}`,'DELETE');kioskCarregar();
+}
+function kioskCopiar(url){try{navigator.clipboard.writeText(url).then(function(){alert('Link copiado!');});}catch(e){prompt('Copie o link:',url);}}
+// ── FIM KIOSKS ────────────────────────────────────────────────────────────────
 
 async function loadConfig(){
   const d=await api('/api/config');

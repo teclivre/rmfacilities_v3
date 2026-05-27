@@ -836,20 +836,23 @@ function marcarPonto(){
   var btn=document.getElementById('btn-ponto');
   if(btn.classList.contains('concluido')) return;
   btn.disabled=true;btn.textContent='📍 Obtendo localização…';
-  obterGps(10000).then(function(pos){
+  // GPS é tentado mas não obrigatório: se negado/indisponível, registra sem coordenadas
+  obterGps(6000).then(function(pos){
     document.getElementById('gps-banner').classList.remove('on');
     btn.textContent='…';
     return api('POST','/api/app/funcionario/me/ponto/marcar',{lat:pos.lat,lon:pos.lon,precisao:pos.precisao});
+  }).catch(function(gpsErr){
+    // Se GPS falhou mas a causa não é de rede/auth, registra sem GPS
+    if(gpsErr&&gpsErr.auth) return Promise.reject(gpsErr);
+    document.getElementById('gps-banner').classList.add('on');
+    btn.textContent='…';
+    return api('POST','/api/app/funcionario/me/ponto/marcar',{lat:null,lon:null,precisao:null});
   }).then(function(){
     showToast('Ponto registrado!');
     _loaded.hist=false;
     loadPontoHoje();
   }).catch(function(e){
-    var msg=e.message||'Erro ao registrar ponto';
-    if(msg.indexOf('GPS')>=0||msg.indexOf('localiz')>=0||msg.indexOf('ermiss')>=0||msg.indexOf('Ative')>=0){
-      document.getElementById('gps-banner').classList.add('on');
-    }
-    showToast(msg,true);
+    if(!e||!e.auth) showToast(e&&e.message?e.message:'Erro ao registrar ponto',true);
     loadPontoHoje();
   }).finally(function(){btn.disabled=false;});
 }
