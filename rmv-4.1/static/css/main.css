@@ -334,13 +334,13 @@ mark{background:#FFF3A0;border-radius:2px;padding:0 1px}
 
 /* Gestão Fácil - Calendário */
 .gf-calendario{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:4px}
-.gf-dia-header{font-size:10px;font-weight:700;text-align:center;color:var(--text-muted);padding:4px 0;text-transform:uppercase;letter-spacing:.5px}
+.gf-dia-header{font-size:12px;font-weight:700;text-align:center;color:var(--text-muted);padding:4px 0;text-transform:uppercase;letter-spacing:.5px}
 .gf-dia{border:1px solid var(--borda);border-radius:8px;padding:6px 4px;text-align:center;cursor:pointer;min-height:76px;display:flex;flex-direction:column;align-items:center;gap:2px;transition:border-color .15s,background .15s}
 .gf-dia:hover{border-color:var(--azul);background:var(--azul-cc)}
-.gf-dia .gf-dn{font-size:13px;font-weight:700}
-.gf-dia .gf-ds{font-size:10px;opacity:.75}
+.gf-dia .gf-dn{font-size:15px;font-weight:700}
+.gf-dia .gf-ds{font-size:12px;opacity:.75}
 .gf-times{display:flex;flex-direction:column;gap:1px;width:100%;align-items:flex-start;padding:0 2px}
-.gf-t{font-size:9px;line-height:13px;color:var(--text-muted)}
+.gf-t{font-size:11px;line-height:15px;color:var(--text-muted)}
 .gf-t.gf-t-e{color:#1a7a40}
 .gf-t.gf-t-si{color:#b87d00}
 .gf-t.gf-t-ri{color:#0a6ea0}
