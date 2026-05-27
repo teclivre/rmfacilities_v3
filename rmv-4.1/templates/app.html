@@ -15183,9 +15183,6 @@ function onAuditPosChange(pos){
 }
 
 function initAssinaturas(){
-  // Ocultar sidebar principal para tela cheia
-  document.body.dataset.asiSidebarWas=document.body.classList.contains('sidebar-collapsed')?'1':'0';
-  document.body.classList.add('sidebar-collapsed');
   loadEnvelopes(_asiTipo);
   setupAsiDropzone();
   // load funcionários para picker
