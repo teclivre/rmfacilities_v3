@@ -86,7 +86,11 @@ class HomeActivity : BaseActivity() {
         session = SessionManager(this)
         api = ApiClient(session)
         retryQueue = ActionRetryQueue(this)
-        connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: run {
+                goLogin()
+                return
+            }
         TelemetryLogger.init(this)
         TelemetryLogger.flush()
 
@@ -271,7 +275,7 @@ class HomeActivity : BaseActivity() {
 
     @Suppress("MissingPermission")
     private fun enviarLocalizacao() {
-        val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val lm = getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
         val provider = when {
             lm.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
             lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER

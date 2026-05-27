@@ -308,7 +308,7 @@ class PontoActivity : BaseActivity() {
 
     private fun registrarCallbackRede() {
         if (networkCallback != null) return
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
         networkCallback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 // Voltou a internet: processa fila e atualiza marcações
@@ -337,7 +337,10 @@ class PontoActivity : BaseActivity() {
     private fun desregistrarCallbackRede() {
         val cb = networkCallback ?: return
         try {
-            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: run {
+                networkCallback = null
+                return
+            }
             cm.unregisterNetworkCallback(cb)
         } catch (_: Exception) {}
         networkCallback = null
@@ -362,7 +365,7 @@ class PontoActivity : BaseActivity() {
     }
 
     private fun isOnline(): Boolean {
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val nc = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
             return nc.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)

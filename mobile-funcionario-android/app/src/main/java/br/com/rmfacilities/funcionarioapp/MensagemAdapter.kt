@@ -179,7 +179,7 @@ class MensagemAdapter(
 
     private fun copiarTexto(context: Context, texto: String?) {
         if (texto.isNullOrBlank()) return
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
         clipboard.setPrimaryClip(ClipData.newPlainText("mensagem", texto))
         Toast.makeText(context, "Mensagem copiada", Toast.LENGTH_SHORT).show()
     }

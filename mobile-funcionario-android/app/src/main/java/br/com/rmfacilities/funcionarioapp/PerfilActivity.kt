@@ -246,7 +246,7 @@ class PerfilActivity : BaseActivity() {
 
                     // Toque longo para copiar dados (nome, CPF, cargo)
                     fun copiarParaClipboard(label: String, texto: String) {
-                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
                         clipboard.setPrimaryClip(ClipData.newPlainText(label, texto))
                         Toast.makeText(this@PerfilActivity, "$label copiado!", Toast.LENGTH_SHORT).show()
                     }
