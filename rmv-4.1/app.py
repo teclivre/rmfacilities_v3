@@ -17750,18 +17750,25 @@ def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
             if isinstance(data_str, str)
             else data_str
         )
+        data_iso = data_obj.isoformat()
 
         # Procura escala ativa para esse funcionário e data
         esc_func = EscalaFuncionario.query.filter(
             EscalaFuncionario.funcionario_id == funcionario.id,
-            EscalaFuncionario.data_inicio <= data_str,
+            EscalaFuncionario.data_inicio <= data_iso,
             EscalaFuncionario.ativo == True,
-        ).all()
+        ).order_by(EscalaFuncionario.data_inicio.desc(), EscalaFuncionario.id.desc()).all()
 
         for ef in esc_func:
             # Se tem data_fim, verifica se data_str está dentro do range
-            if ef.data_fim and ef.data_fim < data_str:
-                continue
+            if ef.data_fim:
+                try:
+                    data_fim_obj = datetime.strptime(ef.data_fim, "%Y-%m-%d").date()
+                    if data_fim_obj < data_obj:
+                        continue
+                except Exception:
+                    # Data fim inválida não deve quebrar o cálculo; ignora vínculo inconsistente.
+                    continue
             # Encontrou escala ativa; calcular índice no ciclo
             esc = db.session.get(Escala, ef.escala_id)
             if not esc:
@@ -17770,6 +17777,8 @@ def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
             # Calcular quantos dias desde data_inicio
             data_inicio_obj = datetime.strptime(ef.data_inicio, "%Y-%m-%d").date()
             dias_decorridos = (data_obj - data_inicio_obj).days
+            if dias_decorridos < 0:
+                continue
 
             # Obter tamanho do ciclo
             try:
