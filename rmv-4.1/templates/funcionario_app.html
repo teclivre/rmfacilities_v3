@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="RM Facilities">
+<meta name="theme-color" content="#1a2540">
+<title>RM Facilities – App do Funcionário</title>
+<style>
+:root {
+  --bg: #0f1929;
+  --bg2: #1a2540;
+  --bg3: #243050;
+  --card: #1e2d4a;
+  --border: #2e4070;
+  --text: #e8ecf4;
+  --text2: #9bacc8;
+  --blue: #3b82f6;
+  --blue-cl: rgba(59,130,246,0.15);
+  --green: #22c55e;
+  --green-cl: rgba(34,197,94,0.15);
+  --yellow: #eab308;
+  --yellow-cl: rgba(234,179,8,0.15);
+  --red: #ef4444;
+  --red-cl: rgba(239,68,68,0.15);
+  --orange: #f97316;
+  --radius: 14px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bot: env(safe-area-inset-bottom, 0px);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overflow:hidden}
+
+/* ── Telas ── */
+.screen{display:none;position:fixed;inset:0;flex-direction:column;overflow:hidden}
+.screen.on{display:flex}
+
+/* ── Login ── */
+#scr-login{background:linear-gradient(160deg,#0f1929 0%,#1a2540 60%,#243050 100%);align-items:center;justify-content:center;padding:20px}
+.login-box{width:100%;max-width:360px}
+.login-logo{text-align:center;margin-bottom:32px}
+.login-logo .brand{font-size:22px;font-weight:700;color:var(--text);letter-spacing:-0.5px}
+.login-logo .sub{font-size:13px;color:var(--text2);margin-top:4px}
+.login-logo .icon-wrap{width:72px;height:72px;background:var(--blue-cl);border:2px solid var(--blue);border-radius:20px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:32px}
+.lf{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.lf label{font-size:13px;color:var(--text2);font-weight:500}
+.lf input{background:var(--bg3);border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-size:16px;padding:13px 14px;outline:none;width:100%;-webkit-appearance:none}
+.lf input:focus{border-color:var(--blue)}
+.btn-login{width:100%;background:var(--blue);color:#fff;font-size:16px;font-weight:600;border:none;border-radius:12px;padding:15px;cursor:pointer;margin-top:4px}
+.btn-login:active{opacity:0.85}
+.login-err{color:var(--red);font-size:13px;text-align:center;min-height:18px;margin-top:8px}
+
+/* ── App shell ── */
+#scr-app{background:var(--bg)}
+.app-header{background:var(--bg2);border-bottom:1px solid var(--border);padding:calc(var(--safe-top) + 12px) 16px 12px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+.app-header .hname{font-size:15px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.app-header .hbadge{background:var(--blue);color:#fff;font-size:11px;font-weight:700;border-radius:10px;padding:2px 8px}
+.app-content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 16px calc(var(--safe-bot) + 70px)}
+.app-nav{position:fixed;bottom:0;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border);display:flex;padding-bottom:var(--safe-bot);z-index:100}
+.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px;font-size:10px;color:var(--text2);cursor:pointer;border:none;background:none;position:relative}
+.nav-btn.on{color:var(--blue)}
+.nav-btn svg{width:22px;height:22px;fill:currentColor}
+.nav-badge{position:absolute;top:7px;right:calc(50% - 18px);background:var(--red);color:#fff;font-size:9px;font-weight:700;border-radius:8px;padding:1px 5px;min-width:16px;text-align:center;display:none}
+.nav-badge.on{display:block}
+
+/* ── Pages ── */
+.page{display:none}
+.page.on{display:block}
+
+/* ── Cards ── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+.card-title{font-size:13px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px}
+.card-title2{font-size:15px;font-weight:600;color:var(--text);margin-bottom:12px}
+
+/* ── Ponto ── */
+.clock-big{text-align:center;font-size:48px;font-weight:200;letter-spacing:-2px;color:var(--text);line-height:1;margin:8px 0 2px}
+.date-sub{text-align:center;font-size:14px;color:var(--text2);margin-bottom:20px}
+.btn-ponto{display:block;width:100%;background:var(--green);color:#fff;font-size:18px;font-weight:700;border:none;border-radius:16px;padding:20px;cursor:pointer;text-align:center;box-shadow:0 4px 20px rgba(34,197,94,0.3)}
+.btn-ponto:active{opacity:0.85;transform:scale(0.98)}
+.btn-ponto.saida{background:var(--orange);box-shadow:0 4px 20px rgba(249,115,22,0.3)}
+.btn-ponto.intervalo{background:var(--yellow);box-shadow:0 4px 20px rgba(234,179,8,0.3);color:#000}
+.btn-ponto.retorno{background:var(--blue);box-shadow:0 4px 20px rgba(59,130,246,0.3)}
+.btn-ponto.concluido{background:var(--bg3);color:var(--text2);box-shadow:none;cursor:default}
+.ponto-next-label{text-align:center;font-size:13px;color:var(--text2);margin-top:10px}
+.marcacoes-list{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.marc-item{display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:10px}
+.marc-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.marc-dot.entrada{background:var(--green)}
+.marc-dot.saida{background:var(--orange)}
+.marc-dot.saida_intervalo{background:var(--yellow)}
+.marc-dot.retorno_intervalo{background:var(--blue)}
+.marc-info{flex:1}
+.marc-tipo{font-size:13px;font-weight:600;color:var(--text)}
+.marc-hora{font-size:12px;color:var(--text2)}
+.saldo-row{display:flex;gap:10px;margin-top:12px}
+.saldo-box{flex:1;background:var(--bg3);border-radius:10px;padding:10px;text-align:center}
+.saldo-box .val{font-size:18px;font-weight:700}
+.saldo-box .lbl{font-size:11px;color:var(--text2);margin-top:2px}
+.saldo-box.pos .val{color:var(--green)}
+.saldo-box.neg .val{color:var(--red)}
+.saldo-box.neu .val{color:var(--text2)}
+.ponto-spin{text-align:center;padding:20px;color:var(--text2);font-size:14px}
+
+/* ── Histórico ── */
+.hist-day{margin-bottom:10px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.hist-day-header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;cursor:pointer}
+.hist-day-date{font-size:14px;font-weight:600;color:var(--text)}
+.hist-day-hours{font-size:13px;font-weight:600}
+.hist-day-body{padding:0 14px 12px;display:none}
+.hist-day-body.on{display:block}
+.hist-marc-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)}
+.hist-marc-row:last-child{border-bottom:none}
+
+/* ── Mensagens ── */
+.chat-wrap{display:flex;flex-direction:column;height:calc(100vh - 200px)}
+.chat-msgs{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 0}
+.msg-item{display:flex;margin-bottom:10px}
+.msg-item.de-rh{justify-content:flex-start}
+.msg-item.de-func{justify-content:flex-end}
+.msg-bubble{max-width:78%;padding:10px 13px;border-radius:18px;font-size:14px;line-height:1.45}
+.msg-item.de-rh .msg-bubble{background:var(--bg3);border-bottom-left-radius:4px;color:var(--text)}
+.msg-item.de-func .msg-bubble{background:var(--blue);color:#fff;border-bottom-right-radius:4px}
+.msg-time{font-size:10px;margin-top:4px;opacity:0.65}
+.msg-item.de-rh .msg-time{text-align:left}
+.msg-item.de-func .msg-time{text-align:right}
+.chat-input-bar{display:flex;gap:8px;padding:10px 0 0;border-top:1px solid var(--border);margin-top:8px}
+.chat-input-bar input{flex:1;background:var(--bg3);border:1.5px solid var(--border);border-radius:22px;color:var(--text);font-size:15px;padding:10px 14px;outline:none;-webkit-appearance:none}
+.chat-input-bar input:focus{border-color:var(--blue)}
+.chat-send-btn{background:var(--blue);border:none;border-radius:50%;width:42px;height:42px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.chat-send-btn svg{width:20px;height:20px;fill:#fff}
+.chat-send-btn:active{opacity:0.8}
+.chat-empty{text-align:center;padding:40px 20px;color:var(--text2);font-size:14px}
+.rh-label{font-size:11px;color:var(--text2);margin-bottom:2px;padding-left:2px}
+
+/* ── Comunicados ── */
+.comun-item{padding:14px;background:var(--bg3);border-radius:12px;margin-bottom:10px;border-left:3px solid var(--blue)}
+.comun-item.nao-lido{border-left-color:var(--orange)}
+.comun-titulo{font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px}
+.comun-corpo{font-size:13px;color:var(--text2);line-height:1.5}
+.comun-data{font-size:11px;color:var(--text2);margin-top:6px}
+.comun-empty{text-align:center;padding:40px 20px;color:var(--text2);font-size:14px}
+
+/* ── Perfil ── */
+.profile-avatar{width:72px;height:72px;border-radius:50%;background:var(--blue-cl);border:2px solid var(--blue);display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--blue);margin:0 auto 12px;overflow:hidden}
+.profile-avatar img{width:100%;height:100%;object-fit:cover}
+.profile-name{text-align:center;font-size:18px;font-weight:700;color:var(--text);margin-bottom:2px}
+.profile-role{text-align:center;font-size:13px;color:var(--text2);margin-bottom:20px}
+.info-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)}
+.info-row:last-child{border-bottom:none}
+.info-label{font-size:12px;color:var(--text2);width:90px;flex-shrink:0}
+.info-val{font-size:14px;color:var(--text);flex:1}
+.btn-logout{display:block;width:100%;background:transparent;border:1.5px solid var(--red);color:var(--red);font-size:15px;font-weight:600;border-radius:12px;padding:14px;cursor:pointer;text-align:center;margin-top:20px}
+.btn-logout:active{background:var(--red-cl)}
+
+/* ── Utils ── */
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px}
+.pill-g{background:var(--green-cl);color:var(--green)}
+.pill-r{background:var(--red-cl);color:var(--red)}
+.pill-y{background:var(--yellow-cl);color:var(--yellow)}
+.pill-b{background:var(--blue-cl);color:var(--blue)}
+.spinner{display:inline-block;width:18px;height:18px;border:2.5px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;bottom:calc(var(--safe-bot) + 80px);left:50%;transform:translateX(-50%) translateY(10px);background:rgba(30,45,74,0.97);color:var(--text);font-size:13px;font-weight:500;padding:10px 18px;border-radius:12px;border:1px solid var(--border);opacity:0;transition:opacity .25s,transform .25s;z-index:9999;white-space:nowrap;pointer-events:none;max-width:90vw;text-align:center}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.err{border-color:var(--red);color:var(--red)}
+.section-hdr{font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;margin-top:4px}
+.empty-state{text-align:center;padding:48px 20px;color:var(--text2);font-size:14px}
+.empty-state .emo{font-size:40px;margin-bottom:10px}
+</style>
+</head>
+<body>
+
+<!-- ════ LOGIN ════ -->
+<div id="scr-login" class="screen on">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="icon-wrap">🏢</div>
+      <div class="brand">RM Facilities</div>
+      <div class="sub">Portal do Colaborador</div>
+    </div>
+    <div class="lf">
+      <label>CPF</label>
+      <input id="l-cpf" type="tel" inputmode="numeric" placeholder="000.000.000-00" autocomplete="username" maxlength="14">
+    </div>
+    <div class="lf">
+      <label>Senha</label>
+      <input id="l-senha" type="password" placeholder="Sua senha" autocomplete="current-password">
+    </div>
+    <button class="btn-login" id="btn-login" onclick="doLogin()">Entrar</button>
+    <div class="login-err" id="l-err"></div>
+  </div>
+</div>
+
+<!-- ════ APP ════ -->
+<div id="scr-app" class="screen">
+  <!-- Header -->
+  <div class="app-header">
+    <div class="hname" id="hd-name">—</div>
+    <span class="hbadge" id="hd-status">Ativo</span>
+  </div>
+
+  <!-- Content -->
+  <div class="app-content" id="app-content">
+
+    <!-- ─── PONTO ─── -->
+    <div id="pg-ponto" class="page on">
+      <div class="card">
+        <div id="clock-big" class="clock-big">—:—</div>
+        <div id="date-sub" class="date-sub">—</div>
+        <button class="btn-ponto" id="btn-marcar-ponto" onclick="marcarPonto()">Carregando…</button>
+        <div class="ponto-next-label" id="ponto-next-lbl"></div>
+      </div>
+      <div class="card" id="card-marcacoes">
+        <div class="card-title">Marcações de hoje</div>
+        <div id="marcacoes-list" class="marcacoes-list"><div class="ponto-spin"><span class="spinner"></span></div></div>
+        <div class="saldo-row" id="saldo-row" style="display:none">
+          <div class="saldo-box neu" id="saldo-trab">
+            <div class="val">—</div><div class="lbl">Trabalhado</div>
+          </div>
+          <div class="saldo-box neu" id="saldo-bal">
+            <div class="val">—</div><div class="lbl">Saldo</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── HISTÓRICO ─── -->
+    <div id="pg-hist" class="page">
+      <div class="section-hdr">Últimos 7 dias</div>
+      <div id="hist-list"><div class="ponto-spin"><span class="spinner"></span></div></div>
+    </div>
+
+    <!-- ─── MENSAGENS ─── -->
+    <div id="pg-msgs" class="page">
+      <div class="card-title2">Chat com RH</div>
+      <div class="chat-wrap">
+        <div class="chat-msgs" id="chat-msgs-box">
+          <div class="chat-empty">Carregando mensagens…</div>
+        </div>
+        <div class="chat-input-bar">
+          <input id="chat-input" type="text" placeholder="Mensagem…" maxlength="2000" onkeydown="if(event.key==='Enter')enviarMsg()">
+          <button class="chat-send-btn" onclick="enviarMsg()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── COMUNICADOS ─── -->
+    <div id="pg-comun" class="page">
+      <div class="section-hdr">Comunicados</div>
+      <div id="comun-list"><div class="ponto-spin"><span class="spinner"></span></div></div>
+    </div>
+
+    <!-- ─── PERFIL ─── -->
+    <div id="pg-perfil" class="page">
+      <div class="card" style="text-align:center;padding-top:24px">
+        <div class="profile-avatar" id="perf-avatar">👤</div>
+        <div class="profile-name" id="perf-name">—</div>
+        <div class="profile-role" id="perf-role">—</div>
+        <div style="text-align:left;margin-top:8px">
+          <div class="info-row"><div class="info-label">CPF</div><div class="info-val" id="perf-cpf">—</div></div>
+          <div class="info-row"><div class="info-label">Empresa</div><div class="info-val" id="perf-emp">—</div></div>
+          <div class="info-row"><div class="info-label">Posto</div><div class="info-val" id="perf-posto">—</div></div>
+          <div class="info-row"><div class="info-label">Status</div><div class="info-val" id="perf-status">—</div></div>
+          <div class="info-row"><div class="info-label">Setor</div><div class="info-val" id="perf-setor">—</div></div>
+          <div class="info-row"><div class="info-label">E-mail</div><div class="info-val" id="perf-email">—</div></div>
+          <div class="info-row"><div class="info-label">Telefone</div><div class="info-val" id="perf-tel">—</div></div>
+        </div>
+        <button class="btn-logout" onclick="logout()">Sair da conta</button>
+      </div>
+    </div>
+
+  </div><!-- /app-content -->
+
+  <!-- Bottom Nav -->
+  <nav class="app-nav">
+    <button class="nav-btn on" id="nav-ponto" onclick="showPage('ponto')">
+      <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zm.5 11H11V7h1.5v4.26l2.62 1.51-.75 1.3L12.5 13z"/></svg>
+      Ponto
+    </button>
+    <button class="nav-btn" id="nav-hist" onclick="showPage('hist')">
+      <svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 1 1 2.05 4.93L6.64 18.34A9 9 0 1 0 13 3zm-1 5v5.25l4.5 2.67-.75 1.23L11 14V8h1z"/></svg>
+      Histórico
+    </button>
+    <button class="nav-btn" id="nav-msgs" onclick="showPage('msgs')">
+      <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+      Mensagens
+      <span class="nav-badge" id="badge-msgs">0</span>
+    </button>
+    <button class="nav-btn" id="nav-comun" onclick="showPage('comun')">
+      <svg viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
+      Comunicados
+      <span class="nav-badge" id="badge-comun">0</span>
+    </button>
+    <button class="nav-btn" id="nav-perfil" onclick="showPage('perfil')">
+      <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+      Perfil
+    </button>
+  </nav>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<script>
+'use strict';
+// ── Estado ──
+let _AT = '', _RT = '', _func = null;
+let _clockT = null, _pontoT = null, _msgsT = null;
+let _pontoData = null, _chatLoaded = false, _histLoaded = false;
+let _comunLoaded = false, _perfilLoaded = false;
+let _curPage = 'ponto';
+let _msgPollT = null;
+
+// ── Storage ──
+function lsGet(k){ try{ return localStorage.getItem(k) }catch(e){ return null } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v) }catch(e){} }
+function lsDel(k){ try{ localStorage.removeItem(k) }catch(e){} }
+
+// ── Init ──
+(function init(){
+  _AT = lsGet('rmf_at') || '';
+  _RT = lsGet('rmf_rt') || '';
+  const fs = lsGet('rmf_func');
+  if(fs){ try{ _func = JSON.parse(fs); }catch(e){} }
+  // Mascarar CPF input
+  const cpfEl = document.getElementById('l-cpf');
+  cpfEl.addEventListener('input', function(){
+    let v = this.value.replace(/\D/g,'').slice(0,11);
+    if(v.length>9) v=v.replace(/(\d{3})(\d{3})(\d{3})(\d{0,2})/,'$1.$2.$3-$4');
+    else if(v.length>6) v=v.replace(/(\d{3})(\d{3})(\d{0,3})/,'$1.$2.$3');
+    else if(v.length>3) v=v.replace(/(\d{3})(\d{0,3})/,'$1.$2');
+    this.value=v;
+  });
+  document.getElementById('l-senha').addEventListener('keydown',function(e){
+    if(e.key==='Enter') doLogin();
+  });
+  if(_AT && _func){
+    showApp();
+  }
+})();
+
+// ── API ──
+async function api(method, path, body, retried){
+  const opts = { method, headers: {'Content-Type':'application/json','Authorization':'Bearer '+_AT} };
+  if(body) opts.body = JSON.stringify(body);
+  let r;
+  try{ r = await fetch(path, opts); }
+  catch(e){ throw {network:true, message:'Sem conexão'} }
+  if(r.status === 401 && !retried){
+    const ok = await refreshToken();
+    if(ok) return api(method, path, body, true);
+    doLogout();
+    throw {auth:true, message:'Sessão expirada'};
+  }
+  let d;
+  try{ d = await r.json(); }catch(e){ d = {}; }
+  if(!r.ok) throw {status:r.status, message: d.erro || d.error || 'Erro '+r.status};
+  return d;
+}
+
+async function refreshToken(){
+  if(!_RT) return false;
+  try{
+    const r = await fetch('/api/app/funcionario/refresh',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({refresh_token: _RT})
+    });
+    if(!r.ok) return false;
+    const d = await r.json();
+    if(d.access_token){ _AT=d.access_token; lsSet('rmf_at',_AT); }
+    if(d.refresh_token){ _RT=d.refresh_token; lsSet('rmf_rt',_RT); }
+    return true;
+  }catch(e){ return false; }
+}
+
+// ── Login ──
+async function doLogin(){
+  const cpf = document.getElementById('l-cpf').value.replace(/\D/g,'');
+  const senha = document.getElementById('l-senha').value;
+  const errEl = document.getElementById('l-err');
+  const btn = document.getElementById('btn-login');
+  errEl.textContent = '';
+  if(cpf.length < 11){ errEl.textContent = 'CPF inválido.'; return; }
+  if(!senha){ errEl.textContent = 'Informe a senha.'; return; }
+  btn.textContent = '…'; btn.disabled = true;
+  try{
+    const r = await fetch('/api/app/funcionario/login',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({cpf, senha})
+    });
+    const d = await r.json();
+    if(!r.ok){ errEl.textContent = d.erro || 'Credenciais inválidas.'; return; }
+    _AT = d.access_token; _RT = d.refresh_token; _func = d.funcionario;
+    lsSet('rmf_at', _AT); lsSet('rmf_rt', _RT); lsSet('rmf_func', JSON.stringify(_func));
+    showApp();
+  }catch(e){
+    errEl.textContent = 'Erro de conexão. Tente novamente.';
+  }finally{
+    btn.textContent = 'Entrar'; btn.disabled = false;
+  }
+}
+
+function logout(){
+  if(!confirm('Deseja sair da sua conta?')) return;
+  doLogout();
+}
+
+async function doLogout(){
+  try{ await api('POST','/api/app/funcionario/logout'); }catch(e){}
+  lsDel('rmf_at'); lsDel('rmf_rt'); lsDel('rmf_func');
+  _AT=''; _RT=''; _func=null;
+  clearTimers();
+  document.getElementById('scr-app').classList.remove('on');
+  document.getElementById('scr-login').classList.add('on');
+  document.getElementById('l-senha').value='';
+  document.getElementById('l-err').textContent='';
+}
+
+// ── App Shell ──
+function showApp(){
+  document.getElementById('scr-login').classList.remove('on');
+  document.getElementById('scr-app').classList.add('on');
+  // Header
+  document.getElementById('hd-name').textContent = _func?.nome || '—';
+  const st = (_func?.status || '').toLowerCase();
+  const hbadge = document.getElementById('hd-status');
+  hbadge.textContent = _func?.status || '';
+  hbadge.style.background = st==='ativo' ? 'var(--green)' : 'var(--yellow)';
+  // Start clock
+  updateClock();
+  _clockT = setInterval(updateClock, 1000);
+  // Load initial page
+  showPage('ponto');
+  loadBadges();
+}
+
+function clearTimers(){
+  clearInterval(_clockT); clearInterval(_msgPollT);
+}
+
+function updateClock(){
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2,'0');
+  const m = String(now.getMinutes()).padStart(2,'0');
+  const s = String(now.getSeconds()).padStart(2,'0');
+  const el = document.getElementById('clock-big');
+  if(el) el.textContent = h+':'+m+':'+s;
+  const days=['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
+  const months=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  const de = document.getElementById('date-sub');
+  if(de) de.textContent = days[now.getDay()]+', '+now.getDate()+' de '+months[now.getMonth()]+' de '+now.getFullYear();
+}
+
+// ── Navigation ──
+function showPage(page){
+  _curPage = page;
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('on'));
+  document.getElementById('pg-'+page).classList.add('on');
+  document.getElementById('nav-'+page).classList.add('on');
+  if(page==='ponto') loadPonto();
+  else if(page==='hist') loadHist();
+  else if(page==='msgs'){ loadMsgs(); startMsgPoll(); }
+  else if(page==='comun') loadComun();
+  else if(page==='perfil') loadPerfil();
+  if(page!=='msgs') stopMsgPoll();
+}
+
+// ── Badges ──
+async function loadBadges(){
+  try{
+    const d = await api('GET','/api/app/funcionario/mensagens/nao-lidas');
+    const c = Array.isArray(d) ? d.length : (d.count || 0);
+    setBadge('msgs', c);
+  }catch(e){}
+  try{
+    const d = await api('GET','/api/app/funcionario/comunicados/nao-lidos');
+    const c = Array.isArray(d) ? d.length : (d.count || 0);
+    setBadge('comun', c);
+  }catch(e){}
+}
+
+function setBadge(name, count){
+  const el = document.getElementById('badge-'+name);
+  if(!el) return;
+  if(count>0){ el.textContent=count>99?'99+':count; el.classList.add('on'); }
+  else{ el.classList.remove('on'); }
+}
+
+// ── Ponto ──
+async function loadPonto(){
+  try{
+    const d = await api('GET','/api/app/funcionario/me/ponto/dia');
+    _pontoData = d.resumo || d;
+    renderPonto(_pontoData);
+  }catch(e){
+    showToast(e.message || 'Erro ao carregar ponto', true);
+  }
+}
+
+function renderPonto(r){
+  if(!r) return;
+  // Botão
+  const btn = document.getElementById('btn-marcar-ponto');
+  const lbl = document.getElementById('ponto-next-lbl');
+  const prox = r.proximo_tipo || '';
+  const proxLabel = r.proximo_tipo_label || '';
+  // Se todas marcações feitas (saída realizada = 4 marcações completas)
+  const marcacoes = r.marcacoes || [];
+  const done = marcacoes.length === 4 && marcacoes.some(m=>m.tipo==='saida');
+  if(done){
+    btn.textContent = '✓ Jornada concluída';
+    btn.className = 'btn-ponto concluido';
+    lbl.textContent = 'Todas as marcações do dia foram registradas.';
+  } else if(prox==='entrada'){
+    btn.textContent = '▶ Registrar Entrada';
+    btn.className = 'btn-ponto';
+    lbl.textContent = '';
+  } else if(prox==='saida_intervalo'){
+    btn.textContent = '⏸ Saída para Intervalo';
+    btn.className = 'btn-ponto intervalo';
+    lbl.textContent = '';
+  } else if(prox==='retorno_intervalo'){
+    btn.textContent = '▶ Retorno do Intervalo';
+    btn.className = 'btn-ponto retorno';
+    lbl.textContent = '';
+  } else if(prox==='saida'){
+    btn.textContent = '⏹ Registrar Saída';
+    btn.className = 'btn-ponto saida';
+    lbl.textContent = '';
+  } else {
+    btn.textContent = proxLabel || 'Registrar Ponto';
+    btn.className = 'btn-ponto';
+    lbl.textContent = '';
+  }
+  // Marcações
+  const list = document.getElementById('marcacoes-list');
+  if(marcacoes.length===0){
+    list.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text2);font-size:13px">Nenhuma marcação hoje.</div>';
+  } else {
+    list.innerHTML = marcacoes.map(m=>`
+      <div class="marc-item">
+        <div class="marc-dot ${m.tipo}"></div>
+        <div class="marc-info">
+          <div class="marc-tipo">${esc(m.tipo_label)}</div>
+          <div class="marc-hora">${esc(m.hora_fmt)} ${m.origem&&m.origem!=='app'?'<span class="pill pill-b">'+esc(m.origem)+'</span>':''}</div>
+        </div>
+      </div>`).join('');
+  }
+  // Saldo
+  const trab = r.horas_trabalhadas_fmt || '00:00';
+  const saldo = r.saldo_fmt || '+00:00';
+  const saldoMin = r.saldo_min || 0;
+  const saldoRow = document.getElementById('saldo-row');
+  saldoRow.style.display = 'flex';
+  const trabEl = document.getElementById('saldo-trab');
+  const balEl = document.getElementById('saldo-bal');
+  trabEl.querySelector('.val').textContent = trab;
+  trabEl.className = 'saldo-box neu';
+  balEl.querySelector('.val').textContent = saldo;
+  balEl.className = 'saldo-box '+(saldoMin>0?'pos':saldoMin<0?'neg':'neu');
+}
+
+async function marcarPonto(){
+  const btn = document.getElementById('btn-marcar-ponto');
+  if(btn.classList.contains('concluido')) return;
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.textContent = '…';
+  try{
+    const d = await api('POST','/api/app/funcionario/me/ponto/marcar',{});
+    showToast('Ponto registrado com sucesso!');
+    await loadPonto();
+  }catch(e){
+    showToast(e.message || 'Erro ao registrar ponto', true);
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+// ── Histórico ──
+async function loadHist(){
+  const el = document.getElementById('hist-list');
+  el.innerHTML = '<div class="ponto-spin"><span class="spinner"></span></div>';
+  try{
+    const d = await api('GET','/api/app/funcionario/me/ponto/historico?dias=7');
+    const dias = d.dias || [];
+    if(dias.length===0){
+      el.innerHTML = '<div class="empty-state"><div class="emo">📅</div>Nenhum dado disponível.</div>';
+      return;
+    }
+    el.innerHTML = dias.map((dia,i)=>renderHistDia(dia,i)).join('');
+    // Expandir o primeiro
+    const first = el.querySelector('.hist-day-body');
+    if(first) first.classList.add('on');
+  }catch(e){
+    el.innerHTML = '<div class="empty-state">Erro ao carregar histórico.</div>';
+  }
+}
+
+function renderHistDia(dia, idx){
+  const dt = dia.data_ref || '';
+  const [ano,mes,d] = dt.split('-');
+  const dtObj = new Date(Number(ano),Number(mes)-1,Number(d));
+  const days=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const dLabel = days[dtObj.getDay()]+', '+d+'/'+mes;
+  const trab = dia.horas_trabalhadas_fmt || '00:00';
+  const saldo = dia.saldo_fmt || '+00:00';
+  const saldoMin = dia.saldo_min || 0;
+  const color = saldoMin>0?'var(--green)':saldoMin<0?'var(--red)':'var(--text2)';
+  const marcacoes = dia.marcacoes || [];
+  return `<div class="hist-day">
+    <div class="hist-day-header" onclick="this.nextElementSibling.classList.toggle('on')">
+      <div>
+        <div class="hist-day-date">${esc(dLabel)}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">${marcacoes.length} marcação${marcacoes.length!==1?'s':''}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="hist-day-hours" style="color:var(--text)">${esc(trab)}</div>
+        <div style="font-size:12px;color:${color}">${esc(saldo)}</div>
+      </div>
+    </div>
+    <div class="hist-day-body">
+      ${marcacoes.length===0?'<div style="color:var(--text2);font-size:13px;padding:4px 0">Sem marcações.</div>':
+        marcacoes.map(m=>`<div class="hist-marc-row">
+          <div class="marc-dot ${m.tipo}" style="width:8px;height:8px"></div>
+          <div style="flex:1;font-size:13px;color:var(--text)">${esc(m.tipo_label)}</div>
+          <div style="font-size:13px;color:var(--text2)">${esc(m.hora_fmt)}</div>
+        </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+// ── Mensagens ──
+async function loadMsgs(){
+  const box = document.getElementById('chat-msgs-box');
+  try{
+    const msgs = await api('GET','/api/app/funcionario/mensagens');
+    setBadge('msgs', 0);
+    renderMsgs(msgs);
+  }catch(e){
+    box.innerHTML = '<div class="chat-empty">Erro ao carregar mensagens.</div>';
+  }
+}
+
+function renderMsgs(msgs){
+  const box = document.getElementById('chat-msgs-box');
+  if(!Array.isArray(msgs)||msgs.length===0){
+    box.innerHTML = '<div class="chat-empty">Nenhuma mensagem ainda.<br>Envie uma mensagem ao RH!</div>';
+    return;
+  }
+  box.innerHTML = msgs.map(m=>{
+    const deRh = m.de_rh;
+    const ts = m.enviado_em ? fmtTs(m.enviado_em) : '';
+    return `<div class="msg-item ${deRh?'de-rh':'de-func'}">
+      <div>
+        ${deRh?'<div class="rh-label">RH</div>':''}
+        <div class="msg-bubble">${esc(m.conteudo||'')}</div>
+        <div class="msg-time">${ts}</div>
+      </div>
+    </div>`;
+  }).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+async function enviarMsg(){
+  const inp = document.getElementById('chat-input');
+  const txt = inp.value.trim();
+  if(!txt) return;
+  inp.value='';
+  try{
+    await api('POST','/api/app/funcionario/mensagens',{conteudo:txt});
+    await loadMsgs();
+  }catch(e){
+    showToast(e.message||'Erro ao enviar', true);
+    inp.value=txt;
+  }
+}
+
+function startMsgPoll(){
+  stopMsgPoll();
+  _msgPollT = setInterval(()=>{ if(_curPage==='msgs') loadMsgs(); }, 30000);
+}
+function stopMsgPoll(){
+  if(_msgPollT){ clearInterval(_msgPollT); _msgPollT=null; }
+}
+
+// ── Comunicados ──
+async function loadComun(){
+  const el = document.getElementById('comun-list');
+  el.innerHTML = '<div class="ponto-spin"><span class="spinner"></span></div>';
+  try{
+    const d = await api('GET','/api/app/funcionario/comunicados');
+    setBadge('comun', 0);
+    const lista = Array.isArray(d) ? d : (d.comunicados || []);
+    if(lista.length===0){
+      el.innerHTML = '<div class="empty-state"><div class="emo">📢</div>Nenhum comunicado.</div>';
+      return;
+    }
+    el.innerHTML = lista.map(c=>{
+      const naoLido = !c.lido;
+      return `<div class="comun-item${naoLido?' nao-lido':''}">
+        <div class="comun-titulo">${esc(c.titulo||c.assunto||'Comunicado')}</div>
+        <div class="comun-corpo">${esc(c.conteudo||c.mensagem||'')}</div>
+        <div class="comun-data">${c.criado_em?fmtTs(c.criado_em):''}</div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    el.innerHTML = '<div class="empty-state">Erro ao carregar comunicados.</div>';
+  }
+}
+
+// ── Perfil ──
+async function loadPerfil(){
+  try{
+    const d = await api('GET','/api/app/funcionario/me');
+    const f = d.funcionario || {};
+    document.getElementById('perf-name').textContent = f.nome||'—';
+    document.getElementById('perf-role').textContent = [f.cargo,f.setor].filter(Boolean).join(' · ')||'—';
+    document.getElementById('perf-cpf').textContent = fmtCpf(f.cpf)||'—';
+    document.getElementById('perf-emp').textContent = f.empresa_nome||'—';
+    document.getElementById('perf-posto').textContent = f.posto_operacional||'—';
+    document.getElementById('perf-status').textContent = f.status||'—';
+    document.getElementById('perf-setor').textContent = f.setor||'—';
+    document.getElementById('perf-email').textContent = f.email||'—';
+    document.getElementById('perf-tel').textContent = f.telefone||'—';
+    // Header update
+    document.getElementById('hd-name').textContent = f.nome||'—';
+    // Foto
+    if(f.foto_url){
+      document.getElementById('perf-avatar').innerHTML = `<img src="${f.foto_url}" alt="foto" onerror="this.parentElement.innerHTML='👤'">`;
+    }
+    // Update cached func
+    _func = {..._func, ...f};
+    lsSet('rmf_func', JSON.stringify(_func));
+  }catch(e){
+    showToast('Erro ao carregar perfil', true);
+  }
+}
+
+// ── Helpers ──
+function esc(s){ const d=document.createElement('div'); d.textContent=String(s||''); return d.innerHTML; }
+function fmtCpf(c){ const s=String(c||'').replace(/\D/g,''); return s.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4')||c; }
+function fmtTs(ts){
+  try{
+    const d = new Date(ts);
+    const h = String(d.getHours()).padStart(2,'0');
+    const m = String(d.getMinutes()).padStart(2,'0');
+    return d.getDate()+'/'+(d.getMonth()+1)+' '+h+':'+m;
+  }catch(e){ return ts; }
+}
+
+let _toastT = null;
+function showToast(msg, isErr){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast on'+(isErr?' err':'');
+  if(_toastT) clearTimeout(_toastT);
+  _toastT = setTimeout(()=>{ t.classList.remove('on'); },3000);
+}
+</script>
+</body>
+</html>

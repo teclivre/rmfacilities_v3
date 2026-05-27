@@ -8362,6 +8362,12 @@ def index():
     )
 
 
+@app.route("/funcionario")
+def funcionario_app():
+    """Portal web do funcionário (PWA para iOS e outros dispositivos)."""
+    return render_template("funcionario_app.html")
+
+
 @app.route("/api/cnpj/<cnpj>")
 @lr
 def api_cnpj(cnpj):
