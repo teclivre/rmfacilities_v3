@@ -18550,7 +18550,7 @@ def api_ponto_kiosk_bater(token):
 
 # Admin: gerenciar kiosks
 @app.route("/api/admin/ponto/kiosks", methods=["GET"])
-@login_required
+@lr
 def api_admin_kiosk_list():
     items = PontoKiosk.query.order_by(PontoKiosk.criado_em.desc()).all()
     result = []
@@ -18562,7 +18562,7 @@ def api_admin_kiosk_list():
 
 
 @app.route("/api/admin/ponto/kiosks", methods=["POST"])
-@login_required
+@lr
 def api_admin_kiosk_create():
     dados = request.json or {}
     nome = (dados.get("nome") or "").strip()
@@ -18585,7 +18585,7 @@ def api_admin_kiosk_create():
 
 
 @app.route("/api/admin/ponto/kiosks/<int:kid>", methods=["PUT"])
-@login_required
+@lr
 def api_admin_kiosk_update(kid):
     k = db.session.get(PontoKiosk, kid)
     if not k:
@@ -18608,7 +18608,7 @@ def api_admin_kiosk_update(kid):
 
 
 @app.route("/api/admin/ponto/kiosks/<int:kid>/regenerar-token", methods=["POST"])
-@login_required
+@lr
 def api_admin_kiosk_regenerar_token(kid):
     k = db.session.get(PontoKiosk, kid)
     if not k:
@@ -18619,7 +18619,7 @@ def api_admin_kiosk_regenerar_token(kid):
 
 
 @app.route("/api/admin/ponto/kiosks/<int:kid>", methods=["DELETE"])
-@login_required
+@lr
 def api_admin_kiosk_delete(kid):
     k = db.session.get(PontoKiosk, kid)
     if not k:
@@ -18630,7 +18630,7 @@ def api_admin_kiosk_delete(kid):
 
 
 @app.route("/api/admin/funcionarios/kiosk-pin", methods=["POST"])
-@login_required
+@lr
 def api_admin_func_kiosk_pin_set():
     """Define PIN de kiosk para um funcionário."""
     dados = request.json or {}
