@@ -611,6 +611,13 @@ async function gfCarregarMes(){
   gfRenderFolha(r.resumo);
 }
 
+function gfAbrirPreviaFolha(){
+  if(!gfFuncId){showSt('gf-st','Selecione um colaborador.',true);return;}
+  const comp=(document.getElementById('gf-competencia')?.value||'').trim();
+  if(!/^\d{4}-\d{2}$/.test(comp)){showSt('gf-st','Competência inválida. Use YYYY-MM.',true);return;}
+  window.open('/api/ponto/espelho-mensal?funcionario_id='+gfFuncId+'&competencia='+encodeURIComponent(comp),'_blank');
+}
+
 function gfRenderCalendario(resumo,comp){
   const wrap=document.getElementById('gf-calendario');
   if(!wrap) return;
