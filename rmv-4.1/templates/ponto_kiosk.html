@@ -112,7 +112,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
     </div>
     <div id="step-cpf-div">
       <div class="pin-label">Informe seu CPF</div>
-      <input id="cpf-inp" class="pin-input" type="tel" inputmode="numeric" placeholder="000.000.000-00" maxlength="14" autocomplete="off" oninput="fmtCpf(this)" onkeydown="if(event.key==='Enter')irParaPin()">
+        <input id="cpf-inp" class="pin-input" type="tel" inputmode="numeric" placeholder="000.000.000-00" maxlength="14" autocomplete="off" oninput="fmtCpf(this)">
       <div class="numpad" id="np-cpf"></div>
       <div class="pin-err" id="cpf-err"></div>
     </div>
@@ -337,13 +337,13 @@ document.addEventListener('keydown', function(e){
   var step = document.getElementById('step-pin-div').style.display!=='none' ? 'pin' : 'cpf';
   if(step==='cpf'){
     var el=document.getElementById('cpf-inp');
-    if(e.key==='Enter'){irParaPin();}
-    else if(e.key==='Backspace'){el.value=el.value.slice(0,-1);fmtCpf(el);}
-    else if(/^\d$/.test(e.key)&&el.value.replace(/\D/g,'').length<11){el.value+=e.key;fmtCpf(el);}
+    if(e.key==='Enter'){e.preventDefault();irParaPin();}
+    else if(e.key==='Backspace'){e.preventDefault();el.value=el.value.slice(0,-1);fmtCpf(el);}
+    else if(/^\d$/.test(e.key)&&el.value.replace(/\D/g,'').length<11){e.preventDefault();el.value+=e.key;fmtCpf(el);}
   } else {
-    if(e.key==='Enter'){submeterPonto();}
-    else if(e.key==='Backspace'){if(_pinDigits.length>0){_pinDigits=_pinDigits.slice(0,-1);document.getElementById('pin-inp').value='•'.repeat(_pinDigits.length);}}
-    else if(/^\d$/.test(e.key)&&_pinDigits.length<10){_pinDigits+=e.key;document.getElementById('pin-inp').value='•'.repeat(_pinDigits.length);}
+    if(e.key==='Enter'){e.preventDefault();submeterPonto();}
+    else if(e.key==='Backspace'){e.preventDefault();if(_pinDigits.length>0){_pinDigits=_pinDigits.slice(0,-1);document.getElementById('pin-inp').value='•'.repeat(_pinDigits.length);}}
+    else if(/^\d$/.test(e.key)&&_pinDigits.length<10){e.preventDefault();_pinDigits+=e.key;document.getElementById('pin-inp').value='•'.repeat(_pinDigits.length);}
   }
 });
 </script>
