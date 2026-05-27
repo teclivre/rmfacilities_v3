@@ -585,6 +585,8 @@ class PontoKiosk(db.Model):
     requer_pin = db.Column(db.Boolean, default=True)          # exige PIN por funcionário
     filtro_tipo = db.Column(db.String(20), default="todos")   # 'todos' ou 'posto'
     filtro_posto = db.Column(db.String(150))                  # se filtro_tipo='posto'
+    filtro_postos_json = db.Column(db.Text, default="[]")     # múltiplos postos permitidos
+    funcionarios_avulsos_json = db.Column(db.Text, default="[]")  # ids permitidos avulsos
     empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
     criado_em = db.Column(db.DateTime, default=utcnow)
     criado_por = db.Column(db.String(100))
@@ -18511,6 +18513,37 @@ def _kiosk_gen_token():
     return _secrets.token_urlsafe(32)
 
 
+def _kiosk_parse_json_list(raw):
+    try:
+        val = json.loads(raw or "[]")
+        return val if isinstance(val, list) else []
+    except Exception:
+        return []
+
+
+def _kiosk_postos_set(kiosk):
+    postos = []
+    for p in _kiosk_parse_json_list(getattr(kiosk, "filtro_postos_json", "[]")):
+        s = (p or "").strip()
+        if s:
+            postos.append(s.lower())
+    if not postos and kiosk.filtro_tipo == "posto" and kiosk.filtro_posto:
+        postos = [(kiosk.filtro_posto or "").strip().lower()]
+    return set([p for p in postos if p])
+
+
+def _kiosk_avulsos_set(kiosk):
+    out = set()
+    for x in _kiosk_parse_json_list(getattr(kiosk, "funcionarios_avulsos_json", "[]")):
+        try:
+            n = int(x)
+        except Exception:
+            continue
+        if n > 0:
+            out.add(n)
+    return out
+
+
 @app.route("/ponto/kiosk/<token>")
 def ponto_kiosk_page(token):
     """Página totem compartilhado — funcionários batem ponto com CPF + PIN."""
@@ -18528,41 +18561,51 @@ def api_ponto_kiosk_bater(token):
         return jsonify({"erro": "Totem não encontrado ou inativo."}), 404
 
     dados = request.json or {}
-    cpf_raw = (dados.get("cpf") or "").strip()
-    pin = (dados.get("pin") or "").strip()
-    cpf = "".join(c for c in cpf_raw if c.isdigit())
-    if len(cpf) != 11:
-        return jsonify({"erro": "CPF inválido."}), 400
+    cpf4 = "".join(c for c in str(dados.get("cpf4") or dados.get("cpf") or "") if c.isdigit())[:4]
+    if len(cpf4) != 4:
+        return jsonify({"erro": "Informe os 4 primeiros dígitos do CPF."}), 400
 
-    # Busca funcionário pelo CPF (aceita com ou sem formatação no banco)
-    f = Funcionario.query.filter(
-        db.or_(
-            Funcionario.cpf == cpf,
-            Funcionario.cpf == f"{cpf[:3]}.{cpf[3:6]}.{cpf[6:9]}-{cpf[9:11]}"
-        )
-    ).first()
-    if not f:
-        return jsonify({"erro": "CPF não encontrado."}), 404
-    if (f.status or "").strip().lower() != "ativo":
-        return jsonify({"erro": "Funcionário inativo."}), 403
-    if not f.app_ativo:
-        return jsonify({"erro": "Acesso bloqueado."}), 403
+    postos_set = _kiosk_postos_set(kiosk)
+    avulsos_set = _kiosk_avulsos_set(kiosk)
+    cliente_nome_map = {
+        int(c.id): (c.nome or "").strip().lower()
+        for c in Cliente.query.with_entities(Cliente.id, Cliente.nome).all()
+        if c.id
+    }
 
-    # Verificar filtro de posto
-    if kiosk.filtro_tipo == "posto" and kiosk.filtro_posto:
-        posto_f = (f.posto_operacional or "").strip().lower()
-        posto_k = kiosk.filtro_posto.strip().lower()
-        if posto_f != posto_k:
-            return jsonify({"erro": "Funcionário não autorizado neste totem."}), 403
+    def _cpf_digits(raw):
+        return "".join(c for c in str(raw or "") if c.isdigit())
 
-    # Verificar PIN
-    if kiosk.requer_pin:
-        pin_esperado = (f.kiosk_pin or "").strip()
-        if not pin_esperado:
-            # PIN não cadastrado: usa últimos 4 dígitos do CPF
-            pin_esperado = cpf[-4:]
-        if pin != pin_esperado:
-            return jsonify({"erro": "PIN incorreto."}), 401
+    def _autorizado(func):
+        if (func.status or "").strip().lower() != "ativo":
+            return False
+        if not bool(func.app_ativo):
+            return False
+        if not postos_set and not avulsos_set:
+            return True
+        if func.id in avulsos_set:
+            return True
+        if postos_set:
+            posto_f = (func.posto_operacional or "").strip().lower()
+            if posto_f and posto_f in postos_set:
+                return True
+            try:
+                cli_nome = cliente_nome_map.get(int(func.posto_cliente_id or 0), "")
+            except Exception:
+                cli_nome = ""
+            if cli_nome and cli_nome in postos_set:
+                return True
+        return False
+
+    funcs = Funcionario.query.filter_by(status="Ativo").all()
+    candidatos = [f for f in funcs if _autorizado(f)]
+    matches = [f for f in candidatos if _cpf_digits(f.cpf).startswith(cpf4)]
+    if not matches:
+        return jsonify({"erro": "Nenhum colaborador encontrado para estes 4 dígitos neste totem."}), 404
+    if len(matches) > 1:
+        nomes = ", ".join([(m.nome or "")[:30] for m in matches[:4]])
+        return jsonify({"erro": f"Mais de um colaborador encontrado ({nomes}). Solicite ao RH ajuste de cadastro."}), 409
+    f = matches[0]
 
     data_hora = utcnow()
     data_ref = data_hora.date()
@@ -18630,6 +18673,8 @@ def api_admin_kiosk_list():
     result = []
     for k in items:
         d = k.to_dict()
+        d["filtro_postos"] = _kiosk_parse_json_list(k.filtro_postos_json)
+        d["funcionarios_avulsos"] = _kiosk_parse_json_list(k.funcionarios_avulsos_json)
         d["url"] = f"/ponto/kiosk/{k.token}"
         result.append(d)
     return jsonify({"kiosks": result})
@@ -18642,18 +18687,38 @@ def api_admin_kiosk_create():
     nome = (dados.get("nome") or "").strip()
     if not nome:
         return jsonify({"erro": "Nome obrigatório."}), 400
+    filtro_postos = []
+    for p in (dados.get("filtro_postos") or []):
+        s = (p or "").strip()
+        if s and s.lower() not in [x.lower() for x in filtro_postos]:
+            filtro_postos.append(s)
+    funcionarios_avulsos = []
+    for x in (dados.get("funcionarios_avulsos") or []):
+        try:
+            n = int(x)
+        except Exception:
+            continue
+        if n > 0 and n not in funcionarios_avulsos:
+            funcionarios_avulsos.append(n)
+    filtro_posto = (dados.get("filtro_posto") or "").strip() or None
+    if filtro_postos and not filtro_posto:
+        filtro_posto = filtro_postos[0]
     k = PontoKiosk(
         nome=nome,
         token=_kiosk_gen_token(),
         ativo=True,
-        requer_pin=bool(dados.get("requer_pin", True)),
+        requer_pin=False,
         filtro_tipo=(dados.get("filtro_tipo") or "todos").strip(),
-        filtro_posto=(dados.get("filtro_posto") or "").strip() or None,
+        filtro_posto=filtro_posto,
+        filtro_postos_json=json.dumps(filtro_postos, ensure_ascii=False),
+        funcionarios_avulsos_json=json.dumps(funcionarios_avulsos, ensure_ascii=False),
         criado_por=session.get("user", "admin"),
     )
     db.session.add(k)
     db.session.commit()
     d = k.to_dict()
+    d["filtro_postos"] = _kiosk_parse_json_list(k.filtro_postos_json)
+    d["funcionarios_avulsos"] = _kiosk_parse_json_list(k.funcionarios_avulsos_json)
     d["url"] = f"/ponto/kiosk/{k.token}"
     return jsonify({"ok": True, "kiosk": d})
 
@@ -18670,13 +18735,34 @@ def api_admin_kiosk_update(kid):
     if "ativo" in dados:
         k.ativo = bool(dados["ativo"])
     if "requer_pin" in dados:
-        k.requer_pin = bool(dados["requer_pin"])
+        k.requer_pin = False
     if "filtro_tipo" in dados:
         k.filtro_tipo = (dados["filtro_tipo"] or "todos").strip()
     if "filtro_posto" in dados:
         k.filtro_posto = (dados["filtro_posto"] or "").strip() or None
+    if "filtro_postos" in dados:
+        filtro_postos = []
+        for p in (dados.get("filtro_postos") or []):
+            s = (p or "").strip()
+            if s and s.lower() not in [x.lower() for x in filtro_postos]:
+                filtro_postos.append(s)
+        k.filtro_postos_json = json.dumps(filtro_postos, ensure_ascii=False)
+        if filtro_postos and not (k.filtro_posto or "").strip():
+            k.filtro_posto = filtro_postos[0]
+    if "funcionarios_avulsos" in dados:
+        funcs = []
+        for x in (dados.get("funcionarios_avulsos") or []):
+            try:
+                n = int(x)
+            except Exception:
+                continue
+            if n > 0 and n not in funcs:
+                funcs.append(n)
+        k.funcionarios_avulsos_json = json.dumps(funcs, ensure_ascii=False)
     db.session.commit()
     d = k.to_dict()
+    d["filtro_postos"] = _kiosk_parse_json_list(k.filtro_postos_json)
+    d["funcionarios_avulsos"] = _kiosk_parse_json_list(k.funcionarios_avulsos_json)
     d["url"] = f"/ponto/kiosk/{k.token}"
     return jsonify({"ok": True, "kiosk": d})
 
@@ -32829,6 +32915,13 @@ with app.app_context():
         db.engine.execute("SELECT 1 FROM ponto_kiosk LIMIT 1")
     except Exception:
         db.create_all()
+    ensure_cols(
+        "ponto_kiosk",
+        [
+            "filtro_postos_json TEXT DEFAULT '[]'",
+            "funcionarios_avulsos_json TEXT DEFAULT '[]'",
+        ],
+    )
     ensure_cols(
         "comunicado_app",
         [

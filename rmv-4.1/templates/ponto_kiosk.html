@@ -111,8 +111,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
       <div class="step-dot" id="dot2"></div>
     </div>
     <div id="step-cpf-div">
-      <div class="pin-label">Informe seu CPF</div>
-        <input id="cpf-inp" class="pin-input" type="tel" inputmode="numeric" placeholder="000.000.000-00" maxlength="14" autocomplete="off" oninput="fmtCpf(this)">
+      <div class="pin-label">Informe os 4 primeiros dígitos do CPF</div>
+        <input id="cpf-inp" class="pin-input lg" type="tel" inputmode="numeric" placeholder="0000" maxlength="4" autocomplete="off" oninput="fmtCpf(this)">
       <div class="numpad" id="np-cpf"></div>
       <div class="pin-err" id="cpf-err"></div>
     </div>
@@ -194,7 +194,7 @@ function buildNumpad(containerId, onDigit, onDel, onOk){
 
 // CPF numpad
 buildNumpad('np-cpf',
-  function(d){ var v=document.getElementById('cpf-inp').value.replace(/\D/g,'');if(v.length<11){v+=d;document.getElementById('cpf-inp').value=v;fmtCpf(document.getElementById('cpf-inp'));} },
+  function(d){ var v=document.getElementById('cpf-inp').value.replace(/\D/g,'');if(v.length<4){v+=d;document.getElementById('cpf-inp').value=v;fmtCpf(document.getElementById('cpf-inp'));} },
   function(){ var el=document.getElementById('cpf-inp'),v=el.value.replace(/\D/g,'');v=v.slice(0,-1);el.value=v;fmtCpf(el); },
   function(){ irParaPin(); }
 );
@@ -207,10 +207,7 @@ buildNumpad('np-pin',
 );
 
 function fmtCpf(el){
-  var v = el.value.replace(/\D/g,'').slice(0,11);
-  if(v.length>9) v = v.replace(/(\d{3})(\d{3})(\d{3})(\d{0,2})/,'$1.$2.$3-$4');
-  else if(v.length>6) v = v.replace(/(\d{3})(\d{3})(\d{0,3})/,'$1.$2.$3');
-  else if(v.length>3) v = v.replace(/(\d{3})(\d{0,3})/,'$1.$2');
+  var v = el.value.replace(/\D/g,'').slice(0,4);
   el.value = v;
 }
 
@@ -250,40 +247,28 @@ function mostrarCpf(){
 }
 
 function mostrarPin(){
-  if(!REQUER_PIN){submeterPonto();return;}
-  document.getElementById('step-cpf-div').style.display='none';
-  document.getElementById('step-pin-div').style.display='';
-  document.getElementById('dot1').classList.remove('on');
-  document.getElementById('dot2').classList.add('on');
-  _pinDigits='';
-  document.getElementById('pin-inp').value='';
-  document.getElementById('pin-err').textContent='';
-  var cpfRaw = document.getElementById('cpf-inp').value.replace(/\D/g,'');
-  document.getElementById('pin-user-label').textContent = 'PIN (padrão: últimos 4 dígitos do CPF)';
-  setTimeout(function(){document.getElementById('pin-inp').focus();},150);
+  submeterPonto();
 }
 
 function irParaPin(){
   var cpfRaw = document.getElementById('cpf-inp').value.replace(/\D/g,'');
   document.getElementById('cpf-err').textContent='';
-  if(cpfRaw.length!==11){document.getElementById('cpf-err').textContent='Informe o CPF completo (11 dígitos).';return;}
+  if(cpfRaw.length!==4){document.getElementById('cpf-err').textContent='Informe os 4 primeiros dígitos do CPF.';return;}
   _cpf = cpfRaw;
-  if(REQUER_PIN) mostrarPin();
-  else submeterPonto();
+  submeterPonto();
 }
 
 function submeterPonto(){
-  _pin = REQUER_PIN ? _pinDigits : '';
-  var err = REQUER_PIN ? document.getElementById('pin-err') : document.getElementById('cpf-err');
-  if(REQUER_PIN && _pin.length < 4){err.textContent='PIN deve ter ao menos 4 dígitos.';return;}
+  _pin = '';
+  var err = document.getElementById('cpf-err');
   err.textContent='';
-  var btn = REQUER_PIN ? document.querySelectorAll('#np-pin .ok')[0] : null;
+  var btn = document.querySelectorAll('#np-cpf .ok')[0];
   if(btn) btn.textContent='…';
 
   fetch('/api/ponto/kiosk/'+KIOSK_TOKEN+'/bater', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({cpf: _cpf, pin: _pin})
+    body: JSON.stringify({cpf4: _cpf})
   }).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d};})})
   .then(function(res){
     if(btn) btn.textContent='→';
@@ -334,17 +319,10 @@ document.addEventListener('keydown', function(e){
   var active = document.querySelector('.screen.on');
   if(!active || active.id==='scr-idle' || active.id==='scr-success') return;
   if(active.id==='scr-confirm'){if(e.key==='Enter')confirmar();return;}
-  var step = document.getElementById('step-pin-div').style.display!=='none' ? 'pin' : 'cpf';
-  if(step==='cpf'){
-    var el=document.getElementById('cpf-inp');
-    if(e.key==='Enter'){e.preventDefault();irParaPin();}
-    else if(e.key==='Backspace'){e.preventDefault();el.value=el.value.slice(0,-1);fmtCpf(el);}
-    else if(/^\d$/.test(e.key)&&el.value.replace(/\D/g,'').length<11){e.preventDefault();el.value+=e.key;fmtCpf(el);}
-  } else {
-    if(e.key==='Enter'){e.preventDefault();submeterPonto();}
-    else if(e.key==='Backspace'){e.preventDefault();if(_pinDigits.length>0){_pinDigits=_pinDigits.slice(0,-1);document.getElementById('pin-inp').value='•'.repeat(_pinDigits.length);}}
-    else if(/^\d$/.test(e.key)&&_pinDigits.length<10){e.preventDefault();_pinDigits+=e.key;document.getElementById('pin-inp').value='•'.repeat(_pinDigits.length);}
-  }
+  var el=document.getElementById('cpf-inp');
+  if(e.key==='Enter'){e.preventDefault();irParaPin();}
+  else if(e.key==='Backspace'){e.preventDefault();el.value=el.value.slice(0,-1);fmtCpf(el);}
+  else if(/^\d$/.test(e.key)&&el.value.replace(/\D/g,'').length<4){e.preventDefault();el.value+=e.key;fmtCpf(el);}
 });
 </script>
 </body>

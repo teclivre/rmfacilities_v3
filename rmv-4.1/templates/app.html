@@ -4018,17 +4018,28 @@ document.addEventListener('DOMContentLoaded',()=>{
           Crie links de totem para tablets/PCs fixos nos postos. O colaborador digita o CPF e seu PIN para bater o ponto sem precisar fazer login.
         </p>
         <div style="margin-bottom:14px">
-          <div class="g3" style="align-items:flex-end;gap:10px">
+          <div class="g2" style="align-items:flex-end;gap:10px">
             <div class="f"><label>Nome do totem</label><input type="text" id="kiosk-nome" placeholder="Ex: Portaria – Sede" maxlength="100"></div>
-              <div class="f"><label>Filtro de posto</label><select id="kiosk-posto"><option value="">Todos os postos</option></select></div>
             <div class="f">
-              <label>Requer PIN</label>
-              <select id="kiosk-pin">
-                <option value="1">Sim (recomendado)</option>
-                <option value="0">Não (só CPF)</option>
-              </select>
+              <label>Postos permitidos (selecione um ou mais)</label>
+              <select id="kiosk-posto" multiple size="6" style="min-height:130px"></select>
+              <div class="hint" style="margin-top:4px">Se nenhum posto for selecionado, o totem aceitará todos os postos.</div>
             </div>
           </div>
+          <div class="g2" style="margin-top:10px;gap:10px">
+            <div class="f">
+              <label>Colaboradores do(s) posto(s) selecionado(s)</label>
+              <div id="kiosk-colabs-posto" style="min-height:130px;max-height:180px;overflow:auto;border:1px solid var(--borda);border-radius:10px;padding:8px;background:var(--cinza-cl)">
+                <div class="vazio">Selecione um posto para listar os colaboradores.</div>
+              </div>
+            </div>
+            <div class="f">
+              <label>Colaboradores avulsos permitidos (multi-seleção)</label>
+              <select id="kiosk-avulsos" multiple size="6" style="min-height:130px"></select>
+              <div class="hint" style="margin-top:4px">Use Ctrl/Cmd para selecionar vários colaboradores avulsos.</div>
+            </div>
+          </div>
+          <div class="hint" style="margin-top:8px">Autenticação do totem: apenas com os 4 primeiros dígitos do CPF.</div>
           <div class="brow" style="justify-content:flex-start;margin-top:10px">
             <button class="btn b-az" onclick="kioskCriar()">+ Criar Totem</button>
           </div>
@@ -6907,19 +6918,74 @@ async function excluirUsr(id,nome){
 }
 
 // ── KIOSKS COMPARTILHADOS ─────────────────────────────────────────────────────
+let _kioskOperItens=[];
+let _kioskPostos=[];
+
+function _kioskSelectedValues(selId){
+  const sel=document.getElementById(selId);
+  if(!sel) return [];
+  return Array.from(sel.selectedOptions||[]).map(function(o){return (o.value||'').trim();}).filter(Boolean);
+}
+
+function kioskRenderColabsPosto(){
+  const box=document.getElementById('kiosk-colabs-posto');
+  if(!box) return;
+  const postosSel=new Set(_kioskSelectedValues('kiosk-posto').map(function(x){return x.toLowerCase();}));
+  if(!postosSel.size){
+    box.innerHTML='<div class="vazio">Selecione um posto para listar os colaboradores.</div>';
+    return;
+  }
+  const lista=_kioskOperItens.filter(function(it){
+    const p=(it.posto_label||it.posto_operacional||'').trim().toLowerCase();
+    return p && postosSel.has(p);
+  }).sort(function(a,b){return (a.nome||'').localeCompare(b.nome||'', 'pt-BR');});
+  if(!lista.length){
+    box.innerHTML='<div class="vazio">Nenhum colaborador ativo nos postos selecionados.</div>';
+    return;
+  }
+  box.innerHTML=lista.map(function(it){
+    const posto=(it.posto_label||it.posto_operacional||'Sem posto');
+    return `<div style="padding:4px 2px;border-bottom:1px solid var(--borda);font-size:12px"><strong>${esc(it.nome||'-')}</strong> <span style="color:var(--text-muted)">(${esc(it.matricula||'')}) · ${esc(posto)}</span></div>`;
+  }).join('');
+}
+
+function kioskRenderAvulsos(){
+  const sel=document.getElementById('kiosk-avulsos');
+  if(!sel) return;
+  const atualSel=new Set(_kioskSelectedValues('kiosk-avulsos'));
+  const opts=_kioskOperItens
+    .slice()
+    .sort(function(a,b){return (a.nome||'').localeCompare(b.nome||'', 'pt-BR');})
+    .map(function(it){
+      const posto=(it.posto_label||it.posto_operacional||'Sem posto');
+      const val=String(it.funcionario_id||'');
+      const selected=atualSel.has(val)?' selected':'';
+      return `<option value="${val}"${selected}>${esc(it.nome||'-')} · ${esc(posto)} · ${esc(it.matricula||'')}</option>`;
+    });
+  sel.innerHTML=opts.join('');
+}
+
 async function kioskCarregarPostos(){
   const sel=document.getElementById('kiosk-posto');
   if(!sel) return;
-  const atual=sel.value||'';
-  sel.innerHTML='<option value="">Carregando postos...</option>';
+  const atuais=new Set(_kioskSelectedValues('kiosk-posto'));
+  sel.innerHTML='';
   try{
     const r=await api('/api/operacional/postos');
     const clientes=r?.clientes||[];
-    const postos=[...new Set(clientes.map(function(c){return (c?.posto_label||c?.nome||'').trim();}).filter(Boolean))].sort(function(a,b){return a.localeCompare(b,'pt-BR');});
-    sel.innerHTML='<option value="">Todos os postos</option>' + postos.map(function(p){return `<option value="${esc(p)}">${esc(p)}</option>`;}).join('');
-    sel.value=postos.includes(atual)?atual:'';
+    _kioskOperItens=(r?.itens||[]);
+    _kioskPostos=[...new Set(clientes.map(function(c){return (c?.posto_label||c?.nome||'').trim();}).filter(Boolean))].sort(function(a,b){return a.localeCompare(b,'pt-BR');});
+    sel.innerHTML=_kioskPostos.map(function(p){
+      const selected=atuais.has(p)?' selected':'';
+      return `<option value="${esc(p)}"${selected}>${esc(p)}</option>`;
+    }).join('');
+    sel.onchange=kioskRenderColabsPosto;
+    kioskRenderColabsPosto();
+    kioskRenderAvulsos();
   }catch(_e){
-    sel.innerHTML='<option value="">Falha ao carregar postos</option>';
+    sel.innerHTML='';
+    const box=document.getElementById('kiosk-colabs-posto');
+    if(box) box.innerHTML='<div class="vazio">Falha ao carregar colaboradores por posto.</div>';
   }
 }
 
@@ -6933,11 +6999,14 @@ async function kioskCarregar(){
   el.innerHTML=ks.map(function(k){
     const cor=k.ativo?'var(--azul)':'var(--danger)';
     const label=k.ativo?'Ativo':'Inativo';
+    const postos=(k.filtro_postos||[]).length?(k.filtro_postos||[]):(k.filtro_posto?[k.filtro_posto]:[]);
+    const postosTxt=postos.length?postos.join(', '):'Todos';
+    const avCount=(k.funcionarios_avulsos||[]).length||0;
     return `<div style="background:var(--bg2);border:1px solid var(--borda);border-radius:10px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <div style="flex:1;min-width:0">
         <div style="font-size:14px;font-weight:600;color:var(--text)">${esc(k.nome)}</div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:2px">
-          Posto: ${esc(k.filtro_posto||'Todos')} · PIN: ${k.requer_pin?'Sim':'Não'} · <span style="color:${cor}">${label}</span>
+          Postos: ${esc(postosTxt)} · Avulsos: ${avCount} · Acesso: 4 primeiros dígitos CPF · <span style="color:${cor}">${label}</span>
         </div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:3px;word-break:break-all">
           URL: <a href="${esc(k.url)}" target="_blank" style="color:var(--azul)">${location.origin}${esc(k.url)}</a>
@@ -6954,12 +7023,24 @@ async function kioskCarregar(){
 }
 async function kioskCriar(){
   const nome=(document.getElementById('kiosk-nome').value||'').trim();
-  const posto=(document.getElementById('kiosk-posto').value||'').trim();
-  const pin=document.getElementById('kiosk-pin').value==='1';
+  const postos=_kioskSelectedValues('kiosk-posto');
+  const avulsos=_kioskSelectedValues('kiosk-avulsos').map(function(x){return parseInt(x,10);}).filter(Number.isFinite);
   if(!nome){alert('Informe o nome do totem.');return;}
-  const d=await api('/api/admin/ponto/kiosks','POST',{nome,filtro_tipo:posto?'posto':'todos',filtro_posto:posto,requer_pin:pin});
+  const d=await api('/api/admin/ponto/kiosks','POST',{
+    nome,
+    filtro_tipo:postos.length?'posto':(avulsos.length?'avulso':'todos'),
+    filtro_posto:postos[0]||'',
+    filtro_postos:postos,
+    funcionarios_avulsos:avulsos,
+    requer_pin:false
+  });
   if(d.erro){alert(d.erro);return;}
-  document.getElementById('kiosk-nome').value='';document.getElementById('kiosk-posto').value='';
+  document.getElementById('kiosk-nome').value='';
+  const selPosto=document.getElementById('kiosk-posto');
+  if(selPosto){Array.from(selPosto.options).forEach(function(o){o.selected=false;});}
+  const selAv=document.getElementById('kiosk-avulsos');
+  if(selAv){Array.from(selAv.options).forEach(function(o){o.selected=false;});}
+  kioskRenderColabsPosto();
   kioskCarregar();
 }
 async function kioskToggle(id,ativo){await api(`/api/admin/ponto/kiosks/${id}`,'PUT',{ativo:!ativo});kioskCarregar();}
