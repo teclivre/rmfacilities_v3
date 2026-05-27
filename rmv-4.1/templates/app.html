@@ -2583,6 +2583,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap" id="rhd-tabs">
         <button class="btn b-az b-sm" onclick="switchTab('rhd','mensagens-app',this)">💬 Chat App <span id="badge-msgs-app" style="display:none;background:var(--verm);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>
         <button class="btn b-gh b-sm" onclick="switchTab('rhd','cfg-email',this)">Config E-mail</button>
+        <button class="btn b-gh b-sm" onclick="switchTab('rhd','cfg-wa',this)">Config WhatsApp</button>
       </div>
 
       <!-- Tab Chat App -->
@@ -2688,6 +2689,75 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-ghv" onclick="testarSMTP()">Enviar e-mail de teste</button>
           </div>
           <div id="smtp-st" class="st"></div>
+        </div>
+      </div>
+
+      <!-- Tab Config WhatsApp -->
+      <div id="rhd-tab-cfg-wa" style="display:none">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Configuração WhatsApp (Evolution API)</span></div>
+          <div class="f"><label>URL base da Evolution API</label><input id="wa-url" placeholder="https://api.suaevolution.com.br"></div>
+          <div class="g2">
+            <div class="f"><label>Nome da Instância</label><input id="wa-instancia" placeholder="minhainstancia"></div>
+            <div class="f"><label>API Key / Token</label><input id="wa-token" type="password" placeholder="••••••••••••"></div>
+          </div>
+          <div class="brow" style="justify-content:flex-start">
+            <button class="btn b-az" onclick="salvarWAConfig()">Salvar configurações</button>
+            <button class="btn b-ghv" onclick="testarWA()">Testar conexão</button>
+          </div>
+          <div class="g3" style="margin-top:10px">
+            <div class="f"><label>Backup automático ativo</label><select id="wa-backup-enabled"><option value="1">Sim</option><option value="0">Não</option></select></div>
+            <div class="f"><label>Backup a cada (horas)</label><input id="wa-backup-interval" type="number" min="1" max="168" step="1" value="2"></div>
+            <div class="f"><label>Janela de coleta (horas)</label><input id="wa-backup-window" type="number" min="1" max="168" step="1" value="8"></div>
+          </div>
+          <div class="g2">
+            <div class="f"><label>E-mail destino do backup</label><input id="wa-backup-email" type="email" placeholder="backup@seudominio.com"></div>
+            <div class="f"><label>Máx. conversas por backup</label><input id="wa-backup-max" type="number" min="1" max="50" step="1" value="10"></div>
+          </div>
+          <div class="brow" style="justify-content:flex-start">
+            <button class="btn b-ghv" onclick="testarWABackup()">Testar envio do backup</button>
+            <button class="btn b-ci" onclick="gerarWABackupLocal()">Gerar backup local (JSON)</button>
+          </div>
+          <div class="g2">
+            <div class="f"><label>Restaurar backup JSON (e-mail)</label><input id="wa-backup-file" type="file" accept=".json,application/json"></div>
+            <div class="f" style="display:flex;align-items:flex-end"><button class="btn b-az" onclick="restaurarWABackup()">Restaurar backup</button></div>
+          </div>
+          <div id="wa-cfg-st" class="st"></div>
+          <p style="font-size:12px;color:var(--text-muted);margin-top:8px">Configure o webhook em sua instância Evolution API para: <code>POST /webhook/whatsapp</code></p>
+        </div>
+        <div class="card" style="margin-top:10px">
+          <div class="card-header"><span class="card-title">Agente IA no WhatsApp (Gemini/OpenAI)</span></div>
+          <div class="g3">
+            <div class="f"><label>Ativar resposta automática</label><select id="iawa-enabled"><option value="0">Não</option><option value="1">Sim</option></select></div>
+            <div class="f"><label>Provedor</label><select id="iawa-provider"><option value="gemini">Google Gemini</option><option value="openai">OpenAI (ChatGPT)</option></select></div>
+            <div class="f"><label>Modelo</label><input id="iawa-model" placeholder="gemini-1.5-flash ou gpt-4o-mini"></div>
+          </div>
+          <div class="g2">
+            <div class="f"><label>API Key da IA</label><input id="iawa-api-key" type="password" placeholder="••••••••••••"></div>
+            <div class="f"><label>Temperatura (0.0 a 1.0)</label><input id="iawa-temperature" type="number" min="0" max="1" step="0.1" placeholder="0.3"></div>
+          </div>
+          <div class="g2">
+            <div class="f"><label>Máx. tokens</label><input id="iawa-max-tokens" type="number" min="50" max="2000" step="10" placeholder="350"></div>
+            <div class="f"><label>Número para teste (com DDI)</label><input id="iawa-numero-teste" placeholder="5511999998888"></div>
+          </div>
+          <div class="f"><label>Prompt do agente</label><textarea id="iawa-prompt" placeholder="Você é atendente da RM Facilities. Seja objetivo, cordial e comercial."></textarea></div>
+          <p style="font-size:12px;color:var(--text-muted);margin-top:6px">
+            Dica: inclua no prompt que funcionário identificado por telefone não deve informar nome novamente, que documentos exigem CPF e que pedidos como "maio e junho" devem considerar o ano corrente quando não informado.
+          </p>
+          <div class="brow" style="justify-content:flex-start">
+            <button class="btn b-az" onclick="salvarIAWAConfig()">Salvar IA</button>
+            <button class="btn b-ghv" onclick="testarIAWA()">Testar IA</button>
+          </div>
+          <div id="iawa-st" class="st"></div>
+          <div id="iawa-resp" style="font-size:12px;color:var(--text-muted);margin-top:8px;white-space:pre-wrap"></div>
+          <div style="margin-top:14px;padding:12px 14px;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span style="font-size:13px;font-weight:600">Agente IA:</span>
+            <span id="iawa-status-badge" style="font-size:12px;padding:3px 10px;border-radius:8px;background:var(--verde-cl);color:var(--verde)">● Ativo</span>
+            <span id="iawa-status-info" style="font-size:12px;color:var(--text-muted);flex:1"></span>
+            <button class="btn b-az b-sm" id="iawa-retomar-btn" style="display:none" onclick="waRetomarIAGlobal()">▶ Reativar agente agora</button>
+            <button class="btn b-gh b-sm" onclick="iawaSincronizarStatus()">↻ Verificar status</button>
+          </div>
+          <div id="iawa-retomar-st" class="st" style="margin-top:6px"></div>
         </div>
       </div>
 
@@ -14256,6 +14326,7 @@ function switchTab(prefix,tab,el){
   document.querySelectorAll(`#${prefix}-tabs .btn`).forEach(b=>{b.classList.remove('b-az');b.classList.add('b-gh');});
   if(el){el.classList.remove('b-gh');el.classList.add('b-az');}
   if(prefix==='rhd'&&tab==='cfg-email')loadSMTPConfig();
+  if(prefix==='rhd'&&tab==='cfg-wa')loadWAConfig();
   if(prefix==='rhd'&&tab==='mensagens-app')mapsIniciar();
 }
 
