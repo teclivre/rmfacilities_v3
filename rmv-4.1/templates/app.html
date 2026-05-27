@@ -2746,7 +2746,13 @@ document.addEventListener('DOMContentLoaded',()=>{
           </p>
           <div class="brow" style="justify-content:flex-start">
             <button class="btn b-az" onclick="salvarIAWAConfig()">Salvar IA</button>
+            <button class="btn b-gh" onclick="iawaAtivarRapido()">Ativar agente</button>
+            <button class="btn b-warn" onclick="iawaDesativarRapido()">Desativar agente</button>
             <button class="btn b-ghv" onclick="testarIAWA()">Testar IA</button>
+            <button class="btn b-gh" onclick="iawaVerStatusNumero()">Ver status contato</button>
+            <button class="btn b-warn" onclick="iawaModoHumano(true)">Modo humano contato</button>
+            <button class="btn b-az" onclick="iawaModoHumano(false)">Reativar IA contato</button>
+            <button class="btn b-gh" onclick="iawaVerLogs()">Ver logs</button>
           </div>
           <div id="iawa-st" class="st"></div>
           <div id="iawa-resp" style="font-size:12px;color:var(--text-muted);margin-top:8px;white-space:pre-wrap"></div>
@@ -15147,6 +15153,59 @@ async function testarIAWA(){
   }
   showSt('iawa-st','IA respondeu com sucesso.',false);
   document.getElementById('iawa-resp').textContent=r.resposta||'';
+}
+
+async function iawaAtivarRapido(){
+  const r=await api('/api/whatsapp/ia/ativar','POST',{});
+  if(r.erro){showSt('iawa-st',r.erro,true);return;}
+  document.getElementById('iawa-enabled').value='1';
+  showSt('iawa-st','Agente automático ativado.',false);
+  iawaSincronizarStatus();
+}
+
+async function iawaDesativarRapido(){
+  const r=await api('/api/whatsapp/ia/desativar','POST',{});
+  if(r.erro){showSt('iawa-st',r.erro,true);return;}
+  document.getElementById('iawa-enabled').value='0';
+  showSt('iawa-st','Agente automático desativado.',false);
+}
+
+function _iawaNumeroContato(){
+  return (document.getElementById('iawa-numero-teste').value||'').trim();
+}
+
+async function iawaModoHumano(ativo){
+  const numero=_iawaNumeroContato();
+  if(!numero){showSt('iawa-st','Informe o número no campo de teste (com DDI).',true);return;}
+  const r=await api('/api/whatsapp/ia/modo-humano','POST',{numero,ativo:!!ativo});
+  if(r.erro){showSt('iawa-st',r.erro,true);return;}
+  showSt('iawa-st',ativo?'Contato definido para atendimento humano.':'IA reativada para este contato.',false);
+}
+
+async function iawaVerStatusNumero(){
+  const numero=_iawaNumeroContato();
+  if(!numero){showSt('iawa-st','Informe o número no campo de teste (com DDI).',true);return;}
+  const r=await api('/api/whatsapp/ia/modo-humano-status?numero='+encodeURIComponent(numero));
+  if(r.erro){showSt('iawa-st',r.erro,true);return;}
+  const parts=[];
+  parts.push('Número: '+(r.numero||numero));
+  parts.push('Modo humano: '+(r.modo_humano?'SIM':'NÃO'));
+  parts.push('IA pausada: '+(r.ia_pausada?'SIM':'NÃO'));
+  if(r.ia_pausada_ate) parts.push('Pausada até: '+r.ia_pausada_ate);
+  showSt('iawa-st',parts.join(' · '),false);
+}
+
+async function iawaVerLogs(){
+  const numero=_iawaNumeroContato();
+  const url=numero?('/api/whatsapp/ia/logs?numero='+encodeURIComponent(numero)+'&limit=15'):'/api/whatsapp/ia/logs?limit=15';
+  const r=await api(url);
+  if(r.erro){showSt('iawa-st',r.erro,true);return;}
+  const logs=r.logs||[];
+  if(!logs.length){showSt('iawa-st','Sem logs de erro para o filtro informado.',false);return;}
+  const txt=logs.map(function(l){
+    return '['+(l.criado_fmt||l.criado_em||'')+'] '+(l.numero||'')+' - '+(l.conteudo||'');
+  }).join('\n\n');
+  alert(txt.slice(0,6000));
 }
 
 setupModalDirtyTracking();

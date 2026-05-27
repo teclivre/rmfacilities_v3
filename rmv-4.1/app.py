@@ -4789,6 +4789,80 @@ def wa_ai_pause_set(numero, hours=8):
     return wa_ai_pause_for(numero, hours)
 
 
+def wa_ai_human_key(numero):
+    n = wa_norm_number(numero)
+    return f"wa_ai_human_mode_{n}" if n else ""
+
+
+def wa_ai_human_enabled(numero):
+    k = wa_ai_human_key(numero)
+    if not k:
+        return False
+    return str(gc(k, "0")).strip().lower() in ("1", "true", "yes", "on")
+
+
+def wa_ai_human_set(numero, ativo=True):
+    n = wa_norm_number(numero)
+    if not n:
+        return False
+    sc_cfg(wa_ai_human_key(n), "1" if bool(ativo) else "0")
+    return True
+
+
+def wa_ai_fallback_text():
+    txt = (gc("ia_wa_fallback_msg", "") or "").strip()
+    if txt:
+        return txt
+    return (
+        "No momento nosso assistente automático está instável. "
+        "Sua mensagem já foi registrada e nossa equipe humana continuará o atendimento em breve."
+    )
+
+
+def wa_ai_log_error(conversa_id, numero, motivo):
+    try:
+        db.session.add(
+            WhatsAppMensagem(
+                conversa_id=conversa_id,
+                numero=numero,
+                direcao="out",
+                tipo="erro",
+                conteudo=(motivo or "Falha no auto-reply")[:700],
+            )
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
+def wa_ai_send_fallback(numero, conversa_id, motivo=""):
+    txt = wa_ai_fallback_text()
+    wa_send_text(numero, txt)
+    conv = db.session.get(WhatsAppConversa, conversa_id)
+    if conv:
+        conv.ultima_msg = utcnow()
+    db.session.add(
+        WhatsAppMensagem(
+            conversa_id=conversa_id,
+            numero=numero,
+            direcao="out",
+            tipo="texto",
+            conteudo=txt,
+        )
+    )
+    db.session.add(
+        WhatsAppMensagem(
+            conversa_id=conversa_id,
+            numero=numero,
+            direcao="out",
+            tipo="erro",
+            conteudo=((motivo or "fallback acionado")[:650]),
+        )
+    )
+    db.session.commit()
+    return txt
+
+
 # Circuit-breaker global para falhas upstream da IA (ex.: 403 PERMISSION_DENIED / billing)
 # Evita repetir a chamada em cada mensagem e enche o log com stack traces.
 _AI_UPSTREAM_BLOCK = {"until": None, "reason": ""}
@@ -31263,6 +31337,86 @@ def api_wa_ia_testar():
         return jsonify({"erro": msg}), 500
 
 
+@app.route("/api/whatsapp/ia/ativar", methods=["POST"])
+@lr
+def api_wa_ia_ativar():
+    sc_cfg("ia_wa_enabled", "1")
+    return jsonify({"ok": True, "enabled": True})
+
+
+@app.route("/api/whatsapp/ia/desativar", methods=["POST"])
+@lr
+def api_wa_ia_desativar():
+    sc_cfg("ia_wa_enabled", "0")
+    return jsonify({"ok": True, "enabled": False})
+
+
+@app.route("/api/whatsapp/ia/modo-humano", methods=["POST"])
+@lr
+def api_wa_ia_modo_humano():
+    d = request.json or {}
+    numero = wa_norm_number(d.get("numero") or "")
+    ativo = str(d.get("ativo", "1")).strip().lower() in ("1", "true", "yes", "on")
+    if not numero:
+        return jsonify({"erro": "numero obrigatorio"}), 400
+    if not wa_is_valid_number(numero):
+        return jsonify({"erro": "numero invalido"}), 400
+    wa_ai_human_set(numero, ativo)
+    return jsonify({"ok": True, "numero": numero, "modo_humano": ativo})
+
+
+@app.route("/api/whatsapp/ia/modo-humano-status")
+@lr
+def api_wa_ia_modo_humano_status():
+    numero = wa_norm_number(request.args.get("numero") or "")
+    if not numero:
+        return jsonify({"erro": "numero obrigatorio"}), 400
+    if not wa_is_valid_number(numero):
+        return jsonify({"erro": "numero invalido"}), 400
+    c = WhatsAppConversa.query.filter_by(numero=numero).first()
+    return jsonify(
+        {
+            "ok": True,
+            "numero": numero,
+            "nome": c.nome if c else numero,
+            "modo_humano": wa_ai_human_enabled(numero),
+            "ia_pausada": wa_ai_pause_active(numero),
+            "ia_pausada_ate": (
+                wa_ai_pause_until(numero).isoformat()
+                if wa_ai_pause_until(numero)
+                else ""
+            ),
+        }
+    )
+
+
+@app.route("/api/whatsapp/ia/logs")
+@lr
+def api_wa_ia_logs():
+    numero = wa_norm_number(request.args.get("numero") or "")
+    limit = max(1, min(50, _to_int(request.args.get("limit"), 20)))
+    q = WhatsAppMensagem.query.filter_by(tipo="erro")
+    if numero:
+        q = q.filter_by(numero=numero)
+    rows = q.order_by(WhatsAppMensagem.criado_em.desc()).limit(limit).all()
+    return jsonify(
+        {
+            "ok": True,
+            "logs": [
+                {
+                    "numero": r.numero,
+                    "conteudo": r.conteudo or "",
+                    "criado_em": r.criado_em.isoformat() if r.criado_em else "",
+                    "criado_fmt": r.criado_em.strftime("%d/%m/%Y %H:%M")
+                    if r.criado_em
+                    else "",
+                }
+                for r in rows
+            ],
+        }
+    )
+
+
 @app.route("/api/whatsapp/ia/retomar", methods=["POST"])
 @lr
 def api_wa_ia_retomar():
@@ -31757,11 +31911,31 @@ def webhook_whatsapp():
                         "Auto-reply WhatsApp inativo para %s: configuracao incompleta",
                         numero,
                     )
-                if ai_wa_enabled() and wa_ready and not wa_ai_pause_active(numero):
+                modo_humano = wa_ai_human_enabled(numero)
+                if ai_wa_enabled() and modo_humano:
+                    msg_h = f"Auto-reply desativado para {numero}: modo humano ativo"
+                    if msg_h not in diag["erros"]:
+                        diag["erros"].append(msg_h)
+                if (
+                    ai_wa_enabled()
+                    and wa_ready
+                    and not wa_ai_pause_active(numero)
+                    and not modo_humano
+                ):
                     if _ai_upstream_block_active():
                         msg_bl = f"Auto-reply em pausa temporaria (falha upstream IA): {_ai_upstream_block_reason()}"
                         if msg_bl not in diag["erros"]:
                             diag["erros"].append(msg_bl)
+                        try:
+                            wa_ai_send_fallback(
+                                numero,
+                                c.id,
+                                "fallback por bloqueio upstream da IA",
+                            )
+                            diag["respostas_enviadas"] += 1
+                        except Exception as e:
+                            diag["erros"].append(f"Falha fallback upstream: {str(e)}")
+                            db.session.rollback()
                     else:
                         try:
                             resposta = ai_wa_reply(
@@ -31783,16 +31957,17 @@ def webhook_whatsapp():
                                 db.session.commit()
                             else:
                                 diag["erros"].append("IA nao retornou resposta")
-                                db.session.add(
-                                    WhatsAppMensagem(
-                                        conversa_id=c.id,
-                                        numero=numero,
-                                        direcao="out",
-                                        tipo="erro",
-                                        conteudo="IA nao retornou resposta.",
+                                wa_ai_log_error(c.id, numero, "IA nao retornou resposta.")
+                                try:
+                                    wa_ai_send_fallback(
+                                        numero,
+                                        c.id,
+                                        "fallback: IA nao retornou resposta",
                                     )
-                                )
-                                db.session.commit()
+                                    diag["respostas_enviadas"] += 1
+                                except Exception as e:
+                                    diag["erros"].append(f"Falha fallback vazio: {str(e)}")
+                                    db.session.rollback()
                         except Exception as e:
                             err_str = str(e)
                             diag["erros"].append(err_str)
@@ -31805,22 +31980,29 @@ def webhook_whatsapp():
                                         numero,
                                         err_str[:300],
                                     )
+                                    try:
+                                        wa_ai_send_fallback(
+                                            numero,
+                                            c.id,
+                                            "fallback: upstream bloqueado",
+                                        )
+                                        diag["respostas_enviadas"] += 1
+                                    except Exception:
+                                        db.session.rollback()
                                 else:
                                     app.logger.exception(
                                         "Falha no auto-reply WhatsApp para %s", numero
                                     )
-                                    db.session.add(
-                                        WhatsAppMensagem(
-                                            conversa_id=c.id,
-                                            numero=numero,
-                                            direcao="out",
-                                            tipo="erro",
-                                            conteudo=("Falha auto-reply: " + err_str)[
-                                                :700
-                                            ],
+                                    wa_ai_log_error(c.id, numero, "Falha auto-reply: " + err_str)
+                                    try:
+                                        wa_ai_send_fallback(
+                                            numero,
+                                            c.id,
+                                            "fallback: excecao no auto-reply",
                                         )
-                                    )
-                                    db.session.commit()
+                                        diag["respostas_enviadas"] += 1
+                                    except Exception:
+                                        db.session.rollback()
                             except Exception:
                                 db.session.rollback()
         elif debug:
