@@ -2302,7 +2302,7 @@ class FuncionarioAlteracaoSolicitacao(db.Model):
         d["analisado_fmt"] = (
             self.analisado_em.strftime("%d/%m/%Y %H:%M") if self.analisado_em else ""
         )
-        d["payload"] = jloads(self.payload, {})
+        d["payload"] = {k: str(v) if v is not None else "" for k, v in jloads(self.payload, {}).items()}
         return d
 
 

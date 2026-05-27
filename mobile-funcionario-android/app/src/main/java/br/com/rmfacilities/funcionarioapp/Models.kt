@@ -328,7 +328,7 @@ data class AlteracaoSolicitacaoItem(
     val motivo_admin: String? = null,
     val solicitado_fmt: String? = null,
     val analisado_fmt: String? = null,
-    val payload: Map<String, String> = emptyMap()
+    val payload: Map<String, Any?> = emptyMap()
 )
 
 data class AlteracaoListResponse(
