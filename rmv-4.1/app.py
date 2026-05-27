@@ -32639,8 +32639,14 @@ with app.app_context():
             "cesta_natal FLOAT DEFAULT 0",
             "foto_perfil VARCHAR(500)",
             "data_nascimento DATE",
+            "kiosk_pin VARCHAR(10)",
         ],
     )
+    # Cria tabela ponto_kiosk se nao existir
+    try:
+        db.engine.execute("SELECT 1 FROM ponto_kiosk LIMIT 1")
+    except Exception:
+        db.create_all()
     ensure_cols(
         "comunicado_app",
         [
