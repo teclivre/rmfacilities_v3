@@ -40,6 +40,7 @@ class LoginActivity : AppCompatActivity() {
     private var cpfAtual = ""
     private var biometricPromptShown = false
     private var otpCooldownTimer: CountDownTimer? = null
+    private var silentAuthInProgress = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -111,19 +112,53 @@ class LoginActivity : AppCompatActivity() {
 
         inicializarBiometriaUI()
 
-        // Pré-preencher CPF salvo (se biometria não fez isso)
+        // Pré-preencher CPF salvo (último login ou biometria)
         if (etCpf.text.isNullOrBlank()) {
-            // Item 2: ler CPF de EncryptedSharedPreferences via SessionManager
-            val savedCpf = session.biometricCpf.takeIf { it.isNotBlank() }
+            val savedCpf = session.lastLoginCpf.takeIf { it.isNotBlank() }
+                ?: session.biometricCpf.takeIf { it.isNotBlank() }
             if (!savedCpf.isNullOrBlank()) etCpf.setText(savedCpf)
         }
+
+        tentarRenovacaoSilenciosa()
     }
 
     override fun onResume() {
         super.onResume()
-        if (!biometricPromptShown && shouldOfferBiometric()) {
+        if (!silentAuthInProgress && !biometricPromptShown && shouldOfferBiometric()) {
             biometricPromptShown = true
             autenticarComBiometria()
+        }
+    }
+
+    private fun tentarRenovacaoSilenciosa() {
+        if (session.accessToken.isNotBlank()) return
+        if (session.refreshToken.isBlank()) return
+        if (!session.isTrustedDeviceValid()) return
+
+        silentAuthInProgress = true
+        setLoading(true)
+        hideErro()
+        lifecycleScope.launch(Dispatchers.IO) {
+            val resp = try {
+                api.renovarSessao(session.refreshToken)
+            } catch (e: Exception) {
+                LoginResponse(ok = false, erro = "Erro de conexão: ${e.message}")
+            }
+            withContext(Dispatchers.Main) {
+                silentAuthInProgress = false
+                setLoading(false)
+                if (resp.ok && !resp.access_token.isNullOrBlank()) {
+                    session.accessToken = resp.access_token
+                    if (!resp.refresh_token.isNullOrBlank()) {
+                        session.refreshToken = resp.refresh_token
+                    }
+                    session.touchActivity()
+                    goHomeOrDeepLink()
+                } else {
+                    // Token de refresh inválido/expirado: mantém login manual como fallback.
+                    session.refreshToken = ""
+                }
+            }
         }
     }
 
@@ -134,6 +169,7 @@ class LoginActivity : AppCompatActivity() {
         if (!btnEnviarCodigo.isEnabled) return  // evita duplo clique
 
         cpfAtual = cpf
+        session.lastLoginCpf = cpf
         setLoading(true)
         hideErro()
 
@@ -205,6 +241,7 @@ class LoginActivity : AppCompatActivity() {
                 if (resp.ok && !resp.access_token.isNullOrBlank()) {
                     session.accessToken = resp.access_token
                     session.refreshToken = resp.refresh_token ?: ""
+                    session.lastLoginCpf = cpf
                     session.markLoginSuccess(label = android.os.Build.MODEL)
                     if (session.biometricCpf.isBlank()) {
                         session.biometricCpf = cpf

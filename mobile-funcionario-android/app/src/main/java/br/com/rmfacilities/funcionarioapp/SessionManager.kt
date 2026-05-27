@@ -68,6 +68,10 @@ class SessionManager(private val context: Context) {
         get() = prefs.getString("biometric_cpf", "") ?: ""
         set(value) = prefs.edit().putString("biometric_cpf", value).apply()
 
+    var lastLoginCpf: String
+        get() = prefs.getString("last_login_cpf", "") ?: ""
+        set(value) = prefs.edit().putString("last_login_cpf", value).apply()
+
     var notificationsEnabled: Boolean
         get() = prefs.getBoolean("notifications_enabled", true)
         set(value) = prefs.edit().putBoolean("notifications_enabled", value).apply()
@@ -100,11 +104,13 @@ class SessionManager(private val context: Context) {
         val notif = notificationsEnabled
         val canal = canalOtp
         val refresh = refreshToken
+        val lastCpf = lastLoginCpf
         val timeoutMin = sessionIdleTimeoutMin
         prefs.edit().clear().apply()
         apiBaseUrl = base
         biometricEnabled = bio
         biometricCpf = bioCpf
+        lastLoginCpf = lastCpf
         notificationsEnabled = notif
         canalOtp = canal
         sessionIdleTimeoutMin = timeoutMin
