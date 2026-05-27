@@ -5023,11 +5023,6 @@ function _sidebarFindNavItem(id){
 }
 
 function sidebarSyncActiveContext(activeId){
-  const item=_sidebarFindNavItem(activeId);
-  if(item){
-    const mod=item.closest('.nav-module');
-    if(mod) mod.classList.add('open');
-  }
   document.querySelectorAll('.nav-module').forEach(mod=>{
     mod.classList.toggle('active',!!mod.querySelector('.nav-item.on'));
   });
