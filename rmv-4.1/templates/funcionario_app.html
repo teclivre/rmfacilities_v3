@@ -998,8 +998,7 @@ function loadDocsAssin(){
         +' · Assinado '+esc(a.ass_em_fmt||'')+'</div>'
         +(a.ass_codigo?'<div class="doc-meta" style="font-size:10px">Cód: '+esc(a.ass_codigo)+'</div>':'')
         +'</div><div class="doc-actions">'
-        +'<button class="btn-sm btn-dl" data-url="'+esc(a.app_download_url||'')+'"
-          data-name="'+esc(a.nome_arquivo||'documento')+'" onclick="downloadAuth(this)">↓</button>'
+        +'<button class="btn-sm btn-dl" data-url="'+esc(a.app_download_url||'')+'" data-name="'+esc(a.nome_arquivo||'documento')+'" onclick="downloadAuth(this)">↓</button>'
         +'</div></div>';
     }).join('');
   }).catch(function(e){el.innerHTML='<div class="empty-state">'+esc(e.message||'Erro')+'</div>';_loaded['docs_assin']=false;});
