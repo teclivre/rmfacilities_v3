@@ -166,13 +166,13 @@ class FcmService : FirebaseMessagingService() {
             .addAction(0, "Marcar para depois", laterPendingIntent)
             .build()
 
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
         nm.notify(notifId, notif)
     }
 
     private fun ensureChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
             nm.createNotificationChannel(
                 NotificationChannel(CHANNEL_DOCS, "Documentos", NotificationManager.IMPORTANCE_HIGH)
             )

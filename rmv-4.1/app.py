@@ -4520,6 +4520,7 @@ def _fcm_send_to_token(token, titulo, corpo, data=None):
         firebase_admin.get_app()
     except Exception:
         try:
+            fcm_project_override = (os.environ.get("FIREBASE_PROJECT_ID") or "").strip()
             # Aceita JSON inline (string) ou caminho de arquivo
             if cred_val.startswith("{"):
                 import json as _json
@@ -4553,14 +4554,16 @@ def _fcm_send_to_token(token, titulo, corpo, data=None):
                 _tmp.flush()
                 _tmp.close()
                 atexit.register(lambda p=_tmp.name: os.path.exists(p) and os.remove(p))
-                firebase_admin.initialize_app(credentials.Certificate(_tmp.name))
+                init_opts = {"projectId": fcm_project_override} if fcm_project_override else None
+                firebase_admin.initialize_app(credentials.Certificate(_tmp.name), init_opts)
             else:
                 if not os.path.exists(cred_val):
                     app.logger.warning(
                         f"[fcm] arquivo de credencial nao encontrado: {cred_val}"
                     )
                     return False
-                firebase_admin.initialize_app(credentials.Certificate(cred_val))
+                init_opts = {"projectId": fcm_project_override} if fcm_project_override else None
+                firebase_admin.initialize_app(credentials.Certificate(cred_val), init_opts)
         except Exception as e:
             app.logger.error(f"[fcm] falha ao inicializar firebase app: {e}")
             return False
@@ -4598,7 +4601,13 @@ def _fcm_send_to_token(token, titulo, corpo, data=None):
         messaging.send(msg)
         return True
     except Exception as e:
-        app.logger.exception(f"[fcm] falha ao enviar para token: {e}")
+        emsg = (str(e) or "").lower()
+        if "requested entity was not found" in emsg:
+            app.logger.exception(
+                "[fcm] falha ao enviar para token: Requested entity was not found (possivel project_id do Firebase incorreto ou credencial de outro projeto)."
+            )
+        else:
+            app.logger.exception(f"[fcm] falha ao enviar para token: {e}")
         return False
 
 
@@ -4634,7 +4643,6 @@ def _push_notify_funcionario(fid, titulo, corpo, data=None):
         if (
             "unregistered" in msg
             or "registration-token-not-registered" in msg
-            or "requested entity was not found" in msg
         ):
             f.app_push_token = None
             db.session.commit()
