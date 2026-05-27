@@ -3944,7 +3944,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div style="margin-bottom:14px">
           <div class="g3" style="align-items:flex-end;gap:10px">
             <div class="f"><label>Nome do totem</label><input type="text" id="kiosk-nome" placeholder="Ex: Portaria – Sede" maxlength="100"></div>
-            <div class="f"><label>Filtro de posto</label><input type="text" id="kiosk-posto" placeholder="Deixe vazio = todos os funcionários"></div>
+              <div class="f"><label>Filtro de posto</label><select id="kiosk-posto"><option value="">Todos os postos</option></select></div>
             <div class="f">
               <label>Requer PIN</label>
               <select id="kiosk-pin">
@@ -6831,9 +6831,26 @@ async function excluirUsr(id,nome){
 }
 
 // ── KIOSKS COMPARTILHADOS ─────────────────────────────────────────────────────
+async function kioskCarregarPostos(){
+  const sel=document.getElementById('kiosk-posto');
+  if(!sel) return;
+  const atual=sel.value||'';
+  sel.innerHTML='<option value="">Carregando postos...</option>';
+  try{
+    const r=await api('/api/operacional/postos');
+    const clientes=r?.clientes||[];
+    const postos=[...new Set(clientes.map(function(c){return (c?.posto_label||c?.nome||'').trim();}).filter(Boolean))].sort(function(a,b){return a.localeCompare(b,'pt-BR');});
+    sel.innerHTML='<option value="">Todos os postos</option>' + postos.map(function(p){return `<option value="${esc(p)}">${esc(p)}</option>`;}).join('');
+    sel.value=postos.includes(atual)?atual:'';
+  }catch(_e){
+    sel.innerHTML='<option value="">Falha ao carregar postos</option>';
+  }
+}
+
 async function kioskCarregar(){
   const el=document.getElementById('kiosk-list');
   if(!el) return;
+  await kioskCarregarPostos();
   const d=await api('/api/admin/ponto/kiosks');
   const ks=d.kiosks||[];
   if(!ks.length){el.innerHTML='<div style="color:var(--text-muted);font-size:13px">Nenhum totem criado ainda.</div>';return;}
