@@ -64,7 +64,15 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .app-header{background:var(--bg2);border-bottom:1px solid var(--border);padding:calc(var(--safe-top) + 12px) 16px 12px;display:flex;align-items:center;gap:12px;flex-shrink:0}
 .app-header .hname{font-size:15px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .app-header .hbadge{background:var(--blue);color:#fff;font-size:11px;font-weight:700;border-radius:10px;padding:2px 8px}
-.app-content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 16px calc(var(--safe-bot) + 70px)}
+.app-content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 16px calc(var(--safe-bot) + 70px);position:relative}
+/* Pull-to-refresh */
+.ptr-indicator{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;justify-content:center;gap:8px;height:56px;font-size:13px;color:var(--text2);transform:translateY(-56px);transition:transform .2s;pointer-events:none;z-index:50}
+.ptr-indicator .ptr-spin{width:18px;height:18px;border:2.5px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite;display:none}
+.ptr-indicator.ready .ptr-spin{display:block}
+/* GPS banner */
+.gps-banner{display:none;align-items:center;gap:10px;background:rgba(234,179,8,0.12);border:1px solid rgba(234,179,8,0.3);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:13px;color:var(--yellow)}
+.gps-banner.on{display:flex}
+.gps-banner button{margin-left:auto;background:var(--yellow);color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0}
 .app-nav{position:fixed;bottom:0;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border);display:flex;padding-bottom:var(--safe-bot);z-index:100}
 .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px;font-size:10px;color:var(--text2);cursor:pointer;border:none;background:none;position:relative}
 .nav-btn.on{color:var(--blue)}
@@ -221,9 +229,14 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 
   <!-- Content -->
   <div class="app-content" id="app-content">
+    <div class="ptr-indicator" id="ptr-indicator"><div class="ptr-spin"></div><span id="ptr-text">Solte para atualizar</span></div>
 
     <!-- ─── PONTO ─── -->
     <div id="pg-ponto" class="page on">
+      <div class="gps-banner" id="gps-banner">
+        <span>📍 Localização necessária para registrar ponto.</span>
+        <button onclick="pedirGps()">Ativar GPS</button>
+      </div>
       <div class="card">
         <div id="clock-big" class="clock-big">—:—</div>
         <div id="date-sub" class="date-sub">—</div>
@@ -492,9 +505,50 @@ function showApp(){
   // Start clock
   updateClock();
   _clockT = setInterval(updateClock, 1000);
+  // Pré-solicitar GPS silenciosamente
+  obterGps(5000).catch(()=>{});
+  // Pull-to-refresh
+  initPullToRefresh();
   // Load initial page
   showPage('ponto');
   loadBadges();
+}
+
+// ── Pull-to-refresh ──
+function initPullToRefresh(){
+  const content = document.getElementById('app-content');
+  const ind = document.getElementById('ptr-indicator');
+  const txt = document.getElementById('ptr-text');
+  let startY=0, pulling=false, triggered=false;
+  const THRESHOLD = 70;
+  content.addEventListener('touchstart', e=>{
+    if(content.scrollTop===0) { startY=e.touches[0].clientY; pulling=true; triggered=false; }
+  }, {passive:true});
+  content.addEventListener('touchmove', e=>{
+    if(!pulling) return;
+    const dy = e.touches[0].clientY - startY;
+    if(dy<=0){ pulling=false; return; }
+    const pull = Math.min(dy, THRESHOLD+20);
+    ind.style.transform = 'translateY('+(pull-56)+'px)';
+    if(dy>=THRESHOLD && !triggered){ triggered=true; ind.classList.add('ready'); txt.textContent='Solte para atualizar'; }
+    else if(dy<THRESHOLD){ ind.classList.remove('ready'); txt.textContent='Puxe para atualizar'; }
+  }, {passive:true});
+  content.addEventListener('touchend', ()=>{
+    if(!pulling) return;
+    pulling=false;
+    ind.style.transform='';
+    ind.classList.remove('ready');
+    if(triggered){ triggered=false; refreshCurrentPage(); }
+  }, {passive:true});
+}
+
+function refreshCurrentPage(){
+  showToast('Atualizando…');
+  if(_curPage==='ponto') loadPonto();
+  else if(_curPage==='hist') loadHist();
+  else if(_curPage==='msgs') loadMsgs();
+  else if(_curPage==='comun') loadComun();
+  else if(_curPage==='perfil') loadPerfil();
 }
 
 function clearTimers(){
@@ -624,18 +678,51 @@ function renderPonto(r){
   balEl.className = 'saldo-box '+(saldoMin>0?'pos':saldoMin<0?'neg':'neu');
 }
 
+// ── GPS ──
+let _gpsPos = null; // {lat, lon, precisao}
+async function obterGps(timeout=10000){
+  return new Promise((resolve, reject)=>{
+    if(!navigator.geolocation){ reject(new Error('GPS não suportado neste dispositivo.')); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos=>{ _gpsPos={lat:pos.coords.latitude,lon:pos.coords.longitude,precisao:pos.coords.accuracy}; resolve(_gpsPos); },
+      err=>{
+        let msg = 'Ative o GPS e permita o acesso à localização.';
+        if(err.code===1) msg='Permissão de localização negada. Toque em Ativar GPS para tentar novamente.';
+        else if(err.code===3) msg='Tempo esgotado ao obter localização. Tente novamente.';
+        reject(new Error(msg));
+      },
+      {enableHighAccuracy:true, timeout, maximumAge:30000}
+    );
+  });
+}
+async function pedirGps(){
+  document.getElementById('gps-banner').classList.remove('on');
+  try{
+    await obterGps();
+    showToast('Localização obtida!');
+  }catch(e){
+    showToast(e.message, true);
+    document.getElementById('gps-banner').classList.add('on');
+  }
+}
 async function marcarPonto(){
   const btn = document.getElementById('btn-marcar-ponto');
   if(btn.classList.contains('concluido')) return;
   btn.disabled = true;
-  const origText = btn.textContent;
-  btn.textContent = '…';
+  btn.textContent = '📍 Obtendo localização…';
   try{
-    const d = await api('POST','/api/app/funcionario/me/ponto/marcar',{});
+    const pos = await obterGps(10000);
+    document.getElementById('gps-banner').classList.remove('on');
+    btn.textContent = '…';
+    await api('POST','/api/app/funcionario/me/ponto/marcar',{lat:pos.lat,lon:pos.lon,precisao:pos.precisao});
     showToast('Ponto registrado com sucesso!');
     await loadPonto();
   }catch(e){
+    if(e.message && e.message.includes('GPS')||e.message&&e.message.includes('localização')||e.message&&e.message.includes('ermissão')||e.message&&e.message.includes('Ative')){
+      document.getElementById('gps-banner').classList.add('on');
+    }
     showToast(e.message || 'Erro ao registrar ponto', true);
+    await loadPonto();
   }finally{
     btn.disabled = false;
   }
