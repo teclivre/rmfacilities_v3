@@ -514,6 +514,33 @@ function setupCpfInput(){
 }
 
 /* API */
+function downloadAuth(el){
+  var url=el.dataset.url,name=el.dataset.name||'arquivo';
+  if(!url){showToast('URL inválida',true);return;}
+  el.disabled=true;var orig=el.textContent;el.textContent='…';
+  fetch(url,{headers:{'Authorization':'Bearer '+_AT}})
+    .then(function(r){
+      if(r.status===401) return refreshToken().then(function(ok){
+        if(!ok){doLogout();return Promise.reject({auth:true});}
+        return fetch(url,{headers:{'Authorization':'Bearer '+_AT}});
+      });
+      return r;
+    })
+    .then(function(r){
+      if(!r.ok) return r.json().then(function(d){return Promise.reject(new Error(d.erro||'Erro '+r.status));});
+      return r.blob();
+    })
+    .then(function(blob){
+      var a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download=name;
+      document.body.appendChild(a);a.click();
+      setTimeout(function(){URL.revokeObjectURL(a.href);document.body.removeChild(a);},1000);
+    })
+    .catch(function(e){if(!e||!e.auth) showToast(e&&e.message?e.message:'Erro ao baixar arquivo',true);})
+    .finally(function(){el.disabled=false;el.textContent=orig;});
+}
+
 function api(method,path,body,retried){
   var opts={method:method,headers:{'Content-Type':'application/json','Authorization':'Bearer '+_AT}};
   if(body) opts.body=JSON.stringify(body);
@@ -971,7 +998,8 @@ function loadDocsAssin(){
         +' · Assinado '+esc(a.ass_em_fmt||'')+'</div>'
         +(a.ass_codigo?'<div class="doc-meta" style="font-size:10px">Cód: '+esc(a.ass_codigo)+'</div>':'')
         +'</div><div class="doc-actions">'
-        +'<a href="'+esc(a.app_download_url||'#')+'" target="_blank" class="btn-sm btn-dl">↓</a>'
+        +'<button class="btn-sm btn-dl" data-url="'+esc(a.app_download_url||'')+'"
+          data-name="'+esc(a.nome_arquivo||'documento')+'" onclick="downloadAuth(this)">↓</button>'
         +'</div></div>';
     }).join('');
   }).catch(function(e){el.innerHTML='<div class="empty-state">'+esc(e.message||'Erro')+'</div>';_loaded['docs_assin']=false;});
@@ -985,7 +1013,7 @@ function renderDocItem(a,showSign){
     +'<div class="doc-info"><div class="doc-name">'+esc(nome)+'</div>'
     +'<div class="doc-meta">'+esc(meta)+(a.ass_status?' · '+esc(a.ass_status):'')+'</div></div>'
     +'<div class="doc-actions">'
-    +'<a href="'+esc(a.app_download_url||'/api/app/funcionario/arquivos/'+(a.id||'')+'/download')+'" target="_blank" class="btn-sm btn-dl">↓</a>'
+    +'<button class="btn-sm btn-dl" data-url="'+esc(a.app_download_url||'/api/app/funcionario/arquivos/'+(a.id||'')+'/download')+'" data-name="'+esc(nome)+'" onclick="downloadAuth(this)">↓</button>'
     +(showSign&&!assinado?'<button class="btn-sm btn-sign" onclick="abrirModalSign('+a.id+',\''+esc(nome).replace(/'/g,"\\'")+'\')" >Assinar</button>':'')
     +(assinado?'<span class="btn-sm btn-signed">✓</span>':'')
     +'</div></div>';
@@ -1003,7 +1031,7 @@ function loadEspelho(){
         return '<div class="comp-row">'
           +'<div><div class="comp-label">'+esc(c.label)+'</div>'
           +'<div class="comp-sub">'+(c.pode_baixar?'✓ Aprovado pelo gestor':'⏳ Aguardando fechamento')+'</div></div>'
-          +(c.pode_baixar?'<a href="/api/app/funcionario/me/ponto/espelho/pdf?competencia='+encodeURIComponent(c.competencia)+'" target="_blank" class="btn-sm btn-dl" style="padding:8px 12px">↓ PDF</a>':'<span style="font-size:12px;color:var(--text2)">—</span>')
+          +(c.pode_baixar?'<button class="btn-sm btn-dl" style="padding:8px 12px" data-url="/api/app/funcionario/me/ponto/espelho/pdf?competencia='+encodeURIComponent(c.competencia)+'" data-name="espelho-'+esc(c.competencia)+'.pdf" onclick="downloadAuth(this)">↓ PDF</button>':'<span style="font-size:12px;color:var(--text2)">—</span>')
           +'</div>';
       }).join('');
   }).catch(function(e){el.innerHTML='<div class="empty-state">'+esc(e.message||'Erro')+'</div>';_loaded['docs_espelho']=false;});
