@@ -1450,12 +1450,11 @@ def register_ponto_routes(
 
         doc.build(elementos)
         saida.seek(0)
-        return send_file(
-            saida,
-            mimetype="application/pdf",
-            as_attachment=False,
-            download_name=nome_arquivo,
-        )
+        from flask import make_response
+        resp = make_response(saida.read())
+        resp.headers['Content-Type'] = 'application/pdf'
+        resp.headers['Content-Disposition'] = f'inline; filename="{nome_arquivo}"'
+        return resp
 
     # ── GESTÃO FÁCIL: calendário mensal ──────────────────────────────────────
     @app.route("/api/ponto/gestao-facil/calendario")
