@@ -29200,18 +29200,22 @@ def api_dashboard():
         if m:
             mm, yy = int(m.group(1)), int(m.group(2))
             if 1 <= mm <= 12:
+                # ASO informado por competência (MM/AAAA) vale por 12 meses.
+                yy += 1
                 prox = date(yy + 1, 1, 1) if mm == 12 else date(yy, mm + 1, 1)
                 return prox - timedelta(days=1)
         m = re.match(r"^(\d{4})-(\d{2})$", s)
         if m:
             yy, mm = int(m.group(1)), int(m.group(2))
             if 1 <= mm <= 12:
+                # ASO informado por competência (AAAA-MM) vale por 12 meses.
+                yy += 1
                 prox = date(yy + 1, 1, 1) if mm == 12 else date(yy, mm + 1, 1)
                 return prox - timedelta(days=1)
         m = re.match(r"^(19|20)\d{2}$", s)
         if m:
             yy = int(s)
-            return date(yy, 12, 31)
+            return date(yy + 1, 12, 31)
         return None
 
     limite = hoje + timedelta(days=30)
