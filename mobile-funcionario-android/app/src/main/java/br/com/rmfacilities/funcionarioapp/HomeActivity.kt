@@ -531,7 +531,7 @@ class HomeActivity : BaseActivity() {
     }
 
     private fun processarFilaPendente() {
-        lifecycleScope.launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val result = retryQueue.process(api)
                 if (result.enviados > 0) {
