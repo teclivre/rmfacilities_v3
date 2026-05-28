@@ -312,7 +312,7 @@ def register_ponto_routes(
         # Dom (weekday==6) ou feriado → tudo a 100%; demais dias → 50% até 2h, 100% além
         _is_feriado = data_ref in (_feriados or set())
         if saldo > 0:
-            if data_ref.weekday() == 6 or _is_feriado:
+            if data_ref.weekday() >= 5 or _is_feriado:
                 he_50_min = 0
                 he_100_min = saldo
             else:
@@ -579,6 +579,7 @@ def register_ponto_routes(
             marc_batch = {}
             for _mb in todas_marc_dia:
                 marc_batch.setdefault(_mb.funcionario_id, []).append(_mb)
+            _feriados_dia = _feriados_para_data(data_ref)
             itens = []
             total_ok = 0
             total_inconsistente = 0
@@ -589,6 +590,7 @@ def register_ponto_routes(
                         funcionario,
                         data_ref,
                         _marcacoes=marc_batch.get(funcionario.id, []),
+                        _feriados=_feriados_dia,
                     )
                     if resumo["status"] == "ok":
                         total_ok += 1
@@ -946,8 +948,14 @@ def register_ponto_routes(
                 {
                     "ok": True,
                     "marcacao": marcacao.to_dict(),
-                    "resumo": _ponto_resumo_func_dia(funcionario, data_nova),
-                    "resumo_dia_anterior": _ponto_resumo_func_dia(funcionario, data_ant)
+                    "resumo": _ponto_resumo_func_dia(
+                        funcionario, data_nova,
+                        _feriados=_feriados_para_data(data_nova),
+                    ),
+                    "resumo_dia_anterior": _ponto_resumo_func_dia(
+                        funcionario, data_ant,
+                        _feriados=_feriados_para_data(data_ant),
+                    )
                     if data_ant != data_nova
                     else None,
                 }
