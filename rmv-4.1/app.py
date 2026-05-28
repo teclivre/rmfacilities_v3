@@ -7721,6 +7721,7 @@ register_ponto_routes(
     PontoAjuste=PontoAjuste,
     PontoFechamentoDia=PontoFechamentoDia,
     Empresa=Empresa,
+    Feriado=Feriado,
     get_logo=get_logo,
     EscalaFuncionario=EscalaFuncionario,
     Escala=Escala,

@@ -23,7 +23,7 @@ def register_ponto_routes(
     PontoFechamentoDia,
     Empresa,
     Cliente=None,
-    Feriado,
+    Feriado=None,
     SolicitacaoHoraExtra=None,
     get_logo,
     EscalaFuncionario=None,
@@ -32,6 +32,33 @@ def register_ponto_routes(
 ):
     if "api_ponto_marcar" in app.view_functions:
         return
+
+    # Fallback lazy: se algum model opcional não foi passado, tenta resolver via
+    # o registry do SQLAlchemy. Evita regressões quando esquecemos de atualizar
+    # a chamada em app.py (ex.: 'register_ponto_routes() missing 1 required
+    # keyword-only argument: Feriado'). Mantemos None se o model não existir.
+    def _resolve_model(name):
+        try:
+            reg = getattr(db.Model, "registry", None)
+            mappers = getattr(reg, "_class_registry", None) if reg is not None else None
+            if mappers and name in mappers:
+                return mappers[name]
+        except Exception:
+            pass
+        return None
+
+    if Feriado is None:
+        Feriado = _resolve_model("Feriado")
+    if Cliente is None:
+        Cliente = _resolve_model("Cliente")
+    if SolicitacaoHoraExtra is None:
+        SolicitacaoHoraExtra = _resolve_model("SolicitacaoHoraExtra")
+    if EscalaFuncionario is None:
+        EscalaFuncionario = _resolve_model("EscalaFuncionario")
+    if Escala is None:
+        Escala = _resolve_model("Escala")
+    if JornadaTrabalho is None:
+        JornadaTrabalho = _resolve_model("JornadaTrabalho")
 
     ponto_tipos = ["entrada", "saida_intervalo", "retorno_intervalo", "saida"]
 
