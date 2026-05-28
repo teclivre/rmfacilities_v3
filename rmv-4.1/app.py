@@ -9597,7 +9597,13 @@ def api_funcionarios():
             return jsonify(f.to_dict())
         return jsonify({})
     q = (request.args.get("q", "") or "").lower()
-    lst = Funcionario.query.order_by(Funcionario.nome).all()
+    # BUG-FIX: respeitar ?status= para que buscas em subseções (aviso prévio,
+    # EPI, etc.) não retornem colaboradores Demitidos/Inativos.
+    status_param = (request.args.get("status") or "").strip()
+    lst_q = Funcionario.query.order_by(Funcionario.nome)
+    if status_param:
+        lst_q = lst_q.filter(Funcionario.status == status_param)
+    lst = lst_q.all()
     if q:
         qdig = only_digits(q)
         lst = [
@@ -10032,7 +10038,9 @@ def api_criar_funcionario():
         ferias_inicio=(d.get("ferias_inicio") or "").strip(),
         ferias_fim=(d.get("ferias_fim") or "").strip(),
         ferias_obs=(d.get("ferias_obs") or "").strip(),
-        posto_operacional="Reserva tecnica",
+        # BUG-FIX: respeitar posto_operacional enviado pelo formulário;
+        # antes o campo era sempre sobrescrito com 'Reserva tecnica' no POST.
+        posto_operacional=(d.get("posto_operacional") or "Reserva tecnica").strip() or "Reserva tecnica",
         salario=to_num(d.get("salario"), dec=True),
         vale_refeicao=to_num(d.get("vale_refeicao"), dec=True),
         vale_alimentacao=to_num(d.get("vale_alimentacao"), dec=True),
@@ -10075,6 +10083,16 @@ def api_criar_funcionario():
     try:
         db.session.add(f)
         db.session.commit()
+        # BUG-FIX: registrar auditoria na criação (antes só o DELETE registrava).
+        audit_event(
+            "funcionario_criar",
+            "usuario",
+            session.get("uid"),
+            "funcionario",
+            f.id,
+            True,
+            {"nome": f.nome, "cpf": f.cpf, "re": f.re},
+        )
         return jsonify(f.to_dict()), 201
     except IntegrityError as e:
         db.session.rollback()
@@ -10209,6 +10227,16 @@ def api_atualizar_funcionario(id):
         f.areas = json.dumps(ars, ensure_ascii=False)
     try:
         db.session.commit()
+        # BUG-FIX: registrar auditoria na edição (antes só o DELETE registrava).
+        audit_event(
+            "funcionario_editar",
+            "usuario",
+            session.get("uid"),
+            "funcionario",
+            f.id,
+            True,
+            {"nome": f.nome, "campos_alterados": list(d.keys())},
+        )
         return jsonify(f.to_dict())
     except IntegrityError as e:
         db.session.rollback()
@@ -10241,6 +10269,10 @@ def api_deletar_funcionario(id):
     PontoMarcacao.query.filter_by(funcionario_id=id).delete()
     PontoAjuste.query.filter_by(funcionario_id=id).delete()
     PontoFechamentoDia.query.filter_by(funcionario_id=id).delete()
+    # BUG-FIX: remover também sessões do app e solicitações de alteração do
+    # colaborador para não deixar registros órfãos com FK inválida.
+    FuncionarioAppSessao.query.filter_by(funcionario_id=id).delete()
+    FuncionarioAlteracaoSolicitacao.query.filter_by(funcionario_id=id).delete()
     db.session.delete(f)
     db.session.commit()
     audit_event(

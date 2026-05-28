@@ -12269,9 +12269,16 @@ async function _renderFuncionariosImpl(){
 
   if(folhaEl) folhaEl.textContent='Folha: R$ 0,00';
   if(!lista.length){
-    const vazioMsg=rhFuncTab==='ativos'
-      ? 'Nenhum colaborador ativo encontrado.'
-      : (rhFuncTab==='ferias'?'Nenhum colaborador em férias encontrado.':'Nenhum colaborador demitido/inativo encontrado.');
+    // BUG-FIX: mensagem de lista vazia correta para cada tab (antes 'afastado'
+    // e 'aviso' exibiam texto de demitido/inativo, que é confuso para o operador).
+    const vazioMsgs={
+      ativos:'Nenhum colaborador ativo encontrado.',
+      ferias:'Nenhum colaborador em férias encontrado.',
+      afastado:'Nenhum colaborador afastado encontrado.',
+      aviso:'Nenhum colaborador em aviso prévio encontrado.',
+      inativos:'Nenhum colaborador demitido/inativo encontrado.'
+    };
+    const vazioMsg=vazioMsgs[rhFuncTab]||'Nenhum resultado encontrado.';
     tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">'+vazioMsg+'</td></tr>';
     return;
   }
