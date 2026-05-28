@@ -12696,7 +12696,7 @@ def _calcular_aviso_previo_dias(data_admissao_str, data_ref=None):
 
 def _gerar_aviso_previo_pdf(
     funcionario, tipo="empresa_trabalhado", empresa=None, obs="", data_aviso_str=None,
-    reducao="nenhuma",
+    reducao="nenhuma", demissao_aviso="cumprira",
 ):
     """Gera PDF de Aviso Prévio proporcional (Lei 12.506/2011)."""
     from reportlab.lib.pagesizes import A4
@@ -12788,6 +12788,10 @@ def _gerar_aviso_previo_pdf(
     # não aviso + N (que dava 1 dia a mais e divergia da prévia JS).
     if tipo == "termino_contrato":
         dt_fim = dt_aviso
+    elif tipo == "pedido_demissao" and demissao_aviso == "nao_cumprira":
+        # Não há período a cumprir: vínculo encerra na data do próprio aviso;
+        # o desconto será registrado nas verbas rescisórias (art. 487 §2º CLT).
+        dt_fim = dt_aviso
     else:
         dt_fim = dt_aviso + timedelta(days=max(total_dias - 1, 0))
 
@@ -12819,7 +12823,11 @@ def _gerar_aviso_previo_pdf(
     TIPOS = {
         "empresa_trabalhado": "AVISO PRÉVIO TRABALHADO",
         "empresa_indenizado": "AVISO PRÉVIO INDENIZADO",
-        "pedido_demissao": "PEDIDO DE DEMISSÃO — AVISO PRÉVIO",
+        "pedido_demissao": (
+            "PEDIDO DE DEMISSÃO — SEM CUMPRIMENTO DE AVISO PRÉVIO"
+            if demissao_aviso == "nao_cumprira"
+            else "PEDIDO DE DEMISSÃO — AVISO PRÉVIO"
+        ),
         "termino_contrato": "TÉRMINO DE CONTRATO POR PRAZO DETERMINADO",
     }
     tipo_label = TIPOS.get(tipo, "AVISO PRÉVIO TRABALHADO")
@@ -13013,13 +13021,23 @@ def _gerar_aviso_previo_pdf(
             f"decisão de <b>rescindir voluntariamente</b> meu contrato de trabalho, "
             f"solicitando meu desligamento da empresa a partir desta data."
         )
-        texto_prazo = (
-            f"Conforme Lei nº 12.506/2011 e art. 487 da CLT, comprometendo-me a cumprir o aviso prévio de "
-            f"<b>{total_dias} dias</b> (30 dias base + {dias_adicionais} dias proporcionais ao tempo de serviço "
-            f"de {anos_servico} ano(s)), a partir de <b>{data_aviso_fmt}</b>, encerrando-se em <b>{data_fim_fmt}</b>, "
-            f"salvo dispensa expressa e por escrito da empresa. Estou ciente de que a falta de cumprimento do aviso "
-            f"implicará desconto no valor correspondente nas verbas rescisórias, nos termos do art. 487, §2º da CLT."
-        )
+        if demissao_aviso == "nao_cumprira":
+            texto_prazo = (
+                f"Declaro que <b>não cumprirei</b> o aviso prévio de <b>{total_dias} dias</b> previsto no "
+                f"art. 487 da CLT, e estou ciente de que o valor correspondente ao período de aviso prévio "
+                f"não cumprido será <b>descontado das verbas rescisórias</b>, nos termos do "
+                f"art. 487, §2º da CLT. O vínculo empregatício será encerrado na data de "
+                f"<b>{data_fim_fmt}</b>."
+            )
+        else:
+            texto_prazo = (
+                f"Conforme art. 487 da CLT, comprometendo-me a cumprir o aviso prévio de "
+                f"<b>{total_dias} dias</b> (30 dias — Lei 12.506/2011 é benefício do empregado), "
+                f"a partir de <b>{data_aviso_fmt}</b>, encerrando-se em <b>{data_fim_fmt}</b>, "
+                f"salvo dispensa expressa e por escrito da empresa. Estou ciente de que a falta de "
+                f"cumprimento do aviso implicará desconto no valor correspondente nas verbas rescisórias, "
+                f"nos termos do art. 487, §2º da CLT."
+            )
 
     if tipo == "termino_contrato":
         texto_base_legal = (
@@ -13233,6 +13251,12 @@ def api_funcionario_gerar_aviso_previo(id):
     # Redução do art. 488 só faz sentido em aviso trabalhado.
     if tipo != "empresa_trabalhado":
         reducao = "nenhuma"
+    demissao_aviso = (d.get("demissao_aviso") or "cumprira").strip().lower()
+    if demissao_aviso not in ("cumprira", "nao_cumprira"):
+        demissao_aviso = "cumprira"
+    # demissao_aviso só se aplica ao pedido de demissão.
+    if tipo != "pedido_demissao":
+        demissao_aviso = "cumprira"
     canal = (d.get("canal") or "nao").strip().lower()
     if canal not in ("whatsapp", "app", "link", "nao"):
         canal = "nao"
@@ -13307,7 +13331,7 @@ def api_funcionario_gerar_aviso_previo(id):
     try:
         buf = _gerar_aviso_previo_pdf(
             f, tipo=tipo, empresa=emp_obj, obs=obs, data_aviso_str=data_aviso or None,
-            reducao=reducao,
+            reducao=reducao, demissao_aviso=demissao_aviso,
         )
     except Exception as e:
         app.logger.exception("Erro ao gerar PDF aviso prévio")

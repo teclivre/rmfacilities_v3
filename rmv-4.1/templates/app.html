@@ -2552,6 +2552,13 @@ document.addEventListener('DOMContentLoaded',()=>{
               <option value="7_dias_indenizados">Redução de 7 dias indenizados ao final do aviso</option>
             </select>
           </div>
+          <div class="f" id="ap-demissao-wrap" style="margin-bottom:14px;display:none">
+            <label>Cumprimento do aviso prévio (art. 487, §2º CLT) — somente Pedido de Demissão</label>
+            <select id="ap-demissao-aviso">
+              <option value="cumprira">Cumprirá os 30 dias de aviso prévio normalmente</option>
+              <option value="nao_cumprira">NÃO cumprirá o aviso — autoriza desconto nas verbas rescisórias (art. 487, §2º CLT)</option>
+            </select>
+          </div>
           <div class="f" style="margin-bottom:14px">
             <label>Observações adicionais</label>
             <input id="ap-obs" type="text" placeholder="Observações opcionais">
@@ -9803,13 +9810,19 @@ function apToggleReducao() {
   const tipo = document.getElementById('ap-tipo')?.value || '';
   const wrap = document.getElementById('ap-reducao-wrap');
   const sel = document.getElementById('ap-reducao');
+  const demWrap = document.getElementById('ap-demissao-wrap');
+  const demSel = document.getElementById('ap-demissao-aviso');
   if (!wrap || !sel) return;
-  const habilita = (tipo === 'empresa_trabalhado');
-  wrap.style.opacity = habilita ? '1' : '0.5';
-  sel.disabled = !habilita;
-  if (!habilita) sel.value = 'nenhuma';
-  // BUG-FIX: ao alternar entre tipos, refazer o painel CLT para esconder
-  // quando for término de contrato e reexibir nos demais casos.
+  const habilitaRed = (tipo === 'empresa_trabalhado');
+  wrap.style.opacity = habilitaRed ? '1' : '0.5';
+  sel.disabled = !habilitaRed;
+  if (!habilitaRed) sel.value = 'nenhuma';
+  if (demWrap && demSel) {
+    const habilitaDem = (tipo === 'pedido_demissao');
+    demWrap.style.display = habilitaDem ? '' : 'none';
+    if (!habilitaDem) demSel.value = 'cumprira';
+  }
+  // Ao alternar tipo, refazer o painel CLT (ocultar em término de contrato).
   if (apFuncSelecionado) apSelecionarFunc(apFuncSelecionado);
 }
 
@@ -9820,6 +9833,7 @@ function previaAvisoPrevio() {
   const dataAviso = document.getElementById('ap-data-aviso').value;
   const obs = (document.getElementById('ap-obs')?.value || '').trim();
   const reducao = document.getElementById('ap-reducao')?.value || 'nenhuma';
+  const demissaoAviso = document.getElementById('ap-demissao-aviso')?.value || 'cumprira';
   const hoje = new Date().toLocaleDateString('pt-BR');
   const empNome = f.empresa_nome || 'RM FACILITIES LTDA';
   // Dados do cálculo (se já carregados no painel)
@@ -9833,28 +9847,28 @@ function previaAvisoPrevio() {
   // (Lei 12.506/2011 é benefício exclusivo do empregado). Sem isso a prévia
   // mostrava 30+3*N e divergia do PDF (que agora também força 30 no backend).
   if (tipo === 'pedido_demissao') { totalDias = 30; diasAdic = 0; }
-  // Data fim
-  // Para término de contrato por prazo determinado: o último dia é a própria data do aviso
-  // (não há aviso prévio — o contrato simplesmente vence no dia acordado).
-  // Para os demais tipos: dataFim = dataAviso + (totalDias - 1), pois o dia do aviso conta como 1º dia.
+  const naoCumprira = (tipo === 'pedido_demissao' && demissaoAviso === 'nao_cumprira');
+  // Título do cabeçalho muda quando o colaborador não vai cumprir.
+  const TIPOS_AP = {
+    empresa_trabalhado: 'AVISO PRÉVIO TRABALHADO',
+    empresa_indenizado: 'AVISO PRÉVIO INDENIZADO',
+    pedido_demissao:    demissaoAviso === 'nao_cumprira'
+      ? 'PEDIDO DE DEMISSÃO — SEM CUMPRIMENTO DE AVISO PRÉVIO'
+      : 'PEDIDO DE DEMISSÃO — AVISO PRÉVIO',
+    termino_contrato:   'TÉRMINO DE CONTRATO POR PRAZO DETERMINADO',
+  };
+  const tipoLabel = TIPOS_AP[tipo] || 'AVISO PRÉVIO TRABALHADO';
   let dataFimFmt = '';
   if (dataAviso) {
     const dt = new Date(dataAviso + 'T12:00:00');
-    if (tipo === 'termino_contrato') {
-      // último dia = data do aviso
+    if (tipo === 'termino_contrato' || naoCumprira) {
+      // término = data do aviso; nao_cumprira = rescisão imediata (data do aviso)
     } else {
       dt.setDate(dt.getDate() + (totalDias - 1));
     }
     dataFimFmt = dt.toLocaleDateString('pt-BR');
   }
   const dataAvisoFmt = dataAviso ? new Date(dataAviso + 'T12:00:00').toLocaleDateString('pt-BR') : hoje;
-  const TIPOS_AP = {
-    empresa_trabalhado: 'AVISO PRÉVIO TRABALHADO',
-    empresa_indenizado: 'AVISO PRÉVIO INDENIZADO',
-    pedido_demissao:    'PEDIDO DE DEMISSÃO — AVISO PRÉVIO',
-    termino_contrato:   'TÉRMINO DE CONTRATO POR PRAZO DETERMINADO',
-  };
-  const tipoLabel = TIPOS_AP[tipo] || 'AVISO PRÉVIO TRABALHADO';
   const corHdr = '#1A3A5C';
   const _fmtCpfPv = (v) => {
     const d = String(v||'').replace(/\D/g,'');
@@ -9898,11 +9912,20 @@ function previaAvisoPrevio() {
       cargo <strong>${_escHtml(f.cargo||'')}</strong> na empresa <strong>${_escHtml(empNome)}</strong>,
       admitido(a) em <strong>${admFmt}</strong>, manifesto minha decisão de
       <strong>rescindir voluntariamente</strong> meu contrato de trabalho.`;
-    textoPrazo = `Comprometo-me a cumprir o aviso prévio de <strong>${totalDias} dias</strong>
-      (30 base + ${diasAdic} proporcionais — ${anos} de serviço),
-      de <strong>${dataAvisoFmt}</strong> a <strong>${dataFimFmt||'—'}</strong>,
-      salvo dispensa expressa da empresa.`;
-    textoBaseLegal = 'Art. 487, §2º CLT; Lei 12.506/2011.';
+    if (demissaoAviso === 'nao_cumprira') {
+      textoPrazo = `Declaro que <strong>não cumprirei</strong> o aviso prévio de
+        <strong>${totalDias} dias</strong> previsto no art. 487 da CLT, e estou ciente de que
+        o valor correspondente ao período de aviso prévio não cumprido será
+        <strong>descontado das verbas rescisórias</strong>, nos termos do art. 487, §2º da CLT.
+        O vínculo empregatício será encerrado na data de <strong>${dataAvisoFmt}</strong>.`;
+      textoBaseLegal = 'Art. 487, §2º CLT — falta de cumprimento do aviso prévio pelo empregado demitente: desconto do equivalente nas verbas rescisórias.';
+    } else {
+      textoPrazo = `Comprometo-me a cumprir o aviso prévio de <strong>${totalDias} dias</strong>
+        (30 dias — Lei 12.506/2011), de <strong>${dataAvisoFmt}</strong> a <strong>${dataFimFmt||'—'}</strong>,
+        salvo dispensa expressa e por escrito da empresa. Estou ciente de que a falta de
+        cumprimento implicará desconto nas verbas rescisórias (art. 487, §2º CLT).`;
+      textoBaseLegal = 'Art. 487, §2º CLT; Lei 12.506/2011.';
+    }
   } else {  // termino_contrato
     textoIntro = `A empresa <strong>${_escHtml(empNome)}</strong> comunica ao(à) colaborador(a)
       <strong>${_escHtml(f.nome||'')}</strong>, RE <strong>${_escHtml(String(f.re||''))}</strong>,
@@ -9979,12 +10002,13 @@ async function gerarAvisoPrevio() {
   const obs = document.getElementById('ap-obs').value;
   const canal = document.getElementById('ap-canal').value;
   const reducao = document.getElementById('ap-reducao')?.value || 'nenhuma';
+  const demissao_aviso = document.getElementById('ap-demissao-aviso')?.value || 'cumprira';
   const btn = document.getElementById('ap-btn-gerar');
   const res = document.getElementById('ap-resultado');
   btn.disabled = true; btn.textContent = '⏳ Gerando...'; res.style.display = 'none';
   try {
     let r = await api(`/api/funcionarios/${apFuncSelecionado.id}/gerar-aviso-previo`, 'POST',
-      { tipo, data_aviso, obs, canal, reducao });
+      { tipo, data_aviso, obs, canal, reducao, demissao_aviso });
     // BUG-FIX: backend retorna {duplicado:true, erro:...} (HTTP 409) quando
     // já existe aviso prévio gerado hoje para o mesmo colaborador. Antes
     // cada clique acidental criava PDF + envio duplicado. Agora pergunta.
