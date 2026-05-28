@@ -243,9 +243,10 @@ def register_ponto_routes(
         minutos_esperados = _ponto_min_esperado_data(funcionario, data_ref)
         saldo = minutos_trabalhados - minutos_esperados
         # ── Horas extras 50% e 100% ──────────────────────────────────────────
-        # Dom (weekday==6) → tudo a 100%; demais dias → 50% até 2h, 100% além
+        # Dom (weekday==6) ou feriado → tudo a 100%; demais dias → 50% até 2h, 100% além
+        _is_feriado = data_ref in (_feriados or set())
         if saldo > 0:
-            if data_ref.weekday() == 6:
+            if data_ref.weekday() == 6 or _is_feriado:
                 he_50_min = 0
                 he_100_min = saldo
             else:

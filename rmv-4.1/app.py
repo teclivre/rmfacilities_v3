@@ -32,11 +32,11 @@ from flask import (
 
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from cryptography.fernet import Fernet
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError, IntegrityError
-import sqlalchemy.pool as _sa_pool
 import re
 import math
 import logging
@@ -46,61 +46,6 @@ import os, json, hashlib, hmac, secrets
 from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
 from ponto_module import register_ponto_routes
-
-# ── Pydantic v2 — validação de payloads de entrada ───────────────────────────
-from typing import Optional, Literal
-from pydantic import BaseModel, Field, field_validator, ValidationError as _PydanticValidationError
-
-_ESCALA_TIPOS = ("6x2", "6x1", "5x2", "4x2", "12x36", "folguista", "noturna")
-_TIME_RE = __import__("re").compile(r"^\d{2}:\d{2}$")
-
-
-class EscalaCreatePayload(BaseModel):
-    """Payload validado para criação de escala (POST /api/escalas)."""
-
-    nome: str = Field(..., min_length=1, max_length=120, strip_whitespace=True)
-    tipo: Literal["6x2", "6x1", "5x2", "4x2", "12x36", "folguista", "noturna"]
-    descricao: Optional[str] = Field(default="", max_length=500)
-    ciclo_json: Optional[str | dict] = Field(default="{}")
-    periodo_noturno_ini: Optional[str] = Field(default="22:00", pattern=r"^\d{2}:\d{2}$")
-    periodo_noturno_fim: Optional[str] = Field(default="05:00", pattern=r"^\d{2}:\d{2}$")
-
-    @field_validator("ciclo_json", mode="before")
-    @classmethod
-    def _coerce_ciclo(cls, v):
-        if isinstance(v, dict):
-            return json.dumps(v, ensure_ascii=False)
-        return v or "{}"
-
-
-class EscalaUpdatePayload(BaseModel):
-    """Payload validado para edição de escala (PUT /api/escalas/<id>)."""
-
-    nome: Optional[str] = Field(default=None, min_length=1, max_length=120, strip_whitespace=True)
-    tipo: Optional[Literal["6x2", "6x1", "5x2", "4x2", "12x36", "folguista", "noturna"]] = None
-    descricao: Optional[str] = Field(default=None, max_length=500)
-    ciclo_json: Optional[str | dict] = None
-    periodo_noturno_ini: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")
-    periodo_noturno_fim: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")
-    ativo: Optional[bool] = None
-
-    @field_validator("ciclo_json", mode="before")
-    @classmethod
-    def _coerce_ciclo(cls, v):
-        if v is None:
-            return None
-        if isinstance(v, dict):
-            return json.dumps(v, ensure_ascii=False)
-        return v or "{}"
-
-
-def _pydantic_error_response(exc: _PydanticValidationError):
-    """Converte erros de validação Pydantic v2 em resposta JSON padronizada."""
-    erros = [
-        f"{' > '.join(str(loc) for loc in e['loc'])}: {e['msg']}"
-        for e in exc.errors()
-    ]
-    return jsonify({"erro": "Dados inválidos: " + "; ".join(erros)}), 422
 
 
 # Flask app and DB initialization must come first
@@ -272,12 +217,11 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True  # Bloqueia acesso via JavaScript a
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", DEFAULT_DB_URI)
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
-    # StaticPool é obrigatório para SQLite em multi-thread (WSGI) + WAL mode.
-    # pool_size / max_overflow são inválidos para StaticPool e causam TypeError.
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
         "connect_args": {"timeout": 30, "check_same_thread": False},
         "pool_pre_ping": True,
-        "poolclass": _sa_pool.StaticPool,
+        "pool_size": 1,
+        "max_overflow": 4,
     }
 db = SQLAlchemy(app)
 
@@ -321,16 +265,6 @@ app.config["COMPRESS_LEVEL"] = 6
 app.config["COMPRESS_MIN_SIZE"] = 500
 _compress.init_app(app)
 
-
-@app.template_filter("fmt_cnpj")
-def _tpl_fmt_cnpj(value):
-    """Formata CNPJ para exibição: 12.345.678/0001-00"""
-    d = re.sub(r"\D", "", str(value or ""))
-    if len(d) == 14:
-        return f"{d[:2]}.{d[2:5]}.{d[5:8]}/{d[8:12]}-{d[12:14]}"
-    return str(value or "")
-
-
 # Cache em memória (ou Redis se disponível) — evita recalcular rotas pesadas repetidamente
 from flask_caching import Cache as _Cache
 
@@ -357,13 +291,7 @@ def _lr_unauth_response():
 def lr(f):
     @wraps(f)
     def w(*a, **k):
-        try:
-            uid = session.get("uid")
-        except Exception:
-            # Sessão corrompida (ex: cookie truncado, chave rotacionada) — trata
-            # como não autenticado sem vazar stacktrace.
-            return _lr_unauth_response()
-        if not uid:
+        if "uid" not in session:
             return _lr_unauth_response()
         if not can_access_request(request.path, request.method):
             return jsonify({"erro": "Acesso negado"}), 403
@@ -382,31 +310,20 @@ def lr(f):
 APP_TZ = ZoneInfo("America/Sao_Paulo")
 
 
-def _same_origin_request(req) -> bool:
-    """Verifica se a requisição tem mesma origem que o host.
-
-    Retorna True em caso de erro de leitura de header para não bloquear
-    requests legítimos com proxies que enviam headers malformados.
-    """
-    try:
-        if not _strict_origin_check:
-            return True
-        host = (req.host_url or "").rstrip("/").lower()
-        origin = (req.headers.get("Origin") or "").rstrip("/").lower()
-        referer = (req.headers.get("Referer") or "").lower()
-        sec_fetch_site = (req.headers.get("Sec-Fetch-Site") or "").lower().strip()
-        if sec_fetch_site in ("same-origin", "none", ""):
-            return True
-        if origin and host and origin.startswith(host):
-            return True
-        if not origin and referer and referer.startswith(host):
-            return True
-        return False
-    except Exception:
-        # Fail-closed: para métodos que mudam estado (POST/PUT/PATCH/DELETE),
-        # qualquer falha na leitura dos headers de origem deve bloquear a
-        # requisição. Esta função é chamada apenas para métodos não seguros.
-        return False
+def _same_origin_request(req):
+    if not _strict_origin_check:
+        return True
+    host = (req.host_url or "").rstrip("/").lower()
+    origin = (req.headers.get("Origin") or "").rstrip("/").lower()
+    referer = (req.headers.get("Referer") or "").lower()
+    sec_fetch_site = (req.headers.get("Sec-Fetch-Site") or "").lower().strip()
+    if sec_fetch_site in ("same-origin", "none", ""):
+        return True
+    if origin and host and origin.startswith(host):
+        return True
+    if not origin and referer and referer.startswith(host):
+        return True
+    return False
 
 
 def localnow():
@@ -575,26 +492,6 @@ class PontoAjuste(db.Model):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
-class PontoKiosk(db.Model):
-    """Totem compartilhado para bater ponto via web sem login individual."""
-    __tablename__ = "ponto_kiosk"
-    id = db.Column(db.Integer, primary_key=True)
-    nome = db.Column(db.String(150), nullable=False)          # Ex: "Portaria - Sede"
-    token = db.Column(db.String(64), unique=True, nullable=False)  # URL token
-    ativo = db.Column(db.Boolean, default=True)
-    requer_pin = db.Column(db.Boolean, default=True)          # exige PIN por funcionário
-    filtro_tipo = db.Column(db.String(20), default="todos")   # 'todos' ou 'posto'
-    filtro_posto = db.Column(db.String(150))                  # se filtro_tipo='posto'
-    filtro_postos_json = db.Column(db.Text, default="[]")     # múltiplos postos permitidos
-    funcionarios_avulsos_json = db.Column(db.Text, default="[]")  # ids permitidos avulsos
-    empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
-    criado_em = db.Column(db.DateTime, default=utcnow)
-    criado_por = db.Column(db.String(100))
-
-    def to_dict(self):
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
-
-
 class JornadaTrabalho(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(120), nullable=False)
@@ -758,7 +655,7 @@ def _jornada_extrair_grade(jornada_obj):
 class Escala(db.Model):
     """
     Modelo de Escala de Turnos:
-    - tipo: '6x2' (6 dias trabalho, 2 folga), '6x1' (seg-sab trabalho, dom folga), '5x2' (seg-sex trabalho, sab-dom folga), '4x2' (4 dias trabalho, 2 folga), '12x36' (12h turno, 36h folga), 'folguista' (customizado), 'noturna'
+    - tipo: '6x2' (6 dias trabalho, 2 folga), '6x1' (seg-sab trabalho, dom folga), '4x2' (4 dias trabalho, 2 folga), '12x36' (12h turno, 36h folga), 'folguista' (customizado), 'noturna'
     - ciclo_json: JSON com estrutura de dias/turnos e folgas
       Ex 6x2: {"dias": [{"tipo": "trabalho"}, ...6x..., {"tipo": "folga"}, {"tipo": "folga"}]}
       Ex 12x36: {"dias": [{"tipo": "trabalho", "horas": 12}, {"tipo": "folga"}, {"tipo": "folga"}]}
@@ -770,7 +667,7 @@ class Escala(db.Model):
     nome = db.Column(db.String(120), nullable=False)
     tipo = db.Column(
         db.String(30), nullable=False
-    )  # '6x2', '6x1', '5x2', '4x2', '12x36', 'folguista', 'noturna'
+    )  # '6x2', '6x1', '4x2', '12x36', 'folguista', 'noturna'
     ciclo_json = db.Column(db.Text, default="{}")  # JSON com dias/turnos/folgas
     descricao = db.Column(db.String(255))
     periodo_noturno_ini = db.Column(
@@ -841,8 +738,6 @@ class Escala(db.Model):
             }
         except Exception:
             return None
-        except Exception:
-            return 0
 
     def to_dict(self):
         d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
@@ -1602,8 +1497,6 @@ class ContratoServico(db.Model):
     tipo = db.Column(db.String(20), default="servico")  # servico | aditivo
     prestadora_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
     tomadora_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
-    cliente_id = db.Column(db.Integer, db.ForeignKey("cliente.id"), nullable=True)
-    proposta_id = db.Column(db.Integer, db.ForeignKey("proposta_comercial.id"), nullable=True)
     objeto = db.Column(db.Text)
     texto_corpo = db.Column(db.Text)
     contrato_pai_id = db.Column(
@@ -1674,7 +1567,6 @@ class Cliente(db.Model):
     geo_lat = db.Column(db.Float)
     geo_lon = db.Column(db.Float)
     geofence_raio_m = db.Column(db.Float, default=150)
-    he_autorizada = db.Column(db.Boolean, default=True)
     obs = db.Column(db.Text, default="")
     criado_em = db.Column(db.DateTime, default=utcnow)
 
@@ -1874,7 +1766,6 @@ class Funcionario(db.Model):
     app_lat = db.Column(db.Float)
     app_lon = db.Column(db.Float)
     app_localizacao_em = db.Column(db.DateTime)
-    kiosk_pin = db.Column(db.String(10))  # PIN para ponto via totem compartilhado
     foto_perfil = db.Column(db.String(500))
     criado_em = db.Column(db.DateTime, default=utcnow)
 
@@ -1886,16 +1777,6 @@ class Funcionario(db.Model):
             d["areas"] = []
         if self.data_nascimento:
             d["data_nascimento"] = self.data_nascimento.isoformat()
-        # Inclui dados da empresa cadastrada para o funcionário (usado em prévias,
-        # geração de documentos e listagens do frontend).
-        emp = db.session.get(Empresa, self.empresa_id) if self.empresa_id else None
-        d["empresa_nome"] = (
-            (getattr(emp, "razao", None) or getattr(emp, "nome", None) or "")
-            if emp
-            else ""
-        )
-        d["empresa_razao"] = getattr(emp, "razao", None) if emp else None
-        d["empresa_cnpj"] = getattr(emp, "cnpj", None) if emp else None
         return d
 
 
@@ -2323,7 +2204,7 @@ class FuncionarioAlteracaoSolicitacao(db.Model):
         d["analisado_fmt"] = (
             self.analisado_em.strftime("%d/%m/%Y %H:%M") if self.analisado_em else ""
         )
-        d["payload"] = {k: str(v) if v is not None else "" for k, v in jloads(self.payload, {}).items()}
+        d["payload"] = jloads(self.payload, {})
         return d
 
 
@@ -2374,42 +2255,6 @@ class AuthTentativa(db.Model):
     ok = db.Column(db.Boolean, default=False)
     motivo = db.Column(db.String(250))
     criado_em = db.Column(db.DateTime, default=utcnow)
-
-
-class SolicitacaoHoraExtra(db.Model):
-    """Solicitação de aprovação de hora extra por competência/funcionário."""
-    __tablename__ = "solicitacao_hora_extra"
-    id = db.Column(db.Integer, primary_key=True)
-    funcionario_id = db.Column(db.Integer, db.ForeignKey("funcionario.id"), nullable=False, index=True)
-    empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
-    competencia = db.Column(db.String(7), nullable=False)   # YYYY-MM
-    he_50_min = db.Column(db.Integer, default=0)
-    he_100_min = db.Column(db.Integer, default=0)
-    he_50_fmt = db.Column(db.String(10))
-    he_100_fmt = db.Column(db.String(10))
-    status = db.Column(db.String(20), default="pendente")   # pendente/aprovado/recusado
-    motivo = db.Column(db.Text, default="")
-    criado_em = db.Column(db.DateTime, default=utcnow)
-    decidido_em = db.Column(db.DateTime)
-    decidido_por = db.Column(db.String(150))
-    __table_args__ = (
-        db.UniqueConstraint("funcionario_id", "competencia", name="uq_solicitacao_he_func_comp"),
-    )
-
-    def to_dict(self):
-        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
-        d["criado_fmt"] = self.criado_em.strftime("%d/%m/%Y %H:%M") if self.criado_em else ""
-        d["decidido_fmt"] = self.decidido_em.strftime("%d/%m/%Y %H:%M") if self.decidido_em else ""
-        try:
-            func = Funcionario.query.get(self.funcionario_id)
-            d["funcionario_nome"] = func.nome if func else ""
-            d["funcionario_matricula"] = func.matricula if func else ""
-            d["posto_label"] = func.posto_operacional or "" if func else ""
-        except Exception:
-            d["funcionario_nome"] = ""
-            d["funcionario_matricula"] = ""
-            d["posto_label"] = ""
-        return d
 
 
 class UsuarioDispositivoConfiavel(db.Model):
@@ -2607,7 +2452,6 @@ class AssinaturaEnvelopeSignatario(db.Model):
     cpf = db.Column(db.String(20))
     cargo = db.Column(db.String(120))
     tipo = db.Column(db.String(20), default="externo")  # funcionario|cliente|externo
-    papel = db.Column(db.String(30), default="assinante")  # assinante|testemunha|aprovador|endossante|observador
     ref_id = db.Column(db.Integer)
     token = db.Column(db.String(120))
     status = db.Column(db.String(20), default="pendente")  # pendente|assinado
@@ -3102,6 +2946,31 @@ def _cert_rel_to_abs(rel_path):
     return ""
 
 
+def _cert_fernet():
+    """Deriva uma chave Fernet a partir da SECRET_KEY da aplicação."""
+    raw = (app.config.get("SECRET_KEY") or "").encode()
+    key = base64.urlsafe_b64encode(hashlib.sha256(raw).digest())
+    return Fernet(key)
+
+
+def _cert_encrypt_senha(senha: str) -> str:
+    """Cifra a senha do certificado antes de persistir no banco."""
+    if not senha:
+        return senha
+    return _cert_fernet().encrypt(senha.encode()).decode()
+
+
+def _cert_decrypt_senha(stored: str) -> str:
+    """Decifra a senha do certificado lida do banco."""
+    if not stored:
+        return stored
+    try:
+        return _cert_fernet().decrypt(stored.encode()).decode()
+    except Exception:
+        # Fallback para senhas em texto puro gravadas antes da migração
+        return stored
+
+
 def _cert_store_file(fs, scope, obj_id):
     if not fs or not fs.filename:
         raise ValueError("Arquivo de certificado não enviado.")
@@ -3151,7 +3020,7 @@ def _get_cert_context(empresa_id=None, usuario_id=None):
             if abs_cert and (emp.cert_senha or "").strip():
                 return {
                     "cert_path": abs_cert,
-                    "cert_pass": emp.cert_senha,
+                    "cert_pass": _cert_decrypt_senha(emp.cert_senha),
                     "cert_subject": emp.cert_assunto or "",
                     "source": "empresa",
                 }
@@ -3162,7 +3031,7 @@ def _get_cert_context(empresa_id=None, usuario_id=None):
             if abs_cert and (usr.cert_senha or "").strip():
                 return {
                     "cert_path": abs_cert,
-                    "cert_pass": usr.cert_senha,
+                    "cert_pass": _cert_decrypt_senha(usr.cert_senha),
                     "cert_subject": usr.cert_assunto or "",
                     "source": "usuario",
                 }
@@ -3559,77 +3428,6 @@ def app_parse_token(token):
         return payload
     except Exception:
         return None
-
-
-# ---- Ponto QR Code (Totem) -----------------------------------------------
-# Token HMAC rotativo de curta duracao, exibido em pagina /ponto/totem.
-# Funcionario escaneia no app -> backend valida assinatura + janela de tempo
-# e registra ponto sem exigir GPS.
-_PONTO_QR_TTL = 10  # segundos de validade de cada token
-_PONTO_QR_NONCE_CACHE = {}  # nonce -> exp_ts (anti-replay)
-
-
-def _ponto_qr_secret():
-    # Deriva chave dedicada para nao reutilizar a mesma do access token.
-    return hmac.new(
-        app_token_secret(), b"ponto-qr-totem-v1", hashlib.sha256
-    ).digest()
-
-
-def ponto_qr_issue_token(totem_id=None, ttl=_PONTO_QR_TTL):
-    now = int(time.time())
-    payload = {
-        "typ": "pqr",
-        "iat": now,
-        "exp": now + int(ttl),
-        "nonce": secrets.token_hex(8),
-        "tid": totem_id,
-    }
-    ptxt = json.dumps(payload, separators=(",", ":")).encode()
-    p64 = b64u_enc(ptxt)
-    sig = hmac.new(_ponto_qr_secret(), p64.encode(), hashlib.sha256).digest()
-    return f"{p64}.{b64u_enc(sig)}", payload
-
-
-def ponto_qr_parse_token(token):
-    try:
-        if not token or "." not in token:
-            return None
-        p64, s64 = token.split(".", 1)
-        expected = b64u_enc(
-            hmac.new(_ponto_qr_secret(), p64.encode(), hashlib.sha256).digest()
-        )
-        if not hmac.compare_digest(expected, s64):
-            return None
-        payload = json.loads(b64u_dec(p64).decode())
-        if payload.get("typ") != "pqr":
-            return None
-        now = int(time.time())
-        # tolera ate 5s de relogio dessincronizado, ja que o token vive ~10s
-        if int(payload.get("exp", 0)) < now - 5:
-            return None
-        if int(payload.get("iat", 0)) > now + 5:
-            return None
-        return payload
-    except Exception:
-        return None
-
-
-def _ponto_qr_nonce_mark(nonce, exp_ts):
-    """Marca o nonce como usado. Retorna False se ja havia sido consumido."""
-    try:
-        now = int(time.time())
-        # GC ocasional
-        if len(_PONTO_QR_NONCE_CACHE) > 2048:
-            for k, v in list(_PONTO_QR_NONCE_CACHE.items()):
-                if v < now:
-                    _PONTO_QR_NONCE_CACHE.pop(k, None)
-        if nonce in _PONTO_QR_NONCE_CACHE:
-            return False
-        _PONTO_QR_NONCE_CACHE[nonce] = int(exp_ts) + 30
-        return True
-    except Exception:
-        return True
 
 
 def app_func_required(f):
@@ -4520,7 +4318,6 @@ def _fcm_send_to_token(token, titulo, corpo, data=None):
         firebase_admin.get_app()
     except Exception:
         try:
-            fcm_project_override = (os.environ.get("FIREBASE_PROJECT_ID") or "").strip()
             # Aceita JSON inline (string) ou caminho de arquivo
             if cred_val.startswith("{"):
                 import json as _json
@@ -4554,16 +4351,14 @@ def _fcm_send_to_token(token, titulo, corpo, data=None):
                 _tmp.flush()
                 _tmp.close()
                 atexit.register(lambda p=_tmp.name: os.path.exists(p) and os.remove(p))
-                init_opts = {"projectId": fcm_project_override} if fcm_project_override else None
-                firebase_admin.initialize_app(credentials.Certificate(_tmp.name), init_opts)
+                firebase_admin.initialize_app(credentials.Certificate(_tmp.name))
             else:
                 if not os.path.exists(cred_val):
                     app.logger.warning(
                         f"[fcm] arquivo de credencial nao encontrado: {cred_val}"
                     )
                     return False
-                init_opts = {"projectId": fcm_project_override} if fcm_project_override else None
-                firebase_admin.initialize_app(credentials.Certificate(cred_val), init_opts)
+                firebase_admin.initialize_app(credentials.Certificate(cred_val))
         except Exception as e:
             app.logger.error(f"[fcm] falha ao inicializar firebase app: {e}")
             return False
@@ -4601,13 +4396,7 @@ def _fcm_send_to_token(token, titulo, corpo, data=None):
         messaging.send(msg)
         return True
     except Exception as e:
-        emsg = (str(e) or "").lower()
-        if "requested entity was not found" in emsg:
-            app.logger.exception(
-                "[fcm] falha ao enviar para token: Requested entity was not found (possivel project_id do Firebase incorreto ou credencial de outro projeto)."
-            )
-        else:
-            app.logger.exception(f"[fcm] falha ao enviar para token: {e}")
+        app.logger.exception(f"[fcm] falha ao enviar para token: {e}")
         return False
 
 
@@ -4643,6 +4432,7 @@ def _push_notify_funcionario(fid, titulo, corpo, data=None):
         if (
             "unregistered" in msg
             or "registration-token-not-registered" in msg
+            or "requested entity was not found" in msg
         ):
             f.app_push_token = None
             db.session.commit()
@@ -4797,80 +4587,6 @@ def wa_ai_resume(numero):
 
 def wa_ai_pause_set(numero, hours=8):
     return wa_ai_pause_for(numero, hours)
-
-
-def wa_ai_human_key(numero):
-    n = wa_norm_number(numero)
-    return f"wa_ai_human_mode_{n}" if n else ""
-
-
-def wa_ai_human_enabled(numero):
-    k = wa_ai_human_key(numero)
-    if not k:
-        return False
-    return str(gc(k, "0")).strip().lower() in ("1", "true", "yes", "on")
-
-
-def wa_ai_human_set(numero, ativo=True):
-    n = wa_norm_number(numero)
-    if not n:
-        return False
-    sc_cfg(wa_ai_human_key(n), "1" if bool(ativo) else "0")
-    return True
-
-
-def wa_ai_fallback_text():
-    txt = (gc("ia_wa_fallback_msg", "") or "").strip()
-    if txt:
-        return txt
-    return (
-        "No momento nosso assistente automático está instável. "
-        "Sua mensagem já foi registrada e nossa equipe humana continuará o atendimento em breve."
-    )
-
-
-def wa_ai_log_error(conversa_id, numero, motivo):
-    try:
-        db.session.add(
-            WhatsAppMensagem(
-                conversa_id=conversa_id,
-                numero=numero,
-                direcao="out",
-                tipo="erro",
-                conteudo=(motivo or "Falha no auto-reply")[:700],
-            )
-        )
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-
-
-def wa_ai_send_fallback(numero, conversa_id, motivo=""):
-    txt = wa_ai_fallback_text()
-    wa_send_text(numero, txt)
-    conv = db.session.get(WhatsAppConversa, conversa_id)
-    if conv:
-        conv.ultima_msg = utcnow()
-    db.session.add(
-        WhatsAppMensagem(
-            conversa_id=conversa_id,
-            numero=numero,
-            direcao="out",
-            tipo="texto",
-            conteudo=txt,
-        )
-    )
-    db.session.add(
-        WhatsAppMensagem(
-            conversa_id=conversa_id,
-            numero=numero,
-            direcao="out",
-            tipo="erro",
-            conteudo=((motivo or "fallback acionado")[:650]),
-        )
-    )
-    db.session.commit()
-    return txt
 
 
 # Circuit-breaker global para falhas upstream da IA (ex.: 403 PERMISSION_DENIED / billing)
@@ -7363,33 +7079,17 @@ def build_func_docs_response(funcionario_id):
     return resp, 200
 
 
-def read_rows_from_upload(arq, max_bytes: int = 8 * 1024 * 1024):
-    """Lê linhas de um arquivo CSV ou XLSX enviado via upload.
-
-    Parâmetros
-    ----------
-    arq:
-        Objeto FileStorage do Flask.
-    max_bytes:
-        Limite de leitura em bytes (default 8 MB) para mitigar DoS por
-        exaustão de memória.  Arquivos maiores lançam ``ValueError``.
-    """
+def read_rows_from_upload(arq):
     nome = (arq.filename or "").lower()
-    # Lê em chunks com limite explícito para evitar OOM em uploads maliciosos
-    buf = arq.read(max_bytes + 1)
-    if len(buf) > max_bytes:
-        raise ValueError(
-            f"Arquivo excede o limite de {max_bytes // (1024 * 1024)} MB para importação."
-        )
     if nome.endswith(".csv"):
-        txt = buf.decode("utf-8-sig")
+        txt = arq.read().decode("utf-8-sig")
         return list(csv.DictReader(io.StringIO(txt), delimiter=";"))
     if nome.endswith(".xlsx"):
         try:
             from openpyxl import load_workbook
         except Exception:
             raise ValueError("Dependencia openpyxl nao instalada para XLSX")
-        wb = load_workbook(io.BytesIO(buf), data_only=True, read_only=True)
+        wb = load_workbook(arq, data_only=True, read_only=True)
         ws = wb.active
         rows = list(ws.iter_rows(values_only=True))
         if not rows:
@@ -7728,21 +7428,24 @@ def _assert_safe_identifier(name, label="identifier"):
 
 def ensure_cols(table, defs):
     _assert_safe_identifier(table, "tabela")
-    with db.engine.begin() as conn:
-        cols = {
-            r[1] for r in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
-        }
-        for d in defs:
-            col_name = d.split(" ", 1)[0]
-            _assert_safe_identifier(col_name, "coluna")
-            if col_name not in cols:
-                try:
-                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {d}"))
-                except Exception as e:
-                    if "duplicate column" in str(e).lower():
-                        pass  # coluna já existe, ignorar
-                    else:
-                        raise
+    cols = {
+        r[1] for r in db.session.execute(text(f"PRAGMA table_info({table})")).fetchall()
+    }
+    changed = False
+    for d in defs:
+        col_name = d.split(" ", 1)[0]
+        _assert_safe_identifier(col_name, "coluna")
+        if col_name not in cols:
+            try:
+                db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN {d}"))
+                changed = True
+            except Exception as e:
+                if "duplicate column" in str(e).lower():
+                    pass  # coluna já existe, ignorar
+                else:
+                    raise
+    if changed:
+        db.session.commit()
 
 
 def sc_cfg(k, v):
@@ -7811,16 +7514,6 @@ def fmt_data(s):
         return f"{p[2]}/{p[1]}/{p[0]}"
     except Exception:
         return s
-
-
-def fmt_cpf(v):
-    """Formata CPF no padrão 123.456.789-10. Retorna string vazia se v vazio."""
-    if not v:
-        return ""
-    d = re.sub(r"\D", "", str(v))
-    if len(d) != 11:
-        return str(v).strip()
-    return f"{d[:3]}.{d[3:6]}.{d[6:9]}-{d[9:11]}"
 
 
 def fmt_mes(s):
@@ -8028,9 +7721,6 @@ register_ponto_routes(
     PontoAjuste=PontoAjuste,
     PontoFechamentoDia=PontoFechamentoDia,
     Empresa=Empresa,
-    Cliente=Cliente,
-    Feriado=Feriado,
-    SolicitacaoHoraExtra=SolicitacaoHoraExtra,
     get_logo=get_logo,
 )
 
@@ -8443,14 +8133,7 @@ def logout():
 @app.route("/politica-de-privacidade")
 @app.route("/privacy-policy")
 def pagina_privacidade_publica():
-    return render_template("privacidade_publica.html", atualizado_em="26/05/2026")
-
-
-@app.route("/codigo-conduta")
-@app.route("/codigo-de-conduta")
-@app.route("/conduta")
-def pagina_codigo_conduta_publica():
-    return render_template("codigo_conduta.html", atualizado_em="26/05/2026")
+    return render_template("privacidade_publica.html", atualizado_em="16/05/2026")
 
 
 @app.route("/")
@@ -8460,15 +8143,9 @@ def index():
         "app.html",
         nome=session["nome"],
         perfil=session["perfil"],
-        areas=session.get("areas", []),
-        permissoes=session.get("permissoes", {}),
+        areas=json.dumps(session.get("areas", []), ensure_ascii=False),
+        permissoes=json.dumps(session.get("permissoes", {}), ensure_ascii=False),
     )
-
-
-@app.route("/funcionario")
-def funcionario_app():
-    """Portal web do funcionário (PWA para iOS e outros dispositivos)."""
-    return render_template("funcionario_app.html")
 
 
 @app.route("/api/cnpj/<cnpj>")
@@ -8647,39 +8324,6 @@ def api_remover_empresa(id):
     return jsonify({"ok": True})
 
 
-@app.route("/api/empresas/<int:id>/certificado", methods=["POST"])
-@lr
-def api_empresa_cert_upload(id):
-    e = db.get_or_404(Empresa, id)
-    fs = request.files.get("arquivo")
-    senha = (request.form.get("senha") or "").strip()
-    ativo = str(request.form.get("ativo", "1")).strip().lower() in ("1", "true", "yes", "on")
-    if not fs:
-        return jsonify({"erro": "Arquivo do certificado não enviado."}), 400
-    if not senha:
-        return jsonify({"erro": "Informe a senha do certificado."}), 400
-    old_abs = _cert_rel_to_abs(e.cert_arquivo)
-    try:
-        rel, name = _cert_store_file(fs, "empresa", id)
-        abs_path = _cert_rel_to_abs(rel)
-        info = _cert_inspect_pkcs12(abs_path, senha)
-    except Exception as ex:
-        return jsonify({"erro": str(ex)}), 400
-    e.cert_arquivo = rel
-    e.cert_nome_arquivo = name
-    e.cert_senha = senha
-    e.cert_ativo = ativo
-    e.cert_assunto = info.get("assunto", "")
-    e.cert_validade_fim = info.get("validade_fim", "")
-    db.session.commit()
-    if old_abs and old_abs != abs_path and os.path.exists(old_abs):
-        try:
-            os.remove(old_abs)
-        except Exception:
-            pass
-    return jsonify({"ok": True, "empresa": e.to_dict()})
-
-
 @app.route("/api/empresas/<int:id>/certificado", methods=["DELETE"])
 @lr
 def api_empresa_cert_delete(id):
@@ -8718,111 +8362,6 @@ def api_save_config():
 @lr
 def api_usuarios():
     return jsonify([u.to_dict() for u in Usuario.query.all()])
-
-
-def _audit_admin_required():
-    """Bloqueia acesso aos endpoints de auditoria a quem nao for admin/dono."""
-    perfil = (session.get("perfil") or "").strip().lower()
-    if perfil in ("admin", "dono"):
-        return None
-    return jsonify({"erro": "Acesso restrito"}), 403
-
-
-@app.route("/api/auditoria", methods=["GET"])
-@lr
-def api_auditoria_listar():
-    bloq = _audit_admin_required()
-    if bloq is not None:
-        return bloq
-    try:
-        page = max(1, int(request.args.get("page", "1") or 1))
-    except Exception:
-        page = 1
-    try:
-        per_page = int(request.args.get("per_page", "50") or 50)
-    except Exception:
-        per_page = 50
-    per_page = max(1, min(per_page, 200))
-
-    q = AuditoriaEvento.query
-    evento = (request.args.get("evento") or "").strip()
-    ator_tipo = (request.args.get("ator_tipo") or "").strip()
-    ator_id = (request.args.get("ator_id") or "").strip()
-    alvo_tipo = (request.args.get("alvo_tipo") or "").strip()
-    alvo_id = (request.args.get("alvo_id") or "").strip()
-    ok_param = (request.args.get("ok") or "").strip().lower()
-    ip_filtro = (request.args.get("ip") or "").strip()
-    desde = (request.args.get("desde") or "").strip()
-    ate = (request.args.get("ate") or "").strip()
-
-    if evento:
-        q = q.filter(AuditoriaEvento.evento.ilike(f"%{evento}%"))
-    if ator_tipo:
-        q = q.filter(AuditoriaEvento.ator_tipo == ator_tipo)
-    if ator_id:
-        q = q.filter(AuditoriaEvento.ator_id == ator_id)
-    if alvo_tipo:
-        q = q.filter(AuditoriaEvento.alvo_tipo == alvo_tipo)
-    if alvo_id:
-        q = q.filter(AuditoriaEvento.alvo_id == alvo_id)
-    if ok_param in ("0", "false", "nao", "não"):
-        q = q.filter(AuditoriaEvento.ok.is_(False))
-    elif ok_param in ("1", "true", "sim"):
-        q = q.filter(AuditoriaEvento.ok.is_(True))
-    if ip_filtro:
-        q = q.filter(AuditoriaEvento.ip.ilike(f"%{ip_filtro}%"))
-    try:
-        if desde:
-            dt = datetime.fromisoformat(desde)
-            q = q.filter(AuditoriaEvento.criado_em >= dt)
-        if ate:
-            dt = datetime.fromisoformat(ate)
-            q = q.filter(AuditoriaEvento.criado_em <= dt)
-    except Exception:
-        pass
-
-    total = q.order_by(None).count()
-    rows = (
-        q.order_by(AuditoriaEvento.id.desc())
-        .offset((page - 1) * per_page)
-        .limit(per_page)
-        .all()
-    )
-
-    def _to_dict(r):
-        return {
-            "id": r.id,
-            "evento": r.evento,
-            "ator_tipo": r.ator_tipo or "",
-            "ator_id": r.ator_id or "",
-            "alvo_tipo": r.alvo_tipo or "",
-            "alvo_id": r.alvo_id or "",
-            "ok": bool(r.ok),
-            "ip": r.ip or "",
-            "ua": (r.ua or "")[:120],
-            "detalhe": r.detalhe or "",
-            "criado_em": (
-                r.criado_em.strftime("%d/%m/%Y %H:%M:%S") if r.criado_em else ""
-            ),
-        }
-
-    return jsonify(
-        {
-            "page": page,
-            "per_page": per_page,
-            "total": total,
-            "itens": [_to_dict(r) for r in rows],
-        }
-    )
-
-
-@app.route("/admin/auditoria", methods=["GET"])
-@lr
-def pagina_auditoria_admin():
-    perfil = (session.get("perfil") or "").strip().lower()
-    if perfil not in ("admin", "dono"):
-        return "Acesso restrito.", 403
-    return render_template("auditoria_admin.html")
 
 
 @app.route("/api/usuarios", methods=["POST"])
@@ -8962,7 +8501,7 @@ def api_usuario_cert_upload(id):
         return jsonify({"erro": str(ex)}), 400
     u.cert_arquivo = rel
     u.cert_nome_arquivo = name
-    u.cert_senha = senha
+    u.cert_senha = _cert_encrypt_senha(senha)
     u.cert_ativo = ativo
     u.cert_assunto = info.get("assunto", "")
     u.cert_validade_fim = info.get("validade_fim", "")
@@ -10883,9 +10422,7 @@ def api_funcionario_upload_arquivo(id):
             from pypdf import PdfReader
             import io
 
-            # Lê apenas os primeiros 5 MB para extração de texto — suficiente
-            # para detectar competência sem carregar o PDF completo em memória.
-            blob = fs.read(5 * 1024 * 1024)
+            blob = fs.read()
             try:
                 fs.seek(0)
             except Exception:
@@ -12056,12 +11593,6 @@ def _gerar_termo_uniforme_pdf(funcionario, itens, empresa=None, obs=""):
     emp_obj = empresa or (
         db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
     )
-    if not emp_obj:
-        emp_obj = (
-            Empresa.query.filter_by(ativa=True)
-            .order_by(Empresa.ordem, Empresa.id)
-            .first()
-        )
     emp_nome = (
         (
             getattr(emp_obj, "razao", None)
@@ -12414,12 +11945,6 @@ def _gerar_declaracao_acumulo_cargo_pdf(
     emp_obj = empresa or (
         db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
     )
-    if not emp_obj:
-        emp_obj = (
-            Empresa.query.filter_by(ativa=True)
-            .order_by(Empresa.ordem, Empresa.id)
-            .first()
-        )
     emp_nome = (
         (
             getattr(emp_obj, "razao", None)
@@ -12430,7 +11955,7 @@ def _gerar_declaracao_acumulo_cargo_pdf(
         else "RM FACILITIES LTDA"
     )
     func_nome = (f.nome or "").strip()
-    func_cpf = fmt_cpf(f.cpf or "")
+    func_cpf = f.cpf or ""
     func_rg = f.rg or ""
     func_re = str(f.re or f.matricula or "")
     func_cargo = (f.cargo or "").strip()
@@ -12788,12 +12313,6 @@ def _gerar_advertencia_pdf(
     emp_obj = empresa or (
         db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
     )
-    if not emp_obj:
-        emp_obj = (
-            Empresa.query.filter_by(ativa=True)
-            .order_by(Empresa.ordem, Empresa.id)
-            .first()
-        )
     emp_nome = (
         (
             getattr(emp_obj, "razao", None)
@@ -13164,12 +12683,7 @@ def _calcular_aviso_previo_dias(data_admissao_str, data_ref=None):
 
 
 def _gerar_aviso_previo_pdf(
-    funcionario,
-    tipo="empresa_trabalhado",
-    empresa=None,
-    obs="",
-    data_aviso_str=None,
-    reducao="nenhuma",
+    funcionario, tipo="empresa_trabalhado", empresa=None, obs="", data_aviso_str=None
 ):
     """Gera PDF de Aviso Prévio proporcional (Lei 12.506/2011)."""
     from reportlab.lib.pagesizes import A4
@@ -13195,12 +12709,6 @@ def _gerar_aviso_previo_pdf(
     emp_obj = empresa or (
         db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
     )
-    if not emp_obj:
-        emp_obj = (
-            Empresa.query.filter_by(ativa=True)
-            .order_by(Empresa.ordem, Empresa.id)
-            .first()
-        )
     emp_nome = (
         (
             getattr(emp_obj, "razao", None)
@@ -13213,7 +12721,7 @@ def _gerar_aviso_previo_pdf(
     emp_cnpj = (getattr(emp_obj, "cnpj", None) or "").strip() if emp_obj else ""
     func_nome = (f.nome or "").strip()
     func_re = str(f.re or f.matricula or "")
-    func_cpf = fmt_cpf((f.cpf or "").strip())
+    func_cpf = (f.cpf or "").strip()
     func_cargo = (f.cargo or "").strip()
     func_adm = f.data_admissao or ""
 
@@ -13247,19 +12755,11 @@ def _gerar_aviso_previo_pdf(
     total_dias = _calcular_aviso_previo_dias(func_adm, data_ref=dt_aviso)
     anos_servico = (dt_aviso - dt_adm).days // 365 if dt_adm else 0
     dias_adicionais = total_dias - 30
-    # Para término de contrato determinado: a data do aviso É a data do término
-    if tipo == "termino_contrato":
-        dt_fim = dt_aviso
-    else:
-        dt_fim = dt_aviso + timedelta(days=total_dias - 1)
-    # Empregado trabalha SEMPRE no maximo 30 dias (base CLT). Os dias proporcionais
-    # da Lei 12.506/2011 sao INDENIZADOS nas verbas rescisorias (jurisprudencia TST).
-    dt_fim_trabalho = dt_aviso + timedelta(days=29)
+    dt_fim = dt_aviso + timedelta(days=total_dias)
 
     data_adm_fmt = dt_adm.strftime("%d/%m/%Y") if dt_adm else str(func_adm)
     data_aviso_fmt = dt_aviso.strftime("%d/%m/%Y")
     data_fim_fmt = dt_fim.strftime("%d/%m/%Y")
-    data_fim_trab_fmt = dt_fim_trabalho.strftime("%d/%m/%Y")
     data_hoje = localnow().strftime("%d/%m/%Y")
     meses_pt = [
         "Janeiro",
@@ -13416,34 +12916,13 @@ def _gerar_aviso_previo_pdf(
             f"o aviso prévio proporcional ao tempo de serviço, nos termos do art. 7º, XXI da Constituição Federal "
             f"c/c Lei nº 12.506/2011 e arts. 487 a 491 da CLT."
         )
-        if dias_adicionais > 0:
-            texto_prazo = (
-                f"Considerando <b>{anos_servico} ano(s)</b> de serviço prestado à empresa, o prazo total de aviso prévio é de "
-                f"<b>{total_dias} dias</b> (30 dias base + {dias_adicionais} dias proporcionais — Lei nº 12.506/2011). "
-                f"O(A) colaborador(a) deverá <b>cumprir efetivamente 30 (trinta) dias de trabalho</b>, a partir de "
-                f"<b>{data_aviso_fmt}</b> até <b>{data_fim_trab_fmt}</b>. Os <b>{dias_adicionais} dias proporcionais adicionais"
-                f"</b> serão <b>INDENIZADOS</b> e integrados às verbas rescisórias, encerrando-se o vínculo empregatício "
-                f"em <b>{data_fim_fmt}</b>."
-            )
-        else:
-            texto_prazo = (
-                f"Considerando <b>{anos_servico} ano(s)</b> de serviço prestado à empresa, o prazo de aviso prévio é de "
-                f"<b>30 dias</b>, contados a partir de <b>{data_aviso_fmt}</b>, encerrando-se em <b>{data_fim_fmt}</b>. "
-                f"O(A) colaborador(a) deverá <b>permanecer trabalhando normalmente</b> durante todo o período do aviso, "
-                f"encerrando seu vínculo empregatício na data supracitada, quando serão processadas as verbas rescisórias cabíveis."
-            )
-        if reducao == "2h_diarias":
-            texto_prazo += (
-                " <b>Redução de jornada (art. 488, parágrafo único, alínea 'a', da CLT):</b> "
-                "durante o cumprimento do aviso prévio o(a) colaborador(a) optou pela <b>redução de 2 (duas) horas diárias</b> "
-                "de sua jornada de trabalho, sem prejuízo do salário integral."
-            )
-        elif reducao == "7_dias_indenizados":
-            texto_prazo += (
-                " <b>Redução do aviso (art. 488, parágrafo único, alínea 'b', da CLT):</b> "
-                "o(a) colaborador(a) optou pela <b>redução de 7 (sete) dias indenizados</b> ao final do período do aviso, "
-                "sem prejuízo do salário integral — os 7 dias finais não serão trabalhados e serão integrados às verbas rescisórias."
-            )
+        texto_prazo = (
+            f"Considerando <b>{anos_servico} ano(s)</b> de serviço prestado à empresa, o prazo de aviso prévio é de "
+            f"<b>{total_dias} dias</b> (30 dias base + {dias_adicionais} dias proporcionais), contados a partir de "
+            f"<b>{data_aviso_fmt}</b>, encerrando-se em <b>{data_fim_fmt}</b>. "
+            f"O(A) colaborador(a) deverá <b>permanecer trabalhando normalmente</b> durante todo o período do aviso, "
+            f"encerrando seu vínculo empregatício na data supracitada, quando serão processadas as verbas rescisórias cabíveis."
+        )
     elif tipo == "empresa_indenizado":
         texto_intro = (
             f"A empresa <b>{emp_nome}</b>, {cnpj_txt}vem por meio deste instrumento comunicar ao(à) "
@@ -13639,16 +13118,13 @@ def api_calcular_aviso_previo(id):
             data_adm_fmt = dt_adm.strftime("%d/%m/%Y")
     except Exception:
         pass
-    dias_adicionais = max(0, total_dias - 30)
     return jsonify(
         {
             "ok": True,
             "total_dias": total_dias,
             "anos_servico": anos,
             "data_admissao": data_adm_fmt,
-            "dias_adicionais": dias_adicionais,
-            "dias_trabalhados": 30,
-            "dias_indenizados": dias_adicionais,
+            "dias_adicionais": total_dias - 30,
         }
     )
 
@@ -13668,9 +13144,6 @@ def api_funcionario_gerar_aviso_previo(id):
         tipo = "empresa_trabalhado"
     obs = (d.get("obs") or "").strip()
     data_aviso = (d.get("data_aviso") or "").strip()
-    reducao = (d.get("reducao") or "nenhuma").strip().lower()
-    if reducao not in ("nenhuma", "2h_diarias", "7_dias_indenizados"):
-        reducao = "nenhuma"
     canal = (d.get("canal") or "nao").strip().lower()
     if canal not in ("whatsapp", "app", "link", "nao"):
         canal = "nao"
@@ -13678,12 +13151,7 @@ def api_funcionario_gerar_aviso_previo(id):
     total_dias = _calcular_aviso_previo_dias(f.data_admissao)
     try:
         buf = _gerar_aviso_previo_pdf(
-            f,
-            tipo=tipo,
-            empresa=emp_obj,
-            obs=obs,
-            data_aviso_str=data_aviso or None,
-            reducao=reducao,
+            f, tipo=tipo, empresa=emp_obj, obs=obs, data_aviso_str=data_aviso or None
         )
     except Exception as e:
         app.logger.exception("Erro ao gerar PDF aviso prévio")
@@ -13775,72 +13243,49 @@ def _gerar_proposta_comercial_pdf(
         Spacer,
         HRFlowable,
         PageBreak,
-        KeepTogether,
     )
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_RIGHT
-    from reportlab.pdfgen import canvas as _rl_canvas_mod2
     import io as _io
 
-    # Canvas ABNT: herda marca d'água e adiciona número de página
-    _base_cls = _WatermarkCanvas if _WatermarkCanvas else _rl_canvas_mod2.Canvas
-
-    class _PropostaCanvas(_base_cls):
-        def showPage(self):
-            self._draw_pg_num()
-            super().showPage()
-
-        def save(self):
-            self._draw_pg_num()
-            super().save()
-
-        def _draw_pg_num(self):
-            try:
-                pw, _ph = self._pagesize
-                self.saveState()
-                self.setFont("Helvetica", 8)
-                self.setFillColorRGB(0.55, 0.55, 0.55)
-                self.drawRightString(pw - 2 * cm, 1.4 * cm, f"Página {self._pageNumber}")
-                self.restoreState()
-            except Exception:
-                pass
-
     buf = _io.BytesIO()
-    # Margens ABNT NBR 14724: sup 3 cm, inf 2 cm, esq 3 cm, dir 2 cm
     doc = SimpleDocTemplate(
         buf,
         pagesize=A4,
-        leftMargin=3 * cm,
+        leftMargin=2 * cm,
         rightMargin=2 * cm,
-        topMargin=3 * cm,
-        bottomMargin=2.5 * cm,
+        topMargin=1.5 * cm,
+        bottomMargin=2 * cm,
     )
 
-    PW, _PH = A4
-    W = PW - 5 * cm
     NAVY = colors.HexColor("#1A3A5C")
-    GRAY = colors.HexColor("#666666")
-    LGRAY = colors.HexColor("#f4f6f8")
+    GRAY = colors.HexColor("#555555")
+    LGRAY = colors.HexColor("#f5f7fa")
     BORDER = colors.HexColor("#cccccc")
-    BLACK = colors.HexColor("#111111")
     WHITE = colors.white
 
     def st(name, **kw):
-        base = dict(fontName="Times-Roman", fontSize=12, leading=18, textColor=BLACK)
+        base = dict(
+            fontName="Helvetica", fontSize=10, leading=15, textColor=colors.black
+        )
         base.update(kw)
         return ParagraphStyle(name, **base)
 
-    s_body   = st("bd",  alignment=TA_JUSTIFY, firstLineIndent=1.25 * cm)
-    s_body_ni= st("bni", alignment=TA_JUSTIFY)
-    s_h1     = st("h1",  fontName="Times-Bold", fontSize=12, leading=18,
-                  spaceBefore=14, spaceAfter=6, textColor=BLACK)
-    s_bold   = st("bo",  fontName="Times-Bold")
-    s_small  = st("sm",  fontSize=9, leading=13, textColor=GRAY, fontName="Helvetica")
-    s_right  = st("ri",  alignment=TA_RIGHT)
-    s_tbl    = st("tb",  fontSize=9, leading=12, fontName="Helvetica")
-    s_tbl_hdr= st("tbh", fontSize=9, leading=12, fontName="Helvetica-Bold",
-                  textColor=WHITE)
-    s_tbl_tot= st("tbt", fontSize=9, leading=12, fontName="Helvetica-Bold")
+    s_normal = st("n", fontSize=10, leading=15, alignment=TA_JUSTIFY)
+    s_bold = st("b", fontName="Helvetica-Bold", fontSize=10, leading=15)
+    s_h1 = st(
+        "h1",
+        fontName="Helvetica-Bold",
+        fontSize=13,
+        textColor=NAVY,
+        leading=18,
+        spaceBefore=14,
+        spaceAfter=6,
+    )
+    s_h4 = st("h4", fontName="Helvetica-Bold", fontSize=10, leading=14, leftIndent=12)
+    s_small = st("sm", fontSize=8.5, textColor=GRAY)
+    s_center = st("c", alignment=TA_CENTER)
+    s_right = st("r", alignment=TA_RIGHT, fontSize=9, textColor=GRAY)
 
     logo_path = None
     try:
@@ -13848,12 +13293,11 @@ def _gerar_proposta_comercial_pdf(
     except Exception:
         pass
 
-    data_fmt  = data_str or localnow().strftime("%d/%m/%Y")
-    ano_ref   = localnow().strftime("%Y")
+    data_fmt = data_str or localnow().strftime("%d/%m/%Y")
+    ano_ref = localnow().strftime("%Y")
     if not ref_num:
         ref_num = f"PC-{localnow().strftime('%Y%m%d%H%M')}"
-    tipo_label = "SPOT" if (tipo or "").lower() == "spot" else "MENSAL"
-    is_spot    = (tipo or "").lower() == "spot"
+    tipo_label = "SPOT" if (tipo or "").lower() == "spot" else "Mensal"
 
     if itens is None:
         itens = [
@@ -13866,175 +13310,196 @@ def _gerar_proposta_comercial_pdf(
             }
         ]
 
-    rem_nome    = ((remetente or {}).get("nome") or (remetente or {}).get("razao")
-                   or "RM CONSERVAÇÃO E SERVIÇOS")
-    rem_cnpj    = (remetente or {}).get("cnpj") or "61.337.803/0001-20"
+    # ── Dados do remetente ─────────────────────────────────────────────────────
+    rem_nome = (
+        (remetente or {}).get("nome")
+        or (remetente or {}).get("razao")
+        or "RM CONSERVAÇÃO E SERVIÇOS"
+    )
+    rem_cnpj = (remetente or {}).get("cnpj") or "61.337.803/0001-20"
     rem_contato = (remetente or {}).get("contato_nome") or "Roberio Figueiredo"
-    rem_tel     = ((remetente or {}).get("contato_telefone")
-                   or (remetente or {}).get("telefone")
-                   or "Tel. (12) 3042-1799 · Cel. (12) 99775-2283")
-    rem_email   = ((remetente or {}).get("contato_email")
-                   or (remetente or {}).get("email")
-                   or "roberio.figueiredo@rmfacilities.com.br")
-
-    def _hr():
-        return HRFlowable(width="100%", thickness=0.6, color=NAVY,
-                          spaceBefore=2, spaceAfter=6)
-
-    def _sec(num, titulo):
-        return Paragraph(
-            f"{num}&nbsp;&nbsp;{titulo.upper()}",
-            st(f"sec{num}", fontName="Times-Bold", fontSize=12, leading=18,
-               spaceBefore=16, spaceAfter=6, textColor=BLACK),
-        )
+    rem_tel = (
+        (remetente or {}).get("contato_telefone")
+        or (remetente or {}).get("telefone")
+        or "Tel. (12) 3042-1799 · Cel. (12) 99775-2283"
+    )
+    rem_email = (
+        (remetente or {}).get("contato_email")
+        or (remetente or {}).get("email")
+        or "roberio.figueiredo@rmfacilities.com.br"
+    )
 
     elems = []
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # CAPA  (NBR 14724 — elementos pré-textuais)
-    # ═══════════════════════════════════════════════════════════════════════════
-    if logo_path:
-        try:
-            from reportlab.platypus import Image as _Img
-            _li = _Img(logo_path, width=4.5 * cm, height=2 * cm)
-            _li.hAlign = "CENTER"
-            elems.append(_li)
-        except Exception:
-            elems.append(Paragraph(
-                f"<b>{rem_nome}</b>",
-                st("lgcap", fontName="Times-Bold", fontSize=14, alignment=TA_CENTER)))
-    else:
-        elems.append(Paragraph(
-            f"<b>{rem_nome}</b>",
-            st("lgcap", fontName="Times-Bold", fontSize=14, alignment=TA_CENTER)))
-
-    elems.append(Spacer(1, 0.25 * cm))
-    elems.append(Paragraph(rem_nome,
-        st("rcap", fontName="Helvetica", fontSize=10, textColor=GRAY,
-           alignment=TA_CENTER)))
-    elems.append(Paragraph(f"CNPJ: {rem_cnpj}",
-        st("cncap", fontName="Helvetica", fontSize=9, textColor=GRAY,
-           alignment=TA_CENTER)))
-
-    elems.append(Spacer(1, 3.5 * cm))
-    elems.append(_hr())
-    elems.append(Spacer(1, 0.3 * cm))
-    elems.append(Paragraph("PROPOSTA COMERCIAL",
-        st("titp", fontName="Times-Bold", fontSize=22, textColor=NAVY,
-           leading=28, alignment=TA_CENTER)))
-    elems.append(Spacer(1, 0.2 * cm))
-    elems.append(Paragraph(
-        f"Contratação de Serviços — Modalidade {tipo_label}",
-        st("subt", fontName="Helvetica", fontSize=11, textColor=GRAY,
-           alignment=TA_CENTER)))
-    elems.append(Spacer(1, 0.3 * cm))
-    elems.append(_hr())
-
-    elems.append(Spacer(1, 2.5 * cm))
-
-    capa_info = [
-        ["Empresa Destinatária:", empresa or "—"],
-        ["CNPJ:", cnpj or "—"],
-        ["Serviço / Função:", funcao or "—"],
-        ["Referência:", ref_num],
-        ["Data:", data_fmt],
-        ["Validade:", "30 (trinta) dias"],
+    # ── CABEÇALHO ─────────────────────────────────────────────────────────────
+    hdr_data = [
+        [
+            Paragraph(
+                f"<b>{rem_nome}</b><br/><font size=8>CNPJ: {rem_cnpj}</font>",
+                st(
+                    "hd",
+                    fontName="Helvetica-Bold",
+                    fontSize=12,
+                    textColor=WHITE,
+                    leading=16,
+                ),
+            ),
+            Paragraph(
+                f"<font size=8>Ref.: {ref_num}</font><br/>"
+                f"<font size=8>Tipo: {tipo_label}</font><br/>"
+                f"<font size=8>Data: {data_fmt}</font>",
+                st("hd2", fontSize=8, textColor=WHITE, alignment=TA_RIGHT, leading=12),
+            ),
+        ]
     ]
-    capa_tbl = Table(capa_info, colWidths=[5 * cm, W - 5 * cm])
-    capa_tbl.setStyle(TableStyle([
-        ("FONTNAME",      (0, 0), (0, -1),  "Helvetica-Bold"),
-        ("FONTNAME",      (1, 0), (1, -1),  "Helvetica"),
-        ("FONTSIZE",      (0, 0), (-1, -1), 10),
-        ("LEADING",       (0, 0), (-1, -1), 15),
-        ("TEXTCOLOR",     (0, 0), (0, -1),  NAVY),
-        ("LINEBELOW",     (0, 0), (-1, -2), 0.3, BORDER),
-        ("TOPPADDING",    (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-    ]))
-    elems.append(capa_tbl)
-
-    elems.append(Spacer(1, 2.5 * cm))
-    elems.append(Paragraph(f"São José dos Campos, {data_fmt}",
-        st("ctdt", fontName="Helvetica", fontSize=10, textColor=GRAY,
-           alignment=TA_RIGHT)))
-    elems.append(PageBreak())
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # CARTA DE APRESENTAÇÃO
-    # ═══════════════════════════════════════════════════════════════════════════
+    hdr_t = Table(hdr_data, colWidths=[13 * cm, 5 * cm])
+    hdr_t.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), NAVY),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+                ("LEFTPADDING", (0, 0), (0, -1), 14),
+                ("RIGHTPADDING", (-1, 0), (-1, -1), 14),
+            ]
+        )
+    )
+    elems.append(hdr_t)
     elems.append(Spacer(1, 0.5 * cm))
-    elems.append(Paragraph(f"São José dos Campos, {data_fmt}", s_right))
-    elems.append(Spacer(1, 0.8 * cm))
-    elems.append(Paragraph(
-        f"A/C: <b>{cliente or 'Prezado(a) Senhor(a)'}</b>", s_body_ni))
-    if email:
-        elems.append(Paragraph(email, s_small))
-    elems.append(Spacer(1, 0.6 * cm))
-    elems.append(Paragraph("Prezado(a) Senhor(a),", s_body_ni))
+
+    # ── DESTINATÁRIO ──────────────────────────────────────────────────────────
+    dest_data = [
+        [
+            Paragraph(
+                "<b>Empresa Destinatária</b>", st("lbl", fontSize=8, textColor=GRAY)
+            ),
+            Paragraph("<b>CNPJ</b>", st("lbl", fontSize=8, textColor=GRAY)),
+            Paragraph("<b>Serviço / Função</b>", st("lbl", fontSize=8, textColor=GRAY)),
+        ],
+        [
+            Paragraph(empresa or "—", s_bold),
+            Paragraph(cnpj or "—", s_bold),
+            Paragraph(funcao or "—", s_bold),
+        ],
+    ]
+    dest_t = Table(dest_data, colWidths=[7 * cm, 5 * cm, 6 * cm])
+    dest_t.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), LGRAY),
+                ("BACKGROUND", (0, 1), (-1, 1), WHITE),
+                ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
+                ("INNERGRID", (0, 0), (-1, -1), 0.3, BORDER),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+    elems.append(dest_data and dest_t)
+    elems.append(Spacer(1, 0.5 * cm))
+
+    # ── Para / Data / Email ───────────────────────────────────────────────────
+    elems.append(Paragraph(f"<b>Data:</b> {data_fmt}", s_normal))
+    elems.append(Spacer(1, 0.2 * cm))
+    elems.append(Paragraph("Para,", s_normal))
+    elems.append(Paragraph(f"<b>{cliente or '—'}</b>", s_normal))
+    elems.append(Paragraph(email or "", st("em", fontSize=9, textColor=GRAY)))
+    elems.append(Spacer(1, 0.5 * cm))
+
+    # ── CORPO CARTA ───────────────────────────────────────────────────────────
+    intro = (
+        f"É com satisfação que apresentamos a V. Sa. nossa proposta comercial para a prestação de em "
+        f"<b>{funcao or 'nossos serviços'}</b> para empresa <b>{empresa or 'V. Sa.'}</b> resposta ao processo a sua "
+        f"necessidade. Nossa equipe avaliou cuidadosamente suas necessidades e considerou várias opções para apresentar "
+        f"a solução ideal para este projeto; contudo, sinta-se à vontade para revisar a proposta e indicar eventuais ajustes."
+    )
+    elems.append(Paragraph(intro, s_normal))
     elems.append(Spacer(1, 0.3 * cm))
-    elems.append(Paragraph(
-        f"É com satisfação que apresentamos a V.&#160;Sa. nossa proposta comercial para a "
-        f"prestação de <b>{funcao or 'nossos serviços'}</b> para a empresa "
-        f"<b>{empresa or 'V. Sa.'}</b>. Nossa equipe avaliou cuidadosamente suas "
-        f"necessidades e elaborou a solução mais eficiente para este projeto, conforme "
-        f"detalhado nas seções seguintes.", s_body))
-    elems.append(Paragraph(
-        "Colocamo-nos à disposição para quaisquer esclarecimentos ou informações "
-        "adicionais que se façam necessários.", s_body))
-    elems.append(Spacer(1, 0.8 * cm))
-    elems.append(Paragraph("Atenciosamente,", s_body_ni))
-    elems.append(Spacer(1, 0.4 * cm))
-    elems.append(Paragraph(f"<b>{rem_contato}</b>", s_body_ni))
+    elems.append(
+        Paragraph(
+            "Por favor, entre em contato conosco caso seja necessário algum esclarecimento ou informações adicionais.",
+            s_normal,
+        )
+    )
+    elems.append(Spacer(1, 0.6 * cm))
+    elems.append(Paragraph("Atenciosamente,", s_normal))
+    elems.append(Spacer(1, 0.2 * cm))
+    elems.append(Paragraph(f"<b>{rem_contato}</b>", s_bold))
     if rem_tel:
         elems.append(Paragraph(rem_tel, s_small))
     if rem_email:
         elems.append(Paragraph(rem_email, s_small))
     elems.append(PageBreak())
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # 1  APRESENTAÇÃO INSTITUCIONAL
-    # ═══════════════════════════════════════════════════════════════════════════
-    elems.append(_sec("1", "Apresentação Institucional"))
-    elems.append(_hr())
-    elems.append(Paragraph(
-        f"{rem_nome} é uma empresa especializada em soluções integradas de "
-        "facility services e tecnologia, comprometida com os mais rígidos "
-        "critérios de compliance e qualidade. Nossa metodologia compreende "
-        "o diagnóstico individualizado de cada cliente para propor a solução "
-        "mais eficiente.", s_body_ni))
-    elems.append(Paragraph(
-        "<b>Security Services —</b> A solidez e a expertise dos fundadores "
-        "permitem operações com escala e de forma customizada, oferecendo "
-        "soluções completas de portaria, controle de acesso e vigilância "
-        "patrimonial.", s_body))
-    elems.append(Paragraph(
-        "<b>Facility Services —</b> Acreditamos na combinação entre "
-        "profissionais qualificados e tecnologia para atender com excelência "
-        "serviços de limpeza, conservação, multisserviços e serviços auxiliares.",
-        s_body))
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # 2  ESCOPO E VALORES DOS SERVIÇOS
-    # ═══════════════════════════════════════════════════════════════════════════
-    elems.append(_sec("2", "Escopo e Valores dos Serviços"))
-    elems.append(_hr())
-    # 2.1
-    elems.append(Paragraph("2.1&#160;&#160;Escopo Operacional",
-        st("h21", fontName="Times-Bold", fontSize=12, leading=18,
-           spaceBefore=8, spaceAfter=4)))
-    elems.append(Paragraph(
-        "Os serviços serão prestados conforme escopo descrito na planilha abaixo, "
-        "por profissionais devidamente uniformizados, treinados e habilitados para "
-        "a função.", s_body_ni))
+    # ── SEÇÃO 1: Apresentação Institucional ──────────────────────────────────
+    elems.append(Paragraph("Apresentação Institucional", s_h1))
+    elems.append(HRFlowable(width="100%", thickness=1, color=NAVY))
     elems.append(Spacer(1, 0.3 * cm))
-    # 2.2
-    elems.append(Paragraph("2.2&#160;&#160;Planilha de Custo",
-        st("h22", fontName="Times-Bold", fontSize=12, leading=18,
-           spaceBefore=8, spaceAfter=4)))
+    elems.append(
+        Paragraph(
+            f"{rem_nome} - Somos uma empresa pronta para oferecer soluções integradas de tecnologia e facility services. "
+            "Estamos buscando sempre atender nossos clientes parceiros, cumprindo os mais rígidos critérios de compliance. "
+            "Compreendemos a demanda de cada cliente para desenhar a proposta mais eficiente.",
+            s_normal,
+        )
+    )
+    elems.append(Spacer(1, 0.3 * cm))
+    elems.append(
+        Paragraph(
+            "SECURITY SERVICES - A solidez e a expertise dos fundadores permitem a operação com escala e de maneira customizada. "
+            f"A {rem_nome} oferece soluções completas para os cenários mais complexos, tem um portfólios que compreende "
+            "serviços como portaria e controle de acesso.",
+            s_normal,
+        )
+    )
+    elems.append(Spacer(1, 0.3 * cm))
+    elems.append(
+        Paragraph(
+            "FACILITY SERVICES - A empresa acredita na combinação entre as melhores pessoas e a tecnologia para atender com "
+            "excelência à demanda de serviços de limpeza, multisserviços e serviços auxiliares.",
+            s_normal,
+        )
+    )
+    elems.append(Spacer(1, 0.5 * cm))
+
+    # ── SEÇÃO 2: Escopo e Valores dos Serviços ───────────────────────────────
+    elems.append(Paragraph("Escopo e Valores dos Serviços", s_h1))
+    elems.append(HRFlowable(width="100%", thickness=1, color=NAVY))
+    elems.append(Spacer(1, 0.3 * cm))
+    elems.append(
+        Paragraph(
+            "Escopo Operacional",
+            st("eo", fontName="Helvetica-Bold", fontSize=11, leading=15),
+        )
+    )
+    elems.append(Spacer(1, 0.2 * cm))
+    elems.append(
+        Paragraph(
+            "Planilha de custo",
+            st("pc", fontName="Helvetica-Bold", fontSize=10, leading=14),
+        )
+    )
     elems.append(Spacer(1, 0.2 * cm))
 
+    # Cabeçalho da planilha
+    plan_header = ["Cod.", "Referência", "Função", "Qtd", "Valor unit.", "Subtotal"]
+    plan_rows = [plan_header]
+    for i, it in enumerate(itens):
+        plan_rows.append(
+            [
+                str(it.get("cod", str(i + 1))),
+                it.get("referencia", ""),
+                it.get("funcao_item", ""),
+                str(it.get("qtd", "1")),
+                it.get("valor_unit", ""),
+                it.get("subtotal", ""),
+            ]
+        )
+
+    # Calcular total somando subtotais numéricos
     def _parse_brl(v):
         try:
             return float(str(v).replace(".", "").replace(",", ".").strip())
@@ -14046,228 +13511,181 @@ def _gerar_proposta_comercial_pdf(
         v = _parse_brl(it.get("subtotal", ""))
         if v is not None:
             total_num = (total_num or 0) + v
+
     if total_num is not None:
-        total_val = (f"R$ {total_num:,.2f}"
-                     .replace(",", "X").replace(".", ",").replace("X", "."))
+        total_val = (
+            f"R$ {total_num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        )
     else:
-        total_val = "—"
+        total_val = "-"
 
-    plan_hdr = [Paragraph(x, s_tbl_hdr)
-                for x in ["Cód.", "Referência", "Função / Descrição",
-                           "Qtd.", "Valor Unit.", "Subtotal"]]
-    plan_rows = [plan_hdr]
-    for i, it in enumerate(itens):
-        plan_rows.append([
-            Paragraph(str(it.get("cod", str(i + 1))), s_tbl),
-            Paragraph(it.get("referencia", ""), s_tbl),
-            Paragraph(it.get("funcao_item", ""), s_tbl),
-            Paragraph(str(it.get("qtd", "1")),
-                      st(f"qt{i}", fontSize=9, leading=12, fontName="Helvetica",
-                         alignment=TA_RIGHT)),
-            Paragraph(it.get("valor_unit", ""),
-                      st(f"vu{i}", fontSize=9, leading=12, fontName="Helvetica",
-                         alignment=TA_RIGHT)),
-            Paragraph(it.get("subtotal", ""),
-                      st(f"sb{i}", fontSize=9, leading=12, fontName="Helvetica",
-                         alignment=TA_RIGHT)),
-        ])
-    lbl_total = "Total:" if is_spot else "Total Mensal:"
-    plan_rows.append([
-        Paragraph(lbl_total, s_tbl_tot),
-        Paragraph("", s_tbl), Paragraph("", s_tbl),
-        Paragraph("", s_tbl), Paragraph("", s_tbl),
-        Paragraph(total_val,
-                  st("tv", fontSize=9, leading=12, fontName="Helvetica-Bold",
-                     alignment=TA_RIGHT)),
-    ])
-    # Proporções originais [1.2, 2.8, 6.8, 1.2, 2.8, 3.2] = 18 cm; escalar para W
-    _plan_props = [1.2, 2.8, 6.8, 1.2, 2.8, 3.2]
-    plan_t = Table(plan_rows,
-                   colWidths=[W * p / sum(_plan_props) for p in _plan_props])
-    plan_t.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0),  (-1, 0),  NAVY),
-        ("FONTSIZE",      (0, 0),  (-1, -1), 9),
-        ("ROWBACKGROUNDS",(0, 1),  (-1, -2), [WHITE, LGRAY]),
-        ("BACKGROUND",    (0, -1), (-1, -1), colors.HexColor("#eef2f6")),
-        ("SPAN",          (0, -1), (4, -1)),
-        ("ALIGN",         (3, 0),  (-1, -1), "RIGHT"),
-        ("ALIGN",         (0, -1), (4, -1),  "LEFT"),
-        ("LINEBELOW",     (0, 0),  (-1, -1), 0.3, BORDER),
-        ("BOX",           (0, 0),  (-1, -1), 0.7, BORDER),
-        ("TOPPADDING",    (0, 0),  (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0),  (-1, -1), 4),
-        ("LEFTPADDING",   (0, 0),  (-1, -1), 5),
-        ("RIGHTPADDING",  (0, 0),  (-1, -1), 5),
-    ]))
-    elems.append(plan_t)
+    plan_rows.append(["Total Mensal:", "", "", "", "", total_val])
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # 3  INCLUSO NA PROPOSTA
-    # ═══════════════════════════════════════════════════════════════════════════
-    elems.append(_sec("3", "Incluso na Proposta"))
-    elems.append(_hr())
-    elems.append(Paragraph(
-        "Os valores informados contemplam todos os benefícios, treinamentos, "
-        "administração e supervisão dos serviços, uniformes e equipamentos, bem "
-        f"como todos os encargos sociais, trabalhistas e fiscais de "
-        f"responsabilidade da {rem_nome}.", s_body_ni))
-    elems.append(Paragraph(
-        "Estão incluídos os seguintes programas obrigatórios:", s_body))
-    for letra, txt in [
-        ("a)", "PPRA – Programa de Prevenção de Riscos Ambientais;"),
-        ("b)", "PCMSO – Programa de Controle Médico e Saúde Ocupacional;"),
-        ("c)", "NR35 – Trabalho em altura (quando aplicável)."),
-    ]:
-        elems.append(Paragraph(
-            f"{letra}&#160;&#160;{txt}",
-            st(f"bi{letra}", fontName="Times-Roman", fontSize=12, leading=18,
-               leftIndent=1.25 * cm)))
-    elems.append(Paragraph(
-        "Os colaboradores alocados possuem os seguintes benefícios, conforme "
-        "convenção coletiva da categoria:", s_body))
-    for txt in ["Seguro de vida em grupo;", "Vale-transporte;",
-                "Vale-alimentação;", "Adicional de insalubridade (20%);",
-                "Uniformes e EPIs."]:
-        elems.append(Paragraph(
-            f"•&#160;&#160;{txt}",
-            st(f"bl{txt[:4]}", fontName="Helvetica", fontSize=10, leading=14,
-               leftIndent=1.25 * cm)))
-    elems.append(Paragraph(
-        f"Todos os colaboradores da {rem_nome} deverão estar devidamente "
-        "identificados por meio de crachás e uniformes padronizados.", s_body))
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # 4  TREINAMENTO E QUALIFICAÇÃO
-    # ═══════════════════════════════════════════════════════════════════════════
-    elems.append(_sec("4", "Treinamento e Qualificação"))
-    elems.append(_hr())
-    elems.append(Paragraph(
-        f"Os profissionais da {rem_nome} recebem treinamento periódico das "
-        "Normas Regulamentadoras (NRs) inerentes às funções desempenhadas, "
-        "garantindo a conformidade legal e a segurança no ambiente de trabalho.",
-        s_body_ni))
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # 5  CONSIDERAÇÕES COMERCIAIS
-    # ═══════════════════════════════════════════════════════════════════════════
-    elems.append(_sec("5", "Considerações Comerciais"))
-    elems.append(_hr())
-
-    _s_ck = st("csk", fontName="Helvetica-Bold", fontSize=10, leading=14, textColor=NAVY)
-    _s_cv = st("csv", fontName="Helvetica",      fontSize=10, leading=14)
-
-    def _ck(t):
-        return Paragraph(t, _s_ck)
-
-    def _cv(t):
-        return Paragraph(t, _s_cv)
-
-    if is_spot:
-        cons_rows = [
-            (_ck("Modalidade:"),        _cv("Serviço avulso (SPOT), conforme escopo da Seção 2.")),
-            (_ck("Forma de Pagamento:"),_cv("Conforme negociação prévia entre as partes.")),
-            (_ck("Base de Preços:"),    _cv(f"Valores elaborados com referência em {ano_ref}.")),
-            (_ck("Serviços Extras:"),   _cv("Solicitados com antecedência mínima de 48 horas úteis.")),
-            (_ck("Responsabilidade:"),  _cv(f"Ocorrências deverão ser comunicadas imediatamente à {rem_nome}.")),
-            (_ck("Infraestrutura:"),    _cv(
-                f"A {empresa or 'CONTRATANTE'} disponibilizará local para guarda "
-                "de equipamentos, água e acesso a banheiros.")),
-            (_ck("Validade:"),          _cv("30 (trinta) dias a partir da data de emissão.")),
-        ]
-    else:
-        cons_rows = [
-            (_ck("Forma de Pagamento:"),_cv("Faturamento mensal, com prazo de vencimento conforme Termo de Referência.")),
-            (_ck("Prazo Contratual:"),  _cv("Indeterminado.")),
-            (_ck("Rescisão:"),          _cv(
-                "Qualquer das partes poderá rescindir o contrato, sem justo motivo, "
-                "mediante aviso prévio de 30 (trinta) dias.")),
-            (_ck("Base de Preços:"),    _cv(f"Valores elaborados com referência em 01 de janeiro de {ano_ref}.")),
-            (_ck("Reajuste:"),          _cv(
-                "Anual, conforme variação do piso salarial da categoria e/ou índice "
-                "contratual. Novos tributos ou alterações legais ensejarão revisão "
-                "para reequilíbrio econômico-financeiro.")),
-            (_ck("Cobertura de Faltas:"),_cv(f"Realizada pela {rem_nome} em até 2 (duas) horas.")),
-            (_ck("Serviços Extras:"),   _cv("Solicitados com antecedência mínima de 72 (setenta e duas) horas úteis.")),
-            (_ck("Responsabilidade:"),  _cv(
-                f"A {empresa or 'CONTRATANTE'} poderá auditar mensalmente os documentos "
-                "trabalhistas e previdenciários dos colaboradores alocados.")),
-            (_ck("Infraestrutura:"),    _cv(
-                f"A {empresa or 'CONTRATANTE'} disponibilizará local para guarda de "
-                "equipamentos, água e acesso a banheiros.")),
-            (_ck("Validade:"),          _cv("30 (trinta) dias a partir da data de emissão.")),
-        ]
-
-    cons_tbl = Table(cons_rows, colWidths=[4.5 * cm, W - 4.5 * cm])
-    cons_tbl.setStyle(TableStyle([
-        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-        ("LINEBELOW",     (0, 0), (-1, -2), 0.3, BORDER),
-        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+    plan_t = Table(
+        plan_rows, colWidths=[1.2 * cm, 3.5 * cm, 6.5 * cm, 1.5 * cm, 3 * cm, 3.3 * cm]
+    )
+    plan_style = [
+        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+        ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("BACKGROUND", (0, 1), (-1, -2), WHITE),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [WHITE, LGRAY]),
+        ("BACKGROUND", (0, -1), (-1, -1), LGRAY),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("SPAN", (0, -1), (4, -1)),
+        ("ALIGN", (3, 0), (-1, -1), "RIGHT"),
+        ("ALIGN", (0, -1), (4, -1), "LEFT"),
+        ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
+        ("INNERGRID", (0, 0), (-1, -1), 0.3, BORDER),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
-    ]))
-    elems.append(cons_tbl)
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+    ]
+    plan_t.setStyle(TableStyle(plan_style))
+    elems.append(plan_t)
+    elems.append(Spacer(1, 0.5 * cm))
 
-    if not is_spot:
-        elems.append(Spacer(1, 0.3 * cm))
-        elems.append(Paragraph(
-            f"Para fins de auditoria, a {empresa or 'CONTRATANTE'} poderá solicitar "
-            "mensalmente cópias dos seguintes documentos:", s_body_ni))
-        for d in [
-            "Folha de pagamento analítica;",
-            "GRF – Guia de Pagamento do FGTS;",
-            "GPS – Guia da Previdência Social;",
-            "Conectividade Social – Protocolo de Envio;",
-            "RET – Relação de Empregados por Tomador;",
-            "CAGED – Cadastro Geral de Empregados e Desempregados.",
-        ]:
-            elems.append(Paragraph(
-                f"•&#160;&#160;{d}",
-                st(f"dl{d[:4]}", fontName="Helvetica", fontSize=10, leading=14,
-                   leftIndent=1.25 * cm)))
+    # ── SEÇÃO 3: Incluso na Proposta ─────────────────────────────────────────
+    elems.append(Paragraph("Incluso na Proposta", s_h1))
+    elems.append(HRFlowable(width="100%", thickness=1, color=NAVY))
+    elems.append(Spacer(1, 0.3 * cm))
+    elems.append(
+        Paragraph(
+            "Proposta de acordo com escopo fornecido contemplando os seguinte benefícios aos colaboradores;",
+            s_normal,
+        )
+    )
+    elems.append(Spacer(1, 0.2 * cm))
+    elems.append(
+        Paragraph(
+            "Os valores informados contemplam todos os benefícios, treinamentos, administração e supervisão dos serviços "
+            "e/ou funcionários e uniformes para o andamento da operação. Estão incluídos também todos os custos como, "
+            f"encargos sociais, trabalhistas e fiscais de responsabilidade da {rem_nome};",
+            s_normal,
+        )
+    )
+    elems.append(Spacer(1, 0.2 * cm))
+    for txt in [
+        "PPRA – Programa de Prevenção e Riscos Ambientais;",
+        "PCMSO – Programa de Controle Médico e Saúde Ocupacional;",
+        f"Todos os funcionários da {rem_nome} possuem os seguintes benefícios de acordo com a convenção coletiva;",
+    ]:
+        elems.append(Paragraph(txt, s_normal))
+    for txt in [
+        "Seguro de Vida em grupo;",
+        "Vale Transporte;",
+        "Vale Alimentação",
+        "20% Insalubridade",
+        "Uniforme;",
+        "EPI's;",
+    ]:
+        elems.append(Paragraph(f"• {txt}", s_h4))
+    elems.append(Paragraph("Nr35 para trabalho em altura;", s_normal))
+    elems.append(Spacer(1, 0.2 * cm))
+    elems.append(
+        Paragraph(
+            f"Todos os funcionários {rem_nome} devem estar identificados através de crachás, "
+            "devidamente uniformizados e munidos de EPI´s;",
+            s_normal,
+        )
+    )
+    elems.append(Spacer(1, 0.5 * cm))
 
-    elems.append(Spacer(1, 1 * cm))
-    elems.append(_hr())
-    elems.append(Spacer(1, 0.6 * cm))
-    elems.append(Paragraph(f"São José dos Campos, {data_fmt}", s_right))
-    elems.append(Spacer(1, 1.8 * cm))
+    # ── SEÇÃO 4: Treinamento ─────────────────────────────────────────────────
+    elems.append(Paragraph("Treinamento", s_h1))
+    elems.append(HRFlowable(width="100%", thickness=1, color=NAVY))
+    elems.append(Spacer(1, 0.3 * cm))
+    elems.append(
+        Paragraph(
+            f"Os profissionais da {rem_nome} recebem treinamento semestral de Normas Regulamentadoras (NRs) "
+            "inerentes à função desempenhada.",
+            s_normal,
+        )
+    )
+    elems.append(Spacer(1, 0.5 * cm))
+
+    # ── SEÇÃO 5: Considerações Comerciais ────────────────────────────────────
+    elems.append(Paragraph("Considerações Comerciais", s_h1))
+    elems.append(HRFlowable(width="100%", thickness=1, color=NAVY))
+    elems.append(Spacer(1, 0.3 * cm))
+    consideracoes = [
+        "Forma de Pagamento: Os serviços propostos serão faturados mensalmente, com prazo de vencimento conforme Termo de Referência.",
+        "Prazo Contratual: Indeterminado.",
+        "Rescisão Imotivada: Poderá ser rescindido por qualquer das partes, em qualquer momento, sem que haja qualquer tipo de motivo relevante, respeitando-se um período mínimo de 30 dias.",
+        f"Data Base: Os preços foram elaborados nas bases do acordo da categoria: 01 de janeiro de {ano_ref}.",
+        "Próximo Reajuste: O contrato será reajustado anualmente, conforme contrato.",
+        "Forma de Reajuste: Caso ocorram alterações no valor do piso salarial da categoria, bem como a criação de novos benefícios sociais advindos de acordos e/ou dissídios coletivos, o preço da mão de obra será reajustado nas mesmas proporções. Os demais insumos componentes do preço não relacionados à mão de obra direta serão reajustados nas mesmas proporções. Se durante a vigência dos serviços forem criados novos tributos ou modificadas as alíquotas atuais, ou se houver reconhecida e comprovada alteração nos custos dos serviços e/ou insumos de forma a majorar ou diminuir o ônus, o preço contratado poderá ser revisto a fim de adequá-lo às modificações, de forma a restabelecer o equilíbrio econômico-financeiro.",
+        f"Todas as ocorrências verificadas nos serviços ou que envolvam os empregados alocados em sua execução deverão ser imediatamente comunicados à {rem_nome} para que sejam tomadas as providências cabíveis;",
+        f"Os serviços serão executados respeitando-se o escopo descrito no item 2, sendo certo que qualquer alteração no mesmo será objeto de uma nova negociação para revalidação das atividades e valores propostos, conforme necessidade e solicitação da <b>{empresa or 'CONTRATANTE'}</b>;",
+        f"Faltas eventuais: será realizada coberturas pela {rem_nome} em até 2 horas.",
+        "Todos os serviços extras deverão ser informados à supervisão com antecedência mínima de 72 (setenta e duas horas) úteis, para a tomada das providências necessárias;",
+        "Consideramos em nossos custos os exames médicos relativos ao PCMSO de acordo com as normas legais de saúde;",
+        "Todos os benefícios e direitos são rigorosamente contemplados, bem como todos os encargos sociais de nossa responsabilidade.",
+        "De acordo com a (Lei 13.467/17), o § 4o do artigo 71 da CLT deverá ser concedida 01 hora de intervalo para refeições e descanso aos funcionários que prestarão os serviços ou pagamento de intrajornada.",
+        f"A <b>{empresa or 'CONTRATANTE'}</b> deverá fornecer locais adequados onde possa ser guardados os equipamentos e fornecer condições de trabalho e permanência dos colaboradores no local de trabalho durante sua jornada de trabalho como, água, banheiro.",
+        f"A <b>{empresa or 'CONTRATANTE'}</b> poderá, a qualquer momento, solicitar e auditar os documentos relativos à regularização da {rem_nome}. Mensalmente serão disponibilizadas cópias dos documentos abaixo listados:",
+    ]
+    for c in consideracoes:
+        elems.append(Paragraph(c, s_normal))
+        elems.append(Spacer(1, 0.15 * cm))
+    for txt in [
+        "Folha de pagamento analítica;",
+        "GRF – Guia de Pagamento de Fundo de Garantia;",
+        "Analítico GRF – Relatório Analítico de Fundo de Garantia;",
+        "GPS – Guia de Pagamento da Previdência Social e de Terceiros;",
+        "Analítico GPS – Relatório Analítico da Guia da Previdência Social;",
+        "Conectividade Social – Protocolo de Envio;",
+        "RET – Relação de Empregados por Tomador;",
+        "CAGED – Cadastro Geral de Empregados e Desempregados;",
+    ]:
+        elems.append(Paragraph(f"• {txt}", s_h4))
+    elems.append(Spacer(1, 0.2 * cm))
+    elems.append(
+        Paragraph(
+            f"Caso a <b>{empresa or 'CONTRATANTE'}</b> necessite de documentação extra esta deverá ser solicitada previamente à celebração contratual.",
+            s_normal,
+        )
+    )
+    elems.append(Spacer(1, 0.2 * cm))
+    elems.append(Paragraph("A presente proposta tem validade de 30 dias.", s_bold))
+    elems.append(Spacer(1, 0.8 * cm))
+    elems.append(Paragraph(data_fmt, s_right))
+    elems.append(Spacer(1, 1.5 * cm))
 
     # ── ASSINATURAS ──────────────────────────────────────────────────────────
-    col_w = (W - 1 * cm) / 2
     ass_data = [
         [
-            Paragraph("_" * 45,
-                      st("al",  fontSize=10, alignment=TA_CENTER)),
-            Paragraph("_" * 45,
-                      st("al2", fontSize=10, alignment=TA_CENTER)),
+            Paragraph("_" * 40, st("al", fontSize=9, alignment=TA_CENTER)),
+            Paragraph("_" * 40, st("al", fontSize=9, alignment=TA_CENTER)),
         ],
         [
             Paragraph(
-                f"<b>{rem_nome}</b><br/>"
-                "<font size='9' color='#666666'>Representante Legal — Contratada</font>",
-                st("alnm", fontName="Times-Bold", fontSize=10, leading=14,
-                   alignment=TA_CENTER)),
+                f"{rem_nome}<br/>Representante Legal",
+                st("al2", fontSize=8, textColor=GRAY, alignment=TA_CENTER),
+            ),
             Paragraph(
-                f"<b>{empresa or 'CONTRATANTE'}</b><br/>"
-                "<font size='9' color='#666666'>Representante Legal — Contratante</font>",
-                st("alnm2", fontName="Times-Bold", fontSize=10, leading=14,
-                   alignment=TA_CENTER)),
+                f"{empresa or 'CONTRATANTE'}<br/>Representante Legal",
+                st("al2", fontSize=8, textColor=GRAY, alignment=TA_CENTER),
+            ),
         ],
     ]
-    ass_t = Table(ass_data, colWidths=[col_w, col_w], hAlign="CENTER")
-    ass_t.setStyle(TableStyle([
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ]))
+    ass_t = Table(ass_data, colWidths=[9 * cm, 9 * cm])
+    ass_t.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
     elems.append(ass_t)
 
-    doc.build(elems, canvasmaker=_PropostaCanvas)
+    doc.build(elems, canvasmaker=(_WatermarkCanvas or None))
     buf.seek(0)
     return buf
-
-
 
 
 @app.route("/api/proposta-comercial/gerar", methods=["POST"])
@@ -14637,13 +14055,8 @@ def api_enviar_proposta_comercial(pid):
 
 
 def _gerar_contrato_pdf(contrato, prestadora, tomadora):
-    """Gera PDF em formato ABNT jurídico para Contrato de Prestação de Serviços.
-
-    prestadora : Empresa  (CONTRATADA)
-    tomadora   : Empresa | Cliente | None  (CONTRATANTE)
-    """
+    """Gera PDF de Contrato de Prestação de Serviços ou Termo Aditivo."""
     from io import BytesIO
-    from datetime import datetime as _dt
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import cm
@@ -14655,700 +14068,189 @@ def _gerar_contrato_pdf(contrato, prestadora, tomadora):
         HRFlowable,
         Table,
         TableStyle,
-        PageBreak,
     )
-    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_RIGHT
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 
     buf = BytesIO()
-    PW, PH = A4
-    LMARGIN, RMARGIN, TMARGIN, BMARGIN = 3 * cm, 2 * cm, 3 * cm, 2.5 * cm
-    W = PW - LMARGIN - RMARGIN
-
-    NAVY = HexColor("#1a3a5c")
-    GRAY = HexColor("#555555")
-    LGRAY = HexColor("#f4f6f9")
-    LINE = HexColor("#c8d0db")
-
-    def ps(nm, **kw):
-        b = dict(
-            fontName="Times-Roman", fontSize=12, leading=18,
-            textColor=black, spaceAfter=6, spaceBefore=0,
-        )
-        b.update(kw)
-        return ParagraphStyle(nm, **b)
-
-    s_body  = ps("body",  alignment=TA_JUSTIFY, firstLineIndent=1.25 * cm, spaceAfter=8)
-    s_bni   = ps("bni",   alignment=TA_JUSTIFY, spaceAfter=8)
-    s_cla   = ps("cla",   fontName="Times-Bold", fontSize=12,
-                          spaceBefore=20, spaceAfter=8, alignment=TA_CENTER)
-    s_tit   = ps("tit",   fontName="Times-Bold", fontSize=16, textColor=NAVY,
-                          alignment=TA_CENTER, spaceAfter=6, leading=22)
-    s_sub   = ps("sub",   fontSize=12, alignment=TA_CENTER, spaceAfter=4)
-    s_ctr   = ps("ctr",   alignment=TA_CENTER)
-    s_right = ps("right", alignment=TA_RIGHT)
-
-    def _hr(thick=0.5, clr=LINE):
-        return HRFlowable(width="100%", thickness=thick, color=clr,
-                          spaceBefore=4, spaceAfter=4)
-
-    def _esc(v):
-        return str(v or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-    def _p(txt, sty=None):
-        return Paragraph(txt, sty or s_body)
-
-    def _cl(ordinal, titulo):
-        return _p(f"CLÁUSULA {ordinal} – {titulo.upper()}", s_cla)
-
-    # ── extrai dict unificado de Empresa ou Cliente ───────────────────────────
-    def _extr(obj):
-        if obj is None:
-            return {}
-        return {
-            "nome":       _esc(getattr(obj, "razao", None) or getattr(obj, "nome", None) or ""),
-            "cnpj":       _esc(getattr(obj, "cnpj", None) or ""),
-            "logradouro": _esc(getattr(obj, "logradouro", None) or ""),
-            "num_end":    _esc(getattr(obj, "numero_end", None) or getattr(obj, "numero", None) or ""),
-            "bairro":     _esc(getattr(obj, "bairro", None) or ""),
-            "cidade":     _esc(getattr(obj, "cidade", None) or ""),
-            "estado":     _esc(getattr(obj, "estado", None) or ""),
-            "resp":       _esc(getattr(obj, "responsavel", None) or
-                               getattr(obj, "contato_nome", None) or ""),
-            "email":      _esc(getattr(obj, "email", None) or ""),
-        }
-
-    prest = _extr(prestadora)
-    toma  = _extr(tomadora)
-
-    def _qualif(d, papel, sigla):
-        txt = f"<b>{_esc(papel)}:</b> <b>{d['nome'] or '???'}</b>"
-        if d["cnpj"]:
-            txt += f", pessoa jurídica de direito privado, inscrita no CNPJ/MF sob o n.° <b>{d['cnpj']}</b>"
-        parts = [d["logradouro"], d["num_end"]]
-        end = ", ".join(p for p in parts if p)
-        if d["bairro"]: end += f", {d['bairro']}"
-        if d["cidade"]: end += f", {d['cidade']}/{d['estado']}"
-        if end: txt += f", com sede na {end}"
-        if d["resp"]: txt += f", neste ato representada por <b>{d['resp']}</b>"
-        txt += f", doravante denominada simplesmente <b>{sigla}</b>;"
-        return txt
-
-    is_indef  = not (contrato.data_fim or "").strip()
-    is_aditivo = (contrato.tipo or "").lower() == "aditivo"
-    tipo_label = "TERMO ADITIVO" if is_aditivo else "CONTRATO DE PRESTAÇÃO DE SERVIÇOS"
-
-    def _fmt(s):
-        if not s: return ""
-        for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
-            try: return _dt.strptime(s, fmt).strftime("%d/%m/%Y")
-            except: pass
-        return s
-
-    data_ini  = _fmt(contrato.data_inicio) or localnow().strftime("%d/%m/%Y")
-    data_fim  = _fmt(contrato.data_fim) if contrato.data_fim else ""
-    hoje      = localnow()
-    MESES = ["janeiro","fevereiro","março","abril","maio","junho",
-             "julho","agosto","setembro","outubro","novembro","dezembro"]
-    data_ext  = f"{hoje.day} de {MESES[hoje.month-1]} de {hoje.year}"
-    cidade_pr = (getattr(prestadora, "cidade", "") or "")
-    estado_pr = (getattr(prestadora, "estado", "") or "SP")
-
-    if is_indef:
-        vigencia_txt = f"a partir de {data_ini}, por prazo indeterminado"
-    else:
-        vigencia_txt = f"de {data_ini} a {data_fim}"
-
-    # ─── INÍCIO DOS ELEMENTOS ─────────────────────────────────────────────────
-    E = []
-
-    # ── CAPA ──────────────────────────────────────────────────────────────────
-    # logo
-    if prestadora and getattr(prestadora, "logo_url", None):
-        try:
-            import os as _os
-            from reportlab.platypus import Image as _RLImg
-            logo_path = _os.path.join(
-                app.root_path, "static",
-                (prestadora.logo_url or "").lstrip("/")
-            )
-            if _os.path.exists(logo_path):
-                E.append(_RLImg(logo_path, width=4 * cm, height=2 * cm, kind="bound"))
-                E.append(Spacer(1, 0.4 * cm))
-        except Exception:
-            pass
-
-    E.append(_p(tipo_label, s_tit))
-    E.append(_p(f"N.° {_esc(contrato.numero)}", s_sub))
-    E.append(Spacer(1, 0.3 * cm))
-    E.append(_hr(1.5, NAVY))
-    E.append(Spacer(1, 0.4 * cm))
-
-    # Quadro resumo
-    def _qrow(k, v):
-        return [
-            Paragraph(k, ps(f"qk{k[:4]}", fontName="Times-Bold", fontSize=10, textColor=NAVY)),
-            Paragraph(v, ps(f"qv{k[:4]}", fontSize=10)),
-        ]
-
-    # Proposta referenciada
-    proposta_num = ""
-    if contrato.proposta_id:
-        prop = db.session.get(PropostaComercial, contrato.proposta_id)
-        if prop:
-            proposta_num = prop.numero or ""
-
-    resumo = [
-        ("N.° do Contrato",           _esc(contrato.numero)),
-        ("CONTRATADA (Prestadora)",   prest.get("nome") or "—"),
-        ("CNPJ da CONTRATADA",        prest.get("cnpj") or "—"),
-        ("CONTRATANTE (Tomadora)",    toma.get("nome") or "—"),
-        ("CNPJ da CONTRATANTE",       toma.get("cnpj") or "—"),
-        ("Objeto",                    _esc(contrato.objeto) or "Prestação de Serviços"),
-        ("Valor",                     _esc(contrato.valor) or "—"),
-        ("Vigência",                  vigencia_txt.capitalize()),
-        ("Foro",                      f"Comarca de {cidade_pr or 'São Paulo'}/{estado_pr}"),
-    ]
-    if proposta_num:
-        resumo.insert(1, ("Proposta Comercial", _esc(proposta_num)))
-    qt = Table([_qrow(k, v) for k, v in resumo],
-               colWidths=[5.2 * cm, W - 5.2 * cm])
-    qt.setStyle(TableStyle([
-        ("LINEBELOW",     (0, 0), (-1, -1), 0.3, LINE),
-        ("BACKGROUND",    (0, 0), (0, -1), LGRAY),
-        ("BOX",           (0, 0), (-1, -1), 0.5, LINE),
-        ("TOPPADDING",    (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 5),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
-    ]))
-    E.append(qt)
-    E.append(PageBreak())
-
-    # ── PREÂMBULO ─────────────────────────────────────────────────────────────
-    E.append(Spacer(1, 0.5 * cm))
-    E.append(_p(tipo_label, s_tit))
-    E.append(_p(f"N.° {_esc(contrato.numero)}", s_sub))
-    E.append(_hr(1.2, NAVY))
-    E.append(Spacer(1, 0.3 * cm))
-
-    if not is_aditivo:
-        if prest:
-            E.append(_p(_qualif(prest, "CONTRATADA – Prestadora de Serviços", "CONTRATADA"), s_bni))
-        if toma:
-            E.append(_p(_qualif(toma, "CONTRATANTE – Tomadora de Serviços", "CONTRATANTE"), s_bni))
-        E.append(Spacer(1, 0.3 * cm))
-        prop_ref = (f", decorrente da Proposta Comercial N.° <b>{_esc(proposta_num)}</b>,"
-                    if proposta_num else "")
-        E.append(_p(
-            f"As partes acima identificadas têm entre si, como justo e contratado, o presente "
-            f"<b>Contrato de Prestação de Serviços</b>{prop_ref}, que se regerá pelas cláusulas e condições "
-            "a seguir estipuladas, em consonância com os artigos 593 e seguintes do "
-            "<b>Código Civil Brasileiro (Lei n.° 10.406/2002)</b> e demais normas aplicáveis.",
-            s_bni,
-        ))
-    else:
-        pai_ref = ""
-        if contrato.contrato_pai_id:
-            pai = db.session.get(ContratoServico, contrato.contrato_pai_id)
-            if pai:
-                pai_ref = f" ao Contrato de Prestação de Serviços N.° {pai.numero}"
-        if prest:
-            E.append(_p(_qualif(prest, "CONTRATADA", "CONTRATADA"), s_bni))
-        if toma:
-            E.append(_p(_qualif(toma, "CONTRATANTE", "CONTRATANTE"), s_bni))
-        E.append(Spacer(1, 0.3 * cm))
-        E.append(_p(
-            f"As partes celebram o presente <b>Termo Aditivo</b>{_esc(pai_ref)}, "
-            "regendo-se pelas cláusulas a seguir e mantendo em vigor as demais "
-            "disposições do instrumento original não expressamente alteradas.",
-            s_bni,
-        ))
-
-    E.append(Spacer(1, 0.5 * cm))
-
-    # ══ CLÁUSULAS PRINCIPAIS (apenas para contrato, não aditivo) ══════════════
-    if not is_aditivo:
-
-        # ── CLÁUSULA PRIMEIRA – DO OBJETO ──────────────────────────────────────
-        E.append(_cl("PRIMEIRA", "DO OBJETO"))
-        E.append(_p(
-            f"O presente Contrato tem por objeto a prestação, pela CONTRATADA à CONTRATANTE, "
-            f"dos seguintes serviços: <b>{_esc(contrato.objeto) or 'serviços especializados conforme proposta técnica e comercial acordada entre as partes'}</b>."
-        ))
-        E.append(_p(
-            "§ 1.° Eventuais serviços adicionais não previstos neste instrumento somente "
-            "poderão ser executados após formalização por Termo Aditivo, assinado por "
-            "representantes legais de ambas as partes."
-        ))
-        E.append(_p(
-            "§ 2.° A CONTRATADA declara possuir plena capacidade técnica, operacional e "
-            "jurídica para a execução do objeto, responsabilizando-se integralmente pela "
-            "qualidade dos serviços, incluindo mão de obra, equipamentos e materiais."
-        ))
-
-        # ── CLÁUSULA SEGUNDA – OBRIGAÇÕES DA CONTRATADA ────────────────────────
-        E.append(_cl("SEGUNDA", "DAS OBRIGAÇÕES DA CONTRATADA"))
-        for i, ob in enumerate([
-            "Executar os serviços com mão de obra qualificada, dentro dos padrões técnicos "
-            "e de qualidade exigidos, respeitando os prazos acordados;",
-
-            "Fornecer, por sua conta e risco, toda a mão de obra necessária, arcando com "
-            "todos os encargos trabalhistas, previdenciários, fiscais e securitários de seus "
-            "empregados, incluindo FGTS, INSS e demais contribuições legais;",
-
-            "Manter seus empregados devidamente identificados, uniformizados e com os "
-            "equipamentos de proteção individual (EPI) exigidos pelas normas vigentes;",
-
-            "Responsabilizar-se por todos os danos causados à CONTRATANTE ou a terceiros, "
-            "decorrentes de culpa ou dolo de seus empregados ou prepostos;",
-
-            "Comunicar por escrito, com antecedência mínima de 48 (quarenta e oito) horas, "
-            "qualquer fato relevante que possa interferir na execução dos serviços;",
-
-            "Manter, durante toda a vigência do Contrato, regularidade fiscal, trabalhista "
-            "e previdenciária, apresentando as certidões quando solicitado;",
-
-            "Abster-se de subcontratar total ou parcialmente os serviços sem prévia "
-            "autorização escrita da CONTRATANTE.",
-        ], 1):
-            E.append(_p(f"{i}.° {ob}", s_bni))
-
-        # ── CLÁUSULA TERCEIRA – OBRIGAÇÕES DA CONTRATANTE ──────────────────────
-        E.append(_cl("TERCEIRA", "DAS OBRIGAÇÕES DA CONTRATANTE"))
-        for i, ob in enumerate([
-            "Remunerar a CONTRATADA na forma e condições estabelecidas neste Contrato;",
-
-            "Fornecer, em tempo hábil, todas as informações, dados técnicos e acessos "
-            "necessários à perfeita execução dos serviços;",
-
-            "Designar responsável para acompanhamento, fiscalização e aprovação dos serviços;",
-
-            "Comunicar à CONTRATADA, por escrito e com razoável antecedência, qualquer "
-            "irregularidade verificada na execução dos serviços;",
-
-            "Arcar com custos de taxas, licenças e autorizações municipais relativas ao "
-            "local de prestação dos serviços, salvo quando expressamente atribuídos à CONTRATADA;",
-
-            "Não contratar, direta ou indiretamente, durante a vigência deste Contrato e "
-            "nos 12 (doze) meses subsequentes ao seu término, empregados ou prepostos "
-            "da CONTRATADA que tenham atuado na execução deste instrumento, salvo com "
-            "consentimento escrito prévio da CONTRATADA.",
-        ], 1):
-            E.append(_p(f"{i}.° {ob}", s_bni))
-
-        # ── CLÁUSULA QUARTA – PREÇO E FORMA DE PAGAMENTO ───────────────────────
-        E.append(_cl("QUARTA", "DO PREÇO E DA FORMA DE PAGAMENTO"))
-        valor_txt = _esc(contrato.valor) or "valor a ser definido conforme proposta comercial em anexo"
-        E.append(_p(
-            f"Pelos serviços objeto deste Contrato, a CONTRATANTE pagará à CONTRATADA "
-            f"o valor de <b>{valor_txt}</b>, nas condições estabelecidas nesta cláusula."
-        ))
-        E.append(_p(
-            "§ 1.° O pagamento será realizado mensalmente, mediante apresentação prévia de "
-            "Nota Fiscal/Fatura, até o 10.° (décimo) dia do mês subsequente à competência "
-            "dos serviços, salvo condição diversa acordada por escrito."
-        ))
-        E.append(_p(
-            "§ 2.° No valor contratado estão incluídas todas as despesas diretas e indiretas "
-            "necessárias à execução dos serviços, inclusive mão de obra, materiais, "
-            "equipamentos, EPI, transporte, tributos e encargos sociais, salvo quando "
-            "convencionado de forma diversa em planilha de custos anexa ao presente instrumento."
-        ))
-        E.append(_p(
-            "§ 3.° O pagamento será efetuado por meio de transferência bancária, PIX ou "
-            "boleto bancário, conforme dados indicados pela CONTRATADA na Nota Fiscal. "
-            "Faturas em duplicidade ou com irregularidade fiscal serão devolvidas para "
-            "regularização sem implicar atraso de pagamento."
-        ))
-
-        # ── CLÁUSULA QUINTA – INADIMPLEMENTO E MORA ────────────────────────────
-        E.append(_cl("QUINTA", "DO INADIMPLEMENTO E DA MORA"))
-        E.append(_p(
-            "O atraso no pagamento por parte da CONTRATANTE sujeitará o valor em aberto à "
-            "incidência de <b>multa moratória de 2% (dois por cento)</b> sobre o montante "
-            "em atraso, acrescida de <b>juros de mora de 1% (um por cento) ao mês</b>, "
-            "calculados pro rata die a partir da data de vencimento até o efetivo pagamento, "
-            "sem prejuízo da correção monetária pelo IPCA/IBGE."
-        ))
-        E.append(_p(
-            "§ 1.° Caracterizado o inadimplemento — ausência de pagamento por mais de "
-            "<b>20 (vinte) dias</b> corridos da data de vencimento —, a CONTRATADA poderá "
-            "suspender a prestação dos serviços, mediante comunicação escrita com "
-            "antecedência mínima de 48 (quarenta e oito) horas. A suspensão não exime a "
-            "CONTRATANTE das obrigações financeiras, que permanecerão vigentes até a "
-            "quitação integral do débito, incluindo principal, multa, juros e correção."
-        ))
-        E.append(_p(
-            "§ 2.° Após regularização integral do débito, os serviços serão restabelecidos "
-            "em até 5 (cinco) dias úteis, podendo ser cobrados os custos de remobilização "
-            "e reinstalação, se houver."
-        ))
-        E.append(_p(
-            "§ 3.° O inadimplemento superior a <b>60 (sessenta) dias</b> autoriza a "
-            "CONTRATADA a rescindir o Contrato de pleno direito, sem aviso prévio adicional, "
-            "e a adotar as medidas extrajudiciais e judiciais cabíveis para cobrança, incluindo "
-            "negativação do nome da CONTRATANTE em cadastros de proteção ao crédito "
-            "(SPC/SERASA/SCPC), após regular notificação com prazo mínimo de 10 (dez) dias."
-        ))
-        E.append(_p(
-            "§ 4.° Não configuram inadimplemento os atrasos comprovadamente decorrentes de "
-            "força maior ou caso fortuito, desde que notificados por escrito no prazo de "
-            "5 (cinco) dias úteis contados do evento."
-        ))
-
-        # ── CLÁUSULA SEXTA – REAJUSTE ──────────────────────────────────────────
-        E.append(_cl("SEXTA", "DO REAJUSTE DE PREÇO"))
-        E.append(_p(
-            "O valor contratual será reajustado anualmente, na data de aniversário "
-            "do Contrato, com base na variação acumulada do <b>Índice Nacional de Preços "
-            "ao Consumidor Amplo (IPCA)</b>, apurado pelo IBGE nos 12 (doze) meses "
-            "imediatamente anteriores à data de reajuste."
-        ))
-        E.append(_p(
-            "§ 1.° Na hipótese de extinção ou substituição oficial do IPCA, as partes "
-            "se comprometem a negociar, de boa-fé, a adoção de índice substituto que "
-            "melhor reflita a variação dos custos dos serviços, no prazo de 30 (trinta) "
-            "dias contados da comunicação do fato."
-        ))
-        E.append(_p(
-            "§ 2.° O reajuste não depende de prévia notificação ou aditivo contratual, "
-            "salvo quando importe variação superior a 20% (vinte por cento) em relação ao "
-            "valor vigente, caso em que deverá ser formalizado por escrito."
-        ))
-        E.append(_p(
-            "§ 3.° Além do reajuste anual, em caso de alteração significativa nos custos "
-            "de mão de obra decorrente de acordo ou convenção coletiva de trabalho da "
-            "categoria, as partes se comprometem a renegociar o valor contratual no prazo "
-            "de 30 (trinta) dias, a fim de manter o equilíbrio econômico-financeiro do Contrato."
-        ))
-
-        # ── CLÁUSULA SÉTIMA – VIGÊNCIA ─────────────────────────────────────────
-        E.append(_cl("SÉTIMA", "DA VIGÊNCIA"))
-        if is_indef:
-            E.append(_p(
-                f"O presente Contrato entra em vigor na data de sua assinatura, "
-                f"fixada em <b>{data_ini}</b>, por prazo <b>indeterminado</b>, "
-                "mantendo-se vigente até que qualquer das partes manifeste, formalmente, "
-                "a intenção de rescindi-lo, observado o disposto na cláusula seguinte."
-            ))
-        else:
-            E.append(_p(
-                f"O presente Contrato entra em vigor em <b>{data_ini}</b> e vigorará até "
-                f"<b>{data_fim}</b>, podendo ser prorrogado por igual período mediante "
-                "Termo Aditivo assinado por ambas as partes antes do término."
-            ))
-            E.append(_p(
-                "Parágrafo único. Caso nenhuma das partes manifeste intenção de não renovar "
-                "com antecedência mínima de 30 (trinta) dias do término, as partes poderão "
-                "negociar a prorrogação mediante Termo Aditivo."
-            ))
-
-        # ── CLÁUSULA OITAVA – RESCISÃO ─────────────────────────────────────────
-        E.append(_cl("OITAVA", "DA RESCISÃO"))
-        E.append(_p(
-            "O presente Contrato poderá ser rescindido por qualquer das partes, mediante "
-            "notificação escrita com antecedência mínima de <b>30 (trinta) dias</b>, sem "
-            "prejuízo das obrigações financeiras já vencidas e dos serviços em andamento "
-            "na data da comunicação."
-        ))
-        if is_indef:
-            E.append(_p(
-                "§ 1.° <b>MULTA POR RESCISÃO ANTECIPADA:</b> Em razão dos custos de "
-                "mobilização, treinamento e estruturação operacional incorridos pela "
-                "CONTRATADA, caso a CONTRATANTE rescinda imotivadamente este Contrato de "
-                "prazo indeterminado antes de decorridos <b>90 (noventa) dias</b> contados "
-                "da data de início, ficará sujeita ao pagamento de multa compensatória "
-                "correspondente a <b>30% (trinta por cento)</b> do valor mensal contratado, "
-                "multiplicado pelo número de meses inteiros restantes para completar os "
-                "3 (três) meses iniciais de vigência, a título de ressarcimento pelos "
-                "investimentos realizados."
-            ))
-            E.append(_p(
-                "§ 2.° A multa prevista no § 1.° não será exigível se a rescisão decorrer "
-                "de descumprimento comprovado de obrigação contratual pela CONTRATADA, "
-                "de caso fortuito ou força maior devidamente documentados."
-            ))
-            E.append(_p(
-                "§ 3.° A rescisão imotivada pela CONTRATADA antes de completados 90 (noventa) "
-                "dias de vigência sujeita a CONTRATADA ao pagamento de multa de igual valor "
-                "em favor da CONTRATANTE."
-            ))
-            p_rescisao = 4
-        else:
-            E.append(_p(
-                "§ 1.° A rescisão antecipada imotivada, antes do término do prazo contratual, "
-                "sujeitará a parte infratora ao pagamento de multa compensatória equivalente "
-                "ao valor das mensalidades remanescentes, limitada a 3 (três) mensalidades."
-            ))
-            p_rescisao = 2
-
-        E.append(_p(
-            f"§ {p_rescisao}.° Constituem motivos para rescisão imediata, independentemente "
-            "de aviso prévio: (i) falência, insolvência ou recuperação judicial de qualquer "
-            "das partes; (ii) descumprimento reiterado de obrigações contratuais; (iii) "
-            "prática de atos dolosos, fraudulentos ou criminosos; (iv) cessão ou "
-            "subcontratação não autorizada."
-        ))
-        E.append(_p(
-            f"§ {p_rescisao + 1}.° A paralisação ou atraso injustificado dos serviços pela "
-            "CONTRATADA, por período superior a 5 (cinco) dias úteis sem justa causa comunicada "
-            "por escrito, configura descumprimento contratual grave e autoriza a rescisão "
-            "imediata, com direito da CONTRATANTE a perdas e danos."
-        ))
-
-        # ── CLÁUSULA NONA – GARANTIA ───────────────────────────────────────────
-        E.append(_cl("NONA", "DA GARANTIA E DA RESPONSABILIDADE"))
-        E.append(_p(
-            "A CONTRATADA garante que todos os serviços executados estarão isentos de "
-            "vícios, defeitos ou imperfeições, sendo utilizados materiais e mão de obra "
-            "adequados às especificações técnicas vigentes."
-        ))
-        E.append(_p(
-            "§ 1.° Identificado qualquer vício ou defeito nos serviços, a CONTRATADA "
-            "obriga-se a providenciar o reparo ou reexecução no prazo máximo de "
-            "<b>10 (dez) dias úteis</b> contados da notificação, sem custo adicional "
-            "para a CONTRATANTE."
-        ))
-        E.append(_p(
-            "§ 2.° Para serviços de natureza pontual (não contínuos), a garantia aplica-se "
-            "pelo prazo de <b>12 (doze) meses</b> após a conclusão e aceite do serviço."
-        ))
-
-        # ── CLÁUSULA DÉCIMA – CONFIDENCIALIDADE ───────────────────────────────
-        E.append(_cl("DÉCIMA", "DA CONFIDENCIALIDADE E DO SIGILO"))
-        E.append(_p(
-            "As partes comprometem-se a manter em absoluto sigilo todas as informações "
-            "confidenciais a que tiverem acesso em razão deste Contrato, incluindo dados "
-            "comerciais, financeiros, administrativos, técnicos, contábeis, fiscais e "
-            "trabalhistas, de qualquer das partes ou de seus clientes e parceiros."
-        ))
-        E.append(_p(
-            "§ 1.° A obrigação de confidencialidade estende-se a empregados, prepostos "
-            "e subcontratados de ambas as partes, que deverão firmar termos de não "
-            "divulgação com cláusulas equivalentes ou mais rigorosas."
-        ))
-        E.append(_p(
-            "§ 2.° É vedado à CONTRATADA utilizar o nome, marca ou logotipo da CONTRATANTE "
-            "em publicidade, marketing ou referências comerciais sem autorização escrita prévia."
-        ))
-        E.append(_p(
-            "§ 3.° As obrigações de sigilo subsistirão por <b>5 (cinco) anos</b> após o "
-            "término ou rescisão deste Contrato, independentemente do motivo."
-        ))
-        E.append(_p(
-            "§ 4.° Não configura violação de confidencialidade a divulgação exigida por "
-            "autoridade judicial ou administrativa competente, desde que a parte obrigada "
-            "notifique a outra previamente, se legalmente possível."
-        ))
-
-        # ── CLÁUSULA DÉCIMA PRIMEIRA – LGPD ───────────────────────────────────
-        E.append(_cl("DÉCIMA PRIMEIRA", "DA PROTEÇÃO DE DADOS PESSOAIS — LGPD"))
-        E.append(_p(
-            "As partes declaram conhecer e observar integralmente a "
-            "<b>Lei n.° 13.709/2018 — Lei Geral de Proteção de Dados Pessoais (LGPD)</b> "
-            "e seus regulamentos, comprometendo-se a adotar as medidas técnicas e "
-            "organizacionais necessárias para proteger os dados pessoais tratados no "
-            "contexto deste Contrato."
-        ))
-        E.append(_p(
-            "§ 1.° Os dados pessoais de empregados, prepostos e representantes serão "
-            "tratados exclusivamente para as finalidades inerentes à execução deste "
-            "Contrato, sendo vedado qualquer tratamento para finalidade diversa sem "
-            "o consentimento expresso do titular ou amparo legal."
-        ))
-        E.append(_p(
-            "§ 2.° A CONTRATADA, na qualidade de operadora de dados ao tratar dados "
-            "pessoais fornecidos pela CONTRATANTE, obriga-se a: (i) tratar os dados "
-            "somente conforme instruções documentadas da CONTRATANTE (controladora); "
-            "(ii) adotar medidas de segurança adequadas ao risco; (iii) notificar a "
-            "CONTRATANTE sobre incidente de segurança com dados pessoais em até "
-            "24 (vinte e quatro) horas do conhecimento do fato; (iv) devolver ou "
-            "eliminar os dados pessoais ao término do contrato, conforme instrução da "
-            "CONTRATANTE e nos termos da LGPD."
-        ))
-        E.append(_p(
-            "§ 3.° A parte que der causa a incidente de segurança ou violação de dados "
-            "responderá pelos danos causados ao titular e à outra parte, nos termos da "
-            "LGPD e da legislação civil vigente."
-        ))
-
-        # ── CLÁUSULA DÉCIMA SEGUNDA – DISPOSIÇÕES GERAIS ─────────────────────
-        E.append(_cl("DÉCIMA SEGUNDA", "DAS DISPOSIÇÕES GERAIS"))
-        for i, d in enumerate([
-            "O presente Contrato é celebrado em caráter <i>intuitu personae</i>. Os direitos "
-            "e obrigações aqui previstos não poderão ser cedidos ou transferidos, no todo ou "
-            "em parte, sem consentimento prévio e expresso por escrito da outra parte.",
-
-            "Qualquer alteração deste Contrato somente produzirá efeitos se formalizada por "
-            "escrito e assinada pelos representantes legais de ambas as partes, por meio de "
-            "Termo Aditivo devidamente numerado e datado.",
-
-            "A tolerância de qualquer das partes quanto ao descumprimento de obrigação pela "
-            "outra não implica novação, renúncia ou alteração contratual, podendo a parte "
-            "tolerante exigir seu cumprimento a qualquer tempo.",
-
-            "Este Contrato não gera vínculo empregatício, societário ou de qualquer outra "
-            "natureza entre os empregados da CONTRATADA e a CONTRATANTE. A CONTRATADA é a "
-            "exclusiva empregadora de seu pessoal.",
-
-            "A CONTRATADA compromete-se, nas ações trabalhistas de seus empregados em que a "
-            "CONTRATANTE figure como litisconsorte, a requerer expressamente a exclusão da "
-            "CONTRATANTE da lide, em todos os graus de jurisdição.",
-
-            "Todos os tributos, contribuições e encargos incidentes sobre os serviços são de "
-            "responsabilidade exclusiva da CONTRATADA, nos termos da legislação vigente, sem "
-            "direito a qualquer reembolso pela CONTRATANTE.",
-
-            "O presente instrumento constitui o acordo integral entre as partes relativamente "
-            "ao seu objeto, substituindo todos os entendimentos anteriores, verbais ou "
-            "escritos, sobre a mesma matéria.",
-        ], 1):
-            E.append(_p(f"{i}.° {d}", s_bni))
-
-        # ── CLÁUSULA DÉCIMA TERCEIRA – FORO ────────────────────────────────────
-        E.append(_cl("DÉCIMA TERCEIRA", "DO FORO"))
-        E.append(_p(
-            f"Fica eleito o foro da <b>Comarca de {_esc(cidade_pr) or 'São Paulo'}, "
-            f"Estado de {_esc(estado_pr)}</b>, com exclusão de qualquer outro, por mais "
-            "privilegiado que seja, para dirimir quaisquer dúvidas ou litígios oriundos "
-            "deste Contrato."
-        ))
-        E.append(_p(
-            "Parágrafo único. Previamente ao ajuizamento de qualquer demanda, as partes "
-            "poderão buscar resolução amigável por meio de mediação ou câmara de "
-            "arbitragem, nos termos da Lei n.° 9.307/1996 e da Lei n.° 13.140/2015."
-        ))
-
-        # ── texto_corpo extra (DISPOSIÇÕES ESPECÍFICAS) ────────────────────────
-        if (contrato.texto_corpo or "").strip():
-            E.append(_cl("DÉCIMA QUARTA", "DISPOSIÇÕES ESPECÍFICAS"))
-            for para in contrato.texto_corpo.split("\n\n"):
-                p = para.strip()
-                if p:
-                    E.append(_p(p.replace("\n", "<br/>"), s_bni))
-
-    else:
-        # ── ADITIVO: cláusulas simplificadas ──────────────────────────────────
-        E.append(_cl("PRIMEIRA", "DAS ALTERAÇÕES"))
-        if (contrato.objeto or "").strip():
-            E.append(_p(
-                "Em razão do acordado entre as partes, ficam alteradas as seguintes "
-                "condições do Contrato original:"
-            ))
-            E.append(_p(_esc(contrato.objeto), s_bni))
-        if (contrato.texto_corpo or "").strip():
-            for para in contrato.texto_corpo.split("\n\n"):
-                p = para.strip()
-                if p:
-                    E.append(_p(p.replace("\n", "<br/>"), s_bni))
-
-        E.append(_cl("SEGUNDA", "DA RATIFICAÇÃO"))
-        E.append(_p(
-            "Ficam ratificadas todas as demais cláusulas e condições do Contrato original "
-            "não expressamente alteradas por este Termo Aditivo."
-        ))
-
-        E.append(_cl("TERCEIRA", "DO FORO"))
-        E.append(_p(
-            "Permanece eleito o foro da Comarca de "
-            f"{_esc(cidade_pr) or 'São Paulo'}/{_esc(estado_pr)} para dirimir eventuais "
-            "litígios oriundos do presente instrumento."
-        ))
-
-    # ── ASSINATURAS ────────────────────────────────────────────────────────────
-    E.append(Spacer(1, 0.8 * cm))
-    E.append(_hr(0.5, LINE))
-    E.append(Spacer(1, 0.5 * cm))
-    E.append(_p(
-        f"{(cidade_pr + ', ') if cidade_pr else ''}{data_ext}.",
-        s_ctr,
-    ))
-    E.append(Spacer(1, 1.5 * cm))
-
-    col_w = (W - 1 * cm) / 2
-    pn = prest.get("nome") or "CONTRATADA"
-    tn = toma.get("nome") or "CONTRATANTE"
-    pr = prest.get("resp") or ""
-    tr = toma.get("resp") or ""
-
-    sig = Table([
-        ["_" * 42, "", "_" * 42],
-        [pn,       "", tn],
-        [pr,       "", tr],
-        ["CONTRATADA",  "", "CONTRATANTE"],
-    ], colWidths=[col_w, 1 * cm, col_w])
-    sig.setStyle(TableStyle([
-        ("FONTNAME",     (0, 0), (-1, -1), "Times-Roman"),
-        ("FONTNAME",     (0, 1), (-1, 1),  "Times-Bold"),
-        ("FONTNAME",     (0, 3), (-1, 3),  "Times-Bold"),
-        ("FONTSIZE",     (0, 0), (-1, -1), 10),
-        ("FONTSIZE",     (0, 2), (-1, 2),  9),
-        ("ALIGN",        (0, 0), (-1, -1), "CENTER"),
-        ("TEXTCOLOR",    (0, 3), (-1, 3),  NAVY),
-        ("TOPPADDING",   (0, 1), (-1, 1),  6),
-        ("TOPPADDING",   (0, 2), (-1, 2),  2),
-        ("TOPPADDING",   (0, 3), (-1, 3),  2),
-    ]))
-    E.append(sig)
-
-    E.append(Spacer(1, 1.5 * cm))
-    E.append(_p("Testemunhas:", ps("th", fontName="Times-Bold", fontSize=10, spaceAfter=8)))
-    tes = Table([
-        ["_" * 35, "", "_" * 35],
-        ["1.ª Testemunha — Nome / CPF", "", "2.ª Testemunha — Nome / CPF"],
-    ], colWidths=[col_w, 1 * cm, col_w])
-    tes.setStyle(TableStyle([
-        ("FONTNAME",   (0, 0), (-1, -1), "Times-Roman"),
-        ("FONTSIZE",   (0, 0), (-1, -1), 9),
-        ("ALIGN",      (0, 0), (-1, -1), "CENTER"),
-        ("TOPPADDING", (0, 1), (-1, 1),  4),
-    ]))
-    E.append(tes)
-
-    # ── CABEÇALHO/RODAPÉ em cada página ───────────────────────────────────────
-    _GRAY_C = GRAY
-    _LINE_C = LINE
-    _NAVY_C = NAVY
-
-    def _hf(canvas, doc):
-        canvas.saveState()
-        if doc.page > 1:
-            canvas.setFont("Times-Roman", 8)
-            canvas.setFillColor(_GRAY_C)
-            canvas.drawString(LMARGIN, PH - 1.8 * cm,
-                              f"{tipo_label}  –  N.° {contrato.numero}")
-        canvas.setFont("Times-Roman", 8)
-        canvas.setFillColor(_GRAY_C)
-        canvas.drawCentredString(PW / 2, 1.5 * cm, f"Página {doc.page}")
-        canvas.setStrokeColor(_LINE_C)
-        canvas.setLineWidth(0.4)
-        canvas.line(LMARGIN, 1.8 * cm, PW - RMARGIN, 1.8 * cm)
-        canvas.restoreState()
-
-    # ── BUILD ─────────────────────────────────────────────────────────────────
-    doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=LMARGIN,
-        rightMargin=RMARGIN,
-        topMargin=TMARGIN,
-        bottomMargin=BMARGIN,
-    )
-
     try:
         canvas_cls = _WatermarkCanvas
     except Exception:
         canvas_cls = None
 
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        rightMargin=2 * cm,
+        leftMargin=2 * cm,
+        topMargin=2.5 * cm,
+        bottomMargin=2 * cm,
+    )
+
+    cor_azul = HexColor("#205d8a")
+    cor_cinza = HexColor("#666666")
+    cor_fundo = HexColor("#f0f6ff")
+
+    s_tit = ParagraphStyle(
+        "Tit",
+        fontName="Helvetica-Bold",
+        fontSize=14,
+        textColor=cor_azul,
+        alignment=TA_CENTER,
+        spaceAfter=4,
+    )
+    s_sub = ParagraphStyle(
+        "Sub",
+        fontName="Helvetica",
+        fontSize=10,
+        textColor=cor_cinza,
+        alignment=TA_CENTER,
+        spaceAfter=14,
+    )
+    s_sec = ParagraphStyle(
+        "Sec",
+        fontName="Helvetica-Bold",
+        fontSize=11,
+        textColor=cor_azul,
+        spaceBefore=14,
+        spaceAfter=6,
+    )
+    s_corp = ParagraphStyle(
+        "Corp",
+        fontName="Helvetica",
+        fontSize=10,
+        textColor=black,
+        alignment=TA_JUSTIFY,
+        spaceAfter=6,
+        leading=15,
+    )
+    s_ctr = ParagraphStyle("Ctr", fontName="Helvetica", fontSize=9, alignment=TA_CENTER)
+
+    tipo_label = (
+        "TERMO ADITIVO"
+        if (contrato.tipo or "") == "aditivo"
+        else "CONTRATO DE PRESTAÇÃO DE SERVIÇOS"
+    )
+
+    elems = []
+    elems.append(Paragraph(tipo_label, s_tit))
+    elems.append(Paragraph(f"N° {contrato.numero}", s_sub))
+    elems.append(HRFlowable(width="100%", color=cor_azul, thickness=1.5, spaceAfter=14))
+
+    def _qualif(emp_dict, papel):
+        if not emp_dict:
+            return ""
+        nome = emp_dict.get("razao") or emp_dict.get("nome") or ""
+        cnpj = emp_dict.get("cnpj") or ""
+        parts_end = [emp_dict.get("logradouro", ""), emp_dict.get("numero", "")]
+        end = ", ".join(filter(None, parts_end))
+        if emp_dict.get("bairro"):
+            end += f", {emp_dict['bairro']}"
+        if emp_dict.get("cidade"):
+            end += f", {emp_dict['cidade']}/{emp_dict.get('estado', '')}"
+        txt = f"<b>{papel}:</b> <b>{nome}</b>"
+        if cnpj:
+            txt += f", inscrita no CNPJ sob n° <b>{cnpj}</b>"
+        if end:
+            txt += f", com sede em {end}"
+        return txt + "."
+
+    elems.append(Paragraph("DAS PARTES", s_sec))
+    prest_d = prestadora.to_dict() if prestadora else {}
+    toma_d = tomadora.to_dict() if tomadora else {}
+    if prest_d:
+        elems.append(Paragraph(_qualif(prest_d, "CONTRATADA (Prestadora)"), s_corp))
+    if toma_d:
+        elems.append(Paragraph(_qualif(toma_d, "CONTRATANTE (Tomadora)"), s_corp))
+
+    if contrato.objeto:
+        elems.append(Paragraph("DO OBJETO", s_sec))
+        elems.append(Paragraph(contrato.objeto, s_corp))
+
+    info_rows = []
+    if contrato.data_inicio or contrato.data_fim:
+        info_rows.append(
+            [
+                "Vigência",
+                f"{contrato.data_inicio or '—'} a {contrato.data_fim or 'Indeterminado'}",
+            ]
+        )
+    if contrato.valor:
+        info_rows.append(["Valor", contrato.valor])
+    if info_rows:
+        elems.append(Paragraph("DA VIGÊNCIA E VALOR", s_sec))
+        t = Table(info_rows, colWidths=[5 * cm, None])
+        t.setStyle(
+            TableStyle(
+                [
+                    ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 10),
+                    ("TEXTCOLOR", (0, 0), (0, -1), cor_azul),
+                    ("ROWBACKGROUNDS", (0, 0), (-1, -1), [cor_fundo, white]),
+                    ("GRID", (0, 0), (-1, -1), 0.5, HexColor("#c5d9f0")),
+                    ("PADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
+        elems.append(t)
+
+    if contrato.texto_corpo:
+        elems.append(Paragraph("DAS CONDIÇÕES", s_sec))
+        for para in contrato.texto_corpo.split("\n\n"):
+            p = para.strip()
+            if p:
+                elems.append(Paragraph(p.replace("\n", "<br/>"), s_corp))
+
+    elems.append(Spacer(1, 1.5 * cm))
+    cidade = (prestadora.cidade if prestadora else "") or ""
+    data_ext = contrato.data_inicio or localnow().strftime("%d/%m/%Y")
+    elems.append(Paragraph(f"{cidade + ', ' if cidade else ''}{data_ext}", s_ctr))
+    elems.append(Spacer(1, 1.2 * cm))
+
+    prest_nome = (prestadora.razao or prestadora.nome) if prestadora else "CONTRATADA"
+    toma_nome = (tomadora.razao or tomadora.nome) if tomadora else "CONTRATANTE"
+    sig = Table(
+        [
+            ["_" * 42, "", "_" * 42],
+            [prest_nome, "", toma_nome],
+            ["CONTRATADA (Prestadora)", "", "CONTRATANTE (Tomadora)"],
+        ],
+        colWidths=[7.5 * cm, 2 * cm, 7.5 * cm],
+    )
+    sig.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+                ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("FONTSIZE", (0, 2), (-1, 2), 8),
+                ("TEXTCOLOR", (0, 2), (-1, 2), cor_cinza),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("TOPPADDING", (0, 1), (-1, 1), 4),
+                ("TOPPADDING", (0, 2), (-1, 2), 2),
+            ]
+        )
+    )
+    elems.append(sig)
+
+    def _footer(canvas, doc):
+        canvas.saveState()
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(cor_cinza)
+        canvas.drawCentredString(
+            A4[0] / 2, 0.8 * cm, f"{tipo_label} — N° {contrato.numero}"
+        )
+        canvas.restoreState()
+
     if canvas_cls:
-        doc.build(E, canvasmaker=canvas_cls, onFirstPage=_hf, onLaterPages=_hf)
+        doc.build(
+            elems, canvasmaker=canvas_cls, onFirstPage=_footer, onLaterPages=_footer
+        )
     else:
-        doc.build(E, onFirstPage=_hf, onLaterPages=_hf)
+        doc.build(elems, onFirstPage=_footer, onLaterPages=_footer)
 
     buf.seek(0)
     return buf
-
-
 
 
 @app.route("/api/contratos-ps", methods=["POST"])
@@ -15358,36 +14260,12 @@ def api_ps_criar_contrato():
     tipo = (d.get("tipo") or "servico").strip().lower()
     if tipo not in ("servico", "aditivo"):
         return jsonify({"erro": "Tipo inválido."}), 400
-
-    # Valida client registrado quando informado
-    cliente_id = d.get("cliente_id") or None
-    if cliente_id:
-        cli = db.session.get(Cliente, int(cliente_id))
-        if not cli:
-            return jsonify({"erro": "Cliente não encontrado. Cadastre o cliente antes de gerar o contrato."}), 400
-
-    # Valida proposta quando informada
-    proposta_id = d.get("proposta_id") or None
-    proposta_num_ref = ""
-    if proposta_id:
-        prop = db.session.get(PropostaComercial, int(proposta_id))
-        if not prop:
-            return jsonify({"erro": "Proposta não encontrada."}), 400
-        proposta_num_ref = prop.numero or ""
-        # Preenche campos da proposta se não enviados
-        if not d.get("objeto") and prop.funcao:
-            d["objeto"] = prop.funcao
-        if not d.get("valor") and prop.total:
-            d["valor"] = prop.total
-
     numero = _gerar_num_contrato(tipo)
     c = ContratoServico(
         numero=numero,
         tipo=tipo,
-        prestadora_id=d.get("prestadora_id") or (prop.remetente_id if proposta_id and prop else None),
+        prestadora_id=d.get("prestadora_id") or None,
         tomadora_id=d.get("tomadora_id") or None,
-        cliente_id=cliente_id,
-        proposta_id=proposta_id,
         objeto=(d.get("objeto") or "").strip(),
         texto_corpo=(d.get("texto_corpo") or "").strip(),
         contrato_pai_id=d.get("contrato_pai_id") or None,
@@ -15406,9 +14284,9 @@ def api_ps_criar_contrato():
         None,
         None,
         True,
-        {"numero": numero, "tipo": tipo, "proposta": proposta_num_ref},
+        {"numero": numero, "tipo": tipo},
     )
-    return jsonify({"ok": True, "id": c.id, "numero": numero, "proposta": proposta_num_ref})
+    return jsonify({"ok": True, "id": c.id, "numero": numero})
 
 
 @app.route("/api/contratos-ps", methods=["GET"])
@@ -15448,33 +14326,11 @@ def api_ps_listar_contratos():
             emp_cache[eid] = (e.razao or e.nome) if e else ""
         return emp_cache[eid]
 
-    cli_cache = {}
-
-    def _cn(cid):
-        if not cid:
-            return ""
-        if cid not in cli_cache:
-            cl = db.session.get(Cliente, cid)
-            cli_cache[cid] = cl.nome if cl else ""
-        return cli_cache[cid]
-
-    prop_cache = {}
-
-    def _pn(pid):
-        if not pid:
-            return ""
-        if pid not in prop_cache:
-            p = db.session.get(PropostaComercial, pid)
-            prop_cache[pid] = p.numero if p else ""
-        return prop_cache[pid]
-
     items = []
     for c in rows:
         dd = c.to_dict()
         dd["prestadora_nome"] = _en(c.prestadora_id)
-        dd["tomadora_nome"] = _en(c.tomadora_id) or _cn(c.cliente_id)
-        dd["cliente_nome"] = _cn(c.cliente_id)
-        dd["proposta_numero"] = _pn(c.proposta_id)
+        dd["tomadora_nome"] = _en(c.tomadora_id)
         items.append(dd)
     return jsonify(
         {
@@ -15497,15 +14353,6 @@ def api_ps_get_contrato(cid):
     if c.tomadora_id:
         e = db.session.get(Empresa, c.tomadora_id)
         dd["tomadora_nome"] = (e.razao or e.nome) if e else ""
-    if c.cliente_id:
-        cl = db.session.get(Cliente, c.cliente_id)
-        if cl:
-            dd["cliente_nome"] = cl.nome
-            dd["tomadora_nome"] = dd.get("tomadora_nome") or cl.nome
-    if c.proposta_id:
-        prop = db.session.get(PropostaComercial, c.proposta_id)
-        if prop:
-            dd["proposta_numero"] = prop.numero or ""
     return jsonify(dd)
 
 
@@ -15514,13 +14361,7 @@ def api_ps_get_contrato(cid):
 def api_ps_contrato_pdf(cid):
     c = db.get_or_404(ContratoServico, cid)
     prestadora = db.session.get(Empresa, c.prestadora_id) if c.prestadora_id else None
-    # Tomadora: prefer Cliente registrado; fallback Empresa
-    if c.cliente_id:
-        tomadora = db.session.get(Cliente, c.cliente_id)
-    elif c.tomadora_id:
-        tomadora = db.session.get(Empresa, c.tomadora_id)
-    else:
-        tomadora = None
+    tomadora = db.session.get(Empresa, c.tomadora_id) if c.tomadora_id else None
     buf = _gerar_contrato_pdf(c, prestadora, tomadora)
     from flask import make_response, send_file as _sf
 
@@ -17596,7 +16437,7 @@ def api_app_mensagem_enviar_arquivo():
     conteudo = (request.form.get("conteudo") or "").strip()[:500]
     pasta = os.path.join(UPLOAD_ROOT, "funcionarios", str(f.id), "chat")
     os.makedirs(pasta, exist_ok=True)
-    ts = localnow().strftime("%Y%m%d%H%M%S")
+    ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     nome_final = f"{ts}_{nome_orig}"
     abs_p = os.path.join(pasta, nome_final)
     arq.save(abs_p)
@@ -17758,25 +16599,18 @@ def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
             if isinstance(data_str, str)
             else data_str
         )
-        data_iso = data_obj.isoformat()
 
         # Procura escala ativa para esse funcionário e data
         esc_func = EscalaFuncionario.query.filter(
             EscalaFuncionario.funcionario_id == funcionario.id,
-            EscalaFuncionario.data_inicio <= data_iso,
+            EscalaFuncionario.data_inicio <= data_str,
             EscalaFuncionario.ativo == True,
-        ).order_by(EscalaFuncionario.data_inicio.desc(), EscalaFuncionario.id.desc()).all()
+        ).all()
 
         for ef in esc_func:
             # Se tem data_fim, verifica se data_str está dentro do range
-            if ef.data_fim:
-                try:
-                    data_fim_obj = datetime.strptime(ef.data_fim, "%Y-%m-%d").date()
-                    if data_fim_obj < data_obj:
-                        continue
-                except Exception:
-                    # Data fim inválida não deve quebrar o cálculo; ignora vínculo inconsistente.
-                    continue
+            if ef.data_fim and ef.data_fim < data_str:
+                continue
             # Encontrou escala ativa; calcular índice no ciclo
             esc = db.session.get(Escala, ef.escala_id)
             if not esc:
@@ -17785,8 +16619,6 @@ def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
             # Calcular quantos dias desde data_inicio
             data_inicio_obj = datetime.strptime(ef.data_inicio, "%Y-%m-%d").date()
             dias_decorridos = (data_obj - data_inicio_obj).days
-            if dias_decorridos < 0:
-                continue
 
             # Obter tamanho do ciclo
             try:
@@ -17905,55 +16737,6 @@ def _app_ponto_max_marcacoes_dia(funcionario):
     return 4
 
 
-def _app_calc_intersec_noturno(ini_dt, fim_dt):
-    """Minutos trabalhados no período noturno 22:00-05:00 para um trecho de trabalho."""
-    if not ini_dt or not fim_dt or fim_dt <= ini_dt:
-        return 0
-    ini_m = ini_dt.hour * 60 + ini_dt.minute
-    fim_m = fim_dt.hour * 60 + fim_dt.minute
-    total = 0
-    if fim_m <= ini_m:
-        fim_m += 1440  # turno cruza meia-noite
-    # Segmento B: 22:00-00:00 → [1320, 1440]
-    total += max(0, min(fim_m, 1440) - max(ini_m, 1320))
-    # Segmento A: 00:00-05:00 → [0, 300]; só se cruzou meia-noite
-    if fim_m > 1440:
-        total += max(0, min(fim_m - 1440, 300))
-    elif ini_m < 300:
-        total += max(0, min(fim_m, 300) - ini_m)
-    return max(0, total)
-
-
-def _app_calc_noturno_min(marcacoes):
-    """Total de minutos no período noturno (22:00-05:00) a partir das marcações."""
-    total = 0
-    aberta_em = None
-    for m in marcacoes:
-        if not getattr(m, "data_hora", None):
-            continue
-        if m.tipo in ("entrada", "retorno_intervalo"):
-            aberta_em = m.data_hora
-        elif m.tipo in ("saida_intervalo", "saida") and aberta_em:
-            total += _app_calc_intersec_noturno(aberta_em, m.data_hora)
-            aberta_em = None
-    return total
-
-
-def _app_calc_intrajornada_min(marcacoes):
-    """Total de minutos de intervalo intrajornada gozado."""
-    total = 0
-    saida_int_em = None
-    for m in marcacoes:
-        if not getattr(m, "data_hora", None):
-            continue
-        if m.tipo == "saida_intervalo":
-            saida_int_em = m.data_hora
-        elif m.tipo == "retorno_intervalo" and saida_int_em:
-            total += max(0, int((m.data_hora - saida_int_em).total_seconds() / 60))
-            saida_int_em = None
-    return total
-
-
 def _app_ponto_resumo_dia(funcionario, data_ref):
     marcacoes = _app_ponto_marcacoes_dia(funcionario.id, data_ref)
     inconsistencias = []
@@ -18002,18 +16785,6 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
         funcionario, data_ref.strftime("%Y-%m-%d")
     )
     saldo = min_trab - min_esp
-    # ── HE 50% / 100%, noturno e intrajornada ────────────────────────────────
-    if saldo > 0:
-        _data_str = data_ref.strftime("%Y-%m-%d")
-        _feriado = Feriado.query.filter_by(data=_data_str).first()
-        if data_ref.weekday() == 6 or _feriado:  # Domingo ou feriado → 100%
-            he_50_min, he_100_min = 0, saldo
-        else:  # Seg-Sáb → 50% inteiro
-            he_50_min, he_100_min = saldo, 0
-    else:
-        he_50_min = he_100_min = 0
-    noturno_min = _app_calc_noturno_min(marcacoes)
-    intrajornada_min = _app_calc_intrajornada_min(marcacoes)
 
     itens = []
     for m in marcacoes:
@@ -18058,14 +16829,6 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
         "horas_esperadas_fmt": _app_ponto_fmt_minutos(min_esp),
         "saldo_min": saldo,
         "saldo_fmt": _app_ponto_fmt_minutos(saldo, signed=True),
-        "he_50_min": he_50_min,
-        "he_50_fmt": _app_ponto_fmt_minutos(he_50_min),
-        "he_100_min": he_100_min,
-        "he_100_fmt": _app_ponto_fmt_minutos(he_100_min),
-        "noturno_min": noturno_min,
-        "noturno_fmt": _app_ponto_fmt_minutos(noturno_min),
-        "intrajornada_min": intrajornada_min,
-        "intrajornada_fmt": _app_ponto_fmt_minutos(intrajornada_min),
         "status": "ok" if not inconsistencias else "inconsistente",
         "inconsistencias": inconsistencias,
         "max_marcacoes_dia": max_marc,
@@ -18191,18 +16954,22 @@ def api_app_ponto_marcar_me():
         precisao = float(precisao) if precisao is not None else None
     except (ValueError, TypeError):
         precisao = None
-    # GPS é opcional: se fornecido é validado e armazenado; se ausente o ponto
-    # é registrado normalmente (útil para navegadores web que negam permissão).
-    if lat is not None and not (-90 <= lat <= 90 and -180 <= lon <= 180):
+    if lat is None or lon is None:
+        return jsonify(
+            {
+                "erro": "Localização obrigatória para registrar ponto. Ative o GPS e tente novamente."
+            }
+        ), 400
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return jsonify({"erro": "Coordenadas de localização inválidas."}), 400
 
     localizacao = {
-        "status": "sem_gps" if lat is None else "sem_referencia_posto",
+        "status": "sem_referencia_posto",
         "distancia_m": None,
         "raio_m": None,
         "posto_cliente_id": f.posto_cliente_id,
     }
-    if lat is not None and f.posto_cliente_id:
+    if f.posto_cliente_id:
         cli = db.session.get(Cliente, f.posto_cliente_id)
         if cli and cli.geo_lat is not None and cli.geo_lon is not None:
             distancia = _geo_haversine_m(lat, lon, cli.geo_lat, cli.geo_lon)
@@ -18297,535 +17064,6 @@ def api_app_ponto_marcar_me():
     )
 
 
-# ---- Ponto via QR Code (Totem) -------------------------------------------
-
-
-def _ponto_qr_svg(token):
-    """Gera SVG do QR code contendo o token. Retorna string SVG."""
-    try:
-        import qrcode as _qrcode
-        from qrcode.image.svg import SvgPathImage as _SvgPath
-
-        qr = _qrcode.QRCode(
-            version=None,
-            error_correction=_qrcode.constants.ERROR_CORRECT_M,
-            box_size=10,
-            border=2,
-        )
-        qr.add_data(token)
-        qr.make(fit=True)
-        img = qr.make_image(image_factory=_SvgPath)
-        import io as _io
-
-        buf = _io.BytesIO()
-        img.save(buf)
-        return buf.getvalue().decode("utf-8")
-    except Exception:
-        return ""
-
-
-@app.route("/ponto/totem")
-@lr
-def ponto_totem_page():
-    """Pagina kiosk com relogio gigante e QR Code rotativo (1s)."""
-    perfil = (session.get("perfil") or "").strip().lower()
-    if perfil not in ("admin", "rh", "dono"):
-        return _lr_unauth_response()
-    cliente_nome = ""
-    try:
-        cliente_nome = (session.get("empresa_nome") or "").strip()
-    except Exception:
-        pass
-    return render_template("ponto_totem.html", cliente_nome=cliente_nome)
-
-
-@app.route("/api/ponto/qrcode/token")
-@lr
-def api_ponto_qrcode_token():
-    """Emite token QR de curta duracao para o totem (renovado a cada 1s)."""
-    perfil = (session.get("perfil") or "").strip().lower()
-    if perfil not in ("admin", "rh", "dono"):
-        return jsonify({"erro": "Acesso negado"}), 403
-    token, payload = ponto_qr_issue_token()
-    svg = _ponto_qr_svg(token)
-    return jsonify(
-        {
-            "ok": True,
-            "token": token,
-            "exp": payload["exp"],
-            "iat": payload["iat"],
-            "ttl": _PONTO_QR_TTL,
-            "server_time": int(time.time()),
-            "svg": svg,
-        }
-    )
-
-
-@app.route("/api/app/funcionario/me/ponto/marcar-qr", methods=["POST"])
-@app_func_required
-def api_app_ponto_marcar_qr_me():
-    """Registra ponto a partir de QR Code lido do totem. Dispensa GPS."""
-    f = g.app_funcionario
-    if (f.status or "").strip().lower() != "ativo":
-        return jsonify(
-            {"erro": "Somente funcionários ativos podem registrar ponto."}
-        ), 400
-    dados = request.json or {}
-    qr_token = (dados.get("qr_token") or "").strip()
-    if not qr_token:
-        return jsonify({"erro": "QR Code ausente."}), 400
-    payload = ponto_qr_parse_token(qr_token)
-    if not payload:
-        return jsonify(
-            {"erro": "QR Code inválido ou expirado. Aproxime do totem e tente novamente."}
-        ), 400
-    nonce = payload.get("nonce") or ""
-    exp_ts = int(payload.get("exp", 0))
-    if not _ponto_qr_nonce_mark(nonce, exp_ts):
-        return jsonify(
-            {"erro": "Este QR Code já foi utilizado. Aguarde o próximo e tente novamente."}
-        ), 400
-
-    tipo = (dados.get("tipo") or "").strip().lower()
-    observacao = (dados.get("observacao") or "").strip()[:500]
-    data_hora = utcnow()
-    data_ref = data_hora.date()
-    marcacoes_dia = _app_ponto_marcacoes_dia(f.id, data_ref)
-    tipo = tipo or _app_ponto_tipo_esperado(marcacoes_dia)
-    if tipo not in _APP_PONTO_TIPOS:
-        return jsonify({"erro": "Tipo de marcação inválido."}), 400
-    esperado = _app_ponto_tipo_esperado(marcacoes_dia)
-    if tipo != esperado:
-        return jsonify(
-            {
-                "erro": f"Ordem de marcação inválida. Agora é esperado: {_app_ponto_label(esperado)}."
-            }
-        ), 400
-    if any(
-        abs((data_hora - m.data_hora).total_seconds()) < 60
-        for m in marcacoes_dia
-        if getattr(m, "data_hora", None)
-    ):
-        return jsonify(
-            {"erro": "Já existe marcação neste minuto para este funcionário."}
-        ), 400
-
-    ip = (
-        (request.headers.get("X-Forwarded-For", "") or request.remote_addr or "")
-        .split(",")[0]
-        .strip()[:60]
-    )
-    # GPS opcional no fluxo QR (a presenca fisica e comprovada pelo proprio QR).
-    lat = dados.get("lat")
-    lon = dados.get("lon")
-    precisao = dados.get("precisao")
-    try:
-        lat = float(lat) if lat is not None else None
-    except (ValueError, TypeError):
-        lat = None
-    try:
-        lon = float(lon) if lon is not None else None
-    except (ValueError, TypeError):
-        lon = None
-    try:
-        precisao = float(precisao) if precisao is not None else None
-    except (ValueError, TypeError):
-        precisao = None
-    if lat is not None and not (-90 <= lat <= 90):
-        lat = None
-    if lon is not None and not (-180 <= lon <= 180):
-        lon = None
-
-    localizacao = {
-        "status": "qr_totem",
-        "distancia_m": None,
-        "raio_m": None,
-        "posto_cliente_id": f.posto_cliente_id,
-    }
-    if f.posto_cliente_id and lat is not None and lon is not None:
-        cli = db.session.get(Cliente, f.posto_cliente_id)
-        if cli and cli.geo_lat is not None and cli.geo_lon is not None:
-            distancia = _geo_haversine_m(lat, lon, cli.geo_lat, cli.geo_lon)
-            raio = float(cli.geofence_raio_m or 150)
-            localizacao = {
-                "status": (
-                    "no_posto"
-                    if (distancia is not None and distancia <= raio)
-                    else "fora_posto"
-                ),
-                "distancia_m": (round(distancia, 1) if distancia is not None else None),
-                "raio_m": raio,
-                "posto_cliente_id": f.posto_cliente_id,
-            }
-
-    m = PontoMarcacao(
-        funcionario_id=f.id,
-        tipo=tipo,
-        data_hora=data_hora,
-        origem="app_qr",
-        observacao=observacao,
-        criado_por="funcionario-app-qr",
-        ip=ip,
-        latitude=lat,
-        longitude=lon,
-        precisao_gps=precisao,
-    )
-    db.session.add(m)
-    db.session.commit()
-    audit_event(
-        "ponto_marcacao_app_qr",
-        "funcionario",
-        f.id,
-        "funcionario",
-        f.id,
-        True,
-        {
-            "tipo": tipo,
-            "data_ref": data_ref.strftime("%Y-%m-%d"),
-            "origem": "app_qr",
-            "qr_nonce": nonce,
-            "qr_iat": payload.get("iat"),
-            "qr_exp": exp_ts,
-            "localizacao_status": localizacao.get("status"),
-        },
-    )
-    try:
-        import json as _json
-
-        _sse_broadcast(
-            "ponto",
-            _json.dumps(
-                {
-                    "funcionario_id": f.id,
-                    "nome": f.nome,
-                    "tipo": m.tipo,
-                    "hora": m.data_hora.strftime("%H:%M"),
-                    "via": "qr",
-                }
-            ),
-        )
-    except Exception:
-        pass
-    return jsonify(
-        {
-            "ok": True,
-            "marcacao": {
-                "id": m.id,
-                "tipo": m.tipo,
-                "tipo_label": _app_ponto_label(m.tipo),
-                "hora_fmt": m.data_hora.strftime("%H:%M") if m.data_hora else "",
-                "localizacao": localizacao,
-            },
-            "resumo": _app_ponto_resumo_dia(f, data_ref),
-        }
-    )
-
-
-# ─── KIOSK COMPARTILHADO ──────────────────────────────────────────────────────
-
-import secrets as _secrets
-
-
-def _kiosk_gen_token():
-    return _secrets.token_urlsafe(32)
-
-
-def _kiosk_parse_json_list(raw):
-    try:
-        val = json.loads(raw or "[]")
-        return val if isinstance(val, list) else []
-    except Exception:
-        return []
-
-
-def _kiosk_postos_set(kiosk):
-    postos = []
-    for p in _kiosk_parse_json_list(getattr(kiosk, "filtro_postos_json", "[]")):
-        s = (p or "").strip()
-        if s:
-            postos.append(s.lower())
-    if not postos and kiosk.filtro_tipo == "posto" and kiosk.filtro_posto:
-        postos = [(kiosk.filtro_posto or "").strip().lower()]
-    return set([p for p in postos if p])
-
-
-def _kiosk_avulsos_set(kiosk):
-    out = set()
-    for x in _kiosk_parse_json_list(getattr(kiosk, "funcionarios_avulsos_json", "[]")):
-        try:
-            n = int(x)
-        except Exception:
-            continue
-        if n > 0:
-            out.add(n)
-    return out
-
-
-@app.route("/ponto/kiosk/<token>")
-def ponto_kiosk_page(token):
-    """Página totem compartilhado — funcionários batem ponto com CPF + PIN."""
-    kiosk = PontoKiosk.query.filter_by(token=token, ativo=True).first()
-    if not kiosk:
-        return "Totem não encontrado ou inativo.", 404
-    return render_template("ponto_kiosk.html", kiosk=kiosk)
-
-
-@app.route("/api/ponto/kiosk/<token>/bater", methods=["POST"])
-def api_ponto_kiosk_bater(token):
-    """Registra ponto de funcionário via totem compartilhado (sem sessão JWT)."""
-    kiosk = PontoKiosk.query.filter_by(token=token, ativo=True).first()
-    if not kiosk:
-        return jsonify({"erro": "Totem não encontrado ou inativo."}), 404
-
-    dados = request.json or {}
-    cpf4 = "".join(c for c in str(dados.get("cpf4") or dados.get("cpf") or "") if c.isdigit())[:4]
-    if len(cpf4) != 4:
-        return jsonify({"erro": "Informe os 4 primeiros dígitos do CPF."}), 400
-
-    postos_set = _kiosk_postos_set(kiosk)
-    avulsos_set = _kiosk_avulsos_set(kiosk)
-    cliente_nome_map = {
-        int(c.id): (c.nome or "").strip().lower()
-        for c in Cliente.query.with_entities(Cliente.id, Cliente.nome).all()
-        if c.id
-    }
-
-    def _cpf_digits(raw):
-        return "".join(c for c in str(raw or "") if c.isdigit())
-
-    def _autorizado(func):
-        if (func.status or "").strip().lower() != "ativo":
-            return False
-        if not bool(func.app_ativo):
-            return False
-        if not postos_set and not avulsos_set:
-            return True
-        if func.id in avulsos_set:
-            return True
-        if postos_set:
-            posto_f = (func.posto_operacional or "").strip().lower()
-            if posto_f and posto_f in postos_set:
-                return True
-            try:
-                cli_nome = cliente_nome_map.get(int(func.posto_cliente_id or 0), "")
-            except Exception:
-                cli_nome = ""
-            if cli_nome and cli_nome in postos_set:
-                return True
-        return False
-
-    funcs = Funcionario.query.filter_by(status="Ativo").all()
-    candidatos = [f for f in funcs if _autorizado(f)]
-    matches = [f for f in candidatos if _cpf_digits(f.cpf).startswith(cpf4)]
-    if not matches:
-        return jsonify({"erro": "Nenhum colaborador encontrado para estes 4 dígitos neste totem."}), 404
-    if len(matches) > 1:
-        nomes = ", ".join([(m.nome or "")[:30] for m in matches[:4]])
-        return jsonify({"erro": f"Mais de um colaborador encontrado ({nomes}). Solicite ao RH ajuste de cadastro."}), 409
-    f = matches[0]
-
-    data_hora = utcnow()
-    data_ref = data_hora.date()
-    marcacoes_dia = _app_ponto_marcacoes_dia(f.id, data_ref)
-    tipo = _app_ponto_tipo_esperado(marcacoes_dia)
-    if tipo not in _APP_PONTO_TIPOS:
-        return jsonify({"erro": "Jornada já concluída hoje."}), 400
-    if any(
-        abs((data_hora - m.data_hora).total_seconds()) < 60
-        for m in marcacoes_dia
-        if getattr(m, "data_hora", None)
-    ):
-        return jsonify({"erro": "Já existe marcação neste minuto."}), 400
-
-    ip = ((request.headers.get("X-Forwarded-For", "") or request.remote_addr or "").split(",")[0].strip()[:60])
-    m = PontoMarcacao(
-        funcionario_id=f.id,
-        tipo=tipo,
-        data_hora=data_hora,
-        origem="kiosk",
-        observacao="",
-        criado_por=f"kiosk:{kiosk.id}:{kiosk.nome[:40]}",
-        ip=ip,
-        latitude=None,
-        longitude=None,
-        precisao_gps=None,
-    )
-    db.session.add(m)
-    db.session.commit()
-    audit_event(
-        "ponto_marcacao_kiosk",
-        "funcionario",
-        f.id,
-        "funcionario",
-        f.id,
-        True,
-        {"tipo": tipo, "kiosk_id": kiosk.id, "kiosk_nome": kiosk.nome},
-    )
-    try:
-        import json as _json
-        _sse_broadcast("ponto", _json.dumps({
-            "funcionario_id": f.id, "nome": f.nome,
-            "tipo": m.tipo, "hora": m.data_hora.strftime("%H:%M"), "via": "kiosk",
-        }))
-    except Exception:
-        pass
-    return jsonify({
-        "ok": True,
-        "nome": f.nome,
-        "foto_url": f.foto_perfil or "",
-        "marcacao": {
-            "tipo": tipo,
-            "tipo_label": _app_ponto_label(tipo),
-            "hora_fmt": m.data_hora.strftime("%H:%M"),
-        },
-        "proximo": _app_ponto_label(_app_ponto_tipo_esperado(_app_ponto_marcacoes_dia(f.id, data_ref))),
-    })
-
-
-# Admin: gerenciar kiosks
-@app.route("/api/admin/ponto/kiosks", methods=["GET"])
-@lr
-def api_admin_kiosk_list():
-    items = PontoKiosk.query.order_by(PontoKiosk.criado_em.desc()).all()
-    result = []
-    for k in items:
-        d = k.to_dict()
-        d["filtro_postos"] = _kiosk_parse_json_list(k.filtro_postos_json)
-        d["funcionarios_avulsos"] = _kiosk_parse_json_list(k.funcionarios_avulsos_json)
-        d["url"] = f"/ponto/kiosk/{k.token}"
-        result.append(d)
-    return jsonify({"kiosks": result})
-
-
-@app.route("/api/admin/ponto/kiosks", methods=["POST"])
-@lr
-def api_admin_kiosk_create():
-    dados = request.json or {}
-    nome = (dados.get("nome") or "").strip()
-    if not nome:
-        return jsonify({"erro": "Nome obrigatório."}), 400
-    filtro_postos = []
-    for p in (dados.get("filtro_postos") or []):
-        s = (p or "").strip()
-        if s and s.lower() not in [x.lower() for x in filtro_postos]:
-            filtro_postos.append(s)
-    funcionarios_avulsos = []
-    for x in (dados.get("funcionarios_avulsos") or []):
-        try:
-            n = int(x)
-        except Exception:
-            continue
-        if n > 0 and n not in funcionarios_avulsos:
-            funcionarios_avulsos.append(n)
-    filtro_posto = (dados.get("filtro_posto") or "").strip() or None
-    if filtro_postos and not filtro_posto:
-        filtro_posto = filtro_postos[0]
-    k = PontoKiosk(
-        nome=nome,
-        token=_kiosk_gen_token(),
-        ativo=True,
-        requer_pin=False,
-        filtro_tipo=(dados.get("filtro_tipo") or "todos").strip(),
-        filtro_posto=filtro_posto,
-        filtro_postos_json=json.dumps(filtro_postos, ensure_ascii=False),
-        funcionarios_avulsos_json=json.dumps(funcionarios_avulsos, ensure_ascii=False),
-        criado_por=session.get("user", "admin"),
-    )
-    db.session.add(k)
-    db.session.commit()
-    d = k.to_dict()
-    d["filtro_postos"] = _kiosk_parse_json_list(k.filtro_postos_json)
-    d["funcionarios_avulsos"] = _kiosk_parse_json_list(k.funcionarios_avulsos_json)
-    d["url"] = f"/ponto/kiosk/{k.token}"
-    return jsonify({"ok": True, "kiosk": d})
-
-
-@app.route("/api/admin/ponto/kiosks/<int:kid>", methods=["PUT"])
-@lr
-def api_admin_kiosk_update(kid):
-    k = db.session.get(PontoKiosk, kid)
-    if not k:
-        return jsonify({"erro": "Não encontrado."}), 404
-    dados = request.json or {}
-    if "nome" in dados:
-        k.nome = (dados["nome"] or "").strip() or k.nome
-    if "ativo" in dados:
-        k.ativo = bool(dados["ativo"])
-    if "requer_pin" in dados:
-        k.requer_pin = False
-    if "filtro_tipo" in dados:
-        k.filtro_tipo = (dados["filtro_tipo"] or "todos").strip()
-    if "filtro_posto" in dados:
-        k.filtro_posto = (dados["filtro_posto"] or "").strip() or None
-    if "filtro_postos" in dados:
-        filtro_postos = []
-        for p in (dados.get("filtro_postos") or []):
-            s = (p or "").strip()
-            if s and s.lower() not in [x.lower() for x in filtro_postos]:
-                filtro_postos.append(s)
-        k.filtro_postos_json = json.dumps(filtro_postos, ensure_ascii=False)
-        if filtro_postos and not (k.filtro_posto or "").strip():
-            k.filtro_posto = filtro_postos[0]
-    if "funcionarios_avulsos" in dados:
-        funcs = []
-        for x in (dados.get("funcionarios_avulsos") or []):
-            try:
-                n = int(x)
-            except Exception:
-                continue
-            if n > 0 and n not in funcs:
-                funcs.append(n)
-        k.funcionarios_avulsos_json = json.dumps(funcs, ensure_ascii=False)
-    db.session.commit()
-    d = k.to_dict()
-    d["filtro_postos"] = _kiosk_parse_json_list(k.filtro_postos_json)
-    d["funcionarios_avulsos"] = _kiosk_parse_json_list(k.funcionarios_avulsos_json)
-    d["url"] = f"/ponto/kiosk/{k.token}"
-    return jsonify({"ok": True, "kiosk": d})
-
-
-@app.route("/api/admin/ponto/kiosks/<int:kid>/regenerar-token", methods=["POST"])
-@lr
-def api_admin_kiosk_regenerar_token(kid):
-    k = db.session.get(PontoKiosk, kid)
-    if not k:
-        return jsonify({"erro": "Não encontrado."}), 404
-    k.token = _kiosk_gen_token()
-    db.session.commit()
-    return jsonify({"ok": True, "token": k.token, "url": f"/ponto/kiosk/{k.token}"})
-
-
-@app.route("/api/admin/ponto/kiosks/<int:kid>", methods=["DELETE"])
-@lr
-def api_admin_kiosk_delete(kid):
-    k = db.session.get(PontoKiosk, kid)
-    if not k:
-        return jsonify({"erro": "Não encontrado."}), 404
-    db.session.delete(k)
-    db.session.commit()
-    return jsonify({"ok": True})
-
-
-@app.route("/api/admin/funcionarios/kiosk-pin", methods=["POST"])
-@lr
-def api_admin_func_kiosk_pin_set():
-    """Define PIN de kiosk para um funcionário."""
-    dados = request.json or {}
-    fid = dados.get("funcionario_id")
-    pin = (dados.get("pin") or "").strip()
-    f = db.session.get(Funcionario, fid) if fid else None
-    if not f:
-        return jsonify({"erro": "Funcionário não encontrado."}), 404
-    if pin and not (4 <= len(pin) <= 10 and pin.isdigit()):
-        return jsonify({"erro": "PIN deve ter entre 4 e 10 dígitos."}), 400
-    f.kiosk_pin = pin or None
-    db.session.commit()
-    return jsonify({"ok": True})
-
-
-# ─── FIM KIOSK ────────────────────────────────────────────────────────────────
-
-
 @app.route("/api/app/funcionario/me/ponto/historico")
 @app_func_required
 def api_app_ponto_historico_me():
@@ -18916,7 +17154,6 @@ def api_app_ponto_espelho_dados_me():
     except (ValueError, TypeError):
         return jsonify({"erro": "Competência inválida."}), 400
     ultimo_dia = _cal.monthrange(ano, mes)[1]
-    data_adm = _parse_date_ymd(str(getattr(f, "data_admissao", "") or "")[:10])
     meses_pt = [
         "Janeiro",
         "Fevereiro",
@@ -18933,23 +17170,14 @@ def api_app_ponto_espelho_dados_me():
     ]
     dias = []
     total_min = 0
-    total_he_50 = 0
-    total_he_100 = 0
-    total_noturno = 0
-    total_intrajornada = 0
     for dia in range(1, ultimo_dia + 1):
         data_ref = date(ano, mes, dia)
-        pre_admissao = bool(data_adm and data_ref < data_adm)
         resumo = _app_ponto_resumo_dia(f, data_ref)
         marcacoes = resumo.get("marcacoes", [])
         dias_semana = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
-        trab_min = 0 if pre_admissao else (resumo.get("horas_trabalhadas_min", 0) or 0)
-        esp_min = 0 if pre_admissao else (resumo.get("horas_esperadas_min", 0) or 0)
+        trab_min = resumo.get("horas_trabalhadas_min", 0) or 0
+        esp_min = resumo.get("horas_esperadas_min", 0) or 0
         total_min += trab_min
-        total_he_50 += 0 if pre_admissao else (resumo.get("he_50_min", 0) or 0)
-        total_he_100 += 0 if pre_admissao else (resumo.get("he_100_min", 0) or 0)
-        total_noturno += 0 if pre_admissao else (resumo.get("noturno_min", 0) or 0)
-        total_intrajornada += 0 if pre_admissao else (resumo.get("intrajornada_min", 0) or 0)
         dias.append(
             {
                 "data": data_ref.isoformat(),
@@ -18965,40 +17193,17 @@ def api_app_ponto_espelho_dados_me():
                 "horas_trabalhadas_fmt": resumo.get("horas_trabalhadas_fmt", "00:00"),
                 "horas_trabalhadas_min": trab_min,
                 "horas_esperadas_min": esp_min,
-                "he_50_min": (0 if pre_admissao else (resumo.get("he_50_min", 0) or 0)),
-                "he_50_fmt": ("00:00" if pre_admissao else resumo.get("he_50_fmt", "00:00")),
-                "he_100_min": (0 if pre_admissao else (resumo.get("he_100_min", 0) or 0)),
-                "he_100_fmt": ("00:00" if pre_admissao else resumo.get("he_100_fmt", "00:00")),
-                "noturno_min": (0 if pre_admissao else (resumo.get("noturno_min", 0) or 0)),
-                "noturno_fmt": ("00:00" if pre_admissao else resumo.get("noturno_fmt", "00:00")),
-                "intrajornada_min": (0 if pre_admissao else (resumo.get("intrajornada_min", 0) or 0)),
-                "intrajornada_fmt": ("00:00" if pre_admissao else resumo.get("intrajornada_fmt", "00:00")),
-                "status": ("nao_admitido" if pre_admissao else resumo.get("status", "")),
-                "inconsistencias": ([] if pre_admissao else resumo.get("inconsistencias", [])),
-                "tem_marcacoes": (False if pre_admissao else bool(marcacoes)),
+                "status": resumo.get("status", ""),
+                "tem_marcacoes": bool(marcacoes),
             }
         )
-    def _fmt(m):
-        return f"{m // 60:02d}:{m % 60:02d}"
-    saldo_total = total_min - sum(d["horas_esperadas_min"] for d in dias)
     return jsonify(
         {
             "ok": True,
             "competencia": competencia,
             "label": f"{meses_pt[mes - 1]}/{ano}",
-            "total_horas": _fmt(total_min),
+            "total_horas": f"{total_min // 60:02d}:{total_min % 60:02d}",
             "funcionario": f.nome,
-            "totais": {
-                "horas_trabalhadas_fmt": _fmt(total_min),
-                "he_50_fmt": _fmt(total_he_50),
-                "he_50_min": total_he_50,
-                "he_100_fmt": _fmt(total_he_100),
-                "he_100_min": total_he_100,
-                "noturno_fmt": _fmt(total_noturno),
-                "noturno_min": total_noturno,
-                "intrajornada_fmt": _fmt(total_intrajornada),
-                "intrajornada_min": total_intrajornada,
-            },
             "dias": dias,
         }
     )
@@ -19049,7 +17254,6 @@ def api_app_ponto_espelho_pdf_me():
     except (ValueError, TypeError):
         return jsonify({"erro": "Competência inválida."}), 400
     ultimo_dia = _cal.monthrange(ano, mes)[1]
-    data_adm = _parse_date_ymd(str(getattr(f, "data_admissao", "") or "")[:10])
     dt_ini = date(ano, mes, 1)
     dt_fim = date(ano, mes, ultimo_dia)
     fechamentos_count = PontoFechamentoDia.query.filter(
@@ -19128,35 +17332,30 @@ def api_app_ponto_espelho_pdf_me():
         dias_semana = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
         for dia in range(1, ultimo_dia + 1):
             data_ref = date(ano, mes, dia)
-            pre_admissao = bool(data_adm and data_ref < data_adm)
             resumo = _app_ponto_resumo_dia(f, data_ref)
             marcacoes = resumo.get("marcacoes", [])
             dds = dias_semana[data_ref.weekday()]
             data_str = f"{dds} {data_ref.strftime('%d/%m')}"
-            trab = "-" if pre_admissao else resumo.get("horas_trabalhadas_fmt", "00:00")
-            trab_min = 0 if pre_admissao else (resumo.get("horas_trabalhadas_min", 0) or 0)
+            trab = resumo.get("horas_trabalhadas_fmt", "00:00")
+            trab_min = resumo.get("horas_trabalhadas_min", 0) or 0
             total_min += trab_min
-            if pre_admissao:
-                status_val = "-"
-                marc_str = "-"
-            else:
-                status_val = (
-                    "OK"
-                    if resumo.get("status") == "ok"
-                    else ("Inconsist." if marcacoes else "-")
-                )
-                marc_str = (
-                    "  ".join(m.get("hora_fmt", "") for m in marcacoes)
-                    if marcacoes
-                    else "Falta"
-                    if resumo.get("horas_esperadas_min", 0)
-                    else "-"
-                )
+            status_val = (
+                "OK"
+                if resumo.get("status") == "ok"
+                else ("Inconsist." if marcacoes else "-")
+            )
+            marc_str = (
+                "  ".join(m.get("hora_fmt", "") for m in marcacoes)
+                if marcacoes
+                else "Falta"
+                if resumo.get("horas_esperadas_min", 0)
+                else "-"
+            )
             rows.append(
                 [
                     data_str,
                     marc_str,
-                    (trab if marcacoes else "-") if not pre_admissao else "-",
+                    trab if marcacoes else "-",
                     status_val,
                 ]
             )
@@ -19470,18 +17669,11 @@ def api_jornada_vincular_funcionarios(id):
         ), 409
 
     vinculados = []
-    escalas_desvinculadas = 0
     for fid in ids_ok:
         f = db.session.get(Funcionario, fid)
         if not f:
             continue
         f.jornada_id = id
-        # Exclusão mútua: ao vincular jornada fixa, desativa qualquer escala de turno ativa
-        for ef_ativo in EscalaFuncionario.query.filter_by(
-            funcionario_id=fid, ativo=True
-        ).all():
-            ef_ativo.ativo = False
-            escalas_desvinculadas += 1
         vinculados.append(fid)
     db.session.commit()
     audit_event(
@@ -19491,15 +17683,9 @@ def api_jornada_vincular_funcionarios(id):
         "jornada_trabalho",
         id,
         True,
-        {"funcionarios": vinculados, "escalas_desvinculadas": escalas_desvinculadas},
+        {"funcionarios": vinculados},
     )
-    return jsonify(
-        {
-            "ok": True,
-            "vinculados": len(vinculados),
-            "escalas_desvinculadas": escalas_desvinculadas,
-        }
-    )
+    return jsonify({"ok": True, "vinculados": len(vinculados)})
 
 
 @app.route("/api/jornadas/<int:id>/funcionarios/<int:fid>", methods=["DELETE"])
@@ -19526,11 +17712,6 @@ def api_funcionario_definir_jornada(id):
         if not j:
             return jsonify({"erro": "Jornada não encontrada"}), 404
         f.jornada_id = j.id
-        # Exclusão mútua: ao definir jornada fixa, desativa escalas ativas
-        for ef_ativo in EscalaFuncionario.query.filter_by(
-            funcionario_id=f.id, ativo=True
-        ).all():
-            ef_ativo.ativo = False
     db.session.commit()
     return jsonify({"ok": True, "jornada_id": f.jornada_id})
 
@@ -19550,18 +17731,37 @@ def api_escalas_listar():
 @app.route("/api/escalas", methods=["POST"])
 @lr
 def api_escalas_criar():
-    try:
-        payload = EscalaCreatePayload.model_validate(request.get_json(force=True) or {})
-    except _PydanticValidationError as exc:
-        return _pydantic_error_response(exc)
+    d = request.json or {}
+    nome = (d.get("nome") or "").strip()
+    tipo = (d.get("tipo") or "").strip()
+    if not nome:
+        return jsonify({"erro": "Nome obrigatório"}), 400
+    if tipo not in ("6x2", "6x1", "4x2", "12x36", "folguista", "noturna"):
+        return jsonify(
+            {
+                "erro": "Tipo deve ser '6x2', '6x1', '4x2', '12x36', 'folguista' ou 'noturna'"
+            }
+        ), 400
+
+    ciclo_json = d.get("ciclo_json") or "{}"
+    if isinstance(ciclo_json, dict):
+        ciclo_json = json.dumps(ciclo_json, ensure_ascii=False)
+
+    periodo_ini = (d.get("periodo_noturno_ini") or "22:00").strip()
+    periodo_fim = (d.get("periodo_noturno_fim") or "05:00").strip()
+    # Validar formato HH:MM
+    if not re.match(r"^\d{2}:\d{2}$", periodo_ini):
+        periodo_ini = "22:00"
+    if not re.match(r"^\d{2}:\d{2}$", periodo_fim):
+        periodo_fim = "05:00"
 
     e = Escala(
-        nome=payload.nome,
-        tipo=payload.tipo,
-        ciclo_json=payload.ciclo_json or "{}",
-        descricao=payload.descricao or "",
-        periodo_noturno_ini=payload.periodo_noturno_ini or "22:00",
-        periodo_noturno_fim=payload.periodo_noturno_fim or "05:00",
+        nome=nome,
+        tipo=tipo,
+        ciclo_json=ciclo_json,
+        descricao=d.get("descricao", ""),
+        periodo_noturno_ini=periodo_ini,
+        periodo_noturno_fim=periodo_fim,
         ativo=True,
     )
     db.session.add(e)
@@ -19573,7 +17773,7 @@ def api_escalas_criar():
         "escala",
         e.id,
         True,
-        {"nome": payload.nome, "tipo": payload.tipo},
+        {"nome": nome, "tipo": tipo},
     )
     return jsonify(e.to_dict()), 201
 
@@ -19605,25 +17805,37 @@ def api_escala_detalhe(id):
 @lr
 def api_escala_editar(id):
     e = db.get_or_404(Escala, id)
-    try:
-        payload = EscalaUpdatePayload.model_validate(request.get_json(force=True) or {})
-    except _PydanticValidationError as exc:
-        return _pydantic_error_response(exc)
-
-    if payload.nome is not None:
-        e.nome = payload.nome or e.nome
-    if payload.tipo is not None:
-        e.tipo = payload.tipo
-    if payload.ciclo_json is not None:
-        e.ciclo_json = payload.ciclo_json or "{}"
-    if payload.descricao is not None:
-        e.descricao = payload.descricao
-    if payload.periodo_noturno_ini is not None:
-        e.periodo_noturno_ini = payload.periodo_noturno_ini
-    if payload.periodo_noturno_fim is not None:
-        e.periodo_noturno_fim = payload.periodo_noturno_fim
-    if payload.ativo is not None:
-        e.ativo = payload.ativo
+    d = request.json or {}
+    if "nome" in d:
+        e.nome = (d.get("nome") or "").strip() or e.nome
+    if "tipo" in d and d.get("tipo") in (
+        "6x2",
+        "6x1",
+        "4x2",
+        "12x36",
+        "folguista",
+        "noturna",
+    ):
+        e.tipo = d.get("tipo")
+    if "ciclo_json" in d:
+        ciclo = d.get("ciclo_json")
+        e.ciclo_json = (
+            json.dumps(ciclo, ensure_ascii=False)
+            if isinstance(ciclo, dict)
+            else (ciclo or "{}")
+        )
+    if "descricao" in d:
+        e.descricao = d.get("descricao", "")
+    if "periodo_noturno_ini" in d:
+        periodo_ini = (d.get("periodo_noturno_ini") or "22:00").strip()
+        if re.match(r"^\d{2}:\d{2}$", periodo_ini):
+            e.periodo_noturno_ini = periodo_ini
+    if "periodo_noturno_fim" in d:
+        periodo_fim = (d.get("periodo_noturno_fim") or "05:00").strip()
+        if re.match(r"^\d{2}:\d{2}$", periodo_fim):
+            e.periodo_noturno_fim = periodo_fim
+    if "ativo" in d:
+        e.ativo = bool(d.get("ativo", True))
     db.session.commit()
     audit_event(
         "escala_editar",
@@ -19699,29 +17911,15 @@ def api_escala_vincular_funcionarios(id):
                 }
             ), 409
 
-        # Exclusão mútua: ao vincular escala, remove jornada fixa atual
-        if f.jornada_id:
-            f.jornada_id = None
-
-        # Reaproveitar vínculo existente (ativo ou inativo) com mesma (fid, eid, data_inicio)
-        # para não violar UNIQUE constraint
-        existente = EscalaFuncionario.query.filter_by(
+        # Criar vínculo
+        ef = EscalaFuncionario(
             escala_id=id,
             funcionario_id=fid,
             data_inicio=data_ini,
-        ).first()
-        if existente:
-            existente.ativo = True
-            existente.data_fim = data_fim
-        else:
-            ef = EscalaFuncionario(
-                escala_id=id,
-                funcionario_id=fid,
-                data_inicio=data_ini,
-                data_fim=data_fim,
-                ativo=True,
-            )
-            db.session.add(ef)
+            data_fim=data_fim,
+            ativo=True,
+        )
+        db.session.add(ef)
         vinculados.append(fid)
 
     db.session.commit()
@@ -19772,503 +17970,6 @@ def api_escala_turno_do_dia(id, data):
         )
     except Exception as ex:
         return jsonify({"erro": str(ex)}), 400
-
-
-# ============================================================
-# REGIMES DE TRABALHO - FACHADA UNIFICADA (Jornadas + Escalas)
-# ============================================================
-# Endpoints novos que tratam JornadaTrabalho ('fixa') e Escala ('escala')
-# como um único conceito "Regime de Trabalho" para a UI. Internamente
-# delegam para os models existentes e garantem EXCLUSÃO MÚTUA: um
-# funcionário só pode estar em UM regime ativo (fixa OU escala) por vez.
-# Os endpoints antigos /api/jornadas/* e /api/escalas/* continuam
-# funcionando (já também aplicam exclusão mútua).
-
-
-def _regime_from_jornada(j, com_funcionarios=False):
-    d = j.to_dict()
-    out = {
-        "regime_id": f"fixa:{j.id}",
-        "tipo": "fixa",
-        "id": j.id,
-        "nome": j.nome or "",
-        "descricao": j.descricao or "",
-        "ativo": bool(j.ativo),
-        "criado_em": d.get("criado_em"),
-        "grade_semanal": d.get("grade_semanal") or {},
-        "dias_semana_list": d.get("dias_semana_list") or [],
-        "tolerancia_min": j.tolerancia_min,
-        "carga_horaria_min": d.get("carga_horaria_min", 0),
-        "funcionarios_count": d.get("funcionarios_count", 0),
-    }
-    if com_funcionarios:
-        out["funcionarios"] = [
-            {
-                "id": f.id,
-                "nome": f.nome or "",
-                "matricula": f.matricula or "",
-                "re": f.re or "",
-                "status": f.status or "",
-            }
-            for f in Funcionario.query.filter_by(jornada_id=j.id)
-            .order_by(Funcionario.nome)
-            .all()
-        ]
-    return out
-
-
-def _regime_from_escala(e, com_funcionarios=False):
-    d = e.to_dict()
-    out = {
-        "regime_id": f"escala:{e.id}",
-        "tipo": "escala",
-        "id": e.id,
-        "nome": e.nome or "",
-        "descricao": e.descricao or "",
-        "ativo": bool(e.ativo),
-        "criado_em": d.get("criado_em"),
-        "escala_tipo": e.tipo,
-        "ciclo": d.get("ciclo") or {},
-        "ciclo_json": e.ciclo_json or "{}",
-        "periodo_noturno_ini": e.periodo_noturno_ini or "22:00",
-        "periodo_noturno_fim": e.periodo_noturno_fim or "05:00",
-        "funcionarios_count": d.get("funcionarios_count", 0),
-    }
-    if com_funcionarios:
-        out["funcionarios"] = []
-        for ef in EscalaFuncionario.query.filter_by(escala_id=e.id, ativo=True).all():
-            f = db.session.get(Funcionario, ef.funcionario_id)
-            if f:
-                out["funcionarios"].append(
-                    {
-                        "id": f.id,
-                        "nome": f.nome or "",
-                        "matricula": f.matricula or "",
-                        "re": f.re or "",
-                        "status": f.status or "",
-                        "data_inicio": ef.data_inicio,
-                        "data_fim": ef.data_fim,
-                    }
-                )
-    return out
-
-
-@app.route("/api/regimes", methods=["GET"])
-@lr
-def api_regimes_listar():
-    """Lista unificada de regimes (jornadas fixas + escalas de turnos)."""
-    apenas_ativos = request.args.get("ativos", "1").strip() == "1"
-    qj = JornadaTrabalho.query
-    qe = Escala.query
-    if apenas_ativos:
-        qj = qj.filter_by(ativo=True)
-        qe = qe.filter_by(ativo=True)
-    out = []
-    for j in qj.order_by(JornadaTrabalho.nome.asc()).all():
-        out.append(_regime_from_jornada(j))
-    for e in qe.order_by(Escala.nome.asc()).all():
-        out.append(_regime_from_escala(e))
-    return jsonify(out)
-
-
-@app.route("/api/regimes/<tipo>/<int:id>", methods=["GET"])
-@lr
-def api_regime_detalhe(tipo, id):
-    if tipo == "fixa":
-        j = db.get_or_404(JornadaTrabalho, id)
-        return jsonify(_regime_from_jornada(j, com_funcionarios=True))
-    if tipo == "escala":
-        e = db.get_or_404(Escala, id)
-        return jsonify(_regime_from_escala(e, com_funcionarios=True))
-    return jsonify({"erro": "Tipo inválido (use 'fixa' ou 'escala')"}), 400
-
-
-@app.route("/api/regimes", methods=["POST"])
-@lr
-def api_regimes_criar():
-    """Cria um regime. Body: {tipo: 'fixa'|'escala', ...campos do tipo}."""
-    d = request.json or {}
-    tipo = (d.get("tipo") or "").strip().lower()
-    nome = (d.get("nome") or "").strip()
-    if tipo not in ("fixa", "escala"):
-        return jsonify({"erro": "tipo deve ser 'fixa' ou 'escala'"}), 400
-    if not nome:
-        return jsonify({"erro": "Nome é obrigatório"}), 400
-
-    if tipo == "fixa":
-        grade_norm = _jornada_normalizar_grade(d.get("grade_semanal") or {}, None)
-        dias_ativos = [
-            int(k)
-            for k, v in grade_norm.items()
-            if bool((v or {}).get("ativo", False))
-        ]
-        primeira_cfg = grade_norm.get(
-            str(dias_ativos[0] if dias_ativos else 1), grade_norm.get("1", {})
-        )
-        ent_prim = (primeira_cfg or {}).get("entrada", "08:00")
-        sai_prim = (primeira_cfg or {}).get("saida", "17:48")
-        intervalo_prim = max(
-            0, min(240, int((primeira_cfg or {}).get("intervalo_min", 60) or 0))
-        )
-        int_ini, int_fim = "12:00", "13:00"
-        try:
-            he = list(map(int, str(ent_prim).split(":")))
-            ini = he[0] * 60 + he[1] + max(0, min(240, int(intervalo_prim // 2)))
-            fim = min(24 * 60, ini + intervalo_prim)
-            int_ini = f"{(ini // 60) % 24:02d}:{ini % 60:02d}"
-            int_fim = f"{(fim // 60) % 24:02d}:{fim % 60:02d}"
-        except Exception:
-            pass
-        j = JornadaTrabalho(
-            nome=nome,
-            descricao=(d.get("descricao") or "").strip()[:255],
-            dias_semana=json.dumps({"v": 1, "dias": grade_norm}, ensure_ascii=False),
-            hora_entrada=str(ent_prim or "08:00").strip()[:5],
-            hora_saida=str(sai_prim or "17:48").strip()[:5],
-            hora_intervalo_inicio=int_ini,
-            hora_intervalo_fim=int_fim,
-            tolerancia_min=max(0, min(60, int(d.get("tolerancia_min") or 10))),
-            ativo=bool(d.get("ativo", True)),
-        )
-        db.session.add(j)
-        db.session.commit()
-        audit_event(
-            "regime_criar",
-            "usuario",
-            session.get("uid"),
-            "jornada_trabalho",
-            j.id,
-            True,
-            {"tipo": "fixa", "nome": nome},
-        )
-        return jsonify(_regime_from_jornada(j)), 201
-
-    # tipo == 'escala'
-    try:
-        payload = EscalaCreatePayload.model_validate(d)
-    except _PydanticValidationError as exc:
-        return _pydantic_error_response(exc)
-    e = Escala(
-        nome=payload.nome,
-        tipo=payload.tipo,
-        ciclo_json=payload.ciclo_json or "{}",
-        descricao=payload.descricao or "",
-        periodo_noturno_ini=payload.periodo_noturno_ini or "22:00",
-        periodo_noturno_fim=payload.periodo_noturno_fim or "05:00",
-        ativo=True,
-    )
-    db.session.add(e)
-    db.session.commit()
-    audit_event(
-        "regime_criar",
-        "usuario",
-        session.get("uid"),
-        "escala",
-        e.id,
-        True,
-        {"tipo": "escala", "nome": payload.nome, "escala_tipo": payload.tipo},
-    )
-    return jsonify(_regime_from_escala(e)), 201
-
-
-@app.route("/api/regimes/<tipo>/<int:id>", methods=["PUT"])
-@lr
-def api_regime_editar(tipo, id):
-    d = request.json or {}
-    if tipo == "fixa":
-        j = db.get_or_404(JornadaTrabalho, id)
-        if "nome" in d:
-            n = (d["nome"] or "").strip()
-            if not n:
-                return jsonify({"erro": "Nome não pode ser vazio"}), 400
-            j.nome = n
-        if "descricao" in d:
-            j.descricao = (d["descricao"] or "").strip()[:255]
-        if "grade_semanal" in d and isinstance(d.get("grade_semanal"), dict):
-            grade_norm = _jornada_normalizar_grade(d.get("grade_semanal") or {}, j)
-            j.dias_semana = json.dumps(
-                {"v": 1, "dias": grade_norm}, ensure_ascii=False
-            )
-            dias_ativos = [
-                int(k)
-                for k, v in grade_norm.items()
-                if bool((v or {}).get("ativo", False))
-            ]
-            primeira_cfg = grade_norm.get(
-                str(dias_ativos[0] if dias_ativos else 1), grade_norm.get("1", {})
-            )
-            j.hora_entrada = str((primeira_cfg or {}).get("entrada", "08:00")).strip()[
-                :5
-            ]
-            j.hora_saida = str((primeira_cfg or {}).get("saida", "17:48")).strip()[:5]
-            intervalo_prim = max(
-                0, min(240, int((primeira_cfg or {}).get("intervalo_min", 60) or 0))
-            )
-            try:
-                he = list(map(int, j.hora_entrada.split(":")))
-                ini = he[0] * 60 + he[1] + max(0, min(240, int(intervalo_prim // 2)))
-                fim = min(24 * 60, ini + intervalo_prim)
-                j.hora_intervalo_inicio = f"{(ini // 60) % 24:02d}:{ini % 60:02d}"
-                j.hora_intervalo_fim = f"{(fim // 60) % 24:02d}:{fim % 60:02d}"
-            except Exception:
-                pass
-        if "tolerancia_min" in d:
-            try:
-                j.tolerancia_min = max(0, min(60, int(d["tolerancia_min"])))
-            except (ValueError, TypeError):
-                pass
-        if "ativo" in d:
-            j.ativo = bool(d["ativo"])
-        db.session.commit()
-        audit_event(
-            "regime_editar",
-            "usuario",
-            session.get("uid"),
-            "jornada_trabalho",
-            id,
-            True,
-            {"tipo": "fixa"},
-        )
-        return jsonify(_regime_from_jornada(j))
-
-    if tipo == "escala":
-        e = db.get_or_404(Escala, id)
-        try:
-            payload = EscalaUpdatePayload.model_validate(d)
-        except _PydanticValidationError as exc:
-            return _pydantic_error_response(exc)
-        if payload.nome is not None:
-            e.nome = payload.nome or e.nome
-        if payload.tipo is not None:
-            e.tipo = payload.tipo
-        if payload.ciclo_json is not None:
-            e.ciclo_json = payload.ciclo_json or "{}"
-        if payload.descricao is not None:
-            e.descricao = payload.descricao
-        if payload.periodo_noturno_ini is not None:
-            e.periodo_noturno_ini = payload.periodo_noturno_ini
-        if payload.periodo_noturno_fim is not None:
-            e.periodo_noturno_fim = payload.periodo_noturno_fim
-        if payload.ativo is not None:
-            e.ativo = payload.ativo
-        db.session.commit()
-        audit_event(
-            "regime_editar",
-            "usuario",
-            session.get("uid"),
-            "escala",
-            id,
-            True,
-            {"tipo": "escala"},
-        )
-        return jsonify(_regime_from_escala(e))
-
-    return jsonify({"erro": "Tipo inválido (use 'fixa' ou 'escala')"}), 400
-
-
-@app.route("/api/regimes/<tipo>/<int:id>", methods=["DELETE"])
-@lr
-def api_regime_excluir(tipo, id):
-    if tipo == "fixa":
-        j = db.get_or_404(JornadaTrabalho, id)
-        count = Funcionario.query.filter_by(jornada_id=id).count()
-        if count > 0:
-            return jsonify(
-                {
-                    "erro": f"Regime vinculado a {count} funcionário(s). Desvincule antes de excluir."
-                }
-            ), 400
-        db.session.delete(j)
-        db.session.commit()
-        audit_event(
-            "regime_excluir",
-            "usuario",
-            session.get("uid"),
-            "jornada_trabalho",
-            id,
-            True,
-            {"tipo": "fixa", "nome": j.nome},
-        )
-        return jsonify({"ok": True})
-    if tipo == "escala":
-        e = db.get_or_404(Escala, id)
-        e.ativo = False
-        db.session.commit()
-        audit_event(
-            "regime_excluir",
-            "usuario",
-            session.get("uid"),
-            "escala",
-            id,
-            True,
-            {"tipo": "escala", "nome": e.nome},
-        )
-        return jsonify({"ok": True})
-    return jsonify({"erro": "Tipo inválido (use 'fixa' ou 'escala')"}), 400
-
-
-@app.route("/api/regimes/<tipo>/<int:id>/funcionarios", methods=["POST"])
-@lr
-def api_regime_vincular_funcionarios(tipo, id):
-    """Vincula funcionários a um regime, garantindo EXCLUSÃO MÚTUA total:
-    o funcionário sai automaticamente de qualquer outro regime ativo (fixa ou escala).
-    Body fixa: {funcionario_ids: [1,2,3]}
-    Body escala: {funcionarios: [{funcionario_id, data_inicio, data_fim?}]}
-    """
-    d = request.json or {}
-
-    if tipo == "fixa":
-        j = db.get_or_404(JornadaTrabalho, id)
-        ids = d.get("funcionario_ids") or []
-        if not isinstance(ids, list):
-            return jsonify({"erro": "funcionario_ids deve ser lista"}), 400
-        ids_ok = sorted({int(x) for x in ids if str(x).isdigit()})
-        if not ids_ok:
-            return jsonify({"erro": "Selecione ao menos 1 funcionário válido."}), 400
-        vinculados = []
-        escalas_desvinculadas = 0
-        for fid in ids_ok:
-            f = db.session.get(Funcionario, fid)
-            if not f:
-                continue
-            f.jornada_id = j.id
-            for ef_ativo in EscalaFuncionario.query.filter_by(
-                funcionario_id=fid, ativo=True
-            ).all():
-                ef_ativo.ativo = False
-                escalas_desvinculadas += 1
-            vinculados.append(fid)
-        db.session.commit()
-        audit_event(
-            "regime_vincular",
-            "usuario",
-            session.get("uid"),
-            "jornada_trabalho",
-            id,
-            True,
-            {"funcionarios": vinculados, "escalas_desvinculadas": escalas_desvinculadas},
-        )
-        return jsonify(
-            {
-                "ok": True,
-                "vinculados": len(vinculados),
-                "escalas_desvinculadas": escalas_desvinculadas,
-            }
-        )
-
-    if tipo == "escala":
-        e = db.get_or_404(Escala, id)
-        pares = d.get("funcionarios") or []
-        if not isinstance(pares, list):
-            return jsonify({"erro": "funcionarios deve ser lista"}), 400
-        vinculados = []
-        jornadas_removidas = 0
-        for par in pares:
-            if not isinstance(par, dict):
-                continue
-            fid = par.get("funcionario_id")
-            data_ini = par.get("data_inicio")
-            data_fim = par.get("data_fim")
-            if not fid or not data_ini:
-                continue
-            f = db.session.get(Funcionario, fid)
-            if not f:
-                continue
-            # Desativa outras escalas ativas do funcionário (qualquer escala diferente desta)
-            for ef_outra in EscalaFuncionario.query.filter(
-                EscalaFuncionario.funcionario_id == fid,
-                EscalaFuncionario.escala_id != e.id,
-                EscalaFuncionario.ativo == True,
-            ).all():
-                ef_outra.ativo = False
-            # Exclusão mútua: remove jornada fixa
-            if f.jornada_id:
-                f.jornada_id = None
-                jornadas_removidas += 1
-            # Reaproveitar vínculo existente (ativo ou inativo) para não violar UNIQUE
-            existente = EscalaFuncionario.query.filter_by(
-                escala_id=e.id,
-                funcionario_id=fid,
-                data_inicio=data_ini,
-            ).first()
-            if existente:
-                existente.ativo = True
-                existente.data_fim = data_fim
-            else:
-                ef = EscalaFuncionario(
-                    escala_id=e.id,
-                    funcionario_id=fid,
-                    data_inicio=data_ini,
-                    data_fim=data_fim,
-                    ativo=True,
-                )
-                db.session.add(ef)
-            vinculados.append(fid)
-        db.session.commit()
-        audit_event(
-            "regime_vincular",
-            "usuario",
-            session.get("uid"),
-            "escala",
-            id,
-            True,
-            {"funcionarios": vinculados, "jornadas_removidas": jornadas_removidas},
-        )
-        return jsonify(
-            {
-                "ok": True,
-                "vinculados": len(vinculados),
-                "jornadas_removidas": jornadas_removidas,
-            }
-        )
-
-    return jsonify({"erro": "Tipo inválido (use 'fixa' ou 'escala')"}), 400
-
-
-@app.route(
-    "/api/regimes/<tipo>/<int:id>/funcionarios/<int:fid>", methods=["DELETE"]
-)
-@lr
-def api_regime_desvincular_funcionario(tipo, id, fid):
-    if tipo == "fixa":
-        f = db.get_or_404(Funcionario, fid)
-        if f.jornada_id != id:
-            return jsonify({"erro": "Funcionário não está nesta jornada"}), 400
-        f.jornada_id = None
-        db.session.commit()
-        return jsonify({"ok": True})
-    if tipo == "escala":
-        ef = EscalaFuncionario.query.filter_by(
-            escala_id=id, funcionario_id=fid
-        ).first_or_404()
-        ef.ativo = False
-        db.session.commit()
-        return jsonify({"ok": True})
-    return jsonify({"erro": "Tipo inválido (use 'fixa' ou 'escala')"}), 400
-
-
-@app.route("/api/regimes/funcionario/<int:fid>", methods=["GET"])
-@lr
-def api_regime_do_funcionario(fid):
-    """Retorna o regime ativo do funcionário (fixa ou escala) ou null."""
-    f = db.get_or_404(Funcionario, fid)
-    # Prioridade: escala ativa > jornada fixa (mesma precedência do cálculo de ponto)
-    ef = (
-        EscalaFuncionario.query.filter_by(funcionario_id=fid, ativo=True)
-        .order_by(EscalaFuncionario.data_inicio.desc())
-        .first()
-    )
-    if ef:
-        e = db.session.get(Escala, ef.escala_id)
-        if e:
-            out = _regime_from_escala(e)
-            out["vinculo"] = {"data_inicio": ef.data_inicio, "data_fim": ef.data_fim}
-            return jsonify(out)
-    if f.jornada_id:
-        j = db.session.get(JornadaTrabalho, f.jornada_id)
-        if j:
-            return jsonify(_regime_from_jornada(j))
-    return jsonify(None)
 
 
 # ============================================================
@@ -20955,13 +18656,7 @@ def func_doc_assinar_publica(token):
             mensagem="Link de assinatura inválido.",
             arquivo=None,
             funcionario=None,
-            empresa=None,
         )
-    funcionario = db.session.get(Funcionario, a.funcionario_id)
-    empresa = db.session.get(Empresa, funcionario.empresa_id) if funcionario and funcionario.empresa_id else None
-    if not empresa:
-        empresa = Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem, Empresa.id).first()
-    
     if (a.ass_status or "") in ("assinado", "concluida"):
         comprovante_url = (
             f"/doc/validar/{a.ass_codigo}" if (a.ass_codigo or "").strip() else ""
@@ -20971,8 +18666,7 @@ def func_doc_assinar_publica(token):
             ok=False,
             mensagem="Este documento já foi assinado.",
             arquivo=a,
-            funcionario=funcionario,
-            empresa=empresa,
+            funcionario=db.session.get(Funcionario, a.funcionario_id),
             comprovante_url=comprovante_url,
         )
     if a.ass_expira_em and a.ass_expira_em < utcnow():
@@ -20983,8 +18677,7 @@ def func_doc_assinar_publica(token):
             ok=False,
             mensagem="Link expirado. Solicite um novo link ao RH.",
             arquivo=a,
-            funcionario=funcionario,
-            empresa=empresa,
+            funcionario=db.session.get(Funcionario, a.funcionario_id),
         )
     src = request.args.get("src", "")
     if _ass_track_mark_received(a, src):
@@ -20994,8 +18687,7 @@ def func_doc_assinar_publica(token):
         ok=True,
         mensagem="",
         arquivo=a,
-        funcionario=funcionario,
-        empresa=empresa,
+        funcionario=db.session.get(Funcionario, a.funcionario_id),
     )
 
 
@@ -21317,7 +19009,6 @@ def func_doc_validar_publica(codigo):
             mensagem="Código de validação inválido.",
             arquivo=None,
             funcionario=None,
-            empresa=None,
         )
     a = FuncionarioArquivo.query.filter_by(ass_codigo=cod).first()
     if not a:
@@ -21327,13 +19018,8 @@ def func_doc_validar_publica(codigo):
             mensagem="Assinatura não encontrada para o código informado.",
             arquivo=None,
             funcionario=None,
-            empresa=None,
         )
     f = db.session.get(Funcionario, a.funcionario_id)
-    empresa = db.session.get(Empresa, f.empresa_id) if f and f.empresa_id else None
-    if not empresa:
-        empresa = Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem, Empresa.id).first()
-    
     ok = (a.ass_status or "").strip().lower() in ("assinado", "concluida")
     msg = (
         "Assinatura válida."
@@ -21345,7 +19031,7 @@ def func_doc_validar_publica(codigo):
         )
     )
     return render_template(
-        "doc_validacao.html", ok=ok, mensagem=msg, arquivo=a, funcionario=f, empresa=empresa
+        "doc_validacao.html", ok=ok, mensagem=msg, arquivo=a, funcionario=f
     )
 
 
@@ -21410,8 +19096,6 @@ def _build_doc_assinatura_pdf(arquivo, funcionario, url_root):
     emp = None
     if funcionario and funcionario.empresa_id:
         emp = db.session.get(Empresa, funcionario.empresa_id)
-    
-    # Fallback para primeira empresa ativa
     if not emp:
         emp = (
             Empresa.query.filter_by(ativa=True)
@@ -21574,7 +19258,7 @@ def _build_doc_assinatura_pdf(arquivo, funcionario, url_root):
     story.append(Spacer(1, 5))
 
     fn_nome = funcionario.nome if funcionario else "-"
-    fn_cpf = fmt_cpf(funcionario.cpf) if funcionario else "-"
+    fn_cpf = funcionario.cpf if funcionario else "-"
     fn_emp = emp.nome if emp else ""
     detalhes = [
         ("Documento", arquivo.nome_arquivo or "-"),
@@ -21912,7 +19596,7 @@ def api_func_arquivo_assinatura_pdf(id):
 
 
 def _build_envelope_audit_pdf(envelope, signatarios, url_root):
-    """Gera página de auditoria do envelope — design minimalista profissional."""
+    """Gera página de auditoria final do envelope (ReportLab)."""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
@@ -21922,11 +19606,10 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
         TableStyle,
         Paragraph,
         Spacer,
-        HRFlowable,
         Image,
     )
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+    from reportlab.lib.enums import TA_CENTER
     from reportlab.graphics.barcode import qr as qr_code
     from reportlab.graphics.shapes import Drawing
 
@@ -21934,47 +19617,58 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     doc = SimpleDocTemplate(
         buf,
         pagesize=A4,
-        leftMargin=2.2 * cm,
-        rightMargin=2.2 * cm,
-        topMargin=2 * cm,
-        bottomMargin=2 * cm,
+        leftMargin=1.2 * cm,
+        rightMargin=1.2 * cm,
+        topMargin=1.2 * cm,
+        bottomMargin=1.2 * cm,
     )
-    PW, _PH = A4
-    W = PW - 4.4 * cm
-
-    NAVY  = colors.HexColor("#1a3a5c")
-    GRAY  = colors.HexColor("#6b7a8d")
-    LGRAY = colors.HexColor("#f7f9fb")
-    LINE  = colors.HexColor("#dde3ea")
-    BLACK = colors.HexColor("#111827")
-    GREEN = colors.HexColor("#166534")
-    AMBER = colors.HexColor("#92400e")
-    WHITE = colors.white
+    W = A4[0] - 2.4 * cm
+    AZ = colors.HexColor("#205d8a")
+    VD = colors.HexColor("#1a7a45")
+    CI = colors.HexColor("#f5f5f5")
+    LJ = colors.HexColor("#f28e34")
 
     def ps(nm, **kw):
-        b = dict(fontName="Helvetica", fontSize=10, leading=14,
-                 textColor=BLACK, spaceAfter=0, spaceBefore=0)
+        b = dict(
+            fontName="Helvetica",
+            fontSize=10,
+            leading=14,
+            textColor=colors.HexColor("#020202"),
+            spaceAfter=0,
+            spaceBefore=0,
+        )
         b.update(kw)
         return ParagraphStyle(nm, **b)
 
-    # ── dados empresa / logo ──────────────────────────────────────────────────
     emp = db.session.get(Empresa, envelope.empresa_id) if envelope.empresa_id else None
-    
-    # Se envelope não tem empresa, buscar do primeiro signatário que seja funcionário
-    if not emp and signatarios:
-        for sig in signatarios:
-            if sig.funcionario_id:
-                func = db.session.get(Funcionario, sig.funcionario_id)
-                if func and func.empresa_id:
-                    emp = db.session.get(Empresa, func.empresa_id)
-                    if emp:
-                        break
-    
-    # Fallback para primeira empresa ativa
     if not emp:
-        emp = (Empresa.query.filter_by(ativa=True)
-               .order_by(Empresa.ordem, Empresa.id).first())
+        emp = (
+            Empresa.query.filter_by(ativa=True)
+            .order_by(Empresa.ordem, Empresa.id)
+            .first()
+        )
     empresa_nome = emp.nome if emp and emp.nome else "RM Facilities"
+    empresas_hdr = _pdf_companies_for_header(empresa_obj=emp, limit=2)
+
+    def _logo_flowable(item):
+        for cand in item.get("logos") or []:
+            try:
+                if str(cand).lower().startswith("http"):
+                    with urllib.request.urlopen(cand, timeout=8) as resp:
+                        data = resp.read()
+                    img = Image(io.BytesIO(data), width=3.2 * cm, height=1.45 * cm)
+                    img.hAlign = "LEFT"
+                    return img
+                if os.path.exists(cand):
+                    img = Image(cand, width=3.2 * cm, height=1.45 * cm)
+                    img.hAlign = "LEFT"
+                    return img
+            except Exception:
+                continue
+            return Paragraph(
+                f"<b>{item.get('nome') or empresa_nome}</b>",
+                ps("lgfb2", fontSize=11, textColor=colors.HexColor("#0f2b47")),
+            )
 
     validacao_link = (
         f"{url_root}/envelope/validar/{envelope.codigo}" if envelope.codigo else ""
@@ -21988,182 +19682,336 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
         except Exception:
             hash_comp = ""
     if not hash_comp:
-        trilha_base = "|".join([
-            str(envelope.id), envelope.titulo or "", envelope.codigo or "",
-            "|".join([
-                f"{s.nome}|{s.cpf or ''}|{s.ass_em.isoformat() if s.ass_em else ''}"
-                for s in signatarios
-            ]),
-        ])
+        trilha_base = "|".join(
+            [
+                str(envelope.id),
+                envelope.titulo or "",
+                envelope.codigo or "",
+                "|".join(
+                    [
+                        f"{s.nome}|{s.cpf or ''}|{s.ass_em.isoformat() if s.ass_em else ''}"
+                        for s in signatarios
+                    ]
+                ),
+            ]
+        )
         hash_comp = hashlib.sha256(trilha_base.encode("utf-8")).hexdigest().upper()
 
+    story = []
+    logo = _logo_flowable(empresas_hdr[0])
+    hdr_right = Paragraph(
+        f"<b>AUDITORIA E VALIDAÇÃO DE ASSINATURA ELETRÔNICA</b><br/>"
+        f'<font size="9" color="#49607a">{empresa_nome}</font><br/>'
+        f'<font size="8" color="#6f8093">Documento: {envelope.titulo or "-"}</font>',
+        ps("htr2", fontSize=11, leading=13, textColor=colors.white),
+    )
+    hdr = Table([[logo, hdr_right]], colWidths=[W * 0.26, W * 0.74])
+    hdr.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), AZ),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+    story.append(hdr)
+    story.append(Spacer(1, 5))
+
+    emp_cells = []
+    for i, item in enumerate(empresas_hdr[:2]):
+        cell = Table(
+            [
+                [_logo_flowable(item)],
+                [
+                    Paragraph(
+                        f'<b>{item.get("nome") or "-"}</b><br/><font size="8" color="#4c6072">CNPJ: {item.get("cnpj") or "-"}</font>',
+                        ps(f"empe{i}", fontSize=8.2, leading=10),
+                    )
+                ],
+            ],
+            colWidths=[W * 0.49],
+        )
+        cell.setStyle(
+            TableStyle(
+                [
+                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7df")),
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fbff")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ]
+            )
+        )
+        emp_cells.append(cell)
+    while len(emp_cells) < 2:
+        emp_cells.append(Paragraph("", ps("empemptye", fontSize=1)))
+    emp_tbl = Table([emp_cells], colWidths=[W * 0.495, W * 0.495])
+    emp_tbl.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    story.append(emp_tbl)
+    story.append(Spacer(1, 6))
     assinados = [s for s in signatarios if s.status == "assinado"]
     pendentes = [s for s in signatarios if s.status != "assinado"]
-    tudo_assinado = len(pendentes) == 0
-
-    def _papel_lbl_fn(p):
-        return {
-            "assinante": "Assinante", "testemunha": "Testemunha",
-            "aprovador": "Aprovador", "endossante": "Endossante",
-            "observador": "Observador",
-        }.get(p or "assinante", (p or "Assinante").capitalize())
-
-    story = []
-
-    # ── CABEÇALHO ─────────────────────────────────────────────────────────────
-    hdr = Table([[
-        Paragraph(empresa_nome.upper(),
-                  ps("hn", fontName="Helvetica-Bold", fontSize=10, textColor=NAVY)),
-        Paragraph("CERTIFICADO DE ASSINATURA ELETRÔNICA",
-                  ps("ht", fontSize=8.5, textColor=GRAY, alignment=TA_RIGHT)),
-    ]], colWidths=[W * 0.55, W * 0.45])
-    hdr.setStyle(TableStyle([
-        ("VALIGN",        (0, 0), (-1, -1), "BOTTOM"),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("TOPPADDING",    (0, 0), (-1, -1), 0),
-    ]))
-    story.append(hdr)
-    story.append(HRFlowable(width="100%", thickness=1.2, color=NAVY,
-                             spaceBefore=0, spaceAfter=10))
-
-    # ── TÍTULO + STATUS ───────────────────────────────────────────────────────
-    story.append(Paragraph(
-        envelope.titulo or "Documento",
-        ps("dt", fontName="Helvetica-Bold", fontSize=15, textColor=NAVY,
-           leading=20, spaceAfter=4)))
-    if tudo_assinado:
-        story.append(Paragraph(
-            "&#x2714;&#160; Todas as assinaturas foram coletadas",
-            ps("stok", fontSize=9, textColor=GREEN)))
+    if len(pendentes) == 0:
+        badge_cor = colors.HexColor("#ecf8f0")
+        badge_txt = VD
+        badge_label = "✔ TODOS OS SIGNATÁRIOS ASSINARAM O DOCUMENTO"
     else:
-        story.append(Paragraph(
-            f"&#x25CB;&#160; {len(assinados)} de {len(signatarios)} assinatura(s) coletada(s)",
-            ps("stpd", fontSize=9, textColor=AMBER)))
-    story.append(Spacer(1, 14))
-
-    # ── DETALHES DO ENVELOPE ──────────────────────────────────────────────────
-    tipo_map = {"funcionario": "Funcionário", "cliente": "Cliente", "avulso": "Avulso"}
-    hash_disp = (hash_comp[:52] + "…") if len(hash_comp) > 52 else hash_comp
-    detalhes = [
-        ("Código de Validação", envelope.codigo or "—"),
-        ("Tipo",               tipo_map.get(envelope.tipo, envelope.tipo or "—")),
-        ("Status",             (envelope.status or "—").capitalize()),
-        ("Criado por",         envelope.criado_por or "—"),
-        ("Data de Criação",    envelope.criado_em.strftime("%d/%m/%Y %H:%M")
-                               if envelope.criado_em else "—"),
-        ("Validade",           envelope.expira_em.strftime("%d/%m/%Y")
-                               if envelope.expira_em else "Sem prazo"),
-        ("Hash SHA-256",       hash_disp),
-    ]
-    det_rows = [
+        badge_cor = colors.HexColor("#fff8ec")
+        badge_txt = LJ
+        badge_label = f"⏳ {len(assinados)} de {len(signatarios)} SIGNATÁRIOS ASSINARAM"
+    st = Table(
         [
-            Paragraph(k, ps(f"dk{i}", fontSize=8.5, textColor=GRAY,
-                            fontName="Helvetica-Bold")),
-            Paragraph(v, ps(f"dv{i}", fontSize=8.5, textColor=BLACK)),
-        ]
-        for i, (k, v) in enumerate(detalhes)
-    ]
-    det = Table(det_rows, colWidths=[W * 0.28, W * 0.72])
-    det.setStyle(TableStyle([
-        ("LINEBELOW",     (0, 0), (-1, -2), 0.3, LINE),
-        ("TOPPADDING",    (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-    ]))
-    story.append(det)
-    story.append(Spacer(1, 16))
+            [
+                Paragraph(
+                    f"<b>{badge_label}</b>", ps("bs", fontSize=10, textColor=badge_txt)
+                )
+            ]
+        ],
+        colWidths=[W],
+    )
+    st.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), badge_cor),
+                ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#9ed3b1")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    story.append(st)
+    story.append(Spacer(1, 5))
 
-    # ── TABELA DE SIGNATÁRIOS ─────────────────────────────────────────────────
-    story.append(Paragraph("Signatários",
-        ps("sh", fontName="Helvetica-Bold", fontSize=10, textColor=NAVY,
-           spaceAfter=6)))
-    sig_hdr = [
-        Paragraph(x, ps(f"shd{i}", fontSize=8, fontName="Helvetica-Bold",
-                        textColor=WHITE))
-        for i, x in enumerate(["Nome", "Papel", "Cargo", "CPF", "Data/Hora", "Status"])
+    detalhes = [
+        ("Título do Documento", envelope.titulo or "-"),
+        (
+            "Tipo",
+            {
+                "funcionario": "Funcionário",
+                "cliente": "Cliente",
+                "avulso": "Avulso",
+            }.get(envelope.tipo, envelope.tipo or "-"),
+        ),
+        ("Status", envelope.status or "-"),
+        ("Código de Validação", envelope.codigo or "-"),
+        ("Criado por", envelope.criado_por or "-"),
+        (
+            "Data de Criação",
+            envelope.criado_em.strftime("%d/%m/%Y %H:%M")
+            if envelope.criado_em
+            else "-",
+        ),
+        (
+            "Validade",
+            envelope.expira_em.strftime("%d/%m/%Y")
+            if envelope.expira_em
+            else "Sem prazo",
+        ),
+        ("Hash SHA-256", hash_comp[:32] + "..."),
     ]
-    sig_rows = [sig_hdr]
+    rows = [
+        [
+            Paragraph(f"<b>{k}</b>", ps("dk", fontSize=8, textColor=AZ)),
+            Paragraph(v, ps("dv", fontSize=8, leading=11)),
+        ]
+        for k, v in detalhes
+    ]
+    det = Table(rows, colWidths=[W * 0.32, W * 0.68])
+    det.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (0, -1), CI),
+                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#d0d7df")),
+                ("LINEBELOW", (0, 0), (-1, -2), 0.3, colors.HexColor("#e3e8ef")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+        )
+    )
+    story.append(det)
+    story.append(Spacer(1, 6))
+
+    # Tabela de signatários
+    story.append(
+        Paragraph(
+            "<b>Signatários</b>", ps("sh", fontSize=10, textColor=AZ, spaceAfter=6)
+        )
+    )
+    sig_header = [
+        Paragraph(
+            x,
+            ps(f"sh{i}", fontSize=8, textColor=colors.white, fontName="Helvetica-Bold"),
+        )
+        for i, x in enumerate(["Nome", "Cargo", "CPF", "Data/Hora", "IP", "Status"])
+    ]
+    sig_rows = [sig_header]
     for s in signatarios:
-        cpf_m = "—"
+        cpf_m = ""
         if s.ass_cpf_informado and len(s.ass_cpf_informado) >= 11:
             c = s.ass_cpf_informado.replace(".", "").replace("-", "").replace(" ", "")
             cpf_m = f"***{c[3:6]}***" if len(c) == 11 else s.ass_cpf_informado
         elif s.cpf and len(s.cpf) >= 3:
             cpf_m = "***" + s.cpf[-3:]
-        papel_txt = _papel_lbl_fn(s.papel)
-        if s.status == "assinado":
-            st_txt = f"Assinou como {papel_txt}"
-            st_col = GREEN
-        else:
-            st_txt = "Pendente"
-            st_col = AMBER
-        sig_rows.append([
-            Paragraph(s.nome or "—",   ps(f"sn{s.id}", fontSize=8)),
-            Paragraph(papel_txt,        ps(f"sp{s.id}", fontSize=8)),
-            Paragraph(s.cargo or "—",  ps(f"sc{s.id}", fontSize=8)),
-            Paragraph(cpf_m,           ps(f"sf{s.id}", fontSize=8)),
-            Paragraph(s.ass_em.strftime("%d/%m/%Y %H:%M") if s.ass_em else "—",
-                      ps(f"se{s.id}", fontSize=8)),
-            Paragraph(st_txt,          ps(f"ss{s.id}", fontSize=7.5,
-                                          textColor=st_col,
-                                          fontName="Helvetica-Bold")),
-        ])
-    sig_tbl = Table(sig_rows,
-                    colWidths=[W*0.22, W*0.13, W*0.13, W*0.12, W*0.17, W*0.23])
-    sig_tbl.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0),  (-1, 0),  NAVY),
-        ("ROWBACKGROUNDS",(0, 1),  (-1, -1), [WHITE, LGRAY]),
-        ("BOX",           (0, 0),  (-1, -1), 0.5, LINE),
-        ("LINEBELOW",     (0, 0),  (-1, -1), 0.3, LINE),
-        ("LEFTPADDING",   (0, 0),  (-1, -1), 5),
-        ("RIGHTPADDING",  (0, 0),  (-1, -1), 5),
-        ("TOPPADDING",    (0, 0),  (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0),  (-1, -1), 4),
-    ]))
+        sc = VD if s.status == "assinado" else LJ
+        sig_rows.append(
+            [
+                Paragraph(s.nome or "-", ps("sn", fontSize=8)),
+                Paragraph(s.cargo or "-", ps("sc", fontSize=8)),
+                Paragraph(cpf_m or "-", ps("scpf", fontSize=8)),
+                Paragraph(
+                    s.ass_em.strftime("%d/%m/%Y %H:%M") if s.ass_em else "-",
+                    ps("sem", fontSize=8),
+                ),
+                Paragraph(s.ass_ip or "-", ps("sip", fontSize=8)),
+                Paragraph(
+                    s.status.upper(),
+                    ps("sst", fontSize=8, textColor=sc, fontName="Helvetica-Bold"),
+                ),
+            ]
+        )
+    sig_tbl = Table(
+        sig_rows, colWidths=[W * 0.22, W * 0.15, W * 0.14, W * 0.18, W * 0.16, W * 0.15]
+    )
+    sig_tbl.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), AZ),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7df")),
+                ("LINEBELOW", (0, 0), (-1, -1), 0.3, colors.HexColor("#e3e8ef")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, CI]),
+            ]
+        )
+    )
     story.append(sig_tbl)
-    story.append(Spacer(1, 16))
+    story.append(Spacer(1, 6))
 
-    # ── QR CODE + LINK DE VALIDAÇÃO ───────────────────────────────────────────
+    if assinados:
+        story.append(
+            Paragraph(
+                "<b>ASSINATURAS REGISTRADAS</b>",
+                ps("asg1", fontSize=8, textColor=AZ, spaceAfter=3),
+            )
+        )
+        sig_rows_cursive = [
+            [
+                Paragraph(
+                    f"<i>{s.nome or '-'}</i>",
+                    ps(
+                        f"asn{i}",
+                        fontName="Times-Italic",
+                        fontSize=18,
+                        textColor=colors.HexColor("#1a2e42"),
+                        leading=20,
+                    ),
+                ),
+                Paragraph(
+                    f'{s.cargo or "Signatário"}<br/><font color="#5d6f82">{s.ass_em.strftime("%d/%m/%Y %H:%M") if s.ass_em else "-"}</font>',
+                    ps(f"asd{i}", fontSize=7.5, leading=10),
+                ),
+            ]
+            for i, s in enumerate(assinados)
+        ]
+        sig_curs = Table(sig_rows_cursive, colWidths=[W * 0.52, W * 0.48])
+        sig_curs.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fbff")),
+                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7df")),
+                    ("LINEBELOW", (0, 0), (-1, -2), 0.3, colors.HexColor("#e3e8ef")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ]
+            )
+        )
+        story.append(sig_curs)
+    story.append(Spacer(1, 6))
+
     if validacao_link:
         try:
             qr_widget = qr_code.QrCodeWidget(validacao_link)
             b = qr_widget.getBounds()
             bw = max(1, b[2] - b[0])
             bh = max(1, b[3] - b[1])
-            sz = 58
+            sz = 75
             qr_draw = Drawing(sz, sz, transform=[sz / bw, 0, 0, sz / bh, 0, 0])
             qr_draw.add(qr_widget)
-            qr_row = Table([[
-                qr_draw,
-                Paragraph(
-                    "<b>Verificar autenticidade</b><br/>"
-                    f"<font color='#6b7a8d' size='8'>Acesse o QR code ou o link "
-                    f"abaixo para validar este documento.<br/>{validacao_link}</font>",
-                    ps("qrp", fontSize=9, leading=13)),
-            ]], colWidths=[sz + 8, W - sz - 8])
-            qr_row.setStyle(TableStyle([
-                ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING",  (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-            ]))
-            story.append(qr_row)
+            qr_tbl = Table(
+                [
+                    [
+                        qr_draw,
+                        Paragraph(
+                            "Escaneie para validar esta assinatura no portal RM Facilities.",
+                            ps(
+                                "qrp",
+                                fontSize=9,
+                                leading=13,
+                                textColor=colors.HexColor("#4c6072"),
+                            ),
+                        ),
+                    ]
+                ],
+                colWidths=[W * 0.20, W * 0.80],
+            )
+            qr_tbl.setStyle(
+                TableStyle(
+                    [
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ]
+                )
+            )
+            story.append(qr_tbl)
         except Exception:
-            story.append(Paragraph(
-                f"Validação: {validacao_link}",
-                ps("ql", fontSize=8, textColor=GRAY)))
-    story.append(Spacer(1, 14))
-
-    # ── RODAPÉ ────────────────────────────────────────────────────────────────
-    story.append(HRFlowable(width="100%", thickness=0.5, color=LINE,
-                             spaceBefore=0, spaceAfter=5))
-    story.append(Paragraph(
-        f"Gerado em {localnow().strftime('%d/%m/%Y às %H:%M')} · {empresa_nome} · "
-        "Este certificado é válido como comprovante de assinatura eletrônica.",
-        ps("rod", fontSize=7, textColor=GRAY, alignment=TA_CENTER)))
-
+            story.append(Paragraph(f"Link: {validacao_link}", ps("ql", fontSize=8)))
+    story.append(Spacer(1, 10))
+    bar = Table([[" "]], colWidths=[W])
+    bar.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), LJ),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]
+        )
+    )
+    story.append(bar)
+    story.append(Spacer(1, 4))
+    story.append(
+        Paragraph(
+            f"Gerado em {localnow().strftime('%d/%m/%Y %H:%M')} — RM Facilities",
+            ps(
+                "rod",
+                fontSize=7,
+                textColor=colors.HexColor("#999"),
+                alignment=TA_CENTER,
+            ),
+        )
+    )
     doc.build(story, canvasmaker=(_WatermarkCanvas or None))
     return buf.getvalue()
 
@@ -23056,10 +20904,6 @@ def api_envelope_add_signatario(id):
     cargo_in = (data.get("cargo") or "").strip()
     cargo_salvar = cargo_in or ((cadastro_tel or {}).get("cargo") or "").strip() or None
     telefone_salvar = tel_norm or tel_in or None
-    papel_in = (data.get("papel") or "assinante").strip().lower()
-    PAPEIS_VALIDOS = {"assinante", "testemunha", "aprovador", "endossante", "observador"}
-    if papel_in not in PAPEIS_VALIDOS:
-        papel_in = "assinante"
     sig = AssinaturaEnvelopeSignatario(
         envelope_id=id,
         nome=nome,
@@ -23068,7 +20912,6 @@ def api_envelope_add_signatario(id):
         cpf=cpf_salvar,
         cargo=cargo_salvar,
         tipo=data.get("tipo") or "externo",
-        papel=papel_in,
         ref_id=data.get("ref_id") or None,
         ordem=int(data.get("ordem") or 0),
         status="pendente",
@@ -23319,6 +21162,7 @@ def envelope_assinar_visualizar_arquivo(token, arq_id):
     )
 
 
+# Página pública de assinatura do envelope
 @app.route("/envelope/assinar/<token>")
 def envelope_assinar_publica(token):
     sig = AssinaturaEnvelopeSignatario.query.filter_by(token=token).first_or_404()
@@ -23328,22 +21172,13 @@ def envelope_assinar_publica(token):
         .order_by(AssinaturaEnvelopeArquivo.ordem, AssinaturaEnvelopeArquivo.id)
         .all()
     )
-    empresa = None
-    
-    # Tentar obter empresa do envelope
-    if env.empresa_id:
-        empresa = db.session.get(Empresa, env.empresa_id)
-    
-    # Se não tem empresa no envelope, buscar a empresa do signatário (se for funcionário)
-    if not empresa and sig.funcionario_id:
-        func = db.session.get(Funcionario, sig.funcionario_id)
-        if func and func.empresa_id:
-            empresa = db.session.get(Empresa, func.empresa_id)
-    
-    # Fallback para primeira empresa ativa
-    if not empresa:
-        empresa = Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem, Empresa.id).first()
-    
+    empresa = (
+        db.session.get(Empresa, env.empresa_id)
+        if env.empresa_id
+        else Empresa.query.filter_by(ativa=True)
+        .order_by(Empresa.ordem, Empresa.id)
+        .first()
+    )
     empresas = [empresa] if empresa else []
     src = request.args.get("src", "")
     if _ass_track_mark_received(sig, src):
@@ -23359,7 +21194,7 @@ def api_envelope_assinatura_enviar_otp(token):
     if sig.status == "assinado":
         return _assinatura_json_erro("Você já assinou este documento.", 400)
     env = db.get_or_404(AssinaturaEnvelope, sig.envelope_id)
-    if env.expira_em and localnow() > env.expira_em:
+    if env.expira_em and datetime.utcnow() > env.expira_em:
         return _assinatura_json_erro(
             "O prazo para assinatura deste documento expirou.", 400
         )
@@ -23397,7 +21232,7 @@ def api_envelope_assinatura_confirmar(token):
     if sig.status == "assinado":
         return _assinatura_json_erro("Você já assinou este documento.", 400)
     env = db.get_or_404(AssinaturaEnvelope, sig.envelope_id)
-    if env.expira_em and localnow() > env.expira_em:
+    if env.expira_em and datetime.utcnow() > env.expira_em:
         return _assinatura_json_erro(
             "O prazo para assinatura deste documento expirou.", 400
         )
@@ -23482,7 +21317,7 @@ def api_envelope_assinatura_confirmar(token):
         sig.cpf = cpf_inf
     sig.ass_cpf_informado = cpf_inf
     sig.ass_ip = ip
-    sig.ass_em = localnow()
+    sig.ass_em = datetime.utcnow()
     sig.ass_codigo = secrets.token_urlsafe(10)
     sig.ass_otp_hash = None
     sig.ass_otp_expira_em = None
@@ -23519,11 +21354,10 @@ def api_envelope_assinatura_confirmar(token):
     signed_pdf_link = ""
     emp = db.session.get(Empresa, env.empresa_id) if env.empresa_id else None
     empresa_nome = (emp.razao or emp.nome) if emp else "RM Facilities"
-    # Verifica se todos assinaram (observadores não precisam assinar)
+    # Verifica se todos assinaram
     todos = AssinaturaEnvelopeSignatario.query.filter_by(envelope_id=env.id).all()
     destino_info = {"ok": True, "destino": (env.destino_salvar_tipo or "envelope")}
-    signatarios_ativos = [s for s in todos if (s.papel or "assinante") != "observador"]
-    if signatarios_ativos and all(s.status == "assinado" for s in signatarios_ativos):
+    if all(s.status == "assinado" for s in todos):
         env.status = "concluido"
         try:
             abs_pdf, fname = _gerar_pdf_assinado_envelope(env, url_root)
@@ -23632,26 +21466,13 @@ def envelope_validar_publica(codigo):
         .order_by(AssinaturaEnvelopeArquivo.ordem, AssinaturaEnvelopeArquivo.id)
         .all()
     )
-    empresa = None
-    
-    # Tentar obter empresa do envelope
-    if env.empresa_id:
-        empresa = db.session.get(Empresa, env.empresa_id)
-    
-    # Se não tem empresa no envelope, buscar a empresa do primeiro signatário (se for funcionário)
-    if not empresa and signatarios:
-        for sig in signatarios:
-            if sig.funcionario_id:
-                func = db.session.get(Funcionario, sig.funcionario_id)
-                if func and func.empresa_id:
-                    empresa = db.session.get(Empresa, func.empresa_id)
-                    if empresa:
-                        break
-    
-    # Fallback para primeira empresa ativa
-    if not empresa:
-        empresa = Empresa.query.filter_by(ativa=True).order_by(Empresa.ordem, Empresa.id).first()
-    
+    empresa = (
+        db.session.get(Empresa, env.empresa_id)
+        if env.empresa_id
+        else Empresa.query.filter_by(ativa=True)
+        .order_by(Empresa.ordem, Empresa.id)
+        .first()
+    )
     empresas = [empresa] if empresa else []
     return render_template(
         "envelope_validar.html",
@@ -24425,7 +22246,6 @@ def api_operacional_postos():
                 posto_cliente_id=c.id, status="Ativo"
             ).count(),
             "posto_label": (c.nome or "").strip(),
-            "he_autorizada": c.he_autorizada if c.he_autorizada is not None else True,
         }
         for c in cls
     ]
@@ -24447,7 +22267,6 @@ def api_operacional_postos():
                 "posto_operacional": f.posto_operacional or "",
                 "posto_cliente_id": f.posto_cliente_id,
                 "posto_label": posto_label,
-                "he_autorizada": cli.he_autorizada if cli and cli.he_autorizada is not None else True,
             }
         )
     return jsonify({"ok": True, "itens": itens, "clientes": clientes})
@@ -26872,7 +24691,6 @@ def _financeiro_salarios_competencia(comp, empresa_id=None):
                 "posto_operacional": posto_nome,
                 "empresa_id": f.empresa_id,
                 "empresa_nome": (emp.nome if emp else ""),
-                "empresa_cnpj": (emp.cnpj if emp else ""),
                 "competencia": comp,
                 "status": f.status or "Ativo",
                 "salario_base": float(f.salario or 0),
@@ -27457,12 +25275,10 @@ def financeiro_salarios_preview():
         key=lambda kv: ((kv[1][0].get("empresa_nome") or "Sem empresa").lower(), kv[0]),
     ):
         nome_emp = items[0].get("empresa_nome") or "Sem empresa"
-        cnpj_emp = items[0].get("empresa_cnpj") or ""
         total_emp = sum(float(it.get("valor_liquido") or 0) for it in items)
         empresas.append(
             {
                 "empresa_nome": nome_emp,
-                "empresa_cnpj": cnpj_emp,
                 "qtd": len(items),
                 "total_fmt": fmt_brl(total_emp),
                 "itens": items,
@@ -28512,7 +26328,6 @@ def api_folhas_export_xlsx(fid):
         "#",
         "RE",
         "Nome",
-        "CPF",
         "Cargo",
         "Salário Base",
         "Adicionais",
@@ -28534,7 +26349,6 @@ def api_folhas_export_xlsx(fid):
                 i,
                 (func.re or func.matricula or "") if func else "",
                 (func.nome or "") if func else "",
-                (func.cpf or "") if func else "",
                 (func.cargo or "") if func else "",
                 float(it.salario_base or 0),
                 float(it.total_adicional or 0),
@@ -28544,17 +26358,16 @@ def api_folhas_export_xlsx(fid):
         )
         total += float(it.total_pagar or 0)
     ws.append([])
-    ws.append(["", "", "", "", "TOTAL", "", "", "", round(total, 2)])
+    ws.append(["", "", "", "TOTAL", "", "", "", round(total, 2)])
     for col_letter, width in [
         ("A", 6),
         ("B", 10),
         ("C", 36),
-        ("D", 16),
-        ("E", 24),
+        ("D", 24),
+        ("E", 14),
         ("F", 14),
         ("G", 14),
-        ("H", 14),
-        ("I", 16),
+        ("H", 16),
     ]:
         ws.column_dimensions[col_letter].width = width
     import io as _io
@@ -29208,22 +27021,18 @@ def api_dashboard():
         if m:
             mm, yy = int(m.group(1)), int(m.group(2))
             if 1 <= mm <= 12:
-                # ASO informado por competência (MM/AAAA) vale por 12 meses.
-                yy += 1
                 prox = date(yy + 1, 1, 1) if mm == 12 else date(yy, mm + 1, 1)
                 return prox - timedelta(days=1)
         m = re.match(r"^(\d{4})-(\d{2})$", s)
         if m:
             yy, mm = int(m.group(1)), int(m.group(2))
             if 1 <= mm <= 12:
-                # ASO informado por competência (AAAA-MM) vale por 12 meses.
-                yy += 1
                 prox = date(yy + 1, 1, 1) if mm == 12 else date(yy, mm + 1, 1)
                 return prox - timedelta(days=1)
         m = re.match(r"^(19|20)\d{2}$", s)
         if m:
             yy = int(s)
-            return date(yy + 1, 12, 31)
+            return date(yy, 12, 31)
         return None
 
     limite = hoje + timedelta(days=30)
@@ -29490,9 +27299,6 @@ def api_dashboard():
                 "itens": alertas_contratos[:8],
             },
             "correcoes_ponto_pendentes": PontoCorrecaoSolicitacao.query.filter_by(
-                status="pendente"
-            ).count(),
-            "he_pendentes": SolicitacaoHoraExtra.query.filter_by(
                 status="pendente"
             ).count(),
             "total_cli": Cliente.query.count(),
@@ -31439,97 +29245,7 @@ def api_wa_ia_testar():
             return jsonify({"erro": "A IA nao retornou resposta"}), 400
         return jsonify({"ok": True, "resposta": resp})
     except Exception as e:
-        msg = str(e)
-        if _ai_error_is_upstream_block(msg):
-            friendly = (
-                "Acesso bloqueado pelo provedor de IA (403 / billing). "
-                "Verifique se há fatura pendente ou pagamento recusado em "
-                "console.cloud.google.com/billing (projeto indicado no erro). "
-                "Após regularizar, o acesso é restaurado automaticamente. "
-                f"Detalhe técnico: {msg}"
-            )
-            return jsonify({"erro": friendly}), 402
-        return jsonify({"erro": msg}), 500
-
-
-@app.route("/api/whatsapp/ia/ativar", methods=["POST"])
-@lr
-def api_wa_ia_ativar():
-    sc_cfg("ia_wa_enabled", "1")
-    return jsonify({"ok": True, "enabled": True})
-
-
-@app.route("/api/whatsapp/ia/desativar", methods=["POST"])
-@lr
-def api_wa_ia_desativar():
-    sc_cfg("ia_wa_enabled", "0")
-    return jsonify({"ok": True, "enabled": False})
-
-
-@app.route("/api/whatsapp/ia/modo-humano", methods=["POST"])
-@lr
-def api_wa_ia_modo_humano():
-    d = request.json or {}
-    numero = wa_norm_number(d.get("numero") or "")
-    ativo = str(d.get("ativo", "1")).strip().lower() in ("1", "true", "yes", "on")
-    if not numero:
-        return jsonify({"erro": "numero obrigatorio"}), 400
-    if not wa_is_valid_number(numero):
-        return jsonify({"erro": "numero invalido"}), 400
-    wa_ai_human_set(numero, ativo)
-    return jsonify({"ok": True, "numero": numero, "modo_humano": ativo})
-
-
-@app.route("/api/whatsapp/ia/modo-humano-status")
-@lr
-def api_wa_ia_modo_humano_status():
-    numero = wa_norm_number(request.args.get("numero") or "")
-    if not numero:
-        return jsonify({"erro": "numero obrigatorio"}), 400
-    if not wa_is_valid_number(numero):
-        return jsonify({"erro": "numero invalido"}), 400
-    c = WhatsAppConversa.query.filter_by(numero=numero).first()
-    return jsonify(
-        {
-            "ok": True,
-            "numero": numero,
-            "nome": c.nome if c else numero,
-            "modo_humano": wa_ai_human_enabled(numero),
-            "ia_pausada": wa_ai_pause_active(numero),
-            "ia_pausada_ate": (
-                wa_ai_pause_until(numero).isoformat()
-                if wa_ai_pause_until(numero)
-                else ""
-            ),
-        }
-    )
-
-
-@app.route("/api/whatsapp/ia/logs")
-@lr
-def api_wa_ia_logs():
-    numero = wa_norm_number(request.args.get("numero") or "")
-    limit = max(1, min(50, _to_int(request.args.get("limit"), 20)))
-    q = WhatsAppMensagem.query.filter_by(tipo="erro")
-    if numero:
-        q = q.filter_by(numero=numero)
-    rows = q.order_by(WhatsAppMensagem.criado_em.desc()).limit(limit).all()
-    return jsonify(
-        {
-            "ok": True,
-            "logs": [
-                {
-                    "numero": r.numero,
-                    "conteudo": r.conteudo or "",
-                    "criado_em": r.criado_em.isoformat() if r.criado_em else "",
-                    "criado_fmt": r.criado_em.strftime("%d/%m/%Y %H:%M")
-                    if r.criado_em
-                    else "",
-                }
-                for r in rows
-            ],
-        }
-    )
+        return jsonify({"erro": str(e)}), 500
 
 
 @app.route("/api/whatsapp/ia/retomar", methods=["POST"])
@@ -31700,12 +29416,10 @@ def api_wa_send_colaboradores():
     arquivo_mimetype = ""
     if fs and (fs.filename or "").strip():
         arquivo_nome = secure_filename(fs.filename or "arquivo") or "arquivo"
-        _WA_MAX = 16 * 1024 * 1024
-        # Lê até limit+1 para detectar excesso *antes* de alocar tudo em RAM
-        arquivo_bytes = fs.read(_WA_MAX + 1)
+        arquivo_bytes = fs.read()
         if not arquivo_bytes:
             return jsonify({"erro": "Arquivo anexado está vazio."}), 400
-        if len(arquivo_bytes) > _WA_MAX:
+        if len(arquivo_bytes) > 16 * 1024 * 1024:
             return jsonify({"erro": "Arquivo excede o limite de 16 MB."}), 400
         try:
             arquivo_tipo, arquivo_mimetype = wa_media_meta(
@@ -32026,31 +29740,11 @@ def webhook_whatsapp():
                         "Auto-reply WhatsApp inativo para %s: configuracao incompleta",
                         numero,
                     )
-                modo_humano = wa_ai_human_enabled(numero)
-                if ai_wa_enabled() and modo_humano:
-                    msg_h = f"Auto-reply desativado para {numero}: modo humano ativo"
-                    if msg_h not in diag["erros"]:
-                        diag["erros"].append(msg_h)
-                if (
-                    ai_wa_enabled()
-                    and wa_ready
-                    and not wa_ai_pause_active(numero)
-                    and not modo_humano
-                ):
+                if ai_wa_enabled() and wa_ready and not wa_ai_pause_active(numero):
                     if _ai_upstream_block_active():
                         msg_bl = f"Auto-reply em pausa temporaria (falha upstream IA): {_ai_upstream_block_reason()}"
                         if msg_bl not in diag["erros"]:
                             diag["erros"].append(msg_bl)
-                        try:
-                            wa_ai_send_fallback(
-                                numero,
-                                c.id,
-                                "fallback por bloqueio upstream da IA",
-                            )
-                            diag["respostas_enviadas"] += 1
-                        except Exception as e:
-                            diag["erros"].append(f"Falha fallback upstream: {str(e)}")
-                            db.session.rollback()
                     else:
                         try:
                             resposta = ai_wa_reply(
@@ -32072,17 +29766,16 @@ def webhook_whatsapp():
                                 db.session.commit()
                             else:
                                 diag["erros"].append("IA nao retornou resposta")
-                                wa_ai_log_error(c.id, numero, "IA nao retornou resposta.")
-                                try:
-                                    wa_ai_send_fallback(
-                                        numero,
-                                        c.id,
-                                        "fallback: IA nao retornou resposta",
+                                db.session.add(
+                                    WhatsAppMensagem(
+                                        conversa_id=c.id,
+                                        numero=numero,
+                                        direcao="out",
+                                        tipo="erro",
+                                        conteudo="IA nao retornou resposta.",
                                     )
-                                    diag["respostas_enviadas"] += 1
-                                except Exception as e:
-                                    diag["erros"].append(f"Falha fallback vazio: {str(e)}")
-                                    db.session.rollback()
+                                )
+                                db.session.commit()
                         except Exception as e:
                             err_str = str(e)
                             diag["erros"].append(err_str)
@@ -32095,29 +29788,22 @@ def webhook_whatsapp():
                                         numero,
                                         err_str[:300],
                                     )
-                                    try:
-                                        wa_ai_send_fallback(
-                                            numero,
-                                            c.id,
-                                            "fallback: upstream bloqueado",
-                                        )
-                                        diag["respostas_enviadas"] += 1
-                                    except Exception:
-                                        db.session.rollback()
                                 else:
                                     app.logger.exception(
                                         "Falha no auto-reply WhatsApp para %s", numero
                                     )
-                                    wa_ai_log_error(c.id, numero, "Falha auto-reply: " + err_str)
-                                    try:
-                                        wa_ai_send_fallback(
-                                            numero,
-                                            c.id,
-                                            "fallback: excecao no auto-reply",
+                                    db.session.add(
+                                        WhatsAppMensagem(
+                                            conversa_id=c.id,
+                                            numero=numero,
+                                            direcao="out",
+                                            tipo="erro",
+                                            conteudo=("Falha auto-reply: " + err_str)[
+                                                :700
+                                            ],
                                         )
-                                        diag["respostas_enviadas"] += 1
-                                    except Exception:
-                                        db.session.rollback()
+                                    )
+                                    db.session.commit()
                             except Exception:
                                 db.session.rollback()
         elif debug:
@@ -32832,13 +30518,6 @@ with app.app_context():
             "whatsapp_enviado_em DATETIME",
         ],
     )
-    ensure_cols(
-        "contrato_servico",
-        [
-            "cliente_id INTEGER REFERENCES cliente(id)",
-            "proposta_id INTEGER REFERENCES proposta_comercial(id)",
-        ],
-    )
     # Cria tabela contrato se não existir (ensure_cols não cria tabelas novas)
     try:
         db.engine.execute("SELECT 1 FROM contrato LIMIT 1")
@@ -32936,19 +30615,6 @@ with app.app_context():
             "cesta_natal FLOAT DEFAULT 0",
             "foto_perfil VARCHAR(500)",
             "data_nascimento DATE",
-            "kiosk_pin VARCHAR(10)",
-        ],
-    )
-    # Cria tabela ponto_kiosk se nao existir
-    try:
-        db.engine.execute("SELECT 1 FROM ponto_kiosk LIMIT 1")
-    except Exception:
-        db.create_all()
-    ensure_cols(
-        "ponto_kiosk",
-        [
-            "filtro_postos_json TEXT DEFAULT '[]'",
-            "funcionarios_avulsos_json TEXT DEFAULT '[]'",
         ],
     )
     ensure_cols(
@@ -32973,7 +30639,6 @@ with app.app_context():
             "geo_lat FLOAT",
             "geo_lon FLOAT",
             "geofence_raio_m FLOAT DEFAULT 150",
-            "he_autorizada INTEGER DEFAULT 1",
         ],
     )
     ensure_cols(
@@ -33201,7 +30866,6 @@ with app.app_context():
             "ordem INTEGER DEFAULT 0",
             "criado_em DATETIME",
             "ass_assinatura_img TEXT",
-            'papel VARCHAR(30) DEFAULT "assinante"',
         ],
     )
     ensure_cols(
