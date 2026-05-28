@@ -13420,6 +13420,7 @@ def api_funcionario_gerar_aviso_previo(id):
     canal = (d.get("canal") or "nao").strip().lower()
     if canal not in ("whatsapp", "app", "link", "nao"):
         canal = "nao"
+    forcar = bool(d.get("forcar"))
     emp_obj = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
     # BUG-FIX: passar data_aviso como ref para o cálculo do total_dias
     # registrado na auditoria/resposta refletir a data escolhida (mesma
