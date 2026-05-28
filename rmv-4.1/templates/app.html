@@ -1738,7 +1738,16 @@ document.addEventListener('DOMContentLoaded',()=>{
               <label>Fim do período</label>
               <input id="rh-ferias-fim" type="date" onchange="renderRhFerias()">
             </div>
-            <div class="f" style="min-width:240px">
+            <!-- BUG-FIX 8: adicionado seletor de empresa para que gestores
+                 possam filtrar férias por empresa sem ver todos os colaboradores
+                 de todas as empresas misturados na listagem. -->
+            <div class="f" style="min-width:180px">
+              <label>Empresa</label>
+              <select id="rh-ferias-empresa" onchange="renderRhFerias()">
+                <option value="">Todas</option>
+              </select>
+            </div>
+            <div class="f" style="min-width:220px">
               <label>Busca</label>
               <input id="rh-ferias-busca" placeholder="Nome, RE, função ou empresa" oninput="renderRhFerias()">
             </div>
@@ -4245,7 +4254,10 @@ document.addEventListener('DOMContentLoaded',()=>{
             <span id="fferias-fim-preview" style="font-size:12px;color:var(--azul);font-weight:700"></span>
           </div>
         </div>
-        <div class="f"><label>Fim das férias <span style="font-size:10px;color:var(--text-muted);font-weight:400">(calculado automaticamente)</span></label><input id="fferias-fim" type="date" readonly style="opacity:.7;cursor:default"></div>
+        <!-- BUG-FIX 7: campo era readonly, impossibilitando correção manual quando
+             o cálculo automático ficava dessincronizado. Agora permite edição com
+             recalculo de ferias_dias ao alterar manualmente. -->
+        <div class="f"><label>Fim das férias <span style="font-size:10px;color:var(--text-muted);font-weight:400">(calculado auto ou edite manualmente)</span></label><input id="fferias-fim" type="date" onchange="rhFuncionarioAoAlterarFeriasManual()"></div>
       </div>
       <div class="g3">
         <div class="f"><label>Obs. férias</label><input id="fferias-obs" placeholder="Ex: férias coletivas"></div>
@@ -5566,7 +5578,12 @@ function rhFeriasFmtBr(v){
 
 function rhFeriasParse(v){
   if(!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
-  return new Date(v+'T00:00:00');
+  // BUG-FIX: new Date('2026-02-30T00:00:00') transborda para março silenciosamente.
+  // Validar o calendário antes de retornar o objeto Date.
+  const [ano,mes,dia]=v.split('-').map(Number);
+  const dt=new Date(ano,mes-1,dia);
+  if(dt.getFullYear()!==ano || dt.getMonth()!==mes-1 || dt.getDate()!==dia) return null;
+  return dt;
 }
 
 function rhFeriasSetMesAtual(){
@@ -5604,17 +5621,22 @@ function rhFeriasLimparFiltros(){
 function rhFeriasNoPeriodo(f,dtIni,dtFim){
   const fi=rhFeriasParse(f.ferias_inicio||'');
   const ff=rhFeriasParse(f.ferias_fim||'');
-  const st=((f.status||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''));
+  // BUG-FIX 1: .trim() garante que status com espaço extra (ex: 'Férias ') seja
+  // normalizado corretamente; normalize+replace sozinhos não removem espaços.
+  const st=((f.status||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''));
   const ehFeriasStatus=(st==='ferias');
   if(!dtIni && !dtFim){
-    return ehFeriasStatus || (!!fi && !!ff);
+    // BUG-FIX 2: antes excluía colaboradores com ferias_fim vazio, mesmo que
+    // tivessem status Férias ou ferias_inicio preenchido. Agora inclui.
+    return ehFeriasStatus || !!fi;
   }
-  if(!fi || !ff){
-    return false;
-  }
-  const ini=dtIni || new Date('1900-01-01T00:00:00');
-  const fim=dtFim || new Date('2999-12-31T00:00:00');
-  return fi<=fim && ff>=ini;
+  // BUG-FIX 2 cont.: com filtro de período, incluir quem tem início no
+  // período mesmo sem data fim (férias em aberto).
+  if(!fi) return false;
+  const ini=dtIni || new Date('1900-01-01');
+  const fim=dtFim || new Date('2999-12-31');
+  if(ff) return fi<=fim && ff>=ini;
+  return fi<=fim;
 }
 
 async function renderRhFerias(){
@@ -5629,8 +5651,18 @@ async function renderRhFerias(){
   const busca=((document.getElementById('rh-ferias-busca')?.value)||'').trim().toLowerCase();
   const dtIni=rhFeriasParse(iniVal);
   const dtFim=rhFeriasParse(fimVal);
+  // BUG-FIX 8: popular seletor de empresa preservando seleção atual
+  const empSelEl=document.getElementById('rh-ferias-empresa');
+  if(empSelEl && emps.length){
+    const empSelVal=empSelEl.value;
+    empSelEl.innerHTML='<option value="">Todas</option>'+emps.map(e=>`<option value="${e.id}">${esc(e.nome||e.razao||'')}</option>`).join('');
+    if(empSelVal) empSelEl.value=empSelVal;
+  }
+  const empFiltroId=(document.getElementById('rh-ferias-empresa')?.value||'').trim();
   const lista=(Array.isArray(funcs)?funcs:[]).filter(f=>{
     if(!rhFeriasNoPeriodo(f,dtIni,dtFim)) return false;
+    // BUG-FIX 8: aplicar filtro de empresa quando selecionado
+    if(empFiltroId && String(f.empresa_id||'')!==empFiltroId) return false;
     if(!busca) return true;
     const emp=emps.find(e=>String(e.id)===String(f.empresa_id||''));
     const hay=[f.nome,f.re,f.funcao,f.cargo,emp?.nome,f.status].map(v=>(v||'').toString().toLowerCase()).join(' ');
@@ -7390,14 +7422,17 @@ function rhFuncionarioAoAlterarFerias(){
   const prev=document.getElementById('fferias-fim-preview');
   // Calcula fim automaticamente a partir do início + dias
   if(ini && dias>0){
-    const dtIni=new Date(ini+'T12:00:00');
-    const dtFim=new Date(dtIni.getTime()+(dias-1)*86400000);
-    const fimStr=dtFim.toISOString().slice(0,10);
+    // BUG-FIX 4: aritmética em ms com new Date(ini+'T12:00:00') + toISOString()
+    // pode deslocar 1 dia na transição de DST (horário de verão, out/nov Brasil).
+    // Usar construtor de calendário local evita o problema.
+    const [_a,_m,_d]=ini.split('-').map(Number);
+    const dtFim=new Date(_a,_m-1,_d+dias-1);
+    const fimStr=`${dtFim.getFullYear()}-${String(dtFim.getMonth()+1).padStart(2,'0')}-${String(dtFim.getDate()).padStart(2,'0')}`;
     const fimEl=document.getElementById('fferias-fim');
     if(fimEl) fimEl.value=fimStr;
     // Informar se as férias são futuras, em andamento ou encerradas
     const hoje=new Date().toISOString().slice(0,10);
-    const fimStr2=dtFim.toISOString().slice(0,10);
+    const fimStr2=fimStr;
     let info='Até '+dtFim.toLocaleDateString('pt-BR');
     if(hoje<ini) info+=' — Status mudará para Férias na data de início';
     else if(hoje>fimStr2) info+=' — Férias encerradas (status volta para Ativo)';

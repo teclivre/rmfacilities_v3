@@ -7125,6 +7125,25 @@ def only_digits(v):
     return "".join(ch for ch in str(v or "") if ch.isdigit())
 
 
+def norm_data_iso(v):
+    """Normaliza e valida datas no formato YYYY-MM-DD.
+    Retorna a string normalizada ou '' se inválida/vazia.
+    BUG-FIX: campos ferias_inicio/ferias_fim eram salvos sem validação,
+    aceitando '01/02/2026' ou '2026-2-1' que quebram comparações ISO."""
+    if not v:
+        return ""
+    s = str(v).strip()
+    import re as _re
+    if not _re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+        return ""
+    try:
+        from datetime import date as _dt
+        _dt.fromisoformat(s)
+        return s
+    except ValueError:
+        return ""
+
+
 def norm_cpf(v):
     d = only_digits(v)[:11]
     return d or None
@@ -9606,10 +9625,11 @@ def api_funcionarios_sync_ferias():
 @app.route("/api/funcionarios", methods=["GET"])
 @lr
 def api_funcionarios():
-    # Throttle: sync de férias no máximo 1x/hora para não sobrecarregar em listagens frequentes
+    # BUG-FIX 6: throttle reduzido de 3600s (1h) para 300s (5min) para que
+    # férias encerradas apareçam como Ativo em até 5 minutos, não 1 hora.
     global _ferias_sync_ts
     _agora = time.monotonic()
-    if _agora - _ferias_sync_ts > 3600:
+    if _agora - _ferias_sync_ts > 300:
         _ferias_sync_ts = _agora
         _sync_ferias_status()
     cpf = only_digits(request.args.get("cpf", ""))
@@ -10095,8 +10115,10 @@ def api_criar_funcionario():
         tipo_contrato=d.get("tipo_contrato", "").strip(),
         jornada=d.get("jornada", "").strip(),
         status=d.get("status", "Ativo"),
-        ferias_inicio=(d.get("ferias_inicio") or "").strip(),
-        ferias_fim=(d.get("ferias_fim") or "").strip(),
+        # BUG-FIX 9: validar formato ISO antes de persistir; datas malformadas
+        # como '01/02/2026' ou '2026-2-1' quebram _sync_ferias_status silenciosamente.
+        ferias_inicio=norm_data_iso(d.get("ferias_inicio")),
+        ferias_fim=norm_data_iso(d.get("ferias_fim")),
         ferias_obs=(d.get("ferias_obs") or "").strip(),
         # BUG-FIX: respeitar posto_operacional enviado pelo formulário;
         # antes o campo era sempre sobrescrito com 'Reserva tecnica' no POST.
@@ -10236,10 +10258,30 @@ def api_atualizar_funcionario(id):
                 setattr(f, k, norm_uf(d.get(k)))
             elif k == "banco_codigo":
                 setattr(f, k, norm_bank_code(d.get(k)))
+            # BUG-FIX 9 (PUT): validar formato ISO de datas de férias antes de
+            # persistir, igual ao tratamento já feito no POST.
+            elif k in ("ferias_inicio", "ferias_fim"):
+                setattr(f, k, norm_data_iso(d.get(k)))
             else:
                 setattr(f, k, d[k])
     if "ferias_dias" in d:
         f.ferias_dias = max(0, int(to_num(d.get("ferias_dias")) or 30))
+    # BUG-FIX 5: recalcular ferias_dias a partir das datas quando ambas estão
+    # presentes no payload mas ferias_dias não foi enviado explicitamente.
+    # Evita inconsistência onde ferias_inicio/fim indicam 20 dias mas ferias_dias=25.
+    if ("ferias_inicio" in d or "ferias_fim" in d) and "ferias_dias" not in d:
+        _ini = (f.ferias_inicio or "").strip()
+        _fim = (f.ferias_fim or "").strip()
+        if _ini and _fim:
+            try:
+                from datetime import date as _dt_calc
+                _d1 = _dt_calc.fromisoformat(_ini)
+                _d2 = _dt_calc.fromisoformat(_fim)
+                _calc_dias = (_d2 - _d1).days + 1
+                if _calc_dias > 0:
+                    f.ferias_dias = _calc_dias
+            except ValueError:
+                pass
     if "faltas_ano" in d:
         f.faltas_ano = max(0, int(to_num(d.get("faltas_ano")) or 0))
     # BUG-FIX: sincronizar status e acesso ao app com data_demissao em
