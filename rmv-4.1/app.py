@@ -7722,6 +7722,9 @@ register_ponto_routes(
     PontoFechamentoDia=PontoFechamentoDia,
     Empresa=Empresa,
     get_logo=get_logo,
+    EscalaFuncionario=EscalaFuncionario,
+    Escala=Escala,
+    JornadaTrabalho=JornadaTrabalho,
 )
 
 

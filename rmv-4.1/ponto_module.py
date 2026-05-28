@@ -22,10 +22,13 @@ def register_ponto_routes(
     PontoAjuste,
     PontoFechamentoDia,
     Empresa,
-    Cliente,
+    Cliente=None,
     Feriado,
-    SolicitacaoHoraExtra,
+    SolicitacaoHoraExtra=None,
     get_logo,
+    EscalaFuncionario=None,
+    Escala=None,
+    JornadaTrabalho=None,
 ):
     if "api_ponto_marcar" in app.view_functions:
         return
@@ -102,6 +105,50 @@ def register_ponto_routes(
         return 8 * 60
 
     def _ponto_min_esperado_data(funcionario, data_ref):
+        """Retorna minutos esperados para funcionario em data_ref.
+        Prioridade: 1) Escala rotativa (EscalaFuncionario/Escala ciclo_json)
+                    2) JornadaTrabalho por dia da semana
+                    3) Campo texto legado (jornada)
+        """
+        try:
+            data_str = data_ref.strftime("%Y-%m-%d") if hasattr(data_ref, "strftime") else str(data_ref)
+            data_obj = data_ref if hasattr(data_ref, "weekday") else datetime.strptime(data_str, "%Y-%m-%d").date()
+
+            # 1) Escala rotativa
+            if EscalaFuncionario and Escala:
+                esc_funcs = EscalaFuncionario.query.filter(
+                    EscalaFuncionario.funcionario_id == funcionario.id,
+                    EscalaFuncionario.data_inicio <= data_str,
+                    EscalaFuncionario.ativo == True,
+                ).all()
+                for ef in esc_funcs:
+                    if ef.data_fim and ef.data_fim < data_str:
+                        continue
+                    esc = db.session.get(Escala, ef.escala_id)
+                    if not esc:
+                        continue
+                    try:
+                        ciclo = json.loads(esc.ciclo_json or "{}")
+                        dias_ciclo = len(ciclo.get("dias", []))
+                        if dias_ciclo > 0:
+                            data_inicio_obj = datetime.strptime(ef.data_inicio, "%Y-%m-%d").date()
+                            indice = (data_obj - data_inicio_obj).days % dias_ciclo
+                            return esc.carga_horaria_min_dia(indice)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # 2) JornadaTrabalho por dia da semana
+        if JornadaTrabalho and getattr(funcionario, "jornada_id", None):
+            try:
+                j = db.session.get(JornadaTrabalho, funcionario.jornada_id)
+                if j:
+                    return j.minutos_esperados_weekday(data_ref.weekday())
+            except Exception:
+                pass
+
+        # 3) Fallback texto legado + regra fim de semana
         if data_ref.weekday() >= 5:
             return 0
         return _ponto_min_esperado_jornada(funcionario)
@@ -188,6 +235,25 @@ def register_ponto_routes(
                 total += max(0, int((m.data_hora - saida_int_em).total_seconds() / 60))
                 saida_int_em = None
         return total
+
+    def _feriados_para_data(data_ref):
+        """Carrega o set de feriados do mês de data_ref para uso nos endpoints por-dia."""
+        try:
+            inicio_mes = data_ref.replace(day=1)
+            if data_ref.month == 12:
+                fim_mes = data_ref.replace(day=31)
+            else:
+                fim_mes = (data_ref.replace(month=data_ref.month + 1, day=1) - timedelta(days=1))
+            rows = Feriado.query.filter(
+                Feriado.data >= inicio_mes.strftime("%Y-%m-%d"),
+                Feriado.data <= fim_mes.strftime("%Y-%m-%d"),
+            ).all()
+            return {
+                datetime.strptime(f.data, "%Y-%m-%d").date()
+                for f in rows if f.data
+            }
+        except Exception:
+            return set()
 
     def _ponto_resumo_func_dia(funcionario, data_ref, _marcacoes=None, _feriados=None):
         marcacoes = (
@@ -460,7 +526,10 @@ def register_ponto_routes(
             {
                 "ok": True,
                 "marcacao": marcacao.to_dict(),
-                "resumo": _ponto_resumo_func_dia(funcionario, data_ref),
+                "resumo": _ponto_resumo_func_dia(
+                    funcionario, data_ref,
+                    _feriados=_feriados_para_data(data_ref),
+                ),
             }
         )
 
@@ -475,7 +544,10 @@ def register_ponto_routes(
             return jsonify({"erro": "Funcionário não encontrado."}), 404
         data_ref = _ponto_parse_data_ref(request.args.get("data"))
         return jsonify(
-            {"ok": True, "resumo": _ponto_resumo_func_dia(funcionario, data_ref)}
+            {"ok": True, "resumo": _ponto_resumo_func_dia(
+                funcionario, data_ref,
+                _feriados=_feriados_para_data(data_ref),
+            )}
         )
 
     @app.route("/api/ponto/resumo-dia")
@@ -660,7 +732,10 @@ def register_ponto_routes(
                     {
                         "ok": True,
                         "ajuste": ajuste.to_dict(),
-                        "resumo": _ponto_resumo_func_dia(funcionario, data_ref),
+                        "resumo": _ponto_resumo_func_dia(
+                            funcionario, data_ref,
+                            _feriados=_feriados_para_data(data_ref),
+                        ),
                     }
                 )
             except Exception as exc:
@@ -738,7 +813,10 @@ def register_ponto_routes(
                     "motivo": motivo[:200],
                 },
             )
-            resumo = _ponto_resumo_func_dia(funcionario, data_ref) if data_ref else {}
+            resumo = _ponto_resumo_func_dia(
+                funcionario, data_ref,
+                _feriados=_feriados_para_data(data_ref),
+            ) if data_ref else {}
             return jsonify({"ok": True, "resumo": resumo})
         except Exception as exc:
             db.session.rollback()
@@ -1002,7 +1080,10 @@ def register_ponto_routes(
         data_ref = _ponto_parse_data_ref(dados.get("data"))
         forcar = bool(dados.get("forcar"))
         observacao = (dados.get("observacao") or "").strip()[:1000]
-        resumo = _ponto_resumo_func_dia(funcionario, data_ref)
+        resumo = _ponto_resumo_func_dia(
+            funcionario, data_ref,
+            _feriados=_feriados_para_data(data_ref),
+        )
         if resumo["status"] != "ok" and not forcar:
             return jsonify(
                 {
