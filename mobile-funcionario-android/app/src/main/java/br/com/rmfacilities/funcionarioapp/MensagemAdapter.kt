@@ -154,6 +154,12 @@ class MensagemAdapter(
         replaceAll(novas)
     }
 
+    /** Retorna a posição real no adapter (incluindo cabeçalhos de data) para a mensagem
+     *  com o [msgId] dado, ou -1 se não encontrada. Necessário porque [itens] intercala
+     *  [ChatItem.DataHeader], então o índice na lista pura de mensagens ≠ posição no adapter. */
+    fun adapterPositionOfMsg(msgId: Int): Int =
+        itens.indexOfFirst { it is ChatItem.Msg && it.item.id == msgId }
+
     private fun mostrarMenuMensagem(context: Context, item: MensagemItem) {
         val opcoes = if (onApagarMensagem != null)
             arrayOf("📋 Copiar", "🗑️ Apagar mensagem")

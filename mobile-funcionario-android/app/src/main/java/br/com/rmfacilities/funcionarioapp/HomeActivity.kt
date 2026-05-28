@@ -529,7 +529,8 @@ class HomeActivity : BaseActivity() {
                 }
 
                 // Salva timestamp de última sincronização para a tela Sobre
-                getSharedPreferences("rm_funcionario_app", MODE_PRIVATE)
+                // Usa arquivo separado para não conflitar com EncryptedSharedPreferences do SessionManager
+                getSharedPreferences("rm_funcionario_ui", MODE_PRIVATE)
                     .edit().putLong("last_sync_ts", System.currentTimeMillis()).apply()
                 if (versao != null && versao.versao_minima > 0 && BuildConfig.VERSION_CODE < versao.versao_minima) {
                     mostrarDialogAtualizar(versao.download_url)

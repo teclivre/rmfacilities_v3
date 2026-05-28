@@ -249,11 +249,14 @@ class MensagensActivity : BaseActivity() {
                 adapter.replaceAll(msgs)
                 if (msgs.isNotEmpty() && (!silently || atBottom)) {
                     // Se o RH respondeu depois da última mensagem do funcionário,
-                    // rola para a primeira mensagem não respondida do RH
-                    val ultimaRhIdx = msgs.indexOfLast { it.de_rh == true }
-                    val ultimaFuncIdx = msgs.indexOfLast { it.de_rh != true }
-                    val scrollTarget = if (!silently && ultimaRhIdx >= 0 && ultimaRhIdx > ultimaFuncIdx) {
-                        ultimaRhIdx
+                    // rola para a primeira mensagem não respondida do RH.
+                    // Usa adapterPositionOfMsg() porque o adapter intercala cabeçalhos de data
+                    // (índice na lista pura ≠ posição no adapter).
+                    val ultimaRh = msgs.lastOrNull { it.de_rh == true }
+                    val ultimaFuncId = msgs.lastOrNull { it.de_rh != true }?.id ?: -1
+                    val scrollTarget = if (!silently && ultimaRh != null && (ultimaRh.id ?: -1) > ultimaFuncId) {
+                        adapter.adapterPositionOfMsg(ultimaRh.id ?: -1).takeIf { it >= 0 }
+                            ?: (adapter.itemCount - 1)
                     } else {
                         adapter.itemCount - 1
                     }

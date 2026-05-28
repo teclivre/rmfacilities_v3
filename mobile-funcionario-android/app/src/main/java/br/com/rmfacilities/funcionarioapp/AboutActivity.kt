@@ -31,7 +31,8 @@ class AboutActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.tvApiUrl).text = apiUrl
 
         // Última sincronização
-        val prefs = getSharedPreferences("rm_funcionario_app", MODE_PRIVATE)
+        // Usa arquivo separado para não conflitar com EncryptedSharedPreferences do SessionManager
+        val prefs = getSharedPreferences("rm_funcionario_ui", MODE_PRIVATE)
         val lastSync = prefs.getLong("last_sync_ts", 0L)
         val syncText = if (lastSync > 0L) {
             SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(lastSync))
