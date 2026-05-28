@@ -1778,6 +1778,17 @@ class Funcionario(db.Model):
             d["areas"] = []
         if self.data_nascimento:
             d["data_nascimento"] = self.data_nascimento.isoformat()
+        # Resolve empresa_nome a partir do relacionamento para que o frontend
+        # exiba a empresa correta em todas as seções (aviso prévio, EPI, etc.)
+        # sem precisar de consulta separada.
+        try:
+            emp = db.session.get(Empresa, self.empresa_id) if self.empresa_id else None
+            d["empresa_nome"] = (
+                (getattr(emp, "razao", None) or getattr(emp, "nome", None) or "").strip()
+                if emp else ""
+            )
+        except Exception:
+            d["empresa_nome"] = ""
         return d
 
 
