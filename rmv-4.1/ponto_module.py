@@ -293,7 +293,11 @@ def register_ponto_routes(
                 Feriado.data >= inicio.strftime("%Y-%m-%d"),
                 Feriado.data <= fim.strftime("%Y-%m-%d"),
             ).all()
-            _feriados_set = {f.data for f in feriados_rows}
+            _feriados_set = {
+                datetime.strptime(f.data, "%Y-%m-%d").date()
+                for f in feriados_rows
+                if f.data
+            }
         except Exception:
             _feriados_set = set()
         dias = []
@@ -1143,8 +1147,22 @@ def register_ponto_routes(
         total_faltas = 0
         total_extras = 0
         dia = inicio
+
+        # Batch: evita N+1 queries (2 por dia) reutilizando os dados já
+        # carregados por _ponto_resumo_competencia.
+        _marc_por_data = {}
+        for _mc in PontoMarcacao.query.filter(
+            PontoMarcacao.funcionario_id == funcionario.id,
+            PontoMarcacao.data_hora >= datetime.combine(inicio, datetime.min.time()),
+            PontoMarcacao.data_hora < datetime.combine(fim + timedelta(days=1), datetime.min.time()),
+        ).order_by(PontoMarcacao.data_hora).all():
+            _marc_por_data.setdefault(_mc.data_hora.date(), []).append(_mc)
+        _resumo_por_data = {
+            d["data_ref"]: d for d in (resumo_comp.get("dias") or [])
+        }
+
         while dia <= fim:
-            marcacoes = _ponto_marcacoes_dia(funcionario.id, dia)
+            marcacoes = _marc_por_data.get(dia, [])
             tempos = sorted(
                 [
                     item.data_hora
@@ -1153,7 +1171,10 @@ def register_ponto_routes(
                 ]
             )
 
-            resumo = _ponto_resumo_func_dia(funcionario, dia)
+            _dia_str = dia.strftime("%Y-%m-%d")
+            resumo = _resumo_por_data.get(_dia_str) or _ponto_resumo_func_dia(
+                funcionario, dia, _marcacoes=marcacoes
+            )
             previstas = int(resumo.get("horas_esperadas_min", 0) or 0)
             diurnas = int(resumo.get("horas_trabalhadas_min", 0) or 0)
             saldo = int(resumo.get("saldo_min", 0) or 0)

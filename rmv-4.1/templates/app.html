@@ -4859,6 +4859,10 @@ async function api(url,m='GET',b=null){
     const o={method:m,headers:{'Content-Type':'application/json'},credentials:'same-origin'};
     if(b)o.body=JSON.stringify(b);
     const r=await fetch(url,o);
+    if(r.status===401){
+      window.location.href='/login?next='+encodeURIComponent(window.location.pathname);
+      return {};
+    }
     const ct=(r.headers.get('content-type')||'').toLowerCase();
     if(ct.includes('application/json')){
       const d=await r.json();
