@@ -290,7 +290,7 @@ class HomeActivity : BaseActivity() {
             else -> return
         }
         val loc = lm.getLastKnownLocation(provider) ?: return
-        lifecycleScope.launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             try { api.enviarLocalizacao(loc.latitude, loc.longitude, loc.accuracy) } catch (_: Exception) {}
         }
     }
@@ -356,7 +356,7 @@ class HomeActivity : BaseActivity() {
         FirebaseMessaging.getInstance().token
             .addOnSuccessListener { token ->
                 if (token.isNullOrBlank()) return@addOnSuccessListener
-                lifecycleScope.launch {
+                lifecycleScope.launch(Dispatchers.IO) {
                     try {
                         api.registrarPushToken(token)
                     } catch (_: Exception) {

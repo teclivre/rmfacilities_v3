@@ -29,6 +29,8 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
@@ -62,6 +64,8 @@ class PontoActivity : BaseActivity() {
     data class MarcacaoExcluida(val id: Int, val hora: String, val tipoLabel: String)
     private val marcacoesExcluidas = mutableListOf<MarcacaoExcluida>()
 
+    private lateinit var session: SessionManager
+    override fun provideSession() = session
     private lateinit var api: ApiClient
     private lateinit var retryQueue: ActionRetryQueue
     private lateinit var tvData: TextView
@@ -137,7 +141,8 @@ class PontoActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_ponto)
 
-        api = ApiClient(SessionManager(this))
+        session = SessionManager(this)
+        api = ApiClient(session)
         retryQueue = ActionRetryQueue(this)
 
         findViewById<TextView>(R.id.btnVoltar).setOnClickListener { finish() }
@@ -536,13 +541,31 @@ class PontoActivity : BaseActivity() {
         return "marcacoes_$hoje"
     }
 
+    private fun pontoCachePrefs(): android.content.SharedPreferences {
+        return try {
+            val masterKey = MasterKey.Builder(this)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                this,
+                "ponto_cache",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (_: Exception) {
+            // Keystore indisponível: fallback sem cifra — aceito pois é cache diário temporário
+            getSharedPreferences("ponto_cache", Context.MODE_PRIVATE)
+        }
+    }
+
     private fun salvarCacheMarcacoes(marcacoes: List<PontoMarcacaoItem>) {
-        val prefs = getSharedPreferences("ponto_cache", Context.MODE_PRIVATE)
+        val prefs = pontoCachePrefs()
         prefs.edit().putString(cacheKeyHoje(), gson.toJson(marcacoes)).apply()
     }
 
     private fun carregarCacheMarcacoes(): List<PontoMarcacaoItem> {
-        val prefs = getSharedPreferences("ponto_cache", Context.MODE_PRIVATE)
+        val prefs = pontoCachePrefs()
         val json = prefs.getString(cacheKeyHoje(), null) ?: return emptyList()
         return try {
             val type = object : TypeToken<List<PontoMarcacaoItem>>() {}.type
@@ -581,7 +604,9 @@ class PontoActivity : BaseActivity() {
     private fun carregarDia() {
         updateStatus("Atualizando...", R.color.mobile_semantic_info)
         lifecycleScope.launch {
-            val resp = try { api.getPontoDia() } catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message) }
+            val resp = withContext(Dispatchers.IO) {
+                try { api.getPontoDia() } catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message) }
+            }
             withContext(Dispatchers.Main) {
                 if (resp.ok) {
                     localPendentes.clear() // servidor confirmou todas as marcações
