@@ -12695,7 +12695,8 @@ def _calcular_aviso_previo_dias(data_admissao_str, data_ref=None):
 
 
 def _gerar_aviso_previo_pdf(
-    funcionario, tipo="empresa_trabalhado", empresa=None, obs="", data_aviso_str=None
+    funcionario, tipo="empresa_trabalhado", empresa=None, obs="", data_aviso_str=None,
+    reducao="nenhuma",
 ):
     """Gera PDF de Aviso Prévio proporcional (Lei 12.506/2011)."""
     from reportlab.lib.pagesizes import A4
@@ -12950,6 +12951,21 @@ def _gerar_aviso_previo_pdf(
             f"O(A) colaborador(a) deverá <b>permanecer trabalhando normalmente</b> durante todo o período do aviso, "
             f"encerrando seu vínculo empregatício na data supracitada, quando serão processadas as verbas rescisórias cabíveis."
         )
+        # BUG-FIX: refletir no PDF a opção de redução do art. 488 escolhida na UI.
+        if reducao == "2h_diarias":
+            texto_prazo += (
+                " <b>Redução de jornada (art. 488, parágrafo único, \"a\", da CLT):</b> "
+                "durante o cumprimento do aviso prévio o(a) colaborador(a) optou pela "
+                "<b>redução de 2 (duas) horas diárias</b> de sua jornada de trabalho, "
+                "sem prejuízo do salário integral."
+            )
+        elif reducao == "7_dias_indenizados":
+            texto_prazo += (
+                " <b>Redução do aviso (art. 488, parágrafo único, \"b\", da CLT):</b> "
+                "o(a) colaborador(a) optou pela <b>redução de 7 (sete) dias indenizados</b> "
+                "ao final do período do aviso, sem prejuízo do salário integral — os 7 dias "
+                "finais não serão trabalhados e serão integrados às verbas rescisórias."
+            )
     elif tipo == "empresa_indenizado":
         texto_intro = (
             f"A empresa <b>{emp_nome}</b>, {cnpj_txt}vem por meio deste instrumento comunicar ao(à) "
@@ -13090,10 +13106,15 @@ def _gerar_aviso_previo_pdf(
         ),
     ]
     if (obs or "").strip():
+        # BUG-FIX: escapar caracteres XML (<, >, &) antes de jogar em Paragraph,
+        # senão reportlab quebra a geração quando o usuário usa esses símbolos
+        # em observações ("H < 8h", "a&b" etc.).
+        from xml.sax.saxutils import escape as _xml_escape
+        obs_safe = _xml_escape(obs.strip())
         elems += [
             Spacer(1, 0.2 * cm),
             Paragraph(
-                f"<b>Observações:</b> {obs.strip()}",
+                f"<b>Observações:</b> {obs_safe}",
                 ParagraphStyle(
                     "ob",
                     fontName="Helvetica",
@@ -13193,6 +13214,12 @@ def api_funcionario_gerar_aviso_previo(id):
         tipo = "empresa_trabalhado"
     obs = (d.get("obs") or "").strip()
     data_aviso = (d.get("data_aviso") or "").strip()
+    reducao = (d.get("reducao") or "nenhuma").strip().lower()
+    if reducao not in ("nenhuma", "2h_diarias", "7_dias_indenizados"):
+        reducao = "nenhuma"
+    # Redução do art. 488 só faz sentido em aviso trabalhado.
+    if tipo != "empresa_trabalhado":
+        reducao = "nenhuma"
     canal = (d.get("canal") or "nao").strip().lower()
     if canal not in ("whatsapp", "app", "link", "nao"):
         canal = "nao"
@@ -13212,10 +13239,32 @@ def api_funcionario_gerar_aviso_previo(id):
                 dt_aviso_audit = _date(int(_yy), int(_mm), int(_dd))
         except Exception:
             dt_aviso_audit = None
+    # BUG-FIX: validar coerência entre data_aviso e data_admissao — sem isso,
+    # operador podia gerar aviso prévio com data anterior à admissão, gerando
+    # PDF com período inválido e contagem de tempo de serviço = 0.
+    dt_adm_chk = None
+    try:
+        _sa = str(f.data_admissao or "")[:10]
+        if "-" in _sa:
+            dt_adm_chk = _date.fromisoformat(_sa)
+        elif "/" in _sa:
+            _dd2, _mm2, _yy2 = _sa.split("/")
+            dt_adm_chk = _date(int(_yy2), int(_mm2), int(_dd2))
+    except Exception:
+        dt_adm_chk = None
+    if dt_aviso_audit and dt_adm_chk and dt_aviso_audit < dt_adm_chk:
+        return jsonify({
+            "erro": (
+                f"Data do aviso ({dt_aviso_audit.strftime('%d/%m/%Y')}) é anterior "
+                f"à data de admissão ({dt_adm_chk.strftime('%d/%m/%Y')}). "
+                "Verifique as datas antes de gerar o documento."
+            )
+        }), 400
     total_dias = _calcular_aviso_previo_dias(f.data_admissao, data_ref=dt_aviso_audit)
     try:
         buf = _gerar_aviso_previo_pdf(
-            f, tipo=tipo, empresa=emp_obj, obs=obs, data_aviso_str=data_aviso or None
+            f, tipo=tipo, empresa=emp_obj, obs=obs, data_aviso_str=data_aviso or None,
+            reducao=reducao,
         )
     except Exception as e:
         app.logger.exception("Erro ao gerar PDF aviso prévio")
@@ -13235,6 +13284,8 @@ def api_funcionario_gerar_aviso_previo(id):
     os.makedirs(os.path.dirname(abs_p), exist_ok=True)
     with open(abs_p, "wb") as fh:
         fh.write(buf.read())
+    # BUG-FIX: atomicidade — em caso de falha no commit/assinatura, remover
+    # o PDF gravado em disco para não deixar arquivo órfão sem registro no DB.
     a = FuncionarioArquivo(
         funcionario_id=id,
         categoria="aviso_previo",
@@ -13243,19 +13294,29 @@ def api_funcionario_gerar_aviso_previo(id):
         caminho=rel,
     )
     db.session.add(a)
-    db.session.flush()
-    assinatura = {}
-    if canal in ("whatsapp", "app", "link"):
-        rs = _solicitar_assinatura_arquivo_funcionario(
-            a, f, canal=canal, commit_now=False
-        )
-        assinatura = {
-            "canal": canal,
-            "link": rs.get("link_curto") or rs.get("link", ""),
-            "status": ("solicitada" if rs.get("ok") else "erro"),
-            "erro": rs.get("erro", ""),
-        }
-    db.session.commit()
+    try:
+        db.session.flush()
+        assinatura = {}
+        if canal in ("whatsapp", "app", "link"):
+            rs = _solicitar_assinatura_arquivo_funcionario(
+                a, f, canal=canal, commit_now=False
+            )
+            assinatura = {
+                "canal": canal,
+                "link": rs.get("link_curto") or rs.get("link", ""),
+                "status": ("solicitada" if rs.get("ok") else "erro"),
+                "erro": rs.get("erro", ""),
+            }
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        try:
+            if os.path.exists(abs_p):
+                os.remove(abs_p)
+        except Exception:
+            pass
+        app.logger.exception("Erro ao persistir aviso prévio")
+        return jsonify({"erro": f"Erro ao salvar documento: {str(e)}"}), 500
     audit_event(
         "aviso_previo_gerado",
         "usuario",

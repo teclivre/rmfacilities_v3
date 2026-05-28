@@ -9755,6 +9755,15 @@ async function apSelecionarFunc(f) {
   document.getElementById('ap-func-nome-sel').textContent = f.nome || '';
   document.getElementById('ap-func-cargo-sel').textContent = f.cargo || '';
   document.getElementById('ap-func-selecionado').style.display = 'block';
+  // BUG-FIX: para término de contrato por prazo determinado NÃO existe aviso
+  // prévio (art. 481 CLT). Não exibir o painel "Cálculo CLT — 30+dias" para
+  // não enganar o operador (o PDF gerado já diz corretamente "sem aviso").
+  const tipoAtual = document.getElementById('ap-tipo')?.value || '';
+  const painelCalc = document.getElementById('ap-calc-aviso');
+  if (tipoAtual === 'termino_contrato') {
+    if (painelCalc) painelCalc.style.display = 'none';
+    return;
+  }
   // Busca e exibe o cálculo CLT (passa data do aviso para a prévia bater com o PDF)
   try {
     const dtAviso = document.getElementById('ap-data-aviso')?.value || '';
@@ -9765,7 +9774,7 @@ async function apSelecionarFunc(f) {
       document.getElementById('ap-calc-anos').textContent = calc.anos_servico + ' ano(s)';
       document.getElementById('ap-calc-dias').textContent = calc.total_dias;
       document.getElementById('ap-calc-extras').textContent = calc.dias_adicionais || 0;
-      document.getElementById('ap-calc-aviso').style.display = 'block';
+      if (painelCalc) painelCalc.style.display = 'block';
     }
   } catch(e) {}
 }
@@ -9794,6 +9803,9 @@ function apToggleReducao() {
   wrap.style.opacity = habilita ? '1' : '0.5';
   sel.disabled = !habilita;
   if (!habilita) sel.value = 'nenhuma';
+  // BUG-FIX: ao alternar entre tipos, refazer o painel CLT para esconder
+  // quando for término de contrato e reexibir nos demais casos.
+  if (apFuncSelecionado) apSelecionarFunc(apFuncSelecionado);
 }
 
 function previaAvisoPrevio() {
