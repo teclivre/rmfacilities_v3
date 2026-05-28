@@ -42,6 +42,14 @@ class LoginActivity : AppCompatActivity() {
     private var otpCooldownTimer: CountDownTimer? = null
     private var silentAuthInProgress = false
 
+    private fun intentExtraStringSafe(key: String): String? {
+        return try {
+            intent?.extras?.get(key)?.toString()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         TelemetryLogger.init(this)
@@ -390,8 +398,8 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun goHomeOrDeepLink() {
-        val tipo = intent?.getStringExtra("tipo") ?: intent?.extras?.getString("tipo") ?: ""
-        val arquivoId = intent?.getStringExtra("arquivo_id")?.toIntOrNull() ?: -1
+        val tipo = intentExtraStringSafe("tipo") ?: ""
+        val arquivoId = intentExtraStringSafe("arquivo_id")?.toIntOrNull() ?: -1
         val target: Intent = when {
             tipo == "documento_assinar" && arquivoId > 0 ->
                 Intent(this, DocumentosActivity::class.java).apply {

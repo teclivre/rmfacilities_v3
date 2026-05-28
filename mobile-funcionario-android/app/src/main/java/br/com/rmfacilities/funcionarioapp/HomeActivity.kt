@@ -38,6 +38,14 @@ class HomeActivity : BaseActivity() {
         private const val KEY_ENABLED = "enabled"
     }
 
+    private fun intentExtraStringSafe(key: String): String? {
+        return try {
+            intent?.extras?.get(key)?.toString()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private lateinit var session: SessionManager
     private lateinit var api: ApiClient
     private lateinit var tvBoasVindas: TextView
@@ -293,10 +301,10 @@ class HomeActivity : BaseActivity() {
      * Chamado ANTES de montar a UI para evitar flash do HomeActivity.
      */
     private fun handleNotifDeepLink(): Boolean {
-        val tipo = intent?.getStringExtra("tipo") ?: return false
-        val arquivoId = intent.getStringExtra("arquivo_id")?.toIntOrNull() ?: -1
-        val url = intent.getStringExtra("url")
-        val titulo = intent.getStringExtra("titulo") ?: "Comunicado"
+        val tipo = intentExtraStringSafe("tipo") ?: return false
+        val arquivoId = intentExtraStringSafe("arquivo_id")?.toIntOrNull() ?: -1
+        val url = intentExtraStringSafe("url")
+        val titulo = intentExtraStringSafe("titulo") ?: "Comunicado"
         intent.removeExtra("tipo")
         val target: Intent? = when {
             tipo == "documento_assinar" && arquivoId > 0 ->
