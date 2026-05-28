@@ -151,6 +151,10 @@ class OfflineDocsStore(private val context: Context) {
         if (!encFile.name.lowercase().endsWith(".enc")) {
             return encFile
         }
+        // Apagar arquivos temporários de chamadas anteriores para não acumular
+        // cópias em texto claro no cacheDir.
+        context.cacheDir.listFiles { f -> f.name.startsWith("tmp_") }
+            ?.forEach { it.delete() }
         val plain = decrypt(encFile.readBytes())
         val baseName = encFile.name.removeSuffix(".enc").ifBlank { "documento.pdf" }
         val out = File(context.cacheDir, "tmp_${System.currentTimeMillis()}_$baseName")

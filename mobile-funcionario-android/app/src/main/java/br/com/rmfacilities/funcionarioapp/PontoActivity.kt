@@ -541,8 +541,11 @@ class PontoActivity : BaseActivity() {
         return "marcacoes_$hoje"
     }
 
-    private fun pontoCachePrefs(): android.content.SharedPreferences {
-        return try {
+    // Instância única criada de forma lazy para evitar dupla inicialização concorrente do
+    // EncryptedSharedPreferences, que em alguns dispositivos (Samsung One UI, Xiaomi MIUI)
+    // lança AEADBadTagException quando dois objetos acessam o mesmo arquivo simultaneamente.
+    private val pontoCachePrefs: android.content.SharedPreferences by lazy {
+        try {
             val masterKey = MasterKey.Builder(this)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
                 .build()
@@ -560,12 +563,12 @@ class PontoActivity : BaseActivity() {
     }
 
     private fun salvarCacheMarcacoes(marcacoes: List<PontoMarcacaoItem>) {
-        val prefs = pontoCachePrefs()
+        val prefs = pontoCachePrefs
         prefs.edit().putString(cacheKeyHoje(), gson.toJson(marcacoes)).apply()
     }
 
     private fun carregarCacheMarcacoes(): List<PontoMarcacaoItem> {
-        val prefs = pontoCachePrefs()
+        val prefs = pontoCachePrefs
         val json = prefs.getString(cacheKeyHoje(), null) ?: return emptyList()
         return try {
             val type = object : TypeToken<List<PontoMarcacaoItem>>() {}.type
