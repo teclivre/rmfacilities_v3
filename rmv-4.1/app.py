@@ -9195,6 +9195,14 @@ def api_funcionarios_import():
                     ).strip()
                     f.obs = str(row.get("obs", "") or "").strip()
                     f.areas = json.dumps(ars, ensure_ascii=False)
+                    # BUG-FIX: import ignorava coluna data_nascimento da planilha.
+                    _dn_upd = str(row.get("data_nascimento", "") or "").strip()
+                    if _dn_upd:
+                        try:
+                            from datetime import date as _date_imp
+                            f.data_nascimento = _date_imp.fromisoformat(_dn_upd[:10])
+                        except (ValueError, TypeError):
+                            pass
                     atualizados += 1
                 else:
                     f = Funcionario(
@@ -9266,6 +9274,14 @@ def api_funcionarios_import():
                         obs=str(row.get("obs", "") or "").strip(),
                         areas=json.dumps(ars, ensure_ascii=False),
                     )
+                    # BUG-FIX: import ignorava coluna data_nascimento da planilha.
+                    _dn_crt = str(row.get("data_nascimento", "") or "").strip()
+                    if _dn_crt:
+                        try:
+                            from datetime import date as _date_imp
+                            f.data_nascimento = _date_imp.fromisoformat(_dn_crt[:10])
+                        except (ValueError, TypeError):
+                            pass
                     db.session.add(f)
                     criados += 1
             except Exception as e:
@@ -9545,13 +9561,16 @@ def _sync_ferias_status():
     """Atualiza status de funcionários com base nas datas de férias:
     - Se hoje >= ferias_inicio E hoje <= ferias_fim → Férias
     - Se ferias_fim preenchido e hoje > ferias_fim e status==Férias → Ativo
-    Ignora funcionários Demitidos/Inativos."""
+    Ignora funcionários Demitidos/Inativos/Afastados/Aviso Prévio."""
     from datetime import date as _date
 
     hoje = _date.today().isoformat()
     alterados = 0
     for f in Funcionario.query.all():
-        if f.status in ("Demitido", "Inativo"):
+        # BUG-FIX: antes só ignorava Demitido/Inativo. Afastado e Aviso Prévio
+        # podiam ter o status sobrescrito para Férias se tinham datas antigas.
+        status_normalizado = (f.status or "Ativo").strip().lower()
+        if status_normalizado in ("demitido", "inativo", "afastado", "aviso prévio", "aviso previo"):
             continue
         ini = (f.ferias_inicio or "").strip()
         fim = (f.ferias_fim or "").strip()
@@ -9565,6 +9584,11 @@ def _sync_ferias_status():
                 f.status = "Ativo"
                 alterados += 1
         elif not ini and not fim and status_atual == "Férias":
+            f.status = "Ativo"
+            alterados += 1
+        # BUG-FIX: colaborador em Férias com ferias_inicio preenchido mas
+        # ferias_fim vazio nunca era revertido para Ativo (ficava preso em Férias).
+        elif ini and not fim and status_atual == "Férias":
             f.status = "Ativo"
             alterados += 1
     if alterados:
@@ -9589,6 +9613,10 @@ def api_funcionarios():
         _ferias_sync_ts = _agora
         _sync_ferias_status()
     cpf = only_digits(request.args.get("cpf", ""))
+    # BUG-FIX: ler status_param antes do branch de CPF para que ?status= seja
+    # respeitado mesmo quando a busca é feita por CPF (antes o filtro era aplicado
+    # somente após o early-return do CPF, tornando-o ineficaz nesse path).
+    status_param = (request.args.get("status") or "").strip()
     if cpf:
         ex_id = to_num(request.args.get("exclude_id"))
         # Filtro SQL: remove formatação de CPF via REPLACE no SQLite
@@ -9600,6 +9628,8 @@ def api_funcionarios():
             "",
         )
         q = Funcionario.query.filter(cpf_norm == cpf)
+        if status_param:
+            q = q.filter(Funcionario.status == status_param)
         if ex_id:
             q = q.filter(Funcionario.id != ex_id)
         f = q.first()
@@ -9609,7 +9639,7 @@ def api_funcionarios():
     q = (request.args.get("q", "") or "").lower()
     # BUG-FIX: respeitar ?status= para que buscas em subseções (aviso prévio,
     # EPI, etc.) não retornem colaboradores Demitidos/Inativos.
-    status_param = (request.args.get("status") or "").strip()
+    # (status_param já foi lido antes do branch de CPF — BUG-FIX)
     lst_q = Funcionario.query.order_by(Funcionario.nome)
     if status_param:
         lst_q = lst_q.filter(Funcionario.status == status_param)
@@ -9979,13 +10009,19 @@ def api_funcionario_cpf_lookup():
     if len(cpf) != 11:
         return jsonify({"erro": "CPF invalido"}), 400
     ex_id = to_num(request.args.get("exclude_id"))
-    for f in Funcionario.query.all():
-        if f.id == ex_id:
-            continue
-        if only_digits(f.cpf) == cpf:
-            return jsonify(
-                {"ok": True, "origem": "interno", "funcionario": f.to_dict()}
-            )
+    # BUG-FIX: antes fazia Funcionario.query.all() + loop Python — O(n) em memória.
+    # Agora usa REPLACE no SQL para normalizar e comparar diretamente no banco.
+    from sqlalchemy import func as sqla_func
+    cpf_norm_lu = sqla_func.replace(
+        sqla_func.replace(sqla_func.replace(Funcionario.cpf, ".", ""), "-", ""),
+        "/", "",
+    )
+    q_lu = Funcionario.query.filter(cpf_norm_lu == cpf)
+    if ex_id:
+        q_lu = q_lu.filter(Funcionario.id != ex_id)
+    f = q_lu.first()
+    if f:
+        return jsonify({"ok": True, "origem": "interno", "funcionario": f.to_dict()})
     r = lookup_cpf_externo(cpf)
     return jsonify(r)
 
@@ -10006,17 +10042,31 @@ def api_funcionario_busca_rapida():
             resultados.append(f.to_dict())
 
     # Busca por CPF se fornecido
+    # BUG-FIX: antes usava ilike("%12345678901%") que não encontra "123.456.789-01".
+    # Agora normaliza o campo do banco via REPLACE (mesma abordagem do cpf-lookup).
     if cpf and len(cpf) == 11:
-        f = Funcionario.query.filter(Funcionario.cpf.ilike(f"%{cpf}%")).first()
-        if f and f.to_dict() not in resultados:
-            resultados.append(f.to_dict())
+        from sqlalchemy import func as sqla_func
+        cpf_norm_br = sqla_func.replace(
+            sqla_func.replace(sqla_func.replace(Funcionario.cpf, ".", ""), "-", ""),
+            "/", "",
+        )
+        f = Funcionario.query.filter(cpf_norm_br == cpf).first()
+        if f:
+            f_dict = f.to_dict()
+            seen_ids = {r["id"] for r in resultados}
+            if f.id not in seen_ids:
+                resultados.append(f_dict)
 
     # Busca por nome se fornecido
+    # BUG-FIX: usar deduplicação por id ao invés de comparar dicts inteiros
+    # (to_dict() faz query DB por empresa — chamar 2x dobrava as consultas).
     if nome:
-        funcs = Funcionario.query.filter(Funcionario.nome.ilike(f"%{nome}%")).all()
-        for f in funcs:
-            if f.to_dict() not in resultados:
+        funcs_nome = Funcionario.query.filter(Funcionario.nome.ilike(f"%{nome}%")).all()
+        seen_ids = {r["id"] for r in resultados}
+        for f in funcs_nome:
+            if f.id not in seen_ids:
                 resultados.append(f.to_dict())
+                seen_ids.add(f.id)
 
     return jsonify(resultados if resultados else [])
 
@@ -10199,10 +10249,13 @@ def api_atualizar_funcionario(id):
             f.status = "Demitido"
             f.app_ativo = False
         else:
-            # Data limpa → reativar colaborador (status e app)
+            # Data limpa → reativar colaborador SOMENTE se estava Demitido.
+            # BUG-FIX: antes setava app_ativo=True incondicionalmente, o que
+            # reativava o acesso ao app de colaboradores Afastados/Inativos cuja
+            # ficha era editada (ex: atualizar telefone) com data_demissao="".
             if f.status == "Demitido":
                 f.status = "Ativo"
-            f.app_ativo = True
+                f.app_ativo = True
     if "salario" in d:
         f.salario = to_num(d.get("salario"), dec=True)
     if "vale_refeicao" in d:
@@ -10239,7 +10292,9 @@ def api_atualizar_funcionario(id):
 
                 f.data_nascimento = _date.fromisoformat(_dn[:10])
             except (ValueError, TypeError):
-                pass
+                # BUG-FIX: antes o erro era silenciado, retornando HTTP 200 ao
+                # cliente sem atualizar o campo. Agora retorna erro explícito.
+                return jsonify({"erro": f"Data de nascimento inválida: '{_dn}'. Use o formato AAAA-MM-DD."}), 400
         else:
             f.data_nascimento = None
     if "areas" in d:
