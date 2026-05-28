@@ -1568,6 +1568,7 @@ class Cliente(db.Model):
     geo_lon = db.Column(db.Float)
     geofence_raio_m = db.Column(db.Float, default=150)
     obs = db.Column(db.Text, default="")
+    he_autorizada = db.Column(db.Boolean, default=True, nullable=False)
     criado_em = db.Column(db.DateTime, default=utcnow)
 
     def end_fmt(self):

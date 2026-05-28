@@ -1641,9 +1641,10 @@ def register_ponto_routes(
         cli = None
         if funcionario.posto_cliente_id:
             cli = Cliente.query.get(funcionario.posto_cliente_id)
-        resumo_comp["he_autorizada"] = (
-            cli.he_autorizada if cli and cli.he_autorizada is not None else True
-        )
+        # Usa getattr porque a coluna he_autorizada pode não existir no schema
+        # em ambientes antigos (migração ainda não aplicada). Default True.
+        _he_aut = getattr(cli, "he_autorizada", None) if cli else None
+        resumo_comp["he_autorizada"] = _he_aut if _he_aut is not None else True
         resumo_comp["posto_nome"] = (cli.nome or "") if cli else (funcionario.posto_operacional or "")
 
         # Incluir status de solicitação HE se existir
