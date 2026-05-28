@@ -8,7 +8,10 @@ object AppThemeManager {
     const val MODE_DARK = "dark"
     const val MODE_SYSTEM = "system"
 
-    private const val PREFS = "rm_funcionario_app"
+    // Arquivo de prefs dedicado ao tema — separado de "rm_funcionario_app" que é
+    // usado pelo SessionManager com EncryptedSharedPreferences. Compartilhar o mesmo
+    // arquivo causava wipe do tema a cada logout e risco de ClassCastException.
+    private const val PREFS = "rm_funcionario_theme"
     private const val KEY_THEME_MODE = "app_theme_mode"
 
     fun getMode(context: Context): String {

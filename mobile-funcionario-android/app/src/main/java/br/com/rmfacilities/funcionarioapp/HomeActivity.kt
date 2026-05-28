@@ -315,11 +315,21 @@ class HomeActivity : BaseActivity() {
                 Intent(this, MensagensActivity::class.java)
             tipo == "novo_documento" ->
                 Intent(this, DocumentosActivity::class.java)
-            tipo == "aviso_geral" && !url.isNullOrBlank() ->
-                Intent(this, WebViewActivity::class.java).apply {
-                    putExtra(WebViewActivity.EXTRA_URL, url)
-                    putExtra(WebViewActivity.EXTRA_TITULO, titulo)
+            tipo == "aviso_geral" && !url.isNullOrBlank() -> run {
+                // Validar host contra apiBaseUrl para evitar open-redirect via intent injection.
+                val allowedHost = android.net.Uri.parse(session.apiBaseUrl).host
+                val pushHost = android.net.Uri.parse(url).host
+                if (allowedHost.isNullOrBlank() || pushHost != allowedHost) {
+                    Intent(this, MensagensActivity::class.java).apply {
+                        putExtra("open_tab", "avisos")
+                    }
+                } else {
+                    Intent(this, WebViewActivity::class.java).apply {
+                        putExtra(WebViewActivity.EXTRA_URL, url)
+                        putExtra(WebViewActivity.EXTRA_TITULO, titulo)
+                    }
                 }
+            }
             tipo == "aviso_geral" ->
                 Intent(this, MensagensActivity::class.java).apply {
                     putExtra("open_tab", "avisos")

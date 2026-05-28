@@ -656,17 +656,21 @@ class PontoActivity : BaseActivity() {
         tvProximoTipo.text = "Próxima marcação: ${resumo?.proximo_tipo_label ?: "Entrada"}"
         tvProximoTipo.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_info))
 
-        // Timer "Trabalhando há..." — ativo quando há entrada e sem saída
+        // Timer "Trabalhando há..." — ativo quando há entrada sem saída NEM intervalo em aberto
         val marcacoesLista = resumo?.marcacoes ?: emptyList()
         val primeiroTipo = marcacoesLista.firstOrNull()?.tipo
         val ultimoTipo = marcacoesLista.lastOrNull()?.tipo
-        if (primeiroTipo == "entrada" && ultimoTipo != "saida") {
-            val entradaHora = marcacoesLista.first().hora_fmt ?: ""
-            if (entradaHora.isNotBlank()) {
+        val emIntervalo = ultimoTipo == "saida_intervalo"
+        if (primeiroTipo == "entrada" && ultimoTipo != "saida" && !emIntervalo) {
+            // Ancoramos no retorno_intervalo mais recente (se existir) para não
+            // incluir o tempo de pausa no contador de horas trabalhadas.
+            val ultimoRetorno = marcacoesLista.lastOrNull { it.tipo == "retorno_intervalo" }
+            val referenciaHora = ultimoRetorno?.hora_fmt ?: marcacoesLista.first().hora_fmt ?: ""
+            if (referenciaHora.isNotBlank()) {
                 val hoje = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
                 try {
                     val sdfFull = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-                    entradaTimestamp = sdfFull.parse("$hoje $entradaHora")?.time
+                    entradaTimestamp = sdfFull.parse("$hoje $referenciaHora")?.time
                 } catch (_: Exception) { entradaTimestamp = null }
             }
         } else {
