@@ -7158,7 +7158,18 @@ async function importarClientesPlanilha(ev){
 async function importarFuncionariosPlanilha(ev){
   const f=ev.target.files?.[0];
   if(!f)return;
-  const fd=new FormData(); fd.append('arquivo',f); fd.append('modo','adicionar');
+  // BUG-FIX: modo era sempre 'adicionar' (hardcoded). Agora perguntar quando
+  // há colaboradores cadastrados para permitir atualização/merge via planilha.
+  let modo='adicionar';
+  if(funcs.length){
+    const escolha=confirm(
+      'Deseja atualizar colaboradores já cadastrados que constarem na planilha?\n\n'
+      +'OK = Atualizar existentes + criar novos (merge)\n'
+      +'Cancelar = Criar apenas os novos (adicionar)'
+    );
+    if(escolha) modo='merge';
+  }
+  const fd=new FormData(); fd.append('arquivo',f); fd.append('modo',modo);
   const r=await fetch('/api/funcionarios/import',{method:'POST',body:fd});
   const d=await r.json();
   if(d.erro){alert(d.erro); ev.target.value=''; return;}
@@ -7427,6 +7438,9 @@ function rhFuncionarioAoAlterarDemissao(){
     if(st) st.value='Demitido';
     if(stEl) stEl.textContent='Ao salvar: acesso ao app será bloqueado e status será Demitido';
   } else {
+    // BUG-FIX: ao limpar a data de demissão, restaurar status para Ativo
+    // (antes apenas limpava a mensagem, deixando o status preso em 'Demitido').
+    if(st && st.value==='Demitido') st.value='Ativo';
     if(stEl) stEl.textContent='';
   }
   rhFuncionarioAutoSaveSchedule();

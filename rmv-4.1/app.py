@@ -9146,7 +9146,12 @@ def api_funcionarios_import():
                     f.status = (
                         str(row.get("status", "Ativo") or "Ativo").strip() or "Ativo"
                     )
-                    f.posto_operacional = "Reserva tecnica"
+                    # BUG-FIX: respeitar posto_operacional da planilha;
+                    # antes era sempre sobrescrito com 'Reserva tecnica'.
+                    f.posto_operacional = (
+                        str(row.get("posto_operacional") or "").strip()
+                        or "Reserva tecnica"
+                    )
                     f.salario = to_num(row.get("salario"), dec=True)
                     f.vale_refeicao = to_num(row.get("vale_refeicao"), dec=True)
                     f.vale_alimentacao = to_num(row.get("vale_alimentacao"), dec=True)
@@ -9211,7 +9216,12 @@ def api_funcionarios_import():
                         jornada=str(row.get("jornada", "") or "").strip(),
                         status=str(row.get("status", "Ativo") or "Ativo").strip()
                         or "Ativo",
-                        posto_operacional="Reserva tecnica",
+                        # BUG-FIX: respeitar posto_operacional da planilha;
+                        # antes era sempre 'Reserva tecnica' na criação.
+                        posto_operacional=(
+                            str(row.get("posto_operacional") or "").strip()
+                            or "Reserva tecnica"
+                        ),
                         salario=to_num(row.get("salario"), dec=True),
                         vale_refeicao=to_num(row.get("vale_refeicao"), dec=True),
                         vale_alimentacao=to_num(row.get("vale_alimentacao"), dec=True),
@@ -10159,6 +10169,9 @@ def api_atualizar_funcionario(id):
         "exame_admissional_data",
         "docs_admissao_obs",
         "obs",
+        # BUG-FIX: posto_operacional estava ausente da lista — editar o posto
+        # de um colaborador existente não tinha efeito no banco.
+        "posto_operacional",
     ]:
         if k in d:
             if k == "cpf":
@@ -10179,10 +10192,17 @@ def api_atualizar_funcionario(id):
         f.ferias_dias = max(0, int(to_num(d.get("ferias_dias")) or 30))
     if "faltas_ano" in d:
         f.faltas_ano = max(0, int(to_num(d.get("faltas_ano")) or 0))
-    # Se data de demissão preenchida → bloquear acesso ao app e mudar status para Demitido
-    if d.get("data_demissao", "").strip():
-        f.status = "Demitido"
-        f.app_ativo = False
+    # BUG-FIX: sincronizar status e acesso ao app com data_demissao em
+    # ambos os sentidos — ao preencher OU ao limpar a data de demissão.
+    if "data_demissao" in d:
+        if (d.get("data_demissao") or "").strip():
+            f.status = "Demitido"
+            f.app_ativo = False
+        else:
+            # Data limpa → reativar colaborador (status e app)
+            if f.status == "Demitido":
+                f.status = "Ativo"
+            f.app_ativo = True
     if "salario" in d:
         f.salario = to_num(d.get("salario"), dec=True)
     if "vale_refeicao" in d:
