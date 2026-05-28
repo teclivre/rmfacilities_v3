@@ -12677,10 +12677,17 @@ def _calcular_aviso_previo_dias(data_admissao_str, data_ref=None):
             dd, mm, yyyy = s.split("/")
             dt_adm = _date(int(yyyy), int(mm), int(dd))
         ref = data_ref if data_ref else localnow().date()
-        delta_dias = (ref - dt_adm).days
-        if delta_dias < 0:
-            delta_dias = 0
-        anos_completos = delta_dias // 365
+        # BUG-FIX: usar comparação de tuplas (year, month, day) ao invés de
+        # delta_dias // 365. Anos bissextos faziam o cálculo errar em 1 ano
+        # nas bordas (ex.: admissão 01/01/2020, aviso 31/12/2024 dava 5 anos
+        # ao invés de 4, gerando 3 dias indevidos de aviso prévio).
+        if ref < dt_adm:
+            return 30
+        anos_completos = ref.year - dt_adm.year - (
+            (ref.month, ref.day) < (dt_adm.month, dt_adm.day)
+        )
+        if anos_completos < 0:
+            anos_completos = 0
         dias_adicionais = min(anos_completos * 3, 60)
         return 30 + dias_adicionais
     except Exception:
@@ -12758,9 +12765,24 @@ def _gerar_aviso_previo_pdf(
         dt_aviso = localnow().date()
 
     total_dias = _calcular_aviso_previo_dias(func_adm, data_ref=dt_aviso)
-    anos_servico = (dt_aviso - dt_adm).days // 365 if dt_adm else 0
+    # BUG-FIX: usar comparação de tuplas para anos_servico (idem //365).
+    if dt_adm and dt_aviso >= dt_adm:
+        anos_servico = dt_aviso.year - dt_adm.year - (
+            (dt_aviso.month, dt_aviso.day) < (dt_adm.month, dt_adm.day)
+        )
+        if anos_servico < 0:
+            anos_servico = 0
+    else:
+        anos_servico = 0
     dias_adicionais = total_dias - 30
-    dt_fim = dt_aviso + timedelta(days=total_dias)
+    # BUG-FIX: para termino_contrato não há aviso prévio — último dia = data do
+    # aviso (data acordada de vencimento do contrato). Para os demais tipos, o
+    # dia da comunicação conta como dia 1 do aviso, então fim = aviso + (N-1),
+    # não aviso + N (que dava 1 dia a mais e divergia da prévia JS).
+    if tipo == "termino_contrato":
+        dt_fim = dt_aviso
+    else:
+        dt_fim = dt_aviso + timedelta(days=max(total_dias - 1, 0))
 
     data_adm_fmt = dt_adm.strftime("%d/%m/%Y") if dt_adm else str(func_adm)
     data_aviso_fmt = dt_aviso.strftime("%d/%m/%Y")
@@ -13104,12 +13126,29 @@ def _gerar_aviso_previo_pdf(
 def api_calcular_aviso_previo(id):
     """Retorna o prazo de aviso prévio calculado pela CLT para exibição na UI."""
     f = db.get_or_404(Funcionario, id)
-    total_dias = _calcular_aviso_previo_dias(f.data_admissao)
+    # BUG-FIX: aceitar data_aviso via query string para a prévia ficar
+    # consistente com o PDF gerado (que sempre usa a data escolhida pelo
+    # usuário). Sem isso, anos_servico/total_dias podiam divergir.
+    from datetime import date as _date
+
+    data_aviso_q = (request.args.get("data_aviso") or "").strip()
+    dt_ref = None
+    if data_aviso_q:
+        try:
+            s_q = data_aviso_q[:10]
+            if "-" in s_q:
+                dt_ref = _date.fromisoformat(s_q)
+            elif "/" in s_q:
+                dd, mm, yyyy = s_q.split("/")
+                dt_ref = _date(int(yyyy), int(mm), int(dd))
+        except Exception:
+            dt_ref = None
+    if dt_ref is None:
+        dt_ref = localnow().date()
+    total_dias = _calcular_aviso_previo_dias(f.data_admissao, data_ref=dt_ref)
     anos = 0
     data_adm_fmt = ""
     try:
-        from datetime import date as _date
-
         s = str(f.data_admissao or "")[:10]
         if "-" in s:
             dt_adm = _date.fromisoformat(s)
@@ -13118,8 +13157,13 @@ def api_calcular_aviso_previo(id):
             dt_adm = _date(int(yyyy), int(mm), int(dd))
         else:
             dt_adm = None
-        if dt_adm:
-            anos = (localnow().date() - dt_adm).days // 365
+        if dt_adm and dt_ref >= dt_adm:
+            # BUG-FIX: comparação de tuplas em vez de //365.
+            anos = dt_ref.year - dt_adm.year - (
+                (dt_ref.month, dt_ref.day) < (dt_adm.month, dt_adm.day)
+            )
+            if anos < 0:
+                anos = 0
             data_adm_fmt = dt_adm.strftime("%d/%m/%Y")
     except Exception:
         pass
@@ -13153,7 +13197,22 @@ def api_funcionario_gerar_aviso_previo(id):
     if canal not in ("whatsapp", "app", "link", "nao"):
         canal = "nao"
     emp_obj = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
-    total_dias = _calcular_aviso_previo_dias(f.data_admissao)
+    # BUG-FIX: passar data_aviso como ref para o cálculo do total_dias
+    # registrado na auditoria/resposta refletir a data escolhida (mesma
+    # base usada pelo PDF). Antes usava sempre hoje e divergia.
+    from datetime import date as _date
+    dt_aviso_audit = None
+    if data_aviso:
+        try:
+            _s = data_aviso[:10]
+            if "-" in _s:
+                dt_aviso_audit = _date.fromisoformat(_s)
+            elif "/" in _s:
+                _dd, _mm, _yy = _s.split("/")
+                dt_aviso_audit = _date(int(_yy), int(_mm), int(_dd))
+        except Exception:
+            dt_aviso_audit = None
+    total_dias = _calcular_aviso_previo_dias(f.data_admissao, data_ref=dt_aviso_audit)
     try:
         buf = _gerar_aviso_previo_pdf(
             f, tipo=tipo, empresa=emp_obj, obs=obs, data_aviso_str=data_aviso or None

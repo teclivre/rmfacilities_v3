@@ -2541,7 +2541,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
             <div class="f">
               <label>Data do aviso</label>
-              <input id="ap-data-aviso" type="date" style="width:170px">
+              <input id="ap-data-aviso" type="date" style="width:170px" onchange="apRecalcularSeFuncSel()">
             </div>
           </div>
           <div class="f" id="ap-reducao-wrap" style="margin-bottom:14px">
@@ -9755,9 +9755,11 @@ async function apSelecionarFunc(f) {
   document.getElementById('ap-func-nome-sel').textContent = f.nome || '';
   document.getElementById('ap-func-cargo-sel').textContent = f.cargo || '';
   document.getElementById('ap-func-selecionado').style.display = 'block';
-  // Busca e exibe o cálculo CLT
+  // Busca e exibe o cálculo CLT (passa data do aviso para a prévia bater com o PDF)
   try {
-    const calc = await api(`/api/funcionarios/${f.id}/calcular-aviso-previo`);
+    const dtAviso = document.getElementById('ap-data-aviso')?.value || '';
+    const qs = dtAviso ? ('?data_aviso=' + encodeURIComponent(dtAviso)) : '';
+    const calc = await api(`/api/funcionarios/${f.id}/calcular-aviso-previo${qs}`);
     if (calc && calc.ok) {
       document.getElementById('ap-calc-adm').textContent = calc.data_admissao || '—';
       document.getElementById('ap-calc-anos').textContent = calc.anos_servico + ' ano(s)';
@@ -9775,6 +9777,12 @@ function apLimparFunc() {
   document.getElementById('ap-func-selecionado').style.display = 'none';
   document.getElementById('ap-calc-aviso').style.display = 'none';
   document.getElementById('ap-resultado').style.display = 'none';
+}
+
+// Recalcula o painel CLT quando o usuário muda a data do aviso, mantendo
+// prévia e PDF sempre sincronizados com a data escolhida.
+function apRecalcularSeFuncSel() {
+  if (apFuncSelecionado) apSelecionarFunc(apFuncSelecionado);
 }
 
 function apToggleReducao() {
