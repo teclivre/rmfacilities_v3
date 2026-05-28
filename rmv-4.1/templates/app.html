@@ -9764,10 +9764,15 @@ async function apSelecionarFunc(f) {
     if (painelCalc) painelCalc.style.display = 'none';
     return;
   }
-  // Busca e exibe o cálculo CLT (passa data do aviso para a prévia bater com o PDF)
+  // Busca e exibe o cálculo CLT (passa data do aviso e tipo para a prévia
+  // bater com o PDF). BUG-FIX: tipo importa porque pedido_demissao do
+  // empregado tem 30 dias fixos (Lei 12.506 é benefício só do empregado).
   try {
     const dtAviso = document.getElementById('ap-data-aviso')?.value || '';
-    const qs = dtAviso ? ('?data_aviso=' + encodeURIComponent(dtAviso)) : '';
+    const params = [];
+    if (dtAviso) params.push('data_aviso=' + encodeURIComponent(dtAviso));
+    if (tipoAtual) params.push('tipo=' + encodeURIComponent(tipoAtual));
+    const qs = params.length ? ('?' + params.join('&')) : '';
     const calc = await api(`/api/funcionarios/${f.id}/calcular-aviso-previo${qs}`);
     if (calc && calc.ok) {
       document.getElementById('ap-calc-adm').textContent = calc.data_admissao || '—';
@@ -9822,8 +9827,12 @@ function previaAvisoPrevio() {
   const calcAnos = document.getElementById('ap-calc-anos')?.textContent?.trim();
   const calcAdm  = document.getElementById('ap-calc-adm')?.textContent?.trim();
   const calcExtras = document.getElementById('ap-calc-extras')?.textContent?.trim() || '0';
-  const totalDias = parseInt(calcDias) || 30;
-  const diasAdic = parseInt(calcExtras) || 0;
+  let totalDias = parseInt(calcDias) || 30;
+  let diasAdic = parseInt(calcExtras) || 0;
+  // BUG-FIX (CLT): pedido de demissão do empregado → 30 dias fixos
+  // (Lei 12.506/2011 é benefício exclusivo do empregado). Sem isso a prévia
+  // mostrava 30+3*N e divergia do PDF (que agora também força 30 no backend).
+  if (tipo === 'pedido_demissao') { totalDias = 30; diasAdic = 0; }
   // Data fim
   // Para término de contrato por prazo determinado: o último dia é a própria data do aviso
   // (não há aviso prévio — o contrato simplesmente vence no dia acordado).
@@ -9974,8 +9983,22 @@ async function gerarAvisoPrevio() {
   const res = document.getElementById('ap-resultado');
   btn.disabled = true; btn.textContent = '⏳ Gerando...'; res.style.display = 'none';
   try {
-    const r = await api(`/api/funcionarios/${apFuncSelecionado.id}/gerar-aviso-previo`, 'POST',
+    let r = await api(`/api/funcionarios/${apFuncSelecionado.id}/gerar-aviso-previo`, 'POST',
       { tipo, data_aviso, obs, canal, reducao });
+    // BUG-FIX: backend retorna {duplicado:true, erro:...} (HTTP 409) quando
+    // já existe aviso prévio gerado hoje para o mesmo colaborador. Antes
+    // cada clique acidental criava PDF + envio duplicado. Agora pergunta.
+    if (r && r.duplicado) {
+      if (confirm((r.erro || 'Já existe aviso gerado hoje.') + '\n\nDeseja gerar outro mesmo assim?')) {
+        r = await api(`/api/funcionarios/${apFuncSelecionado.id}/gerar-aviso-previo`, 'POST',
+          { tipo, data_aviso, obs, canal, reducao, forcar: true });
+      } else {
+        res.innerHTML = `<div style="background:var(--cinza-cl);border:1px solid var(--borda);border-radius:8px;padding:12px 16px">Geração cancelada (já existe documento de hoje).</div>`;
+        res.style.display = 'block';
+        btn.disabled = false; btn.textContent = '📅 Gerar Aviso Prévio';
+        return;
+      }
+    }
     if (r && r.ok) {
       const dl = r.download_url
         ? `<a href="${r.download_url}" target="_blank" class="btn b-gh b-sm" style="margin-top:8px">⬇️ Baixar PDF</a>`

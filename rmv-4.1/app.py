@@ -12714,7 +12714,6 @@ def _gerar_aviso_previo_pdf(
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
     from datetime import date as _date, timedelta
-
     azul_esc = colors.HexColor("#1A3A5C")
     cinza = colors.HexColor("#F0F4F8")
 
@@ -12766,6 +12765,13 @@ def _gerar_aviso_previo_pdf(
         dt_aviso = localnow().date()
 
     total_dias = _calcular_aviso_previo_dias(func_adm, data_ref=dt_aviso)
+    # BUG-FIX (CLT): a Lei 12.506/2011 é benefício DO EMPREGADO em face do
+    # empregador (TST OJ SDI-1 367 / Min. do Trabalho NT 184/2012). Quando o
+    # próprio empregado pede demissão, ele deve apenas 30 dias — não se exige
+    # dele o aviso proporcional. Antes o sistema cobrava 30+3*N dias do
+    # funcionário que pediu demissão, permitindo desconto indevido na resc.
+    if tipo == "pedido_demissao":
+        total_dias = 30
     # BUG-FIX: usar comparação de tuplas para anos_servico (idem //365).
     if dt_adm and dt_aviso >= dt_adm:
         anos_servico = dt_aviso.year - dt_adm.year - (
@@ -12887,7 +12893,9 @@ def _gerar_aviso_previo_pdf(
             "",
         ],
     ]
-    hdr_table = Table(hdr_data, colWidths=[13 * cm, 5.5 * cm])
+    # BUG-FIX: 13+5.5 = 18.5cm > 17cm da área útil A4 (margens 2cm cada lado),
+    # tabela transbordava e clip(ava o logo. Ajustado para 11.5+5.5 = 17cm.
+    hdr_table = Table(hdr_data, colWidths=[11.5 * cm, 5.5 * cm])
     hdr_table.setStyle(
         TableStyle(
             [
@@ -12918,7 +12926,7 @@ def _gerar_aviso_previo_pdf(
         + campo("ÚLTIMO DIA:", data_fim_fmt),
     ]
     info_table = Table(
-        info_data, colWidths=[2 * cm, 4.5 * cm, 2 * cm, 3.5 * cm, 2.5 * cm, 4.0 * cm]
+        info_data, colWidths=[1.8 * cm, 4.0 * cm, 2.0 * cm, 3.2 * cm, 2.5 * cm, 3.5 * cm]
     )
     info_table.setStyle(
         TableStyle(
@@ -13153,6 +13161,7 @@ def api_calcular_aviso_previo(id):
     from datetime import date as _date
 
     data_aviso_q = (request.args.get("data_aviso") or "").strip()
+    tipo_q = (request.args.get("tipo") or "").strip().lower()
     dt_ref = None
     if data_aviso_q:
         try:
@@ -13167,6 +13176,10 @@ def api_calcular_aviso_previo(id):
     if dt_ref is None:
         dt_ref = localnow().date()
     total_dias = _calcular_aviso_previo_dias(f.data_admissao, data_ref=dt_ref)
+    # BUG-FIX (CLT): pedido de demissão do empregado → 30 dias fixos
+    # (Lei 12.506 é benefício apenas do empregado). UI deve refletir o mesmo.
+    if tipo_q == "pedido_demissao":
+        total_dias = 30
     anos = 0
     data_adm_fmt = ""
     try:
@@ -13261,6 +13274,36 @@ def api_funcionario_gerar_aviso_previo(id):
             )
         }), 400
     total_dias = _calcular_aviso_previo_dias(f.data_admissao, data_ref=dt_aviso_audit)
+    if tipo == "pedido_demissao":
+        total_dias = 30  # ver comentário no PDF (Lei 12.506 é do empregado)
+    # BUG-FIX: detectar duplicidade — se já existe um aviso prévio gerado
+    # hoje para este colaborador (qualquer tipo), exigir flag 'forcar' no
+    # body. Antes cada clique no botão salvava novo PDF + registro DB,
+    # poluindo o histórico e fazendo o WhatsApp/App enviar duplicado.
+    if not forcar:
+        try:
+            from datetime import datetime as _dt, time as _time
+            hoje_ini = _dt.combine(localnow().date(), _time.min)
+            existe = (
+                db.session.query(FuncionarioArquivo.id)
+                .filter(
+                    FuncionarioArquivo.funcionario_id == id,
+                    FuncionarioArquivo.categoria == "aviso_previo",
+                    FuncionarioArquivo.criado_em >= hoje_ini,
+                )
+                .first()
+            )
+            if existe:
+                return jsonify({
+                    "erro": (
+                        "Já existe um aviso prévio gerado hoje para este "
+                        "colaborador. Se deseja realmente gerar outro, reenvie "
+                        "com 'forcar': true."
+                    ),
+                    "duplicado": True,
+                }), 409
+        except Exception:
+            pass
     try:
         buf = _gerar_aviso_previo_pdf(
             f, tipo=tipo, empresa=emp_obj, obs=obs, data_aviso_str=data_aviso or None,
