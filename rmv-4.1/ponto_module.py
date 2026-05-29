@@ -648,7 +648,8 @@ def register_ponto_routes(
         funcionario_id = to_num(request.args.get("funcionario_id"))
         if not funcionario_id:
             return jsonify({"erro": "funcionario_id é obrigatório."}), 400
-        funcionario = Funcionario.query.get(funcionario_id)
+        # BUG-FIX 1: .query.get() deprecated no SQLAlchemy 2.x
+        funcionario = db.session.get(Funcionario, funcionario_id)
         if not funcionario:
             return jsonify({"erro": "Funcionário não encontrado."}), 404
         data_ref = _ponto_parse_data_ref(request.args.get("data"))
@@ -665,7 +666,9 @@ def register_ponto_routes(
         try:
             data_ref = _ponto_parse_data_ref(request.args.get("data"))
             empresa_id = to_num(request.args.get("empresa_id"))
-            query = Funcionario.query.filter(Funcionario.status == "Ativo")
+            # BUG-FIX 4: comparação case-sensitive "Ativo" ignorava registros com
+            # status em caixa baixa ("ativo"); usar ilike para tolerância.
+            query = Funcionario.query.filter(Funcionario.status.ilike("ativo"))
             if empresa_id:
                 query = query.filter(Funcionario.empresa_id == empresa_id)
             funcionarios = query.order_by(Funcionario.nome).all()
@@ -787,10 +790,16 @@ def register_ponto_routes(
 
         for tentativa in range(2):
             try:
-                funcionario = Funcionario.query.get(funcionario_id)
+                # BUG-FIX 1: .query.get() deprecated no SQLAlchemy 2.x
+                funcionario = db.session.get(Funcionario, funcionario_id)
                 if not funcionario:
                     return jsonify({"erro": "Funcionário não encontrado."}), 404
-                data_ref = data_hora.date()
+                # BUG-FIX 5: data_hora está em UTC; usar data BRT para que o audit
+                # trail e snapshot do dia reflitam o dia real do colaborador.
+                _dh_brt = data_hora.replace(tzinfo=ZoneInfo("UTC")).astimezone(
+                    ZoneInfo("America/Sao_Paulo")
+                )
+                data_ref = _dh_brt.date()
                 antes = [
                     marcacao.to_dict()
                     for marcacao in _ponto_marcacoes_dia(funcionario_id, data_ref)
@@ -874,13 +883,37 @@ def register_ponto_routes(
         motivo = (dados.get("motivo") or "").strip()
         if not motivo:
             return jsonify({"erro": "Informe o motivo da exclusão."}), 400
-        marcacao = PontoMarcacao.query.get(id)
+        # BUG-FIX 2: .query.get() deprecated no SQLAlchemy 2.x
+        marcacao = db.session.get(PontoMarcacao, id)
         if not marcacao:
             return jsonify({"erro": "Marcação não encontrada."}), 404
-        funcionario = Funcionario.query.get(marcacao.funcionario_id)
+        funcionario = db.session.get(Funcionario, marcacao.funcionario_id)
         if not funcionario:
             return jsonify({"erro": "Funcionário da marcação não encontrado."}), 404
-        data_ref = marcacao.data_hora.date() if marcacao.data_hora else None
+        # BUG-FIX 8: IDOR — qualquer usuário autenticado poderia deletar marcação
+        # de funcionário de outra empresa. Reutilizamos o mesmo padrão do espelho.
+        _uid_del = session.get("uid")
+        _perfil_del = (session.get("perfil") or "").strip().lower()
+        if _perfil_del != "dono" and _uid_del:
+            try:
+                from sqlalchemy import text as _sqlt
+                _u = db.session.execute(
+                    _sqlt("SELECT empresa_id FROM usuario WHERE id = :uid"),
+                    {"uid": int(_uid_del)},
+                ).first()
+                if _u and _u[0] and funcionario.empresa_id and int(_u[0]) != int(funcionario.empresa_id):
+                    return jsonify({"erro": "Acesso negado."}), 403
+            except Exception as _e:
+                app.logger.warning("ponto_excluir: falha no check de empresa uid=%s: %s", _uid_del, _e)
+        # BUG-FIX 6: data_hora em UTC → converter para BRT antes de usar como data_ref
+        # para que audit trail e snapshot correspondam ao dia real do colaborador.
+        if marcacao.data_hora:
+            _dt_brt = marcacao.data_hora.replace(tzinfo=ZoneInfo("UTC")).astimezone(
+                ZoneInfo("America/Sao_Paulo")
+            )
+            data_ref = _dt_brt.date()
+        else:
+            data_ref = None
         snap_antes = (
             [m.to_dict() for m in _ponto_marcacoes_dia(funcionario.id, data_ref)]
             if data_ref
@@ -943,12 +976,29 @@ def register_ponto_routes(
     @lr
     def api_ponto_editar_marcacao(id):
         dados = request.json or {}
-        marcacao = PontoMarcacao.query.get(id)
+        # BUG-FIX 2: .query.get() deprecated no SQLAlchemy 2.x
+        marcacao = db.session.get(PontoMarcacao, id)
         if not marcacao:
             return jsonify({"erro": "Marcação não encontrada."}), 404
-        funcionario = Funcionario.query.get(marcacao.funcionario_id)
+        funcionario = db.session.get(Funcionario, marcacao.funcionario_id)
         if not funcionario:
             return jsonify({"erro": "Funcionário da marcação não encontrado."}), 404
+
+        # BUG-FIX 9: IDOR — qualquer usuário autenticado poderia editar marcação
+        # de funcionário de outra empresa.
+        _uid_edit = session.get("uid")
+        _perfil_edit = (session.get("perfil") or "").strip().lower()
+        if _perfil_edit != "dono" and _uid_edit:
+            try:
+                from sqlalchemy import text as _sqlt2
+                _u2 = db.session.execute(
+                    _sqlt2("SELECT empresa_id FROM usuario WHERE id = :uid"),
+                    {"uid": int(_uid_edit)},
+                ).first()
+                if _u2 and _u2[0] and funcionario.empresa_id and int(_u2[0]) != int(funcionario.empresa_id):
+                    return jsonify({"erro": "Acesso negado."}), 403
+            except Exception as _e2:
+                app.logger.warning("ponto_editar: falha no check de empresa uid=%s: %s", _uid_edit, _e2)
 
         tipo = (dados.get("tipo") or marcacao.tipo or "").strip().lower()
         data_hora = _ponto_parse_data_hora(dados.get("data_hora")) or marcacao.data_hora
@@ -969,8 +1019,16 @@ def register_ponto_routes(
         if not motivo:
             return jsonify({"erro": "Informe o motivo da edição da marcação."}), 400
 
-        data_ant = marcacao.data_hora.date() if marcacao.data_hora else data_hora.date()
-        data_nova = data_hora.date()
+        # BUG-FIX 7: data_hora em UTC → converter para BRT para que data_ant/data_nova
+        # correspondam ao dia real do colaborador (crítico para turnos noturnos).
+        _ant_brt = marcacao.data_hora.replace(tzinfo=ZoneInfo("UTC")).astimezone(
+            ZoneInfo("America/Sao_Paulo")
+        ) if marcacao.data_hora else None
+        _nova_brt = data_hora.replace(tzinfo=ZoneInfo("UTC")).astimezone(
+            ZoneInfo("America/Sao_Paulo")
+        )
+        data_ant = _ant_brt.date() if _ant_brt else _nova_brt.date()
+        data_nova = _nova_brt.date()
 
         def _snap(data_ref):
             return [
@@ -1087,7 +1145,8 @@ def register_ponto_routes(
         funcionario_id = to_num(dados.get("funcionario_id"))
         if not funcionario_id:
             return jsonify({"erro": "funcionario_id é obrigatório."}), 400
-        funcionario = Funcionario.query.get(funcionario_id)
+        # BUG-FIX 1: .query.get() deprecated no SQLAlchemy 2.x
+        funcionario = db.session.get(Funcionario, funcionario_id)
         if not funcionario:
             return jsonify({"erro": "Funcionário não encontrado."}), 404
 
@@ -1099,6 +1158,11 @@ def register_ponto_routes(
         if not data_hora:
             return jsonify({"erro": "Data/hora inválida."}), 400
 
+        # BUG-FIX 3: endpoint admin não verificava data futura; api_ponto_marcar e
+        # api_ponto_ajuste fazem esse check — admin também deve fazê-lo.
+        if data_hora > (utcnow() + timedelta(minutes=1)):
+            return jsonify({"erro": "Não é permitido criar marcação em horário futuro."}), 400
+
         motivo = (dados.get("motivo") or "").strip()
         if not motivo:
             return jsonify({"erro": "Informe o motivo da inclusão da marcação."}), 400
@@ -1106,23 +1170,19 @@ def register_ponto_routes(
         observacao = (dados.get("observacao") or "").strip()[:500]
         data_ref = data_hora.date()
 
-        marcacoes_dia_antes = [
-            m.to_dict() for m in _ponto_marcacoes_dia(funcionario.id, data_ref)
-        ]
-        conflito = PontoMarcacao.query.filter(
-            PontoMarcacao.funcionario_id == funcionario.id,
-            PontoMarcacao.data_hora >= datetime.combine(data_ref, datetime.min.time()),
-            PontoMarcacao.data_hora
-            < datetime.combine(data_ref, datetime.min.time()) + timedelta(days=1),
-        ).all()
+        # BUG-FIX 10: query duplicada — marcacoes_dia_antes fazia a mesma query que
+        # 'conflito' logo abaixo; reutilizar a lista para checar conflito de 1 min.
+        marcacoes_dia_antes = _ponto_marcacoes_dia(funcionario.id, data_ref)
         if any(
             abs((data_hora - m.data_hora).total_seconds()) < 60
-            for m in conflito
+            for m in marcacoes_dia_antes
             if m.data_hora
         ):
             return jsonify(
                 {"erro": "Já existe marcação neste minuto para este funcionário."}
             ), 400
+        # Serializar agora que a lista já foi carregada
+        marcacoes_dia_antes_dict = [m.to_dict() for m in marcacoes_dia_antes]
 
         try:
             ip = (
@@ -1153,7 +1213,7 @@ def register_ponto_routes(
                 data_ref=data_ref.strftime("%Y-%m-%d"),
                 motivo=motivo,
                 antes_json=json.dumps(
-                    {"dia": marcacoes_dia_antes}, ensure_ascii=False, default=str
+                    {"dia": marcacoes_dia_antes_dict}, ensure_ascii=False, default=str
                 ),
                 depois_json=json.dumps(
                     {"dia": marcacoes_dia_depois}, ensure_ascii=False, default=str
