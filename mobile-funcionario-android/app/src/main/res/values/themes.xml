@@ -16,6 +16,7 @@
         <item name="android:textColorLink">@color/primary</item>
         <item name="android:statusBarColor" tools:targetApi="l">@color/primary</item>
         <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement" tools:targetApi="35">true</item>
         <item name="materialButtonStyle">@style/Widget.App.Button</item>
         <item name="textInputStyle">@style/Widget.App.TextInputLayout</item>
         <item name="android:windowAnimationStyle">@style/WindowAnimation</item>
