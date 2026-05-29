@@ -120,10 +120,21 @@ def register_ponto_routes(
         jornada = str(funcionario.jornada or "").strip().lower()
         if not jornada:
             return 8 * 60
+        # BUG-FIX 18: tratar formato decimal ex: "8,5" ou "8.5" (= 8h30min)
+        match_decimal = re.search(r"\b(\d{1,2})[,\.](\d)\.?\b", jornada)
+        if match_decimal:
+            horas = max(0, min(16, int(match_decimal.group(1))))
+            frac = int(match_decimal.group(2))
+            return horas * 60 + (frac * 60 // 10)
         match = re.search(r"(\d{1,2})\s*[:h]\s*(\d{1,2})", jornada)
         if match:
-            horas = max(0, min(16, int(match.group(1))))
-            minutos = max(0, min(59, int(match.group(2))))
+            horas = int(match.group(1))
+            minutos = int(match.group(2))
+            # BUG-FIX 3: validar ranges — há regex não rejeita "25:80"
+            if horas > 23 or minutos > 59:
+                return 8 * 60
+            horas = max(0, min(16, horas))
+            minutos = max(0, min(59, minutos))
             return horas * 60 + minutos
         match = re.search(r"\b(\d{1,2})\b", jornada)
         if match:
@@ -161,10 +172,27 @@ def register_ponto_routes(
                             data_inicio_obj = datetime.strptime(ef.data_inicio, "%Y-%m-%d").date()
                             indice = (data_obj - data_inicio_obj).days % dias_ciclo
                             return esc.carga_horaria_min_dia(indice)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                    except Exception as _exc_esc:
+                        # BUG-FIX 6: logar erro para diagnóstico em vez de silenciar
+                        try:
+                            import logging as _log
+                            _log.getLogger(__name__).warning(
+                                "_ponto_min_esperado_data: erro ao calcular ciclo de escala "
+                                "esc_id=%s ef_id=%s data=%s: %s",
+                                getattr(esc, 'id', '?'), getattr(ef, 'id', '?'), data_str, _exc_esc
+                            )
+                        except Exception:
+                            pass
+        except Exception as _exc_outer:
+            # BUG-FIX 6: logar falha no bloco externo de escala
+            try:
+                import logging as _log
+                _log.getLogger(__name__).warning(
+                    "_ponto_min_esperado_data: erro ao consultar escalas func_id=%s data=%s: %s",
+                    getattr(funcionario, 'id', '?'), data_ref, _exc_outer
+                )
+            except Exception:
+                pass
 
         # 2) JornadaTrabalho por dia da semana
         if JornadaTrabalho and getattr(funcionario, "jornada_id", None):
@@ -332,7 +360,9 @@ def register_ponto_routes(
             esperado = _ponto_next_tipo(marcacao.tipo)
         if aberta_em is not None:
             inconsistencias.append("Jornada em aberto (faltou batida de fechamento).")
-        minutos_trabalhados = int(round(segundos_total / 60.0))
+        # BUG-FIX 15: usar divisão inteira (truncate) em vez de round() para evitar
+        # imprecisão acumulada (+/-1 min) em múltiplas marcações ao longo do mês.
+        minutos_trabalhados = segundos_total // 60
         minutos_esperados = _ponto_min_esperado_data(funcionario, data_ref)
         saldo = minutos_trabalhados - minutos_esperados
         # ── Horas extras 50% e 100% ──────────────────────────────────────────

@@ -506,6 +506,13 @@ class JornadaTrabalho(db.Model):
     criado_em = db.Column(db.DateTime, default=utcnow)
 
     def grade_semanal(self):
+        # BUG-FIX 10: logar quando dias_semana é NULL/vazio para facilitar diagnóstico
+        ds = getattr(self, "dias_semana", None)
+        if not ds:
+            app.logger.warning(
+                "JornadaTrabalho id=%s tem dias_semana NULL/vazio — usando grade seg-sex padrão",
+                self.id,
+            )
         return _jornada_extrair_grade(self)
 
     def minutos_esperados_weekday(self, weekday_python):
@@ -540,7 +547,14 @@ class JornadaTrabalho(db.Model):
             if bool((dia or {}).get("ativo", False)):
                 mins.append(_jornada_minutos_dia_cfg(dia))
         if mins:
-            return max(0, int(round(sum(mins) / float(len(mins)))))
+            # BUG-FIX 12: jornada com todos os dias = 0 minutos (dados corrompidos)
+            soma = sum(mins)
+            if soma == 0:
+                app.logger.warning(
+                    "JornadaTrabalho id=%s: carga_horaria_min=0 para todos os dias ativos — possível dado corrompido",
+                    self.id,
+                )
+            return max(0, int(round(soma / float(len(mins)))))
         return 0
 
     def to_dict(self):
@@ -552,6 +566,11 @@ class JornadaTrabalho(db.Model):
                 int(k) for k, v in grade.items() if bool((v or {}).get("ativo", False))
             ]
         except Exception:
+            # BUG-FIX 17: falha ao parsear chaves da grade — logar para diagnóstico
+            app.logger.warning(
+                "JornadaTrabalho id=%s: erro ao montar dias_semana_list — grade pode estar corrompida",
+                self.id,
+            )
             d["dias_semana_list"] = [1, 2, 3, 4, 5]
         d["carga_horaria_min"] = self.carga_horaria_min()
         d["funcionarios_count"] = (
@@ -574,8 +593,16 @@ def _jornada_minutos_dia_cfg(dia_cfg):
         entrada_min = he[0] * 60 + he[1]
         saida_min = hs[0] * 60 + hs[1]
         if saida_min <= entrada_min:
+            # BUG-FIX 1: cruzamento de meia-noite legítimo somente se saída < 06:00
+            # (turno noturno real, ex: 22:00-05:00). Se saída >= 06:00 com saída < entrada
+            # é horário invertido por engano (ex: 14:00-09:00) — retorna 0 e força correção.
+            if saida_min >= 360:  # saída >= 06:00: não é turno noturno legítimo
+                return 0
             saida_min += 24 * 60
-        return max(0, saida_min - entrada_min - intervalo)
+        # BUG-FIX 2: intervalo não pode ser maior que a jornada bruta (evita minutos negativos)
+        duracao_bruta = saida_min - entrada_min
+        intervalo = min(intervalo, max(0, duracao_bruta - 1))
+        return max(0, duracao_bruta - intervalo)
     except Exception:
         return 0
 
@@ -595,6 +622,7 @@ def _jornada_grade_padrao(jornada_obj=None):
         if _jornada_hhmm_valido(hi) and _jornada_hhmm_valido(hf):
             hi_p = list(map(int, str(hi).split(":")))
             hf_p = list(map(int, str(hf).split(":")))
+            # BUG-FIX 5: intervalo_inicio >= intervalo_fim → não há intervalo real
             intervalo = max(0, (hf_p[0] * 60 + hf_p[1]) - (hi_p[0] * 60 + hi_p[1]))
     except Exception:
         intervalo = 60
@@ -626,10 +654,19 @@ def _jornada_normalizar_grade(grade_in, jornada_obj=None):
             atual["entrada"] = ent
         if _jornada_hhmm_valido(sai):
             atual["saida"] = sai
+        # BUG-FIX 11: entrada == saída cria jornada de 0 minutos — usar padrão
+        if atual["entrada"] == atual["saida"]:
+            atual["entrada"] = "08:00"
+            atual["saida"] = "17:48"
         try:
-            atual["intervalo_min"] = max(
-                0, min(240, int(di.get("intervalo_min", atual["intervalo_min"]) or 0))
-            )
+            _intv = max(0, min(240, int(di.get("intervalo_min", atual["intervalo_min"]) or 0)))
+            # BUG-FIX 2 (complemento): não deixar intervalo >= duração bruta do dia
+            _he = list(map(int, atual["entrada"].split(":")))
+            _hs = list(map(int, atual["saida"].split(":")))
+            _bruto = (_hs[0] * 60 + _hs[1]) - (_he[0] * 60 + _he[1])
+            if _bruto > 0:
+                _intv = min(_intv, _bruto - 1)
+            atual["intervalo_min"] = max(0, _intv)
         except Exception:
             pass
     return base
@@ -17822,9 +17859,15 @@ def api_jornadas_criar():
     dias_ativos = [
         int(k) for k, v in grade_norm.items() if bool((v or {}).get("ativo", False))
     ]
-    primeira_cfg = grade_norm.get(
-        str(dias_ativos[0] if dias_ativos else 1), grade_norm.get("1", {})
-    )
+    # BUG-FIX 13: exigir ao menos 1 dia ativo
+    if not dias_ativos:
+        return jsonify({"erro": "Selecione ao menos um dia da semana para a jornada."}), 400
+    # BUG-FIX 19: limitar carga horária máxima a 12h por dia (720 minutos)
+    for k, v in grade_norm.items():
+        if (v or {}).get("ativo"):
+            mins_dia = _jornada_minutos_dia_cfg(v)
+            if mins_dia > 720:
+                return jsonify({"erro": "A jornada não pode exceder 12 horas por dia."}), 400
     intervalo_prim = max(
         0, min(240, int((primeira_cfg or {}).get("intervalo_min", 60) or 0))
     )
@@ -17893,10 +17936,18 @@ def api_jornada_editar(id):
         j.descricao = (d["descricao"] or "").strip()[:255]
     if "grade_semanal" in d and isinstance(d.get("grade_semanal"), dict):
         grade_norm = _jornada_normalizar_grade(d.get("grade_semanal") or {}, j)
-        j.dias_semana = json.dumps({"v": 1, "dias": grade_norm}, ensure_ascii=False)
         dias_ativos = [
             int(k) for k, v in grade_norm.items() if bool((v or {}).get("ativo", False))
         ]
+        # BUG-FIX 13: exigir ao menos 1 dia ativo
+        if not dias_ativos:
+            return jsonify({"erro": "Selecione ao menos um dia da semana para a jornada."}), 400
+        # BUG-FIX 19: limitar carga horária máxima a 12h por dia (720 minutos)
+        for _k, _v in grade_norm.items():
+            if (_v or {}).get("ativo"):
+                if _jornada_minutos_dia_cfg(_v) > 720:
+                    return jsonify({"erro": "A jornada não pode exceder 12 horas por dia."}), 400
+        j.dias_semana = json.dumps({"v": 1, "dias": grade_norm}, ensure_ascii=False)
         primeira_cfg = grade_norm.get(
             str(dias_ativos[0] if dias_ativos else 1), grade_norm.get("1", {})
         )
@@ -18066,7 +18117,26 @@ def api_funcionario_definir_jornada(id):
             return jsonify({"erro": "Jornada não encontrada"}), 404
         f.jornada_id = j.id
     db.session.commit()
-    return jsonify({"ok": True, "jornada_id": f.jornada_id})
+    # BUG-FIX 7: alertar se funcionário tem escala rotativa ativa ao mesmo tempo que jornada fixa.
+    # Prioridade no ponto é Escala > Jornada, então a jornada recém-vinculada seria ignorada.
+    aviso_escala_ativa = False
+    if f.jornada_id:
+        try:
+            hoje_str = localnow().date().strftime("%Y-%m-%d")
+            ef = EscalaFuncionario.query.filter(
+                EscalaFuncionario.funcionario_id == id,
+                EscalaFuncionario.ativo == True,
+                EscalaFuncionario.data_inicio <= hoje_str,
+            ).first()
+            if ef and (not ef.data_fim or ef.data_fim >= hoje_str):
+                aviso_escala_ativa = True
+        except Exception:
+            pass
+    return jsonify({
+        "ok": True,
+        "jornada_id": f.jornada_id,
+        "aviso_escala_ativa": aviso_escala_ativa,
+    })
 
 
 # ============================================================
