@@ -538,7 +538,6 @@ async function salvarEdicaoDiaCompleto(){
     // Remover qualquer offset existente para enviar como naive
     return base.replace(/[+\-]\d{2}:\d{2}$|Z$/,'');
   }
-  }
 
   // Marcações existentes que continuam = editar
   const itensEditar=[];
