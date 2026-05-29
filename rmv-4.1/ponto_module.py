@@ -258,12 +258,9 @@ def register_ponto_routes(
         )
         resultado = []
         for m in todas:
-            _dh = m.data_hora
-            if _dh.tzinfo is None:
-                _dh = _dh.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/Sao_Paulo"))
-            else:
-                _dh = _dh.astimezone(ZoneInfo("America/Sao_Paulo"))
-            if _dh.date() == data_ref:
+            # data_hora é BRT naive — usar .date() direto.
+            # NÃO tratar como UTC: deslocaria marcações de 00:00-02:59 para o dia anterior.
+            if m.data_hora and m.data_hora.date() == data_ref:
                 resultado.append(m)
         return resultado
 
@@ -498,18 +495,12 @@ def register_ponto_routes(
         )
         marc_por_data_comp = {}
         for _mc in todas_marc_comp:
-            # BUG-FIX 6: data_hora armazenado em UTC; converter para BRT antes de
-            # indexar por data — sem isso marcações de turno noturno após 21h BRT
-            # (00:xx UTC do dia seguinte) ficavam no dia errado e sumiam do espelho.
-            _dt_brt = _mc.data_hora
-            if _dt_brt.tzinfo is None:
-                _dt_brt = _dt_brt.replace(tzinfo=ZoneInfo("UTC")).astimezone(
-                    ZoneInfo("America/Sao_Paulo")
-                )
-            else:
-                _dt_brt = _dt_brt.astimezone(ZoneInfo("America/Sao_Paulo"))
-            _dc = _dt_brt.date()
-            marc_por_data_comp.setdefault(_dc, []).append(_mc)
+            # data_hora é BRT naive (utcnow()=localnow()=BRT); usar .date() direto.
+            # NÃO tratar naive como UTC: isso deslocaria marcações entre 00:00-02:59
+            # para o dia anterior (ex: 01:00 BRT naive → 22:00 BRT do dia anterior).
+            if _mc.data_hora:
+                _dc = _mc.data_hora.date()
+                marc_por_data_comp.setdefault(_dc, []).append(_mc)
         dia = inicio
         while dia <= fim:
             resumo = _ponto_resumo_func_dia(
@@ -615,10 +606,9 @@ def register_ponto_routes(
             return jsonify(
                 {"erro": "Não é permitido registrar ponto em horário futuro."}
             ), 400
-        # BUG-FIX 2: data_hora está em UTC (naive); usar data BRT para que o audit
-        # trail reflita o dia real do colaborador (turno noturno após 21h BRT cai no dia seguinte UTC).
-        _dh_marc_brt = data_hora.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/Sao_Paulo"))
-        data_ref = _dh_marc_brt.date()
+        # data_hora é BRT naive (utcnow()=localnow()=BRT); usar .date() diretamente.
+        # NÃO tratar como UTC: deslocaria marcações de madrugada para o dia anterior.
+        data_ref = data_hora.date()
         marcacoes_dia = _ponto_marcacoes_dia(funcionario.id, data_ref)
         tipo = (dados.get("tipo") or "").strip().lower() or _ponto_tipo_esperado(
             marcacoes_dia
@@ -731,13 +721,9 @@ def register_ponto_routes(
                 todas_marc_dia = []
             marc_batch = {}
             for _mb in todas_marc_dia:
-                # Converter para BRT para indexar pelo dia correto (turno noturno)
-                _dt_brt_b = _mb.data_hora
-                if _dt_brt_b.tzinfo is None:
-                    _dt_brt_b = _dt_brt_b.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/Sao_Paulo"))
-                else:
-                    _dt_brt_b = _dt_brt_b.astimezone(ZoneInfo("America/Sao_Paulo"))
-                if _dt_brt_b.date() == data_ref:
+                # data_hora é BRT naive — usar .date() direto para indexar pelo dia correto.
+                # NÃO tratar como UTC: isso deslocaria marcações de 00:00-02:59 para o dia anterior.
+                if _mb.data_hora and _mb.data_hora.date() == data_ref:
                     marc_batch.setdefault(_mb.funcionario_id, []).append(_mb)
             _feriados_dia = _feriados_para_data(data_ref)
             itens = []
@@ -860,12 +846,8 @@ def register_ponto_routes(
                 funcionario = db.session.get(Funcionario, funcionario_id)
                 if not funcionario:
                     return jsonify({"erro": "Funcionário não encontrado."}), 404
-                # BUG-FIX 5: data_hora está em UTC; usar data BRT para que o audit
-                # trail e snapshot do dia reflitam o dia real do colaborador.
-                _dh_brt = data_hora.replace(tzinfo=ZoneInfo("UTC")).astimezone(
-                    ZoneInfo("America/Sao_Paulo")
-                )
-                data_ref = _dh_brt.date()
+                # data_hora é BRT naive — usar .date() direto para data_ref correto.
+                data_ref = data_hora.date()
                 antes = [
                     marcacao.to_dict()
                     for marcacao in _ponto_marcacoes_dia(funcionario_id, data_ref)
@@ -971,13 +953,9 @@ def register_ponto_routes(
                     return jsonify({"erro": "Acesso negado."}), 403
             except Exception as _e:
                 app.logger.warning("ponto_excluir: falha no check de empresa uid=%s: %s", _uid_del, _e)
-        # BUG-FIX 6: data_hora em UTC → converter para BRT antes de usar como data_ref
-        # para que audit trail e snapshot correspondam ao dia real do colaborador.
+        # data_hora é BRT naive — usar .date() diretamente para data_ref correto.
         if marcacao.data_hora:
-            _dt_brt = marcacao.data_hora.replace(tzinfo=ZoneInfo("UTC")).astimezone(
-                ZoneInfo("America/Sao_Paulo")
-            )
-            data_ref = _dt_brt.date()
+            data_ref = marcacao.data_hora.date()
         else:
             data_ref = None
         snap_antes = (
@@ -1085,16 +1063,9 @@ def register_ponto_routes(
         if not motivo:
             return jsonify({"erro": "Informe o motivo da edição da marcação."}), 400
 
-        # BUG-FIX 7: data_hora em UTC → converter para BRT para que data_ant/data_nova
-        # correspondam ao dia real do colaborador (crítico para turnos noturnos).
-        _ant_brt = marcacao.data_hora.replace(tzinfo=ZoneInfo("UTC")).astimezone(
-            ZoneInfo("America/Sao_Paulo")
-        ) if marcacao.data_hora else None
-        _nova_brt = data_hora.replace(tzinfo=ZoneInfo("UTC")).astimezone(
-            ZoneInfo("America/Sao_Paulo")
-        )
-        data_ant = _ant_brt.date() if _ant_brt else _nova_brt.date()
-        data_nova = _nova_brt.date()
+        # data_hora é BRT naive — usar .date() direto para data_ant e data_nova.
+        data_ant = marcacao.data_hora.date() if marcacao.data_hora else data_hora.date()
+        data_nova = data_hora.date()
 
         def _snap(data_ref):
             return [
@@ -1234,10 +1205,8 @@ def register_ponto_routes(
             return jsonify({"erro": "Informe o motivo da inclusão da marcação."}), 400
 
         observacao = (dados.get("observacao") or "").strip()[:500]
-        # BUG-FIX 6: data_hora está em UTC; usar data BRT para que audit trail e
-        # checagem de duplicata reflitam o dia real do colaborador.
-        _dh_criar_brt = data_hora.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/Sao_Paulo"))
-        data_ref = _dh_criar_brt.date()
+        # data_hora é BRT naive — usar .date() diretamente.
+        data_ref = data_hora.date()
 
         # BUG-FIX 10: query duplicada — marcacoes_dia_antes fazia a mesma query que
         # 'conflito' logo abaixo; reutilizar a lista para checar conflito de 1 min.
@@ -1486,14 +1455,13 @@ def register_ponto_routes(
             return Paragraph(texto, sty)
 
         def hhmm_from_dt(dt):
-            # BUG-FIX 3: data_hora armazenado em UTC; converter para Horário de
-            # Brasília antes de formatar — antes exibia marcacões com 3h a menos.
+            # data_hora é BRT naive (utcnow()=localnow()=BRT); formatar diretamente.
+            # NÃO tratar como UTC: tratar naive como UTC subtrairia 3h dos horários.
             if not dt:
                 return ""
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/Sao_Paulo"))
-            else:
-                dt = dt.astimezone(ZoneInfo("America/Sao_Paulo"))
+            if dt.tzinfo is not None:
+                # Se por algum motivo vier aware, converter para BRT para exibir
+                dt = dt.astimezone(ZoneInfo("America/Sao_Paulo")).replace(tzinfo=None)
             return dt.strftime("%H:%M")
 
         def fmt_comp_br(valor):
@@ -2038,16 +2006,16 @@ def register_ponto_routes(
             # formatar datas para exibição no frontend
             if s.criado_em:
                 try:
-                    _dt_c = s.criado_em.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/Sao_Paulo"))
-                    d_s["criado_fmt"] = _dt_c.strftime("%d/%m/%Y %H:%M")
+                    # criado_em é BRT naive — formatar diretamente sem conversão
+                    d_s["criado_fmt"] = s.criado_em.strftime("%d/%m/%Y %H:%M")
                 except Exception:
                     d_s["criado_fmt"] = str(s.criado_em)[:16]
             else:
                 d_s["criado_fmt"] = ""
             if s.decidido_em:
                 try:
-                    _dt_d = s.decidido_em.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/Sao_Paulo"))
-                    d_s["decidido_fmt"] = _dt_d.strftime("%d/%m/%Y %H:%M")
+                    # decidido_em é BRT naive — formatar diretamente sem conversão
+                    d_s["decidido_fmt"] = s.decidido_em.strftime("%d/%m/%Y %H:%M")
                 except Exception:
                     d_s["decidido_fmt"] = str(s.decidido_em)[:16]
             else:

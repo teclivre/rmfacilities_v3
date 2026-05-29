@@ -919,7 +919,7 @@ function renderCorrecoesPonto(){
     const statusLabel=_CORRECAO_STATUS_LABEL[c.status]||c.status;
     const tipoLabel=_CORRECAO_TIPO_LABEL[c.tipo_problema]||c.tipo_problema;
     const dataFmt=c.data_ref?c.data_ref.split('-').reverse().join('/'):'-';
-    const criadoFmt=c.criado_em?(new Date(c.criado_em+'Z')).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'-';
+    const criadoFmt=c.criado_em?c.criado_em.replace('T',' ').slice(0,16).split('-').join('/').replace(/(\d+)\/(\d+)\/(\d+) (\d+:\d+)/,'$3/$2/$1 $4'):'-';
     const isPendente=c.status==='pendente';
     // Bloco de alteração automática de marcação
     const temMarcacao=c.marcacao_id&&c.horario_correto;
