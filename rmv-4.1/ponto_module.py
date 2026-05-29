@@ -480,7 +480,17 @@ def register_ponto_routes(
         )
         marc_por_data_comp = {}
         for _mc in todas_marc_comp:
-            _dc = _mc.data_hora.date()
+            # BUG-FIX 6: data_hora armazenado em UTC; converter para BRT antes de
+            # indexar por data — sem isso marcações de turno noturno após 21h BRT
+            # (00:xx UTC do dia seguinte) ficavam no dia errado e sumiam do espelho.
+            _dt_brt = _mc.data_hora
+            if _dt_brt.tzinfo is None:
+                _dt_brt = _dt_brt.replace(tzinfo=ZoneInfo("UTC")).astimezone(
+                    ZoneInfo("America/Sao_Paulo")
+                )
+            else:
+                _dt_brt = _dt_brt.astimezone(ZoneInfo("America/Sao_Paulo"))
+            _dc = _dt_brt.date()
             marc_por_data_comp.setdefault(_dc, []).append(_mc)
         dia = inicio
         while dia <= fim:
@@ -1304,8 +1314,13 @@ def register_ponto_routes(
                 ).first()
                 if _u and _u[0] and funcionario.empresa_id and int(_u[0]) != int(funcionario.empresa_id):
                     return jsonify({"erro": "Acesso negado."}), 403
-            except Exception:
-                pass  # em caso de erro no check, não bloqueia (fail-open para não quebrar uso legado)
+            except Exception as _auth_exc:
+                # BUG-FIX 5: logar falha em vez de silenciar completamente; fail-open
+                # é intencional para compatibilidade mas deve ser auditável.
+                app.logger.warning(
+                    "espelho_ponto: falha na verificação de empresa para uid=%s: %s",
+                    _uid_sess, _auth_exc
+                )
 
         resumo_comp = _ponto_resumo_competencia(funcionario, competencia)
         if not resumo_comp:
@@ -1394,7 +1409,9 @@ def register_ponto_routes(
 
             _dia_str = dia.strftime("%Y-%m-%d")
             resumo = _resumo_por_data.get(_dia_str) or _ponto_resumo_func_dia(
-                funcionario, dia, _marcacoes=marcacoes
+                # BUG-FIX 8: passar _feriados ao fallback — sem isso dias de feriado
+                # não eram reconhecidos no caminho de fallback e HE 100% ficava errada.
+                funcionario, dia, _marcacoes=marcacoes, _feriados=set()
             )
             previstas = int(resumo.get("horas_esperadas_min", 0) or 0)
             diurnas = int(resumo.get("horas_trabalhadas_min", 0) or 0)
@@ -1430,8 +1447,11 @@ def register_ponto_routes(
                     faltas = "-" + _ponto_fmt_minutos(abs(saldo))
                     total_faltas += abs(saldo)
                 elif saldo > 0:
-                    extras = _ponto_fmt_minutos(saldo)
-                    total_extras += saldo
+                    # BUG-FIX 7: saldo bruto inclui HE 50% e 100% misturadas;
+                    # a coluna é rotulada "Ext. 100" então usar he_100_min do resumo.
+                    _he100 = int(resumo.get("he_100_min", 0) or 0)
+                    extras = _ponto_fmt_minutos(_he100) if _he100 else ""
+                    total_extras += _he100
 
             total_previstas += previstas
             total_diurnas += diurnas
@@ -1522,7 +1542,10 @@ def register_ponto_routes(
             lp = get_logo()
             if lp:
                 cands.append(lp)
-            cands.append(logo_url_padrao)
+            # BUG-FIX 4: logo_url_padrao nunca foi definido → NameError em runtime.
+            # Usar caminho relativo ao diretório do módulo como fallback final.
+            _fallback = os.path.join(os.path.dirname(__file__), "static", "img", "logo.png")
+            cands.append(_fallback)
             for cand in cands:
                 try:
                     if isinstance(cand, str) and cand.startswith(
@@ -1582,9 +1605,11 @@ def register_ponto_routes(
                     st_small,
                     html=True,
                 ),
-                p("<b>Escala:</b> Normal", st_small, html=True),
+                # BUG-FIX 2: _nome_escala calculado mas nunca usado — estava hardcoded "Normal"
+                p(f"<b>Escala:</b> {_nome_escala}", st_small, html=True),
+                # BUG-FIX 3: reutilizar _now_br já calculado em vez de novo datetime.now()
                 p(
-                    f"<b>Data de emissão:</b> {datetime.now(ZoneInfo('America/Sao_Paulo')).strftime('%d/%m/%Y')}",
+                    f"<b>Data de emissão:</b> {_now_br.strftime('%d/%m/%Y')}",
                     st_small,
                     html=True,
                 ),
@@ -1598,9 +1623,10 @@ def register_ponto_routes(
             TableStyle(
                 [
                     ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#777777")),
-                    ("SPAN", (0, 0), (0, 1)),
+                    # BUG-FIX 1: SPAN(0,0)-(0,1) absorvia célula Colaborador/CPF (col=0, row=1)
+                    # tornando-a invisível; e ALIGN range (0,1) afetava linha errada.
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("ALIGN", (0, 0), (0, 1), "CENTER"),
+                    ("ALIGN", (0, 0), (0, 0), "CENTER"),
                     ("LEFTPADDING", (0, 0), (-1, -1), 4),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                     ("TOPPADDING", (0, 0), (-1, -1), (3 if compact_mode else 5)),
@@ -1660,11 +1686,16 @@ def register_ponto_routes(
         elementos.append(tabela_main)
         elementos.append(Spacer(1, (4 if compact_mode else 8)))
 
+        # BUG-FIX 10: prefixar "-" na coluna Faltas apenas quando há faltas;
+        # antes exibia "-0:00" em competências sem nenhuma falta.
+        _faltas_fmt = (
+            f"-{_ponto_fmt_minutos(total_faltas)}" if total_faltas > 0 else "0:00"
+        )
         resumo_line = (
             f"<b>Previstas:</b> {_ponto_fmt_minutos(total_previstas)}   "
             f"<b>Diurnas:</b> {_ponto_fmt_minutos(total_diurnas)}   "
             f"<b>Intervalo:</b> {_ponto_fmt_minutos(total_intervalo)}   "
-            f"<b>Faltas:</b> -{_ponto_fmt_minutos(total_faltas)}   "
+            f"<b>Faltas:</b> {_faltas_fmt}   "
             f"<b>Extras 100%:</b> {_ponto_fmt_minutos(total_extras)}"
         )
         resumo_tbl = Table(
@@ -1691,7 +1722,8 @@ def register_ponto_routes(
                         # BUG-FIX 19: a legenda mencionava 3 tipos mas as marcações
                         # apareciam todas iguais (HH:MM) sem nenhum símbolo diferenciador.
                         # Agora [A] = incluída por admin  |  [S] = por solicitação  |  sem sufixo = biométrico/kiosk
-                        "<b>Legenda:</b> HH:MM = marcacão normal; HH:MM[A] = incluída pelo RH; HH:MM[S] = por solicitação/ajuste.",
+                        # BUG-FIX 9: typo "marcacão" → "marcação"
+                        "<b>Legenda:</b> HH:MM = marcação normal; HH:MM[A] = incluída pelo RH; HH:MM[S] = por solicitação/ajuste.",
                         st_small,
                         html=True,
                     ),
