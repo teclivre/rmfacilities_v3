@@ -1709,15 +1709,11 @@ def register_ponto_routes(
             ],
             [
                 p(
-                    f"<b>Colaborador:</b> {funcionario.nome}<br/><b>CPF:</b> {fmt_doc(funcionario.cpf or '')}",
+                    f"<b>Colaborador:</b> {funcionario.nome}&nbsp;&nbsp;&nbsp;<b>CPF:</b> {fmt_doc(funcionario.cpf or '')}&nbsp;&nbsp;&nbsp;<b>Cracha:</b> {funcionario.re or '-'}&nbsp;&nbsp;&nbsp;<b>PIS:</b> {funcionario.pis or '-'}",
                     st_small,
                     html=True,
                 ),
-                p(
-                    f"<b>Crachá:</b> {funcionario.re or '-'}<br/><b>PIS:</b> {funcionario.pis or '-'}",
-                    st_small,
-                    html=True,
-                ),
+                p("", st_small),  # absorvida pelo SPAN (0,1)-(1,1)
                 # BUG-FIX 2: _nome_escala calculado mas nunca usado — estava hardcoded "Normal"
                 p(f"<b>Escala:</b> {_nome_escala}", st_small, html=True),
                 # BUG-FIX 3: reutilizar _now_br já calculado em vez de novo datetime.now()
@@ -1736,8 +1732,8 @@ def register_ponto_routes(
             TableStyle(
                 [
                     ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#777777")),
-                    # BUG-FIX 1: SPAN(0,0)-(0,1) absorvia célula Colaborador/CPF (col=0, row=1)
-                    # tornando-a invisível; e ALIGN range (0,1) afetava linha errada.
+                    # SPAN: fundir cols 0-1 na linha do Colaborador para o nome caber em uma linha
+                    ("SPAN", (0, 1), (1, 1)),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                     ("ALIGN", (0, 0), (0, 0), "CENTER"),
                     ("LEFTPADDING", (0, 0), (-1, -1), 4),
