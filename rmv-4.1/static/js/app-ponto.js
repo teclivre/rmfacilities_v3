@@ -3,6 +3,9 @@ function pontoDataHojeISO(){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
+// BUG-FIX 1: pontoAgoraLocalInput deve incluir offset de timezone BRT (-03:00)
+// para que a string enviada à API seja interpretada corretamente como hora local
+// e não como UTC, evitando marcações 3h adiantadas.
 function pontoAgoraLocalInput(){
   const d=new Date();
   const y=d.getFullYear();
@@ -10,7 +13,12 @@ function pontoAgoraLocalInput(){
   const day=String(d.getDate()).padStart(2,'0');
   const h=String(d.getHours()).padStart(2,'0');
   const mi=String(d.getMinutes()).padStart(2,'0');
-  return `${y}-${m}-${day}T${h}:${mi}`;
+  // Incluir offset de timezone para que a API saiba que é hora local (BRT).
+  const tz=d.getTimezoneOffset();
+  const tzSign=tz<=0?'+':'-';
+  const tzH=String(Math.floor(Math.abs(tz)/60)).padStart(2,'0');
+  const tzM=String(Math.abs(tz)%60).padStart(2,'0');
+  return `${y}-${m}-${day}T${h}:${mi}${tzSign}${tzH}:${tzM}`;
 }
 
 function pontoCompetenciaAtual(){
@@ -28,7 +36,8 @@ function pontoAtivosFiltrados(){
   const termo=(document.getElementById('ponto-func-busca')?.value||'').trim().toLowerCase();
   const ativos=(pontoFuncs||[])
     .filter(f=>String((f.status||'').toLowerCase())==='ativo')
-    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
+    // BUG-FIX 10: segunda arg de localeCompare deve ser o locale, não b.nome
+    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
   if(!termo) return ativos;
   const termoDig=termo.replace(/\D/g,'');
   return ativos.filter(f=>{
@@ -101,7 +110,7 @@ function pontoPopularFuncionarios(){
   const atual=String(sel.value||'');
   const ativos=(pontoFuncs||[])
     .filter(f=>String((f.status||'').toLowerCase())==='ativo')
-    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
+    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
   sel.innerHTML=ativos.map(f=>`<option value="${f.id}">${f.nome}${f.matricula?` · Mat ${f.matricula}`:''}</option>`).join('');
   if(!document.getElementById('ponto-data').value){
     document.getElementById('ponto-data').value=pontoDataHojeISO();
@@ -254,7 +263,27 @@ async function salvarEdicaoMarcacaoPonto(){
 async function pontoExcluirMarcacao(marcacaoId){
   const m=(pontoMarcacoesDiaAtual||[]).find(x=>String(x.id)===String(marcacaoId));
   const label=m?(m.tipo_label||m.tipo)+' às '+(m.hora_fmt||''):'marcação #'+marcacaoId;
-  const motivo=prompt(`Excluir "${label}".\n\nInforme o motivo da exclusão:`,'');
+  // BUG-FIX 3: prompt() é bloqueado por popup blockers em browsers modernos.
+  // Usar um modal inline criado dinamicamente como fallback seguro.
+  const motivo = await new Promise(resolve=>{
+    const _overlay=document.createElement('div');
+    _overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+    _overlay.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+      <div style="font-weight:700;margin-bottom:12px">Excluir "${label}"</div>
+      <label style="font-size:13px;display:block;margin-bottom:6px">Motivo da exclusão <span style="color:red">*</span></label>
+      <input id="_exc-motivo-inp" style="width:100%;padding:8px 10px;border:1px solid #ccc;border-radius:8px;font-size:14px;box-sizing:border-box" placeholder="Informe o motivo…">
+      <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+        <button id="_exc-cancel" style="padding:8px 16px;border:1px solid #ccc;border-radius:8px;cursor:pointer;background:#f5f5f5">Cancelar</button>
+        <button id="_exc-ok" style="padding:8px 16px;background:#c62828;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700">Excluir</button>
+      </div>
+    </div>`;
+    document.body.appendChild(_overlay);
+    const inp=_overlay.querySelector('#_exc-motivo-inp');
+    setTimeout(()=>inp.focus(),80);
+    _overlay.querySelector('#_exc-cancel').onclick=()=>{document.body.removeChild(_overlay);resolve(null);};
+    _overlay.querySelector('#_exc-ok').onclick=()=>{const v=inp.value.trim();document.body.removeChild(_overlay);resolve(v||null);};
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter'){const v=inp.value.trim();document.body.removeChild(_overlay);resolve(v||null);}if(e.key==='Escape'){document.body.removeChild(_overlay);resolve(null);}});
+  });
   if(motivo===null) return; // cancelou
   if(!motivo.trim()){
     showSt('ponto-st','Informe o motivo para excluir a marcação.',true);
@@ -313,7 +342,25 @@ async function pontoRegistrarTipo(tipo=''){
   const f=(pontoFuncs||[]).find(x=>String(x.id)===String(fid));
   const rot={entrada:'Entrada',saida_intervalo:'Saída intervalo',retorno_intervalo:'Retorno intervalo',saida:'Saída'};
   const tit=tipo?` (${rot[tipo]||tipo})`:'';
-  if(!confirm(`Confirma registrar ponto${tit} para ${f?.nome||'o colaborador selecionado'}?`)) return;
+  // BUG-FIX 6: confirm() pode ser bloqueado por popup blockers.
+  // Usar inline modal para confirmação segura.
+  const confirmado = await new Promise(resolve=>{
+    const _ov=document.createElement('div');
+    _ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+    _ov.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;max-width:380px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+      <div style="font-weight:700;margin-bottom:12px">Confirmar registro de ponto${tit}</div>
+      <div style="font-size:14px;margin-bottom:16px">Confirma registrar ponto${tit} para <strong>${f?.nome||'o colaborador selecionado'}</strong>?</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="_rg-cancel" style="padding:8px 16px;border:1px solid #ccc;border-radius:8px;cursor:pointer;background:#f5f5f5">Cancelar</button>
+        <button id="_rg-ok" style="padding:8px 16px;background:#2e7d32;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700">Confirmar</button>
+      </div>
+    </div>`;
+    document.body.appendChild(_ov);
+    setTimeout(()=>_ov.querySelector('#_rg-ok').focus(),80);
+    _ov.querySelector('#_rg-cancel').onclick=()=>{document.body.removeChild(_ov);resolve(false);};
+    _ov.querySelector('#_rg-ok').onclick=()=>{document.body.removeChild(_ov);resolve(true);};
+  });
+  if(!confirmado) return;
   const payload={funcionario_id:fid,origem:'web'};
   if(tipo) payload.tipo=tipo;
   const r=await api('/api/ponto/marcar','POST',payload);
@@ -476,13 +523,26 @@ async function salvarEdicaoDiaCompleto(){
   const idsOriginais=(_pedCtx?.marcacoes||pontoMarcacoesDiaAtual||[]).map(m=>String(m.id));
   const idsExcluir=idsOriginais.filter(id=>!idsPresentes.has(id));
 
+  // BUG-FIX 2: helper para montar datetime com offset de timezone correto
+  // (evita que a hora seja interpretada como UTC pelo servidor).
+  function _pedDhComTz(dataRef, dhRaw){
+    const tz=new Date().getTimezoneOffset();
+    const tzSign=tz<=0?'+':'-';
+    const tzH=String(Math.floor(Math.abs(tz)/60)).padStart(2,'0');
+    const tzM=String(Math.abs(tz)%60).padStart(2,'0');
+    const tzStr=`${tzSign}${tzH}:${tzM}`;
+    const base=/^\d{2}:\d{2}$/.test(dhRaw)?dataRef+'T'+dhRaw:dhRaw;
+    if(/[+\-]\d{2}:\d{2}$/.test(base)||base.endsWith('Z')) return base;
+    return base+tzStr;
+  }
+
   // Marcações existentes que continuam = editar
   const itensEditar=[];
   wrap.querySelectorAll('[data-marc-id]:not([data-nova="1"])').forEach(card=>{
     const id=card.dataset.marcId;
     const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
     const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
-    const dh=/^\d{2}:\d{2}$/.test(dhRaw)?data+'T'+dhRaw:dhRaw;
+    const dh=_pedDhComTz(data,dhRaw);
     const obs=(card.querySelector('.ped-obs')?.value||'').trim();
     if(id && tipo && dh) itensEditar.push({id,tipo,data_hora:dh,observacao:obs});
   });
@@ -492,7 +552,7 @@ async function salvarEdicaoDiaCompleto(){
   wrap.querySelectorAll('[data-marc-id][data-nova="1"]').forEach(card=>{
     const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
     const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
-    const dh=/^\d{2}:\d{2}$/.test(dhRaw)?data+'T'+dhRaw:dhRaw;
+    const dh=_pedDhComTz(data,dhRaw);
     const obs=(card.querySelector('.ped-obs')?.value||'').trim();
     if(tipo && dh) itensNovos.push({tipo,data_hora:dh,observacao:obs,funcionario_id:fid,origem:'admin'});
   });
@@ -507,22 +567,23 @@ async function salvarEdicaoDiaCompleto(){
   if(!confirm(`Confirma: ${resumo}?`)) return;
 
   showSt('ped-st','Salvando…',false);
+  // BUG-FIX 4: parar imediatamente em caso de erro parcial, sem continuar
+  // as operações restantes (evita estado inconsistente irrecuperável).
   let erros=[];
 
   for(const id of idsExcluir){
     const r=await api('/api/ponto/marcacao/'+id,'DELETE',{motivo});
-    if(r.erro) erros.push(`Excluir #${id}: ${r.erro}`);
+    if(r.erro){showSt('ped-st','Erro ao excluir #'+id+': '+r.erro,true);return;}
   }
   for(const it of itensEditar){
     const r=await api('/api/ponto/marcacao/'+it.id,'PUT',{tipo:it.tipo,data_hora:it.data_hora,observacao:it.observacao,motivo});
-    if(r.erro) erros.push(`Editar #${it.id}: ${r.erro}`);
+    if(r.erro){showSt('ped-st','Erro ao editar #'+it.id+': '+r.erro,true);return;}
   }
   for(const it of itensNovos){
     const r=await api('/api/ponto/marcacao','POST',{...it,motivo});
-    if(r.erro) erros.push(`Nova marcação: ${r.erro}`);
+    if(r.erro){showSt('ped-st','Erro ao criar marcação: '+r.erro,true);return;}
   }
 
-  if(erros.length){showSt('ped-st','Erros: '+erros.join(' | '),true);return;}
   closeModal('ponto-edit-dia',true);
   if(_pedCtx?.isGf){
     showSt('gf-st',`${resumo} salva(s) com sucesso.`,false);
@@ -551,7 +612,7 @@ function gfRenderFuncs(){
   const termo=(document.getElementById('gf-busca')?.value||'').toLowerCase();
   const ativos=(pontoFuncs||[])
     .filter(f=>String((f.status||'').toLowerCase())==='ativo')
-    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
+    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
   const filtrados=!termo?ativos:ativos.filter(f=>{
     const nm=(f.nome||'').toLowerCase();
     const mat=String(f.matricula||'').toLowerCase();
@@ -639,7 +700,10 @@ function gfRenderCalendario(resumo,comp){
     const dataStr=`${comp}-${String(d).padStart(2,'0')}`;
     const dayData=mapaStatus[dataStr];
     const isHoje=hoje.getFullYear()===ano&&hoje.getMonth()+1===mes&&hoje.getDate()===d;
-    const isFuturo=new Date(ano,mes-1,d)>hoje;
+  // BUG-FIX 5: comparar dia/mês/ano diretamente para evitar problema de timezone
+  // no boundary do dia (new Date(ano,mes-1,d)>hoje pode retornar false para "hoje"
+  // dependendo do fuso horário local do browser às 00:00h local).
+  const isFuturo=(ano>hoje.getFullYear())||(ano===hoje.getFullYear()&&mes-1>hoje.getMonth())||(ano===hoje.getFullYear()&&mes-1===hoje.getMonth()&&d>hoje.getDate());
     let cls='gf-dia';
     if(isFuturo) cls+=' futuro';
     else if(dayData){
@@ -706,7 +770,10 @@ function gfRenderFolha(resumo){
   const linhas=(resumo.dias||[]).map(dia=>{
     const marc=dia.marcacoes||[];
     const get=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);return m?(m.data_hora||'').slice(11,16):'—';};
-    const saldoClass=dia.saldo_fmt?.startsWith('+')?'color:var(--verde)':(dia.saldo_fmt?.startsWith('-')?'color:var(--verm)':'');
+    // BUG-FIX 9: _ponto_fmt_minutos(signed=True) retorna "-HH:MM" para negativo
+    // mas sem "+" para positivo, então startsWith('+') nunca é verdadeiro.
+    // Usar saldo_min (número) para detectar sinal correto.
+    const saldoClass=(dia.saldo_min||0)>0?'color:var(--verde)':((dia.saldo_min||0)<0?'color:var(--verm)':'');
     const statusHtml=dia.status==='ok'?'<span class="pill p-vd" style="font-size:10px">OK</span>':'<span class="pill p-vm" style="font-size:10px">⚠</span>';
     const he50=dia.he_50_fmt||'00:00'; const he100=dia.he_100_fmt||'00:00';
     const not=dia.noturno_fmt||'00:00'; const intra=dia.intrajornada_fmt||'00:00';
@@ -729,7 +796,8 @@ function gfRenderFolha(resumo){
   wrap.style.display='block';
 
   const tot=resumo.totais||{};
-  const saldoStyle=(tot.saldo_fmt||'').startsWith('+')?'color:var(--verde)':(tot.saldo_fmt||'').startsWith('-')?'color:var(--verm)':'';
+  // BUG-FIX 9 (totais): mesma correção de cor de saldo para o total.
+  const saldoStyle=(tot.saldo_min||0)>0?'color:var(--verde)':((tot.saldo_min||0)<0?'color:var(--verm)':'');
   totDiv.innerHTML=`
     <div class="ponto-kpi"><div class="l">Total trabalhado</div><div class="v">${tot.horas_trabalhadas_fmt||'00:00'}</div></div>
     <div class="ponto-kpi"><div class="l">Carga esperada</div><div class="v">${tot.horas_esperadas_fmt||'00:00'}</div></div>
@@ -916,10 +984,11 @@ async function decidirCorrecaoPonto(id,acao){
     const r=await api('/api/funcionarios/ponto/solicitacao-correcao/'+id+'/decidir','POST',{acao,motivo});
     if(r&&r.ok){
       showSt('st-correcoes-ponto',acao==='aprovar'?'✅ Solicitação aprovada.':'❌ Solicitação rejeitada.',false);
-      // Atualiza localmente
+      // BUG-FIX 8: usar status retornado pelo servidor em vez de hardcodar string
+      // ('resolvido'/'rejeitado') — evita badge travado se enum mudar.
       const idx=_correcoesPontoTodas.findIndex(c=>c.id===id);
       if(idx>=0){
-        _correcoesPontoTodas[idx].status=acao==='aprovar'?'resolvido':'rejeitado';
+        _correcoesPontoTodas[idx].status=r.correcao?.status||(acao==='aprovar'?'resolvido':'rejeitado');
         _correcoesPontoTodas[idx].motivo_admin=motivo;
       }
       _atualizarBadgeCorrecoes();
@@ -934,12 +1003,12 @@ async function decidirCorrecaoPonto(id,acao){
 
 // Polling periódico: atualiza badge a cada 60s quando a aba de ponto está visível
 setInterval(()=>{
+  // BUG-FIX 7: não fazer polling quando a seção de ponto está oculta.
   const secPonto=document.getElementById('pg-ponto');
-  if(secPonto&&secPonto.style.display!=='none'){
-    api('/api/funcionarios/ponto/solicitacoes-correcao/todas-pendentes')
-      .then(d=>{if(Array.isArray(d)){_correcoesPontoTodas=d;_atualizarBadgeCorrecoes();}})
-      .catch(()=>{});
-  }
+  if(!secPonto||!secPonto.classList.contains('on')) return;
+  api('/api/funcionarios/ponto/solicitacoes-correcao/todas-pendentes')
+    .then(d=>{if(Array.isArray(d)){_correcoesPontoTodas=d;_atualizarBadgeCorrecoes();}})
+    .catch(()=>{});
 },60000);
 
 // ── Aprovação de Hora Extra ───────────────────────────────────────────────────
