@@ -641,14 +641,17 @@ async function gfSelecionarFunc(id){
 async function gfSolicitarAprovacaoHE(resumo){
   const btn=document.getElementById('gf-btn-solicitar-he');
   if(btn){btn.disabled=true;btn.textContent='Enviando...';}
+  // BUG-FIX: ID correto do input de competência é 'gf-competencia', não 'gf-comp-sel'.
+  const comp=resumo.competencia||document.getElementById('gf-competencia')?.value||(document.getElementById('gf-competencia')?.value)||'';
   try{
     const r=await api('/api/ponto/he/solicitacoes','POST',{
       funcionario_id:resumo.funcionario_id||gfFuncId,
-      competencia:resumo.competencia||document.getElementById('gf-comp-sel')?.value
+      competencia:comp
     });
     if(r&&r.ok){
-      if(btn){btn.textContent='⏳ Aguardando aprovação';btn.disabled=true;}
       showSt('gf-st','✅ Solicitação enviada para aprovação do gestor.',false);
+      // BUG-FIX: recarregar o mês para refletir o novo status da solicitação no botão.
+      await gfCarregarMes();
     }else{
       if(btn){btn.disabled=false;btn.textContent='⏱ Solicitar aprovação de HE';}
       showSt('gf-st',r?.erro||'Erro ao enviar solicitação.',true);
@@ -719,7 +722,9 @@ function gfRenderCalendario(resumo,comp){
     const saldo=dayData?.saldo_fmt||'';
     const horas=dayData?.horas_trabalhadas_fmt||'';
     const marc=dayData?.marcacoes||[];
-    const getT=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);if(!m)return null;const s=String(m.data_hora||'');const mt=s.match(/(\d{2}:\d{2})(?::\d{2})?/);return mt?mt[1]:null;};
+    // BUG-FIX: data_hora vem em UTC ("YYYY-MM-DD HH:MM:SS"); converter para BRT antes
+    // de exibir — sem isso os horários aparecem 3h atrasados no calendário.
+    const getT=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);if(!m)return null;const s=String(m.data_hora||'');if(!s)return null;try{const d=new Date(s.replace(' ','T')+'Z');if(isNaN(d))return null;return d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'});}catch(_){const mt=s.match(/(\d{2}:\d{2})/);return mt?mt[1]:null;}};
     const timesHtml=[['entrada','gf-t-e','E'],['saida_intervalo','gf-t-si','SI'],['retorno_intervalo','gf-t-ri','RI'],['saida','gf-t-s','S']]
       .map(([tipo,cls,lb])=>{const t=getT(tipo);return t?`<span class="gf-t ${cls}">${lb} ${t}</span>`:'';})
       .filter(Boolean).join('');
@@ -769,7 +774,8 @@ function gfRenderFolha(resumo){
 
   const linhas=(resumo.dias||[]).map(dia=>{
     const marc=dia.marcacoes||[];
-    const get=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);return m?(m.data_hora||'').slice(11,16):'—';};
+    // BUG-FIX: data_hora vem em UTC; converter para BRT antes de exibir.
+    const get=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);if(!m)return '—';const s=String(m.data_hora||'');if(!s)return '—';try{const d=new Date(s.replace(' ','T')+'Z');if(isNaN(d))return s.slice(11,16)||'—';return d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'});}catch(_){return s.slice(11,16)||'—';}};
     // BUG-FIX 9: _ponto_fmt_minutos(signed=True) retorna "-HH:MM" para negativo
     // mas sem "+" para positivo, então startsWith('+') nunca é verdadeiro.
     // Usar saldo_min (número) para detectar sinal correto.

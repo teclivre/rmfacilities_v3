@@ -712,8 +712,12 @@ def register_ponto_routes(
             # Batch load: 1 query para TODAS as marcações do dia (elimina N+1)
             ids_ativos = [f.id for f in funcionarios]
             if ids_ativos:
-                inicio_dia = datetime.combine(data_ref, datetime.min.time())
-                fim_dia = inicio_dia + timedelta(days=1)
+                # BUG-FIX: estender janela em ±3h para turno noturno — sem isso,
+                # marcações após 21h BRT (= 00h UTC do dia seguinte) ficam fora da
+                # janela e o _ponto_resumo_func_dia recebe lista vazia para esses
+                # funcionários (porque _marcacoes=[] não é None, não faz fallback).
+                inicio_dia = datetime.combine(data_ref, datetime.min.time()) - timedelta(hours=3)
+                fim_dia = datetime.combine(data_ref, datetime.min.time()) + timedelta(hours=27)
                 todas_marc_dia = (
                     PontoMarcacao.query.filter(
                         PontoMarcacao.funcionario_id.in_(ids_ativos),
@@ -727,7 +731,14 @@ def register_ponto_routes(
                 todas_marc_dia = []
             marc_batch = {}
             for _mb in todas_marc_dia:
-                marc_batch.setdefault(_mb.funcionario_id, []).append(_mb)
+                # Converter para BRT para indexar pelo dia correto (turno noturno)
+                _dt_brt_b = _mb.data_hora
+                if _dt_brt_b.tzinfo is None:
+                    _dt_brt_b = _dt_brt_b.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/Sao_Paulo"))
+                else:
+                    _dt_brt_b = _dt_brt_b.astimezone(ZoneInfo("America/Sao_Paulo"))
+                if _dt_brt_b.date() == data_ref:
+                    marc_batch.setdefault(_mb.funcionario_id, []).append(_mb)
             _feriados_dia = _feriados_para_data(data_ref)
             itens = []
             total_ok = 0
@@ -2009,7 +2020,36 @@ def register_ponto_routes(
                 except Exception as _e_hel:
                     app.logger.warning("he_list: falha no check de empresa uid=%s: %s", _uid_he_list, _e_hel)
         itens = q.order_by(SolicitacaoHoraExtra.criado_em.desc()).all()
-        return jsonify({"ok": True, "itens": [s.to_dict() for s in itens], "total": len(itens)})
+        # BUG-FIX: enriquecer resposta com campos que o frontend usa no modal HE
+        # (funcionario_nome, criado_fmt, decidido_fmt, posto_label, funcionario_matricula).
+        # Batch load para evitar N+1.
+        _func_ids_he = list({s.funcionario_id for s in itens})
+        _funcs_he = {f.id: f for f in Funcionario.query.filter(Funcionario.id.in_(_func_ids_he)).all()} if _func_ids_he else {}
+        def _enrich_sol(s):
+            d_s = s.to_dict()
+            f_he = _funcs_he.get(s.funcionario_id)
+            d_s["funcionario_nome"] = f_he.nome if f_he else ""
+            d_s["funcionario_matricula"] = getattr(f_he, "re", None) or getattr(f_he, "matricula", None) or ""
+            d_s["posto_label"] = getattr(f_he, "posto_operacional", None) or getattr(f_he, "setor", None) or ""
+            # formatar datas para exibição no frontend
+            if s.criado_em:
+                try:
+                    _dt_c = s.criado_em.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/Sao_Paulo"))
+                    d_s["criado_fmt"] = _dt_c.strftime("%d/%m/%Y %H:%M")
+                except Exception:
+                    d_s["criado_fmt"] = str(s.criado_em)[:16]
+            else:
+                d_s["criado_fmt"] = ""
+            if s.decidido_em:
+                try:
+                    _dt_d = s.decidido_em.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/Sao_Paulo"))
+                    d_s["decidido_fmt"] = _dt_d.strftime("%d/%m/%Y %H:%M")
+                except Exception:
+                    d_s["decidido_fmt"] = str(s.decidido_em)[:16]
+            else:
+                d_s["decidido_fmt"] = ""
+            return d_s
+        return jsonify({"ok": True, "itens": [_enrich_sol(s) for s in itens], "total": len(itens)})
 
     @app.route("/api/ponto/he/solicitacoes", methods=["POST"])
     @lr
@@ -2107,9 +2147,14 @@ def register_ponto_routes(
         sol.decidido_em = utcnow()
         sol.decidido_por = flask_session.get("usuario_nome") or flask_session.get("email") or "gestor"
         db.session.commit()
+        # BUG-FIX: audit_event sem ator_tipo/ator_id — trilha não registrava quem decidiu.
         audit_event(
             f"he_solicitacao_{sol.status}",
+            ator_tipo="usuario",
+            ator_id=str(flask_session.get("uid") or ""),
             alvo_tipo="solicitacao_he",
             alvo_id=str(sol.id),
+            ok=True,
+            det={"acao": acao, "motivo": (d.get("motivo") or "")[:200]},
         )
         return jsonify({"ok": True, "solicitacao": sol.to_dict()})
