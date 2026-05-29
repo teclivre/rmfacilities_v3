@@ -482,6 +482,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 <script>
 'use strict';
 var _AT='',_RT='',_func=null,_otpCpf='';
+var _refreshPromise=null;
 var _gpsPos=null,_clockT=null,_msgPollT=null,_curPage='ponto';
 var _curPontoSub='hoje',_curDocsSub='pend',_curFinSub='pagto',_curMsgsSub='chat';
 var _signArqId=null,_loaded={};
@@ -498,7 +499,25 @@ var ls={
   try{var f=ls.get('rmf_func');if(f)_func=JSON.parse(f);}catch(e){}
   setupCpfInput();
   document.getElementById('l-otp').addEventListener('keydown',function(e){if(e.key==='Enter')confirmarOtp();});
-  if(_AT&&_func) showApp();
+  if(_AT&&_func){
+    // Valida sessão com o servidor antes de exibir o app
+    fetch('/api/app/funcionario/me',{headers:{'Authorization':'Bearer '+_AT}})
+      .then(function(r){
+        if(r.status===401) return refreshToken().then(function(ok){
+          if(!ok){doLogout();return;}
+          return fetch('/api/app/funcionario/me',{headers:{'Authorization':'Bearer '+_AT}})
+            .then(function(r2){if(!r2.ok)doLogout(); else showApp();});
+        });
+        if(!r.ok){doLogout();return;}
+        return r.json().then(function(d){
+          if(d.funcionario){
+            _func=Object.assign({},_func,d.funcionario);
+            ls.set('rmf_func',JSON.stringify(_func));
+          }
+          showApp();
+        });
+      }).catch(function(){showApp();});
+  }
 })();
 
 function setupCpfInput(){
@@ -531,11 +550,12 @@ function downloadAuth(el){
       return r.blob();
     })
     .then(function(blob){
+      var objUrl=URL.createObjectURL(blob);
       var a=document.createElement('a');
-      a.href=URL.createObjectURL(blob);
+      a.href=objUrl;
       a.download=name;
       document.body.appendChild(a);a.click();
-      setTimeout(function(){URL.revokeObjectURL(a.href);document.body.removeChild(a);},1000);
+      setTimeout(function(){URL.revokeObjectURL(objUrl);try{document.body.removeChild(a);}catch(e){}},1000);
     })
     .catch(function(e){if(!e||!e.auth) showToast(e&&e.message?e.message:'Erro ao baixar arquivo',true);})
     .finally(function(){el.disabled=false;el.textContent=orig;});
@@ -563,12 +583,15 @@ function api(method,path,body,retried){
 
 function refreshToken(){
   if(!_RT) return Promise.resolve(false);
-  return fetch('/api/app/funcionario/refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({refresh_token:_RT})})
+  if(_refreshPromise) return _refreshPromise;
+  _refreshPromise=fetch('/api/app/funcionario/refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({refresh_token:_RT})})
     .then(function(r){if(!r.ok)return false;return r.json().then(function(d){
       if(d.access_token){_AT=d.access_token;ls.set('rmf_at',_AT);}
       if(d.refresh_token){_RT=d.refresh_token;ls.set('rmf_rt',_RT);}
       return true;
-    });}).catch(function(){return false;});
+    });}).catch(function(){return false;})
+    .finally(function(){_refreshPromise=null;});
+  return _refreshPromise;
 }
 
 /* LOGIN */
@@ -578,7 +601,8 @@ function enviarOtp(){
   err.textContent='';
   if(cpf.length<11){err.textContent='CPF inválido.';return;}
   btn.textContent='…';btn.disabled=true;
-  fetch('/api/app/funcionario/auth/iniciar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cpf:cpf,canal:'whatsapp'})})
+  var canal=(_func&&_func.canal_otp)||'whatsapp';
+  fetch('/api/app/funcionario/auth/iniciar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cpf:cpf,canal:canal})})
     .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d};});})
     .then(function(res){
       if(!res.ok){err.textContent=res.d.erro||'Erro ao enviar código.';return;}
@@ -623,7 +647,7 @@ function logout(){if(confirm('Deseja sair da sua conta?'))doLogout();}
 function doLogout(){
   api('POST','/api/app/funcionario/logout').catch(function(){});
   ls.del('rmf_at');ls.del('rmf_rt');ls.del('rmf_func');
-  _AT='';_RT='';_func=null;_loaded={};
+  _AT='';_RT='';_func=null;_loaded={};_otpCpf='';
   clearInterval(_clockT);stopMsgPoll();
   document.getElementById('scr-app').classList.remove('on');
   document.getElementById('scr-login').classList.add('on');
@@ -943,6 +967,7 @@ function enviarCorrecao(){
   var obs=document.getElementById('corr-obs').value.trim();
   var err=document.getElementById('corr-err');
   if(!data){err.textContent='Informe a data.';return;}
+  if(!obs){err.textContent='Descreva o problema no campo observação.';return;}
   err.textContent='';
   api('POST','/api/app/funcionario/me/ponto/solicitacao-correcao',{data_ref:data,tipo_problema:tipo,observacao:obs})
     .then(function(){fecharModal('modal-correcao');showToast('Solicitação enviada!');_loaded.corr=false;loadCorrecoes();})

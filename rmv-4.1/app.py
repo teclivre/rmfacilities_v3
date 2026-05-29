@@ -3527,8 +3527,6 @@ def app_func_required(f):
         sessao = db.session.get(FuncionarioAppSessao, sid)
         if not sessao or sessao.revogado:
             return jsonify({"erro": "Sessao invalida"}), 401
-        if sessao.exp_refresh < utcnow():
-            return jsonify({"erro": "Sessao expirada"}), 401
         func = db.session.get(Funcionario, sessao.funcionario_id)
         if not func:
             return jsonify({"erro": "Funcionario nao encontrado"}), 404
@@ -3573,6 +3571,17 @@ def _app_issue_session_tokens(funcionario):
         .strip()
     )
     ua = (request.headers.get("User-Agent") or "")[:250]
+    # Limitar sessões ativas: revogar as mais antigas quando há ≥ 5 ativas
+    sessoes_ativas = (
+        FuncionarioAppSessao.query.filter_by(
+            funcionario_id=funcionario.id, revogado=False
+        )
+        .order_by(FuncionarioAppSessao.id.asc())
+        .all()
+    )
+    if len(sessoes_ativas) >= 5:
+        for s_old in sessoes_ativas[: len(sessoes_ativas) - 4]:
+            s_old.revogado = True
     sessao = FuncionarioAppSessao(
         funcionario_id=funcionario.id,
         refresh_hash=token_hash(refresh),
@@ -15041,6 +15050,7 @@ def api_app_funcionario_login():
         True,
         {"sessao_id": sess["sessao_id"], "modo": "senha"},
     )
+    emp_login = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
     return jsonify(
         {
             "ok": True,
@@ -15052,6 +15062,13 @@ def api_app_funcionario_login():
                 "cargo": f.cargo,
                 "setor": f.setor,
                 "status": f.status,
+                "email": f.email,
+                "telefone": f.telefone,
+                "posto_operacional": f.posto_operacional,
+                "empresa_id": f.empresa_id,
+                "empresa_nome": (emp_login.nome if emp_login else None),
+                "canal_otp": f.app_canal_otp or "whatsapp",
+                "foto_url": "/api/app/funcionario/me/foto" if f.foto_perfil else None,
             },
         }
     )
@@ -15071,11 +15088,11 @@ def api_app_funcionario_auth_iniciar():
     if not f:
         reg_auth_attempt("app_otp", cpf, False, "nao_encontrado")
         return jsonify(
-            {"erro": "Funcionario nao encontrado para o CPF informado."}
-        ), 404
+            {"erro": "Credenciais invalidas."}
+        ), 401
     if f.app_ativo is False:
         reg_auth_attempt("app_otp", cpf, False, "app_desativado")
-        return jsonify({"erro": "Acesso do aplicativo desativado."}), 403
+        return jsonify({"erro": "Credenciais invalidas."}), 401
 
     codigo = _otp_new_code()
     f.app_otp_hash = token_hash(codigo)
@@ -15193,6 +15210,7 @@ def api_app_funcionario_auth_confirmar():
         True,
         {"sessao_id": sess["sessao_id"], "modo": "otp"},
     )
+    emp_otp = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
     return jsonify(
         {
             "ok": True,
@@ -15204,6 +15222,13 @@ def api_app_funcionario_auth_confirmar():
                 "cargo": f.cargo,
                 "setor": f.setor,
                 "status": f.status,
+                "email": f.email,
+                "telefone": f.telefone,
+                "posto_operacional": f.posto_operacional,
+                "empresa_id": f.empresa_id,
+                "empresa_nome": (emp_otp.nome if emp_otp else None),
+                "canal_otp": f.app_canal_otp or "whatsapp",
+                "foto_url": "/api/app/funcionario/me/foto" if f.foto_perfil else None,
             },
         }
     )
@@ -15289,6 +15314,7 @@ def api_app_funcionario_stepup_solicitar():
 
 
 @app.route("/api/app/funcionario/refresh", methods=["POST"])
+@_limiter.limit("20 per minute")
 def api_app_funcionario_refresh():
     d = request.json or {}
     refresh = (
@@ -15357,6 +15383,7 @@ def api_app_funcionario_logout():
 
 
 @app.route("/api/app/log", methods=["POST"])
+@_limiter.limit("10 per minute")
 @app_func_required
 def api_app_log():
     """Recebe lote de logs enviados pelo app mobile."""
@@ -15665,6 +15692,7 @@ def api_app_funcionario_minhas_solicitacoes_alteracao():
 
 
 @app.route("/api/app/funcionario/me/solicitacoes-alteracao", methods=["POST"])
+@_limiter.limit("5 per hour")
 @app_func_required
 def api_app_funcionario_solicitar_alteracao():
     d = request.json or {}
@@ -15774,6 +15802,7 @@ def api_app_ponto_solicitacoes_correcao():
 
 
 @app.route("/api/app/funcionario/me/ponto/solicitacao-correcao", methods=["POST"])
+@_limiter.limit("10 per hour")
 @app_func_required
 def api_app_ponto_solicitar_correcao():
     f = g.app_funcionario
@@ -15787,6 +15816,9 @@ def api_app_ponto_solicitar_correcao():
     horario_correto = (d.get("horario_correto") or "").strip()[:5] or None
     if not data_ref:
         return jsonify({"erro": "O campo data_ref é obrigatório."}), 400
+    import re as _re_dr
+    if not _re_dr.match(r"^\d{4}-\d{2}-\d{2}$", data_ref):
+        return jsonify({"erro": "data_ref deve estar no formato YYYY-MM-DD."}), 400
     if not observacao:
         return jsonify({"erro": "Descreva o problema no campo observacao."}), 400
     if tipo_problema not in (
@@ -16811,6 +16843,7 @@ def api_app_mensagens_lista():
 
 
 @app.route("/api/app/funcionario/mensagens", methods=["POST"])
+@_limiter.limit("30 per minute")
 @app_func_required
 def api_app_mensagem_enviar():
     f = g.app_funcionario
@@ -16834,6 +16867,7 @@ def api_app_mensagem_enviar():
 
 
 @app.route("/api/app/funcionario/mensagens/arquivo", methods=["POST"])
+@_limiter.limit("10 per minute")
 @app_func_required
 def api_app_mensagem_enviar_arquivo():
     f = g.app_funcionario
@@ -17306,6 +17340,7 @@ def api_app_ponto_dia_me():
 
 
 @app.route("/api/app/funcionario/me/ponto/marcar", methods=["POST"])
+@_limiter.limit("30 per hour")
 @app_func_required
 def api_app_ponto_marcar_me():
     f = g.app_funcionario
@@ -17378,13 +17413,9 @@ def api_app_ponto_marcar_me():
         precisao = float(precisao) if precisao is not None else None
     except (ValueError, TypeError):
         precisao = None
-    if lat is None or lon is None:
-        return jsonify(
-            {
-                "erro": "Localização obrigatória para registrar ponto. Ative o GPS e tente novamente."
-            }
-        ), 400
-    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+    if precisao is not None and (precisao < 0 or precisao > 50000):
+        precisao = None  # valor fora do intervalo realista → ignorar
+    if lat is not None and lon is not None and not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return jsonify({"erro": "Coordenadas de localização inválidas."}), 400
 
     localizacao = {
@@ -17395,7 +17426,7 @@ def api_app_ponto_marcar_me():
     }
     if f.posto_cliente_id:
         cli = db.session.get(Cliente, f.posto_cliente_id)
-        if cli and cli.geo_lat is not None and cli.geo_lon is not None:
+        if cli and cli.geo_lat is not None and cli.geo_lon is not None and lat is not None and lon is not None:
             distancia = _geo_haversine_m(lat, lon, cli.geo_lat, cli.geo_lon)
             raio = float(cli.geofence_raio_m or 150)
             localizacao = {
