@@ -1989,6 +1989,10 @@ def register_ponto_routes(
         ).first()
         resumo_comp["he_solicitacao"] = sol.to_dict() if sol else None
 
+        # Remover marc_por_data antes de serializar: as chaves são datetime.date,
+        # que o JSON não suporta. O endpoint já extraiu tudo que precisava acima.
+        resumo_comp.pop("marc_por_data", None)
+
         return jsonify({"ok": True, "resumo": resumo_comp})
 
     # ── Solicitações de aprovação de hora extra ───────────────────────────────
