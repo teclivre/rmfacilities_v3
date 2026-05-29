@@ -355,8 +355,8 @@ class DocumentosActivity : BaseActivity() {
             .setNeutralButton("Reenviar") { _, _ -> solicitarOtpEAssinar(item) }
             .setPositiveButton("✍ Assinar") { _, _ ->
                 val codigo = etOtp.text.toString().trim()
-                if (codigo.length < 4) {
-                    Toast.makeText(this, "Informe o código recebido.", Toast.LENGTH_SHORT).show()
+                if (!codigo.matches(Regex("\\d{6}"))) {
+                    Toast.makeText(this, "O código deve ter exatamente 6 dígitos.", Toast.LENGTH_SHORT).show()
                 } else {
                     assinarDocumento(item, stepupOtp = codigo)
                 }
@@ -537,7 +537,24 @@ class DocumentosActivity : BaseActivity() {
                     try { offlineStore.removeById(item.id) } catch (_: Exception) {}
                     carregarComFiltros()
                 } else {
-                    Toast.makeText(this@DocumentosActivity, resp.erro ?: "Falha ao assinar documento", Toast.LENGTH_LONG).show()
+                    val rawErro = resp.erro ?: ""
+                    val mensagem = when {
+                        rawErro.contains("expirado", ignoreCase = true) ->
+                            "Código expirado. Solicite um novo código e tente novamente."
+                        rawErro.contains("invalido", ignoreCase = true) || rawErro.contains("inválido", ignoreCase = true) ->
+                            "Código incorreto. Verifique e tente novamente."
+                        rawErro.contains("muitas tentativas", ignoreCase = true) || rawErro.contains("429", ignoreCase = true) ->
+                            "Muitas tentativas. Aguarde alguns minutos e tente novamente."
+                        rawErro.contains("ja assinado", ignoreCase = true) || rawErro.contains("já assinado", ignoreCase = true) ->
+                            "Este documento já foi assinado anteriormente."
+                        rawErro.contains("solicite", ignoreCase = true) ->
+                            "É necessário solicitar um código antes de assinar."
+                        rawErro.contains("ja utilizado", ignoreCase = true) || rawErro.contains("já utilizado", ignoreCase = true) ->
+                            "Este código já foi utilizado. Solicite um novo."
+                        rawErro.isNotBlank() -> rawErro
+                        else -> "Falha ao assinar documento. Tente novamente."
+                    }
+                    Toast.makeText(this@DocumentosActivity, mensagem, Toast.LENGTH_LONG).show()
                 }
             }
         }

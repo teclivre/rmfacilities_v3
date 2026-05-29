@@ -16689,6 +16689,21 @@ def api_app_funcionario_assinar_lote():
         reg_auth_attempt("app_stepup_confirm", ident, False, "codigo_invalido_lote")
         return jsonify({"erro": "Codigo de confirmacao invalido."}), 401
     reg_auth_attempt("app_stepup_confirm", ident, True, "ok_lote")
+    # Consumo atômico do OTP: atualiza diretamente no DB garantindo que apenas um
+    # request concorrente consuma o hash — evita race condition entre dois requests
+    # que passaram simultaneamente na validação hmac acima.
+    rows_updated = db.session.execute(
+        db.text(
+            "UPDATE funcionario SET app_stepup_hash=NULL, app_stepup_expira_em=NULL,"
+            " app_stepup_tentativas=0, app_stepup_arquivo_id=NULL"
+            " WHERE id=:fid AND app_stepup_hash=:hash"
+        ),
+        {"fid": f.id, "hash": str(f.app_stepup_hash or "")},
+    ).rowcount
+    db.session.flush()
+    if rows_updated == 0:
+        return jsonify({"erro": "Codigo de confirmacao ja utilizado."}), 409
+    # Sincroniza o objeto em memória com o estado do DB
     f.app_stepup_hash = None
     f.app_stepup_expira_em = None
     f.app_stepup_tentativas = 0

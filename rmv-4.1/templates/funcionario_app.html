@@ -624,7 +624,7 @@ function confirmarOtp(){
   var codigo=document.getElementById('l-otp').value.replace(/\D/g,'');
   var err=document.getElementById('l-err2'),btn=document.getElementById('btn-confirmar-otp');
   err.textContent='';
-  if(codigo.length<4){err.textContent='Informe o código.';return;}
+  if(!/^\d{6}$/.test(codigo)){err.textContent='Informe o código de 6 dígitos.';return;}
   btn.textContent='…';btn.disabled=true;
   fetch('/api/app/funcionario/auth/confirmar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cpf:_otpCpf,codigo:codigo})})
     .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d};});})
@@ -1092,7 +1092,7 @@ function signConfirmar(){
   var codigo=document.getElementById('sign-otp-inp').value.replace(/\D/g,'');
   var err=document.getElementById('sign-err'),btn=document.getElementById('btn-sign-confirmar');
   err.textContent='';
-  if(codigo.length<4){err.textContent='Informe o código.';return;}
+  if(!/^\d{6}$/.test(codigo)){err.textContent='O código deve ter exatamente 6 dígitos.';return;}
   btn.textContent='…';btn.disabled=true;
   api('POST','/api/app/funcionario/arquivos/'+_signArqId+'/assinar',{stepup_otp:codigo}).then(function(){
     fecharModal('modal-sign');
