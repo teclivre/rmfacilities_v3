@@ -17188,13 +17188,16 @@ def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
             EscalaFuncionario.data_inicio <= data_str,
             EscalaFuncionario.ativo == True,
         ).all()
+        if esc_func:
+            escala_ids = [ef.escala_id for ef in esc_func]
+            escalas_map = {e.id: e for e in Escala.query.filter(Escala.id.in_(escala_ids)).all()}
 
         for ef in esc_func:
             # Se tem data_fim, verifica se data_str está dentro do range
             if ef.data_fim and ef.data_fim < data_str:
                 continue
             # Encontrou escala ativa; calcular índice no ciclo
-            esc = db.session.get(Escala, ef.escala_id)
+            esc = escalas_map.get(ef.escala_id)
             if not esc:
                 continue
 

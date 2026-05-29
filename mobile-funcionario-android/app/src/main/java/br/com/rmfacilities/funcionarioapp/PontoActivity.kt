@@ -602,11 +602,18 @@ class PontoActivity : BaseActivity() {
 
     private fun carregarDia() {
         updateStatus("Atualizando...", R.color.mobile_semantic_info)
-        lifecycleScope.launch {
+        val exHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, ex ->
+            TelemetryLogger.logHandled(this@PontoActivity, "ponto_carregar_fatal", ex)
+            try {
+                restaurarCacheMarcacoes()
+                updateStatus("Falha ao carregar ponto.", R.color.mobile_semantic_pending)
+            } catch (_: Exception) {}
+        }
+        lifecycleScope.launch(exHandler) {
             val resp = withContext(Dispatchers.IO) {
                 try { api.getPontoDia() } catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message) }
             }
-            withContext(Dispatchers.Main) {
+            try {
                 if (resp.ok) {
                     localPendentes.clear() // servidor confirmou todas as marcações
                     // Detectar marcações excluídas pelo admin
@@ -635,12 +642,18 @@ class PontoActivity : BaseActivity() {
                     updateStatus("Atualizado agora.", R.color.mobile_semantic_info)
                 } else {
                     if (!resp.erro.isNullOrBlank()) {
-                        TelemetryLogger.logHandled(this@PontoActivity, "ponto_carregar", IllegalStateException(resp.erro))
+                        TelemetryLogger.e("ponto_carregar", resp.erro)
                     }
                     // Em caso de falha: restaura do cache para não sumir as marcações
                     restaurarCacheMarcacoes()
                     updateStatus(resp.erro ?: "Falha ao carregar ponto.", R.color.mobile_semantic_pending)
                 }
+            } catch (e: Exception) {
+                TelemetryLogger.logHandled(this@PontoActivity, "ponto_carregar_ui", e)
+                try {
+                    restaurarCacheMarcacoes()
+                    updateStatus("Falha ao exibir ponto.", R.color.mobile_semantic_pending)
+                } catch (_: Exception) {}
             }
         }
     }
