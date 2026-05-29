@@ -23324,6 +23324,12 @@ def api_beneficios_lancamentos_excluir():
     comp = norm_competencia(d.get("competencia"))
     tipo = (d.get("tipo") or "todos").strip().lower()
     empresa_id = to_num(d.get("empresa_id")) or None
+    empresa_ref_id = empresa_id or 0
+    folha_chk = FolhaBeneficios.query.filter_by(
+        competencia=comp, empresa_ref_id=empresa_ref_id
+    ).first()
+    if folha_chk and (folha_chk.status or "") == "fechada":
+        return jsonify({"erro": "Folha fechada. Reabra antes de excluir lançamentos."}), 400
     func_ids = d.get("funcionarios") or []
     func_ids = {int(x) for x in func_ids if str(x).isdigit()}
     if tipo not in {"vt", "vr", "va", "pp", "vg", "cn", "todos"}:
@@ -23398,6 +23404,12 @@ def api_beneficios_lancamentos_limpar():
     comp = norm_competencia(d.get("competencia"))
     tipo = (d.get("tipo") or "").strip().lower()
     empresa_id = to_num(d.get("empresa_id")) or None
+    empresa_ref_id = empresa_id or 0
+    folha_chk = FolhaBeneficios.query.filter_by(
+        competencia=comp, empresa_ref_id=empresa_ref_id
+    ).first()
+    if folha_chk and (folha_chk.status or "") == "fechada":
+        return jsonify({"erro": "Folha fechada. Reabra antes de limpar lançamentos."}), 400
     func_ids = d.get("funcionarios") or []
     func_ids = {int(x) for x in func_ids if str(x).isdigit()}
     if tipo not in {"vt", "vr", "va", "pp", "vg", "cn", "todos"}:
@@ -23470,6 +23482,14 @@ def api_beneficios_lancamentos_limpar():
 def api_beneficios_lancamentos_salvar():
     d = request.json or {}
     comp = norm_competencia(d.get("competencia"))
+    empresa_id_guard = to_num(d.get("empresa_id")) or None
+    empresa_ref_id_guard = empresa_id_guard or 0
+    if empresa_id_guard is not None:
+        folha_guard = FolhaBeneficios.query.filter_by(
+            competencia=comp, empresa_ref_id=empresa_ref_id_guard
+        ).first()
+        if folha_guard and (folha_guard.status or "") == "fechada":
+            return jsonify({"erro": "Folha fechada. Reabra antes de salvar lançamentos."}), 400
     itens = d.get("itens") or []
     atualizar_base_funcionario = to_bool(d.get("atualizar_base_funcionario"))
     salvos = 0
@@ -23666,19 +23686,19 @@ def _beneficios_folha_resumo(comp, empresa_id=None):
             (
                 b.vale_transporte
                 if b and b.vale_transporte is not None
-                else f.vale_transporte
+                else (f.vale_transporte if f.opta_vt is not False else 0)
             )
             or 0
         )
         vr = float(
-            (b.vale_refeicao if b and b.vale_refeicao is not None else f.vale_refeicao)
+            (b.vale_refeicao if b and b.vale_refeicao is not None else (f.vale_refeicao if f.opta_vr is not False else 0))
             or 0
         )
         va = float(
             (
                 b.vale_alimentacao
                 if b and b.vale_alimentacao is not None
-                else f.vale_alimentacao
+                else (f.vale_alimentacao if f.opta_va is not False else 0)
             )
             or 0
         )
@@ -23686,20 +23706,21 @@ def _beneficios_folha_resumo(comp, empresa_id=None):
             (
                 b.premio_produtividade
                 if b and b.premio_produtividade is not None
-                else f.premio_produtividade
+                else (f.premio_produtividade if bool(f.opta_premio_prod) else 0)
             )
             or 0
         )
         vg = float(
-            (b.vale_gasolina if b and b.vale_gasolina is not None else f.vale_gasolina)
+            (b.vale_gasolina if b and b.vale_gasolina is not None else (f.vale_gasolina if bool(f.opta_vale_gasolina) else 0))
             or 0
         )
         cn = float(
-            (b.cesta_natal if b and b.cesta_natal is not None else f.cesta_natal) or 0
+            (b.cesta_natal if b and b.cesta_natal is not None else (f.cesta_natal if bool(f.opta_cesta_natal) else 0)) or 0
         )
         dias_vt = int((b.dias_vt if b else 0) or 0)
         dias_vr = int((b.dias_vr if b else 0) or 0)
-        total_func = (vt * dias_vt) + (vr * dias_vr) + va + pp + vg + cn
+        dias_vg = int((b.dias_vg if b else 0) or 0)
+        total_func = (vt * dias_vt) + (vr * dias_vr) + va + pp + (vg * dias_vg) + cn
         total += total_func
         itens_snap.append(
             {
@@ -23715,6 +23736,7 @@ def _beneficios_folha_resumo(comp, empresa_id=None):
                 "cn": cn,
                 "dias_vt": dias_vt,
                 "dias_vr": dias_vr,
+                "dias_vg": dias_vg,
                 "total": total_func,
             }
         )
@@ -24956,12 +24978,8 @@ def _api_beneficios_xlsx_tipo(tipo):
         ), 400
 
     emps_map = {e.id: e for e in Empresa.query.all()}
-    funcs_map = {f.id: f for f in Funcionario.query.all()}
+    funcs_map = funcs_map_pre  # reutiliza o mapa já carregado
     grupos = {}
-    for r in regs:
-        grupos.setdefault(r.empresa_id or 0, []).append(r)
-
-    wb = Workbook()
     first = True
     header_fill = PatternFill("solid", fgColor="205D8A")
     total_fill = PatternFill("solid", fgColor="EAF2FB")
@@ -25233,7 +25251,7 @@ def _api_beneficios_pdf_tipo(tipo):
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     emps_map = {e.id: e for e in Empresa.query.all()}
-    funcs_map = {f.id: f for f in Funcionario.query.all()}
+    funcs_map = funcs_map_pre  # reutiliza o mapa já carregado
     grupos = {}
     for r in regs:
         grupos.setdefault(r.empresa_id or 0, []).append(r)
@@ -25313,8 +25331,9 @@ def _api_beneficios_pdf_tipo(tipo):
         )
         story.append(hdr)
         cnpj_str = emp.cnpj if emp and emp.cnpj else ""
+        cnpj_fmt = _filter_fmt_cnpj(cnpj_str) if cnpj_str else ""
         emp_info = Paragraph(
-            f'<font color="#4c6072">CNPJ: {cnpj_str}</font>',
+            f'<font color="#4c6072">CNPJ: {cnpj_fmt}</font>',
             ParagraphStyle("empinfo", fontName="Helvetica", fontSize=8.5, leading=11),
         )
         story.append(emp_info)
@@ -25510,11 +25529,11 @@ def _financeiro_salarios_competencia(comp, empresa_id=None):
     total_anual = 0.0
     cargos = set()
     postos = set()
+    _emps_sal = {e.id: e for e in Empresa.query.all()}
+    _clis_sal = {c.id: c for c in Cliente.query.all()}
     for f in funcs_ativos:
-        emp = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
-        cli = (
-            db.session.get(Cliente, f.posto_cliente_id) if f.posto_cliente_id else None
-        )
+        emp = _emps_sal.get(f.empresa_id) if f.empresa_id else None
+        cli = _clis_sal.get(f.posto_cliente_id) if f.posto_cliente_id else None
         posto_nome = (
             cli.nome.strip()
             if cli and (cli.nome or "").strip()
