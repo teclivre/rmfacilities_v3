@@ -307,9 +307,10 @@
         <TextView
             android:id="@+id/tvAvisosVazio"
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
+            android:layout_height="wrap_content"
             android:gravity="center"
+            android:paddingTop="24dp"
+            android:paddingBottom="24dp"
             android:text="Nenhum comunicado ainda."
             android:textColor="@color/mobile_text_secondary"
             android:textSize="14sp"

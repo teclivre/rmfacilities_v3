@@ -1,25 +1,49 @@
 # Mantem metadados usados por Gson para tipos genericos.
--keepattributes Signature,*Annotation*
+-keepattributes Signature,*Annotation*,InnerClasses,EnclosingMethod
 
-# Mantem os modelos JSON do app para evitar quebra de parsing no build release.
--keep class br.com.rmfacilities.funcionarioapp.LoginResponse { *; }
--keep class br.com.rmfacilities.funcionarioapp.OtpStartResponse { *; }
--keep class br.com.rmfacilities.funcionarioapp.FuncionarioResumo { *; }
--keep class br.com.rmfacilities.funcionarioapp.MeResponse { *; }
--keep class br.com.rmfacilities.funcionarioapp.FuncionarioPerfil { *; }
--keep class br.com.rmfacilities.funcionarioapp.FotoUploadResponse { *; }
--keep class br.com.rmfacilities.funcionarioapp.ContatoUpdateResponse { *; }
--keep class br.com.rmfacilities.funcionarioapp.ContatoInfo { *; }
--keep class br.com.rmfacilities.funcionarioapp.SolicitacaoResponse { *; }
--keep class br.com.rmfacilities.funcionarioapp.SolicitacaoItem { *; }
--keep class br.com.rmfacilities.funcionarioapp.DocsResponse { *; }
--keep class br.com.rmfacilities.funcionarioapp.DocumentoItem { *; }
--keep class br.com.rmfacilities.funcionarioapp.MensagemItem { *; }
--keep class br.com.rmfacilities.funcionarioapp.NaoLidasResponse { *; }
--keep class br.com.rmfacilities.funcionarioapp.ApiSimpleResponse { *; }
--keep class br.com.rmfacilities.funcionarioapp.VersaoAppResponse { *; }
--keep class br.com.rmfacilities.funcionarioapp.AssinaturaHistoricoItem { *; }
--keep class br.com.rmfacilities.funcionarioapp.HistoricoAssinaturasResponse { *; }
--keep class br.com.rmfacilities.funcionarioapp.PontoMarcacaoItem { *; }
--keep class br.com.rmfacilities.funcionarioapp.PontoResumo { *; }
--keep class br.com.rmfacilities.funcionarioapp.PontoDiaResponse { *; }
+# ---------------------------------------------------------------------------
+# DTOs JSON do app
+# ---------------------------------------------------------------------------
+# Mantem TODAS as classes/atributos do pacote do app. Sem isso, em build release
+# o R8 renomeia os campos das data classes usadas pelo Gson e o parser
+# silenciosamente devolve objetos vazios -- ou, em alguns caminhos com primitivos
+# Kotlin, lanca ClassCastException ao tentar usar copy()/equals em data classes
+# obfuscadas.
+-keep class br.com.rmfacilities.funcionarioapp.** { *; }
+-keepclassmembers class br.com.rmfacilities.funcionarioapp.** {
+    <init>(...);
+    *;
+}
+
+# Preserva nomes das enums (necessario para serializacao Gson).
+-keepclassmembers enum br.com.rmfacilities.funcionarioapp.** {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
+
+# ---------------------------------------------------------------------------
+# Gson -- regras oficiais
+# ---------------------------------------------------------------------------
+-keep class com.google.gson.** { *; }
+-keep class com.google.gson.reflect.TypeToken { *; }
+-keep class * extends com.google.gson.reflect.TypeToken
+-keep class * extends com.google.gson.TypeAdapter
+-keep,allowobfuscation @interface com.google.gson.annotations.SerializedName
+-keepclassmembers,allowobfuscation class * {
+    @com.google.gson.annotations.SerializedName <fields>;
+}
+
+# ---------------------------------------------------------------------------
+# Kotlin metadata + coroutines
+# ---------------------------------------------------------------------------
+-keep class kotlin.Metadata { *; }
+-keepclassmembers class kotlinx.coroutines.** { volatile <fields>; }
+-keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
+-keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+
+# ---------------------------------------------------------------------------
+# OkHttp / outros warnings (defensivo)
+# ---------------------------------------------------------------------------
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn javax.annotation.**
