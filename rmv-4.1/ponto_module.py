@@ -158,7 +158,9 @@ def register_ponto_routes(
                     EscalaFuncionario.funcionario_id == funcionario.id,
                     EscalaFuncionario.data_inicio <= data_str,
                     EscalaFuncionario.ativo == True,
-                ).all()
+                # BUG-FIX 17: ordenar por data_inicio DESC para resultado determinístico
+                # em ambiente concorrente (múltiplos workers Gunicorn).
+                ).order_by(EscalaFuncionario.data_inicio.desc()).all()
                 for ef in esc_funcs:
                     if ef.data_fim and ef.data_fim < data_str:
                         continue
@@ -170,7 +172,13 @@ def register_ponto_routes(
                         dias_ciclo = len(ciclo.get("dias", []))
                         if dias_ciclo > 0:
                             data_inicio_obj = datetime.strptime(ef.data_inicio, "%Y-%m-%d").date()
-                            indice = (data_obj - data_inicio_obj).days % dias_ciclo
+                            dias_decorridos = (data_obj - data_inicio_obj).days
+                            # BUG-FIX 1: dias_decorridos negativo significa data_ref < data_inicio
+                            # da escala. Em Python (-1 % N) = N-1, retornaria o último dia do
+                            # ciclo erroneamente em vez de ignorar esta escala ainda não iniciada.
+                            if dias_decorridos < 0:
+                                continue
+                            indice = dias_decorridos % dias_ciclo
                             return esc.carga_horaria_min_dia(indice)
                     except Exception as _exc_esc:
                         # BUG-FIX 6: logar erro para diagnóstico em vez de silenciar
@@ -244,8 +252,12 @@ def register_ponto_routes(
             .all()
         )
 
-    def _calc_intersec_noturno(ini_dt, fim_dt):
-        """Minutos trabalhados no período noturno 22:00-05:00 para um trecho de trabalho."""
+    def _calc_intersec_noturno(ini_dt, fim_dt, noc_ini_min=1320, noc_fim_min=300):
+        """Minutos trabalhados no período noturno para um trecho de trabalho.
+        noc_ini_min: início do período noturno em minutos (padrão 22:00 = 1320)
+        noc_fim_min: fim do período noturno em minutos (padrão 05:00 = 300)
+        BUG-FIX 11: antes hardcoded para 22:00-05:00 independente do período
+        configurado em Escala.periodo_noturno_ini/fim."""
         if not ini_dt or not fim_dt or fim_dt <= ini_dt:
             return 0
         ini_m = ini_dt.hour * 60 + ini_dt.minute
@@ -253,18 +265,19 @@ def register_ponto_routes(
         total = 0
         if fim_m <= ini_m:
             fim_m += 1440  # turno cruza meia-noite
-        # Segmento B: 22:00-00:00 → [1320, 1440]
-        total += max(0, min(fim_m, 1440) - max(ini_m, 1320))
-        # Segmento A: 00:00-05:00 → [0, 300]; só se o turno cruzou meia-noite
+        # Segmento tarde: noc_ini_min-00:00
+        total += max(0, min(fim_m, 1440) - max(ini_m, noc_ini_min))
+        # Segmento madrugada: 00:00-noc_fim_min; só se turno cruzou meia-noite
         if fim_m > 1440:
-            total += max(0, min(fim_m - 1440, 300))
-        # Turno que começa e termina dentro de 00:00-05:00 sem cruzar meia-noite
-        elif ini_m < 300:
-            total += max(0, min(fim_m, 300) - ini_m)
+            total += max(0, min(fim_m - 1440, noc_fim_min))
+        # Turno que começa e termina dentro de 00:00-noc_fim_min sem cruzar meia-noite
+        elif ini_m < noc_fim_min:
+            total += max(0, min(fim_m, noc_fim_min) - ini_m)
         return max(0, total)
 
-    def _calc_noturno_min_marcacoes(marcacoes):
-        """Total de minutos de adicional noturno (22:00-05:00) a partir das marcações."""
+    def _calc_noturno_min_marcacoes(marcacoes, noc_ini_min=1320, noc_fim_min=300):
+        """Total de minutos de adicional noturno a partir das marcações.
+        Aceita período noturno customável (BUG-FIX 11)."""
         total = 0
         aberta_em = None
         for m in marcacoes:
@@ -273,7 +286,7 @@ def register_ponto_routes(
             if m.tipo in ("entrada", "retorno_intervalo"):
                 aberta_em = m.data_hora
             elif m.tipo in ("saida_intervalo", "saida") and aberta_em:
-                total += _calc_intersec_noturno(aberta_em, m.data_hora)
+                total += _calc_intersec_noturno(aberta_em, m.data_hora, noc_ini_min, noc_fim_min)
                 aberta_em = None
         return total
 
@@ -379,7 +392,28 @@ def register_ponto_routes(
             he_50_min = 0
             he_100_min = 0
         # ── Adicional noturno e intrajornada ─────────────────────────────────
-        noturno_min = _calc_noturno_min_marcacoes(marcacoes)
+        # BUG-FIX 11: usar período noturno configurado na escala do funcionário,
+        # se existir — em vez dos valores hardcoded 22:00-05:00.
+        _noc_ini_min = 1320  # 22:00 default
+        _noc_fim_min = 300   # 05:00 default
+        if EscalaFuncionario and Escala:
+            try:
+                _data_str = data_ref.strftime("%Y-%m-%d")
+                _ef = EscalaFuncionario.query.filter(
+                    EscalaFuncionario.funcionario_id == funcionario.id,
+                    EscalaFuncionario.data_inicio <= _data_str,
+                    EscalaFuncionario.ativo == True,
+                ).order_by(EscalaFuncionario.data_inicio.desc()).first()
+                if _ef and (not _ef.data_fim or _ef.data_fim >= _data_str):
+                    _esc = db.session.get(Escala, _ef.escala_id)
+                    if _esc:
+                        _h, _m = map(int, (_esc.periodo_noturno_ini or "22:00").split(":"))
+                        _noc_ini_min = _h * 60 + _m
+                        _h, _m = map(int, (_esc.periodo_noturno_fim or "05:00").split(":"))
+                        _noc_fim_min = _h * 60 + _m
+            except Exception:
+                pass
+        noturno_min = _calc_noturno_min_marcacoes(marcacoes, _noc_ini_min, _noc_fim_min)
         intrajornada_min = _calc_intrajornada_min(marcacoes)
         return {
             "funcionario_id": funcionario.id,

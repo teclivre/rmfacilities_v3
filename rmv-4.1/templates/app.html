@@ -8358,10 +8358,15 @@ function rhEscalaPopularSeletor(){
 }
 
 function rhEscalaMontarDiaTrabalho(turno, horaEntrada, horaSaida, intervalo){
+  // BUG-FIX 16: validar formato HH:MM antes de montar o dia — entradas inválidas
+  // causam falha silenciosa no cálculo de horas no backend.
+  const reHora=/^\d{2}:\d{2}$/;
+  const entNorm=reHora.test((horaEntrada||'').trim())?horaEntrada.trim():'08:00';
+  const saiNorm=reHora.test((horaSaida||'').trim())?horaSaida.trim():'17:00';
   const dia={
     tipo:'trabalho',
-    hora_entrada:horaEntrada,
-    hora_saida:horaSaida,
+    hora_entrada:entNorm,
+    hora_saida:saiNorm,
     intervalo_min:Math.max(0,parseInt(intervalo||0,10)||0)
   };
   if(turno==='noturno') dia.noturno=true;
@@ -8515,14 +8520,22 @@ async function rhEscalaSalvar(){
   }
   const cicloMontado=rhEscalaMontarCiclo();
   const cicloArea=document.getElementById('rh-esc-ciclo');
-  if(cicloArea) cicloArea.value=JSON.stringify(cicloMontado,null,2);
-  let cicloStr=JSON.stringify(cicloMontado||{});
+  // BUG-FIX 14: antes, o textarea era sobrescrito sempre com o ciclo montado pelo formulário,
+  // ignorando qualquer edição manual do usuário. Agora: se o textarea foi editado, usar
+  // o conteúdo do textarea; caso contrário, usar o ciclo montado e atualizar o textarea.
   let cicloObj;
-  try{
-    cicloObj=JSON.parse(cicloStr);
-  }catch(e){
-    showSt('rh-escala-st','Ciclo JSON inválido.',true);
-    return;
+  const montadoStr=JSON.stringify(cicloMontado,null,2);
+  const areaVal=(cicloArea?.value||'').trim();
+  if(cicloArea && areaVal && areaVal!==montadoStr){
+    try{
+      cicloObj=JSON.parse(areaVal);
+    }catch(e){
+      showSt('rh-escala-st','Ciclo JSON na textarea é inválido. Corrija ou clique em "Gerar Ciclo" para regenerar.',true);
+      return;
+    }
+  } else {
+    if(cicloArea) cicloArea.value=montadoStr;
+    cicloObj=cicloMontado;
   }
   const turno=(document.getElementById('rh-esc-turno')?.value||'diurno').trim();
   if(turno==='noturno' && Array.isArray(cicloObj?.dias)){
@@ -8585,12 +8598,20 @@ function rhEscalaCarregarFuncsParaVinc(){
     return;
   }
   
-  // Escala selecionada: mostrar funcs que não estão em outra escala
+  // Escala selecionada: mostrar funcs que não estão nesta escala
   const escalaAtual=rhEscalas.find(x=>String(x.id)===String(eid));
   if(!escalaAtual) return;
   const idsJaVincs=new Set((escalaAtual.funcionarios||[]).map(f=>f.id));
+  // BUG-FIX 15: também filtrar funcionários já vinculados em OUTRA escala ativa.
+  // Antes, o filtro mostrava esses funcionários na lista, mas o backend os rejeitava
+  // com erro de conflito — UX confusa para o usuário.
+  const idsEmOutraEscala=new Set();
+  (rhEscalas||[]).forEach(esc=>{
+    if(String(esc.id)===String(eid)) return; // ignorar a própria escala
+    (esc.funcionarios||[]).forEach(f=>idsEmOutraEscala.add(f.id));
+  });
   const ativos=(Array.isArray(funcs)?funcs:[])
-    .filter(f=>String((f.status||'').toLowerCase())==='ativo' && !idsJaVincs.has(f.id))
+    .filter(f=>String((f.status||'').toLowerCase())==='ativo' && !idsJaVincs.has(f.id) && !idsEmOutraEscala.has(f.id))
     .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
   sel.innerHTML=ativos.map(f=>`<option value="${f.id}">${esc(f.nome||'Sem nome')} (${f.matricula||'—'})</option>`).join('');
 }

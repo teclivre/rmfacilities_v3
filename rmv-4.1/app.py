@@ -729,21 +729,49 @@ class Escala(db.Model):
             # Se tem horários específicos (entrada/saída)
             if "hora_entrada" in dia_info and "hora_saida" in dia_info:
                 try:
-                    he = list(map(int, dia_info["hora_entrada"].split(":")))
-                    hs = list(map(int, dia_info["hora_saida"].split(":")))
-                    entrada_min = he[0] * 60 + he[1]
-                    saida_min = hs[0] * 60 + hs[1]
-                    # Se saída < entrada, cruza meia-noite (adiciona 24h)
-                    if saida_min <= entrada_min:
-                        saida_min += 24 * 60
-                    intervalo = dia_info.get("intervalo_min", 0)
-                    return max(0, saida_min - entrada_min - intervalo)
-                except Exception:
-                    pass
+                    # BUG-FIX 12: validar formato HH:MM antes de split para evitar
+                    # IndexError silencioso em entradas como "22" ou "22:00:30".
+                    ent_s = str(dia_info["hora_entrada"]).strip()
+                    sai_s = str(dia_info["hora_saida"]).strip()
+                    if not re.match(r"^\d{2}:\d{2}$", ent_s) or not re.match(r"^\d{2}:\d{2}$", sai_s):
+                        app.logger.warning(
+                            "Escala id=%s dia=%s: formato de horário inválido entrada=%r saida=%r",
+                            self.id, dia_ciclo_indice, ent_s, sai_s,
+                        )
+                    else:
+                        he = list(map(int, ent_s.split(":")))
+                        hs = list(map(int, sai_s.split(":")))
+                        entrada_min = he[0] * 60 + he[1]
+                        saida_min = hs[0] * 60 + hs[1]
+                        # Se saída < entrada, cruza meia-noite (adiciona 24h)
+                        if saida_min <= entrada_min:
+                            saida_min += 24 * 60
+                        intervalo = int(dia_info.get("intervalo_min", 0) or 0)
+                        duracao_bruta = saida_min - entrada_min
+                        # BUG-FIX 13: intervalo > duração bruta resulta em 0 sem log,
+                        # indistinguível de folga. Logar para diagnóstico.
+                        if intervalo >= duracao_bruta:
+                            app.logger.warning(
+                                "Escala id=%s dia=%s: intervalo_min=%d >= duracao_bruta=%d — dado inconsistente",
+                                self.id, dia_ciclo_indice, intervalo, duracao_bruta,
+                            )
+                            return 0
+                        return max(0, duracao_bruta - intervalo)
+                except Exception as _e:
+                    # BUG-FIX 19: logar excepções em vez de silenciar
+                    app.logger.warning(
+                        "Escala id=%s dia=%s: erro ao calcular carga: %s",
+                        self.id, dia_ciclo_indice, _e,
+                    )
             # Senão, usar horas ou padrão 8h
             horas = dia_info.get("horas", 8)
             return int(horas * 60)
-        except Exception:
+        except Exception as _exc:
+            # BUG-FIX 19: logar excepção no bloco externo também
+            app.logger.warning(
+                "Escala id=%s: excepção em carga_horaria_min_dia(%s): %s",
+                self.id, dia_ciclo_indice, _exc,
+            )
             return 0
 
     def is_noturno_dia(self, dia_ciclo_indice):
@@ -754,7 +782,13 @@ class Escala(db.Model):
             if dia_ciclo_indice < 0 or dia_ciclo_indice >= len(dias):
                 return False
             return dias[dia_ciclo_indice].get("noturno", False)
-        except Exception:
+        except Exception as _e:
+            # BUG-FIX 5: logar em vez de silenciar — JSON corrompido aqui faz
+            # adicional noturno ser ignorado sem nenhum diagnóstico.
+            app.logger.warning(
+                "Escala id=%s: erro em is_noturno_dia(%s): %s",
+                self.id, dia_ciclo_indice, _e,
+            )
             return False
 
     def get_horarios_dia(self, dia_ciclo_indice):
@@ -18169,7 +18203,16 @@ def api_escalas_criar():
     ciclo_json = d.get("ciclo_json") or "{}"
     if isinstance(ciclo_json, dict):
         ciclo_json = json.dumps(ciclo_json, ensure_ascii=False)
-
+    # BUG-FIX 6: limitar tamanho do ciclo_json para evitar DoS (SQLite aceita GB de Text)
+    if len(ciclo_json) > 50000:
+        return jsonify({"erro": "ciclo_json muito grande (máximo 50 KB)"}), 400
+    # BUG-FIX 4 & 20: ciclo vazio ou sem dias deixa funcionario com 0h esperadas
+    try:
+        _ciclo_val = json.loads(ciclo_json)
+        if not isinstance(_ciclo_val.get("dias"), list) or len(_ciclo_val.get("dias", [])) == 0:
+            return jsonify({"erro": "ciclo_json deve conter ao menos 1 dia no array 'dias'"}), 400
+    except (json.JSONDecodeError, AttributeError):
+        return jsonify({"erro": "ciclo_json inválido (JSON malformado)"}), 400
     periodo_ini = (d.get("periodo_noturno_ini") or "22:00").strip()
     periodo_fim = (d.get("periodo_noturno_fim") or "05:00").strip()
     # Validar formato HH:MM
@@ -18242,11 +18285,21 @@ def api_escala_editar(id):
         e.tipo = d.get("tipo")
     if "ciclo_json" in d:
         ciclo = d.get("ciclo_json")
-        e.ciclo_json = (
+        ciclo_str = (
             json.dumps(ciclo, ensure_ascii=False)
             if isinstance(ciclo, dict)
             else (ciclo or "{}")
         )
+        # BUG-FIX 6 & 20 (PUT): mesma validação de tamanho e conteúdo do POST
+        if len(ciclo_str) > 50000:
+            return jsonify({"erro": "ciclo_json muito grande (máximo 50 KB)"}), 400
+        try:
+            _ciclo_val = json.loads(ciclo_str)
+            if not isinstance(_ciclo_val.get("dias"), list) or len(_ciclo_val.get("dias", [])) == 0:
+                return jsonify({"erro": "ciclo_json deve conter ao menos 1 dia no array 'dias'"}), 400
+        except (json.JSONDecodeError, AttributeError):
+            return jsonify({"erro": "ciclo_json inválido (JSON malformado)"}), 400
+        e.ciclo_json = ciclo_str
     if "descricao" in d:
         e.descricao = d.get("descricao", "")
     if "periodo_noturno_ini" in d:
@@ -18312,16 +18365,55 @@ def api_escala_vincular_funcionarios(id):
         if not fid or not data_ini:
             continue
 
+        # BUG-FIX 2: validar formato ISO de data_inicio antes de persistir
+        try:
+            from datetime import date as _dt_v
+            _dt_v.fromisoformat(str(data_ini))
+        except (ValueError, TypeError):
+            return jsonify({"erro": f"data_inicio inválida '{data_ini}' — use o formato YYYY-MM-DD"}), 400
+
+        # BUG-FIX 3: data_fim, se fornecida, deve ser >= data_inicio
+        if data_fim:
+            try:
+                from datetime import date as _dt_v2
+                if str(data_fim) < str(data_ini):
+                    return jsonify({"erro": "data_fim deve ser igual ou posterior a data_inicio"}), 400
+            except Exception:
+                pass
+
         f = db.session.get(Funcionario, fid)
         if not f:
             continue
 
-        # Validar se funcionário já está em outra escala na mesma data
+        # BUG-FIX 7: verificar sobreposição na MESMA escala (não apenas em outra)
+        conflito_mesmo = EscalaFuncionario.query.filter(
+            EscalaFuncionario.funcionario_id == fid,
+            EscalaFuncionario.escala_id == id,
+            EscalaFuncionario.ativo == True,
+            # Período sobreposto: registro existente ainda não encerrou antes de data_ini
+            db.or_(
+                EscalaFuncionario.data_fim.is_(None),
+                EscalaFuncionario.data_fim >= data_ini,
+            ),
+        ).first()
+        if conflito_mesmo:
+            return jsonify({
+                "erro": f"Funcionário {f.nome} já está vinculado a esta escala em período sobreposto. Encerre o vínculo existente antes de criar outro.",
+                "conflito_funcionario_id": fid,
+            }), 409
+
+        # BUG-FIX 8 & 9: verificar conflito em OUTRA escala, considerando data_fim
+        # Bug 8: registro com data_fim=None (ativo sem prazo) conflita sempre
+        # Bug 9: registros cujo data_fim < data_ini já encerraram — não são conflito
         conflito = EscalaFuncionario.query.filter(
             EscalaFuncionario.funcionario_id == fid,
             EscalaFuncionario.escala_id != id,
             EscalaFuncionario.data_inicio <= data_ini,
             EscalaFuncionario.ativo == True,
+            db.or_(
+                EscalaFuncionario.data_fim.is_(None),       # Ativo sem prazo
+                EscalaFuncionario.data_fim >= data_ini,     # Termina depois de data_ini
+            ),
         ).first()
 
         if conflito:
@@ -18372,25 +18464,53 @@ def api_escala_desvincular_funcionario(id, fid):
 @app.route("/api/escalas/<int:id>/turno-do-dia/<data>", methods=["GET"])
 @lr
 def api_escala_turno_do_dia(id, data):
-    """Retorna info do turno para uma data específica dentro do ciclo da escala"""
+    """Retorna info do turno de uma escala para uma data específica.
+    BUG-FIX 18: antes o parâmetro <data> era recebido mas nunca usado — retornava
+    o ciclo inteiro em vez das informações do dia calculado pelo índice correto."""
     e = db.get_or_404(Escala, id)
-    # Assumindo que data é a data_inicio de alguma EscalaFuncionario ativa
-    # Aqui retornamos apenas a info do turno do dia no ciclo
+    # Validar formato da data recebida
+    try:
+        from datetime import date as _dt18
+        data_obj_18 = _dt18.fromisoformat(str(data))
+    except (ValueError, TypeError):
+        return jsonify({"erro": "Data inválida — use o formato YYYY-MM-DD"}), 400
     try:
         ciclo = json.loads(e.ciclo_json or "{}")
         dias = ciclo.get("dias", [])
         if not dias:
             return jsonify({"erro": "Escala sem ciclo definido"}), 400
-        # Necessita data_inicio para calcular índice; aqui retornamos apenas a estrutura
-        return jsonify(
-            {
-                "escala_id": id,
-                "escala_nome": e.nome,
-                "escala_tipo": e.tipo,
+        # Buscar vínculo ativo que abranja a data informada
+        data_str_18 = str(data)
+        ef = EscalaFuncionario.query.filter(
+            EscalaFuncionario.escala_id == id,
+            EscalaFuncionario.data_inicio <= data_str_18,
+            EscalaFuncionario.ativo == True,
+            db.or_(
+                EscalaFuncionario.data_fim.is_(None),
+                EscalaFuncionario.data_fim >= data_str_18,
+            ),
+        ).order_by(EscalaFuncionario.data_inicio.desc()).first()
+        if not ef:
+            return jsonify({
+                "erro": "Nenhum funcionário vinculado a esta escala na data informada",
                 "ciclo_dias": len(dias),
-                "ciclo": ciclo,
-            }
-        )
+            }), 404
+        from datetime import date as _dt18b
+        data_inicio_obj = _dt18b.fromisoformat(ef.data_inicio)
+        dias_decorridos = (data_obj_18 - data_inicio_obj).days
+        if dias_decorridos < 0:
+            return jsonify({"erro": "Data anterior ao início do vínculo"}), 400
+        indice = dias_decorridos % len(dias)
+        return jsonify({
+            "escala_id": id,
+            "escala_nome": e.nome,
+            "escala_tipo": e.tipo,
+            "data": data,
+            "indice_ciclo": indice,
+            "ciclo_dias": len(dias),
+            "dia_ciclo": dias[indice],
+            "carga_horaria_min": e.carga_horaria_min_dia(indice),
+        })
     except Exception as ex:
         return jsonify({"erro": str(ex)}), 400
 
