@@ -502,6 +502,30 @@ class PontoAjuste(db.Model):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
+class SolicitacaoHoraExtra(db.Model):
+    __tablename__ = "solicitacao_hora_extra"
+    id = db.Column(db.Integer, primary_key=True)
+    funcionario_id = db.Column(
+        db.Integer, db.ForeignKey("funcionario.id"), nullable=False, index=True
+    )
+    empresa_id = db.Column(
+        db.Integer, db.ForeignKey("empresa.id"), nullable=True, index=True
+    )
+    competencia = db.Column(db.String(7), nullable=False, index=True)  # YYYY-MM
+    he_50_min = db.Column(db.Integer, default=0)   # minutos de HE 50%
+    he_100_min = db.Column(db.Integer, default=0)  # minutos de HE 100%
+    he_50_fmt = db.Column(db.String(20), default="")   # ex: "2h30"
+    he_100_fmt = db.Column(db.String(20), default="")  # ex: "0h00"
+    status = db.Column(db.String(20), default="pendente")  # pendente|aprovado|recusado
+    motivo = db.Column(db.Text, default="")
+    decidido_em = db.Column(db.DateTime, nullable=True)
+    decidido_por = db.Column(db.String(150), nullable=True)
+    criado_em = db.Column(db.DateTime, default=utcnow)
+
+    def to_dict(self):
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
+
 class JornadaTrabalho(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(120), nullable=False)
@@ -7900,6 +7924,7 @@ register_ponto_routes(
     EscalaFuncionario=EscalaFuncionario,
     Escala=Escala,
     JornadaTrabalho=JornadaTrabalho,
+    SolicitacaoHoraExtra=SolicitacaoHoraExtra,
 )
 
 
