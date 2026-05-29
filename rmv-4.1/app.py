@@ -27795,30 +27795,53 @@ def api_dashboard():
     ]
 
     def _parse_aso_validade(raw):
+        """Interpreta o campo competencia do ASO como DATA DE EMISSÃO e devolve
+        a data de VENCIMENTO (emissão + 1 ano). O campo competencia representa o
+        mês/ano em que o exame foi realizado, não a data de expiração."""
         s = (raw or "").strip()
         if not s:
             return None
+        # Formato dia completo (DD/MM/YYYY etc.) — trata como data de emissão
+        # e soma 1 ano para obter o vencimento.
         for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d.%m.%Y"):
             try:
-                return datetime.strptime(s, fmt).date()
+                emissao = datetime.strptime(s, fmt).date()
+                # +1 ano usando replace para preservar dia (exceto 29/02 → 28/02)
+                try:
+                    return emissao.replace(year=emissao.year + 1)
+                except ValueError:
+                    return emissao.replace(year=emissao.year + 1, day=28)
             except Exception:
                 pass
+        # Formato MM/AAAA — considera o último dia do mês de emissão, soma 1 ano
         m = re.match(r"^(\d{2})/(\d{4})$", s)
         if m:
             mm, yy = int(m.group(1)), int(m.group(2))
             if 1 <= mm <= 12:
+                # último dia do mês de emissão
                 prox = date(yy + 1, 1, 1) if mm == 12 else date(yy, mm + 1, 1)
-                return prox - timedelta(days=1)
+                emissao_fim = prox - timedelta(days=1)
+                # vencimento = mesmo mês/dia, 1 ano depois
+                try:
+                    return emissao_fim.replace(year=emissao_fim.year + 1)
+                except ValueError:
+                    return emissao_fim.replace(year=emissao_fim.year + 1, day=28)
+        # Formato AAAA-MM
         m = re.match(r"^(\d{4})-(\d{2})$", s)
         if m:
             yy, mm = int(m.group(1)), int(m.group(2))
             if 1 <= mm <= 12:
                 prox = date(yy + 1, 1, 1) if mm == 12 else date(yy, mm + 1, 1)
-                return prox - timedelta(days=1)
+                emissao_fim = prox - timedelta(days=1)
+                try:
+                    return emissao_fim.replace(year=emissao_fim.year + 1)
+                except ValueError:
+                    return emissao_fim.replace(year=emissao_fim.year + 1, day=28)
+        # Formato AAAA (só ano) — vencimento = último dia do ano seguinte
         m = re.match(r"^(19|20)\d{2}$", s)
         if m:
             yy = int(s)
-            return date(yy, 12, 31)
+            return date(yy + 1, 12, 31)
         return None
 
     limite = hoje + timedelta(days=30)
