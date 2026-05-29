@@ -2723,6 +2723,8 @@ class ComunicadoApp(db.Model):
     )
     # None = todos os postos; string = apenas esse posto
     posto_operacional = db.Column(db.String(150))
+    # None = visível para todos (legado); int = apenas funcionários desta empresa
+    empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
     criado_por = db.Column(db.String(100))
     criado_em = db.Column(db.DateTime, default=utcnow)
     ativo = db.Column(db.Boolean, default=True)
@@ -16921,19 +16923,58 @@ def api_app_comunicados_lista():
             ComunicadoApp.posto_operacional == "",
             ComunicadoApp.posto_operacional == f.posto_operacional,
         ),
+        # Bug #2: isolar por empresa — NULL = legado (visível para todos)
+        or_(
+            ComunicadoApp.empresa_id == None,
+            ComunicadoApp.empresa_id == f.empresa_id,
+        ),
     ).order_by(ComunicadoApp.criado_em.desc())
     itens = base_q.limit(per_page).offset((page - 1) * per_page).all()
     return jsonify([c.to_dict(funcionario_id=f.id) for c in itens])
 
 
 @app.route("/api/app/funcionario/comunicados/<int:cid>/lido", methods=["POST"])
+@_limiter.limit("60 per minute")  # Bug #3: rate limit
 @app_func_required
 def api_app_comunicado_marcar_lido(cid):
     f = g.app_funcionario
     c = db.get_or_404(ComunicadoApp, cid)
+    # Bug #1: verificar se o funcionário tem acesso a este comunicado
+    if c.funcionario_id and c.funcionario_id != f.id:
+        return jsonify({"erro": "Acesso negado"}), 403
+    if c.empresa_id and c.empresa_id != f.empresa_id:
+        return jsonify({"erro": "Acesso negado"}), 403
     c.marcar_lido(f.id)
     db.session.commit()
     return jsonify({"ok": True})
+
+
+@app.route("/api/app/funcionario/comunicados/marcar-todos-lidos", methods=["POST"])
+@_limiter.limit("10 per minute")
+@app_func_required
+def api_app_comunicados_marcar_todos_lidos():
+    """Marca como lidos todos os comunicados visíveis e não lidos do funcionário."""
+    f = g.app_funcionario
+    from sqlalchemy import or_
+
+    itens = ComunicadoApp.query.filter(
+        ComunicadoApp.ativo == True,
+        or_(ComunicadoApp.funcionario_id == None, ComunicadoApp.funcionario_id == f.id),
+        or_(
+            ComunicadoApp.posto_operacional == None,
+            ComunicadoApp.posto_operacional == "",
+            ComunicadoApp.posto_operacional == f.posto_operacional,
+        ),
+        or_(ComunicadoApp.empresa_id == None, ComunicadoApp.empresa_id == f.empresa_id),
+    ).all()
+    marcados = 0
+    for c in itens:
+        if f.id not in c.lidos_por():
+            c.marcar_lido(f.id)
+            marcados += 1
+    if marcados:
+        db.session.commit()
+    return jsonify({"ok": True, "marcados": marcados})
 
 
 @app.route("/api/app/funcionario/comunicados/nao-lidos")
@@ -16950,8 +16991,8 @@ def api_app_comunicados_nao_lidos():
             ComunicadoApp.posto_operacional == "",
             ComunicadoApp.posto_operacional == f.posto_operacional,
         ),
+        or_(ComunicadoApp.empresa_id == None, ComunicadoApp.empresa_id == f.empresa_id),
     ).all()
-    lidos = list(set(fid for c in itens for fid in c.lidos_por()))
     count = sum(1 for c in itens if f.id not in c.lidos_por())
     return jsonify({"nao_lidos": count})
 
@@ -18914,12 +18955,18 @@ def api_rh_comunicado_criar():
         return jsonify({"erro": "URL inválida. Use http:// ou https://"}), 400
     fid = d.get("funcionario_id")
     posto = (d.get("posto_operacional") or "").strip() or None
+    # Determinar empresa_id para isolar o comunicado por tenant
+    empresa_id_comunicado = None
+    if fid:
+        func_alvo = db.session.get(Funcionario, int(fid))
+        empresa_id_comunicado = getattr(func_alvo, "empresa_id", None) if func_alvo else None
     c = ComunicadoApp(
         titulo=titulo,
         conteudo=conteudo,
         url=url,
         funcionario_id=int(fid) if fid else None,
         posto_operacional=posto,
+        empresa_id=empresa_id_comunicado,
         criado_por=session.get("nome") or session.get("email") or "RH",
         ativo=True,
     )
@@ -31601,6 +31648,7 @@ with app.app_context():
         [
             "posto_operacional VARCHAR(150)",
             "url VARCHAR(2000)",
+            "empresa_id INTEGER",
         ],
     )
     ensure_cols(

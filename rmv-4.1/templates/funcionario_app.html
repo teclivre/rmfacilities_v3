@@ -775,10 +775,10 @@ function loadBadges(){
     if(bi){bi.textContent=c;bi.style.display=c>0?'':'none';}
   }).catch(function(){});
   api('GET','/api/app/funcionario/mensagens/nao-lidas').then(function(d){
-    setBadge('msgs',Array.isArray(d)?d.length:(d.count||0));
+    setBadge('msgs',Array.isArray(d)?d.length:(d.nao_lidas||0));
   }).catch(function(){});
   api('GET','/api/app/funcionario/comunicados/nao-lidos').then(function(d){
-    var c=Array.isArray(d)?d.length:(d.count||0);
+    var c=Array.isArray(d)?d.length:(d.nao_lidos||0);
     var bi=document.getElementById('badge-comun-inline');
     if(bi){bi.textContent=c;bi.style.display=c>0?'':'none';}
   }).catch(function(){});
@@ -1240,7 +1240,17 @@ function loadComun(){
         +'<div class="comun-corpo">'+esc(c.conteudo||c.mensagem||'')+'</div>'
         +'<div class="comun-data">'+(c.criado_em?fmtTs(c.criado_em):'')+'</div></div>';
     }).join('');
-    var bi=document.getElementById('badge-comun-inline');if(bi)bi.style.display='none';
+    // Bug #5: marcar todos como lidos no backend após exibir
+    var temNaoLido=lista.some(function(c){return !c.lido;});
+    if(temNaoLido){
+      api('POST','/api/app/funcionario/comunicados/marcar-todos-lidos').then(function(){
+        var bi=document.getElementById('badge-comun-inline');
+        if(bi)bi.style.display='none';
+        setBadge('comun',0);
+      }).catch(function(){});
+    } else {
+      var bi=document.getElementById('badge-comun-inline');if(bi)bi.style.display='none';
+    }
   }).catch(function(e){el.innerHTML='<div class="empty-state">'+esc(e.message||'Erro')+'</div>';_loaded.comun=false;});
 }
 
