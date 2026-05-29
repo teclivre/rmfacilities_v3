@@ -13981,13 +13981,16 @@ function benAvulsoFiltrar(){
     res.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Digite pelo menos 1 caractere para buscar funcionários.</div>';
     return;
   }
-  if(!beneficiosMensais.length){
+  // Usa funcs (carregado no startup) como fonte principal — não depende de
+  // carregarBeneficiosMensais() ter sido chamado previamente.
+  const fonte = (funcs||[]).filter(it => (it.status||'').toLowerCase() === 'ativo');
+  if(!fonte.length){
     res.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Carregando colaboradores, aguarde...</div>';
     return;
   }
-  const _norm = s => (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const _norm = s => (s||'').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const qn = _norm(q);
-  const lista = (beneficiosMensais||[]).filter(it =>
+  const lista = fonte.filter(it =>
     _norm(it.nome).includes(qn) || _norm(it.re).includes(qn) || _norm(it.matricula).includes(qn)
   ).slice(0,30);
   if(!lista.length){
@@ -13996,7 +13999,7 @@ function benAvulsoFiltrar(){
   }
   const tipoLabel = {vt:'Vale Transporte',vr:'Vale Refeição',va:'Vale Alimentação',pp:'Prêmio Produtividade',vg:'Vale Gasolina',cn:'Cesta de Natal'};
   res.innerHTML = lista.map(it => {
-    const jaAdicionado = benAvulsoSelecionados.some(x => x.funcionario_id===it.funcionario_id && x.tipo===tipo);
+    const jaAdicionado = benAvulsoSelecionados.some(x => x.funcionario_id===it.id && x.tipo===tipo);
     return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--borda);flex-wrap:wrap">
       <div style="flex:1;min-width:160px">
         <b>${fpEsc(it.nome)}</b>
@@ -14005,13 +14008,31 @@ function benAvulsoFiltrar(){
       <span style="font-size:11px;color:var(--azul)">${tipoLabel[tipo]||tipo}</span>
       ${jaAdicionado
         ? `<span style="font-size:11px;color:var(--verd);font-weight:700">✓ Adicionado</span>`
-        : `<button class="btn b-az b-sm" onclick="benAvulsoAdicionar(${it.funcionario_id})">+ Adicionar</button>`}
+        : `<button class="btn b-az b-sm" onclick="benAvulsoAdicionar(${it.id})">+ Adicionar</button>`}
     </div>`;
   }).join('');
 }
 
 function benAvulsoAdicionar(funcId){
-  const func = (beneficiosMensais||[]).find(x => x.funcionario_id===funcId);
+  // Busca primeiro em beneficiosMensais (tem dias trabalhados da competência);
+  // se não encontrar, cai para funcs (valores base do cadastro).
+  const bmItem = (beneficiosMensais||[]).find(x => x.funcionario_id===funcId);
+  const fItem  = (funcs||[]).find(x => x.id===funcId);
+  const func   = bmItem || (fItem ? {
+    funcionario_id: fItem.id,
+    nome: fItem.nome||'',
+    re: fItem.re||'',
+    posto_operacional: fItem.posto_operacional||'',
+    dias_vt: fItem.dias_vt||0,
+    dias_vr: fItem.dias_vr||0,
+    dias_vg: fItem.dias_vg||0,
+    vale_transporte: fItem.vale_transporte||0,
+    vale_refeicao: fItem.vale_refeicao||0,
+    vale_alimentacao: fItem.vale_alimentacao||0,
+    premio_produtividade: fItem.premio_produtividade||0,
+    vale_gasolina: fItem.vale_gasolina||0,
+    cesta_natal: fItem.cesta_natal||0,
+  } : null);
   if(!func){ toast('Funcionário não encontrado.','e'); return; }
   const tipo = document.getElementById('ben-avulso-tipo')?.value || 'vt';
   if(benAvulsoSelecionados.some(x => x.funcionario_id===funcId && x.tipo===tipo)){
