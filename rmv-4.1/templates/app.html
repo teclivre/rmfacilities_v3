@@ -13981,8 +13981,14 @@ function benAvulsoFiltrar(){
     res.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Digite pelo menos 1 caractere para buscar funcionários.</div>';
     return;
   }
+  if(!beneficiosMensais.length){
+    res.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Carregando colaboradores, aguarde...</div>';
+    return;
+  }
+  const _norm = s => (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const qn = _norm(q);
   const lista = (beneficiosMensais||[]).filter(it =>
-    (it.nome||'').toLowerCase().includes(q) || (it.re||'').toLowerCase().includes(q) || (it.matricula||'').toLowerCase().includes(q)
+    _norm(it.nome).includes(qn) || _norm(it.re).includes(qn) || _norm(it.matricula).includes(qn)
   ).slice(0,30);
   if(!lista.length){
     res.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Nenhum funcionário encontrado.</div>';
