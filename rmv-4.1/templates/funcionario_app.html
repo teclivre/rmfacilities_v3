@@ -53,8 +53,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .hd-logo{height:28px;object-fit:contain}
 .hd-name{font-size:14px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .hd-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;flex-shrink:0}
-.app-content{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 14px 14px;position:relative}
-.app-nav{flex-shrink:0;background:var(--bg2);border-top:1px solid var(--border);display:flex;padding-bottom:var(--safe-bot);z-index:100}
+.app-content{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 14px calc(var(--safe-bot) + 68px);position:relative}
+.app-nav{position:fixed;bottom:0;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border);display:none;padding-bottom:var(--safe-bot);z-index:1000}.app-nav.on{display:flex}
 .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:9px 2px;font-size:9px;color:var(--text2);cursor:pointer;border:none;background:none;position:relative}
 .nav-btn.on{color:var(--blue)}
 .nav-btn svg{width:21px;height:21px;fill:currentColor}
@@ -376,26 +376,27 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 
   </div>
 
-  <nav class="app-nav">
-    <button class="nav-btn on" id="nav-ponto" onclick="showPage('ponto')">
-      <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zm.5 11H11V7h1.5v4.26l2.62 1.51-.75 1.3L12.5 13z"/></svg>Ponto
-    </button>
-    <button class="nav-btn" id="nav-docs" onclick="showPage('docs')">
-      <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>Docs
-      <span class="nav-badge" id="badge-docs">0</span>
-    </button>
-    <button class="nav-btn" id="nav-fin" onclick="showPage('fin')">
-      <svg viewBox="0 0 24 24"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>Financeiro
-    </button>
-    <button class="nav-btn" id="nav-msgs" onclick="showPage('msgs')">
-      <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>Chat
-      <span class="nav-badge" id="badge-msgs">0</span>
-    </button>
-    <button class="nav-btn" id="nav-perfil" onclick="showPage('perfil')">
-      <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>Perfil
-    </button>
-  </nav>
 </div>
+
+<nav class="app-nav" id="app-nav">
+  <button class="nav-btn on" id="nav-ponto" onclick="showPage('ponto')">
+    <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zm.5 11H11V7h1.5v4.26l2.62 1.51-.75 1.3L12.5 13z"/></svg>Ponto
+  </button>
+  <button class="nav-btn" id="nav-docs" onclick="showPage('docs')">
+    <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>Docs
+    <span class="nav-badge" id="badge-docs">0</span>
+  </button>
+  <button class="nav-btn" id="nav-fin" onclick="showPage('fin')">
+    <svg viewBox="0 0 24 24"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>Financeiro
+  </button>
+  <button class="nav-btn" id="nav-msgs" onclick="showPage('msgs')">
+    <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>Chat
+    <span class="nav-badge" id="badge-msgs">0</span>
+  </button>
+  <button class="nav-btn" id="nav-perfil" onclick="showPage('perfil')">
+    <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>Perfil
+  </button>
+</nav>
 
 <!-- MODAIS -->
 <div class="modal-overlay" id="modal-sign">
@@ -650,6 +651,7 @@ function doLogout(){
   _AT='';_RT='';_func=null;_loaded={};_otpCpf='';
   clearInterval(_clockT);stopMsgPoll();
   document.getElementById('scr-app').classList.remove('on');
+  document.getElementById('app-nav').classList.remove('on');
   document.getElementById('scr-login').classList.add('on');
   document.getElementById('step-cpf').style.display='';
   document.getElementById('step-otp').style.display='none';
@@ -661,6 +663,7 @@ function doLogout(){
 function showApp(){
   document.getElementById('scr-login').classList.remove('on');
   document.getElementById('scr-app').classList.add('on');
+  document.getElementById('app-nav').classList.add('on');
   document.getElementById('hd-name').textContent=(_func&&_func.nome)||'—';
   var st=((_func&&_func.status)||'').toLowerCase();
   var hb=document.getElementById('hd-badge');
