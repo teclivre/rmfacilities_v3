@@ -430,21 +430,11 @@ function pontoBaixarEspelhoMensal(){
   window.open(url, '_blank');
 }
 // ─── EDITAR DIA COMPLETO ───────────────────────────────────────────────────
-// BUG-FIX: data_hora é armazenado em UTC; converter para fuso local antes de
-// preencher os inputs datetime-local/time. Sem isso, _pedDhComTz adiciona o
-// offset de fuso sobre um horário que já é UTC, resultando em envio de
-// horário 3h no futuro → erro "não é permitido editar em horário futuro".
-function _dhUtcParaLocal(dh){
-  const s=String(dh||'');
-  if(!s) return '';
-  try{
-    const d=new Date(s.replace(' ','T')+'Z');
-    if(isNaN(d.getTime())) return s.replace(' ','T').slice(0,16);
-    const pad=n=>String(n).padStart(2,'0');
-    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }catch(_){
-    return s.replace(' ','T').slice(0,16);
-  }
+// Nota: data_hora no banco é BRT naive (utcnow() retorna localnow() = BRT).
+// Os inputs exibem e enviam o valor tal como está, sem conversão de fuso.
+function _dhParaInput(dh){
+  // Converte "YYYY-MM-DD HH:MM:SS" ou "YYYY-MM-DDTHH:MM" para "YYYY-MM-DDTHH:MM"
+  return String(dh||'').replace(' ','T').slice(0,16);
 }
 let _pedCtx=null;
 async function pontoAbrirEditDia(){
@@ -477,7 +467,7 @@ async function pontoAbrirEditDia(){
   }
 
   document.getElementById('ped-marcacoes-wrap').innerHTML=
-    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),_dhUtcParaLocal(m.data_hora),m.observacao||'',false)).join('')+
+    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),_dhParaInput(m.data_hora),m.observacao||'',false)).join('')+
     `<button type="button" class="btn b-vd b-sm" style="width:100%;margin-top:4px" onclick="pedAdicionarLinha()">＋ Adicionar marcação</button>`;
 
   document.getElementById('ped-motivo').value='';
@@ -539,17 +529,15 @@ async function salvarEdicaoDiaCompleto(){
   const idsOriginais=(_pedCtx?.marcacoes||pontoMarcacoesDiaAtual||[]).map(m=>String(m.id));
   const idsExcluir=idsOriginais.filter(id=>!idsPresentes.has(id));
 
-  // BUG-FIX 2: helper para montar datetime com offset de timezone correto
-  // (evita que a hora seja interpretada como UTC pelo servidor).
+  // BUG-FIX 2: helper para montar datetime sem offset de timezone:
+  // banco usa BRT naive, utcnow()=localnow()=BRT. Enviar sem TZ para que
+  // _ponto_parse_data_hora preserve o valor como naive BRT, igual ao que
+  // o app mobile e kiosk enviam.
   function _pedDhComTz(dataRef, dhRaw){
-    const tz=new Date().getTimezoneOffset();
-    const tzSign=tz<=0?'+':'-';
-    const tzH=String(Math.floor(Math.abs(tz)/60)).padStart(2,'0');
-    const tzM=String(Math.abs(tz)%60).padStart(2,'0');
-    const tzStr=`${tzSign}${tzH}:${tzM}`;
     const base=/^\d{2}:\d{2}$/.test(dhRaw)?dataRef+'T'+dhRaw:dhRaw;
-    if(/[+\-]\d{2}:\d{2}$/.test(base)||base.endsWith('Z')) return base;
-    return base+tzStr;
+    // Remover qualquer offset existente para enviar como naive
+    return base.replace(/[+\-]\d{2}:\d{2}$|Z$/,'');
+  }
   }
 
   // Marcações existentes que continuam = editar
@@ -738,9 +726,8 @@ function gfRenderCalendario(resumo,comp){
     const saldo=dayData?.saldo_fmt||'';
     const horas=dayData?.horas_trabalhadas_fmt||'';
     const marc=dayData?.marcacoes||[];
-    // BUG-FIX: data_hora vem em UTC ("YYYY-MM-DD HH:MM:SS"); converter para BRT antes
-    // de exibir — sem isso os horários aparecem 3h atrasados no calendário.
-    const getT=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);if(!m)return null;const s=String(m.data_hora||'');if(!s)return null;try{const d=new Date(s.replace(' ','T')+'Z');if(isNaN(d))return null;return d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'});}catch(_){const mt=s.match(/(\d{2}:\d{2})/);return mt?mt[1]:null;}};
+    // data_hora no banco é BRT naive: exibir diretamente sem conversão de fuso.
+    const getT=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);if(!m)return null;const s=String(m.data_hora||'');const mt=s.match(/(\d{2}:\d{2})(?::\d{2})?$/);return mt?mt[1]:null;};
     const timesHtml=[['entrada','gf-t-e','E'],['saida_intervalo','gf-t-si','SI'],['retorno_intervalo','gf-t-ri','RI'],['saida','gf-t-s','S']]
       .map(([tipo,cls,lb])=>{const t=getT(tipo);return t?`<span class="gf-t ${cls}">${lb} ${t}</span>`:'';})
       .filter(Boolean).join('');
@@ -790,8 +777,8 @@ function gfRenderFolha(resumo){
 
   const linhas=(resumo.dias||[]).map(dia=>{
     const marc=dia.marcacoes||[];
-    // BUG-FIX: data_hora vem em UTC; converter para BRT antes de exibir.
-    const get=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);if(!m)return '—';const s=String(m.data_hora||'');if(!s)return '—';try{const d=new Date(s.replace(' ','T')+'Z');if(isNaN(d))return s.slice(11,16)||'—';return d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'});}catch(_){return s.slice(11,16)||'—';}};
+    // data_hora no banco é BRT naive: exibir diretamente sem conversão de fuso.
+    const get=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);return m?(m.data_hora||'').slice(11,16)||'—':'—'};
     // BUG-FIX 9: _ponto_fmt_minutos(signed=True) retorna "-HH:MM" para negativo
     // mas sem "+" para positivo, então startsWith('+') nunca é verdadeiro.
     // Usar saldo_min (número) para detectar sinal correto.
@@ -846,8 +833,8 @@ function gfAbrirEditDia(dataRef){
   const tiposOpts=`<option value="entrada">Entrada</option><option value="saida_intervalo">Saída intervalo</option><option value="retorno_intervalo">Retorno intervalo</option><option value="saida">Saída</option>`;
   document.getElementById('ped-info').textContent=`Editando marcações de ${f?.nome||'Colaborador'} em ${dataRef}`;
 
-  // BUG-FIX: reutilizar _dhUtcParaLocal para converter UTC→local antes de exibir.
-  function toDtLocal(dh){ return _dhUtcParaLocal(dh); }
+  // BUG-FIX: reutilizar _dhParaInput para exibir o horário BRT armazenado.
+  function toDtLocal(dh){ return _dhParaInput(dh); }
 
   function buildRow(id,tipo,dh,obs,isNova){
     return `<div class="card" style="margin:0 0 8px;padding:10px;position:relative" data-marc-id="${id}" data-nova="${isNova?'1':''}">
