@@ -104,7 +104,7 @@ class PontoActivity : BaseActivity() {
     }
 
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private var primeiraCarregada = false
+    // primeiraCarregada removido: carregarDia() gerenciado exclusivamente pelo onResume
     private val gson = Gson()
 
     private val locationPermissionLauncher = registerForActivityResult(
@@ -280,10 +280,8 @@ class PontoActivity : BaseActivity() {
             }
         }
 
-        // Mostra cache imediatamente antes de carregar do servidor
+        // Mostra cache imediatamente antes de carregar do servidor (onResume fará o carregamento)
         restaurarCacheMarcacoes()
-        carregarDia()
-        primeiraCarregada = true
     }
 
     override fun onResume() {
@@ -293,11 +291,9 @@ class PontoActivity : BaseActivity() {
         tvData.text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
         atualizarBadgePendentes()
         registrarCallbackRede()
-        // Mostra cache imediatamente enquanto carrega do servidor
-        if (primeiraCarregada) {
-            restaurarCacheMarcacoes()
-            carregarDia()
-        }
+        // Mostra cache imediatamente e carrega do servidor (em toda retomada de tela)
+        restaurarCacheMarcacoes()
+        carregarDia()
     }
 
     override fun onPause() {

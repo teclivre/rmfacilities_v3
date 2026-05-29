@@ -15960,6 +15960,18 @@ def api_rh_decidir_correcao_ponto(id):
     it.resolvido_em = utcnow()
     # Se aprovado e há marcação existente + horário correto → alterar horário
     if acao == "aprovar" and it.marcacao_id and it.horario_correto:
+        import re as _re
+        if not _re.match(r"^\d{2}:\d{2}$", it.horario_correto):
+            app.logger.error(
+                f"[correcao-ponto] horario_correto inválido (formato esperado HH:MM): {it.horario_correto!r}"
+            )
+            return jsonify({"erro": "horario_correto inválido. Use o formato HH:MM."}), 400
+        h_val, m_val = it.horario_correto.split(":")
+        if not (0 <= int(h_val) <= 23 and 0 <= int(m_val) <= 59):
+            app.logger.error(
+                f"[correcao-ponto] horario_correto fora do intervalo: {it.horario_correto!r}"
+            )
+            return jsonify({"erro": "horario_correto fora do intervalo (hora 00-23, minuto 00-59)."}), 400
         marc = db.session.get(PontoMarcacao, it.marcacao_id)
         if marc and marc.data_hora:
             try:
@@ -15990,6 +16002,18 @@ def api_rh_decidir_correcao_ponto(id):
         and it.horario_correto
         and it.data_ref
     ):
+        import re as _re
+        if not _re.match(r"^\d{2}:\d{2}$", it.horario_correto):
+            app.logger.error(
+                f"[correcao-ponto] horario_correto inválido (marcacao_faltando): {it.horario_correto!r}"
+            )
+            return jsonify({"erro": "horario_correto inválido. Use o formato HH:MM."}), 400
+        h_val, m_val = it.horario_correto.split(":")
+        if not (0 <= int(h_val) <= 23 and 0 <= int(m_val) <= 59):
+            app.logger.error(
+                f"[correcao-ponto] horario_correto fora do intervalo (marcacao_faltando): {it.horario_correto!r}"
+            )
+            return jsonify({"erro": "horario_correto fora do intervalo (hora 00-23, minuto 00-59)."}), 400
         try:
             data_obj = datetime.strptime(it.data_ref, "%Y-%m-%d").date()
             marcacoes_dia = _app_ponto_marcacoes_dia(it.funcionario_id, data_obj)
@@ -17474,6 +17498,9 @@ def api_app_ponto_marcar_me():
         ), 400
     data_ref = data_hora.date()
     marcacoes_dia = _app_ponto_marcacoes_dia(f.id, data_ref)
+    max_marc = _app_ponto_max_marcacoes_dia(f)
+    if len(marcacoes_dia) >= max_marc:
+        return jsonify({"erro": f"Limite de {max_marc} marcações diárias já atingido. Solicite correção se necessário."}), 400
     tipo = tipo or _app_ponto_tipo_esperado(marcacoes_dia)
     if tipo not in _APP_PONTO_TIPOS:
         return jsonify({"erro": "Tipo de marcação inválido."}), 400
@@ -17623,7 +17650,21 @@ def api_app_ponto_marcar_me():
 @_limiter.limit("120 per hour")
 def api_ponto_qrcode_token():
     """Emite token efêmero (TTL 60s) usado pelo totem/kiosk para gerar o QR Code.
-    Aceita cliente_id no body; valida que existe."""
+    Aceita cliente_id no body; valida que existe.
+    Requer autenticação via header Authorization: Bearer <PONTO_TOTEM_TOKEN>
+    ou X-Api-Key: <PONTO_TOTEM_TOKEN> (configurado no ambiente/gc)."""
+    totem_token = (os.environ.get("PONTO_TOTEM_TOKEN") or gc("ponto_totem_token", "")).strip()
+    if totem_token:
+        bearer = (request.headers.get("Authorization") or "").strip()
+        api_key = (request.headers.get("X-Api-Key") or "").strip()
+        if bearer.lower().startswith("bearer "):
+            apresentado = bearer[7:].strip()
+        else:
+            apresentado = api_key or bearer
+        if not apresentado or not hmac.compare_digest(apresentado.encode(), totem_token.encode()):
+            return jsonify({"erro": "Não autorizado. Configure PONTO_TOTEM_TOKEN no totem."}), 401
+    else:
+        app.logger.warning("[ponto-qr] PONTO_TOTEM_TOKEN não configurado — endpoint sem autenticação")
     d = request.json or {}
     cli_id = d.get("cliente_id")
     try:
@@ -17663,6 +17704,9 @@ def api_app_ponto_marcar_qr_me():
     data_hora = utcnow()
     data_ref = data_hora.date()
     marcacoes_dia = _app_ponto_marcacoes_dia(f.id, data_ref)
+    max_marc = _app_ponto_max_marcacoes_dia(f)
+    if len(marcacoes_dia) >= max_marc:
+        return jsonify({"erro": f"Limite de {max_marc} marcações diárias já atingido. Solicite correção se necessário."}), 400
     tipo = (dados.get("tipo") or "").strip().lower() or _app_ponto_tipo_esperado(marcacoes_dia)
     if tipo not in _APP_PONTO_TIPOS:
         return jsonify({"erro": "Tipo de marcação inválido."}), 400
@@ -17716,6 +17760,37 @@ def api_app_ponto_marcar_qr_me():
         True,
         {"tipo": tipo, "data_ref": data_ref.strftime("%Y-%m-%d"), "origem": "app-qr", "cliente_id": cli_id_token},
     )
+    # Notificar clientes SSE sobre novo ponto (mesma lógica do /marcar)
+    try:
+        import json as _json
+        _sse_broadcast(
+            "ponto",
+            _json.dumps(
+                {
+                    "funcionario_id": f.id,
+                    "nome": f.nome,
+                    "tipo": m.tipo,
+                    "hora": m.data_hora.strftime("%H:%M"),
+                }
+            ),
+        )
+    except Exception:
+        pass
+    # Push de alerta: se hoje é entrada, verificar se ontem houve entrada sem saída
+    if tipo == "entrada":
+        try:
+            data_ant = data_ref - timedelta(days=1)
+            marcacoes_ant = _app_ponto_marcacoes_dia(f.id, data_ant)
+            tipos_ant = [mc.tipo for mc in marcacoes_ant]
+            if "entrada" in tipos_ant and "saida" not in tipos_ant:
+                _push_notify_funcionario(
+                    f.id,
+                    "⚠️ Ponto incompleto",
+                    f"Ontem ({data_ant.strftime('%d/%m')}) você não registrou a saída. Solicite correção no app.",
+                    data={"tipo": "alerta_ponto_incompleto", "data_ref": str(data_ant)},
+                )
+        except Exception:
+            pass
     return jsonify(
         {
             "ok": True,
