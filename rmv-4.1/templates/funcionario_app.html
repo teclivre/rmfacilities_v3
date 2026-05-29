@@ -53,8 +53,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .hd-logo{height:28px;object-fit:contain}
 .hd-name{font-size:14px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .hd-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;flex-shrink:0}
-.app-content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 14px calc(var(--safe-bot) + 68px);position:relative}
-.app-nav{position:fixed;bottom:0;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border);display:flex;padding-bottom:var(--safe-bot);z-index:100}
+.app-content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 14px 14px;position:relative}
+.app-nav{flex-shrink:0;background:var(--bg2);border-top:1px solid var(--border);display:flex;padding-bottom:var(--safe-bot);z-index:100}
 .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:9px 2px;font-size:9px;color:var(--text2);cursor:pointer;border:none;background:none;position:relative}
 .nav-btn.on{color:var(--blue)}
 .nav-btn svg{width:21px;height:21px;fill:currentColor}
@@ -165,7 +165,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .ferias-status{font-size:16px;font-weight:700;color:var(--green);margin-bottom:4px}
 
 /* Mensagens */
-.chat-wrap{display:flex;flex-direction:column;height:calc(100dvh - 224px);min-height:300px}
+.chat-wrap{display:flex;flex-direction:column;height:calc(100dvh - var(--safe-top) - var(--safe-bot) - 186px);min-height:200px}
 .chat-msgs{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 0}
 .msg-item{display:flex;margin-bottom:8px}
 .msg-item.de-rh{justify-content:flex-start}
