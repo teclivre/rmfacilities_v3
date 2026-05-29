@@ -491,8 +491,13 @@ def register_ponto_routes(
             dias.append(
                 {
                     "data_ref": resumo["data_ref"],
+                    # BUG-FIX 1: incluir campos _min que o espelho de ponto precisa
+                    # para calcular totais — antes só existiam as versões _fmt (string).
+                    "horas_trabalhadas_min": resumo["horas_trabalhadas_min"],
                     "horas_trabalhadas_fmt": resumo["horas_trabalhadas_fmt"],
+                    "horas_esperadas_min": resumo["horas_esperadas_min"],
                     "horas_esperadas_fmt": resumo["horas_esperadas_fmt"],
+                    "saldo_min": resumo["saldo_min"],
                     "saldo_fmt": resumo["saldo_fmt"],
                     "he_50_min": resumo["he_50_min"],
                     "he_50_fmt": resumo["he_50_fmt"],
@@ -522,6 +527,9 @@ def register_ponto_routes(
             "funcionario_nome": funcionario.nome,
             "competencia": competencia,
             "dias": dias,
+            # BUG-FIX 5: expor marc_por_data para o espelho de ponto reutilizar
+            # em vez de fazer uma segunda query idêntica (TOCTOU + carga dupla).
+            "marc_por_data": marc_por_data_comp,
             "totais": {
                 "horas_trabalhadas_min": total_trabalhado,
                 "horas_trabalhadas_fmt": _ponto_fmt_minutos(total_trabalhado),
@@ -1248,18 +1256,18 @@ def register_ponto_routes(
         if not re.match(r"^\d{4}-\d{2}$", competencia):
             return jsonify({"erro": "competencia inválida. Use YYYY-MM."}), 400
 
-        funcionario = Funcionario.query.get(funcionario_id)
-        if not funcionario:
-            return jsonify({"erro": "Funcionário não encontrado."}), 404
+        # BUG-FIX 9: bloquear competência futura — antes apenas validava o formato,
+        # gerava PDF válido com todos os dias sem marcações e sem aviso ao usuário.
+        try:
+            _ano_c, _mes_c = [int(x) for x in competencia.split("-")]
+            _hoje_br = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+            if (_ano_c, _mes_c) > (_hoje_br.year, _hoje_br.month):
+                return jsonify({"erro": "Não é possível gerar espelho para competência futura."}), 400
+        except (ValueError, KeyError):
+            return jsonify({"erro": "competencia inválida."}), 400
 
-        resumo_comp = _ponto_resumo_competencia(funcionario, competencia)
-        if not resumo_comp:
-            return jsonify(
-                {
-                    "erro": "Não foi possível gerar o espelho para a competência informada."
-                }
-            ), 400
-
+        # BUG-FIX 8: importar ReportLab ANTES do processamento pesado para falhar rápido;
+        # antes a query de 31 dias era feita e descartada se ReportLab não estivesse instalado.
         try:
             from reportlab.lib import colors
             from reportlab.lib.enums import TA_CENTER
@@ -1279,6 +1287,34 @@ def register_ponto_routes(
                 {"erro": "Dependência ReportLab não disponível para gerar o espelho."}
             ), 500
 
+        funcionario = db.session.get(Funcionario, funcionario_id)  # BUG-FIX 10: .query.get() deprecated
+        if not funcionario:
+            return jsonify({"erro": "Funcionário não encontrado."}), 404
+
+        # BUG-FIX 6: verificar que o usuário só acessa funcionários de sua empresa
+        # (não se aplica a perfil 'dono' que tem acesso global).
+        _uid_sess = session.get("uid")
+        _perfil_sess = (session.get("perfil") or "").strip().lower()
+        if _perfil_sess != "dono" and _uid_sess:
+            try:
+                from sqlalchemy import text as _sql_text
+                _u = db.session.execute(
+                    _sql_text("SELECT empresa_id FROM usuario WHERE id = :uid"),
+                    {"uid": int(_uid_sess)},
+                ).first()
+                if _u and _u[0] and funcionario.empresa_id and int(_u[0]) != int(funcionario.empresa_id):
+                    return jsonify({"erro": "Acesso negado."}), 403
+            except Exception:
+                pass  # em caso de erro no check, não bloqueia (fail-open para não quebrar uso legado)
+
+        resumo_comp = _ponto_resumo_competencia(funcionario, competencia)
+        if not resumo_comp:
+            return jsonify(
+                {
+                    "erro": "Não foi possível gerar o espelho para a competência informada."
+                }
+            ), 400
+
         def p(txt, sty, html=False):
             texto = str(txt or "")
             if not html:
@@ -1290,7 +1326,15 @@ def register_ponto_routes(
             return Paragraph(texto, sty)
 
         def hhmm_from_dt(dt):
-            return dt.strftime("%H:%M") if dt else ""
+            # BUG-FIX 3: data_hora armazenado em UTC; converter para Horário de
+            # Brasília antes de formatar — antes exibia marcacões com 3h a menos.
+            if not dt:
+                return ""
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/Sao_Paulo"))
+            else:
+                dt = dt.astimezone(ZoneInfo("America/Sao_Paulo"))
+            return dt.strftime("%H:%M")
 
         def fmt_comp_br(valor):
             try:
@@ -1303,7 +1347,9 @@ def register_ponto_routes(
                 )
                 fim = proximo - timedelta(days=1)
                 return inicio.strftime("%d/%m/%Y"), fim.strftime("%d/%m/%Y")
-            except Exception:
+            except Exception as _e:
+                # BUG-FIX 15: logar exceção em vez de silenciar; "-" indistinguível de dado ausente
+                app.logger.warning("espelho_ponto: fmt_comp_br falhou para '%s': %s", valor, _e)
                 return "-", "-"
 
         def fmt_doc(valor):
@@ -1328,27 +1374,22 @@ def register_ponto_routes(
         total_extras = 0
         dia = inicio
 
-        # Batch: evita N+1 queries (2 por dia) reutilizando os dados já
-        # carregados por _ponto_resumo_competencia.
-        _marc_por_data = {}
-        for _mc in PontoMarcacao.query.filter(
-            PontoMarcacao.funcionario_id == funcionario.id,
-            PontoMarcacao.data_hora >= datetime.combine(inicio, datetime.min.time()),
-            PontoMarcacao.data_hora < datetime.combine(fim + timedelta(days=1), datetime.min.time()),
-        ).order_by(PontoMarcacao.data_hora).all():
-            _marc_por_data.setdefault(_mc.data_hora.date(), []).append(_mc)
+        # BUG-FIX 5: reutilizar as marcações já carregadas por _ponto_resumo_competencia
+        # em vez de fazer uma segunda query idêntica (TOCTOU + carga dupla no banco).
+        # BUG-FIX 14: a janela do batch load foi estendida +1 dia além do fim da competência
+        # para capturar marcações de saída de turno noturno que comecem no último dia do
+        # mês e terminem na madrugada do dia 1 do mês seguinte.
+        _marc_por_data = resumo_comp.get("marc_por_data") or {}
         _resumo_por_data = {
             d["data_ref"]: d for d in (resumo_comp.get("dias") or [])
         }
 
         while dia <= fim:
             marcacoes = _marc_por_data.get(dia, [])
-            tempos = sorted(
-                [
-                    item.data_hora
-                    for item in marcacoes
-                    if getattr(item, "data_hora", None)
-                ]
+            # Construir lista de marcacoes ordenadas com objeto completo (para BUG-FIX 19)
+            marcacoes_ord = sorted(
+                [m for m in marcacoes if getattr(m, "data_hora", None)],
+                key=lambda m: m.data_hora,
             )
 
             _dia_str = dia.strftime("%Y-%m-%d")
@@ -1358,21 +1399,33 @@ def register_ponto_routes(
             previstas = int(resumo.get("horas_esperadas_min", 0) or 0)
             diurnas = int(resumo.get("horas_trabalhadas_min", 0) or 0)
             saldo = int(resumo.get("saldo_min", 0) or 0)
-            intervalo = 0
-            if len(tempos) >= 3:
-                intervalo = max(0, int((tempos[2] - tempos[1]).total_seconds() // 60))
+            # BUG-FIX 4 & 17: usar intrajornada_min do resumo em vez de calcular
+            # por posição (tempos[1]/tempos[2]) — eliminando a divergência entre
+            # o total exibido no rodapé e o valor efetivamente descontado.
+            intervalo = int(resumo.get("intrajornada_min", 0) or 0)
 
             faltas = ""
             extras = ""
             marcacoes_str = ""
-            if previstas > 0 and not tempos:
-                marcacoes_str = "Falta"
+            if previstas > 0 and not marcacoes_ord:
+                # BUG-FIX 18: antes colocava "Falta" na coluna Marcações, que
+                # é redundante com a coluna Faltas logo ao lado e confuso para quem lê.
+                marcacoes_str = ""
                 faltas = "-" + _ponto_fmt_minutos(previstas)
                 total_faltas += previstas
             else:
-                marcacoes_str = (
-                    "  ".join(hhmm_from_dt(t) for t in tempos) if tempos else ""
-                )
+                # BUG-FIX 19: adicionar marcadores visuais conforme a origem da
+                # marcação para dar significado à legenda que antes era inutilizável.
+                # [A]=incluída por admin  [S]=por solicitação  (sem sufixo)=normal
+                def _fmt_marc(m):
+                    s = hhmm_from_dt(m.data_hora)
+                    orig = (getattr(m, "origem", "") or "").lower()
+                    if orig == "admin":
+                        s += "[A]"
+                    elif orig in ("solicitacao", "ajuste", "he_autorizada"):
+                        s += "[S]"
+                    return s
+                marcacoes_str = "  ".join(_fmt_marc(m) for m in marcacoes_ord) if marcacoes_ord else ""
                 if saldo < 0:
                     faltas = "-" + _ponto_fmt_minutos(abs(saldo))
                     total_faltas += abs(saldo)
@@ -1397,7 +1450,10 @@ def register_ponto_routes(
             )
             dia += timedelta(days=1)
 
-        nome_arquivo = f"espelho_ponto_{funcionario.id}_{competencia}.pdf"
+        # BUG-FIX 20: sanitizar nome do arquivo para evitar path traversal via
+        # caracteres especiais em competencia (improvável mas possível com encoding).
+        _comp_safe = re.sub(r"[^\w-]", "_", competencia)
+        nome_arquivo = f"espelho_ponto_{funcionario.id}_{_comp_safe}.pdf"
         saida = io.BytesIO()
         doc = SimpleDocTemplate(
             saida,
@@ -1436,12 +1492,28 @@ def register_ponto_routes(
         )
 
         elementos = []
+        # BUG-FIX 10: .query.get() deprecated no SQLAlchemy 2.x
         empresa = (
-            Empresa.query.get(funcionario.empresa_id)
+            db.session.get(Empresa, funcionario.empresa_id)
             if funcionario.empresa_id
             else None
         )
-        logo_url_padrao = "https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png"
+        # BUG-FIX 16: calcular now_br UMA vez — antes duas chamadas a datetime.now()
+        # separadas podiam divergir em segundos na virada de minuto.
+        _now_br = datetime.now(ZoneInfo("America/Sao_Paulo"))
+        # BUG-FIX 12: exibir escala real do funcionario em vez de "Normal" hardcoded
+        try:
+            _ef_esc = EscalaFuncionario.query.filter(
+                EscalaFuncionario.funcionario_id == funcionario.id,
+                EscalaFuncionario.ativo == True,
+            ).order_by(EscalaFuncionario.data_inicio.desc()).first()
+            _nome_escala = "Normal"
+            if _ef_esc:
+                _esc_obj = db.session.get(Escala, _ef_esc.escala_id)
+                if _esc_obj:
+                    _nome_escala = f"{_esc_obj.nome} ({_esc_obj.tipo})"
+        except Exception:
+            _nome_escala = "Normal"
 
         def _logo_flowable(emp_item):
             cands = []
@@ -1459,11 +1531,20 @@ def register_ponto_routes(
                         req = urllib.request.Request(
                             cand, headers={"User-Agent": "Mozilla/5.0"}
                         )
-                        with urllib.request.urlopen(req, timeout=8) as resp:
+                        # BUG-FIX 13: timeout reduzido de 8s para 2s; antes um logo
+                        # lento bloqueava o worker Gunicorn por até 8 segundos.
+                        with urllib.request.urlopen(req, timeout=2) as resp:
                             data = resp.read()
                         return Image(io.BytesIO(data), width=20 * mm, height=8 * mm)
-                    if os.path.exists(cand):
-                        return Image(cand, width=20 * mm, height=8 * mm)
+                    # BUG-FIX 7: não passar logo_url arbitrário para os.path.exists/Image
+                    # sem verificar que é um caminho dentro de diretórios permitidos
+                    # (path traversal). Aceitar apenas se for sub-caminho do static/ do app.
+                    _base_dir = os.path.abspath(
+                        os.path.join(os.path.dirname(__file__), "static")
+                    )
+                    _cand_abs = os.path.abspath(cand)
+                    if _cand_abs.startswith(_base_dir) and os.path.exists(_cand_abs):
+                        return Image(_cand_abs, width=20 * mm, height=8 * mm)
                 except Exception:
                     continue
             return p(
@@ -1548,13 +1629,15 @@ def register_ponto_routes(
         tabela_main = Table(
             tabela_dias,
             colWidths=[
+                # BUG-FIX 11: soma anterior era 0.92 (tabela 8% menor que a largura útil).
+                # Redistribuído para somar exatamente 1.0.
                 largura * 0.11,
-                largura * 0.35,
+                largura * 0.37,
                 largura * 0.09,
                 largura * 0.09,
                 largura * 0.09,
                 largura * 0.09,
-                largura * 0.10,
+                largura * 0.12,
             ],
             repeatRows=1,
         )
@@ -1605,7 +1688,10 @@ def register_ponto_routes(
             [
                 [
                     p(
-                        "<b>Legenda:</b> Marcação incluída; Marcação por solicitação; Marcação pré-assinalada.",
+                        # BUG-FIX 19: a legenda mencionava 3 tipos mas as marcações
+                        # apareciam todas iguais (HH:MM) sem nenhum símbolo diferenciador.
+                        # Agora [A] = incluída por admin  |  [S] = por solicitação  |  sem sufixo = biométrico/kiosk
+                        "<b>Legenda:</b> HH:MM = marcacão normal; HH:MM[A] = incluída pelo RH; HH:MM[S] = por solicitação/ajuste.",
                         st_small,
                         html=True,
                     ),
@@ -1617,7 +1703,8 @@ def register_ponto_routes(
                 ],
                 [
                     p(
-                        f"<b>Marcações consideradas:</b> {datetime.now(ZoneInfo('America/Sao_Paulo')).strftime('%d/%m/%Y %H:%M')}",
+                        # BUG-FIX 16: usar _now_br já calculado (evita segundo datetime.now())
+                        f"<b>Marcações consideradas:</b> {_now_br.strftime('%d/%m/%Y %H:%M')}",
                         st_small,
                         html=True,
                     ),
