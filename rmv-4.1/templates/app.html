@@ -5212,6 +5212,12 @@ function filtrarSSTFuncionarios(){
   if(atual && Array.from(el.options).some(o=>o.value===atual)) el.value=atual;
 }
 
+// Stub para o módulo de HE pendentes (feature ainda não implementada).
+// BUG-FIX: sem este stub o botão "HE pendentes" disparava ReferenceError.
+function abrirModalHEPendentes(){
+  showToast('Módulo de horas extras em breve.','info');
+}
+
 async function loadDash(){
   _pontoDiaData = null; // invalidar cache ao recarregar dashboard
   const d=await api('/api/dashboard');

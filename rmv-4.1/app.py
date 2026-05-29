@@ -27700,6 +27700,12 @@ def api_dashboard_ponto_dia():
 @lr
 @cache.cached(timeout=15, key_prefix="api_dashboard")
 def api_dashboard():
+    # BUG-FIX: usar localnow().date() para garantir fuso horário correto
+    # (America/Sao_Paulo). date.today() usava o relógio do sistema (UTC em
+    # produção), causando discrepâncias nos alertas próximos à meia-noite.
+    hoje = localnow().date()
+    mes = hoje.strftime("%Y-%m")
+
     ativos = Cliente.query.filter_by(status="Ativo").all()
     # sum revenue from Contrato table; fall back to Cliente fields for clients without contracts
     contratos_ativos = Contrato.query.filter_by(status="Ativo").all()
@@ -27722,14 +27728,14 @@ def api_dashboard():
     )
     receita = receita_contratos + receita_legado
     total_ativos = len(ativos)
-    mes = localnow().strftime("%Y-%m")
+    # BUG-FIX: query usa 'hoje' já calculado com o timezone correto
     try:
         medicoes_mes = Medicao.query.filter_by(mes_ref=mes).all()
         medicoes_validas = Medicao.query.filter(
             Medicao.status != "cancelada",
             Medicao.dt_vencimento.isnot(None),
             Medicao.dt_vencimento != "",
-            Medicao.dt_vencimento < date.today().isoformat(),
+            Medicao.dt_vencimento < hoje.isoformat(),
         ).all()
     except OperationalError as e:
         if not _is_missing_medicao_stamp_error(e):
@@ -27741,7 +27747,7 @@ def api_dashboard():
             Medicao.status != "cancelada",
             Medicao.dt_vencimento.isnot(None),
             Medicao.dt_vencimento != "",
-            Medicao.dt_vencimento < date.today().isoformat(),
+            Medicao.dt_vencimento < hoje.isoformat(),
         ).all()
     emitidos = {m.cliente_id for m in medicoes_mes if m.cliente_id}
     emps_all = {e.id: e for e in Empresa.query.all()}
@@ -27753,8 +27759,10 @@ def api_dashboard():
 
     inad_itens = []
     total_inadimplencia = 0.0
-    hoje = date.today()
     for m in medicoes_validas:
+        # BUG-FIX: medições pagas não são inadimplentes — pular status "paga"
+        if (m.status or "").lower() == "paga":
+            continue
         dt = (m.dt_vencimento or "").strip()
         if not dt:
             continue
@@ -28110,18 +28118,26 @@ def api_dashboard():
             "correcoes_ponto_pendentes": PontoCorrecaoSolicitacao.query.filter_by(
                 status="pendente"
             ).count(),
+            # he_pendentes: placeholder — módulo de HE ainda não implementado
+            "he_pendentes": 0,
+            # alerta_certificados: placeholder — módulo de certificados ainda não implementado
+            "alerta_certificados": {"qtd": 0, "itens": []},
             "total_cli": Cliente.query.count(),
             "proximo_num": prox_num(),
-            "empresas": [
-                {
-                    "id": e.id,
-                    "nome": e.nome,
-                    "cli": Cliente.query.filter_by(
-                        empresa_id=e.id, status="Ativo"
-                    ).count(),
-                }
-                for e in Empresa.query.filter_by(ativa=True).all()
-            ],
+            # BUG-FIX: evitar N+1 queries — pré-calcular contagem com uma só query
+            "empresas": (lambda: (
+                lambda emps_ativas, cli_counts: [
+                    {"id": e.id, "nome": e.nome, "cli": cli_counts.get(e.id, 0)}
+                    for e in emps_ativas
+                ]
+            )(
+                Empresa.query.filter_by(ativa=True).all(),
+                dict(
+                    db.session.query(
+                        Cliente.empresa_id, db.func.count(Cliente.id)
+                    ).filter_by(status="Ativo").group_by(Cliente.empresa_id).all()
+                ),
+            ))(),
         }
     )
 
