@@ -23213,6 +23213,9 @@ def api_beneficios_lancamentos():
         for bp in qprev.all():
             if bp.funcionario_id not in mapa_prev:
                 mapa_prev[bp.funcionario_id] = bp
+    # Pré-carrega empresas e clientes para evitar N+1 no loop
+    _emps_cache = {e.id: e for e in Empresa.query.all()}
+    _clis_cache = {c.id: c for c in Cliente.query.all()}
     itens = []
 
     def _benef_val(bm, bm_prev, func_obj, attr_name):
@@ -23230,10 +23233,8 @@ def api_beneficios_lancamentos():
         return val_func
 
     for f in funcs_ativos:
-        emp = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
-        cli = (
-            db.session.get(Cliente, f.posto_cliente_id) if f.posto_cliente_id else None
-        )
+        emp = _emps_cache.get(f.empresa_id) if f.empresa_id else None
+        cli = _clis_cache.get(f.posto_cliente_id) if f.posto_cliente_id else None
         posto_nome = (
             cli.nome.strip()
             if cli and (cli.nome or "").strip()
@@ -23507,7 +23508,7 @@ def api_beneficios_lancamentos_salvar():
         b.dias_vg = dias_vg if vg_optante else 0
         b.faltas = faltas
         b.pp_falta = pp_falta
-        b.dias_trabalhados = max(0, max(b.dias_vt, b.dias_vr, b.dias_vg))
+        b.dias_trabalhados = max(0, max(b.dias_vt, b.dias_vr, b.dias_va, b.dias_vg))
 
         b.salario = to_num(it.get("salario"), dec=True)
         vale_transporte = to_num(it.get("vale_transporte"), dec=True)
@@ -23645,14 +23646,14 @@ def _beneficios_folha_resumo(comp, empresa_id=None):
     if empresa_id:
         qb = qb.filter_by(empresa_id=empresa_id)
     mapa = {b.funcionario_id: b for b in qb.all()}
+    _emps_snap = {e.id: e for e in Empresa.query.all()}
+    _clis_snap = {c.id: c for c in Cliente.query.all()}
     total = 0.0
     itens_snap = []
     for f in funcs_ativos:
         b = mapa.get(f.id)
-        emp = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
-        cli = (
-            db.session.get(Cliente, f.posto_cliente_id) if f.posto_cliente_id else None
-        )
+        emp = _emps_snap.get(f.empresa_id) if f.empresa_id else None
+        cli = _clis_snap.get(f.posto_cliente_id) if f.posto_cliente_id else None
         posto_nome = (
             cli.nome.strip()
             if cli and (cli.nome or "").strip()
@@ -23847,6 +23848,8 @@ def api_beneficios_assinar():
         return jsonify({"erro": "Salve a folha antes de assinar."}), 404
     if (folha.status or "") != "fechada":
         return jsonify({"erro": "A folha precisa estar fechada para assinatura."}), 400
+    if folha.assinatura_status == "assinado":
+        return jsonify({"erro": "Esta folha já foi assinada. Reabra e feche novamente para assinar com novos dados."}), 400
     try:
         dados = json.loads(folha.dados_json or "{}")
     except Exception:
@@ -24822,7 +24825,7 @@ def beneficios_relatorio_preview():
             f = funcs_map.get(r.funcionario_id)
             valor = float(getattr(r, col_valor) or 0)
             dias = int(getattr(r, col_dias) or 0) if col_dias else 0
-            total = valor if is_va else (dias * valor if dias > 0 else valor)
+            total = valor if is_va else (dias * valor)
             total_emp += total
             linhas.append(
                 {
@@ -25021,7 +25024,7 @@ def _api_beneficios_xlsx_tipo(tipo):
             f = funcs_map.get(r.funcionario_id)
             valor = float(getattr(r, col_valor) or 0)
             dias = int(getattr(r, col_dias) or 0) if col_dias else 0
-            total = valor if is_fixed else (dias * valor if dias > 0 else valor)
+            total = valor if is_fixed else (dias * valor)
             total_geral += total
             re_val = f.re if f and f.re else (f.matricula if f and f.matricula else "")
             nome_val = f.nome if f else f"Funcionario {r.funcionario_id}"
@@ -25134,7 +25137,7 @@ def _api_beneficios_pdf_tipo(tipo):
             "",
             "opta_premio_prod",
         ),
-        "vale_gasolina": ("Vale Gasolina", "vale_gasolina", "", "opta_vale_gasolina"),
+        "vale_gasolina": ("Vale Gasolina", "vale_gasolina", "dias_vg", "opta_vale_gasolina"),
         "cesta_natal": ("Cesta de Natal", "cesta_natal", "", "opta_cesta_natal"),
     }
     if tipo not in cfg:
@@ -25333,7 +25336,7 @@ def _api_beneficios_pdf_tipo(tipo):
             f = funcs_map.get(r.funcionario_id)
             valor = float(getattr(r, col_valor) or 0)
             dias = int(getattr(r, col_dias) or 0) if col_dias else 0
-            total = valor if is_fixed else (dias * valor if dias > 0 else valor)
+            total = valor if is_fixed else (dias * valor)
             total_emp += total
             re_str = str(
                 f.re if f and f.re else (f.matricula if f and f.matricula else "")
