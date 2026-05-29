@@ -225,6 +225,16 @@ if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
     }
 db = SQLAlchemy(app)
 
+
+@app.template_filter("fmt_cnpj")
+def _filter_fmt_cnpj(v):
+    """Formata string de dígitos como CNPJ: XX.XXX.XXX/XXXX-XX."""
+    digits = "".join(filter(str.isdigit, str(v or "")))
+    if len(digits) == 14:
+        return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
+    return v  # devolve original se não tiver 14 dígitos
+
+
 if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
 
     @event.listens_for(Engine, "connect")
