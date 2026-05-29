@@ -24980,6 +24980,10 @@ def _api_beneficios_xlsx_tipo(tipo):
     emps_map = {e.id: e for e in Empresa.query.all()}
     funcs_map = funcs_map_pre  # reutiliza o mapa já carregado
     grupos = {}
+    for r in regs:
+        grupos.setdefault(r.empresa_id or 0, []).append(r)
+
+    wb = Workbook()
     first = True
     header_fill = PatternFill("solid", fgColor="205D8A")
     total_fill = PatternFill("solid", fgColor="EAF2FB")
