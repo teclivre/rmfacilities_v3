@@ -2708,10 +2708,14 @@ class ComunicadoApp(db.Model):
             self.lidos_por_json = json.dumps(lst)
 
     def to_dict(self, funcionario_id=None):
+        # Whitelist: omite funcionario_id e posto_operacional (metadados internos).
         d = {
-            c.name: getattr(self, c.name)
-            for c in self.__table__.columns
-            if c.name != "lidos_por_json"
+            "id": self.id,
+            "titulo": self.titulo,
+            "conteudo": self.conteudo,
+            "url": self.url,
+            "criado_em": self.criado_em.isoformat() if self.criado_em else None,
+            "ativo": bool(self.ativo),
         }
         d["criado_fmt"] = (
             self.criado_em.strftime("%d/%m/%Y %H:%M") if self.criado_em else ""
@@ -2739,7 +2743,19 @@ class MensagemApp(db.Model):
     arquivo_caminho = db.Column(db.String(500))
 
     def to_dict(self):
-        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        # Whitelist explícita de campos seguros para o cliente.
+        # NÃO expõe arquivo_caminho (path absoluto do servidor).
+        d = {
+            "id": self.id,
+            "funcionario_id": self.funcionario_id,
+            "de_rh": bool(self.de_rh),
+            "conteudo": self.conteudo,
+            "enviado_em": self.enviado_em.isoformat() if self.enviado_em else None,
+            "lida": bool(self.lida),
+            "enviado_por": self.enviado_por,
+            "tipo": self.tipo or "texto",
+            "arquivo_nome": self.arquivo_nome,
+        }
         d["enviado_fmt"] = (
             self.enviado_em.strftime("%d/%m/%Y %H:%M") if self.enviado_em else ""
         )
@@ -3495,6 +3511,42 @@ def app_issue_access_token(funcionario_id, sessao_id, ttl=3600):
 
 def app_issue_refresh_token():
     return secrets.token_urlsafe(48)
+
+
+def ponto_qr_issue(cliente_id, ttl=60):
+    """Emite token curto (HMAC) usado pelo totem/kiosk para autorizar marcação via QR.
+    Reusa o mesmo segredo do JWT do app para evitar nova chave/configuração."""
+    now = int(time.time())
+    payload = {
+        "typ": "ponto_qr",
+        "cid": int(cliente_id) if cliente_id is not None else 0,
+        "iat": now,
+        "exp": now + int(ttl),
+        "n": secrets.token_urlsafe(8),
+    }
+    ptxt = json.dumps(payload, separators=(",", ":")).encode()
+    p64 = b64u_enc(ptxt)
+    sig = hmac.new(app_token_secret(), p64.encode(), hashlib.sha256).digest()
+    s64 = b64u_enc(sig)
+    return f"{p64}.{s64}"
+
+
+def ponto_qr_parse(token):
+    try:
+        p64, s64 = token.split(".", 1)
+        expected = b64u_enc(
+            hmac.new(app_token_secret(), p64.encode(), hashlib.sha256).digest()
+        )
+        if not hmac.compare_digest(expected, s64):
+            return None
+        payload = json.loads(b64u_dec(p64).decode())
+        if payload.get("typ") != "ponto_qr":
+            return None
+        if int(payload.get("exp", 0)) < int(time.time()):
+            return None
+        return payload
+    except Exception:
+        return None
 
 
 def app_parse_token(token):
@@ -7103,8 +7155,9 @@ def build_func_docs_response(funcionario_id):
                 "nome_arquivo": a.nome_arquivo,
                 "competencia": a.competencia,
                 "ass_status": a.ass_status or "nao_solicitada",
+                "ass_em": a.ass_em.isoformat() if a.ass_em else "",
                 "ass_em_fmt": a.ass_em.strftime("%d/%m/%Y %H:%M") if a.ass_em else "",
-                "can_assinar": (a.ass_status or "").lower() != "concluida",
+                "can_assinar": (a.ass_status or "").strip().lower() not in ("assinado", "concluida"),
                 "caminho": a.caminho,
                 "criado_em": a.criado_em.isoformat() if a.criado_em else "",
                 "criado_fmt": a.criado_em.strftime("%d/%m/%Y %H:%M")
@@ -15332,6 +15385,8 @@ def api_app_funcionario_refresh():
         return jsonify({"erro": "Acesso desativado"}), 403
     novo_refresh = app_issue_refresh_token()
     sessao.refresh_hash = token_hash(novo_refresh)
+    # Sliding window: estende a expiração para mais 14 dias a cada uso válido.
+    sessao.exp_refresh = utcnow() + timedelta(days=14)
     access = app_issue_access_token(f.id, sessao.id, ttl=3600)
     db.session.commit()
     audit_event(
@@ -16771,22 +16826,29 @@ def api_app_comunicados_lista():
     f = g.app_funcionario
     from sqlalchemy import or_
 
-    itens = (
-        ComunicadoApp.query.filter(
-            ComunicadoApp.ativo == True,
-            or_(
-                ComunicadoApp.funcionario_id == None,
-                ComunicadoApp.funcionario_id == f.id,
-            ),
-            or_(
-                ComunicadoApp.posto_operacional == None,
-                ComunicadoApp.posto_operacional == "",
-                ComunicadoApp.posto_operacional == f.posto_operacional,
-            ),
-        )
-        .order_by(ComunicadoApp.criado_em.desc())
-        .all()
-    )
+    # Paginação: padrão 50, máximo 200. Mantém compatibilidade — sem parâmetros
+    # retorna lista pura (formato histórico) até o limite, sem envelope.
+    try:
+        per_page = max(1, min(200, int(request.args.get("per_page", 50))))
+    except (ValueError, TypeError):
+        per_page = 50
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except (ValueError, TypeError):
+        page = 1
+    base_q = ComunicadoApp.query.filter(
+        ComunicadoApp.ativo == True,
+        or_(
+            ComunicadoApp.funcionario_id == None,
+            ComunicadoApp.funcionario_id == f.id,
+        ),
+        or_(
+            ComunicadoApp.posto_operacional == None,
+            ComunicadoApp.posto_operacional == "",
+            ComunicadoApp.posto_operacional == f.posto_operacional,
+        ),
+    ).order_by(ComunicadoApp.criado_em.desc())
+    itens = base_q.limit(per_page).offset((page - 1) * per_page).all()
     return jsonify([c.to_dict(funcionario_id=f.id) for c in itens])
 
 
@@ -16829,17 +16891,45 @@ def api_app_comunicados_nao_lidos():
 @app_func_required
 def api_app_mensagens_lista():
     f = g.app_funcionario
-    msgs = (
+    # Paginação opcional: ?limit=N retorna apenas as N mais recentes (em ordem
+    # cronológica asc). Padrão = 200 mensagens (útil para chats longos).
+    try:
+        limit = max(1, min(500, int(request.args.get("limit", 200))))
+    except (ValueError, TypeError):
+        limit = 200
+    sub = (
         MensagemApp.query.filter_by(funcionario_id=f.id)
+        .order_by(MensagemApp.enviado_em.desc())
+        .limit(limit)
+        .subquery()
+    )
+    msgs = (
+        MensagemApp.query.join(sub, MensagemApp.id == sub.c.id)
         .order_by(MensagemApp.enviado_em.asc())
         .all()
     )
-    # Marcar mensagens do RH como lidas ao abrir
-    for m in msgs:
-        if m.de_rh and not m.lida:
-            m.lida = True
-    db.session.commit()
+    # Não marca como lida aqui — o cliente deve chamar POST /mensagens/marcar-lidas
+    # após renderizar com sucesso, evitando perda silenciosa se a request falhar.
     return jsonify([m.to_dict() for m in msgs])
+
+
+@app.route("/api/app/funcionario/mensagens/marcar-lidas", methods=["POST"])
+@app_func_required
+def api_app_mensagens_marcar_lidas():
+    """Marca como lidas todas as mensagens enviadas pelo RH ao funcionário.
+    Chamado pelo app após renderizar a conversa, garantindo que o badge só
+    zere quando o usuário de fato viu as mensagens."""
+    f = g.app_funcionario
+    atualizadas = (
+        MensagemApp.query.filter_by(funcionario_id=f.id, de_rh=True, lida=False)
+        .update({"lida": True})
+    )
+    db.session.commit()
+    try:
+        cache.delete_memoized(api_app_mensagens_nao_lidas)
+    except Exception:
+        pass
+    return jsonify({"ok": True, "atualizadas": int(atualizadas or 0)})
 
 
 @app.route("/api/app/funcionario/mensagens", methods=["POST"])
@@ -16935,8 +17025,8 @@ def api_app_mensagem_download_arquivo(mid):
 
 @app.route("/api/app/funcionario/mensagens/nao-lidas")
 @app_func_required
-@cache.cached(timeout=5, key_prefix=lambda: f"app_msg_nao_lidas_{g.app_funcionario.id}")
 def api_app_mensagens_nao_lidas():
+    # Sem cache: contagem precisa refletir imediatamente envio/leitura.
     f = g.app_funcionario
     count = MensagemApp.query.filter_by(
         funcionario_id=f.id, de_rh=True, lida=False
@@ -17274,6 +17364,13 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
         ).count()
     except Exception:
         correcoes_faltando_pendentes = 0
+    # Status de fechamento do dia (espelho/PontoFechamentoDia)
+    try:
+        fd = PontoFechamentoDia.query.filter_by(
+            funcionario_id=funcionario.id, data_ref=data_ref_str
+        ).first()
+    except Exception:
+        fd = None
     return {
         "funcionario_id": funcionario.id,
         "funcionario_nome": funcionario.nome,
@@ -17291,6 +17388,8 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
         "inconsistencias": inconsistencias,
         "max_marcacoes_dia": max_marc,
         "correcoes_faltando_pendentes": correcoes_faltando_pendentes,
+        "fechado": fd is not None,
+        "fechado_por": (fd.fechado_por or "") if fd else "",
     }
 
 
@@ -17362,12 +17461,13 @@ def api_app_ponto_marcar_me():
             # Convertemos o timestamp do cliente para APP_TZ antes de comparar.
             dh_c_local = dh_c.astimezone(APP_TZ).replace(tzinfo=None)
             agora = utcnow()
-            if dh_c_local <= agora + timedelta(
-                minutes=2
-            ) and dh_c_local >= agora - timedelta(hours=24):
-                data_hora = dh_c_local
+            if dh_c_local > agora + timedelta(minutes=2) or dh_c_local < agora - timedelta(hours=24):
+                return jsonify({
+                    "erro": "Marcação offline fora da janela permitida (máximo 24h no passado). Ajuste o relógio do dispositivo ou solicite correção no app."
+                }), 400
+            data_hora = dh_c_local
         except (ValueError, TypeError):
-            pass
+            return jsonify({"erro": "data_hora_cliente invalida (use ISO 8601)."}), 400
     if data_hora > (utcnow() + timedelta(minutes=2)):
         return jsonify(
             {"erro": "Não é permitido registrar ponto em horário futuro."}
@@ -17513,6 +17613,118 @@ def api_app_ponto_marcar_me():
                 "tipo_label": _app_ponto_label(m.tipo),
                 "hora_fmt": m.data_hora.strftime("%H:%M") if m.data_hora else "",
                 "localizacao": localizacao,
+            },
+            "resumo": _app_ponto_resumo_dia(f, data_ref),
+        }
+    )
+
+
+@app.route("/api/ponto/qrcode/token", methods=["POST"])
+@_limiter.limit("120 per hour")
+def api_ponto_qrcode_token():
+    """Emite token efêmero (TTL 60s) usado pelo totem/kiosk para gerar o QR Code.
+    Aceita cliente_id no body; valida que existe."""
+    d = request.json or {}
+    cli_id = d.get("cliente_id")
+    try:
+        cli_id = int(cli_id) if cli_id is not None else 0
+    except (ValueError, TypeError):
+        return jsonify({"erro": "cliente_id invalido"}), 400
+    if cli_id:
+        cli = db.session.get(Cliente, cli_id)
+        if not cli:
+            return jsonify({"erro": "Cliente nao encontrado"}), 404
+    token = ponto_qr_issue(cli_id, ttl=60)
+    return jsonify({"ok": True, "token": token, "expires_in": 60})
+
+
+@app.route("/api/app/funcionario/me/ponto/marcar-qr", methods=["POST"])
+@_limiter.limit("30 per hour")
+@app_func_required
+def api_app_ponto_marcar_qr_me():
+    """Variante de /ponto/marcar que usa um token efêmero gerado pelo totem
+    (QR Code). O token comprova presença física e dispensa a checagem de geofence."""
+    f = g.app_funcionario
+    if (f.status or "").strip().lower() != "ativo":
+        return jsonify({"erro": "Somente funcionários ativos podem registrar ponto."}), 400
+    dados = request.json or {}
+    qr_token = (dados.get("qr_token") or "").strip()
+    if not qr_token:
+        return jsonify({"erro": "qr_token obrigatorio"}), 400
+    payload = ponto_qr_parse(qr_token)
+    if not payload:
+        return jsonify({"erro": "QR Code expirado ou inválido. Solicite o totem para gerar novo código."}), 401
+    cli_id_token = int(payload.get("cid") or 0)
+    # Quando o token vincula a um cliente específico, exigimos que o funcionário pertença ao posto.
+    if cli_id_token and f.posto_cliente_id and int(f.posto_cliente_id) != cli_id_token:
+        return jsonify({"erro": "QR Code não pertence ao seu posto."}), 403
+
+    observacao = (dados.get("observacao") or "").strip()[:500]
+    data_hora = utcnow()
+    data_ref = data_hora.date()
+    marcacoes_dia = _app_ponto_marcacoes_dia(f.id, data_ref)
+    tipo = (dados.get("tipo") or "").strip().lower() or _app_ponto_tipo_esperado(marcacoes_dia)
+    if tipo not in _APP_PONTO_TIPOS:
+        return jsonify({"erro": "Tipo de marcação inválido."}), 400
+    esperado = _app_ponto_tipo_esperado(marcacoes_dia)
+    if tipo != esperado:
+        return jsonify({"erro": f"Ordem de marcação inválida. Agora é esperado: {_app_ponto_label(esperado)}."}), 400
+    if any(
+        abs((data_hora - m.data_hora).total_seconds()) < 60
+        for m in marcacoes_dia
+        if getattr(m, "data_hora", None)
+    ):
+        return jsonify({"erro": "Já existe marcação neste minuto para este funcionário."}), 400
+
+    ip = (
+        (request.headers.get("X-Forwarded-For", "") or request.remote_addr or "")
+        .split(",")[0]
+        .strip()[:60]
+    )
+    lat = dados.get("lat")
+    lon = dados.get("lon")
+    precisao = dados.get("precisao")
+    try: lat = float(lat) if lat is not None else None
+    except (ValueError, TypeError): lat = None
+    try: lon = float(lon) if lon is not None else None
+    except (ValueError, TypeError): lon = None
+    try: precisao = float(precisao) if precisao is not None else None
+    except (ValueError, TypeError): precisao = None
+    if precisao is not None and (precisao < 0 or precisao > 50000):
+        precisao = None
+
+    m = PontoMarcacao(
+        funcionario_id=f.id,
+        tipo=tipo,
+        data_hora=data_hora,
+        origem="app-qr",
+        observacao=observacao,
+        criado_por="funcionario-app-qr",
+        ip=ip,
+        latitude=lat,
+        longitude=lon,
+        precisao_gps=precisao,
+    )
+    db.session.add(m)
+    db.session.commit()
+    audit_event(
+        "ponto_marcacao_app_qr",
+        "funcionario",
+        f.id,
+        "funcionario",
+        f.id,
+        True,
+        {"tipo": tipo, "data_ref": data_ref.strftime("%Y-%m-%d"), "origem": "app-qr", "cliente_id": cli_id_token},
+    )
+    return jsonify(
+        {
+            "ok": True,
+            "marcacao": {
+                "id": m.id,
+                "tipo": m.tipo,
+                "tipo_label": _app_ponto_label(m.tipo),
+                "hora_fmt": m.data_hora.strftime("%H:%M") if m.data_hora else "",
+                "localizacao": {"status": "qr_totem", "posto_cliente_id": cli_id_token or f.posto_cliente_id},
             },
             "resumo": _app_ponto_resumo_dia(f, data_ref),
         }

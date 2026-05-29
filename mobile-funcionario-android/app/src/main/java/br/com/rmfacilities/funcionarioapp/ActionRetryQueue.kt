@@ -109,6 +109,48 @@ class ActionRetryQueue(context: Context) {
         save(items)
     }
 
+    /** Enfileira um arquivo (anexo de mensagem) cifrado em disco para reenvio posterior.
+     *  Resolve o bug em que apenas o nome era guardado e os bytes eram descartados. */
+    fun enqueueMensagemArquivo(bytes: ByteArray, mimeType: String, fileName: String, legenda: String = "") {
+        val safeName = fileName.replace('/', '_').replace('\\', '_').replace("..", "_")
+        val storedName = "msg_pending_${UUID.randomUUID()}_${safeName}.enc"
+        val dir = File(appContext.filesDir, "pending_msg_arquivos").also { it.mkdirs() }
+        val file = File(dir, storedName)
+        var encrypted = false
+        try {
+            val mk = masterKeyOrNull(appContext)
+            if (mk != null) {
+                val ef = EncryptedFile.Builder(
+                    appContext, file, mk,
+                    EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB
+                ).build()
+                ef.openFileOutput().use { it.write(bytes); it.flush() }
+                encrypted = true
+            } else {
+                file.writeBytes(bytes)
+            }
+        } catch (e: Exception) {
+            try { TelemetryLogger.e(TAG, "enqueueMensagemArquivo encrypt fail: " + (e.message ?: ""), e) } catch (_: Throwable) {}
+            try { file.writeBytes(bytes) } catch (_: Exception) { return }
+        }
+        val items = load()
+        items.add(
+            PendingAction(
+                id = UUID.randomUUID().toString(),
+                type = "mensagem_arquivo",
+                payload = mapOf(
+                    "file_path" to file.absolutePath,
+                    "mime" to mimeType.ifBlank { "application/octet-stream" },
+                    "nome" to safeName,
+                    "legenda" to legenda,
+                    "enc" to if (encrypted) "1" else "0"
+                ),
+                createdAt = System.currentTimeMillis()
+            )
+        )
+        save(items)
+    }
+
     fun enqueuePonto(lat: Double, lon: Double, precisao: Float?, timestampMs: Long = System.currentTimeMillis()) {
         // Rejeita ponto offline com mais de 24h (GPS/timestamp inválido para o backend)
         if ((System.currentTimeMillis() - timestampMs) > PONTO_TTL_MS) return
@@ -221,6 +263,40 @@ class ActionRetryQueue(context: Context) {
                     "mensagem" -> {
                         val texto = action.payload["texto"].orEmpty()
                         texto.isNotBlank() && api.enviarMensagem(texto) != null
+                    }
+                    "mensagem_arquivo" -> {
+                        val filePath = action.payload["file_path"].orEmpty()
+                        val mime = action.payload["mime"].orEmpty().ifBlank { "application/octet-stream" }
+                        val nome = action.payload["nome"].orEmpty().ifBlank { "arquivo" }
+                        val legenda = action.payload["legenda"].orEmpty()
+                        val isEnc = action.payload["enc"] == "1"
+                        if (filePath.isBlank()) false
+                        else {
+                            val file = File(filePath)
+                            if (!file.exists()) true // arquivo perdido — descarta
+                            else {
+                                val bytes: ByteArray = if (isEnc) {
+                                    val mk = masterKeyOrNull(appContext)
+                                    if (mk == null) ByteArray(0) else try {
+                                        val ef = EncryptedFile.Builder(
+                                            appContext, file, mk,
+                                            EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB
+                                        ).build()
+                                        val bos = ByteArrayOutputStream()
+                                        ef.openFileInput().use { it.copyTo(bos) }
+                                        bos.toByteArray()
+                                    } catch (_: Exception) { ByteArray(0) }
+                                } else file.readBytes()
+                                if (bytes.isEmpty()) {
+                                    try { file.delete() } catch (_: Exception) {}
+                                    true
+                                } else {
+                                    val sent2 = api.enviarArquivoMensagem(bytes, mime, nome, legenda) != null
+                                    if (sent2) try { file.delete() } catch (_: Exception) {}
+                                    sent2
+                                }
+                            }
+                        }
                     }
                     "ponto" -> {
                         val lat = action.payload["lat"]?.toDoubleOrNull()

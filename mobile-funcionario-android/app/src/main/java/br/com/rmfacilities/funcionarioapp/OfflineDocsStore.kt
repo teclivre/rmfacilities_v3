@@ -97,6 +97,15 @@ class OfflineDocsStore(private val context: Context) {
         save(emptyList())
     }
 
+    /** Remove a cópia offline (cache local) de um documento — usar após assinatura para
+     *  forçar o próximo download do PDF carimbado. */
+    fun removeById(id: Int) {
+        val all = load()
+        val entry = all.firstOrNull { it.id == id } ?: return
+        try { File(entry.path).delete() } catch (_: Exception) {}
+        save(all.filter { it.id != id })
+    }
+
     fun toDocumentoItems(): List<DocumentoItem> {
         return list().map {
             DocumentoItem(

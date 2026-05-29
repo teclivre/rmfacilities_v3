@@ -533,6 +533,8 @@ class DocumentosActivity : BaseActivity() {
                 swipe.isRefreshing = false
                 if (resp.ok) {
                     Toast.makeText(this@DocumentosActivity, "Documento assinado com sucesso.", Toast.LENGTH_SHORT).show()
+                    // Invalida cópia offline antiga (sem carimbo) para forçar novo download do PDF assinado.
+                    try { offlineStore.removeById(item.id) } catch (_: Exception) {}
                     carregarComFiltros()
                 } else {
                     Toast.makeText(this@DocumentosActivity, resp.erro ?: "Falha ao assinar documento", Toast.LENGTH_LONG).show()
@@ -682,10 +684,12 @@ class DocumentosActivity : BaseActivity() {
             val competencia = (item.competencia ?: "")
             val criado = (item.criado_fmt ?: "")
             val ano = item.ano ?: ""
-            val isPendente = item.can_assinar || item.ass_status.equals("pendente", ignoreCase = true)
+            val statusNorm = (item.ass_status ?: "").trim().lowercase(Locale.getDefault())
+            val isAssinado = statusNorm == "assinado" || statusNorm == "concluida"
+            val isPendente = !isAssinado && (item.can_assinar || statusNorm == "pendente")
             val statusOk = when (filtroStatus) {
                 "pendente" -> isPendente
-                "assinado" -> !isPendente
+                "assinado" -> isAssinado
                 else -> true
             }
             val categoriaOk = filtroCategoria.isBlank() || categoria.equals(filtroCategoria, ignoreCase = true)

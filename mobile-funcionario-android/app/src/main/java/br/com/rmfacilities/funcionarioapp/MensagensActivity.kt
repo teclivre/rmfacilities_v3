@@ -245,6 +245,11 @@ class MensagensActivity : BaseActivity() {
     private fun carregarMensagens(silently: Boolean = false, aoTerminar: (() -> Unit)? = null) {
         lifecycleScope.launch(Dispatchers.IO) {
             val msgs = try { api.getMensagens() } catch (_: Exception) { emptyList() }
+            // Marca como lidas apenas APÓS conseguir baixar a conversa.
+            // Se o servidor cair ou o cliente crashar antes, o badge permanece intacto.
+            if (msgs.any { it.de_rh == true && it.lida != true }) {
+                try { api.marcarMensagensLidas() } catch (_: Exception) {}
+            }
             withContext(Dispatchers.Main) {
                 val llm = rvMensagens.layoutManager as? LinearLayoutManager
                 val atBottom = llm != null &&
@@ -364,10 +369,9 @@ class MensagensActivity : BaseActivity() {
                         adapter.addMensagem(nova)
                         rvMensagens.scrollToPosition(adapter.itemCount - 1)
                     } else {
-                        val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-                        retryQueue.enqueueMensagem("[arquivo pendente] $fileName")
-                        TelemetryLogger.logHandled(this@MensagensActivity, "mensagem_arquivo_fila", IllegalStateException("Arquivo enfileirado: ${b64.length}"))
-                        Toast.makeText(this@MensagensActivity, "Erro ao enviar arquivo.", Toast.LENGTH_LONG).show()
+                        // Enfileira os BYTES reais do arquivo (não só o texto) para reenvio offline.
+                        retryQueue.enqueueMensagemArquivo(bytes, mimeType, fileName)
+                        Toast.makeText(this@MensagensActivity, "Sem conexão. Arquivo na fila de envio offline.", Toast.LENGTH_LONG).show()
                     }
                 }
             } catch (e: Exception) {
@@ -385,8 +389,18 @@ class MensagensActivity : BaseActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val bytes = api.downloadMensagemArquivo(arquivoUrl)
-                val fileName = item.arquivo_nome ?: "arquivo_${item.id}"
-                val file = File(cacheDir, fileName)
+                // Sanitiza nome: remove separadores e ../ para evitar path traversal.
+                val rawName = item.arquivo_nome ?: "arquivo_${item.id}"
+                val safeName = rawName
+                    .replace('\\', '_')
+                    .replace('/', '_')
+                    .replace("..", "_")
+                    .takeIf { it.isNotBlank() } ?: "arquivo_${item.id}"
+                val file = File(cacheDir, safeName)
+                // Garante que o arquivo final est\u00e1 mesmo dentro do cacheDir.
+                if (!file.canonicalPath.startsWith(cacheDir.canonicalPath + File.separator)) {
+                    throw SecurityException("Nome de arquivo invalido")
+                }
                 file.writeBytes(bytes)
                 withContext(Dispatchers.Main) { abrirArquivoLocal(file) }
             } catch (e: Exception) {

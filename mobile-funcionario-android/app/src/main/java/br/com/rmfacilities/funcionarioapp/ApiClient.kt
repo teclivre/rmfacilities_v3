@@ -593,6 +593,19 @@ class ApiClient(private val session: SessionManager) {
         http.newCall(req).execute().use { resp -> return resp.isSuccessful }
     }
 
+    /** Marca como lidas as mensagens do RH para o funcionário autenticado.
+     *  Deve ser chamado pelo app SOMENTE após renderizar a conversa, evitando
+     *  que o badge zere se a request original falhar. */
+    fun marcarMensagensLidas(): Boolean {
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/mensagens/marcar-lidas"))
+            .post("{}".toRequestBody("application/json".toMediaType()))
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .addHeader("Content-Type", "application/json")
+            .build()
+        http.newCall(req).execute().use { resp -> return resp.isSuccessful }
+    }
+
     fun enviarArquivoMensagem(bytes: ByteArray, mimeType: String, fileName: String, legenda: String = ""): MensagemItem? {
         val body = MultipartBody.Builder()
             .setType(MultipartBody.FORM)

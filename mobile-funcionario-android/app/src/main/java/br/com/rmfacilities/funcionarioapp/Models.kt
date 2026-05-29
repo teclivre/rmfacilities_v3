@@ -197,10 +197,26 @@ data class PontoResumo(
     val correcoes_faltando_pendentes: Int = 0
 )
 
+data class PontoMarcacaoLocalizacao(
+    val status: String? = null,
+    val distancia_m: Double? = null,
+    val raio_m: Double? = null,
+    val posto_cliente_id: Int? = null
+)
+
+data class PontoMarcacaoConfirmada(
+    val id: Int? = null,
+    val tipo: String? = null,
+    val tipo_label: String? = null,
+    val hora_fmt: String? = null,
+    val localizacao: PontoMarcacaoLocalizacao? = null
+)
+
 data class PontoDiaResponse(
     val ok: Boolean = false,
     val erro: String? = null,
-    val resumo: PontoResumo? = null
+    val resumo: PontoResumo? = null,
+    val marcacao: PontoMarcacaoConfirmada? = null
 )
 
 data class PontoHistoricoResponse(
