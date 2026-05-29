@@ -70,6 +70,9 @@ class DocumentosActivity : BaseActivity() {
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         setContentView(R.layout.activity_documentos)
 
+        findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.bottomNavApp)
+            ?.let { setupAppBottomNav(it, R.id.nav_tarefas) }
+
         session = SessionManager(this)
         api = ApiClient(session)
         offlineStore = OfflineDocsStore(this)

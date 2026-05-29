@@ -84,6 +84,9 @@ class MensagensActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_mensagens)
 
+        findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.bottomNavApp)
+            ?.let { setupAppBottomNav(it, R.id.nav_mensagens) }
+
         session = SessionManager(this)
         api = ApiClient(session)
         retryQueue = ActionRetryQueue(this)

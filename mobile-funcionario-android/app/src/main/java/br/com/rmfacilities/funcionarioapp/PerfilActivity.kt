@@ -72,6 +72,9 @@ class PerfilActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_perfil)
 
+        findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.bottomNavApp)
+            ?.let { setupAppBottomNav(it, R.id.nav_perfil) }
+
         session = SessionManager(this)
         api = ApiClient(session)
 
