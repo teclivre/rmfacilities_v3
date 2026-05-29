@@ -430,6 +430,22 @@ function pontoBaixarEspelhoMensal(){
   window.open(url, '_blank');
 }
 // ─── EDITAR DIA COMPLETO ───────────────────────────────────────────────────
+// BUG-FIX: data_hora é armazenado em UTC; converter para fuso local antes de
+// preencher os inputs datetime-local/time. Sem isso, _pedDhComTz adiciona o
+// offset de fuso sobre um horário que já é UTC, resultando em envio de
+// horário 3h no futuro → erro "não é permitido editar em horário futuro".
+function _dhUtcParaLocal(dh){
+  const s=String(dh||'');
+  if(!s) return '';
+  try{
+    const d=new Date(s.replace(' ','T')+'Z');
+    if(isNaN(d.getTime())) return s.replace(' ','T').slice(0,16);
+    const pad=n=>String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }catch(_){
+    return s.replace(' ','T').slice(0,16);
+  }
+}
 let _pedCtx=null;
 async function pontoAbrirEditDia(){
   const marcacoes=pontoMarcacoesDiaAtual||[];
@@ -461,7 +477,7 @@ async function pontoAbrirEditDia(){
   }
 
   document.getElementById('ped-marcacoes-wrap').innerHTML=
-    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),(m.data_hora||'').replace(' ','T').slice(0,16),m.observacao||'',false)).join('')+
+    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),_dhUtcParaLocal(m.data_hora),m.observacao||'',false)).join('')+
     `<button type="button" class="btn b-vd b-sm" style="width:100%;margin-top:4px" onclick="pedAdicionarLinha()">＋ Adicionar marcação</button>`;
 
   document.getElementById('ped-motivo').value='';
@@ -830,12 +846,8 @@ function gfAbrirEditDia(dataRef){
   const tiposOpts=`<option value="entrada">Entrada</option><option value="saida_intervalo">Saída intervalo</option><option value="retorno_intervalo">Retorno intervalo</option><option value="saida">Saída</option>`;
   document.getElementById('ped-info').textContent=`Editando marcações de ${f?.nome||'Colaborador'} em ${dataRef}`;
 
-  function toDtLocal(dh){
-    const s=String(dh||'');
-    const m=s.match(/(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
-    if(m) return m[1]+'T'+m[2];
-    return '';
-  }
+  // BUG-FIX: reutilizar _dhUtcParaLocal para converter UTC→local antes de exibir.
+  function toDtLocal(dh){ return _dhUtcParaLocal(dh); }
 
   function buildRow(id,tipo,dh,obs,isNova){
     return `<div class="card" style="margin:0 0 8px;padding:10px;position:relative" data-marc-id="${id}" data-nova="${isNova?'1':''}">
@@ -855,7 +867,7 @@ function gfAbrirEditDia(dataRef){
   }
 
   document.getElementById('ped-marcacoes-wrap').innerHTML=
-    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),toDtLocal(m.data_hora).slice(11),m.observacao||'',false)).join('')+
+    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),toDtLocal(m.data_hora).slice(11,16),m.observacao||'',false)).join('')+
     `<button type="button" class="btn b-vd b-sm" style="width:100%;margin-top:4px" onclick="pedAdicionarLinha()">＋ Adicionar marcação</button>`;
 
   document.getElementById('ped-motivo').value='';
