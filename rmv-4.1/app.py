@@ -24419,6 +24419,124 @@ def api_beneficios_fechar():
     )
 
 
+@app.route("/api/beneficios/notificar", methods=["POST"])
+@_limiter.limit("10 per minute")
+@lr
+def api_beneficios_notificar():
+    """
+    Envia notificação push individual a cada colaborador com o resumo dos
+    benefícios da competência informada.
+
+    Body JSON:
+      - competencia: str  "YYYY-MM"
+      - empresa_id: int | null
+      - funcionario_ids: list[int] | null  — se fornecido, restringe o envio
+        a esses IDs (usado para notificar apenas os avulso adicionados).
+    """
+    from sqlalchemy import or_ as _or_
+    d = request.json or {}
+    comp = norm_competencia(d.get("competencia"))
+    if not comp:
+        return jsonify({"erro": "competencia obrigatória."}), 400
+    empresa_id = to_num(d.get("empresa_id")) or None
+    ids_alvo = d.get("funcionario_ids")  # None = todos; lista = somente esses
+
+    # Montar mapa de BeneficioMensal da competência
+    qb = BeneficioMensal.query.filter_by(competencia=comp)
+    if empresa_id:
+        qb = qb.filter_by(empresa_id=empresa_id)
+    if ids_alvo and isinstance(ids_alvo, list):
+        qb = qb.filter(BeneficioMensal.funcionario_id.in_(ids_alvo))
+    mapa_bm = {b.funcionario_id: b for b in qb.all()}
+
+    # Funcionários ativos/férias envolvidos
+    fids = list(mapa_bm.keys())
+    if not fids:
+        return jsonify({"ok": True, "enviados": 0, "sem_registro": True,
+                        "mensagem": "Nenhum lançamento encontrado para esta competência."}), 200
+
+    funcs_map = {
+        f.id: f
+        for f in Funcionario.query.filter(Funcionario.id.in_(fids)).all()
+    }
+
+    _meses_pt = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                 "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+    try:
+        _partes = comp.split("-")
+        _comp_label = f"{_meses_pt[int(_partes[1])-1]}/{_partes[0]}"
+    except Exception:
+        _comp_label = comp
+
+    enviados = 0
+    sem_token = 0
+
+    for fid, bm in mapa_bm.items():
+        f = funcs_map.get(fid)
+        if not f:
+            continue
+        st = (f.status or "Ativo").strip()
+        if st in ("Demitido", "Inativo"):
+            continue
+        if not (f.app_ativo and (f.app_push_token or "").strip()):
+            sem_token += 1
+            continue
+
+        nome_curto = (f.nome or "").split()[0]
+
+        # Montar resumo dos benefícios recebidos nesta competência
+        linhas = []
+        _opta_vt = True if f.opta_vt is None else bool(f.opta_vt)
+        _opta_vr = True if f.opta_vr is None else bool(f.opta_vr)
+        _opta_va = True if f.opta_va is None else bool(f.opta_va)
+
+        if _opta_vt and (bm.vale_transporte or 0) > 0:
+            dias_vt = bm.dias_vt or 0
+            total_vt = float(bm.vale_transporte or 0) * dias_vt
+            linhas.append(f"VT: R${total_vt:,.2f} ({dias_vt} dias)")
+        if _opta_vr and (bm.vale_refeicao or 0) > 0:
+            dias_vr = bm.dias_vr or 0
+            total_vr = float(bm.vale_refeicao or 0) * dias_vr
+            linhas.append(f"VR: R${total_vr:,.2f} ({dias_vr} dias)")
+        if _opta_va and (bm.vale_alimentacao or 0) > 0:
+            linhas.append(f"VA: R${float(bm.vale_alimentacao):,.2f}")
+        if f.opta_premio_prod and (bm.premio_produtividade or 0) > 0:
+            linhas.append(f"Prêmio Prod.: R${float(bm.premio_produtividade):,.2f}")
+        if f.opta_vale_gasolina and (bm.vale_gasolina or 0) > 0:
+            dias_vg = bm.dias_vg or 0
+            total_vg = float(bm.vale_gasolina or 0) * (dias_vg or 1)
+            linhas.append(f"Vale Gasolina: R${total_vg:,.2f}")
+        if f.opta_cesta_natal and (bm.cesta_natal or 0) > 0:
+            linhas.append(f"Cesta Natal: R${float(bm.cesta_natal):,.2f}")
+
+        if not linhas:
+            # Sem benefícios configurados para notificar
+            continue
+
+        resumo_str = " | ".join(linhas)
+        corpo = (
+            f"{nome_curto}, seus benefícios de {_comp_label} estão disponíveis. "
+            f"{resumo_str}. "
+            "Qualquer dúvida, entre em contato com o RH."
+        )
+
+        ok = _push_notify_funcionario(
+            fid,
+            f"Benefícios de {_comp_label} 💳",
+            corpo,
+            data={"tipo": "pagamento", "competencia": _comp_label},
+        )
+        if ok:
+            enviados += 1
+
+    return jsonify({
+        "ok": True,
+        "competencia": comp,
+        "enviados": enviados,
+        "sem_token": sem_token,
+    })
+
+
 @app.route("/api/beneficios/reabrir", methods=["POST"])
 @lr
 def api_beneficios_reabrir():

@@ -2909,6 +2909,8 @@ document.addEventListener('DOMContentLoaded',()=>{
           <button class="btn b-gh b-sm" id="btn-ben-reabrir" onclick="benReabrirFolha()" style="display:none">Reabrir folha</button>
           <button class="btn b-gh b-sm" id="btn-ben-assinar" onclick="benAssinarFolha()" style="display:none">Assinar fechamento</button>
           <button class="btn b-gh b-sm" onclick="benAbrirHistorico()">Consultar histórico</button>
+          <button id="btn-ben-notificar" class="btn b-sm" style="background:var(--azul);color:#fff;border:1px solid var(--azul)" onclick="benNotificarColaboradores()">📲 Notificar Colaboradores</button>
+          <span id="ben-notif-status" style="font-size:12px;color:var(--verde);display:none;align-self:center"></span>
           <span id="ben-auto-hint" style="font-size:11px;color:var(--text-muted);margin-left:4px;align-self:center">Auto-save ativo</span>
         </div>
         <div id="ben-sal-painel" style="margin:8px 0 12px 0;display:none">
@@ -2997,6 +2999,8 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button class="btn b-az" onclick="benAvulsoSalvar()">&#128190; Salvar lançamentos avulsos</button>
               <button class="btn b-gh b-sm" onclick="benAvulsoLimpar()">&#10005; Limpar lista</button>
+              <button id="btn-ben-notif-avulso" class="btn b-sm" style="background:var(--azul);color:#fff;border:1px solid var(--azul)" onclick="benNotificarAvulso()">📲 Notificar adicionados</button>
+              <span id="ben-avulso-notif-status" style="font-size:12px;color:var(--verde);display:none;align-self:center"></span>
             </div>
           </div>
         </div>
@@ -14046,6 +14050,74 @@ async function benAssinarFolha(){
   if(r?.erro){ showSt('st-benef',r.erro,true); return; }
   showSt('st-benef',`Folha assinada por ${r.assinatura_por||'usuário'} em ${new Date(r.assinatura_em).toLocaleString('pt-BR')}.`,false);
   benAtualizarToolbar('assinada');
+}
+
+async function benNotificarColaboradores(){
+  const comp=benComp();
+  if(!/^\d{4}-\d{2}$/.test(comp)){ showSt('st-benef','Competência inválida.',true); return; }
+  const statusEl=document.getElementById('ben-notif-status');
+  const btn=document.getElementById('btn-ben-notificar');
+  const total=(beneficiosMensais||[]).length;
+  if(!total){ showSt('st-benef','Carregue a lista de benefícios antes de notificar.',true); return; }
+  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const partes=comp.split('-');
+  const compLabel=`${meses[parseInt(partes[1])-1]}/${partes[0]}`;
+  if(!confirm(
+    `Enviar notificação de benefícios de ${compLabel} para os colaboradores optantes?\n\n`+
+    `Cada colaborador receberá um resumo individual com os valores desta competência.\n\n`+
+    `Confirme apenas após os dados estarem corretos.`
+  )) return;
+  if(btn){ btn.disabled=true; btn.textContent='Enviando...'; }
+  if(statusEl) statusEl.style.display='none';
+  try{
+    const empresaId=benEmp()?parseInt(benEmp(),10):null;
+    const body={competencia:comp};
+    if(empresaId) body.empresa_id=empresaId;
+    const r=await api('/api/beneficios/notificar','POST',body);
+    if(r?.erro) throw new Error(r.erro);
+    const enviados=r.enviados||0;
+    const semToken=r.sem_token||0;
+    let msg=`✓ ${enviados} notificação(ões) enviada(s)`;
+    if(semToken) msg+=` · ${semToken} sem app instalado`;
+    if(statusEl){ statusEl.textContent=msg; statusEl.style.display=''; }
+    setTimeout(()=>{ if(statusEl) statusEl.style.display='none'; },5000);
+  }catch(e){
+    showSt('st-benef','Erro ao notificar: '+e.message,true);
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='📲 Notificar Colaboradores'; }
+  }
+}
+
+async function benNotificarAvulso(){
+  const comp=benComp();
+  if(!/^\d{4}-\d{2}$/.test(comp)){ toast('Competência inválida.','e'); return; }
+  const statusEl=document.getElementById('ben-avulso-notif-status');
+  const btn=document.getElementById('btn-ben-notif-avulso');
+  if(!benAvulsoSelecionados.length){ toast('Adicione funcionários à lista antes de notificar.','e'); return; }
+  const ids=[...new Set(benAvulsoSelecionados.map(x=>x.funcionario_id))];
+  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const partes=comp.split('-');
+  const compLabel=`${meses[parseInt(partes[1])-1]}/${partes[0]}`;
+  if(!confirm(
+    `Enviar notificação de benefícios avulsos de ${compLabel} para ${ids.length} colaborador(es)?\n\n`+
+    `Certifique-se de que os lançamentos já foram salvos antes de notificar.`
+  )) return;
+  if(btn){ btn.disabled=true; btn.textContent='Enviando...'; }
+  if(statusEl) statusEl.style.display='none';
+  try{
+    const empresaId=benEmp()?parseInt(benEmp(),10):null;
+    const body={competencia:comp,funcionario_ids:ids};
+    if(empresaId) body.empresa_id=empresaId;
+    const r=await api('/api/beneficios/notificar','POST',body);
+    if(r?.erro) throw new Error(r.erro);
+    const enviados=r.enviados||0;
+    if(statusEl){ statusEl.textContent=`✓ ${enviados} notificação(ões) enviada(s)`; statusEl.style.display=''; }
+    setTimeout(()=>{ if(statusEl) statusEl.style.display='none'; },5000);
+  }catch(e){
+    toast('Erro ao notificar: '+e.message,'e');
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='📲 Notificar adicionados'; }
+  }
 }
 
 // ── Benefício Avulso ──────────────────────────────────────────────────────────
