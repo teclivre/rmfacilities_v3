@@ -15362,16 +15362,18 @@ def api_app_funcionario_stepup_solicitar():
     except Exception as ex:
         db.session.rollback()
         reg_auth_attempt("app_stepup", ident, False, "persist_falha")
+        app.logger.error(f"[stepup] persist falha: {ex}")
         return jsonify(
-            {"erro": "Nao foi possivel preparar o codigo OTP.", "detalhe": str(ex)}
+            {"erro": "Nao foi possivel preparar o codigo OTP."}
         ), 503
 
     try:
         envio = _send_app_login_otp(codigo, f)
     except Exception as ex:
         reg_auth_attempt("app_stepup", ident, False, "envio_falha")
+        app.logger.error(f"[stepup] envio falha: {ex}")
         return jsonify(
-            {"erro": "Nao foi possivel enviar o codigo OTP.", "detalhe": str(ex)}
+            {"erro": "Nao foi possivel enviar o codigo OTP."}
         ), 503
 
     reg_auth_attempt("app_stepup", ident, True, "desafio_enviado")
@@ -16575,7 +16577,13 @@ def api_app_funcionario_assinar_arquivo(id):
         if not hmac.compare_digest(
             token_hash(stepup_otp), str(f.app_stepup_hash or "")
         ):
-            f.app_stepup_tentativas = tent + 1
+            db.session.execute(
+                db.text(
+                    "UPDATE funcionario SET app_stepup_tentativas = app_stepup_tentativas + 1 "
+                    "WHERE id = :fid"
+                ),
+                {"fid": f.id},
+            )
             db.session.commit()
             reg_auth_attempt("app_stepup_confirm", ident, False, "codigo_invalido")
             return jsonify({"erro": "Codigo de confirmacao invalido."}), 401
@@ -21706,6 +21714,10 @@ def api_envelope_add_arquivo(id):
     f = request.files.get("arquivo")
     if not f:
         return jsonify({"erro": "Arquivo não enviado"}), 400
+    _ALLOWED_ENVELOPE_EXTS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt", ".png", ".jpg", ".jpeg"}
+    _ext = os.path.splitext(f.filename or "")[1].lower()
+    if _ext not in _ALLOWED_ENVELOPE_EXTS:
+        return jsonify({"erro": "Tipo de arquivo não permitido. Use PDF, DOC, DOCX, XLS, XLSX, TXT ou imagem."}), 400
     base = os.path.join(_get_uploads_base(), "envelopes", str(id))
     os.makedirs(base, exist_ok=True)
     fname = f"{secrets.token_urlsafe(8)}_{secure_filename(f.filename)}"
@@ -22155,7 +22167,7 @@ def api_envelope_assinatura_enviar_otp(token):
     if sig.status == "assinado":
         return _assinatura_json_erro("Você já assinou este documento.", 400)
     env = db.get_or_404(AssinaturaEnvelope, sig.envelope_id)
-    if env.expira_em and datetime.utcnow() > env.expira_em:
+    if env.expira_em and utcnow() > env.expira_em:
         return _assinatura_json_erro(
             "O prazo para assinatura deste documento expirou.", 400
         )
@@ -22193,7 +22205,7 @@ def api_envelope_assinatura_confirmar(token):
     if sig.status == "assinado":
         return _assinatura_json_erro("Você já assinou este documento.", 400)
     env = db.get_or_404(AssinaturaEnvelope, sig.envelope_id)
-    if env.expira_em and datetime.utcnow() > env.expira_em:
+    if env.expira_em and utcnow() > env.expira_em:
         return _assinatura_json_erro(
             "O prazo para assinatura deste documento expirou.", 400
         )
@@ -22263,7 +22275,13 @@ def api_envelope_assinatura_confirmar(token):
             "Limite de tentativas de OTP excedido. Solicite um novo código.", 400
         )
     if not hmac.compare_digest(token_hash(otp), str(sig.ass_otp_hash or "")):
-        sig.ass_otp_tentativas = tent + 1
+        db.session.execute(
+            db.text(
+                "UPDATE assinatura_envelope_signatario SET ass_otp_tentativas = ass_otp_tentativas + 1 "
+                "WHERE id = :sid"
+            ),
+            {"sid": sig.id},
+        )
         db.session.commit()
         return _assinatura_json_erro("Código OTP inválido.", 400)
 
@@ -22278,7 +22296,7 @@ def api_envelope_assinatura_confirmar(token):
         sig.cpf = cpf_inf
     sig.ass_cpf_informado = cpf_inf
     sig.ass_ip = ip
-    sig.ass_em = datetime.utcnow()
+    sig.ass_em = utcnow()
     sig.ass_codigo = secrets.token_urlsafe(10)
     sig.ass_otp_hash = None
     sig.ass_otp_expira_em = None
@@ -22290,18 +22308,23 @@ def api_envelope_assinatura_confirmar(token):
     if not sig.ass_aberto_em:
         sig.ass_aberto_em = utcnow()
 
-    # Cadastro automático por telefone para reaproveitar em assinaturas futuras.
+    # Cadastro automático por telefone para reaproveitar em assinaturas futuras,
+    # restrito à mesma empresa para evitar vazamento de dados entre clientes.
     tel_sig = wa_norm_number(sig.telefone or "")
     if tel_sig:
         sig.telefone = tel_sig
-        pendentes = (
-            AssinaturaEnvelopeSignatario.query.filter(
-                AssinaturaEnvelopeSignatario.id != sig.id
-            )
+        pendentes_q = (
+            AssinaturaEnvelopeSignatario.query
+            .join(AssinaturaEnvelope, AssinaturaEnvelopeSignatario.envelope_id == AssinaturaEnvelope.id)
+            .filter(AssinaturaEnvelopeSignatario.id != sig.id)
             .filter(AssinaturaEnvelopeSignatario.telefone.isnot(None))
             .filter(AssinaturaEnvelopeSignatario.status == "pendente")
-            .all()
         )
+        if env.empresa_id:
+            pendentes_q = pendentes_q.filter(AssinaturaEnvelope.empresa_id == env.empresa_id)
+        else:
+            pendentes_q = pendentes_q.filter(AssinaturaEnvelope.empresa_id.is_(None))
+        pendentes = pendentes_q.all()
         for p in pendentes:
             if not wa_phone_matches(p.telefone or "", tel_sig):
                 continue
