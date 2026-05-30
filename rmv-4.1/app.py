@@ -10600,6 +10600,27 @@ def api_atualizar_funcionario(id):
                     _changed = True
                 if _changed:
                     db.session.commit()
+            # Notificação push ao colaborador informando as férias agendadas.
+            _ini_n = (f.ferias_inicio or "").strip()
+            _fim_n = (f.ferias_fim or "").strip()
+            if _ini_n and _fim_n:
+                try:
+                    from datetime import date as _dfc
+                    _d1n = _dfc.fromisoformat(_ini_n)
+                    _d2n = _dfc.fromisoformat(_fim_n)
+                    _dias_n = (_d2n - _d1n).days + 1
+                    _retorno_n = (_d2n + __import__("datetime").timedelta(days=1)).strftime("%d/%m/%Y")
+                    _push_notify_funcionario(
+                        f.id,
+                        "Férias Agendadas ✈️",
+                        f"{f.nome}, suas férias estão agendadas de "
+                        f"{_d1n.strftime('%d/%m/%Y')} a {_d2n.strftime('%d/%m/%Y')} "
+                        f"com {_dias_n} {'dia' if _dias_n == 1 else 'dias'} de duração. "
+                        f"Previsão de retorno: {_retorno_n}.",
+                        data={"tela": "ferias"},
+                    )
+                except Exception:
+                    pass
         # BUG-FIX: registrar auditoria na edição (antes só o DELETE registrava).
         audit_event(
             "funcionario_editar",
@@ -16137,6 +16158,40 @@ def api_rh_afastamento_criar(fid):
         True,
         {"tipo": tipo, "data_inicio": data_inicio, "data_fim": data_fim},
     )
+    # Notificação push ao colaborador sobre o afastamento registrado.
+    try:
+        _di_fmt = di.strftime("%d/%m/%Y")
+        _df_fmt = df.strftime("%d/%m/%Y")
+        _dias_af = (df - di).days + 1
+        if tipo == "atestado":
+            _titulo_af = "Atestado Registrado 🏥"
+            _corpo_af = (
+                f"{f.nome}, foi registrado um atestado médico de {_di_fmt} a {_df_fmt} "
+                f"({_dias_af} {'dia' if _dias_af == 1 else 'dias'}). "
+                "Em caso de dúvidas, entre em contato com o RH."
+            )
+        elif tipo == "licenca":
+            _titulo_af = "Licença Registrada 📋"
+            _corpo_af = (
+                f"{f.nome}, foi registrada uma licença de {_di_fmt} a {_df_fmt} "
+                f"({_dias_af} {'dia' if _dias_af == 1 else 'dias'}). "
+                "Em caso de dúvidas, entre em contato com o RH."
+            )
+        else:
+            _titulo_af = "Afastamento Registrado 📋"
+            _corpo_af = (
+                f"{f.nome}, foi registrado um afastamento de {_di_fmt} a {_df_fmt} "
+                f"({_dias_af} {'dia' if _dias_af == 1 else 'dias'}). "
+                "Em caso de dúvidas, entre em contato com o RH."
+            )
+        if observacao:
+            _corpo_af += f" Obs: {observacao}"
+        _push_notify_funcionario(
+            fid, _titulo_af, _corpo_af,
+            data={"tela": "afastamentos"},
+        )
+    except Exception:
+        pass
     return jsonify(af.to_dict()), 201
 
 
@@ -19149,6 +19204,157 @@ def api_escala_turno_do_dia(id, data):
         })
     except Exception as ex:
         return jsonify({"erro": str(ex)}), 400
+
+
+# ============================================================
+# LEMBRETES DE PONTO POR ESCALA
+# ============================================================
+
+
+@app.route("/api/ponto/lembretes-escala", methods=["POST"])
+@_limiter.limit("10 per minute")
+@lr
+def api_ponto_lembretes_escala():
+    """
+    Envia notificações push de lembrete de ponto para funcionários cujo turno
+    começa ou termina dentro de 'minutos_antecedencia' minutos a partir de agora.
+    Deve ser chamado por um cron externo (ex: a cada 5 min).
+
+    Body JSON opcional:
+      - minutos_antecedencia: int (default 15) — janela de antecedência em minutos
+      - tipo: "entrada" | "saida" | "ambos" (default "ambos")
+      - empresa_id: int | null — filtrar por empresa (default: todas)
+    """
+    import math as _math
+    d = request.json or {}
+    minutos = max(1, min(int(d.get("minutos_antecedencia") or 15), 120))
+    tipo_lembrete = (d.get("tipo") or "ambos").strip().lower()
+    empresa_id_filter = d.get("empresa_id")
+
+    from datetime import date as _date_l, timedelta as _td_l, datetime as _datetime_l
+
+    agora = localnow()  # tipo datetime naive BRT
+    hoje_str = agora.date().isoformat()
+
+    # Buscar todos os vínculos de escala ativos hoje
+    vinculos = EscalaFuncionario.query.filter(
+        EscalaFuncionario.ativo == True,
+        EscalaFuncionario.data_inicio <= hoje_str,
+        db.or_(
+            EscalaFuncionario.data_fim.is_(None),
+            EscalaFuncionario.data_fim >= hoje_str,
+        ),
+    ).all()
+
+    # Prefetch escalas e funcionários envolvidos
+    escala_ids = list({v.escala_id for v in vinculos})
+    func_ids = list({v.funcionario_id for v in vinculos})
+    escalas = {e.id: e for e in Escala.query.filter(Escala.id.in_(escala_ids)).all()}
+    funcs_map = {
+        f.id: f
+        for f in Funcionario.query.filter(Funcionario.id.in_(func_ids)).all()
+    }
+
+    enviados = 0
+    erros = 0
+
+    for vf in vinculos:
+        try:
+            f = funcs_map.get(vf.funcionario_id)
+            if not f:
+                continue
+            # Filtrar por empresa se solicitado
+            if empresa_id_filter and str(f.empresa_id) != str(empresa_id_filter):
+                continue
+            # Apenas funcionários com acesso ao app e com token
+            st = (f.status or "Ativo").strip()
+            if st in ("Demitido", "Inativo"):
+                continue
+            if not (f.app_ativo and (f.app_push_token or "").strip()):
+                continue
+
+            e = escalas.get(vf.escala_id)
+            if not e:
+                continue
+
+            try:
+                ciclo = json.loads(e.ciclo_json or "{}")
+                dias = ciclo.get("dias", [])
+            except Exception:
+                continue
+            if not dias:
+                continue
+
+            data_inicio_vf = _date_l.fromisoformat(vf.data_inicio)
+            hoje_date = agora.date()
+            dias_decorridos = (hoje_date - data_inicio_vf).days
+            if dias_decorridos < 0:
+                continue
+            indice = dias_decorridos % len(dias)
+            dia_info = dias[indice]
+            if dia_info.get("tipo") == "folga":
+                continue
+
+            hora_entrada_str = dia_info.get("hora_entrada") or "08:00"
+            hora_saida_str = dia_info.get("hora_saida") or "17:00"
+
+            # Converter horários do turno em datetime de hoje
+            def _turno_dt(hhmm_str):
+                try:
+                    hh, mm = map(int, hhmm_str.split(":"))
+                    dt = _datetime_l(hoje_date.year, hoje_date.month, hoje_date.day, hh, mm)
+                    return dt
+                except Exception:
+                    return None
+
+            hora_entrada_dt = _turno_dt(hora_entrada_str)
+            hora_saida_dt = _turno_dt(hora_saida_str)
+            # Turno noturno: saída no dia seguinte
+            if hora_saida_dt and hora_entrada_dt and hora_saida_dt <= hora_entrada_dt:
+                hora_saida_dt += _td_l(days=1)
+
+            nome_curto = (f.nome or "").split()[0]
+            enviou = False
+
+            if tipo_lembrete in ("entrada", "ambos") and hora_entrada_dt:
+                diff_ent = (hora_entrada_dt - agora).total_seconds() / 60.0
+                if 0 <= diff_ent <= minutos:
+                    ok = _push_notify_funcionario(
+                        f.id,
+                        "⏰ Lembrete de Ponto",
+                        f"{nome_curto}, seu turno começa às {hora_entrada_str}. "
+                        "Não esqueça de registrar sua entrada!",
+                        data={"tela": "ponto"},
+                    )
+                    if ok:
+                        enviou = True
+
+            if tipo_lembrete in ("saida", "ambos") and hora_saida_dt:
+                diff_sai = (hora_saida_dt - agora).total_seconds() / 60.0
+                if 0 <= diff_sai <= minutos:
+                    ok = _push_notify_funcionario(
+                        f.id,
+                        "⏰ Lembrete de Saída",
+                        f"{nome_curto}, seu turno termina às {hora_saida_str}. "
+                        "Não esqueça de registrar sua saída!",
+                        data={"tela": "ponto"},
+                    )
+                    if ok:
+                        enviou = True
+
+            if enviou:
+                enviados += 1
+        except Exception:
+            erros += 1
+            continue
+
+    return jsonify({
+        "ok": True,
+        "enviados": enviados,
+        "erros": erros,
+        "minutos_antecedencia": minutos,
+        "tipo": tipo_lembrete,
+    })
 
 
 # ============================================================
@@ -26295,6 +26501,46 @@ def api_financeiro_salarios_fechar():
         True,
         {"competencia": comp, "empresa_id": empresa_id, "versao": folha.versao_atual},
     )
+    # Notificação push a cada funcionário da folha informando o valor do pagamento.
+    try:
+        _itens_folha = resumo.get("itens") or []
+        _comp_fmt_partes = comp.split("-")
+        _meses_pt = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                     "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+        if len(_comp_fmt_partes) == 2:
+            _m_idx = int(_comp_fmt_partes[1]) - 1
+            _comp_label = f"{_meses_pt[_m_idx]}/{_comp_fmt_partes[0]}"
+        else:
+            _comp_label = comp
+
+        def _notify_folha_bg(itens, label):
+            for _it in itens:
+                try:
+                    _fid = _it.get("funcionario_id")
+                    _nome = (_it.get("nome") or "").split()[0]
+                    _total = float(_it.get("total_pagar") or 0)
+                    if not _fid:
+                        continue
+                    _push_notify_funcionario(
+                        _fid,
+                        f"Pagamento de {label} 💰",
+                        f"{_nome}, seu pagamento referente a {label} está disponível. "
+                        f"Valor líquido: R$ {_total:,.2f}. "
+                        "Acesse o app para mais detalhes.",
+                        data={"tela": "pagamento", "competencia": label},
+                    )
+                except Exception:
+                    pass
+
+        import threading as _thr
+        _t = _thr.Thread(
+            target=_notify_folha_bg,
+            args=(_itens_folha, _comp_label),
+            daemon=True,
+        )
+        _t.start()
+    except Exception:
+        pass
 
     return jsonify(
         {
