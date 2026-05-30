@@ -2611,6 +2611,10 @@ document.addEventListener('DOMContentLoaded',()=>{
               <span style="font-weight:600;font-size:13px">Funcionários</span>
               <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsCarregarFuncionarios()">↺</button>
             </div>
+            <div style="padding:6px 8px;border-bottom:1px solid var(--borda)">
+              <input id="maps-busca-func" type="text" placeholder="🔍 Buscar funcionário…" oninput="mapsBuscarNovaConversa(this.value)" autocomplete="off" style="width:100%;padding:4px 8px;font-size:12px;border:1px solid var(--borda);border-radius:6px;background:var(--fundo);color:var(--text);box-sizing:border-box">
+            </div>
+            <div id="maps-nova-lista" style="display:none;border-bottom:1px solid var(--borda);max-height:160px;overflow-y:auto"></div>
             <div id="maps-func-list" style="flex:1;overflow-y:auto;padding:4px"></div>
           </div>
           <!-- Chat -->
@@ -2634,6 +2638,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div class="g2" style="margin-top:8px">
             <div class="f"><label>Título</label><input id="com-titulo" placeholder="Ex: Reunião amanhã às 9h"></div>
             <div class="f"><label>Funcionário específico (opcional)</label>
+              <input id="com-fid-q" type="text" placeholder="Filtrar por nome ou matrícula…" oninput="mapsFiltrarFuncSelect('com-fid',this.value)" autocomplete="off" style="font-size:13px;margin-bottom:4px">
               <select id="com-fid"><option value="">Todos</option></select>
             </div>
           </div>
@@ -2665,6 +2670,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               <select id="bc-posto"><option value="">Todos os postos</option></select>
             </div>
             <div class="f"><label>Destinatário</label>
+              <input id="bc-fid-q" type="text" placeholder="Filtrar por nome ou matrícula…" oninput="mapsFiltrarFuncSelect('bc-fid',this.value)" autocomplete="off" style="font-size:13px;margin-bottom:4px">
               <select id="bc-fid"><option value="">Todos ativos filtrados</option></select>
             </div>
           </div>
@@ -14624,6 +14630,7 @@ function switchTab(prefix,tab,el){
 let _mapsFidAtual=null;
 let _mapsNomeAtual='';
 let _mapsPolling=null;
+let _mapsFuncs=[];
 
 async function mapsIniciar(){
   await mapsCarregarFuncionarios();
@@ -14715,25 +14722,78 @@ async function mapsEnviar(){
 async function mapsCarregarSelectsEmpresasPosto(){
   try{
     const [listaFunc,listaEmp]=await Promise.all([
-      api('/api/funcionarios?status=ativo&_limit=500'),
+      api('/api/funcionarios?status=ativo'),
       api('/api/empresas')
     ]);
-    const funcs=(listaFunc.itens||listaFunc||[]);
+    _mapsFuncs=(listaFunc.itens||listaFunc||[]);
     const empsData=(Array.isArray(listaEmp)?listaEmp:[]);
-    // Postos únicos
-    const postos=[...new Set(funcs.map(f=>(f.posto_operacional||'').trim()).filter(Boolean))].sort();
-    // Preenche selects de comunicado
+    const postos=[...new Set(_mapsFuncs.map(f=>(f.posto_operacional||'').trim()).filter(Boolean))].sort();
+    // Limpar selects antes de preencher para evitar duplicação a cada troca de aba
+    ['com-fid','com-empresa','com-posto','bc-empresa','bc-posto','bc-fid'].forEach(id=>{
+      const s=document.getElementById(id); if(!s)return;
+      while(s.options.length>1)s.remove(1);
+    });
     const fillSel=(id,items,valFn,txtFn)=>{
       const sel=document.getElementById(id); if(!sel)return;
       items.forEach(it=>{const o=document.createElement('option');o.value=valFn(it);o.textContent=txtFn(it);sel.appendChild(o);});
     };
-    fillSel('com-fid',funcs,f=>f.id,f=>f.nome);
+    fillSel('com-fid',_mapsFuncs,f=>f.id,f=>f.nome);
     fillSel('com-empresa',empsData,e=>e.id,e=>e.nome);
     fillSel('com-posto',postos,p=>p,p=>p);
     fillSel('bc-empresa',empsData,e=>e.id,e=>e.nome);
     fillSel('bc-posto',postos,p=>p,p=>p);
-    fillSel('bc-fid',funcs,f=>f.id,f=>f.nome);
+    fillSel('bc-fid',_mapsFuncs,f=>f.id,f=>f.nome);
   }catch(e){}
+}
+
+function mapsFiltrarFuncSelect(selId, q){
+  const sel=document.getElementById(selId); if(!sel||!_mapsFuncs.length)return;
+  const prevVal=sel.value;
+  const v=(q||'').trim().toLowerCase();
+  while(sel.options.length>1)sel.remove(1);
+  const lista=v ? _mapsFuncs.filter(f=>(f.nome||'').toLowerCase().includes(v)||(f.matricula||'').toLowerCase().includes(v)) : _mapsFuncs;
+  lista.forEach(f=>{
+    const o=document.createElement('option');
+    o.value=f.id;
+    o.textContent=f.nome+(f.matricula?` (${f.matricula})`:'');
+    sel.appendChild(o);
+  });
+  // Restaurar seleção anterior se ainda presente
+  if(prevVal) sel.value=prevVal;
+}
+
+async function mapsBuscarNovaConversa(q){
+  const el=document.getElementById('maps-nova-lista'); if(!el)return;
+  q=(q||'').trim();
+  if(!q){el.style.display='none';el.innerHTML='';return;}
+  // Primeiro tenta filtrar da lista em memória
+  const v=q.toLowerCase();
+  let lista=_mapsFuncs.filter(f=>(f.nome||'').toLowerCase().includes(v)||(f.matricula||'').toLowerCase().includes(v));
+  // Se não carregada ainda, busca na API
+  if(!_mapsFuncs.length){
+    const r=await api('/api/funcionarios?status=ativo&q='+encodeURIComponent(q));
+    lista=(r.itens||r||[]);
+  }
+  if(!Array.isArray(lista)||!lista.length){
+    el.style.display='';
+    el.innerHTML='<div style="font-size:11px;padding:4px 10px;color:var(--text-muted)">Nenhum funcionário encontrado.</div>';
+    return;
+  }
+  el.style.display='';
+  el.innerHTML=lista.slice(0,12).map(f=>`
+    <div onclick="mapsAbrirChatNovo(${f.id},${JSON.stringify(f.nome||'')});" 
+      style="cursor:pointer;padding:6px 10px;font-size:12px;border-radius:6px" 
+      onmouseover="this.style.background='var(--az-cl,#dbeafe)'" onmouseout="this.style.background=''">
+      <strong>${escHtml(f.nome||'')}</strong>${f.matricula?` <span style="color:var(--text-muted);font-size:11px">${escHtml(f.matricula)}</span>`:''}
+      ${f.cargo?`<span style="color:var(--text-muted);font-size:11px"> · ${escHtml(f.cargo)}</span>`:''}
+    </div>`).join('');
+}
+
+function mapsAbrirChatNovo(fid,nome){
+  document.getElementById('maps-busca-func').value='';
+  const el=document.getElementById('maps-nova-lista');
+  if(el){el.style.display='none';el.innerHTML='';}
+  mapsAbrirChat(fid,nome);
 }
 
 async function mapsCarregarListaComunicados(){
