@@ -10575,6 +10575,31 @@ def api_atualizar_funcionario(id):
         f.areas = json.dumps(ars, ensure_ascii=False)
     try:
         db.session.commit()
+        # Sync imediato: se as datas de férias foram alteradas, recalcula o
+        # status deste funcionário sem esperar o polling de 5min do GET.
+        if "ferias_inicio" in d or "ferias_fim" in d:
+            from datetime import date as _date_sync
+            _hoje = _date_sync.today().isoformat()
+            _st = (f.status or "Ativo").strip().lower()
+            if _st not in ("demitido", "inativo", "afastado", "aviso prévio", "aviso previo"):
+                _ini = (f.ferias_inicio or "").strip()
+                _fim = (f.ferias_fim or "").strip()
+                _status_atual = f.status or "Ativo"
+                _changed = False
+                if _ini and _fim:
+                    if _hoje >= _ini and _hoje <= _fim:
+                        if _status_atual != "Férias":
+                            f.status = "Férias"
+                            _changed = True
+                    elif _hoje > _fim and _status_atual == "Férias":
+                        f.status = "Ativo"
+                        _changed = True
+                elif _status_atual == "Férias":
+                    # datas limpas ou incompletas: volta para Ativo
+                    f.status = "Ativo"
+                    _changed = True
+                if _changed:
+                    db.session.commit()
         # BUG-FIX: registrar auditoria na edição (antes só o DELETE registrava).
         audit_event(
             "funcionario_editar",
@@ -23518,7 +23543,17 @@ def api_operacional_postos_salvar():
 def api_beneficios_lancamentos():
     comp = norm_competencia(request.args.get("competencia"))
     empresa_id = to_num(request.args.get("empresa_id")) or None
-    qf = Funcionario.query.filter_by(status="Ativo")
+    from sqlalchemy import or_ as _or_
+    # Inclui: Ativo, Férias (recebem benefícios mesmo durante férias), legado (null/"")
+    # Exclui implicitamente: Demitido, Inativo, Afastado, Aviso Prévio
+    qf = Funcionario.query.filter(
+        _or_(
+            Funcionario.status == "Ativo",
+            Funcionario.status == "Férias",
+            Funcionario.status.is_(None),
+            Funcionario.status == "",
+        )
+    )
     if empresa_id:
         qf = qf.filter_by(empresa_id=empresa_id)
     funcs_ativos = qf.order_by(Funcionario.nome).all()
