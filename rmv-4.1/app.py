@@ -27714,10 +27714,13 @@ def api_folhas_export_pdf(fid):
         Spacer(1, 8),
     ]
     _folha_recalcular_total(f)
+    itens_pdf = f.itens.order_by(FolhaPagamentoItem.id.asc()).all()
+    _fids_pdf = {it.funcionario_id for it in itens_pdf}
+    _funcs_pdf = {fn.id: fn for fn in Funcionario.query.filter(Funcionario.id.in_(_fids_pdf)).all()} if _fids_pdf else {}
     data = [["#", "RE", "Nome", "Cargo", "Salário", "Adic.", "Desc.", "Total"]]
     total = 0.0
-    for i, it in enumerate(f.itens.order_by(FolhaPagamentoItem.id.asc()).all(), 1):
-        func = db.session.get(Funcionario, it.funcionario_id)
+    for i, it in enumerate(itens_pdf, 1):
+        func = _funcs_pdf.get(it.funcionario_id)
         data.append(
             [
                 i,
@@ -27794,6 +27797,8 @@ def api_folhas_preview(fid):
     emp = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
     emp_nome = emp.nome if emp else ""
     itens = f.itens.order_by(FolhaPagamentoItem.id.asc()).all()
+    _fids_prev = {it.funcionario_id for it in itens}
+    _funcs_prev = {fn.id: fn for fn in Funcionario.query.filter(Funcionario.id.in_(_fids_prev)).all()} if _fids_prev else {}
     total_base = total_adic = total_desc = total_pagar = 0.0
 
     def brl(v):
@@ -27805,7 +27810,7 @@ def api_folhas_preview(fid):
 
     rows_html = ""
     for i, it in enumerate(itens, 1):
-        func = db.session.get(Funcionario, it.funcionario_id)
+        func = _funcs_prev.get(it.funcionario_id)
         nome = (func.nome or "") if func else ""
         re = (func.re or func.matricula or "") if func else ""
         cargo = (func.cargo or "") if func else ""

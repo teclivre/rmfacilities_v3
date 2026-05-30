@@ -11650,8 +11650,21 @@ async function fpRemoverItem(funcId){
   if(!confirm('Remover este funcionário da folha?')) return;
   const r = await api(`/api/folhas/${f.id}/funcionarios/${funcId}`, 'DELETE');
   if(!r || r.error || r.erro){ toast(r?.error||r?.erro||'Erro ao remover.','e'); return; }
-  await fpSelecionarFolha(f.id);
-  await fpCarregarFolhas();
+  // Usa folha já retornada pelo DELETE — evita roundtrip e duplo render
+  if(r.folha){
+    FP_STATE.folhaSelecionada = r.folha;
+    const idx = FP_STATE.folhas.findIndex(x => x.id === r.folha.id);
+    if(idx >= 0) FP_STATE.folhas[idx] = r.folha;
+  }
+  fpRenderFolhaPainel();
+  fpRenderListaFolhas();
+  await fpCarregarDisponiveis();
+}
+
+let _fpSalDebounceTimer = null;
+function fpAtualizarSalarioBaseDebounced(itemId, valor){
+  clearTimeout(_fpSalDebounceTimer);
+  _fpSalDebounceTimer = setTimeout(() => fpAtualizarSalarioBase(itemId, valor), 600);
 }
 
 async function fpAtualizarSalarioBase(itemId, valor){
@@ -11659,7 +11672,23 @@ async function fpAtualizarSalarioBase(itemId, valor){
   if(!f) return;
   const r = await api(`/api/folhas/${f.id}/itens/${itemId}`, 'PUT', {salario_base: parseFloat(valor)||0});
   if(!r || r.error || r.erro){ toast(r?.error||r?.erro||'Erro ao atualizar.','e'); return; }
-  await fpRecarregarFolhaAtual();
+  // Atualiza somente o item afetado e o total — evita re-renderizar tabela inteira
+  if(r.item && FP_STATE.folhaSelecionada){
+    const itens = FP_STATE.folhaSelecionada.itens || [];
+    const idx = itens.findIndex(it => it.id === r.item.id);
+    if(idx >= 0) itens[idx] = r.item;
+    if(r.total_folha != null) FP_STATE.folhaSelecionada.total_valor = r.total_folha;
+    fpFiltrarItens();
+    // Atualiza resumo de totais sem recriar o workspace inteiro
+    const allItens = FP_STATE.folhaSelecionada.itens || [];
+    let base=0, adi=0, des=0, tot=0;
+    allItens.forEach(it=>{ base+=Number(it.salario_base||0); adi+=Number(it.total_adicional||0); des+=Number(it.total_desconto||0); tot+=Number(it.total_pagar||0); });
+    const el = (id) => document.getElementById(id);
+    if(el('fp-resumo-base')) el('fp-resumo-base').textContent = fpFmtMoeda(base);
+    if(el('fp-resumo-adic')) el('fp-resumo-adic').textContent = fpFmtMoeda(adi);
+    if(el('fp-resumo-desc')) el('fp-resumo-desc').textContent = fpFmtMoeda(des);
+    if(el('fp-resumo-total')) el('fp-resumo-total').textContent = fpFmtMoeda(tot);
+  }
 }
 
 async function fpRecarregarFolhaAtual(){
@@ -11765,7 +11794,7 @@ function fpRenderItensTbody(itens, editavel){
   }
   tb.innerHTML = itens.map((it,idx)=>{
     const baseCell = editavel
-      ? `<input type="number" step="0.01" value="${Number(it.salario_base||0).toFixed(2)}" onchange="fpAtualizarSalarioBase(${it.id}, this.value)" style="width:110px;text-align:right;padding:4px 6px">`
+      ? `<input type="number" step="0.01" value="${Number(it.salario_base||0).toFixed(2)}" onchange="fpAtualizarSalarioBaseDebounced(${it.id}, this.value)" style="width:110px;text-align:right;padding:4px 6px">`
       : fpFmtMoeda(it.salario_base);
     const isDemitido = (it.status_funcionario||'').toLowerCase()==='demitido';
     const demBadge = isDemitido ? ' <span style="font-size:10px;background:#fde8e8;color:#c0392b;padding:1px 5px;border-radius:99px">Demitido</span>' : '';
