@@ -14722,7 +14722,7 @@ async function mapsEnviar(){
 async function mapsCarregarSelectsEmpresasPosto(){
   try{
     const [listaFunc,listaEmp]=await Promise.all([
-      api('/api/funcionarios?status=ativo'),
+      api('/api/funcionarios?status=Ativo'),
       api('/api/empresas')
     ]);
     _mapsFuncs=(listaFunc.itens||listaFunc||[]);
@@ -14771,7 +14771,7 @@ async function mapsBuscarNovaConversa(q){
   let lista=_mapsFuncs.filter(f=>(f.nome||'').toLowerCase().includes(v)||(f.matricula||'').toLowerCase().includes(v));
   // Se não carregada ainda, busca na API
   if(!_mapsFuncs.length){
-    const r=await api('/api/funcionarios?status=ativo&q='+encodeURIComponent(q));
+    const r=await api('/api/funcionarios?status=Ativo&q='+encodeURIComponent(q));
     lista=(r.itens||r||[]);
   }
   if(!Array.isArray(lista)||!lista.length){
