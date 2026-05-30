@@ -11626,11 +11626,6 @@ function fpFiltrarDisponiveis(){
   fpRenderDisponiveis();
 }
 
-function fpOnDragStart(ev, fid){
-  ev.dataTransfer.effectAllowed = 'copy';
-  ev.dataTransfer.setData('text/funcionario-id', String(fid));
-}
-
 async function fpAdicionarFuncionarios(ids){
   const f = FP_STATE.folhaSelecionada;
   if(!f) return;
@@ -11776,9 +11771,9 @@ function fpRenderItensTbody(itens, editavel){
     const demBadge = isDemitido ? ' <span style="font-size:10px;background:#fde8e8;color:#c0392b;padding:1px 5px;border-radius:99px">Demitido</span>' : '';
     const posto = it.posto_operacional ? `<br><small style="color:var(--text-muted)">${fpEsc(it.posto_operacional)}</small>` : '';
     const acao = editavel
-      ? `<button class="btn b-az b-sm" onclick="salLanAbrirModal(${it.funcionario_id}, ${JSON.stringify(it.nome||'').replace(/\"/g,'&quot;')})" title="Lançamentos avulsos">📋</button>
+      ? `<button class="btn b-az b-sm" onclick="salLanAbrirModal(${it.funcionario_id}, '${fpEsc(it.nome||'')}')" title="Lançamentos avulsos">📋</button>
          <button class="btn b-gh b-sm" onclick="fpRemoverItem(${it.funcionario_id})" style="color:var(--verm)" title="Remover">🗑</button>`
-      : `<button class="btn b-gh b-sm" onclick="salLanAbrirModal(${it.funcionario_id}, ${JSON.stringify(it.nome||'').replace(/\"/g,'&quot;')})" title="Ver lançamentos">📋</button>`;
+      : `<button class="btn b-gh b-sm" onclick="salLanAbrirModal(${it.funcionario_id}, '${fpEsc(it.nome||'')}')" title="Ver lançamentos">📋</button>`;
     return `<tr>
       <td>${idx+1}</td>
       <td><b>${fpEsc(it.nome)}${demBadge}</b>${it.empresa_nome?'<br><small style="color:var(--text-muted)">'+fpEsc(it.empresa_nome)+'</small>':''}${posto}</td>

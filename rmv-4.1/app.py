@@ -27256,7 +27256,7 @@ def api_folhas_list():
 def api_folhas_criar():
     d = request.get_json(silent=True) or {}
     nome = (d.get("nome") or "").strip()
-    comp = (d.get("competencia") or "").strip()
+    comp = norm_competencia((d.get("competencia") or "").strip())
     if not nome or not comp:
         return jsonify({"error": "nome e competencia obrigatórios"}), 400
     tipo = (d.get("tipo") or "mensal").strip()
@@ -27566,8 +27566,15 @@ def api_folhas_funcionarios_disponiveis():
         f = db.session.get(FolhaPagamento, folha_id)
         if f:
             ja = {it.funcionario_id for it in f.itens.all()}
+    funcionarios = q.order_by(Funcionario.nome.asc()).all()
+    # Pré-carrega todas as empresas necessárias em um único roundtrip (evita N+1)
+    emp_ids = {func.empresa_id for func in funcionarios if func.empresa_id}
+    empresas_map = {}
+    if emp_ids:
+        for emp_o in Empresa.query.filter(Empresa.id.in_(emp_ids)).all():
+            empresas_map[emp_o.id] = emp_o
     out = []
-    for func in q.order_by(Funcionario.nome.asc()).all():
+    for func in funcionarios:
         if func.id in ja:
             continue
         if q_str:
@@ -27577,7 +27584,7 @@ def api_folhas_funcionarios_disponiveis():
         posto_func = (func.posto_operacional or "").strip()
         if posto_filtro and posto_func.lower() != posto_filtro:
             continue
-        emp_o = db.session.get(Empresa, func.empresa_id) if func.empresa_id else None
+        emp_o = empresas_map.get(func.empresa_id) if func.empresa_id else None
         out.append(
             {
                 "id": func.id,
