@@ -11285,6 +11285,7 @@ const FP_STATE = {
   disponiveis: [],
   filtroDispText: '',
   filtroDispPosto: '',
+  _dragFuncId: null,        // ID capturado no onStart do sortable (drag confiável)
 };
 
 function fpFmtMoeda(v){
@@ -11539,7 +11540,11 @@ function fpSetupDropZone(editavel){
     ghostClass: 'fp-sortable-ghost',
     onAdd: async (evt) => {
       const el = evt.item;
-      const fid = el?.dataset?.funcId ? parseInt(el.dataset.funcId, 10) : null;
+      // Usa ID capturado no onStart (mais confiável que dataset do clone)
+      const fid = FP_STATE._dragFuncId
+        || parseInt(el?.dataset?.funcId || el?.getAttribute?.('data-func-id') || '0', 10)
+        || null;
+      FP_STATE._dragFuncId = null;
       // Remove o elemento clonado (a tabela vai ser repintada pelo refresh)
       try{ el.parentNode && el.parentNode.removeChild(el); }catch(_){}
       if(fid) await fpAdicionarFuncionarios([fid]);
@@ -11586,9 +11591,9 @@ function fpRenderDisponiveis(){
     const statusBadge = isDemitido ? '<span style="font-size:10px;background:#fde8e8;color:#c0392b;padding:1px 6px;border-radius:99px;font-weight:700;margin-left:4px">Demitido</span>' : '';
     return `
     <div class="fp-disp-item" data-func-id="${f.id}"
-         style="border:1px solid var(--borda);border-radius:8px;padding:8px 10px;margin-bottom:6px;${editavel?'cursor:grab':'cursor:default;opacity:.7'};display:flex;align-items:center;gap:8px;background:var(--cinza-bg,#fff);transition:transform .12s,box-shadow .12s">
+         style="border:1px solid var(--borda);border-radius:8px;padding:8px 10px;margin-bottom:6px;${editavel?'cursor:grab':'cursor:default;opacity:.7'};display:flex;align-items:center;gap:8px;background:var(--branco);transition:transform .12s,box-shadow .12s">
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fpEsc(f.nome)}${statusBadge}</div>
+        <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--preto)">${fpEsc(f.nome)}${statusBadge}</div>
         <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fpEsc(f.re)} ${f.cargo?'• '+fpEsc(f.cargo):''}${f.posto_operacional?' • '+fpEsc(f.posto_operacional):''}</div>
         ${f.empresa_nome?'<div style="font-size:10px;color:var(--text-muted)">'+fpEsc(f.empresa_nome)+'</div>':''}
       </div>
@@ -11607,6 +11612,9 @@ function fpRenderDisponiveis(){
         dragClass: 'fp-sortable-drag',
         forceFallback: true,
         fallbackOnBody: true,
+        onStart: (evt) => {
+          FP_STATE._dragFuncId = parseInt(evt.item?.dataset?.funcId || evt.item?.getAttribute('data-func-id') || '0', 10) || null;
+        },
       });
     }
   }
