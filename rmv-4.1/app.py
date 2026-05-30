@@ -2813,6 +2813,20 @@ class MensagemApp(db.Model):
 
 
 _holerite_jobs = {}
+_HOLERITE_JOB_TTL = 3600  # 1 hora
+
+
+def _holerite_jobs_cleanup():
+    """Remove jobs com mais de 1 hora para evitar acúmulo em memória (memory leak)."""
+    agora = localnow()
+    to_del = [
+        jid
+        for jid, job in list(_holerite_jobs.items())
+        if job.get("criado_em") and
+        (agora - datetime.fromisoformat(job["criado_em"])).total_seconds() > _HOLERITE_JOB_TTL
+    ]
+    for jid in to_del:
+        _holerite_jobs.pop(jid, None)
 
 
 def hs(s):
@@ -23526,6 +23540,15 @@ def api_beneficios_lancamentos_excluir():
                 excluidos += 1
 
     db.session.commit()
+    audit_event(
+        "beneficios_lancamentos_excluidos",
+        "usuario",
+        session.get("uid"),
+        "beneficio_mensal",
+        empresa_id or 0,
+        True,
+        {"competencia": comp, "tipo": tipo, "excluidos": excluidos, "empresa_id": empresa_id},
+    )
     return jsonify(
         {"ok": True, "competencia": comp, "tipo": tipo, "excluidos": excluidos}
     )
@@ -23606,6 +23629,15 @@ def api_beneficios_lancamentos_limpar():
             alterados += 1
 
     db.session.commit()
+    audit_event(
+        "beneficios_lancamentos_limpos",
+        "usuario",
+        session.get("uid"),
+        "beneficio_mensal",
+        empresa_id or 0,
+        True,
+        {"competencia": comp, "tipo": tipo, "alterados": alterados, "empresa_id": empresa_id},
+    )
     return jsonify(
         {"ok": True, "competencia": comp, "tipo": tipo, "alterados": alterados}
     )
@@ -23667,13 +23699,13 @@ def api_beneficios_lancamentos_salvar():
         b.pp_falta = pp_falta
         b.dias_trabalhados = max(0, max(b.dias_vt, b.dias_vr, b.dias_va, b.dias_vg))
 
-        b.salario = to_num(it.get("salario"), dec=True)
-        vale_transporte = to_num(it.get("vale_transporte"), dec=True)
-        vale_refeicao = to_num(it.get("vale_refeicao"), dec=True)
-        vale_alimentacao = to_num(it.get("vale_alimentacao"), dec=True)
-        premio_base = to_num(it.get("premio_produtividade"), dec=True)
-        vale_gasolina = to_num(it.get("vale_gasolina"), dec=True)
-        cesta_natal = to_num(it.get("cesta_natal"), dec=True)
+        b.salario = max(0.0, to_num(it.get("salario"), dec=True))
+        vale_transporte = max(0.0, to_num(it.get("vale_transporte"), dec=True))
+        vale_refeicao = max(0.0, to_num(it.get("vale_refeicao"), dec=True))
+        vale_alimentacao = max(0.0, to_num(it.get("vale_alimentacao"), dec=True))
+        premio_base = max(0.0, to_num(it.get("premio_produtividade"), dec=True))
+        vale_gasolina = max(0.0, to_num(it.get("vale_gasolina"), dec=True))
+        cesta_natal = max(0.0, to_num(it.get("cesta_natal"), dec=True))
 
         b.vale_transporte = vale_transporte if vt_optante else 0
         b.vale_refeicao = vale_refeicao if vr_optante else 0
@@ -26161,6 +26193,7 @@ def api_financeiro_salarios_folhas():
 
 
 @app.route("/api/financeiro/salarios/evolucao", methods=["GET"])
+@_limiter.limit("30 per minute")
 @lr
 def api_financeiro_salarios_evolucao():
     empresa_id = to_num(request.args.get("empresa_id")) or None
@@ -26208,6 +26241,8 @@ def api_financeiro_salarios_importar():
         import csv
 
         rows = list(csv.DictReader(fs.read().decode("utf-8", "replace").splitlines()))
+        if len(rows) > 5000:
+            return jsonify({"erro": "Arquivo com mais de 5000 linhas não é suportado."}), 400
     elif nome.endswith(".xlsx"):
         from openpyxl import load_workbook
 
@@ -26216,6 +26251,8 @@ def api_financeiro_salarios_importar():
         data = list(ws.iter_rows(values_only=True))
         if not data:
             return jsonify({"erro": "Planilha vazia."}), 400
+        if len(data) > 5001:  # 1 header + 5000 linhas
+            return jsonify({"erro": "Planilha com mais de 5000 linhas não é suportada."}), 400
         headers = [str(v or "").strip().lower() for v in data[0]]
         rows = [
             {headers[i]: row[i] for i in range(min(len(headers), len(row)))}
@@ -26255,10 +26292,14 @@ def api_financeiro_salarios_importar():
             continue
         if empresa_id and int(f.empresa_id or 0) != int(empresa_id):
             continue
+        _val_liq = to_num(row.get("valor_liquido", row.get("salario")), dec=True)
+        if _val_liq < 0:
+            ignorados += 1
+            continue
         valores.append(
             {
                 "funcionario_id": f.id,
-                "valor_liquido": row.get("valor_liquido", row.get("salario")),
+                "valor_liquido": _val_liq,
                 "salario_obs": row.get("observacao", row.get("obs", "")),
             }
         )
@@ -26847,9 +26888,15 @@ def api_financeiro_lancamentos_criar():
     if not f:
         return jsonify({"erro": "Funcionário não encontrado."}), 404
     comp = norm_competencia(d.get("competencia"))
-    tipo = (d.get("tipo") or "").strip()
+    _TIPOS_LANCAMENTO_VALIDOS = {
+        "adiantamento", "rescisao", "decimo_terceiro", "ferias",
+        "hora_extra", "bonus", "desconto_avulso", "outros",
+    }
+    tipo = (d.get("tipo") or "").strip().lower()
     if not tipo:
         return jsonify({"erro": "Tipo de lançamento obrigatório."}), 400
+    if tipo not in _TIPOS_LANCAMENTO_VALIDOS:
+        return jsonify({"erro": f"Tipo inválido. Use: {', '.join(sorted(_TIPOS_LANCAMENTO_VALIDOS))}"}), 400
     natureza = (d.get("natureza") or "adicional").strip().lower()
     if natureza not in ("adicional", "desconto"):
         natureza = "adicional"
@@ -26885,6 +26932,11 @@ def api_financeiro_lancamentos_criar():
 @lr
 def api_financeiro_lancamentos_excluir(lid):
     lan = db.get_or_404(LancamentoAvulso, lid)
+    _emp_req = request.args.get("empresa_id", type=int) or to_num(
+        (request.get_json(silent=True) or {}).get("empresa_id")
+    ) or None
+    if _emp_req is not None and lan.empresa_id is not None and int(lan.empresa_id) != int(_emp_req):
+        return jsonify({"erro": "Acesso negado a este lançamento."}), 403
     fid = lan.funcionario_id
     comp = lan.competencia
     tipo = lan.tipo
@@ -27037,7 +27089,7 @@ def api_folhas_criar():
         empresa_id=emp,
         obs=(d.get("obs") or "").strip(),
         status="rascunho",
-        criado_por=session.get("user") or session.get("username") or "",
+        criado_por=_financeiro_usuario_atual(),
     )
     db.session.add(f)
     db.session.commit()
@@ -27069,6 +27121,9 @@ def api_folhas_atualizar(fid):
     if not _folha_pode_editar(f):
         return jsonify({"error": "folha fechada não pode ser editada"}), 400
     d = request.get_json(silent=True) or {}
+    _emp_req = request.args.get("empresa_id", type=int)
+    if _emp_req is not None and f.empresa_id is not None and int(f.empresa_id) != _emp_req:
+        return jsonify({"error": "Acesso negado: empresa não autorizada."}), 403
     for k in ("nome", "tipo", "obs"):
         if k in d:
             setattr(f, k, (d.get(k) or "").strip())
@@ -27078,7 +27133,7 @@ def api_folhas_atualizar(fid):
         except Exception:
             pass
     if "competencia" in d and d.get("competencia"):
-        f.competencia = d.get("competencia").strip()
+        f.competencia = norm_competencia(d.get("competencia"))
     db.session.commit()
     return jsonify(f.to_dict(with_items=True))
 
@@ -27087,6 +27142,9 @@ def api_folhas_atualizar(fid):
 @lr
 def api_folhas_excluir(fid):
     f = db.get_or_404(FolhaPagamento, fid)
+    _emp_req = request.args.get("empresa_id", type=int)
+    if _emp_req is not None and f.empresa_id is not None and int(f.empresa_id) != _emp_req:
+        return jsonify({"error": "Acesso negado: empresa não autorizada."}), 403
     if not _folha_pode_editar(f):
         return jsonify({"error": "somente folhas em rascunho podem ser excluídas"}), 400
     db.session.delete(f)
@@ -27122,6 +27180,9 @@ def api_folhas_add_funcionarios(fid):
             continue
         func = db.session.get(Funcionario, fid_func)
         if not func:
+            continue
+        if f.empresa_id is not None and func.empresa_id is not None and func.empresa_id != f.empresa_id:
+            skipped.append(fid_func)
             continue
         sb = _folha_salario_base_atual(func, f.competencia)
         item = FolhaPagamentoItem(
@@ -27181,7 +27242,7 @@ def api_folhas_editar_item(fid, item_id):
     d = request.get_json(silent=True) or {}
     if "salario_base" in d:
         try:
-            it.salario_base = float(d.get("salario_base") or 0)
+            it.salario_base = max(0.0, float(d.get("salario_base") or 0))
         except Exception:
             pass
     if "obs" in d:
@@ -27205,6 +27266,10 @@ def api_folhas_recalcular(fid):
 @lr
 def api_folhas_fechar(fid):
     f = db.get_or_404(FolhaPagamento, fid)
+    _d_fechar = request.get_json(silent=True) or {}
+    _emp_req = _d_fechar.get("empresa_id") or request.args.get("empresa_id", type=int)
+    if _emp_req is not None and f.empresa_id is not None and int(f.empresa_id) != int(_emp_req):
+        return jsonify({"error": "Acesso negado: empresa não autorizada."}), 403
     if f.status not in ("rascunho",):
         return jsonify({"error": "folha não está em rascunho"}), 400
     if f.itens.count() == 0:
@@ -27212,7 +27277,7 @@ def api_folhas_fechar(fid):
     _folha_recalcular_total(f)
     f.status = "fechada"
     f.fechado_em = utcnow()
-    f.fechado_por = session.get("user") or session.get("username") or ""
+    f.fechado_por = _financeiro_usuario_atual()
     db.session.commit()
     audit_event(
         "folha_fechada",
@@ -27254,13 +27319,21 @@ def api_folhas_marcar_paga(fid):
             {"error": "folha precisa estar fechada antes de marcar como paga"}
         ), 400
     d = request.get_json(silent=True) or {}
+    _emp_req = d.get("empresa_id") or request.args.get("empresa_id", type=int)
+    if _emp_req is not None and f.empresa_id is not None and int(f.empresa_id) != int(_emp_req):
+        return jsonify({"error": "Acesso negado: empresa não autorizada."}), 403
     dp = (d.get("data_pagamento") or "").strip()
-    if not dp:
-        dp = datetime.now().strftime("%Y-%m-%d")
+    if dp:
+        try:
+            datetime.strptime(dp, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "data_pagamento inválida. Use YYYY-MM-DD."}), 400
+    else:
+        dp = localnow().strftime("%Y-%m-%d")
     f.data_pagamento = dp
     f.status = "paga"
     f.pago_em = utcnow()
-    f.pago_por = session.get("user") or session.get("username") or ""
+    f.pago_por = _financeiro_usuario_atual()
     db.session.commit()
     audit_event(
         "folha_paga",
@@ -29723,6 +29796,7 @@ def _build_pdf(d):
 
 
 @app.route("/api/rh/holerites/processar", methods=["POST"])
+@_limiter.limit("10 per minute; 30 per hour")
 @lr
 def api_rh_holerites_processar():
     fs = request.files.get("arquivo")
@@ -29766,6 +29840,8 @@ def api_rh_holerites_processar():
                 "erro": "PDF invalido ou corrompido. Gere/exporte o arquivo novamente e tente de novo."
             }
         ), 400
+    if len(reader.pages) > 300:
+        return jsonify({"erro": "PDF com mais de 300 páginas não é suportado."}), 400
 
     def _norm_comp(v):
         return "".join(ch for ch in (v or "") if ch.isalnum()).lower()
@@ -29900,6 +29976,7 @@ def api_rh_holerites_processar():
         )
     db.session.commit()
     job_id = secrets.token_hex(16)
+    _holerite_jobs_cleanup()
     _holerite_jobs[job_id] = {
         "id": job_id,
         "status": "pronto",
@@ -29908,6 +29985,7 @@ def api_rh_holerites_processar():
         "sem_match": sem_match,
         "competencia": comp,
         "criado_em": utcnow().isoformat(),
+        "criado_por_uid": session.get("uid"),
     }
     itens_resp = [{k: v for k, v in it.items() if k != "abs_caminho"} for it in itens]
     return jsonify(
@@ -29929,6 +30007,8 @@ def api_rh_holerites_job(job_id):
     job = _holerite_jobs.get(job_id)
     if not job:
         return jsonify({"erro": "Job nao encontrado"}), 404
+    if job.get("criado_por_uid") is not None and job.get("criado_por_uid") != session.get("uid"):
+        return jsonify({"erro": "Acesso negado a este job."}), 403
     out = dict(job)
     out["itens"] = [
         {k: v for k, v in it.items() if k != "abs_caminho"}
@@ -29943,6 +30023,8 @@ def api_rh_holerites_enviar(job_id):
     job = _holerite_jobs.get(job_id)
     if not job:
         return jsonify({"erro": "Job nao encontrado. Processe o PDF novamente."}), 404
+    if job.get("criado_por_uid") is not None and job.get("criado_por_uid") != session.get("uid"):
+        return jsonify({"erro": "Acesso negado a este job."}), 403
     d = request.json or {}
     canal = d.get("canal", "email")
     incluir_folha_ponto = bool(d.get("incluir_folha_ponto", False))
