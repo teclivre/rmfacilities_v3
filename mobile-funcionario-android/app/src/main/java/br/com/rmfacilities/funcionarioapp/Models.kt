@@ -176,6 +176,13 @@ data class PontoMarcacaoItem(
     val lon: Double? = null
 )
 
+data class AfastamentoInfo(
+    val tipo: String? = null,
+    val data_inicio: String? = null,
+    val data_fim: String? = null,
+    val observacao: String? = null
+)
+
 data class PontoResumo(
     val funcionario_id: Int? = null,
     val funcionario_nome: String? = null,
@@ -194,7 +201,9 @@ data class PontoResumo(
     val fechado: Boolean = false,
     val fechado_por: String? = null,
     val max_marcacoes_dia: Int = 4,
-    val correcoes_faltando_pendentes: Int = 0
+    val correcoes_faltando_pendentes: Int = 0,
+    val dia_tipo: String? = null,          // "normal" | "folga" | "ferias" | "atestado"
+    val afastamento_info: AfastamentoInfo? = null
 )
 
 data class PontoMarcacaoLocalizacao(

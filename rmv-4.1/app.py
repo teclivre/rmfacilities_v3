@@ -2366,6 +2366,34 @@ class PontoCorrecaoSolicitacao(db.Model):
         return d
 
 
+class PontoAfastamento(db.Model):
+    """Registro de atestado médico ou afastamento temporário de um colaborador.
+    Impede marcação de ponto no período e aparece como aviso no aplicativo."""
+    __tablename__ = "ponto_afastamento"
+    id = db.Column(db.Integer, primary_key=True)
+    funcionario_id = db.Column(
+        db.Integer, db.ForeignKey("funcionario.id"), nullable=False, index=True
+    )
+    empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True, index=True)
+    tipo = db.Column(db.String(40), default="atestado")  # atestado | licenca | outros
+    data_inicio = db.Column(db.String(10), nullable=False)  # YYYY-MM-DD
+    data_fim = db.Column(db.String(10), nullable=False)     # YYYY-MM-DD
+    observacao = db.Column(db.Text, default="")
+    criado_por = db.Column(db.String(100))
+    criado_em = db.Column(db.DateTime, default=utcnow)
+
+    def to_dict(self):
+        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        d["criado_fmt"] = self.criado_em.strftime("%d/%m/%Y %H:%M") if self.criado_em else ""
+        def _br(s):
+            try:
+                return datetime.strptime(s, "%Y-%m-%d").strftime("%d/%m/%Y")
+            except Exception:
+                return s or ""
+        d["periodo_fmt"] = f"{_br(self.data_inicio)} a {_br(self.data_fim)}"
+        return d
+
+
 class AuthTentativa(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     tipo = db.Column(db.String(30), nullable=False)
@@ -16008,6 +16036,92 @@ def api_rh_ponto_solicitacoes_correcao(fid):
     return jsonify([it.to_dict() for it in itens])
 
 
+# ── Afastamentos (atestado médico, licença, etc.) ────────────────────────────
+
+def _afastamento_ativo_na_data(funcionario_id, data_str):
+    """Retorna o primeiro PontoAfastamento ativo para fid na data (YYYY-MM-DD) ou None."""
+    try:
+        return PontoAfastamento.query.filter(
+            PontoAfastamento.funcionario_id == funcionario_id,
+            PontoAfastamento.data_inicio <= data_str,
+            PontoAfastamento.data_fim >= data_str,
+        ).first()
+    except Exception:
+        return None
+
+
+@app.route("/api/funcionarios/<int:fid>/afastamentos", methods=["GET"])
+@lr
+def api_rh_afastamentos_lista(fid):
+    db.get_or_404(Funcionario, fid)
+    itens = (
+        PontoAfastamento.query.filter_by(funcionario_id=fid)
+        .order_by(PontoAfastamento.data_inicio.desc())
+        .all()
+    )
+    return jsonify([it.to_dict() for it in itens])
+
+
+@app.route("/api/funcionarios/<int:fid>/afastamentos", methods=["POST"])
+@_limiter.limit("30 per minute")
+@lr
+def api_rh_afastamento_criar(fid):
+    f = db.get_or_404(Funcionario, fid)
+    d = request.json or {}
+    tipo = (d.get("tipo") or "atestado").strip().lower()
+    if tipo not in ("atestado", "licenca", "outros"):
+        return jsonify({"erro": "Tipo inválido. Use: atestado, licenca ou outros."}), 400
+    data_inicio = (d.get("data_inicio") or "").strip()
+    data_fim = (d.get("data_fim") or "").strip()
+    observacao = (d.get("observacao") or "").strip()[:500]
+    if not data_inicio or not data_fim:
+        return jsonify({"erro": "data_inicio e data_fim são obrigatórios."}), 400
+    try:
+        di = datetime.strptime(data_inicio, "%Y-%m-%d").date()
+        df = datetime.strptime(data_fim, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify({"erro": "Formato de data inválido. Use YYYY-MM-DD."}), 400
+    if df < di:
+        return jsonify({"erro": "data_fim deve ser igual ou posterior a data_inicio."}), 400
+    if (df - di).days > 365:
+        return jsonify({"erro": "Período máximo de afastamento é 365 dias."}), 400
+    af = PontoAfastamento(
+        funcionario_id=fid,
+        empresa_id=f.empresa_id,
+        tipo=tipo,
+        data_inicio=data_inicio,
+        data_fim=data_fim,
+        observacao=observacao,
+        criado_por=session.get("nome") or session.get("email") or "RH",
+        criado_em=utcnow(),
+    )
+    db.session.add(af)
+    db.session.commit()
+    audit_event(
+        "afastamento_criar",
+        "funcionario",
+        fid,
+        "ponto_afastamento",
+        af.id,
+        True,
+        {"tipo": tipo, "data_inicio": data_inicio, "data_fim": data_fim},
+    )
+    return jsonify(af.to_dict()), 201
+
+
+@app.route("/api/funcionarios/<int:fid>/afastamentos/<int:aid>", methods=["DELETE"])
+@lr
+def api_rh_afastamento_excluir(fid, aid):
+    db.get_or_404(Funcionario, fid)
+    af = db.get_or_404(PontoAfastamento, aid)
+    if af.funcionario_id != fid:
+        return jsonify({"erro": "Afastamento não pertence a este funcionário."}), 403
+    db.session.delete(af)
+    db.session.commit()
+    audit_event("afastamento_excluir", "ponto_afastamento", aid, "ponto_afastamento", aid, True, {})
+    return jsonify({"ok": True})
+
+
 @app.route(
     "/api/funcionarios/ponto/solicitacao-correcao/<int:id>/decidir", methods=["POST"]
 )
@@ -17524,6 +17638,25 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
         ).first()
     except Exception:
         fd = None
+
+    # Tipo do dia: atestado > férias > folga_escala > normal
+    dia_tipo = "normal"
+    afastamento_info = None
+    status_func = (funcionario.status or "").strip()
+    if status_func == "Férias":
+        dia_tipo = "ferias"
+    af = _afastamento_ativo_na_data(funcionario.id, data_ref_str)
+    if af:
+        dia_tipo = "atestado"
+        afastamento_info = {
+            "tipo": af.tipo,
+            "data_inicio": af.data_inicio,
+            "data_fim": af.data_fim,
+            "observacao": af.observacao or "",
+        }
+    elif dia_tipo == "normal" and min_esp == 0 and not marcacoes:
+        dia_tipo = "folga"
+
     return {
         "funcionario_id": funcionario.id,
         "funcionario_nome": funcionario.nome,
@@ -17543,6 +17676,8 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
         "correcoes_faltando_pendentes": correcoes_faltando_pendentes,
         "fechado": fd is not None,
         "fechado_por": (fd.fechado_por or "") if fd else "",
+        "dia_tipo": dia_tipo,  # "normal" | "folga" | "ferias" | "atestado"
+        "afastamento_info": afastamento_info,
     }
 
 
@@ -17596,11 +17731,24 @@ def api_app_ponto_dia_me():
 @app_func_required
 def api_app_ponto_marcar_me():
     f = g.app_funcionario
-    if (f.status or "").strip().lower() != "ativo":
+    status_atual = (f.status or "").strip()
+    if status_atual == "Férias":
+        return jsonify(
+            {"erro": "Você está de férias e não pode registrar ponto neste período. Em caso de dúvida, contate o RH."}
+        ), 400
+    if status_atual not in ("Ativo",):
         return jsonify(
             {"erro": "Somente funcionários ativos podem registrar ponto."}
         ), 400
     dados = request.json or {}
+    # Verificar se há atestado/afastamento ativo para hoje
+    data_hoje = utcnow().date().strftime("%Y-%m-%d")
+    af_hoje = _afastamento_ativo_na_data(f.id, data_hoje)
+    if af_hoje:
+        tipo_label = {"atestado": "Atestado médico", "licenca": "Licença", "outros": "Afastamento"}.get(af_hoje.tipo, "Afastamento")
+        return jsonify(
+            {"erro": f"{tipo_label} registrado para hoje. Você não pode bater ponto neste período. Procure o RH se houver algum erro."}
+        ), 400
     tipo = (dados.get("tipo") or "").strip().lower()
     observacao = (dados.get("observacao") or "").strip()[:500]
     # Suporte a ponto offline: aceita data_hora_cliente (ISO UTC) enviado pelo app
@@ -17815,9 +17963,18 @@ def api_app_ponto_marcar_qr_me():
     """Variante de /ponto/marcar que usa um token efêmero gerado pelo totem
     (QR Code). O token comprova presença física e dispensa a checagem de geofence."""
     f = g.app_funcionario
-    if (f.status or "").strip().lower() != "ativo":
+    status_atual = (f.status or "").strip()
+    if status_atual == "Férias":
+        return jsonify({"erro": "Você está de férias e não pode registrar ponto neste período."}), 400
+    if status_atual not in ("Ativo",):
         return jsonify({"erro": "Somente funcionários ativos podem registrar ponto."}), 400
     dados = request.json or {}
+    # Verificar afastamento/atestado ativo
+    data_hoje = utcnow().date().strftime("%Y-%m-%d")
+    af_hoje = _afastamento_ativo_na_data(f.id, data_hoje)
+    if af_hoje:
+        tipo_label = {"atestado": "Atestado médico", "licenca": "Licença", "outros": "Afastamento"}.get(af_hoje.tipo, "Afastamento")
+        return jsonify({"erro": f"{tipo_label} registrado para hoje. Você não pode bater ponto neste período."}), 400
     qr_token = (dados.get("qr_token") or "").strip()
     if not qr_token:
         return jsonify({"erro": "qr_token obrigatorio"}), 400
@@ -32067,6 +32224,21 @@ with app.app_context():
             'tipo VARCHAR(20) DEFAULT "texto"',
             "arquivo_nome VARCHAR(300)",
             "arquivo_caminho VARCHAR(500)",
+        ],
+    )
+    # Migração: tabela de afastamentos/atestados
+    try:
+        db.session.execute(text("SELECT 1 FROM ponto_afastamento LIMIT 1"))
+    except Exception:
+        db.create_all()
+    ensure_cols(
+        "ponto_afastamento",
+        [
+            "empresa_id INTEGER",
+            'tipo VARCHAR(40) DEFAULT "atestado"',
+            "observacao TEXT",
+            "criado_por VARCHAR(100)",
+            "criado_em DATETIME",
         ],
     )
     # Índices compostos para performance de queries frequentes

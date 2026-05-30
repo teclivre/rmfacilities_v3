@@ -695,6 +695,28 @@ class PontoActivity : BaseActivity() {
             tvInconsistencia.visibility = View.GONE
         }
 
+        // Aviso de folga / férias / atestado — bloqueia marcação
+        val diaAviso: String? = when (resumo?.dia_tipo) {
+            "ferias"   -> "🏖️ Você está de férias. Não é possível registrar ponto neste período."
+            "atestado" -> {
+                val tipo = resumo.afastamento_info?.tipo ?: "atestado"
+                val tipoLabel = when (tipo) { "licenca" -> "Licença" "outros" -> "Afastamento" else -> "Atestado médico" }
+                "🏥 $tipoLabel registrado para hoje. Registro de ponto bloqueado."
+            }
+            "folga"    -> "☀️ Hoje é seu dia de folga conforme a escala. Nenhuma marcação é necessária."
+            else       -> null
+        }
+        if (diaAviso != null) {
+            tvInconsistencia.visibility = View.VISIBLE
+            tvInconsistencia.text = diaAviso
+            tvInconsistencia.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_info))
+            btnMarcarPonto.isEnabled = false
+            btnPontoQrCode.isEnabled = false
+        } else {
+            btnMarcarPonto.isEnabled = true
+            btnPontoQrCode.isEnabled = true
+        }
+
         renderMarcacoesComLocais(resumo)
     }
 

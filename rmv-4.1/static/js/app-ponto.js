@@ -101,6 +101,7 @@ async function pontoSelecionarFuncionario(fid,carregar=false){
   if(carregar){
     await pontoCarregarDia();
     await pontoCarregarPainelDia();
+    await pontoCarregarAfastamentos();
   }
 }
 
@@ -1160,4 +1161,99 @@ function _gfSseConnect(){
 _gfSseConnect();
 // Fallback: polling a cada 60s para cobrir eventuais gaps do SSE
 _gfFallbackTimer=setInterval(_gfPollSilent,60000);
+
+// ── Afastamentos / Atestados ──────────────────────────────────────────────────
+
+async function pontoCarregarAfastamentos(){
+  const sel=document.getElementById('ponto-funcionario');
+  const fid=parseInt(sel?.value||'0',10);
+  const el=document.getElementById('ponto-afastamentos-lista');
+  const sec=document.getElementById('ponto-afastamentos-section');
+  if(!el) return;
+  if(!fid){
+    el.textContent='Selecione um colaborador para ver os afastamentos.';
+    if(sec) sec.style.display='none';
+    return;
+  }
+  if(sec) sec.style.display='';
+  el.innerHTML='<div style="color:var(--text-muted);font-size:12px">Carregando…</div>';
+  const r=await api('/api/funcionarios/'+fid+'/afastamentos');
+  if(!Array.isArray(r)||!r.length){
+    el.innerHTML='<div style="color:var(--text-muted);font-size:12px">Nenhum afastamento registrado.</div>';
+    return;
+  }
+  el.innerHTML=r.map(a=>{
+    const tipos={atestado:'🏥 Atestado médico',licenca:'📋 Licença',outros:'📄 Afastamento'};
+    const label=tipos[a.tipo]||'Afastamento';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--borda)">
+      <span style="font-size:12px;flex:1"><strong>${label}</strong> · ${a.periodo_fmt||''} ${a.observacao?`<span style="color:var(--text-muted)">· ${escHtml(a.observacao)}</span>`:''}</span>
+      <span style="font-size:11px;color:var(--text-muted)">${a.criado_fmt||''}</span>
+      <button class="btn b-er b-sm" style="padding:2px 8px;font-size:11px" onclick="pontoExcluirAfastamento(${a.id})">✕</button>
+    </div>`;
+  }).join('');
+}
+
+async function pontoExcluirAfastamento(aid){
+  if(!confirm('Excluir este afastamento?')) return;
+  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
+  const r=await api('/api/funcionarios/'+fid+'/afastamentos/'+aid,'DELETE',{});
+  if(r&&r.erro){showSt('ponto-st',r.erro,true);return;}
+  showSt('ponto-st','Afastamento excluído.',false);
+  await pontoCarregarAfastamentos();
+}
+
+function pontoAbrirModalAfastamento(){
+  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
+  if(!fid){showSt('ponto-st','Selecione um colaborador primeiro.',true);return;}
+  const hoje=pontoDataHojeISO();
+  // Modal inline
+  const _ov=document.createElement('div');
+  _ov.id='_modal-afastamento';
+  _ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  const f=(pontoFuncs||[]).find(x=>String(x.id)===String(fid));
+  _ov.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;max-width:480px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    <div style="font-weight:700;font-size:15px;margin-bottom:14px">🏥 Novo atestado · ${escHtml(f?.nome||'Colaborador')}</div>
+    <div style="display:grid;gap:12px">
+      <div><label style="font-size:12px;display:block;margin-bottom:4px">Tipo</label>
+        <select id="_af-tipo" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px">
+          <option value="atestado">🏥 Atestado médico</option>
+          <option value="licenca">📋 Licença</option>
+          <option value="outros">📄 Outro afastamento</option>
+        </select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label style="font-size:12px;display:block;margin-bottom:4px">Data início <span style="color:red">*</span></label>
+          <input id="_af-inicio" type="date" value="${hoje}" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;box-sizing:border-box"></div>
+        <div><label style="font-size:12px;display:block;margin-bottom:4px">Data fim <span style="color:red">*</span></label>
+          <input id="_af-fim" type="date" value="${hoje}" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;box-sizing:border-box"></div>
+      </div>
+      <div><label style="font-size:12px;display:block;margin-bottom:4px">Observação</label>
+        <input id="_af-obs" placeholder="Ex.: CID J06.9 – consulta médica" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;box-sizing:border-box" maxlength="500"></div>
+    </div>
+    <div id="_af-st" style="margin-top:10px;font-size:12px;color:var(--verm);display:none"></div>
+    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
+      <button id="_af-cancel" style="padding:8px 16px;border:1px solid #ccc;border-radius:8px;cursor:pointer;background:#f5f5f5;font-size:13px">Cancelar</button>
+      <button id="_af-salvar" style="padding:8px 18px;background:#1565c0;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px">Salvar atestado</button>
+    </div>
+  </div>`;
+  document.body.appendChild(_ov);
+  _ov.querySelector('#_af-cancel').onclick=()=>document.body.removeChild(_ov);
+  _ov.querySelector('#_af-salvar').onclick=async ()=>{
+    const tipo=_ov.querySelector('#_af-tipo').value;
+    const inicio=_ov.querySelector('#_af-inicio').value;
+    const fim=_ov.querySelector('#_af-fim').value;
+    const obs=(_ov.querySelector('#_af-obs').value||'').trim();
+    const st=_ov.querySelector('#_af-st');
+    if(!inicio||!fim){st.textContent='Preencha as datas.';st.style.display='';return;}
+    if(fim<inicio){st.textContent='Data fim deve ser igual ou posterior à data início.';st.style.display='';return;}
+    const btn=_ov.querySelector('#_af-salvar');
+    btn.disabled=true;btn.textContent='Salvando…';
+    const r=await api('/api/funcionarios/'+fid+'/afastamentos','POST',{tipo,data_inicio:inicio,data_fim:fim,observacao:obs});
+    btn.disabled=false;btn.textContent='Salvar atestado';
+    if(r&&r.erro){st.textContent=r.erro;st.style.display='';return;}
+    document.body.removeChild(_ov);
+    showSt('ponto-st','Atestado registrado com sucesso!',false);
+    await pontoCarregarAfastamentos();
+  };
+}
 
