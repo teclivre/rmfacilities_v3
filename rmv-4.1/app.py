@@ -8395,6 +8395,12 @@ def pagina_privacidade_publica():
     return render_template("privacidade_publica.html", atualizado_em="16/05/2026")
 
 
+@app.route("/codigo-conduta")
+@app.route("/codigo_conduta")
+def pagina_codigo_conduta():
+    return render_template("codigo_conduta.html")
+
+
 @app.route("/")
 @lr
 def index():
