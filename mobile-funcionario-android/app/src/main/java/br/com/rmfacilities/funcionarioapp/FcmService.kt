@@ -58,6 +58,10 @@ class FcmService : FirebaseMessagingService() {
             "novo_documento" -> "📁 Novo documento disponível"
             "chat", "chat_broadcast" -> "💬 Nova mensagem"
             "aviso_geral" -> "📢 Comunicado do RH"
+            "ferias" -> "✈️ Férias Agendadas"
+            "afastamento" -> "🏥 Afastamento Registrado"
+            "pagamento" -> "💰 Pagamento Disponível"
+            "ponto_lembrete" -> "⏰ Lembrete de Ponto"
             else -> "RM Funcionário"
         }
         val corpo = message.notification?.body ?: data["corpo"] ?: when (tipo) {
@@ -66,6 +70,10 @@ class FcmService : FirebaseMessagingService() {
             "chat" -> "Você recebeu uma nova mensagem."
             "chat_broadcast" -> "Há um aviso novo para você."
             "aviso_geral" -> "Toque para ver o comunicado."
+            "ferias" -> "Suas férias foram agendadas. Toque para ver os detalhes."
+            "afastamento" -> "Um afastamento foi registrado. Toque para ver os detalhes."
+            "pagamento" -> "Seu pagamento está disponível. Toque para ver os detalhes."
+            "ponto_lembrete" -> "Não esqueça de registrar o ponto!"
             else -> "Toque para abrir o aplicativo."
         }
 
@@ -89,6 +97,22 @@ class FcmService : FirebaseMessagingService() {
                 }
             isChat ->
                 Intent(this, MensagensActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+            tipo == "ferias" ->
+                Intent(this, FeriasActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+            tipo == "pagamento" ->
+                Intent(this, PagamentosActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+            tipo == "ponto_lembrete" ->
+                Intent(this, PontoActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+            tipo == "afastamento" ->
+                Intent(this, HomeActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 }
             tipo == "aviso_geral" && !data["url"].isNullOrBlank() -> run {
@@ -129,6 +153,10 @@ class FcmService : FirebaseMessagingService() {
             "novo_documento" -> "Abrir documento"
             "chat", "chat_broadcast" -> "Abrir chat"
             "aviso_geral" -> "Ver comunicado"
+            "ferias" -> "Ver férias"
+            "pagamento" -> "Ver pagamento"
+            "ponto_lembrete" -> "Registrar ponto"
+            "afastamento" -> "Ver detalhes"
             else -> "Abrir"
         }
 

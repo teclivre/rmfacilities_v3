@@ -10617,7 +10617,7 @@ def api_atualizar_funcionario(id):
                         f"{_d1n.strftime('%d/%m/%Y')} a {_d2n.strftime('%d/%m/%Y')} "
                         f"com {_dias_n} {'dia' if _dias_n == 1 else 'dias'} de duração. "
                         f"Previsão de retorno: {_retorno_n}.",
-                        data={"tela": "ferias"},
+                        data={"tipo": "ferias"},
                     )
                 except Exception:
                     pass
@@ -16188,7 +16188,7 @@ def api_rh_afastamento_criar(fid):
             _corpo_af += f" Obs: {observacao}"
         _push_notify_funcionario(
             fid, _titulo_af, _corpo_af,
-            data={"tela": "afastamentos"},
+            data={"tipo": "afastamento"},
         )
     except Exception:
         pass
@@ -19324,7 +19324,7 @@ def api_ponto_lembretes_escala():
                         "⏰ Lembrete de Ponto",
                         f"{nome_curto}, seu turno começa às {hora_entrada_str}. "
                         "Não esqueça de registrar sua entrada!",
-                        data={"tela": "ponto"},
+                        data={"tipo": "ponto_lembrete"},
                     )
                     if ok:
                         enviou = True
@@ -19337,7 +19337,7 @@ def api_ponto_lembretes_escala():
                         "⏰ Lembrete de Saída",
                         f"{nome_curto}, seu turno termina às {hora_saida_str}. "
                         "Não esqueça de registrar sua saída!",
-                        data={"tela": "ponto"},
+                        data={"tipo": "ponto_lembrete"},
                     )
                     if ok:
                         enviou = True
@@ -26527,7 +26527,7 @@ def api_financeiro_salarios_fechar():
                         f"{_nome}, seu pagamento referente a {label} está disponível. "
                         f"Valor líquido: R$ {_total:,.2f}. "
                         "Acesse o app para mais detalhes.",
-                        data={"tela": "pagamento", "competencia": label},
+                        data={"tipo": "pagamento", "competencia": label},
                     )
                 except Exception:
                     pass
