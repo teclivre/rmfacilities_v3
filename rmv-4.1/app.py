@@ -18980,6 +18980,7 @@ def api_rh_comunicados_lista():
 
 
 @app.route("/api/comunicados-app", methods=["POST"])
+@_limiter.limit("5 per minute; 10 per hour")
 @lr
 def api_rh_comunicado_criar():
     d = request.json or {}
@@ -18995,11 +18996,14 @@ def api_rh_comunicado_criar():
         return jsonify({"erro": "URL inválida. Use http:// ou https://"}), 400
     fid = d.get("funcionario_id")
     posto = (d.get("posto_operacional") or "").strip() or None
-    # Determinar empresa_id para isolar o comunicado por tenant
+    # empresa_id: usar empresa do funcionário alvo (individual) ou a empresa enviada pelo RH (broadcast)
+    empresa_id_req = d.get("empresa_id")
     empresa_id_comunicado = None
     if fid:
         func_alvo = db.session.get(Funcionario, int(fid))
         empresa_id_comunicado = getattr(func_alvo, "empresa_id", None) if func_alvo else None
+    elif empresa_id_req and str(empresa_id_req).isdigit():
+        empresa_id_comunicado = int(empresa_id_req)
     c = ComunicadoApp(
         titulo=titulo,
         conteudo=conteudo,
@@ -19016,11 +19020,15 @@ def api_rh_comunicado_criar():
     push_data = {"tipo": "aviso_geral", "comunicado_id": str(c.id)}
     if url:
         push_data["url"] = url
-    corpo_push = url if url else conteudo[:160]
+    # Bug P-N2: corpo da notificação sempre usa o texto, nunca a URL
+    corpo_push = conteudo[:160]
     if fid:
         _push_notify_funcionario(int(fid), titulo, corpo_push, data=push_data)
     else:
+        # Bug P-N1: filtrar por empresa para evitar broadcast cross-tenant
         q = Funcionario.query.filter_by(status="Ativo", app_ativo=True)
+        if empresa_id_comunicado:
+            q = q.filter(Funcionario.empresa_id == empresa_id_comunicado)
         if posto:
             q = q.filter(Funcionario.posto_operacional == posto)
         for func in q.all():
@@ -19032,6 +19040,9 @@ def api_rh_comunicado_criar():
 @lr
 def api_rh_comunicado_editar(cid):
     c = db.get_or_404(ComunicadoApp, cid)
+    _emp_req = (request.json or {}).get("empresa_id") or request.args.get("empresa_id", type=int)
+    if _emp_req is not None and c.empresa_id is not None and int(c.empresa_id) != int(_emp_req):
+        return jsonify({"erro": "Acesso negado: empresa não autorizada."}), 403
     d = request.json or {}
     if "titulo" in d:
         c.titulo = (d["titulo"] or "").strip()
@@ -19052,6 +19063,9 @@ def api_rh_comunicado_editar(cid):
 @lr
 def api_rh_comunicado_excluir(cid):
     c = db.get_or_404(ComunicadoApp, cid)
+    _emp_req = request.args.get("empresa_id", type=int)
+    if _emp_req is not None and c.empresa_id is not None and int(c.empresa_id) != int(_emp_req):
+        return jsonify({"erro": "Acesso negado: empresa não autorizada."}), 403
     c.ativo = False
     db.session.commit()
     audit_event(

@@ -14825,8 +14825,9 @@ async function mapsCriarComunicado(){
   const url=(document.getElementById('com-url').value||'').trim()||null;
   const fid=document.getElementById('com-fid').value||null;
   const posto=(document.getElementById('com-posto').value||'').trim()||null;
+  const empId=document.getElementById('com-empresa').value||null;
   if(!titulo||!conteudo){showSt('com-st','Preencha título e conteúdo.',true);return;}
-  const r=await api('/api/comunicados-app','POST',{titulo,conteudo,url,funcionario_id:fid?parseInt(fid):null,posto_operacional:posto});
+  const r=await api('/api/comunicados-app','POST',{titulo,conteudo,url,funcionario_id:fid?parseInt(fid):null,posto_operacional:posto,empresa_id:empId?parseInt(empId):null});
   if(r.erro){showSt('com-st',r.erro,true);return;}
   document.getElementById('com-titulo').value='';
   document.getElementById('com-conteudo').value='';
