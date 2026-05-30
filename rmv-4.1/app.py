@@ -1099,6 +1099,7 @@ def api_despesas_delete(id):
 
 
 @app.route("/api/despesas/export.csv", methods=["GET"])
+@_limiter.limit("10 per minute")
 @lr
 def api_despesas_export_csv():
     lista = _build_despesas_query(request.args).all()
@@ -1364,6 +1365,7 @@ def api_financeiro_faturamento_list():
 
 
 @app.route("/api/financeiro/faturamento/export.csv", methods=["GET"])
+@_limiter.limit("10 per minute")
 @lr
 def api_financeiro_faturamento_export_csv():
     try:
@@ -9365,10 +9367,10 @@ def api_funcionarios_import():
                         str(row.get("posto_operacional") or "").strip()
                         or "Reserva tecnica"
                     )
-                    f.salario = to_num(row.get("salario"), dec=True)
-                    f.vale_refeicao = to_num(row.get("vale_refeicao"), dec=True)
-                    f.vale_alimentacao = to_num(row.get("vale_alimentacao"), dec=True)
-                    f.vale_transporte = to_num(row.get("vale_transporte"), dec=True)
+                    f.salario = max(0.0, to_num(row.get("salario"), dec=True) or 0)
+                    f.vale_refeicao = max(0.0, to_num(row.get("vale_refeicao"), dec=True) or 0)
+                    f.vale_alimentacao = max(0.0, to_num(row.get("vale_alimentacao"), dec=True) or 0)
+                    f.vale_transporte = max(0.0, to_num(row.get("vale_transporte"), dec=True) or 0)
                     f.cep = norm_cep(str(row.get("cep", "") or "").strip())
                     f.endereco = str(row.get("endereco", "") or "").strip()
                     f.endereco_numero = str(
@@ -10181,6 +10183,7 @@ def _export_funcionarios_ativos_pdf(funcs, include_salario=False):
 
 
 @app.route("/api/funcionarios/ativos/exportar")
+@_limiter.limit("10 per minute")
 @lr
 def api_funcionarios_ativos_exportar():
     formato = (request.args.get("formato") or "xlsx").strip().lower()
@@ -10317,10 +10320,10 @@ def api_criar_funcionario():
         # BUG-FIX: respeitar posto_operacional enviado pelo formulário;
         # antes o campo era sempre sobrescrito com 'Reserva tecnica' no POST.
         posto_operacional=(d.get("posto_operacional") or "Reserva tecnica").strip() or "Reserva tecnica",
-        salario=to_num(d.get("salario"), dec=True),
-        vale_refeicao=to_num(d.get("vale_refeicao"), dec=True),
-        vale_alimentacao=to_num(d.get("vale_alimentacao"), dec=True),
-        vale_transporte=to_num(d.get("vale_transporte"), dec=True),
+        salario=max(0.0, to_num(d.get("salario"), dec=True) or 0),
+        vale_refeicao=max(0.0, to_num(d.get("vale_refeicao"), dec=True) or 0),
+        vale_alimentacao=max(0.0, to_num(d.get("vale_alimentacao"), dec=True) or 0),
+        vale_transporte=max(0.0, to_num(d.get("vale_transporte"), dec=True) or 0),
         endereco=d.get("endereco", "").strip(),
         cidade=d.get("cidade", "").strip(),
         estado=norm_uf(d.get("estado", "")),
@@ -10493,13 +10496,13 @@ def api_atualizar_funcionario(id):
                 f.status = "Ativo"
                 f.app_ativo = True
     if "salario" in d:
-        f.salario = to_num(d.get("salario"), dec=True)
+        f.salario = max(0.0, to_num(d.get("salario"), dec=True) or 0)
     if "vale_refeicao" in d:
-        f.vale_refeicao = to_num(d.get("vale_refeicao"), dec=True)
+        f.vale_refeicao = max(0.0, to_num(d.get("vale_refeicao"), dec=True) or 0)
     if "vale_alimentacao" in d:
-        f.vale_alimentacao = to_num(d.get("vale_alimentacao"), dec=True)
+        f.vale_alimentacao = max(0.0, to_num(d.get("vale_alimentacao"), dec=True) or 0)
     if "vale_transporte" in d:
-        f.vale_transporte = to_num(d.get("vale_transporte"), dec=True)
+        f.vale_transporte = max(0.0, to_num(d.get("vale_transporte"), dec=True) or 0)
     if "opta_vt" in d:
         f.opta_vt = to_bool(d.get("opta_vt"))
     if "opta_vr" in d:
@@ -10515,9 +10518,9 @@ def api_atualizar_funcionario(id):
     if "premio_produtividade" in d:
         f.premio_produtividade = to_num(d.get("premio_produtividade"), dec=True)
     if "vale_gasolina" in d:
-        f.vale_gasolina = to_num(d.get("vale_gasolina"), dec=True)
+        f.vale_gasolina = max(0.0, to_num(d.get("vale_gasolina"), dec=True) or 0)
     if "cesta_natal" in d:
-        f.cesta_natal = to_num(d.get("cesta_natal"), dec=True)
+        f.cesta_natal = max(0.0, to_num(d.get("cesta_natal"), dec=True) or 0)
     if "docs_admissao_ok" in d:
         f.docs_admissao_ok = to_bool(d.get("docs_admissao_ok"))
     if "data_nascimento" in d:
@@ -18106,6 +18109,7 @@ def api_app_ponto_resumo_mes():
 
 
 @app.route("/api/app/funcionario/me/ponto/espelho/pdf")
+@_limiter.limit("10 per hour")
 @app_func_required
 def api_app_ponto_espelho_pdf_me():
     """Gera e retorna PDF da folha de ponto somente se fechada pelo gestor."""
@@ -26500,6 +26504,7 @@ def api_financeiro_salarios_modelo():
 
 
 @app.route("/api/financeiro/salarios/export.xlsx")
+@_limiter.limit("5 per minute")
 @lr
 def api_financeiro_salarios_export_xlsx():
     from openpyxl import Workbook
@@ -26667,6 +26672,7 @@ def api_financeiro_salarios_export_xlsx():
 
 
 @app.route("/api/financeiro/salarios/export.pdf")
+@_limiter.limit("5 per minute")
 @lr
 def api_financeiro_salarios_export_pdf():
     from reportlab.lib.pagesizes import A4
@@ -27413,6 +27419,7 @@ def api_folhas_funcionarios_disponiveis():
 
 
 @app.route("/api/folhas/<int:fid>/export.xlsx", methods=["GET"])
+@_limiter.limit("10 per minute")
 @lr
 def api_folhas_export_xlsx(fid):
     f = db.get_or_404(FolhaPagamento, fid)
@@ -27492,6 +27499,7 @@ def api_folhas_export_xlsx(fid):
 
 
 @app.route("/api/folhas/<int:fid>/export.pdf", methods=["GET"])
+@_limiter.limit("10 per minute")
 @lr
 def api_folhas_export_pdf(fid):
     f = db.get_or_404(FolhaPagamento, fid)
