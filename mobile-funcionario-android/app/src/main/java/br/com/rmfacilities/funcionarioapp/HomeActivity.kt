@@ -657,7 +657,9 @@ class HomeActivity : BaseActivity() {
             .create()
         loading.show()
         lifecycleScope.launch {
-            val resp = try { api.historicoBeneficios() } catch (_: Exception) { null }
+            val resp = withContext(Dispatchers.IO) {
+                try { api.historicoBeneficios() } catch (_: Exception) { null }
+            }
             withContext(Dispatchers.Main) {
                 loading.dismiss()
                 val historico = resp?.historico ?: emptyList()
