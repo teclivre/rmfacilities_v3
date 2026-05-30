@@ -62,6 +62,40 @@
     </div>
   </div>
 </div>
+<!-- Modal Prévia Pagamentos Avulsos -->
+<div id="modal-ben-avulso-previa" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:4000;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:700px;width:100%;padding:24px;box-shadow:var(--shadow-md);border:1px solid var(--borda);max-height:90vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="font-size:16px;font-weight:700">💳 Prévia de Pagamentos Avulsos</div>
+      <button class="btn b-gh b-sm" onclick="document.getElementById('modal-ben-avulso-previa').style.display='none'">✕</button>
+    </div>
+    <div id="ben-avulso-previa-comp" style="font-size:13px;color:var(--text-muted);margin-bottom:12px"></div>
+    <div style="overflow:auto;flex:1">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:var(--fundo-alt)">
+            <th style="padding:8px;text-align:left;border-bottom:2px solid var(--borda)">Colaborador</th>
+            <th style="padding:8px;text-align:left;border-bottom:2px solid var(--borda)">Benefício</th>
+            <th style="padding:8px;text-align:center;border-bottom:2px solid var(--borda)">Dias</th>
+            <th style="padding:8px;text-align:right;border-bottom:2px solid var(--borda)">Valor Unit.</th>
+            <th style="padding:8px;text-align:right;border-bottom:2px solid var(--borda)">Total</th>
+          </tr>
+        </thead>
+        <tbody id="ben-avulso-previa-tbody"></tbody>
+        <tfoot>
+          <tr style="font-weight:700;background:var(--fundo-alt)">
+            <td colspan="4" style="padding:8px;border-top:2px solid var(--borda)">Total geral</td>
+            <td id="ben-avulso-previa-total" style="padding:8px;text-align:right;border-top:2px solid var(--borda)"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn b-gh b-sm" onclick="document.getElementById('modal-ben-avulso-previa').style.display='none'">Fechar</button>
+      <button class="btn b-sm" id="btn-ben-previa-notif" style="background:var(--azul);color:#fff;border:1px solid var(--azul)" onclick="benNotificarAvulso()">📲 Notificar todos desta prévia</button>
+    </div>
+  </div>
+</div>
 <!-- Modal Marcar como Paga -->
 <div id="modal-marcar-paga" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;align-items:center;justify-content:center;padding:16px">
   <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:380px;width:100%;padding:28px 24px;box-shadow:var(--shadow-md);border:1px solid var(--borda)">
@@ -2999,6 +3033,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button class="btn b-az" onclick="benAvulsoSalvar()">&#128190; Salvar lançamentos avulsos</button>
               <button class="btn b-gh b-sm" onclick="benAvulsoLimpar()">&#10005; Limpar lista</button>
+              <button class="btn b-gh b-sm" onclick="benAvulsoPrevia()">&#128269; Prévia</button>
               <button id="btn-ben-notif-avulso" class="btn b-sm" style="background:var(--azul);color:#fff;border:1px solid var(--azul)" onclick="benNotificarAvulso()">📲 Notificar adicionados</button>
               <span id="ben-avulso-notif-status" style="font-size:12px;color:var(--verde);display:none;align-self:center"></span>
             </div>
@@ -14088,13 +14123,58 @@ async function benNotificarColaboradores(){
   }
 }
 
+function benAvulsoPrevia(){
+  const comp=benComp();
+  const lista = benAvulsoSelecionados.length ? benAvulsoSelecionados
+    : (beneficiosMensais||[]).filter(b => benAvulsoUltimosIds.includes(b.funcionario_id)).map(b=>{
+        // Reconstruir itens a partir dos dados salvos
+        const rows=[];
+        const tl={vt:'Vale Transporte',vr:'Vale Refeição',va:'Vale Alimentação',pp:'Prêmio Produtividade',vg:'Vale Gasolina',cn:'Cesta de Natal'};
+        if((b.vale_transporte||0)>0) rows.push({nome:b.nome||b.funcionario_id,re:b.re||'',posto:b.posto||'',tipo:'vt',dias:b.dias_vt||0,valor:b.vale_transporte,funcionario_id:b.funcionario_id});
+        if((b.vale_refeicao||0)>0) rows.push({nome:b.nome||b.funcionario_id,re:b.re||'',posto:b.posto||'',tipo:'vr',dias:b.dias_vr||0,valor:b.vale_refeicao,funcionario_id:b.funcionario_id});
+        if((b.vale_alimentacao||0)>0) rows.push({nome:b.nome||b.funcionario_id,re:b.re||'',posto:b.posto||'',tipo:'va',dias:0,valor:b.vale_alimentacao,funcionario_id:b.funcionario_id});
+        if((b.premio_produtividade||0)>0) rows.push({nome:b.nome||b.funcionario_id,re:b.re||'',posto:b.posto||'',tipo:'pp',dias:0,valor:b.premio_produtividade,funcionario_id:b.funcionario_id});
+        if((b.vale_gasolina||0)>0) rows.push({nome:b.nome||b.funcionario_id,re:b.re||'',posto:b.posto||'',tipo:'vg',dias:b.dias_vg||0,valor:b.vale_gasolina,funcionario_id:b.funcionario_id});
+        if((b.cesta_natal||0)>0) rows.push({nome:b.nome||b.funcionario_id,re:b.re||'',posto:b.posto||'',tipo:'cn',dias:0,valor:b.cesta_natal,funcionario_id:b.funcionario_id});
+        return rows;
+      }).flat();
+  if(!lista.length){ toast('Nenhum dado disponível para prévia. Adicione colaboradores ou salve os lançamentos.','e'); return; }
+  const tipoLabel={vt:'Vale Transporte',vr:'Vale Refeição',va:'Vale Alimentação',pp:'Prêmio Produtividade',vg:'Vale Gasolina',cn:'Cesta de Natal'};
+  const temDias=t=>['vt','vr','vg'].includes(t);
+  const fmt=v=>`R$ ${Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2})}` ;
+  let totalGeral=0;
+  const rows=lista.map(it=>{
+    const total=temDias(it.tipo)?Number(it.valor)*Number(it.dias||1):Number(it.valor);
+    totalGeral+=total;
+    return `<tr style="border-bottom:1px solid var(--borda)">
+      <td style="padding:7px 8px"><b>${fpEsc(it.nome)}</b><br><small style="color:var(--text-muted)">${fpEsc(it.re||'')}${it.posto?` · ${fpEsc(it.posto)}`:''}</small></td>
+      <td style="padding:7px 8px">${tipoLabel[it.tipo]||it.tipo}</td>
+      <td style="padding:7px 8px;text-align:center">${temDias(it.tipo)?it.dias:'—'}</td>
+      <td style="padding:7px 8px;text-align:right">${fmt(it.valor)}</td>
+      <td style="padding:7px 8px;text-align:right;font-weight:600">${fmt(total)}</td>
+    </tr>`;
+  }).join('');
+  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const partes=comp.split('-');
+  const compLabel=/^\d{4}-\d{2}$/.test(comp)?`${meses[parseInt(partes[1])-1]}/${partes[0]}`:comp;
+  document.getElementById('ben-avulso-previa-comp').textContent=`Competência: ${compLabel} · ${lista.length} item(ns) · ${[...new Set(lista.map(x=>x.funcionario_id))].length} colaborador(es)`;
+  document.getElementById('ben-avulso-previa-tbody').innerHTML=rows;
+  document.getElementById('ben-avulso-previa-total').textContent=fmt(totalGeral);
+  const modal=document.getElementById('modal-ben-avulso-previa');
+  modal.style.display='flex';
+}
+
 async function benNotificarAvulso(){
   const comp=benComp();
   if(!/^\d{4}-\d{2}$/.test(comp)){ toast('Competência inválida.','e'); return; }
+  // Usa lista atual OU IDs do último salvar
+  const ids = benAvulsoSelecionados.length
+    ? [...new Set(benAvulsoSelecionados.map(x=>x.funcionario_id))]
+    : benAvulsoUltimosIds.slice();
+  if(!ids.length){ toast('Nenhum dado para notificar. Adicione colaboradores ou salve os lançamentos primeiro.','e'); return; }
   const statusEl=document.getElementById('ben-avulso-notif-status');
   const btn=document.getElementById('btn-ben-notif-avulso');
-  if(!benAvulsoSelecionados.length){ toast('Adicione funcionários à lista antes de notificar.','e'); return; }
-  const ids=[...new Set(benAvulsoSelecionados.map(x=>x.funcionario_id))];
+  const btnPrevia=document.getElementById('btn-ben-previa-notif');
   const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const partes=comp.split('-');
   const compLabel=`${meses[parseInt(partes[1])-1]}/${partes[0]}`;
@@ -14102,7 +14182,10 @@ async function benNotificarAvulso(){
     `Enviar notificação de benefícios avulsos de ${compLabel} para ${ids.length} colaborador(es)?\n\n`+
     `Certifique-se de que os lançamentos já foram salvos antes de notificar.`
   )) return;
+  // Fecha modal de prévia se estiver aberto
+  document.getElementById('modal-ben-avulso-previa').style.display='none';
   if(btn){ btn.disabled=true; btn.textContent='Enviando...'; }
+  if(btnPrevia){ btnPrevia.disabled=true; }
   if(statusEl) statusEl.style.display='none';
   try{
     const empresaId=benEmp()?parseInt(benEmp(),10):null;
@@ -14111,17 +14194,22 @@ async function benNotificarAvulso(){
     const r=await api('/api/beneficios/notificar','POST',body);
     if(r?.erro) throw new Error(r.erro);
     const enviados=r.enviados||0;
-    if(statusEl){ statusEl.textContent=`✓ ${enviados} notificação(ões) enviada(s)`; statusEl.style.display=''; }
-    setTimeout(()=>{ if(statusEl) statusEl.style.display='none'; },5000);
+    const semToken=r.sem_token||0;
+    let msg=`✓ ${enviados} notificação(ões) enviada(s)`;
+    if(semToken) msg+=` · ${semToken} sem app`;
+    if(statusEl){ statusEl.textContent=msg; statusEl.style.display=''; }
+    setTimeout(()=>{ if(statusEl) statusEl.style.display='none'; },6000);
   }catch(e){
     toast('Erro ao notificar: '+e.message,'e');
   }finally{
     if(btn){ btn.disabled=false; btn.textContent='📲 Notificar adicionados'; }
+    if(btnPrevia){ btnPrevia.disabled=false; }
   }
 }
 
 // ── Benefício Avulso ──────────────────────────────────────────────────────────
 let benAvulsoSelecionados = [];
+let benAvulsoUltimosIds = []; // IDs preservados após o último salvar
 
 function benAvulsoFiltrar(){
   const q = (document.getElementById('ben-avulso-busca')?.value||'').trim().toLowerCase();
@@ -14286,6 +14374,7 @@ async function benAvulsoSalvar(){
   const r = await api('/api/beneficios/lancamentos','POST',{competencia:comp, itens});
   if(r?.erro){ toast(r.erro,'e'); return; }
   toast(`${itens.length} lançamento(s) avulso(s) salvo(s) para ${comp}.`,'s');
+  benAvulsoUltimosIds = Object.keys(byFunc).map(Number);
   benAvulsoLimpar();
   await carregarBeneficiosMensais();
 }
