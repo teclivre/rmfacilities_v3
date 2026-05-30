@@ -4982,6 +4982,12 @@ async function api(url,m='GET',b=null){
   };
 })();
 
+// Alias de conveniência para rmToast com tipos curtos: s=ok e=er w=wn i=in
+function toast(msg, type='i', title='', duration=4000){
+  const _map = {s:'ok', e:'er', w:'wn', i:'in', ok:'ok', er:'er', wn:'wn', in:'in'};
+  return window.rmToast(msg, _map[type]||'in', title, duration);
+}
+
 // ── Progress bar (top) ───────────────────────────────────────────────────────
 (function(){
   let _bar = null, _tid = null;
