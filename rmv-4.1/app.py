@@ -10601,26 +10601,29 @@ def api_atualizar_funcionario(id):
                 if _changed:
                     db.session.commit()
             # Notificação push ao colaborador informando as férias agendadas.
-            _ini_n = (f.ferias_inicio or "").strip()
-            _fim_n = (f.ferias_fim or "").strip()
-            if _ini_n and _fim_n:
-                try:
-                    from datetime import date as _dfc
-                    _d1n = _dfc.fromisoformat(_ini_n)
-                    _d2n = _dfc.fromisoformat(_fim_n)
-                    _dias_n = (_d2n - _d1n).days + 1
-                    _retorno_n = (_d2n + __import__("datetime").timedelta(days=1)).strftime("%d/%m/%Y")
-                    _push_notify_funcionario(
-                        f.id,
-                        "Férias Agendadas ✈️",
-                        f"{f.nome}, suas férias estão agendadas de "
-                        f"{_d1n.strftime('%d/%m/%Y')} a {_d2n.strftime('%d/%m/%Y')} "
-                        f"com {_dias_n} {'dia' if _dias_n == 1 else 'dias'} de duração. "
-                        f"Previsão de retorno: {_retorno_n}.",
-                        data={"tipo": "ferias"},
-                    )
-                except Exception:
-                    pass
+            # Só envia se o campo "notificar_ferias" for explicitamente True no payload,
+            # evitando spam em cada edição intermediária de data.
+            if to_bool(d.get("notificar_ferias")):
+                _ini_n = (f.ferias_inicio or "").strip()
+                _fim_n = (f.ferias_fim or "").strip()
+                if _ini_n and _fim_n:
+                    try:
+                        from datetime import date as _dfc
+                        _d1n = _dfc.fromisoformat(_ini_n)
+                        _d2n = _dfc.fromisoformat(_fim_n)
+                        _dias_n = (_d2n - _d1n).days + 1
+                        _retorno_n = (_d2n + __import__("datetime").timedelta(days=1)).strftime("%d/%m/%Y")
+                        _push_notify_funcionario(
+                            f.id,
+                            "Férias Agendadas ✈️",
+                            f"{f.nome}, suas férias estão agendadas de "
+                            f"{_d1n.strftime('%d/%m/%Y')} a {_d2n.strftime('%d/%m/%Y')} "
+                            f"com {_dias_n} {'dia' if _dias_n == 1 else 'dias'} de duração. "
+                            f"Previsão de retorno: {_retorno_n}.",
+                            data={"tipo": "ferias"},
+                        )
+                    except Exception:
+                        pass
         # BUG-FIX: registrar auditoria na edição (antes só o DELETE registrava).
         audit_event(
             "funcionario_editar",
