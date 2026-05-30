@@ -2738,10 +2738,20 @@ class ComunicadoApp(db.Model):
             return []
 
     def marcar_lido(self, fid):
-        lst = self.lidos_por()
-        if fid not in lst:
-            lst.append(fid)
-            self.lidos_por_json = json.dumps(lst)
+        # UPDATE atômico via SQL para evitar race condition no campo JSON
+        db.session.execute(
+            db.text(
+                "UPDATE comunicado_app "
+                "SET lidos_por_json = ("
+                "  CASE WHEN ("
+                "    SELECT COUNT(*) FROM json_each(COALESCE(lidos_por_json,'[]')) WHERE value = :fid"
+                "  ) = 0 "
+                "  THEN json_insert(COALESCE(lidos_por_json,'[]'), '$[#]', :fid) "
+                "  ELSE COALESCE(lidos_por_json,'[]') END) "
+                "WHERE id = :cid"
+            ),
+            {"fid": fid, "cid": self.id},
+        )
 
     def to_dict(self, funcionario_id=None):
         # Whitelist: omite funcionario_id e posto_operacional (metadados internos).
@@ -17108,7 +17118,7 @@ def api_app_mensagem_enviar_arquivo():
     conteudo = (request.form.get("conteudo") or "").strip()[:500]
     pasta = os.path.join(UPLOAD_ROOT, "funcionarios", str(f.id), "chat")
     os.makedirs(pasta, exist_ok=True)
-    ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    ts = utcnow().strftime("%Y%m%d%H%M%S")
     nome_final = f"{ts}_{nome_orig}"
     abs_p = os.path.join(pasta, nome_final)
     arq.save(abs_p)
@@ -18943,7 +18953,11 @@ def api_escala_turno_do_dia(id, data):
 @app.route("/api/comunicados-app", methods=["GET"])
 @lr
 def api_rh_comunicados_lista():
-    itens = ComunicadoApp.query.order_by(ComunicadoApp.criado_em.desc()).all()
+    empresa_id = request.args.get("empresa_id")
+    q = ComunicadoApp.query
+    if empresa_id and str(empresa_id).isdigit():
+        q = q.filter_by(empresa_id=int(empresa_id))
+    itens = q.order_by(ComunicadoApp.criado_em.desc()).all()
     return jsonify([c.to_dict() for c in itens])
 
 
@@ -19045,21 +19059,23 @@ def api_rh_mensagens_funcionarios():
     """Lista funcionários que têm mensagens + contagem de não lidas."""
     from sqlalchemy import func as sqlfunc
 
-    subq = (
-        db.session.query(
-            MensagemApp.funcionario_id,
-            sqlfunc.count(MensagemApp.id).label("total"),
-            sqlfunc.sum(
-                db.cast(
-                    db.and_(MensagemApp.de_rh == False, MensagemApp.lida == False),
-                    db.Integer,
-                )
-            ).label("nao_lidas"),
-            sqlfunc.max(MensagemApp.enviado_em).label("ultima"),
-        )
-        .group_by(MensagemApp.funcionario_id)
-        .all()
+    empresa_id = request.args.get("empresa_id")
+    base_q = db.session.query(
+        MensagemApp.funcionario_id,
+        sqlfunc.count(MensagemApp.id).label("total"),
+        sqlfunc.sum(
+            db.cast(
+                db.and_(MensagemApp.de_rh == False, MensagemApp.lida == False),
+                db.Integer,
+            )
+        ).label("nao_lidas"),
+        sqlfunc.max(MensagemApp.enviado_em).label("ultima"),
     )
+    if empresa_id and str(empresa_id).isdigit():
+        base_q = base_q.join(
+            Funcionario, MensagemApp.funcionario_id == Funcionario.id
+        ).filter(Funcionario.empresa_id == int(empresa_id))
+    subq = base_q.group_by(MensagemApp.funcionario_id).all()
     result = []
     for row in subq:
         f = db.session.get(Funcionario, row.funcionario_id)
@@ -19128,11 +19144,18 @@ def api_rh_mensagem_responder(fid):
 @app.route("/api/mensagens-app/nao-lidas-total")
 @lr
 def api_rh_mensagens_nao_lidas_total():
-    count = MensagemApp.query.filter_by(de_rh=False, lida=False).count()
+    empresa_id = request.args.get("empresa_id")
+    q = MensagemApp.query.filter_by(de_rh=False, lida=False)
+    if empresa_id and str(empresa_id).isdigit():
+        q = q.join(Funcionario, MensagemApp.funcionario_id == Funcionario.id).filter(
+            Funcionario.empresa_id == int(empresa_id)
+        )
+    count = q.count()
     return jsonify({"nao_lidas": count})
 
 
 @app.route("/api/mensagens-app/broadcast", methods=["POST"])
+@_limiter.limit("5 per minute")
 @lr
 def api_rh_mensagens_broadcast():
     d = request.json or {}
@@ -19142,11 +19165,12 @@ def api_rh_mensagens_broadcast():
     if len(conteudo) > 2000:
         return jsonify({"erro": "Mensagem muito longa"}), 400
     empresa_id = d.get("empresa_id")
+    if not empresa_id or not str(empresa_id).isdigit():
+        return jsonify({"erro": "empresa_id é obrigatório para broadcast"}), 400
+    empresa_id = int(empresa_id)
     posto = (d.get("posto") or "").strip()
     nome_rh = session.get("nome") or session.get("email") or "RH"
-    q = Funcionario.query.filter_by(status="Ativo", app_ativo=True)
-    if empresa_id:
-        q = q.filter_by(empresa_id=int(empresa_id))
+    q = Funcionario.query.filter_by(status="Ativo", app_ativo=True, empresa_id=empresa_id)
     if posto:
         q = q.filter(Funcionario.posto_operacional.ilike(f"%{posto}%"))
     funcs = q.all()
