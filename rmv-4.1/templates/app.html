@@ -1094,6 +1094,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-vd b-sm" type="button" id="fp-btn-fechar" onclick="fpFecharFolha()">✓ Fechar folha</button>
             <button class="btn b-gh b-sm" type="button" id="fp-btn-reabrir" style="display:none" onclick="fpReabrirFolha()">↺ Reabrir</button>
             <button class="btn b-vd b-sm" type="button" id="fp-btn-pagar" style="display:none" onclick="fpMarcarPaga()">💰 Marcar como paga</button>
+            <button class="btn b-sm" type="button" id="fp-btn-notificar" style="background:var(--azul);color:#fff;border:1px solid var(--azul)" onclick="fpNotificarFuncionarios()">📲 Notificar funcionários</button>
             <button class="btn b-az b-sm" type="button" onclick="fpAbrirPrevia()">👁 Prévia</button>
             <button class="btn b-gh b-sm" type="button" onclick="fpExportar('xlsx')">⬇ XLSX</button>
             <button class="btn b-gh b-sm" type="button" onclick="fpExportar('pdf')">⬇ PDF</button>
@@ -11836,6 +11837,36 @@ function fpExportar(fmt){
   if(!f){ toast('Selecione uma folha.','e'); return; }
   const url = `/api/folhas/${f.id}/export.${fmt==='pdf'?'pdf':'xlsx'}`;
   window.open(url, '_blank');
+}
+
+async function fpNotificarFuncionarios(){
+  const f = FP_STATE.folhaSelecionada;
+  if(!f){ toast('Selecione uma folha.','e'); return; }
+  const qtd = (f.itens||[]).length;
+  if(!qtd){ toast('Nenhum funcionário na folha.','e'); return; }
+  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const partes=(f.competencia||'').split('-');
+  const compLabel=/^\d{4}-\d{2}$/.test(f.competencia||'')?`${meses[parseInt(partes[1])-1]}/${partes[0]}`:(f.competencia||'');
+  if(!confirm(
+    `Enviar notificação de pagamento de ${compLabel} para os funcionários desta folha?\n\n`+
+    `Cada funcionário receberá o valor líquido referente a esta competência.\n\n`+
+    `Certifique-se de que os dados estão corretos antes de enviar.`
+  )) return;
+  const btn = document.getElementById('fp-btn-notificar');
+  if(btn){ btn.disabled=true; btn.textContent='Enviando...'; }
+  try{
+    const r = await api(`/api/folhas/${f.id}/notificar`, 'POST');
+    if(r?.erro || r?.error) throw new Error(r.erro||r.error);
+    const enviados = r.enviados||0;
+    const semToken = r.sem_token||0;
+    let msg = `✓ ${enviados} notificação(ões) enviada(s)`;
+    if(semToken) msg += ` · ${semToken} sem app instalado`;
+    toast(msg, 's');
+  }catch(e){
+    toast('Erro ao notificar: '+e.message, 'e');
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='📲 Notificar funcionários'; }
+  }
 }
 
 // ── Filtros de itens na tabela da folha ──────────────────────────────────────

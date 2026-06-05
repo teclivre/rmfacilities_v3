@@ -235,6 +235,15 @@ def _filter_fmt_cnpj(v):
     return v  # devolve original se não tiver 14 dígitos
 
 
+@app.template_filter("fmt_cpf")
+def _filter_fmt_cpf(v):
+    """Formata string de dígitos como CPF: XXX.XXX.XXX-XX."""
+    digits = "".join(filter(str.isdigit, str(v or "")))
+    if len(digits) == 11:
+        return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
+    return v  # devolve original se não tiver 11 dígitos
+
+
 if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
 
     @event.listens_for(Engine, "connect")
@@ -27932,6 +27941,74 @@ def api_folhas_marcar_paga(fid):
     return jsonify(f.to_dict(with_items=True))
 
 
+@app.route("/api/folhas/<int:fid>/notificar", methods=["POST"])
+@_limiter.limit("10 per minute")
+@lr
+def api_folhas_notificar(fid):
+    """
+    Envia notificação push individual a cada colaborador da folha
+    informando o valor líquido de pagamento.
+    """
+    f = db.get_or_404(FolhaPagamento, fid)
+    _meses_pt = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                 "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+    try:
+        _partes = (f.competencia or "").split("-")
+        _comp_label = f"{_meses_pt[int(_partes[1])-1]}/{_partes[0]}" if len(_partes) == 2 else (f.competencia or "")
+    except Exception:
+        _comp_label = f.competencia or ""
+
+    itens = f.itens.order_by(FolhaPagamentoItem.id.asc()).all()
+    if not itens:
+        return jsonify({"ok": True, "enviados": 0, "sem_token": 0,
+                        "mensagem": "Nenhum funcionário na folha."}), 200
+
+    _fids = {it.funcionario_id for it in itens}
+    _funcs = {fn.id: fn for fn in Funcionario.query.filter(Funcionario.id.in_(_fids)).all()} if _fids else {}
+    _item_map = {it.funcionario_id: it for it in itens}
+
+    enviados = 0
+    sem_token = 0
+
+    for func_id, func in _funcs.items():
+        st = (func.status or "Ativo").strip()
+        if st in ("Demitido", "Inativo"):
+            continue
+        if not (func.app_ativo and (func.app_push_token or "").strip()):
+            sem_token += 1
+            continue
+        it = _item_map.get(func_id)
+        if not it:
+            continue
+        nome_curto = (func.nome or "").split()[0]
+        _total = float(it.total_pagar or 0)
+        _total_fmt = f"R$ {_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        corpo = (
+            f"{nome_curto}, seu pagamento referente a {_comp_label} está disponível. "
+            f"Valor líquido: {_total_fmt}. "
+            "Acesse o app para mais detalhes."
+        )
+        ok = _push_notify_funcionario(
+            func_id,
+            f"Pagamento de {_comp_label} 💰",
+            corpo,
+            data={"tipo": "pagamento", "competencia": _comp_label, "folha_id": fid},
+        )
+        if ok:
+            enviados += 1
+
+    audit_event(
+        "folha_notificada",
+        "folha_pagamento",
+        f.id,
+        "folha_pagamento",
+        f.id,
+        True,
+        {"competencia": f.competencia, "enviados": enviados},
+    )
+    return jsonify({"ok": True, "enviados": enviados, "sem_token": sem_token})
+
+
 @app.route("/api/folhas/disponiveis-funcionarios", methods=["GET"])
 @lr
 def api_folhas_funcionarios_disponiveis():
@@ -28024,10 +28101,17 @@ def api_folhas_export_xlsx(fid):
         [f"Competência: {f.competencia}  |  Tipo: {f.tipo}  |  Status: {f.status}"]
     )
     ws.append([])
+    def _fmt_cpf_xlsx(v):
+        digits = "".join(c for c in str(v or "") if c.isdigit())
+        if len(digits) == 11:
+            return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
+        return v or ""
+
     headers = [
         "#",
         "RE",
         "Nome",
+        "CPF",
         "Cargo",
         "Salário Base",
         "Adicionais",
@@ -28049,6 +28133,7 @@ def api_folhas_export_xlsx(fid):
                 i,
                 (func.re or func.matricula or "") if func else "",
                 (func.nome or "") if func else "",
+                _fmt_cpf_xlsx(func.cpf if func else ""),
                 (func.cargo or "") if func else "",
                 float(it.salario_base or 0),
                 float(it.total_adicional or 0),
@@ -28058,16 +28143,17 @@ def api_folhas_export_xlsx(fid):
         )
         total += float(it.total_pagar or 0)
     ws.append([])
-    ws.append(["", "", "", "TOTAL", "", "", "", round(total, 2)])
+    ws.append(["", "", "", "", "TOTAL", "", "", "", round(total, 2)])
     for col_letter, width in [
         ("A", 6),
         ("B", 10),
         ("C", 36),
-        ("D", 24),
-        ("E", 14),
+        ("D", 16),
+        ("E", 24),
         ("F", 14),
         ("G", 14),
-        ("H", 16),
+        ("H", 14),
+        ("I", 16),
     ]:
         ws.column_dimensions[col_letter].width = width
     import io as _io
@@ -28119,7 +28205,13 @@ def api_folhas_export_pdf(fid):
     itens_pdf = f.itens.order_by(FolhaPagamentoItem.id.asc()).all()
     _fids_pdf = {it.funcionario_id for it in itens_pdf}
     _funcs_pdf = {fn.id: fn for fn in Funcionario.query.filter(Funcionario.id.in_(_fids_pdf)).all()} if _fids_pdf else {}
-    data = [["#", "RE", "Nome", "Cargo", "Salário", "Adic.", "Desc.", "Total"]]
+    def _fmt_cpf_pdf(v):
+        digits = "".join(c for c in str(v or "") if c.isdigit())
+        if len(digits) == 11:
+            return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
+        return v or ""
+
+    data = [["#", "RE", "Nome", "CPF", "Cargo", "Salário", "Adic.", "Desc.", "Total"]]
     total = 0.0
     for i, it in enumerate(itens_pdf, 1):
         func = _funcs_pdf.get(it.funcionario_id)
@@ -28127,8 +28219,9 @@ def api_folhas_export_pdf(fid):
             [
                 i,
                 (func.re or func.matricula or "") if func else "",
-                (func.nome or "")[:40] if func else "",
-                (func.cargo or "")[:24] if func else "",
+                (func.nome or "")[:36] if func else "",
+                _fmt_cpf_pdf(func.cpf if func else ""),
+                (func.cargo or "")[:20] if func else "",
                 f"R$ {float(it.salario_base or 0):,.2f}".replace(",", "X")
                 .replace(".", ",")
                 .replace("X", "."),
@@ -28149,6 +28242,7 @@ def api_folhas_export_pdf(fid):
             "",
             "",
             "",
+            "",
             "TOTAL",
             "",
             "",
@@ -28164,7 +28258,7 @@ def api_folhas_export_pdf(fid):
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-                ("ALIGN", (4, 1), (-1, -1), "RIGHT"),
+                ("ALIGN", (5, 1), (-1, -1), "RIGHT"),
                 ("FONTSIZE", (0, 0), (-1, -1), 8),
                 ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#e7e9ec")),
                 ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
