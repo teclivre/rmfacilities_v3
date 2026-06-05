@@ -27946,8 +27946,8 @@ def api_folhas_marcar_paga(fid):
 @lr
 def api_folhas_notificar(fid):
     """
-    Envia notificação push individual a cada colaborador da folha
-    informando o valor líquido de pagamento.
+    Envia notificação push individual a cada colaborador da folha informando o
+    valor líquido de pagamento.  Funcionários sem app recebem mensagem via WhatsApp.
     """
     f = db.get_or_404(FolhaPagamento, fid)
     _meses_pt = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
@@ -27960,22 +27960,20 @@ def api_folhas_notificar(fid):
 
     itens = f.itens.order_by(FolhaPagamentoItem.id.asc()).all()
     if not itens:
-        return jsonify({"ok": True, "enviados": 0, "sem_token": 0,
-                        "mensagem": "Nenhum funcionário na folha."}), 200
+        return jsonify({"ok": True, "enviados_push": 0, "enviados_whatsapp": 0,
+                        "sem_contato": 0, "mensagem": "Nenhum funcionário na folha."}), 200
 
     _fids = {it.funcionario_id for it in itens}
     _funcs = {fn.id: fn for fn in Funcionario.query.filter(Funcionario.id.in_(_fids)).all()} if _fids else {}
     _item_map = {it.funcionario_id: it for it in itens}
 
-    enviados = 0
-    sem_token = 0
+    enviados_push = 0
+    enviados_wpp = 0
+    sem_contato = 0
 
     for func_id, func in _funcs.items():
         st = (func.status or "Ativo").strip()
         if st in ("Demitido", "Inativo"):
-            continue
-        if not (func.app_ativo and (func.app_push_token or "").strip()):
-            sem_token += 1
             continue
         it = _item_map.get(func_id)
         if not it:
@@ -27983,19 +27981,45 @@ def api_folhas_notificar(fid):
         nome_curto = (func.nome or "").split()[0]
         _total = float(it.total_pagar or 0)
         _total_fmt = f"R$ {_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        corpo = (
-            f"{nome_curto}, seu pagamento referente a {_comp_label} está disponível. "
-            f"Valor líquido: {_total_fmt}. "
-            "Acesse o app para mais detalhes."
-        )
-        ok = _push_notify_funcionario(
-            func_id,
-            f"Pagamento de {_comp_label} 💰",
-            corpo,
-            data={"tipo": "pagamento", "competencia": _comp_label, "folha_id": fid},
-        )
-        if ok:
-            enviados += 1
+
+        tem_app = func.app_ativo and (func.app_push_token or "").strip()
+
+        if tem_app:
+            # Notificação push via app
+            corpo = (
+                f"{nome_curto}, seu pagamento referente a {_comp_label} está disponível. "
+                f"Valor líquido: {_total_fmt}. "
+                "Acesse o app para mais detalhes."
+            )
+            ok = _push_notify_funcionario(
+                func_id,
+                f"Pagamento de {_comp_label} 💰",
+                corpo,
+                data={"tipo": "pagamento", "competencia": _comp_label, "folha_id": fid},
+            )
+            if ok:
+                enviados_push += 1
+            else:
+                # Push falhou — tentar WhatsApp como fallback
+                tem_app = False
+
+        if not tem_app:
+            # Sem app (ou push falhou) → enviar WhatsApp
+            tel = wa_norm_number(func.telefone or "")
+            if wa_is_valid_number(tel):
+                try:
+                    msg_wpp = (
+                        f"Olá {nome_curto}, seu pagamento referente a *{_comp_label}* está disponível.\n"
+                        f"💰 Valor líquido: *{_total_fmt}*\n"
+                        "Qualquer dúvida, entre em contato com o RH."
+                    )
+                    wa_send_text(tel, msg_wpp)
+                    enviados_wpp += 1
+                except Exception as e:
+                    app.logger.warning(f"[folha_notificar] WhatsApp falhou para func {func_id}: {e}")
+                    sem_contato += 1
+            else:
+                sem_contato += 1
 
     audit_event(
         "folha_notificada",
@@ -28004,9 +28028,15 @@ def api_folhas_notificar(fid):
         "folha_pagamento",
         f.id,
         True,
-        {"competencia": f.competencia, "enviados": enviados},
+        {"competencia": f.competencia, "enviados_push": enviados_push,
+         "enviados_whatsapp": enviados_wpp},
     )
-    return jsonify({"ok": True, "enviados": enviados, "sem_token": sem_token})
+    return jsonify({
+        "ok": True,
+        "enviados_push": enviados_push,
+        "enviados_whatsapp": enviados_wpp,
+        "sem_contato": sem_contato,
+    })
 
 
 @app.route("/api/folhas/disponiveis-funcionarios", methods=["GET"])

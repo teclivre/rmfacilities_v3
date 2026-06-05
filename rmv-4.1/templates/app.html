@@ -11857,10 +11857,14 @@ async function fpNotificarFuncionarios(){
   try{
     const r = await api(`/api/folhas/${f.id}/notificar`, 'POST');
     if(r?.erro || r?.error) throw new Error(r.erro||r.error);
-    const enviados = r.enviados||0;
-    const semToken = r.sem_token||0;
-    let msg = `✓ ${enviados} notificação(ões) enviada(s)`;
-    if(semToken) msg += ` · ${semToken} sem app instalado`;
+    const push = r.enviados_push||0;
+    const wpp = r.enviados_whatsapp||0;
+    const semContato = r.sem_contato||0;
+    let partes = [];
+    if(push) partes.push(`${push} via app`);
+    if(wpp) partes.push(`${wpp} via WhatsApp`);
+    let msg = `✓ Notificações enviadas: ${partes.join(' · ')||'0'}`;
+    if(semContato) msg += ` · ${semContato} sem contato`;
     toast(msg, 's');
   }catch(e){
     toast('Erro ao notificar: '+e.message, 'e');
