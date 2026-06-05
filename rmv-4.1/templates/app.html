@@ -14151,10 +14151,14 @@ async function benNotificarColaboradores(){
     if(empresaId) body.empresa_id=empresaId;
     const r=await api('/api/beneficios/notificar','POST',body);
     if(r?.erro) throw new Error(r.erro);
-    const enviados=r.enviados||0;
-    const semToken=r.sem_token||0;
-    let msg=`✓ ${enviados} notificação(ões) enviada(s)`;
-    if(semToken) msg+=` · ${semToken} sem app instalado`;
+    const push=r.enviados_push||0;
+    const wpp=r.enviados_whatsapp||0;
+    const semContato=r.sem_contato||0;
+    let partes=[];
+    if(push) partes.push(`${push} via app`);
+    if(wpp) partes.push(`${wpp} via WhatsApp`);
+    let msg=`✓ ${partes.join(' · ')||'0'} notificação(ões) enviada(s)`;
+    if(semContato) msg+=` · ${semContato} sem contato`;
     if(statusEl){ statusEl.textContent=msg; statusEl.style.display=''; }
     setTimeout(()=>{ if(statusEl) statusEl.style.display='none'; },5000);
   }catch(e){
@@ -14234,10 +14238,14 @@ async function benNotificarAvulso(){
     if(empresaId) body.empresa_id=empresaId;
     const r=await api('/api/beneficios/notificar','POST',body);
     if(r?.erro) throw new Error(r.erro);
-    const enviados=r.enviados||0;
-    const semToken=r.sem_token||0;
-    let msg=`✓ ${enviados} notificação(ões) enviada(s)`;
-    if(semToken) msg+=` · ${semToken} sem app`;
+    const push=r.enviados_push||0;
+    const wpp=r.enviados_whatsapp||0;
+    const semContato=r.sem_contato||0;
+    let partes=[];
+    if(push) partes.push(`${push} via app`);
+    if(wpp) partes.push(`${wpp} via WhatsApp`);
+    let msg=`✓ ${partes.join(' · ')||'0'} notificação(ões) enviada(s)`;
+    if(semContato) msg+=` · ${semContato} sem contato`;
     if(statusEl){ statusEl.textContent=msg; statusEl.style.display=''; }
     setTimeout(()=>{ if(statusEl) statusEl.style.display='none'; },6000);
   }catch(e){

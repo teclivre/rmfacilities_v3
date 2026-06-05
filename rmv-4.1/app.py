@@ -10816,16 +10816,40 @@ def _solicitar_assinatura_arquivo_funcionario(
                 if eh_lembrete
                 else f"Seu {doc_desc} aguarda assinatura no app. Arquivo: {arquivo.nome_arquivo}."
             )
-            enviado_app = bool(
-                _push_notify_funcionario(
-                    funcionario.id,
-                    titulo_push,
-                    corpo_push,
-                    {"tipo": "documento_assinar", "arquivo_id": str(arquivo.id)},
+            _tem_app = funcionario.app_ativo and (funcionario.app_push_token or "").strip()
+            if _tem_app:
+                enviado_app = bool(
+                    _push_notify_funcionario(
+                        funcionario.id,
+                        titulo_push,
+                        corpo_push,
+                        {"tipo": "documento_assinar", "arquivo_id": str(arquivo.id)},
+                    )
                 )
-            )
+            else:
+                enviado_app = False
             if not enviado_app:
-                erro_envio = "Falha ao enviar notificacao push para o aplicativo."
+                # Sem app ou push falhou → fallback WhatsApp
+                _tel_fb = wa_norm_number(funcionario.telefone or "")
+                if wa_is_valid_number(_tel_fb):
+                    _nome_fb = (funcionario.nome or "colaborador").split()[0]
+                    _msg_fb = (
+                        f"🔔 Lembrete: seu *{doc_desc}* ainda aguarda assinatura.\n"
+                        f"Arquivo: {arquivo.nome_arquivo}\n"
+                        f"Acesse o link para assinar: {link_curto}"
+                        if eh_lembrete else
+                        f"Olá, {_nome_fb}! Seu *{doc_desc}* aguarda assinatura.\n"
+                        f"Arquivo: {arquivo.nome_arquivo}\n"
+                        f"Acesse o link para assinar: {link_curto}"
+                    )
+                    try:
+                        wa_send_text(_tel_fb, _msg_fb)
+                        enviado_wa = True
+                        erro_envio = ""
+                    except Exception as _ex_wa:
+                        erro_envio = f"Sem app e WhatsApp falhou: {_ex_wa}"
+                else:
+                    erro_envio = "Funcionário sem app instalado e sem telefone WhatsApp válido."
         except Exception as ex:
             erro_envio = str(ex)
     if commit_now:
@@ -24477,8 +24501,9 @@ def api_beneficios_notificar():
     except Exception:
         _comp_label = comp
 
-    enviados = 0
-    sem_token = 0
+    enviados_push = 0
+    enviados_wpp = 0
+    sem_contato = 0
 
     for fid, bm in mapa_bm.items():
         f = funcs_map.get(fid)
@@ -24486,9 +24511,6 @@ def api_beneficios_notificar():
             continue
         st = (f.status or "Ativo").strip()
         if st in ("Demitido", "Inativo"):
-            continue
-        if not (f.app_ativo and (f.app_push_token or "").strip()):
-            sem_token += 1
             continue
 
         nome_curto = (f.nome or "").split()[0]
@@ -24523,26 +24545,51 @@ def api_beneficios_notificar():
             continue
 
         resumo_str = " | ".join(linhas)
-        corpo = (
+        corpo_push = (
             f"{nome_curto}, seus benefícios de {_comp_label} estão disponíveis. "
             f"{resumo_str}. "
             "Qualquer dúvida, entre em contato com o RH."
         )
 
-        ok = _push_notify_funcionario(
-            fid,
-            f"Benefícios de {_comp_label} 💳",
-            corpo,
-            data={"tipo": "pagamento", "competencia": _comp_label},
-        )
-        if ok:
-            enviados += 1
+        tem_app = f.app_ativo and (f.app_push_token or "").strip()
+
+        if tem_app:
+            ok = _push_notify_funcionario(
+                fid,
+                f"Benefícios de {_comp_label} 💳",
+                corpo_push,
+                data={"tipo": "pagamento", "competencia": _comp_label},
+            )
+            if ok:
+                enviados_push += 1
+                continue
+            # push falhou — cai no WhatsApp abaixo
+
+        # Sem app ou push falhou → enviar WhatsApp
+        tel = wa_norm_number(f.telefone or "")
+        if wa_is_valid_number(tel):
+            try:
+                linhas_wpp = [f"  • {l}" for l in linhas]
+                msg_wpp = (
+                    f"Olá {nome_curto}, seus benefícios de *{_comp_label}* estão disponíveis:\n"
+                    + "\n".join(linhas_wpp)
+                    + "\nQualquer dúvida, entre em contato com o RH."
+                )
+                wa_send_text(tel, msg_wpp)
+                enviados_wpp += 1
+            except Exception as e:
+                app.logger.warning(f"[beneficios_notificar] WhatsApp falhou para func {fid}: {e}")
+                sem_contato += 1
+        else:
+            sem_contato += 1
 
     return jsonify({
         "ok": True,
         "competencia": comp,
-        "enviados": enviados,
-        "sem_token": sem_token,
+        "enviados": enviados_push + enviados_wpp,
+        "enviados_push": enviados_push,
+        "enviados_whatsapp": enviados_wpp,
+        "sem_contato": sem_contato,
     })
 
 
