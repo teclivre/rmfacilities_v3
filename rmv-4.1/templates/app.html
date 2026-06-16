@@ -276,6 +276,43 @@
   </div>
 </div>
 
+<!-- Modal POC Editor Visual de Escala -->
+<div id="modal-escala-editor" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:4060;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--branco);color:var(--preto);border-radius:8px;max-width:900px;width:100%;padding:18px;box-shadow:var(--shadow-md);border:1px solid var(--borda);max-height:90vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:16px;font-weight:700">🛠️ Editor Visual de Escala (POC)</div>
+      <button class="btn b-gh b-sm" onclick="document.getElementById('modal-escala-editor').style.display='none'">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+      <div>
+        <label>Nome</label>
+        <input id="esc-editor-nome" class="inp" placeholder="Ex: 6x2 Matutino">
+      </div>
+      <div>
+        <label>Tipo</label>
+        <select id="esc-editor-tipo" class="inp"><option value="6x2">6x2</option><option value="4x2">4x2</option><option value="12x36">12x36</option><option value="noturna">noturna</option><option value="folguista">folguista</option></select>
+      </div>
+      <div>
+        <label>Tamanho do ciclo (dias)</label>
+        <input id="esc-editor-length" type="number" class="inp" value="8" min="1" max="60">
+      </div>
+    </div>
+    <div style="margin-bottom:8px">Edite cada dia do ciclo abaixo. Para folga, selecione "folga".</div>
+    <div style="overflow:auto;flex:1;border:1px solid var(--borda);padding:8px;border-radius:6px;background:var(--cinza-cl)">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--fundo-alt)"><th style="padding:6px;text-align:left">#</th><th style="padding:6px;text-align:left">Tipo</th><th style="padding:6px;text-align:left">Entrada</th><th style="padding:6px;text-align:left">Saída</th><th style="padding:6px;text-align:left">Intervalo (min)</th><th style="padding:6px;text-align:left">Horas (opcional)</th></tr></thead>
+        <tbody id="esc-editor-tbody"></tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+      <button class="btn b-gh b-sm" onclick="document.getElementById('modal-escala-editor').style.display='none'">Cancelar</button>
+      <button class="btn b-sm" onclick="escalaEditorGenerate()">Gerar ciclo JSON</button>
+      <button class="btn b-az b-sm" onclick="escalaEditorSave()">Salvar Escala</button>
+    </div>
+    <div id="esc-editor-output" style="font-size:13px;margin-top:8px"></div>
+  </div>
+</div>
+
 <!-- Modal Correções de Ponto (Solicitações do App) -->
 <div id="modal-correcoes-ponto" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;overflow-y:auto;padding:24px 16px">
   <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:720px;margin:40px auto;padding:0;position:relative;box-shadow:var(--shadow-md);border:1px solid var(--borda)">
@@ -344,6 +381,67 @@ function _rmConfirm(titulo, msg, {okLabel='Confirmar', okStyle='background:var(-
     okBtn.addEventListener('click', onOk, {once:true});
     document.getElementById('modal-rm-confirm-cancel').addEventListener('click', onCan, {once:true});
   });
+}
+function abrirModalEscalaEditor(){
+  document.getElementById('modal-escala-editor').style.display='flex';
+  const len = Number(document.getElementById('esc-editor-length').value) || 8;
+  renderEscEditorRows(len);
+  document.getElementById('esc-editor-output').innerHTML='';
+}
+
+function renderEscEditorRows(len){
+  const tbody = document.getElementById('esc-editor-tbody');
+  tbody.innerHTML = '';
+  for(let i=0;i<len;i++){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td style="padding:6px">${i+1}</td>
+      <td style="padding:6px"><select class="esc-day-tipo inp"><option value="trabalho">trabalho</option><option value="folga">folga</option></select></td>
+      <td style="padding:6px"><input class="esc-day-ent inp" value="08:00" /></td>
+      <td style="padding:6px"><input class="esc-day-sai inp" value="17:00" /></td>
+      <td style="padding:6px"><input class="esc-day-int inp" value="60" /></td>
+      <td style="padding:6px"><input class="esc-day-horas inp" placeholder="8" /></td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+document.getElementById('esc-editor-length')?.addEventListener('change', (e)=>{ renderEscEditorRows(Number(e.target.value||8)); });
+
+function escalaEditorGenerate(){
+  const len = Number(document.getElementById('esc-editor-length').value) || 8;
+  const dias = [];
+  const rows = Array.from(document.querySelectorAll('#esc-editor-tbody tr'));
+  for(let r of rows){
+    const tipo = r.querySelector('.esc-day-tipo').value;
+    if(tipo==='folga'){
+      dias.push({tipo:'folga'});
+      continue;
+    }
+    const hora_entrada = (r.querySelector('.esc-day-ent').value||'08:00').trim();
+    const hora_saida = (r.querySelector('.esc-day-sai').value||'17:00').trim();
+    const intervalo_min = parseInt(r.querySelector('.esc-day-int').value)||0;
+    const horas = r.querySelector('.esc-day-horas').value?parseFloat(r.querySelector('.esc-day-horas').value):undefined;
+    const obj = {tipo:'trabalho', hora_entrada, hora_saida, intervalo_min};
+    if(horas) obj.horas = horas;
+    dias.push(obj);
+  }
+  const ciclo = {dias};
+  document.getElementById('esc-editor-output').textContent = JSON.stringify(ciclo, null, 2);
+  rmToast('Ciclo gerado no campo de saída. Use Salvar Escala para persistir.','in');
+}
+
+async function escalaEditorSave(){
+  const nome = (document.getElementById('esc-editor-nome').value||'').trim();
+  const tipo = (document.getElementById('esc-editor-tipo').value||'6x2');
+  if(!nome){ rmToast('Informe um nome para a escala.','er'); return; }
+  const out = document.getElementById('esc-editor-output').textContent || '';
+  if(!out){ rmToast('Gere o ciclo JSON antes de salvar.','er'); return; }
+  let ciclo_json = out;
+  try{ JSON.parse(ciclo_json); }catch(e){ rmToast('JSON inválido. Gere novamente.','er'); return; }
+  const payload = { nome, tipo, ciclo_json };
+  const res = await api('/api/escalas','POST', payload);
+  if(res?.erro){ rmToast(res.erro,'er'); return; }
+  rmToast('Escala criada com sucesso.','ok');
+  document.getElementById('modal-escala-editor').style.display='none';
 }
 function _rmMarcarPaga(numero) {
   return new Promise((resolve, reject) => {
