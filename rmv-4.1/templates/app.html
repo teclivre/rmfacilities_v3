@@ -440,8 +440,18 @@ async function escalaEditorSave(){
   const payload = { nome, tipo, ciclo_json };
   const res = await api('/api/escalas','POST', payload);
   if(res?.erro){ rmToast(res.erro,'er'); return; }
-  rmToast('Escala criada com sucesso.','ok');
+  rmToast('Escala criada com sucesso. Gerando prévia...','ok');
+  // abrir modal de preview e preencher com a escala recém-criada
   document.getElementById('modal-escala-editor').style.display='none';
+  try{
+    // set inputs no modal de preview e disparar a geração
+    abrirModalPreviewEscala();
+    document.querySelector('input[name="preview-mode"][value="escala"]').checked = true;
+    document.getElementById('preview-escala-id').value = res.id || res.escala_id || '';
+    document.getElementById('preview-data-inicio').value = new Date().toISOString().split('T')[0];
+    document.getElementById('preview-dias').value = 14;
+    await gerarPreviewPonto();
+  }catch(e){ console.warn('Falha ao gerar prévia automática',e); }
 }
 function _rmMarcarPaga(numero) {
   return new Promise((resolve, reject) => {

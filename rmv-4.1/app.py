@@ -18938,6 +18938,56 @@ def api_escalas_criar():
         _ciclo_val = json.loads(ciclo_json)
         if not isinstance(_ciclo_val.get("dias"), list) or len(_ciclo_val.get("dias", [])) == 0:
             return jsonify({"erro": "ciclo_json deve conter ao menos 1 dia no array 'dias'"}), 400
+        # Validações adicionais por dia: tipo, formatos de hora e coerência de intervalo
+        dia_errs = []
+        dias = _ciclo_val.get("dias", [])
+        for idx, dia in enumerate(dias):
+            if not isinstance(dia, dict):
+                dia_errs.append(f"dia[{idx}] deve ser um objeto")
+                continue
+            tipo_d = (dia.get("tipo") or "").strip().lower()
+            if tipo_d not in ("trabalho", "folga"):
+                dia_errs.append(f"dia[{idx}].tipo inválido: {dia.get('tipo')}")
+                continue
+            if tipo_d == "trabalho":
+                # se forneceu horários, validar formato HH:MM
+                he = dia.get("hora_entrada")
+                hs = dia.get("hora_saida")
+                intervalo = dia.get("intervalo_min")
+                horas = dia.get("horas")
+                if he and not re.match(r"^\d{2}:\d{2}$", str(he)):
+                    dia_errs.append(f"dia[{idx}].hora_entrada formato inválido: {he}")
+                if hs and not re.match(r"^\d{2}:\d{2}$", str(hs)):
+                    dia_errs.append(f"dia[{idx}].hora_saida formato inválido: {hs}")
+                try:
+                    if he and hs and re.match(r"^\d{2}:\d{2}$", str(he)) and re.match(r"^\d{2}:\d{2}$", str(hs)):
+                        he_h, he_m = map(int, str(he).split(":"))
+                        hs_h, hs_m = map(int, str(hs).split(":"))
+                        entrada_min = he_h * 60 + he_m
+                        saida_min = hs_h * 60 + hs_m
+                        if saida_min <= entrada_min:
+                            saida_min += 24 * 60
+                        duracao = saida_min - entrada_min
+                        if intervalo is None:
+                            intervalo = 0
+                        try:
+                            intervalo_i = int(intervalo or 0)
+                        except Exception:
+                            dia_errs.append(f"dia[{idx}].intervalo_min inválido: {intervalo}")
+                            intervalo_i = 0
+                        if intervalo_i >= duracao:
+                            dia_errs.append(f"dia[{idx}]: intervalo_min >= duração bruta ({intervalo_i} >= {duracao})")
+                except Exception:
+                    pass
+                if horas is not None:
+                    try:
+                        hval = float(horas)
+                        if hval <= 0:
+                            dia_errs.append(f"dia[{idx}].horas inválido: {horas}")
+                    except Exception:
+                        dia_errs.append(f"dia[{idx}].horas inválido: {horas}")
+        if dia_errs:
+            return jsonify({"erro": "Erros no ciclo_json", "detalhes": dia_errs}), 400
     except (json.JSONDecodeError, AttributeError):
         return jsonify({"erro": "ciclo_json inválido (JSON malformado)"}), 400
     periodo_ini = (d.get("periodo_noturno_ini") or "22:00").strip()
