@@ -196,6 +196,53 @@
   </div>
 </div>
 
+<!-- Modal Prévia Jornada / Escala -->
+<div id="modal-preview-escala" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:4050;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--branco);color:var(--preto);border-radius:8px;max-width:720px;width:100%;padding:20px;box-shadow:var(--shadow-md);border:1px solid var(--borda);max-height:90vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-size:16px;font-weight:700">🔎 Prévia de Jornada/Escala</div>
+      <button class="btn b-gh b-sm" onclick="document.getElementById('modal-preview-escala').style.display='none'">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+      <div>
+        <label>Modo</label>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <label style="font-size:13px"><input type="radio" name="preview-mode" value="funcionario" checked> Funcionário</label>
+          <label style="font-size:13px"><input type="radio" name="preview-mode" value="escala"> Escala</label>
+          <label style="font-size:13px"><input type="radio" name="preview-mode" value="jornada"> Jornada</label>
+        </div>
+      </div>
+      <div>
+        <label>Dias</label>
+        <input id="preview-dias" type="number" class="inp" value="14" min="1" max="120" style="width:100%">
+      </div>
+      <div>
+        <label>Funcionário ID</label>
+        <input id="preview-funcionario-id" type="number" class="inp" placeholder="ID do funcionário" style="width:100%">
+      </div>
+      <div>
+        <label>Escala ID</label>
+        <input id="preview-escala-id" type="number" class="inp" placeholder="ID da escala" style="width:100%">
+      </div>
+      <div>
+        <label>Jornada ID</label>
+        <input id="preview-jornada-id" type="number" class="inp" placeholder="ID da jornada" style="width:100%">
+      </div>
+      <div>
+        <label>Data início</label>
+        <input id="preview-data-inicio" type="date" class="inp" value="{{ localnow().strftime('%Y-%m-%d') }}" style="width:100%">
+      </div>
+    </div>
+    <div style="overflow:auto;flex:1">
+      <div id="preview-result" style="font-size:13px"></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="btn b-gh b-sm" onclick="document.getElementById('modal-preview-escala').style.display='none'">Fechar</button>
+      <button class="btn b-az b-sm" onclick="gerarPreviewPonto()">Gerar prévia</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal Correções de Ponto (Solicitações do App) -->
 <div id="modal-correcoes-ponto" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;overflow-y:auto;padding:24px 16px">
   <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:720px;margin:40px auto;padding:0;position:relative;box-shadow:var(--shadow-md);border:1px solid var(--borda)">
@@ -337,6 +384,41 @@ function _rmVincularConc(valor) {
     document.getElementById('modal-vinc-ok').addEventListener('click', onOk, {once:true});
     document.getElementById('modal-vinc-cancel').addEventListener('click', onCan, {once:true});
   });
+}
+// Abrir modal de prévia de jornada/escala
+function abrirModalPreviewEscala(funcionario_id){
+  const modal = document.getElementById('modal-preview-escala');
+  document.getElementById('preview-funcionario-id').value = funcionario_id || '';
+  document.getElementById('preview-escala-id').value = '';
+  document.getElementById('preview-jornada-id').value = '';
+  document.getElementById('preview-data-inicio').value = new Date().toISOString().split('T')[0];
+  document.getElementById('preview-dias').value = 14;
+  document.getElementById('preview-result').innerHTML = '';
+  modal.style.display = 'flex';
+}
+
+async function gerarPreviewPonto(){
+  const mode = document.querySelector('input[name="preview-mode"]:checked').value;
+  const funcionario_id = Number(document.getElementById('preview-funcionario-id').value) || undefined;
+  const escala_id = Number(document.getElementById('preview-escala-id').value) || undefined;
+  const jornada_id = Number(document.getElementById('preview-jornada-id').value) || undefined;
+  const data_inicio = document.getElementById('preview-data-inicio').value;
+  const dias = Number(document.getElementById('preview-dias').value) || 14;
+  const body = {mode, data_inicio, dias};
+  if(mode==='funcionario') body.funcionario_id = funcionario_id;
+  if(mode==='escala') body.escala_id = escala_id;
+  if(mode==='jornada') body.jornada_id = jornada_id;
+  const res = await api('/api/ponto/preview','POST', body);
+  if(res?.erro){ rmToast(res.erro,'er'); return; }
+  const items = res.preview || [];
+  if(!items.length){ document.getElementById('preview-result').innerHTML = '<div style="opacity:.7">Nenhum item retornado.</div>'; return; }
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--fundo-alt)"><th style="padding:8px;text-align:left">Data</th><th style="padding:8px;text-align:right">Horas</th><th style="padding:8px;text-align:left">Fonte</th><th style="padding:8px;text-align:left">Detalhe</th></tr></thead><tbody>';
+  for(const p of items){
+    const detalhe = p.detalhe ? (typeof p.detalhe==='object'?JSON.stringify(p.detalhe):p.detalhe) : (p.indice!==undefined?('idx '+p.indice): (p.horarios?JSON.stringify(p.horarios):''));
+    html += `<tr><td style="padding:8px;border-top:1px solid var(--borda)">${p.data_ref}</td><td style="padding:8px;border-top:1px solid var(--borda);text-align:right">${p.horas_esperadas_fmt||''}</td><td style="padding:8px;border-top:1px solid var(--borda)">${p.fonte||''}</td><td style="padding:8px;border-top:1px solid var(--borda)">${detalhe}</td></tr>`;
+  }
+  html += '</tbody></table>';
+  document.getElementById('preview-result').innerHTML = html;
 }
 // ─────────────────────────────────────────────────────────────────────────────
 const FAT_STATE={page:1,per_page:20,order_by:'dt_emissao',order_dir:'desc'};

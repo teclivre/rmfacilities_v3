@@ -687,6 +687,158 @@ def register_ponto_routes(
             )}
         )
 
+    def _ponto_esperado_source(funcionario, data_ref):
+        """Retorna (minutos_esperados, fonte, detalhe) para um funcionário em data_ref.
+        Fonte: 'escala' | 'jornada' | 'legado'. Implementa mesma prioridade que
+        _ponto_min_esperado_data, mas devolve a origem para uso em previews.
+        """
+        try:
+            data_str = data_ref.strftime("%Y-%m-%d") if hasattr(data_ref, "strftime") else str(data_ref)
+            data_obj = data_ref if hasattr(data_ref, "weekday") else datetime.strptime(data_str, "%Y-%m-%d").date()
+            # 1) Escala rotativa
+            if EscalaFuncionario and Escala:
+                esc_funcs = EscalaFuncionario.query.filter(
+                    EscalaFuncionario.funcionario_id == funcionario.id,
+                    EscalaFuncionario.data_inicio <= data_str,
+                    EscalaFuncionario.ativo == True,
+                ).order_by(EscalaFuncionario.data_inicio.desc()).all()
+                for ef in esc_funcs:
+                    if ef.data_fim and ef.data_fim < data_str:
+                        continue
+                    esc = db.session.get(Escala, ef.escala_id)
+                    if not esc:
+                        continue
+                    try:
+                        ciclo = json.loads(esc.ciclo_json or "{}")
+                        dias_ciclo = len(ciclo.get("dias", []))
+                        if dias_ciclo > 0:
+                            data_inicio_obj = datetime.strptime(ef.data_inicio, "%Y-%m-%d").date()
+                            dias_decorridos = (data_obj - data_inicio_obj).days
+                            if dias_decorridos < 0:
+                                continue
+                            indice = dias_decorridos % dias_ciclo
+                            minutos = esc.carga_horaria_min_dia(indice)
+                            return minutos, 'escala', {'escala_id': getattr(esc, 'id', None), 'indice': indice}
+                    except Exception as _exc_esc:
+                        try:
+                            import logging as _log
+                            _log.getLogger(__name__).warning("_ponto_esperado_source: erro ao calcular ciclo de escala esc_id=%s ef_id=%s data=%s: %s", getattr(esc, 'id', '?'), getattr(ef, 'id', '?'), data_str, _exc_esc)
+                        except Exception:
+                            pass
+        except Exception:
+            try:
+                import logging as _log
+                _log.getLogger(__name__).warning("_ponto_esperado_source: falha ao consultar escalas func_id=%s data=%s", getattr(funcionario, 'id', '?'), data_ref)
+            except Exception:
+                pass
+
+        # 2) JornadaTrabalho por dia da semana
+        if JornadaTrabalho and getattr(funcionario, "jornada_id", None):
+            try:
+                j = db.session.get(JornadaTrabalho, funcionario.jornada_id)
+                if j:
+                    return j.minutos_esperados_weekday(data_ref.weekday()), 'jornada', {'jornada_id': getattr(j, 'id', None)}
+            except Exception:
+                pass
+
+        # 3) Fallback texto legado + regra fim de semana
+        if data_ref.weekday() >= 5:
+            return 0, 'legado', {'reason': 'weekend'}
+        return _ponto_min_esperado_jornada(funcionario), 'legado', {'text': funcionario.jornada}
+
+    @app.route("/api/ponto/preview", methods=["POST"])
+    @lr
+    def api_ponto_preview():
+        """Gera uma prévia de minutos esperados aplicando uma escala/jornada
+        ou mostrando o efeito atual para um funcionário. Body JSON:
+        { mode: 'funcionario'|'escala'|'jornada', funcionario_id?, escala_id?, jornada_id?, data_inicio?, dias? }
+        """
+        dados = request.json or {}
+        mode = (dados.get("mode") or "funcionario").strip().lower()
+        dias = int(dados.get("dias") or 14)
+        if dias < 1:
+            dias = 1
+        if dias > 120:
+            dias = 120
+        data_inicio = _ponto_parse_data_ref(dados.get("data_inicio"))
+
+        if mode == 'funcionario':
+            funcionario_id = to_num(dados.get("funcionario_id"))
+            if not funcionario_id:
+                return jsonify({"erro": "funcionario_id é obrigatório."}), 400
+            funcionario = db.session.get(Funcionario, funcionario_id)
+            if not funcionario:
+                return jsonify({"erro": "Funcionário não encontrado."}), 404
+            preview = []
+            for i in range(dias):
+                d = data_inicio + timedelta(days=i)
+                minutos, fonte, detalhe = _ponto_esperado_source(funcionario, d)
+                preview.append({
+                    "data_ref": d.strftime("%Y-%m-%d"),
+                    "horas_esperadas_min": minutos,
+                    "horas_esperadas_fmt": _ponto_fmt_minutos(minutos),
+                    "fonte": fonte,
+                    "detalhe": detalhe,
+                })
+            return jsonify({"ok": True, "tipo": "funcionario", "funcionario_id": funcionario_id, "preview": preview})
+
+        if mode == 'escala':
+            escala_id = to_num(dados.get("escala_id"))
+            if not escala_id:
+                return jsonify({"erro": "escala_id é obrigatório."}), 400
+            esc = db.session.get(Escala, escala_id)
+            if not esc:
+                return jsonify({"erro": "Escala não encontrada."}), 404
+            try:
+                ciclo = json.loads(esc.ciclo_json or "{}")
+            except Exception:
+                ciclo = {}
+            dias_ciclo = len(ciclo.get("dias", [])) or 0
+            preview = []
+            for i in range(dias):
+                d = data_inicio + timedelta(days=i)
+                indice = i % dias_ciclo if dias_ciclo else 0
+                try:
+                    minutos = esc.carga_horaria_min_dia(indice)
+                except Exception:
+                    minutos = 0
+                horarios = None
+                try:
+                    if hasattr(esc, 'get_horarios_dia'):
+                        horarios = esc.get_horarios_dia(indice)
+                except Exception:
+                    horarios = None
+                preview.append({
+                    "data_ref": d.strftime("%Y-%m-%d"),
+                    "horas_esperadas_min": minutos,
+                    "horas_esperadas_fmt": _ponto_fmt_minutos(minutos),
+                    "fonte": "escala",
+                    "indice": indice,
+                    "horarios": horarios,
+                })
+            return jsonify({"ok": True, "tipo": "escala", "escala_id": escala_id, "preview": preview})
+
+        if mode == 'jornada':
+            jornada_id = to_num(dados.get("jornada_id"))
+            if not jornada_id:
+                return jsonify({"erro": "jornada_id é obrigatório."}), 400
+            j = db.session.get(JornadaTrabalho, jornada_id)
+            if not j:
+                return jsonify({"erro": "Jornada não encontrada."}), 404
+            preview = []
+            for i in range(dias):
+                d = data_inicio + timedelta(days=i)
+                minutos = j.minutos_esperados_weekday(d.weekday())
+                preview.append({
+                    "data_ref": d.strftime("%Y-%m-%d"),
+                    "horas_esperadas_min": minutos,
+                    "horas_esperadas_fmt": _ponto_fmt_minutos(minutos),
+                    "fonte": "jornada",
+                })
+            return jsonify({"ok": True, "tipo": "jornada", "jornada_id": jornada_id, "preview": preview})
+
+        return jsonify({"erro": "modo inválido. Use funcionario|escala|jornada."}), 400
+
     @app.route("/api/ponto/resumo-dia")
     @lr
     def api_ponto_resumo_dia():
