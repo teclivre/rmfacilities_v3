@@ -5271,7 +5271,11 @@ function rhSetSubAba(tab,btn){
   const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','ponto','painel-dia','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
-    p.style.display=(p.dataset.rhPane===rhSubAba)?'block':'none !important';
+    if(p.dataset.rhPane===rhSubAba){
+      p.style.setProperty('display','block','important');
+    }else{
+      p.style.setProperty('display','none','important');
+    }
   });
   Array.from(document.querySelectorAll('#rh-subabas .subaba-bloco')).forEach(b=>b.classList.remove('on'));
   const alvo=btn || document.getElementById('rh-subtab-'+rhSubAba);
