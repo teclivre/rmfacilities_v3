@@ -839,6 +839,97 @@ def register_ponto_routes(
 
         return jsonify({"erro": "modo inválido. Use funcionario|escala|jornada."}), 400
 
+    @app.route("/api/ponto/escala/bulk_assign", methods=["POST"])
+    @lr
+    def api_ponto_escala_bulk_assign():
+        """Atribui uma `Escala` a vários funcionários em batch.
+        Body JSON: { funcionario_ids: [1,2,3] | funcionarios_csv: '1,2,3', escala_id, data_inicio, data_fim? }
+        Retorna resumo: {created:[], skipped_conflict:[], errors:[]}
+        """
+        dados = request.json or {}
+        ids = dados.get("funcionario_ids")
+        if not ids:
+            csv = (dados.get("funcionarios_csv") or "").strip()
+            if not csv:
+                return jsonify({"erro": "funcionario_ids ou funcionarios_csv é obrigatório."}), 400
+            try:
+                ids = [to_num(x) for x in re.split(r"[;,\n\s]+", csv) if x.strip()]
+            except Exception:
+                ids = []
+        ids = [int(x) for x in ids if x]
+        if not ids:
+            return jsonify({"erro": "Nenhum funcionário válido fornecido."}), 400
+
+        escala_id = to_num(dados.get("escala_id"))
+        if not escala_id:
+            return jsonify({"erro": "escala_id é obrigatório."}), 400
+        esc = db.session.get(Escala, escala_id)
+        if not esc:
+            return jsonify({"erro": "Escala não encontrada."}), 404
+
+        data_inicio = _ponto_parse_data_ref(dados.get("data_inicio"))
+        data_fim = None
+        if dados.get("data_fim"):
+            data_fim = _ponto_parse_data_ref(dados.get("data_fim"))
+            if data_fim < data_inicio:
+                return jsonify({"erro": "data_fim não pode ser anterior a data_inicio."}), 400
+
+        created = []
+        skipped_conflict = []
+        errors = []
+        for fid in ids:
+            try:
+                funcionario = db.session.get(Funcionario, fid)
+                if not funcionario:
+                    errors.append({"funcionario_id": fid, "erro": "Funcionário não encontrado."})
+                    continue
+                # verificar conflito com atribuições ativas que se sobrepõem
+                q = EscalaFuncionario.query.filter(EscalaFuncionario.funcionario_id == fid, EscalaFuncionario.ativo == True)
+                q = q.order_by(EscalaFuncionario.data_inicio.desc())
+                overlaps = False
+                for ef in q.all():
+                    try:
+                        # se ef.data_fim é None → ativo indefinido; se ef.data_fim >= data_inicio -> conflito
+                        if not ef.data_fim or datetime.strptime(ef.data_fim, "%Y-%m-%d").date() >= data_inicio:
+                            overlaps = True
+                            break
+                    except Exception:
+                        overlaps = True
+                        break
+                if overlaps:
+                    skipped_conflict.append(fid)
+                    continue
+                novo = EscalaFuncionario(
+                    escala_id=escala_id,
+                    funcionario_id=fid,
+                    data_inicio=data_inicio.strftime("%Y-%m-%d"),
+                    data_fim=(data_fim.strftime("%Y-%m-%d") if data_fim else None),
+                    ativo=True,
+                )
+                db.session.add(novo)
+                created.append(fid)
+            except Exception as exc:
+                db.session.rollback()
+                errors.append({"funcionario_id": fid, "erro": str(exc)[:180]})
+        try:
+            if created:
+                db.session.commit()
+                for fid in created:
+                    audit_event(
+                        "escala_bulk_assign",
+                        "usuario",
+                        session.get("uid"),
+                        "funcionario",
+                        fid,
+                        True,
+                        {"escala_id": escala_id, "data_inicio": data_inicio.strftime("%Y-%m-%d"), "data_fim": (data_fim.strftime("%Y-%m-%d") if data_fim else None)},
+                    )
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({"erro": "Falha ao salvar atribuições.", "detalhe": str(exc)[:220]}), 500
+
+        return jsonify({"ok": True, "created": created, "skipped_conflict": skipped_conflict, "errors": errors})
+
     @app.route("/api/ponto/resumo-dia")
     @lr
     def api_ponto_resumo_dia():
