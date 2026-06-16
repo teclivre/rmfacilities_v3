@@ -62,40 +62,6 @@
     </div>
   </div>
 </div>
-<!-- Modal Prévia Pagamentos Avulsos -->
-<div id="modal-ben-avulso-previa" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:4000;align-items:center;justify-content:center;padding:16px">
-  <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:700px;width:100%;padding:24px;box-shadow:var(--shadow-md);border:1px solid var(--borda);max-height:90vh;display:flex;flex-direction:column">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <div style="font-size:16px;font-weight:700">💳 Prévia de Pagamentos Avulsos</div>
-      <button class="btn b-gh b-sm" onclick="document.getElementById('modal-ben-avulso-previa').style.display='none'">✕</button>
-    </div>
-    <div id="ben-avulso-previa-comp" style="font-size:13px;color:var(--text-muted);margin-bottom:12px"></div>
-    <div style="overflow:auto;flex:1">
-      <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <thead>
-          <tr style="background:var(--fundo-alt)">
-            <th style="padding:8px;text-align:left;border-bottom:2px solid var(--borda)">Colaborador</th>
-            <th style="padding:8px;text-align:left;border-bottom:2px solid var(--borda)">Benefício</th>
-            <th style="padding:8px;text-align:center;border-bottom:2px solid var(--borda)">Dias</th>
-            <th style="padding:8px;text-align:right;border-bottom:2px solid var(--borda)">Valor Unit.</th>
-            <th style="padding:8px;text-align:right;border-bottom:2px solid var(--borda)">Total</th>
-          </tr>
-        </thead>
-        <tbody id="ben-avulso-previa-tbody"></tbody>
-        <tfoot>
-          <tr style="font-weight:700;background:var(--fundo-alt)">
-            <td colspan="4" style="padding:8px;border-top:2px solid var(--borda)">Total geral</td>
-            <td id="ben-avulso-previa-total" style="padding:8px;text-align:right;border-top:2px solid var(--borda)"></td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
-    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn b-gh b-sm" onclick="document.getElementById('modal-ben-avulso-previa').style.display='none'">Fechar</button>
-      <button class="btn b-sm" id="btn-ben-previa-notif" style="background:var(--azul);color:#fff;border:1px solid var(--azul)" onclick="benNotificarAvulso()">📲 Notificar todos desta prévia</button>
-    </div>
-  </div>
-</div>
 <!-- Modal Marcar como Paga -->
 <div id="modal-marcar-paga" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;align-items:center;justify-content:center;padding:16px">
   <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:380px;width:100%;padding:28px 24px;box-shadow:var(--shadow-md);border:1px solid var(--borda)">
@@ -196,123 +162,6 @@
   </div>
 </div>
 
-<!-- Modal Prévia Jornada / Escala -->
-<div id="modal-preview-escala" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:4050;align-items:center;justify-content:center;padding:16px">
-  <div style="background:var(--branco);color:var(--preto);border-radius:8px;max-width:720px;width:100%;padding:20px;box-shadow:var(--shadow-md);border:1px solid var(--borda);max-height:90vh;display:flex;flex-direction:column">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-size:16px;font-weight:700">🔎 Prévia de Jornada/Escala</div>
-      <button class="btn b-gh b-sm" onclick="document.getElementById('modal-preview-escala').style.display='none'">✕</button>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-      <div>
-        <label>Modo</label>
-        <div style="display:flex;gap:8px;margin-top:6px">
-          <label style="font-size:13px"><input type="radio" name="preview-mode" value="funcionario" checked> Funcionário</label>
-          <label style="font-size:13px"><input type="radio" name="preview-mode" value="escala"> Escala</label>
-          <label style="font-size:13px"><input type="radio" name="preview-mode" value="jornada"> Jornada</label>
-        </div>
-      </div>
-      <div>
-        <label>Dias</label>
-        <input id="preview-dias" type="number" class="inp" value="14" min="1" max="120" style="width:100%">
-      </div>
-      <div>
-        <label>Funcionário ID</label>
-        <input id="preview-funcionario-id" type="number" class="inp" placeholder="ID do funcionário" style="width:100%">
-      </div>
-      <div>
-        <label>Escala ID</label>
-        <input id="preview-escala-id" type="number" class="inp" placeholder="ID da escala" style="width:100%">
-      </div>
-      <div>
-        <label>Jornada ID</label>
-        <input id="preview-jornada-id" type="number" class="inp" placeholder="ID da jornada" style="width:100%">
-      </div>
-      <div>
-        <label>Data início</label>
-        <input id="preview-data-inicio" type="date" class="inp" value="{{ localnow().strftime('%Y-%m-%d') }}" style="width:100%">
-      </div>
-    </div>
-    <div style="overflow:auto;flex:1">
-      <div id="preview-result" style="font-size:13px"></div>
-    </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
-      <button class="btn b-gh b-sm" onclick="document.getElementById('modal-preview-escala').style.display='none'">Fechar</button>
-      <button class="btn b-az b-sm" onclick="gerarPreviewPonto()">Gerar prévia</button>
-    </div>
-  </div>
-</div>
-
-<!-- Modal Bulk Assign Escala -->
-<div id="modal-bulk-assign" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:4050;align-items:center;justify-content:center;padding:16px">
-  <div style="background:var(--branco);color:var(--preto);border-radius:8px;max-width:720px;width:100%;padding:20px;box-shadow:var(--shadow-md);border:1px solid var(--borda);max-height:90vh;display:flex;flex-direction:column">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-size:16px;font-weight:700">👥 Atribuição em massa de Escala</div>
-      <button class="btn b-gh b-sm" onclick="document.getElementById('modal-bulk-assign').style.display='none'">✕</button>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-      <div style="grid-column:1/3">
-        <label>Funcionários (IDs separados por vírgula, espaço ou nova linha)</label>
-        <textarea id="bulk-funcionarios" class="inp" rows="3" placeholder="Ex: 12,34,56" style="width:100%;resize:vertical"></textarea>
-      </div>
-      <div>
-        <label>Escala ID</label>
-        <input id="bulk-escala-id" type="number" class="inp" placeholder="ID da escala" style="width:100%">
-      </div>
-      <div>
-        <label>Data início</label>
-        <input id="bulk-data-inicio" type="date" class="inp" value="{{ localnow().strftime('%Y-%m-%d') }}" style="width:100%">
-      </div>
-      <div>
-        <label>Data fim (opcional)</label>
-        <input id="bulk-data-fim" type="date" class="inp" style="width:100%">
-      </div>
-    </div>
-    <div id="bulk-result" style="overflow:auto;flex:1;font-size:13px"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
-      <button class="btn b-gh b-sm" onclick="document.getElementById('modal-bulk-assign').style.display='none'">Fechar</button>
-      <button class="btn b-az b-sm" onclick="executarBulkAssign()">Atribuir Escala</button>
-    </div>
-  </div>
-</div>
-
-<!-- Modal POC Editor Visual de Escala -->
-<div id="modal-escala-editor" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:4060;align-items:center;justify-content:center;padding:16px">
-  <div style="background:var(--branco);color:var(--preto);border-radius:8px;max-width:900px;width:100%;padding:18px;box-shadow:var(--shadow-md);border:1px solid var(--borda);max-height:90vh;display:flex;flex-direction:column">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <div style="font-size:16px;font-weight:700">🛠️ Editor Visual de Escala (POC)</div>
-      <button class="btn b-gh b-sm" onclick="document.getElementById('modal-escala-editor').style.display='none'">✕</button>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
-      <div>
-        <label>Nome</label>
-        <input id="esc-editor-nome" class="inp" placeholder="Ex: 6x2 Matutino">
-      </div>
-      <div>
-        <label>Tipo</label>
-        <select id="esc-editor-tipo" class="inp"><option value="6x2">6x2</option><option value="4x2">4x2</option><option value="12x36">12x36</option><option value="noturna">noturna</option><option value="folguista">folguista</option></select>
-      </div>
-      <div>
-        <label>Tamanho do ciclo (dias)</label>
-        <input id="esc-editor-length" type="number" class="inp" value="8" min="1" max="60">
-      </div>
-    </div>
-    <div style="margin-bottom:8px">Edite cada dia do ciclo abaixo. Para folga, selecione "folga".</div>
-    <div style="overflow:auto;flex:1;border:1px solid var(--borda);padding:8px;border-radius:6px;background:var(--cinza-cl)">
-      <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <thead><tr style="background:var(--fundo-alt)"><th style="padding:6px;text-align:left">#</th><th style="padding:6px;text-align:left">Tipo</th><th style="padding:6px;text-align:left">Entrada</th><th style="padding:6px;text-align:left">Saída</th><th style="padding:6px;text-align:left">Intervalo (min)</th><th style="padding:6px;text-align:left">Horas (opcional)</th></tr></thead>
-        <tbody id="esc-editor-tbody"></tbody>
-      </table>
-    </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
-      <button class="btn b-gh b-sm" onclick="document.getElementById('modal-escala-editor').style.display='none'">Cancelar</button>
-      <button class="btn b-sm" onclick="escalaEditorGenerate()">Gerar ciclo JSON</button>
-      <button class="btn b-az b-sm" onclick="escalaEditorSave()">Salvar Escala</button>
-    </div>
-    <div id="esc-editor-output" style="font-size:13px;margin-top:8px"></div>
-  </div>
-</div>
-
 <!-- Modal Correções de Ponto (Solicitações do App) -->
 <div id="modal-correcoes-ponto" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;overflow-y:auto;padding:24px 16px">
   <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:720px;margin:40px auto;padding:0;position:relative;box-shadow:var(--shadow-md);border:1px solid var(--borda)">
@@ -333,30 +182,6 @@
     </div>
     <div id="modal-correcoes-body" style="padding:12px 20px 24px;max-height:65vh;overflow-y:auto">Carregando...</div>
     <div id="st-correcoes-ponto" class="st" style="margin:0 20px 16px"></div>
-  </div>
-</div>
-<!-- Modal aprovação de HE -->
-<div id="modal-he-pendentes" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;overflow-y:auto;padding:24px 16px">
-  <div style="background:var(--branco);color:var(--preto);border-radius:var(--r2);max-width:760px;margin:40px auto;padding:0;position:relative;box-shadow:var(--shadow-md);border:1px solid var(--borda)">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--borda)">
-      <div>
-        <div style="font-size:16px;font-weight:700;color:var(--preto)">⏱ Solicitações de Hora Extra</div>
-        <div style="font-size:12px;opacity:.55;color:var(--preto);margin-top:2px">Aprovação por gestor</div>
-      </div>
-      <button type="button" onclick="document.getElementById('modal-he-pendentes').style.display='none'" style="background:none;border:none;font-size:22px;cursor:pointer;opacity:.5;color:var(--preto);line-height:1">&times;</button>
-    </div>
-    <div style="padding:12px 20px;border-bottom:1px solid var(--borda);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <select id="modal-he-filtro" onchange="carregarHEPendentes()" style="font-size:13px;padding:4px 8px;border:1px solid var(--borda);border-radius:var(--r);background:var(--branco);color:var(--preto)">
-        <option value="pendente">Pendentes</option>
-        <option value="aprovado">Aprovadas</option>
-        <option value="recusado">Recusadas</option>
-        <option value="todos">Todas</option>
-      </select>
-      <button class="btn b-gh b-sm" onclick="carregarHEPendentes()">🔄 Atualizar</button>
-      <span id="modal-he-count" style="font-size:12px;opacity:.6"></span>
-    </div>
-    <div id="modal-he-body" style="padding:12px 20px 24px;max-height:65vh;overflow-y:auto">Carregando...</div>
-    <div id="st-he" class="st" style="margin:0 20px 16px"></div>
   </div>
 </div>
 <div id="modal-fat-detalhe" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:24px 16px">
@@ -381,77 +206,6 @@ function _rmConfirm(titulo, msg, {okLabel='Confirmar', okStyle='background:var(-
     okBtn.addEventListener('click', onOk, {once:true});
     document.getElementById('modal-rm-confirm-cancel').addEventListener('click', onCan, {once:true});
   });
-}
-function abrirModalEscalaEditor(){
-  document.getElementById('modal-escala-editor').style.display='flex';
-  const len = Number(document.getElementById('esc-editor-length').value) || 8;
-  renderEscEditorRows(len);
-  document.getElementById('esc-editor-output').innerHTML='';
-}
-
-function renderEscEditorRows(len){
-  const tbody = document.getElementById('esc-editor-tbody');
-  tbody.innerHTML = '';
-  for(let i=0;i<len;i++){
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td style="padding:6px">${i+1}</td>
-      <td style="padding:6px"><select class="esc-day-tipo inp"><option value="trabalho">trabalho</option><option value="folga">folga</option></select></td>
-      <td style="padding:6px"><input class="esc-day-ent inp" value="08:00" /></td>
-      <td style="padding:6px"><input class="esc-day-sai inp" value="17:00" /></td>
-      <td style="padding:6px"><input class="esc-day-int inp" value="60" /></td>
-      <td style="padding:6px"><input class="esc-day-horas inp" placeholder="8" /></td>`;
-    tbody.appendChild(tr);
-  }
-}
-
-document.getElementById('esc-editor-length')?.addEventListener('change', (e)=>{ renderEscEditorRows(Number(e.target.value||8)); });
-
-function escalaEditorGenerate(){
-  const len = Number(document.getElementById('esc-editor-length').value) || 8;
-  const dias = [];
-  const rows = Array.from(document.querySelectorAll('#esc-editor-tbody tr'));
-  for(let r of rows){
-    const tipo = r.querySelector('.esc-day-tipo').value;
-    if(tipo==='folga'){
-      dias.push({tipo:'folga'});
-      continue;
-    }
-    const hora_entrada = (r.querySelector('.esc-day-ent').value||'08:00').trim();
-    const hora_saida = (r.querySelector('.esc-day-sai').value||'17:00').trim();
-    const intervalo_min = parseInt(r.querySelector('.esc-day-int').value)||0;
-    const horas = r.querySelector('.esc-day-horas').value?parseFloat(r.querySelector('.esc-day-horas').value):undefined;
-    const obj = {tipo:'trabalho', hora_entrada, hora_saida, intervalo_min};
-    if(horas) obj.horas = horas;
-    dias.push(obj);
-  }
-  const ciclo = {dias};
-  document.getElementById('esc-editor-output').textContent = JSON.stringify(ciclo, null, 2);
-  rmToast('Ciclo gerado no campo de saída. Use Salvar Escala para persistir.','in');
-}
-
-async function escalaEditorSave(){
-  const nome = (document.getElementById('esc-editor-nome').value||'').trim();
-  const tipo = (document.getElementById('esc-editor-tipo').value||'6x2');
-  if(!nome){ rmToast('Informe um nome para a escala.','er'); return; }
-  const out = document.getElementById('esc-editor-output').textContent || '';
-  if(!out){ rmToast('Gere o ciclo JSON antes de salvar.','er'); return; }
-  let ciclo_json = out;
-  try{ JSON.parse(ciclo_json); }catch(e){ rmToast('JSON inválido. Gere novamente.','er'); return; }
-  const payload = { nome, tipo, ciclo_json };
-  const res = await api('/api/escalas','POST', payload);
-  if(res?.erro){ rmToast(res.erro,'er'); return; }
-  rmToast('Escala criada com sucesso. Gerando prévia...','ok');
-  // abrir modal de preview e preencher com a escala recém-criada
-  document.getElementById('modal-escala-editor').style.display='none';
-  try{
-    // set inputs no modal de preview e disparar a geração
-    abrirModalPreviewEscala();
-    document.querySelector('input[name="preview-mode"][value="escala"]').checked = true;
-    document.getElementById('preview-escala-id').value = res.id || res.escala_id || '';
-    document.getElementById('preview-data-inicio').value = new Date().toISOString().split('T')[0];
-    document.getElementById('preview-dias').value = 14;
-    await gerarPreviewPonto();
-  }catch(e){ console.warn('Falha ao gerar prévia automática',e); }
 }
 function _rmMarcarPaga(numero) {
   return new Promise((resolve, reject) => {
@@ -525,64 +279,6 @@ function _rmVincularConc(valor) {
     document.getElementById('modal-vinc-ok').addEventListener('click', onOk, {once:true});
     document.getElementById('modal-vinc-cancel').addEventListener('click', onCan, {once:true});
   });
-}
-// Abrir modal de prévia de jornada/escala
-function abrirModalPreviewEscala(funcionario_id){
-  const modal = document.getElementById('modal-preview-escala');
-  document.getElementById('preview-funcionario-id').value = funcionario_id || '';
-  document.getElementById('preview-escala-id').value = '';
-  document.getElementById('preview-jornada-id').value = '';
-  document.getElementById('preview-data-inicio').value = new Date().toISOString().split('T')[0];
-  document.getElementById('preview-dias').value = 14;
-  document.getElementById('preview-result').innerHTML = '';
-  modal.style.display = 'flex';
-}
-
-async function gerarPreviewPonto(){
-  const mode = document.querySelector('input[name="preview-mode"]:checked').value;
-  const funcionario_id = Number(document.getElementById('preview-funcionario-id').value) || undefined;
-  const escala_id = Number(document.getElementById('preview-escala-id').value) || undefined;
-  const jornada_id = Number(document.getElementById('preview-jornada-id').value) || undefined;
-  const data_inicio = document.getElementById('preview-data-inicio').value;
-  const dias = Number(document.getElementById('preview-dias').value) || 14;
-  const body = {mode, data_inicio, dias};
-  if(mode==='funcionario') body.funcionario_id = funcionario_id;
-  if(mode==='escala') body.escala_id = escala_id;
-  if(mode==='jornada') body.jornada_id = jornada_id;
-  const res = await api('/api/ponto/preview','POST', body);
-  if(res?.erro){ rmToast(res.erro,'er'); return; }
-  const items = res.preview || [];
-  if(!items.length){ document.getElementById('preview-result').innerHTML = '<div style="opacity:.7">Nenhum item retornado.</div>'; return; }
-  let html = '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--fundo-alt)"><th style="padding:8px;text-align:left">Data</th><th style="padding:8px;text-align:right">Horas</th><th style="padding:8px;text-align:left">Fonte</th><th style="padding:8px;text-align:left">Detalhe</th></tr></thead><tbody>';
-  for(const p of items){
-    const detalhe = p.detalhe ? (typeof p.detalhe==='object'?JSON.stringify(p.detalhe):p.detalhe) : (p.indice!==undefined?('idx '+p.indice): (p.horarios?JSON.stringify(p.horarios):''));
-    html += `<tr><td style="padding:8px;border-top:1px solid var(--borda)">${p.data_ref}</td><td style="padding:8px;border-top:1px solid var(--borda);text-align:right">${p.horas_esperadas_fmt||''}</td><td style="padding:8px;border-top:1px solid var(--borda)">${p.fonte||''}</td><td style="padding:8px;border-top:1px solid var(--borda)">${detalhe}</td></tr>`;
-  }
-  html += '</tbody></table>';
-  document.getElementById('preview-result').innerHTML = html;
-}
-
-function abrirModalBulkAssign(){
-  document.getElementById('modal-bulk-assign').style.display='flex';
-  document.getElementById('bulk-result').innerHTML='';
-}
-
-async function executarBulkAssign(){
-  const raw = document.getElementById('bulk-funcionarios').value||'';
-  const escala_id = Number(document.getElementById('bulk-escala-id').value)||undefined;
-  const data_inicio = document.getElementById('bulk-data-inicio').value||undefined;
-  const data_fim = document.getElementById('bulk-data-fim').value||undefined;
-  if(!raw.trim()){ rmToast('Informe pelo menos um funcionário.','er'); return; }
-  if(!escala_id){ rmToast('Informe a escala_id.','er'); return; }
-  const body = { funcionarios_csv: raw, escala_id, data_inicio };
-  if(data_fim) body.data_fim = data_fim;
-  const res = await api('/api/ponto/escala/bulk_assign','POST', body);
-  if(res?.erro){ rmToast(res.erro,'er'); return; }
-  let html = `<div style="margin-bottom:8px"><b>Criados:</b> ${res.created?.length||0} — <b>Ignorados (conflito):</b> ${res.skipped_conflict?.length||0} — <b>Erros:</b> ${res.errors?.length||0}</div>`;
-  if(res.created && res.created.length){ html += '<div style="margin-bottom:6px"><b>IDs criados:</b> '+res.created.join(', ')+'</div>'; }
-  if(res.skipped_conflict && res.skipped_conflict.length){ html += '<div style="color:#b45309;margin-bottom:6px"><b>Ignorados (conflito):</b> '+res.skipped_conflict.join(', ')+'</div>'; }
-  if(res.errors && res.errors.length){ html += '<div style="color:#a00"><b>Erros:</b><ul>'+res.errors.map(e=>`<li>${e.funcionario_id||''}: ${e.erro||''}</li>`).join('')+'</ul></div>'; }
-  document.getElementById('bulk-result').innerHTML = html;
 }
 // ─────────────────────────────────────────────────────────────────────────────
 const FAT_STATE={page:1,per_page:20,order_by:'dt_emissao',order_dir:'desc'};
@@ -914,59 +610,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 <script src="/static/vendor/pdfjs/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<style>
-/* ── Caret de módulo: indica estado fechado/aberto ─────────────────── */
-.nav-module:not(.open) .module-caret{transform:rotate(-90deg)}
-.nav-module.open .module-caret{transform:rotate(0deg)}
-
-/* ── Overlay / Modal base reutilizável ─────────────────────────────── */
-.rm-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.62);
-  z-index:3000;align-items:center;justify-content:center;padding:16px;
-  backdrop-filter:blur(3px)}
-.rm-overlay.show{display:flex}
-@keyframes rm-modal-in{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:none}}
-.rm-modal-box{background:var(--branco);color:var(--preto);border-radius:var(--r2);
-  width:100%;padding:28px 24px;box-shadow:var(--shadow-md);border:1px solid var(--borda);
-  animation:rm-modal-in .2s ease}
-.rm-modal-title{font-size:16px;font-weight:700;margin-bottom:18px;
-  display:flex;align-items:center;justify-content:space-between;gap:10px}
-.rm-modal-title .rm-close{background:transparent;border:none;font-size:18px;
-  cursor:pointer;padding:0 6px;color:var(--text-muted);line-height:1;border-radius:6px;
-  transition:background .15s,color .15s}
-.rm-modal-title .rm-close:hover{background:var(--verm-cl);color:var(--verm)}
-.rm-modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:22px;flex-wrap:wrap}
-.rm-form-row{margin-bottom:14px}
-.rm-form-row>label{font-size:11px;font-weight:700;display:block;margin-bottom:5px;
-  color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px}
-.rm-form-row input,.rm-form-row select,.rm-form-row textarea{width:100%;
-  box-sizing:border-box;padding:9px 11px;border:1.5px solid var(--borda);
-  border-radius:var(--r);background:var(--cinza-cl);color:var(--preto);
-  font-size:13px;font-family:inherit;transition:border-color .18s,box-shadow .18s}
-.rm-form-row input:focus,.rm-form-row select:focus,.rm-form-row textarea:focus{
-  outline:none;border-color:var(--azul);box-shadow:var(--shadow-glow)}
-.rm-form-row .hint{font-size:11px;color:var(--text-muted);margin-top:3px}
-.rm-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media(max-width:520px){.rm-grid-2{grid-template-columns:1fr}}
-
-/* ── Módulos nav: destaque de módulo com item ativo ────────────────── */
-.nav-module.active{border-color:rgba(240,141,56,.55)!important;
-  box-shadow:0 0 0 1px rgba(240,141,56,.22)!important}
-.nav-module.active>.module-toggle{color:#fff}
-
-/* ── Sidebar scrollbar fina ─────────────────────────────────────────── */
-.sidebar-main{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent}
-.sidebar-main::-webkit-scrollbar{width:4px}
-.sidebar-main::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:4px}
-
-/* ── Mobile nav: chip de categoria ──────────────────────────────────── */
-.mobile-nav-sep{font-size:9px;font-weight:800;color:var(--text-muted);
-  text-transform:uppercase;letter-spacing:.6px;padding:0 4px;
-  align-self:center;white-space:nowrap;flex-shrink:0}
-</style>
 </head>
 <body>
-
-<div class="rm-progress-bar" id="rm-progress-bar-top"></div>
 
 <div id="autosave-global-badge" class="autosave-global-badge state-ok" aria-live="polite" title="Sincronizado">
   <span class="dot"></span>
@@ -976,38 +621,17 @@ document.addEventListener('DOMContentLoaded',()=>{
   <div class="mobile-nav-inner">
     <label>Navegação rápida</label>
     <div class="mobile-nav-scroller" id="mobile-nav-scroller">
-      <!-- Principal -->
       <button type="button" class="mobile-nav-btn on" data-nav="dashboard" onclick="navFromMobile('dashboard')">Dashboard</button>
-      <!-- Comercial -->
-      <span class="mobile-nav-sep">|</span>
+      <button type="button" class="mobile-nav-btn" data-nav="pagamento-salario" onclick="navFromMobile('pagamento-salario')">Salarios</button>
       <button type="button" class="mobile-nav-btn" data-nav="clientes" onclick="navFromMobile('clientes')">Clientes</button>
-      <button type="button" class="mobile-nav-btn" data-nav="faturamento" onclick="navFromMobile('faturamento')">Faturamento</button>
-      <button type="button" class="mobile-nav-btn" data-nav="nova-medicao" onclick="navFromMobile('nova-medicao')">Nova Medição</button>
-      <button type="button" class="mobile-nav-btn" data-nav="historico" onclick="navFromMobile('historico')">Histórico</button>
-      <button type="button" class="mobile-nav-btn" data-nav="cobrancas" onclick="navFromMobile('cobrancas')">Cobranças</button>
-      <!-- Financeiro -->
-      <span class="mobile-nav-sep">|</span>
-      <button type="button" class="mobile-nav-btn" data-nav="financeiro" onclick="navFromMobile('financeiro')">Financeiro</button>
-      <button type="button" class="mobile-nav-btn" data-nav="despesas" onclick="navFromMobile('despesas')">Despesas</button>
-      <button type="button" class="mobile-nav-btn" data-nav="fluxo-caixa" onclick="navFromMobile('fluxo-caixa')">Fluxo de Caixa</button>
-      <button type="button" class="mobile-nav-btn" data-nav="contas" onclick="navFromMobile('contas')">Contas</button>
-      <button type="button" class="mobile-nav-btn" data-nav="conciliacao" onclick="navFromMobile('conciliacao')">Conciliação</button>
-      <button type="button" class="mobile-nav-btn" data-nav="relatorios" onclick="navFromMobile('relatorios')">Relatórios</button>
-      <!-- RH -->
-      <span class="mobile-nav-sep">|</span>
       <button type="button" class="mobile-nav-btn" data-nav="rh" onclick="navFromMobile('rh')">RH</button>
-      <button type="button" class="mobile-nav-btn" data-nav="pagamento-salario" onclick="navFromMobile('pagamento-salario')">Salários</button>
       <button type="button" class="mobile-nav-btn" data-nav="rh-digital" onclick="navFromMobile('rh-digital')">Comunicação</button>
+      <button type="button" class="mobile-nav-btn" data-nav="operacional" onclick="navFromMobile('operacional')">Operacional</button>
+      <button type="button" class="mobile-nav-btn" data-nav="compras" onclick="navFromMobile('compras')">Compras</button>
       <button type="button" class="mobile-nav-btn" data-nav="beneficios" onclick="navFromMobile('beneficios')">Benefícios</button>
       <button type="button" class="mobile-nav-btn" data-nav="sst" onclick="navFromMobile('sst')">SST</button>
       <button type="button" class="mobile-nav-btn" data-nav="assinaturas" onclick="navFromMobile('assinaturas')">Assinaturas</button>
       <button type="button" class="mobile-nav-btn" data-nav="documentos" onclick="navFromMobile('documentos')">📄 Documentos</button>
-      <!-- Operacional -->
-      <span class="mobile-nav-sep">|</span>
-      <button type="button" class="mobile-nav-btn" data-nav="operacional" onclick="navFromMobile('operacional')">Operacional</button>
-      <button type="button" class="mobile-nav-btn" data-nav="compras" onclick="navFromMobile('compras')">Compras</button>
-      <!-- Admin -->
-      <span class="mobile-nav-sep">|</span>
       <button type="button" class="mobile-nav-btn" data-nav="empresas" onclick="navFromMobile('empresas')">Empresas</button>
       <button type="button" class="mobile-nav-btn" data-nav="usuarios" onclick="navFromMobile('usuarios')">Usuários</button>
       <button type="button" class="mobile-nav-btn" data-nav="config" onclick="navFromMobile('config')">Configurações</button>
@@ -1028,88 +652,62 @@ document.addEventListener('DOMContentLoaded',()=>{
     </div>
 
     <div class="sidebar-main">
-
-      <!-- ── Principal ──────────────────────────────────────────────── -->
-      <div class="nav-module" id="mod-principal">
+      <div class="nav-module open" id="mod-principal">
         <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-principal')">
           <span class="mod-icon">🏠</span><span class="module-label">Principal</span><span class="module-caret">▾</span>
         </button>
         <div class="module-panel">
           <a class="nav-item lv2 on" data-nav="dashboard" onclick="nav('dashboard',this)">
-            <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
             <span class="nav-label">Dashboard</span>
           </a>
         </div>
       </div>
 
-      <!-- ── Comercial ───────────────────────────────────────────────── -->
       <div class="nav-module" id="mod-comercial">
         <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-comercial')">
           <span class="mod-icon">🧾</span><span class="module-label">Comercial</span><span class="module-caret">▾</span>
         </button>
         <div class="module-panel">
-          <a class="nav-item lv2" data-nav="clientes" onclick="nav('clientes',this)"><span class="nav-label">Clientes</span></a>
-          <a class="nav-item lv2" data-nav="faturamento" onclick="nav('faturamento',this)"><span class="nav-label">Faturamento</span></a>
-          <a class="nav-item lv2" data-nav="nova-medicao" onclick="nav('nova-medicao',this)"><span class="nav-label">Nova Medição</span></a>
-          <a class="nav-item lv2" data-nav="historico" onclick="nav('historico',this)"><span class="nav-label">Histórico</span></a>
-          <a class="nav-item lv2" data-nav="cobrancas" onclick="nav('cobrancas',this)"><span class="nav-label">Cobranças</span></a>
+          <a class="nav-item lv2" onclick="nav('clientes',this)"><span class="nav-label">Clientes</span></a>
         </div>
       </div>
 
-      <!-- ── Financeiro ──────────────────────────────────────────────── -->
-      <div class="nav-module" id="mod-financeiro">
-        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-financeiro')">
-          <span class="mod-icon">💰</span><span class="module-label">Financeiro</span><span class="module-caret">▾</span>
-        </button>
-        <div class="module-panel">
-          <a class="nav-item lv2" data-nav="financeiro" onclick="nav('financeiro',this)"><span class="nav-label">Visão Geral</span></a>
-          <a class="nav-item lv2" data-nav="despesas" onclick="nav('despesas',this)"><span class="nav-label">Despesas</span></a>
-          <a class="nav-item lv2" data-nav="fluxo-caixa" onclick="nav('fluxo-caixa',this)"><span class="nav-label">Fluxo de Caixa</span></a>
-          <a class="nav-item lv2" data-nav="contas" onclick="nav('contas',this)"><span class="nav-label">Contas</span></a>
-          <a class="nav-item lv2" data-nav="conciliacao" onclick="nav('conciliacao',this)"><span class="nav-label">Conciliação Bancária</span></a>
-          <a class="nav-item lv2" data-nav="relatorios" onclick="nav('relatorios',this)"><span class="nav-label">Relatórios</span></a>
-        </div>
-      </div>
-
-      <!-- ── RH ─────────────────────────────────────────────────────── -->
       <div class="nav-module" id="mod-rh">
         <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-rh')">
           <span class="mod-icon">👥</span><span class="module-label">RH</span><span class="module-caret">▾</span>
         </button>
         <div class="module-panel">
-          <a class="nav-item lv2" data-nav="rh" onclick="nav('rh',this)"><span class="nav-label">Colaboradores</span></a>
-          <a class="nav-item lv2" data-nav="rh-digital" onclick="nav('rh-digital',this)"><span class="nav-label">Comunicação</span></a>
-          <a class="nav-item lv2" data-nav="beneficios" onclick="nav('beneficios',this)"><span class="nav-label">Benefícios</span></a>
+          <a class="nav-item lv2" onclick="nav('rh',this)"><span class="nav-label">RH</span></a>
+          <a class="nav-item lv2" onclick="nav('rh-digital',this)"><span class="nav-label">Comunicacao</span></a>
+          <a class="nav-item lv2" onclick="nav('beneficios',this)"><span class="nav-label">Beneficios</span></a>
           <a class="nav-item lv2" data-nav="pagamento-salario" onclick="nav('pagamento-salario',this)"><span class="nav-label">Pagamento de Salário</span></a>
-          <a class="nav-item lv2" data-nav="sst" onclick="nav('sst',this)"><span class="nav-label">Segurança do Trabalho</span></a>
-          <a class="nav-item lv2" data-nav="assinaturas" onclick="nav('assinaturas',this)"><span class="nav-label">Assinaturas</span></a>
-          <a class="nav-item lv2" data-nav="documentos" onclick="nav('documentos',this)"><span class="nav-label">📄 Documentos</span></a>
+          <a class="nav-item lv2" onclick="nav('sst',this)"><span class="nav-label">Seguranca do Trabalho</span></a>
+          <a class="nav-item lv2" onclick="nav('assinaturas',this)"><span class="nav-label">Assinaturas</span></a>
+          <a class="nav-item lv2" onclick="nav('documentos',this)"><span class="nav-label">📄 Documentos</span></a>
         </div>
       </div>
 
-      <!-- ── Operacional ────────────────────────────────────────────── -->
       <div class="nav-module" id="mod-operacional">
         <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-operacional')">
           <span class="mod-icon">🏭</span><span class="module-label">Operacional</span><span class="module-caret">▾</span>
         </button>
         <div class="module-panel">
-          <a class="nav-item lv2" data-nav="operacional" onclick="nav('operacional',this)"><span class="nav-label">Operacional</span></a>
-          <a class="nav-item lv2" data-nav="compras" onclick="nav('compras',this)"><span class="nav-label">Compras</span></a>
+          <a class="nav-item lv2" onclick="nav('operacional',this)"><span class="nav-label">Operacional</span></a>
+          <a class="nav-item lv2" onclick="nav('compras',this)"><span class="nav-label">Compras</span></a>
         </div>
       </div>
 
-      <!-- ── Administração ──────────────────────────────────────────── -->
       <div class="nav-module" id="mod-admin">
         <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-admin')">
-          <span class="mod-icon">⚙️</span><span class="module-label">Administração</span><span class="module-caret">▾</span>
+          <span class="mod-icon">⚙️</span><span class="module-label">Administracao</span><span class="module-caret">▾</span>
         </button>
         <div class="module-panel">
-          <a class="nav-item lv2" data-nav="empresas" onclick="nav('empresas',this)"><span class="nav-label">Empresas</span></a>
-          <a class="nav-item lv2" data-nav="usuarios" onclick="nav('usuarios',this)"><span class="nav-label">Usuários</span></a>
-          <a class="nav-item lv2" data-nav="config" onclick="nav('config',this)"><span class="nav-label">Configurações</span></a>
+          <a class="nav-item lv2" onclick="nav('empresas',this)"><span class="nav-label">Empresas</span></a>
+          <a class="nav-item lv2" onclick="nav('usuarios',this)"><span class="nav-label">Usuarios</span></a>
+          <a class="nav-item lv2" onclick="nav('config',this)"><span class="nav-label">Configuracoes</span></a>
         </div>
       </div>
-
     </div>
 
     <div class="sidebar-bottom">
@@ -1139,50 +737,52 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button class="metric metric-btn" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Benefícios pendentes"><div class="n" id="d-benef-pend">—</div><div class="l">Benefícios pendentes <span class="metric-go">Ver</span></div></button>
         <button class="metric metric-btn" type="button" onclick="abrirDashboardDestino('clientes')" aria-label="Abrir clientes ativos"><div class="n" id="d-at">—</div><div class="l">Clientes ativos <span class="metric-go">Abrir</span></div></button>
         <button class="metric metric-btn" style="--metric-c:var(--laranja)" type="button" onclick="abrirModalCorrecoesPonto()" aria-label="Correções de ponto pendentes"><div class="n" id="d-correcoes-ponto" style="color:var(--laranja)">—</div><div class="l">Correções de ponto <span class="metric-go">Ver</span></div></button>
-        <button class="metric metric-btn" style="--metric-c:#b45309" type="button" onclick="abrirModalHEPendentes()" aria-label="Horas extras pendentes de aprovação"><div class="n" id="d-he-pendentes" style="color:#b45309">—</div><div class="l">HE pendentes <span class="metric-go">Aprovar</span></div></button>
         <button class="metric metric-btn lj" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Cálculo de benefícios pendente"><div class="n" id="d-calc-benef">—</div><div class="l">Cálculos pendentes <span class="metric-go">Ver</span></div></button>
       </div>
       <div id="dash-alertas" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px"></div>
-      <!-- Card Gestão Fácil de Ponto -->
       <div class="card" style="margin-bottom:12px">
-        <div class="card-header">
-          <span class="card-title">⚡ Gestão Fácil de Ponto</span>
-          <button class="btn b-az b-sm" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'));setTimeout(()=>{rhSetSubAba&&rhSetSubAba('gestao-facil',null);gfCarregar&&gfCarregar()},200)">Abrir</button>
-        </div>
-        <div style="font-size:12px;color:var(--text-muted);padding:4px 0 2px">Monitore e gerencie o ponto dos colaboradores em tempo real.</div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:6px 0;text-align:center">
+        <div class="card-header"><span class="card-title">Resumo de colaboradores</span></div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:12px 0;text-align:center">
           <div>
-            <div style="font-size:18px;font-weight:700;color:var(--azul)" id="dash-resumo-ativos">—</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Ativos</div>
+            <div style="font-size:28px;font-weight:700;color:var(--azul)" id="dash-resumo-ativos">—</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ativos</div>
           </div>
           <div>
-            <div style="font-size:18px;font-weight:700;color:var(--verde)" id="dash-resumo-ferias">—</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Em férias</div>
+            <div style="font-size:28px;font-weight:700;color:var(--verde)" id="dash-resumo-ferias">—</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Em férias</div>
           </div>
           <div>
-            <div style="font-size:18px;font-weight:700;color:var(--laranja)" id="dash-resumo-afastados">—</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Afastados</div>
+            <div style="font-size:28px;font-weight:700;color:var(--laranja)" id="dash-resumo-afastados">—</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Afastados</div>
           </div>
           <div>
-            <div style="font-size:18px;font-weight:700;color:var(--text-muted)" id="dash-resumo-ponto-hoje">—</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Ponto hoje</div>
+            <div style="font-size:28px;font-weight:700;color:var(--text-muted)" id="dash-resumo-ponto-hoje">—</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ponto hoje</div>
           </div>
         </div>
       </div>
-      <div class="card" style="margin-bottom:8px">
+      <div class="card" style="margin-bottom:12px">
         <div class="card-header"><span class="card-title">Ponto do dia</span><span style="font-size:11px;color:var(--text-muted)" id="dash-ponto-data"></span></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:4px 0;text-align:center">
-          <button type="button" class="metric metric-btn" style="background:none;border:2px solid var(--verde);border-radius:8px;padding:6px;cursor:pointer" onclick="abrirModalPontoDia('bateram')">
-            <div style="font-size:18px;font-weight:700;color:var(--verde)" id="dash-ponto-bateram">—</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">✅ Bateram ponto</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:12px 0;text-align:center">
+          <button type="button" class="metric metric-btn" style="background:none;border:2px solid var(--verde);border-radius:10px;padding:16px 8px;cursor:pointer" onclick="abrirModalPontoDia('bateram')">
+            <div style="font-size:36px;font-weight:700;color:var(--verde)" id="dash-ponto-bateram">—</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:4px">✅ Bateram ponto</div>
           </button>
-          <button type="button" class="metric metric-btn" style="background:none;border:2px solid var(--verm);border-radius:8px;padding:6px;cursor:pointer" onclick="abrirModalPontoDia('falta')">
-            <div style="font-size:18px;font-weight:700;color:var(--verm)" id="dash-ponto-falta">—</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">❌ Falta / sem registro</div>
+          <button type="button" class="metric metric-btn" style="background:none;border:2px solid var(--verm);border-radius:10px;padding:16px 8px;cursor:pointer" onclick="abrirModalPontoDia('falta')">
+            <div style="font-size:36px;font-weight:700;color:var(--verm)" id="dash-ponto-falta">—</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:4px">❌ Falta / sem registro</div>
           </button>
         </div>
       </div>
-
+      <div class="card">
+        <div class="card-header"><span class="card-title">Acesso rápido</span></div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+          <button class="btn b-az b-lg" style="justify-content:center" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))">RH</button>
+          <button class="btn b-gh b-lg" style="justify-content:center" onclick="nav('clientes',document.querySelector('[onclick*=clientes]'))">Clientes</button>
+          <button class="btn b-ghl b-lg" style="justify-content:center" onclick="nav('operacional',document.querySelector('.nav-item[data-nav=\'operacional\']'))">Operacional</button>
+        </div>
+      </div>
+      <div id="dash-empresas" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"></div>
     </div>
 
     <!-- ══ ABA FINANCEIRO (PLACEHOLDER) ══ -->
@@ -1340,7 +940,6 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-vd b-sm" type="button" id="fp-btn-fechar" onclick="fpFecharFolha()">✓ Fechar folha</button>
             <button class="btn b-gh b-sm" type="button" id="fp-btn-reabrir" style="display:none" onclick="fpReabrirFolha()">↺ Reabrir</button>
             <button class="btn b-vd b-sm" type="button" id="fp-btn-pagar" style="display:none" onclick="fpMarcarPaga()">💰 Marcar como paga</button>
-            <button class="btn b-sm" type="button" id="fp-btn-notificar" style="background:var(--azul);color:#fff;border:1px solid var(--azul)" onclick="fpNotificarFuncionarios()">📲 Notificar funcionários</button>
             <button class="btn b-az b-sm" type="button" onclick="fpAbrirPrevia()">👁 Prévia</button>
             <button class="btn b-gh b-sm" type="button" onclick="fpExportar('xlsx')">⬇ XLSX</button>
             <button class="btn b-gh b-sm" type="button" onclick="fpExportar('pdf')">⬇ PDF</button>
@@ -1964,9 +1563,8 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-funcionarios" class="subaba-bloco on" onclick="rhSetSubAba('funcionarios',this)">Funcionários</button>
         <button type="button" id="rh-subtab-ferias-gestao" class="subaba-bloco" onclick="rhSetSubAba('ferias-gestao',this)">Gestão de Férias</button>
         <button type="button" id="rh-subtab-exportar" class="subaba-bloco" onclick="rhSetSubAba('exportar',this)">Exportar colaboradores ativos</button>
-        <button type="button" id="rh-subtab-jornada" class="subaba-bloco" onclick="rhSetSubAba('jornada',this)">Regime: Jornada Fixa</button>
-        <button type="button" id="rh-subtab-escalas" class="subaba-bloco" onclick="rhSetSubAba('escalas',this)">Regime: Escala de Turnos</button>
-        <button type="button" id="rh-subtab-postos-geofence" class="subaba-bloco" onclick="rhSetSubAba('postos-geofence',this)">Postos e Geofence</button>
+        <button type="button" id="rh-subtab-jornada" class="subaba-bloco" onclick="rhSetSubAba('jornada',this)">Jornadas e Geofence</button>
+        <button type="button" id="rh-subtab-escalas" class="subaba-bloco" onclick="rhSetSubAba('escalas',this)">Escalas de Turnos</button>
         <button type="button" id="rh-subtab-ponto" class="subaba-bloco" onclick="rhSetSubAba('ponto',this)">Gestão de Ponto por Funcionário</button>
         <button type="button" id="rh-subtab-painel-dia" class="subaba-bloco" onclick="rhSetSubAba('painel-dia',this)">Painel do dia</button>
         <button type="button" id="rh-subtab-envio" class="subaba-bloco" onclick="rhSetSubAba('envio',this)">Envio de arquivo</button>
@@ -2019,16 +1617,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               <label>Fim do período</label>
               <input id="rh-ferias-fim" type="date" onchange="renderRhFerias()">
             </div>
-            <!-- BUG-FIX 8: adicionado seletor de empresa para que gestores
-                 possam filtrar férias por empresa sem ver todos os colaboradores
-                 de todas as empresas misturados na listagem. -->
-            <div class="f" style="min-width:180px">
-              <label>Empresa</label>
-              <select id="rh-ferias-empresa" onchange="renderRhFerias()">
-                <option value="">Todas</option>
-              </select>
-            </div>
-            <div class="f" style="min-width:220px">
+            <div class="f" style="min-width:240px">
               <label>Busca</label>
               <input id="rh-ferias-busca" placeholder="Nome, RE, função ou empresa" oninput="renderRhFerias()">
             </div>
@@ -2093,11 +1682,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
 
       <div class="card rh-pane" id="rh-pane-jornada" data-rh-pane="jornada">
-        <div class="card-header"><span class="card-title">Regime: Jornada Fixa (grade semanal seg-dom)</span></div>
-        <div class="hint" style="margin:4px 0 8px;color:var(--text-muted);font-size:12px">
-          Use este regime para horários <b>fixos por dia da semana</b>. Para ciclos rotativos (6x2, 12x36, etc.) use a aba <b>Regime: Escala de Turnos</b>.
-          <br>Um funcionário pode ter <b>apenas um regime ativo</b> — ao vincular aqui, qualquer escala de turno ativa dele é desativada automaticamente.
-        </div>
+        <div class="card-header"><span class="card-title">Jornadas de Trabalho e Geofence de Posto</span></div>
         <div class="g2" style="margin-top:8px">
           <div class="f" style="border:1px solid var(--borda);border-radius:10px;padding:10px;background:var(--cinza-cl)">
             <input id="rh-jor-id" type="hidden">
@@ -2166,17 +1751,40 @@ document.addEventListener('DOMContentLoaded',()=>{
               <button class="btn b-ghv b-sm" onclick="rhJornadaVincularSelecionados()">Vincular selecionados</button>
               <button class="btn b-gh b-sm" onclick="rhJornadaDesvincularSelecionados()">Desvincular selecionados</button>
             </div>
+
+            <hr style="margin:12px 0;border:none;border-top:1px solid var(--borda)">
+
+            <label>Geofence do posto (cliente)</label>
+            <div class="g3" style="margin-top:6px">
+              <div class="f s2">
+                <label>Posto / Cliente</label>
+                <select id="rh-geo-cliente" onchange="rhGeoCarregarCliente()"></select>
+              </div>
+              <div class="f"><label>Raio (metros)</label><input id="rh-geo-raio" type="number" min="10" max="2000" value="150"></div>
+            </div>
+            <div class="f" style="margin-top:6px">
+              <label>Endereço</label>
+              <div style="display:flex;gap:6px">
+                <input id="rh-geo-endereco" placeholder="Ex.: Rua das Flores, 123, São Paulo" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();rhGeoBuscarEndereco();}">  
+                <button class="btn b-gh b-sm" type="button" onclick="rhGeoBuscarEndereco()" style="white-space:nowrap">🔍 Buscar</button>
+              </div>
+              <div id="rh-geo-sugestoes" style="display:none;border:1px solid var(--borda);border-radius:6px;background:var(--bg,#fff);max-height:160px;overflow-y:auto;margin-top:2px;z-index:10;position:relative"></div>
+            </div>
+            <div class="g2" style="margin-top:6px">
+              <div class="f"><label>Latitude</label><input id="rh-geo-lat" placeholder="-23.123456" readonly></div>
+              <div class="f"><label>Longitude</label><input id="rh-geo-lon" placeholder="-46.123456" readonly></div>
+            </div>
+            <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
+              <button class="btn b-gh b-sm" onclick="rhGeoUsarLocalAtual()">📍 Usar minha localização</button>
+              <button class="btn b-az b-sm" onclick="rhGeoSalvarCliente()">Salvar geofence</button>
+            </div>
           </div>
         </div>
         <div id="rh-jornada-st" class="st" style="margin-top:8px"></div>
       </div>
 
       <div class="card rh-pane" id="rh-pane-escalas" data-rh-pane="escalas">
-        <div class="card-header"><span class="card-title">Regime: Escala de Turnos (ciclo rotativo — 6x1, 6x2, 5x2, 4x2, 12x36, Folguista)</span></div>
-        <div class="hint" style="margin:4px 0 8px;color:var(--text-muted);font-size:12px">
-          Use este regime para <b>ciclos rotativos</b> de trabalho/folga. Para horários fixos seg-dom use a aba <b>Regime: Jornada Fixa</b>.
-          <br>Um funcionário pode ter <b>apenas um regime ativo</b> — ao vincular aqui, qualquer jornada fixa atual dele é removida automaticamente.
-        </div>
+        <div class="card-header"><span class="card-title">Escalas de Turnos (6x1, 6x2, 4x2, 12x36, Folguista)</span></div>
         <div class="g2" style="margin-top:8px">
           <div class="f" style="border:1px solid var(--borda);border-radius:10px;padding:10px;background:var(--cinza-cl)">
             <input id="rh-esc-id" type="hidden">
@@ -2188,7 +1796,6 @@ document.addEventListener('DOMContentLoaded',()=>{
               <option value="">-- Selecione --</option>
               <option value="6x1">6x1 (seg-sáb trabalho, dom folga)</option>
               <option value="6x2">6x2 (6 dias trabalho, 2 folga)</option>
-              <option value="5x2">5x2 (seg-sex trabalho, sáb-dom folga)</option>
               <option value="4x2">4x2 (4 dias trabalho, 2 folga)</option>
               <option value="12x36">12x36 (12h trabalho, 36h folga)</option>
               <option value="folguista">Folguista (customizado)</option>
@@ -2275,41 +1882,6 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
         </div>
         <div id="rh-escala-st" class="st" style="margin-top:8px"></div>
-      </div>
-
-      <div class="card rh-pane" id="rh-pane-postos-geofence" data-rh-pane="postos-geofence" style="display:none">
-        <div class="card-header"><span class="card-title">Postos e Geofence (validação de localização do ponto)</span></div>
-        <div class="hint" style="margin:4px 0 8px;color:var(--text-muted);font-size:12px">
-          Configure o <b>raio de geofence</b> de cada posto/cliente. Quando o funcionário bate ponto pelo app, o sistema mede a distância entre a posição GPS e o posto e classifica como <b>no posto</b> ou <b>fora do posto</b>.
-          <br>É independente do <b>Regime</b> (jornada fixa ou escala) — cuida apenas da <b>localização</b>.
-        </div>
-        <div class="f" style="border:1px solid var(--borda);border-radius:10px;padding:10px;background:var(--cinza-cl)">
-          <label>Geofence do posto (cliente)</label>
-          <div class="g3" style="margin-top:6px">
-            <div class="f s2">
-              <label>Posto / Cliente</label>
-              <select id="rh-geo-cliente" onchange="rhGeoCarregarCliente()"></select>
-            </div>
-            <div class="f"><label>Raio (metros)</label><input id="rh-geo-raio" type="number" min="10" max="2000" value="150"></div>
-          </div>
-          <div class="f" style="margin-top:6px">
-            <label>Endereço</label>
-            <div style="display:flex;gap:6px">
-              <input id="rh-geo-endereco" placeholder="Ex.: Rua das Flores, 123, São Paulo" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();rhGeoBuscarEndereco();}">
-              <button class="btn b-gh b-sm" type="button" onclick="rhGeoBuscarEndereco()" style="white-space:nowrap">🔍 Buscar</button>
-            </div>
-            <div id="rh-geo-sugestoes" style="display:none;border:1px solid var(--borda);border-radius:6px;background:var(--bg,#fff);max-height:160px;overflow-y:auto;margin-top:2px;z-index:10;position:relative"></div>
-          </div>
-          <div class="g2" style="margin-top:6px">
-            <div class="f"><label>Latitude</label><input id="rh-geo-lat" placeholder="-23.123456" readonly></div>
-            <div class="f"><label>Longitude</label><input id="rh-geo-lon" placeholder="-46.123456" readonly></div>
-          </div>
-          <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
-            <button class="btn b-gh b-sm" onclick="rhGeoUsarLocalAtual()">📍 Usar minha localização</button>
-            <button class="btn b-az b-sm" onclick="rhGeoSalvarCliente()">Salvar geofence</button>
-          </div>
-        </div>
-        <div id="rh-postos-geofence-st" class="st" style="margin-top:8px"></div>
       </div>
 
       <div class="rh-pane" id="rh-pane-ponto" data-rh-pane="ponto">
@@ -2831,7 +2403,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
             <div class="f">
               <label>Data do aviso</label>
-              <input id="ap-data-aviso" type="date" style="width:170px" onchange="apRecalcularSeFuncSel()">
+              <input id="ap-data-aviso" type="date" style="width:170px">
             </div>
           </div>
           <div class="f" id="ap-reducao-wrap" style="margin-bottom:14px">
@@ -2840,13 +2412,6 @@ document.addEventListener('DOMContentLoaded',()=>{
               <option value="nenhuma">Sem redução (cumprimento integral)</option>
               <option value="2h_diarias">Redução de 2 horas diárias durante todo o aviso</option>
               <option value="7_dias_indenizados">Redução de 7 dias indenizados ao final do aviso</option>
-            </select>
-          </div>
-          <div class="f" id="ap-demissao-wrap" style="margin-bottom:14px;display:none">
-            <label>Cumprimento do aviso prévio (art. 487, §2º CLT) — somente Pedido de Demissão</label>
-            <select id="ap-demissao-aviso">
-              <option value="cumprira">Cumprirá os 30 dias de aviso prévio normalmente</option>
-              <option value="nao_cumprira">NÃO cumprirá o aviso — autoriza desconto nas verbas rescisórias (art. 487, §2º CLT)</option>
             </select>
           </div>
           <div class="f" style="margin-bottom:14px">
@@ -2878,13 +2443,78 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div id="pg-rh-digital" class="pg">
       <div id="st-rhd" class="st"></div>
       <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap" id="rhd-tabs">
-        <button class="btn b-az b-sm" onclick="switchTab('rhd','mensagens-app',this)">💬 Chat App <span id="badge-msgs-app" style="display:none;background:var(--verm);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>
+        <button class="btn b-az b-sm" onclick="switchTab('rhd','conversas',this)">Envio ativos</button>
+        <button class="btn b-gh b-sm" onclick="switchTab('rhd','mensagens-app',this)">💬 Chat App <span id="badge-msgs-app" style="display:none;background:var(--verm);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>
         <button class="btn b-gh b-sm" onclick="switchTab('rhd','cfg-email',this)">Config E-mail</button>
         <button class="btn b-gh b-sm" onclick="switchTab('rhd','cfg-wa',this)">Config WhatsApp</button>
       </div>
 
+      <!-- Tab Envio WhatsApp -->
+      <div id="rhd-tab-conversas">
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-header"><span class="card-title">Envio para colaboradores ativos</span></div>
+          <div class="g3" style="margin-top:8px">
+            <div class="f"><label>Empresa</label><select id="wa-colab-empresa" onchange="waAtualizarPostosColab();waRenderListaColab()"><option value="">Todas</option></select></div>
+            <div class="f"><label>Posto</label><select id="wa-colab-posto" onchange="waRenderListaColab()"><option value="">Todos</option></select></div>
+            <div class="f"><label>Buscar colaborador</label><input id="wa-colab-q" placeholder="Nome, matrícula, RE ou telefone" oninput="waRenderListaColab()"></div>
+          </div>
+          <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
+            <button class="btn b-gh b-sm" onclick="waSelTodosColab(true)">Selecionar visíveis</button>
+            <button class="btn b-gh b-sm" onclick="waSelTodosColab(false)">Desmarcar</button>
+            <button class="btn b-gh b-sm" onclick="waCarregarDisparoColaboradores()">Atualizar lista</button>
+            <span id="wa-colab-count" style="font-size:12px;color:var(--text-muted);margin-left:4px">0 selecionado(s)</span>
+          </div>
+          <div id="wa-colab-list" style="margin-top:8px;max-height:220px;overflow:auto;border:1px solid var(--borda);border-radius:10px;padding:8px;background:var(--cinza-cl)"><div class="vazio">Carregando colaboradores...</div></div>
+          <div class="f" style="margin-top:10px"><label>Mensagem para envio</label><textarea id="wa-colab-msg" placeholder="Digite a mensagem que será enviada aos colaboradores selecionados" style="min-height:84px"></textarea></div>
+          <div class="g2" style="margin-top:8px">
+            <div class="f"><label>Anexo opcional</label><input id="wa-colab-arquivo" type="file" accept="*/*"></div>
+            <div class="f"><label>Remetente exibido</label><input value="{{ nome }}" disabled></div>
+          </div>
+          <div class="hint" style="margin-top:4px">O sistema inclui automaticamente o nome do usuário logado no texto/caption do envio.</div>
+          <div class="brow" style="justify-content:flex-start;gap:8px">
+            <button class="btn b-az" onclick="waEnviarColaboradoresSelecionados()">Enviar para selecionados</button>
+          </div>
+          <div id="wa-colab-st" class="st" style="margin-top:8px"></div>
+        </div>
+
+        <!-- Caixa de conversas WhatsApp -->
+        <div class="card" style="margin-top:14px">
+          <div class="card-header">
+            <span class="card-title">💬 Conversas WhatsApp (Inbox)</span>
+            <button class="btn b-gh b-sm" onclick="loadWAConversas()">↻ Atualizar</button>
+          </div>
+          <div style="display:flex;gap:10px;height:480px;margin-top:8px">
+            <!-- Lista de conversas -->
+            <div style="width:260px;min-width:200px;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
+              <div style="padding:8px 10px;border-bottom:1px solid var(--borda)">
+                <input id="wa-conv-busca" placeholder="Buscar conversa…" oninput="waFiltrarConversas()" style="width:100%;border:1px solid var(--borda);border-radius:8px;padding:5px 8px;font-size:12px;background:var(--fundo);color:var(--text)">
+              </div>
+              <div id="wa-conversas-lista" style="flex:1;overflow-y:auto">
+                <div class="vazio" style="padding:16px">Carregando conversas…</div>
+              </div>
+            </div>
+            <!-- Chat -->
+            <div style="flex:1;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
+              <div style="padding:10px 14px;border-bottom:1px solid var(--borda);display:flex;align-items:center;gap:8px">
+                <span id="wa-chat-titulo" style="font-weight:600;font-size:13px;flex:1">Selecione uma conversa</span>
+                <span id="wa-pausa-info" style="display:none;font-size:11px;background:var(--laranja-cl);color:var(--laranja-esc);padding:2px 8px;border-radius:8px"></span>
+                <button id="wa-pausar-btn" class="btn b-gh b-sm" style="display:none;padding:2px 10px;font-size:11px" onclick="waPausarIA()">⏸ Pausar IA</button>
+                <button id="wa-retomar-btn" class="btn b-az b-sm" style="display:none;padding:2px 10px;font-size:11px" onclick="waRetomarIA()">▶ Reativar IA</button>
+              </div>
+              <div id="wa-chat-msgs" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px">
+                <div class="vazio" style="margin-top:40px">Selecione uma conversa para ver as mensagens</div>
+              </div>
+              <div style="padding:10px;border-top:1px solid var(--borda);display:flex;gap:8px;align-items:flex-end">
+                <textarea id="wa-msg-input" placeholder="Digite uma mensagem…" style="flex:1;min-height:38px;max-height:120px;resize:vertical;border-radius:8px;border:1px solid var(--borda);background:var(--fundo);color:var(--text);padding:8px 10px;font-size:13px" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();waSend()}" disabled></textarea>
+                <button class="btn b-az" id="wa-send-btn" onclick="waSend()" disabled style="white-space:nowrap">Enviar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Tab Chat App -->
-      <div id="rhd-tab-mensagens-app">
+      <div id="rhd-tab-mensagens-app" style="display:none">
         <div style="display:flex;gap:10px;height:520px">
           <!-- Lista de funcionários -->
           <div style="width:260px;min-width:200px;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
@@ -2892,10 +2522,6 @@ document.addEventListener('DOMContentLoaded',()=>{
               <span style="font-weight:600;font-size:13px">Funcionários</span>
               <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsCarregarFuncionarios()">↺</button>
             </div>
-            <div style="padding:6px 8px;border-bottom:1px solid var(--borda)">
-              <input id="maps-busca-func" type="text" placeholder="🔍 Buscar funcionário…" oninput="mapsBuscarNovaConversa(this.value)" autocomplete="off" style="width:100%;padding:4px 8px;font-size:12px;border:1px solid var(--borda);border-radius:6px;background:var(--fundo);color:var(--text);box-sizing:border-box">
-            </div>
-            <div id="maps-nova-lista" style="display:none;border-bottom:1px solid var(--borda);max-height:160px;overflow-y:auto"></div>
             <div id="maps-func-list" style="flex:1;overflow-y:auto;padding:4px"></div>
           </div>
           <!-- Chat -->
@@ -2919,7 +2545,6 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div class="g2" style="margin-top:8px">
             <div class="f"><label>Título</label><input id="com-titulo" placeholder="Ex: Reunião amanhã às 9h"></div>
             <div class="f"><label>Funcionário específico (opcional)</label>
-              <input id="com-fid-q" type="text" placeholder="Filtrar por nome ou matrícula…" oninput="mapsFiltrarFuncSelect('com-fid',this.value)" autocomplete="off" style="font-size:13px;margin-bottom:4px">
               <select id="com-fid"><option value="">Todos</option></select>
             </div>
           </div>
@@ -2951,7 +2576,6 @@ document.addEventListener('DOMContentLoaded',()=>{
               <select id="bc-posto"><option value="">Todos os postos</option></select>
             </div>
             <div class="f"><label>Destinatário</label>
-              <input id="bc-fid-q" type="text" placeholder="Filtrar por nome ou matrícula…" oninput="mapsFiltrarFuncSelect('bc-fid',this.value)" autocomplete="off" style="font-size:13px;margin-bottom:4px">
               <select id="bc-fid"><option value="">Todos ativos filtrados</option></select>
             </div>
           </div>
@@ -3049,16 +2673,12 @@ document.addEventListener('DOMContentLoaded',()=>{
           </p>
           <div class="brow" style="justify-content:flex-start">
             <button class="btn b-az" onclick="salvarIAWAConfig()">Salvar IA</button>
-            <button class="btn b-gh" onclick="iawaAtivarRapido()">Ativar agente</button>
-            <button class="btn b-warn" onclick="iawaDesativarRapido()">Desativar agente</button>
             <button class="btn b-ghv" onclick="testarIAWA()">Testar IA</button>
-            <button class="btn b-gh" onclick="iawaVerStatusNumero()">Ver status contato</button>
-            <button class="btn b-warn" onclick="iawaModoHumano(true)">Modo humano contato</button>
-            <button class="btn b-az" onclick="iawaModoHumano(false)">Reativar IA contato</button>
-            <button class="btn b-gh" onclick="iawaVerLogs()">Ver logs</button>
           </div>
           <div id="iawa-st" class="st"></div>
           <div id="iawa-resp" style="font-size:12px;color:var(--text-muted);margin-top:8px;white-space:pre-wrap"></div>
+
+          <!-- Status de pausa e botão global de despausar -->
           <div style="margin-top:14px;padding:12px 14px;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
             <span style="font-size:13px;font-weight:600">Agente IA:</span>
             <span id="iawa-status-badge" style="font-size:12px;padding:3px 10px;border-radius:8px;background:var(--verde-cl);color:var(--verde)">● Ativo</span>
@@ -3069,7 +2689,6 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div id="iawa-retomar-st" class="st" style="margin-top:6px"></div>
         </div>
       </div>
-
     </div>
 
     <!-- ══ OPERACIONAL ══ -->
@@ -3136,9 +2755,9 @@ document.addEventListener('DOMContentLoaded',()=>{
     <!-- ══ BENEFÍCIOS ══ -->
     <div id="pg-beneficios" class="pg">
       <div id="st-benef" class="st"></div>
-      <div class="card" style="padding:12px 16px">
-        <div class="card-header" style="margin-bottom:8px;padding-bottom:6px"><span class="card-title">Lançamento mensal de benefícios (ativos)</span></div>
-        <div class="g4" style="gap:8px">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Lançamento mensal de benefícios (ativos)</span></div>
+        <div class="g4">
           <div class="f"><label>Competência</label><input id="ben-comp" type="month" onchange="carregarBeneficiosMensais()"></div>
           <div class="f"><label>Empresa</label><select id="ben-emp" onchange="carregarBeneficiosMensais()"><option value="">Todas</option></select></div>
           <div class="f"><label>Buscar colaborador / matrícula</label><input id="ben-busca" placeholder="Ex: Joana ou 395" oninput="renderBeneficiosAtivos();renderBeneficioPorTipo('vt','tb-benef-vt');renderBeneficioPorTipo('vr','tb-benef-vr');renderBeneficioPorTipo('va','tb-benef-va');renderBeneficioPorTipo('pp','tb-benef-pp');renderBeneficioPorTipo('vg','tb-benef-vg');renderBeneficioPorTipo('cn','tb-benef-cn')"></div>
@@ -3149,7 +2768,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <option value="nao_optantes">Somente não-optantes</option>
           </select></div>
         </div>
-        <div class="g4" style="margin-top:6px;gap:8px">
+        <div class="g4" style="margin-top:8px">
           <div class="f" style="display:flex;align-items:flex-end"><button class="btn b-gh b-sm" onclick="carregarBeneficiosMensais()">Carregar colaboradores</button></div>
           <div class="f" style="display:flex;align-items:flex-end"><button class="btn b-az b-sm" onclick="salvarBeneficiosValoresBase()">Salvar valores-base</button></div>
           <div class="f"><label>Dia alerta VT</label><input id="ben-alerta-vt-dia" type="number" min="1" max="31" placeholder="25"></div>
@@ -3158,7 +2777,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="brow" style="justify-content:flex-start;margin-top:6px">
           <button class="btn b-ghl b-sm" onclick="salvarConfigAlertaBeneficios()">Salvar dias de alerta</button>
         </div>
-        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;background:linear-gradient(90deg,rgba(35,93,138,.22),rgba(9,35,74,.55));padding:8px 10px;border-radius:10px;border:1px solid rgba(120,180,240,.35);position:sticky;top:0;z-index:99">
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;background:linear-gradient(90deg,rgba(35,93,138,.22),rgba(9,35,74,.55));padding:10px;border-radius:12px;border:1px solid rgba(120,180,240,.35)">
           <button id="ben-tab-ativos" class="btn b-az b-sm" onclick="switchBenTab('ativos',this)">Colaboradores Ativos</button>
           <button id="ben-tab-vt" class="btn b-gh b-sm" onclick="switchBenTab('vt',this)">Vale Transporte</button>
           <button id="ben-tab-vr" class="btn b-gh b-sm" onclick="switchBenTab('vr',this)">Vale Refeição</button>
@@ -3190,15 +2809,13 @@ document.addEventListener('DOMContentLoaded',()=>{
           <button class="btn b-gh b-sm" id="btn-ben-reabrir" onclick="benReabrirFolha()" style="display:none">Reabrir folha</button>
           <button class="btn b-gh b-sm" id="btn-ben-assinar" onclick="benAssinarFolha()" style="display:none">Assinar fechamento</button>
           <button class="btn b-gh b-sm" onclick="benAbrirHistorico()">Consultar histórico</button>
-          <button id="btn-ben-notificar" class="btn b-sm" style="background:var(--azul);color:#fff;border:1px solid var(--azul)" onclick="benNotificarColaboradores()">📲 Notificar Colaboradores</button>
-          <span id="ben-notif-status" style="font-size:12px;color:var(--verde);display:none;align-self:center"></span>
           <span id="ben-auto-hint" style="font-size:11px;color:var(--text-muted);margin-left:4px;align-self:center">Auto-save ativo</span>
         </div>
         <div id="ben-sal-painel" style="margin:8px 0 12px 0;display:none">
           <div class="g3" style="margin-top:0">
-            <div class="card" style="margin:0"><div class="card-header" style="margin-bottom:6px;padding-bottom:4px"><span class="card-title">Histórico de versões</span></div><div id="ben-sal-historico" style="padding:4px 10px 8px;color:var(--text-muted);font-size:12px;max-height:90px;overflow:auto"></div></div>
-            <div class="card" style="margin:0"><div class="card-header" style="margin-bottom:6px;padding-bottom:4px"><span class="card-title">Alertas</span></div><div id="ben-sal-alertas" style="padding:4px 10px 8px;color:var(--text-muted);font-size:12px;max-height:90px;overflow:auto"></div></div>
-            <div class="card" style="margin:0"><div class="card-header" style="margin-bottom:6px;padding-bottom:4px"><span class="card-title">Evolução mensal</span></div><div style="position:relative;height:110px;padding:4px 8px 8px 8px"><canvas id="chart-ben-beneficios"></canvas></div></div>
+            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Histórico de versões</span></div><div id="ben-sal-historico" style="padding:8px 12px 12px 12px;color:var(--text-muted);font-size:13px"></div></div>
+            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Alertas</span></div><div id="ben-sal-alertas" style="padding:8px 12px 12px 12px;color:var(--text-muted);font-size:13px"></div></div>
+            <div class="card" style="margin:0"><div class="card-header"><span class="card-title">Evolução mensal</span></div><div style="position:relative;height:180px;padding:4px 8px 12px 8px"><canvas id="chart-ben-beneficios"></canvas></div></div>
           </div>
         </div>
 
@@ -3280,9 +2897,6 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button class="btn b-az" onclick="benAvulsoSalvar()">&#128190; Salvar lançamentos avulsos</button>
               <button class="btn b-gh b-sm" onclick="benAvulsoLimpar()">&#10005; Limpar lista</button>
-              <button class="btn b-gh b-sm" onclick="benAvulsoPrevia()">&#128269; Prévia</button>
-              <button id="btn-ben-notif-avulso" class="btn b-sm" style="background:var(--azul);color:#fff;border:1px solid var(--azul)" onclick="benNotificarAvulso()">📲 Notificar adicionados</button>
-              <span id="ben-avulso-notif-status" style="font-size:12px;color:var(--verde);display:none;align-self:center"></span>
             </div>
           </div>
         </div>
@@ -3782,6 +3396,8 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
 
+    </div>
+
       <!-- ── Painel: Novo Contrato / Termo Aditivo ── -->
       <div id="docs-pane-contrato" class="card" style="display:none">
         <div class="card-header" style="display:flex;align-items:center;gap:10px">
@@ -3796,19 +3412,9 @@ document.addEventListener('DOMContentLoaded',()=>{
                 <option value="">— Selecione —</option>
               </select>
             </div>
-            <div class="f s2"><label>Tomadora PJ (Empresa contratante)</label>
+            <div class="f s2"><label>Tomadora (Contratante)</label>
               <select id="ctr-tomadora" class="inp">
-                <option value="">— Empresa contratante (opcional) —</option>
-              </select>
-            </div>
-            <div class="f s2"><label>Cliente Cadastrado (Contratante)</label>
-              <select id="ctr-cliente" class="inp">
-                <option value="">— Cliente cadastrado (opcional) —</option>
-              </select>
-            </div>
-            <div class="f s2"><label>Proposta Comercial Vinculada</label>
-              <select id="ctr-proposta" class="inp" onchange="ctrPropostaSelecionada()">
-                <option value="">— Vincular proposta (opcional) —</option>
+                <option value="">— Selecione —</option>
               </select>
             </div>
             <div class="f"><label>Data Início</label><input type="date" id="ctr-data-inicio" class="inp"></div>
@@ -3884,8 +3490,8 @@ document.addEventListener('DOMContentLoaded',()=>{
         #pg-assinaturas.on{
           display:block!important;
           position:fixed!important;
-          top:52px!important; /* altura da navbar horizontal */
-          left:0!important;
+          top:0!important;
+          left:78px!important; /* largura sidebar colapsada */
           right:0!important;
           bottom:0!important;
           overflow-y:auto;
@@ -3895,7 +3501,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           z-index:10;
           animation:none!important;
         }
-        @media(max-width:768px){ #pg-assinaturas.on{left:0;top:52px}}
+        @media(max-width:768px){#pg-assinaturas.on{left:0;top:52px}}
         #pg-assinaturas .asi-shell{display:flex;flex-direction:row;align-items:flex-start;gap:16px;width:100%;margin:0}
         #pg-assinaturas .asi-side{flex:0 0 250px;min-width:0}
         #pg-assinaturas .asi-main{flex:1 1 auto;min-width:0}
@@ -4086,16 +3692,6 @@ document.addEventListener('DOMContentLoaded',()=>{
               <div class="f"><label>Telefone WhatsApp</label><input id="sigf-tel" placeholder="(11) 99999-9999"></div>
               <div class="f"><label>E-mail</label><input id="sigf-email" type="email" placeholder="email@exemplo.com"></div>
             </div>
-            <div class="f" style="margin-top:8px">
-              <label>Papel no documento</label>
-              <select id="sigf-papel">
-                <option value="assinante">✍ Assinante</option>
-                <option value="testemunha">👁 Testemunha</option>
-                <option value="aprovador">✅ Aprovador</option>
-                <option value="endossante">🔏 Endossante</option>
-                <option value="observador">📋 Somente acompanhar (não precisa assinar)</option>
-              </select>
-            </div>
             <div class="brow" style="gap:8px;justify-content:flex-start;margin-top:6px">
               <button class="btn b-az b-sm" onclick="salvarSignatario()">Salvar signatário</button>
               <button class="btn b-sm" style="background:var(--cinza-cl);color:var(--text-muted);border:none;cursor:pointer" onclick="document.getElementById('asi-sig-form').style.display='none'">Cancelar</button>
@@ -4262,11 +3858,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     </div>
 
     <!-- ══ EMPRESAS ══ -->
-    <div id="pg-empresas" class="pg" data-subaba-ready="1">
-      <div style="margin-bottom:14px">
-        <div style="font-size:18px;font-weight:700;color:var(--azul)">🏢 Empresas</div>
-        <div style="font-size:12px;color:var(--text-muted)">Gerencie as empresas cadastradas no sistema.</div>
-      </div>
+    <div id="pg-empresas" class="pg">
       <div id="st-emp" class="st"></div>
       <div class="card">
         <div class="card-header">
@@ -4278,11 +3870,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     </div>
 
     <!-- ══ USUÁRIOS ══ -->
-    <div id="pg-usuarios" class="pg" data-subaba-ready="1">
-      <div style="margin-bottom:14px">
-        <div style="font-size:18px;font-weight:700;color:var(--azul)">👥 Usuários</div>
-        <div style="font-size:12px;color:var(--text-muted)">Gerencie os usuários e permissões de acesso ao sistema.</div>
-      </div>
+    <div id="pg-usuarios" class="pg">
       <div id="st-usr" class="st"></div>
       <div class="card">
         <div class="card-header">
@@ -4299,70 +3887,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     </div>
 
     <!-- ══ CONFIGURAÇÕES ══ -->
-    <div id="pg-config" class="pg" data-subaba-ready="1">
-      <div style="margin-bottom:14px">
-        <div style="font-size:18px;font-weight:700;color:var(--azul)">⚙️ Configurações</div>
-        <div style="font-size:12px;color:var(--text-muted)">Configurações gerais do sistema, backup e logs.</div>
-      </div>
-      <div class="card">
-        <div class="card-header"><span class="card-title">🔗 Links úteis</span></div>
-        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
-          Atalhos rápidos para páginas auxiliares do sistema.
-        </p>
-        <div style="display:flex;flex-wrap:wrap;gap:10px">
-          <a href="/ponto/totem" target="_blank" rel="noopener" class="btn b-az" style="text-decoration:none">
-            📱 Totem de Ponto por QR Code
-          </a>
-        </div>
-        <p style="font-size:11px;color:var(--text-muted);margin-top:8px">
-          Abre uma tela em modo quiosque com QR Code rotativo (1s). Os funcionários escaneiam pelo app para registrar o ponto.
-        </p>
-      </div>
-
-      <!-- TOTEM COMPARTILHADO -->
-      <div class="card" id="card-kiosks">
-        <div class="card-header"><span class="card-title">📟 Totens Compartilhados (Ponto por CPF+PIN)</span></div>
-        <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">
-          Crie links de totem para tablets/PCs fixos nos postos. O colaborador digita o CPF e seu PIN para bater o ponto sem precisar fazer login.
-        </p>
-        <div style="margin-bottom:14px">
-          <div class="g2" style="align-items:flex-end;gap:10px">
-            <div class="f"><label>Nome do totem</label><input type="text" id="kiosk-nome" placeholder="Ex: Portaria – Sede" maxlength="100"></div>
-            <div class="f">
-              <label>Postos permitidos (selecione um ou mais)</label>
-              <select id="kiosk-posto" multiple size="6" style="min-height:130px"></select>
-              <div class="hint" style="margin-top:4px">Se nenhum posto for selecionado, o totem aceitará todos os postos.</div>
-            </div>
-          </div>
-          <div class="g2" style="margin-top:10px;gap:10px">
-            <div class="f">
-              <label>Colaboradores do(s) posto(s) selecionado(s)</label>
-              <div id="kiosk-colabs-posto" style="min-height:130px;max-height:180px;overflow:auto;border:1px solid var(--borda);border-radius:10px;padding:8px;background:var(--cinza-cl)">
-                <div class="vazio">Selecione um posto para listar os colaboradores.</div>
-              </div>
-            </div>
-            <div class="f">
-              <label>Colaboradores avulsos permitidos (multi-seleção)</label>
-              <div style="display:flex;gap:6px;margin-bottom:6px">
-                <button class="btn b-gh b-sm" type="button" onclick="kioskSelAvulsos(true)">Marcar todos</button>
-                <button class="btn b-gh b-sm" type="button" onclick="kioskSelAvulsos(false)">Limpar</button>
-              </div>
-              <div id="kiosk-avulsos" style="min-height:130px;max-height:180px;overflow:auto;border:1px solid var(--borda);border-radius:10px;padding:8px;background:var(--cinza-cl)">
-                <div class="vazio">Carregando colaboradores...</div>
-              </div>
-              <div class="hint" style="margin-top:4px">Selecione um ou vários colaboradores avulsos.</div>
-            </div>
-          </div>
-          <div class="hint" style="margin-top:8px">Autenticação do totem: apenas com os 4 primeiros dígitos do CPF.</div>
-          <div class="brow" style="justify-content:flex-start;margin-top:10px">
-            <button class="btn b-az" onclick="kioskCriar()">+ Criar Totem</button>
-          </div>
-        </div>
-        <div id="kiosk-list"><div style="color:var(--text-muted);font-size:13px">Carregando…</div></div>
-        <p style="font-size:11px;color:var(--text-muted);margin-top:10px">
-          <strong>PIN padrão:</strong> se o funcionário não tiver PIN cadastrado, o padrão são os <strong>últimos 4 dígitos do CPF</strong>. Para definir um PIN específico, acesse o cadastro do funcionário → campo "PIN Totem".
-        </p>
-      </div>
+    <div id="pg-config" class="pg">
       <div class="card">
         <div class="card-header"><span class="card-title">Numeração de documentos</span></div>
         <div class="g2">
@@ -4546,10 +4071,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <span id="fferias-fim-preview" style="font-size:12px;color:var(--azul);font-weight:700"></span>
           </div>
         </div>
-        <!-- BUG-FIX 7: campo era readonly, impossibilitando correção manual quando
-             o cálculo automático ficava dessincronizado. Agora permite edição com
-             recalculo de ferias_dias ao alterar manualmente. -->
-        <div class="f"><label>Fim das férias <span style="font-size:10px;color:var(--text-muted);font-weight:400">(calculado auto ou edite manualmente)</span></label><input id="fferias-fim" type="date" onchange="rhFuncionarioAoAlterarFeriasManual()"></div>
+        <div class="f"><label>Fim das férias <span style="font-size:10px;color:var(--text-muted);font-weight:400">(calculado automaticamente)</span></label><input id="fferias-fim" type="date" readonly style="opacity:.7;cursor:default"></div>
       </div>
       <div class="g3">
         <div class="f"><label>Obs. férias</label><input id="fferias-obs" placeholder="Ex: férias coletivas"></div>
@@ -4562,13 +4084,6 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div id="fferias-direito" style="font-size:15px;font-weight:700;color:var(--azul);padding:6px 0">30 dias</div>
           <div id="fferias-direito-obs" style="font-size:11px;color:var(--verm)"></div>
         </div>
-      </div>
-      <div style="margin-bottom:12px;padding:10px 12px;background:var(--branco);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <span style="font-size:12px;color:var(--text-muted);flex:1;min-width:200px">Após confirmar as datas de férias, envie a notificação ao colaborador pelo aplicativo.</span>
-        <button type="button" id="btn-notif-ferias" onclick="rhNotificarFerias()" style="padding:7px 16px;background:var(--azul);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">
-          ✈️ Notificar Colaborador
-        </button>
-        <span id="ferias-notif-status" style="font-size:12px;color:var(--verde);display:none"></span>
       </div>
       <div class="g4">
         <div class="f"><label>Cargo</label><input id="fcargo"></div>
@@ -4722,13 +4237,6 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
       <div class="f"><label>Observação interna</label><input id="mob"></div>
-      <div class="f" style="display:flex;align-items:center;gap:10px;padding:6px 0">
-        <label class="toggle-label" style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:0">
-          <span style="font-size:13px;color:var(--c-txt)">Autoriza hora extra neste posto?</span>
-          <input type="checkbox" id="mhe-aut" style="width:18px;height:18px;cursor:pointer" checked>
-        </label>
-        <span id="mhe-aut-hint" style="font-size:11px;color:var(--c-warn)"></span>
-      </div>
       <div class="brow" style="margin-top:6px">
         <button class="btn b-ci" onclick="closeModal('cli')">Cancelar</button>
         <button class="btn b-az" onclick="salvarCliente()">Salvar cliente</button>
@@ -4950,8 +4458,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 <script src="/static/js/app-ponto.js"></script>
 <script nonce="{{ g.csp_nonce }}">
 const N='{{ nome }}', P='{{ perfil }}';
-const USER_AREAS={{ areas|tojson }};
-const USER_PERMISSIONS={{ permissoes|tojson }};
+const USER_AREAS={{ areas|safe }};
+const USER_PERMISSIONS={{ permissoes|safe }};
 const THEME_KEY='rm_theme';
 const AREAS=['dashboard','medicoes','historico','clientes','empresas','usuarios','config','rh','operacional','compras','beneficios','sst','rh-digital','documentos'];
 const RBAC_ACTIONS=['view','create','edit','delete','approve','export'];
@@ -5177,10 +4685,6 @@ async function api(url,m='GET',b=null){
     const o={method:m,headers:{'Content-Type':'application/json'},credentials:'same-origin'};
     if(b)o.body=JSON.stringify(b);
     const r=await fetch(url,o);
-    if(r.status===401){
-      window.location.href='/login?next='+encodeURIComponent(window.location.pathname);
-      return {};
-    }
     const ct=(r.headers.get('content-type')||'').toLowerCase();
     if(ct.includes('application/json')){
       const d=await r.json();
@@ -5193,60 +4697,6 @@ async function api(url,m='GET',b=null){
     return {erro:'Falha de conexao com o servidor. Verifique sua rede e tente novamente.'};
   }
 }
-
-// ── Toast notification system ────────────────────────────────────────────────
-(function(){
-  let _wrap = null;
-  function _getWrap(){
-    if(!_wrap){
-      _wrap = document.createElement('div');
-      _wrap.className = 'rm-toast-wrap';
-      document.body.appendChild(_wrap);
-    }
-    return _wrap;
-  }
-  window.rmToast = function(msg, type='in', title='', duration=4000){
-    const icons = {ok:'✅', er:'❌', in:'ℹ️', wn:'⚠️'};
-    const wrap = _getWrap();
-    const t = document.createElement('div');
-    t.className = `rm-toast t-${type}`;
-    t.innerHTML = `<span class="rm-toast-icon">${icons[type]||'ℹ️'}</span>
-      <div class="rm-toast-body">${title ? `<div class="rm-toast-title">${title}</div>` : ''}
-      <div class="rm-toast-msg">${msg}</div></div>
-      <button class="rm-toast-close" onclick="rmDismissToast(this.closest('.rm-toast'))">✕</button>`;
-    wrap.appendChild(t);
-    if(duration > 0){
-      setTimeout(()=>rmDismissToast(t), duration);
-    }
-    return t;
-  };
-  window.rmDismissToast = function(t){
-    if(!t || t._dismissing) return;
-    t._dismissing = true;
-    t.classList.add('dismiss');
-    t.addEventListener('animationend', ()=>t.remove(), {once:true});
-    setTimeout(()=>{ if(t.parentNode) t.remove(); }, 500);
-  };
-})();
-
-// Alias de conveniência para rmToast com tipos curtos: s=ok e=er w=wn i=in
-function toast(msg, type='i', title='', duration=4000){
-  const _map = {s:'ok', e:'er', w:'wn', i:'in', ok:'ok', er:'er', wn:'wn', in:'in'};
-  return window.rmToast(msg, _map[type]||'in', title, duration);
-}
-
-// ── Progress bar (top) ───────────────────────────────────────────────────────
-(function(){
-  let _bar = null, _tid = null;
-  function _getBar(){
-    if(!_bar){ _bar=document.createElement('div'); _bar.className='rm-progress-bar'; document.body.appendChild(_bar); }
-    return _bar;
-  }
-  window.rmProgress = {
-    start(){ const b=_getBar(); b.classList.remove('done'); b.classList.add('loading'); },
-    done(){ const b=_getBar(); b.classList.add('done'); clearTimeout(_tid); _tid=setTimeout(()=>{ b.classList.remove('loading','done'); },500); },
-  };
-})();
 
 async function apiForm(url,fd,m='POST'){
   const r=await fetch(url,{method:m,body:fd,credentials:'same-origin'});
@@ -5302,19 +4752,8 @@ function toggleSidebarModule(moduleId,forceOpen){
   if(!mod) return;
   if(document.body.classList.contains('sidebar-collapsed')) return;
   const open=(typeof forceOpen==='boolean')?forceOpen:!mod.classList.contains('open');
-  // Fechar todos os outros painéis (accordion)
-  document.querySelectorAll('.nav-module').forEach(m=>{
-    if(m.id!==moduleId) m.classList.remove('open');
-  });
   mod.classList.toggle('open',open);
 }
-
-// Fechar painéis do nav ao clicar fora da sidebar
-document.addEventListener('click',function(e){
-  if(!e.target.closest('.sidebar')){
-    document.querySelectorAll('.nav-module').forEach(m=>m.classList.remove('open'));
-  }
-});
 
 function toggleSidebarSublevel(subId,btn){
   const el=document.getElementById(subId);
@@ -5334,6 +4773,11 @@ function _sidebarFindNavItem(id){
 }
 
 function sidebarSyncActiveContext(activeId){
+  const item=_sidebarFindNavItem(activeId);
+  if(item){
+    const mod=item.closest('.nav-module');
+    if(mod) mod.classList.add('open');
+  }
   document.querySelectorAll('.nav-module').forEach(mod=>{
     mod.classList.toggle('active',!!mod.querySelector('.nav-item.on'));
   });
@@ -5517,12 +4961,6 @@ function filtrarSSTFuncionarios(){
   if(atual && Array.from(el.options).some(o=>o.value===atual)) el.value=atual;
 }
 
-// Stub para o módulo de HE pendentes (feature ainda não implementada).
-// BUG-FIX: sem este stub o botão "HE pendentes" disparava ReferenceError.
-function abrirModalHEPendentes(){
-  showToast('Módulo de horas extras em breve.','info');
-}
-
 async function loadDash(){
   _pontoDiaData = null; // invalidar cache ao recarregar dashboard
   const d=await api('/api/dashboard');
@@ -5553,13 +4991,6 @@ async function loadDash(){
     elCorrecoesPonto.textContent=nCorrecoes;
     elCorrecoesPonto.closest('.metric')?.classList.toggle('vm',nCorrecoes>0);
     elCorrecoesPonto.closest('.metric')?.style.setProperty('--metric-c',nCorrecoes>0?'var(--verm)':'var(--laranja)');
-  }
-  const elHePend=document.getElementById('d-he-pendentes');
-  if(elHePend){
-    const nHe=d.he_pendentes??0;
-    elHePend.textContent=nHe;
-    elHePend.closest('.metric')?.classList.toggle('vm',nHe>0);
-    elHePend.closest('.metric')?.style.setProperty('--metric-c',nHe>0?'var(--verm)':'#b45309');
   }
   const elCalcBenef=document.getElementById('d-calc-benef');
   if(elCalcBenef) elCalcBenef.textContent=(d.alerta_calculo_beneficios?.qtd??0);
@@ -5646,9 +5077,9 @@ async function loadDash(){
     }
   }
   const de=document.getElementById('dash-empresas');
-  if(de && d.empresas && d.empresas.length){
+  if(d.empresas && d.empresas.length){
     de.innerHTML=d.empresas.map(e=>`<button type="button" class="card dash-company-btn" style="margin-bottom:0" onclick="abrirDashboardDestino('clientes',${e.id})"><div style="font-size:13px;font-weight:700;color:var(--azul);margin-bottom:8px">${e.nome}</div><div style="font-size:24px;font-weight:700;color:var(--laranja)">${e.cli}</div><div style="font-size:11px;color:var(--text-muted)">clientes ativos · tocar para abrir</div></button>`).join('');
-  } else if(de) {
+  } else {
     de.innerHTML='';
   }
 }
@@ -5698,8 +5129,6 @@ function nav(id,el,force=false){
   }
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));
-  // Fechar todos os painéis do nav ao navegar
-  document.querySelectorAll('.nav-module').forEach(m=>m.classList.remove('open'));
   document.getElementById('pg-'+targetId).classList.add('on');
   // Sempre resetar scroll ao trocar de página
   try{
@@ -5721,7 +5150,7 @@ function nav(id,el,force=false){
   }
   if(targetId==='empresas')renderEmps();
   if(targetId==='usuarios')renderUsr();
-  if(targetId==='config'){loadConfig();kioskCarregar();}
+  if(targetId==='config')loadConfig();
   if(targetId==='rh'){
     renderFuncionarios();
     painelAssInicializar();
@@ -5839,7 +5268,7 @@ function rhSalariosIniciarPagina(){
 }
 
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','postos-geofence','ponto','painel-dia','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo'];
+  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','ponto','painel-dia','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
     p.style.display=(p.dataset.rhPane===rhSubAba)?'block':'none';
@@ -5853,14 +5282,6 @@ function rhSetSubAba(tab,btn){
   }
   if(rhSubAba==='escalas'){
     rhEscalaInit();
-  }
-  if(rhSubAba==='postos-geofence'){
-    (async()=>{
-      try{
-        if(!Array.isArray(todos) || !todos.length) todos=await api('/api/clientes');
-        rhGeoPopularClientes();
-      }catch(_e){ showSt('rh-postos-geofence-st','Falha ao carregar postos.',true); }
-    })();
   }
   if(rhSubAba==='ponto'){
     carregarCorrecoesPonto();
@@ -5889,12 +5310,7 @@ function rhFeriasFmtBr(v){
 
 function rhFeriasParse(v){
   if(!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
-  // BUG-FIX: new Date('2026-02-30T00:00:00') transborda para março silenciosamente.
-  // Validar o calendário antes de retornar o objeto Date.
-  const [ano,mes,dia]=v.split('-').map(Number);
-  const dt=new Date(ano,mes-1,dia);
-  if(dt.getFullYear()!==ano || dt.getMonth()!==mes-1 || dt.getDate()!==dia) return null;
-  return dt;
+  return new Date(v+'T00:00:00');
 }
 
 function rhFeriasSetMesAtual(){
@@ -5932,22 +5348,17 @@ function rhFeriasLimparFiltros(){
 function rhFeriasNoPeriodo(f,dtIni,dtFim){
   const fi=rhFeriasParse(f.ferias_inicio||'');
   const ff=rhFeriasParse(f.ferias_fim||'');
-  // BUG-FIX 1: .trim() garante que status com espaço extra (ex: 'Férias ') seja
-  // normalizado corretamente; normalize+replace sozinhos não removem espaços.
-  const st=((f.status||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''));
+  const st=((f.status||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''));
   const ehFeriasStatus=(st==='ferias');
   if(!dtIni && !dtFim){
-    // BUG-FIX 2: antes excluía colaboradores com ferias_fim vazio, mesmo que
-    // tivessem status Férias ou ferias_inicio preenchido. Agora inclui.
-    return ehFeriasStatus || !!fi;
+    return ehFeriasStatus || (!!fi && !!ff);
   }
-  // BUG-FIX 2 cont.: com filtro de período, incluir quem tem início no
-  // período mesmo sem data fim (férias em aberto).
-  if(!fi) return false;
-  const ini=dtIni || new Date('1900-01-01');
-  const fim=dtFim || new Date('2999-12-31');
-  if(ff) return fi<=fim && ff>=ini;
-  return fi<=fim;
+  if(!fi || !ff){
+    return false;
+  }
+  const ini=dtIni || new Date('1900-01-01T00:00:00');
+  const fim=dtFim || new Date('2999-12-31T00:00:00');
+  return fi<=fim && ff>=ini;
 }
 
 async function renderRhFerias(){
@@ -5962,18 +5373,8 @@ async function renderRhFerias(){
   const busca=((document.getElementById('rh-ferias-busca')?.value)||'').trim().toLowerCase();
   const dtIni=rhFeriasParse(iniVal);
   const dtFim=rhFeriasParse(fimVal);
-  // BUG-FIX 8: popular seletor de empresa preservando seleção atual
-  const empSelEl=document.getElementById('rh-ferias-empresa');
-  if(empSelEl && emps.length){
-    const empSelVal=empSelEl.value;
-    empSelEl.innerHTML='<option value="">Todas</option>'+emps.map(e=>`<option value="${e.id}">${esc(e.nome||e.razao||'')}</option>`).join('');
-    if(empSelVal) empSelEl.value=empSelVal;
-  }
-  const empFiltroId=(document.getElementById('rh-ferias-empresa')?.value||'').trim();
   const lista=(Array.isArray(funcs)?funcs:[]).filter(f=>{
     if(!rhFeriasNoPeriodo(f,dtIni,dtFim)) return false;
-    // BUG-FIX 8: aplicar filtro de empresa quando selecionado
-    if(empFiltroId && String(f.empresa_id||'')!==empFiltroId) return false;
     if(!busca) return true;
     const emp=emps.find(e=>String(e.id)===String(f.empresa_id||''));
     const hay=[f.nome,f.re,f.funcao,f.cargo,emp?.nome,f.status].map(v=>(v||'').toString().toLowerCase()).join(' ');
@@ -6780,12 +6181,7 @@ async function openModal(modo,id){
     document.getElementById('memp').value=c.empresa_id||'';
     document.getElementById('mst').value=c.status||'Ativo';
     document.getElementById('mob').value=c.obs||'';
-    const heAut=c.he_autorizada===undefined||c.he_autorizada===null?true:!!c.he_autorizada;
-    document.getElementById('mhe-aut').checked=heAut;
-    document.getElementById('mhe-aut-hint').textContent=heAut?'':'⚠ Horas extras NÃO autorizadas neste posto';
   } else {
-    document.getElementById('mhe-aut').checked=true;
-    document.getElementById('mhe-aut-hint').textContent='';
     document.getElementById('mod-cli-tit').textContent='Novo cliente';
   }
   setModalClean('cli');
@@ -6846,8 +6242,7 @@ async function salvarCliente(){
     estado:document.getElementById('mestado').value,
     empresa_id:parseInt(document.getElementById('memp').value)||null,
     status:document.getElementById('mst').value,
-    obs:document.getElementById('mob').value,
-    he_autorizada:document.getElementById('mhe-aut').checked
+    obs:document.getElementById('mob').value
   };
   const resp=id ? await api('/api/clientes/'+id,'PUT',d) : await api('/api/clientes','POST',d);
   if(resp?.erro){
@@ -7277,161 +6672,6 @@ async function excluirUsr(id,nome){
   renderUsr();
 }
 
-// ── KIOSKS COMPARTILHADOS ─────────────────────────────────────────────────────
-let _kioskOperItens=[];
-let _kioskPostos=[];
-
-function _kioskSelectedValues(selId){
-  const sel=document.getElementById(selId);
-  if(!sel) return [];
-  return Array.from(sel.selectedOptions||[]).map(function(o){return (o.value||'').trim();}).filter(Boolean);
-}
-
-function _kioskSelectedAvulsos(){
-  return Array.from(document.querySelectorAll('#kiosk-avulsos .kiosk-avulso-chk:checked'))
-    .map(function(chk){return parseInt(chk.value,10);})
-    .filter(Number.isFinite);
-}
-
-function kioskSelAvulsos(mark){
-  document.querySelectorAll('#kiosk-avulsos .kiosk-avulso-chk').forEach(function(chk){
-    chk.checked=!!mark;
-  });
-}
-
-function kioskRenderColabsPosto(){
-  const box=document.getElementById('kiosk-colabs-posto');
-  if(!box) return;
-  const postosSel=new Set(_kioskSelectedValues('kiosk-posto').map(function(x){return x.toLowerCase();}));
-  if(!postosSel.size){
-    box.innerHTML='<div class="vazio">Selecione um posto para listar os colaboradores.</div>';
-    return;
-  }
-  const lista=_kioskOperItens.filter(function(it){
-    const p=(it.posto_label||it.posto_operacional||'').trim().toLowerCase();
-    return p && postosSel.has(p);
-  }).sort(function(a,b){return (a.nome||'').localeCompare(b.nome||'', 'pt-BR');});
-  if(!lista.length){
-    box.innerHTML='<div class="vazio">Nenhum colaborador ativo nos postos selecionados.</div>';
-    return;
-  }
-  box.innerHTML=lista.map(function(it){
-    const posto=(it.posto_label||it.posto_operacional||'Sem posto');
-    return `<div style="padding:4px 2px;border-bottom:1px solid var(--borda);font-size:12px"><strong>${esc(it.nome||'-')}</strong> <span style="color:var(--text-muted)">(${esc(it.matricula||'')}) · ${esc(posto)}</span></div>`;
-  }).join('');
-}
-
-function kioskRenderAvulsos(){
-  const box=document.getElementById('kiosk-avulsos');
-  if(!box) return;
-  const atualSel=new Set(
-    Array.from(document.querySelectorAll('#kiosk-avulsos .kiosk-avulso-chk:checked')).map(function(chk){return parseInt(chk.value,10);}).filter(Number.isFinite)
-  );
-  const rows=_kioskOperItens
-    .slice()
-    .sort(function(a,b){return (a.nome||'').localeCompare(b.nome||'', 'pt-BR');})
-    .map(function(it){
-      const posto=(it.posto_label||it.posto_operacional||'Sem posto');
-      const val=parseInt(it.funcionario_id||0,10);
-      const checked=atualSel.has(val)?' checked':'';
-      return `<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 4px;border-bottom:1px solid var(--borda)">
-        <input type="checkbox" class="kiosk-avulso-chk" value="${val}"${checked}>
-        <div style="font-size:12px"><strong>${esc(it.nome||'-')}</strong> <span style="color:var(--text-muted)">· ${esc(posto)} · ${esc(it.matricula||'')}</span></div>
-      </label>`;
-    });
-  box.innerHTML=rows.length?rows.join(''):'<div class="vazio">Nenhum colaborador ativo disponível para seleção avulsa.</div>';
-}
-
-async function kioskCarregarPostos(){
-  const sel=document.getElementById('kiosk-posto');
-  if(!sel) return;
-  const atuais=new Set(_kioskSelectedValues('kiosk-posto'));
-  sel.innerHTML='';
-  try{
-    const r=await api('/api/operacional/postos');
-    const clientes=r?.clientes||[];
-    _kioskOperItens=(r?.itens||[]);
-    _kioskPostos=[...new Set(clientes.map(function(c){return (c?.posto_label||c?.nome||'').trim();}).filter(Boolean))].sort(function(a,b){return a.localeCompare(b,'pt-BR');});
-    sel.innerHTML=_kioskPostos.map(function(p){
-      const selected=atuais.has(p)?' selected':'';
-      return `<option value="${esc(p)}"${selected}>${esc(p)}</option>`;
-    }).join('');
-    sel.onchange=kioskRenderColabsPosto;
-    kioskRenderColabsPosto();
-    kioskRenderAvulsos();
-  }catch(_e){
-    sel.innerHTML='';
-    const box=document.getElementById('kiosk-colabs-posto');
-    if(box) box.innerHTML='<div class="vazio">Falha ao carregar colaboradores por posto.</div>';
-  }
-}
-
-async function kioskCarregar(){
-  const el=document.getElementById('kiosk-list');
-  if(!el) return;
-  await kioskCarregarPostos();
-  const d=await api('/api/admin/ponto/kiosks');
-  const ks=d.kiosks||[];
-  if(!ks.length){el.innerHTML='<div style="color:var(--text-muted);font-size:13px">Nenhum totem criado ainda.</div>';return;}
-  el.innerHTML=ks.map(function(k){
-    const cor=k.ativo?'var(--azul)':'var(--danger)';
-    const label=k.ativo?'Ativo':'Inativo';
-    const postos=(k.filtro_postos||[]).length?(k.filtro_postos||[]):(k.filtro_posto?[k.filtro_posto]:[]);
-    const postosTxt=postos.length?postos.join(', '):'Todos';
-    const avCount=(k.funcionarios_avulsos||[]).length||0;
-    return `<div style="background:var(--bg2);border:1px solid var(--borda);border-radius:10px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:14px;font-weight:600;color:var(--text)">${esc(k.nome)}</div>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:2px">
-          Postos: ${esc(postosTxt)} · Avulsos: ${avCount} · Acesso: 4 primeiros dígitos CPF · <span style="color:${cor}">${label}</span>
-        </div>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:3px;word-break:break-all">
-          URL: <a href="${esc(k.url)}" target="_blank" style="color:var(--azul)">${location.origin}${esc(k.url)}</a>
-        </div>
-      </div>
-      <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
-        <button class="btn b-az" style="padding:5px 10px;font-size:11px" onclick="kioskCopiar('${location.origin}${esc(k.url)}')">📋 Copiar</button>
-        <button class="btn ${k.ativo?'b-warn':'b-az'}" style="padding:5px 10px;font-size:11px" onclick="kioskToggle(${k.id},${k.ativo})">${k.ativo?'⏸ Pausar':'▶ Ativar'}</button>
-        <button class="btn b-warn" style="padding:5px 10px;font-size:11px" onclick="kioskRegen(${k.id})">🔄 Novo Link</button>
-        <button class="btn b-danger" style="padding:5px 10px;font-size:11px" onclick="kioskExcluir(${k.id},'${esc(k.nome)}')">🗑 Excluir</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-async function kioskCriar(){
-  const nome=(document.getElementById('kiosk-nome').value||'').trim();
-  const postos=_kioskSelectedValues('kiosk-posto');
-  const avulsos=_kioskSelectedAvulsos();
-  if(!nome){alert('Informe o nome do totem.');return;}
-  const d=await api('/api/admin/ponto/kiosks','POST',{
-    nome,
-    filtro_tipo:postos.length?'posto':(avulsos.length?'avulso':'todos'),
-    filtro_posto:postos[0]||'',
-    filtro_postos:postos,
-    funcionarios_avulsos:avulsos,
-    requer_pin:false
-  });
-  if(d.erro){alert(d.erro);return;}
-  document.getElementById('kiosk-nome').value='';
-  const selPosto=document.getElementById('kiosk-posto');
-  if(selPosto){Array.from(selPosto.options).forEach(function(o){o.selected=false;});}
-  kioskSelAvulsos(false);
-  kioskRenderColabsPosto();
-  kioskCarregar();
-}
-async function kioskToggle(id,ativo){await api(`/api/admin/ponto/kiosks/${id}`,'PUT',{ativo:!ativo});kioskCarregar();}
-async function kioskRegen(id){
-  if(!confirm('Gerar novo link? O link atual deixará de funcionar imediatamente.')) return;
-  const d=await api(`/api/admin/ponto/kiosks/${id}/regenerar-token`,'POST',{});
-  if(d.ok){alert('Novo link:\n'+location.origin+d.url);kioskCarregar();}
-}
-async function kioskExcluir(id,nome){
-  if(!confirm(`Excluir o totem "${nome}"?`)) return;
-  await api(`/api/admin/ponto/kiosks/${id}`,'DELETE');kioskCarregar();
-}
-function kioskCopiar(url){try{navigator.clipboard.writeText(url).then(function(){alert('Link copiado!');});}catch(e){prompt('Copie o link:',url);}}
-// ── FIM KIOSKS ────────────────────────────────────────────────────────────────
-
 async function loadConfig(){
   const d=await api('/api/config');
   document.getElementById('cfg-num-base').value=d.num_base||'100';
@@ -7501,18 +6741,7 @@ async function importarClientesPlanilha(ev){
 async function importarFuncionariosPlanilha(ev){
   const f=ev.target.files?.[0];
   if(!f)return;
-  // BUG-FIX: modo era sempre 'adicionar' (hardcoded). Agora perguntar quando
-  // há colaboradores cadastrados para permitir atualização/merge via planilha.
-  let modo='adicionar';
-  if(funcs.length){
-    const escolha=confirm(
-      'Deseja atualizar colaboradores já cadastrados que constarem na planilha?\n\n'
-      +'OK = Atualizar existentes + criar novos (merge)\n'
-      +'Cancelar = Criar apenas os novos (adicionar)'
-    );
-    if(escolha) modo='merge';
-  }
-  const fd=new FormData(); fd.append('arquivo',f); fd.append('modo',modo);
+  const fd=new FormData(); fd.append('arquivo',f); fd.append('modo','adicionar');
   const r=await fetch('/api/funcionarios/import',{method:'POST',body:fd});
   const d=await r.json();
   if(d.erro){alert(d.erro); ev.target.value=''; return;}
@@ -7733,17 +6962,14 @@ function rhFuncionarioAoAlterarFerias(){
   const prev=document.getElementById('fferias-fim-preview');
   // Calcula fim automaticamente a partir do início + dias
   if(ini && dias>0){
-    // BUG-FIX 4: aritmética em ms com new Date(ini+'T12:00:00') + toISOString()
-    // pode deslocar 1 dia na transição de DST (horário de verão, out/nov Brasil).
-    // Usar construtor de calendário local evita o problema.
-    const [_a,_m,_d]=ini.split('-').map(Number);
-    const dtFim=new Date(_a,_m-1,_d+dias-1);
-    const fimStr=`${dtFim.getFullYear()}-${String(dtFim.getMonth()+1).padStart(2,'0')}-${String(dtFim.getDate()).padStart(2,'0')}`;
+    const dtIni=new Date(ini+'T12:00:00');
+    const dtFim=new Date(dtIni.getTime()+(dias-1)*86400000);
+    const fimStr=dtFim.toISOString().slice(0,10);
     const fimEl=document.getElementById('fferias-fim');
     if(fimEl) fimEl.value=fimStr;
     // Informar se as férias são futuras, em andamento ou encerradas
     const hoje=new Date().toISOString().slice(0,10);
-    const fimStr2=fimStr;
+    const fimStr2=dtFim.toISOString().slice(0,10);
     let info='Até '+dtFim.toLocaleDateString('pt-BR');
     if(hoje<ini) info+=' — Status mudará para Férias na data de início';
     else if(hoje>fimStr2) info+=' — Férias encerradas (status volta para Ativo)';
@@ -7784,46 +7010,9 @@ function rhFuncionarioAoAlterarDemissao(){
     if(st) st.value='Demitido';
     if(stEl) stEl.textContent='Ao salvar: acesso ao app será bloqueado e status será Demitido';
   } else {
-    // BUG-FIX: ao limpar a data de demissão, restaurar status para Ativo
-    // (antes apenas limpava a mensagem, deixando o status preso em 'Demitido').
-    if(st && st.value==='Demitido') st.value='Ativo';
     if(stEl) stEl.textContent='';
   }
   rhFuncionarioAutoSaveSchedule();
-}
-
-async function rhNotificarFerias(){
-  const id=(document.getElementById('fid')?.value||'').trim();
-  const ini=(document.getElementById('fferias-inicio')?.value||'').trim();
-  const fim=(document.getElementById('fferias-fim')?.value||'').trim();
-  const statusEl=document.getElementById('ferias-notif-status');
-  const btn=document.getElementById('btn-notif-ferias');
-  if(!id){ alert('Selecione um colaborador primeiro.'); return; }
-  if(!ini||!fim){ alert('Preencha as datas de início e fim das férias antes de notificar.'); return; }
-  if(!confirm('Enviar notificação de férias agendadas para este colaborador?\n\nCertifique-se de que as datas estão corretas.')) return;
-  if(btn){ btn.disabled=true; btn.textContent='Enviando...'; }
-  if(statusEl){ statusEl.style.display='none'; }
-  try{
-    const r=await fetch('/api/funcionarios/'+id,{
-      method:'PUT',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        ferias_inicio:ini,
-        ferias_fim:fim,
-        ferias_obs:(document.getElementById('fferias-obs')?.value||'').trim(),
-        ferias_dias:parseInt(document.getElementById('fferias-dias')?.value)||30,
-        notificar_ferias:true
-      })
-    });
-    const j=await r.json();
-    if(!r.ok) throw new Error(j.erro||'Erro ao notificar');
-    if(statusEl){ statusEl.textContent='✓ Notificação enviada!'; statusEl.style.display=''; }
-    setTimeout(()=>{ if(statusEl) statusEl.style.display='none'; },4000);
-  }catch(e){
-    alert('Erro ao enviar notificação: '+e.message);
-  }finally{
-    if(btn){ btn.disabled=false; btn.textContent='✈️ Notificar Colaborador'; }
-  }
 }
 
 
@@ -7902,7 +7091,7 @@ function openModalFunc(modo,id){
   if(_rhFuncAutoTimer){ clearTimeout(_rhFuncAutoTimer); _rhFuncAutoTimer=null; }
   _rhFuncAutoLastHash='';
   document.getElementById('fid').value='';
-  ['fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','fdemissao','ftipo-contrato','fjornada','fferias-inicio','fferias-fim','fferias-obs','fposto','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fnascimento','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
+  ['fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fferias-inicio','fferias-fim','fferias-obs','fposto','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fnascimento','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
   document.getElementById('fbanco-tipo').value='';
   document.getElementById('fddi').value='55';
   const st=document.getElementById('fcpf-st'); if(st){st.style.display='none';st.textContent='';}
@@ -8561,7 +7750,7 @@ function rhGeoCarregarCliente(){
 
 async function rhGeoBuscarEndereco(){
   const q=(document.getElementById('rh-geo-endereco')?.value||'').trim();
-  if(!q){showSt('rh-postos-geofence-st','Digite um endereço para buscar.',true);return;}
+  if(!q){showSt('rh-jornada-st','Digite um endereço para buscar.',true);return;}
   const sug=document.getElementById('rh-geo-sugestoes');
   sug.innerHTML='<div style="padding:8px;color:var(--text-muted)">Buscando...</div>';
   sug.style.display='block';
@@ -8585,21 +7774,21 @@ function rhGeoSelecionarSugestao(lat,lon,label){
   document.getElementById('rh-geo-lon').value=parseFloat(lon).toFixed(6);
   document.getElementById('rh-geo-endereco').value=label;
   document.getElementById('rh-geo-sugestoes').style.display='none';
-  showSt('rh-postos-geofence-st','Endereço localizado. Confirme e salve o geofence.',false);
+  showSt('rh-jornada-st','Endereço localizado. Confirme e salve o geofence.',false);
 }
 
 function rhGeoUsarLocalAtual(){
   if(!navigator.geolocation){
-    showSt('rh-postos-geofence-st','Navegador não suporta geolocalização.',true);
+    showSt('rh-jornada-st','Navegador não suporta geolocalização.',true);
     return;
   }
   navigator.geolocation.getCurrentPosition(
     pos=>{
       document.getElementById('rh-geo-lat').value=String(pos.coords.latitude.toFixed(6));
       document.getElementById('rh-geo-lon').value=String(pos.coords.longitude.toFixed(6));
-      showSt('rh-postos-geofence-st','Localização atual preenchida.',false);
+      showSt('rh-jornada-st','Localização atual preenchida.',false);
     },
-    _=>showSt('rh-postos-geofence-st','Não foi possível obter sua localização atual.',true),
+    _=>showSt('rh-jornada-st','Não foi possível obter sua localização atual.',true),
     {enableHighAccuracy:true,timeout:12000,maximumAge:0}
   );
 }
@@ -8607,7 +7796,7 @@ function rhGeoUsarLocalAtual(){
 async function rhGeoSalvarCliente(){
   const cid=(document.getElementById('rh-geo-cliente')?.value||'').trim();
   if(!cid){
-    showSt('rh-postos-geofence-st','Selecione um posto/cliente.',true);
+    showSt('rh-jornada-st','Selecione um posto/cliente.',true);
     return;
   }
   const latRaw=(document.getElementById('rh-geo-lat')?.value||'').trim().replace(',','.');
@@ -8615,23 +7804,23 @@ async function rhGeoSalvarCliente(){
   const raioRaw=(document.getElementById('rh-geo-raio')?.value||'150').trim().replace(',','.');
   const lat=parseFloat(latRaw), lon=parseFloat(lonRaw), raio=parseFloat(raioRaw);
   if(!Number.isFinite(lat) || !Number.isFinite(lon) || lat<-90 || lat>90 || lon<-180 || lon>180){
-    showSt('rh-postos-geofence-st','Latitude/longitude inválidas.',true);
+    showSt('rh-jornada-st','Latitude/longitude inválidas.',true);
     return;
   }
   if(!Number.isFinite(raio) || raio<10 || raio>2000){
-    showSt('rh-postos-geofence-st','Raio inválido (use entre 10 e 2000 metros).',true);
+    showSt('rh-jornada-st','Raio inválido (use entre 10 e 2000 metros).',true);
     return;
   }
   const r=await api('/api/clientes/'+cid,'PUT',{geo_lat:lat,geo_lon:lon,geofence_raio_m:raio});
   if(r?.erro){
-    showSt('rh-postos-geofence-st',r.erro,true);
+    showSt('rh-jornada-st',r.erro,true);
     return;
   }
   todos=await api('/api/clientes');
   rhGeoPopularClientes();
   document.getElementById('rh-geo-cliente').value=String(cid);
   rhGeoCarregarCliente();
-  showSt('rh-postos-geofence-st','Geofence do posto salva com sucesso.',false);
+  showSt('rh-jornada-st','Geofence do posto salva com sucesso.',false);
 }
 
 async function rhJornadaInit(force=false){
@@ -8641,10 +7830,11 @@ async function rhJornadaInit(force=false){
     if(!Array.isArray(todos) || !todos.length) todos=await api('/api/clientes');
     await rhJornadaCarregar();
     rhJornadaPopularFuncionariosAtivos();
+    rhGeoPopularClientes();
     rhJornadaLimparForm();
     rhJornadaInitDone=true;
   }catch(e){
-    showSt('rh-jornada-st','Falha ao carregar jornadas.',true);
+    showSt('rh-jornada-st','Falha ao carregar jornadas/geofence.',true);
   }
 }
 
@@ -8703,15 +7893,10 @@ function rhEscalaPopularSeletor(){
 }
 
 function rhEscalaMontarDiaTrabalho(turno, horaEntrada, horaSaida, intervalo){
-  // BUG-FIX 16: validar formato HH:MM antes de montar o dia — entradas inválidas
-  // causam falha silenciosa no cálculo de horas no backend.
-  const reHora=/^\d{2}:\d{2}$/;
-  const entNorm=reHora.test((horaEntrada||'').trim())?horaEntrada.trim():'08:00';
-  const saiNorm=reHora.test((horaSaida||'').trim())?horaSaida.trim():'17:00';
   const dia={
     tipo:'trabalho',
-    hora_entrada:entNorm,
-    hora_saida:saiNorm,
+    hora_entrada:horaEntrada,
+    hora_saida:horaSaida,
     intervalo_min:Math.max(0,parseInt(intervalo||0,10)||0)
   };
   if(turno==='noturno') dia.noturno=true;
@@ -8769,18 +7954,6 @@ function rhEscalaAtualizarCicloTemplate(){
   if(tipo==='6x1'){
     document.getElementById('rh-esc-dias-trabalho').value='6';
     document.getElementById('rh-esc-dias-folga').value='1';
-  }
-  if(tipo==='5x2'){
-    document.getElementById('rh-esc-dias-trabalho').value='5';
-    document.getElementById('rh-esc-dias-folga').value='2';
-  }
-  if(tipo==='6x2'){
-    document.getElementById('rh-esc-dias-trabalho').value='6';
-    document.getElementById('rh-esc-dias-folga').value='2';
-  }
-  if(tipo==='4x2'){
-    document.getElementById('rh-esc-dias-trabalho').value='4';
-    document.getElementById('rh-esc-dias-folga').value='2';
   }
   const templateObj=tipo?rhEscalaMontarCiclo():{};
   cicloArea.value=JSON.stringify(templateObj,null,2);
@@ -8865,22 +8038,14 @@ async function rhEscalaSalvar(){
   }
   const cicloMontado=rhEscalaMontarCiclo();
   const cicloArea=document.getElementById('rh-esc-ciclo');
-  // BUG-FIX 14: antes, o textarea era sobrescrito sempre com o ciclo montado pelo formulário,
-  // ignorando qualquer edição manual do usuário. Agora: se o textarea foi editado, usar
-  // o conteúdo do textarea; caso contrário, usar o ciclo montado e atualizar o textarea.
+  if(cicloArea) cicloArea.value=JSON.stringify(cicloMontado,null,2);
+  let cicloStr=JSON.stringify(cicloMontado||{});
   let cicloObj;
-  const montadoStr=JSON.stringify(cicloMontado,null,2);
-  const areaVal=(cicloArea?.value||'').trim();
-  if(cicloArea && areaVal && areaVal!==montadoStr){
-    try{
-      cicloObj=JSON.parse(areaVal);
-    }catch(e){
-      showSt('rh-escala-st','Ciclo JSON na textarea é inválido. Corrija ou clique em "Gerar Ciclo" para regenerar.',true);
-      return;
-    }
-  } else {
-    if(cicloArea) cicloArea.value=montadoStr;
-    cicloObj=cicloMontado;
+  try{
+    cicloObj=JSON.parse(cicloStr);
+  }catch(e){
+    showSt('rh-escala-st','Ciclo JSON inválido.',true);
+    return;
   }
   const turno=(document.getElementById('rh-esc-turno')?.value||'diurno').trim();
   if(turno==='noturno' && Array.isArray(cicloObj?.dias)){
@@ -8943,20 +8108,12 @@ function rhEscalaCarregarFuncsParaVinc(){
     return;
   }
   
-  // Escala selecionada: mostrar funcs que não estão nesta escala
+  // Escala selecionada: mostrar funcs que não estão em outra escala
   const escalaAtual=rhEscalas.find(x=>String(x.id)===String(eid));
   if(!escalaAtual) return;
   const idsJaVincs=new Set((escalaAtual.funcionarios||[]).map(f=>f.id));
-  // BUG-FIX 15: também filtrar funcionários já vinculados em OUTRA escala ativa.
-  // Antes, o filtro mostrava esses funcionários na lista, mas o backend os rejeitava
-  // com erro de conflito — UX confusa para o usuário.
-  const idsEmOutraEscala=new Set();
-  (rhEscalas||[]).forEach(esc=>{
-    if(String(esc.id)===String(eid)) return; // ignorar a própria escala
-    (esc.funcionarios||[]).forEach(f=>idsEmOutraEscala.add(f.id));
-  });
   const ativos=(Array.isArray(funcs)?funcs:[])
-    .filter(f=>String((f.status||'').toLowerCase())==='ativo' && !idsJaVincs.has(f.id) && !idsEmOutraEscala.has(f.id))
+    .filter(f=>String((f.status||'').toLowerCase())==='ativo' && !idsJaVincs.has(f.id))
     .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
   sel.innerHTML=ativos.map(f=>`<option value="${f.id}">${esc(f.nome||'Sem nome')} (${f.matricula||'—'})</option>`).join('');
 }
@@ -10177,31 +9334,15 @@ async function apSelecionarFunc(f) {
   document.getElementById('ap-func-nome-sel').textContent = f.nome || '';
   document.getElementById('ap-func-cargo-sel').textContent = f.cargo || '';
   document.getElementById('ap-func-selecionado').style.display = 'block';
-  // BUG-FIX: para término de contrato por prazo determinado NÃO existe aviso
-  // prévio (art. 481 CLT). Não exibir o painel "Cálculo CLT — 30+dias" para
-  // não enganar o operador (o PDF gerado já diz corretamente "sem aviso").
-  const tipoAtual = document.getElementById('ap-tipo')?.value || '';
-  const painelCalc = document.getElementById('ap-calc-aviso');
-  if (tipoAtual === 'termino_contrato') {
-    if (painelCalc) painelCalc.style.display = 'none';
-    return;
-  }
-  // Busca e exibe o cálculo CLT (passa data do aviso e tipo para a prévia
-  // bater com o PDF). BUG-FIX: tipo importa porque pedido_demissao do
-  // empregado tem 30 dias fixos (Lei 12.506 é benefício só do empregado).
+  // Busca e exibe o cálculo CLT
   try {
-    const dtAviso = document.getElementById('ap-data-aviso')?.value || '';
-    const params = [];
-    if (dtAviso) params.push('data_aviso=' + encodeURIComponent(dtAviso));
-    if (tipoAtual) params.push('tipo=' + encodeURIComponent(tipoAtual));
-    const qs = params.length ? ('?' + params.join('&')) : '';
-    const calc = await api(`/api/funcionarios/${f.id}/calcular-aviso-previo${qs}`);
+    const calc = await api(`/api/funcionarios/${f.id}/calcular-aviso-previo`);
     if (calc && calc.ok) {
       document.getElementById('ap-calc-adm').textContent = calc.data_admissao || '—';
       document.getElementById('ap-calc-anos').textContent = calc.anos_servico + ' ano(s)';
       document.getElementById('ap-calc-dias').textContent = calc.total_dias;
       document.getElementById('ap-calc-extras').textContent = calc.dias_adicionais || 0;
-      if (painelCalc) painelCalc.style.display = 'block';
+      document.getElementById('ap-calc-aviso').style.display = 'block';
     }
   } catch(e) {}
 }
@@ -10215,30 +9356,15 @@ function apLimparFunc() {
   document.getElementById('ap-resultado').style.display = 'none';
 }
 
-// Recalcula o painel CLT quando o usuário muda a data do aviso, mantendo
-// prévia e PDF sempre sincronizados com a data escolhida.
-function apRecalcularSeFuncSel() {
-  if (apFuncSelecionado) apSelecionarFunc(apFuncSelecionado);
-}
-
 function apToggleReducao() {
   const tipo = document.getElementById('ap-tipo')?.value || '';
   const wrap = document.getElementById('ap-reducao-wrap');
   const sel = document.getElementById('ap-reducao');
-  const demWrap = document.getElementById('ap-demissao-wrap');
-  const demSel = document.getElementById('ap-demissao-aviso');
   if (!wrap || !sel) return;
-  const habilitaRed = (tipo === 'empresa_trabalhado');
-  wrap.style.opacity = habilitaRed ? '1' : '0.5';
-  sel.disabled = !habilitaRed;
-  if (!habilitaRed) sel.value = 'nenhuma';
-  if (demWrap && demSel) {
-    const habilitaDem = (tipo === 'pedido_demissao');
-    demWrap.style.display = habilitaDem ? '' : 'none';
-    if (!habilitaDem) demSel.value = 'cumprira';
-  }
-  // Ao alternar tipo, refazer o painel CLT (ocultar em término de contrato).
-  if (apFuncSelecionado) apSelecionarFunc(apFuncSelecionado);
+  const habilita = (tipo === 'empresa_trabalhado');
+  wrap.style.opacity = habilita ? '1' : '0.5';
+  sel.disabled = !habilita;
+  if (!habilita) sel.value = 'nenhuma';
 }
 
 function previaAvisoPrevio() {
@@ -10248,7 +9374,6 @@ function previaAvisoPrevio() {
   const dataAviso = document.getElementById('ap-data-aviso').value;
   const obs = (document.getElementById('ap-obs')?.value || '').trim();
   const reducao = document.getElementById('ap-reducao')?.value || 'nenhuma';
-  const demissaoAviso = document.getElementById('ap-demissao-aviso')?.value || 'cumprira';
   const hoje = new Date().toLocaleDateString('pt-BR');
   const empNome = f.empresa_nome || 'RM FACILITIES LTDA';
   // Dados do cálculo (se já carregados no painel)
@@ -10256,34 +9381,23 @@ function previaAvisoPrevio() {
   const calcAnos = document.getElementById('ap-calc-anos')?.textContent?.trim();
   const calcAdm  = document.getElementById('ap-calc-adm')?.textContent?.trim();
   const calcExtras = document.getElementById('ap-calc-extras')?.textContent?.trim() || '0';
-  let totalDias = parseInt(calcDias) || 30;
-  let diasAdic = parseInt(calcExtras) || 0;
-  // BUG-FIX (CLT): pedido de demissão do empregado → 30 dias fixos
-  // (Lei 12.506/2011 é benefício exclusivo do empregado). Sem isso a prévia
-  // mostrava 30+3*N e divergia do PDF (que agora também força 30 no backend).
-  if (tipo === 'pedido_demissao') { totalDias = 30; diasAdic = 0; }
-  const naoCumprira = (tipo === 'pedido_demissao' && demissaoAviso === 'nao_cumprira');
-  // Título do cabeçalho muda quando o colaborador não vai cumprir.
-  const TIPOS_AP = {
-    empresa_trabalhado: 'AVISO PRÉVIO TRABALHADO',
-    empresa_indenizado: 'AVISO PRÉVIO INDENIZADO',
-    pedido_demissao:    demissaoAviso === 'nao_cumprira'
-      ? 'PEDIDO DE DEMISSÃO — SEM CUMPRIMENTO DE AVISO PRÉVIO'
-      : 'PEDIDO DE DEMISSÃO — AVISO PRÉVIO',
-    termino_contrato:   'TÉRMINO DE CONTRATO POR PRAZO DETERMINADO',
-  };
-  const tipoLabel = TIPOS_AP[tipo] || 'AVISO PRÉVIO TRABALHADO';
+  const totalDias = parseInt(calcDias) || 30;
+  const diasAdic = parseInt(calcExtras) || 0;
+  // Data fim
   let dataFimFmt = '';
   if (dataAviso) {
     const dt = new Date(dataAviso + 'T12:00:00');
-    if (tipo === 'termino_contrato' || naoCumprira) {
-      // término = data do aviso; nao_cumprira = rescisão imediata (data do aviso)
-    } else {
-      dt.setDate(dt.getDate() + (totalDias - 1));
-    }
+    dt.setDate(dt.getDate() + totalDias);
     dataFimFmt = dt.toLocaleDateString('pt-BR');
   }
   const dataAvisoFmt = dataAviso ? new Date(dataAviso + 'T12:00:00').toLocaleDateString('pt-BR') : hoje;
+  const TIPOS_AP = {
+    empresa_trabalhado: 'AVISO PRÉVIO TRABALHADO',
+    empresa_indenizado: 'AVISO PRÉVIO INDENIZADO',
+    pedido_demissao:    'PEDIDO DE DEMISSÃO — AVISO PRÉVIO',
+    termino_contrato:   'TÉRMINO DE CONTRATO POR PRAZO DETERMINADO',
+  };
+  const tipoLabel = TIPOS_AP[tipo] || 'AVISO PRÉVIO TRABALHADO';
   const corHdr = '#1A3A5C';
   const _fmtCpfPv = (v) => {
     const d = String(v||'').replace(/\D/g,'');
@@ -10327,20 +9441,11 @@ function previaAvisoPrevio() {
       cargo <strong>${_escHtml(f.cargo||'')}</strong> na empresa <strong>${_escHtml(empNome)}</strong>,
       admitido(a) em <strong>${admFmt}</strong>, manifesto minha decisão de
       <strong>rescindir voluntariamente</strong> meu contrato de trabalho.`;
-    if (demissaoAviso === 'nao_cumprira') {
-      textoPrazo = `Declaro que <strong>não cumprirei</strong> o aviso prévio de
-        <strong>${totalDias} dias</strong> previsto no art. 487 da CLT, e estou ciente de que
-        o valor correspondente ao período de aviso prévio não cumprido será
-        <strong>descontado das verbas rescisórias</strong>, nos termos do art. 487, §2º da CLT.
-        O vínculo empregatício será encerrado na data de <strong>${dataAvisoFmt}</strong>.`;
-      textoBaseLegal = 'Art. 487, §2º CLT — falta de cumprimento do aviso prévio pelo empregado demitente: desconto do equivalente nas verbas rescisórias.';
-    } else {
-      textoPrazo = `Comprometo-me a cumprir o aviso prévio de <strong>${totalDias} dias</strong>
-        (30 dias — Lei 12.506/2011), de <strong>${dataAvisoFmt}</strong> a <strong>${dataFimFmt||'—'}</strong>,
-        salvo dispensa expressa e por escrito da empresa. Estou ciente de que a falta de
-        cumprimento implicará desconto nas verbas rescisórias (art. 487, §2º CLT).`;
-      textoBaseLegal = 'Art. 487, §2º CLT; Lei 12.506/2011.';
-    }
+    textoPrazo = `Comprometo-me a cumprir o aviso prévio de <strong>${totalDias} dias</strong>
+      (30 base + ${diasAdic} proporcionais — ${anos} de serviço),
+      de <strong>${dataAvisoFmt}</strong> a <strong>${dataFimFmt||'—'}</strong>,
+      salvo dispensa expressa da empresa.`;
+    textoBaseLegal = 'Art. 487, §2º CLT; Lei 12.506/2011.';
   } else {  // termino_contrato
     textoIntro = `A empresa <strong>${_escHtml(empNome)}</strong> comunica ao(à) colaborador(a)
       <strong>${_escHtml(f.nome||'')}</strong>, RE <strong>${_escHtml(String(f.re||''))}</strong>,
@@ -10417,27 +9522,12 @@ async function gerarAvisoPrevio() {
   const obs = document.getElementById('ap-obs').value;
   const canal = document.getElementById('ap-canal').value;
   const reducao = document.getElementById('ap-reducao')?.value || 'nenhuma';
-  const demissao_aviso = document.getElementById('ap-demissao-aviso')?.value || 'cumprira';
   const btn = document.getElementById('ap-btn-gerar');
   const res = document.getElementById('ap-resultado');
   btn.disabled = true; btn.textContent = '⏳ Gerando...'; res.style.display = 'none';
   try {
-    let r = await api(`/api/funcionarios/${apFuncSelecionado.id}/gerar-aviso-previo`, 'POST',
-      { tipo, data_aviso, obs, canal, reducao, demissao_aviso });
-    // BUG-FIX: backend retorna {duplicado:true, erro:...} (HTTP 409) quando
-    // já existe aviso prévio gerado hoje para o mesmo colaborador. Antes
-    // cada clique acidental criava PDF + envio duplicado. Agora pergunta.
-    if (r && r.duplicado) {
-      if (confirm((r.erro || 'Já existe aviso gerado hoje.') + '\n\nDeseja gerar outro mesmo assim?')) {
-        r = await api(`/api/funcionarios/${apFuncSelecionado.id}/gerar-aviso-previo`, 'POST',
-          { tipo, data_aviso, obs, canal, reducao, forcar: true });
-      } else {
-        res.innerHTML = `<div style="background:var(--cinza-cl);border:1px solid var(--borda);border-radius:8px;padding:12px 16px">Geração cancelada (já existe documento de hoje).</div>`;
-        res.style.display = 'block';
-        btn.disabled = false; btn.textContent = '📅 Gerar Aviso Prévio';
-        return;
-      }
-    }
+    const r = await api(`/api/funcionarios/${apFuncSelecionado.id}/gerar-aviso-previo`, 'POST',
+      { tipo, data_aviso, obs, canal, reducao });
     if (r && r.ok) {
       const dl = r.download_url
         ? `<a href="${r.download_url}" target="_blank" class="btn b-gh b-sm" style="margin-top:8px">⬇️ Baixar PDF</a>`
@@ -10502,57 +9592,26 @@ async function docsAbrirProposta() {
 // ── CONTRATOS ───────────────────────────────────────────────────────────────
 let _ctrEmpresas = [];
 let _ctrClientes = [];
-let _ctrPropostas = [];
 
 async function _ctrCarregarEmpresas() {
-  const [emps, clis, propsRes] = await Promise.all([
-    _ctrEmpresas.length  ? Promise.resolve(_ctrEmpresas)  : api('/api/empresas').catch(() => []),
-    _ctrClientes.length  ? Promise.resolve(_ctrClientes)  : api('/api/clientes').catch(() => []),
-    _ctrPropostas.length ? Promise.resolve({items: _ctrPropostas}) : api('/api/propostas-comerciais?per_page=200').catch(() => ({items:[]})),
+  const [emps, clis] = await Promise.all([
+    _ctrEmpresas.length ? Promise.resolve(_ctrEmpresas) : api('/api/empresas').catch(() => []),
+    _ctrClientes.length ? Promise.resolve(_ctrClientes) : api('/api/clientes').catch(() => []),
   ]);
-  _ctrEmpresas  = emps;
-  _ctrClientes  = clis;
-  _ctrPropostas = propsRes.items || propsRes || [];
+  _ctrEmpresas = emps;
+  _ctrClientes = clis;
 
-  const pSel    = document.getElementById('ctr-prestadora');
-  const tSel    = document.getElementById('ctr-tomadora');
-  const cliSel  = document.getElementById('ctr-cliente');
-  const propSel = document.getElementById('ctr-proposta');
-  if (!pSel) return;
+  const pSel = document.getElementById('ctr-prestadora');
+  const tSel = document.getElementById('ctr-tomadora');
+  if (!pSel || !tSel) return;
 
   // Prestadora = empresas próprias
-  pSel.innerHTML = '<option value="">— Selecione a prestadora —</option>' +
+  pSel.innerHTML = '<option value="">— Selecione a empresa prestadora —</option>' +
     _ctrEmpresas.map(e => `<option value="${e.id}">${_escHtml(e.razao || e.nome)}</option>`).join('');
 
-  // Tomadora = empresas (contratante PJ)
-  if (tSel) {
-    tSel.innerHTML = '<option value="">— Empresa contratante (opcional) —</option>' +
-      _ctrEmpresas.map(e => `<option value="${e.id}">${_escHtml(e.razao || e.nome)}</option>`).join('');
-  }
-
-  // Cliente cadastrado (contratante PF/PJ registrado)
-  if (cliSel) {
-    cliSel.innerHTML = '<option value="">— Cliente cadastrado (opcional) —</option>' +
-      _ctrClientes.map(c => `<option value="${c.id}">${_escHtml(c.nome)}${c.cnpj ? ' — ' + _escHtml(c.cnpj) : ''}</option>`).join('');
-  }
-
-  // Proposta Comercial
-  if (propSel) {
-    propSel.innerHTML = '<option value="">— Vincular proposta (opcional) —</option>' +
-      _ctrPropostas.map(p => `<option value="${p.id}" data-empresa="${_escHtml(p.empresa||'')}" data-funcao="${_escHtml(p.funcao||'')}" data-total="${_escHtml(p.total||'')}">${_escHtml(p.numero)} — ${_escHtml(p.empresa||'')}${p.funcao ? ' | '+_escHtml(p.funcao) : ''}</option>`).join('');
-  }
-}
-
-function ctrPropostaSelecionada() {
-  const sel = document.getElementById('ctr-proposta');
-  if (!sel || !sel.value) return;
-  const opt = sel.options[sel.selectedIndex];
-  const funcao = opt.getAttribute('data-funcao') || '';
-  const total  = opt.getAttribute('data-total')  || '';
-  const objEl  = document.getElementById('ctr-objeto');
-  const valEl  = document.getElementById('ctr-valor');
-  if (objEl && !objEl.value && funcao) objEl.value = funcao;
-  if (valEl && !valEl.value && total)  valEl.value = total;
+  // Tomadora = clientes cadastrados
+  tSel.innerHTML = '<option value="">— Selecione o cliente tomador —</option>' +
+    _ctrClientes.map(c => `<option value="cli_${c.id}">${_escHtml(c.nome)}${c.cnpj ? ' — ' + _escHtml(c.cnpj) : ''}</option>`).join('');
 }
 
 async function docsAbrirContrato(tipo) {
@@ -10564,10 +9623,6 @@ async function docsAbrirContrato(tipo) {
   document.getElementById('ctr-ia-area').style.display = '';
   // Limpa campos
   ['ctr-objeto','ctr-corpo','ctr-ia-instrucao','ctr-valor'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  ['ctr-tomadora','ctr-cliente','ctr-proposta'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -10599,28 +9654,23 @@ async function ctrGerarIA() {
 
 async function ctrSalvar() {
   const st = document.getElementById('ctr-st');
-  const tipo          = document.getElementById('ctr-tipo').value;
+  const tipo         = document.getElementById('ctr-tipo').value;
   const prestadora_id = document.getElementById('ctr-prestadora').value || null;
-  const tomadora_id   = document.getElementById('ctr-tomadora')?.value  || null;
-  const cliente_id    = document.getElementById('ctr-cliente')?.value   || null;
-  const proposta_id   = document.getElementById('ctr-proposta')?.value  || null;
-  const objeto        = document.getElementById('ctr-objeto').value.trim();
-  const texto_corpo   = document.getElementById('ctr-corpo').value.trim();
-  const data_inicio   = document.getElementById('ctr-data-inicio').value;
-  const data_fim      = document.getElementById('ctr-data-fim').value;
-  const valor         = document.getElementById('ctr-valor').value.trim();
-  if (!objeto && !texto_corpo && !proposta_id) {
-    st.innerHTML = '<span style="color:#c62828">Preencha o objeto, o corpo do contrato ou vincule uma proposta.</span>';
+  const tomadora_id   = document.getElementById('ctr-tomadora').value   || null;
+  const objeto       = document.getElementById('ctr-objeto').value.trim();
+  const texto_corpo  = document.getElementById('ctr-corpo').value.trim();
+  const data_inicio  = document.getElementById('ctr-data-inicio').value;
+  const data_fim     = document.getElementById('ctr-data-fim').value;
+  const valor        = document.getElementById('ctr-valor').value.trim();
+  if (!objeto && !texto_corpo) {
+    st.innerHTML = '<span style="color:#c62828">Preencha o objeto ou o corpo do contrato.</span>';
     return;
   }
   st.innerHTML = '<span style="color:#205d8a">⏳ Salvando…</span>';
-  const res = await api('/api/contratos-ps', 'POST', {
-    tipo, prestadora_id, tomadora_id, cliente_id, proposta_id,
-    objeto, texto_corpo, data_inicio, data_fim, valor,
-  });
+  const res = await api('/api/contratos-ps', 'POST', {tipo, prestadora_id, tomadora_id, objeto, texto_corpo, data_inicio, data_fim, valor});
   if (res.erro) { st.innerHTML = `<span style="color:#c62828">❌ ${_escHtml(res.erro)}</span>`; return; }
-  const infoP = res.proposta ? ` (Proposta ${_escHtml(res.proposta)})` : '';
-  st.innerHTML = `<span style="color:#2e7d32">✅ Contrato ${_escHtml(res.numero)} salvo!${infoP}</span>`;
+  st.innerHTML = `<span style="color:#2e7d32">✅ Contrato ${_escHtml(res.numero)} salvo!</span>`;
+  // Baixa o PDF automaticamente
   window.open(`/api/contratos-ps/${res.id}/pdf`, '_blank');
 }
 
@@ -11618,7 +10668,6 @@ const FP_STATE = {
   disponiveis: [],
   filtroDispText: '',
   filtroDispPosto: '',
-  _dragFuncId: null,        // ID capturado no onStart do sortable (drag confiável)
 };
 
 function fpFmtMoeda(v){
@@ -11873,11 +10922,7 @@ function fpSetupDropZone(editavel){
     ghostClass: 'fp-sortable-ghost',
     onAdd: async (evt) => {
       const el = evt.item;
-      // Usa ID capturado no onStart (mais confiável que dataset do clone)
-      const fid = FP_STATE._dragFuncId
-        || parseInt(el?.dataset?.funcId || el?.getAttribute?.('data-func-id') || '0', 10)
-        || null;
-      FP_STATE._dragFuncId = null;
+      const fid = el?.dataset?.funcId ? parseInt(el.dataset.funcId, 10) : null;
       // Remove o elemento clonado (a tabela vai ser repintada pelo refresh)
       try{ el.parentNode && el.parentNode.removeChild(el); }catch(_){}
       if(fid) await fpAdicionarFuncionarios([fid]);
@@ -11924,9 +10969,9 @@ function fpRenderDisponiveis(){
     const statusBadge = isDemitido ? '<span style="font-size:10px;background:#fde8e8;color:#c0392b;padding:1px 6px;border-radius:99px;font-weight:700;margin-left:4px">Demitido</span>' : '';
     return `
     <div class="fp-disp-item" data-func-id="${f.id}"
-         style="border:1px solid var(--borda);border-radius:8px;padding:8px 10px;margin-bottom:6px;${editavel?'cursor:grab':'cursor:default;opacity:.7'};display:flex;align-items:center;gap:8px;background:var(--branco);transition:transform .12s,box-shadow .12s">
+         style="border:1px solid var(--borda);border-radius:8px;padding:8px 10px;margin-bottom:6px;${editavel?'cursor:grab':'cursor:default;opacity:.7'};display:flex;align-items:center;gap:8px;background:var(--cinza-bg,#fff);transition:transform .12s,box-shadow .12s">
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--preto)">${fpEsc(f.nome)}${statusBadge}</div>
+        <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fpEsc(f.nome)}${statusBadge}</div>
         <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fpEsc(f.re)} ${f.cargo?'• '+fpEsc(f.cargo):''}${f.posto_operacional?' • '+fpEsc(f.posto_operacional):''}</div>
         ${f.empresa_nome?'<div style="font-size:10px;color:var(--text-muted)">'+fpEsc(f.empresa_nome)+'</div>':''}
       </div>
@@ -11945,9 +10990,6 @@ function fpRenderDisponiveis(){
         dragClass: 'fp-sortable-drag',
         forceFallback: true,
         fallbackOnBody: true,
-        onStart: (evt) => {
-          FP_STATE._dragFuncId = parseInt(evt.item?.dataset?.funcId || evt.item?.getAttribute('data-func-id') || '0', 10) || null;
-        },
       });
     }
   }
@@ -11957,6 +10999,11 @@ function fpFiltrarDisponiveis(){
   FP_STATE.filtroDispText = (document.getElementById('fp-busca-func')?.value||'').trim();
   FP_STATE.filtroDispPosto = (document.getElementById('fp-posto-func')?.value||'').trim().toLowerCase();
   fpRenderDisponiveis();
+}
+
+function fpOnDragStart(ev, fid){
+  ev.dataTransfer.effectAllowed = 'copy';
+  ev.dataTransfer.setData('text/funcionario-id', String(fid));
 }
 
 async function fpAdicionarFuncionarios(ids){
@@ -11983,21 +11030,8 @@ async function fpRemoverItem(funcId){
   if(!confirm('Remover este funcionário da folha?')) return;
   const r = await api(`/api/folhas/${f.id}/funcionarios/${funcId}`, 'DELETE');
   if(!r || r.error || r.erro){ toast(r?.error||r?.erro||'Erro ao remover.','e'); return; }
-  // Usa folha já retornada pelo DELETE — evita roundtrip e duplo render
-  if(r.folha){
-    FP_STATE.folhaSelecionada = r.folha;
-    const idx = FP_STATE.folhas.findIndex(x => x.id === r.folha.id);
-    if(idx >= 0) FP_STATE.folhas[idx] = r.folha;
-  }
-  fpRenderFolhaPainel();
-  fpRenderListaFolhas();
-  await fpCarregarDisponiveis();
-}
-
-let _fpSalDebounceTimer = null;
-function fpAtualizarSalarioBaseDebounced(itemId, valor){
-  clearTimeout(_fpSalDebounceTimer);
-  _fpSalDebounceTimer = setTimeout(() => fpAtualizarSalarioBase(itemId, valor), 600);
+  await fpSelecionarFolha(f.id);
+  await fpCarregarFolhas();
 }
 
 async function fpAtualizarSalarioBase(itemId, valor){
@@ -12005,23 +11039,7 @@ async function fpAtualizarSalarioBase(itemId, valor){
   if(!f) return;
   const r = await api(`/api/folhas/${f.id}/itens/${itemId}`, 'PUT', {salario_base: parseFloat(valor)||0});
   if(!r || r.error || r.erro){ toast(r?.error||r?.erro||'Erro ao atualizar.','e'); return; }
-  // Atualiza somente o item afetado e o total — evita re-renderizar tabela inteira
-  if(r.item && FP_STATE.folhaSelecionada){
-    const itens = FP_STATE.folhaSelecionada.itens || [];
-    const idx = itens.findIndex(it => it.id === r.item.id);
-    if(idx >= 0) itens[idx] = r.item;
-    if(r.total_folha != null) FP_STATE.folhaSelecionada.total_valor = r.total_folha;
-    fpFiltrarItens();
-    // Atualiza resumo de totais sem recriar o workspace inteiro
-    const allItens = FP_STATE.folhaSelecionada.itens || [];
-    let base=0, adi=0, des=0, tot=0;
-    allItens.forEach(it=>{ base+=Number(it.salario_base||0); adi+=Number(it.total_adicional||0); des+=Number(it.total_desconto||0); tot+=Number(it.total_pagar||0); });
-    const el = (id) => document.getElementById(id);
-    if(el('fp-resumo-base')) el('fp-resumo-base').textContent = fpFmtMoeda(base);
-    if(el('fp-resumo-adic')) el('fp-resumo-adic').textContent = fpFmtMoeda(adi);
-    if(el('fp-resumo-desc')) el('fp-resumo-desc').textContent = fpFmtMoeda(des);
-    if(el('fp-resumo-total')) el('fp-resumo-total').textContent = fpFmtMoeda(tot);
-  }
+  await fpRecarregarFolhaAtual();
 }
 
 async function fpRecarregarFolhaAtual(){
@@ -12085,40 +11103,6 @@ function fpExportar(fmt){
   window.open(url, '_blank');
 }
 
-async function fpNotificarFuncionarios(){
-  const f = FP_STATE.folhaSelecionada;
-  if(!f){ toast('Selecione uma folha.','e'); return; }
-  const qtd = (f.itens||[]).length;
-  if(!qtd){ toast('Nenhum funcionário na folha.','e'); return; }
-  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const partes=(f.competencia||'').split('-');
-  const compLabel=/^\d{4}-\d{2}$/.test(f.competencia||'')?`${meses[parseInt(partes[1])-1]}/${partes[0]}`:(f.competencia||'');
-  if(!confirm(
-    `Enviar notificação de pagamento de ${compLabel} para os funcionários desta folha?\n\n`+
-    `Cada funcionário receberá o valor líquido referente a esta competência.\n\n`+
-    `Certifique-se de que os dados estão corretos antes de enviar.`
-  )) return;
-  const btn = document.getElementById('fp-btn-notificar');
-  if(btn){ btn.disabled=true; btn.textContent='Enviando...'; }
-  try{
-    const r = await api(`/api/folhas/${f.id}/notificar`, 'POST');
-    if(r?.erro || r?.error) throw new Error(r.erro||r.error);
-    const push = r.enviados_push||0;
-    const wpp = r.enviados_whatsapp||0;
-    const semContato = r.sem_contato||0;
-    let partes = [];
-    if(push) partes.push(`${push} via app`);
-    if(wpp) partes.push(`${wpp} via WhatsApp`);
-    let msg = `✓ Notificações enviadas: ${partes.join(' · ')||'0'}`;
-    if(semContato) msg += ` · ${semContato} sem contato`;
-    toast(msg, 's');
-  }catch(e){
-    toast('Erro ao notificar: '+e.message, 'e');
-  }finally{
-    if(btn){ btn.disabled=false; btn.textContent='📲 Notificar funcionários'; }
-  }
-}
-
 // ── Filtros de itens na tabela da folha ──────────────────────────────────────
 function fpFiltrarItens(){
   const f = FP_STATE.folhaSelecionada;
@@ -12161,15 +11145,15 @@ function fpRenderItensTbody(itens, editavel){
   }
   tb.innerHTML = itens.map((it,idx)=>{
     const baseCell = editavel
-      ? `<input type="number" step="0.01" value="${Number(it.salario_base||0).toFixed(2)}" onchange="fpAtualizarSalarioBaseDebounced(${it.id}, this.value)" style="width:110px;text-align:right;padding:4px 6px">`
+      ? `<input type="number" step="0.01" value="${Number(it.salario_base||0).toFixed(2)}" onchange="fpAtualizarSalarioBase(${it.id}, this.value)" style="width:110px;text-align:right;padding:4px 6px">`
       : fpFmtMoeda(it.salario_base);
     const isDemitido = (it.status_funcionario||'').toLowerCase()==='demitido';
     const demBadge = isDemitido ? ' <span style="font-size:10px;background:#fde8e8;color:#c0392b;padding:1px 5px;border-radius:99px">Demitido</span>' : '';
     const posto = it.posto_operacional ? `<br><small style="color:var(--text-muted)">${fpEsc(it.posto_operacional)}</small>` : '';
     const acao = editavel
-      ? `<button class="btn b-az b-sm" onclick="salLanAbrirModal(${it.funcionario_id}, '${fpEsc(it.nome||'')}')" title="Lançamentos avulsos">📋</button>
+      ? `<button class="btn b-az b-sm" onclick="salLanAbrirModal(${it.funcionario_id}, ${JSON.stringify(it.nome||'').replace(/\"/g,'&quot;')})" title="Lançamentos avulsos">📋</button>
          <button class="btn b-gh b-sm" onclick="fpRemoverItem(${it.funcionario_id})" style="color:var(--verm)" title="Remover">🗑</button>`
-      : `<button class="btn b-gh b-sm" onclick="salLanAbrirModal(${it.funcionario_id}, '${fpEsc(it.nome||'')}')" title="Ver lançamentos">📋</button>`;
+      : `<button class="btn b-gh b-sm" onclick="salLanAbrirModal(${it.funcionario_id}, ${JSON.stringify(it.nome||'').replace(/\"/g,'&quot;')})" title="Ver lançamentos">📋</button>`;
     return `<tr>
       <td>${idx+1}</td>
       <td><b>${fpEsc(it.nome)}${demBadge}</b>${it.empresa_nome?'<br><small style="color:var(--text-muted)">'+fpEsc(it.empresa_nome)+'</small>':''}${posto}</td>
@@ -12750,16 +11734,9 @@ async function _renderFuncionariosImpl(){
 
   if(folhaEl) folhaEl.textContent='Folha: R$ 0,00';
   if(!lista.length){
-    // BUG-FIX: mensagem de lista vazia correta para cada tab (antes 'afastado'
-    // e 'aviso' exibiam texto de demitido/inativo, que é confuso para o operador).
-    const vazioMsgs={
-      ativos:'Nenhum colaborador ativo encontrado.',
-      ferias:'Nenhum colaborador em férias encontrado.',
-      afastado:'Nenhum colaborador afastado encontrado.',
-      aviso:'Nenhum colaborador em aviso prévio encontrado.',
-      inativos:'Nenhum colaborador demitido/inativo encontrado.'
-    };
-    const vazioMsg=vazioMsgs[rhFuncTab]||'Nenhum resultado encontrado.';
+    const vazioMsg=rhFuncTab==='ativos'
+      ? 'Nenhum colaborador ativo encontrado.'
+      : (rhFuncTab==='ferias'?'Nenhum colaborador em férias encontrado.':'Nenhum colaborador demitido/inativo encontrado.');
     tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">'+vazioMsg+'</td></tr>';
     return;
   }
@@ -14374,137 +13351,8 @@ async function benAssinarFolha(){
   benAtualizarToolbar('assinada');
 }
 
-async function benNotificarColaboradores(){
-  const comp=benComp();
-  if(!/^\d{4}-\d{2}$/.test(comp)){ showSt('st-benef','Competência inválida.',true); return; }
-  const statusEl=document.getElementById('ben-notif-status');
-  const btn=document.getElementById('btn-ben-notificar');
-  const total=(beneficiosMensais||[]).length;
-  if(!total){ showSt('st-benef','Carregue a lista de benefícios antes de notificar.',true); return; }
-  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const partes=comp.split('-');
-  const compLabel=`${meses[parseInt(partes[1])-1]}/${partes[0]}`;
-  if(!confirm(
-    `Enviar notificação de benefícios de ${compLabel} para os colaboradores optantes?\n\n`+
-    `Cada colaborador receberá um resumo individual com os valores desta competência.\n\n`+
-    `Confirme apenas após os dados estarem corretos.`
-  )) return;
-  if(btn){ btn.disabled=true; btn.textContent='Enviando...'; }
-  if(statusEl) statusEl.style.display='none';
-  try{
-    const empresaId=benEmp()?parseInt(benEmp(),10):null;
-    const body={competencia:comp};
-    if(empresaId) body.empresa_id=empresaId;
-    const r=await api('/api/beneficios/notificar','POST',body);
-    if(r?.erro) throw new Error(r.erro);
-    const push=r.enviados_push||0;
-    const wpp=r.enviados_whatsapp||0;
-    const semContato=r.sem_contato||0;
-    let partes=[];
-    if(push) partes.push(`${push} via app`);
-    if(wpp) partes.push(`${wpp} via WhatsApp`);
-    let msg=`✓ ${partes.join(' · ')||'0'} notificação(ões) enviada(s)`;
-    if(semContato) msg+=` · ${semContato} sem contato`;
-    if(statusEl){ statusEl.textContent=msg; statusEl.style.display=''; }
-    setTimeout(()=>{ if(statusEl) statusEl.style.display='none'; },5000);
-  }catch(e){
-    showSt('st-benef','Erro ao notificar: '+e.message,true);
-  }finally{
-    if(btn){ btn.disabled=false; btn.textContent='📲 Notificar Colaboradores'; }
-  }
-}
-
-function benAvulsoPrevia(){
-  const comp=benComp();
-  const lista = benAvulsoSelecionados.length ? benAvulsoSelecionados
-    : (beneficiosMensais||[]).filter(b => benAvulsoUltimosIds.includes(b.funcionario_id)).map(b=>{
-        // Reconstruir itens a partir dos dados salvos
-        const rows=[];
-        const tl={vt:'Vale Transporte',vr:'Vale Refeição',va:'Vale Alimentação',pp:'Prêmio Produtividade',vg:'Vale Gasolina',cn:'Cesta de Natal'};
-        if((b.vale_transporte||0)>0) rows.push({nome:b.nome||b.funcionario_id,re:b.re||'',posto:b.posto||'',tipo:'vt',dias:b.dias_vt||0,valor:b.vale_transporte,funcionario_id:b.funcionario_id});
-        if((b.vale_refeicao||0)>0) rows.push({nome:b.nome||b.funcionario_id,re:b.re||'',posto:b.posto||'',tipo:'vr',dias:b.dias_vr||0,valor:b.vale_refeicao,funcionario_id:b.funcionario_id});
-        if((b.vale_alimentacao||0)>0) rows.push({nome:b.nome||b.funcionario_id,re:b.re||'',posto:b.posto||'',tipo:'va',dias:0,valor:b.vale_alimentacao,funcionario_id:b.funcionario_id});
-        if((b.premio_produtividade||0)>0) rows.push({nome:b.nome||b.funcionario_id,re:b.re||'',posto:b.posto||'',tipo:'pp',dias:0,valor:b.premio_produtividade,funcionario_id:b.funcionario_id});
-        if((b.vale_gasolina||0)>0) rows.push({nome:b.nome||b.funcionario_id,re:b.re||'',posto:b.posto||'',tipo:'vg',dias:b.dias_vg||0,valor:b.vale_gasolina,funcionario_id:b.funcionario_id});
-        if((b.cesta_natal||0)>0) rows.push({nome:b.nome||b.funcionario_id,re:b.re||'',posto:b.posto||'',tipo:'cn',dias:0,valor:b.cesta_natal,funcionario_id:b.funcionario_id});
-        return rows;
-      }).flat();
-  if(!lista.length){ toast('Nenhum dado disponível para prévia. Adicione colaboradores ou salve os lançamentos.','e'); return; }
-  const tipoLabel={vt:'Vale Transporte',vr:'Vale Refeição',va:'Vale Alimentação',pp:'Prêmio Produtividade',vg:'Vale Gasolina',cn:'Cesta de Natal'};
-  const temDias=t=>['vt','vr','vg'].includes(t);
-  const fmt=v=>`R$ ${Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2})}` ;
-  let totalGeral=0;
-  const rows=lista.map(it=>{
-    const total=temDias(it.tipo)?Number(it.valor)*Number(it.dias||1):Number(it.valor);
-    totalGeral+=total;
-    return `<tr style="border-bottom:1px solid var(--borda)">
-      <td style="padding:7px 8px"><b>${fpEsc(it.nome)}</b><br><small style="color:var(--text-muted)">${fpEsc(it.re||'')}${it.posto?` · ${fpEsc(it.posto)}`:''}</small></td>
-      <td style="padding:7px 8px">${tipoLabel[it.tipo]||it.tipo}</td>
-      <td style="padding:7px 8px;text-align:center">${temDias(it.tipo)?it.dias:'—'}</td>
-      <td style="padding:7px 8px;text-align:right">${fmt(it.valor)}</td>
-      <td style="padding:7px 8px;text-align:right;font-weight:600">${fmt(total)}</td>
-    </tr>`;
-  }).join('');
-  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const partes=comp.split('-');
-  const compLabel=/^\d{4}-\d{2}$/.test(comp)?`${meses[parseInt(partes[1])-1]}/${partes[0]}`:comp;
-  document.getElementById('ben-avulso-previa-comp').textContent=`Competência: ${compLabel} · ${lista.length} item(ns) · ${[...new Set(lista.map(x=>x.funcionario_id))].length} colaborador(es)`;
-  document.getElementById('ben-avulso-previa-tbody').innerHTML=rows;
-  document.getElementById('ben-avulso-previa-total').textContent=fmt(totalGeral);
-  const modal=document.getElementById('modal-ben-avulso-previa');
-  modal.style.display='flex';
-}
-
-async function benNotificarAvulso(){
-  const comp=benComp();
-  if(!/^\d{4}-\d{2}$/.test(comp)){ toast('Competência inválida.','e'); return; }
-  // Usa lista atual OU IDs do último salvar
-  const ids = benAvulsoSelecionados.length
-    ? [...new Set(benAvulsoSelecionados.map(x=>x.funcionario_id))]
-    : benAvulsoUltimosIds.slice();
-  if(!ids.length){ toast('Nenhum dado para notificar. Adicione colaboradores ou salve os lançamentos primeiro.','e'); return; }
-  const statusEl=document.getElementById('ben-avulso-notif-status');
-  const btn=document.getElementById('btn-ben-notif-avulso');
-  const btnPrevia=document.getElementById('btn-ben-previa-notif');
-  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const partes=comp.split('-');
-  const compLabel=`${meses[parseInt(partes[1])-1]}/${partes[0]}`;
-  if(!confirm(
-    `Enviar notificação de benefícios avulsos de ${compLabel} para ${ids.length} colaborador(es)?\n\n`+
-    `Certifique-se de que os lançamentos já foram salvos antes de notificar.`
-  )) return;
-  // Fecha modal de prévia se estiver aberto
-  document.getElementById('modal-ben-avulso-previa').style.display='none';
-  if(btn){ btn.disabled=true; btn.textContent='Enviando...'; }
-  if(btnPrevia){ btnPrevia.disabled=true; }
-  if(statusEl) statusEl.style.display='none';
-  try{
-    const empresaId=benEmp()?parseInt(benEmp(),10):null;
-    const body={competencia:comp,funcionario_ids:ids};
-    if(empresaId) body.empresa_id=empresaId;
-    const r=await api('/api/beneficios/notificar','POST',body);
-    if(r?.erro) throw new Error(r.erro);
-    const push=r.enviados_push||0;
-    const wpp=r.enviados_whatsapp||0;
-    const semContato=r.sem_contato||0;
-    let partes=[];
-    if(push) partes.push(`${push} via app`);
-    if(wpp) partes.push(`${wpp} via WhatsApp`);
-    let msg=`✓ ${partes.join(' · ')||'0'} notificação(ões) enviada(s)`;
-    if(semContato) msg+=` · ${semContato} sem contato`;
-    if(statusEl){ statusEl.textContent=msg; statusEl.style.display=''; }
-    setTimeout(()=>{ if(statusEl) statusEl.style.display='none'; },6000);
-  }catch(e){
-    toast('Erro ao notificar: '+e.message,'e');
-  }finally{
-    if(btn){ btn.disabled=false; btn.textContent='📲 Notificar adicionados'; }
-    if(btnPrevia){ btnPrevia.disabled=false; }
-  }
-}
-
 // ── Benefício Avulso ──────────────────────────────────────────────────────────
 let benAvulsoSelecionados = [];
-let benAvulsoUltimosIds = []; // IDs preservados após o último salvar
 
 function benAvulsoFiltrar(){
   const q = (document.getElementById('ben-avulso-busca')?.value||'').trim().toLowerCase();
@@ -14515,17 +13363,8 @@ function benAvulsoFiltrar(){
     res.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Digite pelo menos 1 caractere para buscar funcionários.</div>';
     return;
   }
-  // Usa funcs (carregado no startup) como fonte principal — não depende de
-  // carregarBeneficiosMensais() ter sido chamado previamente.
-  const fonte = (funcs||[]).filter(it => (it.status||'').toLowerCase() === 'ativo');
-  if(!fonte.length){
-    res.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Carregando colaboradores, aguarde...</div>';
-    return;
-  }
-  const _norm = s => (s||'').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  const qn = _norm(q);
-  const lista = fonte.filter(it =>
-    _norm(it.nome).includes(qn) || _norm(it.re).includes(qn) || _norm(it.matricula).includes(qn)
+  const lista = (beneficiosMensais||[]).filter(it =>
+    (it.nome||'').toLowerCase().includes(q) || (it.re||'').toLowerCase().includes(q) || (it.matricula||'').toLowerCase().includes(q)
   ).slice(0,30);
   if(!lista.length){
     res.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Nenhum funcionário encontrado.</div>';
@@ -14533,7 +13372,7 @@ function benAvulsoFiltrar(){
   }
   const tipoLabel = {vt:'Vale Transporte',vr:'Vale Refeição',va:'Vale Alimentação',pp:'Prêmio Produtividade',vg:'Vale Gasolina',cn:'Cesta de Natal'};
   res.innerHTML = lista.map(it => {
-    const jaAdicionado = benAvulsoSelecionados.some(x => x.funcionario_id===it.id && x.tipo===tipo);
+    const jaAdicionado = benAvulsoSelecionados.some(x => x.funcionario_id===it.funcionario_id && x.tipo===tipo);
     return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--borda);flex-wrap:wrap">
       <div style="flex:1;min-width:160px">
         <b>${fpEsc(it.nome)}</b>
@@ -14542,31 +13381,13 @@ function benAvulsoFiltrar(){
       <span style="font-size:11px;color:var(--azul)">${tipoLabel[tipo]||tipo}</span>
       ${jaAdicionado
         ? `<span style="font-size:11px;color:var(--verd);font-weight:700">✓ Adicionado</span>`
-        : `<button class="btn b-az b-sm" onclick="benAvulsoAdicionar(${it.id})">+ Adicionar</button>`}
+        : `<button class="btn b-az b-sm" onclick="benAvulsoAdicionar(${it.funcionario_id})">+ Adicionar</button>`}
     </div>`;
   }).join('');
 }
 
 function benAvulsoAdicionar(funcId){
-  // Busca primeiro em beneficiosMensais (tem dias trabalhados da competência);
-  // se não encontrar, cai para funcs (valores base do cadastro).
-  const bmItem = (beneficiosMensais||[]).find(x => x.funcionario_id===funcId);
-  const fItem  = (funcs||[]).find(x => x.id===funcId);
-  const func   = bmItem || (fItem ? {
-    funcionario_id: fItem.id,
-    nome: fItem.nome||'',
-    re: fItem.re||'',
-    posto_operacional: fItem.posto_operacional||'',
-    dias_vt: fItem.dias_vt||0,
-    dias_vr: fItem.dias_vr||0,
-    dias_vg: fItem.dias_vg||0,
-    vale_transporte: fItem.vale_transporte||0,
-    vale_refeicao: fItem.vale_refeicao||0,
-    vale_alimentacao: fItem.vale_alimentacao||0,
-    premio_produtividade: fItem.premio_produtividade||0,
-    vale_gasolina: fItem.vale_gasolina||0,
-    cesta_natal: fItem.cesta_natal||0,
-  } : null);
+  const func = (beneficiosMensais||[]).find(x => x.funcionario_id===funcId);
   if(!func){ toast('Funcionário não encontrado.','e'); return; }
   const tipo = document.getElementById('ben-avulso-tipo')?.value || 'vt';
   if(benAvulsoSelecionados.some(x => x.funcionario_id===funcId && x.tipo===tipo)){
@@ -14669,7 +13490,6 @@ async function benAvulsoSalvar(){
   const r = await api('/api/beneficios/lancamentos','POST',{competencia:comp, itens});
   if(r?.erro){ toast(r.erro,'e'); return; }
   toast(`${itens.length} lançamento(s) avulso(s) salvo(s) para ${comp}.`,'s');
-  benAvulsoUltimosIds = Object.keys(byFunc).map(Number);
   benAvulsoLimpar();
   await carregarBeneficiosMensais();
 }
@@ -15141,7 +13961,7 @@ function initRHDigital(){
   if(tabs.length && !Array.from(tabs).some(b=>b.classList.contains('b-az'))){
     tabs[0].classList.replace('b-gh','b-az');
   }
-  mapsIniciar();
+  waCarregarDisparoColaboradores();
 }
 
 function switchTab(prefix,tab,el){
@@ -15150,6 +13970,10 @@ function switchTab(prefix,tab,el){
   if(target)target.style.display='';
   document.querySelectorAll(`#${prefix}-tabs .btn`).forEach(b=>{b.classList.remove('b-az');b.classList.add('b-gh');});
   if(el){el.classList.remove('b-gh');el.classList.add('b-az');}
+  if(prefix==='rhd'&&tab==='conversas'){
+    waCarregarDisparoColaboradores();
+    loadWAConversas();
+  }
   if(prefix==='rhd'&&tab==='cfg-email')loadSMTPConfig();
   if(prefix==='rhd'&&tab==='cfg-wa')loadWAConfig();
   if(prefix==='rhd'&&tab==='mensagens-app')mapsIniciar();
@@ -15159,7 +13983,6 @@ function switchTab(prefix,tab,el){
 let _mapsFidAtual=null;
 let _mapsNomeAtual='';
 let _mapsPolling=null;
-let _mapsFuncs=[];
 
 async function mapsIniciar(){
   await mapsCarregarFuncionarios();
@@ -15251,78 +14074,25 @@ async function mapsEnviar(){
 async function mapsCarregarSelectsEmpresasPosto(){
   try{
     const [listaFunc,listaEmp]=await Promise.all([
-      api('/api/funcionarios?status=Ativo'),
+      api('/api/funcionarios?status=ativo&_limit=500'),
       api('/api/empresas')
     ]);
-    _mapsFuncs=(listaFunc.itens||listaFunc||[]);
+    const funcs=(listaFunc.itens||listaFunc||[]);
     const empsData=(Array.isArray(listaEmp)?listaEmp:[]);
-    const postos=[...new Set(_mapsFuncs.map(f=>(f.posto_operacional||'').trim()).filter(Boolean))].sort();
-    // Limpar selects antes de preencher para evitar duplicação a cada troca de aba
-    ['com-fid','com-empresa','com-posto','bc-empresa','bc-posto','bc-fid'].forEach(id=>{
-      const s=document.getElementById(id); if(!s)return;
-      while(s.options.length>1)s.remove(1);
-    });
+    // Postos únicos
+    const postos=[...new Set(funcs.map(f=>(f.posto_operacional||'').trim()).filter(Boolean))].sort();
+    // Preenche selects de comunicado
     const fillSel=(id,items,valFn,txtFn)=>{
       const sel=document.getElementById(id); if(!sel)return;
       items.forEach(it=>{const o=document.createElement('option');o.value=valFn(it);o.textContent=txtFn(it);sel.appendChild(o);});
     };
-    fillSel('com-fid',_mapsFuncs,f=>f.id,f=>f.nome);
+    fillSel('com-fid',funcs,f=>f.id,f=>f.nome);
     fillSel('com-empresa',empsData,e=>e.id,e=>e.nome);
     fillSel('com-posto',postos,p=>p,p=>p);
     fillSel('bc-empresa',empsData,e=>e.id,e=>e.nome);
     fillSel('bc-posto',postos,p=>p,p=>p);
-    fillSel('bc-fid',_mapsFuncs,f=>f.id,f=>f.nome);
+    fillSel('bc-fid',funcs,f=>f.id,f=>f.nome);
   }catch(e){}
-}
-
-function mapsFiltrarFuncSelect(selId, q){
-  const sel=document.getElementById(selId); if(!sel||!_mapsFuncs.length)return;
-  const prevVal=sel.value;
-  const v=(q||'').trim().toLowerCase();
-  while(sel.options.length>1)sel.remove(1);
-  const lista=v ? _mapsFuncs.filter(f=>(f.nome||'').toLowerCase().includes(v)||(f.matricula||'').toLowerCase().includes(v)) : _mapsFuncs;
-  lista.forEach(f=>{
-    const o=document.createElement('option');
-    o.value=f.id;
-    o.textContent=f.nome+(f.matricula?` (${f.matricula})`:'');
-    sel.appendChild(o);
-  });
-  // Restaurar seleção anterior se ainda presente
-  if(prevVal) sel.value=prevVal;
-}
-
-async function mapsBuscarNovaConversa(q){
-  const el=document.getElementById('maps-nova-lista'); if(!el)return;
-  q=(q||'').trim();
-  if(!q){el.style.display='none';el.innerHTML='';return;}
-  // Primeiro tenta filtrar da lista em memória
-  const v=q.toLowerCase();
-  let lista=_mapsFuncs.filter(f=>(f.nome||'').toLowerCase().includes(v)||(f.matricula||'').toLowerCase().includes(v));
-  // Se não carregada ainda, busca na API
-  if(!_mapsFuncs.length){
-    const r=await api('/api/funcionarios?status=Ativo&q='+encodeURIComponent(q));
-    lista=(r.itens||r||[]);
-  }
-  if(!Array.isArray(lista)||!lista.length){
-    el.style.display='';
-    el.innerHTML='<div style="font-size:11px;padding:4px 10px;color:var(--text-muted)">Nenhum funcionário encontrado.</div>';
-    return;
-  }
-  el.style.display='';
-  el.innerHTML=lista.slice(0,12).map(f=>`
-    <div onclick="mapsAbrirChatNovo(${f.id},${JSON.stringify(f.nome||'')});" 
-      style="cursor:pointer;padding:6px 10px;font-size:12px;border-radius:6px" 
-      onmouseover="this.style.background='var(--az-cl,#dbeafe)'" onmouseout="this.style.background=''">
-      <strong>${escHtml(f.nome||'')}</strong>${f.matricula?` <span style="color:var(--text-muted);font-size:11px">${escHtml(f.matricula)}</span>`:''}
-      ${f.cargo?`<span style="color:var(--text-muted);font-size:11px"> · ${escHtml(f.cargo)}</span>`:''}
-    </div>`).join('');
-}
-
-function mapsAbrirChatNovo(fid,nome){
-  document.getElementById('maps-busca-func').value='';
-  const el=document.getElementById('maps-nova-lista');
-  if(el){el.style.display='none';el.innerHTML='';}
-  mapsAbrirChat(fid,nome);
 }
 
 async function mapsCarregarListaComunicados(){
@@ -15354,9 +14124,8 @@ async function mapsCriarComunicado(){
   const url=(document.getElementById('com-url').value||'').trim()||null;
   const fid=document.getElementById('com-fid').value||null;
   const posto=(document.getElementById('com-posto').value||'').trim()||null;
-  const empId=document.getElementById('com-empresa').value||null;
   if(!titulo||!conteudo){showSt('com-st','Preencha título e conteúdo.',true);return;}
-  const r=await api('/api/comunicados-app','POST',{titulo,conteudo,url,funcionario_id:fid?parseInt(fid):null,posto_operacional:posto,empresa_id:empId?parseInt(empId):null});
+  const r=await api('/api/comunicados-app','POST',{titulo,conteudo,url,funcionario_id:fid?parseInt(fid):null,posto_operacional:posto});
   if(r.erro){showSt('com-st',r.erro,true);return;}
   document.getElementById('com-titulo').value='';
   document.getElementById('com-conteudo').value='';
@@ -16029,59 +14798,6 @@ async function testarIAWA(){
   document.getElementById('iawa-resp').textContent=r.resposta||'';
 }
 
-async function iawaAtivarRapido(){
-  const r=await api('/api/whatsapp/ia/ativar','POST',{});
-  if(r.erro){showSt('iawa-st',r.erro,true);return;}
-  document.getElementById('iawa-enabled').value='1';
-  showSt('iawa-st','Agente automático ativado.',false);
-  iawaSincronizarStatus();
-}
-
-async function iawaDesativarRapido(){
-  const r=await api('/api/whatsapp/ia/desativar','POST',{});
-  if(r.erro){showSt('iawa-st',r.erro,true);return;}
-  document.getElementById('iawa-enabled').value='0';
-  showSt('iawa-st','Agente automático desativado.',false);
-}
-
-function _iawaNumeroContato(){
-  return (document.getElementById('iawa-numero-teste').value||'').trim();
-}
-
-async function iawaModoHumano(ativo){
-  const numero=_iawaNumeroContato();
-  if(!numero){showSt('iawa-st','Informe o número no campo de teste (com DDI).',true);return;}
-  const r=await api('/api/whatsapp/ia/modo-humano','POST',{numero,ativo:!!ativo});
-  if(r.erro){showSt('iawa-st',r.erro,true);return;}
-  showSt('iawa-st',ativo?'Contato definido para atendimento humano.':'IA reativada para este contato.',false);
-}
-
-async function iawaVerStatusNumero(){
-  const numero=_iawaNumeroContato();
-  if(!numero){showSt('iawa-st','Informe o número no campo de teste (com DDI).',true);return;}
-  const r=await api('/api/whatsapp/ia/modo-humano-status?numero='+encodeURIComponent(numero));
-  if(r.erro){showSt('iawa-st',r.erro,true);return;}
-  const parts=[];
-  parts.push('Número: '+(r.numero||numero));
-  parts.push('Modo humano: '+(r.modo_humano?'SIM':'NÃO'));
-  parts.push('IA pausada: '+(r.ia_pausada?'SIM':'NÃO'));
-  if(r.ia_pausada_ate) parts.push('Pausada até: '+r.ia_pausada_ate);
-  showSt('iawa-st',parts.join(' · '),false);
-}
-
-async function iawaVerLogs(){
-  const numero=_iawaNumeroContato();
-  const url=numero?('/api/whatsapp/ia/logs?numero='+encodeURIComponent(numero)+'&limit=15'):'/api/whatsapp/ia/logs?limit=15';
-  const r=await api(url);
-  if(r.erro){showSt('iawa-st',r.erro,true);return;}
-  const logs=r.logs||[];
-  if(!logs.length){showSt('iawa-st','Sem logs de erro para o filtro informado.',false);return;}
-  const txt=logs.map(function(l){
-    return '['+(l.criado_fmt||l.criado_em||'')+'] '+(l.numero||'')+' - '+(l.conteudo||'');
-  }).join('\n\n');
-  alert(txt.slice(0,6000));
-}
-
 setupModalDirtyTracking();
 setupPageDirtyTracking();
 initTheme();
@@ -16143,6 +14859,9 @@ function onAuditPosChange(pos){
 }
 
 function initAssinaturas(){
+  // Ocultar sidebar principal para tela cheia
+  document.body.dataset.asiSidebarWas=document.body.classList.contains('sidebar-collapsed')?'1':'0';
+  document.body.classList.add('sidebar-collapsed');
   loadEnvelopes(_asiTipo);
   setupAsiDropzone();
   // load funcionários para picker
@@ -16255,25 +14974,21 @@ async function recarregarDetalheEnvelope(){
     }else{
       const statusLbl={'pendente':'⏳ Pendente','assinado':'✔ Assinado'};
       const statusCss={'pendente':'pill-warn','assinado':'pill-ok'};
-      const papelLbl={assinante:'✍ Assinante',testemunha:'👁 Testemunha',aprovador:'✅ Aprovador',endossante:'🔏 Endossante',observador:'📋 Observador'};
       sigBox.innerHTML=`<div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Nome</th><th>Papel</th><th>Cargo</th><th>Telefone</th><th>E-mail</th><th>Status</th><th>Assinado em</th><th></th></tr></thead>
-        <tbody>${env.signatarios.map(s=>{
-          const pTxt=papelLbl[s.papel||'assinante']||(s.papel||'Assinante');
-          return `
+        <thead><tr><th>Nome</th><th>Cargo</th><th>Telefone</th><th>E-mail</th><th>Status</th><th>Assinado em</th><th></th></tr></thead>
+        <tbody>${env.signatarios.map(s=>`
           <tr>
             <td>${s.nome||'-'}</td>
-            <td><span style="font-size:11px;font-weight:600">${pTxt}</span></td>
             <td>${s.cargo||'-'}</td>
             <td>${s.telefone||'-'}</td>
             <td>${s.email||'-'}</td>
             <td><span class="pill ${statusCss[s.status]||''}">${statusLbl[s.status]||s.status}</span></td>
             <td>${s.ass_em_fmt||'-'}</td>
             <td>
-              ${s.status!=='assinado'&&(s.papel||'assinante')!=='observador'?`<button class="btn b-sm" style="background:var(--azul-cc);color:var(--azul);border:1px solid var(--borda);cursor:pointer" onclick="copiarLinkSignatario(${s.id})">Link</button>`:''}
+              ${s.status!=='assinado'?`<button class="btn b-sm" style="background:var(--azul-cc);color:var(--azul);border:1px solid var(--borda);cursor:pointer" onclick="copiarLinkSignatario(${s.id})">Link</button>`:''}
               ${s.status!=='assinado'?`<button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);border:1px solid var(--verm);cursor:pointer" onclick="remSigEnvelope(${s.id})">✕</button>`:''}
             </td>
-          </tr>`}).join('')}
+          </tr>`).join('')}
         </tbody></table></div>`;
     }
       atualizarToggleAsiSignatarios();
@@ -16465,7 +15180,6 @@ async function salvarSignatario(){
   const cpf=(document.getElementById('sigf-cpf').value||'').trim();
   const telefone=(document.getElementById('sigf-tel').value||'').trim();
   const email=(document.getElementById('sigf-email').value||'').trim();
-  const papel=(document.getElementById('sigf-papel')?.value||'assinante');
   if(!telefone && !email){
     alert('Informe ao menos telefone WhatsApp ou e-mail para envio.');
     return;
@@ -16474,7 +15188,7 @@ async function salvarSignatario(){
     const r=await fetch(`/api/envelopes/${_asiEnvelopeId}/signatarios`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({nome,cargo,cpf,telefone,email,papel,tipo:'externo'})
+      body:JSON.stringify({nome,cargo,cpf,telefone,email,tipo:'externo'})
     });
     const j=await r.json();
     if(!r.ok){ alert(j.erro||'Erro ao salvar signatário.'); return; }
