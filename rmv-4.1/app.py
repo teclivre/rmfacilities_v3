@@ -10005,6 +10005,10 @@ def _export_funcionarios_ativos_xlsx(funcs, include_salario=False):
         "Empresa",
         "Status",
     ]
+    # Incluir coluna de data de demissão se houver funcionários demitidos/inativos
+    include_demissao = any((f.status or "").strip().lower() in ("demitido", "inativo") for f in funcs)
+    if include_demissao:
+        headers.append("Data de demissão")
     if include_salario:
         headers.append("Salário")
     ws.append(["Relatório de colaboradores ativos"])
@@ -10027,6 +10031,26 @@ def _export_funcionarios_ativos_xlsx(funcs, include_salario=False):
             emps_map.get(f.empresa_id, "") if f.empresa_id else "",
             f.status or "Ativo",
         ]
+        # adicionar data de demissão quando aplicável
+        if include_demissao:
+            dt_dem = ""
+            try:
+                if getattr(f, "data_demissao", None):
+                    from datetime import date as _d, datetime as _dt
+                    v = f.data_demissao
+                    if isinstance(v, str):
+                        try:
+                            _dobj = _dt.fromisoformat(v)
+                            dt_dem = _dobj.strftime("%d/%m/%Y")
+                        except Exception:
+                            dt_dem = v
+                    elif hasattr(v, "strftime"):
+                        dt_dem = v.strftime("%d/%m/%Y")
+                    else:
+                        dt_dem = str(v)
+            except Exception:
+                dt_dem = ""
+            row.append(dt_dem)
         if include_salario:
             sal = float(f.salario or 0)
             total_salario += sal
@@ -10071,9 +10095,11 @@ def _export_funcionarios_ativos_xlsx(funcs, include_salario=False):
             horizontal="right", vertical="center"
         )
 
-    widths = [10, 12, 34, 18, 16, 20, 20, 24, 26, 10] + (
-        [14] if include_salario else []
-    )
+    widths = [10, 12, 34, 18, 16, 20, 20, 24, 26, 10]
+    if include_demissao:
+        widths.insert(10, 14)  # inserir antes da coluna de salário (ou no fim se não houver salário)
+    if include_salario:
+        widths.append(14)
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
@@ -10140,27 +10166,29 @@ def _export_funcionarios_ativos_pdf(funcs, include_salario=False):
         )
 
     emps_map = {e.id: e.nome for e in Empresa.query.all()}
+    # incluir coluna de data de demissão se houver demitidos/inativos
+    include_demissao = any((f.status or "").strip().lower() in ("demitido", "inativo") for f in funcs)
     if include_salario:
-        data = [
-            [
-                Paragraph("<b>RE</b>", st_c),
-                Paragraph("<b>Nome</b>", st_c),
-                Paragraph("<b>Posto</b>", st_c),
-                Paragraph("<b>Empresa</b>", st_c),
-                Paragraph("<b>Telefone</b>", st_c),
-                Paragraph("<b>Salário</b>", st_c),
-            ]
+        # quando incluir salário também poderá incluir demissão
+        headers = [
+            Paragraph("<b>RE</b>", st_c),
+            Paragraph("<b>Nome</b>", st_c),
+            Paragraph("<b>Posto</b>", st_c),
+            Paragraph("<b>Empresa</b>", st_c),
+            Paragraph("<b>Telefone</b>", st_c),
+            Paragraph("<b>Salário</b>", st_c),
         ]
     else:
-        data = [
-            [
-                Paragraph("<b>RE</b>", st_c),
-                Paragraph("<b>Nome</b>", st_c),
-                Paragraph("<b>Posto</b>", st_c),
-                Paragraph("<b>Empresa</b>", st_c),
-                Paragraph("<b>Telefone</b>", st_c),
-            ]
+        headers = [
+            Paragraph("<b>RE</b>", st_c),
+            Paragraph("<b>Nome</b>", st_c),
+            Paragraph("<b>Posto</b>", st_c),
+            Paragraph("<b>Empresa</b>", st_c),
+            Paragraph("<b>Telefone</b>", st_c),
         ]
+    if include_demissao:
+        headers.insert(len(headers)- (1 if include_salario else 0), Paragraph("<b>Data de demissão</b>", st_c))
+    data = [headers]
     total_salario = 0.0
     for f in funcs:
         row = [
@@ -10172,15 +10200,37 @@ def _export_funcionarios_ativos_pdf(funcs, include_salario=False):
             ),
             Paragraph(str(f.telefone or "—"), st_c),
         ]
+        # inserir data de demissão antes do salário, se aplicável
+        if include_demissao:
+            dt_dem="—"
+            try:
+                v = getattr(f, "data_demissao", None)
+                if v:
+                    from datetime import datetime as _dt
+                    if isinstance(v, str):
+                        try:
+                            _dobj = _dt.fromisoformat(v)
+                            dt_dem = _dobj.strftime("%d/%m/%Y")
+                        except Exception:
+                            dt_dem = v
+                    elif hasattr(v, "strftime"):
+                        dt_dem = v.strftime("%d/%m/%Y")
+                    else:
+                        dt_dem = str(v)
+            except Exception:
+                dt_dem = "—"
+            row.append(Paragraph(dt_dem, st_c))
         if include_salario:
             sal = float(f.salario or 0)
             total_salario += sal
             row.append(Paragraph(_br_money(sal), st_c))
         data.append(row)
 
-    col_widths = [1.8 * cm, 5.9 * cm, 4.6 * cm, 4.7 * cm, 3.0 * cm] + (
-        [2.6 * cm] if include_salario else []
-    )
+    col_widths = [1.8 * cm, 5.9 * cm, 4.6 * cm, 4.7 * cm, 3.0 * cm]
+    if include_demissao:
+        col_widths.insert(4, 3.0 * cm)
+    if include_salario:
+        col_widths.append(2.6 * cm)
     table = Table(data, colWidths=col_widths, repeatRows=1)
     table.setStyle(
         TableStyle(
