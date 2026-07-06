@@ -28311,10 +28311,29 @@ def api_folhas_export_xlsx(fid):
         c.alignment = Alignment(horizontal="center")
     _folha_recalcular_total(f)
     total = 0.0
-    for i, it in enumerate(f.itens.order_by(FolhaPagamentoItem.id.asc()).all(), 1):
-        func = db.session.get(Funcionario, it.funcionario_id)
-        ws.append(
-            [
+    # Agrupar itens por empresa para separar na planilha
+    itens_all = f.itens.order_by(FolhaPagamentoItem.id.asc()).all()
+    fids = {it.funcionario_id for it in itens_all}
+    funcs = {fn.id: fn for fn in Funcionario.query.filter(Funcionario.id.in_(fids)).all()} if fids else {}
+    empresa_ids = { (funcs.get(it.funcionario_id).empresa_id if funcs.get(it.funcionario_id) else None) for it in itens_all }
+    empresas = {e.id: e for e in Empresa.query.filter(Empresa.id.in_([eid for eid in empresa_ids if eid])).all()} if any(empresa_ids) else {}
+
+    i = 1
+    for eid in sorted(list(empresa_ids), key=lambda x: (empresas.get(x).nome.lower() if empresas.get(x) else 'zzzz')):
+        emp_nome = empresas.get(eid).nome if eid and empresas.get(eid) else 'Sem empresa'
+        # adicionar linha de título do grupo
+        ws.append([])
+        grp_row_idx = ws.max_row + 0
+        ws.append([f"Empresa: {emp_nome}"])
+        # estilizar a linha do título do grupo
+        for col in range(1, len(headers) + 1):
+            c = ws.cell(row=ws.max_row, column=col)
+            c.font = Font(bold=True)
+        group_total = 0.0
+        # itens do grupo
+        for it in [it for it in itens_all if (funcs.get(it.funcionario_id).empresa_id if funcs.get(it.funcionario_id) else None) == eid]:
+            func = funcs.get(it.funcionario_id)
+            ws.append([
                 i,
                 (func.re or func.matricula or "") if func else "",
                 (func.nome or "") if func else "",
@@ -28324,9 +28343,13 @@ def api_folhas_export_xlsx(fid):
                 float(it.total_adicional or 0),
                 float(it.total_desconto or 0),
                 float(it.total_pagar or 0),
-            ]
-        )
-        total += float(it.total_pagar or 0)
+            ])
+            group_total += float(it.total_pagar or 0)
+            total += float(it.total_pagar or 0)
+            i += 1
+        # subtotal do grupo
+        ws.append(["", "", "", "", "SUBTOTAL", "", "", "", round(group_total, 2)])
+    # linha final de total geral
     ws.append([])
     ws.append(["", "", "", "", "TOTAL", "", "", "", round(total, 2)])
     for col_letter, width in [
@@ -28396,60 +28419,73 @@ def api_folhas_export_pdf(fid):
             return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
         return v or ""
 
-    data = [["#", "RE", "Nome", "CPF", "Cargo", "Salário", "Adic.", "Desc.", "Total"]]
+    headers_row = ["#", "RE", "Nome", "CPF", "Cargo", "Salário", "Adic.", "Desc.", "Total"]
+    data = [headers_row]
     total = 0.0
-    for i, it in enumerate(itens_pdf, 1):
-        func = _funcs_pdf.get(it.funcionario_id)
-        data.append(
-            [
-                i,
-                (func.re or func.matricula or "") if func else "",
-                (func.nome or "")[:36] if func else "",
-                _fmt_cpf_pdf(func.cpf if func else ""),
-                (func.cargo or "")[:20] if func else "",
-                f"R$ {float(it.salario_base or 0):,.2f}".replace(",", "X")
-                .replace(".", ",")
-                .replace("X", "."),
-                f"R$ {float(it.total_adicional or 0):,.2f}".replace(",", "X")
-                .replace(".", ",")
-                .replace("X", "."),
-                f"R$ {float(it.total_desconto or 0):,.2f}".replace(",", "X")
-                .replace(".", ",")
-                .replace("X", "."),
-                f"R$ {float(it.total_pagar or 0):,.2f}".replace(",", "X")
-                .replace(".", ",")
-                .replace("X", "."),
-            ]
-        )
-        total += float(it.total_pagar or 0)
-    data.append(
-        [
-            "",
-            "",
-            "",
-            "",
-            "TOTAL",
-            "",
-            "",
-            "",
-            f"R$ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
-        ]
-    )
+    # preparar agrupamento por empresa
+    empresa_ids = { ( _funcs_pdf.get(it.funcionario_id).empresa_id if _funcs_pdf.get(it.funcionario_id) else None) for it in itens_pdf }
+    empresas = {e.id: e for e in Empresa.query.filter(Empresa.id.in_([eid for eid in empresa_ids if eid])).all()} if any(empresa_ids) else {}
+    row_index = 1  # já temos header at 0
+    i = 1
+    company_header_rows = []
+    subtotal_rows = []
+    for eid in sorted(list(empresa_ids), key=lambda x: (empresas.get(x).nome.lower() if empresas.get(x) else 'zzzz')):
+        emp_nome = empresas.get(eid).nome if eid and empresas.get(eid) else 'Sem empresa'
+        # inserir linha de título de empresa (span depois via TableStyle)
+        data.append([f"EMPRESA: {emp_nome}"] + [""] * (len(headers_row) - 1))
+        company_header_rows.append(row_index)
+        row_index += 1
+        group_total = 0.0
+        for it in [it for it in itens_pdf if (_funcs_pdf.get(it.funcionario_id).empresa_id if _funcs_pdf.get(it.funcionario_id) else None) == eid]:
+            func = _funcs_pdf.get(it.funcionario_id)
+            data.append(
+                [
+                    i,
+                    (func.re or func.matricula or "") if func else "",
+                    (func.nome or "")[:36] if func else "",
+                    _fmt_cpf_pdf(func.cpf if func else ""),
+                    (func.cargo or "")[:20] if func else "",
+                    f"R$ {float(it.salario_base or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+                    f"R$ {float(it.total_adicional or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+                    f"R$ {float(it.total_desconto or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+                    f"R$ {float(it.total_pagar or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+                ]
+            )
+            group_total += float(it.total_pagar or 0)
+            total += float(it.total_pagar or 0)
+            i += 1
+            row_index += 1
+        # subtotal do grupo
+        data.append(["", "", "", "", "SUBTOTAL", "", "", "", f"R$ {group_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")])
+        subtotal_rows.append(row_index)
+        row_index += 1
+    # total geral
+    data.append(["", "", "", "", "TOTAL", "", "", "", f"R$ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")])
+    total_row = row_index
     t = Table(data, repeatRows=1)
-    t.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f4e78")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-                ("ALIGN", (5, 1), (-1, -1), "RIGHT"),
-                ("FONTSIZE", (0, 0), (-1, -1), 8),
-                ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#e7e9ec")),
-                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-            ]
-        )
-    )
+    style_cmds = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f4e78")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+        ("ALIGN", (5, 1), (-1, -1), "RIGHT"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+    ]
+    # estilos para linhas de cabeçalho de empresa e subtotais
+    for r in company_header_rows:
+        style_cmds.append(("BACKGROUND", (0, r), (-1, r), colors.HexColor("#f0f4f8")))
+        style_cmds.append(("FONTNAME", (0, r), (-1, r), "Helvetica-Bold"))
+        style_cmds.append(("SPAN", (0, r), (-1, r)))
+        style_cmds.append(("ALIGN", (0, r), (-1, r), "LEFT"))
+    for r in subtotal_rows:
+        style_cmds.append(("BACKGROUND", (0, r), (-1, r), colors.HexColor("#e7e9ec")))
+        style_cmds.append(("FONTNAME", (0, r), (-1, r), "Helvetica-Bold"))
+        style_cmds.append(("ALIGN", (4, r), (4, r), "RIGHT"))
+    # total geral
+    style_cmds.append(("BACKGROUND", (0, total_row), (-1, total_row), colors.HexColor("#e7e9ec")))
+    style_cmds.append(("FONTNAME", (0, total_row), (-1, total_row), "Helvetica-Bold"))
+
+    t.setStyle(TableStyle(style_cmds))
     story.append(t)
     doc.build(story)
     buf.seek(0)
@@ -28489,34 +28525,52 @@ def api_folhas_preview(fid):
             .replace("X", ".")
         )
 
+    # Agrupar itens por empresa para exibir por blocos
+    itens_all = itens
+    fids = {it.funcionario_id for it in itens_all}
+    funcs = {fn.id: fn for fn in Funcionario.query.filter(Funcionario.id.in_(fids)).all()} if fids else {}
+    empresa_ids = { (funcs.get(it.funcionario_id).empresa_id if funcs.get(it.funcionario_id) else None) for it in itens_all }
+    empresas = {e.id: e for e in Empresa.query.filter(Empresa.id.in_([eid for eid in empresa_ids if eid])).all()} if any(empresa_ids) else {}
+
     rows_html = ""
-    for i, it in enumerate(itens, 1):
-        func = _funcs_prev.get(it.funcionario_id)
-        nome = (func.nome or "") if func else ""
-        re = (func.re or func.matricula or "") if func else ""
-        cargo = (func.cargo or "") if func else ""
-        posto = (func.posto_operacional or "") if func else ""
-        s_base = float(it.salario_base or 0)
-        s_adic = float(it.total_adicional or 0)
-        s_desc = float(it.total_desconto or 0)
-        s_tot = float(it.total_pagar or 0)
-        total_base += s_base
-        total_adic += s_adic
-        total_desc += s_desc
-        total_pagar += s_tot
-        posto_line = (
-            f'<div style="font-size:10px;color:#777">{posto}</div>' if posto else ""
-        )
-        rows_html += f"""<tr>
-          <td style="text-align:center;color:#666">{i}</td>
+    idx = 1
+    for eid in sorted(list(empresa_ids), key=lambda x: (empresas.get(x).nome.lower() if empresas.get(x) else 'zzzz')):
+        emp_nome = empresas.get(eid).nome if eid and empresas.get(eid) else 'Sem empresa'
+        # cabeçalho da empresa
+        rows_html += f"""<tr><td colspan=8 style=\"background:#f0f4f8;padding:8px 10px;font-weight:700\">Empresa: {emp_nome}</td></tr>"""
+        group_base = group_adic = group_desc = group_tot = 0.0
+        for it in [it for it in itens_all if (funcs.get(it.funcionario_id).empresa_id if funcs.get(it.funcionario_id) else None) == eid]:
+            func = funcs.get(it.funcionario_id)
+            nome = (func.nome or "") if func else ""
+            re = (func.re or func.matricula or "") if func else ""
+            cargo = (func.cargo or "") if func else ""
+            posto = (func.posto_operacional or "") if func else ""
+            s_base = float(it.salario_base or 0)
+            s_adic = float(it.total_adicional or 0)
+            s_desc = float(it.total_desconto or 0)
+            s_tot = float(it.total_pagar or 0)
+            total_base += s_base
+            total_adic += s_adic
+            total_desc += s_desc
+            total_pagar += s_tot
+            group_base += s_base
+            group_adic += s_adic
+            group_desc += s_desc
+            group_tot += s_tot
+            posto_line = f'<div style="font-size:10px;color:#777">{posto}</div>' if posto else ""
+            rows_html += f"""<tr>
+          <td style=\"text-align:center;color:#666\">{idx}</td>
           <td>{re}</td>
           <td><b>{nome}</b>{posto_line}</td>
           <td>{cargo}</td>
-          <td style="text-align:right">{brl(s_base)}</td>
-          <td style="text-align:right;color:#1a7a3a">{brl(s_adic)}</td>
-          <td style="text-align:right;color:#c0392b">{brl(s_desc)}</td>
-          <td style="text-align:right;font-weight:700;border-left:2px solid #1f4e78">{brl(s_tot)}</td>
+          <td style=\"text-align:right\">{brl(s_base)}</td>
+          <td style=\"text-align:right;color:#1a7a3a\">{brl(s_adic)}</td>
+          <td style=\"text-align:right;color:#c0392b\">{brl(s_desc)}</td>
+          <td style=\"text-align:right;font-weight:700;border-left:2px solid #1f4e78\">{brl(s_tot)}</td>
         </tr>"""
+            idx += 1
+        # subtotal da empresa
+        rows_html += f"""<tr><td colspan=4 style=\"text-align:right;font-weight:700\">SUBTOTAL ({emp_nome})</td><td style=\"text-align:right;font-weight:700\">{brl(group_base)}</td><td style=\"text-align:right;font-weight:700;color:#1a7a3a\">{brl(group_adic)}</td><td style=\"text-align:right;font-weight:700;color:#c0392b\">{brl(group_desc)}</td><td style=\"text-align:right;font-weight:800;border-left:2px solid #1f4e78\">{brl(group_tot)}</td></tr>"""
     status_colors = {
         "rascunho": ("#fff7e0", "#a06b00"),
         "fechada": ("#dde7ff", "#1e3aa6"),
