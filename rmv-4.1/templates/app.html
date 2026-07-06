@@ -4752,6 +4752,12 @@ function toggleSidebarModule(moduleId,forceOpen){
   if(!mod) return;
   if(document.body.classList.contains('sidebar-collapsed')) return;
   const open=(typeof forceOpen==='boolean')?forceOpen:!mod.classList.contains('open');
+  // Se abrindo, fechar outras modules para manter apenas uma aberta
+  if(open){
+    document.querySelectorAll('.nav-module').forEach(m=>{
+      if(m.id!==moduleId) m.classList.remove('open');
+    });
+  }
   mod.classList.toggle('open',open);
 }
 
@@ -4782,6 +4788,15 @@ function sidebarSyncActiveContext(activeId){
     mod.classList.toggle('active',!!mod.querySelector('.nav-item.on'));
   });
 }
+
+// Fechar módulos do menu ao clicar fora da sidebar (UX para menu superior)
+document.addEventListener('click', function(e){
+  const sidebar=document.querySelector('nav.sidebar');
+  if(!sidebar) return;
+  if(e.target.closest('nav.sidebar') || e.target.closest('.module-toggle')) return;
+  // fechar todos os módulos abertos
+  document.querySelectorAll('.nav-module.open').forEach(m=>m.classList.remove('open'));
+});
 
 function initSidebarLayout(){
   try{

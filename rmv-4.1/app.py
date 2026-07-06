@@ -28270,7 +28270,15 @@ def api_folhas_export_xlsx(fid):
         return jsonify({"error": "openpyxl não instalado"}), 500
     wb = Workbook()
     ws = wb.active
-    ws.title = (f.nome or "Folha")[:30]
+    # Sanitizar título da planilha: remover caracteres inválidos para nomes de aba
+    # ([:\\/?*[]]) e limitar a 31 caracteres conforme especificação do Excel.
+    _raw_title = (f.nome or "Folha")
+    _safe_title = "".join(c if c not in '[]:/\\?*' else '_' for c in str(_raw_title))
+    # remover caracteres de controle e espaços extremos
+    _safe_title = _safe_title.strip()
+    if not _safe_title:
+        _safe_title = "Folha"
+    ws.title = _safe_title[:31]
     header_fill = PatternFill("solid", fgColor="1f4e78")
     header_font = Font(bold=True, color="FFFFFF")
     ws.append([f.nome])
