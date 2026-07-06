@@ -714,13 +714,11 @@ function gfRenderCalendario(resumo,comp){
     let cls='gf-dia';
     if(isFuturo) cls+=' futuro';
     else if(dayData){
-      const wday=new Date(ano,mes-1,d).getDay();
-      const isWeekend=wday===0||wday===6;
-      if(isWeekend&&!dayData.marcacoes_count) cls+=' folga';
+      const isFolga = !dayData.marcacoes_count && (dayData.horas_esperadas_min === 0 || dayData.horas_esperadas_min === '00:00');
+      if(isFolga) cls+=' folga';
       else if(dayData.status==='ok'&&dayData.marcacoes_count>0) cls+=' ok';
       else if(dayData.marcacoes_count>0) cls+=' pendente';
-      else if(!isWeekend) cls+=' falta';
-      else cls+=' folga';
+      else cls+=' falta';
     }
     if(isHoje) cls+=' hoje';
     const saldo=dayData?.saldo_fmt||'';

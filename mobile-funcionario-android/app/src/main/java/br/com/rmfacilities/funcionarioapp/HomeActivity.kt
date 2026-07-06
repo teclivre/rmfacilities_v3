@@ -384,7 +384,6 @@ class HomeActivity : BaseActivity() {
             val meD = async(Dispatchers.IO) { try { api.me() } catch (_: Exception) { MeResponse(ok = false) } }
             val naoLidasD = async(Dispatchers.IO) { try { api.getNaoLidas() } catch (_: Exception) { 0 } }
             val pontoDiaD = async(Dispatchers.IO) { try { api.getPontoDia() } catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message ?: "Falha de conexão.") } }
-            val versaoD = async(Dispatchers.IO) { try { api.getVersaoApp() } catch (_: Exception) { null } }
             val pendentesD = async(Dispatchers.IO) { try { api.pendentesAssinatura().itens.size } catch (_: Exception) { 0 } }
             val pagamentoD = async(Dispatchers.IO) { try { api.ultimoPagamento() } catch (_: Exception) { null } }
             val saldoMesD = async(Dispatchers.IO) { try { api.getResumoMes() } catch (_: Exception) { null } }
@@ -392,7 +391,6 @@ class HomeActivity : BaseActivity() {
             val me = meD.await()
             val naoLidas = naoLidasD.await()
             val pontoDia = pontoDiaD.await()
-            val versao = versaoD.await()
             val pendentesCount = pendentesD.await()
             val ultimoPagamento = pagamentoD.await()
             val saldoMes = saldoMesD.await()
@@ -532,9 +530,6 @@ class HomeActivity : BaseActivity() {
                 // Usa arquivo separado para não conflitar com EncryptedSharedPreferences do SessionManager
                 getSharedPreferences("rm_funcionario_ui", MODE_PRIVATE)
                     .edit().putLong("last_sync_ts", System.currentTimeMillis()).apply()
-                if (versao != null && versao.versao_minima > 0 && BuildConfig.VERSION_CODE < versao.versao_minima) {
-                    mostrarDialogAtualizar(versao.download_url)
-                }
                 // Animação stagger de entrada nos cards principais
                 animarCardsHome()
             }

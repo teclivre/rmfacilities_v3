@@ -41,12 +41,43 @@ class LoginActivity : AppCompatActivity() {
     private var biometricPromptShown = false
     private var otpCooldownTimer: CountDownTimer? = null
     private var silentAuthInProgress = false
+    private var appUpdateDialogShown = false
 
     private fun intentExtraStringSafe(key: String): String? {
         return try {
             intent?.extras?.get(key)?.toString()
         } catch (_: Exception) {
             null
+        }
+    }
+
+    private fun checkAppVersionIfNeeded() {
+        if (appUpdateDialogShown) return
+        appUpdateDialogShown = true
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val versao = api.getVersaoApp()
+                if (versao.versao_minima > 0 && BuildConfig.VERSION_CODE < versao.versao_minima) {
+                    withContext(Dispatchers.Main) {
+                        if (!isFinishing && !isDestroyed) {
+                            val dialog = androidx.appcompat.app.AlertDialog.Builder(this@LoginActivity)
+                                .setTitle("Atualização necessária")
+                                .setMessage("Há uma versão mais nova do app disponível. Por favor, atualize para continuar usando.")
+                                .setCancelable(false)
+                                .setPositiveButton("Atualizar") { _, _ ->
+                                    val url = api.session.apiBaseUrl.trimEnd('/') + "/app/download"
+                                    try {
+                                        startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+                                    } catch (_: Exception) {}
+                                }
+                                .create()
+                            dialog.show()
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // Ignore failures here.
+            }
         }
     }
 
@@ -62,6 +93,7 @@ class LoginActivity : AppCompatActivity() {
             goHomeOrDeepLink()
             return
         }
+        checkAppVersionIfNeeded()
 
         etCpf = findViewById(R.id.etCpf)
         etCodigo = findViewById(R.id.etCodigo)

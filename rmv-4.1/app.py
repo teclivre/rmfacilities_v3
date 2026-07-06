@@ -17570,6 +17570,16 @@ def _app_ponto_min_esperado_jornada_data(funcionario, data_ref):
                 return j.minutos_esperados_weekday(dt_ref.weekday())
             except Exception:
                 return j.carga_horaria_min()
+    try:
+        dt_ref = (
+            datetime.strptime(data_ref, "%Y-%m-%d").date()
+            if isinstance(data_ref, str)
+            else data_ref
+        )
+        if dt_ref.weekday() >= 5:
+            return 0
+    except Exception:
+        pass
     return _app_ponto_min_esperado_jornada(funcionario)
 
 
@@ -17589,7 +17599,7 @@ def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
             EscalaFuncionario.funcionario_id == funcionario.id,
             EscalaFuncionario.data_inicio <= data_str,
             EscalaFuncionario.ativo == True,
-        ).all()
+        ).order_by(EscalaFuncionario.data_inicio.desc()).all()
         if esc_func:
             escala_ids = [ef.escala_id for ef in esc_func]
             escalas_map = {e.id: e for e in Escala.query.filter(Escala.id.in_(escala_ids)).all()}
@@ -17606,6 +17616,8 @@ def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
             # Calcular quantos dias desde data_inicio
             data_inicio_obj = datetime.strptime(ef.data_inicio, "%Y-%m-%d").date()
             dias_decorridos = (data_obj - data_inicio_obj).days
+            if dias_decorridos < 0:
+                continue
 
             # Obter tamanho do ciclo
             try:
@@ -18679,6 +18691,7 @@ def api_jornadas_criar():
             mins_dia = _jornada_minutos_dia_cfg(v)
             if mins_dia > 720:
                 return jsonify({"erro": "A jornada não pode exceder 12 horas por dia."}), 400
+    primeira_cfg = grade_norm.get(str(dias_ativos[0]), {}) if dias_ativos else {}
     intervalo_prim = max(
         0, min(240, int((primeira_cfg or {}).get("intervalo_min", 60) or 0))
     )

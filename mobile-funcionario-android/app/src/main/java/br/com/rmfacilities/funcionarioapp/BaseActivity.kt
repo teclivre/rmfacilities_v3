@@ -6,12 +6,18 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Classe base para todas as Activities autenticadas.
  * Fornece:
  * - Logout automático via BroadcastReceiver (ACTION_LOGOUT)
  * - Verificação de idle timeout em onResume
+ * - Verificação de versão mínima do app em todas as Activities
  * - goLogin() centralizado
  *
  * Subclasses com sessão autenticada devem sobrescrever provideSession()
@@ -46,13 +52,60 @@ abstract class BaseActivity : AppCompatActivity() {
         try { unregisterReceiver(logoutReceiver) } catch (_: Exception) {}
     }
 
+    private var appUpdateDialogShown = false
+    private var appVersionCheckInProgress = false
+    private var appVersionChecked = false
+
     override fun onResume() {
         super.onResume()
         val sess = provideSession() ?: return
         if (sess.isIdleSessionExpired() && !sess.isTrustedDeviceValid()) {
             sess.clear()
             goLogin()
+            return
         }
+        checkAppVersionIfNeeded(sess)
+    }
+
+    private fun checkAppVersionIfNeeded(session: SessionManager) {
+        if (appUpdateDialogShown || appVersionCheckInProgress || appVersionChecked) return
+        appVersionCheckInProgress = true
+        lifecycleScope.launch {
+            try {
+                val versao = withContext(Dispatchers.IO) {
+                    ApiClient(session).getVersaoApp()
+                }
+                if (versao.versao_minima > 0 && BuildConfig.VERSION_CODE < versao.versao_minima) {
+                    appUpdateDialogShown = true
+                    if (!isFinishing && !isDestroyed) {
+                        showAppUpdateDialog(versao.download_url)
+                    }
+                } else {
+                    appVersionChecked = true
+                }
+            } catch (_: Exception) {
+                // Falha na verificação de versão: revalida em próximo onResume.
+            } finally {
+                appVersionCheckInProgress = false
+            }
+        }
+    }
+
+    protected fun showAppUpdateDialog(downloadUrl: String?) {
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle("Atualização necessária")
+            .setMessage("Há uma versão mais nova do app disponível. Por favor, atualize para continuar usando.")
+            .setCancelable(false)
+            .setPositiveButton("Atualizar") { _, _ ->
+                val url = downloadUrl?.takeIf { it.isNotBlank() }
+                    ?: "${provideSession()?.apiBaseUrl?.trimEnd('/')}/app/download"
+                try {
+                    startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+                } catch (_: Exception) {
+                }
+            }
+            .create()
+        if (!isFinishing && !isDestroyed) dialog.show()
     }
 
     fun goLogin() {
