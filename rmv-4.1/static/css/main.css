@@ -109,6 +109,36 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 #pg-assinaturas .tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px}
 #rhd-tabs .btn,
 #pg-assinaturas .tabs .tab{justify-content:center;border-radius:12px;padding:10px 12px;font-weight:800}
+
+/* Evita espaço vertical excessivo nas páginas do submenu Administração */
+#pg-empresas.on,
+#pg-usuarios.on,
+#pg-config.on{
+	position:fixed;
+	top:52px;
+	left:0;
+	right:0;
+	bottom:0;
+	overflow-y:auto;
+	overflow-x:hidden;
+	padding:20px 22px;
+	animation:none;
+	z-index:9;
+}
+
+@media(max-width:768px){
+	#pg-empresas.on,
+	#pg-usuarios.on,
+	#pg-config.on{
+		position:static;
+		top:auto;
+		left:auto;
+		right:auto;
+		bottom:auto;
+		padding:0;
+	}
+}
+
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:11px}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:11px}
 .g4{display:grid;grid-template-columns:repeat(4,1fr);gap:11px}
