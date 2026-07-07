@@ -29,6 +29,7 @@ def register_ponto_routes(
     EscalaFuncionario=None,
     Escala=None,
     JornadaTrabalho=None,
+    PontoAfastamento=None,
 ):
     if "api_ponto_marcar" in app.view_functions:
         return
@@ -59,6 +60,8 @@ def register_ponto_routes(
         Escala = _resolve_model("Escala")
     if JornadaTrabalho is None:
         JornadaTrabalho = _resolve_model("JornadaTrabalho")
+    if PontoAfastamento is None:
+        PontoAfastamento = _resolve_model("PontoAfastamento")
 
     ponto_tipos = ["entrada", "saida_intervalo", "retorno_intervalo", "saida"]
 
@@ -335,6 +338,19 @@ def register_ponto_routes(
         except Exception:
             return set()
 
+    def _afastamento_ativo_na_data(funcionario_id, data_ref):
+        if not PontoAfastamento:
+            return None
+        try:
+            data_str = data_ref.strftime("%Y-%m-%d") if hasattr(data_ref, "strftime") else str(data_ref)
+            return PontoAfastamento.query.filter(
+                PontoAfastamento.funcionario_id == funcionario_id,
+                PontoAfastamento.data_inicio <= data_str,
+                PontoAfastamento.data_fim >= data_str,
+            ).order_by(PontoAfastamento.data_inicio.desc(), PontoAfastamento.id.desc()).first()
+        except Exception:
+            return None
+
     def _ponto_resumo_func_dia(funcionario, data_ref, _marcacoes=None, _feriados=None):
         marcacoes = (
             _marcacoes
@@ -388,7 +404,27 @@ def register_ponto_routes(
         # BUG-FIX 15: usar divisão inteira (truncate) em vez de round() para evitar
         # imprecisão acumulada (+/-1 min) em múltiplas marcações ao longo do mês.
         minutos_trabalhados = segundos_total // 60
-        minutos_esperados = _ponto_min_esperado_data(funcionario, data_ref)
+
+        data_ref_str = data_ref.strftime("%Y-%m-%d")
+        status_norm = (getattr(funcionario, "status", "") or "").strip().lower()
+        af = _afastamento_ativo_na_data(funcionario.id, data_ref)
+        dia_tipo = "normal"
+        afastamento_info = None
+        if af:
+            dia_tipo = "afastamento"
+            afastamento_info = {
+                "id": af.id,
+                "tipo": af.tipo,
+                "observacao": (af.observacao or ""),
+                "data_inicio": af.data_inicio,
+                "data_fim": af.data_fim,
+            }
+        elif status_norm == "férias" or status_norm == "ferias":
+            dia_tipo = "ferias"
+
+        minutos_esperados = 0 if dia_tipo in ("afastamento", "ferias") else _ponto_min_esperado_data(funcionario, data_ref)
+        if dia_tipo == "normal" and minutos_esperados == 0 and not marcacoes:
+            dia_tipo = "folga"
         saldo = minutos_trabalhados - minutos_esperados
         # ── Horas extras 50% e 100% ──────────────────────────────────────────
         # Dom (weekday==6) ou feriado → tudo a 100%; demais dias → 50% até 2h, 100% além
@@ -450,6 +486,9 @@ def register_ponto_routes(
             "intrajornada_fmt": _ponto_fmt_minutos(intrajornada_min),
             "status": "ok" if not inconsistencias else "inconsistente",
             "inconsistencias": inconsistencias,
+            "dia_tipo": dia_tipo,
+            "afastamento_info": afastamento_info,
+            "data_ref_str": data_ref_str,
         }
 
     def _ponto_resumo_competencia(funcionario, competencia):
@@ -609,6 +648,10 @@ def register_ponto_routes(
         # data_hora é BRT naive (utcnow()=localnow()=BRT); usar .date() diretamente.
         # NÃO tratar como UTC: deslocaria marcações de madrugada para o dia anterior.
         data_ref = data_hora.date()
+        af_hoje = _afastamento_ativo_na_data(funcionario.id, data_ref)
+        if af_hoje:
+            tipo_label = (af_hoje.tipo or "Afastamento").strip().title()
+            return jsonify({"erro": f"{tipo_label} registrado para este dia. Nao e permitido marcar ponto durante o afastamento."}), 400
         marcacoes_dia = _ponto_marcacoes_dia(funcionario.id, data_ref)
         tipo = (dados.get("tipo") or "").strip().lower() or _ponto_tipo_esperado(
             marcacoes_dia
@@ -1808,6 +1851,15 @@ def register_ponto_routes(
                     _he100 = int(resumo.get("he_100_min", 0) or 0)
                     extras = _ponto_fmt_minutos(_he100) if _he100 else ""
                     total_extras += _he100
+
+            if resumo.get("dia_tipo") == "afastamento" and not marcacoes_ord:
+                _af_info = resumo.get("afastamento_info") or {}
+                _af_tipo = (_af_info.get("tipo") or "Afastamento").strip().title()
+                marcacoes_str = _af_tipo
+                faltas = ""
+            elif resumo.get("dia_tipo") == "ferias" and not marcacoes_ord:
+                marcacoes_str = "Ferias"
+                faltas = ""
 
             total_previstas += previstas
             total_diurnas += diurnas

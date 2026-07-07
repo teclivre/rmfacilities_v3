@@ -65,7 +65,8 @@ class LoginActivity : AppCompatActivity() {
                                 .setMessage("Há uma versão mais nova do app disponível. Por favor, atualize para continuar usando.")
                                 .setCancelable(false)
                                 .setPositiveButton("Atualizar") { _, _ ->
-                                    val url = api.session.apiBaseUrl.trimEnd('/') + "/app/download"
+                                    val baseUrl = session.apiBaseUrl.ifBlank { BuildConfig.DEFAULT_API_BASE_URL }.trimEnd('/')
+                                    val url = "$baseUrl/app/download"
                                     try {
                                         startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
                                     } catch (_: Exception) {}

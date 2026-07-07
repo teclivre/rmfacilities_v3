@@ -384,6 +384,10 @@ mark{background:#FFF3A0;border-radius:2px;padding:0 1px}
 .gf-dia.falta .gf-dn{color:var(--verm)}
 .gf-dia.folga{background:var(--azul-cc);border-color:var(--azul-cl)}
 .gf-dia.folga .gf-dn{color:var(--azul)}
+.gf-dia.afastamento{background:#eef7ff;border-color:#79aee3}
+.gf-dia.afastamento .gf-dn{color:#1f5f9b}
+.gf-dia.ferias{background:#f3f0ff;border-color:#a996e8}
+.gf-dia.ferias .gf-dn{color:#5e49b7}
 .gf-dia.hoje{outline:2px solid var(--azul);outline-offset:1px}
 .gf-dia.futuro{opacity:.45;pointer-events:none}
 html[data-theme='dark'] .gf-dia{background:#0b1627;border-color:var(--borda)}
@@ -393,6 +397,8 @@ html[data-theme='dark'] .gf-dia.pendente{background:#2a2006;border-color:#d4a017
 html[data-theme='dark'] .gf-dia.pendente .gf-dn{color:#f0d060}
 html[data-theme='dark'] .gf-dia.falta{background:var(--verm-cl);border-color:var(--verm)}
 html[data-theme='dark'] .gf-dia.folga{background:var(--azul-cc);border-color:var(--azul-cl)}
+html[data-theme='dark'] .gf-dia.afastamento{background:#0f243b;border-color:#2f6a9a}
+html[data-theme='dark'] .gf-dia.ferias{background:#231d3c;border-color:#6f60b9}
 
 @media(max-width:980px){
 	.ponto-gestao-wrap{grid-template-columns:1fr}

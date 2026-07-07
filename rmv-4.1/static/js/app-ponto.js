@@ -26,6 +26,56 @@ function pontoCompetenciaAtual(){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 }
 
+function pontoFeriadosAnoAtual(){
+  return String(new Date().getFullYear());
+}
+
+function pontoGetAnoFeriados(){
+  const inp=document.getElementById('ponto-feriados-ano');
+  const raw=(inp?.value||'').trim();
+  const ano=parseInt(raw||pontoFeriadosAnoAtual(),10);
+  if(inp && !inp.value) inp.value=String(ano);
+  if(Number.isNaN(ano) || ano<2020 || ano>2099) return null;
+  return ano;
+}
+
+async function pontoCarregarFeriadosNacionais(){
+  const ano=pontoGetAnoFeriados();
+  const tb=document.getElementById('tb-ponto-feriados-nacionais');
+  const stId='ponto-feriados-st';
+  if(!tb) return;
+  if(!ano){ showSt(stId,'Ano inválido. Use entre 2020 e 2099.',true); return; }
+  showSt(stId,'Carregando feriados nacionais...',false);
+  const r=await api('/api/feriados?tipo=nacional&ano='+encodeURIComponent(String(ano)));
+  if(r?.erro){ showSt(stId,r.erro,true); return; }
+  const itens=Array.isArray(r?.itens)?r.itens:[];
+  if(!itens.length){
+    tb.innerHTML='<tr><td colspan="3" style="text-align:center;padding:12px;color:var(--text-muted)">Nenhum feriado nacional cadastrado para este ano.</td></tr>';
+    showSt(stId,'Nenhum feriado nacional encontrado.',false);
+    return;
+  }
+  tb.innerHTML=itens.map(it=>`
+    <tr>
+      <td>${escHtml((it.data||'').split('-').reverse().join('/'))}</td>
+      <td>${escHtml(it.descricao||'')}</td>
+      <td>${escHtml(it.tipo||'nacional')}</td>
+    </tr>
+  `).join('');
+  showSt(stId,`${itens.length} feriado(s) nacional(is) carregado(s).`,false);
+}
+
+async function pontoAtualizarFeriadosNacionais(){
+  const ano=pontoGetAnoFeriados();
+  const stId='ponto-feriados-st';
+  if(!ano){ showSt(stId,'Ano inválido. Use entre 2020 e 2099.',true); return; }
+  showSt(stId,'Atualizando feriados nacionais do ano...',false);
+  const r=await api('/api/feriados/atualizar-nacionais','POST',{ano,substituir:true,incluir_facultativos:true});
+  if(r?.erro){ showSt(stId,r.erro,true); return; }
+  const msg=`Atualizado ${ano}: inseridos ${r.inseridos||0}, atualizados ${r.atualizados||0}, ignorados ${r.ignorados||0}.`;
+  showSt(stId,msg,false);
+  await pontoCarregarFeriadosNacionais();
+}
+
 async function pontoSyncFuncionarios(force=false){
   if(force || !Array.isArray(pontoFuncs) || !pontoFuncs.length){
     pontoFuncs=await api('/api/funcionarios');
@@ -121,6 +171,10 @@ function pontoPopularFuncionarios(){
   }
   if(document.getElementById('ponto-competencia') && !document.getElementById('ponto-competencia').value){
     document.getElementById('ponto-competencia').value=pontoCompetenciaAtual();
+  }
+  if(document.getElementById('ponto-feriados-ano') && !document.getElementById('ponto-feriados-ano').value){
+    document.getElementById('ponto-feriados-ano').value=pontoFeriadosAnoAtual();
+    pontoCarregarFeriadosNacionais();
   }
   if(atual && ativos.some(f=>String(f.id)===atual)) sel.value=atual;
   if(!sel.value && ativos[0]) sel.value=String(ativos[0].id);
@@ -714,8 +768,11 @@ function gfRenderCalendario(resumo,comp){
     let cls='gf-dia';
     if(isFuturo) cls+=' futuro';
     else if(dayData){
-      const isFolga = !dayData.marcacoes_count && (dayData.horas_esperadas_min === 0 || dayData.horas_esperadas_min === '00:00');
-      if(isFolga) cls+=' folga';
+      const diaTipo=String(dayData.dia_tipo||'').toLowerCase();
+      const isFolga = diaTipo==='folga' || (!dayData.marcacoes_count && (dayData.horas_esperadas_min === 0 || dayData.horas_esperadas_min === '00:00'));
+      if(diaTipo==='afastamento') cls+=' afastamento';
+      else if(diaTipo==='ferias') cls+=' ferias';
+      else if(isFolga) cls+=' folga';
       else if(dayData.status==='ok'&&dayData.marcacoes_count>0) cls+=' ok';
       else if(dayData.marcacoes_count>0) cls+=' pendente';
       else cls+=' falta';
@@ -781,7 +838,11 @@ function gfRenderFolha(resumo){
     // mas sem "+" para positivo, então startsWith('+') nunca é verdadeiro.
     // Usar saldo_min (número) para detectar sinal correto.
     const saldoClass=(dia.saldo_min||0)>0?'color:var(--verde)':((dia.saldo_min||0)<0?'color:var(--verm)':'');
-    const statusHtml=dia.status==='ok'?'<span class="pill p-vd" style="font-size:10px">OK</span>':'<span class="pill p-vm" style="font-size:10px">⚠</span>';
+    const diaTipo=String(dia.dia_tipo||'').toLowerCase();
+    let statusHtml=dia.status==='ok'?'<span class="pill p-vd" style="font-size:10px">OK</span>':'<span class="pill p-vm" style="font-size:10px">⚠</span>';
+    if(diaTipo==='afastamento') statusHtml='<span class="pill p-az" style="font-size:10px">Afastamento</span>';
+    else if(diaTipo==='ferias') statusHtml='<span class="pill p-ci" style="font-size:10px">Férias</span>';
+    else if(diaTipo==='folga') statusHtml='<span class="pill p-ci" style="font-size:10px">Folga</span>';
     const he50=dia.he_50_fmt||'00:00'; const he100=dia.he_100_fmt||'00:00';
     const not=dia.noturno_fmt||'00:00'; const intra=dia.intrajornada_fmt||'00:00';
     return `<tr>
@@ -1162,6 +1223,14 @@ _gfFallbackTimer=setInterval(_gfPollSilent,60000);
 
 // ── Afastamentos / Atestados ──────────────────────────────────────────────────
 
+function pontoFmtTipoAfastamento(tipo){
+  const t=String(tipo||'').trim();
+  if(!t) return 'Afastamento';
+  const map={atestado:'Atestado medico',licenca:'Licenca',outros:'Afastamento'};
+  if(map[t.toLowerCase()]) return map[t.toLowerCase()];
+  return t.charAt(0).toUpperCase()+t.slice(1);
+}
+
 async function pontoCarregarAfastamentos(){
   const sel=document.getElementById('ponto-funcionario');
   const fid=parseInt(sel?.value||'0',10);
@@ -1181,8 +1250,9 @@ async function pontoCarregarAfastamentos(){
     return;
   }
   el.innerHTML=r.map(a=>{
-    const tipos={atestado:'🏥 Atestado médico',licenca:'📋 Licença',outros:'📄 Afastamento'};
-    const label=tipos[a.tipo]||'Afastamento';
+    const baseLabel=pontoFmtTipoAfastamento(a.tipo_label||a.tipo);
+    const icon=((a.tipo||'').toLowerCase()==='atestado')?'🏥':(((a.tipo||'').toLowerCase()==='licenca')?'📋':'📄');
+    const label=`${icon} ${baseLabel}`;
     return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--borda)">
       <span style="font-size:12px;flex:1"><strong>${label}</strong> · ${a.periodo_fmt||''} ${a.observacao?`<span style="color:var(--text-muted)">· ${escHtml(a.observacao)}</span>`:''}</span>
       <span style="font-size:11px;color:var(--text-muted)">${a.criado_fmt||''}</span>
@@ -1210,15 +1280,18 @@ function pontoAbrirModalAfastamento(){
   _ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   const f=(pontoFuncs||[]).find(x=>String(x.id)===String(fid));
   _ov.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;max-width:480px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2)">
-    <div style="font-weight:700;font-size:15px;margin-bottom:14px">🏥 Novo atestado · ${escHtml(f?.nome||'Colaborador')}</div>
+    <div style="font-weight:700;font-size:15px;margin-bottom:14px">🏥 Novo afastamento/atestado · ${escHtml(f?.nome||'Colaborador')}</div>
     <div style="display:grid;gap:12px">
       <div><label style="font-size:12px;display:block;margin-bottom:4px">Tipo</label>
         <select id="_af-tipo" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px">
           <option value="atestado">🏥 Atestado médico</option>
           <option value="licenca">📋 Licença</option>
           <option value="outros">📄 Outro afastamento</option>
+          <option value="custom">✍ Tipo livre</option>
         </select>
       </div>
+      <div id="_af-tipo-livre-wrap" style="display:none"><label style="font-size:12px;display:block;margin-bottom:4px">Tipo livre</label>
+        <input id="_af-tipo-livre" placeholder="Ex.: Acompanhamento familiar" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;box-sizing:border-box" maxlength="40"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div><label style="font-size:12px;display:block;margin-bottom:4px">Data início <span style="color:red">*</span></label>
           <input id="_af-inicio" type="date" value="${hoje}" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;box-sizing:border-box"></div>
@@ -1231,13 +1304,30 @@ function pontoAbrirModalAfastamento(){
     <div id="_af-st" style="margin-top:10px;font-size:12px;color:var(--verm);display:none"></div>
     <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
       <button id="_af-cancel" style="padding:8px 16px;border:1px solid #ccc;border-radius:8px;cursor:pointer;background:#f5f5f5;font-size:13px">Cancelar</button>
-      <button id="_af-salvar" style="padding:8px 18px;background:#1565c0;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px">Salvar atestado</button>
+      <button id="_af-salvar" style="padding:8px 18px;background:#1565c0;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px">Salvar afastamento</button>
     </div>
   </div>`;
   document.body.appendChild(_ov);
+  const _tipoSel=_ov.querySelector('#_af-tipo');
+  const _tipoLivreWrap=_ov.querySelector('#_af-tipo-livre-wrap');
+  const _toggleTipoLivre=()=>{
+    const on=_tipoSel?.value==='custom';
+    if(_tipoLivreWrap) _tipoLivreWrap.style.display=on?'':'none';
+  };
+  if(_tipoSel) _tipoSel.onchange=_toggleTipoLivre;
+  _toggleTipoLivre();
   _ov.querySelector('#_af-cancel').onclick=()=>document.body.removeChild(_ov);
   _ov.querySelector('#_af-salvar').onclick=async ()=>{
-    const tipo=_ov.querySelector('#_af-tipo').value;
+    let tipo=_ov.querySelector('#_af-tipo').value;
+    if(tipo==='custom'){
+      tipo=(_ov.querySelector('#_af-tipo-livre')?.value||'').trim();
+      if(!tipo){
+        const st=_ov.querySelector('#_af-st');
+        st.textContent='Informe o tipo livre do afastamento.';
+        st.style.display='';
+        return;
+      }
+    }
     const inicio=_ov.querySelector('#_af-inicio').value;
     const fim=_ov.querySelector('#_af-fim').value;
     const obs=(_ov.querySelector('#_af-obs').value||'').trim();
@@ -1247,10 +1337,10 @@ function pontoAbrirModalAfastamento(){
     const btn=_ov.querySelector('#_af-salvar');
     btn.disabled=true;btn.textContent='Salvando…';
     const r=await api('/api/funcionarios/'+fid+'/afastamentos','POST',{tipo,data_inicio:inicio,data_fim:fim,observacao:obs});
-    btn.disabled=false;btn.textContent='Salvar atestado';
+    btn.disabled=false;btn.textContent='Salvar afastamento';
     if(r&&r.erro){st.textContent=r.erro;st.style.display='';return;}
     document.body.removeChild(_ov);
-    showSt('ponto-st','Atestado registrado com sucesso!',false);
+    showSt('ponto-st','Afastamento registrado com sucesso!',false);
     await pontoCarregarAfastamentos();
   };
 }

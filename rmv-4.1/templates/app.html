@@ -7888,11 +7888,24 @@ async function rhEscalaCarregar(){
 function rhEscalaRenderTabela(){
   const tb=document.getElementById('rh-esc-tb');
   if(!tb) return;
+  const nomesFuncs=(lst)=>{
+    if(!Array.isArray(lst) || !lst.length) return '<span style="color:var(--text-muted)">Nenhum</span>';
+    const nomes=lst
+      .map(f=>esc((f?.nome||'').trim()))
+      .filter(Boolean)
+      .sort((a,b)=>a.localeCompare(b,'pt-BR'));
+    const head=nomes.slice(0,4).join(', ');
+    const extra=nomes.length>4 ? ` <span style="color:var(--text-muted)">+${nomes.length-4}</span>` : '';
+    return `${head}${extra}`;
+  };
   tb.innerHTML=rhEscalas.map(e=>`
     <tr>
       <td>${esc(e.nome||'')}</td>
       <td>${esc(e.tipo||'')}</td>
-      <td>${e.funcionarios_count||0}</td>
+      <td>
+        <div style="font-weight:700">${e.funcionarios_count||0}</div>
+        <div style="font-size:11px;line-height:1.25">${nomesFuncs(e.funcionarios)}</div>
+      </td>
       <td>
         <button class="btn b-az b-xs" onclick="rhEscalaEditar(${e.id})">Editar</button>
         <button class="btn b-vh b-xs" onclick="rhEscalaExcluir(${e.id})">Excluir</button>

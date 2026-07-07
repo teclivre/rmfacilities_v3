@@ -2395,6 +2395,15 @@ class PontoAfastamento(db.Model):
     def to_dict(self):
         d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
         d["criado_fmt"] = self.criado_em.strftime("%d/%m/%Y %H:%M") if self.criado_em else ""
+
+        tipo_raw = (self.tipo or "").strip()
+        tipo_map = {
+            "atestado": "Atestado medico",
+            "licenca": "Licenca",
+            "outros": "Afastamento",
+        }
+        d["tipo_label"] = tipo_map.get(tipo_raw.lower(), tipo_raw.title() if tipo_raw else "Afastamento")
+
         def _br(s):
             try:
                 return datetime.strptime(s, "%Y-%m-%d").strftime("%d/%m/%Y")
@@ -7990,6 +7999,7 @@ register_ponto_routes(
     EscalaFuncionario=EscalaFuncionario,
     Escala=Escala,
     JornadaTrabalho=JornadaTrabalho,
+    PontoAfastamento=PontoAfastamento,
     SolicitacaoHoraExtra=SolicitacaoHoraExtra,
 )
 
@@ -16257,9 +16267,14 @@ def api_rh_afastamentos_lista(fid):
 def api_rh_afastamento_criar(fid):
     f = db.get_or_404(Funcionario, fid)
     d = request.json or {}
-    tipo = (d.get("tipo") or "atestado").strip().lower()
-    if tipo not in ("atestado", "licenca", "outros"):
-        return jsonify({"erro": "Tipo inválido. Use: atestado, licenca ou outros."}), 400
+    tipo_raw = (d.get("tipo") or "").strip()
+    if not tipo_raw:
+        return jsonify({"erro": "Tipo de afastamento é obrigatório."}), 400
+    tipo = tipo_raw.lower()
+    if len(tipo) > 40:
+        return jsonify({"erro": "Tipo muito longo. Máximo de 40 caracteres."}), 400
+    if not re.match(r"^[a-z0-9_\-\s]+$", tipo):
+        return jsonify({"erro": "Tipo inválido. Use apenas letras, números, espaço, _ ou -."}), 400
     data_inicio = (d.get("data_inicio") or "").strip()
     data_fim = (d.get("data_fim") or "").strip()
     observacao = (d.get("observacao") or "").strip()[:500]
@@ -16315,9 +16330,10 @@ def api_rh_afastamento_criar(fid):
                 "Em caso de dúvidas, entre em contato com o RH."
             )
         else:
-            _titulo_af = "Afastamento Registrado 📋"
+            _tipo_custom = (tipo_raw or "Afastamento").strip().title()
+            _titulo_af = f"{_tipo_custom} Registrado 📋"
             _corpo_af = (
-                f"{f.nome}, foi registrado um afastamento de {_di_fmt} a {_df_fmt} "
+                f"{f.nome}, foi registrado {_tipo_custom.lower()} de {_di_fmt} a {_df_fmt} "
                 f"({_dias_af} {'dia' if _dias_af == 1 else 'dias'}). "
                 "Em caso de dúvidas, entre em contato com o RH."
             )
@@ -19054,7 +19070,41 @@ def api_funcionario_definir_jornada(id):
 @lr
 def api_escalas_listar():
     escalas = Escala.query.filter_by(ativo=True).order_by(Escala.criado_em.desc()).all()
-    return jsonify([e.to_dict() for e in escalas])
+    escala_ids = [e.id for e in escalas if e.id]
+    map_vinculos = {}
+    if escala_ids:
+        vincs = EscalaFuncionario.query.filter(
+            EscalaFuncionario.escala_id.in_(escala_ids),
+            EscalaFuncionario.ativo == True,
+        ).all()
+        func_ids = sorted({v.funcionario_id for v in vincs if v.funcionario_id})
+        func_map = {}
+        if func_ids:
+            for f in Funcionario.query.filter(Funcionario.id.in_(func_ids)).all():
+                func_map[f.id] = f
+        for v in vincs:
+            f = func_map.get(v.funcionario_id)
+            if not f:
+                continue
+            map_vinculos.setdefault(v.escala_id, []).append(
+                {
+                    "id": f.id,
+                    "nome": f.nome,
+                    "matricula": f.matricula,
+                    "data_inicio": v.data_inicio,
+                    "data_fim": v.data_fim,
+                    "ativo": bool(v.ativo),
+                }
+            )
+
+    out = []
+    for e in escalas:
+        d = e.to_dict()
+        funcs = map_vinculos.get(e.id, [])
+        d["funcionarios"] = sorted(funcs, key=lambda x: (x.get("nome") or "").lower())
+        d["funcionarios_count"] = len(d["funcionarios"])
+        out.append(d)
+    return jsonify(out)
 
 
 @app.route("/api/escalas", methods=["POST"])
