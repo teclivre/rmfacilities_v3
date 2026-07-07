@@ -670,6 +670,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </button>
         <div class="module-panel">
           <a class="nav-item lv2" onclick="nav('clientes',this)"><span class="nav-label">Clientes</span></a>
+          <a class="nav-item lv2" onclick="nav('documentos',this); setTimeout(()=>docsAbrirProposta(), 140)"><span class="nav-label">Propostas</span></a>
         </div>
       </div>
 
@@ -3078,6 +3079,8 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div class="subaba-blocos" id="docs-subabas" style="margin-bottom:18px;flex-wrap:wrap">
         <button type="button" id="docs-subtab-funcionarios" class="subaba-bloco" onclick="docsSetAba('funcionarios',this)">👤 Funcionarios</button>
         <button type="button" id="docs-subtab-clientes" class="subaba-bloco" onclick="docsSetAba('clientes',this)">🏢 Clientes</button>
+        <button type="button" id="docs-subtab-proposta" class="subaba-bloco" onclick="docsSetAba('proposta',this)">🧾 Propostas</button>
+        <button type="button" id="docs-subtab-lista-propostas" class="subaba-bloco" onclick="docsSetAba('lista-propostas',this)">📋 Histórico</button>
       </div>
 
       <!-- ── Painel: Funcionários ── -->
