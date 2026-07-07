@@ -31,9 +31,12 @@ class ZoomableImageView @JvmOverloads constructor(
 
     init {
         scaleType = ScaleType.MATRIX
+        isClickable = true
+        isFocusable = true
     }
 
     override fun onScale(detector: ScaleGestureDetector): Boolean {
+        parent?.requestDisallowInterceptTouchEvent(true)
         val scaleFactor = detector.scaleFactor
         val prevScale = currentScale
         currentScale = (currentScale * scaleFactor).coerceIn(minScale, maxScale)
@@ -45,9 +48,16 @@ class ZoomableImageView @JvmOverloads constructor(
         return true
     }
 
-    override fun onScaleBegin(detector: ScaleGestureDetector) = true
+    override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+        parent?.requestDisallowInterceptTouchEvent(true)
+        return true
+    }
 
-    override fun onScaleEnd(detector: ScaleGestureDetector) {}
+    override fun onScaleEnd(detector: ScaleGestureDetector) {
+        if (currentScale <= minScale) {
+            parent?.requestDisallowInterceptTouchEvent(false)
+        }
+    }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         scaleGestureDetector.onTouchEvent(event)
@@ -58,9 +68,16 @@ class ZoomableImageView @JvmOverloads constructor(
                 lastX = event.x
                 lastY = event.y
                 isDragging = currentScale > 1f
+                if (isDragging) {
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                }
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
             }
             MotionEvent.ACTION_MOVE -> {
                 if (!scaleGestureDetector.isInProgress && isDragging) {
+                    parent?.requestDisallowInterceptTouchEvent(true)
                     val dx = event.x - lastX
                     val dy = event.y - lastY
                     tempMatrix.set(imageMatrix)
@@ -73,6 +90,14 @@ class ZoomableImageView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 isDragging = false
+                if (currentScale <= minScale) {
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                }
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                if (!scaleGestureDetector.isInProgress && currentScale <= minScale) {
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                }
             }
         }
 
