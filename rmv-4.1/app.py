@@ -1820,6 +1820,7 @@ class Funcionario(db.Model):
     jornada_id = db.Column(
         db.Integer, db.ForeignKey("jornada_trabalho.id"), nullable=True
     )
+    jornada_id_retorno = db.Column(db.Integer, nullable=True)
     status = db.Column(db.String(20), default="Ativo")
     ferias_inicio = db.Column(db.String(10))
     ferias_fim = db.Column(db.String(10))
@@ -9829,6 +9830,8 @@ def _sync_ferias_status():
         # podiam ter o status sobrescrito para Férias se tinham datas antigas.
         status_normalizado = (f.status or "Ativo").strip().lower()
         if status_normalizado in ("demitido", "inativo", "afastado", "aviso prévio", "aviso previo"):
+            if _aplicar_regra_jornada_por_status(f):
+                alterados += 1
             continue
         ini = (f.ferias_inicio or "").strip()
         fim = (f.ferias_fim or "").strip()
@@ -9849,9 +9852,55 @@ def _sync_ferias_status():
         elif ini and not fim and status_atual == "Férias":
             f.status = "Ativo"
             alterados += 1
+        if _aplicar_regra_jornada_por_status(f):
+            alterados += 1
     if alterados:
         db.session.commit()
     return alterados
+
+
+def _status_norm(v):
+    txt = (v or "").strip().lower()
+    txt = unicodedata.normalize("NFD", txt)
+    txt = "".join(ch for ch in txt if unicodedata.category(ch) != "Mn")
+    return txt
+
+
+def _aplicar_regra_jornada_por_status(funcionario):
+    """Regras automáticas de vínculo em jornada:
+    - Demitido/Inativo: sempre sem jornada.
+    - Férias: sai temporariamente da jornada e guarda backup.
+    - Ativo: se voltou de férias, restaura jornada do backup.
+    """
+    changed = False
+    st = _status_norm(getattr(funcionario, "status", "Ativo"))
+
+    if st in ("demitido", "inativo"):
+        if funcionario.jornada_id is not None:
+            funcionario.jornada_id = None
+            changed = True
+        if funcionario.jornada_id_retorno is not None:
+            funcionario.jornada_id_retorno = None
+            changed = True
+        return changed
+
+    if st == "ferias":
+        if funcionario.jornada_id is not None:
+            if funcionario.jornada_id_retorno is None:
+                funcionario.jornada_id_retorno = funcionario.jornada_id
+            funcionario.jornada_id = None
+            changed = True
+        return changed
+
+    if st == "ativo" and funcionario.jornada_id is None and funcionario.jornada_id_retorno:
+        j = db.session.get(JornadaTrabalho, int(funcionario.jornada_id_retorno))
+        if j:
+            funcionario.jornada_id = j.id
+            changed = True
+        funcionario.jornada_id_retorno = None
+        changed = True
+
+    return changed
 
 
 @app.route("/api/funcionarios/sync-ferias", methods=["POST"])
@@ -10632,6 +10681,7 @@ def api_atualizar_funcionario(id):
     if "areas" in d:
         ars = [a for a in d.get("areas", []) if a in ALLOWED_AREAS]
         f.areas = json.dumps(ars, ensure_ascii=False)
+    _aplicar_regra_jornada_por_status(f)
     try:
         db.session.commit()
         # Sync imediato: se as datas de férias foram alteradas, recalcula o
@@ -10658,6 +10708,7 @@ def api_atualizar_funcionario(id):
                     f.status = "Ativo"
                     _changed = True
                 if _changed:
+                    _aplicar_regra_jornada_por_status(f)
                     db.session.commit()
             # Notificação push ao colaborador informando as férias agendadas.
             # Só envia se o campo "notificar_ferias" for explicitamente True no payload,
@@ -18865,9 +18916,21 @@ def api_jornada_vincular_funcionarios(id):
         return jsonify({"erro": "Selecione ao menos 1 funcionário válido."}), 400
 
     conflitos = []
+    bloqueados_status = []
     for fid in ids_ok:
         f = db.session.get(Funcionario, fid)
         if not f:
+            continue
+
+        st_norm = _status_norm(f.status or "Ativo")
+        if st_norm in ("ferias", "demitido", "inativo"):
+            bloqueados_status.append(
+                {
+                    "funcionario_id": f.id,
+                    "nome": f.nome or "",
+                    "status": f.status or "",
+                }
+            )
             continue
 
         if f.jornada_id and int(f.jornada_id) != int(id):
@@ -18896,6 +18959,21 @@ def api_jornada_vincular_funcionarios(id):
                 "conflitos": conflitos,
                 "jornada_destino_id": j.id,
                 "jornada_destino_nome": j.nome or "",
+            }
+        ), 409
+
+    if bloqueados_status:
+        nomes = ", ".join(
+            [
+                f"{(c.get('nome') or c.get('funcionario_id'))} ({c.get('status') or 'status inválido'})"
+                for c in bloqueados_status[:6]
+            ]
+        )
+        sufixo = "..." if len(bloqueados_status) > 6 else ""
+        return jsonify(
+            {
+                "erro": f"Não é permitido vincular jornada para funcionário em Férias/Demitido/Inativo: {nomes}{sufixo}",
+                "bloqueados_status": bloqueados_status,
             }
         ), 409
 
@@ -18943,6 +19021,7 @@ def api_funcionario_definir_jornada(id):
         if not j:
             return jsonify({"erro": "Jornada não encontrada"}), 404
         f.jornada_id = j.id
+    _aplicar_regra_jornada_por_status(f)
     db.session.commit()
     # BUG-FIX 7: alertar se funcionário tem escala rotativa ativa ao mesmo tempo que jornada fixa.
     # Prioridade no ponto é Escala > Jornada, então a jornada recém-vinculada seria ignorada.
@@ -32826,6 +32905,7 @@ with app.app_context():
         "funcionario",
         [
             "jornada_id INTEGER",
+            "jornada_id_retorno INTEGER",
         ],
     )
     ensure_cols(
