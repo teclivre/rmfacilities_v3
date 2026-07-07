@@ -652,7 +652,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     </div>
 
     <div class="sidebar-main">
-      <div class="nav-module open" id="mod-principal">
+      <div class="nav-module" id="mod-principal">
         <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-principal')">
           <span class="mod-icon">🏠</span><span class="module-label">Principal</span><span class="module-caret">▾</span>
         </button>
@@ -4753,14 +4753,8 @@ function toggleSidebarModule(moduleId,forceOpen){
   const mod=document.getElementById(moduleId);
   if(!mod) return;
   if(document.body.classList.contains('sidebar-collapsed')) return;
-  const open=(typeof forceOpen==='boolean')?forceOpen:!mod.classList.contains('open');
-  // Se abrindo, fechar outras modules para manter apenas uma aberta
-  if(open){
-    document.querySelectorAll('.nav-module').forEach(m=>{
-      if(m.id!==moduleId) m.classList.remove('open');
-    });
-  }
-  mod.classList.toggle('open',open);
+  // Menu superior abre por hover; não manter estado "open" por clique.
+  mod.classList.remove('open');
 }
 
 function toggleSidebarSublevel(subId,btn){
@@ -4782,10 +4776,6 @@ function _sidebarFindNavItem(id){
 
 function sidebarSyncActiveContext(activeId){
   const item=_sidebarFindNavItem(activeId);
-  if(item){
-    const mod=item.closest('.nav-module');
-    if(mod) mod.classList.add('open');
-  }
   document.querySelectorAll('.nav-module').forEach(mod=>{
     mod.classList.toggle('active',!!mod.querySelector('.nav-item.on'));
   });
