@@ -1298,6 +1298,8 @@ function pontoAbrirModalAfastamento(){
         <div><label style="font-size:12px;display:block;margin-bottom:4px">Data fim <span style="color:red">*</span></label>
           <input id="_af-fim" type="date" value="${hoje}" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;box-sizing:border-box"></div>
       </div>
+      <div><label style="font-size:12px;display:block;margin-bottom:4px">Quantidade de dias</label>
+        <input id="_af-dias" type="number" min="1" max="365" value="1" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;box-sizing:border-box"></div>
       <div><label style="font-size:12px;display:block;margin-bottom:4px">Observação</label>
         <input id="_af-obs" placeholder="Ex.: CID J06.9 – consulta médica" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;box-sizing:border-box" maxlength="500"></div>
     </div>
@@ -1310,12 +1312,39 @@ function pontoAbrirModalAfastamento(){
   document.body.appendChild(_ov);
   const _tipoSel=_ov.querySelector('#_af-tipo');
   const _tipoLivreWrap=_ov.querySelector('#_af-tipo-livre-wrap');
+  const _inicioInp=_ov.querySelector('#_af-inicio');
+  const _fimInp=_ov.querySelector('#_af-fim');
+  const _diasInp=_ov.querySelector('#_af-dias');
   const _toggleTipoLivre=()=>{
     const on=_tipoSel?.value==='custom';
     if(_tipoLivreWrap) _tipoLivreWrap.style.display=on?'':'none';
   };
+  const _syncFimPorDias=()=>{
+    if(!_inicioInp || !_fimInp || !_diasInp) return;
+    const ini=_inicioInp.value;
+    const dias=Math.max(1,Math.min(365,parseInt(_diasInp.value||'1',10)||1));
+    _diasInp.value=String(dias);
+    if(!ini) return;
+    const dt=new Date(ini+'T00:00:00');
+    if(Number.isNaN(dt.getTime())) return;
+    dt.setDate(dt.getDate()+dias-1);
+    const fim=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+    _fimInp.value=fim;
+  };
+  const _syncDiasPorFim=()=>{
+    if(!_inicioInp || !_fimInp || !_diasInp) return;
+    const ini=new Date((_inicioInp.value||'')+'T00:00:00');
+    const fim=new Date((_fimInp.value||'')+'T00:00:00');
+    if(Number.isNaN(ini.getTime()) || Number.isNaN(fim.getTime()) || fim<ini) return;
+    const diff=Math.floor((fim-ini)/86400000)+1;
+    _diasInp.value=String(Math.max(1,Math.min(365,diff)));
+  };
   if(_tipoSel) _tipoSel.onchange=_toggleTipoLivre;
+  if(_diasInp) _diasInp.oninput=_syncFimPorDias;
+  if(_inicioInp) _inicioInp.onchange=()=>{_syncFimPorDias();};
+  if(_fimInp) _fimInp.onchange=_syncDiasPorFim;
   _toggleTipoLivre();
+  _syncFimPorDias();
   _ov.querySelector('#_af-cancel').onclick=()=>document.body.removeChild(_ov);
   _ov.querySelector('#_af-salvar').onclick=async ()=>{
     let tipo=_ov.querySelector('#_af-tipo').value;
