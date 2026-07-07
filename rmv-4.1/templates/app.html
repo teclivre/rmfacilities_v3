@@ -7688,8 +7688,13 @@ function rhJornadaPopularFuncionariosAtivos(){
   const sel=document.getElementById('rh-jor-vinc-funcs');
   if(!sel) return;
   const atual=new Set(Array.from(sel.selectedOptions||[]).map(o=>String(o.value)));
+  const destino=(document.getElementById('rh-jor-vinc-jornada')?.value||'').trim();
   const ativos=(Array.isArray(funcs)?funcs:[])
     .filter(f=>String((f.status||'').toLowerCase())==='ativo')
+    .filter(f=>{
+      if(!destino) return true;
+      return !f.jornada_id || String(f.jornada_id)===destino;
+    })
     .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
   sel.innerHTML=ativos.map(f=>{
     const j=rhJornadas.find(x=>String(x.id)===String(f.jornada_id));
@@ -7888,6 +7893,7 @@ async function rhEscalaCarregar(){
   rhEscalas=Array.isArray(r)?r:[];
   rhEscalaRenderTabela();
   rhEscalaPopularSeletor();
+  await rhEscalaCarregarFuncsParaVinc();
 }
 
 function rhEscalaRenderTabela(){
@@ -8020,7 +8026,7 @@ function rhEscalaEditar(id){
   rhEscalaAtualizarCicloTemplate();
 }
 
-function rhEscalaLimparForm(){
+async function rhEscalaLimparForm(){
   document.getElementById('rh-esc-id').value='';
   document.getElementById('rh-esc-nome').value='';
   document.getElementById('rh-esc-tipo').value='';
@@ -8043,7 +8049,7 @@ function rhEscalaLimparForm(){
   if(noturnoConfig) noturnoConfig.style.display='none';
   const cfg6x1=document.getElementById('rh-esc-6x1-config');
   if(cfg6x1) cfg6x1.style.display='none';
-  rhEscalaCarregarFuncsParaVinc();
+  await rhEscalaCarregarFuncsParaVinc();
 }
 
 async function rhEscalaSalvar(){
@@ -8111,29 +8117,35 @@ async function rhEscalaExcluir(id){
     return;
   }
   await rhEscalaCarregar();
+  await rhEscalaCarregarFuncsParaVinc();
   showSt('rh-escala-st','Escala excluída com sucesso.',false);
 }
 
-function rhEscalaCarregarFuncsParaVinc(){
+async function rhEscalaCarregarFuncsParaVinc(){
   const eid=(document.getElementById('rh-esc-vinc-escala')?.value||'').trim();
   const sel=document.getElementById('rh-esc-vinc-funcs');
   if(!sel) return;
   
-  // Se não selecionou escala, mostrar todos os ativos que não estão em escala
+  // Se não selecionou escala, mostrar todos os ativos
   if(!eid){
-    const sel2=document.getElementById('rh-esc-vinc-funcs');
-    if(!sel2) return;
     const ativos=(Array.isArray(funcs)?funcs:[])
       .filter(f=>String((f.status||'').toLowerCase())==='ativo')
       .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
-    sel2.innerHTML=ativos.map(f=>`<option value="${f.id}">${esc(f.nome||'Sem nome')} (${f.matricula||'—'})</option>`).join('');
+    sel.innerHTML=ativos.map(f=>`<option value="${f.id}">${esc(f.nome||'Sem nome')} (${f.matricula||'—'})</option>`).join('');
     return;
   }
   
-  // Escala selecionada: mostrar funcs que não estão em outra escala
+  // Escala selecionada: buscar vínculos existentes para não sugerir funcionários já vinculados
+  let idsJaVincs=new Set();
   const escalaAtual=rhEscalas.find(x=>String(x.id)===String(eid));
-  if(!escalaAtual) return;
-  const idsJaVincs=new Set((escalaAtual.funcionarios||[]).map(f=>f.id));
+  if(escalaAtual && Array.isArray(escalaAtual.funcionarios) && escalaAtual.funcionarios.length){
+    idsJaVincs=new Set(escalaAtual.funcionarios.map(f=>f.id));
+  } else {
+    const escalaDetalhe = await api(`/api/escalas/${eid}`);
+    if(escalaDetalhe && Array.isArray(escalaDetalhe.funcionarios)){
+      idsJaVincs=new Set(escalaDetalhe.funcionarios.map(f=>f.id));
+    }
+  }
   const ativos=(Array.isArray(funcs)?funcs:[])
     .filter(f=>String((f.status||'').toLowerCase())==='ativo' && !idsJaVincs.has(f.id))
     .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));

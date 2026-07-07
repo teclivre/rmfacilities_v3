@@ -18869,18 +18869,21 @@ def api_jornada_vincular_funcionarios(id):
         f = db.session.get(Funcionario, fid)
         if not f:
             continue
+
         if f.jornada_id and int(f.jornada_id) != int(id):
             j_atual = db.session.get(JornadaTrabalho, f.jornada_id)
-            conflitos.append(
-                {
-                    "funcionario_id": f.id,
-                    "nome": f.nome or "",
-                    "jornada_atual_id": f.jornada_id,
-                    "jornada_atual_nome": (
-                        j_atual.nome if j_atual else f"Jornada #{f.jornada_id}"
-                    ),
-                }
-            )
+            if j_atual:
+                conflitos.append(
+                    {
+                        "funcionario_id": f.id,
+                        "nome": f.nome or "",
+                        "jornada_atual_id": f.jornada_id,
+                        "jornada_atual_nome": j_atual.nome,
+                    }
+                )
+            else:
+                # Limpar referência obsoleta para jornadas que não existem mais
+                f.jornada_id = None
 
     if conflitos:
         nomes = ", ".join(
@@ -19170,6 +19173,7 @@ def api_escala_editar(id):
 def api_escala_excluir(id):
     e = db.get_or_404(Escala, id)
     e.ativo = False
+    EscalaFuncionario.query.filter_by(escala_id=id, ativo=True).update({"ativo": False})
     db.session.commit()
     audit_event(
         "escala_excluir",
