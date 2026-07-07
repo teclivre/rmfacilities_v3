@@ -3488,23 +3488,10 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div id="st-assinaturas" class="st"></div>
 
       <style>
-        /* LAYOUT: position:fixed — ignora scroll da .content completamente */
-        #pg-assinaturas{display:none;margin:0;padding:0}
+        #pg-assinaturas{margin:0;padding:0}
         #pg-assinaturas.on{
-          display:block!important;
-          position:fixed!important;
-          top:0!important;
-          left:78px!important; /* largura sidebar colapsada */
-          right:0!important;
-          bottom:0!important;
-          overflow-y:auto;
-          overflow-x:hidden;
           overflow-anchor:none;
-          padding:20px 22px;
-          z-index:10;
-          animation:none!important;
         }
-        @media(max-width:768px){ #pg-assinaturas.on{left:0;top:52px}}
         #pg-assinaturas .asi-shell{display:flex;flex-direction:row;align-items:flex-start;gap:16px;width:100%;margin:0}
         #pg-assinaturas .asi-side{flex:0 0 250px;min-width:0}
         #pg-assinaturas .asi-main{flex:1 1 auto;min-width:0}
@@ -14893,9 +14880,8 @@ function onAuditPosChange(pos){
 }
 
 function initAssinaturas(){
-  // Ocultar sidebar principal para tela cheia
+  // Manter navegação principal visível durante o uso de assinaturas
   document.body.dataset.asiSidebarWas=document.body.classList.contains('sidebar-collapsed')?'1':'0';
-  document.body.classList.add('sidebar-collapsed');
   loadEnvelopes(_asiTipo);
   setupAsiDropzone();
   // load funcionários para picker
