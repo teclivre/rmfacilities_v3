@@ -169,7 +169,7 @@ def register_ponto_routes(
                     if ef.data_fim and ef.data_fim < data_str:
                         continue
                     esc = db.session.get(Escala, ef.escala_id)
-                    if not esc:
+                    if not esc or not esc.ativo:
                         continue
                     try:
                         ciclo = json.loads(esc.ciclo_json or "{}")
@@ -454,7 +454,7 @@ def register_ponto_routes(
                 ).order_by(EscalaFuncionario.data_inicio.desc()).first()
                 if _ef and (not _ef.data_fim or _ef.data_fim >= _data_str):
                     _esc = db.session.get(Escala, _ef.escala_id)
-                    if _esc:
+                    if _esc and _esc.ativo:
                         _h, _m = map(int, (_esc.periodo_noturno_ini or "22:00").split(":"))
                         _noc_ini_min = _h * 60 + _m
                         _h, _m = map(int, (_esc.periodo_noturno_fim or "05:00").split(":"))
@@ -749,7 +749,7 @@ def register_ponto_routes(
                     if ef.data_fim and ef.data_fim < data_str:
                         continue
                     esc = db.session.get(Escala, ef.escala_id)
-                    if not esc:
+                    if not esc or not esc.ativo:
                         continue
                     try:
                         ciclo = json.loads(esc.ciclo_json or "{}")
@@ -1934,11 +1934,16 @@ def register_ponto_routes(
             _ef_esc = EscalaFuncionario.query.filter(
                 EscalaFuncionario.funcionario_id == funcionario.id,
                 EscalaFuncionario.ativo == True,
+                EscalaFuncionario.data_inicio <= fim.strftime("%Y-%m-%d"),
+                db.or_(
+                    EscalaFuncionario.data_fim.is_(None),
+                    EscalaFuncionario.data_fim >= inicio.strftime("%Y-%m-%d"),
+                ),
             ).order_by(EscalaFuncionario.data_inicio.desc()).first()
             _nome_escala = "Normal"
             if _ef_esc:
                 _esc_obj = db.session.get(Escala, _ef_esc.escala_id)
-                if _esc_obj:
+                if _esc_obj and _esc_obj.ativo:
                     _nome_escala = f"{_esc_obj.nome} ({_esc_obj.tipo})"
         except Exception:
             _nome_escala = "Normal"

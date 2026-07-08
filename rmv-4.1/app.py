@@ -17810,7 +17810,13 @@ def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
         ).order_by(EscalaFuncionario.data_inicio.desc()).all()
         if esc_func:
             escala_ids = [ef.escala_id for ef in esc_func]
-            escalas_map = {e.id: e for e in Escala.query.filter(Escala.id.in_(escala_ids)).all()}
+            escalas_map = {
+                e.id: e
+                for e in Escala.query.filter(
+                    Escala.id.in_(escala_ids),
+                    Escala.ativo == True,
+                ).all()
+            }
 
         for ef in esc_func:
             # Se tem data_fim, verifica se data_str está dentro do range
@@ -19192,7 +19198,9 @@ def api_funcionario_definir_jornada(id):
                 EscalaFuncionario.data_inicio <= hoje_str,
             ).first()
             if ef and (not ef.data_fim or ef.data_fim >= hoje_str):
-                aviso_escala_ativa = True
+                _esc = db.session.get(Escala, ef.escala_id)
+                if _esc and _esc.ativo:
+                    aviso_escala_ativa = True
         except Exception:
             pass
     return jsonify({
@@ -19520,11 +19528,14 @@ def api_escala_vincular_funcionarios(id):
         # BUG-FIX 8 & 9: verificar conflito em OUTRA escala, considerando data_fim
         # Bug 8: registro com data_fim=None (ativo sem prazo) conflita sempre
         # Bug 9: registros cujo data_fim < data_ini já encerraram — não são conflito
-        conflito = EscalaFuncionario.query.filter(
+        conflito = EscalaFuncionario.query.join(
+            Escala, Escala.id == EscalaFuncionario.escala_id
+        ).filter(
             EscalaFuncionario.funcionario_id == fid,
             EscalaFuncionario.escala_id != id,
             EscalaFuncionario.data_inicio <= data_ini,
             EscalaFuncionario.ativo == True,
+            Escala.ativo == True,
             db.or_(
                 EscalaFuncionario.data_fim.is_(None),       # Ativo sem prazo
                 EscalaFuncionario.data_fim >= data_ini,     # Termina depois de data_ini
@@ -25431,7 +25442,7 @@ def _calcular_horas_noturnas_funcionario(funcionario_id, data_inicio_str, data_f
                 continue
 
             esc = db.session.get(Escala, ef.escala_id)
-            if not esc:
+            if not esc or not esc.ativo:
                 continue
 
             # Tamanho do ciclo para identificar se o dia é noturno
