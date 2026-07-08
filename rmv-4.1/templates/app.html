@@ -941,6 +941,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-vd b-sm" type="button" id="fp-btn-fechar" onclick="fpFecharFolha()">✓ Fechar folha</button>
             <button class="btn b-gh b-sm" type="button" id="fp-btn-reabrir" style="display:none" onclick="fpReabrirFolha()">↺ Reabrir</button>
             <button class="btn b-vd b-sm" type="button" id="fp-btn-pagar" style="display:none" onclick="fpMarcarPaga()">💰 Marcar como paga</button>
+            <button class="btn b-ghv b-sm" type="button" onclick="fpNotificarPagamento()">🔔 Notificar pagamento</button>
             <button class="btn b-az b-sm" type="button" onclick="fpAbrirPrevia()">👁 Prévia</button>
             <button class="btn b-gh b-sm" type="button" onclick="fpExportar('xlsx')">⬇ XLSX</button>
             <button class="btn b-gh b-sm" type="button" onclick="fpExportar('pdf')">⬇ PDF</button>
@@ -1625,6 +1626,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-gh b-sm" type="button" onclick="rhFeriasSetMesAtual()">Mês atual</button>
             <button class="btn b-gh b-sm" type="button" onclick="rhFeriasLimparFiltros()">Limpar filtros</button>
             <button class="btn b-ghv b-sm" type="button" onclick="renderRhFerias()">Atualizar</button>
+            <button class="btn b-vd b-sm" type="button" onclick="rhFeriasNotificarFiltro()">🔔 Notificar férias</button>
           </div>
         </div>
         <div id="rh-ferias-res" class="hint" style="margin:0 12px 8px 12px"></div>
@@ -2807,6 +2809,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="brow" id="ben-folha-toolbar" style="justify-content:flex-start;margin-top:6px;flex-wrap:wrap;gap:6px;border-top:1px solid var(--borda);padding-top:8px">
           <button class="btn b-vd b-sm" onclick="benSalvarFolha()">Salvar folha do mês</button>
           <button class="btn b-gh b-sm" onclick="benFecharFolha()">Fechar folha</button>
+          <button class="btn b-ghv b-sm" onclick="benNotificarBeneficios()">🔔 Notificar benefícios</button>
           <button class="btn b-gh b-sm" id="btn-ben-reabrir" onclick="benReabrirFolha()" style="display:none">Reabrir folha</button>
           <button class="btn b-gh b-sm" id="btn-ben-assinar" onclick="benAssinarFolha()" style="display:none">Assinar fechamento</button>
           <button class="btn b-gh b-sm" onclick="benAbrirHistorico()">Consultar histórico</button>
@@ -5372,6 +5375,8 @@ function rhFeriasNoPeriodo(f,dtIni,dtFim){
   return fi<=fim && ff>=ini;
 }
 
+let rhFeriasListaAtual=[];
+
 async function renderRhFerias(){
   const tb=document.getElementById('rh-ferias-tb');
   const res=document.getElementById('rh-ferias-res');
@@ -5391,6 +5396,7 @@ async function renderRhFerias(){
     const hay=[f.nome,f.re,f.funcao,f.cargo,emp?.nome,f.status].map(v=>(v||'').toString().toLowerCase()).join(' ');
     return hay.includes(busca);
   }).sort((a,b)=>((a.nome||'').localeCompare((b.nome||''),'pt-BR')));
+  rhFeriasListaAtual=lista;
 
   if(!lista.length){
     tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted)">Nenhum colaborador em férias para os filtros selecionados.</td></tr>';
@@ -5420,6 +5426,26 @@ async function renderRhFerias(){
     </tr>`;
   }).join('');
   if(res) res.textContent=`${lista.length} colaborador(es) em férias.`;
+}
+
+async function rhFeriasNotificarFiltro(){
+  const res=document.getElementById('rh-ferias-res');
+  const lista=Array.isArray(rhFeriasListaAtual)?rhFeriasListaAtual:[];
+  const ids=[...new Set(lista.map(f=>parseInt(f.id,10)).filter(v=>Number.isInteger(v)&&v>0))];
+  if(!ids.length){
+    toast('Nenhum colaborador em férias nos filtros atuais.','w');
+    return;
+  }
+  if(!confirm(`Enviar aviso de férias para ${ids.length} colaborador(es)?`)) return;
+  const r=await api('/api/ferias/notificar','POST',{funcionario_ids:ids});
+  if(r?.erro){
+    toast(r.erro,'e');
+    if(res) res.textContent=`Erro ao notificar férias: ${r.erro}`;
+    return;
+  }
+  const msg=`Férias notificadas: ${r.enviados||0} envio(s) (${r.enviados_push||0} app, ${r.enviados_whatsapp||0} WhatsApp). Sem contato: ${r.sem_contato||0}. Sem período: ${r.sem_periodo||0}.`;
+  toast(msg,'s');
+  if(res) res.textContent=msg;
 }
 
 // ── Modal Ponto do Dia ───────────────────────────────────────────────────────
@@ -11120,6 +11146,15 @@ async function fpMarcarPaga(){
   await fpCarregarFolhas();
 }
 
+async function fpNotificarPagamento(){
+  const f=FP_STATE.folhaSelecionada;
+  if(!f){ toast('Selecione uma folha.','e'); return; }
+  if(!confirm(`Enviar aviso de pagamento da folha "${f.nome}" para os colaboradores?`)) return;
+  const r=await api(`/api/folhas/${f.id}/notificar`,'POST');
+  if(!r||r.error||r.erro){ toast(r?.error||r?.erro||'Erro ao notificar pagamento.','e'); return; }
+  toast(`Notificações enviadas: ${r.enviados_push||0} app, ${r.enviados_whatsapp||0} WhatsApp, ${r.sem_contato||0} sem contato.`,'s');
+}
+
 async function fpExcluirFolha(){
   const f = FP_STATE.folhaSelecionada;
   if(!f) return;
@@ -13385,6 +13420,30 @@ async function benAssinarFolha(){
   if(r?.erro){ showSt('st-benef',r.erro,true); return; }
   showSt('st-benef',`Folha assinada por ${r.assinatura_por||'usuário'} em ${new Date(r.assinatura_em).toLocaleString('pt-BR')}.`,false);
   benAtualizarToolbar('assinada');
+}
+
+async function benNotificarBeneficios(){
+  const comp=benComp();
+  if(!/^\d{4}-\d{2}$/.test(comp)){
+    showSt('st-benef','Competência inválida para notificação.',true);
+    return;
+  }
+  const empVal=benEmp();
+  const body={competencia:comp};
+  if(empVal) body.empresa_id=parseInt(empVal,10)||null;
+  if(benSelecionados && benSelecionados.size>0){
+    body.funcionario_ids=[...benSelecionados];
+  }
+  const alvoTxt=(body.funcionario_ids&&body.funcionario_ids.length)
+    ? `${body.funcionario_ids.length} colaborador(es) selecionado(s)`
+    : 'todos os colaboradores filtrados da competência';
+  if(!confirm(`Enviar aviso de benefícios para ${alvoTxt}?`)) return;
+  const r=await api('/api/beneficios/notificar','POST',body);
+  if(r?.erro){
+    showSt('st-benef',r.erro,true);
+    return;
+  }
+  showSt('st-benef',`Notificações de benefícios enviadas: ${r.enviados_push||0} app, ${r.enviados_whatsapp||0} WhatsApp, ${r.sem_contato||0} sem contato.`,false);
 }
 
 // ── Benefício Avulso ──────────────────────────────────────────────────────────

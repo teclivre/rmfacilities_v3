@@ -10541,6 +10541,93 @@ def api_criar_funcionario():
         ), 400
 
 
+def _notificar_ferias_funcionario(funcionario):
+    ini_raw = (getattr(funcionario, "ferias_inicio", "") or "").strip()
+    fim_raw = (getattr(funcionario, "ferias_fim", "") or "").strip()
+    if not ini_raw or not fim_raw:
+        return {
+            "ok": False,
+            "push": False,
+            "whatsapp": False,
+            "sem_contato": False,
+            "sem_periodo": True,
+        }
+
+    try:
+        d1 = datetime.strptime(ini_raw, "%Y-%m-%d").date()
+        d2 = datetime.strptime(fim_raw, "%Y-%m-%d").date()
+    except ValueError:
+        return {
+            "ok": False,
+            "push": False,
+            "whatsapp": False,
+            "sem_contato": False,
+            "sem_periodo": True,
+        }
+
+    if d2 < d1:
+        d1, d2 = d2, d1
+
+    dias = (d2 - d1).days + 1
+    retorno = (d2 + timedelta(days=1)).strftime("%d/%m/%Y")
+    nome = (getattr(funcionario, "nome", "") or "Colaborador").strip()
+    primeiro_nome = (nome.split()[0] if nome else "Colaborador")
+
+    titulo = "Férias Agendadas ✈️"
+    corpo_push = (
+        f"{nome}, suas férias estão agendadas de "
+        f"{d1.strftime('%d/%m/%Y')} a {d2.strftime('%d/%m/%Y')} "
+        f"com {dias} {'dia' if dias == 1 else 'dias'} de duração. "
+        f"Previsão de retorno: {retorno}."
+    )
+
+    ok_push = False
+    ok_wpp = False
+
+    tem_app = bool(
+        getattr(funcionario, "app_ativo", False)
+        and (getattr(funcionario, "app_push_token", "") or "").strip()
+    )
+    if tem_app:
+        try:
+            ok_push = bool(
+                _push_notify_funcionario(
+                    funcionario.id,
+                    titulo,
+                    corpo_push,
+                    data={"tipo": "ferias"},
+                )
+            )
+        except Exception:
+            ok_push = False
+
+    tel = wa_norm_number(getattr(funcionario, "telefone", "") or "")
+    if wa_is_valid_number(tel):
+        try:
+            msg_wpp = (
+                f"Olá {primeiro_nome}, suas férias foram programadas.\n"
+                f"📅 Período: *{d1.strftime('%d/%m/%Y')}* até *{d2.strftime('%d/%m/%Y')}*\n"
+                f"🗓 Duração: *{dias}* {'dia' if dias == 1 else 'dias'}\n"
+                f"✅ Previsão de retorno: *{retorno}*\n"
+                "Em caso de dúvidas, entre em contato com o RH."
+            )
+            wa_send_text(tel, msg_wpp)
+            ok_wpp = True
+        except Exception as e:
+            app.logger.warning(
+                f"[ferias_notificar] WhatsApp falhou para func {funcionario.id}: {e}"
+            )
+
+    sem_contato = (not ok_push) and (not ok_wpp)
+    return {
+        "ok": (ok_push or ok_wpp),
+        "push": ok_push,
+        "whatsapp": ok_wpp,
+        "sem_contato": sem_contato,
+        "sem_periodo": False,
+    }
+
+
 @app.route("/api/funcionarios/<int:id>", methods=["PUT"])
 @lr
 def api_atualizar_funcionario(id):
@@ -10724,26 +10811,7 @@ def api_atualizar_funcionario(id):
             # Só envia se o campo "notificar_ferias" for explicitamente True no payload,
             # evitando spam em cada edição intermediária de data.
             if to_bool(d.get("notificar_ferias")):
-                _ini_n = (f.ferias_inicio or "").strip()
-                _fim_n = (f.ferias_fim or "").strip()
-                if _ini_n and _fim_n:
-                    try:
-                        from datetime import date as _dfc
-                        _d1n = _dfc.fromisoformat(_ini_n)
-                        _d2n = _dfc.fromisoformat(_fim_n)
-                        _dias_n = (_d2n - _d1n).days + 1
-                        _retorno_n = (_d2n + __import__("datetime").timedelta(days=1)).strftime("%d/%m/%Y")
-                        _push_notify_funcionario(
-                            f.id,
-                            "Férias Agendadas ✈️",
-                            f"{f.nome}, suas férias estão agendadas de "
-                            f"{_d1n.strftime('%d/%m/%Y')} a {_d2n.strftime('%d/%m/%Y')} "
-                            f"com {_dias_n} {'dia' if _dias_n == 1 else 'dias'} de duração. "
-                            f"Previsão de retorno: {_retorno_n}.",
-                            data={"tipo": "ferias"},
-                        )
-                    except Exception:
-                        pass
+                _notificar_ferias_funcionario(f)
         # BUG-FIX: registrar auditoria na edição (antes só o DELETE registrava).
         audit_event(
             "funcionario_editar",
@@ -10769,6 +10837,79 @@ def api_atualizar_funcionario(id):
         return jsonify(
             {"erro": "Não foi possível atualizar o funcionário (dados duplicados)."}
         ), 400
+
+
+@app.route("/api/ferias/notificar", methods=["POST"])
+@_limiter.limit("10 per minute")
+@lr
+def api_ferias_notificar():
+    d = request.get_json(silent=True) or {}
+    ids_raw = d.get("funcionario_ids")
+    if not isinstance(ids_raw, list) or not ids_raw:
+        return jsonify({"erro": "funcionario_ids é obrigatório."}), 400
+
+    ids = []
+    for v in ids_raw:
+        n = to_num(v)
+        if n and int(n) > 0:
+            ids.append(int(n))
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        return jsonify({"erro": "Nenhum funcionário válido informado."}), 400
+
+    funcs_lista = Funcionario.query.filter(Funcionario.id.in_(ids)).all()
+    funcs = {f.id: f for f in funcs_lista}
+
+    enviados_push = 0
+    enviados_wpp = 0
+    sem_contato = 0
+    sem_periodo = 0
+
+    for fid in ids:
+        f = funcs.get(fid)
+        if not f:
+            sem_contato += 1
+            continue
+        st = (f.status or "Ativo").strip().lower()
+        if st in ("demitido", "inativo"):
+            sem_contato += 1
+            continue
+        r = _notificar_ferias_funcionario(f)
+        if r.get("push"):
+            enviados_push += 1
+        if r.get("whatsapp"):
+            enviados_wpp += 1
+        if r.get("sem_periodo"):
+            sem_periodo += 1
+        elif r.get("sem_contato"):
+            sem_contato += 1
+
+    audit_event(
+        "ferias_notificar",
+        "usuario",
+        session.get("uid"),
+        "funcionario",
+        0,
+        True,
+        {
+            "qtd_ids": len(ids),
+            "enviados_push": enviados_push,
+            "enviados_whatsapp": enviados_wpp,
+            "sem_contato": sem_contato,
+            "sem_periodo": sem_periodo,
+        },
+    )
+
+    return jsonify(
+        {
+            "ok": True,
+            "enviados": (enviados_push + enviados_wpp),
+            "enviados_push": enviados_push,
+            "enviados_whatsapp": enviados_wpp,
+            "sem_contato": sem_contato,
+            "sem_periodo": sem_periodo,
+        }
+    )
 
 
 @app.route("/api/funcionarios/<int:id>", methods=["DELETE"])
