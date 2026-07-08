@@ -9850,6 +9850,8 @@ def _sync_ferias_status():
         if status_normalizado in ("demitido", "inativo", "afastado", "aviso prévio", "aviso previo"):
             if _aplicar_regra_jornada_por_status(f):
                 alterados += 1
+            if _aplicar_regra_posto_por_status(f):
+                alterados += 1
             continue
         ini = (f.ferias_inicio or "").strip()
         fim = (f.ferias_fim or "").strip()
@@ -9871,6 +9873,8 @@ def _sync_ferias_status():
             f.status = "Ativo"
             alterados += 1
         if _aplicar_regra_jornada_por_status(f):
+            alterados += 1
+        if _aplicar_regra_posto_por_status(f):
             alterados += 1
     if alterados:
         db.session.commit()
@@ -9917,6 +9921,25 @@ def _aplicar_regra_jornada_por_status(funcionario):
             changed = True
         funcionario.jornada_id_retorno = None
         changed = True
+
+    return changed
+
+
+def _aplicar_regra_posto_por_status(funcionario):
+    """Regras automáticas de vínculo em posto:
+    - Demitido/Inativo: remove do posto do cliente e volta para Reserva tecnica.
+    """
+    changed = False
+    st = _status_norm(getattr(funcionario, "status", "Ativo"))
+
+    if st in ("demitido", "inativo"):
+        if getattr(funcionario, "posto_cliente_id", None) is not None:
+            funcionario.posto_cliente_id = None
+            changed = True
+        posto_atual = (getattr(funcionario, "posto_operacional", "") or "").strip()
+        if posto_atual != "Reserva tecnica":
+            funcionario.posto_operacional = "Reserva tecnica"
+            changed = True
 
     return changed
 
@@ -10787,6 +10810,7 @@ def api_atualizar_funcionario(id):
         ars = [a for a in d.get("areas", []) if a in ALLOWED_AREAS]
         f.areas = json.dumps(ars, ensure_ascii=False)
     _aplicar_regra_jornada_por_status(f)
+    _aplicar_regra_posto_por_status(f)
     try:
         db.session.commit()
         # Sync imediato: se as datas de férias foram alteradas, recalcula o
@@ -10814,6 +10838,7 @@ def api_atualizar_funcionario(id):
                     _changed = True
                 if _changed:
                     _aplicar_regra_jornada_por_status(f)
+                    _aplicar_regra_posto_por_status(f)
                     db.session.commit()
             # Notificação push ao colaborador informando as férias agendadas.
             # Só envia se o campo "notificar_ferias" for explicitamente True no payload,
