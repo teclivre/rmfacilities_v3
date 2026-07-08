@@ -533,22 +533,42 @@ async function pontoAbrirEditDia(){
 }
 
 let _pedNovaSeq=0;
+
+const _PED_TIPOS_SEQ=['entrada','saida_intervalo','retorno_intervalo','saida'];
+const _PED_TIPOS_LABEL={
+  entrada:'Entrada',
+  saida_intervalo:'Saída para refeição',
+  retorno_intervalo:'Retorno da refeição',
+  saida:'Saída'
+};
+
+function _pedProximoTipoAutomatico(){
+  const wrap=document.getElementById('ped-marcacoes-wrap');
+  if(!wrap) return 'entrada';
+  const tipos=Array.from(wrap.querySelectorAll('.ped-tipo'))
+    .map(el=>String(el.value||'').trim().toLowerCase())
+    .filter(t=>_PED_TIPOS_SEQ.includes(t));
+  if(!tipos.length) return 'entrada';
+  const ultimo=tipos[tipos.length-1];
+  const idx=_PED_TIPOS_SEQ.indexOf(ultimo);
+  if(idx<0) return 'entrada';
+  return _PED_TIPOS_SEQ[(idx+1)%_PED_TIPOS_SEQ.length];
+}
+
 function pedAdicionarLinha(){
   const wrap=document.getElementById('ped-marcacoes-wrap');
   const addBtn=wrap.querySelector('button[onclick="pedAdicionarLinha()"]');
   const fid=(_pedCtx?.fid)||parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
   const data=(_pedCtx?.data)||document.getElementById('ponto-data')?.value||pontoDataHojeISO();
   const seq='new_'+(++_pedNovaSeq);
+  const tipoAuto=_pedProximoTipoAutomatico();
+  const tipoLabel=_PED_TIPOS_LABEL[tipoAuto]||'Entrada';
   const div=document.createElement('div');
   div.innerHTML=`<div class="card" style="margin:0 0 8px;padding:10px;position:relative" data-marc-id="${seq}" data-nova="1">
     <div class="g3" style="align-items:flex-end;gap:8px">
-      <div class="f" style="margin:0"><label style="font-size:11px">Tipo</label>
-        <select class="ped-tipo" data-id="${seq}">
-          <option value="entrada">Entrada</option>
-          <option value="saida_intervalo">Saída intervalo</option>
-          <option value="retorno_intervalo">Retorno intervalo</option>
-          <option value="saida">Saída</option>
-        </select>
+      <div class="f" style="margin:0"><label style="font-size:11px">Tipo (automático)</label>
+        <input value="${tipoLabel}" readonly style="width:100%;opacity:.85;cursor:default">
+        <input type="hidden" class="ped-tipo" data-id="${seq}" value="${tipoAuto}">
       </div>
       <div class="f" style="margin:0"><label style="font-size:11px">${_pedCtx?.isGf?'Hora':'Data/hora'}</label>
         <input class="ped-dh" data-id="${seq}" type="${_pedCtx?.isGf?'time':'datetime-local'}" value="${_pedCtx?.isGf?'00:00':data+'T00:00'}">
