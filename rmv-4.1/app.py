@@ -18034,6 +18034,49 @@ def _app_ponto_max_marcacoes_dia(funcionario):
     return 4
 
 
+def _app_is_feriado_para_funcionario(funcionario, data_ref_str):
+    """Retorna True se existir feriado aplicavel ao funcionario na data informada."""
+
+    def _norm_posto(v):
+        t = (v or "").strip()
+        return (t or "Reserva tecnica").lower()
+
+    try:
+        feriados = Feriado.query.filter(Feriado.data == data_ref_str).all()
+        if not feriados:
+            return False
+
+        feriado_ids = [f.id for f in feriados if getattr(f, "id", None)]
+        vinc_map = {}
+        if feriado_ids:
+            for v in FeriadoFuncionario.query.filter(
+                FeriadoFuncionario.feriado_id.in_(feriado_ids)
+            ).all():
+                vinc_map.setdefault(v.feriado_id, set()).add(v.funcionario_id)
+
+        posto_func = _norm_posto(getattr(funcionario, "posto_operacional", ""))
+        for fer in feriados:
+            tipo = (fer.tipo or "").strip().lower()
+            if tipo == "nacional":
+                return True
+
+            postos_fer = _feriado_parse_postos(getattr(fer, "posto_operacional", ""))
+            if postos_fer:
+                postos_norm = {_norm_posto(p) for p in postos_fer}
+                if posto_func not in postos_norm:
+                    continue
+
+            vincs = vinc_map.get(fer.id, set())
+            if vincs and funcionario.id not in vincs:
+                continue
+
+            return True
+    except Exception:
+        return False
+
+    return False
+
+
 def _app_ponto_resumo_dia(funcionario, data_ref):
     marcacoes = _app_ponto_marcacoes_dia(funcionario.id, data_ref)
     inconsistencias = []
@@ -18125,6 +18168,7 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
     dia_tipo = "normal"
     afastamento_info = None
     status_func = (funcionario.status or "").strip()
+    is_feriado = _app_is_feriado_para_funcionario(funcionario, data_ref_str)
     if status_func.lower() in ("férias", "ferias"):
         dia_tipo = "ferias"
     af = _afastamento_ativo_na_data(funcionario.id, data_ref_str)
@@ -18136,7 +18180,10 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
             "data_fim": af.data_fim,
             "observacao": af.observacao or "",
         }
-    if dia_tipo in ("afastamento", "ferias"):
+    elif is_feriado:
+        dia_tipo = "feriado"
+
+    if dia_tipo in ("afastamento", "ferias", "feriado"):
         min_esp = 0
         saldo = min_trab - min_esp
     elif dia_tipo == "normal" and min_esp == 0 and not marcacoes:
@@ -18161,7 +18208,7 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
         "correcoes_faltando_pendentes": correcoes_faltando_pendentes,
         "fechado": fd is not None,
         "fechado_por": (fd.fechado_por or "") if fd else "",
-        "dia_tipo": dia_tipo,  # "normal" | "folga" | "ferias" | "afastamento"
+        "dia_tipo": dia_tipo,  # "normal" | "folga" | "ferias" | "afastamento" | "feriado"
         "afastamento_info": afastamento_info,
     }
 
