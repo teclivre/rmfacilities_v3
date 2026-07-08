@@ -1929,9 +1929,9 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
             <div class="f"><label>Município (se municipal)</label><input id="fer-municipio" placeholder="Ex: São Paulo" maxlength="100"></div>
             <div class="f"><label>Estado (UF)</label><input id="fer-estado" placeholder="SP" maxlength="2" style="width:60px"></div>
-            <div class="f"><label>Posto (opcional)</label><select id="fer-posto"><option value="">Todos os postos (inclui reserva técnica)</option></select></div>
+            <div class="f"><label>Postos (opcional)</label><select id="fer-posto" multiple size="6"></select></div>
           </div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:8px">Se não escolher posto, o feriado vale para todos os postos, inclusive reserva técnica.</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:8px">Você pode escolher vários postos. Se não escolher nenhum, o feriado vale para todos os postos, inclusive reserva técnica.</div>
           <div class="brow" style="justify-content:flex-start;margin-top:8px">
             <button class="btn b-vd b-sm" onclick="ferSalvar()">&#128190; Salvar feriado</button>
           </div>
@@ -12787,13 +12787,12 @@ async function ferCarregar(){
 function ferAtualizarInfoSelecionados(){
   const sel=document.getElementById('fer-posto');
   if(!sel) return;
-  const atual=(sel.value||'').trim();
+  const atuais=new Set(Array.from(sel.selectedOptions||[]).map(o=>(o.value||'').trim()).filter(Boolean));
   const base=((beneficiosMensais&&beneficiosMensais.length)?beneficiosMensais:((funcs&&funcs.length)?funcs:(pontoFuncs||[])));
   const postos=[...new Set(base.map(it=>(it.posto_operacional||'Reserva tecnica').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   if(!postos.find(p=>p.toLowerCase()==='reserva tecnica')) postos.push('Reserva tecnica');
-  sel.innerHTML='<option value="">Todos os postos (inclui reserva técnica)</option>'+postos.map(p=>`<option value="${escHtml(p)}">${escHtml(p)}</option>`).join('');
-  const found=postos.find(p=>p===atual);
-  if(found) sel.value=found;
+  sel.innerHTML=postos.map(p=>`<option value="${escHtml(p)}">${escHtml(p)}</option>`).join('');
+  Array.from(sel.options).forEach(opt=>{ opt.selected=atuais.has(opt.value); });
 }
 
 function ferRenderTabela(){
@@ -12810,7 +12809,7 @@ function ferRenderTabela(){
       <td><span style="background:${f.tipo==='nacional'?'var(--azul-esc)':'var(--azul)'};color:var(--branco);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700">${f.tipo||''}</span></td>
       <td>${escHtml(f.municipio||'')}</td>
       <td>${escHtml(f.estado||'')}</td>
-      <td>${f.tipo==='nacional' ? 'Nacional (todos)' : (f.posto_operacional ? ('Posto: '+escHtml(f.posto_operacional)) : ((f.qtd_funcionarios||0)>0 ? ((f.qtd_funcionarios||0)+' funcionário(s)') : 'Todos os postos (inclui reserva técnica)'))}</td>
+      <td>${f.tipo==='nacional' ? 'Nacional (todos)' : ((f.postos_operacionais||[]).length ? ('Postos: '+(f.postos_operacionais||[]).map(p=>escHtml(p)).join(', ')) : ((f.qtd_funcionarios||0)>0 ? ((f.qtd_funcionarios||0)+' funcionário(s)') : 'Todos os postos (inclui reserva técnica)'))}</td>
       <td><button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);border:1px solid var(--verm);padding:2px 8px" onclick="ferExcluir(${f.id})">&#128465;</button></td>
     </tr>`).join('');
 }
@@ -12821,7 +12820,7 @@ async function ferSalvar(){
   const tipo=document.getElementById('fer-tipo').value;
   const municipio=document.getElementById('fer-municipio').value.trim();
   const estado=document.getElementById('fer-estado').value.trim();
-  const posto=(document.getElementById('fer-posto')?.value||'').trim();
+  const postos=Array.from(document.getElementById('fer-posto')?.selectedOptions||[]).map(o=>(o.value||'').trim()).filter(Boolean);
   const st=document.getElementById('fer-status');
   if(!data){st.textContent='Informe a data.';st.style.color='var(--verm-cl)';return;}
   if(!desc){st.textContent='Informe a descrição.';st.style.color='var(--verm-cl)';return;}
@@ -12837,7 +12836,7 @@ async function ferSalvar(){
       tipo,
       municipio,
       estado,
-      posto_operacional:posto||null
+      postos_operacionais:postos
     })});
   const j=await r.json();
   if(j.ok){

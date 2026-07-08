@@ -2272,6 +2272,7 @@ class Feriado(db.Model):
 
     def to_dict(self):
         d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        d["postos_operacionais"] = _feriado_parse_postos(d.get("posto_operacional"))
         if (d.get("tipo") or "").lower() == "estadual":
             _m = (d.get("municipio") or "").strip()
             if _m.startswith("@UF:"):
@@ -2287,6 +2288,57 @@ class Feriado(db.Model):
         except Exception:
             d["data_fmt"] = self.data or ""
         return d
+
+
+def _feriado_parse_postos(raw_value):
+    txt = (raw_value or "").strip()
+    if not txt:
+        return []
+    if txt.startswith("["):
+        try:
+            arr = json.loads(txt)
+            if isinstance(arr, list):
+                out = []
+                seen = set()
+                for item in arr:
+                    nome = re.sub(r"\s+", " ", str(item or "")).strip()
+                    if not nome:
+                        continue
+                    key = nome.lower()
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    out.append(nome)
+                return out
+        except Exception:
+            pass
+    out = []
+    seen = set()
+    for item in txt.split(","):
+        nome = re.sub(r"\s+", " ", str(item or "")).strip()
+        if not nome:
+            continue
+        key = nome.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(nome)
+    return out
+
+
+def _feriado_dump_postos(valores):
+    itens = []
+    seen = set()
+    for item in (valores or []):
+        nome = re.sub(r"\s+", " ", str(item or "")).strip()
+        if not nome:
+            continue
+        key = nome.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        itens.append(nome)
+    return json.dumps(itens, ensure_ascii=False) if itens else ""
 
 
 class FeriadoFuncionario(db.Model):
@@ -25204,7 +25256,13 @@ def api_feriados_criar():
     tipo = (d.get("tipo") or "nacional").strip().lower()
     municipio = (d.get("municipio") or "").strip()
     estado = (d.get("estado") or "").strip().upper()[:2]
-    posto_operacional = (d.get("posto_operacional") or "").strip()
+    postos_operacionais = d.get("postos_operacionais") or []
+    if not isinstance(postos_operacionais, list):
+        postos_operacionais = []
+    if not postos_operacionais:
+        posto_operacional = (d.get("posto_operacional") or "").strip()
+        if posto_operacional:
+            postos_operacionais = [posto_operacional]
     empresa_id = to_num(d.get("empresa_id")) or None
     funcionario_ids = {
         int(x) for x in (d.get("funcionario_ids") or []) if str(x).isdigit()
@@ -25246,7 +25304,7 @@ def api_feriados_criar():
         tipo=tipo,
         municipio=municipio,
         estado=estado,
-        posto_operacional=("" if tipo == "nacional" else posto_operacional),
+        posto_operacional=("" if tipo == "nacional" else _feriado_dump_postos(postos_operacionais)),
         empresa_id=empresa_id,
         criado_por=session.get("nome", ""),
     )
@@ -25278,7 +25336,13 @@ def api_feriados_editar(fid):
     tipo = (d.get("tipo") or f.tipo or "nacional").strip().lower()
     municipio = (d.get("municipio") or "").strip()
     estado = (d.get("estado") or "").strip().upper()[:2]
-    posto_operacional = (d.get("posto_operacional") or "").strip()
+    postos_operacionais = d.get("postos_operacionais") or []
+    if not isinstance(postos_operacionais, list):
+        postos_operacionais = []
+    if not postos_operacionais:
+        posto_operacional = (d.get("posto_operacional") or "").strip()
+        if posto_operacional:
+            postos_operacionais = [posto_operacional]
     funcionario_ids = {
         int(x) for x in (d.get("funcionario_ids") or []) if str(x).isdigit()
     }
@@ -25307,7 +25371,7 @@ def api_feriados_editar(fid):
         municipio = f"@UF:{estado}"
     f.municipio = municipio
     f.estado = estado
-    f.posto_operacional = "" if f.tipo == "nacional" else posto_operacional
+    f.posto_operacional = "" if f.tipo == "nacional" else _feriado_dump_postos(postos_operacionais)
     if "empresa_id" in d:
         f.empresa_id = to_num(d.get("empresa_id")) or None
     if f.tipo in ("municipal", "estadual") and funcionario_ids:
@@ -25724,8 +25788,8 @@ def api_beneficios_calcular_por_periodo():
         _tipo = (feriado_obj.tipo or "").strip().lower()
         if _tipo == "nacional":
             return True
-        _posto_fer = (getattr(feriado_obj, "posto_operacional", "") or "").strip()
-        if _posto_fer and _norm_posto(_posto_fer) != _norm_posto(funcionario_obj.posto_operacional):
+        _postos_fer = _feriado_parse_postos(getattr(feriado_obj, "posto_operacional", ""))
+        if _postos_fer and _norm_posto(funcionario_obj.posto_operacional) not in {_norm_posto(x) for x in _postos_fer}:
             return False
         _vincs = feriado_vinc_map.get(feriado_obj.id, set())
         if _vincs:

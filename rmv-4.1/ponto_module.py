@@ -331,6 +331,19 @@ def register_ponto_routes(
             t = (v or "").strip()
             return (t or "Reserva tecnica").lower()
 
+        def _parse_postos(raw_value):
+            txt = (raw_value or "").strip()
+            if not txt:
+                return []
+            if txt.startswith("["):
+                try:
+                    arr = json.loads(txt)
+                    if isinstance(arr, list):
+                        return [str(x or "").strip() for x in arr if str(x or "").strip()]
+                except Exception:
+                    pass
+            return [p.strip() for p in txt.split(",") if p.strip()]
+
         try:
             inicio_mes = data_ref.replace(day=1)
             if data_ref.month == 12:
@@ -366,8 +379,8 @@ def register_ponto_routes(
                 if tipo == "nacional":
                     aplica = True
                 else:
-                    posto_fer = (getattr(fer, "posto_operacional", "") or "").strip()
-                    if posto_fer and _norm_posto(posto_fer) != posto_func:
+                    postos_fer = _parse_postos(getattr(fer, "posto_operacional", ""))
+                    if postos_fer and posto_func not in {_norm_posto(p) for p in postos_fer}:
                         aplica = False
                     else:
                         vincs = vinc_map.get(fer.id, set())
