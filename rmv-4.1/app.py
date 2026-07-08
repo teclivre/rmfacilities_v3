@@ -19635,6 +19635,7 @@ def api_escala_excluir(id):
 def api_escala_vincular_funcionarios(id):
     e = db.get_or_404(Escala, id)
     d = request.json or {}
+    substituir_escala_atual = bool(d.get("substituir_escala_atual"))
     pares = (
         d.get("funcionarios") or []
     )  # [{'funcionario_id': 1, 'data_inicio': '2026-05-11', 'data_fim': None}, ...]
@@ -19642,6 +19643,7 @@ def api_escala_vincular_funcionarios(id):
         return jsonify({"erro": "funcionarios deve ser lista"}), 400
 
     vinculados = []
+    movidos_de_outra_escala = []
     for par in pares:
         if not isinstance(par, dict):
             continue
@@ -19707,14 +19709,28 @@ def api_escala_vincular_funcionarios(id):
         ).first()
 
         if conflito:
-            esc_atual = db.session.get(Escala, conflito.escala_id)
-            return jsonify(
-                {
-                    "erro": f"Funcionário {f.nome} já está em outra escala ({esc_atual.nome if esc_atual else f'escala #{conflito.escala_id}'})",
-                    "conflito_funcionario_id": fid,
-                    "conflito_escala_id": conflito.escala_id,
-                }
-            ), 409
+            if substituir_escala_atual:
+                # Move de escala: encerra vínculo anterior e cria o novo na escala alvo.
+                conflito.ativo = False
+                try:
+                    dt_ini = datetime.strptime(str(data_ini), "%Y-%m-%d").date()
+                    if conflito.data_inicio and str(conflito.data_inicio) < str(data_ini):
+                        conflito.data_fim = (dt_ini - timedelta(days=1)).isoformat()
+                except Exception:
+                    pass
+                movidos_de_outra_escala.append({
+                    "funcionario_id": fid,
+                    "escala_origem_id": conflito.escala_id,
+                })
+            else:
+                esc_atual = db.session.get(Escala, conflito.escala_id)
+                return jsonify(
+                    {
+                        "erro": f"Funcionário {f.nome} já está em outra escala ({esc_atual.nome if esc_atual else f'escala #{conflito.escala_id}'})",
+                        "conflito_funcionario_id": fid,
+                        "conflito_escala_id": conflito.escala_id,
+                    }
+                ), 409
 
         # Criar vínculo
         ef = EscalaFuncionario(
@@ -19735,9 +19751,19 @@ def api_escala_vincular_funcionarios(id):
         "escala",
         id,
         True,
-        {"funcionarios": vinculados},
+        {
+            "funcionarios": vinculados,
+            "substituir_escala_atual": substituir_escala_atual,
+            "movidos_de_outra_escala": movidos_de_outra_escala,
+        },
     )
-    return jsonify({"ok": True, "vinculados": len(vinculados)})
+    return jsonify(
+        {
+            "ok": True,
+            "vinculados": len(vinculados),
+            "movidos_de_outra_escala": movidos_de_outra_escala,
+        }
+    )
 
 
 @app.route("/api/escalas/<int:id>/funcionarios/trocar", methods=["POST"])

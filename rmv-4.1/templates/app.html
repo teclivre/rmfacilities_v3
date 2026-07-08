@@ -1891,6 +1891,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div class="hint" style="margin-top:4px">Use Ctrl/Cmd para selecionar múltiplos funcionários. Data de início define quando a escala começa a valer.</div>
             <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
               <button class="btn b-ghv b-sm" onclick="rhEscalaVincularSelecionados()">Vincular selecionados</button>
+              <button class="btn b-az b-sm" onclick="rhEscalaMoverSelecionados()">Mover para esta escala</button>
             </div>
 
             <label style="margin-top:12px">Trocar funcionário na escala</label>
@@ -8276,6 +8277,43 @@ async function rhEscalaVincularSelecionados(){
   rhEscalaCarregarFuncsParaVinc();
   renderFuncionarios();
   showSt('rh-escala-st','Funcionários vinculados à escala.',false);
+}
+
+async function rhEscalaMoverSelecionados(){
+  const eid=(document.getElementById('rh-esc-vinc-escala')?.value||'').trim();
+  if(!eid){
+    showSt('rh-escala-st','Selecione a escala de destino.',true);
+    return;
+  }
+  const dataIni=(document.getElementById('rh-esc-vinc-data-ini')?.value||'').trim();
+  if(!dataIni){
+    showSt('rh-escala-st','Informe a data de início.',true);
+    return;
+  }
+  const sel=document.getElementById('rh-esc-vinc-funcs');
+  const ids=Array.from(sel?.selectedOptions||[]).map(o=>parseInt(o.value,10)).filter(x=>!Number.isNaN(x));
+  if(!ids.length){
+    showSt('rh-escala-st','Selecione ao menos um funcionário.',true);
+    return;
+  }
+
+  const funcionarios=ids.map(fid=>({funcionario_id:fid,data_inicio:dataIni,data_fim:null}));
+  const r=await api('/api/escalas/'+eid+'/funcionarios','POST',{
+    funcionarios,
+    substituir_escala_atual:true,
+  });
+  if(r?.erro){
+    showSt('rh-escala-st',r.erro,true);
+    return;
+  }
+
+  const movidos=Array.isArray(r?.movidos_de_outra_escala)?r.movidos_de_outra_escala.length:0;
+  funcs=await api('/api/funcionarios');
+  pontoFuncs=[...funcs];
+  await rhEscalaCarregar();
+  rhEscalaCarregarFuncsParaVinc();
+  renderFuncionarios();
+  showSt('rh-escala-st',`Funcionários movidos para a nova escala. Movidos de outra escala: ${movidos}.`,false);
 }
 
 async function rhEscalaTrocarFuncionario(){
