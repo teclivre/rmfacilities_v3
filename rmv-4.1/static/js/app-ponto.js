@@ -1311,8 +1311,12 @@ async function pontoExcluirAfastamento(aid){
 }
 
 function pontoAbrirModalAfastamento(){
-  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
-  if(!fid){showSt('ponto-st','Selecione um colaborador primeiro.',true);return;}
+  const fidPonto=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
+  const fidGf=parseInt(gfFuncId||'0',10);
+  const usandoGf=(_gfPaneVisible() && fidGf>0);
+  const fid=usandoGf?fidGf:fidPonto;
+  const stId=usandoGf?'gf-st':'ponto-st';
+  if(!fid){showSt(stId,'Selecione um colaborador primeiro.',true);return;}
   const hoje=pontoDataHojeISO();
   // Modal inline
   const _ov=document.createElement('div');
@@ -1392,10 +1396,14 @@ function pontoAbrirModalAfastamento(){
     btn.disabled=false;btn.textContent='Salvar afastamento';
     if(r&&r.erro){st.textContent=r.erro;st.style.display='';return;}
     document.body.removeChild(_ov);
-    showSt('ponto-st','Afastamento registrado com sucesso!',false);
-    await pontoCarregarAfastamentos();
-    await pontoCarregarDia();
-    await pontoCarregarPainelDia();
+    showSt(stId,'Afastamento registrado com sucesso!',false);
+    if(usandoGf){
+      await gfCarregarMes();
+    } else {
+      await pontoCarregarAfastamentos();
+      await pontoCarregarDia();
+      await pontoCarregarPainelDia();
+    }
   };
 }
 
