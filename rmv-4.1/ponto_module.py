@@ -610,6 +610,8 @@ def register_ponto_routes(
                     "intrajornada_min": resumo["intrajornada_min"],
                     "intrajornada_fmt": resumo["intrajornada_fmt"],
                     "status": resumo["status"],
+                    "dia_tipo": resumo.get("dia_tipo", "normal"),
+                    "afastamento_info": resumo.get("afastamento_info"),
                     "marcacoes_count": len(resumo["marcacoes"]),
                     "inconsistencias": resumo["inconsistencias"],
                 }
