@@ -19256,10 +19256,10 @@ def api_escalas_criar():
     tipo = (d.get("tipo") or "").strip()
     if not nome:
         return jsonify({"erro": "Nome obrigatório"}), 400
-    if tipo not in ("6x2", "6x1", "4x2", "12x36", "folguista", "noturna"):
+    if tipo not in ("5x2", "6x2", "6x1", "4x2", "12x36", "folguista", "noturna"):
         return jsonify(
             {
-                "erro": "Tipo deve ser '6x2', '6x1', '4x2', '12x36', 'folguista' ou 'noturna'"
+                "erro": "Tipo deve ser '5x2', '6x2', '6x1', '4x2', '12x36', 'folguista' ou 'noturna'"
             }
         ), 400
 
@@ -19388,6 +19388,7 @@ def api_escala_editar(id):
     if "nome" in d:
         e.nome = (d.get("nome") or "").strip() or e.nome
     if "tipo" in d and d.get("tipo") in (
+        "5x2",
         "6x2",
         "6x1",
         "4x2",

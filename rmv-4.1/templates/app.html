@@ -1787,7 +1787,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
 
       <div class="card rh-pane" id="rh-pane-escalas" data-rh-pane="escalas">
-        <div class="card-header"><span class="card-title">Escalas de Turnos (6x1, 6x2, 4x2, 12x36, Folguista)</span></div>
+        <div class="card-header"><span class="card-title">Escalas de Turnos (5x2, 6x1, 6x2, 4x2, 12x36, Folguista)</span></div>
         <div class="g2" style="margin-top:8px">
           <div class="f" style="border:1px solid var(--borda);border-radius:10px;padding:10px;background:var(--cinza-cl)">
             <input id="rh-esc-id" type="hidden">
@@ -1797,6 +1797,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <label style="margin-top:8px">Tipo de escala</label>
             <select id="rh-esc-tipo" onchange="rhEscalaAtualizarCicloTemplate()">
               <option value="">-- Selecione --</option>
+              <option value="5x2">5x2 (5 dias trabalho, 2 folga)</option>
               <option value="6x1">6x1 (seg-sáb trabalho, dom folga)</option>
               <option value="6x2">6x2 (6 dias trabalho, 2 folga)</option>
               <option value="4x2">4x2 (4 dias trabalho, 2 folga)</option>
@@ -1841,7 +1842,15 @@ document.addEventListener('DOMContentLoaded',()=>{
               <div class="f"><label>Dias de trabalho no ciclo</label><input id="rh-esc-dias-trabalho" type="number" min="1" max="31" value="6"></div>
               <div class="f"><label>Dias de folga no ciclo</label><input id="rh-esc-dias-folga" type="number" min="0" max="31" value="2"></div>
             </div>
+            <div class="f" style="margin-top:6px">
+              <label>Ordem do ciclo</label>
+              <select id="rh-esc-ordem" onchange="rhEscalaAtualizarCicloTemplate()">
+                <option value="trabalho_folga">Trabalho primeiro, depois folga</option>
+                <option value="folga_trabalho">Folga primeiro, depois trabalho</option>
+              </select>
+            </div>
             <div class="hint" style="margin-top:4px">Você só preenche os campos acima. O sistema monta o ciclo automaticamente.</div>
+            <div class="hint" style="margin-top:4px">Para folga fixa segunda e terça em 5x2: escolha “Folga primeiro, depois trabalho” e vincule com data de início na segunda-feira.</div>
 
             <details style="margin-top:8px">
               <summary style="cursor:pointer">Pré-visualização técnica (somente leitura)</summary>
@@ -7967,6 +7976,7 @@ function rhEscalaMontarCiclo(){
   const intervalo=parseInt((document.getElementById('rh-esc-intervalo')?.value||'60').trim(),10)||0;
   const diasTrabalho=Math.max(1,parseInt((document.getElementById('rh-esc-dias-trabalho')?.value||'6').trim(),10)||6);
   const diasFolga=Math.max(0,parseInt((document.getElementById('rh-esc-dias-folga')?.value||'2').trim(),10)||2);
+  const ordem=(document.getElementById('rh-esc-ordem')?.value||'trabalho_folga').trim();
 
   const dias=[];
   const diaBase=rhEscalaMontarDiaTrabalho(turno,horaEntrada,horaSaida,intervalo);
@@ -7995,8 +8005,13 @@ function rhEscalaMontarCiclo(){
     return {dias};
   }
 
-  for(let i=0;i<diasTrabalho;i++) dias.push({...diaBase});
-  for(let i=0;i<diasFolga;i++) dias.push({tipo:'folga'});
+  if(ordem==='folga_trabalho'){
+    for(let i=0;i<diasFolga;i++) dias.push({tipo:'folga'});
+    for(let i=0;i<diasTrabalho;i++) dias.push({...diaBase});
+  }else{
+    for(let i=0;i<diasTrabalho;i++) dias.push({...diaBase});
+    for(let i=0;i<diasFolga;i++) dias.push({tipo:'folga'});
+  }
   return {dias};
 }
 
@@ -8007,6 +8022,10 @@ function rhEscalaAtualizarCicloTemplate(){
   const noturnoConfig=document.getElementById('rh-esc-noturno-config');
   const cfg6x1=document.getElementById('rh-esc-6x1-config');
   if(!cicloArea) return;
+  if(tipo==='5x2'){
+    document.getElementById('rh-esc-dias-trabalho').value='5';
+    document.getElementById('rh-esc-dias-folga').value='2';
+  }
   if(tipo==='6x1'){
     document.getElementById('rh-esc-dias-trabalho').value='6';
     document.getElementById('rh-esc-dias-folga').value='1';
@@ -8032,6 +8051,8 @@ function rhEscalaEditar(id){
   const dias=(e?.ciclo?.dias||[]);
   const diasTrabalho=dias.filter(d=>d && d.tipo==='trabalho');
   const diasFolga=dias.filter(d=>d && d.tipo==='folga');
+  const primeiroTipo=((dias[0]||{}).tipo||'').toLowerCase();
+  document.getElementById('rh-esc-ordem').value=(primeiroTipo==='folga')?'folga_trabalho':'trabalho_folga';
   if(diasTrabalho.length){
     const base=diasTrabalho[0]||{};
     if(base.hora_entrada) document.getElementById('rh-esc-hora-entrada').value=base.hora_entrada;
@@ -8065,6 +8086,7 @@ async function rhEscalaLimparForm(){
   document.getElementById('rh-esc-intervalo').value='60';
   document.getElementById('rh-esc-dias-trabalho').value='6';
   document.getElementById('rh-esc-dias-folga').value='2';
+  document.getElementById('rh-esc-ordem').value='trabalho_folga';
   document.getElementById('rh-esc-sab-hora-entrada').value='08:00';
   document.getElementById('rh-esc-sab-hora-saida').value='12:00';
   document.getElementById('rh-esc-sab-intervalo').value='0';
