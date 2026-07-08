@@ -505,10 +505,13 @@ async function pontoAbrirEditDia(){
   document.getElementById('ped-info').textContent=`Editando marcações de ${f?.nome||'Colaborador'} em ${data}`;
 
   function buildRow(id,tipo,dh,obs,isNova){
+    const tipoNorm=String(tipo||'entrada').trim().toLowerCase();
+    const tipoLabel=_PED_TIPOS_LABEL[tipoNorm]||'Entrada';
     return `<div class="card" style="margin:0 0 8px;padding:10px;position:relative" data-marc-id="${id}" data-nova="${isNova?'1':''}">
       <div class="g3" style="align-items:flex-end;gap:8px">
-        <div class="f" style="margin:0"><label style="font-size:11px">Tipo</label>
-          <select class="ped-tipo" data-id="${id}">${tiposOpts.replace(`value="${tipo}"`,`value="${tipo}" selected`)}</select>
+        <div class="f" style="margin:0"><label style="font-size:11px">Tipo (automático)</label>
+          <input value="${tipoLabel}" readonly style="width:100%;opacity:.85;cursor:default">
+          <input type="hidden" class="ped-tipo" data-id="${id}" value="${tipoNorm}">
         </div>
         <div class="f" style="margin:0"><label style="font-size:11px">Data/hora</label>
           <input class="ped-dh" data-id="${id}" type="datetime-local" value="${dh}">
@@ -916,10 +919,13 @@ function gfAbrirEditDia(dataRef){
   function toDtLocal(dh){ return _dhParaInput(dh); }
 
   function buildRow(id,tipo,dh,obs,isNova){
+    const tipoNorm=String(tipo||'entrada').trim().toLowerCase();
+    const tipoLabel=_PED_TIPOS_LABEL[tipoNorm]||'Entrada';
     return `<div class="card" style="margin:0 0 8px;padding:10px;position:relative" data-marc-id="${id}" data-nova="${isNova?'1':''}">
       <div class="g3" style="align-items:flex-end;gap:8px">
-        <div class="f" style="margin:0"><label style="font-size:11px">Tipo</label>
-          <select class="ped-tipo" data-id="${id}">${tiposOpts.replace(`value="${tipo}"`,`value="${tipo}" selected`)}</select>
+        <div class="f" style="margin:0"><label style="font-size:11px">Tipo (automático)</label>
+          <input value="${tipoLabel}" readonly style="width:100%;opacity:.85;cursor:default">
+          <input type="hidden" class="ped-tipo" data-id="${id}" value="${tipoNorm}">
         </div>
         <div class="f" style="margin:0"><label style="font-size:11px">Hora</label>
           <input class="ped-dh" data-id="${id}" type="time" value="${dh}">
