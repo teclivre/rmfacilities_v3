@@ -1904,8 +1904,8 @@ def register_ponto_routes(
             elif resumo.get("dia_tipo") == "ferias" and not marcacoes_ord:
                 marcacoes_str = "Ferias"
                 faltas = ""
-            elif resumo.get("dia_tipo") == "feriado" and not marcacoes_ord:
-                marcacoes_str = "Feriado"
+            elif resumo.get("dia_tipo") == "feriado":
+                marcacoes_str = f"{marcacoes_str} | FERIADO" if marcacoes_str else "FERIADO"
                 faltas = ""
 
             total_previstas += previstas

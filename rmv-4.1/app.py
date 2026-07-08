@@ -18892,6 +18892,9 @@ def api_app_ponto_espelho_pdf_me():
                 status_val = "Afastamento"
             elif dia_tipo == "ferias" and not marcacoes:
                 marc_str = "Ferias"
+            elif dia_tipo == "feriado":
+                marc_str = f"{marc_str} | FERIADO" if marcacoes else "FERIADO"
+                status_val = "Feriado"
             rows.append(
                 [
                     data_str,
