@@ -38,32 +38,11 @@
       </div>
 
       <div style="margin-top:12px;border:1px solid var(--borda);border-radius:10px;padding:12px 14px">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-          <span style="font-size:13px;font-weight:700;color:var(--azul)">Cadastro rápido e feriados nacionais</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+          <span style="font-size:13px;font-weight:700;color:var(--azul)">Cadastro rápido</span>
           <button class="btn b-az b-sm" onclick="openModalFunc('novo')">+ Cadastrar funcionário</button>
         </div>
-        <div class="g4" style="align-items:flex-end">
-          <div class="f">
-            <label>Ano dos feriados</label>
-            <input id="ponto-feriados-ano" type="number" min="2020" max="2099" step="1" placeholder="2026">
-          </div>
-          <div class="f" style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn b-ghv b-sm" onclick="pontoCarregarFeriadosNacionais()">Listar nacionais</button>
-            <button class="btn b-gh b-sm" onclick="pontoAtualizarFeriadosNacionais()">Atualizar nacionais do ano</button>
-          </div>
-          <div class="f s2">
-            <label>Status feriados</label>
-            <div id="ponto-feriados-st" class="st" style="margin:0"></div>
-          </div>
-        </div>
-        <div class="tbl-wrap" style="margin-top:8px">
-          <table class="tbl">
-            <thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th></tr></thead>
-            <tbody id="tb-ponto-feriados-nacionais">
-              <tr><td colspan="3" style="text-align:center;padding:12px;color:var(--text-muted)">Informe o ano e clique em "Listar nacionais".</td></tr>
-            </tbody>
-          </table>
-        </div>
+        <div style="margin-top:8px;font-size:12px;color:var(--text-muted)">Os feriados agora ficam centralizados exclusivamente na subaba RH &gt; Feriados.</div>
       </div>
 
       <div class="ponto-acoes">
@@ -114,7 +93,7 @@
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <span style="font-size:13px;font-weight:700;color:var(--azul)">🏥 Atestados e Afastamentos</span>
           <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-            <button class="btn b-gh b-sm" onclick="nav('beneficios',null,true);setTimeout(()=>{switchBenTab('feriados',document.getElementById('ben-tab-feriados'));document.getElementById('fer-form-novo')?.setAttribute('open','open');document.getElementById('fer-form-novo')?.scrollIntoView({behavior:'smooth',block:'start'});},180)">Abrir feriados manuais</button>
+            <button class="btn b-gh b-sm" onclick="rhSetSubAba('feriados',document.getElementById('rh-subtab-feriados'));setTimeout(()=>{document.getElementById('fer-form-novo')?.setAttribute('open','open');document.getElementById('fer-form-novo')?.scrollIntoView({behavior:'smooth',block:'start'});},120)">Abrir feriados</button>
             <button class="btn b-az b-sm" onclick="pontoAbrirModalAfastamento()">+ Novo afastamento</button>
           </div>
         </div>

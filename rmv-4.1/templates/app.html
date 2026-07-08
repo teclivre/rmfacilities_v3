@@ -1567,6 +1567,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-exportar" class="subaba-bloco" onclick="rhSetSubAba('exportar',this)">Exportar colaboradores ativos</button>
         <button type="button" id="rh-subtab-jornada" class="subaba-bloco" onclick="rhSetSubAba('jornada',this)">Jornadas e Geofence</button>
         <button type="button" id="rh-subtab-escalas" class="subaba-bloco" onclick="rhSetSubAba('escalas',this)">Escalas de Turnos</button>
+        <button type="button" id="rh-subtab-feriados" class="subaba-bloco" onclick="rhSetSubAba('feriados',this)">Feriados</button>
         <button type="button" id="rh-subtab-ponto" class="subaba-bloco" onclick="rhSetSubAba('ponto',this)">Gestão de Ponto por Funcionário</button>
         <button type="button" id="rh-subtab-painel-dia" class="subaba-bloco" onclick="rhSetSubAba('painel-dia',this)">Painel do dia</button>
         <button type="button" id="rh-subtab-envio" class="subaba-bloco" onclick="rhSetSubAba('envio',this)">Envio de arquivo</button>
@@ -1894,6 +1895,56 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
         </div>
         <div id="rh-escala-st" class="st" style="margin-top:8px"></div>
+      </div>
+
+      <div class="card rh-pane" id="rh-pane-feriados" data-rh-pane="feriados" style="display:none">
+        <div class="card-header"><span class="card-title">Cadastro de Feriados</span></div>
+        <p style="font-size:13px;color:var(--text-muted);margin:4px 0 12px 0">Central única de feriados nacionais, estaduais e municipais. Os feriados cadastrados aqui são usados no ponto e nos cálculos por período.</p>
+        <div class="g4" style="margin-bottom:10px">
+          <div class="f"><label>Ano</label><input id="fer-ano" type="number" min="2020" max="2099" placeholder="2026" style="width:100px"></div>
+          <div class="f"><label>Tipo</label>
+            <select id="fer-filtro-tipo">
+              <option value="">Todos</option>
+              <option value="nacional">Nacionais</option>
+              <option value="estadual">Estaduais</option>
+              <option value="municipal">Municipais</option>
+            </select>
+          </div>
+          <div class="f" style="display:flex;align-items:flex-end;gap:8px">
+            <button class="btn b-gh b-sm" onclick="ferCarregar()">&#128269; Carregar</button>
+            <button class="btn b-az b-sm" onclick="ferAtualizarNacionais()">&#10227; Atualizar nacionais do ano</button>
+          </div>
+        </div>
+        <details id="fer-form-novo" open style="margin-bottom:14px">
+          <summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--azul);padding:6px 0">&#43; Adicionar feriado manual (estadual/municipal)</summary>
+          <div class="g4" style="margin-top:10px">
+            <div class="f"><label>Data</label><input id="fer-data" type="date"></div>
+            <div class="f"><label>Descrição</label><input id="fer-desc" placeholder="Ex: Carnaval" maxlength="200"></div>
+            <div class="f"><label>Tipo</label>
+              <select id="fer-tipo">
+                <option value="nacional">Nacional</option>
+                <option value="estadual">Estadual</option>
+                <option value="municipal">Municipal</option>
+              </select>
+            </div>
+            <div class="f"><label>Município (se municipal)</label><input id="fer-municipio" placeholder="Ex: São Paulo" maxlength="100"></div>
+            <div class="f"><label>Estado (UF)</label><input id="fer-estado" placeholder="SP" maxlength="2" style="width:60px"></div>
+            <div class="f"><label>Posto (opcional)</label><select id="fer-posto"><option value="">Todos os postos (inclui reserva técnica)</option></select></div>
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:8px">Se não escolher posto, o feriado vale para todos os postos, inclusive reserva técnica.</div>
+          <div class="brow" style="justify-content:flex-start;margin-top:8px">
+            <button class="btn b-vd b-sm" onclick="ferSalvar()">&#128190; Salvar feriado</button>
+          </div>
+        </details>
+        <div id="fer-status" style="font-size:13px;color:var(--azul);margin-bottom:8px"></div>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr>
+              <th>Data</th><th>Descrição</th><th>Tipo</th><th>Município</th><th>Estado</th><th>Aplicação</th><th style="width:60px">Ações</th>
+            </tr></thead>
+            <tbody id="tb-feriados"></tbody>
+          </table>
+        </div>
       </div>
 
       <div class="rh-pane" id="rh-pane-ponto" data-rh-pane="ponto">
@@ -2800,7 +2851,6 @@ document.addEventListener('DOMContentLoaded',()=>{
           <button id="ben-tab-avulso" class="btn b-gh b-sm" onclick="switchBenTab('avulso',this)">&#128176; Pagar Avulso</button>
           <button id="ben-tab-relatorios" class="btn b-gh b-sm" onclick="switchBenTab('relatorios',this)">Relatórios</button>
           <button id="ben-tab-periodo" class="btn b-gh b-sm" onclick="switchBenTab('periodo',this)">&#128197; Calcular por Período</button>
-          <button id="ben-tab-feriados" class="btn b-gh b-sm" onclick="switchBenTab('feriados',this)">&#127970; Feriados</button>
         </div>
 
         <div class="brow" style="justify-content:flex-start;margin-top:10px;flex-wrap:wrap;gap:6px;align-items:center">
@@ -3004,59 +3054,6 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
         </div>
 
-        <!-- ── Pane: Feriados ── -->
-        <div id="ben-pane-feriados" class="tbl-wrap" style="margin-top:10px;display:none">
-          <div class="card" style="padding:14px">
-            <div class="card-header"><span class="card-title">&#127970; Cadastro de Feriados</span></div>
-            <p style="font-size:13px;color:var(--text-muted);margin:4px 0 12px 0">Cadastre feriados nacionais, estaduais e municipais. Eles serão descontados automaticamente no cálculo por período e aparecerão na folha de ponto.</p>
-            <div class="g4" style="margin-bottom:10px">
-              <div class="f"><label>Ano</label><input id="fer-ano" type="number" min="2020" max="2099" placeholder="2026" style="width:100px"></div>
-              <div class="f"><label>Tipo</label>
-                <select id="fer-filtro-tipo">
-                  <option value="">Todos</option>
-                  <option value="nacional">Nacionais</option>
-                  <option value="estadual">Estaduais</option>
-                  <option value="municipal">Municipais</option>
-                </select>
-              </div>
-              <div class="f" style="display:flex;align-items:flex-end;gap:8px">
-                <button class="btn b-gh b-sm" onclick="ferCarregar()">&#128269; Carregar</button>
-                <button class="btn b-az b-sm" onclick="ferAtualizarNacionais()">&#10227; Atualizar nacionais do ano</button>
-              </div>
-            </div>
-            <!-- Formulário de adição -->
-            <details id="fer-form-novo" open style="margin-bottom:14px">
-              <summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--azul);padding:6px 0">&#43; Adicionar feriado manual (estadual/municipal)</summary>
-              <div class="g4" style="margin-top:10px">
-                <div class="f"><label>Data</label><input id="fer-data" type="date"></div>
-                <div class="f"><label>Descrição</label><input id="fer-desc" placeholder="Ex: Carnaval" maxlength="200"></div>
-                <div class="f"><label>Tipo</label>
-                  <select id="fer-tipo">
-                    <option value="nacional">Nacional</option>
-                    <option value="estadual">Estadual</option>
-                    <option value="municipal">Municipal</option>
-                  </select>
-                </div>
-                <div class="f"><label>Município (se municipal)</label><input id="fer-municipio" placeholder="Ex: São Paulo" maxlength="100"></div>
-                <div class="f"><label>Estado (UF)</label><input id="fer-estado" placeholder="SP" maxlength="2" style="width:60px"></div>
-                <div class="f"><label>Posto (opcional)</label><select id="fer-posto"><option value="">Todos os postos (inclui reserva técnica)</option></select></div>
-              </div>
-              <div style="font-size:12px;color:var(--text-muted);margin-top:8px">Se não escolher posto, o feriado vale para todos os postos, inclusive reserva técnica.</div>
-              <div class="brow" style="justify-content:flex-start;margin-top:8px">
-                <button class="btn b-vd b-sm" onclick="ferSalvar()">&#128190; Salvar feriado</button>
-              </div>
-            </details>
-            <div id="fer-status" style="font-size:13px;color:var(--azul);margin-bottom:8px"></div>
-            <div class="tbl-wrap">
-              <table class="tbl">
-                <thead><tr>
-                  <th>Data</th><th>Descrição</th><th>Tipo</th><th>Município</th><th>Estado</th><th>Aplicação</th><th style="width:60px">Ações</th>
-                </tr></thead>
-                <tbody id="tb-feriados"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -5284,7 +5281,7 @@ function rhSalariosIniciarPagina(){
 }
 
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','ponto','painel-dia','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo'];
+  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','feriados','ponto','painel-dia','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
     if(p.dataset.rhPane===rhSubAba){
@@ -5302,6 +5299,9 @@ function rhSetSubAba(tab,btn){
   }
   if(rhSubAba==='escalas'){
     rhEscalaInit();
+  }
+  if(rhSubAba==='feriados'){
+    ferCarregar();
   }
   if(rhSubAba==='ponto'){
     carregarCorrecoesPonto();
@@ -12721,7 +12721,7 @@ function limparSelecaoBen(){
 
 function switchBenTab(tab,btn){
   benTab=tab;
-  ['ativos','vt','vr','va','pp','vg','cn','avulso','relatorios','periodo','feriados'].forEach(t=>{
+  ['ativos','vt','vr','va','pp','vg','cn','avulso','relatorios','periodo'].forEach(t=>{
     const pane=document.getElementById('ben-pane-'+t);
     const b=document.getElementById('ben-tab-'+t);
     if(pane)pane.style.display=t===tab?'block':'none';
@@ -12735,7 +12735,6 @@ function switchBenTab(tab,btn){
   else if(tab==='cn') renderBeneficioPorTipo('cn','tb-benef-cn');
   else if(tab==='ativos') renderBeneficiosAtivos();
   else if(tab==='avulso'){ if(!beneficiosMensais.length) carregarBeneficiosMensais(); benAvulsoFiltrar(); }
-  else if(tab==='feriados') ferCarregar();
   if(btn && btn.scrollIntoView) btn.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});
 }
 
@@ -12775,7 +12774,11 @@ async function ferCarregar(){
   if(tipo) url+=`&tipo=${encodeURIComponent(tipo)}`;
   const r=await fetch(url);
   const j=await r.json();
-  if(!j.ok){showSt('st-benef',j.erro||'Erro ao carregar feriados.',true);return;}
+  if(!j.ok){
+    const st=document.getElementById('fer-status');
+    if(st){st.textContent=j.erro||'Erro ao carregar feriados.';st.style.color='var(--verm)';}
+    return;
+  }
   _feriadosData=j.itens||[];
   ferAtualizarInfoSelecionados();
   ferRenderTabela();
@@ -12785,7 +12788,7 @@ function ferAtualizarInfoSelecionados(){
   const sel=document.getElementById('fer-posto');
   if(!sel) return;
   const atual=(sel.value||'').trim();
-  const base=(beneficiosMensais||[]);
+  const base=((beneficiosMensais&&beneficiosMensais.length)?beneficiosMensais:((funcs&&funcs.length)?funcs:(pontoFuncs||[])));
   const postos=[...new Set(base.map(it=>(it.posto_operacional||'Reserva tecnica').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   if(!postos.find(p=>p.toLowerCase()==='reserva tecnica')) postos.push('Reserva tecnica');
   sel.innerHTML='<option value="">Todos os postos (inclui reserva técnica)</option>'+postos.map(p=>`<option value="${escHtml(p)}">${escHtml(p)}</option>`).join('');
