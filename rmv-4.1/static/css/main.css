@@ -101,6 +101,21 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 #pg-rh .btn.b-ghv{background:rgba(54,201,148,.16);color:#7ee5bf;border:1px solid rgba(54,201,148,.3)}
 #pg-rh .btn.b-vd{background:linear-gradient(180deg,#37cb99,#22b886)}
 
+#mod-ponto-edit-dia .ped-card{margin:0 0 6px;padding:8px 10px;border-radius:12px}
+#mod-ponto-edit-dia .ped-grid{display:grid;grid-template-columns:minmax(140px,1.1fr) minmax(120px,.9fr) minmax(160px,1fr) auto;align-items:end;gap:6px}
+#mod-ponto-edit-dia .ped-f{margin:0;gap:3px}
+#mod-ponto-edit-dia .ped-f label{font-size:10px;letter-spacing:.35px}
+#mod-ponto-edit-dia .ped-f input{padding:6px 8px;font-size:12px;border-radius:8px;min-height:32px}
+#mod-ponto-edit-dia .ped-input-readonly{opacity:.88;cursor:default}
+#mod-ponto-edit-dia .ped-btn-del{width:30px;min-width:30px;height:30px;padding:0;display:inline-flex;align-items:center;justify-content:center;line-height:1;border-radius:8px}
+#mod-ponto-edit-dia #ped-info{margin-bottom:8px}
+#mod-ponto-edit-dia #ped-marcacoes-wrap .btn.b-vd.b-sm{padding:5px 10px;font-size:11px;margin-top:2px}
+
+@media(max-width:768px){
+	#mod-ponto-edit-dia .ped-grid{grid-template-columns:1fr 1fr}
+	#mod-ponto-edit-dia .ped-grid .ped-btn-del{grid-column:2;justify-self:end}
+}
+
 @media(max-width:900px){
 	#pg-rh .rh-subabas{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
 }

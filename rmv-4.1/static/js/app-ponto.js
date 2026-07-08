@@ -507,19 +507,19 @@ async function pontoAbrirEditDia(){
   function buildRow(id,tipo,dh,obs,isNova){
     const tipoNorm=String(tipo||'entrada').trim().toLowerCase();
     const tipoLabel=_PED_TIPOS_LABEL[tipoNorm]||'Entrada';
-    return `<div class="card" style="margin:0 0 8px;padding:10px;position:relative" data-marc-id="${id}" data-nova="${isNova?'1':''}">
-      <div class="g3" style="align-items:flex-end;gap:8px">
-        <div class="f" style="margin:0"><label style="font-size:11px">Tipo (automático)</label>
-          <input value="${tipoLabel}" readonly style="width:100%;opacity:.85;cursor:default">
+    return `<div class="card ped-card" data-marc-id="${id}" data-nova="${isNova?'1':''}">
+      <div class="ped-grid">
+        <div class="f ped-f"><label>Tipo (automático)</label>
+          <input value="${tipoLabel}" readonly class="ped-input-readonly">
           <input type="hidden" class="ped-tipo" data-id="${id}" value="${tipoNorm}">
         </div>
-        <div class="f" style="margin:0"><label style="font-size:11px">Data/hora</label>
+        <div class="f ped-f"><label>Data/hora</label>
           <input class="ped-dh" data-id="${id}" type="datetime-local" value="${dh}">
         </div>
-        <div class="f" style="margin:0"><label style="font-size:11px">Observação</label>
+        <div class="f ped-f"><label>Observação</label>
           <input class="ped-obs" data-id="${id}" placeholder="Opcional" value="${obs}">
         </div>
-        <button type="button" class="btn b-vm b-sm" style="flex-shrink:0;margin-bottom:1px" onclick="pedRemoverRow(this)" title="Excluir esta marcação">🗑</button>
+        <button type="button" class="btn b-vm b-sm ped-btn-del" onclick="pedRemoverRow(this)" title="Excluir esta marcação">🗑</button>
       </div>
     </div>`;
   }
@@ -567,20 +567,20 @@ function pedAdicionarLinha(){
   const tipoAuto=_pedProximoTipoAutomatico();
   const tipoLabel=_PED_TIPOS_LABEL[tipoAuto]||'Entrada';
   const div=document.createElement('div');
-  div.innerHTML=`<div class="card" style="margin:0 0 8px;padding:10px;position:relative" data-marc-id="${seq}" data-nova="1">
-    <div class="g3" style="align-items:flex-end;gap:8px">
-      <div class="f" style="margin:0"><label style="font-size:11px">Tipo (automático)</label>
-        <input value="${tipoLabel}" readonly style="width:100%;opacity:.85;cursor:default">
+  div.innerHTML=`<div class="card ped-card" data-marc-id="${seq}" data-nova="1">
+    <div class="ped-grid">
+      <div class="f ped-f"><label>Tipo (automático)</label>
+        <input value="${tipoLabel}" readonly class="ped-input-readonly">
         <input type="hidden" class="ped-tipo" data-id="${seq}" value="${tipoAuto}">
       </div>
-      <div class="f" style="margin:0"><label style="font-size:11px">${_pedCtx?.isGf?'Hora':'Data/hora'}</label>
+      <div class="f ped-f"><label>${_pedCtx?.isGf?'Hora':'Data/hora'}</label>
         <input class="ped-dh" data-id="${seq}" type="${_pedCtx?.isGf?'time':'datetime-local'}" value="${_pedCtx?.isGf?'00:00':data+'T00:00'}">
       </div>
-      <div class="f" style="margin:0"><label style="font-size:11px">Observação</label>
+      <div class="f ped-f"><label>Observação</label>
         <input class="ped-obs" data-id="${seq}" placeholder="Opcional" value="">
       </div>
       <input type="hidden" class="ped-fid" value="${fid}">
-      <button type="button" class="btn b-vm b-sm" style="flex-shrink:0;margin-bottom:1px" onclick="pedRemoverRow(this)" title="Remover">🗑</button>
+      <button type="button" class="btn b-vm b-sm ped-btn-del" onclick="pedRemoverRow(this)" title="Remover">🗑</button>
     </div>
   </div>`;
   wrap.insertBefore(div.firstElementChild, addBtn);
@@ -921,19 +921,19 @@ function gfAbrirEditDia(dataRef){
   function buildRow(id,tipo,dh,obs,isNova){
     const tipoNorm=String(tipo||'entrada').trim().toLowerCase();
     const tipoLabel=_PED_TIPOS_LABEL[tipoNorm]||'Entrada';
-    return `<div class="card" style="margin:0 0 8px;padding:10px;position:relative" data-marc-id="${id}" data-nova="${isNova?'1':''}">
-      <div class="g3" style="align-items:flex-end;gap:8px">
-        <div class="f" style="margin:0"><label style="font-size:11px">Tipo (automático)</label>
-          <input value="${tipoLabel}" readonly style="width:100%;opacity:.85;cursor:default">
+    return `<div class="card ped-card" data-marc-id="${id}" data-nova="${isNova?'1':''}">
+      <div class="ped-grid">
+        <div class="f ped-f"><label>Tipo (automático)</label>
+          <input value="${tipoLabel}" readonly class="ped-input-readonly">
           <input type="hidden" class="ped-tipo" data-id="${id}" value="${tipoNorm}">
         </div>
-        <div class="f" style="margin:0"><label style="font-size:11px">Hora</label>
+        <div class="f ped-f"><label>Hora</label>
           <input class="ped-dh" data-id="${id}" type="time" value="${dh}">
         </div>
-        <div class="f" style="margin:0"><label style="font-size:11px">Observação</label>
+        <div class="f ped-f"><label>Observação</label>
           <input class="ped-obs" data-id="${id}" placeholder="Opcional" value="${obs}">
         </div>
-        <button type="button" class="btn b-vm b-sm" style="flex-shrink:0;margin-bottom:1px" onclick="pedRemoverRow(this)" title="Excluir esta marcação">🗑</button>
+        <button type="button" class="btn b-vm b-sm ped-btn-del" onclick="pedRemoverRow(this)" title="Excluir esta marcação">🗑</button>
       </div>
     </div>`;
   }
