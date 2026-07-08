@@ -18044,21 +18044,24 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
     except Exception:
         fd = None
 
-    # Tipo do dia: atestado > férias > folga_escala > normal
+    # Tipo do dia: afastamento > férias > folga_escala > normal
     dia_tipo = "normal"
     afastamento_info = None
     status_func = (funcionario.status or "").strip()
-    if status_func == "Férias":
+    if status_func.lower() in ("férias", "ferias"):
         dia_tipo = "ferias"
     af = _afastamento_ativo_na_data(funcionario.id, data_ref_str)
     if af:
-        dia_tipo = "atestado"
+        dia_tipo = "afastamento"
         afastamento_info = {
             "tipo": af.tipo,
             "data_inicio": af.data_inicio,
             "data_fim": af.data_fim,
             "observacao": af.observacao or "",
         }
+    if dia_tipo in ("afastamento", "ferias"):
+        min_esp = 0
+        saldo = min_trab - min_esp
     elif dia_tipo == "normal" and min_esp == 0 and not marcacoes:
         dia_tipo = "folga"
 
@@ -18081,7 +18084,7 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
         "correcoes_faltando_pendentes": correcoes_faltando_pendentes,
         "fechado": fd is not None,
         "fechado_por": (fd.fechado_por or "") if fd else "",
-        "dia_tipo": dia_tipo,  # "normal" | "folga" | "ferias" | "atestado"
+        "dia_tipo": dia_tipo,  # "normal" | "folga" | "ferias" | "afastamento"
         "afastamento_info": afastamento_info,
     }
 
@@ -18644,6 +18647,8 @@ def api_app_ponto_espelho_dados_me():
                 "horas_esperadas_min": esp_min,
                 "status": resumo.get("status", ""),
                 "tem_marcacoes": bool(marcacoes),
+                "dia_tipo": resumo.get("dia_tipo", "normal"),
+                "afastamento_info": resumo.get("afastamento_info") or None,
             }
         )
     return jsonify(
@@ -18794,6 +18799,8 @@ def api_app_ponto_espelho_pdf_me():
                 if resumo.get("status") == "ok"
                 else ("Inconsist." if marcacoes else "-")
             )
+            dia_tipo = (resumo.get("dia_tipo") or "").strip().lower()
+            af_info = resumo.get("afastamento_info") or {}
             marc_str = (
                 "  ".join(m.get("hora_fmt", "") for m in marcacoes)
                 if marcacoes
@@ -18801,6 +18808,11 @@ def api_app_ponto_espelho_pdf_me():
                 if resumo.get("horas_esperadas_min", 0)
                 else "-"
             )
+            if dia_tipo == "afastamento":
+                af_tipo = (af_info.get("tipo") or "Afastamento").strip()
+                marc_str = f"{marc_str} | {af_tipo}" if marcacoes else af_tipo
+            elif dia_tipo == "ferias" and not marcacoes:
+                marc_str = "Ferias"
             rows.append(
                 [
                     data_str,
