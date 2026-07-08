@@ -1295,6 +1295,8 @@ async function pontoExcluirAfastamento(aid){
   if(r&&r.erro){showSt('ponto-st',r.erro,true);return;}
   showSt('ponto-st','Afastamento excluído.',false);
   await pontoCarregarAfastamentos();
+  await pontoCarregarDia();
+  await pontoCarregarPainelDia();
 }
 
 function pontoAbrirModalAfastamento(){
@@ -1381,6 +1383,8 @@ function pontoAbrirModalAfastamento(){
     document.body.removeChild(_ov);
     showSt('ponto-st','Afastamento registrado com sucesso!',false);
     await pontoCarregarAfastamentos();
+    await pontoCarregarDia();
+    await pontoCarregarPainelDia();
   };
 }
 

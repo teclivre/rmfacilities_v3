@@ -113,7 +113,10 @@
       <div style="margin-top:14px;border:1px solid var(--borda);border-radius:10px;padding:12px 14px" id="ponto-afastamentos-section" style="display:none">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <span style="font-size:13px;font-weight:700;color:var(--azul)">🏥 Atestados e Afastamentos</span>
-          <button class="btn b-az b-sm" onclick="pontoAbrirModalAfastamento()">+ Novo afastamento</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+            <button class="btn b-gh b-sm" onclick="rhSetSubAba('beneficios');setTimeout(()=>switchBenTab('feriados',document.getElementById('ben-tab-feriados')),120)">Abrir feriados manuais</button>
+            <button class="btn b-az b-sm" onclick="pontoAbrirModalAfastamento()">+ Novo afastamento</button>
+          </div>
         </div>
         <div id="ponto-afastamentos-lista" style="font-size:12px;color:var(--text-muted)">Selecione um colaborador para ver os afastamentos.</div>
       </div>
