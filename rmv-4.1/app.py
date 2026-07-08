@@ -18835,7 +18835,9 @@ def api_app_ponto_espelho_pdf_me():
             )
             if dia_tipo == "afastamento":
                 af_tipo = (af_info.get("tipo") or "Afastamento").strip()
-                marc_str = f"{marc_str} | {af_tipo}" if marcacoes else af_tipo
+                af_txt = f"AFASTAMENTO: {af_tipo}"
+                marc_str = f"{marc_str} | {af_txt}" if marcacoes else af_txt
+                status_val = "Afastamento"
             elif dia_tipo == "ferias" and not marcacoes:
                 marc_str = "Ferias"
             rows.append(

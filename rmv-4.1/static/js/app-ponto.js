@@ -230,12 +230,23 @@ async function pontoCarregarDia(){
   const selTipo=document.getElementById('ponto-ajuste-tipo');
   if(selTipo && s.proximo_tipo) selTipo.value=s.proximo_tipo;
   const inc=(s.inconsistencias||[]);
+  const diaTipo=String(s.dia_tipo||'').toLowerCase();
+  const afastamentoInfo=s.afastamento_info||{};
+  let diaAviso='';
+  if(diaTipo==='afastamento'){
+    diaAviso=`<div style="margin-top:8px;font-size:12px;color:#0f4c81;background:#eef6ff;border:1px solid #b8d7f2;border-radius:8px;padding:8px">📄 AFASTAMENTO: <strong>${escHtml((afastamentoInfo.tipo||'Afastamento').trim())}</strong></div>`;
+  }else if(diaTipo==='ferias'){
+    diaAviso=`<div style="margin-top:8px;font-size:12px;color:#0f4c81;background:#eef6ff;border:1px solid #b8d7f2;border-radius:8px;padding:8px">🏖 FÉRIAS</div>`;
+  }else if(diaTipo==='feriado'){
+    diaAviso=`<div style="margin-top:8px;font-size:12px;color:#0f4c81;background:#eef6ff;border:1px solid #b8d7f2;border-radius:8px;padding:8px">🎉 FERIADO</div>`;
+  }
   resumoEl.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px">
     <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:var(--text-muted)">Horas trabalhadas</div><div style="font-size:19px;font-weight:700">${s.horas_trabalhadas_fmt||'00:00'}</div></div>
     <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:var(--text-muted)">Carga esperada</div><div style="font-size:19px;font-weight:700">${s.horas_esperadas_fmt||'08:00'}</div></div>
     <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:var(--text-muted)">Saldo</div><div style="font-size:19px;font-weight:700">${s.saldo_fmt||'00:00'}</div></div>
     <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:var(--text-muted)">Próxima marcação</div><div style="font-size:19px;font-weight:700">${s.proximo_tipo_label||'Entrada'}</div></div>
   </div>
+  ${diaAviso}
   ${inc.length?`<div style="margin-top:8px;font-size:12px;color:#8a1c1c;background:#fff3f3;border:1px solid #f2c5c5;border-radius:8px;padding:8px">⚠ ${inc.join(' | ')}</div>`:''}`;
   const marc=s.marcacoes||[];
   pontoMarcacoesDiaAtual=marc;

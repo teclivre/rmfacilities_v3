@@ -1885,7 +1885,8 @@ def register_ponto_routes(
             if resumo.get("dia_tipo") == "afastamento":
                 _af_info = resumo.get("afastamento_info") or {}
                 _af_tipo = (_af_info.get("tipo") or "Afastamento").strip()
-                marcacoes_str = f"{marcacoes_str} | {_af_tipo}" if marcacoes_str else _af_tipo
+                _af_txt = f"AFASTAMENTO: {_af_tipo}"
+                marcacoes_str = f"{marcacoes_str} | {_af_txt}" if marcacoes_str else _af_txt
                 faltas = ""
             elif resumo.get("dia_tipo") == "ferias" and not marcacoes_ord:
                 marcacoes_str = "Ferias"
