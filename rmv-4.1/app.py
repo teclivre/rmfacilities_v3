@@ -8493,6 +8493,13 @@ def index():
     )
 
 
+@app.route("/funcionario")
+@app.route("/funcionario/")
+def pagina_funcionario_app():
+    # Compatibilidade para links antigos que apontam para /funcionario.
+    return render_template("funcionario_app.html")
+
+
 @app.route("/api/cnpj/<cnpj>")
 @lr
 def api_cnpj(cnpj):
