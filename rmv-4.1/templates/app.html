@@ -1893,28 +1893,6 @@ document.addEventListener('DOMContentLoaded',()=>{
               <button class="btn b-ghv b-sm" onclick="rhEscalaVincularSelecionados()">Vincular selecionados</button>
               <button class="btn b-az b-sm" onclick="rhEscalaMoverSelecionados()">Mover para esta escala</button>
             </div>
-
-            <label style="margin-top:12px">Trocar funcionário na escala</label>
-            <div class="g2" style="margin-top:6px">
-              <div class="f">
-                <label>Funcionário atual (vinculado)</label>
-                <select id="rh-esc-troca-atual"></select>
-              </div>
-              <div class="f">
-                <label>Novo funcionário (substituto)</label>
-                <select id="rh-esc-troca-novo"></select>
-              </div>
-            </div>
-            <div class="g2" style="margin-top:6px">
-              <div class="f">
-                <label>Data de início da troca</label>
-                <input id="rh-esc-troca-data-ini" type="date" value="">
-              </div>
-              <div class="f" style="display:flex;align-items:flex-end">
-                <button class="btn b-az b-sm" onclick="rhEscalaTrocarFuncionario()">Trocar funcionário</button>
-              </div>
-            </div>
-            <div class="hint" style="margin-top:4px">A troca remove o vínculo ativo do funcionário atual e cria o vínculo do novo funcionário na mesma escala a partir da data informada.</div>
           </div>
         </div>
         <div id="rh-escala-st" class="st" style="margin-top:8px"></div>
@@ -8115,8 +8093,6 @@ async function rhEscalaLimparForm(){
   document.getElementById('rh-esc-noturno-fim').value='05:00';
   document.getElementById('rh-esc-vinc-escala').value='';
   document.getElementById('rh-esc-vinc-data-ini').value=new Date().toISOString().split('T')[0];
-  const trocaData=document.getElementById('rh-esc-troca-data-ini');
-  if(trocaData) trocaData.value=new Date().toISOString().split('T')[0];
   const noturnoConfig=document.getElementById('rh-esc-noturno-config');
   if(noturnoConfig) noturnoConfig.style.display='none';
   const cfg6x1=document.getElementById('rh-esc-6x1-config');
@@ -8196,8 +8172,6 @@ async function rhEscalaExcluir(id){
 async function rhEscalaCarregarFuncsParaVinc(){
   const eid=(document.getElementById('rh-esc-vinc-escala')?.value||'').trim();
   const sel=document.getElementById('rh-esc-vinc-funcs');
-  const selTrocaAtual=document.getElementById('rh-esc-troca-atual');
-  const selTrocaNovo=document.getElementById('rh-esc-troca-novo');
   if(!sel) return;
   
   // Se não selecionou escala, mostrar todos os ativos
@@ -8206,8 +8180,6 @@ async function rhEscalaCarregarFuncsParaVinc(){
       .filter(f=>String((f.status||'').toLowerCase())==='ativo')
       .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
     sel.innerHTML=ativos.map(f=>`<option value="${f.id}">${esc(f.nome||'Sem nome')} (${f.matricula||'—'})</option>`).join('');
-    if(selTrocaAtual) selTrocaAtual.innerHTML='<option value="">Selecione a escala...</option>';
-    if(selTrocaNovo) selTrocaNovo.innerHTML='<option value="">Selecione a escala...</option>';
     return;
   }
   
@@ -8229,22 +8201,6 @@ async function rhEscalaCarregarFuncsParaVinc(){
     .filter(f=>String((f.status||'').toLowerCase())==='ativo' && !idsJaVincs.has(f.id))
     .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
   sel.innerHTML=ativos.map(f=>`<option value="${f.id}">${esc(f.nome||'Sem nome')} (${f.matricula||'—'})</option>`).join('');
-
-  if(selTrocaAtual){
-    const atualVal=selTrocaAtual.value||'';
-    const vinculadosOrdenados=funcsVinculados
-      .slice()
-      .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
-    selTrocaAtual.innerHTML='<option value="">Selecione o funcionário atual...</option>'+
-      vinculadosOrdenados.map(f=>`<option value="${f.id}">${esc(f.nome||'Sem nome')} (${f.matricula||'—'})</option>`).join('');
-    if(atualVal && vinculadosOrdenados.some(f=>String(f.id)===String(atualVal))) selTrocaAtual.value=atualVal;
-  }
-  if(selTrocaNovo){
-    const novoVal=selTrocaNovo.value||'';
-    selTrocaNovo.innerHTML='<option value="">Selecione o substituto...</option>'+
-      ativos.map(f=>`<option value="${f.id}">${esc(f.nome||'Sem nome')} (${f.matricula||'—'})</option>`).join('');
-    if(novoVal && ativos.some(f=>String(f.id)===String(novoVal))) selTrocaNovo.value=novoVal;
-  }
 }
 
 async function rhEscalaVincularSelecionados(){
@@ -8314,51 +8270,6 @@ async function rhEscalaMoverSelecionados(){
   rhEscalaCarregarFuncsParaVinc();
   renderFuncionarios();
   showSt('rh-escala-st',`Funcionários movidos para a nova escala. Movidos de outra escala: ${movidos}.`,false);
-}
-
-async function rhEscalaTrocarFuncionario(){
-  const eid=(document.getElementById('rh-esc-vinc-escala')?.value||'').trim();
-  if(!eid){
-    showSt('rh-escala-st','Selecione a escala para trocar funcionário.',true);
-    return;
-  }
-  const fidAtual=parseInt(document.getElementById('rh-esc-troca-atual')?.value||'0',10);
-  const fidNovo=parseInt(document.getElementById('rh-esc-troca-novo')?.value||'0',10);
-  const dataIni=(document.getElementById('rh-esc-troca-data-ini')?.value||'').trim();
-
-  if(!fidAtual){
-    showSt('rh-escala-st','Selecione o funcionário atual.',true);
-    return;
-  }
-  if(!fidNovo){
-    showSt('rh-escala-st','Selecione o novo funcionário.',true);
-    return;
-  }
-  if(fidAtual===fidNovo){
-    showSt('rh-escala-st','Selecione funcionários diferentes para a troca.',true);
-    return;
-  }
-  if(!dataIni){
-    showSt('rh-escala-st','Informe a data de início da troca.',true);
-    return;
-  }
-
-  const r=await api('/api/escalas/'+eid+'/funcionarios/trocar','POST',{
-    funcionario_atual_id:fidAtual,
-    funcionario_novo_id:fidNovo,
-    data_inicio:dataIni,
-  });
-  if(r?.erro){
-    showSt('rh-escala-st',r.erro,true);
-    return;
-  }
-
-  funcs=await api('/api/funcionarios');
-  pontoFuncs=[...funcs];
-  await rhEscalaCarregar();
-  await rhEscalaCarregarFuncsParaVinc();
-  renderFuncionarios();
-  showSt('rh-escala-st','Troca de funcionário na escala realizada com sucesso.',false);
 }
 
 // ══════════════════════════════════════════════
