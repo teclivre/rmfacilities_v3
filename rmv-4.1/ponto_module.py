@@ -50,6 +50,7 @@ def register_ponto_routes(
 
     if Feriado is None:
         Feriado = _resolve_model("Feriado")
+    FeriadoFuncionario = _resolve_model("FeriadoFuncionario")
     if Cliente is None:
         Cliente = _resolve_model("Cliente")
     if SolicitacaoHoraExtra is None:
@@ -319,8 +320,17 @@ def register_ponto_routes(
                 saida_int_em = None
         return total
 
-    def _feriados_para_data(data_ref):
-        """Carrega o set de feriados do mês de data_ref para uso nos endpoints por-dia."""
+    def _feriados_para_data(data_ref, funcionario=None):
+        """Carrega feriados do mês de data_ref.
+
+        - Sem funcionario: retorna todos os feriados do mês (comportamento legado).
+        - Com funcionario: aplica escopo por tipo, posto_operacional e vínculo em
+          FeriadoFuncionario (quando houver).
+        """
+        def _norm_posto(v):
+            t = (v or "").strip()
+            return (t or "Reserva tecnica").lower()
+
         try:
             inicio_mes = data_ref.replace(day=1)
             if data_ref.month == 12:
@@ -331,10 +341,40 @@ def register_ponto_routes(
                 Feriado.data >= inicio_mes.strftime("%Y-%m-%d"),
                 Feriado.data <= fim_mes.strftime("%Y-%m-%d"),
             ).all()
-            return {
-                datetime.strptime(f.data, "%Y-%m-%d").date()
-                for f in rows if f.data
-            }
+
+            if not funcionario:
+                return {
+                    datetime.strptime(f.data, "%Y-%m-%d").date()
+                    for f in rows
+                    if f.data
+                }
+
+            vinc_map = {}
+            if FeriadoFuncionario:
+                ids = [f.id for f in rows if getattr(f, "id", None)]
+                if ids:
+                    for v in FeriadoFuncionario.query.filter(FeriadoFuncionario.feriado_id.in_(ids)).all():
+                        vinc_map.setdefault(v.feriado_id, set()).add(v.funcionario_id)
+
+            out = set()
+            posto_func = _norm_posto(getattr(funcionario, "posto_operacional", ""))
+            for fer in rows:
+                if not fer.data:
+                    continue
+                tipo = (fer.tipo or "").strip().lower()
+                aplica = False
+                if tipo == "nacional":
+                    aplica = True
+                else:
+                    posto_fer = (getattr(fer, "posto_operacional", "") or "").strip()
+                    if posto_fer and _norm_posto(posto_fer) != posto_func:
+                        aplica = False
+                    else:
+                        vincs = vinc_map.get(fer.id, set())
+                        aplica = (funcionario.id in vincs) if vincs else True
+                if aplica:
+                    out.add(datetime.strptime(fer.data, "%Y-%m-%d").date())
+            return out
         except Exception:
             return set()
 
@@ -410,6 +450,7 @@ def register_ponto_routes(
         af = _afastamento_ativo_na_data(funcionario.id, data_ref)
         dia_tipo = "normal"
         afastamento_info = None
+        _is_feriado = data_ref in (_feriados or set())
         if af:
             dia_tipo = "afastamento"
             afastamento_info = {
@@ -421,14 +462,15 @@ def register_ponto_routes(
             }
         elif status_norm == "férias" or status_norm == "ferias":
             dia_tipo = "ferias"
+        elif _is_feriado:
+            dia_tipo = "feriado"
 
-        minutos_esperados = 0 if dia_tipo in ("afastamento", "ferias") else _ponto_min_esperado_data(funcionario, data_ref)
+        minutos_esperados = 0 if dia_tipo in ("afastamento", "ferias", "feriado") else _ponto_min_esperado_data(funcionario, data_ref)
         if dia_tipo == "normal" and minutos_esperados == 0 and not marcacoes:
             dia_tipo = "folga"
         saldo = minutos_trabalhados - minutos_esperados
         # ── Horas extras 50% e 100% ──────────────────────────────────────────
         # Dom (weekday==6) ou feriado → tudo a 100%; demais dias → 50% até 2h, 100% além
-        _is_feriado = data_ref in (_feriados or set())
         if saldo > 0:
             if data_ref.weekday() >= 5 or _is_feriado:
                 he_50_min = 0
@@ -495,19 +537,8 @@ def register_ponto_routes(
         inicio, fim = _ponto_competencia_bounds(competencia)
         if not inicio:
             return None
-        # Carregar feriados do período para calcular HE 100% correto
-        try:
-            feriados_rows = Feriado.query.filter(
-                Feriado.data >= inicio.strftime("%Y-%m-%d"),
-                Feriado.data <= fim.strftime("%Y-%m-%d"),
-            ).all()
-            _feriados_set = {
-                datetime.strptime(f.data, "%Y-%m-%d").date()
-                for f in feriados_rows
-                if f.data
-            }
-        except Exception:
-            _feriados_set = set()
+        # Carregar feriados aplicáveis ao colaborador (tipo + posto + vínculos)
+        _feriados_set = _feriados_para_data(inicio, funcionario)
         dias = []
         total_trabalhado = 0
         total_esperado = 0
@@ -650,7 +681,7 @@ def register_ponto_routes(
         data_ref = data_hora.date()
         af_hoje = _afastamento_ativo_na_data(funcionario.id, data_ref)
         if af_hoje:
-            tipo_label = (af_hoje.tipo or "Afastamento").strip().title()
+            tipo_label = (af_hoje.tipo or "Afastamento").strip()
             return jsonify({"erro": f"{tipo_label} registrado para este dia. Nao e permitido marcar ponto durante o afastamento."}), 400
         marcacoes_dia = _ponto_marcacoes_dia(funcionario.id, data_ref)
         tipo = (dados.get("tipo") or "").strip().lower() or _ponto_tipo_esperado(
@@ -707,7 +738,7 @@ def register_ponto_routes(
                 "marcacao": marcacao.to_dict(),
                 "resumo": _ponto_resumo_func_dia(
                     funcionario, data_ref,
-                    _feriados=_feriados_para_data(data_ref),
+                    _feriados=_feriados_para_data(data_ref, funcionario),
                 ),
             }
         )
@@ -726,7 +757,7 @@ def register_ponto_routes(
         return jsonify(
             {"ok": True, "resumo": _ponto_resumo_func_dia(
                 funcionario, data_ref,
-                _feriados=_feriados_para_data(data_ref),
+                _feriados=_feriados_para_data(data_ref, funcionario),
             )}
         )
 
@@ -1011,7 +1042,6 @@ def register_ponto_routes(
                 # NÃO tratar como UTC: isso deslocaria marcações de 00:00-02:59 para o dia anterior.
                 if _mb.data_hora and _mb.data_hora.date() == data_ref:
                     marc_batch.setdefault(_mb.funcionario_id, []).append(_mb)
-            _feriados_dia = _feriados_para_data(data_ref)
             itens = []
             total_ok = 0
             total_inconsistente = 0
@@ -1022,7 +1052,7 @@ def register_ponto_routes(
                         funcionario,
                         data_ref,
                         _marcacoes=marc_batch.get(funcionario.id, []),
-                        _feriados=_feriados_dia,
+                        _feriados=_feriados_para_data(data_ref, funcionario),
                     )
                     if resumo["status"] == "ok":
                         total_ok += 1
@@ -1188,7 +1218,7 @@ def register_ponto_routes(
                         "ajuste": ajuste.to_dict(),
                         "resumo": _ponto_resumo_func_dia(
                             funcionario, data_ref,
-                            _feriados=_feriados_para_data(data_ref),
+                            _feriados=_feriados_para_data(data_ref, funcionario),
                         ),
                     }
                 )
@@ -1289,7 +1319,7 @@ def register_ponto_routes(
             )
             resumo = _ponto_resumo_func_dia(
                 funcionario, data_ref,
-                _feriados=_feriados_para_data(data_ref),
+                _feriados=_feriados_para_data(data_ref, funcionario),
             ) if data_ref else {}
             return jsonify({"ok": True, "resumo": resumo})
         except Exception as exc:
@@ -1440,11 +1470,11 @@ def register_ponto_routes(
                     "marcacao": marcacao.to_dict(),
                     "resumo": _ponto_resumo_func_dia(
                         funcionario, data_nova,
-                        _feriados=_feriados_para_data(data_nova),
+                        _feriados=_feriados_para_data(data_nova, funcionario),
                     ),
                     "resumo_dia_anterior": _ponto_resumo_func_dia(
                         funcionario, data_ant,
-                        _feriados=_feriados_para_data(data_ant),
+                        _feriados=_feriados_para_data(data_ant, funcionario),
                     )
                     if data_ant != data_nova
                     else None,
@@ -1599,7 +1629,7 @@ def register_ponto_routes(
         observacao = (dados.get("observacao") or "").strip()[:1000]
         resumo = _ponto_resumo_func_dia(
             funcionario, data_ref,
-            _feriados=_feriados_para_data(data_ref),
+            _feriados=_feriados_para_data(data_ref, funcionario),
         )
         if resumo["status"] != "ok" and not forcar:
             return jsonify(
@@ -1854,11 +1884,14 @@ def register_ponto_routes(
 
             if resumo.get("dia_tipo") == "afastamento" and not marcacoes_ord:
                 _af_info = resumo.get("afastamento_info") or {}
-                _af_tipo = (_af_info.get("tipo") or "Afastamento").strip().title()
+                _af_tipo = (_af_info.get("tipo") or "Afastamento").strip()
                 marcacoes_str = _af_tipo
                 faltas = ""
             elif resumo.get("dia_tipo") == "ferias" and not marcacoes_ord:
                 marcacoes_str = "Ferias"
+                faltas = ""
+            elif resumo.get("dia_tipo") == "feriado" and not marcacoes_ord:
+                marcacoes_str = "Feriado"
                 faltas = ""
 
             total_previstas += previstas

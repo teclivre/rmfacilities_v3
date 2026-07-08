@@ -2258,6 +2258,9 @@ class Feriado(db.Model):
     )  # 'nacional' ou 'municipal'
     municipio = db.Column(db.String(100), default="")
     estado = db.Column(db.String(2), default="")
+    # Quando preenchido, aplica somente ao posto informado.
+    # Vazio/None = aplica a todos os postos (inclui reserva tecnica).
+    posto_operacional = db.Column(db.String(150), default="")
     empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
     criado_por = db.Column(db.String(100), default="")
     criado_em = db.Column(db.DateTime, default=utcnow)
@@ -2269,6 +2272,10 @@ class Feriado(db.Model):
 
     def to_dict(self):
         d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        if (d.get("tipo") or "").lower() == "estadual":
+            _m = (d.get("municipio") or "").strip()
+            if _m.startswith("@UF:"):
+                d["municipio"] = ""
         try:
             from datetime import datetime as _dt
 
@@ -2385,7 +2392,8 @@ class PontoAfastamento(db.Model):
         db.Integer, db.ForeignKey("funcionario.id"), nullable=False, index=True
     )
     empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True, index=True)
-    tipo = db.Column(db.String(40), default="atestado")  # atestado | licenca | outros
+    # Tipo livre informado pelo RH (ex.: Atestado medico, Licenca, Acompanhamento)
+    tipo = db.Column(db.String(80), default="Atestado medico")
     data_inicio = db.Column(db.String(10), nullable=False)  # YYYY-MM-DD
     data_fim = db.Column(db.String(10), nullable=False)     # YYYY-MM-DD
     observacao = db.Column(db.Text, default="")
@@ -2402,7 +2410,7 @@ class PontoAfastamento(db.Model):
             "licenca": "Licenca",
             "outros": "Afastamento",
         }
-        d["tipo_label"] = tipo_map.get(tipo_raw.lower(), tipo_raw.title() if tipo_raw else "Afastamento")
+        d["tipo_label"] = tipo_map.get(tipo_raw.lower(), tipo_raw if tipo_raw else "Afastamento")
 
         def _br(s):
             try:
@@ -16408,14 +16416,12 @@ def api_rh_afastamentos_lista(fid):
 def api_rh_afastamento_criar(fid):
     f = db.get_or_404(Funcionario, fid)
     d = request.json or {}
-    tipo_raw = (d.get("tipo") or "").strip()
+    tipo_raw = (d.get("tipo") or "").replace("\n", " ").replace("\r", " ").strip()
     if not tipo_raw:
         return jsonify({"erro": "Tipo de afastamento é obrigatório."}), 400
-    tipo = tipo_raw.lower()
-    if len(tipo) > 40:
-        return jsonify({"erro": "Tipo muito longo. Máximo de 40 caracteres."}), 400
-    if not re.match(r"^[a-z0-9_\-\s]+$", tipo):
-        return jsonify({"erro": "Tipo inválido. Use apenas letras, números, espaço, _ ou -."}), 400
+    tipo = re.sub(r"\s+", " ", tipo_raw).strip()
+    if len(tipo) > 80:
+        return jsonify({"erro": "Tipo muito longo. Máximo de 80 caracteres."}), 400
     data_inicio = (d.get("data_inicio") or "").strip()
     data_fim = (d.get("data_fim") or "").strip()
     observacao = (d.get("observacao") or "").strip()[:500]
@@ -16456,14 +16462,15 @@ def api_rh_afastamento_criar(fid):
         _di_fmt = di.strftime("%d/%m/%Y")
         _df_fmt = df.strftime("%d/%m/%Y")
         _dias_af = (df - di).days + 1
-        if tipo == "atestado":
+        _tipo_norm = tipo.lower()
+        if _tipo_norm in ("atestado", "atestado medico", "atestado médico"):
             _titulo_af = "Atestado Registrado 🏥"
             _corpo_af = (
                 f"{f.nome}, foi registrado um atestado médico de {_di_fmt} a {_df_fmt} "
                 f"({_dias_af} {'dia' if _dias_af == 1 else 'dias'}). "
                 "Em caso de dúvidas, entre em contato com o RH."
             )
-        elif tipo == "licenca":
+        elif _tipo_norm in ("licenca", "licença"):
             _titulo_af = "Licença Registrada 📋"
             _corpo_af = (
                 f"{f.nome}, foi registrada uma licença de {_di_fmt} a {_df_fmt} "
@@ -16471,7 +16478,7 @@ def api_rh_afastamento_criar(fid):
                 "Em caso de dúvidas, entre em contato com o RH."
             )
         else:
-            _tipo_custom = (tipo_raw or "Afastamento").strip().title()
+            _tipo_custom = (tipo or "Afastamento").strip()
             _titulo_af = f"{_tipo_custom} Registrado 📋"
             _corpo_af = (
                 f"{f.nome}, foi registrado {_tipo_custom.lower()} de {_di_fmt} a {_df_fmt} "
@@ -18143,7 +18150,15 @@ def api_app_ponto_marcar_me():
     data_hoje = utcnow().date().strftime("%Y-%m-%d")
     af_hoje = _afastamento_ativo_na_data(f.id, data_hoje)
     if af_hoje:
-        tipo_label = {"atestado": "Atestado médico", "licenca": "Licença", "outros": "Afastamento"}.get(af_hoje.tipo, "Afastamento")
+        _tipo_raw = (af_hoje.tipo or "").strip()
+        tipo_label = {
+            "atestado": "Atestado médico",
+            "atestado medico": "Atestado médico",
+            "atestado médico": "Atestado médico",
+            "licenca": "Licença",
+            "licença": "Licença",
+            "outros": "Afastamento",
+        }.get(_tipo_raw.lower(), _tipo_raw or "Afastamento")
         return jsonify(
             {"erro": f"{tipo_label} registrado para hoje. Você não pode bater ponto neste período. Procure o RH se houver algum erro."}
         ), 400
@@ -18371,7 +18386,15 @@ def api_app_ponto_marcar_qr_me():
     data_hoje = utcnow().date().strftime("%Y-%m-%d")
     af_hoje = _afastamento_ativo_na_data(f.id, data_hoje)
     if af_hoje:
-        tipo_label = {"atestado": "Atestado médico", "licenca": "Licença", "outros": "Afastamento"}.get(af_hoje.tipo, "Afastamento")
+        _tipo_raw = (af_hoje.tipo or "").strip()
+        tipo_label = {
+            "atestado": "Atestado médico",
+            "atestado medico": "Atestado médico",
+            "atestado médico": "Atestado médico",
+            "licenca": "Licença",
+            "licença": "Licença",
+            "outros": "Afastamento",
+        }.get(_tipo_raw.lower(), _tipo_raw or "Afastamento")
         return jsonify({"erro": f"{tipo_label} registrado para hoje. Você não pode bater ponto neste período."}), 400
     qr_token = (dados.get("qr_token") or "").strip()
     if not qr_token:
@@ -25112,7 +25135,7 @@ def api_feriados_listar():
     q = Feriado.query
     if ano:
         q = q.filter(Feriado.data.like(f"{ano}-%"))
-    if tipo in ("nacional", "municipal"):
+    if tipo in ("nacional", "municipal", "estadual"):
         q = q.filter_by(tipo=tipo)
     q = q.order_by(Feriado.data.asc())
     itens = q.all()
@@ -25142,6 +25165,7 @@ def api_feriados_criar():
     tipo = (d.get("tipo") or "nacional").strip().lower()
     municipio = (d.get("municipio") or "").strip()
     estado = (d.get("estado") or "").strip().upper()[:2]
+    posto_operacional = (d.get("posto_operacional") or "").strip()
     empresa_id = to_num(d.get("empresa_id")) or None
     funcionario_ids = {
         int(x) for x in (d.get("funcionario_ids") or []) if str(x).isdigit()
@@ -25150,12 +25174,14 @@ def api_feriados_criar():
         return jsonify({"erro": "Data é obrigatória."}), 400
     if not descricao:
         return jsonify({"erro": "Descrição é obrigatória."}), 400
-    if tipo not in ("nacional", "municipal"):
-        return jsonify({"erro": "Tipo inválido. Use nacional ou municipal."}), 400
-    if tipo == "municipal" and not funcionario_ids:
-        return jsonify(
-            {"erro": "Para feriado municipal, selecione ao menos 1 funcionário."}
-        ), 400
+    if tipo not in ("nacional", "municipal", "estadual"):
+        return jsonify({"erro": "Tipo inválido. Use nacional, municipal ou estadual."}), 400
+    if tipo == "municipal" and not municipio:
+        return jsonify({"erro": "Para feriado municipal, informe o município."}), 400
+    if tipo == "estadual" and not estado:
+        return jsonify({"erro": "Para feriado estadual, informe a UF."}), 400
+    if tipo == "estadual":
+        municipio = f"@UF:{estado}"
     # normaliza para YYYY-MM-DD
     data_norm = None
     for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
@@ -25181,12 +25207,13 @@ def api_feriados_criar():
         tipo=tipo,
         municipio=municipio,
         estado=estado,
+        posto_operacional=("" if tipo == "nacional" else posto_operacional),
         empresa_id=empresa_id,
         criado_por=session.get("nome", ""),
     )
     db.session.add(f)
     db.session.flush()
-    if tipo == "municipal":
+    if tipo in ("municipal", "estadual") and funcionario_ids:
         funcs_validos = {
             x.id
             for x in Funcionario.query.filter(
@@ -25197,7 +25224,7 @@ def api_feriados_criar():
             db.session.add(FeriadoFuncionario(feriado_id=f.id, funcionario_id=fid))
     db.session.commit()
     fd = f.to_dict()
-    fd["funcionario_ids"] = sorted(list(funcionario_ids)) if tipo == "municipal" else []
+    fd["funcionario_ids"] = sorted(list(funcionario_ids)) if tipo in ("municipal", "estadual") else []
     fd["qtd_funcionarios"] = len(fd["funcionario_ids"])
     return jsonify({"ok": True, "feriado": fd}), 201
 
@@ -25212,6 +25239,7 @@ def api_feriados_editar(fid):
     tipo = (d.get("tipo") or f.tipo or "nacional").strip().lower()
     municipio = (d.get("municipio") or "").strip()
     estado = (d.get("estado") or "").strip().upper()[:2]
+    posto_operacional = (d.get("posto_operacional") or "").strip()
     funcionario_ids = {
         int(x) for x in (d.get("funcionario_ids") or []) if str(x).isdigit()
     }
@@ -25230,17 +25258,20 @@ def api_feriados_editar(fid):
         f.data = data_norm
     if descricao:
         f.descricao = descricao
-    if tipo in ("nacional", "municipal"):
+    if tipo in ("nacional", "municipal", "estadual"):
         f.tipo = tipo
+    if f.tipo == "municipal" and not municipio:
+        return jsonify({"erro": "Para feriado municipal, informe o município."}), 400
+    if f.tipo == "estadual" and not estado:
+        return jsonify({"erro": "Para feriado estadual, informe a UF."}), 400
+    if f.tipo == "estadual":
+        municipio = f"@UF:{estado}"
     f.municipio = municipio
     f.estado = estado
+    f.posto_operacional = "" if f.tipo == "nacional" else posto_operacional
     if "empresa_id" in d:
         f.empresa_id = to_num(d.get("empresa_id")) or None
-    if f.tipo == "municipal":
-        if not funcionario_ids:
-            return jsonify(
-                {"erro": "Para feriado municipal, selecione ao menos 1 funcionário."}
-            ), 400
+    if f.tipo in ("municipal", "estadual") and funcionario_ids:
         FeriadoFuncionario.query.filter_by(feriado_id=f.id).delete()
         funcs_validos = {
             x.id
@@ -25250,7 +25281,7 @@ def api_feriados_editar(fid):
         }
         for func_id in funcs_validos:
             db.session.add(FeriadoFuncionario(feriado_id=f.id, funcionario_id=func_id))
-    else:
+    elif f.tipo == "nacional" or "funcionario_ids" in d:
         FeriadoFuncionario.query.filter_by(feriado_id=f.id).delete()
     db.session.commit()
     fd = f.to_dict()
@@ -25633,28 +25664,40 @@ def api_beneficios_calcular_por_periodo():
         Feriado.data >= dt_ini.isoformat(), Feriado.data <= dt_fim.isoformat()
     ).all()
     feriados_nacionais = {
-        f.data for f in feriados_rows if (f.tipo or "").lower() == "nacional"
+        f.data for f in feriados_rows if (f.tipo or "").strip().lower() == "nacional"
     }
-    mun_ids = [f.id for f in feriados_rows if (f.tipo or "").lower() == "municipal"]
-    feriados_municipais_por_func = {}
-    if mun_ids:
-        vincs = FeriadoFuncionario.query.filter(
-            FeriadoFuncionario.feriado_id.in_(mun_ids)
-        ).all()
-        mapa_data = {f.id: f.data for f in feriados_rows}
-        for v in vincs:
-            data_ref = mapa_data.get(v.feriado_id)
-            if not data_ref:
-                continue
-            feriados_municipais_por_func.setdefault(v.funcionario_id, set()).add(
-                data_ref
-            )
+    feriados_por_data = {}
+    for _fer in feriados_rows:
+        feriados_por_data.setdefault(_fer.data, []).append(_fer)
+
+    _fer_ids = [f.id for f in feriados_rows if f.id]
+    feriado_vinc_map = {}
+    if _fer_ids:
+        for _v in FeriadoFuncionario.query.filter(FeriadoFuncionario.feriado_id.in_(_fer_ids)).all():
+            feriado_vinc_map.setdefault(_v.feriado_id, set()).add(_v.funcionario_id)
+    _qtd_vinculos_feriado = sum(len(v) for v in feriado_vinc_map.values())
+
+    def _norm_posto(v):
+        t = (v or "").strip()
+        return (t or "Reserva tecnica").lower()
+
+    def _feriado_aplica_funcionario(feriado_obj, funcionario_obj):
+        _tipo = (feriado_obj.tipo or "").strip().lower()
+        if _tipo == "nacional":
+            return True
+        _posto_fer = (getattr(feriado_obj, "posto_operacional", "") or "").strip()
+        if _posto_fer and _norm_posto(_posto_fer) != _norm_posto(funcionario_obj.posto_operacional):
+            return False
+        _vincs = feriado_vinc_map.get(feriado_obj.id, set())
+        if _vincs:
+            return funcionario_obj.id in _vincs
+        return True
 
     # Dias do período
     todos_dias = [dt_ini + timedelta(days=i) for i in range(delta)]
 
     # Monta conjunto de dias uteis (seg-sex, excluindo feriados)
-    def _is_util(dt, funcionario_id, dias_semana_set=None):
+    def _is_util(dt, funcionario_obj, dias_semana_set=None):
         # dt.weekday(): 0=seg,1=ter,...,4=sex,5=sab,6=dom
         if dias_semana_set:
             # dias_semana_set = conjunto de ints 0-6 (weekday)
@@ -25664,10 +25707,9 @@ def api_beneficios_calcular_por_periodo():
             if dt.weekday() >= 5:
                 return False
         data_iso = dt.isoformat()
-        if data_iso in feriados_nacionais:
-            return False
-        if data_iso in feriados_municipais_por_func.get(funcionario_id, set()):
-            return False
+        for _fer in feriados_por_data.get(data_iso, []):
+            if _feriado_aplica_funcionario(_fer, funcionario_obj):
+                return False
         return True
 
     # Funcionários ativos
@@ -25759,7 +25801,7 @@ def api_beneficios_calcular_por_periodo():
                 dias_semana_set = None
 
         dias_calendario = sum(
-            1 for dt in todos_dias if _is_util(dt, f.id, dias_semana_set)
+            1 for dt in todos_dias if _is_util(dt, f, dias_semana_set)
         )
 
         # Dias reais de ponto com minutos apurados por dia.
@@ -25903,9 +25945,7 @@ def api_beneficios_calcular_por_periodo():
             "total_dias": delta,
             "feriados_periodo": len(feriados_nacionais),
             "feriados_nacionais_periodo": len(feriados_nacionais),
-            "feriados_municipais_vinculados": sum(
-                len(v) for v in feriados_municipais_por_func.values()
-            ),
+            "feriados_municipais_vinculados": _qtd_vinculos_feriado,
             "min_horas_vrvt": min_horas_vrvt,
             "regra_vrvt": "VT e VR pagos apenas em dias com 8h ou mais trabalhadas. Vale gasolina pago por dia trabalhado. Faltas informadas são descontadas dos dias pagos.",
             "fonte_usada": fonte,
@@ -33292,6 +33332,13 @@ with app.app_context():
             "observacao TEXT",
             "criado_por VARCHAR(100)",
             "criado_em DATETIME",
+        ],
+    )
+    ensure_cols(
+        "feriado",
+        [
+            "estado VARCHAR(2)",
+            "posto_operacional VARCHAR(150)",
         ],
     )
     # Índices compostos para performance de queries frequentes

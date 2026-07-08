@@ -3008,13 +3008,14 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div id="ben-pane-feriados" class="tbl-wrap" style="margin-top:10px;display:none">
           <div class="card" style="padding:14px">
             <div class="card-header"><span class="card-title">&#127970; Cadastro de Feriados</span></div>
-            <p style="font-size:13px;color:var(--text-muted);margin:4px 0 12px 0">Cadastre feriados nacionais e municipais. Eles serão descontados automaticamente no cálculo por período.</p>
+            <p style="font-size:13px;color:var(--text-muted);margin:4px 0 12px 0">Cadastre feriados nacionais, estaduais e municipais. Eles serão descontados automaticamente no cálculo por período e aparecerão na folha de ponto.</p>
             <div class="g4" style="margin-bottom:10px">
               <div class="f"><label>Ano</label><input id="fer-ano" type="number" min="2020" max="2099" placeholder="2026" style="width:100px"></div>
               <div class="f"><label>Tipo</label>
                 <select id="fer-filtro-tipo">
                   <option value="">Todos</option>
                   <option value="nacional">Nacionais</option>
+                  <option value="estadual">Estaduais</option>
                   <option value="municipal">Municipais</option>
                 </select>
               </div>
@@ -3032,19 +3033,15 @@ document.addEventListener('DOMContentLoaded',()=>{
                 <div class="f"><label>Tipo</label>
                   <select id="fer-tipo">
                     <option value="nacional">Nacional</option>
+                    <option value="estadual">Estadual</option>
                     <option value="municipal">Municipal</option>
                   </select>
                 </div>
                 <div class="f"><label>Município (se municipal)</label><input id="fer-municipio" placeholder="Ex: São Paulo" maxlength="100"></div>
                 <div class="f"><label>Estado (UF)</label><input id="fer-estado" placeholder="SP" maxlength="2" style="width:60px"></div>
+                <div class="f"><label>Posto (opcional)</label><select id="fer-posto"><option value="">Todos os postos (inclui reserva técnica)</option></select></div>
               </div>
-              <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px;flex-wrap:wrap">
-                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted)">
-                  <input id="fer-aplicar-selecionados" type="checkbox" checked>
-                  Municipal: aplicar aos funcionários selecionados na aba "Colaboradores Ativos"
-                </label>
-                <span id="fer-sel-info" style="font-size:12px;color:var(--azul)">Nenhum funcionário selecionado</span>
-              </div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:8px">Se não escolher posto, o feriado vale para todos os postos, inclusive reserva técnica.</div>
               <div class="brow" style="justify-content:flex-start;margin-top:8px">
                 <button class="btn b-vd b-sm" onclick="ferSalvar()">&#128190; Salvar feriado</button>
               </div>
@@ -12785,10 +12782,15 @@ async function ferCarregar(){
 }
 
 function ferAtualizarInfoSelecionados(){
-  const el=document.getElementById('fer-sel-info');
-  if(!el) return;
-  const qtd=benSelecionados?.size||0;
-  el.textContent=qtd>0?`${qtd} funcionário(s) selecionado(s)`:'Nenhum funcionário selecionado';
+  const sel=document.getElementById('fer-posto');
+  if(!sel) return;
+  const atual=(sel.value||'').trim();
+  const base=(beneficiosMensais||[]);
+  const postos=[...new Set(base.map(it=>(it.posto_operacional||'Reserva tecnica').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  if(!postos.find(p=>p.toLowerCase()==='reserva tecnica')) postos.push('Reserva tecnica');
+  sel.innerHTML='<option value="">Todos os postos (inclui reserva técnica)</option>'+postos.map(p=>`<option value="${escHtml(p)}">${escHtml(p)}</option>`).join('');
+  const found=postos.find(p=>p===atual);
+  if(found) sel.value=found;
 }
 
 function ferRenderTabela(){
@@ -12805,7 +12807,7 @@ function ferRenderTabela(){
       <td><span style="background:${f.tipo==='nacional'?'var(--azul-esc)':'var(--azul)'};color:var(--branco);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700">${f.tipo||''}</span></td>
       <td>${escHtml(f.municipio||'')}</td>
       <td>${escHtml(f.estado||'')}</td>
-      <td>${f.tipo==='municipal' ? ((f.qtd_funcionarios||0)+ ' funcionário(s)') : 'Nacional (todos)'}</td>
+      <td>${f.tipo==='nacional' ? 'Nacional (todos)' : (f.posto_operacional ? ('Posto: '+escHtml(f.posto_operacional)) : ((f.qtd_funcionarios||0)>0 ? ((f.qtd_funcionarios||0)+' funcionário(s)') : 'Todos os postos (inclui reserva técnica)'))}</td>
       <td><button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);border:1px solid var(--verm);padding:2px 8px" onclick="ferExcluir(${f.id})">&#128465;</button></td>
     </tr>`).join('');
 }
@@ -12816,17 +12818,12 @@ async function ferSalvar(){
   const tipo=document.getElementById('fer-tipo').value;
   const municipio=document.getElementById('fer-municipio').value.trim();
   const estado=document.getElementById('fer-estado').value.trim();
-  const aplicarSelecionados=document.getElementById('fer-aplicar-selecionados')?.checked!==false;
-  const funcionariosSelecionados=[...(benSelecionados||new Set())];
+  const posto=(document.getElementById('fer-posto')?.value||'').trim();
   const st=document.getElementById('fer-status');
   if(!data){st.textContent='Informe a data.';st.style.color='var(--verm-cl)';return;}
   if(!desc){st.textContent='Informe a descrição.';st.style.color='var(--verm-cl)';return;}
   if(tipo==='municipal'&&!municipio){st.textContent='Informe o município.';st.style.color='var(--verm-cl)';return;}
-  if(tipo==='municipal' && aplicarSelecionados && !funcionariosSelecionados.length){
-    st.textContent='Selecione ao menos 1 funcionário na aba Colaboradores Ativos para feriado municipal.';
-    st.style.color='var(--verm-cl)';
-    return;
-  }
+  if(tipo==='estadual'&&!estado){st.textContent='Informe a UF para feriado estadual.';st.style.color='var(--verm-cl)';return;}
   // converte YYYY-MM-DD -> DD/MM/YYYY para envio
   const [y,m,d]=data.split('-');
   const dataEnvio=`${d}/${m}/${y}`;
@@ -12837,7 +12834,7 @@ async function ferSalvar(){
       tipo,
       municipio,
       estado,
-      funcionario_ids:(tipo==='municipal' && aplicarSelecionados) ? funcionariosSelecionados : []
+      posto_operacional:posto||null
     })});
   const j=await r.json();
   if(j.ok){

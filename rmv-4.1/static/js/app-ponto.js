@@ -1253,8 +1253,9 @@ function pontoFmtTipoAfastamento(tipo){
   const t=String(tipo||'').trim();
   if(!t) return 'Afastamento';
   const map={atestado:'Atestado medico',licenca:'Licenca',outros:'Afastamento'};
-  if(map[t.toLowerCase()]) return map[t.toLowerCase()];
-  return t.charAt(0).toUpperCase()+t.slice(1);
+  const norm=t.toLowerCase();
+  if(map[norm]) return map[norm];
+  return t;
 }
 
 async function pontoCarregarAfastamentos(){
@@ -1309,15 +1310,13 @@ function pontoAbrirModalAfastamento(){
     <div style="font-weight:700;font-size:15px;margin-bottom:14px">🏥 Novo afastamento/atestado · ${escHtml(f?.nome||'Colaborador')}</div>
     <div style="display:grid;gap:12px">
       <div><label style="font-size:12px;display:block;margin-bottom:4px">Tipo</label>
-        <select id="_af-tipo" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px">
-          <option value="atestado">🏥 Atestado médico</option>
-          <option value="licenca">📋 Licença</option>
-          <option value="outros">📄 Outro afastamento</option>
-          <option value="custom">✍ Tipo livre</option>
-        </select>
+        <input id="_af-tipo" placeholder="Ex.: Atestado médico, Licença, Acompanhamento familiar" list="_af-tipo-sugestoes" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;box-sizing:border-box" maxlength="40" value="Atestado médico">
+        <datalist id="_af-tipo-sugestoes">
+          <option value="Atestado médico"></option>
+          <option value="Licença"></option>
+          <option value="Outro afastamento"></option>
+        </datalist>
       </div>
-      <div id="_af-tipo-livre-wrap" style="display:none"><label style="font-size:12px;display:block;margin-bottom:4px">Tipo livre</label>
-        <input id="_af-tipo-livre" placeholder="Ex.: Acompanhamento familiar" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;box-sizing:border-box" maxlength="40"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div><label style="font-size:12px;display:block;margin-bottom:4px">Data início <span style="color:red">*</span></label>
           <input id="_af-inicio" type="date" value="${hoje}" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;box-sizing:border-box"></div>
@@ -1337,14 +1336,9 @@ function pontoAbrirModalAfastamento(){
   </div>`;
   document.body.appendChild(_ov);
   const _tipoSel=_ov.querySelector('#_af-tipo');
-  const _tipoLivreWrap=_ov.querySelector('#_af-tipo-livre-wrap');
   const _inicioInp=_ov.querySelector('#_af-inicio');
   const _fimInp=_ov.querySelector('#_af-fim');
   const _diasInp=_ov.querySelector('#_af-dias');
-  const _toggleTipoLivre=()=>{
-    const on=_tipoSel?.value==='custom';
-    if(_tipoLivreWrap) _tipoLivreWrap.style.display=on?'':'none';
-  };
   const _syncFimPorDias=()=>{
     if(!_inicioInp || !_fimInp || !_diasInp) return;
     const ini=_inicioInp.value;
@@ -1365,28 +1359,18 @@ function pontoAbrirModalAfastamento(){
     const diff=Math.floor((fim-ini)/86400000)+1;
     _diasInp.value=String(Math.max(1,Math.min(365,diff)));
   };
-  if(_tipoSel) _tipoSel.onchange=_toggleTipoLivre;
   if(_diasInp) _diasInp.oninput=_syncFimPorDias;
   if(_inicioInp) _inicioInp.onchange=()=>{_syncFimPorDias();};
   if(_fimInp) _fimInp.onchange=_syncDiasPorFim;
-  _toggleTipoLivre();
   _syncFimPorDias();
   _ov.querySelector('#_af-cancel').onclick=()=>document.body.removeChild(_ov);
   _ov.querySelector('#_af-salvar').onclick=async ()=>{
-    let tipo=_ov.querySelector('#_af-tipo').value;
-    if(tipo==='custom'){
-      tipo=(_ov.querySelector('#_af-tipo-livre')?.value||'').trim();
-      if(!tipo){
-        const st=_ov.querySelector('#_af-st');
-        st.textContent='Informe o tipo livre do afastamento.';
-        st.style.display='';
-        return;
-      }
-    }
+    const tipo=(_ov.querySelector('#_af-tipo')?.value||'').trim();
     const inicio=_ov.querySelector('#_af-inicio').value;
     const fim=_ov.querySelector('#_af-fim').value;
     const obs=(_ov.querySelector('#_af-obs').value||'').trim();
     const st=_ov.querySelector('#_af-st');
+    if(!tipo){st.textContent='Informe o tipo do afastamento.';st.style.display='';return;}
     if(!inicio||!fim){st.textContent='Preencha as datas.';st.style.display='';return;}
     if(fim<inicio){st.textContent='Data fim deve ser igual ou posterior à data início.';st.style.display='';return;}
     const btn=_ov.querySelector('#_af-salvar');
