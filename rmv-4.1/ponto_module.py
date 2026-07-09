@@ -1979,6 +1979,7 @@ def register_ponto_routes(
         # separadas podiam divergir em segundos na virada de minuto.
         _now_br = datetime.now(ZoneInfo("America/Sao_Paulo"))
         # BUG-FIX 12: exibir escala real do funcionario em vez de "Normal" hardcoded
+        _esc_obj = None
         try:
             _ef_esc = EscalaFuncionario.query.filter(
                 EscalaFuncionario.funcionario_id == funcionario.id,
@@ -1996,6 +1997,11 @@ def register_ponto_routes(
                     _nome_escala = f"{_esc_obj.nome} ({_esc_obj.tipo})"
         except Exception:
             _nome_escala = "Normal"
+
+        if _esc_obj and getattr(_esc_obj, "tipo", "") == "12x36":
+            _jornada_label = "11h trabalhadas + 1h de refeição"
+        else:
+            _jornada_label = (funcionario.jornada or "08:00").replace(";", "<br/>")
 
         def _logo_flowable(emp_item):
             cands = []
@@ -2020,7 +2026,7 @@ def register_ponto_routes(
                         # lento bloqueava o worker Gunicorn por até 8 segundos.
                         with urllib.request.urlopen(req, timeout=2) as resp:
                             data = resp.read()
-                        return Image(io.BytesIO(data), width=20 * mm, height=8 * mm)
+                        return Image(io.BytesIO(data), width=28 * mm, height=11 * mm)
                     # BUG-FIX 7: não passar logo_url arbitrário para os.path.exists/Image
                     # sem verificar que é um caminho dentro de diretórios permitidos
                     # (path traversal). Aceitar apenas se for sub-caminho do static/ do app.
@@ -2029,7 +2035,7 @@ def register_ponto_routes(
                     )
                     _cand_abs = os.path.abspath(cand)
                     if _cand_abs.startswith(_base_dir) and os.path.exists(_cand_abs):
-                        return Image(_cand_abs, width=20 * mm, height=8 * mm)
+                        return Image(_cand_abs, width=28 * mm, height=11 * mm)
                 except Exception:
                     continue
             return p(
@@ -2050,11 +2056,7 @@ def register_ponto_routes(
                     html=True,
                 ),
                 p(f"<b>Período:</b><br/>{inicio_br} à {fim_br}", st_small, html=True),
-                p(
-                    f"<b>Jornada de trabalho:</b><br/>{(funcionario.jornada or '08:00').replace(';', '<br/>')}",
-                    st_small,
-                    html=True,
-                ),
+                p(f"<b>Jornada de trabalho:</b><br/>{_jornada_label}", st_small, html=True),
             ],
             [
                 p(
@@ -2094,9 +2096,9 @@ def register_ponto_routes(
         )
 
         elementos.append(p("Espelho Ponto", st_titulo))
-        elementos.append(Spacer(1, (4 if compact_mode else 6)))
+        elementos.append(Spacer(1, (3 if compact_mode else 5)))
         elementos.append(tabela_cab)
-        elementos.append(Spacer(1, (4 if compact_mode else 6)))
+        elementos.append(Spacer(1, (3 if compact_mode else 5)))
 
         tabela_dias = [
             [
