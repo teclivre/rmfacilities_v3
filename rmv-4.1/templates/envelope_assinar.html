@@ -156,7 +156,8 @@
               </div>
                 <div class="signer-actions-sticky">
                   <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
-                    <button class="public-btn public-btn-primary" id="btn-assinar" onclick="confirmarAssinatura()" disabled>Visualize os documentos para assinar</button>
+                    <button class="public-btn public-btn-secondary" type="button" onclick="abrirPrimeiroDocumento()">Ver documento</button>
+                    <button class="public-btn public-btn-primary" id="btn-assinar" onclick="confirmarAssinatura()">Assinar documento</button>
                   </div>
               </div>
             </div>
@@ -176,7 +177,7 @@
                 </div>
                 <button type="button" class="fs-btn" onclick="toggleViewerFullscreen()">⛶ Tela cheia</button>
               </div>
-              <p style="font-size:11px;color:#8aafcc;margin:0">Todos os documentos são carregados em sequência abaixo. Role até o final para liberar a assinatura.</p>
+              <p style="font-size:11px;color:#8aafcc;margin:0">Todos os documentos são carregados em sequência abaixo. Se quiser, você pode visualizá-los antes de assinar.</p>
               <div class="doc-chip-list" id="doc-chip-list">
                 {% for a in arquivos %}
                 <button type="button" class="doc-chip" data-doc-id="{{ a.id }}" onclick="irParaDocumento({{ a.id }})">{{ a.nome_arquivo }}</button>
@@ -247,17 +248,6 @@ function atualizarProgressoDocs(){
   const vistos=docsVistos.size;
   const lbl=document.getElementById('viewer-progress');
   if(lbl) lbl.textContent=`${vistos}/${total} visualizado(s)`;
-  const btn=document.getElementById('btn-assinar');
-  if(btn){
-    if(total>0 && vistos>=total){
-      btn.disabled=false;
-      btn.textContent='Assinar documento';
-      showViewerMsg('Todos os documentos foram visualizados. Agora você pode assinar.','ok');
-    }else{
-      btn.disabled=true;
-      btn.textContent='Visualize os documentos para assinar';
-    }
-  }
 }
 
 function marcarChipAtivo(docId){
@@ -270,6 +260,11 @@ function marcarChipAtivo(docId){
 
 function abrirDocumento(docId){
   irParaDocumento(docId);
+}
+
+function abrirPrimeiroDocumento(){
+  if(!DOCS.length) return;
+  irParaDocumento(parseInt(DOCS[0],10));
 }
 
 function irParaDocumento(docId){
@@ -434,14 +429,13 @@ async function carregarTodosDocumentos(){
   bindReadScroll();
   if(DOCS.length){
     marcarChipAtivo(parseInt(DOCS[0],10));
-    showViewerMsg('Documentos carregados. Role até o final para liberar a assinatura.','ok');
+    showViewerMsg('Documentos carregados. Use "Ver documento" se quiser abrir a visualização com mais facilidade.','ok');
   }
 }
 
 function validaEtapa1(){
   const nome=document.getElementById('inp-nome').value.trim();
   const aceite=document.getElementById('chk-aceite').checked;
-  if(DOCS.length>0 && docsVistos.size<DOCS.length) return 'Visualize todos os documentos para liberar a assinatura.';
   if(!nome) return 'Informe seu nome completo.';
   if(!aceite) return 'Marque o aceite para continuar com a assinatura.';
   return '';
