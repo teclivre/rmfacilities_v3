@@ -99,11 +99,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .empty-state{text-align:center;padding:40px 16px;color:var(--text2);font-size:13px}
 .empty-state .emo{font-size:36px;margin-bottom:8px}
 
-/* GPS Banner */
-.gps-banner{display:none;align-items:center;gap:10px;background:var(--yellow-cl);border:1px solid rgba(234,179,8,.3);border-radius:12px;padding:11px 13px;margin-bottom:10px;font-size:13px;color:var(--yellow)}
-.gps-banner.on{display:flex}
-.gps-banner button{margin-left:auto;background:var(--yellow);color:#000;border:none;border-radius:8px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0}
-
 /* Ponto */
 .clock-big{text-align:center;font-size:44px;font-weight:200;letter-spacing:-2px;color:var(--text);line-height:1;margin:4px 0 2px}
 .date-sub{text-align:center;font-size:13px;color:var(--text2);margin-bottom:18px}
@@ -884,8 +879,6 @@ function marcarPonto(){
   btn.disabled=true;btn.textContent='Registrando ponto…';
   // GPS é tentado mas não obrigatório: se negado/indisponível, registra sem coordenadas
   obterGps(6000).then(function(pos){
-    var banner=document.getElementById('gps-banner');
-    if(banner) banner.classList.remove('on');
     btn.textContent='…';
     return api('POST','/api/app/funcionario/me/ponto/marcar',{lat:pos.lat,lon:pos.lon,precisao:pos.precisao});
   }).catch(function(gpsErr){
