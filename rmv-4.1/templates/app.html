@@ -1570,6 +1570,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-feriados" class="subaba-bloco" onclick="rhSetSubAba('feriados',this)">Calendário de Feriados</button>
         <button type="button" id="rh-subtab-ponto" class="subaba-bloco" onclick="rhSetSubAba('ponto',this)">Gestão de Ponto por Funcionário</button>
         <button type="button" id="rh-subtab-painel-dia" class="subaba-bloco" onclick="rhSetSubAba('painel-dia',this)">Painel do dia</button>
+        <button type="button" id="rh-subtab-ciclo-assinatura" class="subaba-bloco" onclick="rhSetSubAba('ciclo-assinatura',this)">Fechar ciclo e assinar ponto</button>
         <button type="button" id="rh-subtab-envio" class="subaba-bloco" onclick="rhSetSubAba('envio',this)">Envio de arquivo</button>
         <button type="button" id="rh-subtab-assinaturas" class="subaba-bloco" onclick="rhSetSubAba('assinaturas',this)">Painel de Assinaturas</button>
         <button type="button" id="rh-subtab-gestao-facil" class="subaba-bloco" onclick="rhSetSubAba('gestao-facil',this);gfCarregar()">⚡ Gestão Fácil</button>
@@ -1959,6 +1960,48 @@ document.addEventListener('DOMContentLoaded',()=>{
           <table class="tbl">
             <thead><tr><th>Colaborador</th><th>Marcações</th><th>Horas</th><th>Esperado</th><th>Saldo</th><th>Próxima</th><th>Status</th></tr></thead>
             <tbody id="tb-ponto-painel"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card rh-pane" id="rh-pane-ciclo-assinatura" data-rh-pane="ciclo-assinatura" style="display:none">
+        <div class="card-header">
+          <span class="card-title">Fechamento de ciclo e envio para assinatura</span>
+        </div>
+        <div class="g4" style="margin-top:8px;align-items:flex-end">
+          <div class="f">
+            <label>Competência</label>
+            <input id="rh-ciclo-comp" type="month">
+          </div>
+          <div class="f">
+            <label>Empresa</label>
+            <select id="rh-ciclo-empresa"><option value="">Todas as empresas</option></select>
+          </div>
+          <div class="f">
+            <label>Assinatura via</label>
+            <select id="rh-ciclo-canal">
+              <option value="app">App</option>
+              <option value="link">Link</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="nao">Não solicitar assinatura</option>
+            </select>
+          </div>
+          <div class="f">
+            <label>Prazo assinatura (dias)</label>
+            <input id="rh-ciclo-prazo" type="number" min="1" max="90" placeholder="Opcional">
+          </div>
+        </div>
+        <div class="brow" style="justify-content:flex-start;gap:10px;flex-wrap:wrap;margin-top:8px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px"><input id="rh-ciclo-so-ativos" type="checkbox" checked style="width:auto">Somente ativos</label>
+          <button class="btn b-gh b-sm" type="button" onclick="rhCicloFechar(false)">Fechar ciclo</button>
+          <button class="btn b-vd b-sm" type="button" onclick="rhCicloFechar(true)">Fechar ciclo e enviar para assinatura</button>
+        </div>
+        <div class="hint" style="margin-top:8px">Ao enviar assinatura, o sistema gera o espelho PDF por colaborador e publica em documentos RH como categoria Folha de Ponto.</div>
+        <div id="st-rh-ciclo" class="st" style="margin-top:10px"></div>
+        <div class="tbl-wrap" style="margin-top:10px">
+          <table class="tbl">
+            <thead><tr><th>Colaborador</th><th>Fechamento</th><th>Envio para assinatura</th></tr></thead>
+            <tbody id="rh-ciclo-tb"><tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:14px">Nenhum processamento executado ainda.</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -5282,7 +5325,7 @@ function rhSalariosIniciarPagina(){
 }
 
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','feriados','ponto','painel-dia','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo'];
+  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','feriados','ponto','painel-dia','ciclo-assinatura','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
     if(p.dataset.rhPane===rhSubAba){
@@ -5307,6 +5350,9 @@ function rhSetSubAba(tab,btn){
   if(rhSubAba==='ponto'){
     carregarCorrecoesPonto();
   }
+  if(rhSubAba==='ciclo-assinatura'){
+    rhCicloInit();
+  }
   if(rhSubAba==='ficha-epi'){
     epiInicializar();
   }
@@ -5319,6 +5365,118 @@ function rhSetSubAba(tab,btn){
     if(dtInput && !dtInput.value){
       dtInput.value = new Date().toISOString().slice(0,10);
     }
+  }
+}
+
+function rhCicloInit(){
+  const compEl=document.getElementById('rh-ciclo-comp');
+  if(compEl && !compEl.value){
+    const hoje=new Date();
+    compEl.value=`${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}`;
+  }
+  rhCicloPopularEmpresas();
+}
+
+function rhCicloPopularEmpresas(){
+  const sel=document.getElementById('rh-ciclo-empresa');
+  if(!sel) return;
+  const atual=sel.value||'';
+  const lista=Array.isArray(emps)?emps.slice().sort((a,b)=>String(a?.nome||'').localeCompare(String(b?.nome||''))):[];
+  sel.innerHTML='<option value="">Todas as empresas</option>' + lista.map(e=>`<option value="${e.id}">${esc(e.nome||('Empresa '+e.id))}</option>`).join('');
+  if(atual && sel.querySelector(`option[value="${atual}"]`)) sel.value=atual;
+}
+
+function rhCicloRenderTabela(rows){
+  const tb=document.getElementById('rh-ciclo-tb');
+  if(!tb) return;
+  if(!Array.isArray(rows) || !rows.length){
+    tb.innerHTML='<tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:14px">Nenhum colaborador processado.</td></tr>';
+    return;
+  }
+  tb.innerHTML=rows.map(r=>`<tr>
+    <td>${esc(r.nome||'')}</td>
+    <td>${esc(r.fechamento||'')}</td>
+    <td>${esc(r.envio||'-')}</td>
+  </tr>`).join('');
+}
+
+async function rhCicloFechar(enviarAssinatura){
+  const compMes=(document.getElementById('rh-ciclo-comp')?.value||'').trim();
+  if(!/^\d{4}-\d{2}$/.test(compMes)){
+    showSt('st-rh-ciclo','Informe a competência no formato AAAA-MM.',true);
+    return;
+  }
+  const empresaVal=(document.getElementById('rh-ciclo-empresa')?.value||'').trim();
+  const somenteAtivos=!!document.getElementById('rh-ciclo-so-ativos')?.checked;
+  const canal=(document.getElementById('rh-ciclo-canal')?.value||'app').trim();
+  const prazoDias=(document.getElementById('rh-ciclo-prazo')?.value||'').trim();
+
+  showSt('st-rh-ciclo','Fechando ciclo da competência...',false);
+  rhCicloRenderTabela([]);
+
+  const payload={
+    competencia:compMes,
+    empresa_id:(empresaVal?Number(empresaVal):0),
+    somente_ativos:somenteAtivos
+  };
+  const fechamento=await api('/api/rh/ponto/ciclo/fechar','POST',payload);
+  if(fechamento.erro){
+    showSt('st-rh-ciclo',fechamento.erro,true);
+    return;
+  }
+
+  const funcs=Array.isArray(fechamento.funcionarios)?fechamento.funcionarios:[];
+  const linhas=funcs.map(f=>({nome:f.nome||'',fechamento:`${f.dias_fechados||0} dia(s) fechados`,envio:enviarAssinatura?'Aguardando envio...':'—'}));
+  rhCicloRenderTabela(linhas);
+  showSt('st-rh-ciclo',`Ciclo fechado: ${fechamento.total_funcionarios||0} colaborador(es), ${fechamento.dias_fechados||0} dia(s).`,false);
+
+  if(!enviarAssinatura || !funcs.length) return;
+
+  let ok=0, falhas=0;
+  for(let i=0;i<funcs.length;i++){
+    const f=funcs[i]||{};
+    const fid=Number(f.funcionario_id||0);
+    if(!fid){
+      falhas++;
+      linhas[i].envio='Falha: ID inválido';
+      rhCicloRenderTabela(linhas);
+      continue;
+    }
+    showSt('st-rh-ciclo',`Enviando assinatura ${i+1}/${funcs.length}: ${f.nome||('ID '+fid)}...`,false);
+    try{
+      const pdfResp=await fetch(`/api/ponto/espelho-mensal?funcionario_id=${encodeURIComponent(fid)}&competencia=${encodeURIComponent(compMes)}`,{credentials:'same-origin'});
+      if(!pdfResp.ok){
+        let msg=`Erro ao gerar espelho (HTTP ${pdfResp.status})`;
+        try{ const ej=await pdfResp.json(); if(ej?.erro) msg=ej.erro; }catch(_e){}
+        throw new Error(msg);
+      }
+      const blob=await pdfResp.blob();
+      const nome=(f.nome||`funcionario_${fid}`).replace(/\s+/g,'_');
+      const fd=new FormData();
+      fd.append('arquivo',blob,`folha_ponto_${nome}_${compMes}.pdf`);
+      fd.append('categoria','folha_ponto');
+      fd.append('competencia',compMes);
+      fd.append('canal_assinatura',canal);
+      if(prazoDias) fd.append('prazo_dias',prazoDias);
+
+      const upResp=await fetch(`/api/funcionarios/${encodeURIComponent(fid)}/arquivos`,{method:'POST',body:fd,credentials:'same-origin'});
+      const upJson=await upResp.json().catch(()=>({}));
+      if(!upResp.ok || upJson?.erro){
+        throw new Error(upJson?.erro || `Falha no upload (HTTP ${upResp.status})`);
+      }
+      ok++;
+      linhas[i].envio='Enviado para assinatura';
+    }catch(err){
+      falhas++;
+      linhas[i].envio=`Falha: ${err?.message||'erro desconhecido'}`;
+    }
+    rhCicloRenderTabela(linhas);
+  }
+
+  if(falhas>0){
+    showSt('st-rh-ciclo',`Concluído com falhas. Enviados: ${ok}. Falhas: ${falhas}.`,true);
+  }else{
+    showSt('st-rh-ciclo',`Concluído com sucesso. ${ok} assinatura(s) enviada(s).`,false);
   }
 }
 

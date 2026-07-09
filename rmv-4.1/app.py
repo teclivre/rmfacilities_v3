@@ -24034,6 +24034,129 @@ def api_documentos_rh_upload():
     )
 
 
+@app.route("/api/rh/ponto/ciclo/fechar", methods=["POST"])
+@lr
+def api_rh_ponto_ciclo_fechar():
+    """Fecha em lote os dias da competência para funcionários ativos (ou seleção informada)."""
+    import calendar as _cal
+
+    d = request.json or {}
+    competencia = (d.get("competencia") or "").strip()
+    if not re.match(r"^\d{4}-\d{2}$", competencia):
+        return jsonify({"erro": "Competência inválida. Use YYYY-MM."}), 400
+
+    try:
+        ano, mes = [int(x) for x in competencia.split("-")]
+        if not (1 <= mes <= 12 and 2000 <= ano <= 2100):
+            raise ValueError()
+    except Exception:
+        return jsonify({"erro": "Competência inválida."}), 400
+
+    empresa_id = to_num(d.get("empresa_id") or 0)
+    somente_ativos = bool(d.get("somente_ativos", True))
+    ids_raw = d.get("funcionario_ids") or []
+    funcionario_ids = []
+    if isinstance(ids_raw, list):
+        for item in ids_raw:
+            fid = to_num(item)
+            if fid and fid not in funcionario_ids:
+                funcionario_ids.append(fid)
+
+    q = Funcionario.query
+    if empresa_id:
+        q = q.filter(Funcionario.empresa_id == empresa_id)
+    if somente_ativos:
+        q = q.filter(Funcionario.status == "Ativo")
+    if funcionario_ids:
+        q = q.filter(Funcionario.id.in_(funcionario_ids))
+    funcionarios = q.order_by(Funcionario.nome.asc()).all()
+
+    if not funcionarios:
+        return jsonify(
+            {
+                "ok": True,
+                "competencia": competencia,
+                "funcionarios": [],
+                "total_funcionarios": 0,
+                "dias_fechados": 0,
+                "mensagem": "Nenhum funcionário encontrado para os filtros selecionados.",
+            }
+        )
+
+    ultimo_dia = _cal.monthrange(ano, mes)[1]
+    hoje = localnow().date()
+    if ano == hoje.year and mes == hoje.month:
+        ultimo_dia = min(ultimo_dia, hoje.day)
+
+    uid = session.get("uid")
+    agora = utcnow()
+    total_dias = 0
+    resumo_funcs = []
+
+    try:
+        for f in funcionarios:
+            dias_fechados_func = 0
+            for dia in range(1, ultimo_dia + 1):
+                data_ref = date(ano, mes, dia)
+                data_ref_str = data_ref.isoformat()
+                resumo = _app_ponto_resumo_dia(f, data_ref) or {}
+                fechamento = PontoFechamentoDia.query.filter_by(
+                    funcionario_id=f.id, data_ref=data_ref_str
+                ).first()
+                if not fechamento:
+                    fechamento = PontoFechamentoDia(
+                        funcionario_id=f.id,
+                        data_ref=data_ref_str,
+                    )
+                    db.session.add(fechamento)
+
+                fechamento.status = (resumo.get("status") or "ok").strip() or "ok"
+                fechamento.observacao = "Fechamento mensal em lote"
+                fechamento.resumo_json = json.dumps(
+                    {
+                        "data": data_ref_str,
+                        "horas_trabalhadas_min": int(
+                            resumo.get("horas_trabalhadas_min") or 0
+                        ),
+                        "horas_esperadas_min": int(
+                            resumo.get("horas_esperadas_min") or 0
+                        ),
+                        "saldo_min": int(resumo.get("saldo_min") or 0),
+                        "dia_tipo": (resumo.get("dia_tipo") or "normal"),
+                    },
+                    ensure_ascii=False,
+                )
+                fechamento.fechado_por = str(uid or "")
+                fechamento.fechado_em = agora
+                dias_fechados_func += 1
+
+            total_dias += dias_fechados_func
+            resumo_funcs.append(
+                {
+                    "funcionario_id": f.id,
+                    "nome": f.nome or "",
+                    "empresa_id": f.empresa_id,
+                    "dias_fechados": dias_fechados_func,
+                }
+            )
+
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.exception("Falha ao fechar ciclo de ponto em lote")
+        return jsonify({"erro": f"Falha ao fechar ciclo: {str(exc)}"}), 500
+
+    return jsonify(
+        {
+            "ok": True,
+            "competencia": competencia,
+            "total_funcionarios": len(resumo_funcs),
+            "dias_fechados": total_dias,
+            "funcionarios": resumo_funcs,
+        }
+    )
+
+
 @app.route("/api/rh/preview-destinatarios", methods=["POST"])
 @lr
 def api_rh_preview_destinatarios():
