@@ -674,11 +674,11 @@ def register_ponto_routes(
         )
         marc_por_data_comp = {}
         for _mc in todas_marc_comp:
-            # data_hora é BRT naive (utcnow()=localnow()=BRT); usar .date() direto.
-            # NÃO tratar naive como UTC: isso deslocaria marcações entre 00:00-02:59
-            # para o dia anterior (ex: 01:00 BRT naive → 22:00 BRT do dia anterior).
             if _mc.data_hora:
-                _dc = _mc.data_hora.date()
+                # Alinhar o espelho mensal com a mesma data_ref efetiva já usada
+                # no registro e na consulta diária: em turno noturno, marcações da
+                # madrugada pertencem ao dia anterior até o corte configurado.
+                _dc = _ponto_data_ref_efetiva(funcionario, _mc.data_hora) or _mc.data_hora.date()
                 marc_por_data_comp.setdefault(_dc, []).append(_mc)
         dia = inicio
         while dia <= fim:
