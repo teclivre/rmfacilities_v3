@@ -1924,6 +1924,7 @@ def register_ponto_routes(
             # por posição (tempos[1]/tempos[2]) — eliminando a divergência entre
             # o total exibido no rodapé e o valor efetivamente descontado.
             intervalo = int(resumo.get("intrajornada_min", 0) or 0)
+            noturno = int(resumo.get("noturno_min", 0) or 0)
 
             faltas = ""
             extras_50 = ""
@@ -1978,6 +1979,7 @@ def register_ponto_routes(
             total_previstas += previstas
             total_diurnas += diurnas
             total_intervalo += intervalo
+            total_noturno += noturno
 
             linhas.append(
                 [
@@ -1986,6 +1988,7 @@ def register_ponto_routes(
                     _ponto_fmt_minutos(previstas),
                     _ponto_fmt_minutos(diurnas),
                     _ponto_fmt_minutos(intervalo) if intervalo else "",
+                    _ponto_fmt_minutos(noturno) if noturno else "",
                     faltas,
                     extras_50,
                     extras_100,
@@ -2192,6 +2195,7 @@ def register_ponto_routes(
                 "Previstas",
                 "Diurnas",
                 "Intervalo",
+                "Noturno",
                 "Faltas",
                 "Ext. 50",
                 "Ext. 100",
@@ -2203,12 +2207,13 @@ def register_ponto_routes(
             colWidths=[
                 # BUG-FIX 11: soma anterior era 0.92 (tabela 8% menor que a largura útil).
                 # Redistribuído para somar exatamente 1.0.
-                largura * 0.10,
-                largura * 0.34,
                 largura * 0.09,
-                largura * 0.09,
-                largura * 0.09,
-                largura * 0.09,
+                largura * 0.31,
+                largura * 0.08,
+                largura * 0.08,
+                largura * 0.08,
+                largura * 0.08,
+                largura * 0.08,
                 largura * 0.10,
                 largura * 0.10,
             ],
@@ -2242,6 +2247,7 @@ def register_ponto_routes(
             f"<b>Previstas:</b> {_ponto_fmt_minutos(total_previstas)}   "
             f"<b>Diurnas:</b> {_ponto_fmt_minutos(total_diurnas)}   "
             f"<b>Intervalo:</b> {_ponto_fmt_minutos(total_intervalo)}   "
+            f"<b>Noturno:</b> {_ponto_fmt_minutos(total_noturno)}   "
             f"<b>Faltas:</b> {_faltas_fmt}   "
             f"<b>Extras 50%:</b> {_ponto_fmt_minutos(total_extras_50)}   "
             f"<b>Extras 100%:</b> {_ponto_fmt_minutos(total_extras_100)}"
