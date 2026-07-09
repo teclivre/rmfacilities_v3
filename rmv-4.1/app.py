@@ -19395,6 +19395,10 @@ def api_jornada_excluir(id):
 @app.route("/api/jornadas/<int:id>/funcionarios", methods=["POST"])
 @lr
 def api_jornada_vincular_funcionarios(id):
+    return jsonify({
+        "erro": "Vinculação de jornada foi desativada para evitar conflito com Escalas. Use Escalas de Turnos no cadastro do funcionário."
+    }), 409
+
     j = db.get_or_404(JornadaTrabalho, id)
     d = request.json or {}
     ids = d.get("funcionario_ids") or []
@@ -19512,10 +19516,9 @@ def api_funcionario_definir_jornada(id):
     if jid is None or jid == "":
         f.jornada_id = None
     else:
-        j = db.session.get(JornadaTrabalho, int(jid))
-        if not j:
-            return jsonify({"erro": "Jornada não encontrada"}), 404
-        f.jornada_id = j.id
+        return jsonify({
+            "erro": "Vinculação de jornada foi desativada para evitar conflito com Escalas. Use Escalas de Turnos no cadastro do funcionário."
+        }), 409
     _aplicar_regra_jornada_por_status(f)
     db.session.commit()
     # BUG-FIX 7: alertar se funcionário tem escala rotativa ativa ao mesmo tempo que jornada fixa.

@@ -1735,22 +1735,8 @@ document.addEventListener('DOMContentLoaded',()=>{
               </table>
             </div>
 
-            <label style="margin-top:10px">Vincular funcionários à jornada</label>
-            <div class="g2" style="margin-top:6px">
-              <div class="f">
-                <label>Jornada</label>
-                <select id="rh-jor-vinc-jornada"></select>
-              </div>
-              <div class="f">
-                <label>Funcionários ativos</label>
-                <select id="rh-jor-vinc-funcs" multiple size="7"></select>
-              </div>
-            </div>
-            <div class="hint" style="margin-top:4px">Use Ctrl/Cmd para selecionar múltiplos funcionários.</div>
-            <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
-              <button class="btn b-ghv b-sm" onclick="rhJornadaVincularSelecionados()">Vincular selecionados</button>
-              <button class="btn b-gh b-sm" onclick="rhJornadaDesvincularSelecionados()">Desvincular selecionados</button>
-            </div>
+            <label style="margin-top:10px">Vinculação de jornada</label>
+            <div class="hint" style="margin-top:6px">Desativada para evitar conflito com Escalas de Turnos. Use apenas Escalas no cadastro do funcionário.</div>
 
             <hr style="margin:12px 0;border:none;border-top:1px solid var(--borda)">
 
