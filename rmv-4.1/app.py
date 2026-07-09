@@ -18496,9 +18496,6 @@ def api_app_ponto_marcar_me():
         ), 400
     data_ref = _app_ponto_data_ref_efetiva(f, data_hora) or data_hora.date()
     marcacoes_dia = _app_ponto_marcacoes_dia(f.id, data_ref)
-    max_marc = _app_ponto_max_marcacoes_dia(f)
-    if len(marcacoes_dia) >= max_marc:
-        return jsonify({"erro": f"Limite de {max_marc} marcações diárias já atingido. Solicite correção se necessário."}), 400
     tipo = tipo or _app_ponto_tipo_esperado(marcacoes_dia)
     if tipo not in _APP_PONTO_TIPOS:
         return jsonify({"erro": "Tipo de marcação inválido."}), 400
@@ -18720,9 +18717,6 @@ def api_app_ponto_marcar_qr_me():
     data_hora = utcnow()
     data_ref = _app_ponto_data_ref_efetiva(f, data_hora) or data_hora.date()
     marcacoes_dia = _app_ponto_marcacoes_dia(f.id, data_ref)
-    max_marc = _app_ponto_max_marcacoes_dia(f)
-    if len(marcacoes_dia) >= max_marc:
-        return jsonify({"erro": f"Limite de {max_marc} marcações diárias já atingido. Solicite correção se necessário."}), 400
     tipo = (dados.get("tipo") or "").strip().lower() or _app_ponto_tipo_esperado(marcacoes_dia)
     if tipo not in _APP_PONTO_TIPOS:
         return jsonify({"erro": "Tipo de marcação inválido."}), 400
