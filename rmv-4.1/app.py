@@ -18090,6 +18090,8 @@ def _app_is_feriado_para_funcionario(funcionario, data_ref_str):
 
 
 def _app_ponto_resumo_dia(funcionario, data_ref):
+    HE_MINIMA_AUTORIZACAO_MIN = 60
+    FALTA_PARCIAL_TOLERANCIA_MIN = 10
     marcacoes = _app_ponto_marcacoes_dia(funcionario.id, data_ref)
     inconsistencias = []
     esperado = "entrada"
@@ -18136,7 +18138,13 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
     min_esp = _app_ponto_min_esperado_jornada_em_data(
         funcionario, data_ref.strftime("%Y-%m-%d")
     )
-    saldo = min_trab - min_esp
+    saldo_bruto = min_trab - min_esp
+    if saldo_bruto > 0 and saldo_bruto < HE_MINIMA_AUTORIZACAO_MIN:
+        saldo = 0
+    elif saldo_bruto < 0 and abs(saldo_bruto) <= FALTA_PARCIAL_TOLERANCIA_MIN:
+        saldo = 0
+    else:
+        saldo = saldo_bruto
 
     itens = []
     for m in marcacoes:
@@ -18197,7 +18205,8 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
 
     if dia_tipo in ("afastamento", "ferias", "feriado"):
         min_esp = 0
-        saldo = min_trab - min_esp
+        saldo_bruto = min_trab - min_esp
+        saldo = saldo_bruto
     elif dia_tipo == "normal" and min_esp == 0 and not marcacoes:
         dia_tipo = "folga"
 
@@ -18212,6 +18221,8 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
         "horas_trabalhadas_fmt": _app_ponto_fmt_minutos(min_trab),
         "horas_esperadas_min": min_esp,
         "horas_esperadas_fmt": _app_ponto_fmt_minutos(min_esp),
+        "saldo_bruto_min": saldo_bruto,
+        "saldo_bruto_fmt": _app_ponto_fmt_minutos(saldo_bruto, signed=True),
         "saldo_min": saldo,
         "saldo_fmt": _app_ponto_fmt_minutos(saldo, signed=True),
         "status": "ok" if not inconsistencias else "inconsistente",

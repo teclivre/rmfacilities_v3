@@ -1571,6 +1571,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-feriados" class="subaba-bloco" onclick="rhSetSubAba('feriados',this)">Calendário de Feriados</button>
         <button type="button" id="rh-subtab-ponto" class="subaba-bloco" onclick="rhSetSubAba('ponto',this)">Gestão de Ponto por Funcionário</button>
         <button type="button" id="rh-subtab-painel-dia" class="subaba-bloco" onclick="rhSetSubAba('painel-dia',this)">Painel do dia</button>
+        <button type="button" id="rh-subtab-he-autorizacao" class="subaba-bloco" onclick="rhSetSubAba('he-autorizacao',this)">Autorização de HE</button>
         <button type="button" id="rh-subtab-ciclo-assinatura" class="subaba-bloco" onclick="rhSetSubAba('ciclo-assinatura',this)">Fechar ciclo e assinar ponto</button>
         <button type="button" id="rh-subtab-envio" class="subaba-bloco" onclick="rhSetSubAba('envio',this)">Envio de arquivo</button>
         <button type="button" id="rh-subtab-assinaturas" class="subaba-bloco" onclick="rhSetSubAba('assinaturas',this)">Painel de Assinaturas</button>
@@ -1964,6 +1965,23 @@ document.addEventListener('DOMContentLoaded',()=>{
             <tbody id="tb-ponto-painel"></tbody>
           </table>
         </div>
+      </div>
+
+      <div class="card rh-pane" id="rh-pane-he-autorizacao" data-rh-pane="he-autorizacao" style="display:none">
+        <div class="card-header">
+          <span class="card-title">Autorização de Hora Extra</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <select id="modal-he-filtro" onchange="carregarHEPendentes()">
+              <option value="pendente">Pendentes</option>
+              <option value="todos">Todas</option>
+            </select>
+            <button class="btn b-gh b-sm" type="button" onclick="carregarHEPendentes()">Atualizar</button>
+            <span id="modal-he-count" class="hint"></span>
+          </div>
+        </div>
+        <div class="hint" style="margin:0 0 8px 0">As horas extras só entram na folha quando a solicitação estiver aprovada.</div>
+        <div id="st-he" class="st" style="margin-bottom:8px"></div>
+        <div id="modal-he-body"><div style="text-align:center;padding:32px;opacity:.5">Carregando...</div></div>
       </div>
 
       <div class="card rh-pane" id="rh-pane-ciclo-assinatura" data-rh-pane="ciclo-assinatura" style="display:none">
@@ -5384,7 +5402,7 @@ function rhSalariosIniciarPagina(){
 }
 
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','feriados','ponto','painel-dia','ciclo-assinatura','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo'];
+  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','feriados','ponto','painel-dia','he-autorizacao','ciclo-assinatura','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
     if(p.dataset.rhPane===rhSubAba){
@@ -5408,6 +5426,9 @@ function rhSetSubAba(tab,btn){
   }
   if(rhSubAba==='ponto'){
     carregarCorrecoesPonto();
+  }
+  if(rhSubAba==='he-autorizacao'){
+    carregarHEPendentes();
   }
   if(rhSubAba==='ciclo-assinatura'){
     rhCicloInit();
@@ -8218,7 +8239,7 @@ function rhEscalaMontarCiclo(){
   const diaBase=rhEscalaMontarDiaTrabalho(turno,horaEntrada,horaSaida,intervalo);
 
   if(tipo==='12x36'){
-    const diaTrabalho={...diaBase,horas:12,intervalo_min:0};
+    const diaTrabalho={...diaBase,horas:12};
     const diaFolga={tipo:'folga'};
     if(ordem==='folga_trabalho'){
       dias.push(diaFolga);
@@ -8276,7 +8297,6 @@ function rhEscalaAtualizarCicloTemplate(){
   if(tipo==='12x36'){
     document.getElementById('rh-esc-dias-trabalho').value='1';
     document.getElementById('rh-esc-dias-folga').value='1';
-    document.getElementById('rh-esc-intervalo').value='0';
   }
   const templateObj=tipo?rhEscalaMontarCiclo():{};
   cicloArea.value=JSON.stringify(templateObj,null,2);
@@ -8312,7 +8332,6 @@ function rhEscalaEditar(id){
   if((e.tipo||'')==='12x36'){
     document.getElementById('rh-esc-dias-trabalho').value='1';
     document.getElementById('rh-esc-dias-folga').value='1';
-    document.getElementById('rh-esc-intervalo').value='0';
   }
   if((e.tipo||'')==='6x1' && diasTrabalho.length>=6){
     const sab=diasTrabalho[5]||{};

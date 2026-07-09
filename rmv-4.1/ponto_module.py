@@ -59,6 +59,9 @@ def register_ponto_routes(
         EscalaFuncionario = _resolve_model("EscalaFuncionario")
     if Escala is None:
         Escala = _resolve_model("Escala")
+
+    HE_MINIMA_AUTORIZACAO_MIN = 60
+    FALTA_PARCIAL_TOLERANCIA_MIN = 10
     if JornadaTrabalho is None:
         JornadaTrabalho = _resolve_model("JornadaTrabalho")
     if PontoAfastamento is None:
@@ -481,19 +484,27 @@ def register_ponto_routes(
         minutos_esperados = 0 if dia_tipo in ("afastamento", "ferias", "feriado") else _ponto_min_esperado_data(funcionario, data_ref)
         if dia_tipo == "normal" and minutos_esperados == 0 and not marcacoes:
             dia_tipo = "folga"
-        saldo = minutos_trabalhados - minutos_esperados
+        saldo_bruto = minutos_trabalhados - minutos_esperados
+        if saldo_bruto > 0 and saldo_bruto < HE_MINIMA_AUTORIZACAO_MIN:
+            saldo = 0
+        elif saldo_bruto < 0 and abs(saldo_bruto) <= FALTA_PARCIAL_TOLERANCIA_MIN:
+            saldo = 0
+        else:
+            saldo = saldo_bruto
         # ── Horas extras 50% e 100% ──────────────────────────────────────────
         # Dom (weekday==6) ou feriado → tudo a 100%; demais dias → 50% até 2h, 100% além
         if saldo > 0:
             if data_ref.weekday() >= 5 or _is_feriado:
-                he_50_min = 0
-                he_100_min = saldo
+                he_50_min_bruto = 0
+                he_100_min_bruto = saldo
             else:
-                he_50_min = min(saldo, 120)
-                he_100_min = max(0, saldo - 120)
+                he_50_min_bruto = min(saldo, 120)
+                he_100_min_bruto = max(0, saldo - 120)
         else:
-            he_50_min = 0
-            he_100_min = 0
+            he_50_min_bruto = 0
+            he_100_min_bruto = 0
+        he_50_min = he_50_min_bruto
+        he_100_min = he_100_min_bruto
         # ── Adicional noturno e intrajornada ─────────────────────────────────
         # BUG-FIX 11: usar período noturno configurado na escala do funcionário,
         # se existir — em vez dos valores hardcoded 22:00-05:00.
@@ -529,10 +540,16 @@ def register_ponto_routes(
             "horas_trabalhadas_fmt": _ponto_fmt_minutos(minutos_trabalhados),
             "horas_esperadas_min": minutos_esperados,
             "horas_esperadas_fmt": _ponto_fmt_minutos(minutos_esperados),
+            "saldo_bruto_min": saldo_bruto,
+            "saldo_bruto_fmt": _ponto_fmt_minutos(saldo_bruto, signed=True),
             "saldo_min": saldo,
             "saldo_fmt": _ponto_fmt_minutos(saldo, signed=True),
+            "he_50_min_bruto": he_50_min_bruto,
+            "he_50_fmt_bruto": _ponto_fmt_minutos(he_50_min_bruto),
             "he_50_min": he_50_min,
             "he_50_fmt": _ponto_fmt_minutos(he_50_min),
+            "he_100_min_bruto": he_100_min_bruto,
+            "he_100_fmt_bruto": _ponto_fmt_minutos(he_100_min_bruto),
             "he_100_min": he_100_min,
             "he_100_fmt": _ponto_fmt_minutos(he_100_min),
             "noturno_min": noturno_min,
@@ -556,6 +573,9 @@ def register_ponto_routes(
         total_trabalhado = 0
         total_esperado = 0
         total_saldo = 0
+        total_saldo_bruto = 0
+        total_he_50_bruto = 0
+        total_he_100_bruto = 0
         total_he_50 = 0
         total_he_100 = 0
         total_noturno = 0
@@ -599,10 +619,16 @@ def register_ponto_routes(
                     "horas_trabalhadas_fmt": resumo["horas_trabalhadas_fmt"],
                     "horas_esperadas_min": resumo["horas_esperadas_min"],
                     "horas_esperadas_fmt": resumo["horas_esperadas_fmt"],
+                    "saldo_bruto_min": resumo["saldo_bruto_min"],
+                    "saldo_bruto_fmt": resumo["saldo_bruto_fmt"],
                     "saldo_min": resumo["saldo_min"],
                     "saldo_fmt": resumo["saldo_fmt"],
+                    "he_50_min_bruto": resumo["he_50_min_bruto"],
+                    "he_50_fmt_bruto": resumo["he_50_fmt_bruto"],
                     "he_50_min": resumo["he_50_min"],
                     "he_50_fmt": resumo["he_50_fmt"],
+                    "he_100_min_bruto": resumo["he_100_min_bruto"],
+                    "he_100_fmt_bruto": resumo["he_100_fmt_bruto"],
                     "he_100_min": resumo["he_100_min"],
                     "he_100_fmt": resumo["he_100_fmt"],
                     "noturno_min": resumo["noturno_min"],
@@ -618,7 +644,10 @@ def register_ponto_routes(
             )
             total_trabalhado += resumo["horas_trabalhadas_min"]
             total_esperado += resumo["horas_esperadas_min"]
+            total_saldo_bruto += resumo["saldo_bruto_min"]
             total_saldo += resumo["saldo_min"]
+            total_he_50_bruto += resumo["he_50_min_bruto"]
+            total_he_100_bruto += resumo["he_100_min_bruto"]
             total_he_50 += resumo["he_50_min"]
             total_he_100 += resumo["he_100_min"]
             total_noturno += resumo["noturno_min"]
@@ -626,6 +655,28 @@ def register_ponto_routes(
             if resumo["status"] != "ok":
                 inconsistencias += 1
             dia += timedelta(days=1)
+
+        # Se o posto exige autorização de HE, só contabilizar oficialmente após aprovação.
+        cli = None
+        if funcionario.posto_cliente_id and Cliente:
+            cli = db.session.get(Cliente, funcionario.posto_cliente_id)
+        he_autorizada = getattr(cli, "he_autorizada", None) if cli else None
+        he_requer_autorizacao = False if he_autorizada is None else (not bool(he_autorizada))
+        sol = None
+        if SolicitacaoHoraExtra:
+            sol = SolicitacaoHoraExtra.query.filter_by(
+                funcionario_id=funcionario.id, competencia=competencia
+            ).first()
+        he_aprovada = (not he_requer_autorizacao) or (sol and sol.status == "aprovado")
+        if not he_aprovada:
+            for dia_resumo in dias:
+                dia_resumo["he_50_min"] = 0
+                dia_resumo["he_50_fmt"] = _ponto_fmt_minutos(0)
+                dia_resumo["he_100_min"] = 0
+                dia_resumo["he_100_fmt"] = _ponto_fmt_minutos(0)
+            total_he_50 = 0
+            total_he_100 = 0
+
         return {
             "funcionario_id": funcionario.id,
             "funcionario_nome": funcionario.nome,
@@ -639,10 +690,16 @@ def register_ponto_routes(
                 "horas_trabalhadas_fmt": _ponto_fmt_minutos(total_trabalhado),
                 "horas_esperadas_min": total_esperado,
                 "horas_esperadas_fmt": _ponto_fmt_minutos(total_esperado),
+                "saldo_bruto_min": total_saldo_bruto,
+                "saldo_bruto_fmt": _ponto_fmt_minutos(total_saldo_bruto, signed=True),
                 "saldo_min": total_saldo,
                 "saldo_fmt": _ponto_fmt_minutos(total_saldo, signed=True),
+                "he_50_min_bruto": total_he_50_bruto,
+                "he_50_fmt_bruto": _ponto_fmt_minutos(total_he_50_bruto),
                 "he_50_min": total_he_50,
                 "he_50_fmt": _ponto_fmt_minutos(total_he_50),
+                "he_100_min_bruto": total_he_100_bruto,
+                "he_100_fmt_bruto": _ponto_fmt_minutos(total_he_100_bruto),
                 "he_100_min": total_he_100,
                 "he_100_fmt": _ponto_fmt_minutos(total_he_100),
                 "noturno_min": total_noturno,
@@ -651,6 +708,7 @@ def register_ponto_routes(
                 "intrajornada_fmt": _ponto_fmt_minutos(total_intrajornada),
                 "inconsistencias": inconsistencias,
                 "dias": len(dias),
+                "he_pendente_autorizacao": bool(he_requer_autorizacao and not he_aprovada and (total_he_50_bruto > 0 or total_he_100_bruto > 0)),
             },
         }
 
@@ -2408,8 +2466,8 @@ def register_ponto_routes(
         resumo = _ponto_resumo_competencia(func, competencia)
         if not resumo:
             return jsonify({"erro": "Competência inválida."}), 400
-        he_50 = resumo["totais"]["he_50_min"]
-        he_100 = resumo["totais"]["he_100_min"]
+        he_50 = resumo["totais"].get("he_50_min_bruto", resumo["totais"]["he_50_min"])
+        he_100 = resumo["totais"].get("he_100_min_bruto", resumo["totais"]["he_100_min"])
         if he_50 == 0 and he_100 == 0:
             return jsonify({"erro": "Não há horas extras registradas nesta competência."}), 400
         # Criar ou atualizar solicitação
@@ -2421,8 +2479,8 @@ def register_ponto_routes(
             # pendente/aprovada apenas atualizando criado_em (BUG-FIX 15).
             sol.he_50_min = he_50
             sol.he_100_min = he_100
-            sol.he_50_fmt = resumo["totais"]["he_50_fmt"]
-            sol.he_100_fmt = resumo["totais"]["he_100_fmt"]
+            sol.he_50_fmt = _ponto_fmt_minutos(he_50)
+            sol.he_100_fmt = _ponto_fmt_minutos(he_100)
             # Não alterar status nem criado_em: solicitação pendente/aprovada mantém estado.
         else:
             sol = SolicitacaoHoraExtra(
@@ -2431,8 +2489,8 @@ def register_ponto_routes(
                 competencia=competencia,
                 he_50_min=he_50,
                 he_100_min=he_100,
-                he_50_fmt=resumo["totais"]["he_50_fmt"],
-                he_100_fmt=resumo["totais"]["he_100_fmt"],
+                he_50_fmt=_ponto_fmt_minutos(he_50),
+                he_100_fmt=_ponto_fmt_minutos(he_100),
                 status="pendente",
                 motivo=d.get("motivo") or "",
             )

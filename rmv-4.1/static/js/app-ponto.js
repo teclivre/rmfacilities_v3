@@ -923,7 +923,7 @@ function gfRenderFolha(resumo){
   const avisoEl=document.getElementById('gf-he-aviso');
   if(avisoEl){
     const heAutorizada=resumo.he_autorizada===undefined||resumo.he_autorizada===null?true:!!resumo.he_autorizada;
-    const temHE=(resumo.totais?.he_50_min||0)+(resumo.totais?.he_100_min||0)>0;
+    const temHE=((resumo.totais?.he_50_min_bruto||0)+(resumo.totais?.he_100_min_bruto||0))>0;
     const heVisible=(!heAutorizada&&temHE);
     avisoEl.style.display=heVisible?'':'none';
     // Botão solicitar aprovação HE
