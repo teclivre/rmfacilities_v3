@@ -14316,13 +14316,25 @@ async function mapsEnviarBroadcast(){
     // Enviar para apenas um via endpoint normal de chat
     const r=await api('/api/mensagens-app/'+fidSel,'POST',{conteudo:msg});
     if(r.erro){showSt('bc-st',r.erro,true);return;}
-    showSt('bc-st','Mensagem enviada!',false);
+    if(r.push_enviado){
+      showSt('bc-st','Mensagem enviada para o app (push entregue).',false);
+    }else if(r.push_token_presente===false){
+      showSt('bc-st','Mensagem salva no chat, mas o colaborador está sem token push ativo no app. Peça para ele abrir/atualizar login no Android.',true);
+    }else{
+      showSt('bc-st','Mensagem salva no chat, porém o push falhou nesta tentativa.',true);
+    }
   } else {
     if(empId)body.empresa_id=parseInt(empId);
     if(posto)body.posto=posto;
     const r=await api('/api/mensagens-app/broadcast','POST',body);
     if(r.erro){showSt('bc-st',r.erro,true);return;}
-    showSt('bc-st',`Mensagem enviada para ${r.enviado_para} colaborador(es).`,false);
+    const semToken=Number(r.sem_token_push||0);
+    const pushFalhou=Number(r.push_falhou||0);
+    const pushOk=Number(r.push_enviados||0);
+    const total=Number(r.enviado_para||0);
+    const comRisco=semToken+pushFalhou;
+    const detalhe=`Total: ${total}. Push ok: ${pushOk}. Sem token: ${semToken}. Push falhou: ${pushFalhou}.`;
+    showSt('bc-st',detalhe,comRisco>0);
   }
   document.getElementById('bc-msg').value='';
   await mapsCarregarFuncionarios();

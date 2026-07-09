@@ -20173,7 +20173,7 @@ def api_rh_mensagens_chat(fid):
 @app.route("/api/mensagens-app/<int:fid>", methods=["POST"])
 @lr
 def api_rh_mensagem_responder(fid):
-    db.get_or_404(Funcionario, fid)
+    f = db.get_or_404(Funcionario, fid)
     d = request.json or {}
     conteudo = (d.get("conteudo") or "").strip()
     if not conteudo:
@@ -20190,13 +20190,17 @@ def api_rh_mensagem_responder(fid):
     )
     db.session.add(m)
     db.session.commit()
-    _push_notify_funcionario(
+    tem_token_push = bool((f.app_push_token or "").strip())
+    push_enviado = _push_notify_funcionario(
         fid,
         "Nova mensagem do RH",
         conteudo[:160],
         data={"tipo": "chat", "funcionario_id": str(fid)},
     )
-    return jsonify(m.to_dict()), 201
+    resp = m.to_dict()
+    resp["push_enviado"] = bool(push_enviado)
+    resp["push_token_presente"] = tem_token_push
+    return jsonify(resp), 201
 
 
 @app.route("/api/mensagens-app/nao-lidas-total")
@@ -20234,6 +20238,9 @@ def api_rh_mensagens_broadcast():
     funcs = q.all()
     if not funcs:
         return jsonify({"erro": "Nenhum colaborador encontrado com esse filtro"}), 404
+    sem_token_push = 0
+    push_enviados = 0
+    push_falhou = 0
     for func in funcs:
         m = MensagemApp(
             funcionario_id=func.id,
@@ -20245,13 +20252,28 @@ def api_rh_mensagens_broadcast():
         db.session.add(m)
     db.session.commit()
     for func in funcs:
-        _push_notify_funcionario(
+        if not bool((func.app_push_token or "").strip()):
+            sem_token_push += 1
+            continue
+        ok_push = _push_notify_funcionario(
             func.id,
             "Nova mensagem do RH",
             conteudo[:160],
             data={"tipo": "chat_broadcast", "funcionario_id": str(func.id)},
         )
-    return jsonify({"ok": True, "enviado_para": len(funcs)})
+        if ok_push:
+            push_enviados += 1
+        else:
+            push_falhou += 1
+    return jsonify(
+        {
+            "ok": True,
+            "enviado_para": len(funcs),
+            "push_enviados": push_enviados,
+            "push_falhou": push_falhou,
+            "sem_token_push": sem_token_push,
+        }
+    )
 
 
 @app.route("/api/funcionarios/arquivos/<int:id>", methods=["DELETE"])
