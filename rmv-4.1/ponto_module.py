@@ -624,7 +624,6 @@ def register_ponto_routes(
         minutos_trabalhados = segundos_total // 60
 
         data_ref_str = data_ref.strftime("%Y-%m-%d")
-        status_norm = (getattr(funcionario, "status", "") or "").strip().lower()
         af = _afastamento_ativo_na_data(funcionario.id, data_ref)
         dia_tipo = "normal"
         afastamento_info = None
@@ -638,11 +637,7 @@ def register_ponto_routes(
                 "data_inicio": af.data_inicio,
                 "data_fim": af.data_fim,
             }
-        elif (
-            status_norm == "férias"
-            or status_norm == "ferias"
-            or _ponto_funcionario_em_ferias_na_data(funcionario, data_ref)
-        ):
+        elif _ponto_funcionario_em_ferias_na_data(funcionario, data_ref):
             dia_tipo = "ferias"
         elif _is_feriado:
             dia_tipo = "feriado"

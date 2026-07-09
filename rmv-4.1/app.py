@@ -9925,6 +9925,9 @@ def _sync_ferias_status():
                 if status_atual != "Férias":
                     f.status = "Férias"
                     alterados += 1
+            elif hoje < ini and status_atual == "Férias":
+                f.status = "Ativo"
+                alterados += 1
             elif hoje > fim and status_atual == "Férias":
                 f.status = "Ativo"
                 alterados += 1
@@ -10893,6 +10896,9 @@ def api_atualizar_funcionario(id):
                         if _status_atual != "Férias":
                             f.status = "Férias"
                             _changed = True
+                    elif _hoje < _ini and _status_atual == "Férias":
+                        f.status = "Ativo"
+                        _changed = True
                     elif _hoje > _fim and _status_atual == "Férias":
                         f.status = "Ativo"
                         _changed = True
@@ -18321,9 +18327,8 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
     # Tipo do dia: afastamento > férias > folga_escala > normal
     dia_tipo = "normal"
     afastamento_info = None
-    status_func = (funcionario.status or "").strip()
     is_feriado = _app_is_feriado_para_funcionario(funcionario, data_ref_str)
-    if status_func.lower() in ("férias", "ferias") or _app_funcionario_em_ferias_na_data(funcionario, data_ref):
+    if _app_funcionario_em_ferias_na_data(funcionario, data_ref):
         dia_tipo = "ferias"
     af = _afastamento_ativo_na_data(funcionario.id, data_ref_str)
     if af:
@@ -18420,11 +18425,12 @@ def api_app_ponto_dia_me():
 @app_func_required
 def api_app_ponto_marcar_me():
     f = g.app_funcionario
-    status_atual = (f.status or "").strip()
-    if status_atual == "Férias":
+    hoje_ref = utcnow().date()
+    if _app_funcionario_em_ferias_na_data(f, hoje_ref):
         return jsonify(
             {"erro": "Você está de férias e não pode registrar ponto neste período. Em caso de dúvida, contate o RH."}
         ), 400
+    status_atual = (f.status or "").strip()
     if status_atual not in ("Ativo",):
         return jsonify(
             {"erro": "Somente funcionários ativos podem registrar ponto."}
@@ -18660,9 +18666,10 @@ def api_app_ponto_marcar_qr_me():
     """Variante de /ponto/marcar que usa um token efêmero gerado pelo totem
     (QR Code). O token comprova presença física e dispensa a checagem de geofence."""
     f = g.app_funcionario
-    status_atual = (f.status or "").strip()
-    if status_atual == "Férias":
+    hoje_ref = utcnow().date()
+    if _app_funcionario_em_ferias_na_data(f, hoje_ref):
         return jsonify({"erro": "Você está de férias e não pode registrar ponto neste período."}), 400
+    status_atual = (f.status or "").strip()
     if status_atual not in ("Ativo",):
         return jsonify({"erro": "Somente funcionários ativos podem registrar ponto."}), 400
     dados = request.json or {}
