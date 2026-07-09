@@ -770,9 +770,10 @@ class Escala(db.Model):
             if dia_info.get("tipo") == "folga":
                 return 0
             if self.tipo == "12x36" or int(dia_info.get("horas", 0) or 0) == 12:
-                # 12x36 deve ser contabilizada como 12h cheias no dia de trabalho.
-                # Não subtraímos intervalo aqui para evitar lançar 1h extra diária.
-                return 12 * 60
+                # Na 12x36, a jornada esperada é 11h trabalhadas + 1h de refeição.
+                # A refeição não entra como carga esperada, então evitamos lançar
+                # 1h de falta diária para quem cumpre 11h líquidas de trabalho.
+                return 11 * 60
             # Se tem horários específicos (entrada/saída)
             if "hora_entrada" in dia_info and "hora_saida" in dia_info:
                 try:
