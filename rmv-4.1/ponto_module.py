@@ -2243,7 +2243,7 @@ def register_ponto_routes(
                 cands.append(lp)
             # BUG-FIX 4: logo_url_padrao nunca foi definido → NameError em runtime.
             # Usar caminho relativo ao diretório do módulo como fallback final.
-            _fallback = os.path.join(os.path.dirname(__file__), "static", "img", "logo.png")
+            _fallback = os.path.join(os.path.dirname(__file__), "static", "img", "logo-rm-facilities.png")
             cands.append(_fallback)
             for cand in cands:
                 try:

@@ -7878,7 +7878,7 @@ def fmt_mes(s):
         return s
 
 
-LOGO_PATH = os.path.join(os.path.dirname(__file__), "static", "img", "logo.png")
+LOGO_PATH = os.path.join(os.path.dirname(__file__), "static", "img", "logo-rm-facilities.png")
 LOGO_URL = (
     "https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png"
 )
@@ -7956,12 +7956,16 @@ except Exception:
 
 
 def get_logo():
-    if not os.path.exists(LOGO_PATH):
-        try:
-            urllib.request.urlretrieve(LOGO_URL, LOGO_PATH)
-        except Exception:
-            pass
-    return LOGO_PATH if os.path.exists(LOGO_PATH) else None
+    if os.path.exists(LOGO_PATH):
+        return LOGO_PATH
+    _legacy_logo = os.path.join(os.path.dirname(__file__), "static", "img", "logo.png")
+    if os.path.exists(_legacy_logo):
+        return _legacy_logo
+    try:
+        urllib.request.urlretrieve(LOGO_URL, LOGO_PATH)
+    except Exception:
+        pass
+    return LOGO_PATH if os.path.exists(LOGO_PATH) else (_legacy_logo if os.path.exists(_legacy_logo) else None)
 
 
 def _get_logo_path_for_pdf(empresa=None):
