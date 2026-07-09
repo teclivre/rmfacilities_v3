@@ -235,6 +235,33 @@ def register_ponto_routes(
             return 0
         return _ponto_min_esperado_jornada(funcionario)
 
+    def _parse_minutos_hhmm(valor, padrao="05:00"):
+        texto = (valor or padrao or "05:00").strip()
+        try:
+            hh, mm = [int(x) for x in texto.split(":")[:2]]
+            return max(0, min(23, hh)) * 60 + max(0, min(59, mm))
+        except Exception:
+            return _parse_minutos_hhmm(padrao, "05:00") if texto != (padrao or "05:00") else 5 * 60
+
+    def _ponto_cruza_meia_noite(esc, dia_info):
+        if getattr(esc, "tipo", "") == "noturna" or bool((dia_info or {}).get("noturno")):
+            return True
+        entrada_txt = (dia_info or {}).get("hora_entrada")
+        saida_txt = (dia_info or {}).get("hora_saida")
+        if not entrada_txt or not saida_txt:
+            return False
+        entrada_min = _parse_minutos_hhmm(str(entrada_txt), "08:00")
+        saida_min = _parse_minutos_hhmm(str(saida_txt), "17:00")
+        return saida_min <= entrada_min
+
+    def _ponto_corte_data_ref_min(esc, dia_info):
+        if _ponto_cruza_meia_noite(esc, dia_info):
+            saida_txt = (dia_info or {}).get("hora_saida")
+            if saida_txt:
+                return _parse_minutos_hhmm(str(saida_txt), getattr(esc, "periodo_noturno_fim", "05:00"))
+            return _parse_minutos_hhmm(getattr(esc, "periodo_noturno_fim", "05:00"))
+        return None
+
     def _ponto_competencia_bounds(competencia):
         comp = (competencia or "").strip()
         if not re.match(r"^\d{4}-\d{2}$", comp):
@@ -266,14 +293,6 @@ def register_ponto_routes(
         except Exception:
             funcionario = None
 
-        def _parse_minutos_hhmm(valor, padrao="05:00"):
-            texto = (valor or padrao or "05:00").strip()
-            try:
-                hh, mm = [int(x) for x in texto.split(":")[:2]]
-                return max(0, min(23, hh)) * 60 + max(0, min(59, mm))
-            except Exception:
-                return 5 * 60
-
         def _data_efetiva_marcacao(dt):
             if not dt or not funcionario:
                 return dt.date() if dt else data_ref
@@ -283,8 +302,8 @@ def register_ponto_routes(
             if esc_prev:
                 esc = esc_prev.get("escala")
                 dia_info = esc_prev.get("dia_info") or {}
-                if getattr(esc, "tipo", "") == "noturna" or bool(dia_info.get("noturno")):
-                    corte_min = _parse_minutos_hhmm(getattr(esc, "periodo_noturno_fim", "05:00"))
+                corte_min = _ponto_corte_data_ref_min(esc, dia_info)
+                if corte_min is not None:
                     if (dt.hour * 60 + dt.minute) <= corte_min:
                         return data_prev
             return data_base
@@ -316,20 +335,12 @@ def register_ponto_routes(
         data_base = data_hora.date()
         data_prev = data_base - timedelta(days=1)
 
-        def _parse_minutos_hhmm(valor, padrao="05:00"):
-            texto = (valor or padrao or "05:00").strip()
-            try:
-                hh, mm = [int(x) for x in texto.split(":")[:2]]
-                return max(0, min(23, hh)) * 60 + max(0, min(59, mm))
-            except Exception:
-                return 5 * 60
-
         esc_prev = _ponto_escala_info_data(funcionario, data_prev)
         if esc_prev:
             esc = esc_prev.get("escala")
             dia_info = esc_prev.get("dia_info") or {}
-            if getattr(esc, "tipo", "") == "noturna" or bool(dia_info.get("noturno")):
-                corte_min = _parse_minutos_hhmm(getattr(esc, "periodo_noturno_fim", "05:00"))
+            corte_min = _ponto_corte_data_ref_min(esc, dia_info)
+            if corte_min is not None:
                 if (data_hora.hour * 60 + data_hora.minute) <= corte_min:
                     return data_prev
         return data_base
