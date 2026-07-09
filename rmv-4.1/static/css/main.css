@@ -141,21 +141,6 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 	z-index:9;
 }
 
-/* Evita espaço vertical excessivo na aba Controle de Ponto */
-#pg-controle-ponto.on{
-	position:fixed;
-	top:52px;
-	left:0;
-	right:0;
-	bottom:0;
-	display:block!important;
-	overflow-y:auto;
-	overflow-x:hidden;
-	padding:20px 22px !important;
-	animation:none;
-	z-index:9;
-}
-
 #pg-controle-ponto.on > .subaba-blocos{
 	display:none!important;
 }
@@ -175,14 +160,6 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 		right:auto;
 		bottom:auto;
 		padding:0;
-	}
-	#pg-controle-ponto.on{
-		position:static;
-		top:auto;
-		left:auto;
-		right:auto;
-		bottom:auto;
-		padding:0 !important;
 	}
 }
 
