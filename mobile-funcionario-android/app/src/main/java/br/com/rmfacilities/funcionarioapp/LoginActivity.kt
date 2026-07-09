@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.lifecycle.lifecycleScope
+import androidx.appcompat.app.AlertDialog
 
 class LoginActivity : AppCompatActivity() {
     private lateinit var session: SessionManager
@@ -42,6 +43,9 @@ class LoginActivity : AppCompatActivity() {
     private var otpCooldownTimer: CountDownTimer? = null
     private var silentAuthInProgress = false
     private var appUpdateDialogShown = false
+    private var appVersionCheckInProgress = false
+    private var appVersionChecked = false
+    private var updateDialog: AlertDialog? = null
 
     private fun intentExtraStringSafe(key: String): String? {
         return try {
@@ -52,32 +56,43 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun checkAppVersionIfNeeded() {
-        if (appUpdateDialogShown) return
-        appUpdateDialogShown = true
+        if (appUpdateDialogShown || appVersionCheckInProgress || appVersionChecked) return
+        appVersionCheckInProgress = true
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val versao = api.getVersaoApp()
                 if (versao.versao_minima > 0 && BuildConfig.VERSION_CODE < versao.versao_minima) {
                     withContext(Dispatchers.Main) {
+                        appVersionChecked = false
+                        appUpdateDialogShown = true
                         if (!isFinishing && !isDestroyed) {
-                            val dialog = androidx.appcompat.app.AlertDialog.Builder(this@LoginActivity)
+                            val dialog = AlertDialog.Builder(this@LoginActivity)
                                 .setTitle("Atualização necessária")
                                 .setMessage("Há uma versão mais nova do app disponível. Por favor, atualize para continuar usando.")
                                 .setCancelable(false)
                                 .setPositiveButton("Atualizar") { _, _ ->
                                     val baseUrl = session.apiBaseUrl.ifBlank { BuildConfig.DEFAULT_API_BASE_URL }.trimEnd('/')
-                                    val url = "$baseUrl/app/download"
+                                    val url = versao.download_url?.takeIf { it.isNotBlank() } ?: "$baseUrl/app/download"
                                     try {
                                         startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
                                     } catch (_: Exception) {}
                                 }
                                 .create()
+                            dialog.setOnDismissListener {
+                                appUpdateDialogShown = false
+                                updateDialog = null
+                            }
+                            updateDialog = dialog
                             dialog.show()
                         }
                     }
+                } else {
+                    appVersionChecked = true
                 }
             } catch (_: Exception) {
                 // Ignore failures here.
+            } finally {
+                appVersionCheckInProgress = false
             }
         }
     }
@@ -165,6 +180,7 @@ class LoginActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        checkAppVersionIfNeeded()
         if (!silentAuthInProgress && !biometricPromptShown && shouldOfferBiometric()) {
             biometricPromptShown = true
             autenticarComBiometria()

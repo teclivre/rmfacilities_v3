@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -55,6 +56,7 @@ abstract class BaseActivity : AppCompatActivity() {
     private var appUpdateDialogShown = false
     private var appVersionCheckInProgress = false
     private var appVersionChecked = false
+    private var updateDialog: AlertDialog? = null
 
     override fun onResume() {
         super.onResume()
@@ -77,6 +79,7 @@ abstract class BaseActivity : AppCompatActivity() {
                 }
                 if (versao.versao_minima > 0 && BuildConfig.VERSION_CODE < versao.versao_minima) {
                     appUpdateDialogShown = true
+                    appVersionChecked = false
                     if (!isFinishing && !isDestroyed) {
                         showAppUpdateDialog(versao.download_url)
                     }
@@ -92,6 +95,7 @@ abstract class BaseActivity : AppCompatActivity() {
     }
 
     protected fun showAppUpdateDialog(downloadUrl: String?) {
+        if (updateDialog?.isShowing == true) return
         val dialog = MaterialAlertDialogBuilder(this)
             .setTitle("Atualização necessária")
             .setMessage("Há uma versão mais nova do app disponível. Por favor, atualize para continuar usando.")
@@ -105,6 +109,11 @@ abstract class BaseActivity : AppCompatActivity() {
                 }
             }
             .create()
+        dialog.setOnDismissListener {
+            appUpdateDialogShown = false
+            updateDialog = null
+        }
+        updateDialog = dialog
         if (!isFinishing && !isDestroyed) dialog.show()
     }
 
