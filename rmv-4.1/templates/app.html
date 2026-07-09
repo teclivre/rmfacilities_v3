@@ -8218,7 +8218,7 @@ function rhEscalaMontarCiclo(){
   const diaBase=rhEscalaMontarDiaTrabalho(turno,horaEntrada,horaSaida,intervalo);
 
   if(tipo==='12x36'){
-    const diaTrabalho={...diaBase,horas:12};
+    const diaTrabalho={...diaBase,horas:12,intervalo_min:0};
     const diaFolga={tipo:'folga'};
     if(ordem==='folga_trabalho'){
       dias.push(diaFolga);
@@ -8276,6 +8276,7 @@ function rhEscalaAtualizarCicloTemplate(){
   if(tipo==='12x36'){
     document.getElementById('rh-esc-dias-trabalho').value='1';
     document.getElementById('rh-esc-dias-folga').value='1';
+    document.getElementById('rh-esc-intervalo').value='0';
   }
   const templateObj=tipo?rhEscalaMontarCiclo():{};
   cicloArea.value=JSON.stringify(templateObj,null,2);
@@ -8311,6 +8312,7 @@ function rhEscalaEditar(id){
   if((e.tipo||'')==='12x36'){
     document.getElementById('rh-esc-dias-trabalho').value='1';
     document.getElementById('rh-esc-dias-folga').value='1';
+    document.getElementById('rh-esc-intervalo').value='0';
   }
   if((e.tipo||'')==='6x1' && diasTrabalho.length>=6){
     const sab=diasTrabalho[5]||{};

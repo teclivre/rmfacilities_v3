@@ -769,6 +769,10 @@ class Escala(db.Model):
             dia_info = dias[dia_ciclo_indice]
             if dia_info.get("tipo") == "folga":
                 return 0
+            if self.tipo == "12x36" or int(dia_info.get("horas", 0) or 0) == 12:
+                # 12x36 deve ser contabilizada como 12h cheias no dia de trabalho.
+                # Não subtraímos intervalo aqui para evitar lançar 1h extra diária.
+                return 12 * 60
             # Se tem horários específicos (entrada/saída)
             if "hora_entrada" in dia_info and "hora_saida" in dia_info:
                 try:
