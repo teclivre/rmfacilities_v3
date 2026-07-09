@@ -2516,7 +2516,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       <!-- Tab Envio WhatsApp -->
       <div id="rhd-tab-conversas">
         <div class="card" style="margin-bottom:12px">
-          <div class="card-header"><span class="card-title">Envio para colaboradores ativos</span></div>
+          <div class="card-header"><span class="card-title">Envio por WhatsApp para colaboradores ativos</span></div>
           <div class="g3" style="margin-top:8px">
             <div class="f"><label>Empresa</label><select id="wa-colab-empresa" onchange="waAtualizarPostosColab();waRenderListaColab()"><option value="">Todas</option></select></div>
             <div class="f"><label>Posto</label><select id="wa-colab-posto" onchange="waRenderListaColab()"><option value="">Todos</option></select></div>
@@ -2529,12 +2529,12 @@ document.addEventListener('DOMContentLoaded',()=>{
             <span id="wa-colab-count" style="font-size:12px;color:var(--text-muted);margin-left:4px">0 selecionado(s)</span>
           </div>
           <div id="wa-colab-list" style="margin-top:8px;max-height:220px;overflow:auto;border:1px solid var(--borda);border-radius:10px;padding:8px;background:var(--cinza-cl)"><div class="vazio">Carregando colaboradores...</div></div>
-          <div class="f" style="margin-top:10px"><label>Mensagem para envio</label><textarea id="wa-colab-msg" placeholder="Digite a mensagem que será enviada aos colaboradores selecionados" style="min-height:84px"></textarea></div>
+          <div class="f" style="margin-top:10px"><label>Mensagem para envio (WhatsApp)</label><textarea id="wa-colab-msg" placeholder="Digite a mensagem que será enviada por WhatsApp aos colaboradores selecionados" style="min-height:84px"></textarea></div>
           <div class="g2" style="margin-top:8px">
             <div class="f"><label>Anexo opcional</label><input id="wa-colab-arquivo" type="file" accept="*/*"></div>
             <div class="f"><label>Remetente exibido</label><input value="{{ nome }}" disabled></div>
           </div>
-          <div class="hint" style="margin-top:4px">O sistema inclui automaticamente o nome do usuário logado no texto/caption do envio.</div>
+          <div class="hint" style="margin-top:4px">Este card envia mensagens via WhatsApp. Para enviar mensagem para o aplicativo do colaborador, use a aba "💬 Chat App".</div>
           <div class="brow" style="justify-content:flex-start;gap:8px">
             <button class="btn b-az" onclick="waEnviarColaboradoresSelecionados()">Enviar para selecionados</button>
           </div>
@@ -14695,7 +14695,7 @@ async function waEnviarColaboradoresSelecionados(){
   const maisConf=ids.length>5?` e mais ${ids.length-5}...`:'';
   const msgConf=texto.length>100?texto.substring(0,100)+'...':texto;
   const anexoConf=arq?`\n\nAnexo:\n${arq.name}`:'';
-  if(!confirm(`Você está prestes a enviar mensagem para ${ids.length} colaborador(es):\n\n${nomesConf}${maisConf}\n\nMensagem:\n"${msgConf||'[sem texto]'}"${anexoConf}\n\nRemetente exibido:\n${N}\n\nConfirmar envio?`)) return;
+  if(!confirm(`Você está prestes a enviar mensagem via WhatsApp para ${ids.length} colaborador(es):\n\n${nomesConf}${maisConf}\n\nMensagem:\n"${msgConf||'[sem texto]'}"${anexoConf}\n\nRemetente exibido:\n${N}\n\nConfirmar envio?`)) return;
   showSt('wa-colab-st',arq?'Enviando mensagens com anexo...':'Enviando mensagens...',false);
   const fd=new FormData();
   ids.forEach(id=>fd.append('funcionario_ids',String(id)));
@@ -14704,7 +14704,7 @@ async function waEnviarColaboradoresSelecionados(){
   const r=await apiForm('/api/whatsapp/send-colaboradores',fd,'POST');
   if(r.erro){showSt('wa-colab-st',r.erro,true);return;}
   const falhas=(r.falhas||[]);
-  const envioMsg=`Envio concluído. Sucesso: ${r.enviados_count||0}. Falhas: ${falhas.length}.`;
+  const envioMsg=`Envio WhatsApp concluído. Sucesso: ${r.enviados_count||0}. Falhas: ${falhas.length}.`;
   showSt('wa-colab-st',envioMsg,falhas.length>0);
   document.getElementById('wa-colab-arquivo').value='';
   if(falhas.length){
