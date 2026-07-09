@@ -8196,9 +8196,15 @@ function rhEscalaMontarCiclo(){
   const diaBase=rhEscalaMontarDiaTrabalho(turno,horaEntrada,horaSaida,intervalo);
 
   if(tipo==='12x36'){
-    dias.push({...diaBase,horas:12});
-    dias.push({tipo:'folga'});
-    dias.push({tipo:'folga'});
+    const diaTrabalho={...diaBase,horas:12};
+    const diaFolga={tipo:'folga'};
+    if(ordem==='folga_trabalho'){
+      dias.push(diaFolga);
+      dias.push(diaTrabalho);
+    }else{
+      dias.push(diaTrabalho);
+      dias.push(diaFolga);
+    }
     return {dias};
   }
 
@@ -8244,6 +8250,10 @@ function rhEscalaAtualizarCicloTemplate(){
     document.getElementById('rh-esc-dias-trabalho').value='6';
     document.getElementById('rh-esc-dias-folga').value='1';
   }
+  if(tipo==='12x36'){
+    document.getElementById('rh-esc-dias-trabalho').value='1';
+    document.getElementById('rh-esc-dias-folga').value='1';
+  }
   const templateObj=tipo?rhEscalaMontarCiclo():{};
   cicloArea.value=JSON.stringify(templateObj,null,2);
   // Mostrar/esconder painel de configuração noturna
@@ -8275,6 +8285,10 @@ function rhEscalaEditar(id){
   }
   document.getElementById('rh-esc-dias-trabalho').value=diasTrabalho.length||6;
   document.getElementById('rh-esc-dias-folga').value=diasFolga.length||2;
+  if((e.tipo||'')==='12x36'){
+    document.getElementById('rh-esc-dias-trabalho').value='1';
+    document.getElementById('rh-esc-dias-folga').value='1';
+  }
   if((e.tipo||'')==='6x1' && diasTrabalho.length>=6){
     const sab=diasTrabalho[5]||{};
     if(sab.hora_entrada) document.getElementById('rh-esc-sab-hora-entrada').value=sab.hora_entrada;

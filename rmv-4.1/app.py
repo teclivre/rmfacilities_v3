@@ -738,7 +738,7 @@ class Escala(db.Model):
     - tipo: '6x2' (6 dias trabalho, 2 folga), '6x1' (seg-sab trabalho, dom folga), '4x2' (4 dias trabalho, 2 folga), '12x36' (12h turno, 36h folga), 'folguista' (customizado), 'noturna'
     - ciclo_json: JSON com estrutura de dias/turnos e folgas
       Ex 6x2: {"dias": [{"tipo": "trabalho"}, ...6x..., {"tipo": "folga"}, {"tipo": "folga"}]}
-      Ex 12x36: {"dias": [{"tipo": "trabalho", "horas": 12}, {"tipo": "folga"}, {"tipo": "folga"}]}
+    Ex 12x36: {"dias": [{"tipo": "trabalho", "horas": 12}, {"tipo": "folga"}]}
       Ex noturna: {"dias": [{"tipo": "trabalho", "hora_entrada": "22:00", "hora_saida": "06:00", "noturno": true}]}
     - periodo_noturno_ini/fim: horários de início e fim do turno noturno (padrão 22:00-05:00)
     """
