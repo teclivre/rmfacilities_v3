@@ -1,6 +1,5 @@
 package br.com.rmfacilities.funcionarioapp
 
-import android.graphics.BitmapFactory
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -335,7 +334,7 @@ class PerfilActivity : BaseActivity() {
     }
 
     private fun exibirFotoDosBytes(bytes: ByteArray) {
-        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        val bitmap = decodeSampledBitmap(bytes, 256, 256)
         if (bitmap != null) {
             ivFoto.setImageBitmap(bitmap)
             ivFoto.visibility = View.VISIBLE

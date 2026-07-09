@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.net.ConnectivityManager
 import android.net.Network
@@ -423,7 +422,7 @@ class HomeActivity : BaseActivity() {
                     lifecycleScope.launch(Dispatchers.IO) {
                         try {
                             val bytes = api.downloadFile(fotoUrl)
-                            val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            val bmp = decodeSampledBitmap(bytes, 256, 256)
                             withContext(Dispatchers.Main) {
                                 if (bmp != null) {
                                     ivAvatarHome.setImageBitmap(bmp)
