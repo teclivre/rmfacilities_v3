@@ -2202,6 +2202,10 @@ def register_ponto_routes(
                 ],
                 [
                     p("", st_small),
+                    p("", st_sign),
+                ],
+                [
+                    p("", st_small),
                     p(
                         "____________________________________________________________",
                         st_sign,
@@ -2219,7 +2223,10 @@ def register_ponto_routes(
                     ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                     ("TOPPADDING", (0, 0), (-1, -1), (4 if compact_mode else 6)),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), (4 if compact_mode else 6)),
-                    ("BOTTOMPADDING", (1, 2), (1, 2), (8 if compact_mode else 14)),
+                    # Reserva área para assinatura manual acima da linha.
+                    ("TOPPADDING", (1, 2), (1, 2), (10 if compact_mode else 16)),
+                    ("BOTTOMPADDING", (1, 2), (1, 2), (10 if compact_mode else 16)),
+                    ("BOTTOMPADDING", (1, 3), (1, 3), (8 if compact_mode else 14)),
                 ]
             )
         )
