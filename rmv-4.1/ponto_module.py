@@ -262,6 +262,57 @@ def register_ponto_routes(
             return _parse_minutos_hhmm(getattr(esc, "periodo_noturno_fim", "05:00"))
         return None
 
+    def _ponto_hora_entrada_min(esc, dia_info):
+        entrada_txt = (dia_info or {}).get("hora_entrada")
+        if entrada_txt:
+            return _parse_minutos_hhmm(str(entrada_txt), "08:00")
+        if _ponto_cruza_meia_noite(esc, dia_info):
+            return _parse_minutos_hhmm(getattr(esc, "periodo_noturno_ini", "22:00"), "22:00")
+        return None
+
+    def _ponto_data_hora_logica(funcionario, data_ref, data_hora):
+        if not data_hora:
+            return None
+        esc_info = _ponto_escala_info_data(funcionario, data_ref)
+        if not esc_info:
+            return data_hora
+        esc = esc_info.get("escala")
+        dia_info = esc_info.get("dia_info") or {}
+        if not _ponto_cruza_meia_noite(esc, dia_info):
+            return data_hora
+        entrada_min = _ponto_hora_entrada_min(esc, dia_info)
+        if entrada_min is None:
+            return data_hora
+        logical_dt = datetime.combine(data_ref, data_hora.time())
+        if (data_hora.hour * 60 + data_hora.minute) < entrada_min:
+            logical_dt += timedelta(days=1)
+        return logical_dt
+
+    def _ponto_marcacoes_ordenadas_logicas(funcionario, data_ref, marcacoes):
+        return sorted(
+            [m for m in (marcacoes or []) if getattr(m, "data_hora", None)],
+            key=lambda m: (
+                _ponto_data_hora_logica(funcionario, data_ref, m.data_hora),
+                m.data_hora,
+                getattr(m, "id", 0),
+            ),
+        )
+
+    def _ponto_intervalos_logicos(funcionario, data_ref, marcacoes):
+        ordenadas = _ponto_marcacoes_ordenadas_logicas(funcionario, data_ref, marcacoes)
+        datas_logicas = [
+            _ponto_data_hora_logica(funcionario, data_ref, m.data_hora)
+            for m in ordenadas
+            if getattr(m, "data_hora", None)
+        ]
+        intervalos = []
+        for idx in range(0, len(datas_logicas) - 1, 2):
+            ini_dt = datas_logicas[idx]
+            fim_dt = datas_logicas[idx + 1]
+            if ini_dt and fim_dt and fim_dt > ini_dt:
+                intervalos.append((ini_dt, fim_dt))
+        return ordenadas, intervalos
+
     def _ponto_competencia_bounds(competencia):
         comp = (competencia or "").strip()
         if not re.match(r"^\d{4}-\d{2}$", comp):
@@ -487,9 +538,14 @@ def register_ponto_routes(
             if _marcacoes is not None
             else _ponto_marcacoes_dia(funcionario.id, data_ref)
         )
+        marcacoes, intervalos_logicos = _ponto_intervalos_logicos(funcionario, data_ref, marcacoes)
+        data_hora_logica_por_id = {
+            id(marcacao): _ponto_data_hora_logica(funcionario, data_ref, marcacao.data_hora)
+            for marcacao in marcacoes
+            if getattr(marcacao, "data_hora", None)
+        }
         inconsistencias = []
         esperado = "entrada"
-        segundos_total = 0
         aberta_em = None
         for marcacao in marcacoes:
             if not getattr(marcacao, "data_hora", None):
@@ -502,35 +558,32 @@ def register_ponto_routes(
                 inconsistencias.append(
                     f"Sequência inesperada: recebido {_ponto_label(marcacao.tipo)}; esperado {_ponto_label(esperado)}."
                 )
+            data_hora_logica = data_hora_logica_por_id.get(id(marcacao), marcacao.data_hora)
             if marcacao.tipo == "entrada":
                 if aberta_em is not None:
                     inconsistencias.append(
                         "Existe uma entrada sem fechamento antes desta nova entrada."
                     )
-                aberta_em = marcacao.data_hora
+                aberta_em = data_hora_logica
             elif marcacao.tipo == "saida_intervalo":
                 if aberta_em is None:
                     inconsistencias.append("Saída para intervalo sem entrada anterior.")
-                else:
-                    segundos_total += max(
-                        0, int((marcacao.data_hora - aberta_em).total_seconds())
-                    )
-                    aberta_em = None
+                aberta_em = None
             elif marcacao.tipo == "retorno_intervalo":
                 if aberta_em is not None:
                     inconsistencias.append("Retorno de intervalo sem saída anterior.")
-                aberta_em = marcacao.data_hora
+                aberta_em = data_hora_logica
             elif marcacao.tipo == "saida":
                 if aberta_em is None:
                     inconsistencias.append("Saída final sem entrada anterior.")
-                else:
-                    segundos_total += max(
-                        0, int((marcacao.data_hora - aberta_em).total_seconds())
-                    )
-                    aberta_em = None
+                aberta_em = None
             esperado = _ponto_next_tipo(marcacao.tipo)
         if aberta_em is not None:
             inconsistencias.append("Jornada em aberto (faltou batida de fechamento).")
+        segundos_total = sum(
+            max(0, int((fim_dt - ini_dt).total_seconds()))
+            for ini_dt, fim_dt in intervalos_logicos
+        )
         # BUG-FIX 15: usar divisão inteira (truncate) em vez de round() para evitar
         # imprecisão acumulada (+/-1 min) em múltiplas marcações ao longo do mês.
         minutos_trabalhados = segundos_total // 60
@@ -614,8 +667,14 @@ def register_ponto_routes(
                         _noc_fim_min = _h * 60 + _m
             except Exception:
                 pass
-        noturno_min = _calc_noturno_min_marcacoes(marcacoes, _noc_ini_min, _noc_fim_min)
-        intrajornada_min = _calc_intrajornada_min(marcacoes)
+        noturno_min = sum(
+            _calc_intersec_noturno(ini_dt, fim_dt, _noc_ini_min, _noc_fim_min)
+            for ini_dt, fim_dt in intervalos_logicos
+        )
+        intrajornada_min = sum(
+            max(0, int((intervalos_logicos[idx + 1][0] - intervalos_logicos[idx][1]).total_seconds() / 60))
+            for idx in range(len(intervalos_logicos) - 1)
+        )
         return {
             "funcionario_id": funcionario.id,
             "funcionario_nome": funcionario.nome,
@@ -1971,11 +2030,9 @@ def register_ponto_routes(
 
         while dia <= fim:
             marcacoes = _marc_por_data.get(dia, [])
-            # Construir lista de marcacoes ordenadas com objeto completo (para BUG-FIX 19)
-            marcacoes_ord = sorted(
-                [m for m in marcacoes if getattr(m, "data_hora", None)],
-                key=lambda m: m.data_hora,
-            )
+            # Ordenar pela cronologia lógica do turno para que saídas da madrugada
+            # apareçam ao final do dia trabalhado, não no começo da linha.
+            marcacoes_ord = _ponto_marcacoes_ordenadas_logicas(funcionario, dia, marcacoes)
 
             _dia_str = dia.strftime("%Y-%m-%d")
             resumo = _resumo_por_data.get(_dia_str) or _ponto_resumo_func_dia(
