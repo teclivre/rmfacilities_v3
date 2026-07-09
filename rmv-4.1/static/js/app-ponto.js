@@ -1412,11 +1412,11 @@ function pontoAbrirModalAfastamento(){
   _ov.id='_modal-afastamento';
   _ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   const f=(pontoFuncs||[]).find(x=>String(x.id)===String(fid));
-  _ov.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;max-width:480px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+  _ov.innerHTML=`<div style="background:var(--bg);color:var(--preto);border-radius:12px;padding:24px;max-width:480px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.35);border:1px solid var(--borda)">
     <div style="font-weight:700;font-size:15px;margin-bottom:14px">🏥 Novo afastamento/atestado · ${escHtml(f?.nome||'Colaborador')}</div>
     <div style="display:grid;gap:12px">
       <div><label style="font-size:12px;display:block;margin-bottom:4px">Tipo</label>
-        <input id="_af-tipo" placeholder="Ex.: Atestado médico, Licença, Acompanhamento familiar" list="_af-tipo-sugestoes" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;box-sizing:border-box" maxlength="40" value="Atestado médico">
+        <input id="_af-tipo" placeholder="Ex.: Atestado médico, Licença, Acompanhamento familiar" list="_af-tipo-sugestoes" style="width:100%;padding:8px;border:1px solid var(--borda);border-radius:8px;font-size:13px;box-sizing:border-box;background:var(--bg-alt);color:var(--preto)" maxlength="40" value="Atestado médico">
         <datalist id="_af-tipo-sugestoes">
           <option value="Atestado médico"></option>
           <option value="Licença"></option>
@@ -1425,18 +1425,18 @@ function pontoAbrirModalAfastamento(){
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div><label style="font-size:12px;display:block;margin-bottom:4px">Data início <span style="color:red">*</span></label>
-          <input id="_af-inicio" type="date" value="${hoje}" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;box-sizing:border-box"></div>
+          <input id="_af-inicio" type="date" value="${hoje}" style="width:100%;padding:8px;border:1px solid var(--borda);border-radius:8px;font-size:13px;box-sizing:border-box;background:var(--bg-alt);color:var(--preto)"></div>
         <div><label style="font-size:12px;display:block;margin-bottom:4px">Data fim <span style="color:red">*</span></label>
-          <input id="_af-fim" type="date" value="${hoje}" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;box-sizing:border-box"></div>
+          <input id="_af-fim" type="date" value="${hoje}" style="width:100%;padding:8px;border:1px solid var(--borda);border-radius:8px;font-size:13px;box-sizing:border-box;background:var(--bg-alt);color:var(--preto)"></div>
       </div>
       <div><label style="font-size:12px;display:block;margin-bottom:4px">Quantidade de dias</label>
-        <input id="_af-dias" type="number" min="1" max="365" value="1" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;box-sizing:border-box"></div>
+        <input id="_af-dias" type="number" min="1" max="365" value="1" style="width:100%;padding:8px;border:1px solid var(--borda);border-radius:8px;font-size:13px;box-sizing:border-box;background:var(--bg-alt);color:var(--preto)"></div>
       <div><label style="font-size:12px;display:block;margin-bottom:4px">Observação</label>
-        <input id="_af-obs" placeholder="Ex.: CID J06.9 – consulta médica" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;box-sizing:border-box" maxlength="500"></div>
+        <input id="_af-obs" placeholder="Ex.: CID J06.9 – consulta médica" style="width:100%;padding:8px;border:1px solid var(--borda);border-radius:8px;font-size:13px;box-sizing:border-box;background:var(--bg-alt);color:var(--preto)" maxlength="500"></div>
     </div>
     <div id="_af-st" style="margin-top:10px;font-size:12px;color:var(--verm);display:none"></div>
     <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
-      <button id="_af-cancel" style="padding:8px 16px;border:1px solid #ccc;border-radius:8px;cursor:pointer;background:#f5f5f5;font-size:13px">Cancelar</button>
+      <button id="_af-cancel" style="padding:8px 16px;border:1px solid var(--borda);border-radius:8px;cursor:pointer;background:var(--bg-alt);color:var(--preto);font-size:13px">Cancelar</button>
       <button id="_af-salvar" style="padding:8px 18px;background:#1565c0;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px">Salvar afastamento</button>
     </div>
   </div>`;
