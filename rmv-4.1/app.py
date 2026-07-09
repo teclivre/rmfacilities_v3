@@ -17829,15 +17829,73 @@ def _app_ponto_parse_data_ref(v):
 
 
 def _app_ponto_marcacoes_dia(funcionario_id, data_ref):
-    inicio = datetime.combine(data_ref, datetime.min.time())
-    fim = inicio + timedelta(days=1)
-    return (
+    try:
+        funcionario = db.session.get(Funcionario, funcionario_id)
+    except Exception:
+        funcionario = None
+
+    def _parse_minutos_hhmm(valor, padrao="05:00"):
+        texto = (valor or padrao or "05:00").strip()
+        try:
+            hh, mm = [int(x) for x in texto.split(":")[:2]]
+            return max(0, min(23, hh)) * 60 + max(0, min(59, mm))
+        except Exception:
+            return 5 * 60
+
+    def _data_efetiva_marcacao(dt):
+        if not dt or not funcionario:
+            return dt.date() if dt else data_ref
+        data_base = dt.date()
+        data_prev = data_base - timedelta(days=1)
+        esc_prev = _app_ponto_escala_info_data(funcionario, data_prev)
+        if esc_prev:
+            esc = esc_prev.get("escala")
+            dia_info = esc_prev.get("dia_info") or {}
+            if getattr(esc, "tipo", "") == "noturna" or bool(dia_info.get("noturno")):
+                corte_min = _parse_minutos_hhmm(getattr(esc, "periodo_noturno_fim", "05:00"))
+                if (dt.hour * 60 + dt.minute) <= corte_min:
+                    return data_prev
+        return data_base
+
+    inicio = datetime.combine(data_ref, datetime.min.time()) - timedelta(hours=3)
+    fim = datetime.combine(data_ref, datetime.min.time()) + timedelta(hours=27)
+    todas = (
         PontoMarcacao.query.filter(PontoMarcacao.funcionario_id == funcionario_id)
         .filter(PontoMarcacao.data_hora >= inicio)
         .filter(PontoMarcacao.data_hora < fim)
         .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
         .all()
     )
+    resultado = []
+    for m in todas:
+        if m.data_hora and _data_efetiva_marcacao(m.data_hora) == data_ref:
+            resultado.append(m)
+    return resultado
+
+
+def _app_ponto_data_ref_efetiva(funcionario, data_hora):
+    if not data_hora:
+        return None
+    data_base = data_hora.date()
+    data_prev = data_base - timedelta(days=1)
+
+    def _parse_minutos_hhmm(valor, padrao="05:00"):
+        texto = (valor or padrao or "05:00").strip()
+        try:
+            hh, mm = [int(x) for x in texto.split(":")[:2]]
+            return max(0, min(23, hh)) * 60 + max(0, min(59, mm))
+        except Exception:
+            return 5 * 60
+
+    esc_prev = _app_ponto_escala_info_data(funcionario, data_prev)
+    if esc_prev:
+        esc = esc_prev.get("escala")
+        dia_info = esc_prev.get("dia_info") or {}
+        if getattr(esc, "tipo", "") == "noturna" or bool(dia_info.get("noturno")):
+            corte_min = _parse_minutos_hhmm(getattr(esc, "periodo_noturno_fim", "05:00"))
+            if (data_hora.hour * 60 + data_hora.minute) <= corte_min:
+                return data_prev
+    return data_base
 
 
 def _app_ponto_min_esperado_jornada(funcionario):
@@ -18336,7 +18394,7 @@ def api_app_ponto_marcar_me():
         return jsonify(
             {"erro": "Não é permitido registrar ponto em horário futuro."}
         ), 400
-    data_ref = data_hora.date()
+    data_ref = _app_ponto_data_ref_efetiva(f, data_hora) or data_hora.date()
     marcacoes_dia = _app_ponto_marcacoes_dia(f.id, data_ref)
     max_marc = _app_ponto_max_marcacoes_dia(f)
     if len(marcacoes_dia) >= max_marc:
@@ -18559,7 +18617,7 @@ def api_app_ponto_marcar_qr_me():
 
     observacao = (dados.get("observacao") or "").strip()[:500]
     data_hora = utcnow()
-    data_ref = data_hora.date()
+    data_ref = _app_ponto_data_ref_efetiva(f, data_hora) or data_hora.date()
     marcacoes_dia = _app_ponto_marcacoes_dia(f.id, data_ref)
     max_marc = _app_ponto_max_marcacoes_dia(f)
     if len(marcacoes_dia) >= max_marc:

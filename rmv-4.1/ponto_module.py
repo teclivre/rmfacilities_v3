@@ -261,10 +261,38 @@ def register_ponto_routes(
         return f"{sinal}{minutos // 60:02d}:{minutos % 60:02d}"
 
     def _ponto_marcacoes_dia(funcionario_id, data_ref):
+        try:
+            funcionario = db.session.get(Funcionario, funcionario_id)
+        except Exception:
+            funcionario = None
+
+        def _parse_minutos_hhmm(valor, padrao="05:00"):
+            texto = (valor or padrao or "05:00").strip()
+            try:
+                hh, mm = [int(x) for x in texto.split(":")[:2]]
+                return max(0, min(23, hh)) * 60 + max(0, min(59, mm))
+            except Exception:
+                return 5 * 60
+
+        def _data_efetiva_marcacao(dt):
+            if not dt or not funcionario:
+                return dt.date() if dt else data_ref
+            data_base = dt.date()
+            data_prev = data_base - timedelta(days=1)
+            esc_prev = _ponto_escala_info_data(funcionario, data_prev)
+            if esc_prev:
+                esc = esc_prev.get("escala")
+                dia_info = esc_prev.get("dia_info") or {}
+                if getattr(esc, "tipo", "") == "noturna" or bool(dia_info.get("noturno")):
+                    corte_min = _parse_minutos_hhmm(getattr(esc, "periodo_noturno_fim", "05:00"))
+                    if (dt.hour * 60 + dt.minute) <= corte_min:
+                        return data_prev
+            return data_base
+
         # BUG-FIX 13: a janela UTC midnight→midnight cortava marcações de turno
         # noturno que em BRT são do dia data_ref mas em UTC caem no dia seguinte
         # (após 21h BRT = após 00h UTC). Estender a janela em 3h em cada lado e
-        # filtrar pelo dia BRT na memória, garantindo cobertura total.
+        # filtrar pela data efetiva da marcação na memória, garantindo cobertura total.
         inicio = datetime.combine(data_ref, datetime.min.time()) - timedelta(hours=3)
         fim = datetime.combine(data_ref, datetime.min.time()) + timedelta(hours=27)
         todas = (
@@ -276,11 +304,35 @@ def register_ponto_routes(
         )
         resultado = []
         for m in todas:
-            # data_hora é BRT naive — usar .date() direto.
-            # NÃO tratar como UTC: deslocaria marcações de 00:00-02:59 para o dia anterior.
-            if m.data_hora and m.data_hora.date() == data_ref:
+            # data_hora é BRT naive; a data efetiva pode voltar para o dia anterior
+            # em escala noturna quando a marcação ocorre antes do fim do período noturno.
+            if m.data_hora and _data_efetiva_marcacao(m.data_hora) == data_ref:
                 resultado.append(m)
         return resultado
+
+    def _ponto_data_ref_efetiva(funcionario, data_hora):
+        if not data_hora:
+            return None
+        data_base = data_hora.date()
+        data_prev = data_base - timedelta(days=1)
+
+        def _parse_minutos_hhmm(valor, padrao="05:00"):
+            texto = (valor or padrao or "05:00").strip()
+            try:
+                hh, mm = [int(x) for x in texto.split(":")[:2]]
+                return max(0, min(23, hh)) * 60 + max(0, min(59, mm))
+            except Exception:
+                return 5 * 60
+
+        esc_prev = _ponto_escala_info_data(funcionario, data_prev)
+        if esc_prev:
+            esc = esc_prev.get("escala")
+            dia_info = esc_prev.get("dia_info") or {}
+            if getattr(esc, "tipo", "") == "noturna" or bool(dia_info.get("noturno")):
+                corte_min = _parse_minutos_hhmm(getattr(esc, "periodo_noturno_fim", "05:00"))
+                if (data_hora.hour * 60 + data_hora.minute) <= corte_min:
+                    return data_prev
+        return data_base
 
     def _calc_intersec_noturno(ini_dt, fim_dt, noc_ini_min=1320, noc_fim_min=300):
         """Minutos trabalhados no período noturno para um trecho de trabalho.
@@ -773,9 +825,9 @@ def register_ponto_routes(
             return jsonify(
                 {"erro": "Não é permitido registrar ponto em horário futuro."}
             ), 400
-        # data_hora é BRT naive (utcnow()=localnow()=BRT); usar .date() diretamente.
-        # NÃO tratar como UTC: deslocaria marcações de madrugada para o dia anterior.
-        data_ref = data_hora.date()
+        # Marcações em escala noturna podem pertencer ao dia anterior quando
+        # ocorrem antes do fim do período noturno.
+        data_ref = _ponto_data_ref_efetiva(funcionario, data_hora) or data_hora.date()
         af_hoje = _afastamento_ativo_na_data(funcionario.id, data_ref)
         if af_hoje:
             tipo_label = (af_hoje.tipo or "Afastamento").strip()
@@ -1235,8 +1287,9 @@ def register_ponto_routes(
                 funcionario = db.session.get(Funcionario, funcionario_id)
                 if not funcionario:
                     return jsonify({"erro": "Funcionário não encontrado."}), 404
-                # data_hora é BRT naive — usar .date() direto para data_ref correto.
-                data_ref = data_hora.date()
+                # Marcações em escala noturna podem pertencer ao dia anterior
+                # quando ocorrem antes do fim do período noturno.
+                data_ref = _ponto_data_ref_efetiva(funcionario, data_hora) or data_hora.date()
                 antes = [
                     marcacao.to_dict()
                     for marcacao in _ponto_marcacoes_dia(funcionario_id, data_ref)
@@ -1594,8 +1647,9 @@ def register_ponto_routes(
             return jsonify({"erro": "Informe o motivo da inclusão da marcação."}), 400
 
         observacao = (dados.get("observacao") or "").strip()[:500]
-        # data_hora é BRT naive — usar .date() diretamente.
-        data_ref = data_hora.date()
+        # Marcações em escala noturna podem pertencer ao dia anterior quando
+        # ocorrem antes do fim do período noturno.
+        data_ref = _ponto_data_ref_efetiva(funcionario, data_hora) or data_hora.date()
 
         # BUG-FIX 10: query duplicada — marcacoes_dia_antes fazia a mesma query que
         # 'conflito' logo abaixo; reutilizar a lista para checar conflito de 1 min.
