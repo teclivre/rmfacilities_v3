@@ -148,11 +148,21 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 	left:0;
 	right:0;
 	bottom:0;
+	display:block!important;
 	overflow-y:auto;
 	overflow-x:hidden;
 	padding:20px 22px !important;
 	animation:none;
 	z-index:9;
+}
+
+#pg-controle-ponto.on > .subaba-blocos{
+	display:none!important;
+}
+
+#pg-controle-ponto.on > #st-controle-ponto,
+#pg-controle-ponto.on > .card{
+	margin-top:0!important;
 }
 
 @media(max-width:768px){

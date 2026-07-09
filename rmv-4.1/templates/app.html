@@ -5292,7 +5292,7 @@ function _subAbaLabel(item,idx){
 function montarSubAbasBloco(){
   document.querySelectorAll('.pg').forEach(pg=>{
     if(pg.dataset.subabaReady==='1') return;
-    if(['pg-rh','pg-rh-digital','pg-assinaturas','pg-documentos'].includes(pg.id)) return;
+    if(['pg-rh','pg-rh-digital','pg-assinaturas','pg-documentos','pg-controle-ponto'].includes(pg.id)) return;
 
     const itens=Array.from(pg.children).filter(el=>{
       if(!el) return false;
