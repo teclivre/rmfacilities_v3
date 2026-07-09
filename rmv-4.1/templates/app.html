@@ -1827,12 +1827,13 @@ document.addEventListener('DOMContentLoaded',()=>{
               <div class="hint">Horas trabalhadas entre esses horários serão marcadas como noturnas no cálculo de benefícios.</div>
             </div>
 
-            <label style="margin-top:8px">Configuração do ciclo (simples)</label>
+            <label id="rh-esc-ciclo-label" style="margin-top:8px">Configuração do ciclo (simples)</label>
             <div class="g3" style="margin-top:6px">
-              <div class="f"><label>Hora de entrada</label><input id="rh-esc-hora-entrada" type="time" value="08:00"></div>
-              <div class="f"><label>Hora de saída</label><input id="rh-esc-hora-saida" type="time" value="17:00"></div>
-              <div class="f"><label>Intervalo (min)</label><input id="rh-esc-intervalo" type="number" min="0" max="240" value="60"></div>
+              <div class="f" data-rh-esc-gen-field="1"><label>Hora de entrada</label><input id="rh-esc-hora-entrada" type="time" value="08:00"></div>
+              <div class="f" data-rh-esc-gen-field="1"><label>Hora de saída</label><input id="rh-esc-hora-saida" type="time" value="17:00"></div>
+              <div class="f" data-rh-esc-gen-field="1"><label>Intervalo (min)</label><input id="rh-esc-intervalo" type="number" min="0" max="240" value="60"></div>
             </div>
+            <div id="rh-esc-12x36-hint" class="hint" style="display:none;margin-top:6px">Na escala 12x36, você só define se ela começa em trabalho ou folga. Os horários são automáticos.</div>
             <div id="rh-esc-6x1-config" style="display:none;border:1px solid var(--borda);border-radius:8px;padding:10px;margin-top:8px">
               <label style="font-weight:700">Configuração de sábado (somente para 6x1)</label>
               <div class="g3" style="margin-top:6px">
@@ -1842,11 +1843,11 @@ document.addEventListener('DOMContentLoaded',()=>{
               </div>
             </div>
             <div class="g2" style="margin-top:6px">
-              <div class="f"><label>Dias de trabalho no ciclo</label><input id="rh-esc-dias-trabalho" type="number" min="1" max="31" value="6"></div>
-              <div class="f"><label>Dias de folga no ciclo</label><input id="rh-esc-dias-folga" type="number" min="0" max="31" value="2"></div>
+              <div class="f" data-rh-esc-gen-field="1"><label>Dias de trabalho no ciclo</label><input id="rh-esc-dias-trabalho" type="number" min="1" max="31" value="6"></div>
+              <div class="f" data-rh-esc-gen-field="1"><label>Dias de folga no ciclo</label><input id="rh-esc-dias-folga" type="number" min="0" max="31" value="2"></div>
             </div>
-            <div class="f" style="margin-top:6px">
-              <label>Ordem do ciclo</label>
+            <div class="f" id="rh-esc-ordem-wrap" style="margin-top:6px">
+              <label id="rh-esc-ordem-label">Ordem do ciclo</label>
               <select id="rh-esc-ordem" onchange="rhEscalaAtualizarCicloTemplate()">
                 <option value="trabalho_folga">Trabalho primeiro, depois folga</option>
                 <option value="folga_trabalho">Folga primeiro, depois trabalho</option>
@@ -1882,15 +1883,15 @@ document.addEventListener('DOMContentLoaded',()=>{
                 <select id="rh-esc-vinc-escala" onchange="rhEscalaCarregarFuncsParaVinc()"></select>
               </div>
               <div class="f">
-                <label>Data de início</label>
+                <label id="rh-esc-vinc-data-label">Data de início</label>
                 <input id="rh-esc-vinc-data-ini" type="date" value="">
               </div>
             </div>
-            <div class="f" style="margin-top:6px">
+                <div class="f" style="margin-top:6px">
               <label>Funcionários ativos (disponíveis)</label>
               <select id="rh-esc-vinc-funcs" multiple size="7"></select>
             </div>
-            <div class="hint" style="margin-top:4px">Use Ctrl/Cmd para selecionar múltiplos funcionários. Data de início define quando a escala começa a valer.</div>
+                <div class="hint" id="rh-esc-vinc-hint" style="margin-top:4px">Use Ctrl/Cmd para selecionar múltiplos funcionários. A data de início define quando a escala começa a valer.</div>
             <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
               <button class="btn b-ghv b-sm" onclick="rhEscalaVincularSelecionados()">Vincular selecionados</button>
               <button class="btn b-az b-sm" onclick="rhEscalaMoverSelecionados()">Mover para esta escala</button>
@@ -8182,6 +8183,27 @@ function rhEscalaMontarDiaTrabalho(turno, horaEntrada, horaSaida, intervalo){
   return dia;
 }
 
+function rhEscalaAjustarVisaoPorTipo(){
+  const tipo=document.getElementById('rh-esc-tipo')?.value||'';
+  const esconderBasicos=tipo==='12x36';
+  const mostrar6x1=tipo==='6x1';
+  const ordemWrap=document.getElementById('rh-esc-ordem-wrap');
+  const ordemLabel=document.getElementById('rh-esc-ordem-label');
+  const cicloLabel=document.getElementById('rh-esc-ciclo-label');
+  const hint12x36=document.getElementById('rh-esc-12x36-hint');
+
+  document.querySelectorAll('[data-rh-esc-gen-field="1"]').forEach(el=>{
+    el.style.display=esconderBasicos?'none':'';
+  });
+  if(ordemWrap) ordemWrap.style.display=esconderBasicos?'':'block';
+  if(ordemLabel) ordemLabel.textContent=esconderBasicos?'Início da escala':'Ordem do ciclo';
+  if(cicloLabel) cicloLabel.textContent=esconderBasicos?'Configuração da escala 12x36':'Configuração do ciclo (simples)';
+  if(hint12x36) hint12x36.style.display=esconderBasicos?'block':'none';
+
+  const cfg6x1=document.getElementById('rh-esc-6x1-config');
+  if(cfg6x1) cfg6x1.style.display=mostrar6x1?'block':'none';
+}
+
 function rhEscalaMontarCiclo(){
   const tipo=document.getElementById('rh-esc-tipo')?.value||'';
   const turno=document.getElementById('rh-esc-turno')?.value||'diurno';
@@ -8242,6 +8264,7 @@ function rhEscalaAtualizarCicloTemplate(){
   const noturnoConfig=document.getElementById('rh-esc-noturno-config');
   const cfg6x1=document.getElementById('rh-esc-6x1-config');
   if(!cicloArea) return;
+  rhEscalaAjustarVisaoPorTipo();
   if(tipo==='5x2'){
     document.getElementById('rh-esc-dias-trabalho').value='5';
     document.getElementById('rh-esc-dias-folga').value='2';
@@ -8300,6 +8323,7 @@ function rhEscalaEditar(id){
   // Popular campos noturnos se disponíveis
   if(e.periodo_noturno_ini) document.getElementById('rh-esc-noturno-ini').value=e.periodo_noturno_ini;
   if(e.periodo_noturno_fim) document.getElementById('rh-esc-noturno-fim').value=e.periodo_noturno_fim;
+  rhEscalaAjustarVisaoPorTipo();
   rhEscalaAtualizarCicloTemplate();
 }
 
@@ -8327,6 +8351,7 @@ async function rhEscalaLimparForm(){
   if(noturnoConfig) noturnoConfig.style.display='none';
   const cfg6x1=document.getElementById('rh-esc-6x1-config');
   if(cfg6x1) cfg6x1.style.display='none';
+  rhEscalaAjustarVisaoPorTipo();
   await rhEscalaCarregarFuncsParaVinc();
 }
 
@@ -8402,6 +8427,13 @@ async function rhEscalaExcluir(id){
 async function rhEscalaCarregarFuncsParaVinc(){
   const eid=(document.getElementById('rh-esc-vinc-escala')?.value||'').trim();
   const sel=document.getElementById('rh-esc-vinc-funcs');
+  const escalaAtual=eid ? rhEscalas.find(x=>String(x.id)===String(eid)) : null;
+  const dataLabel=document.getElementById('rh-esc-vinc-data-label');
+  const dataHint=document.getElementById('rh-esc-vinc-hint');
+  if(dataLabel) dataLabel.textContent=(escalaAtual?.tipo==='12x36')?'Data de início da 12x36':'Data de início';
+  if(dataHint) dataHint.textContent=(escalaAtual?.tipo==='12x36')
+    ?'Escolha a data em que a 12x36 começa a valer. A opção "Início da escala" define se o primeiro dia será trabalho ou folga.'
+    :'Use Ctrl/Cmd para selecionar múltiplos funcionários. A data de início define quando a escala começa a valer.';
   if(!sel) return;
   
   // Se não selecionou escala, mostrar todos os ativos
@@ -8415,7 +8447,6 @@ async function rhEscalaCarregarFuncsParaVinc(){
   
   // Escala selecionada: buscar vínculos existentes para não sugerir funcionários já vinculados
   let idsJaVincs=new Set();
-  const escalaAtual=rhEscalas.find(x=>String(x.id)===String(eid));
   let funcsVinculados=[];
   if(escalaAtual && Array.isArray(escalaAtual.funcionarios) && escalaAtual.funcionarios.length){
     funcsVinculados=escalaAtual.funcionarios.slice();
