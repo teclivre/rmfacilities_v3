@@ -1941,6 +1941,7 @@ def register_ponto_routes(
         total_previstas = 0
         total_diurnas = 0
         total_intervalo = 0
+        total_noturno = 0
         total_faltas = 0
         total_extras_50 = 0
         total_extras_100 = 0
