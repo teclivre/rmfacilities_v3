@@ -273,7 +273,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
         <div class="card">
           <div id="clock-big" class="clock-big">--:--</div>
           <div id="date-sub" class="date-sub">—</div>
-          <div class="gps-banner" id="gps-banner"><span>📍 Localização necessária</span><button onclick="pedirGps()">Ativar GPS</button></div>
           <button class="btn-ponto entrada" id="btn-ponto" onclick="marcarPonto()">Carregando…</button>
           <div class="ponto-sub" id="ponto-sub"></div>
         </div>
@@ -671,7 +670,6 @@ function showApp(){
   hb.style.background=st==='ativo'?'var(--green)':'var(--yellow)';
   hb.style.color='#fff';
   updateClock();_clockT=setInterval(updateClock,1000);
-  obterGps(5000).catch(function(){});
   initPTR();
   showPage('ponto');
   loadBadges();
@@ -693,16 +691,10 @@ function obterGps(timeout){
     if(!navigator.geolocation){rej(new Error('GPS não suportado.'));return;}
     navigator.geolocation.getCurrentPosition(
       function(p){_gpsPos={lat:p.coords.latitude,lon:p.coords.longitude,precisao:p.coords.accuracy};res(_gpsPos);},
-      function(e){var msg='Ative o GPS para registrar o ponto.';if(e.code===1)msg='Permissão negada. Toque em "Ativar GPS".';else if(e.code===3)msg='Tempo esgotado. Tente novamente.';rej(new Error(msg));},
+      function(e){var msg='Localização indisponível no momento.';if(e.code===3)msg='Tempo esgotado ao obter localização.';rej(new Error(msg));},
       {enableHighAccuracy:true,timeout:timeout,maximumAge:30000}
     );
   });
-}
-
-function pedirGps(){
-  document.getElementById('gps-banner').classList.remove('on');
-  obterGps().then(function(){showToast('Localização obtida!');})
-    .catch(function(e){showToast(e.message,true);document.getElementById('gps-banner').classList.add('on');});
 }
 
 /* NAVIGATION */
@@ -889,16 +881,16 @@ function renderBtnPonto(r){
 function marcarPonto(){
   var btn=document.getElementById('btn-ponto');
   if(btn.classList.contains('concluido')) return;
-  btn.disabled=true;btn.textContent='📍 Obtendo localização…';
+  btn.disabled=true;btn.textContent='Registrando ponto…';
   // GPS é tentado mas não obrigatório: se negado/indisponível, registra sem coordenadas
   obterGps(6000).then(function(pos){
-    document.getElementById('gps-banner').classList.remove('on');
+    var banner=document.getElementById('gps-banner');
+    if(banner) banner.classList.remove('on');
     btn.textContent='…';
     return api('POST','/api/app/funcionario/me/ponto/marcar',{lat:pos.lat,lon:pos.lon,precisao:pos.precisao});
   }).catch(function(gpsErr){
     // Se GPS falhou mas a causa não é de rede/auth, registra sem GPS
     if(gpsErr&&gpsErr.auth) return Promise.reject(gpsErr);
-    document.getElementById('gps-banner').classList.add('on');
     btn.textContent='…';
     return api('POST','/api/app/funcionario/me/ponto/marcar',{lat:null,lon:null,precisao:null});
   }).then(function(){
