@@ -540,6 +540,10 @@ async function pontoAbrirEditDia(){
     `<button type="button" class="btn b-vd b-sm" style="width:100%;margin-top:4px" onclick="pedAdicionarLinha()">＋ Adicionar marcação</button>`;
 
   document.getElementById('ped-motivo').value='';
+  const bulkWrap=document.getElementById('ped-gf-bulk-wrap');
+  const bulkCk=document.getElementById('ped-aplicar-todos-dias');
+  if(bulkWrap) bulkWrap.style.display='none';
+  if(bulkCk) bulkCk.checked=false;
   showSt('ped-st','',false);
   setModalClean('ponto-edit-dia');
   document.getElementById('mod-ponto-edit-dia').classList.add('on');
@@ -609,6 +613,7 @@ async function salvarEdicaoDiaCompleto(){
   const fid=(_pedCtx?.fid)||parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
   const data=(_pedCtx?.data)||document.getElementById('ponto-data')?.value||pontoDataHojeISO();
   const wrap=document.getElementById('ped-marcacoes-wrap');
+  const aplicarEmTodosDias=!!(_pedCtx?.isGf && document.getElementById('ped-aplicar-todos-dias')?.checked);
 
   // Coletar o que está no DOM agora
   const idsPresentes=new Set(
@@ -626,6 +631,86 @@ async function salvarEdicaoDiaCompleto(){
     const base=/^\d{2}:\d{2}$/.test(dhRaw)?dataRef+'T'+dhRaw:dhRaw;
     // Remover qualquer offset existente para enviar como naive
     return base.replace(/[+\-]\d{2}:\d{2}$|Z$/,'');
+  }
+
+  if(aplicarEmTodosDias){
+    if(!gfUltimoResumo || !Array.isArray(gfUltimoResumo.dias)){
+      showSt('ped-st','Resumo mensal indisponível para aplicar em massa.',true);
+      return;
+    }
+
+    const modelo=[];
+    wrap.querySelectorAll('[data-marc-id]').forEach(card=>{
+      const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
+      const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
+      const obs=(card.querySelector('.ped-obs')?.value||'').trim();
+      if(!tipo || !dhRaw) return;
+      const dh=_pedDhComTz(data,dhRaw);
+      const m=dh.match(/T(\d{2}:\d{2})/);
+      if(!m) return;
+      modelo.push({tipo,hora:m[1],observacao:obs});
+    });
+
+    if(!modelo.length){
+      showSt('ped-st','Defina ao menos uma marcação para aplicar nos dias de trabalho.',true);
+      return;
+    }
+
+    const hojeIso=pontoDataHojeISO();
+    const diasAlvo=(gfUltimoResumo.dias||[]).filter(d=>{
+      const dataRef=String(d?.data_ref||'');
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(dataRef)) return false;
+      if(dataRef>hojeIso) return false;
+      const diaTipo=String(d?.dia_tipo||'').toLowerCase();
+      if(['afastamento','ferias','folga','feriado'].includes(diaTipo)) return false;
+      return Number(d?.horas_esperadas_min||0)>0;
+    });
+
+    if(!diasAlvo.length){
+      showSt('ped-st','Não há dias de trabalho elegíveis para aplicação em massa nesta competência.',true);
+      return;
+    }
+
+    if(!confirm(`Aplicar este padrão em ${diasAlvo.length} dia(s) de trabalho da competência?`)) return;
+
+    showSt('ped-st','Aplicando padrão em massa…',false);
+    let diasAtualizados=0;
+    let marcacoesRecriadas=0;
+
+    for(const dia of diasAlvo){
+      const dataRef=dia.data_ref;
+      const idsExcluir=(dia.marcacoes||[]).map(m=>m.id).filter(Boolean);
+
+      for(const id of idsExcluir){
+        const r=await api('/api/ponto/marcacao/'+id,'DELETE',{motivo});
+        if(r.erro){
+          showSt('ped-st','Erro ao excluir marcação #'+id+' em '+dataRef+': '+r.erro,true);
+          return;
+        }
+      }
+
+      for(const it of modelo){
+        const r=await api('/api/ponto/marcacao','POST',{
+          funcionario_id:fid,
+          tipo:it.tipo,
+          data_hora:`${dataRef}T${it.hora}`,
+          observacao:it.observacao,
+          origem:'admin',
+          motivo
+        });
+        if(r.erro){
+          showSt('ped-st','Erro ao criar marcação em '+dataRef+': '+r.erro,true);
+          return;
+        }
+        marcacoesRecriadas++;
+      }
+      diasAtualizados++;
+    }
+
+    closeModal('ponto-edit-dia',true);
+    showSt('gf-st',`Padrão aplicado em ${diasAtualizados} dia(s) de trabalho. Marcações recriadas: ${marcacoesRecriadas}.`,false);
+    await gfCarregarMes();
+    return;
   }
 
   // Marcações existentes que continuam = editar
@@ -954,6 +1039,10 @@ function gfAbrirEditDia(dataRef){
     `<button type="button" class="btn b-vd b-sm" style="width:100%;margin-top:4px" onclick="pedAdicionarLinha()">＋ Adicionar marcação</button>`;
 
   document.getElementById('ped-motivo').value='';
+  const bulkWrap=document.getElementById('ped-gf-bulk-wrap');
+  const bulkCk=document.getElementById('ped-aplicar-todos-dias');
+  if(bulkWrap) bulkWrap.style.display='block';
+  if(bulkCk) bulkCk.checked=false;
   showSt('ped-st','',false);
   setModalClean('ponto-edit-dia');
   document.getElementById('mod-ponto-edit-dia').classList.add('on');
