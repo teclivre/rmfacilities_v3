@@ -23496,76 +23496,20 @@ def api_envelope_assinatura_confirmar(token):
     data = request.get_json() or {}
     nome = (data.get("nome") or "").strip()
     cargo = (data.get("cargo") or "").strip()
-    cpf_inf = (
-        (data.get("cpf") or "")
-        .strip()
-        .replace(".", "")
-        .replace("-", "")
-        .replace(" ", "")
-    )
-    otp = (only_digits(data.get("otp") or "") or "").strip()
     aceite = data.get("aceite")
-    if not nome or not cpf_inf or not aceite:
-        return _assinatura_json_erro("Preencha nome, CPF e confirme o aceite.", 400)
-    if len(cpf_inf) < 11 or not _valida_cpf(cpf_inf):
-        return _assinatura_json_erro(
-            "CPF inválido. Verifique os dígitos e tente novamente.", 400
-        )
+    if not nome or not aceite:
+        return _assinatura_json_erro("Preencha o nome e confirme o aceite.", 400)
     cpf_base = only_digits(sig.cpf or "")
-    if cpf_base and cpf_inf != cpf_base:
+    if not cpf_base:
         return _assinatura_json_erro(
-            "O CPF informado não confere com o CPF cadastrado para este signatário.",
+            "O CPF deste signatário não foi cadastrado. Atualize o cadastro antes de assinar.",
             400,
         )
-
-    if not otp:
-        codigo = _otp_new_code()
-        sig.ass_otp_hash = token_hash(codigo)
-        sig.ass_otp_expira_em = utcnow() + timedelta(minutes=10)
-        sig.ass_otp_tentativas = 0
-        try:
-            envio = _send_signature_otp(
-                codigo,
-                nome_dest=nome,
-                telefone=sig.telefone or "",
-                email=sig.email or "",
-                contexto="envelope",
-            )
-        except Exception as ex:
-            db.session.rollback()
-            return _assinatura_json_erro(
-                f"Falha ao enviar OTP de confirmação: {str(ex)}", 400
-            )
-        db.session.commit()
-        return _assinatura_json_otp(
-            mensagem=f"Código OTP enviado via {envio.get('canal', 'canal')} para {envio.get('destino', 'destino mascarado')}",
-            canal=envio.get("canal", ""),
-            destino=envio.get("destino", ""),
-        )
-
-    if not (sig.ass_otp_hash or "").strip() or not sig.ass_otp_expira_em:
+    if len(cpf_base) != 11 or not _valida_cpf(cpf_base):
         return _assinatura_json_erro(
-            "Solicite um novo código OTP para concluir a assinatura.", 400
+            "O CPF cadastrado para este signatário é inválido. Atualize o cadastro antes de assinar.",
+            400,
         )
-    if sig.ass_otp_expira_em < utcnow():
-        return _assinatura_json_erro(
-            "Código OTP expirado. Solicite um novo código.", 400
-        )
-    tent = int(sig.ass_otp_tentativas or 0)
-    if tent >= 5:
-        return _assinatura_json_erro(
-            "Limite de tentativas de OTP excedido. Solicite um novo código.", 400
-        )
-    if not hmac.compare_digest(token_hash(otp), str(sig.ass_otp_hash or "")):
-        db.session.execute(
-            db.text(
-                "UPDATE assinatura_envelope_signatario SET ass_otp_tentativas = ass_otp_tentativas + 1 "
-                "WHERE id = :sid"
-            ),
-            {"sid": sig.id},
-        )
-        db.session.commit()
-        return _assinatura_json_erro("Código OTP inválido.", 400)
 
     ip = (
         request.headers.get("X-Forwarded-For", request.remote_addr or "")
@@ -23574,9 +23518,7 @@ def api_envelope_assinatura_confirmar(token):
     )
     sig.nome = nome
     sig.cargo = cargo
-    if not (sig.cpf or "").strip():
-        sig.cpf = cpf_inf
-    sig.ass_cpf_informado = cpf_inf
+    sig.ass_cpf_informado = cpf_base
     sig.ass_ip = ip
     sig.ass_em = utcnow()
     sig.ass_codigo = secrets.token_urlsafe(10)
@@ -23613,7 +23555,7 @@ def api_envelope_assinatura_confirmar(token):
             if not (p.nome or "").strip():
                 p.nome = nome
             if not (p.cpf or "").strip():
-                p.cpf = cpf_inf
+                p.cpf = cpf_base
 
     sig.token = None  # invalida o token após uso
     url_root = request.url_root.rstrip("/")
