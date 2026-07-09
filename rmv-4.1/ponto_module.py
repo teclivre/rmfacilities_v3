@@ -150,17 +150,11 @@ def register_ponto_routes(
             return horas * 60
         return 8 * 60
 
-    def _ponto_min_esperado_data(funcionario, data_ref):
-        """Retorna minutos esperados para funcionario em data_ref.
-        Prioridade: 1) Escala rotativa (EscalaFuncionario/Escala ciclo_json)
-                    2) JornadaTrabalho por dia da semana
-                    3) Campo texto legado (jornada)
-        """
+    def _ponto_escala_info_data(funcionario, data_ref):
+        """Retorna informações do dia da escala para um funcionário em data_ref."""
         try:
             data_str = data_ref.strftime("%Y-%m-%d") if hasattr(data_ref, "strftime") else str(data_ref)
             data_obj = data_ref if hasattr(data_ref, "weekday") else datetime.strptime(data_str, "%Y-%m-%d").date()
-
-            # 1) Escala rotativa
             if EscalaFuncionario and Escala:
                 esc_funcs = EscalaFuncionario.query.filter(
                     EscalaFuncionario.funcionario_id == funcionario.id,
@@ -181,19 +175,22 @@ def register_ponto_routes(
                         if dias_ciclo > 0:
                             data_inicio_obj = datetime.strptime(ef.data_inicio, "%Y-%m-%d").date()
                             dias_decorridos = (data_obj - data_inicio_obj).days
-                            # BUG-FIX 1: dias_decorridos negativo significa data_ref < data_inicio
-                            # da escala. Em Python (-1 % N) = N-1, retornaria o último dia do
-                            # ciclo erroneamente em vez de ignorar esta escala ainda não iniciada.
                             if dias_decorridos < 0:
                                 continue
                             indice = dias_decorridos % dias_ciclo
-                            return esc.carga_horaria_min_dia(indice)
+                            dia_info = (ciclo.get("dias", [])[indice] or {}) if indice < len(ciclo.get("dias", [])) else {}
+                            return {
+                                "escala": esc,
+                                "vinculo": ef,
+                                "indice": indice,
+                                "dia_info": dia_info,
+                                "minutos": esc.carga_horaria_min_dia(indice),
+                            }
                     except Exception as _exc_esc:
-                        # BUG-FIX 6: logar erro para diagnóstico em vez de silenciar
                         try:
                             import logging as _log
                             _log.getLogger(__name__).warning(
-                                "_ponto_min_esperado_data: erro ao calcular ciclo de escala "
+                                "_ponto_escala_info_data: erro ao calcular ciclo de escala "
                                 "esc_id=%s ef_id=%s data=%s: %s",
                                 getattr(esc, 'id', '?'), getattr(ef, 'id', '?'), data_str, _exc_esc
                             )
@@ -204,11 +201,25 @@ def register_ponto_routes(
             try:
                 import logging as _log
                 _log.getLogger(__name__).warning(
-                    "_ponto_min_esperado_data: erro ao consultar escalas func_id=%s data=%s: %s",
+                    "_ponto_escala_info_data: erro ao consultar escalas func_id=%s data=%s: %s",
                     getattr(funcionario, 'id', '?'), data_ref, _exc_outer
                 )
             except Exception:
                 pass
+        return None
+
+    def _ponto_min_esperado_data(funcionario, data_ref):
+        """Retorna minutos esperados para funcionario em data_ref.
+        Prioridade: 1) Escala rotativa (EscalaFuncionario/Escala ciclo_json)
+                    2) JornadaTrabalho por dia da semana
+                    3) Campo texto legado (jornada)
+        """
+        try:
+            esc_info = _ponto_escala_info_data(funcionario, data_ref)
+            if esc_info:
+                return esc_info.get("minutos", 0) or 0
+        except Exception:
+            pass
 
         # 2) JornadaTrabalho por dia da semana
         if JornadaTrabalho and getattr(funcionario, "jornada_id", None):
@@ -481,6 +492,7 @@ def register_ponto_routes(
         elif _is_feriado:
             dia_tipo = "feriado"
 
+        esc_info_dia = _ponto_escala_info_data(funcionario, data_ref)
         minutos_esperados = 0 if dia_tipo in ("afastamento", "ferias", "feriado") else _ponto_min_esperado_data(funcionario, data_ref)
         if dia_tipo == "normal" and minutos_esperados == 0 and not marcacoes:
             dia_tipo = "folga"
@@ -492,14 +504,22 @@ def register_ponto_routes(
         else:
             saldo = saldo_bruto
         # ── Horas extras 50% e 100% ──────────────────────────────────────────
-        # Dom (weekday==6) ou feriado → tudo a 100%; demais dias → 50% até 2h, 100% além
+        # Regra padrão: 100% somente em domingo/feriado; semana e sábado ficam em 50%.
+        # Exceção 12x36: se domingo/feriado cair em dia normal de trabalho da escala,
+        # continua 50%; 100% apenas quando o colaborador trabalhar na folga.
+        escala_tipo = getattr((esc_info_dia or {}).get("escala"), "tipo", "") if esc_info_dia else ""
+        escala_dia_tipo = str(((esc_info_dia or {}).get("dia_info") or {}).get("tipo", "")).lower()
+        domingo_ou_feriado = (data_ref.weekday() == 6) or _is_feriado
+        he_100_por_data = domingo_ou_feriado
+        if he_100_por_data and escala_tipo == "12x36" and escala_dia_tipo == "trabalho":
+            he_100_por_data = False
         if saldo > 0:
-            if data_ref.weekday() >= 5 or _is_feriado:
+            if he_100_por_data:
                 he_50_min_bruto = 0
                 he_100_min_bruto = saldo
             else:
-                he_50_min_bruto = min(saldo, 120)
-                he_100_min_bruto = max(0, saldo - 120)
+                he_50_min_bruto = saldo
+                he_100_min_bruto = 0
         else:
             he_50_min_bruto = 0
             he_100_min_bruto = 0
@@ -840,38 +860,14 @@ def register_ponto_routes(
         _ponto_min_esperado_data, mas devolve a origem para uso em previews.
         """
         try:
-            data_str = data_ref.strftime("%Y-%m-%d") if hasattr(data_ref, "strftime") else str(data_ref)
-            data_obj = data_ref if hasattr(data_ref, "weekday") else datetime.strptime(data_str, "%Y-%m-%d").date()
-            # 1) Escala rotativa
-            if EscalaFuncionario and Escala:
-                esc_funcs = EscalaFuncionario.query.filter(
-                    EscalaFuncionario.funcionario_id == funcionario.id,
-                    EscalaFuncionario.data_inicio <= data_str,
-                    EscalaFuncionario.ativo == True,
-                ).order_by(EscalaFuncionario.data_inicio.desc()).all()
-                for ef in esc_funcs:
-                    if ef.data_fim and ef.data_fim < data_str:
-                        continue
-                    esc = db.session.get(Escala, ef.escala_id)
-                    if not esc or not esc.ativo:
-                        continue
-                    try:
-                        ciclo = json.loads(esc.ciclo_json or "{}")
-                        dias_ciclo = len(ciclo.get("dias", []))
-                        if dias_ciclo > 0:
-                            data_inicio_obj = datetime.strptime(ef.data_inicio, "%Y-%m-%d").date()
-                            dias_decorridos = (data_obj - data_inicio_obj).days
-                            if dias_decorridos < 0:
-                                continue
-                            indice = dias_decorridos % dias_ciclo
-                            minutos = esc.carga_horaria_min_dia(indice)
-                            return minutos, 'escala', {'escala_id': getattr(esc, 'id', None), 'indice': indice}
-                    except Exception as _exc_esc:
-                        try:
-                            import logging as _log
-                            _log.getLogger(__name__).warning("_ponto_esperado_source: erro ao calcular ciclo de escala esc_id=%s ef_id=%s data=%s: %s", getattr(esc, 'id', '?'), getattr(ef, 'id', '?'), data_str, _exc_esc)
-                        except Exception:
-                            pass
+            esc_info = _ponto_escala_info_data(funcionario, data_ref)
+            if esc_info:
+                return esc_info.get("minutos", 0), 'escala', {
+                    'escala_id': getattr(esc_info.get('escala'), 'id', None),
+                    'indice': esc_info.get('indice'),
+                    'dia_tipo': (esc_info.get('dia_info') or {}).get('tipo', 'trabalho'),
+                    'escala_tipo': getattr(esc_info.get('escala'), 'tipo', ''),
+                }
         except Exception:
             try:
                 import logging as _log
