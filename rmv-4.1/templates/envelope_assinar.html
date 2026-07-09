@@ -135,6 +135,7 @@
               <div style="font-size:12px;color:#445;margin-bottom:10px">
                 <strong>Signatário:</strong> {{ sig.nome or 'Não informado' }}
                 {% if sig.cargo %}<br><strong>Cargo:</strong> {{ sig.cargo }}{% endif %}
+                {% if sig.cpf %}<br><strong>CPF:</strong> {{ sig.cpf|fmt_cpf }}{% endif %}
               </div>
 
               <div class="public-msg" id="msg"></div>
