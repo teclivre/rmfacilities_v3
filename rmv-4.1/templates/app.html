@@ -1816,6 +1816,11 @@ document.addEventListener('DOMContentLoaded',()=>{
               <option value="noturno">Noturno</option>
             </select>
 
+            <label style="margin-top:8px;display:flex;align-items:center;gap:8px">
+              <input id="rh-esc-e-noturna" type="checkbox" onchange="rhEscalaSincronizarNoturno()">
+              Esta escala é noturna
+            </label>
+
             <label style="margin-top:8px">Descrição</label>
             <input id="rh-esc-desc" placeholder="Ex.: Escala com turnos alternados">
 
@@ -8204,6 +8209,14 @@ function rhEscalaMontarDiaTrabalho(turno, horaEntrada, horaSaida, intervalo){
   return dia;
 }
 
+function rhEscalaSincronizarNoturno(){
+  const chk=document.getElementById('rh-esc-e-noturna');
+  const sel=document.getElementById('rh-esc-turno');
+  if(!chk||!sel) return;
+  sel.value=chk.checked?'noturno':'diurno';
+  rhEscalaAtualizarCicloTemplate();
+}
+
 function rhEscalaAjustarVisaoPorTipo(){
   const tipo=document.getElementById('rh-esc-tipo')?.value||'';
   const esconderBasicos=tipo==='12x36';
@@ -8227,7 +8240,9 @@ function rhEscalaAjustarVisaoPorTipo(){
 
 function rhEscalaMontarCiclo(){
   const tipo=document.getElementById('rh-esc-tipo')?.value||'';
-  const turno=document.getElementById('rh-esc-turno')?.value||'diurno';
+  const turnoCheckbox=document.getElementById('rh-esc-e-noturna');
+  const turnoSelect=document.getElementById('rh-esc-turno');
+  const turno=((turnoCheckbox&&turnoCheckbox.checked) || (turnoSelect?.value||'')==='noturno')?'noturno':'diurno';
   const horaEntrada=(document.getElementById('rh-esc-hora-entrada')?.value||'08:00').trim();
   const horaSaida=(document.getElementById('rh-esc-hora-saida')?.value||'17:00').trim();
   const intervalo=parseInt((document.getElementById('rh-esc-intervalo')?.value||'60').trim(),10)||0;
@@ -8281,10 +8296,12 @@ function rhEscalaMontarCiclo(){
 function rhEscalaAtualizarCicloTemplate(){
   const tipo=document.getElementById('rh-esc-tipo')?.value||'';
   const turno=document.getElementById('rh-esc-turno')?.value||'diurno';
+  const turnoCheckbox=document.getElementById('rh-esc-e-noturna');
   const cicloArea=document.getElementById('rh-esc-ciclo');
   const noturnoConfig=document.getElementById('rh-esc-noturno-config');
   const cfg6x1=document.getElementById('rh-esc-6x1-config');
   if(!cicloArea) return;
+  if(turnoCheckbox) turnoCheckbox.checked=(turno==='noturno' || tipo==='noturna');
   rhEscalaAjustarVisaoPorTipo();
   if(tipo==='5x2'){
     document.getElementById('rh-esc-dias-trabalho').value='5';
@@ -8341,6 +8358,8 @@ function rhEscalaEditar(id){
   }
   const ehNoturno=(e.tipo==='noturna') || dias.some(d=>d && d.tipo==='trabalho' && d.noturno===true);
   document.getElementById('rh-esc-turno').value=ehNoturno?'noturno':'diurno';
+  const turnoCheckbox=document.getElementById('rh-esc-e-noturna');
+  if(turnoCheckbox) turnoCheckbox.checked=ehNoturno;
   // Popular campos noturnos se disponíveis
   if(e.periodo_noturno_ini) document.getElementById('rh-esc-noturno-ini').value=e.periodo_noturno_ini;
   if(e.periodo_noturno_fim) document.getElementById('rh-esc-noturno-fim').value=e.periodo_noturno_fim;
@@ -8354,6 +8373,8 @@ async function rhEscalaLimparForm(){
   document.getElementById('rh-esc-tipo').value='';
   document.getElementById('rh-esc-desc').value='';
   document.getElementById('rh-esc-turno').value='diurno';
+  const turnoCheckbox=document.getElementById('rh-esc-e-noturna');
+  if(turnoCheckbox) turnoCheckbox.checked=false;
   document.getElementById('rh-esc-hora-entrada').value='08:00';
   document.getElementById('rh-esc-hora-saida').value='17:00';
   document.getElementById('rh-esc-intervalo').value='60';
