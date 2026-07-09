@@ -5209,6 +5209,19 @@ function abrirControlePonto(tab){
   }
 }
 
+function resetMainScroll(){
+  try{
+    const c=document.querySelector('main.content')||document.querySelector('.content');
+    if(c){
+      c.scrollTop=0;
+      c.scrollLeft=0;
+    }
+    window.scrollTo(0,0);
+    document.documentElement.scrollTop=0;
+    document.body.scrollTop=0;
+  }catch(_){ }
+}
+
 function nav(id,el,force=false){
   // Restaurar sidebar ao sair da página de Assinaturas
   if(document.getElementById('pg-assinaturas')?.classList.contains('on') && id!=='assinaturas'){
@@ -5237,14 +5250,11 @@ function nav(id,el,force=false){
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));
   document.getElementById('pg-'+targetId).classList.add('on');
-  // Sempre resetar scroll ao trocar de página
-  try{
-    const _c=document.querySelector('main.content')||document.querySelector('.content');
-    if(_c) _c.scrollTop=0;
-    window.scrollTo(0,0);
-    document.documentElement.scrollTop=0;
-    document.body.scrollTop=0;
-  }catch(_){}
+  // Sempre resetar scroll ao trocar de página (imediato e pós-render)
+  resetMainScroll();
+  requestAnimationFrame(resetMainScroll);
+  setTimeout(resetMainScroll,60);
+  if(targetId==='controle-ponto') setTimeout(resetMainScroll,180);
   ativarSubAbaPagina(targetId);
   if(el)el.classList.add('on');
   const navMobile=id;
