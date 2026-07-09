@@ -10,6 +10,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.text.Normalizer
 import java.util.UUID
 
 data class PendingAction(
@@ -78,6 +79,37 @@ class ActionRetryQueue(context: Context) {
     private fun isExpired(action: PendingAction): Boolean {
         val ttl = if (action.type == "ponto") PONTO_TTL_MS else DEFAULT_TTL_MS
         return (System.currentTimeMillis() - action.createdAt) > ttl
+    }
+
+    private fun shouldDropPontoByBusinessError(msg: String?): Boolean {
+        if (msg.isNullOrBlank()) return false
+        val norm = Normalizer.normalize(msg.lowercase(), Normalizer.Form.NFD)
+            .replace("\\p{Mn}+".toRegex(), "")
+
+        // Erros transitórios devem continuar na fila para nova tentativa.
+        if (
+            norm.contains("timeout") ||
+            norm.contains("temporari") ||
+            norm.contains("try again") ||
+            norm.contains("too many request") ||
+            norm.contains("429") ||
+            norm.contains("503")
+        ) {
+            return false
+        }
+
+        // Erros definitivos (regra de negocio) travam a fila se não forem descartados.
+        return (
+            norm.contains("ordem de marcacao invalida") ||
+            norm.contains("ja existe marcacao neste minuto") ||
+            norm.contains("limite de") && norm.contains("marcacoes") ||
+            norm.contains("fora da janela permitida") ||
+            norm.contains("nao e permitido registrar ponto") ||
+            norm.contains("somente funcionarios ativos") ||
+            norm.contains("voce esta de ferias") ||
+            norm.contains("afastamento") ||
+            norm.contains("atestado")
+        )
     }
 
     private fun load(): MutableList<PendingAction> {
@@ -307,7 +339,22 @@ class ActionRetryQueue(context: Context) {
                         val dataHoraIso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply {
                             timeZone = java.util.TimeZone.getTimeZone("UTC")
                         }.format(java.util.Date(tsMs))
-                        if (lat == null || lon == null) false else api.marcarPonto(lat = lat, lon = lon, precisao = precisao, dataHoraIso = dataHoraIso).ok
+                        if (lat == null || lon == null) {
+                            true // payload invalido: descarta para nao travar fila
+                        } else {
+                            val resp = api.marcarPonto(lat = lat, lon = lon, precisao = precisao, dataHoraIso = dataHoraIso)
+                            if (resp.ok) {
+                                true
+                            } else {
+                                val drop = shouldDropPontoByBusinessError(resp.erro)
+                                if (drop) {
+                                    try {
+                                        TelemetryLogger.e(TAG, "drop_ponto_offline_business_error: ${resp.erro ?: "erro_desconhecido"}")
+                                    } catch (_: Exception) {}
+                                }
+                                drop
+                            }
+                        }
                     }
                     "foto" -> {
                         val filePath = action.payload["file_path"].orEmpty()
