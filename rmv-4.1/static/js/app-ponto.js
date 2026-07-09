@@ -82,15 +82,42 @@ async function pontoSyncFuncionarios(force=false){
   }
 }
 
+function _pontoStatusNorm(v=''){
+  return String(v||'').trim().toLowerCase();
+}
+
+function _pontoCompetenciaRef(){
+  const gfComp=(document.getElementById('gf-competencia')?.value||'').trim();
+  if(/^\d{4}-\d{2}$/.test(gfComp)) return gfComp;
+  const comp=(document.getElementById('ponto-competencia')?.value||'').trim();
+  if(/^\d{4}-\d{2}$/.test(comp)) return comp;
+  const dataRef=(document.getElementById('ponto-data')?.value||'').trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(dataRef)) return dataRef.slice(0,7);
+  return pontoCompetenciaAtual();
+}
+
+function _pontoFuncionarioElegivelCompetencia(funcionario, competenciaRef){
+  const st=_pontoStatusNorm(funcionario?.status);
+  if(st==='demitido' || st==='inativo'){
+    const dem=(funcionario?.data_demissao||'').trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(dem) && dem.slice(0,7)===competenciaRef;
+  }
+  return true;
+}
+
+function _pontoFuncionariosElegiveis(){
+  const compRef=_pontoCompetenciaRef();
+  return (pontoFuncs||[])
+    .filter(f=>_pontoFuncionarioElegivelCompetencia(f,compRef))
+    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
+}
+
 function pontoAtivosFiltrados(){
   const termo=(document.getElementById('ponto-func-busca')?.value||'').trim().toLowerCase();
-  const ativos=(pontoFuncs||[])
-    .filter(f=>String((f.status||'').toLowerCase())==='ativo')
-    // BUG-FIX 10: segunda arg de localeCompare deve ser o locale, não b.nome
-    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
-  if(!termo) return ativos;
+  const elegiveis=_pontoFuncionariosElegiveis();
+  if(!termo) return elegiveis;
   const termoDig=termo.replace(/\D/g,'');
-  return ativos.filter(f=>{
+  return elegiveis.filter(f=>{
     const mat=String(f.matricula||'').toLowerCase();
     const nm=String(f.nome||'').toLowerCase();
     const cargo=String(f.cargo||f.funcao||'').toLowerCase();
@@ -159,10 +186,8 @@ function pontoPopularFuncionarios(){
   const sel=document.getElementById('ponto-funcionario');
   if(!sel)return;
   const atual=String(sel.value||'');
-  const ativos=(pontoFuncs||[])
-    .filter(f=>String((f.status||'').toLowerCase())==='ativo')
-    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
-  sel.innerHTML=ativos.map(f=>`<option value="${f.id}">${f.nome}${f.matricula?` · Mat ${f.matricula}`:''}</option>`).join('');
+  const elegiveis=_pontoFuncionariosElegiveis();
+  sel.innerHTML=elegiveis.map(f=>`<option value="${f.id}">${f.nome}${f.matricula?` · Mat ${f.matricula}`:''}</option>`).join('');
   if(!document.getElementById('ponto-data').value){
     document.getElementById('ponto-data').value=pontoDataHojeISO();
   }
@@ -176,8 +201,8 @@ function pontoPopularFuncionarios(){
     document.getElementById('ponto-feriados-ano').value=pontoFeriadosAnoAtual();
     pontoCarregarFeriadosNacionais();
   }
-  if(atual && ativos.some(f=>String(f.id)===atual)) sel.value=atual;
-  if(!sel.value && ativos[0]) sel.value=String(ativos[0].id);
+  if(atual && elegiveis.some(f=>String(f.id)===atual)) sel.value=atual;
+  if(!sel.value && elegiveis[0]) sel.value=String(elegiveis[0].id);
   pontoSelecionarFuncionario(sel.value,false);
 }
 
@@ -210,7 +235,7 @@ async function pontoCarregarDia(){
   const fid=parseInt(sel.value||'0',10);
   const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
   if(!fid){
-    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text-muted)">Selecione um colaborador ativo.</td></tr>';
+    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text-muted)">Selecione um colaborador.</td></tr>';
     resumoEl.innerHTML='';
     pontoMarcacoesDiaAtual=[];
     if(proxEl) proxEl.textContent='Entrada';
@@ -384,7 +409,7 @@ async function pontoCarregarPainelDia(){
   itens.forEach(it=>{ pontoResumoPainelByFunc[String(it.funcionario_id)]=it; });
   pontoRenderGestaoFuncionarios();
   if(!itens.length){
-    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:18px;color:var(--text-muted)">Nenhum colaborador ativo encontrado.</td></tr>';
+    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:18px;color:var(--text-muted)">Nenhum colaborador elegível na competência.</td></tr>';
     return;
   }
   tb.innerHTML=itens.map(it=>`<tr class="row-clickable" onclick="pontoSelecionarFuncionario(${it.funcionario_id},true)">
@@ -402,7 +427,7 @@ async function pontoRegistrarTipo(tipo=''){
   const sel=document.getElementById('ponto-funcionario');
   const fid=parseInt(sel?.value||'0',10);
   if(!fid){
-    showSt('ponto-st','Selecione um colaborador ativo.',true);
+    showSt('ponto-st','Selecione um colaborador.',true);
     return;
   }
   const f=(pontoFuncs||[]).find(x=>String(x.id)===String(fid));
@@ -448,7 +473,7 @@ async function pontoAplicarAjuste(){
   const tipo=(document.getElementById('ponto-ajuste-tipo')?.value||'').trim();
   const dh=(document.getElementById('ponto-ajuste-dh')?.value||'').trim();
   const motivo=(document.getElementById('ponto-ajuste-motivo')?.value||'').trim();
-  if(!fid){showSt('ponto-st','Selecione um colaborador ativo.',true);return;}
+  if(!fid){showSt('ponto-st','Selecione um colaborador.',true);return;}
   if(!tipo){showSt('ponto-st','Selecione o tipo de ajuste.',true);return;}
   if(!dh){showSt('ponto-st','Informe a data/hora do ajuste.',true);return;}
   if(!motivo){showSt('ponto-st','Informe o motivo do ajuste.',true);return;}
@@ -469,7 +494,7 @@ async function pontoAplicarAjuste(){
 async function pontoFecharDia(forcar){
   const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
   const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
-  if(!fid){showSt('ponto-st','Selecione um colaborador ativo.',true);return;}
+  if(!fid){showSt('ponto-st','Selecione um colaborador.',true);return;}
   const msg=forcar
     ? 'Fechar o dia com ressalvas? Use somente quando houver inconsistências justificadas.'
     : 'Confirma fechar o dia deste colaborador?';
@@ -487,7 +512,7 @@ async function pontoFecharDia(forcar){
 function pontoBaixarEspelhoMensal(){
   const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
   const comp=(document.getElementById('ponto-competencia')?.value||'').trim();
-  if(!fid){showSt('ponto-st','Selecione um colaborador ativo.',true);return;}
+  if(!fid){showSt('ponto-st','Selecione um colaborador.',true);return;}
   if(!/^\d{4}-\d{2}$/.test(comp)){
     showSt('ponto-st','Competência inválida. Use YYYY-MM.',true);
     return;
@@ -508,7 +533,7 @@ async function pontoAbrirEditDia(){
   const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
   const f=(pontoFuncs||[]).find(x=>String(x.id)===String(fid));
   const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
-  if(!fid){showSt('ponto-st','Selecione um colaborador ativo.',true);return;}
+  if(!fid){showSt('ponto-st','Selecione um colaborador.',true);return;}
   _pedCtx={fid,data,marcacoes,isGf:false};
 
   const tiposOpts=`<option value="entrada">Entrada</option><option value="saida_intervalo">Saída intervalo</option><option value="retorno_intervalo">Retorno intervalo</option><option value="saida">Saída</option>`;
@@ -787,10 +812,8 @@ function gfRenderFuncs(){
   const qtd=document.getElementById('gf-func-qtd');
   if(!box||!qtd) return;
   const termo=(document.getElementById('gf-busca')?.value||'').toLowerCase();
-  const ativos=(pontoFuncs||[])
-    .filter(f=>String((f.status||'').toLowerCase())==='ativo')
-    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
-  const filtrados=!termo?ativos:ativos.filter(f=>{
+  const elegiveis=_pontoFuncionariosElegiveis();
+  const filtrados=!termo?elegiveis:elegiveis.filter(f=>{
     const nm=(f.nome||'').toLowerCase();
     const mat=String(f.matricula||'').toLowerCase();
     const cargo=(f.cargo||f.funcao||'').toLowerCase();

@@ -327,6 +327,41 @@ def register_ponto_routes(
         fim = proximo - timedelta(days=1)
         return inicio, fim
 
+    def _ponto_parse_data_iso(valor):
+        txt = (valor or "").strip()
+        if not txt:
+            return None
+        try:
+            return datetime.strptime(txt, "%Y-%m-%d").date()
+        except Exception:
+            return None
+
+    def _ponto_funcionario_em_ferias_na_data(funcionario, data_ref):
+        ini = _ponto_parse_data_iso(getattr(funcionario, "ferias_inicio", ""))
+        fim = _ponto_parse_data_iso(getattr(funcionario, "ferias_fim", ""))
+        if ini and fim:
+            return ini <= data_ref <= fim
+        if ini and not fim:
+            return data_ref >= ini
+        if fim and not ini:
+            return data_ref <= fim
+        return False
+
+    def _ponto_funcionario_elegivel_competencia(funcionario, competencia):
+        """Define se o funcionário deve aparecer na gestão da competência.
+
+        Regra: todos os status aparecem, exceto Demitido/Inativo fora da
+        competência de demissão.
+        """
+        inicio, fim = _ponto_competencia_bounds(competencia)
+        if not inicio or not fim:
+            return True
+        st = (getattr(funcionario, "status", "") or "").strip().lower()
+        if st in ("demitido", "inativo"):
+            dt_dem = _ponto_parse_data_iso(getattr(funcionario, "data_demissao", ""))
+            return bool(dt_dem and inicio <= dt_dem <= fim)
+        return True
+
     def _ponto_fmt_minutos(total, signed=False):
         try:
             minutos = int(total or 0)
@@ -603,7 +638,11 @@ def register_ponto_routes(
                 "data_inicio": af.data_inicio,
                 "data_fim": af.data_fim,
             }
-        elif status_norm == "férias" or status_norm == "ferias":
+        elif (
+            status_norm == "férias"
+            or status_norm == "ferias"
+            or _ponto_funcionario_em_ferias_na_data(funcionario, data_ref)
+        ):
             dia_tipo = "ferias"
         elif _is_feriado:
             dia_tipo = "feriado"
@@ -1204,16 +1243,18 @@ def register_ponto_routes(
     def api_ponto_resumo_dia():
         try:
             data_ref = _ponto_parse_data_ref(request.args.get("data"))
+            competencia_ref = data_ref.strftime("%Y-%m")
             empresa_id = to_num(request.args.get("empresa_id"))
-            # BUG-FIX 4: comparação case-sensitive "Ativo" ignorava registros com
-            # status em caixa baixa ("ativo"); usar ilike para tolerância.
-            query = Funcionario.query.filter(Funcionario.status.ilike("ativo"))
+            query = Funcionario.query
             if empresa_id:
                 query = query.filter(Funcionario.empresa_id == empresa_id)
-            funcionarios = query.order_by(Funcionario.nome).all()
+            funcionarios = [
+                f for f in query.order_by(Funcionario.nome).all()
+                if _ponto_funcionario_elegivel_competencia(f, competencia_ref)
+            ]
             # Batch load: 1 query para TODAS as marcações do dia (elimina N+1)
-            ids_ativos = [f.id for f in funcionarios]
-            if ids_ativos:
+            ids_funcionarios = [f.id for f in funcionarios]
+            if ids_funcionarios:
                 # BUG-FIX: estender janela em ±3h para turno noturno — sem isso,
                 # marcações após 21h BRT (= 00h UTC do dia seguinte) ficam fora da
                 # janela e o _ponto_resumo_func_dia recebe lista vazia para esses
@@ -1222,7 +1263,7 @@ def register_ponto_routes(
                 fim_dia = datetime.combine(data_ref, datetime.min.time()) + timedelta(hours=27)
                 todas_marc_dia = (
                     PontoMarcacao.query.filter(
-                        PontoMarcacao.funcionario_id.in_(ids_ativos),
+                        PontoMarcacao.funcionario_id.in_(ids_funcionarios),
                         PontoMarcacao.data_hora >= inicio_dia,
                         PontoMarcacao.data_hora < fim_dia,
                     )
@@ -1231,11 +1272,14 @@ def register_ponto_routes(
                 )
             else:
                 todas_marc_dia = []
+            _func_map = {f.id: f for f in funcionarios}
             marc_batch = {}
             for _mb in todas_marc_dia:
-                # data_hora é BRT naive — usar .date() direto para indexar pelo dia correto.
-                # NÃO tratar como UTC: isso deslocaria marcações de 00:00-02:59 para o dia anterior.
-                if _mb.data_hora and _mb.data_hora.date() == data_ref:
+                if not _mb.data_hora:
+                    continue
+                _func_m = _func_map.get(_mb.funcionario_id)
+                _data_ef = _ponto_data_ref_efetiva(_func_m, _mb.data_hora) if _func_m else _mb.data_hora.date()
+                if _data_ef == data_ref:
                     marc_batch.setdefault(_mb.funcionario_id, []).append(_mb)
             itens = []
             total_ok = 0

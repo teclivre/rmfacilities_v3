@@ -17828,19 +17828,103 @@ def _app_ponto_parse_data_ref(v):
         return localnow().date()
 
 
+def _app_parse_minutos_hhmm(valor, padrao="05:00"):
+    texto = (valor or padrao or "05:00").strip()
+    try:
+        hh, mm = [int(x) for x in texto.split(":")[:2]]
+        return max(0, min(23, hh)) * 60 + max(0, min(59, mm))
+    except Exception:
+        return 5 * 60
+
+
+def _app_ponto_escala_info_data(funcionario, data_ref):
+    try:
+        data_str = data_ref.strftime("%Y-%m-%d") if hasattr(data_ref, "strftime") else str(data_ref)
+        data_obj = data_ref if hasattr(data_ref, "weekday") else datetime.strptime(data_str, "%Y-%m-%d").date()
+        esc_funcs = EscalaFuncionario.query.filter(
+            EscalaFuncionario.funcionario_id == funcionario.id,
+            EscalaFuncionario.data_inicio <= data_str,
+            EscalaFuncionario.ativo == True,
+        ).order_by(EscalaFuncionario.data_inicio.desc()).all()
+        for ef in esc_funcs:
+            if ef.data_fim and ef.data_fim < data_str:
+                continue
+            esc = db.session.get(Escala, ef.escala_id)
+            if not esc or not esc.ativo:
+                continue
+            try:
+                ciclo = json.loads(esc.ciclo_json or "{}")
+                dias = ciclo.get("dias", [])
+                dias_ciclo = len(dias)
+                if dias_ciclo <= 0:
+                    continue
+                data_inicio_obj = datetime.strptime(ef.data_inicio, "%Y-%m-%d").date()
+                dias_decorridos = (data_obj - data_inicio_obj).days
+                if dias_decorridos < 0:
+                    continue
+                indice = dias_decorridos % dias_ciclo
+                dia_info = (dias[indice] or {}) if indice < len(dias) else {}
+                return {
+                    "escala": esc,
+                    "vinculo": ef,
+                    "indice": indice,
+                    "dia_info": dia_info,
+                }
+            except Exception:
+                continue
+    except Exception:
+        return None
+    return None
+
+
+def _app_ponto_cruza_meia_noite(esc, dia_info):
+    if getattr(esc, "tipo", "") == "noturna" or bool((dia_info or {}).get("noturno")):
+        return True
+    entrada_txt = (dia_info or {}).get("hora_entrada")
+    saida_txt = (dia_info or {}).get("hora_saida")
+    if not entrada_txt or not saida_txt:
+        return False
+    entrada_min = _app_parse_minutos_hhmm(str(entrada_txt), "08:00")
+    saida_min = _app_parse_minutos_hhmm(str(saida_txt), "17:00")
+    return saida_min <= entrada_min
+
+
+def _app_ponto_corte_data_ref_min(esc, dia_info):
+    if _app_ponto_cruza_meia_noite(esc, dia_info):
+        saida_txt = (dia_info or {}).get("hora_saida")
+        if saida_txt:
+            return _app_parse_minutos_hhmm(str(saida_txt), getattr(esc, "periodo_noturno_fim", "05:00"))
+        return _app_parse_minutos_hhmm(getattr(esc, "periodo_noturno_fim", "05:00"))
+    return None
+
+
+def _app_parse_data_iso(v):
+    txt = (v or "").strip()
+    if not txt:
+        return None
+    try:
+        return datetime.strptime(txt, "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _app_funcionario_em_ferias_na_data(funcionario, data_ref):
+    ini = _app_parse_data_iso(getattr(funcionario, "ferias_inicio", ""))
+    fim = _app_parse_data_iso(getattr(funcionario, "ferias_fim", ""))
+    if ini and fim:
+        return ini <= data_ref <= fim
+    if ini and not fim:
+        return data_ref >= ini
+    if fim and not ini:
+        return data_ref <= fim
+    return False
+
+
 def _app_ponto_marcacoes_dia(funcionario_id, data_ref):
     try:
         funcionario = db.session.get(Funcionario, funcionario_id)
     except Exception:
         funcionario = None
-
-    def _parse_minutos_hhmm(valor, padrao="05:00"):
-        texto = (valor or padrao or "05:00").strip()
-        try:
-            hh, mm = [int(x) for x in texto.split(":")[:2]]
-            return max(0, min(23, hh)) * 60 + max(0, min(59, mm))
-        except Exception:
-            return 5 * 60
 
     def _data_efetiva_marcacao(dt):
         if not dt or not funcionario:
@@ -17851,8 +17935,8 @@ def _app_ponto_marcacoes_dia(funcionario_id, data_ref):
         if esc_prev:
             esc = esc_prev.get("escala")
             dia_info = esc_prev.get("dia_info") or {}
-            if getattr(esc, "tipo", "") == "noturna" or bool(dia_info.get("noturno")):
-                corte_min = _parse_minutos_hhmm(getattr(esc, "periodo_noturno_fim", "05:00"))
+            corte_min = _app_ponto_corte_data_ref_min(esc, dia_info)
+            if corte_min is not None:
                 if (dt.hour * 60 + dt.minute) <= corte_min:
                     return data_prev
         return data_base
@@ -17879,20 +17963,12 @@ def _app_ponto_data_ref_efetiva(funcionario, data_hora):
     data_base = data_hora.date()
     data_prev = data_base - timedelta(days=1)
 
-    def _parse_minutos_hhmm(valor, padrao="05:00"):
-        texto = (valor or padrao or "05:00").strip()
-        try:
-            hh, mm = [int(x) for x in texto.split(":")[:2]]
-            return max(0, min(23, hh)) * 60 + max(0, min(59, mm))
-        except Exception:
-            return 5 * 60
-
     esc_prev = _app_ponto_escala_info_data(funcionario, data_prev)
     if esc_prev:
         esc = esc_prev.get("escala")
         dia_info = esc_prev.get("dia_info") or {}
-        if getattr(esc, "tipo", "") == "noturna" or bool(dia_info.get("noturno")):
-            corte_min = _parse_minutos_hhmm(getattr(esc, "periodo_noturno_fim", "05:00"))
+        corte_min = _app_ponto_corte_data_ref_min(esc, dia_info)
+        if corte_min is not None:
             if (data_hora.hour * 60 + data_hora.minute) <= corte_min:
                 return data_prev
     return data_base
@@ -18247,7 +18323,7 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
     afastamento_info = None
     status_func = (funcionario.status or "").strip()
     is_feriado = _app_is_feriado_para_funcionario(funcionario, data_ref_str)
-    if status_func.lower() in ("férias", "ferias"):
+    if status_func.lower() in ("férias", "ferias") or _app_funcionario_em_ferias_na_data(funcionario, data_ref):
         dia_tipo = "ferias"
     af = _afastamento_ativo_na_data(funcionario.id, data_ref_str)
     if af:
