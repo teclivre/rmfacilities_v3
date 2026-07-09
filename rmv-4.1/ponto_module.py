@@ -1884,7 +1884,8 @@ def register_ponto_routes(
         total_diurnas = 0
         total_intervalo = 0
         total_faltas = 0
-        total_extras = 0
+        total_extras_50 = 0
+        total_extras_100 = 0
         dia = inicio
 
         # BUG-FIX 5: reutilizar as marcações já carregadas por _ponto_resumo_competencia
@@ -1896,6 +1897,7 @@ def register_ponto_routes(
         _resumo_por_data = {
             d["data_ref"]: d for d in (resumo_comp.get("dias") or [])
         }
+        _he_pendente = bool((resumo_comp.get("totais") or {}).get("he_pendente_autorizacao"))
 
         while dia <= fim:
             marcacoes = _marc_por_data.get(dia, [])
@@ -1920,7 +1922,8 @@ def register_ponto_routes(
             intervalo = int(resumo.get("intrajornada_min", 0) or 0)
 
             faltas = ""
-            extras = ""
+            extras_50 = ""
+            extras_100 = ""
             marcacoes_str = ""
             if previstas > 0 and not marcacoes_ord:
                 # BUG-FIX 18: antes colocava "Falta" na coluna Marcações, que
@@ -1945,11 +1948,15 @@ def register_ponto_routes(
                     faltas = "-" + _ponto_fmt_minutos(abs(saldo))
                     total_faltas += abs(saldo)
                 elif saldo > 0:
-                    # BUG-FIX 7: saldo bruto inclui HE 50% e 100% misturadas;
-                    # a coluna é rotulada "Ext. 100" então usar he_100_min do resumo.
+                    _he50 = int(resumo.get("he_50_min", 0) or 0)
                     _he100 = int(resumo.get("he_100_min", 0) or 0)
-                    extras = _ponto_fmt_minutos(_he100) if _he100 else ""
-                    total_extras += _he100
+                    if _he_pendente:
+                        _he50 = int(resumo.get("he_50_min_bruto", _he50) or _he50)
+                        _he100 = int(resumo.get("he_100_min_bruto", _he100) or _he100)
+                    extras_50 = _ponto_fmt_minutos(_he50) if _he50 else ""
+                    extras_100 = _ponto_fmt_minutos(_he100) if _he100 else ""
+                    total_extras_50 += _he50
+                    total_extras_100 += _he100
 
             if resumo.get("dia_tipo") == "afastamento":
                 _af_info = resumo.get("afastamento_info") or {}
@@ -1976,7 +1983,8 @@ def register_ponto_routes(
                     _ponto_fmt_minutos(diurnas),
                     _ponto_fmt_minutos(intervalo) if intervalo else "",
                     faltas,
-                    extras,
+                    extras_50,
+                    extras_100,
                 ]
             )
             dia += timedelta(days=1)
@@ -2153,6 +2161,25 @@ def register_ponto_routes(
         elementos.append(Spacer(1, (3 if compact_mode else 5)))
         elementos.append(tabela_cab)
         elementos.append(Spacer(1, (3 if compact_mode else 5)))
+        if _he_pendente:
+            aviso_he = Table(
+                [[p("<b>Atenção:</b> existem horas extras pendentes de autorização nesta competência.", st_small, html=True)]],
+                colWidths=[largura * 1.00],
+            )
+            aviso_he.setStyle(
+                TableStyle(
+                    [
+                        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#c77d00")),
+                        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fff4d6")),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                        ("TOPPADDING", (0, 0), (-1, -1), (3 if compact_mode else 5)),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), (3 if compact_mode else 5)),
+                    ]
+                )
+            )
+            elementos.append(aviso_he)
+            elementos.append(Spacer(1, (3 if compact_mode else 5)))
 
         tabela_dias = [
             [
@@ -2162,6 +2189,7 @@ def register_ponto_routes(
                 "Diurnas",
                 "Intervalo",
                 "Faltas",
+                "Ext. 50",
                 "Ext. 100",
             ]
         ]
@@ -2171,13 +2199,14 @@ def register_ponto_routes(
             colWidths=[
                 # BUG-FIX 11: soma anterior era 0.92 (tabela 8% menor que a largura útil).
                 # Redistribuído para somar exatamente 1.0.
-                largura * 0.11,
-                largura * 0.37,
+                largura * 0.10,
+                largura * 0.34,
                 largura * 0.09,
                 largura * 0.09,
                 largura * 0.09,
                 largura * 0.09,
-                largura * 0.12,
+                largura * 0.10,
+                largura * 0.10,
             ],
             repeatRows=1,
         )
@@ -2210,7 +2239,8 @@ def register_ponto_routes(
             f"<b>Diurnas:</b> {_ponto_fmt_minutos(total_diurnas)}   "
             f"<b>Intervalo:</b> {_ponto_fmt_minutos(total_intervalo)}   "
             f"<b>Faltas:</b> {_faltas_fmt}   "
-            f"<b>Extras 100%:</b> {_ponto_fmt_minutos(total_extras)}"
+            f"<b>Extras 50%:</b> {_ponto_fmt_minutos(total_extras_50)}   "
+            f"<b>Extras 100%:</b> {_ponto_fmt_minutos(total_extras_100)}"
         )
         resumo_tbl = Table(
             [[p(resumo_line, st_small, html=True)]], colWidths=[largura * 1.00]
