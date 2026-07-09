@@ -680,6 +680,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </button>
         <div class="module-panel">
           <a class="nav-item lv2" onclick="nav('rh',this)"><span class="nav-label">RH</span></a>
+          <a class="nav-item lv2" onclick="nav('controle-ponto',this)"><span class="nav-label">Controle de Ponto</span></a>
           <a class="nav-item lv2" onclick="nav('rh-digital',this)"><span class="nav-label">Comunicacao</span></a>
           <a class="nav-item lv2" onclick="nav('beneficios',this)"><span class="nav-label">Beneficios</span></a>
           <a class="nav-item lv2" data-nav="pagamento-salario" onclick="nav('pagamento-salario',this)"><span class="nav-label">Pagamento de Salário</span></a>
@@ -2224,6 +2225,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               </select>
             </div>
             <div>
+
               <button class="btn b-gh" onclick="previaFichaEPI()" id="epi-btn-previa" style="margin-right:8px">
                 🔍 Prévia
               </button>
@@ -3532,6 +3534,55 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
 
     </div>
+
+      <!-- ══ CONTROLE DE PONTO ══ -->
+      <div id="pg-controle-ponto" class="pg">
+        <div id="st-controle-ponto" class="st"></div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Controle de Ponto</span>
+          </div>
+          <p style="font-size:13px;color:var(--text-muted);margin:4px 0 14px 0">
+            Centralize aqui as rotinas de ponto, ciclo, escalas e calendário. Cada botão abre a configuração correspondente.
+          </p>
+
+          <div class="g3" style="margin-top:8px">
+            <button class="metric metric-btn vd" type="button" onclick="abrirControlePonto('gestao-facil')">
+              <div class="l">Gestão Fácil <span class="metric-go">Abrir</span></div>
+            </button>
+            <button class="metric metric-btn lj" type="button" onclick="abrirControlePonto('ponto')">
+              <div class="l">Pontos do dia <span class="metric-go">Abrir</span></div>
+            </button>
+            <button class="metric metric-btn vm" type="button" onclick="abrirControlePonto('ciclo-assinatura')">
+              <div class="l">Fechar ciclo e assinar ponto <span class="metric-go">Abrir</span></div>
+            </button>
+            <button class="metric metric-btn az" type="button" onclick="abrirControlePonto('jornada')">
+              <div class="l">Jornadas <span class="metric-go">Abrir</span></div>
+            </button>
+            <button class="metric metric-btn gh" type="button" onclick="abrirControlePonto('escalas')">
+              <div class="l">Escalas <span class="metric-go">Abrir</span></div>
+            </button>
+            <button class="metric metric-btn lj" type="button" onclick="abrirControlePonto('feriados')">
+              <div class="l">Feriados <span class="metric-go">Abrir</span></div>
+            </button>
+            <button class="metric metric-btn vm" type="button" onclick="abrirControlePonto('painel-dia')">
+              <div class="l">Gestão de pontos por funcionário <span class="metric-go">Abrir</span></div>
+            </button>
+          </div>
+
+          <div class="card-header" style="margin-top:18px"><span class="card-title">Atalhos rápidos</span></div>
+          <div class="hint" style="margin:6px 0 12px 0">Use essa aba como ponto de entrada para as configurações operacionais do controle de ponto.</div>
+          <div class="brow" style="justify-content:flex-start;gap:8px;flex-wrap:wrap">
+            <button class="btn b-az b-sm" type="button" onclick="abrirControlePonto('gestao-facil')">Gestão Fácil</button>
+            <button class="btn b-ghv b-sm" type="button" onclick="abrirControlePonto('ponto')">Pontos do dia</button>
+            <button class="btn b-gh b-sm" type="button" onclick="abrirControlePonto('ciclo-assinatura')">Fechar ciclo e assinar ponto</button>
+            <button class="btn b-az b-sm" type="button" onclick="abrirControlePonto('jornada')">Jornadas</button>
+            <button class="btn b-gh b-sm" type="button" onclick="abrirControlePonto('escalas')">Escalas</button>
+            <button class="btn b-ghv b-sm" type="button" onclick="abrirControlePonto('feriados')">Feriados</button>
+            <button class="btn b-vd b-sm" type="button" onclick="abrirControlePonto('painel-dia')">Gestão de pontos por funcionário</button>
+          </div>
+        </div>
+      </div>
 
     <!-- ══ ASSINATURAS ══ -->
     <div id="pg-assinaturas" class="pg">
@@ -5159,6 +5210,13 @@ async function loadFaturamentoAlert(){
   card.style.display='block';
 }
 
+function abrirControlePonto(tab){
+  nav('rh', document.querySelector(".nav-item[onclick*=\"nav('rh'\"]"));
+  if(tab){
+    setTimeout(()=>rhSetSubAba(tab),120);
+  }
+}
+
 function nav(id,el,force=false){
   // Restaurar sidebar ao sair da página de Assinaturas
   if(document.getElementById('pg-assinaturas')?.classList.contains('on') && id!=='assinaturas'){
@@ -5180,7 +5238,7 @@ function nav(id,el,force=false){
 
   // Lógica padrão
   const targetId=id;
-  if(P!=='dono' && USER_AREAS.length && !USER_AREAS.includes(id) && id!=='dashboard'){
+  if(P!=='dono' && USER_AREAS.length && !USER_AREAS.includes(id) && id!=='dashboard' && !(id==='controle-ponto' && USER_AREAS.includes('rh'))){
     alert('Seu usuário não tem acesso a esta área.');
     return;
   }
