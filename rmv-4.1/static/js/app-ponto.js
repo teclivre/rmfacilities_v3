@@ -334,12 +334,12 @@ async function pontoExcluirMarcacao(marcacaoId){
   const motivo = await new Promise(resolve=>{
     const _overlay=document.createElement('div');
     _overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-    _overlay.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    _overlay.innerHTML=`<div style="background:var(--bg);color:var(--preto);border-radius:12px;padding:24px;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.35);border:1px solid var(--borda)">
       <div style="font-weight:700;margin-bottom:12px">Excluir "${label}"</div>
       <label style="font-size:13px;display:block;margin-bottom:6px">Motivo da exclusão <span style="color:red">*</span></label>
-      <input id="_exc-motivo-inp" style="width:100%;padding:8px 10px;border:1px solid #ccc;border-radius:8px;font-size:14px;box-sizing:border-box" placeholder="Informe o motivo…">
+      <input id="_exc-motivo-inp" style="width:100%;padding:8px 10px;border:1px solid var(--borda);border-radius:8px;font-size:14px;box-sizing:border-box;background:var(--bg-alt);color:var(--preto)" placeholder="Informe o motivo…">
       <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
-        <button id="_exc-cancel" style="padding:8px 16px;border:1px solid #ccc;border-radius:8px;cursor:pointer;background:#f5f5f5">Cancelar</button>
+        <button id="_exc-cancel" style="padding:8px 16px;border:1px solid var(--borda);border-radius:8px;cursor:pointer;background:var(--bg-alt);color:var(--preto)">Cancelar</button>
         <button id="_exc-ok" style="padding:8px 16px;background:#c62828;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700">Excluir</button>
       </div>
     </div>`;
@@ -413,11 +413,11 @@ async function pontoRegistrarTipo(tipo=''){
   const confirmado = await new Promise(resolve=>{
     const _ov=document.createElement('div');
     _ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-    _ov.innerHTML=`<div style="background:#fff;border-radius:12px;padding:24px;max-width:380px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    _ov.innerHTML=`<div style="background:var(--bg);color:var(--preto);border-radius:12px;padding:24px;max-width:380px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.35);border:1px solid var(--borda)">
       <div style="font-weight:700;margin-bottom:12px">Confirmar registro de ponto${tit}</div>
       <div style="font-size:14px;margin-bottom:16px">Confirma registrar ponto${tit} para <strong>${f?.nome||'o colaborador selecionado'}</strong>?</div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button id="_rg-cancel" style="padding:8px 16px;border:1px solid #ccc;border-radius:8px;cursor:pointer;background:#f5f5f5">Cancelar</button>
+        <button id="_rg-cancel" style="padding:8px 16px;border:1px solid var(--borda);border-radius:8px;cursor:pointer;background:var(--bg-alt);color:var(--preto)">Cancelar</button>
         <button id="_rg-ok" style="padding:8px 16px;background:#2e7d32;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700">Confirmar</button>
       </div>
     </div>`;
