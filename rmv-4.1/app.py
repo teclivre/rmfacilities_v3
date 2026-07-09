@@ -3767,6 +3767,20 @@ def app_func_required(f):
     return w
 
 
+def _limiter_key_app_bearer():
+    """Chave de rate limit por token do app (fallback para IP).
+
+    Evita que múltiplos funcionários atrás do mesmo NAT compartilhem o mesmo limite.
+    """
+    auth = (request.headers.get("Authorization") or "").strip()
+    if auth.lower().startswith("bearer "):
+        tok = auth.split(" ", 1)[1].strip()
+        if tok:
+            token_hash = hashlib.sha256(tok.encode("utf-8")).hexdigest()[:24]
+            return f"appbearer:{token_hash}"
+    return get_remote_address()
+
+
 def _norm_nome_login(v):
     s = unicodedata.normalize("NFKD", str(v or ""))
     s = "".join(ch for ch in s if not unicodedata.combining(ch))
@@ -18425,7 +18439,7 @@ def api_app_ponto_dia_me():
 
 
 @app.route("/api/app/funcionario/me/ponto/marcar", methods=["POST"])
-@_limiter.limit("30 per hour")
+@_limiter.limit("20 per minute; 240 per hour", key_func=_limiter_key_app_bearer)
 @app_func_required
 def api_app_ponto_marcar_me():
     f = g.app_funcionario
@@ -18664,7 +18678,7 @@ def api_ponto_qrcode_token():
 
 
 @app.route("/api/app/funcionario/me/ponto/marcar-qr", methods=["POST"])
-@_limiter.limit("30 per hour")
+@_limiter.limit("20 per minute; 240 per hour", key_func=_limiter_key_app_bearer)
 @app_func_required
 def api_app_ponto_marcar_qr_me():
     """Variante de /ponto/marcar que usa um token efêmero gerado pelo totem

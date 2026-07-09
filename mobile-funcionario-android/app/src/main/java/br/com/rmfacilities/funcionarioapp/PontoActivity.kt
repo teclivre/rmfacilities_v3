@@ -524,7 +524,8 @@ class PontoActivity : BaseActivity() {
                 else
                     HapticFeedbackConstants.LONG_PRESS
                 btnMarcarPonto.performHapticFeedback(hapticError)
-                updateStatus("Falha ao enviar. Ponto salvo — será sincronizado automaticamente.", R.color.mobile_semantic_pending)
+                val erroCurto = (resp.erro ?: "Falha ao enviar ponto.").take(140)
+                updateStatus("$erroCurto Ponto salvo — será sincronizado automaticamente.", R.color.mobile_semantic_pending)
                 atualizarBadgePendentes()
             }
         }
