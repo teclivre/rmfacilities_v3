@@ -5234,13 +5234,6 @@ function nav(id,el,force=false){
     return;
   }
 
-  if(id==='controle-ponto'){
-    const rhNav=document.querySelector(".nav-item[onclick*=\"nav('rh'\"]");
-    nav('rh', rhNav, force);
-    setTimeout(()=>rhSetSubAba('ponto'),120);
-    return;
-  }
-
   if(!force && hasUnsavedChanges()){
     const ok=confirm('Existem alterações não salvas. Deseja sair desta página mesmo assim?');
     if(!ok) return;
