@@ -183,6 +183,7 @@ class PontoActivity : BaseActivity() {
         btnAtualizarPonto.setOnClickListener {
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             carregarDia()
+            processarFilaPendente(atualizarTelaAoEnviar = true)
         }
 
         btnPontoQrCode.setOnClickListener {
@@ -294,6 +295,7 @@ class PontoActivity : BaseActivity() {
         // Mostra cache imediatamente e carrega do servidor (em toda retomada de tela)
         restaurarCacheMarcacoes()
         carregarDia()
+        processarFilaPendente(atualizarTelaAoEnviar = true)
     }
 
     override fun onPause() {
@@ -313,19 +315,7 @@ class PontoActivity : BaseActivity() {
         networkCallback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 // Voltou a internet: processa fila e atualiza marcações
-                lifecycleScope.launch(Dispatchers.IO) {
-                    try {
-                        retryQueue.process(api) // reutiliza instância existente — evita vazamento de threads
-                    } catch (_: Exception) {}
-                    withContext(Dispatchers.Main) {
-                        if (retryQueue.pendingCount() == 0 && localPendentes.isNotEmpty()) {
-                            // Todos sincronizados — recarrega do servidor para mostrar verde
-                            carregarDia()
-                        } else {
-                            atualizarBadgePendentes()
-                        }
-                    }
-                }
+                processarFilaPendente(atualizarTelaAoEnviar = true)
             }
         }
         try {
@@ -381,6 +371,30 @@ class PontoActivity : BaseActivity() {
         if (count > 0) {
             badge.text = "⏳ $count ponto(s) offline aguardando sincronização"
             badge.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_pending))
+        } else {
+            // Evita manter na tela uma contagem antiga quando a fila já foi sincronizada.
+            if (badge.text.toString().contains("offline aguardando sincronização", ignoreCase = true)) {
+                badge.text = "Sem pendências offline."
+                badge.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_info))
+            }
+        }
+    }
+
+    private fun processarFilaPendente(atualizarTelaAoEnviar: Boolean = false) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val result = try {
+                retryQueue.process(api)
+            } catch (_: Exception) {
+                null
+            }
+
+            withContext(Dispatchers.Main) {
+                atualizarBadgePendentes()
+                if (result != null && result.enviados > 0 && atualizarTelaAoEnviar) {
+                    // Recarrega para trocar itens locais por marcações confirmadas do servidor.
+                    carregarDia()
+                }
+            }
         }
     }
 
