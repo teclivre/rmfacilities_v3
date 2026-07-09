@@ -18434,8 +18434,8 @@ def api_app_ponto_marcar_me():
         return jsonify(
             {"erro": "Você está de férias e não pode registrar ponto neste período. Em caso de dúvida, contate o RH."}
         ), 400
-    status_atual = (f.status or "").strip()
-    if status_atual not in ("Ativo",):
+    status_atual = _status_norm(f.status or "Ativo")
+    if status_atual != "ativo":
         return jsonify(
             {"erro": "Somente funcionários ativos podem registrar ponto."}
         ), 400
@@ -18673,8 +18673,8 @@ def api_app_ponto_marcar_qr_me():
     hoje_ref = utcnow().date()
     if _app_funcionario_em_ferias_na_data(f, hoje_ref):
         return jsonify({"erro": "Você está de férias e não pode registrar ponto neste período."}), 400
-    status_atual = (f.status or "").strip()
-    if status_atual not in ("Ativo",):
+    status_atual = _status_norm(f.status or "Ativo")
+    if status_atual != "ativo":
         return jsonify({"erro": "Somente funcionários ativos podem registrar ponto."}), 400
     dados = request.json or {}
     # Verificar afastamento/atestado ativo

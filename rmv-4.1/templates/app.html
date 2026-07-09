@@ -1566,7 +1566,6 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-funcionarios" class="subaba-bloco on" onclick="rhSetSubAba('funcionarios',this)">Funcionários</button>
         <button type="button" id="rh-subtab-ferias-gestao" class="subaba-bloco" onclick="rhSetSubAba('ferias-gestao',this)">Gestão de Férias</button>
         <button type="button" id="rh-subtab-exportar" class="subaba-bloco" onclick="rhSetSubAba('exportar',this)">Exportar colaboradores ativos</button>
-        <button type="button" id="rh-subtab-jornada" class="subaba-bloco" onclick="rhSetSubAba('jornada',this)">Jornadas e Geofence</button>
         <button type="button" id="rh-subtab-escalas" class="subaba-bloco" onclick="rhSetSubAba('escalas',this)">Escalas de Turnos</button>
         <button type="button" id="rh-subtab-feriados" class="subaba-bloco" onclick="rhSetSubAba('feriados',this)">Calendário de Feriados</button>
         <button type="button" id="rh-subtab-ficha-epi" class="subaba-bloco" onclick="rhSetSubAba('ficha-epi',this)">🦺 Ficha de EPI</button>
@@ -3539,9 +3538,6 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="metric metric-btn vm" type="button" onclick="abrirControlePonto('ciclo-assinatura')">
               <div class="l">Fechar ciclo e assinar ponto <span class="metric-go">Abrir</span></div>
             </button>
-            <button class="metric metric-btn az" type="button" onclick="abrirControlePonto('jornada')">
-              <div class="l">Jornadas <span class="metric-go">Abrir</span></div>
-            </button>
             <button class="metric metric-btn gh" type="button" onclick="abrirControlePonto('escalas')">
               <div class="l">Escalas <span class="metric-go">Abrir</span></div>
             </button>
@@ -3559,7 +3555,6 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-az b-sm" type="button" onclick="abrirControlePonto('gestao-facil')">Gestão Fácil</button>
             <button class="btn b-ghv b-sm" type="button" onclick="abrirControlePonto('ponto')">Pontos do dia</button>
             <button class="btn b-gh b-sm" type="button" onclick="abrirControlePonto('ciclo-assinatura')">Fechar ciclo e assinar ponto</button>
-            <button class="btn b-az b-sm" type="button" onclick="abrirControlePonto('jornada')">Jornadas</button>
             <button class="btn b-gh b-sm" type="button" onclick="abrirControlePonto('escalas')">Escalas</button>
             <button class="btn b-ghv b-sm" type="button" onclick="abrirControlePonto('feriados')">Feriados</button>
             <button class="btn b-vd b-sm" type="button" onclick="abrirControlePonto('painel-dia')">Gestão de pontos por funcionário</button>
@@ -5208,6 +5203,7 @@ async function loadFaturamentoAlert(){
 
 function abrirControlePonto(tab){
   nav('rh', document.querySelector(".nav-item[onclick*=\"nav('rh'\"]"));
+  if(tab==='jornada') tab='escalas';
   if(tab){
     setTimeout(()=>rhSetSubAba(tab),120);
   }
@@ -5266,7 +5262,6 @@ function nav(id,el,force=false){
     renderFuncionarios();
     painelAssInicializar();
     rhExportCarregarFiltros();
-    rhJornadaInit();
     rhEscalaInit();
     rhSetSubAba(rhSubAba || 'funcionarios');
   }
@@ -5379,7 +5374,7 @@ function rhSalariosIniciarPagina(){
 }
 
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','feriados','ponto','painel-dia','he-autorizacao','ciclo-assinatura','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo'];
+  const tabs=['funcionarios','ferias-gestao','exportar','escalas','feriados','ponto','painel-dia','he-autorizacao','ciclo-assinatura','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
     if(p.dataset.rhPane===rhSubAba){
