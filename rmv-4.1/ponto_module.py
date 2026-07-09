@@ -505,16 +505,20 @@ def register_ponto_routes(
             saldo = saldo_bruto
         # ── Horas extras 50% e 100% ──────────────────────────────────────────
         # Regra padrão: 100% somente em domingo/feriado; semana e sábado ficam em 50%.
-        # Exceção 12x36: se domingo/feriado cair em dia normal de trabalho da escala,
-        # continua 50%; 100% apenas quando o colaborador trabalhar na folga.
+        # Exceção 12x36: só há HE quando a folga da escala é trabalhada.
+        # Em dia de trabalho da 12x36, inclusive se cair em feriado, não há HE.
         escala_tipo = getattr((esc_info_dia or {}).get("escala"), "tipo", "") if esc_info_dia else ""
         escala_dia_tipo = str(((esc_info_dia or {}).get("dia_info") or {}).get("tipo", "")).lower()
         domingo_ou_feriado = (data_ref.weekday() == 6) or _is_feriado
-        he_100_por_data = domingo_ou_feriado
-        if he_100_por_data and escala_tipo == "12x36" and escala_dia_tipo == "trabalho":
-            he_100_por_data = False
         if saldo > 0:
-            if he_100_por_data:
+            if escala_tipo == "12x36":
+                if escala_dia_tipo == "folga":
+                    he_50_min_bruto = saldo
+                    he_100_min_bruto = 0
+                else:
+                    he_50_min_bruto = 0
+                    he_100_min_bruto = 0
+            elif domingo_ou_feriado:
                 he_50_min_bruto = 0
                 he_100_min_bruto = saldo
             else:
