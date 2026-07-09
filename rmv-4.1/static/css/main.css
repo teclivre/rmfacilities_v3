@@ -145,6 +145,15 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 	display:none!important;
 }
 
+#pg-controle-ponto.on{
+	padding-top:0!important;
+	display:block!important;
+}
+
+#pg-controle-ponto.on > :not(#st-controle-ponto):not(.card){
+	display:none!important;
+}
+
 #pg-controle-ponto.on > #st-controle-ponto,
 #pg-controle-ponto.on > .card{
 	margin-top:0!important;
