@@ -14241,16 +14241,26 @@ async function mapsEnviar(){
 async function mapsCarregarSelectsEmpresasPosto(){
   try{
     const [listaFunc,listaEmp]=await Promise.all([
-      api('/api/funcionarios?status=ativo&_limit=500'),
+      api('/api/funcionarios?status=Ativo'),
       api('/api/empresas')
     ]);
-    const funcs=(listaFunc.itens||listaFunc||[]);
-    const empsData=(Array.isArray(listaEmp)?listaEmp:[]);
+    let funcs=[];
+    if(Array.isArray(listaFunc)) funcs=listaFunc;
+    else if(Array.isArray(listaFunc?.itens)) funcs=listaFunc.itens;
+    // Fallback defensivo: se a API responder vazio por algum motivo, tenta sem filtro e normaliza localmente.
+    if(!funcs.length){
+      const todos=await api('/api/funcionarios');
+      const base=Array.isArray(todos)?todos:(Array.isArray(todos?.itens)?todos.itens:[]);
+      funcs=base.filter(f=>String((f?.status||'')).toLowerCase()==='ativo');
+    }
+    const empsData=(Array.isArray(listaEmp)?listaEmp:(Array.isArray(listaEmp?.itens)?listaEmp.itens:[]));
     // Postos únicos
     const postos=[...new Set(funcs.map(f=>(f.posto_operacional||'').trim()).filter(Boolean))].sort();
     // Preenche selects de comunicado
     const fillSel=(id,items,valFn,txtFn)=>{
       const sel=document.getElementById(id); if(!sel)return;
+      // Preserva somente a primeira opção padrão e remove opções já adicionadas anteriormente.
+      while(sel.options.length>1) sel.remove(1);
       items.forEach(it=>{const o=document.createElement('option');o.value=valFn(it);o.textContent=txtFn(it);sel.appendChild(o);});
     };
     fillSel('com-fid',funcs,f=>f.id,f=>f.nome);
