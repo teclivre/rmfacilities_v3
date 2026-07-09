@@ -1569,13 +1569,6 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-jornada" class="subaba-bloco" onclick="rhSetSubAba('jornada',this)">Jornadas e Geofence</button>
         <button type="button" id="rh-subtab-escalas" class="subaba-bloco" onclick="rhSetSubAba('escalas',this)">Escalas de Turnos</button>
         <button type="button" id="rh-subtab-feriados" class="subaba-bloco" onclick="rhSetSubAba('feriados',this)">Calendário de Feriados</button>
-        <button type="button" id="rh-subtab-ponto" class="subaba-bloco" onclick="rhSetSubAba('ponto',this)">Gestão de Ponto por Funcionário</button>
-        <button type="button" id="rh-subtab-painel-dia" class="subaba-bloco" onclick="rhSetSubAba('painel-dia',this)">Painel do dia</button>
-        <button type="button" id="rh-subtab-he-autorizacao" class="subaba-bloco" onclick="rhSetSubAba('he-autorizacao',this)">Autorização de HE</button>
-        <button type="button" id="rh-subtab-ciclo-assinatura" class="subaba-bloco" onclick="rhSetSubAba('ciclo-assinatura',this)">Fechar ciclo e assinar ponto</button>
-        <button type="button" id="rh-subtab-envio" class="subaba-bloco" onclick="rhSetSubAba('envio',this)">Envio de arquivo</button>
-        <button type="button" id="rh-subtab-assinaturas" class="subaba-bloco" onclick="rhSetSubAba('assinaturas',this)">Painel de Assinaturas</button>
-        <button type="button" id="rh-subtab-gestao-facil" class="subaba-bloco" onclick="rhSetSubAba('gestao-facil',this);gfCarregar()">⚡ Gestão Fácil</button>
         <button type="button" id="rh-subtab-ficha-epi" class="subaba-bloco" onclick="rhSetSubAba('ficha-epi',this)">🦺 Ficha de EPI</button>
         <button type="button" id="rh-subtab-req-vt" class="subaba-bloco" onclick="rhSetSubAba('req-vt',this)">🚌 Requisição VT</button>
         <button type="button" id="rh-subtab-uniforme" class="subaba-bloco" onclick="rhSetSubAba('uniforme',this)">👕 Termo Uniforme</button>
@@ -1881,27 +1874,7 @@ document.addEventListener('DOMContentLoaded',()=>{
                 <tbody id="rh-esc-tb"></tbody>
               </table>
             </div>
-
-            <label style="margin-top:10px">Vincular funcionários à escala</label>
-            <div class="g2" style="margin-top:6px">
-              <div class="f">
-                <label>Escala</label>
-                <select id="rh-esc-vinc-escala" onchange="rhEscalaCarregarFuncsParaVinc()"></select>
-              </div>
-              <div class="f">
-                <label id="rh-esc-vinc-data-label">Data de início</label>
-                <input id="rh-esc-vinc-data-ini" type="date" value="">
-              </div>
-            </div>
-                <div class="f" style="margin-top:6px">
-              <label>Funcionários ativos (disponíveis)</label>
-              <select id="rh-esc-vinc-funcs" multiple size="7"></select>
-            </div>
-                <div class="hint" id="rh-esc-vinc-hint" style="margin-top:4px">Use Ctrl/Cmd para selecionar múltiplos funcionários. A data de início define quando a escala começa a valer.</div>
-            <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
-              <button class="btn b-ghv b-sm" onclick="rhEscalaVincularSelecionados()">Vincular selecionados</button>
-              <button class="btn b-az b-sm" onclick="rhEscalaMoverSelecionados()">Mover para esta escala</button>
-            </div>
+            <div class="hint" style="margin-top:10px">O vínculo de escala agora é feito no cadastro do funcionário (RH &gt; Funcionários).</div>
           </div>
         </div>
         <div id="rh-escala-st" class="st" style="margin-top:8px"></div>
@@ -4223,6 +4196,19 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="f"><label>Tipo de contrato</label><input id="ftipo-contrato" placeholder="CLT, PJ, Temporário..."></div>
         <div class="f"><label>Jornada</label><input id="fjornada" placeholder="44h semanais"></div>
         <div class="f"><label>Posto (definido no Operacional)</label><input id="fposto" readonly placeholder="Defina na aba Operacional"></div>
+      </div>
+      <div class="g4">
+        <div class="f s2">
+          <label>Escala de turnos</label>
+          <select id="fescala">
+            <option value="">Sem alteração de escala</option>
+          </select>
+          <div id="fescala-st" class="hint" style="margin-top:4px"></div>
+        </div>
+        <div class="f">
+          <label>Data início da escala</label>
+          <input id="fescala-data-ini" type="date">
+        </div>
       </div>
       <div class="g4">
         <div class="f s2"><label>Banco (busca por código/nome)</label><div style="display:flex;gap:6px"><input id="fbanco-busca" list="fbanco-list" placeholder="Ex: 077 - Banco Inter S.A." oninput="onBancoBuscaInput()" onblur="onBancoBuscaBlur()" style="flex:1"><button type="button" class="btn b-gh b-sm" onclick="atualizarBancosBR()">Atualizar</button></div><datalist id="fbanco-list"></datalist><div id="fbanco-st" class="hint" style="display:none"></div></div>
@@ -7138,9 +7124,122 @@ let _rhFuncAutoInflight=false;
 let _rhFuncAutoHydrating=false;
 let _rhFuncAutoLastHash='';
 let _rhFuncAutoBound=false;
+let _rhFuncEscalaAtual={escala_id:'',data_inicio:'',data_fim:''};
+
+function rhHojeISO(){
+  return new Date().toISOString().split('T')[0];
+}
+
+function rhFuncionarioEscalaSnapshot(){
+  const sel=document.getElementById('fescala');
+  const dt=document.getElementById('fescala-data-ini');
+  return {
+    escala_id:(sel?.value||'').trim(),
+    data_inicio:(dt?.value||'').trim(),
+  };
+}
+
+function rhFuncionarioEscalaDefinirStatus(msg){
+  const el=document.getElementById('fescala-st');
+  if(!el) return;
+  el.textContent=msg||'';
+}
+
+function rhFuncionarioEscalaVigenteDoFuncionario(fid){
+  const hoje=rhHojeISO();
+  const todos=[];
+  (Array.isArray(rhEscalas)?rhEscalas:[]).forEach(e=>{
+    (Array.isArray(e?.funcionarios)?e.funcionarios:[]).forEach(v=>{
+      if(String(v?.id)!==String(fid)) return;
+      todos.push({
+        escala_id:e.id,
+        escala_nome:e.nome||'',
+        data_inicio:(v?.data_inicio||'').trim(),
+        data_fim:(v?.data_fim||'').trim(),
+      });
+    });
+  });
+  if(!todos.length) return null;
+  const emVigencia=todos
+    .filter(v=>v.data_inicio && v.data_inicio<=hoje && (!v.data_fim || v.data_fim>=hoje))
+    .sort((a,b)=>String(b.data_inicio).localeCompare(String(a.data_inicio)));
+  if(emVigencia.length) return emVigencia[0];
+  return todos.sort((a,b)=>String(b.data_inicio).localeCompare(String(a.data_inicio)))[0]||null;
+}
+
+async function rhFuncionarioEscalaCarregarNoModal(fid=null){
+  const sel=document.getElementById('fescala');
+  const dataIni=document.getElementById('fescala-data-ini');
+  if(!sel || !dataIni) return;
+  if(!Array.isArray(rhEscalas) || !rhEscalas.length){
+    const r=await api('/api/escalas');
+    rhEscalas=Array.isArray(r)?r:[];
+  }
+  const valAtual=(sel.value||'').trim();
+  sel.innerHTML='<option value="">Sem alteração de escala</option>'+rhEscalas.map(e=>`<option value="${e.id}">${esc(e.nome||'')} (${e.tipo||''})</option>`).join('');
+  if(fid){
+    const vigente=rhFuncionarioEscalaVigenteDoFuncionario(fid);
+    if(vigente){
+      sel.value=String(vigente.escala_id||'');
+      dataIni.value=vigente.data_inicio||rhHojeISO();
+      _rhFuncEscalaAtual={
+        escala_id:String(vigente.escala_id||''),
+        data_inicio:vigente.data_inicio||'',
+        data_fim:vigente.data_fim||'',
+      };
+      rhFuncionarioEscalaDefinirStatus(`Escala atual: ${vigente.escala_nome||('escala #'+vigente.escala_id)} (desde ${vigente.data_inicio||'—'}).`);
+      return;
+    }
+  }
+  _rhFuncEscalaAtual={escala_id:'',data_inicio:'',data_fim:''};
+  if(valAtual && rhEscalas.some(e=>String(e.id)===String(valAtual))){
+    sel.value=valAtual;
+  }else{
+    sel.value='';
+  }
+  if(!dataIni.value) dataIni.value=rhHojeISO();
+  rhFuncionarioEscalaDefinirStatus('');
+}
+
+async function rhFuncionarioAplicarEscala(fid,forceFeedback=false){
+  if(!fid) return true;
+  const snap=rhFuncionarioEscalaSnapshot();
+  const eid=snap.escala_id;
+  const dataIni=(snap.data_inicio||rhHojeISO()).trim();
+  if(!eid) return true;
+
+  const atualId=String(_rhFuncEscalaAtual?.escala_id||'');
+  const atualIni=String(_rhFuncEscalaAtual?.data_inicio||'');
+  if(atualId===String(eid) && atualIni===String(dataIni)) return true;
+
+  if(atualId===String(eid) && atualIni && atualIni!==String(dataIni)){
+    rhFuncionarioEscalaDefinirStatus('Para alterar a data de início da escala atual, faça a troca para outra escala e salve novamente.');
+    const dtEl=document.getElementById('fescala-data-ini');
+    if(dtEl) dtEl.value=atualIni;
+    if(forceFeedback) showSt('st-rh','A data de início da escala atual não pode ser alterada diretamente.',true);
+    return false;
+  }
+
+  const r=await api('/api/escalas/'+eid+'/funcionarios','POST',{
+    funcionarios:[{funcionario_id:fid,data_inicio:dataIni,data_fim:null}],
+    substituir_escala_atual:true,
+  });
+  if(r?.erro){
+    showSt('st-rh','Falha ao vincular escala: '+r.erro,true);
+    if(forceFeedback) alert(r.erro);
+    return false;
+  }
+
+  _rhFuncEscalaAtual={escala_id:String(eid),data_inicio:dataIni,data_fim:''};
+  rhFuncionarioEscalaDefinirStatus('Escala vinculada com sucesso.');
+  if(rhEscalaInitDone){
+    await rhEscalaCarregar();
+  }
+  return true;
+}
 
 function rhFuncionarioHashPayload(id,payload){
-  return JSON.stringify({id:id||'',payload:payload||{}});
+  return JSON.stringify({id:id||'',payload:payload||{},escala:rhFuncionarioEscalaSnapshot()});
 }
 
 function rhFuncionarioMontarPayload(requireNome=false){
@@ -7354,6 +7453,8 @@ async function rhFuncionarioAutoSaveFlush(force=false,closeAfter=false){
 
   const fid=parseInt(document.getElementById('fid').value||r?.id||0,10)||0;
   if(fid){
+    const escalaOk=await rhFuncionarioAplicarEscala(fid,force);
+    if(force && !escalaOk) return false;
     const idx=funcs.findIndex(x=>parseInt(x.id,10)===fid);
     if(idx>=0) funcs[idx]=r;
     else funcs.push(r);
@@ -7378,13 +7479,15 @@ function openModalFunc(modo,id){
   if(_rhFuncAutoTimer){ clearTimeout(_rhFuncAutoTimer); _rhFuncAutoTimer=null; }
   _rhFuncAutoLastHash='';
   document.getElementById('fid').value='';
-  ['fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fferias-inicio','fferias-fim','fferias-obs','fposto','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fnascimento','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
+  ['fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fferias-inicio','fferias-fim','fferias-obs','fposto','fescala','fescala-data-ini','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fnascimento','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
   document.getElementById('fbanco-tipo').value='';
   document.getElementById('fddi').value='55';
   const st=document.getElementById('fcpf-st'); if(st){st.style.display='none';st.textContent='';}
   const stCep=document.getElementById('fcep-st'); if(stCep){stCep.style.display='none';stCep.textContent='';}
   const stBanco=document.getElementById('fbanco-st'); if(stBanco){stBanco.style.display='none';stBanco.textContent='';}
   _fCepLastLookup='';
+  _rhFuncEscalaAtual={escala_id:'',data_inicio:'',data_fim:''};
+  rhFuncionarioEscalaDefinirStatus('');
   document.getElementById('fstatus').value='Ativo';
   document.getElementById('fposto').value='';
   document.getElementById('fdocs-ok').value='0';
@@ -7400,6 +7503,7 @@ function openModalFunc(modo,id){
     preencherFormFuncionario(f,'Editar funcionário');
   } else {
     document.getElementById('mod-func-tit').textContent='Novo funcionário';
+    document.getElementById('fescala-data-ini').value=rhHojeISO();
     api('/api/funcionarios/proxima-re').then(r=>{
       if(r && r.re) document.getElementById('fre').value=r.re;
     });
@@ -7408,6 +7512,7 @@ function openModalFunc(modo,id){
   document.getElementById('mod-func').classList.add('on');
   rhBenefAberturaDiasSugestao();
   _rhFuncAutoHydrating=false;
+  rhFuncionarioEscalaCarregarNoModal(modo==='editar'&&id ? id : null);
   _rhFuncAutoLastHash=rhFuncionarioHashPayload(document.getElementById('fid').value||'',rhFuncionarioMontarPayload(false));
 }
 
@@ -8145,7 +8250,6 @@ async function rhEscalaInit(force=false){
   try{
     if(!Array.isArray(funcs) || !funcs.length) funcs=await api('/api/funcionarios');
     await rhEscalaCarregar();
-    rhEscalaCarregarFuncsParaVinc();
     rhEscalaLimparForm();
     rhEscalaInitDone=true;
   }catch(e){
@@ -8157,8 +8261,7 @@ async function rhEscalaCarregar(){
   const r=await api('/api/escalas');
   rhEscalas=Array.isArray(r)?r:[];
   rhEscalaRenderTabela();
-  rhEscalaPopularSeletor();
-  await rhEscalaCarregarFuncsParaVinc();
+  rhFuncionarioEscalaCarregarNoModal((document.getElementById('fid')?.value||'').trim()||null);
 }
 
 function rhEscalaRenderTabela(){
@@ -8188,14 +8291,6 @@ function rhEscalaRenderTabela(){
       </td>
     </tr>
   `).join('');
-}
-
-function rhEscalaPopularSeletor(){
-  const sel=document.getElementById('rh-esc-vinc-escala');
-  if(!sel) return;
-  const atual=sel.value||'';
-  sel.innerHTML='<option value="">Selecione a escala...</option>'+rhEscalas.map(e=>`<option value="${e.id}">${esc(e.nome||'')} (${e.tipo||''})</option>`).join('');
-  if(atual && rhEscalas.some(e=>String(e.id)===String(atual))) sel.value=atual;
 }
 
 function rhEscalaMontarDiaTrabalho(turno, horaEntrada, horaSaida, intervalo){
@@ -8387,14 +8482,11 @@ async function rhEscalaLimparForm(){
   document.getElementById('rh-esc-ciclo').value='{}';
   document.getElementById('rh-esc-noturno-ini').value='22:00';
   document.getElementById('rh-esc-noturno-fim').value='05:00';
-  document.getElementById('rh-esc-vinc-escala').value='';
-  document.getElementById('rh-esc-vinc-data-ini').value=new Date().toISOString().split('T')[0];
   const noturnoConfig=document.getElementById('rh-esc-noturno-config');
   if(noturnoConfig) noturnoConfig.style.display='none';
   const cfg6x1=document.getElementById('rh-esc-6x1-config');
   if(cfg6x1) cfg6x1.style.display='none';
   rhEscalaAjustarVisaoPorTipo();
-  await rhEscalaCarregarFuncsParaVinc();
 }
 
 async function rhEscalaSalvar(){
@@ -8462,117 +8554,7 @@ async function rhEscalaExcluir(id){
     return;
   }
   await rhEscalaCarregar();
-  await rhEscalaCarregarFuncsParaVinc();
   showSt('rh-escala-st','Escala excluída com sucesso.',false);
-}
-
-async function rhEscalaCarregarFuncsParaVinc(){
-  const eid=(document.getElementById('rh-esc-vinc-escala')?.value||'').trim();
-  const sel=document.getElementById('rh-esc-vinc-funcs');
-  const escalaAtual=eid ? rhEscalas.find(x=>String(x.id)===String(eid)) : null;
-  const dataLabel=document.getElementById('rh-esc-vinc-data-label');
-  const dataHint=document.getElementById('rh-esc-vinc-hint');
-  if(dataLabel) dataLabel.textContent=(escalaAtual?.tipo==='12x36')?'Data de início da 12x36':'Data de início';
-  if(dataHint) dataHint.textContent=(escalaAtual?.tipo==='12x36')
-    ?'Escolha a data em que a 12x36 começa a valer. A opção "Início da escala" define se o primeiro dia será trabalho ou folga.'
-    :'Use Ctrl/Cmd para selecionar múltiplos funcionários. A data de início define quando a escala começa a valer.';
-  if(!sel) return;
-  
-  // Se não selecionou escala, mostrar todos os ativos
-  if(!eid){
-    const ativos=(Array.isArray(funcs)?funcs:[])
-      .filter(f=>String((f.status||'').toLowerCase())==='ativo')
-      .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
-    sel.innerHTML=ativos.map(f=>`<option value="${f.id}">${esc(f.nome||'Sem nome')} (${f.matricula||'—'})</option>`).join('');
-    return;
-  }
-  
-  // Escala selecionada: buscar vínculos existentes para não sugerir funcionários já vinculados
-  let idsJaVincs=new Set();
-  let funcsVinculados=[];
-  if(escalaAtual && Array.isArray(escalaAtual.funcionarios) && escalaAtual.funcionarios.length){
-    funcsVinculados=escalaAtual.funcionarios.slice();
-    idsJaVincs=new Set(funcsVinculados.map(f=>f.id));
-  } else {
-    const escalaDetalhe = await api(`/api/escalas/${eid}`);
-    if(escalaDetalhe && Array.isArray(escalaDetalhe.funcionarios)){
-      funcsVinculados=escalaDetalhe.funcionarios.slice();
-      idsJaVincs=new Set(funcsVinculados.map(f=>f.id));
-    }
-  }
-  const ativos=(Array.isArray(funcs)?funcs:[])
-    .filter(f=>String((f.status||'').toLowerCase())==='ativo' && !idsJaVincs.has(f.id))
-    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
-  sel.innerHTML=ativos.map(f=>`<option value="${f.id}">${esc(f.nome||'Sem nome')} (${f.matricula||'—'})</option>`).join('');
-}
-
-async function rhEscalaVincularSelecionados(){
-  const eid=(document.getElementById('rh-esc-vinc-escala')?.value||'').trim();
-  if(!eid){
-    showSt('rh-escala-st','Selecione a escala para vincular.',true);
-    return;
-  }
-  const dataIni=(document.getElementById('rh-esc-vinc-data-ini')?.value||'').trim();
-  if(!dataIni){
-    showSt('rh-escala-st','Informe a data de início.',true);
-    return;
-  }
-  const sel=document.getElementById('rh-esc-vinc-funcs');
-  const ids=Array.from(sel?.selectedOptions||[]).map(o=>parseInt(o.value,10)).filter(x=>!Number.isNaN(x));
-  if(!ids.length){
-    showSt('rh-escala-st','Selecione ao menos um funcionário.',true);
-    return;
-  }
-  
-  const funcionarios=ids.map(fid=>({funcionario_id:fid,data_inicio:dataIni,data_fim:null}));
-  const r=await api('/api/escalas/'+eid+'/funcionarios','POST',{funcionarios});
-  if(r?.erro){
-    showSt('rh-escala-st',r.erro,true);
-    return;
-  }
-  funcs=await api('/api/funcionarios');
-  pontoFuncs=[...funcs];
-  await rhEscalaCarregar();
-  rhEscalaCarregarFuncsParaVinc();
-  renderFuncionarios();
-  showSt('rh-escala-st','Funcionários vinculados à escala.',false);
-}
-
-async function rhEscalaMoverSelecionados(){
-  const eid=(document.getElementById('rh-esc-vinc-escala')?.value||'').trim();
-  if(!eid){
-    showSt('rh-escala-st','Selecione a escala de destino.',true);
-    return;
-  }
-  const dataIni=(document.getElementById('rh-esc-vinc-data-ini')?.value||'').trim();
-  if(!dataIni){
-    showSt('rh-escala-st','Informe a data de início.',true);
-    return;
-  }
-  const sel=document.getElementById('rh-esc-vinc-funcs');
-  const ids=Array.from(sel?.selectedOptions||[]).map(o=>parseInt(o.value,10)).filter(x=>!Number.isNaN(x));
-  if(!ids.length){
-    showSt('rh-escala-st','Selecione ao menos um funcionário.',true);
-    return;
-  }
-
-  const funcionarios=ids.map(fid=>({funcionario_id:fid,data_inicio:dataIni,data_fim:null}));
-  const r=await api('/api/escalas/'+eid+'/funcionarios','POST',{
-    funcionarios,
-    substituir_escala_atual:true,
-  });
-  if(r?.erro){
-    showSt('rh-escala-st',r.erro,true);
-    return;
-  }
-
-  const movidos=Array.isArray(r?.movidos_de_outra_escala)?r.movidos_de_outra_escala.length:0;
-  funcs=await api('/api/funcionarios');
-  pontoFuncs=[...funcs];
-  await rhEscalaCarregar();
-  rhEscalaCarregarFuncsParaVinc();
-  renderFuncionarios();
-  showSt('rh-escala-st',`Funcionários movidos para a nova escala. Movidos de outra escala: ${movidos}.`,false);
 }
 
 // ══════════════════════════════════════════════
