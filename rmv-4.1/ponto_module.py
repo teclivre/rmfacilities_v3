@@ -2257,7 +2257,12 @@ def register_ponto_routes(
                         # lento bloqueava o worker Gunicorn por até 8 segundos.
                         with urllib.request.urlopen(req, timeout=2) as resp:
                             data = resp.read()
-                        return Image(io.BytesIO(data), width=28 * mm, height=11 * mm)
+                        return Image(
+                            io.BytesIO(data),
+                            width=22 * mm,
+                            height=10 * mm,
+                            kind="proportional",
+                        )
                     # BUG-FIX 7: não passar logo_url arbitrário para os.path.exists/Image
                     # sem verificar que é um caminho dentro de diretórios permitidos
                     # (path traversal). Aceitar apenas se for sub-caminho do static/ do app.
@@ -2266,7 +2271,12 @@ def register_ponto_routes(
                     )
                     _cand_abs = os.path.abspath(cand)
                     if _cand_abs.startswith(_base_dir) and os.path.exists(_cand_abs):
-                        return Image(_cand_abs, width=28 * mm, height=11 * mm)
+                        return Image(
+                            _cand_abs,
+                            width=22 * mm,
+                            height=10 * mm,
+                            kind="proportional",
+                        )
                 except Exception:
                     continue
             return p(
