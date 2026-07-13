@@ -18364,8 +18364,11 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
         min_esp = 0
         saldo_bruto = min_trab - min_esp
         saldo = saldo_bruto
+    # Hotfix temporário: não classificar automaticamente como "folga" quando
+    # min_esp == 0 sem marcações. Isso estava gerando bloqueio/aviso indevido
+    # no app para funcionários que precisam bater ponto normalmente.
     elif dia_tipo == "normal" and min_esp == 0 and not marcacoes:
-        dia_tipo = "folga"
+        dia_tipo = "normal"
 
     return {
         "funcionario_id": funcionario.id,
