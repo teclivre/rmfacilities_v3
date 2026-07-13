@@ -32429,45 +32429,74 @@ def webhook_whatsapp():
     try:
         evento = (data.get("event") or "").lower()
         diag["evento"] = evento
-        raw = data.get("data", {})
+        raw = data.get("data")
+        if raw is None:
+            raw = data
         is_message_payload = False
         if isinstance(raw, dict):
             is_message_payload = bool(
-                raw.get("message") or raw.get("body") or raw.get("text")
+                raw.get("message")
+                or raw.get("messages")
+                or raw.get("body")
+                or raw.get("text")
             )
         elif isinstance(raw, list):
             for _m in raw:
                 if isinstance(_m, dict) and (
-                    _m.get("message") or _m.get("body") or _m.get("text")
+                    _m.get("message")
+                    or _m.get("messages")
+                    or _m.get("body")
+                    or _m.get("text")
                 ):
                     is_message_payload = True
                     break
         if "message" in evento or "upsert" in evento or is_message_payload:
-            msgs = (
-                [raw]
-                if isinstance(raw, dict)
-                else (raw if isinstance(raw, list) else [])
-            )
+            if isinstance(raw, dict):
+                if isinstance(raw.get("messages"), list):
+                    msgs = raw.get("messages") or []
+                elif isinstance(raw.get("message"), list):
+                    msgs = raw.get("message") or []
+                else:
+                    msgs = [raw]
+            elif isinstance(raw, list):
+                msgs = raw
+            else:
+                msgs = []
             diag["mensagens_recebidas"] = len(msgs)
             for msg_data in msgs:
-                if bool(msg_data.get("key", {}).get("fromMe")) or bool(
+                key_obj = msg_data.get("key", {})
+                if not isinstance(key_obj, dict):
+                    key_obj = {}
+                if bool(key_obj.get("fromMe")) or bool(
                     msg_data.get("fromMe")
                 ):
                     continue
                 jid = (
-                    msg_data.get("key", {}).get("remoteJid")
+                    key_obj.get("remoteJid")
+                    or msg_data.get("remoteJid")
+                    or msg_data.get("chatId")
+                    or msg_data.get("jid")
                     or msg_data.get("sender")
                     or msg_data.get("from")
                     or ""
                 )
-                if not jid.endswith("@s.whatsapp.net"):
+                if isinstance(jid, dict):
+                    jid = (
+                        jid.get("id")
+                        or jid.get("jid")
+                        or jid.get("phone")
+                        or jid.get("number")
+                        or ""
+                    )
+                jid = str(jid or "")
+                if "@g.us" in jid or "status@broadcast" in jid:
                     continue
-                numero = jid.split("@")[0] if jid else ""
+                numero = only_digits(jid) or (jid.split("@")[0] if jid else "")
                 if not numero:
                     continue
-                numero = only_digits(numero) or numero
+                numero = wa_norm_number(numero)
                 if not wa_is_valid_number(numero):
-                    diag["erros"].append(f"Numero invalido no webhook: {numero}")
+                    diag["erros"].append(f"Numero invalido no webhook: {numero or jid}")
                     continue
 
                 msg_obj = (
