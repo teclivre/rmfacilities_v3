@@ -3355,6 +3355,11 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
           </div>
 
+          <div class="f" style="margin-bottom:14px">
+            <label>Observações de escopo / serviços a realizar</label>
+            <textarea id="pc-escopo-obs" rows="4" placeholder="Ex.: limpeza técnica de áreas comuns, cobertura das 07h às 19h, equipe com 2 profissionais por turno, materiais fornecidos pelo cliente." style="width:100%"></textarea>
+          </div>
+
           <!-- Planilha de custo -->
           <div style="margin-bottom:14px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -10634,6 +10639,7 @@ function previaProposta() {
   const dataVal = document.getElementById('pc-data').value;
   const cliente = document.getElementById('pc-cliente').value.trim();
   const email = document.getElementById('pc-email').value.trim();
+  const escopoObs = document.getElementById('pc-escopo-obs')?.value?.trim() || '';
   const itens = pcGetItens();
   const dataFmt = dataVal ? new Date(dataVal+'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
   const refNum = 'PC-'+new Date().toISOString().replace(/[-:T.Z]/g,'').slice(0,12);
@@ -10713,6 +10719,7 @@ table.custo .total-row td{font-weight:700;background:#f0f4f8;border-top:2px soli
 
   <div class="sec-title">Escopo e Valores dos Serviços</div>
   <p style="font-weight:700;font-size:11pt;margin-bottom:6px">Escopo Operacional</p>
+  ${escopoObs ? `<p class="body-text">${_escHtml(escopoObs).replace(/\n/g,'<br>')}</p>` : ''}
   <p style="font-weight:700;font-size:10pt;margin-bottom:6px">Planilha de custo</p>
   <table class="custo">
     <thead><tr><th>Cod.</th><th>Referência</th><th>Função</th><th style="text-align:center">Qtd</th><th style="text-align:right">Valor unit.</th><th style="text-align:right">Subtotal</th></tr></thead>
@@ -10773,6 +10780,7 @@ async function gerarProposta() {
   const dataFmt = dataVal ? new Date(dataVal+'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
   const cliente = document.getElementById('pc-cliente').value.trim();
   const email   = document.getElementById('pc-email').value.trim();
+  const escopoObservacoes = document.getElementById('pc-escopo-obs')?.value?.trim() || '';
   const itens   = pcGetItens();
   const remetenteId = _pcEmpresaRemSel ? _pcEmpresaRemSel.id : null;
   const btn = document.getElementById('pc-btn-gerar');
@@ -10784,7 +10792,8 @@ async function gerarProposta() {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({empresa,cnpj,funcao,data:dataFmt,cliente,email,
                             itens, remetente_id:remetenteId,
-                            tipo: document.getElementById('pc-tipo')?.value || 'mensal'})
+                            tipo: document.getElementById('pc-tipo')?.value || 'mensal',
+                            escopo_observacoes: escopoObservacoes})
     });
     if (!resp.ok) { const err=await resp.json().catch(()=>({erro:resp.statusText})); throw new Error(err.erro||resp.statusText); }
     const numProposta = resp.headers.get('X-Proposta-Numero') || '';

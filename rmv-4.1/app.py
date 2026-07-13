@@ -1558,6 +1558,7 @@ class PropostaComercial(db.Model):
     data_proposta = db.Column(db.String(10))
     cliente_contato = db.Column(db.String(150))
     email_contato = db.Column(db.String(150))
+    escopo_observacoes = db.Column(db.Text)
     remetente_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
     itens = db.Column(db.Text, default="[]")  # JSON
     total = db.Column(db.String(50))
@@ -14280,6 +14281,7 @@ def _gerar_proposta_comercial_pdf(
     remetente=None,
     ref_num=None,
     tipo=None,
+    escopo_observacoes=None,
 ):
     """Gera PDF da Proposta Comercial com os campos dinâmicos preenchidos.
     remetente: dict da empresa remetente (campos do modelo Empresa), ou None para defaults.
@@ -14529,6 +14531,10 @@ def _gerar_proposta_comercial_pdf(
         )
     )
     elems.append(Spacer(1, 0.2 * cm))
+    escopo_obs = (escopo_observacoes or "").strip()
+    if escopo_obs:
+        elems.append(Paragraph(escopo_obs.replace("\n", "<br/>"), s_normal))
+        elems.append(Spacer(1, 0.25 * cm))
     elems.append(
         Paragraph(
             "Planilha de custo",
@@ -14753,6 +14759,7 @@ def api_gerar_proposta_comercial():
     data_str = (d.get("data") or localnow().strftime("%d/%m/%Y")).strip()
     cliente = (d.get("cliente") or "").strip()
     email = (d.get("email") or "").strip()
+    escopo_observacoes = (d.get("escopo_observacoes") or "").strip()
     itens = d.get("itens") or None
     tipo = (d.get("tipo") or "mensal").strip().lower()
 
@@ -14796,6 +14803,7 @@ def api_gerar_proposta_comercial():
             data_proposta=data_str,
             cliente_contato=cliente,
             email_contato=email,
+            escopo_observacoes=escopo_observacoes,
             remetente_id=int(remetente_id) if remetente_id else None,
             itens=_json.dumps(itens or [], ensure_ascii=False),
             total=total_str,
@@ -14826,6 +14834,7 @@ def api_gerar_proposta_comercial():
             remetente=remetente,
             ref_num=ref_num,
             tipo=tipo,
+            escopo_observacoes=escopo_observacoes,
         )
     except Exception as e:
         app.logger.exception("Erro ao gerar proposta comercial")
@@ -14879,6 +14888,7 @@ def api_lista_propostas_comerciais():
                 PropostaComercial.empresa.ilike(like),
                 PropostaComercial.funcao.ilike(like),
                 PropostaComercial.cliente_contato.ilike(like),
+                PropostaComercial.escopo_observacoes.ilike(like),
             )
         )
     if status_f:
@@ -14968,6 +14978,7 @@ def api_enviar_proposta_comercial(pid):
                 remetente=remetente,
                 ref_num=p.numero,
                 tipo=p.tipo,
+                escopo_observacoes=p.escopo_observacoes,
             )
             pdf_buf.seek(0)
         except Exception as e:
@@ -15032,6 +15043,7 @@ def api_enviar_proposta_comercial(pid):
                 remetente=remetente,
                 ref_num=p.numero,
                 tipo=p.tipo,
+                escopo_observacoes=p.escopo_observacoes,
             )
             pdf_buf.seek(0)
             pdf_bytes = pdf_buf.read()
@@ -33744,6 +33756,7 @@ with app.app_context():
             'tipo VARCHAR(20) DEFAULT "mensal"',
             "email_enviado_em DATETIME",
             "whatsapp_enviado_em DATETIME",
+            "escopo_observacoes TEXT",
         ],
     )
     # Cria tabela contrato se não existir (ensure_cols não cria tabelas novas)
