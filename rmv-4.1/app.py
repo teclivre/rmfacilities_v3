@@ -11110,6 +11110,18 @@ def _solicitar_assinatura_arquivo_funcionario(
         funcionario = db.session.get(Funcionario, arquivo.funcionario_id)
     if (arquivo.ass_status or "") == "assinado":
         return {"ok": False, "erro": "Documento ja assinado."}
+
+    # Regra de negócio: colaborador demitido não deve receber novos envios de
+    # assinatura de folha de ponto. Documentos já gerados permanecem no histórico.
+    if (
+        str((arquivo.categoria or "")).strip().lower() == "folha_ponto"
+        and funcionario
+        and str((funcionario.status or "")).strip().lower() == "demitido"
+    ):
+        return {
+            "ok": False,
+            "erro": "Colaborador demitido não pode receber nova solicitação de assinatura de folha de ponto.",
+        }
     canal = (canal or "link").strip().lower()
     if canal not in ("link", "whatsapp", "email", "app"):
         canal = "link"
@@ -11303,6 +11315,12 @@ def api_funcionario_upload_arquivo(id):
     ano = infer_doc_year(comp)
     prepare_func_doc_dirs(id, ano)
     subdir, cat = func_doc_subdir(id, cat, comp)
+
+    # Regra de negócio no upload: para folha de ponto de colaborador demitido,
+    # mantém upload, mas impede novos envios para assinatura.
+    if cat == "folha_ponto" and str((f.status or "")).strip().lower() == "demitido":
+        canal_ass = "nao"
+
     rel, _ = save_upload(fs, subdir)
     a = FuncionarioArquivo(
         funcionario_id=id,
@@ -11373,6 +11391,11 @@ def api_funcionario_upload_arquivo(id):
             )
         except Exception:
             pass
+        if cat == "folha_ponto" and str((f.status or "")).strip().lower() == "demitido":
+            assinatura_auto = {
+                "status": "bloqueado_demitido",
+                "motivo": "Novos envios de assinatura de folha de ponto são bloqueados para demitidos.",
+            }
     audit_event(
         "funcionario_arquivo_upload",
         "usuario",
@@ -24546,11 +24569,32 @@ def api_rh_ponto_ciclo_fechar():
     agora = utcnow()
     total_dias = 0
     resumo_funcs = []
+    emp_map = {e.id: e for e in Empresa.query.all()}
+
+    def _parse_data_demissao_iso(v):
+        s = (v or "").strip()
+        if not s:
+            return None
+        try:
+            return datetime.strptime(s, "%Y-%m-%d").date()
+        except Exception:
+            return None
 
     try:
         for f in funcionarios:
             dias_fechados_func = 0
-            for dia in range(1, ultimo_dia + 1):
+            status_norm = (f.status or "").strip().lower()
+            dt_dem = _parse_data_demissao_iso(getattr(f, "data_demissao", ""))
+            dia_limite_func = ultimo_dia
+            if status_norm == "demitido" and dt_dem:
+                # Regra solicitada: competência do desligamento considera dias
+                # até o dia anterior à demissão.
+                if dt_dem.year < ano or (dt_dem.year == ano and dt_dem.month < mes):
+                    dia_limite_func = 0
+                elif dt_dem.year == ano and dt_dem.month == mes:
+                    dia_limite_func = max(0, min(ultimo_dia, dt_dem.day - 1))
+
+            for dia in range(1, dia_limite_func + 1):
                 data_ref = date(ano, mes, dia)
                 data_ref_str = data_ref.isoformat()
                 resumo = _app_ponto_resumo_dia(f, data_ref) or {}
@@ -24590,6 +24634,12 @@ def api_rh_ponto_ciclo_fechar():
                     "funcionario_id": f.id,
                     "nome": f.nome or "",
                     "empresa_id": f.empresa_id,
+                    "empresa_nome": (
+                        (emp_map.get(f.empresa_id).nome if f.empresa_id and emp_map.get(f.empresa_id) else "")
+                    ),
+                    "status": f.status or "",
+                    "data_demissao": getattr(f, "data_demissao", "") or "",
+                    "dia_limite_competencia": int(dia_limite_func),
                     "dias_fechados": dias_fechados_func,
                 }
             )
@@ -24608,6 +24658,149 @@ def api_rh_ponto_ciclo_fechar():
             "dias_fechados": total_dias,
             "funcionarios": resumo_funcs,
         }
+    )
+
+
+@app.route("/api/rh/ponto/ciclo/arquivos")
+@lr
+def api_rh_ponto_ciclo_arquivos():
+    """Lista PDFs de folha de ponto da competência, agrupados por empresa."""
+    competencia = (request.args.get("competencia") or "").strip()
+    if not re.match(r"^\d{4}-\d{2}$", competencia):
+        return jsonify({"erro": "Competência inválida. Use YYYY-MM."}), 400
+
+    empresa_id = to_num(request.args.get("empresa_id") or 0)
+
+    q = (
+        db.session.query(FuncionarioArquivo, Funcionario)
+        .join(Funcionario, Funcionario.id == FuncionarioArquivo.funcionario_id)
+        .filter(
+            FuncionarioArquivo.categoria == "folha_ponto",
+            FuncionarioArquivo.competencia == competencia,
+        )
+        .order_by(FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc())
+    )
+    if empresa_id:
+        q = q.filter(Funcionario.empresa_id == empresa_id)
+
+    regs = q.all()
+
+    # Exibir 1 arquivo por colaborador (o mais recente), mantendo histórico no banco.
+    por_func = {}
+    for arq, func in regs:
+        if func.id in por_func:
+            continue
+        por_func[func.id] = (arq, func)
+
+    emp_map = {e.id: e for e in Empresa.query.all()}
+    por_empresa = {}
+
+    for arq, func in por_func.values():
+        eid = func.empresa_id or 0
+        emp_nome = (
+            (emp_map.get(eid).nome if emp_map.get(eid) else "Sem empresa") if eid else "Sem empresa"
+        )
+        grp = por_empresa.setdefault(
+            eid,
+            {
+                "empresa_id": eid,
+                "empresa_nome": emp_nome,
+                "itens": [],
+            },
+        )
+        grp["itens"].append(
+            {
+                "arquivo_id": arq.id,
+                "funcionario_id": func.id,
+                "funcionario_nome": func.nome or "",
+                "nome_arquivo": arq.nome_arquivo or "",
+                "download_url": f"/api/funcionarios/arquivos/{arq.id}/download",
+                "criado_fmt": arq.criado_em.strftime("%d/%m/%Y %H:%M") if arq.criado_em else "",
+            }
+        )
+
+    empresas_out = sorted(
+        por_empresa.values(),
+        key=lambda x: (x.get("empresa_nome") or "").lower(),
+    )
+    for emp in empresas_out:
+        emp["itens"] = sorted(emp["itens"], key=lambda x: (x.get("funcionario_nome") or "").lower())
+        emp["total_arquivos"] = len(emp["itens"])
+
+    return jsonify(
+        {
+            "ok": True,
+            "competencia": competencia,
+            "total_arquivos": sum(e.get("total_arquivos", 0) for e in empresas_out),
+            "empresas": empresas_out,
+        }
+    )
+
+
+@app.route("/api/rh/ponto/ciclo/arquivos/zip")
+@lr
+def api_rh_ponto_ciclo_arquivos_zip():
+    """Baixa ZIP da competência com 1 PDF por colaborador, separado por empresa."""
+    competencia = (request.args.get("competencia") or "").strip()
+    if not re.match(r"^\d{4}-\d{2}$", competencia):
+        return jsonify({"erro": "Competência inválida. Use YYYY-MM."}), 400
+
+    empresa_id = to_num(request.args.get("empresa_id") or 0)
+
+    q = (
+        db.session.query(FuncionarioArquivo, Funcionario)
+        .join(Funcionario, Funcionario.id == FuncionarioArquivo.funcionario_id)
+        .filter(
+            FuncionarioArquivo.categoria == "folha_ponto",
+            FuncionarioArquivo.competencia == competencia,
+        )
+        .order_by(FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc())
+    )
+    if empresa_id:
+        q = q.filter(Funcionario.empresa_id == empresa_id)
+    regs = q.all()
+
+    por_func = {}
+    for arq, func in regs:
+        if func.id in por_func:
+            continue
+        por_func[func.id] = (arq, func)
+
+    if not por_func:
+        return jsonify({"erro": "Nenhum PDF encontrado para a competência informada."}), 404
+
+    emp_map = {e.id: e for e in Empresa.query.all()}
+    mem = io.BytesIO()
+    with zipfile.ZipFile(mem, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for arq, func in por_func.values():
+            abs_p = os.path.join(UPLOAD_ROOT, arq.caminho or "")
+            if not os.path.exists(abs_p):
+                continue
+            eid = func.empresa_id or 0
+            emp_nome = (
+                (emp_map.get(eid).nome if emp_map.get(eid) else "Sem_empresa") if eid else "Sem_empresa"
+            )
+            emp_nome = _clean_file_part(emp_nome, 80, "empresa")
+            nome_func = _clean_file_part(func.nome or f"funcionario_{func.id}", 100, f"funcionario_{func.id}")
+            nome_arq = _clean_file_part(
+                f"{emp_nome}_{nome_func}_{competencia}.pdf",
+                180,
+                f"folha_ponto_{func.id}_{competencia}.pdf",
+            )
+            arcname = f"{emp_nome}/{nome_arq}"
+            try:
+                with open(abs_p, "rb") as fp:
+                    zf.writestr(arcname, fp.read())
+            except Exception:
+                continue
+
+    mem.seek(0)
+    sufixo_emp = f"_empresa_{empresa_id}" if empresa_id else ""
+    return send_file(
+        mem,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"folhas_ponto_{competencia}{sufixo_emp}.zip",
     )
 
 

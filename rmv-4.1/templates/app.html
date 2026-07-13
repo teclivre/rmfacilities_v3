@@ -1951,11 +1951,11 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="g4" style="margin-top:8px;align-items:flex-end">
           <div class="f">
             <label>Competência</label>
-            <input id="rh-ciclo-comp" type="month">
+            <input id="rh-ciclo-comp" type="month" onchange="rhCicloCarregarArquivos()">
           </div>
           <div class="f">
             <label>Empresa</label>
-            <select id="rh-ciclo-empresa"><option value="">Todas as empresas</option></select>
+            <select id="rh-ciclo-empresa" onchange="rhCicloCarregarArquivos()"><option value="">Todas as empresas</option></select>
           </div>
           <div class="f">
             <label>Assinatura via</label>
@@ -1983,6 +1983,20 @@ document.addEventListener('DOMContentLoaded',()=>{
             <thead><tr><th>Colaborador</th><th>Fechamento</th><th>Envio para assinatura</th></tr></thead>
             <tbody id="rh-ciclo-tb"><tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:14px">Nenhum processamento executado ainda.</td></tr></tbody>
           </table>
+        </div>
+
+        <div class="card" style="margin-top:12px;padding:12px;background:var(--cinza-cl)">
+          <div class="card-header" style="margin-bottom:8px">
+            <span class="card-title">PDFs da competência (por empresa)</span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn b-gh b-sm" type="button" onclick="rhCicloCarregarArquivos()">Atualizar lista</button>
+              <button class="btn b-az b-sm" type="button" onclick="rhCicloBaixarZip()">Baixar tudo (ZIP)</button>
+            </div>
+          </div>
+          <div id="rh-ciclo-arq-st" class="st" style="margin-bottom:8px"></div>
+          <div id="rh-ciclo-arq-box" style="display:grid;gap:10px">
+            <div style="text-align:center;color:var(--text-muted);padding:10px">Nenhuma listagem carregada.</div>
+          </div>
         </div>
       </div>
 
@@ -5461,6 +5475,7 @@ function rhCicloInit(){
     compEl.value=`${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}`;
   }
   rhCicloPopularEmpresas();
+  rhCicloCarregarArquivos();
 }
 
 function rhCicloPopularEmpresas(){
@@ -5486,13 +5501,88 @@ function rhCicloRenderTabela(rows){
   </tr>`).join('');
 }
 
+function rhCicloGetCompetencia(){
+  return (document.getElementById('rh-ciclo-comp')?.value||'').trim();
+}
+
+function rhCicloGetEmpresaId(){
+  const empresaVal=(document.getElementById('rh-ciclo-empresa')?.value||'').trim();
+  return empresaVal?Number(empresaVal):0;
+}
+
+function rhCicloRenderArquivos(data){
+  const box=document.getElementById('rh-ciclo-arq-box');
+  if(!box) return;
+  const empresas=Array.isArray(data?.empresas)?data.empresas:[];
+  if(!empresas.length){
+    box.innerHTML='<div style="text-align:center;color:var(--text-muted);padding:10px">Nenhum PDF de folha de ponto encontrado para os filtros.</div>';
+    return;
+  }
+  box.innerHTML=empresas.map(emp=>{
+    const itens=Array.isArray(emp?.itens)?emp.itens:[];
+    const empresaId=Number(emp?.empresa_id||0);
+    const itensHtml=itens.length ? itens.map(it=>`<tr>
+      <td>${esc(it.funcionario_nome||'')}</td>
+      <td>${esc(it.nome_arquivo||'')}</td>
+      <td style="white-space:nowrap">${esc(it.criado_fmt||'')}</td>
+      <td style="text-align:right;white-space:nowrap"><a class="btn b-gh b-sm" href="${esc(it.download_url||'#')}" target="_blank" rel="noopener">Baixar PDF</a></td>
+    </tr>`).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:12px">Sem arquivos nesta empresa.</td></tr>';
+    return `<div class="card" style="margin:0;padding:10px">
+      <div class="card-header" style="margin-bottom:8px">
+        <span class="card-title">${esc(emp.empresa_nome||'Sem empresa')} · ${Number(emp.total_arquivos||0)} arquivo(s)</span>
+        <button class="btn b-az b-sm" type="button" onclick="rhCicloBaixarZip(${empresaId||0})">ZIP da empresa</button>
+      </div>
+      <div class="tbl-wrap" style="margin-top:0">
+        <table class="tbl">
+          <thead><tr><th>Colaborador</th><th>Arquivo</th><th>Gerado em</th><th style="width:120px">Ação</th></tr></thead>
+          <tbody>${itensHtml}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function rhCicloCarregarArquivos(){
+  const compMes=rhCicloGetCompetencia();
+  const stId='rh-ciclo-arq-st';
+  if(!/^\d{4}-\d{2}$/.test(compMes)){
+    showSt(stId,'Informe a competência para listar os PDFs do ciclo.',true);
+    rhCicloRenderArquivos({empresas:[]});
+    return;
+  }
+  showSt(stId,'Carregando PDFs da competência...',false);
+  const params=new URLSearchParams({competencia:compMes});
+  const empresaId=rhCicloGetEmpresaId();
+  if(empresaId) params.set('empresa_id',String(empresaId));
+  const d=await api(`/api/rh/ponto/ciclo/arquivos?${params.toString()}`);
+  if(d?.erro){
+    showSt(stId,d.erro,true);
+    rhCicloRenderArquivos({empresas:[]});
+    return;
+  }
+  rhCicloRenderArquivos(d||{});
+  showSt(stId,`Total listado: ${Number(d?.total_arquivos||0)} arquivo(s).`,false);
+}
+
+function rhCicloBaixarZip(empresaId){
+  const compMes=rhCicloGetCompetencia();
+  if(!/^\d{4}-\d{2}$/.test(compMes)){
+    showSt('rh-ciclo-arq-st','Informe a competência no formato AAAA-MM antes de baixar o ZIP.',true);
+    return;
+  }
+  const filtroEmpresa=Number(empresaId||0) || rhCicloGetEmpresaId() || 0;
+  const params=new URLSearchParams({competencia:compMes});
+  if(filtroEmpresa) params.set('empresa_id',String(filtroEmpresa));
+  window.open(`/api/rh/ponto/ciclo/arquivos/zip?${params.toString()}`,'_blank');
+}
+
 async function rhCicloFechar(enviarAssinatura){
-  const compMes=(document.getElementById('rh-ciclo-comp')?.value||'').trim();
+  const compMes=rhCicloGetCompetencia();
   if(!/^\d{4}-\d{2}$/.test(compMes)){
     showSt('st-rh-ciclo','Informe a competência no formato AAAA-MM.',true);
     return;
   }
-  const empresaVal=(document.getElementById('rh-ciclo-empresa')?.value||'').trim();
+  const empresaId=rhCicloGetEmpresaId();
   const somenteAtivos=!!document.getElementById('rh-ciclo-so-ativos')?.checked;
   const canal=(document.getElementById('rh-ciclo-canal')?.value||'app').trim();
   const prazoDias=(document.getElementById('rh-ciclo-prazo')?.value||'').trim();
@@ -5502,7 +5592,7 @@ async function rhCicloFechar(enviarAssinatura){
 
   const payload={
     competencia:compMes,
-    empresa_id:(empresaVal?Number(empresaVal):0),
+    empresa_id:empresaId,
     somente_ativos:somenteAtivos
   };
   const fechamento=await api('/api/rh/ponto/ciclo/fechar','POST',payload);
@@ -5516,12 +5606,21 @@ async function rhCicloFechar(enviarAssinatura){
   rhCicloRenderTabela(linhas);
   showSt('st-rh-ciclo',`Ciclo fechado: ${fechamento.total_funcionarios||0} colaborador(es), ${fechamento.dias_fechados||0} dia(s).`,false);
 
-  if(!enviarAssinatura || !funcs.length) return;
+  if(!enviarAssinatura || !funcs.length){
+    await rhCicloCarregarArquivos();
+    return;
+  }
 
   let ok=0, falhas=0;
   for(let i=0;i<funcs.length;i++){
     const f=funcs[i]||{};
     const fid=Number(f.funcionario_id||0);
+    const statusNorm=String(f.status||'').trim().toLowerCase();
+    if(statusNorm==='demitido'){
+      linhas[i].envio='Não enviado: colaborador demitido';
+      rhCicloRenderTabela(linhas);
+      continue;
+    }
     if(!fid){
       falhas++;
       linhas[i].envio='Falha: ID inválido';
@@ -5550,8 +5649,13 @@ async function rhCicloFechar(enviarAssinatura){
       if(!upResp.ok || upJson?.erro){
         throw new Error(upJson?.erro || `Falha no upload (HTTP ${upResp.status})`);
       }
-      ok++;
-      linhas[i].envio='Enviado para assinatura';
+      const stAuto=(upJson?.assinatura_auto?.status||'').toString().toLowerCase();
+      if(stAuto==='bloqueado_demitido'){
+        linhas[i].envio='Não enviado: bloqueado para demitido';
+      }else{
+        ok++;
+        linhas[i].envio='Enviado para assinatura';
+      }
     }catch(err){
       falhas++;
       linhas[i].envio=`Falha: ${err?.message||'erro desconhecido'}`;
@@ -5564,6 +5668,7 @@ async function rhCicloFechar(enviarAssinatura){
   }else{
     showSt('st-rh-ciclo',`Concluído com sucesso. ${ok} assinatura(s) enviada(s).`,false);
   }
+  await rhCicloCarregarArquivos();
 }
 
 function rhFeriasFmtBr(v){
