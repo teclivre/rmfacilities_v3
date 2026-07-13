@@ -1817,7 +1817,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               <div class="f" data-rh-esc-gen-field="1"><label>Hora de saída</label><input id="rh-esc-hora-saida" type="time" value="17:00"></div>
               <div class="f" data-rh-esc-gen-field="1"><label>Intervalo (min)</label><input id="rh-esc-intervalo" type="number" min="0" max="240" value="60"></div>
             </div>
-            <div id="rh-esc-12x36-hint" class="hint" style="display:none;margin-top:6px">Na escala 12x36, você só define se ela começa em trabalho ou folga. Os horários são automáticos.</div>
+            <div id="rh-esc-12x36-hint" class="hint" style="display:none;margin-top:6px">Na escala 12x36, a referência passa a ser a data de início da escala. Os horários são automáticos.</div>
             <div id="rh-esc-6x1-config" style="display:none;border:1px solid var(--borda);border-radius:8px;padding:10px;margin-top:8px">
               <label style="font-weight:700">Configuração de sábado (somente para 6x1)</label>
               <div class="g3" style="margin-top:6px">
@@ -1830,15 +1830,12 @@ document.addEventListener('DOMContentLoaded',()=>{
               <div class="f" data-rh-esc-gen-field="1"><label>Dias de trabalho no ciclo</label><input id="rh-esc-dias-trabalho" type="number" min="1" max="31" value="6"></div>
               <div class="f" data-rh-esc-gen-field="1"><label>Dias de folga no ciclo</label><input id="rh-esc-dias-folga" type="number" min="0" max="31" value="2"></div>
             </div>
-            <div class="f" id="rh-esc-ordem-wrap" style="margin-top:6px">
-              <label id="rh-esc-ordem-label">Ordem do ciclo</label>
-              <select id="rh-esc-ordem" onchange="rhEscalaAtualizarCicloTemplate()">
-                <option value="trabalho_folga">Trabalho primeiro, depois folga</option>
-                <option value="folga_trabalho">Folga primeiro, depois trabalho</option>
-              </select>
+            <div class="f" id="rh-esc-data-ini-wrap" style="margin-top:6px">
+              <label id="rh-esc-data-ini-label">Data de início da escala</label>
+              <input id="rh-esc-data-inicio" type="date" onchange="rhEscalaAtualizarCicloTemplate()">
             </div>
             <div class="hint" style="margin-top:4px">Você só preenche os campos acima. O sistema monta o ciclo automaticamente.</div>
-            <div class="hint" style="margin-top:4px">Para folga fixa segunda e terça em 5x2: escolha “Folga primeiro, depois trabalho” e vincule com data de início na segunda-feira.</div>
+            <div class="hint" style="margin-top:4px">A data de início fica registrada na própria escala e é usada como referência no vínculo dos funcionários.</div>
 
             <details style="margin-top:8px">
               <summary style="cursor:pointer">Pré-visualização técnica (somente leitura)</summary>
@@ -4181,7 +4178,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div class="g4">
         <div class="f s2">
           <label>Escala de turnos</label>
-          <select id="fescala">
+          <select id="fescala" onchange="rhFuncionarioEscalaSincronizarDataInicio()">
             <option value="">Sem alteração de escala</option>
           </select>
           <div id="fescala-st" class="hint" style="margin-top:4px"></div>
@@ -7130,6 +7127,22 @@ function rhFuncionarioEscalaSnapshot(){
   };
 }
 
+function rhEscalaDataInicioReferencia(escalaId){
+  const id=String(escalaId||'').trim();
+  if(!id) return '';
+  const escObj=(Array.isArray(rhEscalas)?rhEscalas:[]).find(e=>String(e?.id)===id);
+  return String(escObj?.ciclo?.data_inicio_referencia||'').trim();
+}
+
+function rhFuncionarioEscalaSincronizarDataInicio(force=false){
+  const sel=document.getElementById('fescala');
+  const dt=document.getElementById('fescala-data-ini');
+  if(!sel || !dt) return;
+  const ref=rhEscalaDataInicioReferencia(sel.value);
+  if(!ref) return;
+  if(force || !(dt.value||'').trim()) dt.value=ref;
+}
+
 function rhFuncionarioEscalaDefinirStatus(msg){
   const el=document.getElementById('fescala-st');
   if(!el) return;
@@ -7185,6 +7198,7 @@ async function rhFuncionarioEscalaCarregarNoModal(fid=null){
   _rhFuncEscalaAtual={escala_id:'',data_inicio:'',data_fim:''};
   if(valAtual && rhEscalas.some(e=>String(e.id)===String(valAtual))){
     sel.value=valAtual;
+    rhFuncionarioEscalaSincronizarDataInicio(true);
   }else{
     sel.value='';
   }
@@ -7196,7 +7210,7 @@ async function rhFuncionarioAplicarEscala(fid,forceFeedback=false){
   if(!fid) return true;
   const snap=rhFuncionarioEscalaSnapshot();
   const eid=snap.escala_id;
-  const dataIni=(snap.data_inicio||rhHojeISO()).trim();
+  const dataIni=(snap.data_inicio||rhEscalaDataInicioReferencia(eid)||rhHojeISO()).trim();
   if(!eid) return true;
 
   const atualId=String(_rhFuncEscalaAtual?.escala_id||'');
@@ -8307,16 +8321,14 @@ function rhEscalaAjustarVisaoPorTipo(){
   const tipo=document.getElementById('rh-esc-tipo')?.value||'';
   const esconderBasicos=tipo==='12x36';
   const mostrar6x1=tipo==='6x1';
-  const ordemWrap=document.getElementById('rh-esc-ordem-wrap');
-  const ordemLabel=document.getElementById('rh-esc-ordem-label');
+  const dataIniWrap=document.getElementById('rh-esc-data-ini-wrap');
   const cicloLabel=document.getElementById('rh-esc-ciclo-label');
   const hint12x36=document.getElementById('rh-esc-12x36-hint');
 
   document.querySelectorAll('[data-rh-esc-gen-field="1"]').forEach(el=>{
     el.style.display=esconderBasicos?'none':'';
   });
-  if(ordemWrap) ordemWrap.style.display=esconderBasicos?'':'block';
-  if(ordemLabel) ordemLabel.textContent=esconderBasicos?'Início da escala':'Ordem do ciclo';
+  if(dataIniWrap) dataIniWrap.style.display='block';
   if(cicloLabel) cicloLabel.textContent=esconderBasicos?'Configuração da escala 12x36':'Configuração do ciclo (simples)';
   if(hint12x36) hint12x36.style.display=esconderBasicos?'block':'none';
 
@@ -8334,7 +8346,7 @@ function rhEscalaMontarCiclo(){
   const intervalo=parseInt((document.getElementById('rh-esc-intervalo')?.value||'60').trim(),10)||0;
   const diasTrabalho=Math.max(1,parseInt((document.getElementById('rh-esc-dias-trabalho')?.value||'6').trim(),10)||6);
   const diasFolga=Math.max(0,parseInt((document.getElementById('rh-esc-dias-folga')?.value||'2').trim(),10)||2);
-  const ordem=(document.getElementById('rh-esc-ordem')?.value||'trabalho_folga').trim();
+  const dataInicioRef=(document.getElementById('rh-esc-data-inicio')?.value||rhHojeISO()).trim();
 
   const dias=[];
   const diaBase=rhEscalaMontarDiaTrabalho(turno,horaEntrada,horaSaida,intervalo);
@@ -8342,14 +8354,9 @@ function rhEscalaMontarCiclo(){
   if(tipo==='12x36'){
     const diaTrabalho={...diaBase,horas:12};
     const diaFolga={tipo:'folga'};
-    if(ordem==='folga_trabalho'){
-      dias.push(diaFolga);
-      dias.push(diaTrabalho);
-    }else{
-      dias.push(diaTrabalho);
-      dias.push(diaFolga);
-    }
-    return {dias};
+    dias.push(diaTrabalho);
+    dias.push(diaFolga);
+    return {dias,data_inicio_referencia:dataInicioRef};
   }
 
   if(tipo==='6x1'){
@@ -8359,24 +8366,19 @@ function rhEscalaMontarCiclo(){
     const sabIntervalo=parseInt((document.getElementById('rh-esc-sab-intervalo')?.value||'0').trim(),10)||0;
     dias.push(rhEscalaMontarDiaTrabalho(turno,sabEntrada,sabSaida,sabIntervalo));
     dias.push({tipo:'folga'});
-    return {dias};
+    return {dias,data_inicio_referencia:dataInicioRef};
   }
 
   if(tipo==='noturna'){
     const nEnt=horaEntrada||'22:00';
     const nSai=horaSaida||'06:00';
     dias.push(rhEscalaMontarDiaTrabalho('noturno',nEnt,nSai,intervalo));
-    return {dias};
+    return {dias,data_inicio_referencia:dataInicioRef};
   }
 
-  if(ordem==='folga_trabalho'){
-    for(let i=0;i<diasFolga;i++) dias.push({tipo:'folga'});
-    for(let i=0;i<diasTrabalho;i++) dias.push({...diaBase});
-  }else{
-    for(let i=0;i<diasTrabalho;i++) dias.push({...diaBase});
-    for(let i=0;i<diasFolga;i++) dias.push({tipo:'folga'});
-  }
-  return {dias};
+  for(let i=0;i<diasTrabalho;i++) dias.push({...diaBase});
+  for(let i=0;i<diasFolga;i++) dias.push({tipo:'folga'});
+  return {dias,data_inicio_referencia:dataInicioRef};
 }
 
 function rhEscalaAtualizarCicloTemplate(){
@@ -8422,8 +8424,7 @@ function rhEscalaEditar(id){
   const dias=(e?.ciclo?.dias||[]);
   const diasTrabalho=dias.filter(d=>d && d.tipo==='trabalho');
   const diasFolga=dias.filter(d=>d && d.tipo==='folga');
-  const primeiroTipo=((dias[0]||{}).tipo||'').toLowerCase();
-  document.getElementById('rh-esc-ordem').value=(primeiroTipo==='folga')?'folga_trabalho':'trabalho_folga';
+  document.getElementById('rh-esc-data-inicio').value=(e?.ciclo?.data_inicio_referencia||'').trim()||rhHojeISO();
   if(diasTrabalho.length){
     const base=diasTrabalho[0]||{};
     if(base.hora_entrada) document.getElementById('rh-esc-hora-entrada').value=base.hora_entrada;
@@ -8466,7 +8467,7 @@ async function rhEscalaLimparForm(){
   document.getElementById('rh-esc-intervalo').value='60';
   document.getElementById('rh-esc-dias-trabalho').value='6';
   document.getElementById('rh-esc-dias-folga').value='2';
-  document.getElementById('rh-esc-ordem').value='trabalho_folga';
+  document.getElementById('rh-esc-data-inicio').value=rhHojeISO();
   document.getElementById('rh-esc-sab-hora-entrada').value='08:00';
   document.getElementById('rh-esc-sab-hora-saida').value='12:00';
   document.getElementById('rh-esc-sab-intervalo').value='0';
