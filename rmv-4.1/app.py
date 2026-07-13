@@ -10578,7 +10578,7 @@ def api_criar_funcionario():
         empresa_id=d.get("empresa_id"),
         data_admissao=d.get("data_admissao", ""),
         tipo_contrato=d.get("tipo_contrato", "").strip(),
-        jornada=d.get("jornada", "").strip(),
+        jornada="",
         status=d.get("status", "Ativo"),
         # BUG-FIX 9: validar formato ISO antes de persistir; datas malformadas
         # como '01/02/2026' ou '2026-2-1' quebram _sync_ferias_status silenciosamente.
@@ -10763,7 +10763,6 @@ def api_atualizar_funcionario(id):
         "data_admissao",
         "data_demissao",
         "tipo_contrato",
-        "jornada",
         "status",
         "ferias_inicio",
         "ferias_fim",
@@ -17882,6 +17881,43 @@ def _app_ponto_escala_info_data(funcionario, data_ref):
                 dias_ciclo = len(dias)
                 if dias_ciclo <= 0:
                     continue
+
+                # 5x2 deve respeitar dia da semana (seg-sex trabalho; sab-dom folga),
+                # independentemente do deslocamento do ciclo por data_inicio.
+                if str(getattr(esc, "tipo", "")).strip().lower() == "5x2":
+                    if data_obj.weekday() <= 4:
+                        idx_tpl = next(
+                            (
+                                i
+                                for i, d in enumerate(dias)
+                                if str((d or {}).get("tipo", "trabalho")).lower()
+                                != "folga"
+                            ),
+                            0,
+                        )
+                    else:
+                        idx_tpl = next(
+                            (
+                                i
+                                for i, d in enumerate(dias)
+                                if str((d or {}).get("tipo", "")).lower()
+                                == "folga"
+                            ),
+                            None,
+                        )
+                    dia_info = (
+                        (dias[idx_tpl] or {})
+                        if idx_tpl is not None and idx_tpl < len(dias)
+                        else ({"tipo": "folga"} if data_obj.weekday() >= 5 else {"tipo": "trabalho"})
+                    )
+                    return {
+                        "escala": esc,
+                        "vinculo": ef,
+                        "indice": data_obj.weekday(),
+                        "indice_template": idx_tpl,
+                        "dia_info": dia_info,
+                    }
+
                 data_inicio_obj = datetime.strptime(ef.data_inicio, "%Y-%m-%d").date()
                 dias_decorridos = (data_obj - data_inicio_obj).days
                 if dias_decorridos < 0:
@@ -17892,6 +17928,7 @@ def _app_ponto_escala_info_data(funcionario, data_ref):
                     "escala": esc,
                     "vinculo": ef,
                     "indice": indice,
+                    "indice_template": indice,
                     "dia_info": dia_info,
                 }
             except Exception:
@@ -18047,65 +18084,32 @@ def _app_ponto_min_esperado_jornada_data(funcionario, data_ref):
 
 def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
     """Retorna minutos esperados para um funcionário em uma data específica.
-    Se tem escala ativa nessa data, usa turno da escala; senão usa jornada fixa."""
+    Usa apenas a escala ativa nessa data. Jornada está desabilitada no ponto."""
     try:
-        # Verificar se tem escala ativa nessa data
         data_obj = (
             datetime.strptime(data_str, "%Y-%m-%d").date()
             if isinstance(data_str, str)
             else data_str
         )
-
-        # Procura escala ativa para esse funcionário e data
-        esc_func = EscalaFuncionario.query.filter(
-            EscalaFuncionario.funcionario_id == funcionario.id,
-            EscalaFuncionario.data_inicio <= data_str,
-            EscalaFuncionario.ativo == True,
-        ).order_by(EscalaFuncionario.data_inicio.desc()).all()
-        if esc_func:
-            escala_ids = [ef.escala_id for ef in esc_func]
-            escalas_map = {
-                e.id: e
-                for e in Escala.query.filter(
-                    Escala.id.in_(escala_ids),
-                    Escala.ativo == True,
-                ).all()
-            }
-
-        for ef in esc_func:
-            # Se tem data_fim, verifica se data_str está dentro do range
-            if ef.data_fim and ef.data_fim < data_str:
-                continue
-            # Encontrou escala ativa; calcular índice no ciclo
-            esc = escalas_map.get(ef.escala_id)
-            if not esc:
-                continue
-
-            # Calcular quantos dias desde data_inicio
-            data_inicio_obj = datetime.strptime(ef.data_inicio, "%Y-%m-%d").date()
-            dias_decorridos = (data_obj - data_inicio_obj).days
-            if dias_decorridos < 0:
-                continue
-
-            # Obter tamanho do ciclo
-            try:
-                ciclo = json.loads(esc.ciclo_json or "{}")
-                dias_ciclo = len(ciclo.get("dias", []))
-                if dias_ciclo > 0:
-                    indice_ciclo = dias_decorridos % dias_ciclo
-                    return esc.carga_horaria_min_dia(indice_ciclo)
-            except Exception:
-                pass
+        esc_info = _app_ponto_escala_info_data(funcionario, data_obj)
+        if esc_info:
+            esc = esc_info.get("escala")
+            dia_info = esc_info.get("dia_info") or {}
+            if str(dia_info.get("tipo", "")).strip().lower() == "folga":
+                return 0
+            idx_tpl = esc_info.get("indice_template")
+            if esc and idx_tpl is not None:
+                try:
+                    return int(esc.carga_horaria_min_dia(int(idx_tpl)) or 0)
+                except Exception:
+                    pass
+            return 8 * 60
     except Exception:
         try:
             db.session.rollback()
         except Exception:
             pass
-
-    # Se não tem escala ou erro, usa jornada fixa no dia
-    return _app_ponto_min_esperado_jornada_data(
-        funcionario, data_obj if "data_obj" in locals() else data_str
-    )
+    return 0
 
 
 def _calcular_horas_noturnas(
@@ -18183,21 +18187,28 @@ def _app_ponto_fmt_minutos(total, signed=False):
 
 def _app_ponto_max_marcacoes_dia(funcionario):
     """Retorna quantas marcações são esperadas em um dia completo para este funcionário.
-    4 se a jornada tem intervalo, 2 se não tem, 4 por padrão."""
+    4 se a escala do dia tem intervalo, 2 se não tem, 4 por padrão."""
     try:
-        jid = getattr(funcionario, "jornada_id", None)
-        if jid:
-            jornada = db.session.get(JornadaTrabalho, jid)
-            if jornada:
-                hi = (jornada.hora_intervalo_inicio or "").strip()
-                hf = (jornada.hora_intervalo_fim or "").strip()
-                if (
-                    hi
-                    and hf
-                    and re.match(r"^\d{2}:\d{2}$", hi)
-                    and re.match(r"^\d{2}:\d{2}$", hf)
-                ):
-                    return 4
+        esc_info = _app_ponto_escala_info_data(funcionario, localnow().date())
+        if esc_info:
+            dia_info = esc_info.get("dia_info") or {}
+            hi = (dia_info.get("hora_intervalo_inicio") or "").strip()
+            hf = (dia_info.get("hora_intervalo_fim") or "").strip()
+            if not hi or not hf:
+                # Algumas escalas usam apenas intervalo_min
+                try:
+                    if int(dia_info.get("intervalo_min", 0) or 0) > 0:
+                        return 4
+                except Exception:
+                    pass
+            if (
+                hi
+                and hf
+                and re.match(r"^\d{2}:\d{2}$", hi)
+                and re.match(r"^\d{2}:\d{2}$", hf)
+            ):
+                return 4
+            if str(dia_info.get("tipo", "")).strip().lower() == "trabalho":
                 return 2
     except Exception:
         pass

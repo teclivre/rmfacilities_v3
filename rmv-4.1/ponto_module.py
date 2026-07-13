@@ -173,6 +173,52 @@ def register_ponto_routes(
                         ciclo = json.loads(esc.ciclo_json or "{}")
                         dias_ciclo = len(ciclo.get("dias", []))
                         if dias_ciclo > 0:
+                            dias = ciclo.get("dias", [])
+
+                            # 5x2 deve seguir dia da semana (seg-sex trabalho;
+                            # sab-dom folga), sem depender do deslocamento por
+                            # data_inicio do vínculo.
+                            if str(getattr(esc, "tipo", "")).strip().lower() == "5x2":
+                                if data_obj.weekday() <= 4:
+                                    idx_tpl = next(
+                                        (
+                                            i
+                                            for i, d in enumerate(dias)
+                                            if str((d or {}).get("tipo", "trabalho")).lower()
+                                            != "folga"
+                                        ),
+                                        0,
+                                    )
+                                else:
+                                    idx_tpl = next(
+                                        (
+                                            i
+                                            for i, d in enumerate(dias)
+                                            if str((d or {}).get("tipo", "")).lower()
+                                            == "folga"
+                                        ),
+                                        None,
+                                    )
+                                dia_info = (
+                                    (dias[idx_tpl] or {})
+                                    if idx_tpl is not None and idx_tpl < len(dias)
+                                    else ({"tipo": "folga"} if data_obj.weekday() >= 5 else {"tipo": "trabalho"})
+                                )
+                                minutos = 0
+                                if str((dia_info or {}).get("tipo", "")).lower() != "folga" and idx_tpl is not None:
+                                    try:
+                                        minutos = int(esc.carga_horaria_min_dia(int(idx_tpl)) or 0)
+                                    except Exception:
+                                        minutos = 0
+                                return {
+                                    "escala": esc,
+                                    "vinculo": ef,
+                                    "indice": data_obj.weekday(),
+                                    "indice_template": idx_tpl,
+                                    "dia_info": dia_info,
+                                    "minutos": minutos,
+                                }
+
                             data_inicio_obj = datetime.strptime(ef.data_inicio, "%Y-%m-%d").date()
                             dias_decorridos = (data_obj - data_inicio_obj).days
                             if dias_decorridos < 0:
@@ -183,6 +229,7 @@ def register_ponto_routes(
                                 "escala": esc,
                                 "vinculo": ef,
                                 "indice": indice,
+                                "indice_template": indice,
                                 "dia_info": dia_info,
                                 "minutos": esc.carga_horaria_min_dia(indice),
                             }
@@ -211,8 +258,7 @@ def register_ponto_routes(
     def _ponto_min_esperado_data(funcionario, data_ref):
         """Retorna minutos esperados para funcionario em data_ref.
         Prioridade: 1) Escala rotativa (EscalaFuncionario/Escala ciclo_json)
-                    2) JornadaTrabalho por dia da semana
-                    3) Campo texto legado (jornada)
+        Jornada está desabilitada para evitar conflito no ponto.
         """
         try:
             esc_info = _ponto_escala_info_data(funcionario, data_ref)
@@ -220,20 +266,7 @@ def register_ponto_routes(
                 return esc_info.get("minutos", 0) or 0
         except Exception:
             pass
-
-        # 2) JornadaTrabalho por dia da semana
-        if JornadaTrabalho and getattr(funcionario, "jornada_id", None):
-            try:
-                j = db.session.get(JornadaTrabalho, funcionario.jornada_id)
-                if j:
-                    return j.minutos_esperados_weekday(data_ref.weekday())
-            except Exception:
-                pass
-
-        # 3) Fallback texto legado + regra fim de semana
-        if data_ref.weekday() >= 5:
-            return 0
-        return _ponto_min_esperado_jornada(funcionario)
+        return 0
 
     def _parse_minutos_hhmm(valor, padrao="05:00"):
         texto = (valor or padrao or "05:00").strip()
@@ -1016,7 +1049,7 @@ def register_ponto_routes(
 
     def _ponto_esperado_source(funcionario, data_ref):
         """Retorna (minutos_esperados, fonte, detalhe) para um funcionário em data_ref.
-        Fonte: 'escala' | 'jornada' | 'legado'. Implementa mesma prioridade que
+        Fonte: 'escala' | 'desabilitado'. Implementa mesma prioridade que
         _ponto_min_esperado_data, mas devolve a origem para uso em previews.
         """
         try:
@@ -1035,19 +1068,7 @@ def register_ponto_routes(
             except Exception:
                 pass
 
-        # 2) JornadaTrabalho por dia da semana
-        if JornadaTrabalho and getattr(funcionario, "jornada_id", None):
-            try:
-                j = db.session.get(JornadaTrabalho, funcionario.jornada_id)
-                if j:
-                    return j.minutos_esperados_weekday(data_ref.weekday()), 'jornada', {'jornada_id': getattr(j, 'id', None)}
-            except Exception:
-                pass
-
-        # 3) Fallback texto legado + regra fim de semana
-        if data_ref.weekday() >= 5:
-            return 0, 'legado', {'reason': 'weekend'}
-        return _ponto_min_esperado_jornada(funcionario), 'legado', {'text': funcionario.jornada}
+        return 0, 'desabilitado', {'reason': 'jornada_desabilitada_sem_escala'}
 
     @app.route("/api/ponto/preview", methods=["POST"])
     @lr

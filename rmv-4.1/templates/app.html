@@ -4175,7 +4175,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div class="g4">
         <div class="f"><label>Empresa</label><select id="femp"><option value="">Selecione...</option></select></div>
         <div class="f"><label>Tipo de contrato</label><input id="ftipo-contrato" placeholder="CLT, PJ, Temporário..."></div>
-        <div class="f"><label>Jornada</label><input id="fjornada" placeholder="44h semanais"></div>
+        <div class="f"><label>Jornada</label><input id="fjornada" placeholder="Desabilitada (usar escala)" disabled></div>
         <div class="f"><label>Posto (definido no Operacional)</label><input id="fposto" readonly placeholder="Defina na aba Operacional"></div>
       </div>
       <div class="g4">
@@ -7251,7 +7251,7 @@ function rhFuncionarioMontarPayload(requireNome=false){
     data_admissao:document.getElementById('fadmissao').value,
     data_demissao:document.getElementById('fdemissao').value,
     tipo_contrato:document.getElementById('ftipo-contrato').value,
-    jornada:document.getElementById('fjornada').value,
+    jornada:'',
     status:document.getElementById('fstatus').value,
     ferias_inicio:document.getElementById('fferias-inicio').value,
     ferias_fim:document.getElementById('fferias-fim').value,
