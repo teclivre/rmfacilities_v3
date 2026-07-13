@@ -1886,6 +1886,12 @@ class Funcionario(db.Model):
     app_stepup_tentativas = db.Column(db.Integer, default=0)
     app_stepup_arquivo_id = db.Column(db.Integer)
     app_push_token = db.Column(db.String(300))
+    app_versao_nome = db.Column(db.String(40))
+    app_versao_code = db.Column(db.Integer)
+    app_versao_atualizado_em = db.Column(db.DateTime)
+    app_versao_desatualizada = db.Column(db.Boolean, default=False)
+    app_versao_notificado_em = db.Column(db.DateTime)
+    app_versao_notificado_code = db.Column(db.Integer)
     app_lat = db.Column(db.Float)
     app_lon = db.Column(db.Float)
     app_localizacao_em = db.Column(db.DateTime)
@@ -8722,7 +8728,16 @@ def api_empresa_cert_delete(id):
 @app.route("/api/config", methods=["GET"])
 @lr
 def api_get_config():
-    return jsonify({k: gc(k) for k in ["num_base", "num_ultima"]})
+    chaves = [
+        "num_base",
+        "num_ultima",
+        "pdf_cert_policy",
+        "app_version_minima",
+        "app_version_atual",
+        "app_download_url",
+        "app_version_notif_cooldown_h",
+    ]
+    return jsonify({k: gc(k) for k in chaves})
 
 
 @app.route("/api/config", methods=["POST"])
@@ -15562,19 +15577,199 @@ def api_funcionario_push_teste(id):
 @app.route("/api/app/versao")
 @_limiter.limit("60 per minute")
 def api_app_versao():
-    """Retorna versão mínima e atual do app. Configurável por variável de ambiente APP_VERSION_CODE."""
-    import os
-
-    versao_minima = int(os.environ.get("APP_VERSION_MINIMA", "14"))
-    versao_atual = int(os.environ.get("APP_VERSION_ATUAL", "14"))
-    download_url = os.environ.get("APP_DOWNLOAD_URL", "")
+    """Retorna versão mínima e atual do app (Config > App ou variáveis de ambiente)."""
+    pol = _app_version_policy()
     return jsonify(
         {
-            "versao_minima": versao_minima,
-            "versao_atual": versao_atual,
-            "download_url": download_url,
+            "versao_minima": pol["versao_minima"],
+            "versao_atual": pol["versao_atual"],
+            "download_url": pol["download_url"],
         }
     )
+
+
+def _to_int_safe(v, default=0):
+    try:
+        return int(v)
+    except Exception:
+        return default
+
+
+def _app_version_policy():
+    min_cfg = gc("app_version_minima", "")
+    cur_cfg = gc("app_version_atual", "")
+    dl_cfg = (gc("app_download_url", "") or "").strip()
+
+    versao_minima = _to_int_safe(
+        min_cfg if str(min_cfg or "").strip() else os.environ.get("APP_VERSION_MINIMA", "14"),
+        14,
+    )
+    versao_atual = _to_int_safe(
+        cur_cfg if str(cur_cfg or "").strip() else os.environ.get("APP_VERSION_ATUAL", str(versao_minima)),
+        versao_minima,
+    )
+    download_url = dl_cfg or (os.environ.get("APP_DOWNLOAD_URL", "").strip())
+    cooldown_h = max(
+        1,
+        _to_int_safe(
+            gc("app_version_notif_cooldown_h", "24"),
+            24,
+        ),
+    )
+    return {
+        "versao_minima": max(0, versao_minima),
+        "versao_atual": max(0, versao_atual),
+        "download_url": download_url,
+        "cooldown_h": cooldown_h,
+    }
+
+
+def _app_parse_version_code(value):
+    if value is None:
+        return None
+    try:
+        return int(str(value).strip())
+    except Exception:
+        pass
+    m = re.search(r"(\d+)", str(value))
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except Exception:
+        return None
+
+
+def _app_extract_version_info(payload=None):
+    payload = payload if isinstance(payload, dict) else {}
+    hdr = request.headers
+
+    versao_nome = (
+        payload.get("versao")
+        or payload.get("version")
+        or payload.get("app_version")
+        or payload.get("versao_app")
+        or hdr.get("X-App-Version")
+        or hdr.get("X-App-Version-Name")
+        or ""
+    )
+    versao_nome = str(versao_nome or "").strip()[:40]
+
+    versao_code_raw = (
+        payload.get("versao_code")
+        or payload.get("version_code")
+        or payload.get("build")
+        or payload.get("build_number")
+        or payload.get("app_version_code")
+        or hdr.get("X-App-Version-Code")
+        or hdr.get("X-App-Build")
+    )
+    versao_code = _app_parse_version_code(versao_code_raw)
+    if versao_code is None and versao_nome:
+        versao_code = _app_parse_version_code(versao_nome)
+
+    return {
+        "versao_nome": versao_nome,
+        "versao_code": versao_code,
+    }
+
+
+def _app_notify_outdated_version(funcionario, pol):
+    code = _to_int_safe(getattr(funcionario, "app_versao_code", None), -1)
+    if code < 0 or code >= pol["versao_minima"]:
+        return False
+
+    agora = utcnow()
+    ultimo = getattr(funcionario, "app_versao_notificado_em", None)
+    ultimo_code = _to_int_safe(getattr(funcionario, "app_versao_notificado_code", None), -1)
+    if ultimo and ultimo_code == code:
+        delta_h = (agora - ultimo).total_seconds() / 3600.0
+        if delta_h < float(pol["cooldown_h"]):
+            return False
+
+    versao_txt = (getattr(funcionario, "app_versao_nome", None) or f"build {code}").strip()
+    titulo = "Atualize o aplicativo RM Facilities"
+    corpo = (
+        f"Sua versão ({versao_txt}) está desatualizada. "
+        f"Atualize para continuar usando o app com segurança."
+    )
+    data_push = {
+        "tipo": "app_update_required",
+        "versao_minima": pol["versao_minima"],
+        "versao_atual": pol["versao_atual"],
+    }
+    if pol["download_url"]:
+        data_push["download_url"] = pol["download_url"]
+
+    enviado = _push_notify_funcionario(funcionario.id, titulo, corpo, data_push)
+    if not enviado:
+        try:
+            tel = norm_phone(getattr(funcionario, "telefone", ""))
+            if tel and wa_is_valid_number(tel):
+                msg = (
+                    "RM Facilities: seu aplicativo está desatualizado.\n"
+                    f"Versão instalada: {versao_txt}\n"
+                    f"Versão mínima: {pol['versao_minima']}\n"
+                )
+                if pol["download_url"]:
+                    msg += f"Atualize em: {pol['download_url']}"
+                wa_send_text(tel, msg)
+                enviado = True
+        except Exception as ex:
+            app.logger.warning(
+                "[app_version_notify] WhatsApp falhou para func %s: %s",
+                funcionario.id,
+                ex,
+            )
+
+    if enviado:
+        funcionario.app_versao_notificado_em = agora
+        funcionario.app_versao_notificado_code = code
+    return bool(enviado)
+
+
+def _app_track_version(funcionario, payload=None, notificar=False):
+    pol = _app_version_policy()
+    info = _app_extract_version_info(payload)
+    versao_nome = info.get("versao_nome") or ""
+    versao_code = info.get("versao_code")
+
+    atualizado = False
+    if versao_nome and versao_nome != (getattr(funcionario, "app_versao_nome", "") or ""):
+        funcionario.app_versao_nome = versao_nome
+        atualizado = True
+    if versao_code is not None and versao_code != getattr(funcionario, "app_versao_code", None):
+        funcionario.app_versao_code = int(versao_code)
+        atualizado = True
+    if atualizado:
+        funcionario.app_versao_atualizado_em = utcnow()
+
+    code_eff = _to_int_safe(getattr(funcionario, "app_versao_code", None), -1)
+    desat = bool(code_eff >= 0 and code_eff < pol["versao_minima"])
+    if desat != bool(getattr(funcionario, "app_versao_desatualizada", False)):
+        funcionario.app_versao_desatualizada = desat
+        atualizado = True
+
+    notif_enviada = False
+    if notificar and desat:
+        notif_enviada = _app_notify_outdated_version(funcionario, pol)
+        atualizado = atualizado or notif_enviada
+
+    if atualizado:
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+    return {
+        "versao_nome": getattr(funcionario, "app_versao_nome", None),
+        "versao_code": getattr(funcionario, "app_versao_code", None),
+        "desatualizada": bool(getattr(funcionario, "app_versao_desatualizada", False)),
+        "notificacao_enviada": bool(notif_enviada),
+        "versao_minima": pol["versao_minima"],
+        "versao_atual": pol["versao_atual"],
+        "download_url": pol["download_url"],
+    }
 
 
 @app.route("/api/app/funcionario/login", methods=["POST"])
@@ -15645,6 +15840,7 @@ def api_app_funcionario_login():
 
     sess = _app_issue_session_tokens(f)
     db.session.commit()
+    app_update = _app_track_version(f, d, notificar=True)
     reg_auth_attempt("app", cpf, True, "ok")
     audit_event(
         "auth_app_sucesso",
@@ -15675,6 +15871,7 @@ def api_app_funcionario_login():
                 "canal_otp": f.app_canal_otp or "whatsapp",
                 "foto_url": "/api/app/funcionario/me/foto" if f.foto_perfil else None,
             },
+            "app_update": app_update,
         }
     )
 
@@ -15805,6 +16002,7 @@ def api_app_funcionario_auth_confirmar():
     f.app_otp_tentativas = 0
     sess = _app_issue_session_tokens(f)
     db.session.commit()
+    app_update = _app_track_version(f, d, notificar=True)
     reg_auth_attempt("app_otp_confirm", cpf, True, "ok")
     audit_event(
         "auth_app_sucesso",
@@ -15835,6 +16033,7 @@ def api_app_funcionario_auth_confirmar():
                 "canal_otp": f.app_canal_otp or "whatsapp",
                 "foto_url": "/api/app/funcionario/me/foto" if f.foto_perfil else None,
             },
+            "app_update": app_update,
         }
     )
 
@@ -15943,6 +16142,7 @@ def api_app_funcionario_refresh():
     sessao.exp_refresh = utcnow() + timedelta(days=14)
     access = app_issue_access_token(f.id, sessao.id, ttl=3600)
     db.session.commit()
+    app_update = _app_track_version(f, d, notificar=True)
     audit_event(
         "auth_app_refresh",
         "funcionario",
@@ -15962,6 +16162,7 @@ def api_app_funcionario_refresh():
             "refresh_expires_in": max(
                 0, int((sessao.exp_refresh - utcnow()).total_seconds())
             ),
+            "app_update": app_update,
         }
     )
 
@@ -16000,12 +16201,25 @@ def api_app_log():
     payload = request.json or {}
     entradas = payload.get("logs") or [payload]
     salvos = 0
+    ultima_versao_nome = ""
+    ultima_versao_code = None
     for ent in entradas[:200]:
         nivel = (ent.get("nivel") or ent.get("level") or "INFO").upper()[:10]
         tag = (ent.get("tag") or "")[:80]
         mensagem = ent.get("mensagem") or ent.get("message") or ""
         stack = ent.get("stack") or ent.get("stackTrace") or ""
         versao_app = (ent.get("versao") or ent.get("version") or "")[:20]
+        versao_code = _app_parse_version_code(
+            ent.get("versao_code")
+            or ent.get("version_code")
+            or ent.get("build")
+            or ent.get("build_number")
+            or versao_app
+        )
+        if versao_app:
+            ultima_versao_nome = versao_app
+        if versao_code is not None:
+            ultima_versao_code = versao_code
         dispositivo = (ent.get("dispositivo") or ent.get("device") or "")[:120]
         ts_raw = ent.get("timestamp") or ent.get("ts")
         ts_disp = None
@@ -16034,6 +16248,15 @@ def api_app_log():
         db.session.commit()
     except Exception:
         db.session.rollback()
+    if ultima_versao_nome or ultima_versao_code is not None:
+        _app_track_version(
+            f,
+            {
+                "versao": ultima_versao_nome,
+                "versao_code": ultima_versao_code,
+            },
+            notificar=True,
+        )
     return jsonify({"ok": True, "salvos": salvos})
 
 
@@ -16053,6 +16276,7 @@ def api_admin_logs_app():
 @app_func_required
 def api_app_funcionario_me():
     f = g.app_funcionario
+    app_update = _app_track_version(f, None, notificar=True)
     ultimo_aso = (
         FuncionarioArquivo.query.filter_by(funcionario_id=f.id, categoria="aso")
         .order_by(FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc())
@@ -16104,7 +16328,13 @@ def api_app_funcionario_me():
                 "jornada": f.jornada,
                 "jornada_info": jornada_info,
                 "canal_otp": f.app_canal_otp or "whatsapp",
+                "app_versao_nome": getattr(f, "app_versao_nome", None),
+                "app_versao_code": getattr(f, "app_versao_code", None),
+                "app_versao_desatualizada": bool(
+                    getattr(f, "app_versao_desatualizada", False)
+                ),
             },
+            "app_update": app_update,
         }
     )
 
@@ -17882,6 +18112,58 @@ def _app_ponto_escala_info_data(funcionario, data_ref):
                 if dias_ciclo <= 0:
                     continue
 
+                # Regra opcional por dia da semana (0=seg ... 6=dom).
+                # Quando configurada, tem prioridade sobre deslocamento de ciclo.
+                sem_trab_raw = ciclo.get("dias_semana_trabalho")
+                if isinstance(sem_trab_raw, list) and sem_trab_raw:
+                    sem_trab = set()
+                    for x in sem_trab_raw:
+                        try:
+                            iv = int(x)
+                            if 0 <= iv <= 6:
+                                sem_trab.add(iv)
+                        except Exception:
+                            pass
+                    if sem_trab:
+                        idx_tpl_trab = next(
+                            (
+                                i
+                                for i, d in enumerate(dias)
+                                if str((d or {}).get("tipo", "trabalho")).lower()
+                                != "folga"
+                            ),
+                            0,
+                        )
+                        idx_tpl_folga = next(
+                            (
+                                i
+                                for i, d in enumerate(dias)
+                                if str((d or {}).get("tipo", "")).lower() == "folga"
+                            ),
+                            None,
+                        )
+                        if data_obj.weekday() in sem_trab:
+                            idx_tpl = idx_tpl_trab
+                            dia_info = (
+                                (dias[idx_tpl] or {})
+                                if idx_tpl is not None and idx_tpl < len(dias)
+                                else {"tipo": "trabalho"}
+                            )
+                        else:
+                            idx_tpl = idx_tpl_folga
+                            dia_info = (
+                                (dias[idx_tpl] or {})
+                                if idx_tpl is not None and idx_tpl < len(dias)
+                                else {"tipo": "folga"}
+                            )
+                        return {
+                            "escala": esc,
+                            "vinculo": ef,
+                            "indice": data_obj.weekday(),
+                            "indice_template": idx_tpl,
+                            "dia_info": dia_info,
+                        }
+
                 # 5x2 deve respeitar dia da semana (seg-sex trabalho; sab-dom folga),
                 # independentemente do deslocamento do ciclo por data_inicio.
                 if str(getattr(esc, "tipo", "")).strip().lower() == "5x2":
@@ -19639,6 +19921,22 @@ def api_escalas_criar():
         _ciclo_val = json.loads(ciclo_json)
         if not isinstance(_ciclo_val.get("dias"), list) or len(_ciclo_val.get("dias", [])) == 0:
             return jsonify({"erro": "ciclo_json deve conter ao menos 1 dia no array 'dias'"}), 400
+        sem_trab = _ciclo_val.get("dias_semana_trabalho")
+        if sem_trab is not None:
+            if not isinstance(sem_trab, list):
+                return jsonify({"erro": "ciclo_json.dias_semana_trabalho deve ser uma lista"}), 400
+            sem_val = []
+            for x in sem_trab:
+                try:
+                    iv = int(x)
+                except Exception:
+                    return jsonify({"erro": "dias_semana_trabalho deve conter inteiros de 0 a 6"}), 400
+                if iv < 0 or iv > 6:
+                    return jsonify({"erro": "dias_semana_trabalho deve conter inteiros de 0 a 6"}), 400
+                if iv not in sem_val:
+                    sem_val.append(iv)
+            _ciclo_val["dias_semana_trabalho"] = sem_val
+            ciclo_json = json.dumps(_ciclo_val, ensure_ascii=False)
         # Validações adicionais por dia: tipo, formatos de hora e coerência de intervalo
         dia_errs = []
         dias = _ciclo_val.get("dias", [])
@@ -19776,6 +20074,22 @@ def api_escala_editar(id):
             _ciclo_val = json.loads(ciclo_str)
             if not isinstance(_ciclo_val.get("dias"), list) or len(_ciclo_val.get("dias", [])) == 0:
                 return jsonify({"erro": "ciclo_json deve conter ao menos 1 dia no array 'dias'"}), 400
+            sem_trab = _ciclo_val.get("dias_semana_trabalho")
+            if sem_trab is not None:
+                if not isinstance(sem_trab, list):
+                    return jsonify({"erro": "ciclo_json.dias_semana_trabalho deve ser uma lista"}), 400
+                sem_val = []
+                for x in sem_trab:
+                    try:
+                        iv = int(x)
+                    except Exception:
+                        return jsonify({"erro": "dias_semana_trabalho deve conter inteiros de 0 a 6"}), 400
+                    if iv < 0 or iv > 6:
+                        return jsonify({"erro": "dias_semana_trabalho deve conter inteiros de 0 a 6"}), 400
+                    if iv not in sem_val:
+                        sem_val.append(iv)
+                _ciclo_val["dias_semana_trabalho"] = sem_val
+                ciclo_str = json.dumps(_ciclo_val, ensure_ascii=False)
         except (json.JSONDecodeError, AttributeError):
             return jsonify({"erro": "ciclo_json inválido (JSON malformado)"}), 400
         e.ciclo_json = ciclo_str
@@ -33504,6 +33818,12 @@ with app.app_context():
             "app_stepup_tentativas INTEGER DEFAULT 0",
             "app_stepup_arquivo_id INTEGER",
             "app_push_token VARCHAR(300)",
+            "app_versao_nome VARCHAR(40)",
+            "app_versao_code INTEGER",
+            "app_versao_atualizado_em DATETIME",
+            "app_versao_desatualizada BOOLEAN DEFAULT 0",
+            "app_versao_notificado_em DATETIME",
+            "app_versao_notificado_code INTEGER",
             "app_lat FLOAT",
             "app_lon FLOAT",
             "app_localizacao_em DATETIME",

@@ -175,6 +175,66 @@ def register_ponto_routes(
                         if dias_ciclo > 0:
                             dias = ciclo.get("dias", [])
 
+                            # Regra opcional por dia da semana (0=seg ... 6=dom)
+                            # com prioridade sobre deslocamento por data_inicio.
+                            sem_trab_raw = ciclo.get("dias_semana_trabalho")
+                            if isinstance(sem_trab_raw, list) and sem_trab_raw:
+                                sem_trab = set()
+                                for x in sem_trab_raw:
+                                    try:
+                                        iv = int(x)
+                                        if 0 <= iv <= 6:
+                                            sem_trab.add(iv)
+                                    except Exception:
+                                        pass
+                                if sem_trab:
+                                    idx_tpl_trab = next(
+                                        (
+                                            i
+                                            for i, d in enumerate(dias)
+                                            if str((d or {}).get("tipo", "trabalho")).lower()
+                                            != "folga"
+                                        ),
+                                        0,
+                                    )
+                                    idx_tpl_folga = next(
+                                        (
+                                            i
+                                            for i, d in enumerate(dias)
+                                            if str((d or {}).get("tipo", "")).lower()
+                                            == "folga"
+                                        ),
+                                        None,
+                                    )
+                                    if data_obj.weekday() in sem_trab:
+                                        idx_tpl = idx_tpl_trab
+                                        dia_info = (
+                                            (dias[idx_tpl] or {})
+                                            if idx_tpl is not None and idx_tpl < len(dias)
+                                            else {"tipo": "trabalho"}
+                                        )
+                                    else:
+                                        idx_tpl = idx_tpl_folga
+                                        dia_info = (
+                                            (dias[idx_tpl] or {})
+                                            if idx_tpl is not None and idx_tpl < len(dias)
+                                            else {"tipo": "folga"}
+                                        )
+                                    minutos = 0
+                                    if str((dia_info or {}).get("tipo", "")).lower() != "folga" and idx_tpl is not None:
+                                        try:
+                                            minutos = int(esc.carga_horaria_min_dia(int(idx_tpl)) or 0)
+                                        except Exception:
+                                            minutos = 0
+                                    return {
+                                        "escala": esc,
+                                        "vinculo": ef,
+                                        "indice": data_obj.weekday(),
+                                        "indice_template": idx_tpl,
+                                        "dia_info": dia_info,
+                                        "minutos": minutos,
+                                    }
+
                             # 5x2 deve seguir dia da semana (seg-sex trabalho;
                             # sab-dom folga), sem depender do deslocamento por
                             # data_inicio do vínculo.

@@ -1597,7 +1597,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div class="tbl-wrap">
           <table class="tbl">
-            <thead><tr><th>RE</th><th>Nome</th><th>Cargo/Função</th><th>Posto</th><th>Empresa</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead>
+            <thead><tr><th>RE</th><th>Nome</th><th>Cargo/Função</th><th>Posto</th><th>Empresa</th><th>Contato</th><th>App</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody id="tb-func"></tbody>
           </table>
         </div>
@@ -3982,6 +3982,15 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
           <div class="f"><label>Resumo</label><div id="cfg-cert-policy-resumo" class="hint" style="padding-top:10px">O sistema usará a política definida abaixo.</div></div>
         </div>
+        <div class="g3" style="margin-top:10px">
+          <div class="f"><label>Versão mínima do app (build)</label><input type="number" id="cfg-app-version-min" min="1" placeholder="14"></div>
+          <div class="f"><label>Versão atual recomendada (build)</label><input type="number" id="cfg-app-version-atual" min="1" placeholder="14"></div>
+          <div class="f"><label>Cooldown notificação (horas)</label><input type="number" id="cfg-app-version-cooldown" min="1" max="720" placeholder="24"></div>
+        </div>
+        <div class="f" style="margin-top:10px">
+          <label>URL de atualização do app</label>
+          <input id="cfg-app-download-url" placeholder="https://...">
+        </div>
         <div class="brow" style="justify-content:flex-start;margin-top:14px">
           <button class="btn b-az" onclick="salvarConfig()">Salvar configurações</button>
         </div>
@@ -4234,6 +4243,19 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="f" style="display:flex;align-items:center;gap:8px;padding-top:22px">
           <input type="checkbox" id="fopta-vt" checked style="width:16px;height:16px" onchange="rhBenefAberturaDiasSugestao()">
           <label for="fopta-vt" style="margin:0;font-weight:500">Optante VT</label>
+            <div class="f" id="rh-esc-semana-wrap" style="margin-top:8px">
+              <label>Dias de trabalho na semana (opcional)</label>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="rh-esc-ds-trab-0" onchange="rhEscalaAtualizarCicloTemplate()">Seg</label>
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="rh-esc-ds-trab-1" onchange="rhEscalaAtualizarCicloTemplate()">Ter</label>
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="rh-esc-ds-trab-2" onchange="rhEscalaAtualizarCicloTemplate()">Qua</label>
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="rh-esc-ds-trab-3" onchange="rhEscalaAtualizarCicloTemplate()">Qui</label>
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="rh-esc-ds-trab-4" onchange="rhEscalaAtualizarCicloTemplate()">Sex</label>
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="rh-esc-ds-trab-5" onchange="rhEscalaAtualizarCicloTemplate()">Sab</label>
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="rh-esc-ds-trab-6" onchange="rhEscalaAtualizarCicloTemplate()">Dom</label>
+              </div>
+              <div class="hint" style="margin-top:4px">Quando marcado, o sistema usa estes dias como trabalho e os demais como folga.</div>
+            </div>
         </div>
         <div class="f" style="display:flex;align-items:center;gap:8px;padding-top:22px">
           <input type="checkbox" id="fopta-vr" checked style="width:16px;height:16px" onchange="rhBenefAberturaDiasSugestao()">
@@ -6940,11 +6962,23 @@ async function loadConfig(){
   const pol=d.pdf_cert_policy||'prefer_empresa';
   document.getElementById('cfg-pdf-cert-policy').value=pol;
   document.getElementById('cfg-cert-policy-resumo').textContent=certPolicySummary(pol);
+  document.getElementById('cfg-app-version-min').value=d.app_version_minima||'14';
+  document.getElementById('cfg-app-version-atual').value=d.app_version_atual||d.app_version_minima||'14';
+  document.getElementById('cfg-app-version-cooldown').value=d.app_version_notif_cooldown_h||'24';
+  document.getElementById('cfg-app-download-url').value=d.app_download_url||'';
 }
 
 async function salvarConfig(){
   const pol=document.getElementById('cfg-pdf-cert-policy').value||'prefer_empresa';
-  await api('/api/config','POST',{num_base:document.getElementById('cfg-num-base').value,num_ultima:document.getElementById('cfg-num-ultima').value,pdf_cert_policy:pol});
+  await api('/api/config','POST',{
+    num_base:document.getElementById('cfg-num-base').value,
+    num_ultima:document.getElementById('cfg-num-ultima').value,
+    pdf_cert_policy:pol,
+    app_version_minima:document.getElementById('cfg-app-version-min').value,
+    app_version_atual:document.getElementById('cfg-app-version-atual').value,
+    app_version_notif_cooldown_h:document.getElementById('cfg-app-version-cooldown').value,
+    app_download_url:document.getElementById('cfg-app-download-url').value
+  });
   await loadProxNum();
   alert('Configurações salvas! Próxima medição: '+document.getElementById('prox-num').textContent);
 }
@@ -8336,6 +8370,23 @@ function rhEscalaAjustarVisaoPorTipo(){
   if(cfg6x1) cfg6x1.style.display=mostrar6x1?'block':'none';
 }
 
+function rhEscalaSemanaTrabalhoSelecionados(){
+  const out=[];
+  for(let i=0;i<=6;i++){
+    const el=document.getElementById('rh-esc-ds-trab-'+i);
+    if(el && el.checked) out.push(i);
+  }
+  return out;
+}
+
+function rhEscalaSemanaTrabalhoDefinir(valores){
+  const setVals=new Set(Array.isArray(valores)?valores.map(v=>parseInt(v,10)).filter(v=>!Number.isNaN(v) && v>=0 && v<=6):[]);
+  for(let i=0;i<=6;i++){
+    const el=document.getElementById('rh-esc-ds-trab-'+i);
+    if(el) el.checked=setVals.has(i);
+  }
+}
+
 function rhEscalaMontarCiclo(){
   const tipo=document.getElementById('rh-esc-tipo')?.value||'';
   const turnoCheckbox=document.getElementById('rh-esc-e-noturna');
@@ -8347,6 +8398,12 @@ function rhEscalaMontarCiclo(){
   const diasTrabalho=Math.max(1,parseInt((document.getElementById('rh-esc-dias-trabalho')?.value||'6').trim(),10)||6);
   const diasFolga=Math.max(0,parseInt((document.getElementById('rh-esc-dias-folga')?.value||'2').trim(),10)||2);
   const dataInicioRef=(document.getElementById('rh-esc-data-inicio')?.value||rhHojeISO()).trim();
+  const diasSemanaTrabalho=rhEscalaSemanaTrabalhoSelecionados();
+  const montarOut=(arrDias)=>{
+    const out={dias:arrDias,data_inicio_referencia:dataInicioRef};
+    if(diasSemanaTrabalho.length) out.dias_semana_trabalho=diasSemanaTrabalho;
+    return out;
+  };
 
   const dias=[];
   const diaBase=rhEscalaMontarDiaTrabalho(turno,horaEntrada,horaSaida,intervalo);
@@ -8356,7 +8413,7 @@ function rhEscalaMontarCiclo(){
     const diaFolga={tipo:'folga'};
     dias.push(diaTrabalho);
     dias.push(diaFolga);
-    return {dias,data_inicio_referencia:dataInicioRef};
+    return montarOut(dias);
   }
 
   if(tipo==='6x1'){
@@ -8366,19 +8423,19 @@ function rhEscalaMontarCiclo(){
     const sabIntervalo=parseInt((document.getElementById('rh-esc-sab-intervalo')?.value||'0').trim(),10)||0;
     dias.push(rhEscalaMontarDiaTrabalho(turno,sabEntrada,sabSaida,sabIntervalo));
     dias.push({tipo:'folga'});
-    return {dias,data_inicio_referencia:dataInicioRef};
+    return montarOut(dias);
   }
 
   if(tipo==='noturna'){
     const nEnt=horaEntrada||'22:00';
     const nSai=horaSaida||'06:00';
     dias.push(rhEscalaMontarDiaTrabalho('noturno',nEnt,nSai,intervalo));
-    return {dias,data_inicio_referencia:dataInicioRef};
+    return montarOut(dias);
   }
 
   for(let i=0;i<diasTrabalho;i++) dias.push({...diaBase});
   for(let i=0;i<diasFolga;i++) dias.push({tipo:'folga'});
-  return {dias,data_inicio_referencia:dataInicioRef};
+  return montarOut(dias);
 }
 
 function rhEscalaAtualizarCicloTemplate(){
@@ -8424,6 +8481,7 @@ function rhEscalaEditar(id){
   const dias=(e?.ciclo?.dias||[]);
   const diasTrabalho=dias.filter(d=>d && d.tipo==='trabalho');
   const diasFolga=dias.filter(d=>d && d.tipo==='folga');
+  rhEscalaSemanaTrabalhoDefinir(e?.ciclo?.dias_semana_trabalho||[]);
   document.getElementById('rh-esc-data-inicio').value=(e?.ciclo?.data_inicio_referencia||'').trim()||rhHojeISO();
   if(diasTrabalho.length){
     const base=diasTrabalho[0]||{};
@@ -8467,6 +8525,7 @@ async function rhEscalaLimparForm(){
   document.getElementById('rh-esc-intervalo').value='60';
   document.getElementById('rh-esc-dias-trabalho').value='6';
   document.getElementById('rh-esc-dias-folga').value='2';
+  rhEscalaSemanaTrabalhoDefinir([]);
   document.getElementById('rh-esc-data-inicio').value=rhHojeISO();
   document.getElementById('rh-esc-sab-hora-entrada').value='08:00';
   document.getElementById('rh-esc-sab-hora-saida').value='12:00';
@@ -12145,12 +12204,15 @@ async function _renderFuncionariosImpl(){
     const vazioMsg=rhFuncTab==='ativos'
       ? 'Nenhum colaborador ativo encontrado.'
       : (rhFuncTab==='ferias'?'Nenhum colaborador em férias encontrado.':'Nenhum colaborador demitido/inativo encontrado.');
-    tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">'+vazioMsg+'</td></tr>';
+    tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted)">'+vazioMsg+'</td></tr>';
     return;
   }
   tb.innerHTML=lista.map(f=>{
     const emp=emps.find(e=>e.id===f.empresa_id);
     const ativo=isAtivo(f);
+    const appVer=(f.app_versao_nome||'').trim() || (f.app_versao_code!=null ? ('build '+f.app_versao_code) : '—');
+    const appVerTs=f.app_versao_atualizado_em?new Date(f.app_versao_atualizado_em).toLocaleString('pt-BR'):'—';
+    const appBadge=f.app_versao_desatualizada?'<span class="pill p-ci" title="Versão abaixo da mínima">Desatualizado</span>':'<span class="pill p-vd">OK</span>';
     return `<tr class="row-clickable" onclick="openModalFunc('editar',${f.id})">
       <td style="font-weight:700">${f.re||'—'}</td>
       <td><div style="font-weight:700">${f.nome}</div><div style="font-size:11px;color:var(--text-muted)">${fmtDoc(f.cpf)||''}</div></td>
@@ -12158,6 +12220,7 @@ async function _renderFuncionariosImpl(){
       <td style="font-size:11px">${f.posto_operacional||'Reserva tecnica'}</td>
       <td>${emp?emp.nome:'—'}</td>
       <td>${[f.email,fmtTelefone(f.telefone)].filter(Boolean).join(' · ')||'—'}</td>
+      <td><div style="font-size:11px">${esc(appVer)}</div><div style="font-size:10px;color:var(--text-muted)">${esc(appVerTs)}</div><div style="margin-top:3px">${appBadge}</div></td>
       <td><span class="pill ${ativo?'p-vd':(isFerias(f)?'p-az':'p-ci')}">${f.status||'Ativo'}</span></td>
       <td><div class="tac">
         <button class="btn b-gh b-sm" onclick="event.stopPropagation();openModalFunc('editar',${f.id})">Editar</button>
