@@ -14863,15 +14863,35 @@ def api_gerar_proposta_comercial():
     if not empresa:
         return jsonify({"erro": "Informe o nome da empresa destinatária."}), 400
 
-    # Calcular total a partir dos itens
+    # Calcular total a partir dos itens (aceita formato BR: 4.923,88)
+    def _parse_money_num(v):
+        if v is None:
+            return None
+        if isinstance(v, (int, float)):
+            return float(v)
+        s = str(v).strip()
+        if not s:
+            return None
+        s = s.replace("R$", "").replace(" ", "")
+        if "," in s and "." in s:
+            s = s.replace(".", "").replace(",", ".")
+        elif "," in s:
+            s = s.replace(",", ".")
+        try:
+            return float(s)
+        except Exception:
+            return None
+
     total_val = 0.0
     try:
         if itens:
             for it in itens:
-                try:
-                    total_val += float(it.get("subtotal") or 0)
-                except Exception:
-                    pass
+                val = _parse_money_num(it.get("subtotal"))
+                if val is None:
+                    q = _parse_money_num(it.get("qtd")) or 0.0
+                    vu = _parse_money_num(it.get("valor_unit")) or 0.0
+                    val = q * vu
+                total_val += float(val or 0.0)
     except Exception:
         pass
     total_str = (
