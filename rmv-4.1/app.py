@@ -15106,11 +15106,11 @@ def api_enviar_proposta_comercial(pid):
             ), 400
         tipo_label = "SPOT" if (p.tipo or "").lower() == "spot" else "Mensal"
         texto = (
-            f"Olá{' ' + dest_nome if dest_nome else ''}! 👋\n\n"
+            f"Olá{' ' + dest_nome if dest_nome else ''}.\n\n"
             + (f"{mensagem}\n\n" if mensagem else "")
             + f"Segue nossa Proposta Comercial {tipo_label} *{p.numero}*.\n"
             f"Empresa: {p.empresa or ''}\nData: {p.data_proposta or ''}\nValor Total: {p.total or ''}\n\n"
-            f"Qualquer dúvida estamos à disposição! 😊\n— {rem_nome} Comercial"
+            f"Ficamos à disposição para quaisquer esclarecimentos.\n{rem_nome} Comercial"
         )
         # Gera o PDF para anexar via Evolution API
         try:
