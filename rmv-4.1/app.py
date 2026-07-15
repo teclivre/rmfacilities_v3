@@ -7992,8 +7992,50 @@ try:
         def save(self):
             self._draw_watermark()
             super().save()
+
+
+    class _AuditWatermarkCanvas(_WatermarkCanvas):
+        """Variação para auditorias: diagonal mais evidente e escala mais contida."""
+
+        def _draw_watermark(self):
+            try:
+                from reportlab.lib.utils import ImageReader
+
+                buf = self.__class__._build_wm()
+                if buf is None:
+                    return
+                buf.seek(0)
+                pw, ph = self._pagesize
+                img_reader = ImageReader(buf)
+                iw, ih = img_reader.getSize()
+                if not iw or not ih:
+                    return
+
+                aspect = float(iw) / float(ih)
+                target_w = pw * 0.56
+                target_h = target_w / aspect
+                max_h = ph * 0.56
+                if target_h > max_h:
+                    target_h = max_h
+                    target_w = target_h * aspect
+
+                self.saveState()
+                self.translate(pw / 2.0, ph / 2.0)
+                self.rotate(38)
+                self.drawImage(
+                    img_reader,
+                    -target_w / 2.0,
+                    -target_h / 2.0,
+                    target_w,
+                    target_h,
+                    mask="auto",
+                )
+                self.restoreState()
+            except Exception:
+                pass
 except Exception:
     _WatermarkCanvas = None  # type: ignore
+    _AuditWatermarkCanvas = None  # type: ignore
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -22041,7 +22083,7 @@ def _build_doc_assinatura_pdf(arquivo, funcionario, url_root):
             ),
         )
     )
-    doc.build(story, canvasmaker=(_WatermarkCanvas or None))
+    doc.build(story, canvasmaker=(_AuditWatermarkCanvas or _WatermarkCanvas or None))
     return buf.getvalue()
 
 
@@ -22641,7 +22683,7 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
             ),
         )
     )
-    doc.build(story, canvasmaker=(_WatermarkCanvas or None))
+    doc.build(story, canvasmaker=(_AuditWatermarkCanvas or _WatermarkCanvas or None))
     return buf.getvalue()
 
 
