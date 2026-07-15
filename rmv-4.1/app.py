@@ -2353,6 +2353,69 @@ def _feriado_dump_postos(valores):
     return json.dumps(itens, ensure_ascii=False) if itens else ""
 
 
+def _feriado_norm_txt(valor, fallback=""):
+    txt = re.sub(r"\s+", " ", str(valor or fallback or "")).strip()
+    if not txt:
+        txt = fallback or ""
+    txt = unicodedata.normalize("NFKD", txt)
+    txt = "".join(ch for ch in txt if not unicodedata.combining(ch))
+    return txt.casefold().strip()
+
+
+def _feriado_aplica_funcionario_obj(feriado_obj, funcionario_obj, vinculos_ids=None):
+    """Define se um feriado se aplica ao colaborador pelo escopo geográfico e posto."""
+    if not feriado_obj or not funcionario_obj:
+        return False
+
+    tipo = (getattr(feriado_obj, "tipo", "") or "").strip().lower()
+    if tipo not in ("nacional", "municipal", "estadual"):
+        return False
+
+    if tipo == "municipal":
+        mun_fer = _feriado_norm_txt(getattr(feriado_obj, "municipio", ""))
+        mun_func = _feriado_norm_txt(getattr(funcionario_obj, "cidade", ""))
+        if mun_fer and mun_func != mun_fer:
+            return False
+    elif tipo == "estadual":
+        uf_fer = (getattr(feriado_obj, "estado", "") or "").strip().upper()
+        uf_func = (getattr(funcionario_obj, "estado", "") or "").strip().upper()
+        if uf_fer and uf_func != uf_fer:
+            return False
+
+    postos_fer = _feriado_parse_postos(getattr(feriado_obj, "posto_operacional", ""))
+    if postos_fer:
+        posto_func = _feriado_norm_txt(
+            getattr(funcionario_obj, "posto_operacional", ""), "Reserva tecnica"
+        )
+        postos_norm = {
+            _feriado_norm_txt(item, "Reserva tecnica") for item in postos_fer if str(item or "").strip()
+        }
+        if posto_func not in postos_norm:
+            return False
+
+    vincs = vinculos_ids or set()
+    if vincs:
+        return getattr(funcionario_obj, "id", None) in vincs
+    return True
+
+
+def _feriado_aplicacao_label(feriado_obj, qtd_funcionarios=0):
+    tipo = (getattr(feriado_obj, "tipo", "") or "").strip().lower()
+    if tipo == "nacional":
+        return "Nacional (todos)"
+    postos = _feriado_parse_postos(getattr(feriado_obj, "posto_operacional", ""))
+    escopo_geo = "Municipio" if tipo == "municipal" else "Estado"
+    geo_val = (getattr(feriado_obj, "municipio", "") or "").strip()
+    if tipo == "estadual":
+        geo_val = (getattr(feriado_obj, "estado", "") or "").strip().upper()
+    geo_txt = f"{escopo_geo}: {geo_val}" if geo_val else escopo_geo
+    if postos:
+        return f"{geo_txt} · Postos: {', '.join(postos)}"
+    if qtd_funcionarios:
+        return f"{geo_txt} · {qtd_funcionarios} funcionario(s) vinculado(s)"
+    return f"{geo_txt} · Todos os postos"
+
+
 class FeriadoFuncionario(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     feriado_id = db.Column(
@@ -19515,11 +19578,12 @@ def api_app_ponto_espelho_pdf_me():
             )
             dia_tipo = (resumo.get("dia_tipo") or "").strip().lower()
             af_info = resumo.get("afastamento_info") or {}
+            esp_min = resumo.get("horas_esperadas_min", 0) or 0
             marc_str = (
                 "  ".join(m.get("hora_fmt", "") for m in marcacoes)
                 if marcacoes
                 else "Falta"
-                if resumo.get("horas_esperadas_min", 0)
+                if esp_min > 0
                 else "-"
             )
             if dia_tipo == "afastamento":
@@ -19532,6 +19596,9 @@ def api_app_ponto_espelho_pdf_me():
             elif dia_tipo == "feriado":
                 marc_str = f"{marc_str} | FERIADO" if marcacoes else "FERIADO"
                 status_val = "Feriado"
+            elif not marcacoes and esp_min == 0 and dia_tipo not in ("afastamento", "ferias", "feriado"):
+                marc_str = "Folga"
+                status_val = "Folga"
             rows.append(
                 [
                     data_str,
@@ -26201,6 +26268,7 @@ def api_feriados_listar():
         fids = mapa_func.get(f.id, [])
         d["funcionario_ids"] = fids
         d["qtd_funcionarios"] = len(fids)
+        d["aplicacao_label"] = _feriado_aplicacao_label(f, len(fids))
         out.append(d)
     return jsonify({"ok": True, "itens": out})
 

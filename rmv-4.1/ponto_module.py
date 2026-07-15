@@ -2174,9 +2174,7 @@ def register_ponto_routes(
             extras_100 = ""
             marcacoes_str = ""
             if previstas > 0 and not marcacoes_ord:
-                # BUG-FIX 18: antes colocava "Falta" na coluna Marcações, que
-                # é redundante com a coluna Faltas logo ao lado e confuso para quem lê.
-                marcacoes_str = ""
+                marcacoes_str = "Falta"
                 faltas = "-" + _ponto_fmt_minutos(previstas)
                 total_faltas += previstas
             else:
@@ -2217,6 +2215,9 @@ def register_ponto_routes(
                 faltas = ""
             elif resumo.get("dia_tipo") == "feriado":
                 marcacoes_str = f"{marcacoes_str} | FERIADO" if marcacoes_str else "FERIADO"
+                faltas = ""
+            elif resumo.get("dia_tipo") == "folga" and not marcacoes_ord:
+                marcacoes_str = "Folga"
                 faltas = ""
 
             total_previstas += previstas
