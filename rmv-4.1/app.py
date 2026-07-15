@@ -7955,11 +7955,32 @@ try:
                     return
                 buf.seek(0)
                 pw, ph = self._pagesize
-                wm_size = min(pw, ph) * 0.52
-                x = (pw - wm_size) / 2
-                y = (ph - wm_size) / 2
+                img_reader = ImageReader(buf)
+                iw, ih = img_reader.getSize()
+                if not iw or not ih:
+                    return
+
+                # Preserva proporção da logo e posiciona em diagonal no centro,
+                # evitando o efeito "apertado" em logos não quadradas.
+                aspect = float(iw) / float(ih)
+                target_w = pw * 0.64
+                target_h = target_w / aspect
+                max_h = ph * 0.62
+                if target_h > max_h:
+                    target_h = max_h
+                    target_w = target_h * aspect
+
                 self.saveState()
-                self.drawImage(ImageReader(buf), x, y, wm_size, wm_size, mask="auto")
+                self.translate(pw / 2.0, ph / 2.0)
+                self.rotate(32)
+                self.drawImage(
+                    img_reader,
+                    -target_w / 2.0,
+                    -target_h / 2.0,
+                    target_w,
+                    target_h,
+                    mask="auto",
+                )
                 self.restoreState()
             except Exception:
                 pass
