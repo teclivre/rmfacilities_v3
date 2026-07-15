@@ -10905,9 +10905,11 @@ async function gerarProposta() {
     const propostaId  = resp.headers.get('X-Proposta-Id') || null;
     const blob = await resp.blob();
     const url  = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href=url; a.download=`Proposta_Comercial_${empresa.replace(/\s+/g,'_').slice(0,30)}.pdf`;
-    a.click(); setTimeout(()=>URL.revokeObjectURL(url),10000);
+    const aba = window.open(url, '_blank');
+    if(!aba){
+      throw new Error('Não foi possível abrir a prévia. Verifique se o navegador bloqueou pop-ups para este site.');
+    }
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
     const numBadge = numProposta ? ` &nbsp;<strong>${_escHtml(numProposta)}</strong>` : '';
     const emailDest = document.getElementById('pc-email')?.value?.trim() || '';
     const telDest   = document.getElementById('pc-telefone')?.value?.trim() || '';
