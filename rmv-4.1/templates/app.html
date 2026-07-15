@@ -1881,23 +1881,26 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
         </div>
         <details id="fer-form-novo" open style="margin-bottom:14px">
-          <summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--azul);padding:6px 0">&#43; Adicionar feriado manual (estadual/municipal)</summary>
+          <summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--azul);padding:6px 0">&#43; Adicionar feriado manual</summary>
           <div class="g4" style="margin-top:10px">
             <div class="f"><label>Data</label><input id="fer-data" type="date"></div>
-            <div class="f"><label>Descrição</label><input id="fer-desc" placeholder="Ex: Carnaval" maxlength="200"></div>
+            <div class="f"><label>Descrição</label><input id="fer-desc" placeholder="Ex: Aniversário da Cidade" maxlength="200"></div>
             <div class="f"><label>Tipo</label>
-              <select id="fer-tipo">
-                <option value="nacional">Nacional</option>
-                <option value="estadual">Estadual</option>
+              <select id="fer-tipo" onchange="ferTipoChange(this.value)">
                 <option value="municipal">Municipal</option>
+                <option value="estadual">Estadual</option>
+                <option value="nacional">Nacional</option>
               </select>
             </div>
-            <div class="f"><label>Município (se municipal)</label><input id="fer-municipio" placeholder="Ex: São Paulo" maxlength="100"></div>
-            <div class="f"><label>Estado (UF)</label><input id="fer-estado" placeholder="SP" maxlength="2" style="width:60px"></div>
-            <div class="f"><label>Postos (opcional)</label><select id="fer-posto" multiple size="6"></select></div>
+            <div class="f" id="fer-campo-municipio"><label>Município</label><input id="fer-municipio" placeholder="Ex: São Paulo" maxlength="100"></div>
+            <div class="f" id="fer-campo-estado"><label>Estado (UF)</label><input id="fer-estado" placeholder="SP" maxlength="2" style="width:60px"></div>
+            <div class="f" id="fer-campo-postos">
+              <label>Postos operacionais <span style="font-weight:400;color:var(--text-muted)">(sem seleção = todos os postos)</span></label>
+              <select id="fer-posto" multiple size="5" style="min-width:220px"></select>
+              <button type="button" class="btn b-gh b-sm" style="margin-top:4px;font-size:11px" onclick="Array.from(document.getElementById('fer-posto').options).forEach(o=>o.selected=false)">Desmarcar todos</button>
+            </div>
           </div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:8px">Você pode escolher vários postos. Se não escolher nenhum, o feriado vale para todos os postos, inclusive reserva técnica.</div>
-          <div class="brow" style="justify-content:flex-start;margin-top:8px">
+          <div class="brow" style="justify-content:flex-start;margin-top:10px">
             <button class="btn b-vd b-sm" onclick="ferSalvar()">&#128190; Salvar feriado</button>
           </div>
         </details>
@@ -5443,6 +5446,7 @@ function rhSetSubAba(tab,btn){
   }
   if(rhSubAba==='feriados'){
     ferCarregar();
+    ferTipoChange(document.getElementById('fer-tipo')?.value||'municipal');
   }
   if(rhSubAba==='ponto'){
     carregarCorrecoesPonto();
@@ -13271,6 +13275,16 @@ async function abrirPreviaBeneficio(tab){
 // ════════════════════════════════════════════════════════════
 let _feriadosData=[];
 
+function ferTipoChange(tipo){
+  const cMun=document.getElementById('fer-campo-municipio');
+  const cEst=document.getElementById('fer-campo-estado');
+  const cPos=document.getElementById('fer-campo-postos');
+  if(!cMun||!cEst||!cPos) return;
+  cMun.style.display = (tipo==='municipal') ? '' : 'none';
+  cEst.style.display = (tipo==='estadual') ? '' : 'none';
+  cPos.style.display = (tipo==='nacional') ? 'none' : '';
+}
+
 async function ferCarregar(){
   const ano=document.getElementById('fer-ano').value||new Date().getFullYear();
   const tipo=document.getElementById('fer-filtro-tipo').value||'';
@@ -13284,15 +13298,23 @@ async function ferCarregar(){
     return;
   }
   _feriadosData=j.itens||[];
-  ferAtualizarInfoSelecionados();
+  await ferAtualizarInfoSelecionados();
   ferRenderTabela();
 }
 
-function ferAtualizarInfoSelecionados(){
+async function ferAtualizarInfoSelecionados(){
   const sel=document.getElementById('fer-posto');
   if(!sel) return;
   const atuais=new Set(Array.from(sel.selectedOptions||[]).map(o=>(o.value||'').trim()).filter(Boolean));
-  const base=((beneficiosMensais&&beneficiosMensais.length)?beneficiosMensais:((funcs&&funcs.length)?funcs:(pontoFuncs||[])));
+  let base=((beneficiosMensais&&beneficiosMensais.length)?beneficiosMensais:((funcs&&funcs.length)?funcs:(pontoFuncs||[])));
+  // Fallback: se os dados ainda não foram carregados, busca funcionários da API
+  if(!base.length){
+    try{
+      const _r=await fetch('/api/funcionarios',{credentials:'same-origin'});
+      const _j=await _r.json();
+      base=Array.isArray(_j)?_j:(_j.itens||[]);
+    }catch(_){}
+  }
   const postos=[...new Set(base.map(it=>(it.posto_operacional||'Reserva tecnica').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   if(!postos.find(p=>p.toLowerCase()==='reserva tecnica')) postos.push('Reserva tecnica');
   sel.innerHTML=postos.map(p=>`<option value="${escHtml(p)}">${escHtml(p)}</option>`).join('');
@@ -13349,6 +13371,9 @@ async function ferSalvar(){
     document.getElementById('fer-desc').value='';
     document.getElementById('fer-municipio').value='';
     document.getElementById('fer-estado').value='';
+    document.getElementById('fer-tipo').value='municipal';
+    // Limpa seleção de postos para o próximo cadastro
+    Array.from(document.getElementById('fer-posto')?.options||[]).forEach(o=>o.selected=false);
     ferCarregar();
   } else {
     st.textContent=j.erro||'Erro ao salvar.';st.style.color='var(--verm-cl)';
