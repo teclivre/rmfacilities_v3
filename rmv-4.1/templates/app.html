@@ -10483,7 +10483,8 @@ async function pcEnviarProposta() {
     fb.style.display = '';
   };
 
-  btn.disabled = true; btn.textContent = '⏳ Enviando…';
+  btn.disabled = true; btn.textContent = '⏳ Enviando...';
+  let envioOk = false;
   try {
     const body = {canal, email, telefone, mensagem};
     const res  = await api(`/api/propostas-comerciais/${_mepPropostaId}/enviar`, 'POST', body);
@@ -10492,11 +10493,14 @@ async function pcEnviarProposta() {
       if (res.wa_url) {
         window.open(res.wa_url, '_blank');
         _showFb('💬 Evolution API não configurada. WhatsApp aberto em nova aba para envio manual.', true);
+        envioOk = true;
       } else {
         _showFb(`✅ Proposta enviada via WhatsApp para <strong>${_escHtml(res.dest || telefone)}</strong>!`, true);
+        envioOk = true;
       }
     } else {
       _showFb(`✅ E-mail enviado com sucesso para <strong>${_escHtml(email)}</strong>!`, true);
+      envioOk = true;
     }
     lpCarregar(_lpPage);  // Atualiza ícones de envio na lista
   } catch(e) {
@@ -10504,6 +10508,9 @@ async function pcEnviarProposta() {
   }
   btn.disabled = false;
   _mepToggleCanal(canal);
+  if (envioOk) {
+    setTimeout(() => pcFecharModalEnvio(), 350);
+  }
 }
 
 // Fechar modal ao clicar fora
