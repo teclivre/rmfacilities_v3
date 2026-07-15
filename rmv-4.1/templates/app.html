@@ -10395,7 +10395,7 @@ function lpRenderizar(items) {
       </td>
       <td>
         <button class="btn b-sm" style="font-size:11px;background:#205d8a;color:#fff;white-space:nowrap"
-          onclick="pcAbrirModalEnvio(${p.id}, ${JSON.stringify(p.numero)}, ${JSON.stringify(p.email_contato||'')}, '')">📨 Enviar</button>
+          onclick='pcAbrirModalEnvio(${p.id}, ${JSON.stringify(p.numero)}, ${JSON.stringify(p.email_contato||"")}, "")'>📨 Enviar</button>
       </td>
     </tr>`;
   }).join('');
@@ -10913,7 +10913,7 @@ async function gerarProposta() {
     const telDest   = document.getElementById('pc-telefone')?.value?.trim() || '';
     res.innerHTML=`<div style="background:var(--verde-cl);border:1px solid var(--verde);border-radius:8px;padding:10px 14px;color:var(--verde);display:flex;flex-wrap:wrap;gap:8px;align-items:center">
       <span>✅ PDF gerado com sucesso!${numBadge}</span>
-      ${propostaId ? `<button class="btn b-sm" style="font-size:11px;background:#e8f5e9;color:#2e7d32;border:1px solid #2e7d32" onclick="pcAbrirModalEnvio(${propostaId}, ${JSON.stringify(numProposta)}, ${JSON.stringify(emailDest)}, ${JSON.stringify(telDest)})">📨 Enviar ao cliente</button>` : ''}
+      ${propostaId ? `<button class="btn b-sm" style="font-size:11px;background:#e8f5e9;color:#2e7d32;border:1px solid #2e7d32" onclick='pcAbrirModalEnvio(${propostaId}, ${JSON.stringify(numProposta)}, ${JSON.stringify(emailDest)}, ${JSON.stringify(telDest)})'>📨 Enviar ao cliente</button>` : ''}
       <button class="btn b-sm" style="font-size:11px;background:#e3f2fd;color:#1565c0;border:1px solid #1565c0" onclick="docsAbrirListaPropostas()">📋 Ver histórico</button>
     </div>`;
   } catch(e) {
