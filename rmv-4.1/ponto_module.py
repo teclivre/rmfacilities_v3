@@ -317,15 +317,41 @@ def register_ponto_routes(
 
     def _ponto_min_esperado_data(funcionario, data_ref):
         """Retorna minutos esperados para funcionario em data_ref.
-        Prioridade: 1) Escala rotativa (EscalaFuncionario/Escala ciclo_json)
-        Jornada está desabilitada para evitar conflito no ponto.
+        Prioridade:
+        1) Escala rotativa ativa na data (EscalaFuncionario/Escala ciclo_json)
+        2) JornadaTrabalho vinculada ao funcionário (grade semanal por dia da semana)
+        3) Campo texto jornada do funcionário (fallback seg-sex)
+
+        O fallback de jornada corrige o bug crônico onde dias anteriores a
+        EscalaFuncionario.data_inicio retornavam 0 minutos, fazendo todas as
+        horas trabalhadas nesse período aparecerem como hora extra.
         """
         try:
             esc_info = _ponto_escala_info_data(funcionario, data_ref)
-            if esc_info:
+            if esc_info is not None:
                 return esc_info.get("minutos", 0) or 0
         except Exception:
             pass
+
+        # Fallback 2: JornadaTrabalho — respeita a grade semanal completa.
+        if JornadaTrabalho is not None:
+            try:
+                jid = getattr(funcionario, "jornada_id", None)
+                if jid:
+                    j = db.session.get(JornadaTrabalho, int(jid))
+                    if j:
+                        return j.minutos_esperados_weekday(data_ref.weekday())
+            except Exception:
+                pass
+
+        # Fallback 3: texto de jornada — assume seg-sex para não inflar extras
+        # em fins de semana de escalas não cadastradas.
+        try:
+            if data_ref.weekday() < 5:  # 0=seg .. 4=sex
+                return _ponto_min_esperado_jornada(funcionario)
+        except Exception:
+            pass
+
         return 0
 
     def _parse_minutos_hhmm(valor, padrao="05:00"):
@@ -1128,7 +1154,27 @@ def register_ponto_routes(
             except Exception:
                 pass
 
-        return 0, 'desabilitado', {'reason': 'jornada_desabilitada_sem_escala'}
+        # Fallback 2: JornadaTrabalho
+        if JornadaTrabalho is not None:
+            try:
+                jid = getattr(funcionario, "jornada_id", None)
+                if jid:
+                    j = db.session.get(JornadaTrabalho, int(jid))
+                    if j:
+                        return j.minutos_esperados_weekday(data_ref.weekday()), 'jornada', {
+                            'jornada_id': j.id, 'weekday': data_ref.weekday()
+                        }
+            except Exception:
+                pass
+
+        # Fallback 3: texto de jornada (seg-sex)
+        if data_ref.weekday() < 5:
+            try:
+                return _ponto_min_esperado_jornada(funcionario), 'jornada_texto', {}
+            except Exception:
+                pass
+
+        return 0, 'sem_escala', {'reason': 'sem_escala_nem_jornada_para_data'}
 
     @app.route("/api/ponto/preview", methods=["POST"])
     @lr
