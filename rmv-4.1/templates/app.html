@@ -4214,6 +4214,11 @@ document.addEventListener('DOMContentLoaded',()=>{
           <input id="fescala-data-ini" type="date">
         </div>
       </div>
+      <div id="fescala-conflitos-wrap" style="display:none;margin-top:8px;padding:10px;background:var(--aviso-bg,#fff3cd);border:1px solid var(--aviso,#ffc107);border-radius:6px">
+        <strong style="color:var(--text-dark)">⚠ Escalas ativas conflitantes</strong>
+        <p style="font-size:12px;margin:6px 0 0 0;color:var(--text-muted)">Este funcionário está em múltiplas escalas ativas. Desative as antigas para trocar:</p>
+        <div id="fescala-conflitos-list" style="margin-top:6px"></div>
+      </div>
       <div class="g4">
         <div class="f s2"><label>Banco (busca por código/nome)</label><div style="display:flex;gap:6px"><input id="fbanco-busca" list="fbanco-list" placeholder="Ex: 077 - Banco Inter S.A." oninput="onBancoBuscaInput()" onblur="onBancoBuscaBlur()" style="flex:1"><button type="button" class="btn b-gh b-sm" onclick="atualizarBancosBR()">Atualizar</button></div><datalist id="fbanco-list"></datalist><div id="fbanco-st" class="hint" style="display:none"></div></div>
         <div class="f"><label>Código banco</label><input id="fbanco-codigo" maxlength="3" placeholder="077" oninput="this.value=this.value.replace(/\D/g,'').slice(0,3)"></div>
@@ -7314,6 +7319,25 @@ function rhFuncionarioEscalaVigenteDoFuncionario(fid){
   return todos.sort((a,b)=>String(b.data_inicio).localeCompare(String(a.data_inicio)))[0]||null;
 }
 
+function rhFuncionarioEscalasVigentes(fid){
+  const hoje=rhHojeISO();
+  const todos=[];
+  (Array.isArray(rhEscalas)?rhEscalas:[]).forEach(e=>{
+    (Array.isArray(e?.funcionarios)?e.funcionarios:[]).forEach(v=>{
+      if(String(v?.id)!==String(fid)) return;
+      todos.push({
+        escala_id:e.id,
+        escala_nome:e.nome||'',
+        data_inicio:(v?.data_inicio||'').trim(),
+        data_fim:(v?.data_fim||'').trim(),
+      });
+    });
+  });
+  return todos
+    .filter(v=>v.data_inicio && v.data_inicio<=hoje && (!v.data_fim || v.data_fim>=hoje))
+    .sort((a,b)=>String(b.data_inicio).localeCompare(String(a.data_inicio)));
+}
+
 async function rhFuncionarioEscalaCarregarNoModal(fid=null){
   const sel=document.getElementById('fescala');
   const dataIni=document.getElementById('fescala-data-ini');
@@ -7335,6 +7359,22 @@ async function rhFuncionarioEscalaCarregarNoModal(fid=null){
         data_fim:vigente.data_fim||'',
       };
       rhFuncionarioEscalaDefinirStatus(`Escala atual: ${vigente.escala_nome||('escala #'+vigente.escala_id)} (desde ${vigente.data_inicio||'—'}).`);
+      
+      // Verificar se há escalas vigentes múltiplas (conflito)
+      const vigentes=rhFuncionarioEscalasVigentes(fid);
+      const wrapConflito=document.getElementById('fescala-conflitos-wrap');
+      const listaConflito=document.getElementById('fescala-conflitos-list');
+      if(vigentes.length>1 && wrapConflito && listaConflito){
+        wrapConflito.style.display='block';
+        listaConflito.innerHTML=vigentes.map((v,idx)=>`
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(0,0,0,0.1)">
+            <span style="flex:1">${v.escala_nome} (desde ${v.data_inicio})</span>
+            <button type="button" class="btn b-gh b-sm" onclick="rhDesativarEscalaFuncionario(${fid},${v.escala_id},'${v.data_inicio}')">Desativar</button>
+          </div>
+        `).join('');
+      }else if(wrapConflito){
+        wrapConflito.style.display='none';
+      }
       return;
     }
   }
@@ -7346,6 +7386,8 @@ async function rhFuncionarioEscalaCarregarNoModal(fid=null){
   }
   if(!dataIni.value) dataIni.value=rhHojeISO();
   rhFuncionarioEscalaDefinirStatus('');
+  const wrapConflito=document.getElementById('fescala-conflitos-wrap');
+  if(wrapConflito) wrapConflito.style.display='none';
 }
 
 async function rhFuncionarioAplicarEscala(fid,forceFeedback=false){
@@ -7375,6 +7417,19 @@ async function rhFuncionarioAplicarEscala(fid,forceFeedback=false){
     await rhEscalaCarregar();
   }
   return true;
+}
+
+async function rhDesativarEscalaFuncionario(fid, escalaId, dataInicio){
+  if(!confirm(`Desativar esta escala para liberar o funcionário?`)) return;
+  const r=await api(`/api/escalas/${escalaId}/funcionarios/${fid}`, 'DELETE');
+  if(r?.erro){
+    alert('Erro ao desativar: '+r.erro);
+    return;
+  }
+  showSt('st-rh','Escala desativada. Recarregando...', false);
+  await new Promise(resolve=>setTimeout(resolve,500));
+  const fid_val=parseInt(document.getElementById('fid').value||0,10)||0;
+  if(fid_val) await rhFuncionarioEscalaCarregarNoModal(fid_val);
 }
 
 function rhFuncionarioHashPayload(id,payload){
