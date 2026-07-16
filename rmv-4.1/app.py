@@ -3828,7 +3828,7 @@ def app_func_required(f):
             return jsonify({"erro": "Funcionario nao encontrado"}), 404
         if to_num(payload.get("fid")) != func.id:
             return jsonify({"erro": "Token invalido"}), 401
-        if func.app_ativo is False:
+        if func.app_ativo is False or _status_norm(func.status) in ("demitido", "inativo") or bool((getattr(func, "data_demissao", "") or "").strip()):
             return jsonify({"erro": "Acesso do aplicativo desativado"}), 403
         g.app_funcionario = func
         g.app_sessao = sessao
@@ -10991,6 +10991,9 @@ def api_atualizar_funcionario(id):
             if f.status == "Demitido":
                 f.status = "Ativo"
                 f.app_ativo = True
+    if _status_norm(f.status) in ("demitido", "inativo"):
+        f.app_ativo = False
+        FuncionarioAppSessao.query.filter_by(funcionario_id=f.id, revogado=False).update({"revogado": True})
     if "salario" in d:
         f.salario = max(0.0, to_num(d.get("salario"), dec=True) or 0)
     if "vale_refeicao" in d:
@@ -16073,7 +16076,7 @@ def api_app_funcionario_auth_iniciar():
         return jsonify(
             {"erro": "Credenciais invalidas."}
         ), 401
-    if f.app_ativo is False:
+    if f.app_ativo is False or _status_norm(f.status) in ("demitido", "inativo") or bool((getattr(f, "data_demissao", "") or "").strip()):
         reg_auth_attempt("app_otp", cpf, False, "app_desativado")
         return jsonify({"erro": "Credenciais invalidas."}), 401
 
@@ -16158,7 +16161,7 @@ def api_app_funcionario_auth_confirmar():
     if not f:
         reg_auth_attempt("app_otp_confirm", cpf, False, "nao_encontrado")
         return jsonify({"erro": "Funcionario nao encontrado."}), 404
-    if f.app_ativo is False:
+    if f.app_ativo is False or _status_norm(f.status) in ("demitido", "inativo") or bool((getattr(f, "data_demissao", "") or "").strip()):
         reg_auth_attempt("app_otp_confirm", cpf, False, "app_desativado")
         return jsonify({"erro": "Acesso do aplicativo desativado."}), 403
 
@@ -16315,7 +16318,7 @@ def api_app_funcionario_refresh():
     if not sessao or sessao.exp_refresh < utcnow():
         return jsonify({"erro": "Refresh token invalido ou expirado"}), 401
     f = db.session.get(Funcionario, sessao.funcionario_id)
-    if not f or f.app_ativo is False:
+    if not f or f.app_ativo is False or _status_norm(f.status) in ("demitido", "inativo") or bool((getattr(f, "data_demissao", "") or "").strip()):
         return jsonify({"erro": "Acesso desativado"}), 403
     novo_refresh = app_issue_refresh_token()
     sessao.refresh_hash = token_hash(novo_refresh)
@@ -20832,6 +20835,8 @@ def api_rh_mensagens_funcionarios():
         f = db.session.get(Funcionario, row.funcionario_id)
         if not f:
             continue
+        if _status_norm(f.status) in ("demitido", "inativo") or not bool(getattr(f, "app_ativo", True)):
+            continue
         result.append(
             {
                 "funcionario_id": f.id,
@@ -20849,7 +20854,9 @@ def api_rh_mensagens_funcionarios():
 @app.route("/api/mensagens-app/<int:fid>")
 @lr
 def api_rh_mensagens_chat(fid):
-    db.get_or_404(Funcionario, fid)
+    f = db.get_or_404(Funcionario, fid)
+    if _status_norm(f.status) in ("demitido", "inativo") or not bool(getattr(f, "app_ativo", True)):
+        return jsonify({"erro": "Funcionario sem acesso ao aplicativo."}), 404
     msgs = (
         MensagemApp.query.filter_by(funcionario_id=fid)
         .order_by(MensagemApp.enviado_em.asc())
@@ -20867,6 +20874,8 @@ def api_rh_mensagens_chat(fid):
 @lr
 def api_rh_mensagem_responder(fid):
     f = db.get_or_404(Funcionario, fid)
+    if _status_norm(f.status) in ("demitido", "inativo") or not bool(getattr(f, "app_ativo", True)):
+        return jsonify({"erro": "Funcionario sem acesso ao aplicativo."}), 404
     d = request.json or {}
     conteudo = (d.get("conteudo") or "").strip()
     if not conteudo:
@@ -20901,10 +20910,12 @@ def api_rh_mensagem_responder(fid):
 def api_rh_mensagens_nao_lidas_total():
     empresa_id = request.args.get("empresa_id")
     q = MensagemApp.query.filter_by(de_rh=False, lida=False)
+    q = q.join(Funcionario, MensagemApp.funcionario_id == Funcionario.id).filter(
+        Funcionario.status == "Ativo",
+        Funcionario.app_ativo == True,
+    )
     if empresa_id and str(empresa_id).isdigit():
-        q = q.join(Funcionario, MensagemApp.funcionario_id == Funcionario.id).filter(
-            Funcionario.empresa_id == int(empresa_id)
-        )
+        q = q.filter(Funcionario.empresa_id == int(empresa_id))
     count = q.count()
     return jsonify({"nao_lidas": count})
 

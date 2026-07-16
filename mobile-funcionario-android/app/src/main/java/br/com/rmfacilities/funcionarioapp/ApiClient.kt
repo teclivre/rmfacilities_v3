@@ -39,6 +39,13 @@ class ApiClient(private val session: SessionManager) {
             builder.authenticator(okhttp3.Authenticator { _, response ->
                 authRetryRequest(response)
             })
+            builder.addInterceptor { chain ->
+                val resp = chain.proceed(chain.request())
+                if (resp.code == 401 || resp.code == 403) {
+                    handleUnauthorized()
+                }
+                resp
+            }
         }
         return builder.build()
     }
