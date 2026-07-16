@@ -4209,7 +4209,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div class="g4">
         <div class="f s2">
           <label>Escala de turnos</label>
-          <select id="fescala" onchange="rhFuncionarioEscalaSincronizarDataInicio()">
+          <select id="fescala">
             <option value="">Sem alteração de escala</option>
           </select>
           <div id="fescala-st" class="hint" style="margin-top:4px"></div>
@@ -7346,7 +7346,6 @@ async function rhFuncionarioEscalaCarregarNoModal(fid=null){
   _rhFuncEscalaAtual={escala_id:'',data_inicio:'',data_fim:''};
   if(valAtual && rhEscalas.some(e=>String(e.id)===String(valAtual))){
     sel.value=valAtual;
-    rhFuncionarioEscalaSincronizarDataInicio(true);
   }else{
     sel.value='';
   }
