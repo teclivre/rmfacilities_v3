@@ -20367,6 +20367,7 @@ def api_escala_vincular_funcionarios(id):
             continue
 
         # BUG-FIX 7: verificar sobreposição na MESMA escala (não apenas em outra)
+        # Se substituir_escala_atual=true, permitir editar vínculo existente na mesma escala
         conflito_mesmo = EscalaFuncionario.query.filter(
             EscalaFuncionario.funcionario_id == fid,
             EscalaFuncionario.escala_id == id,
@@ -20377,11 +20378,18 @@ def api_escala_vincular_funcionarios(id):
                 EscalaFuncionario.data_fim >= data_ini,
             ),
         ).first()
-        if conflito_mesmo:
+        if conflito_mesmo and not substituir_escala_atual:
             return jsonify({
                 "erro": f"Funcionário {f.nome} já está vinculado a esta escala em período sobreposto. Encerre o vínculo existente antes de criar outro.",
                 "conflito_funcionario_id": fid,
             }), 409
+        
+        # Se substituir_escala_atual=true e há conflito na mesma escala, atualizar em vez de criar novo
+        if conflito_mesmo and substituir_escala_atual:
+            conflito_mesmo.data_inicio = data_ini
+            conflito_mesmo.data_fim = data_fim
+            vinculados.append(fid)
+            continue
 
         # BUG-FIX 8 & 9: verificar conflito em OUTRA escala, considerando data_fim
         # Bug 8: registro com data_fim=None (ativo sem prazo) conflita sempre
