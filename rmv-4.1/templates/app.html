@@ -714,6 +714,19 @@ document.addEventListener('DOMContentLoaded',()=>{
 
     <div class="sidebar-bottom">
       <button class="btn-top" type="button" id="theme-toggle" onclick="toggleTheme()" title="Alternar tema">🌙 Dark</button>
+      <div style="position:relative">
+        <button class="btn-top" type="button" id="btn-notificacoes" onclick="togglePainelNotificacoes()" title="Notificações" aria-label="Notificações" style="position:relative;min-width:44px">
+          🔔
+          <span id="top-notif-badge" style="display:none;position:absolute;top:-6px;right:-6px;background:var(--verm);color:#fff;border-radius:10px;padding:0 6px;font-size:11px;line-height:18px;min-width:18px;text-align:center">0</span>
+        </button>
+        <div id="top-notif-panel" style="display:none;position:absolute;right:0;bottom:52px;width:340px;max-width:calc(100vw - 24px);background:var(--branco);color:var(--preto);border:1px solid var(--borda);border-radius:10px;box-shadow:var(--shadow-md);z-index:1600;overflow:hidden">
+          <div style="padding:10px 12px;border-bottom:1px solid var(--borda);display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <strong style="font-size:13px">Notificações</strong>
+            <button class="btn b-gh b-sm" type="button" onclick="atualizarSininhoNotificacoes()" style="padding:2px 8px">Atualizar</button>
+          </div>
+          <div id="top-notif-list" style="max-height:260px;overflow:auto;padding:8px 10px;font-size:12px;color:var(--text-muted)">Sem notificações no momento.</div>
+        </div>
+      </div>
       <div class="topbar-user">
         <div style="font-weight:700">{{ nome }}</div>
         <div id="relogio"></div>
@@ -4816,6 +4829,96 @@ function toggleTheme(){
   applyTheme(next);
 }
 
+let _notifPanelOpen=false;
+
+function _notifBadgeSet(total){
+  const badge=document.getElementById('top-notif-badge');
+  if(!badge) return;
+  const n=Math.max(0,parseInt(total||0,10)||0);
+  if(n>0){
+    badge.style.display='';
+    badge.textContent=n>99?'99+':String(n);
+  }else{
+    badge.style.display='none';
+  }
+}
+
+function togglePainelNotificacoes(){
+  const panel=document.getElementById('top-notif-panel');
+  if(!panel) return;
+  _notifPanelOpen=!_notifPanelOpen;
+  panel.style.display=_notifPanelOpen?'block':'none';
+  if(_notifPanelOpen) atualizarSininhoNotificacoes();
+}
+
+function _notifRenderList(msgs, pendencias){
+  const box=document.getElementById('top-notif-list');
+  if(!box) return;
+  const itens=[];
+  if(msgs>0){
+    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start;margin-bottom:6px" onclick="_notifAbrirChatApp()">💬 ${msgs} mensagem(ns) não lida(s) no Chat App</button>`);
+  }
+  if((pendencias.correcoes||0)>0){
+    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start;margin-bottom:6px" onclick="_notifAbrirRH()">📋 ${pendencias.correcoes} correção(ões) de ponto pendente(s)</button>`);
+  }
+  if((pendencias.beneficios||0)>0){
+    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start;margin-bottom:6px" onclick="_notifAbrirBeneficios()">🎯 ${pendencias.beneficios} benefício(s) pendente(s)</button>`);
+  }
+  if((pendencias.calculos||0)>0){
+    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start;margin-bottom:6px" onclick="_notifAbrirBeneficios()">🧮 ${pendencias.calculos} cálculo(s) pendente(s)</button>`);
+  }
+  if((pendencias.aso||0)>0){
+    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start" onclick="_notifAbrirRH()">⚠️ ${pendencias.aso} colaborador(es) sem ASO válido</button>`);
+  }
+  box.innerHTML=itens.length?itens.join(''):'Sem notificações no momento.';
+}
+
+function _notifAbrirChatApp(){
+  _notifPanelOpen=false;
+  const panel=document.getElementById('top-notif-panel');
+  if(panel) panel.style.display='none';
+  nav('rh-digital',document.querySelector('.nav-item[onclick*="rh-digital"]'));
+  setTimeout(()=>{
+    const btn=document.querySelector('#rhd-tabs .btn[onclick*="mensagens-app"]');
+    if(btn) switchTab('rhd','mensagens-app',btn);
+  },160);
+}
+
+function _notifAbrirRH(){
+  _notifPanelOpen=false;
+  const panel=document.getElementById('top-notif-panel');
+  if(panel) panel.style.display='none';
+  nav('rh',document.querySelector('.nav-item[data-nav="rh"]'));
+}
+
+function _notifAbrirBeneficios(){
+  _notifPanelOpen=false;
+  const panel=document.getElementById('top-notif-panel');
+  if(panel) panel.style.display='none';
+  nav('beneficios',document.querySelector('.nav-item[onclick*="beneficios"]'));
+}
+
+async function atualizarSininhoNotificacoes(dashCache=null){
+  try{
+    const [msgResp,dashResp]=await Promise.all([
+      api('/api/mensagens-app/nao-lidas-total'),
+      dashCache?Promise.resolve(dashCache):api('/api/dashboard')
+    ]);
+    const msgs=Math.max(0,parseInt(msgResp?.nao_lidas||0,10)||0);
+    const pendencias={
+      correcoes:Math.max(0,parseInt(dashResp?.correcoes_ponto_pendentes||0,10)||0),
+      beneficios:Math.max(0,parseInt(dashResp?.alerta_beneficios_pendentes?.qtd||0,10)||0),
+      calculos:Math.max(0,parseInt(dashResp?.alerta_calculo_beneficios?.qtd||0,10)||0),
+      aso:Math.max(0,parseInt(dashResp?.alerta_sem_aso_valido?.qtd||0,10)||0),
+    };
+    const total=msgs+pendencias.correcoes+pendencias.beneficios+pendencias.calculos+pendencias.aso;
+    _notifBadgeSet(total);
+    _notifRenderList(msgs,pendencias);
+  }catch(_){
+    _notifBadgeSet(0);
+  }
+}
+
 async function api(url,m='GET',b=null){
   try{
     const o={method:m,headers:{'Content-Type':'application/json'},credentials:'same-origin'};
@@ -4966,6 +5069,7 @@ async function init(){
   montarSubAbasBloco();
   ativarSubAbaPagina('dashboard');
   _initSSE();
+  await atualizarSininhoNotificacoes();
 }
 
 // ── Auto-update via SSE ───────────────────────────────────────────────────────
@@ -5029,6 +5133,16 @@ function tick(){
     rel.innerHTML=n.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'})+'<br>'+n.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   }
 }
+
+document.addEventListener('click',function(e){
+  if(!_notifPanelOpen) return;
+  const panel=document.getElementById('top-notif-panel');
+  const btn=document.getElementById('btn-notificacoes');
+  if(!panel || !btn) return;
+  if(panel.contains(e.target) || btn.contains(e.target)) return;
+  _notifPanelOpen=false;
+  panel.style.display='none';
+});
 
 async function loadProxNum(){
   const d=await api('/api/proximo-numero');
@@ -5223,6 +5337,7 @@ async function loadDash(){
   } else {
     de.innerHTML='';
   }
+  await atualizarSininhoNotificacoes(d);
 }
 
 async function loadFaturamentoAlert(){
@@ -14945,6 +15060,7 @@ async function mapsVerificarBadgeGlobal(){
     const d=await api('/api/mensagens-app/nao-lidas-total');
     const b=document.getElementById('badge-msgs-app');
     if(b){if(d.nao_lidas>0){b.textContent=d.nao_lidas;b.style.display='';}else b.style.display='none';}
+    await atualizarSininhoNotificacoes();
   }catch(e){}
 }
 
