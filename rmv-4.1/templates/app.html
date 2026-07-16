@@ -1877,6 +1877,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <details id="fer-form-novo" open style="margin-bottom:14px">
           <summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--azul);padding:6px 0">&#43; Adicionar feriado manual</summary>
+          <input id="fer-id-edit" type="hidden" value="">
           <div class="g4" style="margin-top:10px">
             <div class="f"><label>Data</label><input id="fer-data" type="date"></div>
             <div class="f"><label>Descrição</label><input id="fer-desc" placeholder="Ex: Aniversário da Cidade" maxlength="200"></div>
@@ -13372,7 +13373,10 @@ function ferRenderTabela(){
       <td>${escHtml(f.municipio||'')}</td>
       <td>${escHtml(f.estado||'')}</td>
       <td>${f.tipo==='nacional' ? 'Nacional (todos)' : ((f.postos_operacionais||[]).length ? ('Postos: '+(f.postos_operacionais||[]).map(p=>escHtml(p)).join(', ')) : ((f.qtd_funcionarios||0)>0 ? ((f.qtd_funcionarios||0)+' funcionário(s)') : 'Todos os postos (inclui reserva técnica)'))}</td>
-      <td><button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);border:1px solid var(--verm);padding:2px 8px" onclick="ferExcluir(${f.id})">&#128465;</button></td>
+      <td style="display:flex;gap:4px;justify-content:center">
+        <button class="btn b-sm" style="background:var(--azul-cl);color:var(--azul);border:1px solid var(--azul);padding:2px 8px" onclick="ferEditar(${f.id})" title="Editar">✎</button>
+        <button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);border:1px solid var(--verm);padding:2px 8px" onclick="ferExcluir(${f.id})">🗑</button>
+      </td>
     </tr>`).join('');
 }
 
@@ -13383,6 +13387,7 @@ async function ferSalvar(){
   const municipio=document.getElementById('fer-municipio').value.trim();
   const estado=document.getElementById('fer-estado').value.trim();
   const postos=Array.from(document.getElementById('fer-posto')?.selectedOptions||[]).map(o=>(o.value||'').trim()).filter(Boolean);
+  const idEdit=document.getElementById('fer-id-edit').value.trim();
   const st=document.getElementById('fer-status');
   if(!data){st.textContent='Informe a data.';st.style.color='var(--verm-cl)';return;}
   if(!desc){st.textContent='Informe a descrição.';st.style.color='var(--verm-cl)';return;}
@@ -13391,23 +13396,32 @@ async function ferSalvar(){
   // converte YYYY-MM-DD -> DD/MM/YYYY para envio
   const [y,m,d]=data.split('-');
   const dataEnvio=`${d}/${m}/${y}`;
-  const r=await fetch('/api/feriados',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      data:dataEnvio,
-      descricao:desc,
-      tipo,
-      municipio,
-      estado,
-      postos_operacionais:postos
-    })});
+  
+  const payload={
+    data:dataEnvio,
+    descricao:desc,
+    tipo,
+    municipio,
+    estado,
+    postos_operacionais:postos
+  };
+  
+  const method=idEdit?'PUT':'POST';
+  const url=idEdit?`/api/feriados/${idEdit}`:'/api/feriados';
+  
+  const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   const j=await r.json();
   if(j.ok){
-    st.textContent='Feriado salvo com sucesso!';st.style.color='var(--azul)';
+    st.textContent=idEdit?'Feriado atualizado com sucesso!':'Feriado salvo com sucesso!';st.style.color='var(--azul)';
     document.getElementById('fer-data').value='';
     document.getElementById('fer-desc').value='';
     document.getElementById('fer-municipio').value='';
     document.getElementById('fer-estado').value='';
     document.getElementById('fer-tipo').value='municipal';
+    document.getElementById('fer-id-edit').value='';
+    // Reseta botão para "Salvar"
+    const btnSalvar=Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Atualizar feriado'));
+    if(btnSalvar) btnSalvar.textContent='💾 Salvar feriado';
     // Limpa seleção de postos para o próximo cadastro
     Array.from(document.getElementById('fer-posto')?.options||[]).forEach(o=>o.selected=false);
     ferCarregar();
@@ -13425,6 +13439,43 @@ async function ferExcluir(id){
     st.textContent='Feriado excluído.';st.style.color='var(--azul)';
     ferCarregar();
   }
+}
+
+async function ferEditar(id){
+  const feriado=_feriadosData.find(f=>f.id===id);
+  if(!feriado) return;
+  
+  // Preenchendo o formulário com dados do feriado
+  const [d,m,y]=feriado.data.split('/');
+  document.getElementById('fer-data').value=`${y}-${m}-${d}`;
+  document.getElementById('fer-desc').value=feriado.descricao||'';
+  document.getElementById('fer-tipo').value=feriado.tipo||'municipal';
+  document.getElementById('fer-municipio').value=feriado.municipio||'';
+  document.getElementById('fer-estado').value=feriado.estado||'';
+  ferTipoChange(feriado.tipo||'municipal');
+  
+  // Selecionar os postos
+  const sel=document.getElementById('fer-posto');
+  if(sel){
+    const postos_selecionados=(feriado.postos_operacionais||[]);
+    Array.from(sel.options).forEach(opt=>{
+      opt.selected=postos_selecionados.includes(opt.value);
+    });
+  }
+  
+  // Armazenar ID do feriado em edição
+  document.getElementById('fer-id-edit').value=id;
+  
+  // Mudar rótulo do botão
+  const btnSalvar=Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Salvar feriado'));
+  if(btnSalvar) btnSalvar.textContent='📝 Atualizar feriado';
+  
+  // Expandir formulário
+  const formNovo=document.getElementById('fer-form-novo');
+  if(formNovo) formNovo.open=true;
+  
+  // Focus no primeiro campo
+  document.getElementById('fer-data').focus();
 }
 
 async function ferAtualizarNacionais(){
