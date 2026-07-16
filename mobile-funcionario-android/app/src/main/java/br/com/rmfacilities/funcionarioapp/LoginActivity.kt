@@ -209,6 +209,7 @@ class LoginActivity : AppCompatActivity() {
                     if (!resp.refresh_token.isNullOrBlank()) {
                         session.refreshToken = resp.refresh_token
                     }
+                    session.markLoginSuccess(label = android.os.Build.MODEL)
                     session.touchActivity()
                     goHomeOrDeepLink()
                 } else {
@@ -406,6 +407,7 @@ class LoginActivity : AppCompatActivity() {
                     if (!resp.refresh_token.isNullOrBlank()) {
                         session.refreshToken = resp.refresh_token
                     }
+                    session.markLoginSuccess(label = android.os.Build.MODEL)
                     session.touchActivity()
                     goHomeOrDeepLink()
                 } else {

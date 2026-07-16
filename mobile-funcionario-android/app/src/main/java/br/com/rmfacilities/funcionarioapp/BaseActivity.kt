@@ -73,7 +73,13 @@ abstract class BaseActivity : AppCompatActivity() {
             goLogin()
             return
         }
+        sess.touchActivity()
         checkAppVersionIfNeeded(sess)
+    }
+
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        provideSession()?.touchActivity()
     }
 
     private fun checkAppVersionIfNeeded(session: SessionManager) {

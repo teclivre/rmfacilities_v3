@@ -39,6 +39,12 @@ class SessionManager(private val context: Context) {
         }
         prefs = resolved
         keystoreFailed = failed
+
+        // Migração de compatibilidade: sessões antigas podem não ter trusted_device_until.
+        // Se já existe access token, evita forçar logout por timeout curto logo após atualizar o app.
+        if (trustedDeviceUntil <= 0L && accessToken.isNotBlank()) {
+            markLoginSuccess(label = android.os.Build.MODEL)
+        }
     }
 
     var apiBaseUrl: String
