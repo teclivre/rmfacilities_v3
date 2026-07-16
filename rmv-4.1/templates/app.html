@@ -7365,14 +7365,6 @@ async function rhFuncionarioAplicarEscala(fid,forceFeedback=false){
   const atualIni=String(_rhFuncEscalaAtual?.data_inicio||'');
   if(atualId===String(eid) && atualIni===String(dataIni)) return true;
 
-  if(atualId===String(eid) && atualIni && atualIni!==String(dataIni)){
-    rhFuncionarioEscalaDefinirStatus('Para alterar a data de início da escala atual, faça a troca para outra escala e salve novamente.');
-    const dtEl=document.getElementById('fescala-data-ini');
-    if(dtEl) dtEl.value=atualIni;
-    if(forceFeedback) showSt('st-rh','A data de início da escala atual não pode ser alterada diretamente.',true);
-    return false;
-  }
-
   const r=await api('/api/escalas/'+eid+'/funcionarios','POST',{
     funcionarios:[{funcionario_id:fid,data_inicio:dataIni,data_fim:null}],
     substituir_escala_atual:true,
