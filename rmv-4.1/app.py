@@ -2991,8 +2991,10 @@ class MensagemApp(db.Model):
         )
         if self.arquivo_caminho:
             d["arquivo_url"] = f"/api/app/funcionario/mensagens/{self.id}/arquivo"
+            d["arquivo_admin_url"] = f"/api/mensagens-app/{self.id}/arquivo"
         else:
             d["arquivo_url"] = None
+            d["arquivo_admin_url"] = None
         return d
 
 
@@ -21032,6 +21034,34 @@ def api_rh_mensagem_responder(fid):
     resp["push_enviado"] = bool(push_enviado)
     resp["push_token_presente"] = tem_token_push
     return jsonify(resp), 201
+
+
+@app.route("/api/mensagens-app/<int:mid>/arquivo")
+@lr
+def api_rh_mensagem_download_arquivo(mid):
+    m = db.get_or_404(MensagemApp, mid)
+    if not m.arquivo_caminho:
+        return jsonify({"erro": "Mensagem sem arquivo"}), 404
+    f = db.session.get(Funcionario, m.funcionario_id)
+    if not f:
+        return jsonify({"erro": "Funcionario nao encontrado"}), 404
+    uid = session.get("uid")
+    perfil = (session.get("perfil") or "").strip().lower()
+    if perfil != "dono" and uid:
+        try:
+            from sqlalchemy import text as _sqlt_msg_arq
+            u = db.session.execute(
+                _sqlt_msg_arq("SELECT empresa_id FROM usuario WHERE id = :uid"),
+                {"uid": int(uid)},
+            ).first()
+            if u and u[0] and f.empresa_id and int(u[0]) != int(f.empresa_id):
+                return jsonify({"erro": "Acesso negado."}), 403
+        except Exception:
+            pass
+    abs_p = os.path.join(UPLOAD_ROOT, m.arquivo_caminho)
+    if not os.path.exists(abs_p):
+        return jsonify({"erro": "Arquivo nao encontrado"}), 404
+    return send_file(abs_p, as_attachment=True, download_name=m.arquivo_nome or "arquivo")
 
 
 @app.route("/api/mensagens-app/nao-lidas-total")

@@ -14962,9 +14962,14 @@ async function mapsCarregarChat(silencioso=false){
       const bg=deRh?'var(--az)':'var(--cinza-md,#2a3a4a)';
       const cor=deRh?'#fff':'var(--text)';
       const label=deRh?'RH':_mapsNomeAtual;
+      const arqUrl=m.arquivo_admin_url||m.arquivo_url||'';
+      const arqNome=escHtml(m.arquivo_nome||'Arquivo');
+      const arqHtml=(m.tipo==='arquivo'&&arqUrl)
+        ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12);font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span>📎 <strong>${arqNome}</strong></span><a href="${escHtml(arqUrl)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">Abrir anexo</a></div>`
+        : '';
       return `<div style="display:flex;flex-direction:column;align-items:${align}">
         <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">${label}</div>
-        <div style="background:${bg};color:${cor};padding:8px 12px;border-radius:12px;max-width:78%;font-size:13px;line-height:1.4;word-break:break-word">${escHtml(m.conteudo)}</div>
+        <div style="background:${bg};color:${cor};padding:8px 12px;border-radius:12px;max-width:78%;font-size:13px;line-height:1.4;word-break:break-word">${escHtml(m.conteudo)}${arqHtml}</div>
         <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${m.enviado_fmt||''}</div>
       </div>`;
     }).join('');
@@ -14979,12 +14984,15 @@ async function mapsEnviar(){
   if(!txt)return;
   const btn=document.getElementById('maps-btn-enviar');
   btn.disabled=true;inp.disabled=true;
+  inp.value='';
   try{
     const r=await api('/api/mensagens-app/'+_mapsFidAtual,'POST',{conteudo:txt});
-    if(r.erro){alert(r.erro);return;}
-    inp.value='';
+    if(r.erro){alert(r.erro);inp.value=txt;return;}
     await mapsCarregarChat();
-  }catch(e){alert('Erro ao enviar mensagem.');}
+  }catch(e){
+    inp.value=txt;
+    alert('Erro ao enviar mensagem.');
+  }
   finally{btn.disabled=false;inp.disabled=false;inp.focus();}
 }
 
@@ -15072,10 +15080,12 @@ async function mapsEnviarBroadcast(){
   const dest=fidSel?`1 funcionário`:(posto?`posto "${posto}"`:(empId?`empresa selecionada`:'todos os ativos'));
   if(!confirm(`Enviar mensagem para ${dest}?\n\n"${msg.substring(0,100)}${msg.length>100?'…':''}"`))return;
   const body={conteudo:msg};
+  const bcMsgEl=document.getElementById('bc-msg');
+  if(bcMsgEl) bcMsgEl.value='';
   if(fidSel){
     // Enviar para apenas um via endpoint normal de chat
     const r=await api('/api/mensagens-app/'+fidSel,'POST',{conteudo:msg});
-    if(r.erro){showSt('bc-st',r.erro,true);return;}
+    if(r.erro){showSt('bc-st',r.erro,true);if(bcMsgEl) bcMsgEl.value=msg;return;}
     if(r.push_enviado){
       showSt('bc-st','Mensagem enviada para o app (push entregue).',false);
     }else if(r.push_token_presente===false){
@@ -15087,7 +15097,7 @@ async function mapsEnviarBroadcast(){
     if(empId)body.empresa_id=parseInt(empId);
     if(posto)body.posto=posto;
     const r=await api('/api/mensagens-app/broadcast','POST',body);
-    if(r.erro){showSt('bc-st',r.erro,true);return;}
+    if(r.erro){showSt('bc-st',r.erro,true);if(bcMsgEl) bcMsgEl.value=msg;return;}
     const semToken=Number(r.sem_token_push||0);
     const pushFalhou=Number(r.push_falhou||0);
     const pushOk=Number(r.push_enviados||0);
@@ -15096,7 +15106,6 @@ async function mapsEnviarBroadcast(){
     const detalhe=`Total: ${total}. Push ok: ${pushOk}. Sem token: ${semToken}. Push falhou: ${pushFalhou}.`;
     showSt('bc-st',detalhe,comRisco>0);
   }
-  document.getElementById('bc-msg').value='';
   await mapsCarregarFuncionarios();
   await mapsCarregarBadge();
 }

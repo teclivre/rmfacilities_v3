@@ -1190,9 +1190,16 @@ function loadChat(){
     }
     box.innerHTML=msgs.map(function(m){
       var ts=m.enviado_em?fmtTs(m.enviado_em):'';
+      var arqUrl=m.arquivo_url||m.arquivo_admin_url||'';
+      var arqHtml=(m.tipo==='arquivo'&&arqUrl)
+        ? '<div class="msg-attach" style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12);font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+          +'<span>📎 <strong>'+esc(m.arquivo_nome||'Arquivo')+'</strong></span>'
+          +'<a href="'+esc(arqUrl)+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">Abrir anexo</a>'
+          +'</div>'
+        : '';
       return '<div class="msg-item '+(m.de_rh?'de-rh':'de-func')+'">'
         +'<div>'+(m.de_rh?'<div class="rh-label">RH</div>':'')
-        +'<div class="msg-bubble">'+esc(m.conteudo||'')+'</div>'
+        +'<div class="msg-bubble">'+esc(m.conteudo||'')+arqHtml+'</div>'
         +'<div class="msg-time">'+ts+'</div></div></div>';
     }).join('');
     box.scrollTop=box.scrollHeight;
@@ -1203,7 +1210,7 @@ function enviarMsg(){
   var inp=document.getElementById('chat-inp'),txt=inp.value.trim();
   if(!txt)return;inp.value='';
   api('POST','/api/app/funcionario/mensagens',{conteudo:txt})
-    .then(function(){loadChat();})
+    .then(function(){loadChat();inp.value='';})
     .catch(function(e){showToast(e.message||'Erro ao enviar',true);inp.value=txt;});
 }
 
