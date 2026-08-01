@@ -10672,6 +10672,8 @@ function lpRenderizar(items) {
             onclick='pcAbrirModalEnvio(${p.id}, ${JSON.stringify(p.numero)}, ${JSON.stringify(p.email_contato||"")}, "")'>📨 Enviar</button>
           <button class="btn b-sm" style="font-size:11px;background:#2e7d32;color:#fff;white-space:nowrap"
             onclick="window.open('/api/propostas-comerciais/${p.id}/pdf','_blank')">⬇ Baixar</button>
+          <button class="btn b-sm" style="font-size:11px;background:#c62828;color:#fff;white-space:nowrap"
+            onclick='lpExcluirProposta(${p.id}, ${JSON.stringify(p.numero||"")}, ${JSON.stringify(p.empresa||"")})'>🗑 Excluir</button>
         </div>
       </td>
     </tr>`;
@@ -10707,6 +10709,21 @@ async function lpAtualizarStatus(id, status, selectEl) {
   } catch(e) {
     alert('Erro ao atualizar status.');
     lpCarregar(_lpPage);
+  }
+}
+
+async function lpExcluirProposta(id, numero, empresa) {
+  const alvo = [numero, empresa].filter(Boolean).join(' · ');
+  if (!confirm(`Excluir esta proposta?\n\n${alvo || `ID ${id}`}\n\nEsta ação não pode ser desfeita.`)) return;
+  try {
+    const res = await api(`/api/propostas-comerciais/${id}`, 'DELETE');
+    if (res?.erro) {
+      alert(res.erro);
+      return;
+    }
+    lpCarregar(_lpPage);
+  } catch (e) {
+    alert('Erro ao excluir proposta.');
   }
 }
 // ── FIM LISTA DE PROPOSTAS ───────────────────────────────────────────────────

@@ -15088,6 +15088,26 @@ def api_get_proposta_comercial(pid):
     return jsonify(p.to_dict())
 
 
+@app.route("/api/propostas-comerciais/<int:pid>", methods=["DELETE"])
+@lr
+def api_delete_proposta_comercial(pid):
+    p = db.get_or_404(PropostaComercial, pid)
+    numero = p.numero
+    empresa = p.empresa
+    db.session.delete(p)
+    db.session.commit()
+    audit_event(
+        "proposta_excluida",
+        "proposta",
+        pid,
+        None,
+        None,
+        True,
+        {"numero": numero, "empresa": empresa},
+    )
+    return jsonify({"ok": True, "numero": numero})
+
+
 @app.route("/api/propostas-comerciais/<int:pid>/pdf", methods=["GET"])
 @lr
 def api_download_proposta_comercial_pdf(pid):
