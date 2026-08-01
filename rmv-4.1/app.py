@@ -1559,6 +1559,7 @@ class PropostaComercial(db.Model):
     cliente_contato = db.Column(db.String(150))
     email_contato = db.Column(db.String(150))
     escopo_observacoes = db.Column(db.Text)
+    insalubridade = db.Column(db.String(80), default="20% Insalubridade")
     remetente_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
     itens = db.Column(db.Text, default="[]")  # JSON
     total = db.Column(db.String(50))
@@ -14436,6 +14437,7 @@ def _gerar_proposta_comercial_pdf(
     ref_num=None,
     tipo=None,
     escopo_observacoes=None,
+    insalubridade=None,
 ):
     """Gera PDF da Proposta Comercial com os campos dinâmicos preenchidos.
     remetente: dict da empresa remetente (campos do modelo Empresa), ou None para defaults.
@@ -14786,11 +14788,12 @@ def _gerar_proposta_comercial_pdf(
         f"Todos os funcionários da {rem_nome} possuem os seguintes benefícios de acordo com a convenção coletiva;",
     ]:
         elems.append(Paragraph(txt, s_normal))
+    insalubridade_txt = (insalubridade or "20% Insalubridade").strip()
     for txt in [
         "Seguro de Vida em grupo;",
         "Vale Transporte;",
         "Vale Alimentação",
-        "20% Insalubridade",
+        insalubridade_txt,
         "Uniforme;",
         "EPI's;",
     ]:
@@ -14914,6 +14917,7 @@ def api_gerar_proposta_comercial():
     cliente = (d.get("cliente") or "").strip()
     email = (d.get("email") or "").strip()
     escopo_observacoes = (d.get("escopo_observacoes") or "").strip()
+    insalubridade = (d.get("insalubridade") or "20% Insalubridade").strip()
     itens = d.get("itens") or None
     tipo = (d.get("tipo") or "mensal").strip().lower()
 
@@ -14978,6 +14982,7 @@ def api_gerar_proposta_comercial():
             cliente_contato=cliente,
             email_contato=email,
             escopo_observacoes=escopo_observacoes,
+            insalubridade=insalubridade,
             remetente_id=int(remetente_id) if remetente_id else None,
             itens=_json.dumps(itens or [], ensure_ascii=False),
             total=total_str,
@@ -15009,6 +15014,7 @@ def api_gerar_proposta_comercial():
             ref_num=ref_num,
             tipo=tipo,
             escopo_observacoes=escopo_observacoes,
+            insalubridade=insalubridade,
         )
     except Exception as e:
         app.logger.exception("Erro ao gerar proposta comercial")
@@ -15082,6 +15088,55 @@ def api_get_proposta_comercial(pid):
     return jsonify(p.to_dict())
 
 
+@app.route("/api/propostas-comerciais/<int:pid>/pdf", methods=["GET"])
+@lr
+def api_download_proposta_comercial_pdf(pid):
+    import json as _json
+
+    p = db.get_or_404(PropostaComercial, pid)
+    remetente = None
+    if p.remetente_id:
+        try:
+            emp = db.session.get(Empresa, p.remetente_id)
+            if emp:
+                remetente = emp.to_dict()
+        except Exception:
+            pass
+
+    try:
+        itens = _json.loads(p.itens or "[]")
+    except Exception:
+        itens = []
+
+    try:
+        buf = _gerar_proposta_comercial_pdf(
+            p.empresa,
+            p.cnpj_dest,
+            p.funcao,
+            p.data_proposta,
+            p.cliente_contato,
+            p.email_contato,
+            itens,
+            remetente=remetente,
+            ref_num=p.numero,
+            tipo=p.tipo,
+            escopo_observacoes=p.escopo_observacoes,
+            insalubridade=p.insalubridade,
+        )
+    except Exception as e:
+        app.logger.exception("Erro ao regenerar PDF da proposta para download")
+        return jsonify({"erro": f"Erro ao gerar PDF: {e}"}), 500
+
+    nome_arq = _clean_file_part(p.empresa or "proposta") or "proposta"
+    filename = f"Proposta_Comercial_{p.numero}_{nome_arq}.pdf"
+    return send_file(
+        buf,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
 @app.route("/api/propostas-comerciais/<int:pid>/status", methods=["PATCH"])
 @lr
 def api_atualizar_status_proposta(pid):
@@ -15153,6 +15208,7 @@ def api_enviar_proposta_comercial(pid):
                 ref_num=p.numero,
                 tipo=p.tipo,
                 escopo_observacoes=p.escopo_observacoes,
+                insalubridade=p.insalubridade,
             )
             pdf_buf.seek(0)
         except Exception as e:
@@ -15218,6 +15274,7 @@ def api_enviar_proposta_comercial(pid):
                 ref_num=p.numero,
                 tipo=p.tipo,
                 escopo_observacoes=p.escopo_observacoes,
+                insalubridade=p.insalubridade,
             )
             pdf_buf.seek(0)
             pdf_bytes = pdf_buf.read()
@@ -34279,6 +34336,7 @@ with app.app_context():
             "email_enviado_em DATETIME",
             "whatsapp_enviado_em DATETIME",
             "escopo_observacoes TEXT",
+            'insalubridade VARCHAR(80) DEFAULT "20% Insalubridade"',
         ],
     )
     # Cria tabela contrato se não existir (ensure_cols não cria tabelas novas)

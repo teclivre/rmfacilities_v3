@@ -3351,7 +3351,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
           </div>
 
-          <div class="g3" style="margin-bottom:14px;gap:14px">
+          <div class="g4" style="margin-bottom:14px;gap:14px">
             <div class="f" style="flex:2">
               <label>Serviço / Função</label>
               <input id="pc-funcao" type="text" placeholder="Ex: limpeza, portaria, conservação..." style="width:100%">
@@ -3366,6 +3366,10 @@ document.addEventListener('DOMContentLoaded',()=>{
                 <option value="mensal">Mensal</option>
                 <option value="spot">SPOT (pontual)</option>
               </select>
+            </div>
+            <div class="f">
+              <label>Texto de insalubridade</label>
+              <input id="pc-insalubridade" type="text" value="20% Insalubridade" placeholder="Ex: 40% Insalubridade" style="width:100%">
             </div>
           </div>
 
@@ -10354,12 +10358,65 @@ function docsSetAba(aba, el) {
   });
 }
 
+function pcLimparFormulario() {
+  const ids = ['pc-cnpj', 'pc-empresa', 'pc-funcao', 'pc-cliente', 'pc-email', 'pc-telefone', 'pc-escopo-obs', 'pc-busca', 'pc-rem-busca'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+
+  const pcData = document.getElementById('pc-data');
+  if (pcData) pcData.value = new Date().toISOString().split('T')[0];
+  const pcTipo = document.getElementById('pc-tipo');
+  if (pcTipo) pcTipo.value = 'mensal';
+  const pcIns = document.getElementById('pc-insalubridade');
+  if (pcIns) pcIns.value = '20% Insalubridade';
+
+  const cliSel = document.getElementById('pc-cli-sel');
+  if (cliSel) cliSel.style.display = 'none';
+  const remSel = document.getElementById('pc-rem-sel');
+  if (remSel) remSel.style.display = 'none';
+  const acCli = document.getElementById('pc-ac');
+  if (acCli) acCli.style.display = 'none';
+  const acRem = document.getElementById('pc-rem-ac');
+  if (acRem) acRem.style.display = 'none';
+  const stCnpj = document.getElementById('pc-cnpj-st');
+  if (stCnpj) {
+    stCnpj.style.display = 'none';
+    stCnpj.textContent = '';
+  }
+
+  _pcEmpresaRemSel = null;
+  const tbody = document.getElementById('pc-itens-body');
+  if (tbody) {
+    tbody.innerHTML = `
+      <tr>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="1" style="width:38px;text-align:center"></td>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="Limpeza" placeholder="Referência" style="width:98px"></td>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="AGENTES DE LIMPEZA 44 HORAS SEMANAIS" placeholder="Descrição do serviço" style="width:100%"></td>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="number" min="1" value="1" style="width:52px;text-align:center" oninput="pcRecalcRow(this.closest('tr'))"></td>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="0,00" style="width:100px;text-align:right" oninput="pcRecalcRow(this.closest('tr'))"></td>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" readonly tabindex="-1" placeholder="0,00" style="width:100px;text-align:right;background:var(--azul-cc);cursor:default"></td>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--borda);text-align:center"><button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);padding:2px 7px" onclick="this.closest('tr').remove();pcRecalcTotal()">✕</button></td>
+      </tr>`;
+  }
+
+  pcRecalcTotal();
+  const res = document.getElementById('pc-resultado');
+  if (res) {
+    res.style.display = 'none';
+    res.innerHTML = '';
+  }
+}
+
 async function docsAbrirProposta() {
   docsSetAba('proposta');
   const pcData = document.getElementById('pc-data');
   if (pcData && !pcData.value) {
     pcData.value = new Date().toISOString().split('T')[0];
   }
+  const pcIns = document.getElementById('pc-insalubridade');
+  if (pcIns && !pcIns.value.trim()) pcIns.value = '20% Insalubridade';
   // Garante que os clientes estão carregados para o autocomplete de destinatária
   if (!Array.isArray(todos) || !todos.length) todos = await api('/api/clientes');
   // Carrega empresas remetentes
@@ -10610,8 +10667,12 @@ function lpRenderizar(items) {
         </select>
       </td>
       <td>
-        <button class="btn b-sm" style="font-size:11px;background:#205d8a;color:#fff;white-space:nowrap"
-          onclick='pcAbrirModalEnvio(${p.id}, ${JSON.stringify(p.numero)}, ${JSON.stringify(p.email_contato||"")}, "")'>📨 Enviar</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn b-sm" style="font-size:11px;background:#205d8a;color:#fff;white-space:nowrap"
+            onclick='pcAbrirModalEnvio(${p.id}, ${JSON.stringify(p.numero)}, ${JSON.stringify(p.email_contato||"")}, "")'>📨 Enviar</button>
+          <button class="btn b-sm" style="font-size:11px;background:#2e7d32;color:#fff;white-space:nowrap"
+            onclick="window.open('/api/propostas-comerciais/${p.id}/pdf','_blank')">⬇ Baixar</button>
+        </div>
       </td>
     </tr>`;
   }).join('');
@@ -10725,6 +10786,7 @@ async function pcEnviarProposta() {
   btn.disabled = false;
   _mepToggleCanal(canal);
   if (envioOk) {
+    pcLimparFormulario();
     setTimeout(() => pcFecharModalEnvio(), 350);
   }
 }
@@ -10967,6 +11029,7 @@ function previaProposta() {
   const dataVal = document.getElementById('pc-data').value;
   const cliente = document.getElementById('pc-cliente').value.trim();
   const email = document.getElementById('pc-email').value.trim();
+  const insalubridade = (document.getElementById('pc-insalubridade')?.value || '20% Insalubridade').trim() || '20% Insalubridade';
   const escopoObs = document.getElementById('pc-escopo-obs')?.value?.trim() || '';
   const itens = pcGetItens();
   const dataFmt = dataVal ? new Date(dataVal+'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
@@ -11059,7 +11122,7 @@ table.custo .total-row td{font-weight:700;background:#f0f4f8;border-top:2px soli
   <p class="body-text">Proposta de acordo com escopo fornecido contemplando os seguinte benefícios aos colaboradores;</p>
   <p class="body-text">Os valores informados contemplam todos os benefícios, treinamentos, administração e supervisão dos serviços e/ou funcionários e uniformes para o andamento da operação. Estão incluídos também todos os custos como, encargos sociais, trabalhistas e fiscais de responsabilidade da ${_escHtml(remNome)};</p>
   <p class="body-text">PPRA – Programa de Prevenção e Riscos Ambientais;<br>PCMSO – Programa de Controle Médico e Saúde Ocupacional;<br>Todos os funcionários da ${_escHtml(remNome)} possuem os seguintes benefícios de acordo com a convenção coletiva;</p>
-  ${['Seguro de Vida em grupo;','Vale Transporte;','Vale Alimentação','20% Insalubridade','Uniforme;',"EPI's;"].map(t=>`<div class="bullet">• ${_escHtml(t)}</div>`).join('')}
+  ${['Seguro de Vida em grupo;','Vale Transporte;','Vale Alimentação',insalubridade,'Uniforme;',"EPI's;"].map(t=>`<div class="bullet">• ${_escHtml(t)}</div>`).join('')}
   <p class="body-text">Nr35 para trabalho em altura;</p>
   <p class="body-text">Todos os funcionários ${_escHtml(remNome)} devem estar identificados através de crachás, devidamente uniformizados e munidos de EPI´s;</p>
 
@@ -11108,6 +11171,7 @@ async function gerarProposta() {
   const dataFmt = dataVal ? new Date(dataVal+'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
   const cliente = document.getElementById('pc-cliente').value.trim();
   const email   = document.getElementById('pc-email').value.trim();
+  const insalubridade = (document.getElementById('pc-insalubridade')?.value || '20% Insalubridade').trim() || '20% Insalubridade';
   const escopoObservacoes = document.getElementById('pc-escopo-obs')?.value?.trim() || '';
   const itens   = pcGetItens();
   const remetenteId = _pcEmpresaRemSel ? _pcEmpresaRemSel.id : null;
@@ -11121,6 +11185,7 @@ async function gerarProposta() {
       body: JSON.stringify({empresa,cnpj,funcao,data:dataFmt,cliente,email,
                             itens, remetente_id:remetenteId,
                             tipo: document.getElementById('pc-tipo')?.value || 'mensal',
+                            insalubridade,
                             escopo_observacoes: escopoObservacoes})
     });
     if (!resp.ok) { const err=await resp.json().catch(()=>({erro:resp.statusText})); throw new Error(err.erro||resp.statusText); }
