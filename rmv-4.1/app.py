@@ -18425,6 +18425,15 @@ def _app_ponto_corte_data_ref_min(esc, dia_info):
     return None
 
 
+def _app_ponto_hora_entrada_min(esc, dia_info):
+    entrada_txt = (dia_info or {}).get("hora_entrada")
+    if entrada_txt:
+        return _app_parse_minutos_hhmm(str(entrada_txt), "08:00")
+    if _app_ponto_cruza_meia_noite(esc, dia_info):
+        return _app_parse_minutos_hhmm(getattr(esc, "periodo_noturno_ini", "22:00"), "22:00")
+    return None
+
+
 def _app_parse_data_iso(v):
     txt = (v or "").strip()
     if not txt:
@@ -18464,12 +18473,18 @@ def _app_ponto_marcacoes_dia(funcionario_id, data_ref):
             dia_info = esc_prev.get("dia_info") or {}
             corte_min = _app_ponto_corte_data_ref_min(esc, dia_info)
             if corte_min is not None:
+                if _app_ponto_cruza_meia_noite(esc, dia_info):
+                    entrada_min = _app_ponto_hora_entrada_min(esc, dia_info)
+                    if entrada_min is not None and entrada_min >= 18 * 60:
+                        corte_min = max(corte_min, 360)
                 if (dt.hour * 60 + dt.minute) <= corte_min:
                     return data_prev
         return data_base
 
+    # BUG-FIX: estender a janela para capturar até 06:00 do dia seguinte
+    # em turnos noturnos com saída tardia, sem perder as batidas do dia atual.
     inicio = datetime.combine(data_ref, datetime.min.time()) - timedelta(hours=3)
-    fim = datetime.combine(data_ref, datetime.min.time()) + timedelta(hours=27)
+    fim = datetime.combine(data_ref, datetime.min.time()) + timedelta(hours=33)
     todas = (
         PontoMarcacao.query.filter(PontoMarcacao.funcionario_id == funcionario_id)
         .filter(PontoMarcacao.data_hora >= inicio)
@@ -18496,6 +18511,10 @@ def _app_ponto_data_ref_efetiva(funcionario, data_hora):
         dia_info = esc_prev.get("dia_info") or {}
         corte_min = _app_ponto_corte_data_ref_min(esc, dia_info)
         if corte_min is not None:
+            if _app_ponto_cruza_meia_noite(esc, dia_info):
+                entrada_min = _app_ponto_hora_entrada_min(esc, dia_info)
+                if entrada_min is not None and entrada_min >= 18 * 60:
+                    corte_min = max(corte_min, 360)
             if (data_hora.hour * 60 + data_hora.minute) <= corte_min:
                 return data_prev
     return data_base

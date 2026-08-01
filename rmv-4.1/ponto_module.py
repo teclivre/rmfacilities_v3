@@ -509,16 +509,21 @@ def register_ponto_routes(
                 dia_info = esc_prev.get("dia_info") or {}
                 corte_min = _ponto_corte_data_ref_min(esc, dia_info)
                 if corte_min is not None:
+                    if _ponto_cruza_meia_noite(esc, dia_info):
+                        entrada_min = _ponto_hora_entrada_min(esc, dia_info)
+                        if entrada_min is not None and entrada_min >= 18 * 60:
+                            corte_min = max(corte_min, 360)
                     if (dt.hour * 60 + dt.minute) <= corte_min:
                         return data_prev
             return data_base
 
         # BUG-FIX 13: a janela UTC midnight→midnight cortava marcações de turno
         # noturno que em BRT são do dia data_ref mas em UTC caem no dia seguinte
-        # (após 21h BRT = após 00h UTC). Estender a janela em 3h em cada lado e
-        # filtrar pela data efetiva da marcação na memória, garantindo cobertura total.
+        # (após 21h BRT = após 00h UTC do próximo dia). Estender a janela em 3h em
+        # cada lado e também cobrir até 06:00 no dia seguinte para turnos noturnos
+        # que podem ter saída de madrugada ainda pertencendo à data_ref anterior.
         inicio = datetime.combine(data_ref, datetime.min.time()) - timedelta(hours=3)
-        fim = datetime.combine(data_ref, datetime.min.time()) + timedelta(hours=27)
+        fim = datetime.combine(data_ref, datetime.min.time()) + timedelta(hours=33)
         todas = (
             PontoMarcacao.query.filter(PontoMarcacao.funcionario_id == funcionario_id)
             .filter(PontoMarcacao.data_hora >= inicio)
@@ -546,6 +551,10 @@ def register_ponto_routes(
             dia_info = esc_prev.get("dia_info") or {}
             corte_min = _ponto_corte_data_ref_min(esc, dia_info)
             if corte_min is not None:
+                if _ponto_cruza_meia_noite(esc, dia_info):
+                    entrada_min = _ponto_hora_entrada_min(esc, dia_info)
+                    if entrada_min is not None and entrada_min >= 18 * 60:
+                        corte_min = max(corte_min, 360)
                 if (data_hora.hour * 60 + data_hora.minute) <= corte_min:
                     return data_prev
         return data_base
@@ -881,11 +890,11 @@ def register_ponto_routes(
         total_intrajornada = 0
         inconsistencias = 0
         # Batch load: 1 query para todo o período da competência
-        # BUG-FIX: estender janela de query em 3h em cada lado para capturar
-        # marcações de turno noturno que em UTC caem no dia seguinte (após 21h BRT
-        # = após 00h UTC do próximo dia). A indexação por data BRT já é correta.
+        # BUG-FIX: estender janela de query para capturar marcações de turno
+        # noturno que em UTC caem no dia seguinte e podem terminar até 06:00
+        # do dia posterior à competência. A indexação por data BRT já é correta.
         inicio_dt = datetime.combine(inicio, datetime.min.time()) - timedelta(hours=3)
-        fim_dt = datetime.combine(fim + timedelta(days=1), datetime.min.time()) + timedelta(hours=3)
+        fim_dt = datetime.combine(fim + timedelta(days=1), datetime.min.time()) + timedelta(hours=6)
         todas_marc_comp = (
             PontoMarcacao.query.filter(
                 PontoMarcacao.funcionario_id == funcionario.id,
