@@ -18,12 +18,15 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -47,12 +50,15 @@ class MensagensActivity : BaseActivity() {
     private lateinit var tvStatusRh: TextView
     private lateinit var panelChat: LinearLayout
     private lateinit var panelAvisos: LinearLayout
+    private lateinit var mensagensRoot: LinearLayout
+    private lateinit var bottomNav: BottomNavigationView
     private lateinit var btnTabChat: MaterialButton
     private lateinit var btnTabAvisos: MaterialButton
     private lateinit var retryQueue: ActionRetryQueue
     private lateinit var swipeChat: SwipeRefreshLayout
     private lateinit var progressEnvio: ProgressBar
     private lateinit var tvCharCount: TextView
+    private var rootPaddingBottomOriginal = 0
 
     private var cameraPhotoUri: Uri? = null
     private val pollingHandler = Handler(Looper.getMainLooper())
@@ -77,15 +83,19 @@ class MensagensActivity : BaseActivity() {
     }
 
     private val takePhoto = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        if (success) cameraPhotoUri?.let { enviarArquivo(it) }
+        if (success) {
+            cameraPhotoUri?.let { enviarArquivo(it) }
+        } else {
+            Toast.makeText(this, "Captura de foto cancelada.", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_mensagens)
 
-        findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.bottomNavApp)
-            ?.let { setupAppBottomNav(it, R.id.nav_mensagens) }
+        bottomNav = findViewById(R.id.bottomNavApp)
+        setupAppBottomNav(bottomNav, R.id.nav_mensagens)
 
         session = SessionManager(this)
         api = ApiClient(session)
@@ -99,11 +109,14 @@ class MensagensActivity : BaseActivity() {
         tvStatusRh = findViewById(R.id.tvStatusRh)
         panelChat = findViewById(R.id.panelChat)
         panelAvisos = findViewById(R.id.panelAvisos)
+        mensagensRoot = findViewById(R.id.mensagensRoot)
         btnTabChat = findViewById(R.id.btnTabChat)
         btnTabAvisos = findViewById(R.id.btnTabAvisos)
         swipeChat = findViewById(R.id.swipeChat)
         progressEnvio = findViewById(R.id.progressEnvio)
         tvCharCount = findViewById(R.id.tvCharCount)
+        rootPaddingBottomOriginal = mensagensRoot.paddingBottom
+        configurarInsetsDoTeclado()
 
         adapter = MensagemAdapter(
             onAbrirArquivo = { item -> abrirArquivoMensagem(item) },
@@ -235,12 +248,34 @@ class MensagensActivity : BaseActivity() {
     }
 
     private fun abrirCamera() {
-        val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val imgFile = File(getExternalFilesDir(null), "foto_chat_$ts.jpg")
-        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", imgFile)
-        cameraPhotoUri = uri
-        takePhoto.launch(uri)
+        try {
+            val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val baseDir = getExternalFilesDir(null) ?: filesDir
+            val cameraDir = File(baseDir, "camera").apply { if (!exists()) mkdirs() }
+            val imgFile = File(cameraDir, "foto_chat_$ts.jpg")
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", imgFile)
+            cameraPhotoUri = uri
+            takePhoto.launch(uri)
+        } catch (e: Exception) {
+            TelemetryLogger.logHandled(this, "mensagem_camera_abrir", e)
+            Toast.makeText(this, "Não foi possível abrir a câmera neste aparelho.", Toast.LENGTH_LONG).show()
+        }
     }
+
+    private fun configurarInsetsDoTeclado() {
+        ViewCompat.setOnApplyWindowInsetsListener(mensagensRoot) { v, insets ->
+            val tecladoVisivel = insets.isVisible(WindowInsetsCompat.Type.ime())
+            bottomNav.visibility = if (tecladoVisivel) View.GONE else View.VISIBLE
+            val novoPaddingBottom = if (tecladoVisivel) 8.dp() else rootPaddingBottomOriginal
+            if (v.paddingBottom != novoPaddingBottom) {
+                v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, novoPaddingBottom)
+            }
+            insets
+        }
+        ViewCompat.requestApplyInsets(mensagensRoot)
+    }
+
+    private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
 
     private fun carregarMensagens(silently: Boolean = false, aoTerminar: (() -> Unit)? = null) {
         lifecycleScope.launch(Dispatchers.IO) {
