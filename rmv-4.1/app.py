@@ -18538,6 +18538,10 @@ def _app_funcionario_em_ferias_na_data(funcionario, data_ref):
     return False
 
 
+def _app_funcionario_admissao_data(funcionario):
+    return _app_parse_data_iso(getattr(funcionario, "data_admissao", ""))
+
+
 def _app_ponto_marcacoes_dia(funcionario_id, data_ref):
     try:
         funcionario = db.session.get(Funcionario, funcionario_id)
@@ -18938,7 +18942,13 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
     dia_tipo = "normal"
     afastamento_info = None
     is_feriado = _app_is_feriado_para_funcionario(funcionario, data_ref_str)
-    if _app_funcionario_em_ferias_na_data(funcionario, data_ref):
+    admissao_data = _app_funcionario_admissao_data(funcionario)
+    if admissao_data and data_ref < admissao_data:
+        dia_tipo = "pre_admissao"
+        min_esp = 0
+        saldo_bruto = min_trab - min_esp
+        saldo = saldo_bruto
+    elif _app_funcionario_em_ferias_na_data(funcionario, data_ref):
         dia_tipo = "ferias"
     af = _afastamento_ativo_na_data(funcionario.id, data_ref_str)
     if af:

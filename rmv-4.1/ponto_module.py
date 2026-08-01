@@ -516,6 +516,9 @@ def register_ponto_routes(
             return data_ref <= fim
         return False
 
+    def _ponto_funcionario_admissao_data(funcionario):
+        return _ponto_parse_data_iso(getattr(funcionario, "data_admissao", ""))
+
     def _ponto_funcionario_elegivel_competencia(funcionario, competencia):
         """Define se o funcionário deve aparecer na gestão da competência.
 
@@ -818,7 +821,10 @@ def register_ponto_routes(
         dia_tipo = "normal"
         afastamento_info = None
         _is_feriado = data_ref in (_feriados or set())
-        if af:
+        admissao_data = _ponto_funcionario_admissao_data(funcionario)
+        if admissao_data and data_ref < admissao_data:
+            dia_tipo = "pre_admissao"
+        elif af:
             dia_tipo = "afastamento"
             afastamento_info = {
                 "id": af.id,
@@ -833,7 +839,7 @@ def register_ponto_routes(
             dia_tipo = "feriado"
 
         esc_info_dia = _ponto_escala_info_data(funcionario, data_ref)
-        minutos_esperados = 0 if dia_tipo in ("afastamento", "ferias", "feriado") else _ponto_min_esperado_data(funcionario, data_ref)
+        minutos_esperados = 0 if dia_tipo in ("pre_admissao", "afastamento", "ferias", "feriado") else _ponto_min_esperado_data(funcionario, data_ref)
         if dia_tipo == "normal" and minutos_esperados == 0 and not marcacoes:
             dia_tipo = "folga"
         saldo_bruto = minutos_trabalhados - minutos_esperados
@@ -2321,6 +2327,9 @@ def register_ponto_routes(
                 _af_tipo = (_af_info.get("tipo") or "Afastamento").strip()
                 _af_txt = f"AFASTAMENTO: {_af_tipo}"
                 marcacoes_str = f"{marcacoes_str} | {_af_txt}" if marcacoes_str else _af_txt
+                faltas = ""
+            elif resumo.get("dia_tipo") == "pre_admissao" and not marcacoes_ord:
+                marcacoes_str = ""
                 faltas = ""
             elif resumo.get("dia_tipo") == "ferias" and not marcacoes_ord:
                 marcacoes_str = "Ferias"
