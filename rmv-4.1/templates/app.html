@@ -14343,6 +14343,38 @@ async function benNotificarBeneficios(){
 // ── Benefício Avulso ──────────────────────────────────────────────────────────
 let benAvulsoSelecionados = [];
 
+function benAvulsoFonteFuncionarios(){
+  if(Array.isArray(beneficiosMensais) && beneficiosMensais.length) return beneficiosMensais;
+  const base = Array.isArray(funcs) ? funcs : [];
+  return base
+    .filter(f => {
+      const st = String(f?.status || '').toLowerCase();
+      return !st || st === 'ativo' || st === 'férias' || st === 'ferias';
+    })
+    .map(f => ({
+      funcionario_id: parseInt(f.id,10) || parseInt(f.funcionario_id,10) || 0,
+      nome: String(f.nome || ''),
+      re: String(f.re || ''),
+      matricula: String(f.matricula || ''),
+      posto_operacional: String(f.posto_operacional || 'Reserva tecnica'),
+      dias_trabalhados: 0,
+      dias_vt: 0,
+      dias_vr: 0,
+      dias_va: 0,
+      dias_vg: 0,
+      faltas: 0,
+      salario: Number(f.salario || 0),
+      vale_refeicao: Number(f.vale_refeicao || 0),
+      vale_alimentacao: Number(f.vale_alimentacao || 0),
+      vale_transporte: Number(f.vale_transporte || 0),
+      pp_falta: false,
+      premio_produtividade: Number(f.premio_produtividade || 0),
+      vale_gasolina: Number(f.vale_gasolina || 0),
+      cesta_natal: Number(f.cesta_natal || 0),
+    }))
+    .filter(f => f.funcionario_id > 0);
+}
+
 function benAvulsoFiltrar(){
   const q = (document.getElementById('ben-avulso-busca')?.value||'').trim().toLowerCase();
   const tipo = document.getElementById('ben-avulso-tipo')?.value || 'vt';
@@ -14352,8 +14384,11 @@ function benAvulsoFiltrar(){
     res.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Digite pelo menos 1 caractere para buscar funcionários.</div>';
     return;
   }
-  const lista = (beneficiosMensais||[]).filter(it =>
-    (it.nome||'').toLowerCase().includes(q) || (it.re||'').toLowerCase().includes(q) || (it.matricula||'').toLowerCase().includes(q)
+  const fonte = benAvulsoFonteFuncionarios();
+  const lista = (fonte||[]).filter(it =>
+    String(it.nome||'').toLowerCase().includes(q)
+    || String(it.re||'').toLowerCase().includes(q)
+    || String(it.matricula||'').toLowerCase().includes(q)
   ).slice(0,30);
   if(!lista.length){
     res.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Nenhum funcionário encontrado.</div>';
@@ -14376,16 +14411,17 @@ function benAvulsoFiltrar(){
 }
 
 function benAvulsoAdicionar(funcId){
-  const func = (beneficiosMensais||[]).find(x => x.funcionario_id===funcId);
+  const fid = parseInt(funcId,10);
+  const func = benAvulsoFonteFuncionarios().find(x => parseInt(x.funcionario_id,10)===fid);
   if(!func){ toast('Funcionário não encontrado.','e'); return; }
   const tipo = document.getElementById('ben-avulso-tipo')?.value || 'vt';
-  if(benAvulsoSelecionados.some(x => x.funcionario_id===funcId && x.tipo===tipo)){
+  if(benAvulsoSelecionados.some(x => parseInt(x.funcionario_id,10)===fid && x.tipo===tipo)){
     toast('Já adicionado para este benefício.','w'); return;
   }
   const diasPadrao = {'vt': func.dias_vt||0, 'vr': func.dias_vr||0, 'vg': func.dias_vg||0};
   const valorPadrao = {'vt': func.vale_transporte||0, 'vr': func.vale_refeicao||0, 'va': func.vale_alimentacao||0, 'pp': func.premio_produtividade||0, 'vg': func.vale_gasolina||0, 'cn': func.cesta_natal||0};
   benAvulsoSelecionados.push({
-    funcionario_id: funcId,
+    funcionario_id: fid,
     nome: func.nome||'',
     re: func.re||'',
     posto: func.posto_operacional||'',
@@ -14445,10 +14481,11 @@ async function benAvulsoSalvar(){
   if(!/^\d{4}-\d{2}$/.test(comp)){ toast('Competência inválida.','e'); return; }
   // Agrupa por funcionário (um func pode ter vários tipos)
   const byFunc = {};
+  const fonte = benAvulsoFonteFuncionarios();
   for(const it of benAvulsoSelecionados){
     const fid = it.funcionario_id;
     if(!byFunc[fid]){
-      const orig = (beneficiosMensais||[]).find(x => x.funcionario_id===fid) || {};
+      const orig = (fonte||[]).find(x => parseInt(x.funcionario_id,10)===parseInt(fid,10)) || {};
       byFunc[fid] = {
         funcionario_id: fid,
         dias_trabalhados: orig.dias_trabalhados||0,
@@ -14478,7 +14515,23 @@ async function benAvulsoSalvar(){
   const itens = Object.values(byFunc);
   const r = await api('/api/beneficios/lancamentos','POST',{competencia:comp, itens});
   if(r?.erro){ toast(r.erro,'e'); return; }
+  const idsNotificar = itens.map(it => parseInt(it.funcionario_id,10)).filter(Number.isFinite);
+  const empresaSel = benEmp();
+  const bodyNotif = {competencia: comp, funcionario_ids: idsNotificar};
+  if(empresaSel) bodyNotif.empresa_id = parseInt(empresaSel,10) || null;
+  let notif = null;
+  let notifErro = '';
+  try {
+    notif = await api('/api/beneficios/notificar','POST',bodyNotif);
+  } catch (e) {
+    notifErro = e?.message || String(e);
+  }
   toast(`${itens.length} lançamento(s) avulso(s) salvo(s) para ${comp}.`,'s');
+  if(notifErro || notif?.erro){
+    showSt('st-benef',`Lançamentos salvos, mas houve erro ao notificar: ${notifErro || notif.erro}`,true);
+  } else {
+    showSt('st-benef',`Lançamentos salvos e notificados: ${notif?.enviados_push||0} app, ${notif?.enviados_whatsapp||0} WhatsApp, ${notif?.sem_contato||0} sem contato.`,false);
+  }
   benAvulsoLimpar();
   await carregarBeneficiosMensais();
 }
