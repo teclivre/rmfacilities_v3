@@ -722,7 +722,10 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div id="top-notif-panel" style="display:none;position:absolute;right:0;top:calc(100% + 8px);width:340px;max-width:calc(100vw - 24px);background:var(--branco);color:var(--preto);border:1px solid var(--borda);border-radius:10px;box-shadow:var(--shadow-md);z-index:9999;overflow:hidden">
           <div style="padding:10px 12px;border-bottom:1px solid var(--borda);display:flex;align-items:center;justify-content:space-between;gap:8px">
             <strong style="font-size:13px">Notificações</strong>
-            <button class="btn b-gh b-sm" type="button" onclick="atualizarSininhoNotificacoes()" style="padding:2px 8px">Atualizar</button>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+              <button class="btn b-gh b-sm" type="button" id="top-notif-readall" onclick="marcarTodasNotificacoesLidas()" style="padding:2px 8px;display:none">Marcar todas como lidas</button>
+              <button class="btn b-gh b-sm" type="button" onclick="atualizarSininhoNotificacoes()" style="padding:2px 8px">Atualizar</button>
+            </div>
           </div>
           <div id="top-notif-list" style="max-height:260px;overflow:auto;padding:8px 10px;font-size:12px;color:var(--text-muted)">Sem notificações no momento.</div>
         </div>
@@ -4830,6 +4833,43 @@ function toggleTheme(){
 }
 
 let _notifPanelOpen=false;
+const _NOTIF_LIDAS_KEY='rm_top_notif_lidas_v1';
+let _notifSnapshotAtual={msgs:0,correcoes:0,beneficios:0,calculos:0,aso:0};
+
+function _notifLidasCarregar(){
+  try{
+    const raw=localStorage.getItem(_NOTIF_LIDAS_KEY);
+    const parsed=raw?JSON.parse(raw):{};
+    return parsed&&typeof parsed==='object'?parsed:{};
+  }catch(_){
+    return {};
+  }
+}
+
+function _notifLidasSalvar(state){
+  try{ localStorage.setItem(_NOTIF_LIDAS_KEY,JSON.stringify(state||{})); }catch(_){ }
+}
+
+function _notifCountVisivel(tipo,total){
+  const n=Math.max(0,parseInt(total||0,10)||0);
+  if(n<=0) return 0;
+  const state=_notifLidasCarregar();
+  const visto=Math.max(0,parseInt(state?.[tipo]||0,10)||0);
+  return visto===n?0:n;
+}
+
+function _notifMarcarLido(tipo,total){
+  const n=Math.max(0,parseInt(total||0,10)||0);
+  const state=_notifLidasCarregar();
+  if(n>0) state[tipo]=n;
+  else delete state[tipo];
+  _notifLidasSalvar(state);
+}
+
+function marcarTodasNotificacoesLidas(){
+  Object.entries(_notifSnapshotAtual||{}).forEach(([tipo,total])=>_notifMarcarLido(tipo,total));
+  atualizarSininhoNotificacoes();
+}
 
 function _notifBadgeSet(total){
   const badge=document.getElementById('top-notif-badge');
@@ -4854,27 +4894,37 @@ function togglePainelNotificacoes(e){
 
 function _notifRenderList(msgs, pendencias){
   const box=document.getElementById('top-notif-list');
+  const btnReadAll=document.getElementById('top-notif-readall');
   if(!box) return;
+  const visiveis={
+    msgs:_notifCountVisivel('msgs',msgs),
+    correcoes:_notifCountVisivel('correcoes',pendencias.correcoes),
+    beneficios:_notifCountVisivel('beneficios',pendencias.beneficios),
+    calculos:_notifCountVisivel('calculos',pendencias.calculos),
+    aso:_notifCountVisivel('aso',pendencias.aso),
+  };
   const itens=[];
-  if(msgs>0){
-    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start;margin-bottom:6px" onclick="_notifAbrirChatApp()">💬 ${msgs} mensagem(ns) não lida(s) no Chat App</button>`);
+  if(visiveis.msgs>0){
+    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start;margin-bottom:6px" onclick="_notifAbrirChatApp()">💬 ${visiveis.msgs} mensagem(ns) não lida(s) no Chat App</button>`);
   }
-  if((pendencias.correcoes||0)>0){
-    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start;margin-bottom:6px" onclick="_notifAbrirRH()">📋 ${pendencias.correcoes} correção(ões) de ponto pendente(s)</button>`);
+  if(visiveis.correcoes>0){
+    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start;margin-bottom:6px" onclick="_notifAbrirRH('correcoes')">📋 ${visiveis.correcoes} correção(ões) de ponto pendente(s)</button>`);
   }
-  if((pendencias.beneficios||0)>0){
-    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start;margin-bottom:6px" onclick="_notifAbrirBeneficios()">🎯 ${pendencias.beneficios} benefício(s) pendente(s)</button>`);
+  if(visiveis.beneficios>0){
+    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start;margin-bottom:6px" onclick="_notifAbrirBeneficios('beneficios')">🎯 ${visiveis.beneficios} benefício(s) pendente(s)</button>`);
   }
-  if((pendencias.calculos||0)>0){
-    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start;margin-bottom:6px" onclick="_notifAbrirBeneficios()">🧮 ${pendencias.calculos} cálculo(s) pendente(s)</button>`);
+  if(visiveis.calculos>0){
+    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start;margin-bottom:6px" onclick="_notifAbrirBeneficios('calculos')">🧮 ${visiveis.calculos} cálculo(s) pendente(s)</button>`);
   }
-  if((pendencias.aso||0)>0){
-    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start" onclick="_notifAbrirRH()">⚠️ ${pendencias.aso} colaborador(es) sem ASO válido</button>`);
+  if(visiveis.aso>0){
+    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start" onclick="_notifAbrirRH('aso')">⚠️ ${visiveis.aso} colaborador(es) sem ASO válido</button>`);
   }
+  if(btnReadAll) btnReadAll.style.display=itens.length?'':'none';
   box.innerHTML=itens.length?itens.join(''):'Sem notificações no momento.';
 }
 
 function _notifAbrirChatApp(){
+  _notifMarcarLido('msgs',_notifSnapshotAtual.msgs);
   _notifPanelOpen=false;
   const panel=document.getElementById('top-notif-panel');
   if(panel) panel.style.display='none';
@@ -4885,14 +4935,16 @@ function _notifAbrirChatApp(){
   },160);
 }
 
-function _notifAbrirRH(){
+function _notifAbrirRH(tipo='correcoes'){
+  if(tipo) _notifMarcarLido(tipo,_notifSnapshotAtual[tipo]);
   _notifPanelOpen=false;
   const panel=document.getElementById('top-notif-panel');
   if(panel) panel.style.display='none';
   nav('rh',document.querySelector('.nav-item[data-nav="rh"]'));
 }
 
-function _notifAbrirBeneficios(){
+function _notifAbrirBeneficios(tipo='beneficios'){
+  if(tipo) _notifMarcarLido(tipo,_notifSnapshotAtual[tipo]);
   _notifPanelOpen=false;
   const panel=document.getElementById('top-notif-panel');
   if(panel) panel.style.display='none';
@@ -4912,10 +4964,17 @@ async function atualizarSininhoNotificacoes(dashCache=null){
       calculos:Math.max(0,parseInt(dashResp?.alerta_calculo_beneficios?.qtd||0,10)||0),
       aso:Math.max(0,parseInt(dashResp?.alerta_sem_aso_valido?.qtd||0,10)||0),
     };
-    const total=msgs+pendencias.correcoes+pendencias.beneficios+pendencias.calculos+pendencias.aso;
+    _notifSnapshotAtual={msgs,correcoes:pendencias.correcoes,beneficios:pendencias.beneficios,calculos:pendencias.calculos,aso:pendencias.aso};
+    const total=
+      _notifCountVisivel('msgs',msgs)+
+      _notifCountVisivel('correcoes',pendencias.correcoes)+
+      _notifCountVisivel('beneficios',pendencias.beneficios)+
+      _notifCountVisivel('calculos',pendencias.calculos)+
+      _notifCountVisivel('aso',pendencias.aso);
     _notifBadgeSet(total);
     _notifRenderList(msgs,pendencias);
   }catch(_){
+    _notifSnapshotAtual={msgs:0,correcoes:0,beneficios:0,calculos:0,aso:0};
     _notifBadgeSet(0);
   }
 }
