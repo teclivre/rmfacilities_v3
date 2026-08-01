@@ -389,15 +389,52 @@ def register_ponto_routes(
             return _parse_minutos_hhmm(getattr(esc, "periodo_noturno_ini", "22:00"), "22:00")
         return None
 
-    def _ponto_data_hora_logica(funcionario, data_ref, data_hora):
+    def _ponto_entrada_noturna_avulsa(marcacoes, data_ref):
+        marcacoes_ordenadas = sorted(
+            [m for m in (marcacoes or []) if getattr(m, "data_hora", None)],
+            key=lambda m: (m.data_hora, getattr(m, "id", 0)),
+        )
+        for marcacao in marcacoes_ordenadas:
+            dt = getattr(marcacao, "data_hora", None)
+            if not dt:
+                continue
+            if dt.date() < data_ref:
+                continue
+            if marcacao.tipo == "entrada" and (dt.hour * 60 + dt.minute) >= 18 * 60:
+                anteriores = [m for m in marcacoes_ordenadas if getattr(m, "data_hora", None) and m.data_hora < dt]
+                if anteriores and anteriores[0].tipo != "entrada":
+                    return dt
+        return None
+
+    def _ponto_jornada_avulsa_aberta(funcionario_id, data_ref):
+        inicio = datetime.combine(data_ref, datetime.min.time())
+        fim = inicio + timedelta(days=1)
+        marcacoes = (
+            PontoMarcacao.query.filter(PontoMarcacao.funcionario_id == funcionario_id)
+            .filter(PontoMarcacao.data_hora >= inicio)
+            .filter(PontoMarcacao.data_hora < fim)
+            .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
+            .all()
+        )
+        if len(marcacoes) % 2 == 0:
+            return False
+        return _ponto_entrada_noturna_avulsa(marcacoes, data_ref) is not None
+
+    def _ponto_data_hora_logica(funcionario, data_ref, data_hora, marcacoes=None):
         if not data_hora:
             return None
         esc_info = _ponto_escala_info_data(funcionario, data_ref)
         if not esc_info:
+            entrada_noturna = _ponto_entrada_noturna_avulsa(marcacoes, data_ref)
+            if entrada_noturna and data_hora < entrada_noturna:
+                return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
             return data_hora
         esc = esc_info.get("escala")
         dia_info = esc_info.get("dia_info") or {}
         if not _ponto_cruza_meia_noite(esc, dia_info):
+            entrada_noturna = _ponto_entrada_noturna_avulsa(marcacoes, data_ref)
+            if entrada_noturna and data_hora < entrada_noturna:
+                return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
             return data_hora
         entrada_min = _ponto_hora_entrada_min(esc, dia_info)
         if entrada_min is None:
@@ -411,7 +448,7 @@ def register_ponto_routes(
         return sorted(
             [m for m in (marcacoes or []) if getattr(m, "data_hora", None)],
             key=lambda m: (
-                _ponto_data_hora_logica(funcionario, data_ref, m.data_hora),
+                _ponto_data_hora_logica(funcionario, data_ref, m.data_hora, marcacoes),
                 m.data_hora,
                 getattr(m, "id", 0),
             ),
@@ -420,7 +457,7 @@ def register_ponto_routes(
     def _ponto_intervalos_logicos(funcionario, data_ref, marcacoes):
         ordenadas = _ponto_marcacoes_ordenadas_logicas(funcionario, data_ref, marcacoes)
         datas_logicas = [
-            _ponto_data_hora_logica(funcionario, data_ref, m.data_hora)
+            _ponto_data_hora_logica(funcionario, data_ref, m.data_hora, ordenadas)
             for m in ordenadas
             if getattr(m, "data_hora", None)
         ]
@@ -515,6 +552,8 @@ def register_ponto_routes(
                             corte_min = max(corte_min, 360)
                     if (dt.hour * 60 + dt.minute) <= corte_min:
                         return data_prev
+            if (dt.hour * 60 + dt.minute) <= 6 * 60 and _ponto_jornada_avulsa_aberta(funcionario.id, data_prev):
+                return data_prev
             return data_base
 
         # BUG-FIX 13: a janela UTC midnight→midnight cortava marcações de turno
@@ -557,6 +596,8 @@ def register_ponto_routes(
                         corte_min = max(corte_min, 360)
                 if (data_hora.hour * 60 + data_hora.minute) <= corte_min:
                     return data_prev
+        if (data_hora.hour * 60 + data_hora.minute) <= 6 * 60 and _ponto_jornada_avulsa_aberta(funcionario.id, data_prev):
+            return data_prev
         return data_base
 
     def _calc_intersec_noturno(ini_dt, fim_dt, noc_ini_min=1320, noc_fim_min=300):
@@ -2690,7 +2731,9 @@ def register_ponto_routes(
         # em vez de duplicar a query (era N+1 + TOCTOU). O dict já usa date como chave;
         # converter para string YYYY-MM-DD para bater com dia["data_ref"].
         marc_por_data_str = {
-            k.strftime("%Y-%m-%d"): [m.to_dict() for m in v]
+            k.strftime("%Y-%m-%d"): [
+                m.to_dict() for m in _ponto_marcacoes_ordenadas_logicas(funcionario, k, v)
+            ]
             for k, v in resumo_comp.get("marc_por_data", {}).items()
         }
         for dia in resumo_comp["dias"]:

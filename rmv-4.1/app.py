@@ -18434,6 +18434,75 @@ def _app_ponto_hora_entrada_min(esc, dia_info):
     return None
 
 
+def _app_ponto_entrada_noturna_avulsa(marcacoes, data_ref):
+    marcacoes_ordenadas = sorted(
+        [m for m in (marcacoes or []) if getattr(m, "data_hora", None)],
+        key=lambda m: (m.data_hora, getattr(m, "id", 0)),
+    )
+    for marcacao in marcacoes_ordenadas:
+        dt = getattr(marcacao, "data_hora", None)
+        if not dt:
+            continue
+        if dt.date() < data_ref:
+            continue
+        if marcacao.tipo == "entrada" and (dt.hour * 60 + dt.minute) >= 18 * 60:
+            anteriores = [m for m in marcacoes_ordenadas if getattr(m, "data_hora", None) and m.data_hora < dt]
+            if anteriores and anteriores[0].tipo != "entrada":
+                return dt
+    return None
+
+
+def _app_ponto_jornada_avulsa_aberta(funcionario_id, data_ref):
+    inicio = datetime.combine(data_ref, datetime.min.time())
+    fim = inicio + timedelta(days=1)
+    marcacoes = (
+        PontoMarcacao.query.filter(PontoMarcacao.funcionario_id == funcionario_id)
+        .filter(PontoMarcacao.data_hora >= inicio)
+        .filter(PontoMarcacao.data_hora < fim)
+        .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
+        .all()
+    )
+    if len(marcacoes) % 2 == 0:
+        return False
+    return _app_ponto_entrada_noturna_avulsa(marcacoes, data_ref) is not None
+
+
+def _app_ponto_data_hora_logica(funcionario, data_ref, data_hora, marcacoes=None):
+    if not data_hora:
+        return None
+    esc_info = _app_ponto_escala_info_data(funcionario, data_ref)
+    if not esc_info:
+        entrada_noturna = _app_ponto_entrada_noturna_avulsa(marcacoes, data_ref)
+        if entrada_noturna and data_hora < entrada_noturna:
+            return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
+        return data_hora
+    esc = esc_info.get("escala")
+    dia_info = esc_info.get("dia_info") or {}
+    if not _app_ponto_cruza_meia_noite(esc, dia_info):
+        entrada_noturna = _app_ponto_entrada_noturna_avulsa(marcacoes, data_ref)
+        if entrada_noturna and data_hora < entrada_noturna:
+            return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
+        return data_hora
+    entrada_min = _app_ponto_hora_entrada_min(esc, dia_info)
+    if entrada_min is None:
+        return data_hora
+    logical_dt = datetime.combine(data_ref, data_hora.time())
+    if (data_hora.hour * 60 + data_hora.minute) < entrada_min:
+        logical_dt += timedelta(days=1)
+    return logical_dt
+
+
+def _app_ponto_marcacoes_ordenadas_logicas(funcionario, data_ref, marcacoes):
+    return sorted(
+        [m for m in (marcacoes or []) if getattr(m, "data_hora", None)],
+        key=lambda m: (
+            _app_ponto_data_hora_logica(funcionario, data_ref, m.data_hora, marcacoes),
+            m.data_hora,
+            getattr(m, "id", 0),
+        ),
+    )
+
+
 def _app_parse_data_iso(v):
     txt = (v or "").strip()
     if not txt:
@@ -18479,6 +18548,8 @@ def _app_ponto_marcacoes_dia(funcionario_id, data_ref):
                         corte_min = max(corte_min, 360)
                 if (dt.hour * 60 + dt.minute) <= corte_min:
                     return data_prev
+        if (dt.hour * 60 + dt.minute) <= 6 * 60 and _app_ponto_jornada_avulsa_aberta(funcionario.id, data_prev):
+            return data_prev
         return data_base
 
     # BUG-FIX: estender a janela para capturar até 06:00 do dia seguinte
@@ -18517,6 +18588,8 @@ def _app_ponto_data_ref_efetiva(funcionario, data_hora):
                     corte_min = max(corte_min, 360)
             if (data_hora.hour * 60 + data_hora.minute) <= corte_min:
                 return data_prev
+    if (data_hora.hour * 60 + data_hora.minute) <= 6 * 60 and _app_ponto_jornada_avulsa_aberta(funcionario.id, data_prev):
+        return data_prev
     return data_base
 
 
@@ -18747,6 +18820,7 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
     HE_MINIMA_AUTORIZACAO_MIN = 60
     FALTA_PARCIAL_TOLERANCIA_MIN = 10
     marcacoes = _app_ponto_marcacoes_dia(funcionario.id, data_ref)
+    marcacoes = _app_ponto_marcacoes_ordenadas_logicas(funcionario, data_ref, marcacoes)
     inconsistencias = []
     esperado = "entrada"
     segundos_total = 0
@@ -18762,27 +18836,28 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
             inconsistencias.append(
                 f"Sequência inesperada: recebido {_app_ponto_label(m.tipo)}; esperado {_app_ponto_label(esperado)}."
             )
+        data_hora_logica = _app_ponto_data_hora_logica(funcionario, data_ref, m.data_hora, marcacoes)
         if m.tipo == "entrada":
             if aberta_em is not None:
                 inconsistencias.append(
                     "Existe uma entrada sem fechamento antes desta nova entrada."
                 )
-            aberta_em = m.data_hora
+            aberta_em = data_hora_logica
         elif m.tipo == "saida_intervalo":
             if aberta_em is None:
                 inconsistencias.append("Saída para intervalo sem entrada anterior.")
             else:
-                segundos_total += max(0, int((m.data_hora - aberta_em).total_seconds()))
+                segundos_total += max(0, int((data_hora_logica - aberta_em).total_seconds()))
                 aberta_em = None
         elif m.tipo == "retorno_intervalo":
             if aberta_em is not None:
                 inconsistencias.append("Retorno de intervalo sem saída anterior.")
-            aberta_em = m.data_hora
+            aberta_em = data_hora_logica
         elif m.tipo == "saida":
             if aberta_em is None:
                 inconsistencias.append("Saída final sem entrada anterior.")
             else:
-                segundos_total += max(0, int((m.data_hora - aberta_em).total_seconds()))
+                segundos_total += max(0, int((data_hora_logica - aberta_em).total_seconds()))
                 aberta_em = None
         esperado = _app_ponto_next_tipo(m.tipo)
     if aberta_em is not None:
