@@ -715,11 +715,11 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div class="sidebar-bottom">
       <button class="btn-top" type="button" id="theme-toggle" onclick="toggleTheme()" title="Alternar tema">🌙 Dark</button>
       <div style="position:relative">
-        <button class="btn-top" type="button" id="btn-notificacoes" onclick="togglePainelNotificacoes()" title="Notificações" aria-label="Notificações" style="position:relative;min-width:44px">
+        <button class="btn-top" type="button" id="btn-notificacoes" onclick="togglePainelNotificacoes(event)" title="Notificações" aria-label="Notificações" style="position:relative;min-width:44px">
           🔔
           <span id="top-notif-badge" style="display:none;position:absolute;top:-6px;right:-6px;background:var(--verm);color:#fff;border-radius:10px;padding:0 6px;font-size:11px;line-height:18px;min-width:18px;text-align:center">0</span>
         </button>
-        <div id="top-notif-panel" style="display:none;position:absolute;right:0;bottom:52px;width:340px;max-width:calc(100vw - 24px);background:var(--branco);color:var(--preto);border:1px solid var(--borda);border-radius:10px;box-shadow:var(--shadow-md);z-index:1600;overflow:hidden">
+        <div id="top-notif-panel" style="display:none;position:absolute;right:0;bottom:52px;width:340px;max-width:calc(100vw - 24px);background:var(--branco);color:var(--preto);border:1px solid var(--borda);border-radius:10px;box-shadow:var(--shadow-md);z-index:9999;overflow:hidden">
           <div style="padding:10px 12px;border-bottom:1px solid var(--borda);display:flex;align-items:center;justify-content:space-between;gap:8px">
             <strong style="font-size:13px">Notificações</strong>
             <button class="btn b-gh b-sm" type="button" onclick="atualizarSininhoNotificacoes()" style="padding:2px 8px">Atualizar</button>
@@ -4843,7 +4843,8 @@ function _notifBadgeSet(total){
   }
 }
 
-function togglePainelNotificacoes(){
+function togglePainelNotificacoes(e){
+  if(e && typeof e.stopPropagation === 'function') e.stopPropagation();
   const panel=document.getElementById('top-notif-panel');
   if(!panel) return;
   _notifPanelOpen=!_notifPanelOpen;
