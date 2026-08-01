@@ -945,9 +945,9 @@ function gfRenderFolha(resumo){
   // Aviso de HE não autorizada
   const avisoEl=document.getElementById('gf-he-aviso');
   if(avisoEl){
-    const heAutorizada=resumo.he_autorizada===undefined||resumo.he_autorizada===null?true:!!resumo.he_autorizada;
+    const hePendente=!!(resumo.totais?.he_pendente_autorizacao);
     const temHE=((resumo.totais?.he_50_min_bruto||0)+(resumo.totais?.he_100_min_bruto||0))>0;
-    const heVisible=(!heAutorizada&&temHE);
+    const heVisible=(hePendente&&temHE);
     avisoEl.style.display=heVisible?'':'none';
     // Botão solicitar aprovação HE
     let btnSolHE=document.getElementById('gf-btn-solicitar-he');
@@ -1228,9 +1228,8 @@ setInterval(()=>{
 let _heSolicitacoes=[];
 
 async function abrirModalHEPendentes(){
-  const modal=document.getElementById('modal-he-pendentes');
-  if(!modal)return;
-  modal.style.display='flex';
+  if(typeof nav==='function') nav('rh',document.querySelector('.nav-item[data-nav="rh"]'));
+  if(typeof rhSetSubAba==='function') rhSetSubAba('he-autorizacao');
   document.getElementById('modal-he-body').innerHTML='<div style="text-align:center;padding:32px;opacity:.5">Carregando...</div>';
   await carregarHEPendentes();
 }

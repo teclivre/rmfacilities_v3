@@ -1010,7 +1010,7 @@ def register_ponto_routes(
         if funcionario.posto_cliente_id and Cliente:
             cli = db.session.get(Cliente, funcionario.posto_cliente_id)
         he_autorizada = getattr(cli, "he_autorizada", None) if cli else None
-        he_requer_autorizacao = False if he_autorizada is None else (not bool(he_autorizada))
+        he_requer_autorizacao = True
         sol = None
         if SolicitacaoHoraExtra:
             sol = SolicitacaoHoraExtra.query.filter_by(
@@ -2292,9 +2292,6 @@ def register_ponto_routes(
                 elif saldo > 0:
                     _he50 = int(resumo.get("he_50_min", 0) or 0)
                     _he100 = int(resumo.get("he_100_min", 0) or 0)
-                    if _he_pendente:
-                        _he50 = int(resumo.get("he_50_min_bruto", _he50) or _he50)
-                        _he100 = int(resumo.get("he_100_min_bruto", _he100) or _he100)
                     extras_50 = _ponto_fmt_minutos(_he50) if _he50 else ""
                     extras_100 = _ponto_fmt_minutos(_he100) if _he100 else ""
                     total_extras_50 += _he50
@@ -2747,7 +2744,7 @@ def register_ponto_routes(
         # Usa getattr porque a coluna he_autorizada pode não existir no schema
         # em ambientes antigos (migração ainda não aplicada). Default True.
         _he_aut = getattr(cli, "he_autorizada", None) if cli else None
-        resumo_comp["he_autorizada"] = _he_aut if _he_aut is not None else True
+        resumo_comp["he_autorizada"] = not bool((resumo_comp.get("totais") or {}).get("he_pendente_autorizacao"))
         resumo_comp["posto_nome"] = (cli.nome or "") if cli else (funcionario.posto_operacional or "")
 
         # Incluir status de solicitação HE se existir
