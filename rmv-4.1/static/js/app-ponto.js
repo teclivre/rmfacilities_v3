@@ -602,8 +602,21 @@ function _pedOrdenarMarcacoesGestaoFacil(marcacoes){
 }
 
 function _pedConstruirDataHoraGestao(dataRef, itens){
-  const baseDate=new Date(`${dataRef}T00:00:00`);
-  if(Number.isNaN(baseDate.getTime())) return itens;
+  const _somarDiasIso=(isoDate,dias)=>{
+    const m=String(isoDate||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if(!m) return String(isoDate||'');
+    const y=parseInt(m[1],10);
+    const mo=parseInt(m[2],10)-1;
+    const d=parseInt(m[3],10);
+    const dt=new Date(Date.UTC(y,mo,d));
+    dt.setUTCDate(dt.getUTCDate()+dias);
+    const yy=dt.getUTCFullYear();
+    const mm=String(dt.getUTCMonth()+1).padStart(2,'0');
+    const dd=String(dt.getUTCDate()).padStart(2,'0');
+    return `${yy}-${mm}-${dd}`;
+  };
+
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(dataRef||''))) return itens;
   const ordenados=itens.slice().sort((a,b)=>_PED_TIPOS_SEQ.indexOf(a.tipo)-_PED_TIPOS_SEQ.indexOf(b.tipo));
   let virouDiaSeguinte=false;
   let referenciaEntradaNoite=null;
@@ -619,10 +632,9 @@ function _pedConstruirDataHoraGestao(dataRef, itens){
     }else if(referenciaEntradaNoite!==null && minutos < referenciaEntradaNoite){
       virouDiaSeguinte=true;
     }
-    const dt=new Date(baseDate.getTime());
-    if(virouDiaSeguinte) dt.setDate(dt.getDate()+1);
-    dt.setHours(hh,mm,0,0);
-    item.data_hora=dt.toISOString().slice(0,19);
+    const dataItem=virouDiaSeguinte?_somarDiasIso(dataRef,1):dataRef;
+    // Importante: enviar datetime local sem UTC para evitar deslocamento de fuso.
+    item.data_hora=`${dataItem}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
   }
   return itens;
 }
