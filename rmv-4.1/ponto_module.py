@@ -420,22 +420,35 @@ def register_ponto_routes(
             return False
         return _ponto_entrada_noturna_avulsa(marcacoes, data_ref) is not None
 
+    def _ponto_tem_entrada_noturna_mesma_data(funcionario_id, data_ref):
+        inicio = datetime.combine(data_ref, datetime.min.time())
+        fim = inicio + timedelta(days=1)
+        marcacoes = (
+            PontoMarcacao.query.filter(PontoMarcacao.funcionario_id == funcionario_id)
+            .filter(PontoMarcacao.data_hora >= inicio)
+            .filter(PontoMarcacao.data_hora < fim)
+            .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
+            .all()
+        )
+        return _ponto_entrada_noturna_avulsa(marcacoes, data_ref) is not None
+
     def _ponto_data_hora_logica(funcionario, data_ref, data_hora, marcacoes=None):
         if not data_hora:
             return None
+        entrada_noturna = _ponto_entrada_noturna_avulsa(marcacoes, data_ref)
         esc_info = _ponto_escala_info_data(funcionario, data_ref)
         if not esc_info:
-            entrada_noturna = _ponto_entrada_noturna_avulsa(marcacoes, data_ref)
             if entrada_noturna and data_hora < entrada_noturna:
                 return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
             return data_hora
         esc = esc_info.get("escala")
         dia_info = esc_info.get("dia_info") or {}
         if not _ponto_cruza_meia_noite(esc, dia_info):
-            entrada_noturna = _ponto_entrada_noturna_avulsa(marcacoes, data_ref)
             if entrada_noturna and data_hora < entrada_noturna:
                 return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
             return data_hora
+        if entrada_noturna and data_hora.date() == data_ref and data_hora < entrada_noturna:
+            return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
         entrada_min = _ponto_hora_entrada_min(esc, dia_info)
         if entrada_min is None:
             return data_hora
@@ -551,8 +564,12 @@ def register_ponto_routes(
                         if entrada_min is not None and entrada_min >= 18 * 60:
                             corte_min = max(corte_min, 360)
                     if (dt.hour * 60 + dt.minute) <= corte_min:
+                        if _ponto_tem_entrada_noturna_mesma_data(funcionario.id, data_base):
+                            return data_base
                         return data_prev
             if (dt.hour * 60 + dt.minute) <= 6 * 60 and _ponto_jornada_avulsa_aberta(funcionario.id, data_prev):
+                if _ponto_tem_entrada_noturna_mesma_data(funcionario.id, data_base):
+                    return data_base
                 return data_prev
             return data_base
 
@@ -595,8 +612,12 @@ def register_ponto_routes(
                     if entrada_min is not None and entrada_min >= 18 * 60:
                         corte_min = max(corte_min, 360)
                 if (data_hora.hour * 60 + data_hora.minute) <= corte_min:
+                    if _ponto_tem_entrada_noturna_mesma_data(funcionario.id, data_base):
+                        return data_base
                     return data_prev
         if (data_hora.hour * 60 + data_hora.minute) <= 6 * 60 and _ponto_jornada_avulsa_aberta(funcionario.id, data_prev):
+            if _ponto_tem_entrada_noturna_mesma_data(funcionario.id, data_base):
+                return data_base
             return data_prev
         return data_base
 
@@ -2242,8 +2263,6 @@ def register_ponto_routes(
         _resumo_por_data = {
             d["data_ref"]: d for d in (resumo_comp.get("dias") or [])
         }
-        _he_pendente = bool((resumo_comp.get("totais") or {}).get("he_pendente_autorizacao"))
-
         while dia <= fim:
             marcacoes = _marc_por_data.get(dia, [])
             # Ordenar pela cronologia lógica do turno para que saídas da madrugada
@@ -2515,26 +2534,6 @@ def register_ponto_routes(
         elementos.append(Spacer(1, (3 if compact_mode else 5)))
         elementos.append(tabela_cab)
         elementos.append(Spacer(1, (3 if compact_mode else 5)))
-        if _he_pendente:
-            aviso_he = Table(
-                [[p("<b>Atenção:</b> existem horas extras pendentes de autorização nesta competência.", st_small, html=True)]],
-                colWidths=[largura * 1.00],
-            )
-            aviso_he.setStyle(
-                TableStyle(
-                    [
-                        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#c77d00")),
-                        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fff4d6")),
-                        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                        ("TOPPADDING", (0, 0), (-1, -1), (3 if compact_mode else 5)),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), (3 if compact_mode else 5)),
-                    ]
-                )
-            )
-            elementos.append(aviso_he)
-            elementos.append(Spacer(1, (3 if compact_mode else 5)))
-
         tabela_dias = [
             [
                 "Data",

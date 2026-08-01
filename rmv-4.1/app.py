@@ -18467,6 +18467,19 @@ def _app_ponto_jornada_avulsa_aberta(funcionario_id, data_ref):
     return _app_ponto_entrada_noturna_avulsa(marcacoes, data_ref) is not None
 
 
+def _app_ponto_tem_entrada_noturna_mesma_data(funcionario_id, data_ref):
+    inicio = datetime.combine(data_ref, datetime.min.time())
+    fim = inicio + timedelta(days=1)
+    marcacoes = (
+        PontoMarcacao.query.filter(PontoMarcacao.funcionario_id == funcionario_id)
+        .filter(PontoMarcacao.data_hora >= inicio)
+        .filter(PontoMarcacao.data_hora < fim)
+        .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
+        .all()
+    )
+    return _app_ponto_entrada_noturna_avulsa(marcacoes, data_ref) is not None
+
+
 def _app_ponto_data_hora_logica(funcionario, data_ref, data_hora, marcacoes=None):
     if not data_hora:
         return None
@@ -18547,8 +18560,12 @@ def _app_ponto_marcacoes_dia(funcionario_id, data_ref):
                     if entrada_min is not None and entrada_min >= 18 * 60:
                         corte_min = max(corte_min, 360)
                 if (dt.hour * 60 + dt.minute) <= corte_min:
+                    if _app_ponto_tem_entrada_noturna_mesma_data(funcionario.id, data_base):
+                        return data_base
                     return data_prev
         if (dt.hour * 60 + dt.minute) <= 6 * 60 and _app_ponto_jornada_avulsa_aberta(funcionario.id, data_prev):
+            if _app_ponto_tem_entrada_noturna_mesma_data(funcionario.id, data_base):
+                return data_base
             return data_prev
         return data_base
 
@@ -18587,8 +18604,12 @@ def _app_ponto_data_ref_efetiva(funcionario, data_hora):
                 if entrada_min is not None and entrada_min >= 18 * 60:
                     corte_min = max(corte_min, 360)
             if (data_hora.hour * 60 + data_hora.minute) <= corte_min:
+                if _app_ponto_tem_entrada_noturna_mesma_data(funcionario.id, data_base):
+                    return data_base
                 return data_prev
     if (data_hora.hour * 60 + data_hora.minute) <= 6 * 60 and _app_ponto_jornada_avulsa_aberta(funcionario.id, data_prev):
+        if _app_ponto_tem_entrada_noturna_mesma_data(funcionario.id, data_base):
+            return data_base
         return data_prev
     return data_base
 

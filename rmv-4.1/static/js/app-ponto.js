@@ -585,6 +585,48 @@ const _PED_TIPOS_LABEL={
   saida:'Saída'
 };
 
+function _pedOrdenarMarcacoesGestaoFacil(marcacoes){
+  const lista=(marcacoes||[]).slice();
+  const idxTipo=(tipo)=>{
+    const idx=_PED_TIPOS_SEQ.indexOf(String(tipo||'').trim().toLowerCase());
+    return idx>=0?idx:999;
+  };
+  if(lista.length && lista.every(m=>_PED_TIPOS_SEQ.includes(String(m?.tipo||'').trim().toLowerCase()))){
+    return lista.sort((a,b)=>{
+      const ia=idxTipo(a?.tipo); const ib=idxTipo(b?.tipo);
+      if(ia!==ib) return ia-ib;
+      return String(a?.data_hora||'').localeCompare(String(b?.data_hora||''));
+    });
+  }
+  return lista;
+}
+
+function _pedConstruirDataHoraGestao(dataRef, itens){
+  const baseDate=new Date(`${dataRef}T00:00:00`);
+  if(Number.isNaN(baseDate.getTime())) return itens;
+  const ordenados=itens.slice().sort((a,b)=>_PED_TIPOS_SEQ.indexOf(a.tipo)-_PED_TIPOS_SEQ.indexOf(b.tipo));
+  let virouDiaSeguinte=false;
+  let referenciaEntradaNoite=null;
+  for(const item of ordenados){
+    const hora=(item.hora||'').trim();
+    const m=hora.match(/^(\d{2}):(\d{2})$/);
+    if(!m) continue;
+    const hh=parseInt(m[1],10); const mm=parseInt(m[2],10);
+    const minutos=hh*60+mm;
+    if(item.tipo==='entrada' && minutos>=17*60){
+      referenciaEntradaNoite=minutos;
+      virouDiaSeguinte=false;
+    }else if(referenciaEntradaNoite!==null && minutos < referenciaEntradaNoite){
+      virouDiaSeguinte=true;
+    }
+    const dt=new Date(baseDate.getTime());
+    if(virouDiaSeguinte) dt.setDate(dt.getDate()+1);
+    dt.setHours(hh,mm,0,0);
+    item.data_hora=dt.toISOString().slice(0,19);
+  }
+  return itens;
+}
+
 function _pedProximoTipoAutomatico(){
   const wrap=document.getElementById('ped-marcacoes-wrap');
   if(!wrap) return 'entrada';
@@ -656,6 +698,20 @@ async function salvarEdicaoDiaCompleto(){
     const base=/^\d{2}:\d{2}$/.test(dhRaw)?dataRef+'T'+dhRaw:dhRaw;
     // Remover qualquer offset existente para enviar como naive
     return base.replace(/[+\-]\d{2}:\d{2}$|Z$/,'');
+  }
+
+  function _pedColetarItensGestao(cards){
+    const itens=[];
+    cards.forEach(card=>{
+      const id=card.dataset.marcId||'';
+      const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
+      const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
+      const obs=(card.querySelector('.ped-obs')?.value||'').trim();
+      const matchHora=dhRaw.match(/(\d{2}:\d{2})$/);
+      if(!tipo || !matchHora) return;
+      itens.push({id,tipo,hora:matchHora[1],observacao:obs,nova:card.dataset.nova==='1'});
+    });
+    return _pedConstruirDataHoraGestao(data,itens);
   }
 
   if(aplicarEmTodosDias){
@@ -740,24 +796,39 @@ async function salvarEdicaoDiaCompleto(){
 
   // Marcações existentes que continuam = editar
   const itensEditar=[];
-  wrap.querySelectorAll('[data-marc-id]:not([data-nova="1"])').forEach(card=>{
-    const id=card.dataset.marcId;
-    const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
-    const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
-    const dh=_pedDhComTz(data,dhRaw);
-    const obs=(card.querySelector('.ped-obs')?.value||'').trim();
-    if(id && tipo && dh) itensEditar.push({id,tipo,data_hora:dh,observacao:obs});
-  });
+  const cardsExistentes=Array.from(wrap.querySelectorAll('[data-marc-id]:not([data-nova="1"])'));
+  const cardsNovos=Array.from(wrap.querySelectorAll('[data-marc-id][data-nova="1"]'));
+  const itensSequencia=_pedCtx?.isGf ? _pedColetarItensGestao([...cardsExistentes,...cardsNovos]) : null;
+  if(_pedCtx?.isGf && itensSequencia){
+    itensSequencia.filter(it=>!it.nova).forEach(it=>{
+      if(it.id && it.tipo && it.data_hora) itensEditar.push({id:it.id,tipo:it.tipo,data_hora:it.data_hora,observacao:it.observacao});
+    });
+  }else{
+    cardsExistentes.forEach(card=>{
+      const id=card.dataset.marcId;
+      const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
+      const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
+      const dh=_pedDhComTz(data,dhRaw);
+      const obs=(card.querySelector('.ped-obs')?.value||'').trim();
+      if(id && tipo && dh) itensEditar.push({id,tipo,data_hora:dh,observacao:obs});
+    });
+  }
 
   // Linhas novas = criar
   const itensNovos=[];
-  wrap.querySelectorAll('[data-marc-id][data-nova="1"]').forEach(card=>{
-    const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
-    const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
-    const dh=_pedDhComTz(data,dhRaw);
-    const obs=(card.querySelector('.ped-obs')?.value||'').trim();
-    if(tipo && dh) itensNovos.push({tipo,data_hora:dh,observacao:obs,funcionario_id:fid,origem:'admin'});
-  });
+  if(_pedCtx?.isGf && itensSequencia){
+    itensSequencia.filter(it=>it.nova).forEach(it=>{
+      if(it.tipo && it.data_hora) itensNovos.push({tipo:it.tipo,data_hora:it.data_hora,observacao:it.observacao,funcionario_id:fid,origem:'admin'});
+    });
+  }else{
+    cardsNovos.forEach(card=>{
+      const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
+      const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
+      const dh=_pedDhComTz(data,dhRaw);
+      const obs=(card.querySelector('.ped-obs')?.value||'').trim();
+      if(tipo && dh) itensNovos.push({tipo,data_hora:dh,observacao:obs,funcionario_id:fid,origem:'admin'});
+    });
+  }
 
   const totalOps=idsExcluir.length+itensEditar.length+itensNovos.length;
   if(!totalOps){showSt('ped-st','Nenhuma alteração detectada.',true);return;}
@@ -1027,7 +1098,7 @@ function gfDiaClick(dataRef){
 function gfAbrirEditDia(dataRef){
   if(!gfFuncId||!gfUltimoResumo){showSt('gf-st','Selecione um colaborador.',true);return;}
   const diaData=(gfUltimoResumo.dias||[]).find(d=>d.data_ref===dataRef);
-  const marcacoes=diaData?.marcacoes||[];
+  const marcacoes=_pedOrdenarMarcacoesGestaoFacil(diaData?.marcacoes||[]);
   const f=(pontoFuncs||[]).find(x=>String(x.id)===String(gfFuncId));
   _pedCtx={fid:gfFuncId,data:dataRef,marcacoes,isGf:true};
 
