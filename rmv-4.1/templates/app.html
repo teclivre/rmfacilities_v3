@@ -15140,14 +15140,16 @@ async function mapsCriarComunicado(){
   const conteudo=(document.getElementById('com-conteudo').value||'').trim();
   const url=(document.getElementById('com-url').value||'').trim()||null;
   const fid=document.getElementById('com-fid').value||null;
+  const empId=document.getElementById('com-empresa').value||null;
   const posto=(document.getElementById('com-posto').value||'').trim()||null;
   if(!titulo||!conteudo){showSt('com-st','Preencha título e conteúdo.',true);return;}
-  const r=await api('/api/comunicados-app','POST',{titulo,conteudo,url,funcionario_id:fid?parseInt(fid):null,posto_operacional:posto});
+  const r=await api('/api/comunicados-app','POST',{titulo,conteudo,url,funcionario_id:fid?parseInt(fid):null,empresa_id:empId?parseInt(empId):null,posto_operacional:posto});
   if(r.erro){showSt('com-st',r.erro,true);return;}
   document.getElementById('com-titulo').value='';
   document.getElementById('com-conteudo').value='';
   document.getElementById('com-url').value='';
   document.getElementById('com-fid').value='';
+  document.getElementById('com-empresa').value='';
   document.getElementById('com-posto').value='';
   showSt('com-st','Comunicado publicado!',false);
   await mapsCarregarListaComunicados();
@@ -15162,12 +15164,11 @@ async function mapsEnviarBroadcast(){
   const dest=fidSel?`1 funcionário`:(posto?`posto "${posto}"`:(empId?`empresa selecionada`:'todos os ativos'));
   if(!confirm(`Enviar mensagem para ${dest}?\n\n"${msg.substring(0,100)}${msg.length>100?'…':''}"`))return;
   const body={conteudo:msg};
-  const bcMsgEl=document.getElementById('bc-msg');
-  if(bcMsgEl) bcMsgEl.value='';
+  let envioEfetivado=false;
   if(fidSel){
     // Enviar para apenas um via endpoint normal de chat
     const r=await api('/api/mensagens-app/'+fidSel,'POST',{conteudo:msg});
-    if(r.erro){showSt('bc-st',r.erro,true);if(bcMsgEl) bcMsgEl.value=msg;return;}
+    if(r.erro){showSt('bc-st',r.erro,true);return;}
     if(r.push_enviado){
       showSt('bc-st','Mensagem enviada para o app (push entregue).',false);
     }else if(r.push_token_presente===false){
@@ -15175,11 +15176,12 @@ async function mapsEnviarBroadcast(){
     }else{
       showSt('bc-st','Mensagem salva no chat, porém o push falhou nesta tentativa.',true);
     }
+    envioEfetivado=true;
   } else {
     if(empId)body.empresa_id=parseInt(empId);
     if(posto)body.posto=posto;
     const r=await api('/api/mensagens-app/broadcast','POST',body);
-    if(r.erro){showSt('bc-st',r.erro,true);if(bcMsgEl) bcMsgEl.value=msg;return;}
+    if(r.erro){showSt('bc-st',r.erro,true);return;}
     const semToken=Number(r.sem_token_push||0);
     const pushFalhou=Number(r.push_falhou||0);
     const pushOk=Number(r.push_enviados||0);
@@ -15187,6 +15189,13 @@ async function mapsEnviarBroadcast(){
     const comRisco=semToken+pushFalhou;
     const detalhe=`Total: ${total}. Push ok: ${pushOk}. Sem token: ${semToken}. Push falhou: ${pushFalhou}.`;
     showSt('bc-st',detalhe,comRisco>0);
+    envioEfetivado=true;
+  }
+  if(envioEfetivado){
+    document.getElementById('bc-msg').value='';
+    document.getElementById('bc-fid').value='';
+    document.getElementById('bc-empresa').value='';
+    document.getElementById('bc-posto').value='';
   }
   await mapsCarregarFuncionarios();
   await mapsCarregarBadge();
