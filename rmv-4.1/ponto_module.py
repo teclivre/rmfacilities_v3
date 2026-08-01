@@ -400,7 +400,7 @@ def register_ponto_routes(
                 continue
             if dt.date() < data_ref:
                 continue
-            if marcacao.tipo == "entrada" and (dt.hour * 60 + dt.minute) >= 18 * 60:
+            if marcacao.tipo == "entrada" and (dt.hour * 60 + dt.minute) >= 17 * 60:
                 anteriores = [m for m in marcacoes_ordenadas if getattr(m, "data_hora", None) and m.data_hora < dt]
                 if anteriores and anteriores[0].tipo != "entrada":
                     return dt
@@ -447,8 +447,10 @@ def register_ponto_routes(
             if entrada_noturna and data_hora < entrada_noturna:
                 return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
             return data_hora
-        if entrada_noturna and data_hora.date() == data_ref and data_hora < entrada_noturna:
-            return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
+        if entrada_noturna and data_hora.date() == data_ref:
+            if data_hora < entrada_noturna:
+                return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
+            return data_hora
         entrada_min = _ponto_hora_entrada_min(esc, dia_info)
         if entrada_min is None:
             return data_hora

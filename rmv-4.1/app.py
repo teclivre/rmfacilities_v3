@@ -18445,7 +18445,7 @@ def _app_ponto_entrada_noturna_avulsa(marcacoes, data_ref):
             continue
         if dt.date() < data_ref:
             continue
-        if marcacao.tipo == "entrada" and (dt.hour * 60 + dt.minute) >= 18 * 60:
+        if marcacao.tipo == "entrada" and (dt.hour * 60 + dt.minute) >= 17 * 60:
             anteriores = [m for m in marcacoes_ordenadas if getattr(m, "data_hora", None) and m.data_hora < dt]
             if anteriores and anteriores[0].tipo != "entrada":
                 return dt
@@ -18494,6 +18494,10 @@ def _app_ponto_data_hora_logica(funcionario, data_ref, data_hora, marcacoes=None
     if not _app_ponto_cruza_meia_noite(esc, dia_info):
         entrada_noturna = _app_ponto_entrada_noturna_avulsa(marcacoes, data_ref)
         if entrada_noturna and data_hora < entrada_noturna:
+            return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
+        return data_hora
+    if entrada_noturna and data_hora.date() == data_ref:
+        if data_hora < entrada_noturna:
             return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
         return data_hora
     entrada_min = _app_ponto_hora_entrada_min(esc, dia_info)
