@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -65,7 +64,8 @@
         <activity
             android:name=".MensagensActivity"
             android:exported="false"
-            android:launchMode="singleTop" />
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
         <activity
             android:name=".PontoActivity"
             android:exported="false"
@@ -103,11 +103,9 @@
             </intent-filter>
         </activity>
 
-        <!-- Força o scanner de QR Code a abrir em modo retrato (vertical) -->
+        <!-- Usa a configuração padrão da lib de scanner para suportar telas grandes/dobráveis. -->
         <activity
-            android:name="com.journeyapps.barcodescanner.CaptureActivity"
-            android:screenOrientation="portrait"
-            tools:replace="screenOrientation" />
+            android:name="com.journeyapps.barcodescanner.CaptureActivity" />
 
         <service
             android:name=".FcmService"

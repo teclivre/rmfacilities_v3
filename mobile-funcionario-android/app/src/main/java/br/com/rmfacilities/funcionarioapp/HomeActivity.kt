@@ -179,7 +179,9 @@ class HomeActivity : BaseActivity() {
 
         btnMensagens.setOnClickListener {
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            startActivity(Intent(this, MensagensActivity::class.java))
+            startActivity(Intent(this, MensagensActivity::class.java).apply {
+                putExtra("open_tab", "avisos")
+            })
         }
 
         btnOfflineHome.setOnClickListener {
