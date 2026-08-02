@@ -143,7 +143,13 @@ class ActionRetryQueue(context: Context) {
 
     /** Enfileira um arquivo (anexo de mensagem) cifrado em disco para reenvio posterior.
      *  Resolve o bug em que apenas o nome era guardado e os bytes eram descartados. */
-    fun enqueueMensagemArquivo(bytes: ByteArray, mimeType: String, fileName: String, legenda: String = "") {
+    fun enqueueMensagemArquivo(
+        bytes: ByteArray,
+        mimeType: String,
+        fileName: String,
+        legenda: String = "",
+        documentoTipo: String = ""
+    ) {
         val safeName = fileName.replace('/', '_').replace('\\', '_').replace("..", "_")
         val storedName = "msg_pending_${UUID.randomUUID()}_${safeName}.enc"
         val dir = File(appContext.filesDir, "pending_msg_arquivos").also { it.mkdirs() }
@@ -175,6 +181,7 @@ class ActionRetryQueue(context: Context) {
                     "mime" to mimeType.ifBlank { "application/octet-stream" },
                     "nome" to safeName,
                     "legenda" to legenda,
+                    "documento_tipo" to documentoTipo,
                     "enc" to if (encrypted) "1" else "0"
                 ),
                 createdAt = System.currentTimeMillis()
@@ -301,6 +308,7 @@ class ActionRetryQueue(context: Context) {
                         val mime = action.payload["mime"].orEmpty().ifBlank { "application/octet-stream" }
                         val nome = action.payload["nome"].orEmpty().ifBlank { "arquivo" }
                         val legenda = action.payload["legenda"].orEmpty()
+                        val documentoTipo = action.payload["documento_tipo"].orEmpty()
                         val isEnc = action.payload["enc"] == "1"
                         if (filePath.isBlank()) false
                         else {
@@ -323,7 +331,9 @@ class ActionRetryQueue(context: Context) {
                                     try { file.delete() } catch (_: Exception) {}
                                     true
                                 } else {
-                                    val sent2 = api.enviarArquivoMensagem(bytes, mime, nome, legenda) != null
+                                    val sent2 = api.enviarArquivoMensagem(
+                                        bytes, mime, nome, legenda, documentoTipo
+                                    ) != null
                                     if (sent2) try { file.delete() } catch (_: Exception) {}
                                     sent2
                                 }

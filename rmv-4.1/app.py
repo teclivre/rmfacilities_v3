@@ -2972,6 +2972,7 @@ class MensagemApp(db.Model):
     lida = db.Column(db.Boolean, default=False)
     enviado_por = db.Column(db.String(100))  # nome do usuário RH ou 'funcionario'
     tipo = db.Column(db.String(20), default="texto")  # 'texto' | 'arquivo'
+    documento_tipo = db.Column(db.String(80))
     arquivo_nome = db.Column(db.String(300))
     arquivo_caminho = db.Column(db.String(500))
 
@@ -2987,6 +2988,7 @@ class MensagemApp(db.Model):
             "lida": bool(self.lida),
             "enviado_por": self.enviado_por,
             "tipo": self.tipo or "texto",
+            "documento_tipo": self.documento_tipo,
             "arquivo_nome": self.arquivo_nome,
         }
         d["enviado_fmt"] = (
@@ -18180,6 +18182,17 @@ def api_app_mensagem_enviar_arquivo():
     }
     if ext not in exts_permitidas:
         return jsonify({"erro": "Tipo de arquivo nao permitido"}), 400
+    tipos_documento = {
+        "Atestado medico",
+        "ASO",
+        "Documento de identidade",
+        "Comprovante de endereco",
+        "Comprovante bancario",
+        "Outro documento",
+    }
+    documento_tipo = (request.form.get("documento_tipo") or "Outro documento").strip()
+    if documento_tipo not in tipos_documento:
+        return jsonify({"erro": "Informe um tipo de documento valido"}), 400
     conteudo = (request.form.get("conteudo") or "").strip()[:500]
     pasta = os.path.join(UPLOAD_ROOT, "funcionarios", str(f.id), "chat")
     os.makedirs(pasta, exist_ok=True)
@@ -18188,7 +18201,7 @@ def api_app_mensagem_enviar_arquivo():
     abs_p = os.path.join(pasta, nome_final)
     arq.save(abs_p)
     rel = os.path.relpath(abs_p, UPLOAD_ROOT)
-    texto_msg = conteudo if conteudo else f"[Arquivo: {nome_orig}]"
+    texto_msg = conteudo if conteudo else f"[{documento_tipo}: {nome_orig}]"
     m = MensagemApp(
         funcionario_id=f.id,
         de_rh=False,
@@ -18196,6 +18209,7 @@ def api_app_mensagem_enviar_arquivo():
         lida=False,
         enviado_por="funcionario",
         tipo="arquivo",
+        documento_tipo=documento_tipo,
         arquivo_nome=nome_orig,
         arquivo_caminho=rel,
     )
@@ -35024,6 +35038,7 @@ with app.app_context():
         "mensagem_app",
         [
             'tipo VARCHAR(20) DEFAULT "texto"',
+            "documento_tipo VARCHAR(80)",
             "arquivo_nome VARCHAR(300)",
             "arquivo_caminho VARCHAR(500)",
         ],

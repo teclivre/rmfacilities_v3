@@ -113,6 +113,7 @@ data class MensagemItem(
     val lida: Boolean = false,
     val enviado_por: String? = null,
     val tipo: String? = "texto",
+    val documento_tipo: String? = null,
     val arquivo_nome: String? = null,
     val arquivo_url: String? = null
 )

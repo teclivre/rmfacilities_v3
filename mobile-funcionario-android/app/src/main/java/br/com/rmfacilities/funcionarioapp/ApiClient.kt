@@ -591,11 +591,18 @@ class ApiClient(private val session: SessionManager) {
         http.newCall(req).execute().use { resp -> return resp.isSuccessful }
     }
 
-    fun enviarArquivoMensagem(bytes: ByteArray, mimeType: String, fileName: String, legenda: String = ""): MensagemItem? {
+    fun enviarArquivoMensagem(
+        bytes: ByteArray,
+        mimeType: String,
+        fileName: String,
+        legenda: String = "",
+        documentoTipo: String = ""
+    ): MensagemItem? {
         val body = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("arquivo", fileName, bytes.toRequestBody(mimeType.toMediaType()))
             .apply { if (legenda.isNotBlank()) addFormDataPart("conteudo", legenda) }
+            .apply { if (documentoTipo.isNotBlank()) addFormDataPart("documento_tipo", documentoTipo) }
             .build()
         val req = Request.Builder()
             .url(url("/api/app/funcionario/mensagens/arquivo"))

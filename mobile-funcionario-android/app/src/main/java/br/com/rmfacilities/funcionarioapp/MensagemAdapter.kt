@@ -193,7 +193,10 @@ class MensagemAdapter(
     private fun bindArquivo(layout: LinearLayout, tvNome: TextView, item: MensagemItem, temArquivo: Boolean) {
         if (temArquivo) {
             layout.visibility = View.VISIBLE
-            tvNome.text = item.arquivo_nome ?: "arquivo"
+            tvNome.text = listOfNotNull(
+                item.documento_tipo?.takeIf { it.isNotBlank() },
+                item.arquivo_nome ?: "arquivo"
+            ).joinToString(" - ")
             layout.setOnClickListener { onAbrirArquivo(item) }
         } else {
             layout.visibility = View.GONE
