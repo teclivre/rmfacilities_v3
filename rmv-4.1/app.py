@@ -24921,6 +24921,66 @@ def api_documentos_rh_upload():
     )
 
 
+@app.route("/api/rh/ponto/ciclo/colaboradores")
+@lr
+def api_rh_ponto_ciclo_colaboradores():
+    """Lista os colaboradores elegíveis para a folha da competência."""
+    import calendar as _cal
+    from sqlalchemy import func as sqla_func
+
+    competencia = (request.args.get("competencia") or "").strip()
+    if not re.match(r"^\d{4}-\d{2}$", competencia):
+        return jsonify({"erro": "Competência inválida. Use YYYY-MM."}), 400
+    try:
+        ano, mes = [int(x) for x in competencia.split("-")]
+        inicio = date(ano, mes, 1)
+        fim = date(ano, mes, _cal.monthrange(ano, mes)[1])
+    except ValueError:
+        return jsonify({"erro": "Competência inválida."}), 400
+
+    empresa_id = to_num(request.args.get("empresa_id") or 0)
+    somente_ativos = str(request.args.get("somente_ativos", "true")).lower() not in ("0", "false", "nao")
+    q = Funcionario.query
+    if empresa_id:
+        q = q.filter(Funcionario.empresa_id == empresa_id)
+    if somente_ativos:
+        q = q.filter(Funcionario.status == "Ativo")
+    funcionarios = q.order_by(Funcionario.nome.asc()).all()
+
+    ids = [f.id for f in funcionarios]
+    fechados_por_func = {}
+    if ids:
+        fechamentos = (
+            db.session.query(
+                PontoFechamentoDia.funcionario_id,
+                sqla_func.count(PontoFechamentoDia.id),
+            )
+            .filter(
+                PontoFechamentoDia.funcionario_id.in_(ids),
+                PontoFechamentoDia.data_ref >= inicio.isoformat(),
+                PontoFechamentoDia.data_ref <= fim.isoformat(),
+            )
+            .group_by(PontoFechamentoDia.funcionario_id)
+            .all()
+        )
+        fechados_por_func = {fid: total for fid, total in fechamentos}
+
+    empresas = {empresa.id: empresa.nome for empresa in Empresa.query.all()}
+    itens = [
+        {
+            "funcionario_id": f.id,
+            "nome": f.nome or "",
+            "matricula": f.matricula or "",
+            "cargo": f.cargo or f.funcao or "",
+            "status": f.status or "",
+            "empresa_nome": empresas.get(f.empresa_id, ""),
+            "dias_fechados": int(fechados_por_func.get(f.id, 0)),
+        }
+        for f in funcionarios
+    ]
+    return jsonify({"ok": True, "competencia": competencia, "colaboradores": itens})
+
+
 @app.route("/api/rh/ponto/ciclo/fechar", methods=["POST"])
 @lr
 def api_rh_ponto_ciclo_fechar():

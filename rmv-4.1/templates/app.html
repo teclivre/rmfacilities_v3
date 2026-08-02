@@ -1966,11 +1966,11 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="g4" style="margin-top:8px;align-items:flex-end">
           <div class="f">
             <label>Competência</label>
-            <input id="rh-ciclo-comp" type="month" onchange="rhCicloCarregarArquivos()">
+            <input id="rh-ciclo-comp" type="month" onchange="rhCicloCarregarColaboradores();rhCicloCarregarArquivos()">
           </div>
           <div class="f">
             <label>Empresa</label>
-            <select id="rh-ciclo-empresa" onchange="rhCicloCarregarArquivos()"><option value="">Todas as empresas</option></select>
+            <select id="rh-ciclo-empresa" onchange="rhCicloCarregarColaboradores();rhCicloCarregarArquivos()"><option value="">Todas as empresas</option></select>
           </div>
           <div class="f">
             <label>Assinatura via</label>
@@ -1987,16 +1987,20 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
         </div>
         <div class="brow" style="justify-content:flex-start;gap:10px;flex-wrap:wrap;margin-top:8px">
-          <label style="display:flex;align-items:center;gap:6px;font-size:12px"><input id="rh-ciclo-so-ativos" type="checkbox" checked style="width:auto">Somente ativos</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px"><input id="rh-ciclo-so-ativos" type="checkbox" checked onchange="rhCicloCarregarColaboradores()" style="width:auto">Somente ativos</label>
           <button class="btn b-gh b-sm" type="button" onclick="rhCicloFechar(false)">Fechar ciclo</button>
           <button class="btn b-vd b-sm" type="button" onclick="rhCicloFechar(true)">Fechar ciclo e enviar para assinatura</button>
+        </div>
+        <div class="f" style="margin-top:10px;max-width:360px">
+          <label>Buscar colaborador</label>
+          <input id="rh-ciclo-busca" placeholder="Nome ou matrícula" oninput="rhCicloRenderColaboradores()">
         </div>
         <div class="hint" style="margin-top:8px">Ao enviar assinatura, o sistema gera o espelho PDF por colaborador e publica em documentos RH como categoria Folha de Ponto.</div>
         <div id="st-rh-ciclo" class="st" style="margin-top:10px"></div>
         <div class="tbl-wrap" style="margin-top:10px">
           <table class="tbl">
-            <thead><tr><th>Colaborador</th><th>Fechamento</th><th>Envio para assinatura</th></tr></thead>
-            <tbody id="rh-ciclo-tb"><tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:14px">Nenhum processamento executado ainda.</td></tr></tbody>
+            <thead><tr><th>Colaborador</th><th>Fechamento</th><th>Envio para assinatura</th><th>Ações</th></tr></thead>
+            <tbody id="rh-ciclo-tb"><tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px">Carregando colaboradores...</td></tr></tbody>
           </table>
         </div>
 
@@ -5662,6 +5666,7 @@ function rhCicloInit(){
     compEl.value=`${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}`;
   }
   rhCicloPopularEmpresas();
+  rhCicloCarregarColaboradores();
   rhCicloCarregarArquivos();
 }
 
@@ -5678,13 +5683,14 @@ function rhCicloRenderTabela(rows){
   const tb=document.getElementById('rh-ciclo-tb');
   if(!tb) return;
   if(!Array.isArray(rows) || !rows.length){
-    tb.innerHTML='<tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:14px">Nenhum colaborador processado.</td></tr>';
+    tb.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px">Nenhum colaborador encontrado.</td></tr>';
     return;
   }
   tb.innerHTML=rows.map(r=>`<tr>
-    <td>${esc(r.nome||'')}</td>
+    <td><strong>${esc(r.nome||'')}</strong>${r.meta?`<br><small style="color:var(--text-muted)">${esc(r.meta)}</small>`:''}</td>
     <td>${esc(r.fechamento||'')}</td>
     <td>${esc(r.envio||'-')}</td>
+    <td style="white-space:nowrap">${r.acoes||'—'}</td>
   </tr>`).join('');
 }
 
@@ -5695,6 +5701,56 @@ function rhCicloGetCompetencia(){
 function rhCicloGetEmpresaId(){
   const empresaVal=(document.getElementById('rh-ciclo-empresa')?.value||'').trim();
   return empresaVal?Number(empresaVal):0;
+}
+
+function rhCicloRenderColaboradores(){
+  const termo=(document.getElementById('rh-ciclo-busca')?.value||'').trim().toLowerCase();
+  const filtrados=(rhCicloColaboradores||[]).filter(f=>{
+    if(!termo) return true;
+    return String(f.nome||'').toLowerCase().includes(termo) || String(f.matricula||'').toLowerCase().includes(termo);
+  });
+  const rows=filtrados.map(f=>{
+    const fid=Number(f.funcionario_id||0);
+    const meta=[f.matricula?`Mat. ${f.matricula}`:'',f.cargo||'',f.empresa_nome||''].filter(Boolean).join(' · ');
+    const fechamento=Number(f.dias_fechados||0)>0?`${f.dias_fechados} dia(s) fechado(s)`:'Pendente';
+    return {
+      nome:f.nome||'',
+      meta,
+      fechamento,
+      envio:'—',
+      acoes:`<button class="btn b-gh b-sm" type="button" onclick="rhCicloAbrirPrevia(${fid})">Prévia</button> <button class="btn b-az b-sm" type="button" onclick="rhCicloFecharFuncionario(${fid},false)">Fechar</button> <button class="btn b-vd b-sm" type="button" onclick="rhCicloFecharFuncionario(${fid},true)">Fechar e enviar</button>`
+    };
+  });
+  rhCicloRenderTabela(rows);
+}
+
+async function rhCicloCarregarColaboradores(){
+  const compMes=rhCicloGetCompetencia();
+  if(!/^\d{4}-\d{2}$/.test(compMes)) return;
+  const params=new URLSearchParams({competencia:compMes,somente_ativos:document.getElementById('rh-ciclo-so-ativos')?.checked?'true':'false'});
+  const empresaId=rhCicloGetEmpresaId();
+  if(empresaId) params.set('empresa_id',String(empresaId));
+  const d=await api(`/api/rh/ponto/ciclo/colaboradores?${params.toString()}`);
+  if(d?.erro){
+    rhCicloColaboradores=[];
+    rhCicloRenderColaboradores();
+    showSt('st-rh-ciclo',d.erro,true);
+    return;
+  }
+  rhCicloColaboradores=Array.isArray(d?.colaboradores)?d.colaboradores:[];
+  rhCicloRenderColaboradores();
+}
+
+function rhCicloAbrirPrevia(funcionarioId){
+  const compMes=rhCicloGetCompetencia();
+  if(!/^\d{4}-\d{2}$/.test(compMes)) return;
+  window.open(`/api/ponto/espelho-mensal?funcionario_id=${encodeURIComponent(funcionarioId)}&competencia=${encodeURIComponent(compMes)}`,'_blank');
+}
+
+async function rhCicloFecharFuncionario(funcionarioId,enviarAssinatura){
+  const ok=await rhCicloFechar(enviarAssinatura,[Number(funcionarioId)]);
+  await rhCicloCarregarColaboradores();
+  return ok;
 }
 
 function rhCicloRenderArquivos(data){
@@ -5763,11 +5819,11 @@ function rhCicloBaixarZip(empresaId){
   window.open(`/api/rh/ponto/ciclo/arquivos/zip?${params.toString()}`,'_blank');
 }
 
-async function rhCicloFechar(enviarAssinatura){
+async function rhCicloFechar(enviarAssinatura,funcionarioIds=[]){
   const compMes=rhCicloGetCompetencia();
   if(!/^\d{4}-\d{2}$/.test(compMes)){
     showSt('st-rh-ciclo','Informe a competência no formato AAAA-MM.',true);
-    return;
+    return false;
   }
   const empresaId=rhCicloGetEmpresaId();
   const somenteAtivos=!!document.getElementById('rh-ciclo-so-ativos')?.checked;
@@ -5782,10 +5838,13 @@ async function rhCicloFechar(enviarAssinatura){
     empresa_id:empresaId,
     somente_ativos:somenteAtivos
   };
+  if(Array.isArray(funcionarioIds) && funcionarioIds.length){
+    payload.funcionario_ids=funcionarioIds;
+  }
   const fechamento=await api('/api/rh/ponto/ciclo/fechar','POST',payload);
   if(fechamento.erro){
     showSt('st-rh-ciclo',fechamento.erro,true);
-    return;
+    return false;
   }
 
   const funcs=Array.isArray(fechamento.funcionarios)?fechamento.funcionarios:[];
@@ -5795,7 +5854,7 @@ async function rhCicloFechar(enviarAssinatura){
 
   if(!enviarAssinatura || !funcs.length){
     await rhCicloCarregarArquivos();
-    return;
+    return true;
   }
 
   let ok=0, falhas=0;
@@ -5856,6 +5915,7 @@ async function rhCicloFechar(enviarAssinatura){
     showSt('st-rh-ciclo',`Concluído com sucesso. ${ok} assinatura(s) enviada(s).`,false);
   }
   await rhCicloCarregarArquivos();
+  return falhas===0;
 }
 
 function rhFeriasFmtBr(v){

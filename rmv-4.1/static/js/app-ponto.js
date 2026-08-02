@@ -885,6 +885,7 @@ async function salvarEdicaoDiaCompleto(){
 
 // ─── GESTÃO FÁCIL ─────────────────────────────────────────────────────────
 let gfFuncId = 0;let gfUltimoResumo = null;
+let rhCicloColaboradores = [];
 async function gfCarregar(){
   // Pré-preencher competência com mês atual se vazio
   const inp=document.getElementById('gf-competencia');
@@ -966,6 +967,27 @@ function gfAbrirPreviaFolha(){
   const comp=(document.getElementById('gf-competencia')?.value||'').trim();
   if(!/^\d{4}-\d{2}$/.test(comp)){showSt('gf-st','Competência inválida. Use YYYY-MM.',true);return;}
   window.open('/api/ponto/espelho-mensal?funcionario_id='+gfFuncId+'&competencia='+encodeURIComponent(comp),'_blank');
+}
+
+async function gfFecharFolha(enviarAssinatura){
+  if(!gfFuncId){showSt('gf-st','Selecione um colaborador.',true);return;}
+  const funcionario=(pontoFuncs||[]).find(f=>String(f.id)===String(gfFuncId));
+  if(_pontoStatusNorm(funcionario?.status)!=='ativo'){
+    showSt('gf-st','O fechamento individual está disponível apenas para colaboradores ativos.',true);
+    return;
+  }
+  const comp=(document.getElementById('gf-competencia')?.value||'').trim();
+  if(!/^\d{4}-\d{2}$/.test(comp)){showSt('gf-st','Competência inválida. Use YYYY-MM.',true);return;}
+  const cicloComp=document.getElementById('rh-ciclo-comp');
+  const cicloAtivos=document.getElementById('rh-ciclo-so-ativos');
+  if(cicloComp) cicloComp.value=comp;
+  if(cicloAtivos) cicloAtivos.checked=true;
+  showSt('gf-st',enviarAssinatura?'Fechando folha e enviando para assinatura...':'Fechando folha...',false);
+  const ok=await rhCicloFecharFuncionario(gfFuncId,enviarAssinatura);
+  await gfCarregarMes();
+  if(ok){
+    showSt('gf-st',enviarAssinatura?'Folha processada para fechamento e assinatura.':'Folha processada para fechamento.',false);
+  }
 }
 
 function gfRenderCalendario(resumo,comp){
