@@ -5712,13 +5712,19 @@ function rhCicloRenderColaboradores(){
   const rows=filtrados.map(f=>{
     const fid=Number(f.funcionario_id||0);
     const meta=[f.matricula?`Mat. ${f.matricula}`:'',f.cargo||'',f.empresa_nome||''].filter(Boolean).join(' · ');
-    const fechamento=Number(f.dias_fechados||0)>0?`${f.dias_fechados} dia(s) fechado(s)`:'Pendente';
+    const fechado=Number(f.dias_fechados||0)>0;
+    const enviado=!!f.assinatura_enviada;
+    const fechamento=fechado?`Fechada (${f.dias_fechados} dia(s))`:'Pendente';
+    const envio=f.assinado?'Assinada':(enviado?'Enviada para assinatura':'Não enviada');
+    const acaoEnviar=enviado
+      ? '<button class="btn b-gh b-sm" type="button" disabled title="A folha desta competência já foi enviada para assinatura">Já enviada</button>'
+      : `<button class="btn b-vd b-sm" type="button" onclick="rhCicloFecharFuncionario(${fid},true)">Fechar e enviar</button>`;
     return {
       nome:f.nome||'',
       meta,
       fechamento,
-      envio:'—',
-      acoes:`<button class="btn b-gh b-sm" type="button" onclick="rhCicloAbrirPrevia(${fid})">Prévia</button> <button class="btn b-az b-sm" type="button" onclick="rhCicloFecharFuncionario(${fid},false)">Fechar</button> <button class="btn b-vd b-sm" type="button" onclick="rhCicloFecharFuncionario(${fid},true)">Fechar e enviar</button>`
+      envio,
+      acoes:`<button class="btn b-gh b-sm" type="button" onclick="rhCicloAbrirPrevia(${fid})">Prévia</button> <button class="btn b-az b-sm" type="button" onclick="rhCicloFecharFuncionario(${fid},false)">Fechar</button> ${acaoEnviar}`
     };
   });
   rhCicloRenderTabela(rows);
@@ -5854,14 +5860,23 @@ async function rhCicloFechar(enviarAssinatura,funcionarioIds=[]){
 
   if(!enviarAssinatura || !funcs.length){
     await rhCicloCarregarArquivos();
+    await rhCicloCarregarColaboradores();
     return true;
   }
 
+  await rhCicloCarregarColaboradores();
+  const estadoPorFuncionario=new Map((rhCicloColaboradores||[]).map(f=>[Number(f.funcionario_id||0),f]));
   let ok=0, falhas=0;
   for(let i=0;i<funcs.length;i++){
     const f=funcs[i]||{};
     const fid=Number(f.funcionario_id||0);
     const statusNorm=String(f.status||'').trim().toLowerCase();
+    const estadoAtual=estadoPorFuncionario.get(fid);
+    if(estadoAtual?.assinatura_enviada){
+      linhas[i].envio=estadoAtual.assinado?'Já assinada':'Já enviada para assinatura';
+      rhCicloRenderTabela(linhas);
+      continue;
+    }
     if(statusNorm==='demitido'){
       linhas[i].envio='Não enviado: colaborador demitido';
       rhCicloRenderTabela(linhas);
@@ -5888,12 +5903,18 @@ async function rhCicloFechar(enviarAssinatura,funcionarioIds=[]){
       fd.append('categoria','folha_ponto');
       fd.append('competencia',compMes);
       fd.append('canal_assinatura',canal);
+      fd.append('evitar_duplicado','1');
       if(prazoDias) fd.append('prazo_dias',prazoDias);
 
       const upResp=await fetch(`/api/funcionarios/${encodeURIComponent(fid)}/arquivos`,{method:'POST',body:fd,credentials:'same-origin'});
       const upJson=await upResp.json().catch(()=>({}));
       if(!upResp.ok || upJson?.erro){
         throw new Error(upJson?.erro || `Falha no upload (HTTP ${upResp.status})`);
+      }
+      if(upJson?.duplicado){
+        linhas[i].envio=upJson?.ass_status==='assinado'?'Já assinada':'Já enviada para assinatura';
+        rhCicloRenderTabela(linhas);
+        continue;
       }
       const stAuto=(upJson?.assinatura_auto?.status||'').toString().toLowerCase();
       if(stAuto==='bloqueado_demitido'){
@@ -5915,6 +5936,7 @@ async function rhCicloFechar(enviarAssinatura,funcionarioIds=[]){
     showSt('st-rh-ciclo',`Concluído com sucesso. ${ok} assinatura(s) enviada(s).`,false);
   }
   await rhCicloCarregarArquivos();
+  await rhCicloCarregarColaboradores();
   return falhas===0;
 }
 

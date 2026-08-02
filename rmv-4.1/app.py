@@ -11453,6 +11453,27 @@ def api_funcionario_upload_arquivo(id):
     if cat == "folha_ponto" and str((f.status or "")).strip().lower() == "demitido":
         canal_ass = "nao"
 
+    evitar_duplicado = str(request.form.get("evitar_duplicado") or "").strip().lower()
+    if cat == "folha_ponto" and evitar_duplicado in ("1", "true", "sim", "yes"):
+        arquivo_existente = (
+            FuncionarioArquivo.query.filter(
+                FuncionarioArquivo.funcionario_id == id,
+                FuncionarioArquivo.categoria == "folha_ponto",
+                FuncionarioArquivo.competencia == comp,
+                FuncionarioArquivo.ass_status.in_(["pendente", "assinado", "concluida"]),
+            )
+            .order_by(FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc())
+            .first()
+        )
+        if arquivo_existente:
+            out = arquivo_existente.to_dict()
+            out["duplicado"] = True
+            out["assinatura_auto"] = {
+                "status": "ja_solicitada",
+                "ass_status": arquivo_existente.ass_status or "pendente",
+            }
+            return jsonify(out)
+
     rel, _ = save_upload(fs, subdir)
     a = FuncionarioArquivo(
         funcionario_id=id,
@@ -24949,6 +24970,7 @@ def api_rh_ponto_ciclo_colaboradores():
 
     ids = [f.id for f in funcionarios]
     fechados_por_func = {}
+    arquivos_por_func = {}
     if ids:
         fechamentos = (
             db.session.query(
@@ -24964,10 +24986,28 @@ def api_rh_ponto_ciclo_colaboradores():
             .all()
         )
         fechados_por_func = {fid: total for fid, total in fechamentos}
+        arquivos = (
+            FuncionarioArquivo.query.filter(
+                FuncionarioArquivo.funcionario_id.in_(ids),
+                FuncionarioArquivo.categoria == "folha_ponto",
+                FuncionarioArquivo.competencia == competencia,
+            )
+            .order_by(
+                FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc()
+            )
+            .all()
+        )
+        for arquivo in arquivos:
+            arquivos_por_func.setdefault(arquivo.funcionario_id, arquivo)
 
     empresas = {empresa.id: empresa.nome for empresa in Empresa.query.all()}
-    itens = [
-        {
+    itens = []
+    for f in funcionarios:
+        arquivo = arquivos_por_func.get(f.id)
+        ass_status = (arquivo.ass_status or "nao_solicitada").strip().lower() if arquivo else ""
+        assinatura_enviada = ass_status in ("pendente", "assinado", "concluida")
+        itens.append(
+            {
             "funcionario_id": f.id,
             "nome": f.nome or "",
             "matricula": f.matricula or "",
@@ -24975,9 +25015,12 @@ def api_rh_ponto_ciclo_colaboradores():
             "status": f.status or "",
             "empresa_nome": empresas.get(f.empresa_id, ""),
             "dias_fechados": int(fechados_por_func.get(f.id, 0)),
+            "arquivo_id": arquivo.id if arquivo else None,
+            "ass_status": ass_status or "nao_solicitada",
+            "assinatura_enviada": assinatura_enviada,
+            "assinado": ass_status in ("assinado", "concluida"),
         }
-        for f in funcionarios
-    ]
+        )
     return jsonify({"ok": True, "competencia": competencia, "colaboradores": itens})
 
 
