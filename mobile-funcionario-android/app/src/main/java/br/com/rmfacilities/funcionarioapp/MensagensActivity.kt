@@ -266,7 +266,11 @@ class MensagensActivity : BaseActivity() {
         ViewCompat.setOnApplyWindowInsetsListener(mensagensRoot) { v, insets ->
             val tecladoVisivel = insets.isVisible(WindowInsetsCompat.Type.ime())
             bottomNav.visibility = if (tecladoVisivel) View.GONE else View.VISIBLE
-            val novoPaddingBottom = if (tecladoVisivel) 8.dp() else rootPaddingBottomOriginal
+            val novoPaddingBottom = if (tecladoVisivel) {
+                insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            } else {
+                rootPaddingBottomOriginal
+            }
             if (v.paddingBottom != novoPaddingBottom) {
                 v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, novoPaddingBottom)
             }
