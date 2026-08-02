@@ -2878,7 +2878,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div style="margin-top:14px">
           <div class="card-header" style="margin-bottom:8px"><span class="card-title">Itens da cotação</span></div>
           <div class="g3" style="margin-bottom:8px;align-items:flex-end">
-            <div class="f"><label>Novo item</label><input id="oc-novo-item-desc" placeholder="Ex.: Luva de proteção" list="oc-catalogo-opcoes"></div>
+            <div class="f"><label>Novo item</label><div style="position:relative"><input id="oc-novo-item-desc" placeholder="Ex.: Luva de proteção" autocomplete="off" oninput="ocAtualizarSugestoesNovoItem()" onfocus="ocAtualizarSugestoesNovoItem()" onblur="setTimeout(ocFecharSugestoesNovoItem,120)" onkeydown="ocTeclaSugestoesNovoItem(event)"><div id="oc-novo-item-sugestoes" hidden style="position:absolute;left:0;right:0;top:calc(100% + 6px);max-height:240px;overflow:auto;background:linear-gradient(180deg,#0f2338,#112b47);border:1px solid rgba(126,180,240,.38);border-radius:12px;box-shadow:0 18px 42px rgba(0,0,0,.38);z-index:40;padding:6px"></div></div></div>
             <div class="f"><label>Quantidade</label><input id="oc-novo-item-qtd" placeholder="Ex.: 20 unidades" onkeydown="if(event.key==='Enter'){event.preventDefault();ocAdicionarItemRapido();}"></div>
             <div class="f" style="display:flex;align-items:flex-end"><button class="btn b-gh b-sm" type="button" onclick="ocAdicionarItemRapido()">Adicionar item</button></div>
           </div>
@@ -13424,6 +13424,97 @@ let _ocLista=[];
 let _ocEditId=null;
 let _ocCatalogoItens=[];
 let _ocCatalogoEditId=null;
+let _ocSugestoesVisiveis=[];
+let _ocSugestaoAtiva=-1;
+
+function ocFecharSugestoesNovoItem(){
+  const box=document.getElementById('oc-novo-item-sugestoes');
+  if(!box)return;
+  box.hidden=true;
+  box.innerHTML='';
+  _ocSugestoesVisiveis=[];
+  _ocSugestaoAtiva=-1;
+}
+
+function ocAplicarSugestaoNovoItem(item){
+  const input=document.getElementById('oc-novo-item-desc');
+  if(!input||!item)return;
+  input.value=item.nome||'';
+  ocFecharSugestoesNovoItem();
+  const qtd=document.getElementById('oc-novo-item-qtd');
+  if(qtd && !qtd.value) qtd.focus();
+}
+
+function ocPintarSugestaoAtiva(){
+  const box=document.getElementById('oc-novo-item-sugestoes');
+  if(!box)return;
+  const nodes=box.querySelectorAll('[data-oc-sug]');
+  nodes.forEach((node,idx)=>{
+    if(idx===_ocSugestaoAtiva){
+      node.style.background='linear-gradient(90deg,rgba(59,148,230,.28),rgba(40,90,170,.24))';
+      node.style.borderColor='rgba(128,189,255,.56)';
+    }else{
+      node.style.background='rgba(8,25,44,.35)';
+      node.style.borderColor='rgba(124,176,238,.12)';
+    }
+  });
+}
+
+function ocAtualizarSugestoesNovoItem(){
+  const box=document.getElementById('oc-novo-item-sugestoes');
+  const input=document.getElementById('oc-novo-item-desc');
+  if(!box||!input)return;
+  const termo=(input.value||'').trim().toLowerCase();
+  const ativos=(_ocCatalogoItens||[]).filter(i=>i.ativo!==false);
+  const vistos=new Set();
+  const itens=ativos.filter(i=>{
+    const nome=(i.nome||'').trim();
+    if(!nome)return false;
+    const chave=nome.toLowerCase();
+    if(vistos.has(chave)) return false;
+    vistos.add(chave);
+    if(!termo) return true;
+    const alvo=`${nome} ${(i.unidade||'')} ${(i.descricao||'')}`.toLowerCase();
+    return alvo.includes(termo);
+  }).slice(0,8);
+  _ocSugestoesVisiveis=itens;
+  _ocSugestaoAtiva=-1;
+  if(!itens.length || !input.matches(':focus')){
+    ocFecharSugestoesNovoItem();
+    return;
+  }
+  box.hidden=false;
+  box.innerHTML=itens.map((item,idx)=>{
+    const meta=[item.unidade||'',item.descricao||''].filter(Boolean).join(' · ');
+    return `<div data-oc-sug="${idx}" onmousedown="event.preventDefault();ocAplicarSugestaoNovoItem(_ocSugestoesVisiveis[${idx}])" style="padding:9px 10px;border:1px solid rgba(124,176,238,.12);border-radius:10px;background:rgba(8,25,44,.35);cursor:pointer;margin-bottom:4px;transition:all .12s ease"><div style="font-weight:700;color:#e9f4ff;line-height:1.2">${escHtml(item.nome||'')}</div>${meta?`<div style="font-size:11px;color:#a8c8e8;margin-top:3px">${escHtml(meta)}</div>`:''}</div>`;
+  }).join('');
+  ocPintarSugestaoAtiva();
+}
+
+function ocTeclaSugestoesNovoItem(event){
+  if(!Array.isArray(_ocSugestoesVisiveis) || !_ocSugestoesVisiveis.length) return;
+  if(event.key==='ArrowDown'){
+    event.preventDefault();
+    _ocSugestaoAtiva=Math.min(_ocSugestaoAtiva+1,_ocSugestoesVisiveis.length-1);
+    ocPintarSugestaoAtiva();
+    return;
+  }
+  if(event.key==='ArrowUp'){
+    event.preventDefault();
+    _ocSugestaoAtiva=Math.max(_ocSugestaoAtiva-1,0);
+    ocPintarSugestaoAtiva();
+    return;
+  }
+  if(event.key==='Enter' && _ocSugestaoAtiva>=0){
+    event.preventDefault();
+    ocAplicarSugestaoNovoItem(_ocSugestoesVisiveis[_ocSugestaoAtiva]);
+    return;
+  }
+  if(event.key==='Escape'){
+    event.preventDefault();
+    ocFecharSugestoesNovoItem();
+  }
+}
 
 function ocAtualizarModalidade(){
   const ehOrcamento=document.getElementById('oc-tipo')?.value==='pedido_orcamento';
@@ -13480,6 +13571,7 @@ function ocAdicionarItemRapido(){
   }
   descEl.value='';
   qtdEl.value='';
+  ocFecharSugestoesNovoItem();
   descEl.focus();
 }
 
@@ -13487,6 +13579,7 @@ function ocRenderCatalogoDatalist(){
   const dl=document.getElementById('oc-catalogo-opcoes');
   if(!dl)return;
   dl.innerHTML=_ocCatalogoItens.filter(i=>i.ativo!==false).map(i=>`<option value="${escHtml(i.nome||'')}">${escHtml([i.unidade||'',i.descricao||''].filter(Boolean).join(' - '))}</option>`).join('');
+  ocAtualizarSugestoesNovoItem();
 }
 
 function ocRenderCatalogoItens(){
