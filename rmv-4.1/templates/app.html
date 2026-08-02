@@ -2884,22 +2884,6 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="brow" style="justify-content:flex-start"><button class="btn b-az" onclick="salvarOrdemCompra()">Gerar ordem e PDF</button></div>
       </div>
       <div class="card">
-        <div class="card-header"><span class="card-title">Cadastro de itens para compras e orçamento</span></div>
-        <div class="g4">
-          <div class="f"><label>Nome do item *</label><input id="oc-cat-nome" placeholder="Ex.: Luva nitrílica"></div>
-          <div class="f"><label>Unidade</label><input id="oc-cat-unidade" placeholder="Ex.: caixa, unidade, litro"></div>
-          <div class="f"><label>Descrição</label><input id="oc-cat-descricao" placeholder="Observação opcional"></div>
-          <div class="f"><label>Ativo</label><select id="oc-cat-ativo"><option value="1">Sim</option><option value="0">Não</option></select></div>
-        </div>
-        <div class="brow" style="justify-content:flex-start;margin-top:8px;gap:8px;flex-wrap:wrap">
-          <button class="btn b-vd" type="button" onclick="ocSalvarItemCatalogo()">Salvar item</button>
-          <button class="btn b-gh" type="button" onclick="ocLimparItemCatalogoForm()">Limpar</button>
-          <input id="oc-cat-busca" placeholder="Buscar item cadastrado" oninput="ocRenderCatalogoItens()" style="min-width:260px">
-          <button class="btn b-gh b-sm" type="button" onclick="ocCarregarCatalogoItens()">Atualizar lista</button>
-        </div>
-        <div id="oc-cat-lista" class="tbl-wrap" style="margin-top:10px"><div class="vazio">Carregando itens...</div></div>
-      </div>
-      <div class="card">
         <div class="card-header"><span class="card-title">Resumo mensal de pedidos aprovados</span></div>
         <div id="resumo-oc" class="tbl-wrap"><div class="vazio">Carregando resumo...</div></div>
       </div>
@@ -4072,6 +4056,23 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="brow" style="justify-content:flex-start;margin-top:14px">
           <button class="btn b-az" onclick="salvarConfig()">Salvar configurações</button>
         </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Cadastro de itens para compras e orçamento</span></div>
+        <div class="g4">
+          <div class="f"><label>Nome do item *</label><input id="oc-cat-nome" placeholder="Ex.: Luva nitrílica"></div>
+          <div class="f"><label>Unidade</label><input id="oc-cat-unidade" placeholder="Ex.: caixa, unidade, litro"></div>
+          <div class="f"><label>Descrição</label><input id="oc-cat-descricao" placeholder="Observação opcional"></div>
+          <div class="f"><label>Ativo</label><select id="oc-cat-ativo"><option value="1">Sim</option><option value="0">Não</option></select></div>
+        </div>
+        <div class="brow" style="justify-content:flex-start;margin-top:8px;gap:8px;flex-wrap:wrap">
+          <button class="btn b-vd" type="button" onclick="ocSalvarItemCatalogo()">Salvar item</button>
+          <button class="btn b-gh" type="button" onclick="ocLimparItemCatalogoForm()">Limpar</button>
+          <input id="oc-cat-busca" placeholder="Buscar item cadastrado" oninput="ocRenderCatalogoItens()" style="min-width:260px">
+          <button class="btn b-gh b-sm" type="button" onclick="ocCarregarCatalogoItens()">Atualizar lista</button>
+        </div>
+        <div id="st-oc-catalogo" class="st" style="margin-top:8px"></div>
+        <div id="oc-cat-lista" class="tbl-wrap" style="margin-top:10px"><div class="vazio">Carregando itens...</div></div>
       </div>
       <div class="card">
         <div class="card-header"><span class="card-title">🔒 Backup & Recuperação Completa do Sistema</span></div>
@@ -5528,7 +5529,7 @@ function nav(id,el,force=false){
   }
   if(targetId==='empresas')renderEmps();
   if(targetId==='usuarios')renderUsr();
-  if(targetId==='config')loadConfig();
+  if(targetId==='config'){loadConfig();ocCarregarCatalogoItens();}
   if(targetId==='rh'){
     renderFuncionarios();
     painelAssInicializar();
@@ -13459,6 +13460,11 @@ function ocRenderCatalogoItens(){
   el.innerHTML=`<table class="tbl"><thead><tr><th>Item</th><th>Unidade</th><th>Descrição</th><th>Status</th><th style="width:220px">Ações</th></tr></thead><tbody>${itens.map(i=>`<tr><td>${escHtml(i.nome||'')}</td><td>${escHtml(i.unidade||'-')}</td><td>${escHtml(i.descricao||'-')}</td><td>${i.ativo===false?'Inativo':'Ativo'}</td><td><button class="btn b-gh b-sm" type="button" onclick="ocEditarItemCatalogo(${i.id})">Editar</button> <button class="btn b-ghv b-sm" type="button" onclick="ocAlternarItemCatalogo(${i.id},${i.ativo===false?'true':'false'})">${i.ativo===false?'Ativar':'Inativar'}</button> <button class="btn b-er b-sm" type="button" onclick="ocExcluirItemCatalogo(${i.id})">Excluir</button></td></tr>`).join('')}</tbody></table>`;
 }
 
+function ocShowStatus(msg,erro=false){
+  const alvo=document.getElementById('st-oc-catalogo')? 'st-oc-catalogo' : 'st-compras';
+  showSt(alvo,msg,erro);
+}
+
 async function ocCarregarCatalogoItens(){
   const r=await api('/api/ordens-compra/itens-catalogo?ativos=0');
   _ocCatalogoItens=Array.isArray(r)?r:[];
@@ -13484,7 +13490,7 @@ function ocEditarItemCatalogo(id){
 
 async function ocSalvarItemCatalogo(){
   const nome=(document.getElementById('oc-cat-nome').value||'').trim();
-  if(!nome){showSt('st-compras','Informe o nome do item para cadastro.',true);return;}
+  if(!nome){ocShowStatus('Informe o nome do item para cadastro.',true);return;}
   const payload={
     nome,
     unidade:(document.getElementById('oc-cat-unidade').value||'').trim(),
@@ -13494,24 +13500,24 @@ async function ocSalvarItemCatalogo(){
   const r=_ocCatalogoEditId
     ? await api('/api/ordens-compra/itens-catalogo/'+_ocCatalogoEditId,'PUT',payload)
     : await api('/api/ordens-compra/itens-catalogo','POST',payload);
-  if(r?.erro){showSt('st-compras',r.erro,true);return;}
+  if(r?.erro){ocShowStatus(r.erro,true);return;}
   ocLimparItemCatalogoForm();
   await ocCarregarCatalogoItens();
-  showSt('st-compras','Item de compras salvo com sucesso.',false);
+  ocShowStatus('Item de compras salvo com sucesso.',false);
 }
 
 async function ocAlternarItemCatalogo(id,ativo){
   const r=await api('/api/ordens-compra/itens-catalogo/'+id,'PUT',{ativo});
-  if(r?.erro){showSt('st-compras',r.erro,true);return;}
+  if(r?.erro){ocShowStatus(r.erro,true);return;}
   await ocCarregarCatalogoItens();
 }
 
 async function ocExcluirItemCatalogo(id){
   if(!confirm('Excluir item cadastrado?'))return;
   const r=await api('/api/ordens-compra/itens-catalogo/'+id,'DELETE');
-  if(r?.erro){showSt('st-compras',r.erro,true);return;}
+  if(r?.erro){ocShowStatus(r.erro,true);return;}
   await ocCarregarCatalogoItens();
-  showSt('st-compras','Item excluído.',false);
+  ocShowStatus('Item excluído.',false);
 }
 
 function ocRemoverItem(botao){
