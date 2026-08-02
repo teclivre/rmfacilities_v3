@@ -19025,11 +19025,14 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
     afastamento_info = None
     is_feriado = _app_is_feriado_para_funcionario(funcionario, data_ref_str)
     admissao_data = _app_funcionario_admissao_data(funcionario)
+    demissao_data = _app_parse_data_iso(getattr(funcionario, "data_demissao", ""))
     if admissao_data and data_ref < admissao_data:
         dia_tipo = "pre_admissao"
         min_esp = 0
         saldo_bruto = min_trab - min_esp
         saldo = saldo_bruto
+    elif demissao_data and data_ref >= demissao_data:
+        dia_tipo = "demitido"
     elif _app_funcionario_em_ferias_na_data(funcionario, data_ref):
         dia_tipo = "ferias"
     af = _afastamento_ativo_na_data(funcionario.id, data_ref_str)
@@ -19044,7 +19047,7 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
     elif is_feriado:
         dia_tipo = "feriado"
 
-    if dia_tipo in ("afastamento", "ferias", "feriado"):
+    if dia_tipo in ("demitido", "afastamento", "ferias", "feriado"):
         min_esp = 0
         saldo_bruto = min_trab - min_esp
         saldo = saldo_bruto
@@ -19075,7 +19078,7 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
         "correcoes_faltando_pendentes": correcoes_faltando_pendentes,
         "fechado": fd is not None,
         "fechado_por": (fd.fechado_por or "") if fd else "",
-        "dia_tipo": dia_tipo,  # "normal" | "folga" | "ferias" | "afastamento" | "feriado"
+        "dia_tipo": dia_tipo,  # "normal" | "folga" | "ferias" | "afastamento" | "demitido" | "feriado"
         "afastamento_info": afastamento_info,
     }
 
@@ -19798,15 +19801,18 @@ def api_app_ponto_espelho_pdf_me():
             )
             if dia_tipo == "afastamento":
                 af_tipo = (af_info.get("tipo") or "Afastamento").strip()
-                af_txt = f"AFASTAMENTO: {af_tipo}"
+                af_txt = f"Afastado: {af_tipo}"
                 marc_str = f"{marc_str} | {af_txt}" if marcacoes else af_txt
-                status_val = "Afastamento"
+                status_val = "Afastado"
+            elif dia_tipo == "demitido" and not marcacoes:
+                marc_str = "Demitido"
+                status_val = "Demitido"
             elif dia_tipo == "ferias" and not marcacoes:
                 marc_str = "Ferias"
             elif dia_tipo == "feriado":
                 marc_str = f"{marc_str} | FERIADO" if marcacoes else "FERIADO"
                 status_val = "Feriado"
-            elif not marcacoes and esp_min == 0 and dia_tipo not in ("afastamento", "ferias", "feriado"):
+            elif not marcacoes and esp_min == 0 and dia_tipo not in ("demitido", "afastamento", "ferias", "feriado"):
                 marc_str = "Folga"
                 status_val = "Folga"
             rows.append(

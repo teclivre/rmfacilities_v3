@@ -824,8 +824,11 @@ def register_ponto_routes(
         afastamento_info = None
         _is_feriado = data_ref in (_feriados or set())
         admissao_data = _ponto_funcionario_admissao_data(funcionario)
+        demissao_data = _ponto_parse_data_iso(getattr(funcionario, "data_demissao", ""))
         if admissao_data and data_ref < admissao_data:
             dia_tipo = "pre_admissao"
+        elif demissao_data and data_ref >= demissao_data:
+            dia_tipo = "demitido"
         elif af:
             dia_tipo = "afastamento"
             afastamento_info = {
@@ -841,7 +844,7 @@ def register_ponto_routes(
             dia_tipo = "feriado"
 
         esc_info_dia = _ponto_escala_info_data(funcionario, data_ref)
-        minutos_esperados = 0 if dia_tipo in ("pre_admissao", "afastamento", "ferias", "feriado") else _ponto_min_esperado_data(funcionario, data_ref)
+        minutos_esperados = 0 if dia_tipo in ("pre_admissao", "demitido", "afastamento", "ferias", "feriado") else _ponto_min_esperado_data(funcionario, data_ref)
         if dia_tipo == "normal" and minutos_esperados == 0 and not marcacoes:
             dia_tipo = "folga"
         saldo_bruto = minutos_trabalhados - minutos_esperados
@@ -2327,8 +2330,11 @@ def register_ponto_routes(
             if resumo.get("dia_tipo") == "afastamento":
                 _af_info = resumo.get("afastamento_info") or {}
                 _af_tipo = (_af_info.get("tipo") or "Afastamento").strip()
-                _af_txt = f"AFASTAMENTO: {_af_tipo}"
+                _af_txt = f"Afastado: {_af_tipo}"
                 marcacoes_str = f"{marcacoes_str} | {_af_txt}" if marcacoes_str else _af_txt
+                faltas = ""
+            elif resumo.get("dia_tipo") == "demitido" and not marcacoes_ord:
+                marcacoes_str = "Demitido"
                 faltas = ""
             elif resumo.get("dia_tipo") == "pre_admissao" and not marcacoes_ord:
                 marcacoes_str = ""

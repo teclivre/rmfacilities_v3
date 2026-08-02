@@ -260,6 +260,8 @@ async function pontoCarregarDia(){
   let diaAviso='';
   if(diaTipo==='afastamento'){
     diaAviso=`<div style="margin-top:8px;font-size:12px;color:#0f4c81;background:#eef6ff;border:1px solid #b8d7f2;border-radius:8px;padding:8px">📄 AFASTAMENTO: <strong>${escHtml((afastamentoInfo.tipo||'Afastamento').trim())}</strong></div>`;
+  }else if(diaTipo==='demitido'){
+    diaAviso='<div style="margin-top:8px;font-size:12px;color:#8a1c1c;background:#fff3f3;border:1px solid #f2c5c5;border-radius:8px;padding:8px">Funcionário demitido nesta data.</div>';
   }else if(diaTipo==='ferias'){
     diaAviso=`<div style="margin-top:8px;font-size:12px;color:#0f4c81;background:#eef6ff;border:1px solid #b8d7f2;border-radius:8px;padding:8px">🏖 FÉRIAS</div>`;
   }else if(diaTipo==='feriado'){
@@ -755,7 +757,7 @@ async function salvarEdicaoDiaCompleto(){
       if(!/^\d{4}-\d{2}-\d{2}$/.test(dataRef)) return false;
       if(dataRef>hojeIso) return false;
       const diaTipo=String(d?.dia_tipo||'').toLowerCase();
-      if(['afastamento','ferias','folga','feriado'].includes(diaTipo)) return false;
+      if(['demitido','afastamento','ferias','folga','feriado'].includes(diaTipo)) return false;
       return Number(d?.horas_esperadas_min||0)>0;
     });
 
@@ -995,7 +997,8 @@ function gfRenderCalendario(resumo,comp){
     else if(dayData){
       const diaTipo=String(dayData.dia_tipo||'').toLowerCase();
       const isFolga = diaTipo==='folga' || (!dayData.marcacoes_count && (dayData.horas_esperadas_min === 0 || dayData.horas_esperadas_min === '00:00'));
-      if(diaTipo==='afastamento') cls+=' afastamento';
+      if(diaTipo==='demitido') cls+=' afastamento';
+      else if(diaTipo==='afastamento') cls+=' afastamento';
       else if(diaTipo==='ferias') cls+=' ferias';
       else if(isFolga) cls+=' folga';
       else if(dayData.status==='ok'&&dayData.marcacoes_count>0) cls+=' ok';
@@ -1065,7 +1068,8 @@ function gfRenderFolha(resumo){
     const saldoClass=(dia.saldo_min||0)>0?'color:var(--verde)':((dia.saldo_min||0)<0?'color:var(--verm)':'');
     const diaTipo=String(dia.dia_tipo||'').toLowerCase();
     let statusHtml=dia.status==='ok'?'<span class="pill p-vd" style="font-size:10px">OK</span>':'<span class="pill p-vm" style="font-size:10px">⚠</span>';
-    if(diaTipo==='afastamento') statusHtml='<span class="pill p-az" style="font-size:10px">Afastamento</span>';
+    if(diaTipo==='demitido') statusHtml='<span class="pill p-vm" style="font-size:10px">Demitido</span>';
+    else if(diaTipo==='afastamento') statusHtml='<span class="pill p-az" style="font-size:10px">Afastado</span>';
     else if(diaTipo==='ferias') statusHtml='<span class="pill p-ci" style="font-size:10px">Férias</span>';
     else if(diaTipo==='folga') statusHtml='<span class="pill p-ci" style="font-size:10px">Folga</span>';
     const he50=dia.he_50_fmt||'00:00'; const he100=dia.he_100_fmt||'00:00';
