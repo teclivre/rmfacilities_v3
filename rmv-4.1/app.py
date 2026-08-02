@@ -3670,6 +3670,11 @@ def _db_commit_retry(context="", attempts=3, base_delay=0.2, swallow_locked=Fals
             time.sleep(base_delay * (idx + 1))
 
 
+def _is_sqlite_locked_error(ex):
+    msg = (str(ex) or "").lower()
+    return "database is locked" in msg or "sqlite busy" in msg
+
+
 def _try_sign_pdf_bytes_crypto(pdf_bytes, empresa_id=None, usuario_id=None):
     cert_ctx = _get_cert_context(empresa_id=empresa_id, usuario_id=usuario_id)
     p12_path = (cert_ctx.get("cert_path") if cert_ctx else "") or (
@@ -11424,9 +11429,7 @@ def _solicitar_assinatura_arquivo_funcionario(
         except Exception as ex:
             erro_envio = str(ex)
     if commit_now:
-        db.session.commit()
-    else:
-        db.session.flush()
+        _db_commit_retry("solicitar_assinatura_arquivo", attempts=3)
     return {
         "ok": True,
         "link": link,
@@ -25777,7 +25780,14 @@ def api_oc_itens_catalogo_criar():
         criado_por=session.get("nome", ""),
     )
     db.session.add(item)
-    db.session.commit()
+    try:
+        _db_commit_retry("oc_item_catalogo_criar", attempts=2, base_delay=0.15)
+    except OperationalError as ex:
+        db.session.rollback()
+        if _is_sqlite_locked_error(ex):
+            app.logger.warning(f"[compras-catalogo] lock ao criar item: {ex}")
+            return jsonify({"erro": "Banco de dados ocupado no momento. Tente novamente em alguns segundos."}), 503
+        raise
     audit_event(
         "ordem_compra_item_catalogo_criar",
         "usuario",
@@ -25806,7 +25816,14 @@ def api_oc_itens_catalogo_atualizar(id):
         item.descricao = (d.get("descricao") or "").strip()[:400]
     if "ativo" in d:
         item.ativo = bool(d.get("ativo"))
-    db.session.commit()
+    try:
+        _db_commit_retry("oc_item_catalogo_atualizar", attempts=2, base_delay=0.15)
+    except OperationalError as ex:
+        db.session.rollback()
+        if _is_sqlite_locked_error(ex):
+            app.logger.warning(f"[compras-catalogo] lock ao atualizar item={id}: {ex}")
+            return jsonify({"erro": "Banco de dados ocupado no momento. Tente novamente em alguns segundos."}), 503
+        raise
     audit_event(
         "ordem_compra_item_catalogo_atualizar",
         "usuario",
@@ -25825,7 +25842,14 @@ def api_oc_itens_catalogo_excluir(id):
     item = db.get_or_404(OrdemCompraItemCatalogo, id)
     info = {"nome": item.nome}
     db.session.delete(item)
-    db.session.commit()
+    try:
+        _db_commit_retry("oc_item_catalogo_excluir", attempts=2, base_delay=0.15)
+    except OperationalError as ex:
+        db.session.rollback()
+        if _is_sqlite_locked_error(ex):
+            app.logger.warning(f"[compras-catalogo] lock ao excluir item={id}: {ex}")
+            return jsonify({"erro": "Banco de dados ocupado no momento. Tente novamente em alguns segundos."}), 503
+        raise
     audit_event(
         "ordem_compra_item_catalogo_excluir",
         "usuario",
@@ -35660,7 +35684,12 @@ def _lembrete_assinatura_loop():
                         )
                         a.ass_lembretes_enviados = (a.ass_lembretes_enviados or 0) + 1
                         a.ass_ultimo_lembrete_em = agora
-                        db.session.commit()
+                        _db_commit_retry(
+                            "lembrete_assinatura",
+                            attempts=2,
+                            base_delay=0.2,
+                            swallow_locked=True,
+                        )
                         app.logger.info(
                             f"[lembrete-auto] funcionario={a.funcionario_id} arquivo={a.id} "
                             f"canal={canal} ok={rs.get('ok')}"
@@ -35668,11 +35697,19 @@ def _lembrete_assinatura_loop():
                     except Exception as ex:
                         app.logger.error(f"[lembrete-auto] arquivo={a.id} erro={ex}")
                         try:
+                            db.session.rollback()
+                        except Exception:
+                            pass
+                        try:
                             db.session.remove()  # descarta sessão corrompida; próxima iteração cria nova
                         except Exception:
                             pass
         except Exception as e:
             app.logger.error(f"[lembrete-assinatura] erro geral: {e}")
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
             try:
                 db.session.remove()  # sessão pode estar em rolled-back; remove para garantir sessão limpa
             except Exception:
