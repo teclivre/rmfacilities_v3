@@ -25618,7 +25618,8 @@ def _gerar_pdf_ordem_compra(ordem):
 
     empresa = db.session.get(Empresa, ordem.empresa_id) if ordem.empresa_id else None
     empresa_nome = (getattr(empresa, "razao", None) or getattr(empresa, "nome", None) or "RM Facilities").strip()
-    empresa_cnpj = (getattr(empresa, "cnpj", None) or "-").strip()
+    empresa_cnpj_raw = (getattr(empresa, "cnpj", None) or "").strip()
+    empresa_cnpj = _filter_fmt_cnpj(empresa_cnpj_raw) if empresa_cnpj_raw else "-"
     empresa_endereco = "-"
     if empresa:
         cidade_uf = "/".join(filter(None, [empresa.cidade, empresa.estado]))
@@ -25683,7 +25684,7 @@ def _gerar_pdf_ordem_compra(ordem):
     else:
         dados[7:7] = [
             ("Fornecedor", ordem.fornecedor or "-"),
-            ("CNPJ do fornecedor", ordem.fornecedor_cnpj or "-"),
+            ("CNPJ do fornecedor", _filter_fmt_cnpj(ordem.fornecedor_cnpj) if (ordem.fornecedor_cnpj or "").strip() else "-"),
             ("Endereço do fornecedor", ordem.fornecedor_endereco or "-"),
             ("Telefone do fornecedor", ordem.fornecedor_telefone or "-"),
             ("E-mail do fornecedor", ordem.fornecedor_email or "-"),
