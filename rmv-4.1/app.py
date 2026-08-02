@@ -25036,6 +25036,12 @@ def api_rh_ponto_ciclo_colaboradores():
             "ass_status": ass_status or "nao_solicitada",
             "assinatura_enviada": assinatura_enviada,
             "assinado": ass_status in ("assinado", "concluida"),
+            "assinatura_aberta": bool(arquivo and arquivo.ass_aberto_em),
+            "assinatura_aberta_fmt": (
+                arquivo.ass_aberto_em.strftime("%d/%m/%Y %H:%M")
+                if arquivo and arquivo.ass_aberto_em
+                else ""
+            ),
         }
         )
     return jsonify({"ok": True, "competencia": competencia, "colaboradores": itens})

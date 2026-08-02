@@ -5730,10 +5730,13 @@ function rhCicloRenderColaboradores(){
     const fechado=!!f.folha_fechada;
     const enviado=!!f.folha_enviada;
     const assinado=!!f.assinado;
+    const aberto=!!f.assinatura_aberta;
     const fechamento=fechado?`Fechada (${f.dias_fechados}/${f.dias_esperados} dia(s))`:(Number(f.dias_fechados||0)?`Em fechamento (${f.dias_fechados}/${f.dias_esperados} dia(s))`:'Pendente');
-    const envio=f.assinado?'Assinada':(enviado?'Enviada':'Não enviada');
+    const envio=assinado?'Assinada':(aberto?`Aberta${f.assinatura_aberta_fmt?` (${f.assinatura_aberta_fmt})`:''}`:(enviado?'Enviada':'Não enviada'));
     const acaoEnviar=assinado
       ? '<button class="btn b-vd b-sm" type="button" disabled>Assinada</button>'
+      : aberto
+      ? '<button class="btn b-az b-sm" type="button" disabled title="O colaborador abriu a folha e ainda não assinou">Aberta</button>'
       : enviado
       ? '<button class="btn b-gh b-sm" type="button" disabled title="A folha desta competência já foi enviada e não pode mais ser alterada">Enviada</button>'
       : `<button class="btn b-vd b-sm" type="button" onclick="rhCicloFecharFuncionario(${fid},true)">Fechar e enviar</button>`;
