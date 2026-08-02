@@ -25561,6 +25561,22 @@ def _gerar_pdf_ordem_compra(ordem):
     empresa = db.session.get(Empresa, ordem.empresa_id) if ordem.empresa_id else None
     empresa_nome = (getattr(empresa, "razao", None) or getattr(empresa, "nome", None) or "RM Facilities").strip()
     empresa_cnpj = (getattr(empresa, "cnpj", None) or "-").strip()
+    empresa_endereco = "-"
+    if empresa:
+        cidade_uf = "/".join(filter(None, [empresa.cidade, empresa.estado]))
+        empresa_endereco = ", ".join(
+            filter(
+                None,
+                [
+                    empresa.logradouro,
+                    empresa.numero,
+                    empresa.complemento,
+                    empresa.bairro,
+                    cidade_uf,
+                    f"CEP {empresa.cep}" if empresa.cep else "",
+                ],
+            )
+        ) or "-"
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf,
@@ -25589,6 +25605,7 @@ def _gerar_pdf_ordem_compra(ordem):
     dados = [
         ("Empresa emissora", empresa_nome),
         ("CNPJ da emissora", empresa_cnpj),
+        ("Endereço da emissora", empresa_endereco),
         ("Solicitante", ordem.solicitante or "-"),
         ("Data de emissão", ordem.data_emissao or "-"),
         ("Status", ordem.status or "Aberta"),
@@ -25700,7 +25717,7 @@ def api_ordem_compra_pdf(id):
     return send_file(
         io.BytesIO(_gerar_pdf_ordem_compra(ordem)),
         mimetype="application/pdf",
-        as_attachment=True,
+        as_attachment=False,
         download_name=f"{ordem.numero}.pdf",
     )
 
