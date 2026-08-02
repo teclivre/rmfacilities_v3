@@ -21171,7 +21171,11 @@ def api_rh_mensagem_download_arquivo(mid):
     abs_p = os.path.join(UPLOAD_ROOT, m.arquivo_caminho)
     if not os.path.exists(abs_p):
         return jsonify({"erro": "Arquivo nao encontrado"}), 404
-    return send_file(abs_p, as_attachment=True, download_name=m.arquivo_nome or "arquivo")
+    return send_file(
+        abs_p,
+        as_attachment=bool(m.de_rh),
+        download_name=m.arquivo_nome or "arquivo",
+    )
 
 
 @app.route("/api/mensagens-app/nao-lidas-total")
