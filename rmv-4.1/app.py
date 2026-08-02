@@ -35131,13 +35131,12 @@ threading.Thread(target=_auto_backup_loop, daemon=True, name="auto-backup").star
 
 def _lembrete_assinatura_loop():
     """Envia lembretes automáticos para documentos pendentes de assinatura.
-    Intervalo configurável via env LEMBRETE_ASSINATURA_INTERVALO_HORAS (padrão: 8h).
-    Usa o canal original de cada documento (whatsapp / email / app / link)."""
-    # Garantimos ao menos 8h entre lembretes automáticos para evitar excesso de mensagens.
+    Folhas de ponto pendentes recebem push no aplicativo a cada hora; os demais
+    documentos preservam o intervalo configurável e canal original."""
     intervalo_horas = max(
         8, min(168, _to_int(os.environ.get("LEMBRETE_ASSINATURA_INTERVALO_HORAS"), 8))
     )
-    intervalo_seg = intervalo_horas * 3600
+    intervalo_seg = 3600
 
     def _canal_padrao(a):
         ch = (a.ass_canal_envio or "").strip().lower()
@@ -35168,19 +35167,21 @@ def _lembrete_assinatura_loop():
                 for a in pendentes:
                     if not a.criado_em:
                         continue
+                    eh_folha_ponto = norm_cat(a.categoria) == "folha_ponto"
+                    intervalo_atual = 1 if eh_folha_ponto else intervalo_horas
                     # Só envia se nenhum lembrete foi enviado ainda OU
                     # se já passaram intervalo_horas desde o último lembrete
                     ultimo = a.ass_ultimo_lembrete_em
                     if ultimo is not None:
                         horas_desde = (agora - ultimo).total_seconds() / 3600
-                        if horas_desde < intervalo_horas:
+                        if horas_desde < intervalo_atual:
                             continue
                     else:
-                        # Primeiro lembrete: aguarda ao menos intervalo_horas após criação
+                        # Primeiro lembrete: aguarda ao menos o intervalo aplicável após criação.
                         horas_desde_criacao = (
                             agora - a.criado_em
                         ).total_seconds() / 3600
-                        if horas_desde_criacao < intervalo_horas:
+                        if horas_desde_criacao < intervalo_atual:
                             continue
                     try:
                         if a.funcionario_id not in func_cache:
@@ -35191,7 +35192,7 @@ def _lembrete_assinatura_loop():
                         f = func_cache[a.funcionario_id]
                         if not f:
                             continue
-                        canal = _canal_padrao(a)
+                        canal = "app" if eh_folha_ponto else _canal_padrao(a)
                         rs = _solicitar_assinatura_arquivo_funcionario(
                             a,
                             f,

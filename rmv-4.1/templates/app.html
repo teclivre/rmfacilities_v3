@@ -5669,7 +5669,15 @@ function rhCicloInit(){
   rhCicloPopularEmpresas();
   rhCicloCarregarColaboradores();
   rhCicloCarregarArquivos();
+  if(!window.rhCicloAtualizacaoTimer){
+    window.rhCicloAtualizacaoTimer=setInterval(()=>{
+      if(rhSubAba==='ciclo-assinatura') rhCicloCarregarColaboradores();
+    },60000);
+  }
 }
+
+let rhCicloAssinaturasConhecidas=null;
+let rhCicloAssinaturasContexto='';
 
 function rhCicloPopularEmpresas(){
   const sel=document.getElementById('rh-ciclo-empresa');
@@ -5715,9 +5723,12 @@ function rhCicloRenderColaboradores(){
     const meta=[f.matricula?`Mat. ${f.matricula}`:'',f.cargo||'',f.empresa_nome||''].filter(Boolean).join(' · ');
     const fechado=!!f.folha_fechada;
     const enviado=!!f.folha_enviada;
+    const assinado=!!f.assinado;
     const fechamento=fechado?`Fechada (${f.dias_fechados}/${f.dias_esperados} dia(s))`:(Number(f.dias_fechados||0)?`Em fechamento (${f.dias_fechados}/${f.dias_esperados} dia(s))`:'Pendente');
     const envio=f.assinado?'Assinada':(enviado?'Enviada':'Não enviada');
-    const acaoEnviar=enviado
+    const acaoEnviar=assinado
+      ? '<button class="btn b-vd b-sm" type="button" disabled>Assinada</button>'
+      : enviado
       ? '<button class="btn b-gh b-sm" type="button" disabled title="A folha desta competência já foi enviada e não pode mais ser alterada">Enviada</button>'
       : `<button class="btn b-vd b-sm" type="button" onclick="rhCicloFecharFuncionario(${fid},true)">Fechar e enviar</button>`;
     const acaoFechar=(fechado||enviado)
@@ -5750,7 +5761,21 @@ async function rhCicloCarregarColaboradores(){
     showSt('st-rh-ciclo',d.erro,true);
     return;
   }
-  rhCicloColaboradores=Array.isArray(d?.colaboradores)?d.colaboradores:[];
+  const contexto=`${compMes}:${empresaId}:${document.getElementById('rh-ciclo-so-ativos')?.checked?'ativos':'todos'}`;
+  const colaboradores=Array.isArray(d?.colaboradores)?d.colaboradores:[];
+  const assinadosAgora=new Set(colaboradores.filter(f=>f.assinado).map(f=>Number(f.arquivo_id||0)).filter(Boolean));
+  if(rhCicloAssinaturasContexto!==contexto){
+    rhCicloAssinaturasContexto=contexto;
+    rhCicloAssinaturasConhecidas=assinadosAgora;
+  }else if(rhCicloAssinaturasConhecidas){
+    colaboradores.filter(f=>f.assinado && !rhCicloAssinaturasConhecidas.has(Number(f.arquivo_id||0))).forEach(f=>{
+      toast(`Folha assinada: ${f.nome||'colaborador'}`,'s');
+    });
+    rhCicloAssinaturasConhecidas=assinadosAgora;
+  }else{
+    rhCicloAssinaturasConhecidas=assinadosAgora;
+  }
+  rhCicloColaboradores=colaboradores;
   rhCicloRenderColaboradores();
 }
 
