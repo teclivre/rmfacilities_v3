@@ -1801,6 +1801,9 @@ class OrdemCompra(db.Model):
     descricao = db.Column(db.Text)
     valor = db.Column(db.Float, default=0)
     status = db.Column(db.String(50), default="Aberta")
+    decisao_por = db.Column(db.String(100))
+    decisao_em = db.Column(db.DateTime)
+    decisao_motivo = db.Column(db.Text)
     data_emissao = db.Column(db.String(10))
     criado_por = db.Column(db.String(100))
     criado_em = db.Column(db.DateTime, default=utcnow)
@@ -25609,6 +25612,8 @@ def _gerar_pdf_ordem_compra(ordem):
         ("Solicitante", ordem.solicitante or "-"),
         ("Data de emissão", ordem.data_emissao or "-"),
         ("Status", ordem.status or "Aberta"),
+        ("Decisão", f"{ordem.decisao_por or '-'} em {ordem.decisao_em.strftime('%d/%m/%Y %H:%M') if ordem.decisao_em else '-'}"),
+        ("Motivo da reprovação", ordem.decisao_motivo or "-"),
         ("Fornecedor", ordem.fornecedor or "-"),
         ("CNPJ do fornecedor", ordem.fornecedor_cnpj or "-"),
         ("Endereço do fornecedor", ordem.fornecedor_endereco or "-"),
@@ -25699,7 +25704,6 @@ def api_atualizar_ordem_compra(id):
         "fornecedor_cnpj",
         "fornecedor_endereco",
         "descricao",
-        "status",
         "data_emissao",
     ]:
         if k in d:
@@ -25708,6 +25712,36 @@ def api_atualizar_ordem_compra(id):
         o.valor = to_num(d.get("valor"), dec=True)
     db.session.commit()
     return jsonify(o.to_dict())
+
+
+@app.route("/api/ordens-compra/<int:id>/decisao", methods=["POST"])
+@lr
+def api_decidir_ordem_compra(id):
+    ordem = db.get_or_404(OrdemCompra, id)
+    if ordem.status != "Aberta":
+        return jsonify({"erro": "Apenas ordens abertas podem ser aprovadas ou reprovadas."}), 400
+    d = request.json or {}
+    acao = (d.get("acao") or "").strip().lower()
+    if acao not in {"aprovar", "reprovar"}:
+        return jsonify({"erro": "Decisão inválida."}), 400
+    motivo = (d.get("motivo") or "").strip()
+    if acao == "reprovar" and not motivo:
+        return jsonify({"erro": "Informe o motivo da reprovação."}), 400
+    ordem.status = "Aprovada" if acao == "aprovar" else "Reprovada"
+    ordem.decisao_por = session.get("nome", "")
+    ordem.decisao_em = utcnow()
+    ordem.decisao_motivo = motivo if acao == "reprovar" else None
+    db.session.commit()
+    audit_event(
+        f"ordem_compra_{acao}",
+        "usuario",
+        session.get("uid"),
+        "ordem_compra",
+        ordem.id,
+        True,
+        {"numero": ordem.numero, "motivo": ordem.decisao_motivo},
+    )
+    return jsonify(ordem.to_dict())
 
 
 @app.route("/api/ordens-compra/<int:id>/pdf")
@@ -35049,6 +35083,9 @@ with app.app_context():
             "descricao TEXT",
             "valor REAL DEFAULT 0",
             'status VARCHAR(50) DEFAULT "Aberta"',
+            "decisao_por VARCHAR(100)",
+            "decisao_em DATETIME",
+            "decisao_motivo TEXT",
             "data_emissao VARCHAR(10)",
             "criado_por VARCHAR(100)",
             "criado_em DATETIME",

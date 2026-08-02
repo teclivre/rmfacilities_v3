@@ -2864,7 +2864,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div class="f"><label>CNPJ do fornecedor</label><div style="display:flex;gap:6px"><input id="oc-cnpj" maxlength="18" placeholder="00.000.000/0000-00" oninput="maskCNPJ(this);ocCnpjAuto(this)" style="flex:1"><button class="btn b-gh b-sm" id="oc-cnpj-btn" type="button" onclick="ocBuscarCnpj()" title="Buscar fornecedor pelo CNPJ">Buscar</button></div></div>
           <div class="f"><label>Fornecedor *</label><input id="oc-for"></div>
           <div class="f"><label>Valor</label><input id="oc-val" type="number" min="0" step="0.01"></div>
-          <div class="f"><label>Status</label><select id="oc-status"><option>Aberta</option><option>Aprovada</option><option>Cancelada</option></select></div>
+          <div class="f"><label>Status</label><input id="oc-status" value="Aberta" readonly></div>
         </div>
         <div class="f" style="margin-top:10px"><label>Endereço do fornecedor</label><input id="oc-endereco" placeholder="Preenchido pela consulta de CNPJ ou informado manualmente"></div>
         <div class="f" style="margin-top:10px"><label>Descrição</label><textarea id="oc-desc"></textarea></div>
@@ -13439,13 +13439,31 @@ async function renderOrdensCompra(){
   const el=document.getElementById('lista-oc');
   if(!el)return;
   if(!lst.length){el.innerHTML='<div class="vazio">Nenhuma ordem de compra.</div>';return;}
-  el.innerHTML=lst.map(o=>`<div class="hist-item row-clickable" onclick="editarOC(${o.id})"><div><div class="hist-tit">${o.numero} · ${o.fornecedor||'Sem fornecedor'}</div><div class="hist-sub">${o.status} · ${o.data_emissao||''} · ${o.fornecedor_endereco||o.descricao||''}</div></div><div style="display:flex;gap:8px;align-items:center"><div class="hist-val">${brl(o.valor||0)}</div><a class="btn b-gh b-sm" href="/api/ordens-compra/${o.id}/pdf" target="_blank" rel="noopener" onclick="event.stopPropagation()">PDF</a><button class="btn b-ghr b-sm" onclick="event.stopPropagation();delOC(${o.id})">Excluir</button></div></div>`).join('');
+  el.innerHTML=lst.map(o=>{
+    const decisao=o.status==='Aberta'?`<button class="btn b-vd b-sm" onclick="event.stopPropagation();decidirOC(${o.id},'aprovar')">Aprovar</button><button class="btn b-er b-sm" onclick="event.stopPropagation();decidirOC(${o.id},'reprovar')">Reprovar</button>`:'';
+    const detalhe=o.decisao_por?` · ${o.decisao_por}${o.decisao_motivo?`: ${o.decisao_motivo}`:''}`:'';
+    return `<div class="hist-item row-clickable" onclick="editarOC(${o.id})"><div><div class="hist-tit">${o.numero} · ${o.fornecedor||'Sem fornecedor'}</div><div class="hist-sub">${o.status} · ${o.data_emissao||''}${detalhe} · ${o.fornecedor_endereco||o.descricao||''}</div></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end"><div class="hist-val">${brl(o.valor||0)}</div>${decisao}<a class="btn b-gh b-sm" href="/api/ordens-compra/${o.id}/pdf" target="_blank" rel="noopener" onclick="event.stopPropagation()">PDF</a><button class="btn b-ghr b-sm" onclick="event.stopPropagation();delOC(${o.id})">Excluir</button></div></div>`;
+  }).join('');
+}
+
+async function decidirOC(id,acao){
+  let motivo='';
+  if(acao==='aprovar'){
+    if(!confirm('Aprovar esta ordem de compra?'))return;
+  }else{
+    motivo=prompt('Informe o motivo da reprovação:')||'';
+    if(!motivo.trim()){showSt('st-compras','A reprovação exige um motivo.',true);return;}
+  }
+  const r=await api('/api/ordens-compra/'+id+'/decisao','POST',{acao,motivo:motivo.trim()});
+  if(r?.erro){showSt('st-compras',r.erro,true);return;}
+  renderOrdensCompra();
+  showSt('st-compras',acao==='aprovar'?'Ordem de compra aprovada.':'Ordem de compra reprovada.',false);
 }
 
 async function delOC(id){
   if(!confirm('Excluir ordem de compra?'))return;
   const r=await api('/api/ordens-compra/'+id,'DELETE');
-  if(r?.erro){ showSt('st-op',r.erro,true); return; }
+  if(r?.erro){ showSt('st-compras',r.erro,true); return; }
   renderOrdensCompra();
 }
 
