@@ -2876,7 +2876,12 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div class="f" style="margin-top:10px"><label>Status</label><input id="oc-status" value="Aberta" readonly></div>
         <div style="margin-top:14px">
-          <div class="card-header" style="margin-bottom:8px"><span class="card-title">Itens da cotação</span><button class="btn b-gh b-sm" type="button" onclick="ocAdicionarItem()">Adicionar item</button></div>
+          <div class="card-header" style="margin-bottom:8px"><span class="card-title">Itens da cotação</span></div>
+          <div class="g3" style="margin-bottom:8px;align-items:flex-end">
+            <div class="f"><label>Novo item</label><input id="oc-novo-item-desc" placeholder="Ex.: Luva de proteção" list="oc-catalogo-opcoes"></div>
+            <div class="f"><label>Quantidade</label><input id="oc-novo-item-qtd" placeholder="Ex.: 20 unidades" onkeydown="if(event.key==='Enter'){event.preventDefault();ocAdicionarItemRapido();}"></div>
+            <div class="f" style="display:flex;align-items:flex-end"><button class="btn b-gh b-sm" type="button" onclick="ocAdicionarItemRapido()">Adicionar item</button></div>
+          </div>
           <datalist id="oc-catalogo-opcoes"></datalist>
           <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Item / produto</th><th style="width:180px">Quantidade</th><th style="width:80px">Ação</th></tr></thead><tbody id="oc-itens"></tbody></table></div>
         </div>
@@ -13435,15 +13440,47 @@ function ocRenderItens(itens=[]){
   const corpo=document.getElementById('oc-itens');
   if(!corpo)return;
   const lista=Array.isArray(itens)&&itens.length?itens:[{descricao:'',quantidade:''}];
-  corpo.innerHTML=lista.map(item=>`<tr><td><input class="oc-item-desc" list="oc-catalogo-opcoes" value="${escHtml(item.descricao||'')}" placeholder="Ex.: Luva de proteção"></td><td><input class="oc-item-qtd" value="${escHtml(item.quantidade||'')}" placeholder="Ex.: 20 unidades"></td><td><button class="btn b-er b-sm" type="button" onclick="ocRemoverItem(this)">Remover</button></td></tr>`).join('');
+  corpo.innerHTML=lista.map(item=>ocLinhaItemHtml(item.descricao||'',item.quantidade||'')).join('');
+}
+
+function ocLinhaItemHtml(descricao='',quantidade=''){
+  return `<tr><td><input class="oc-item-desc" list="oc-catalogo-opcoes" value="${escHtml(descricao)}" placeholder="Ex.: Luva de proteção"></td><td><input class="oc-item-qtd" value="${escHtml(quantidade)}" placeholder="Ex.: 20 unidades"></td><td><button class="btn b-er b-sm" type="button" onclick="ocRemoverItem(this)">Remover</button></td></tr>`;
 }
 
 function ocAdicionarItem(){
   const corpo=document.getElementById('oc-itens');
   if(!corpo)return;
   const linha=document.createElement('tr');
-  linha.innerHTML='<td><input class="oc-item-desc" list="oc-catalogo-opcoes" placeholder="Ex.: Luva de proteção"></td><td><input class="oc-item-qtd" placeholder="Ex.: 20 unidades"></td><td><button class="btn b-er b-sm" type="button" onclick="ocRemoverItem(this)">Remover</button></td>';
+  linha.innerHTML=ocLinhaItemHtml('','').replace('<tr>','').replace('</tr>','');
   corpo.appendChild(linha);
+}
+
+function ocAdicionarItemRapido(){
+  const descEl=document.getElementById('oc-novo-item-desc');
+  const qtdEl=document.getElementById('oc-novo-item-qtd');
+  const descricao=(descEl?.value||'').trim();
+  const quantidade=(qtdEl?.value||'').trim();
+  if(!descricao){
+    ocShowStatus('Informe o nome do item para adicionar.',true);
+    descEl?.focus();
+    return;
+  }
+  const corpo=document.getElementById('oc-itens');
+  if(!corpo)return;
+  const primeira=corpo.querySelector('tr');
+  const primeiraDesc=primeira?.querySelector('.oc-item-desc')?.value?.trim()||'';
+  const primeiraQtd=primeira?.querySelector('.oc-item-qtd')?.value?.trim()||'';
+  if(corpo.querySelectorAll('tr').length===1 && !primeiraDesc && !primeiraQtd){
+    primeira.querySelector('.oc-item-desc').value=descricao;
+    primeira.querySelector('.oc-item-qtd').value=quantidade;
+  }else{
+    const linha=document.createElement('tr');
+    linha.innerHTML=ocLinhaItemHtml(descricao,quantidade).replace('<tr>','').replace('</tr>','');
+    corpo.appendChild(linha);
+  }
+  descEl.value='';
+  qtdEl.value='';
+  descEl.focus();
 }
 
 function ocRenderCatalogoDatalist(){
