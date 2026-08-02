@@ -18562,16 +18562,15 @@ def _app_ponto_tem_entrada_noturna_mesma_data(funcionario_id, data_ref):
 def _app_ponto_data_hora_logica(funcionario, data_ref, data_hora, marcacoes=None):
     if not data_hora:
         return None
+    entrada_noturna = _app_ponto_entrada_noturna_avulsa(marcacoes, data_ref)
     esc_info = _app_ponto_escala_info_data(funcionario, data_ref)
     if not esc_info:
-        entrada_noturna = _app_ponto_entrada_noturna_avulsa(marcacoes, data_ref)
         if entrada_noturna and data_hora < entrada_noturna:
             return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
         return data_hora
     esc = esc_info.get("escala")
     dia_info = esc_info.get("dia_info") or {}
     if not _app_ponto_cruza_meia_noite(esc, dia_info):
-        entrada_noturna = _app_ponto_entrada_noturna_avulsa(marcacoes, data_ref)
         if entrada_noturna and data_hora < entrada_noturna:
             return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
         return data_hora
