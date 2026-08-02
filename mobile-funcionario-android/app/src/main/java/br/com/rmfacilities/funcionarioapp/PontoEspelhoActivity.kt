@@ -93,7 +93,7 @@ class PontoEspelhoActivity : AppCompatActivity() {
             ).apply { bottomMargin = (14 * dp).toInt() }
         }
         val tvInfo = TextView(this).apply {
-            text = "ℹ️  O download do PDF fica disponível após o fechamento pelo gestor."
+            text = "ℹ️  A folha pode ser visualizada aqui. O download do PDF é liberado após a assinatura."
             setTextColor(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.mobile_text_secondary))
             textSize = 11.5f
         }
@@ -234,6 +234,14 @@ class PontoEspelhoActivity : AppCompatActivity() {
                     }
                 }
                 btnRow.addView(btnBaixar)
+            } else if (comp.folha_disponivel && !comp.folha_assinada) {
+                val tvAssinatura = TextView(this).apply {
+                    text = "Assine a folha para liberar o PDF"
+                    setTextColor(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.mobile_text_secondary))
+                    textSize = 11f
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                btnRow.addView(tvAssinatura)
             }
 
             val btnHolerite = MaterialButton(this).apply {

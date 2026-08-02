@@ -19609,6 +19609,17 @@ def api_app_ponto_espelho_status_me():
             PontoFechamentoDia.data_ref >= dt_ini.isoformat(),
             PontoFechamentoDia.data_ref <= dt_fim.isoformat(),
         ).count()
+        folha = (
+            FuncionarioArquivo.query.filter_by(
+                funcionario_id=f.id,
+                categoria="folha_ponto",
+                competencia=comp,
+            )
+            .order_by(FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc())
+            .first()
+        )
+        folha_ass_status = (folha.ass_status or "nao_solicitada").strip().lower() if folha else ""
+        folha_assinada = folha_ass_status in ("assinado", "concluida")
         holerite = (
             FuncionarioArquivo.query.filter_by(
                 funcionario_id=f.id,
@@ -19639,8 +19650,12 @@ def api_app_ponto_espelho_status_me():
             {
                 "competencia": comp,
                 "label": f"{meses_pt[mes - 1]}/{ano}",
-                "pode_baixar": pode_baixar,
+                "pode_baixar": bool(pode_baixar and folha_assinada),
                 "fechamentos_dias": fechamentos,
+                "folha_disponivel": folha is not None,
+                "folha_assinada": folha_assinada,
+                "folha_ass_status": folha_ass_status,
+                "folha_arquivo_id": folha.id if folha else None,
                 "holerite_disponivel": holerite is not None,
                 "holerite_assinado": holerite_assinado,
                 "holerite_ass_status": holerite_ass_status,
@@ -19786,6 +19801,21 @@ def api_app_ponto_espelho_pdf_me():
         return jsonify(
             {
                 "erro": "Folha ainda não fechada pelo gestor. Aguarde o fechamento para baixar o PDF."
+            }
+        ), 403
+    folha = (
+        FuncionarioArquivo.query.filter_by(
+            funcionario_id=f.id,
+            categoria="folha_ponto",
+            competencia=competencia,
+        )
+        .order_by(FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc())
+        .first()
+    )
+    if not folha or (folha.ass_status or "").strip().lower() not in ("assinado", "concluida"):
+        return jsonify(
+            {
+                "erro": "Esta folha de ponto precisa ser assinada antes de ser baixada. Ela continua disponível para visualização no aplicativo."
             }
         ), 403
     try:
