@@ -2871,7 +2871,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="brow" style="justify-content:flex-start"><button class="btn b-az" onclick="salvarOrdemCompra()">Gerar ordem e PDF</button></div>
       </div>
       <div class="card">
-        <div class="card-header"><span class="card-title">Resumo mensal de pedidos</span></div>
+        <div class="card-header"><span class="card-title">Resumo mensal de pedidos aprovados</span></div>
         <div id="resumo-oc" class="tbl-wrap"><div class="vazio">Carregando resumo...</div></div>
       </div>
       <div class="card">
@@ -13443,11 +13443,11 @@ async function renderResumoOrdensCompra(){
   if(!el)return;
   try{
     const itens=await api('/api/ordens-compra/resumo-mensal');
-    if(!itens?.length){el.innerHTML='<div class="vazio">Nenhum pedido com data de emissão.</div>';return;}
+    if(!itens?.length){el.innerHTML='<div class="vazio">Nenhuma ordem aprovada.</div>';return;}
     const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
     const nomeMes=mes=>{const [ano,numero]=(mes||'').split('-');return ano&&numero?`${meses[(parseInt(numero,10)||1)-1]}/${ano}`:mes;};
     const total=itens.reduce((s,item)=>s+(parseFloat(item.valor_total)||0),0);
-    el.innerHTML=`<table class="tbl"><thead><tr><th>Mês</th><th>Pedidos</th><th>Total solicitado</th><th>Total aprovado</th></tr></thead><tbody>${itens.map(item=>`<tr><td>${nomeMes(item.mes)}</td><td>${item.quantidade}</td><td>${brl(item.valor_total)}</td><td>${brl(item.valor_aprovado)}</td></tr>`).join('')}</tbody><tfoot><tr><th>Total geral</th><th>${itens.reduce((s,item)=>s+(item.quantidade||0),0)}</th><th>${brl(total)}</th><th>${brl(itens.reduce((s,item)=>s+(parseFloat(item.valor_aprovado)||0),0))}</th></tr></tfoot></table>`;
+    el.innerHTML=`<table class="tbl"><thead><tr><th>Mês</th><th>Pedidos aprovados</th><th>Total aprovado</th></tr></thead><tbody>${itens.map(item=>`<tr><td>${nomeMes(item.mes)}</td><td>${item.quantidade}</td><td>${brl(item.valor_total)}</td></tr>`).join('')}</tbody><tfoot><tr><th>Total geral</th><th>${itens.reduce((s,item)=>s+(item.quantidade||0),0)}</th><th>${brl(total)}</th></tr></tfoot></table>`;
   }catch(e){el.innerHTML='<div class="vazio">Não foi possível carregar o resumo mensal.</div>';}
 }
 

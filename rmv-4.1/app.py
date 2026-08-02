@@ -25657,19 +25657,17 @@ def api_ordens_compra():
 @lr
 def api_ordens_compra_resumo_mensal():
     resumo = {}
-    for ordem in OrdemCompra.query.all():
+    for ordem in OrdemCompra.query.filter_by(status="Aprovada").all():
         mes = (ordem.data_emissao or "")[:7]
         if len(mes) != 7:
             mes = "Sem data"
-        item = resumo.setdefault(mes, {"mes": mes, "quantidade": 0, "valor_total": 0, "valor_aprovado": 0})
+        item = resumo.setdefault(mes, {"mes": mes, "quantidade": 0, "valor_total": 0})
         valor = float(ordem.valor or 0)
         item["quantidade"] += 1
         item["valor_total"] += valor
-        if ordem.status == "Aprovada":
-            item["valor_aprovado"] += valor
     return jsonify(
         [
-            {**item, "valor_total": round(item["valor_total"], 2), "valor_aprovado": round(item["valor_aprovado"], 2)}
+            {**item, "valor_total": round(item["valor_total"], 2)}
             for _, item in sorted(resumo.items(), key=lambda pair: pair[0], reverse=True)
         ]
     )
