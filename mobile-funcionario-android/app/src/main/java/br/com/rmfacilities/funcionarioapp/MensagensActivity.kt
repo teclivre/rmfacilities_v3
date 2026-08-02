@@ -16,6 +16,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
@@ -28,6 +29,9 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.button.MaterialButton
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -61,6 +65,15 @@ class MensagensActivity : BaseActivity() {
     private var rootPaddingBottomOriginal = 0
 
     private var cameraPhotoUri: Uri? = null
+    private val documentScanner by lazy {
+        val options = GmsDocumentScannerOptions.Builder()
+            .setGalleryImportAllowed(true)
+            .setPageLimit(1)
+            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+            .build()
+        GmsDocumentScanning.getClient(options)
+    }
     private val pollingHandler = Handler(Looper.getMainLooper())
     private var isInChatTab = true
     // Polling como FALLBACK do FCM push. Em condicoes normais, ChatPushBus dispara
@@ -88,6 +101,20 @@ class MensagensActivity : BaseActivity() {
         } else {
             Toast.makeText(this, "Captura de foto cancelada.", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private val scanDocument = registerForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode != RESULT_OK) return@registerForActivityResult
+        val imageUri = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
+            ?.pages
+            ?.firstOrNull()
+            ?.imageUri
+        if (imageUri != null) {
+            enviarArquivo(imageUri, "documento_digitalizado_${System.currentTimeMillis()}.jpg")
+        }
+        else Toast.makeText(this, "Nenhum documento foi digitalizado.", Toast.LENGTH_SHORT).show()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -179,8 +206,12 @@ class MensagensActivity : BaseActivity() {
         findViewById<MaterialButton>(R.id.btnAnexar).setOnClickListener {
             com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle("Enviar arquivo")
-                .setItems(arrayOf("📷 Câmera", "📁 Arquivo / Galeria")) { _, which ->
-                    if (which == 0) abrirCamera() else pickFile.launch("*/*")
+                .setItems(arrayOf("Digitalizar documento", "Câmera (foto comum)", "Arquivo / Galeria")) { _, which ->
+                    when (which) {
+                        0 -> abrirScannerDocumento()
+                        1 -> abrirCamera()
+                        else -> pickFile.launch("*/*")
+                    }
                 }
                 .show()
         }
@@ -260,6 +291,17 @@ class MensagensActivity : BaseActivity() {
             TelemetryLogger.logHandled(this, "mensagem_camera_abrir", e)
             Toast.makeText(this, "Não foi possível abrir a câmera neste aparelho.", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun abrirScannerDocumento() {
+        documentScanner.getStartScanIntent(this)
+            .addOnSuccessListener { intentSender ->
+                scanDocument.launch(IntentSenderRequest.Builder(intentSender).build())
+            }
+            .addOnFailureListener { error ->
+                TelemetryLogger.logHandled(this, "mensagem_scanner_abrir", error)
+                Toast.makeText(this, "Não foi possível abrir o scanner de documentos.", Toast.LENGTH_LONG).show()
+            }
     }
 
     private fun configurarInsetsDoTeclado() {
@@ -385,7 +427,7 @@ class MensagensActivity : BaseActivity() {
         }
     }
 
-    private fun enviarArquivo(uri: Uri) {
+    private fun enviarArquivo(uri: Uri, nomePadrao: String? = null) {
         val sizeLimit = 20 * 1024 * 1024L
         val fileSize = contentResolver.query(
             uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null
@@ -396,7 +438,9 @@ class MensagensActivity : BaseActivity() {
         }
 
         val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
-        val fileName = obterNomeArquivo(uri)
+        val fileName = obterNomeArquivo(uri).takeIf { it.contains('.') }
+            ?: nomePadrao
+            ?: "arquivo"
         Toast.makeText(this, "Enviando $fileName...", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch(Dispatchers.IO) {
             try {
