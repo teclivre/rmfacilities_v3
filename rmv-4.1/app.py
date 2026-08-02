@@ -1793,6 +1793,7 @@ class Medicao(db.Model):
 class OrdemCompra(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     numero = db.Column(db.String(30), nullable=False, unique=True)
+    tipo_documento = db.Column(db.String(30), default="ordem_compra")
     empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
     solicitante = db.Column(db.String(200))
     fornecedor = db.Column(db.String(200), nullable=False)
@@ -25624,8 +25625,10 @@ def _gerar_pdf_ordem_compra(ordem):
     titulo = ParagraphStyle("oc_titulo", parent=estilo, fontName="Helvetica-Bold", fontSize=18, leading=22, textColor=colors.white, alignment=TA_CENTER)
     rotulo = ParagraphStyle("oc_rotulo", parent=estilo, fontName="Helvetica-Bold", textColor=azul)
 
+    eh_orcamento = ordem.tipo_documento == "pedido_orcamento"
+    titulo_documento = "PEDIDO DE ORÇAMENTO" if eh_orcamento else "ORDEM DE COMPRA"
     cabecalho = Table(
-        [[Paragraph("ORDEM DE COMPRA", titulo)], [Paragraph(f"<b>{ordem.numero}</b>", ParagraphStyle("oc_num", parent=titulo, fontSize=12))]],
+        [[Paragraph(titulo_documento, titulo)], [Paragraph(f"<b>{ordem.numero}</b>", ParagraphStyle("oc_num", parent=titulo, fontSize=12))]],
         colWidths=[largura],
     )
     cabecalho.setStyle(TableStyle([
@@ -25647,15 +25650,20 @@ def _gerar_pdf_ordem_compra(ordem):
         ("Status", ordem.status or "Aberta"),
         ("Decisão", f"{ordem.decisao_por or '-'} em {ordem.decisao_em.strftime('%d/%m/%Y %H:%M') if ordem.decisao_em else '-'}"),
         ("Motivo da reprovação", ordem.decisao_motivo or "-"),
-        ("Fornecedor", ordem.fornecedor or "-"),
-        ("CNPJ do fornecedor", ordem.fornecedor_cnpj or "-"),
-        ("Endereço do fornecedor", ordem.fornecedor_endereco or "-"),
-        ("Telefone do fornecedor", ordem.fornecedor_telefone or "-"),
-        ("E-mail do fornecedor", ordem.fornecedor_email or "-"),
-        ("E-mail para o pedido", ordem.pedido_email or "-"),
-        ("Valor total", f"R$ {float(ordem.valor or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")),
         ("Descrição", ordem.descricao or "-"),
     ]
+    if eh_orcamento:
+        dados.append(("Observação", "Solicitação de orçamento sem fornecedor e sem valor definidos."))
+    else:
+        dados[7:7] = [
+            ("Fornecedor", ordem.fornecedor or "-"),
+            ("CNPJ do fornecedor", ordem.fornecedor_cnpj or "-"),
+            ("Endereço do fornecedor", ordem.fornecedor_endereco or "-"),
+            ("Telefone do fornecedor", ordem.fornecedor_telefone or "-"),
+            ("E-mail do fornecedor", ordem.fornecedor_email or "-"),
+            ("E-mail para o pedido", ordem.pedido_email or "-"),
+            ("Valor total", f"R$ {float(ordem.valor or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")),
+        ]
     tabela = Table(
         [[Paragraph(chave, rotulo), Paragraph(str(valor).replace("\n", "<br/>"), estilo)] for chave, valor in dados],
         colWidths=[largura * 0.30, largura * 0.70],
@@ -25715,7 +25723,7 @@ def api_ordens_compra():
 @lr
 def api_ordens_compra_resumo_mensal():
     resumo = {}
-    for ordem in OrdemCompra.query.filter_by(status="Aprovada").all():
+    for ordem in OrdemCompra.query.filter_by(status="Aprovada", tipo_documento="ordem_compra").all():
         mes = (ordem.data_emissao or "")[:7]
         if len(mes) != 7:
             mes = "Sem data"
@@ -25738,8 +25746,11 @@ def api_criar_ordem_compra():
     empresa_id = to_num(d.get("empresa_id")) or None
     if not empresa_id or not db.session.get(Empresa, empresa_id):
         return jsonify({"erro": "Selecione a empresa emissora da ordem de compra."}), 400
+    tipo_documento = (d.get("tipo_documento") or "ordem_compra").strip()
+    if tipo_documento not in {"ordem_compra", "pedido_orcamento"}:
+        return jsonify({"erro": "Tipo de solicitação inválido."}), 400
     fornecedor = (d.get("fornecedor") or "").strip()
-    if not fornecedor:
+    if tipo_documento == "ordem_compra" and not fornecedor:
         return jsonify({"erro": "Informe o fornecedor da ordem de compra."}), 400
     itens = _normalizar_itens_ordem_compra(d.get("itens") or [])
     if itens is None:
@@ -25748,17 +25759,18 @@ def api_criar_ordem_compra():
         return jsonify({"erro": "Inclua ao menos um item na cotação."}), 400
     o = OrdemCompra(
         numero=_proximo_numero_ordem_compra(),
+        tipo_documento=tipo_documento,
         empresa_id=empresa_id,
         solicitante=d.get("solicitante", ""),
         fornecedor=fornecedor,
-        fornecedor_cnpj=only_digits(d.get("fornecedor_cnpj") or ""),
-        fornecedor_endereco=(d.get("fornecedor_endereco") or "").strip(),
-        fornecedor_email=(d.get("fornecedor_email") or "").strip()[:150],
-        fornecedor_telefone=(d.get("fornecedor_telefone") or "").strip()[:30],
+        fornecedor_cnpj=only_digits(d.get("fornecedor_cnpj") or "") if tipo_documento == "ordem_compra" else "",
+        fornecedor_endereco=(d.get("fornecedor_endereco") or "").strip() if tipo_documento == "ordem_compra" else "",
+        fornecedor_email=(d.get("fornecedor_email") or "").strip()[:150] if tipo_documento == "ordem_compra" else "",
+        fornecedor_telefone=(d.get("fornecedor_telefone") or "").strip()[:30] if tipo_documento == "ordem_compra" else "",
         pedido_email=(d.get("pedido_email") or "").strip()[:150],
         itens=json.dumps(itens, ensure_ascii=False),
         descricao=d.get("descricao", ""),
-        valor=to_num(d.get("valor"), dec=True),
+        valor=to_num(d.get("valor"), dec=True) if tipo_documento == "ordem_compra" else 0,
         status=d.get("status", "Aberta"),
         data_emissao=d.get("data_emissao", ""),
         criado_por=session.get("nome", ""),
@@ -25784,7 +25796,11 @@ def api_criar_ordem_compra():
 def api_atualizar_ordem_compra(id):
     o = db.get_or_404(OrdemCompra, id)
     d = request.json or {}
+    tipo_documento = (d.get("tipo_documento") or o.tipo_documento or "ordem_compra").strip()
+    if tipo_documento not in {"ordem_compra", "pedido_orcamento"}:
+        return jsonify({"erro": "Tipo de solicitação inválido."}), 400
     for k in [
+        "tipo_documento",
         "empresa_id",
         "solicitante",
         "fornecedor",
@@ -25803,8 +25819,17 @@ def api_atualizar_ordem_compra(id):
         if itens is None or not itens:
             return jsonify({"erro": "Inclua ao menos um item na cotação."}), 400
         o.itens = json.dumps(itens, ensure_ascii=False)
-    if "valor" in d:
+    if "valor" in d and o.tipo_documento != "pedido_orcamento":
         o.valor = to_num(d.get("valor"), dec=True)
+    if o.tipo_documento == "pedido_orcamento":
+        o.fornecedor = ""
+        o.fornecedor_cnpj = ""
+        o.fornecedor_endereco = ""
+        o.fornecedor_email = ""
+        o.fornecedor_telefone = ""
+        o.valor = 0
+    elif not (o.fornecedor or "").strip():
+        return jsonify({"erro": "Informe o fornecedor da ordem de compra."}), 400
     db.session.commit()
     return jsonify(o.to_dict())
 
@@ -25813,6 +25838,8 @@ def api_atualizar_ordem_compra(id):
 @lr
 def api_decidir_ordem_compra(id):
     ordem = db.get_or_404(OrdemCompra, id)
+    if ordem.tipo_documento == "pedido_orcamento":
+        return jsonify({"erro": "Pedidos de orçamento não passam por aprovação. Converta-o em ordem de compra após receber a cotação."}), 400
     if ordem.status != "Aberta":
         return jsonify({"erro": "Apenas ordens abertas podem ser aprovadas ou reprovadas."}), 400
     d = request.json or {}
@@ -35170,6 +35197,7 @@ with app.app_context():
     ensure_cols(
         "ordem_compra",
         [
+            'tipo_documento VARCHAR(30) DEFAULT "ordem_compra"',
             "empresa_id INTEGER",
             "solicitante VARCHAR(200)",
             "fornecedor VARCHAR(200)",
