@@ -2867,6 +2867,15 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div class="f"><label>Status</label><input id="oc-status" value="Aberta" readonly></div>
         </div>
         <div class="f" style="margin-top:10px"><label>Endereço do fornecedor</label><input id="oc-endereco" placeholder="Preenchido pela consulta de CNPJ ou informado manualmente"></div>
+        <div class="g3" style="margin-top:10px">
+          <div class="f"><label>Telefone do fornecedor</label><input id="oc-for-telefone" type="tel" placeholder="Preenchido pela consulta de CNPJ"></div>
+          <div class="f"><label>E-mail do fornecedor</label><input id="oc-for-email" type="email" placeholder="Preenchido pela consulta de CNPJ"></div>
+          <div class="f"><label>E-mail de quem fará o pedido</label><input id="oc-pedido-email" type="email" placeholder="compras@empresa.com.br"></div>
+        </div>
+        <div style="margin-top:14px">
+          <div class="card-header" style="margin-bottom:8px"><span class="card-title">Itens da cotação</span><button class="btn b-gh b-sm" type="button" onclick="ocAdicionarItem()">Adicionar item</button></div>
+          <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Item / produto</th><th style="width:180px">Quantidade</th><th style="width:80px">Ação</th></tr></thead><tbody id="oc-itens"></tbody></table></div>
+        </div>
         <div class="f" style="margin-top:10px"><label>Descrição</label><textarea id="oc-desc"></textarea></div>
         <div class="brow" style="justify-content:flex-start"><button class="btn b-az" onclick="salvarOrdemCompra()">Gerar ordem e PDF</button></div>
       </div>
@@ -13387,6 +13396,38 @@ async function uploadSSTArquivo(){
 let _ocLista=[];
 let _ocEditId=null;
 
+function ocRenderItens(itens=[]){
+  const corpo=document.getElementById('oc-itens');
+  if(!corpo)return;
+  const lista=Array.isArray(itens)&&itens.length?itens:[{descricao:'',quantidade:''}];
+  corpo.innerHTML=lista.map(item=>`<tr><td><input class="oc-item-desc" value="${escHtml(item.descricao||'')}" placeholder="Ex.: Luva de proteção"></td><td><input class="oc-item-qtd" value="${escHtml(item.quantidade||'')}" placeholder="Ex.: 20 unidades"></td><td><button class="btn b-er b-sm" type="button" onclick="ocRemoverItem(this)">Remover</button></td></tr>`).join('');
+}
+
+function ocAdicionarItem(){
+  const corpo=document.getElementById('oc-itens');
+  if(!corpo)return;
+  const linha=document.createElement('tr');
+  linha.innerHTML='<td><input class="oc-item-desc" placeholder="Ex.: Luva de proteção"></td><td><input class="oc-item-qtd" placeholder="Ex.: 20 unidades"></td><td><button class="btn b-er b-sm" type="button" onclick="ocRemoverItem(this)">Remover</button></td>';
+  corpo.appendChild(linha);
+}
+
+function ocRemoverItem(botao){
+  const corpo=document.getElementById('oc-itens');
+  const linhas=corpo?.querySelectorAll('tr')||[];
+  if(linhas.length<=1){
+    linhas[0]?.querySelectorAll('input').forEach(input=>input.value='');
+    return;
+  }
+  botao.closest('tr')?.remove();
+}
+
+function ocColetarItens(){
+  return Array.from(document.querySelectorAll('#oc-itens tr')).map(linha=>({
+    descricao:linha.querySelector('.oc-item-desc')?.value.trim()||'',
+    quantidade:linha.querySelector('.oc-item-qtd')?.value.trim()||''
+  })).filter(item=>item.descricao);
+}
+
 function editarOC(id){
   const o=_ocLista.find(x=>x.id===id);
   if(!o) return;
@@ -13397,6 +13438,10 @@ function editarOC(id){
   document.getElementById('oc-for').value=o.fornecedor||'';
   document.getElementById('oc-cnpj').value=fmtDoc(o.fornecedor_cnpj||'');
   document.getElementById('oc-endereco').value=o.fornecedor_endereco||'';
+  document.getElementById('oc-for-telefone').value=o.fornecedor_telefone||'';
+  document.getElementById('oc-for-email').value=o.fornecedor_email||'';
+  document.getElementById('oc-pedido-email').value=o.pedido_email||'';
+  ocRenderItens(o.itens||[]);
   document.getElementById('oc-desc').value=o.descricao||'';
   document.getElementById('oc-val').value=o.valor||0;
   document.getElementById('oc-status').value=o.status||'Aberta';
@@ -13422,20 +13467,25 @@ async function ocBuscarCnpj(){
     document.getElementById('oc-for').value=d.nome||d.razao||'';
     const endereco=[d.logradouro,d.numero,d.complemento,d.bairro,d.cidade&&d.estado?`${d.cidade}/${d.estado}`:(d.cidade||d.estado),d.cep?`CEP ${d.cep}`:''].filter(Boolean).join(', ');
     document.getElementById('oc-endereco').value=endereco;
+    document.getElementById('oc-for-telefone').value=d.telefone||'';
+    document.getElementById('oc-for-email').value=d.email||'';
     showSt('st-compras','Fornecedor e endereço preenchidos pela consulta de CNPJ.',false);
   }catch(err){showSt('st-compras',err?.message||'Não foi possível consultar o CNPJ.',true);}
   finally{btn.disabled=false;btn.textContent='Buscar';}
 }
 
 async function salvarOrdemCompra(){
-  const d={empresa_id:parseInt(document.getElementById('oc-emp').value)||null,solicitante:document.getElementById('oc-sol').value,fornecedor:document.getElementById('oc-for').value,fornecedor_cnpj:document.getElementById('oc-cnpj').value,fornecedor_endereco:document.getElementById('oc-endereco').value,descricao:document.getElementById('oc-desc').value,valor:parseFloat(document.getElementById('oc-val').value)||0,status:document.getElementById('oc-status').value,data_emissao:document.getElementById('oc-data').value};
+  const itens=ocColetarItens();
+  if(!itens.length){showSt('st-compras','Inclua ao menos um item na cotação.',true);return;}
+  const d={empresa_id:parseInt(document.getElementById('oc-emp').value)||null,solicitante:document.getElementById('oc-sol').value,fornecedor:document.getElementById('oc-for').value,fornecedor_cnpj:document.getElementById('oc-cnpj').value,fornecedor_endereco:document.getElementById('oc-endereco').value,fornecedor_telefone:document.getElementById('oc-for-telefone').value,fornecedor_email:document.getElementById('oc-for-email').value,pedido_email:document.getElementById('oc-pedido-email').value,itens,descricao:document.getElementById('oc-desc').value,valor:parseFloat(document.getElementById('oc-val').value)||0,status:document.getElementById('oc-status').value,data_emissao:document.getElementById('oc-data').value};
   const r=_ocEditId ? await api('/api/ordens-compra/'+_ocEditId,'PUT',d) : await api('/api/ordens-compra','POST',d);
   if(r?.erro){showSt('st-compras',r.erro,true);return;}
   if(!_ocEditId && r?.pdf_url) window.open(r.pdf_url,'_blank','noopener');
   _ocEditId=null;
-  ['oc-num','oc-sol','oc-cnpj','oc-for','oc-endereco','oc-desc','oc-val','oc-data'].forEach(id=>document.getElementById(id).value='');
+  ['oc-num','oc-sol','oc-cnpj','oc-for','oc-endereco','oc-for-telefone','oc-for-email','oc-pedido-email','oc-desc','oc-val','oc-data'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('oc-emp').value='';
   document.getElementById('oc-status').value='Aberta';
+  ocRenderItens();
   renderOrdensCompra();
   renderResumoOrdensCompra();
   showSt('st-compras',`Ordem de compra ${r?.numero||''} salva e PDF gerado.`,false);
@@ -13459,6 +13509,7 @@ async function renderOrdensCompra(){
   _ocLista=lst||[];
   const el=document.getElementById('lista-oc');
   if(!el)return;
+  if(!document.querySelector('#oc-itens tr'))ocRenderItens();
   if(!lst.length){el.innerHTML='<div class="vazio">Nenhuma ordem de compra.</div>';return;}
   el.innerHTML=lst.map(o=>{
     const decisao=o.status==='Aberta'?`<button class="btn b-vd b-sm" onclick="event.stopPropagation();decidirOC(${o.id},'aprovar')">Aprovar</button><button class="btn b-er b-sm" onclick="event.stopPropagation();decidirOC(${o.id},'reprovar')">Reprovar</button>`:'';

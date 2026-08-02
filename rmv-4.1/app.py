@@ -1798,6 +1798,10 @@ class OrdemCompra(db.Model):
     fornecedor = db.Column(db.String(200), nullable=False)
     fornecedor_cnpj = db.Column(db.String(20))
     fornecedor_endereco = db.Column(db.String(500))
+    fornecedor_email = db.Column(db.String(150))
+    fornecedor_telefone = db.Column(db.String(30))
+    pedido_email = db.Column(db.String(150))
+    itens = db.Column(db.Text, default="[]")
     descricao = db.Column(db.Text)
     valor = db.Column(db.Float, default=0)
     status = db.Column(db.String(50), default="Aberta")
@@ -1810,7 +1814,12 @@ class OrdemCompra(db.Model):
     ass_assinatura_img = db.Column(db.Text)
 
     def to_dict(self):
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        dados = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        try:
+            dados["itens"] = json.loads(dados.get("itens") or "[]")
+        except (TypeError, ValueError):
+            dados["itens"] = []
+        return dados
 
 
 class Funcionario(db.Model):
@@ -25559,6 +25568,19 @@ def _proximo_numero_ordem_compra():
     return f"{prefixo}{sequencia:04d}"
 
 
+def _normalizar_itens_ordem_compra(itens_raw):
+    if not isinstance(itens_raw, list):
+        return None
+    return [
+        {
+            "descricao": str(item.get("descricao") or "").strip()[:250],
+            "quantidade": str(item.get("quantidade") or "").strip()[:50],
+        }
+        for item in itens_raw
+        if isinstance(item, dict) and str(item.get("descricao") or "").strip()
+    ]
+
+
 def _gerar_pdf_ordem_compra(ordem):
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER
@@ -25611,6 +25633,11 @@ def _gerar_pdf_ordem_compra(ordem):
         ("TOPPADDING", (0, 0), (-1, -1), 10),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
     ]))
+    try:
+        itens = json.loads(ordem.itens or "[]")
+    except (TypeError, ValueError):
+        itens = []
+    itens = [item for item in itens if isinstance(item, dict) and item.get("descricao")]
     dados = [
         ("Empresa emissora", empresa_nome),
         ("CNPJ da emissora", empresa_cnpj),
@@ -25623,6 +25650,9 @@ def _gerar_pdf_ordem_compra(ordem):
         ("Fornecedor", ordem.fornecedor or "-"),
         ("CNPJ do fornecedor", ordem.fornecedor_cnpj or "-"),
         ("Endereço do fornecedor", ordem.fornecedor_endereco or "-"),
+        ("Telefone do fornecedor", ordem.fornecedor_telefone or "-"),
+        ("E-mail do fornecedor", ordem.fornecedor_email or "-"),
+        ("E-mail para o pedido", ordem.pedido_email or "-"),
         ("Valor total", f"R$ {float(ordem.valor or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")),
         ("Descrição", ordem.descricao or "-"),
     ]
@@ -25640,11 +25670,33 @@ def _gerar_pdf_ordem_compra(ordem):
         ("TOPPADDING", (0, 0), (-1, -1), 6),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
+    elementos = [cabecalho, Spacer(1, 14), tabela]
+    if itens:
+        tabela_itens = Table(
+            [[Paragraph("Item", rotulo), Paragraph("Quantidade", rotulo)]]
+            + [
+                [Paragraph(str(item["descricao"]), estilo), Paragraph(str(item.get("quantidade") or "-"), estilo)]
+                for item in itens
+            ],
+            colWidths=[largura * 0.75, largura * 0.25],
+            repeatRows=1,
+        )
+        tabela_itens.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), cinza),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d5dce5")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        elementos.extend([Spacer(1, 14), Paragraph("ITENS DA COTAÇÃO", rotulo), Spacer(1, 5), tabela_itens])
     rodape = Paragraph(
         f"Gerada em {localnow().strftime('%d/%m/%Y %H:%M')} por {ordem.criado_por or 'Sistema'}.",
         ParagraphStyle("oc_rodape", parent=estilo, fontSize=8, textColor=colors.HexColor("#666"), alignment=TA_CENTER),
     )
-    doc.build([cabecalho, Spacer(1, 14), tabela, Spacer(1, 18), rodape], canvasmaker=(_WatermarkCanvas or None))
+    elementos.extend([Spacer(1, 18), rodape])
+    doc.build(elementos, canvasmaker=(_WatermarkCanvas or None))
     return buf.getvalue()
 
 
@@ -25689,6 +25741,11 @@ def api_criar_ordem_compra():
     fornecedor = (d.get("fornecedor") or "").strip()
     if not fornecedor:
         return jsonify({"erro": "Informe o fornecedor da ordem de compra."}), 400
+    itens = _normalizar_itens_ordem_compra(d.get("itens") or [])
+    if itens is None:
+        return jsonify({"erro": "Itens da cotação inválidos."}), 400
+    if not itens:
+        return jsonify({"erro": "Inclua ao menos um item na cotação."}), 400
     o = OrdemCompra(
         numero=_proximo_numero_ordem_compra(),
         empresa_id=empresa_id,
@@ -25696,6 +25753,10 @@ def api_criar_ordem_compra():
         fornecedor=fornecedor,
         fornecedor_cnpj=only_digits(d.get("fornecedor_cnpj") or ""),
         fornecedor_endereco=(d.get("fornecedor_endereco") or "").strip(),
+        fornecedor_email=(d.get("fornecedor_email") or "").strip()[:150],
+        fornecedor_telefone=(d.get("fornecedor_telefone") or "").strip()[:30],
+        pedido_email=(d.get("pedido_email") or "").strip()[:150],
+        itens=json.dumps(itens, ensure_ascii=False),
         descricao=d.get("descricao", ""),
         valor=to_num(d.get("valor"), dec=True),
         status=d.get("status", "Aberta"),
@@ -25729,11 +25790,19 @@ def api_atualizar_ordem_compra(id):
         "fornecedor",
         "fornecedor_cnpj",
         "fornecedor_endereco",
+        "fornecedor_email",
+        "fornecedor_telefone",
+        "pedido_email",
         "descricao",
         "data_emissao",
     ]:
         if k in d:
             setattr(o, k, d[k])
+    if "itens" in d:
+        itens = _normalizar_itens_ordem_compra(d.get("itens"))
+        if itens is None or not itens:
+            return jsonify({"erro": "Inclua ao menos um item na cotação."}), 400
+        o.itens = json.dumps(itens, ensure_ascii=False)
     if "valor" in d:
         o.valor = to_num(d.get("valor"), dec=True)
     db.session.commit()
@@ -35106,6 +35175,10 @@ with app.app_context():
             "fornecedor VARCHAR(200)",
             "fornecedor_cnpj VARCHAR(20)",
             "fornecedor_endereco VARCHAR(500)",
+            "fornecedor_email VARCHAR(150)",
+            "fornecedor_telefone VARCHAR(30)",
+            "pedido_email VARCHAR(150)",
+            "itens TEXT DEFAULT '[]'",
             "descricao TEXT",
             "valor REAL DEFAULT 0",
             'status VARCHAR(50) DEFAULT "Aberta"',
