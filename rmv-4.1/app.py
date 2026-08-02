@@ -8056,7 +8056,6 @@ try:
             super().showPage()
 
         def save(self):
-            self._draw_watermark()
             super().save()
 
 
@@ -22134,7 +22133,7 @@ def _build_doc_assinatura_pdf(arquivo, funcionario, url_root):
             .first()
         )
     empresa_nome = emp.nome if emp and emp.nome else "RM Facilities"
-    empresas_hdr = _pdf_companies_for_header(empresa_obj=emp, limit=2)
+    empresas_hdr = _pdf_companies_for_header(empresa_obj=emp, limit=1)
 
     def _logo_flowable(item):
         for cand in item.get("logos") or []:
@@ -22217,36 +22216,19 @@ def _build_doc_assinatura_pdf(arquivo, funcionario, url_root):
     story.append(hdr)
     story.append(Spacer(1, 5))
 
-    emp_cells = []
-    for i, item in enumerate(empresas_hdr[:2]):
-        cell = Table(
+    empresa_header = empresas_hdr[0]
+    emp_tbl = Table(
+        [
+            [_logo_flowable(empresa_header)],
             [
-                [_logo_flowable(item)],
-                [
-                    Paragraph(
-                        f'<b>{item.get("nome") or "-"}</b><br/><font size="8" color="#4c6072">CNPJ: {item.get("cnpj") or "-"}</font>',
-                        ps(f"empc{i}", fontSize=8.2, leading=10),
-                    )
-                ],
+                Paragraph(
+                    f'<b>{empresa_header.get("nome") or "-"}</b><br/><font size="8" color="#4c6072">CNPJ: {empresa_header.get("cnpj") or "-"}</font>',
+                    ps("empc", fontSize=8.2, leading=10),
+                )
             ],
-            colWidths=[W * 0.49],
-        )
-        cell.setStyle(
-            TableStyle(
-                [
-                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7df")),
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fbff")),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                ]
-            )
-        )
-        emp_cells.append(cell)
-    while len(emp_cells) < 2:
-        emp_cells.append(Paragraph("", ps("empemptyd", fontSize=1)))
-    emp_tbl = Table([emp_cells], colWidths=[W * 0.495, W * 0.495])
+        ],
+        colWidths=[W],
+    )
     emp_tbl.setStyle(
         TableStyle(
             [
@@ -22679,7 +22661,7 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
             .first()
         )
     empresa_nome = emp.nome if emp and emp.nome else "RM Facilities"
-    empresas_hdr = _pdf_companies_for_header(empresa_obj=emp, limit=2)
+    empresas_hdr = _pdf_companies_for_header(empresa_obj=emp, limit=1)
 
     def _logo_flowable(item):
         for cand in item.get("logos") or []:
@@ -22752,36 +22734,19 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     story.append(hdr)
     story.append(Spacer(1, 5))
 
-    emp_cells = []
-    for i, item in enumerate(empresas_hdr[:2]):
-        cell = Table(
+    empresa_header = empresas_hdr[0]
+    emp_tbl = Table(
+        [
+            [_logo_flowable(empresa_header)],
             [
-                [_logo_flowable(item)],
-                [
-                    Paragraph(
-                        f'<b>{item.get("nome") or "-"}</b><br/><font size="8" color="#4c6072">CNPJ: {item.get("cnpj") or "-"}</font>',
-                        ps(f"empe{i}", fontSize=8.2, leading=10),
-                    )
-                ],
+                Paragraph(
+                    f'<b>{empresa_header.get("nome") or "-"}</b><br/><font size="8" color="#4c6072">CNPJ: {empresa_header.get("cnpj") or "-"}</font>',
+                    ps("empe", fontSize=8.2, leading=10),
+                )
             ],
-            colWidths=[W * 0.49],
-        )
-        cell.setStyle(
-            TableStyle(
-                [
-                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7df")),
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fbff")),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                ]
-            )
-        )
-        emp_cells.append(cell)
-    while len(emp_cells) < 2:
-        emp_cells.append(Paragraph("", ps("empemptye", fontSize=1)))
-    emp_tbl = Table([emp_cells], colWidths=[W * 0.495, W * 0.495])
+        ],
+        colWidths=[W],
+    )
     emp_tbl.setStyle(
         TableStyle(
             [
