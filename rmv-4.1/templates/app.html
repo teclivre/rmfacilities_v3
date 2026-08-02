@@ -5713,19 +5713,25 @@ function rhCicloRenderColaboradores(){
   const rows=filtrados.map(f=>{
     const fid=Number(f.funcionario_id||0);
     const meta=[f.matricula?`Mat. ${f.matricula}`:'',f.cargo||'',f.empresa_nome||''].filter(Boolean).join(' · ');
-    const fechado=Number(f.dias_fechados||0)>0;
-    const enviado=!!f.assinatura_enviada;
-    const fechamento=fechado?`Fechada (${f.dias_fechados} dia(s))`:'Pendente';
-    const envio=f.assinado?'Assinada':(enviado?'Enviada para assinatura':'Não enviada');
+    const fechado=!!f.folha_fechada;
+    const enviado=!!f.folha_enviada;
+    const fechamento=fechado?`Fechada (${f.dias_fechados}/${f.dias_esperados} dia(s))`:(Number(f.dias_fechados||0)?`Em fechamento (${f.dias_fechados}/${f.dias_esperados} dia(s))`:'Pendente');
+    const envio=f.assinado?'Assinada':(enviado?'Enviada':'Não enviada');
     const acaoEnviar=enviado
-      ? '<button class="btn b-gh b-sm" type="button" disabled title="A folha desta competência já foi enviada para assinatura">Já enviada</button>'
+      ? '<button class="btn b-gh b-sm" type="button" disabled title="A folha desta competência já foi enviada e não pode mais ser alterada">Enviada</button>'
       : `<button class="btn b-vd b-sm" type="button" onclick="rhCicloFecharFuncionario(${fid},true)">Fechar e enviar</button>`;
+    const acaoFechar=(fechado||enviado)
+      ? '<button class="btn b-gh b-sm" type="button" disabled>Já fechada</button>'
+      : `<button class="btn b-az b-sm" type="button" onclick="rhCicloFecharFuncionario(${fid},false)">Fechar</button>`;
+    const acaoReabrir=(fechado&&!enviado)
+      ? `<button class="btn b-az b-sm" type="button" onclick="rhCicloReabrirFuncionario(${fid})">Reabrir</button>`
+      : '';
     return {
       nome:f.nome||'',
       meta,
       fechamento,
       envio,
-      acoes:`<button class="btn b-gh b-sm" type="button" onclick="rhCicloAbrirPrevia(${fid})">Prévia</button> <button class="btn b-az b-sm" type="button" onclick="rhCicloFecharFuncionario(${fid},false)">Fechar</button> ${acaoEnviar}`
+      acoes:`<button class="btn b-gh b-sm" type="button" onclick="rhCicloAbrirPrevia(${fid})">Prévia</button> ${acaoFechar} ${acaoReabrir} ${acaoEnviar}`
     };
   });
   rhCicloRenderTabela(rows);
@@ -5758,6 +5764,17 @@ async function rhCicloFecharFuncionario(funcionarioId,enviarAssinatura){
   const ok=await rhCicloFechar(enviarAssinatura,[Number(funcionarioId)]);
   await rhCicloCarregarColaboradores();
   return ok;
+}
+
+async function rhCicloReabrirFuncionario(funcionarioId){
+  const compMes=rhCicloGetCompetencia();
+  if(!/^[0-9]{4}-[0-9]{2}$/.test(compMes)) return;
+  if(!confirm('Reabrir esta folha? As marcações voltarão a poder ser editadas até um novo fechamento.')) return;
+  const r=await api('/api/rh/ponto/ciclo/reabrir','POST',{funcionario_id:Number(funcionarioId),competencia:compMes});
+  if(r?.erro){ showSt('st-rh-ciclo',r.erro,true); return false; }
+  showSt('st-rh-ciclo','Folha reaberta para edição.',false);
+  await rhCicloCarregarColaboradores();
+  return true;
 }
 
 function rhCicloRenderArquivos(data){
@@ -5837,6 +5854,11 @@ async function rhCicloFechar(enviarAssinatura,funcionarioIds=[]){
   const canal=(document.getElementById('rh-ciclo-canal')?.value||'app').trim();
   const prazoDias=(document.getElementById('rh-ciclo-prazo')?.value||'').trim();
 
+  if(enviarAssinatura){
+    const confirmado=confirm('Ao enviar a folha para assinatura, ela não poderá mais ser reaberta nem editada. Deseja continuar?');
+    if(!confirmado) return false;
+  }
+
   showSt('st-rh-ciclo','Fechando ciclo da competência...',false);
   rhCicloRenderTabela([]);
 
@@ -5855,7 +5877,11 @@ async function rhCicloFechar(enviarAssinatura,funcionarioIds=[]){
   }
 
   const funcs=Array.isArray(fechamento.funcionarios)?fechamento.funcionarios:[];
-  const linhas=funcs.map(f=>({nome:f.nome||'',fechamento:`${f.dias_fechados||0} dia(s) fechados`,envio:enviarAssinatura?'Aguardando envio...':'—'}));
+  const linhas=funcs.map(f=>({
+    nome:f.nome||'',
+    fechamento:f.resultado==='ja_fechada'?'Folha já fechada':(f.resultado==='enviada'?'Folha já enviada':`${f.dias_fechados||0} dia(s) fechados`),
+    envio:f.resultado==='enviada'?'Já enviada':(enviarAssinatura?'Aguardando envio...':'—')
+  }));
   rhCicloRenderTabela(linhas);
   showSt('st-rh-ciclo',`Ciclo fechado: ${fechamento.total_funcionarios||0} colaborador(es), ${fechamento.dias_fechados||0} dia(s).`,false);
 
@@ -5873,6 +5899,11 @@ async function rhCicloFechar(enviarAssinatura,funcionarioIds=[]){
     const fid=Number(f.funcionario_id||0);
     const statusNorm=String(f.status||'').trim().toLowerCase();
     const estadoAtual=estadoPorFuncionario.get(fid);
+    if(f.resultado==='enviada'){
+      linhas[i].envio='Já enviada';
+      rhCicloRenderTabela(linhas);
+      continue;
+    }
     if(estadoAtual?.assinatura_enviada){
       linhas[i].envio=estadoAtual.assinado?'Já assinada':'Já enviada para assinatura';
       rhCicloRenderTabela(linhas);

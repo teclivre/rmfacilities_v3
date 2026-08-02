@@ -69,6 +69,21 @@ def register_ponto_routes(
 
     ponto_tipos = ["entrada", "saida_intervalo", "retorno_intervalo", "saida"]
 
+    def _ponto_exigir_dia_aberto(funcionario_id, data_ref):
+        if not data_ref:
+            return None
+        fechamento = PontoFechamentoDia.query.filter_by(
+            funcionario_id=funcionario_id,
+            data_ref=data_ref.strftime("%Y-%m-%d"),
+        ).first()
+        if fechamento:
+            return jsonify(
+                {
+                    "erro": "A folha deste dia já está fechada. Para editar as marcações, reabra a folha da competência antes de continuar."
+                }
+            ), 409
+        return None
+
     def _ponto_label(tipo):
         return {
             "entrada": "Entrada",
@@ -1133,6 +1148,9 @@ def register_ponto_routes(
         # Marcações em escala noturna podem pertencer ao dia anterior quando
         # ocorrem antes do fim do período noturno.
         data_ref = _ponto_data_ref_efetiva(funcionario, data_hora) or data_hora.date()
+        bloqueio = _ponto_exigir_dia_aberto(funcionario.id, data_ref)
+        if bloqueio:
+            return bloqueio
         af_hoje = _afastamento_ativo_na_data(funcionario.id, data_ref)
         if af_hoje:
             tipo_label = (af_hoje.tipo or "Afastamento").strip()
@@ -1608,6 +1626,9 @@ def register_ponto_routes(
                 # Marcações em escala noturna podem pertencer ao dia anterior
                 # quando ocorrem antes do fim do período noturno.
                 data_ref = _ponto_data_ref_efetiva(funcionario, data_hora) or data_hora.date()
+                bloqueio = _ponto_exigir_dia_aberto(funcionario.id, data_ref)
+                if bloqueio:
+                    return bloqueio
                 antes = [
                     marcacao.to_dict()
                     for marcacao in _ponto_marcacoes_dia(funcionario_id, data_ref)
@@ -1713,11 +1734,14 @@ def register_ponto_routes(
                     return jsonify({"erro": "Acesso negado."}), 403
             except Exception as _e:
                 app.logger.warning("ponto_excluir: falha no check de empresa uid=%s: %s", _uid_del, _e)
-        # data_hora é BRT naive — usar .date() diretamente para data_ref correto.
-        if marcacao.data_hora:
-            data_ref = marcacao.data_hora.date()
-        else:
-            data_ref = None
+        data_ref = (
+            _ponto_data_ref_efetiva(funcionario, marcacao.data_hora)
+            if marcacao.data_hora
+            else None
+        )
+        bloqueio = _ponto_exigir_dia_aberto(funcionario.id, data_ref)
+        if bloqueio:
+            return bloqueio
         snap_antes = (
             [m.to_dict() for m in _ponto_marcacoes_dia(funcionario.id, data_ref)]
             if data_ref
@@ -1826,6 +1850,15 @@ def register_ponto_routes(
         # data_hora é BRT naive — usar .date() direto para data_ant e data_nova.
         data_ant = marcacao.data_hora.date() if marcacao.data_hora else data_hora.date()
         data_nova = data_hora.date()
+        data_ant_ref = _ponto_data_ref_efetiva(funcionario, marcacao.data_hora) or data_ant
+        data_nova_ref = _ponto_data_ref_efetiva(funcionario, data_hora) or data_nova
+        bloqueio = _ponto_exigir_dia_aberto(funcionario.id, data_ant_ref)
+        if bloqueio:
+            return bloqueio
+        if data_nova_ref != data_ant_ref:
+            bloqueio = _ponto_exigir_dia_aberto(funcionario.id, data_nova_ref)
+            if bloqueio:
+                return bloqueio
 
         def _snap(data_ref):
             return [
@@ -1968,6 +2001,9 @@ def register_ponto_routes(
         # Marcações em escala noturna podem pertencer ao dia anterior quando
         # ocorrem antes do fim do período noturno.
         data_ref = _ponto_data_ref_efetiva(funcionario, data_hora) or data_hora.date()
+        bloqueio = _ponto_exigir_dia_aberto(funcionario.id, data_ref)
+        if bloqueio:
+            return bloqueio
 
         # BUG-FIX 10: query duplicada — marcacoes_dia_antes fazia a mesma query que
         # 'conflito' logo abaixo; reutilizar a lista para checar conflito de 1 min.

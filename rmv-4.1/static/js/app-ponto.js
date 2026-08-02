@@ -884,7 +884,7 @@ async function salvarEdicaoDiaCompleto(){
 }
 
 // ─── GESTÃO FÁCIL ─────────────────────────────────────────────────────────
-let gfFuncId = 0;let gfUltimoResumo = null;
+let gfFuncId = 0;let gfUltimoResumo = null;let gfFolhaEstado = null;
 let rhCicloColaboradores = [];
 async function gfCarregar(){
   // Pré-preencher competência com mês atual se vazio
@@ -960,6 +960,28 @@ async function gfCarregarMes(){
   gfUltimoResumo=r.resumo;
   gfRenderCalendario(r.resumo,comp);
   gfRenderFolha(r.resumo);
+  await gfCarregarEstadoFolha(comp);
+}
+
+async function gfCarregarEstadoFolha(comp){
+  if(!gfFuncId) return;
+  const params=new URLSearchParams({competencia:comp,somente_ativos:'false'});
+  const r=await api('/api/rh/ponto/ciclo/colaboradores?'+params.toString());
+  const estado=(r?.colaboradores||[]).find(f=>String(f.funcionario_id)===String(gfFuncId))||null;
+  gfFolhaEstado=estado;
+  const fechar=document.getElementById('gf-btn-fechar');
+  const enviar=document.getElementById('gf-btn-enviar');
+  const reabrir=document.getElementById('gf-btn-reabrir');
+  const enviada=!!estado?.folha_enviada;
+  const fechada=!!estado?.folha_fechada;
+  if(fechar){ fechar.disabled=enviada; fechar.title=fechada?'A folha já está fechada. Reabra-a para editar.':''; }
+  if(enviar){ enviar.disabled=enviada; enviar.title=enviada?'A folha já foi enviada e não pode mais ser alterada.':''; }
+  if(reabrir) reabrir.style.display=(fechada&&!enviada)?'':'none';
+  if(enviada){
+    showSt('gf-st','Folha enviada. Ela não pode mais ser reaberta nem editada.',false);
+  }else if(fechada){
+    showSt('gf-st','Folha já fechada. Reabra a folha antes de editar as marcações.',false);
+  }
 }
 
 function gfAbrirPreviaFolha(){
@@ -978,6 +1000,14 @@ async function gfFecharFolha(enviarAssinatura){
   }
   const comp=(document.getElementById('gf-competencia')?.value||'').trim();
   if(!/^\d{4}-\d{2}$/.test(comp)){showSt('gf-st','Competência inválida. Use YYYY-MM.',true);return;}
+  if(gfFolhaEstado?.folha_enviada){
+    showSt('gf-st','A folha já foi enviada e não pode mais ser reaberta nem editada.',true);
+    return;
+  }
+  if(!enviarAssinatura && gfFolhaEstado?.folha_fechada){
+    showSt('gf-st','A folha já está fechada. Reabra-a antes de fazer alterações.',true);
+    return;
+  }
   const cicloComp=document.getElementById('rh-ciclo-comp');
   const cicloAtivos=document.getElementById('rh-ciclo-so-ativos');
   if(cicloComp) cicloComp.value=comp;
@@ -988,6 +1018,20 @@ async function gfFecharFolha(enviarAssinatura){
   if(ok){
     showSt('gf-st',enviarAssinatura?'Folha processada para fechamento e assinatura.':'Folha processada para fechamento.',false);
   }
+}
+
+async function gfReabrirFolha(){
+  if(!gfFuncId || !gfFolhaEstado?.folha_fechada) return;
+  if(gfFolhaEstado?.folha_enviada){
+    showSt('gf-st','A folha já foi enviada e não pode mais ser reaberta.',true);
+    return;
+  }
+  const comp=(document.getElementById('gf-competencia')?.value||'').trim();
+  if(!confirm('Reabrir esta folha? As marcações voltarão a poder ser editadas até um novo fechamento.')) return;
+  const r=await api('/api/rh/ponto/ciclo/reabrir','POST',{funcionario_id:gfFuncId,competencia:comp});
+  if(r?.erro){ showSt('gf-st',r.erro,true); return; }
+  showSt('gf-st','Folha reaberta para edição.',false);
+  await gfCarregarMes();
 }
 
 function gfRenderCalendario(resumo,comp){
@@ -1136,6 +1180,14 @@ function gfDiaClick(dataRef){
 
 function gfAbrirEditDia(dataRef){
   if(!gfFuncId||!gfUltimoResumo){showSt('gf-st','Selecione um colaborador.',true);return;}
+  if(gfFolhaEstado?.folha_enviada){
+    showSt('gf-st','Esta folha foi enviada para assinatura e não pode mais ser editada nem reaberta.',true);
+    return;
+  }
+  if(gfFolhaEstado?.folha_fechada){
+    showSt('gf-st','Esta folha está fechada. Reabra a folha para editar as marcações.',true);
+    return;
+  }
   const diaData=(gfUltimoResumo.dias||[]).find(d=>d.data_ref===dataRef);
   const marcacoes=_pedOrdenarMarcacoesGestaoFacil(diaData?.marcacoes||[]);
   const f=(pontoFuncs||[]).find(x=>String(x.id)===String(gfFuncId));

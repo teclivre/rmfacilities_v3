@@ -17148,6 +17148,15 @@ def api_rh_decidir_correcao_ponto(id):
     motivo = (d.get("motivo") or "").strip()
     if acao not in ("aprovar", "rejeitar"):
         return jsonify({"erro": "Ação inválida. Use aprovar ou rejeitar."}), 400
+    if acao == "aprovar":
+        funcionario = db.session.get(Funcionario, it.funcionario_id)
+        data_ref = _app_parse_data_iso(it.data_ref)
+        marcacao = db.session.get(PontoMarcacao, it.marcacao_id) if it.marcacao_id else None
+        if funcionario and marcacao and marcacao.data_hora:
+            data_ref = _app_ponto_data_ref_efetiva(funcionario, marcacao.data_hora) or data_ref
+        bloqueio = _app_ponto_exigir_dia_aberto(it.funcionario_id, data_ref)
+        if bloqueio:
+            return bloqueio
     it.status = "resolvido" if acao == "aprovar" else "rejeitado"
     it.motivo_admin = motivo
     it.resolvido_em = utcnow()
@@ -18721,6 +18730,22 @@ def _app_ponto_data_ref_efetiva(funcionario, data_hora):
     return data_base
 
 
+def _app_ponto_exigir_dia_aberto(funcionario_id, data_ref):
+    if not data_ref:
+        return None
+    fechamento = PontoFechamentoDia.query.filter_by(
+        funcionario_id=funcionario_id,
+        data_ref=data_ref.isoformat(),
+    ).first()
+    if fechamento:
+        return jsonify(
+            {
+                "erro": "Esta folha está fechada. Reabra a folha para editar as marcações."
+            }
+        ), 409
+    return None
+
+
 def _app_ponto_min_esperado_jornada(funcionario):
     # Preferir jornada estruturada (JornadaTrabalho)
     if getattr(funcionario, "jornada_id", None):
@@ -19206,6 +19231,9 @@ def api_app_ponto_marcar_me():
             {"erro": "Não é permitido registrar ponto em horário futuro."}
         ), 400
     data_ref = _app_ponto_data_ref_efetiva(f, data_hora) or data_hora.date()
+    bloqueio = _app_ponto_exigir_dia_aberto(f.id, data_ref)
+    if bloqueio:
+        return bloqueio
     marcacoes_dia = _app_ponto_marcacoes_dia(f.id, data_ref)
     tipo = tipo or _app_ponto_tipo_esperado(marcacoes_dia)
     if tipo not in _APP_PONTO_TIPOS:
@@ -19427,6 +19455,9 @@ def api_app_ponto_marcar_qr_me():
     observacao = (dados.get("observacao") or "").strip()[:500]
     data_hora = utcnow()
     data_ref = _app_ponto_data_ref_efetiva(f, data_hora) or data_hora.date()
+    bloqueio = _app_ponto_exigir_dia_aberto(f.id, data_ref)
+    if bloqueio:
+        return bloqueio
     marcacoes_dia = _app_ponto_marcacoes_dia(f.id, data_ref)
     tipo = (dados.get("tipo") or "").strip().lower() or _app_ponto_tipo_esperado(marcacoes_dia)
     if tipo not in _APP_PONTO_TIPOS:
@@ -24942,6 +24973,54 @@ def api_documentos_rh_upload():
     )
 
 
+def _app_ponto_ciclo_estado(funcionario, competencia):
+    """Estado persistido da folha mensal usado pelo ciclo e pela Gestão Fácil."""
+    import calendar as _cal
+
+    ano, mes = [int(x) for x in competencia.split("-")]
+    ultimo_dia = _cal.monthrange(ano, mes)[1]
+    hoje = localnow().date()
+    if (ano, mes) == (hoje.year, hoje.month):
+        ultimo_dia = min(ultimo_dia, hoje.day)
+    data_demissao = _app_parse_data_iso(getattr(funcionario, "data_demissao", ""))
+    if data_demissao:
+        if (data_demissao.year, data_demissao.month) < (ano, mes):
+            ultimo_dia = 0
+        elif (data_demissao.year, data_demissao.month) == (ano, mes):
+            ultimo_dia = min(ultimo_dia, max(0, data_demissao.day - 1))
+
+    inicio = date(ano, mes, 1)
+    fim = date(ano, mes, max(1, ultimo_dia))
+    dias_fechados = 0
+    if ultimo_dia:
+        dias_fechados = PontoFechamentoDia.query.filter(
+            PontoFechamentoDia.funcionario_id == funcionario.id,
+            PontoFechamentoDia.data_ref >= inicio.isoformat(),
+            PontoFechamentoDia.data_ref <= fim.isoformat(),
+        ).count()
+    arquivo = (
+        FuncionarioArquivo.query.filter_by(
+            funcionario_id=funcionario.id,
+            categoria="folha_ponto",
+            competencia=competencia,
+        )
+        .order_by(FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc())
+        .first()
+    )
+    assinatura_enviada = bool(
+        arquivo
+        and (arquivo.ass_status or "").strip().lower()
+        in ("pendente", "assinado", "concluida")
+    )
+    return {
+        "dias_esperados": ultimo_dia,
+        "dias_fechados": dias_fechados,
+        "fechada": bool(ultimo_dia and dias_fechados >= ultimo_dia),
+        "arquivo": arquivo,
+        "enviada": assinatura_enviada,
+    }
+
+
 @app.route("/api/rh/ponto/ciclo/colaboradores")
 @lr
 def api_rh_ponto_ciclo_colaboradores():
@@ -24969,23 +25048,8 @@ def api_rh_ponto_ciclo_colaboradores():
     funcionarios = q.order_by(Funcionario.nome.asc()).all()
 
     ids = [f.id for f in funcionarios]
-    fechados_por_func = {}
     arquivos_por_func = {}
     if ids:
-        fechamentos = (
-            db.session.query(
-                PontoFechamentoDia.funcionario_id,
-                sqla_func.count(PontoFechamentoDia.id),
-            )
-            .filter(
-                PontoFechamentoDia.funcionario_id.in_(ids),
-                PontoFechamentoDia.data_ref >= inicio.isoformat(),
-                PontoFechamentoDia.data_ref <= fim.isoformat(),
-            )
-            .group_by(PontoFechamentoDia.funcionario_id)
-            .all()
-        )
-        fechados_por_func = {fid: total for fid, total in fechamentos}
         arquivos = (
             FuncionarioArquivo.query.filter(
                 FuncionarioArquivo.funcionario_id.in_(ids),
@@ -25003,7 +25067,8 @@ def api_rh_ponto_ciclo_colaboradores():
     empresas = {empresa.id: empresa.nome for empresa in Empresa.query.all()}
     itens = []
     for f in funcionarios:
-        arquivo = arquivos_por_func.get(f.id)
+        estado = _app_ponto_ciclo_estado(f, competencia)
+        arquivo = estado["arquivo"] or arquivos_por_func.get(f.id)
         ass_status = (arquivo.ass_status or "nao_solicitada").strip().lower() if arquivo else ""
         assinatura_enviada = ass_status in ("pendente", "assinado", "concluida")
         itens.append(
@@ -25014,7 +25079,10 @@ def api_rh_ponto_ciclo_colaboradores():
             "cargo": f.cargo or f.funcao or "",
             "status": f.status or "",
             "empresa_nome": empresas.get(f.empresa_id, ""),
-            "dias_fechados": int(fechados_por_func.get(f.id, 0)),
+            "dias_fechados": estado["dias_fechados"],
+            "dias_esperados": estado["dias_esperados"],
+            "folha_fechada": estado["fechada"],
+            "folha_enviada": estado["enviada"],
             "arquivo_id": arquivo.id if arquivo else None,
             "ass_status": ass_status or "nao_solicitada",
             "assinatura_enviada": assinatura_enviada,
@@ -25095,6 +25163,33 @@ def api_rh_ponto_ciclo_fechar():
 
     try:
         for f in funcionarios:
+            estado_atual = _app_ponto_ciclo_estado(f, competencia)
+            if estado_atual["enviada"]:
+                resumo_funcs.append(
+                    {
+                        "funcionario_id": f.id,
+                        "nome": f.nome or "",
+                        "empresa_id": f.empresa_id,
+                        "status": f.status or "",
+                        "dias_fechados": estado_atual["dias_fechados"],
+                        "dias_esperados": estado_atual["dias_esperados"],
+                        "resultado": "enviada",
+                    }
+                )
+                continue
+            if estado_atual["fechada"]:
+                resumo_funcs.append(
+                    {
+                        "funcionario_id": f.id,
+                        "nome": f.nome or "",
+                        "empresa_id": f.empresa_id,
+                        "status": f.status or "",
+                        "dias_fechados": estado_atual["dias_fechados"],
+                        "dias_esperados": estado_atual["dias_esperados"],
+                        "resultado": "ja_fechada",
+                    }
+                )
+                continue
             dias_fechados_func = 0
             status_norm = (f.status or "").strip().lower()
             dt_dem = _parse_data_demissao_iso(getattr(f, "data_demissao", ""))
@@ -25154,6 +25249,8 @@ def api_rh_ponto_ciclo_fechar():
                     "data_demissao": getattr(f, "data_demissao", "") or "",
                     "dia_limite_competencia": int(dia_limite_func),
                     "dias_fechados": dias_fechados_func,
+                    "dias_esperados": dias_fechados_func,
+                    "resultado": "fechada",
                 }
             )
 
@@ -25172,6 +25269,41 @@ def api_rh_ponto_ciclo_fechar():
             "funcionarios": resumo_funcs,
         }
     )
+
+
+@app.route("/api/rh/ponto/ciclo/reabrir", methods=["POST"])
+@lr
+def api_rh_ponto_ciclo_reabrir():
+    d = request.json or {}
+    competencia = (d.get("competencia") or "").strip()
+    funcionario_id = to_num(d.get("funcionario_id"))
+    if not funcionario_id or not re.match(r"^\d{4}-\d{2}$", competencia):
+        return jsonify({"erro": "Funcionário e competência válida são obrigatórios."}), 400
+    funcionario = db.session.get(Funcionario, funcionario_id)
+    if not funcionario:
+        return jsonify({"erro": "Funcionário não encontrado."}), 404
+    estado = _app_ponto_ciclo_estado(funcionario, competencia)
+    if estado["enviada"]:
+        return jsonify(
+            {"erro": "A folha já foi enviada e não pode mais ser reaberta ou editada."}
+        ), 409
+    if not estado["dias_fechados"]:
+        return jsonify({"erro": "A folha desta competência já está aberta."}), 400
+    ano, mes = [int(x) for x in competencia.split("-")]
+    import calendar as _cal
+    inicio = date(ano, mes, 1).isoformat()
+    fim = date(ano, mes, _cal.monthrange(ano, mes)[1]).isoformat()
+    PontoFechamentoDia.query.filter(
+        PontoFechamentoDia.funcionario_id == funcionario.id,
+        PontoFechamentoDia.data_ref >= inicio,
+        PontoFechamentoDia.data_ref <= fim,
+    ).delete(synchronize_session=False)
+    db.session.commit()
+    audit_event(
+        "ponto_reabertura_folha", "usuario", session.get("uid"), "funcionario",
+        funcionario.id, True, {"competencia": competencia},
+    )
+    return jsonify({"ok": True, "mensagem": "Folha reaberta para edição."})
 
 
 @app.route("/api/rh/ponto/ciclo/arquivos")

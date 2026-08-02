@@ -41,8 +41,9 @@
           </div>
           <button class="btn b-az b-sm" onclick="gfCarregarMes()">Ver mês</button>
           <button class="btn b-gh b-sm" onclick="gfAbrirPreviaFolha()" title="Abrir PDF da folha de ponto em nova aba">📄 Prévia da Folha</button>
-          <button class="btn b-gh b-sm" onclick="gfFecharFolha(false)">Fechar folha</button>
-          <button class="btn b-vd b-sm" onclick="gfFecharFolha(true)">Fechar e enviar</button>
+          <button id="gf-btn-fechar" class="btn b-gh b-sm" onclick="gfFecharFolha(false)">Fechar folha</button>
+          <button id="gf-btn-enviar" class="btn b-vd b-sm" onclick="gfFecharFolha(true)">Fechar e enviar</button>
+          <button id="gf-btn-reabrir" class="btn b-az b-sm" style="display:none" onclick="gfReabrirFolha()">Reabrir folha</button>
         </div>
       </div>
 
