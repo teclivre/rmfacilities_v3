@@ -17700,61 +17700,6 @@ def api_app_funcionario_assinar_arquivo(id):
             {"ok": True, "mensagem": "Documento ja assinado.", "item": a.to_dict()}
         )
 
-    d = request.json or {}
-    stepup_otp = only_digits(d.get("stepup_otp") or "")
-    stepup_biometria = bool(d.get("stepup_biometria"))
-    ident = norm_cpf(getattr(f, "cpf", None)) or str(f.id)
-
-    # App #1: biometria exige device registrado (push token confirma dispositivo ativo)
-    if stepup_biometria and not (f.app_push_token or "").strip():
-        return jsonify(
-            {
-                "erro": "Autenticação biométrica não disponível para este dispositivo. Use código OTP."
-            }
-        ), 403
-
-    if not stepup_biometria:
-        if auth_blocked("app_stepup_confirm", ident, (request.remote_addr or "")):
-            return jsonify({"erro": "Muitas tentativas. Aguarde alguns minutos."}), 429
-        if not stepup_otp:
-            return jsonify(
-                {
-                    "erro": "step_up_required",
-                    "mensagem": "Confirme sua identidade antes de assinar.",
-                }
-            ), 403
-        if not (f.app_stepup_hash or "").strip() or not f.app_stepup_expira_em:
-            return jsonify(
-                {"erro": "Solicite um codigo de confirmacao antes de assinar."}
-            ), 400
-        if f.app_stepup_expira_em < utcnow():
-            return jsonify(
-                {"erro": "Codigo expirado. Solicite um novo codigo de confirmacao."}
-            ), 400
-        if int(f.app_stepup_arquivo_id or 0) != id:
-            return jsonify(
-                {"erro": "Codigo de confirmacao invalido para este documento."}
-            ), 400
-        tent = int(f.app_stepup_tentativas or 0)
-        if tent >= 5:
-            reg_auth_attempt("app_stepup_confirm", ident, False, "limite_tentativas")
-            return jsonify(
-                {"erro": "Limite de tentativas excedido. Solicite novo codigo."}
-            ), 400
-        if not hmac.compare_digest(
-            token_hash(stepup_otp), str(f.app_stepup_hash or "")
-        ):
-            db.session.execute(
-                db.text(
-                    "UPDATE funcionario SET app_stepup_tentativas = app_stepup_tentativas + 1 "
-                    "WHERE id = :fid"
-                ),
-                {"fid": f.id},
-            )
-            db.session.commit()
-            reg_auth_attempt("app_stepup_confirm", ident, False, "codigo_invalido")
-            return jsonify({"erro": "Codigo de confirmacao invalido."}), 401
-
     f.app_stepup_hash = None
     f.app_stepup_expira_em = None
     f.app_stepup_tentativas = 0
@@ -17774,9 +17719,6 @@ def api_app_funcionario_assinar_arquivo(id):
     a.ass_codigo = a.ass_codigo or secrets.token_urlsafe(16)
 
     db.session.commit()
-    if not stepup_biometria:
-        reg_auth_attempt("app_stepup_confirm", ident, True, "ok")
-    modo = "biometria" if stepup_biometria else "otp"
     audit_event(
         "funcionario_app_arquivo_assinado",
         "funcionario",
@@ -17789,7 +17731,7 @@ def api_app_funcionario_assinar_arquivo(id):
             "categoria": a.categoria,
             "competencia": a.competencia,
             "origem": "app",
-            "stepup": modo,
+            "stepup": "sessao_app",
         },
     )
     # Gera PDF assinado com carimbo QR code em cada página + página de auditoria
@@ -17838,49 +17780,14 @@ def api_app_funcionario_assinar_arquivo(id):
 @app.route("/api/app/funcionario/arquivos/assinar-lote", methods=["POST"])
 @app_func_required
 def api_app_funcionario_assinar_lote():
-    """App #2: Assina múltiplos documentos com um único código OTP de step-up."""
+    """Assina múltiplos documentos pela sessão autenticada do aplicativo."""
     f = g.app_funcionario
     d = request.json or {}
-    stepup_otp = only_digits(d.get("stepup_otp") or "")
     ids_raw = d.get("ids") or []
-    ident = norm_cpf(getattr(f, "cpf", None)) or str(f.id)
-    if not stepup_otp:
-        return jsonify({"erro": "stepup_otp obrigatorio para assinatura em lote."}), 400
     if not ids_raw or not isinstance(ids_raw, list):
         return jsonify({"erro": "ids deve ser uma lista de IDs de documentos."}), 400
     if len(ids_raw) > 50:
         return jsonify({"erro": "Limite de 50 documentos por lote."}), 400
-    if auth_blocked("app_stepup_confirm", ident, (request.remote_addr or "")):
-        return jsonify({"erro": "Muitas tentativas. Aguarde alguns minutos."}), 429
-    if not (f.app_stepup_hash or "").strip() or not f.app_stepup_expira_em:
-        return jsonify(
-            {"erro": "Solicite um codigo de confirmacao antes de assinar."}
-        ), 400
-    if f.app_stepup_expira_em < utcnow():
-        return jsonify(
-            {"erro": "Codigo expirado. Solicite um novo codigo de confirmacao."}
-        ), 400
-    if not hmac.compare_digest(token_hash(stepup_otp), str(f.app_stepup_hash or "")):
-        f.app_stepup_tentativas = int(f.app_stepup_tentativas or 0) + 1
-        db.session.commit()
-        reg_auth_attempt("app_stepup_confirm", ident, False, "codigo_invalido_lote")
-        return jsonify({"erro": "Codigo de confirmacao invalido."}), 401
-    reg_auth_attempt("app_stepup_confirm", ident, True, "ok_lote")
-    # Consumo atômico do OTP: atualiza diretamente no DB garantindo que apenas um
-    # request concorrente consuma o hash — evita race condition entre dois requests
-    # que passaram simultaneamente na validação hmac acima.
-    rows_updated = db.session.execute(
-        db.text(
-            "UPDATE funcionario SET app_stepup_hash=NULL, app_stepup_expira_em=NULL,"
-            " app_stepup_tentativas=0, app_stepup_arquivo_id=NULL"
-            " WHERE id=:fid AND app_stepup_hash=:hash"
-        ),
-        {"fid": f.id, "hash": str(f.app_stepup_hash or "")},
-    ).rowcount
-    db.session.flush()
-    if rows_updated == 0:
-        return jsonify({"erro": "Codigo de confirmacao ja utilizado."}), 409
-    # Sincroniza o objeto em memória com o estado do DB
     f.app_stepup_hash = None
     f.app_stepup_expira_em = None
     f.app_stepup_tentativas = 0
@@ -17928,7 +17835,7 @@ def api_app_funcionario_assinar_lote():
                 "categoria": a.categoria,
                 "competencia": a.competencia,
                 "origem": "app_lote",
-                "stepup": "otp",
+                "stepup": "sessao_app",
             },
         )
         copia = _salvar_pdf_assinado_em_arquivos_funcionario(a, f, url_root)

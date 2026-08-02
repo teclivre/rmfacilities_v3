@@ -399,15 +399,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
     <div class="modal-title">Assinar Documento</div>
     <div id="sign-doc-name" style="font-size:13px;color:var(--text2);margin-bottom:14px;word-break:break-word"></div>
     <div id="sign-step1">
-      <p style="font-size:14px;color:var(--text2);margin-bottom:16px;line-height:1.5">Para assinar, confirmaremos sua identidade via WhatsApp. Um código de 6 dígitos será enviado.</p>
-      <button class="btn-full green" id="btn-sign-enviar" onclick="signSolicitarOtp()">Enviar código de confirmação</button>
-      <button class="btn-full gray" onclick="fecharModal('modal-sign')">Cancelar</button>
-    </div>
-    <div id="sign-step2" style="display:none">
-      <div style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.5" id="sign-otp-hint"></div>
-      <div class="lf"><label>Código recebido</label>
-        <input id="sign-otp-inp" type="tel" inputmode="numeric" placeholder="000000" maxlength="6" style="text-align:center;font-size:22px;font-weight:700;letter-spacing:5px" onkeydown="if(event.key==='Enter')signConfirmar()">
-      </div>
+      <p style="font-size:14px;color:var(--text2);margin-bottom:16px;line-height:1.5">Confirme para assinar este documento pela sua sessão do aplicativo.</p>
       <button class="btn-full green" id="btn-sign-confirmar" onclick="signConfirmar()">Assinar Documento</button>
       <button class="btn-full gray" onclick="fecharModal('modal-sign')">Cancelar</button>
       <div class="login-err" id="sign-err" style="margin-top:8px"></div>
@@ -1049,37 +1041,20 @@ function loadEspelho(){
   }).catch(function(e){el.innerHTML='<div class="empty-state">'+esc(e.message||'Erro')+'</div>';_loaded['docs_espelho']=false;});
 }
 
-/* Assinatura stepup */
+/* Assinatura autenticada */
 function abrirModalSign(arqId,nome){
   _signArqId=arqId;
   document.getElementById('sign-doc-name').textContent=nome;
   document.getElementById('sign-step1').style.display='';
-  document.getElementById('sign-step2').style.display='none';
-  document.getElementById('sign-otp-inp').value='';
   document.getElementById('sign-err').textContent='';
   abrirModal('modal-sign');
 }
 
-function signSolicitarOtp(){
-  var btn=document.getElementById('btn-sign-enviar');
-  btn.textContent='…';btn.disabled=true;
-  api('POST','/api/app/funcionario/stepup/solicitar',{arquivo_id:_signArqId}).then(function(d){
-    var hint=document.getElementById('sign-otp-hint');
-    hint.textContent=d.mensagem||(d.destino?'Código enviado para '+d.destino:'Código enviado via WhatsApp');
-    document.getElementById('sign-step1').style.display='none';
-    document.getElementById('sign-step2').style.display='';
-    setTimeout(function(){document.getElementById('sign-otp-inp').focus();},150);
-  }).catch(function(e){showToast(e.message||'Erro ao enviar código',true);})
-  .finally(function(){btn.textContent='Enviar código de confirmação';btn.disabled=false;});
-}
-
 function signConfirmar(){
-  var codigo=document.getElementById('sign-otp-inp').value.replace(/\D/g,'');
   var err=document.getElementById('sign-err'),btn=document.getElementById('btn-sign-confirmar');
   err.textContent='';
-  if(!/^\d{6}$/.test(codigo)){err.textContent='O código deve ter exatamente 6 dígitos.';return;}
   btn.textContent='…';btn.disabled=true;
-  api('POST','/api/app/funcionario/arquivos/'+_signArqId+'/assinar',{stepup_otp:codigo}).then(function(){
+  api('POST','/api/app/funcionario/arquivos/'+_signArqId+'/assinar',{}).then(function(){
     fecharModal('modal-sign');
     showToast('Documento assinado com sucesso!');
     _loaded['docs_pend']=false;_loaded['docs_todos']=false;_loaded['docs_assin']=false;

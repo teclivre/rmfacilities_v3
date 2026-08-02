@@ -504,14 +504,10 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
-    fun assinarDocumento(documentoId: Int, stepupOtp: String? = null, stepupBiometria: Boolean = false): ApiSimpleResponse {
-        val body = buildMap<String, Any> {
-            if (stepupBiometria) put("stepup_biometria", true)
-            else if (!stepupOtp.isNullOrBlank()) put("stepup_otp", stepupOtp)
-        }
+    fun assinarDocumento(documentoId: Int): ApiSimpleResponse {
         val req = Request.Builder()
             .url(url("/api/app/funcionario/arquivos/$documentoId/assinar"))
-            .post(gson.toJson(body).toRequestBody("application/json".toMediaType()))
+            .post("{}".toRequestBody("application/json".toMediaType()))
             .addHeader("Authorization", "Bearer ${session.accessToken}")
             .addHeader("Content-Type", "application/json")
             .build()
@@ -522,24 +518,6 @@ class ApiClient(private val session: SessionManager) {
                 gson.fromJson(raw, ApiSimpleResponse::class.java)
             } catch (_: Exception) {
                 ApiSimpleResponse(ok = resp.isSuccessful, erro = if (resp.isSuccessful) null else parseErro(raw, "Falha ao assinar documento."))
-            }
-        }
-    }
-
-    fun solicitarStepupOtp(arquivoId: Int): ApiSimpleResponse {
-        val payload = gson.toJson(mapOf("arquivo_id" to arquivoId, "canal" to session.canalOtp))
-        val req = Request.Builder()
-            .url(url("/api/app/funcionario/stepup/solicitar"))
-            .post(payload.toRequestBody("application/json".toMediaType()))
-            .addHeader("Authorization", "Bearer ${session.accessToken}")
-            .addHeader("Content-Type", "application/json")
-            .build()
-        http.newCall(req).execute().use { resp ->
-            val raw = resp.body?.string().orEmpty()
-            return try {
-                gson.fromJson(raw, ApiSimpleResponse::class.java)
-            } catch (_: Exception) {
-                ApiSimpleResponse(ok = resp.isSuccessful, erro = if (resp.isSuccessful) null else parseErro(raw, "Falha ao solicitar código."))
             }
         }
     }
