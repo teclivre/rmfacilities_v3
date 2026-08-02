@@ -78,7 +78,8 @@ async function pontoAtualizarFeriadosNacionais(){
 
 async function pontoSyncFuncionarios(force=false){
   if(force || !Array.isArray(pontoFuncs) || !pontoFuncs.length){
-    pontoFuncs=await api('/api/funcionarios');
+    const funcionarios=await api('/api/funcionarios');
+    pontoFuncs=Array.isArray(funcionarios)?funcionarios:[];
   }
 }
 
@@ -885,11 +886,11 @@ async function salvarEdicaoDiaCompleto(){
 // ─── GESTÃO FÁCIL ─────────────────────────────────────────────────────────
 let gfFuncId = 0;let gfUltimoResumo = null;
 async function gfCarregar(){
-  await pontoSyncFuncionarios(false);
-  gfRenderFuncs();
   // Pré-preencher competência com mês atual se vazio
   const inp=document.getElementById('gf-competencia');
   if(inp && !inp.value) inp.value=pontoCompetenciaAtual();
+  await pontoSyncFuncionarios(false);
+  gfRenderFuncs();
 }
 
 function gfRenderFuncs(){
