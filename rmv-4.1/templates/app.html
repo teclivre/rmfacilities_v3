@@ -15451,9 +15451,9 @@ async function mapsCarregarListaComunicados(){
   const el=document.getElementById('com-lista');
   if(!el)return;
   try{
-    const ehOrcamento=o.tipo_documento==='pedido_orcamento';
-    const decisao=!ehOrcamento&&o.status==='Aberta'?`<button class="btn b-vd b-sm" onclick="event.stopPropagation();decidirOC(${o.id},'aprovar')">Aprovar</button><button class="btn b-er b-sm" onclick="event.stopPropagation();decidirOC(${o.id},'reprovar')">Reprovar</button>`:'';
+    const lista=await api('/api/comunicados-app');
     if(!lista.length){el.innerHTML='<div class="vazio">Nenhum comunicado ainda.</div>';return;}
+    el.innerHTML=lista.slice(0,20).map(c=>`
       <div style="border:1px solid var(--borda);border-radius:8px;padding:8px 12px;margin-bottom:6px;${c.ativo?'':'opacity:.5'}">
         <div style="display:flex;align-items:center;gap:8px">
           <strong style="font-size:13px;flex:1">${escHtml(c.titulo)}</strong>
