@@ -1584,6 +1584,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-exportar" class="subaba-bloco" onclick="rhSetSubAba('exportar',this)">Exportar colaboradores ativos</button>
         <button type="button" id="rh-subtab-escalas" class="subaba-bloco" onclick="rhSetSubAba('escalas',this)">Escalas de Turnos</button>
         <button type="button" id="rh-subtab-feriados" class="subaba-bloco" onclick="rhSetSubAba('feriados',this)">Calendário de Feriados</button>
+        <button type="button" id="rh-subtab-envio" class="subaba-bloco" onclick="rhSetSubAba('envio',this)">Envio em massa de documentos</button>
         <button type="button" id="rh-subtab-ficha-epi" class="subaba-bloco" onclick="rhSetSubAba('ficha-epi',this)">🦺 Ficha de EPI</button>
         <button type="button" id="rh-subtab-req-vt" class="subaba-bloco" onclick="rhSetSubAba('req-vt',this)">🚌 Requisição VT</button>
         <button type="button" id="rh-subtab-uniforme" class="subaba-bloco" onclick="rhSetSubAba('uniforme',this)">👕 Termo Uniforme</button>
@@ -2020,7 +2021,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
 
       <div class="card rh-pane" id="rh-pane-envio" data-rh-pane="envio">
-        <div class="card-header"><span class="card-title">Envio de arquivo</span></div>
+        <div class="card-header"><span class="card-title">Envio em massa de documentos</span></div>
         <div class="g4">
           <div class="f"><label>Tipo de documento</label>
             <select id="rh-lote-tipo">
@@ -2050,7 +2051,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
           <div class="f s2"><label>Arquivo PDF único (com várias páginas)</label><input type="file" id="rh-lote-arq" accept="application/pdf" onchange="autoPreencherCompetencia(this,'rh-lote-comp')"></div>
         </div>
-        <div class="hint" style="margin-top:8px">Se escolher um funcionário, o PDF inteiro será salvo para ele. Sem seleção, o sistema tenta identificar o colaborador pelo conteúdo de cada página.</div>
+        <div class="hint" style="margin-top:8px">Para holerites, envie o PDF único com várias páginas sem selecionar um funcionário: o sistema separa cada página pelo colaborador identificado. A assinatura pode ser solicitada no app, por WhatsApp ou por link.</div>
         <div class="brow" style="justify-content:flex-start">
           <button class="btn b-gh" type="button" onclick="previewDocumentoRHLote()">Pré-visualizar destinatários</button>
           <button class="btn b-ghv" type="button" onclick="uploadDocumentoRHLote()">Enviar arquivo</button>
