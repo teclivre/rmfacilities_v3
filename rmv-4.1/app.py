@@ -1823,6 +1823,29 @@ class OrdemCompra(db.Model):
         return dados
 
 
+class OrdemCompraItemCatalogo(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(200), nullable=False)
+    unidade = db.Column(db.String(40))
+    descricao = db.Column(db.String(400))
+    ativo = db.Column(db.Boolean, default=True)
+    criado_por = db.Column(db.String(100))
+    criado_em = db.Column(db.DateTime, default=utcnow)
+    atualizado_em = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "nome": self.nome or "",
+            "unidade": self.unidade or "",
+            "descricao": self.descricao or "",
+            "ativo": bool(self.ativo),
+            "criado_por": self.criado_por or "",
+            "criado_em": self.criado_em.isoformat() if self.criado_em else None,
+            "atualizado_em": self.atualizado_em.isoformat() if self.atualizado_em else None,
+        }
+
+
 class Funcionario(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     matricula = db.Column(db.String(30), index=True)
@@ -25719,6 +25742,102 @@ def api_ordens_compra():
     )
 
 
+@app.route("/api/ordens-compra/itens-catalogo", methods=["GET"])
+@lr
+def api_oc_itens_catalogo_listar():
+    q = (request.args.get("q") or "").strip().lower()
+    somente_ativos = (request.args.get("ativos") or "1").strip() != "0"
+    query = OrdemCompraItemCatalogo.query
+    if somente_ativos:
+        query = query.filter_by(ativo=True)
+    itens = query.order_by(OrdemCompraItemCatalogo.nome.asc()).all()
+    if q:
+        itens = [
+            i
+            for i in itens
+            if q in (i.nome or "").lower()
+            or q in (i.descricao or "").lower()
+            or q in (i.unidade or "").lower()
+        ]
+    return jsonify([i.to_dict() for i in itens])
+
+
+@app.route("/api/ordens-compra/itens-catalogo", methods=["POST"])
+@lr
+def api_oc_itens_catalogo_criar():
+    d = request.json or {}
+    nome = (d.get("nome") or "").strip()
+    if not nome:
+        return jsonify({"erro": "Informe o nome do item."}), 400
+    item = OrdemCompraItemCatalogo(
+        nome=nome[:200],
+        unidade=(d.get("unidade") or "").strip()[:40],
+        descricao=(d.get("descricao") or "").strip()[:400],
+        ativo=bool(d.get("ativo", True)),
+        criado_por=session.get("nome", ""),
+    )
+    db.session.add(item)
+    db.session.commit()
+    audit_event(
+        "ordem_compra_item_catalogo_criar",
+        "usuario",
+        session.get("uid"),
+        "ordem_compra_item_catalogo",
+        item.id,
+        True,
+        {"nome": item.nome},
+    )
+    return jsonify(item.to_dict()), 201
+
+
+@app.route("/api/ordens-compra/itens-catalogo/<int:id>", methods=["PUT"])
+@lr
+def api_oc_itens_catalogo_atualizar(id):
+    item = db.get_or_404(OrdemCompraItemCatalogo, id)
+    d = request.json or {}
+    if "nome" in d:
+        nome = (d.get("nome") or "").strip()
+        if not nome:
+            return jsonify({"erro": "Informe o nome do item."}), 400
+        item.nome = nome[:200]
+    if "unidade" in d:
+        item.unidade = (d.get("unidade") or "").strip()[:40]
+    if "descricao" in d:
+        item.descricao = (d.get("descricao") or "").strip()[:400]
+    if "ativo" in d:
+        item.ativo = bool(d.get("ativo"))
+    db.session.commit()
+    audit_event(
+        "ordem_compra_item_catalogo_atualizar",
+        "usuario",
+        session.get("uid"),
+        "ordem_compra_item_catalogo",
+        item.id,
+        True,
+        {"nome": item.nome, "ativo": bool(item.ativo)},
+    )
+    return jsonify(item.to_dict())
+
+
+@app.route("/api/ordens-compra/itens-catalogo/<int:id>", methods=["DELETE"])
+@lr
+def api_oc_itens_catalogo_excluir(id):
+    item = db.get_or_404(OrdemCompraItemCatalogo, id)
+    info = {"nome": item.nome}
+    db.session.delete(item)
+    db.session.commit()
+    audit_event(
+        "ordem_compra_item_catalogo_excluir",
+        "usuario",
+        session.get("uid"),
+        "ordem_compra_item_catalogo",
+        id,
+        True,
+        info,
+    )
+    return jsonify({"ok": True})
+
+
 @app.route("/api/ordens-compra/resumo-mensal")
 @lr
 def api_ordens_compra_resumo_mensal():
@@ -35217,6 +35336,22 @@ with app.app_context():
             "criado_por VARCHAR(100)",
             "criado_em DATETIME",
             "ass_assinatura_img TEXT",
+        ],
+    )
+    try:
+        db.session.execute(text("SELECT 1 FROM ordem_compra_item_catalogo LIMIT 1"))
+    except Exception:
+        db.create_all()
+    ensure_cols(
+        "ordem_compra_item_catalogo",
+        [
+            "nome VARCHAR(200)",
+            "unidade VARCHAR(40)",
+            "descricao VARCHAR(400)",
+            "ativo BOOLEAN DEFAULT 1",
+            "criado_por VARCHAR(100)",
+            "criado_em DATETIME",
+            "atualizado_em DATETIME",
         ],
     )
     ensure_cols(

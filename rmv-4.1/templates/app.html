@@ -2877,10 +2877,27 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="f" style="margin-top:10px"><label>Status</label><input id="oc-status" value="Aberta" readonly></div>
         <div style="margin-top:14px">
           <div class="card-header" style="margin-bottom:8px"><span class="card-title">Itens da cotação</span><button class="btn b-gh b-sm" type="button" onclick="ocAdicionarItem()">Adicionar item</button></div>
+          <datalist id="oc-catalogo-opcoes"></datalist>
           <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Item / produto</th><th style="width:180px">Quantidade</th><th style="width:80px">Ação</th></tr></thead><tbody id="oc-itens"></tbody></table></div>
         </div>
         <div class="f" style="margin-top:10px"><label>Descrição</label><textarea id="oc-desc"></textarea></div>
         <div class="brow" style="justify-content:flex-start"><button class="btn b-az" onclick="salvarOrdemCompra()">Gerar ordem e PDF</button></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Cadastro de itens para compras e orçamento</span></div>
+        <div class="g4">
+          <div class="f"><label>Nome do item *</label><input id="oc-cat-nome" placeholder="Ex.: Luva nitrílica"></div>
+          <div class="f"><label>Unidade</label><input id="oc-cat-unidade" placeholder="Ex.: caixa, unidade, litro"></div>
+          <div class="f"><label>Descrição</label><input id="oc-cat-descricao" placeholder="Observação opcional"></div>
+          <div class="f"><label>Ativo</label><select id="oc-cat-ativo"><option value="1">Sim</option><option value="0">Não</option></select></div>
+        </div>
+        <div class="brow" style="justify-content:flex-start;margin-top:8px;gap:8px;flex-wrap:wrap">
+          <button class="btn b-vd" type="button" onclick="ocSalvarItemCatalogo()">Salvar item</button>
+          <button class="btn b-gh" type="button" onclick="ocLimparItemCatalogoForm()">Limpar</button>
+          <input id="oc-cat-busca" placeholder="Buscar item cadastrado" oninput="ocRenderCatalogoItens()" style="min-width:260px">
+          <button class="btn b-gh b-sm" type="button" onclick="ocCarregarCatalogoItens()">Atualizar lista</button>
+        </div>
+        <div id="oc-cat-lista" class="tbl-wrap" style="margin-top:10px"><div class="vazio">Carregando itens...</div></div>
       </div>
       <div class="card">
         <div class="card-header"><span class="card-title">Resumo mensal de pedidos aprovados</span></div>
@@ -13398,6 +13415,8 @@ async function uploadSSTArquivo(){
 
 let _ocLista=[];
 let _ocEditId=null;
+let _ocCatalogoItens=[];
+let _ocCatalogoEditId=null;
 
 function ocAtualizarModalidade(){
   const ehOrcamento=document.getElementById('oc-tipo')?.value==='pedido_orcamento';
@@ -13414,15 +13433,85 @@ function ocRenderItens(itens=[]){
   const corpo=document.getElementById('oc-itens');
   if(!corpo)return;
   const lista=Array.isArray(itens)&&itens.length?itens:[{descricao:'',quantidade:''}];
-  corpo.innerHTML=lista.map(item=>`<tr><td><input class="oc-item-desc" value="${escHtml(item.descricao||'')}" placeholder="Ex.: Luva de proteção"></td><td><input class="oc-item-qtd" value="${escHtml(item.quantidade||'')}" placeholder="Ex.: 20 unidades"></td><td><button class="btn b-er b-sm" type="button" onclick="ocRemoverItem(this)">Remover</button></td></tr>`).join('');
+  corpo.innerHTML=lista.map(item=>`<tr><td><input class="oc-item-desc" list="oc-catalogo-opcoes" value="${escHtml(item.descricao||'')}" placeholder="Ex.: Luva de proteção"></td><td><input class="oc-item-qtd" value="${escHtml(item.quantidade||'')}" placeholder="Ex.: 20 unidades"></td><td><button class="btn b-er b-sm" type="button" onclick="ocRemoverItem(this)">Remover</button></td></tr>`).join('');
 }
 
 function ocAdicionarItem(){
   const corpo=document.getElementById('oc-itens');
   if(!corpo)return;
   const linha=document.createElement('tr');
-  linha.innerHTML='<td><input class="oc-item-desc" placeholder="Ex.: Luva de proteção"></td><td><input class="oc-item-qtd" placeholder="Ex.: 20 unidades"></td><td><button class="btn b-er b-sm" type="button" onclick="ocRemoverItem(this)">Remover</button></td>';
+  linha.innerHTML='<td><input class="oc-item-desc" list="oc-catalogo-opcoes" placeholder="Ex.: Luva de proteção"></td><td><input class="oc-item-qtd" placeholder="Ex.: 20 unidades"></td><td><button class="btn b-er b-sm" type="button" onclick="ocRemoverItem(this)">Remover</button></td>';
   corpo.appendChild(linha);
+}
+
+function ocRenderCatalogoDatalist(){
+  const dl=document.getElementById('oc-catalogo-opcoes');
+  if(!dl)return;
+  dl.innerHTML=_ocCatalogoItens.filter(i=>i.ativo!==false).map(i=>`<option value="${escHtml(i.nome||'')}">${escHtml([i.unidade||'',i.descricao||''].filter(Boolean).join(' - '))}</option>`).join('');
+}
+
+function ocRenderCatalogoItens(){
+  const el=document.getElementById('oc-cat-lista');
+  if(!el)return;
+  const busca=(document.getElementById('oc-cat-busca')?.value||'').toLowerCase().trim();
+  const itens=(_ocCatalogoItens||[]).filter(i=>!busca||`${(i.nome||'').toLowerCase()} ${(i.unidade||'').toLowerCase()} ${(i.descricao||'').toLowerCase()}`.includes(busca));
+  if(!itens.length){el.innerHTML='<div class="vazio">Nenhum item cadastrado.</div>';return;}
+  el.innerHTML=`<table class="tbl"><thead><tr><th>Item</th><th>Unidade</th><th>Descrição</th><th>Status</th><th style="width:220px">Ações</th></tr></thead><tbody>${itens.map(i=>`<tr><td>${escHtml(i.nome||'')}</td><td>${escHtml(i.unidade||'-')}</td><td>${escHtml(i.descricao||'-')}</td><td>${i.ativo===false?'Inativo':'Ativo'}</td><td><button class="btn b-gh b-sm" type="button" onclick="ocEditarItemCatalogo(${i.id})">Editar</button> <button class="btn b-ghv b-sm" type="button" onclick="ocAlternarItemCatalogo(${i.id},${i.ativo===false?'true':'false'})">${i.ativo===false?'Ativar':'Inativar'}</button> <button class="btn b-er b-sm" type="button" onclick="ocExcluirItemCatalogo(${i.id})">Excluir</button></td></tr>`).join('')}</tbody></table>`;
+}
+
+async function ocCarregarCatalogoItens(){
+  const r=await api('/api/ordens-compra/itens-catalogo?ativos=0');
+  _ocCatalogoItens=Array.isArray(r)?r:[];
+  ocRenderCatalogoDatalist();
+  ocRenderCatalogoItens();
+}
+
+function ocLimparItemCatalogoForm(){
+  _ocCatalogoEditId=null;
+  ['oc-cat-nome','oc-cat-unidade','oc-cat-descricao'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('oc-cat-ativo').value='1';
+}
+
+function ocEditarItemCatalogo(id){
+  const item=_ocCatalogoItens.find(i=>i.id===id);
+  if(!item) return;
+  _ocCatalogoEditId=id;
+  document.getElementById('oc-cat-nome').value=item.nome||'';
+  document.getElementById('oc-cat-unidade').value=item.unidade||'';
+  document.getElementById('oc-cat-descricao').value=item.descricao||'';
+  document.getElementById('oc-cat-ativo').value=item.ativo===false?'0':'1';
+}
+
+async function ocSalvarItemCatalogo(){
+  const nome=(document.getElementById('oc-cat-nome').value||'').trim();
+  if(!nome){showSt('st-compras','Informe o nome do item para cadastro.',true);return;}
+  const payload={
+    nome,
+    unidade:(document.getElementById('oc-cat-unidade').value||'').trim(),
+    descricao:(document.getElementById('oc-cat-descricao').value||'').trim(),
+    ativo:document.getElementById('oc-cat-ativo').value==='1'
+  };
+  const r=_ocCatalogoEditId
+    ? await api('/api/ordens-compra/itens-catalogo/'+_ocCatalogoEditId,'PUT',payload)
+    : await api('/api/ordens-compra/itens-catalogo','POST',payload);
+  if(r?.erro){showSt('st-compras',r.erro,true);return;}
+  ocLimparItemCatalogoForm();
+  await ocCarregarCatalogoItens();
+  showSt('st-compras','Item de compras salvo com sucesso.',false);
+}
+
+async function ocAlternarItemCatalogo(id,ativo){
+  const r=await api('/api/ordens-compra/itens-catalogo/'+id,'PUT',{ativo});
+  if(r?.erro){showSt('st-compras',r.erro,true);return;}
+  await ocCarregarCatalogoItens();
+}
+
+async function ocExcluirItemCatalogo(id){
+  if(!confirm('Excluir item cadastrado?'))return;
+  const r=await api('/api/ordens-compra/itens-catalogo/'+id,'DELETE');
+  if(r?.erro){showSt('st-compras',r.erro,true);return;}
+  await ocCarregarCatalogoItens();
+  showSt('st-compras','Item excluído.',false);
 }
 
 function ocRemoverItem(botao){
@@ -13525,6 +13614,7 @@ async function renderResumoOrdensCompra(){
 
 async function renderOrdensCompra(){
   const lst=await api('/api/ordens-compra');
+  try{await ocCarregarCatalogoItens();}catch(e){}
   _ocLista=lst||[];
   const el=document.getElementById('lista-oc');
   if(!el)return;
