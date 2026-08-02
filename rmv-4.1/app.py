@@ -8206,7 +8206,11 @@ def _pdf_companies_for_header(empresa_obj=None, empresa_dict=None, limit=2):
         itens.append(
             {
                 "nome": (nome or "RM Facilities").strip(),
-                "cnpj": (cnpj or "").strip(),
+                "cnpj": (
+                    _filter_fmt_cnpj((cnpj or "").strip())
+                    if (cnpj or "").strip()
+                    else ""
+                ),
                 "logos": logos,
             }
         )
@@ -13810,6 +13814,7 @@ def _gerar_aviso_previo_pdf(
         else "RM FACILITIES LTDA"
     )
     emp_cnpj = (getattr(emp_obj, "cnpj", None) or "").strip() if emp_obj else ""
+    emp_cnpj_fmt = _filter_fmt_cnpj(emp_cnpj) if emp_cnpj else ""
     func_nome = (f.nome or "").strip()
     func_re = str(f.re or f.matricula or "")
     func_cpf = (f.cpf or "").strip()
@@ -14030,7 +14035,7 @@ def _gerar_aviso_previo_pdf(
         )
     )
 
-    cnpj_txt = f"CNPJ nº {emp_cnpj}, " if emp_cnpj else ""
+    cnpj_txt = f"CNPJ nº {emp_cnpj_fmt}, " if emp_cnpj_fmt else ""
     if tipo == "empresa_trabalhado":
         texto_intro = (
             f"A empresa <b>{emp_nome}</b>, {cnpj_txt}vem por meio deste instrumento comunicar ao(à) "
@@ -14591,6 +14596,8 @@ def _gerar_proposta_comercial_pdf(
         or "RM CONSERVAÇÃO E SERVIÇOS"
     )
     rem_cnpj = (remetente or {}).get("cnpj") or "61.337.803/0001-20"
+    rem_cnpj_fmt = _filter_fmt_cnpj(rem_cnpj) if rem_cnpj else ""
+    cnpj_fmt = _filter_fmt_cnpj(cnpj) if (cnpj or "").strip() else ""
     rem_contato = (remetente or {}).get("contato_nome") or "Roberio Figueiredo"
     rem_tel = (
         (remetente or {}).get("contato_telefone")
@@ -14609,7 +14616,7 @@ def _gerar_proposta_comercial_pdf(
     hdr_data = [
         [
             Paragraph(
-                f"<b>{rem_nome}</b><br/><font size=8>CNPJ: {rem_cnpj}</font>",
+                f"<b>{rem_nome}</b><br/><font size=8>CNPJ: {rem_cnpj_fmt or rem_cnpj}</font>",
                 st(
                     "hd",
                     fontName="Helvetica-Bold",
@@ -14653,7 +14660,7 @@ def _gerar_proposta_comercial_pdf(
         ],
         [
             Paragraph(empresa or "—", s_bold),
-            Paragraph(cnpj or "—", s_bold),
+            Paragraph(cnpj_fmt or cnpj or "—", s_bold),
             Paragraph(funcao or "—", s_bold),
         ],
     ]
@@ -15520,6 +15527,7 @@ def _gerar_contrato_pdf(contrato, prestadora, tomadora):
             return ""
         nome = emp_dict.get("razao") or emp_dict.get("nome") or ""
         cnpj = emp_dict.get("cnpj") or ""
+        cnpj_fmt = _filter_fmt_cnpj(cnpj) if cnpj else ""
         parts_end = [emp_dict.get("logradouro", ""), emp_dict.get("numero", "")]
         end = ", ".join(filter(None, parts_end))
         if emp_dict.get("bairro"):
@@ -15528,7 +15536,7 @@ def _gerar_contrato_pdf(contrato, prestadora, tomadora):
             end += f", {emp_dict['cidade']}/{emp_dict.get('estado', '')}"
         txt = f"<b>{papel}:</b> <b>{nome}</b>"
         if cnpj:
-            txt += f", inscrita no CNPJ sob n° <b>{cnpj}</b>"
+            txt += f", inscrita no CNPJ sob n° <b>{cnpj_fmt or cnpj}</b>"
         if end:
             txt += f", com sede em {end}"
         return txt + "."
@@ -32172,6 +32180,7 @@ def _build_pdf(d):
     eboleto = emp.get("boleto", "")
     cname = d.get("cliente_nome", "")
     ccnpj = d.get("cliente_cnpj", "")
+    ccnpj_fmt = _filter_fmt_cnpj(ccnpj) if (ccnpj or "").strip() else ""
     cend = d.get("cliente_end", "")
     cresp = d.get("cliente_resp", "")
     obs = d.get("observacoes", "")
@@ -32422,7 +32431,7 @@ def _build_pdf(d):
     flat = []
     for row in [
         [campo("Cliente:", cname), campo("Mês ref.:", fmt_mes(mes))],
-        [campo("CNPJ/CPF:", ccnpj), campo("Emissão:", fmt_data(dtem))],
+        [campo("CNPJ/CPF:", ccnpj_fmt or ccnpj), campo("Emissão:", fmt_data(dtem))],
         [campo("Endereço:", cend), campo("Vencimento:", fmt_data(dtvenc))],
         [campo("Responsável:", cresp), campo("Empresa prestadora:", enome)],
     ]:
