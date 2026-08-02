@@ -238,7 +238,12 @@ data class PontoEspelhoCompetencia(
     val competencia: String = "",
     val label: String = "",
     val pode_baixar: Boolean = false,
-    val fechamentos_dias: Int = 0
+    val fechamentos_dias: Int = 0,
+    val holerite_disponivel: Boolean = false,
+    val holerite_assinado: Boolean = false,
+    val holerite_ass_status: String? = null,
+    val holerite_arquivo_id: Int? = null,
+    val holerite_download_url: String? = null
 )
 
 data class PontoEspelhoStatusResponse(

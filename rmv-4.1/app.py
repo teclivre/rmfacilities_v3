@@ -17668,6 +17668,10 @@ def api_app_funcionario_download_arquivo(id):
     a = db.get_or_404(FuncionarioArquivo, id)
     if a.funcionario_id != g.app_funcionario.id:
         return jsonify({"erro": "Acesso negado"}), 403
+    if norm_cat(a.categoria) == "holerite" and (a.ass_status or "").strip().lower() not in ("assinado", "concluida"):
+        return jsonify(
+            {"erro": "Este holerite precisa ser assinado antes de ser baixado."}
+        ), 403
     abs_p = os.path.join(UPLOAD_ROOT, a.caminho)
     if not os.path.exists(abs_p):
         return jsonify({"erro": "Arquivo nao encontrado"}), 404
@@ -19605,6 +19609,17 @@ def api_app_ponto_espelho_status_me():
             PontoFechamentoDia.data_ref >= dt_ini.isoformat(),
             PontoFechamentoDia.data_ref <= dt_fim.isoformat(),
         ).count()
+        holerite = (
+            FuncionarioArquivo.query.filter_by(
+                funcionario_id=f.id,
+                categoria="holerite",
+                competencia=comp,
+            )
+            .order_by(FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc())
+            .first()
+        )
+        holerite_ass_status = (holerite.ass_status or "nao_solicitada").strip().lower() if holerite else ""
+        holerite_assinado = holerite_ass_status in ("assinado", "concluida")
         pode_baixar = fechamentos > 0
         meses_pt = [
             "Janeiro",
@@ -19626,6 +19641,15 @@ def api_app_ponto_espelho_status_me():
                 "label": f"{meses_pt[mes - 1]}/{ano}",
                 "pode_baixar": pode_baixar,
                 "fechamentos_dias": fechamentos,
+                "holerite_disponivel": holerite is not None,
+                "holerite_assinado": holerite_assinado,
+                "holerite_ass_status": holerite_ass_status,
+                "holerite_arquivo_id": holerite.id if holerite else None,
+                "holerite_download_url": (
+                    f"/api/app/funcionario/arquivos/{holerite.id}/download"
+                    if holerite_assinado
+                    else ""
+                ),
             }
         )
     return jsonify({"ok": True, "competencias": competencias})

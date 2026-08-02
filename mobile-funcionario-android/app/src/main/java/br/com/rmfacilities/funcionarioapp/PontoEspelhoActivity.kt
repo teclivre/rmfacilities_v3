@@ -235,7 +235,33 @@ class PontoEspelhoActivity : AppCompatActivity() {
                 }
                 btnRow.addView(btnBaixar)
             }
+
+            val btnHolerite = MaterialButton(this).apply {
+                text = "💰  Holerite"
+                textSize = 12.5f
+                letterSpacing = 0.01f
+                cornerRadius = (10 * dp).toInt()
+                backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_accent_btn))
+                setTextColor(Color.WHITE)
+                elevation = 2f
+                stateListAnimator = null
+                minWidth = 0
+                minimumWidth = 0
+                insetTop = 0
+                insetBottom = 0
+                setPadding((10 * dp).toInt(), (6 * dp).toInt(), (10 * dp).toInt(), (6 * dp).toInt())
+            }
+            btnHolerite.setOnClickListener { abrirHolerite(comp) }
             card.addView(btnRow)
+
+            val holeriteRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = (8 * dp).toInt() }
+            }
+            holeriteRow.addView(btnHolerite)
+            card.addView(holeriteRow)
 
             containerCompetencias.addView(cardWrapper)
         }
@@ -715,6 +741,57 @@ class PontoEspelhoActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     Toast.makeText(this@PontoEspelhoActivity, "Erro ao salvar PDF: ${e.message}", Toast.LENGTH_LONG).show()
                 }
+            }
+        }
+    }
+
+    private fun abrirHolerite(comp: PontoEspelhoCompetencia) {
+        if (!comp.holerite_disponivel) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Holerite indisponível")
+                .setMessage("O holerite de ${comp.label} ainda não foi enviado pelo RH.")
+                .setPositiveButton("Entendi", null)
+                .show()
+            return
+        }
+        if (!comp.holerite_assinado) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Assinatura necessária")
+                .setMessage("O holerite de ${comp.label} está disponível, mas precisa ser assinado antes do download.")
+                .setNegativeButton("Agora não", null)
+                .setPositiveButton("Assinar agora") { _, _ ->
+                    startActivity(Intent(this, DocumentosActivity::class.java).apply {
+                        putExtra("preset_categoria", "Holerites")
+                        putExtra("preset_busca", comp.competencia)
+                    })
+                }
+                .show()
+            return
+        }
+        val downloadUrl = comp.holerite_download_url.orEmpty()
+        if (downloadUrl.isBlank()) {
+            Toast.makeText(this, "Não foi possível localizar o holerite para download.", Toast.LENGTH_LONG).show()
+            return
+        }
+        lifecycleScope.launch {
+            val bytes = withContext(Dispatchers.IO) {
+                try { api.downloadFile(downloadUrl) } catch (_: Exception) { null }
+            }
+            if (bytes == null) {
+                Toast.makeText(this@PontoEspelhoActivity, "Falha ao baixar o holerite.", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            try {
+                val dir = File(cacheDir, "holerites").also { it.mkdirs() }
+                val file = File(dir, "holerite_${comp.competencia}.pdf")
+                file.writeBytes(bytes)
+                val uri = FileProvider.getUriForFile(this@PontoEspelhoActivity, "$packageName.fileprovider", file)
+                startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/pdf")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }, "Abrir holerite"))
+            } catch (_: Exception) {
+                Toast.makeText(this@PontoEspelhoActivity, "Nenhum app disponível para abrir o holerite.", Toast.LENGTH_LONG).show()
             }
         }
     }
