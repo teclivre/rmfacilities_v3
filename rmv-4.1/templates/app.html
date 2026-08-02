@@ -2855,18 +2855,20 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div class="card">
         <div class="card-header"><span class="card-title">Ordem de Compra</span></div>
         <div class="g4">
-          <div class="f"><label>Número</label><input id="oc-num" placeholder="OC-2026-001"></div>
-          <div class="f"><label>Empresa</label><select id="oc-emp"><option value="">Selecione...</option></select></div>
+          <div class="f"><label>Número</label><input id="oc-num" placeholder="Gerado automaticamente ao salvar" readonly></div>
+          <div class="f"><label>Empresa emissora *</label><select id="oc-emp"><option value="">Selecione...</option></select></div>
           <div class="f"><label>Solicitante</label><input id="oc-sol"></div>
           <div class="f"><label>Data</label><input id="oc-data" type="date"></div>
         </div>
         <div class="g3" style="margin-top:10px">
-          <div class="f"><label>Fornecedor</label><input id="oc-for"></div>
+          <div class="f"><label>CNPJ do fornecedor</label><div style="display:flex;gap:6px"><input id="oc-cnpj" maxlength="18" placeholder="00.000.000/0000-00" oninput="maskCNPJ(this);ocCnpjAuto(this)" style="flex:1"><button class="btn b-gh b-sm" id="oc-cnpj-btn" type="button" onclick="ocBuscarCnpj()" title="Buscar fornecedor pelo CNPJ">Buscar</button></div></div>
+          <div class="f"><label>Fornecedor *</label><input id="oc-for"></div>
           <div class="f"><label>Valor</label><input id="oc-val" type="number" min="0" step="0.01"></div>
           <div class="f"><label>Status</label><select id="oc-status"><option>Aberta</option><option>Aprovada</option><option>Cancelada</option></select></div>
         </div>
+        <div class="f" style="margin-top:10px"><label>Endereço do fornecedor</label><input id="oc-endereco" placeholder="Preenchido pela consulta de CNPJ ou informado manualmente"></div>
         <div class="f" style="margin-top:10px"><label>Descrição</label><textarea id="oc-desc"></textarea></div>
-        <div class="brow" style="justify-content:flex-start"><button class="btn b-az" onclick="salvarOrdemCompra()">Salvar ordem</button></div>
+        <div class="brow" style="justify-content:flex-start"><button class="btn b-az" onclick="salvarOrdemCompra()">Gerar ordem e PDF</button></div>
       </div>
       <div class="card">
         <div class="card-header"><span class="card-title">Ordens cadastradas</span></div>
@@ -13386,23 +13388,49 @@ function editarOC(id){
   document.getElementById('oc-emp').value=o.empresa_id||'';
   document.getElementById('oc-sol').value=o.solicitante||'';
   document.getElementById('oc-for').value=o.fornecedor||'';
+  document.getElementById('oc-cnpj').value=fmtDoc(o.fornecedor_cnpj||'');
+  document.getElementById('oc-endereco').value=o.fornecedor_endereco||'';
   document.getElementById('oc-desc').value=o.descricao||'';
   document.getElementById('oc-val').value=o.valor||0;
   document.getElementById('oc-status').value=o.status||'Aberta';
   document.getElementById('oc-data').value=o.data_emissao||'';
-  showSt('st-op','Ordem de compra carregada para edição.',false);
+  showSt('st-compras','Ordem de compra carregada para edição.',false);
+}
+
+let _ocCnpjTimer=null;
+function ocCnpjAuto(input){
+  if((input.value||'').replace(/\D/g,'').length!==14) return;
+  clearTimeout(_ocCnpjTimer);
+  _ocCnpjTimer=setTimeout(ocBuscarCnpj,600);
+}
+
+async function ocBuscarCnpj(){
+  const cnpj=(document.getElementById('oc-cnpj').value||'').replace(/\D/g,'');
+  if(cnpj.length!==14){showSt('st-compras','Informe os 14 dígitos do CNPJ do fornecedor.',true);return;}
+  const btn=document.getElementById('oc-cnpj-btn');
+  btn.disabled=true;btn.textContent='...';
+  try{
+    const d=await api('/api/cnpj/'+cnpj);
+    if(d?.erro) throw new Error(d.erro);
+    document.getElementById('oc-for').value=d.nome||d.razao||'';
+    const endereco=[d.logradouro,d.numero,d.complemento,d.bairro,d.cidade&&d.estado?`${d.cidade}/${d.estado}`:(d.cidade||d.estado),d.cep?`CEP ${d.cep}`:''].filter(Boolean).join(', ');
+    document.getElementById('oc-endereco').value=endereco;
+    showSt('st-compras','Fornecedor e endereço preenchidos pela consulta de CNPJ.',false);
+  }catch(err){showSt('st-compras',err?.message||'Não foi possível consultar o CNPJ.',true);}
+  finally{btn.disabled=false;btn.textContent='Buscar';}
 }
 
 async function salvarOrdemCompra(){
-  const d={numero:document.getElementById('oc-num').value,empresa_id:parseInt(document.getElementById('oc-emp').value)||null,solicitante:document.getElementById('oc-sol').value,fornecedor:document.getElementById('oc-for').value,descricao:document.getElementById('oc-desc').value,valor:parseFloat(document.getElementById('oc-val').value)||0,status:document.getElementById('oc-status').value,data_emissao:document.getElementById('oc-data').value};
-  if(_ocEditId) await api('/api/ordens-compra/'+_ocEditId,'PUT',d);
-  else await api('/api/ordens-compra','POST',d);
+  const d={empresa_id:parseInt(document.getElementById('oc-emp').value)||null,solicitante:document.getElementById('oc-sol').value,fornecedor:document.getElementById('oc-for').value,fornecedor_cnpj:document.getElementById('oc-cnpj').value,fornecedor_endereco:document.getElementById('oc-endereco').value,descricao:document.getElementById('oc-desc').value,valor:parseFloat(document.getElementById('oc-val').value)||0,status:document.getElementById('oc-status').value,data_emissao:document.getElementById('oc-data').value};
+  const r=_ocEditId ? await api('/api/ordens-compra/'+_ocEditId,'PUT',d) : await api('/api/ordens-compra','POST',d);
+  if(r?.erro){showSt('st-compras',r.erro,true);return;}
+  if(!_ocEditId && r?.pdf_url) window.open(r.pdf_url,'_blank','noopener');
   _ocEditId=null;
-  ['oc-num','oc-sol','oc-for','oc-desc','oc-val','oc-data'].forEach(id=>document.getElementById(id).value='');
+  ['oc-num','oc-sol','oc-cnpj','oc-for','oc-endereco','oc-desc','oc-val','oc-data'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('oc-emp').value='';
   document.getElementById('oc-status').value='Aberta';
   renderOrdensCompra();
-  showSt('st-op','Ordem de compra salva.',false);
+  showSt('st-compras',`Ordem de compra ${r?.numero||''} salva e PDF gerado.`,false);
 }
 
 async function renderOrdensCompra(){
@@ -13411,7 +13439,7 @@ async function renderOrdensCompra(){
   const el=document.getElementById('lista-oc');
   if(!el)return;
   if(!lst.length){el.innerHTML='<div class="vazio">Nenhuma ordem de compra.</div>';return;}
-  el.innerHTML=lst.map(o=>`<div class="hist-item row-clickable" onclick="editarOC(${o.id})"><div><div class="hist-tit">${o.numero} · ${o.fornecedor||'Sem fornecedor'}</div><div class="hist-sub">${o.status} · ${o.data_emissao||''} · ${o.descricao||''}</div></div><div style="display:flex;gap:8px;align-items:center"><div class="hist-val">${brl(o.valor||0)}</div><button class="btn b-ghr b-sm" onclick="event.stopPropagation();delOC(${o.id})">Excluir</button></div></div>`).join('');
+  el.innerHTML=lst.map(o=>`<div class="hist-item row-clickable" onclick="editarOC(${o.id})"><div><div class="hist-tit">${o.numero} · ${o.fornecedor||'Sem fornecedor'}</div><div class="hist-sub">${o.status} · ${o.data_emissao||''} · ${o.fornecedor_endereco||o.descricao||''}</div></div><div style="display:flex;gap:8px;align-items:center"><div class="hist-val">${brl(o.valor||0)}</div><a class="btn b-gh b-sm" href="/api/ordens-compra/${o.id}/pdf" target="_blank" rel="noopener" onclick="event.stopPropagation()">PDF</a><button class="btn b-ghr b-sm" onclick="event.stopPropagation();delOC(${o.id})">Excluir</button></div></div>`).join('');
 }
 
 async function delOC(id){

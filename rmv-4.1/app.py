@@ -1796,6 +1796,8 @@ class OrdemCompra(db.Model):
     empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
     solicitante = db.Column(db.String(200))
     fornecedor = db.Column(db.String(200), nullable=False)
+    fornecedor_cnpj = db.Column(db.String(20))
+    fornecedor_endereco = db.Column(db.String(500))
     descricao = db.Column(db.Text)
     valor = db.Column(db.Float, default=0)
     status = db.Column(db.String(50), default="Aberta")
@@ -25513,6 +25515,93 @@ def api_rh_preview_destinatarios():
     )
 
 
+def _proximo_numero_ordem_compra():
+    ano = localnow().strftime("%Y")
+    prefixo = f"OC-{ano}-"
+    ultima = (
+        OrdemCompra.query.filter(OrdemCompra.numero.like(f"{prefixo}%"))
+        .order_by(OrdemCompra.numero.desc())
+        .first()
+    )
+    sequencia = 1
+    if ultima:
+        try:
+            sequencia = int((ultima.numero or "").rsplit("-", 1)[-1]) + 1
+        except (TypeError, ValueError):
+            pass
+    return f"{prefixo}{sequencia:04d}"
+
+
+def _gerar_pdf_ordem_compra(ordem):
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    empresa = db.session.get(Empresa, ordem.empresa_id) if ordem.empresa_id else None
+    empresa_nome = (getattr(empresa, "razao", None) or getattr(empresa, "nome", None) or "RM Facilities").strip()
+    empresa_cnpj = (getattr(empresa, "cnpj", None) or "-").strip()
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=1.5 * cm,
+        rightMargin=1.5 * cm,
+        topMargin=1.5 * cm,
+        bottomMargin=1.5 * cm,
+    )
+    largura = A4[0] - 3 * cm
+    azul = colors.HexColor("#205d8a")
+    cinza = colors.HexColor("#f5f7fa")
+    estilo = ParagraphStyle("oc", fontName="Helvetica", fontSize=9, leading=13)
+    titulo = ParagraphStyle("oc_titulo", parent=estilo, fontName="Helvetica-Bold", fontSize=18, leading=22, textColor=colors.white, alignment=TA_CENTER)
+    rotulo = ParagraphStyle("oc_rotulo", parent=estilo, fontName="Helvetica-Bold", textColor=azul)
+
+    cabecalho = Table(
+        [[Paragraph("ORDEM DE COMPRA", titulo)], [Paragraph(f"<b>{ordem.numero}</b>", ParagraphStyle("oc_num", parent=titulo, fontSize=12))]],
+        colWidths=[largura],
+    )
+    cabecalho.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), azul),
+        ("TOPPADDING", (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+    ]))
+    dados = [
+        ("Empresa emissora", empresa_nome),
+        ("CNPJ da emissora", empresa_cnpj),
+        ("Solicitante", ordem.solicitante or "-"),
+        ("Data de emissão", ordem.data_emissao or "-"),
+        ("Status", ordem.status or "Aberta"),
+        ("Fornecedor", ordem.fornecedor or "-"),
+        ("CNPJ do fornecedor", ordem.fornecedor_cnpj or "-"),
+        ("Endereço do fornecedor", ordem.fornecedor_endereco or "-"),
+        ("Valor total", f"R$ {float(ordem.valor or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")),
+        ("Descrição", ordem.descricao or "-"),
+    ]
+    tabela = Table(
+        [[Paragraph(chave, rotulo), Paragraph(str(valor).replace("\n", "<br/>"), estilo)] for chave, valor in dados],
+        colWidths=[largura * 0.30, largura * 0.70],
+        repeatRows=0,
+    )
+    tabela.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), cinza),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d5dce5")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    rodape = Paragraph(
+        f"Gerada em {localnow().strftime('%d/%m/%Y %H:%M')} por {ordem.criado_por or 'Sistema'}.",
+        ParagraphStyle("oc_rodape", parent=estilo, fontSize=8, textColor=colors.HexColor("#666"), alignment=TA_CENTER),
+    )
+    doc.build([cabecalho, Spacer(1, 14), tabela, Spacer(1, 18), rodape], canvasmaker=(_WatermarkCanvas or None))
+    return buf.getvalue()
+
+
 @app.route("/api/ordens-compra", methods=["GET"])
 @lr
 def api_ordens_compra():
@@ -25528,12 +25617,19 @@ def api_ordens_compra():
 @lr
 def api_criar_ordem_compra():
     d = request.json or {}
-    num = d.get("numero") or f"OC-{localnow().strftime('%Y%m%d%H%M%S')}"
+    empresa_id = to_num(d.get("empresa_id")) or None
+    if not empresa_id or not db.session.get(Empresa, empresa_id):
+        return jsonify({"erro": "Selecione a empresa emissora da ordem de compra."}), 400
+    fornecedor = (d.get("fornecedor") or "").strip()
+    if not fornecedor:
+        return jsonify({"erro": "Informe o fornecedor da ordem de compra."}), 400
     o = OrdemCompra(
-        numero=num,
-        empresa_id=d.get("empresa_id"),
+        numero=_proximo_numero_ordem_compra(),
+        empresa_id=empresa_id,
         solicitante=d.get("solicitante", ""),
-        fornecedor=d.get("fornecedor", ""),
+        fornecedor=fornecedor,
+        fornecedor_cnpj=only_digits(d.get("fornecedor_cnpj") or ""),
+        fornecedor_endereco=(d.get("fornecedor_endereco") or "").strip(),
         descricao=d.get("descricao", ""),
         valor=to_num(d.get("valor"), dec=True),
         status=d.get("status", "Aberta"),
@@ -25542,7 +25638,18 @@ def api_criar_ordem_compra():
     )
     db.session.add(o)
     db.session.commit()
-    return jsonify(o.to_dict()), 201
+    audit_event(
+        "ordem_compra_criar",
+        "usuario",
+        session.get("uid"),
+        "ordem_compra",
+        o.id,
+        True,
+        {"numero": o.numero, "empresa_id": o.empresa_id, "fornecedor": o.fornecedor},
+    )
+    retorno = o.to_dict()
+    retorno["pdf_url"] = f"/api/ordens-compra/{o.id}/pdf"
+    return jsonify(retorno), 201
 
 
 @app.route("/api/ordens-compra/<int:id>", methods=["PUT"])
@@ -25551,10 +25658,11 @@ def api_atualizar_ordem_compra(id):
     o = db.get_or_404(OrdemCompra, id)
     d = request.json or {}
     for k in [
-        "numero",
         "empresa_id",
         "solicitante",
         "fornecedor",
+        "fornecedor_cnpj",
+        "fornecedor_endereco",
         "descricao",
         "status",
         "data_emissao",
@@ -25565,6 +25673,18 @@ def api_atualizar_ordem_compra(id):
         o.valor = to_num(d.get("valor"), dec=True)
     db.session.commit()
     return jsonify(o.to_dict())
+
+
+@app.route("/api/ordens-compra/<int:id>/pdf")
+@lr
+def api_ordem_compra_pdf(id):
+    ordem = db.get_or_404(OrdemCompra, id)
+    return send_file(
+        io.BytesIO(_gerar_pdf_ordem_compra(ordem)),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"{ordem.numero}.pdf",
+    )
 
 
 @app.route("/api/ordens-compra/<int:id>", methods=["DELETE"])
@@ -34889,6 +35009,8 @@ with app.app_context():
             "empresa_id INTEGER",
             "solicitante VARCHAR(200)",
             "fornecedor VARCHAR(200)",
+            "fornecedor_cnpj VARCHAR(20)",
+            "fornecedor_endereco VARCHAR(500)",
             "descricao TEXT",
             "valor REAL DEFAULT 0",
             'status VARCHAR(50) DEFAULT "Aberta"',
