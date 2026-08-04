@@ -13375,7 +13375,8 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
     hdr_table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, -1), azul),
+                ("BACKGROUND", (0, 0), (1, 0), azul),
+                ("BACKGROUND", (2, 0), (2, 0), colors.white),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("ALIGN", (1, 0), (1, 0), "CENTER"),
                 ("ALIGN", (2, 0), (2, 0), "CENTER"),
@@ -13408,10 +13409,8 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
     _end_completo_esc = _html.escape(end_completo)
     _emp_cnpj_esc = _html.escape(emp_cnpj)
 
-    p1 = (
-        f"<b>{_emp_nome_esc}</b>, com sede à {_end_completo_esc}, inscrita no CNPJ sob o nº "
-        f"<b>{_emp_cnpj_esc}</b>."
-    )
+    _cnpj_parte = f", inscrita no CNPJ sob o nº <b>{_emp_cnpj_esc}</b>" if emp_cnpj else ""
+    p1 = f"<b>{_emp_nome_esc}</b>, com sede à {_end_completo_esc}{_cnpj_parte}."
     elems.append(Paragraph(p1, st_para))
     elems.append(Spacer(1, 0.4 * cm))
 
