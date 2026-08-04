@@ -13369,19 +13369,20 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
     )
 
     hdr_data = [
-        [Paragraph("DECLARAÇÃO DO SIMPLES NACIONAL", st_title), logo_el],
+        ["", Paragraph("DECLARAÇÃO DO SIMPLES NACIONAL", st_title), logo_el],
     ]
-    hdr_table = Table(hdr_data, colWidths=[12 * cm, 5.5 * cm])
+    hdr_table = Table(hdr_data, colWidths=[4 * cm, 8 * cm, 4 * cm])
     hdr_table.setStyle(
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, -1), azul),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("ALIGN", (1, 0), (1, 0), "CENTER"),
-                ("TOPPADDING", (0, 0), (-1, -1), 8),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-                ("LEFTPADDING", (0, 0), (-1, -1), 12),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                ("ALIGN", (2, 0), (2, 0), "CENTER"),
+                ("TOPPADDING", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
             ]
         )
     )
