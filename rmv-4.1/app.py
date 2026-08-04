@@ -13240,6 +13240,326 @@ def api_funcionario_gerar_aviso_previo(id):
     ), 201
 
 
+# ── CARTA DE DECLARAÇÃO — SIMPLES NACIONAL ──────────────────────────────────
+
+
+def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, destinatario_cnpj=""):
+    """Gera PDF da Carta de Declaração de Optante pelo Simples Nacional."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import (
+        SimpleDocTemplate,
+        Table,
+        TableStyle,
+        Paragraph,
+        Spacer,
+        HRFlowable,
+        Image,
+    )
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
+
+    azul = colors.HexColor("#1A3A5C")
+
+    st_title = ParagraphStyle(
+        "sntit",
+        fontName="Helvetica-Bold",
+        fontSize=16,
+        leading=20,
+        textColor=colors.white,
+        alignment=TA_CENTER,
+    )
+    st_sub = ParagraphStyle(
+        "snsu",
+        fontName="Helvetica",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.white,
+        alignment=TA_CENTER,
+    )
+    st_para = ParagraphStyle(
+        "snpara",
+        fontName="Helvetica",
+        fontSize=10,
+        leading=15,
+        alignment=TA_JUSTIFY,
+    )
+    st_dest = ParagraphStyle("sndest", fontName="Helvetica", fontSize=10, leading=14)
+    st_dest_nm = ParagraphStyle(
+        "sndestnm", fontName="Helvetica-Bold", fontSize=11, leading=14
+    )
+    st_item = ParagraphStyle(
+        "snitem",
+        fontName="Helvetica",
+        fontSize=10,
+        leading=15,
+        leftIndent=0.5 * cm,
+        alignment=TA_JUSTIFY,
+    )
+    st_rod = ParagraphStyle(
+        "snro",
+        fontName="Helvetica",
+        fontSize=7,
+        leading=9,
+        textColor=colors.HexColor("#888"),
+        alignment=TA_CENTER,
+    )
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=2.5 * cm,
+        rightMargin=2.5 * cm,
+        topMargin=1.5 * cm,
+        bottomMargin=1.5 * cm,
+    )
+
+    emp = empresa_declarante
+    emp_nome = (
+        (
+            getattr(emp, "razao", None)
+            or getattr(emp, "nome", None)
+            or "RM FACILITIES LTDA"
+        ).upper()
+        if emp
+        else "RM FACILITIES LTDA"
+    )
+    emp_cnpj = _filter_fmt_cnpj(getattr(emp, "cnpj", "") or "") if emp else ""
+    emp_logradouro = (getattr(emp, "logradouro", "") or "") if emp else ""
+    emp_numero = (getattr(emp, "numero", "") or "") if emp else ""
+    emp_complemento = (getattr(emp, "complemento", "") or "") if emp else ""
+    emp_bairro = (getattr(emp, "bairro", "") or "") if emp else ""
+    emp_cidade = ((getattr(emp, "cidade", "") or "São José dos Campos") if emp else "São José dos Campos")
+    emp_estado = ((getattr(emp, "estado", "") or "SP") if emp else "SP")
+    emp_cep = (getattr(emp, "cep", "") or "") if emp else ""
+
+    partes_end = list(filter(None, [emp_logradouro, emp_numero, emp_complemento]))
+    end_linha = ", ".join(partes_end)
+    partes_local = []
+    if emp_bairro:
+        partes_local.append(f"bairro: {emp_bairro}")
+    if emp_cidade:
+        partes_local.append(f"{emp_cidade}/{emp_estado}" if emp_estado else emp_cidade)
+    if emp_cep:
+        partes_local.append(f"CEP: {emp_cep}")
+    end_completo = ", ".join(filter(None, [end_linha, ", ".join(partes_local)]))
+
+    meses_pt = [
+        "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+        "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+    ]
+    hoje = localnow()
+    data_extensa = f"{emp_cidade}, {hoje.day} de {meses_pt[hoje.month - 1]} de {hoje.year}."
+
+    logo_path = _get_logo_path_for_pdf(emp)
+    if logo_path and os.path.exists(logo_path):
+        logo_el = Image(logo_path, width=3.8 * cm, height=1.4 * cm, kind="proportional")
+    else:
+        logo_el = Paragraph(
+            emp_nome,
+            ParagraphStyle(
+                "snln",
+                fontName="Helvetica-Bold",
+                fontSize=8,
+                textColor=colors.white,
+                alignment=TA_CENTER,
+            ),
+        )
+
+    hdr_data = [
+        [Paragraph("DECLARAÇÃO", st_title), logo_el],
+        [Paragraph(emp_nome, st_sub), ""],
+    ]
+    hdr_table = Table(hdr_data, colWidths=[12 * cm, 5.5 * cm])
+    hdr_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), azul),
+                ("SPAN", (0, 1), (1, 1)),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (1, 0), (1, 0), "CENTER"),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+            ]
+        )
+    )
+
+    dest_nome = (destinatario_nome or "").strip()
+    cnpj_dest_fmt = _filter_fmt_cnpj(destinatario_cnpj) if destinatario_cnpj else ""
+    dest_label = dest_nome or "[EMPRESA DESTINATÁRIA]"
+    dest_display = dest_label + (f" — CNPJ: {cnpj_dest_fmt}" if cnpj_dest_fmt else "")
+
+    elems = []
+    elems.append(hdr_table)
+    elems.append(Spacer(1, 0.7 * cm))
+
+    elems.append(Paragraph("À", st_dest))
+    elems.append(Paragraph(dest_display, st_dest_nm))
+    elems.append(Spacer(1, 0.5 * cm))
+
+    p1 = (
+        f"<b>{emp_nome}</b>, com sede à {end_completo}, inscrita no CNPJ sob o nº "
+        f"<b>{emp_cnpj}</b>."
+    )
+    elems.append(Paragraph(p1, st_para))
+    elems.append(Spacer(1, 0.4 * cm))
+
+    p2 = (
+        f"DECLARA à <b>{dest_label}</b> para fins de não incidência na fonte da "
+        "Contribuição Social sobre o Lucro Líquido (CSLL), da Contribuição para o "
+        "Financiamento da Seguridade Social (Cofins), e da Contribuição para o PIS/Pasep, "
+        "a que se refere o art. 30 da Lei nº 10.833, de 29 de dezembro de 2003, que é "
+        "regularmente inscrita no Sistema Integrado de Pagamento de Impostos e Contribuições "
+        "das Microempresas e das Empresas de Pequeno Porte (Simples), nos termos do Inciso "
+        "XXVI do Artigo 17 da Lei Complementar Federal nº 123 de 14 de Dezembro de 2006."
+    )
+    elems.append(Paragraph(p2, st_para))
+    elems.append(Spacer(1, 0.4 * cm))
+
+    elems.append(Paragraph("Para esse efeito, a declarante informa que:", st_para))
+    elems.append(Spacer(1, 0.15 * cm))
+    elems.append(Paragraph("preenche os seguintes requisitos:", st_para))
+    elems.append(Spacer(1, 0.15 * cm))
+
+    bullets = [
+        (
+            "conserva em boa ordem, pelo prazo de cinco anos, contado da data da emissão, os "
+            "documentos que comprovam a origem de suas receitas e a efetivação de suas despesas, "
+            "bem assim a realização de quaisquer outros atos ou operações que venham a modificar "
+            "sua situação patrimonial;"
+        ),
+        (
+            "apresenta anualmente Declaração Simplificada da Pessoa Jurídica (Simples), em "
+            "conformidade com o disposto em ato da Receita Federal do Brasil;"
+        ),
+        (
+            "o signatário é representante legal desta empresa, assumindo o compromisso de informar "
+            "à Receita Federal do Brasil e à pessoa jurídica pagadora, imediatamente, eventual "
+            "desenquadramento da presente situação e está ciente de que a falsidade na prestação "
+            "destas informações, sem prejuízo do disposto no art. 32 da Lei nº 9.430, de 1996, "
+            "sujeita-lo-á, juntamente com as demais pessoas que para ela concorrerem, às "
+            "penalidades previstas na legislação criminal e tributária, relativas à falsidade "
+            "ideológica (art. 299 do Código Penal) e ao crime contra a ordem tributária "
+            "(art. 1º da Lei nº 8.137, de 27 de dezembro de 1990)."
+        ),
+    ]
+    for b in bullets:
+        elems.append(Paragraph(f"• {b}", st_item))
+        elems.append(Spacer(1, 0.15 * cm))
+
+    elems.append(Spacer(1, 0.7 * cm))
+    elems.append(
+        Paragraph(
+            data_extensa,
+            ParagraphStyle(
+                "sndat",
+                fontName="Helvetica",
+                fontSize=10,
+                leading=14,
+                alignment=TA_CENTER,
+            ),
+        )
+    )
+    elems.append(Spacer(1, 1.8 * cm))
+
+    sig_inner = [
+        [HRFlowable(width="80%", thickness=1, color=colors.HexColor("#333"))],
+        [
+            Paragraph(
+                emp_nome,
+                ParagraphStyle(
+                    "snsnm",
+                    fontName="Helvetica-Bold",
+                    fontSize=9,
+                    leading=12,
+                    alignment=TA_CENTER,
+                ),
+            )
+        ],
+        [
+            Paragraph(
+                f"CNPJ: {emp_cnpj}" if emp_cnpj else "",
+                ParagraphStyle(
+                    "snscnpj",
+                    fontName="Helvetica",
+                    fontSize=8.5,
+                    textColor=colors.HexColor("#555"),
+                    alignment=TA_CENTER,
+                ),
+            )
+        ],
+    ]
+    sig_tbl = Table(sig_inner, colWidths=[10 * cm])
+    sig_tbl.setStyle(
+        TableStyle(
+            [
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+        )
+    )
+    elems.append(
+        Table(
+            [[sig_tbl]],
+            colWidths=[17.5 * cm],
+            style=TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")]),
+        )
+    )
+
+    elems.append(Spacer(1, 0.5 * cm))
+    elems.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#ccc")))
+    elems.append(Spacer(1, 0.1 * cm))
+    elems.append(
+        Paragraph(
+            f"Documento gerado em {hoje.strftime('%d/%m/%Y às %H:%M')} · {emp_nome}",
+            st_rod,
+        )
+    )
+
+    doc.build(elems, canvasmaker=_WatermarkCanvas)
+    buf.seek(0)
+    return buf
+
+
+@app.route("/api/carta-simples-nacional/gerar", methods=["POST"])
+@lr
+def api_gerar_carta_simples_nacional():
+    d = request.json or {}
+    destinatario_nome = (d.get("destinatario_nome") or "").strip()
+    destinatario_cnpj = "".join(filter(str.isdigit, d.get("destinatario_cnpj") or ""))
+    remetente_id = d.get("remetente_id")
+
+    if not destinatario_nome:
+        return jsonify({"erro": "Informe o nome da empresa destinatária."}), 400
+
+    emp = None
+    if remetente_id:
+        try:
+            emp = db.session.get(Empresa, int(remetente_id))
+        except Exception:
+            pass
+
+    try:
+        buf = _gerar_carta_simples_nacional_pdf(emp, destinatario_nome, destinatario_cnpj)
+    except Exception as e:
+        app.logger.exception("Erro ao gerar Carta Simples Nacional")
+        return jsonify({"erro": f"Erro ao gerar PDF: {str(e)}"}), 500
+
+    nome_arq = (
+        f"Carta_Simples_Nacional_"
+        f"{_clean_file_part(destinatario_nome, 50, 'Destinatario')}"
+        f"_{localnow().strftime('%Y%m%d')}.pdf"
+    )
+    return send_file(buf, mimetype="application/pdf", as_attachment=False,
+                     download_name=nome_arq)
+
+
 # ── PROPOSTA COMERCIAL ────────────────────────────────────────────────────────
 
 

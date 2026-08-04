@@ -1576,6 +1576,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-decl-acumulo" class="subaba-bloco" onclick="rhSetSubAba('decl-acumulo',this)">📋 Decl. Acúmulo</button>
         <button type="button" id="rh-subtab-advertencia" class="subaba-bloco" onclick="rhSetSubAba('advertencia',this)">⚠️ Advertência</button>
         <button type="button" id="rh-subtab-aviso-previo" class="subaba-bloco" onclick="rhSetSubAba('aviso-previo',this)">📅 Aviso Prévio</button>
+        <button type="button" id="rh-subtab-simples-nacional" class="subaba-bloco" onclick="rhSetSubAba('simples-nacional',this)">📜 Simples Nacional</button>
       </div>
       <div class="card rh-pane" id="rh-pane-funcionarios" data-rh-pane="funcionarios">
         <div class="card-header">
@@ -2434,6 +2435,46 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
           </div>
           <div id="ap-resultado" style="display:none"></div>
+        </div>
+      </div>
+
+      <!-- ══ PAINEL: CARTA DE DECLARAÇÃO — SIMPLES NACIONAL ══ -->
+      <div class="card rh-pane" id="rh-pane-simples-nacional" data-rh-pane="simples-nacional">
+        <div class="card-header">
+          <span class="card-title">📜 Gerar Carta de Declaração — Simples Nacional</span>
+        </div>
+        <div style="padding:16px">
+          <div style="margin-bottom:14px;padding:10px 14px;background:var(--azul-cc);border:1px solid var(--azul-borda);border-radius:6px;font-size:13px;color:var(--text-muted)">
+            Declaração para fins de não incidência na fonte de CSLL, Cofins e PIS/Pasep, conforme art. 30 da Lei nº 10.833/2003 e Lei Complementar nº 123/2006.
+          </div>
+          <!-- Empresa declarante -->
+          <div class="f" style="margin-bottom:14px">
+            <label>Empresa declarante (remetente)</label>
+            <select id="sn-remetente" style="width:100%">
+              <option value="">— Selecione a empresa declarante —</option>
+            </select>
+          </div>
+          <!-- CNPJ da empresa destinatária -->
+          <div style="margin-bottom:6px">
+            <label style="display:block;margin-bottom:6px;font-weight:600">Empresa destinatária</label>
+            <div class="g4" style="align-items:flex-end">
+              <div class="f" style="flex:2">
+                <label>CNPJ (busca automática)</label>
+                <input id="sn-cnpj" type="text" placeholder="00.000.000/0000-00"
+                  maxlength="18" oninput="snCNPJAuto(this)" autocomplete="off">
+              </div>
+              <button class="btn b-gh" id="sn-cnpj-btn" onclick="snCNPJBuscar()" style="height:38px">🔍</button>
+            </div>
+            <div id="sn-cnpj-st" style="display:none;font-size:12.5px;margin-top:5px"></div>
+          </div>
+          <div class="f" style="margin-bottom:18px">
+            <label>Nome / Razão social da empresa destinatária</label>
+            <input id="sn-dest-nome" type="text" placeholder="Razão social ou nome fantasia">
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:14px">
+            <button class="btn b-az" onclick="snGerarCarta()" id="sn-btn-gerar">📜 Gerar Carta</button>
+          </div>
+          <div id="sn-resultado" style="display:none"></div>
         </div>
       </div>
 
@@ -5268,7 +5309,7 @@ function rhSalariosIniciarPagina(){
 }
 
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','ponto','painel-dia','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo'];
+  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','ponto','painel-dia','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo','simples-nacional'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
     p.style.display=(p.dataset.rhPane===rhSubAba)?'block':'none';
@@ -5298,6 +5339,9 @@ function rhSetSubAba(tab,btn){
     if(dtInput && !dtInput.value){
       dtInput.value = new Date().toISOString().slice(0,10);
     }
+  }
+  if(rhSubAba==='simples-nacional'){
+    snInicializar();
   }
 }
 
@@ -9552,6 +9596,86 @@ async function gerarAvisoPrevio() {
   btn.disabled = false; btn.textContent = '📅 Gerar Aviso Prévio';
 }
 // ── FIM AVISO PRÉVIO ─────────────────────────────────────────────────────────
+
+// ── CARTA DE DECLARAÇÃO — SIMPLES NACIONAL ───────────────────────────────────
+let _snRemEmpresas = [];
+
+async function snInicializar() {
+  if (!_snRemEmpresas.length) {
+    _snRemEmpresas = await api('/api/empresas').catch(() => []);
+  }
+  const sel = document.getElementById('sn-remetente');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Selecione a empresa declarante —</option>' +
+    _snRemEmpresas.map(e => `<option value="${e.id}">${_escHtml(e.razao || e.nome)}</option>`).join('');
+  if (_snRemEmpresas.length === 1) sel.value = String(_snRemEmpresas[0].id);
+}
+
+function snCNPJAuto(input) {
+  const digits = input.value.replace(/\D/g, '');
+  if (digits.length === 14) snCNPJBuscar();
+}
+
+async function snCNPJBuscar() {
+  const input = document.getElementById('sn-cnpj');
+  const st = document.getElementById('sn-cnpj-st');
+  const btn = document.getElementById('sn-cnpj-btn');
+  const cnpj = (input?.value || '').replace(/\D/g, '');
+  if (cnpj.length !== 14) {
+    st.style.display = 'block'; st.style.color = 'var(--verm)';
+    st.textContent = 'CNPJ deve ter 14 dígitos.'; return;
+  }
+  btn.disabled = true; btn.textContent = '⏳';
+  st.style.display = 'block'; st.style.color = 'var(--text-muted)';
+  st.textContent = 'Consultando Receita Federal...';
+  try {
+    const d = await api('/api/cnpj/' + cnpj);
+    if (d.erro) { st.style.color = 'var(--verm)'; st.textContent = d.erro; return; }
+    const nomeEl = document.getElementById('sn-dest-nome');
+    if (nomeEl && !nomeEl.value.trim()) nomeEl.value = d.nome || d.razao || '';
+    st.style.color = 'var(--verde)';
+    st.textContent = '✅ ' + (d.nome || d.razao || 'Empresa encontrada!') + (d.situacao ? ' — ' + d.situacao : '');
+  } catch (err) {
+    st.style.color = 'var(--verm)'; st.textContent = 'Erro ao consultar.';
+  }
+  btn.disabled = false; btn.textContent = '🔍';
+}
+
+async function snGerarCarta() {
+  const remetenteId = document.getElementById('sn-remetente')?.value || null;
+  const cnpj = (document.getElementById('sn-cnpj')?.value || '').replace(/\D/g, '');
+  const nome = (document.getElementById('sn-dest-nome')?.value || '').trim();
+  const btn = document.getElementById('sn-btn-gerar');
+  const res = document.getElementById('sn-resultado');
+  if (!nome) { alert('Informe o nome da empresa destinatária.'); return; }
+  btn.disabled = true; btn.textContent = '⏳ Gerando...'; res.style.display = 'none';
+  try {
+    const resp = await fetch('/api/carta-simples-nacional/gerar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        remetente_id: remetenteId ? parseInt(remetenteId) : null,
+        destinatario_nome: nome,
+        destinatario_cnpj: cnpj
+      })
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ erro: resp.statusText }));
+      throw new Error(err.erro || resp.statusText);
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const aba = window.open(url, '_blank');
+    if (!aba) throw new Error('Não foi possível abrir o PDF. Verifique se o navegador bloqueou pop-ups para este site.');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    res.innerHTML = `<div style="background:var(--verde-cl);border:1px solid var(--verde);border-radius:8px;padding:12px 16px;color:var(--verde)">✅ <strong>Carta gerada com sucesso!</strong> O PDF foi aberto em uma nova aba.</div>`;
+  } catch (e) {
+    res.innerHTML = `<div style="background:var(--verm-cl);border:1px solid var(--verm);border-radius:8px;padding:12px 16px;color:var(--verm)">❌ ${esc(String(e))}</div>`;
+  }
+  res.style.display = 'block';
+  btn.disabled = false; btn.textContent = '📜 Gerar Carta';
+}
+// ── FIM CARTA SIMPLES NACIONAL ────────────────────────────────────────────────
 
 // ── DOCUMENTOS ───────────────────────────────────────────────────────────────
 let docsAbaAtiva = 'funcionarios';
