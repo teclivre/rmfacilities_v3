@@ -13360,19 +13360,13 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
     data_extensa = f"{emp_cidade}, {hoje.day} de {meses_pt[hoje.month - 1]} de {hoje.year}."
 
     logo_path = _get_logo_path_for_pdf(emp)
-    if logo_path and os.path.exists(logo_path):
-        logo_el = Image(logo_path, width=3.8 * cm, height=1.4 * cm, kind="proportional")
-    else:
-        logo_el = Paragraph(
-            emp_nome,
-            ParagraphStyle(
-                "snln",
-                fontName="Helvetica-Bold",
-                fontSize=8,
-                textColor=colors.white,
-                alignment=TA_CENTER,
-            ),
-        )
+    if not (logo_path and os.path.exists(logo_path)):
+        logo_path = LOGO_PATH if os.path.exists(LOGO_PATH) else None
+    logo_el = (
+        Image(logo_path, width=3.8 * cm, height=1.4 * cm, kind="proportional")
+        if logo_path
+        else Paragraph("", ParagraphStyle("snln_empty"))
+    )
 
     hdr_data = [
         [Paragraph("DECLARAÇÃO DO SIMPLES NACIONAL", st_title), logo_el],
