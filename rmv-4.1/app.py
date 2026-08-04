@@ -13327,7 +13327,12 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         if emp
         else "RM FACILITIES LTDA"
     )
-    emp_cnpj = _filter_fmt_cnpj(getattr(emp, "cnpj", "") or "") if emp else ""
+    _raw_cnpj = "".join(filter(str.isdigit, getattr(emp, "cnpj", "") or "")) if emp else ""
+    emp_cnpj = (
+        f"{_raw_cnpj[:2]}.{_raw_cnpj[2:5]}.{_raw_cnpj[5:8]}/{_raw_cnpj[8:12]}-{_raw_cnpj[12:14]}"
+        if len(_raw_cnpj) == 14
+        else (getattr(emp, "cnpj", "") or "")
+    ) if emp else ""
     emp_logradouro = (getattr(emp, "logradouro", "") or "") if emp else ""
     emp_numero = (getattr(emp, "numero", "") or "") if emp else ""
     emp_complemento = (getattr(emp, "complemento", "") or "") if emp else ""
@@ -13390,7 +13395,11 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
     )
 
     dest_nome = (destinatario_nome or "").strip()
-    cnpj_dest_fmt = _filter_fmt_cnpj(destinatario_cnpj) if destinatario_cnpj else ""
+    cnpj_dest_fmt = (
+        f"{destinatario_cnpj[:2]}.{destinatario_cnpj[2:5]}.{destinatario_cnpj[5:8]}/{destinatario_cnpj[8:12]}-{destinatario_cnpj[12:14]}"
+        if destinatario_cnpj and len(destinatario_cnpj) == 14
+        else ""
+    )
     dest_label = _html.escape(dest_nome) if dest_nome else "[EMPRESA DESTINATÁRIA]"
     dest_display = dest_label + (f" &#8212; CNPJ: {cnpj_dest_fmt}" if cnpj_dest_fmt else "")
 
