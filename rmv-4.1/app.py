@@ -13245,6 +13245,7 @@ def api_funcionario_gerar_aviso_previo(id):
 
 def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, destinatario_cnpj=""):
     """Gera PDF da Carta de Declaração de Optante pelo Simples Nacional."""
+    import html as _html
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
@@ -13390,8 +13391,8 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
 
     dest_nome = (destinatario_nome or "").strip()
     cnpj_dest_fmt = _filter_fmt_cnpj(destinatario_cnpj) if destinatario_cnpj else ""
-    dest_label = dest_nome or "[EMPRESA DESTINATÁRIA]"
-    dest_display = dest_label + (f" — CNPJ: {cnpj_dest_fmt}" if cnpj_dest_fmt else "")
+    dest_label = _html.escape(dest_nome) if dest_nome else "[EMPRESA DESTINATÁRIA]"
+    dest_display = dest_label + (f" &#8212; CNPJ: {cnpj_dest_fmt}" if cnpj_dest_fmt else "")
 
     elems = []
     elems.append(hdr_table)
@@ -13401,9 +13402,13 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
     elems.append(Paragraph(dest_display, st_dest_nm))
     elems.append(Spacer(1, 0.5 * cm))
 
+    _emp_nome_esc = _html.escape(emp_nome)
+    _end_completo_esc = _html.escape(end_completo)
+    _emp_cnpj_esc = _html.escape(emp_cnpj)
+
     p1 = (
-        f"<b>{emp_nome}</b>, com sede à {end_completo}, inscrita no CNPJ sob o nº "
-        f"<b>{emp_cnpj}</b>."
+        f"<b>{_emp_nome_esc}</b>, com sede à {_end_completo_esc}, inscrita no CNPJ sob o nº "
+        f"<b>{_emp_cnpj_esc}</b>."
     )
     elems.append(Paragraph(p1, st_para))
     elems.append(Spacer(1, 0.4 * cm))
@@ -13448,7 +13453,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         ),
     ]
     for b in bullets:
-        elems.append(Paragraph(f"• {b}", st_item))
+        elems.append(Paragraph(f"- {_html.escape(b)}", st_item))
         elems.append(Spacer(1, 0.15 * cm))
 
     elems.append(Spacer(1, 0.7 * cm))
@@ -13470,7 +13475,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         [HRFlowable(width="80%", thickness=1, color=colors.HexColor("#333"))],
         [
             Paragraph(
-                emp_nome,
+                _emp_nome_esc,
                 ParagraphStyle(
                     "snsnm",
                     fontName="Helvetica-Bold",
@@ -13482,7 +13487,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         ],
         [
             Paragraph(
-                f"CNPJ: {emp_cnpj}" if emp_cnpj else "",
+                f"CNPJ: {_emp_cnpj_esc}" if emp_cnpj else "",
                 ParagraphStyle(
                     "snscnpj",
                     fontName="Helvetica",
