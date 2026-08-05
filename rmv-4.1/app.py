@@ -18456,6 +18456,8 @@ def api_rh_mensagens_funcionarios():
         f = db.session.get(Funcionario, row.funcionario_id)
         if not f:
             continue
+        if f.status in ("Demitido", "Inativo"):
+            continue
         result.append(
             {
                 "funcionario_id": f.id,
