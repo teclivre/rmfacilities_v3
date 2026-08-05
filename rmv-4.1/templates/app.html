@@ -613,21 +613,6 @@ document.addEventListener('DOMContentLoaded',()=>{
 </head>
 <body>
 
-<div class="topbar">
-  <div class="topbar-brand">
-    <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
-    <h1>RM Facilities</h1>
-  </div>
-  <div class="topbar-right">
-    <button class="btn-top" type="button" id="theme-toggle" onclick="toggleTheme()" title="Alternar tema">🌙 Dark</button>
-    <div class="topbar-user">
-      <div style="font-weight:700">{{ nome }}</div>
-      <div id="relogio"></div>
-    </div>
-    <a href="/logout" class="btn-top">Sair</a>
-  </div>
-</div>
-
 <div id="autosave-global-badge" class="autosave-global-badge state-ok" aria-live="polite" title="Sincronizado">
   <span class="dot"></span>
 </div>
@@ -723,6 +708,15 @@ document.addEventListener('DOMContentLoaded',()=>{
           <a class="nav-item lv2" onclick="nav('config',this)"><span class="nav-label">Configuracoes</span></a>
         </div>
       </div>
+    </div>
+
+    <div class="sidebar-bottom">
+      <button class="btn-top" type="button" id="theme-toggle" onclick="toggleTheme()" title="Alternar tema">🌙 Claro</button>
+      <div class="topbar-user">
+        <div style="font-weight:700">{{ nome }}</div>
+        <div id="relogio"></div>
+      </div>
+      <a href="/logout" class="btn-top">Sair</a>
     </div>
   </nav>
 
