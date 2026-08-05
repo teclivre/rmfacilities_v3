@@ -7582,11 +7582,13 @@ try:
                     return
                 buf.seek(0)
                 pw, ph = self._pagesize
-                wm_size = min(pw, ph) * 0.52
-                x = (pw - wm_size) / 2
-                y = (ph - wm_size) / 2
+                wm_size = min(pw, ph) * 0.55
                 self.saveState()
-                self.drawImage(ImageReader(buf), x, y, wm_size, wm_size, mask="auto")
+                self.translate(pw / 2, ph / 2)
+                self.rotate(45)
+                self.drawImage(
+                    ImageReader(buf), -wm_size / 2, -wm_size / 2, wm_size, wm_size, mask="auto"
+                )
                 self.restoreState()
             except Exception:
                 pass
@@ -13271,9 +13273,9 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
     st_title = ParagraphStyle(
         "sntit",
         fontName="Helvetica-Bold",
-        fontSize=16,
-        leading=20,
-        textColor=colors.white,
+        fontSize=14,
+        leading=18,
+        textColor=azul,
         alignment=TA_CENTER,
     )
     st_sub = ParagraphStyle(
@@ -13281,7 +13283,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         fontName="Helvetica",
         fontSize=8.5,
         leading=11,
-        textColor=colors.white,
+        textColor=colors.HexColor("#555"),
         alignment=TA_CENTER,
     )
     st_para = ParagraphStyle(
@@ -13374,17 +13376,17 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
     )
 
     hdr_data = [
-        ["", Paragraph("DECLARAÇÃO DO SIMPLES NACIONAL", st_title), logo_el],
+        [logo_el, Paragraph("DECLARAÇÃO DO SIMPLES NACIONAL", st_title)],
     ]
-    hdr_table = Table(hdr_data, colWidths=[4 * cm, 8 * cm, 4 * cm])
+    hdr_table = Table(hdr_data, colWidths=[4 * cm, 12 * cm])
     hdr_table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (1, 0), azul),
-                ("BACKGROUND", (2, 0), (2, 0), colors.white),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#333")),
+                ("LINEBEFORE", (1, 0), (1, 0), 0.5, colors.HexColor("#333")),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (0, 0), "CENTER"),
                 ("ALIGN", (1, 0), (1, 0), "CENTER"),
-                ("ALIGN", (2, 0), (2, 0), "CENTER"),
                 ("TOPPADDING", (0, 0), (-1, -1), 10),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
                 ("LEFTPADDING", (0, 0), (-1, -1), 8),
