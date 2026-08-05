@@ -13301,7 +13301,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         "snitem",
         fontName="Helvetica",
         fontSize=10,
-        leading=15,
+        leading=13,
         leftIndent=0.5 * cm,
         alignment=TA_JUSTIFY,
     )
@@ -13320,8 +13320,8 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         pagesize=A4,
         leftMargin=2.5 * cm,
         rightMargin=2.5 * cm,
-        topMargin=1.5 * cm,
-        bottomMargin=1.5 * cm,
+        topMargin=1.2 * cm,
+        bottomMargin=1.2 * cm,
     )
 
     emp = empresa_declarante
@@ -13406,11 +13406,11 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
 
     elems = []
     elems.append(hdr_table)
-    elems.append(Spacer(1, 0.7 * cm))
+    elems.append(Spacer(1, 0.4 * cm))
 
     elems.append(Paragraph("À", st_dest))
     elems.append(Paragraph(dest_display, st_dest_nm))
-    elems.append(Spacer(1, 0.5 * cm))
+    elems.append(Spacer(1, 0.35 * cm))
 
     _emp_nome_esc = _html.escape(emp_nome)
     _end_completo_esc = _html.escape(end_completo)
@@ -13419,7 +13419,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
     _cnpj_parte = f", inscrita no CNPJ sob o nº <b>{_emp_cnpj_esc}</b>" if emp_cnpj else ""
     p1 = f"<b>{_emp_nome_esc}</b>, com sede à {_end_completo_esc}{_cnpj_parte}."
     elems.append(Paragraph(p1, st_para))
-    elems.append(Spacer(1, 0.4 * cm))
+    elems.append(Spacer(1, 0.3 * cm))
 
     p2 = (
         f"DECLARA à <b>{dest_label}</b> para fins de não incidência na fonte da "
@@ -13431,12 +13431,12 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         "XXVI do Artigo 17 da Lei Complementar Federal nº 123 de 14 de Dezembro de 2006."
     )
     elems.append(Paragraph(p2, st_para))
-    elems.append(Spacer(1, 0.4 * cm))
+    elems.append(Spacer(1, 0.3 * cm))
 
     elems.append(Paragraph("Para esse efeito, a declarante informa que:", st_para))
-    elems.append(Spacer(1, 0.15 * cm))
+    elems.append(Spacer(1, 0.12 * cm))
     elems.append(Paragraph("preenche os seguintes requisitos:", st_para))
-    elems.append(Spacer(1, 0.15 * cm))
+    elems.append(Spacer(1, 0.12 * cm))
 
     bullets = [
         (
@@ -13462,9 +13462,9 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
     ]
     for b in bullets:
         elems.append(Paragraph(f"- {_html.escape(b)}", st_item))
-        elems.append(Spacer(1, 0.15 * cm))
+        elems.append(Spacer(1, 0.12 * cm))
 
-    elems.append(Spacer(1, 0.7 * cm))
+    elems.append(Spacer(1, 0.5 * cm))
     elems.append(
         Paragraph(
             data_extensa,
@@ -13477,7 +13477,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
             ),
         )
     )
-    elems.append(Spacer(1, 1.8 * cm))
+    elems.append(Spacer(1, 1.0 * cm))
 
     sig_inner = [
         [HRFlowable(width="80%", thickness=1, color=colors.HexColor("#333"))],
@@ -13525,7 +13525,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         )
     )
 
-    elems.append(Spacer(1, 0.5 * cm))
+    elems.append(Spacer(1, 0.35 * cm))
     elems.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#ccc")))
     elems.append(Spacer(1, 0.1 * cm))
     elems.append(
