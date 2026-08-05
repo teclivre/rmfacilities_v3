@@ -8134,6 +8134,11 @@ def index():
     )
 
 
+@app.route("/funcionario")
+def funcionario_app():
+    return render_template("funcionario_app.html")
+
+
 @app.route("/api/cnpj/<cnpj>")
 @lr
 def api_cnpj(cnpj):
