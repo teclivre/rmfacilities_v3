@@ -36,7 +36,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .login-logo .sub{font-size:13px;color:var(--text2)}
 .lf{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
 .lf label{font-size:13px;color:var(--text2);font-weight:500}
-.lf input,.lf select,.lf textarea{background:rgba(255,255,255,.08);border:1.5px solid rgba(255,255,255,.15);border-radius:10px;color:var(--text);font-size:15px;padding:12px 14px;outline:none;width:100%;-webkit-appearance:none}
+.lf input,.lf select,.lf textarea{background:rgba(255,255,255,.08);border:1.5px solid rgba(255,255,255,.15);border-radius:10px;color:var(--text);-webkit-text-fill-color:var(--text);font-size:15px;padding:12px 14px;outline:none;width:100%;-webkit-appearance:none}
 .lf input:focus,.lf select:focus,.lf textarea:focus{border-color:var(--blue)}
 .lf select option{background:#1a2540}
 .lf textarea{resize:vertical;min-height:80px}
@@ -99,10 +99,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .empty-state{text-align:center;padding:40px 16px;color:var(--text2);font-size:13px}
 .empty-state .emo{font-size:36px;margin-bottom:8px}
 
-/* GPS Banner */
-.gps-banner{display:none;align-items:center;gap:10px;background:var(--yellow-cl);border:1px solid rgba(234,179,8,.3);border-radius:12px;padding:11px 13px;margin-bottom:10px;font-size:13px;color:var(--yellow)}
-.gps-banner.on{display:flex}
-.gps-banner button{margin-left:auto;background:var(--yellow);color:#000;border:none;border-radius:8px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0}
 
 /* Ponto */
 .clock-big{text-align:center;font-size:44px;font-weight:200;letter-spacing:-2px;color:var(--text);line-height:1;margin:4px 0 2px}
@@ -229,12 +225,12 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 <div id="scr-login" class="screen on">
   <div class="login-box">
     <div class="login-logo">
-      <img class="logo-img" src="/static/img/logo-rm-facilities.png" alt="RM Facilities">
+      <img class="logo-img" src="/static/img/logo.png" alt="RM Facilities">
       <div class="sub">Portal do Colaborador</div>
     </div>
     <div id="step-cpf">
       <div class="lf"><label>CPF</label>
-        <input id="l-cpf" type="tel" inputmode="numeric" placeholder="000.000.000-00" autocomplete="username" maxlength="14">
+        <input id="l-cpf" type="text" inputmode="numeric" placeholder="000.000.000-00" autocomplete="off" maxlength="14">
       </div>
       <button class="btn-login" id="btn-enviar-otp" onclick="enviarOtp()">Enviar código via WhatsApp</button>
       <div class="login-err" id="l-err"></div>
@@ -254,7 +250,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 <!-- APP -->
 <div id="scr-app" class="screen">
   <div class="app-header">
-    <img class="hd-logo" src="/static/img/logo-rm-facilities.png" alt="RM">
+    <img class="hd-logo" src="/static/img/logo.png" alt="RM">
     <div class="hd-name" id="hd-name">—</div>
     <span class="hd-badge" id="hd-badge">Ativo</span>
   </div>
@@ -273,7 +269,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
         <div class="card">
           <div id="clock-big" class="clock-big">--:--</div>
           <div id="date-sub" class="date-sub">—</div>
-          <div class="gps-banner" id="gps-banner"><span>📍 Localização necessária</span><button onclick="pedirGps()">Ativar GPS</button></div>
           <button class="btn-ponto entrada" id="btn-ponto" onclick="marcarPonto()">Carregando…</button>
           <div class="ponto-sub" id="ponto-sub"></div>
         </div>
@@ -484,7 +479,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 'use strict';
 var _AT='',_RT='',_func=null,_otpCpf='';
 var _refreshPromise=null;
-var _gpsPos=null,_clockT=null,_msgPollT=null,_curPage='ponto';
+var _clockT=null,_msgPollT=null,_curPage='ponto';
 var _curPontoSub='hoje',_curDocsSub='pend',_curFinSub='pagto',_curMsgsSub='chat';
 var _signArqId=null,_loaded={};
 
@@ -687,24 +682,6 @@ function updateClock(){
   if(de)de.textContent=days[n.getDay()]+', '+n.getDate()+' '+months[n.getMonth()]+' de '+n.getFullYear();
 }
 
-function obterGps(timeout){
-  timeout=timeout||10000;
-  return new Promise(function(res,rej){
-    if(!navigator.geolocation){rej(new Error('GPS não suportado.'));return;}
-    navigator.geolocation.getCurrentPosition(
-      function(p){_gpsPos={lat:p.coords.latitude,lon:p.coords.longitude,precisao:p.coords.accuracy};res(_gpsPos);},
-      function(e){var msg='Ative o GPS para registrar o ponto.';if(e.code===1)msg='Permissão negada. Toque em "Ativar GPS".';else if(e.code===3)msg='Tempo esgotado. Tente novamente.';rej(new Error(msg));},
-      {enableHighAccuracy:true,timeout:timeout,maximumAge:30000}
-    );
-  });
-}
-
-function pedirGps(){
-  document.getElementById('gps-banner').classList.remove('on');
-  obterGps().then(function(){showToast('Localização obtida!');})
-    .catch(function(e){showToast(e.message,true);document.getElementById('gps-banner').classList.add('on');});
-}
-
 /* NAVIGATION */
 function showPage(page){
   _curPage=page;
@@ -889,19 +866,9 @@ function renderBtnPonto(r){
 function marcarPonto(){
   var btn=document.getElementById('btn-ponto');
   if(btn.classList.contains('concluido')) return;
-  btn.disabled=true;btn.textContent='📍 Obtendo localização…';
-  // GPS é tentado mas não obrigatório: se negado/indisponível, registra sem coordenadas
-  obterGps(6000).then(function(pos){
-    document.getElementById('gps-banner').classList.remove('on');
-    btn.textContent='…';
-    return api('POST','/api/app/funcionario/me/ponto/marcar',{lat:pos.lat,lon:pos.lon,precisao:pos.precisao});
-  }).catch(function(gpsErr){
-    // Se GPS falhou mas a causa não é de rede/auth, registra sem GPS
-    if(gpsErr&&gpsErr.auth) return Promise.reject(gpsErr);
-    document.getElementById('gps-banner').classList.add('on');
-    btn.textContent='…';
-    return api('POST','/api/app/funcionario/me/ponto/marcar',{lat:null,lon:null,precisao:null});
-  }).then(function(){
+  btn.disabled=true;btn.textContent='…';
+  api('POST','/api/app/funcionario/me/ponto/marcar',{lat:null,lon:null,precisao:null})
+  .then(function(){
     showToast('Ponto registrado!');
     _loaded.hist=false;
     loadPontoHoje();
