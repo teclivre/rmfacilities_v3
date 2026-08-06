@@ -14122,7 +14122,7 @@ async function mapsCarregarFuncionarios(){
     el.innerHTML=lista.map(f=>{
       const badge=f.nao_lidas>0?`<span style="background:var(--verm);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:auto">${f.nao_lidas}</span>`:'';
       const ativo=_mapsFidAtual===f.funcionario_id?'background:var(--az);color:#fff;':'';
-      return `<div onclick="mapsAbrirChat(${f.funcionario_id},${JSON.stringify(f.nome)})" style="cursor:pointer;padding:8px 10px;border-radius:8px;margin:2px 4px;display:flex;align-items:center;gap:6px;${ativo}">
+      return `<div onclick="mapsAbrirChat(${f.funcionario_id},${JSON.stringify(f.nome).replace(/"/g,'&quot;')})" style="cursor:pointer;padding:8px 10px;border-radius:8px;margin:2px 4px;display:flex;align-items:center;gap:6px;${ativo}">
         <div style="flex:1;overflow:hidden">
           <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${f.nome}</div>
           <div style="font-size:10px;color:var(--text-muted)">${f.ultima||''}</div>
