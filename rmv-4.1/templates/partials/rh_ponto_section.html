@@ -1,15 +1,18 @@
 <div class="card">
   <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
     <span class="card-title">Gestão de Ponto por Funcionário</span>
-    <button class="btn b-gh b-sm" onclick="abrirModalCorrecoesPonto()" id="btn-correcoes-ponto" style="display:flex;align-items:center;gap:6px">
-      📋 Correções de Ponto
-      <span id="badge-correcoes-ponto" style="display:none;background:var(--verm);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;font-weight:700">0</span>
-    </button>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <button class="btn b-az b-sm" type="button" onclick="abrirModalHEPendentes()">⏱ Autorizações de HE</button>
+      <button class="btn b-gh b-sm" onclick="abrirModalCorrecoesPonto()" id="btn-correcoes-ponto" style="display:flex;align-items:center;gap:6px">
+        📋 Correções de Ponto
+        <span id="badge-correcoes-ponto" style="display:none;background:var(--verm);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;font-weight:700">0</span>
+      </button>
+    </div>
   </div>
   <div class="ponto-gestao-wrap">
     <aside class="ponto-side">
       <div class="ponto-side-head">
-        <div style="font-size:11px;color:var(--text-muted)">Colaboradores ativos</div>
+        <div style="font-size:11px;color:var(--text-muted)">Colaboradores da competência</div>
         <span id="ponto-func-qtd" class="pill p-vd">0</span>
       </div>
       <div class="f" style="margin-top:8px">
@@ -37,6 +40,14 @@
         <div class="ponto-kpi"><div class="l">Acompanhamento</div><div class="v" style="font-size:13px">Tempo real</div></div>
       </div>
 
+      <div style="margin-top:12px;border:1px solid var(--borda);border-radius:10px;padding:12px 14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+          <span style="font-size:13px;font-weight:700;color:var(--azul)">Cadastro rápido</span>
+          <button class="btn b-az b-sm" onclick="openModalFunc('novo')">+ Cadastrar funcionário</button>
+        </div>
+        <div style="margin-top:8px;font-size:12px;color:var(--text-muted)">Os feriados agora ficam centralizados exclusivamente na subaba RH &gt; Feriados.</div>
+      </div>
+
       <div class="ponto-acoes">
         <button class="btn b-az b-sm" onclick="pontoRegistrarAgora()">Registrar ponto agora</button>
         <button class="btn b-gh b-sm" onclick="pontoRegistrarTipo('entrada')">Entrada</button>
@@ -51,7 +62,7 @@
       <div id="ponto-resumo" style="margin-top:10px"></div>
 
       <div class="f" style="display:none">
-        <label>Colaborador ativo</label>
+        <label>Colaborador</label>
         <select id="ponto-funcionario" onchange="pontoSelecionarFuncionario(this.value,true)"></select>
       </div>
 
@@ -78,6 +89,17 @@
           <button class="btn b-ghv" onclick="pontoFecharDia(false)">Fechar dia</button>
           <button class="btn b-ci" onclick="pontoFecharDia(true)">Fechar com ressalvas</button>
         </div>
+      </div>
+
+      <!-- Atestados e Afastamentos -->
+      <div style="margin-top:14px;border:1px solid var(--borda);border-radius:10px;padding:12px 14px" id="ponto-afastamentos-section" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <span style="font-size:13px;font-weight:700;color:var(--azul)">🏥 Atestados e Afastamentos</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+            <button class="btn b-gh b-sm" onclick="rhSetSubAba('feriados',document.getElementById('rh-subtab-feriados'));setTimeout(()=>{document.getElementById('fer-form-novo')?.setAttribute('open','open');document.getElementById('fer-form-novo')?.scrollIntoView({behavior:'smooth',block:'start'});},120)">Abrir calendário de feriados</button>
+          </div>
+        </div>
+        <div id="ponto-afastamentos-lista" style="font-size:12px;color:var(--text-muted)">Selecione um colaborador para ver os afastamentos.</div>
       </div>
 
       <div class="g3" style="margin-top:10px;align-items:flex-end">
@@ -116,7 +138,11 @@
       <div style="margin-top:14px;border:1px solid var(--borda);border-radius:10px;padding:12px 14px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
           <span style="font-size:13px;font-weight:700;color:var(--azul)">🌐 Pontos globais (todos os colaboradores)</span>
-          <button class="btn b-ghv b-sm" onclick="pontoCarregarGlobal()">Atualizar lista global</button>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <button class="btn b-az b-sm" onclick="pontoBaixarRelatorioJuridico(false)">Baixar relatório jurídico (CSV)</button>
+            <button class="btn b-gh b-sm" onclick="pontoBaixarRelatorioJuridico(true)">Histórico completo do colaborador</button>
+            <button class="btn b-ghv b-sm" onclick="pontoCarregarGlobal()">Atualizar lista global</button>
+          </div>
         </div>
         <div class="g4" style="margin-top:10px;align-items:flex-end">
           <div class="f">
@@ -143,6 +169,7 @@
           </div>
         </div>
         <div id="ponto-global-st" class="st" style="margin-top:8px"></div>
+        <div style="margin-top:6px;font-size:11px;color:var(--text-muted)">O relatório jurídico inclui marcações, IP, geolocalização, hash de evidência, dispositivo (quando enviado pelo app), ajustes do RH e solicitações de correção.</div>
         <div class="tbl-wrap" style="margin-top:6px">
           <table class="tbl">
             <thead><tr><th>Data ref.</th><th>Data/Hora batida</th><th>Colaborador</th><th>Tipo</th><th>Origem</th><th>Geolocalização</th><th>Evidência</th></tr></thead>

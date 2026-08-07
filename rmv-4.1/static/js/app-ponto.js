@@ -3,6 +3,9 @@ function pontoDataHojeISO(){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
+// BUG-FIX 1: pontoAgoraLocalInput deve incluir offset de timezone BRT (-03:00)
+// para que a string enviada à API seja interpretada corretamente como hora local
+// e não como UTC, evitando marcações 3h adiantadas.
 function pontoAgoraLocalInput(){
   const d=new Date();
   const y=d.getFullYear();
@@ -10,7 +13,12 @@ function pontoAgoraLocalInput(){
   const day=String(d.getDate()).padStart(2,'0');
   const h=String(d.getHours()).padStart(2,'0');
   const mi=String(d.getMinutes()).padStart(2,'0');
-  return `${y}-${m}-${day}T${h}:${mi}`;
+  // Incluir offset de timezone para que a API saiba que é hora local (BRT).
+  const tz=d.getTimezoneOffset();
+  const tzSign=tz<=0?'+':'-';
+  const tzH=String(Math.floor(Math.abs(tz)/60)).padStart(2,'0');
+  const tzM=String(Math.abs(tz)%60).padStart(2,'0');
+  return `${y}-${m}-${day}T${h}:${mi}${tzSign}${tzH}:${tzM}`;
 }
 
 function pontoCompetenciaAtual(){
@@ -18,20 +26,99 @@ function pontoCompetenciaAtual(){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 }
 
+function pontoFeriadosAnoAtual(){
+  return String(new Date().getFullYear());
+}
+
+function pontoGetAnoFeriados(){
+  const inp=document.getElementById('ponto-feriados-ano');
+  const raw=(inp?.value||'').trim();
+  const ano=parseInt(raw||pontoFeriadosAnoAtual(),10);
+  if(inp && !inp.value) inp.value=String(ano);
+  if(Number.isNaN(ano) || ano<2020 || ano>2099) return null;
+  return ano;
+}
+
+async function pontoCarregarFeriadosNacionais(){
+  const ano=pontoGetAnoFeriados();
+  const tb=document.getElementById('tb-ponto-feriados-nacionais');
+  const stId='ponto-feriados-st';
+  if(!tb) return;
+  if(!ano){ showSt(stId,'Ano inválido. Use entre 2020 e 2099.',true); return; }
+  showSt(stId,'Carregando feriados nacionais...',false);
+  const r=await api('/api/feriados?tipo=nacional&ano='+encodeURIComponent(String(ano)));
+  if(r?.erro){ showSt(stId,r.erro,true); return; }
+  const itens=Array.isArray(r?.itens)?r.itens:[];
+  if(!itens.length){
+    tb.innerHTML='<tr><td colspan="3" style="text-align:center;padding:12px;color:var(--text-muted)">Nenhum feriado nacional cadastrado para este ano.</td></tr>';
+    showSt(stId,'Nenhum feriado nacional encontrado.',false);
+    return;
+  }
+  tb.innerHTML=itens.map(it=>`
+    <tr>
+      <td>${escHtml((it.data||'').split('-').reverse().join('/'))}</td>
+      <td>${escHtml(it.descricao||'')}</td>
+      <td>${escHtml(it.tipo||'nacional')}</td>
+    </tr>
+  `).join('');
+  showSt(stId,`${itens.length} feriado(s) nacional(is) carregado(s).`,false);
+}
+
+async function pontoAtualizarFeriadosNacionais(){
+  const ano=pontoGetAnoFeriados();
+  const stId='ponto-feriados-st';
+  if(!ano){ showSt(stId,'Ano inválido. Use entre 2020 e 2099.',true); return; }
+  showSt(stId,'Atualizando feriados nacionais do ano...',false);
+  const r=await api('/api/feriados/atualizar-nacionais','POST',{ano,substituir:true,incluir_facultativos:true});
+  if(r?.erro){ showSt(stId,r.erro,true); return; }
+  const msg=`Atualizado ${ano}: inseridos ${r.inseridos||0}, atualizados ${r.atualizados||0}, ignorados ${r.ignorados||0}.`;
+  showSt(stId,msg,false);
+  await pontoCarregarFeriadosNacionais();
+}
+
 async function pontoSyncFuncionarios(force=false){
   if(force || !Array.isArray(pontoFuncs) || !pontoFuncs.length){
-    pontoFuncs=await api('/api/funcionarios');
+    const funcionarios=await api('/api/funcionarios');
+    pontoFuncs=Array.isArray(funcionarios)?funcionarios:[];
   }
+}
+
+function _pontoStatusNorm(v=''){
+  return String(v||'').trim().toLowerCase();
+}
+
+function _pontoCompetenciaRef(){
+  const gfComp=(document.getElementById('gf-competencia')?.value||'').trim();
+  if(/^\d{4}-\d{2}$/.test(gfComp)) return gfComp;
+  const comp=(document.getElementById('ponto-competencia')?.value||'').trim();
+  if(/^\d{4}-\d{2}$/.test(comp)) return comp;
+  const dataRef=(document.getElementById('ponto-data')?.value||'').trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(dataRef)) return dataRef.slice(0,7);
+  return pontoCompetenciaAtual();
+}
+
+function _pontoFuncionarioElegivelCompetencia(funcionario, competenciaRef){
+  const st=_pontoStatusNorm(funcionario?.status);
+  if(st==='demitido' || st==='inativo'){
+    const dem=(funcionario?.data_demissao||'').trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(dem) && dem.slice(0,7)===competenciaRef;
+  }
+  return true;
+}
+
+function _pontoFuncionariosElegiveis(){
+  const compRef=_pontoCompetenciaRef();
+  return (pontoFuncs||[])
+    .filter(f=>_pontoFuncionarioElegivelCompetencia(f,compRef))
+    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
 }
 
 function pontoAtivosFiltrados(){
   const termo=(document.getElementById('ponto-func-busca')?.value||'').trim().toLowerCase();
-  const ativos=(pontoFuncs||[])
-    .filter(f=>String((f.status||'').toLowerCase())==='ativo')
-    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
-  if(!termo) return ativos;
+  const elegiveis=_pontoFuncionariosElegiveis();
+  if(!termo) return elegiveis;
   const termoDig=termo.replace(/\D/g,'');
-  return ativos.filter(f=>{
+  return elegiveis.filter(f=>{
     const mat=String(f.matricula||'').toLowerCase();
     const nm=String(f.nome||'').toLowerCase();
     const cargo=String(f.cargo||f.funcao||'').toLowerCase();
@@ -128,6 +215,7 @@ async function pontoSelecionarFuncionario(fid,carregar=false){
   if(carregar){
     await pontoCarregarDia();
     await pontoCarregarPainelDia();
+    await pontoCarregarAfastamentos();
   }
 }
 
@@ -135,10 +223,8 @@ function pontoPopularFuncionarios(){
   const sel=document.getElementById('ponto-funcionario');
   if(!sel)return;
   const atual=String(sel.value||'');
-  const ativos=(pontoFuncs||[])
-    .filter(f=>String((f.status||'').toLowerCase())==='ativo')
-    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
-  sel.innerHTML=ativos.map(f=>`<option value="${f.id}">${f.nome}${f.matricula?` · Mat ${f.matricula}`:''}</option>`).join('');
+  const elegiveis=_pontoFuncionariosElegiveis();
+  sel.innerHTML=elegiveis.map(f=>`<option value="${f.id}">${f.nome}${f.matricula?` · Mat ${f.matricula}`:''}</option>`).join('');
   if(!document.getElementById('ponto-data').value){
     document.getElementById('ponto-data').value=pontoDataHojeISO();
   }
@@ -148,8 +234,12 @@ function pontoPopularFuncionarios(){
   if(document.getElementById('ponto-competencia') && !document.getElementById('ponto-competencia').value){
     document.getElementById('ponto-competencia').value=pontoCompetenciaAtual();
   }
-  if(atual && ativos.some(f=>String(f.id)===atual)) sel.value=atual;
-  if(!sel.value && ativos[0]) sel.value=String(ativos[0].id);
+  if(document.getElementById('ponto-feriados-ano') && !document.getElementById('ponto-feriados-ano').value){
+    document.getElementById('ponto-feriados-ano').value=pontoFeriadosAnoAtual();
+    pontoCarregarFeriadosNacionais();
+  }
+  if(atual && elegiveis.some(f=>String(f.id)===atual)) sel.value=atual;
+  if(!sel.value && elegiveis[0]) sel.value=String(elegiveis[0].id);
   pontoSelecionarFuncionario(sel.value,false);
   pontoPopularFiltroGlobalFuncionarios();
 }
@@ -183,7 +273,7 @@ async function pontoCarregarDia(){
   const fid=parseInt(sel.value||'0',10);
   const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
   if(!fid){
-    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text-muted)">Selecione um colaborador ativo.</td></tr>';
+    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text-muted)">Selecione um colaborador.</td></tr>';
     resumoEl.innerHTML='';
     pontoMarcacoesDiaAtual=[];
     pontoRenderAuditoriaDia([]);
@@ -205,12 +295,25 @@ async function pontoCarregarDia(){
   const selTipo=document.getElementById('ponto-ajuste-tipo');
   if(selTipo && s.proximo_tipo) selTipo.value=s.proximo_tipo;
   const inc=(s.inconsistencias||[]);
+  const diaTipo=String(s.dia_tipo||'').toLowerCase();
+  const afastamentoInfo=s.afastamento_info||{};
+  let diaAviso='';
+  if(diaTipo==='afastamento'){
+    diaAviso=`<div style="margin-top:8px;font-size:12px;color:#0f4c81;background:#eef6ff;border:1px solid #b8d7f2;border-radius:8px;padding:8px">📄 AFASTAMENTO: <strong>${escHtml((afastamentoInfo.tipo||'Afastamento').trim())}</strong></div>`;
+  }else if(diaTipo==='demitido'){
+    diaAviso='<div style="margin-top:8px;font-size:12px;color:#8a1c1c;background:#fff3f3;border:1px solid #f2c5c5;border-radius:8px;padding:8px">Funcionário demitido nesta data.</div>';
+  }else if(diaTipo==='ferias'){
+    diaAviso=`<div style="margin-top:8px;font-size:12px;color:#0f4c81;background:#eef6ff;border:1px solid #b8d7f2;border-radius:8px;padding:8px">🏖 FÉRIAS</div>`;
+  }else if(diaTipo==='feriado'){
+    diaAviso=`<div style="margin-top:8px;font-size:12px;color:#0f4c81;background:#eef6ff;border:1px solid #b8d7f2;border-radius:8px;padding:8px">🎉 FERIADO</div>`;
+  }
   resumoEl.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px">
     <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:var(--text-muted)">Horas trabalhadas</div><div style="font-size:19px;font-weight:700">${s.horas_trabalhadas_fmt||'00:00'}</div></div>
     <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:var(--text-muted)">Carga esperada</div><div style="font-size:19px;font-weight:700">${s.horas_esperadas_fmt||'08:00'}</div></div>
     <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:var(--text-muted)">Saldo</div><div style="font-size:19px;font-weight:700">${s.saldo_fmt||'00:00'}</div></div>
     <div class="card" style="margin:0;padding:10px"><div style="font-size:11px;color:var(--text-muted)">Próxima marcação</div><div style="font-size:19px;font-weight:700">${s.proximo_tipo_label||'Entrada'}</div></div>
   </div>
+  ${diaAviso}
   ${inc.length?`<div style="margin-top:8px;font-size:12px;color:#8a1c1c;background:#fff3f3;border:1px solid #f2c5c5;border-radius:8px;padding:8px">⚠ ${inc.join(' | ')}</div>`:''}`;
   const marc=s.marcacoes||[];
   pontoMarcacoesDiaAtual=marc;
@@ -253,6 +356,43 @@ function pontoPopularFiltroGlobalFuncionarios(){
   const elegiveis=_pontoFuncionariosElegiveis();
   sel.innerHTML='<option value="">Todos os colaboradores</option>'+elegiveis.map(f=>`<option value="${f.id}">${escHtml(f.nome||'')} ${f.matricula?`· Mat ${escHtml(String(f.matricula))}`:''}</option>`).join('');
   if(atual && elegiveis.some(f=>String(f.id)===atual)) sel.value=atual;
+}
+
+async function pontoBaixarRelatorioJuridico(histCompletoFuncionario=false){
+  const iniEl=document.getElementById('ponto-global-data-ini');
+  const fimEl=document.getElementById('ponto-global-data-fim');
+  const funcEl=document.getElementById('ponto-global-funcionario');
+  const dataIni=(iniEl?.value||'').trim();
+  const dataFim=(fimEl?.value||'').trim();
+  const funcId=(funcEl?.value||'').trim();
+  const q=new URLSearchParams({formato:'csv',incluir_ajustes:'1'});
+
+  if(funcId) q.set('funcionario_id',funcId);
+  if(histCompletoFuncionario && funcId){
+    // Sem período explícito, o backend retorna todo o histórico do colaborador.
+  }else{
+    if(!dataIni || !dataFim){
+      showSt('ponto-global-st','Defina data inicial e final para baixar o relatório jurídico.',true);
+      return;
+    }
+    q.set('data_inicio',dataIni);
+    q.set('data_fim',dataFim);
+  }
+
+  showSt('ponto-global-st','Gerando relatório jurídico...',false);
+  const url='/api/ponto/auditoria/relatorio?'+q.toString();
+  try{
+    const a=document.createElement('a');
+    a.href=url;
+    a.target='_blank';
+    a.rel='noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showSt('ponto-global-st','Download do relatório iniciado.',false);
+  }catch(_e){
+    showSt('ponto-global-st','Não foi possível iniciar o download do relatório.',true);
+  }
 }
 
 async function pontoCarregarGlobal(){
@@ -363,7 +503,27 @@ async function salvarEdicaoMarcacaoPonto(){
 async function pontoExcluirMarcacao(marcacaoId){
   const m=(pontoMarcacoesDiaAtual||[]).find(x=>String(x.id)===String(marcacaoId));
   const label=m?(m.tipo_label||m.tipo)+' às '+(m.hora_fmt||''):'marcação #'+marcacaoId;
-  const motivo=prompt(`Excluir "${label}".\n\nInforme o motivo da exclusão:`,'');
+  // BUG-FIX 3: prompt() é bloqueado por popup blockers em browsers modernos.
+  // Usar um modal inline criado dinamicamente como fallback seguro.
+  const motivo = await new Promise(resolve=>{
+    const _overlay=document.createElement('div');
+    _overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+    _overlay.innerHTML=`<div style="background:var(--bg);color:var(--preto);border-radius:12px;padding:24px;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.35);border:1px solid var(--borda)">
+      <div style="font-weight:700;margin-bottom:12px">Excluir "${label}"</div>
+      <label style="font-size:13px;display:block;margin-bottom:6px">Motivo da exclusão <span style="color:red">*</span></label>
+      <input id="_exc-motivo-inp" style="width:100%;padding:8px 10px;border:1px solid var(--borda);border-radius:8px;font-size:14px;box-sizing:border-box;background:var(--bg-alt);color:var(--preto)" placeholder="Informe o motivo…">
+      <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+        <button id="_exc-cancel" style="padding:8px 16px;border:1px solid var(--borda);border-radius:8px;cursor:pointer;background:var(--bg-alt);color:var(--preto)">Cancelar</button>
+        <button id="_exc-ok" style="padding:8px 16px;background:#c62828;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700">Excluir</button>
+      </div>
+    </div>`;
+    document.body.appendChild(_overlay);
+    const inp=_overlay.querySelector('#_exc-motivo-inp');
+    setTimeout(()=>inp.focus(),80);
+    _overlay.querySelector('#_exc-cancel').onclick=()=>{document.body.removeChild(_overlay);resolve(null);};
+    _overlay.querySelector('#_exc-ok').onclick=()=>{const v=inp.value.trim();document.body.removeChild(_overlay);resolve(v||null);};
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter'){const v=inp.value.trim();document.body.removeChild(_overlay);resolve(v||null);}if(e.key==='Escape'){document.body.removeChild(_overlay);resolve(null);}});
+  });
   if(motivo===null) return; // cancelou
   if(!motivo.trim()){
     showSt('ponto-st','Informe o motivo para excluir a marcação.',true);
@@ -398,7 +558,7 @@ async function pontoCarregarPainelDia(){
   itens.forEach(it=>{ pontoResumoPainelByFunc[String(it.funcionario_id)]=it; });
   pontoRenderGestaoFuncionarios();
   if(!itens.length){
-    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:18px;color:var(--text-muted)">Nenhum colaborador ativo encontrado.</td></tr>';
+    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:18px;color:var(--text-muted)">Nenhum colaborador elegível na competência.</td></tr>';
     return;
   }
   tb.innerHTML=itens.map(it=>`<tr class="row-clickable" onclick="pontoSelecionarFuncionario(${it.funcionario_id},true)">
@@ -416,13 +576,31 @@ async function pontoRegistrarTipo(tipo=''){
   const sel=document.getElementById('ponto-funcionario');
   const fid=parseInt(sel?.value||'0',10);
   if(!fid){
-    showSt('ponto-st','Selecione um colaborador ativo.',true);
+    showSt('ponto-st','Selecione um colaborador.',true);
     return;
   }
   const f=(pontoFuncs||[]).find(x=>String(x.id)===String(fid));
   const rot={entrada:'Entrada',saida_intervalo:'Saída intervalo',retorno_intervalo:'Retorno intervalo',saida:'Saída'};
   const tit=tipo?` (${rot[tipo]||tipo})`:'';
-  if(!confirm(`Confirma registrar ponto${tit} para ${f?.nome||'o colaborador selecionado'}?`)) return;
+  // BUG-FIX 6: confirm() pode ser bloqueado por popup blockers.
+  // Usar inline modal para confirmação segura.
+  const confirmado = await new Promise(resolve=>{
+    const _ov=document.createElement('div');
+    _ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+    _ov.innerHTML=`<div style="background:var(--bg);color:var(--preto);border-radius:12px;padding:24px;max-width:380px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.35);border:1px solid var(--borda)">
+      <div style="font-weight:700;margin-bottom:12px">Confirmar registro de ponto${tit}</div>
+      <div style="font-size:14px;margin-bottom:16px">Confirma registrar ponto${tit} para <strong>${f?.nome||'o colaborador selecionado'}</strong>?</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="_rg-cancel" style="padding:8px 16px;border:1px solid var(--borda);border-radius:8px;cursor:pointer;background:var(--bg-alt);color:var(--preto)">Cancelar</button>
+        <button id="_rg-ok" style="padding:8px 16px;background:#2e7d32;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700">Confirmar</button>
+      </div>
+    </div>`;
+    document.body.appendChild(_ov);
+    setTimeout(()=>_ov.querySelector('#_rg-ok').focus(),80);
+    _ov.querySelector('#_rg-cancel').onclick=()=>{document.body.removeChild(_ov);resolve(false);};
+    _ov.querySelector('#_rg-ok').onclick=()=>{document.body.removeChild(_ov);resolve(true);};
+  });
+  if(!confirmado) return;
   const payload={funcionario_id:fid,origem:'web'};
   if(tipo) payload.tipo=tipo;
   const r=await api('/api/ponto/marcar','POST',payload);
@@ -444,7 +622,7 @@ async function pontoAplicarAjuste(){
   const tipo=(document.getElementById('ponto-ajuste-tipo')?.value||'').trim();
   const dh=(document.getElementById('ponto-ajuste-dh')?.value||'').trim();
   const motivo=(document.getElementById('ponto-ajuste-motivo')?.value||'').trim();
-  if(!fid){showSt('ponto-st','Selecione um colaborador ativo.',true);return;}
+  if(!fid){showSt('ponto-st','Selecione um colaborador.',true);return;}
   if(!tipo){showSt('ponto-st','Selecione o tipo de ajuste.',true);return;}
   if(!dh){showSt('ponto-st','Informe a data/hora do ajuste.',true);return;}
   if(!motivo){showSt('ponto-st','Informe o motivo do ajuste.',true);return;}
@@ -465,7 +643,7 @@ async function pontoAplicarAjuste(){
 async function pontoFecharDia(forcar){
   const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
   const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
-  if(!fid){showSt('ponto-st','Selecione um colaborador ativo.',true);return;}
+  if(!fid){showSt('ponto-st','Selecione um colaborador.',true);return;}
   const msg=forcar
     ? 'Fechar o dia com ressalvas? Use somente quando houver inconsistências justificadas.'
     : 'Confirma fechar o dia deste colaborador?';
@@ -483,7 +661,7 @@ async function pontoFecharDia(forcar){
 function pontoBaixarEspelhoMensal(){
   const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
   const comp=(document.getElementById('ponto-competencia')?.value||'').trim();
-  if(!fid){showSt('ponto-st','Selecione um colaborador ativo.',true);return;}
+  if(!fid){showSt('ponto-st','Selecione um colaborador.',true);return;}
   if(!/^\d{4}-\d{2}$/.test(comp)){
     showSt('ponto-st','Competência inválida. Use YYYY-MM.',true);
     return;
@@ -492,13 +670,19 @@ function pontoBaixarEspelhoMensal(){
   window.open(url, '_blank');
 }
 // ─── EDITAR DIA COMPLETO ───────────────────────────────────────────────────
+// Nota: data_hora no banco é BRT naive (utcnow() retorna localnow() = BRT).
+// Os inputs exibem e enviam o valor tal como está, sem conversão de fuso.
+function _dhParaInput(dh){
+  // Converte "YYYY-MM-DD HH:MM:SS" ou "YYYY-MM-DDTHH:MM" para "YYYY-MM-DDTHH:MM"
+  return String(dh||'').replace(' ','T').slice(0,16);
+}
 let _pedCtx=null;
 async function pontoAbrirEditDia(){
   const marcacoes=pontoMarcacoesDiaAtual||[];
   const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
   const f=(pontoFuncs||[]).find(x=>String(x.id)===String(fid));
   const data=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
-  if(!fid){showSt('ponto-st','Selecione um colaborador ativo.',true);return;}
+  if(!fid){showSt('ponto-st','Selecione um colaborador.',true);return;}
   _pedCtx={fid,data,marcacoes,isGf:false};
 
   const tiposOpts=`<option value="entrada">Entrada</option><option value="saida_intervalo">Saída intervalo</option><option value="retorno_intervalo">Retorno intervalo</option><option value="saida">Saída</option>`;
@@ -506,27 +690,34 @@ async function pontoAbrirEditDia(){
   document.getElementById('ped-info').textContent=`Editando marcações de ${f?.nome||'Colaborador'} em ${data}`;
 
   function buildRow(id,tipo,dh,obs,isNova){
-    return `<div class="card" style="margin:0 0 8px;padding:10px;position:relative" data-marc-id="${id}" data-nova="${isNova?'1':''}">
-      <div class="g3" style="align-items:flex-end;gap:8px">
-        <div class="f" style="margin:0"><label style="font-size:11px">Tipo</label>
-          <select class="ped-tipo" data-id="${id}">${tiposOpts.replace(`value="${tipo}"`,`value="${tipo}" selected`)}</select>
+    const tipoNorm=String(tipo||'entrada').trim().toLowerCase();
+    const tipoLabel=_PED_TIPOS_LABEL[tipoNorm]||'Entrada';
+    return `<div class="card ped-card" data-marc-id="${id}" data-nova="${isNova?'1':''}">
+      <div class="ped-grid">
+        <div class="f ped-f"><label>Tipo (automático)</label>
+          <input value="${tipoLabel}" readonly class="ped-input-readonly">
+          <input type="hidden" class="ped-tipo" data-id="${id}" value="${tipoNorm}">
         </div>
-        <div class="f" style="margin:0"><label style="font-size:11px">Data/hora</label>
+        <div class="f ped-f"><label>Data/hora</label>
           <input class="ped-dh" data-id="${id}" type="datetime-local" value="${dh}">
         </div>
-        <div class="f" style="margin:0"><label style="font-size:11px">Observação</label>
+        <div class="f ped-f"><label>Observação</label>
           <input class="ped-obs" data-id="${id}" placeholder="Opcional" value="${obs}">
         </div>
-        <button type="button" class="btn b-vm b-sm" style="flex-shrink:0;margin-bottom:1px" onclick="pedRemoverRow(this)" title="Excluir esta marcação">🗑</button>
+        <button type="button" class="btn b-vm b-sm ped-btn-del" onclick="pedRemoverRow(this)" title="Excluir esta marcação">🗑</button>
       </div>
     </div>`;
   }
 
   document.getElementById('ped-marcacoes-wrap').innerHTML=
-    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),(m.data_hora||'').replace(' ','T').slice(0,16),m.observacao||'',false)).join('')+
+    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),_dhParaInput(m.data_hora),m.observacao||'',false)).join('')+
     `<button type="button" class="btn b-vd b-sm" style="width:100%;margin-top:4px" onclick="pedAdicionarLinha()">＋ Adicionar marcação</button>`;
 
   document.getElementById('ped-motivo').value='';
+  const bulkWrap=document.getElementById('ped-gf-bulk-wrap');
+  const bulkCk=document.getElementById('ped-aplicar-todos-dias');
+  if(bulkWrap) bulkWrap.style.display='none';
+  if(bulkCk) bulkCk.checked=false;
   showSt('ped-st','',false);
   setModalClean('ponto-edit-dia');
   document.getElementById('mod-ponto-edit-dia').classList.add('on');
@@ -534,31 +725,105 @@ async function pontoAbrirEditDia(){
 }
 
 let _pedNovaSeq=0;
+
+const _PED_TIPOS_SEQ=['entrada','saida_intervalo','retorno_intervalo','saida'];
+const _PED_TIPOS_LABEL={
+  entrada:'Entrada',
+  saida_intervalo:'Saída para refeição',
+  retorno_intervalo:'Retorno da refeição',
+  saida:'Saída'
+};
+
+function _pedOrdenarMarcacoesGestaoFacil(marcacoes){
+  const lista=(marcacoes||[]).slice();
+  const idxTipo=(tipo)=>{
+    const idx=_PED_TIPOS_SEQ.indexOf(String(tipo||'').trim().toLowerCase());
+    return idx>=0?idx:999;
+  };
+  if(lista.length && lista.every(m=>_PED_TIPOS_SEQ.includes(String(m?.tipo||'').trim().toLowerCase()))){
+    return lista.sort((a,b)=>{
+      const ia=idxTipo(a?.tipo); const ib=idxTipo(b?.tipo);
+      if(ia!==ib) return ia-ib;
+      return String(a?.data_hora||'').localeCompare(String(b?.data_hora||''));
+    });
+  }
+  return lista;
+}
+
+function _pedConstruirDataHoraGestao(dataRef, itens){
+  const _somarDiasIso=(isoDate,dias)=>{
+    const m=String(isoDate||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if(!m) return String(isoDate||'');
+    const y=parseInt(m[1],10);
+    const mo=parseInt(m[2],10)-1;
+    const d=parseInt(m[3],10);
+    const dt=new Date(Date.UTC(y,mo,d));
+    dt.setUTCDate(dt.getUTCDate()+dias);
+    const yy=dt.getUTCFullYear();
+    const mm=String(dt.getUTCMonth()+1).padStart(2,'0');
+    const dd=String(dt.getUTCDate()).padStart(2,'0');
+    return `${yy}-${mm}-${dd}`;
+  };
+
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(dataRef||''))) return itens;
+  const ordenados=itens.slice().sort((a,b)=>_PED_TIPOS_SEQ.indexOf(a.tipo)-_PED_TIPOS_SEQ.indexOf(b.tipo));
+  let virouDiaSeguinte=false;
+  let referenciaEntradaNoite=null;
+  for(const item of ordenados){
+    const hora=(item.hora||'').trim();
+    const m=hora.match(/^(\d{2}):(\d{2})$/);
+    if(!m) continue;
+    const hh=parseInt(m[1],10); const mm=parseInt(m[2],10);
+    const minutos=hh*60+mm;
+    if(item.tipo==='entrada' && minutos>=17*60){
+      referenciaEntradaNoite=minutos;
+      virouDiaSeguinte=false;
+    }else if(referenciaEntradaNoite!==null && minutos < referenciaEntradaNoite){
+      virouDiaSeguinte=true;
+    }
+    const dataItem=virouDiaSeguinte?_somarDiasIso(dataRef,1):dataRef;
+    // Importante: enviar datetime local sem UTC para evitar deslocamento de fuso.
+    item.data_hora=`${dataItem}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+  }
+  return itens;
+}
+
+function _pedProximoTipoAutomatico(){
+  const wrap=document.getElementById('ped-marcacoes-wrap');
+  if(!wrap) return 'entrada';
+  const tipos=Array.from(wrap.querySelectorAll('.ped-tipo'))
+    .map(el=>String(el.value||'').trim().toLowerCase())
+    .filter(t=>_PED_TIPOS_SEQ.includes(t));
+  if(!tipos.length) return 'entrada';
+  const ultimo=tipos[tipos.length-1];
+  const idx=_PED_TIPOS_SEQ.indexOf(ultimo);
+  if(idx<0) return 'entrada';
+  return _PED_TIPOS_SEQ[(idx+1)%_PED_TIPOS_SEQ.length];
+}
+
 function pedAdicionarLinha(){
   const wrap=document.getElementById('ped-marcacoes-wrap');
   const addBtn=wrap.querySelector('button[onclick="pedAdicionarLinha()"]');
   const fid=(_pedCtx?.fid)||parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
   const data=(_pedCtx?.data)||document.getElementById('ponto-data')?.value||pontoDataHojeISO();
   const seq='new_'+(++_pedNovaSeq);
+  const tipoAuto=_pedProximoTipoAutomatico();
+  const tipoLabel=_PED_TIPOS_LABEL[tipoAuto]||'Entrada';
   const div=document.createElement('div');
-  div.innerHTML=`<div class="card" style="margin:0 0 8px;padding:10px;position:relative" data-marc-id="${seq}" data-nova="1">
-    <div class="g3" style="align-items:flex-end;gap:8px">
-      <div class="f" style="margin:0"><label style="font-size:11px">Tipo</label>
-        <select class="ped-tipo" data-id="${seq}">
-          <option value="entrada">Entrada</option>
-          <option value="saida_intervalo">Saída intervalo</option>
-          <option value="retorno_intervalo">Retorno intervalo</option>
-          <option value="saida">Saída</option>
-        </select>
+  div.innerHTML=`<div class="card ped-card" data-marc-id="${seq}" data-nova="1">
+    <div class="ped-grid">
+      <div class="f ped-f"><label>Tipo (automático)</label>
+        <input value="${tipoLabel}" readonly class="ped-input-readonly">
+        <input type="hidden" class="ped-tipo" data-id="${seq}" value="${tipoAuto}">
       </div>
-      <div class="f" style="margin:0"><label style="font-size:11px">${_pedCtx?.isGf?'Hora':'Data/hora'}</label>
+      <div class="f ped-f"><label>${_pedCtx?.isGf?'Hora':'Data/hora'}</label>
         <input class="ped-dh" data-id="${seq}" type="${_pedCtx?.isGf?'time':'datetime-local'}" value="${_pedCtx?.isGf?'00:00':data+'T00:00'}">
       </div>
-      <div class="f" style="margin:0"><label style="font-size:11px">Observação</label>
+      <div class="f ped-f"><label>Observação</label>
         <input class="ped-obs" data-id="${seq}" placeholder="Opcional" value="">
       </div>
       <input type="hidden" class="ped-fid" value="${fid}">
-      <button type="button" class="btn b-vm b-sm" style="flex-shrink:0;margin-bottom:1px" onclick="pedRemoverRow(this)" title="Remover">🗑</button>
+      <button type="button" class="btn b-vm b-sm ped-btn-del" onclick="pedRemoverRow(this)" title="Remover">🗑</button>
     </div>
   </div>`;
   wrap.insertBefore(div.firstElementChild, addBtn);
@@ -576,6 +841,7 @@ async function salvarEdicaoDiaCompleto(){
   const fid=(_pedCtx?.fid)||parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
   const data=(_pedCtx?.data)||document.getElementById('ponto-data')?.value||pontoDataHojeISO();
   const wrap=document.getElementById('ped-marcacoes-wrap');
+  const aplicarEmTodosDias=!!(_pedCtx?.isGf && document.getElementById('ped-aplicar-todos-dias')?.checked);
 
   // Coletar o que está no DOM agora
   const idsPresentes=new Set(
@@ -585,26 +851,145 @@ async function salvarEdicaoDiaCompleto(){
   const idsOriginais=(_pedCtx?.marcacoes||pontoMarcacoesDiaAtual||[]).map(m=>String(m.id));
   const idsExcluir=idsOriginais.filter(id=>!idsPresentes.has(id));
 
+  // BUG-FIX 2: helper para montar datetime sem offset de timezone:
+  // banco usa BRT naive, utcnow()=localnow()=BRT. Enviar sem TZ para que
+  // _ponto_parse_data_hora preserve o valor como naive BRT, igual ao que
+  // o app mobile e kiosk enviam.
+  function _pedDhComTz(dataRef, dhRaw){
+    const base=/^\d{2}:\d{2}$/.test(dhRaw)?dataRef+'T'+dhRaw:dhRaw;
+    // Remover qualquer offset existente para enviar como naive
+    return base.replace(/[+\-]\d{2}:\d{2}$|Z$/,'');
+  }
+
+  function _pedColetarItensGestao(cards){
+    const itens=[];
+    cards.forEach(card=>{
+      const id=card.dataset.marcId||'';
+      const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
+      const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
+      const obs=(card.querySelector('.ped-obs')?.value||'').trim();
+      const matchHora=dhRaw.match(/(\d{2}:\d{2})$/);
+      if(!tipo || !matchHora) return;
+      itens.push({id,tipo,hora:matchHora[1],observacao:obs,nova:card.dataset.nova==='1'});
+    });
+    return _pedConstruirDataHoraGestao(data,itens);
+  }
+
+  if(aplicarEmTodosDias){
+    if(!gfUltimoResumo || !Array.isArray(gfUltimoResumo.dias)){
+      showSt('ped-st','Resumo mensal indisponível para aplicar em massa.',true);
+      return;
+    }
+
+    const modelo=[];
+    wrap.querySelectorAll('[data-marc-id]').forEach(card=>{
+      const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
+      const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
+      const obs=(card.querySelector('.ped-obs')?.value||'').trim();
+      if(!tipo || !dhRaw) return;
+      const dh=_pedDhComTz(data,dhRaw);
+      const m=dh.match(/T(\d{2}:\d{2})/);
+      if(!m) return;
+      modelo.push({tipo,hora:m[1],observacao:obs});
+    });
+
+    if(!modelo.length){
+      showSt('ped-st','Defina ao menos uma marcação para aplicar nos dias de trabalho.',true);
+      return;
+    }
+
+    const hojeIso=pontoDataHojeISO();
+    const diasAlvo=(gfUltimoResumo.dias||[]).filter(d=>{
+      const dataRef=String(d?.data_ref||'');
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(dataRef)) return false;
+      if(dataRef>hojeIso) return false;
+      const diaTipo=String(d?.dia_tipo||'').toLowerCase();
+      if(['demitido','afastamento','ferias','folga','feriado'].includes(diaTipo)) return false;
+      return Number(d?.horas_esperadas_min||0)>0;
+    });
+
+    if(!diasAlvo.length){
+      showSt('ped-st','Não há dias de trabalho elegíveis para aplicação em massa nesta competência.',true);
+      return;
+    }
+
+    if(!confirm(`Aplicar este padrão em ${diasAlvo.length} dia(s) de trabalho da competência?`)) return;
+
+    showSt('ped-st','Aplicando padrão em massa…',false);
+    let diasAtualizados=0;
+    let marcacoesRecriadas=0;
+
+    for(const dia of diasAlvo){
+      const dataRef=dia.data_ref;
+      const idsExcluir=(dia.marcacoes||[]).map(m=>m.id).filter(Boolean);
+
+      for(const id of idsExcluir){
+        const r=await api('/api/ponto/marcacao/'+id,'DELETE',{motivo});
+        if(r.erro){
+          showSt('ped-st','Erro ao excluir marcação #'+id+' em '+dataRef+': '+r.erro,true);
+          return;
+        }
+      }
+
+      for(const it of modelo){
+        const r=await api('/api/ponto/marcacao','POST',{
+          funcionario_id:fid,
+          tipo:it.tipo,
+          data_hora:`${dataRef}T${it.hora}`,
+          observacao:it.observacao,
+          origem:'admin',
+          motivo
+        });
+        if(r.erro){
+          showSt('ped-st','Erro ao criar marcação em '+dataRef+': '+r.erro,true);
+          return;
+        }
+        marcacoesRecriadas++;
+      }
+      diasAtualizados++;
+    }
+
+    closeModal('ponto-edit-dia',true);
+    showSt('gf-st',`Padrão aplicado em ${diasAtualizados} dia(s) de trabalho. Marcações recriadas: ${marcacoesRecriadas}.`,false);
+    await gfCarregarMes();
+    return;
+  }
+
   // Marcações existentes que continuam = editar
   const itensEditar=[];
-  wrap.querySelectorAll('[data-marc-id]:not([data-nova="1"])').forEach(card=>{
-    const id=card.dataset.marcId;
-    const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
-    const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
-    const dh=/^\d{2}:\d{2}$/.test(dhRaw)?data+'T'+dhRaw:dhRaw;
-    const obs=(card.querySelector('.ped-obs')?.value||'').trim();
-    if(id && tipo && dh) itensEditar.push({id,tipo,data_hora:dh,observacao:obs});
-  });
+  const cardsExistentes=Array.from(wrap.querySelectorAll('[data-marc-id]:not([data-nova="1"])'));
+  const cardsNovos=Array.from(wrap.querySelectorAll('[data-marc-id][data-nova="1"]'));
+  const itensSequencia=_pedCtx?.isGf ? _pedColetarItensGestao([...cardsExistentes,...cardsNovos]) : null;
+  if(_pedCtx?.isGf && itensSequencia){
+    itensSequencia.filter(it=>!it.nova).forEach(it=>{
+      if(it.id && it.tipo && it.data_hora) itensEditar.push({id:it.id,tipo:it.tipo,data_hora:it.data_hora,observacao:it.observacao});
+    });
+  }else{
+    cardsExistentes.forEach(card=>{
+      const id=card.dataset.marcId;
+      const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
+      const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
+      const dh=_pedDhComTz(data,dhRaw);
+      const obs=(card.querySelector('.ped-obs')?.value||'').trim();
+      if(id && tipo && dh) itensEditar.push({id,tipo,data_hora:dh,observacao:obs});
+    });
+  }
 
   // Linhas novas = criar
   const itensNovos=[];
-  wrap.querySelectorAll('[data-marc-id][data-nova="1"]').forEach(card=>{
-    const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
-    const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
-    const dh=/^\d{2}:\d{2}$/.test(dhRaw)?data+'T'+dhRaw:dhRaw;
-    const obs=(card.querySelector('.ped-obs')?.value||'').trim();
-    if(tipo && dh) itensNovos.push({tipo,data_hora:dh,observacao:obs,funcionario_id:fid,origem:'admin'});
-  });
+  if(_pedCtx?.isGf && itensSequencia){
+    itensSequencia.filter(it=>it.nova).forEach(it=>{
+      if(it.tipo && it.data_hora) itensNovos.push({tipo:it.tipo,data_hora:it.data_hora,observacao:it.observacao,funcionario_id:fid,origem:'admin'});
+    });
+  }else{
+    cardsNovos.forEach(card=>{
+      const tipo=(card.querySelector('.ped-tipo')?.value||'').trim().toLowerCase();
+      const dhRaw=(card.querySelector('.ped-dh')?.value||'').trim();
+      const dh=_pedDhComTz(data,dhRaw);
+      const obs=(card.querySelector('.ped-obs')?.value||'').trim();
+      if(tipo && dh) itensNovos.push({tipo,data_hora:dh,observacao:obs,funcionario_id:fid,origem:'admin'});
+    });
+  }
 
   const totalOps=idsExcluir.length+itensEditar.length+itensNovos.length;
   if(!totalOps){showSt('ped-st','Nenhuma alteração detectada.',true);return;}
@@ -616,22 +1001,23 @@ async function salvarEdicaoDiaCompleto(){
   if(!confirm(`Confirma: ${resumo}?`)) return;
 
   showSt('ped-st','Salvando…',false);
+  // BUG-FIX 4: parar imediatamente em caso de erro parcial, sem continuar
+  // as operações restantes (evita estado inconsistente irrecuperável).
   let erros=[];
 
   for(const id of idsExcluir){
     const r=await api('/api/ponto/marcacao/'+id,'DELETE',{motivo});
-    if(r.erro) erros.push(`Excluir #${id}: ${r.erro}`);
+    if(r.erro){showSt('ped-st','Erro ao excluir #'+id+': '+r.erro,true);return;}
   }
   for(const it of itensEditar){
     const r=await api('/api/ponto/marcacao/'+it.id,'PUT',{tipo:it.tipo,data_hora:it.data_hora,observacao:it.observacao,motivo});
-    if(r.erro) erros.push(`Editar #${it.id}: ${r.erro}`);
+    if(r.erro){showSt('ped-st','Erro ao editar #'+it.id+': '+r.erro,true);return;}
   }
   for(const it of itensNovos){
     const r=await api('/api/ponto/marcacao','POST',{...it,motivo});
-    if(r.erro) erros.push(`Nova marcação: ${r.erro}`);
+    if(r.erro){showSt('ped-st','Erro ao criar marcação: '+r.erro,true);return;}
   }
 
-  if(erros.length){showSt('ped-st','Erros: '+erros.join(' | '),true);return;}
   closeModal('ponto-edit-dia',true);
   if(_pedCtx?.isGf){
     showSt('gf-st',`${resumo} salva(s) com sucesso.`,false);
@@ -644,13 +1030,14 @@ async function salvarEdicaoDiaCompleto(){
 }
 
 // ─── GESTÃO FÁCIL ─────────────────────────────────────────────────────────
-let gfFuncId = 0;let gfUltimoResumo = null;
+let gfFuncId = 0;let gfUltimoResumo = null;let gfFolhaEstado = null;
+let rhCicloColaboradores = [];
 async function gfCarregar(){
-  await pontoSyncFuncionarios(false);
-  gfRenderFuncs();
   // Pré-preencher competência com mês atual se vazio
   const inp=document.getElementById('gf-competencia');
   if(inp && !inp.value) inp.value=pontoCompetenciaAtual();
+  await pontoSyncFuncionarios(false);
+  gfRenderFuncs();
 }
 
 function gfRenderFuncs(){
@@ -658,10 +1045,8 @@ function gfRenderFuncs(){
   const qtd=document.getElementById('gf-func-qtd');
   if(!box||!qtd) return;
   const termo=(document.getElementById('gf-busca')?.value||'').toLowerCase();
-  const ativos=(pontoFuncs||[])
-    .filter(f=>String((f.status||'').toLowerCase())==='ativo')
-    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
-  const filtrados=!termo?ativos:ativos.filter(f=>{
+  const elegiveis=_pontoFuncionariosElegiveis();
+  const filtrados=!termo?elegiveis:elegiveis.filter(f=>{
     const nm=(f.nome||'').toLowerCase();
     const mat=String(f.matricula||'').toLowerCase();
     const cargo=(f.cargo||f.funcao||'').toLowerCase();
@@ -686,6 +1071,30 @@ async function gfSelecionarFunc(id){
   await gfCarregarMes();
 }
 
+async function gfSolicitarAprovacaoHE(resumo){
+  const btn=document.getElementById('gf-btn-solicitar-he');
+  if(btn){btn.disabled=true;btn.textContent='Enviando...';}
+  // BUG-FIX: ID correto do input de competência é 'gf-competencia', não 'gf-comp-sel'.
+  const comp=resumo.competencia||document.getElementById('gf-competencia')?.value||(document.getElementById('gf-competencia')?.value)||'';
+  try{
+    const r=await api('/api/ponto/he/solicitacoes','POST',{
+      funcionario_id:resumo.funcionario_id||gfFuncId,
+      competencia:comp
+    });
+    if(r&&r.ok){
+      showSt('gf-st','✅ Solicitação enviada para aprovação do gestor.',false);
+      // BUG-FIX: recarregar o mês para refletir o novo status da solicitação no botão.
+      await gfCarregarMes();
+    }else{
+      if(btn){btn.disabled=false;btn.textContent='⏱ Solicitar aprovação de HE';}
+      showSt('gf-st',r?.erro||'Erro ao enviar solicitação.',true);
+    }
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='⏱ Solicitar aprovação de HE';}
+    showSt('gf-st','Erro: '+e.message,true);
+  }
+}
+
 async function gfCarregarMes(){
   if(!gfFuncId){showSt('gf-st','Selecione um colaborador.',true);return;}
   const comp=(document.getElementById('gf-competencia')?.value||'').trim();
@@ -697,6 +1106,78 @@ async function gfCarregarMes(){
   gfUltimoResumo=r.resumo;
   gfRenderCalendario(r.resumo,comp);
   gfRenderFolha(r.resumo);
+  await gfCarregarEstadoFolha(comp);
+}
+
+async function gfCarregarEstadoFolha(comp){
+  if(!gfFuncId) return;
+  const params=new URLSearchParams({competencia:comp,somente_ativos:'false'});
+  const r=await api('/api/rh/ponto/ciclo/colaboradores?'+params.toString());
+  const estado=(r?.colaboradores||[]).find(f=>String(f.funcionario_id)===String(gfFuncId))||null;
+  gfFolhaEstado=estado;
+  const fechar=document.getElementById('gf-btn-fechar');
+  const enviar=document.getElementById('gf-btn-enviar');
+  const reabrir=document.getElementById('gf-btn-reabrir');
+  const enviada=!!estado?.folha_enviada;
+  const fechada=!!estado?.folha_fechada;
+  if(fechar){ fechar.disabled=enviada; fechar.title=fechada?'A folha já está fechada. Reabra-a para editar.':''; }
+  if(enviar){ enviar.disabled=enviada; enviar.title=enviada?'A folha já foi enviada e não pode mais ser alterada.':''; }
+  if(reabrir) reabrir.style.display=(fechada&&!enviada)?'':'none';
+  if(enviada){
+    showSt('gf-st','Folha enviada. Ela não pode mais ser reaberta nem editada.',false);
+  }else if(fechada){
+    showSt('gf-st','Folha já fechada. Reabra a folha antes de editar as marcações.',false);
+  }
+}
+
+function gfAbrirPreviaFolha(){
+  if(!gfFuncId){showSt('gf-st','Selecione um colaborador.',true);return;}
+  const comp=(document.getElementById('gf-competencia')?.value||'').trim();
+  if(!/^\d{4}-\d{2}$/.test(comp)){showSt('gf-st','Competência inválida. Use YYYY-MM.',true);return;}
+  window.open('/api/ponto/espelho-mensal?funcionario_id='+gfFuncId+'&competencia='+encodeURIComponent(comp),'_blank');
+}
+
+async function gfFecharFolha(enviarAssinatura){
+  if(!gfFuncId){showSt('gf-st','Selecione um colaborador.',true);return;}
+  const funcionario=(pontoFuncs||[]).find(f=>String(f.id)===String(gfFuncId));
+  if(_pontoStatusNorm(funcionario?.status)!=='ativo'){
+    showSt('gf-st','O fechamento individual está disponível apenas para colaboradores ativos.',true);
+    return;
+  }
+  const comp=(document.getElementById('gf-competencia')?.value||'').trim();
+  if(!/^\d{4}-\d{2}$/.test(comp)){showSt('gf-st','Competência inválida. Use YYYY-MM.',true);return;}
+  if(gfFolhaEstado?.folha_enviada){
+    showSt('gf-st','A folha já foi enviada e não pode mais ser reaberta nem editada.',true);
+    return;
+  }
+  if(!enviarAssinatura && gfFolhaEstado?.folha_fechada){
+    showSt('gf-st','A folha já está fechada. Reabra-a antes de fazer alterações.',true);
+    return;
+  }
+  const cicloComp=document.getElementById('rh-ciclo-comp');
+  const cicloAtivos=document.getElementById('rh-ciclo-so-ativos');
+  if(cicloComp) cicloComp.value=comp;
+  if(cicloAtivos) cicloAtivos.checked=true;
+  showSt('gf-st',enviarAssinatura?'Fechando folha e enviando para assinatura...':'Fechando folha...',false);
+  const ok=await rhCicloFecharFuncionario(gfFuncId,enviarAssinatura);
+  await gfCarregarMes();
+  if(ok){
+    showSt('gf-st',enviarAssinatura?'Folha processada para fechamento e assinatura.':'Folha processada para fechamento.',false);
+  }
+}
+
+async function gfReabrirFolha(){
+  if(!gfFuncId || !gfFolhaEstado?.folha_fechada) return;
+  if(gfFolhaEstado?.folha_enviada){
+    showSt('gf-st','A folha já foi enviada e não pode mais ser reaberta.',true);
+    return;
+  }
+  const comp=(document.getElementById('gf-competencia')?.value||'').trim();
+  if(!confirm('Reabrir esta folha? As marcações voltarão a poder ser editadas até um novo fechamento.')) return;
+  const r=await api('/api/rh/ponto/ciclo/reabrir','POST',{funcionario_id:gfFuncId,competencia:comp});
+  if(r?.erro){ showSt('gf-st',r.erro,true); return; }
+  showSt('gf-st','Folha reaberta para edição.',false);
+  await gfCarregarMes();
 }
 
 function gfRenderCalendario(resumo,comp){
@@ -720,23 +1201,29 @@ function gfRenderCalendario(resumo,comp){
     const dataStr=`${comp}-${String(d).padStart(2,'0')}`;
     const dayData=mapaStatus[dataStr];
     const isHoje=hoje.getFullYear()===ano&&hoje.getMonth()+1===mes&&hoje.getDate()===d;
-    const isFuturo=new Date(ano,mes-1,d)>hoje;
+  // BUG-FIX 5: comparar dia/mês/ano diretamente para evitar problema de timezone
+  // no boundary do dia (new Date(ano,mes-1,d)>hoje pode retornar false para "hoje"
+  // dependendo do fuso horário local do browser às 00:00h local).
+  const isFuturo=(ano>hoje.getFullYear())||(ano===hoje.getFullYear()&&mes-1>hoje.getMonth())||(ano===hoje.getFullYear()&&mes-1===hoje.getMonth()&&d>hoje.getDate());
     let cls='gf-dia';
     if(isFuturo) cls+=' futuro';
     else if(dayData){
-      const wday=new Date(ano,mes-1,d).getDay();
-      const isWeekend=wday===0||wday===6;
-      if(isWeekend&&!dayData.marcacoes_count) cls+=' folga';
+      const diaTipo=String(dayData.dia_tipo||'').toLowerCase();
+      const isFolga = diaTipo==='folga' || (!dayData.marcacoes_count && (dayData.horas_esperadas_min === 0 || dayData.horas_esperadas_min === '00:00'));
+      if(diaTipo==='demitido') cls+=' afastamento';
+      else if(diaTipo==='afastamento') cls+=' afastamento';
+      else if(diaTipo==='ferias') cls+=' ferias';
+      else if(isFolga) cls+=' folga';
       else if(dayData.status==='ok'&&dayData.marcacoes_count>0) cls+=' ok';
       else if(dayData.marcacoes_count>0) cls+=' pendente';
-      else if(!isWeekend) cls+=' falta';
-      else cls+=' folga';
+      else cls+=' falta';
     }
     if(isHoje) cls+=' hoje';
     const saldo=dayData?.saldo_fmt||'';
     const horas=dayData?.horas_trabalhadas_fmt||'';
     const marc=dayData?.marcacoes||[];
-    const getT=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);if(!m)return null;const s=String(m.data_hora||'');const mt=s.match(/(\d{2}:\d{2})(?::\d{2})?/);return mt?mt[1]:null;};
+    // data_hora no banco é BRT naive: exibir diretamente sem conversão de fuso.
+    const getT=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);if(!m)return null;const s=String(m.data_hora||'');const mt=s.match(/(\d{2}:\d{2})(?::\d{2})?$/);return mt?mt[1]:null;};
     const timesHtml=[['entrada','gf-t-e','E'],['saida_intervalo','gf-t-si','SI'],['retorno_intervalo','gf-t-ri','RI'],['saida','gf-t-s','S']]
       .map(([tipo,cls,lb])=>{const t=getT(tipo);return t?`<span class="gf-t ${cls}">${lb} ${t}</span>`:'';})
       .filter(Boolean).join('');
@@ -754,13 +1241,52 @@ function gfRenderFolha(resumo){
   const totDiv=document.getElementById('gf-totais');
   if(!wrap||!tb) return;
 
+  // Aviso de HE não autorizada
+  const avisoEl=document.getElementById('gf-he-aviso');
+  if(avisoEl){
+    const hePendente=!!(resumo.totais?.he_pendente_autorizacao);
+    const temHE=((resumo.totais?.he_50_min_bruto||0)+(resumo.totais?.he_100_min_bruto||0))>0;
+    const heVisible=(hePendente&&temHE);
+    avisoEl.style.display=heVisible?'':'none';
+    // Botão solicitar aprovação HE
+    let btnSolHE=document.getElementById('gf-btn-solicitar-he');
+    if(heVisible){
+      const sol=resumo.he_solicitacao;
+      const btnLabel=!sol?'⏱ Solicitar aprovação de HE':sol.status==='pendente'?'⏳ Aguardando aprovação':sol.status==='aprovado'?'✅ HE aprovada':'🔁 Re-solicitar aprovação';
+      const btnDisabled=sol&&sol.status==='pendente'?'disabled':sol&&sol.status==='aprovado'?'disabled':'';
+      if(!btnSolHE){
+        btnSolHE=document.createElement('button');
+        btnSolHE.id='gf-btn-solicitar-he';
+        btnSolHE.className='btn b-az b-sm';
+        btnSolHE.style.marginTop='8px';
+        avisoEl.appendChild(btnSolHE);
+      }
+      btnSolHE.textContent=btnLabel;
+      btnSolHE.disabled=!!btnDisabled;
+      btnSolHE.onclick=()=>gfSolicitarAprovacaoHE(resumo);
+    }else{
+      if(btnSolHE)btnSolHE.remove();
+    }
+  }
+
   const tipos_map={entrada:'E',saida_intervalo:'SI',retorno_intervalo:'RI',saida:'S'};
 
   const linhas=(resumo.dias||[]).map(dia=>{
     const marc=dia.marcacoes||[];
-    const get=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);return m?(m.data_hora||'').slice(11,16):'—';};
-    const saldoClass=dia.saldo_fmt?.startsWith('+')?'color:var(--verde)':(dia.saldo_fmt?.startsWith('-')?'color:var(--verm)':'');
-    const statusHtml=dia.status==='ok'?'<span class="pill p-vd" style="font-size:10px">OK</span>':'<span class="pill p-vm" style="font-size:10px">⚠</span>';
+    // data_hora no banco é BRT naive: exibir diretamente sem conversão de fuso.
+    const get=(tipo)=>{const m=marc.find(x=>x.tipo===tipo);return m?(m.data_hora||'').slice(11,16)||'—':'—'};
+    // BUG-FIX 9: _ponto_fmt_minutos(signed=True) retorna "-HH:MM" para negativo
+    // mas sem "+" para positivo, então startsWith('+') nunca é verdadeiro.
+    // Usar saldo_min (número) para detectar sinal correto.
+    const saldoClass=(dia.saldo_min||0)>0?'color:var(--verde)':((dia.saldo_min||0)<0?'color:var(--verm)':'');
+    const diaTipo=String(dia.dia_tipo||'').toLowerCase();
+    let statusHtml=dia.status==='ok'?'<span class="pill p-vd" style="font-size:10px">OK</span>':'<span class="pill p-vm" style="font-size:10px">⚠</span>';
+    if(diaTipo==='demitido') statusHtml='<span class="pill p-vm" style="font-size:10px">Demitido</span>';
+    else if(diaTipo==='afastamento') statusHtml='<span class="pill p-az" style="font-size:10px">Afastado</span>';
+    else if(diaTipo==='ferias') statusHtml='<span class="pill p-ci" style="font-size:10px">Férias</span>';
+    else if(diaTipo==='folga') statusHtml='<span class="pill p-ci" style="font-size:10px">Folga</span>';
+    const he50=dia.he_50_fmt||'00:00'; const he100=dia.he_100_fmt||'00:00';
+    const not=dia.noturno_fmt||'00:00'; const intra=dia.intrajornada_fmt||'00:00';
     return `<tr>
       <td style="font-size:12px">${dia.data_ref}</td>
       <td>${get('entrada')}</td>
@@ -769,6 +1295,10 @@ function gfRenderFolha(resumo){
       <td>${get('saida')}</td>
       <td>${dia.horas_trabalhadas_fmt||'00:00'}</td>
       <td style="${saldoClass}">${dia.saldo_fmt||'00:00'}</td>
+      <td style="${he50!=='00:00'?'color:var(--laranja)':''}">${he50}</td>
+      <td style="${he100!=='00:00'?'color:var(--verm)':''}">${he100}</td>
+      <td style="${not!=='00:00'?'color:var(--azul)':''}">${not}</td>
+      <td>${intra}</td>
       <td>${statusHtml}</td>
     </tr>`;
   }).join('');
@@ -776,10 +1306,16 @@ function gfRenderFolha(resumo){
   wrap.style.display='block';
 
   const tot=resumo.totais||{};
+  // BUG-FIX 9 (totais): mesma correção de cor de saldo para o total.
+  const saldoStyle=(tot.saldo_min||0)>0?'color:var(--verde)':((tot.saldo_min||0)<0?'color:var(--verm)':'');
   totDiv.innerHTML=`
     <div class="ponto-kpi"><div class="l">Total trabalhado</div><div class="v">${tot.horas_trabalhadas_fmt||'00:00'}</div></div>
     <div class="ponto-kpi"><div class="l">Carga esperada</div><div class="v">${tot.horas_esperadas_fmt||'00:00'}</div></div>
-    <div class="ponto-kpi"><div class="l">Saldo total</div><div class="v" style="${(tot.saldo_fmt||'').startsWith('+')?'color:var(--verde)':(tot.saldo_fmt||'').startsWith('-')?'color:var(--verm)':''}">${tot.saldo_fmt||'00:00'}</div></div>
+    <div class="ponto-kpi"><div class="l">Saldo total</div><div class="v" style="${saldoStyle}">${tot.saldo_fmt||'00:00'}</div></div>
+    <div class="ponto-kpi"><div class="l">HE 50%</div><div class="v" style="${tot.he_50_min>0?'color:var(--laranja)':''}">${tot.he_50_fmt||'00:00'}</div></div>
+    <div class="ponto-kpi"><div class="l">HE 100%</div><div class="v" style="${tot.he_100_min>0?'color:var(--verm)':''}">${tot.he_100_fmt||'00:00'}</div></div>
+    <div class="ponto-kpi"><div class="l">Adicional noturno</div><div class="v" style="${tot.noturno_min>0?'color:var(--azul)':''}">${tot.noturno_fmt||'00:00'}</div></div>
+    <div class="ponto-kpi"><div class="l">Intrajornada</div><div class="v">${tot.intrajornada_fmt||'00:00'}</div></div>
     <div class="ponto-kpi"><div class="l">Dias inconsistentes</div><div class="v" style="${tot.inconsistencias>0?'color:var(--verm)':''}">${tot.inconsistencias||0}</div></div>
   `;
 }
@@ -790,43 +1326,54 @@ function gfDiaClick(dataRef){
 
 function gfAbrirEditDia(dataRef){
   if(!gfFuncId||!gfUltimoResumo){showSt('gf-st','Selecione um colaborador.',true);return;}
+  if(gfFolhaEstado?.folha_enviada){
+    showSt('gf-st','Esta folha foi enviada para assinatura e não pode mais ser editada nem reaberta.',true);
+    return;
+  }
+  if(gfFolhaEstado?.folha_fechada){
+    showSt('gf-st','Esta folha está fechada. Reabra a folha para editar as marcações.',true);
+    return;
+  }
   const diaData=(gfUltimoResumo.dias||[]).find(d=>d.data_ref===dataRef);
-  const marcacoes=diaData?.marcacoes||[];
+  const marcacoes=_pedOrdenarMarcacoesGestaoFacil(diaData?.marcacoes||[]);
   const f=(pontoFuncs||[]).find(x=>String(x.id)===String(gfFuncId));
   _pedCtx={fid:gfFuncId,data:dataRef,marcacoes,isGf:true};
 
   const tiposOpts=`<option value="entrada">Entrada</option><option value="saida_intervalo">Saída intervalo</option><option value="retorno_intervalo">Retorno intervalo</option><option value="saida">Saída</option>`;
   document.getElementById('ped-info').textContent=`Editando marcações de ${f?.nome||'Colaborador'} em ${dataRef}`;
 
-  function toDtLocal(dh){
-    const s=String(dh||'');
-    const m=s.match(/(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
-    if(m) return m[1]+'T'+m[2];
-    return '';
-  }
+  // BUG-FIX: reutilizar _dhParaInput para exibir o horário BRT armazenado.
+  function toDtLocal(dh){ return _dhParaInput(dh); }
 
   function buildRow(id,tipo,dh,obs,isNova){
-    return `<div class="card" style="margin:0 0 8px;padding:10px;position:relative" data-marc-id="${id}" data-nova="${isNova?'1':''}">
-      <div class="g3" style="align-items:flex-end;gap:8px">
-        <div class="f" style="margin:0"><label style="font-size:11px">Tipo</label>
-          <select class="ped-tipo" data-id="${id}">${tiposOpts.replace(`value="${tipo}"`,`value="${tipo}" selected`)}</select>
+    const tipoNorm=String(tipo||'entrada').trim().toLowerCase();
+    const tipoLabel=_PED_TIPOS_LABEL[tipoNorm]||'Entrada';
+    return `<div class="card ped-card" data-marc-id="${id}" data-nova="${isNova?'1':''}">
+      <div class="ped-grid">
+        <div class="f ped-f"><label>Tipo (automático)</label>
+          <input value="${tipoLabel}" readonly class="ped-input-readonly">
+          <input type="hidden" class="ped-tipo" data-id="${id}" value="${tipoNorm}">
         </div>
-        <div class="f" style="margin:0"><label style="font-size:11px">Hora</label>
+        <div class="f ped-f"><label>Hora</label>
           <input class="ped-dh" data-id="${id}" type="time" value="${dh}">
         </div>
-        <div class="f" style="margin:0"><label style="font-size:11px">Observação</label>
+        <div class="f ped-f"><label>Observação</label>
           <input class="ped-obs" data-id="${id}" placeholder="Opcional" value="${obs}">
         </div>
-        <button type="button" class="btn b-vm b-sm" style="flex-shrink:0;margin-bottom:1px" onclick="pedRemoverRow(this)" title="Excluir esta marcação">🗑</button>
+        <button type="button" class="btn b-vm b-sm ped-btn-del" onclick="pedRemoverRow(this)" title="Excluir esta marcação">🗑</button>
       </div>
     </div>`;
   }
 
   document.getElementById('ped-marcacoes-wrap').innerHTML=
-    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),toDtLocal(m.data_hora).slice(11),m.observacao||'',false)).join('')+
+    marcacoes.map(m=>buildRow(m.id,(m.tipo||'entrada').trim().toLowerCase(),toDtLocal(m.data_hora).slice(11,16),m.observacao||'',false)).join('')+
     `<button type="button" class="btn b-vd b-sm" style="width:100%;margin-top:4px" onclick="pedAdicionarLinha()">＋ Adicionar marcação</button>`;
 
   document.getElementById('ped-motivo').value='';
+  const bulkWrap=document.getElementById('ped-gf-bulk-wrap');
+  const bulkCk=document.getElementById('ped-aplicar-todos-dias');
+  if(bulkWrap) bulkWrap.style.display='block';
+  if(bulkCk) bulkCk.checked=false;
   showSt('ped-st','',false);
   setModalClean('ponto-edit-dia');
   document.getElementById('mod-ponto-edit-dia').classList.add('on');
@@ -889,7 +1436,7 @@ function renderCorrecoesPonto(){
     const statusLabel=_CORRECAO_STATUS_LABEL[c.status]||c.status;
     const tipoLabel=_CORRECAO_TIPO_LABEL[c.tipo_problema]||c.tipo_problema;
     const dataFmt=c.data_ref?c.data_ref.split('-').reverse().join('/'):'-';
-    const criadoFmt=c.criado_em?(new Date(c.criado_em+'Z')).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'-';
+    const criadoFmt=c.criado_em?c.criado_em.replace('T',' ').slice(0,16).split('-').join('/').replace(/(\d+)\/(\d+)\/(\d+) (\d+:\d+)/,'$3/$2/$1 $4'):'-';
     const isPendente=c.status==='pendente';
     // Bloco de alteração automática de marcação
     const temMarcacao=c.marcacao_id&&c.horario_correto;
@@ -958,10 +1505,11 @@ async function decidirCorrecaoPonto(id,acao){
     const r=await api('/api/funcionarios/ponto/solicitacao-correcao/'+id+'/decidir','POST',{acao,motivo});
     if(r&&r.ok){
       showSt('st-correcoes-ponto',acao==='aprovar'?'✅ Solicitação aprovada.':'❌ Solicitação rejeitada.',false);
-      // Atualiza localmente
+      // BUG-FIX 8: usar status retornado pelo servidor em vez de hardcodar string
+      // ('resolvido'/'rejeitado') — evita badge travado se enum mudar.
       const idx=_correcoesPontoTodas.findIndex(c=>c.id===id);
       if(idx>=0){
-        _correcoesPontoTodas[idx].status=acao==='aprovar'?'resolvido':'rejeitado';
+        _correcoesPontoTodas[idx].status=r.correcao?.status||(acao==='aprovar'?'resolvido':'rejeitado');
         _correcoesPontoTodas[idx].motivo_admin=motivo;
       }
       _atualizarBadgeCorrecoes();
@@ -976,10 +1524,305 @@ async function decidirCorrecaoPonto(id,acao){
 
 // Polling periódico: atualiza badge a cada 60s quando a aba de ponto está visível
 setInterval(()=>{
+  // BUG-FIX 7: não fazer polling quando a seção de ponto está oculta.
   const secPonto=document.getElementById('pg-ponto');
-  if(secPonto&&secPonto.style.display!=='none'){
-    api('/api/funcionarios/ponto/solicitacoes-correcao/todas-pendentes')
-      .then(d=>{if(Array.isArray(d)){_correcoesPontoTodas=d;_atualizarBadgeCorrecoes();}})
-      .catch(()=>{});
-  }
+  if(!secPonto||!secPonto.classList.contains('on')) return;
+  api('/api/funcionarios/ponto/solicitacoes-correcao/todas-pendentes')
+    .then(d=>{if(Array.isArray(d)){_correcoesPontoTodas=d;_atualizarBadgeCorrecoes();}})
+    .catch(()=>{});
 },60000);
+
+// ── Aprovação de Hora Extra ───────────────────────────────────────────────────
+let _heSolicitacoes=[];
+
+async function abrirModalHEPendentes(){
+  if(typeof nav==='function') nav('rh',document.querySelector('.nav-item[data-nav="rh"]'));
+  if(typeof rhSetSubAba==='function') rhSetSubAba('he-autorizacao');
+  document.getElementById('modal-he-body').innerHTML='<div style="text-align:center;padding:32px;opacity:.5">Carregando...</div>';
+  await carregarHEPendentes();
+}
+
+async function carregarHEPendentes(){
+  const filtro=document.getElementById('modal-he-filtro')?.value||'pendente';
+  try{
+    const r=await api('/api/ponto/he/solicitacoes?status='+filtro);
+    _heSolicitacoes=Array.isArray(r?.itens)?r.itens:[];
+  }catch(_){_heSolicitacoes=[];}
+  renderHESolicitacoes();
+}
+
+function renderHESolicitacoes(){
+  const body=document.getElementById('modal-he-body');
+  const cntEl=document.getElementById('modal-he-count');
+  if(!body)return;
+  const items=_heSolicitacoes;
+  if(cntEl)cntEl.textContent=items.length+' registro(s)';
+  if(!items.length){body.innerHTML='<div style="text-align:center;padding:32px;opacity:.5">Nenhum registro.</div>';return;}
+  const rows=items.map(s=>{
+    const statusStyle=s.status==='pendente'?'color:#b45309':s.status==='aprovado'?'color:var(--verd)':'color:var(--verm)';
+    const btns=s.status==='pendente'?`
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <textarea id="he-motivo-${s.id}" placeholder="Motivo (opcional)" style="flex:1;font-size:12px;padding:4px 6px;border:1px solid var(--borda);border-radius:var(--r);background:var(--branco);color:var(--preto);resize:vertical;min-height:40px"></textarea>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <button class="btn b-vd b-sm" onclick="decidirHE(${s.id},'aprovar')">✅ Aprovar</button>
+          <button class="btn b-rm b-sm" onclick="decidirHE(${s.id},'recusar')">❌ Recusar</button>
+        </div>
+      </div>`:'<div style="font-size:12px;opacity:.6;margin-top:4px">Decidido em: '+(s.decidido_fmt||'—')+(s.decidido_por?' por '+s.decidido_por:'')+'</div>';
+    return `<div style="padding:12px 0;border-bottom:1px solid var(--borda)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-weight:600">${s.funcionario_nome||'—'} <span style="font-size:12px;opacity:.6">${s.funcionario_matricula?'Mat '+s.funcionario_matricula:''}</span></div>
+          <div style="font-size:13px;opacity:.7">Competência: ${s.competencia} · HE 50%: ${s.he_50_fmt||'0h'} · HE 100%: ${s.he_100_fmt||'0h'}</div>
+          <div style="font-size:12px;opacity:.5">Solicitado em: ${s.criado_fmt||'—'} · Posto: ${s.posto_label||'—'}</div>
+        </div>
+        <span style="font-size:12px;font-weight:700;${statusStyle}">${s.status.toUpperCase()}</span>
+      </div>
+      ${btns}
+    </div>`;
+  }).join('');
+  body.innerHTML=rows;
+}
+
+async function decidirHE(id,acao){
+  const motivo=document.getElementById('he-motivo-'+id)?.value?.trim()||'';
+  showSt('st-he','Processando...',false);
+  try{
+    const r=await api('/api/ponto/he/solicitacoes/'+id+'/decidir','POST',{acao,motivo});
+    if(r&&r.ok){
+      showSt('st-he',acao==='aprovar'?'✅ HE aprovada.':'❌ HE recusada.',false);
+      const idx=_heSolicitacoes.findIndex(s=>s.id===id);
+      if(idx>=0)_heSolicitacoes[idx]=r.solicitacao;
+      renderHESolicitacoes();
+      // Atualizar badge no dashboard
+      const elHePend=document.getElementById('d-he-pendentes');
+      if(elHePend){
+        const atual=parseInt(elHePend.textContent)||0;
+        const novo=Math.max(0,atual-1);
+        elHePend.textContent=novo;
+        elHePend.closest('.metric')?.classList.toggle('vm',novo>0);
+        elHePend.closest('.metric')?.style.setProperty('--metric-c',novo>0?'var(--verm)':'#b45309');
+      }
+    }else{
+      showSt('st-he',r?.erro||'Erro ao processar.',true);
+    }
+  }catch(e){
+    showSt('st-he','Erro: '+e.message,true);
+  }
+}
+
+// ── Gestão Fácil: auto-refresh instantâneo via SSE + fallback 60s ─────────────
+let _gfSseSource=null;
+let _gfFallbackTimer=null;
+let _gfLastRefresh=null;
+
+function _gfPaneVisible(){
+  // Verifica (1) que a página RH está ativa e (2) que o painel Gestão Fácil
+  // está explicitamente em display:block (não apenas "não-none", pois a div
+  // não tem display:none inicial e isso causava false-positives).
+  const pg=document.getElementById('pg-rh');
+  if(!pg||!pg.classList.contains('on')) return false;
+  const pane=document.getElementById('rh-pane-gestao-facil');
+  return !!(pane&&pane.style.display==='block');
+}
+
+function _gfUpdateTimestamp(){
+  const el=document.getElementById('gf-live-ts');
+  if(!el) return;
+  if(!_gfLastRefresh){el.textContent='ao vivo';return;}
+  const hh=String(_gfLastRefresh.getHours()).padStart(2,'0');
+  const mm=String(_gfLastRefresh.getMinutes()).padStart(2,'0');
+  const ss=String(_gfLastRefresh.getSeconds()).padStart(2,'0');
+  el.textContent=`atualizado ${hh}:${mm}:${ss}`;
+}
+
+async function _gfPollSilent(){
+  if(!_gfPaneVisible()||!gfFuncId) return;
+  const comp=(document.getElementById('gf-competencia')?.value||'').trim();
+  if(!/^\d{4}-\d{2}$/.test(comp)) return;
+  try{
+    const r=await api('/api/ponto/gestao-facil/calendario?funcionario_id='+gfFuncId+'&competencia='+encodeURIComponent(comp));
+    if(r.erro||!r.resumo) return;
+    // Só re-renderiza se os dados mudaram (evita piscar sem motivo)
+    const novoHash=JSON.stringify(r.resumo?.dias||[]);
+    const velhoHash=JSON.stringify(gfUltimoResumo?.dias||[]);
+    if(novoHash!==velhoHash){
+      gfUltimoResumo=r.resumo;
+      gfRenderCalendario(r.resumo,comp);
+      gfRenderFolha(r.resumo);
+    }
+    _gfLastRefresh=new Date();
+    _gfUpdateTimestamp();
+  }catch(_){}
+}
+
+function _gfSseConnect(){
+  if(_gfSseSource){_gfSseSource.close();_gfSseSource=null;}
+  const src=new EventSource('/api/eventos');
+  _gfSseSource=src;
+  // Evento 'ponto': disparado imediatamente quando funcionário bate ponto no app
+  src.addEventListener('ponto',function(e){
+    try{
+      const d=JSON.parse(e.data||'{}');
+      // Só recarrega se o funcionário exibido é o que bateu o ponto
+      if(gfFuncId&&d.funcionario_id&&Number(d.funcionario_id)===Number(gfFuncId)){
+        _gfPollSilent();
+      }
+    }catch(_){}
+  });
+  // EventSource reconecta automaticamente em caso de erro (nativo do browser)
+}
+
+// Inicia SSE ao carregar o script
+_gfSseConnect();
+// Fallback: polling a cada 60s para cobrir eventuais gaps do SSE
+_gfFallbackTimer=setInterval(_gfPollSilent,60000);
+
+// ── Afastamentos / Atestados ──────────────────────────────────────────────────
+
+function pontoFmtTipoAfastamento(tipo){
+  const t=String(tipo||'').trim();
+  if(!t) return 'Afastamento';
+  const map={atestado:'Atestado medico',licenca:'Licenca',outros:'Afastamento'};
+  const norm=t.toLowerCase();
+  if(map[norm]) return map[norm];
+  return t;
+}
+
+async function pontoCarregarAfastamentos(){
+  const sel=document.getElementById('ponto-funcionario');
+  const fid=parseInt(sel?.value||'0',10);
+  const el=document.getElementById('ponto-afastamentos-lista');
+  const sec=document.getElementById('ponto-afastamentos-section');
+  if(!el) return;
+  if(!fid){
+    el.textContent='Selecione um colaborador para ver os afastamentos.';
+    if(sec) sec.style.display='none';
+    return;
+  }
+  if(sec) sec.style.display='';
+  el.innerHTML='<div style="color:var(--text-muted);font-size:12px">Carregando…</div>';
+  const r=await api('/api/funcionarios/'+fid+'/afastamentos');
+  if(!Array.isArray(r)||!r.length){
+    el.innerHTML='<div style="color:var(--text-muted);font-size:12px">Nenhum afastamento registrado.</div>';
+    return;
+  }
+  el.innerHTML=r.map(a=>{
+    const baseLabel=pontoFmtTipoAfastamento(a.tipo_label||a.tipo);
+    const icon=((a.tipo||'').toLowerCase()==='atestado')?'🏥':(((a.tipo||'').toLowerCase()==='licenca')?'📋':'📄');
+    const label=`${icon} ${baseLabel}`;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--borda)">
+      <span style="font-size:12px;flex:1"><strong>${label}</strong> · ${a.periodo_fmt||''} ${a.observacao?`<span style="color:var(--text-muted)">· ${escHtml(a.observacao)}</span>`:''}</span>
+      <span style="font-size:11px;color:var(--text-muted)">${a.criado_fmt||''}</span>
+      <button class="btn b-er b-sm" style="padding:2px 8px;font-size:11px" onclick="pontoExcluirAfastamento(${a.id})">✕</button>
+    </div>`;
+  }).join('');
+}
+
+async function pontoExcluirAfastamento(aid){
+  if(!confirm('Excluir este afastamento?')) return;
+  const fid=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
+  const r=await api('/api/funcionarios/'+fid+'/afastamentos/'+aid,'DELETE',{});
+  if(r&&r.erro){showSt('ponto-st',r.erro,true);return;}
+  showSt('ponto-st','Afastamento excluído.',false);
+  await pontoCarregarAfastamentos();
+  await pontoCarregarDia();
+  await pontoCarregarPainelDia();
+}
+
+function pontoAbrirModalAfastamento(){
+  const fidPonto=parseInt(document.getElementById('ponto-funcionario')?.value||'0',10);
+  const fidGf=parseInt(gfFuncId||'0',10);
+  const usandoGf=(_gfPaneVisible() && fidGf>0);
+  const fid=usandoGf?fidGf:fidPonto;
+  const stId=usandoGf?'gf-st':'ponto-st';
+  if(!fid){showSt(stId,'Selecione um colaborador primeiro.',true);return;}
+  const hoje=pontoDataHojeISO();
+  // Modal inline
+  const _ov=document.createElement('div');
+  _ov.id='_modal-afastamento';
+  _ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  const f=(pontoFuncs||[]).find(x=>String(x.id)===String(fid));
+  _ov.innerHTML=`<div style="background:var(--bg);color:var(--preto);border-radius:12px;padding:24px;max-width:480px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.35);border:1px solid var(--borda)">
+    <div style="font-weight:700;font-size:15px;margin-bottom:14px">🏥 Novo afastamento/atestado · ${escHtml(f?.nome||'Colaborador')}</div>
+    <div style="display:grid;gap:12px">
+      <div><label style="font-size:12px;display:block;margin-bottom:4px">Tipo</label>
+        <input id="_af-tipo" placeholder="Ex.: Atestado médico, Licença, Acompanhamento familiar" list="_af-tipo-sugestoes" style="width:100%;padding:8px;border:1px solid var(--borda);border-radius:8px;font-size:13px;box-sizing:border-box;background:var(--bg-alt);color:var(--preto)" maxlength="40" value="Atestado médico">
+        <datalist id="_af-tipo-sugestoes">
+          <option value="Atestado médico"></option>
+          <option value="Licença"></option>
+          <option value="Outro afastamento"></option>
+        </datalist>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label style="font-size:12px;display:block;margin-bottom:4px">Data início <span style="color:red">*</span></label>
+          <input id="_af-inicio" type="date" value="${hoje}" style="width:100%;padding:8px;border:1px solid var(--borda);border-radius:8px;font-size:13px;box-sizing:border-box;background:var(--bg-alt);color:var(--preto)"></div>
+        <div><label style="font-size:12px;display:block;margin-bottom:4px">Data fim <span style="color:red">*</span></label>
+          <input id="_af-fim" type="date" value="${hoje}" style="width:100%;padding:8px;border:1px solid var(--borda);border-radius:8px;font-size:13px;box-sizing:border-box;background:var(--bg-alt);color:var(--preto)"></div>
+      </div>
+      <div><label style="font-size:12px;display:block;margin-bottom:4px">Quantidade de dias</label>
+        <input id="_af-dias" type="number" min="1" max="365" value="1" style="width:100%;padding:8px;border:1px solid var(--borda);border-radius:8px;font-size:13px;box-sizing:border-box;background:var(--bg-alt);color:var(--preto)"></div>
+      <div><label style="font-size:12px;display:block;margin-bottom:4px">Observação</label>
+        <input id="_af-obs" placeholder="Ex.: CID J06.9 – consulta médica" style="width:100%;padding:8px;border:1px solid var(--borda);border-radius:8px;font-size:13px;box-sizing:border-box;background:var(--bg-alt);color:var(--preto)" maxlength="500"></div>
+    </div>
+    <div id="_af-st" style="margin-top:10px;font-size:12px;color:var(--verm);display:none"></div>
+    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
+      <button id="_af-cancel" style="padding:8px 16px;border:1px solid var(--borda);border-radius:8px;cursor:pointer;background:var(--bg-alt);color:var(--preto);font-size:13px">Cancelar</button>
+      <button id="_af-salvar" style="padding:8px 18px;background:#1565c0;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px">Salvar afastamento</button>
+    </div>
+  </div>`;
+  document.body.appendChild(_ov);
+  const _tipoSel=_ov.querySelector('#_af-tipo');
+  const _inicioInp=_ov.querySelector('#_af-inicio');
+  const _fimInp=_ov.querySelector('#_af-fim');
+  const _diasInp=_ov.querySelector('#_af-dias');
+  const _syncFimPorDias=()=>{
+    if(!_inicioInp || !_fimInp || !_diasInp) return;
+    const ini=_inicioInp.value;
+    const dias=Math.max(1,Math.min(365,parseInt(_diasInp.value||'1',10)||1));
+    _diasInp.value=String(dias);
+    if(!ini) return;
+    const dt=new Date(ini+'T00:00:00');
+    if(Number.isNaN(dt.getTime())) return;
+    dt.setDate(dt.getDate()+dias-1);
+    const fim=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+    _fimInp.value=fim;
+  };
+  const _syncDiasPorFim=()=>{
+    if(!_inicioInp || !_fimInp || !_diasInp) return;
+    const ini=new Date((_inicioInp.value||'')+'T00:00:00');
+    const fim=new Date((_fimInp.value||'')+'T00:00:00');
+    if(Number.isNaN(ini.getTime()) || Number.isNaN(fim.getTime()) || fim<ini) return;
+    const diff=Math.floor((fim-ini)/86400000)+1;
+    _diasInp.value=String(Math.max(1,Math.min(365,diff)));
+  };
+  if(_diasInp) _diasInp.oninput=_syncFimPorDias;
+  if(_inicioInp) _inicioInp.onchange=()=>{_syncFimPorDias();};
+  if(_fimInp) _fimInp.onchange=_syncDiasPorFim;
+  _syncFimPorDias();
+  _ov.querySelector('#_af-cancel').onclick=()=>document.body.removeChild(_ov);
+  _ov.querySelector('#_af-salvar').onclick=async ()=>{
+    const tipo=(_ov.querySelector('#_af-tipo')?.value||'').trim();
+    const inicio=_ov.querySelector('#_af-inicio').value;
+    const fim=_ov.querySelector('#_af-fim').value;
+    const obs=(_ov.querySelector('#_af-obs').value||'').trim();
+    const st=_ov.querySelector('#_af-st');
+    if(!tipo){st.textContent='Informe o tipo do afastamento.';st.style.display='';return;}
+    if(!inicio||!fim){st.textContent='Preencha as datas.';st.style.display='';return;}
+    if(fim<inicio){st.textContent='Data fim deve ser igual ou posterior à data início.';st.style.display='';return;}
+    const btn=_ov.querySelector('#_af-salvar');
+    btn.disabled=true;btn.textContent='Salvando…';
+    const r=await api('/api/funcionarios/'+fid+'/afastamentos','POST',{tipo,data_inicio:inicio,data_fim:fim,observacao:obs});
+    btn.disabled=false;btn.textContent='Salvar afastamento';
+    if(r&&r.erro){st.textContent=r.erro;st.style.display='';return;}
+    document.body.removeChild(_ov);
+    showSt(stId,'Afastamento registrado com sucesso!',false);
+    if(usandoGf){
+      await gfCarregarMes();
+    } else {
+      await pontoCarregarAfastamentos();
+      await pontoCarregarDia();
+      await pontoCarregarPainelDia();
+    }
+  };
+}
+

@@ -32,6 +32,7 @@ from flask import (
 
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from cryptography.fernet import Fernet
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text, event
 from sqlalchemy.engine import Engine
@@ -223,6 +224,25 @@ if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
         "max_overflow": 4,
     }
 db = SQLAlchemy(app)
+
+
+@app.template_filter("fmt_cnpj")
+def _filter_fmt_cnpj(v):
+    """Formata string de dígitos como CNPJ: XX.XXX.XXX/XXXX-XX."""
+    digits = "".join(filter(str.isdigit, str(v or "")))
+    if len(digits) == 14:
+        return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
+    return v  # devolve original se não tiver 14 dígitos
+
+
+@app.template_filter("fmt_cpf")
+def _filter_fmt_cpf(v):
+    """Formata string de dígitos como CPF: XXX.XXX.XXX-XX."""
+    digits = "".join(filter(str.isdigit, str(v or "")))
+    if len(digits) == 11:
+        return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
+    return v  # devolve original se não tiver 11 dígitos
+
 
 if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
 
@@ -491,6 +511,30 @@ class PontoAjuste(db.Model):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
+class SolicitacaoHoraExtra(db.Model):
+    __tablename__ = "solicitacao_hora_extra"
+    id = db.Column(db.Integer, primary_key=True)
+    funcionario_id = db.Column(
+        db.Integer, db.ForeignKey("funcionario.id"), nullable=False, index=True
+    )
+    empresa_id = db.Column(
+        db.Integer, db.ForeignKey("empresa.id"), nullable=True, index=True
+    )
+    competencia = db.Column(db.String(7), nullable=False, index=True)  # YYYY-MM
+    he_50_min = db.Column(db.Integer, default=0)   # minutos de HE 50%
+    he_100_min = db.Column(db.Integer, default=0)  # minutos de HE 100%
+    he_50_fmt = db.Column(db.String(20), default="")   # ex: "2h30"
+    he_100_fmt = db.Column(db.String(20), default="")  # ex: "0h00"
+    status = db.Column(db.String(20), default="pendente")  # pendente|aprovado|recusado
+    motivo = db.Column(db.Text, default="")
+    decidido_em = db.Column(db.DateTime, nullable=True)
+    decidido_por = db.Column(db.String(150), nullable=True)
+    criado_em = db.Column(db.DateTime, default=utcnow)
+
+    def to_dict(self):
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
+
 class JornadaTrabalho(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(120), nullable=False)
@@ -505,6 +549,13 @@ class JornadaTrabalho(db.Model):
     criado_em = db.Column(db.DateTime, default=utcnow)
 
     def grade_semanal(self):
+        # BUG-FIX 10: logar quando dias_semana é NULL/vazio para facilitar diagnóstico
+        ds = getattr(self, "dias_semana", None)
+        if not ds:
+            app.logger.warning(
+                "JornadaTrabalho id=%s tem dias_semana NULL/vazio — usando grade seg-sex padrão",
+                self.id,
+            )
         return _jornada_extrair_grade(self)
 
     def minutos_esperados_weekday(self, weekday_python):
@@ -539,7 +590,14 @@ class JornadaTrabalho(db.Model):
             if bool((dia or {}).get("ativo", False)):
                 mins.append(_jornada_minutos_dia_cfg(dia))
         if mins:
-            return max(0, int(round(sum(mins) / float(len(mins)))))
+            # BUG-FIX 12: jornada com todos os dias = 0 minutos (dados corrompidos)
+            soma = sum(mins)
+            if soma == 0:
+                app.logger.warning(
+                    "JornadaTrabalho id=%s: carga_horaria_min=0 para todos os dias ativos — possível dado corrompido",
+                    self.id,
+                )
+            return max(0, int(round(soma / float(len(mins)))))
         return 0
 
     def to_dict(self):
@@ -551,6 +609,11 @@ class JornadaTrabalho(db.Model):
                 int(k) for k, v in grade.items() if bool((v or {}).get("ativo", False))
             ]
         except Exception:
+            # BUG-FIX 17: falha ao parsear chaves da grade — logar para diagnóstico
+            app.logger.warning(
+                "JornadaTrabalho id=%s: erro ao montar dias_semana_list — grade pode estar corrompida",
+                self.id,
+            )
             d["dias_semana_list"] = [1, 2, 3, 4, 5]
         d["carga_horaria_min"] = self.carga_horaria_min()
         d["funcionarios_count"] = (
@@ -573,8 +636,16 @@ def _jornada_minutos_dia_cfg(dia_cfg):
         entrada_min = he[0] * 60 + he[1]
         saida_min = hs[0] * 60 + hs[1]
         if saida_min <= entrada_min:
+            # BUG-FIX 1: cruzamento de meia-noite legítimo somente se saída < 06:00
+            # (turno noturno real, ex: 22:00-05:00). Se saída >= 06:00 com saída < entrada
+            # é horário invertido por engano (ex: 14:00-09:00) — retorna 0 e força correção.
+            if saida_min >= 360:  # saída >= 06:00: não é turno noturno legítimo
+                return 0
             saida_min += 24 * 60
-        return max(0, saida_min - entrada_min - intervalo)
+        # BUG-FIX 2: intervalo não pode ser maior que a jornada bruta (evita minutos negativos)
+        duracao_bruta = saida_min - entrada_min
+        intervalo = min(intervalo, max(0, duracao_bruta - 1))
+        return max(0, duracao_bruta - intervalo)
     except Exception:
         return 0
 
@@ -594,6 +665,7 @@ def _jornada_grade_padrao(jornada_obj=None):
         if _jornada_hhmm_valido(hi) and _jornada_hhmm_valido(hf):
             hi_p = list(map(int, str(hi).split(":")))
             hf_p = list(map(int, str(hf).split(":")))
+            # BUG-FIX 5: intervalo_inicio >= intervalo_fim → não há intervalo real
             intervalo = max(0, (hf_p[0] * 60 + hf_p[1]) - (hi_p[0] * 60 + hi_p[1]))
     except Exception:
         intervalo = 60
@@ -625,10 +697,19 @@ def _jornada_normalizar_grade(grade_in, jornada_obj=None):
             atual["entrada"] = ent
         if _jornada_hhmm_valido(sai):
             atual["saida"] = sai
+        # BUG-FIX 11: entrada == saída cria jornada de 0 minutos — usar padrão
+        if atual["entrada"] == atual["saida"]:
+            atual["entrada"] = "08:00"
+            atual["saida"] = "17:48"
         try:
-            atual["intervalo_min"] = max(
-                0, min(240, int(di.get("intervalo_min", atual["intervalo_min"]) or 0))
-            )
+            _intv = max(0, min(240, int(di.get("intervalo_min", atual["intervalo_min"]) or 0)))
+            # BUG-FIX 2 (complemento): não deixar intervalo >= duração bruta do dia
+            _he = list(map(int, atual["entrada"].split(":")))
+            _hs = list(map(int, atual["saida"].split(":")))
+            _bruto = (_hs[0] * 60 + _hs[1]) - (_he[0] * 60 + _he[1])
+            if _bruto > 0:
+                _intv = min(_intv, _bruto - 1)
+            atual["intervalo_min"] = max(0, _intv)
         except Exception:
             pass
     return base
@@ -657,7 +738,7 @@ class Escala(db.Model):
     - tipo: '6x2' (6 dias trabalho, 2 folga), '6x1' (seg-sab trabalho, dom folga), '4x2' (4 dias trabalho, 2 folga), '12x36' (12h turno, 36h folga), 'folguista' (customizado), 'noturna'
     - ciclo_json: JSON com estrutura de dias/turnos e folgas
       Ex 6x2: {"dias": [{"tipo": "trabalho"}, ...6x..., {"tipo": "folga"}, {"tipo": "folga"}]}
-      Ex 12x36: {"dias": [{"tipo": "trabalho", "horas": 12}, {"tipo": "folga"}, {"tipo": "folga"}]}
+    Ex 12x36: {"dias": [{"tipo": "trabalho", "horas": 12}, {"tipo": "folga"}]}
       Ex noturna: {"dias": [{"tipo": "trabalho", "hora_entrada": "22:00", "hora_saida": "06:00", "noturno": true}]}
     - periodo_noturno_ini/fim: horários de início e fim do turno noturno (padrão 22:00-05:00)
     """
@@ -688,24 +769,57 @@ class Escala(db.Model):
             dia_info = dias[dia_ciclo_indice]
             if dia_info.get("tipo") == "folga":
                 return 0
+            if self.tipo == "12x36" or int(dia_info.get("horas", 0) or 0) == 12:
+                # Na 12x36, a jornada esperada é 11h trabalhadas + 1h de refeição.
+                # A refeição não entra como carga esperada, então evitamos lançar
+                # 1h de falta diária para quem cumpre 11h líquidas de trabalho.
+                return 11 * 60
             # Se tem horários específicos (entrada/saída)
             if "hora_entrada" in dia_info and "hora_saida" in dia_info:
                 try:
-                    he = list(map(int, dia_info["hora_entrada"].split(":")))
-                    hs = list(map(int, dia_info["hora_saida"].split(":")))
-                    entrada_min = he[0] * 60 + he[1]
-                    saida_min = hs[0] * 60 + hs[1]
-                    # Se saída < entrada, cruza meia-noite (adiciona 24h)
-                    if saida_min <= entrada_min:
-                        saida_min += 24 * 60
-                    intervalo = dia_info.get("intervalo_min", 0)
-                    return max(0, saida_min - entrada_min - intervalo)
-                except Exception:
-                    pass
+                    # BUG-FIX 12: validar formato HH:MM antes de split para evitar
+                    # IndexError silencioso em entradas como "22" ou "22:00:30".
+                    ent_s = str(dia_info["hora_entrada"]).strip()
+                    sai_s = str(dia_info["hora_saida"]).strip()
+                    if not re.match(r"^\d{2}:\d{2}$", ent_s) or not re.match(r"^\d{2}:\d{2}$", sai_s):
+                        app.logger.warning(
+                            "Escala id=%s dia=%s: formato de horário inválido entrada=%r saida=%r",
+                            self.id, dia_ciclo_indice, ent_s, sai_s,
+                        )
+                    else:
+                        he = list(map(int, ent_s.split(":")))
+                        hs = list(map(int, sai_s.split(":")))
+                        entrada_min = he[0] * 60 + he[1]
+                        saida_min = hs[0] * 60 + hs[1]
+                        # Se saída < entrada, cruza meia-noite (adiciona 24h)
+                        if saida_min <= entrada_min:
+                            saida_min += 24 * 60
+                        intervalo = int(dia_info.get("intervalo_min", 0) or 0)
+                        duracao_bruta = saida_min - entrada_min
+                        # BUG-FIX 13: intervalo > duração bruta resulta em 0 sem log,
+                        # indistinguível de folga. Logar para diagnóstico.
+                        if intervalo >= duracao_bruta:
+                            app.logger.warning(
+                                "Escala id=%s dia=%s: intervalo_min=%d >= duracao_bruta=%d — dado inconsistente",
+                                self.id, dia_ciclo_indice, intervalo, duracao_bruta,
+                            )
+                            return 0
+                        return max(0, duracao_bruta - intervalo)
+                except Exception as _e:
+                    # BUG-FIX 19: logar excepções em vez de silenciar
+                    app.logger.warning(
+                        "Escala id=%s dia=%s: erro ao calcular carga: %s",
+                        self.id, dia_ciclo_indice, _e,
+                    )
             # Senão, usar horas ou padrão 8h
             horas = dia_info.get("horas", 8)
             return int(horas * 60)
-        except Exception:
+        except Exception as _exc:
+            # BUG-FIX 19: logar excepção no bloco externo também
+            app.logger.warning(
+                "Escala id=%s: excepção em carga_horaria_min_dia(%s): %s",
+                self.id, dia_ciclo_indice, _exc,
+            )
             return 0
 
     def is_noturno_dia(self, dia_ciclo_indice):
@@ -716,7 +830,13 @@ class Escala(db.Model):
             if dia_ciclo_indice < 0 or dia_ciclo_indice >= len(dias):
                 return False
             return dias[dia_ciclo_indice].get("noturno", False)
-        except Exception:
+        except Exception as _e:
+            # BUG-FIX 5: logar em vez de silenciar — JSON corrompido aqui faz
+            # adicional noturno ser ignorado sem nenhum diagnóstico.
+            app.logger.warning(
+                "Escala id=%s: erro em is_noturno_dia(%s): %s",
+                self.id, dia_ciclo_indice, _e,
+            )
             return False
 
     def get_horarios_dia(self, dia_ciclo_indice):
@@ -737,8 +857,6 @@ class Escala(db.Model):
             }
         except Exception:
             return None
-        except Exception:
-            return 0
 
     def to_dict(self):
         d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
@@ -995,6 +1113,7 @@ def api_despesas_delete(id):
 
 
 @app.route("/api/despesas/export.csv", methods=["GET"])
+@_limiter.limit("10 per minute")
 @lr
 def api_despesas_export_csv():
     lista = _build_despesas_query(request.args).all()
@@ -1260,6 +1379,7 @@ def api_financeiro_faturamento_list():
 
 
 @app.route("/api/financeiro/faturamento/export.csv", methods=["GET"])
+@_limiter.limit("10 per minute")
 @lr
 def api_financeiro_faturamento_export_csv():
     try:
@@ -1438,6 +1558,8 @@ class PropostaComercial(db.Model):
     data_proposta = db.Column(db.String(10))
     cliente_contato = db.Column(db.String(150))
     email_contato = db.Column(db.String(150))
+    escopo_observacoes = db.Column(db.Text)
+    insalubridade = db.Column(db.String(80), default="20% Insalubridade")
     remetente_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
     itens = db.Column(db.Text, default="[]")  # JSON
     total = db.Column(db.String(50))
@@ -1569,6 +1691,7 @@ class Cliente(db.Model):
     geo_lon = db.Column(db.Float)
     geofence_raio_m = db.Column(db.Float, default=150)
     obs = db.Column(db.Text, default="")
+    he_autorizada = db.Column(db.Boolean, default=True, nullable=False)
     criado_em = db.Column(db.DateTime, default=utcnow)
 
     def end_fmt(self):
@@ -1670,19 +1793,57 @@ class Medicao(db.Model):
 class OrdemCompra(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     numero = db.Column(db.String(30), nullable=False, unique=True)
+    tipo_documento = db.Column(db.String(30), default="ordem_compra")
     empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
     solicitante = db.Column(db.String(200))
     fornecedor = db.Column(db.String(200), nullable=False)
+    fornecedor_cnpj = db.Column(db.String(20))
+    fornecedor_endereco = db.Column(db.String(500))
+    fornecedor_email = db.Column(db.String(150))
+    fornecedor_telefone = db.Column(db.String(30))
+    pedido_email = db.Column(db.String(150))
+    itens = db.Column(db.Text, default="[]")
     descricao = db.Column(db.Text)
     valor = db.Column(db.Float, default=0)
     status = db.Column(db.String(50), default="Aberta")
+    decisao_por = db.Column(db.String(100))
+    decisao_em = db.Column(db.DateTime)
+    decisao_motivo = db.Column(db.Text)
     data_emissao = db.Column(db.String(10))
     criado_por = db.Column(db.String(100))
     criado_em = db.Column(db.DateTime, default=utcnow)
     ass_assinatura_img = db.Column(db.Text)
 
     def to_dict(self):
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        dados = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        try:
+            dados["itens"] = json.loads(dados.get("itens") or "[]")
+        except (TypeError, ValueError):
+            dados["itens"] = []
+        return dados
+
+
+class OrdemCompraItemCatalogo(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(200), nullable=False)
+    unidade = db.Column(db.String(40))
+    descricao = db.Column(db.String(400))
+    ativo = db.Column(db.Boolean, default=True)
+    criado_por = db.Column(db.String(100))
+    criado_em = db.Column(db.DateTime, default=utcnow)
+    atualizado_em = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "nome": self.nome or "",
+            "unidade": self.unidade or "",
+            "descricao": self.descricao or "",
+            "ativo": bool(self.ativo),
+            "criado_por": self.criado_por or "",
+            "criado_em": self.criado_em.isoformat() if self.criado_em else None,
+            "atualizado_em": self.atualizado_em.isoformat() if self.atualizado_em else None,
+        }
 
 
 class Funcionario(db.Model):
@@ -1704,6 +1865,7 @@ class Funcionario(db.Model):
     jornada_id = db.Column(
         db.Integer, db.ForeignKey("jornada_trabalho.id"), nullable=True
     )
+    jornada_id_retorno = db.Column(db.Integer, nullable=True)
     status = db.Column(db.String(20), default="Ativo")
     ferias_inicio = db.Column(db.String(10))
     ferias_fim = db.Column(db.String(10))
@@ -1764,6 +1926,12 @@ class Funcionario(db.Model):
     app_stepup_tentativas = db.Column(db.Integer, default=0)
     app_stepup_arquivo_id = db.Column(db.Integer)
     app_push_token = db.Column(db.String(300))
+    app_versao_nome = db.Column(db.String(40))
+    app_versao_code = db.Column(db.Integer)
+    app_versao_atualizado_em = db.Column(db.DateTime)
+    app_versao_desatualizada = db.Column(db.Boolean, default=False)
+    app_versao_notificado_em = db.Column(db.DateTime)
+    app_versao_notificado_code = db.Column(db.Integer)
     app_lat = db.Column(db.Float)
     app_lon = db.Column(db.Float)
     app_localizacao_em = db.Column(db.DateTime)
@@ -1778,6 +1946,17 @@ class Funcionario(db.Model):
             d["areas"] = []
         if self.data_nascimento:
             d["data_nascimento"] = self.data_nascimento.isoformat()
+        # Resolve empresa_nome a partir do relacionamento para que o frontend
+        # exiba a empresa correta em todas as seções (aviso prévio, EPI, etc.)
+        # sem precisar de consulta separada.
+        try:
+            emp = db.session.get(Empresa, self.empresa_id) if self.empresa_id else None
+            d["empresa_nome"] = (
+                (getattr(emp, "razao", None) or getattr(emp, "nome", None) or "").strip()
+                if emp else ""
+            )
+        except Exception:
+            d["empresa_nome"] = ""
         return d
 
 
@@ -2130,6 +2309,9 @@ class Feriado(db.Model):
     )  # 'nacional' ou 'municipal'
     municipio = db.Column(db.String(100), default="")
     estado = db.Column(db.String(2), default="")
+    # Quando preenchido, aplica somente ao posto informado.
+    # Vazio/None = aplica a todos os postos (inclui reserva tecnica).
+    posto_operacional = db.Column(db.String(150), default="")
     empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
     criado_por = db.Column(db.String(100), default="")
     criado_em = db.Column(db.DateTime, default=utcnow)
@@ -2141,6 +2323,11 @@ class Feriado(db.Model):
 
     def to_dict(self):
         d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        d["postos_operacionais"] = _feriado_parse_postos(d.get("posto_operacional"))
+        if (d.get("tipo") or "").lower() == "estadual":
+            _m = (d.get("municipio") or "").strip()
+            if _m.startswith("@UF:"):
+                d["municipio"] = ""
         try:
             from datetime import datetime as _dt
 
@@ -2152,6 +2339,120 @@ class Feriado(db.Model):
         except Exception:
             d["data_fmt"] = self.data or ""
         return d
+
+
+def _feriado_parse_postos(raw_value):
+    txt = (raw_value or "").strip()
+    if not txt:
+        return []
+    if txt.startswith("["):
+        try:
+            arr = json.loads(txt)
+            if isinstance(arr, list):
+                out = []
+                seen = set()
+                for item in arr:
+                    nome = re.sub(r"\s+", " ", str(item or "")).strip()
+                    if not nome:
+                        continue
+                    key = nome.lower()
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    out.append(nome)
+                return out
+        except Exception:
+            pass
+    out = []
+    seen = set()
+    for item in txt.split(","):
+        nome = re.sub(r"\s+", " ", str(item or "")).strip()
+        if not nome:
+            continue
+        key = nome.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(nome)
+    return out
+
+
+def _feriado_dump_postos(valores):
+    itens = []
+    seen = set()
+    for item in (valores or []):
+        nome = re.sub(r"\s+", " ", str(item or "")).strip()
+        if not nome:
+            continue
+        key = nome.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        itens.append(nome)
+    return json.dumps(itens, ensure_ascii=False) if itens else ""
+
+
+def _feriado_norm_txt(valor, fallback=""):
+    txt = re.sub(r"\s+", " ", str(valor or fallback or "")).strip()
+    if not txt:
+        txt = fallback or ""
+    txt = unicodedata.normalize("NFKD", txt)
+    txt = "".join(ch for ch in txt if not unicodedata.combining(ch))
+    return txt.casefold().strip()
+
+
+def _feriado_aplica_funcionario_obj(feriado_obj, funcionario_obj, vinculos_ids=None):
+    """Define se um feriado se aplica ao colaborador pelo escopo geográfico e posto."""
+    if not feriado_obj or not funcionario_obj:
+        return False
+
+    tipo = (getattr(feriado_obj, "tipo", "") or "").strip().lower()
+    if tipo not in ("nacional", "municipal", "estadual"):
+        return False
+
+    if tipo == "municipal":
+        mun_fer = _feriado_norm_txt(getattr(feriado_obj, "municipio", ""))
+        mun_func = _feriado_norm_txt(getattr(funcionario_obj, "cidade", ""))
+        if mun_fer and mun_func != mun_fer:
+            return False
+    elif tipo == "estadual":
+        uf_fer = (getattr(feriado_obj, "estado", "") or "").strip().upper()
+        uf_func = (getattr(funcionario_obj, "estado", "") or "").strip().upper()
+        if uf_fer and uf_func != uf_fer:
+            return False
+
+    postos_fer = _feriado_parse_postos(getattr(feriado_obj, "posto_operacional", ""))
+    if postos_fer:
+        posto_func = _feriado_norm_txt(
+            getattr(funcionario_obj, "posto_operacional", ""), "Reserva tecnica"
+        )
+        postos_norm = {
+            _feriado_norm_txt(item, "Reserva tecnica") for item in postos_fer if str(item or "").strip()
+        }
+        if posto_func not in postos_norm:
+            return False
+
+    vincs = vinculos_ids or set()
+    if vincs:
+        return getattr(funcionario_obj, "id", None) in vincs
+    return True
+
+
+def _feriado_aplicacao_label(feriado_obj, qtd_funcionarios=0):
+    tipo = (getattr(feriado_obj, "tipo", "") or "").strip().lower()
+    if tipo == "nacional":
+        return "Nacional (todos)"
+    postos = _feriado_parse_postos(getattr(feriado_obj, "posto_operacional", ""))
+    escopo_geo = "Municipio" if tipo == "municipal" else "Estado"
+    geo_val = (getattr(feriado_obj, "municipio", "") or "").strip()
+    if tipo == "estadual":
+        geo_val = (getattr(feriado_obj, "estado", "") or "").strip().upper()
+    geo_txt = f"{escopo_geo}: {geo_val}" if geo_val else escopo_geo
+    if postos:
+        return f"{geo_txt} · Postos: {', '.join(postos)}"
+    if qtd_funcionarios:
+        return f"{geo_txt} · {qtd_funcionarios} funcionario(s) vinculado(s)"
+    return f"{geo_txt} · Todos os postos"
 
 
 class FeriadoFuncionario(db.Model):
@@ -2245,6 +2546,44 @@ class PontoCorrecaoSolicitacao(db.Model):
             d["funcionario_nome"] = func.nome if func else None
         except Exception:
             d["funcionario_nome"] = None
+        return d
+
+
+class PontoAfastamento(db.Model):
+    """Registro de atestado médico ou afastamento temporário de um colaborador.
+    Impede marcação de ponto no período e aparece como aviso no aplicativo."""
+    __tablename__ = "ponto_afastamento"
+    id = db.Column(db.Integer, primary_key=True)
+    funcionario_id = db.Column(
+        db.Integer, db.ForeignKey("funcionario.id"), nullable=False, index=True
+    )
+    empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True, index=True)
+    # Tipo livre informado pelo RH (ex.: Atestado medico, Licenca, Acompanhamento)
+    tipo = db.Column(db.String(80), default="Atestado medico")
+    data_inicio = db.Column(db.String(10), nullable=False)  # YYYY-MM-DD
+    data_fim = db.Column(db.String(10), nullable=False)     # YYYY-MM-DD
+    observacao = db.Column(db.Text, default="")
+    criado_por = db.Column(db.String(100))
+    criado_em = db.Column(db.DateTime, default=utcnow)
+
+    def to_dict(self):
+        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        d["criado_fmt"] = self.criado_em.strftime("%d/%m/%Y %H:%M") if self.criado_em else ""
+
+        tipo_raw = (self.tipo or "").strip()
+        tipo_map = {
+            "atestado": "Atestado medico",
+            "licenca": "Licenca",
+            "outros": "Afastamento",
+        }
+        d["tipo_label"] = tipo_map.get(tipo_raw.lower(), tipo_raw if tipo_raw else "Afastamento")
+
+        def _br(s):
+            try:
+                return datetime.strptime(s, "%Y-%m-%d").strftime("%d/%m/%Y")
+            except Exception:
+                return s or ""
+        d["periodo_fmt"] = f"{_br(self.data_inicio)} a {_br(self.data_fim)}"
         return d
 
 
@@ -2607,6 +2946,8 @@ class ComunicadoApp(db.Model):
     )
     # None = todos os postos; string = apenas esse posto
     posto_operacional = db.Column(db.String(150))
+    # None = visível para todos (legado); int = apenas funcionários desta empresa
+    empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
     criado_por = db.Column(db.String(100))
     criado_em = db.Column(db.DateTime, default=utcnow)
     ativo = db.Column(db.Boolean, default=True)
@@ -2620,16 +2961,30 @@ class ComunicadoApp(db.Model):
             return []
 
     def marcar_lido(self, fid):
-        lst = self.lidos_por()
-        if fid not in lst:
-            lst.append(fid)
-            self.lidos_por_json = json.dumps(lst)
+        # UPDATE atômico via SQL para evitar race condition no campo JSON
+        db.session.execute(
+            db.text(
+                "UPDATE comunicado_app "
+                "SET lidos_por_json = ("
+                "  CASE WHEN ("
+                "    SELECT COUNT(*) FROM json_each(COALESCE(lidos_por_json,'[]')) WHERE value = :fid"
+                "  ) = 0 "
+                "  THEN json_insert(COALESCE(lidos_por_json,'[]'), '$[#]', :fid) "
+                "  ELSE COALESCE(lidos_por_json,'[]') END) "
+                "WHERE id = :cid"
+            ),
+            {"fid": fid, "cid": self.id},
+        )
 
     def to_dict(self, funcionario_id=None):
+        # Whitelist: omite funcionario_id e posto_operacional (metadados internos).
         d = {
-            c.name: getattr(self, c.name)
-            for c in self.__table__.columns
-            if c.name != "lidos_por_json"
+            "id": self.id,
+            "titulo": self.titulo,
+            "conteudo": self.conteudo,
+            "url": self.url,
+            "criado_em": self.criado_em.isoformat() if self.criado_em else None,
+            "ativo": bool(self.ativo),
         }
         d["criado_fmt"] = (
             self.criado_em.strftime("%d/%m/%Y %H:%M") if self.criado_em else ""
@@ -2653,22 +3008,52 @@ class MensagemApp(db.Model):
     lida = db.Column(db.Boolean, default=False)
     enviado_por = db.Column(db.String(100))  # nome do usuário RH ou 'funcionario'
     tipo = db.Column(db.String(20), default="texto")  # 'texto' | 'arquivo'
+    documento_tipo = db.Column(db.String(80))
     arquivo_nome = db.Column(db.String(300))
     arquivo_caminho = db.Column(db.String(500))
 
     def to_dict(self):
-        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        # Whitelist explícita de campos seguros para o cliente.
+        # NÃO expõe arquivo_caminho (path absoluto do servidor).
+        d = {
+            "id": self.id,
+            "funcionario_id": self.funcionario_id,
+            "de_rh": bool(self.de_rh),
+            "conteudo": self.conteudo,
+            "enviado_em": self.enviado_em.isoformat() if self.enviado_em else None,
+            "lida": bool(self.lida),
+            "enviado_por": self.enviado_por,
+            "tipo": self.tipo or "texto",
+            "documento_tipo": self.documento_tipo,
+            "arquivo_nome": self.arquivo_nome,
+        }
         d["enviado_fmt"] = (
             self.enviado_em.strftime("%d/%m/%Y %H:%M") if self.enviado_em else ""
         )
         if self.arquivo_caminho:
             d["arquivo_url"] = f"/api/app/funcionario/mensagens/{self.id}/arquivo"
+            d["arquivo_admin_url"] = f"/api/mensagens-app/{self.id}/arquivo"
         else:
             d["arquivo_url"] = None
+            d["arquivo_admin_url"] = None
         return d
 
 
 _holerite_jobs = {}
+_HOLERITE_JOB_TTL = 3600  # 1 hora
+
+
+def _holerite_jobs_cleanup():
+    """Remove jobs com mais de 1 hora para evitar acúmulo em memória (memory leak)."""
+    agora = localnow()
+    to_del = [
+        jid
+        for jid, job in list(_holerite_jobs.items())
+        if job.get("criado_em") and
+        (agora - datetime.fromisoformat(job["criado_em"])).total_seconds() > _HOLERITE_JOB_TTL
+    ]
+    for jid in to_del:
+        _holerite_jobs.pop(jid, None)
 
 
 def hs(s):
@@ -2947,6 +3332,31 @@ def _cert_rel_to_abs(rel_path):
     return ""
 
 
+def _cert_fernet():
+    """Deriva uma chave Fernet a partir da SECRET_KEY da aplicação."""
+    raw = (app.config.get("SECRET_KEY") or "").encode()
+    key = base64.urlsafe_b64encode(hashlib.sha256(raw).digest())
+    return Fernet(key)
+
+
+def _cert_encrypt_senha(senha: str) -> str:
+    """Cifra a senha do certificado antes de persistir no banco."""
+    if not senha:
+        return senha
+    return _cert_fernet().encrypt(senha.encode()).decode()
+
+
+def _cert_decrypt_senha(stored: str) -> str:
+    """Decifra a senha do certificado lida do banco."""
+    if not stored:
+        return stored
+    try:
+        return _cert_fernet().decrypt(stored.encode()).decode()
+    except Exception:
+        # Fallback para senhas em texto puro gravadas antes da migração
+        return stored
+
+
 def _cert_store_file(fs, scope, obj_id):
     if not fs or not fs.filename:
         raise ValueError("Arquivo de certificado não enviado.")
@@ -2996,7 +3406,7 @@ def _get_cert_context(empresa_id=None, usuario_id=None):
             if abs_cert and (emp.cert_senha or "").strip():
                 return {
                     "cert_path": abs_cert,
-                    "cert_pass": emp.cert_senha,
+                    "cert_pass": _cert_decrypt_senha(emp.cert_senha),
                     "cert_subject": emp.cert_assunto or "",
                     "source": "empresa",
                 }
@@ -3007,7 +3417,7 @@ def _get_cert_context(empresa_id=None, usuario_id=None):
             if abs_cert and (usr.cert_senha or "").strip():
                 return {
                     "cert_path": abs_cert,
-                    "cert_pass": usr.cert_senha,
+                    "cert_pass": _cert_decrypt_senha(usr.cert_senha),
                     "cert_subject": usr.cert_assunto or "",
                     "source": "usuario",
                 }
@@ -3260,6 +3670,11 @@ def _db_commit_retry(context="", attempts=3, base_delay=0.2, swallow_locked=Fals
             time.sleep(base_delay * (idx + 1))
 
 
+def _is_sqlite_locked_error(ex):
+    msg = (str(ex) or "").lower()
+    return "database is locked" in msg or "sqlite busy" in msg
+
+
 def _try_sign_pdf_bytes_crypto(pdf_bytes, empresa_id=None, usuario_id=None):
     cert_ctx = _get_cert_context(empresa_id=empresa_id, usuario_id=usuario_id)
     p12_path = (cert_ctx.get("cert_path") if cert_ctx else "") or (
@@ -3390,6 +3805,42 @@ def app_issue_refresh_token():
     return secrets.token_urlsafe(48)
 
 
+def ponto_qr_issue(cliente_id, ttl=60):
+    """Emite token curto (HMAC) usado pelo totem/kiosk para autorizar marcação via QR.
+    Reusa o mesmo segredo do JWT do app para evitar nova chave/configuração."""
+    now = int(time.time())
+    payload = {
+        "typ": "ponto_qr",
+        "cid": int(cliente_id) if cliente_id is not None else 0,
+        "iat": now,
+        "exp": now + int(ttl),
+        "n": secrets.token_urlsafe(8),
+    }
+    ptxt = json.dumps(payload, separators=(",", ":")).encode()
+    p64 = b64u_enc(ptxt)
+    sig = hmac.new(app_token_secret(), p64.encode(), hashlib.sha256).digest()
+    s64 = b64u_enc(sig)
+    return f"{p64}.{s64}"
+
+
+def ponto_qr_parse(token):
+    try:
+        p64, s64 = token.split(".", 1)
+        expected = b64u_enc(
+            hmac.new(app_token_secret(), p64.encode(), hashlib.sha256).digest()
+        )
+        if not hmac.compare_digest(expected, s64):
+            return None
+        payload = json.loads(b64u_dec(p64).decode())
+        if payload.get("typ") != "ponto_qr":
+            return None
+        if int(payload.get("exp", 0)) < int(time.time()):
+            return None
+        return payload
+    except Exception:
+        return None
+
+
 def app_parse_token(token):
     try:
         p64, s64 = token.split(".", 1)
@@ -3420,20 +3871,32 @@ def app_func_required(f):
         sessao = db.session.get(FuncionarioAppSessao, sid)
         if not sessao or sessao.revogado:
             return jsonify({"erro": "Sessao invalida"}), 401
-        if sessao.exp_refresh < utcnow():
-            return jsonify({"erro": "Sessao expirada"}), 401
         func = db.session.get(Funcionario, sessao.funcionario_id)
         if not func:
             return jsonify({"erro": "Funcionario nao encontrado"}), 404
         if to_num(payload.get("fid")) != func.id:
             return jsonify({"erro": "Token invalido"}), 401
-        if func.app_ativo is False:
+        if func.app_ativo is False or _status_norm(func.status) in ("demitido", "inativo") or bool((getattr(func, "data_demissao", "") or "").strip()):
             return jsonify({"erro": "Acesso do aplicativo desativado"}), 403
         g.app_funcionario = func
         g.app_sessao = sessao
         return f(*a, **k)
 
     return w
+
+
+def _limiter_key_app_bearer():
+    """Chave de rate limit por token do app (fallback para IP).
+
+    Evita que múltiplos funcionários atrás do mesmo NAT compartilhem o mesmo limite.
+    """
+    auth = (request.headers.get("Authorization") or "").strip()
+    if auth.lower().startswith("bearer "):
+        tok = auth.split(" ", 1)[1].strip()
+        if tok:
+            token_hash = hashlib.sha256(tok.encode("utf-8")).hexdigest()[:24]
+            return f"appbearer:{token_hash}"
+    return get_remote_address()
 
 
 def _norm_nome_login(v):
@@ -3466,6 +3929,17 @@ def _app_issue_session_tokens(funcionario):
         .strip()
     )
     ua = (request.headers.get("User-Agent") or "")[:250]
+    # Limitar sessões ativas: revogar as mais antigas quando há ≥ 5 ativas
+    sessoes_ativas = (
+        FuncionarioAppSessao.query.filter_by(
+            funcionario_id=funcionario.id, revogado=False
+        )
+        .order_by(FuncionarioAppSessao.id.asc())
+        .all()
+    )
+    if len(sessoes_ativas) >= 5:
+        for s_old in sessoes_ativas[: len(sessoes_ativas) - 4]:
+            s_old.revogado = True
     sessao = FuncionarioAppSessao(
         funcionario_id=funcionario.id,
         refresh_hash=token_hash(refresh),
@@ -6987,8 +7461,9 @@ def build_func_docs_response(funcionario_id):
                 "nome_arquivo": a.nome_arquivo,
                 "competencia": a.competencia,
                 "ass_status": a.ass_status or "nao_solicitada",
+                "ass_em": a.ass_em.isoformat() if a.ass_em else "",
                 "ass_em_fmt": a.ass_em.strftime("%d/%m/%Y %H:%M") if a.ass_em else "",
-                "can_assinar": (a.ass_status or "").lower() != "concluida",
+                "can_assinar": (a.ass_status or "").strip().lower() not in ("assinado", "concluida"),
                 "caminho": a.caminho,
                 "criado_em": a.criado_em.isoformat() if a.criado_em else "",
                 "criado_fmt": a.criado_em.strftime("%d/%m/%Y %H:%M")
@@ -7087,6 +7562,25 @@ def read_rows_from_upload(arq):
 
 def only_digits(v):
     return "".join(ch for ch in str(v or "") if ch.isdigit())
+
+
+def norm_data_iso(v):
+    """Normaliza e valida datas no formato YYYY-MM-DD.
+    Retorna a string normalizada ou '' se inválida/vazia.
+    BUG-FIX: campos ferias_inicio/ferias_fim eram salvos sem validação,
+    aceitando '01/02/2026' ou '2026-2-1' que quebram comparações ISO."""
+    if not v:
+        return ""
+    s = str(v).strip()
+    import re as _re
+    if not _re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+        return ""
+    try:
+        from datetime import date as _dt
+        _dt.fromisoformat(s)
+        return s
+    except ValueError:
+        return ""
 
 
 def norm_cpf(v):
@@ -7492,16 +7986,6 @@ def fmt_data(s):
         return s
 
 
-def fmt_cpf(v):
-    """Formata CPF no padrão 123.456.789-10. Retorna string vazia se v vazio."""
-    if not v:
-        return ""
-    d = re.sub(r"\D", "", str(v))
-    if len(d) != 11:
-        return str(v).strip()
-    return f"{d[:3]}.{d[3:6]}.{d[6:9]}-{d[9:11]}"
-
-
 def fmt_mes(s):
     if not s:
         return ""
@@ -7526,7 +8010,7 @@ def fmt_mes(s):
         return s
 
 
-LOGO_PATH = os.path.join(os.path.dirname(__file__), "static", "img", "logo.png")
+LOGO_PATH = os.path.join(os.path.dirname(__file__), "static", "img", "logo-rm-facilities.png")
 LOGO_URL = (
     "https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png"
 )
@@ -7582,12 +8066,31 @@ try:
                     return
                 buf.seek(0)
                 pw, ph = self._pagesize
-                wm_size = min(pw, ph) * 0.55
+                img_reader = ImageReader(buf)
+                iw, ih = img_reader.getSize()
+                if not iw or not ih:
+                    return
+
+                # Preserva proporção da logo e posiciona em diagonal no centro,
+                # evitando o efeito "apertado" em logos não quadradas.
+                aspect = float(iw) / float(ih)
+                target_w = pw * 0.64
+                target_h = target_w / aspect
+                max_h = ph * 0.62
+                if target_h > max_h:
+                    target_h = max_h
+                    target_w = target_h * aspect
+
                 self.saveState()
-                self.translate(pw / 2, ph / 2)
-                self.rotate(45)
+                self.translate(pw / 2.0, ph / 2.0)
+                self.rotate(32)
                 self.drawImage(
-                    ImageReader(buf), -wm_size / 2, -wm_size / 2, wm_size, wm_size, mask="auto"
+                    img_reader,
+                    -target_w / 2.0,
+                    -target_h / 2.0,
+                    target_w,
+                    target_h,
+                    mask="auto",
                 )
                 self.restoreState()
             except Exception:
@@ -7598,20 +8101,65 @@ try:
             super().showPage()
 
         def save(self):
-            self._draw_watermark()
             super().save()
+
+
+    class _AuditWatermarkCanvas(_WatermarkCanvas):
+        """Variação para auditorias: diagonal mais evidente e escala mais contida."""
+
+        def _draw_watermark(self):
+            try:
+                from reportlab.lib.utils import ImageReader
+
+                buf = self.__class__._build_wm()
+                if buf is None:
+                    return
+                buf.seek(0)
+                pw, ph = self._pagesize
+                img_reader = ImageReader(buf)
+                iw, ih = img_reader.getSize()
+                if not iw or not ih:
+                    return
+
+                aspect = float(iw) / float(ih)
+                target_w = pw * 0.56
+                target_h = target_w / aspect
+                max_h = ph * 0.56
+                if target_h > max_h:
+                    target_h = max_h
+                    target_w = target_h * aspect
+
+                self.saveState()
+                self.translate(pw / 2.0, ph / 2.0)
+                self.rotate(38)
+                self.drawImage(
+                    img_reader,
+                    -target_w / 2.0,
+                    -target_h / 2.0,
+                    target_w,
+                    target_h,
+                    mask="auto",
+                )
+                self.restoreState()
+            except Exception:
+                pass
 except Exception:
     _WatermarkCanvas = None  # type: ignore
+    _AuditWatermarkCanvas = None  # type: ignore
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 def get_logo():
-    if not os.path.exists(LOGO_PATH):
-        try:
-            urllib.request.urlretrieve(LOGO_URL, LOGO_PATH)
-        except Exception:
-            pass
-    return LOGO_PATH if os.path.exists(LOGO_PATH) else None
+    if os.path.exists(LOGO_PATH):
+        return LOGO_PATH
+    _legacy_logo = os.path.join(os.path.dirname(__file__), "static", "img", "logo.png")
+    if os.path.exists(_legacy_logo):
+        return _legacy_logo
+    try:
+        urllib.request.urlretrieve(LOGO_URL, LOGO_PATH)
+    except Exception:
+        pass
+    return LOGO_PATH if os.path.exists(LOGO_PATH) else (_legacy_logo if os.path.exists(_legacy_logo) else None)
 
 
 def _get_logo_path_for_pdf(empresa=None):
@@ -7658,7 +8206,11 @@ def _pdf_companies_for_header(empresa_obj=None, empresa_dict=None, limit=2):
         itens.append(
             {
                 "nome": (nome or "RM Facilities").strip(),
-                "cnpj": (cnpj or "").strip(),
+                "cnpj": (
+                    _filter_fmt_cnpj((cnpj or "").strip())
+                    if (cnpj or "").strip()
+                    else ""
+                ),
                 "logos": logos,
             }
         )
@@ -7709,7 +8261,13 @@ register_ponto_routes(
     PontoAjuste=PontoAjuste,
     PontoFechamentoDia=PontoFechamentoDia,
     Empresa=Empresa,
+    Feriado=Feriado,
     get_logo=get_logo,
+    EscalaFuncionario=EscalaFuncionario,
+    Escala=Escala,
+    JornadaTrabalho=JornadaTrabalho,
+    PontoAfastamento=PontoAfastamento,
+    SolicitacaoHoraExtra=SolicitacaoHoraExtra,
 )
 
 
@@ -8124,6 +8682,12 @@ def pagina_privacidade_publica():
     return render_template("privacidade_publica.html", atualizado_em="16/05/2026")
 
 
+@app.route("/codigo-conduta")
+@app.route("/codigo_conduta")
+def pagina_codigo_conduta():
+    return render_template("codigo_conduta.html")
+
+
 @app.route("/")
 @lr
 def index():
@@ -8137,7 +8701,9 @@ def index():
 
 
 @app.route("/funcionario")
-def funcionario_app():
+@app.route("/funcionario/")
+def pagina_funcionario_app():
+    # Compatibilidade para links antigos que apontam para /funcionario.
     return render_template("funcionario_app.html")
 
 
@@ -8340,7 +8906,16 @@ def api_empresa_cert_delete(id):
 @app.route("/api/config", methods=["GET"])
 @lr
 def api_get_config():
-    return jsonify({k: gc(k) for k in ["num_base", "num_ultima"]})
+    chaves = [
+        "num_base",
+        "num_ultima",
+        "pdf_cert_policy",
+        "app_version_minima",
+        "app_version_atual",
+        "app_download_url",
+        "app_version_notif_cooldown_h",
+    ]
+    return jsonify({k: gc(k) for k in chaves})
 
 
 @app.route("/api/config", methods=["POST"])
@@ -8494,7 +9069,7 @@ def api_usuario_cert_upload(id):
         return jsonify({"erro": str(ex)}), 400
     u.cert_arquivo = rel
     u.cert_nome_arquivo = name
-    u.cert_senha = senha
+    u.cert_senha = _cert_encrypt_senha(senha)
     u.cert_ativo = ativo
     u.cert_assunto = info.get("assunto", "")
     u.cert_validade_fim = info.get("validade_fim", "")
@@ -9123,11 +9698,16 @@ def api_funcionarios_import():
                     f.status = (
                         str(row.get("status", "Ativo") or "Ativo").strip() or "Ativo"
                     )
-                    f.posto_operacional = "Reserva tecnica"
-                    f.salario = to_num(row.get("salario"), dec=True)
-                    f.vale_refeicao = to_num(row.get("vale_refeicao"), dec=True)
-                    f.vale_alimentacao = to_num(row.get("vale_alimentacao"), dec=True)
-                    f.vale_transporte = to_num(row.get("vale_transporte"), dec=True)
+                    # BUG-FIX: respeitar posto_operacional da planilha;
+                    # antes era sempre sobrescrito com 'Reserva tecnica'.
+                    f.posto_operacional = (
+                        str(row.get("posto_operacional") or "").strip()
+                        or "Reserva tecnica"
+                    )
+                    f.salario = max(0.0, to_num(row.get("salario"), dec=True) or 0)
+                    f.vale_refeicao = max(0.0, to_num(row.get("vale_refeicao"), dec=True) or 0)
+                    f.vale_alimentacao = max(0.0, to_num(row.get("vale_alimentacao"), dec=True) or 0)
+                    f.vale_transporte = max(0.0, to_num(row.get("vale_transporte"), dec=True) or 0)
                     f.cep = norm_cep(str(row.get("cep", "") or "").strip())
                     f.endereco = str(row.get("endereco", "") or "").strip()
                     f.endereco_numero = str(
@@ -9167,6 +9747,14 @@ def api_funcionarios_import():
                     ).strip()
                     f.obs = str(row.get("obs", "") or "").strip()
                     f.areas = json.dumps(ars, ensure_ascii=False)
+                    # BUG-FIX: import ignorava coluna data_nascimento da planilha.
+                    _dn_upd = str(row.get("data_nascimento", "") or "").strip()
+                    if _dn_upd:
+                        try:
+                            from datetime import date as _date_imp
+                            f.data_nascimento = _date_imp.fromisoformat(_dn_upd[:10])
+                        except (ValueError, TypeError):
+                            pass
                     atualizados += 1
                 else:
                     f = Funcionario(
@@ -9188,7 +9776,12 @@ def api_funcionarios_import():
                         jornada=str(row.get("jornada", "") or "").strip(),
                         status=str(row.get("status", "Ativo") or "Ativo").strip()
                         or "Ativo",
-                        posto_operacional="Reserva tecnica",
+                        # BUG-FIX: respeitar posto_operacional da planilha;
+                        # antes era sempre 'Reserva tecnica' na criação.
+                        posto_operacional=(
+                            str(row.get("posto_operacional") or "").strip()
+                            or "Reserva tecnica"
+                        ),
                         salario=to_num(row.get("salario"), dec=True),
                         vale_refeicao=to_num(row.get("vale_refeicao"), dec=True),
                         vale_alimentacao=to_num(row.get("vale_alimentacao"), dec=True),
@@ -9233,6 +9826,14 @@ def api_funcionarios_import():
                         obs=str(row.get("obs", "") or "").strip(),
                         areas=json.dumps(ars, ensure_ascii=False),
                     )
+                    # BUG-FIX: import ignorava coluna data_nascimento da planilha.
+                    _dn_crt = str(row.get("data_nascimento", "") or "").strip()
+                    if _dn_crt:
+                        try:
+                            from datetime import date as _date_imp
+                            f.data_nascimento = _date_imp.fromisoformat(_dn_crt[:10])
+                        except (ValueError, TypeError):
+                            pass
                     db.session.add(f)
                     criados += 1
             except Exception as e:
@@ -9512,13 +10113,20 @@ def _sync_ferias_status():
     """Atualiza status de funcionários com base nas datas de férias:
     - Se hoje >= ferias_inicio E hoje <= ferias_fim → Férias
     - Se ferias_fim preenchido e hoje > ferias_fim e status==Férias → Ativo
-    Ignora funcionários Demitidos/Inativos."""
+    Ignora funcionários Demitidos/Inativos/Afastados/Aviso Prévio."""
     from datetime import date as _date
 
     hoje = _date.today().isoformat()
     alterados = 0
     for f in Funcionario.query.all():
-        if f.status in ("Demitido", "Inativo"):
+        # BUG-FIX: antes só ignorava Demitido/Inativo. Afastado e Aviso Prévio
+        # podiam ter o status sobrescrito para Férias se tinham datas antigas.
+        status_normalizado = (f.status or "Ativo").strip().lower()
+        if status_normalizado in ("demitido", "inativo", "afastado", "aviso prévio", "aviso previo"):
+            if _aplicar_regra_jornada_por_status(f):
+                alterados += 1
+            if _aplicar_regra_posto_por_status(f):
+                alterados += 1
             continue
         ini = (f.ferias_inicio or "").strip()
         fim = (f.ferias_fim or "").strip()
@@ -9528,15 +10136,90 @@ def _sync_ferias_status():
                 if status_atual != "Férias":
                     f.status = "Férias"
                     alterados += 1
+            elif hoje < ini and status_atual == "Férias":
+                f.status = "Ativo"
+                alterados += 1
             elif hoje > fim and status_atual == "Férias":
                 f.status = "Ativo"
                 alterados += 1
         elif not ini and not fim and status_atual == "Férias":
             f.status = "Ativo"
             alterados += 1
+        # BUG-FIX: colaborador em Férias com ferias_inicio preenchido mas
+        # ferias_fim vazio nunca era revertido para Ativo (ficava preso em Férias).
+        elif ini and not fim and status_atual == "Férias":
+            f.status = "Ativo"
+            alterados += 1
+        if _aplicar_regra_jornada_por_status(f):
+            alterados += 1
+        if _aplicar_regra_posto_por_status(f):
+            alterados += 1
     if alterados:
         db.session.commit()
     return alterados
+
+
+def _status_norm(v):
+    txt = (v or "").strip().lower()
+    txt = unicodedata.normalize("NFD", txt)
+    txt = "".join(ch for ch in txt if unicodedata.category(ch) != "Mn")
+    return txt
+
+
+def _aplicar_regra_jornada_por_status(funcionario):
+    """Regras automáticas de vínculo em jornada:
+    - Demitido/Inativo: sempre sem jornada.
+    - Férias: sai temporariamente da jornada e guarda backup.
+    - Ativo: se voltou de férias, restaura jornada do backup.
+    """
+    changed = False
+    st = _status_norm(getattr(funcionario, "status", "Ativo"))
+
+    if st in ("demitido", "inativo"):
+        if funcionario.jornada_id is not None:
+            funcionario.jornada_id = None
+            changed = True
+        if funcionario.jornada_id_retorno is not None:
+            funcionario.jornada_id_retorno = None
+            changed = True
+        return changed
+
+    if st == "ferias":
+        if funcionario.jornada_id is not None:
+            if funcionario.jornada_id_retorno is None:
+                funcionario.jornada_id_retorno = funcionario.jornada_id
+            funcionario.jornada_id = None
+            changed = True
+        return changed
+
+    if st == "ativo" and funcionario.jornada_id is None and funcionario.jornada_id_retorno:
+        j = db.session.get(JornadaTrabalho, int(funcionario.jornada_id_retorno))
+        if j:
+            funcionario.jornada_id = j.id
+            changed = True
+        funcionario.jornada_id_retorno = None
+        changed = True
+
+    return changed
+
+
+def _aplicar_regra_posto_por_status(funcionario):
+    """Regras automáticas de vínculo em posto:
+    - Demitido/Inativo: remove do posto do cliente e volta para Reserva tecnica.
+    """
+    changed = False
+    st = _status_norm(getattr(funcionario, "status", "Ativo"))
+
+    if st in ("demitido", "inativo"):
+        if getattr(funcionario, "posto_cliente_id", None) is not None:
+            funcionario.posto_cliente_id = None
+            changed = True
+        posto_atual = (getattr(funcionario, "posto_operacional", "") or "").strip()
+        if posto_atual != "Reserva tecnica":
+            funcionario.posto_operacional = "Reserva tecnica"
+            changed = True
+
+    return changed
 
 
 @app.route("/api/funcionarios/sync-ferias", methods=["POST"])
@@ -9549,13 +10232,18 @@ def api_funcionarios_sync_ferias():
 @app.route("/api/funcionarios", methods=["GET"])
 @lr
 def api_funcionarios():
-    # Throttle: sync de férias no máximo 1x/hora para não sobrecarregar em listagens frequentes
+    # BUG-FIX 6: throttle reduzido de 3600s (1h) para 300s (5min) para que
+    # férias encerradas apareçam como Ativo em até 5 minutos, não 1 hora.
     global _ferias_sync_ts
     _agora = time.monotonic()
-    if _agora - _ferias_sync_ts > 3600:
+    if _agora - _ferias_sync_ts > 300:
         _ferias_sync_ts = _agora
         _sync_ferias_status()
     cpf = only_digits(request.args.get("cpf", ""))
+    # BUG-FIX: ler status_param antes do branch de CPF para que ?status= seja
+    # respeitado mesmo quando a busca é feita por CPF (antes o filtro era aplicado
+    # somente após o early-return do CPF, tornando-o ineficaz nesse path).
+    status_param = (request.args.get("status") or "").strip()
     if cpf:
         ex_id = to_num(request.args.get("exclude_id"))
         # Filtro SQL: remove formatação de CPF via REPLACE no SQLite
@@ -9567,6 +10255,8 @@ def api_funcionarios():
             "",
         )
         q = Funcionario.query.filter(cpf_norm == cpf)
+        if status_param:
+            q = q.filter(Funcionario.status == status_param)
         if ex_id:
             q = q.filter(Funcionario.id != ex_id)
         f = q.first()
@@ -9574,7 +10264,13 @@ def api_funcionarios():
             return jsonify(f.to_dict())
         return jsonify({})
     q = (request.args.get("q", "") or "").lower()
-    lst = Funcionario.query.order_by(Funcionario.nome).all()
+    # BUG-FIX: respeitar ?status= para que buscas em subseções (aviso prévio,
+    # EPI, etc.) não retornem colaboradores Demitidos/Inativos.
+    # (status_param já foi lido antes do branch de CPF — BUG-FIX)
+    lst_q = Funcionario.query.order_by(Funcionario.nome)
+    if status_param:
+        lst_q = lst_q.filter(Funcionario.status == status_param)
+    lst = lst_q.all()
     if q:
         qdig = only_digits(q)
         lst = [
@@ -9677,6 +10373,10 @@ def _export_funcionarios_ativos_xlsx(funcs, include_salario=False):
         "Empresa",
         "Status",
     ]
+    # Incluir coluna de data de demissão se houver funcionários demitidos/inativos
+    include_demissao = any((f.status or "").strip().lower() in ("demitido", "inativo") for f in funcs)
+    if include_demissao:
+        headers.append("Data de demissão")
     if include_salario:
         headers.append("Salário")
     ws.append(["Relatório de colaboradores ativos"])
@@ -9699,6 +10399,26 @@ def _export_funcionarios_ativos_xlsx(funcs, include_salario=False):
             emps_map.get(f.empresa_id, "") if f.empresa_id else "",
             f.status or "Ativo",
         ]
+        # adicionar data de demissão quando aplicável
+        if include_demissao:
+            dt_dem = ""
+            try:
+                if getattr(f, "data_demissao", None):
+                    from datetime import date as _d, datetime as _dt
+                    v = f.data_demissao
+                    if isinstance(v, str):
+                        try:
+                            _dobj = _dt.fromisoformat(v)
+                            dt_dem = _dobj.strftime("%d/%m/%Y")
+                        except Exception:
+                            dt_dem = v
+                    elif hasattr(v, "strftime"):
+                        dt_dem = v.strftime("%d/%m/%Y")
+                    else:
+                        dt_dem = str(v)
+            except Exception:
+                dt_dem = ""
+            row.append(dt_dem)
         if include_salario:
             sal = float(f.salario or 0)
             total_salario += sal
@@ -9743,9 +10463,11 @@ def _export_funcionarios_ativos_xlsx(funcs, include_salario=False):
             horizontal="right", vertical="center"
         )
 
-    widths = [10, 12, 34, 18, 16, 20, 20, 24, 26, 10] + (
-        [14] if include_salario else []
-    )
+    widths = [10, 12, 34, 18, 16, 20, 20, 24, 26, 10]
+    if include_demissao:
+        widths.insert(10, 14)  # inserir antes da coluna de salário (ou no fim se não houver salário)
+    if include_salario:
+        widths.append(14)
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
@@ -9812,27 +10534,29 @@ def _export_funcionarios_ativos_pdf(funcs, include_salario=False):
         )
 
     emps_map = {e.id: e.nome for e in Empresa.query.all()}
+    # incluir coluna de data de demissão se houver demitidos/inativos
+    include_demissao = any((f.status or "").strip().lower() in ("demitido", "inativo") for f in funcs)
     if include_salario:
-        data = [
-            [
-                Paragraph("<b>RE</b>", st_c),
-                Paragraph("<b>Nome</b>", st_c),
-                Paragraph("<b>Posto</b>", st_c),
-                Paragraph("<b>Empresa</b>", st_c),
-                Paragraph("<b>Telefone</b>", st_c),
-                Paragraph("<b>Salário</b>", st_c),
-            ]
+        # quando incluir salário também poderá incluir demissão
+        headers = [
+            Paragraph("<b>RE</b>", st_c),
+            Paragraph("<b>Nome</b>", st_c),
+            Paragraph("<b>Posto</b>", st_c),
+            Paragraph("<b>Empresa</b>", st_c),
+            Paragraph("<b>Telefone</b>", st_c),
+            Paragraph("<b>Salário</b>", st_c),
         ]
     else:
-        data = [
-            [
-                Paragraph("<b>RE</b>", st_c),
-                Paragraph("<b>Nome</b>", st_c),
-                Paragraph("<b>Posto</b>", st_c),
-                Paragraph("<b>Empresa</b>", st_c),
-                Paragraph("<b>Telefone</b>", st_c),
-            ]
+        headers = [
+            Paragraph("<b>RE</b>", st_c),
+            Paragraph("<b>Nome</b>", st_c),
+            Paragraph("<b>Posto</b>", st_c),
+            Paragraph("<b>Empresa</b>", st_c),
+            Paragraph("<b>Telefone</b>", st_c),
         ]
+    if include_demissao:
+        headers.insert(len(headers)- (1 if include_salario else 0), Paragraph("<b>Data de demissão</b>", st_c))
+    data = [headers]
     total_salario = 0.0
     for f in funcs:
         row = [
@@ -9844,15 +10568,37 @@ def _export_funcionarios_ativos_pdf(funcs, include_salario=False):
             ),
             Paragraph(str(f.telefone or "—"), st_c),
         ]
+        # inserir data de demissão antes do salário, se aplicável
+        if include_demissao:
+            dt_dem="—"
+            try:
+                v = getattr(f, "data_demissao", None)
+                if v:
+                    from datetime import datetime as _dt
+                    if isinstance(v, str):
+                        try:
+                            _dobj = _dt.fromisoformat(v)
+                            dt_dem = _dobj.strftime("%d/%m/%Y")
+                        except Exception:
+                            dt_dem = v
+                    elif hasattr(v, "strftime"):
+                        dt_dem = v.strftime("%d/%m/%Y")
+                    else:
+                        dt_dem = str(v)
+            except Exception:
+                dt_dem = "—"
+            row.append(Paragraph(dt_dem, st_c))
         if include_salario:
             sal = float(f.salario or 0)
             total_salario += sal
             row.append(Paragraph(_br_money(sal), st_c))
         data.append(row)
 
-    col_widths = [1.8 * cm, 5.9 * cm, 4.6 * cm, 4.7 * cm, 3.0 * cm] + (
-        [2.6 * cm] if include_salario else []
-    )
+    col_widths = [1.8 * cm, 5.9 * cm, 4.6 * cm, 4.7 * cm, 3.0 * cm]
+    if include_demissao:
+        col_widths.insert(4, 3.0 * cm)
+    if include_salario:
+        col_widths.append(2.6 * cm)
     table = Table(data, colWidths=col_widths, repeatRows=1)
     table.setStyle(
         TableStyle(
@@ -9898,6 +10644,7 @@ def _export_funcionarios_ativos_pdf(funcs, include_salario=False):
 
 
 @app.route("/api/funcionarios/ativos/exportar")
+@_limiter.limit("10 per minute")
 @lr
 def api_funcionarios_ativos_exportar():
     formato = (request.args.get("formato") or "xlsx").strip().lower()
@@ -9940,13 +10687,19 @@ def api_funcionario_cpf_lookup():
     if len(cpf) != 11:
         return jsonify({"erro": "CPF invalido"}), 400
     ex_id = to_num(request.args.get("exclude_id"))
-    for f in Funcionario.query.all():
-        if f.id == ex_id:
-            continue
-        if only_digits(f.cpf) == cpf:
-            return jsonify(
-                {"ok": True, "origem": "interno", "funcionario": f.to_dict()}
-            )
+    # BUG-FIX: antes fazia Funcionario.query.all() + loop Python — O(n) em memória.
+    # Agora usa REPLACE no SQL para normalizar e comparar diretamente no banco.
+    from sqlalchemy import func as sqla_func
+    cpf_norm_lu = sqla_func.replace(
+        sqla_func.replace(sqla_func.replace(Funcionario.cpf, ".", ""), "-", ""),
+        "/", "",
+    )
+    q_lu = Funcionario.query.filter(cpf_norm_lu == cpf)
+    if ex_id:
+        q_lu = q_lu.filter(Funcionario.id != ex_id)
+    f = q_lu.first()
+    if f:
+        return jsonify({"ok": True, "origem": "interno", "funcionario": f.to_dict()})
     r = lookup_cpf_externo(cpf)
     return jsonify(r)
 
@@ -9967,17 +10720,31 @@ def api_funcionario_busca_rapida():
             resultados.append(f.to_dict())
 
     # Busca por CPF se fornecido
+    # BUG-FIX: antes usava ilike("%12345678901%") que não encontra "123.456.789-01".
+    # Agora normaliza o campo do banco via REPLACE (mesma abordagem do cpf-lookup).
     if cpf and len(cpf) == 11:
-        f = Funcionario.query.filter(Funcionario.cpf.ilike(f"%{cpf}%")).first()
-        if f and f.to_dict() not in resultados:
-            resultados.append(f.to_dict())
+        from sqlalchemy import func as sqla_func
+        cpf_norm_br = sqla_func.replace(
+            sqla_func.replace(sqla_func.replace(Funcionario.cpf, ".", ""), "-", ""),
+            "/", "",
+        )
+        f = Funcionario.query.filter(cpf_norm_br == cpf).first()
+        if f:
+            f_dict = f.to_dict()
+            seen_ids = {r["id"] for r in resultados}
+            if f.id not in seen_ids:
+                resultados.append(f_dict)
 
     # Busca por nome se fornecido
+    # BUG-FIX: usar deduplicação por id ao invés de comparar dicts inteiros
+    # (to_dict() faz query DB por empresa — chamar 2x dobrava as consultas).
     if nome:
-        funcs = Funcionario.query.filter(Funcionario.nome.ilike(f"%{nome}%")).all()
-        for f in funcs:
-            if f.to_dict() not in resultados:
+        funcs_nome = Funcionario.query.filter(Funcionario.nome.ilike(f"%{nome}%")).all()
+        seen_ids = {r["id"] for r in resultados}
+        for f in funcs_nome:
+            if f.id not in seen_ids:
                 resultados.append(f.to_dict())
+                seen_ids.add(f.id)
 
     return jsonify(resultados if resultados else [])
 
@@ -10004,16 +10771,20 @@ def api_criar_funcionario():
         empresa_id=d.get("empresa_id"),
         data_admissao=d.get("data_admissao", ""),
         tipo_contrato=d.get("tipo_contrato", "").strip(),
-        jornada=d.get("jornada", "").strip(),
+        jornada="",
         status=d.get("status", "Ativo"),
-        ferias_inicio=(d.get("ferias_inicio") or "").strip(),
-        ferias_fim=(d.get("ferias_fim") or "").strip(),
+        # BUG-FIX 9: validar formato ISO antes de persistir; datas malformadas
+        # como '01/02/2026' ou '2026-2-1' quebram _sync_ferias_status silenciosamente.
+        ferias_inicio=norm_data_iso(d.get("ferias_inicio")),
+        ferias_fim=norm_data_iso(d.get("ferias_fim")),
         ferias_obs=(d.get("ferias_obs") or "").strip(),
-        posto_operacional="Reserva tecnica",
-        salario=to_num(d.get("salario"), dec=True),
-        vale_refeicao=to_num(d.get("vale_refeicao"), dec=True),
-        vale_alimentacao=to_num(d.get("vale_alimentacao"), dec=True),
-        vale_transporte=to_num(d.get("vale_transporte"), dec=True),
+        # BUG-FIX: respeitar posto_operacional enviado pelo formulário;
+        # antes o campo era sempre sobrescrito com 'Reserva tecnica' no POST.
+        posto_operacional=(d.get("posto_operacional") or "Reserva tecnica").strip() or "Reserva tecnica",
+        salario=max(0.0, to_num(d.get("salario"), dec=True) or 0),
+        vale_refeicao=max(0.0, to_num(d.get("vale_refeicao"), dec=True) or 0),
+        vale_alimentacao=max(0.0, to_num(d.get("vale_alimentacao"), dec=True) or 0),
+        vale_transporte=max(0.0, to_num(d.get("vale_transporte"), dec=True) or 0),
         endereco=d.get("endereco", "").strip(),
         cidade=d.get("cidade", "").strip(),
         estado=norm_uf(d.get("estado", "")),
@@ -10052,6 +10823,16 @@ def api_criar_funcionario():
     try:
         db.session.add(f)
         db.session.commit()
+        # BUG-FIX: registrar auditoria na criação (antes só o DELETE registrava).
+        audit_event(
+            "funcionario_criar",
+            "usuario",
+            session.get("uid"),
+            "funcionario",
+            f.id,
+            True,
+            {"nome": f.nome, "cpf": f.cpf, "re": f.re},
+        )
         return jsonify(f.to_dict()), 201
     except IntegrityError as e:
         db.session.rollback()
@@ -10067,6 +10848,93 @@ def api_criar_funcionario():
         return jsonify(
             {"erro": "Não foi possível salvar o funcionário (dados duplicados)."}
         ), 400
+
+
+def _notificar_ferias_funcionario(funcionario):
+    ini_raw = (getattr(funcionario, "ferias_inicio", "") or "").strip()
+    fim_raw = (getattr(funcionario, "ferias_fim", "") or "").strip()
+    if not ini_raw or not fim_raw:
+        return {
+            "ok": False,
+            "push": False,
+            "whatsapp": False,
+            "sem_contato": False,
+            "sem_periodo": True,
+        }
+
+    try:
+        d1 = datetime.strptime(ini_raw, "%Y-%m-%d").date()
+        d2 = datetime.strptime(fim_raw, "%Y-%m-%d").date()
+    except ValueError:
+        return {
+            "ok": False,
+            "push": False,
+            "whatsapp": False,
+            "sem_contato": False,
+            "sem_periodo": True,
+        }
+
+    if d2 < d1:
+        d1, d2 = d2, d1
+
+    dias = (d2 - d1).days + 1
+    retorno = (d2 + timedelta(days=1)).strftime("%d/%m/%Y")
+    nome = (getattr(funcionario, "nome", "") or "Colaborador").strip()
+    primeiro_nome = (nome.split()[0] if nome else "Colaborador")
+
+    titulo = "Férias Agendadas ✈️"
+    corpo_push = (
+        f"{nome}, suas férias estão agendadas de "
+        f"{d1.strftime('%d/%m/%Y')} a {d2.strftime('%d/%m/%Y')} "
+        f"com {dias} {'dia' if dias == 1 else 'dias'} de duração. "
+        f"Previsão de retorno: {retorno}."
+    )
+
+    ok_push = False
+    ok_wpp = False
+
+    tem_app = bool(
+        getattr(funcionario, "app_ativo", False)
+        and (getattr(funcionario, "app_push_token", "") or "").strip()
+    )
+    if tem_app:
+        try:
+            ok_push = bool(
+                _push_notify_funcionario(
+                    funcionario.id,
+                    titulo,
+                    corpo_push,
+                    data={"tipo": "ferias"},
+                )
+            )
+        except Exception:
+            ok_push = False
+
+    tel = wa_norm_number(getattr(funcionario, "telefone", "") or "")
+    if wa_is_valid_number(tel):
+        try:
+            msg_wpp = (
+                f"Olá {primeiro_nome}, suas férias foram programadas.\n"
+                f"📅 Período: *{d1.strftime('%d/%m/%Y')}* até *{d2.strftime('%d/%m/%Y')}*\n"
+                f"🗓 Duração: *{dias}* {'dia' if dias == 1 else 'dias'}\n"
+                f"✅ Previsão de retorno: *{retorno}*\n"
+                "Em caso de dúvidas, entre em contato com o RH."
+            )
+            wa_send_text(tel, msg_wpp)
+            ok_wpp = True
+        except Exception as e:
+            app.logger.warning(
+                f"[ferias_notificar] WhatsApp falhou para func {funcionario.id}: {e}"
+            )
+
+    sem_contato = (not ok_push) and (not ok_wpp)
+    return {
+        "ok": (ok_push or ok_wpp),
+        "push": ok_push,
+        "whatsapp": ok_wpp,
+        "sem_contato": sem_contato,
+        "sem_periodo": False,
+    }
 
 
 @app.route("/api/funcionarios/<int:id>", methods=["PUT"])
@@ -10088,7 +10956,6 @@ def api_atualizar_funcionario(id):
         "data_admissao",
         "data_demissao",
         "tipo_contrato",
-        "jornada",
         "status",
         "ferias_inicio",
         "ferias_fim",
@@ -10118,6 +10985,9 @@ def api_atualizar_funcionario(id):
         "exame_admissional_data",
         "docs_admissao_obs",
         "obs",
+        # BUG-FIX: posto_operacional estava ausente da lista — editar o posto
+        # de um colaborador existente não tinha efeito no banco.
+        "posto_operacional",
     ]:
         if k in d:
             if k == "cpf":
@@ -10132,24 +11002,57 @@ def api_atualizar_funcionario(id):
                 setattr(f, k, norm_uf(d.get(k)))
             elif k == "banco_codigo":
                 setattr(f, k, norm_bank_code(d.get(k)))
+            # BUG-FIX 9 (PUT): validar formato ISO de datas de férias antes de
+            # persistir, igual ao tratamento já feito no POST.
+            elif k in ("ferias_inicio", "ferias_fim"):
+                setattr(f, k, norm_data_iso(d.get(k)))
             else:
                 setattr(f, k, d[k])
     if "ferias_dias" in d:
         f.ferias_dias = max(0, int(to_num(d.get("ferias_dias")) or 30))
+    # BUG-FIX 5: recalcular ferias_dias a partir das datas quando ambas estão
+    # presentes no payload mas ferias_dias não foi enviado explicitamente.
+    # Evita inconsistência onde ferias_inicio/fim indicam 20 dias mas ferias_dias=25.
+    if ("ferias_inicio" in d or "ferias_fim" in d) and "ferias_dias" not in d:
+        _ini = (f.ferias_inicio or "").strip()
+        _fim = (f.ferias_fim or "").strip()
+        if _ini and _fim:
+            try:
+                from datetime import date as _dt_calc
+                _d1 = _dt_calc.fromisoformat(_ini)
+                _d2 = _dt_calc.fromisoformat(_fim)
+                _calc_dias = (_d2 - _d1).days + 1
+                if _calc_dias > 0:
+                    f.ferias_dias = _calc_dias
+            except ValueError:
+                pass
     if "faltas_ano" in d:
         f.faltas_ano = max(0, int(to_num(d.get("faltas_ano")) or 0))
-    # Se data de demissão preenchida → bloquear acesso ao app e mudar status para Demitido
-    if d.get("data_demissao", "").strip():
-        f.status = "Demitido"
+    # BUG-FIX: sincronizar status e acesso ao app com data_demissao em
+    # ambos os sentidos — ao preencher OU ao limpar a data de demissão.
+    if "data_demissao" in d:
+        if (d.get("data_demissao") or "").strip():
+            f.status = "Demitido"
+            f.app_ativo = False
+        else:
+            # Data limpa → reativar colaborador SOMENTE se estava Demitido.
+            # BUG-FIX: antes setava app_ativo=True incondicionalmente, o que
+            # reativava o acesso ao app de colaboradores Afastados/Inativos cuja
+            # ficha era editada (ex: atualizar telefone) com data_demissao="".
+            if f.status == "Demitido":
+                f.status = "Ativo"
+                f.app_ativo = True
+    if _status_norm(f.status) in ("demitido", "inativo"):
         f.app_ativo = False
+        FuncionarioAppSessao.query.filter_by(funcionario_id=f.id, revogado=False).update({"revogado": True})
     if "salario" in d:
-        f.salario = to_num(d.get("salario"), dec=True)
+        f.salario = max(0.0, to_num(d.get("salario"), dec=True) or 0)
     if "vale_refeicao" in d:
-        f.vale_refeicao = to_num(d.get("vale_refeicao"), dec=True)
+        f.vale_refeicao = max(0.0, to_num(d.get("vale_refeicao"), dec=True) or 0)
     if "vale_alimentacao" in d:
-        f.vale_alimentacao = to_num(d.get("vale_alimentacao"), dec=True)
+        f.vale_alimentacao = max(0.0, to_num(d.get("vale_alimentacao"), dec=True) or 0)
     if "vale_transporte" in d:
-        f.vale_transporte = to_num(d.get("vale_transporte"), dec=True)
+        f.vale_transporte = max(0.0, to_num(d.get("vale_transporte"), dec=True) or 0)
     if "opta_vt" in d:
         f.opta_vt = to_bool(d.get("opta_vt"))
     if "opta_vr" in d:
@@ -10165,9 +11068,9 @@ def api_atualizar_funcionario(id):
     if "premio_produtividade" in d:
         f.premio_produtividade = to_num(d.get("premio_produtividade"), dec=True)
     if "vale_gasolina" in d:
-        f.vale_gasolina = to_num(d.get("vale_gasolina"), dec=True)
+        f.vale_gasolina = max(0.0, to_num(d.get("vale_gasolina"), dec=True) or 0)
     if "cesta_natal" in d:
-        f.cesta_natal = to_num(d.get("cesta_natal"), dec=True)
+        f.cesta_natal = max(0.0, to_num(d.get("cesta_natal"), dec=True) or 0)
     if "docs_admissao_ok" in d:
         f.docs_admissao_ok = to_bool(d.get("docs_admissao_ok"))
     if "data_nascimento" in d:
@@ -10178,14 +11081,63 @@ def api_atualizar_funcionario(id):
 
                 f.data_nascimento = _date.fromisoformat(_dn[:10])
             except (ValueError, TypeError):
-                pass
+                # BUG-FIX: antes o erro era silenciado, retornando HTTP 200 ao
+                # cliente sem atualizar o campo. Agora retorna erro explícito.
+                return jsonify({"erro": f"Data de nascimento inválida: '{_dn}'. Use o formato AAAA-MM-DD."}), 400
         else:
             f.data_nascimento = None
     if "areas" in d:
         ars = [a for a in d.get("areas", []) if a in ALLOWED_AREAS]
         f.areas = json.dumps(ars, ensure_ascii=False)
+    _aplicar_regra_jornada_por_status(f)
+    _aplicar_regra_posto_por_status(f)
     try:
         db.session.commit()
+        # Sync imediato: se as datas de férias foram alteradas, recalcula o
+        # status deste funcionário sem esperar o polling de 5min do GET.
+        if "ferias_inicio" in d or "ferias_fim" in d:
+            from datetime import date as _date_sync
+            _hoje = _date_sync.today().isoformat()
+            _st = (f.status or "Ativo").strip().lower()
+            if _st not in ("demitido", "inativo", "afastado", "aviso prévio", "aviso previo"):
+                _ini = (f.ferias_inicio or "").strip()
+                _fim = (f.ferias_fim or "").strip()
+                _status_atual = f.status or "Ativo"
+                _changed = False
+                if _ini and _fim:
+                    if _hoje >= _ini and _hoje <= _fim:
+                        if _status_atual != "Férias":
+                            f.status = "Férias"
+                            _changed = True
+                    elif _hoje < _ini and _status_atual == "Férias":
+                        f.status = "Ativo"
+                        _changed = True
+                    elif _hoje > _fim and _status_atual == "Férias":
+                        f.status = "Ativo"
+                        _changed = True
+                elif _status_atual == "Férias":
+                    # datas limpas ou incompletas: volta para Ativo
+                    f.status = "Ativo"
+                    _changed = True
+                if _changed:
+                    _aplicar_regra_jornada_por_status(f)
+                    _aplicar_regra_posto_por_status(f)
+                    db.session.commit()
+            # Notificação push ao colaborador informando as férias agendadas.
+            # Só envia se o campo "notificar_ferias" for explicitamente True no payload,
+            # evitando spam em cada edição intermediária de data.
+            if to_bool(d.get("notificar_ferias")):
+                _notificar_ferias_funcionario(f)
+        # BUG-FIX: registrar auditoria na edição (antes só o DELETE registrava).
+        audit_event(
+            "funcionario_editar",
+            "usuario",
+            session.get("uid"),
+            "funcionario",
+            f.id,
+            True,
+            {"nome": f.nome, "campos_alterados": list(d.keys())},
+        )
         return jsonify(f.to_dict())
     except IntegrityError as e:
         db.session.rollback()
@@ -10203,6 +11155,79 @@ def api_atualizar_funcionario(id):
         ), 400
 
 
+@app.route("/api/ferias/notificar", methods=["POST"])
+@_limiter.limit("10 per minute")
+@lr
+def api_ferias_notificar():
+    d = request.get_json(silent=True) or {}
+    ids_raw = d.get("funcionario_ids")
+    if not isinstance(ids_raw, list) or not ids_raw:
+        return jsonify({"erro": "funcionario_ids é obrigatório."}), 400
+
+    ids = []
+    for v in ids_raw:
+        n = to_num(v)
+        if n and int(n) > 0:
+            ids.append(int(n))
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        return jsonify({"erro": "Nenhum funcionário válido informado."}), 400
+
+    funcs_lista = Funcionario.query.filter(Funcionario.id.in_(ids)).all()
+    funcs = {f.id: f for f in funcs_lista}
+
+    enviados_push = 0
+    enviados_wpp = 0
+    sem_contato = 0
+    sem_periodo = 0
+
+    for fid in ids:
+        f = funcs.get(fid)
+        if not f:
+            sem_contato += 1
+            continue
+        st = (f.status or "Ativo").strip().lower()
+        if st in ("demitido", "inativo"):
+            sem_contato += 1
+            continue
+        r = _notificar_ferias_funcionario(f)
+        if r.get("push"):
+            enviados_push += 1
+        if r.get("whatsapp"):
+            enviados_wpp += 1
+        if r.get("sem_periodo"):
+            sem_periodo += 1
+        elif r.get("sem_contato"):
+            sem_contato += 1
+
+    audit_event(
+        "ferias_notificar",
+        "usuario",
+        session.get("uid"),
+        "funcionario",
+        0,
+        True,
+        {
+            "qtd_ids": len(ids),
+            "enviados_push": enviados_push,
+            "enviados_whatsapp": enviados_wpp,
+            "sem_contato": sem_contato,
+            "sem_periodo": sem_periodo,
+        },
+    )
+
+    return jsonify(
+        {
+            "ok": True,
+            "enviados": (enviados_push + enviados_wpp),
+            "enviados_push": enviados_push,
+            "enviados_whatsapp": enviados_wpp,
+            "sem_contato": sem_contato,
+            "sem_periodo": sem_periodo,
+        }
+    )
+
+
 @app.route("/api/funcionarios/<int:id>", methods=["DELETE"])
 @lr
 def api_deletar_funcionario(id):
@@ -10218,6 +11243,10 @@ def api_deletar_funcionario(id):
     PontoMarcacao.query.filter_by(funcionario_id=id).delete()
     PontoAjuste.query.filter_by(funcionario_id=id).delete()
     PontoFechamentoDia.query.filter_by(funcionario_id=id).delete()
+    # BUG-FIX: remover também sessões do app e solicitações de alteração do
+    # colaborador para não deixar registros órfãos com FK inválida.
+    FuncionarioAppSessao.query.filter_by(funcionario_id=id).delete()
+    FuncionarioAlteracaoSolicitacao.query.filter_by(funcionario_id=id).delete()
     db.session.delete(f)
     db.session.commit()
     audit_event(
@@ -10261,6 +11290,18 @@ def _solicitar_assinatura_arquivo_funcionario(
         funcionario = db.session.get(Funcionario, arquivo.funcionario_id)
     if (arquivo.ass_status or "") == "assinado":
         return {"ok": False, "erro": "Documento ja assinado."}
+
+    # Regra de negócio: colaborador demitido não deve receber novos envios de
+    # assinatura de folha de ponto. Documentos já gerados permanecem no histórico.
+    if (
+        str((arquivo.categoria or "")).strip().lower() == "folha_ponto"
+        and funcionario
+        and str((funcionario.status or "")).strip().lower() == "demitido"
+    ):
+        return {
+            "ok": False,
+            "erro": "Colaborador demitido não pode receber nova solicitação de assinatura de folha de ponto.",
+        }
     canal = (canal or "link").strip().lower()
     if canal not in ("link", "whatsapp", "email", "app"):
         canal = "link"
@@ -10355,22 +11396,44 @@ def _solicitar_assinatura_arquivo_funcionario(
                 if eh_lembrete
                 else f"Seu {doc_desc} aguarda assinatura no app. Arquivo: {arquivo.nome_arquivo}."
             )
-            enviado_app = bool(
-                _push_notify_funcionario(
-                    funcionario.id,
-                    titulo_push,
-                    corpo_push,
-                    {"tipo": "documento_assinar", "arquivo_id": str(arquivo.id)},
+            _tem_app = funcionario.app_ativo and (funcionario.app_push_token or "").strip()
+            if _tem_app:
+                enviado_app = bool(
+                    _push_notify_funcionario(
+                        funcionario.id,
+                        titulo_push,
+                        corpo_push,
+                        {"tipo": "documento_assinar", "arquivo_id": str(arquivo.id)},
+                    )
                 )
-            )
+            else:
+                enviado_app = False
             if not enviado_app:
-                erro_envio = "Falha ao enviar notificacao push para o aplicativo."
+                # Sem app ou push falhou → fallback WhatsApp
+                _tel_fb = wa_norm_number(funcionario.telefone or "")
+                if wa_is_valid_number(_tel_fb):
+                    _nome_fb = (funcionario.nome or "colaborador").split()[0]
+                    _msg_fb = (
+                        f"🔔 Lembrete: seu *{doc_desc}* ainda aguarda assinatura.\n"
+                        f"Arquivo: {arquivo.nome_arquivo}\n"
+                        f"Acesse o link para assinar: {link_curto}"
+                        if eh_lembrete else
+                        f"Olá, {_nome_fb}! Seu *{doc_desc}* aguarda assinatura.\n"
+                        f"Arquivo: {arquivo.nome_arquivo}\n"
+                        f"Acesse o link para assinar: {link_curto}"
+                    )
+                    try:
+                        wa_send_text(_tel_fb, _msg_fb)
+                        enviado_wa = True
+                        erro_envio = ""
+                    except Exception as _ex_wa:
+                        erro_envio = f"Sem app e WhatsApp falhou: {_ex_wa}"
+                else:
+                    erro_envio = "Funcionário sem app instalado e sem telefone WhatsApp válido."
         except Exception as ex:
             erro_envio = str(ex)
     if commit_now:
-        db.session.commit()
-    else:
-        db.session.flush()
+        _db_commit_retry("solicitar_assinatura_arquivo", attempts=3)
     return {
         "ok": True,
         "link": link,
@@ -10430,6 +11493,33 @@ def api_funcionario_upload_arquivo(id):
     ano = infer_doc_year(comp)
     prepare_func_doc_dirs(id, ano)
     subdir, cat = func_doc_subdir(id, cat, comp)
+
+    # Regra de negócio no upload: para folha de ponto de colaborador demitido,
+    # mantém upload, mas impede novos envios para assinatura.
+    if cat == "folha_ponto" and str((f.status or "")).strip().lower() == "demitido":
+        canal_ass = "nao"
+
+    evitar_duplicado = str(request.form.get("evitar_duplicado") or "").strip().lower()
+    if cat == "folha_ponto" and evitar_duplicado in ("1", "true", "sim", "yes"):
+        arquivo_existente = (
+            FuncionarioArquivo.query.filter(
+                FuncionarioArquivo.funcionario_id == id,
+                FuncionarioArquivo.categoria == "folha_ponto",
+                FuncionarioArquivo.competencia == comp,
+                FuncionarioArquivo.ass_status.in_(["pendente", "assinado", "concluida"]),
+            )
+            .order_by(FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc())
+            .first()
+        )
+        if arquivo_existente:
+            out = arquivo_existente.to_dict()
+            out["duplicado"] = True
+            out["assinatura_auto"] = {
+                "status": "ja_solicitada",
+                "ass_status": arquivo_existente.ass_status or "pendente",
+            }
+            return jsonify(out)
+
     rel, _ = save_upload(fs, subdir)
     a = FuncionarioArquivo(
         funcionario_id=id,
@@ -10500,6 +11590,11 @@ def api_funcionario_upload_arquivo(id):
             )
         except Exception:
             pass
+        if cat == "folha_ponto" and str((f.status or "")).strip().lower() == "demitido":
+            assinatura_auto = {
+                "status": "bloqueado_demitido",
+                "motivo": "Novos envios de assinatura de folha de ponto são bloqueados para demitidos.",
+            }
     audit_event(
         "funcionario_arquivo_upload",
         "usuario",
@@ -11948,7 +13043,7 @@ def _gerar_declaracao_acumulo_cargo_pdf(
         else "RM FACILITIES LTDA"
     )
     func_nome = (f.nome or "").strip()
-    func_cpf = fmt_cpf(f.cpf or "")
+    func_cpf = f.cpf or ""
     func_rg = f.rg or ""
     func_re = str(f.re or f.matricula or "")
     func_cargo = (f.cargo or "").strip()
@@ -12665,10 +13760,17 @@ def _calcular_aviso_previo_dias(data_admissao_str, data_ref=None):
             dd, mm, yyyy = s.split("/")
             dt_adm = _date(int(yyyy), int(mm), int(dd))
         ref = data_ref if data_ref else localnow().date()
-        delta_dias = (ref - dt_adm).days
-        if delta_dias < 0:
-            delta_dias = 0
-        anos_completos = delta_dias // 365
+        # BUG-FIX: usar comparação de tuplas (year, month, day) ao invés de
+        # delta_dias // 365. Anos bissextos faziam o cálculo errar em 1 ano
+        # nas bordas (ex.: admissão 01/01/2020, aviso 31/12/2024 dava 5 anos
+        # ao invés de 4, gerando 3 dias indevidos de aviso prévio).
+        if ref < dt_adm:
+            return 30
+        anos_completos = ref.year - dt_adm.year - (
+            (ref.month, ref.day) < (dt_adm.month, dt_adm.day)
+        )
+        if anos_completos < 0:
+            anos_completos = 0
         dias_adicionais = min(anos_completos * 3, 60)
         return 30 + dias_adicionais
     except Exception:
@@ -12676,12 +13778,8 @@ def _calcular_aviso_previo_dias(data_admissao_str, data_ref=None):
 
 
 def _gerar_aviso_previo_pdf(
-    funcionario,
-    tipo="empresa_trabalhado",
-    empresa=None,
-    obs="",
-    data_aviso_str=None,
-    reducao="nenhuma",
+    funcionario, tipo="empresa_trabalhado", empresa=None, obs="", data_aviso_str=None,
+    reducao="nenhuma", demissao_aviso="cumprira",
 ):
     """Gera PDF de Aviso Prévio proporcional (Lei 12.506/2011)."""
     from reportlab.lib.pagesizes import A4
@@ -12699,7 +13797,6 @@ def _gerar_aviso_previo_pdf(
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
     from datetime import date as _date, timedelta
-
     azul_esc = colors.HexColor("#1A3A5C")
     cinza = colors.HexColor("#F0F4F8")
 
@@ -12717,9 +13814,10 @@ def _gerar_aviso_previo_pdf(
         else "RM FACILITIES LTDA"
     )
     emp_cnpj = (getattr(emp_obj, "cnpj", None) or "").strip() if emp_obj else ""
+    emp_cnpj_fmt = _filter_fmt_cnpj(emp_cnpj) if emp_cnpj else ""
     func_nome = (f.nome or "").strip()
     func_re = str(f.re or f.matricula or "")
-    func_cpf = fmt_cpf((f.cpf or "").strip())
+    func_cpf = (f.cpf or "").strip()
     func_cargo = (f.cargo or "").strip()
     func_adm = f.data_admissao or ""
 
@@ -12751,17 +13849,39 @@ def _gerar_aviso_previo_pdf(
         dt_aviso = localnow().date()
 
     total_dias = _calcular_aviso_previo_dias(func_adm, data_ref=dt_aviso)
-    anos_servico = (dt_aviso - dt_adm).days // 365 if dt_adm else 0
+    # BUG-FIX (CLT): a Lei 12.506/2011 é benefício DO EMPREGADO em face do
+    # empregador (TST OJ SDI-1 367 / Min. do Trabalho NT 184/2012). Quando o
+    # próprio empregado pede demissão, ele deve apenas 30 dias — não se exige
+    # dele o aviso proporcional. Antes o sistema cobrava 30+3*N dias do
+    # funcionário que pediu demissão, permitindo desconto indevido na resc.
+    if tipo == "pedido_demissao":
+        total_dias = 30
+    # BUG-FIX: usar comparação de tuplas para anos_servico (idem //365).
+    if dt_adm and dt_aviso >= dt_adm:
+        anos_servico = dt_aviso.year - dt_adm.year - (
+            (dt_aviso.month, dt_aviso.day) < (dt_adm.month, dt_adm.day)
+        )
+        if anos_servico < 0:
+            anos_servico = 0
+    else:
+        anos_servico = 0
     dias_adicionais = total_dias - 30
-    dt_fim = dt_aviso + timedelta(days=total_dias)
-    # Empregado trabalha SEMPRE no maximo 30 dias (base CLT). Os dias proporcionais
-    # da Lei 12.506/2011 sao INDENIZADOS nas verbas rescisorias (jurisprudencia TST).
-    dt_fim_trabalho = dt_aviso + timedelta(days=30)
+    # BUG-FIX: para termino_contrato não há aviso prévio — último dia = data do
+    # aviso (data acordada de vencimento do contrato). Para os demais tipos, o
+    # dia da comunicação conta como dia 1 do aviso, então fim = aviso + (N-1),
+    # não aviso + N (que dava 1 dia a mais e divergia da prévia JS).
+    if tipo == "termino_contrato":
+        dt_fim = dt_aviso
+    elif tipo == "pedido_demissao" and demissao_aviso == "nao_cumprira":
+        # Não há período a cumprir: vínculo encerra na data do próprio aviso;
+        # o desconto será registrado nas verbas rescisórias (art. 487 §2º CLT).
+        dt_fim = dt_aviso
+    else:
+        dt_fim = dt_aviso + timedelta(days=max(total_dias - 1, 0))
 
     data_adm_fmt = dt_adm.strftime("%d/%m/%Y") if dt_adm else str(func_adm)
     data_aviso_fmt = dt_aviso.strftime("%d/%m/%Y")
     data_fim_fmt = dt_fim.strftime("%d/%m/%Y")
-    data_fim_trab_fmt = dt_fim_trabalho.strftime("%d/%m/%Y")
     data_hoje = localnow().strftime("%d/%m/%Y")
     meses_pt = [
         "Janeiro",
@@ -12787,7 +13907,11 @@ def _gerar_aviso_previo_pdf(
     TIPOS = {
         "empresa_trabalhado": "AVISO PRÉVIO TRABALHADO",
         "empresa_indenizado": "AVISO PRÉVIO INDENIZADO",
-        "pedido_demissao": "PEDIDO DE DEMISSÃO — AVISO PRÉVIO",
+        "pedido_demissao": (
+            "PEDIDO DE DEMISSÃO — SEM CUMPRIMENTO DE AVISO PRÉVIO"
+            if demissao_aviso == "nao_cumprira"
+            else "PEDIDO DE DEMISSÃO — AVISO PRÉVIO"
+        ),
         "termino_contrato": "TÉRMINO DE CONTRATO POR PRAZO DETERMINADO",
     }
     tipo_label = TIPOS.get(tipo, "AVISO PRÉVIO TRABALHADO")
@@ -12861,7 +13985,9 @@ def _gerar_aviso_previo_pdf(
             "",
         ],
     ]
-    hdr_table = Table(hdr_data, colWidths=[13 * cm, 5.5 * cm])
+    # BUG-FIX: 13+5.5 = 18.5cm > 17cm da área útil A4 (margens 2cm cada lado),
+    # tabela transbordava e clip(ava o logo. Ajustado para 11.5+5.5 = 17cm.
+    hdr_table = Table(hdr_data, colWidths=[11.5 * cm, 5.5 * cm])
     hdr_table.setStyle(
         TableStyle(
             [
@@ -12892,7 +14018,7 @@ def _gerar_aviso_previo_pdf(
         + campo("ÚLTIMO DIA:", data_fim_fmt),
     ]
     info_table = Table(
-        info_data, colWidths=[2 * cm, 4.5 * cm, 2 * cm, 3.5 * cm, 2.5 * cm, 4.0 * cm]
+        info_data, colWidths=[1.8 * cm, 4.0 * cm, 2.0 * cm, 3.2 * cm, 2.5 * cm, 3.5 * cm]
     )
     info_table.setStyle(
         TableStyle(
@@ -12909,7 +14035,7 @@ def _gerar_aviso_previo_pdf(
         )
     )
 
-    cnpj_txt = f"CNPJ nº {emp_cnpj}, " if emp_cnpj else ""
+    cnpj_txt = f"CNPJ nº {emp_cnpj_fmt}, " if emp_cnpj_fmt else ""
     if tipo == "empresa_trabalhado":
         texto_intro = (
             f"A empresa <b>{emp_nome}</b>, {cnpj_txt}vem por meio deste instrumento comunicar ao(à) "
@@ -12918,33 +14044,27 @@ def _gerar_aviso_previo_pdf(
             f"o aviso prévio proporcional ao tempo de serviço, nos termos do art. 7º, XXI da Constituição Federal "
             f"c/c Lei nº 12.506/2011 e arts. 487 a 491 da CLT."
         )
-        if dias_adicionais > 0:
-            texto_prazo = (
-                f"Considerando <b>{anos_servico} ano(s)</b> de serviço prestado à empresa, o prazo total de aviso prévio é de "
-                f"<b>{total_dias} dias</b> (30 dias base + {dias_adicionais} dias proporcionais — Lei nº 12.506/2011). "
-                f"O(A) colaborador(a) deverá <b>cumprir efetivamente 30 (trinta) dias de trabalho</b>, a partir de "
-                f"<b>{data_aviso_fmt}</b> até <b>{data_fim_trab_fmt}</b>. Os <b>{dias_adicionais} dias proporcionais adicionais"
-                f"</b> serão <b>INDENIZADOS</b> e integrados às verbas rescisórias, encerrando-se o vínculo empregatício "
-                f"em <b>{data_fim_fmt}</b>."
-            )
-        else:
-            texto_prazo = (
-                f"Considerando <b>{anos_servico} ano(s)</b> de serviço prestado à empresa, o prazo de aviso prévio é de "
-                f"<b>30 dias</b>, contados a partir de <b>{data_aviso_fmt}</b>, encerrando-se em <b>{data_fim_fmt}</b>. "
-                f"O(A) colaborador(a) deverá <b>permanecer trabalhando normalmente</b> durante todo o período do aviso, "
-                f"encerrando seu vínculo empregatício na data supracitada, quando serão processadas as verbas rescisórias cabíveis."
-            )
+        texto_prazo = (
+            f"Considerando <b>{anos_servico} ano(s)</b> de serviço prestado à empresa, o prazo de aviso prévio é de "
+            f"<b>{total_dias} dias</b> (30 dias base + {dias_adicionais} dias proporcionais), contados a partir de "
+            f"<b>{data_aviso_fmt}</b>, encerrando-se em <b>{data_fim_fmt}</b>. "
+            f"O(A) colaborador(a) deverá <b>permanecer trabalhando normalmente</b> durante todo o período do aviso, "
+            f"encerrando seu vínculo empregatício na data supracitada, quando serão processadas as verbas rescisórias cabíveis."
+        )
+        # BUG-FIX: refletir no PDF a opção de redução do art. 488 escolhida na UI.
         if reducao == "2h_diarias":
             texto_prazo += (
-                " <b>Redução de jornada (art. 488, parágrafo único, alínea 'a', da CLT):</b> "
-                "durante o cumprimento do aviso prévio o(a) colaborador(a) optou pela <b>redução de 2 (duas) horas diárias</b> "
-                "de sua jornada de trabalho, sem prejuízo do salário integral."
+                " <b>Redução de jornada (art. 488, parágrafo único, \"a\", da CLT):</b> "
+                "durante o cumprimento do aviso prévio o(a) colaborador(a) optou pela "
+                "<b>redução de 2 (duas) horas diárias</b> de sua jornada de trabalho, "
+                "sem prejuízo do salário integral."
             )
         elif reducao == "7_dias_indenizados":
             texto_prazo += (
-                " <b>Redução do aviso (art. 488, parágrafo único, alínea 'b', da CLT):</b> "
-                "o(a) colaborador(a) optou pela <b>redução de 7 (sete) dias indenizados</b> ao final do período do aviso, "
-                "sem prejuízo do salário integral — os 7 dias finais não serão trabalhados e serão integrados às verbas rescisórias."
+                " <b>Redução do aviso (art. 488, parágrafo único, \"b\", da CLT):</b> "
+                "o(a) colaborador(a) optou pela <b>redução de 7 (sete) dias indenizados</b> "
+                "ao final do período do aviso, sem prejuízo do salário integral — os 7 dias "
+                "finais não serão trabalhados e serão integrados às verbas rescisórias."
             )
     elif tipo == "empresa_indenizado":
         texto_intro = (
@@ -12985,13 +14105,23 @@ def _gerar_aviso_previo_pdf(
             f"decisão de <b>rescindir voluntariamente</b> meu contrato de trabalho, "
             f"solicitando meu desligamento da empresa a partir desta data."
         )
-        texto_prazo = (
-            f"Conforme Lei nº 12.506/2011 e art. 487 da CLT, comprometendo-me a cumprir o aviso prévio de "
-            f"<b>{total_dias} dias</b> (30 dias base + {dias_adicionais} dias proporcionais ao tempo de serviço "
-            f"de {anos_servico} ano(s)), a partir de <b>{data_aviso_fmt}</b>, encerrando-se em <b>{data_fim_fmt}</b>, "
-            f"salvo dispensa expressa e por escrito da empresa. Estou ciente de que a falta de cumprimento do aviso "
-            f"implicará desconto no valor correspondente nas verbas rescisórias, nos termos do art. 487, §2º da CLT."
-        )
+        if demissao_aviso == "nao_cumprira":
+            texto_prazo = (
+                f"Declaro que <b>não cumprirei</b> o aviso prévio de <b>{total_dias} dias</b> previsto no "
+                f"art. 487 da CLT, e estou ciente de que o valor correspondente ao período de aviso prévio "
+                f"não cumprido será <b>descontado das verbas rescisórias</b>, nos termos do "
+                f"art. 487, §2º da CLT. O vínculo empregatício será encerrado na data de "
+                f"<b>{data_fim_fmt}</b>."
+            )
+        else:
+            texto_prazo = (
+                f"Conforme art. 487 da CLT, comprometendo-me a cumprir o aviso prévio de "
+                f"<b>{total_dias} dias</b> (30 dias — Lei 12.506/2011 é benefício do empregado), "
+                f"a partir de <b>{data_aviso_fmt}</b>, encerrando-se em <b>{data_fim_fmt}</b>, "
+                f"salvo dispensa expressa e por escrito da empresa. Estou ciente de que a falta de "
+                f"cumprimento do aviso implicará desconto no valor correspondente nas verbas rescisórias, "
+                f"nos termos do art. 487, §2º da CLT."
+            )
 
     if tipo == "termino_contrato":
         texto_base_legal = (
@@ -13086,10 +14216,15 @@ def _gerar_aviso_previo_pdf(
         ),
     ]
     if (obs or "").strip():
+        # BUG-FIX: escapar caracteres XML (<, >, &) antes de jogar em Paragraph,
+        # senão reportlab quebra a geração quando o usuário usa esses símbolos
+        # em observações ("H < 8h", "a&b" etc.).
+        from xml.sax.saxutils import escape as _xml_escape
+        obs_safe = _xml_escape(obs.strip())
         elems += [
             Spacer(1, 0.2 * cm),
             Paragraph(
-                f"<b>Observações:</b> {obs.strip()}",
+                f"<b>Observações:</b> {obs_safe}",
                 ParagraphStyle(
                     "ob",
                     fontName="Helvetica",
@@ -13122,12 +14257,34 @@ def _gerar_aviso_previo_pdf(
 def api_calcular_aviso_previo(id):
     """Retorna o prazo de aviso prévio calculado pela CLT para exibição na UI."""
     f = db.get_or_404(Funcionario, id)
-    total_dias = _calcular_aviso_previo_dias(f.data_admissao)
+    # BUG-FIX: aceitar data_aviso via query string para a prévia ficar
+    # consistente com o PDF gerado (que sempre usa a data escolhida pelo
+    # usuário). Sem isso, anos_servico/total_dias podiam divergir.
+    from datetime import date as _date
+
+    data_aviso_q = (request.args.get("data_aviso") or "").strip()
+    tipo_q = (request.args.get("tipo") or "").strip().lower()
+    dt_ref = None
+    if data_aviso_q:
+        try:
+            s_q = data_aviso_q[:10]
+            if "-" in s_q:
+                dt_ref = _date.fromisoformat(s_q)
+            elif "/" in s_q:
+                dd, mm, yyyy = s_q.split("/")
+                dt_ref = _date(int(yyyy), int(mm), int(dd))
+        except Exception:
+            dt_ref = None
+    if dt_ref is None:
+        dt_ref = localnow().date()
+    total_dias = _calcular_aviso_previo_dias(f.data_admissao, data_ref=dt_ref)
+    # BUG-FIX (CLT): pedido de demissão do empregado → 30 dias fixos
+    # (Lei 12.506 é benefício apenas do empregado). UI deve refletir o mesmo.
+    if tipo_q == "pedido_demissao":
+        total_dias = 30
     anos = 0
     data_adm_fmt = ""
     try:
-        from datetime import date as _date
-
         s = str(f.data_admissao or "")[:10]
         if "-" in s:
             dt_adm = _date.fromisoformat(s)
@@ -13136,21 +14293,23 @@ def api_calcular_aviso_previo(id):
             dt_adm = _date(int(yyyy), int(mm), int(dd))
         else:
             dt_adm = None
-        if dt_adm:
-            anos = (localnow().date() - dt_adm).days // 365
+        if dt_adm and dt_ref >= dt_adm:
+            # BUG-FIX: comparação de tuplas em vez de //365.
+            anos = dt_ref.year - dt_adm.year - (
+                (dt_ref.month, dt_ref.day) < (dt_adm.month, dt_adm.day)
+            )
+            if anos < 0:
+                anos = 0
             data_adm_fmt = dt_adm.strftime("%d/%m/%Y")
     except Exception:
         pass
-    dias_adicionais = max(0, total_dias - 30)
     return jsonify(
         {
             "ok": True,
             "total_dias": total_dias,
             "anos_servico": anos,
             "data_admissao": data_adm_fmt,
-            "dias_adicionais": dias_adicionais,
-            "dias_trabalhados": 30,
-            "dias_indenizados": dias_adicionais,
+            "dias_adicionais": total_dias - 30,
         }
     )
 
@@ -13173,19 +14332,91 @@ def api_funcionario_gerar_aviso_previo(id):
     reducao = (d.get("reducao") or "nenhuma").strip().lower()
     if reducao not in ("nenhuma", "2h_diarias", "7_dias_indenizados"):
         reducao = "nenhuma"
+    # Redução do art. 488 só faz sentido em aviso trabalhado.
+    if tipo != "empresa_trabalhado":
+        reducao = "nenhuma"
+    demissao_aviso = (d.get("demissao_aviso") or "cumprira").strip().lower()
+    if demissao_aviso not in ("cumprira", "nao_cumprira"):
+        demissao_aviso = "cumprira"
+    # demissao_aviso só se aplica ao pedido de demissão.
+    if tipo != "pedido_demissao":
+        demissao_aviso = "cumprira"
     canal = (d.get("canal") or "nao").strip().lower()
     if canal not in ("whatsapp", "app", "link", "nao"):
         canal = "nao"
+    forcar = bool(d.get("forcar"))
     emp_obj = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
-    total_dias = _calcular_aviso_previo_dias(f.data_admissao)
+    # BUG-FIX: passar data_aviso como ref para o cálculo do total_dias
+    # registrado na auditoria/resposta refletir a data escolhida (mesma
+    # base usada pelo PDF). Antes usava sempre hoje e divergia.
+    from datetime import date as _date
+    dt_aviso_audit = None
+    if data_aviso:
+        try:
+            _s = data_aviso[:10]
+            if "-" in _s:
+                dt_aviso_audit = _date.fromisoformat(_s)
+            elif "/" in _s:
+                _dd, _mm, _yy = _s.split("/")
+                dt_aviso_audit = _date(int(_yy), int(_mm), int(_dd))
+        except Exception:
+            dt_aviso_audit = None
+    # BUG-FIX: validar coerência entre data_aviso e data_admissao — sem isso,
+    # operador podia gerar aviso prévio com data anterior à admissão, gerando
+    # PDF com período inválido e contagem de tempo de serviço = 0.
+    dt_adm_chk = None
+    try:
+        _sa = str(f.data_admissao or "")[:10]
+        if "-" in _sa:
+            dt_adm_chk = _date.fromisoformat(_sa)
+        elif "/" in _sa:
+            _dd2, _mm2, _yy2 = _sa.split("/")
+            dt_adm_chk = _date(int(_yy2), int(_mm2), int(_dd2))
+    except Exception:
+        dt_adm_chk = None
+    if dt_aviso_audit and dt_adm_chk and dt_aviso_audit < dt_adm_chk:
+        return jsonify({
+            "erro": (
+                f"Data do aviso ({dt_aviso_audit.strftime('%d/%m/%Y')}) é anterior "
+                f"à data de admissão ({dt_adm_chk.strftime('%d/%m/%Y')}). "
+                "Verifique as datas antes de gerar o documento."
+            )
+        }), 400
+    total_dias = _calcular_aviso_previo_dias(f.data_admissao, data_ref=dt_aviso_audit)
+    if tipo == "pedido_demissao":
+        total_dias = 30  # ver comentário no PDF (Lei 12.506 é do empregado)
+    # BUG-FIX: detectar duplicidade — se já existe um aviso prévio gerado
+    # hoje para este colaborador (qualquer tipo), exigir flag 'forcar' no
+    # body. Antes cada clique no botão salvava novo PDF + registro DB,
+    # poluindo o histórico e fazendo o WhatsApp/App enviar duplicado.
+    if not forcar:
+        try:
+            from datetime import datetime as _dt, time as _time
+            hoje_ini = _dt.combine(localnow().date(), _time.min)
+            existe = (
+                db.session.query(FuncionarioArquivo.id)
+                .filter(
+                    FuncionarioArquivo.funcionario_id == id,
+                    FuncionarioArquivo.categoria == "aviso_previo",
+                    FuncionarioArquivo.criado_em >= hoje_ini,
+                )
+                .first()
+            )
+            if existe:
+                return jsonify({
+                    "erro": (
+                        "Já existe um aviso prévio gerado hoje para este "
+                        "colaborador. Se deseja realmente gerar outro, reenvie "
+                        "com 'forcar': true."
+                    ),
+                    "duplicado": True,
+                }), 409
+        except Exception:
+            pass
     try:
         buf = _gerar_aviso_previo_pdf(
-            f,
-            tipo=tipo,
-            empresa=emp_obj,
-            obs=obs,
-            data_aviso_str=data_aviso or None,
-            reducao=reducao,
+            f, tipo=tipo, empresa=emp_obj, obs=obs, data_aviso_str=data_aviso or None,
+            reducao=reducao, demissao_aviso=demissao_aviso,
         )
     except Exception as e:
         app.logger.exception("Erro ao gerar PDF aviso prévio")
@@ -13205,6 +14436,8 @@ def api_funcionario_gerar_aviso_previo(id):
     os.makedirs(os.path.dirname(abs_p), exist_ok=True)
     with open(abs_p, "wb") as fh:
         fh.write(buf.read())
+    # BUG-FIX: atomicidade — em caso de falha no commit/assinatura, remover
+    # o PDF gravado em disco para não deixar arquivo órfão sem registro no DB.
     a = FuncionarioArquivo(
         funcionario_id=id,
         categoria="aviso_previo",
@@ -13213,19 +14446,29 @@ def api_funcionario_gerar_aviso_previo(id):
         caminho=rel,
     )
     db.session.add(a)
-    db.session.flush()
-    assinatura = {}
-    if canal in ("whatsapp", "app", "link"):
-        rs = _solicitar_assinatura_arquivo_funcionario(
-            a, f, canal=canal, commit_now=False
-        )
-        assinatura = {
-            "canal": canal,
-            "link": rs.get("link_curto") or rs.get("link", ""),
-            "status": ("solicitada" if rs.get("ok") else "erro"),
-            "erro": rs.get("erro", ""),
-        }
-    db.session.commit()
+    try:
+        db.session.flush()
+        assinatura = {}
+        if canal in ("whatsapp", "app", "link"):
+            rs = _solicitar_assinatura_arquivo_funcionario(
+                a, f, canal=canal, commit_now=False
+            )
+            assinatura = {
+                "canal": canal,
+                "link": rs.get("link_curto") or rs.get("link", ""),
+                "status": ("solicitada" if rs.get("ok") else "erro"),
+                "erro": rs.get("erro", ""),
+            }
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        try:
+            if os.path.exists(abs_p):
+                os.remove(abs_p)
+        except Exception:
+            pass
+        app.logger.exception("Erro ao persistir aviso prévio")
+        return jsonify({"erro": f"Erro ao salvar documento: {str(e)}"}), 500
     audit_event(
         "aviso_previo_gerado",
         "usuario",
@@ -13252,7 +14495,6 @@ def api_funcionario_gerar_aviso_previo(id):
 
 def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, destinatario_cnpj=""):
     """Gera PDF da Carta de Declaração de Optante pelo Simples Nacional."""
-    import html as _html
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
@@ -13273,9 +14515,9 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
     st_title = ParagraphStyle(
         "sntit",
         fontName="Helvetica-Bold",
-        fontSize=14,
-        leading=18,
-        textColor=azul,
+        fontSize=16,
+        leading=20,
+        textColor=colors.white,
         alignment=TA_CENTER,
     )
     st_sub = ParagraphStyle(
@@ -13283,7 +14525,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         fontName="Helvetica",
         fontSize=8.5,
         leading=11,
-        textColor=colors.HexColor("#555"),
+        textColor=colors.white,
         alignment=TA_CENTER,
     )
     st_para = ParagraphStyle(
@@ -13301,7 +14543,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         "snitem",
         fontName="Helvetica",
         fontSize=10,
-        leading=13,
+        leading=15,
         leftIndent=0.5 * cm,
         alignment=TA_JUSTIFY,
     )
@@ -13320,8 +14562,8 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         pagesize=A4,
         leftMargin=2.5 * cm,
         rightMargin=2.5 * cm,
-        topMargin=1.2 * cm,
-        bottomMargin=1.2 * cm,
+        topMargin=1.5 * cm,
+        bottomMargin=1.5 * cm,
     )
 
     emp = empresa_declarante
@@ -13334,12 +14576,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         if emp
         else "RM FACILITIES LTDA"
     )
-    _raw_cnpj = "".join(filter(str.isdigit, getattr(emp, "cnpj", "") or "")) if emp else ""
-    emp_cnpj = (
-        f"{_raw_cnpj[:2]}.{_raw_cnpj[2:5]}.{_raw_cnpj[5:8]}/{_raw_cnpj[8:12]}-{_raw_cnpj[12:14]}"
-        if len(_raw_cnpj) == 14
-        else (getattr(emp, "cnpj", "") or "")
-    ) if emp else ""
+    emp_cnpj = _filter_fmt_cnpj(getattr(emp, "cnpj", "") or "") if emp else ""
     emp_logradouro = (getattr(emp, "logradouro", "") or "") if emp else ""
     emp_numero = (getattr(emp, "numero", "") or "") if emp else ""
     emp_complemento = (getattr(emp, "complemento", "") or "") if emp else ""
@@ -13367,59 +14604,59 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
     data_extensa = f"{emp_cidade}, {hoje.day} de {meses_pt[hoje.month - 1]} de {hoje.year}."
 
     logo_path = _get_logo_path_for_pdf(emp)
-    if not (logo_path and os.path.exists(logo_path)):
-        logo_path = LOGO_PATH if os.path.exists(LOGO_PATH) else None
-    logo_el = (
-        Image(logo_path, width=3.8 * cm, height=1.4 * cm, kind="proportional")
-        if logo_path
-        else Paragraph("", ParagraphStyle("snln_empty"))
-    )
+    if logo_path and os.path.exists(logo_path):
+        logo_el = Image(logo_path, width=3.8 * cm, height=1.4 * cm, kind="proportional")
+    else:
+        logo_el = Paragraph(
+            emp_nome,
+            ParagraphStyle(
+                "snln",
+                fontName="Helvetica-Bold",
+                fontSize=8,
+                textColor=colors.white,
+                alignment=TA_CENTER,
+            ),
+        )
 
     hdr_data = [
-        [logo_el, Paragraph("DECLARAÇÃO DO SIMPLES NACIONAL", st_title)],
+        [Paragraph("DECLARAÇÃO", st_title), logo_el],
+        [Paragraph(emp_nome, st_sub), ""],
     ]
-    hdr_table = Table(hdr_data, colWidths=[4 * cm, 12 * cm])
+    hdr_table = Table(hdr_data, colWidths=[12 * cm, 5.5 * cm])
     hdr_table.setStyle(
         TableStyle(
             [
-                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#333")),
-                ("LINEBEFORE", (1, 0), (1, 0), 0.5, colors.HexColor("#333")),
+                ("BACKGROUND", (0, 0), (-1, -1), azul),
+                ("SPAN", (0, 1), (1, 1)),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("ALIGN", (0, 0), (0, 0), "CENTER"),
                 ("ALIGN", (1, 0), (1, 0), "CENTER"),
-                ("TOPPADDING", (0, 0), (-1, -1), 10),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-                ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
             ]
         )
     )
 
     dest_nome = (destinatario_nome or "").strip()
-    cnpj_dest_fmt = (
-        f"{destinatario_cnpj[:2]}.{destinatario_cnpj[2:5]}.{destinatario_cnpj[5:8]}/{destinatario_cnpj[8:12]}-{destinatario_cnpj[12:14]}"
-        if destinatario_cnpj and len(destinatario_cnpj) == 14
-        else ""
-    )
-    dest_label = _html.escape(dest_nome) if dest_nome else "[EMPRESA DESTINATÁRIA]"
-    dest_display = dest_label + (f" &#8212; CNPJ: {cnpj_dest_fmt}" if cnpj_dest_fmt else "")
+    cnpj_dest_fmt = _filter_fmt_cnpj(destinatario_cnpj) if destinatario_cnpj else ""
+    dest_label = dest_nome or "[EMPRESA DESTINATÁRIA]"
+    dest_display = dest_label + (f" — CNPJ: {cnpj_dest_fmt}" if cnpj_dest_fmt else "")
 
     elems = []
     elems.append(hdr_table)
-    elems.append(Spacer(1, 0.4 * cm))
+    elems.append(Spacer(1, 0.7 * cm))
 
     elems.append(Paragraph("À", st_dest))
     elems.append(Paragraph(dest_display, st_dest_nm))
-    elems.append(Spacer(1, 0.35 * cm))
+    elems.append(Spacer(1, 0.5 * cm))
 
-    _emp_nome_esc = _html.escape(emp_nome)
-    _end_completo_esc = _html.escape(end_completo)
-    _emp_cnpj_esc = _html.escape(emp_cnpj)
-
-    _cnpj_parte = f", inscrita no CNPJ sob o nº <b>{_emp_cnpj_esc}</b>" if emp_cnpj else ""
-    p1 = f"<b>{_emp_nome_esc}</b>, com sede à {_end_completo_esc}{_cnpj_parte}."
+    p1 = (
+        f"<b>{emp_nome}</b>, com sede à {end_completo}, inscrita no CNPJ sob o nº "
+        f"<b>{emp_cnpj}</b>."
+    )
     elems.append(Paragraph(p1, st_para))
-    elems.append(Spacer(1, 0.3 * cm))
+    elems.append(Spacer(1, 0.4 * cm))
 
     p2 = (
         f"DECLARA à <b>{dest_label}</b> para fins de não incidência na fonte da "
@@ -13431,12 +14668,12 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         "XXVI do Artigo 17 da Lei Complementar Federal nº 123 de 14 de Dezembro de 2006."
     )
     elems.append(Paragraph(p2, st_para))
-    elems.append(Spacer(1, 0.3 * cm))
+    elems.append(Spacer(1, 0.4 * cm))
 
     elems.append(Paragraph("Para esse efeito, a declarante informa que:", st_para))
-    elems.append(Spacer(1, 0.12 * cm))
+    elems.append(Spacer(1, 0.15 * cm))
     elems.append(Paragraph("preenche os seguintes requisitos:", st_para))
-    elems.append(Spacer(1, 0.12 * cm))
+    elems.append(Spacer(1, 0.15 * cm))
 
     bullets = [
         (
@@ -13461,10 +14698,10 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         ),
     ]
     for b in bullets:
-        elems.append(Paragraph(f"- {_html.escape(b)}", st_item))
-        elems.append(Spacer(1, 0.12 * cm))
+        elems.append(Paragraph(f"• {b}", st_item))
+        elems.append(Spacer(1, 0.15 * cm))
 
-    elems.append(Spacer(1, 0.5 * cm))
+    elems.append(Spacer(1, 0.7 * cm))
     elems.append(
         Paragraph(
             data_extensa,
@@ -13477,13 +14714,13 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
             ),
         )
     )
-    elems.append(Spacer(1, 1.0 * cm))
+    elems.append(Spacer(1, 1.8 * cm))
 
     sig_inner = [
         [HRFlowable(width="80%", thickness=1, color=colors.HexColor("#333"))],
         [
             Paragraph(
-                _emp_nome_esc,
+                emp_nome,
                 ParagraphStyle(
                     "snsnm",
                     fontName="Helvetica-Bold",
@@ -13495,7 +14732,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         ],
         [
             Paragraph(
-                f"CNPJ: {_emp_cnpj_esc}" if emp_cnpj else "",
+                f"CNPJ: {emp_cnpj}" if emp_cnpj else "",
                 ParagraphStyle(
                     "snscnpj",
                     fontName="Helvetica",
@@ -13525,7 +14762,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         )
     )
 
-    elems.append(Spacer(1, 0.35 * cm))
+    elems.append(Spacer(1, 0.5 * cm))
     elems.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#ccc")))
     elems.append(Spacer(1, 0.1 * cm))
     elems.append(
@@ -13587,6 +14824,8 @@ def _gerar_proposta_comercial_pdf(
     remetente=None,
     ref_num=None,
     tipo=None,
+    escopo_observacoes=None,
+    insalubridade=None,
 ):
     """Gera PDF da Proposta Comercial com os campos dinâmicos preenchidos.
     remetente: dict da empresa remetente (campos do modelo Empresa), ou None para defaults.
@@ -13677,6 +14916,8 @@ def _gerar_proposta_comercial_pdf(
         or "RM CONSERVAÇÃO E SERVIÇOS"
     )
     rem_cnpj = (remetente or {}).get("cnpj") or "61.337.803/0001-20"
+    rem_cnpj_fmt = _filter_fmt_cnpj(rem_cnpj) if rem_cnpj else ""
+    cnpj_fmt = _filter_fmt_cnpj(cnpj) if (cnpj or "").strip() else ""
     rem_contato = (remetente or {}).get("contato_nome") or "Roberio Figueiredo"
     rem_tel = (
         (remetente or {}).get("contato_telefone")
@@ -13695,7 +14936,7 @@ def _gerar_proposta_comercial_pdf(
     hdr_data = [
         [
             Paragraph(
-                f"<b>{rem_nome}</b><br/><font size=8>CNPJ: {rem_cnpj}</font>",
+                f"<b>{rem_nome}</b><br/><font size=8>CNPJ: {rem_cnpj_fmt or rem_cnpj}</font>",
                 st(
                     "hd",
                     fontName="Helvetica-Bold",
@@ -13739,7 +14980,7 @@ def _gerar_proposta_comercial_pdf(
         ],
         [
             Paragraph(empresa or "—", s_bold),
-            Paragraph(cnpj or "—", s_bold),
+            Paragraph(cnpj_fmt or cnpj or "—", s_bold),
             Paragraph(funcao or "—", s_bold),
         ],
     ]
@@ -13836,6 +15077,10 @@ def _gerar_proposta_comercial_pdf(
         )
     )
     elems.append(Spacer(1, 0.2 * cm))
+    escopo_obs = (escopo_observacoes or "").strip()
+    if escopo_obs:
+        elems.append(Paragraph(escopo_obs.replace("\n", "<br/>"), s_normal))
+        elems.append(Spacer(1, 0.25 * cm))
     elems.append(
         Paragraph(
             "Planilha de custo",
@@ -13933,11 +15178,12 @@ def _gerar_proposta_comercial_pdf(
         f"Todos os funcionários da {rem_nome} possuem os seguintes benefícios de acordo com a convenção coletiva;",
     ]:
         elems.append(Paragraph(txt, s_normal))
+    insalubridade_txt = (insalubridade or "20% Insalubridade").strip()
     for txt in [
         "Seguro de Vida em grupo;",
         "Vale Transporte;",
         "Vale Alimentação",
-        "20% Insalubridade",
+        insalubridade_txt,
         "Uniforme;",
         "EPI's;",
     ]:
@@ -14060,6 +15306,8 @@ def api_gerar_proposta_comercial():
     data_str = (d.get("data") or localnow().strftime("%d/%m/%Y")).strip()
     cliente = (d.get("cliente") or "").strip()
     email = (d.get("email") or "").strip()
+    escopo_observacoes = (d.get("escopo_observacoes") or "").strip()
+    insalubridade = (d.get("insalubridade") or "20% Insalubridade").strip()
     itens = d.get("itens") or None
     tipo = (d.get("tipo") or "mensal").strip().lower()
 
@@ -14077,15 +15325,35 @@ def api_gerar_proposta_comercial():
     if not empresa:
         return jsonify({"erro": "Informe o nome da empresa destinatária."}), 400
 
-    # Calcular total a partir dos itens
+    # Calcular total a partir dos itens (aceita formato BR: 4.923,88)
+    def _parse_money_num(v):
+        if v is None:
+            return None
+        if isinstance(v, (int, float)):
+            return float(v)
+        s = str(v).strip()
+        if not s:
+            return None
+        s = s.replace("R$", "").replace(" ", "")
+        if "," in s and "." in s:
+            s = s.replace(".", "").replace(",", ".")
+        elif "," in s:
+            s = s.replace(",", ".")
+        try:
+            return float(s)
+        except Exception:
+            return None
+
     total_val = 0.0
     try:
         if itens:
             for it in itens:
-                try:
-                    total_val += float(it.get("subtotal") or 0)
-                except Exception:
-                    pass
+                val = _parse_money_num(it.get("subtotal"))
+                if val is None:
+                    q = _parse_money_num(it.get("qtd")) or 0.0
+                    vu = _parse_money_num(it.get("valor_unit")) or 0.0
+                    val = q * vu
+                total_val += float(val or 0.0)
     except Exception:
         pass
     total_str = (
@@ -14103,6 +15371,8 @@ def api_gerar_proposta_comercial():
             data_proposta=data_str,
             cliente_contato=cliente,
             email_contato=email,
+            escopo_observacoes=escopo_observacoes,
+            insalubridade=insalubridade,
             remetente_id=int(remetente_id) if remetente_id else None,
             itens=_json.dumps(itens or [], ensure_ascii=False),
             total=total_str,
@@ -14133,6 +15403,8 @@ def api_gerar_proposta_comercial():
             remetente=remetente,
             ref_num=ref_num,
             tipo=tipo,
+            escopo_observacoes=escopo_observacoes,
+            insalubridade=insalubridade,
         )
     except Exception as e:
         app.logger.exception("Erro ao gerar proposta comercial")
@@ -14186,6 +15458,7 @@ def api_lista_propostas_comerciais():
                 PropostaComercial.empresa.ilike(like),
                 PropostaComercial.funcao.ilike(like),
                 PropostaComercial.cliente_contato.ilike(like),
+                PropostaComercial.escopo_observacoes.ilike(like),
             )
         )
     if status_f:
@@ -14203,6 +15476,75 @@ def api_lista_propostas_comerciais():
 def api_get_proposta_comercial(pid):
     p = db.get_or_404(PropostaComercial, pid)
     return jsonify(p.to_dict())
+
+
+@app.route("/api/propostas-comerciais/<int:pid>", methods=["DELETE"])
+@lr
+def api_delete_proposta_comercial(pid):
+    p = db.get_or_404(PropostaComercial, pid)
+    numero = p.numero
+    empresa = p.empresa
+    db.session.delete(p)
+    db.session.commit()
+    audit_event(
+        "proposta_excluida",
+        "proposta",
+        pid,
+        None,
+        None,
+        True,
+        {"numero": numero, "empresa": empresa},
+    )
+    return jsonify({"ok": True, "numero": numero})
+
+
+@app.route("/api/propostas-comerciais/<int:pid>/pdf", methods=["GET"])
+@lr
+def api_download_proposta_comercial_pdf(pid):
+    import json as _json
+
+    p = db.get_or_404(PropostaComercial, pid)
+    remetente = None
+    if p.remetente_id:
+        try:
+            emp = db.session.get(Empresa, p.remetente_id)
+            if emp:
+                remetente = emp.to_dict()
+        except Exception:
+            pass
+
+    try:
+        itens = _json.loads(p.itens or "[]")
+    except Exception:
+        itens = []
+
+    try:
+        buf = _gerar_proposta_comercial_pdf(
+            p.empresa,
+            p.cnpj_dest,
+            p.funcao,
+            p.data_proposta,
+            p.cliente_contato,
+            p.email_contato,
+            itens,
+            remetente=remetente,
+            ref_num=p.numero,
+            tipo=p.tipo,
+            escopo_observacoes=p.escopo_observacoes,
+            insalubridade=p.insalubridade,
+        )
+    except Exception as e:
+        app.logger.exception("Erro ao regenerar PDF da proposta para download")
+        return jsonify({"erro": f"Erro ao gerar PDF: {e}"}), 500
+
+    nome_arq = _clean_file_part(p.empresa or "proposta") or "proposta"
+    filename = f"Proposta_Comercial_{p.numero}_{nome_arq}.pdf"
+    return send_file(
+        buf,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+    )
 
 
 @app.route("/api/propostas-comerciais/<int:pid>/status", methods=["PATCH"])
@@ -14275,6 +15617,8 @@ def api_enviar_proposta_comercial(pid):
                 remetente=remetente,
                 ref_num=p.numero,
                 tipo=p.tipo,
+                escopo_observacoes=p.escopo_observacoes,
+                insalubridade=p.insalubridade,
             )
             pdf_buf.seek(0)
         except Exception as e:
@@ -14316,11 +15660,11 @@ def api_enviar_proposta_comercial(pid):
             ), 400
         tipo_label = "SPOT" if (p.tipo or "").lower() == "spot" else "Mensal"
         texto = (
-            f"Olá{' ' + dest_nome if dest_nome else ''}! 👋\n\n"
+            f"Olá{' ' + dest_nome if dest_nome else ''}.\n\n"
             + (f"{mensagem}\n\n" if mensagem else "")
             + f"Segue nossa Proposta Comercial {tipo_label} *{p.numero}*.\n"
             f"Empresa: {p.empresa or ''}\nData: {p.data_proposta or ''}\nValor Total: {p.total or ''}\n\n"
-            f"Qualquer dúvida estamos à disposição! 😊\n— {rem_nome} Comercial"
+            f"Ficamos à disposição para quaisquer esclarecimentos.\n{rem_nome} Comercial"
         )
         # Gera o PDF para anexar via Evolution API
         try:
@@ -14339,6 +15683,8 @@ def api_enviar_proposta_comercial(pid):
                 remetente=remetente,
                 ref_num=p.numero,
                 tipo=p.tipo,
+                escopo_observacoes=p.escopo_observacoes,
+                insalubridade=p.insalubridade,
             )
             pdf_buf.seek(0)
             pdf_bytes = pdf_buf.read()
@@ -14501,6 +15847,7 @@ def _gerar_contrato_pdf(contrato, prestadora, tomadora):
             return ""
         nome = emp_dict.get("razao") or emp_dict.get("nome") or ""
         cnpj = emp_dict.get("cnpj") or ""
+        cnpj_fmt = _filter_fmt_cnpj(cnpj) if cnpj else ""
         parts_end = [emp_dict.get("logradouro", ""), emp_dict.get("numero", "")]
         end = ", ".join(filter(None, parts_end))
         if emp_dict.get("bairro"):
@@ -14509,7 +15856,7 @@ def _gerar_contrato_pdf(contrato, prestadora, tomadora):
             end += f", {emp_dict['cidade']}/{emp_dict.get('estado', '')}"
         txt = f"<b>{papel}:</b> <b>{nome}</b>"
         if cnpj:
-            txt += f", inscrita no CNPJ sob n° <b>{cnpj}</b>"
+            txt += f", inscrita no CNPJ sob n° <b>{cnpj_fmt or cnpj}</b>"
         if end:
             txt += f", com sede em {end}"
         return txt + "."
@@ -14884,19 +16231,199 @@ def api_funcionario_push_teste(id):
 @app.route("/api/app/versao")
 @_limiter.limit("60 per minute")
 def api_app_versao():
-    """Retorna versão mínima e atual do app. Configurável por variável de ambiente APP_VERSION_CODE."""
-    import os
-
-    versao_minima = int(os.environ.get("APP_VERSION_MINIMA", "14"))
-    versao_atual = int(os.environ.get("APP_VERSION_ATUAL", "14"))
-    download_url = os.environ.get("APP_DOWNLOAD_URL", "")
+    """Retorna versão mínima e atual do app (Config > App ou variáveis de ambiente)."""
+    pol = _app_version_policy()
     return jsonify(
         {
-            "versao_minima": versao_minima,
-            "versao_atual": versao_atual,
-            "download_url": download_url,
+            "versao_minima": pol["versao_minima"],
+            "versao_atual": pol["versao_atual"],
+            "download_url": pol["download_url"],
         }
     )
+
+
+def _to_int_safe(v, default=0):
+    try:
+        return int(v)
+    except Exception:
+        return default
+
+
+def _app_version_policy():
+    min_cfg = gc("app_version_minima", "")
+    cur_cfg = gc("app_version_atual", "")
+    dl_cfg = (gc("app_download_url", "") or "").strip()
+
+    versao_minima = _to_int_safe(
+        min_cfg if str(min_cfg or "").strip() else os.environ.get("APP_VERSION_MINIMA", "14"),
+        14,
+    )
+    versao_atual = _to_int_safe(
+        cur_cfg if str(cur_cfg or "").strip() else os.environ.get("APP_VERSION_ATUAL", str(versao_minima)),
+        versao_minima,
+    )
+    download_url = dl_cfg or (os.environ.get("APP_DOWNLOAD_URL", "").strip())
+    cooldown_h = max(
+        1,
+        _to_int_safe(
+            gc("app_version_notif_cooldown_h", "24"),
+            24,
+        ),
+    )
+    return {
+        "versao_minima": max(0, versao_minima),
+        "versao_atual": max(0, versao_atual),
+        "download_url": download_url,
+        "cooldown_h": cooldown_h,
+    }
+
+
+def _app_parse_version_code(value):
+    if value is None:
+        return None
+    try:
+        return int(str(value).strip())
+    except Exception:
+        pass
+    m = re.search(r"(\d+)", str(value))
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except Exception:
+        return None
+
+
+def _app_extract_version_info(payload=None):
+    payload = payload if isinstance(payload, dict) else {}
+    hdr = request.headers
+
+    versao_nome = (
+        payload.get("versao")
+        or payload.get("version")
+        or payload.get("app_version")
+        or payload.get("versao_app")
+        or hdr.get("X-App-Version")
+        or hdr.get("X-App-Version-Name")
+        or ""
+    )
+    versao_nome = str(versao_nome or "").strip()[:40]
+
+    versao_code_raw = (
+        payload.get("versao_code")
+        or payload.get("version_code")
+        or payload.get("build")
+        or payload.get("build_number")
+        or payload.get("app_version_code")
+        or hdr.get("X-App-Version-Code")
+        or hdr.get("X-App-Build")
+    )
+    versao_code = _app_parse_version_code(versao_code_raw)
+    if versao_code is None and versao_nome:
+        versao_code = _app_parse_version_code(versao_nome)
+
+    return {
+        "versao_nome": versao_nome,
+        "versao_code": versao_code,
+    }
+
+
+def _app_notify_outdated_version(funcionario, pol):
+    code = _to_int_safe(getattr(funcionario, "app_versao_code", None), -1)
+    if code < 0 or code >= pol["versao_minima"]:
+        return False
+
+    agora = utcnow()
+    ultimo = getattr(funcionario, "app_versao_notificado_em", None)
+    ultimo_code = _to_int_safe(getattr(funcionario, "app_versao_notificado_code", None), -1)
+    if ultimo and ultimo_code == code:
+        delta_h = (agora - ultimo).total_seconds() / 3600.0
+        if delta_h < float(pol["cooldown_h"]):
+            return False
+
+    versao_txt = (getattr(funcionario, "app_versao_nome", None) or f"build {code}").strip()
+    titulo = "Atualize o aplicativo RM Facilities"
+    corpo = (
+        f"Sua versão ({versao_txt}) está desatualizada. "
+        f"Atualize para continuar usando o app com segurança."
+    )
+    data_push = {
+        "tipo": "app_update_required",
+        "versao_minima": pol["versao_minima"],
+        "versao_atual": pol["versao_atual"],
+    }
+    if pol["download_url"]:
+        data_push["download_url"] = pol["download_url"]
+
+    enviado = _push_notify_funcionario(funcionario.id, titulo, corpo, data_push)
+    if not enviado:
+        try:
+            tel = norm_phone(getattr(funcionario, "telefone", ""))
+            if tel and wa_is_valid_number(tel):
+                msg = (
+                    "RM Facilities: seu aplicativo está desatualizado.\n"
+                    f"Versão instalada: {versao_txt}\n"
+                    f"Versão mínima: {pol['versao_minima']}\n"
+                )
+                if pol["download_url"]:
+                    msg += f"Atualize em: {pol['download_url']}"
+                wa_send_text(tel, msg)
+                enviado = True
+        except Exception as ex:
+            app.logger.warning(
+                "[app_version_notify] WhatsApp falhou para func %s: %s",
+                funcionario.id,
+                ex,
+            )
+
+    if enviado:
+        funcionario.app_versao_notificado_em = agora
+        funcionario.app_versao_notificado_code = code
+    return bool(enviado)
+
+
+def _app_track_version(funcionario, payload=None, notificar=False):
+    pol = _app_version_policy()
+    info = _app_extract_version_info(payload)
+    versao_nome = info.get("versao_nome") or ""
+    versao_code = info.get("versao_code")
+
+    atualizado = False
+    if versao_nome and versao_nome != (getattr(funcionario, "app_versao_nome", "") or ""):
+        funcionario.app_versao_nome = versao_nome
+        atualizado = True
+    if versao_code is not None and versao_code != getattr(funcionario, "app_versao_code", None):
+        funcionario.app_versao_code = int(versao_code)
+        atualizado = True
+    if atualizado:
+        funcionario.app_versao_atualizado_em = utcnow()
+
+    code_eff = _to_int_safe(getattr(funcionario, "app_versao_code", None), -1)
+    desat = bool(code_eff >= 0 and code_eff < pol["versao_minima"])
+    if desat != bool(getattr(funcionario, "app_versao_desatualizada", False)):
+        funcionario.app_versao_desatualizada = desat
+        atualizado = True
+
+    notif_enviada = False
+    if notificar and desat:
+        notif_enviada = _app_notify_outdated_version(funcionario, pol)
+        atualizado = atualizado or notif_enviada
+
+    if atualizado:
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+    return {
+        "versao_nome": getattr(funcionario, "app_versao_nome", None),
+        "versao_code": getattr(funcionario, "app_versao_code", None),
+        "desatualizada": bool(getattr(funcionario, "app_versao_desatualizada", False)),
+        "notificacao_enviada": bool(notif_enviada),
+        "versao_minima": pol["versao_minima"],
+        "versao_atual": pol["versao_atual"],
+        "download_url": pol["download_url"],
+    }
 
 
 @app.route("/api/app/funcionario/login", methods=["POST"])
@@ -14967,6 +16494,7 @@ def api_app_funcionario_login():
 
     sess = _app_issue_session_tokens(f)
     db.session.commit()
+    app_update = _app_track_version(f, d, notificar=True)
     reg_auth_attempt("app", cpf, True, "ok")
     audit_event(
         "auth_app_sucesso",
@@ -14977,6 +16505,7 @@ def api_app_funcionario_login():
         True,
         {"sessao_id": sess["sessao_id"], "modo": "senha"},
     )
+    emp_login = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
     return jsonify(
         {
             "ok": True,
@@ -14988,7 +16517,15 @@ def api_app_funcionario_login():
                 "cargo": f.cargo,
                 "setor": f.setor,
                 "status": f.status,
+                "email": f.email,
+                "telefone": f.telefone,
+                "posto_operacional": f.posto_operacional,
+                "empresa_id": f.empresa_id,
+                "empresa_nome": (emp_login.nome if emp_login else None),
+                "canal_otp": f.app_canal_otp or "whatsapp",
+                "foto_url": "/api/app/funcionario/me/foto" if f.foto_perfil else None,
             },
+            "app_update": app_update,
         }
     )
 
@@ -15007,11 +16544,11 @@ def api_app_funcionario_auth_iniciar():
     if not f:
         reg_auth_attempt("app_otp", cpf, False, "nao_encontrado")
         return jsonify(
-            {"erro": "Funcionario nao encontrado para o CPF informado."}
-        ), 404
-    if f.app_ativo is False:
+            {"erro": "Credenciais invalidas."}
+        ), 401
+    if f.app_ativo is False or _status_norm(f.status) in ("demitido", "inativo") or bool((getattr(f, "data_demissao", "") or "").strip()):
         reg_auth_attempt("app_otp", cpf, False, "app_desativado")
-        return jsonify({"erro": "Acesso do aplicativo desativado."}), 403
+        return jsonify({"erro": "Credenciais invalidas."}), 401
 
     codigo = _otp_new_code()
     f.app_otp_hash = token_hash(codigo)
@@ -15094,7 +16631,7 @@ def api_app_funcionario_auth_confirmar():
     if not f:
         reg_auth_attempt("app_otp_confirm", cpf, False, "nao_encontrado")
         return jsonify({"erro": "Funcionario nao encontrado."}), 404
-    if f.app_ativo is False:
+    if f.app_ativo is False or _status_norm(f.status) in ("demitido", "inativo") or bool((getattr(f, "data_demissao", "") or "").strip()):
         reg_auth_attempt("app_otp_confirm", cpf, False, "app_desativado")
         return jsonify({"erro": "Acesso do aplicativo desativado."}), 403
 
@@ -15119,6 +16656,7 @@ def api_app_funcionario_auth_confirmar():
     f.app_otp_tentativas = 0
     sess = _app_issue_session_tokens(f)
     db.session.commit()
+    app_update = _app_track_version(f, d, notificar=True)
     reg_auth_attempt("app_otp_confirm", cpf, True, "ok")
     audit_event(
         "auth_app_sucesso",
@@ -15129,6 +16667,7 @@ def api_app_funcionario_auth_confirmar():
         True,
         {"sessao_id": sess["sessao_id"], "modo": "otp"},
     )
+    emp_otp = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
     return jsonify(
         {
             "ok": True,
@@ -15140,7 +16679,15 @@ def api_app_funcionario_auth_confirmar():
                 "cargo": f.cargo,
                 "setor": f.setor,
                 "status": f.status,
+                "email": f.email,
+                "telefone": f.telefone,
+                "posto_operacional": f.posto_operacional,
+                "empresa_id": f.empresa_id,
+                "empresa_nome": (emp_otp.nome if emp_otp else None),
+                "canal_otp": f.app_canal_otp or "whatsapp",
+                "foto_url": "/api/app/funcionario/me/foto" if f.foto_perfil else None,
             },
+            "app_update": app_update,
         }
     )
 
@@ -15183,16 +16730,18 @@ def api_app_funcionario_stepup_solicitar():
     except Exception as ex:
         db.session.rollback()
         reg_auth_attempt("app_stepup", ident, False, "persist_falha")
+        app.logger.error(f"[stepup] persist falha: {ex}")
         return jsonify(
-            {"erro": "Nao foi possivel preparar o codigo OTP.", "detalhe": str(ex)}
+            {"erro": "Nao foi possivel preparar o codigo OTP."}
         ), 503
 
     try:
         envio = _send_app_login_otp(codigo, f)
     except Exception as ex:
         reg_auth_attempt("app_stepup", ident, False, "envio_falha")
+        app.logger.error(f"[stepup] envio falha: {ex}")
         return jsonify(
-            {"erro": "Nao foi possivel enviar o codigo OTP.", "detalhe": str(ex)}
+            {"erro": "Nao foi possivel enviar o codigo OTP."}
         ), 503
 
     reg_auth_attempt("app_stepup", ident, True, "desafio_enviado")
@@ -15225,6 +16774,7 @@ def api_app_funcionario_stepup_solicitar():
 
 
 @app.route("/api/app/funcionario/refresh", methods=["POST"])
+@_limiter.limit("20 per minute")
 def api_app_funcionario_refresh():
     d = request.json or {}
     refresh = (
@@ -15238,12 +16788,15 @@ def api_app_funcionario_refresh():
     if not sessao or sessao.exp_refresh < utcnow():
         return jsonify({"erro": "Refresh token invalido ou expirado"}), 401
     f = db.session.get(Funcionario, sessao.funcionario_id)
-    if not f or f.app_ativo is False:
+    if not f or f.app_ativo is False or _status_norm(f.status) in ("demitido", "inativo") or bool((getattr(f, "data_demissao", "") or "").strip()):
         return jsonify({"erro": "Acesso desativado"}), 403
     novo_refresh = app_issue_refresh_token()
     sessao.refresh_hash = token_hash(novo_refresh)
+    # Sliding window: estende a expiração para mais 14 dias a cada uso válido.
+    sessao.exp_refresh = utcnow() + timedelta(days=14)
     access = app_issue_access_token(f.id, sessao.id, ttl=3600)
     db.session.commit()
+    app_update = _app_track_version(f, d, notificar=True)
     audit_event(
         "auth_app_refresh",
         "funcionario",
@@ -15263,6 +16816,7 @@ def api_app_funcionario_refresh():
             "refresh_expires_in": max(
                 0, int((sessao.exp_refresh - utcnow()).total_seconds())
             ),
+            "app_update": app_update,
         }
     )
 
@@ -15293,6 +16847,7 @@ def api_app_funcionario_logout():
 
 
 @app.route("/api/app/log", methods=["POST"])
+@_limiter.limit("10 per minute")
 @app_func_required
 def api_app_log():
     """Recebe lote de logs enviados pelo app mobile."""
@@ -15300,12 +16855,25 @@ def api_app_log():
     payload = request.json or {}
     entradas = payload.get("logs") or [payload]
     salvos = 0
+    ultima_versao_nome = ""
+    ultima_versao_code = None
     for ent in entradas[:200]:
         nivel = (ent.get("nivel") or ent.get("level") or "INFO").upper()[:10]
         tag = (ent.get("tag") or "")[:80]
         mensagem = ent.get("mensagem") or ent.get("message") or ""
         stack = ent.get("stack") or ent.get("stackTrace") or ""
         versao_app = (ent.get("versao") or ent.get("version") or "")[:20]
+        versao_code = _app_parse_version_code(
+            ent.get("versao_code")
+            or ent.get("version_code")
+            or ent.get("build")
+            or ent.get("build_number")
+            or versao_app
+        )
+        if versao_app:
+            ultima_versao_nome = versao_app
+        if versao_code is not None:
+            ultima_versao_code = versao_code
         dispositivo = (ent.get("dispositivo") or ent.get("device") or "")[:120]
         ts_raw = ent.get("timestamp") or ent.get("ts")
         ts_disp = None
@@ -15334,6 +16902,15 @@ def api_app_log():
         db.session.commit()
     except Exception:
         db.session.rollback()
+    if ultima_versao_nome or ultima_versao_code is not None:
+        _app_track_version(
+            f,
+            {
+                "versao": ultima_versao_nome,
+                "versao_code": ultima_versao_code,
+            },
+            notificar=True,
+        )
     return jsonify({"ok": True, "salvos": salvos})
 
 
@@ -15353,6 +16930,7 @@ def api_admin_logs_app():
 @app_func_required
 def api_app_funcionario_me():
     f = g.app_funcionario
+    app_update = _app_track_version(f, None, notificar=True)
     ultimo_aso = (
         FuncionarioArquivo.query.filter_by(funcionario_id=f.id, categoria="aso")
         .order_by(FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc())
@@ -15404,7 +16982,13 @@ def api_app_funcionario_me():
                 "jornada": f.jornada,
                 "jornada_info": jornada_info,
                 "canal_otp": f.app_canal_otp or "whatsapp",
+                "app_versao_nome": getattr(f, "app_versao_nome", None),
+                "app_versao_code": getattr(f, "app_versao_code", None),
+                "app_versao_desatualizada": bool(
+                    getattr(f, "app_versao_desatualizada", False)
+                ),
             },
+            "app_update": app_update,
         }
     )
 
@@ -15601,6 +17185,7 @@ def api_app_funcionario_minhas_solicitacoes_alteracao():
 
 
 @app.route("/api/app/funcionario/me/solicitacoes-alteracao", methods=["POST"])
+@_limiter.limit("5 per hour")
 @app_func_required
 def api_app_funcionario_solicitar_alteracao():
     d = request.json or {}
@@ -15710,6 +17295,7 @@ def api_app_ponto_solicitacoes_correcao():
 
 
 @app.route("/api/app/funcionario/me/ponto/solicitacao-correcao", methods=["POST"])
+@_limiter.limit("10 per hour")
 @app_func_required
 def api_app_ponto_solicitar_correcao():
     f = g.app_funcionario
@@ -15723,6 +17309,9 @@ def api_app_ponto_solicitar_correcao():
     horario_correto = (d.get("horario_correto") or "").strip()[:5] or None
     if not data_ref:
         return jsonify({"erro": "O campo data_ref é obrigatório."}), 400
+    import re as _re_dr
+    if not _re_dr.match(r"^\d{4}-\d{2}-\d{2}$", data_ref):
+        return jsonify({"erro": "data_ref deve estar no formato YYYY-MM-DD."}), 400
     if not observacao:
         return jsonify({"erro": "Descreva o problema no campo observacao."}), 400
     if tipo_problema not in (
@@ -15791,6 +17380,131 @@ def api_rh_ponto_solicitacoes_correcao(fid):
     return jsonify([it.to_dict() for it in itens])
 
 
+# ── Afastamentos (atestado médico, licença, etc.) ────────────────────────────
+
+def _afastamento_ativo_na_data(funcionario_id, data_str):
+    """Retorna o primeiro PontoAfastamento ativo para fid na data (YYYY-MM-DD) ou None."""
+    try:
+        return PontoAfastamento.query.filter(
+            PontoAfastamento.funcionario_id == funcionario_id,
+            PontoAfastamento.data_inicio <= data_str,
+            PontoAfastamento.data_fim >= data_str,
+        ).first()
+    except Exception:
+        return None
+
+
+@app.route("/api/funcionarios/<int:fid>/afastamentos", methods=["GET"])
+@lr
+def api_rh_afastamentos_lista(fid):
+    db.get_or_404(Funcionario, fid)
+    itens = (
+        PontoAfastamento.query.filter_by(funcionario_id=fid)
+        .order_by(PontoAfastamento.data_inicio.desc())
+        .all()
+    )
+    return jsonify([it.to_dict() for it in itens])
+
+
+@app.route("/api/funcionarios/<int:fid>/afastamentos", methods=["POST"])
+@_limiter.limit("30 per minute")
+@lr
+def api_rh_afastamento_criar(fid):
+    f = db.get_or_404(Funcionario, fid)
+    d = request.json or {}
+    tipo_raw = (d.get("tipo") or "").replace("\n", " ").replace("\r", " ").strip()
+    if not tipo_raw:
+        return jsonify({"erro": "Tipo de afastamento é obrigatório."}), 400
+    tipo = re.sub(r"\s+", " ", tipo_raw).strip()
+    if len(tipo) > 80:
+        return jsonify({"erro": "Tipo muito longo. Máximo de 80 caracteres."}), 400
+    data_inicio = (d.get("data_inicio") or "").strip()
+    data_fim = (d.get("data_fim") or "").strip()
+    observacao = (d.get("observacao") or "").strip()[:500]
+    if not data_inicio or not data_fim:
+        return jsonify({"erro": "data_inicio e data_fim são obrigatórios."}), 400
+    try:
+        di = datetime.strptime(data_inicio, "%Y-%m-%d").date()
+        df = datetime.strptime(data_fim, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify({"erro": "Formato de data inválido. Use YYYY-MM-DD."}), 400
+    if df < di:
+        return jsonify({"erro": "data_fim deve ser igual ou posterior a data_inicio."}), 400
+    if (df - di).days > 365:
+        return jsonify({"erro": "Período máximo de afastamento é 365 dias."}), 400
+    af = PontoAfastamento(
+        funcionario_id=fid,
+        empresa_id=f.empresa_id,
+        tipo=tipo,
+        data_inicio=data_inicio,
+        data_fim=data_fim,
+        observacao=observacao,
+        criado_por=session.get("nome") or session.get("email") or "RH",
+        criado_em=utcnow(),
+    )
+    db.session.add(af)
+    db.session.commit()
+    audit_event(
+        "afastamento_criar",
+        "funcionario",
+        fid,
+        "ponto_afastamento",
+        af.id,
+        True,
+        {"tipo": tipo, "data_inicio": data_inicio, "data_fim": data_fim},
+    )
+    # Notificação push ao colaborador sobre o afastamento registrado.
+    try:
+        _di_fmt = di.strftime("%d/%m/%Y")
+        _df_fmt = df.strftime("%d/%m/%Y")
+        _dias_af = (df - di).days + 1
+        _tipo_norm = tipo.lower()
+        if _tipo_norm in ("atestado", "atestado medico", "atestado médico"):
+            _titulo_af = "Atestado Registrado 🏥"
+            _corpo_af = (
+                f"{f.nome}, foi registrado um atestado médico de {_di_fmt} a {_df_fmt} "
+                f"({_dias_af} {'dia' if _dias_af == 1 else 'dias'}). "
+                "Em caso de dúvidas, entre em contato com o RH."
+            )
+        elif _tipo_norm in ("licenca", "licença"):
+            _titulo_af = "Licença Registrada 📋"
+            _corpo_af = (
+                f"{f.nome}, foi registrada uma licença de {_di_fmt} a {_df_fmt} "
+                f"({_dias_af} {'dia' if _dias_af == 1 else 'dias'}). "
+                "Em caso de dúvidas, entre em contato com o RH."
+            )
+        else:
+            _tipo_custom = (tipo or "Afastamento").strip()
+            _titulo_af = f"{_tipo_custom} Registrado 📋"
+            _corpo_af = (
+                f"{f.nome}, foi registrado {_tipo_custom.lower()} de {_di_fmt} a {_df_fmt} "
+                f"({_dias_af} {'dia' if _dias_af == 1 else 'dias'}). "
+                "Em caso de dúvidas, entre em contato com o RH."
+            )
+        if observacao:
+            _corpo_af += f" Obs: {observacao}"
+        _push_notify_funcionario(
+            fid, _titulo_af, _corpo_af,
+            data={"tipo": "afastamento"},
+        )
+    except Exception:
+        pass
+    return jsonify(af.to_dict()), 201
+
+
+@app.route("/api/funcionarios/<int:fid>/afastamentos/<int:aid>", methods=["DELETE"])
+@lr
+def api_rh_afastamento_excluir(fid, aid):
+    db.get_or_404(Funcionario, fid)
+    af = db.get_or_404(PontoAfastamento, aid)
+    if af.funcionario_id != fid:
+        return jsonify({"erro": "Afastamento não pertence a este funcionário."}), 403
+    db.session.delete(af)
+    db.session.commit()
+    audit_event("afastamento_excluir", "ponto_afastamento", aid, "ponto_afastamento", aid, True, {})
+    return jsonify({"ok": True})
+
+
 @app.route(
     "/api/funcionarios/ponto/solicitacao-correcao/<int:id>/decidir", methods=["POST"]
 )
@@ -15804,11 +17518,32 @@ def api_rh_decidir_correcao_ponto(id):
     motivo = (d.get("motivo") or "").strip()
     if acao not in ("aprovar", "rejeitar"):
         return jsonify({"erro": "Ação inválida. Use aprovar ou rejeitar."}), 400
+    if acao == "aprovar":
+        funcionario = db.session.get(Funcionario, it.funcionario_id)
+        data_ref = _app_parse_data_iso(it.data_ref)
+        marcacao = db.session.get(PontoMarcacao, it.marcacao_id) if it.marcacao_id else None
+        if funcionario and marcacao and marcacao.data_hora:
+            data_ref = _app_ponto_data_ref_efetiva(funcionario, marcacao.data_hora) or data_ref
+        bloqueio = _app_ponto_exigir_dia_aberto(it.funcionario_id, data_ref)
+        if bloqueio:
+            return bloqueio
     it.status = "resolvido" if acao == "aprovar" else "rejeitado"
     it.motivo_admin = motivo
     it.resolvido_em = utcnow()
     # Se aprovado e há marcação existente + horário correto → alterar horário
     if acao == "aprovar" and it.marcacao_id and it.horario_correto:
+        import re as _re
+        if not _re.match(r"^\d{2}:\d{2}$", it.horario_correto):
+            app.logger.error(
+                f"[correcao-ponto] horario_correto inválido (formato esperado HH:MM): {it.horario_correto!r}"
+            )
+            return jsonify({"erro": "horario_correto inválido. Use o formato HH:MM."}), 400
+        h_val, m_val = it.horario_correto.split(":")
+        if not (0 <= int(h_val) <= 23 and 0 <= int(m_val) <= 59):
+            app.logger.error(
+                f"[correcao-ponto] horario_correto fora do intervalo: {it.horario_correto!r}"
+            )
+            return jsonify({"erro": "horario_correto fora do intervalo (hora 00-23, minuto 00-59)."}), 400
         marc = db.session.get(PontoMarcacao, it.marcacao_id)
         if marc and marc.data_hora:
             try:
@@ -15839,6 +17574,18 @@ def api_rh_decidir_correcao_ponto(id):
         and it.horario_correto
         and it.data_ref
     ):
+        import re as _re
+        if not _re.match(r"^\d{2}:\d{2}$", it.horario_correto):
+            app.logger.error(
+                f"[correcao-ponto] horario_correto inválido (marcacao_faltando): {it.horario_correto!r}"
+            )
+            return jsonify({"erro": "horario_correto inválido. Use o formato HH:MM."}), 400
+        h_val, m_val = it.horario_correto.split(":")
+        if not (0 <= int(h_val) <= 23 and 0 <= int(m_val) <= 59):
+            app.logger.error(
+                f"[correcao-ponto] horario_correto fora do intervalo (marcacao_faltando): {it.horario_correto!r}"
+            )
+            return jsonify({"erro": "horario_correto fora do intervalo (hora 00-23, minuto 00-59)."}), 400
         try:
             data_obj = datetime.strptime(it.data_ref, "%Y-%m-%d").date()
             marcacoes_dia = _app_ponto_marcacoes_dia(it.funcionario_id, data_obj)
@@ -16291,6 +18038,10 @@ def api_app_funcionario_download_arquivo(id):
     a = db.get_or_404(FuncionarioArquivo, id)
     if a.funcionario_id != g.app_funcionario.id:
         return jsonify({"erro": "Acesso negado"}), 403
+    if norm_cat(a.categoria) == "holerite" and (a.ass_status or "").strip().lower() not in ("assinado", "concluida"):
+        return jsonify(
+            {"erro": "Este holerite precisa ser assinado antes de ser baixado."}
+        ), 403
     abs_p = os.path.join(UPLOAD_ROOT, a.caminho)
     if not os.path.exists(abs_p):
         return jsonify({"erro": "Arquivo nao encontrado"}), 404
@@ -16319,55 +18070,6 @@ def api_app_funcionario_assinar_arquivo(id):
             {"ok": True, "mensagem": "Documento ja assinado.", "item": a.to_dict()}
         )
 
-    d = request.json or {}
-    stepup_otp = only_digits(d.get("stepup_otp") or "")
-    stepup_biometria = bool(d.get("stepup_biometria"))
-    ident = norm_cpf(getattr(f, "cpf", None)) or str(f.id)
-
-    # App #1: biometria exige device registrado (push token confirma dispositivo ativo)
-    if stepup_biometria and not (f.app_push_token or "").strip():
-        return jsonify(
-            {
-                "erro": "Autenticação biométrica não disponível para este dispositivo. Use código OTP."
-            }
-        ), 403
-
-    if not stepup_biometria:
-        if auth_blocked("app_stepup_confirm", ident, (request.remote_addr or "")):
-            return jsonify({"erro": "Muitas tentativas. Aguarde alguns minutos."}), 429
-        if not stepup_otp:
-            return jsonify(
-                {
-                    "erro": "step_up_required",
-                    "mensagem": "Confirme sua identidade antes de assinar.",
-                }
-            ), 403
-        if not (f.app_stepup_hash or "").strip() or not f.app_stepup_expira_em:
-            return jsonify(
-                {"erro": "Solicite um codigo de confirmacao antes de assinar."}
-            ), 400
-        if f.app_stepup_expira_em < utcnow():
-            return jsonify(
-                {"erro": "Codigo expirado. Solicite um novo codigo de confirmacao."}
-            ), 400
-        if int(f.app_stepup_arquivo_id or 0) != id:
-            return jsonify(
-                {"erro": "Codigo de confirmacao invalido para este documento."}
-            ), 400
-        tent = int(f.app_stepup_tentativas or 0)
-        if tent >= 5:
-            reg_auth_attempt("app_stepup_confirm", ident, False, "limite_tentativas")
-            return jsonify(
-                {"erro": "Limite de tentativas excedido. Solicite novo codigo."}
-            ), 400
-        if not hmac.compare_digest(
-            token_hash(stepup_otp), str(f.app_stepup_hash or "")
-        ):
-            f.app_stepup_tentativas = tent + 1
-            db.session.commit()
-            reg_auth_attempt("app_stepup_confirm", ident, False, "codigo_invalido")
-            return jsonify({"erro": "Codigo de confirmacao invalido."}), 401
-
     f.app_stepup_hash = None
     f.app_stepup_expira_em = None
     f.app_stepup_tentativas = 0
@@ -16387,9 +18089,6 @@ def api_app_funcionario_assinar_arquivo(id):
     a.ass_codigo = a.ass_codigo or secrets.token_urlsafe(16)
 
     db.session.commit()
-    if not stepup_biometria:
-        reg_auth_attempt("app_stepup_confirm", ident, True, "ok")
-    modo = "biometria" if stepup_biometria else "otp"
     audit_event(
         "funcionario_app_arquivo_assinado",
         "funcionario",
@@ -16402,7 +18101,7 @@ def api_app_funcionario_assinar_arquivo(id):
             "categoria": a.categoria,
             "competencia": a.competencia,
             "origem": "app",
-            "stepup": modo,
+            "stepup": "sessao_app",
         },
     )
     # Gera PDF assinado com carimbo QR code em cada página + página de auditoria
@@ -16451,34 +18150,14 @@ def api_app_funcionario_assinar_arquivo(id):
 @app.route("/api/app/funcionario/arquivos/assinar-lote", methods=["POST"])
 @app_func_required
 def api_app_funcionario_assinar_lote():
-    """App #2: Assina múltiplos documentos com um único código OTP de step-up."""
+    """Assina múltiplos documentos pela sessão autenticada do aplicativo."""
     f = g.app_funcionario
     d = request.json or {}
-    stepup_otp = only_digits(d.get("stepup_otp") or "")
     ids_raw = d.get("ids") or []
-    ident = norm_cpf(getattr(f, "cpf", None)) or str(f.id)
-    if not stepup_otp:
-        return jsonify({"erro": "stepup_otp obrigatorio para assinatura em lote."}), 400
     if not ids_raw or not isinstance(ids_raw, list):
         return jsonify({"erro": "ids deve ser uma lista de IDs de documentos."}), 400
     if len(ids_raw) > 50:
         return jsonify({"erro": "Limite de 50 documentos por lote."}), 400
-    if auth_blocked("app_stepup_confirm", ident, (request.remote_addr or "")):
-        return jsonify({"erro": "Muitas tentativas. Aguarde alguns minutos."}), 429
-    if not (f.app_stepup_hash or "").strip() or not f.app_stepup_expira_em:
-        return jsonify(
-            {"erro": "Solicite um codigo de confirmacao antes de assinar."}
-        ), 400
-    if f.app_stepup_expira_em < utcnow():
-        return jsonify(
-            {"erro": "Codigo expirado. Solicite um novo codigo de confirmacao."}
-        ), 400
-    if not hmac.compare_digest(token_hash(stepup_otp), str(f.app_stepup_hash or "")):
-        f.app_stepup_tentativas = int(f.app_stepup_tentativas or 0) + 1
-        db.session.commit()
-        reg_auth_attempt("app_stepup_confirm", ident, False, "codigo_invalido_lote")
-        return jsonify({"erro": "Codigo de confirmacao invalido."}), 401
-    reg_auth_attempt("app_stepup_confirm", ident, True, "ok_lote")
     f.app_stepup_hash = None
     f.app_stepup_expira_em = None
     f.app_stepup_tentativas = 0
@@ -16526,7 +18205,7 @@ def api_app_funcionario_assinar_lote():
                 "categoria": a.categoria,
                 "competencia": a.competencia,
                 "origem": "app_lote",
-                "stepup": "otp",
+                "stepup": "sessao_app",
             },
         )
         copia = _salvar_pdf_assinado_em_arquivos_funcionario(a, f, url_root)
@@ -16675,33 +18354,79 @@ def api_app_comunicados_lista():
     f = g.app_funcionario
     from sqlalchemy import or_
 
-    itens = (
-        ComunicadoApp.query.filter(
-            ComunicadoApp.ativo == True,
-            or_(
-                ComunicadoApp.funcionario_id == None,
-                ComunicadoApp.funcionario_id == f.id,
-            ),
-            or_(
-                ComunicadoApp.posto_operacional == None,
-                ComunicadoApp.posto_operacional == "",
-                ComunicadoApp.posto_operacional == f.posto_operacional,
-            ),
-        )
-        .order_by(ComunicadoApp.criado_em.desc())
-        .all()
-    )
+    # Paginação: padrão 50, máximo 200. Mantém compatibilidade — sem parâmetros
+    # retorna lista pura (formato histórico) até o limite, sem envelope.
+    try:
+        per_page = max(1, min(200, int(request.args.get("per_page", 50))))
+    except (ValueError, TypeError):
+        per_page = 50
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except (ValueError, TypeError):
+        page = 1
+    base_q = ComunicadoApp.query.filter(
+        ComunicadoApp.ativo == True,
+        or_(
+            ComunicadoApp.funcionario_id == None,
+            ComunicadoApp.funcionario_id == f.id,
+        ),
+        or_(
+            ComunicadoApp.posto_operacional == None,
+            ComunicadoApp.posto_operacional == "",
+            ComunicadoApp.posto_operacional == f.posto_operacional,
+        ),
+        # Bug #2: isolar por empresa — NULL = legado (visível para todos)
+        or_(
+            ComunicadoApp.empresa_id == None,
+            ComunicadoApp.empresa_id == f.empresa_id,
+        ),
+    ).order_by(ComunicadoApp.criado_em.desc())
+    itens = base_q.limit(per_page).offset((page - 1) * per_page).all()
     return jsonify([c.to_dict(funcionario_id=f.id) for c in itens])
 
 
 @app.route("/api/app/funcionario/comunicados/<int:cid>/lido", methods=["POST"])
+@_limiter.limit("60 per minute")  # Bug #3: rate limit
 @app_func_required
 def api_app_comunicado_marcar_lido(cid):
     f = g.app_funcionario
     c = db.get_or_404(ComunicadoApp, cid)
+    # Bug #1: verificar se o funcionário tem acesso a este comunicado
+    if c.funcionario_id and c.funcionario_id != f.id:
+        return jsonify({"erro": "Acesso negado"}), 403
+    if c.empresa_id and c.empresa_id != f.empresa_id:
+        return jsonify({"erro": "Acesso negado"}), 403
     c.marcar_lido(f.id)
     db.session.commit()
     return jsonify({"ok": True})
+
+
+@app.route("/api/app/funcionario/comunicados/marcar-todos-lidos", methods=["POST"])
+@_limiter.limit("10 per minute")
+@app_func_required
+def api_app_comunicados_marcar_todos_lidos():
+    """Marca como lidos todos os comunicados visíveis e não lidos do funcionário."""
+    f = g.app_funcionario
+    from sqlalchemy import or_
+
+    itens = ComunicadoApp.query.filter(
+        ComunicadoApp.ativo == True,
+        or_(ComunicadoApp.funcionario_id == None, ComunicadoApp.funcionario_id == f.id),
+        or_(
+            ComunicadoApp.posto_operacional == None,
+            ComunicadoApp.posto_operacional == "",
+            ComunicadoApp.posto_operacional == f.posto_operacional,
+        ),
+        or_(ComunicadoApp.empresa_id == None, ComunicadoApp.empresa_id == f.empresa_id),
+    ).all()
+    marcados = 0
+    for c in itens:
+        if f.id not in c.lidos_por():
+            c.marcar_lido(f.id)
+            marcados += 1
+    if marcados:
+        db.session.commit()
+    return jsonify({"ok": True, "marcados": marcados})
 
 
 @app.route("/api/app/funcionario/comunicados/nao-lidos")
@@ -16718,8 +18443,8 @@ def api_app_comunicados_nao_lidos():
             ComunicadoApp.posto_operacional == "",
             ComunicadoApp.posto_operacional == f.posto_operacional,
         ),
+        or_(ComunicadoApp.empresa_id == None, ComunicadoApp.empresa_id == f.empresa_id),
     ).all()
-    lidos = list(set(fid for c in itens for fid in c.lidos_por()))
     count = sum(1 for c in itens if f.id not in c.lidos_por())
     return jsonify({"nao_lidos": count})
 
@@ -16733,20 +18458,49 @@ def api_app_comunicados_nao_lidos():
 @app_func_required
 def api_app_mensagens_lista():
     f = g.app_funcionario
-    msgs = (
+    # Paginação opcional: ?limit=N retorna apenas as N mais recentes (em ordem
+    # cronológica asc). Padrão = 200 mensagens (útil para chats longos).
+    try:
+        limit = max(1, min(500, int(request.args.get("limit", 200))))
+    except (ValueError, TypeError):
+        limit = 200
+    sub = (
         MensagemApp.query.filter_by(funcionario_id=f.id)
+        .order_by(MensagemApp.enviado_em.desc())
+        .limit(limit)
+        .subquery()
+    )
+    msgs = (
+        MensagemApp.query.join(sub, MensagemApp.id == sub.c.id)
         .order_by(MensagemApp.enviado_em.asc())
         .all()
     )
-    # Marcar mensagens do RH como lidas ao abrir
-    for m in msgs:
-        if m.de_rh and not m.lida:
-            m.lida = True
-    db.session.commit()
+    # Não marca como lida aqui — o cliente deve chamar POST /mensagens/marcar-lidas
+    # após renderizar com sucesso, evitando perda silenciosa se a request falhar.
     return jsonify([m.to_dict() for m in msgs])
 
 
+@app.route("/api/app/funcionario/mensagens/marcar-lidas", methods=["POST"])
+@app_func_required
+def api_app_mensagens_marcar_lidas():
+    """Marca como lidas todas as mensagens enviadas pelo RH ao funcionário.
+    Chamado pelo app após renderizar a conversa, garantindo que o badge só
+    zere quando o usuário de fato viu as mensagens."""
+    f = g.app_funcionario
+    atualizadas = (
+        MensagemApp.query.filter_by(funcionario_id=f.id, de_rh=True, lida=False)
+        .update({"lida": True})
+    )
+    db.session.commit()
+    try:
+        cache.delete_memoized(api_app_mensagens_nao_lidas)
+    except Exception:
+        pass
+    return jsonify({"ok": True, "atualizadas": int(atualizadas or 0)})
+
+
 @app.route("/api/app/funcionario/mensagens", methods=["POST"])
+@_limiter.limit("30 per minute")
 @app_func_required
 def api_app_mensagem_enviar():
     f = g.app_funcionario
@@ -16770,6 +18524,7 @@ def api_app_mensagem_enviar():
 
 
 @app.route("/api/app/funcionario/mensagens/arquivo", methods=["POST"])
+@_limiter.limit("10 per minute")
 @app_func_required
 def api_app_mensagem_enviar_arquivo():
     f = g.app_funcionario
@@ -16794,15 +18549,26 @@ def api_app_mensagem_enviar_arquivo():
     }
     if ext not in exts_permitidas:
         return jsonify({"erro": "Tipo de arquivo nao permitido"}), 400
+    tipos_documento = {
+        "Atestado medico",
+        "ASO",
+        "Documento de identidade",
+        "Comprovante de endereco",
+        "Comprovante bancario",
+        "Outro documento",
+    }
+    documento_tipo = (request.form.get("documento_tipo") or "Outro documento").strip()
+    if documento_tipo not in tipos_documento:
+        return jsonify({"erro": "Informe um tipo de documento valido"}), 400
     conteudo = (request.form.get("conteudo") or "").strip()[:500]
     pasta = os.path.join(UPLOAD_ROOT, "funcionarios", str(f.id), "chat")
     os.makedirs(pasta, exist_ok=True)
-    ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    ts = utcnow().strftime("%Y%m%d%H%M%S")
     nome_final = f"{ts}_{nome_orig}"
     abs_p = os.path.join(pasta, nome_final)
     arq.save(abs_p)
     rel = os.path.relpath(abs_p, UPLOAD_ROOT)
-    texto_msg = conteudo if conteudo else f"[Arquivo: {nome_orig}]"
+    texto_msg = conteudo if conteudo else f"[{documento_tipo}: {nome_orig}]"
     m = MensagemApp(
         funcionario_id=f.id,
         de_rh=False,
@@ -16810,6 +18576,7 @@ def api_app_mensagem_enviar_arquivo():
         lida=False,
         enviado_por="funcionario",
         tipo="arquivo",
+        documento_tipo=documento_tipo,
         arquivo_nome=nome_orig,
         arquivo_caminho=rel,
     )
@@ -16837,8 +18604,8 @@ def api_app_mensagem_download_arquivo(mid):
 
 @app.route("/api/app/funcionario/mensagens/nao-lidas")
 @app_func_required
-@cache.cached(timeout=5, key_prefix=lambda: f"app_msg_nao_lidas_{g.app_funcionario.id}")
 def api_app_mensagens_nao_lidas():
+    # Sem cache: contagem precisa refletir imediatamente envio/leitura.
     f = g.app_funcionario
     count = MensagemApp.query.filter_by(
         funcionario_id=f.id, de_rh=True, lida=False
@@ -16900,16 +18667,376 @@ def _app_ponto_parse_data_ref(v):
         return localnow().date()
 
 
-def _app_ponto_marcacoes_dia(funcionario_id, data_ref):
+def _app_parse_minutos_hhmm(valor, padrao="05:00"):
+    texto = (valor or padrao or "05:00").strip()
+    try:
+        hh, mm = [int(x) for x in texto.split(":")[:2]]
+        return max(0, min(23, hh)) * 60 + max(0, min(59, mm))
+    except Exception:
+        return 5 * 60
+
+
+def _app_ponto_escala_info_data(funcionario, data_ref):
+    try:
+        data_str = data_ref.strftime("%Y-%m-%d") if hasattr(data_ref, "strftime") else str(data_ref)
+        data_obj = data_ref if hasattr(data_ref, "weekday") else datetime.strptime(data_str, "%Y-%m-%d").date()
+        esc_funcs = EscalaFuncionario.query.filter(
+            EscalaFuncionario.funcionario_id == funcionario.id,
+            EscalaFuncionario.data_inicio <= data_str,
+            EscalaFuncionario.ativo == True,
+        ).order_by(EscalaFuncionario.data_inicio.desc()).all()
+        for ef in esc_funcs:
+            if ef.data_fim and ef.data_fim < data_str:
+                continue
+            esc = db.session.get(Escala, ef.escala_id)
+            if not esc or not esc.ativo:
+                continue
+            try:
+                ciclo = json.loads(esc.ciclo_json or "{}")
+                dias = ciclo.get("dias", [])
+                dias_ciclo = len(dias)
+                if dias_ciclo <= 0:
+                    continue
+
+                # Regra opcional por dia da semana (0=seg ... 6=dom).
+                # Quando configurada, tem prioridade sobre deslocamento de ciclo.
+                sem_trab_raw = ciclo.get("dias_semana_trabalho")
+                if isinstance(sem_trab_raw, list) and sem_trab_raw:
+                    sem_trab = set()
+                    for x in sem_trab_raw:
+                        try:
+                            iv = int(x)
+                            if 0 <= iv <= 6:
+                                sem_trab.add(iv)
+                        except Exception:
+                            pass
+                    if sem_trab:
+                        idx_tpl_trab = next(
+                            (
+                                i
+                                for i, d in enumerate(dias)
+                                if str((d or {}).get("tipo", "trabalho")).lower()
+                                != "folga"
+                            ),
+                            0,
+                        )
+                        idx_tpl_folga = next(
+                            (
+                                i
+                                for i, d in enumerate(dias)
+                                if str((d or {}).get("tipo", "")).lower() == "folga"
+                            ),
+                            None,
+                        )
+                        if data_obj.weekday() in sem_trab:
+                            idx_tpl = idx_tpl_trab
+                            dia_info = (
+                                (dias[idx_tpl] or {})
+                                if idx_tpl is not None and idx_tpl < len(dias)
+                                else {"tipo": "trabalho"}
+                            )
+                        else:
+                            idx_tpl = idx_tpl_folga
+                            dia_info = (
+                                (dias[idx_tpl] or {})
+                                if idx_tpl is not None and idx_tpl < len(dias)
+                                else {"tipo": "folga"}
+                            )
+                        return {
+                            "escala": esc,
+                            "vinculo": ef,
+                            "indice": data_obj.weekday(),
+                            "indice_template": idx_tpl,
+                            "dia_info": dia_info,
+                        }
+
+                # 5x2 deve respeitar dia da semana (seg-sex trabalho; sab-dom folga),
+                # independentemente do deslocamento do ciclo por data_inicio.
+                if str(getattr(esc, "tipo", "")).strip().lower() == "5x2":
+                    if data_obj.weekday() <= 4:
+                        idx_tpl = next(
+                            (
+                                i
+                                for i, d in enumerate(dias)
+                                if str((d or {}).get("tipo", "trabalho")).lower()
+                                != "folga"
+                            ),
+                            0,
+                        )
+                    else:
+                        idx_tpl = next(
+                            (
+                                i
+                                for i, d in enumerate(dias)
+                                if str((d or {}).get("tipo", "")).lower()
+                                == "folga"
+                            ),
+                            None,
+                        )
+                    dia_info = (
+                        (dias[idx_tpl] or {})
+                        if idx_tpl is not None and idx_tpl < len(dias)
+                        else ({"tipo": "folga"} if data_obj.weekday() >= 5 else {"tipo": "trabalho"})
+                    )
+                    return {
+                        "escala": esc,
+                        "vinculo": ef,
+                        "indice": data_obj.weekday(),
+                        "indice_template": idx_tpl,
+                        "dia_info": dia_info,
+                    }
+
+                data_inicio_obj = datetime.strptime(ef.data_inicio, "%Y-%m-%d").date()
+                dias_decorridos = (data_obj - data_inicio_obj).days
+                if dias_decorridos < 0:
+                    continue
+                indice = dias_decorridos % dias_ciclo
+                dia_info = (dias[indice] or {}) if indice < len(dias) else {}
+                return {
+                    "escala": esc,
+                    "vinculo": ef,
+                    "indice": indice,
+                    "indice_template": indice,
+                    "dia_info": dia_info,
+                }
+            except Exception:
+                continue
+    except Exception:
+        return None
+    return None
+
+
+def _app_ponto_cruza_meia_noite(esc, dia_info):
+    if getattr(esc, "tipo", "") == "noturna" or bool((dia_info or {}).get("noturno")):
+        return True
+    entrada_txt = (dia_info or {}).get("hora_entrada")
+    saida_txt = (dia_info or {}).get("hora_saida")
+    if not entrada_txt or not saida_txt:
+        return False
+    entrada_min = _app_parse_minutos_hhmm(str(entrada_txt), "08:00")
+    saida_min = _app_parse_minutos_hhmm(str(saida_txt), "17:00")
+    return saida_min <= entrada_min
+
+
+def _app_ponto_corte_data_ref_min(esc, dia_info):
+    if _app_ponto_cruza_meia_noite(esc, dia_info):
+        saida_txt = (dia_info or {}).get("hora_saida")
+        if saida_txt:
+            return _app_parse_minutos_hhmm(str(saida_txt), getattr(esc, "periodo_noturno_fim", "05:00"))
+        return _app_parse_minutos_hhmm(getattr(esc, "periodo_noturno_fim", "05:00"))
+    return None
+
+
+def _app_ponto_hora_entrada_min(esc, dia_info):
+    entrada_txt = (dia_info or {}).get("hora_entrada")
+    if entrada_txt:
+        return _app_parse_minutos_hhmm(str(entrada_txt), "08:00")
+    if _app_ponto_cruza_meia_noite(esc, dia_info):
+        return _app_parse_minutos_hhmm(getattr(esc, "periodo_noturno_ini", "22:00"), "22:00")
+    return None
+
+
+def _app_ponto_entrada_noturna_avulsa(marcacoes, data_ref):
+    marcacoes_ordenadas = sorted(
+        [m for m in (marcacoes or []) if getattr(m, "data_hora", None)],
+        key=lambda m: (m.data_hora, getattr(m, "id", 0)),
+    )
+    for marcacao in marcacoes_ordenadas:
+        dt = getattr(marcacao, "data_hora", None)
+        if not dt:
+            continue
+        if dt.date() < data_ref:
+            continue
+        if marcacao.tipo == "entrada" and (dt.hour * 60 + dt.minute) >= 17 * 60:
+            anteriores = [m for m in marcacoes_ordenadas if getattr(m, "data_hora", None) and m.data_hora < dt]
+            if anteriores and anteriores[0].tipo != "entrada":
+                return dt
+    return None
+
+
+def _app_ponto_jornada_avulsa_aberta(funcionario_id, data_ref):
     inicio = datetime.combine(data_ref, datetime.min.time())
     fim = inicio + timedelta(days=1)
-    return (
+    marcacoes = (
         PontoMarcacao.query.filter(PontoMarcacao.funcionario_id == funcionario_id)
         .filter(PontoMarcacao.data_hora >= inicio)
         .filter(PontoMarcacao.data_hora < fim)
         .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
         .all()
     )
+    if len(marcacoes) % 2 == 0:
+        return False
+    return _app_ponto_entrada_noturna_avulsa(marcacoes, data_ref) is not None
+
+
+def _app_ponto_tem_entrada_noturna_mesma_data(funcionario_id, data_ref):
+    inicio = datetime.combine(data_ref, datetime.min.time())
+    fim = inicio + timedelta(days=1)
+    marcacoes = (
+        PontoMarcacao.query.filter(PontoMarcacao.funcionario_id == funcionario_id)
+        .filter(PontoMarcacao.data_hora >= inicio)
+        .filter(PontoMarcacao.data_hora < fim)
+        .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
+        .all()
+    )
+    return _app_ponto_entrada_noturna_avulsa(marcacoes, data_ref) is not None
+
+
+def _app_ponto_data_hora_logica(funcionario, data_ref, data_hora, marcacoes=None):
+    if not data_hora:
+        return None
+    entrada_noturna = _app_ponto_entrada_noturna_avulsa(marcacoes, data_ref)
+    esc_info = _app_ponto_escala_info_data(funcionario, data_ref)
+    if not esc_info:
+        if entrada_noturna and data_hora < entrada_noturna:
+            return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
+        return data_hora
+    esc = esc_info.get("escala")
+    dia_info = esc_info.get("dia_info") or {}
+    if not _app_ponto_cruza_meia_noite(esc, dia_info):
+        if entrada_noturna and data_hora < entrada_noturna:
+            return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
+        return data_hora
+    if entrada_noturna and data_hora.date() == data_ref:
+        if data_hora < entrada_noturna:
+            return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
+        return data_hora
+    entrada_min = _app_ponto_hora_entrada_min(esc, dia_info)
+    if entrada_min is None:
+        return data_hora
+    logical_dt = datetime.combine(data_ref, data_hora.time())
+    if (data_hora.hour * 60 + data_hora.minute) < entrada_min:
+        logical_dt += timedelta(days=1)
+    return logical_dt
+
+
+def _app_ponto_marcacoes_ordenadas_logicas(funcionario, data_ref, marcacoes):
+    return sorted(
+        [m for m in (marcacoes or []) if getattr(m, "data_hora", None)],
+        key=lambda m: (
+            _app_ponto_data_hora_logica(funcionario, data_ref, m.data_hora, marcacoes),
+            m.data_hora,
+            getattr(m, "id", 0),
+        ),
+    )
+
+
+def _app_parse_data_iso(v):
+    txt = (v or "").strip()
+    if not txt:
+        return None
+    try:
+        return datetime.strptime(txt, "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _app_funcionario_em_ferias_na_data(funcionario, data_ref):
+    ini = _app_parse_data_iso(getattr(funcionario, "ferias_inicio", ""))
+    fim = _app_parse_data_iso(getattr(funcionario, "ferias_fim", ""))
+    if ini and fim:
+        return ini <= data_ref <= fim
+    if ini and not fim:
+        return data_ref >= ini
+    if fim and not ini:
+        return data_ref <= fim
+    return False
+
+
+def _app_funcionario_admissao_data(funcionario):
+    return _app_parse_data_iso(getattr(funcionario, "data_admissao", ""))
+
+
+def _app_ponto_marcacoes_dia(funcionario_id, data_ref):
+    try:
+        funcionario = db.session.get(Funcionario, funcionario_id)
+    except Exception:
+        funcionario = None
+
+    def _data_efetiva_marcacao(dt):
+        if not dt or not funcionario:
+            return dt.date() if dt else data_ref
+        data_base = dt.date()
+        data_prev = data_base - timedelta(days=1)
+        esc_prev = _app_ponto_escala_info_data(funcionario, data_prev)
+        if esc_prev:
+            esc = esc_prev.get("escala")
+            dia_info = esc_prev.get("dia_info") or {}
+            corte_min = _app_ponto_corte_data_ref_min(esc, dia_info)
+            if corte_min is not None:
+                if _app_ponto_cruza_meia_noite(esc, dia_info):
+                    entrada_min = _app_ponto_hora_entrada_min(esc, dia_info)
+                    if entrada_min is not None and entrada_min >= 18 * 60:
+                        corte_min = max(corte_min, 360)
+                if (dt.hour * 60 + dt.minute) <= corte_min:
+                    if _app_ponto_tem_entrada_noturna_mesma_data(funcionario.id, data_base):
+                        return data_base
+                    return data_prev
+        if (dt.hour * 60 + dt.minute) <= 6 * 60 and _app_ponto_jornada_avulsa_aberta(funcionario.id, data_prev):
+            if _app_ponto_tem_entrada_noturna_mesma_data(funcionario.id, data_base):
+                return data_base
+            return data_prev
+        return data_base
+
+    # BUG-FIX: estender a janela para capturar até 06:00 do dia seguinte
+    # em turnos noturnos com saída tardia, sem perder as batidas do dia atual.
+    inicio = datetime.combine(data_ref, datetime.min.time()) - timedelta(hours=3)
+    fim = datetime.combine(data_ref, datetime.min.time()) + timedelta(hours=33)
+    todas = (
+        PontoMarcacao.query.filter(PontoMarcacao.funcionario_id == funcionario_id)
+        .filter(PontoMarcacao.data_hora >= inicio)
+        .filter(PontoMarcacao.data_hora < fim)
+        .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
+        .all()
+    )
+    resultado = []
+    for m in todas:
+        if m.data_hora and _data_efetiva_marcacao(m.data_hora) == data_ref:
+            resultado.append(m)
+    return resultado
+
+
+def _app_ponto_data_ref_efetiva(funcionario, data_hora):
+    if not data_hora:
+        return None
+    data_base = data_hora.date()
+    data_prev = data_base - timedelta(days=1)
+
+    esc_prev = _app_ponto_escala_info_data(funcionario, data_prev)
+    if esc_prev:
+        esc = esc_prev.get("escala")
+        dia_info = esc_prev.get("dia_info") or {}
+        corte_min = _app_ponto_corte_data_ref_min(esc, dia_info)
+        if corte_min is not None:
+            if _app_ponto_cruza_meia_noite(esc, dia_info):
+                entrada_min = _app_ponto_hora_entrada_min(esc, dia_info)
+                if entrada_min is not None and entrada_min >= 18 * 60:
+                    corte_min = max(corte_min, 360)
+            if (data_hora.hour * 60 + data_hora.minute) <= corte_min:
+                if _app_ponto_tem_entrada_noturna_mesma_data(funcionario.id, data_base):
+                    return data_base
+                return data_prev
+    if (data_hora.hour * 60 + data_hora.minute) <= 6 * 60 and _app_ponto_jornada_avulsa_aberta(funcionario.id, data_prev):
+        if _app_ponto_tem_entrada_noturna_mesma_data(funcionario.id, data_base):
+            return data_base
+        return data_prev
+    return data_base
+
+
+def _app_ponto_exigir_dia_aberto(funcionario_id, data_ref):
+    if not data_ref:
+        return None
+    fechamento = PontoFechamentoDia.query.filter_by(
+        funcionario_id=funcionario_id,
+        data_ref=data_ref.isoformat(),
+    ).first()
+    if fechamento:
+        return jsonify(
+            {
+                "erro": "Esta folha está fechada. Reabra a folha para editar as marcações."
+            }
+        ), 409
+    return None
 
 
 def _app_ponto_min_esperado_jornada(funcionario):
@@ -16946,59 +19073,47 @@ def _app_ponto_min_esperado_jornada_data(funcionario, data_ref):
                 return j.minutos_esperados_weekday(dt_ref.weekday())
             except Exception:
                 return j.carga_horaria_min()
+    try:
+        dt_ref = (
+            datetime.strptime(data_ref, "%Y-%m-%d").date()
+            if isinstance(data_ref, str)
+            else data_ref
+        )
+        if dt_ref.weekday() >= 5:
+            return 0
+    except Exception:
+        pass
     return _app_ponto_min_esperado_jornada(funcionario)
 
 
 def _app_ponto_min_esperado_jornada_em_data(funcionario, data_str):
     """Retorna minutos esperados para um funcionário em uma data específica.
-    Se tem escala ativa nessa data, usa turno da escala; senão usa jornada fixa."""
+    Usa apenas a escala ativa nessa data. Jornada está desabilitada no ponto."""
     try:
-        # Verificar se tem escala ativa nessa data
         data_obj = (
             datetime.strptime(data_str, "%Y-%m-%d").date()
             if isinstance(data_str, str)
             else data_str
         )
-
-        # Procura escala ativa para esse funcionário e data
-        esc_func = EscalaFuncionario.query.filter(
-            EscalaFuncionario.funcionario_id == funcionario.id,
-            EscalaFuncionario.data_inicio <= data_str,
-            EscalaFuncionario.ativo == True,
-        ).all()
-
-        for ef in esc_func:
-            # Se tem data_fim, verifica se data_str está dentro do range
-            if ef.data_fim and ef.data_fim < data_str:
-                continue
-            # Encontrou escala ativa; calcular índice no ciclo
-            esc = db.session.get(Escala, ef.escala_id)
-            if not esc:
-                continue
-
-            # Calcular quantos dias desde data_inicio
-            data_inicio_obj = datetime.strptime(ef.data_inicio, "%Y-%m-%d").date()
-            dias_decorridos = (data_obj - data_inicio_obj).days
-
-            # Obter tamanho do ciclo
-            try:
-                ciclo = json.loads(esc.ciclo_json or "{}")
-                dias_ciclo = len(ciclo.get("dias", []))
-                if dias_ciclo > 0:
-                    indice_ciclo = dias_decorridos % dias_ciclo
-                    return esc.carga_horaria_min_dia(indice_ciclo)
-            except Exception:
-                pass
+        esc_info = _app_ponto_escala_info_data(funcionario, data_obj)
+        if esc_info:
+            esc = esc_info.get("escala")
+            dia_info = esc_info.get("dia_info") or {}
+            if str(dia_info.get("tipo", "")).strip().lower() == "folga":
+                return 0
+            idx_tpl = esc_info.get("indice_template")
+            if esc and idx_tpl is not None:
+                try:
+                    return int(esc.carga_horaria_min_dia(int(idx_tpl)) or 0)
+                except Exception:
+                    pass
+            return 8 * 60
     except Exception:
         try:
             db.session.rollback()
         except Exception:
             pass
-
-    # Se não tem escala ou erro, usa jornada fixa no dia
-    return _app_ponto_min_esperado_jornada_data(
-        funcionario, data_obj if "data_obj" in locals() else data_str
-    )
+    return 0
 
 
 def _calcular_horas_noturnas(
@@ -17076,29 +19191,82 @@ def _app_ponto_fmt_minutos(total, signed=False):
 
 def _app_ponto_max_marcacoes_dia(funcionario):
     """Retorna quantas marcações são esperadas em um dia completo para este funcionário.
-    4 se a jornada tem intervalo, 2 se não tem, 4 por padrão."""
+    4 se a escala do dia tem intervalo, 2 se não tem, 4 por padrão."""
     try:
-        jid = getattr(funcionario, "jornada_id", None)
-        if jid:
-            jornada = db.session.get(JornadaTrabalho, jid)
-            if jornada:
-                hi = (jornada.hora_intervalo_inicio or "").strip()
-                hf = (jornada.hora_intervalo_fim or "").strip()
-                if (
-                    hi
-                    and hf
-                    and re.match(r"^\d{2}:\d{2}$", hi)
-                    and re.match(r"^\d{2}:\d{2}$", hf)
-                ):
-                    return 4
+        esc_info = _app_ponto_escala_info_data(funcionario, localnow().date())
+        if esc_info:
+            dia_info = esc_info.get("dia_info") or {}
+            hi = (dia_info.get("hora_intervalo_inicio") or "").strip()
+            hf = (dia_info.get("hora_intervalo_fim") or "").strip()
+            if not hi or not hf:
+                # Algumas escalas usam apenas intervalo_min
+                try:
+                    if int(dia_info.get("intervalo_min", 0) or 0) > 0:
+                        return 4
+                except Exception:
+                    pass
+            if (
+                hi
+                and hf
+                and re.match(r"^\d{2}:\d{2}$", hi)
+                and re.match(r"^\d{2}:\d{2}$", hf)
+            ):
+                return 4
+            if str(dia_info.get("tipo", "")).strip().lower() == "trabalho":
                 return 2
     except Exception:
         pass
     return 4
 
 
+def _app_is_feriado_para_funcionario(funcionario, data_ref_str):
+    """Retorna True se existir feriado aplicavel ao funcionario na data informada."""
+
+    def _norm_posto(v):
+        t = (v or "").strip()
+        return (t or "Reserva tecnica").lower()
+
+    try:
+        feriados = Feriado.query.filter(Feriado.data == data_ref_str).all()
+        if not feriados:
+            return False
+
+        feriado_ids = [f.id for f in feriados if getattr(f, "id", None)]
+        vinc_map = {}
+        if feriado_ids:
+            for v in FeriadoFuncionario.query.filter(
+                FeriadoFuncionario.feriado_id.in_(feriado_ids)
+            ).all():
+                vinc_map.setdefault(v.feriado_id, set()).add(v.funcionario_id)
+
+        posto_func = _norm_posto(getattr(funcionario, "posto_operacional", ""))
+        for fer in feriados:
+            tipo = (fer.tipo or "").strip().lower()
+            if tipo == "nacional":
+                return True
+
+            postos_fer = _feriado_parse_postos(getattr(fer, "posto_operacional", ""))
+            if postos_fer:
+                postos_norm = {_norm_posto(p) for p in postos_fer}
+                if posto_func not in postos_norm:
+                    continue
+
+            vincs = vinc_map.get(fer.id, set())
+            if vincs and funcionario.id not in vincs:
+                continue
+
+            return True
+    except Exception:
+        return False
+
+    return False
+
+
 def _app_ponto_resumo_dia(funcionario, data_ref):
+    HE_MINIMA_AUTORIZACAO_MIN = 60
+    FALTA_PARCIAL_TOLERANCIA_MIN = 10
     marcacoes = _app_ponto_marcacoes_dia(funcionario.id, data_ref)
+    marcacoes = _app_ponto_marcacoes_ordenadas_logicas(funcionario, data_ref, marcacoes)
     inconsistencias = []
     esperado = "entrada"
     segundos_total = 0
@@ -17114,27 +19282,28 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
             inconsistencias.append(
                 f"Sequência inesperada: recebido {_app_ponto_label(m.tipo)}; esperado {_app_ponto_label(esperado)}."
             )
+        data_hora_logica = _app_ponto_data_hora_logica(funcionario, data_ref, m.data_hora, marcacoes)
         if m.tipo == "entrada":
             if aberta_em is not None:
                 inconsistencias.append(
                     "Existe uma entrada sem fechamento antes desta nova entrada."
                 )
-            aberta_em = m.data_hora
+            aberta_em = data_hora_logica
         elif m.tipo == "saida_intervalo":
             if aberta_em is None:
                 inconsistencias.append("Saída para intervalo sem entrada anterior.")
             else:
-                segundos_total += max(0, int((m.data_hora - aberta_em).total_seconds()))
+                segundos_total += max(0, int((data_hora_logica - aberta_em).total_seconds()))
                 aberta_em = None
         elif m.tipo == "retorno_intervalo":
             if aberta_em is not None:
                 inconsistencias.append("Retorno de intervalo sem saída anterior.")
-            aberta_em = m.data_hora
+            aberta_em = data_hora_logica
         elif m.tipo == "saida":
             if aberta_em is None:
                 inconsistencias.append("Saída final sem entrada anterior.")
             else:
-                segundos_total += max(0, int((m.data_hora - aberta_em).total_seconds()))
+                segundos_total += max(0, int((data_hora_logica - aberta_em).total_seconds()))
                 aberta_em = None
         esperado = _app_ponto_next_tipo(m.tipo)
     if aberta_em is not None:
@@ -17144,7 +19313,13 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
     min_esp = _app_ponto_min_esperado_jornada_em_data(
         funcionario, data_ref.strftime("%Y-%m-%d")
     )
-    saldo = min_trab - min_esp
+    saldo_bruto = min_trab - min_esp
+    if saldo_bruto > 0 and saldo_bruto < HE_MINIMA_AUTORIZACAO_MIN:
+        saldo = 0
+    elif saldo_bruto < 0 and abs(saldo_bruto) <= FALTA_PARCIAL_TOLERANCIA_MIN:
+        saldo = 0
+    else:
+        saldo = saldo_bruto
 
     itens = []
     for m in marcacoes:
@@ -17176,6 +19351,51 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
         ).count()
     except Exception:
         correcoes_faltando_pendentes = 0
+    # Status de fechamento do dia (espelho/PontoFechamentoDia)
+    try:
+        fd = PontoFechamentoDia.query.filter_by(
+            funcionario_id=funcionario.id, data_ref=data_ref_str
+        ).first()
+    except Exception:
+        fd = None
+
+    # Tipo do dia: afastamento > férias > folga_escala > normal
+    dia_tipo = "normal"
+    afastamento_info = None
+    is_feriado = _app_is_feriado_para_funcionario(funcionario, data_ref_str)
+    admissao_data = _app_funcionario_admissao_data(funcionario)
+    demissao_data = _app_parse_data_iso(getattr(funcionario, "data_demissao", ""))
+    if admissao_data and data_ref < admissao_data:
+        dia_tipo = "pre_admissao"
+        min_esp = 0
+        saldo_bruto = min_trab - min_esp
+        saldo = saldo_bruto
+    elif demissao_data and data_ref >= demissao_data:
+        dia_tipo = "demitido"
+    elif _app_funcionario_em_ferias_na_data(funcionario, data_ref):
+        dia_tipo = "ferias"
+    af = _afastamento_ativo_na_data(funcionario.id, data_ref_str)
+    if af:
+        dia_tipo = "afastamento"
+        afastamento_info = {
+            "tipo": af.tipo,
+            "data_inicio": af.data_inicio,
+            "data_fim": af.data_fim,
+            "observacao": af.observacao or "",
+        }
+    elif is_feriado:
+        dia_tipo = "feriado"
+
+    if dia_tipo in ("demitido", "afastamento", "ferias", "feriado"):
+        min_esp = 0
+        saldo_bruto = min_trab - min_esp
+        saldo = saldo_bruto
+    # Hotfix temporário: não classificar automaticamente como "folga" quando
+    # min_esp == 0 sem marcações. Isso estava gerando bloqueio/aviso indevido
+    # no app para funcionários que precisam bater ponto normalmente.
+    elif dia_tipo == "normal" and min_esp == 0 and not marcacoes:
+        dia_tipo = "normal"
+
     return {
         "funcionario_id": funcionario.id,
         "funcionario_nome": funcionario.nome,
@@ -17187,12 +19407,18 @@ def _app_ponto_resumo_dia(funcionario, data_ref):
         "horas_trabalhadas_fmt": _app_ponto_fmt_minutos(min_trab),
         "horas_esperadas_min": min_esp,
         "horas_esperadas_fmt": _app_ponto_fmt_minutos(min_esp),
+        "saldo_bruto_min": saldo_bruto,
+        "saldo_bruto_fmt": _app_ponto_fmt_minutos(saldo_bruto, signed=True),
         "saldo_min": saldo,
         "saldo_fmt": _app_ponto_fmt_minutos(saldo, signed=True),
         "status": "ok" if not inconsistencias else "inconsistente",
         "inconsistencias": inconsistencias,
         "max_marcacoes_dia": max_marc,
         "correcoes_faltando_pendentes": correcoes_faltando_pendentes,
+        "fechado": fd is not None,
+        "fechado_por": (fd.fechado_por or "") if fd else "",
+        "dia_tipo": dia_tipo,  # "normal" | "folga" | "ferias" | "afastamento" | "demitido" | "feriado"
+        "afastamento_info": afastamento_info,
     }
 
 
@@ -17242,16 +19468,49 @@ def api_app_ponto_dia_me():
 
 
 @app.route("/api/app/funcionario/me/ponto/marcar", methods=["POST"])
+@_limiter.limit("20 per minute; 240 per hour", key_func=_limiter_key_app_bearer)
 @app_func_required
 def api_app_ponto_marcar_me():
     f = g.app_funcionario
-    if (f.status or "").strip().lower() != "ativo":
+    hoje_ref = utcnow().date()
+    if _app_funcionario_em_ferias_na_data(f, hoje_ref):
+        return jsonify(
+            {"erro": "Você está de férias e não pode registrar ponto neste período. Em caso de dúvida, contate o RH."}
+        ), 400
+    status_atual = _status_norm(f.status or "Ativo")
+    if status_atual != "ativo":
         return jsonify(
             {"erro": "Somente funcionários ativos podem registrar ponto."}
         ), 400
     dados = request.json or {}
+    # Verificar se há atestado/afastamento ativo para hoje
+    data_hoje = utcnow().date().strftime("%Y-%m-%d")
+    af_hoje = _afastamento_ativo_na_data(f.id, data_hoje)
+    if af_hoje:
+        _tipo_raw = (af_hoje.tipo or "").strip()
+        tipo_label = {
+            "atestado": "Atestado médico",
+            "atestado medico": "Atestado médico",
+            "atestado médico": "Atestado médico",
+            "licenca": "Licença",
+            "licença": "Licença",
+            "outros": "Afastamento",
+        }.get(_tipo_raw.lower(), _tipo_raw or "Afastamento")
+        return jsonify(
+            {"erro": f"{tipo_label} registrado para hoje. Você não pode bater ponto neste período. Procure o RH se houver algum erro."}
+        ), 400
     tipo = (dados.get("tipo") or "").strip().lower()
     observacao = (dados.get("observacao") or "").strip()[:500]
+    marca_celular = (dados.get("marca_celular") or dados.get("device_brand") or "").strip()[:60]
+    modelo_celular = (dados.get("modelo_celular") or dados.get("device_model") or "").strip()[:80]
+    plataforma_celular = (dados.get("plataforma") or dados.get("device_platform") or "").strip()[:40]
+    app_versao = (dados.get("app_versao") or "").strip()[:30]
+    assinatura_dispositivo = (
+        dados.get("assinatura_dispositivo")
+        or dados.get("device_id_hash")
+        or dados.get("device_fingerprint")
+        or ""
+    ).strip()[:120]
     # Suporte a ponto offline: aceita data_hora_cliente (ISO UTC) enviado pelo app
     # quando batido sem internet e sincronizado depois. Limite: até 24h no passado.
     data_hora = utcnow()
@@ -17263,17 +19522,21 @@ def api_app_ponto_marcar_me():
             # Convertemos o timestamp do cliente para APP_TZ antes de comparar.
             dh_c_local = dh_c.astimezone(APP_TZ).replace(tzinfo=None)
             agora = utcnow()
-            if dh_c_local <= agora + timedelta(
-                minutes=2
-            ) and dh_c_local >= agora - timedelta(hours=24):
-                data_hora = dh_c_local
+            if dh_c_local > agora + timedelta(minutes=2) or dh_c_local < agora - timedelta(hours=24):
+                return jsonify({
+                    "erro": "Marcação offline fora da janela permitida (máximo 24h no passado). Ajuste o relógio do dispositivo ou solicite correção no app."
+                }), 400
+            data_hora = dh_c_local
         except (ValueError, TypeError):
-            pass
+            return jsonify({"erro": "data_hora_cliente invalida (use ISO 8601)."}), 400
     if data_hora > (utcnow() + timedelta(minutes=2)):
         return jsonify(
             {"erro": "Não é permitido registrar ponto em horário futuro."}
         ), 400
-    data_ref = data_hora.date()
+    data_ref = _app_ponto_data_ref_efetiva(f, data_hora) or data_hora.date()
+    bloqueio = _app_ponto_exigir_dia_aberto(f.id, data_ref)
+    if bloqueio:
+        return bloqueio
     marcacoes_dia = _app_ponto_marcacoes_dia(f.id, data_ref)
     tipo = tipo or _app_ponto_tipo_esperado(marcacoes_dia)
     if tipo not in _APP_PONTO_TIPOS:
@@ -17314,14 +19577,30 @@ def api_app_ponto_marcar_me():
         precisao = float(precisao) if precisao is not None else None
     except (ValueError, TypeError):
         precisao = None
-    if lat is None or lon is None:
-        return jsonify(
-            {
-                "erro": "Localização obrigatória para registrar ponto. Ative o GPS e tente novamente."
-            }
-        ), 400
-    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+    if precisao is not None and (precisao < 0 or precisao > 50000):
+        precisao = None  # valor fora do intervalo realista → ignorar
+    if lat is not None and lon is not None and not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return jsonify({"erro": "Coordenadas de localização inválidas."}), 400
+
+    if (
+        marca_celular
+        or modelo_celular
+        or plataforma_celular
+        or app_versao
+        or assinatura_dispositivo
+    ):
+        tag_parts = []
+        if marca_celular:
+            tag_parts.append(f"marca={marca_celular}")
+        if modelo_celular:
+            tag_parts.append(f"modelo={modelo_celular}")
+        if plataforma_celular:
+            tag_parts.append(f"plataforma={plataforma_celular}")
+        if app_versao:
+            tag_parts.append(f"app={app_versao}")
+        if assinatura_dispositivo:
+            tag_parts.append(f"assinatura={assinatura_dispositivo}")
+        observacao = ((observacao + " [APP_DEVICE " + ";".join(tag_parts) + "]").strip())[:500]
 
     localizacao = {
         "status": "sem_referencia_posto",
@@ -17331,7 +19610,7 @@ def api_app_ponto_marcar_me():
     }
     if f.posto_cliente_id:
         cli = db.session.get(Cliente, f.posto_cliente_id)
-        if cli and cli.geo_lat is not None and cli.geo_lon is not None:
+        if cli and cli.geo_lat is not None and cli.geo_lon is not None and lat is not None and lon is not None:
             distancia = _geo_haversine_m(lat, lon, cli.geo_lat, cli.geo_lon)
             raio = float(cli.geofence_raio_m or 150)
             localizacao = {
@@ -17424,6 +19703,214 @@ def api_app_ponto_marcar_me():
     )
 
 
+@app.route("/api/ponto/qrcode/token", methods=["POST"])
+@_limiter.limit("120 per hour")
+def api_ponto_qrcode_token():
+    """Emite token efêmero (TTL 60s) usado pelo totem/kiosk para gerar o QR Code.
+    Aceita cliente_id no body; valida que existe.
+    Requer autenticação via header Authorization: Bearer <PONTO_TOTEM_TOKEN>
+    ou X-Api-Key: <PONTO_TOTEM_TOKEN> (configurado no ambiente/gc)."""
+    totem_token = (os.environ.get("PONTO_TOTEM_TOKEN") or gc("ponto_totem_token", "")).strip()
+    if totem_token:
+        bearer = (request.headers.get("Authorization") or "").strip()
+        api_key = (request.headers.get("X-Api-Key") or "").strip()
+        if bearer.lower().startswith("bearer "):
+            apresentado = bearer[7:].strip()
+        else:
+            apresentado = api_key or bearer
+        if not apresentado or not hmac.compare_digest(apresentado.encode(), totem_token.encode()):
+            return jsonify({"erro": "Não autorizado. Configure PONTO_TOTEM_TOKEN no totem."}), 401
+    else:
+        app.logger.warning("[ponto-qr] PONTO_TOTEM_TOKEN não configurado — endpoint sem autenticação")
+    d = request.json or {}
+    cli_id = d.get("cliente_id")
+    try:
+        cli_id = int(cli_id) if cli_id is not None else 0
+    except (ValueError, TypeError):
+        return jsonify({"erro": "cliente_id invalido"}), 400
+    if cli_id:
+        cli = db.session.get(Cliente, cli_id)
+        if not cli:
+            return jsonify({"erro": "Cliente nao encontrado"}), 404
+    token = ponto_qr_issue(cli_id, ttl=60)
+    return jsonify({"ok": True, "token": token, "expires_in": 60})
+
+
+@app.route("/api/app/funcionario/me/ponto/marcar-qr", methods=["POST"])
+@_limiter.limit("20 per minute; 240 per hour", key_func=_limiter_key_app_bearer)
+@app_func_required
+def api_app_ponto_marcar_qr_me():
+    """Variante de /ponto/marcar que usa um token efêmero gerado pelo totem
+    (QR Code). O token comprova presença física e dispensa a checagem de geofence."""
+    f = g.app_funcionario
+    hoje_ref = utcnow().date()
+    if _app_funcionario_em_ferias_na_data(f, hoje_ref):
+        return jsonify({"erro": "Você está de férias e não pode registrar ponto neste período."}), 400
+    status_atual = _status_norm(f.status or "Ativo")
+    if status_atual != "ativo":
+        return jsonify({"erro": "Somente funcionários ativos podem registrar ponto."}), 400
+    dados = request.json or {}
+    # Verificar afastamento/atestado ativo
+    data_hoje = utcnow().date().strftime("%Y-%m-%d")
+    af_hoje = _afastamento_ativo_na_data(f.id, data_hoje)
+    if af_hoje:
+        _tipo_raw = (af_hoje.tipo or "").strip()
+        tipo_label = {
+            "atestado": "Atestado médico",
+            "atestado medico": "Atestado médico",
+            "atestado médico": "Atestado médico",
+            "licenca": "Licença",
+            "licença": "Licença",
+            "outros": "Afastamento",
+        }.get(_tipo_raw.lower(), _tipo_raw or "Afastamento")
+        return jsonify({"erro": f"{tipo_label} registrado para hoje. Você não pode bater ponto neste período."}), 400
+    qr_token = (dados.get("qr_token") or "").strip()
+    if not qr_token:
+        return jsonify({"erro": "qr_token obrigatorio"}), 400
+    payload = ponto_qr_parse(qr_token)
+    if not payload:
+        return jsonify({"erro": "QR Code expirado ou inválido. Solicite o totem para gerar novo código."}), 401
+    cli_id_token = int(payload.get("cid") or 0)
+    # Quando o token vincula a um cliente específico, exigimos que o funcionário pertença ao posto.
+    if cli_id_token and f.posto_cliente_id and int(f.posto_cliente_id) != cli_id_token:
+        return jsonify({"erro": "QR Code não pertence ao seu posto."}), 403
+
+    observacao = (dados.get("observacao") or "").strip()[:500]
+    marca_celular = (dados.get("marca_celular") or dados.get("device_brand") or "").strip()[:60]
+    modelo_celular = (dados.get("modelo_celular") or dados.get("device_model") or "").strip()[:80]
+    plataforma_celular = (dados.get("plataforma") or dados.get("device_platform") or "").strip()[:40]
+    app_versao = (dados.get("app_versao") or "").strip()[:30]
+    assinatura_dispositivo = (
+        dados.get("assinatura_dispositivo")
+        or dados.get("device_id_hash")
+        or dados.get("device_fingerprint")
+        or ""
+    ).strip()[:120]
+    data_hora = utcnow()
+    data_ref = _app_ponto_data_ref_efetiva(f, data_hora) or data_hora.date()
+    bloqueio = _app_ponto_exigir_dia_aberto(f.id, data_ref)
+    if bloqueio:
+        return bloqueio
+    marcacoes_dia = _app_ponto_marcacoes_dia(f.id, data_ref)
+    tipo = (dados.get("tipo") or "").strip().lower() or _app_ponto_tipo_esperado(marcacoes_dia)
+    if tipo not in _APP_PONTO_TIPOS:
+        return jsonify({"erro": "Tipo de marcação inválido."}), 400
+    esperado = _app_ponto_tipo_esperado(marcacoes_dia)
+    if tipo != esperado:
+        return jsonify({"erro": f"Ordem de marcação inválida. Agora é esperado: {_app_ponto_label(esperado)}."}), 400
+    if any(
+        abs((data_hora - m.data_hora).total_seconds()) < 60
+        for m in marcacoes_dia
+        if getattr(m, "data_hora", None)
+    ):
+        return jsonify({"erro": "Já existe marcação neste minuto para este funcionário."}), 400
+
+    ip = (
+        (request.headers.get("X-Forwarded-For", "") or request.remote_addr or "")
+        .split(",")[0]
+        .strip()[:60]
+    )
+    lat = dados.get("lat")
+    lon = dados.get("lon")
+    precisao = dados.get("precisao")
+    try: lat = float(lat) if lat is not None else None
+    except (ValueError, TypeError): lat = None
+    try: lon = float(lon) if lon is not None else None
+    except (ValueError, TypeError): lon = None
+    try: precisao = float(precisao) if precisao is not None else None
+    except (ValueError, TypeError): precisao = None
+    if precisao is not None and (precisao < 0 or precisao > 50000):
+        precisao = None
+
+    if (
+        marca_celular
+        or modelo_celular
+        or plataforma_celular
+        or app_versao
+        or assinatura_dispositivo
+    ):
+        tag_parts = []
+        if marca_celular:
+            tag_parts.append(f"marca={marca_celular}")
+        if modelo_celular:
+            tag_parts.append(f"modelo={modelo_celular}")
+        if plataforma_celular:
+            tag_parts.append(f"plataforma={plataforma_celular}")
+        if app_versao:
+            tag_parts.append(f"app={app_versao}")
+        if assinatura_dispositivo:
+            tag_parts.append(f"assinatura={assinatura_dispositivo}")
+        observacao = ((observacao + " [APP_DEVICE " + ";".join(tag_parts) + "]").strip())[:500]
+
+    m = PontoMarcacao(
+        funcionario_id=f.id,
+        tipo=tipo,
+        data_hora=data_hora,
+        origem="app-qr",
+        observacao=observacao,
+        criado_por="funcionario-app-qr",
+        ip=ip,
+        latitude=lat,
+        longitude=lon,
+        precisao_gps=precisao,
+    )
+    db.session.add(m)
+    db.session.commit()
+    audit_event(
+        "ponto_marcacao_app_qr",
+        "funcionario",
+        f.id,
+        "funcionario",
+        f.id,
+        True,
+        {"tipo": tipo, "data_ref": data_ref.strftime("%Y-%m-%d"), "origem": "app-qr", "cliente_id": cli_id_token},
+    )
+    # Notificar clientes SSE sobre novo ponto (mesma lógica do /marcar)
+    try:
+        import json as _json
+        _sse_broadcast(
+            "ponto",
+            _json.dumps(
+                {
+                    "funcionario_id": f.id,
+                    "nome": f.nome,
+                    "tipo": m.tipo,
+                    "hora": m.data_hora.strftime("%H:%M"),
+                }
+            ),
+        )
+    except Exception:
+        pass
+    # Push de alerta: se hoje é entrada, verificar se ontem houve entrada sem saída
+    if tipo == "entrada":
+        try:
+            data_ant = data_ref - timedelta(days=1)
+            marcacoes_ant = _app_ponto_marcacoes_dia(f.id, data_ant)
+            tipos_ant = [mc.tipo for mc in marcacoes_ant]
+            if "entrada" in tipos_ant and "saida" not in tipos_ant:
+                _push_notify_funcionario(
+                    f.id,
+                    "⚠️ Ponto incompleto",
+                    f"Ontem ({data_ant.strftime('%d/%m')}) você não registrou a saída. Solicite correção no app.",
+                    data={"tipo": "alerta_ponto_incompleto", "data_ref": str(data_ant)},
+                )
+        except Exception:
+            pass
+    return jsonify(
+        {
+            "ok": True,
+            "marcacao": {
+                "id": m.id,
+                "tipo": m.tipo,
+                "tipo_label": _app_ponto_label(m.tipo),
+                "hora_fmt": m.data_hora.strftime("%H:%M") if m.data_hora else "",
+                "localizacao": {"status": "qr_totem", "posto_cliente_id": cli_id_token or f.posto_cliente_id},
+            },
+            "resumo": _app_ponto_resumo_dia(f, data_ref),
+        }
+    )
+
+
 @app.route("/api/app/funcionario/me/ponto/historico")
 @app_func_required
 def api_app_ponto_historico_me():
@@ -17471,6 +19958,28 @@ def api_app_ponto_espelho_status_me():
             PontoFechamentoDia.data_ref >= dt_ini.isoformat(),
             PontoFechamentoDia.data_ref <= dt_fim.isoformat(),
         ).count()
+        folha = (
+            FuncionarioArquivo.query.filter_by(
+                funcionario_id=f.id,
+                categoria="folha_ponto",
+                competencia=comp,
+            )
+            .order_by(FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc())
+            .first()
+        )
+        folha_ass_status = (folha.ass_status or "nao_solicitada").strip().lower() if folha else ""
+        folha_assinada = folha_ass_status in ("assinado", "concluida")
+        holerite = (
+            FuncionarioArquivo.query.filter_by(
+                funcionario_id=f.id,
+                categoria="holerite",
+                competencia=comp,
+            )
+            .order_by(FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc())
+            .first()
+        )
+        holerite_ass_status = (holerite.ass_status or "nao_solicitada").strip().lower() if holerite else ""
+        holerite_assinado = holerite_ass_status in ("assinado", "concluida")
         pode_baixar = fechamentos > 0
         meses_pt = [
             "Janeiro",
@@ -17490,8 +19999,21 @@ def api_app_ponto_espelho_status_me():
             {
                 "competencia": comp,
                 "label": f"{meses_pt[mes - 1]}/{ano}",
-                "pode_baixar": pode_baixar,
+                "pode_baixar": bool(pode_baixar and folha_assinada),
                 "fechamentos_dias": fechamentos,
+                "folha_disponivel": folha is not None,
+                "folha_assinada": folha_assinada,
+                "folha_ass_status": folha_ass_status,
+                "folha_arquivo_id": folha.id if folha else None,
+                "holerite_disponivel": holerite is not None,
+                "holerite_assinado": holerite_assinado,
+                "holerite_ass_status": holerite_ass_status,
+                "holerite_arquivo_id": holerite.id if holerite else None,
+                "holerite_download_url": (
+                    f"/api/app/funcionario/arquivos/{holerite.id}/download"
+                    if holerite_assinado
+                    else ""
+                ),
             }
         )
     return jsonify({"ok": True, "competencias": competencias})
@@ -17555,6 +20077,8 @@ def api_app_ponto_espelho_dados_me():
                 "horas_esperadas_min": esp_min,
                 "status": resumo.get("status", ""),
                 "tem_marcacoes": bool(marcacoes),
+                "dia_tipo": resumo.get("dia_tipo", "normal"),
+                "afastamento_info": resumo.get("afastamento_info") or None,
             }
         )
     return jsonify(
@@ -17598,6 +20122,7 @@ def api_app_ponto_resumo_mes():
 
 
 @app.route("/api/app/funcionario/me/ponto/espelho/pdf")
+@_limiter.limit("10 per hour")
 @app_func_required
 def api_app_ponto_espelho_pdf_me():
     """Gera e retorna PDF da folha de ponto somente se fechada pelo gestor."""
@@ -17625,6 +20150,21 @@ def api_app_ponto_espelho_pdf_me():
         return jsonify(
             {
                 "erro": "Folha ainda não fechada pelo gestor. Aguarde o fechamento para baixar o PDF."
+            }
+        ), 403
+    folha = (
+        FuncionarioArquivo.query.filter_by(
+            funcionario_id=f.id,
+            categoria="folha_ponto",
+            competencia=competencia,
+        )
+        .order_by(FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc())
+        .first()
+    )
+    if not folha or (folha.ass_status or "").strip().lower() not in ("assinado", "concluida"):
+        return jsonify(
+            {
+                "erro": "Esta folha de ponto precisa ser assinada antes de ser baixada. Ela continua disponível para visualização no aplicativo."
             }
         ), 403
     try:
@@ -17704,13 +20244,32 @@ def api_app_ponto_espelho_pdf_me():
                 if resumo.get("status") == "ok"
                 else ("Inconsist." if marcacoes else "-")
             )
+            dia_tipo = (resumo.get("dia_tipo") or "").strip().lower()
+            af_info = resumo.get("afastamento_info") or {}
+            esp_min = resumo.get("horas_esperadas_min", 0) or 0
             marc_str = (
                 "  ".join(m.get("hora_fmt", "") for m in marcacoes)
                 if marcacoes
                 else "Falta"
-                if resumo.get("horas_esperadas_min", 0)
+                if esp_min > 0
                 else "-"
             )
+            if dia_tipo == "afastamento":
+                af_tipo = (af_info.get("tipo") or "Afastamento").strip()
+                af_txt = f"Afastado: {af_tipo}"
+                marc_str = f"{marc_str} | {af_txt}" if marcacoes else af_txt
+                status_val = "Afastado"
+            elif dia_tipo == "demitido" and not marcacoes:
+                marc_str = "Demitido"
+                status_val = "Demitido"
+            elif dia_tipo == "ferias" and not marcacoes:
+                marc_str = "Ferias"
+            elif dia_tipo == "feriado":
+                marc_str = f"{marc_str} | FERIADO" if marcacoes else "FERIADO"
+                status_val = "Feriado"
+            elif not marcacoes and esp_min == 0 and dia_tipo not in ("demitido", "afastamento", "ferias", "feriado"):
+                marc_str = "Folga"
+                status_val = "Folga"
             rows.append(
                 [
                     data_str,
@@ -17829,9 +20388,16 @@ def api_jornadas_criar():
     dias_ativos = [
         int(k) for k, v in grade_norm.items() if bool((v or {}).get("ativo", False))
     ]
-    primeira_cfg = grade_norm.get(
-        str(dias_ativos[0] if dias_ativos else 1), grade_norm.get("1", {})
-    )
+    # BUG-FIX 13: exigir ao menos 1 dia ativo
+    if not dias_ativos:
+        return jsonify({"erro": "Selecione ao menos um dia da semana para a jornada."}), 400
+    # BUG-FIX 19: limitar carga horária máxima a 12h por dia (720 minutos)
+    for k, v in grade_norm.items():
+        if (v or {}).get("ativo"):
+            mins_dia = _jornada_minutos_dia_cfg(v)
+            if mins_dia > 720:
+                return jsonify({"erro": "A jornada não pode exceder 12 horas por dia."}), 400
+    primeira_cfg = grade_norm.get(str(dias_ativos[0]), {}) if dias_ativos else {}
     intervalo_prim = max(
         0, min(240, int((primeira_cfg or {}).get("intervalo_min", 60) or 0))
     )
@@ -17900,10 +20466,18 @@ def api_jornada_editar(id):
         j.descricao = (d["descricao"] or "").strip()[:255]
     if "grade_semanal" in d and isinstance(d.get("grade_semanal"), dict):
         grade_norm = _jornada_normalizar_grade(d.get("grade_semanal") or {}, j)
-        j.dias_semana = json.dumps({"v": 1, "dias": grade_norm}, ensure_ascii=False)
         dias_ativos = [
             int(k) for k, v in grade_norm.items() if bool((v or {}).get("ativo", False))
         ]
+        # BUG-FIX 13: exigir ao menos 1 dia ativo
+        if not dias_ativos:
+            return jsonify({"erro": "Selecione ao menos um dia da semana para a jornada."}), 400
+        # BUG-FIX 19: limitar carga horária máxima a 12h por dia (720 minutos)
+        for _k, _v in grade_norm.items():
+            if (_v or {}).get("ativo"):
+                if _jornada_minutos_dia_cfg(_v) > 720:
+                    return jsonify({"erro": "A jornada não pode exceder 12 horas por dia."}), 400
+        j.dias_semana = json.dumps({"v": 1, "dias": grade_norm}, ensure_ascii=False)
         primeira_cfg = grade_norm.get(
             str(dias_ativos[0] if dias_ativos else 1), grade_norm.get("1", {})
         )
@@ -17981,6 +20555,10 @@ def api_jornada_excluir(id):
 @app.route("/api/jornadas/<int:id>/funcionarios", methods=["POST"])
 @lr
 def api_jornada_vincular_funcionarios(id):
+    return jsonify({
+        "erro": "Vinculação de jornada foi desativada para evitar conflito com Escalas. Use Escalas de Turnos no cadastro do funcionário."
+    }), 409
+
     j = db.get_or_404(JornadaTrabalho, id)
     d = request.json or {}
     ids = d.get("funcionario_ids") or []
@@ -17997,22 +20575,37 @@ def api_jornada_vincular_funcionarios(id):
         return jsonify({"erro": "Selecione ao menos 1 funcionário válido."}), 400
 
     conflitos = []
+    bloqueados_status = []
     for fid in ids_ok:
         f = db.session.get(Funcionario, fid)
         if not f:
             continue
-        if f.jornada_id and int(f.jornada_id) != int(id):
-            j_atual = db.session.get(JornadaTrabalho, f.jornada_id)
-            conflitos.append(
+
+        st_norm = _status_norm(f.status or "Ativo")
+        if st_norm in ("ferias", "demitido", "inativo"):
+            bloqueados_status.append(
                 {
                     "funcionario_id": f.id,
                     "nome": f.nome or "",
-                    "jornada_atual_id": f.jornada_id,
-                    "jornada_atual_nome": (
-                        j_atual.nome if j_atual else f"Jornada #{f.jornada_id}"
-                    ),
+                    "status": f.status or "",
                 }
             )
+            continue
+
+        if f.jornada_id and int(f.jornada_id) != int(id):
+            j_atual = db.session.get(JornadaTrabalho, f.jornada_id)
+            if j_atual:
+                conflitos.append(
+                    {
+                        "funcionario_id": f.id,
+                        "nome": f.nome or "",
+                        "jornada_atual_id": f.jornada_id,
+                        "jornada_atual_nome": j_atual.nome,
+                    }
+                )
+            else:
+                # Limpar referência obsoleta para jornadas que não existem mais
+                f.jornada_id = None
 
     if conflitos:
         nomes = ", ".join(
@@ -18025,6 +20618,21 @@ def api_jornada_vincular_funcionarios(id):
                 "conflitos": conflitos,
                 "jornada_destino_id": j.id,
                 "jornada_destino_nome": j.nome or "",
+            }
+        ), 409
+
+    if bloqueados_status:
+        nomes = ", ".join(
+            [
+                f"{(c.get('nome') or c.get('funcionario_id'))} ({c.get('status') or 'status inválido'})"
+                for c in bloqueados_status[:6]
+            ]
+        )
+        sufixo = "..." if len(bloqueados_status) > 6 else ""
+        return jsonify(
+            {
+                "erro": f"Não é permitido vincular jornada para funcionário em Férias/Demitido/Inativo: {nomes}{sufixo}",
+                "bloqueados_status": bloqueados_status,
             }
         ), 409
 
@@ -18068,12 +20676,33 @@ def api_funcionario_definir_jornada(id):
     if jid is None or jid == "":
         f.jornada_id = None
     else:
-        j = db.session.get(JornadaTrabalho, int(jid))
-        if not j:
-            return jsonify({"erro": "Jornada não encontrada"}), 404
-        f.jornada_id = j.id
+        return jsonify({
+            "erro": "Vinculação de jornada foi desativada para evitar conflito com Escalas. Use Escalas de Turnos no cadastro do funcionário."
+        }), 409
+    _aplicar_regra_jornada_por_status(f)
     db.session.commit()
-    return jsonify({"ok": True, "jornada_id": f.jornada_id})
+    # BUG-FIX 7: alertar se funcionário tem escala rotativa ativa ao mesmo tempo que jornada fixa.
+    # Prioridade no ponto é Escala > Jornada, então a jornada recém-vinculada seria ignorada.
+    aviso_escala_ativa = False
+    if f.jornada_id:
+        try:
+            hoje_str = localnow().date().strftime("%Y-%m-%d")
+            ef = EscalaFuncionario.query.filter(
+                EscalaFuncionario.funcionario_id == id,
+                EscalaFuncionario.ativo == True,
+                EscalaFuncionario.data_inicio <= hoje_str,
+            ).first()
+            if ef and (not ef.data_fim or ef.data_fim >= hoje_str):
+                _esc = db.session.get(Escala, ef.escala_id)
+                if _esc and _esc.ativo:
+                    aviso_escala_ativa = True
+        except Exception:
+            pass
+    return jsonify({
+        "ok": True,
+        "jornada_id": f.jornada_id,
+        "aviso_escala_ativa": aviso_escala_ativa,
+    })
 
 
 # ============================================================
@@ -18085,7 +20714,41 @@ def api_funcionario_definir_jornada(id):
 @lr
 def api_escalas_listar():
     escalas = Escala.query.filter_by(ativo=True).order_by(Escala.criado_em.desc()).all()
-    return jsonify([e.to_dict() for e in escalas])
+    escala_ids = [e.id for e in escalas if e.id]
+    map_vinculos = {}
+    if escala_ids:
+        vincs = EscalaFuncionario.query.filter(
+            EscalaFuncionario.escala_id.in_(escala_ids),
+            EscalaFuncionario.ativo == True,
+        ).all()
+        func_ids = sorted({v.funcionario_id for v in vincs if v.funcionario_id})
+        func_map = {}
+        if func_ids:
+            for f in Funcionario.query.filter(Funcionario.id.in_(func_ids)).all():
+                func_map[f.id] = f
+        for v in vincs:
+            f = func_map.get(v.funcionario_id)
+            if not f:
+                continue
+            map_vinculos.setdefault(v.escala_id, []).append(
+                {
+                    "id": f.id,
+                    "nome": f.nome,
+                    "matricula": f.matricula,
+                    "data_inicio": v.data_inicio,
+                    "data_fim": v.data_fim,
+                    "ativo": bool(v.ativo),
+                }
+            )
+
+    out = []
+    for e in escalas:
+        d = e.to_dict()
+        funcs = map_vinculos.get(e.id, [])
+        d["funcionarios"] = sorted(funcs, key=lambda x: (x.get("nome") or "").lower())
+        d["funcionarios_count"] = len(d["funcionarios"])
+        out.append(d)
+    return jsonify(out)
 
 
 @app.route("/api/escalas", methods=["POST"])
@@ -18096,17 +20759,92 @@ def api_escalas_criar():
     tipo = (d.get("tipo") or "").strip()
     if not nome:
         return jsonify({"erro": "Nome obrigatório"}), 400
-    if tipo not in ("6x2", "6x1", "4x2", "12x36", "folguista", "noturna"):
+    if tipo not in ("5x2", "6x2", "6x1", "4x2", "12x36", "folguista", "noturna"):
         return jsonify(
             {
-                "erro": "Tipo deve ser '6x2', '6x1', '4x2', '12x36', 'folguista' ou 'noturna'"
+                "erro": "Tipo deve ser '5x2', '6x2', '6x1', '4x2', '12x36', 'folguista' ou 'noturna'"
             }
         ), 400
 
     ciclo_json = d.get("ciclo_json") or "{}"
     if isinstance(ciclo_json, dict):
         ciclo_json = json.dumps(ciclo_json, ensure_ascii=False)
-
+    # BUG-FIX 6: limitar tamanho do ciclo_json para evitar DoS (SQLite aceita GB de Text)
+    if len(ciclo_json) > 50000:
+        return jsonify({"erro": "ciclo_json muito grande (máximo 50 KB)"}), 400
+    # BUG-FIX 4 & 20: ciclo vazio ou sem dias deixa funcionario com 0h esperadas
+    try:
+        _ciclo_val = json.loads(ciclo_json)
+        if not isinstance(_ciclo_val.get("dias"), list) or len(_ciclo_val.get("dias", [])) == 0:
+            return jsonify({"erro": "ciclo_json deve conter ao menos 1 dia no array 'dias'"}), 400
+        sem_trab = _ciclo_val.get("dias_semana_trabalho")
+        if sem_trab is not None:
+            if not isinstance(sem_trab, list):
+                return jsonify({"erro": "ciclo_json.dias_semana_trabalho deve ser uma lista"}), 400
+            sem_val = []
+            for x in sem_trab:
+                try:
+                    iv = int(x)
+                except Exception:
+                    return jsonify({"erro": "dias_semana_trabalho deve conter inteiros de 0 a 6"}), 400
+                if iv < 0 or iv > 6:
+                    return jsonify({"erro": "dias_semana_trabalho deve conter inteiros de 0 a 6"}), 400
+                if iv not in sem_val:
+                    sem_val.append(iv)
+            _ciclo_val["dias_semana_trabalho"] = sem_val
+            ciclo_json = json.dumps(_ciclo_val, ensure_ascii=False)
+        # Validações adicionais por dia: tipo, formatos de hora e coerência de intervalo
+        dia_errs = []
+        dias = _ciclo_val.get("dias", [])
+        for idx, dia in enumerate(dias):
+            if not isinstance(dia, dict):
+                dia_errs.append(f"dia[{idx}] deve ser um objeto")
+                continue
+            tipo_d = (dia.get("tipo") or "").strip().lower()
+            if tipo_d not in ("trabalho", "folga"):
+                dia_errs.append(f"dia[{idx}].tipo inválido: {dia.get('tipo')}")
+                continue
+            if tipo_d == "trabalho":
+                # se forneceu horários, validar formato HH:MM
+                he = dia.get("hora_entrada")
+                hs = dia.get("hora_saida")
+                intervalo = dia.get("intervalo_min")
+                horas = dia.get("horas")
+                if he and not re.match(r"^\d{2}:\d{2}$", str(he)):
+                    dia_errs.append(f"dia[{idx}].hora_entrada formato inválido: {he}")
+                if hs and not re.match(r"^\d{2}:\d{2}$", str(hs)):
+                    dia_errs.append(f"dia[{idx}].hora_saida formato inválido: {hs}")
+                try:
+                    if he and hs and re.match(r"^\d{2}:\d{2}$", str(he)) and re.match(r"^\d{2}:\d{2}$", str(hs)):
+                        he_h, he_m = map(int, str(he).split(":"))
+                        hs_h, hs_m = map(int, str(hs).split(":"))
+                        entrada_min = he_h * 60 + he_m
+                        saida_min = hs_h * 60 + hs_m
+                        if saida_min <= entrada_min:
+                            saida_min += 24 * 60
+                        duracao = saida_min - entrada_min
+                        if intervalo is None:
+                            intervalo = 0
+                        try:
+                            intervalo_i = int(intervalo or 0)
+                        except Exception:
+                            dia_errs.append(f"dia[{idx}].intervalo_min inválido: {intervalo}")
+                            intervalo_i = 0
+                        if intervalo_i >= duracao:
+                            dia_errs.append(f"dia[{idx}]: intervalo_min >= duração bruta ({intervalo_i} >= {duracao})")
+                except Exception:
+                    pass
+                if horas is not None:
+                    try:
+                        hval = float(horas)
+                        if hval <= 0:
+                            dia_errs.append(f"dia[{idx}].horas inválido: {horas}")
+                    except Exception:
+                        dia_errs.append(f"dia[{idx}].horas inválido: {horas}")
+        if dia_errs:
+            return jsonify({"erro": "Erros no ciclo_json", "detalhes": dia_errs}), 400
+    except (json.JSONDecodeError, AttributeError):
+        return jsonify({"erro": "ciclo_json inválido (JSON malformado)"}), 400
     periodo_ini = (d.get("periodo_noturno_ini") or "22:00").strip()
     periodo_fim = (d.get("periodo_noturno_fim") or "05:00").strip()
     # Validar formato HH:MM
@@ -18169,6 +20907,7 @@ def api_escala_editar(id):
     if "nome" in d:
         e.nome = (d.get("nome") or "").strip() or e.nome
     if "tipo" in d and d.get("tipo") in (
+        "5x2",
         "6x2",
         "6x1",
         "4x2",
@@ -18179,11 +20918,37 @@ def api_escala_editar(id):
         e.tipo = d.get("tipo")
     if "ciclo_json" in d:
         ciclo = d.get("ciclo_json")
-        e.ciclo_json = (
+        ciclo_str = (
             json.dumps(ciclo, ensure_ascii=False)
             if isinstance(ciclo, dict)
             else (ciclo or "{}")
         )
+        # BUG-FIX 6 & 20 (PUT): mesma validação de tamanho e conteúdo do POST
+        if len(ciclo_str) > 50000:
+            return jsonify({"erro": "ciclo_json muito grande (máximo 50 KB)"}), 400
+        try:
+            _ciclo_val = json.loads(ciclo_str)
+            if not isinstance(_ciclo_val.get("dias"), list) or len(_ciclo_val.get("dias", [])) == 0:
+                return jsonify({"erro": "ciclo_json deve conter ao menos 1 dia no array 'dias'"}), 400
+            sem_trab = _ciclo_val.get("dias_semana_trabalho")
+            if sem_trab is not None:
+                if not isinstance(sem_trab, list):
+                    return jsonify({"erro": "ciclo_json.dias_semana_trabalho deve ser uma lista"}), 400
+                sem_val = []
+                for x in sem_trab:
+                    try:
+                        iv = int(x)
+                    except Exception:
+                        return jsonify({"erro": "dias_semana_trabalho deve conter inteiros de 0 a 6"}), 400
+                    if iv < 0 or iv > 6:
+                        return jsonify({"erro": "dias_semana_trabalho deve conter inteiros de 0 a 6"}), 400
+                    if iv not in sem_val:
+                        sem_val.append(iv)
+                _ciclo_val["dias_semana_trabalho"] = sem_val
+                ciclo_str = json.dumps(_ciclo_val, ensure_ascii=False)
+        except (json.JSONDecodeError, AttributeError):
+            return jsonify({"erro": "ciclo_json inválido (JSON malformado)"}), 400
+        e.ciclo_json = ciclo_str
     if "descricao" in d:
         e.descricao = d.get("descricao", "")
     if "periodo_noturno_ini" in d:
@@ -18214,6 +20979,7 @@ def api_escala_editar(id):
 def api_escala_excluir(id):
     e = db.get_or_404(Escala, id)
     e.ativo = False
+    EscalaFuncionario.query.filter_by(escala_id=id, ativo=True).update({"ativo": False})
     db.session.commit()
     audit_event(
         "escala_excluir",
@@ -18232,6 +20998,7 @@ def api_escala_excluir(id):
 def api_escala_vincular_funcionarios(id):
     e = db.get_or_404(Escala, id)
     d = request.json or {}
+    substituir_escala_atual = bool(d.get("substituir_escala_atual"))
     pares = (
         d.get("funcionarios") or []
     )  # [{'funcionario_id': 1, 'data_inicio': '2026-05-11', 'data_fim': None}, ...]
@@ -18239,6 +21006,7 @@ def api_escala_vincular_funcionarios(id):
         return jsonify({"erro": "funcionarios deve ser lista"}), 400
 
     vinculados = []
+    movidos_de_outra_escala = []
     for par in pares:
         if not isinstance(par, dict):
             continue
@@ -18249,27 +21017,91 @@ def api_escala_vincular_funcionarios(id):
         if not fid or not data_ini:
             continue
 
+        # BUG-FIX 2: validar formato ISO de data_inicio antes de persistir
+        try:
+            from datetime import date as _dt_v
+            _dt_v.fromisoformat(str(data_ini))
+        except (ValueError, TypeError):
+            return jsonify({"erro": f"data_inicio inválida '{data_ini}' — use o formato YYYY-MM-DD"}), 400
+
+        # BUG-FIX 3: data_fim, se fornecida, deve ser >= data_inicio
+        if data_fim:
+            try:
+                from datetime import date as _dt_v2
+                if str(data_fim) < str(data_ini):
+                    return jsonify({"erro": "data_fim deve ser igual ou posterior a data_inicio"}), 400
+            except Exception:
+                pass
+
         f = db.session.get(Funcionario, fid)
         if not f:
             continue
 
-        # Validar se funcionário já está em outra escala na mesma data
-        conflito = EscalaFuncionario.query.filter(
+        # BUG-FIX 7: verificar sobreposição na MESMA escala (não apenas em outra)
+        # Se substituir_escala_atual=true, permitir editar vínculo existente na mesma escala
+        conflito_mesmo = EscalaFuncionario.query.filter(
+            EscalaFuncionario.funcionario_id == fid,
+            EscalaFuncionario.escala_id == id,
+            EscalaFuncionario.ativo == True,
+            # Período sobreposto: registro existente ainda não encerrou antes de data_ini
+            db.or_(
+                EscalaFuncionario.data_fim.is_(None),
+                EscalaFuncionario.data_fim >= data_ini,
+            ),
+        ).first()
+        if conflito_mesmo and not substituir_escala_atual:
+            return jsonify({
+                "erro": f"Funcionário {f.nome} já está vinculado a esta escala em período sobreposto. Encerre o vínculo existente antes de criar outro.",
+                "conflito_funcionario_id": fid,
+            }), 409
+        
+        # Se substituir_escala_atual=true e há conflito na mesma escala, atualizar em vez de criar novo
+        if conflito_mesmo and substituir_escala_atual:
+            conflito_mesmo.data_inicio = data_ini
+            conflito_mesmo.data_fim = data_fim
+            vinculados.append(fid)
+            continue
+
+        # BUG-FIX 8 & 9: verificar conflito em OUTRA escala, considerando data_fim
+        # Bug 8: registro com data_fim=None (ativo sem prazo) conflita sempre
+        # Bug 9: registros cujo data_fim < data_ini já encerraram — não são conflito
+        conflito = EscalaFuncionario.query.join(
+            Escala, Escala.id == EscalaFuncionario.escala_id
+        ).filter(
             EscalaFuncionario.funcionario_id == fid,
             EscalaFuncionario.escala_id != id,
             EscalaFuncionario.data_inicio <= data_ini,
             EscalaFuncionario.ativo == True,
+            Escala.ativo == True,
+            db.or_(
+                EscalaFuncionario.data_fim.is_(None),       # Ativo sem prazo
+                EscalaFuncionario.data_fim >= data_ini,     # Termina depois de data_ini
+            ),
         ).first()
 
         if conflito:
-            esc_atual = db.session.get(Escala, conflito.escala_id)
-            return jsonify(
-                {
-                    "erro": f"Funcionário {f.nome} já está em outra escala ({esc_atual.nome if esc_atual else f'escala #{conflito.escala_id}'})",
-                    "conflito_funcionario_id": fid,
-                    "conflito_escala_id": conflito.escala_id,
-                }
-            ), 409
+            if substituir_escala_atual:
+                # Move de escala: encerra vínculo anterior e cria o novo na escala alvo.
+                conflito.ativo = False
+                try:
+                    dt_ini = datetime.strptime(str(data_ini), "%Y-%m-%d").date()
+                    if conflito.data_inicio and str(conflito.data_inicio) < str(data_ini):
+                        conflito.data_fim = (dt_ini - timedelta(days=1)).isoformat()
+                except Exception:
+                    pass
+                movidos_de_outra_escala.append({
+                    "funcionario_id": fid,
+                    "escala_origem_id": conflito.escala_id,
+                })
+            else:
+                esc_atual = db.session.get(Escala, conflito.escala_id)
+                return jsonify(
+                    {
+                        "erro": f"Funcionário {f.nome} já está em outra escala ({esc_atual.nome if esc_atual else f'escala #{conflito.escala_id}'})",
+                        "conflito_funcionario_id": fid,
+                        "conflito_escala_id": conflito.escala_id,
+                    }
+                ), 409
 
         # Criar vínculo
         ef = EscalaFuncionario(
@@ -18290,9 +21122,19 @@ def api_escala_vincular_funcionarios(id):
         "escala",
         id,
         True,
-        {"funcionarios": vinculados},
+        {
+            "funcionarios": vinculados,
+            "substituir_escala_atual": substituir_escala_atual,
+            "movidos_de_outra_escala": movidos_de_outra_escala,
+        },
     )
-    return jsonify({"ok": True, "vinculados": len(vinculados)})
+    return jsonify(
+        {
+            "ok": True,
+            "vinculados": len(vinculados),
+            "movidos_de_outra_escala": movidos_de_outra_escala,
+        }
+    )
 
 
 @app.route("/api/escalas/<int:id>/funcionarios/<int:fid>", methods=["DELETE"])
@@ -18309,27 +21151,206 @@ def api_escala_desvincular_funcionario(id, fid):
 @app.route("/api/escalas/<int:id>/turno-do-dia/<data>", methods=["GET"])
 @lr
 def api_escala_turno_do_dia(id, data):
-    """Retorna info do turno para uma data específica dentro do ciclo da escala"""
+    """Retorna info do turno de uma escala para uma data específica.
+    BUG-FIX 18: antes o parâmetro <data> era recebido mas nunca usado — retornava
+    o ciclo inteiro em vez das informações do dia calculado pelo índice correto."""
     e = db.get_or_404(Escala, id)
-    # Assumindo que data é a data_inicio de alguma EscalaFuncionario ativa
-    # Aqui retornamos apenas a info do turno do dia no ciclo
+    # Validar formato da data recebida
+    try:
+        from datetime import date as _dt18
+        data_obj_18 = _dt18.fromisoformat(str(data))
+    except (ValueError, TypeError):
+        return jsonify({"erro": "Data inválida — use o formato YYYY-MM-DD"}), 400
     try:
         ciclo = json.loads(e.ciclo_json or "{}")
         dias = ciclo.get("dias", [])
         if not dias:
             return jsonify({"erro": "Escala sem ciclo definido"}), 400
-        # Necessita data_inicio para calcular índice; aqui retornamos apenas a estrutura
-        return jsonify(
-            {
-                "escala_id": id,
-                "escala_nome": e.nome,
-                "escala_tipo": e.tipo,
+        # Buscar vínculo ativo que abranja a data informada
+        data_str_18 = str(data)
+        ef = EscalaFuncionario.query.filter(
+            EscalaFuncionario.escala_id == id,
+            EscalaFuncionario.data_inicio <= data_str_18,
+            EscalaFuncionario.ativo == True,
+            db.or_(
+                EscalaFuncionario.data_fim.is_(None),
+                EscalaFuncionario.data_fim >= data_str_18,
+            ),
+        ).order_by(EscalaFuncionario.data_inicio.desc()).first()
+        if not ef:
+            return jsonify({
+                "erro": "Nenhum funcionário vinculado a esta escala na data informada",
                 "ciclo_dias": len(dias),
-                "ciclo": ciclo,
-            }
-        )
+            }), 404
+        from datetime import date as _dt18b
+        data_inicio_obj = _dt18b.fromisoformat(ef.data_inicio)
+        dias_decorridos = (data_obj_18 - data_inicio_obj).days
+        if dias_decorridos < 0:
+            return jsonify({"erro": "Data anterior ao início do vínculo"}), 400
+        indice = dias_decorridos % len(dias)
+        return jsonify({
+            "escala_id": id,
+            "escala_nome": e.nome,
+            "escala_tipo": e.tipo,
+            "data": data,
+            "indice_ciclo": indice,
+            "ciclo_dias": len(dias),
+            "dia_ciclo": dias[indice],
+            "carga_horaria_min": e.carga_horaria_min_dia(indice),
+        })
     except Exception as ex:
         return jsonify({"erro": str(ex)}), 400
+
+
+# ============================================================
+# LEMBRETES DE PONTO POR ESCALA
+# ============================================================
+
+
+@app.route("/api/ponto/lembretes-escala", methods=["POST"])
+@_limiter.limit("10 per minute")
+@lr
+def api_ponto_lembretes_escala():
+    """
+    Envia notificações push de lembrete de ponto para funcionários cujo turno
+    começa ou termina dentro de 'minutos_antecedencia' minutos a partir de agora.
+    Deve ser chamado por um cron externo (ex: a cada 5 min).
+
+    Body JSON opcional:
+      - minutos_antecedencia: int (default 15) — janela de antecedência em minutos
+      - tipo: "entrada" | "saida" | "ambos" (default "ambos")
+      - empresa_id: int | null — filtrar por empresa (default: todas)
+    """
+    import math as _math
+    d = request.json or {}
+    minutos = max(1, min(int(d.get("minutos_antecedencia") or 15), 120))
+    tipo_lembrete = (d.get("tipo") or "ambos").strip().lower()
+    empresa_id_filter = d.get("empresa_id")
+
+    from datetime import date as _date_l, timedelta as _td_l, datetime as _datetime_l
+
+    agora = localnow()  # tipo datetime naive BRT
+    hoje_str = agora.date().isoformat()
+
+    # Buscar todos os vínculos de escala ativos hoje
+    vinculos = EscalaFuncionario.query.filter(
+        EscalaFuncionario.ativo == True,
+        EscalaFuncionario.data_inicio <= hoje_str,
+        db.or_(
+            EscalaFuncionario.data_fim.is_(None),
+            EscalaFuncionario.data_fim >= hoje_str,
+        ),
+    ).all()
+
+    # Prefetch escalas e funcionários envolvidos
+    escala_ids = list({v.escala_id for v in vinculos})
+    func_ids = list({v.funcionario_id for v in vinculos})
+    escalas = {e.id: e for e in Escala.query.filter(Escala.id.in_(escala_ids)).all()}
+    funcs_map = {
+        f.id: f
+        for f in Funcionario.query.filter(Funcionario.id.in_(func_ids)).all()
+    }
+
+    enviados = 0
+    erros = 0
+
+    for vf in vinculos:
+        try:
+            f = funcs_map.get(vf.funcionario_id)
+            if not f:
+                continue
+            # Filtrar por empresa se solicitado
+            if empresa_id_filter and str(f.empresa_id) != str(empresa_id_filter):
+                continue
+            # Apenas funcionários com acesso ao app e com token
+            st = (f.status or "Ativo").strip()
+            if st in ("Demitido", "Inativo"):
+                continue
+            if not (f.app_ativo and (f.app_push_token or "").strip()):
+                continue
+
+            e = escalas.get(vf.escala_id)
+            if not e:
+                continue
+
+            try:
+                ciclo = json.loads(e.ciclo_json or "{}")
+                dias = ciclo.get("dias", [])
+            except Exception:
+                continue
+            if not dias:
+                continue
+
+            data_inicio_vf = _date_l.fromisoformat(vf.data_inicio)
+            hoje_date = agora.date()
+            dias_decorridos = (hoje_date - data_inicio_vf).days
+            if dias_decorridos < 0:
+                continue
+            indice = dias_decorridos % len(dias)
+            dia_info = dias[indice]
+            if dia_info.get("tipo") == "folga":
+                continue
+
+            hora_entrada_str = dia_info.get("hora_entrada") or "08:00"
+            hora_saida_str = dia_info.get("hora_saida") or "17:00"
+
+            # Converter horários do turno em datetime de hoje
+            def _turno_dt(hhmm_str):
+                try:
+                    hh, mm = map(int, hhmm_str.split(":"))
+                    dt = _datetime_l(hoje_date.year, hoje_date.month, hoje_date.day, hh, mm)
+                    return dt
+                except Exception:
+                    return None
+
+            hora_entrada_dt = _turno_dt(hora_entrada_str)
+            hora_saida_dt = _turno_dt(hora_saida_str)
+            # Turno noturno: saída no dia seguinte
+            if hora_saida_dt and hora_entrada_dt and hora_saida_dt <= hora_entrada_dt:
+                hora_saida_dt += _td_l(days=1)
+
+            nome_curto = (f.nome or "").split()[0]
+            enviou = False
+
+            if tipo_lembrete in ("entrada", "ambos") and hora_entrada_dt:
+                diff_ent = (hora_entrada_dt - agora).total_seconds() / 60.0
+                if 0 <= diff_ent <= minutos:
+                    ok = _push_notify_funcionario(
+                        f.id,
+                        "⏰ Lembrete de Ponto",
+                        f"{nome_curto}, seu turno começa às {hora_entrada_str}. "
+                        "Não esqueça de registrar sua entrada!",
+                        data={"tipo": "ponto_lembrete"},
+                    )
+                    if ok:
+                        enviou = True
+
+            if tipo_lembrete in ("saida", "ambos") and hora_saida_dt:
+                diff_sai = (hora_saida_dt - agora).total_seconds() / 60.0
+                if 0 <= diff_sai <= minutos:
+                    ok = _push_notify_funcionario(
+                        f.id,
+                        "⏰ Lembrete de Saída",
+                        f"{nome_curto}, seu turno termina às {hora_saida_str}. "
+                        "Não esqueça de registrar sua saída!",
+                        data={"tipo": "ponto_lembrete"},
+                    )
+                    if ok:
+                        enviou = True
+
+            if enviou:
+                enviados += 1
+        except Exception:
+            erros += 1
+            continue
+
+    return jsonify({
+        "ok": True,
+        "enviados": enviados,
+        "erros": erros,
+        "minutos_antecedencia": minutos,
+        "tipo": tipo_lembrete,
+    })
 
 
 # ============================================================
@@ -18340,11 +21361,16 @@ def api_escala_turno_do_dia(id, data):
 @app.route("/api/comunicados-app", methods=["GET"])
 @lr
 def api_rh_comunicados_lista():
-    itens = ComunicadoApp.query.order_by(ComunicadoApp.criado_em.desc()).all()
+    empresa_id = request.args.get("empresa_id")
+    q = ComunicadoApp.query
+    if empresa_id and str(empresa_id).isdigit():
+        q = q.filter_by(empresa_id=int(empresa_id))
+    itens = q.order_by(ComunicadoApp.criado_em.desc()).all()
     return jsonify([c.to_dict() for c in itens])
 
 
 @app.route("/api/comunicados-app", methods=["POST"])
+@_limiter.limit("5 per minute; 10 per hour")
 @lr
 def api_rh_comunicado_criar():
     d = request.json or {}
@@ -18360,12 +21386,21 @@ def api_rh_comunicado_criar():
         return jsonify({"erro": "URL inválida. Use http:// ou https://"}), 400
     fid = d.get("funcionario_id")
     posto = (d.get("posto_operacional") or "").strip() or None
+    # empresa_id: usar empresa do funcionário alvo (individual) ou a empresa enviada pelo RH (broadcast)
+    empresa_id_req = d.get("empresa_id")
+    empresa_id_comunicado = None
+    if fid:
+        func_alvo = db.session.get(Funcionario, int(fid))
+        empresa_id_comunicado = getattr(func_alvo, "empresa_id", None) if func_alvo else None
+    elif empresa_id_req and str(empresa_id_req).isdigit():
+        empresa_id_comunicado = int(empresa_id_req)
     c = ComunicadoApp(
         titulo=titulo,
         conteudo=conteudo,
         url=url,
         funcionario_id=int(fid) if fid else None,
         posto_operacional=posto,
+        empresa_id=empresa_id_comunicado,
         criado_por=session.get("nome") or session.get("email") or "RH",
         ativo=True,
     )
@@ -18375,11 +21410,15 @@ def api_rh_comunicado_criar():
     push_data = {"tipo": "aviso_geral", "comunicado_id": str(c.id)}
     if url:
         push_data["url"] = url
-    corpo_push = url if url else conteudo[:160]
+    # Bug P-N2: corpo da notificação sempre usa o texto, nunca a URL
+    corpo_push = conteudo[:160]
     if fid:
         _push_notify_funcionario(int(fid), titulo, corpo_push, data=push_data)
     else:
+        # Bug P-N1: filtrar por empresa para evitar broadcast cross-tenant
         q = Funcionario.query.filter_by(status="Ativo", app_ativo=True)
+        if empresa_id_comunicado:
+            q = q.filter(Funcionario.empresa_id == empresa_id_comunicado)
         if posto:
             q = q.filter(Funcionario.posto_operacional == posto)
         for func in q.all():
@@ -18391,6 +21430,9 @@ def api_rh_comunicado_criar():
 @lr
 def api_rh_comunicado_editar(cid):
     c = db.get_or_404(ComunicadoApp, cid)
+    _emp_req = (request.json or {}).get("empresa_id") or request.args.get("empresa_id", type=int)
+    if _emp_req is not None and c.empresa_id is not None and int(c.empresa_id) != int(_emp_req):
+        return jsonify({"erro": "Acesso negado: empresa não autorizada."}), 403
     d = request.json or {}
     if "titulo" in d:
         c.titulo = (d["titulo"] or "").strip()
@@ -18411,6 +21453,9 @@ def api_rh_comunicado_editar(cid):
 @lr
 def api_rh_comunicado_excluir(cid):
     c = db.get_or_404(ComunicadoApp, cid)
+    _emp_req = request.args.get("empresa_id", type=int)
+    if _emp_req is not None and c.empresa_id is not None and int(c.empresa_id) != int(_emp_req):
+        return jsonify({"erro": "Acesso negado: empresa não autorizada."}), 403
     c.ativo = False
     db.session.commit()
     audit_event(
@@ -18436,27 +21481,29 @@ def api_rh_mensagens_funcionarios():
     """Lista funcionários que têm mensagens + contagem de não lidas."""
     from sqlalchemy import func as sqlfunc
 
-    subq = (
-        db.session.query(
-            MensagemApp.funcionario_id,
-            sqlfunc.count(MensagemApp.id).label("total"),
-            sqlfunc.sum(
-                db.cast(
-                    db.and_(MensagemApp.de_rh == False, MensagemApp.lida == False),
-                    db.Integer,
-                )
-            ).label("nao_lidas"),
-            sqlfunc.max(MensagemApp.enviado_em).label("ultima"),
-        )
-        .group_by(MensagemApp.funcionario_id)
-        .all()
+    empresa_id = request.args.get("empresa_id")
+    base_q = db.session.query(
+        MensagemApp.funcionario_id,
+        sqlfunc.count(MensagemApp.id).label("total"),
+        sqlfunc.sum(
+            db.cast(
+                db.and_(MensagemApp.de_rh == False, MensagemApp.lida == False),
+                db.Integer,
+            )
+        ).label("nao_lidas"),
+        sqlfunc.max(MensagemApp.enviado_em).label("ultima"),
     )
+    if empresa_id and str(empresa_id).isdigit():
+        base_q = base_q.join(
+            Funcionario, MensagemApp.funcionario_id == Funcionario.id
+        ).filter(Funcionario.empresa_id == int(empresa_id))
+    subq = base_q.group_by(MensagemApp.funcionario_id).all()
     result = []
     for row in subq:
         f = db.session.get(Funcionario, row.funcionario_id)
         if not f:
             continue
-        if f.status in ("Demitido", "Inativo"):
+        if _status_norm(f.status) in ("demitido", "inativo") or not bool(getattr(f, "app_ativo", True)):
             continue
         result.append(
             {
@@ -18475,7 +21522,9 @@ def api_rh_mensagens_funcionarios():
 @app.route("/api/mensagens-app/<int:fid>")
 @lr
 def api_rh_mensagens_chat(fid):
-    db.get_or_404(Funcionario, fid)
+    f = db.get_or_404(Funcionario, fid)
+    if _status_norm(f.status) in ("demitido", "inativo") or not bool(getattr(f, "app_ativo", True)):
+        return jsonify({"erro": "Funcionario sem acesso ao aplicativo."}), 404
     msgs = (
         MensagemApp.query.filter_by(funcionario_id=fid)
         .order_by(MensagemApp.enviado_em.asc())
@@ -18492,7 +21541,9 @@ def api_rh_mensagens_chat(fid):
 @app.route("/api/mensagens-app/<int:fid>", methods=["POST"])
 @lr
 def api_rh_mensagem_responder(fid):
-    db.get_or_404(Funcionario, fid)
+    f = db.get_or_404(Funcionario, fid)
+    if _status_norm(f.status) in ("demitido", "inativo") or not bool(getattr(f, "app_ativo", True)):
+        return jsonify({"erro": "Funcionario sem acesso ao aplicativo."}), 404
     d = request.json or {}
     conteudo = (d.get("conteudo") or "").strip()
     if not conteudo:
@@ -18509,23 +21560,68 @@ def api_rh_mensagem_responder(fid):
     )
     db.session.add(m)
     db.session.commit()
-    _push_notify_funcionario(
+    tem_token_push = bool((f.app_push_token or "").strip())
+    push_enviado = _push_notify_funcionario(
         fid,
         "Nova mensagem do RH",
         conteudo[:160],
         data={"tipo": "chat", "funcionario_id": str(fid)},
     )
-    return jsonify(m.to_dict()), 201
+    resp = m.to_dict()
+    resp["push_enviado"] = bool(push_enviado)
+    resp["push_token_presente"] = tem_token_push
+    return jsonify(resp), 201
+
+
+@app.route("/api/mensagens-app/<int:mid>/arquivo")
+@lr
+def api_rh_mensagem_download_arquivo(mid):
+    m = db.get_or_404(MensagemApp, mid)
+    if not m.arquivo_caminho:
+        return jsonify({"erro": "Mensagem sem arquivo"}), 404
+    f = db.session.get(Funcionario, m.funcionario_id)
+    if not f:
+        return jsonify({"erro": "Funcionario nao encontrado"}), 404
+    uid = session.get("uid")
+    perfil = (session.get("perfil") or "").strip().lower()
+    if perfil != "dono" and uid:
+        try:
+            from sqlalchemy import text as _sqlt_msg_arq
+            u = db.session.execute(
+                _sqlt_msg_arq("SELECT empresa_id FROM usuario WHERE id = :uid"),
+                {"uid": int(uid)},
+            ).first()
+            if u and u[0] and f.empresa_id and int(u[0]) != int(f.empresa_id):
+                return jsonify({"erro": "Acesso negado."}), 403
+        except Exception:
+            pass
+    abs_p = os.path.join(UPLOAD_ROOT, m.arquivo_caminho)
+    if not os.path.exists(abs_p):
+        return jsonify({"erro": "Arquivo nao encontrado"}), 404
+    return send_file(
+        abs_p,
+        as_attachment=bool(m.de_rh),
+        download_name=m.arquivo_nome or "arquivo",
+    )
 
 
 @app.route("/api/mensagens-app/nao-lidas-total")
 @lr
 def api_rh_mensagens_nao_lidas_total():
-    count = MensagemApp.query.filter_by(de_rh=False, lida=False).count()
+    empresa_id = request.args.get("empresa_id")
+    q = MensagemApp.query.filter_by(de_rh=False, lida=False)
+    q = q.join(Funcionario, MensagemApp.funcionario_id == Funcionario.id).filter(
+        Funcionario.status == "Ativo",
+        Funcionario.app_ativo == True,
+    )
+    if empresa_id and str(empresa_id).isdigit():
+        q = q.filter(Funcionario.empresa_id == int(empresa_id))
+    count = q.count()
     return jsonify({"nao_lidas": count})
 
 
 @app.route("/api/mensagens-app/broadcast", methods=["POST"])
+@_limiter.limit("5 per minute")
 @lr
 def api_rh_mensagens_broadcast():
     d = request.json or {}
@@ -18535,16 +21631,20 @@ def api_rh_mensagens_broadcast():
     if len(conteudo) > 2000:
         return jsonify({"erro": "Mensagem muito longa"}), 400
     empresa_id = d.get("empresa_id")
+    if not empresa_id or not str(empresa_id).isdigit():
+        return jsonify({"erro": "empresa_id é obrigatório para broadcast"}), 400
+    empresa_id = int(empresa_id)
     posto = (d.get("posto") or "").strip()
     nome_rh = session.get("nome") or session.get("email") or "RH"
-    q = Funcionario.query.filter_by(status="Ativo", app_ativo=True)
-    if empresa_id:
-        q = q.filter_by(empresa_id=int(empresa_id))
+    q = Funcionario.query.filter_by(status="Ativo", app_ativo=True, empresa_id=empresa_id)
     if posto:
         q = q.filter(Funcionario.posto_operacional.ilike(f"%{posto}%"))
     funcs = q.all()
     if not funcs:
         return jsonify({"erro": "Nenhum colaborador encontrado com esse filtro"}), 404
+    sem_token_push = 0
+    push_enviados = 0
+    push_falhou = 0
     for func in funcs:
         m = MensagemApp(
             funcionario_id=func.id,
@@ -18556,13 +21656,28 @@ def api_rh_mensagens_broadcast():
         db.session.add(m)
     db.session.commit()
     for func in funcs:
-        _push_notify_funcionario(
+        if not bool((func.app_push_token or "").strip()):
+            sem_token_push += 1
+            continue
+        ok_push = _push_notify_funcionario(
             func.id,
             "Nova mensagem do RH",
             conteudo[:160],
             data={"tipo": "chat_broadcast", "funcionario_id": str(func.id)},
         )
-    return jsonify({"ok": True, "enviado_para": len(funcs)})
+        if ok_push:
+            push_enviados += 1
+        else:
+            push_falhou += 1
+    return jsonify(
+        {
+            "ok": True,
+            "enviado_para": len(funcs),
+            "push_enviados": push_enviados,
+            "push_falhou": push_falhou,
+            "sem_token_push": sem_token_push,
+        }
+    )
 
 
 @app.route("/api/funcionarios/arquivos/<int:id>", methods=["DELETE"])
@@ -19465,7 +22580,7 @@ def _build_doc_assinatura_pdf(arquivo, funcionario, url_root):
             .first()
         )
     empresa_nome = emp.nome if emp and emp.nome else "RM Facilities"
-    empresas_hdr = _pdf_companies_for_header(empresa_obj=emp, limit=2)
+    empresas_hdr = _pdf_companies_for_header(empresa_obj=emp, limit=1)
 
     def _logo_flowable(item):
         for cand in item.get("logos") or []:
@@ -19548,36 +22663,19 @@ def _build_doc_assinatura_pdf(arquivo, funcionario, url_root):
     story.append(hdr)
     story.append(Spacer(1, 5))
 
-    emp_cells = []
-    for i, item in enumerate(empresas_hdr[:2]):
-        cell = Table(
+    empresa_header = empresas_hdr[0]
+    emp_tbl = Table(
+        [
+            [_logo_flowable(empresa_header)],
             [
-                [_logo_flowable(item)],
-                [
-                    Paragraph(
-                        f'<b>{item.get("nome") or "-"}</b><br/><font size="8" color="#4c6072">CNPJ: {item.get("cnpj") or "-"}</font>',
-                        ps(f"empc{i}", fontSize=8.2, leading=10),
-                    )
-                ],
+                Paragraph(
+                    f'<b>{empresa_header.get("nome") or "-"}</b><br/><font size="8" color="#4c6072">CNPJ: {empresa_header.get("cnpj") or "-"}</font>',
+                    ps("empc", fontSize=8.2, leading=10),
+                )
             ],
-            colWidths=[W * 0.49],
-        )
-        cell.setStyle(
-            TableStyle(
-                [
-                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7df")),
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fbff")),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                ]
-            )
-        )
-        emp_cells.append(cell)
-    while len(emp_cells) < 2:
-        emp_cells.append(Paragraph("", ps("empemptyd", fontSize=1)))
-    emp_tbl = Table([emp_cells], colWidths=[W * 0.495, W * 0.495])
+        ],
+        colWidths=[W],
+    )
     emp_tbl.setStyle(
         TableStyle(
             [
@@ -19620,7 +22718,7 @@ def _build_doc_assinatura_pdf(arquivo, funcionario, url_root):
     story.append(Spacer(1, 5))
 
     fn_nome = funcionario.nome if funcionario else "-"
-    fn_cpf = fmt_cpf(funcionario.cpf) if funcionario else "-"
+    fn_cpf = funcionario.cpf if funcionario else "-"
     fn_emp = emp.nome if emp else ""
     detalhes = [
         ("Documento", arquivo.nome_arquivo or "-"),
@@ -19774,7 +22872,7 @@ def _build_doc_assinatura_pdf(arquivo, funcionario, url_root):
             ),
         )
     )
-    doc.build(story, canvasmaker=(_WatermarkCanvas or None))
+    doc.build(story, canvasmaker=(_AuditWatermarkCanvas or _WatermarkCanvas or None))
     return buf.getvalue()
 
 
@@ -20010,7 +23108,7 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
             .first()
         )
     empresa_nome = emp.nome if emp and emp.nome else "RM Facilities"
-    empresas_hdr = _pdf_companies_for_header(empresa_obj=emp, limit=2)
+    empresas_hdr = _pdf_companies_for_header(empresa_obj=emp, limit=1)
 
     def _logo_flowable(item):
         for cand in item.get("logos") or []:
@@ -20083,36 +23181,19 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     story.append(hdr)
     story.append(Spacer(1, 5))
 
-    emp_cells = []
-    for i, item in enumerate(empresas_hdr[:2]):
-        cell = Table(
+    empresa_header = empresas_hdr[0]
+    emp_tbl = Table(
+        [
+            [_logo_flowable(empresa_header)],
             [
-                [_logo_flowable(item)],
-                [
-                    Paragraph(
-                        f'<b>{item.get("nome") or "-"}</b><br/><font size="8" color="#4c6072">CNPJ: {item.get("cnpj") or "-"}</font>',
-                        ps(f"empe{i}", fontSize=8.2, leading=10),
-                    )
-                ],
+                Paragraph(
+                    f'<b>{empresa_header.get("nome") or "-"}</b><br/><font size="8" color="#4c6072">CNPJ: {empresa_header.get("cnpj") or "-"}</font>',
+                    ps("empe", fontSize=8.2, leading=10),
+                )
             ],
-            colWidths=[W * 0.49],
-        )
-        cell.setStyle(
-            TableStyle(
-                [
-                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7df")),
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fbff")),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                ]
-            )
-        )
-        emp_cells.append(cell)
-    while len(emp_cells) < 2:
-        emp_cells.append(Paragraph("", ps("empemptye", fontSize=1)))
-    emp_tbl = Table([emp_cells], colWidths=[W * 0.495, W * 0.495])
+        ],
+        colWidths=[W],
+    )
     emp_tbl.setStyle(
         TableStyle(
             [
@@ -20283,9 +23364,9 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
                     ps(
                         f"asn{i}",
                         fontName="Times-Italic",
-                        fontSize=12,
+                        fontSize=18,
                         textColor=colors.HexColor("#1a2e42"),
-                        leading=14,
+                        leading=20,
                     ),
                 ),
                 Paragraph(
@@ -20374,7 +23455,7 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
             ),
         )
     )
-    doc.build(story, canvasmaker=(_WatermarkCanvas or None))
+    doc.build(story, canvasmaker=(_AuditWatermarkCanvas or _WatermarkCanvas or None))
     return buf.getvalue()
 
 
@@ -21107,6 +24188,10 @@ def api_envelope_add_arquivo(id):
     f = request.files.get("arquivo")
     if not f:
         return jsonify({"erro": "Arquivo não enviado"}), 400
+    _ALLOWED_ENVELOPE_EXTS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt", ".png", ".jpg", ".jpeg"}
+    _ext = os.path.splitext(f.filename or "")[1].lower()
+    if _ext not in _ALLOWED_ENVELOPE_EXTS:
+        return jsonify({"erro": "Tipo de arquivo não permitido. Use PDF, DOC, DOCX, XLS, XLSX, TXT ou imagem."}), 400
     base = os.path.join(_get_uploads_base(), "envelopes", str(id))
     os.makedirs(base, exist_ok=True)
     fname = f"{secrets.token_urlsafe(8)}_{secure_filename(f.filename)}"
@@ -21556,7 +24641,7 @@ def api_envelope_assinatura_enviar_otp(token):
     if sig.status == "assinado":
         return _assinatura_json_erro("Você já assinou este documento.", 400)
     env = db.get_or_404(AssinaturaEnvelope, sig.envelope_id)
-    if env.expira_em and datetime.utcnow() > env.expira_em:
+    if env.expira_em and utcnow() > env.expira_em:
         return _assinatura_json_erro(
             "O prazo para assinatura deste documento expirou.", 400
         )
@@ -21594,7 +24679,7 @@ def api_envelope_assinatura_confirmar(token):
     if sig.status == "assinado":
         return _assinatura_json_erro("Você já assinou este documento.", 400)
     env = db.get_or_404(AssinaturaEnvelope, sig.envelope_id)
-    if env.expira_em and datetime.utcnow() > env.expira_em:
+    if env.expira_em and utcnow() > env.expira_em:
         return _assinatura_json_erro(
             "O prazo para assinatura deste documento expirou.", 400
         )
@@ -21603,70 +24688,20 @@ def api_envelope_assinatura_confirmar(token):
     data = request.get_json() or {}
     nome = (data.get("nome") or "").strip()
     cargo = (data.get("cargo") or "").strip()
-    cpf_inf = (
-        (data.get("cpf") or "")
-        .strip()
-        .replace(".", "")
-        .replace("-", "")
-        .replace(" ", "")
-    )
-    otp = (only_digits(data.get("otp") or "") or "").strip()
     aceite = data.get("aceite")
-    if not nome or not cpf_inf or not aceite:
-        return _assinatura_json_erro("Preencha nome, CPF e confirme o aceite.", 400)
-    if len(cpf_inf) < 11 or not _valida_cpf(cpf_inf):
-        return _assinatura_json_erro(
-            "CPF inválido. Verifique os dígitos e tente novamente.", 400
-        )
+    if not nome or not aceite:
+        return _assinatura_json_erro("Preencha o nome e confirme o aceite.", 400)
     cpf_base = only_digits(sig.cpf or "")
-    if cpf_base and cpf_inf != cpf_base:
+    if not cpf_base:
         return _assinatura_json_erro(
-            "O CPF informado não confere com o CPF cadastrado para este signatário.",
+            "O CPF deste signatário não foi cadastrado. Atualize o cadastro antes de assinar.",
             400,
         )
-
-    if not otp:
-        codigo = _otp_new_code()
-        sig.ass_otp_hash = token_hash(codigo)
-        sig.ass_otp_expira_em = utcnow() + timedelta(minutes=10)
-        sig.ass_otp_tentativas = 0
-        try:
-            envio = _send_signature_otp(
-                codigo,
-                nome_dest=nome,
-                telefone=sig.telefone or "",
-                email=sig.email or "",
-                contexto="envelope",
-            )
-        except Exception as ex:
-            db.session.rollback()
-            return _assinatura_json_erro(
-                f"Falha ao enviar OTP de confirmação: {str(ex)}", 400
-            )
-        db.session.commit()
-        return _assinatura_json_otp(
-            mensagem=f"Código OTP enviado via {envio.get('canal', 'canal')} para {envio.get('destino', 'destino mascarado')}",
-            canal=envio.get("canal", ""),
-            destino=envio.get("destino", ""),
-        )
-
-    if not (sig.ass_otp_hash or "").strip() or not sig.ass_otp_expira_em:
+    if len(cpf_base) != 11 or not _valida_cpf(cpf_base):
         return _assinatura_json_erro(
-            "Solicite um novo código OTP para concluir a assinatura.", 400
+            "O CPF cadastrado para este signatário é inválido. Atualize o cadastro antes de assinar.",
+            400,
         )
-    if sig.ass_otp_expira_em < utcnow():
-        return _assinatura_json_erro(
-            "Código OTP expirado. Solicite um novo código.", 400
-        )
-    tent = int(sig.ass_otp_tentativas or 0)
-    if tent >= 5:
-        return _assinatura_json_erro(
-            "Limite de tentativas de OTP excedido. Solicite um novo código.", 400
-        )
-    if not hmac.compare_digest(token_hash(otp), str(sig.ass_otp_hash or "")):
-        sig.ass_otp_tentativas = tent + 1
-        db.session.commit()
-        return _assinatura_json_erro("Código OTP inválido.", 400)
 
     ip = (
         request.headers.get("X-Forwarded-For", request.remote_addr or "")
@@ -21675,11 +24710,9 @@ def api_envelope_assinatura_confirmar(token):
     )
     sig.nome = nome
     sig.cargo = cargo
-    if not (sig.cpf or "").strip():
-        sig.cpf = cpf_inf
-    sig.ass_cpf_informado = cpf_inf
+    sig.ass_cpf_informado = cpf_base
     sig.ass_ip = ip
-    sig.ass_em = datetime.utcnow()
+    sig.ass_em = utcnow()
     sig.ass_codigo = secrets.token_urlsafe(10)
     sig.ass_otp_hash = None
     sig.ass_otp_expira_em = None
@@ -21691,25 +24724,30 @@ def api_envelope_assinatura_confirmar(token):
     if not sig.ass_aberto_em:
         sig.ass_aberto_em = utcnow()
 
-    # Cadastro automático por telefone para reaproveitar em assinaturas futuras.
+    # Cadastro automático por telefone para reaproveitar em assinaturas futuras,
+    # restrito à mesma empresa para evitar vazamento de dados entre clientes.
     tel_sig = wa_norm_number(sig.telefone or "")
     if tel_sig:
         sig.telefone = tel_sig
-        pendentes = (
-            AssinaturaEnvelopeSignatario.query.filter(
-                AssinaturaEnvelopeSignatario.id != sig.id
-            )
+        pendentes_q = (
+            AssinaturaEnvelopeSignatario.query
+            .join(AssinaturaEnvelope, AssinaturaEnvelopeSignatario.envelope_id == AssinaturaEnvelope.id)
+            .filter(AssinaturaEnvelopeSignatario.id != sig.id)
             .filter(AssinaturaEnvelopeSignatario.telefone.isnot(None))
             .filter(AssinaturaEnvelopeSignatario.status == "pendente")
-            .all()
         )
+        if env.empresa_id:
+            pendentes_q = pendentes_q.filter(AssinaturaEnvelope.empresa_id == env.empresa_id)
+        else:
+            pendentes_q = pendentes_q.filter(AssinaturaEnvelope.empresa_id.is_(None))
+        pendentes = pendentes_q.all()
         for p in pendentes:
             if not wa_phone_matches(p.telefone or "", tel_sig):
                 continue
             if not (p.nome or "").strip():
                 p.nome = nome
             if not (p.cpf or "").strip():
-                p.cpf = cpf_inf
+                p.cpf = cpf_base
 
     sig.token = None  # invalida o token após uso
     url_root = request.url_root.rstrip("/")
@@ -22308,6 +25346,488 @@ def api_documentos_rh_upload():
     )
 
 
+def _app_ponto_ciclo_estado(funcionario, competencia):
+    """Estado persistido da folha mensal usado pelo ciclo e pela Gestão Fácil."""
+    import calendar as _cal
+
+    ano, mes = [int(x) for x in competencia.split("-")]
+    ultimo_dia = _cal.monthrange(ano, mes)[1]
+    hoje = localnow().date()
+    if (ano, mes) == (hoje.year, hoje.month):
+        ultimo_dia = min(ultimo_dia, hoje.day)
+    data_demissao = _app_parse_data_iso(getattr(funcionario, "data_demissao", ""))
+    if data_demissao:
+        if (data_demissao.year, data_demissao.month) < (ano, mes):
+            ultimo_dia = 0
+        elif (data_demissao.year, data_demissao.month) == (ano, mes):
+            ultimo_dia = min(ultimo_dia, max(0, data_demissao.day - 1))
+
+    inicio = date(ano, mes, 1)
+    fim = date(ano, mes, max(1, ultimo_dia))
+    dias_fechados = 0
+    if ultimo_dia:
+        dias_fechados = PontoFechamentoDia.query.filter(
+            PontoFechamentoDia.funcionario_id == funcionario.id,
+            PontoFechamentoDia.data_ref >= inicio.isoformat(),
+            PontoFechamentoDia.data_ref <= fim.isoformat(),
+        ).count()
+    arquivo = (
+        FuncionarioArquivo.query.filter_by(
+            funcionario_id=funcionario.id,
+            categoria="folha_ponto",
+            competencia=competencia,
+        )
+        .order_by(FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc())
+        .first()
+    )
+    assinatura_enviada = bool(
+        arquivo
+        and (arquivo.ass_status or "").strip().lower()
+        in ("pendente", "assinado", "concluida")
+    )
+    return {
+        "dias_esperados": ultimo_dia,
+        "dias_fechados": dias_fechados,
+        "fechada": bool(ultimo_dia and dias_fechados >= ultimo_dia),
+        "arquivo": arquivo,
+        "enviada": assinatura_enviada,
+    }
+
+
+@app.route("/api/rh/ponto/ciclo/colaboradores")
+@lr
+def api_rh_ponto_ciclo_colaboradores():
+    """Lista os colaboradores elegíveis para a folha da competência."""
+    import calendar as _cal
+    from sqlalchemy import func as sqla_func
+
+    competencia = (request.args.get("competencia") or "").strip()
+    if not re.match(r"^\d{4}-\d{2}$", competencia):
+        return jsonify({"erro": "Competência inválida. Use YYYY-MM."}), 400
+    try:
+        ano, mes = [int(x) for x in competencia.split("-")]
+        inicio = date(ano, mes, 1)
+        fim = date(ano, mes, _cal.monthrange(ano, mes)[1])
+    except ValueError:
+        return jsonify({"erro": "Competência inválida."}), 400
+
+    empresa_id = to_num(request.args.get("empresa_id") or 0)
+    somente_ativos = str(request.args.get("somente_ativos", "true")).lower() not in ("0", "false", "nao")
+    q = Funcionario.query
+    if empresa_id:
+        q = q.filter(Funcionario.empresa_id == empresa_id)
+    if somente_ativos:
+        q = q.filter(Funcionario.status == "Ativo")
+    funcionarios = q.order_by(Funcionario.nome.asc()).all()
+
+    ids = [f.id for f in funcionarios]
+    arquivos_por_func = {}
+    if ids:
+        arquivos = (
+            FuncionarioArquivo.query.filter(
+                FuncionarioArquivo.funcionario_id.in_(ids),
+                FuncionarioArquivo.categoria == "folha_ponto",
+                FuncionarioArquivo.competencia == competencia,
+            )
+            .order_by(
+                FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc()
+            )
+            .all()
+        )
+        for arquivo in arquivos:
+            arquivos_por_func.setdefault(arquivo.funcionario_id, arquivo)
+
+    empresas = {empresa.id: empresa.nome for empresa in Empresa.query.all()}
+    itens = []
+    for f in funcionarios:
+        estado = _app_ponto_ciclo_estado(f, competencia)
+        arquivo = estado["arquivo"] or arquivos_por_func.get(f.id)
+        ass_status = (arquivo.ass_status or "nao_solicitada").strip().lower() if arquivo else ""
+        assinatura_enviada = ass_status in ("pendente", "assinado", "concluida")
+        itens.append(
+            {
+            "funcionario_id": f.id,
+            "nome": f.nome or "",
+            "matricula": f.matricula or "",
+            "cargo": f.cargo or f.funcao or "",
+            "status": f.status or "",
+            "empresa_nome": empresas.get(f.empresa_id, ""),
+            "dias_fechados": estado["dias_fechados"],
+            "dias_esperados": estado["dias_esperados"],
+            "folha_fechada": estado["fechada"],
+            "folha_enviada": estado["enviada"],
+            "arquivo_id": arquivo.id if arquivo else None,
+            "ass_status": ass_status or "nao_solicitada",
+            "assinatura_enviada": assinatura_enviada,
+            "assinado": ass_status in ("assinado", "concluida"),
+            "assinatura_aberta": bool(arquivo and arquivo.ass_aberto_em),
+            "assinatura_aberta_fmt": (
+                arquivo.ass_aberto_em.strftime("%d/%m/%Y %H:%M")
+                if arquivo and arquivo.ass_aberto_em
+                else ""
+            ),
+        }
+        )
+    return jsonify({"ok": True, "competencia": competencia, "colaboradores": itens})
+
+
+@app.route("/api/rh/ponto/ciclo/fechar", methods=["POST"])
+@lr
+def api_rh_ponto_ciclo_fechar():
+    """Fecha em lote os dias da competência para funcionários ativos (ou seleção informada)."""
+    import calendar as _cal
+
+    d = request.json or {}
+    competencia = (d.get("competencia") or "").strip()
+    if not re.match(r"^\d{4}-\d{2}$", competencia):
+        return jsonify({"erro": "Competência inválida. Use YYYY-MM."}), 400
+
+    try:
+        ano, mes = [int(x) for x in competencia.split("-")]
+        if not (1 <= mes <= 12 and 2000 <= ano <= 2100):
+            raise ValueError()
+    except Exception:
+        return jsonify({"erro": "Competência inválida."}), 400
+
+    empresa_id = to_num(d.get("empresa_id") or 0)
+    somente_ativos = bool(d.get("somente_ativos", True))
+    ids_raw = d.get("funcionario_ids") or []
+    funcionario_ids = []
+    if isinstance(ids_raw, list):
+        for item in ids_raw:
+            fid = to_num(item)
+            if fid and fid not in funcionario_ids:
+                funcionario_ids.append(fid)
+
+    q = Funcionario.query
+    if empresa_id:
+        q = q.filter(Funcionario.empresa_id == empresa_id)
+    if somente_ativos:
+        q = q.filter(Funcionario.status == "Ativo")
+    if funcionario_ids:
+        q = q.filter(Funcionario.id.in_(funcionario_ids))
+    funcionarios = q.order_by(Funcionario.nome.asc()).all()
+
+    if not funcionarios:
+        return jsonify(
+            {
+                "ok": True,
+                "competencia": competencia,
+                "funcionarios": [],
+                "total_funcionarios": 0,
+                "dias_fechados": 0,
+                "mensagem": "Nenhum funcionário encontrado para os filtros selecionados.",
+            }
+        )
+
+    ultimo_dia = _cal.monthrange(ano, mes)[1]
+    hoje = localnow().date()
+    if ano == hoje.year and mes == hoje.month:
+        ultimo_dia = min(ultimo_dia, hoje.day)
+
+    uid = session.get("uid")
+    agora = utcnow()
+    total_dias = 0
+    resumo_funcs = []
+    emp_map = {e.id: e for e in Empresa.query.all()}
+
+    def _parse_data_demissao_iso(v):
+        s = (v or "").strip()
+        if not s:
+            return None
+        try:
+            return datetime.strptime(s, "%Y-%m-%d").date()
+        except Exception:
+            return None
+
+    try:
+        for f in funcionarios:
+            estado_atual = _app_ponto_ciclo_estado(f, competencia)
+            if estado_atual["enviada"]:
+                resumo_funcs.append(
+                    {
+                        "funcionario_id": f.id,
+                        "nome": f.nome or "",
+                        "empresa_id": f.empresa_id,
+                        "status": f.status or "",
+                        "dias_fechados": estado_atual["dias_fechados"],
+                        "dias_esperados": estado_atual["dias_esperados"],
+                        "resultado": "enviada",
+                    }
+                )
+                continue
+            if estado_atual["fechada"]:
+                resumo_funcs.append(
+                    {
+                        "funcionario_id": f.id,
+                        "nome": f.nome or "",
+                        "empresa_id": f.empresa_id,
+                        "status": f.status or "",
+                        "dias_fechados": estado_atual["dias_fechados"],
+                        "dias_esperados": estado_atual["dias_esperados"],
+                        "resultado": "ja_fechada",
+                    }
+                )
+                continue
+            dias_fechados_func = 0
+            status_norm = (f.status or "").strip().lower()
+            dt_dem = _parse_data_demissao_iso(getattr(f, "data_demissao", ""))
+            dia_limite_func = ultimo_dia
+            if status_norm == "demitido" and dt_dem:
+                # Regra solicitada: competência do desligamento considera dias
+                # até o dia anterior à demissão.
+                if dt_dem.year < ano or (dt_dem.year == ano and dt_dem.month < mes):
+                    dia_limite_func = 0
+                elif dt_dem.year == ano and dt_dem.month == mes:
+                    dia_limite_func = max(0, min(ultimo_dia, dt_dem.day - 1))
+
+            for dia in range(1, dia_limite_func + 1):
+                data_ref = date(ano, mes, dia)
+                data_ref_str = data_ref.isoformat()
+                resumo = _app_ponto_resumo_dia(f, data_ref) or {}
+                fechamento = PontoFechamentoDia.query.filter_by(
+                    funcionario_id=f.id, data_ref=data_ref_str
+                ).first()
+                if not fechamento:
+                    fechamento = PontoFechamentoDia(
+                        funcionario_id=f.id,
+                        data_ref=data_ref_str,
+                    )
+                    db.session.add(fechamento)
+
+                fechamento.status = (resumo.get("status") or "ok").strip() or "ok"
+                fechamento.observacao = "Fechamento mensal em lote"
+                fechamento.resumo_json = json.dumps(
+                    {
+                        "data": data_ref_str,
+                        "horas_trabalhadas_min": int(
+                            resumo.get("horas_trabalhadas_min") or 0
+                        ),
+                        "horas_esperadas_min": int(
+                            resumo.get("horas_esperadas_min") or 0
+                        ),
+                        "saldo_min": int(resumo.get("saldo_min") or 0),
+                        "dia_tipo": (resumo.get("dia_tipo") or "normal"),
+                    },
+                    ensure_ascii=False,
+                )
+                fechamento.fechado_por = str(uid or "")
+                fechamento.fechado_em = agora
+                dias_fechados_func += 1
+
+            total_dias += dias_fechados_func
+            resumo_funcs.append(
+                {
+                    "funcionario_id": f.id,
+                    "nome": f.nome or "",
+                    "empresa_id": f.empresa_id,
+                    "empresa_nome": (
+                        (emp_map.get(f.empresa_id).nome if f.empresa_id and emp_map.get(f.empresa_id) else "")
+                    ),
+                    "status": f.status or "",
+                    "data_demissao": getattr(f, "data_demissao", "") or "",
+                    "dia_limite_competencia": int(dia_limite_func),
+                    "dias_fechados": dias_fechados_func,
+                    "dias_esperados": dias_fechados_func,
+                    "resultado": "fechada",
+                }
+            )
+
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.exception("Falha ao fechar ciclo de ponto em lote")
+        return jsonify({"erro": f"Falha ao fechar ciclo: {str(exc)}"}), 500
+
+    return jsonify(
+        {
+            "ok": True,
+            "competencia": competencia,
+            "total_funcionarios": len(resumo_funcs),
+            "dias_fechados": total_dias,
+            "funcionarios": resumo_funcs,
+        }
+    )
+
+
+@app.route("/api/rh/ponto/ciclo/reabrir", methods=["POST"])
+@lr
+def api_rh_ponto_ciclo_reabrir():
+    d = request.json or {}
+    competencia = (d.get("competencia") or "").strip()
+    funcionario_id = to_num(d.get("funcionario_id"))
+    if not funcionario_id or not re.match(r"^\d{4}-\d{2}$", competencia):
+        return jsonify({"erro": "Funcionário e competência válida são obrigatórios."}), 400
+    funcionario = db.session.get(Funcionario, funcionario_id)
+    if not funcionario:
+        return jsonify({"erro": "Funcionário não encontrado."}), 404
+    estado = _app_ponto_ciclo_estado(funcionario, competencia)
+    if estado["enviada"]:
+        return jsonify(
+            {"erro": "A folha já foi enviada e não pode mais ser reaberta ou editada."}
+        ), 409
+    if not estado["dias_fechados"]:
+        return jsonify({"erro": "A folha desta competência já está aberta."}), 400
+    ano, mes = [int(x) for x in competencia.split("-")]
+    import calendar as _cal
+    inicio = date(ano, mes, 1).isoformat()
+    fim = date(ano, mes, _cal.monthrange(ano, mes)[1]).isoformat()
+    PontoFechamentoDia.query.filter(
+        PontoFechamentoDia.funcionario_id == funcionario.id,
+        PontoFechamentoDia.data_ref >= inicio,
+        PontoFechamentoDia.data_ref <= fim,
+    ).delete(synchronize_session=False)
+    db.session.commit()
+    audit_event(
+        "ponto_reabertura_folha", "usuario", session.get("uid"), "funcionario",
+        funcionario.id, True, {"competencia": competencia},
+    )
+    return jsonify({"ok": True, "mensagem": "Folha reaberta para edição."})
+
+
+@app.route("/api/rh/ponto/ciclo/arquivos")
+@lr
+def api_rh_ponto_ciclo_arquivos():
+    """Lista PDFs de folha de ponto da competência, agrupados por empresa."""
+    competencia = (request.args.get("competencia") or "").strip()
+    if not re.match(r"^\d{4}-\d{2}$", competencia):
+        return jsonify({"erro": "Competência inválida. Use YYYY-MM."}), 400
+
+    empresa_id = to_num(request.args.get("empresa_id") or 0)
+
+    q = (
+        db.session.query(FuncionarioArquivo, Funcionario)
+        .join(Funcionario, Funcionario.id == FuncionarioArquivo.funcionario_id)
+        .filter(
+            FuncionarioArquivo.categoria == "folha_ponto",
+            FuncionarioArquivo.competencia == competencia,
+        )
+        .order_by(FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc())
+    )
+    if empresa_id:
+        q = q.filter(Funcionario.empresa_id == empresa_id)
+
+    regs = q.all()
+
+    # Exibir 1 arquivo por colaborador (o mais recente), mantendo histórico no banco.
+    por_func = {}
+    for arq, func in regs:
+        if func.id in por_func:
+            continue
+        por_func[func.id] = (arq, func)
+
+    emp_map = {e.id: e for e in Empresa.query.all()}
+    por_empresa = {}
+
+    for arq, func in por_func.values():
+        eid = func.empresa_id or 0
+        emp_nome = (
+            (emp_map.get(eid).nome if emp_map.get(eid) else "Sem empresa") if eid else "Sem empresa"
+        )
+        grp = por_empresa.setdefault(
+            eid,
+            {
+                "empresa_id": eid,
+                "empresa_nome": emp_nome,
+                "itens": [],
+            },
+        )
+        grp["itens"].append(
+            {
+                "arquivo_id": arq.id,
+                "funcionario_id": func.id,
+                "funcionario_nome": func.nome or "",
+                "nome_arquivo": arq.nome_arquivo or "",
+                "download_url": f"/api/funcionarios/arquivos/{arq.id}/download",
+                "criado_fmt": arq.criado_em.strftime("%d/%m/%Y %H:%M") if arq.criado_em else "",
+            }
+        )
+
+    empresas_out = sorted(
+        por_empresa.values(),
+        key=lambda x: (x.get("empresa_nome") or "").lower(),
+    )
+    for emp in empresas_out:
+        emp["itens"] = sorted(emp["itens"], key=lambda x: (x.get("funcionario_nome") or "").lower())
+        emp["total_arquivos"] = len(emp["itens"])
+
+    return jsonify(
+        {
+            "ok": True,
+            "competencia": competencia,
+            "total_arquivos": sum(e.get("total_arquivos", 0) for e in empresas_out),
+            "empresas": empresas_out,
+        }
+    )
+
+
+@app.route("/api/rh/ponto/ciclo/arquivos/zip")
+@lr
+def api_rh_ponto_ciclo_arquivos_zip():
+    """Baixa ZIP da competência com 1 PDF por colaborador, separado por empresa."""
+    competencia = (request.args.get("competencia") or "").strip()
+    if not re.match(r"^\d{4}-\d{2}$", competencia):
+        return jsonify({"erro": "Competência inválida. Use YYYY-MM."}), 400
+
+    empresa_id = to_num(request.args.get("empresa_id") or 0)
+
+    q = (
+        db.session.query(FuncionarioArquivo, Funcionario)
+        .join(Funcionario, Funcionario.id == FuncionarioArquivo.funcionario_id)
+        .filter(
+            FuncionarioArquivo.categoria == "folha_ponto",
+            FuncionarioArquivo.competencia == competencia,
+        )
+        .order_by(FuncionarioArquivo.criado_em.desc(), FuncionarioArquivo.id.desc())
+    )
+    if empresa_id:
+        q = q.filter(Funcionario.empresa_id == empresa_id)
+    regs = q.all()
+
+    por_func = {}
+    for arq, func in regs:
+        if func.id in por_func:
+            continue
+        por_func[func.id] = (arq, func)
+
+    if not por_func:
+        return jsonify({"erro": "Nenhum PDF encontrado para a competência informada."}), 404
+
+    emp_map = {e.id: e for e in Empresa.query.all()}
+    mem = io.BytesIO()
+    with zipfile.ZipFile(mem, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for arq, func in por_func.values():
+            abs_p = os.path.join(UPLOAD_ROOT, arq.caminho or "")
+            if not os.path.exists(abs_p):
+                continue
+            eid = func.empresa_id or 0
+            emp_nome = (
+                (emp_map.get(eid).nome if emp_map.get(eid) else "Sem_empresa") if eid else "Sem_empresa"
+            )
+            emp_nome = _clean_file_part(emp_nome, 80, "empresa")
+            nome_func = _clean_file_part(func.nome or f"funcionario_{func.id}", 100, f"funcionario_{func.id}")
+            nome_arq = _clean_file_part(
+                f"{emp_nome}_{nome_func}_{competencia}.pdf",
+                180,
+                f"folha_ponto_{func.id}_{competencia}.pdf",
+            )
+            arcname = f"{emp_nome}/{nome_arq}"
+            try:
+                with open(abs_p, "rb") as fp:
+                    zf.writestr(arcname, fp.read())
+            except Exception:
+                continue
+
+    mem.seek(0)
+    sufixo_emp = f"_empresa_{empresa_id}" if empresa_id else ""
+    return send_file(
+        mem,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"folhas_ponto_{competencia}{sufixo_emp}.zip",
+    )
+
+
 @app.route("/api/rh/preview-destinatarios", methods=["POST"])
 @lr
 def api_rh_preview_destinatarios():
@@ -22446,6 +25966,163 @@ def api_rh_preview_destinatarios():
     )
 
 
+def _proximo_numero_ordem_compra():
+    ano = localnow().strftime("%Y")
+    prefixo = f"OC-{ano}-"
+    ultima = (
+        OrdemCompra.query.filter(OrdemCompra.numero.like(f"{prefixo}%"))
+        .order_by(OrdemCompra.numero.desc())
+        .first()
+    )
+    sequencia = 1
+    if ultima:
+        try:
+            sequencia = int((ultima.numero or "").rsplit("-", 1)[-1]) + 1
+        except (TypeError, ValueError):
+            pass
+    return f"{prefixo}{sequencia:04d}"
+
+
+def _normalizar_itens_ordem_compra(itens_raw):
+    if not isinstance(itens_raw, list):
+        return None
+    return [
+        {
+            "descricao": str(item.get("descricao") or "").strip()[:250],
+            "quantidade": str(item.get("quantidade") or "").strip()[:50],
+        }
+        for item in itens_raw
+        if isinstance(item, dict) and str(item.get("descricao") or "").strip()
+    ]
+
+
+def _gerar_pdf_ordem_compra(ordem):
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    empresa = db.session.get(Empresa, ordem.empresa_id) if ordem.empresa_id else None
+    empresa_nome = (getattr(empresa, "razao", None) or getattr(empresa, "nome", None) or "RM Facilities").strip()
+    empresa_cnpj_raw = (getattr(empresa, "cnpj", None) or "").strip()
+    empresa_cnpj = _filter_fmt_cnpj(empresa_cnpj_raw) if empresa_cnpj_raw else "-"
+    empresa_endereco = "-"
+    if empresa:
+        cidade_uf = "/".join(filter(None, [empresa.cidade, empresa.estado]))
+        empresa_endereco = ", ".join(
+            filter(
+                None,
+                [
+                    empresa.logradouro,
+                    empresa.numero,
+                    empresa.complemento,
+                    empresa.bairro,
+                    cidade_uf,
+                    f"CEP {empresa.cep}" if empresa.cep else "",
+                ],
+            )
+        ) or "-"
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=1.5 * cm,
+        rightMargin=1.5 * cm,
+        topMargin=1.5 * cm,
+        bottomMargin=1.5 * cm,
+    )
+    largura = A4[0] - 3 * cm
+    azul = colors.HexColor("#205d8a")
+    cinza = colors.HexColor("#f5f7fa")
+    estilo = ParagraphStyle("oc", fontName="Helvetica", fontSize=9, leading=13)
+    titulo = ParagraphStyle("oc_titulo", parent=estilo, fontName="Helvetica-Bold", fontSize=18, leading=22, textColor=colors.white, alignment=TA_CENTER)
+    rotulo = ParagraphStyle("oc_rotulo", parent=estilo, fontName="Helvetica-Bold", textColor=azul)
+
+    eh_orcamento = ordem.tipo_documento == "pedido_orcamento"
+    titulo_documento = "PEDIDO DE ORÇAMENTO" if eh_orcamento else "ORDEM DE COMPRA"
+    cabecalho = Table(
+        [[Paragraph(titulo_documento, titulo)], [Paragraph(f"<b>{ordem.numero}</b>", ParagraphStyle("oc_num", parent=titulo, fontSize=12))]],
+        colWidths=[largura],
+    )
+    cabecalho.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), azul),
+        ("TOPPADDING", (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+    ]))
+    try:
+        itens = json.loads(ordem.itens or "[]")
+    except (TypeError, ValueError):
+        itens = []
+    itens = [item for item in itens if isinstance(item, dict) and item.get("descricao")]
+    dados = [
+        ("Empresa emissora", empresa_nome),
+        ("CNPJ da emissora", empresa_cnpj),
+        ("Endereço da emissora", empresa_endereco),
+        ("Solicitante", ordem.solicitante or "-"),
+        ("Data de emissão", ordem.data_emissao or "-"),
+        ("Status", ordem.status or "Aberta"),
+        ("Decisão", f"{ordem.decisao_por or '-'} em {ordem.decisao_em.strftime('%d/%m/%Y %H:%M') if ordem.decisao_em else '-'}"),
+        ("Motivo da reprovação", ordem.decisao_motivo or "-"),
+        ("Descrição", ordem.descricao or "-"),
+    ]
+    if eh_orcamento:
+        dados.append(("Observação", "Solicitação de orçamento sem fornecedor e sem valor definidos."))
+    else:
+        dados[7:7] = [
+            ("Fornecedor", ordem.fornecedor or "-"),
+            ("CNPJ do fornecedor", _filter_fmt_cnpj(ordem.fornecedor_cnpj) if (ordem.fornecedor_cnpj or "").strip() else "-"),
+            ("Endereço do fornecedor", ordem.fornecedor_endereco or "-"),
+            ("Telefone do fornecedor", ordem.fornecedor_telefone or "-"),
+            ("E-mail do fornecedor", ordem.fornecedor_email or "-"),
+            ("E-mail para o pedido", ordem.pedido_email or "-"),
+            ("Valor total", f"R$ {float(ordem.valor or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")),
+        ]
+    tabela = Table(
+        [[Paragraph(chave, rotulo), Paragraph(str(valor).replace("\n", "<br/>"), estilo)] for chave, valor in dados],
+        colWidths=[largura * 0.30, largura * 0.70],
+        repeatRows=0,
+    )
+    tabela.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), cinza),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d5dce5")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    elementos = [cabecalho, Spacer(1, 14), tabela]
+    if itens:
+        tabela_itens = Table(
+            [[Paragraph("Item", rotulo), Paragraph("Quantidade", rotulo)]]
+            + [
+                [Paragraph(str(item["descricao"]), estilo), Paragraph(str(item.get("quantidade") or "-"), estilo)]
+                for item in itens
+            ],
+            colWidths=[largura * 0.75, largura * 0.25],
+            repeatRows=1,
+        )
+        tabela_itens.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), cinza),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d5dce5")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        elementos.extend([Spacer(1, 14), Paragraph("ITENS DA COTAÇÃO", rotulo), Spacer(1, 5), tabela_itens])
+    rodape = Paragraph(
+        f"Gerada em {localnow().strftime('%d/%m/%Y %H:%M')} por {ordem.criado_por or 'Sistema'}.",
+        ParagraphStyle("oc_rodape", parent=estilo, fontSize=8, textColor=colors.HexColor("#666"), alignment=TA_CENTER),
+    )
+    elementos.extend([Spacer(1, 18), rodape])
+    doc.build(elementos, canvasmaker=(_WatermarkCanvas or None))
+    return buf.getvalue()
+
+
 @app.route("/api/ordens-compra", methods=["GET"])
 @lr
 def api_ordens_compra():
@@ -22457,25 +26134,193 @@ def api_ordens_compra():
     )
 
 
+@app.route("/api/ordens-compra/itens-catalogo", methods=["GET"])
+@lr
+def api_oc_itens_catalogo_listar():
+    q = (request.args.get("q") or "").strip().lower()
+    somente_ativos = (request.args.get("ativos") or "1").strip() != "0"
+    query = OrdemCompraItemCatalogo.query
+    if somente_ativos:
+        query = query.filter_by(ativo=True)
+    itens = query.order_by(OrdemCompraItemCatalogo.nome.asc()).all()
+    if q:
+        itens = [
+            i
+            for i in itens
+            if q in (i.nome or "").lower()
+            or q in (i.descricao or "").lower()
+            or q in (i.unidade or "").lower()
+        ]
+    return jsonify([i.to_dict() for i in itens])
+
+
+@app.route("/api/ordens-compra/itens-catalogo", methods=["POST"])
+@lr
+def api_oc_itens_catalogo_criar():
+    d = request.json or {}
+    nome = (d.get("nome") or "").strip()
+    if not nome:
+        return jsonify({"erro": "Informe o nome do item."}), 400
+    item = OrdemCompraItemCatalogo(
+        nome=nome[:200],
+        unidade=(d.get("unidade") or "").strip()[:40],
+        descricao=(d.get("descricao") or "").strip()[:400],
+        ativo=bool(d.get("ativo", True)),
+        criado_por=session.get("nome", ""),
+    )
+    db.session.add(item)
+    try:
+        _db_commit_retry("oc_item_catalogo_criar", attempts=2, base_delay=0.15)
+    except OperationalError as ex:
+        db.session.rollback()
+        if _is_sqlite_locked_error(ex):
+            app.logger.warning(f"[compras-catalogo] lock ao criar item: {ex}")
+            return jsonify({"erro": "Banco de dados ocupado no momento. Tente novamente em alguns segundos."}), 503
+        raise
+    audit_event(
+        "ordem_compra_item_catalogo_criar",
+        "usuario",
+        session.get("uid"),
+        "ordem_compra_item_catalogo",
+        item.id,
+        True,
+        {"nome": item.nome},
+    )
+    return jsonify(item.to_dict()), 201
+
+
+@app.route("/api/ordens-compra/itens-catalogo/<int:id>", methods=["PUT"])
+@lr
+def api_oc_itens_catalogo_atualizar(id):
+    item = db.get_or_404(OrdemCompraItemCatalogo, id)
+    d = request.json or {}
+    if "nome" in d:
+        nome = (d.get("nome") or "").strip()
+        if not nome:
+            return jsonify({"erro": "Informe o nome do item."}), 400
+        item.nome = nome[:200]
+    if "unidade" in d:
+        item.unidade = (d.get("unidade") or "").strip()[:40]
+    if "descricao" in d:
+        item.descricao = (d.get("descricao") or "").strip()[:400]
+    if "ativo" in d:
+        item.ativo = bool(d.get("ativo"))
+    try:
+        _db_commit_retry("oc_item_catalogo_atualizar", attempts=2, base_delay=0.15)
+    except OperationalError as ex:
+        db.session.rollback()
+        if _is_sqlite_locked_error(ex):
+            app.logger.warning(f"[compras-catalogo] lock ao atualizar item={id}: {ex}")
+            return jsonify({"erro": "Banco de dados ocupado no momento. Tente novamente em alguns segundos."}), 503
+        raise
+    audit_event(
+        "ordem_compra_item_catalogo_atualizar",
+        "usuario",
+        session.get("uid"),
+        "ordem_compra_item_catalogo",
+        item.id,
+        True,
+        {"nome": item.nome, "ativo": bool(item.ativo)},
+    )
+    return jsonify(item.to_dict())
+
+
+@app.route("/api/ordens-compra/itens-catalogo/<int:id>", methods=["DELETE"])
+@lr
+def api_oc_itens_catalogo_excluir(id):
+    item = db.get_or_404(OrdemCompraItemCatalogo, id)
+    info = {"nome": item.nome}
+    db.session.delete(item)
+    try:
+        _db_commit_retry("oc_item_catalogo_excluir", attempts=2, base_delay=0.15)
+    except OperationalError as ex:
+        db.session.rollback()
+        if _is_sqlite_locked_error(ex):
+            app.logger.warning(f"[compras-catalogo] lock ao excluir item={id}: {ex}")
+            return jsonify({"erro": "Banco de dados ocupado no momento. Tente novamente em alguns segundos."}), 503
+        raise
+    audit_event(
+        "ordem_compra_item_catalogo_excluir",
+        "usuario",
+        session.get("uid"),
+        "ordem_compra_item_catalogo",
+        id,
+        True,
+        info,
+    )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/ordens-compra/resumo-mensal")
+@lr
+def api_ordens_compra_resumo_mensal():
+    resumo = {}
+    for ordem in OrdemCompra.query.filter_by(status="Aprovada", tipo_documento="ordem_compra").all():
+        mes = (ordem.data_emissao or "")[:7]
+        if len(mes) != 7:
+            mes = "Sem data"
+        item = resumo.setdefault(mes, {"mes": mes, "quantidade": 0, "valor_total": 0})
+        valor = float(ordem.valor or 0)
+        item["quantidade"] += 1
+        item["valor_total"] += valor
+    return jsonify(
+        [
+            {**item, "valor_total": round(item["valor_total"], 2)}
+            for _, item in sorted(resumo.items(), key=lambda pair: pair[0], reverse=True)
+        ]
+    )
+
+
 @app.route("/api/ordens-compra", methods=["POST"])
 @lr
 def api_criar_ordem_compra():
     d = request.json or {}
-    num = d.get("numero") or f"OC-{localnow().strftime('%Y%m%d%H%M%S')}"
+    empresa_id = to_num(d.get("empresa_id")) or None
+    if not empresa_id or not db.session.get(Empresa, empresa_id):
+        return jsonify({"erro": "Selecione a empresa emissora da ordem de compra."}), 400
+    tipo_documento = (d.get("tipo_documento") or "ordem_compra").strip()
+    if tipo_documento not in {"ordem_compra", "pedido_orcamento"}:
+        return jsonify({"erro": "Tipo de solicitação inválido."}), 400
+    fornecedor = (d.get("fornecedor") or "").strip()
+    if tipo_documento == "ordem_compra" and not fornecedor:
+        return jsonify({"erro": "Informe o fornecedor da ordem de compra."}), 400
+    itens = _normalizar_itens_ordem_compra(d.get("itens") or [])
+    if itens is None:
+        return jsonify({"erro": "Itens da cotação inválidos."}), 400
+    if not itens:
+        return jsonify({"erro": "Inclua ao menos um item na cotação."}), 400
     o = OrdemCompra(
-        numero=num,
-        empresa_id=d.get("empresa_id"),
+        numero=_proximo_numero_ordem_compra(),
+        tipo_documento=tipo_documento,
+        empresa_id=empresa_id,
         solicitante=d.get("solicitante", ""),
-        fornecedor=d.get("fornecedor", ""),
+        fornecedor=fornecedor,
+        fornecedor_cnpj=only_digits(d.get("fornecedor_cnpj") or "") if tipo_documento == "ordem_compra" else "",
+        fornecedor_endereco=(d.get("fornecedor_endereco") or "").strip() if tipo_documento == "ordem_compra" else "",
+        fornecedor_email=(d.get("fornecedor_email") or "").strip()[:150] if tipo_documento == "ordem_compra" else "",
+        fornecedor_telefone=(d.get("fornecedor_telefone") or "").strip()[:30] if tipo_documento == "ordem_compra" else "",
+        pedido_email=(d.get("pedido_email") or "").strip()[:150],
+        itens=json.dumps(itens, ensure_ascii=False),
         descricao=d.get("descricao", ""),
-        valor=to_num(d.get("valor"), dec=True),
+        valor=to_num(d.get("valor"), dec=True) if tipo_documento == "ordem_compra" else 0,
         status=d.get("status", "Aberta"),
         data_emissao=d.get("data_emissao", ""),
         criado_por=session.get("nome", ""),
     )
     db.session.add(o)
     db.session.commit()
-    return jsonify(o.to_dict()), 201
+    audit_event(
+        "ordem_compra_criar",
+        "usuario",
+        session.get("uid"),
+        "ordem_compra",
+        o.id,
+        True,
+        {"numero": o.numero, "empresa_id": o.empresa_id, "fornecedor": o.fornecedor},
+    )
+    retorno = o.to_dict()
+    retorno["pdf_url"] = f"/api/ordens-compra/{o.id}/pdf"
+    return jsonify(retorno), 201
 
 
 @app.route("/api/ordens-compra/<int:id>", methods=["PUT"])
@@ -22483,21 +26328,86 @@ def api_criar_ordem_compra():
 def api_atualizar_ordem_compra(id):
     o = db.get_or_404(OrdemCompra, id)
     d = request.json or {}
+    tipo_documento = (d.get("tipo_documento") or o.tipo_documento or "ordem_compra").strip()
+    if tipo_documento not in {"ordem_compra", "pedido_orcamento"}:
+        return jsonify({"erro": "Tipo de solicitação inválido."}), 400
     for k in [
-        "numero",
+        "tipo_documento",
         "empresa_id",
         "solicitante",
         "fornecedor",
+        "fornecedor_cnpj",
+        "fornecedor_endereco",
+        "fornecedor_email",
+        "fornecedor_telefone",
+        "pedido_email",
         "descricao",
-        "status",
         "data_emissao",
     ]:
         if k in d:
             setattr(o, k, d[k])
-    if "valor" in d:
+    if "itens" in d:
+        itens = _normalizar_itens_ordem_compra(d.get("itens"))
+        if itens is None or not itens:
+            return jsonify({"erro": "Inclua ao menos um item na cotação."}), 400
+        o.itens = json.dumps(itens, ensure_ascii=False)
+    if "valor" in d and o.tipo_documento != "pedido_orcamento":
         o.valor = to_num(d.get("valor"), dec=True)
+    if o.tipo_documento == "pedido_orcamento":
+        o.fornecedor = ""
+        o.fornecedor_cnpj = ""
+        o.fornecedor_endereco = ""
+        o.fornecedor_email = ""
+        o.fornecedor_telefone = ""
+        o.valor = 0
+    elif not (o.fornecedor or "").strip():
+        return jsonify({"erro": "Informe o fornecedor da ordem de compra."}), 400
     db.session.commit()
     return jsonify(o.to_dict())
+
+
+@app.route("/api/ordens-compra/<int:id>/decisao", methods=["POST"])
+@lr
+def api_decidir_ordem_compra(id):
+    ordem = db.get_or_404(OrdemCompra, id)
+    if ordem.tipo_documento == "pedido_orcamento":
+        return jsonify({"erro": "Pedidos de orçamento não passam por aprovação. Converta-o em ordem de compra após receber a cotação."}), 400
+    if ordem.status != "Aberta":
+        return jsonify({"erro": "Apenas ordens abertas podem ser aprovadas ou reprovadas."}), 400
+    d = request.json or {}
+    acao = (d.get("acao") or "").strip().lower()
+    if acao not in {"aprovar", "reprovar"}:
+        return jsonify({"erro": "Decisão inválida."}), 400
+    motivo = (d.get("motivo") or "").strip()
+    if acao == "reprovar" and not motivo:
+        return jsonify({"erro": "Informe o motivo da reprovação."}), 400
+    ordem.status = "Aprovada" if acao == "aprovar" else "Reprovada"
+    ordem.decisao_por = session.get("nome", "")
+    ordem.decisao_em = utcnow()
+    ordem.decisao_motivo = motivo if acao == "reprovar" else None
+    db.session.commit()
+    audit_event(
+        f"ordem_compra_{acao}",
+        "usuario",
+        session.get("uid"),
+        "ordem_compra",
+        ordem.id,
+        True,
+        {"numero": ordem.numero, "motivo": ordem.decisao_motivo},
+    )
+    return jsonify(ordem.to_dict())
+
+
+@app.route("/api/ordens-compra/<int:id>/pdf")
+@lr
+def api_ordem_compra_pdf(id):
+    ordem = db.get_or_404(OrdemCompra, id)
+    return send_file(
+        io.BytesIO(_gerar_pdf_ordem_compra(ordem)),
+        mimetype="application/pdf",
+        as_attachment=False,
+        download_name=f"{ordem.numero}.pdf",
+    )
 
 
 @app.route("/api/ordens-compra/<int:id>", methods=["DELETE"])
@@ -22677,7 +26587,17 @@ def api_operacional_postos_salvar():
 def api_beneficios_lancamentos():
     comp = norm_competencia(request.args.get("competencia"))
     empresa_id = to_num(request.args.get("empresa_id")) or None
-    qf = Funcionario.query.filter_by(status="Ativo")
+    from sqlalchemy import or_ as _or_
+    # Inclui: Ativo, Férias (recebem benefícios mesmo durante férias), legado (null/"")
+    # Exclui implicitamente: Demitido, Inativo, Afastado, Aviso Prévio
+    qf = Funcionario.query.filter(
+        _or_(
+            Funcionario.status == "Ativo",
+            Funcionario.status == "Férias",
+            Funcionario.status.is_(None),
+            Funcionario.status == "",
+        )
+    )
     if empresa_id:
         qf = qf.filter_by(empresa_id=empresa_id)
     funcs_ativos = qf.order_by(Funcionario.nome).all()
@@ -22704,6 +26624,9 @@ def api_beneficios_lancamentos():
         for bp in qprev.all():
             if bp.funcionario_id not in mapa_prev:
                 mapa_prev[bp.funcionario_id] = bp
+    # Pré-carrega empresas e clientes para evitar N+1 no loop
+    _emps_cache = {e.id: e for e in Empresa.query.all()}
+    _clis_cache = {c.id: c for c in Cliente.query.all()}
     itens = []
 
     def _benef_val(bm, bm_prev, func_obj, attr_name):
@@ -22721,10 +26644,8 @@ def api_beneficios_lancamentos():
         return val_func
 
     for f in funcs_ativos:
-        emp = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
-        cli = (
-            db.session.get(Cliente, f.posto_cliente_id) if f.posto_cliente_id else None
-        )
+        emp = _emps_cache.get(f.empresa_id) if f.empresa_id else None
+        cli = _clis_cache.get(f.posto_cliente_id) if f.posto_cliente_id else None
         posto_nome = (
             cli.nome.strip()
             if cli and (cli.nome or "").strip()
@@ -22811,6 +26732,12 @@ def api_beneficios_lancamentos_excluir():
     comp = norm_competencia(d.get("competencia"))
     tipo = (d.get("tipo") or "todos").strip().lower()
     empresa_id = to_num(d.get("empresa_id")) or None
+    empresa_ref_id = empresa_id or 0
+    folha_chk = FolhaBeneficios.query.filter_by(
+        competencia=comp, empresa_ref_id=empresa_ref_id
+    ).first()
+    if folha_chk and (folha_chk.status or "") == "fechada":
+        return jsonify({"erro": "Folha fechada. Reabra antes de excluir lançamentos."}), 400
     func_ids = d.get("funcionarios") or []
     func_ids = {int(x) for x in func_ids if str(x).isdigit()}
     if tipo not in {"vt", "vr", "va", "pp", "vg", "cn", "todos"}:
@@ -22873,6 +26800,15 @@ def api_beneficios_lancamentos_excluir():
                 excluidos += 1
 
     db.session.commit()
+    audit_event(
+        "beneficios_lancamentos_excluidos",
+        "usuario",
+        session.get("uid"),
+        "beneficio_mensal",
+        empresa_id or 0,
+        True,
+        {"competencia": comp, "tipo": tipo, "excluidos": excluidos, "empresa_id": empresa_id},
+    )
     return jsonify(
         {"ok": True, "competencia": comp, "tipo": tipo, "excluidos": excluidos}
     )
@@ -22885,6 +26821,12 @@ def api_beneficios_lancamentos_limpar():
     comp = norm_competencia(d.get("competencia"))
     tipo = (d.get("tipo") or "").strip().lower()
     empresa_id = to_num(d.get("empresa_id")) or None
+    empresa_ref_id = empresa_id or 0
+    folha_chk = FolhaBeneficios.query.filter_by(
+        competencia=comp, empresa_ref_id=empresa_ref_id
+    ).first()
+    if folha_chk and (folha_chk.status or "") == "fechada":
+        return jsonify({"erro": "Folha fechada. Reabra antes de limpar lançamentos."}), 400
     func_ids = d.get("funcionarios") or []
     func_ids = {int(x) for x in func_ids if str(x).isdigit()}
     if tipo not in {"vt", "vr", "va", "pp", "vg", "cn", "todos"}:
@@ -22947,6 +26889,15 @@ def api_beneficios_lancamentos_limpar():
             alterados += 1
 
     db.session.commit()
+    audit_event(
+        "beneficios_lancamentos_limpos",
+        "usuario",
+        session.get("uid"),
+        "beneficio_mensal",
+        empresa_id or 0,
+        True,
+        {"competencia": comp, "tipo": tipo, "alterados": alterados, "empresa_id": empresa_id},
+    )
     return jsonify(
         {"ok": True, "competencia": comp, "tipo": tipo, "alterados": alterados}
     )
@@ -22957,6 +26908,14 @@ def api_beneficios_lancamentos_limpar():
 def api_beneficios_lancamentos_salvar():
     d = request.json or {}
     comp = norm_competencia(d.get("competencia"))
+    empresa_id_guard = to_num(d.get("empresa_id")) or None
+    empresa_ref_id_guard = empresa_id_guard or 0
+    if empresa_id_guard is not None:
+        folha_guard = FolhaBeneficios.query.filter_by(
+            competencia=comp, empresa_ref_id=empresa_ref_id_guard
+        ).first()
+        if folha_guard and (folha_guard.status or "") == "fechada":
+            return jsonify({"erro": "Folha fechada. Reabra antes de salvar lançamentos."}), 400
     itens = d.get("itens") or []
     atualizar_base_funcionario = to_bool(d.get("atualizar_base_funcionario"))
     salvos = 0
@@ -22998,15 +26957,15 @@ def api_beneficios_lancamentos_salvar():
         b.dias_vg = dias_vg if vg_optante else 0
         b.faltas = faltas
         b.pp_falta = pp_falta
-        b.dias_trabalhados = max(0, max(b.dias_vt, b.dias_vr, b.dias_vg))
+        b.dias_trabalhados = max(0, max(b.dias_vt, b.dias_vr, b.dias_va, b.dias_vg))
 
-        b.salario = to_num(it.get("salario"), dec=True)
-        vale_transporte = to_num(it.get("vale_transporte"), dec=True)
-        vale_refeicao = to_num(it.get("vale_refeicao"), dec=True)
-        vale_alimentacao = to_num(it.get("vale_alimentacao"), dec=True)
-        premio_base = to_num(it.get("premio_produtividade"), dec=True)
-        vale_gasolina = to_num(it.get("vale_gasolina"), dec=True)
-        cesta_natal = to_num(it.get("cesta_natal"), dec=True)
+        b.salario = max(0.0, to_num(it.get("salario"), dec=True))
+        vale_transporte = max(0.0, to_num(it.get("vale_transporte"), dec=True))
+        vale_refeicao = max(0.0, to_num(it.get("vale_refeicao"), dec=True))
+        vale_alimentacao = max(0.0, to_num(it.get("vale_alimentacao"), dec=True))
+        premio_base = max(0.0, to_num(it.get("premio_produtividade"), dec=True))
+        vale_gasolina = max(0.0, to_num(it.get("vale_gasolina"), dec=True))
+        cesta_natal = max(0.0, to_num(it.get("cesta_natal"), dec=True))
 
         b.vale_transporte = vale_transporte if vt_optante else 0
         b.vale_refeicao = vale_refeicao if vr_optante else 0
@@ -23136,14 +27095,14 @@ def _beneficios_folha_resumo(comp, empresa_id=None):
     if empresa_id:
         qb = qb.filter_by(empresa_id=empresa_id)
     mapa = {b.funcionario_id: b for b in qb.all()}
+    _emps_snap = {e.id: e for e in Empresa.query.all()}
+    _clis_snap = {c.id: c for c in Cliente.query.all()}
     total = 0.0
     itens_snap = []
     for f in funcs_ativos:
         b = mapa.get(f.id)
-        emp = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
-        cli = (
-            db.session.get(Cliente, f.posto_cliente_id) if f.posto_cliente_id else None
-        )
+        emp = _emps_snap.get(f.empresa_id) if f.empresa_id else None
+        cli = _clis_snap.get(f.posto_cliente_id) if f.posto_cliente_id else None
         posto_nome = (
             cli.nome.strip()
             if cli and (cli.nome or "").strip()
@@ -23153,19 +27112,19 @@ def _beneficios_folha_resumo(comp, empresa_id=None):
             (
                 b.vale_transporte
                 if b and b.vale_transporte is not None
-                else f.vale_transporte
+                else (f.vale_transporte if f.opta_vt is not False else 0)
             )
             or 0
         )
         vr = float(
-            (b.vale_refeicao if b and b.vale_refeicao is not None else f.vale_refeicao)
+            (b.vale_refeicao if b and b.vale_refeicao is not None else (f.vale_refeicao if f.opta_vr is not False else 0))
             or 0
         )
         va = float(
             (
                 b.vale_alimentacao
                 if b and b.vale_alimentacao is not None
-                else f.vale_alimentacao
+                else (f.vale_alimentacao if f.opta_va is not False else 0)
             )
             or 0
         )
@@ -23173,20 +27132,21 @@ def _beneficios_folha_resumo(comp, empresa_id=None):
             (
                 b.premio_produtividade
                 if b and b.premio_produtividade is not None
-                else f.premio_produtividade
+                else (f.premio_produtividade if bool(f.opta_premio_prod) else 0)
             )
             or 0
         )
         vg = float(
-            (b.vale_gasolina if b and b.vale_gasolina is not None else f.vale_gasolina)
+            (b.vale_gasolina if b and b.vale_gasolina is not None else (f.vale_gasolina if bool(f.opta_vale_gasolina) else 0))
             or 0
         )
         cn = float(
-            (b.cesta_natal if b and b.cesta_natal is not None else f.cesta_natal) or 0
+            (b.cesta_natal if b and b.cesta_natal is not None else (f.cesta_natal if bool(f.opta_cesta_natal) else 0)) or 0
         )
         dias_vt = int((b.dias_vt if b else 0) or 0)
         dias_vr = int((b.dias_vr if b else 0) or 0)
-        total_func = (vt * dias_vt) + (vr * dias_vr) + va + pp + vg + cn
+        dias_vg = int((b.dias_vg if b else 0) or 0)
+        total_func = (vt * dias_vt) + (vr * dias_vr) + va + pp + (vg * dias_vg) + cn
         total += total_func
         itens_snap.append(
             {
@@ -23202,6 +27162,7 @@ def _beneficios_folha_resumo(comp, empresa_id=None):
                 "cn": cn,
                 "dias_vt": dias_vt,
                 "dias_vr": dias_vr,
+                "dias_vg": dias_vg,
                 "total": total_func,
             }
         )
@@ -23293,6 +27254,147 @@ def api_beneficios_fechar():
     )
 
 
+@app.route("/api/beneficios/notificar", methods=["POST"])
+@_limiter.limit("10 per minute")
+@lr
+def api_beneficios_notificar():
+    """
+    Envia notificação push individual a cada colaborador com o resumo dos
+    benefícios da competência informada.
+
+    Body JSON:
+      - competencia: str  "YYYY-MM"
+      - empresa_id: int | null
+      - funcionario_ids: list[int] | null  — se fornecido, restringe o envio
+        a esses IDs (usado para notificar apenas os avulso adicionados).
+    """
+    from sqlalchemy import or_ as _or_
+    d = request.json or {}
+    comp = norm_competencia(d.get("competencia"))
+    if not comp:
+        return jsonify({"erro": "competencia obrigatória."}), 400
+    empresa_id = to_num(d.get("empresa_id")) or None
+    ids_alvo = d.get("funcionario_ids")  # None = todos; lista = somente esses
+
+    # Montar mapa de BeneficioMensal da competência
+    qb = BeneficioMensal.query.filter_by(competencia=comp)
+    if empresa_id:
+        qb = qb.filter_by(empresa_id=empresa_id)
+    if ids_alvo and isinstance(ids_alvo, list):
+        qb = qb.filter(BeneficioMensal.funcionario_id.in_(ids_alvo))
+    mapa_bm = {b.funcionario_id: b for b in qb.all()}
+
+    # Funcionários ativos/férias envolvidos
+    fids = list(mapa_bm.keys())
+    if not fids:
+        return jsonify({"ok": True, "enviados": 0, "sem_registro": True,
+                        "mensagem": "Nenhum lançamento encontrado para esta competência."}), 200
+
+    funcs_map = {
+        f.id: f
+        for f in Funcionario.query.filter(Funcionario.id.in_(fids)).all()
+    }
+
+    _meses_pt = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                 "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+    try:
+        _partes = comp.split("-")
+        _comp_label = f"{_meses_pt[int(_partes[1])-1]}/{_partes[0]}"
+    except Exception:
+        _comp_label = comp
+
+    enviados_push = 0
+    enviados_wpp = 0
+    sem_contato = 0
+
+    for fid, bm in mapa_bm.items():
+        f = funcs_map.get(fid)
+        if not f:
+            continue
+        st = (f.status or "Ativo").strip()
+        if st in ("Demitido", "Inativo"):
+            continue
+
+        nome_curto = (f.nome or "").split()[0]
+
+        # Montar resumo dos benefícios recebidos nesta competência
+        linhas = []
+        _opta_vt = True if f.opta_vt is None else bool(f.opta_vt)
+        _opta_vr = True if f.opta_vr is None else bool(f.opta_vr)
+        _opta_va = True if f.opta_va is None else bool(f.opta_va)
+
+        if _opta_vt and (bm.vale_transporte or 0) > 0:
+            dias_vt = bm.dias_vt or 0
+            total_vt = float(bm.vale_transporte or 0) * dias_vt
+            linhas.append(f"VT: R${total_vt:,.2f} ({dias_vt} dias)")
+        if _opta_vr and (bm.vale_refeicao or 0) > 0:
+            dias_vr = bm.dias_vr or 0
+            total_vr = float(bm.vale_refeicao or 0) * dias_vr
+            linhas.append(f"VR: R${total_vr:,.2f} ({dias_vr} dias)")
+        if _opta_va and (bm.vale_alimentacao or 0) > 0:
+            linhas.append(f"VA: R${float(bm.vale_alimentacao):,.2f}")
+        if f.opta_premio_prod and (bm.premio_produtividade or 0) > 0:
+            linhas.append(f"Prêmio Prod.: R${float(bm.premio_produtividade):,.2f}")
+        if f.opta_vale_gasolina and (bm.vale_gasolina or 0) > 0:
+            dias_vg = bm.dias_vg or 0
+            total_vg = float(bm.vale_gasolina or 0) * (dias_vg or 1)
+            linhas.append(f"Vale Gasolina: R${total_vg:,.2f}")
+        if f.opta_cesta_natal and (bm.cesta_natal or 0) > 0:
+            linhas.append(f"Cesta Natal: R${float(bm.cesta_natal):,.2f}")
+
+        if not linhas:
+            # Sem benefícios configurados para notificar
+            continue
+
+        resumo_str = " | ".join(linhas)
+        corpo_push = (
+            f"{nome_curto}, seus benefícios de {_comp_label} estão disponíveis. "
+            f"{resumo_str}. "
+            "Qualquer dúvida, entre em contato com o RH."
+        )
+
+        tem_app = f.app_ativo and (f.app_push_token or "").strip()
+
+        if tem_app:
+            ok = _push_notify_funcionario(
+                fid,
+                f"Benefícios de {_comp_label} 💳",
+                corpo_push,
+                data={"tipo": "pagamento", "competencia": _comp_label},
+            )
+            if ok:
+                enviados_push += 1
+                continue
+            # push falhou — cai no WhatsApp abaixo
+
+        # Sem app ou push falhou → enviar WhatsApp
+        tel = wa_norm_number(f.telefone or "")
+        if wa_is_valid_number(tel):
+            try:
+                linhas_wpp = [f"  • {l}" for l in linhas]
+                msg_wpp = (
+                    f"Olá {nome_curto}, seus benefícios de *{_comp_label}* estão disponíveis:\n"
+                    + "\n".join(linhas_wpp)
+                    + "\nQualquer dúvida, entre em contato com o RH."
+                )
+                wa_send_text(tel, msg_wpp)
+                enviados_wpp += 1
+            except Exception as e:
+                app.logger.warning(f"[beneficios_notificar] WhatsApp falhou para func {fid}: {e}")
+                sem_contato += 1
+        else:
+            sem_contato += 1
+
+    return jsonify({
+        "ok": True,
+        "competencia": comp,
+        "enviados": enviados_push + enviados_wpp,
+        "enviados_push": enviados_push,
+        "enviados_whatsapp": enviados_wpp,
+        "sem_contato": sem_contato,
+    })
+
+
 @app.route("/api/beneficios/reabrir", methods=["POST"])
 @lr
 def api_beneficios_reabrir():
@@ -23338,6 +27440,8 @@ def api_beneficios_assinar():
         return jsonify({"erro": "Salve a folha antes de assinar."}), 404
     if (folha.status or "") != "fechada":
         return jsonify({"erro": "A folha precisa estar fechada para assinatura."}), 400
+    if folha.assinatura_status == "assinado":
+        return jsonify({"erro": "Esta folha já foi assinada. Reabra e feche novamente para assinar com novos dados."}), 400
     try:
         dados = json.loads(folha.dados_json or "{}")
     except Exception:
@@ -23411,7 +27515,7 @@ def api_feriados_listar():
     q = Feriado.query
     if ano:
         q = q.filter(Feriado.data.like(f"{ano}-%"))
-    if tipo in ("nacional", "municipal"):
+    if tipo in ("nacional", "municipal", "estadual"):
         q = q.filter_by(tipo=tipo)
     q = q.order_by(Feriado.data.asc())
     itens = q.all()
@@ -23428,6 +27532,7 @@ def api_feriados_listar():
         fids = mapa_func.get(f.id, [])
         d["funcionario_ids"] = fids
         d["qtd_funcionarios"] = len(fids)
+        d["aplicacao_label"] = _feriado_aplicacao_label(f, len(fids))
         out.append(d)
     return jsonify({"ok": True, "itens": out})
 
@@ -23441,6 +27546,13 @@ def api_feriados_criar():
     tipo = (d.get("tipo") or "nacional").strip().lower()
     municipio = (d.get("municipio") or "").strip()
     estado = (d.get("estado") or "").strip().upper()[:2]
+    postos_operacionais = d.get("postos_operacionais") or []
+    if not isinstance(postos_operacionais, list):
+        postos_operacionais = []
+    if not postos_operacionais:
+        posto_operacional = (d.get("posto_operacional") or "").strip()
+        if posto_operacional:
+            postos_operacionais = [posto_operacional]
     empresa_id = to_num(d.get("empresa_id")) or None
     funcionario_ids = {
         int(x) for x in (d.get("funcionario_ids") or []) if str(x).isdigit()
@@ -23449,12 +27561,14 @@ def api_feriados_criar():
         return jsonify({"erro": "Data é obrigatória."}), 400
     if not descricao:
         return jsonify({"erro": "Descrição é obrigatória."}), 400
-    if tipo not in ("nacional", "municipal"):
-        return jsonify({"erro": "Tipo inválido. Use nacional ou municipal."}), 400
-    if tipo == "municipal" and not funcionario_ids:
-        return jsonify(
-            {"erro": "Para feriado municipal, selecione ao menos 1 funcionário."}
-        ), 400
+    if tipo not in ("nacional", "municipal", "estadual"):
+        return jsonify({"erro": "Tipo inválido. Use nacional, municipal ou estadual."}), 400
+    if tipo == "municipal" and not municipio:
+        return jsonify({"erro": "Para feriado municipal, informe o município."}), 400
+    if tipo == "estadual" and not estado:
+        return jsonify({"erro": "Para feriado estadual, informe a UF."}), 400
+    if tipo == "estadual":
+        municipio = f"@UF:{estado}"
     # normaliza para YYYY-MM-DD
     data_norm = None
     for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
@@ -23480,12 +27594,13 @@ def api_feriados_criar():
         tipo=tipo,
         municipio=municipio,
         estado=estado,
+        posto_operacional=("" if tipo == "nacional" else _feriado_dump_postos(postos_operacionais)),
         empresa_id=empresa_id,
         criado_por=session.get("nome", ""),
     )
     db.session.add(f)
     db.session.flush()
-    if tipo == "municipal":
+    if tipo in ("municipal", "estadual") and funcionario_ids:
         funcs_validos = {
             x.id
             for x in Funcionario.query.filter(
@@ -23496,7 +27611,7 @@ def api_feriados_criar():
             db.session.add(FeriadoFuncionario(feriado_id=f.id, funcionario_id=fid))
     db.session.commit()
     fd = f.to_dict()
-    fd["funcionario_ids"] = sorted(list(funcionario_ids)) if tipo == "municipal" else []
+    fd["funcionario_ids"] = sorted(list(funcionario_ids)) if tipo in ("municipal", "estadual") else []
     fd["qtd_funcionarios"] = len(fd["funcionario_ids"])
     return jsonify({"ok": True, "feriado": fd}), 201
 
@@ -23511,6 +27626,13 @@ def api_feriados_editar(fid):
     tipo = (d.get("tipo") or f.tipo or "nacional").strip().lower()
     municipio = (d.get("municipio") or "").strip()
     estado = (d.get("estado") or "").strip().upper()[:2]
+    postos_operacionais = d.get("postos_operacionais") or []
+    if not isinstance(postos_operacionais, list):
+        postos_operacionais = []
+    if not postos_operacionais:
+        posto_operacional = (d.get("posto_operacional") or "").strip()
+        if posto_operacional:
+            postos_operacionais = [posto_operacional]
     funcionario_ids = {
         int(x) for x in (d.get("funcionario_ids") or []) if str(x).isdigit()
     }
@@ -23529,17 +27651,20 @@ def api_feriados_editar(fid):
         f.data = data_norm
     if descricao:
         f.descricao = descricao
-    if tipo in ("nacional", "municipal"):
+    if tipo in ("nacional", "municipal", "estadual"):
         f.tipo = tipo
+    if f.tipo == "municipal" and not municipio:
+        return jsonify({"erro": "Para feriado municipal, informe o município."}), 400
+    if f.tipo == "estadual" and not estado:
+        return jsonify({"erro": "Para feriado estadual, informe a UF."}), 400
+    if f.tipo == "estadual":
+        municipio = f"@UF:{estado}"
     f.municipio = municipio
     f.estado = estado
+    f.posto_operacional = "" if f.tipo == "nacional" else _feriado_dump_postos(postos_operacionais)
     if "empresa_id" in d:
         f.empresa_id = to_num(d.get("empresa_id")) or None
-    if f.tipo == "municipal":
-        if not funcionario_ids:
-            return jsonify(
-                {"erro": "Para feriado municipal, selecione ao menos 1 funcionário."}
-            ), 400
+    if f.tipo in ("municipal", "estadual") and funcionario_ids:
         FeriadoFuncionario.query.filter_by(feriado_id=f.id).delete()
         funcs_validos = {
             x.id
@@ -23549,7 +27674,7 @@ def api_feriados_editar(fid):
         }
         for func_id in funcs_validos:
             db.session.add(FeriadoFuncionario(feriado_id=f.id, funcionario_id=func_id))
-    else:
+    elif f.tipo == "nacional" or "funcionario_ids" in d:
         FeriadoFuncionario.query.filter_by(feriado_id=f.id).delete()
     db.session.commit()
     fd = f.to_dict()
@@ -23741,7 +27866,7 @@ def _calcular_horas_noturnas_funcionario(funcionario_id, data_inicio_str, data_f
                 continue
 
             esc = db.session.get(Escala, ef.escala_id)
-            if not esc:
+            if not esc or not esc.ativo:
                 continue
 
             # Tamanho do ciclo para identificar se o dia é noturno
@@ -23932,28 +28057,40 @@ def api_beneficios_calcular_por_periodo():
         Feriado.data >= dt_ini.isoformat(), Feriado.data <= dt_fim.isoformat()
     ).all()
     feriados_nacionais = {
-        f.data for f in feriados_rows if (f.tipo or "").lower() == "nacional"
+        f.data for f in feriados_rows if (f.tipo or "").strip().lower() == "nacional"
     }
-    mun_ids = [f.id for f in feriados_rows if (f.tipo or "").lower() == "municipal"]
-    feriados_municipais_por_func = {}
-    if mun_ids:
-        vincs = FeriadoFuncionario.query.filter(
-            FeriadoFuncionario.feriado_id.in_(mun_ids)
-        ).all()
-        mapa_data = {f.id: f.data for f in feriados_rows}
-        for v in vincs:
-            data_ref = mapa_data.get(v.feriado_id)
-            if not data_ref:
-                continue
-            feriados_municipais_por_func.setdefault(v.funcionario_id, set()).add(
-                data_ref
-            )
+    feriados_por_data = {}
+    for _fer in feriados_rows:
+        feriados_por_data.setdefault(_fer.data, []).append(_fer)
+
+    _fer_ids = [f.id for f in feriados_rows if f.id]
+    feriado_vinc_map = {}
+    if _fer_ids:
+        for _v in FeriadoFuncionario.query.filter(FeriadoFuncionario.feriado_id.in_(_fer_ids)).all():
+            feriado_vinc_map.setdefault(_v.feriado_id, set()).add(_v.funcionario_id)
+    _qtd_vinculos_feriado = sum(len(v) for v in feriado_vinc_map.values())
+
+    def _norm_posto(v):
+        t = (v or "").strip()
+        return (t or "Reserva tecnica").lower()
+
+    def _feriado_aplica_funcionario(feriado_obj, funcionario_obj):
+        _tipo = (feriado_obj.tipo or "").strip().lower()
+        if _tipo == "nacional":
+            return True
+        _postos_fer = _feriado_parse_postos(getattr(feriado_obj, "posto_operacional", ""))
+        if _postos_fer and _norm_posto(funcionario_obj.posto_operacional) not in {_norm_posto(x) for x in _postos_fer}:
+            return False
+        _vincs = feriado_vinc_map.get(feriado_obj.id, set())
+        if _vincs:
+            return funcionario_obj.id in _vincs
+        return True
 
     # Dias do período
     todos_dias = [dt_ini + timedelta(days=i) for i in range(delta)]
 
     # Monta conjunto de dias uteis (seg-sex, excluindo feriados)
-    def _is_util(dt, funcionario_id, dias_semana_set=None):
+    def _is_util(dt, funcionario_obj, dias_semana_set=None):
         # dt.weekday(): 0=seg,1=ter,...,4=sex,5=sab,6=dom
         if dias_semana_set:
             # dias_semana_set = conjunto de ints 0-6 (weekday)
@@ -23963,10 +28100,9 @@ def api_beneficios_calcular_por_periodo():
             if dt.weekday() >= 5:
                 return False
         data_iso = dt.isoformat()
-        if data_iso in feriados_nacionais:
-            return False
-        if data_iso in feriados_municipais_por_func.get(funcionario_id, set()):
-            return False
+        for _fer in feriados_por_data.get(data_iso, []):
+            if _feriado_aplica_funcionario(_fer, funcionario_obj):
+                return False
         return True
 
     # Funcionários ativos
@@ -24058,7 +28194,7 @@ def api_beneficios_calcular_por_periodo():
                 dias_semana_set = None
 
         dias_calendario = sum(
-            1 for dt in todos_dias if _is_util(dt, f.id, dias_semana_set)
+            1 for dt in todos_dias if _is_util(dt, f, dias_semana_set)
         )
 
         # Dias reais de ponto com minutos apurados por dia.
@@ -24202,9 +28338,7 @@ def api_beneficios_calcular_por_periodo():
             "total_dias": delta,
             "feriados_periodo": len(feriados_nacionais),
             "feriados_nacionais_periodo": len(feriados_nacionais),
-            "feriados_municipais_vinculados": sum(
-                len(v) for v in feriados_municipais_por_func.values()
-            ),
+            "feriados_municipais_vinculados": _qtd_vinculos_feriado,
             "min_horas_vrvt": min_horas_vrvt,
             "regra_vrvt": "VT e VR pagos apenas em dias com 8h ou mais trabalhadas. Vale gasolina pago por dia trabalhado. Faltas informadas são descontadas dos dias pagos.",
             "fonte_usada": fonte,
@@ -24313,7 +28447,7 @@ def beneficios_relatorio_preview():
             f = funcs_map.get(r.funcionario_id)
             valor = float(getattr(r, col_valor) or 0)
             dias = int(getattr(r, col_dias) or 0) if col_dias else 0
-            total = valor if is_va else (dias * valor if dias > 0 else valor)
+            total = valor if is_va else (dias * valor)
             total_emp += total
             linhas.append(
                 {
@@ -24441,7 +28575,7 @@ def _api_beneficios_xlsx_tipo(tipo):
         ), 400
 
     emps_map = {e.id: e for e in Empresa.query.all()}
-    funcs_map = {f.id: f for f in Funcionario.query.all()}
+    funcs_map = funcs_map_pre  # reutiliza o mapa já carregado
     grupos = {}
     for r in regs:
         grupos.setdefault(r.empresa_id or 0, []).append(r)
@@ -24512,7 +28646,7 @@ def _api_beneficios_xlsx_tipo(tipo):
             f = funcs_map.get(r.funcionario_id)
             valor = float(getattr(r, col_valor) or 0)
             dias = int(getattr(r, col_dias) or 0) if col_dias else 0
-            total = valor if is_fixed else (dias * valor if dias > 0 else valor)
+            total = valor if is_fixed else (dias * valor)
             total_geral += total
             re_val = f.re if f and f.re else (f.matricula if f and f.matricula else "")
             nome_val = f.nome if f else f"Funcionario {r.funcionario_id}"
@@ -24625,7 +28759,7 @@ def _api_beneficios_pdf_tipo(tipo):
             "",
             "opta_premio_prod",
         ),
-        "vale_gasolina": ("Vale Gasolina", "vale_gasolina", "", "opta_vale_gasolina"),
+        "vale_gasolina": ("Vale Gasolina", "vale_gasolina", "dias_vg", "opta_vale_gasolina"),
         "cesta_natal": ("Cesta de Natal", "cesta_natal", "", "opta_cesta_natal"),
     }
     if tipo not in cfg:
@@ -24718,7 +28852,7 @@ def _api_beneficios_pdf_tipo(tipo):
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     emps_map = {e.id: e for e in Empresa.query.all()}
-    funcs_map = {f.id: f for f in Funcionario.query.all()}
+    funcs_map = funcs_map_pre  # reutiliza o mapa já carregado
     grupos = {}
     for r in regs:
         grupos.setdefault(r.empresa_id or 0, []).append(r)
@@ -24798,8 +28932,9 @@ def _api_beneficios_pdf_tipo(tipo):
         )
         story.append(hdr)
         cnpj_str = emp.cnpj if emp and emp.cnpj else ""
+        cnpj_fmt = _filter_fmt_cnpj(cnpj_str) if cnpj_str else ""
         emp_info = Paragraph(
-            f'<font color="#4c6072">CNPJ: {cnpj_str}</font>',
+            f'<font color="#4c6072">CNPJ: {cnpj_fmt}</font>',
             ParagraphStyle("empinfo", fontName="Helvetica", fontSize=8.5, leading=11),
         )
         story.append(emp_info)
@@ -24824,7 +28959,7 @@ def _api_beneficios_pdf_tipo(tipo):
             f = funcs_map.get(r.funcionario_id)
             valor = float(getattr(r, col_valor) or 0)
             dias = int(getattr(r, col_dias) or 0) if col_dias else 0
-            total = valor if is_fixed else (dias * valor if dias > 0 else valor)
+            total = valor if is_fixed else (dias * valor)
             total_emp += total
             re_str = str(
                 f.re if f and f.re else (f.matricula if f and f.matricula else "")
@@ -24995,11 +29130,11 @@ def _financeiro_salarios_competencia(comp, empresa_id=None):
     total_anual = 0.0
     cargos = set()
     postos = set()
+    _emps_sal = {e.id: e for e in Empresa.query.all()}
+    _clis_sal = {c.id: c for c in Cliente.query.all()}
     for f in funcs_ativos:
-        emp = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
-        cli = (
-            db.session.get(Cliente, f.posto_cliente_id) if f.posto_cliente_id else None
-        )
+        emp = _emps_sal.get(f.empresa_id) if f.empresa_id else None
+        cli = _clis_sal.get(f.posto_cliente_id) if f.posto_cliente_id else None
         posto_nome = (
             cli.nome.strip()
             if cli and (cli.nome or "").strip()
@@ -25375,6 +29510,46 @@ def api_financeiro_salarios_fechar():
         True,
         {"competencia": comp, "empresa_id": empresa_id, "versao": folha.versao_atual},
     )
+    # Notificação push a cada funcionário da folha informando o valor do pagamento.
+    try:
+        _itens_folha = resumo.get("itens") or []
+        _comp_fmt_partes = comp.split("-")
+        _meses_pt = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                     "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+        if len(_comp_fmt_partes) == 2:
+            _m_idx = int(_comp_fmt_partes[1]) - 1
+            _comp_label = f"{_meses_pt[_m_idx]}/{_comp_fmt_partes[0]}"
+        else:
+            _comp_label = comp
+
+        def _notify_folha_bg(itens, label):
+            for _it in itens:
+                try:
+                    _fid = _it.get("funcionario_id")
+                    _nome = (_it.get("nome") or "").split()[0]
+                    _total = float(_it.get("total_pagar") or 0)
+                    if not _fid:
+                        continue
+                    _push_notify_funcionario(
+                        _fid,
+                        f"Pagamento de {label} 💰",
+                        f"{_nome}, seu pagamento referente a {label} está disponível. "
+                        f"Valor líquido: R$ {_total:,.2f}. "
+                        "Acesse o app para mais detalhes.",
+                        data={"tipo": "pagamento", "competencia": label},
+                    )
+                except Exception:
+                    pass
+
+        import threading as _thr
+        _t = _thr.Thread(
+            target=_notify_folha_bg,
+            args=(_itens_folha, _comp_label),
+            daemon=True,
+        )
+        _t.start()
+    except Exception:
+        pass
 
     return jsonify(
         {
@@ -25489,6 +29664,7 @@ def api_financeiro_salarios_folhas():
 
 
 @app.route("/api/financeiro/salarios/evolucao", methods=["GET"])
+@_limiter.limit("30 per minute")
 @lr
 def api_financeiro_salarios_evolucao():
     empresa_id = to_num(request.args.get("empresa_id")) or None
@@ -25536,6 +29712,8 @@ def api_financeiro_salarios_importar():
         import csv
 
         rows = list(csv.DictReader(fs.read().decode("utf-8", "replace").splitlines()))
+        if len(rows) > 5000:
+            return jsonify({"erro": "Arquivo com mais de 5000 linhas não é suportado."}), 400
     elif nome.endswith(".xlsx"):
         from openpyxl import load_workbook
 
@@ -25544,6 +29722,8 @@ def api_financeiro_salarios_importar():
         data = list(ws.iter_rows(values_only=True))
         if not data:
             return jsonify({"erro": "Planilha vazia."}), 400
+        if len(data) > 5001:  # 1 header + 5000 linhas
+            return jsonify({"erro": "Planilha com mais de 5000 linhas não é suportada."}), 400
         headers = [str(v or "").strip().lower() for v in data[0]]
         rows = [
             {headers[i]: row[i] for i in range(min(len(headers), len(row)))}
@@ -25583,10 +29763,14 @@ def api_financeiro_salarios_importar():
             continue
         if empresa_id and int(f.empresa_id or 0) != int(empresa_id):
             continue
+        _val_liq = to_num(row.get("valor_liquido", row.get("salario")), dec=True)
+        if _val_liq < 0:
+            ignorados += 1
+            continue
         valores.append(
             {
                 "funcionario_id": f.id,
-                "valor_liquido": row.get("valor_liquido", row.get("salario")),
+                "valor_liquido": _val_liq,
                 "salario_obs": row.get("observacao", row.get("obs", "")),
             }
         )
@@ -25787,6 +29971,7 @@ def api_financeiro_salarios_modelo():
 
 
 @app.route("/api/financeiro/salarios/export.xlsx")
+@_limiter.limit("5 per minute")
 @lr
 def api_financeiro_salarios_export_xlsx():
     from openpyxl import Workbook
@@ -25954,6 +30139,7 @@ def api_financeiro_salarios_export_xlsx():
 
 
 @app.route("/api/financeiro/salarios/export.pdf")
+@_limiter.limit("5 per minute")
 @lr
 def api_financeiro_salarios_export_pdf():
     from reportlab.lib.pagesizes import A4
@@ -26175,9 +30361,15 @@ def api_financeiro_lancamentos_criar():
     if not f:
         return jsonify({"erro": "Funcionário não encontrado."}), 404
     comp = norm_competencia(d.get("competencia"))
-    tipo = (d.get("tipo") or "").strip()
+    _TIPOS_LANCAMENTO_VALIDOS = {
+        "adiantamento", "rescisao", "decimo_terceiro", "ferias",
+        "hora_extra", "bonus", "desconto_avulso", "outros",
+    }
+    tipo = (d.get("tipo") or "").strip().lower()
     if not tipo:
         return jsonify({"erro": "Tipo de lançamento obrigatório."}), 400
+    if tipo not in _TIPOS_LANCAMENTO_VALIDOS:
+        return jsonify({"erro": f"Tipo inválido. Use: {', '.join(sorted(_TIPOS_LANCAMENTO_VALIDOS))}"}), 400
     natureza = (d.get("natureza") or "adicional").strip().lower()
     if natureza not in ("adicional", "desconto"):
         natureza = "adicional"
@@ -26213,6 +30405,11 @@ def api_financeiro_lancamentos_criar():
 @lr
 def api_financeiro_lancamentos_excluir(lid):
     lan = db.get_or_404(LancamentoAvulso, lid)
+    _emp_req = request.args.get("empresa_id", type=int) or to_num(
+        (request.get_json(silent=True) or {}).get("empresa_id")
+    ) or None
+    if _emp_req is not None and lan.empresa_id is not None and int(lan.empresa_id) != int(_emp_req):
+        return jsonify({"erro": "Acesso negado a este lançamento."}), 403
     fid = lan.funcionario_id
     comp = lan.competencia
     tipo = lan.tipo
@@ -26349,7 +30546,7 @@ def api_folhas_list():
 def api_folhas_criar():
     d = request.get_json(silent=True) or {}
     nome = (d.get("nome") or "").strip()
-    comp = (d.get("competencia") or "").strip()
+    comp = norm_competencia((d.get("competencia") or "").strip())
     if not nome or not comp:
         return jsonify({"error": "nome e competencia obrigatórios"}), 400
     tipo = (d.get("tipo") or "mensal").strip()
@@ -26365,7 +30562,7 @@ def api_folhas_criar():
         empresa_id=emp,
         obs=(d.get("obs") or "").strip(),
         status="rascunho",
-        criado_por=session.get("user") or session.get("username") or "",
+        criado_por=_financeiro_usuario_atual(),
     )
     db.session.add(f)
     db.session.commit()
@@ -26397,6 +30594,9 @@ def api_folhas_atualizar(fid):
     if not _folha_pode_editar(f):
         return jsonify({"error": "folha fechada não pode ser editada"}), 400
     d = request.get_json(silent=True) or {}
+    _emp_req = request.args.get("empresa_id", type=int)
+    if _emp_req is not None and f.empresa_id is not None and int(f.empresa_id) != _emp_req:
+        return jsonify({"error": "Acesso negado: empresa não autorizada."}), 403
     for k in ("nome", "tipo", "obs"):
         if k in d:
             setattr(f, k, (d.get(k) or "").strip())
@@ -26406,7 +30606,7 @@ def api_folhas_atualizar(fid):
         except Exception:
             pass
     if "competencia" in d and d.get("competencia"):
-        f.competencia = d.get("competencia").strip()
+        f.competencia = norm_competencia(d.get("competencia"))
     db.session.commit()
     return jsonify(f.to_dict(with_items=True))
 
@@ -26415,6 +30615,9 @@ def api_folhas_atualizar(fid):
 @lr
 def api_folhas_excluir(fid):
     f = db.get_or_404(FolhaPagamento, fid)
+    _emp_req = request.args.get("empresa_id", type=int)
+    if _emp_req is not None and f.empresa_id is not None and int(f.empresa_id) != _emp_req:
+        return jsonify({"error": "Acesso negado: empresa não autorizada."}), 403
     if not _folha_pode_editar(f):
         return jsonify({"error": "somente folhas em rascunho podem ser excluídas"}), 400
     db.session.delete(f)
@@ -26450,6 +30653,9 @@ def api_folhas_add_funcionarios(fid):
             continue
         func = db.session.get(Funcionario, fid_func)
         if not func:
+            continue
+        if f.empresa_id is not None and func.empresa_id is not None and func.empresa_id != f.empresa_id:
+            skipped.append(fid_func)
             continue
         sb = _folha_salario_base_atual(func, f.competencia)
         item = FolhaPagamentoItem(
@@ -26509,7 +30715,7 @@ def api_folhas_editar_item(fid, item_id):
     d = request.get_json(silent=True) or {}
     if "salario_base" in d:
         try:
-            it.salario_base = float(d.get("salario_base") or 0)
+            it.salario_base = max(0.0, float(d.get("salario_base") or 0))
         except Exception:
             pass
     if "obs" in d:
@@ -26533,6 +30739,10 @@ def api_folhas_recalcular(fid):
 @lr
 def api_folhas_fechar(fid):
     f = db.get_or_404(FolhaPagamento, fid)
+    _d_fechar = request.get_json(silent=True) or {}
+    _emp_req = _d_fechar.get("empresa_id") or request.args.get("empresa_id", type=int)
+    if _emp_req is not None and f.empresa_id is not None and int(f.empresa_id) != int(_emp_req):
+        return jsonify({"error": "Acesso negado: empresa não autorizada."}), 403
     if f.status not in ("rascunho",):
         return jsonify({"error": "folha não está em rascunho"}), 400
     if f.itens.count() == 0:
@@ -26540,7 +30750,7 @@ def api_folhas_fechar(fid):
     _folha_recalcular_total(f)
     f.status = "fechada"
     f.fechado_em = utcnow()
-    f.fechado_por = session.get("user") or session.get("username") or ""
+    f.fechado_por = _financeiro_usuario_atual()
     db.session.commit()
     audit_event(
         "folha_fechada",
@@ -26582,13 +30792,21 @@ def api_folhas_marcar_paga(fid):
             {"error": "folha precisa estar fechada antes de marcar como paga"}
         ), 400
     d = request.get_json(silent=True) or {}
+    _emp_req = d.get("empresa_id") or request.args.get("empresa_id", type=int)
+    if _emp_req is not None and f.empresa_id is not None and int(f.empresa_id) != int(_emp_req):
+        return jsonify({"error": "Acesso negado: empresa não autorizada."}), 403
     dp = (d.get("data_pagamento") or "").strip()
-    if not dp:
-        dp = datetime.now().strftime("%Y-%m-%d")
+    if dp:
+        try:
+            datetime.strptime(dp, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "data_pagamento inválida. Use YYYY-MM-DD."}), 400
+    else:
+        dp = localnow().strftime("%Y-%m-%d")
     f.data_pagamento = dp
     f.status = "paga"
     f.pago_em = utcnow()
-    f.pago_por = session.get("user") or session.get("username") or ""
+    f.pago_por = _financeiro_usuario_atual()
     db.session.commit()
     audit_event(
         "folha_paga",
@@ -26600,6 +30818,104 @@ def api_folhas_marcar_paga(fid):
         {"data_pagamento": dp, "total": f.total_valor},
     )
     return jsonify(f.to_dict(with_items=True))
+
+
+@app.route("/api/folhas/<int:fid>/notificar", methods=["POST"])
+@_limiter.limit("10 per minute")
+@lr
+def api_folhas_notificar(fid):
+    """
+    Envia notificação push individual a cada colaborador da folha informando o
+    valor líquido de pagamento.  Funcionários sem app recebem mensagem via WhatsApp.
+    """
+    f = db.get_or_404(FolhaPagamento, fid)
+    _meses_pt = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                 "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+    try:
+        _partes = (f.competencia or "").split("-")
+        _comp_label = f"{_meses_pt[int(_partes[1])-1]}/{_partes[0]}" if len(_partes) == 2 else (f.competencia or "")
+    except Exception:
+        _comp_label = f.competencia or ""
+
+    itens = f.itens.order_by(FolhaPagamentoItem.id.asc()).all()
+    if not itens:
+        return jsonify({"ok": True, "enviados_push": 0, "enviados_whatsapp": 0,
+                        "sem_contato": 0, "mensagem": "Nenhum funcionário na folha."}), 200
+
+    _fids = {it.funcionario_id for it in itens}
+    _funcs = {fn.id: fn for fn in Funcionario.query.filter(Funcionario.id.in_(_fids)).all()} if _fids else {}
+    _item_map = {it.funcionario_id: it for it in itens}
+
+    enviados_push = 0
+    enviados_wpp = 0
+    sem_contato = 0
+
+    for func_id, func in _funcs.items():
+        st = (func.status or "Ativo").strip()
+        if st in ("Demitido", "Inativo"):
+            continue
+        it = _item_map.get(func_id)
+        if not it:
+            continue
+        nome_curto = (func.nome or "").split()[0]
+        _total = float(it.total_pagar or 0)
+        _total_fmt = f"R$ {_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+        tem_app = func.app_ativo and (func.app_push_token or "").strip()
+
+        if tem_app:
+            # Notificação push via app
+            corpo = (
+                f"{nome_curto}, seu pagamento referente a {_comp_label} está disponível. "
+                f"Valor líquido: {_total_fmt}. "
+                "Acesse o app para mais detalhes."
+            )
+            ok = _push_notify_funcionario(
+                func_id,
+                f"Pagamento de {_comp_label} 💰",
+                corpo,
+                data={"tipo": "pagamento", "competencia": _comp_label, "folha_id": fid},
+            )
+            if ok:
+                enviados_push += 1
+            else:
+                # Push falhou — tentar WhatsApp como fallback
+                tem_app = False
+
+        if not tem_app:
+            # Sem app (ou push falhou) → enviar WhatsApp
+            tel = wa_norm_number(func.telefone or "")
+            if wa_is_valid_number(tel):
+                try:
+                    msg_wpp = (
+                        f"Olá {nome_curto}, seu pagamento referente a *{_comp_label}* está disponível.\n"
+                        f"💰 Valor líquido: *{_total_fmt}*\n"
+                        "Qualquer dúvida, entre em contato com o RH."
+                    )
+                    wa_send_text(tel, msg_wpp)
+                    enviados_wpp += 1
+                except Exception as e:
+                    app.logger.warning(f"[folha_notificar] WhatsApp falhou para func {func_id}: {e}")
+                    sem_contato += 1
+            else:
+                sem_contato += 1
+
+    audit_event(
+        "folha_notificada",
+        "folha_pagamento",
+        f.id,
+        "folha_pagamento",
+        f.id,
+        True,
+        {"competencia": f.competencia, "enviados_push": enviados_push,
+         "enviados_whatsapp": enviados_wpp},
+    )
+    return jsonify({
+        "ok": True,
+        "enviados_push": enviados_push,
+        "enviados_whatsapp": enviados_wpp,
+        "sem_contato": sem_contato,
+    })
 
 
 @app.route("/api/folhas/disponiveis-funcionarios", methods=["GET"])
@@ -26638,8 +30954,15 @@ def api_folhas_funcionarios_disponiveis():
         f = db.session.get(FolhaPagamento, folha_id)
         if f:
             ja = {it.funcionario_id for it in f.itens.all()}
+    funcionarios = q.order_by(Funcionario.nome.asc()).all()
+    # Pré-carrega todas as empresas necessárias em um único roundtrip (evita N+1)
+    emp_ids = {func.empresa_id for func in funcionarios if func.empresa_id}
+    empresas_map = {}
+    if emp_ids:
+        for emp_o in Empresa.query.filter(Empresa.id.in_(emp_ids)).all():
+            empresas_map[emp_o.id] = emp_o
     out = []
-    for func in q.order_by(Funcionario.nome.asc()).all():
+    for func in funcionarios:
         if func.id in ja:
             continue
         if q_str:
@@ -26649,7 +30972,7 @@ def api_folhas_funcionarios_disponiveis():
         posto_func = (func.posto_operacional or "").strip()
         if posto_filtro and posto_func.lower() != posto_filtro:
             continue
-        emp_o = db.session.get(Empresa, func.empresa_id) if func.empresa_id else None
+        emp_o = empresas_map.get(func.empresa_id) if func.empresa_id else None
         out.append(
             {
                 "id": func.id,
@@ -26668,6 +30991,7 @@ def api_folhas_funcionarios_disponiveis():
 
 
 @app.route("/api/folhas/<int:fid>/export.xlsx", methods=["GET"])
+@_limiter.limit("10 per minute")
 @lr
 def api_folhas_export_xlsx(fid):
     f = db.get_or_404(FolhaPagamento, fid)
@@ -26678,7 +31002,15 @@ def api_folhas_export_xlsx(fid):
         return jsonify({"error": "openpyxl não instalado"}), 500
     wb = Workbook()
     ws = wb.active
-    ws.title = (f.nome or "Folha")[:30]
+    # Sanitizar título da planilha: remover caracteres inválidos para nomes de aba
+    # ([:\\/?*[]]) e limitar a 31 caracteres conforme especificação do Excel.
+    _raw_title = (f.nome or "Folha")
+    _safe_title = "".join(c if c not in '[]:/\\?*' else '_' for c in str(_raw_title))
+    # remover caracteres de controle e espaços extremos
+    _safe_title = _safe_title.strip()
+    if not _safe_title:
+        _safe_title = "Folha"
+    ws.title = _safe_title[:31]
     header_fill = PatternFill("solid", fgColor="1f4e78")
     header_font = Font(bold=True, color="FFFFFF")
     ws.append([f.nome])
@@ -26686,6 +31018,12 @@ def api_folhas_export_xlsx(fid):
         [f"Competência: {f.competencia}  |  Tipo: {f.tipo}  |  Status: {f.status}"]
     )
     ws.append([])
+    def _fmt_cpf_xlsx(v):
+        digits = "".join(c for c in str(v or "") if c.isdigit())
+        if len(digits) == 11:
+            return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
+        return v or ""
+
     headers = [
         "#",
         "RE",
@@ -26705,22 +31043,45 @@ def api_folhas_export_xlsx(fid):
         c.alignment = Alignment(horizontal="center")
     _folha_recalcular_total(f)
     total = 0.0
-    for i, it in enumerate(f.itens.order_by(FolhaPagamentoItem.id.asc()).all(), 1):
-        func = db.session.get(Funcionario, it.funcionario_id)
-        ws.append(
-            [
+    # Agrupar itens por empresa para separar na planilha
+    itens_all = f.itens.order_by(FolhaPagamentoItem.id.asc()).all()
+    fids = {it.funcionario_id for it in itens_all}
+    funcs = {fn.id: fn for fn in Funcionario.query.filter(Funcionario.id.in_(fids)).all()} if fids else {}
+    empresa_ids = { (funcs.get(it.funcionario_id).empresa_id if funcs.get(it.funcionario_id) else None) for it in itens_all }
+    empresas = {e.id: e for e in Empresa.query.filter(Empresa.id.in_([eid for eid in empresa_ids if eid])).all()} if any(empresa_ids) else {}
+
+    i = 1
+    for eid in sorted(list(empresa_ids), key=lambda x: (empresas.get(x).nome.lower() if empresas.get(x) else 'zzzz')):
+        emp_nome = empresas.get(eid).nome if eid and empresas.get(eid) else 'Sem empresa'
+        # adicionar linha de título do grupo
+        ws.append([])
+        grp_row_idx = ws.max_row + 0
+        ws.append([f"Empresa: {emp_nome}"])
+        # estilizar a linha do título do grupo
+        for col in range(1, len(headers) + 1):
+            c = ws.cell(row=ws.max_row, column=col)
+            c.font = Font(bold=True)
+        group_total = 0.0
+        # itens do grupo
+        for it in [it for it in itens_all if (funcs.get(it.funcionario_id).empresa_id if funcs.get(it.funcionario_id) else None) == eid]:
+            func = funcs.get(it.funcionario_id)
+            ws.append([
                 i,
                 (func.re or func.matricula or "") if func else "",
                 (func.nome or "") if func else "",
-                (func.cpf or "") if func else "",
+                _fmt_cpf_xlsx(func.cpf if func else ""),
                 (func.cargo or "") if func else "",
                 float(it.salario_base or 0),
                 float(it.total_adicional or 0),
                 float(it.total_desconto or 0),
                 float(it.total_pagar or 0),
-            ]
-        )
-        total += float(it.total_pagar or 0)
+            ])
+            group_total += float(it.total_pagar or 0)
+            total += float(it.total_pagar or 0)
+            i += 1
+        # subtotal do grupo
+        ws.append(["", "", "", "", "SUBTOTAL", "", "", "", round(group_total, 2)])
+    # linha final de total geral
     ws.append([])
     ws.append(["", "", "", "", "TOTAL", "", "", "", round(total, 2)])
     for col_letter, width in [
@@ -26750,6 +31111,7 @@ def api_folhas_export_xlsx(fid):
 
 
 @app.route("/api/folhas/<int:fid>/export.pdf", methods=["GET"])
+@_limiter.limit("10 per minute")
 @lr
 def api_folhas_export_pdf(fid):
     f = db.get_or_404(FolhaPagamento, fid)
@@ -26780,58 +31142,82 @@ def api_folhas_export_pdf(fid):
         Spacer(1, 8),
     ]
     _folha_recalcular_total(f)
-    data = [["#", "RE", "Nome", "Cargo", "Salário", "Adic.", "Desc.", "Total"]]
+    itens_pdf = f.itens.order_by(FolhaPagamentoItem.id.asc()).all()
+    _fids_pdf = {it.funcionario_id for it in itens_pdf}
+    _funcs_pdf = {fn.id: fn for fn in Funcionario.query.filter(Funcionario.id.in_(_fids_pdf)).all()} if _fids_pdf else {}
+    def _fmt_cpf_pdf(v):
+        digits = "".join(c for c in str(v or "") if c.isdigit())
+        if len(digits) == 11:
+            return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
+        return v or ""
+
+    headers_row = ["#", "RE", "Nome", "CPF", "Cargo", "Salário", "Adic.", "Desc.", "Total"]
+    data = [headers_row]
     total = 0.0
-    for i, it in enumerate(f.itens.order_by(FolhaPagamentoItem.id.asc()).all(), 1):
-        func = db.session.get(Funcionario, it.funcionario_id)
-        data.append(
-            [
-                i,
-                (func.re or func.matricula or "") if func else "",
-                (func.nome or "")[:40] if func else "",
-                (func.cargo or "")[:24] if func else "",
-                f"R$ {float(it.salario_base or 0):,.2f}".replace(",", "X")
-                .replace(".", ",")
-                .replace("X", "."),
-                f"R$ {float(it.total_adicional or 0):,.2f}".replace(",", "X")
-                .replace(".", ",")
-                .replace("X", "."),
-                f"R$ {float(it.total_desconto or 0):,.2f}".replace(",", "X")
-                .replace(".", ",")
-                .replace("X", "."),
-                f"R$ {float(it.total_pagar or 0):,.2f}".replace(",", "X")
-                .replace(".", ",")
-                .replace("X", "."),
-            ]
-        )
-        total += float(it.total_pagar or 0)
-    data.append(
-        [
-            "",
-            "",
-            "",
-            "TOTAL",
-            "",
-            "",
-            "",
-            f"R$ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
-        ]
-    )
+    # preparar agrupamento por empresa
+    empresa_ids = { ( _funcs_pdf.get(it.funcionario_id).empresa_id if _funcs_pdf.get(it.funcionario_id) else None) for it in itens_pdf }
+    empresas = {e.id: e for e in Empresa.query.filter(Empresa.id.in_([eid for eid in empresa_ids if eid])).all()} if any(empresa_ids) else {}
+    row_index = 1  # já temos header at 0
+    i = 1
+    company_header_rows = []
+    subtotal_rows = []
+    for eid in sorted(list(empresa_ids), key=lambda x: (empresas.get(x).nome.lower() if empresas.get(x) else 'zzzz')):
+        emp_nome = empresas.get(eid).nome if eid and empresas.get(eid) else 'Sem empresa'
+        # inserir linha de título de empresa (span depois via TableStyle)
+        data.append([f"EMPRESA: {emp_nome}"] + [""] * (len(headers_row) - 1))
+        company_header_rows.append(row_index)
+        row_index += 1
+        group_total = 0.0
+        for it in [it for it in itens_pdf if (_funcs_pdf.get(it.funcionario_id).empresa_id if _funcs_pdf.get(it.funcionario_id) else None) == eid]:
+            func = _funcs_pdf.get(it.funcionario_id)
+            data.append(
+                [
+                    i,
+                    (func.re or func.matricula or "") if func else "",
+                    (func.nome or "")[:36] if func else "",
+                    _fmt_cpf_pdf(func.cpf if func else ""),
+                    (func.cargo or "")[:20] if func else "",
+                    f"R$ {float(it.salario_base or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+                    f"R$ {float(it.total_adicional or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+                    f"R$ {float(it.total_desconto or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+                    f"R$ {float(it.total_pagar or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+                ]
+            )
+            group_total += float(it.total_pagar or 0)
+            total += float(it.total_pagar or 0)
+            i += 1
+            row_index += 1
+        # subtotal do grupo
+        data.append(["", "", "", "", "SUBTOTAL", "", "", "", f"R$ {group_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")])
+        subtotal_rows.append(row_index)
+        row_index += 1
+    # total geral
+    data.append(["", "", "", "", "TOTAL", "", "", "", f"R$ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")])
+    total_row = row_index
     t = Table(data, repeatRows=1)
-    t.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f4e78")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-                ("ALIGN", (4, 1), (-1, -1), "RIGHT"),
-                ("FONTSIZE", (0, 0), (-1, -1), 8),
-                ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#e7e9ec")),
-                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-            ]
-        )
-    )
+    style_cmds = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f4e78")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+        ("ALIGN", (5, 1), (-1, -1), "RIGHT"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+    ]
+    # estilos para linhas de cabeçalho de empresa e subtotais
+    for r in company_header_rows:
+        style_cmds.append(("BACKGROUND", (0, r), (-1, r), colors.HexColor("#f0f4f8")))
+        style_cmds.append(("FONTNAME", (0, r), (-1, r), "Helvetica-Bold"))
+        style_cmds.append(("SPAN", (0, r), (-1, r)))
+        style_cmds.append(("ALIGN", (0, r), (-1, r), "LEFT"))
+    for r in subtotal_rows:
+        style_cmds.append(("BACKGROUND", (0, r), (-1, r), colors.HexColor("#e7e9ec")))
+        style_cmds.append(("FONTNAME", (0, r), (-1, r), "Helvetica-Bold"))
+        style_cmds.append(("ALIGN", (4, r), (4, r), "RIGHT"))
+    # total geral
+    style_cmds.append(("BACKGROUND", (0, total_row), (-1, total_row), colors.HexColor("#e7e9ec")))
+    style_cmds.append(("FONTNAME", (0, total_row), (-1, total_row), "Helvetica-Bold"))
+
+    t.setStyle(TableStyle(style_cmds))
     story.append(t)
     doc.build(story)
     buf.seek(0)
@@ -26860,6 +31246,8 @@ def api_folhas_preview(fid):
     emp = db.session.get(Empresa, f.empresa_id) if f.empresa_id else None
     emp_nome = emp.nome if emp else ""
     itens = f.itens.order_by(FolhaPagamentoItem.id.asc()).all()
+    _fids_prev = {it.funcionario_id for it in itens}
+    _funcs_prev = {fn.id: fn for fn in Funcionario.query.filter(Funcionario.id.in_(_fids_prev)).all()} if _fids_prev else {}
     total_base = total_adic = total_desc = total_pagar = 0.0
 
     def brl(v):
@@ -26869,34 +31257,52 @@ def api_folhas_preview(fid):
             .replace("X", ".")
         )
 
+    # Agrupar itens por empresa para exibir por blocos
+    itens_all = itens
+    fids = {it.funcionario_id for it in itens_all}
+    funcs = {fn.id: fn for fn in Funcionario.query.filter(Funcionario.id.in_(fids)).all()} if fids else {}
+    empresa_ids = { (funcs.get(it.funcionario_id).empresa_id if funcs.get(it.funcionario_id) else None) for it in itens_all }
+    empresas = {e.id: e for e in Empresa.query.filter(Empresa.id.in_([eid for eid in empresa_ids if eid])).all()} if any(empresa_ids) else {}
+
     rows_html = ""
-    for i, it in enumerate(itens, 1):
-        func = db.session.get(Funcionario, it.funcionario_id)
-        nome = (func.nome or "") if func else ""
-        re = (func.re or func.matricula or "") if func else ""
-        cargo = (func.cargo or "") if func else ""
-        posto = (func.posto_operacional or "") if func else ""
-        s_base = float(it.salario_base or 0)
-        s_adic = float(it.total_adicional or 0)
-        s_desc = float(it.total_desconto or 0)
-        s_tot = float(it.total_pagar or 0)
-        total_base += s_base
-        total_adic += s_adic
-        total_desc += s_desc
-        total_pagar += s_tot
-        posto_line = (
-            f'<div style="font-size:10px;color:#777">{posto}</div>' if posto else ""
-        )
-        rows_html += f"""<tr>
-          <td style="text-align:center;color:#666">{i}</td>
+    idx = 1
+    for eid in sorted(list(empresa_ids), key=lambda x: (empresas.get(x).nome.lower() if empresas.get(x) else 'zzzz')):
+        emp_nome = empresas.get(eid).nome if eid and empresas.get(eid) else 'Sem empresa'
+        # cabeçalho da empresa
+        rows_html += f"""<tr><td colspan=8 style=\"background:#f0f4f8;padding:8px 10px;font-weight:700\">Empresa: {emp_nome}</td></tr>"""
+        group_base = group_adic = group_desc = group_tot = 0.0
+        for it in [it for it in itens_all if (funcs.get(it.funcionario_id).empresa_id if funcs.get(it.funcionario_id) else None) == eid]:
+            func = funcs.get(it.funcionario_id)
+            nome = (func.nome or "") if func else ""
+            re = (func.re or func.matricula or "") if func else ""
+            cargo = (func.cargo or "") if func else ""
+            posto = (func.posto_operacional or "") if func else ""
+            s_base = float(it.salario_base or 0)
+            s_adic = float(it.total_adicional or 0)
+            s_desc = float(it.total_desconto or 0)
+            s_tot = float(it.total_pagar or 0)
+            total_base += s_base
+            total_adic += s_adic
+            total_desc += s_desc
+            total_pagar += s_tot
+            group_base += s_base
+            group_adic += s_adic
+            group_desc += s_desc
+            group_tot += s_tot
+            posto_line = f'<div style="font-size:10px;color:#777">{posto}</div>' if posto else ""
+            rows_html += f"""<tr>
+          <td style=\"text-align:center;color:#666\">{idx}</td>
           <td>{re}</td>
           <td><b>{nome}</b>{posto_line}</td>
           <td>{cargo}</td>
-          <td style="text-align:right">{brl(s_base)}</td>
-          <td style="text-align:right;color:#1a7a3a">{brl(s_adic)}</td>
-          <td style="text-align:right;color:#c0392b">{brl(s_desc)}</td>
-          <td style="text-align:right;font-weight:700;border-left:2px solid #1f4e78">{brl(s_tot)}</td>
+          <td style=\"text-align:right\">{brl(s_base)}</td>
+          <td style=\"text-align:right;color:#1a7a3a\">{brl(s_adic)}</td>
+          <td style=\"text-align:right;color:#c0392b\">{brl(s_desc)}</td>
+          <td style=\"text-align:right;font-weight:700;border-left:2px solid #1f4e78\">{brl(s_tot)}</td>
         </tr>"""
+            idx += 1
+        # subtotal da empresa
+        rows_html += f"""<tr><td colspan=4 style=\"text-align:right;font-weight:700\">SUBTOTAL ({emp_nome})</td><td style=\"text-align:right;font-weight:700\">{brl(group_base)}</td><td style=\"text-align:right;font-weight:700;color:#1a7a3a\">{brl(group_adic)}</td><td style=\"text-align:right;font-weight:700;color:#c0392b\">{brl(group_desc)}</td><td style=\"text-align:right;font-weight:800;border-left:2px solid #1f4e78\">{brl(group_tot)}</td></tr>"""
     status_colors = {
         "rascunho": ("#fff7e0", "#a06b00"),
         "fechada": ("#dde7ff", "#1e3aa6"),
@@ -27279,6 +31685,12 @@ def api_dashboard_ponto_dia():
 @lr
 @cache.cached(timeout=15, key_prefix="api_dashboard")
 def api_dashboard():
+    # BUG-FIX: usar localnow().date() para garantir fuso horário correto
+    # (America/Sao_Paulo). date.today() usava o relógio do sistema (UTC em
+    # produção), causando discrepâncias nos alertas próximos à meia-noite.
+    hoje = localnow().date()
+    mes = hoje.strftime("%Y-%m")
+
     ativos = Cliente.query.filter_by(status="Ativo").all()
     # sum revenue from Contrato table; fall back to Cliente fields for clients without contracts
     contratos_ativos = Contrato.query.filter_by(status="Ativo").all()
@@ -27301,14 +31713,14 @@ def api_dashboard():
     )
     receita = receita_contratos + receita_legado
     total_ativos = len(ativos)
-    mes = localnow().strftime("%Y-%m")
+    # BUG-FIX: query usa 'hoje' já calculado com o timezone correto
     try:
         medicoes_mes = Medicao.query.filter_by(mes_ref=mes).all()
         medicoes_validas = Medicao.query.filter(
             Medicao.status != "cancelada",
             Medicao.dt_vencimento.isnot(None),
             Medicao.dt_vencimento != "",
-            Medicao.dt_vencimento < date.today().isoformat(),
+            Medicao.dt_vencimento < hoje.isoformat(),
         ).all()
     except OperationalError as e:
         if not _is_missing_medicao_stamp_error(e):
@@ -27320,7 +31732,7 @@ def api_dashboard():
             Medicao.status != "cancelada",
             Medicao.dt_vencimento.isnot(None),
             Medicao.dt_vencimento != "",
-            Medicao.dt_vencimento < date.today().isoformat(),
+            Medicao.dt_vencimento < hoje.isoformat(),
         ).all()
     emitidos = {m.cliente_id for m in medicoes_mes if m.cliente_id}
     emps_all = {e.id: e for e in Empresa.query.all()}
@@ -27332,8 +31744,10 @@ def api_dashboard():
 
     inad_itens = []
     total_inadimplencia = 0.0
-    hoje = date.today()
     for m in medicoes_validas:
+        # BUG-FIX: medições pagas não são inadimplentes — pular status "paga"
+        if (m.status or "").lower() == "paga":
+            continue
         dt = (m.dt_vencimento or "").strip()
         if not dt:
             continue
@@ -27374,30 +31788,53 @@ def api_dashboard():
     ]
 
     def _parse_aso_validade(raw):
+        """Interpreta o campo competencia do ASO como DATA DE EMISSÃO e devolve
+        a data de VENCIMENTO (emissão + 1 ano). O campo competencia representa o
+        mês/ano em que o exame foi realizado, não a data de expiração."""
         s = (raw or "").strip()
         if not s:
             return None
+        # Formato dia completo (DD/MM/YYYY etc.) — trata como data de emissão
+        # e soma 1 ano para obter o vencimento.
         for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d.%m.%Y"):
             try:
-                return datetime.strptime(s, fmt).date()
+                emissao = datetime.strptime(s, fmt).date()
+                # +1 ano usando replace para preservar dia (exceto 29/02 → 28/02)
+                try:
+                    return emissao.replace(year=emissao.year + 1)
+                except ValueError:
+                    return emissao.replace(year=emissao.year + 1, day=28)
             except Exception:
                 pass
+        # Formato MM/AAAA — considera o último dia do mês de emissão, soma 1 ano
         m = re.match(r"^(\d{2})/(\d{4})$", s)
         if m:
             mm, yy = int(m.group(1)), int(m.group(2))
             if 1 <= mm <= 12:
+                # último dia do mês de emissão
                 prox = date(yy + 1, 1, 1) if mm == 12 else date(yy, mm + 1, 1)
-                return prox - timedelta(days=1)
+                emissao_fim = prox - timedelta(days=1)
+                # vencimento = mesmo mês/dia, 1 ano depois
+                try:
+                    return emissao_fim.replace(year=emissao_fim.year + 1)
+                except ValueError:
+                    return emissao_fim.replace(year=emissao_fim.year + 1, day=28)
+        # Formato AAAA-MM
         m = re.match(r"^(\d{4})-(\d{2})$", s)
         if m:
             yy, mm = int(m.group(1)), int(m.group(2))
             if 1 <= mm <= 12:
                 prox = date(yy + 1, 1, 1) if mm == 12 else date(yy, mm + 1, 1)
-                return prox - timedelta(days=1)
+                emissao_fim = prox - timedelta(days=1)
+                try:
+                    return emissao_fim.replace(year=emissao_fim.year + 1)
+                except ValueError:
+                    return emissao_fim.replace(year=emissao_fim.year + 1, day=28)
+        # Formato AAAA (só ano) — vencimento = último dia do ano seguinte
         m = re.match(r"^(19|20)\d{2}$", s)
         if m:
             yy = int(s)
-            return date(yy, 12, 31)
+            return date(yy + 1, 12, 31)
         return None
 
     limite = hoje + timedelta(days=30)
@@ -27666,18 +32103,26 @@ def api_dashboard():
             "correcoes_ponto_pendentes": PontoCorrecaoSolicitacao.query.filter_by(
                 status="pendente"
             ).count(),
+            # he_pendentes: placeholder — módulo de HE ainda não implementado
+            "he_pendentes": 0,
+            # alerta_certificados: placeholder — módulo de certificados ainda não implementado
+            "alerta_certificados": {"qtd": 0, "itens": []},
             "total_cli": Cliente.query.count(),
             "proximo_num": prox_num(),
-            "empresas": [
-                {
-                    "id": e.id,
-                    "nome": e.nome,
-                    "cli": Cliente.query.filter_by(
-                        empresa_id=e.id, status="Ativo"
-                    ).count(),
-                }
-                for e in Empresa.query.filter_by(ativa=True).all()
-            ],
+            # BUG-FIX: evitar N+1 queries — pré-calcular contagem com uma só query
+            "empresas": (lambda: (
+                lambda emps_ativas, cli_counts: [
+                    {"id": e.id, "nome": e.nome, "cli": cli_counts.get(e.id, 0)}
+                    for e in emps_ativas
+                ]
+            )(
+                Empresa.query.filter_by(ativa=True).all(),
+                dict(
+                    db.session.query(
+                        Cliente.empresa_id, db.func.count(Cliente.id)
+                    ).filter_by(status="Ativo").group_by(Cliente.empresa_id).all()
+                ),
+            ))(),
         }
     )
 
@@ -28115,6 +32560,7 @@ def _build_pdf(d):
     eboleto = emp.get("boleto", "")
     cname = d.get("cliente_nome", "")
     ccnpj = d.get("cliente_cnpj", "")
+    ccnpj_fmt = _filter_fmt_cnpj(ccnpj) if (ccnpj or "").strip() else ""
     cend = d.get("cliente_end", "")
     cresp = d.get("cliente_resp", "")
     obs = d.get("observacoes", "")
@@ -28365,7 +32811,7 @@ def _build_pdf(d):
     flat = []
     for row in [
         [campo("Cliente:", cname), campo("Mês ref.:", fmt_mes(mes))],
-        [campo("CNPJ/CPF:", ccnpj), campo("Emissão:", fmt_data(dtem))],
+        [campo("CNPJ/CPF:", ccnpj_fmt or ccnpj), campo("Emissão:", fmt_data(dtem))],
         [campo("Endereço:", cend), campo("Vencimento:", fmt_data(dtvenc))],
         [campo("Responsável:", cresp), campo("Empresa prestadora:", enome)],
     ]:
@@ -29015,6 +33461,7 @@ def _build_pdf(d):
 
 
 @app.route("/api/rh/holerites/processar", methods=["POST"])
+@_limiter.limit("10 per minute; 30 per hour")
 @lr
 def api_rh_holerites_processar():
     fs = request.files.get("arquivo")
@@ -29058,6 +33505,8 @@ def api_rh_holerites_processar():
                 "erro": "PDF invalido ou corrompido. Gere/exporte o arquivo novamente e tente de novo."
             }
         ), 400
+    if len(reader.pages) > 300:
+        return jsonify({"erro": "PDF com mais de 300 páginas não é suportado."}), 400
 
     def _norm_comp(v):
         return "".join(ch for ch in (v or "") if ch.isalnum()).lower()
@@ -29192,6 +33641,7 @@ def api_rh_holerites_processar():
         )
     db.session.commit()
     job_id = secrets.token_hex(16)
+    _holerite_jobs_cleanup()
     _holerite_jobs[job_id] = {
         "id": job_id,
         "status": "pronto",
@@ -29200,6 +33650,7 @@ def api_rh_holerites_processar():
         "sem_match": sem_match,
         "competencia": comp,
         "criado_em": utcnow().isoformat(),
+        "criado_por_uid": session.get("uid"),
     }
     itens_resp = [{k: v for k, v in it.items() if k != "abs_caminho"} for it in itens]
     return jsonify(
@@ -29221,6 +33672,8 @@ def api_rh_holerites_job(job_id):
     job = _holerite_jobs.get(job_id)
     if not job:
         return jsonify({"erro": "Job nao encontrado"}), 404
+    if job.get("criado_por_uid") is not None and job.get("criado_por_uid") != session.get("uid"):
+        return jsonify({"erro": "Acesso negado a este job."}), 403
     out = dict(job)
     out["itens"] = [
         {k: v for k, v in it.items() if k != "abs_caminho"}
@@ -29235,6 +33688,8 @@ def api_rh_holerites_enviar(job_id):
     job = _holerite_jobs.get(job_id)
     if not job:
         return jsonify({"erro": "Job nao encontrado. Processe o PDF novamente."}), 404
+    if job.get("criado_por_uid") is not None and job.get("criado_por_uid") != session.get("uid"):
+        return jsonify({"erro": "Acesso negado a este job."}), 403
     d = request.json or {}
     canal = d.get("canal", "email")
     incluir_folha_ponto = bool(d.get("incluir_folha_ponto", False))
@@ -29923,45 +34378,74 @@ def webhook_whatsapp():
     try:
         evento = (data.get("event") or "").lower()
         diag["evento"] = evento
-        raw = data.get("data", {})
+        raw = data.get("data")
+        if raw is None:
+            raw = data
         is_message_payload = False
         if isinstance(raw, dict):
             is_message_payload = bool(
-                raw.get("message") or raw.get("body") or raw.get("text")
+                raw.get("message")
+                or raw.get("messages")
+                or raw.get("body")
+                or raw.get("text")
             )
         elif isinstance(raw, list):
             for _m in raw:
                 if isinstance(_m, dict) and (
-                    _m.get("message") or _m.get("body") or _m.get("text")
+                    _m.get("message")
+                    or _m.get("messages")
+                    or _m.get("body")
+                    or _m.get("text")
                 ):
                     is_message_payload = True
                     break
         if "message" in evento or "upsert" in evento or is_message_payload:
-            msgs = (
-                [raw]
-                if isinstance(raw, dict)
-                else (raw if isinstance(raw, list) else [])
-            )
+            if isinstance(raw, dict):
+                if isinstance(raw.get("messages"), list):
+                    msgs = raw.get("messages") or []
+                elif isinstance(raw.get("message"), list):
+                    msgs = raw.get("message") or []
+                else:
+                    msgs = [raw]
+            elif isinstance(raw, list):
+                msgs = raw
+            else:
+                msgs = []
             diag["mensagens_recebidas"] = len(msgs)
             for msg_data in msgs:
-                if bool(msg_data.get("key", {}).get("fromMe")) or bool(
+                key_obj = msg_data.get("key", {})
+                if not isinstance(key_obj, dict):
+                    key_obj = {}
+                if bool(key_obj.get("fromMe")) or bool(
                     msg_data.get("fromMe")
                 ):
                     continue
                 jid = (
-                    msg_data.get("key", {}).get("remoteJid")
+                    key_obj.get("remoteJid")
+                    or msg_data.get("remoteJid")
+                    or msg_data.get("chatId")
+                    or msg_data.get("jid")
                     or msg_data.get("sender")
                     or msg_data.get("from")
                     or ""
                 )
-                if not jid.endswith("@s.whatsapp.net"):
+                if isinstance(jid, dict):
+                    jid = (
+                        jid.get("id")
+                        or jid.get("jid")
+                        or jid.get("phone")
+                        or jid.get("number")
+                        or ""
+                    )
+                jid = str(jid or "")
+                if "@g.us" in jid or "status@broadcast" in jid:
                     continue
-                numero = jid.split("@")[0] if jid else ""
+                numero = only_digits(jid) or (jid.split("@")[0] if jid else "")
                 if not numero:
                     continue
-                numero = only_digits(numero) or numero
+                numero = wa_norm_number(numero)
                 if not wa_is_valid_number(numero):
-                    diag["erros"].append(f"Numero invalido no webhook: {numero}")
+                    diag["erros"].append(f"Numero invalido no webhook: {numero or jid}")
                     continue
 
                 msg_obj = (
@@ -30881,6 +35365,8 @@ with app.app_context():
             'tipo VARCHAR(20) DEFAULT "mensal"',
             "email_enviado_em DATETIME",
             "whatsapp_enviado_em DATETIME",
+            "escopo_observacoes TEXT",
+            'insalubridade VARCHAR(80) DEFAULT "20% Insalubridade"',
         ],
     )
     # Cria tabela contrato se não existir (ensure_cols não cria tabelas novas)
@@ -30955,6 +35441,12 @@ with app.app_context():
             "app_stepup_tentativas INTEGER DEFAULT 0",
             "app_stepup_arquivo_id INTEGER",
             "app_push_token VARCHAR(300)",
+            "app_versao_nome VARCHAR(40)",
+            "app_versao_code INTEGER",
+            "app_versao_atualizado_em DATETIME",
+            "app_versao_desatualizada BOOLEAN DEFAULT 0",
+            "app_versao_notificado_em DATETIME",
+            "app_versao_notificado_code INTEGER",
             "app_lat FLOAT",
             "app_lon FLOAT",
             "app_localizacao_em DATETIME",
@@ -30987,6 +35479,7 @@ with app.app_context():
         [
             "posto_operacional VARCHAR(150)",
             "url VARCHAR(2000)",
+            "empresa_id INTEGER",
         ],
     )
     ensure_cols(
@@ -31086,6 +35579,7 @@ with app.app_context():
         "funcionario",
         [
             "jornada_id INTEGER",
+            "jornada_id_retorno INTEGER",
         ],
     )
     ensure_cols(
@@ -31236,24 +35730,73 @@ with app.app_context():
     ensure_cols(
         "ordem_compra",
         [
+            'tipo_documento VARCHAR(30) DEFAULT "ordem_compra"',
             "empresa_id INTEGER",
             "solicitante VARCHAR(200)",
             "fornecedor VARCHAR(200)",
+            "fornecedor_cnpj VARCHAR(20)",
+            "fornecedor_endereco VARCHAR(500)",
+            "fornecedor_email VARCHAR(150)",
+            "fornecedor_telefone VARCHAR(30)",
+            "pedido_email VARCHAR(150)",
+            "itens TEXT DEFAULT '[]'",
             "descricao TEXT",
             "valor REAL DEFAULT 0",
             'status VARCHAR(50) DEFAULT "Aberta"',
+            "decisao_por VARCHAR(100)",
+            "decisao_em DATETIME",
+            "decisao_motivo TEXT",
             "data_emissao VARCHAR(10)",
             "criado_por VARCHAR(100)",
             "criado_em DATETIME",
             "ass_assinatura_img TEXT",
         ],
     )
+    try:
+        db.session.execute(text("SELECT 1 FROM ordem_compra_item_catalogo LIMIT 1"))
+    except Exception:
+        db.create_all()
+    ensure_cols(
+        "ordem_compra_item_catalogo",
+        [
+            "nome VARCHAR(200)",
+            "unidade VARCHAR(40)",
+            "descricao VARCHAR(400)",
+            "ativo BOOLEAN DEFAULT 1",
+            "criado_por VARCHAR(100)",
+            "criado_em DATETIME",
+            "atualizado_em DATETIME",
+        ],
+    )
     ensure_cols(
         "mensagem_app",
         [
             'tipo VARCHAR(20) DEFAULT "texto"',
+            "documento_tipo VARCHAR(80)",
             "arquivo_nome VARCHAR(300)",
             "arquivo_caminho VARCHAR(500)",
+        ],
+    )
+    # Migração: tabela de afastamentos/atestados
+    try:
+        db.session.execute(text("SELECT 1 FROM ponto_afastamento LIMIT 1"))
+    except Exception:
+        db.create_all()
+    ensure_cols(
+        "ponto_afastamento",
+        [
+            "empresa_id INTEGER",
+            'tipo VARCHAR(40) DEFAULT "atestado"',
+            "observacao TEXT",
+            "criado_por VARCHAR(100)",
+            "criado_em DATETIME",
+        ],
+    )
+    ensure_cols(
+        "feriado",
+        [
+            "estado VARCHAR(2)",
+            "posto_operacional VARCHAR(150)",
         ],
     )
     # Índices compostos para performance de queries frequentes
@@ -31459,13 +36002,12 @@ threading.Thread(target=_auto_backup_loop, daemon=True, name="auto-backup").star
 
 def _lembrete_assinatura_loop():
     """Envia lembretes automáticos para documentos pendentes de assinatura.
-    Intervalo configurável via env LEMBRETE_ASSINATURA_INTERVALO_HORAS (padrão: 8h).
-    Usa o canal original de cada documento (whatsapp / email / app / link)."""
-    # Garantimos ao menos 8h entre lembretes automáticos para evitar excesso de mensagens.
+    Folhas de ponto pendentes recebem push no aplicativo a cada hora; os demais
+    documentos preservam o intervalo configurável e canal original."""
     intervalo_horas = max(
         8, min(168, _to_int(os.environ.get("LEMBRETE_ASSINATURA_INTERVALO_HORAS"), 8))
     )
-    intervalo_seg = intervalo_horas * 3600
+    intervalo_seg = 3600
 
     def _canal_padrao(a):
         ch = (a.ass_canal_envio or "").strip().lower()
@@ -31496,19 +36038,21 @@ def _lembrete_assinatura_loop():
                 for a in pendentes:
                     if not a.criado_em:
                         continue
+                    eh_folha_ponto = norm_cat(a.categoria) == "folha_ponto"
+                    intervalo_atual = 1 if eh_folha_ponto else intervalo_horas
                     # Só envia se nenhum lembrete foi enviado ainda OU
                     # se já passaram intervalo_horas desde o último lembrete
                     ultimo = a.ass_ultimo_lembrete_em
                     if ultimo is not None:
                         horas_desde = (agora - ultimo).total_seconds() / 3600
-                        if horas_desde < intervalo_horas:
+                        if horas_desde < intervalo_atual:
                             continue
                     else:
-                        # Primeiro lembrete: aguarda ao menos intervalo_horas após criação
+                        # Primeiro lembrete: aguarda ao menos o intervalo aplicável após criação.
                         horas_desde_criacao = (
                             agora - a.criado_em
                         ).total_seconds() / 3600
-                        if horas_desde_criacao < intervalo_horas:
+                        if horas_desde_criacao < intervalo_atual:
                             continue
                     try:
                         if a.funcionario_id not in func_cache:
@@ -31519,7 +36063,7 @@ def _lembrete_assinatura_loop():
                         f = func_cache[a.funcionario_id]
                         if not f:
                             continue
-                        canal = _canal_padrao(a)
+                        canal = "app" if eh_folha_ponto else _canal_padrao(a)
                         rs = _solicitar_assinatura_arquivo_funcionario(
                             a,
                             f,
@@ -31530,7 +36074,12 @@ def _lembrete_assinatura_loop():
                         )
                         a.ass_lembretes_enviados = (a.ass_lembretes_enviados or 0) + 1
                         a.ass_ultimo_lembrete_em = agora
-                        db.session.commit()
+                        _db_commit_retry(
+                            "lembrete_assinatura",
+                            attempts=2,
+                            base_delay=0.2,
+                            swallow_locked=True,
+                        )
                         app.logger.info(
                             f"[lembrete-auto] funcionario={a.funcionario_id} arquivo={a.id} "
                             f"canal={canal} ok={rs.get('ok')}"
@@ -31538,11 +36087,19 @@ def _lembrete_assinatura_loop():
                     except Exception as ex:
                         app.logger.error(f"[lembrete-auto] arquivo={a.id} erro={ex}")
                         try:
+                            db.session.rollback()
+                        except Exception:
+                            pass
+                        try:
                             db.session.remove()  # descarta sessão corrompida; próxima iteração cria nova
                         except Exception:
                             pass
         except Exception as e:
             app.logger.error(f"[lembrete-assinatura] erro geral: {e}")
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
             try:
                 db.session.remove()  # sessão pode estar em rolled-back; remove para garantir sessão limpa
             except Exception:
