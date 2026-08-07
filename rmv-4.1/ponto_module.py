@@ -689,6 +689,16 @@ def register_ponto_routes(
         except Exception:
             return str(dt)
 
+    def _fmt_data_ref_csv(data_ref):
+        if not data_ref:
+            return ""
+        try:
+            if hasattr(data_ref, "strftime"):
+                return data_ref.strftime("%Y-%m-%d")
+            return str(data_ref)
+        except Exception:
+            return str(data_ref)
+
     def _auditoria_row_from_marcacao(marcacao, funcionario, data_ref_efetiva):
         item = _serializar_marcacao_auditoria(marcacao)
         dev = _parse_marcacao_device_info(marcacao)
@@ -728,7 +738,7 @@ def register_ponto_routes(
             "funcionario_nome": funcionario.nome,
             "funcionario_matricula": getattr(funcionario, "matricula", "") or "",
             "empresa_id": getattr(funcionario, "empresa_id", "") or "",
-            "data_ref": getattr(ajuste, "data_ref", "") or "",
+            "data_ref": _fmt_data_ref_csv(getattr(ajuste, "data_ref", "") or ""),
             "data_hora": _fmt_data_hora_csv(getattr(ajuste, "criado_em", None)),
             "tipo": "ajuste",
             "origem": "admin",
@@ -755,7 +765,7 @@ def register_ponto_routes(
             "funcionario_nome": funcionario.nome,
             "funcionario_matricula": getattr(funcionario, "matricula", "") or "",
             "empresa_id": getattr(funcionario, "empresa_id", "") or "",
-            "data_ref": getattr(correcao, "data_ref", "") or "",
+            "data_ref": _fmt_data_ref_csv(getattr(correcao, "data_ref", "") or ""),
             "data_hora": _fmt_data_hora_csv(getattr(correcao, "criado_em", None)),
             "tipo": getattr(correcao, "tipo_problema", "") or "",
             "origem": "app",
@@ -1657,7 +1667,13 @@ def register_ponto_routes(
                 continue
             linhas.append(_auditoria_row_from_correcao(c, f))
 
-        linhas.sort(key=lambda x: (x.get("data_ref") or "", x.get("data_hora") or "", x.get("tipo_registro") or ""))
+        linhas.sort(
+            key=lambda x: (
+                str(x.get("data_ref") or ""),
+                str(x.get("data_hora") or ""),
+                str(x.get("tipo_registro") or ""),
+            )
+        )
 
         if formato == "csv":
             campos = [
