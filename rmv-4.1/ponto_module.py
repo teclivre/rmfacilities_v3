@@ -1635,37 +1635,54 @@ def register_ponto_routes(
                 app.logger.warning("[auditoria-relatorio] correcoes indisponiveis: %s", ex)
                 avisos.append("Solicitacoes de correcao indisponiveis neste ambiente.")
 
-        fids = sorted({int(x) for x in fids if x})
+        fids_norm = []
+        for _fid in fids:
+            _fid_num = to_num(_fid)
+            if _fid_num:
+                fids_norm.append(_fid_num)
+        fids = sorted(set(fids_norm))
         funcionarios = Funcionario.query.filter(Funcionario.id.in_(fids)).all() if fids else []
         func_map = {f.id: f for f in funcionarios}
 
         linhas = []
         for m in marcacoes:
-            f = func_map.get(m.funcionario_id)
-            if not f:
+            try:
+                f = func_map.get(m.funcionario_id)
+                if not f:
+                    continue
+                if empresa_id_logada and f.empresa_id and int(f.empresa_id) != int(empresa_id_logada):
+                    continue
+                data_ref_ef = _ponto_data_ref_efetiva(f, m.data_hora) if m.data_hora else None
+                if not data_ref_ef or data_ref_ef < data_inicio or data_ref_ef > data_fim:
+                    continue
+                linhas.append(_auditoria_row_from_marcacao(m, f, data_ref_ef))
+            except Exception as ex:
+                app.logger.warning("[auditoria-relatorio] falha em marcacao id=%s: %s", getattr(m, "id", None), ex)
                 continue
-            if empresa_id_logada and f.empresa_id and int(f.empresa_id) != int(empresa_id_logada):
-                continue
-            data_ref_ef = _ponto_data_ref_efetiva(f, m.data_hora) if m.data_hora else None
-            if not data_ref_ef or data_ref_ef < data_inicio or data_ref_ef > data_fim:
-                continue
-            linhas.append(_auditoria_row_from_marcacao(m, f, data_ref_ef))
 
         for a in ajustes:
-            f = func_map.get(a.funcionario_id)
-            if not f:
+            try:
+                f = func_map.get(a.funcionario_id)
+                if not f:
+                    continue
+                if empresa_id_logada and f.empresa_id and int(f.empresa_id) != int(empresa_id_logada):
+                    continue
+                linhas.append(_auditoria_row_from_ajuste(a, f))
+            except Exception as ex:
+                app.logger.warning("[auditoria-relatorio] falha em ajuste id=%s: %s", getattr(a, "id", None), ex)
                 continue
-            if empresa_id_logada and f.empresa_id and int(f.empresa_id) != int(empresa_id_logada):
-                continue
-            linhas.append(_auditoria_row_from_ajuste(a, f))
 
         for c in correcoes:
-            f = func_map.get(c.funcionario_id)
-            if not f:
+            try:
+                f = func_map.get(c.funcionario_id)
+                if not f:
+                    continue
+                if empresa_id_logada and f.empresa_id and int(f.empresa_id) != int(empresa_id_logada):
+                    continue
+                linhas.append(_auditoria_row_from_correcao(c, f))
+            except Exception as ex:
+                app.logger.warning("[auditoria-relatorio] falha em correcao id=%s: %s", getattr(c, "id", None), ex)
                 continue
-            if empresa_id_logada and f.empresa_id and int(f.empresa_id) != int(empresa_id_logada):
-                continue
-            linhas.append(_auditoria_row_from_correcao(c, f))
 
         linhas.sort(
             key=lambda x: (
@@ -1702,7 +1719,7 @@ def register_ponto_routes(
                 "detalhes",
             ]
             sio = io.StringIO()
-            writer = csv.DictWriter(sio, fieldnames=campos)
+            writer = csv.DictWriter(sio, fieldnames=campos, extrasaction="ignore", restval="")
             writer.writeheader()
             for row in linhas:
                 writer.writerow(row)
