@@ -5540,6 +5540,15 @@ function resetMainScroll(){
   }catch(_){ }
 }
 
+function resetPageScroll(pageId){
+  try{
+    const pg=document.getElementById('pg-'+pageId);
+    if(!pg) return;
+    pg.scrollTop=0;
+    pg.scrollLeft=0;
+  }catch(_){ }
+}
+
 function nav(id,el,force=false){
   // Restaurar sidebar ao sair da página de Assinaturas
   if(document.getElementById('pg-assinaturas')?.classList.contains('on') && id!=='assinaturas'){
@@ -5571,9 +5580,13 @@ function nav(id,el,force=false){
   document.getElementById('pg-'+targetId).classList.add('on');
   // Sempre resetar scroll ao trocar de página (imediato e pós-render)
   resetMainScroll();
+  resetPageScroll(targetId);
   requestAnimationFrame(resetMainScroll);
+  requestAnimationFrame(()=>resetPageScroll(targetId));
   setTimeout(resetMainScroll,60);
+  setTimeout(()=>resetPageScroll(targetId),60);
   if(targetId==='controle-ponto') setTimeout(resetMainScroll,180);
+  if(targetId==='controle-ponto') setTimeout(()=>resetPageScroll(targetId),180);
   ativarSubAbaPagina(targetId);
   if(el)el.classList.add('on');
   const navMobile=id;
