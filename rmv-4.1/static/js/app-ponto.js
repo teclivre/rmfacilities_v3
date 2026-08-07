@@ -127,6 +127,42 @@ function pontoAtivosFiltrados(){
   });
 }
 
+function pontoFmtGeo(m){
+  if(m?.geo_fmt) return escHtml(m.geo_fmt);
+  const lat=(m?.latitude!==undefined&&m?.latitude!==null&&m?.latitude!=='')?Number(m.latitude):null;
+  const lon=(m?.longitude!==undefined&&m?.longitude!==null&&m?.longitude!=='')?Number(m.longitude):null;
+  const prs=(m?.precisao_gps!==undefined&&m?.precisao_gps!==null&&m?.precisao_gps!=='')?Number(m.precisao_gps):null;
+  if(lat===null || lon===null || Number.isNaN(lat) || Number.isNaN(lon)) return 'Sem geolocalização';
+  const base=`${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+  if(prs===null || Number.isNaN(prs)) return escHtml(base);
+  return escHtml(`${base} (±${Math.round(Math.abs(prs))}m)`);
+}
+
+function pontoRenderAuditoriaDia(marcacoes){
+  const tb=document.getElementById('tb-ponto-auditoria-dia');
+  if(!tb) return;
+  const lista=Array.isArray(marcacoes)?marcacoes:[];
+  if(!lista.length){
+    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:14px;color:var(--text-muted)">Sem marcações para auditoria neste dia.</td></tr>';
+    return;
+  }
+  tb.innerHTML=lista.map(m=>{
+    const dataHora=m.data_hora_fmt||m.data_hora||'—';
+    const tipo=m.tipo_label||m.tipo||'—';
+    const origem=m.origem||'web';
+    const evid=(m.audit_hash||'').slice(0,16);
+    const ip=m.ip?` · IP ${escHtml(m.ip)}`:'';
+    const por=m.criado_por?` · por ${escHtml(m.criado_por)}`:'';
+    return `<tr>
+      <td style="font-weight:700">${escHtml(dataHora)}</td>
+      <td>${escHtml(tipo)}</td>
+      <td>${escHtml(origem)}${ip}${por}</td>
+      <td>${pontoFmtGeo(m)}</td>
+      <td style="font-family:monospace">${escHtml(evid||'—')}</td>
+    </tr>`;
+  }).join('');
+}
+
 function pontoRenderGestaoFuncionarios(){
   const box=document.getElementById('ponto-func-list');
   const qtd=document.getElementById('ponto-func-qtd');
@@ -205,6 +241,7 @@ function pontoPopularFuncionarios(){
   if(atual && elegiveis.some(f=>String(f.id)===atual)) sel.value=atual;
   if(!sel.value && elegiveis[0]) sel.value=String(elegiveis[0].id);
   pontoSelecionarFuncionario(sel.value,false);
+  pontoPopularFiltroGlobalFuncionarios();
 }
 
 async function pontoCarregarFechamentoDia(){
@@ -239,6 +276,7 @@ async function pontoCarregarDia(){
     tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text-muted)">Selecione um colaborador.</td></tr>';
     resumoEl.innerHTML='';
     pontoMarcacoesDiaAtual=[];
+    pontoRenderAuditoriaDia([]);
     if(proxEl) proxEl.textContent='Entrada';
     return;
   }
@@ -248,6 +286,7 @@ async function pontoCarregarDia(){
     tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text-muted)">Não foi possível carregar o ponto do dia.</td></tr>';
     resumoEl.innerHTML='';
     pontoMarcacoesDiaAtual=[];
+    pontoRenderAuditoriaDia([]);
     if(proxEl) proxEl.textContent='Entrada';
     return;
   }
@@ -278,6 +317,7 @@ async function pontoCarregarDia(){
   ${inc.length?`<div style="margin-top:8px;font-size:12px;color:#8a1c1c;background:#fff3f3;border:1px solid #f2c5c5;border-radius:8px;padding:8px">⚠ ${inc.join(' | ')}</div>`:''}`;
   const marc=s.marcacoes||[];
   pontoMarcacoesDiaAtual=marc;
+  pontoRenderAuditoriaDia(marc);
   if(!marc.length){
     tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text-muted)">Nenhuma marcação neste dia.</td></tr>';
     return;
@@ -293,6 +333,75 @@ async function pontoCarregarDia(){
     </td>
   </tr>`).join('');
   await pontoCarregarFechamentoDia();
+}
+
+function pontoGlobalSetPeriodo(dias){
+  const fim=document.getElementById('ponto-global-data-fim');
+  const ini=document.getElementById('ponto-global-data-ini');
+  if(!fim || !ini) return;
+  const base=(document.getElementById('ponto-data')?.value||pontoDataHojeISO());
+  const dtFim=new Date(`${base}T12:00:00`);
+  const dtIni=new Date(dtFim);
+  dtIni.setDate(dtIni.getDate()-Math.max(0,Number(dias||1)-1));
+  const fmt=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  fim.value=fmt(dtFim);
+  ini.value=fmt(dtIni);
+  pontoCarregarGlobal();
+}
+
+function pontoPopularFiltroGlobalFuncionarios(){
+  const sel=document.getElementById('ponto-global-funcionario');
+  if(!sel) return;
+  const atual=String(sel.value||'');
+  const elegiveis=_pontoFuncionariosElegiveis();
+  sel.innerHTML='<option value="">Todos os colaboradores</option>'+elegiveis.map(f=>`<option value="${f.id}">${escHtml(f.nome||'')} ${f.matricula?`· Mat ${escHtml(String(f.matricula))}`:''}</option>`).join('');
+  if(atual && elegiveis.some(f=>String(f.id)===atual)) sel.value=atual;
+}
+
+async function pontoCarregarGlobal(){
+  const tb=document.getElementById('tb-ponto-global');
+  if(!tb) return;
+  const iniEl=document.getElementById('ponto-global-data-ini');
+  const fimEl=document.getElementById('ponto-global-data-fim');
+  const funcEl=document.getElementById('ponto-global-funcionario');
+  if(iniEl && !iniEl.value) iniEl.value=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
+  if(fimEl && !fimEl.value) fimEl.value=document.getElementById('ponto-data')?.value||pontoDataHojeISO();
+  const dataIni=(iniEl?.value||'').trim();
+  const dataFim=(fimEl?.value||'').trim();
+  const funcId=(funcEl?.value||'').trim();
+  if(!dataIni || !dataFim){
+    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:16px;color:var(--text-muted)">Defina o período para listar os pontos globais.</td></tr>';
+    return;
+  }
+  const q=new URLSearchParams({data_inicio:dataIni,data_fim:dataFim,limite:'5000'});
+  if(funcId) q.set('funcionario_id',funcId);
+  const r=await api('/api/ponto/marcacoes-global?'+q.toString());
+  if(r?.erro){
+    showSt('ponto-global-st',r.erro,true);
+    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:16px;color:var(--text-muted)">Não foi possível carregar os pontos globais.</td></tr>';
+    return;
+  }
+  const itens=Array.isArray(r?.itens)?r.itens:[];
+  showSt('ponto-global-st',`Registros encontrados: ${itens.length}.`,false);
+  if(!itens.length){
+    tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:16px;color:var(--text-muted)">Nenhuma marcação no período selecionado.</td></tr>';
+    return;
+  }
+  tb.innerHTML=itens.map(m=>{
+    const dataRef=m.data_ref_efetiva||'—';
+    const dataHora=m.data_hora_fmt||m.data_hora||'—';
+    const funcNome=[m.funcionario_nome||'—',m.funcionario_matricula?`Mat ${m.funcionario_matricula}`:''].filter(Boolean).join(' · ');
+    const evid=(m.audit_hash||'').slice(0,16);
+    return `<tr>
+      <td>${escHtml(dataRef)}</td>
+      <td style="font-weight:700">${escHtml(dataHora)}</td>
+      <td>${escHtml(funcNome)}</td>
+      <td>${escHtml(m.tipo_label||m.tipo||'—')}</td>
+      <td>${escHtml(m.origem||'web')}</td>
+      <td>${pontoFmtGeo(m)}</td>
+      <td style="font-family:monospace">${escHtml(evid||'—')}</td>
+    </tr>`;
+  }).join('');
 }
 
 async function pontoEditarMarcacao(marcacaoId){

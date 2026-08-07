@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+import hashlib
 import io
 import json
 import os
@@ -562,6 +563,72 @@ def register_ponto_routes(
         minutos = abs(minutos)
         return f"{sinal}{minutos // 60:02d}:{minutos % 60:02d}"
 
+    def _safe_float(valor):
+        if valor in (None, ""):
+            return None
+        try:
+            return float(valor)
+        except Exception:
+            return None
+
+    def _fmt_geo(lat, lon, precisao):
+        if lat is None or lon is None:
+            return "Sem geolocalizacao"
+        base = f"{lat:.6f}, {lon:.6f}"
+        if precisao is None:
+            return base
+        return f"{base} (±{int(round(abs(precisao)))}m)"
+
+    def _audit_hash_marcacao(marcacao):
+        dt_txt = ""
+        if getattr(marcacao, "data_hora", None):
+            dt_txt = marcacao.data_hora.strftime("%Y-%m-%d %H:%M:%S")
+        payload = "|".join(
+            [
+                str(getattr(marcacao, "id", "") or ""),
+                str(getattr(marcacao, "funcionario_id", "") or ""),
+                str(getattr(marcacao, "tipo", "") or ""),
+                dt_txt,
+                str(getattr(marcacao, "origem", "") or ""),
+                str(getattr(marcacao, "ip", "") or ""),
+                str(getattr(marcacao, "latitude", "") or ""),
+                str(getattr(marcacao, "longitude", "") or ""),
+                str(getattr(marcacao, "precisao_gps", "") or ""),
+            ]
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def _serializar_marcacao_auditoria(marcacao):
+        d = marcacao.to_dict()
+        dt = getattr(marcacao, "data_hora", None)
+        tipo_norm = str(getattr(marcacao, "tipo", "") or "").strip().lower()
+        lat = _safe_float(getattr(marcacao, "latitude", None))
+        lon = _safe_float(getattr(marcacao, "longitude", None))
+        precisao = _safe_float(getattr(marcacao, "precisao_gps", None))
+        d["tipo_label"] = _ponto_label(tipo_norm)
+        d["hora_fmt"] = dt.strftime("%H:%M") if dt else ""
+        d["data_hora_fmt"] = dt.strftime("%d/%m/%Y %H:%M:%S") if dt else ""
+        d["tem_geolocalizacao"] = lat is not None and lon is not None
+        d["geo_fmt"] = _fmt_geo(lat, lon, precisao)
+        d["audit_hash"] = _audit_hash_marcacao(marcacao)
+        return d
+
+    def _empresa_id_usuario_logado():
+        uid = session.get("uid")
+        perfil = (session.get("perfil") or "").strip().lower()
+        if perfil == "dono" or not uid:
+            return None
+        try:
+            from sqlalchemy import text as _sql_text_empresa
+
+            row = db.session.execute(
+                _sql_text_empresa("SELECT empresa_id FROM usuario WHERE id = :uid"),
+                {"uid": int(uid)},
+            ).first()
+            return int(row[0]) if row and row[0] else None
+        except Exception:
+            return None
+
     def _ponto_marcacoes_dia(funcionario_id, data_ref):
         try:
             funcionario = db.session.get(Funcionario, funcionario_id)
@@ -929,7 +996,7 @@ def register_ponto_routes(
             "funcionario_id": funcionario.id,
             "funcionario_nome": funcionario.nome,
             "data_ref": data_ref.strftime("%Y-%m-%d"),
-            "marcacoes": [marcacao.to_dict() for marcacao in marcacoes],
+            "marcacoes": [_serializar_marcacao_auditoria(marcacao) for marcacao in marcacoes],
             "proximo_tipo": _ponto_tipo_esperado(marcacoes),
             "proximo_tipo_label": _ponto_label(_ponto_tipo_esperado(marcacoes)),
             "horas_trabalhadas_min": minutos_trabalhados,
@@ -1179,6 +1246,17 @@ def register_ponto_routes(
         if origem not in ("web", "admin", "importacao"):
             origem = "web"
         observacao = (dados.get("observacao") or "").strip()[:500]
+        latitude = _safe_float(dados.get("latitude", dados.get("lat")))
+        longitude = _safe_float(dados.get("longitude", dados.get("lon")))
+        precisao_gps = _safe_float(
+            dados.get("precisao_gps", dados.get("precisao", dados.get("accuracy")))
+        )
+        if latitude is not None and not (-90 <= latitude <= 90):
+            return jsonify({"erro": "Latitude inválida."}), 400
+        if longitude is not None and not (-180 <= longitude <= 180):
+            return jsonify({"erro": "Longitude inválida."}), 400
+        if precisao_gps is not None and precisao_gps < 0:
+            precisao_gps = abs(precisao_gps)
         ip = (
             (request.headers.get("X-Forwarded-For", "") or request.remote_addr or "")
             .split(",")[0]
@@ -1192,6 +1270,9 @@ def register_ponto_routes(
             observacao=observacao,
             criado_por=session.get("nome", ""),
             ip=ip,
+            latitude=latitude,
+            longitude=longitude,
+            precisao_gps=precisao_gps,
         )
         db.session.add(marcacao)
         db.session.commit()
@@ -1202,7 +1283,14 @@ def register_ponto_routes(
             "funcionario",
             funcionario.id,
             True,
-            {"tipo": tipo, "data_ref": data_ref.strftime("%Y-%m-%d"), "origem": origem},
+            {
+                "tipo": tipo,
+                "data_ref": data_ref.strftime("%Y-%m-%d"),
+                "origem": origem,
+                "ip": ip,
+                "geo": _fmt_geo(latitude, longitude, precisao_gps),
+                "audit_hash": _audit_hash_marcacao(marcacao),
+            },
         )
         return jsonify(
             {
@@ -1231,6 +1319,88 @@ def register_ponto_routes(
                 funcionario, data_ref,
                 _feriados=_feriados_para_data(data_ref, funcionario),
             )}
+        )
+
+    @app.route("/api/ponto/marcacoes-global")
+    @lr
+    def api_ponto_marcacoes_global():
+        data_inicio = _ponto_parse_data_ref(
+            request.args.get("data_inicio") or request.args.get("data")
+        )
+        data_fim = _ponto_parse_data_ref(request.args.get("data_fim") or data_inicio)
+        if data_fim < data_inicio:
+            return jsonify({"erro": "data_fim não pode ser anterior a data_inicio."}), 400
+        if (data_fim - data_inicio).days > 93:
+            return jsonify({"erro": "Intervalo máximo permitido é de 93 dias."}), 400
+
+        funcionario_id = to_num(request.args.get("funcionario_id"))
+        limite = to_num(request.args.get("limite")) or 2000
+        limite = max(100, min(int(limite), 5000))
+
+        empresa_id_logada = _empresa_id_usuario_logado()
+        inicio_dt = datetime.combine(data_inicio, datetime.min.time()) - timedelta(hours=3)
+        fim_dt = datetime.combine(data_fim + timedelta(days=1), datetime.min.time()) + timedelta(hours=33)
+
+        query = PontoMarcacao.query.filter(
+            PontoMarcacao.data_hora >= inicio_dt,
+            PontoMarcacao.data_hora < fim_dt,
+        )
+        if funcionario_id:
+            query = query.filter(PontoMarcacao.funcionario_id == funcionario_id)
+
+        marcacoes = (
+            query.order_by(PontoMarcacao.data_hora.desc(), PontoMarcacao.id.desc())
+            .limit(limite)
+            .all()
+        )
+        if not marcacoes:
+            return jsonify(
+                {
+                    "ok": True,
+                    "filtros": {
+                        "data_inicio": data_inicio.strftime("%Y-%m-%d"),
+                        "data_fim": data_fim.strftime("%Y-%m-%d"),
+                        "funcionario_id": funcionario_id,
+                    },
+                    "itens": [],
+                    "total": 0,
+                }
+            )
+
+        func_ids = sorted({m.funcionario_id for m in marcacoes if m.funcionario_id})
+        funcionarios = Funcionario.query.filter(Funcionario.id.in_(func_ids)).all() if func_ids else []
+        func_map = {f.id: f for f in funcionarios}
+
+        itens = []
+        for m in marcacoes:
+            f = func_map.get(m.funcionario_id)
+            if not f:
+                continue
+            if empresa_id_logada and f.empresa_id and int(f.empresa_id) != int(empresa_id_logada):
+                continue
+            data_ref_efetiva = _ponto_data_ref_efetiva(f, m.data_hora) if m.data_hora else None
+            if not data_ref_efetiva:
+                continue
+            if data_ref_efetiva < data_inicio or data_ref_efetiva > data_fim:
+                continue
+            item = _serializar_marcacao_auditoria(m)
+            item["funcionario_nome"] = f.nome
+            item["funcionario_matricula"] = getattr(f, "matricula", "")
+            item["empresa_id"] = f.empresa_id
+            item["data_ref_efetiva"] = data_ref_efetiva.strftime("%Y-%m-%d")
+            itens.append(item)
+
+        return jsonify(
+            {
+                "ok": True,
+                "filtros": {
+                    "data_inicio": data_inicio.strftime("%Y-%m-%d"),
+                    "data_fim": data_fim.strftime("%Y-%m-%d"),
+                    "funcionario_id": funcionario_id,
+                },
+                "itens": itens,
+                "total": len(itens),
+            }
         )
 
     def _ponto_esperado_source(funcionario, data_ref):
@@ -2037,6 +2207,9 @@ def register_ponto_routes(
                 observacao=observacao,
                 criado_por=session.get("nome", ""),
                 ip=ip,
+                latitude=_safe_float(dados.get("latitude", dados.get("lat"))),
+                longitude=_safe_float(dados.get("longitude", dados.get("lon"))),
+                precisao_gps=_safe_float(dados.get("precisao_gps", dados.get("precisao", dados.get("accuracy")))),
             )
             db.session.add(marcacao)
             db.session.flush()
