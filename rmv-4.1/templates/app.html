@@ -5561,7 +5561,8 @@ function nav(id,el,force=false){
 
   // Lógica padrão
   const targetId=id;
-  if(P!=='dono' && USER_AREAS.length && !USER_AREAS.includes(id) && id!=='dashboard' && !(id==='controle-ponto' && USER_AREAS.includes('rh'))){
+  const acessoDocumentosComercial = id==='documentos' && USER_AREAS.includes('clientes');
+  if(P!=='dono' && USER_AREAS.length && !USER_AREAS.includes(id) && id!=='dashboard' && !(id==='controle-ponto' && USER_AREAS.includes('rh')) && !acessoDocumentosComercial){
     alert('Seu usuário não tem acesso a esta área.');
     return;
   }
