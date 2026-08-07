@@ -1,0 +1,47 @@
+<div class="card">
+  <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <span class="card-title">Auditoria Jurídica de Ponto</span>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <button class="btn b-az b-sm" onclick="pontoBaixarRelatorioJuridico(false)">Baixar relatório jurídico (CSV)</button>
+      <button class="btn b-gh b-sm" onclick="pontoBaixarRelatorioJuridico(true)">Histórico completo do colaborador</button>
+      <button class="btn b-ghv b-sm" onclick="pontoCarregarGlobal()">Atualizar auditoria</button>
+    </div>
+  </div>
+
+  <div class="g4" style="margin-top:8px;align-items:flex-end">
+    <div class="f">
+      <label>Data inicial</label>
+      <input id="ponto-global-data-ini" type="date" onchange="pontoCarregarGlobal()">
+    </div>
+    <div class="f">
+      <label>Data final</label>
+      <input id="ponto-global-data-fim" type="date" onchange="pontoCarregarGlobal()">
+    </div>
+    <div class="f s2">
+      <label>Funcionário (opcional)</label>
+      <select id="ponto-global-funcionario" onchange="pontoCarregarGlobal()">
+        <option value="">Todos os colaboradores</option>
+      </select>
+    </div>
+    <div class="f">
+      <label>Período rápido</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn b-gh b-sm" onclick="pontoGlobalSetPeriodo(1)">Hoje</button>
+        <button class="btn b-gh b-sm" onclick="pontoGlobalSetPeriodo(7)">7 dias</button>
+        <button class="btn b-gh b-sm" onclick="pontoGlobalSetPeriodo(31)">31 dias</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="ponto-global-st" class="st" style="margin-top:10px"></div>
+  <div style="margin-top:6px;font-size:11px;color:var(--text-muted)">
+    CSV com filtros por data/período e funcionário. Inclui marcações, IP, geolocalização, hash de evidência, dados de dispositivo (quando enviados pelo app), ajustes do RH e solicitações de correção.
+  </div>
+
+  <div class="tbl-wrap" style="margin-top:8px">
+    <table class="tbl">
+      <thead><tr><th>Data ref.</th><th>Data/Hora batida</th><th>Colaborador</th><th>Tipo</th><th>Origem</th><th>Geolocalização</th><th>Evidência</th></tr></thead>
+      <tbody id="tb-ponto-global"></tbody>
+    </table>
+  </div>
+</div>

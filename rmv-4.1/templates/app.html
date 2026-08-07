@@ -670,6 +670,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </button>
         <div class="module-panel">
           <a class="nav-item lv2" onclick="nav('clientes',this)"><span class="nav-label">Clientes</span></a>
+          <a class="nav-item lv2" onclick="nav('documentos',this); setTimeout(()=>docsAbrirProposta(), 140)"><span class="nav-label">Propostas</span></a>
         </div>
       </div>
 
@@ -679,6 +680,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </button>
         <div class="module-panel">
           <a class="nav-item lv2" onclick="nav('rh',this)"><span class="nav-label">RH</span></a>
+          <a class="nav-item lv2" onclick="nav('controle-ponto',this)"><span class="nav-label">Controle de Ponto</span></a>
           <a class="nav-item lv2" onclick="nav('rh-digital',this)"><span class="nav-label">Comunicacao</span></a>
           <a class="nav-item lv2" onclick="nav('beneficios',this)"><span class="nav-label">Beneficios</span></a>
           <a class="nav-item lv2" data-nav="pagamento-salario" onclick="nav('pagamento-salario',this)"><span class="nav-label">Pagamento de Salário</span></a>
@@ -711,7 +713,23 @@ document.addEventListener('DOMContentLoaded',()=>{
     </div>
 
     <div class="sidebar-bottom">
-      <button class="btn-top" type="button" id="theme-toggle" onclick="toggleTheme()" title="Alternar tema">🌙 Claro</button>
+      <button class="btn-top" type="button" id="theme-toggle" onclick="toggleTheme()" title="Alternar tema">🌙 Dark</button>
+      <div style="position:relative">
+        <button class="btn-top" type="button" id="btn-notificacoes" onclick="togglePainelNotificacoes(event)" title="Notificações" aria-label="Notificações" style="position:relative;min-width:44px">
+          🔔
+          <span id="top-notif-badge" style="display:none;position:absolute;top:-6px;right:-6px;background:var(--verm);color:#fff;border-radius:10px;padding:0 6px;font-size:11px;line-height:18px;min-width:18px;text-align:center">0</span>
+        </button>
+        <div id="top-notif-panel" style="display:none;position:absolute;right:0;top:calc(100% + 8px);width:340px;max-width:calc(100vw - 24px);background:var(--branco);color:var(--preto);border:1px solid var(--borda);border-radius:10px;box-shadow:var(--shadow-md);z-index:9999;overflow:hidden">
+          <div style="padding:10px 12px;border-bottom:1px solid var(--borda);display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <strong style="font-size:13px">Notificações</strong>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+              <button class="btn b-gh b-sm" type="button" id="top-notif-readall" onclick="marcarTodasNotificacoesLidas()" style="padding:2px 8px;display:none">Marcar todas como lidas</button>
+              <button class="btn b-gh b-sm" type="button" onclick="atualizarSininhoNotificacoes()" style="padding:2px 8px">Atualizar</button>
+            </div>
+          </div>
+          <div id="top-notif-list" style="max-height:260px;overflow:auto;padding:8px 10px;font-size:12px;color:var(--text-muted)">Sem notificações no momento.</div>
+        </div>
+      </div>
       <div class="topbar-user">
         <div style="font-weight:700">{{ nome }}</div>
         <div id="relogio"></div>
@@ -940,6 +958,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-vd b-sm" type="button" id="fp-btn-fechar" onclick="fpFecharFolha()">✓ Fechar folha</button>
             <button class="btn b-gh b-sm" type="button" id="fp-btn-reabrir" style="display:none" onclick="fpReabrirFolha()">↺ Reabrir</button>
             <button class="btn b-vd b-sm" type="button" id="fp-btn-pagar" style="display:none" onclick="fpMarcarPaga()">💰 Marcar como paga</button>
+            <button class="btn b-ghv b-sm" type="button" onclick="fpNotificarPagamento()">🔔 Notificar pagamento</button>
             <button class="btn b-az b-sm" type="button" onclick="fpAbrirPrevia()">👁 Prévia</button>
             <button class="btn b-gh b-sm" type="button" onclick="fpExportar('xlsx')">⬇ XLSX</button>
             <button class="btn b-gh b-sm" type="button" onclick="fpExportar('pdf')">⬇ PDF</button>
@@ -1563,19 +1582,17 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-funcionarios" class="subaba-bloco on" onclick="rhSetSubAba('funcionarios',this)">Funcionários</button>
         <button type="button" id="rh-subtab-ferias-gestao" class="subaba-bloco" onclick="rhSetSubAba('ferias-gestao',this)">Gestão de Férias</button>
         <button type="button" id="rh-subtab-exportar" class="subaba-bloco" onclick="rhSetSubAba('exportar',this)">Exportar colaboradores ativos</button>
-        <button type="button" id="rh-subtab-jornada" class="subaba-bloco" onclick="rhSetSubAba('jornada',this)">Jornadas e Geofence</button>
         <button type="button" id="rh-subtab-escalas" class="subaba-bloco" onclick="rhSetSubAba('escalas',this)">Escalas de Turnos</button>
-        <button type="button" id="rh-subtab-ponto" class="subaba-bloco" onclick="rhSetSubAba('ponto',this)">Gestão de Ponto por Funcionário</button>
-        <button type="button" id="rh-subtab-painel-dia" class="subaba-bloco" onclick="rhSetSubAba('painel-dia',this)">Painel do dia</button>
-        <button type="button" id="rh-subtab-envio" class="subaba-bloco" onclick="rhSetSubAba('envio',this)">Envio de arquivo</button>
-        <button type="button" id="rh-subtab-assinaturas" class="subaba-bloco" onclick="rhSetSubAba('assinaturas',this)">Painel de Assinaturas</button>
-        <button type="button" id="rh-subtab-gestao-facil" class="subaba-bloco" onclick="rhSetSubAba('gestao-facil',this);gfCarregar()">⚡ Gestão Fácil</button>
+        <button type="button" id="rh-subtab-feriados" class="subaba-bloco" onclick="rhSetSubAba('feriados',this)">Calendário de Feriados</button>
+        <button type="button" id="rh-subtab-envio" class="subaba-bloco" onclick="rhSetSubAba('envio',this)">Envio em massa de documentos</button>
+        <button type="button" id="rh-subtab-auditoria-ponto" class="subaba-bloco" onclick="rhSetSubAba('auditoria-ponto',this)">Auditoria de Ponto</button>
         <button type="button" id="rh-subtab-ficha-epi" class="subaba-bloco" onclick="rhSetSubAba('ficha-epi',this)">🦺 Ficha de EPI</button>
         <button type="button" id="rh-subtab-req-vt" class="subaba-bloco" onclick="rhSetSubAba('req-vt',this)">🚌 Requisição VT</button>
         <button type="button" id="rh-subtab-uniforme" class="subaba-bloco" onclick="rhSetSubAba('uniforme',this)">👕 Termo Uniforme</button>
         <button type="button" id="rh-subtab-decl-acumulo" class="subaba-bloco" onclick="rhSetSubAba('decl-acumulo',this)">📋 Decl. Acúmulo</button>
         <button type="button" id="rh-subtab-advertencia" class="subaba-bloco" onclick="rhSetSubAba('advertencia',this)">⚠️ Advertência</button>
         <button type="button" id="rh-subtab-aviso-previo" class="subaba-bloco" onclick="rhSetSubAba('aviso-previo',this)">📅 Aviso Prévio</button>
+        <button type="button" id="rh-subtab-simples-nacional" class="subaba-bloco" onclick="rhSetSubAba('simples-nacional',this)">📜 Simples Nacional</button>
       </div>
       <div class="card rh-pane" id="rh-pane-funcionarios" data-rh-pane="funcionarios">
         <div class="card-header">
@@ -1599,7 +1616,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div class="tbl-wrap">
           <table class="tbl">
-            <thead><tr><th>RE</th><th>Nome</th><th>Cargo/Função</th><th>Posto</th><th>Empresa</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead>
+            <thead><tr><th>RE</th><th>Nome</th><th>Cargo/Função</th><th>Posto</th><th>Empresa</th><th>Contato</th><th>App</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody id="tb-func"></tbody>
           </table>
         </div>
@@ -1624,6 +1641,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-gh b-sm" type="button" onclick="rhFeriasSetMesAtual()">Mês atual</button>
             <button class="btn b-gh b-sm" type="button" onclick="rhFeriasLimparFiltros()">Limpar filtros</button>
             <button class="btn b-ghv b-sm" type="button" onclick="renderRhFerias()">Atualizar</button>
+            <button class="btn b-vd b-sm" type="button" onclick="rhFeriasNotificarFiltro()">🔔 Notificar férias</button>
           </div>
         </div>
         <div id="rh-ferias-res" class="hint" style="margin:0 12px 8px 12px"></div>
@@ -1735,22 +1753,8 @@ document.addEventListener('DOMContentLoaded',()=>{
               </table>
             </div>
 
-            <label style="margin-top:10px">Vincular funcionários à jornada</label>
-            <div class="g2" style="margin-top:6px">
-              <div class="f">
-                <label>Jornada</label>
-                <select id="rh-jor-vinc-jornada"></select>
-              </div>
-              <div class="f">
-                <label>Funcionários ativos</label>
-                <select id="rh-jor-vinc-funcs" multiple size="7"></select>
-              </div>
-            </div>
-            <div class="hint" style="margin-top:4px">Use Ctrl/Cmd para selecionar múltiplos funcionários.</div>
-            <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
-              <button class="btn b-ghv b-sm" onclick="rhJornadaVincularSelecionados()">Vincular selecionados</button>
-              <button class="btn b-gh b-sm" onclick="rhJornadaDesvincularSelecionados()">Desvincular selecionados</button>
-            </div>
+            <label style="margin-top:10px">Vinculação de jornada</label>
+            <div class="hint" style="margin-top:6px">Desativada para evitar conflito com Escalas de Turnos. Use apenas Escalas no cadastro do funcionário.</div>
 
             <hr style="margin:12px 0;border:none;border-top:1px solid var(--borda)">
 
@@ -1784,7 +1788,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
 
       <div class="card rh-pane" id="rh-pane-escalas" data-rh-pane="escalas">
-        <div class="card-header"><span class="card-title">Escalas de Turnos (6x1, 6x2, 4x2, 12x36, Folguista)</span></div>
+        <div class="card-header"><span class="card-title">Escalas de Turnos (5x2, 6x1, 6x2, 4x2, 12x36, Folguista)</span></div>
         <div class="g2" style="margin-top:8px">
           <div class="f" style="border:1px solid var(--borda);border-radius:10px;padding:10px;background:var(--cinza-cl)">
             <input id="rh-esc-id" type="hidden">
@@ -1794,6 +1798,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <label style="margin-top:8px">Tipo de escala</label>
             <select id="rh-esc-tipo" onchange="rhEscalaAtualizarCicloTemplate()">
               <option value="">-- Selecione --</option>
+              <option value="5x2">5x2 (5 dias trabalho, 2 folga)</option>
               <option value="6x1">6x1 (seg-sáb trabalho, dom folga)</option>
               <option value="6x2">6x2 (6 dias trabalho, 2 folga)</option>
               <option value="4x2">4x2 (4 dias trabalho, 2 folga)</option>
@@ -1808,6 +1813,11 @@ document.addEventListener('DOMContentLoaded',()=>{
               <option value="noturno">Noturno</option>
             </select>
 
+            <label style="margin-top:8px;display:flex;align-items:center;gap:8px">
+              <input id="rh-esc-e-noturna" type="checkbox" onchange="rhEscalaSincronizarNoturno()">
+              Esta escala é noturna
+            </label>
+
             <label style="margin-top:8px">Descrição</label>
             <input id="rh-esc-desc" placeholder="Ex.: Escala com turnos alternados">
 
@@ -1820,12 +1830,13 @@ document.addEventListener('DOMContentLoaded',()=>{
               <div class="hint">Horas trabalhadas entre esses horários serão marcadas como noturnas no cálculo de benefícios.</div>
             </div>
 
-            <label style="margin-top:8px">Configuração do ciclo (simples)</label>
+            <label id="rh-esc-ciclo-label" style="margin-top:8px">Configuração do ciclo (simples)</label>
             <div class="g3" style="margin-top:6px">
-              <div class="f"><label>Hora de entrada</label><input id="rh-esc-hora-entrada" type="time" value="08:00"></div>
-              <div class="f"><label>Hora de saída</label><input id="rh-esc-hora-saida" type="time" value="17:00"></div>
-              <div class="f"><label>Intervalo (min)</label><input id="rh-esc-intervalo" type="number" min="0" max="240" value="60"></div>
+              <div class="f" data-rh-esc-gen-field="1"><label>Hora de entrada</label><input id="rh-esc-hora-entrada" type="time" value="08:00"></div>
+              <div class="f" data-rh-esc-gen-field="1"><label>Hora de saída</label><input id="rh-esc-hora-saida" type="time" value="17:00"></div>
+              <div class="f" data-rh-esc-gen-field="1"><label>Intervalo (min)</label><input id="rh-esc-intervalo" type="number" min="0" max="240" value="60"></div>
             </div>
+            <div id="rh-esc-12x36-hint" class="hint" style="display:none;margin-top:6px">Na escala 12x36, a referência passa a ser a data de início da escala. Os horários são automáticos.</div>
             <div id="rh-esc-6x1-config" style="display:none;border:1px solid var(--borda);border-radius:8px;padding:10px;margin-top:8px">
               <label style="font-weight:700">Configuração de sábado (somente para 6x1)</label>
               <div class="g3" style="margin-top:6px">
@@ -1835,8 +1846,8 @@ document.addEventListener('DOMContentLoaded',()=>{
               </div>
             </div>
             <div class="g2" style="margin-top:6px">
-              <div class="f"><label>Dias de trabalho no ciclo</label><input id="rh-esc-dias-trabalho" type="number" min="1" max="31" value="6"></div>
-              <div class="f"><label>Dias de folga no ciclo</label><input id="rh-esc-dias-folga" type="number" min="0" max="31" value="2"></div>
+              <div class="f" data-rh-esc-gen-field="1"><label>Dias de trabalho no ciclo</label><input id="rh-esc-dias-trabalho" type="number" min="1" max="31" value="6"></div>
+              <div class="f" data-rh-esc-gen-field="1"><label>Dias de folga no ciclo</label><input id="rh-esc-dias-folga" type="number" min="0" max="31" value="2"></div>
             </div>
             <div class="hint" style="margin-top:4px">Você só preenche os campos acima. O sistema monta o ciclo automaticamente.</div>
 
@@ -1859,33 +1870,72 @@ document.addEventListener('DOMContentLoaded',()=>{
                 <tbody id="rh-esc-tb"></tbody>
               </table>
             </div>
-
-            <label style="margin-top:10px">Vincular funcionários à escala</label>
-            <div class="g2" style="margin-top:6px">
-              <div class="f">
-                <label>Escala</label>
-                <select id="rh-esc-vinc-escala" onchange="rhEscalaCarregarFuncsParaVinc()"></select>
-              </div>
-              <div class="f">
-                <label>Data de início</label>
-                <input id="rh-esc-vinc-data-ini" type="date" value="">
-              </div>
-            </div>
-            <div class="f" style="margin-top:6px">
-              <label>Funcionários ativos (disponíveis)</label>
-              <select id="rh-esc-vinc-funcs" multiple size="7"></select>
-            </div>
-            <div class="hint" style="margin-top:4px">Use Ctrl/Cmd para selecionar múltiplos funcionários. Data de início define quando a escala começa a valer.</div>
-            <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px">
-              <button class="btn b-ghv b-sm" onclick="rhEscalaVincularSelecionados()">Vincular selecionados</button>
-            </div>
+            <div class="hint" style="margin-top:10px">O vínculo de escala agora é feito no cadastro do funcionário (RH &gt; Funcionários).</div>
           </div>
         </div>
         <div id="rh-escala-st" class="st" style="margin-top:8px"></div>
       </div>
 
+      <div class="card rh-pane" id="rh-pane-feriados" data-rh-pane="feriados" style="display:none">
+        <div class="card-header"><span class="card-title">Calendário de Feriados</span></div>
+        <p style="font-size:13px;color:var(--text-muted);margin:4px 0 12px 0">Central única de feriados nacionais, estaduais e municipais. Os feriados cadastrados aqui são usados no ponto e nos cálculos por período.</p>
+        <div class="g4" style="margin-bottom:10px">
+          <div class="f"><label>Ano</label><input id="fer-ano" type="number" min="2020" max="2099" placeholder="2026" style="width:100px"></div>
+          <div class="f"><label>Tipo</label>
+            <select id="fer-filtro-tipo">
+              <option value="">Todos</option>
+              <option value="nacional">Nacionais</option>
+              <option value="estadual">Estaduais</option>
+              <option value="municipal">Municipais</option>
+            </select>
+          </div>
+          <div class="f" style="display:flex;align-items:flex-end;gap:8px">
+            <button class="btn b-gh b-sm" onclick="ferCarregar()">&#128269; Carregar</button>
+            <button class="btn b-az b-sm" onclick="ferAtualizarNacionais()">&#10227; Atualizar nacionais do ano</button>
+          </div>
+        </div>
+        <details id="fer-form-novo" open style="margin-bottom:14px">
+          <summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--azul);padding:6px 0">&#43; Adicionar feriado manual</summary>
+          <input id="fer-id-edit" type="hidden" value="">
+          <div class="g4" style="margin-top:10px">
+            <div class="f"><label>Data</label><input id="fer-data" type="date"></div>
+            <div class="f"><label>Descrição</label><input id="fer-desc" placeholder="Ex: Aniversário da Cidade" maxlength="200"></div>
+            <div class="f"><label>Tipo</label>
+              <select id="fer-tipo" onchange="ferTipoChange(this.value)">
+                <option value="municipal">Municipal</option>
+                <option value="estadual">Estadual</option>
+                <option value="nacional">Nacional</option>
+              </select>
+            </div>
+            <div class="f" id="fer-campo-municipio"><label>Município</label><input id="fer-municipio" placeholder="Ex: São Paulo" maxlength="100"></div>
+            <div class="f" id="fer-campo-estado"><label>Estado (UF)</label><input id="fer-estado" placeholder="SP" maxlength="2" style="width:60px"></div>
+            <div class="f" id="fer-campo-postos">
+              <label>Postos operacionais <span style="font-weight:400;color:var(--text-muted)">(sem seleção = todos os postos)</span></label>
+              <select id="fer-posto" multiple size="5" style="min-width:220px"></select>
+              <button type="button" class="btn b-gh b-sm" style="margin-top:4px;font-size:11px" onclick="Array.from(document.getElementById('fer-posto').options).forEach(o=>o.selected=false)">Desmarcar todos</button>
+            </div>
+          </div>
+          <div class="brow" style="justify-content:flex-start;margin-top:10px">
+            <button class="btn b-vd b-sm" onclick="ferSalvar()">&#128190; Salvar feriado</button>
+          </div>
+        </details>
+        <div id="fer-status" style="font-size:13px;color:var(--azul);margin-bottom:8px"></div>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr>
+              <th>Data</th><th>Descrição</th><th>Tipo</th><th>Município</th><th>Estado</th><th>Aplicação</th><th style="width:60px">Ações</th>
+            </tr></thead>
+            <tbody id="tb-feriados"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="rh-pane" id="rh-pane-ponto" data-rh-pane="ponto">
         {% include 'partials/rh_ponto_section.html' %}
+      </div>
+
+      <div class="rh-pane" id="rh-pane-auditoria-ponto" data-rh-pane="auditoria-ponto" style="display:none">
+        {% include 'partials/rh_ponto_auditoria_section.html' %}
       </div>
 
       <div class="card rh-pane" id="rh-pane-painel-dia" data-rh-pane="painel-dia">
@@ -1899,8 +1949,85 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
 
+      <div class="card rh-pane" id="rh-pane-he-autorizacao" data-rh-pane="he-autorizacao" style="display:none">
+        <div class="card-header">
+          <span class="card-title">Autorização de Hora Extra</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <select id="modal-he-filtro" onchange="carregarHEPendentes()">
+              <option value="pendente">Pendentes</option>
+              <option value="todos">Todas</option>
+            </select>
+            <button class="btn b-gh b-sm" type="button" onclick="carregarHEPendentes()">Atualizar</button>
+            <span id="modal-he-count" class="hint"></span>
+          </div>
+        </div>
+        <div class="hint" style="margin:0 0 8px 0">As horas extras só entram na folha quando a solicitação estiver aprovada.</div>
+        <div id="st-he" class="st" style="margin-bottom:8px"></div>
+        <div id="modal-he-body"><div style="text-align:center;padding:32px;opacity:.5">Carregando...</div></div>
+      </div>
+
+      <div class="card rh-pane" id="rh-pane-ciclo-assinatura" data-rh-pane="ciclo-assinatura" style="display:none">
+        <div class="card-header">
+          <span class="card-title">Fechamento de ciclo e envio para assinatura</span>
+        </div>
+        <div class="g4" style="margin-top:8px;align-items:flex-end">
+          <div class="f">
+            <label>Competência</label>
+            <input id="rh-ciclo-comp" type="month" onchange="rhCicloCarregarColaboradores();rhCicloCarregarArquivos()">
+          </div>
+          <div class="f">
+            <label>Empresa</label>
+            <select id="rh-ciclo-empresa" onchange="rhCicloCarregarColaboradores();rhCicloCarregarArquivos()"><option value="">Todas as empresas</option></select>
+          </div>
+          <div class="f">
+            <label>Assinatura via</label>
+            <select id="rh-ciclo-canal">
+              <option value="app">App</option>
+              <option value="link">Link</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="nao">Não solicitar assinatura</option>
+            </select>
+          </div>
+          <div class="f">
+            <label>Prazo assinatura (dias)</label>
+            <input id="rh-ciclo-prazo" type="number" min="1" max="90" placeholder="Opcional">
+          </div>
+        </div>
+        <div class="brow" style="justify-content:flex-start;gap:10px;flex-wrap:wrap;margin-top:8px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px"><input id="rh-ciclo-so-ativos" type="checkbox" checked onchange="rhCicloCarregarColaboradores()" style="width:auto">Somente ativos</label>
+          <button class="btn b-gh b-sm" type="button" onclick="rhCicloFechar(false)">Fechar ciclo</button>
+          <button class="btn b-vd b-sm" type="button" onclick="rhCicloFechar(true)">Fechar ciclo e enviar para assinatura</button>
+        </div>
+        <div class="f" style="margin-top:10px;max-width:360px">
+          <label>Buscar colaborador</label>
+          <input id="rh-ciclo-busca" placeholder="Nome ou matrícula" oninput="rhCicloRenderColaboradores()">
+        </div>
+        <div class="hint" style="margin-top:8px">Ao enviar assinatura, o sistema gera o espelho PDF por colaborador e publica em documentos RH como categoria Folha de Ponto.</div>
+        <div id="st-rh-ciclo" class="st" style="margin-top:10px"></div>
+        <div class="tbl-wrap" style="margin-top:10px">
+          <table class="tbl">
+            <thead><tr><th>Colaborador</th><th>Fechamento</th><th>Envio para assinatura</th><th>Ações</th></tr></thead>
+            <tbody id="rh-ciclo-tb"><tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px">Carregando colaboradores...</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="card" style="margin-top:12px;padding:12px;background:var(--cinza-cl)">
+          <div class="card-header" style="margin-bottom:8px">
+            <span class="card-title">PDFs da competência (por empresa)</span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn b-gh b-sm" type="button" onclick="rhCicloCarregarArquivos()">Atualizar lista</button>
+              <button class="btn b-az b-sm" type="button" onclick="rhCicloBaixarZip()">Baixar tudo (ZIP)</button>
+            </div>
+          </div>
+          <div id="rh-ciclo-arq-st" class="st" style="margin-bottom:8px"></div>
+          <div id="rh-ciclo-arq-box" style="display:grid;gap:10px">
+            <div style="text-align:center;color:var(--text-muted);padding:10px">Nenhuma listagem carregada.</div>
+          </div>
+        </div>
+      </div>
+
       <div class="card rh-pane" id="rh-pane-envio" data-rh-pane="envio">
-        <div class="card-header"><span class="card-title">Envio de arquivo</span></div>
+        <div class="card-header"><span class="card-title">Envio em massa de documentos</span></div>
         <div class="g4">
           <div class="f"><label>Tipo de documento</label>
             <select id="rh-lote-tipo">
@@ -1930,7 +2057,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
           <div class="f s2"><label>Arquivo PDF único (com várias páginas)</label><input type="file" id="rh-lote-arq" accept="application/pdf" onchange="autoPreencherCompetencia(this,'rh-lote-comp')"></div>
         </div>
-        <div class="hint" style="margin-top:8px">Se escolher um funcionário, o PDF inteiro será salvo para ele. Sem seleção, o sistema tenta identificar o colaborador pelo conteúdo de cada página.</div>
+        <div class="hint" style="margin-top:8px">Para holerites, envie o PDF único com várias páginas sem selecionar um funcionário: o sistema separa cada página pelo colaborador identificado. A assinatura pode ser solicitada no app, por WhatsApp ou por link.</div>
         <div class="brow" style="justify-content:flex-start">
           <button class="btn b-gh" type="button" onclick="previewDocumentoRHLote()">Pré-visualizar destinatários</button>
           <button class="btn b-ghv" type="button" onclick="uploadDocumentoRHLote()">Enviar arquivo</button>
@@ -2117,6 +2244,7 @@ document.addEventListener('DOMContentLoaded',()=>{
               </select>
             </div>
             <div>
+
               <button class="btn b-gh" onclick="previaFichaEPI()" id="epi-btn-previa" style="margin-right:8px">
                 🔍 Prévia
               </button>
@@ -2437,6 +2565,46 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
 
+      <!-- ══ PAINEL: CARTA DE DECLARAÇÃO — SIMPLES NACIONAL ══ -->
+      <div class="card rh-pane" id="rh-pane-simples-nacional" data-rh-pane="simples-nacional">
+        <div class="card-header">
+          <span class="card-title">📜 Gerar Carta de Declaração — Simples Nacional</span>
+        </div>
+        <div style="padding:16px">
+          <div style="margin-bottom:14px;padding:10px 14px;background:var(--azul-cc);border:1px solid var(--azul-borda);border-radius:6px;font-size:13px;color:var(--text-muted)">
+            Declaração para fins de não incidência na fonte de CSLL, Cofins e PIS/Pasep, conforme art. 30 da Lei nº 10.833/2003 e Lei Complementar nº 123/2006.
+          </div>
+          <!-- Empresa declarante -->
+          <div class="f" style="margin-bottom:14px">
+            <label>Empresa declarante (remetente)</label>
+            <select id="sn-remetente" style="width:100%">
+              <option value="">— Selecione a empresa declarante —</option>
+            </select>
+          </div>
+          <!-- CNPJ da empresa destinatária -->
+          <div style="margin-bottom:6px">
+            <label style="display:block;margin-bottom:6px;font-weight:600">Empresa destinatária</label>
+            <div class="g4" style="align-items:flex-end">
+              <div class="f" style="flex:2">
+                <label>CNPJ (busca automática)</label>
+                <input id="sn-cnpj" type="text" placeholder="00.000.000/0000-00"
+                  maxlength="18" oninput="snCNPJAuto(this)" autocomplete="off">
+              </div>
+              <button class="btn b-gh" id="sn-cnpj-btn" onclick="snCNPJBuscar()" style="height:38px">🔍</button>
+            </div>
+            <div id="sn-cnpj-st" style="display:none;font-size:12.5px;margin-top:5px"></div>
+          </div>
+          <div class="f" style="margin-bottom:18px">
+            <label>Nome / Razão social da empresa destinatária</label>
+            <input id="sn-dest-nome" type="text" placeholder="Razão social ou nome fantasia">
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:14px">
+            <button class="btn b-az" onclick="snGerarCarta()" id="sn-btn-gerar">📜 Gerar Carta</button>
+          </div>
+          <div id="sn-resultado" style="display:none"></div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ══ COMUNICAÇÃO ══ -->
@@ -2452,7 +2620,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       <!-- Tab Envio WhatsApp -->
       <div id="rhd-tab-conversas">
         <div class="card" style="margin-bottom:12px">
-          <div class="card-header"><span class="card-title">Envio para colaboradores ativos</span></div>
+          <div class="card-header"><span class="card-title">Envio por WhatsApp para colaboradores ativos</span></div>
           <div class="g3" style="margin-top:8px">
             <div class="f"><label>Empresa</label><select id="wa-colab-empresa" onchange="waAtualizarPostosColab();waRenderListaColab()"><option value="">Todas</option></select></div>
             <div class="f"><label>Posto</label><select id="wa-colab-posto" onchange="waRenderListaColab()"><option value="">Todos</option></select></div>
@@ -2465,12 +2633,12 @@ document.addEventListener('DOMContentLoaded',()=>{
             <span id="wa-colab-count" style="font-size:12px;color:var(--text-muted);margin-left:4px">0 selecionado(s)</span>
           </div>
           <div id="wa-colab-list" style="margin-top:8px;max-height:220px;overflow:auto;border:1px solid var(--borda);border-radius:10px;padding:8px;background:var(--cinza-cl)"><div class="vazio">Carregando colaboradores...</div></div>
-          <div class="f" style="margin-top:10px"><label>Mensagem para envio</label><textarea id="wa-colab-msg" placeholder="Digite a mensagem que será enviada aos colaboradores selecionados" style="min-height:84px"></textarea></div>
+          <div class="f" style="margin-top:10px"><label>Mensagem para envio (WhatsApp)</label><textarea id="wa-colab-msg" placeholder="Digite a mensagem que será enviada por WhatsApp aos colaboradores selecionados" style="min-height:84px"></textarea></div>
           <div class="g2" style="margin-top:8px">
             <div class="f"><label>Anexo opcional</label><input id="wa-colab-arquivo" type="file" accept="*/*"></div>
             <div class="f"><label>Remetente exibido</label><input value="{{ nome }}" disabled></div>
           </div>
-          <div class="hint" style="margin-top:4px">O sistema inclui automaticamente o nome do usuário logado no texto/caption do envio.</div>
+          <div class="hint" style="margin-top:4px">Este card envia mensagens via WhatsApp. Para enviar mensagem para o aplicativo do colaborador, use a aba "💬 Chat App".</div>
           <div class="brow" style="justify-content:flex-start;gap:8px">
             <button class="btn b-az" onclick="waEnviarColaboradoresSelecionados()">Enviar para selecionados</button>
           </div>
@@ -2521,11 +2689,6 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div style="padding:10px 12px;border-bottom:1px solid var(--borda);display:flex;align-items:center;justify-content:space-between">
               <span style="font-weight:600;font-size:13px">Funcionários</span>
               <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsCarregarFuncionarios()">↺</button>
-            </div>
-            <div style="padding:8px 10px;border-bottom:1px solid var(--borda)">
-              <select id="maps-novo-chat" style="width:100%;font-size:12px" onchange="if(this.value){mapsAbrirChat(parseInt(this.value),this.options[this.selectedIndex].textContent);this.value=''}">
-                <option value="">+ Iniciar novo chat…</option>
-              </select>
             </div>
             <div id="maps-func-list" style="flex:1;overflow-y:auto;padding:4px"></div>
           </div>
@@ -2738,18 +2901,42 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div class="card">
         <div class="card-header"><span class="card-title">Ordem de Compra</span></div>
         <div class="g4">
-          <div class="f"><label>Número</label><input id="oc-num" placeholder="OC-2026-001"></div>
-          <div class="f"><label>Empresa</label><select id="oc-emp"><option value="">Selecione...</option></select></div>
+          <div class="f"><label>Modalidade *</label><select id="oc-tipo" onchange="ocAtualizarModalidade()"><option value="ordem_compra">Ordem de Compra</option><option value="pedido_orcamento">Pedido de Orçamento</option></select></div>
+          <div class="f"><label>Número</label><input id="oc-num" placeholder="Gerado automaticamente ao salvar" readonly></div>
+          <div class="f"><label>Empresa emissora *</label><select id="oc-emp"><option value="">Selecione...</option></select></div>
           <div class="f"><label>Solicitante</label><input id="oc-sol"></div>
           <div class="f"><label>Data</label><input id="oc-data" type="date"></div>
         </div>
+        <div id="oc-fornecedor-campos">
         <div class="g3" style="margin-top:10px">
-          <div class="f"><label>Fornecedor</label><input id="oc-for"></div>
+          <div class="f"><label>CNPJ do fornecedor</label><div style="display:flex;gap:6px"><input id="oc-cnpj" maxlength="18" placeholder="00.000.000/0000-00" oninput="maskCNPJ(this);ocCnpjAuto(this)" style="flex:1"><button class="btn b-gh b-sm" id="oc-cnpj-btn" type="button" onclick="ocBuscarCnpj()" title="Buscar fornecedor pelo CNPJ">Buscar</button></div></div>
+          <div class="f"><label>Fornecedor *</label><input id="oc-for"></div>
           <div class="f"><label>Valor</label><input id="oc-val" type="number" min="0" step="0.01"></div>
-          <div class="f"><label>Status</label><select id="oc-status"><option>Aberta</option><option>Aprovada</option><option>Cancelada</option></select></div>
+        </div>
+        <div class="f" style="margin-top:10px"><label>Endereço do fornecedor</label><input id="oc-endereco" placeholder="Preenchido pela consulta de CNPJ ou informado manualmente"></div>
+        <div class="g3" style="margin-top:10px">
+          <div class="f"><label>Telefone do fornecedor</label><input id="oc-for-telefone" type="tel" placeholder="Preenchido pela consulta de CNPJ"></div>
+          <div class="f"><label>E-mail do fornecedor</label><input id="oc-for-email" type="email" placeholder="Preenchido pela consulta de CNPJ"></div>
+          <div class="f"><label>E-mail de quem fará o pedido</label><input id="oc-pedido-email" type="email" placeholder="compras@empresa.com.br"></div>
+        </div>
+        </div>
+        <div class="f" style="margin-top:10px"><label>Status</label><input id="oc-status" value="Aberta" readonly></div>
+        <div style="margin-top:14px">
+          <div class="card-header" style="margin-bottom:8px"><span class="card-title">Itens da cotação</span></div>
+          <div class="g3" style="margin-bottom:8px;align-items:flex-end">
+            <div class="f"><label>Novo item</label><div style="position:relative"><input id="oc-novo-item-desc" placeholder="Ex.: Luva de proteção" autocomplete="off" oninput="ocAtualizarSugestoesNovoItem()" onfocus="ocAtualizarSugestoesNovoItem()" onblur="setTimeout(ocFecharSugestoesNovoItem,120)" onkeydown="ocTeclaSugestoesNovoItem(event)"><div id="oc-novo-item-sugestoes" hidden style="position:absolute;left:0;right:0;top:calc(100% + 6px);max-height:240px;overflow:auto;background:linear-gradient(180deg,#0f2338,#112b47);border:1px solid rgba(126,180,240,.38);border-radius:12px;box-shadow:0 18px 42px rgba(0,0,0,.38);z-index:40;padding:6px"></div></div></div>
+            <div class="f"><label>Quantidade</label><input id="oc-novo-item-qtd" placeholder="Ex.: 20 unidades" onkeydown="if(event.key==='Enter'){event.preventDefault();ocAdicionarItemRapido();}"></div>
+            <div class="f" style="display:flex;align-items:flex-end"><button class="btn b-gh b-sm" type="button" onclick="ocAdicionarItemRapido()">Adicionar item</button></div>
+          </div>
+          <datalist id="oc-catalogo-opcoes"></datalist>
+          <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Item / produto</th><th style="width:180px">Quantidade</th><th style="width:80px">Ação</th></tr></thead><tbody id="oc-itens"></tbody></table></div>
         </div>
         <div class="f" style="margin-top:10px"><label>Descrição</label><textarea id="oc-desc"></textarea></div>
-        <div class="brow" style="justify-content:flex-start"><button class="btn b-az" onclick="salvarOrdemCompra()">Salvar ordem</button></div>
+        <div class="brow" style="justify-content:flex-start"><button class="btn b-az" onclick="salvarOrdemCompra()">Gerar ordem e PDF</button></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Resumo mensal de pedidos aprovados</span></div>
+        <div id="resumo-oc" class="tbl-wrap"><div class="vazio">Carregando resumo...</div></div>
       </div>
       <div class="card">
         <div class="card-header"><span class="card-title">Ordens cadastradas</span></div>
@@ -2793,7 +2980,6 @@ document.addEventListener('DOMContentLoaded',()=>{
           <button id="ben-tab-avulso" class="btn b-gh b-sm" onclick="switchBenTab('avulso',this)">&#128176; Pagar Avulso</button>
           <button id="ben-tab-relatorios" class="btn b-gh b-sm" onclick="switchBenTab('relatorios',this)">Relatórios</button>
           <button id="ben-tab-periodo" class="btn b-gh b-sm" onclick="switchBenTab('periodo',this)">&#128197; Calcular por Período</button>
-          <button id="ben-tab-feriados" class="btn b-gh b-sm" onclick="switchBenTab('feriados',this)">&#127970; Feriados</button>
         </div>
 
         <div class="brow" style="justify-content:flex-start;margin-top:10px;flex-wrap:wrap;gap:6px;align-items:center">
@@ -2811,6 +2997,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="brow" id="ben-folha-toolbar" style="justify-content:flex-start;margin-top:6px;flex-wrap:wrap;gap:6px;border-top:1px solid var(--borda);padding-top:8px">
           <button class="btn b-vd b-sm" onclick="benSalvarFolha()">Salvar folha do mês</button>
           <button class="btn b-gh b-sm" onclick="benFecharFolha()">Fechar folha</button>
+          <button class="btn b-ghv b-sm" onclick="benNotificarBeneficios()">🔔 Notificar benefícios</button>
           <button class="btn b-gh b-sm" id="btn-ben-reabrir" onclick="benReabrirFolha()" style="display:none">Reabrir folha</button>
           <button class="btn b-gh b-sm" id="btn-ben-assinar" onclick="benAssinarFolha()" style="display:none">Assinar fechamento</button>
           <button class="btn b-gh b-sm" onclick="benAbrirHistorico()">Consultar histórico</button>
@@ -2996,62 +3183,6 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
         </div>
 
-        <!-- ── Pane: Feriados ── -->
-        <div id="ben-pane-feriados" class="tbl-wrap" style="margin-top:10px;display:none">
-          <div class="card" style="padding:14px">
-            <div class="card-header"><span class="card-title">&#127970; Cadastro de Feriados</span></div>
-            <p style="font-size:13px;color:var(--text-muted);margin:4px 0 12px 0">Cadastre feriados nacionais e municipais. Eles serão descontados automaticamente no cálculo por período.</p>
-            <div class="g4" style="margin-bottom:10px">
-              <div class="f"><label>Ano</label><input id="fer-ano" type="number" min="2020" max="2099" placeholder="2026" style="width:100px"></div>
-              <div class="f"><label>Tipo</label>
-                <select id="fer-filtro-tipo">
-                  <option value="">Todos</option>
-                  <option value="nacional">Nacionais</option>
-                  <option value="municipal">Municipais</option>
-                </select>
-              </div>
-              <div class="f" style="display:flex;align-items:flex-end;gap:8px">
-                <button class="btn b-gh b-sm" onclick="ferCarregar()">&#128269; Carregar</button>
-                <button class="btn b-az b-sm" onclick="ferAtualizarNacionais()">&#10227; Atualizar nacionais do ano</button>
-              </div>
-            </div>
-            <!-- Formulário de adição -->
-            <details id="fer-form-novo" style="margin-bottom:14px">
-              <summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--azul);padding:6px 0">&#43; Adicionar feriado</summary>
-              <div class="g4" style="margin-top:10px">
-                <div class="f"><label>Data</label><input id="fer-data" type="date"></div>
-                <div class="f"><label>Descrição</label><input id="fer-desc" placeholder="Ex: Carnaval" maxlength="200"></div>
-                <div class="f"><label>Tipo</label>
-                  <select id="fer-tipo">
-                    <option value="nacional">Nacional</option>
-                    <option value="municipal">Municipal</option>
-                  </select>
-                </div>
-                <div class="f"><label>Município (se municipal)</label><input id="fer-municipio" placeholder="Ex: São Paulo" maxlength="100"></div>
-                <div class="f"><label>Estado (UF)</label><input id="fer-estado" placeholder="SP" maxlength="2" style="width:60px"></div>
-              </div>
-              <div class="brow" style="justify-content:flex-start;gap:8px;margin-top:8px;flex-wrap:wrap">
-                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted)">
-                  <input id="fer-aplicar-selecionados" type="checkbox" checked>
-                  Municipal: aplicar aos funcionários selecionados na aba "Colaboradores Ativos"
-                </label>
-                <span id="fer-sel-info" style="font-size:12px;color:var(--azul)">Nenhum funcionário selecionado</span>
-              </div>
-              <div class="brow" style="justify-content:flex-start;margin-top:8px">
-                <button class="btn b-vd b-sm" onclick="ferSalvar()">&#128190; Salvar feriado</button>
-              </div>
-            </details>
-            <div id="fer-status" style="font-size:13px;color:var(--azul);margin-bottom:8px"></div>
-            <div class="tbl-wrap">
-              <table class="tbl">
-                <thead><tr>
-                  <th>Data</th><th>Descrição</th><th>Tipo</th><th>Município</th><th>Estado</th><th>Aplicação</th><th style="width:60px">Ações</th>
-                </tr></thead>
-                <tbody id="tb-feriados"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -3083,6 +3214,8 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div class="subaba-blocos" id="docs-subabas" style="margin-bottom:18px;flex-wrap:wrap">
         <button type="button" id="docs-subtab-funcionarios" class="subaba-bloco" onclick="docsSetAba('funcionarios',this)">👤 Funcionarios</button>
         <button type="button" id="docs-subtab-clientes" class="subaba-bloco" onclick="docsSetAba('clientes',this)">🏢 Clientes</button>
+        <button type="button" id="docs-subtab-proposta" class="subaba-bloco" onclick="docsSetAba('proposta',this)">🧾 Propostas</button>
+        <button type="button" id="docs-subtab-lista-propostas" class="subaba-bloco" onclick="docsSetAba('lista-propostas',this)">📋 Histórico</button>
       </div>
 
       <!-- ── Painel: Funcionários ── -->
@@ -3229,55 +3362,9 @@ document.addEventListener('DOMContentLoaded',()=>{
               <span class="btn b-sm" style="background:var(--borda);color:var(--text-muted);cursor:default">Em breve</span>
             </div>
 
-            <div class="card" style="padding:16px;border:1px solid var(--azul-borda);border-radius:10px;display:flex;flex-direction:column;gap:8px">
-              <div style="font-size:22px">📜</div>
-              <div style="font-weight:700;font-size:14px">Carta de Declaração — Simples Nacional</div>
-              <div style="font-size:12px;color:var(--text-muted);flex:1">Declaração de optante pelo Simples Nacional para não incidência de CSLL, Cofins e PIS/Pasep na fonte (Lei Complementar nº 123/2006).</div>
-              <button class="btn b-az b-sm" onclick="docsAbrirSimplesNacional()">Gerar Carta &rsaquo;</button>
-            </div>
-
           </div>
         </div>
       </div>
-      <!-- ── Painel: Carta Simples Nacional ── -->
-      <div id="docs-pane-simples-nacional" class="card" style="display:none">
-        <div class="card-header" style="display:flex;align-items:center;gap:10px">
-          <button class="btn b-sm" style="background:transparent;color:var(--text-muted);font-size:12px;padding:2px 8px" onclick="docsSetAba('clientes')">&larr; Voltar</button>
-          <span class="card-title">📜 Gerar Carta de Declaração — Simples Nacional</span>
-        </div>
-        <div style="padding:18px;max-width:700px">
-          <div style="margin-bottom:18px;padding:10px 14px;background:var(--azul-cc);border:1px solid var(--azul-borda);border-radius:6px;font-size:13px;color:var(--text-muted)">
-            Declaração para fins de não incidência na fonte de CSLL, Cofins e PIS/Pasep, conforme art. 30 da Lei nº 10.833/2003 e Lei Complementar nº 123/2006.
-          </div>
-          <div class="f" style="margin-bottom:14px">
-            <label>Empresa declarante (remetente)</label>
-            <select id="sn-remetente" style="width:100%">
-              <option value="">— Selecione a empresa declarante —</option>
-            </select>
-          </div>
-          <div style="margin-bottom:6px">
-            <label style="display:block;margin-bottom:6px;font-weight:600">Empresa destinatária</label>
-            <div class="g4" style="align-items:flex-end">
-              <div class="f" style="flex:2">
-                <label>CNPJ (busca automática na Receita Federal)</label>
-                <input id="sn-cnpj" type="text" placeholder="00.000.000/0000-00"
-                  maxlength="18" oninput="snCNPJAuto(this)" autocomplete="off">
-              </div>
-              <button class="btn b-gh" id="sn-cnpj-btn" onclick="snCNPJBuscar()" style="height:38px">🔍</button>
-            </div>
-            <div id="sn-cnpj-st" style="display:none;font-size:12.5px;margin-top:5px"></div>
-          </div>
-          <div class="f" style="margin-bottom:22px">
-            <label>Nome / Razão social da empresa destinatária</label>
-            <input id="sn-dest-nome" type="text" placeholder="Razão social ou nome fantasia">
-          </div>
-          <div style="display:flex;gap:8px;margin-bottom:14px">
-            <button class="btn b-az" onclick="snGerarCarta()" id="sn-btn-gerar">📜 Gerar Carta</button>
-          </div>
-          <div id="sn-resultado" style="display:none"></div>
-        </div>
-      </div>
-
       <!-- ── Painel: Proposta Comercial ── -->
       <div id="docs-pane-proposta" class="card" style="display:none">
         <div class="card-header" style="display:flex;align-items:center;gap:10px">
@@ -3339,7 +3426,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
           </div>
 
-          <div class="g3" style="margin-bottom:14px;gap:14px">
+          <div class="g4" style="margin-bottom:14px;gap:14px">
             <div class="f" style="flex:2">
               <label>Serviço / Função</label>
               <input id="pc-funcao" type="text" placeholder="Ex: limpeza, portaria, conservação..." style="width:100%">
@@ -3354,6 +3441,10 @@ document.addEventListener('DOMContentLoaded',()=>{
                 <option value="mensal">Mensal</option>
                 <option value="spot">SPOT (pontual)</option>
               </select>
+            </div>
+            <div class="f">
+              <label>Texto de insalubridade</label>
+              <input id="pc-insalubridade" type="text" value="20% Insalubridade" placeholder="Ex: 40% Insalubridade" style="width:100%">
             </div>
           </div>
 
@@ -3370,6 +3461,11 @@ document.addEventListener('DOMContentLoaded',()=>{
               <label>WhatsApp do contato</label>
               <input id="pc-telefone" type="tel" placeholder="(11) 9 1234-5678" style="width:100%">
             </div>
+          </div>
+
+          <div class="f" style="margin-bottom:14px">
+            <label>Observações de escopo / serviços a realizar</label>
+            <textarea id="pc-escopo-obs" rows="4" placeholder="Ex.: limpeza técnica de áreas comuns, cobertura das 07h às 19h, equipe com 2 profissionais por turno, materiais fornecidos pelo cliente." style="width:100%"></textarea>
           </div>
 
           <!-- Planilha de custo -->
@@ -3446,6 +3542,8 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div id="lp-paginacao" style="display:flex;gap:8px;margin-top:14px;align-items:center;justify-content:flex-end"></div>
         </div>
       </div>
+
+    </div>
 
       <!-- ── Painel: Novo Contrato / Termo Aditivo ── -->
       <div id="docs-pane-contrato" class="card" style="display:none">
@@ -3529,14 +3627,76 @@ document.addEventListener('DOMContentLoaded',()=>{
 
     </div>
 
+      <!-- ══ CONTROLE DE PONTO ══ -->
+      <div id="pg-controle-ponto" class="pg">
+        <div id="st-controle-ponto" class="st" style="margin-top:0;margin-bottom:8px"></div>
+        <div class="card" style="margin-top:0">
+          <div class="card-header">
+            <span class="card-title">Controle de Ponto</span>
+          </div>
+          <p style="font-size:13px;color:var(--text-muted);margin:4px 0 14px 0">
+            Centralize aqui as rotinas de ponto, ciclo, escalas e calendário. Cada botão abre a configuração correspondente.
+          </p>
+
+          <div class="g3" style="margin-top:8px">
+            <button class="metric metric-btn vd" type="button" onclick="abrirControlePonto('gestao-facil')">
+              <div class="l">Gestão Fácil <span class="metric-go">Abrir</span></div>
+            </button>
+            <button class="metric metric-btn lj" type="button" onclick="abrirControlePonto('ponto')">
+              <div class="l">Pontos do dia <span class="metric-go">Abrir</span></div>
+            </button>
+            <button class="metric metric-btn vm" type="button" onclick="abrirControlePonto('ciclo-assinatura')">
+              <div class="l">Fechar ciclo e assinar ponto <span class="metric-go">Abrir</span></div>
+            </button>
+            <button class="metric metric-btn gh" type="button" onclick="abrirControlePonto('escalas')">
+              <div class="l">Escalas <span class="metric-go">Abrir</span></div>
+            </button>
+            <button class="metric metric-btn lj" type="button" onclick="abrirControlePonto('feriados')">
+              <div class="l">Feriados <span class="metric-go">Abrir</span></div>
+            </button>
+            <button class="metric metric-btn vm" type="button" onclick="abrirControlePonto('painel-dia')">
+              <div class="l">Gestão de pontos por funcionário <span class="metric-go">Abrir</span></div>
+            </button>
+            <button class="metric metric-btn gh" type="button" onclick="abrirControlePonto('auditoria-ponto')">
+              <div class="l">Auditoria de ponto <span class="metric-go">Abrir</span></div>
+            </button>
+          </div>
+
+          <div class="card-header" style="margin-top:18px"><span class="card-title">Atalhos rápidos</span></div>
+          <div class="hint" style="margin:6px 0 12px 0">Use essa aba como ponto de entrada para as configurações operacionais do controle de ponto.</div>
+          <div class="brow" style="justify-content:flex-start;gap:8px;flex-wrap:wrap">
+            <button class="btn b-az b-sm" type="button" onclick="abrirControlePonto('gestao-facil')">Gestão Fácil</button>
+            <button class="btn b-ghv b-sm" type="button" onclick="abrirControlePonto('ponto')">Pontos do dia</button>
+            <button class="btn b-gh b-sm" type="button" onclick="abrirControlePonto('ciclo-assinatura')">Fechar ciclo e assinar ponto</button>
+            <button class="btn b-gh b-sm" type="button" onclick="abrirControlePonto('escalas')">Escalas</button>
+            <button class="btn b-ghv b-sm" type="button" onclick="abrirControlePonto('feriados')">Feriados</button>
+            <button class="btn b-vd b-sm" type="button" onclick="abrirControlePonto('painel-dia')">Gestão de pontos por funcionário</button>
+            <button class="btn b-gh b-sm" type="button" onclick="abrirControlePonto('auditoria-ponto')">Auditoria de ponto</button>
+          </div>
+        </div>
+      </div>
+
     <!-- ══ ASSINATURAS ══ -->
     <div id="pg-assinaturas" class="pg">
       <div id="st-assinaturas" class="st"></div>
 
       <style>
-        #pg-assinaturas{display:none;margin:0;padding:0}
-        #pg-assinaturas.on{display:block!important;animation:none!important;}
-        @media(max-width:768px){ #pg-assinaturas.on{padding:0}}
+        #pg-assinaturas{margin:0;padding:0}
+        #pg-assinaturas.on{
+          display:block!important;
+          position:fixed!important;
+          top:52px!important;
+          left:0!important;
+          right:0!important;
+          bottom:0!important;
+          padding:20px 22px;
+          overflow-y:auto;
+          overflow-x:hidden;
+          overflow-anchor:none;
+          animation:none!important;
+          z-index:10;
+        }
+        @media(max-width:768px){ #pg-assinaturas.on{padding:12px} }
         #pg-assinaturas .asi-shell{display:flex;flex-direction:row;align-items:flex-start;gap:16px;width:100%;margin:0}
         #pg-assinaturas .asi-side{flex:0 0 250px;min-width:0}
         #pg-assinaturas .asi-main{flex:1 1 auto;min-width:0}
@@ -3939,9 +4099,36 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
           <div class="f"><label>Resumo</label><div id="cfg-cert-policy-resumo" class="hint" style="padding-top:10px">O sistema usará a política definida abaixo.</div></div>
         </div>
+        <div class="g3" style="margin-top:10px">
+          <div class="f"><label>Versão mínima do app (build)</label><input type="number" id="cfg-app-version-min" min="1" placeholder="14"></div>
+          <div class="f"><label>Versão atual recomendada (build)</label><input type="number" id="cfg-app-version-atual" min="1" placeholder="14"></div>
+          <div class="f"><label>Cooldown notificação (horas)</label><input type="number" id="cfg-app-version-cooldown" min="1" max="720" placeholder="24"></div>
+        </div>
+        <div class="f" style="margin-top:10px">
+          <label>URL de atualização do app</label>
+          <input id="cfg-app-download-url" placeholder="https://...">
+        </div>
         <div class="brow" style="justify-content:flex-start;margin-top:14px">
           <button class="btn b-az" onclick="salvarConfig()">Salvar configurações</button>
         </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Banco de Itens de Compras</span></div>
+        <div class="hint" style="margin-bottom:8px">Cadastre aqui os itens padrão usados em ordens de compra e pedidos de orçamento. Eles ficam disponíveis como sugestão no campo de itens.</div>
+        <div class="g4">
+          <div class="f"><label>Nome do item *</label><input id="oc-cat-nome" placeholder="Ex.: Luva nitrílica"></div>
+          <div class="f"><label>Unidade</label><input id="oc-cat-unidade" placeholder="Ex.: caixa, unidade, litro"></div>
+          <div class="f"><label>Descrição</label><input id="oc-cat-descricao" placeholder="Observação opcional"></div>
+          <div class="f"><label>Ativo</label><select id="oc-cat-ativo"><option value="1">Sim</option><option value="0">Não</option></select></div>
+        </div>
+        <div class="brow" style="justify-content:flex-start;margin-top:8px;gap:8px;flex-wrap:wrap">
+          <button class="btn b-vd" type="button" onclick="ocSalvarItemCatalogo()">Salvar item</button>
+          <button class="btn b-gh" type="button" onclick="ocLimparItemCatalogoForm()">Limpar</button>
+          <input id="oc-cat-busca" placeholder="Buscar item cadastrado" oninput="ocRenderCatalogoItens()" style="min-width:260px">
+          <button class="btn b-gh b-sm" type="button" onclick="ocCarregarCatalogoItens()">Atualizar lista</button>
+        </div>
+        <div id="st-oc-catalogo" class="st" style="margin-top:8px"></div>
+        <div id="oc-cat-lista" class="tbl-wrap" style="margin-top:10px"><div class="vazio">Carregando itens...</div></div>
       </div>
       <div class="card">
         <div class="card-header"><span class="card-title">🔒 Backup & Recuperação Completa do Sistema</span></div>
@@ -4129,8 +4316,26 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div class="g4">
         <div class="f"><label>Empresa</label><select id="femp"><option value="">Selecione...</option></select></div>
         <div class="f"><label>Tipo de contrato</label><input id="ftipo-contrato" placeholder="CLT, PJ, Temporário..."></div>
-        <div class="f"><label>Jornada</label><input id="fjornada" placeholder="44h semanais"></div>
+        <div class="f"><label>Jornada</label><input id="fjornada" placeholder="Desabilitada (usar escala)" disabled></div>
         <div class="f"><label>Posto (definido no Operacional)</label><input id="fposto" readonly placeholder="Defina na aba Operacional"></div>
+      </div>
+      <div class="g4">
+        <div class="f s2">
+          <label>Escala de turnos</label>
+          <select id="fescala">
+            <option value="">Sem alteração de escala</option>
+          </select>
+          <div id="fescala-st" class="hint" style="margin-top:4px"></div>
+        </div>
+        <div class="f">
+          <label>Data início da escala</label>
+          <input id="fescala-data-ini" type="date">
+        </div>
+      </div>
+      <div id="fescala-conflitos-wrap" style="display:none;margin-top:8px;padding:10px;background:var(--aviso-bg,#fff3cd);border:1px solid var(--aviso,#ffc107);border-radius:6px">
+        <strong style="color:var(--text-dark)">⚠ Escalas ativas conflitantes</strong>
+        <p style="font-size:12px;margin:6px 0 0 0;color:var(--text-muted)">Este funcionário está em múltiplas escalas ativas. Desative as antigas para trocar:</p>
+        <div id="fescala-conflitos-list" style="margin-top:6px"></div>
       </div>
       <div class="g4">
         <div class="f s2"><label>Banco (busca por código/nome)</label><div style="display:flex;gap:6px"><input id="fbanco-busca" list="fbanco-list" placeholder="Ex: 077 - Banco Inter S.A." oninput="onBancoBuscaInput()" onblur="onBancoBuscaBlur()" style="flex:1"><button type="button" class="btn b-gh b-sm" onclick="atualizarBancosBR()">Atualizar</button></div><datalist id="fbanco-list"></datalist><div id="fbanco-st" class="hint" style="display:none"></div></div>
@@ -4162,6 +4367,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="f"><label>Data de nascimento 🎂 <span style="font-size:10px;color:var(--text-muted);font-weight:400">(usada para notificação no app)</span></label><input id="fnascimento" type="date"></div>
         <div class="f"><label>PIS</label><input id="fpis"></div>
         <div class="f"><label>CTPS</label><input id="fctps"></div>
+      </div>
         <div class="f"><label>Título de eleitor</label><input id="ftitulo-eleitor"></div>
       </div>
       <div class="g3">
@@ -4177,6 +4383,19 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="f" style="display:flex;align-items:center;gap:8px;padding-top:22px">
           <input type="checkbox" id="fopta-vt" checked style="width:16px;height:16px" onchange="rhBenefAberturaDiasSugestao()">
           <label for="fopta-vt" style="margin:0;font-weight:500">Optante VT</label>
+            <div class="f" id="rh-esc-semana-wrap" style="margin-top:8px">
+              <label>Dias de trabalho na semana (opcional)</label>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="rh-esc-ds-trab-0" onchange="rhEscalaAtualizarCicloTemplate()">Seg</label>
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="rh-esc-ds-trab-1" onchange="rhEscalaAtualizarCicloTemplate()">Ter</label>
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="rh-esc-ds-trab-2" onchange="rhEscalaAtualizarCicloTemplate()">Qua</label>
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="rh-esc-ds-trab-3" onchange="rhEscalaAtualizarCicloTemplate()">Qui</label>
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="rh-esc-ds-trab-4" onchange="rhEscalaAtualizarCicloTemplate()">Sex</label>
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="rh-esc-ds-trab-5" onchange="rhEscalaAtualizarCicloTemplate()">Sab</label>
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="rh-esc-ds-trab-6" onchange="rhEscalaAtualizarCicloTemplate()">Dom</label>
+              </div>
+              <div class="hint" style="margin-top:4px">Quando marcado, o sistema usa estes dias como trabalho e os demais como folga.</div>
+            </div>
         </div>
         <div class="f" style="display:flex;align-items:center;gap:8px;padding-top:22px">
           <input type="checkbox" id="fopta-vr" checked style="width:16px;height:16px" onchange="rhBenefAberturaDiasSugestao()">
@@ -4714,6 +4933,153 @@ function toggleTheme(){
   applyTheme(next);
 }
 
+let _notifPanelOpen=false;
+const _NOTIF_LIDAS_KEY='rm_top_notif_lidas_v1';
+let _notifSnapshotAtual={msgs:0,correcoes:0,beneficios:0,calculos:0,aso:0};
+
+function _notifLidasCarregar(){
+  try{
+    const raw=localStorage.getItem(_NOTIF_LIDAS_KEY);
+    const parsed=raw?JSON.parse(raw):{};
+    return parsed&&typeof parsed==='object'?parsed:{};
+  }catch(_){
+    return {};
+  }
+}
+
+function _notifLidasSalvar(state){
+  try{ localStorage.setItem(_NOTIF_LIDAS_KEY,JSON.stringify(state||{})); }catch(_){ }
+}
+
+function _notifCountVisivel(tipo,total){
+  const n=Math.max(0,parseInt(total||0,10)||0);
+  if(n<=0) return 0;
+  const state=_notifLidasCarregar();
+  const visto=Math.max(0,parseInt(state?.[tipo]||0,10)||0);
+  return visto===n?0:n;
+}
+
+function _notifMarcarLido(tipo,total){
+  const n=Math.max(0,parseInt(total||0,10)||0);
+  const state=_notifLidasCarregar();
+  if(n>0) state[tipo]=n;
+  else delete state[tipo];
+  _notifLidasSalvar(state);
+}
+
+function marcarTodasNotificacoesLidas(){
+  Object.entries(_notifSnapshotAtual||{}).forEach(([tipo,total])=>_notifMarcarLido(tipo,total));
+  atualizarSininhoNotificacoes();
+}
+
+function _notifBadgeSet(total){
+  const badge=document.getElementById('top-notif-badge');
+  if(!badge) return;
+  const n=Math.max(0,parseInt(total||0,10)||0);
+  if(n>0){
+    badge.style.display='';
+    badge.textContent=n>99?'99+':String(n);
+  }else{
+    badge.style.display='none';
+  }
+}
+
+function togglePainelNotificacoes(e){
+  if(e && typeof e.stopPropagation === 'function') e.stopPropagation();
+  const panel=document.getElementById('top-notif-panel');
+  if(!panel) return;
+  _notifPanelOpen=!_notifPanelOpen;
+  panel.style.display=_notifPanelOpen?'block':'none';
+  if(_notifPanelOpen) atualizarSininhoNotificacoes();
+}
+
+function _notifRenderList(msgs, pendencias){
+  const box=document.getElementById('top-notif-list');
+  const btnReadAll=document.getElementById('top-notif-readall');
+  if(!box) return;
+  const visiveis={
+    msgs:_notifCountVisivel('msgs',msgs),
+    correcoes:_notifCountVisivel('correcoes',pendencias.correcoes),
+    beneficios:_notifCountVisivel('beneficios',pendencias.beneficios),
+    calculos:_notifCountVisivel('calculos',pendencias.calculos),
+    aso:_notifCountVisivel('aso',pendencias.aso),
+  };
+  const itens=[];
+  if(visiveis.msgs>0){
+    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start;margin-bottom:6px" onclick="_notifAbrirChatApp()">💬 ${visiveis.msgs} mensagem(ns) não lida(s) no Chat App</button>`);
+  }
+  if(visiveis.correcoes>0){
+    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start;margin-bottom:6px" onclick="_notifAbrirRH('correcoes')">📋 ${visiveis.correcoes} correção(ões) de ponto pendente(s)</button>`);
+  }
+  if(visiveis.beneficios>0){
+    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start;margin-bottom:6px" onclick="_notifAbrirBeneficios('beneficios')">🎯 ${visiveis.beneficios} benefício(s) pendente(s)</button>`);
+  }
+  if(visiveis.calculos>0){
+    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start;margin-bottom:6px" onclick="_notifAbrirBeneficios('calculos')">🧮 ${visiveis.calculos} cálculo(s) pendente(s)</button>`);
+  }
+  if(visiveis.aso>0){
+    itens.push(`<button type="button" class="btn b-gh" style="width:100%;justify-content:flex-start" onclick="_notifAbrirRH('aso')">⚠️ ${visiveis.aso} colaborador(es) sem ASO válido</button>`);
+  }
+  if(btnReadAll) btnReadAll.style.display=itens.length?'':'none';
+  box.innerHTML=itens.length?itens.join(''):'Sem notificações no momento.';
+}
+
+function _notifAbrirChatApp(){
+  _notifMarcarLido('msgs',_notifSnapshotAtual.msgs);
+  _notifPanelOpen=false;
+  const panel=document.getElementById('top-notif-panel');
+  if(panel) panel.style.display='none';
+  nav('rh-digital',document.querySelector('.nav-item[onclick*="rh-digital"]'));
+  setTimeout(()=>{
+    const btn=document.querySelector('#rhd-tabs .btn[onclick*="mensagens-app"]');
+    if(btn) switchTab('rhd','mensagens-app',btn);
+  },160);
+}
+
+function _notifAbrirRH(tipo='correcoes'){
+  if(tipo) _notifMarcarLido(tipo,_notifSnapshotAtual[tipo]);
+  _notifPanelOpen=false;
+  const panel=document.getElementById('top-notif-panel');
+  if(panel) panel.style.display='none';
+  nav('rh',document.querySelector('.nav-item[data-nav="rh"]'));
+}
+
+function _notifAbrirBeneficios(tipo='beneficios'){
+  if(tipo) _notifMarcarLido(tipo,_notifSnapshotAtual[tipo]);
+  _notifPanelOpen=false;
+  const panel=document.getElementById('top-notif-panel');
+  if(panel) panel.style.display='none';
+  nav('beneficios',document.querySelector('.nav-item[onclick*="beneficios"]'));
+}
+
+async function atualizarSininhoNotificacoes(dashCache=null){
+  try{
+    const [msgResp,dashResp]=await Promise.all([
+      api('/api/mensagens-app/nao-lidas-total'),
+      dashCache?Promise.resolve(dashCache):api('/api/dashboard')
+    ]);
+    const msgs=Math.max(0,parseInt(msgResp?.nao_lidas||0,10)||0);
+    const pendencias={
+      correcoes:Math.max(0,parseInt(dashResp?.correcoes_ponto_pendentes||0,10)||0),
+      beneficios:Math.max(0,parseInt(dashResp?.alerta_beneficios_pendentes?.qtd||0,10)||0),
+      calculos:Math.max(0,parseInt(dashResp?.alerta_calculo_beneficios?.qtd||0,10)||0),
+      aso:Math.max(0,parseInt(dashResp?.alerta_sem_aso_valido?.qtd||0,10)||0),
+    };
+    _notifSnapshotAtual={msgs,correcoes:pendencias.correcoes,beneficios:pendencias.beneficios,calculos:pendencias.calculos,aso:pendencias.aso};
+    const total=
+      _notifCountVisivel('msgs',msgs)+
+      _notifCountVisivel('correcoes',pendencias.correcoes)+
+      _notifCountVisivel('beneficios',pendencias.beneficios)+
+      _notifCountVisivel('calculos',pendencias.calculos)+
+      _notifCountVisivel('aso',pendencias.aso);
+    _notifBadgeSet(total);
+    _notifRenderList(msgs,pendencias);
+  }catch(_){
+    _notifSnapshotAtual={msgs:0,correcoes:0,beneficios:0,calculos:0,aso:0};
+    _notifBadgeSet(0);
+  }
+}
+
 async function api(url,m='GET',b=null){
   try{
     const o={method:m,headers:{'Content-Type':'application/json'},credentials:'same-origin'};
@@ -4785,6 +5151,7 @@ function toggleSidebarModule(moduleId,forceOpen){
   const mod=document.getElementById(moduleId);
   if(!mod) return;
   if(document.body.classList.contains('sidebar-collapsed')) return;
+  // Menu superior abre por hover; não manter estado "open" por clique.
   mod.classList.remove('open');
 }
 
@@ -4806,10 +5173,20 @@ function _sidebarFindNavItem(id){
 }
 
 function sidebarSyncActiveContext(activeId){
+  const item=_sidebarFindNavItem(activeId);
   document.querySelectorAll('.nav-module').forEach(mod=>{
     mod.classList.toggle('active',!!mod.querySelector('.nav-item.on'));
   });
 }
+
+// Fechar módulos do menu ao clicar fora da sidebar (UX para menu superior)
+document.addEventListener('click', function(e){
+  const sidebar=document.querySelector('nav.sidebar');
+  if(!sidebar) return;
+  if(e.target.closest('nav.sidebar') || e.target.closest('.module-toggle')) return;
+  // fechar todos os módulos abertos
+  document.querySelectorAll('.nav-module.open').forEach(m=>m.classList.remove('open'));
+});
 
 function initSidebarLayout(){
   try{
@@ -4853,6 +5230,7 @@ async function init(){
   montarSubAbasBloco();
   ativarSubAbaPagina('dashboard');
   _initSSE();
+  await atualizarSininhoNotificacoes();
 }
 
 // ── Auto-update via SSE ───────────────────────────────────────────────────────
@@ -4916,6 +5294,16 @@ function tick(){
     rel.innerHTML=n.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'})+'<br>'+n.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   }
 }
+
+document.addEventListener('click',function(e){
+  if(!_notifPanelOpen) return;
+  const panel=document.getElementById('top-notif-panel');
+  const btn=document.getElementById('btn-notificacoes');
+  if(!panel || !btn) return;
+  if(panel.contains(e.target) || btn.contains(e.target)) return;
+  _notifPanelOpen=false;
+  panel.style.display='none';
+});
 
 async function loadProxNum(){
   const d=await api('/api/proximo-numero');
@@ -5110,6 +5498,7 @@ async function loadDash(){
   } else {
     de.innerHTML='';
   }
+  await atualizarSininhoNotificacoes(d);
 }
 
 async function loadFaturamentoAlert(){
@@ -5128,6 +5517,27 @@ async function loadFaturamentoAlert(){
   qtd.textContent=String(fat.qtd||fat.itens.length||0);
   list.innerHTML=(fat.itens||[]).map(it=>`<div style="padding:7px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.cliente_nome||'—'}</div><div style="font-size:11px;color:var(--text-muted)">${it.empresa_nome||'Sem empresa'}</div></div>`).join('');
   card.style.display='block';
+}
+
+function abrirControlePonto(tab){
+  nav('rh', document.querySelector(".nav-item[onclick*=\"nav('rh'\"]"));
+  if(tab==='jornada') tab='escalas';
+  if(tab){
+    setTimeout(()=>rhSetSubAba(tab),120);
+  }
+}
+
+function resetMainScroll(){
+  try{
+    const c=document.querySelector('main.content')||document.querySelector('.content');
+    if(c){
+      c.scrollTop=0;
+      c.scrollLeft=0;
+    }
+    window.scrollTo(0,0);
+    document.documentElement.scrollTop=0;
+    document.body.scrollTop=0;
+  }catch(_){ }
 }
 
 function nav(id,el,force=false){
@@ -5151,21 +5561,18 @@ function nav(id,el,force=false){
 
   // Lógica padrão
   const targetId=id;
-  if(P!=='dono' && USER_AREAS.length && !USER_AREAS.includes(id) && id!=='dashboard'){
+  if(P!=='dono' && USER_AREAS.length && !USER_AREAS.includes(id) && id!=='dashboard' && !(id==='controle-ponto' && USER_AREAS.includes('rh'))){
     alert('Seu usuário não tem acesso a esta área.');
     return;
   }
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));
   document.getElementById('pg-'+targetId).classList.add('on');
-  // Sempre resetar scroll ao trocar de página
-  try{
-    const _c=document.querySelector('main.content')||document.querySelector('.content');
-    if(_c) _c.scrollTop=0;
-    window.scrollTo(0,0);
-    document.documentElement.scrollTop=0;
-    document.body.scrollTop=0;
-  }catch(_){}
+  // Sempre resetar scroll ao trocar de página (imediato e pós-render)
+  resetMainScroll();
+  requestAnimationFrame(resetMainScroll);
+  setTimeout(resetMainScroll,60);
+  if(targetId==='controle-ponto') setTimeout(resetMainScroll,180);
   ativarSubAbaPagina(targetId);
   if(el)el.classList.add('on');
   const navMobile=id;
@@ -5178,12 +5585,11 @@ function nav(id,el,force=false){
   }
   if(targetId==='empresas')renderEmps();
   if(targetId==='usuarios')renderUsr();
-  if(targetId==='config')loadConfig();
+  if(targetId==='config'){loadConfig();ocCarregarCatalogoItens();}
   if(targetId==='rh'){
     renderFuncionarios();
     painelAssInicializar();
     rhExportCarregarFiltros();
-    rhJornadaInit();
     rhEscalaInit();
     rhSetSubAba(rhSubAba || 'funcionarios');
   }
@@ -5214,7 +5620,7 @@ function _subAbaLabel(item,idx){
 function montarSubAbasBloco(){
   document.querySelectorAll('.pg').forEach(pg=>{
     if(pg.dataset.subabaReady==='1') return;
-    if(['pg-rh','pg-rh-digital','pg-assinaturas','pg-documentos'].includes(pg.id)) return;
+    if(['pg-rh','pg-rh-digital','pg-assinaturas','pg-documentos','pg-controle-ponto'].includes(pg.id)) return;
 
     const itens=Array.from(pg.children).filter(el=>{
       if(!el) return false;
@@ -5296,10 +5702,14 @@ function rhSalariosIniciarPagina(){
 }
 
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','ferias-gestao','exportar','jornada','escalas','ponto','painel-dia','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo'];
+  const tabs=['funcionarios','ferias-gestao','exportar','escalas','feriados','ponto','painel-dia','auditoria-ponto','he-autorizacao','ciclo-assinatura','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo','simples-nacional'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
-    p.style.display=(p.dataset.rhPane===rhSubAba)?'block':'none';
+    if(p.dataset.rhPane===rhSubAba){
+      p.style.setProperty('display','block','important');
+    }else{
+      p.style.setProperty('display','none','important');
+    }
   });
   Array.from(document.querySelectorAll('#rh-subabas .subaba-bloco')).forEach(b=>b.classList.remove('on'));
   const alvo=btn || document.getElementById('rh-subtab-'+rhSubAba);
@@ -5311,8 +5721,25 @@ function rhSetSubAba(tab,btn){
   if(rhSubAba==='escalas'){
     rhEscalaInit();
   }
+  if(rhSubAba==='feriados'){
+    ferCarregar();
+    ferTipoChange(document.getElementById('fer-tipo')?.value||'municipal');
+  }
   if(rhSubAba==='ponto'){
     carregarCorrecoesPonto();
+  }
+  if(rhSubAba==='auditoria-ponto'){
+    pontoPopularFiltroGlobalFuncionarios();
+    pontoCarregarGlobal();
+  }
+  if(rhSubAba==='gestao-facil'){
+    gfCarregar();
+  }
+  if(rhSubAba==='he-autorizacao'){
+    carregarHEPendentes();
+  }
+  if(rhSubAba==='ciclo-assinatura'){
+    rhCicloInit();
   }
   if(rhSubAba==='ficha-epi'){
     epiInicializar();
@@ -5327,6 +5754,349 @@ function rhSetSubAba(tab,btn){
       dtInput.value = new Date().toISOString().slice(0,10);
     }
   }
+  if(rhSubAba==='simples-nacional'){
+    snInicializar();
+  }
+}
+
+function rhCicloInit(){
+  const compEl=document.getElementById('rh-ciclo-comp');
+  if(compEl && !compEl.value){
+    const hoje=new Date();
+    compEl.value=`${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}`;
+  }
+  rhCicloPopularEmpresas();
+  rhCicloCarregarColaboradores();
+  rhCicloCarregarArquivos();
+  if(!window.rhCicloAtualizacaoTimer){
+    window.rhCicloAtualizacaoTimer=setInterval(()=>{
+      if(rhSubAba==='ciclo-assinatura') rhCicloCarregarColaboradores();
+    },60000);
+  }
+}
+
+let rhCicloAssinaturasConhecidas=null;
+let rhCicloAssinaturasContexto='';
+
+function rhCicloPopularEmpresas(){
+  const sel=document.getElementById('rh-ciclo-empresa');
+  if(!sel) return;
+  const atual=sel.value||'';
+  const lista=Array.isArray(emps)?emps.slice().sort((a,b)=>String(a?.nome||'').localeCompare(String(b?.nome||''))):[];
+  sel.innerHTML='<option value="">Todas as empresas</option>' + lista.map(e=>`<option value="${e.id}">${esc(e.nome||('Empresa '+e.id))}</option>`).join('');
+  if(atual && sel.querySelector(`option[value="${atual}"]`)) sel.value=atual;
+}
+
+function rhCicloRenderTabela(rows){
+  const tb=document.getElementById('rh-ciclo-tb');
+  if(!tb) return;
+  if(!Array.isArray(rows) || !rows.length){
+    tb.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px">Nenhum colaborador encontrado.</td></tr>';
+    return;
+  }
+  tb.innerHTML=rows.map(r=>`<tr>
+    <td><strong>${esc(r.nome||'')}</strong>${r.meta?`<br><small style="color:var(--text-muted)">${esc(r.meta)}</small>`:''}</td>
+    <td>${esc(r.fechamento||'')}</td>
+    <td>${esc(r.envio||'-')}</td>
+    <td style="white-space:nowrap">${r.acoes||'—'}</td>
+  </tr>`).join('');
+}
+
+function rhCicloGetCompetencia(){
+  return (document.getElementById('rh-ciclo-comp')?.value||'').trim();
+}
+
+function rhCicloGetEmpresaId(){
+  const empresaVal=(document.getElementById('rh-ciclo-empresa')?.value||'').trim();
+  return empresaVal?Number(empresaVal):0;
+}
+
+function rhCicloRenderColaboradores(){
+  const termo=(document.getElementById('rh-ciclo-busca')?.value||'').trim().toLowerCase();
+  const filtrados=(rhCicloColaboradores||[]).filter(f=>{
+    if(!termo) return true;
+    return String(f.nome||'').toLowerCase().includes(termo) || String(f.matricula||'').toLowerCase().includes(termo);
+  });
+  const rows=filtrados.map(f=>{
+    const fid=Number(f.funcionario_id||0);
+    const meta=[f.matricula?`Mat. ${f.matricula}`:'',f.cargo||'',f.empresa_nome||''].filter(Boolean).join(' · ');
+    const fechado=!!f.folha_fechada;
+    const enviado=!!f.folha_enviada;
+    const assinado=!!f.assinado;
+    const aberto=!!f.assinatura_aberta;
+    const fechamento=fechado?`Fechada (${f.dias_fechados}/${f.dias_esperados} dia(s))`:(Number(f.dias_fechados||0)?`Em fechamento (${f.dias_fechados}/${f.dias_esperados} dia(s))`:'Pendente');
+    const envio=assinado?'Assinada':(aberto?`Aberta${f.assinatura_aberta_fmt?` (${f.assinatura_aberta_fmt})`:''}`:(enviado?'Enviada':'Não enviada'));
+    const acaoEnviar=assinado
+      ? '<button class="btn b-vd b-sm" type="button" disabled>Assinada</button>'
+      : aberto
+      ? '<button class="btn b-az b-sm" type="button" disabled title="O colaborador abriu a folha e ainda não assinou">Aberta</button>'
+      : enviado
+      ? '<button class="btn b-gh b-sm" type="button" disabled title="A folha desta competência já foi enviada e não pode mais ser alterada">Enviada</button>'
+      : `<button class="btn b-vd b-sm" type="button" onclick="rhCicloFecharFuncionario(${fid},true)">Fechar e enviar</button>`;
+    const acaoFechar=(fechado||enviado)
+      ? '<button class="btn b-gh b-sm" type="button" disabled>Já fechada</button>'
+      : `<button class="btn b-az b-sm" type="button" onclick="rhCicloFecharFuncionario(${fid},false)">Fechar</button>`;
+    const acaoReabrir=(fechado&&!enviado)
+      ? `<button class="btn b-az b-sm" type="button" onclick="rhCicloReabrirFuncionario(${fid})">Reabrir</button>`
+      : '';
+    return {
+      nome:f.nome||'',
+      meta,
+      fechamento,
+      envio,
+      acoes:`<button class="btn b-gh b-sm" type="button" onclick="rhCicloAbrirPrevia(${fid})">Prévia</button> ${acaoFechar} ${acaoReabrir} ${acaoEnviar}`
+    };
+  });
+  rhCicloRenderTabela(rows);
+}
+
+async function rhCicloCarregarColaboradores(){
+  const compMes=rhCicloGetCompetencia();
+  if(!/^\d{4}-\d{2}$/.test(compMes)) return;
+  const params=new URLSearchParams({competencia:compMes,somente_ativos:document.getElementById('rh-ciclo-so-ativos')?.checked?'true':'false'});
+  const empresaId=rhCicloGetEmpresaId();
+  if(empresaId) params.set('empresa_id',String(empresaId));
+  const d=await api(`/api/rh/ponto/ciclo/colaboradores?${params.toString()}`);
+  if(d?.erro){
+    rhCicloColaboradores=[];
+    rhCicloRenderColaboradores();
+    showSt('st-rh-ciclo',d.erro,true);
+    return;
+  }
+  const contexto=`${compMes}:${empresaId}:${document.getElementById('rh-ciclo-so-ativos')?.checked?'ativos':'todos'}`;
+  const colaboradores=Array.isArray(d?.colaboradores)?d.colaboradores:[];
+  const assinadosAgora=new Set(colaboradores.filter(f=>f.assinado).map(f=>Number(f.arquivo_id||0)).filter(Boolean));
+  if(rhCicloAssinaturasContexto!==contexto){
+    rhCicloAssinaturasContexto=contexto;
+    rhCicloAssinaturasConhecidas=assinadosAgora;
+  }else if(rhCicloAssinaturasConhecidas){
+    colaboradores.filter(f=>f.assinado && !rhCicloAssinaturasConhecidas.has(Number(f.arquivo_id||0))).forEach(f=>{
+      toast(`Folha assinada: ${f.nome||'colaborador'}`,'s');
+    });
+    rhCicloAssinaturasConhecidas=assinadosAgora;
+  }else{
+    rhCicloAssinaturasConhecidas=assinadosAgora;
+  }
+  rhCicloColaboradores=colaboradores;
+  rhCicloRenderColaboradores();
+}
+
+function rhCicloAbrirPrevia(funcionarioId){
+  const compMes=rhCicloGetCompetencia();
+  if(!/^\d{4}-\d{2}$/.test(compMes)) return;
+  window.open(`/api/ponto/espelho-mensal?funcionario_id=${encodeURIComponent(funcionarioId)}&competencia=${encodeURIComponent(compMes)}`,'_blank');
+}
+
+async function rhCicloFecharFuncionario(funcionarioId,enviarAssinatura){
+  const ok=await rhCicloFechar(enviarAssinatura,[Number(funcionarioId)]);
+  await rhCicloCarregarColaboradores();
+  return ok;
+}
+
+async function rhCicloReabrirFuncionario(funcionarioId){
+  const compMes=rhCicloGetCompetencia();
+  if(!/^[0-9]{4}-[0-9]{2}$/.test(compMes)) return;
+  if(!confirm('Reabrir esta folha? As marcações voltarão a poder ser editadas até um novo fechamento.')) return;
+  const r=await api('/api/rh/ponto/ciclo/reabrir','POST',{funcionario_id:Number(funcionarioId),competencia:compMes});
+  if(r?.erro){ showSt('st-rh-ciclo',r.erro,true); return false; }
+  showSt('st-rh-ciclo','Folha reaberta para edição.',false);
+  await rhCicloCarregarColaboradores();
+  return true;
+}
+
+function rhCicloRenderArquivos(data){
+  const box=document.getElementById('rh-ciclo-arq-box');
+  if(!box) return;
+  const empresas=Array.isArray(data?.empresas)?data.empresas:[];
+  if(!empresas.length){
+    box.innerHTML='<div style="text-align:center;color:var(--text-muted);padding:10px">Nenhum PDF de folha de ponto encontrado para os filtros.</div>';
+    return;
+  }
+  box.innerHTML=empresas.map(emp=>{
+    const itens=Array.isArray(emp?.itens)?emp.itens:[];
+    const empresaId=Number(emp?.empresa_id||0);
+    const itensHtml=itens.length ? itens.map(it=>`<tr>
+      <td>${esc(it.funcionario_nome||'')}</td>
+      <td>${esc(it.nome_arquivo||'')}</td>
+      <td style="white-space:nowrap">${esc(it.criado_fmt||'')}</td>
+      <td style="text-align:right;white-space:nowrap"><a class="btn b-gh b-sm" href="${esc(it.download_url||'#')}" target="_blank" rel="noopener">Baixar PDF</a></td>
+    </tr>`).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:12px">Sem arquivos nesta empresa.</td></tr>';
+    return `<div class="card" style="margin:0;padding:10px">
+      <div class="card-header" style="margin-bottom:8px">
+        <span class="card-title">${esc(emp.empresa_nome||'Sem empresa')} · ${Number(emp.total_arquivos||0)} arquivo(s)</span>
+        <button class="btn b-az b-sm" type="button" onclick="rhCicloBaixarZip(${empresaId||0})">ZIP da empresa</button>
+      </div>
+      <div class="tbl-wrap" style="margin-top:0">
+        <table class="tbl">
+          <thead><tr><th>Colaborador</th><th>Arquivo</th><th>Gerado em</th><th style="width:120px">Ação</th></tr></thead>
+          <tbody>${itensHtml}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function rhCicloCarregarArquivos(){
+  const compMes=rhCicloGetCompetencia();
+  const stId='rh-ciclo-arq-st';
+  if(!/^\d{4}-\d{2}$/.test(compMes)){
+    showSt(stId,'Informe a competência para listar os PDFs do ciclo.',true);
+    rhCicloRenderArquivos({empresas:[]});
+    return;
+  }
+  showSt(stId,'Carregando PDFs da competência...',false);
+  const params=new URLSearchParams({competencia:compMes});
+  const empresaId=rhCicloGetEmpresaId();
+  if(empresaId) params.set('empresa_id',String(empresaId));
+  const d=await api(`/api/rh/ponto/ciclo/arquivos?${params.toString()}`);
+  if(d?.erro){
+    showSt(stId,d.erro,true);
+    rhCicloRenderArquivos({empresas:[]});
+    return;
+  }
+  rhCicloRenderArquivos(d||{});
+  showSt(stId,`Total listado: ${Number(d?.total_arquivos||0)} arquivo(s).`,false);
+}
+
+function rhCicloBaixarZip(empresaId){
+  const compMes=rhCicloGetCompetencia();
+  if(!/^\d{4}-\d{2}$/.test(compMes)){
+    showSt('rh-ciclo-arq-st','Informe a competência no formato AAAA-MM antes de baixar o ZIP.',true);
+    return;
+  }
+  const filtroEmpresa=Number(empresaId||0) || rhCicloGetEmpresaId() || 0;
+  const params=new URLSearchParams({competencia:compMes});
+  if(filtroEmpresa) params.set('empresa_id',String(filtroEmpresa));
+  window.open(`/api/rh/ponto/ciclo/arquivos/zip?${params.toString()}`,'_blank');
+}
+
+async function rhCicloFechar(enviarAssinatura,funcionarioIds=[]){
+  const compMes=rhCicloGetCompetencia();
+  if(!/^\d{4}-\d{2}$/.test(compMes)){
+    showSt('st-rh-ciclo','Informe a competência no formato AAAA-MM.',true);
+    return false;
+  }
+  const empresaId=rhCicloGetEmpresaId();
+  const somenteAtivos=!!document.getElementById('rh-ciclo-so-ativos')?.checked;
+  const canal=(document.getElementById('rh-ciclo-canal')?.value||'app').trim();
+  const prazoDias=(document.getElementById('rh-ciclo-prazo')?.value||'').trim();
+
+  if(enviarAssinatura){
+    const confirmado=confirm('Ao enviar a folha para assinatura, ela não poderá mais ser reaberta nem editada. Deseja continuar?');
+    if(!confirmado) return false;
+  }
+
+  showSt('st-rh-ciclo','Fechando ciclo da competência...',false);
+  rhCicloRenderTabela([]);
+
+  const payload={
+    competencia:compMes,
+    empresa_id:empresaId,
+    somente_ativos:somenteAtivos
+  };
+  if(Array.isArray(funcionarioIds) && funcionarioIds.length){
+    payload.funcionario_ids=funcionarioIds;
+  }
+  const fechamento=await api('/api/rh/ponto/ciclo/fechar','POST',payload);
+  if(fechamento.erro){
+    showSt('st-rh-ciclo',fechamento.erro,true);
+    return false;
+  }
+
+  const funcs=Array.isArray(fechamento.funcionarios)?fechamento.funcionarios:[];
+  const linhas=funcs.map(f=>({
+    nome:f.nome||'',
+    fechamento:f.resultado==='ja_fechada'?'Folha já fechada':(f.resultado==='enviada'?'Folha já enviada':`${f.dias_fechados||0} dia(s) fechados`),
+    envio:f.resultado==='enviada'?'Já enviada':(enviarAssinatura?'Aguardando envio...':'—')
+  }));
+  rhCicloRenderTabela(linhas);
+  showSt('st-rh-ciclo',`Ciclo fechado: ${fechamento.total_funcionarios||0} colaborador(es), ${fechamento.dias_fechados||0} dia(s).`,false);
+
+  if(!enviarAssinatura || !funcs.length){
+    await rhCicloCarregarArquivos();
+    await rhCicloCarregarColaboradores();
+    return true;
+  }
+
+  await rhCicloCarregarColaboradores();
+  const estadoPorFuncionario=new Map((rhCicloColaboradores||[]).map(f=>[Number(f.funcionario_id||0),f]));
+  let ok=0, falhas=0;
+  for(let i=0;i<funcs.length;i++){
+    const f=funcs[i]||{};
+    const fid=Number(f.funcionario_id||0);
+    const statusNorm=String(f.status||'').trim().toLowerCase();
+    const estadoAtual=estadoPorFuncionario.get(fid);
+    if(f.resultado==='enviada'){
+      linhas[i].envio='Já enviada';
+      rhCicloRenderTabela(linhas);
+      continue;
+    }
+    if(estadoAtual?.assinatura_enviada){
+      linhas[i].envio=estadoAtual.assinado?'Já assinada':'Já enviada para assinatura';
+      rhCicloRenderTabela(linhas);
+      continue;
+    }
+    if(statusNorm==='demitido'){
+      linhas[i].envio='Não enviado: colaborador demitido';
+      rhCicloRenderTabela(linhas);
+      continue;
+    }
+    if(!fid){
+      falhas++;
+      linhas[i].envio='Falha: ID inválido';
+      rhCicloRenderTabela(linhas);
+      continue;
+    }
+    showSt('st-rh-ciclo',`Enviando assinatura ${i+1}/${funcs.length}: ${f.nome||('ID '+fid)}...`,false);
+    try{
+      const pdfResp=await fetch(`/api/ponto/espelho-mensal?funcionario_id=${encodeURIComponent(fid)}&competencia=${encodeURIComponent(compMes)}`,{credentials:'same-origin'});
+      if(!pdfResp.ok){
+        let msg=`Erro ao gerar espelho (HTTP ${pdfResp.status})`;
+        try{ const ej=await pdfResp.json(); if(ej?.erro) msg=ej.erro; }catch(_e){}
+        throw new Error(msg);
+      }
+      const blob=await pdfResp.blob();
+      const nome=(f.nome||`funcionario_${fid}`).replace(/\s+/g,'_');
+      const fd=new FormData();
+      fd.append('arquivo',blob,`folha_ponto_${nome}_${compMes}.pdf`);
+      fd.append('categoria','folha_ponto');
+      fd.append('competencia',compMes);
+      fd.append('canal_assinatura',canal);
+      fd.append('evitar_duplicado','1');
+      if(prazoDias) fd.append('prazo_dias',prazoDias);
+
+      const upResp=await fetch(`/api/funcionarios/${encodeURIComponent(fid)}/arquivos`,{method:'POST',body:fd,credentials:'same-origin'});
+      const upJson=await upResp.json().catch(()=>({}));
+      if(!upResp.ok || upJson?.erro){
+        throw new Error(upJson?.erro || `Falha no upload (HTTP ${upResp.status})`);
+      }
+      if(upJson?.duplicado){
+        linhas[i].envio=upJson?.ass_status==='assinado'?'Já assinada':'Já enviada para assinatura';
+        rhCicloRenderTabela(linhas);
+        continue;
+      }
+      const stAuto=(upJson?.assinatura_auto?.status||'').toString().toLowerCase();
+      if(stAuto==='bloqueado_demitido'){
+        linhas[i].envio='Não enviado: bloqueado para demitido';
+      }else{
+        ok++;
+        linhas[i].envio='Enviado para assinatura';
+      }
+    }catch(err){
+      falhas++;
+      linhas[i].envio=`Falha: ${err?.message||'erro desconhecido'}`;
+    }
+    rhCicloRenderTabela(linhas);
+  }
+
+  if(falhas>0){
+    showSt('st-rh-ciclo',`Concluído com falhas. Enviados: ${ok}. Falhas: ${falhas}.`,true);
+  }else{
+    showSt('st-rh-ciclo',`Concluído com sucesso. ${ok} assinatura(s) enviada(s).`,false);
+  }
+  await rhCicloCarregarArquivos();
+  await rhCicloCarregarColaboradores();
+  return falhas===0;
 }
 
 function rhFeriasFmtBr(v){
@@ -5389,6 +6159,8 @@ function rhFeriasNoPeriodo(f,dtIni,dtFim){
   return fi<=fim && ff>=ini;
 }
 
+let rhFeriasListaAtual=[];
+
 async function renderRhFerias(){
   const tb=document.getElementById('rh-ferias-tb');
   const res=document.getElementById('rh-ferias-res');
@@ -5408,6 +6180,7 @@ async function renderRhFerias(){
     const hay=[f.nome,f.re,f.funcao,f.cargo,emp?.nome,f.status].map(v=>(v||'').toString().toLowerCase()).join(' ');
     return hay.includes(busca);
   }).sort((a,b)=>((a.nome||'').localeCompare((b.nome||''),'pt-BR')));
+  rhFeriasListaAtual=lista;
 
   if(!lista.length){
     tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted)">Nenhum colaborador em férias para os filtros selecionados.</td></tr>';
@@ -5437,6 +6210,26 @@ async function renderRhFerias(){
     </tr>`;
   }).join('');
   if(res) res.textContent=`${lista.length} colaborador(es) em férias.`;
+}
+
+async function rhFeriasNotificarFiltro(){
+  const res=document.getElementById('rh-ferias-res');
+  const lista=Array.isArray(rhFeriasListaAtual)?rhFeriasListaAtual:[];
+  const ids=[...new Set(lista.map(f=>parseInt(f.id,10)).filter(v=>Number.isInteger(v)&&v>0))];
+  if(!ids.length){
+    toast('Nenhum colaborador em férias nos filtros atuais.','w');
+    return;
+  }
+  if(!confirm(`Enviar aviso de férias para ${ids.length} colaborador(es)?`)) return;
+  const r=await api('/api/ferias/notificar','POST',{funcionario_ids:ids});
+  if(r?.erro){
+    toast(r.erro,'e');
+    if(res) res.textContent=`Erro ao notificar férias: ${r.erro}`;
+    return;
+  }
+  const msg=`Férias notificadas: ${r.enviados||0} envio(s) (${r.enviados_push||0} app, ${r.enviados_whatsapp||0} WhatsApp). Sem contato: ${r.sem_contato||0}. Sem período: ${r.sem_periodo||0}.`;
+  toast(msg,'s');
+  if(res) res.textContent=msg;
 }
 
 // ── Modal Ponto do Dia ───────────────────────────────────────────────────────
@@ -6707,11 +7500,23 @@ async function loadConfig(){
   const pol=d.pdf_cert_policy||'prefer_empresa';
   document.getElementById('cfg-pdf-cert-policy').value=pol;
   document.getElementById('cfg-cert-policy-resumo').textContent=certPolicySummary(pol);
+  document.getElementById('cfg-app-version-min').value=d.app_version_minima||'14';
+  document.getElementById('cfg-app-version-atual').value=d.app_version_atual||d.app_version_minima||'14';
+  document.getElementById('cfg-app-version-cooldown').value=d.app_version_notif_cooldown_h||'24';
+  document.getElementById('cfg-app-download-url').value=d.app_download_url||'';
 }
 
 async function salvarConfig(){
   const pol=document.getElementById('cfg-pdf-cert-policy').value||'prefer_empresa';
-  await api('/api/config','POST',{num_base:document.getElementById('cfg-num-base').value,num_ultima:document.getElementById('cfg-num-ultima').value,pdf_cert_policy:pol});
+  await api('/api/config','POST',{
+    num_base:document.getElementById('cfg-num-base').value,
+    num_ultima:document.getElementById('cfg-num-ultima').value,
+    pdf_cert_policy:pol,
+    app_version_minima:document.getElementById('cfg-app-version-min').value,
+    app_version_atual:document.getElementById('cfg-app-version-atual').value,
+    app_version_notif_cooldown_h:document.getElementById('cfg-app-version-cooldown').value,
+    app_download_url:document.getElementById('cfg-app-download-url').value
+  });
   await loadProxNum();
   alert('Configurações salvas! Próxima medição: '+document.getElementById('prox-num').textContent);
 }
@@ -6879,9 +7684,180 @@ let _rhFuncAutoInflight=false;
 let _rhFuncAutoHydrating=false;
 let _rhFuncAutoLastHash='';
 let _rhFuncAutoBound=false;
+let _rhFuncEscalaAtual={escala_id:'',data_inicio:'',data_fim:''};
+
+function rhHojeISO(){
+  return new Date().toISOString().split('T')[0];
+}
+
+function rhFuncionarioEscalaSnapshot(){
+  const sel=document.getElementById('fescala');
+  const dt=document.getElementById('fescala-data-ini');
+  return {
+    escala_id:(sel?.value||'').trim(),
+    data_inicio:(dt?.value||'').trim(),
+  };
+}
+
+function rhEscalaDataInicioReferencia(escalaId){
+  const id=String(escalaId||'').trim();
+  if(!id) return '';
+  const escObj=(Array.isArray(rhEscalas)?rhEscalas:[]).find(e=>String(e?.id)===id);
+  return String(escObj?.ciclo?.data_inicio_referencia||'').trim();
+}
+
+function rhFuncionarioEscalaSincronizarDataInicio(force=false){
+  const sel=document.getElementById('fescala');
+  const dt=document.getElementById('fescala-data-ini');
+  if(!sel || !dt) return;
+  const ref=rhEscalaDataInicioReferencia(sel.value);
+  if(!ref) return;
+  if(force || !(dt.value||'').trim()) dt.value=ref;
+}
+
+function rhFuncionarioEscalaDefinirStatus(msg){
+  const el=document.getElementById('fescala-st');
+  if(!el) return;
+  el.textContent=msg||'';
+}
+
+function rhFuncionarioEscalaVigenteDoFuncionario(fid){
+  const hoje=rhHojeISO();
+  const todos=[];
+  (Array.isArray(rhEscalas)?rhEscalas:[]).forEach(e=>{
+    (Array.isArray(e?.funcionarios)?e.funcionarios:[]).forEach(v=>{
+      if(String(v?.id)!==String(fid)) return;
+      todos.push({
+        escala_id:e.id,
+        escala_nome:e.nome||'',
+        data_inicio:(v?.data_inicio||'').trim(),
+        data_fim:(v?.data_fim||'').trim(),
+      });
+    });
+  });
+  if(!todos.length) return null;
+  const emVigencia=todos
+    .filter(v=>v.data_inicio && v.data_inicio<=hoje && (!v.data_fim || v.data_fim>=hoje))
+    .sort((a,b)=>String(b.data_inicio).localeCompare(String(a.data_inicio)));
+  if(emVigencia.length) return emVigencia[0];
+  return todos.sort((a,b)=>String(b.data_inicio).localeCompare(String(a.data_inicio)))[0]||null;
+}
+
+function rhFuncionarioEscalasVigentes(fid){
+  const hoje=rhHojeISO();
+  const todos=[];
+  (Array.isArray(rhEscalas)?rhEscalas:[]).forEach(e=>{
+    (Array.isArray(e?.funcionarios)?e.funcionarios:[]).forEach(v=>{
+      if(String(v?.id)!==String(fid)) return;
+      todos.push({
+        escala_id:e.id,
+        escala_nome:e.nome||'',
+        data_inicio:(v?.data_inicio||'').trim(),
+        data_fim:(v?.data_fim||'').trim(),
+      });
+    });
+  });
+  return todos
+    .filter(v=>v.data_inicio && v.data_inicio<=hoje && (!v.data_fim || v.data_fim>=hoje))
+    .sort((a,b)=>String(b.data_inicio).localeCompare(String(a.data_inicio)));
+}
+
+async function rhFuncionarioEscalaCarregarNoModal(fid=null){
+  const sel=document.getElementById('fescala');
+  const dataIni=document.getElementById('fescala-data-ini');
+  if(!sel || !dataIni) return;
+  if(!Array.isArray(rhEscalas) || !rhEscalas.length){
+    const r=await api('/api/escalas');
+    rhEscalas=Array.isArray(r)?r:[];
+  }
+  const valAtual=(sel.value||'').trim();
+  sel.innerHTML='<option value="">Sem alteração de escala</option>'+rhEscalas.map(e=>`<option value="${e.id}">${esc(e.nome||'')} (${e.tipo||''})</option>`).join('');
+  if(fid){
+    const vigente=rhFuncionarioEscalaVigenteDoFuncionario(fid);
+    if(vigente){
+      sel.value=String(vigente.escala_id||'');
+      dataIni.value=vigente.data_inicio||rhHojeISO();
+      _rhFuncEscalaAtual={
+        escala_id:String(vigente.escala_id||''),
+        data_inicio:vigente.data_inicio||'',
+        data_fim:vigente.data_fim||'',
+      };
+      rhFuncionarioEscalaDefinirStatus(`Escala atual: ${vigente.escala_nome||('escala #'+vigente.escala_id)} (desde ${vigente.data_inicio||'—'}).`);
+      
+      // Verificar se há escalas vigentes múltiplas (conflito)
+      const vigentes=rhFuncionarioEscalasVigentes(fid);
+      const wrapConflito=document.getElementById('fescala-conflitos-wrap');
+      const listaConflito=document.getElementById('fescala-conflitos-list');
+      if(vigentes.length>1 && wrapConflito && listaConflito){
+        wrapConflito.style.display='block';
+        listaConflito.innerHTML=vigentes.map((v,idx)=>`
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(0,0,0,0.1)">
+            <span style="flex:1">${v.escala_nome} (desde ${v.data_inicio})</span>
+            <button type="button" class="btn b-gh b-sm" onclick="rhDesativarEscalaFuncionario(${fid},${v.escala_id},'${v.data_inicio}')">Desativar</button>
+          </div>
+        `).join('');
+      }else if(wrapConflito){
+        wrapConflito.style.display='none';
+      }
+      return;
+    }
+  }
+  _rhFuncEscalaAtual={escala_id:'',data_inicio:'',data_fim:''};
+  if(valAtual && rhEscalas.some(e=>String(e.id)===String(valAtual))){
+    sel.value=valAtual;
+  }else{
+    sel.value='';
+  }
+  if(!dataIni.value) dataIni.value=rhHojeISO();
+  rhFuncionarioEscalaDefinirStatus('');
+  const wrapConflito=document.getElementById('fescala-conflitos-wrap');
+  if(wrapConflito) wrapConflito.style.display='none';
+}
+
+async function rhFuncionarioAplicarEscala(fid,forceFeedback=false){
+  if(!fid) return true;
+  const snap=rhFuncionarioEscalaSnapshot();
+  const eid=snap.escala_id;
+  const dataIni=(snap.data_inicio||rhEscalaDataInicioReferencia(eid)||rhHojeISO()).trim();
+  if(!eid) return true;
+
+  const atualId=String(_rhFuncEscalaAtual?.escala_id||'');
+  const atualIni=String(_rhFuncEscalaAtual?.data_inicio||'');
+  if(atualId===String(eid) && atualIni===String(dataIni)) return true;
+
+  const r=await api('/api/escalas/'+eid+'/funcionarios','POST',{
+    funcionarios:[{funcionario_id:fid,data_inicio:dataIni,data_fim:null}],
+    substituir_escala_atual:true,
+  });
+  if(r?.erro){
+    showSt('st-rh','Falha ao vincular escala: '+r.erro,true);
+    if(forceFeedback) alert(r.erro);
+    return false;
+  }
+
+  _rhFuncEscalaAtual={escala_id:String(eid),data_inicio:dataIni,data_fim:''};
+  rhFuncionarioEscalaDefinirStatus('Escala vinculada com sucesso.');
+  if(rhEscalaInitDone){
+    await rhEscalaCarregar();
+  }
+  return true;
+}
+
+async function rhDesativarEscalaFuncionario(fid, escalaId, dataInicio){
+  if(!confirm(`Desativar esta escala para liberar o funcionário?`)) return;
+  const r=await api(`/api/escalas/${escalaId}/funcionarios/${fid}`, 'DELETE');
+  if(r?.erro){
+    alert('Erro ao desativar: '+r.erro);
+    return;
+  }
+  showSt('st-rh','Escala desativada. Recarregando...', false);
+  await new Promise(resolve=>setTimeout(resolve,500));
+  const fid_val=parseInt(document.getElementById('fid').value||0,10)||0;
+  if(fid_val) await rhFuncionarioEscalaCarregarNoModal(fid_val);
+}
 
 function rhFuncionarioHashPayload(id,payload){
-  return JSON.stringify({id:id||'',payload:payload||{}});
+  return JSON.stringify({id:id||'',payload:payload||{},escala:rhFuncionarioEscalaSnapshot()});
 }
 
 function rhFuncionarioMontarPayload(requireNome=false){
@@ -6902,7 +7878,7 @@ function rhFuncionarioMontarPayload(requireNome=false){
     data_admissao:document.getElementById('fadmissao').value,
     data_demissao:document.getElementById('fdemissao').value,
     tipo_contrato:document.getElementById('ftipo-contrato').value,
-    jornada:document.getElementById('fjornada').value,
+    jornada:'',
     status:document.getElementById('fstatus').value,
     ferias_inicio:document.getElementById('fferias-inicio').value,
     ferias_fim:document.getElementById('fferias-fim').value,
@@ -7095,6 +8071,8 @@ async function rhFuncionarioAutoSaveFlush(force=false,closeAfter=false){
 
   const fid=parseInt(document.getElementById('fid').value||r?.id||0,10)||0;
   if(fid){
+    const escalaOk=await rhFuncionarioAplicarEscala(fid,force);
+    if(force && !escalaOk) return false;
     const idx=funcs.findIndex(x=>parseInt(x.id,10)===fid);
     if(idx>=0) funcs[idx]=r;
     else funcs.push(r);
@@ -7119,13 +8097,15 @@ function openModalFunc(modo,id){
   if(_rhFuncAutoTimer){ clearTimeout(_rhFuncAutoTimer); _rhFuncAutoTimer=null; }
   _rhFuncAutoLastHash='';
   document.getElementById('fid').value='';
-  ['fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fferias-inicio','fferias-fim','fferias-obs','fposto','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fnascimento','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
+  ['fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fferias-inicio','fferias-fim','fferias-obs','fposto','fescala','fescala-data-ini','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fnascimento','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
   document.getElementById('fbanco-tipo').value='';
   document.getElementById('fddi').value='55';
   const st=document.getElementById('fcpf-st'); if(st){st.style.display='none';st.textContent='';}
   const stCep=document.getElementById('fcep-st'); if(stCep){stCep.style.display='none';stCep.textContent='';}
   const stBanco=document.getElementById('fbanco-st'); if(stBanco){stBanco.style.display='none';stBanco.textContent='';}
   _fCepLastLookup='';
+  _rhFuncEscalaAtual={escala_id:'',data_inicio:'',data_fim:''};
+  rhFuncionarioEscalaDefinirStatus('');
   document.getElementById('fstatus').value='Ativo';
   document.getElementById('fposto').value='';
   document.getElementById('fdocs-ok').value='0';
@@ -7141,6 +8121,7 @@ function openModalFunc(modo,id){
     preencherFormFuncionario(f,'Editar funcionário');
   } else {
     document.getElementById('mod-func-tit').textContent='Novo funcionário';
+    document.getElementById('fescala-data-ini').value=rhHojeISO();
     api('/api/funcionarios/proxima-re').then(r=>{
       if(r && r.re) document.getElementById('fre').value=r.re;
     });
@@ -7149,6 +8130,7 @@ function openModalFunc(modo,id){
   document.getElementById('mod-func').classList.add('on');
   rhBenefAberturaDiasSugestao();
   _rhFuncAutoHydrating=false;
+  rhFuncionarioEscalaCarregarNoModal(modo==='editar'&&id ? id : null);
   _rhFuncAutoLastHash=rhFuncionarioHashPayload(document.getElementById('fid').value||'',rhFuncionarioMontarPayload(false));
 }
 
@@ -7694,8 +8676,13 @@ function rhJornadaPopularFuncionariosAtivos(){
   const sel=document.getElementById('rh-jor-vinc-funcs');
   if(!sel) return;
   const atual=new Set(Array.from(sel.selectedOptions||[]).map(o=>String(o.value)));
+  const destino=(document.getElementById('rh-jor-vinc-jornada')?.value||'').trim();
   const ativos=(Array.isArray(funcs)?funcs:[])
     .filter(f=>String((f.status||'').toLowerCase())==='ativo')
+    .filter(f=>{
+      if(!destino) return true;
+      return !f.jornada_id || String(f.jornada_id)===destino;
+    })
     .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
   sel.innerHTML=ativos.map(f=>{
     const j=rhJornadas.find(x=>String(x.id)===String(f.jornada_id));
@@ -7881,7 +8868,6 @@ async function rhEscalaInit(force=false){
   try{
     if(!Array.isArray(funcs) || !funcs.length) funcs=await api('/api/funcionarios');
     await rhEscalaCarregar();
-    rhEscalaCarregarFuncsParaVinc();
     rhEscalaLimparForm();
     rhEscalaInitDone=true;
   }catch(e){
@@ -7893,31 +8879,36 @@ async function rhEscalaCarregar(){
   const r=await api('/api/escalas');
   rhEscalas=Array.isArray(r)?r:[];
   rhEscalaRenderTabela();
-  rhEscalaPopularSeletor();
+  rhFuncionarioEscalaCarregarNoModal((document.getElementById('fid')?.value||'').trim()||null);
 }
 
 function rhEscalaRenderTabela(){
   const tb=document.getElementById('rh-esc-tb');
   if(!tb) return;
+  const nomesFuncs=(lst)=>{
+    if(!Array.isArray(lst) || !lst.length) return '<span style="color:var(--text-muted)">Nenhum</span>';
+    const nomes=lst
+      .map(f=>esc((f?.nome||'').trim()))
+      .filter(Boolean)
+      .sort((a,b)=>a.localeCompare(b,'pt-BR'));
+    const head=nomes.slice(0,4).join(', ');
+    const extra=nomes.length>4 ? ` <span style="color:var(--text-muted)">+${nomes.length-4}</span>` : '';
+    return `${head}${extra}`;
+  };
   tb.innerHTML=rhEscalas.map(e=>`
     <tr>
       <td>${esc(e.nome||'')}</td>
       <td>${esc(e.tipo||'')}</td>
-      <td>${e.funcionarios_count||0}</td>
+      <td>
+        <div style="font-weight:700">${e.funcionarios_count||0}</div>
+        <div style="font-size:11px;line-height:1.25">${nomesFuncs(e.funcionarios)}</div>
+      </td>
       <td>
         <button class="btn b-az b-xs" onclick="rhEscalaEditar(${e.id})">Editar</button>
         <button class="btn b-vh b-xs" onclick="rhEscalaExcluir(${e.id})">Excluir</button>
       </td>
     </tr>
   `).join('');
-}
-
-function rhEscalaPopularSeletor(){
-  const sel=document.getElementById('rh-esc-vinc-escala');
-  if(!sel) return;
-  const atual=sel.value||'';
-  sel.innerHTML='<option value="">Selecione a escala...</option>'+rhEscalas.map(e=>`<option value="${e.id}">${esc(e.nome||'')} (${e.tipo||''})</option>`).join('');
-  if(atual && rhEscalas.some(e=>String(e.id)===String(atual))) sel.value=atual;
 }
 
 function rhEscalaMontarDiaTrabalho(turno, horaEntrada, horaSaida, intervalo){
@@ -7931,23 +8922,74 @@ function rhEscalaMontarDiaTrabalho(turno, horaEntrada, horaSaida, intervalo){
   return dia;
 }
 
+function rhEscalaSincronizarNoturno(){
+  const chk=document.getElementById('rh-esc-e-noturna');
+  const sel=document.getElementById('rh-esc-turno');
+  if(!chk||!sel) return;
+  sel.value=chk.checked?'noturno':'diurno';
+  rhEscalaAtualizarCicloTemplate();
+}
+
+function rhEscalaAjustarVisaoPorTipo(){
+  const tipo=document.getElementById('rh-esc-tipo')?.value||'';
+  const esconderBasicos=tipo==='12x36';
+  const mostrar6x1=tipo==='6x1';
+  const cicloLabel=document.getElementById('rh-esc-ciclo-label');
+  const hint12x36=document.getElementById('rh-esc-12x36-hint');
+
+  document.querySelectorAll('[data-rh-esc-gen-field="1"]').forEach(el=>{
+    el.style.display=esconderBasicos?'none':'';
+  });
+  if(cicloLabel) cicloLabel.textContent=esconderBasicos?'Configuração da escala 12x36':'Configuração do ciclo (simples)';
+  if(hint12x36) hint12x36.style.display=esconderBasicos?'block':'none';
+
+  const cfg6x1=document.getElementById('rh-esc-6x1-config');
+  if(cfg6x1) cfg6x1.style.display=mostrar6x1?'block':'none';
+}
+
+function rhEscalaSemanaTrabalhoSelecionados(){
+  const out=[];
+  for(let i=0;i<=6;i++){
+    const el=document.getElementById('rh-esc-ds-trab-'+i);
+    if(el && el.checked) out.push(i);
+  }
+  return out;
+}
+
+function rhEscalaSemanaTrabalhoDefinir(valores){
+  const setVals=new Set(Array.isArray(valores)?valores.map(v=>parseInt(v,10)).filter(v=>!Number.isNaN(v) && v>=0 && v<=6):[]);
+  for(let i=0;i<=6;i++){
+    const el=document.getElementById('rh-esc-ds-trab-'+i);
+    if(el) el.checked=setVals.has(i);
+  }
+}
+
 function rhEscalaMontarCiclo(){
   const tipo=document.getElementById('rh-esc-tipo')?.value||'';
-  const turno=document.getElementById('rh-esc-turno')?.value||'diurno';
+  const turnoCheckbox=document.getElementById('rh-esc-e-noturna');
+  const turnoSelect=document.getElementById('rh-esc-turno');
+  const turno=((turnoCheckbox&&turnoCheckbox.checked) || (turnoSelect?.value||'')==='noturno')?'noturno':'diurno';
   const horaEntrada=(document.getElementById('rh-esc-hora-entrada')?.value||'08:00').trim();
   const horaSaida=(document.getElementById('rh-esc-hora-saida')?.value||'17:00').trim();
   const intervalo=parseInt((document.getElementById('rh-esc-intervalo')?.value||'60').trim(),10)||0;
   const diasTrabalho=Math.max(1,parseInt((document.getElementById('rh-esc-dias-trabalho')?.value||'6').trim(),10)||6);
   const diasFolga=Math.max(0,parseInt((document.getElementById('rh-esc-dias-folga')?.value||'2').trim(),10)||2);
+  const diasSemanaTrabalho=rhEscalaSemanaTrabalhoSelecionados();
+  const montarOut=(arrDias)=>{
+    const out={dias:arrDias};
+    if(diasSemanaTrabalho.length) out.dias_semana_trabalho=diasSemanaTrabalho;
+    return out;
+  };
 
   const dias=[];
   const diaBase=rhEscalaMontarDiaTrabalho(turno,horaEntrada,horaSaida,intervalo);
 
   if(tipo==='12x36'){
-    dias.push({...diaBase,horas:12});
-    dias.push({tipo:'folga'});
-    dias.push({tipo:'folga'});
-    return {dias};
+    const diaTrabalho={...diaBase,horas:12};
+    const diaFolga={tipo:'folga'};
+    dias.push(diaTrabalho);
+    dias.push(diaFolga);
+    return montarOut(dias);
   }
 
   if(tipo==='6x1'){
@@ -7957,30 +8999,41 @@ function rhEscalaMontarCiclo(){
     const sabIntervalo=parseInt((document.getElementById('rh-esc-sab-intervalo')?.value||'0').trim(),10)||0;
     dias.push(rhEscalaMontarDiaTrabalho(turno,sabEntrada,sabSaida,sabIntervalo));
     dias.push({tipo:'folga'});
-    return {dias};
+    return montarOut(dias);
   }
 
   if(tipo==='noturna'){
     const nEnt=horaEntrada||'22:00';
     const nSai=horaSaida||'06:00';
     dias.push(rhEscalaMontarDiaTrabalho('noturno',nEnt,nSai,intervalo));
-    return {dias};
+    return montarOut(dias);
   }
 
   for(let i=0;i<diasTrabalho;i++) dias.push({...diaBase});
   for(let i=0;i<diasFolga;i++) dias.push({tipo:'folga'});
-  return {dias};
+  return montarOut(dias);
 }
 
 function rhEscalaAtualizarCicloTemplate(){
   const tipo=document.getElementById('rh-esc-tipo')?.value||'';
   const turno=document.getElementById('rh-esc-turno')?.value||'diurno';
+  const turnoCheckbox=document.getElementById('rh-esc-e-noturna');
   const cicloArea=document.getElementById('rh-esc-ciclo');
   const noturnoConfig=document.getElementById('rh-esc-noturno-config');
   const cfg6x1=document.getElementById('rh-esc-6x1-config');
   if(!cicloArea) return;
+  if(turnoCheckbox) turnoCheckbox.checked=(turno==='noturno' || tipo==='noturna');
+  rhEscalaAjustarVisaoPorTipo();
+  if(tipo==='5x2'){
+    document.getElementById('rh-esc-dias-trabalho').value='5';
+    document.getElementById('rh-esc-dias-folga').value='2';
+  }
   if(tipo==='6x1'){
     document.getElementById('rh-esc-dias-trabalho').value='6';
+    document.getElementById('rh-esc-dias-folga').value='1';
+  }
+  if(tipo==='12x36'){
+    document.getElementById('rh-esc-dias-trabalho').value='1';
     document.getElementById('rh-esc-dias-folga').value='1';
   }
   const templateObj=tipo?rhEscalaMontarCiclo():{};
@@ -8004,6 +9057,7 @@ function rhEscalaEditar(id){
   const dias=(e?.ciclo?.dias||[]);
   const diasTrabalho=dias.filter(d=>d && d.tipo==='trabalho');
   const diasFolga=dias.filter(d=>d && d.tipo==='folga');
+  rhEscalaSemanaTrabalhoDefinir(e?.ciclo?.dias_semana_trabalho||[]);
   if(diasTrabalho.length){
     const base=diasTrabalho[0]||{};
     if(base.hora_entrada) document.getElementById('rh-esc-hora-entrada').value=base.hora_entrada;
@@ -8012,6 +9066,10 @@ function rhEscalaEditar(id){
   }
   document.getElementById('rh-esc-dias-trabalho').value=diasTrabalho.length||6;
   document.getElementById('rh-esc-dias-folga').value=diasFolga.length||2;
+  if((e.tipo||'')==='12x36'){
+    document.getElementById('rh-esc-dias-trabalho').value='1';
+    document.getElementById('rh-esc-dias-folga').value='1';
+  }
   if((e.tipo||'')==='6x1' && diasTrabalho.length>=6){
     const sab=diasTrabalho[5]||{};
     if(sab.hora_entrada) document.getElementById('rh-esc-sab-hora-entrada').value=sab.hora_entrada;
@@ -8020,36 +9078,40 @@ function rhEscalaEditar(id){
   }
   const ehNoturno=(e.tipo==='noturna') || dias.some(d=>d && d.tipo==='trabalho' && d.noturno===true);
   document.getElementById('rh-esc-turno').value=ehNoturno?'noturno':'diurno';
+  const turnoCheckbox=document.getElementById('rh-esc-e-noturna');
+  if(turnoCheckbox) turnoCheckbox.checked=ehNoturno;
   // Popular campos noturnos se disponíveis
   if(e.periodo_noturno_ini) document.getElementById('rh-esc-noturno-ini').value=e.periodo_noturno_ini;
   if(e.periodo_noturno_fim) document.getElementById('rh-esc-noturno-fim').value=e.periodo_noturno_fim;
+  rhEscalaAjustarVisaoPorTipo();
   rhEscalaAtualizarCicloTemplate();
 }
 
-function rhEscalaLimparForm(){
+async function rhEscalaLimparForm(){
   document.getElementById('rh-esc-id').value='';
   document.getElementById('rh-esc-nome').value='';
   document.getElementById('rh-esc-tipo').value='';
   document.getElementById('rh-esc-desc').value='';
   document.getElementById('rh-esc-turno').value='diurno';
+  const turnoCheckbox=document.getElementById('rh-esc-e-noturna');
+  if(turnoCheckbox) turnoCheckbox.checked=false;
   document.getElementById('rh-esc-hora-entrada').value='08:00';
   document.getElementById('rh-esc-hora-saida').value='17:00';
   document.getElementById('rh-esc-intervalo').value='60';
   document.getElementById('rh-esc-dias-trabalho').value='6';
   document.getElementById('rh-esc-dias-folga').value='2';
+  rhEscalaSemanaTrabalhoDefinir([]);
   document.getElementById('rh-esc-sab-hora-entrada').value='08:00';
   document.getElementById('rh-esc-sab-hora-saida').value='12:00';
   document.getElementById('rh-esc-sab-intervalo').value='0';
   document.getElementById('rh-esc-ciclo').value='{}';
   document.getElementById('rh-esc-noturno-ini').value='22:00';
   document.getElementById('rh-esc-noturno-fim').value='05:00';
-  document.getElementById('rh-esc-vinc-escala').value='';
-  document.getElementById('rh-esc-vinc-data-ini').value=new Date().toISOString().split('T')[0];
   const noturnoConfig=document.getElementById('rh-esc-noturno-config');
   if(noturnoConfig) noturnoConfig.style.display='none';
   const cfg6x1=document.getElementById('rh-esc-6x1-config');
   if(cfg6x1) cfg6x1.style.display='none';
-  rhEscalaCarregarFuncsParaVinc();
+  rhEscalaAjustarVisaoPorTipo();
 }
 
 async function rhEscalaSalvar(){
@@ -8118,64 +9180,6 @@ async function rhEscalaExcluir(id){
   }
   await rhEscalaCarregar();
   showSt('rh-escala-st','Escala excluída com sucesso.',false);
-}
-
-function rhEscalaCarregarFuncsParaVinc(){
-  const eid=(document.getElementById('rh-esc-vinc-escala')?.value||'').trim();
-  const sel=document.getElementById('rh-esc-vinc-funcs');
-  if(!sel) return;
-  
-  // Se não selecionou escala, mostrar todos os ativos que não estão em escala
-  if(!eid){
-    const sel2=document.getElementById('rh-esc-vinc-funcs');
-    if(!sel2) return;
-    const ativos=(Array.isArray(funcs)?funcs:[])
-      .filter(f=>String((f.status||'').toLowerCase())==='ativo')
-      .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
-    sel2.innerHTML=ativos.map(f=>`<option value="${f.id}">${esc(f.nome||'Sem nome')} (${f.matricula||'—'})</option>`).join('');
-    return;
-  }
-  
-  // Escala selecionada: mostrar funcs que não estão em outra escala
-  const escalaAtual=rhEscalas.find(x=>String(x.id)===String(eid));
-  if(!escalaAtual) return;
-  const idsJaVincs=new Set((escalaAtual.funcionarios||[]).map(f=>f.id));
-  const ativos=(Array.isArray(funcs)?funcs:[])
-    .filter(f=>String((f.status||'').toLowerCase())==='ativo' && !idsJaVincs.has(f.id))
-    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||'pt-BR'));
-  sel.innerHTML=ativos.map(f=>`<option value="${f.id}">${esc(f.nome||'Sem nome')} (${f.matricula||'—'})</option>`).join('');
-}
-
-async function rhEscalaVincularSelecionados(){
-  const eid=(document.getElementById('rh-esc-vinc-escala')?.value||'').trim();
-  if(!eid){
-    showSt('rh-escala-st','Selecione a escala para vincular.',true);
-    return;
-  }
-  const dataIni=(document.getElementById('rh-esc-vinc-data-ini')?.value||'').trim();
-  if(!dataIni){
-    showSt('rh-escala-st','Informe a data de início.',true);
-    return;
-  }
-  const sel=document.getElementById('rh-esc-vinc-funcs');
-  const ids=Array.from(sel?.selectedOptions||[]).map(o=>parseInt(o.value,10)).filter(x=>!Number.isNaN(x));
-  if(!ids.length){
-    showSt('rh-escala-st','Selecione ao menos um funcionário.',true);
-    return;
-  }
-  
-  const funcionarios=ids.map(fid=>({funcionario_id:fid,data_inicio:dataIni,data_fim:null}));
-  const r=await api('/api/escalas/'+eid+'/funcionarios','POST',{funcionarios});
-  if(r?.erro){
-    showSt('rh-escala-st',r.erro,true);
-    return;
-  }
-  funcs=await api('/api/funcionarios');
-  pontoFuncs=[...funcs];
-  await rhEscalaCarregar();
-  rhEscalaCarregarFuncsParaVinc();
-  renderFuncionarios();
-  showSt('rh-escala-st','Funcionários vinculados à escala.',false);
 }
 
 // ══════════════════════════════════════════════
@@ -9670,12 +10674,63 @@ function docsInit() {
 
 function docsSetAba(aba, el) {
   docsAbaAtiva = aba;
-  ['funcionarios','clientes','proposta','lista-propostas','contrato','lista-contratos','simples-nacional'].forEach(a => {
+  ['funcionarios','clientes','proposta','lista-propostas','contrato','lista-contratos'].forEach(a => {
     const pane = document.getElementById('docs-pane-' + a);
     const btn = document.getElementById('docs-subtab-' + a);
     if (pane) pane.style.display = a === aba ? '' : 'none';
     if (btn) btn.classList.toggle('on', a === aba);
   });
+}
+
+function pcLimparFormulario() {
+  const ids = ['pc-cnpj', 'pc-empresa', 'pc-funcao', 'pc-cliente', 'pc-email', 'pc-telefone', 'pc-escopo-obs', 'pc-busca', 'pc-rem-busca'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+
+  const pcData = document.getElementById('pc-data');
+  if (pcData) pcData.value = new Date().toISOString().split('T')[0];
+  const pcTipo = document.getElementById('pc-tipo');
+  if (pcTipo) pcTipo.value = 'mensal';
+  const pcIns = document.getElementById('pc-insalubridade');
+  if (pcIns) pcIns.value = '20% Insalubridade';
+
+  const cliSel = document.getElementById('pc-cli-sel');
+  if (cliSel) cliSel.style.display = 'none';
+  const remSel = document.getElementById('pc-rem-sel');
+  if (remSel) remSel.style.display = 'none';
+  const acCli = document.getElementById('pc-ac');
+  if (acCli) acCli.style.display = 'none';
+  const acRem = document.getElementById('pc-rem-ac');
+  if (acRem) acRem.style.display = 'none';
+  const stCnpj = document.getElementById('pc-cnpj-st');
+  if (stCnpj) {
+    stCnpj.style.display = 'none';
+    stCnpj.textContent = '';
+  }
+
+  _pcEmpresaRemSel = null;
+  const tbody = document.getElementById('pc-itens-body');
+  if (tbody) {
+    tbody.innerHTML = `
+      <tr>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="1" style="width:38px;text-align:center"></td>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="Limpeza" placeholder="Referência" style="width:98px"></td>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="AGENTES DE LIMPEZA 44 HORAS SEMANAIS" placeholder="Descrição do serviço" style="width:100%"></td>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="number" min="1" value="1" style="width:52px;text-align:center" oninput="pcRecalcRow(this.closest('tr'))"></td>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="0,00" style="width:100px;text-align:right" oninput="pcRecalcRow(this.closest('tr'))"></td>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" readonly tabindex="-1" placeholder="0,00" style="width:100px;text-align:right;background:var(--azul-cc);cursor:default"></td>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--borda);text-align:center"><button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);padding:2px 7px" onclick="this.closest('tr').remove();pcRecalcTotal()">✕</button></td>
+      </tr>`;
+  }
+
+  pcRecalcTotal();
+  const res = document.getElementById('pc-resultado');
+  if (res) {
+    res.style.display = 'none';
+    res.innerHTML = '';
+  }
 }
 
 async function docsAbrirProposta() {
@@ -9684,6 +10739,8 @@ async function docsAbrirProposta() {
   if (pcData && !pcData.value) {
     pcData.value = new Date().toISOString().split('T')[0];
   }
+  const pcIns = document.getElementById('pc-insalubridade');
+  if (pcIns && !pcIns.value.trim()) pcIns.value = '20% Insalubridade';
   // Garante que os clientes estão carregados para o autocomplete de destinatária
   if (!Array.isArray(todos) || !todos.length) todos = await api('/api/clientes');
   // Carrega empresas remetentes
@@ -9694,11 +10751,6 @@ async function docsAbrirProposta() {
   if (!_pcEmpresaRemSel && Array.isArray(_pcRemEmpresas) && _pcRemEmpresas.length === 1) {
     pcSelecionarRemetente(_pcRemEmpresas[0].id);
   }
-}
-
-async function docsAbrirSimplesNacional() {
-  docsSetAba('simples-nacional');
-  await snInicializar();
 }
 // ── FIM DOCUMENTOS ──────────────────────────────────────────────────────────
 
@@ -9939,8 +10991,14 @@ function lpRenderizar(items) {
         </select>
       </td>
       <td>
-        <button class="btn b-sm" style="font-size:11px;background:#205d8a;color:#fff;white-space:nowrap"
-          onclick="pcAbrirModalEnvio(${p.id}, ${JSON.stringify(p.numero)}, ${JSON.stringify(p.email_contato||'')}, '')">📨 Enviar</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn b-sm" style="font-size:11px;background:#205d8a;color:#fff;white-space:nowrap"
+            onclick='pcAbrirModalEnvio(${p.id}, ${JSON.stringify(p.numero)}, ${JSON.stringify(p.email_contato||"")}, "")'>📨 Enviar</button>
+          <button class="btn b-sm" style="font-size:11px;background:#2e7d32;color:#fff;white-space:nowrap"
+            onclick="window.open('/api/propostas-comerciais/${p.id}/pdf','_blank')">⬇ Baixar</button>
+          <button class="btn b-sm" style="font-size:11px;background:#c62828;color:#fff;white-space:nowrap"
+            onclick='lpExcluirProposta(${p.id}, ${JSON.stringify(p.numero||"")}, ${JSON.stringify(p.empresa||"")})'>🗑 Excluir</button>
+        </div>
       </td>
     </tr>`;
   }).join('');
@@ -9975,6 +11033,21 @@ async function lpAtualizarStatus(id, status, selectEl) {
   } catch(e) {
     alert('Erro ao atualizar status.');
     lpCarregar(_lpPage);
+  }
+}
+
+async function lpExcluirProposta(id, numero, empresa) {
+  const alvo = [numero, empresa].filter(Boolean).join(' · ');
+  if (!confirm(`Excluir esta proposta?\n\n${alvo || `ID ${id}`}\n\nEsta ação não pode ser desfeita.`)) return;
+  try {
+    const res = await api(`/api/propostas-comerciais/${id}`, 'DELETE');
+    if (res?.erro) {
+      alert(res.erro);
+      return;
+    }
+    lpCarregar(_lpPage);
+  } catch (e) {
+    alert('Erro ao excluir proposta.');
   }
 }
 // ── FIM LISTA DE PROPOSTAS ───────────────────────────────────────────────────
@@ -10028,7 +11101,8 @@ async function pcEnviarProposta() {
     fb.style.display = '';
   };
 
-  btn.disabled = true; btn.textContent = '⏳ Enviando…';
+  btn.disabled = true; btn.textContent = '⏳ Enviando...';
+  let envioOk = false;
   try {
     const body = {canal, email, telefone, mensagem};
     const res  = await api(`/api/propostas-comerciais/${_mepPropostaId}/enviar`, 'POST', body);
@@ -10037,11 +11111,14 @@ async function pcEnviarProposta() {
       if (res.wa_url) {
         window.open(res.wa_url, '_blank');
         _showFb('💬 Evolution API não configurada. WhatsApp aberto em nova aba para envio manual.', true);
+        envioOk = true;
       } else {
         _showFb(`✅ Proposta enviada via WhatsApp para <strong>${_escHtml(res.dest || telefone)}</strong>!`, true);
+        envioOk = true;
       }
     } else {
       _showFb(`✅ E-mail enviado com sucesso para <strong>${_escHtml(email)}</strong>!`, true);
+      envioOk = true;
     }
     lpCarregar(_lpPage);  // Atualiza ícones de envio na lista
   } catch(e) {
@@ -10049,6 +11126,10 @@ async function pcEnviarProposta() {
   }
   btn.disabled = false;
   _mepToggleCanal(canal);
+  if (envioOk) {
+    pcLimparFormulario();
+    setTimeout(() => pcFecharModalEnvio(), 350);
+  }
 }
 
 // Fechar modal ao clicar fora
@@ -10289,6 +11370,8 @@ function previaProposta() {
   const dataVal = document.getElementById('pc-data').value;
   const cliente = document.getElementById('pc-cliente').value.trim();
   const email = document.getElementById('pc-email').value.trim();
+  const insalubridade = (document.getElementById('pc-insalubridade')?.value || '20% Insalubridade').trim() || '20% Insalubridade';
+  const escopoObs = document.getElementById('pc-escopo-obs')?.value?.trim() || '';
   const itens = pcGetItens();
   const dataFmt = dataVal ? new Date(dataVal+'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
   const refNum = 'PC-'+new Date().toISOString().replace(/[-:T.Z]/g,'').slice(0,12);
@@ -10368,6 +11451,7 @@ table.custo .total-row td{font-weight:700;background:#f0f4f8;border-top:2px soli
 
   <div class="sec-title">Escopo e Valores dos Serviços</div>
   <p style="font-weight:700;font-size:11pt;margin-bottom:6px">Escopo Operacional</p>
+  ${escopoObs ? `<p class="body-text">${_escHtml(escopoObs).replace(/\n/g,'<br>')}</p>` : ''}
   <p style="font-weight:700;font-size:10pt;margin-bottom:6px">Planilha de custo</p>
   <table class="custo">
     <thead><tr><th>Cod.</th><th>Referência</th><th>Função</th><th style="text-align:center">Qtd</th><th style="text-align:right">Valor unit.</th><th style="text-align:right">Subtotal</th></tr></thead>
@@ -10379,7 +11463,7 @@ table.custo .total-row td{font-weight:700;background:#f0f4f8;border-top:2px soli
   <p class="body-text">Proposta de acordo com escopo fornecido contemplando os seguinte benefícios aos colaboradores;</p>
   <p class="body-text">Os valores informados contemplam todos os benefícios, treinamentos, administração e supervisão dos serviços e/ou funcionários e uniformes para o andamento da operação. Estão incluídos também todos os custos como, encargos sociais, trabalhistas e fiscais de responsabilidade da ${_escHtml(remNome)};</p>
   <p class="body-text">PPRA – Programa de Prevenção e Riscos Ambientais;<br>PCMSO – Programa de Controle Médico e Saúde Ocupacional;<br>Todos os funcionários da ${_escHtml(remNome)} possuem os seguintes benefícios de acordo com a convenção coletiva;</p>
-  ${['Seguro de Vida em grupo;','Vale Transporte;','Vale Alimentação','20% Insalubridade','Uniforme;',"EPI's;"].map(t=>`<div class="bullet">• ${_escHtml(t)}</div>`).join('')}
+  ${['Seguro de Vida em grupo;','Vale Transporte;','Vale Alimentação',insalubridade,'Uniforme;',"EPI's;"].map(t=>`<div class="bullet">• ${_escHtml(t)}</div>`).join('')}
   <p class="body-text">Nr35 para trabalho em altura;</p>
   <p class="body-text">Todos os funcionários ${_escHtml(remNome)} devem estar identificados através de crachás, devidamente uniformizados e munidos de EPI´s;</p>
 
@@ -10428,6 +11512,8 @@ async function gerarProposta() {
   const dataFmt = dataVal ? new Date(dataVal+'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
   const cliente = document.getElementById('pc-cliente').value.trim();
   const email   = document.getElementById('pc-email').value.trim();
+  const insalubridade = (document.getElementById('pc-insalubridade')?.value || '20% Insalubridade').trim() || '20% Insalubridade';
+  const escopoObservacoes = document.getElementById('pc-escopo-obs')?.value?.trim() || '';
   const itens   = pcGetItens();
   const remetenteId = _pcEmpresaRemSel ? _pcEmpresaRemSel.id : null;
   const btn = document.getElementById('pc-btn-gerar');
@@ -10439,22 +11525,26 @@ async function gerarProposta() {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({empresa,cnpj,funcao,data:dataFmt,cliente,email,
                             itens, remetente_id:remetenteId,
-                            tipo: document.getElementById('pc-tipo')?.value || 'mensal'})
+                            tipo: document.getElementById('pc-tipo')?.value || 'mensal',
+                            insalubridade,
+                            escopo_observacoes: escopoObservacoes})
     });
     if (!resp.ok) { const err=await resp.json().catch(()=>({erro:resp.statusText})); throw new Error(err.erro||resp.statusText); }
     const numProposta = resp.headers.get('X-Proposta-Numero') || '';
     const propostaId  = resp.headers.get('X-Proposta-Id') || null;
     const blob = await resp.blob();
     const url  = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href=url; a.download=`Proposta_Comercial_${empresa.replace(/\s+/g,'_').slice(0,30)}.pdf`;
-    a.click(); setTimeout(()=>URL.revokeObjectURL(url),10000);
+    const aba = window.open(url, '_blank');
+    if(!aba){
+      throw new Error('Não foi possível abrir a prévia. Verifique se o navegador bloqueou pop-ups para este site.');
+    }
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
     const numBadge = numProposta ? ` &nbsp;<strong>${_escHtml(numProposta)}</strong>` : '';
     const emailDest = document.getElementById('pc-email')?.value?.trim() || '';
     const telDest   = document.getElementById('pc-telefone')?.value?.trim() || '';
     res.innerHTML=`<div style="background:var(--verde-cl);border:1px solid var(--verde);border-radius:8px;padding:10px 14px;color:var(--verde);display:flex;flex-wrap:wrap;gap:8px;align-items:center">
       <span>✅ PDF gerado com sucesso!${numBadge}</span>
-      ${propostaId ? `<button class="btn b-sm" style="font-size:11px;background:#e8f5e9;color:#2e7d32;border:1px solid #2e7d32" onclick="pcAbrirModalEnvio(${propostaId}, ${JSON.stringify(numProposta)}, ${JSON.stringify(emailDest)}, ${JSON.stringify(telDest)})">📨 Enviar ao cliente</button>` : ''}
+      ${propostaId ? `<button class="btn b-sm" style="font-size:11px;background:#e8f5e9;color:#2e7d32;border:1px solid #2e7d32" onclick='pcAbrirModalEnvio(${propostaId}, ${JSON.stringify(numProposta)}, ${JSON.stringify(emailDest)}, ${JSON.stringify(telDest)})'>📨 Enviar ao cliente</button>` : ''}
       <button class="btn b-sm" style="font-size:11px;background:#e3f2fd;color:#1565c0;border:1px solid #1565c0" onclick="docsAbrirListaPropostas()">📋 Ver histórico</button>
     </div>`;
   } catch(e) {
@@ -11197,6 +12287,15 @@ async function fpMarcarPaga(){
   await fpCarregarFolhas();
 }
 
+async function fpNotificarPagamento(){
+  const f=FP_STATE.folhaSelecionada;
+  if(!f){ toast('Selecione uma folha.','e'); return; }
+  if(!confirm(`Enviar aviso de pagamento da folha "${f.nome}" para os colaboradores?`)) return;
+  const r=await api(`/api/folhas/${f.id}/notificar`,'POST');
+  if(!r||r.error||r.erro){ toast(r?.error||r?.erro||'Erro ao notificar pagamento.','e'); return; }
+  toast(`Notificações enviadas: ${r.enviados_push||0} app, ${r.enviados_whatsapp||0} WhatsApp, ${r.sem_contato||0} sem contato.`,'s');
+}
+
 async function fpExcluirFolha(){
   const f = FP_STATE.folhaSelecionada;
   if(!f) return;
@@ -11850,12 +12949,15 @@ async function _renderFuncionariosImpl(){
     const vazioMsg=rhFuncTab==='ativos'
       ? 'Nenhum colaborador ativo encontrado.'
       : (rhFuncTab==='ferias'?'Nenhum colaborador em férias encontrado.':'Nenhum colaborador demitido/inativo encontrado.');
-    tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">'+vazioMsg+'</td></tr>';
+    tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted)">'+vazioMsg+'</td></tr>';
     return;
   }
   tb.innerHTML=lista.map(f=>{
     const emp=emps.find(e=>e.id===f.empresa_id);
     const ativo=isAtivo(f);
+    const appVer=(f.app_versao_nome||'').trim() || (f.app_versao_code!=null ? ('build '+f.app_versao_code) : '—');
+    const appVerTs=f.app_versao_atualizado_em?new Date(f.app_versao_atualizado_em).toLocaleString('pt-BR'):'—';
+    const appBadge=f.app_versao_desatualizada?'<span class="pill p-ci" title="Versão abaixo da mínima">Desatualizado</span>':'<span class="pill p-vd">OK</span>';
     return `<tr class="row-clickable" onclick="openModalFunc('editar',${f.id})">
       <td style="font-weight:700">${f.re||'—'}</td>
       <td><div style="font-weight:700">${f.nome}</div><div style="font-size:11px;color:var(--text-muted)">${fmtDoc(f.cpf)||''}</div></td>
@@ -11863,6 +12965,7 @@ async function _renderFuncionariosImpl(){
       <td style="font-size:11px">${f.posto_operacional||'Reserva tecnica'}</td>
       <td>${emp?emp.nome:'—'}</td>
       <td>${[f.email,fmtTelefone(f.telefone)].filter(Boolean).join(' · ')||'—'}</td>
+      <td><div style="font-size:11px">${esc(appVer)}</div><div style="font-size:10px;color:var(--text-muted)">${esc(appVerTs)}</div><div style="margin-top:3px">${appBadge}</div></td>
       <td><span class="pill ${ativo?'p-vd':(isFerias(f)?'p-az':'p-ci')}">${f.status||'Ativo'}</span></td>
       <td><div class="tac">
         <button class="btn b-gh b-sm" onclick="event.stopPropagation();openModalFunc('editar',${f.id})">Editar</button>
@@ -12457,47 +13560,369 @@ async function uploadSSTArquivo(){
 
 let _ocLista=[];
 let _ocEditId=null;
+let _ocCatalogoItens=[];
+let _ocCatalogoEditId=null;
+let _ocSugestoesVisiveis=[];
+let _ocSugestaoAtiva=-1;
+
+function ocFecharSugestoesNovoItem(){
+  const box=document.getElementById('oc-novo-item-sugestoes');
+  if(!box)return;
+  box.hidden=true;
+  box.innerHTML='';
+  _ocSugestoesVisiveis=[];
+  _ocSugestaoAtiva=-1;
+}
+
+function ocAplicarSugestaoNovoItem(item){
+  const input=document.getElementById('oc-novo-item-desc');
+  if(!input||!item)return;
+  input.value=item.nome||'';
+  ocFecharSugestoesNovoItem();
+  const qtd=document.getElementById('oc-novo-item-qtd');
+  if(qtd && !qtd.value) qtd.focus();
+}
+
+function ocPintarSugestaoAtiva(){
+  const box=document.getElementById('oc-novo-item-sugestoes');
+  if(!box)return;
+  const nodes=box.querySelectorAll('[data-oc-sug]');
+  nodes.forEach((node,idx)=>{
+    if(idx===_ocSugestaoAtiva){
+      node.style.background='linear-gradient(90deg,rgba(59,148,230,.28),rgba(40,90,170,.24))';
+      node.style.borderColor='rgba(128,189,255,.56)';
+    }else{
+      node.style.background='rgba(8,25,44,.35)';
+      node.style.borderColor='rgba(124,176,238,.12)';
+    }
+  });
+}
+
+function ocAtualizarSugestoesNovoItem(){
+  const box=document.getElementById('oc-novo-item-sugestoes');
+  const input=document.getElementById('oc-novo-item-desc');
+  if(!box||!input)return;
+  const termo=(input.value||'').trim().toLowerCase();
+  const ativos=(_ocCatalogoItens||[]).filter(i=>i.ativo!==false);
+  const vistos=new Set();
+  const itens=ativos.filter(i=>{
+    const nome=(i.nome||'').trim();
+    if(!nome)return false;
+    const chave=nome.toLowerCase();
+    if(vistos.has(chave)) return false;
+    vistos.add(chave);
+    if(!termo) return true;
+    const alvo=`${nome} ${(i.unidade||'')} ${(i.descricao||'')}`.toLowerCase();
+    return alvo.includes(termo);
+  }).slice(0,8);
+  _ocSugestoesVisiveis=itens;
+  _ocSugestaoAtiva=-1;
+  if(!itens.length || !input.matches(':focus')){
+    ocFecharSugestoesNovoItem();
+    return;
+  }
+  box.hidden=false;
+  box.innerHTML=itens.map((item,idx)=>{
+    const meta=[item.unidade||'',item.descricao||''].filter(Boolean).join(' · ');
+    return `<div data-oc-sug="${idx}" onmousedown="event.preventDefault();ocAplicarSugestaoNovoItem(_ocSugestoesVisiveis[${idx}])" style="padding:9px 10px;border:1px solid rgba(124,176,238,.12);border-radius:10px;background:rgba(8,25,44,.35);cursor:pointer;margin-bottom:4px;transition:all .12s ease"><div style="font-weight:700;color:#e9f4ff;line-height:1.2">${escHtml(item.nome||'')}</div>${meta?`<div style="font-size:11px;color:#a8c8e8;margin-top:3px">${escHtml(meta)}</div>`:''}</div>`;
+  }).join('');
+  ocPintarSugestaoAtiva();
+}
+
+function ocTeclaSugestoesNovoItem(event){
+  if(!Array.isArray(_ocSugestoesVisiveis) || !_ocSugestoesVisiveis.length) return;
+  if(event.key==='ArrowDown'){
+    event.preventDefault();
+    _ocSugestaoAtiva=Math.min(_ocSugestaoAtiva+1,_ocSugestoesVisiveis.length-1);
+    ocPintarSugestaoAtiva();
+    return;
+  }
+  if(event.key==='ArrowUp'){
+    event.preventDefault();
+    _ocSugestaoAtiva=Math.max(_ocSugestaoAtiva-1,0);
+    ocPintarSugestaoAtiva();
+    return;
+  }
+  if(event.key==='Enter' && _ocSugestaoAtiva>=0){
+    event.preventDefault();
+    ocAplicarSugestaoNovoItem(_ocSugestoesVisiveis[_ocSugestaoAtiva]);
+    return;
+  }
+  if(event.key==='Escape'){
+    event.preventDefault();
+    ocFecharSugestoesNovoItem();
+  }
+}
+
+function ocAtualizarModalidade(){
+  const ehOrcamento=document.getElementById('oc-tipo')?.value==='pedido_orcamento';
+  const fornecedor=document.getElementById('oc-fornecedor-campos');
+  if(fornecedor) fornecedor.style.display=ehOrcamento?'none':'';
+  if(ehOrcamento){
+    ['oc-cnpj','oc-for','oc-endereco','oc-for-telefone','oc-for-email','oc-val'].forEach(id=>document.getElementById(id).value='');
+  }
+  const titulo=document.querySelector('#pg-compras .card-title');
+  if(titulo) titulo.textContent=ehOrcamento?'Pedido de Orçamento':'Ordem de Compra';
+}
+
+function ocRenderItens(itens=[]){
+  const corpo=document.getElementById('oc-itens');
+  if(!corpo)return;
+  const lista=Array.isArray(itens)&&itens.length?itens:[{descricao:'',quantidade:''}];
+  corpo.innerHTML=lista.map(item=>ocLinhaItemHtml(item.descricao||'',item.quantidade||'')).join('');
+}
+
+function ocLinhaItemHtml(descricao='',quantidade=''){
+  return `<tr><td><input class="oc-item-desc" list="oc-catalogo-opcoes" value="${escHtml(descricao)}" placeholder="Ex.: Luva de proteção"></td><td><input class="oc-item-qtd" value="${escHtml(quantidade)}" placeholder="Ex.: 20 unidades"></td><td><button class="btn b-er b-sm" type="button" onclick="ocRemoverItem(this)">Remover</button></td></tr>`;
+}
+
+function ocAdicionarItem(){
+  const corpo=document.getElementById('oc-itens');
+  if(!corpo)return;
+  const linha=document.createElement('tr');
+  linha.innerHTML=ocLinhaItemHtml('','').replace('<tr>','').replace('</tr>','');
+  corpo.appendChild(linha);
+}
+
+function ocAdicionarItemRapido(){
+  const descEl=document.getElementById('oc-novo-item-desc');
+  const qtdEl=document.getElementById('oc-novo-item-qtd');
+  const descricao=(descEl?.value||'').trim();
+  const quantidade=(qtdEl?.value||'').trim();
+  if(!descricao){
+    ocShowStatus('Informe o nome do item para adicionar.',true);
+    descEl?.focus();
+    return;
+  }
+  const corpo=document.getElementById('oc-itens');
+  if(!corpo)return;
+  const primeira=corpo.querySelector('tr');
+  const primeiraDesc=primeira?.querySelector('.oc-item-desc')?.value?.trim()||'';
+  const primeiraQtd=primeira?.querySelector('.oc-item-qtd')?.value?.trim()||'';
+  if(corpo.querySelectorAll('tr').length===1 && !primeiraDesc && !primeiraQtd){
+    primeira.querySelector('.oc-item-desc').value=descricao;
+    primeira.querySelector('.oc-item-qtd').value=quantidade;
+  }else{
+    const linha=document.createElement('tr');
+    linha.innerHTML=ocLinhaItemHtml(descricao,quantidade).replace('<tr>','').replace('</tr>','');
+    corpo.appendChild(linha);
+  }
+  descEl.value='';
+  qtdEl.value='';
+  ocFecharSugestoesNovoItem();
+  descEl.focus();
+}
+
+function ocRenderCatalogoDatalist(){
+  const dl=document.getElementById('oc-catalogo-opcoes');
+  if(!dl)return;
+  dl.innerHTML=_ocCatalogoItens.filter(i=>i.ativo!==false).map(i=>`<option value="${escHtml(i.nome||'')}">${escHtml([i.unidade||'',i.descricao||''].filter(Boolean).join(' - '))}</option>`).join('');
+  ocAtualizarSugestoesNovoItem();
+}
+
+function ocRenderCatalogoItens(){
+  const el=document.getElementById('oc-cat-lista');
+  if(!el)return;
+  const busca=(document.getElementById('oc-cat-busca')?.value||'').toLowerCase().trim();
+  const itens=(_ocCatalogoItens||[]).filter(i=>!busca||`${(i.nome||'').toLowerCase()} ${(i.unidade||'').toLowerCase()} ${(i.descricao||'').toLowerCase()}`.includes(busca));
+  if(!itens.length){el.innerHTML='<div class="vazio">Nenhum item cadastrado.</div>';return;}
+  el.innerHTML=`<table class="tbl"><thead><tr><th>Item</th><th>Unidade</th><th>Descrição</th><th>Status</th><th style="width:220px">Ações</th></tr></thead><tbody>${itens.map(i=>`<tr><td>${escHtml(i.nome||'')}</td><td>${escHtml(i.unidade||'-')}</td><td>${escHtml(i.descricao||'-')}</td><td>${i.ativo===false?'Inativo':'Ativo'}</td><td><button class="btn b-gh b-sm" type="button" onclick="ocEditarItemCatalogo(${i.id})">Editar</button> <button class="btn b-ghv b-sm" type="button" onclick="ocAlternarItemCatalogo(${i.id},${i.ativo===false?'true':'false'})">${i.ativo===false?'Ativar':'Inativar'}</button> <button class="btn b-er b-sm" type="button" onclick="ocExcluirItemCatalogo(${i.id})">Excluir</button></td></tr>`).join('')}</tbody></table>`;
+}
+
+function ocShowStatus(msg,erro=false){
+  const alvo=document.getElementById('st-oc-catalogo')? 'st-oc-catalogo' : 'st-compras';
+  showSt(alvo,msg,erro);
+}
+
+async function ocCarregarCatalogoItens(){
+  const r=await api('/api/ordens-compra/itens-catalogo?ativos=0');
+  _ocCatalogoItens=Array.isArray(r)?r:[];
+  ocRenderCatalogoDatalist();
+  ocRenderCatalogoItens();
+}
+
+function ocLimparItemCatalogoForm(){
+  _ocCatalogoEditId=null;
+  ['oc-cat-nome','oc-cat-unidade','oc-cat-descricao'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('oc-cat-ativo').value='1';
+}
+
+function ocEditarItemCatalogo(id){
+  const item=_ocCatalogoItens.find(i=>i.id===id);
+  if(!item) return;
+  _ocCatalogoEditId=id;
+  document.getElementById('oc-cat-nome').value=item.nome||'';
+  document.getElementById('oc-cat-unidade').value=item.unidade||'';
+  document.getElementById('oc-cat-descricao').value=item.descricao||'';
+  document.getElementById('oc-cat-ativo').value=item.ativo===false?'0':'1';
+}
+
+async function ocSalvarItemCatalogo(){
+  const nome=(document.getElementById('oc-cat-nome').value||'').trim();
+  if(!nome){ocShowStatus('Informe o nome do item para cadastro.',true);return;}
+  const payload={
+    nome,
+    unidade:(document.getElementById('oc-cat-unidade').value||'').trim(),
+    descricao:(document.getElementById('oc-cat-descricao').value||'').trim(),
+    ativo:document.getElementById('oc-cat-ativo').value==='1'
+  };
+  const r=_ocCatalogoEditId
+    ? await api('/api/ordens-compra/itens-catalogo/'+_ocCatalogoEditId,'PUT',payload)
+    : await api('/api/ordens-compra/itens-catalogo','POST',payload);
+  if(r?.erro){ocShowStatus(r.erro,true);return;}
+  ocLimparItemCatalogoForm();
+  await ocCarregarCatalogoItens();
+  ocShowStatus('Item de compras salvo com sucesso.',false);
+}
+
+async function ocAlternarItemCatalogo(id,ativo){
+  const r=await api('/api/ordens-compra/itens-catalogo/'+id,'PUT',{ativo});
+  if(r?.erro){ocShowStatus(r.erro,true);return;}
+  await ocCarregarCatalogoItens();
+}
+
+async function ocExcluirItemCatalogo(id){
+  if(!confirm('Excluir item cadastrado?'))return;
+  const r=await api('/api/ordens-compra/itens-catalogo/'+id,'DELETE');
+  if(r?.erro){ocShowStatus(r.erro,true);return;}
+  await ocCarregarCatalogoItens();
+  ocShowStatus('Item excluído.',false);
+}
+
+function ocRemoverItem(botao){
+  const corpo=document.getElementById('oc-itens');
+  const linhas=corpo?.querySelectorAll('tr')||[];
+  if(linhas.length<=1){
+    linhas[0]?.querySelectorAll('input').forEach(input=>input.value='');
+    return;
+  }
+  botao.closest('tr')?.remove();
+}
+
+function ocColetarItens(){
+  return Array.from(document.querySelectorAll('#oc-itens tr')).map(linha=>({
+    descricao:linha.querySelector('.oc-item-desc')?.value.trim()||'',
+    quantidade:linha.querySelector('.oc-item-qtd')?.value.trim()||''
+  })).filter(item=>item.descricao);
+}
 
 function editarOC(id){
   const o=_ocLista.find(x=>x.id===id);
   if(!o) return;
   _ocEditId=id;
+  document.getElementById('oc-tipo').value=o.tipo_documento||'ordem_compra';
   document.getElementById('oc-num').value=o.numero||'';
   document.getElementById('oc-emp').value=o.empresa_id||'';
   document.getElementById('oc-sol').value=o.solicitante||'';
   document.getElementById('oc-for').value=o.fornecedor||'';
+  document.getElementById('oc-cnpj').value=fmtDoc(o.fornecedor_cnpj||'');
+  document.getElementById('oc-endereco').value=o.fornecedor_endereco||'';
+  document.getElementById('oc-for-telefone').value=o.fornecedor_telefone||'';
+  document.getElementById('oc-for-email').value=o.fornecedor_email||'';
+  document.getElementById('oc-pedido-email').value=o.pedido_email||'';
+  ocRenderItens(o.itens||[]);
   document.getElementById('oc-desc').value=o.descricao||'';
   document.getElementById('oc-val').value=o.valor||0;
   document.getElementById('oc-status').value=o.status||'Aberta';
   document.getElementById('oc-data').value=o.data_emissao||'';
-  showSt('st-op','Ordem de compra carregada para edição.',false);
+  ocAtualizarModalidade();
+  showSt('st-compras','Ordem de compra carregada para edição.',false);
+}
+
+let _ocCnpjTimer=null;
+function ocCnpjAuto(input){
+  if((input.value||'').replace(/\D/g,'').length!==14) return;
+  clearTimeout(_ocCnpjTimer);
+  _ocCnpjTimer=setTimeout(ocBuscarCnpj,600);
+}
+
+async function ocBuscarCnpj(){
+  const cnpj=(document.getElementById('oc-cnpj').value||'').replace(/\D/g,'');
+  if(cnpj.length!==14){showSt('st-compras','Informe os 14 dígitos do CNPJ do fornecedor.',true);return;}
+  const btn=document.getElementById('oc-cnpj-btn');
+  btn.disabled=true;btn.textContent='...';
+  try{
+    const d=await api('/api/cnpj/'+cnpj);
+    if(d?.erro) throw new Error(d.erro);
+    document.getElementById('oc-for').value=d.nome||d.razao||'';
+    const endereco=[d.logradouro,d.numero,d.complemento,d.bairro,d.cidade&&d.estado?`${d.cidade}/${d.estado}`:(d.cidade||d.estado),d.cep?`CEP ${d.cep}`:''].filter(Boolean).join(', ');
+    document.getElementById('oc-endereco').value=endereco;
+    document.getElementById('oc-for-telefone').value=d.telefone||'';
+    document.getElementById('oc-for-email').value=d.email||'';
+    showSt('st-compras','Fornecedor e endereço preenchidos pela consulta de CNPJ.',false);
+  }catch(err){showSt('st-compras',err?.message||'Não foi possível consultar o CNPJ.',true);}
+  finally{btn.disabled=false;btn.textContent='Buscar';}
 }
 
 async function salvarOrdemCompra(){
-  const d={numero:document.getElementById('oc-num').value,empresa_id:parseInt(document.getElementById('oc-emp').value)||null,solicitante:document.getElementById('oc-sol').value,fornecedor:document.getElementById('oc-for').value,descricao:document.getElementById('oc-desc').value,valor:parseFloat(document.getElementById('oc-val').value)||0,status:document.getElementById('oc-status').value,data_emissao:document.getElementById('oc-data').value};
-  if(_ocEditId) await api('/api/ordens-compra/'+_ocEditId,'PUT',d);
-  else await api('/api/ordens-compra','POST',d);
+  const itens=ocColetarItens();
+  if(!itens.length){showSt('st-compras','Inclua ao menos um item na cotação.',true);return;}
+  const tipo_documento=document.getElementById('oc-tipo').value;
+  const d={tipo_documento,empresa_id:parseInt(document.getElementById('oc-emp').value)||null,solicitante:document.getElementById('oc-sol').value,fornecedor:document.getElementById('oc-for').value,fornecedor_cnpj:document.getElementById('oc-cnpj').value,fornecedor_endereco:document.getElementById('oc-endereco').value,fornecedor_telefone:document.getElementById('oc-for-telefone').value,fornecedor_email:document.getElementById('oc-for-email').value,pedido_email:document.getElementById('oc-pedido-email').value,itens,descricao:document.getElementById('oc-desc').value,valor:tipo_documento==='ordem_compra'?(parseFloat(document.getElementById('oc-val').value)||0):0,status:document.getElementById('oc-status').value,data_emissao:document.getElementById('oc-data').value};
+  const r=_ocEditId ? await api('/api/ordens-compra/'+_ocEditId,'PUT',d) : await api('/api/ordens-compra','POST',d);
+  if(r?.erro){showSt('st-compras',r.erro,true);return;}
+  if(!_ocEditId && r?.pdf_url) window.open(r.pdf_url,'_blank','noopener');
   _ocEditId=null;
-  ['oc-num','oc-sol','oc-for','oc-desc','oc-val','oc-data'].forEach(id=>document.getElementById(id).value='');
+  ['oc-num','oc-sol','oc-cnpj','oc-for','oc-endereco','oc-for-telefone','oc-for-email','oc-pedido-email','oc-desc','oc-val','oc-data'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('oc-emp').value='';
+  document.getElementById('oc-tipo').value='ordem_compra';
   document.getElementById('oc-status').value='Aberta';
+  ocRenderItens();
+  ocAtualizarModalidade();
   renderOrdensCompra();
-  showSt('st-op','Ordem de compra salva.',false);
+  renderResumoOrdensCompra();
+  showSt('st-compras',`Ordem de compra ${r?.numero||''} salva e PDF gerado.`,false);
+}
+
+async function renderResumoOrdensCompra(){
+  const el=document.getElementById('resumo-oc');
+  if(!el)return;
+  try{
+    const itens=await api('/api/ordens-compra/resumo-mensal');
+    if(!itens?.length){el.innerHTML='<div class="vazio">Nenhuma ordem aprovada.</div>';return;}
+    const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const nomeMes=mes=>{const [ano,numero]=(mes||'').split('-');return ano&&numero?`${meses[(parseInt(numero,10)||1)-1]}/${ano}`:mes;};
+    const total=itens.reduce((s,item)=>s+(parseFloat(item.valor_total)||0),0);
+    el.innerHTML=`<table class="tbl"><thead><tr><th>Mês</th><th>Pedidos aprovados</th><th>Total aprovado</th></tr></thead><tbody>${itens.map(item=>`<tr><td>${nomeMes(item.mes)}</td><td>${item.quantidade}</td><td>${brl(item.valor_total)}</td></tr>`).join('')}</tbody><tfoot><tr><th>Total geral</th><th>${itens.reduce((s,item)=>s+(item.quantidade||0),0)}</th><th>${brl(total)}</th></tr></tfoot></table>`;
+  }catch(e){el.innerHTML='<div class="vazio">Não foi possível carregar o resumo mensal.</div>';}
 }
 
 async function renderOrdensCompra(){
   const lst=await api('/api/ordens-compra');
+  try{await ocCarregarCatalogoItens();}catch(e){}
   _ocLista=lst||[];
   const el=document.getElementById('lista-oc');
   if(!el)return;
+  if(!document.querySelector('#oc-itens tr'))ocRenderItens();
   if(!lst.length){el.innerHTML='<div class="vazio">Nenhuma ordem de compra.</div>';return;}
-  el.innerHTML=lst.map(o=>`<div class="hist-item row-clickable" onclick="editarOC(${o.id})"><div><div class="hist-tit">${o.numero} · ${o.fornecedor||'Sem fornecedor'}</div><div class="hist-sub">${o.status} · ${o.data_emissao||''} · ${o.descricao||''}</div></div><div style="display:flex;gap:8px;align-items:center"><div class="hist-val">${brl(o.valor||0)}</div><button class="btn b-ghr b-sm" onclick="event.stopPropagation();delOC(${o.id})">Excluir</button></div></div>`).join('');
+  el.innerHTML=lst.map(o=>{
+    const decisao=o.status==='Aberta'?`<button class="btn b-vd b-sm" onclick="event.stopPropagation();decidirOC(${o.id},'aprovar')">Aprovar</button><button class="btn b-er b-sm" onclick="event.stopPropagation();decidirOC(${o.id},'reprovar')">Reprovar</button>`:'';
+    const detalhe=o.decisao_por?` · ${o.decisao_por}${o.decisao_motivo?`: ${o.decisao_motivo}`:''}`:'';
+    const ehOrcamento=o.tipo_documento==='pedido_orcamento';
+    return `<div class="hist-item row-clickable" onclick="editarOC(${o.id})"><div><div class="hist-tit">${o.numero} · ${ehOrcamento?'Pedido de Orçamento':(o.fornecedor||'Sem fornecedor')}</div><div class="hist-sub">${o.status} · ${o.data_emissao||''}${detalhe} · ${ehOrcamento?(o.descricao||'Sem fornecedor e sem valor definido'):(o.fornecedor_endereco||o.descricao||'')}</div></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${ehOrcamento?'':`<div class="hist-val">${brl(o.valor||0)}</div>`}${decisao}<a class="btn b-gh b-sm" href="/api/ordens-compra/${o.id}/pdf" target="_blank" rel="noopener" onclick="event.stopPropagation()">PDF</a><button class="btn b-ghr b-sm" onclick="event.stopPropagation();delOC(${o.id})">Excluir</button></div></div>`;
+  }).join('');
+  renderResumoOrdensCompra();
+}
+
+async function decidirOC(id,acao){
+  let motivo='';
+  if(acao==='aprovar'){
+    if(!confirm('Aprovar esta ordem de compra?'))return;
+  }else{
+    motivo=prompt('Informe o motivo da reprovação:')||'';
+    if(!motivo.trim()){showSt('st-compras','A reprovação exige um motivo.',true);return;}
+  }
+  const r=await api('/api/ordens-compra/'+id+'/decisao','POST',{acao,motivo:motivo.trim()});
+  if(r?.erro){showSt('st-compras',r.erro,true);return;}
+  renderOrdensCompra();
+  renderResumoOrdensCompra();
+  showSt('st-compras',acao==='aprovar'?'Ordem de compra aprovada.':'Ordem de compra reprovada.',false);
 }
 
 async function delOC(id){
   if(!confirm('Excluir ordem de compra?'))return;
   const r=await api('/api/ordens-compra/'+id,'DELETE');
-  if(r?.erro){ showSt('st-op',r.erro,true); return; }
+  if(r?.erro){ showSt('st-compras',r.erro,true); return; }
   renderOrdensCompra();
 }
 
@@ -12745,7 +14170,7 @@ function limparSelecaoBen(){
 
 function switchBenTab(tab,btn){
   benTab=tab;
-  ['ativos','vt','vr','va','pp','vg','cn','avulso','relatorios','periodo','feriados'].forEach(t=>{
+  ['ativos','vt','vr','va','pp','vg','cn','avulso','relatorios','periodo'].forEach(t=>{
     const pane=document.getElementById('ben-pane-'+t);
     const b=document.getElementById('ben-tab-'+t);
     if(pane)pane.style.display=t===tab?'block':'none';
@@ -12759,7 +14184,6 @@ function switchBenTab(tab,btn){
   else if(tab==='cn') renderBeneficioPorTipo('cn','tb-benef-cn');
   else if(tab==='ativos') renderBeneficiosAtivos();
   else if(tab==='avulso'){ if(!beneficiosMensais.length) carregarBeneficiosMensais(); benAvulsoFiltrar(); }
-  else if(tab==='feriados') ferCarregar();
   if(btn && btn.scrollIntoView) btn.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});
 }
 
@@ -12792,6 +14216,16 @@ async function abrirPreviaBeneficio(tab){
 // ════════════════════════════════════════════════════════════
 let _feriadosData=[];
 
+function ferTipoChange(tipo){
+  const cMun=document.getElementById('fer-campo-municipio');
+  const cEst=document.getElementById('fer-campo-estado');
+  const cPos=document.getElementById('fer-campo-postos');
+  if(!cMun||!cEst||!cPos) return;
+  cMun.style.display = (tipo==='municipal') ? '' : 'none';
+  cEst.style.display = (tipo==='estadual') ? '' : 'none';
+  cPos.style.display = (tipo==='nacional') ? 'none' : '';
+}
+
 async function ferCarregar(){
   const ano=document.getElementById('fer-ano').value||new Date().getFullYear();
   const tipo=document.getElementById('fer-filtro-tipo').value||'';
@@ -12799,17 +14233,33 @@ async function ferCarregar(){
   if(tipo) url+=`&tipo=${encodeURIComponent(tipo)}`;
   const r=await fetch(url);
   const j=await r.json();
-  if(!j.ok){showSt('st-benef',j.erro||'Erro ao carregar feriados.',true);return;}
+  if(!j.ok){
+    const st=document.getElementById('fer-status');
+    if(st){st.textContent=j.erro||'Erro ao carregar feriados.';st.style.color='var(--verm)';}
+    return;
+  }
   _feriadosData=j.itens||[];
-  ferAtualizarInfoSelecionados();
+  await ferAtualizarInfoSelecionados();
   ferRenderTabela();
 }
 
-function ferAtualizarInfoSelecionados(){
-  const el=document.getElementById('fer-sel-info');
-  if(!el) return;
-  const qtd=benSelecionados?.size||0;
-  el.textContent=qtd>0?`${qtd} funcionário(s) selecionado(s)`:'Nenhum funcionário selecionado';
+async function ferAtualizarInfoSelecionados(){
+  const sel=document.getElementById('fer-posto');
+  if(!sel) return;
+  const atuais=new Set(Array.from(sel.selectedOptions||[]).map(o=>(o.value||'').trim()).filter(Boolean));
+  let base=((beneficiosMensais&&beneficiosMensais.length)?beneficiosMensais:((funcs&&funcs.length)?funcs:(pontoFuncs||[])));
+  // Fallback: se os dados ainda não foram carregados, busca funcionários da API
+  if(!base.length){
+    try{
+      const _r=await fetch('/api/funcionarios',{credentials:'same-origin'});
+      const _j=await _r.json();
+      base=Array.isArray(_j)?_j:(_j.itens||[]);
+    }catch(_){}
+  }
+  const postos=[...new Set(base.map(it=>(it.posto_operacional||'Reserva tecnica').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  if(!postos.find(p=>p.toLowerCase()==='reserva tecnica')) postos.push('Reserva tecnica');
+  sel.innerHTML=postos.map(p=>`<option value="${escHtml(p)}">${escHtml(p)}</option>`).join('');
+  Array.from(sel.options).forEach(opt=>{ opt.selected=atuais.has(opt.value); });
 }
 
 function ferRenderTabela(){
@@ -12826,8 +14276,11 @@ function ferRenderTabela(){
       <td><span style="background:${f.tipo==='nacional'?'var(--azul-esc)':'var(--azul)'};color:var(--branco);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700">${f.tipo||''}</span></td>
       <td>${escHtml(f.municipio||'')}</td>
       <td>${escHtml(f.estado||'')}</td>
-      <td>${f.tipo==='municipal' ? ((f.qtd_funcionarios||0)+ ' funcionário(s)') : 'Nacional (todos)'}</td>
-      <td><button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);border:1px solid var(--verm);padding:2px 8px" onclick="ferExcluir(${f.id})">&#128465;</button></td>
+      <td>${f.tipo==='nacional' ? 'Nacional (todos)' : ((f.postos_operacionais||[]).length ? ('Postos: '+(f.postos_operacionais||[]).map(p=>escHtml(p)).join(', ')) : ((f.qtd_funcionarios||0)>0 ? ((f.qtd_funcionarios||0)+' funcionário(s)') : 'Todos os postos (inclui reserva técnica)'))}</td>
+      <td style="display:flex;gap:4px;justify-content:center">
+        <button class="btn b-sm" style="background:var(--azul-cl);color:var(--azul);border:1px solid var(--azul);padding:2px 8px" onclick="ferEditar(${f.id})" title="Editar">✎</button>
+        <button class="btn b-sm" style="background:var(--verm-cl);color:var(--verm);border:1px solid var(--verm);padding:2px 8px" onclick="ferExcluir(${f.id})">🗑</button>
+      </td>
     </tr>`).join('');
 }
 
@@ -12837,36 +14290,44 @@ async function ferSalvar(){
   const tipo=document.getElementById('fer-tipo').value;
   const municipio=document.getElementById('fer-municipio').value.trim();
   const estado=document.getElementById('fer-estado').value.trim();
-  const aplicarSelecionados=document.getElementById('fer-aplicar-selecionados')?.checked!==false;
-  const funcionariosSelecionados=[...(benSelecionados||new Set())];
+  const postos=Array.from(document.getElementById('fer-posto')?.selectedOptions||[]).map(o=>(o.value||'').trim()).filter(Boolean);
+  const idEdit=document.getElementById('fer-id-edit').value.trim();
   const st=document.getElementById('fer-status');
   if(!data){st.textContent='Informe a data.';st.style.color='var(--verm-cl)';return;}
   if(!desc){st.textContent='Informe a descrição.';st.style.color='var(--verm-cl)';return;}
   if(tipo==='municipal'&&!municipio){st.textContent='Informe o município.';st.style.color='var(--verm-cl)';return;}
-  if(tipo==='municipal' && aplicarSelecionados && !funcionariosSelecionados.length){
-    st.textContent='Selecione ao menos 1 funcionário na aba Colaboradores Ativos para feriado municipal.';
-    st.style.color='var(--verm-cl)';
-    return;
-  }
+  if(tipo==='estadual'&&!estado){st.textContent='Informe a UF para feriado estadual.';st.style.color='var(--verm-cl)';return;}
   // converte YYYY-MM-DD -> DD/MM/YYYY para envio
   const [y,m,d]=data.split('-');
   const dataEnvio=`${d}/${m}/${y}`;
-  const r=await fetch('/api/feriados',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      data:dataEnvio,
-      descricao:desc,
-      tipo,
-      municipio,
-      estado,
-      funcionario_ids:(tipo==='municipal' && aplicarSelecionados) ? funcionariosSelecionados : []
-    })});
+  
+  const payload={
+    data:dataEnvio,
+    descricao:desc,
+    tipo,
+    municipio,
+    estado,
+    postos_operacionais:postos
+  };
+  
+  const method=idEdit?'PUT':'POST';
+  const url=idEdit?`/api/feriados/${idEdit}`:'/api/feriados';
+  
+  const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   const j=await r.json();
   if(j.ok){
-    st.textContent='Feriado salvo com sucesso!';st.style.color='var(--azul)';
+    st.textContent=idEdit?'Feriado atualizado com sucesso!':'Feriado salvo com sucesso!';st.style.color='var(--azul)';
     document.getElementById('fer-data').value='';
     document.getElementById('fer-desc').value='';
     document.getElementById('fer-municipio').value='';
     document.getElementById('fer-estado').value='';
+    document.getElementById('fer-tipo').value='municipal';
+    document.getElementById('fer-id-edit').value='';
+    // Reseta botão para "Salvar"
+    const btnSalvar=Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Atualizar feriado'));
+    if(btnSalvar) btnSalvar.textContent='💾 Salvar feriado';
+    // Limpa seleção de postos para o próximo cadastro
+    Array.from(document.getElementById('fer-posto')?.options||[]).forEach(o=>o.selected=false);
     ferCarregar();
   } else {
     st.textContent=j.erro||'Erro ao salvar.';st.style.color='var(--verm-cl)';
@@ -12882,6 +14343,43 @@ async function ferExcluir(id){
     st.textContent='Feriado excluído.';st.style.color='var(--azul)';
     ferCarregar();
   }
+}
+
+async function ferEditar(id){
+  const feriado=_feriadosData.find(f=>f.id===id);
+  if(!feriado) return;
+  
+  // Preenchendo o formulário com dados do feriado
+  const [d,m,y]=feriado.data.split('/');
+  document.getElementById('fer-data').value=`${y}-${m}-${d}`;
+  document.getElementById('fer-desc').value=feriado.descricao||'';
+  document.getElementById('fer-tipo').value=feriado.tipo||'municipal';
+  document.getElementById('fer-municipio').value=feriado.municipio||'';
+  document.getElementById('fer-estado').value=feriado.estado||'';
+  ferTipoChange(feriado.tipo||'municipal');
+  
+  // Selecionar os postos
+  const sel=document.getElementById('fer-posto');
+  if(sel){
+    const postos_selecionados=(feriado.postos_operacionais||[]);
+    Array.from(sel.options).forEach(opt=>{
+      opt.selected=postos_selecionados.includes(opt.value);
+    });
+  }
+  
+  // Armazenar ID do feriado em edição
+  document.getElementById('fer-id-edit').value=id;
+  
+  // Mudar rótulo do botão
+  const btnSalvar=Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Salvar feriado'));
+  if(btnSalvar) btnSalvar.textContent='📝 Atualizar feriado';
+  
+  // Expandir formulário
+  const formNovo=document.getElementById('fer-form-novo');
+  if(formNovo) formNovo.open=true;
+  
+  // Focus no primeiro campo
+  document.getElementById('fer-data').focus();
 }
 
 async function ferAtualizarNacionais(){
@@ -13465,8 +14963,64 @@ async function benAssinarFolha(){
   benAtualizarToolbar('assinada');
 }
 
+async function benNotificarBeneficios(){
+  const comp=benComp();
+  if(!/^\d{4}-\d{2}$/.test(comp)){
+    showSt('st-benef','Competência inválida para notificação.',true);
+    return;
+  }
+  const empVal=benEmp();
+  const body={competencia:comp};
+  if(empVal) body.empresa_id=parseInt(empVal,10)||null;
+  if(benSelecionados && benSelecionados.size>0){
+    body.funcionario_ids=[...benSelecionados];
+  }
+  const alvoTxt=(body.funcionario_ids&&body.funcionario_ids.length)
+    ? `${body.funcionario_ids.length} colaborador(es) selecionado(s)`
+    : 'todos os colaboradores filtrados da competência';
+  if(!confirm(`Enviar aviso de benefícios para ${alvoTxt}?`)) return;
+  const r=await api('/api/beneficios/notificar','POST',body);
+  if(r?.erro){
+    showSt('st-benef',r.erro,true);
+    return;
+  }
+  showSt('st-benef',`Notificações de benefícios enviadas: ${r.enviados_push||0} app, ${r.enviados_whatsapp||0} WhatsApp, ${r.sem_contato||0} sem contato.`,false);
+}
+
 // ── Benefício Avulso ──────────────────────────────────────────────────────────
 let benAvulsoSelecionados = [];
+
+function benAvulsoFonteFuncionarios(){
+  if(Array.isArray(beneficiosMensais) && beneficiosMensais.length) return beneficiosMensais;
+  const base = Array.isArray(funcs) ? funcs : [];
+  return base
+    .filter(f => {
+      const st = String(f?.status || '').toLowerCase();
+      return !st || st === 'ativo' || st === 'férias' || st === 'ferias';
+    })
+    .map(f => ({
+      funcionario_id: parseInt(f.id,10) || parseInt(f.funcionario_id,10) || 0,
+      nome: String(f.nome || ''),
+      re: String(f.re || ''),
+      matricula: String(f.matricula || ''),
+      posto_operacional: String(f.posto_operacional || 'Reserva tecnica'),
+      dias_trabalhados: 0,
+      dias_vt: 0,
+      dias_vr: 0,
+      dias_va: 0,
+      dias_vg: 0,
+      faltas: 0,
+      salario: Number(f.salario || 0),
+      vale_refeicao: Number(f.vale_refeicao || 0),
+      vale_alimentacao: Number(f.vale_alimentacao || 0),
+      vale_transporte: Number(f.vale_transporte || 0),
+      pp_falta: false,
+      premio_produtividade: Number(f.premio_produtividade || 0),
+      vale_gasolina: Number(f.vale_gasolina || 0),
+      cesta_natal: Number(f.cesta_natal || 0),
+    }))
+    .filter(f => f.funcionario_id > 0);
+}
 
 function benAvulsoFiltrar(){
   const q = (document.getElementById('ben-avulso-busca')?.value||'').trim().toLowerCase();
@@ -13477,8 +15031,11 @@ function benAvulsoFiltrar(){
     res.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Digite pelo menos 1 caractere para buscar funcionários.</div>';
     return;
   }
-  const lista = (beneficiosMensais||[]).filter(it =>
-    (it.nome||'').toLowerCase().includes(q) || (it.re||'').toLowerCase().includes(q) || (it.matricula||'').toLowerCase().includes(q)
+  const fonte = benAvulsoFonteFuncionarios();
+  const lista = (fonte||[]).filter(it =>
+    String(it.nome||'').toLowerCase().includes(q)
+    || String(it.re||'').toLowerCase().includes(q)
+    || String(it.matricula||'').toLowerCase().includes(q)
   ).slice(0,30);
   if(!lista.length){
     res.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Nenhum funcionário encontrado.</div>';
@@ -13501,16 +15058,17 @@ function benAvulsoFiltrar(){
 }
 
 function benAvulsoAdicionar(funcId){
-  const func = (beneficiosMensais||[]).find(x => x.funcionario_id===funcId);
+  const fid = parseInt(funcId,10);
+  const func = benAvulsoFonteFuncionarios().find(x => parseInt(x.funcionario_id,10)===fid);
   if(!func){ toast('Funcionário não encontrado.','e'); return; }
   const tipo = document.getElementById('ben-avulso-tipo')?.value || 'vt';
-  if(benAvulsoSelecionados.some(x => x.funcionario_id===funcId && x.tipo===tipo)){
+  if(benAvulsoSelecionados.some(x => parseInt(x.funcionario_id,10)===fid && x.tipo===tipo)){
     toast('Já adicionado para este benefício.','w'); return;
   }
   const diasPadrao = {'vt': func.dias_vt||0, 'vr': func.dias_vr||0, 'vg': func.dias_vg||0};
   const valorPadrao = {'vt': func.vale_transporte||0, 'vr': func.vale_refeicao||0, 'va': func.vale_alimentacao||0, 'pp': func.premio_produtividade||0, 'vg': func.vale_gasolina||0, 'cn': func.cesta_natal||0};
   benAvulsoSelecionados.push({
-    funcionario_id: funcId,
+    funcionario_id: fid,
     nome: func.nome||'',
     re: func.re||'',
     posto: func.posto_operacional||'',
@@ -13570,10 +15128,11 @@ async function benAvulsoSalvar(){
   if(!/^\d{4}-\d{2}$/.test(comp)){ toast('Competência inválida.','e'); return; }
   // Agrupa por funcionário (um func pode ter vários tipos)
   const byFunc = {};
+  const fonte = benAvulsoFonteFuncionarios();
   for(const it of benAvulsoSelecionados){
     const fid = it.funcionario_id;
     if(!byFunc[fid]){
-      const orig = (beneficiosMensais||[]).find(x => x.funcionario_id===fid) || {};
+      const orig = (fonte||[]).find(x => parseInt(x.funcionario_id,10)===parseInt(fid,10)) || {};
       byFunc[fid] = {
         funcionario_id: fid,
         dias_trabalhados: orig.dias_trabalhados||0,
@@ -13603,7 +15162,23 @@ async function benAvulsoSalvar(){
   const itens = Object.values(byFunc);
   const r = await api('/api/beneficios/lancamentos','POST',{competencia:comp, itens});
   if(r?.erro){ toast(r.erro,'e'); return; }
+  const idsNotificar = itens.map(it => parseInt(it.funcionario_id,10)).filter(Number.isFinite);
+  const empresaSel = benEmp();
+  const bodyNotif = {competencia: comp, funcionario_ids: idsNotificar};
+  if(empresaSel) bodyNotif.empresa_id = parseInt(empresaSel,10) || null;
+  let notif = null;
+  let notifErro = '';
+  try {
+    notif = await api('/api/beneficios/notificar','POST',bodyNotif);
+  } catch (e) {
+    notifErro = e?.message || String(e);
+  }
   toast(`${itens.length} lançamento(s) avulso(s) salvo(s) para ${comp}.`,'s');
+  if(notifErro || notif?.erro){
+    showSt('st-benef',`Lançamentos salvos, mas houve erro ao notificar: ${notifErro || notif.erro}`,true);
+  } else {
+    showSt('st-benef',`Lançamentos salvos e notificados: ${notif?.enviados_push||0} app, ${notif?.enviados_whatsapp||0} WhatsApp, ${notif?.sem_contato||0} sem contato.`,false);
+  }
   benAvulsoLimpar();
   await carregarBeneficiosMensais();
 }
@@ -14123,12 +15698,22 @@ async function mapsCarregarFuncionarios(){
     el.innerHTML=lista.map(f=>{
       const badge=f.nao_lidas>0?`<span style="background:var(--verm);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:auto">${f.nao_lidas}</span>`:'';
       const ativo=_mapsFidAtual===f.funcionario_id?'background:var(--az);color:#fff;':'';
-      return `<div onclick="mapsAbrirChat(${f.funcionario_id},${JSON.stringify(f.nome).replace(/"/g,'&quot;')})" style="cursor:pointer;padding:8px 10px;border-radius:8px;margin:2px 4px;display:flex;align-items:center;gap:6px;${ativo}">
+      const nomeEnc=encodeURIComponent(f.nome||'');
+      return `<div class="maps-func-item" data-fid="${f.funcionario_id}" data-nome="${nomeEnc}" style="cursor:pointer;padding:8px 10px;border-radius:8px;margin:2px 4px;display:flex;align-items:center;gap:6px;${ativo}">
         <div style="flex:1;overflow:hidden">
-          <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${f.nome}</div>
-          <div style="font-size:10px;color:var(--text-muted)">${f.ultima||''}</div>
+          <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(f.nome||'')}</div>
+          <div style="font-size:10px;color:var(--text-muted)">${escHtml(f.ultima||'')}</div>
         </div>${badge}</div>`;
     }).join('');
+    el.querySelectorAll('.maps-func-item').forEach(node=>{
+      node.addEventListener('click',()=>{
+        const fid=parseInt(node.getAttribute('data-fid')||'0',10);
+        const nomeEnc=node.getAttribute('data-nome')||'';
+        const nome=nomeEnc?decodeURIComponent(nomeEnc):'';
+        if(!fid)return;
+        mapsAbrirChat(fid,nome||'Funcionário');
+      });
+    });
   }catch(e){el.innerHTML='<div class="vazio" style="padding:8px">Erro ao carregar.</div>';}
 }
 
@@ -14159,9 +15744,14 @@ async function mapsCarregarChat(silencioso=false){
       const bg=deRh?'var(--az)':'var(--cinza-md,#2a3a4a)';
       const cor=deRh?'#fff':'var(--text)';
       const label=deRh?'RH':_mapsNomeAtual;
+      const arqUrl=m.arquivo_admin_url||m.arquivo_url||'';
+      const arqNome=escHtml(m.arquivo_nome||'Arquivo');
+      const arqHtml=(m.tipo==='arquivo'&&arqUrl)
+        ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12);font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span>📎 <strong>${arqNome}</strong></span><a href="${escHtml(arqUrl)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">Abrir anexo</a></div>`
+        : '';
       return `<div style="display:flex;flex-direction:column;align-items:${align}">
         <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">${label}</div>
-        <div style="background:${bg};color:${cor};padding:8px 12px;border-radius:12px;max-width:78%;font-size:13px;line-height:1.4;word-break:break-word">${escHtml(m.conteudo)}</div>
+        <div style="background:${bg};color:${cor};padding:8px 12px;border-radius:12px;max-width:78%;font-size:13px;line-height:1.4;word-break:break-word">${escHtml(m.conteudo)}${arqHtml}</div>
         <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${m.enviado_fmt||''}</div>
       </div>`;
     }).join('');
@@ -14176,29 +15766,41 @@ async function mapsEnviar(){
   if(!txt)return;
   const btn=document.getElementById('maps-btn-enviar');
   btn.disabled=true;inp.disabled=true;
+  inp.value='';
   try{
     const r=await api('/api/mensagens-app/'+_mapsFidAtual,'POST',{conteudo:txt});
-    if(r.erro){alert(r.erro);return;}
-    inp.value='';
+    if(r.erro){alert(r.erro);inp.value=txt;return;}
     await mapsCarregarChat();
-  }catch(e){alert('Erro ao enviar mensagem.');}
+  }catch(e){
+    inp.value=txt;
+    alert('Erro ao enviar mensagem.');
+  }
   finally{btn.disabled=false;inp.disabled=false;inp.focus();}
 }
 
 async function mapsCarregarSelectsEmpresasPosto(){
   try{
     const [listaFunc,listaEmp]=await Promise.all([
-      api('/api/funcionarios?status=ativo&_limit=500'),
+      api('/api/funcionarios?status=Ativo'),
       api('/api/empresas')
     ]);
-    const funcs=(listaFunc.itens||listaFunc||[]);
-    const empsData=(Array.isArray(listaEmp)?listaEmp:[]);
+    let funcs=[];
+    if(Array.isArray(listaFunc)) funcs=listaFunc;
+    else if(Array.isArray(listaFunc?.itens)) funcs=listaFunc.itens;
+    // Fallback defensivo: se a API responder vazio por algum motivo, tenta sem filtro e normaliza localmente.
+    if(!funcs.length){
+      const todos=await api('/api/funcionarios');
+      const base=Array.isArray(todos)?todos:(Array.isArray(todos?.itens)?todos.itens:[]);
+      funcs=base.filter(f=>String((f?.status||'')).toLowerCase()==='ativo');
+    }
+    const empsData=(Array.isArray(listaEmp)?listaEmp:(Array.isArray(listaEmp?.itens)?listaEmp.itens:[]));
     // Postos únicos
     const postos=[...new Set(funcs.map(f=>(f.posto_operacional||'').trim()).filter(Boolean))].sort();
-    // Preenche selects de comunicado (mantém a 1ª opção padrão e remove as demais antes de repopular)
+    // Preenche selects de comunicado
     const fillSel=(id,items,valFn,txtFn)=>{
       const sel=document.getElementById(id); if(!sel)return;
-      while(sel.options.length>1)sel.remove(1);
+      // Preserva somente a primeira opção padrão e remove opções já adicionadas anteriormente.
+      while(sel.options.length>1) sel.remove(1);
       items.forEach(it=>{const o=document.createElement('option');o.value=valFn(it);o.textContent=txtFn(it);sel.appendChild(o);});
     };
     fillSel('com-fid',funcs,f=>f.id,f=>f.nome);
@@ -14207,7 +15809,6 @@ async function mapsCarregarSelectsEmpresasPosto(){
     fillSel('bc-empresa',empsData,e=>e.id,e=>e.nome);
     fillSel('bc-posto',postos,p=>p,p=>p);
     fillSel('bc-fid',funcs,f=>f.id,f=>f.nome);
-    fillSel('maps-novo-chat',funcs,f=>f.id,f=>f.nome);
   }catch(e){}
 }
 
@@ -14239,14 +15840,16 @@ async function mapsCriarComunicado(){
   const conteudo=(document.getElementById('com-conteudo').value||'').trim();
   const url=(document.getElementById('com-url').value||'').trim()||null;
   const fid=document.getElementById('com-fid').value||null;
+  const empId=document.getElementById('com-empresa').value||null;
   const posto=(document.getElementById('com-posto').value||'').trim()||null;
   if(!titulo||!conteudo){showSt('com-st','Preencha título e conteúdo.',true);return;}
-  const r=await api('/api/comunicados-app','POST',{titulo,conteudo,url,funcionario_id:fid?parseInt(fid):null,posto_operacional:posto});
+  const r=await api('/api/comunicados-app','POST',{titulo,conteudo,url,funcionario_id:fid?parseInt(fid):null,empresa_id:empId?parseInt(empId):null,posto_operacional:posto});
   if(r.erro){showSt('com-st',r.erro,true);return;}
   document.getElementById('com-titulo').value='';
   document.getElementById('com-conteudo').value='';
   document.getElementById('com-url').value='';
   document.getElementById('com-fid').value='';
+  document.getElementById('com-empresa').value='';
   document.getElementById('com-posto').value='';
   showSt('com-st','Comunicado publicado!',false);
   await mapsCarregarListaComunicados();
@@ -14261,19 +15864,39 @@ async function mapsEnviarBroadcast(){
   const dest=fidSel?`1 funcionário`:(posto?`posto "${posto}"`:(empId?`empresa selecionada`:'todos os ativos'));
   if(!confirm(`Enviar mensagem para ${dest}?\n\n"${msg.substring(0,100)}${msg.length>100?'…':''}"`))return;
   const body={conteudo:msg};
+  let envioEfetivado=false;
   if(fidSel){
     // Enviar para apenas um via endpoint normal de chat
     const r=await api('/api/mensagens-app/'+fidSel,'POST',{conteudo:msg});
     if(r.erro){showSt('bc-st',r.erro,true);return;}
-    showSt('bc-st','Mensagem enviada!',false);
+    if(r.push_enviado){
+      showSt('bc-st','Mensagem enviada para o app (push entregue).',false);
+    }else if(r.push_token_presente===false){
+      showSt('bc-st','Mensagem salva no chat, mas o colaborador está sem token push ativo no app. Peça para ele abrir/atualizar login no Android.',true);
+    }else{
+      showSt('bc-st','Mensagem salva no chat, porém o push falhou nesta tentativa.',true);
+    }
+    envioEfetivado=true;
   } else {
     if(empId)body.empresa_id=parseInt(empId);
     if(posto)body.posto=posto;
     const r=await api('/api/mensagens-app/broadcast','POST',body);
     if(r.erro){showSt('bc-st',r.erro,true);return;}
-    showSt('bc-st',`Mensagem enviada para ${r.enviado_para} colaborador(es).`,false);
+    const semToken=Number(r.sem_token_push||0);
+    const pushFalhou=Number(r.push_falhou||0);
+    const pushOk=Number(r.push_enviados||0);
+    const total=Number(r.enviado_para||0);
+    const comRisco=semToken+pushFalhou;
+    const detalhe=`Total: ${total}. Push ok: ${pushOk}. Sem token: ${semToken}. Push falhou: ${pushFalhou}.`;
+    showSt('bc-st',detalhe,comRisco>0);
+    envioEfetivado=true;
   }
-  document.getElementById('bc-msg').value='';
+  if(envioEfetivado){
+    document.getElementById('bc-msg').value='';
+    document.getElementById('bc-fid').value='';
+    document.getElementById('bc-empresa').value='';
+    document.getElementById('bc-posto').value='';
+  }
   await mapsCarregarFuncionarios();
   await mapsCarregarBadge();
 }
@@ -14297,6 +15920,7 @@ async function mapsVerificarBadgeGlobal(){
     const d=await api('/api/mensagens-app/nao-lidas-total');
     const b=document.getElementById('badge-msgs-app');
     if(b){if(d.nao_lidas>0){b.textContent=d.nao_lidas;b.style.display='';}else b.style.display='none';}
+    await atualizarSininhoNotificacoes();
   }catch(e){}
 }
 
@@ -14644,7 +16268,7 @@ async function waEnviarColaboradoresSelecionados(){
   const maisConf=ids.length>5?` e mais ${ids.length-5}...`:'';
   const msgConf=texto.length>100?texto.substring(0,100)+'...':texto;
   const anexoConf=arq?`\n\nAnexo:\n${arq.name}`:'';
-  if(!confirm(`Você está prestes a enviar mensagem para ${ids.length} colaborador(es):\n\n${nomesConf}${maisConf}\n\nMensagem:\n"${msgConf||'[sem texto]'}"${anexoConf}\n\nRemetente exibido:\n${N}\n\nConfirmar envio?`)) return;
+  if(!confirm(`Você está prestes a enviar mensagem via WhatsApp para ${ids.length} colaborador(es):\n\n${nomesConf}${maisConf}\n\nMensagem:\n"${msgConf||'[sem texto]'}"${anexoConf}\n\nRemetente exibido:\n${N}\n\nConfirmar envio?`)) return;
   showSt('wa-colab-st',arq?'Enviando mensagens com anexo...':'Enviando mensagens...',false);
   const fd=new FormData();
   ids.forEach(id=>fd.append('funcionario_ids',String(id)));
@@ -14653,7 +16277,7 @@ async function waEnviarColaboradoresSelecionados(){
   const r=await apiForm('/api/whatsapp/send-colaboradores',fd,'POST');
   if(r.erro){showSt('wa-colab-st',r.erro,true);return;}
   const falhas=(r.falhas||[]);
-  const envioMsg=`Envio concluído. Sucesso: ${r.enviados_count||0}. Falhas: ${falhas.length}.`;
+  const envioMsg=`Envio WhatsApp concluído. Sucesso: ${r.enviados_count||0}. Falhas: ${falhas.length}.`;
   showSt('wa-colab-st',envioMsg,falhas.length>0);
   document.getElementById('wa-colab-arquivo').value='';
   if(falhas.length){
@@ -14975,9 +16599,8 @@ function onAuditPosChange(pos){
 }
 
 function initAssinaturas(){
-  // Ocultar sidebar principal para tela cheia
+  // Manter navegação principal visível durante o uso de assinaturas
   document.body.dataset.asiSidebarWas=document.body.classList.contains('sidebar-collapsed')?'1':'0';
-  document.body.classList.add('sidebar-collapsed');
   loadEnvelopes(_asiTipo);
   setupAsiDropzone();
   // load funcionários para picker
