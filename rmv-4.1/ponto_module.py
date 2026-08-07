@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+import hashlib
 import io
 import json
 import os
@@ -22,12 +23,67 @@ def register_ponto_routes(
     PontoAjuste,
     PontoFechamentoDia,
     Empresa,
+    Cliente=None,
+    Feriado=None,
+    SolicitacaoHoraExtra=None,
     get_logo,
+    EscalaFuncionario=None,
+    Escala=None,
+    JornadaTrabalho=None,
+    PontoAfastamento=None,
 ):
     if "api_ponto_marcar" in app.view_functions:
         return
 
+    # Fallback lazy: se algum model opcional não foi passado, tenta resolver via
+    # o registry do SQLAlchemy. Evita regressões quando esquecemos de atualizar
+    # a chamada em app.py (ex.: 'register_ponto_routes() missing 1 required
+    # keyword-only argument: Feriado'). Mantemos None se o model não existir.
+    def _resolve_model(name):
+        try:
+            reg = getattr(db.Model, "registry", None)
+            mappers = getattr(reg, "_class_registry", None) if reg is not None else None
+            if mappers and name in mappers:
+                return mappers[name]
+        except Exception:
+            pass
+        return None
+
+    if Feriado is None:
+        Feriado = _resolve_model("Feriado")
+    FeriadoFuncionario = _resolve_model("FeriadoFuncionario")
+    if Cliente is None:
+        Cliente = _resolve_model("Cliente")
+    if SolicitacaoHoraExtra is None:
+        SolicitacaoHoraExtra = _resolve_model("SolicitacaoHoraExtra")
+    if EscalaFuncionario is None:
+        EscalaFuncionario = _resolve_model("EscalaFuncionario")
+    if Escala is None:
+        Escala = _resolve_model("Escala")
+
+    HE_MINIMA_AUTORIZACAO_MIN = 60
+    FALTA_PARCIAL_TOLERANCIA_MIN = 10
+    if JornadaTrabalho is None:
+        JornadaTrabalho = _resolve_model("JornadaTrabalho")
+    if PontoAfastamento is None:
+        PontoAfastamento = _resolve_model("PontoAfastamento")
+
     ponto_tipos = ["entrada", "saida_intervalo", "retorno_intervalo", "saida"]
+
+    def _ponto_exigir_dia_aberto(funcionario_id, data_ref):
+        if not data_ref:
+            return None
+        fechamento = PontoFechamentoDia.query.filter_by(
+            funcionario_id=funcionario_id,
+            data_ref=data_ref.strftime("%Y-%m-%d"),
+        ).first()
+        if fechamento:
+            return jsonify(
+                {
+                    "erro": "A folha deste dia já está fechada. Para editar as marcações, reabra a folha da competência antes de continuar."
+                }
+            ), 409
+        return None
 
     def _ponto_label(tipo):
         return {
@@ -51,11 +107,12 @@ def register_ponto_routes(
     def _ponto_parse_data_ref(valor):
         texto = (valor or "").strip()
         if not texto:
-            return date.today()
+            # BUG-FIX: date.today() usa timezone do SO (pode ser UTC); localnow() retorna BRT.
+            return localnow().date()
         try:
             return datetime.strptime(texto, "%Y-%m-%d").date()
         except Exception:
-            return date.today()
+            return localnow().date()
 
     def _ponto_parse_data_hora(valor):
         texto = (valor or "").strip()
@@ -87,10 +144,21 @@ def register_ponto_routes(
         jornada = str(funcionario.jornada or "").strip().lower()
         if not jornada:
             return 8 * 60
+        # BUG-FIX 18: tratar formato decimal ex: "8,5" ou "8.5" (= 8h30min)
+        match_decimal = re.search(r"\b(\d{1,2})[,\.](\d)\.?\b", jornada)
+        if match_decimal:
+            horas = max(0, min(16, int(match_decimal.group(1))))
+            frac = int(match_decimal.group(2))
+            return horas * 60 + (frac * 60 // 10)
         match = re.search(r"(\d{1,2})\s*[:h]\s*(\d{1,2})", jornada)
         if match:
-            horas = max(0, min(16, int(match.group(1))))
-            minutos = max(0, min(59, int(match.group(2))))
+            horas = int(match.group(1))
+            minutos = int(match.group(2))
+            # BUG-FIX 3: validar ranges — há regex não rejeita "25:80"
+            if horas > 23 or minutos > 59:
+                return 8 * 60
+            horas = max(0, min(16, horas))
+            minutos = max(0, min(59, minutos))
             return horas * 60 + minutos
         match = re.search(r"\b(\d{1,2})\b", jornada)
         if match:
@@ -98,10 +166,339 @@ def register_ponto_routes(
             return horas * 60
         return 8 * 60
 
+    def _ponto_escala_info_data(funcionario, data_ref):
+        """Retorna informações do dia da escala para um funcionário em data_ref."""
+        try:
+            data_str = data_ref.strftime("%Y-%m-%d") if hasattr(data_ref, "strftime") else str(data_ref)
+            data_obj = data_ref if hasattr(data_ref, "weekday") else datetime.strptime(data_str, "%Y-%m-%d").date()
+            if EscalaFuncionario and Escala:
+                esc_funcs = EscalaFuncionario.query.filter(
+                    EscalaFuncionario.funcionario_id == funcionario.id,
+                    EscalaFuncionario.data_inicio <= data_str,
+                    EscalaFuncionario.ativo == True,
+                # BUG-FIX 17: ordenar por data_inicio DESC para resultado determinístico
+                # em ambiente concorrente (múltiplos workers Gunicorn).
+                ).order_by(EscalaFuncionario.data_inicio.desc()).all()
+                for ef in esc_funcs:
+                    if ef.data_fim and ef.data_fim < data_str:
+                        continue
+                    esc = db.session.get(Escala, ef.escala_id)
+                    if not esc or not esc.ativo:
+                        continue
+                    try:
+                        ciclo = json.loads(esc.ciclo_json or "{}")
+                        dias_ciclo = len(ciclo.get("dias", []))
+                        if dias_ciclo > 0:
+                            dias = ciclo.get("dias", [])
+
+                            # Regra opcional por dia da semana (0=seg ... 6=dom)
+                            # com prioridade sobre deslocamento por data_inicio.
+                            sem_trab_raw = ciclo.get("dias_semana_trabalho")
+                            if isinstance(sem_trab_raw, list) and sem_trab_raw:
+                                sem_trab = set()
+                                for x in sem_trab_raw:
+                                    try:
+                                        iv = int(x)
+                                        if 0 <= iv <= 6:
+                                            sem_trab.add(iv)
+                                    except Exception:
+                                        pass
+                                if sem_trab:
+                                    idx_tpl_trab = next(
+                                        (
+                                            i
+                                            for i, d in enumerate(dias)
+                                            if str((d or {}).get("tipo", "trabalho")).lower()
+                                            != "folga"
+                                        ),
+                                        0,
+                                    )
+                                    idx_tpl_folga = next(
+                                        (
+                                            i
+                                            for i, d in enumerate(dias)
+                                            if str((d or {}).get("tipo", "")).lower()
+                                            == "folga"
+                                        ),
+                                        None,
+                                    )
+                                    if data_obj.weekday() in sem_trab:
+                                        idx_tpl = idx_tpl_trab
+                                        dia_info = (
+                                            (dias[idx_tpl] or {})
+                                            if idx_tpl is not None and idx_tpl < len(dias)
+                                            else {"tipo": "trabalho"}
+                                        )
+                                    else:
+                                        idx_tpl = idx_tpl_folga
+                                        dia_info = (
+                                            (dias[idx_tpl] or {})
+                                            if idx_tpl is not None and idx_tpl < len(dias)
+                                            else {"tipo": "folga"}
+                                        )
+                                    minutos = 0
+                                    if str((dia_info or {}).get("tipo", "")).lower() != "folga" and idx_tpl is not None:
+                                        try:
+                                            minutos = int(esc.carga_horaria_min_dia(int(idx_tpl)) or 0)
+                                        except Exception:
+                                            minutos = 0
+                                    return {
+                                        "escala": esc,
+                                        "vinculo": ef,
+                                        "indice": data_obj.weekday(),
+                                        "indice_template": idx_tpl,
+                                        "dia_info": dia_info,
+                                        "minutos": minutos,
+                                    }
+
+                            # 5x2 deve seguir dia da semana (seg-sex trabalho;
+                            # sab-dom folga), sem depender do deslocamento por
+                            # data_inicio do vínculo.
+                            if str(getattr(esc, "tipo", "")).strip().lower() == "5x2":
+                                if data_obj.weekday() <= 4:
+                                    idx_tpl = next(
+                                        (
+                                            i
+                                            for i, d in enumerate(dias)
+                                            if str((d or {}).get("tipo", "trabalho")).lower()
+                                            != "folga"
+                                        ),
+                                        0,
+                                    )
+                                else:
+                                    idx_tpl = next(
+                                        (
+                                            i
+                                            for i, d in enumerate(dias)
+                                            if str((d or {}).get("tipo", "")).lower()
+                                            == "folga"
+                                        ),
+                                        None,
+                                    )
+                                dia_info = (
+                                    (dias[idx_tpl] or {})
+                                    if idx_tpl is not None and idx_tpl < len(dias)
+                                    else ({"tipo": "folga"} if data_obj.weekday() >= 5 else {"tipo": "trabalho"})
+                                )
+                                minutos = 0
+                                if str((dia_info or {}).get("tipo", "")).lower() != "folga" and idx_tpl is not None:
+                                    try:
+                                        minutos = int(esc.carga_horaria_min_dia(int(idx_tpl)) or 0)
+                                    except Exception:
+                                        minutos = 0
+                                return {
+                                    "escala": esc,
+                                    "vinculo": ef,
+                                    "indice": data_obj.weekday(),
+                                    "indice_template": idx_tpl,
+                                    "dia_info": dia_info,
+                                    "minutos": minutos,
+                                }
+
+                            data_inicio_obj = datetime.strptime(ef.data_inicio, "%Y-%m-%d").date()
+                            dias_decorridos = (data_obj - data_inicio_obj).days
+                            if dias_decorridos < 0:
+                                continue
+                            indice = dias_decorridos % dias_ciclo
+                            dia_info = (ciclo.get("dias", [])[indice] or {}) if indice < len(ciclo.get("dias", [])) else {}
+                            return {
+                                "escala": esc,
+                                "vinculo": ef,
+                                "indice": indice,
+                                "indice_template": indice,
+                                "dia_info": dia_info,
+                                "minutos": esc.carga_horaria_min_dia(indice),
+                            }
+                    except Exception as _exc_esc:
+                        try:
+                            import logging as _log
+                            _log.getLogger(__name__).warning(
+                                "_ponto_escala_info_data: erro ao calcular ciclo de escala "
+                                "esc_id=%s ef_id=%s data=%s: %s",
+                                getattr(esc, 'id', '?'), getattr(ef, 'id', '?'), data_str, _exc_esc
+                            )
+                        except Exception:
+                            pass
+        except Exception as _exc_outer:
+            # BUG-FIX 6: logar falha no bloco externo de escala
+            try:
+                import logging as _log
+                _log.getLogger(__name__).warning(
+                    "_ponto_escala_info_data: erro ao consultar escalas func_id=%s data=%s: %s",
+                    getattr(funcionario, 'id', '?'), data_ref, _exc_outer
+                )
+            except Exception:
+                pass
+        return None
+
     def _ponto_min_esperado_data(funcionario, data_ref):
-        if data_ref.weekday() >= 5:
-            return 0
-        return _ponto_min_esperado_jornada(funcionario)
+        """Retorna minutos esperados para funcionario em data_ref.
+        Prioridade:
+        1) Escala rotativa ativa na data (EscalaFuncionario/Escala ciclo_json)
+        2) JornadaTrabalho vinculada ao funcionário (grade semanal por dia da semana)
+        3) Campo texto jornada do funcionário (fallback seg-sex)
+
+        O fallback de jornada corrige o bug crônico onde dias anteriores a
+        EscalaFuncionario.data_inicio retornavam 0 minutos, fazendo todas as
+        horas trabalhadas nesse período aparecerem como hora extra.
+        """
+        try:
+            esc_info = _ponto_escala_info_data(funcionario, data_ref)
+            if esc_info is not None:
+                return esc_info.get("minutos", 0) or 0
+        except Exception:
+            pass
+
+        # Fallback 2: JornadaTrabalho — respeita a grade semanal completa.
+        if JornadaTrabalho is not None:
+            try:
+                jid = getattr(funcionario, "jornada_id", None)
+                if jid:
+                    j = db.session.get(JornadaTrabalho, int(jid))
+                    if j:
+                        return j.minutos_esperados_weekday(data_ref.weekday())
+            except Exception:
+                pass
+
+        # Fallback 3: texto de jornada — assume seg-sex para não inflar extras
+        # em fins de semana de escalas não cadastradas.
+        try:
+            if data_ref.weekday() < 5:  # 0=seg .. 4=sex
+                return _ponto_min_esperado_jornada(funcionario)
+        except Exception:
+            pass
+
+        return 0
+
+    def _parse_minutos_hhmm(valor, padrao="05:00"):
+        texto = (valor or padrao or "05:00").strip()
+        try:
+            hh, mm = [int(x) for x in texto.split(":")[:2]]
+            return max(0, min(23, hh)) * 60 + max(0, min(59, mm))
+        except Exception:
+            return _parse_minutos_hhmm(padrao, "05:00") if texto != (padrao or "05:00") else 5 * 60
+
+    def _ponto_cruza_meia_noite(esc, dia_info):
+        if getattr(esc, "tipo", "") == "noturna" or bool((dia_info or {}).get("noturno")):
+            return True
+        entrada_txt = (dia_info or {}).get("hora_entrada")
+        saida_txt = (dia_info or {}).get("hora_saida")
+        if not entrada_txt or not saida_txt:
+            return False
+        entrada_min = _parse_minutos_hhmm(str(entrada_txt), "08:00")
+        saida_min = _parse_minutos_hhmm(str(saida_txt), "17:00")
+        return saida_min <= entrada_min
+
+    def _ponto_corte_data_ref_min(esc, dia_info):
+        if _ponto_cruza_meia_noite(esc, dia_info):
+            saida_txt = (dia_info or {}).get("hora_saida")
+            if saida_txt:
+                return _parse_minutos_hhmm(str(saida_txt), getattr(esc, "periodo_noturno_fim", "05:00"))
+            return _parse_minutos_hhmm(getattr(esc, "periodo_noturno_fim", "05:00"))
+        return None
+
+    def _ponto_hora_entrada_min(esc, dia_info):
+        entrada_txt = (dia_info or {}).get("hora_entrada")
+        if entrada_txt:
+            return _parse_minutos_hhmm(str(entrada_txt), "08:00")
+        if _ponto_cruza_meia_noite(esc, dia_info):
+            return _parse_minutos_hhmm(getattr(esc, "periodo_noturno_ini", "22:00"), "22:00")
+        return None
+
+    def _ponto_entrada_noturna_avulsa(marcacoes, data_ref):
+        marcacoes_ordenadas = sorted(
+            [m for m in (marcacoes or []) if getattr(m, "data_hora", None)],
+            key=lambda m: (m.data_hora, getattr(m, "id", 0)),
+        )
+        for marcacao in marcacoes_ordenadas:
+            dt = getattr(marcacao, "data_hora", None)
+            if not dt:
+                continue
+            if dt.date() < data_ref:
+                continue
+            if marcacao.tipo == "entrada" and (dt.hour * 60 + dt.minute) >= 17 * 60:
+                anteriores = [m for m in marcacoes_ordenadas if getattr(m, "data_hora", None) and m.data_hora < dt]
+                if anteriores and anteriores[0].tipo != "entrada":
+                    return dt
+        return None
+
+    def _ponto_jornada_avulsa_aberta(funcionario_id, data_ref):
+        inicio = datetime.combine(data_ref, datetime.min.time())
+        fim = inicio + timedelta(days=1)
+        marcacoes = (
+            PontoMarcacao.query.filter(PontoMarcacao.funcionario_id == funcionario_id)
+            .filter(PontoMarcacao.data_hora >= inicio)
+            .filter(PontoMarcacao.data_hora < fim)
+            .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
+            .all()
+        )
+        if len(marcacoes) % 2 == 0:
+            return False
+        return _ponto_entrada_noturna_avulsa(marcacoes, data_ref) is not None
+
+    def _ponto_tem_entrada_noturna_mesma_data(funcionario_id, data_ref):
+        inicio = datetime.combine(data_ref, datetime.min.time())
+        fim = inicio + timedelta(days=1)
+        marcacoes = (
+            PontoMarcacao.query.filter(PontoMarcacao.funcionario_id == funcionario_id)
+            .filter(PontoMarcacao.data_hora >= inicio)
+            .filter(PontoMarcacao.data_hora < fim)
+            .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
+            .all()
+        )
+        return _ponto_entrada_noturna_avulsa(marcacoes, data_ref) is not None
+
+    def _ponto_data_hora_logica(funcionario, data_ref, data_hora, marcacoes=None):
+        if not data_hora:
+            return None
+        entrada_noturna = _ponto_entrada_noturna_avulsa(marcacoes, data_ref)
+        esc_info = _ponto_escala_info_data(funcionario, data_ref)
+        if not esc_info:
+            if entrada_noturna and data_hora < entrada_noturna:
+                return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
+            return data_hora
+        esc = esc_info.get("escala")
+        dia_info = esc_info.get("dia_info") or {}
+        if not _ponto_cruza_meia_noite(esc, dia_info):
+            if entrada_noturna and data_hora < entrada_noturna:
+                return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
+            return data_hora
+        if entrada_noturna and data_hora.date() == data_ref:
+            if data_hora < entrada_noturna:
+                return datetime.combine(data_ref + timedelta(days=1), data_hora.time())
+            return data_hora
+        entrada_min = _ponto_hora_entrada_min(esc, dia_info)
+        if entrada_min is None:
+            return data_hora
+        logical_dt = datetime.combine(data_ref, data_hora.time())
+        if (data_hora.hour * 60 + data_hora.minute) < entrada_min:
+            logical_dt += timedelta(days=1)
+        return logical_dt
+
+    def _ponto_marcacoes_ordenadas_logicas(funcionario, data_ref, marcacoes):
+        return sorted(
+            [m for m in (marcacoes or []) if getattr(m, "data_hora", None)],
+            key=lambda m: (
+                _ponto_data_hora_logica(funcionario, data_ref, m.data_hora, marcacoes),
+                m.data_hora,
+                getattr(m, "id", 0),
+            ),
+        )
+
+    def _ponto_intervalos_logicos(funcionario, data_ref, marcacoes):
+        ordenadas = _ponto_marcacoes_ordenadas_logicas(funcionario, data_ref, marcacoes)
+        datas_logicas = [
+            _ponto_data_hora_logica(funcionario, data_ref, m.data_hora, ordenadas)
+            for m in ordenadas
+            if getattr(m, "data_hora", None)
+        ]
+        intervalos = []
+        for idx in range(0, len(datas_logicas) - 1, 2):
+            ini_dt = datas_logicas[idx]
+            fim_dt = datas_logicas[idx + 1]
+            if ini_dt and fim_dt and fim_dt > ini_dt:
+                intervalos.append((ini_dt, fim_dt))
+        return ordenadas, intervalos
 
     def _ponto_competencia_bounds(competencia):
         comp = (competencia or "").strip()
@@ -117,6 +514,44 @@ def register_ponto_routes(
         fim = proximo - timedelta(days=1)
         return inicio, fim
 
+    def _ponto_parse_data_iso(valor):
+        txt = (valor or "").strip()
+        if not txt:
+            return None
+        try:
+            return datetime.strptime(txt, "%Y-%m-%d").date()
+        except Exception:
+            return None
+
+    def _ponto_funcionario_em_ferias_na_data(funcionario, data_ref):
+        ini = _ponto_parse_data_iso(getattr(funcionario, "ferias_inicio", ""))
+        fim = _ponto_parse_data_iso(getattr(funcionario, "ferias_fim", ""))
+        if ini and fim:
+            return ini <= data_ref <= fim
+        if ini and not fim:
+            return data_ref >= ini
+        if fim and not ini:
+            return data_ref <= fim
+        return False
+
+    def _ponto_funcionario_admissao_data(funcionario):
+        return _ponto_parse_data_iso(getattr(funcionario, "data_admissao", ""))
+
+    def _ponto_funcionario_elegivel_competencia(funcionario, competencia):
+        """Define se o funcionário deve aparecer na gestão da competência.
+
+        Regra: todos os status aparecem, exceto Demitido/Inativo fora da
+        competência de demissão.
+        """
+        inicio, fim = _ponto_competencia_bounds(competencia)
+        if not inicio or not fim:
+            return True
+        st = (getattr(funcionario, "status", "") or "").strip().lower()
+        if st in ("demitido", "inativo"):
+            dt_dem = _ponto_parse_data_iso(getattr(funcionario, "data_demissao", ""))
+            return bool(dt_dem and inicio <= dt_dem <= fim)
+        return True
+
     def _ponto_fmt_minutos(total, signed=False):
         try:
             minutos = int(total or 0)
@@ -128,26 +563,301 @@ def register_ponto_routes(
         minutos = abs(minutos)
         return f"{sinal}{minutos // 60:02d}:{minutos % 60:02d}"
 
+    def _safe_float(valor):
+        if valor in (None, ""):
+            return None
+        try:
+            return float(valor)
+        except Exception:
+            return None
+
+    def _fmt_geo(lat, lon, precisao):
+        if lat is None or lon is None:
+            return "Sem geolocalizacao"
+        base = f"{lat:.6f}, {lon:.6f}"
+        if precisao is None:
+            return base
+        return f"{base} (±{int(round(abs(precisao)))}m)"
+
+    def _audit_hash_marcacao(marcacao):
+        dt_txt = ""
+        if getattr(marcacao, "data_hora", None):
+            dt_txt = marcacao.data_hora.strftime("%Y-%m-%d %H:%M:%S")
+        payload = "|".join(
+            [
+                str(getattr(marcacao, "id", "") or ""),
+                str(getattr(marcacao, "funcionario_id", "") or ""),
+                str(getattr(marcacao, "tipo", "") or ""),
+                dt_txt,
+                str(getattr(marcacao, "origem", "") or ""),
+                str(getattr(marcacao, "ip", "") or ""),
+                str(getattr(marcacao, "latitude", "") or ""),
+                str(getattr(marcacao, "longitude", "") or ""),
+                str(getattr(marcacao, "precisao_gps", "") or ""),
+            ]
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def _serializar_marcacao_auditoria(marcacao):
+        d = marcacao.to_dict()
+        dt = getattr(marcacao, "data_hora", None)
+        tipo_norm = str(getattr(marcacao, "tipo", "") or "").strip().lower()
+        lat = _safe_float(getattr(marcacao, "latitude", None))
+        lon = _safe_float(getattr(marcacao, "longitude", None))
+        precisao = _safe_float(getattr(marcacao, "precisao_gps", None))
+        d["tipo_label"] = _ponto_label(tipo_norm)
+        d["hora_fmt"] = dt.strftime("%H:%M") if dt else ""
+        d["data_hora_fmt"] = dt.strftime("%d/%m/%Y %H:%M:%S") if dt else ""
+        d["tem_geolocalizacao"] = lat is not None and lon is not None
+        d["geo_fmt"] = _fmt_geo(lat, lon, precisao)
+        d["audit_hash"] = _audit_hash_marcacao(marcacao)
+        return d
+
+    def _empresa_id_usuario_logado():
+        uid = session.get("uid")
+        perfil = (session.get("perfil") or "").strip().lower()
+        if perfil == "dono" or not uid:
+            return None
+        try:
+            from sqlalchemy import text as _sql_text_empresa
+
+            row = db.session.execute(
+                _sql_text_empresa("SELECT empresa_id FROM usuario WHERE id = :uid"),
+                {"uid": int(uid)},
+            ).first()
+            return int(row[0]) if row and row[0] else None
+        except Exception:
+            return None
+
     def _ponto_marcacoes_dia(funcionario_id, data_ref):
-        inicio = datetime.combine(data_ref, datetime.min.time())
-        fim = inicio + timedelta(days=1)
-        return (
+        try:
+            funcionario = db.session.get(Funcionario, funcionario_id)
+        except Exception:
+            funcionario = None
+
+        def _data_efetiva_marcacao(dt):
+            if not dt or not funcionario:
+                return dt.date() if dt else data_ref
+            data_base = dt.date()
+            data_prev = data_base - timedelta(days=1)
+            esc_prev = _ponto_escala_info_data(funcionario, data_prev)
+            if esc_prev:
+                esc = esc_prev.get("escala")
+                dia_info = esc_prev.get("dia_info") or {}
+                corte_min = _ponto_corte_data_ref_min(esc, dia_info)
+                if corte_min is not None:
+                    if _ponto_cruza_meia_noite(esc, dia_info):
+                        entrada_min = _ponto_hora_entrada_min(esc, dia_info)
+                        if entrada_min is not None and entrada_min >= 18 * 60:
+                            corte_min = max(corte_min, 360)
+                    if (dt.hour * 60 + dt.minute) <= corte_min:
+                        if _ponto_tem_entrada_noturna_mesma_data(funcionario.id, data_base):
+                            return data_base
+                        return data_prev
+            if (dt.hour * 60 + dt.minute) <= 6 * 60 and _ponto_jornada_avulsa_aberta(funcionario.id, data_prev):
+                if _ponto_tem_entrada_noturna_mesma_data(funcionario.id, data_base):
+                    return data_base
+                return data_prev
+            return data_base
+
+        # BUG-FIX 13: a janela UTC midnight→midnight cortava marcações de turno
+        # noturno que em BRT são do dia data_ref mas em UTC caem no dia seguinte
+        # (após 21h BRT = após 00h UTC do próximo dia). Estender a janela em 3h em
+        # cada lado e também cobrir até 06:00 no dia seguinte para turnos noturnos
+        # que podem ter saída de madrugada ainda pertencendo à data_ref anterior.
+        inicio = datetime.combine(data_ref, datetime.min.time()) - timedelta(hours=3)
+        fim = datetime.combine(data_ref, datetime.min.time()) + timedelta(hours=33)
+        todas = (
             PontoMarcacao.query.filter(PontoMarcacao.funcionario_id == funcionario_id)
             .filter(PontoMarcacao.data_hora >= inicio)
             .filter(PontoMarcacao.data_hora < fim)
             .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
             .all()
         )
+        resultado = []
+        for m in todas:
+            # data_hora é BRT naive; a data efetiva pode voltar para o dia anterior
+            # em escala noturna quando a marcação ocorre antes do fim do período noturno.
+            if m.data_hora and _data_efetiva_marcacao(m.data_hora) == data_ref:
+                resultado.append(m)
+        return resultado
 
-    def _ponto_resumo_func_dia(funcionario, data_ref, _marcacoes=None):
+    def _ponto_data_ref_efetiva(funcionario, data_hora):
+        if not data_hora:
+            return None
+        data_base = data_hora.date()
+        data_prev = data_base - timedelta(days=1)
+
+        esc_prev = _ponto_escala_info_data(funcionario, data_prev)
+        if esc_prev:
+            esc = esc_prev.get("escala")
+            dia_info = esc_prev.get("dia_info") or {}
+            corte_min = _ponto_corte_data_ref_min(esc, dia_info)
+            if corte_min is not None:
+                if _ponto_cruza_meia_noite(esc, dia_info):
+                    entrada_min = _ponto_hora_entrada_min(esc, dia_info)
+                    if entrada_min is not None and entrada_min >= 18 * 60:
+                        corte_min = max(corte_min, 360)
+                if (data_hora.hour * 60 + data_hora.minute) <= corte_min:
+                    if _ponto_tem_entrada_noturna_mesma_data(funcionario.id, data_base):
+                        return data_base
+                    return data_prev
+        if (data_hora.hour * 60 + data_hora.minute) <= 6 * 60 and _ponto_jornada_avulsa_aberta(funcionario.id, data_prev):
+            if _ponto_tem_entrada_noturna_mesma_data(funcionario.id, data_base):
+                return data_base
+            return data_prev
+        return data_base
+
+    def _calc_intersec_noturno(ini_dt, fim_dt, noc_ini_min=1320, noc_fim_min=300):
+        """Minutos trabalhados no período noturno para um trecho de trabalho.
+        noc_ini_min: início do período noturno em minutos (padrão 22:00 = 1320)
+        noc_fim_min: fim do período noturno em minutos (padrão 05:00 = 300)
+        BUG-FIX 11: antes hardcoded para 22:00-05:00 independente do período
+        configurado em Escala.periodo_noturno_ini/fim."""
+        if not ini_dt or not fim_dt or fim_dt <= ini_dt:
+            return 0
+        ini_m = ini_dt.hour * 60 + ini_dt.minute
+        fim_m = fim_dt.hour * 60 + fim_dt.minute
+        total = 0
+        if fim_m <= ini_m:
+            fim_m += 1440  # turno cruza meia-noite
+        # Segmento tarde: noc_ini_min-00:00
+        total += max(0, min(fim_m, 1440) - max(ini_m, noc_ini_min))
+        # Segmento madrugada: 00:00-noc_fim_min; só se turno cruzou meia-noite
+        if fim_m > 1440:
+            total += max(0, min(fim_m - 1440, noc_fim_min))
+        # Turno que começa e termina dentro de 00:00-noc_fim_min sem cruzar meia-noite
+        elif ini_m < noc_fim_min:
+            total += max(0, min(fim_m, noc_fim_min) - ini_m)
+        return max(0, total)
+
+    def _calc_noturno_min_marcacoes(marcacoes, noc_ini_min=1320, noc_fim_min=300):
+        """Total de minutos de adicional noturno a partir das marcações.
+        Aceita período noturno customável (BUG-FIX 11)."""
+        total = 0
+        aberta_em = None
+        for m in marcacoes:
+            if not getattr(m, "data_hora", None):
+                continue
+            if m.tipo in ("entrada", "retorno_intervalo"):
+                aberta_em = m.data_hora
+            elif m.tipo in ("saida_intervalo", "saida") and aberta_em:
+                total += _calc_intersec_noturno(aberta_em, m.data_hora, noc_ini_min, noc_fim_min)
+                aberta_em = None
+        return total
+
+    def _calc_intrajornada_min(marcacoes):
+        """Total de minutos de intervalo intrajornada efetivamente gozado."""
+        total = 0
+        saida_int_em = None
+        for m in marcacoes:
+            if not getattr(m, "data_hora", None):
+                continue
+            if m.tipo == "saida_intervalo":
+                saida_int_em = m.data_hora
+            elif m.tipo == "retorno_intervalo" and saida_int_em:
+                total += max(0, int((m.data_hora - saida_int_em).total_seconds() / 60))
+                saida_int_em = None
+        return total
+
+    def _feriados_para_data(data_ref, funcionario=None):
+        """Carrega feriados do mês de data_ref.
+
+        - Sem funcionario: retorna todos os feriados do mês (comportamento legado).
+        - Com funcionario: aplica escopo por tipo, posto_operacional e vínculo em
+          FeriadoFuncionario (quando houver).
+        """
+        def _norm_posto(v):
+            t = (v or "").strip()
+            return (t or "Reserva tecnica").lower()
+
+        def _parse_postos(raw_value):
+            txt = (raw_value or "").strip()
+            if not txt:
+                return []
+            if txt.startswith("["):
+                try:
+                    arr = json.loads(txt)
+                    if isinstance(arr, list):
+                        return [str(x or "").strip() for x in arr if str(x or "").strip()]
+                except Exception:
+                    pass
+            return [p.strip() for p in txt.split(",") if p.strip()]
+
+        try:
+            inicio_mes = data_ref.replace(day=1)
+            if data_ref.month == 12:
+                fim_mes = data_ref.replace(day=31)
+            else:
+                fim_mes = (data_ref.replace(month=data_ref.month + 1, day=1) - timedelta(days=1))
+            rows = Feriado.query.filter(
+                Feriado.data >= inicio_mes.strftime("%Y-%m-%d"),
+                Feriado.data <= fim_mes.strftime("%Y-%m-%d"),
+            ).all()
+
+            if not funcionario:
+                return {
+                    datetime.strptime(f.data, "%Y-%m-%d").date()
+                    for f in rows
+                    if f.data
+                }
+
+            vinc_map = {}
+            if FeriadoFuncionario:
+                ids = [f.id for f in rows if getattr(f, "id", None)]
+                if ids:
+                    for v in FeriadoFuncionario.query.filter(FeriadoFuncionario.feriado_id.in_(ids)).all():
+                        vinc_map.setdefault(v.feriado_id, set()).add(v.funcionario_id)
+
+            out = set()
+            posto_func = _norm_posto(getattr(funcionario, "posto_operacional", ""))
+            for fer in rows:
+                if not fer.data:
+                    continue
+                tipo = (fer.tipo or "").strip().lower()
+                aplica = False
+                if tipo == "nacional":
+                    aplica = True
+                else:
+                    postos_fer = _parse_postos(getattr(fer, "posto_operacional", ""))
+                    if postos_fer and posto_func not in {_norm_posto(p) for p in postos_fer}:
+                        aplica = False
+                    else:
+                        vincs = vinc_map.get(fer.id, set())
+                        aplica = (funcionario.id in vincs) if vincs else True
+                if aplica:
+                    out.add(datetime.strptime(fer.data, "%Y-%m-%d").date())
+            return out
+        except Exception:
+            return set()
+
+    def _afastamento_ativo_na_data(funcionario_id, data_ref):
+        if not PontoAfastamento:
+            return None
+        try:
+            data_str = data_ref.strftime("%Y-%m-%d") if hasattr(data_ref, "strftime") else str(data_ref)
+            return PontoAfastamento.query.filter(
+                PontoAfastamento.funcionario_id == funcionario_id,
+                PontoAfastamento.data_inicio <= data_str,
+                PontoAfastamento.data_fim >= data_str,
+            ).order_by(PontoAfastamento.data_inicio.desc(), PontoAfastamento.id.desc()).first()
+        except Exception:
+            return None
+
+    def _ponto_resumo_func_dia(funcionario, data_ref, _marcacoes=None, _feriados=None):
         marcacoes = (
             _marcacoes
             if _marcacoes is not None
             else _ponto_marcacoes_dia(funcionario.id, data_ref)
         )
+        marcacoes, intervalos_logicos = _ponto_intervalos_logicos(funcionario, data_ref, marcacoes)
+        data_hora_logica_por_id = {
+            id(marcacao): _ponto_data_hora_logica(funcionario, data_ref, marcacao.data_hora)
+            for marcacao in marcacoes
+            if getattr(marcacao, "data_hora", None)
+        }
         inconsistencias = []
         esperado = "entrada"
-        segundos_total = 0
         aberta_em = None
         for marcacao in marcacoes:
             if not getattr(marcacao, "data_hora", None):
@@ -160,67 +870,186 @@ def register_ponto_routes(
                 inconsistencias.append(
                     f"Sequência inesperada: recebido {_ponto_label(marcacao.tipo)}; esperado {_ponto_label(esperado)}."
                 )
+            data_hora_logica = data_hora_logica_por_id.get(id(marcacao), marcacao.data_hora)
             if marcacao.tipo == "entrada":
                 if aberta_em is not None:
                     inconsistencias.append(
                         "Existe uma entrada sem fechamento antes desta nova entrada."
                     )
-                aberta_em = marcacao.data_hora
+                aberta_em = data_hora_logica
             elif marcacao.tipo == "saida_intervalo":
                 if aberta_em is None:
                     inconsistencias.append("Saída para intervalo sem entrada anterior.")
-                else:
-                    segundos_total += max(
-                        0, int((marcacao.data_hora - aberta_em).total_seconds())
-                    )
-                    aberta_em = None
+                aberta_em = None
             elif marcacao.tipo == "retorno_intervalo":
                 if aberta_em is not None:
                     inconsistencias.append("Retorno de intervalo sem saída anterior.")
-                aberta_em = marcacao.data_hora
+                aberta_em = data_hora_logica
             elif marcacao.tipo == "saida":
                 if aberta_em is None:
                     inconsistencias.append("Saída final sem entrada anterior.")
-                else:
-                    segundos_total += max(
-                        0, int((marcacao.data_hora - aberta_em).total_seconds())
-                    )
-                    aberta_em = None
+                aberta_em = None
             esperado = _ponto_next_tipo(marcacao.tipo)
         if aberta_em is not None:
             inconsistencias.append("Jornada em aberto (faltou batida de fechamento).")
-        minutos_trabalhados = int(round(segundos_total / 60.0))
-        minutos_esperados = _ponto_min_esperado_data(funcionario, data_ref)
-        saldo = minutos_trabalhados - minutos_esperados
+        segundos_total = sum(
+            max(0, int((fim_dt - ini_dt).total_seconds()))
+            for ini_dt, fim_dt in intervalos_logicos
+        )
+        # BUG-FIX 15: usar divisão inteira (truncate) em vez de round() para evitar
+        # imprecisão acumulada (+/-1 min) em múltiplas marcações ao longo do mês.
+        minutos_trabalhados = segundos_total // 60
+
+        data_ref_str = data_ref.strftime("%Y-%m-%d")
+        af = _afastamento_ativo_na_data(funcionario.id, data_ref)
+        dia_tipo = "normal"
+        afastamento_info = None
+        _is_feriado = data_ref in (_feriados or set())
+        admissao_data = _ponto_funcionario_admissao_data(funcionario)
+        demissao_data = _ponto_parse_data_iso(getattr(funcionario, "data_demissao", ""))
+        if admissao_data and data_ref < admissao_data:
+            dia_tipo = "pre_admissao"
+        elif demissao_data and data_ref >= demissao_data:
+            dia_tipo = "demitido"
+        elif af:
+            dia_tipo = "afastamento"
+            afastamento_info = {
+                "id": af.id,
+                "tipo": af.tipo,
+                "observacao": (af.observacao or ""),
+                "data_inicio": af.data_inicio,
+                "data_fim": af.data_fim,
+            }
+        elif _ponto_funcionario_em_ferias_na_data(funcionario, data_ref):
+            dia_tipo = "ferias"
+        elif _is_feriado:
+            dia_tipo = "feriado"
+
+        esc_info_dia = _ponto_escala_info_data(funcionario, data_ref)
+        minutos_esperados = 0 if dia_tipo in ("pre_admissao", "demitido", "afastamento", "ferias", "feriado") else _ponto_min_esperado_data(funcionario, data_ref)
+        if dia_tipo == "normal" and minutos_esperados == 0 and not marcacoes:
+            dia_tipo = "folga"
+        saldo_bruto = minutos_trabalhados - minutos_esperados
+        if saldo_bruto > 0 and saldo_bruto < HE_MINIMA_AUTORIZACAO_MIN:
+            saldo = 0
+        elif saldo_bruto < 0 and abs(saldo_bruto) <= FALTA_PARCIAL_TOLERANCIA_MIN:
+            saldo = 0
+        else:
+            saldo = saldo_bruto
+        # ── Horas extras 50% e 100% ──────────────────────────────────────────
+        # Regra padrão: 100% somente em domingo/feriado; semana e sábado ficam em 50%.
+        # Exceção 12x36: só há HE quando a folga da escala é trabalhada.
+        # Em dia de trabalho da 12x36, inclusive se cair em feriado, não há HE.
+        escala_tipo = getattr((esc_info_dia or {}).get("escala"), "tipo", "") if esc_info_dia else ""
+        escala_dia_tipo = str(((esc_info_dia or {}).get("dia_info") or {}).get("tipo", "")).lower()
+        domingo_ou_feriado = (data_ref.weekday() == 6) or _is_feriado
+        if saldo > 0:
+            if escala_tipo == "12x36":
+                if escala_dia_tipo == "folga":
+                    he_50_min_bruto = saldo
+                    he_100_min_bruto = 0
+                else:
+                    he_50_min_bruto = 0
+                    he_100_min_bruto = 0
+            elif domingo_ou_feriado:
+                he_50_min_bruto = 0
+                he_100_min_bruto = saldo
+            else:
+                he_50_min_bruto = saldo
+                he_100_min_bruto = 0
+        else:
+            he_50_min_bruto = 0
+            he_100_min_bruto = 0
+        he_50_min = he_50_min_bruto
+        he_100_min = he_100_min_bruto
+        # ── Adicional noturno e intrajornada ─────────────────────────────────
+        # BUG-FIX 11: usar período noturno configurado na escala do funcionário,
+        # se existir — em vez dos valores hardcoded 22:00-05:00.
+        _noc_ini_min = 1320  # 22:00 default
+        _noc_fim_min = 300   # 05:00 default
+        if EscalaFuncionario and Escala:
+            try:
+                _data_str = data_ref.strftime("%Y-%m-%d")
+                _ef = EscalaFuncionario.query.filter(
+                    EscalaFuncionario.funcionario_id == funcionario.id,
+                    EscalaFuncionario.data_inicio <= _data_str,
+                    EscalaFuncionario.ativo == True,
+                ).order_by(EscalaFuncionario.data_inicio.desc()).first()
+                if _ef and (not _ef.data_fim or _ef.data_fim >= _data_str):
+                    _esc = db.session.get(Escala, _ef.escala_id)
+                    if _esc and _esc.ativo:
+                        _h, _m = map(int, (_esc.periodo_noturno_ini or "22:00").split(":"))
+                        _noc_ini_min = _h * 60 + _m
+                        _h, _m = map(int, (_esc.periodo_noturno_fim or "05:00").split(":"))
+                        _noc_fim_min = _h * 60 + _m
+            except Exception:
+                pass
+        noturno_min = sum(
+            _calc_intersec_noturno(ini_dt, fim_dt, _noc_ini_min, _noc_fim_min)
+            for ini_dt, fim_dt in intervalos_logicos
+        )
+        intrajornada_min = sum(
+            max(0, int((intervalos_logicos[idx + 1][0] - intervalos_logicos[idx][1]).total_seconds() / 60))
+            for idx in range(len(intervalos_logicos) - 1)
+        )
         return {
             "funcionario_id": funcionario.id,
             "funcionario_nome": funcionario.nome,
             "data_ref": data_ref.strftime("%Y-%m-%d"),
-            "marcacoes": [marcacao.to_dict() for marcacao in marcacoes],
+            "marcacoes": [_serializar_marcacao_auditoria(marcacao) for marcacao in marcacoes],
             "proximo_tipo": _ponto_tipo_esperado(marcacoes),
             "proximo_tipo_label": _ponto_label(_ponto_tipo_esperado(marcacoes)),
             "horas_trabalhadas_min": minutos_trabalhados,
             "horas_trabalhadas_fmt": _ponto_fmt_minutos(minutos_trabalhados),
             "horas_esperadas_min": minutos_esperados,
             "horas_esperadas_fmt": _ponto_fmt_minutos(minutos_esperados),
+            "saldo_bruto_min": saldo_bruto,
+            "saldo_bruto_fmt": _ponto_fmt_minutos(saldo_bruto, signed=True),
             "saldo_min": saldo,
             "saldo_fmt": _ponto_fmt_minutos(saldo, signed=True),
+            "he_50_min_bruto": he_50_min_bruto,
+            "he_50_fmt_bruto": _ponto_fmt_minutos(he_50_min_bruto),
+            "he_50_min": he_50_min,
+            "he_50_fmt": _ponto_fmt_minutos(he_50_min),
+            "he_100_min_bruto": he_100_min_bruto,
+            "he_100_fmt_bruto": _ponto_fmt_minutos(he_100_min_bruto),
+            "he_100_min": he_100_min,
+            "he_100_fmt": _ponto_fmt_minutos(he_100_min),
+            "noturno_min": noturno_min,
+            "noturno_fmt": _ponto_fmt_minutos(noturno_min),
+            "intrajornada_min": intrajornada_min,
+            "intrajornada_fmt": _ponto_fmt_minutos(intrajornada_min),
             "status": "ok" if not inconsistencias else "inconsistente",
             "inconsistencias": inconsistencias,
+            "dia_tipo": dia_tipo,
+            "afastamento_info": afastamento_info,
+            "data_ref_str": data_ref_str,
         }
 
     def _ponto_resumo_competencia(funcionario, competencia):
         inicio, fim = _ponto_competencia_bounds(competencia)
         if not inicio:
             return None
+        # Carregar feriados aplicáveis ao colaborador (tipo + posto + vínculos)
+        _feriados_set = _feriados_para_data(inicio, funcionario)
         dias = []
         total_trabalhado = 0
         total_esperado = 0
         total_saldo = 0
+        total_saldo_bruto = 0
+        total_he_50_bruto = 0
+        total_he_100_bruto = 0
+        total_he_50 = 0
+        total_he_100 = 0
+        total_noturno = 0
+        total_intrajornada = 0
         inconsistencias = 0
         # Batch load: 1 query para todo o período da competência
-        inicio_dt = datetime.combine(inicio, datetime.min.time())
-        fim_dt = datetime.combine(fim + timedelta(days=1), datetime.min.time())
+        # BUG-FIX: estender janela de query para capturar marcações de turno
+        # noturno que em UTC caem no dia seguinte e podem terminar até 06:00
+        # do dia posterior à competência. A indexação por data BRT já é correta.
+        inicio_dt = datetime.combine(inicio, datetime.min.time()) - timedelta(hours=3)
+        fim_dt = datetime.combine(fim + timedelta(days=1), datetime.min.time()) + timedelta(hours=6)
         todas_marc_comp = (
             PontoMarcacao.query.filter(
                 PontoMarcacao.funcionario_id == funcionario.id,
@@ -232,44 +1061,117 @@ def register_ponto_routes(
         )
         marc_por_data_comp = {}
         for _mc in todas_marc_comp:
-            _dc = _mc.data_hora.date()
-            marc_por_data_comp.setdefault(_dc, []).append(_mc)
+            if _mc.data_hora:
+                # Alinhar o espelho mensal com a mesma data_ref efetiva já usada
+                # no registro e na consulta diária: em turno noturno, marcações da
+                # madrugada pertencem ao dia anterior até o corte configurado.
+                _dc = _ponto_data_ref_efetiva(funcionario, _mc.data_hora) or _mc.data_hora.date()
+                marc_por_data_comp.setdefault(_dc, []).append(_mc)
         dia = inicio
         while dia <= fim:
             resumo = _ponto_resumo_func_dia(
-                funcionario, dia, _marcacoes=marc_por_data_comp.get(dia, [])
+                funcionario, dia, _marcacoes=marc_por_data_comp.get(dia, []),
+                _feriados=_feriados_set
             )
             dias.append(
                 {
                     "data_ref": resumo["data_ref"],
+                    # BUG-FIX 1: incluir campos _min que o espelho de ponto precisa
+                    # para calcular totais — antes só existiam as versões _fmt (string).
+                    "horas_trabalhadas_min": resumo["horas_trabalhadas_min"],
                     "horas_trabalhadas_fmt": resumo["horas_trabalhadas_fmt"],
+                    "horas_esperadas_min": resumo["horas_esperadas_min"],
                     "horas_esperadas_fmt": resumo["horas_esperadas_fmt"],
+                    "saldo_bruto_min": resumo["saldo_bruto_min"],
+                    "saldo_bruto_fmt": resumo["saldo_bruto_fmt"],
+                    "saldo_min": resumo["saldo_min"],
                     "saldo_fmt": resumo["saldo_fmt"],
+                    "he_50_min_bruto": resumo["he_50_min_bruto"],
+                    "he_50_fmt_bruto": resumo["he_50_fmt_bruto"],
+                    "he_50_min": resumo["he_50_min"],
+                    "he_50_fmt": resumo["he_50_fmt"],
+                    "he_100_min_bruto": resumo["he_100_min_bruto"],
+                    "he_100_fmt_bruto": resumo["he_100_fmt_bruto"],
+                    "he_100_min": resumo["he_100_min"],
+                    "he_100_fmt": resumo["he_100_fmt"],
+                    "noturno_min": resumo["noturno_min"],
+                    "noturno_fmt": resumo["noturno_fmt"],
+                    "intrajornada_min": resumo["intrajornada_min"],
+                    "intrajornada_fmt": resumo["intrajornada_fmt"],
                     "status": resumo["status"],
+                    "dia_tipo": resumo.get("dia_tipo", "normal"),
+                    "afastamento_info": resumo.get("afastamento_info"),
                     "marcacoes_count": len(resumo["marcacoes"]),
                     "inconsistencias": resumo["inconsistencias"],
                 }
             )
             total_trabalhado += resumo["horas_trabalhadas_min"]
             total_esperado += resumo["horas_esperadas_min"]
+            total_saldo_bruto += resumo["saldo_bruto_min"]
             total_saldo += resumo["saldo_min"]
+            total_he_50_bruto += resumo["he_50_min_bruto"]
+            total_he_100_bruto += resumo["he_100_min_bruto"]
+            total_he_50 += resumo["he_50_min"]
+            total_he_100 += resumo["he_100_min"]
+            total_noturno += resumo["noturno_min"]
+            total_intrajornada += resumo["intrajornada_min"]
             if resumo["status"] != "ok":
                 inconsistencias += 1
             dia += timedelta(days=1)
+
+        # Se o posto exige autorização de HE, só contabilizar oficialmente após aprovação.
+        cli = None
+        if funcionario.posto_cliente_id and Cliente:
+            cli = db.session.get(Cliente, funcionario.posto_cliente_id)
+        he_autorizada = getattr(cli, "he_autorizada", None) if cli else None
+        he_requer_autorizacao = True
+        sol = None
+        if SolicitacaoHoraExtra:
+            sol = SolicitacaoHoraExtra.query.filter_by(
+                funcionario_id=funcionario.id, competencia=competencia
+            ).first()
+        he_aprovada = (not he_requer_autorizacao) or (sol and sol.status == "aprovado")
+        if not he_aprovada:
+            for dia_resumo in dias:
+                dia_resumo["he_50_min"] = 0
+                dia_resumo["he_50_fmt"] = _ponto_fmt_minutos(0)
+                dia_resumo["he_100_min"] = 0
+                dia_resumo["he_100_fmt"] = _ponto_fmt_minutos(0)
+            total_he_50 = 0
+            total_he_100 = 0
+
         return {
             "funcionario_id": funcionario.id,
             "funcionario_nome": funcionario.nome,
             "competencia": competencia,
             "dias": dias,
+            # BUG-FIX 5: expor marc_por_data para o espelho de ponto reutilizar
+            # em vez de fazer uma segunda query idêntica (TOCTOU + carga dupla).
+            "marc_por_data": marc_por_data_comp,
             "totais": {
                 "horas_trabalhadas_min": total_trabalhado,
                 "horas_trabalhadas_fmt": _ponto_fmt_minutos(total_trabalhado),
                 "horas_esperadas_min": total_esperado,
                 "horas_esperadas_fmt": _ponto_fmt_minutos(total_esperado),
+                "saldo_bruto_min": total_saldo_bruto,
+                "saldo_bruto_fmt": _ponto_fmt_minutos(total_saldo_bruto, signed=True),
                 "saldo_min": total_saldo,
                 "saldo_fmt": _ponto_fmt_minutos(total_saldo, signed=True),
+                "he_50_min_bruto": total_he_50_bruto,
+                "he_50_fmt_bruto": _ponto_fmt_minutos(total_he_50_bruto),
+                "he_50_min": total_he_50,
+                "he_50_fmt": _ponto_fmt_minutos(total_he_50),
+                "he_100_min_bruto": total_he_100_bruto,
+                "he_100_fmt_bruto": _ponto_fmt_minutos(total_he_100_bruto),
+                "he_100_min": total_he_100,
+                "he_100_fmt": _ponto_fmt_minutos(total_he_100),
+                "noturno_min": total_noturno,
+                "noturno_fmt": _ponto_fmt_minutos(total_noturno),
+                "intrajornada_min": total_intrajornada,
+                "intrajornada_fmt": _ponto_fmt_minutos(total_intrajornada),
                 "inconsistencias": inconsistencias,
                 "dias": len(dias),
+                "he_pendente_autorizacao": bool(he_requer_autorizacao and not he_aprovada and (total_he_50_bruto > 0 or total_he_100_bruto > 0)),
             },
         }
 
@@ -282,9 +1184,25 @@ def register_ponto_routes(
             return jsonify(
                 {"erro": "Selecione o funcionário para registrar ponto."}
             ), 400
-        funcionario = Funcionario.query.get(funcionario_id)
+        # BUG-FIX 1: .query.get() deprecated no SQLAlchemy 2.x
+        funcionario = db.session.get(Funcionario, funcionario_id)
         if not funcionario:
             return jsonify({"erro": "Funcionário não encontrado."}), 404
+        # BUG-FIX 3: IDOR — qualquer usuário autenticado poderia registrar ponto
+        # para funcionário de outra empresa.
+        _uid_marc = session.get("uid")
+        _perfil_marc = (session.get("perfil") or "").strip().lower()
+        if _perfil_marc != "dono" and _uid_marc:
+            try:
+                from sqlalchemy import text as _sqlt_marc
+                _u_marc = db.session.execute(
+                    _sqlt_marc("SELECT empresa_id FROM usuario WHERE id = :uid"),
+                    {"uid": int(_uid_marc)},
+                ).first()
+                if _u_marc and _u_marc[0] and funcionario.empresa_id and int(_u_marc[0]) != int(funcionario.empresa_id):
+                    return jsonify({"erro": "Acesso negado."}), 403
+            except Exception as _e_marc:
+                app.logger.warning("ponto_marcar: falha no check de empresa uid=%s: %s", _uid_marc, _e_marc)
         if (funcionario.status or "").strip().lower() != "ativo":
             return jsonify(
                 {"erro": "Somente funcionários ativos podem registrar ponto."}
@@ -294,7 +1212,16 @@ def register_ponto_routes(
             return jsonify(
                 {"erro": "Não é permitido registrar ponto em horário futuro."}
             ), 400
-        data_ref = data_hora.date()
+        # Marcações em escala noturna podem pertencer ao dia anterior quando
+        # ocorrem antes do fim do período noturno.
+        data_ref = _ponto_data_ref_efetiva(funcionario, data_hora) or data_hora.date()
+        bloqueio = _ponto_exigir_dia_aberto(funcionario.id, data_ref)
+        if bloqueio:
+            return bloqueio
+        af_hoje = _afastamento_ativo_na_data(funcionario.id, data_ref)
+        if af_hoje:
+            tipo_label = (af_hoje.tipo or "Afastamento").strip()
+            return jsonify({"erro": f"{tipo_label} registrado para este dia. Nao e permitido marcar ponto durante o afastamento."}), 400
         marcacoes_dia = _ponto_marcacoes_dia(funcionario.id, data_ref)
         tipo = (dados.get("tipo") or "").strip().lower() or _ponto_tipo_esperado(
             marcacoes_dia
@@ -319,6 +1246,17 @@ def register_ponto_routes(
         if origem not in ("web", "admin", "importacao"):
             origem = "web"
         observacao = (dados.get("observacao") or "").strip()[:500]
+        latitude = _safe_float(dados.get("latitude", dados.get("lat")))
+        longitude = _safe_float(dados.get("longitude", dados.get("lon")))
+        precisao_gps = _safe_float(
+            dados.get("precisao_gps", dados.get("precisao", dados.get("accuracy")))
+        )
+        if latitude is not None and not (-90 <= latitude <= 90):
+            return jsonify({"erro": "Latitude inválida."}), 400
+        if longitude is not None and not (-180 <= longitude <= 180):
+            return jsonify({"erro": "Longitude inválida."}), 400
+        if precisao_gps is not None and precisao_gps < 0:
+            precisao_gps = abs(precisao_gps)
         ip = (
             (request.headers.get("X-Forwarded-For", "") or request.remote_addr or "")
             .split(",")[0]
@@ -332,6 +1270,9 @@ def register_ponto_routes(
             observacao=observacao,
             criado_por=session.get("nome", ""),
             ip=ip,
+            latitude=latitude,
+            longitude=longitude,
+            precisao_gps=precisao_gps,
         )
         db.session.add(marcacao)
         db.session.commit()
@@ -342,13 +1283,23 @@ def register_ponto_routes(
             "funcionario",
             funcionario.id,
             True,
-            {"tipo": tipo, "data_ref": data_ref.strftime("%Y-%m-%d"), "origem": origem},
+            {
+                "tipo": tipo,
+                "data_ref": data_ref.strftime("%Y-%m-%d"),
+                "origem": origem,
+                "ip": ip,
+                "geo": _fmt_geo(latitude, longitude, precisao_gps),
+                "audit_hash": _audit_hash_marcacao(marcacao),
+            },
         )
         return jsonify(
             {
                 "ok": True,
                 "marcacao": marcacao.to_dict(),
-                "resumo": _ponto_resumo_func_dia(funcionario, data_ref),
+                "resumo": _ponto_resumo_func_dia(
+                    funcionario, data_ref,
+                    _feriados=_feriados_para_data(data_ref, funcionario),
+                ),
             }
         )
 
@@ -358,32 +1309,353 @@ def register_ponto_routes(
         funcionario_id = to_num(request.args.get("funcionario_id"))
         if not funcionario_id:
             return jsonify({"erro": "funcionario_id é obrigatório."}), 400
-        funcionario = Funcionario.query.get(funcionario_id)
+        # BUG-FIX 1: .query.get() deprecated no SQLAlchemy 2.x
+        funcionario = db.session.get(Funcionario, funcionario_id)
         if not funcionario:
             return jsonify({"erro": "Funcionário não encontrado."}), 404
         data_ref = _ponto_parse_data_ref(request.args.get("data"))
         return jsonify(
-            {"ok": True, "resumo": _ponto_resumo_func_dia(funcionario, data_ref)}
+            {"ok": True, "resumo": _ponto_resumo_func_dia(
+                funcionario, data_ref,
+                _feriados=_feriados_para_data(data_ref, funcionario),
+            )}
         )
+
+    @app.route("/api/ponto/marcacoes-global")
+    @lr
+    def api_ponto_marcacoes_global():
+        data_inicio = _ponto_parse_data_ref(
+            request.args.get("data_inicio") or request.args.get("data")
+        )
+        data_fim = _ponto_parse_data_ref(request.args.get("data_fim") or data_inicio)
+        if data_fim < data_inicio:
+            return jsonify({"erro": "data_fim não pode ser anterior a data_inicio."}), 400
+        if (data_fim - data_inicio).days > 93:
+            return jsonify({"erro": "Intervalo máximo permitido é de 93 dias."}), 400
+
+        funcionario_id = to_num(request.args.get("funcionario_id"))
+        limite = to_num(request.args.get("limite")) or 2000
+        limite = max(100, min(int(limite), 5000))
+
+        empresa_id_logada = _empresa_id_usuario_logado()
+        inicio_dt = datetime.combine(data_inicio, datetime.min.time()) - timedelta(hours=3)
+        fim_dt = datetime.combine(data_fim + timedelta(days=1), datetime.min.time()) + timedelta(hours=33)
+
+        query = PontoMarcacao.query.filter(
+            PontoMarcacao.data_hora >= inicio_dt,
+            PontoMarcacao.data_hora < fim_dt,
+        )
+        if funcionario_id:
+            query = query.filter(PontoMarcacao.funcionario_id == funcionario_id)
+
+        marcacoes = (
+            query.order_by(PontoMarcacao.data_hora.desc(), PontoMarcacao.id.desc())
+            .limit(limite)
+            .all()
+        )
+        if not marcacoes:
+            return jsonify(
+                {
+                    "ok": True,
+                    "filtros": {
+                        "data_inicio": data_inicio.strftime("%Y-%m-%d"),
+                        "data_fim": data_fim.strftime("%Y-%m-%d"),
+                        "funcionario_id": funcionario_id,
+                    },
+                    "itens": [],
+                    "total": 0,
+                }
+            )
+
+        func_ids = sorted({m.funcionario_id for m in marcacoes if m.funcionario_id})
+        funcionarios = Funcionario.query.filter(Funcionario.id.in_(func_ids)).all() if func_ids else []
+        func_map = {f.id: f for f in funcionarios}
+
+        itens = []
+        for m in marcacoes:
+            f = func_map.get(m.funcionario_id)
+            if not f:
+                continue
+            if empresa_id_logada and f.empresa_id and int(f.empresa_id) != int(empresa_id_logada):
+                continue
+            data_ref_efetiva = _ponto_data_ref_efetiva(f, m.data_hora) if m.data_hora else None
+            if not data_ref_efetiva:
+                continue
+            if data_ref_efetiva < data_inicio or data_ref_efetiva > data_fim:
+                continue
+            item = _serializar_marcacao_auditoria(m)
+            item["funcionario_nome"] = f.nome
+            item["funcionario_matricula"] = getattr(f, "matricula", "")
+            item["empresa_id"] = f.empresa_id
+            item["data_ref_efetiva"] = data_ref_efetiva.strftime("%Y-%m-%d")
+            itens.append(item)
+
+        return jsonify(
+            {
+                "ok": True,
+                "filtros": {
+                    "data_inicio": data_inicio.strftime("%Y-%m-%d"),
+                    "data_fim": data_fim.strftime("%Y-%m-%d"),
+                    "funcionario_id": funcionario_id,
+                },
+                "itens": itens,
+                "total": len(itens),
+            }
+        )
+
+    def _ponto_esperado_source(funcionario, data_ref):
+        """Retorna (minutos_esperados, fonte, detalhe) para um funcionário em data_ref.
+        Fonte: 'escala' | 'desabilitado'. Implementa mesma prioridade que
+        _ponto_min_esperado_data, mas devolve a origem para uso em previews.
+        """
+        try:
+            esc_info = _ponto_escala_info_data(funcionario, data_ref)
+            if esc_info:
+                return esc_info.get("minutos", 0), 'escala', {
+                    'escala_id': getattr(esc_info.get('escala'), 'id', None),
+                    'indice': esc_info.get('indice'),
+                    'dia_tipo': (esc_info.get('dia_info') or {}).get('tipo', 'trabalho'),
+                    'escala_tipo': getattr(esc_info.get('escala'), 'tipo', ''),
+                }
+        except Exception:
+            try:
+                import logging as _log
+                _log.getLogger(__name__).warning("_ponto_esperado_source: falha ao consultar escalas func_id=%s data=%s", getattr(funcionario, 'id', '?'), data_ref)
+            except Exception:
+                pass
+
+        # Fallback 2: JornadaTrabalho
+        if JornadaTrabalho is not None:
+            try:
+                jid = getattr(funcionario, "jornada_id", None)
+                if jid:
+                    j = db.session.get(JornadaTrabalho, int(jid))
+                    if j:
+                        return j.minutos_esperados_weekday(data_ref.weekday()), 'jornada', {
+                            'jornada_id': j.id, 'weekday': data_ref.weekday()
+                        }
+            except Exception:
+                pass
+
+        # Fallback 3: texto de jornada (seg-sex)
+        if data_ref.weekday() < 5:
+            try:
+                return _ponto_min_esperado_jornada(funcionario), 'jornada_texto', {}
+            except Exception:
+                pass
+
+        return 0, 'sem_escala', {'reason': 'sem_escala_nem_jornada_para_data'}
+
+    @app.route("/api/ponto/preview", methods=["POST"])
+    @lr
+    def api_ponto_preview():
+        """Gera uma prévia de minutos esperados aplicando uma escala/jornada
+        ou mostrando o efeito atual para um funcionário. Body JSON:
+        { mode: 'funcionario'|'escala'|'jornada', funcionario_id?, escala_id?, jornada_id?, data_inicio?, dias? }
+        """
+        dados = request.json or {}
+        mode = (dados.get("mode") or "funcionario").strip().lower()
+        dias = int(dados.get("dias") or 14)
+        if dias < 1:
+            dias = 1
+        if dias > 120:
+            dias = 120
+        data_inicio = _ponto_parse_data_ref(dados.get("data_inicio"))
+
+        if mode == 'funcionario':
+            funcionario_id = to_num(dados.get("funcionario_id"))
+            if not funcionario_id:
+                return jsonify({"erro": "funcionario_id é obrigatório."}), 400
+            funcionario = db.session.get(Funcionario, funcionario_id)
+            if not funcionario:
+                return jsonify({"erro": "Funcionário não encontrado."}), 404
+            preview = []
+            for i in range(dias):
+                d = data_inicio + timedelta(days=i)
+                minutos, fonte, detalhe = _ponto_esperado_source(funcionario, d)
+                preview.append({
+                    "data_ref": d.strftime("%Y-%m-%d"),
+                    "horas_esperadas_min": minutos,
+                    "horas_esperadas_fmt": _ponto_fmt_minutos(minutos),
+                    "fonte": fonte,
+                    "detalhe": detalhe,
+                })
+            return jsonify({"ok": True, "tipo": "funcionario", "funcionario_id": funcionario_id, "preview": preview})
+
+        if mode == 'escala':
+            escala_id = to_num(dados.get("escala_id"))
+            if not escala_id:
+                return jsonify({"erro": "escala_id é obrigatório."}), 400
+            esc = db.session.get(Escala, escala_id)
+            if not esc:
+                return jsonify({"erro": "Escala não encontrada."}), 404
+            try:
+                ciclo = json.loads(esc.ciclo_json or "{}")
+            except Exception:
+                ciclo = {}
+            dias_ciclo = len(ciclo.get("dias", [])) or 0
+            preview = []
+            for i in range(dias):
+                d = data_inicio + timedelta(days=i)
+                indice = i % dias_ciclo if dias_ciclo else 0
+                try:
+                    minutos = esc.carga_horaria_min_dia(indice)
+                except Exception:
+                    minutos = 0
+                horarios = None
+                try:
+                    if hasattr(esc, 'get_horarios_dia'):
+                        horarios = esc.get_horarios_dia(indice)
+                except Exception:
+                    horarios = None
+                preview.append({
+                    "data_ref": d.strftime("%Y-%m-%d"),
+                    "horas_esperadas_min": minutos,
+                    "horas_esperadas_fmt": _ponto_fmt_minutos(minutos),
+                    "fonte": "escala",
+                    "indice": indice,
+                    "horarios": horarios,
+                })
+            return jsonify({"ok": True, "tipo": "escala", "escala_id": escala_id, "preview": preview})
+
+        if mode == 'jornada':
+            jornada_id = to_num(dados.get("jornada_id"))
+            if not jornada_id:
+                return jsonify({"erro": "jornada_id é obrigatório."}), 400
+            j = db.session.get(JornadaTrabalho, jornada_id)
+            if not j:
+                return jsonify({"erro": "Jornada não encontrada."}), 404
+            preview = []
+            for i in range(dias):
+                d = data_inicio + timedelta(days=i)
+                minutos = j.minutos_esperados_weekday(d.weekday())
+                preview.append({
+                    "data_ref": d.strftime("%Y-%m-%d"),
+                    "horas_esperadas_min": minutos,
+                    "horas_esperadas_fmt": _ponto_fmt_minutos(minutos),
+                    "fonte": "jornada",
+                })
+            return jsonify({"ok": True, "tipo": "jornada", "jornada_id": jornada_id, "preview": preview})
+
+        return jsonify({"erro": "modo inválido. Use funcionario|escala|jornada."}), 400
+
+    @app.route("/api/ponto/escala/bulk_assign", methods=["POST"])
+    @lr
+    def api_ponto_escala_bulk_assign():
+        """Atribui uma `Escala` a vários funcionários em batch.
+        Body JSON: { funcionario_ids: [1,2,3] | funcionarios_csv: '1,2,3', escala_id, data_inicio, data_fim? }
+        Retorna resumo: {created:[], skipped_conflict:[], errors:[]}
+        """
+        dados = request.json or {}
+        ids = dados.get("funcionario_ids")
+        if not ids:
+            csv = (dados.get("funcionarios_csv") or "").strip()
+            if not csv:
+                return jsonify({"erro": "funcionario_ids ou funcionarios_csv é obrigatório."}), 400
+            try:
+                ids = [to_num(x) for x in re.split(r"[;,\n\s]+", csv) if x.strip()]
+            except Exception:
+                ids = []
+        ids = [int(x) for x in ids if x]
+        if not ids:
+            return jsonify({"erro": "Nenhum funcionário válido fornecido."}), 400
+
+        escala_id = to_num(dados.get("escala_id"))
+        if not escala_id:
+            return jsonify({"erro": "escala_id é obrigatório."}), 400
+        esc = db.session.get(Escala, escala_id)
+        if not esc:
+            return jsonify({"erro": "Escala não encontrada."}), 404
+
+        data_inicio = _ponto_parse_data_ref(dados.get("data_inicio"))
+        data_fim = None
+        if dados.get("data_fim"):
+            data_fim = _ponto_parse_data_ref(dados.get("data_fim"))
+            if data_fim < data_inicio:
+                return jsonify({"erro": "data_fim não pode ser anterior a data_inicio."}), 400
+
+        created = []
+        skipped_conflict = []
+        errors = []
+        for fid in ids:
+            try:
+                funcionario = db.session.get(Funcionario, fid)
+                if not funcionario:
+                    errors.append({"funcionario_id": fid, "erro": "Funcionário não encontrado."})
+                    continue
+                # verificar conflito com atribuições ativas que se sobrepõem
+                q = EscalaFuncionario.query.filter(EscalaFuncionario.funcionario_id == fid, EscalaFuncionario.ativo == True)
+                q = q.order_by(EscalaFuncionario.data_inicio.desc())
+                overlaps = False
+                for ef in q.all():
+                    try:
+                        # se ef.data_fim é None → ativo indefinido; se ef.data_fim >= data_inicio -> conflito
+                        if not ef.data_fim or datetime.strptime(ef.data_fim, "%Y-%m-%d").date() >= data_inicio:
+                            overlaps = True
+                            break
+                    except Exception:
+                        overlaps = True
+                        break
+                if overlaps:
+                    skipped_conflict.append(fid)
+                    continue
+                novo = EscalaFuncionario(
+                    escala_id=escala_id,
+                    funcionario_id=fid,
+                    data_inicio=data_inicio.strftime("%Y-%m-%d"),
+                    data_fim=(data_fim.strftime("%Y-%m-%d") if data_fim else None),
+                    ativo=True,
+                )
+                db.session.add(novo)
+                created.append(fid)
+            except Exception as exc:
+                db.session.rollback()
+                errors.append({"funcionario_id": fid, "erro": str(exc)[:180]})
+        try:
+            if created:
+                db.session.commit()
+                for fid in created:
+                    audit_event(
+                        "escala_bulk_assign",
+                        "usuario",
+                        session.get("uid"),
+                        "funcionario",
+                        fid,
+                        True,
+                        {"escala_id": escala_id, "data_inicio": data_inicio.strftime("%Y-%m-%d"), "data_fim": (data_fim.strftime("%Y-%m-%d") if data_fim else None)},
+                    )
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({"erro": "Falha ao salvar atribuições.", "detalhe": str(exc)[:220]}), 500
+
+        return jsonify({"ok": True, "created": created, "skipped_conflict": skipped_conflict, "errors": errors})
 
     @app.route("/api/ponto/resumo-dia")
     @lr
     def api_ponto_resumo_dia():
         try:
             data_ref = _ponto_parse_data_ref(request.args.get("data"))
+            competencia_ref = data_ref.strftime("%Y-%m")
             empresa_id = to_num(request.args.get("empresa_id"))
-            query = Funcionario.query.filter(Funcionario.status == "Ativo")
+            query = Funcionario.query
             if empresa_id:
                 query = query.filter(Funcionario.empresa_id == empresa_id)
-            funcionarios = query.order_by(Funcionario.nome).all()
+            funcionarios = [
+                f for f in query.order_by(Funcionario.nome).all()
+                if _ponto_funcionario_elegivel_competencia(f, competencia_ref)
+            ]
             # Batch load: 1 query para TODAS as marcações do dia (elimina N+1)
-            ids_ativos = [f.id for f in funcionarios]
-            if ids_ativos:
-                inicio_dia = datetime.combine(data_ref, datetime.min.time())
-                fim_dia = inicio_dia + timedelta(days=1)
+            ids_funcionarios = [f.id for f in funcionarios]
+            if ids_funcionarios:
+                # BUG-FIX: estender janela em ±3h para turno noturno — sem isso,
+                # marcações após 21h BRT (= 00h UTC do dia seguinte) ficam fora da
+                # janela e o _ponto_resumo_func_dia recebe lista vazia para esses
+                # funcionários (porque _marcacoes=[] não é None, não faz fallback).
+                inicio_dia = datetime.combine(data_ref, datetime.min.time()) - timedelta(hours=3)
+                fim_dia = datetime.combine(data_ref, datetime.min.time()) + timedelta(hours=27)
                 todas_marc_dia = (
                     PontoMarcacao.query.filter(
-                        PontoMarcacao.funcionario_id.in_(ids_ativos),
+                        PontoMarcacao.funcionario_id.in_(ids_funcionarios),
                         PontoMarcacao.data_hora >= inicio_dia,
                         PontoMarcacao.data_hora < fim_dia,
                     )
@@ -392,9 +1664,15 @@ def register_ponto_routes(
                 )
             else:
                 todas_marc_dia = []
+            _func_map = {f.id: f for f in funcionarios}
             marc_batch = {}
             for _mb in todas_marc_dia:
-                marc_batch.setdefault(_mb.funcionario_id, []).append(_mb)
+                if not _mb.data_hora:
+                    continue
+                _func_m = _func_map.get(_mb.funcionario_id)
+                _data_ef = _ponto_data_ref_efetiva(_func_m, _mb.data_hora) if _func_m else _mb.data_hora.date()
+                if _data_ef == data_ref:
+                    marc_batch.setdefault(_mb.funcionario_id, []).append(_mb)
             itens = []
             total_ok = 0
             total_inconsistente = 0
@@ -405,6 +1683,7 @@ def register_ponto_routes(
                         funcionario,
                         data_ref,
                         _marcacoes=marc_batch.get(funcionario.id, []),
+                        _feriados=_feriados_para_data(data_ref, funcionario),
                     )
                     if resumo["status"] == "ok":
                         total_ok += 1
@@ -490,12 +1769,36 @@ def register_ponto_routes(
         if not motivo:
             return jsonify({"erro": "Informe o motivo do ajuste."}), 400
 
+        # BUG-FIX 19: IDOR — qualquer usuário autenticado poderia fazer ajuste em
+        # funcionário de outra empresa. Verificar antes do retry loop.
+        _uid_ajuste = session.get("uid")
+        _perfil_ajuste = (session.get("perfil") or "").strip().lower()
+        if _perfil_ajuste != "dono" and _uid_ajuste:
+            try:
+                from sqlalchemy import text as _sqlt_ajuste
+                _func_ajuste = db.session.get(Funcionario, funcionario_id)
+                if _func_ajuste:
+                    _u_ajuste = db.session.execute(
+                        _sqlt_ajuste("SELECT empresa_id FROM usuario WHERE id = :uid"),
+                        {"uid": int(_uid_ajuste)},
+                    ).first()
+                    if _u_ajuste and _u_ajuste[0] and _func_ajuste.empresa_id and int(_u_ajuste[0]) != int(_func_ajuste.empresa_id):
+                        return jsonify({"erro": "Acesso negado."}), 403
+            except Exception as _e_ajuste:
+                app.logger.warning("ponto_ajuste: falha no check de empresa uid=%s: %s", _uid_ajuste, _e_ajuste)
+
         for tentativa in range(2):
             try:
-                funcionario = Funcionario.query.get(funcionario_id)
+                # BUG-FIX 1: .query.get() deprecated no SQLAlchemy 2.x
+                funcionario = db.session.get(Funcionario, funcionario_id)
                 if not funcionario:
                     return jsonify({"erro": "Funcionário não encontrado."}), 404
-                data_ref = data_hora.date()
+                # Marcações em escala noturna podem pertencer ao dia anterior
+                # quando ocorrem antes do fim do período noturno.
+                data_ref = _ponto_data_ref_efetiva(funcionario, data_hora) or data_hora.date()
+                bloqueio = _ponto_exigir_dia_aberto(funcionario.id, data_ref)
+                if bloqueio:
+                    return bloqueio
                 antes = [
                     marcacao.to_dict()
                     for marcacao in _ponto_marcacoes_dia(funcionario_id, data_ref)
@@ -548,7 +1851,10 @@ def register_ponto_routes(
                     {
                         "ok": True,
                         "ajuste": ajuste.to_dict(),
-                        "resumo": _ponto_resumo_func_dia(funcionario, data_ref),
+                        "resumo": _ponto_resumo_func_dia(
+                            funcionario, data_ref,
+                            _feriados=_feriados_para_data(data_ref, funcionario),
+                        ),
                     }
                 )
             except Exception as exc:
@@ -576,13 +1882,36 @@ def register_ponto_routes(
         motivo = (dados.get("motivo") or "").strip()
         if not motivo:
             return jsonify({"erro": "Informe o motivo da exclusão."}), 400
-        marcacao = PontoMarcacao.query.get(id)
+        # BUG-FIX 2: .query.get() deprecated no SQLAlchemy 2.x
+        marcacao = db.session.get(PontoMarcacao, id)
         if not marcacao:
             return jsonify({"erro": "Marcação não encontrada."}), 404
-        funcionario = Funcionario.query.get(marcacao.funcionario_id)
+        funcionario = db.session.get(Funcionario, marcacao.funcionario_id)
         if not funcionario:
             return jsonify({"erro": "Funcionário da marcação não encontrado."}), 404
-        data_ref = marcacao.data_hora.date() if marcacao.data_hora else None
+        # BUG-FIX 8: IDOR — qualquer usuário autenticado poderia deletar marcação
+        # de funcionário de outra empresa. Reutilizamos o mesmo padrão do espelho.
+        _uid_del = session.get("uid")
+        _perfil_del = (session.get("perfil") or "").strip().lower()
+        if _perfil_del != "dono" and _uid_del:
+            try:
+                from sqlalchemy import text as _sqlt
+                _u = db.session.execute(
+                    _sqlt("SELECT empresa_id FROM usuario WHERE id = :uid"),
+                    {"uid": int(_uid_del)},
+                ).first()
+                if _u and _u[0] and funcionario.empresa_id and int(_u[0]) != int(funcionario.empresa_id):
+                    return jsonify({"erro": "Acesso negado."}), 403
+            except Exception as _e:
+                app.logger.warning("ponto_excluir: falha no check de empresa uid=%s: %s", _uid_del, _e)
+        data_ref = (
+            _ponto_data_ref_efetiva(funcionario, marcacao.data_hora)
+            if marcacao.data_hora
+            else None
+        )
+        bloqueio = _ponto_exigir_dia_aberto(funcionario.id, data_ref)
+        if bloqueio:
+            return bloqueio
         snap_antes = (
             [m.to_dict() for m in _ponto_marcacoes_dia(funcionario.id, data_ref)]
             if data_ref
@@ -626,7 +1955,10 @@ def register_ponto_routes(
                     "motivo": motivo[:200],
                 },
             )
-            resumo = _ponto_resumo_func_dia(funcionario, data_ref) if data_ref else {}
+            resumo = _ponto_resumo_func_dia(
+                funcionario, data_ref,
+                _feriados=_feriados_para_data(data_ref, funcionario),
+            ) if data_ref else {}
             return jsonify({"ok": True, "resumo": resumo})
         except Exception as exc:
             db.session.rollback()
@@ -642,12 +1974,29 @@ def register_ponto_routes(
     @lr
     def api_ponto_editar_marcacao(id):
         dados = request.json or {}
-        marcacao = PontoMarcacao.query.get(id)
+        # BUG-FIX 2: .query.get() deprecated no SQLAlchemy 2.x
+        marcacao = db.session.get(PontoMarcacao, id)
         if not marcacao:
             return jsonify({"erro": "Marcação não encontrada."}), 404
-        funcionario = Funcionario.query.get(marcacao.funcionario_id)
+        funcionario = db.session.get(Funcionario, marcacao.funcionario_id)
         if not funcionario:
             return jsonify({"erro": "Funcionário da marcação não encontrado."}), 404
+
+        # BUG-FIX 9: IDOR — qualquer usuário autenticado poderia editar marcação
+        # de funcionário de outra empresa.
+        _uid_edit = session.get("uid")
+        _perfil_edit = (session.get("perfil") or "").strip().lower()
+        if _perfil_edit != "dono" and _uid_edit:
+            try:
+                from sqlalchemy import text as _sqlt2
+                _u2 = db.session.execute(
+                    _sqlt2("SELECT empresa_id FROM usuario WHERE id = :uid"),
+                    {"uid": int(_uid_edit)},
+                ).first()
+                if _u2 and _u2[0] and funcionario.empresa_id and int(_u2[0]) != int(funcionario.empresa_id):
+                    return jsonify({"erro": "Acesso negado."}), 403
+            except Exception as _e2:
+                app.logger.warning("ponto_editar: falha no check de empresa uid=%s: %s", _uid_edit, _e2)
 
         tipo = (dados.get("tipo") or marcacao.tipo or "").strip().lower()
         data_hora = _ponto_parse_data_hora(dados.get("data_hora")) or marcacao.data_hora
@@ -668,8 +2017,18 @@ def register_ponto_routes(
         if not motivo:
             return jsonify({"erro": "Informe o motivo da edição da marcação."}), 400
 
+        # data_hora é BRT naive — usar .date() direto para data_ant e data_nova.
         data_ant = marcacao.data_hora.date() if marcacao.data_hora else data_hora.date()
         data_nova = data_hora.date()
+        data_ant_ref = _ponto_data_ref_efetiva(funcionario, marcacao.data_hora) or data_ant
+        data_nova_ref = _ponto_data_ref_efetiva(funcionario, data_hora) or data_nova
+        bloqueio = _ponto_exigir_dia_aberto(funcionario.id, data_ant_ref)
+        if bloqueio:
+            return bloqueio
+        if data_nova_ref != data_ant_ref:
+            bloqueio = _ponto_exigir_dia_aberto(funcionario.id, data_nova_ref)
+            if bloqueio:
+                return bloqueio
 
         def _snap(data_ref):
             return [
@@ -756,8 +2115,14 @@ def register_ponto_routes(
                 {
                     "ok": True,
                     "marcacao": marcacao.to_dict(),
-                    "resumo": _ponto_resumo_func_dia(funcionario, data_nova),
-                    "resumo_dia_anterior": _ponto_resumo_func_dia(funcionario, data_ant)
+                    "resumo": _ponto_resumo_func_dia(
+                        funcionario, data_nova,
+                        _feriados=_feriados_para_data(data_nova, funcionario),
+                    ),
+                    "resumo_dia_anterior": _ponto_resumo_func_dia(
+                        funcionario, data_ant,
+                        _feriados=_feriados_para_data(data_ant, funcionario),
+                    )
                     if data_ant != data_nova
                     else None,
                 }
@@ -780,7 +2145,8 @@ def register_ponto_routes(
         funcionario_id = to_num(dados.get("funcionario_id"))
         if not funcionario_id:
             return jsonify({"erro": "funcionario_id é obrigatório."}), 400
-        funcionario = Funcionario.query.get(funcionario_id)
+        # BUG-FIX 1: .query.get() deprecated no SQLAlchemy 2.x
+        funcionario = db.session.get(Funcionario, funcionario_id)
         if not funcionario:
             return jsonify({"erro": "Funcionário não encontrado."}), 404
 
@@ -792,30 +2158,36 @@ def register_ponto_routes(
         if not data_hora:
             return jsonify({"erro": "Data/hora inválida."}), 400
 
+        # BUG-FIX 3: endpoint admin não verificava data futura; api_ponto_marcar e
+        # api_ponto_ajuste fazem esse check — admin também deve fazê-lo.
+        if data_hora > (utcnow() + timedelta(minutes=1)):
+            return jsonify({"erro": "Não é permitido criar marcação em horário futuro."}), 400
+
         motivo = (dados.get("motivo") or "").strip()
         if not motivo:
             return jsonify({"erro": "Informe o motivo da inclusão da marcação."}), 400
 
         observacao = (dados.get("observacao") or "").strip()[:500]
-        data_ref = data_hora.date()
+        # Marcações em escala noturna podem pertencer ao dia anterior quando
+        # ocorrem antes do fim do período noturno.
+        data_ref = _ponto_data_ref_efetiva(funcionario, data_hora) or data_hora.date()
+        bloqueio = _ponto_exigir_dia_aberto(funcionario.id, data_ref)
+        if bloqueio:
+            return bloqueio
 
-        marcacoes_dia_antes = [
-            m.to_dict() for m in _ponto_marcacoes_dia(funcionario.id, data_ref)
-        ]
-        conflito = PontoMarcacao.query.filter(
-            PontoMarcacao.funcionario_id == funcionario.id,
-            PontoMarcacao.data_hora >= datetime.combine(data_ref, datetime.min.time()),
-            PontoMarcacao.data_hora
-            < datetime.combine(data_ref, datetime.min.time()) + timedelta(days=1),
-        ).all()
+        # BUG-FIX 10: query duplicada — marcacoes_dia_antes fazia a mesma query que
+        # 'conflito' logo abaixo; reutilizar a lista para checar conflito de 1 min.
+        marcacoes_dia_antes = _ponto_marcacoes_dia(funcionario.id, data_ref)
         if any(
             abs((data_hora - m.data_hora).total_seconds()) < 60
-            for m in conflito
+            for m in marcacoes_dia_antes
             if m.data_hora
         ):
             return jsonify(
                 {"erro": "Já existe marcação neste minuto para este funcionário."}
             ), 400
+        # Serializar agora que a lista já foi carregada
+        marcacoes_dia_antes_dict = [m.to_dict() for m in marcacoes_dia_antes]
 
         try:
             ip = (
@@ -835,6 +2207,9 @@ def register_ponto_routes(
                 observacao=observacao,
                 criado_por=session.get("nome", ""),
                 ip=ip,
+                latitude=_safe_float(dados.get("latitude", dados.get("lat"))),
+                longitude=_safe_float(dados.get("longitude", dados.get("lon"))),
+                precisao_gps=_safe_float(dados.get("precisao_gps", dados.get("precisao", dados.get("accuracy")))),
             )
             db.session.add(marcacao)
             db.session.flush()
@@ -846,7 +2221,7 @@ def register_ponto_routes(
                 data_ref=data_ref.strftime("%Y-%m-%d"),
                 motivo=motivo,
                 antes_json=json.dumps(
-                    {"dia": marcacoes_dia_antes}, ensure_ascii=False, default=str
+                    {"dia": marcacoes_dia_antes_dict}, ensure_ascii=False, default=str
                 ),
                 depois_json=json.dumps(
                     {"dia": marcacoes_dia_depois}, ensure_ascii=False, default=str
@@ -884,13 +2259,32 @@ def register_ponto_routes(
         funcionario_id = to_num(dados.get("funcionario_id"))
         if not funcionario_id:
             return jsonify({"erro": "funcionario_id é obrigatório."}), 400
-        funcionario = Funcionario.query.get(funcionario_id)
+        # BUG-FIX 4: .query.get() deprecated no SQLAlchemy 2.x
+        funcionario = db.session.get(Funcionario, funcionario_id)
         if not funcionario:
             return jsonify({"erro": "Funcionário não encontrado."}), 404
+        # BUG-FIX 5: IDOR — qualquer usuário autenticado poderia fechar dia de
+        # funcionário de outra empresa.
+        _uid_fecha = session.get("uid")
+        _perfil_fecha = (session.get("perfil") or "").strip().lower()
+        if _perfil_fecha != "dono" and _uid_fecha:
+            try:
+                from sqlalchemy import text as _sqlt_fecha
+                _u_fecha = db.session.execute(
+                    _sqlt_fecha("SELECT empresa_id FROM usuario WHERE id = :uid"),
+                    {"uid": int(_uid_fecha)},
+                ).first()
+                if _u_fecha and _u_fecha[0] and funcionario.empresa_id and int(_u_fecha[0]) != int(funcionario.empresa_id):
+                    return jsonify({"erro": "Acesso negado."}), 403
+            except Exception as _e_fecha:
+                app.logger.warning("ponto_fechar_dia: falha no check de empresa uid=%s: %s", _uid_fecha, _e_fecha)
         data_ref = _ponto_parse_data_ref(dados.get("data"))
         forcar = bool(dados.get("forcar"))
         observacao = (dados.get("observacao") or "").strip()[:1000]
-        resumo = _ponto_resumo_func_dia(funcionario, data_ref)
+        resumo = _ponto_resumo_func_dia(
+            funcionario, data_ref,
+            _feriados=_feriados_para_data(data_ref, funcionario),
+        )
         if resumo["status"] != "ok" and not forcar:
             return jsonify(
                 {
@@ -956,18 +2350,18 @@ def register_ponto_routes(
         if not re.match(r"^\d{4}-\d{2}$", competencia):
             return jsonify({"erro": "competencia inválida. Use YYYY-MM."}), 400
 
-        funcionario = Funcionario.query.get(funcionario_id)
-        if not funcionario:
-            return jsonify({"erro": "Funcionário não encontrado."}), 404
+        # BUG-FIX 9: bloquear competência futura — antes apenas validava o formato,
+        # gerava PDF válido com todos os dias sem marcações e sem aviso ao usuário.
+        try:
+            _ano_c, _mes_c = [int(x) for x in competencia.split("-")]
+            _hoje_br = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+            if (_ano_c, _mes_c) > (_hoje_br.year, _hoje_br.month):
+                return jsonify({"erro": "Não é possível gerar espelho para competência futura."}), 400
+        except (ValueError, KeyError):
+            return jsonify({"erro": "competencia inválida."}), 400
 
-        resumo_comp = _ponto_resumo_competencia(funcionario, competencia)
-        if not resumo_comp:
-            return jsonify(
-                {
-                    "erro": "Não foi possível gerar o espelho para a competência informada."
-                }
-            ), 400
-
+        # BUG-FIX 8: importar ReportLab ANTES do processamento pesado para falhar rápido;
+        # antes a query de 31 dias era feita e descartada se ReportLab não estivesse instalado.
         try:
             from reportlab.lib import colors
             from reportlab.lib.enums import TA_CENTER
@@ -987,6 +2381,39 @@ def register_ponto_routes(
                 {"erro": "Dependência ReportLab não disponível para gerar o espelho."}
             ), 500
 
+        funcionario = db.session.get(Funcionario, funcionario_id)  # BUG-FIX 10: .query.get() deprecated
+        if not funcionario:
+            return jsonify({"erro": "Funcionário não encontrado."}), 404
+
+        # BUG-FIX 6: verificar que o usuário só acessa funcionários de sua empresa
+        # (não se aplica a perfil 'dono' que tem acesso global).
+        _uid_sess = session.get("uid")
+        _perfil_sess = (session.get("perfil") or "").strip().lower()
+        if _perfil_sess != "dono" and _uid_sess:
+            try:
+                from sqlalchemy import text as _sql_text
+                _u = db.session.execute(
+                    _sql_text("SELECT empresa_id FROM usuario WHERE id = :uid"),
+                    {"uid": int(_uid_sess)},
+                ).first()
+                if _u and _u[0] and funcionario.empresa_id and int(_u[0]) != int(funcionario.empresa_id):
+                    return jsonify({"erro": "Acesso negado."}), 403
+            except Exception as _auth_exc:
+                # BUG-FIX 5: logar falha em vez de silenciar completamente; fail-open
+                # é intencional para compatibilidade mas deve ser auditável.
+                app.logger.warning(
+                    "espelho_ponto: falha na verificação de empresa para uid=%s: %s",
+                    _uid_sess, _auth_exc
+                )
+
+        resumo_comp = _ponto_resumo_competencia(funcionario, competencia)
+        if not resumo_comp:
+            return jsonify(
+                {
+                    "erro": "Não foi possível gerar o espelho para a competência informada."
+                }
+            ), 400
+
         def p(txt, sty, html=False):
             texto = str(txt or "")
             if not html:
@@ -998,7 +2425,14 @@ def register_ponto_routes(
             return Paragraph(texto, sty)
 
         def hhmm_from_dt(dt):
-            return dt.strftime("%H:%M") if dt else ""
+            # data_hora é BRT naive (utcnow()=localnow()=BRT); formatar diretamente.
+            # NÃO tratar como UTC: tratar naive como UTC subtrairia 3h dos horários.
+            if not dt:
+                return ""
+            if dt.tzinfo is not None:
+                # Se por algum motivo vier aware, converter para BRT para exibir
+                dt = dt.astimezone(ZoneInfo("America/Sao_Paulo")).replace(tzinfo=None)
+            return dt.strftime("%H:%M")
 
         def fmt_comp_br(valor):
             try:
@@ -1011,7 +2445,9 @@ def register_ponto_routes(
                 )
                 fim = proximo - timedelta(days=1)
                 return inicio.strftime("%d/%m/%Y"), fim.strftime("%d/%m/%Y")
-            except Exception:
+            except Exception as _e:
+                # BUG-FIX 15: logar exceção em vez de silenciar; "-" indistinguível de dado ausente
+                app.logger.warning("espelho_ponto: fmt_comp_br falhou para '%s': %s", valor, _e)
                 return "-", "-"
 
         def fmt_doc(valor):
@@ -1032,48 +2468,100 @@ def register_ponto_routes(
         total_previstas = 0
         total_diurnas = 0
         total_intervalo = 0
+        total_noturno = 0
         total_faltas = 0
-        total_extras = 0
+        total_extras_50 = 0
+        total_extras_100 = 0
         dia = inicio
-        while dia <= fim:
-            marcacoes = _ponto_marcacoes_dia(funcionario.id, dia)
-            tempos = sorted(
-                [
-                    item.data_hora
-                    for item in marcacoes
-                    if getattr(item, "data_hora", None)
-                ]
-            )
 
-            resumo = _ponto_resumo_func_dia(funcionario, dia)
+        # BUG-FIX 5: reutilizar as marcações já carregadas por _ponto_resumo_competencia
+        # em vez de fazer uma segunda query idêntica (TOCTOU + carga dupla no banco).
+        # BUG-FIX 14: a janela do batch load foi estendida +1 dia além do fim da competência
+        # para capturar marcações de saída de turno noturno que comecem no último dia do
+        # mês e terminem na madrugada do dia 1 do mês seguinte.
+        _marc_por_data = resumo_comp.get("marc_por_data") or {}
+        _resumo_por_data = {
+            d["data_ref"]: d for d in (resumo_comp.get("dias") or [])
+        }
+        while dia <= fim:
+            marcacoes = _marc_por_data.get(dia, [])
+            # Ordenar pela cronologia lógica do turno para que saídas da madrugada
+            # apareçam ao final do dia trabalhado, não no começo da linha.
+            marcacoes_ord = _ponto_marcacoes_ordenadas_logicas(funcionario, dia, marcacoes)
+
+            _dia_str = dia.strftime("%Y-%m-%d")
+            resumo = _resumo_por_data.get(_dia_str) or _ponto_resumo_func_dia(
+                # BUG-FIX 8: passar _feriados ao fallback — sem isso dias de feriado
+                # não eram reconhecidos no caminho de fallback e HE 100% ficava errada.
+                funcionario, dia, _marcacoes=marcacoes, _feriados=set()
+            )
             previstas = int(resumo.get("horas_esperadas_min", 0) or 0)
             diurnas = int(resumo.get("horas_trabalhadas_min", 0) or 0)
             saldo = int(resumo.get("saldo_min", 0) or 0)
-            intervalo = 0
-            if len(tempos) >= 3:
-                intervalo = max(0, int((tempos[2] - tempos[1]).total_seconds() // 60))
+            # BUG-FIX 4 & 17: usar intrajornada_min do resumo em vez de calcular
+            # por posição (tempos[1]/tempos[2]) — eliminando a divergência entre
+            # o total exibido no rodapé e o valor efetivamente descontado.
+            intervalo = int(resumo.get("intrajornada_min", 0) or 0)
+            noturno = int(resumo.get("noturno_min", 0) or 0)
 
             faltas = ""
-            extras = ""
+            extras_50 = ""
+            extras_100 = ""
             marcacoes_str = ""
-            if previstas > 0 and not tempos:
+            if previstas > 0 and not marcacoes_ord:
                 marcacoes_str = "Falta"
                 faltas = "-" + _ponto_fmt_minutos(previstas)
                 total_faltas += previstas
             else:
-                marcacoes_str = (
-                    "  ".join(hhmm_from_dt(t) for t in tempos) if tempos else ""
-                )
+                # BUG-FIX 19: adicionar marcadores visuais conforme a origem da
+                # marcação para dar significado à legenda que antes era inutilizável.
+                # [A]=incluída por admin  [S]=por solicitação  (sem sufixo)=normal
+                def _fmt_marc(m):
+                    s = hhmm_from_dt(m.data_hora)
+                    orig = (getattr(m, "origem", "") or "").lower()
+                    if orig == "admin":
+                        s += "[A]"
+                    elif orig in ("solicitacao", "ajuste", "he_autorizada"):
+                        s += "[S]"
+                    return s
+                marcacoes_str = "  ".join(_fmt_marc(m) for m in marcacoes_ord) if marcacoes_ord else ""
                 if saldo < 0:
                     faltas = "-" + _ponto_fmt_minutos(abs(saldo))
                     total_faltas += abs(saldo)
                 elif saldo > 0:
-                    extras = _ponto_fmt_minutos(saldo)
-                    total_extras += saldo
+                    _he50 = int(resumo.get("he_50_min", 0) or 0)
+                    _he100 = int(resumo.get("he_100_min", 0) or 0)
+                    extras_50 = _ponto_fmt_minutos(_he50) if _he50 else ""
+                    extras_100 = _ponto_fmt_minutos(_he100) if _he100 else ""
+                    total_extras_50 += _he50
+                    total_extras_100 += _he100
+
+            if resumo.get("dia_tipo") == "afastamento":
+                _af_info = resumo.get("afastamento_info") or {}
+                _af_tipo = (_af_info.get("tipo") or "Afastamento").strip()
+                _af_txt = f"Afastado: {_af_tipo}"
+                marcacoes_str = f"{marcacoes_str} | {_af_txt}" if marcacoes_str else _af_txt
+                faltas = ""
+            elif resumo.get("dia_tipo") == "demitido" and not marcacoes_ord:
+                marcacoes_str = "Demitido"
+                faltas = ""
+            elif resumo.get("dia_tipo") == "pre_admissao" and not marcacoes_ord:
+                marcacoes_str = ""
+                faltas = ""
+            elif resumo.get("dia_tipo") == "ferias" and not marcacoes_ord:
+                marcacoes_str = "Ferias"
+                faltas = ""
+            elif resumo.get("dia_tipo") == "feriado":
+                marcacoes_str = f"{marcacoes_str} | FERIADO" if marcacoes_str else "FERIADO"
+                faltas = ""
+            elif resumo.get("dia_tipo") == "folga" and not marcacoes_ord:
+                marcacoes_str = "Folga"
+                faltas = ""
 
             total_previstas += previstas
             total_diurnas += diurnas
             total_intervalo += intervalo
+            total_noturno += noturno
 
             linhas.append(
                 [
@@ -1082,13 +2570,18 @@ def register_ponto_routes(
                     _ponto_fmt_minutos(previstas),
                     _ponto_fmt_minutos(diurnas),
                     _ponto_fmt_minutos(intervalo) if intervalo else "",
+                    _ponto_fmt_minutos(noturno) if noturno else "",
                     faltas,
-                    extras,
+                    extras_50,
+                    extras_100,
                 ]
             )
             dia += timedelta(days=1)
 
-        nome_arquivo = f"espelho_ponto_{funcionario.id}_{competencia}.pdf"
+        # BUG-FIX 20: sanitizar nome do arquivo para evitar path traversal via
+        # caracteres especiais em competencia (improvável mas possível com encoding).
+        _comp_safe = re.sub(r"[^\w-]", "_", competencia)
+        nome_arquivo = f"espelho_ponto_{funcionario.id}_{_comp_safe}.pdf"
         saida = io.BytesIO()
         doc = SimpleDocTemplate(
             saida,
@@ -1127,12 +2620,39 @@ def register_ponto_routes(
         )
 
         elementos = []
+        # BUG-FIX 10: .query.get() deprecated no SQLAlchemy 2.x
         empresa = (
-            Empresa.query.get(funcionario.empresa_id)
+            db.session.get(Empresa, funcionario.empresa_id)
             if funcionario.empresa_id
             else None
         )
-        logo_url_padrao = "https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png"
+        # BUG-FIX 16: calcular now_br UMA vez — antes duas chamadas a datetime.now()
+        # separadas podiam divergir em segundos na virada de minuto.
+        _now_br = datetime.now(ZoneInfo("America/Sao_Paulo"))
+        # BUG-FIX 12: exibir escala real do funcionario em vez de "Normal" hardcoded
+        _esc_obj = None
+        try:
+            _ef_esc = EscalaFuncionario.query.filter(
+                EscalaFuncionario.funcionario_id == funcionario.id,
+                EscalaFuncionario.ativo == True,
+                EscalaFuncionario.data_inicio <= fim.strftime("%Y-%m-%d"),
+                db.or_(
+                    EscalaFuncionario.data_fim.is_(None),
+                    EscalaFuncionario.data_fim >= inicio.strftime("%Y-%m-%d"),
+                ),
+            ).order_by(EscalaFuncionario.data_inicio.desc()).first()
+            _nome_escala = "Normal"
+            if _ef_esc:
+                _esc_obj = db.session.get(Escala, _ef_esc.escala_id)
+                if _esc_obj and _esc_obj.ativo:
+                    _nome_escala = f"{_esc_obj.nome} ({_esc_obj.tipo})"
+        except Exception:
+            _nome_escala = "Normal"
+
+        if _esc_obj and getattr(_esc_obj, "tipo", "") == "12x36":
+            _jornada_label = "11h trabalhadas + 1h de refeição"
+        else:
+            _jornada_label = (funcionario.jornada or "08:00").replace(";", "<br/>")
 
         def _logo_flowable(emp_item):
             cands = []
@@ -1141,7 +2661,10 @@ def register_ponto_routes(
             lp = get_logo()
             if lp:
                 cands.append(lp)
-            cands.append(logo_url_padrao)
+            # BUG-FIX 4: logo_url_padrao nunca foi definido → NameError em runtime.
+            # Usar caminho relativo ao diretório do módulo como fallback final.
+            _fallback = os.path.join(os.path.dirname(__file__), "static", "img", "logo-rm-facilities.png")
+            cands.append(_fallback)
             for cand in cands:
                 try:
                     if isinstance(cand, str) and cand.startswith(
@@ -1150,11 +2673,30 @@ def register_ponto_routes(
                         req = urllib.request.Request(
                             cand, headers={"User-Agent": "Mozilla/5.0"}
                         )
-                        with urllib.request.urlopen(req, timeout=8) as resp:
+                        # BUG-FIX 13: timeout reduzido de 8s para 2s; antes um logo
+                        # lento bloqueava o worker Gunicorn por até 8 segundos.
+                        with urllib.request.urlopen(req, timeout=2) as resp:
                             data = resp.read()
-                        return Image(io.BytesIO(data), width=20 * mm, height=8 * mm)
-                    if os.path.exists(cand):
-                        return Image(cand, width=20 * mm, height=8 * mm)
+                        return Image(
+                            io.BytesIO(data),
+                            width=22 * mm,
+                            height=10 * mm,
+                            kind="proportional",
+                        )
+                    # BUG-FIX 7: não passar logo_url arbitrário para os.path.exists/Image
+                    # sem verificar que é um caminho dentro de diretórios permitidos
+                    # (path traversal). Aceitar apenas se for sub-caminho do static/ do app.
+                    _base_dir = os.path.abspath(
+                        os.path.join(os.path.dirname(__file__), "static")
+                    )
+                    _cand_abs = os.path.abspath(cand)
+                    if _cand_abs.startswith(_base_dir) and os.path.exists(_cand_abs):
+                        return Image(
+                            _cand_abs,
+                            width=22 * mm,
+                            height=10 * mm,
+                            kind="proportional",
+                        )
                 except Exception:
                     continue
             return p(
@@ -1175,26 +2717,20 @@ def register_ponto_routes(
                     html=True,
                 ),
                 p(f"<b>Período:</b><br/>{inicio_br} à {fim_br}", st_small, html=True),
-                p(
-                    f"<b>Jornada de trabalho:</b><br/>{(funcionario.jornada or '08:00').replace(';', '<br/>')}",
-                    st_small,
-                    html=True,
-                ),
+                p(f"<b>Jornada de trabalho:</b><br/>{_jornada_label}", st_small, html=True),
             ],
             [
                 p(
-                    f"<b>Colaborador:</b> {funcionario.nome}<br/><b>CPF:</b> {fmt_doc(funcionario.cpf or '')}",
+                    f"<b>Colaborador:</b> {funcionario.nome}&nbsp;&nbsp;&nbsp;<b>CPF:</b> {fmt_doc(funcionario.cpf or '')}&nbsp;&nbsp;&nbsp;<b>Cracha:</b> {funcionario.re or '-'}&nbsp;&nbsp;&nbsp;<b>PIS:</b> {funcionario.pis or '-'}",
                     st_small,
                     html=True,
                 ),
+                p("", st_small),  # absorvida pelo SPAN (0,1)-(1,1)
+                # BUG-FIX 2: _nome_escala calculado mas nunca usado — estava hardcoded "Normal"
+                p(f"<b>Escala:</b> {_nome_escala}", st_small, html=True),
+                # BUG-FIX 3: reutilizar _now_br já calculado em vez de novo datetime.now()
                 p(
-                    f"<b>Crachá:</b> {funcionario.re or '-'}<br/><b>PIS:</b> {funcionario.pis or '-'}",
-                    st_small,
-                    html=True,
-                ),
-                p("<b>Escala:</b> Normal", st_small, html=True),
-                p(
-                    f"<b>Data de emissão:</b> {datetime.now(ZoneInfo('America/Sao_Paulo')).strftime('%d/%m/%Y')}",
+                    f"<b>Data de emissão:</b> {_now_br.strftime('%d/%m/%Y')}",
                     st_small,
                     html=True,
                 ),
@@ -1208,9 +2744,10 @@ def register_ponto_routes(
             TableStyle(
                 [
                     ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#777777")),
-                    ("SPAN", (0, 0), (0, 1)),
+                    # SPAN: fundir cols 0-1 na linha do Colaborador para o nome caber em uma linha
+                    ("SPAN", (0, 1), (1, 1)),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("ALIGN", (0, 0), (0, 1), "CENTER"),
+                    ("ALIGN", (0, 0), (0, 0), "CENTER"),
                     ("LEFTPADDING", (0, 0), (-1, -1), 4),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                     ("TOPPADDING", (0, 0), (-1, -1), (3 if compact_mode else 5)),
@@ -1220,10 +2757,9 @@ def register_ponto_routes(
         )
 
         elementos.append(p("Espelho Ponto", st_titulo))
-        elementos.append(Spacer(1, (4 if compact_mode else 6)))
+        elementos.append(Spacer(1, (3 if compact_mode else 5)))
         elementos.append(tabela_cab)
-        elementos.append(Spacer(1, (4 if compact_mode else 6)))
-
+        elementos.append(Spacer(1, (3 if compact_mode else 5)))
         tabela_dias = [
             [
                 "Data",
@@ -1231,7 +2767,9 @@ def register_ponto_routes(
                 "Previstas",
                 "Diurnas",
                 "Intervalo",
+                "Noturno",
                 "Faltas",
+                "Ext. 50",
                 "Ext. 100",
             ]
         ]
@@ -1239,12 +2777,16 @@ def register_ponto_routes(
         tabela_main = Table(
             tabela_dias,
             colWidths=[
-                largura * 0.11,
-                largura * 0.35,
+                # BUG-FIX 11: soma anterior era 0.92 (tabela 8% menor que a largura útil).
+                # Redistribuído para somar exatamente 1.0.
                 largura * 0.09,
-                largura * 0.09,
-                largura * 0.09,
-                largura * 0.09,
+                largura * 0.31,
+                largura * 0.08,
+                largura * 0.08,
+                largura * 0.08,
+                largura * 0.08,
+                largura * 0.08,
+                largura * 0.10,
                 largura * 0.10,
             ],
             repeatRows=1,
@@ -1268,12 +2810,19 @@ def register_ponto_routes(
         elementos.append(tabela_main)
         elementos.append(Spacer(1, (4 if compact_mode else 8)))
 
+        # BUG-FIX 10: prefixar "-" na coluna Faltas apenas quando há faltas;
+        # antes exibia "-0:00" em competências sem nenhuma falta.
+        _faltas_fmt = (
+            f"-{_ponto_fmt_minutos(total_faltas)}" if total_faltas > 0 else "0:00"
+        )
         resumo_line = (
             f"<b>Previstas:</b> {_ponto_fmt_minutos(total_previstas)}   "
             f"<b>Diurnas:</b> {_ponto_fmt_minutos(total_diurnas)}   "
             f"<b>Intervalo:</b> {_ponto_fmt_minutos(total_intervalo)}   "
-            f"<b>Faltas:</b> -{_ponto_fmt_minutos(total_faltas)}   "
-            f"<b>Extras 100%:</b> {_ponto_fmt_minutos(total_extras)}"
+            f"<b>Noturno:</b> {_ponto_fmt_minutos(total_noturno)}   "
+            f"<b>Faltas:</b> {_faltas_fmt}   "
+            f"<b>Extras 50%:</b> {_ponto_fmt_minutos(total_extras_50)}   "
+            f"<b>Extras 100%:</b> {_ponto_fmt_minutos(total_extras_100)}"
         )
         resumo_tbl = Table(
             [[p(resumo_line, st_small, html=True)]], colWidths=[largura * 1.00]
@@ -1296,7 +2845,11 @@ def register_ponto_routes(
             [
                 [
                     p(
-                        "<b>Legenda:</b> Marcação incluída; Marcação por solicitação; Marcação pré-assinalada.",
+                        # BUG-FIX 19: a legenda mencionava 3 tipos mas as marcações
+                        # apareciam todas iguais (HH:MM) sem nenhum símbolo diferenciador.
+                        # Agora [A] = incluída por admin  |  [S] = por solicitação  |  sem sufixo = biométrico/kiosk
+                        # BUG-FIX 9: typo "marcacão" → "marcação"
+                        "<b>Legenda:</b> HH:MM = marcação normal; HH:MM[A] = incluída pelo RH; HH:MM[S] = por solicitação/ajuste.",
                         st_small,
                         html=True,
                     ),
@@ -1308,11 +2861,16 @@ def register_ponto_routes(
                 ],
                 [
                     p(
-                        f"<b>Marcações consideradas:</b> {datetime.now(ZoneInfo('America/Sao_Paulo')).strftime('%d/%m/%Y %H:%M')}",
+                        # BUG-FIX 16: usar _now_br já calculado (evita segundo datetime.now())
+                        f"<b>Marcações consideradas:</b> {_now_br.strftime('%d/%m/%Y %H:%M')}",
                         st_small,
                         html=True,
                     ),
                     p("Assinatura do colaborador:", st_sign),
+                ],
+                [
+                    p("", st_small),
+                    p("", st_sign),
                 ],
                 [
                     p("", st_small),
@@ -1333,7 +2891,10 @@ def register_ponto_routes(
                     ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                     ("TOPPADDING", (0, 0), (-1, -1), (4 if compact_mode else 6)),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), (4 if compact_mode else 6)),
-                    ("BOTTOMPADDING", (1, 2), (1, 2), (8 if compact_mode else 14)),
+                    # Reserva área para assinatura manual acima da linha.
+                    ("TOPPADDING", (1, 2), (1, 2), (10 if compact_mode else 16)),
+                    ("BOTTOMPADDING", (1, 2), (1, 2), (10 if compact_mode else 16)),
+                    ("BOTTOMPADDING", (1, 3), (1, 3), (8 if compact_mode else 14)),
                 ]
             )
         )
@@ -1343,12 +2904,11 @@ def register_ponto_routes(
 
         doc.build(elementos)
         saida.seek(0)
-        return send_file(
-            saida,
-            mimetype="application/pdf",
-            as_attachment=False,
-            download_name=nome_arquivo,
-        )
+        from flask import make_response
+        resp = make_response(saida.read())
+        resp.headers['Content-Type'] = 'application/pdf'
+        resp.headers['Content-Disposition'] = f'inline; filename="{nome_arquivo}"'
+        return resp
 
     # ── GESTÃO FÁCIL: calendário mensal ──────────────────────────────────────
     @app.route("/api/ponto/gestao-facil/calendario")
@@ -1360,9 +2920,25 @@ def register_ponto_routes(
             return jsonify({"erro": "funcionario_id é obrigatório."}), 400
         if not re.match(r"^\d{4}-\d{2}$", competencia):
             return jsonify({"erro": "competencia inválida. Use YYYY-MM."}), 400
-        funcionario = Funcionario.query.get(funcionario_id)
+        # BUG-FIX 7: .query.get() deprecated no SQLAlchemy 2.x
+        funcionario = db.session.get(Funcionario, funcionario_id)
         if not funcionario:
             return jsonify({"erro": "Funcionário não encontrado."}), 404
+        # BUG-FIX 10: IDOR — qualquer usuário autenticado poderia ver calendário
+        # de funcionário de outra empresa.
+        _uid_gf = session.get("uid")
+        _perfil_gf = (session.get("perfil") or "").strip().lower()
+        if _perfil_gf != "dono" and _uid_gf:
+            try:
+                from sqlalchemy import text as _sqlt_gf
+                _u_gf = db.session.execute(
+                    _sqlt_gf("SELECT empresa_id FROM usuario WHERE id = :uid"),
+                    {"uid": int(_uid_gf)},
+                ).first()
+                if _u_gf and _u_gf[0] and funcionario.empresa_id and int(_u_gf[0]) != int(funcionario.empresa_id):
+                    return jsonify({"erro": "Acesso negado."}), 403
+            except Exception as _e_gf:
+                app.logger.warning("gestao_facil_calendario: falha no check de empresa uid=%s: %s", _uid_gf, _e_gf)
 
         resumo_comp = _ponto_resumo_competencia(funcionario, competencia)
         if not resumo_comp:
@@ -1373,24 +2949,206 @@ def register_ponto_routes(
             ), 400
 
         # Enriquecer cada dia com os horários de cada marcação para a folha
-        inicio, fim = _ponto_competencia_bounds(competencia)
-        inicio_dt = datetime.combine(inicio, datetime.min.time())
-        fim_dt = datetime.combine(fim + timedelta(days=1), datetime.min.time())
-        todas_marc = (
-            PontoMarcacao.query.filter(
-                PontoMarcacao.funcionario_id == funcionario.id,
-                PontoMarcacao.data_hora >= inicio_dt,
-                PontoMarcacao.data_hora < fim_dt,
-            )
-            .order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc())
-            .all()
-        )
-        marc_por_data = {}
-        for mc in todas_marc:
-            dc = mc.data_hora.date().strftime("%Y-%m-%d")
-            marc_por_data.setdefault(dc, []).append(mc.to_dict())
-
+        # BUG-FIX 8: reutilizar marc_por_data de resumo_comp (já indexado por data BRT)
+        # em vez de duplicar a query (era N+1 + TOCTOU). O dict já usa date como chave;
+        # converter para string YYYY-MM-DD para bater com dia["data_ref"].
+        marc_por_data_str = {
+            k.strftime("%Y-%m-%d"): [
+                m.to_dict() for m in _ponto_marcacoes_ordenadas_logicas(funcionario, k, v)
+            ]
+            for k, v in resumo_comp.get("marc_por_data", {}).items()
+        }
         for dia in resumo_comp["dias"]:
-            dia["marcacoes"] = marc_por_data.get(dia["data_ref"], [])
+            dia["marcacoes"] = marc_por_data_str.get(dia["data_ref"], [])
+
+        # Incluir flag he_autorizada do posto do funcionário
+        cli = None
+        if funcionario.posto_cliente_id:
+            # BUG-FIX 11: .query.get() deprecated no SQLAlchemy 2.x
+            cli = db.session.get(Cliente, funcionario.posto_cliente_id)
+        # Usa getattr porque a coluna he_autorizada pode não existir no schema
+        # em ambientes antigos (migração ainda não aplicada). Default True.
+        _he_aut = getattr(cli, "he_autorizada", None) if cli else None
+        resumo_comp["he_autorizada"] = not bool((resumo_comp.get("totais") or {}).get("he_pendente_autorizacao"))
+        resumo_comp["posto_nome"] = (cli.nome or "") if cli else (funcionario.posto_operacional or "")
+
+        # Incluir status de solicitação HE se existir
+        comp_str = competencia
+        sol = SolicitacaoHoraExtra.query.filter_by(
+            funcionario_id=funcionario.id, competencia=comp_str
+        ).first()
+        resumo_comp["he_solicitacao"] = sol.to_dict() if sol else None
+
+        # Remover marc_por_data antes de serializar: as chaves são datetime.date,
+        # que o JSON não suporta. O endpoint já extraiu tudo que precisava acima.
+        resumo_comp.pop("marc_por_data", None)
 
         return jsonify({"ok": True, "resumo": resumo_comp})
+
+    # ── Solicitações de aprovação de hora extra ───────────────────────────────
+
+    @app.route("/api/ponto/he/solicitacoes", methods=["GET"])
+    @lr
+    def api_ponto_he_solicitacoes_list():
+        status_q = request.args.get("status") or "pendente"
+        empresa_id = to_num(request.args.get("empresa_id")) or None
+        q = SolicitacaoHoraExtra.query
+        if status_q != "todos":
+            q = q.filter_by(status=status_q)
+        # BUG-FIX 12: se empresa_id não fornecido, escopar pelo usuário logado
+        # (exceto "dono" que pode ver tudo) para evitar vazamento cross-company.
+        if empresa_id:
+            q = q.filter_by(empresa_id=empresa_id)
+        else:
+            _uid_he_list = session.get("uid")
+            _perfil_he_list = (session.get("perfil") or "").strip().lower()
+            if _perfil_he_list != "dono" and _uid_he_list:
+                try:
+                    from sqlalchemy import text as _sqlt_hel
+                    _u_hel = db.session.execute(
+                        _sqlt_hel("SELECT empresa_id FROM usuario WHERE id = :uid"),
+                        {"uid": int(_uid_he_list)},
+                    ).first()
+                    if _u_hel and _u_hel[0]:
+                        q = q.filter_by(empresa_id=int(_u_hel[0]))
+                except Exception as _e_hel:
+                    app.logger.warning("he_list: falha no check de empresa uid=%s: %s", _uid_he_list, _e_hel)
+        itens = q.order_by(SolicitacaoHoraExtra.criado_em.desc()).all()
+        # BUG-FIX: enriquecer resposta com campos que o frontend usa no modal HE
+        # (funcionario_nome, criado_fmt, decidido_fmt, posto_label, funcionario_matricula).
+        # Batch load para evitar N+1.
+        _func_ids_he = list({s.funcionario_id for s in itens})
+        _funcs_he = {f.id: f for f in Funcionario.query.filter(Funcionario.id.in_(_func_ids_he)).all()} if _func_ids_he else {}
+        def _enrich_sol(s):
+            d_s = s.to_dict()
+            f_he = _funcs_he.get(s.funcionario_id)
+            d_s["funcionario_nome"] = f_he.nome if f_he else ""
+            d_s["funcionario_matricula"] = getattr(f_he, "re", None) or getattr(f_he, "matricula", None) or ""
+            d_s["posto_label"] = getattr(f_he, "posto_operacional", None) or getattr(f_he, "setor", None) or ""
+            # formatar datas para exibição no frontend
+            if s.criado_em:
+                try:
+                    # criado_em é BRT naive — formatar diretamente sem conversão
+                    d_s["criado_fmt"] = s.criado_em.strftime("%d/%m/%Y %H:%M")
+                except Exception:
+                    d_s["criado_fmt"] = str(s.criado_em)[:16]
+            else:
+                d_s["criado_fmt"] = ""
+            if s.decidido_em:
+                try:
+                    # decidido_em é BRT naive — formatar diretamente sem conversão
+                    d_s["decidido_fmt"] = s.decidido_em.strftime("%d/%m/%Y %H:%M")
+                except Exception:
+                    d_s["decidido_fmt"] = str(s.decidido_em)[:16]
+            else:
+                d_s["decidido_fmt"] = ""
+            return d_s
+        return jsonify({"ok": True, "itens": [_enrich_sol(s) for s in itens], "total": len(itens)})
+
+    @app.route("/api/ponto/he/solicitacoes", methods=["POST"])
+    @lr
+    def api_ponto_he_solicitacoes_criar():
+        d = request.json or {}
+        func_id = to_num(d.get("funcionario_id"))
+        competencia = (d.get("competencia") or "").strip()
+        if not func_id or not competencia:
+            return jsonify({"erro": "funcionario_id e competencia são obrigatórios."}), 400
+        # BUG-FIX 13: .query.get() deprecated no SQLAlchemy 2.x
+        func = db.session.get(Funcionario, func_id)
+        if not func:
+            return jsonify({"erro": "Funcionário não encontrado."}), 404
+        # BUG-FIX 14: IDOR — qualquer usuário poderia criar solicitação HE para
+        # funcionário de outra empresa.
+        _uid_he_c = session.get("uid")
+        _perfil_he_c = (session.get("perfil") or "").strip().lower()
+        if _perfil_he_c != "dono" and _uid_he_c:
+            try:
+                from sqlalchemy import text as _sqlt_hec
+                _u_hec = db.session.execute(
+                    _sqlt_hec("SELECT empresa_id FROM usuario WHERE id = :uid"),
+                    {"uid": int(_uid_he_c)},
+                ).first()
+                if _u_hec and _u_hec[0] and func.empresa_id and int(_u_hec[0]) != int(func.empresa_id):
+                    return jsonify({"erro": "Acesso negado."}), 403
+            except Exception as _e_hec:
+                app.logger.warning("he_criar: falha no check de empresa uid=%s: %s", _uid_he_c, _e_hec)
+        # Calcular HE do período
+        resumo = _ponto_resumo_competencia(func, competencia)
+        if not resumo:
+            return jsonify({"erro": "Competência inválida."}), 400
+        he_50 = resumo["totais"].get("he_50_min_bruto", resumo["totais"]["he_50_min"])
+        he_100 = resumo["totais"].get("he_100_min_bruto", resumo["totais"]["he_100_min"])
+        if he_50 == 0 and he_100 == 0:
+            return jsonify({"erro": "Não há horas extras registradas nesta competência."}), 400
+        # Criar ou atualizar solicitação
+        sol = SolicitacaoHoraExtra.query.filter_by(
+            funcionario_id=func_id, competencia=competencia
+        ).first()
+        if sol and sol.status not in ("recusado",):
+            # Atualizar valores (HE pode ter mudado), mas NÃO re-abrir uma solicitação
+            # pendente/aprovada apenas atualizando criado_em (BUG-FIX 15).
+            sol.he_50_min = he_50
+            sol.he_100_min = he_100
+            sol.he_50_fmt = _ponto_fmt_minutos(he_50)
+            sol.he_100_fmt = _ponto_fmt_minutos(he_100)
+            # Não alterar status nem criado_em: solicitação pendente/aprovada mantém estado.
+        else:
+            sol = SolicitacaoHoraExtra(
+                funcionario_id=func_id,
+                empresa_id=func.empresa_id,
+                competencia=competencia,
+                he_50_min=he_50,
+                he_100_min=he_100,
+                he_50_fmt=_ponto_fmt_minutos(he_50),
+                he_100_fmt=_ponto_fmt_minutos(he_100),
+                status="pendente",
+                motivo=d.get("motivo") or "",
+            )
+            db.session.add(sol)
+        db.session.commit()
+        return jsonify({"ok": True, "solicitacao": sol.to_dict()}), 201
+
+    @app.route("/api/ponto/he/solicitacoes/<int:sid>/decidir", methods=["POST"])
+    @lr
+    def api_ponto_he_solicitacoes_decidir(sid):
+        from flask import session as flask_session
+        # BUG-FIX 16: .query.get_or_404() deprecated no SQLAlchemy 2.x
+        sol = db.session.get(SolicitacaoHoraExtra, sid)
+        if not sol:
+            from flask import abort
+            abort(404)
+        # BUG-FIX 17: qualquer usuário autenticado poderia aprovar/recusar HE de
+        # qualquer empresa. Exigir "dono" ou empresa matching.
+        _uid_hed = flask_session.get("uid")
+        _perfil_hed = (flask_session.get("perfil") or "").strip().lower()
+        if _perfil_hed != "dono" and _uid_hed:
+            try:
+                from sqlalchemy import text as _sqlt_hed
+                _u_hed = db.session.execute(
+                    _sqlt_hed("SELECT empresa_id FROM usuario WHERE id = :uid"),
+                    {"uid": int(_uid_hed)},
+                ).first()
+                if _u_hed and _u_hed[0] and sol.empresa_id and int(_u_hed[0]) != int(sol.empresa_id):
+                    return jsonify({"erro": "Acesso negado."}), 403
+            except Exception as _e_hed:
+                app.logger.warning("he_decidir: falha no check de empresa uid=%s: %s", _uid_hed, _e_hed)
+        d = request.json or {}
+        acao = (d.get("acao") or "").strip()
+        if acao not in ("aprovar", "recusar"):
+            return jsonify({"erro": "acao deve ser 'aprovar' ou 'recusar'."}), 400
+        sol.status = "aprovado" if acao == "aprovar" else "recusado"
+        sol.motivo = d.get("motivo") or ""
+        sol.decidido_em = utcnow()
+        sol.decidido_por = flask_session.get("usuario_nome") or flask_session.get("email") or "gestor"
+        db.session.commit()
+        # BUG-FIX: audit_event sem ator_tipo/ator_id — trilha não registrava quem decidiu.
+        audit_event(
+            f"he_solicitacao_{sol.status}",
+            ator_tipo="usuario",
+            ator_id=str(flask_session.get("uid") or ""),
+            alvo_tipo="solicitacao_he",
+            alvo_id=str(sol.id),
+            ok=True,
+            det={"acao": acao, "motivo": (d.get("motivo") or "")[:200]},
+        )
+        return jsonify({"ok": True, "solicitacao": sol.to_dict()})

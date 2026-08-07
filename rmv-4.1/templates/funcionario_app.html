@@ -36,7 +36,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .login-logo .sub{font-size:13px;color:var(--text2)}
 .lf{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
 .lf label{font-size:13px;color:var(--text2);font-weight:500}
-.lf input,.lf select,.lf textarea{background:rgba(255,255,255,.08);border:1.5px solid rgba(255,255,255,.15);border-radius:10px;color:var(--text);-webkit-text-fill-color:var(--text);font-size:15px;padding:12px 14px;outline:none;width:100%;-webkit-appearance:none}
+.lf input,.lf select,.lf textarea{background:rgba(255,255,255,.08);border:1.5px solid rgba(255,255,255,.15);border-radius:10px;color:var(--text);font-size:15px;padding:12px 14px;outline:none;width:100%;-webkit-appearance:none}
 .lf input:focus,.lf select:focus,.lf textarea:focus{border-color:var(--blue)}
 .lf select option{background:#1a2540}
 .lf textarea{resize:vertical;min-height:80px}
@@ -99,7 +99,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .empty-state{text-align:center;padding:40px 16px;color:var(--text2);font-size:13px}
 .empty-state .emo{font-size:36px;margin-bottom:8px}
 
-
 /* Ponto */
 .clock-big{text-align:center;font-size:44px;font-weight:200;letter-spacing:-2px;color:var(--text);line-height:1;margin:4px 0 2px}
 .date-sub{text-align:center;font-size:13px;color:var(--text2);margin-bottom:18px}
@@ -135,6 +134,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 /* Documentos */
 .doc-item{display:flex;align-items:center;gap:11px;padding:12px;background:var(--bg3);border-radius:12px;margin-bottom:8px}
 .doc-icon{width:38px;height:38px;background:var(--blue-cl);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.doc-brand{width:40px;height:40px;border-radius:10px;object-fit:contain;background:#fff;border:1px solid rgba(148,163,184,.3);padding:4px;flex-shrink:0}
 .doc-info{flex:1;min-width:0}
 .doc-name{font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .doc-meta{font-size:11px;color:var(--text2);margin-top:2px}
@@ -147,6 +147,17 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .comp-row{display:flex;align-items:center;justify-content:space-between;padding:11px 13px;background:var(--bg3);border-radius:11px;margin-bottom:7px}
 .comp-label{font-size:14px;font-weight:600;color:var(--text)}
 .comp-sub{font-size:11px;color:var(--text2);margin-top:2px}
+.quick-links{display:grid;gap:10px;margin-top:12px}
+.quick-link-card{background:linear-gradient(180deg,rgba(59,130,246,.12),rgba(30,45,74,.92));border:1px solid rgba(93,145,221,.22);border-radius:14px;padding:12px}
+.quick-link-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
+.quick-link-title{font-size:14px;font-weight:700;color:var(--text)}
+.quick-link-sub{font-size:11px;color:var(--text2);margin-top:2px}
+.quick-pill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:700;background:rgba(255,255,255,.06);color:var(--text2)}
+.quick-pill.ok{background:rgba(16,185,129,.15);color:#8ef0c2}
+.quick-pill.warn{background:rgba(245,158,11,.16);color:#ffd38a}
+.quick-pill.neu{background:rgba(59,130,246,.16);color:#9fc5ff}
+.quick-actions{display:flex;gap:8px;flex-wrap:wrap}
+.quick-actions .btn-sm{padding:8px 10px}
 
 /* Financeiro */
 .pgto-hero{text-align:center;padding:8px 0 16px}
@@ -174,9 +185,17 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .chat-bar{display:flex;gap:8px;padding:8px 0 0;border-top:1px solid var(--border);margin-top:6px}
 .chat-bar input{flex:1;background:var(--bg3);border:1.5px solid var(--border);border-radius:22px;color:var(--text);font-size:15px;padding:10px 14px;outline:none;-webkit-appearance:none}
 .chat-bar input:focus{border-color:var(--blue)}
+.chat-attach{background:var(--blue-cl);border:1px solid rgba(59,130,246,.28);border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;color:var(--blue)}
+.chat-attach svg{width:18px;height:18px;fill:currentColor}
 .chat-send{background:var(--blue);border:none;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
 .chat-send svg{width:18px;height:18px;fill:#fff}
 .chat-send:active{opacity:.8}
+.attach-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+.attach-opt{background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;color:var(--text);cursor:pointer}
+.attach-opt:active{opacity:.84}
+.attach-opt .ico{font-size:22px;display:block;margin-bottom:6px}
+.attach-opt .ttl{font-size:12px;font-weight:700;display:block}
+.attach-opt .sub{font-size:10px;color:var(--text2);display:block;margin-top:3px;line-height:1.35}
 .comun-item{padding:13px;background:var(--bg3);border-radius:12px;margin-bottom:8px;border-left:3px solid var(--border)}
 .comun-item.novo{border-left-color:var(--orange)}
 .comun-titulo{font-size:14px;font-weight:600;color:var(--text);margin-bottom:3px}
@@ -225,12 +244,12 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 <div id="scr-login" class="screen on">
   <div class="login-box">
     <div class="login-logo">
-      <img class="logo-img" src="/static/img/logo.png" alt="RM Facilities">
+      <img class="logo-img" src="/static/img/logo-rm-facilities.png" alt="RM Facilities">
       <div class="sub">Portal do Colaborador</div>
     </div>
     <div id="step-cpf">
       <div class="lf"><label>CPF</label>
-        <input id="l-cpf" type="text" inputmode="numeric" placeholder="000.000.000-00" autocomplete="off" maxlength="14">
+        <input id="l-cpf" type="tel" inputmode="numeric" placeholder="000.000.000-00" autocomplete="username" maxlength="14">
       </div>
       <button class="btn-login" id="btn-enviar-otp" onclick="enviarOtp()">Enviar código via WhatsApp</button>
       <div class="login-err" id="l-err"></div>
@@ -250,7 +269,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 <!-- APP -->
 <div id="scr-app" class="screen">
   <div class="app-header">
-    <img class="hd-logo" src="/static/img/logo.png" alt="RM">
+    <img class="hd-logo" src="/static/img/logo-rm-facilities.png" alt="RM">
     <div class="hd-name" id="hd-name">—</div>
     <span class="hd-badge" id="hd-badge">Ativo</span>
   </div>
@@ -325,6 +344,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
         <div class="chat-wrap">
           <div class="chat-msgs" id="chat-box"><div class="spin-center"><span class="spinner"></span></div></div>
           <div class="chat-bar">
+            <button class="chat-attach" type="button" onclick="abrirModalAnexoChat()" title="Enviar anexo"><svg viewBox="0 0 24 24"><path d="M16.5 6.5v8.75a4.25 4.25 0 1 1-8.5 0V5.75a2.75 2.75 0 1 1 5.5 0v8.5a1.25 1.25 0 1 1-2.5 0V7.5h1.5v6.75a.25.25 0 0 0 .5 0v-8.5a1.25 1.25 0 1 0-2.5 0v9.5a2.75 2.75 0 1 0 5.5 0V6.5z"/></svg></button>
             <input id="chat-inp" type="text" placeholder="Mensagem para o RH…" maxlength="2000" onkeydown="if(event.key==='Enter')enviarMsg()">
             <button class="chat-send" onclick="enviarMsg()"><svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg></button>
           </div>
@@ -400,15 +420,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
     <div class="modal-title">Assinar Documento</div>
     <div id="sign-doc-name" style="font-size:13px;color:var(--text2);margin-bottom:14px;word-break:break-word"></div>
     <div id="sign-step1">
-      <p style="font-size:14px;color:var(--text2);margin-bottom:16px;line-height:1.5">Para assinar, confirmaremos sua identidade via WhatsApp. Um código de 6 dígitos será enviado.</p>
-      <button class="btn-full green" id="btn-sign-enviar" onclick="signSolicitarOtp()">Enviar código de confirmação</button>
-      <button class="btn-full gray" onclick="fecharModal('modal-sign')">Cancelar</button>
-    </div>
-    <div id="sign-step2" style="display:none">
-      <div style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.5" id="sign-otp-hint"></div>
-      <div class="lf"><label>Código recebido</label>
-        <input id="sign-otp-inp" type="tel" inputmode="numeric" placeholder="000000" maxlength="6" style="text-align:center;font-size:22px;font-weight:700;letter-spacing:5px" onkeydown="if(event.key==='Enter')signConfirmar()">
-      </div>
+      <p style="font-size:14px;color:var(--text2);margin-bottom:16px;line-height:1.5">Confirme para assinar este documento pela sua sessão do aplicativo.</p>
       <button class="btn-full green" id="btn-sign-confirmar" onclick="signConfirmar()">Assinar Documento</button>
       <button class="btn-full gray" onclick="fecharModal('modal-sign')">Cancelar</button>
       <div class="login-err" id="sign-err" style="margin-top:8px"></div>
@@ -473,15 +485,45 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
   </div>
 </div>
 
+<div class="modal-overlay" id="modal-chat-anexo">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Enviar anexo para o RH</div>
+    <p style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:14px">Você pode digitalizar um documento em PDF, tirar uma foto simples ou enviar um arquivo já existente.</p>
+    <div class="lf"><label>Tipo de documento</label>
+      <select id="chat-doc-tipo">
+        <option>Atestado medico</option>
+        <option>ASO</option>
+        <option>Documento de identidade</option>
+        <option>Comprovante de endereco</option>
+        <option>Comprovante bancario</option>
+        <option selected>Outro documento</option>
+      </select>
+    </div>
+    <div class="lf"><label>Mensagem junto com o anexo</label><textarea id="chat-anexo-msg" placeholder="Ex.: estou enviando meu atestado de hoje"></textarea></div>
+    <div class="attach-grid">
+      <button class="attach-opt" type="button" onclick="abrirSeletorAnexoChat('scan')"><span class="ico">🧾</span><span class="ttl">Digitalizar PDF</span><span class="sub">Captura da câmera e conversão para PDF</span></button>
+      <button class="attach-opt" type="button" onclick="abrirSeletorAnexoChat('camera')"><span class="ico">📷</span><span class="ttl">Câmera</span><span class="sub">Foto comum do documento</span></button>
+      <button class="attach-opt" type="button" onclick="abrirSeletorAnexoChat('arquivo')"><span class="ico">📎</span><span class="ttl">Arquivo / galeria</span><span class="sub">PDF, foto ou outro anexo permitido</span></button>
+    </div>
+    <div class="login-err" id="chat-anexo-err" style="margin-top:10px"></div>
+    <button class="btn-full gray" onclick="fecharModal('modal-chat-anexo')">Fechar</button>
+  </div>
+</div>
+
 <div id="toast" class="toast"></div>
+<input id="chat-file-any" type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.txt,.zip" style="display:none" onchange="selecionarArquivoChat(this,false)">
+<input id="chat-file-camera" type="file" accept="image/*" capture="environment" style="display:none" onchange="selecionarArquivoChat(this,false)">
+<input id="chat-file-scan" type="file" accept="image/*" capture="environment" style="display:none" onchange="selecionarArquivoChat(this,true)">
 
 <script>
 'use strict';
 var _AT='',_RT='',_func=null,_otpCpf='';
 var _refreshPromise=null;
-var _clockT=null,_msgPollT=null,_curPage='ponto';
+var _gpsPos=null,_clockT=null,_msgPollT=null,_curPage='ponto';
 var _curPontoSub='hoje',_curDocsSub='pend',_curFinSub='pagto',_curMsgsSub='chat';
 var _signArqId=null,_loaded={};
+var _chatAnexoEnviando=false;
 
 var ls={
   get:function(k){try{return localStorage.getItem(k)}catch(e){return null}},
@@ -565,6 +607,25 @@ function api(method,path,body,retried){
       return refreshToken().then(function(ok){
         if(ok) return api(method,path,body,true);
         doLogout(); return Promise.reject({auth:true,message:'Sessão expirada'});
+      });
+    }
+    return r.json().then(function(d){
+      if(!r.ok) return Promise.reject({status:r.status,message:d.erro||d.error||'Erro '+r.status});
+      return d;
+    });
+  }).catch(function(e){
+    if(e&&e.message&&!e.status) return Promise.reject({message:'Sem conexão com o servidor'});
+    return Promise.reject(e);
+  });
+}
+
+function apiFormData(path,formData,retried){
+  return fetch(path,{method:'POST',headers:{'Authorization':'Bearer '+_AT},body:formData}).then(function(r){
+    if(r.status===401&&!retried){
+      return refreshToken().then(function(ok){
+        if(ok) return apiFormData(path,formData,true);
+        doLogout();
+        return Promise.reject({auth:true,message:'Sessão expirada'});
       });
     }
     return r.json().then(function(d){
@@ -666,7 +727,6 @@ function showApp(){
   hb.style.background=st==='ativo'?'var(--green)':'var(--yellow)';
   hb.style.color='#fff';
   updateClock();_clockT=setInterval(updateClock,1000);
-  obterGps(5000).catch(function(){});
   initPTR();
   showPage('ponto');
   loadBadges();
@@ -680,6 +740,18 @@ function updateClock(){
   var months=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
   var de=document.getElementById('date-sub');
   if(de)de.textContent=days[n.getDay()]+', '+n.getDate()+' '+months[n.getMonth()]+' de '+n.getFullYear();
+}
+
+function obterGps(timeout){
+  timeout=timeout||10000;
+  return new Promise(function(res,rej){
+    if(!navigator.geolocation){rej(new Error('GPS não suportado.'));return;}
+    navigator.geolocation.getCurrentPosition(
+      function(p){_gpsPos={lat:p.coords.latitude,lon:p.coords.longitude,precisao:p.coords.accuracy};res(_gpsPos);},
+      function(e){var msg='Localização indisponível no momento.';if(e.code===3)msg='Tempo esgotado ao obter localização.';rej(new Error(msg));},
+      {enableHighAccuracy:true,timeout:timeout,maximumAge:30000}
+    );
+  });
 }
 
 /* NAVIGATION */
@@ -765,6 +837,72 @@ function setBadge(name,count){
   var el=document.getElementById('badge-'+name);if(!el)return;
   if(count>0){el.textContent=count>99?'99+':count;el.classList.add('on');}
   else el.classList.remove('on');
+}
+
+function docAssinado(status){
+  return ['assinado','concluida'].indexOf(String(status||'').toLowerCase())>=0;
+}
+
+function docPendenteAssinatura(status){
+  return String(status||'').toLowerCase()==='pendente';
+}
+
+function docStatusLabel(status,disponivel){
+  var s=String(status||'').toLowerCase();
+  if(docAssinado(s)) return 'Assinado';
+  if(s==='pendente') return 'Pendente de assinatura';
+  if(s==='cancelada') return 'Assinatura cancelada';
+  if(s==='rejeitada') return 'Assinatura rejeitada';
+  return disponivel ? 'Disponível' : 'Não enviado';
+}
+
+function docStatusClasse(status,disponivel){
+  var s=String(status||'').toLowerCase();
+  if(docAssinado(s)) return 'ok';
+  if(s==='pendente') return 'warn';
+  return disponivel ? 'neu' : '';
+}
+
+function jsq(s){
+  return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+}
+
+function docLogoUrl(a){
+  if(a && a.logo_url) return String(a.logo_url);
+  return '/static/img/logo-rm-facilities.png';
+}
+
+function renderDocLogo(a){
+  var src=docLogoUrl(a);
+  return '<img class="doc-brand" src="'+esc(src)+'" alt="Logo do documento" onerror="this.style.display=\'none\'">';
+}
+
+function renderArquivoAcao(arquivoId,nome,status){
+  var acoes='';
+  var url=arquivoId?'/api/app/funcionario/arquivos/'+arquivoId+'/download':'';
+  if(url){
+    acoes+='<button class="btn-sm btn-dl" data-url="'+esc(url)+'" data-name="'+esc(nome||'documento')+'" onclick="downloadAuth(this)">↓ Baixar</button>';
+  }
+  if(arquivoId&&docPendenteAssinatura(status)){
+    acoes+='<button class="btn-sm btn-sign" onclick="abrirModalSign('+arquivoId+',\''+jsq(nome||'Documento')+'\')">Assinar</button>';
+  }
+  return acoes||'<span style="font-size:12px;color:var(--text2)">—</span>';
+}
+
+function renderCompetenciaDocsCard(c){
+  var espelhoBtn=c.pode_baixar
+    ? '<button class="btn-sm btn-dl" data-url="/api/app/funcionario/me/ponto/espelho/pdf?competencia='+encodeURIComponent(c.competencia)+'" data-name="espelho-'+esc(c.competencia)+'.pdf" onclick="downloadAuth(this)">↓ Espelho PDF</button>'
+    : '';
+  return '<div class="quick-link-card">'
+    +'<div class="quick-link-head"><div><div class="quick-link-title">'+esc(c.label||c.competencia||'Competência')+'</div>'
+    +'<div class="quick-link-sub">Folha de ponto, holerite e assinatura desta competência</div></div>'
+    +'<span class="quick-pill '+docStatusClasse(c.folha_ass_status,c.folha_disponivel)+'">'+(c.fechamentos_dias>0?'Folha fechada':'Em andamento')+'</span></div>'
+    +(espelhoBtn?'<div class="quick-actions" style="margin-bottom:10px">'+espelhoBtn+'</div>':'')
+    +'<div class="quick-link-sub" style="margin-bottom:6px">Folha de ponto: <span class="quick-pill '+docStatusClasse(c.folha_ass_status,c.folha_disponivel)+'">'+esc(docStatusLabel(c.folha_ass_status,c.folha_disponivel))+'</span></div>'
+    +'<div class="quick-actions" style="margin-bottom:10px">'+renderArquivoAcao(c.folha_arquivo_id,'folha_ponto_'+(c.competencia||''),c.folha_ass_status)+'</div>'
+    +'<div class="quick-link-sub" style="margin-bottom:6px">Holerite: <span class="quick-pill '+docStatusClasse(c.holerite_ass_status,c.holerite_disponivel)+'">'+esc(docStatusLabel(c.holerite_ass_status,c.holerite_disponivel))+'</span></div>'
+    +'<div class="quick-actions">'+renderArquivoAcao(c.holerite_arquivo_id,'holerite_'+(c.competencia||''),c.holerite_ass_status)+'</div>'
+    +'</div>';
 }
 
 /* PULL-TO-REFRESH */
@@ -866,9 +1004,17 @@ function renderBtnPonto(r){
 function marcarPonto(){
   var btn=document.getElementById('btn-ponto');
   if(btn.classList.contains('concluido')) return;
-  btn.disabled=true;btn.textContent='…';
-  api('POST','/api/app/funcionario/me/ponto/marcar',{lat:null,lon:null,precisao:null})
-  .then(function(){
+  btn.disabled=true;btn.textContent='Registrando ponto…';
+  // GPS é tentado mas não obrigatório: se negado/indisponível, registra sem coordenadas
+  obterGps(6000).then(function(pos){
+    btn.textContent='…';
+    return api('POST','/api/app/funcionario/me/ponto/marcar',{lat:pos.lat,lon:pos.lon,precisao:pos.precisao});
+  }).catch(function(gpsErr){
+    // Se GPS falhou mas a causa não é de rede/auth, registra sem GPS
+    if(gpsErr&&gpsErr.auth) return Promise.reject(gpsErr);
+    btn.textContent='…';
+    return api('POST','/api/app/funcionario/me/ponto/marcar',{lat:null,lon:null,precisao:null});
+  }).then(function(){
     showToast('Ponto registrado!');
     _loaded.hist=false;
     loadPontoHoje();
@@ -987,13 +1133,15 @@ function loadDocsAssin(){
     var itens=d.itens||[];
     if(!itens.length){el.innerHTML='<div class="empty-state"><div class="emo">📋</div>Nenhuma assinatura.</div>';return;}
     el.innerHTML=itens.map(function(a){
-      return '<div class="doc-item"><div class="doc-icon">📄</div>'
+      var validarBtn=a.ass_codigo?'<button class="btn-sm btn-dl" type="button" onclick="window.open(\'/doc/validar/'+encodeURIComponent(a.ass_codigo)+'\',\'_blank\',\'noopener\')">Validar</button>':'';
+      return '<div class="doc-item">'+renderDocLogo(a)+'<div class="doc-icon">📄</div>'
         +'<div class="doc-info"><div class="doc-name">'+esc(a.nome_arquivo||a.categoria_label||'Documento')+'</div>'
         +'<div class="doc-meta">'+esc(a.categoria_label||'')+(a.competencia?' · '+esc(a.competencia):'')
         +' · Assinado '+esc(a.ass_em_fmt||'')+'</div>'
         +(a.ass_codigo?'<div class="doc-meta" style="font-size:10px">Cód: '+esc(a.ass_codigo)+'</div>':'')
         +'</div><div class="doc-actions">'
         +'<button class="btn-sm btn-dl" data-url="'+esc(a.app_download_url||'')+'" data-name="'+esc(a.nome_arquivo||'documento')+'" onclick="downloadAuth(this)">↓</button>'
+        +validarBtn
         +'</div></div>';
     }).join('');
   }).catch(function(e){el.innerHTML='<div class="empty-state">'+esc(e.message||'Erro')+'</div>';_loaded['docs_assin']=false;});
@@ -1003,7 +1151,7 @@ function renderDocItem(a,showSign){
   var assinado=['assinado','concluida'].indexOf((a.ass_status||'').toLowerCase())>=0;
   var nome=a.nome_arquivo||a.nome||'Documento';
   var meta=[a.categoria_label||a.categoria||'',a.competencia||''].filter(function(x){return x;}).join(' · ');
-  return '<div class="doc-item"><div class="doc-icon">📄</div>'
+  return '<div class="doc-item">'+renderDocLogo(a)+'<div class="doc-icon">📄</div>'
     +'<div class="doc-info"><div class="doc-name">'+esc(nome)+'</div>'
     +'<div class="doc-meta">'+esc(meta)+(a.ass_status?' · '+esc(a.ass_status):'')+'</div></div>'
     +'<div class="doc-actions">'
@@ -1020,51 +1168,29 @@ function loadEspelho(){
   api('GET','/api/app/funcionario/me/ponto/espelho/status').then(function(d){
     var comps=d.competencias||[];
     if(!comps.length){el.innerHTML='<div class="empty-state">Nenhuma competência.</div>';return;}
-    el.innerHTML='<div class="section-hdr">Selecione o mês para baixar o espelho PDF</div>'
-      +comps.map(function(c){
-        return '<div class="comp-row">'
-          +'<div><div class="comp-label">'+esc(c.label)+'</div>'
-          +'<div class="comp-sub">'+(c.pode_baixar?'✓ Aprovado pelo gestor':'⏳ Aguardando fechamento')+'</div></div>'
-          +(c.pode_baixar?'<button class="btn-sm btn-dl" style="padding:8px 12px" data-url="/api/app/funcionario/me/ponto/espelho/pdf?competencia='+encodeURIComponent(c.competencia)+'" data-name="espelho-'+esc(c.competencia)+'.pdf" onclick="downloadAuth(this)">↓ PDF</button>':'<span style="font-size:12px;color:var(--text2)">—</span>')
-          +'</div>';
-      }).join('');
+    el.innerHTML='<div class="section-hdr">Folha de ponto, holerites e anexos por competência</div><div class="quick-links">'
+      +comps.map(function(c){ return renderCompetenciaDocsCard(c); }).join('')
+      +'</div>';
   }).catch(function(e){el.innerHTML='<div class="empty-state">'+esc(e.message||'Erro')+'</div>';_loaded['docs_espelho']=false;});
 }
 
-/* Assinatura stepup */
+/* Assinatura autenticada */
 function abrirModalSign(arqId,nome){
   _signArqId=arqId;
   document.getElementById('sign-doc-name').textContent=nome;
   document.getElementById('sign-step1').style.display='';
-  document.getElementById('sign-step2').style.display='none';
-  document.getElementById('sign-otp-inp').value='';
   document.getElementById('sign-err').textContent='';
   abrirModal('modal-sign');
 }
 
-function signSolicitarOtp(){
-  var btn=document.getElementById('btn-sign-enviar');
-  btn.textContent='…';btn.disabled=true;
-  api('POST','/api/app/funcionario/stepup/solicitar',{arquivo_id:_signArqId}).then(function(d){
-    var hint=document.getElementById('sign-otp-hint');
-    hint.textContent=d.mensagem||(d.destino?'Código enviado para '+d.destino:'Código enviado via WhatsApp');
-    document.getElementById('sign-step1').style.display='none';
-    document.getElementById('sign-step2').style.display='';
-    setTimeout(function(){document.getElementById('sign-otp-inp').focus();},150);
-  }).catch(function(e){showToast(e.message||'Erro ao enviar código',true);})
-  .finally(function(){btn.textContent='Enviar código de confirmação';btn.disabled=false;});
-}
-
 function signConfirmar(){
-  var codigo=document.getElementById('sign-otp-inp').value.replace(/\D/g,'');
   var err=document.getElementById('sign-err'),btn=document.getElementById('btn-sign-confirmar');
   err.textContent='';
-  if(!/^\d{6}$/.test(codigo)){err.textContent='O código deve ter exatamente 6 dígitos.';return;}
   btn.textContent='…';btn.disabled=true;
-  api('POST','/api/app/funcionario/arquivos/'+_signArqId+'/assinar',{stepup_otp:codigo}).then(function(){
+  api('POST','/api/app/funcionario/arquivos/'+_signArqId+'/assinar',{}).then(function(){
     fecharModal('modal-sign');
     showToast('Documento assinado com sucesso!');
-    _loaded['docs_pend']=false;_loaded['docs_todos']=false;_loaded['docs_assin']=false;
+    _loaded['docs_pend']=false;_loaded['docs_todos']=false;_loaded['docs_assin']=false;_loaded['docs_espelho']=false;_loaded['fin_pagto']=false;
     loadDocsPend();loadBadges();
   }).catch(function(e){err.textContent=e.message||'Erro ao assinar.';})
   .finally(function(){btn.textContent='Assinar Documento';btn.disabled=false;});
@@ -1083,9 +1209,10 @@ function loadPagto(){
   el.innerHTML='<div class="spin-center"><span class="spinner"></span></div>';
   Promise.all([
     api('GET','/api/app/funcionario/ultimo-pagamento').catch(function(){return null;}),
-    api('GET','/api/app/funcionario/historico-pagamentos').catch(function(){return{historico:[]};})
+    api('GET','/api/app/funcionario/historico-pagamentos').catch(function(){return{historico:[]};}),
+    api('GET','/api/app/funcionario/me/ponto/espelho/status').catch(function(){return{competencias:[]};})
   ]).then(function(results){
-    var ult=results[0],hist=results[1];
+    var ult=results[0],hist=results[1],espelho=results[2];
     var html='';
     if(ult&&ult.ok){
       var vl=Number(ult.total_pagar||ult.valor_liquido||0).toFixed(2).replace('.',',');
@@ -1099,6 +1226,12 @@ function loadPagto(){
         +'</div>';
     } else {
       html+='<div class="empty-state"><div class="emo">💳</div>Nenhum pagamento encontrado.</div>';
+    }
+    var comps=(espelho&&espelho.competencias)||[];
+    var compRef=(ult&&ult.competencia)||'';
+    var compAtalho=comps.find(function(c){return c.competencia===compRef;}) || comps.find(function(c){return c.holerite_disponivel||c.folha_disponivel;});
+    if(compAtalho){
+      html+='<div class="section-hdr">Acessos rápidos da competência</div><div class="quick-links">'+renderCompetenciaDocsCard(compAtalho)+'</div>';
     }
     var historico=(hist&&hist.historico)||[];
     if(historico.length){
@@ -1162,6 +1295,123 @@ function loadFerias(){
 }
 
 /* ===== MENSAGENS ===== */
+function abrirModalAnexoChat(){
+  document.getElementById('chat-anexo-err').textContent='';
+  document.getElementById('chat-anexo-msg').value=document.getElementById('chat-inp').value.trim();
+  document.getElementById('chat-doc-tipo').value='Outro documento';
+  abrirModal('modal-chat-anexo');
+}
+
+function abrirSeletorAnexoChat(tipo){
+  if(_chatAnexoEnviando) return;
+  var id=tipo==='scan'?'chat-file-scan':(tipo==='camera'?'chat-file-camera':'chat-file-any');
+  var input=document.getElementById(id);
+  if(!input) return;
+  input.value='';
+  input.click();
+}
+
+function nomeBaseArquivo(nome){
+  return String(nome||'documento').replace(/\.[^.]+$/,'').replace(/[^a-zA-Z0-9_-]+/g,'_').replace(/^_+|_+$/g,'')||'documento';
+}
+
+function mergeUint8Arrays(partes){
+  var total=partes.reduce(function(s,p){return s+(p.length||0);},0);
+  var out=new Uint8Array(total),off=0;
+  partes.forEach(function(p){out.set(p,off);off+=p.length||0;});
+  return out;
+}
+
+function pdfNum(v){
+  return (Math.round(v*100)/100).toFixed(2).replace(/\.00$/,'');
+}
+
+function montarPdfSimples(jpegBytes,w,h){
+  var enc=new TextEncoder();
+  var partes=[]; var offsets=[]; var len=0;
+  function pushStr(s){var b=enc.encode(s);partes.push(b);len+=b.length;}
+  function pushBytes(b){partes.push(b);len+=b.length;}
+  var pageW=595.28,pageH=841.89;
+  var esc=Math.min(pageW/w,pageH/h);
+  var drawW=w*esc,drawH=h*esc,x=(pageW-drawW)/2,y=(pageH-drawH)/2;
+  var content='q\n'+pdfNum(drawW)+' 0 0 '+pdfNum(drawH)+' '+pdfNum(x)+' '+pdfNum(y)+' cm\n/Im0 Do\nQ\n';
+  pushStr('%PDF-1.4\n%\xC7\xEC\x8F\xA2\n');
+  function beginObj(n){offsets[n]=len;pushStr(n+' 0 obj\n');}
+  function endObj(){pushStr('endobj\n');}
+  beginObj(1); pushStr('<< /Type /Catalog /Pages 2 0 R >>\n'); endObj();
+  beginObj(2); pushStr('<< /Type /Pages /Kids [3 0 R] /Count 1 >>\n'); endObj();
+  beginObj(3); pushStr('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+pdfNum(pageW)+' '+pdfNum(pageH)+'] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\n'); endObj();
+  beginObj(4); pushStr('<< /Type /XObject /Subtype /Image /Width '+Math.round(w)+' /Height '+Math.round(h)+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+jpegBytes.length+' >>\nstream\n'); pushBytes(jpegBytes); pushStr('\nendstream\n'); endObj();
+  beginObj(5); pushStr('<< /Length '+enc.encode(content).length+' >>\nstream\n'+content+'endstream\n'); endObj();
+  var xrefPos=len;
+  pushStr('xref\n0 6\n0000000000 65535 f \n');
+  for(var i=1;i<=5;i++) pushStr(String(offsets[i]||0).padStart(10,'0')+' 00000 n \n');
+  pushStr('trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+xrefPos+'\n%%EOF');
+  return new Blob([mergeUint8Arrays(partes)],{type:'application/pdf'});
+}
+
+function converterImagemParaPdfWeb(file){
+  return new Promise(function(resolve,reject){
+    var url=URL.createObjectURL(file),img=new Image();
+    img.onload=function(){
+      try{
+        var max=1800;
+        var ow=img.naturalWidth||img.width||1200;
+        var oh=img.naturalHeight||img.height||1600;
+        var esc=Math.min(1,max/Math.max(ow,oh));
+        var w=Math.max(1,Math.round(ow*esc));
+        var h=Math.max(1,Math.round(oh*esc));
+        var canvas=document.createElement('canvas');
+        canvas.width=w; canvas.height=h;
+        var ctx=canvas.getContext('2d');
+        ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h); ctx.drawImage(img,0,0,w,h);
+        canvas.toBlob(function(blob){
+          URL.revokeObjectURL(url);
+          if(!blob){reject(new Error('Não foi possível gerar o PDF do documento.'));return;}
+          blob.arrayBuffer().then(function(buf){
+            resolve(montarPdfSimples(new Uint8Array(buf),w,h));
+          }).catch(function(){reject(new Error('Não foi possível processar a imagem.'));});
+        },'image/jpeg',0.9);
+      }catch(err){URL.revokeObjectURL(url);reject(err);}
+    };
+    img.onerror=function(){URL.revokeObjectURL(url);reject(new Error('Não foi possível abrir a imagem do documento.'));};
+    img.src=url;
+  });
+}
+
+function selecionarArquivoChat(input,converterPdf){
+  var file=input&&input.files&&input.files[0];
+  if(!file || _chatAnexoEnviando) return;
+  var err=document.getElementById('chat-anexo-err');
+  var tipo=(document.getElementById('chat-doc-tipo').value||'Outro documento').trim();
+  var msg=(document.getElementById('chat-anexo-msg').value||'').trim();
+  err.textContent='';
+  _chatAnexoEnviando=true;
+  showToast(converterPdf?'Gerando PDF do documento...':'Enviando anexo...');
+  var proc=(converterPdf?converterImagemParaPdfWeb(file).then(function(pdfBlob){
+    return new File([pdfBlob],nomeBaseArquivo(file.name||tipo)+'_'+Date.now()+'.pdf',{type:'application/pdf'});
+  }):Promise.resolve(file));
+  proc.then(function(fileFinal){
+    if((fileFinal.size||0)>20*1024*1024) throw new Error('Documento muito grande. Limite de 20 MB.');
+    var fd=new FormData();
+    fd.append('arquivo',fileFinal,fileFinal.name||'documento');
+    fd.append('documento_tipo',tipo);
+    if(msg) fd.append('conteudo',msg);
+    return apiFormData('/api/app/funcionario/mensagens/arquivo',fd);
+  }).then(function(){
+    fecharModal('modal-chat-anexo');
+    document.getElementById('chat-inp').value='';
+    document.getElementById('chat-anexo-msg').value='';
+    loadChat();
+    showToast('Anexo enviado com sucesso!');
+  }).catch(function(e){
+    err.textContent=e&&e.message?e.message:'Não foi possível enviar o anexo.';
+  }).finally(function(){
+    _chatAnexoEnviando=false;
+    if(input) input.value='';
+  });
+}
+
 function loadChat(){
   var box=document.getElementById('chat-box');
   api('GET','/api/app/funcionario/mensagens').then(function(msgs){
@@ -1172,9 +1422,16 @@ function loadChat(){
     }
     box.innerHTML=msgs.map(function(m){
       var ts=m.enviado_em?fmtTs(m.enviado_em):'';
+      var arqUrl=m.arquivo_url||m.arquivo_admin_url||'';
+      var arqHtml=(m.tipo==='arquivo'&&arqUrl)
+        ? '<div class="msg-attach" style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12);font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+          +'<span>📎 <strong>'+esc(m.arquivo_nome||'Arquivo')+'</strong></span>'
+          +'<button class="btn-sm btn-dl" data-url="'+esc(arqUrl)+'" data-name="'+esc(m.arquivo_nome||'arquivo')+'" onclick="downloadAuth(this)">Abrir anexo</button>'
+          +'</div>'
+        : '';
       return '<div class="msg-item '+(m.de_rh?'de-rh':'de-func')+'">'
         +'<div>'+(m.de_rh?'<div class="rh-label">RH</div>':'')
-        +'<div class="msg-bubble">'+esc(m.conteudo||'')+'</div>'
+        +'<div class="msg-bubble">'+esc(m.conteudo||'')+arqHtml+'</div>'
         +'<div class="msg-time">'+ts+'</div></div></div>';
     }).join('');
     box.scrollTop=box.scrollHeight;
@@ -1185,7 +1442,7 @@ function enviarMsg(){
   var inp=document.getElementById('chat-inp'),txt=inp.value.trim();
   if(!txt)return;inp.value='';
   api('POST','/api/app/funcionario/mensagens',{conteudo:txt})
-    .then(function(){loadChat();})
+    .then(function(){loadChat();inp.value='';})
     .catch(function(e){showToast(e.message||'Erro ao enviar',true);inp.value=txt;});
 }
 
