@@ -14517,7 +14517,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         fontName="Helvetica-Bold",
         fontSize=16,
         leading=20,
-        textColor=colors.white,
+        textColor=azul,
         alignment=TA_CENTER,
     )
     st_sub = ParagraphStyle(
@@ -14525,7 +14525,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         fontName="Helvetica",
         fontSize=8.5,
         leading=11,
-        textColor=colors.white,
+        textColor=colors.HexColor("#2A4864"),
         alignment=TA_CENTER,
     )
     st_para = ParagraphStyle(
@@ -14613,23 +14613,23 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
                 "snln",
                 fontName="Helvetica-Bold",
                 fontSize=8,
-                textColor=colors.white,
+                textColor=azul,
                 alignment=TA_CENTER,
             ),
         )
 
     hdr_data = [
-        [Paragraph("DECLARAÇÃO", st_title), logo_el],
+        [Paragraph("DECLARAÇÃO SIMPLE NACIONAL", st_title), logo_el],
         [Paragraph(emp_nome, st_sub), ""],
     ]
     hdr_table = Table(hdr_data, colWidths=[12 * cm, 5.5 * cm])
     hdr_table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, -1), azul),
                 ("SPAN", (0, 1), (1, 1)),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("ALIGN", (1, 0), (1, 0), "CENTER"),
+                ("LINEBELOW", (0, 1), (1, 1), 0.8, colors.HexColor("#A7B8C9")),
                 ("TOPPADDING", (0, 0), (-1, -1), 8),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
                 ("LEFTPADDING", (0, 0), (-1, -1), 12),
