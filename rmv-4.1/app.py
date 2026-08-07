@@ -8710,10 +8710,31 @@ def pagina_funcionario_app():
 @app.route("/api/cnpj/<cnpj>")
 @lr
 def api_cnpj(cnpj):
+    # Cache simples em memória para reduzir chamadas aos provedores externos.
+    # Estrutura: {cnpj: {exp: epoch, status: int, data?: dict, erro?: str}}
+    global _CNPJ_LOOKUP_CACHE
+    try:
+        _CNPJ_LOOKUP_CACHE
+    except NameError:
+        _CNPJ_LOOKUP_CACHE = {}
+
+    TTL_OK = 6 * 60 * 60
+    TTL_RATE_LIMIT = 60
+
     c = "".join(filter(str.isdigit, cnpj))
     if len(c) != 14:
         return jsonify({"erro": "CNPJ inválido"}), 400
+
+    now_ts = time.time()
+    cache_entry = _CNPJ_LOOKUP_CACHE.get(c)
+    if cache_entry and cache_entry.get("exp", 0) > now_ts:
+        if cache_entry.get("status") == 200:
+            return jsonify(cache_entry.get("data") or {})
+        return jsonify({"erro": cache_entry.get("erro") or "Consulta temporariamente indisponível."}), int(cache_entry.get("status") or 500)
+
     # Tenta Receitaws primeiro e usa BrasilAPI como fallback.
+    throttled = False
+
     try:
         req = urllib.request.Request(
             f"https://receitaws.com.br/v1/cnpj/{c}",
@@ -8722,27 +8743,31 @@ def api_cnpj(cnpj):
         with urllib.request.urlopen(req, timeout=8) as r:
             d = json.loads(r.read().decode())
         if d.get("status") != "ERROR":
-            return jsonify(
-                {
-                    "nome": d.get("fantasia") or d.get("nome", ""),
-                    "razao": d.get("nome", ""),
-                    "email": d.get("email", ""),
-                    "telefone": d.get("telefone", ""),
-                    "cep": d.get("cep", "")
-                    .replace(".", "")
-                    .replace("-", "")
-                    .replace(" ", ""),
-                    "logradouro": d.get("logradouro", ""),
-                    "numero": d.get("numero", ""),
-                    "complemento": d.get("complemento", ""),
-                    "bairro": d.get("bairro", ""),
-                    "cidade": d.get("municipio", ""),
-                    "estado": d.get("uf", ""),
-                    "situacao": d.get("situacao", ""),
-                }
-            )
+            payload = {
+                "nome": d.get("fantasia") or d.get("nome", ""),
+                "razao": d.get("nome", ""),
+                "email": d.get("email", ""),
+                "telefone": d.get("telefone", ""),
+                "cep": d.get("cep", "")
+                .replace(".", "")
+                .replace("-", "")
+                .replace(" ", ""),
+                "logradouro": d.get("logradouro", ""),
+                "numero": d.get("numero", ""),
+                "complemento": d.get("complemento", ""),
+                "bairro": d.get("bairro", ""),
+                "cidade": d.get("municipio", ""),
+                "estado": d.get("uf", ""),
+                "situacao": d.get("situacao", ""),
+            }
+            _CNPJ_LOOKUP_CACHE[c] = {"exp": now_ts + TTL_OK, "status": 200, "data": payload}
+            return jsonify(payload)
+    except urllib.error.HTTPError as e:
+        if int(getattr(e, "code", 0) or 0) == 429:
+            throttled = True
     except Exception:
         pass
+
     try:
         req = urllib.request.Request(
             f"https://brasilapi.com.br/api/cnpj/v1/{c}",
@@ -8750,24 +8775,34 @@ def api_cnpj(cnpj):
         )
         with urllib.request.urlopen(req, timeout=8) as r:
             d = json.loads(r.read().decode())
-        return jsonify(
-            {
-                "nome": d.get("nome_fantasia") or d.get("razao_social", ""),
-                "razao": d.get("razao_social", ""),
-                "email": d.get("email", ""),
-                "telefone": d.get("ddd_telefone_1") or d.get("ddd_telefone_2", ""),
-                "cep": str(d.get("cep", "")).replace("-", ""),
-                "logradouro": d.get("logradouro", ""),
-                "numero": d.get("numero", ""),
-                "complemento": d.get("complemento", ""),
-                "bairro": d.get("bairro", ""),
-                "cidade": d.get("municipio", ""),
-                "estado": d.get("uf", ""),
-                "situacao": d.get("descricao_situacao_cadastral", ""),
-            }
-        )
-    except Exception as e:
-        return jsonify({"erro": str(e)}), 500
+        payload = {
+            "nome": d.get("nome_fantasia") or d.get("razao_social", ""),
+            "razao": d.get("razao_social", ""),
+            "email": d.get("email", ""),
+            "telefone": d.get("ddd_telefone_1") or d.get("ddd_telefone_2", ""),
+            "cep": str(d.get("cep", "")).replace("-", ""),
+            "logradouro": d.get("logradouro", ""),
+            "numero": d.get("numero", ""),
+            "complemento": d.get("complemento", ""),
+            "bairro": d.get("bairro", ""),
+            "cidade": d.get("municipio", ""),
+            "estado": d.get("uf", ""),
+            "situacao": d.get("descricao_situacao_cadastral", ""),
+        }
+        _CNPJ_LOOKUP_CACHE[c] = {"exp": now_ts + TTL_OK, "status": 200, "data": payload}
+        return jsonify(payload)
+    except urllib.error.HTTPError as e:
+        if int(getattr(e, "code", 0) or 0) == 429:
+            throttled = True
+    except Exception:
+        pass
+
+    if throttled:
+        msg = "Consulta temporariamente limitada pelos provedores de CNPJ. Aguarde 1 minuto e tente novamente."
+        _CNPJ_LOOKUP_CACHE[c] = {"exp": now_ts + TTL_RATE_LIMIT, "status": 429, "erro": msg}
+        return jsonify({"erro": msg}), 429
+
+    return jsonify({"erro": "Não foi possível consultar o CNPJ neste momento. Tente novamente em instantes."}), 502
 
 
 @app.route("/api/cep/<cep>")
