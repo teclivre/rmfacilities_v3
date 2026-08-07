@@ -678,6 +678,9 @@ def register_ponto_routes(
             return date(2000, 1, 1), hoje
         return hoje - timedelta(days=31), hoje
 
+    def _model_query_available(model_cls):
+        return bool(model_cls) and hasattr(model_cls, "query")
+
     def _fmt_data_hora_csv(dt):
         if not dt:
             return ""
@@ -1586,29 +1589,41 @@ def register_ponto_routes(
         marcacoes = q_m.order_by(PontoMarcacao.data_hora.asc(), PontoMarcacao.id.asc()).all()
 
         fids = sorted({m.funcionario_id for m in marcacoes if m.funcionario_id})
-        if incluir_ajustes:
-            q_a = PontoAjuste.query.filter(
-                PontoAjuste.data_ref >= data_inicio.strftime("%Y-%m-%d"),
-                PontoAjuste.data_ref <= data_fim.strftime("%Y-%m-%d"),
-            )
-            if funcionario_id:
-                q_a = q_a.filter(PontoAjuste.funcionario_id == funcionario_id)
-            ajustes = q_a.order_by(PontoAjuste.data_ref.asc(), PontoAjuste.id.asc()).all()
-            fids.extend([a.funcionario_id for a in ajustes if a.funcionario_id])
-        else:
-            ajustes = []
+        avisos = []
+        ajustes = []
+        if incluir_ajustes and _model_query_available(PontoAjuste):
+            try:
+                q_a = PontoAjuste.query.filter(
+                    PontoAjuste.data_ref >= data_inicio.strftime("%Y-%m-%d"),
+                    PontoAjuste.data_ref <= data_fim.strftime("%Y-%m-%d"),
+                )
+                if funcionario_id:
+                    q_a = q_a.filter(PontoAjuste.funcionario_id == funcionario_id)
+                ajustes = q_a.order_by(PontoAjuste.data_ref.asc(), PontoAjuste.id.asc()).all()
+                fids.extend([a.funcionario_id for a in ajustes if a.funcionario_id])
+            except Exception as ex:
+                app.logger.warning("[auditoria-relatorio] ajustes indisponiveis: %s", ex)
+                avisos.append("Ajustes administrativos indisponiveis neste ambiente.")
 
-        if incluir_ajustes and PontoCorrecaoSolicitacao is not None:
-            q_c = PontoCorrecaoSolicitacao.query.filter(
-                PontoCorrecaoSolicitacao.data_ref >= data_inicio.strftime("%Y-%m-%d"),
-                PontoCorrecaoSolicitacao.data_ref <= data_fim.strftime("%Y-%m-%d"),
-            )
-            if funcionario_id:
-                q_c = q_c.filter(PontoCorrecaoSolicitacao.funcionario_id == funcionario_id)
-            correcoes = q_c.order_by(PontoCorrecaoSolicitacao.data_ref.asc(), PontoCorrecaoSolicitacao.id.asc()).all()
-            fids.extend([c.funcionario_id for c in correcoes if c.funcionario_id])
-        else:
-            correcoes = []
+        correcoes = []
+        correcao_model = (
+            PontoCorrecaoSolicitacao
+            if _model_query_available(PontoCorrecaoSolicitacao)
+            else _resolve_model("PontoCorrecaoSolicitacao")
+        )
+        if incluir_ajustes and _model_query_available(correcao_model):
+            try:
+                q_c = correcao_model.query.filter(
+                    correcao_model.data_ref >= data_inicio.strftime("%Y-%m-%d"),
+                    correcao_model.data_ref <= data_fim.strftime("%Y-%m-%d"),
+                )
+                if funcionario_id:
+                    q_c = q_c.filter(correcao_model.funcionario_id == funcionario_id)
+                correcoes = q_c.order_by(correcao_model.data_ref.asc(), correcao_model.id.asc()).all()
+                fids.extend([c.funcionario_id for c in correcoes if c.funcionario_id])
+            except Exception as ex:
+                app.logger.warning("[auditoria-relatorio] correcoes indisponiveis: %s", ex)
+                avisos.append("Solicitacoes de correcao indisponiveis neste ambiente.")
 
         fids = sorted({int(x) for x in fids if x})
         funcionarios = Funcionario.query.filter(Funcionario.id.in_(fids)).all() if fids else []
@@ -1691,6 +1706,7 @@ def register_ponto_routes(
                     "funcionario_id": funcionario_id,
                     "incluir_ajustes": incluir_ajustes,
                 },
+                "avisos": avisos,
                 "total": len(linhas),
                 "itens": linhas,
             }
