@@ -9,6 +9,7 @@ import base64
 import time
 import smtplib
 import threading
+import traceback
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -25486,7 +25487,18 @@ def envelope_baixar_assinado_publico(codigo):
         url_root = request.url_root.rstrip("/")
         abs_pdf, fname = _envelope_signed_pdf_path(env)
         if not os.path.isfile(abs_pdf):
-            abs_pdf, fname = _gerar_pdf_assinado_envelope(env, url_root)
+            try:
+                abs_pdf, fname = _gerar_pdf_assinado_envelope(env, url_root)
+            except FileNotFoundError:
+                raise
+            except Exception as exc:
+                app.logger.exception(
+                    "Falha na renderização do PDF envelope codigo=%s tipo=%s erro=%r",
+                    codigo,
+                    type(exc).__name__,
+                    exc,
+                )
+                raise
         return send_file(
             abs_pdf,
             mimetype="application/pdf",
@@ -25502,7 +25514,7 @@ def envelope_baixar_assinado_publico(codigo):
         app.logger.exception(
             "Falha ao baixar PDF assinado envelope codigo=%s erro=%r", codigo, exc
         )
-        return "Não foi possível gerar o PDF assinado neste momento.", 500
+        return Response(traceback.format_exc(), status=500, mimetype="text/plain")
 
 
 # Página pública de validação do envelope

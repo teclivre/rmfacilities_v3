@@ -17359,8 +17359,13 @@ function previewStampPos(){
 }
 
 function atualizarStampPos(canvasEl,pageNum,xPct,yPct){
-  const xClamped=Math.max(0,Math.min(62,Math.round(xPct)));
-  const yClamped=Math.max(0,Math.min(90,Math.round(yPct)));
+  const markerWidth=180;
+  const markerHeight=70;
+  const canvasRect=canvasEl.getBoundingClientRect();
+  const maxX=Math.max(0,100-(markerWidth/canvasRect.width)*100);
+  const maxY=Math.max(0,100-(markerHeight/canvasRect.height)*100);
+  const xClamped=Math.max(0,Math.min(maxX,Math.round(xPct)));
+  const yClamped=Math.max(0,Math.min(maxY,Math.round(yPct)));
   document.getElementById('stamp-x-pct').value=xClamped;
   document.getElementById('stamp-y-pct').value=yClamped;
   document.getElementById('stamp-x-val').textContent=xClamped;
@@ -17374,8 +17379,8 @@ function atualizarStampPos(canvasEl,pageNum,xPct,yPct){
   document.querySelectorAll('.stamp-page-indicator').forEach(el=>el.remove());
   const ind=document.createElement('div');
   ind.className='stamp-page-indicator';
-  ind.style.cssText=`position:absolute;left:${xClamped}%;bottom:${yClamped}%;background:rgba(30,60,120,.15);border:2px dashed #3060c0;border-radius:4px;width:38%;height:8%;min-height:28px;cursor:move;touch-action:none;display:flex;align-items:center;justify-content:center;z-index:10`;
-  ind.innerHTML='<span style="font-size:9px;color:var(--azul);font-weight:700;pointer-events:none">CARIMBO · ARRASTE PARA POSICIONAR</span>';
+  ind.style.cssText=`position:absolute;left:${xClamped}%;bottom:${yClamped}%;background:rgba(30,60,120,.15);border:2px dashed #3060c0;border-radius:4px;width:180px!important;height:70px!important;min-width:180px!important;max-width:180px!important;min-height:70px!important;max-height:70px!important;box-sizing:border-box;overflow:hidden;padding:4px;cursor:move;touch-action:none;display:flex;align-items:center;justify-content:center;z-index:10`;
+  ind.innerHTML='<span style="font-size:10px;line-height:1.15;text-align:center;color:var(--azul);font-weight:700;pointer-events:none">CARIMBO · ARRASTE PARA POSICIONAR</span>';
   const wrapper=canvasEl.closest('.stamp-page-wrap');
   if(wrapper){
     wrapper.style.position='relative';
@@ -17387,8 +17392,10 @@ function atualizarStampPos(canvasEl,pageNum,xPct,yPct){
     ind.addEventListener('pointermove',function(ev){
       if(!ind.hasPointerCapture(ev.pointerId)) return;
       const rect=canvasEl.getBoundingClientRect();
-      const nextX=Math.max(0,Math.min(62,Math.round(((ev.clientX-rect.left)/rect.width)*100-19)));
-      const nextY=Math.max(0,Math.min(90,Math.round((1-(ev.clientY-rect.top)/rect.height)*100-4)));
+      const maxDragX=Math.max(0,100-(markerWidth/rect.width)*100);
+      const maxDragY=Math.max(0,100-(markerHeight/rect.height)*100);
+      const nextX=Math.max(0,Math.min(maxDragX,Math.round(((ev.clientX-rect.left-markerWidth/2)/rect.width)*100)));
+      const nextY=Math.max(0,Math.min(maxDragY,Math.round(((rect.bottom-ev.clientY-markerHeight/2)/rect.height)*100)));
       ind.style.left=nextX+'%';
       ind.style.bottom=nextY+'%';
       document.getElementById('stamp-x-pct').value=nextX;
@@ -17401,8 +17408,8 @@ function atualizarStampPos(canvasEl,pageNum,xPct,yPct){
 
 function setStampPosFromClick(e,canvasEl,pageNum){
   const rect=canvasEl.getBoundingClientRect();
-  const xPct=((e.clientX-rect.left)/rect.width)*100-19;
-  const yPct=(1-(e.clientY-rect.top)/rect.height)*100-4;
+  const xPct=((e.clientX-rect.left-90)/rect.width)*100;
+  const yPct=((rect.bottom-e.clientY-35)/rect.height)*100;
   atualizarStampPos(canvasEl,pageNum,xPct,yPct);
 }
 
