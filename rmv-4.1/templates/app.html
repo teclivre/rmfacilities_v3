@@ -2697,6 +2697,9 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div style="padding:10px 14px;border-bottom:1px solid var(--borda);display:flex;align-items:center;gap:8px">
               <span id="maps-chat-titulo" style="font-weight:600;font-size:13px;flex:1">Selecione um funcionário</span>
               <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsCarregarChat()" id="maps-btn-refresh" disabled>↺</button>
+                <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsExportarConversa('pdf')" id="maps-btn-exp-pdf" disabled>PDF</button>
+                <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsExportarConversa('csv')" id="maps-btn-exp-csv" disabled>CSV</button>
+                <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsExportarConversa('docx')" id="maps-btn-exp-docx" disabled>Word</button>
             </div>
             <div id="maps-bubbles" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px">
               <div class="vazio" style="margin-top:40px">Selecione um funcionário para ver o chat</div>
@@ -15736,6 +15739,9 @@ async function mapsAbrirChat(fid,nome){
   _mapsNomeAtual=nome;
   document.getElementById('maps-chat-titulo').textContent='💬 '+nome;
   document.getElementById('maps-btn-refresh').disabled=false;
+  document.getElementById('maps-btn-exp-pdf').disabled=false;
+  document.getElementById('maps-btn-exp-csv').disabled=false;
+  document.getElementById('maps-btn-exp-docx').disabled=false;
   document.getElementById('maps-input').disabled=false;
   document.getElementById('maps-btn-enviar').disabled=false;
   await mapsCarregarChat();
@@ -15790,6 +15796,19 @@ async function mapsEnviar(){
     alert('Erro ao enviar mensagem.');
   }
   finally{btn.disabled=false;inp.disabled=false;inp.focus();}
+}
+
+function mapsExportarConversa(formato){
+  if(!_mapsFidAtual){
+    alert('Selecione um funcionário primeiro.');
+    return;
+  }
+  const fmt=(formato||'').toLowerCase();
+  if(!['pdf','csv','docx'].includes(fmt)){
+    alert('Formato inválido.');
+    return;
+  }
+  window.open(`/api/mensagens-app/${_mapsFidAtual}/export.${fmt}`,'_blank','noopener');
 }
 
 async function mapsCarregarSelectsEmpresasPosto(){
