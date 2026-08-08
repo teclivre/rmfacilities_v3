@@ -23088,6 +23088,8 @@ def _build_doc_assinatura_pdf(arquivo, funcionario, url_root):
     )
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_CENTER
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.pdfmetrics import EmbeddedType1Face, Font
     from reportlab.graphics.barcode import qr as qr_code
     from reportlab.graphics.shapes import Drawing
 
@@ -23102,9 +23104,30 @@ def _build_doc_assinatura_pdf(arquivo, funcionario, url_root):
     )
     W = A4[0] - 2.4 * cm
     AZ = colors.HexColor("#205d8a")
+    AZ_CL = colors.HexColor("#e8f2f9")
     VD = colors.HexColor("#1a7a45")
     CI = colors.HexColor("#f5f5f5")
     LJ = colors.HexColor("#f28e34")
+    signature_font = "Times-Italic"
+    try:
+        signature_face = EmbeddedType1Face(
+            "/usr/share/fonts/type1/urw-base35/Z003-MediumItalic.afm",
+            "/usr/share/fonts/X11/Type1/Z003-MediumItalic.pfb",
+        )
+        pdfmetrics.registerTypeFace(signature_face)
+        pdfmetrics.registerFont(
+            Font("RMSignatureScript", signature_face.name, "WinAnsiEncoding")
+        )
+        pdfmetrics.registerFontFamily(
+            "RMSignatureScript",
+            normal="RMSignatureScript",
+            bold="RMSignatureScript",
+            italic="RMSignatureScript",
+            boldItalic="RMSignatureScript",
+        )
+        signature_font = "RMSignatureScript"
+    except Exception:
+        pass
 
     def ps(nm, **kw):
         b = dict(
@@ -23724,13 +23747,13 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
         f"<b>AUDITORIA E VALIDAÇÃO DE ASSINATURA ELETRÔNICA</b><br/>"
         f'<font size="9" color="#49607a">{empresa_nome}</font><br/>'
         f'<font size="8" color="#6f8093">Documento: {envelope.titulo or "-"}</font>',
-        ps("htr2", fontSize=11, leading=13, textColor=colors.white),
+        ps("htr2", fontSize=11, leading=13, textColor=colors.HexColor("#0f2b47")),
     )
     hdr = Table([[logo, hdr_right]], colWidths=[W * 0.26, W * 0.74])
     hdr.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, -1), AZ),
+                ("BACKGROUND", (0, 0), (-1, -1), AZ_CL),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 10),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 10),
@@ -23745,11 +23768,10 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     empresa_header = empresas_hdr[0]
     emp_tbl = Table(
         [
-            [_logo_flowable(empresa_header)],
             [
                 Paragraph(
-                    f'<b>{empresa_header.get("nome") or "-"}</b><br/><font size="8" color="#4c6072">CNPJ: {empresa_header.get("cnpj") or "-"}</font>',
-                    ps("empe", fontSize=8.2, leading=10),
+                    f'<b>{(empresa_header.get("nome") or "RM FACILITIES LTDA").upper()}</b><br/><font size="8" color="#4c6072">CNPJ: {empresa_header.get("cnpj") or "-"}</font>',
+                    ps("empe", fontSize=9, leading=11, textColor=colors.HexColor("#0f2b47")),
                 )
             ],
         ],
@@ -23921,13 +23943,13 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
         sig_rows_cursive = [
             [
                 Paragraph(
-                    f"<i>{s.nome or '-'}</i>",
+                    s.nome or "-",
                     ps(
                         f"asn{i}",
-                        fontName="Times-Italic",
-                        fontSize=18,
+                        fontName=signature_font,
+                        fontSize=11,
                         textColor=colors.HexColor("#1a2e42"),
-                        leading=20,
+                        leading=13,
                     ),
                 ),
                 Paragraph(

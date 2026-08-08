@@ -16678,7 +16678,7 @@ function asiWizardGo(step){
   if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
-function onAuditPosChange(pos){
+function onAuditPosChange(pos,ativarPersonalizado=true){
   // update visual
   ['rodape','lateral-direita','lateral-esquerda','personalizado'].forEach(p=>{
     const el=document.getElementById('auditpos-'+p);
@@ -16689,6 +16689,11 @@ function onAuditPosChange(pos){
   // show/hide manual stamp controls
   const manualArea=document.getElementById('stamp-pos-area');
   if(manualArea) manualArea.style.display=(pos==='personalizado')?'':'none';
+  if(pos==='personalizado'&&ativarPersonalizado){
+    const hab=document.getElementById('stamp-hab');
+    if(hab) hab.checked=true;
+    carregarPreviewCarimbo();
+  }
   if(pos==='rodape'){
     // preset: todas páginas, todos arquivos, bottom area
     const chkTodas=document.getElementById('stamp-todas-paginas');
@@ -17353,12 +17358,9 @@ function previewStampPos(){
   if(area) area.style.display=hab?'block':'none';
 }
 
-function setStampPosFromClick(e,canvasEl,pageNum){
-  const rect=canvasEl.getBoundingClientRect();
-  const xPct=Math.round(((e.clientX-rect.left)/rect.width)*100);
-  const yPctFromBottom=Math.round((1-(e.clientY-rect.top)/rect.height)*100);
-  const xClamped=Math.max(2,Math.min(90,xPct));
-  const yClamped=Math.max(2,Math.min(90,yPctFromBottom));
+function atualizarStampPos(canvasEl,pageNum,xPct,yPct){
+  const xClamped=Math.max(0,Math.min(62,Math.round(xPct)));
+  const yClamped=Math.max(0,Math.min(90,Math.round(yPct)));
   document.getElementById('stamp-x-pct').value=xClamped;
   document.getElementById('stamp-y-pct').value=yClamped;
   document.getElementById('stamp-x-val').textContent=xClamped;
@@ -17369,14 +17371,39 @@ function setStampPosFromClick(e,canvasEl,pageNum){
     const pgVal=document.getElementById('stamp-pagina-val');
     if(pgVal) pgVal.textContent=pageNum;
   }
-  // Atualiza indicador visual na página clicada
   document.querySelectorAll('.stamp-page-indicator').forEach(el=>el.remove());
   const ind=document.createElement('div');
   ind.className='stamp-page-indicator';
-  ind.style.cssText=`position:absolute;left:${xClamped}%;bottom:${yClamped}%;transform:translate(-50%,50%);background:rgba(30,60,120,0.15);border:2px dashed #3060c0;border-radius:4px;width:68px;height:28px;pointer-events:none;display:flex;align-items:center;justify-content:center;z-index:10`;
-  ind.innerHTML='<span style="font-size:9px;color:var(--azul);font-weight:700">CARIMBO</span>';
+  ind.style.cssText=`position:absolute;left:${xClamped}%;bottom:${yClamped}%;background:rgba(30,60,120,.15);border:2px dashed #3060c0;border-radius:4px;width:38%;height:8%;min-height:28px;cursor:move;touch-action:none;display:flex;align-items:center;justify-content:center;z-index:10`;
+  ind.innerHTML='<span style="font-size:9px;color:var(--azul);font-weight:700;pointer-events:none">CARIMBO · ARRASTE PARA POSICIONAR</span>';
   const wrapper=canvasEl.closest('.stamp-page-wrap');
-  if(wrapper) wrapper.style.position='relative', wrapper.appendChild(ind);
+  if(wrapper){
+    wrapper.style.position='relative';
+    wrapper.appendChild(ind);
+    ind.addEventListener('pointerdown',function(ev){
+      ev.preventDefault();
+      ind.setPointerCapture(ev.pointerId);
+    });
+    ind.addEventListener('pointermove',function(ev){
+      if(!ind.hasPointerCapture(ev.pointerId)) return;
+      const rect=canvasEl.getBoundingClientRect();
+      const nextX=Math.max(0,Math.min(62,Math.round(((ev.clientX-rect.left)/rect.width)*100-19)));
+      const nextY=Math.max(0,Math.min(90,Math.round((1-(ev.clientY-rect.top)/rect.height)*100-4)));
+      ind.style.left=nextX+'%';
+      ind.style.bottom=nextY+'%';
+      document.getElementById('stamp-x-pct').value=nextX;
+      document.getElementById('stamp-y-pct').value=nextY;
+      document.getElementById('stamp-x-val').textContent=nextX;
+      document.getElementById('stamp-y-val').textContent=nextY;
+    });
+  }
+}
+
+function setStampPosFromClick(e,canvasEl,pageNum){
+  const rect=canvasEl.getBoundingClientRect();
+  const xPct=((e.clientX-rect.left)/rect.width)*100-19;
+  const yPct=(1-(e.clientY-rect.top)/rect.height)*100-4;
+  atualizarStampPos(canvasEl,pageNum,xPct,yPct);
 }
 
 function _nomeArquivoEnvelope(arqId){
@@ -17561,7 +17588,7 @@ function _carregarStampConfig(env){
   if(chkTodos) chkTodos.checked=!!env.stamp_todos_arquivos;
   // Load audit_pos
   const ap=(env.audit_pos||'personalizado').trim().toLowerCase();
-  onAuditPosChange(ap);
+  onAuditPosChange(ap,false);
   previewStampPos();
 }
 </script>
