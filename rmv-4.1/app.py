@@ -23672,6 +23672,7 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     )
     W = A4[0] - 2.4 * cm
     AZ = colors.HexColor("#205d8a")
+    AZ_CL = colors.HexColor("#e8f2f9")
     VD = colors.HexColor("#1a7a45")
     CI = colors.HexColor("#f5f5f5")
     LJ = colors.HexColor("#f28e34")
