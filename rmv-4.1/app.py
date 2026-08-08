@@ -23457,7 +23457,10 @@ def _build_doc_assinatura_pdf(arquivo, funcionario, url_root):
         )
     )
     doc.build(story, canvasmaker=(_AuditWatermarkCanvas or _WatermarkCanvas or None))
-    return buf.getvalue()
+    try:
+        return buf.getvalue()
+    finally:
+        buf.close()
 
 
 def _montar_pdf_assinado_funcionario(arquivo, funcionario, url_root):
@@ -24042,6 +24045,18 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     return buf.getvalue()
 
 
+def _resolve_envelope_file_path(caminho):
+    raw = (caminho or "").strip()
+    if not raw:
+        return ""
+    candidatos = [raw]
+    if not os.path.isabs(raw):
+        candidatos.extend(
+            [os.path.join(UPLOAD_ROOT, raw), os.path.join(_get_uploads_base(), raw)]
+        )
+    return next((path for path in candidatos if path and os.path.isfile(path)), "")
+
+
 def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
     """Estampa rodapé + carimbo de signatários nos PDFs do envelope e adiciona página de auditoria."""
     try:
@@ -24090,19 +24105,6 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
             if getattr(s, "ass_assinatura_img", None):
                 assinatura_img_map[s.id] = s.ass_assinatura_img
 
-    def _resolve_abs_path(caminho):
-        raw = (caminho or "").strip()
-        if not raw:
-            return ""
-        cands = [raw]
-        if not os.path.isabs(raw):
-            cands.append(os.path.join(UPLOAD_ROOT, raw))
-            cands.append(os.path.join(_get_uploads_base(), raw))
-        for p in cands:
-            if p and os.path.exists(p):
-                return p
-        return ""
-
     def _make_footer_overlay(w, h):
         ov = io.BytesIO()
         c = rl_canvas.Canvas(ov, pagesize=(w, h))
@@ -24126,8 +24128,10 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
         c.setFont("Helvetica", 8)
         c.drawString(text_x, 22, footer_text)
         c.save()
-        ov.seek(0)
-        return ov.getvalue()
+        try:
+            return ov.getvalue()
+        finally:
+            ov.close()
 
     def _make_stamp_overlay(w, h, sigs, img_map, x_pct, y_pct):
         """Gera overlay com carimbos de assinatura posicionados na página."""
@@ -24213,8 +24217,10 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
             c.setFont("Helvetica", 5.5)
             c.drawString(text_x + stamp_w * 0.35, y_bottom + stamp_h - 10, codigo)
         c.save()
-        ov.seek(0)
-        return ov.getvalue()
+        try:
+            return ov.getvalue()
+        finally:
+            ov.close()
 
     def _make_stamp_overlay_lateral(w, h, sigs, side="direita"):
         """Gera faixa lateral rotacionada com info dos signatários."""
@@ -24254,14 +24260,18 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
             c.line(x_cur - 7, 3, x_cur - 7, 15)
         c.restoreState()
         c.save()
-        ov.seek(0)
-        return ov.getvalue()
+        try:
+            return ov.getvalue()
+        finally:
+            ov.close()
 
     file_idx = 0
     for arq in arquivos:
-        abs_path = _resolve_abs_path(arq.caminho)
+        abs_path = _resolve_envelope_file_path(arq.caminho)
         if not abs_path:
-            continue
+            raise FileNotFoundError(
+                f"Arquivo original não encontrado: {arq.nome_arquivo or arq.caminho or arq.id}"
+            )
         try:
             with open(abs_path, "rb") as fh:
                 reader = PdfReader(fh)
@@ -24304,12 +24314,25 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
                                 stamp_page = PdfReader(io.BytesIO(stamp_bytes)).pages[0]
                                 page.merge_page(stamp_page)
                     except Exception:
-                        pass
+                        app.logger.exception(
+                            "Falha ao aplicar carimbo no PDF envelope_id=%s arquivo_id=%s pagina=%s path=%s",
+                            envelope.id,
+                            arq.id,
+                            page_idx + 1,
+                            abs_path,
+                        )
+                        raise
                     writer.add_page(page)
                     pages_added += 1
             file_idx += 1
         except Exception:
-            continue
+            app.logger.exception(
+                "Falha ao ler ou mesclar PDF envelope_id=%s arquivo_id=%s path=%s",
+                envelope.id,
+                arq.id,
+                abs_path,
+            )
+            raise
 
     if pages_added == 0:
         raise ValueError(
@@ -24324,20 +24347,36 @@ def _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root):
     PdfReaderAudit = PdfReader
     try:
         audit_reader = PdfReaderAudit(io.BytesIO(audit_bytes))
-    except Exception:
+    except Exception as pypdf_exc:
+        app.logger.warning(
+            "pypdf falhou ao ler auditoria envelope_id=%s: %r; tentando PyPDF2",
+            envelope.id,
+            pypdf_exc,
+            exc_info=True,
+        )
         try:
             from PyPDF2 import PdfReader as PdfReaderAudit2
 
             audit_reader = PdfReaderAudit2(io.BytesIO(audit_bytes))
-        except Exception:
-            audit_reader = None
-    if audit_reader:
-        for page in audit_reader.pages:
-            writer.add_page(page)
+        except Exception as pypdf2_exc:
+            app.logger.exception(
+                "Falha ao finalizar página de auditoria envelope_id=%s pypdf=%r PyPDF2=%r",
+                envelope.id,
+                pypdf_exc,
+                pypdf2_exc,
+            )
+            raise RuntimeError(
+                "Não foi possível finalizar a página de auditoria do PDF."
+            ) from pypdf2_exc
+    for page in audit_reader.pages:
+        writer.add_page(page)
 
     out = io.BytesIO()
-    writer.write(out)
-    return out.getvalue()
+    try:
+        writer.write(out)
+        return out.getvalue()
+    finally:
+        out.close()
 
 
 def _get_uploads_base():
@@ -24400,14 +24439,33 @@ def _gerar_pdf_assinado_envelope(envelope, url_root):
     )
     if not arquivos:
         raise ValueError("Envelope sem arquivos para gerar PDF assinado.")
+    arquivos_ausentes = [
+        arq
+        for arq in arquivos
+        if not _resolve_envelope_file_path(arq.caminho)
+    ]
+    if arquivos_ausentes:
+        nomes = ", ".join(
+            arq.nome_arquivo or arq.caminho or str(arq.id)
+            for arq in arquivos_ausentes
+        )
+        raise FileNotFoundError(f"Arquivo original não encontrado: {nomes}")
     footer_text = (
         f"RM Facilities | Assinatura Eletrônica | Cód: {envelope.codigo} | "
         f"Valide em: {url_root}/envelope/validar/{envelope.codigo}"
     )
     pdf_bytes = _stamp_envelope_pdfs(arquivos, footer_text, envelope, url_root)
     abs_path, fname = _envelope_signed_pdf_path(envelope)
-    with open(abs_path, "wb") as out:
-        out.write(pdf_bytes)
+    temp_path = f"{abs_path}.tmp-{secrets.token_hex(6)}"
+    try:
+        with open(temp_path, "wb") as out:
+            out.write(pdf_bytes)
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(temp_path, abs_path)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
     return abs_path, fname
 
 
@@ -25419,20 +25477,32 @@ def api_envelope_assinatura_confirmar(token):
 
 @app.route("/envelope/baixar/<codigo>")
 def envelope_baixar_assinado_publico(codigo):
-    env = AssinaturaEnvelope.query.filter_by(codigo=codigo).first_or_404()
-    if env.status != "concluido":
-        return "Documento ainda não concluído para download.", 400
-    url_root = request.url_root.rstrip("/")
-    abs_pdf, fname = _envelope_signed_pdf_path(env)
-    if not os.path.exists(abs_pdf):
-        try:
+    try:
+        env = AssinaturaEnvelope.query.filter_by(codigo=codigo).first()
+        if not env:
+            return "Envelope não encontrado.", 404
+        if env.status != "concluido":
+            return "Documento ainda não concluído para download.", 400
+        url_root = request.url_root.rstrip("/")
+        abs_pdf, fname = _envelope_signed_pdf_path(env)
+        if not os.path.isfile(abs_pdf):
             abs_pdf, fname = _gerar_pdf_assinado_envelope(env, url_root)
-        except Exception:
-            app.logger.exception("Falha ao gerar PDF assinado do envelope %s", codigo)
-            return "Não foi possível gerar o PDF assinado neste momento.", 500
-    return send_file(
-        abs_pdf, mimetype="application/pdf", as_attachment=False, download_name=fname
-    )
+        return send_file(
+            abs_pdf,
+            mimetype="application/pdf",
+            as_attachment=False,
+            download_name=fname,
+        )
+    except FileNotFoundError as exc:
+        app.logger.exception(
+            "Arquivo base ausente ao baixar envelope codigo=%s: %s", codigo, exc
+        )
+        return "Arquivo original não encontrado.", 404
+    except Exception as exc:
+        app.logger.exception(
+            "Falha ao baixar PDF assinado envelope codigo=%s erro=%r", codigo, exc
+        )
+        return "Não foi possível gerar o PDF assinado neste momento.", 500
 
 
 # Página pública de validação do envelope
