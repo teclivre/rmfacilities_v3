@@ -648,7 +648,6 @@ document.addEventListener('DOMContentLoaded',()=>{
       <button type="button" class="sidebar-collapse" onclick="toggleSidebarCollapse()" title="Recolher/expandir menu">☰</button>
       <div class="sidebar-brand">
         <img src="https://rmfacilities.com.br/wp-content/uploads/2023/08/logo-rm-facilities-1.png" alt="RM Facilities" onerror="this.style.display='none'">
-        <span class="brand-label">RM Facilities</span>
       </div>
     </div>
 
@@ -1617,6 +1616,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-escalas" class="subaba-bloco" onclick="rhSetSubAba('escalas',this)">Escalas de Turnos</button>
         <button type="button" id="rh-subtab-feriados" class="subaba-bloco" onclick="rhSetSubAba('feriados',this)">Calendário de Feriados</button>
         <button type="button" id="rh-subtab-envio" class="subaba-bloco" onclick="rhSetSubAba('envio',this)">Envio em massa de documentos</button>
+        <button type="button" id="rh-subtab-auditoria-ponto" class="subaba-bloco" onclick="rhSetSubAba('auditoria-ponto',this)">Auditoria de Ponto</button>
         <button type="button" id="rh-subtab-ficha-epi" class="subaba-bloco" onclick="rhSetSubAba('ficha-epi',this)">🦺 Ficha de EPI</button>
         <button type="button" id="rh-subtab-req-vt" class="subaba-bloco" onclick="rhSetSubAba('req-vt',this)">🚌 Requisição VT</button>
         <button type="button" id="rh-subtab-uniforme" class="subaba-bloco" onclick="rhSetSubAba('uniforme',this)">👕 Termo Uniforme</button>
@@ -1963,6 +1963,10 @@ document.addEventListener('DOMContentLoaded',()=>{
 
       <div class="rh-pane" id="rh-pane-ponto" data-rh-pane="ponto">
         {% include 'partials/rh_ponto_section.html' %}
+      </div>
+
+      <div class="rh-pane" id="rh-pane-auditoria-ponto" data-rh-pane="auditoria-ponto" style="display:none">
+        {% include 'partials/rh_ponto_auditoria_section.html' %}
       </div>
 
       <div class="card rh-pane" id="rh-pane-painel-dia" data-rh-pane="painel-dia">
@@ -2637,15 +2641,15 @@ document.addEventListener('DOMContentLoaded',()=>{
     <!-- ══ COMUNICAÇÃO ══ -->
     <div id="pg-rh-digital" class="pg">
       <div id="st-rhd" class="st"></div>
-      <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap" id="rhd-tabs">
-        <button class="btn b-az b-sm" onclick="switchTab('rhd','conversas',this)">Envio ativos</button>
-        <button class="btn b-gh b-sm" onclick="switchTab('rhd','mensagens-app',this)">💬 Chat App <span id="badge-msgs-app" style="display:none;background:var(--verm);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>
-        <button class="btn b-gh b-sm" onclick="switchTab('rhd','cfg-email',this)">Config E-mail</button>
-        <button class="btn b-gh b-sm" onclick="switchTab('rhd','cfg-wa',this)">Config WhatsApp</button>
+      <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap" id="rhd-tabs" role="tablist" aria-label="Abas de comunicação">
+        <button type="button" class="btn b-az b-sm" role="tab" aria-selected="true" onclick="switchTab('rhd','conversas',this)">Envio ativos</button>
+        <button type="button" class="btn b-gh b-sm" role="tab" aria-selected="false" onclick="switchTab('rhd','mensagens-app',this)">💬 Chat App <span id="badge-msgs-app" style="display:none;background:var(--verm);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>
+        <button type="button" class="btn b-gh b-sm" role="tab" aria-selected="false" onclick="switchTab('rhd','cfg-email',this)">Config E-mail</button>
+        <button type="button" class="btn b-gh b-sm" role="tab" aria-selected="false" onclick="switchTab('rhd','cfg-wa',this)">Config WhatsApp</button>
       </div>
 
       <!-- Tab Envio WhatsApp -->
-      <div id="rhd-tab-conversas">
+      <div id="rhd-tab-conversas" class="rhd-tab-pane" role="tabpanel">
         <div class="card" style="margin-bottom:12px">
           <div class="card-header"><span class="card-title">Envio por WhatsApp para colaboradores ativos</span></div>
           <div class="g3" style="margin-top:8px">
@@ -2672,8 +2676,12 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div id="wa-colab-st" class="st" style="margin-top:8px"></div>
         </div>
 
+      </div>
+
+      <!-- Tab Chat App -->
+      <div id="rhd-tab-mensagens-app" class="rhd-tab-pane" style="display:none" role="tabpanel" hidden>
         <!-- Caixa de conversas WhatsApp -->
-        <div class="card" style="margin-top:14px">
+        <div class="card" style="margin-bottom:14px">
           <div class="card-header">
             <span class="card-title">💬 Conversas WhatsApp (Inbox)</span>
             <button class="btn b-gh b-sm" onclick="loadWAConversas()">↻ Atualizar</button>
@@ -2706,16 +2714,20 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Tab Chat App -->
-      <div id="rhd-tab-mensagens-app" style="display:none">
         <div style="display:flex;gap:10px;height:520px">
           <!-- Lista de funcionários -->
           <div style="width:260px;min-width:200px;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
-            <div style="padding:10px 12px;border-bottom:1px solid var(--borda);display:flex;align-items:center;justify-content:space-between">
-              <span style="font-weight:600;font-size:13px">Funcionários</span>
-              <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsCarregarFuncionarios()">↺</button>
+            <div style="padding:10px 12px;border-bottom:1px solid var(--borda)">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+                <span style="font-weight:600;font-size:13px">Funcionários</span>
+                <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsCarregarFuncionarios()">↺</button>
+              </div>
+              <select id="maps-func-status" onchange="mapsAlterarFiltroStatus(this.value)" style="width:100%;border:1px solid var(--borda);border-radius:8px;padding:6px 8px;font-size:12px;background:var(--fundo);color:var(--text)">
+                <option value="ativo">Ativos</option>
+                <option value="inativo">Inativos</option>
+                <option value="all">Todos</option>
+              </select>
             </div>
             <div id="maps-func-list" style="flex:1;overflow-y:auto;padding:4px"></div>
           </div>
@@ -2724,6 +2736,9 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div style="padding:10px 14px;border-bottom:1px solid var(--borda);display:flex;align-items:center;gap:8px">
               <span id="maps-chat-titulo" style="font-weight:600;font-size:13px;flex:1">Selecione um funcionário</span>
               <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsCarregarChat()" id="maps-btn-refresh" disabled>↺</button>
+                <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsExportarConversa('pdf')" id="maps-btn-exp-pdf" disabled>PDF</button>
+                <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsExportarConversa('csv')" id="maps-btn-exp-csv" disabled>CSV</button>
+                <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsExportarConversa('docx')" id="maps-btn-exp-docx" disabled>Word</button>
             </div>
             <div id="maps-bubbles" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px">
               <div class="vazio" style="margin-top:40px">Selecione um funcionário para ver o chat</div>
@@ -2786,7 +2801,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
 
       <!-- Tab Config E-mail -->
-      <div id="rhd-tab-cfg-email" style="display:none">
+      <div id="rhd-tab-cfg-email" class="rhd-tab-pane" style="display:none" role="tabpanel" hidden>
         <div class="card">
           <div class="card-header"><span class="card-title">Configuração de E-mail (SMTP)</span></div>
           <div class="g3">
@@ -2815,7 +2830,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
 
       <!-- Tab Config WhatsApp -->
-      <div id="rhd-tab-cfg-wa" style="display:none">
+      <div id="rhd-tab-cfg-wa" class="rhd-tab-pane" style="display:none" role="tabpanel" hidden>
         <div class="card">
           <div class="card-header"><span class="card-title">Configuração WhatsApp (Evolution API)</span></div>
           <div class="f"><label>URL base da Evolution API</label><input id="wa-url" placeholder="https://api.suaevolution.com.br"></div>
@@ -3684,6 +3699,9 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="metric metric-btn vm" type="button" onclick="abrirControlePonto('painel-dia')">
               <div class="l">Gestão de pontos por funcionário <span class="metric-go">Abrir</span></div>
             </button>
+            <button class="metric metric-btn gh" type="button" onclick="abrirControlePonto('auditoria-ponto')">
+              <div class="l">Auditoria de ponto <span class="metric-go">Abrir</span></div>
+            </button>
           </div>
 
           <div class="card-header" style="margin-top:18px"><span class="card-title">Atalhos rápidos</span></div>
@@ -3695,6 +3713,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-gh b-sm" type="button" onclick="abrirControlePonto('escalas')">Escalas</button>
             <button class="btn b-ghv b-sm" type="button" onclick="abrirControlePonto('feriados')">Feriados</button>
             <button class="btn b-vd b-sm" type="button" onclick="abrirControlePonto('painel-dia')">Gestão de pontos por funcionário</button>
+            <button class="btn b-gh b-sm" type="button" onclick="abrirControlePonto('auditoria-ponto')">Auditoria de ponto</button>
           </div>
         </div>
       </div>
@@ -5563,6 +5582,15 @@ function resetMainScroll(){
   }catch(_){ }
 }
 
+function resetPageScroll(pageId){
+  try{
+    const pg=document.getElementById('pg-'+pageId);
+    if(!pg) return;
+    pg.scrollTop=0;
+    pg.scrollLeft=0;
+  }catch(_){ }
+}
+
 function nav(id,el,force=false){
   // Restaurar sidebar ao sair da página de Assinaturas
   if(document.getElementById('pg-assinaturas')?.classList.contains('on') && id!=='assinaturas'){
@@ -5584,7 +5612,8 @@ function nav(id,el,force=false){
 
   // Lógica padrão
   const targetId=id;
-  if(P!=='dono' && USER_AREAS.length && !USER_AREAS.includes(id) && id!=='dashboard' && !(id==='controle-ponto' && USER_AREAS.includes('rh'))){
+  const acessoDocumentosComercial = id==='documentos' && USER_AREAS.includes('clientes');
+  if(P!=='dono' && USER_AREAS.length && !USER_AREAS.includes(id) && id!=='dashboard' && !(id==='controle-ponto' && USER_AREAS.includes('rh')) && !acessoDocumentosComercial){
     alert('Seu usuário não tem acesso a esta área.');
     return;
   }
@@ -5593,9 +5622,13 @@ function nav(id,el,force=false){
   document.getElementById('pg-'+targetId).classList.add('on');
   // Sempre resetar scroll ao trocar de página (imediato e pós-render)
   resetMainScroll();
+  resetPageScroll(targetId);
   requestAnimationFrame(resetMainScroll);
+  requestAnimationFrame(()=>resetPageScroll(targetId));
   setTimeout(resetMainScroll,60);
+  setTimeout(()=>resetPageScroll(targetId),60);
   if(targetId==='controle-ponto') setTimeout(resetMainScroll,180);
+  if(targetId==='controle-ponto') setTimeout(()=>resetPageScroll(targetId),180);
   ativarSubAbaPagina(targetId);
   if(el)el.classList.add('on');
   const navMobile=id;
@@ -5725,7 +5758,7 @@ function rhSalariosIniciarPagina(){
 }
 
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','ferias-gestao','exportar','escalas','feriados','ponto','painel-dia','he-autorizacao','ciclo-assinatura','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo','simples-nacional'];
+  const tabs=['funcionarios','ferias-gestao','exportar','escalas','feriados','ponto','painel-dia','auditoria-ponto','he-autorizacao','ciclo-assinatura','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo','simples-nacional'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
     if(p.dataset.rhPane===rhSubAba){
@@ -5750,6 +5783,10 @@ function rhSetSubAba(tab,btn){
   }
   if(rhSubAba==='ponto'){
     carregarCorrecoesPonto();
+  }
+  if(rhSubAba==='auditoria-ponto'){
+    pontoPopularFiltroGlobalFuncionarios();
+    pontoCarregarGlobal();
   }
   if(rhSubAba==='gestao-facil'){
     gfCarregar();
@@ -15664,23 +15701,24 @@ let _rhdJob=null, _waNumeroAtual=null, _waConversasTodas=[];
 let _rhdAssFiltro='todos';
 
 function initRHDigital(){
-  // activate first tab if not active
-  const tabs=document.querySelectorAll('#rhd-tabs .btn');
-  if(tabs.length && !Array.from(tabs).some(b=>b.classList.contains('b-az'))){
-    tabs[0].classList.replace('b-gh','b-az');
-  }
-  waCarregarDisparoColaboradores();
+  const tabs=Array.from(document.querySelectorAll('#rhd-tabs .btn'));
+  if(!tabs.length) return;
+  const atual=tabs.find(b=>b.classList.contains('b-az'))||tabs[0];
+  const onclick=String(atual.getAttribute('onclick')||'');
+  const m=onclick.match(/switchTab\('rhd','([^']+)'/);
+  const tab=(m&&m[1])?m[1]:'conversas';
+  switchTab('rhd',tab,atual);
 }
 
 function switchTab(prefix,tab,el){
-  document.querySelectorAll(`[id^="${prefix}-tab-"]`).forEach(d=>d.style.display='none');
+  const paineis=document.querySelectorAll(`[id^="${prefix}-tab-"]`);
+  paineis.forEach(d=>{d.style.display='none';d.hidden=true;d.classList.remove('on');});
   const target=document.getElementById(`${prefix}-tab-${tab}`);
-  if(target)target.style.display='';
-  document.querySelectorAll(`#${prefix}-tabs .btn`).forEach(b=>{b.classList.remove('b-az');b.classList.add('b-gh');});
-  if(el){el.classList.remove('b-gh');el.classList.add('b-az');}
+  if(target){target.style.display='';target.hidden=false;target.classList.add('on');}
+  document.querySelectorAll(`#${prefix}-tabs .btn`).forEach(b=>{b.classList.remove('b-az');b.classList.add('b-gh');b.setAttribute('aria-selected','false');});
+  if(el){el.classList.remove('b-gh');el.classList.add('b-az');el.setAttribute('aria-selected','true');}
   if(prefix==='rhd'&&tab==='conversas'){
     waCarregarDisparoColaboradores();
-    loadWAConversas();
   }
   if(prefix==='rhd'&&tab==='cfg-email')loadSMTPConfig();
   if(prefix==='rhd'&&tab==='cfg-wa')loadWAConfig();
@@ -15691,12 +15729,18 @@ function switchTab(prefix,tab,el){
 let _mapsFidAtual=null;
 let _mapsNomeAtual='';
 let _mapsPolling=null;
+let _mapsStatusFiltro='ativo';
 
 async function mapsIniciar(){
   await mapsCarregarFuncionarios();
   await mapsCarregarBadge();
   await mapsCarregarSelectsEmpresasPosto();
   await mapsCarregarListaComunicados();
+}
+
+function mapsAlterarFiltroStatus(status){
+  _mapsStatusFiltro = status || 'ativo';
+  mapsCarregarFuncionarios(_mapsStatusFiltro);
 }
 
 async function mapsCarregarBadge(){
@@ -15707,12 +15751,17 @@ async function mapsCarregarBadge(){
   }catch(e){}
 }
 
-async function mapsCarregarFuncionarios(){
+async function mapsCarregarFuncionarios(status=_mapsStatusFiltro){
   const el=document.getElementById('maps-func-list');
   if(!el)return;
+  const selStatus=document.getElementById('maps-func-status');
+  if(selStatus && selStatus.value!==status) selStatus.value=status;
+  _mapsStatusFiltro=status || 'ativo';
   el.innerHTML='<div class="vazio" style="padding:8px">Carregando…</div>';
   try{
-    const lista=await api('/api/mensagens-app/funcionarios');
+    const qs = new URLSearchParams();
+    if(_mapsStatusFiltro && _mapsStatusFiltro !== 'all') qs.set('status', _mapsStatusFiltro);
+    const lista=await api('/api/mensagens-app/funcionarios' + (qs.toString() ? '?' + qs.toString() : ''));
     if(!lista.length){el.innerHTML='<div class="vazio" style="padding:8px;font-size:12px">Nenhuma conversa ainda.</div>';return;}
     el.innerHTML=lista.map(f=>{
       const badge=f.nao_lidas>0?`<span style="background:var(--verm);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:auto">${f.nao_lidas}</span>`:'';
@@ -15741,6 +15790,9 @@ async function mapsAbrirChat(fid,nome){
   _mapsNomeAtual=nome;
   document.getElementById('maps-chat-titulo').textContent='💬 '+nome;
   document.getElementById('maps-btn-refresh').disabled=false;
+  document.getElementById('maps-btn-exp-pdf').disabled=false;
+  document.getElementById('maps-btn-exp-csv').disabled=false;
+  document.getElementById('maps-btn-exp-docx').disabled=false;
   document.getElementById('maps-input').disabled=false;
   document.getElementById('maps-btn-enviar').disabled=false;
   await mapsCarregarChat();
@@ -15797,6 +15849,19 @@ async function mapsEnviar(){
   finally{btn.disabled=false;inp.disabled=false;inp.focus();}
 }
 
+function mapsExportarConversa(formato){
+  if(!_mapsFidAtual){
+    alert('Selecione um funcionário primeiro.');
+    return;
+  }
+  const fmt=(formato||'').toLowerCase();
+  if(!['pdf','csv','docx'].includes(fmt)){
+    alert('Formato inválido.');
+    return;
+  }
+  window.open(`/api/mensagens-app/${_mapsFidAtual}/export.${fmt}`,'_blank','noopener');
+}
+
 async function mapsCarregarSelectsEmpresasPosto(){
   try{
     const [listaFunc,listaEmp]=await Promise.all([
@@ -15837,7 +15902,11 @@ async function mapsCarregarListaComunicados(){
   try{
     const lista=await api('/api/comunicados-app');
     if(!lista.length){el.innerHTML='<div class="vazio">Nenhum comunicado ainda.</div>';return;}
-    el.innerHTML=lista.slice(0,20).map(c=>`
+    el.innerHTML=lista.slice(0,20).map(c=>{
+      const conteudoRaw=String(c.conteudo||'');
+      const conteudoHtml=escHtml(conteudoRaw);
+      const precisaToggle=conteudoRaw.length>180 || conteudoRaw.split(/\r?\n/).length>2;
+      return `
       <div style="border:1px solid var(--borda);border-radius:8px;padding:8px 12px;margin-bottom:6px;${c.ativo?'':'opacity:.5'}">
         <div style="display:flex;align-items:center;gap:8px">
           <strong style="font-size:13px;flex:1">${escHtml(c.titulo)}</strong>
@@ -15845,13 +15914,30 @@ async function mapsCarregarListaComunicados(){
           <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsToggleComunicado(${c.id},${!c.ativo})">${c.ativo?'Desativar':'Ativar'}</button>
           <button class="btn b-er b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsExcluirComunicado(${c.id})">✕</button>
         </div>
-        <div style="font-size:12px;color:var(--text-muted);margin-top:4px">${escHtml(c.conteudo)}</div>
+        <div style="margin-top:4px">
+          <div id="com-conteudo-${c.id}" class="comunicado-conteudo${precisaToggle?' truncado':''}">${conteudoHtml}</div>
+          ${precisaToggle?`<button type="button" class="comunicado-toggle" onclick="mapsToggleComunicadoTexto(${c.id},this)">Ver mais</button>`:''}
+        </div>
         ${c.url?`<div style="font-size:11px;margin-top:4px">🔗 <a href="${escHtml(c.url)}" target="_blank" rel="noopener">${escHtml(c.url)}</a></div>`:''}
         ${c.funcionario_id?`<div style="font-size:10px;color:var(--azul);margin-top:2px">Para: funcionário #${c.funcionario_id}</div>`:
          c.posto_operacional?`<div style="font-size:10px;color:var(--laranja);margin-top:2px">Para: posto "${c.posto_operacional}"</div>`:
          '<div style="font-size:10px;color:var(--verde);margin-top:2px">Para: todos</div>'}
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }catch(e){el.innerHTML='<div class="vazio">Erro ao carregar comunicados.</div>';}
+}
+
+function mapsToggleComunicadoTexto(id,btn){
+  const box=document.getElementById(`com-conteudo-${id}`);
+  if(!box||!btn) return;
+  const expandido=box.classList.toggle('expandido');
+  if(expandido){
+    box.classList.remove('truncado');
+    btn.textContent='Ver menos';
+  }else{
+    box.classList.add('truncado');
+    btn.textContent='Ver mais';
+  }
 }
 
 async function mapsCriarComunicado(){
@@ -16409,7 +16495,19 @@ async function loadSMTPConfig(){
   document.getElementById('smtp-tls').value=d.tls||'1';
 }
 
+function smtpSenderValido(v){
+  const s=String(v||'').trim();
+  if(!s) return true;
+  const m=s.match(/^\s*(?:([^<>]+)\s*<\s*)?([A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)\s*>?\s*$/);
+  return !!(m&&m[2]);
+}
+
 async function salvarSMTP(){
+  const de=document.getElementById('smtp-de').value;
+  if(!smtpSenderValido(de)){
+    showSt('smtp-st','Remetente inválido. Use e-mail válido ou Nome <email@dominio>.',true);
+    return;
+  }
   const d={host:document.getElementById('smtp-host').value,port:document.getElementById('smtp-port').value,user:document.getElementById('smtp-user').value,senha:document.getElementById('smtp-senha').value,de:document.getElementById('smtp-de').value,tls:document.getElementById('smtp-tls').value};
   const r=await api('/api/config/smtp','POST',d);
   showSt('smtp-st',r.erro||'Configurações salvas!',!!r.erro);
