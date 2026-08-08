@@ -22,13 +22,13 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;ba
 .mobile-nav-btn{border:1.5px solid var(--borda);background:var(--branco);color:var(--preto);border-radius:999px;padding:8px 14px;font-size:12px;font-weight:700;font-family:'Manrope',sans-serif;white-space:nowrap;cursor:pointer;transition:all .15s;flex:0 0 auto}
 .mobile-nav-btn.on{background:var(--azul);border-color:var(--azul);color:#fff;box-shadow:0 6px 16px rgba(32,93,138,.18)}
 .mobile-nav-btn:active{transform:scale(.98)}
-.sidebar{width:100%;background:linear-gradient(90deg,#0a2037 0%,#0b2844 100%);flex-shrink:0;display:flex;justify-content:space-between;align-items:center;position:fixed;top:0;left:0;right:0;height:52px;overflow:hidden;border-right:none;border-bottom:1px solid rgba(126,194,255,.18);box-shadow:0 2px 16px rgba(0,0,0,.25);z-index:200}
+.sidebar{width:100%;background:linear-gradient(90deg,#0a2037 0%,#0b2844 100%);flex-shrink:0;display:flex;justify-content:space-between;align-items:center;position:fixed;top:0;left:0;right:0;height:52px;overflow:visible;border-right:none;border-bottom:1px solid rgba(126,194,255,.18);box-shadow:0 2px 16px rgba(0,0,0,.25);z-index:200}
 .sidebar-top{display:flex;align-items:center;justify-content:center;gap:0;width:66px;min-width:66px;max-width:66px;padding:0;border-bottom:none;border-right:1px solid rgba(126,194,255,.2);flex-shrink:0}
 .sidebar-brand{display:flex;align-items:center;justify-content:center;gap:0;min-width:0;width:100%}
 .sidebar-brand img{height:26px;width:26px;object-fit:contain;flex:0 0 auto}
 .brand-label{font-family:'Space Grotesk',sans-serif;color:#fff;font-weight:700;letter-spacing:.2px;white-space:nowrap}
 .sidebar-collapse{display:none}
-.sidebar-main{flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;padding:0;display:flex;flex-direction:row;align-items:stretch;justify-content:flex-start;scrollbar-width:none}
+.sidebar-main{flex:1;min-width:0;overflow:visible;padding:0;display:flex;flex-direction:row;align-items:stretch;justify-content:flex-start;scrollbar-width:none}
 .sidebar-main::-webkit-scrollbar{display:none}
 .sidebar-bottom{display:flex;flex-direction:row;align-items:center;gap:8px;padding:0 10px;border-top:none;border-left:1px solid rgba(126,194,255,.2);flex-shrink:0;min-width:max-content}
 .nav-module{margin-bottom:0;border:none;border-radius:0;background:transparent;overflow:visible;position:relative;display:flex;align-items:stretch}
