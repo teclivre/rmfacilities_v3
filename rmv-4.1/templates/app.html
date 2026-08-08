@@ -622,16 +622,17 @@ document.addEventListener('DOMContentLoaded',()=>{
     <label>Navegação rápida</label>
     <div class="mobile-nav-scroller" id="mobile-nav-scroller">
       <button type="button" class="mobile-nav-btn on" data-nav="dashboard" onclick="navFromMobile('dashboard')">Dashboard</button>
-      <button type="button" class="mobile-nav-btn" data-nav="pagamento-salario" onclick="navFromMobile('pagamento-salario')">Salarios</button>
       <button type="button" class="mobile-nav-btn" data-nav="clientes" onclick="navFromMobile('clientes')">Clientes</button>
       <button type="button" class="mobile-nav-btn" data-nav="rh" onclick="navFromMobile('rh')">RH</button>
+      <button type="button" class="mobile-nav-btn" data-nav="controle-ponto" onclick="navFromMobile('controle-ponto')">Controle de Ponto</button>
       <button type="button" class="mobile-nav-btn" data-nav="rh-digital" onclick="navFromMobile('rh-digital')">Comunicação</button>
+      <button type="button" class="mobile-nav-btn" data-nav="assinaturas" onclick="navFromMobile('assinaturas')">Assinaturas</button>
+      <button type="button" class="mobile-nav-btn" data-nav="documentos" onclick="navFromMobile('documentos')">Documentos</button>
       <button type="button" class="mobile-nav-btn" data-nav="operacional" onclick="navFromMobile('operacional')">Operacional</button>
       <button type="button" class="mobile-nav-btn" data-nav="compras" onclick="navFromMobile('compras')">Compras</button>
       <button type="button" class="mobile-nav-btn" data-nav="beneficios" onclick="navFromMobile('beneficios')">Benefícios</button>
+      <button type="button" class="mobile-nav-btn" data-nav="pagamento-salario" onclick="navFromMobile('pagamento-salario')">Salarios</button>
       <button type="button" class="mobile-nav-btn" data-nav="sst" onclick="navFromMobile('sst')">SST</button>
-      <button type="button" class="mobile-nav-btn" data-nav="assinaturas" onclick="navFromMobile('assinaturas')">Assinaturas</button>
-      <button type="button" class="mobile-nav-btn" data-nav="documentos" onclick="navFromMobile('documentos')">📄 Documentos</button>
       <button type="button" class="mobile-nav-btn" data-nav="empresas" onclick="navFromMobile('empresas')">Empresas</button>
       <button type="button" class="mobile-nav-btn" data-nav="usuarios" onclick="navFromMobile('usuarios')">Usuários</button>
       <button type="button" class="mobile-nav-btn" data-nav="config" onclick="navFromMobile('config')">Configurações</button>
@@ -679,14 +680,45 @@ document.addEventListener('DOMContentLoaded',()=>{
           <span class="mod-icon">👥</span><span class="module-label">RH</span><span class="module-caret">▾</span>
         </button>
         <div class="module-panel">
-          <a class="nav-item lv2" onclick="nav('rh',this)"><span class="nav-label">RH</span></a>
-          <a class="nav-item lv2" onclick="nav('controle-ponto',this)"><span class="nav-label">Controle de Ponto</span></a>
-          <a class="nav-item lv2" onclick="nav('rh-digital',this)"><span class="nav-label">Comunicacao</span></a>
           <a class="nav-item lv2" onclick="nav('beneficios',this)"><span class="nav-label">Beneficios</span></a>
           <a class="nav-item lv2" data-nav="pagamento-salario" onclick="nav('pagamento-salario',this)"><span class="nav-label">Pagamento de Salário</span></a>
           <a class="nav-item lv2" onclick="nav('sst',this)"><span class="nav-label">Seguranca do Trabalho</span></a>
+        </div>
+      </div>
+
+      <div class="nav-module" id="mod-controle-ponto">
+        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-controle-ponto')">
+          <span class="mod-icon">⏱️</span><span class="module-label">Controle de Ponto</span><span class="module-caret">▾</span>
+        </button>
+        <div class="module-panel">
+          <a class="nav-item lv2" onclick="nav('controle-ponto',this)"><span class="nav-label">Controle de Ponto</span></a>
+        </div>
+      </div>
+
+      <div class="nav-module" id="mod-comunicacao">
+        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-comunicacao')">
+          <span class="mod-icon">💬</span><span class="module-label">Comunicacao</span><span class="module-caret">▾</span>
+        </button>
+        <div class="module-panel">
+          <a class="nav-item lv2" onclick="nav('rh-digital',this)"><span class="nav-label">Comunicacao</span></a>
+        </div>
+      </div>
+
+      <div class="nav-module" id="mod-assinaturas">
+        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-assinaturas')">
+          <span class="mod-icon">✍️</span><span class="module-label">Assinaturas</span><span class="module-caret">▾</span>
+        </button>
+        <div class="module-panel">
           <a class="nav-item lv2" onclick="nav('assinaturas',this)"><span class="nav-label">Assinaturas</span></a>
-          <a class="nav-item lv2" onclick="nav('documentos',this)"><span class="nav-label">📄 Documentos</span></a>
+        </div>
+      </div>
+
+      <div class="nav-module" id="mod-documentos">
+        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-documentos')">
+          <span class="mod-icon">📄</span><span class="module-label">Documentos</span><span class="module-caret">▾</span>
+        </button>
+        <div class="module-panel">
+          <a class="nav-item lv2" onclick="nav('documentos',this)"><span class="nav-label">Documentos</span></a>
         </div>
       </div>
 
