@@ -758,49 +758,60 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button class="metric metric-btn lj" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Cálculo de benefícios pendente"><div class="n" id="d-calc-benef">—</div><div class="l">Cálculos pendentes <span class="metric-go">Ver</span></div></button>
       </div>
       <div id="dash-alertas" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px"></div>
-      <div class="card" style="margin-bottom:12px">
-        <div class="card-header"><span class="card-title">Resumo de colaboradores</span></div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:12px 0;text-align:center">
-          <div>
-            <div style="font-size:28px;font-weight:700;color:var(--azul)" id="dash-resumo-ativos">—</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ativos</div>
+      <div class="card dash-tabs-card">
+        <div class="dash-tabs" role="tablist" aria-label="Resumo do dashboard">
+          <button type="button" class="dash-tab is-active" id="dash-tab-resumo" role="tab" aria-selected="true" aria-controls="dash-panel-resumo" onclick="setDashboardTab('resumo',this)">Resumo de colaboradores</button>
+          <button type="button" class="dash-tab" id="dash-tab-ponto" role="tab" aria-selected="false" aria-controls="dash-panel-ponto" onclick="setDashboardTab('ponto',this)">Ponto do dia</button>
+          <button type="button" class="dash-tab" id="dash-tab-acesso" role="tab" aria-selected="false" aria-controls="dash-panel-acesso" onclick="setDashboardTab('acesso',this)">Acesso rápido</button>
+        </div>
+
+        <div id="dash-panel-resumo" class="dash-tab-panel is-active" role="tabpanel" aria-labelledby="dash-tab-resumo">
+          <div class="dash-resumo-grid">
+            <div class="dash-resumo-item">
+              <div class="dash-resumo-num azul" id="dash-resumo-ativos">—</div>
+              <div class="dash-resumo-label">Ativos</div>
+            </div>
+            <div class="dash-resumo-item">
+              <div class="dash-resumo-num verde" id="dash-resumo-ferias">—</div>
+              <div class="dash-resumo-label">Em férias</div>
+            </div>
+            <div class="dash-resumo-item">
+              <div class="dash-resumo-num laranja" id="dash-resumo-afastados">—</div>
+              <div class="dash-resumo-label">Afastados</div>
+            </div>
+            <div class="dash-resumo-item">
+              <div class="dash-resumo-num muted" id="dash-resumo-ponto-hoje">—</div>
+              <div class="dash-resumo-label">Ponto hoje</div>
+            </div>
           </div>
-          <div>
-            <div style="font-size:28px;font-weight:700;color:var(--verde)" id="dash-resumo-ferias">—</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Em férias</div>
+        </div>
+
+        <div id="dash-panel-ponto" class="dash-tab-panel" role="tabpanel" aria-labelledby="dash-tab-ponto" hidden>
+          <div class="dash-ponto-head">
+            <span class="card-title">Ponto do dia</span>
+            <span class="dash-ponto-data" id="dash-ponto-data"></span>
           </div>
-          <div>
-            <div style="font-size:28px;font-weight:700;color:var(--laranja)" id="dash-resumo-afastados">—</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Afastados</div>
+          <div class="dash-ponto-grid">
+            <button type="button" class="dash-ponto-card ok" onclick="abrirModalPontoDia('bateram')">
+              <div class="dash-ponto-num" id="dash-ponto-bateram">—</div>
+              <div class="dash-ponto-label">✅ Bateram ponto</div>
+            </button>
+            <button type="button" class="dash-ponto-card alerta" onclick="abrirModalPontoDia('falta')">
+              <div class="dash-ponto-num" id="dash-ponto-falta">—</div>
+              <div class="dash-ponto-label">❌ Falta / sem registro</div>
+            </button>
           </div>
-          <div>
-            <div style="font-size:28px;font-weight:700;color:var(--text-muted)" id="dash-resumo-ponto-hoje">—</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ponto hoje</div>
+        </div>
+
+        <div id="dash-panel-acesso" class="dash-tab-panel" role="tabpanel" aria-labelledby="dash-tab-acesso" hidden>
+          <div class="dash-atalhos-grid">
+            <button class="btn b-az b-lg" style="justify-content:center" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))">RH</button>
+            <button class="btn b-gh b-lg" style="justify-content:center" onclick="nav('clientes',document.querySelector('[onclick*=clientes]'))">Clientes</button>
+            <button class="btn b-ghl b-lg" style="justify-content:center" onclick="nav('operacional',document.querySelector('.nav-item[data-nav=\'operacional\']'))">Operacional</button>
           </div>
         </div>
       </div>
-      <div class="card" style="margin-bottom:12px">
-        <div class="card-header"><span class="card-title">Ponto do dia</span><span style="font-size:11px;color:var(--text-muted)" id="dash-ponto-data"></span></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:12px 0;text-align:center">
-          <button type="button" class="metric metric-btn" style="background:none;border:2px solid var(--verde);border-radius:10px;padding:16px 8px;cursor:pointer" onclick="abrirModalPontoDia('bateram')">
-            <div style="font-size:36px;font-weight:700;color:var(--verde)" id="dash-ponto-bateram">—</div>
-            <div style="font-size:13px;color:var(--text-muted);margin-top:4px">✅ Bateram ponto</div>
-          </button>
-          <button type="button" class="metric metric-btn" style="background:none;border:2px solid var(--verm);border-radius:10px;padding:16px 8px;cursor:pointer" onclick="abrirModalPontoDia('falta')">
-            <div style="font-size:36px;font-weight:700;color:var(--verm)" id="dash-ponto-falta">—</div>
-            <div style="font-size:13px;color:var(--text-muted);margin-top:4px">❌ Falta / sem registro</div>
-          </button>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-header"><span class="card-title">Acesso rápido</span></div>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
-          <button class="btn b-az b-lg" style="justify-content:center" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))">RH</button>
-          <button class="btn b-gh b-lg" style="justify-content:center" onclick="nav('clientes',document.querySelector('[onclick*=clientes]'))">Clientes</button>
-          <button class="btn b-ghl b-lg" style="justify-content:center" onclick="nav('operacional',document.querySelector('.nav-item[data-nav=\'operacional\']'))">Operacional</button>
-        </div>
-      </div>
-      <div id="dash-empresas" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"></div>
+      <div id="dash-empresas" class="dash-empresas-grid"></div>
     </div>
 
     <!-- ══ ABA FINANCEIRO (PLACEHOLDER) ══ -->
@@ -1585,6 +1596,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-escalas" class="subaba-bloco" onclick="rhSetSubAba('escalas',this)">Escalas de Turnos</button>
         <button type="button" id="rh-subtab-feriados" class="subaba-bloco" onclick="rhSetSubAba('feriados',this)">Calendário de Feriados</button>
         <button type="button" id="rh-subtab-envio" class="subaba-bloco" onclick="rhSetSubAba('envio',this)">Envio em massa de documentos</button>
+        <button type="button" id="rh-subtab-auditoria-ponto" class="subaba-bloco" onclick="rhSetSubAba('auditoria-ponto',this)">Auditoria de Ponto</button>
         <button type="button" id="rh-subtab-ficha-epi" class="subaba-bloco" onclick="rhSetSubAba('ficha-epi',this)">🦺 Ficha de EPI</button>
         <button type="button" id="rh-subtab-req-vt" class="subaba-bloco" onclick="rhSetSubAba('req-vt',this)">🚌 Requisição VT</button>
         <button type="button" id="rh-subtab-uniforme" class="subaba-bloco" onclick="rhSetSubAba('uniforme',this)">👕 Termo Uniforme</button>
@@ -1931,6 +1943,10 @@ document.addEventListener('DOMContentLoaded',()=>{
 
       <div class="rh-pane" id="rh-pane-ponto" data-rh-pane="ponto">
         {% include 'partials/rh_ponto_section.html' %}
+      </div>
+
+      <div class="rh-pane" id="rh-pane-auditoria-ponto" data-rh-pane="auditoria-ponto" style="display:none">
+        {% include 'partials/rh_ponto_auditoria_section.html' %}
       </div>
 
       <div class="card rh-pane" id="rh-pane-painel-dia" data-rh-pane="painel-dia">
@@ -2681,9 +2697,16 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div style="display:flex;gap:10px;height:520px">
           <!-- Lista de funcionários -->
           <div style="width:260px;min-width:200px;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
-            <div style="padding:10px 12px;border-bottom:1px solid var(--borda);display:flex;align-items:center;justify-content:space-between">
-              <span style="font-weight:600;font-size:13px">Funcionários</span>
-              <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsCarregarFuncionarios()">↺</button>
+            <div style="padding:10px 12px;border-bottom:1px solid var(--borda)">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+                <span style="font-weight:600;font-size:13px">Funcionários</span>
+                <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsCarregarFuncionarios()">↺</button>
+              </div>
+              <select id="maps-func-status" onchange="mapsAlterarFiltroStatus(this.value)" style="width:100%;border:1px solid var(--borda);border-radius:8px;padding:6px 8px;font-size:12px;background:var(--fundo);color:var(--text)">
+                <option value="ativo">Ativos</option>
+                <option value="inativo">Inativos</option>
+                <option value="all">Todos</option>
+              </select>
             </div>
             <div id="maps-func-list" style="flex:1;overflow-y:auto;padding:4px"></div>
           </div>
@@ -2692,6 +2715,9 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div style="padding:10px 14px;border-bottom:1px solid var(--borda);display:flex;align-items:center;gap:8px">
               <span id="maps-chat-titulo" style="font-weight:600;font-size:13px;flex:1">Selecione um funcionário</span>
               <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsCarregarChat()" id="maps-btn-refresh" disabled>↺</button>
+                <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsExportarConversa('pdf')" id="maps-btn-exp-pdf" disabled>PDF</button>
+                <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsExportarConversa('csv')" id="maps-btn-exp-csv" disabled>CSV</button>
+                <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsExportarConversa('docx')" id="maps-btn-exp-docx" disabled>Word</button>
             </div>
             <div id="maps-bubbles" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px">
               <div class="vazio" style="margin-top:40px">Selecione um funcionário para ver o chat</div>
@@ -3652,6 +3678,9 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="metric metric-btn vm" type="button" onclick="abrirControlePonto('painel-dia')">
               <div class="l">Gestão de pontos por funcionário <span class="metric-go">Abrir</span></div>
             </button>
+            <button class="metric metric-btn gh" type="button" onclick="abrirControlePonto('auditoria-ponto')">
+              <div class="l">Auditoria de ponto <span class="metric-go">Abrir</span></div>
+            </button>
           </div>
 
           <div class="card-header" style="margin-top:18px"><span class="card-title">Atalhos rápidos</span></div>
@@ -3663,6 +3692,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-gh b-sm" type="button" onclick="abrirControlePonto('escalas')">Escalas</button>
             <button class="btn b-ghv b-sm" type="button" onclick="abrirControlePonto('feriados')">Feriados</button>
             <button class="btn b-vd b-sm" type="button" onclick="abrirControlePonto('painel-dia')">Gestão de pontos por funcionário</button>
+            <button class="btn b-gh b-sm" type="button" onclick="abrirControlePonto('auditoria-ponto')">Auditoria de ponto</button>
           </div>
         </div>
       </div>
@@ -5368,6 +5398,21 @@ function filtrarSSTFuncionarios(){
   if(atual && Array.from(el.options).some(o=>o.value===atual)) el.value=atual;
 }
 
+function setDashboardTab(tab,btnEl){
+  const tabs=document.querySelectorAll('#pg-dashboard .dash-tab');
+  const panels=document.querySelectorAll('#pg-dashboard .dash-tab-panel');
+  tabs.forEach(tabEl=>{
+    const active=tabEl===btnEl;
+    tabEl.classList.toggle('is-active',active);
+    tabEl.setAttribute('aria-selected',active?'true':'false');
+  });
+  panels.forEach(panel=>{
+    const match=panel.id===`dash-panel-${tab}`;
+    panel.classList.toggle('is-active',match);
+    panel.hidden=!match;
+  });
+}
+
 async function loadDash(){
   _pontoDiaData = null; // invalidar cache ao recarregar dashboard
   const d=await api('/api/dashboard');
@@ -5485,7 +5530,7 @@ async function loadDash(){
   }
   const de=document.getElementById('dash-empresas');
   if(d.empresas && d.empresas.length){
-    de.innerHTML=d.empresas.map(e=>`<button type="button" class="card dash-company-btn" style="margin-bottom:0" onclick="abrirDashboardDestino('clientes',${e.id})"><div style="font-size:13px;font-weight:700;color:var(--azul);margin-bottom:8px">${e.nome}</div><div style="font-size:24px;font-weight:700;color:var(--laranja)">${e.cli}</div><div style="font-size:11px;color:var(--text-muted)">clientes ativos · tocar para abrir</div></button>`).join('');
+    de.innerHTML=d.empresas.map(e=>`<button type="button" class="card dash-company-btn" onclick="abrirDashboardDestino('clientes',${e.id})"><div class="dash-company-head">${e.nome}</div><div class="dash-company-main"><div class="dash-company-num">${e.cli}</div><div class="dash-company-sub">clientes ativos</div></div><div class="dash-company-foot">Toque para abrir</div></button>`).join('');
   } else {
     de.innerHTML='';
   }
@@ -5531,6 +5576,15 @@ function resetMainScroll(){
   }catch(_){ }
 }
 
+function resetPageScroll(pageId){
+  try{
+    const pg=document.getElementById('pg-'+pageId);
+    if(!pg) return;
+    pg.scrollTop=0;
+    pg.scrollLeft=0;
+  }catch(_){ }
+}
+
 function nav(id,el,force=false){
   // Restaurar sidebar ao sair da página de Assinaturas
   if(document.getElementById('pg-assinaturas')?.classList.contains('on') && id!=='assinaturas'){
@@ -5552,7 +5606,8 @@ function nav(id,el,force=false){
 
   // Lógica padrão
   const targetId=id;
-  if(P!=='dono' && USER_AREAS.length && !USER_AREAS.includes(id) && id!=='dashboard' && !(id==='controle-ponto' && USER_AREAS.includes('rh'))){
+  const acessoDocumentosComercial = id==='documentos' && USER_AREAS.includes('clientes');
+  if(P!=='dono' && USER_AREAS.length && !USER_AREAS.includes(id) && id!=='dashboard' && !(id==='controle-ponto' && USER_AREAS.includes('rh')) && !acessoDocumentosComercial){
     alert('Seu usuário não tem acesso a esta área.');
     return;
   }
@@ -5561,9 +5616,13 @@ function nav(id,el,force=false){
   document.getElementById('pg-'+targetId).classList.add('on');
   // Sempre resetar scroll ao trocar de página (imediato e pós-render)
   resetMainScroll();
+  resetPageScroll(targetId);
   requestAnimationFrame(resetMainScroll);
+  requestAnimationFrame(()=>resetPageScroll(targetId));
   setTimeout(resetMainScroll,60);
+  setTimeout(()=>resetPageScroll(targetId),60);
   if(targetId==='controle-ponto') setTimeout(resetMainScroll,180);
+  if(targetId==='controle-ponto') setTimeout(()=>resetPageScroll(targetId),180);
   ativarSubAbaPagina(targetId);
   if(el)el.classList.add('on');
   const navMobile=id;
@@ -5693,7 +5752,7 @@ function rhSalariosIniciarPagina(){
 }
 
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','ferias-gestao','exportar','escalas','feriados','ponto','painel-dia','he-autorizacao','ciclo-assinatura','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo','simples-nacional'];
+  const tabs=['funcionarios','ferias-gestao','exportar','escalas','feriados','ponto','painel-dia','auditoria-ponto','he-autorizacao','ciclo-assinatura','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo','simples-nacional'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
     if(p.dataset.rhPane===rhSubAba){
@@ -5718,6 +5777,10 @@ function rhSetSubAba(tab,btn){
   }
   if(rhSubAba==='ponto'){
     carregarCorrecoesPonto();
+  }
+  if(rhSubAba==='auditoria-ponto'){
+    pontoPopularFiltroGlobalFuncionarios();
+    pontoCarregarGlobal();
   }
   if(rhSubAba==='gestao-facil'){
     gfCarregar();
@@ -12967,6 +13030,7 @@ async function _renderFuncionariosImpl(){
   if(document.getElementById('pg-rh')?.classList.contains('on')){
     pontoCarregarDia();
     pontoCarregarPainelDia();
+    pontoCarregarGlobal();
     carregarCorrecoesPonto();
   }
 }
@@ -15658,12 +15722,18 @@ function switchTab(prefix,tab,el){
 let _mapsFidAtual=null;
 let _mapsNomeAtual='';
 let _mapsPolling=null;
+let _mapsStatusFiltro='ativo';
 
 async function mapsIniciar(){
   await mapsCarregarFuncionarios();
   await mapsCarregarBadge();
   await mapsCarregarSelectsEmpresasPosto();
   await mapsCarregarListaComunicados();
+}
+
+function mapsAlterarFiltroStatus(status){
+  _mapsStatusFiltro = status || 'ativo';
+  mapsCarregarFuncionarios(_mapsStatusFiltro);
 }
 
 async function mapsCarregarBadge(){
@@ -15674,12 +15744,17 @@ async function mapsCarregarBadge(){
   }catch(e){}
 }
 
-async function mapsCarregarFuncionarios(){
+async function mapsCarregarFuncionarios(status=_mapsStatusFiltro){
   const el=document.getElementById('maps-func-list');
   if(!el)return;
+  const selStatus=document.getElementById('maps-func-status');
+  if(selStatus && selStatus.value!==status) selStatus.value=status;
+  _mapsStatusFiltro=status || 'ativo';
   el.innerHTML='<div class="vazio" style="padding:8px">Carregando…</div>';
   try{
-    const lista=await api('/api/mensagens-app/funcionarios');
+    const qs = new URLSearchParams();
+    if(_mapsStatusFiltro && _mapsStatusFiltro !== 'all') qs.set('status', _mapsStatusFiltro);
+    const lista=await api('/api/mensagens-app/funcionarios' + (qs.toString() ? '?' + qs.toString() : ''));
     if(!lista.length){el.innerHTML='<div class="vazio" style="padding:8px;font-size:12px">Nenhuma conversa ainda.</div>';return;}
     el.innerHTML=lista.map(f=>{
       const badge=f.nao_lidas>0?`<span style="background:var(--verm);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:auto">${f.nao_lidas}</span>`:'';
@@ -15708,6 +15783,9 @@ async function mapsAbrirChat(fid,nome){
   _mapsNomeAtual=nome;
   document.getElementById('maps-chat-titulo').textContent='💬 '+nome;
   document.getElementById('maps-btn-refresh').disabled=false;
+  document.getElementById('maps-btn-exp-pdf').disabled=false;
+  document.getElementById('maps-btn-exp-csv').disabled=false;
+  document.getElementById('maps-btn-exp-docx').disabled=false;
   document.getElementById('maps-input').disabled=false;
   document.getElementById('maps-btn-enviar').disabled=false;
   await mapsCarregarChat();
@@ -15762,6 +15840,19 @@ async function mapsEnviar(){
     alert('Erro ao enviar mensagem.');
   }
   finally{btn.disabled=false;inp.disabled=false;inp.focus();}
+}
+
+function mapsExportarConversa(formato){
+  if(!_mapsFidAtual){
+    alert('Selecione um funcionário primeiro.');
+    return;
+  }
+  const fmt=(formato||'').toLowerCase();
+  if(!['pdf','csv','docx'].includes(fmt)){
+    alert('Formato inválido.');
+    return;
+  }
+  window.open(`/api/mensagens-app/${_mapsFidAtual}/export.${fmt}`,'_blank','noopener');
 }
 
 async function mapsCarregarSelectsEmpresasPosto(){
