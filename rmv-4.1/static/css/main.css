@@ -28,8 +28,9 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;ba
 .sidebar-brand img{height:30px;width:auto;object-fit:contain;flex:0 0 auto}
 .brand-label{font-family:'Space Grotesk',sans-serif;color:#fff;font-weight:700;letter-spacing:.2px;white-space:nowrap}
 .sidebar-collapse{display:none}
-.sidebar-main{flex:1;overflow:visible;padding:0;display:flex;flex-direction:row;align-items:stretch}
-.sidebar-bottom{display:flex;flex-direction:row;align-items:center;gap:8px;padding:0 10px;border-top:none;border-left:1px solid rgba(126,194,255,.2);flex-shrink:0}
+.sidebar-main{flex:1;min-width:0;overflow-x:auto;overflow-y:visible;padding:0;display:flex;flex-direction:row;align-items:stretch;scrollbar-width:none}
+.sidebar-main::-webkit-scrollbar{display:none}
+.sidebar-bottom{display:flex;flex-direction:row;align-items:center;gap:8px;padding:0 10px;border-top:none;border-left:1px solid rgba(126,194,255,.2);flex-shrink:0;white-space:nowrap}
 .nav-module{margin-bottom:0;border:none;border-radius:0;background:transparent;overflow:visible;position:relative;display:flex;align-items:stretch}
 .nav-module.active{border-color:transparent;box-shadow:none}
 .module-toggle{width:auto;height:100%;display:flex;align-items:center;gap:4px;padding:0 10px;background:transparent;color:rgba(255,255,255,.9);border:none;border-bottom:3px solid transparent;cursor:pointer;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.35px;white-space:nowrap;transition:background .2s,border-color .2s}
@@ -58,6 +59,13 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;ba
 	.sidebar-top{padding:0 10px}
 	.sidebar-bottom{padding:0 8px}
 	.brand-label{font-size:14px}
+}
+
+@media(max-width:1366px){
+	.module-toggle{padding:0 6px;font-size:9px;letter-spacing:.1px;gap:2px}
+	.module-caret{display:none}
+	.sidebar-bottom{gap:6px;padding:0 6px}
+	.btn-top{padding:5px 10px;font-size:11px}
 }
 
 .autosave-global-badge{position:fixed;right:16px;bottom:16px;z-index:1200;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:2px solid rgba(126,229,191,.38);background:rgba(10,26,41,.80);backdrop-filter:blur(6px);box-shadow:0 4px 14px rgba(0,0,0,.28);cursor:default;transition:border-color .3s}
