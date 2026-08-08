@@ -3,12 +3,19 @@
   Activity Mensagens (Chat + Avisos) — redesign Material 3.
   IDs preservados para compatibilidade com MensagensActivity.kt.
 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+<LinearLayout
+    android:id="@+id/mensagensRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@drawable/bg_mobile_gradient">
+    android:background="@drawable/bg_mobile_gradient"
+    android:paddingBottom="86dp"
+    android:clipToPadding="false">
 
     <!-- ── Header (status-bar safe) ─────────────────────────────────────── -->
     <LinearLayout
@@ -301,12 +308,17 @@
         <TextView
             android:id="@+id/tvAvisosVazio"
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
+            android:layout_height="wrap_content"
             android:gravity="center"
+            android:paddingTop="24dp"
+            android:paddingBottom="24dp"
             android:text="Nenhum comunicado ainda."
             android:textColor="@color/mobile_text_secondary"
             android:textSize="14sp"
             android:visibility="gone" />
     </LinearLayout>
 </LinearLayout>
+
+    <include layout="@layout/view_bottom_nav" />
+
+</FrameLayout>

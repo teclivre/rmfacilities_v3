@@ -59,7 +59,7 @@
 
     {% for emp in empresas %}
       <div class="card">
-        <div class="card-header"><span class="card-title">{{ emp.nome }}{% if emp.cnpj %} - CNPJ: {{ emp.cnpj }}{% endif %}</span></div>
+        <div class="card-header"><span class="card-title">{{ emp.nome }}{% if emp.cnpj %} - CNPJ: {{ emp.cnpj | fmt_cnpj }}{% endif %}</span></div>
         <div class="tbl-wrap">
         <table class="tbl">
           <thead>

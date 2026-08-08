@@ -312,6 +312,16 @@
                     app:strokeColor="@color/mobile_card_border" />
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnCodigoConduta"
+                    style="@style/Widget.App.Button.Outlined"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:layout_marginTop="8dp"
+                    android:text="Código de conduta"
+                    android:textColor="@color/mobile_text_secondary"
+                    app:strokeColor="@color/mobile_card_border" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnLimparOffline"
                     style="@style/Widget.App.Button.Outlined"
                     android:layout_width="match_parent"

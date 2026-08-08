@@ -27,6 +27,10 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
@@ -60,6 +64,8 @@ class PontoActivity : BaseActivity() {
     data class MarcacaoExcluida(val id: Int, val hora: String, val tipoLabel: String)
     private val marcacoesExcluidas = mutableListOf<MarcacaoExcluida>()
 
+    private lateinit var session: SessionManager
+    override fun provideSession() = session
     private lateinit var api: ApiClient
     private lateinit var retryQueue: ActionRetryQueue
     private lateinit var tvData: TextView
@@ -72,6 +78,7 @@ class PontoActivity : BaseActivity() {
     private lateinit var containerMarcacoes: LinearLayout
     private lateinit var btnMarcarPonto: MaterialButton
     private lateinit var btnAtualizarPonto: MaterialButton
+    private lateinit var btnPontoQrCode: MaterialButton
     private lateinit var tvRelogio: TextView
     private lateinit var tvTrabalhando: TextView
     private var entradaTimestamp: Long? = null
@@ -97,7 +104,7 @@ class PontoActivity : BaseActivity() {
     }
 
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private var primeiraCarregada = false
+    // primeiraCarregada removido: carregarDia() gerenciado exclusivamente pelo onResume
     private val gson = Gson()
 
     private val locationPermissionLauncher = registerForActivityResult(
@@ -110,11 +117,32 @@ class PontoActivity : BaseActivity() {
         }
     }
 
+    private val qrScanLauncher = registerForActivityResult(ScanContract()) { result ->
+        val token = result?.contents
+        if (token.isNullOrBlank()) {
+            btnPontoQrCode.isEnabled = true
+            return@registerForActivityResult
+        }
+        registrarPontoViaQr(token)
+    }
+
+    private val cameraPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            lancarScannerQr()
+        } else {
+            btnPontoQrCode.isEnabled = true
+            updateStatus("Permissão de câmera é obrigatória para ler o QR Code.", R.color.mobile_semantic_pending)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_ponto)
 
-        api = ApiClient(SessionManager(this))
+        session = SessionManager(this)
+        api = ApiClient(session)
         retryQueue = ActionRetryQueue(this)
 
         findViewById<TextView>(R.id.btnVoltar).setOnClickListener { finish() }
@@ -129,6 +157,7 @@ class PontoActivity : BaseActivity() {
         containerMarcacoes = findViewById(R.id.containerMarcacoes)
         btnMarcarPonto = findViewById(R.id.btnMarcarPonto)
         btnAtualizarPonto = findViewById(R.id.btnAtualizarPonto)
+        btnPontoQrCode = findViewById(R.id.btnPontoQrCode)
         tvRelogio = findViewById(R.id.tvRelogio)
         tvTrabalhando = findViewById(R.id.tvTrabalhando)
 
@@ -154,6 +183,18 @@ class PontoActivity : BaseActivity() {
         btnAtualizarPonto.setOnClickListener {
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             carregarDia()
+            processarFilaPendente(atualizarTelaAoEnviar = true)
+        }
+
+        btnPontoQrCode.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            btnPontoQrCode.isEnabled = false
+            val temCamera = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            if (temCamera) {
+                lancarScannerQr()
+            } else {
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            }
         }
 
         // Linha de atalhos: Histórico e Folha de Ponto lado a lado
@@ -240,10 +281,8 @@ class PontoActivity : BaseActivity() {
             }
         }
 
-        // Mostra cache imediatamente antes de carregar do servidor
+        // Mostra cache imediatamente antes de carregar do servidor (onResume fará o carregamento)
         restaurarCacheMarcacoes()
-        carregarDia()
-        primeiraCarregada = true
     }
 
     override fun onResume() {
@@ -253,11 +292,10 @@ class PontoActivity : BaseActivity() {
         tvData.text = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
         atualizarBadgePendentes()
         registrarCallbackRede()
-        // Mostra cache imediatamente enquanto carrega do servidor
-        if (primeiraCarregada) {
-            restaurarCacheMarcacoes()
-            carregarDia()
-        }
+        // Mostra cache imediatamente e carrega do servidor (em toda retomada de tela)
+        restaurarCacheMarcacoes()
+        carregarDia()
+        processarFilaPendente(atualizarTelaAoEnviar = true)
     }
 
     override fun onPause() {
@@ -273,23 +311,11 @@ class PontoActivity : BaseActivity() {
 
     private fun registrarCallbackRede() {
         if (networkCallback != null) return
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
         networkCallback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 // Voltou a internet: processa fila e atualiza marcações
-                lifecycleScope.launch(Dispatchers.IO) {
-                    try {
-                        retryQueue.process(api) // reutiliza instância existente — evita vazamento de threads
-                    } catch (_: Exception) {}
-                    withContext(Dispatchers.Main) {
-                        if (retryQueue.pendingCount() == 0 && localPendentes.isNotEmpty()) {
-                            // Todos sincronizados — recarrega do servidor para mostrar verde
-                            carregarDia()
-                        } else {
-                            atualizarBadgePendentes()
-                        }
-                    }
-                }
+                processarFilaPendente(atualizarTelaAoEnviar = true)
             }
         }
         try {
@@ -302,7 +328,10 @@ class PontoActivity : BaseActivity() {
     private fun desregistrarCallbackRede() {
         val cb = networkCallback ?: return
         try {
-            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: run {
+                networkCallback = null
+                return
+            }
             cm.unregisterNetworkCallback(cb)
         } catch (_: Exception) {}
         networkCallback = null
@@ -327,7 +356,7 @@ class PontoActivity : BaseActivity() {
     }
 
     private fun isOnline(): Boolean {
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val nc = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
             return nc.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -342,6 +371,93 @@ class PontoActivity : BaseActivity() {
         if (count > 0) {
             badge.text = "⏳ $count ponto(s) offline aguardando sincronização"
             badge.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_pending))
+        } else {
+            // Evita manter na tela uma contagem antiga quando a fila já foi sincronizada.
+            if (badge.text.toString().contains("offline aguardando sincronização", ignoreCase = true)) {
+                badge.text = "Sem pendências offline."
+                badge.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_info))
+            }
+        }
+    }
+
+    private fun processarFilaPendente(atualizarTelaAoEnviar: Boolean = false) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val result = try {
+                retryQueue.process(api)
+            } catch (_: Exception) {
+                null
+            }
+
+            withContext(Dispatchers.Main) {
+                atualizarBadgePendentes()
+                if (result != null && result.enviados > 0 && atualizarTelaAoEnviar) {
+                    // Recarrega para trocar itens locais por marcações confirmadas do servidor.
+                    carregarDia()
+                }
+            }
+        }
+    }
+
+    private fun lancarScannerQr() {
+        val options = ScanOptions().apply {
+            setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+            setPrompt("Aproxime do QR Code do totem")
+            setBeepEnabled(true)
+            setOrientationLocked(true)
+            setBarcodeImageEnabled(false)
+        }
+        qrScanLauncher.launch(options)
+    }
+
+    private fun registrarPontoViaQr(token: String) {
+        updateStatus("QR lido. Obtendo localização e registrando ponto...", R.color.mobile_semantic_info)
+        lifecycleScope.launch {
+            // Tenta capturar GPS em paralelo (best-effort, ate 4s).
+            // O QR ja comprova a presenca; a localizacao e apenas registrada para auditoria.
+            val temPermLoc = ContextCompat.checkSelfPermission(this@PontoActivity, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(this@PontoActivity, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            val loc: Location? = if (temPermLoc) {
+                withTimeoutOrNull(4000) { obterLocalizacaoAtual() }
+            } else null
+
+            val resp = withContext(Dispatchers.IO) {
+                try {
+                    api.marcarPontoQr(
+                        qrToken = token,
+                        lat = loc?.latitude,
+                        lon = loc?.longitude,
+                        precisao = loc?.accuracy,
+                    )
+                } catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message) }
+            }
+            btnPontoQrCode.isEnabled = true
+            if (resp.ok) {
+                localPendentes.clear()
+                val marcacoesResp = resp.resumo?.marcacoes
+                if (!marcacoesResp.isNullOrEmpty()) salvarCacheMarcacoes(marcacoesResp)
+                renderResumo(resp.resumo)
+                btnPontoQrCode.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                val flashView = View(this@PontoActivity).apply {
+                    setBackgroundColor(ContextCompat.getColor(this@PontoActivity, R.color.ponto_flash_success))
+                    layoutParams = android.view.ViewGroup.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                }
+                val root = window.decorView.findViewById<android.view.ViewGroup>(android.R.id.content)
+                root.addView(flashView)
+                flashView.animate().alpha(0f).setDuration(500).withEndAction { root.removeView(flashView) }.start()
+                updateStatus("Ponto registrado via QR Code do totem.", R.color.mobile_semantic_success)
+            } else {
+                @Suppress("DEPRECATION")
+                val hapticError = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+                    HapticFeedbackConstants.REJECT
+                else
+                    HapticFeedbackConstants.LONG_PRESS
+                btnPontoQrCode.performHapticFeedback(hapticError)
+                val msg = (resp.erro ?: "Falha ao registrar ponto via QR.").take(140)
+                updateStatus(msg, R.color.mobile_semantic_pending)
+            }
         }
     }
 
@@ -422,7 +538,8 @@ class PontoActivity : BaseActivity() {
                 else
                     HapticFeedbackConstants.LONG_PRESS
                 btnMarcarPonto.performHapticFeedback(hapticError)
-                updateStatus("Falha ao enviar. Ponto salvo — será sincronizado automaticamente.", R.color.mobile_semantic_pending)
+                val erroCurto = (resp.erro ?: "Falha ao enviar ponto.").take(140)
+                updateStatus("$erroCurto Ponto salvo — será sincronizado automaticamente.", R.color.mobile_semantic_pending)
                 atualizarBadgePendentes()
             }
         }
@@ -435,13 +552,34 @@ class PontoActivity : BaseActivity() {
         return "marcacoes_$hoje"
     }
 
+    // Instância única criada de forma lazy para evitar dupla inicialização concorrente do
+    // EncryptedSharedPreferences, que em alguns dispositivos (Samsung One UI, Xiaomi MIUI)
+    // lança AEADBadTagException quando dois objetos acessam o mesmo arquivo simultaneamente.
+    private val pontoCachePrefs: android.content.SharedPreferences by lazy {
+        try {
+            val masterKey = MasterKey.Builder(this)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                this,
+                "ponto_cache",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (_: Exception) {
+            // Keystore indisponível: fallback sem cifra — aceito pois é cache diário temporário
+            getSharedPreferences("ponto_cache", Context.MODE_PRIVATE)
+        }
+    }
+
     private fun salvarCacheMarcacoes(marcacoes: List<PontoMarcacaoItem>) {
-        val prefs = getSharedPreferences("ponto_cache", Context.MODE_PRIVATE)
+        val prefs = pontoCachePrefs
         prefs.edit().putString(cacheKeyHoje(), gson.toJson(marcacoes)).apply()
     }
 
     private fun carregarCacheMarcacoes(): List<PontoMarcacaoItem> {
-        val prefs = getSharedPreferences("ponto_cache", Context.MODE_PRIVATE)
+        val prefs = pontoCachePrefs
         val json = prefs.getString(cacheKeyHoje(), null) ?: return emptyList()
         return try {
             val type = object : TypeToken<List<PontoMarcacaoItem>>() {}.type
@@ -479,9 +617,18 @@ class PontoActivity : BaseActivity() {
 
     private fun carregarDia() {
         updateStatus("Atualizando...", R.color.mobile_semantic_info)
-        lifecycleScope.launch {
-            val resp = try { api.getPontoDia() } catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message) }
-            withContext(Dispatchers.Main) {
+        val exHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, ex ->
+            TelemetryLogger.logHandled(this@PontoActivity, "ponto_carregar_fatal", ex)
+            try {
+                restaurarCacheMarcacoes()
+                updateStatus("Falha ao carregar ponto.", R.color.mobile_semantic_pending)
+            } catch (_: Exception) {}
+        }
+        lifecycleScope.launch(exHandler) {
+            val resp = withContext(Dispatchers.IO) {
+                try { api.getPontoDia() } catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message) }
+            }
+            try {
                 if (resp.ok) {
                     localPendentes.clear() // servidor confirmou todas as marcações
                     // Detectar marcações excluídas pelo admin
@@ -510,12 +657,18 @@ class PontoActivity : BaseActivity() {
                     updateStatus("Atualizado agora.", R.color.mobile_semantic_info)
                 } else {
                     if (!resp.erro.isNullOrBlank()) {
-                        TelemetryLogger.logHandled(this@PontoActivity, "ponto_carregar", IllegalStateException(resp.erro))
+                        TelemetryLogger.e("ponto_carregar", resp.erro)
                     }
                     // Em caso de falha: restaura do cache para não sumir as marcações
                     restaurarCacheMarcacoes()
                     updateStatus(resp.erro ?: "Falha ao carregar ponto.", R.color.mobile_semantic_pending)
                 }
+            } catch (e: Exception) {
+                TelemetryLogger.logHandled(this@PontoActivity, "ponto_carregar_ui", e)
+                try {
+                    restaurarCacheMarcacoes()
+                    updateStatus("Falha ao exibir ponto.", R.color.mobile_semantic_pending)
+                } catch (_: Exception) {}
             }
         }
     }
@@ -527,17 +680,21 @@ class PontoActivity : BaseActivity() {
         tvProximoTipo.text = "Próxima marcação: ${resumo?.proximo_tipo_label ?: "Entrada"}"
         tvProximoTipo.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_info))
 
-        // Timer "Trabalhando há..." — ativo quando há entrada e sem saída
+        // Timer "Trabalhando há..." — ativo quando há entrada sem saída NEM intervalo em aberto
         val marcacoesLista = resumo?.marcacoes ?: emptyList()
         val primeiroTipo = marcacoesLista.firstOrNull()?.tipo
         val ultimoTipo = marcacoesLista.lastOrNull()?.tipo
-        if (primeiroTipo == "entrada" && ultimoTipo != "saida") {
-            val entradaHora = marcacoesLista.first().hora_fmt ?: ""
-            if (entradaHora.isNotBlank()) {
+        val emIntervalo = ultimoTipo == "saida_intervalo"
+        if (primeiroTipo == "entrada" && ultimoTipo != "saida" && !emIntervalo) {
+            // Ancoramos no retorno_intervalo mais recente (se existir) para não
+            // incluir o tempo de pausa no contador de horas trabalhadas.
+            val ultimoRetorno = marcacoesLista.lastOrNull { it.tipo == "retorno_intervalo" }
+            val referenciaHora = ultimoRetorno?.hora_fmt ?: marcacoesLista.first().hora_fmt ?: ""
+            if (referenciaHora.isNotBlank()) {
                 val hoje = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
                 try {
                     val sdfFull = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-                    entradaTimestamp = sdfFull.parse("$hoje $entradaHora")?.time
+                    entradaTimestamp = sdfFull.parse("$hoje $referenciaHora")?.time
                 } catch (_: Exception) { entradaTimestamp = null }
             }
         } else {
@@ -551,6 +708,28 @@ class PontoActivity : BaseActivity() {
             tvInconsistencia.text = inconsistencias.joinToString(" | ")
         } else {
             tvInconsistencia.visibility = View.GONE
+        }
+
+        // Aviso de folga / férias / atestado — bloqueia marcação
+        val diaAviso: String? = when (resumo?.dia_tipo) {
+            "ferias"   -> "🏖️ Você está de férias. Não é possível registrar ponto neste período."
+            "atestado" -> {
+                val tipo = resumo.afastamento_info?.tipo ?: "atestado"
+                val tipoLabel = when (tipo) { "licenca" -> "Licença" "outros" -> "Afastamento" else -> "Atestado médico" }
+                "🏥 $tipoLabel registrado para hoje. Registro de ponto bloqueado."
+            }
+            "folga"    -> "☀️ Hoje é seu dia de folga conforme a escala. Nenhuma marcação é necessária."
+            else       -> null
+        }
+        if (diaAviso != null) {
+            tvInconsistencia.visibility = View.VISIBLE
+            tvInconsistencia.text = diaAviso
+            tvInconsistencia.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_info))
+            btnMarcarPonto.isEnabled = false
+            btnPontoQrCode.isEnabled = false
+        } else {
+            btnMarcarPonto.isEnabled = true
+            btnPontoQrCode.isEnabled = true
         }
 
         renderMarcacoesComLocais(resumo)

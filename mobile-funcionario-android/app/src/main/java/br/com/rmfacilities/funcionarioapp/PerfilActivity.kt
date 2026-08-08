@@ -1,6 +1,5 @@
 package br.com.rmfacilities.funcionarioapp
 
-import android.graphics.BitmapFactory
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -71,6 +70,9 @@ class PerfilActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_perfil)
+
+        findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.bottomNavApp)
+            ?.let { setupAppBottomNav(it, R.id.nav_perfil) }
 
         session = SessionManager(this)
         api = ApiClient(session)
@@ -246,7 +248,7 @@ class PerfilActivity : BaseActivity() {
 
                     // Toque longo para copiar dados (nome, CPF, cargo)
                     fun copiarParaClipboard(label: String, texto: String) {
-                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
                         clipboard.setPrimaryClip(ClipData.newPlainText(label, texto))
                         Toast.makeText(this@PerfilActivity, "$label copiado!", Toast.LENGTH_SHORT).show()
                     }
@@ -332,7 +334,7 @@ class PerfilActivity : BaseActivity() {
     }
 
     private fun exibirFotoDosBytes(bytes: ByteArray) {
-        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        val bitmap = decodeSampledBitmap(bytes, 256, 256)
         if (bitmap != null) {
             ivFoto.setImageBitmap(bitmap)
             ivFoto.visibility = View.VISIBLE

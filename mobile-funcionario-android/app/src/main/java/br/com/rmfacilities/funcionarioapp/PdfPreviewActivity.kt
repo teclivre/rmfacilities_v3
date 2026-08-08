@@ -199,24 +199,27 @@ class PdfPreviewActivity : AppCompatActivity() {
             }
             val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
             val renderer = PdfRenderer(fd)
-            for (i in 0 until renderer.pageCount) {
-                withContext(Dispatchers.Main) {
-                    tvLoading.text = "Renderizando ${renderedPages + 1}/$totalPages..."
+            try {
+                for (i in 0 until renderer.pageCount) {
+                    withContext(Dispatchers.Main) {
+                        tvLoading.text = "Renderizando ${renderedPages + 1}/$totalPages..."
+                    }
+                    val page = renderer.openPage(i)
+                    val scale = targetWidth.toFloat() / page.width
+                    val bmpHeight = (page.height * scale).toInt()
+                    val bmp = Bitmap.createBitmap(targetWidth, bmpHeight, Bitmap.Config.ARGB_8888)
+                    bmp.eraseColor(android.graphics.Color.WHITE)
+                    page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    page.close()
+                    renderedPages += 1
+                    withContext(Dispatchers.Main) {
+                        adapter.append(PreviewItem.Page(bmp))
+                    }
                 }
-                val page = renderer.openPage(i)
-                val scale = targetWidth.toFloat() / page.width
-                val bmpHeight = (page.height * scale).toInt()
-                val bmp = Bitmap.createBitmap(targetWidth, bmpHeight, Bitmap.Config.ARGB_8888)
-                bmp.eraseColor(android.graphics.Color.WHITE)
-                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                page.close()
-                renderedPages += 1
-                withContext(Dispatchers.Main) {
-                    adapter.append(PreviewItem.Page(bmp))
-                }
+            } finally {
+                renderer.close()
+                fd.close()
             }
-            renderer.close()
-            fd.close()
         }
         pdfRenderer = null
         return adapter

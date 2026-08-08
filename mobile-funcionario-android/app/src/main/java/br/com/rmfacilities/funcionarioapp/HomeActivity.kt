@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.net.ConnectivityManager
 import android.net.Network
@@ -36,6 +35,14 @@ class HomeActivity : BaseActivity() {
     companion object {
         private const val PREF_SHORTCUTS = "home_shortcuts"
         private const val KEY_ENABLED = "enabled"
+    }
+
+    private fun intentExtraStringSafe(key: String): String? {
+        return try {
+            intent?.extras?.get(key)?.toString()
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private lateinit var session: SessionManager
@@ -86,7 +93,11 @@ class HomeActivity : BaseActivity() {
         session = SessionManager(this)
         api = ApiClient(session)
         retryQueue = ActionRetryQueue(this)
-        connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: run {
+                goLogin()
+                return
+            }
         TelemetryLogger.init(this)
         TelemetryLogger.flush()
 
@@ -168,7 +179,9 @@ class HomeActivity : BaseActivity() {
 
         btnMensagens.setOnClickListener {
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            startActivity(Intent(this, MensagensActivity::class.java))
+            startActivity(Intent(this, MensagensActivity::class.java).apply {
+                putExtra("open_tab", "avisos")
+            })
         }
 
         btnOfflineHome.setOnClickListener {
@@ -271,14 +284,14 @@ class HomeActivity : BaseActivity() {
 
     @Suppress("MissingPermission")
     private fun enviarLocalizacao() {
-        val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val lm = getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
         val provider = when {
             lm.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
             lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
             else -> return
         }
         val loc = lm.getLastKnownLocation(provider) ?: return
-        lifecycleScope.launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             try { api.enviarLocalizacao(loc.latitude, loc.longitude, loc.accuracy) } catch (_: Exception) {}
         }
     }
@@ -289,10 +302,10 @@ class HomeActivity : BaseActivity() {
      * Chamado ANTES de montar a UI para evitar flash do HomeActivity.
      */
     private fun handleNotifDeepLink(): Boolean {
-        val tipo = intent?.getStringExtra("tipo") ?: return false
-        val arquivoId = intent.getStringExtra("arquivo_id")?.toIntOrNull() ?: -1
-        val url = intent.getStringExtra("url")
-        val titulo = intent.getStringExtra("titulo") ?: "Comunicado"
+        val tipo = intentExtraStringSafe("tipo") ?: return false
+        val arquivoId = intentExtraStringSafe("arquivo_id")?.toIntOrNull() ?: -1
+        val url = intentExtraStringSafe("url")
+        val titulo = intentExtraStringSafe("titulo") ?: "Comunicado"
         intent.removeExtra("tipo")
         val target: Intent? = when {
             tipo == "documento_assinar" && arquivoId > 0 ->
@@ -303,11 +316,21 @@ class HomeActivity : BaseActivity() {
                 Intent(this, MensagensActivity::class.java)
             tipo == "novo_documento" ->
                 Intent(this, DocumentosActivity::class.java)
-            tipo == "aviso_geral" && !url.isNullOrBlank() ->
-                Intent(this, WebViewActivity::class.java).apply {
-                    putExtra(WebViewActivity.EXTRA_URL, url)
-                    putExtra(WebViewActivity.EXTRA_TITULO, titulo)
+            tipo == "aviso_geral" && !url.isNullOrBlank() -> run {
+                // Validar host contra apiBaseUrl para evitar open-redirect via intent injection.
+                val allowedHost = android.net.Uri.parse(session.apiBaseUrl).host
+                val pushHost = android.net.Uri.parse(url).host
+                if (allowedHost.isNullOrBlank() || pushHost != allowedHost) {
+                    Intent(this, MensagensActivity::class.java).apply {
+                        putExtra("open_tab", "avisos")
+                    }
+                } else {
+                    Intent(this, WebViewActivity::class.java).apply {
+                        putExtra(WebViewActivity.EXTRA_URL, url)
+                        putExtra(WebViewActivity.EXTRA_TITULO, titulo)
+                    }
                 }
+            }
             tipo == "aviso_geral" ->
                 Intent(this, MensagensActivity::class.java).apply {
                     putExtra("open_tab", "avisos")
@@ -344,7 +367,7 @@ class HomeActivity : BaseActivity() {
         FirebaseMessaging.getInstance().token
             .addOnSuccessListener { token ->
                 if (token.isNullOrBlank()) return@addOnSuccessListener
-                lifecycleScope.launch {
+                lifecycleScope.launch(Dispatchers.IO) {
                     try {
                         api.registrarPushToken(token)
                     } catch (_: Exception) {
@@ -362,7 +385,6 @@ class HomeActivity : BaseActivity() {
             val meD = async(Dispatchers.IO) { try { api.me() } catch (_: Exception) { MeResponse(ok = false) } }
             val naoLidasD = async(Dispatchers.IO) { try { api.getNaoLidas() } catch (_: Exception) { 0 } }
             val pontoDiaD = async(Dispatchers.IO) { try { api.getPontoDia() } catch (e: Exception) { PontoDiaResponse(ok = false, erro = e.message ?: "Falha de conexão.") } }
-            val versaoD = async(Dispatchers.IO) { try { api.getVersaoApp() } catch (_: Exception) { null } }
             val pendentesD = async(Dispatchers.IO) { try { api.pendentesAssinatura().itens.size } catch (_: Exception) { 0 } }
             val pagamentoD = async(Dispatchers.IO) { try { api.ultimoPagamento() } catch (_: Exception) { null } }
             val saldoMesD = async(Dispatchers.IO) { try { api.getResumoMes() } catch (_: Exception) { null } }
@@ -370,7 +392,6 @@ class HomeActivity : BaseActivity() {
             val me = meD.await()
             val naoLidas = naoLidasD.await()
             val pontoDia = pontoDiaD.await()
-            val versao = versaoD.await()
             val pendentesCount = pendentesD.await()
             val ultimoPagamento = pagamentoD.await()
             val saldoMes = saldoMesD.await()
@@ -403,7 +424,7 @@ class HomeActivity : BaseActivity() {
                     lifecycleScope.launch(Dispatchers.IO) {
                         try {
                             val bytes = api.downloadFile(fotoUrl)
-                            val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            val bmp = decodeSampledBitmap(bytes, 256, 256)
                             withContext(Dispatchers.Main) {
                                 if (bmp != null) {
                                     ivAvatarHome.setImageBitmap(bmp)
@@ -507,11 +528,9 @@ class HomeActivity : BaseActivity() {
                 }
 
                 // Salva timestamp de última sincronização para a tela Sobre
-                getSharedPreferences("rm_funcionario_app", MODE_PRIVATE)
+                // Usa arquivo separado para não conflitar com EncryptedSharedPreferences do SessionManager
+                getSharedPreferences("rm_funcionario_ui", MODE_PRIVATE)
                     .edit().putLong("last_sync_ts", System.currentTimeMillis()).apply()
-                if (versao != null && versao.versao_minima > 0 && BuildConfig.VERSION_CODE < versao.versao_minima) {
-                    mostrarDialogAtualizar(versao.download_url)
-                }
                 // Animação stagger de entrada nos cards principais
                 animarCardsHome()
             }
@@ -519,7 +538,7 @@ class HomeActivity : BaseActivity() {
     }
 
     private fun processarFilaPendente() {
-        lifecycleScope.launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val result = retryQueue.process(api)
                 if (result.enviados > 0) {
@@ -634,7 +653,9 @@ class HomeActivity : BaseActivity() {
             .create()
         loading.show()
         lifecycleScope.launch {
-            val resp = try { api.historicoBeneficios() } catch (_: Exception) { null }
+            val resp = withContext(Dispatchers.IO) {
+                try { api.historicoBeneficios() } catch (_: Exception) { null }
+            }
             withContext(Dispatchers.Main) {
                 loading.dismiss()
                 val historico = resp?.historico ?: emptyList()

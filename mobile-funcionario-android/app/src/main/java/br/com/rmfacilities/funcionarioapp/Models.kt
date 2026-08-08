@@ -113,6 +113,7 @@ data class MensagemItem(
     val lida: Boolean = false,
     val enviado_por: String? = null,
     val tipo: String? = "texto",
+    val documento_tipo: String? = null,
     val arquivo_nome: String? = null,
     val arquivo_url: String? = null
 )
@@ -176,6 +177,13 @@ data class PontoMarcacaoItem(
     val lon: Double? = null
 )
 
+data class AfastamentoInfo(
+    val tipo: String? = null,
+    val data_inicio: String? = null,
+    val data_fim: String? = null,
+    val observacao: String? = null
+)
+
 data class PontoResumo(
     val funcionario_id: Int? = null,
     val funcionario_nome: String? = null,
@@ -194,13 +202,31 @@ data class PontoResumo(
     val fechado: Boolean = false,
     val fechado_por: String? = null,
     val max_marcacoes_dia: Int = 4,
-    val correcoes_faltando_pendentes: Int = 0
+    val correcoes_faltando_pendentes: Int = 0,
+    val dia_tipo: String? = null,          // "normal" | "folga" | "ferias" | "atestado"
+    val afastamento_info: AfastamentoInfo? = null
+)
+
+data class PontoMarcacaoLocalizacao(
+    val status: String? = null,
+    val distancia_m: Double? = null,
+    val raio_m: Double? = null,
+    val posto_cliente_id: Int? = null
+)
+
+data class PontoMarcacaoConfirmada(
+    val id: Int? = null,
+    val tipo: String? = null,
+    val tipo_label: String? = null,
+    val hora_fmt: String? = null,
+    val localizacao: PontoMarcacaoLocalizacao? = null
 )
 
 data class PontoDiaResponse(
     val ok: Boolean = false,
     val erro: String? = null,
-    val resumo: PontoResumo? = null
+    val resumo: PontoResumo? = null,
+    val marcacao: PontoMarcacaoConfirmada? = null
 )
 
 data class PontoHistoricoResponse(
@@ -213,7 +239,16 @@ data class PontoEspelhoCompetencia(
     val competencia: String = "",
     val label: String = "",
     val pode_baixar: Boolean = false,
-    val fechamentos_dias: Int = 0
+    val fechamentos_dias: Int = 0,
+    val folha_disponivel: Boolean = false,
+    val folha_assinada: Boolean = false,
+    val folha_ass_status: String? = null,
+    val folha_arquivo_id: Int? = null,
+    val holerite_disponivel: Boolean = false,
+    val holerite_assinado: Boolean = false,
+    val holerite_ass_status: String? = null,
+    val holerite_arquivo_id: Int? = null,
+    val holerite_download_url: String? = null
 )
 
 data class PontoEspelhoStatusResponse(
@@ -229,8 +264,29 @@ data class PontoEspelhoDia(
     val horas_trabalhadas_fmt: String? = null,
     val horas_trabalhadas_min: Int = 0,
     val horas_esperadas_min: Int = 0,
+    val he_50_fmt: String? = null,
+    val he_50_min: Int = 0,
+    val he_100_fmt: String? = null,
+    val he_100_min: Int = 0,
+    val noturno_fmt: String? = null,
+    val noturno_min: Int = 0,
+    val intrajornada_fmt: String? = null,
+    val intrajornada_min: Int = 0,
+    val inconsistencias: List<String> = emptyList(),
     val status: String? = null,
     val tem_marcacoes: Boolean = false
+)
+
+data class PontoEspelhoTotais(
+    val horas_trabalhadas_fmt: String? = null,
+    val he_50_fmt: String? = null,
+    val he_50_min: Int = 0,
+    val he_100_fmt: String? = null,
+    val he_100_min: Int = 0,
+    val noturno_fmt: String? = null,
+    val noturno_min: Int = 0,
+    val intrajornada_fmt: String? = null,
+    val intrajornada_min: Int = 0
 )
 
 data class PontoEspelhoDadosResponse(
@@ -240,6 +296,7 @@ data class PontoEspelhoDadosResponse(
     val label: String? = null,
     val total_horas: String? = null,
     val funcionario: String? = null,
+    val totais: PontoEspelhoTotais? = null,
     val dias: List<PontoEspelhoDia> = emptyList()
 )
 
@@ -306,7 +363,7 @@ data class AlteracaoSolicitacaoItem(
     val motivo_admin: String? = null,
     val solicitado_fmt: String? = null,
     val analisado_fmt: String? = null,
-    val payload: Map<String, String> = emptyMap()
+    val payload: Map<String, String?> = emptyMap()
 )
 
 data class AlteracaoListResponse(

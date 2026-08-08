@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.lifecycle.lifecycleScope
+import androidx.appcompat.app.AlertDialog
 
 class LoginActivity : AppCompatActivity() {
     private lateinit var session: SessionManager
@@ -40,6 +41,61 @@ class LoginActivity : AppCompatActivity() {
     private var cpfAtual = ""
     private var biometricPromptShown = false
     private var otpCooldownTimer: CountDownTimer? = null
+    private var silentAuthInProgress = false
+    private var appUpdateDialogShown = false
+    private var appVersionCheckInProgress = false
+    private var appVersionChecked = false
+    private var updateDialog: AlertDialog? = null
+
+    private fun intentExtraStringSafe(key: String): String? {
+        return try {
+            intent?.extras?.get(key)?.toString()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun checkAppVersionIfNeeded() {
+        if (appUpdateDialogShown || appVersionCheckInProgress || appVersionChecked) return
+        appVersionCheckInProgress = true
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val versao = api.getVersaoApp()
+                if (versao.versao_minima > 0 && BuildConfig.VERSION_CODE < versao.versao_minima) {
+                    withContext(Dispatchers.Main) {
+                        appVersionChecked = false
+                        appUpdateDialogShown = true
+                        if (!isFinishing && !isDestroyed) {
+                            val dialog = AlertDialog.Builder(this@LoginActivity)
+                                .setTitle("Atualização necessária")
+                                .setMessage("Há uma versão mais nova do app disponível. Por favor, atualize para continuar usando.")
+                                .setCancelable(false)
+                                .setPositiveButton("Atualizar") { _, _ ->
+                                    val baseUrl = session.apiBaseUrl.ifBlank { BuildConfig.DEFAULT_API_BASE_URL }.trimEnd('/')
+                                    val url = versao.download_url?.takeIf { it.isNotBlank() } ?: "$baseUrl/app/download"
+                                    try {
+                                        startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+                                    } catch (_: Exception) {}
+                                }
+                                .create()
+                            dialog.setOnDismissListener {
+                                appUpdateDialogShown = false
+                                updateDialog = null
+                            }
+                            updateDialog = dialog
+                            dialog.show()
+                        }
+                    }
+                } else {
+                    appVersionChecked = true
+                }
+            } catch (_: Exception) {
+                // Ignore failures here.
+            } finally {
+                appVersionCheckInProgress = false
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,6 +109,7 @@ class LoginActivity : AppCompatActivity() {
             goHomeOrDeepLink()
             return
         }
+        checkAppVersionIfNeeded()
 
         etCpf = findViewById(R.id.etCpf)
         etCodigo = findViewById(R.id.etCodigo)
@@ -111,19 +168,55 @@ class LoginActivity : AppCompatActivity() {
 
         inicializarBiometriaUI()
 
-        // Pré-preencher CPF salvo (se biometria não fez isso)
+        // Pré-preencher CPF salvo (último login ou biometria)
         if (etCpf.text.isNullOrBlank()) {
-            // Item 2: ler CPF de EncryptedSharedPreferences via SessionManager
-            val savedCpf = session.biometricCpf.takeIf { it.isNotBlank() }
+            val savedCpf = session.lastLoginCpf.takeIf { it.isNotBlank() }
+                ?: session.biometricCpf.takeIf { it.isNotBlank() }
             if (!savedCpf.isNullOrBlank()) etCpf.setText(savedCpf)
         }
+
+        tentarRenovacaoSilenciosa()
     }
 
     override fun onResume() {
         super.onResume()
-        if (!biometricPromptShown && shouldOfferBiometric()) {
+        checkAppVersionIfNeeded()
+        if (!silentAuthInProgress && !biometricPromptShown && shouldOfferBiometric()) {
             biometricPromptShown = true
             autenticarComBiometria()
+        }
+    }
+
+    private fun tentarRenovacaoSilenciosa() {
+        if (session.accessToken.isNotBlank()) return
+        if (session.refreshToken.isBlank()) return
+        if (!session.isTrustedDeviceValid()) return
+
+        silentAuthInProgress = true
+        setLoading(true)
+        hideErro()
+        lifecycleScope.launch(Dispatchers.IO) {
+            val resp = try {
+                api.renovarSessao(session.refreshToken)
+            } catch (e: Exception) {
+                LoginResponse(ok = false, erro = "Erro de conexão: ${e.message}")
+            }
+            withContext(Dispatchers.Main) {
+                silentAuthInProgress = false
+                setLoading(false)
+                if (resp.ok && !resp.access_token.isNullOrBlank()) {
+                    session.accessToken = resp.access_token
+                    if (!resp.refresh_token.isNullOrBlank()) {
+                        session.refreshToken = resp.refresh_token
+                    }
+                    session.markLoginSuccess(label = android.os.Build.MODEL)
+                    session.touchActivity()
+                    goHomeOrDeepLink()
+                } else {
+                    // Token de refresh inválido/expirado: mantém login manual como fallback.
+                    session.refreshToken = ""
+                }
+            }
         }
     }
 
@@ -134,6 +227,7 @@ class LoginActivity : AppCompatActivity() {
         if (!btnEnviarCodigo.isEnabled) return  // evita duplo clique
 
         cpfAtual = cpf
+        session.lastLoginCpf = cpf
         setLoading(true)
         hideErro()
 
@@ -205,6 +299,7 @@ class LoginActivity : AppCompatActivity() {
                 if (resp.ok && !resp.access_token.isNullOrBlank()) {
                     session.accessToken = resp.access_token
                     session.refreshToken = resp.refresh_token ?: ""
+                    session.lastLoginCpf = cpf
                     session.markLoginSuccess(label = android.os.Build.MODEL)
                     if (session.biometricCpf.isBlank()) {
                         session.biometricCpf = cpf
@@ -312,6 +407,7 @@ class LoginActivity : AppCompatActivity() {
                     if (!resp.refresh_token.isNullOrBlank()) {
                         session.refreshToken = resp.refresh_token
                     }
+                    session.markLoginSuccess(label = android.os.Build.MODEL)
                     session.touchActivity()
                     goHomeOrDeepLink()
                 } else {
@@ -353,8 +449,8 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun goHomeOrDeepLink() {
-        val tipo = intent?.getStringExtra("tipo") ?: intent?.extras?.getString("tipo") ?: ""
-        val arquivoId = intent?.getStringExtra("arquivo_id")?.toIntOrNull() ?: -1
+        val tipo = intentExtraStringSafe("tipo") ?: ""
+        val arquivoId = intentExtraStringSafe("arquivo_id")?.toIntOrNull() ?: -1
         val target: Intent = when {
             tipo == "documento_assinar" && arquivoId > 0 ->
                 Intent(this, DocumentosActivity::class.java).apply {

@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
         android:name=".RMFuncionarioApplication"
@@ -61,7 +64,8 @@
         <activity
             android:name=".MensagensActivity"
             android:exported="false"
-            android:launchMode="singleTop" />
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
         <activity
             android:name=".PontoActivity"
             android:exported="false"
@@ -98,6 +102,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Usa a configuração padrão da lib de scanner para suportar telas grandes/dobráveis. -->
+        <activity
+            android:name="com.journeyapps.barcodescanner.CaptureActivity" />
 
         <service
             android:name=".FcmService"

@@ -58,6 +58,10 @@ class FcmService : FirebaseMessagingService() {
             "novo_documento" -> "📁 Novo documento disponível"
             "chat", "chat_broadcast" -> "💬 Nova mensagem"
             "aviso_geral" -> "📢 Comunicado do RH"
+            "ferias" -> "✈️ Férias Agendadas"
+            "afastamento" -> "🏥 Afastamento Registrado"
+            "pagamento" -> "💰 Pagamento Disponível"
+            "ponto_lembrete" -> "⏰ Lembrete de Ponto"
             else -> "RM Funcionário"
         }
         val corpo = message.notification?.body ?: data["corpo"] ?: when (tipo) {
@@ -66,6 +70,10 @@ class FcmService : FirebaseMessagingService() {
             "chat" -> "Você recebeu uma nova mensagem."
             "chat_broadcast" -> "Há um aviso novo para você."
             "aviso_geral" -> "Toque para ver o comunicado."
+            "ferias" -> "Suas férias foram agendadas. Toque para ver os detalhes."
+            "afastamento" -> "Um afastamento foi registrado. Toque para ver os detalhes."
+            "pagamento" -> "Seu pagamento está disponível. Toque para ver os detalhes."
+            "ponto_lembrete" -> "Não esqueça de registrar o ponto!"
             else -> "Toque para abrir o aplicativo."
         }
 
@@ -91,13 +99,43 @@ class FcmService : FirebaseMessagingService() {
                 Intent(this, MensagensActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 }
-            tipo == "aviso_geral" && !data["url"].isNullOrBlank() ->
-                // Comunicado com link: abre o artigo direto no WebView
-                Intent(this, WebViewActivity::class.java).apply {
-                    putExtra(WebViewActivity.EXTRA_URL, data["url"])
-                    putExtra(WebViewActivity.EXTRA_TITULO, titulo)
+            tipo == "ferias" ->
+                Intent(this, FeriasActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 }
+            tipo == "pagamento" ->
+                Intent(this, PagamentosActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+            tipo == "ponto_lembrete" ->
+                Intent(this, PontoActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+            tipo == "afastamento" ->
+                Intent(this, HomeActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+            tipo == "aviso_geral" && !data["url"].isNullOrBlank() -> run {
+                // Comunicado com link: validar host antes de abrir no WebView.
+                // URL cujo host seja diferente do servidor configurado é descartada
+                // para evitar phishing via push malicioso.
+                val rawPushUrl = data["url"]!!
+                val allowedHost = android.net.Uri.parse(session.apiBaseUrl).host
+                val pushHost = android.net.Uri.parse(rawPushUrl).host
+                if (allowedHost.isNullOrBlank() || pushHost != allowedHost) {
+                    // Host inválido: fallback para tela de avisos sem abrir URL externa
+                    Intent(this, MensagensActivity::class.java).apply {
+                        putExtra("open_tab", "avisos")
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    }
+                } else {
+                    Intent(this, WebViewActivity::class.java).apply {
+                        putExtra(WebViewActivity.EXTRA_URL, rawPushUrl)
+                        putExtra(WebViewActivity.EXTRA_TITULO, titulo)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    }
+                }
+            }
             tipo == "aviso_geral" ->
                 Intent(this, MensagensActivity::class.java).apply {
                     putExtra("open_tab", "avisos")
@@ -115,6 +153,10 @@ class FcmService : FirebaseMessagingService() {
             "novo_documento" -> "Abrir documento"
             "chat", "chat_broadcast" -> "Abrir chat"
             "aviso_geral" -> "Ver comunicado"
+            "ferias" -> "Ver férias"
+            "pagamento" -> "Ver pagamento"
+            "ponto_lembrete" -> "Registrar ponto"
+            "afastamento" -> "Ver detalhes"
             else -> "Abrir"
         }
 
@@ -166,13 +208,13 @@ class FcmService : FirebaseMessagingService() {
             .addAction(0, "Marcar para depois", laterPendingIntent)
             .build()
 
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
         nm.notify(notifId, notif)
     }
 
     private fun ensureChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
             nm.createNotificationChannel(
                 NotificationChannel(CHANNEL_DOCS, "Documentos", NotificationManager.IMPORTANCE_HIGH)
             )

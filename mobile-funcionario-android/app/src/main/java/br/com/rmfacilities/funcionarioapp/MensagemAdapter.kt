@@ -154,6 +154,12 @@ class MensagemAdapter(
         replaceAll(novas)
     }
 
+    /** Retorna a posição real no adapter (incluindo cabeçalhos de data) para a mensagem
+     *  com o [msgId] dado, ou -1 se não encontrada. Necessário porque [itens] intercala
+     *  [ChatItem.DataHeader], então o índice na lista pura de mensagens ≠ posição no adapter. */
+    fun adapterPositionOfMsg(msgId: Int): Int =
+        itens.indexOfFirst { it is ChatItem.Msg && it.item.id == msgId }
+
     private fun mostrarMenuMensagem(context: Context, item: MensagemItem) {
         val opcoes = if (onApagarMensagem != null)
             arrayOf("📋 Copiar", "🗑️ Apagar mensagem")
@@ -179,7 +185,7 @@ class MensagemAdapter(
 
     private fun copiarTexto(context: Context, texto: String?) {
         if (texto.isNullOrBlank()) return
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
         clipboard.setPrimaryClip(ClipData.newPlainText("mensagem", texto))
         Toast.makeText(context, "Mensagem copiada", Toast.LENGTH_SHORT).show()
     }
@@ -187,7 +193,10 @@ class MensagemAdapter(
     private fun bindArquivo(layout: LinearLayout, tvNome: TextView, item: MensagemItem, temArquivo: Boolean) {
         if (temArquivo) {
             layout.visibility = View.VISIBLE
-            tvNome.text = item.arquivo_nome ?: "arquivo"
+            tvNome.text = listOfNotNull(
+                item.documento_tipo?.takeIf { it.isNotBlank() },
+                item.arquivo_nome ?: "arquivo"
+            ).joinToString(" - ")
             layout.setOnClickListener { onAbrirArquivo(item) }
         } else {
             layout.visibility = View.GONE

@@ -28,7 +28,9 @@ object TelemetryLogger {
     @Volatile private var session: SessionManager? = null
 
     fun init(context: Context, sessionManager: SessionManager? = null) {
-        session = sessionManager
+        // Só atualiza session se um valor explícito foi fornecido, para não
+        // sobrescrever com null quando Activities chamam init() sem parâmetro.
+        if (sessionManager != null) session = sessionManager
         if (initialized) return
         synchronized(this) {
             if (initialized) return

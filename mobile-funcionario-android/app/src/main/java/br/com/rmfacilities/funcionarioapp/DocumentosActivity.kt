@@ -29,9 +29,6 @@ import android.widget.LinearLayout
 import com.facebook.shimmer.ShimmerFrameLayout
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
-import androidx.biometric.BiometricManager
-import androidx.biometric.BiometricPrompt
-import androidx.core.content.ContextCompat
 import java.util.Locale
 import androidx.lifecycle.lifecycleScope
 
@@ -69,6 +66,9 @@ class DocumentosActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         setContentView(R.layout.activity_documentos)
+
+        findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.bottomNavApp)
+            ?.let { setupAppBottomNav(it, R.id.nav_tarefas) }
 
         session = SessionManager(this)
         api = ApiClient(session)
@@ -266,97 +266,10 @@ class DocumentosActivity : BaseActivity() {
 
         MaterialAlertDialogBuilder(this)
             .setTitle("Confirmar assinatura")
-            .setMessage("${item.nome_arquivo ?: "Documento"}\n\n$detalhes\n\nSua identidade será confirmada antes de assinar.")
+            .setMessage("${item.nome_arquivo ?: "Documento"}\n\n$detalhes\n\nDeseja assinar este documento?")
             .setNegativeButton("Cancelar", null)
             .setPositiveButton("✍ Prosseguir") { _, _ ->
-                iniciarStepUp(item)
-            }
-            .show()
-    }
-
-    private fun canUseBiometric(): Boolean {
-        val bm = BiometricManager.from(this)
-        return bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
-    }
-
-    private fun iniciarStepUp(item: DocumentoItem) {
-        if (canUseBiometric() && session.biometricEnabled && session.biometricCpf.isNotBlank()) {
-            val executor = ContextCompat.getMainExecutor(this)
-            val prompt = BiometricPrompt(this, executor,
-                object : BiometricPrompt.AuthenticationCallback() {
-                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                        super.onAuthenticationSucceeded(result)
-                        assinarDocumento(item, stepupBiometria = true)
-                    }
-                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                        super.onAuthenticationError(errorCode, errString)
-                        if (errorCode != BiometricPrompt.ERROR_USER_CANCELED && errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
-                            Toast.makeText(this@DocumentosActivity, "Biometria: $errString", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                })
-            prompt.authenticate(
-                BiometricPrompt.PromptInfo.Builder()
-                    .setTitle("Confirmar identidade")
-                    .setSubtitle("Autentique para assinar: ${item.nome_arquivo ?: "documento"}")
-                    .setNegativeButtonText("Usar código")
-                    .build()
-            )
-        } else {
-            solicitarOtpEAssinar(item)
-        }
-    }
-
-    private fun solicitarOtpEAssinar(item: DocumentoItem) {
-        swipe.isRefreshing = true
-        lifecycleScope.launch(Dispatchers.IO) {
-            val resp = try {
-                api.solicitarStepupOtp(item.id)
-            } catch (e: Exception) {
-                ApiSimpleResponse(ok = false, erro = e.message)
-            }
-            withContext(Dispatchers.Main) {
-                swipe.isRefreshing = false
-                if (resp.ok) {
-                    mostrarDialogOtpAssinatura(item, resp.mensagem ?: "Código enviado.")
-                } else {
-                    Toast.makeText(this@DocumentosActivity, resp.erro ?: "Falha ao enviar código", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-
-    private fun mostrarDialogOtpAssinatura(item: DocumentoItem, infoEnvio: String) {
-        val etOtp = EditText(this).apply {
-            hint = "Código de 6 dígitos"
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-            maxLines = 1
-        }
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val dp16 = (16 * resources.displayMetrics.density).toInt()
-            setPadding(dp16 * 2, dp16, dp16 * 2, dp16 / 2)
-            addView(android.widget.TextView(this@DocumentosActivity).apply {
-                text = infoEnvio
-                setTextColor(androidx.core.content.ContextCompat.getColor(this@DocumentosActivity, R.color.text_hint))
-                textSize = 13f
-                setPadding(0, 0, 0, (8 * resources.displayMetrics.density).toInt())
-            })
-            addView(etOtp)
-        }
-        MaterialAlertDialogBuilder(this)
-            .setTitle("Código de confirmação")
-            .setMessage("Para assinar \"${item.nome_arquivo ?: "documento"}\" insira o código enviado.")
-            .setView(layout)
-            .setNegativeButton("Cancelar", null)
-            .setNeutralButton("Reenviar") { _, _ -> solicitarOtpEAssinar(item) }
-            .setPositiveButton("✍ Assinar") { _, _ ->
-                val codigo = etOtp.text.toString().trim()
-                if (codigo.length < 4) {
-                    Toast.makeText(this, "Informe o código recebido.", Toast.LENGTH_SHORT).show()
-                } else {
-                    assinarDocumento(item, stepupOtp = codigo)
-                }
+                assinarDocumento(item)
             }
             .show()
     }
@@ -518,11 +431,11 @@ class DocumentosActivity : BaseActivity() {
         }
     }
 
-    private fun assinarDocumento(item: DocumentoItem, stepupOtp: String? = null, stepupBiometria: Boolean = false) {
+    private fun assinarDocumento(item: DocumentoItem) {
         swipe.isRefreshing = true
         lifecycleScope.launch(Dispatchers.IO) {
             val resp = try {
-                api.assinarDocumento(item.id, stepupOtp = stepupOtp, stepupBiometria = stepupBiometria)
+                api.assinarDocumento(item.id)
             } catch (e: Exception) {
                 ApiSimpleResponse(ok = false, erro = e.message)
             }
@@ -530,9 +443,28 @@ class DocumentosActivity : BaseActivity() {
                 swipe.isRefreshing = false
                 if (resp.ok) {
                     Toast.makeText(this@DocumentosActivity, "Documento assinado com sucesso.", Toast.LENGTH_SHORT).show()
+                    // Invalida cópia offline antiga (sem carimbo) para forçar novo download do PDF assinado.
+                    try { offlineStore.removeById(item.id) } catch (_: Exception) {}
                     carregarComFiltros()
                 } else {
-                    Toast.makeText(this@DocumentosActivity, resp.erro ?: "Falha ao assinar documento", Toast.LENGTH_LONG).show()
+                    val rawErro = resp.erro ?: ""
+                    val mensagem = when {
+                        rawErro.contains("expirado", ignoreCase = true) ->
+                            "Código expirado. Solicite um novo código e tente novamente."
+                        rawErro.contains("invalido", ignoreCase = true) || rawErro.contains("inválido", ignoreCase = true) ->
+                            "Código incorreto. Verifique e tente novamente."
+                        rawErro.contains("muitas tentativas", ignoreCase = true) || rawErro.contains("429", ignoreCase = true) ->
+                            "Muitas tentativas. Aguarde alguns minutos e tente novamente."
+                        rawErro.contains("ja assinado", ignoreCase = true) || rawErro.contains("já assinado", ignoreCase = true) ->
+                            "Este documento já foi assinado anteriormente."
+                        rawErro.contains("solicite", ignoreCase = true) ->
+                            "É necessário solicitar um código antes de assinar."
+                        rawErro.contains("ja utilizado", ignoreCase = true) || rawErro.contains("já utilizado", ignoreCase = true) ->
+                            "Este código já foi utilizado. Solicite um novo."
+                        rawErro.isNotBlank() -> rawErro
+                        else -> "Falha ao assinar documento. Tente novamente."
+                    }
+                    Toast.makeText(this@DocumentosActivity, mensagem, Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -679,10 +611,12 @@ class DocumentosActivity : BaseActivity() {
             val competencia = (item.competencia ?: "")
             val criado = (item.criado_fmt ?: "")
             val ano = item.ano ?: ""
-            val isPendente = item.can_assinar || item.ass_status.equals("pendente", ignoreCase = true)
+            val statusNorm = (item.ass_status ?: "").trim().lowercase(Locale.getDefault())
+            val isAssinado = statusNorm == "assinado" || statusNorm == "concluida"
+            val isPendente = !isAssinado && (item.can_assinar || statusNorm == "pendente")
             val statusOk = when (filtroStatus) {
                 "pendente" -> isPendente
-                "assinado" -> !isPendente
+                "assinado" -> isAssinado
                 else -> true
             }
             val categoriaOk = filtroCategoria.isBlank() || categoria.equals(filtroCategoria, ignoreCase = true)

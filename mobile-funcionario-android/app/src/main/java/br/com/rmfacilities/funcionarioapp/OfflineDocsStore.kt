@@ -97,6 +97,15 @@ class OfflineDocsStore(private val context: Context) {
         save(emptyList())
     }
 
+    /** Remove a cópia offline (cache local) de um documento — usar após assinatura para
+     *  forçar o próximo download do PDF carimbado. */
+    fun removeById(id: Int) {
+        val all = load()
+        val entry = all.firstOrNull { it.id == id } ?: return
+        try { File(entry.path).delete() } catch (_: Exception) {}
+        save(all.filter { it.id != id })
+    }
+
     fun toDocumentoItems(): List<DocumentoItem> {
         return list().map {
             DocumentoItem(
@@ -151,6 +160,10 @@ class OfflineDocsStore(private val context: Context) {
         if (!encFile.name.lowercase().endsWith(".enc")) {
             return encFile
         }
+        // Apagar arquivos temporários de chamadas anteriores para não acumular
+        // cópias em texto claro no cacheDir.
+        context.cacheDir.listFiles { f -> f.name.startsWith("tmp_") }
+            ?.forEach { it.delete() }
         val plain = decrypt(encFile.readBytes())
         val baseName = encFile.name.removeSuffix(".enc").ifBlank { "documento.pdf" }
         val out = File(context.cacheDir, "tmp_${System.currentTimeMillis()}_$baseName")

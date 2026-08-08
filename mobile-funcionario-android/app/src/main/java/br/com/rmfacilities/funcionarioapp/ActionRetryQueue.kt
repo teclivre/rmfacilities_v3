@@ -10,6 +10,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.text.Normalizer
 import java.util.UUID
 
 data class PendingAction(
@@ -80,6 +81,37 @@ class ActionRetryQueue(context: Context) {
         return (System.currentTimeMillis() - action.createdAt) > ttl
     }
 
+    private fun shouldDropPontoByBusinessError(msg: String?): Boolean {
+        if (msg.isNullOrBlank()) return false
+        val norm = Normalizer.normalize(msg.lowercase(), Normalizer.Form.NFD)
+            .replace("\\p{Mn}+".toRegex(), "")
+
+        // Erros transitórios devem continuar na fila para nova tentativa.
+        if (
+            norm.contains("timeout") ||
+            norm.contains("temporari") ||
+            norm.contains("try again") ||
+            norm.contains("too many request") ||
+            norm.contains("429") ||
+            norm.contains("503")
+        ) {
+            return false
+        }
+
+        // Erros definitivos (regra de negocio) travam a fila se não forem descartados.
+        return (
+            norm.contains("ordem de marcacao invalida") ||
+            norm.contains("ja existe marcacao neste minuto") ||
+            norm.contains("limite de") && norm.contains("marcacoes") ||
+            norm.contains("fora da janela permitida") ||
+            norm.contains("nao e permitido registrar ponto") ||
+            norm.contains("somente funcionarios ativos") ||
+            norm.contains("voce esta de ferias") ||
+            norm.contains("afastamento") ||
+            norm.contains("atestado")
+        )
+    }
+
     private fun load(): MutableList<PendingAction> {
         val raw = prefs.getString(key, "[]") ?: "[]"
         return try {
@@ -103,6 +135,55 @@ class ActionRetryQueue(context: Context) {
                 id = UUID.randomUUID().toString(),
                 type = "mensagem",
                 payload = mapOf("texto" to texto),
+                createdAt = System.currentTimeMillis()
+            )
+        )
+        save(items)
+    }
+
+    /** Enfileira um arquivo (anexo de mensagem) cifrado em disco para reenvio posterior.
+     *  Resolve o bug em que apenas o nome era guardado e os bytes eram descartados. */
+    fun enqueueMensagemArquivo(
+        bytes: ByteArray,
+        mimeType: String,
+        fileName: String,
+        legenda: String = "",
+        documentoTipo: String = ""
+    ) {
+        val safeName = fileName.replace('/', '_').replace('\\', '_').replace("..", "_")
+        val storedName = "msg_pending_${UUID.randomUUID()}_${safeName}.enc"
+        val dir = File(appContext.filesDir, "pending_msg_arquivos").also { it.mkdirs() }
+        val file = File(dir, storedName)
+        var encrypted = false
+        try {
+            val mk = masterKeyOrNull(appContext)
+            if (mk != null) {
+                val ef = EncryptedFile.Builder(
+                    appContext, file, mk,
+                    EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB
+                ).build()
+                ef.openFileOutput().use { it.write(bytes); it.flush() }
+                encrypted = true
+            } else {
+                file.writeBytes(bytes)
+            }
+        } catch (e: Exception) {
+            try { TelemetryLogger.e(TAG, "enqueueMensagemArquivo encrypt fail: " + (e.message ?: ""), e) } catch (_: Throwable) {}
+            try { file.writeBytes(bytes) } catch (_: Exception) { return }
+        }
+        val items = load()
+        items.add(
+            PendingAction(
+                id = UUID.randomUUID().toString(),
+                type = "mensagem_arquivo",
+                payload = mapOf(
+                    "file_path" to file.absolutePath,
+                    "mime" to mimeType.ifBlank { "application/octet-stream" },
+                    "nome" to safeName,
+                    "legenda" to legenda,
+                    "documento_tipo" to documentoTipo,
+                    "enc" to if (encrypted) "1" else "0"
+                ),
                 createdAt = System.currentTimeMillis()
             )
         )
@@ -222,6 +303,43 @@ class ActionRetryQueue(context: Context) {
                         val texto = action.payload["texto"].orEmpty()
                         texto.isNotBlank() && api.enviarMensagem(texto) != null
                     }
+                    "mensagem_arquivo" -> {
+                        val filePath = action.payload["file_path"].orEmpty()
+                        val mime = action.payload["mime"].orEmpty().ifBlank { "application/octet-stream" }
+                        val nome = action.payload["nome"].orEmpty().ifBlank { "arquivo" }
+                        val legenda = action.payload["legenda"].orEmpty()
+                        val documentoTipo = action.payload["documento_tipo"].orEmpty()
+                        val isEnc = action.payload["enc"] == "1"
+                        if (filePath.isBlank()) false
+                        else {
+                            val file = File(filePath)
+                            if (!file.exists()) true // arquivo perdido — descarta
+                            else {
+                                val bytes: ByteArray = if (isEnc) {
+                                    val mk = masterKeyOrNull(appContext)
+                                    if (mk == null) ByteArray(0) else try {
+                                        val ef = EncryptedFile.Builder(
+                                            appContext, file, mk,
+                                            EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB
+                                        ).build()
+                                        val bos = ByteArrayOutputStream()
+                                        ef.openFileInput().use { it.copyTo(bos) }
+                                        bos.toByteArray()
+                                    } catch (_: Exception) { ByteArray(0) }
+                                } else file.readBytes()
+                                if (bytes.isEmpty()) {
+                                    try { file.delete() } catch (_: Exception) {}
+                                    true
+                                } else {
+                                    val sent2 = api.enviarArquivoMensagem(
+                                        bytes, mime, nome, legenda, documentoTipo
+                                    ) != null
+                                    if (sent2) try { file.delete() } catch (_: Exception) {}
+                                    sent2
+                                }
+                            }
+                        }
+                    }
                     "ponto" -> {
                         val lat = action.payload["lat"]?.toDoubleOrNull()
                         val lon = action.payload["lon"]?.toDoubleOrNull()
@@ -231,7 +349,22 @@ class ActionRetryQueue(context: Context) {
                         val dataHoraIso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply {
                             timeZone = java.util.TimeZone.getTimeZone("UTC")
                         }.format(java.util.Date(tsMs))
-                        if (lat == null || lon == null) false else api.marcarPonto(lat = lat, lon = lon, precisao = precisao, dataHoraIso = dataHoraIso).ok
+                        if (lat == null || lon == null) {
+                            true // payload invalido: descarta para nao travar fila
+                        } else {
+                            val resp = api.marcarPonto(lat = lat, lon = lon, precisao = precisao, dataHoraIso = dataHoraIso)
+                            if (resp.ok) {
+                                true
+                            } else {
+                                val drop = shouldDropPontoByBusinessError(resp.erro)
+                                if (drop) {
+                                    try {
+                                        TelemetryLogger.e(TAG, "drop_ponto_offline_business_error: ${resp.erro ?: "erro_desconhecido"}")
+                                    } catch (_: Exception) {}
+                                }
+                                drop
+                            }
+                        }
                     }
                     "foto" -> {
                         val filePath = action.payload["file_path"].orEmpty()

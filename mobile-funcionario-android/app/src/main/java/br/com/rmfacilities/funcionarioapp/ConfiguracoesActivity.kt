@@ -182,6 +182,15 @@ class ConfiguracoesActivity : BaseActivity() {
             })
         }
 
+        findViewById<MaterialButton>(R.id.btnCodigoConduta).setOnClickListener {
+            window.decorView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            val base = (session.apiBaseUrl.ifBlank { BuildConfig.DEFAULT_API_BASE_URL }).trimEnd('/')
+            startActivity(Intent(this, PrivacyPolicyActivity::class.java).apply {
+                putExtra(PrivacyPolicyActivity.EXTRA_URL, "$base/codigo-conduta")
+                putExtra(PrivacyPolicyActivity.EXTRA_TITLE, "Código de Conduta")
+            })
+        }
+
         findViewById<MaterialButton>(R.id.btnLimparOffline).setOnClickListener {
             window.decorView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             OfflineDocsStore(this).clearAll()

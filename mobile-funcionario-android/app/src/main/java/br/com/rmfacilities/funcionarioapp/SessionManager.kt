@@ -39,6 +39,12 @@ class SessionManager(private val context: Context) {
         }
         prefs = resolved
         keystoreFailed = failed
+
+        // Migração de compatibilidade: sessões antigas podem não ter trusted_device_until.
+        // Se já existe access token, evita forçar logout por timeout curto logo após atualizar o app.
+        if (trustedDeviceUntil <= 0L && accessToken.isNotBlank()) {
+            markLoginSuccess(label = android.os.Build.MODEL)
+        }
     }
 
     var apiBaseUrl: String
@@ -67,6 +73,10 @@ class SessionManager(private val context: Context) {
     var biometricCpf: String
         get() = prefs.getString("biometric_cpf", "") ?: ""
         set(value) = prefs.edit().putString("biometric_cpf", value).apply()
+
+    var lastLoginCpf: String
+        get() = prefs.getString("last_login_cpf", "") ?: ""
+        set(value) = prefs.edit().putString("last_login_cpf", value).apply()
 
     var notificationsEnabled: Boolean
         get() = prefs.getBoolean("notifications_enabled", true)
@@ -100,11 +110,13 @@ class SessionManager(private val context: Context) {
         val notif = notificationsEnabled
         val canal = canalOtp
         val refresh = refreshToken
+        val lastCpf = lastLoginCpf
         val timeoutMin = sessionIdleTimeoutMin
         prefs.edit().clear().apply()
         apiBaseUrl = base
         biometricEnabled = bio
         biometricCpf = bioCpf
+        lastLoginCpf = lastCpf
         notificationsEnabled = notif
         canalOtp = canal
         sessionIdleTimeoutMin = timeoutMin

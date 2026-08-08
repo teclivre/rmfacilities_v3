@@ -93,7 +93,7 @@ class PontoEspelhoActivity : AppCompatActivity() {
             ).apply { bottomMargin = (14 * dp).toInt() }
         }
         val tvInfo = TextView(this).apply {
-            text = "ℹ️  O download do PDF fica disponível após o fechamento pelo gestor."
+            text = "ℹ️  A folha pode ser visualizada aqui. O download do PDF é liberado após a assinatura."
             setTextColor(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.mobile_text_secondary))
             textSize = 11.5f
         }
@@ -234,8 +234,42 @@ class PontoEspelhoActivity : AppCompatActivity() {
                     }
                 }
                 btnRow.addView(btnBaixar)
+            } else if (comp.folha_disponivel && !comp.folha_assinada) {
+                val tvAssinatura = TextView(this).apply {
+                    text = "Assine a folha para liberar o PDF"
+                    setTextColor(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.mobile_text_secondary))
+                    textSize = 11f
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                btnRow.addView(tvAssinatura)
             }
+
+            val btnHolerite = MaterialButton(this).apply {
+                text = "💰  Holerite"
+                textSize = 12.5f
+                letterSpacing = 0.01f
+                cornerRadius = (10 * dp).toInt()
+                backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this@PontoEspelhoActivity, R.color.espelho_accent_btn))
+                setTextColor(Color.WHITE)
+                elevation = 2f
+                stateListAnimator = null
+                minWidth = 0
+                minimumWidth = 0
+                insetTop = 0
+                insetBottom = 0
+                setPadding((10 * dp).toInt(), (6 * dp).toInt(), (10 * dp).toInt(), (6 * dp).toInt())
+            }
+            btnHolerite.setOnClickListener { abrirHolerite(comp) }
             card.addView(btnRow)
+
+            val holeriteRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = (8 * dp).toInt() }
+            }
+            holeriteRow.addView(btnHolerite)
+            card.addView(holeriteRow)
 
             containerCompetencias.addView(cardWrapper)
         }
@@ -299,6 +333,50 @@ class PontoEspelhoActivity : AppCompatActivity() {
                 header.addView(tvTitulo)
                 header.addView(tvSubtitulo)
                 header.addView(tvTotalHoras)
+
+                // ── Painel de totais: HE 50%, HE 100%, Noturno, Intrajornada ─
+                val tot = resp.totais
+                if (tot != null) {
+                    val kpiRow = LinearLayout(this@PontoEspelhoActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(0, (10 * dp).toInt(), 0, 0)
+                    }
+                    fun kpiChip(label: String, value: String?, mins: Int, bgColor: Int) {
+                        val v = value ?: "00:00"
+                        val chip = LinearLayout(this@PontoEspelhoActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            gravity = Gravity.CENTER
+                            background = android.graphics.drawable.GradientDrawable().apply {
+                                setColor(if (mins > 0) bgColor else Color.parseColor("#33FFFFFF"))
+                                cornerRadius = 8 * dp
+                            }
+                            setPadding((8 * dp).toInt(), (4 * dp).toInt(), (8 * dp).toInt(), (4 * dp).toInt())
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                            ).apply { marginEnd = (6 * dp).toInt() }
+                        }
+                        chip.addView(TextView(this@PontoEspelhoActivity).apply {
+                            text = v
+                            setTextColor(Color.WHITE)
+                            textSize = 12f
+                            setTypeface(null, Typeface.BOLD)
+                            gravity = Gravity.CENTER
+                        })
+                        chip.addView(TextView(this@PontoEspelhoActivity).apply {
+                            text = label
+                            setTextColor(Color.parseColor("#CCFFFFFF"))
+                            textSize = 9f
+                            gravity = Gravity.CENTER
+                        })
+                        kpiRow.addView(chip)
+                    }
+                    kpiChip("HE 50%",  tot.he_50_fmt,  tot.he_50_min,  Color.parseColor("#E07C00"))
+                    kpiChip("HE 100%", tot.he_100_fmt, tot.he_100_min, Color.parseColor("#C0392B"))
+                    kpiChip("Noturno", tot.noturno_fmt, tot.noturno_min, Color.parseColor("#1A73E8"))
+                    kpiChip("Intrajornada", tot.intrajornada_fmt, tot.intrajornada_min, Color.parseColor("#2E7D32"))
+                    header.addView(kpiRow)
+                }
                 root.addView(header)
 
                 // ── Mini-gráfico de barras horizontais ───────────────────
@@ -481,17 +559,45 @@ class PontoEspelhoActivity : AppCompatActivity() {
                     }
                     row.addView(batidasCell)
 
-                    // Célula total horas
-                    val tvHoras = TextView(this@PontoEspelhoActivity).apply {
+                    // Célula total horas (coluna vertical: horas + extras)
+                    val horasCell = LinearLayout(this@PontoEspelhoActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = Gravity.END
+                        setPadding((4 * dp).toInt(), (6 * dp).toInt(), (12 * dp).toInt(), (6 * dp).toInt())
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.5f)
+                    }
+                    horasCell.addView(TextView(this@PontoEspelhoActivity).apply {
                         text = dia.horas_trabalhadas_fmt ?: "-"
                         textSize = 11f
                         setTextColor(colorSuccess)
                         setTypeface(null, Typeface.BOLD)
-                        gravity = Gravity.END or Gravity.CENTER_VERTICAL
-                        setPadding((4 * dp).toInt(), (9 * dp).toInt(), (12 * dp).toInt(), (9 * dp).toInt())
-                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.5f)
+                        gravity = Gravity.END
+                    })
+                    // Indicadores de extras se houver
+                    val extras = buildList {
+                        if ((dia.he_50_min) > 0) add("HE50 ${dia.he_50_fmt}")
+                        if ((dia.he_100_min) > 0) add("HE100 ${dia.he_100_fmt}")
+                        if ((dia.noturno_min) > 0) add("Not ${dia.noturno_fmt}")
                     }
-                    row.addView(tvHoras)
+                    if (extras.isNotEmpty()) {
+                        horasCell.addView(TextView(this@PontoEspelhoActivity).apply {
+                            text = extras.joinToString(" ")
+                            textSize = 8f
+                            setTextColor(Color.parseColor("#E07C00"))
+                            gravity = Gravity.END
+                            setTypeface(null, Typeface.BOLD)
+                        })
+                    }
+                    // Alerta de inconsistência
+                    if (dia.status == "inconsistente") {
+                        horasCell.addView(TextView(this@PontoEspelhoActivity).apply {
+                            text = "⚠ verificar"
+                            textSize = 8f
+                            setTextColor(Color.parseColor("#C0392B"))
+                            gravity = Gravity.END
+                        })
+                    }
+                    row.addView(horasCell)
 
                     table.addView(row)
 
@@ -545,10 +651,24 @@ class PontoEspelhoActivity : AppCompatActivity() {
                     appendLine("📋 FOLHA DE PONTO — $label")
                     appendLine("Funcionário: ${resp.funcionario ?: "-"}")
                     appendLine("Total trabalhado: ${resp.total_horas ?: "--:--"}")
+                    val t = resp.totais
+                    if (t != null) {
+                        if (t.he_50_min > 0) appendLine("HE 50%: ${t.he_50_fmt}")
+                        if (t.he_100_min > 0) appendLine("HE 100%: ${t.he_100_fmt}")
+                        if (t.noturno_min > 0) appendLine("Adicional noturno: ${t.noturno_fmt}")
+                        if (t.intrajornada_min > 0) appendLine("Intrajornada: ${t.intrajornada_fmt}")
+                    }
                     appendLine("─".repeat(36))
                     resp.dias.filter { it.tem_marcacoes }.forEach { dia ->
                         val batidas = dia.marcacoes.joinToString("  ") { it.hora_fmt ?: "-" }
-                        appendLine("${dia.data_fmt ?: ""}  |  $batidas  |  ${dia.horas_trabalhadas_fmt ?: "-"}")
+                        val extras = buildList {
+                            if (dia.he_50_min > 0) add("HE50:${dia.he_50_fmt}")
+                            if (dia.he_100_min > 0) add("HE100:${dia.he_100_fmt}")
+                            if (dia.noturno_min > 0) add("Not:${dia.noturno_fmt}")
+                            if (dia.status == "inconsistente") add("⚠")
+                        }.joinToString(" ")
+                        val extrasStr = if (extras.isNotEmpty()) "  [$extras]" else ""
+                        appendLine("${dia.data_fmt ?: ""}  |  $batidas  |  ${dia.horas_trabalhadas_fmt ?: "-"}$extrasStr")
                     }
                     appendLine("─".repeat(36))
                     append("Exportado pelo RMFacilities App")
@@ -629,6 +749,57 @@ class PontoEspelhoActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     Toast.makeText(this@PontoEspelhoActivity, "Erro ao salvar PDF: ${e.message}", Toast.LENGTH_LONG).show()
                 }
+            }
+        }
+    }
+
+    private fun abrirHolerite(comp: PontoEspelhoCompetencia) {
+        if (!comp.holerite_disponivel) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Holerite indisponível")
+                .setMessage("O holerite de ${comp.label} ainda não foi enviado pelo RH.")
+                .setPositiveButton("Entendi", null)
+                .show()
+            return
+        }
+        if (!comp.holerite_assinado) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Assinatura necessária")
+                .setMessage("O holerite de ${comp.label} está disponível, mas precisa ser assinado antes do download.")
+                .setNegativeButton("Agora não", null)
+                .setPositiveButton("Assinar agora") { _, _ ->
+                    startActivity(Intent(this, DocumentosActivity::class.java).apply {
+                        putExtra("preset_categoria", "Holerites")
+                        putExtra("preset_busca", comp.competencia)
+                    })
+                }
+                .show()
+            return
+        }
+        val downloadUrl = comp.holerite_download_url.orEmpty()
+        if (downloadUrl.isBlank()) {
+            Toast.makeText(this, "Não foi possível localizar o holerite para download.", Toast.LENGTH_LONG).show()
+            return
+        }
+        lifecycleScope.launch {
+            val bytes = withContext(Dispatchers.IO) {
+                try { api.downloadFile(downloadUrl) } catch (_: Exception) { null }
+            }
+            if (bytes == null) {
+                Toast.makeText(this@PontoEspelhoActivity, "Falha ao baixar o holerite.", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            try {
+                val dir = File(cacheDir, "holerites").also { it.mkdirs() }
+                val file = File(dir, "holerite_${comp.competencia}.pdf")
+                file.writeBytes(bytes)
+                val uri = FileProvider.getUriForFile(this@PontoEspelhoActivity, "$packageName.fileprovider", file)
+                startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/pdf")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }, "Abrir holerite"))
+            } catch (_: Exception) {
+                Toast.makeText(this@PontoEspelhoActivity, "Nenhum app disponível para abrir o holerite.", Toast.LENGTH_LONG).show()
             }
         }
     }

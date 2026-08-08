@@ -44,7 +44,7 @@ object BirthdayNotifier {
         criarCanal(context)
 
         val primeiroNome = nomeFunc.split(" ").firstOrNull() ?: nomeFunc
-        val notifManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notifManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
         val notif = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("🎂 Feliz Aniversário, $primeiroNome!")

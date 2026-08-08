@@ -2,7 +2,14 @@
 <div class="card">
   <div class="card-header">
     <span class="card-title">⚡ Gestão Fácil</span>
-    <button class="btn b-ghv b-sm" onclick="gfCarregar()">↻ Atualizar</button>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span id="gf-live-badge" style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--verde);font-weight:700">
+        <span style="width:7px;height:7px;border-radius:50%;background:var(--verde);display:inline-block;animation:dot-pulse .9s ease-in-out infinite"></span>
+        <span id="gf-live-ts">ao vivo</span>
+      </span>
+      <button class="btn b-az b-sm" onclick="pontoAbrirModalAfastamento()">+ Novo afastamento</button>
+      <button class="btn b-ghv b-sm" onclick="gfCarregar()">↻ Atualizar</button>
+    </div>
   </div>
 
   <div class="ponto-gestao-wrap">
@@ -10,7 +17,7 @@
     <!-- LADO ESQUERDO: seletor de funcionário -->
     <aside class="ponto-side">
       <div class="ponto-side-head">
-        <div style="font-size:11px;color:var(--text-muted)">Colaboradores ativos</div>
+        <div style="font-size:11px;color:var(--text-muted)">Colaboradores da competência</div>
         <span id="gf-func-qtd" class="pill p-vd">0</span>
       </div>
       <div class="f" style="margin-top:8px">
@@ -33,10 +40,17 @@
             <input id="gf-competencia" type="month" onchange="gfCarregarMes()">
           </div>
           <button class="btn b-az b-sm" onclick="gfCarregarMes()">Ver mês</button>
+          <button class="btn b-gh b-sm" onclick="gfAbrirPreviaFolha()" title="Abrir PDF da folha de ponto em nova aba">📄 Prévia da Folha</button>
+          <button id="gf-btn-fechar" class="btn b-gh b-sm" onclick="gfFecharFolha(false)">Fechar folha</button>
+          <button id="gf-btn-enviar" class="btn b-vd b-sm" onclick="gfFecharFolha(true)">Fechar e enviar</button>
+          <button id="gf-btn-reabrir" class="btn b-az b-sm" style="display:none" onclick="gfReabrirFolha()">Reabrir folha</button>
         </div>
       </div>
 
       <div id="gf-st" class="st" style="margin:8px 0"></div>
+      <div id="gf-he-aviso" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:13px;color:#856404">
+        ⚠ <strong>Hora extra não autorizada</strong> neste posto. As horas extras registradas neste mês precisam de justificativa.
+      </div>
 
       <!-- CALENDÁRIO -->
       <div id="gf-calendario-wrap" style="margin-top:12px">
@@ -57,6 +71,10 @@
                 <th>Saída</th>
                 <th>Horas</th>
                 <th>Saldo</th>
+                <th title="Horas extras a 50%">HE 50%</th>
+                <th title="Horas extras a 100%">HE 100%</th>
+                <th title="Adicional noturno (22h-05h)">Noturno</th>
+                <th title="Intrajornada gozada">Intrajornada</th>
                 <th>Status</th>
               </tr>
             </thead>
