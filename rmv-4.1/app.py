@@ -23658,6 +23658,8 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     )
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_CENTER
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.pdfmetrics import EmbeddedType1Face, Font
     from reportlab.graphics.barcode import qr as qr_code
     from reportlab.graphics.shapes import Drawing
 
@@ -23676,6 +23678,26 @@ def _build_envelope_audit_pdf(envelope, signatarios, url_root):
     VD = colors.HexColor("#1a7a45")
     CI = colors.HexColor("#f5f5f5")
     LJ = colors.HexColor("#f28e34")
+    signature_font = "Times-Italic"
+    try:
+        signature_face = EmbeddedType1Face(
+            "/usr/share/fonts/type1/urw-base35/Z003-MediumItalic.afm",
+            "/usr/share/fonts/X11/Type1/Z003-MediumItalic.pfb",
+        )
+        pdfmetrics.registerTypeFace(signature_face)
+        pdfmetrics.registerFont(
+            Font("RMSignatureScript", signature_face.name, "WinAnsiEncoding")
+        )
+        pdfmetrics.registerFontFamily(
+            "RMSignatureScript",
+            normal="RMSignatureScript",
+            bold="RMSignatureScript",
+            italic="RMSignatureScript",
+            boldItalic="RMSignatureScript",
+        )
+        signature_font = "RMSignatureScript"
+    except Exception:
+        pass
 
     def ps(nm, **kw):
         b = dict(
