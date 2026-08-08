@@ -13,6 +13,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
+from email.utils import parseaddr, formataddr
 
 # Corrige NameError: _strict_origin_check
 _strict_origin_check = True
@@ -3994,6 +3995,41 @@ def smtp_cfg():
     }
 
 
+_SMTP_EMAIL_RE = re.compile(
+    r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$"
+)
+
+
+def _is_valid_email_address(addr):
+    s = (addr or "").strip()
+    if not s:
+        return False
+    return bool(_SMTP_EMAIL_RE.fullmatch(s))
+
+
+def _smtp_normalize_sender(raw_sender, fallback_user=""):
+    raw = (raw_sender or "").strip()
+    fallback = (fallback_user or "").strip()
+    candidate = raw or fallback
+    if not candidate:
+        raise ValueError("Informe um remetente SMTP válido.")
+
+    nome, email_addr = parseaddr(candidate)
+    email_addr = (email_addr or "").strip()
+    if not _is_valid_email_address(email_addr):
+        raise ValueError(
+            "Remetente inválido. Use e-mail válido ou o formato Nome <email@dominio>."
+        )
+
+    nome = (nome or "").strip().strip('"').strip("'")
+    header_from = formataddr((nome, email_addr)) if nome else email_addr
+    return {
+        "header_from": header_from,
+        "envelope_from": email_addr,
+        "address": email_addr,
+    }
+
+
 def sms_cfg():
     return {
         "account_sid": os.environ.get("TWILIO_ACCOUNT_SID")
@@ -4305,8 +4341,9 @@ def smtp_send_text(dest, assunto, corpo, anexos=None):
     cfg = smtp_cfg()
     if not cfg["host"] or not cfg["user"]:
         raise ValueError("SMTP nao configurado")
+    sender = _smtp_normalize_sender(cfg.get("de", ""), cfg.get("user", ""))
     msg = MIMEMultipart()
-    msg["From"] = cfg["de"] or cfg["user"]
+    msg["From"] = sender["header_from"]
     msg["To"] = dest
     msg["Subject"] = assunto
     msg.attach(MIMEText(corpo or "", "plain", "utf-8"))
@@ -4328,11 +4365,11 @@ def smtp_send_text(dest, assunto, corpo, anexos=None):
             with smtplib.SMTP(cfg["host"], port, timeout=20) as s:
                 s.starttls()
                 s.login(cfg["user"], cfg["senha"])
-                s.sendmail(cfg["de"] or cfg["user"], dest, msg.as_string())
+                s.sendmail(sender["envelope_from"], dest, msg.as_string())
         else:
             with smtplib.SMTP_SSL(cfg["host"], port, timeout=20) as s:
                 s.login(cfg["user"], cfg["senha"])
-                s.sendmail(cfg["de"] or cfg["user"], dest, msg.as_string())
+                s.sendmail(sender["envelope_from"], dest, msg.as_string())
 
     _smtp_exec_with_retry(_do_send)
 
@@ -6484,8 +6521,9 @@ def smtp_send_pdf(
     cfg = smtp_cfg()
     if not cfg["host"] or not cfg["user"]:
         raise ValueError("SMTP nao configurado")
+    sender = _smtp_normalize_sender(cfg.get("de", ""), cfg.get("user", ""))
     msg = MIMEMultipart()
-    msg["From"] = f"{remetente} <{cfg['de'] or cfg['user']}>"
+    msg["From"] = formataddr(((remetente or "RM Facilities").strip(), sender["address"]))
     msg["To"] = dest
     msg["Subject"] = f"Holerite {competencia} - {remetente}"
     corpo = f"Ol\u00e1 {nome_dest},\n\nSegue em anexo seu holerite{(' de ' + competencia) if competencia else ''}.\n\nAtenciosamente,\n{remetente}"
@@ -6503,11 +6541,11 @@ def smtp_send_pdf(
             with smtplib.SMTP(cfg["host"], port, timeout=20) as s:
                 s.starttls()
                 s.login(cfg["user"], cfg["senha"])
-                s.sendmail(cfg["de"] or cfg["user"], dest, msg.as_string())
+                s.sendmail(sender["envelope_from"], dest, msg.as_string())
         else:
             with smtplib.SMTP_SSL(cfg["host"], port, timeout=20) as s:
                 s.login(cfg["user"], cfg["senha"])
-                s.sendmail(cfg["de"] or cfg["user"], dest, msg.as_string())
+                s.sendmail(sender["envelope_from"], dest, msg.as_string())
 
     _smtp_exec_with_retry(_do_send)
 
@@ -6519,8 +6557,9 @@ def smtp_send_link_assinatura(
     cfg = smtp_cfg()
     if not cfg["host"] or not cfg["user"]:
         raise ValueError("SMTP não configurado")
+    sender = _smtp_normalize_sender(cfg.get("de", ""), cfg.get("user", ""))
     msg = MIMEMultipart("alternative")
-    msg["From"] = f"{remetente} <{cfg['de'] or cfg['user']}>"
+    msg["From"] = formataddr(((remetente or "RM Facilities").strip(), sender["address"]))
     msg["To"] = dest
     assunto_prefixo = "Lembrete: " if eh_lembrete else ""
     texto_intro = "Este e um lembrete de um envio anterior.\n\n" if eh_lembrete else ""
@@ -6567,11 +6606,11 @@ def smtp_send_link_assinatura(
             with smtplib.SMTP(cfg["host"], port, timeout=20) as s:
                 s.starttls()
                 s.login(cfg["user"], cfg["senha"])
-                s.sendmail(cfg["de"] or cfg["user"], dest, msg.as_string())
+                s.sendmail(sender["envelope_from"], dest, msg.as_string())
         else:
             with smtplib.SMTP_SSL(cfg["host"], port, timeout=20) as s:
                 s.login(cfg["user"], cfg["senha"])
-                s.sendmail(cfg["de"] or cfg["user"], dest, msg.as_string())
+                s.sendmail(sender["envelope_from"], dest, msg.as_string())
 
     _smtp_exec_with_retry(_do_send)
 
@@ -6594,11 +6633,11 @@ def smtp_send_proposta_comercial(
         raise ValueError(
             "SMTP não configurado. Acesse Configurações → E-mail e preencha os dados SMTP."
         )
+    sender = _smtp_normalize_sender(cfg.get("de", ""), cfg.get("user", ""))
 
     tipo_label = "SPOT" if (tipo or "").lower() == "spot" else "Mensal"
-    # Usa o e-mail configurado no SMTP para evitar rejeição por mismatch de From
-    smtp_email = (cfg.get("de") or cfg.get("user") or "").strip()
-    remetente_display = f"{remetente_nome} Comercial <{smtp_email}>"
+    smtp_email = sender["address"]
+    remetente_display = formataddr((f"{remetente_nome} Comercial", smtp_email))
 
     msg = MIMEMultipart("mixed")
     msg["From"] = remetente_display
@@ -6667,11 +6706,11 @@ def smtp_send_proposta_comercial(
             with smtplib.SMTP(cfg["host"], port, timeout=20) as s:
                 s.starttls()
                 s.login(cfg["user"], cfg["senha"])
-                s.sendmail(cfg["user"], dest_email, msg.as_string())
+                s.sendmail(sender["envelope_from"], dest_email, msg.as_string())
         else:
             with smtplib.SMTP_SSL(cfg["host"], port, timeout=20) as s:
                 s.login(cfg["user"], cfg["senha"])
-                s.sendmail(cfg["user"], dest_email, msg.as_string())
+                s.sendmail(sender["envelope_from"], dest_email, msg.as_string())
 
     _smtp_exec_with_retry(_do_send)
 
@@ -8710,10 +8749,31 @@ def pagina_funcionario_app():
 @app.route("/api/cnpj/<cnpj>")
 @lr
 def api_cnpj(cnpj):
+    # Cache simples em memória para reduzir chamadas aos provedores externos.
+    # Estrutura: {cnpj: {exp: epoch, status: int, data?: dict, erro?: str}}
+    global _CNPJ_LOOKUP_CACHE
+    try:
+        _CNPJ_LOOKUP_CACHE
+    except NameError:
+        _CNPJ_LOOKUP_CACHE = {}
+
+    TTL_OK = 6 * 60 * 60
+    TTL_RATE_LIMIT = 60
+
     c = "".join(filter(str.isdigit, cnpj))
     if len(c) != 14:
         return jsonify({"erro": "CNPJ inválido"}), 400
+
+    now_ts = time.time()
+    cache_entry = _CNPJ_LOOKUP_CACHE.get(c)
+    if cache_entry and cache_entry.get("exp", 0) > now_ts:
+        if cache_entry.get("status") == 200:
+            return jsonify(cache_entry.get("data") or {})
+        return jsonify({"erro": cache_entry.get("erro") or "Consulta temporariamente indisponível."}), int(cache_entry.get("status") or 500)
+
     # Tenta Receitaws primeiro e usa BrasilAPI como fallback.
+    throttled = False
+
     try:
         req = urllib.request.Request(
             f"https://receitaws.com.br/v1/cnpj/{c}",
@@ -8722,27 +8782,31 @@ def api_cnpj(cnpj):
         with urllib.request.urlopen(req, timeout=8) as r:
             d = json.loads(r.read().decode())
         if d.get("status") != "ERROR":
-            return jsonify(
-                {
-                    "nome": d.get("fantasia") or d.get("nome", ""),
-                    "razao": d.get("nome", ""),
-                    "email": d.get("email", ""),
-                    "telefone": d.get("telefone", ""),
-                    "cep": d.get("cep", "")
-                    .replace(".", "")
-                    .replace("-", "")
-                    .replace(" ", ""),
-                    "logradouro": d.get("logradouro", ""),
-                    "numero": d.get("numero", ""),
-                    "complemento": d.get("complemento", ""),
-                    "bairro": d.get("bairro", ""),
-                    "cidade": d.get("municipio", ""),
-                    "estado": d.get("uf", ""),
-                    "situacao": d.get("situacao", ""),
-                }
-            )
+            payload = {
+                "nome": d.get("fantasia") or d.get("nome", ""),
+                "razao": d.get("nome", ""),
+                "email": d.get("email", ""),
+                "telefone": d.get("telefone", ""),
+                "cep": d.get("cep", "")
+                .replace(".", "")
+                .replace("-", "")
+                .replace(" ", ""),
+                "logradouro": d.get("logradouro", ""),
+                "numero": d.get("numero", ""),
+                "complemento": d.get("complemento", ""),
+                "bairro": d.get("bairro", ""),
+                "cidade": d.get("municipio", ""),
+                "estado": d.get("uf", ""),
+                "situacao": d.get("situacao", ""),
+            }
+            _CNPJ_LOOKUP_CACHE[c] = {"exp": now_ts + TTL_OK, "status": 200, "data": payload}
+            return jsonify(payload)
+    except urllib.error.HTTPError as e:
+        if int(getattr(e, "code", 0) or 0) == 429:
+            throttled = True
     except Exception:
         pass
+
     try:
         req = urllib.request.Request(
             f"https://brasilapi.com.br/api/cnpj/v1/{c}",
@@ -8750,24 +8814,34 @@ def api_cnpj(cnpj):
         )
         with urllib.request.urlopen(req, timeout=8) as r:
             d = json.loads(r.read().decode())
-        return jsonify(
-            {
-                "nome": d.get("nome_fantasia") or d.get("razao_social", ""),
-                "razao": d.get("razao_social", ""),
-                "email": d.get("email", ""),
-                "telefone": d.get("ddd_telefone_1") or d.get("ddd_telefone_2", ""),
-                "cep": str(d.get("cep", "")).replace("-", ""),
-                "logradouro": d.get("logradouro", ""),
-                "numero": d.get("numero", ""),
-                "complemento": d.get("complemento", ""),
-                "bairro": d.get("bairro", ""),
-                "cidade": d.get("municipio", ""),
-                "estado": d.get("uf", ""),
-                "situacao": d.get("descricao_situacao_cadastral", ""),
-            }
-        )
-    except Exception as e:
-        return jsonify({"erro": str(e)}), 500
+        payload = {
+            "nome": d.get("nome_fantasia") or d.get("razao_social", ""),
+            "razao": d.get("razao_social", ""),
+            "email": d.get("email", ""),
+            "telefone": d.get("ddd_telefone_1") or d.get("ddd_telefone_2", ""),
+            "cep": str(d.get("cep", "")).replace("-", ""),
+            "logradouro": d.get("logradouro", ""),
+            "numero": d.get("numero", ""),
+            "complemento": d.get("complemento", ""),
+            "bairro": d.get("bairro", ""),
+            "cidade": d.get("municipio", ""),
+            "estado": d.get("uf", ""),
+            "situacao": d.get("descricao_situacao_cadastral", ""),
+        }
+        _CNPJ_LOOKUP_CACHE[c] = {"exp": now_ts + TTL_OK, "status": 200, "data": payload}
+        return jsonify(payload)
+    except urllib.error.HTTPError as e:
+        if int(getattr(e, "code", 0) or 0) == 429:
+            throttled = True
+    except Exception:
+        pass
+
+    if throttled:
+        msg = "Consulta temporariamente limitada pelos provedores de CNPJ. Aguarde 1 minuto e tente novamente."
+        _CNPJ_LOOKUP_CACHE[c] = {"exp": now_ts + TTL_RATE_LIMIT, "status": 429, "erro": msg}
+        return jsonify({"erro": msg}), 429
+
+    return jsonify({"erro": "Não foi possível consultar o CNPJ neste momento. Tente novamente em instantes."}), 502
 
 
 @app.route("/api/cep/<cep>")
@@ -14517,7 +14591,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         fontName="Helvetica-Bold",
         fontSize=16,
         leading=20,
-        textColor=colors.white,
+        textColor=azul,
         alignment=TA_CENTER,
     )
     st_sub = ParagraphStyle(
@@ -14525,7 +14599,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         fontName="Helvetica",
         fontSize=8.5,
         leading=11,
-        textColor=colors.white,
+        textColor=colors.HexColor("#2A4864"),
         alignment=TA_CENTER,
     )
     st_para = ParagraphStyle(
@@ -14613,23 +14687,23 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
                 "snln",
                 fontName="Helvetica-Bold",
                 fontSize=8,
-                textColor=colors.white,
+                textColor=azul,
                 alignment=TA_CENTER,
             ),
         )
 
     hdr_data = [
-        [Paragraph("DECLARAÇÃO", st_title), logo_el],
+        [Paragraph("DECLARAÇÃO SIMPLES NACIONAL", st_title), logo_el],
         [Paragraph(emp_nome, st_sub), ""],
     ]
     hdr_table = Table(hdr_data, colWidths=[12 * cm, 5.5 * cm])
     hdr_table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, -1), azul),
                 ("SPAN", (0, 1), (1, 1)),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("ALIGN", (1, 0), (1, 0), "CENTER"),
+                ("LINEBELOW", (0, 1), (1, 1), 0.8, colors.HexColor("#A7B8C9")),
                 ("TOPPADDING", (0, 0), (-1, -1), 8),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
                 ("LEFTPADDING", (0, 0), (-1, -1), 12),
@@ -14802,9 +14876,9 @@ def api_gerar_carta_simples_nacional():
         return jsonify({"erro": f"Erro ao gerar PDF: {str(e)}"}), 500
 
     nome_arq = (
-        f"Carta_Simples_Nacional_"
+        f"Declaração simples nacional_"
         f"{_clean_file_part(destinatario_nome, 50, 'Destinatario')}"
-        f"_{localnow().strftime('%Y%m%d')}.pdf"
+        f".pdf"
     )
     return send_file(buf, mimetype="application/pdf", as_attachment=False,
                      download_name=nome_arq)
@@ -18492,6 +18566,15 @@ def api_app_mensagens_marcar_lidas():
         .update({"lida": True})
     )
     db.session.commit()
+    audit_event(
+        "app_chat_marcar_lidas",
+        "funcionario",
+        f.id,
+        "mensagem_app",
+        f.id,
+        True,
+        {"atualizadas": int(atualizadas or 0)},
+    )
     try:
         cache.delete_memoized(api_app_mensagens_nao_lidas)
     except Exception:
@@ -18520,6 +18603,15 @@ def api_app_mensagem_enviar():
     )
     db.session.add(m)
     db.session.commit()
+    audit_event(
+        "app_chat_enviar",
+        "funcionario",
+        f.id,
+        "mensagem_app",
+        m.id,
+        True,
+        {"de_rh": False, "tipo": "texto", "tamanho": len(conteudo)},
+    )
     return jsonify(m.to_dict()), 201
 
 
@@ -18582,6 +18674,19 @@ def api_app_mensagem_enviar_arquivo():
     )
     db.session.add(m)
     db.session.commit()
+    audit_event(
+        "app_chat_enviar_arquivo",
+        "funcionario",
+        f.id,
+        "mensagem_app",
+        m.id,
+        True,
+        {
+            "documento_tipo": documento_tipo,
+            "arquivo_nome": nome_orig,
+            "tipo": "arquivo",
+        },
+    )
     return jsonify(m.to_dict()), 201
 
 
@@ -18625,6 +18730,15 @@ def api_app_mensagem_apagar(mid):
         return jsonify({"erro": "Não é possível apagar mensagens do RH"}), 400
     db.session.delete(m)
     db.session.commit()
+    audit_event(
+        "app_chat_apagar",
+        "funcionario",
+        f.id,
+        "mensagem_app",
+        mid,
+        True,
+        {"de_rh": False},
+    )
     return jsonify({"ok": True})
 
 
@@ -19501,6 +19615,16 @@ def api_app_ponto_marcar_me():
         ), 400
     tipo = (dados.get("tipo") or "").strip().lower()
     observacao = (dados.get("observacao") or "").strip()[:500]
+    marca_celular = (dados.get("marca_celular") or dados.get("device_brand") or "").strip()[:60]
+    modelo_celular = (dados.get("modelo_celular") or dados.get("device_model") or "").strip()[:80]
+    plataforma_celular = (dados.get("plataforma") or dados.get("device_platform") or "").strip()[:40]
+    app_versao = (dados.get("app_versao") or "").strip()[:30]
+    assinatura_dispositivo = (
+        dados.get("assinatura_dispositivo")
+        or dados.get("device_id_hash")
+        or dados.get("device_fingerprint")
+        or ""
+    ).strip()[:120]
     # Suporte a ponto offline: aceita data_hora_cliente (ISO UTC) enviado pelo app
     # quando batido sem internet e sincronizado depois. Limite: até 24h no passado.
     data_hora = utcnow()
@@ -19571,6 +19695,26 @@ def api_app_ponto_marcar_me():
         precisao = None  # valor fora do intervalo realista → ignorar
     if lat is not None and lon is not None and not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return jsonify({"erro": "Coordenadas de localização inválidas."}), 400
+
+    if (
+        marca_celular
+        or modelo_celular
+        or plataforma_celular
+        or app_versao
+        or assinatura_dispositivo
+    ):
+        tag_parts = []
+        if marca_celular:
+            tag_parts.append(f"marca={marca_celular}")
+        if modelo_celular:
+            tag_parts.append(f"modelo={modelo_celular}")
+        if plataforma_celular:
+            tag_parts.append(f"plataforma={plataforma_celular}")
+        if app_versao:
+            tag_parts.append(f"app={app_versao}")
+        if assinatura_dispositivo:
+            tag_parts.append(f"assinatura={assinatura_dispositivo}")
+        observacao = ((observacao + " [APP_DEVICE " + ";".join(tag_parts) + "]").strip())[:500]
 
     localizacao = {
         "status": "sem_referencia_posto",
@@ -19746,6 +19890,16 @@ def api_app_ponto_marcar_qr_me():
         return jsonify({"erro": "QR Code não pertence ao seu posto."}), 403
 
     observacao = (dados.get("observacao") or "").strip()[:500]
+    marca_celular = (dados.get("marca_celular") or dados.get("device_brand") or "").strip()[:60]
+    modelo_celular = (dados.get("modelo_celular") or dados.get("device_model") or "").strip()[:80]
+    plataforma_celular = (dados.get("plataforma") or dados.get("device_platform") or "").strip()[:40]
+    app_versao = (dados.get("app_versao") or "").strip()[:30]
+    assinatura_dispositivo = (
+        dados.get("assinatura_dispositivo")
+        or dados.get("device_id_hash")
+        or dados.get("device_fingerprint")
+        or ""
+    ).strip()[:120]
     data_hora = utcnow()
     data_ref = _app_ponto_data_ref_efetiva(f, data_hora) or data_hora.date()
     bloqueio = _app_ponto_exigir_dia_aberto(f.id, data_ref)
@@ -19781,6 +19935,26 @@ def api_app_ponto_marcar_qr_me():
     except (ValueError, TypeError): precisao = None
     if precisao is not None and (precisao < 0 or precisao > 50000):
         precisao = None
+
+    if (
+        marca_celular
+        or modelo_celular
+        or plataforma_celular
+        or app_versao
+        or assinatura_dispositivo
+    ):
+        tag_parts = []
+        if marca_celular:
+            tag_parts.append(f"marca={marca_celular}")
+        if modelo_celular:
+            tag_parts.append(f"modelo={modelo_celular}")
+        if plataforma_celular:
+            tag_parts.append(f"plataforma={plataforma_celular}")
+        if app_versao:
+            tag_parts.append(f"app={app_versao}")
+        if assinatura_dispositivo:
+            tag_parts.append(f"assinatura={assinatura_dispositivo}")
+        observacao = ((observacao + " [APP_DEVICE " + ";".join(tag_parts) + "]").strip())[:500]
 
     m = PontoMarcacao(
         funcionario_id=f.id,
@@ -21415,6 +21589,378 @@ def api_rh_comunicado_excluir(cid):
 # ============================================================
 
 
+def _mensagens_app_empresa_autorizada(funcionario):
+    uid = session.get("uid")
+    perfil = (session.get("perfil") or "").strip().lower()
+    if perfil == "dono" or not uid:
+        return True
+    try:
+        row = db.session.execute(
+            text("SELECT empresa_id FROM usuario WHERE id = :uid"),
+            {"uid": int(uid)},
+        ).first()
+        if row and row[0] and funcionario.empresa_id and int(row[0]) != int(funcionario.empresa_id):
+            return False
+    except Exception:
+        pass
+    return True
+
+
+def _mensagens_app_coletar_exportacao(fid):
+    from sqlalchemy import and_, or_
+
+    funcionario = db.get_or_404(Funcionario, fid)
+    if not _mensagens_app_empresa_autorizada(funcionario):
+        return None, (jsonify({"erro": "Acesso negado."}), 403)
+
+    msgs = (
+        MensagemApp.query.filter_by(funcionario_id=fid)
+        .order_by(MensagemApp.enviado_em.asc(), MensagemApp.id.asc())
+        .all()
+    )
+    msg_ids = [m.id for m in msgs if getattr(m, "id", None)]
+
+    aud_filtro_msg = (
+        and_(
+            AuditoriaEvento.alvo_tipo == "mensagem_app",
+            AuditoriaEvento.alvo_id.in_([str(x) for x in msg_ids]),
+        )
+        if msg_ids
+        else None
+    )
+    conds = [
+        and_(
+            AuditoriaEvento.alvo_tipo == "funcionario",
+            AuditoriaEvento.alvo_id == str(fid),
+        )
+    ]
+    if aud_filtro_msg is not None:
+        conds.append(aud_filtro_msg)
+    aud_q = AuditoriaEvento.query.filter(or_(*conds))
+    aud = aud_q.order_by(AuditoriaEvento.criado_em.asc(), AuditoriaEvento.id.asc()).all()
+
+    logs = (
+        AppLog.query.filter_by(funcionario_id=fid)
+        .order_by(AppLog.criado_em.asc(), AppLog.id.asc())
+        .all()
+    )
+
+    def _fmt_dt(dt):
+        if not dt:
+            return ""
+        try:
+            return dt.strftime("%d/%m/%Y %H:%M:%S")
+        except Exception:
+            return str(dt)
+
+    def _hash_line(prefix, partes):
+        payload = prefix + "|" + "|".join(str(p or "") for p in partes)
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    all_rows = []
+
+    prev_hash = ""
+    mensagens_rows = []
+    for m in msgs:
+        hash_linha = _hash_line(
+            "MSG",
+            [
+                prev_hash,
+                m.id,
+                m.funcionario_id,
+                int(bool(m.de_rh)),
+                _fmt_dt(m.enviado_em),
+                m.enviado_por or "",
+                m.tipo or "texto",
+                m.documento_tipo or "",
+                m.arquivo_nome or "",
+                int(bool(m.lida)),
+                m.conteudo or "",
+            ],
+        )
+        prev_hash = hash_linha
+        row = {
+            "tipo_registro": "MENSAGEM",
+            "data_hora": _fmt_dt(m.enviado_em),
+            "funcionario_id": m.funcionario_id,
+            "funcionario_nome": funcionario.nome,
+            "origem": "RH" if m.de_rh else "FUNCIONARIO",
+            "enviado_por": m.enviado_por or ("RH" if m.de_rh else "funcionario"),
+            "lida": "sim" if m.lida else "nao",
+            "tipo": m.tipo or "texto",
+            "documento_tipo": m.documento_tipo or "",
+            "arquivo_nome": m.arquivo_nome or "",
+            "conteudo": m.conteudo or "",
+            "hash_linha": hash_linha,
+        }
+        mensagens_rows.append(row)
+        all_rows.append(row)
+
+    prev_hash = ""
+    auditoria_rows = []
+    for a in aud:
+        hash_linha = _hash_line(
+            "AUD",
+            [
+                prev_hash,
+                a.id,
+                _fmt_dt(a.criado_em),
+                a.evento or "",
+                a.ator_tipo or "",
+                a.ator_id or "",
+                a.alvo_tipo or "",
+                a.alvo_id or "",
+                int(bool(a.ok)),
+                a.ip or "",
+                a.ua or "",
+                a.detalhe or "",
+            ],
+        )
+        prev_hash = hash_linha
+        row = {
+            "tipo_registro": "AUDITORIA",
+            "data_hora": _fmt_dt(a.criado_em),
+            "evento": a.evento or "",
+            "ator_tipo": a.ator_tipo or "",
+            "ator_id": a.ator_id or "",
+            "alvo_tipo": a.alvo_tipo or "",
+            "alvo_id": a.alvo_id or "",
+            "ok": "sim" if a.ok else "nao",
+            "ip": a.ip or "",
+            "ua": a.ua or "",
+            "detalhe": a.detalhe or "",
+            "hash_linha": hash_linha,
+        }
+        auditoria_rows.append(row)
+        all_rows.append(row)
+
+    prev_hash = ""
+    app_rows = []
+    for l in logs:
+        hash_linha = _hash_line(
+            "APP",
+            [
+                prev_hash,
+                l.id,
+                _fmt_dt(l.criado_em),
+                l.nivel or "",
+                l.tag or "",
+                l.mensagem or "",
+                l.stack or "",
+                l.versao_app or "",
+                l.dispositivo or "",
+                _fmt_dt(l.ts_dispositivo),
+            ],
+        )
+        prev_hash = hash_linha
+        row = {
+            "tipo_registro": "APP_LOG",
+            "data_hora": _fmt_dt(l.criado_em),
+            "nivel": l.nivel or "",
+            "tag": l.tag or "",
+            "mensagem": l.mensagem or "",
+            "stack": l.stack or "",
+            "versao_app": l.versao_app or "",
+            "dispositivo": l.dispositivo or "",
+            "ts_dispositivo": _fmt_dt(l.ts_dispositivo),
+            "hash_linha": hash_linha,
+        }
+        app_rows.append(row)
+        all_rows.append(row)
+
+    hash_manifesto = hashlib.sha256(
+        "\n".join(r["hash_linha"] for r in all_rows if r.get("hash_linha")).encode("utf-8")
+    ).hexdigest()
+
+    return {
+        "funcionario": {
+            "id": funcionario.id,
+            "nome": funcionario.nome,
+            "matricula": getattr(funcionario, "matricula", "") or "",
+            "cargo": getattr(funcionario, "cargo", "") or "",
+            "empresa": getattr(funcionario, "empresa_nome", "") or "",
+        },
+        "mensagens": mensagens_rows,
+        "auditoria": auditoria_rows,
+        "app_logs": app_rows,
+        "hash_manifesto": hash_manifesto,
+        "total_mensagens": len(mensagens_rows),
+        "total_auditoria": len(auditoria_rows),
+        "total_app_logs": len(app_rows),
+    }, None
+
+
+def _mensagens_app_exportar_csv(payload):
+    campos = [
+        "tipo_registro",
+        "data_hora",
+        "funcionario_id",
+        "funcionario_nome",
+        "origem",
+        "enviado_por",
+        "lida",
+        "tipo",
+        "documento_tipo",
+        "arquivo_nome",
+        "conteudo",
+        "evento",
+        "ator_tipo",
+        "ator_id",
+        "alvo_tipo",
+        "alvo_id",
+        "ok",
+        "ip",
+        "ua",
+        "detalhe",
+        "nivel",
+        "tag",
+        "mensagem",
+        "stack",
+        "versao_app",
+        "dispositivo",
+        "ts_dispositivo",
+        "hash_linha",
+    ]
+    sio = io.StringIO()
+    writer = csv.DictWriter(sio, fieldnames=campos, extrasaction="ignore", restval="")
+    writer.writeheader()
+    for row in payload["mensagens"] + payload["auditoria"] + payload["app_logs"]:
+        writer.writerow(row)
+    return sio.getvalue().encode("utf-8-sig")
+
+
+def _mensagens_app_exportar_docx(payload):
+    def _esc_xml(v):
+        s = "" if v is None else str(v)
+        return (
+            s.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&apos;")
+        )
+
+    linhas = []
+    linhas.append(("head", "Exportação da conversa do funcionário"))
+    linhas.append(("p", f"Funcionário: {payload['funcionario']['nome']}"))
+    if payload["funcionario"].get("matricula"):
+        linhas.append(("p", f"Matrícula: {payload['funcionario']['matricula']}"))
+    if payload["funcionario"].get("cargo"):
+        linhas.append(("p", f"Cargo: {payload['funcionario']['cargo']}"))
+    linhas.append(("p", f"Hash de integridade: {payload['hash_manifesto']}"))
+    linhas.append(("p", f"Mensagens: {payload['total_mensagens']} · Auditoria: {payload['total_auditoria']} · App logs: {payload['total_app_logs']}"))
+
+    def _bloco(secao, rows, campos):
+        linhas.append(("head2", secao))
+        if not rows:
+            linhas.append(("p", "Nenhum registro."))
+            return
+        for idx, row in enumerate(rows, start=1):
+            partes = [f"{k}: {row.get(k, '')}" for k in campos if row.get(k, "")]
+            linhas.append(("p", f"{idx}. " + " | ".join(partes)))
+
+    _bloco("Mensagens", payload["mensagens"], ["data_hora", "origem", "enviado_por", "lida", "tipo", "documento_tipo", "arquivo_nome", "conteudo", "hash_linha"])
+    _bloco("Auditoria de segurança", payload["auditoria"], ["data_hora", "evento", "ator_tipo", "ator_id", "alvo_tipo", "alvo_id", "ok", "ip", "ua", "detalhe", "hash_linha"])
+    _bloco("Logs do app", payload["app_logs"], ["data_hora", "nivel", "tag", "mensagem", "dispositivo", "versao_app", "ts_dispositivo", "hash_linha"])
+
+    body_parts = []
+    for kind, text in linhas:
+        if kind == "head":
+            body_parts.append(f'<w:p><w:r><w:rPr><w:b/><w:sz w:val="28"/></w:rPr><w:t>{_esc_xml(text)}</w:t></w:r></w:p>')
+        elif kind == "head2":
+            body_parts.append(f'<w:p><w:r><w:rPr><w:b/><w:sz w:val="22"/></w:rPr><w:t>{_esc_xml(text)}</w:t></w:r></w:p>')
+        else:
+            body_parts.append(f'<w:p><w:r><w:t>{_esc_xml(text)}</w:t></w:r></w:p>')
+
+    doc_xml = "".join([
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">',
+        '<w:body>',
+        *body_parts,
+        '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>',
+        '</w:body></w:document>',
+    ])
+    content_types = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+        '</Types>'
+    )
+    rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="R1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+        '</Relationships>'
+    )
+    docx_buf = io.BytesIO()
+    with zipfile.ZipFile(docx_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", content_types)
+        zf.writestr("_rels/.rels", rels)
+        zf.writestr("word/document.xml", doc_xml)
+    docx_buf.seek(0)
+    return docx_buf
+
+
+def _mensagens_app_exportar_pdf(payload):
+    from html import escape as html_escape
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+    from reportlab.lib.enums import TA_LEFT
+
+    class _NFDocTemplate(SimpleDocTemplate):
+        pass
+
+    buf = io.BytesIO()
+    doc = _NFDocTemplate(buf, pagesize=A4, leftMargin=1.5 * cm, rightMargin=1.5 * cm, topMargin=1.5 * cm, bottomMargin=1.5 * cm)
+
+    st_h1 = ParagraphStyle("h1", fontName="Helvetica-Bold", fontSize=16, leading=20, textColor=colors.HexColor("#1A3A5C"), alignment=TA_LEFT)
+    st_h2 = ParagraphStyle("h2", fontName="Helvetica-Bold", fontSize=12, leading=15, textColor=colors.HexColor("#205D8A"), alignment=TA_LEFT)
+    st_p = ParagraphStyle("p", fontName="Helvetica", fontSize=9.2, leading=12.5, textColor=colors.black, alignment=TA_LEFT)
+    st_m = ParagraphStyle("m", fontName="Helvetica", fontSize=8.4, leading=11.2, textColor=colors.HexColor("#333333"), alignment=TA_LEFT)
+
+    def _esc(v):
+        return html_escape(str(v or ""))
+
+    story = [
+        Paragraph("Exportação da conversa do funcionário", st_h1),
+        Paragraph(f"Funcionário: {_esc(payload['funcionario']['nome'])}", st_p),
+    ]
+    if payload["funcionario"].get("matricula"):
+        story.append(Paragraph(f"Matrícula: {_esc(payload['funcionario']['matricula'])}", st_p))
+    if payload["funcionario"].get("cargo"):
+        story.append(Paragraph(f"Cargo: {_esc(payload['funcionario']['cargo'])}", st_p))
+    story += [
+        Spacer(1, 0.2 * cm),
+        Paragraph(f"Hash de integridade: {_esc(payload['hash_manifesto'])}", st_m),
+        Paragraph(f"Mensagens: {payload['total_mensagens']} · Auditoria: {payload['total_auditoria']} · App logs: {payload['total_app_logs']}", st_m),
+        Spacer(1, 0.25 * cm),
+    ]
+
+    def _add_section(title, rows, campos):
+        story.append(Paragraph(title, st_h2))
+        if not rows:
+            story.append(Paragraph("Nenhum registro.", st_p))
+            story.append(Spacer(1, 0.12 * cm))
+            return
+        for idx, row in enumerate(rows, start=1):
+            partes = [f"{k}: {_esc(row.get(k, ''))}" for k in campos if row.get(k, "")]
+            story.append(Paragraph(f"{idx}. " + "<br/>".join(_esc(" | ".join(partes)).split(" | ")), st_p))
+        story.append(Spacer(1, 0.18 * cm))
+
+    _add_section("Mensagens", payload["mensagens"], ["data_hora", "origem", "enviado_por", "lida", "tipo", "documento_tipo", "arquivo_nome", "conteudo", "hash_linha"])
+    _add_section("Auditoria de segurança", payload["auditoria"], ["data_hora", "evento", "ator_tipo", "ator_id", "alvo_tipo", "alvo_id", "ok", "ip", "ua", "detalhe", "hash_linha"])
+    _add_section("Logs do app", payload["app_logs"], ["data_hora", "nivel", "tag", "mensagem", "dispositivo", "versao_app", "ts_dispositivo", "hash_linha"])
+
+    doc.build(story)
+    buf.seek(0)
+    return buf
+
+
 @app.route("/api/mensagens-app/funcionarios")
 @lr
 def api_rh_mensagens_funcionarios():
@@ -21422,6 +21968,7 @@ def api_rh_mensagens_funcionarios():
     from sqlalchemy import func as sqlfunc
 
     empresa_id = request.args.get("empresa_id")
+    status_filtro = (request.args.get("status") or "ativo").strip().lower()
     base_q = db.session.query(
         MensagemApp.funcionario_id,
         sqlfunc.count(MensagemApp.id).label("total"),
@@ -21443,7 +21990,15 @@ def api_rh_mensagens_funcionarios():
         f = db.session.get(Funcionario, row.funcionario_id)
         if not f:
             continue
-        if _status_norm(f.status) in ("demitido", "inativo") or not bool(getattr(f, "app_ativo", True)):
+        st_norm = _status_norm(f.status)
+        if status_filtro == "ativo":
+            if st_norm in ("demitido", "inativo") or not bool(getattr(f, "app_ativo", True)):
+                continue
+        elif status_filtro == "inativo":
+            if st_norm == "ativo":
+                continue
+        # status=all -> sem filtro adicional de status
+        if not bool(getattr(f, "app_ativo", True)) and status_filtro == "ativo":
             continue
         result.append(
             {
@@ -21475,7 +22030,64 @@ def api_rh_mensagens_chat(fid):
         if not m.de_rh and not m.lida:
             m.lida = True
     db.session.commit()
+    audit_event(
+        "mensagens_app_visualizar",
+        "usuario",
+        session.get("uid"),
+        "funcionario",
+        fid,
+        True,
+        {"mensagens": len(msgs)},
+    )
     return jsonify([m.to_dict() for m in msgs])
+
+
+@app.route("/api/mensagens-app/<int:fid>/export.<formato>")
+@lr
+def api_rh_mensagens_exportar(fid, formato):
+    formato = (formato or "").strip().lower()
+    if formato not in ("csv", "pdf", "docx"):
+        return jsonify({"erro": "Formato inválido."}), 400
+    payload, erro = _mensagens_app_coletar_exportacao(fid)
+    if erro:
+        return erro
+    funcionario_nome = payload["funcionario"]["nome"]
+    base = re.sub(r"[^a-zA-Z0-9_-]+", "_", funcionario_nome.lower()).strip("_") or f"funcionario_{fid}"
+    nome_base = f"conversa_{base}_{fid}"
+    audit_event(
+        "mensagens_app_exportar",
+        "usuario",
+        session.get("uid"),
+        "funcionario",
+        fid,
+        True,
+        {
+            "formato": formato,
+            "mensagens": payload["total_mensagens"],
+            "auditoria": payload["total_auditoria"],
+            "app_logs": payload["total_app_logs"],
+            "hash_manifesto": payload["hash_manifesto"],
+        },
+    )
+    if formato == "csv":
+        return Response(
+            _mensagens_app_exportar_csv(payload),
+            mimetype="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f"attachment; filename={nome_base}.csv"},
+        )
+    if formato == "docx":
+        return send_file(
+            _mensagens_app_exportar_docx(payload),
+            as_attachment=True,
+            download_name=f"{nome_base}.docx",
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+    return send_file(
+        _mensagens_app_exportar_pdf(payload),
+        as_attachment=True,
+        download_name=f"{nome_base}.pdf",
+        mimetype="application/pdf",
+    )
 
 
 @app.route("/api/mensagens-app/<int:fid>", methods=["POST"])
@@ -21500,6 +22112,15 @@ def api_rh_mensagem_responder(fid):
     )
     db.session.add(m)
     db.session.commit()
+    audit_event(
+        "mensagens_app_responder",
+        "usuario",
+        session.get("uid"),
+        "funcionario",
+        fid,
+        True,
+        {"mensagem_id": m.id, "tamanho": len(conteudo)},
+    )
     tem_token_push = bool((f.app_push_token or "").strip())
     push_enviado = _push_notify_funcionario(
         fid,
@@ -33727,9 +34348,20 @@ def api_smtp_get():
 @dr
 def api_smtp_save():
     d = request.json or {}
-    for k in ["host", "port", "user", "de", "tls"]:
+    for k in ["host", "port", "user", "tls"]:
         if k in d:
             sc_cfg(f"smtp_{k}", str(d[k]))
+    if "de" in d:
+        sender_raw = str(d.get("de", "")).strip()
+        if sender_raw:
+            smtp_user = str(d.get("user", "")).strip() or gc("smtp_user", "")
+            try:
+                sender = _smtp_normalize_sender(sender_raw, smtp_user)
+            except ValueError as e:
+                return jsonify({"erro": str(e)}), 400
+            sc_cfg("smtp_de", sender["header_from"])
+        else:
+            sc_cfg("smtp_de", "")
     if str(d.get("senha_clear", "0")).strip().lower() in ("1", "true", "yes", "on"):
         sc_cfg("smtp_senha", "")
     elif "senha" in d and str(d.get("senha", "")).strip():
@@ -33744,12 +34376,15 @@ def api_smtp_testar():
     dest = (d.get("email") or gc("smtp_user", "")).strip()
     if not dest:
         return jsonify({"erro": "Informe o e-mail de destino"}), 400
+    if not _is_valid_email_address(dest):
+        return jsonify({"erro": "E-mail de destino inválido."}), 400
     try:
         cfg = smtp_cfg()
         if not cfg["host"] or not cfg["user"]:
             return jsonify({"erro": "SMTP nao configurado"}), 400
+        sender = _smtp_normalize_sender(cfg.get("de", ""), cfg.get("user", ""))
         msg = MIMEMultipart()
-        msg["From"] = cfg["de"] or cfg["user"]
+        msg["From"] = sender["header_from"]
         msg["To"] = dest
         msg["Subject"] = "Teste de envio — RM Facilities"
         msg.attach(
@@ -33764,12 +34399,14 @@ def api_smtp_testar():
             with smtplib.SMTP(cfg["host"], port, timeout=20) as s:
                 s.starttls()
                 s.login(cfg["user"], cfg["senha"])
-                s.sendmail(cfg["de"] or cfg["user"], dest, msg.as_string())
+                s.sendmail(sender["envelope_from"], dest, msg.as_string())
         else:
             with smtplib.SMTP_SSL(cfg["host"], port, timeout=20) as s:
                 s.login(cfg["user"], cfg["senha"])
-                s.sendmail(cfg["de"] or cfg["user"], dest, msg.as_string())
+                s.sendmail(sender["envelope_from"], dest, msg.as_string())
         return jsonify({"ok": True, "mensagem": f"E-mail enviado para {dest}"})
+    except ValueError as e:
+        return jsonify({"erro": str(e)}), 400
     except Exception as e:
         return jsonify({"erro": str(e)}), 500
 

@@ -2642,15 +2642,15 @@ document.addEventListener('DOMContentLoaded',()=>{
     <!-- ══ COMUNICAÇÃO ══ -->
     <div id="pg-rh-digital" class="pg">
       <div id="st-rhd" class="st"></div>
-      <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap" id="rhd-tabs">
-        <button class="btn b-az b-sm" onclick="switchTab('rhd','conversas',this)">Envio ativos</button>
-        <button class="btn b-gh b-sm" onclick="switchTab('rhd','mensagens-app',this)">💬 Chat App <span id="badge-msgs-app" style="display:none;background:var(--verm);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>
-        <button class="btn b-gh b-sm" onclick="switchTab('rhd','cfg-email',this)">Config E-mail</button>
-        <button class="btn b-gh b-sm" onclick="switchTab('rhd','cfg-wa',this)">Config WhatsApp</button>
+      <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap" id="rhd-tabs" role="tablist" aria-label="Abas de comunicação">
+        <button type="button" class="btn b-az b-sm" role="tab" aria-selected="true" onclick="switchTab('rhd','conversas',this)">Envio ativos</button>
+        <button type="button" class="btn b-gh b-sm" role="tab" aria-selected="false" onclick="switchTab('rhd','mensagens-app',this)">💬 Chat App <span id="badge-msgs-app" style="display:none;background:var(--verm);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:4px">0</span></button>
+        <button type="button" class="btn b-gh b-sm" role="tab" aria-selected="false" onclick="switchTab('rhd','cfg-email',this)">Config E-mail</button>
+        <button type="button" class="btn b-gh b-sm" role="tab" aria-selected="false" onclick="switchTab('rhd','cfg-wa',this)">Config WhatsApp</button>
       </div>
 
       <!-- Tab Envio WhatsApp -->
-      <div id="rhd-tab-conversas">
+      <div id="rhd-tab-conversas" class="rhd-tab-pane" role="tabpanel">
         <div class="card" style="margin-bottom:12px">
           <div class="card-header"><span class="card-title">Envio por WhatsApp para colaboradores ativos</span></div>
           <div class="g3" style="margin-top:8px">
@@ -2677,8 +2677,12 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div id="wa-colab-st" class="st" style="margin-top:8px"></div>
         </div>
 
+      </div>
+
+      <!-- Tab Chat App -->
+      <div id="rhd-tab-mensagens-app" class="rhd-tab-pane" style="display:none" role="tabpanel" hidden>
         <!-- Caixa de conversas WhatsApp -->
-        <div class="card" style="margin-top:14px">
+        <div class="card" style="margin-bottom:14px">
           <div class="card-header">
             <span class="card-title">💬 Conversas WhatsApp (Inbox)</span>
             <button class="btn b-gh b-sm" onclick="loadWAConversas()">↻ Atualizar</button>
@@ -2711,10 +2715,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Tab Chat App -->
-      <div id="rhd-tab-mensagens-app" style="display:none">
         <div style="display:flex;gap:10px;height:520px">
           <!-- Lista de funcionários -->
           <div style="width:260px;min-width:200px;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
@@ -2801,7 +2802,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
 
       <!-- Tab Config E-mail -->
-      <div id="rhd-tab-cfg-email" style="display:none">
+      <div id="rhd-tab-cfg-email" class="rhd-tab-pane" style="display:none" role="tabpanel" hidden>
         <div class="card">
           <div class="card-header"><span class="card-title">Configuração de E-mail (SMTP)</span></div>
           <div class="g3">
@@ -2830,7 +2831,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
 
       <!-- Tab Config WhatsApp -->
-      <div id="rhd-tab-cfg-wa" style="display:none">
+      <div id="rhd-tab-cfg-wa" class="rhd-tab-pane" style="display:none" role="tabpanel" hidden>
         <div class="card">
           <div class="card-header"><span class="card-title">Configuração WhatsApp (Evolution API)</span></div>
           <div class="f"><label>URL base da Evolution API</label><input id="wa-url" placeholder="https://api.suaevolution.com.br"></div>
@@ -15701,23 +15702,24 @@ let _rhdJob=null, _waNumeroAtual=null, _waConversasTodas=[];
 let _rhdAssFiltro='todos';
 
 function initRHDigital(){
-  // activate first tab if not active
-  const tabs=document.querySelectorAll('#rhd-tabs .btn');
-  if(tabs.length && !Array.from(tabs).some(b=>b.classList.contains('b-az'))){
-    tabs[0].classList.replace('b-gh','b-az');
-  }
-  waCarregarDisparoColaboradores();
+  const tabs=Array.from(document.querySelectorAll('#rhd-tabs .btn'));
+  if(!tabs.length) return;
+  const atual=tabs.find(b=>b.classList.contains('b-az'))||tabs[0];
+  const onclick=String(atual.getAttribute('onclick')||'');
+  const m=onclick.match(/switchTab\('rhd','([^']+)'/);
+  const tab=(m&&m[1])?m[1]:'conversas';
+  switchTab('rhd',tab,atual);
 }
 
 function switchTab(prefix,tab,el){
-  document.querySelectorAll(`[id^="${prefix}-tab-"]`).forEach(d=>d.style.display='none');
+  const paineis=document.querySelectorAll(`[id^="${prefix}-tab-"]`);
+  paineis.forEach(d=>{d.style.display='none';d.hidden=true;d.classList.remove('on');});
   const target=document.getElementById(`${prefix}-tab-${tab}`);
-  if(target)target.style.display='';
-  document.querySelectorAll(`#${prefix}-tabs .btn`).forEach(b=>{b.classList.remove('b-az');b.classList.add('b-gh');});
-  if(el){el.classList.remove('b-gh');el.classList.add('b-az');}
+  if(target){target.style.display='';target.hidden=false;target.classList.add('on');}
+  document.querySelectorAll(`#${prefix}-tabs .btn`).forEach(b=>{b.classList.remove('b-az');b.classList.add('b-gh');b.setAttribute('aria-selected','false');});
+  if(el){el.classList.remove('b-gh');el.classList.add('b-az');el.setAttribute('aria-selected','true');}
   if(prefix==='rhd'&&tab==='conversas'){
     waCarregarDisparoColaboradores();
-    loadWAConversas();
   }
   if(prefix==='rhd'&&tab==='cfg-email')loadSMTPConfig();
   if(prefix==='rhd'&&tab==='cfg-wa')loadWAConfig();
@@ -15901,7 +15903,11 @@ async function mapsCarregarListaComunicados(){
   try{
     const lista=await api('/api/comunicados-app');
     if(!lista.length){el.innerHTML='<div class="vazio">Nenhum comunicado ainda.</div>';return;}
-    el.innerHTML=lista.slice(0,20).map(c=>`
+    el.innerHTML=lista.slice(0,20).map(c=>{
+      const conteudoRaw=String(c.conteudo||'');
+      const conteudoHtml=escHtml(conteudoRaw);
+      const precisaToggle=conteudoRaw.length>180 || conteudoRaw.split(/\r?\n/).length>2;
+      return `
       <div style="border:1px solid var(--borda);border-radius:8px;padding:8px 12px;margin-bottom:6px;${c.ativo?'':'opacity:.5'}">
         <div style="display:flex;align-items:center;gap:8px">
           <strong style="font-size:13px;flex:1">${escHtml(c.titulo)}</strong>
@@ -15909,13 +15915,30 @@ async function mapsCarregarListaComunicados(){
           <button class="btn b-gh b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsToggleComunicado(${c.id},${!c.ativo})">${c.ativo?'Desativar':'Ativar'}</button>
           <button class="btn b-er b-sm" style="padding:2px 8px;font-size:11px" onclick="mapsExcluirComunicado(${c.id})">✕</button>
         </div>
-        <div style="font-size:12px;color:var(--text-muted);margin-top:4px">${escHtml(c.conteudo)}</div>
+        <div style="margin-top:4px">
+          <div id="com-conteudo-${c.id}" class="comunicado-conteudo${precisaToggle?' truncado':''}">${conteudoHtml}</div>
+          ${precisaToggle?`<button type="button" class="comunicado-toggle" onclick="mapsToggleComunicadoTexto(${c.id},this)">Ver mais</button>`:''}
+        </div>
         ${c.url?`<div style="font-size:11px;margin-top:4px">🔗 <a href="${escHtml(c.url)}" target="_blank" rel="noopener">${escHtml(c.url)}</a></div>`:''}
         ${c.funcionario_id?`<div style="font-size:10px;color:var(--azul);margin-top:2px">Para: funcionário #${c.funcionario_id}</div>`:
          c.posto_operacional?`<div style="font-size:10px;color:var(--laranja);margin-top:2px">Para: posto "${c.posto_operacional}"</div>`:
          '<div style="font-size:10px;color:var(--verde);margin-top:2px">Para: todos</div>'}
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }catch(e){el.innerHTML='<div class="vazio">Erro ao carregar comunicados.</div>';}
+}
+
+function mapsToggleComunicadoTexto(id,btn){
+  const box=document.getElementById(`com-conteudo-${id}`);
+  if(!box||!btn) return;
+  const expandido=box.classList.toggle('expandido');
+  if(expandido){
+    box.classList.remove('truncado');
+    btn.textContent='Ver menos';
+  }else{
+    box.classList.add('truncado');
+    btn.textContent='Ver mais';
+  }
 }
 
 async function mapsCriarComunicado(){
@@ -16473,7 +16496,19 @@ async function loadSMTPConfig(){
   document.getElementById('smtp-tls').value=d.tls||'1';
 }
 
+function smtpSenderValido(v){
+  const s=String(v||'').trim();
+  if(!s) return true;
+  const m=s.match(/^\s*(?:([^<>]+)\s*<\s*)?([A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)\s*>?\s*$/);
+  return !!(m&&m[2]);
+}
+
 async function salvarSMTP(){
+  const de=document.getElementById('smtp-de').value;
+  if(!smtpSenderValido(de)){
+    showSt('smtp-st','Remetente inválido. Use e-mail válido ou Nome <email@dominio>.',true);
+    return;
+  }
   const d={host:document.getElementById('smtp-host').value,port:document.getElementById('smtp-port').value,user:document.getElementById('smtp-user').value,senha:document.getElementById('smtp-senha').value,de:document.getElementById('smtp-de').value,tls:document.getElementById('smtp-tls').value};
   const r=await api('/api/config/smtp','POST',d);
   showSt('smtp-st',r.erro||'Configurações salvas!',!!r.erro);

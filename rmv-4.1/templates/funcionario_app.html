@@ -134,6 +134,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 /* Documentos */
 .doc-item{display:flex;align-items:center;gap:11px;padding:12px;background:var(--bg3);border-radius:12px;margin-bottom:8px}
 .doc-icon{width:38px;height:38px;background:var(--blue-cl);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.doc-brand{width:40px;height:40px;border-radius:10px;object-fit:contain;background:#fff;border:1px solid rgba(148,163,184,.3);padding:4px;flex-shrink:0}
 .doc-info{flex:1;min-width:0}
 .doc-name{font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .doc-meta{font-size:11px;color:var(--text2);margin-top:2px}
@@ -866,6 +867,16 @@ function jsq(s){
   return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
 }
 
+function docLogoUrl(a){
+  if(a && a.logo_url) return String(a.logo_url);
+  return '/static/img/logo-rm-facilities.png';
+}
+
+function renderDocLogo(a){
+  var src=docLogoUrl(a);
+  return '<img class="doc-brand" src="'+esc(src)+'" alt="Logo do documento" onerror="this.style.display=\'none\'">';
+}
+
 function renderArquivoAcao(arquivoId,nome,status){
   var acoes='';
   var url=arquivoId?'/api/app/funcionario/arquivos/'+arquivoId+'/download':'';
@@ -1123,7 +1134,7 @@ function loadDocsAssin(){
     if(!itens.length){el.innerHTML='<div class="empty-state"><div class="emo">📋</div>Nenhuma assinatura.</div>';return;}
     el.innerHTML=itens.map(function(a){
       var validarBtn=a.ass_codigo?'<button class="btn-sm btn-dl" type="button" onclick="window.open(\'/doc/validar/'+encodeURIComponent(a.ass_codigo)+'\',\'_blank\',\'noopener\')">Validar</button>':'';
-      return '<div class="doc-item"><div class="doc-icon">📄</div>'
+      return '<div class="doc-item">'+renderDocLogo(a)+'<div class="doc-icon">📄</div>'
         +'<div class="doc-info"><div class="doc-name">'+esc(a.nome_arquivo||a.categoria_label||'Documento')+'</div>'
         +'<div class="doc-meta">'+esc(a.categoria_label||'')+(a.competencia?' · '+esc(a.competencia):'')
         +' · Assinado '+esc(a.ass_em_fmt||'')+'</div>'
@@ -1140,7 +1151,7 @@ function renderDocItem(a,showSign){
   var assinado=['assinado','concluida'].indexOf((a.ass_status||'').toLowerCase())>=0;
   var nome=a.nome_arquivo||a.nome||'Documento';
   var meta=[a.categoria_label||a.categoria||'',a.competencia||''].filter(function(x){return x;}).join(' · ');
-  return '<div class="doc-item"><div class="doc-icon">📄</div>'
+  return '<div class="doc-item">'+renderDocLogo(a)+'<div class="doc-icon">📄</div>'
     +'<div class="doc-info"><div class="doc-name">'+esc(nome)+'</div>'
     +'<div class="doc-meta">'+esc(meta)+(a.ass_status?' · '+esc(a.ass_status):'')+'</div></div>'
     +'<div class="doc-actions">'
