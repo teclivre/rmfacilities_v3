@@ -14654,7 +14654,7 @@ def _gerar_carta_simples_nacional_pdf(empresa_declarante, destinatario_nome, des
         )
 
     hdr_data = [
-        [Paragraph("DECLARAÇÃO SIMPLE NACIONAL", st_title), logo_el],
+        [Paragraph("DECLARAÇÃO SIMPLES NACIONAL", st_title), logo_el],
         [Paragraph(emp_nome, st_sub), ""],
     ]
     hdr_table = Table(hdr_data, colWidths=[12 * cm, 5.5 * cm])
