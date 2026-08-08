@@ -25939,7 +25939,8 @@ def api_rh_ponto_ciclo_colaboradores():
     if empresa_id:
         q = q.filter(Funcionario.empresa_id == empresa_id)
     if somente_ativos:
-        q = q.filter(Funcionario.status == "Ativo")
+        from sqlalchemy import or_ as _or_sa1
+        q = q.filter(_or_sa1(Funcionario.status == "Ativo", Funcionario.status == "Férias"))
     funcionarios = q.order_by(Funcionario.nome.asc()).all()
 
     ids = [f.id for f in funcionarios]
@@ -26025,7 +26026,8 @@ def api_rh_ponto_ciclo_fechar():
     if empresa_id:
         q = q.filter(Funcionario.empresa_id == empresa_id)
     if somente_ativos:
-        q = q.filter(Funcionario.status == "Ativo")
+        from sqlalchemy import or_ as _or_sa2
+        q = q.filter(_or_sa2(Funcionario.status == "Ativo", Funcionario.status == "Férias"))
     if funcionario_ids:
         q = q.filter(Funcionario.id.in_(funcionario_ids))
     funcionarios = q.order_by(Funcionario.nome.asc()).all()
@@ -27609,7 +27611,8 @@ def api_beneficios_cesta_natal_xlsx():
 def _beneficios_folha_resumo(comp, empresa_id=None):
     empresa_ref_id = empresa_id or 0
     comp = norm_competencia(comp)
-    qf = Funcionario.query.filter_by(status="Ativo")
+    from sqlalchemy import or_ as _or_bfr
+    qf = Funcionario.query.filter(_or_bfr(Funcionario.status == "Ativo", Funcionario.status == "Férias"))
     if empresa_id:
         qf = qf.filter_by(empresa_id=empresa_id)
     funcs_ativos = qf.all()
@@ -28627,8 +28630,9 @@ def api_beneficios_calcular_por_periodo():
                 return False
         return True
 
-    # Funcionários ativos
-    qf = Funcionario.query.filter_by(status="Ativo")
+    # Funcionários ativos ou em férias
+    from sqlalchemy import or_ as _or_fa
+    qf = Funcionario.query.filter(_or_fa(Funcionario.status == "Ativo", Funcionario.status == "Férias"))
     if empresa_id:
         qf = qf.filter_by(empresa_id=empresa_id)
     funcs = qf.order_by(Funcionario.nome).all()
@@ -29603,7 +29607,8 @@ def _api_beneficios_pdf_tipo(tipo):
 
 
 def _financeiro_salarios_competencia(comp, empresa_id=None):
-    qf = Funcionario.query.filter_by(status="Ativo")
+    from sqlalchemy import or_ as _or_fsc
+    qf = Funcionario.query.filter(_or_fsc(Funcionario.status == "Ativo", Funcionario.status == "Férias"))
     if empresa_id:
         qf = qf.filter_by(empresa_id=empresa_id)
     funcs_ativos = qf.order_by(Funcionario.nome).all()
