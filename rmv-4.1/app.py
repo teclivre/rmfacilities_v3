@@ -21929,6 +21929,7 @@ def api_rh_mensagens_funcionarios():
     from sqlalchemy import func as sqlfunc
 
     empresa_id = request.args.get("empresa_id")
+    status_filtro = (request.args.get("status") or "ativo").strip().lower()
     base_q = db.session.query(
         MensagemApp.funcionario_id,
         sqlfunc.count(MensagemApp.id).label("total"),
@@ -21950,7 +21951,15 @@ def api_rh_mensagens_funcionarios():
         f = db.session.get(Funcionario, row.funcionario_id)
         if not f:
             continue
-        if _status_norm(f.status) in ("demitido", "inativo") or not bool(getattr(f, "app_ativo", True)):
+        st_norm = _status_norm(f.status)
+        if status_filtro == "ativo":
+            if st_norm in ("demitido", "inativo") or not bool(getattr(f, "app_ativo", True)):
+                continue
+        elif status_filtro == "inativo":
+            if st_norm == "ativo":
+                continue
+        # status=all -> sem filtro adicional de status
+        if not bool(getattr(f, "app_ativo", True)) and status_filtro == "ativo":
             continue
         result.append(
             {
