@@ -622,16 +622,17 @@ document.addEventListener('DOMContentLoaded',()=>{
     <label>Navegação rápida</label>
     <div class="mobile-nav-scroller" id="mobile-nav-scroller">
       <button type="button" class="mobile-nav-btn on" data-nav="dashboard" onclick="navFromMobile('dashboard')">Dashboard</button>
-      <button type="button" class="mobile-nav-btn" data-nav="pagamento-salario" onclick="navFromMobile('pagamento-salario')">Salarios</button>
       <button type="button" class="mobile-nav-btn" data-nav="clientes" onclick="navFromMobile('clientes')">Clientes</button>
       <button type="button" class="mobile-nav-btn" data-nav="rh" onclick="navFromMobile('rh')">RH</button>
+      <button type="button" class="mobile-nav-btn" data-nav="controle-ponto" onclick="navFromMobile('controle-ponto')">Controle de Ponto</button>
       <button type="button" class="mobile-nav-btn" data-nav="rh-digital" onclick="navFromMobile('rh-digital')">Comunicação</button>
+      <button type="button" class="mobile-nav-btn" data-nav="assinaturas" onclick="navFromMobile('assinaturas')">Assinaturas</button>
+      <button type="button" class="mobile-nav-btn" data-nav="documentos" onclick="navFromMobile('documentos')">Documentos</button>
       <button type="button" class="mobile-nav-btn" data-nav="operacional" onclick="navFromMobile('operacional')">Operacional</button>
       <button type="button" class="mobile-nav-btn" data-nav="compras" onclick="navFromMobile('compras')">Compras</button>
       <button type="button" class="mobile-nav-btn" data-nav="beneficios" onclick="navFromMobile('beneficios')">Benefícios</button>
+      <button type="button" class="mobile-nav-btn" data-nav="pagamento-salario" onclick="navFromMobile('pagamento-salario')">Salarios</button>
       <button type="button" class="mobile-nav-btn" data-nav="sst" onclick="navFromMobile('sst')">SST</button>
-      <button type="button" class="mobile-nav-btn" data-nav="assinaturas" onclick="navFromMobile('assinaturas')">Assinaturas</button>
-      <button type="button" class="mobile-nav-btn" data-nav="documentos" onclick="navFromMobile('documentos')">📄 Documentos</button>
       <button type="button" class="mobile-nav-btn" data-nav="empresas" onclick="navFromMobile('empresas')">Empresas</button>
       <button type="button" class="mobile-nav-btn" data-nav="usuarios" onclick="navFromMobile('usuarios')">Usuários</button>
       <button type="button" class="mobile-nav-btn" data-nav="config" onclick="navFromMobile('config')">Configurações</button>
@@ -679,14 +680,45 @@ document.addEventListener('DOMContentLoaded',()=>{
           <span class="mod-icon">👥</span><span class="module-label">RH</span><span class="module-caret">▾</span>
         </button>
         <div class="module-panel">
-          <a class="nav-item lv2" onclick="nav('rh',this)"><span class="nav-label">RH</span></a>
-          <a class="nav-item lv2" onclick="nav('controle-ponto',this)"><span class="nav-label">Controle de Ponto</span></a>
-          <a class="nav-item lv2" onclick="nav('rh-digital',this)"><span class="nav-label">Comunicacao</span></a>
           <a class="nav-item lv2" onclick="nav('beneficios',this)"><span class="nav-label">Beneficios</span></a>
           <a class="nav-item lv2" data-nav="pagamento-salario" onclick="nav('pagamento-salario',this)"><span class="nav-label">Pagamento de Salário</span></a>
           <a class="nav-item lv2" onclick="nav('sst',this)"><span class="nav-label">Seguranca do Trabalho</span></a>
+        </div>
+      </div>
+
+      <div class="nav-module" id="mod-controle-ponto">
+        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-controle-ponto')">
+          <span class="mod-icon">⏱️</span><span class="module-label">Controle de Ponto</span><span class="module-caret">▾</span>
+        </button>
+        <div class="module-panel">
+          <a class="nav-item lv2" onclick="nav('controle-ponto',this)"><span class="nav-label">Controle de Ponto</span></a>
+        </div>
+      </div>
+
+      <div class="nav-module" id="mod-comunicacao">
+        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-comunicacao')">
+          <span class="mod-icon">💬</span><span class="module-label">Comunicacao</span><span class="module-caret">▾</span>
+        </button>
+        <div class="module-panel">
+          <a class="nav-item lv2" onclick="nav('rh-digital',this)"><span class="nav-label">Comunicacao</span></a>
+        </div>
+      </div>
+
+      <div class="nav-module" id="mod-assinaturas">
+        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-assinaturas')">
+          <span class="mod-icon">✍️</span><span class="module-label">Assinaturas</span><span class="module-caret">▾</span>
+        </button>
+        <div class="module-panel">
           <a class="nav-item lv2" onclick="nav('assinaturas',this)"><span class="nav-label">Assinaturas</span></a>
-          <a class="nav-item lv2" onclick="nav('documentos',this)"><span class="nav-label">📄 Documentos</span></a>
+        </div>
+      </div>
+
+      <div class="nav-module" id="mod-documentos">
+        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-documentos')">
+          <span class="mod-icon">📄</span><span class="module-label">Documentos</span><span class="module-caret">▾</span>
+        </button>
+        <div class="module-panel">
+          <a class="nav-item lv2" onclick="nav('documentos',this)"><span class="nav-label">Documentos</span></a>
         </div>
       </div>
 
@@ -758,60 +790,49 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button class="metric metric-btn lj" type="button" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))" aria-label="Cálculo de benefícios pendente"><div class="n" id="d-calc-benef">—</div><div class="l">Cálculos pendentes <span class="metric-go">Ver</span></div></button>
       </div>
       <div id="dash-alertas" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px"></div>
-      <div class="card dash-tabs-card">
-        <div class="dash-tabs" role="tablist" aria-label="Resumo do dashboard">
-          <button type="button" class="dash-tab is-active" id="dash-tab-resumo" role="tab" aria-selected="true" aria-controls="dash-panel-resumo" onclick="setDashboardTab('resumo',this)">Resumo de colaboradores</button>
-          <button type="button" class="dash-tab" id="dash-tab-ponto" role="tab" aria-selected="false" aria-controls="dash-panel-ponto" onclick="setDashboardTab('ponto',this)">Ponto do dia</button>
-          <button type="button" class="dash-tab" id="dash-tab-acesso" role="tab" aria-selected="false" aria-controls="dash-panel-acesso" onclick="setDashboardTab('acesso',this)">Acesso rápido</button>
-        </div>
-
-        <div id="dash-panel-resumo" class="dash-tab-panel is-active" role="tabpanel" aria-labelledby="dash-tab-resumo">
-          <div class="dash-resumo-grid">
-            <div class="dash-resumo-item">
-              <div class="dash-resumo-num azul" id="dash-resumo-ativos">—</div>
-              <div class="dash-resumo-label">Ativos</div>
-            </div>
-            <div class="dash-resumo-item">
-              <div class="dash-resumo-num verde" id="dash-resumo-ferias">—</div>
-              <div class="dash-resumo-label">Em férias</div>
-            </div>
-            <div class="dash-resumo-item">
-              <div class="dash-resumo-num laranja" id="dash-resumo-afastados">—</div>
-              <div class="dash-resumo-label">Afastados</div>
-            </div>
-            <div class="dash-resumo-item">
-              <div class="dash-resumo-num muted" id="dash-resumo-ponto-hoje">—</div>
-              <div class="dash-resumo-label">Ponto hoje</div>
-            </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-header"><span class="card-title">Resumo de colaboradores</span></div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:12px 0;text-align:center">
+          <div>
+            <div style="font-size:28px;font-weight:700;color:var(--azul)" id="dash-resumo-ativos">—</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ativos</div>
           </div>
-        </div>
-
-        <div id="dash-panel-ponto" class="dash-tab-panel" role="tabpanel" aria-labelledby="dash-tab-ponto" hidden>
-          <div class="dash-ponto-head">
-            <span class="card-title">Ponto do dia</span>
-            <span class="dash-ponto-data" id="dash-ponto-data"></span>
+          <div>
+            <div style="font-size:28px;font-weight:700;color:var(--verde)" id="dash-resumo-ferias">—</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Em férias</div>
           </div>
-          <div class="dash-ponto-grid">
-            <button type="button" class="dash-ponto-card ok" onclick="abrirModalPontoDia('bateram')">
-              <div class="dash-ponto-num" id="dash-ponto-bateram">—</div>
-              <div class="dash-ponto-label">✅ Bateram ponto</div>
-            </button>
-            <button type="button" class="dash-ponto-card alerta" onclick="abrirModalPontoDia('falta')">
-              <div class="dash-ponto-num" id="dash-ponto-falta">—</div>
-              <div class="dash-ponto-label">❌ Falta / sem registro</div>
-            </button>
+          <div>
+            <div style="font-size:28px;font-weight:700;color:var(--laranja)" id="dash-resumo-afastados">—</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Afastados</div>
           </div>
-        </div>
-
-        <div id="dash-panel-acesso" class="dash-tab-panel" role="tabpanel" aria-labelledby="dash-tab-acesso" hidden>
-          <div class="dash-atalhos-grid">
-            <button class="btn b-az b-lg" style="justify-content:center" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))">RH</button>
-            <button class="btn b-gh b-lg" style="justify-content:center" onclick="nav('clientes',document.querySelector('[onclick*=clientes]'))">Clientes</button>
-            <button class="btn b-ghl b-lg" style="justify-content:center" onclick="nav('operacional',document.querySelector('.nav-item[data-nav=\'operacional\']'))">Operacional</button>
+          <div>
+            <div style="font-size:28px;font-weight:700;color:var(--text-muted)" id="dash-resumo-ponto-hoje">—</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ponto hoje</div>
           </div>
         </div>
       </div>
-      <div id="dash-empresas" class="dash-empresas-grid"></div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-header"><span class="card-title">Ponto do dia</span><span style="font-size:11px;color:var(--text-muted)" id="dash-ponto-data"></span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:12px 0;text-align:center">
+          <button type="button" class="metric metric-btn" style="background:none;border:2px solid var(--verde);border-radius:10px;padding:16px 8px;cursor:pointer" onclick="abrirModalPontoDia('bateram')">
+            <div style="font-size:36px;font-weight:700;color:var(--verde)" id="dash-ponto-bateram">—</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:4px">✅ Bateram ponto</div>
+          </button>
+          <button type="button" class="metric metric-btn" style="background:none;border:2px solid var(--verm);border-radius:10px;padding:16px 8px;cursor:pointer" onclick="abrirModalPontoDia('falta')">
+            <div style="font-size:36px;font-weight:700;color:var(--verm)" id="dash-ponto-falta">—</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:4px">❌ Falta / sem registro</div>
+          </button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Acesso rápido</span></div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+          <button class="btn b-az b-lg" style="justify-content:center" onclick="nav('rh',document.querySelector('.nav-item[data-nav=\'rh\']'))">RH</button>
+          <button class="btn b-gh b-lg" style="justify-content:center" onclick="nav('clientes',document.querySelector('[onclick*=clientes]'))">Clientes</button>
+          <button class="btn b-ghl b-lg" style="justify-content:center" onclick="nav('operacional',document.querySelector('.nav-item[data-nav=\'operacional\']'))">Operacional</button>
+        </div>
+      </div>
+      <div id="dash-empresas" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"></div>
     </div>
 
     <!-- ══ ABA FINANCEIRO (PLACEHOLDER) ══ -->
@@ -5398,21 +5419,6 @@ function filtrarSSTFuncionarios(){
   if(atual && Array.from(el.options).some(o=>o.value===atual)) el.value=atual;
 }
 
-function setDashboardTab(tab,btnEl){
-  const tabs=document.querySelectorAll('#pg-dashboard .dash-tab');
-  const panels=document.querySelectorAll('#pg-dashboard .dash-tab-panel');
-  tabs.forEach(tabEl=>{
-    const active=tabEl===btnEl;
-    tabEl.classList.toggle('is-active',active);
-    tabEl.setAttribute('aria-selected',active?'true':'false');
-  });
-  panels.forEach(panel=>{
-    const match=panel.id===`dash-panel-${tab}`;
-    panel.classList.toggle('is-active',match);
-    panel.hidden=!match;
-  });
-}
-
 async function loadDash(){
   _pontoDiaData = null; // invalidar cache ao recarregar dashboard
   const d=await api('/api/dashboard');
@@ -5530,7 +5536,7 @@ async function loadDash(){
   }
   const de=document.getElementById('dash-empresas');
   if(d.empresas && d.empresas.length){
-    de.innerHTML=d.empresas.map(e=>`<button type="button" class="card dash-company-btn" onclick="abrirDashboardDestino('clientes',${e.id})"><div class="dash-company-head">${e.nome}</div><div class="dash-company-main"><div class="dash-company-num">${e.cli}</div><div class="dash-company-sub">clientes ativos</div></div><div class="dash-company-foot">Toque para abrir</div></button>`).join('');
+    de.innerHTML=d.empresas.map(e=>`<button type="button" class="card dash-company-btn" style="margin-bottom:0" onclick="abrirDashboardDestino('clientes',${e.id})"><div style="font-size:13px;font-weight:700;color:var(--azul);margin-bottom:8px">${e.nome}</div><div style="font-size:24px;font-weight:700;color:var(--laranja)">${e.cli}</div><div style="font-size:11px;color:var(--text-muted)">clientes ativos · tocar para abrir</div></button>`).join('');
   } else {
     de.innerHTML='';
   }
