@@ -14837,9 +14837,9 @@ def api_gerar_carta_simples_nacional():
         return jsonify({"erro": f"Erro ao gerar PDF: {str(e)}"}), 500
 
     nome_arq = (
-        f"Carta_Simples_Nacional_"
+        f"Declaração simples nacional_"
         f"{_clean_file_part(destinatario_nome, 50, 'Destinatario')}"
-        f"_{localnow().strftime('%Y%m%d')}.pdf"
+        f".pdf"
     )
     return send_file(buf, mimetype="application/pdf", as_attachment=False,
                      download_name=nome_arq)
