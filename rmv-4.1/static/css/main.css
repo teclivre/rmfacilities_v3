@@ -283,6 +283,50 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 .metric.metric-btn .l{display:flex;align-items:center;justify-content:space-between;width:100%;gap:10px}
 .metric-go{font-size:10px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;border:1px solid rgba(31,110,176,.24);background:rgba(31,110,176,.11);color:var(--azul);padding:3px 8px;border-radius:999px}
 .metric.metric-btn:active{transform:scale(.985)}
+.dash-grid .metric.metric-btn{min-height:104px;padding:12px;gap:10px;justify-content:space-between}
+.dash-grid .metric .n{font-size:22px;line-height:1.05}
+.dash-grid .metric.metric-btn .l{margin-top:auto;align-items:flex-end}
+.dash-grid .metric.metric-btn .metric-go{margin-left:auto;align-self:flex-end}
+
+.dash-tabs-card{margin-bottom:12px}
+.dash-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid rgba(31,110,176,.22)}
+.dash-tab{border:1px solid rgba(31,110,176,.2);background:linear-gradient(180deg,var(--cinza-cl),var(--branco));color:var(--text-muted);border-radius:10px;padding:9px 12px;min-height:40px;font-size:12px;font-weight:800;font-family:'Manrope',sans-serif;cursor:pointer;text-align:center;transition:all .2s ease}
+.dash-tab:hover{border-color:rgba(31,110,176,.35);color:var(--azul)}
+.dash-tab.is-active{background:var(--branco);color:var(--azul);border-color:rgba(31,110,176,.42);box-shadow:inset 0 -2px 0 var(--azul)}
+
+.dash-tab-panel{display:none}
+.dash-tab-panel.is-active{display:block}
+.dash-resumo-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;align-items:stretch;background:linear-gradient(180deg,var(--azul-cc),rgba(32,93,138,.06));border:1px solid rgba(31,110,176,.24);border-radius:14px;padding:14px 16px;justify-content:space-between}
+.dash-resumo-item{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:92px;text-align:center;padding:8px 6px}
+.dash-resumo-num{font-size:30px;font-weight:800;line-height:1.05}
+.dash-resumo-num.azul{color:var(--azul)}
+.dash-resumo-num.verde{color:var(--verde)}
+.dash-resumo-num.laranja{color:var(--laranja-esc)}
+.dash-resumo-num.muted{color:var(--text-muted)}
+.dash-resumo-label{font-size:12px;color:var(--text-muted);margin-top:4px}
+
+.dash-ponto-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.dash-ponto-data{font-size:11px;color:var(--text-muted)}
+.dash-ponto-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.dash-ponto-card{border:2px solid transparent;border-radius:12px;padding:14px 10px;background:var(--branco);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:124px;transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
+.dash-ponto-card.ok{border-color:var(--verde)}
+.dash-ponto-card.alerta{border-color:var(--verm)}
+.dash-ponto-card:hover{transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.dash-ponto-num{font-size:34px;font-weight:800;line-height:1.05}
+.dash-ponto-card.ok .dash-ponto-num{color:var(--verde)}
+.dash-ponto-card.alerta .dash-ponto-num{color:var(--verm)}
+.dash-ponto-label{font-size:13px;color:var(--text-muted);margin-top:5px}
+
+.dash-atalhos-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+
+.dash-empresas-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.dash-company-btn{width:100%;text-align:left;cursor:pointer;padding:16px 18px;margin-bottom:0;display:grid;gap:10px;align-content:space-between;min-height:146px}
+.dash-company-head{font-size:13px;font-weight:800;color:var(--azul);line-height:1.35;word-break:break-word;padding-bottom:4px;border-bottom:1px solid rgba(31,110,176,.2)}
+.dash-company-main{display:flex;flex-direction:column;gap:2px}
+.dash-company-num{font-size:26px;font-weight:800;color:var(--laranja-esc);line-height:1}
+.dash-company-sub{font-size:12px;color:var(--text-muted)}
+.dash-company-foot{font-size:11px;color:var(--text-muted)}
+
 .dash-company-btn{width:100%;text-align:left;cursor:pointer}
 .dash-company-btn:active{transform:scale(.99)}
 .dash-alert-btn{width:100%;cursor:pointer;background:none;border:1px solid var(--borda);border-radius:var(--r2);padding:0;transition:box-shadow .2s ease,border-color .2s ease,transform .2s ease}
@@ -581,11 +625,20 @@ html[data-theme='dark'] .ponto-kpi .v{color:#cfe6fb}
 
 @media(max-width:768px){
 	#dash-alertas{grid-template-columns:1fr!important}
-	#dash-empresas{grid-template-columns:1fr!important}
+	#dash-empresas,
+	.dash-empresas-grid{grid-template-columns:1fr!important}
 	.metric.metric-btn{min-height:0;padding:8px}
 	.metric .n{font-size:15px}
 	.metric .l{font-size:11px}
 	.metric-go{padding:3px 8px}
+	.dash-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+	.dash-grid .metric.metric-btn{min-height:96px;padding:10px}
+	.dash-tabs{grid-template-columns:1fr}
+	.dash-resumo-grid{grid-template-columns:repeat(2,minmax(0,1fr));padding:12px}
+	.dash-resumo-item{min-height:84px}
+	.dash-ponto-grid{grid-template-columns:1fr}
+	.dash-atalhos-grid{grid-template-columns:1fr}
+	.dash-empresas-grid{grid-template-columns:1fr}
 }
 
 @media (prefers-reduced-motion:reduce){
