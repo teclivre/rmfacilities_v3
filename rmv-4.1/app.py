@@ -13,6 +13,7 @@ import traceback
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
+from email.mime.image import MIMEImage
 from email import encoders
 from email.utils import parseaddr, formataddr
 
@@ -6635,6 +6636,7 @@ def smtp_send_proposta_comercial(
     mensagem_extra,
     pdf_buf,
     remetente_nome="RM Facilities",
+    remetente=None,
 ):
     """Envia proposta comercial por e-mail com assinatura da equipe comercial e PDF anexado."""
     cfg = smtp_cfg()
@@ -6654,38 +6656,89 @@ def smtp_send_proposta_comercial(
     msg["Reply-To"] = smtp_email
     msg["Subject"] = f"Proposta Comercial {tipo_label} — {numero} | {remetente_nome}"
 
-    # Corpo HTML
+    from html import escape as html_escape
+
+    def _texto_html(valor):
+        return html_escape(str(valor or ""), quote=True)
+
+    logo_data = None
+    logo_subtype = None
+    logo_candidatos = []
+    if isinstance(remetente, dict):
+        logo_candidatos.append((remetente.get("logo_url") or "").strip())
+    logo_candidatos.append(get_logo())
+    for logo_candidato in logo_candidatos:
+        if not logo_candidato:
+            continue
+        try:
+            if str(logo_candidato).lower().startswith(("http://", "https://")):
+                with urllib.request.urlopen(logo_candidato, timeout=8) as response:
+                    logo_data = response.read(2 * 1024 * 1024 + 1)
+                    mime_logo = response.headers.get_content_type()
+                if len(logo_data) > 2 * 1024 * 1024:
+                    logo_data = None
+                    continue
+                if not mime_logo or not mime_logo.startswith("image/"):
+                    mime_logo = mimetypes.guess_type(logo_candidato)[0] or "image/png"
+            else:
+                with open(logo_candidato, "rb") as logo_file:
+                    logo_data = logo_file.read(2 * 1024 * 1024 + 1)
+                if len(logo_data) > 2 * 1024 * 1024:
+                    logo_data = None
+                    continue
+                mime_logo = mimetypes.guess_type(logo_candidato)[0] or "image/png"
+            logo_subtype = mime_logo.split("/", 1)[-1].split("+", 1)[0]
+            break
+        except Exception:
+            logo_data = None
+
+    nome_html = _texto_html(remetente_nome)
+    destinatario_html = _texto_html(dest_nome or empresa_dest)
+    numero_html = _texto_html(numero)
+    tipo_html = _texto_html(tipo_label)
+    empresa_html = _texto_html(empresa_dest)
+    data_html = _texto_html(data_str)
+    total_html = _texto_html(total)
+    smtp_email_html = _texto_html(smtp_email)
+    logo_html = (
+        "<img src='cid:logo-remetente' alt='"
+        + nome_html
+        + "' style='display:block;max-width:180px;max-height:58px;width:auto;height:auto;border:0'>"
+        if logo_data
+        else f"<strong style='font-size:17px;color:#18334d'>{nome_html}</strong>"
+    )
     msg_extra_html = (
-        f"<p style='margin:14px 0 0;font-size:14px;color:#333;white-space:pre-wrap'>{mensagem_extra}</p>"
+        f"<p style='margin:0 0 20px;font-size:14px;line-height:21px;color:#374151;white-space:pre-wrap'>{_texto_html(mensagem_extra)}</p>"
         if mensagem_extra
         else ""
     )
     corpo_html = (
-        f"<div style='font-family:Arial,sans-serif;max-width:560px;margin:0 auto'>"
-        f"<div style='background:#205d8a;padding:18px 28px;border-radius:8px 8px 0 0;display:flex;align-items:center;gap:12px'>"
-        f"<span style='color:#fff;font-size:18px;font-weight:700'>📄 {remetente_nome}</span>"
-        f"</div>"
-        f"<div style='background:#fff;border:1px solid #dde5f0;border-top:none;padding:28px;border-radius:0 0 8px 8px'>"
-        f"<p style='color:#333;font-size:15px'>Prezado(a) <strong>{dest_nome or empresa_dest}</strong>,</p>"
+        "<!doctype html><html><body style='margin:0;padding:0;background:#f4f5f7'>"
+        "<table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' style='background:#f4f5f7'>"
+        "<tr><td align='center' style='padding:28px 12px'>"
+        "<table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' style='max-width:620px;background:#ffffff;border:1px solid #dfe3e8;border-collapse:separate'>"
+        f"<tr><td style='padding:24px 30px 18px'>{logo_html}</td></tr>"
+        "<tr><td style='height:3px;background:#2d7f74;font-size:0;line-height:0'>&nbsp;</td></tr>"
+        "<tr><td style='padding:30px'>"
+        "<p style='margin:0 0 8px;font-family:Arial,sans-serif;font-size:12px;line-height:18px;color:#6b7280;text-transform:uppercase'>Proposta comercial</p>"
+        f"<h1 style='margin:0 0 24px;font-family:Arial,sans-serif;font-size:22px;line-height:29px;color:#172b3a;font-weight:600'>Proposta {numero_html}</h1>"
+        f"<p style='margin:0 0 16px;font-family:Arial,sans-serif;color:#263746;font-size:15px;line-height:23px'>Prezado(a) <strong>{destinatario_html}</strong>,</p>"
         f"{msg_extra_html}"
-        f"<div style='background:#f0f6ff;border:1px solid #c5d9f0;border-radius:8px;padding:16px;margin:20px 0'>"
-        f"<table style='font-size:13px;color:#333;width:100%'>"
-        f"<tr><td style='padding:3px 0;color:#666;width:120px'>Número:</td><td><strong>{numero}</strong></td></tr>"
-        f"<tr><td style='padding:3px 0;color:#666'>Tipo:</td><td><strong>{tipo_label}</strong></td></tr>"
-        f"<tr><td style='padding:3px 0;color:#666'>Empresa:</td><td>{empresa_dest}</td></tr>"
-        f"<tr><td style='padding:3px 0;color:#666'>Data:</td><td>{data_str}</td></tr>"
-        f"<tr><td style='padding:3px 0;color:#666'>Valor Total:</td><td><strong>{total}</strong></td></tr>"
-        f"</table></div>"
-        f"<p style='color:#555;font-size:13px'>O documento com a proposta completa está em anexo neste e-mail.</p>"
-        f"<hr style='border:none;border-top:1px solid #eee;margin:24px 0'>"
-        f"<table style='font-size:12px;color:#666;width:100%'><tr>"
-        f"<td>"
-        f"<strong style='color:#205d8a;font-size:13px'>{remetente_nome}</strong><br>"
-        f"Equipe Comercial<br>"
-        f"📧 <a href='mailto:{smtp_email}' style='color:#205d8a'>{smtp_email}</a><br>"
-        f"🌐 <a href='https://www.rmfacilities.com.br' style='color:#205d8a'>www.rmfacilities.com.br</a>"
-        f"</td></tr></table>"
-        f"</div></div>"
+        "<p style='margin:0 0 22px;font-family:Arial,sans-serif;color:#4b5563;font-size:14px;line-height:22px'>Encaminhamos em anexo a proposta comercial preparada para sua análise.</p>"
+        "<table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' style='border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb'>"
+        f"<tr><td style='padding:10px 8px 10px 0;font-family:Arial,sans-serif;font-size:12px;color:#6b7280;width:115px'>Número</td><td style='padding:10px 0;font-family:Arial,sans-serif;font-size:13px;color:#1f2937;font-weight:600'>{numero_html}</td></tr>"
+        f"<tr><td style='padding:10px 8px 10px 0;border-top:1px solid #eef0f2;font-family:Arial,sans-serif;font-size:12px;color:#6b7280'>Modalidade</td><td style='padding:10px 0;border-top:1px solid #eef0f2;font-family:Arial,sans-serif;font-size:13px;color:#1f2937'>{tipo_html}</td></tr>"
+        f"<tr><td style='padding:10px 8px 10px 0;border-top:1px solid #eef0f2;font-family:Arial,sans-serif;font-size:12px;color:#6b7280'>Contratante</td><td style='padding:10px 0;border-top:1px solid #eef0f2;font-family:Arial,sans-serif;font-size:13px;color:#1f2937'>{empresa_html}</td></tr>"
+        f"<tr><td style='padding:10px 8px 10px 0;border-top:1px solid #eef0f2;font-family:Arial,sans-serif;font-size:12px;color:#6b7280'>Emissão</td><td style='padding:10px 0;border-top:1px solid #eef0f2;font-family:Arial,sans-serif;font-size:13px;color:#1f2937'>{data_html}</td></tr>"
+        f"<tr><td style='padding:10px 8px 10px 0;border-top:1px solid #eef0f2;font-family:Arial,sans-serif;font-size:12px;color:#6b7280'>Valor total</td><td style='padding:10px 0;border-top:1px solid #eef0f2;font-family:Arial,sans-serif;font-size:14px;color:#172b3a;font-weight:700'>{total_html}</td></tr>"
+        "</table>"
+        "<p style='margin:22px 0 0;font-family:Arial,sans-serif;color:#6b7280;font-size:12px;line-height:18px'>O documento completo está anexado em formato PDF.</p>"
+        "</td></tr>"
+        "<tr><td style='padding:18px 30px;background:#f8f9fa;border-top:1px solid #e5e7eb'>"
+        f"<p style='margin:0;font-family:Arial,sans-serif;font-size:12px;line-height:18px;color:#55616d'><strong style='color:#263746'>{nome_html}</strong><br>Equipe Comercial<br><a href='mailto:{smtp_email_html}' style='color:#2d6f68;text-decoration:none'>{smtp_email_html}</a> &nbsp;|&nbsp; <a href='https://www.rmfacilities.com.br' style='color:#2d6f68;text-decoration:none'>www.rmfacilities.com.br</a></p>"
+        "</td></tr></table>"
+        "<p style='margin:14px 0 0;font-family:Arial,sans-serif;font-size:10px;line-height:15px;color:#8a929a'>Mensagem enviada pelo sistema de propostas comerciais.</p>"
+        "</td></tr></table></body></html>"
     )
     corpo_txt = (
         f"Prezado(a) {dest_nome or empresa_dest},\n\n"
@@ -6694,10 +6747,17 @@ def smtp_send_proposta_comercial(
         f"Empresa: {empresa_dest}\nData: {data_str}\nValor Total: {total}\n\n"
         f"Atenciosamente,\n{remetente_nome} — Equipe Comercial\n{smtp_email}"
     )
+    related = MIMEMultipart("related")
     alt = MIMEMultipart("alternative")
     alt.attach(MIMEText(corpo_txt, "plain", "utf-8"))
     alt.attach(MIMEText(corpo_html, "html", "utf-8"))
-    msg.attach(alt)
+    related.attach(alt)
+    if logo_data:
+        logo_part = MIMEImage(logo_data, _subtype=logo_subtype or "png")
+        logo_part.add_header("Content-ID", "<logo-remetente>")
+        logo_part.add_header("Content-Disposition", "inline", filename="logo-remetente")
+        related.attach(logo_part)
+    msg.attach(related)
 
     # PDF em anexo a partir de BytesIO
     pdf_data = pdf_buf.read() if hasattr(pdf_buf, "read") else pdf_buf
@@ -15719,6 +15779,7 @@ def api_enviar_proposta_comercial(pid):
                 mensagem_extra=mensagem,
                 pdf_buf=pdf_buf,
                 remetente_nome=rem_nome,
+                remetente=remetente,
             )
         except Exception as e:
             app.logger.exception("Erro ao enviar e-mail da proposta")
