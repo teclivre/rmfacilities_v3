@@ -4017,6 +4017,14 @@ def _smtp_normalize_sender(raw_sender, fallback_user=""):
 
     nome, email_addr = parseaddr(candidate)
     email_addr = (email_addr or "").strip()
+    if not _is_valid_email_address(email_addr) and raw and not any(
+        char in raw for char in "@<>"
+    ):
+        _, fallback_addr = parseaddr(fallback)
+        fallback_addr = (fallback_addr or "").strip()
+        if _is_valid_email_address(fallback_addr):
+            nome = raw
+            email_addr = fallback_addr
     if not _is_valid_email_address(email_addr):
         raise ValueError(
             "Remetente inválido. Use e-mail válido ou o formato Nome <email@dominio>."

@@ -16478,17 +16478,21 @@ async function loadSMTPConfig(){
   document.getElementById('smtp-tls').value=d.tls||'1';
 }
 
-function smtpSenderValido(v){
+function smtpSenderValido(v,fallbackUser=''){
   const s=String(v||'').trim();
   if(!s) return true;
   const m=s.match(/^\s*(?:([^<>]+)\s*<\s*)?([A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)\s*>?\s*$/);
-  return !!(m&&m[2]);
+  if(m&&m[2]) return true;
+  const user=String(fallbackUser||'').trim();
+  const userValido=/^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(user);
+  return userValido&&!/[@<>]/.test(s);
 }
 
 async function salvarSMTP(){
   const de=document.getElementById('smtp-de').value;
-  if(!smtpSenderValido(de)){
-    showSt('smtp-st','Remetente inválido. Use e-mail válido ou Nome <email@dominio>.',true);
+  const user=document.getElementById('smtp-user').value;
+  if(!smtpSenderValido(de,user)){
+    showSt('smtp-st','Remetente inválido. Use um nome com login SMTP válido, um e-mail ou Nome <email@dominio>.',true);
     return;
   }
   const d={host:document.getElementById('smtp-host').value,port:document.getElementById('smtp-port').value,user:document.getElementById('smtp-user').value,senha:document.getElementById('smtp-senha').value,de:document.getElementById('smtp-de').value,tls:document.getElementById('smtp-tls').value};
