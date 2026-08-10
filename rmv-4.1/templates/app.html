@@ -1610,7 +1610,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div id="pg-rh" class="pg">
       <div id="st-rh" class="st"></div>
       <div id="rh-subabas" class="subaba-blocos rh-subabas">
-        <button type="button" id="rh-subtab-funcionarios" class="subaba-bloco on" onclick="rhSetSubAba('funcionarios',this)">Funcionários</button>
+        <button type="button" id="rh-subtab-funcionarios" class="subaba-bloco on" onclick="rhSetSubAba('funcionarios',this)">Cadastro de Funcionários</button>
         <button type="button" id="rh-subtab-ferias-gestao" class="subaba-bloco" onclick="rhSetSubAba('ferias-gestao',this)">Gestão de Férias</button>
         <button type="button" id="rh-subtab-exportar" class="subaba-bloco" onclick="rhSetSubAba('exportar',this)">Exportar colaboradores ativos</button>
         <button type="button" id="rh-subtab-escalas" class="subaba-bloco" onclick="rhSetSubAba('escalas',this)">Escalas de Turnos</button>
@@ -1627,10 +1627,10 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
       <div class="card rh-pane" id="rh-pane-funcionarios" data-rh-pane="funcionarios">
         <div class="card-header">
-          <span class="card-title">Funcionários</span>
+          <span class="card-title">Cadastro de Funcionários</span>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <input id="rh-busca" placeholder="Buscar por matrícula, nome, CPF ou cargo" oninput="renderFuncionarios()" style="padding:6px 10px;font-size:12px;border:1.5px solid var(--borda);border-radius:var(--r);width:280px">
-            <button class="btn b-az b-sm" onclick="openModalFunc('novo')">+ Novo funcionário</button>
+            <button class="btn b-az b-sm" onclick="openModalFunc('novo')">+ Cadastrar funcionário</button>
             <a class="btn b-gh b-sm" href="/api/funcionarios/modelo">Modelo funcionários</a>
             <label class="btn b-gh b-sm" for="func-import-file" style="cursor:pointer">Importar planilha</label>
             <input type="file" id="func-import-file" accept=".csv,.xlsx" style="display:none" onchange="importarFuncionariosPlanilha(event)">
