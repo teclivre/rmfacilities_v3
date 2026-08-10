@@ -11,12 +11,15 @@
     <!-- Canal -->
     <div class="f" style="margin-bottom:14px">
       <label>Canal de envio</label>
-      <div style="display:flex;gap:10px;margin-top:6px">
+      <div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px">
           <input type="radio" name="mep-canal" value="email" checked onchange="_mepToggleCanal(this.value)"> 📧 E-mail
         </label>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px">
           <input type="radio" name="mep-canal" value="whatsapp" onchange="_mepToggleCanal(this.value)"> 💬 WhatsApp
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px">
+          <input type="radio" name="mep-canal" value="ambos" onchange="_mepToggleCanal(this.value)"> E-mail + WhatsApp
         </label>
       </div>
     </div>
@@ -24,8 +27,8 @@
     <!-- Campos Email -->
     <div id="mep-campos-email">
       <div class="f" style="margin-bottom:12px">
-        <label>Para (e-mail do destinatário)</label>
-        <input id="mep-email" type="email" class="inp" placeholder="contato@empresa.com.br" style="width:100%">
+        <label>Para (separe vários e-mails por vírgula)</label>
+        <input id="mep-email" type="text" class="inp" placeholder="contato@empresa.com.br, financeiro@empresa.com.br" style="width:100%">
       </div>
     </div>
     <!-- Campos WhatsApp -->
@@ -11120,10 +11123,10 @@ function pcFecharModalEnvio() {
 }
 
 function _mepToggleCanal(canal) {
-  document.getElementById('mep-campos-email').style.display = canal === 'email' ? '' : 'none';
-  document.getElementById('mep-campos-whatsapp').style.display = canal === 'whatsapp' ? '' : 'none';
+  document.getElementById('mep-campos-email').style.display = ['email','ambos'].includes(canal) ? '' : 'none';
+  document.getElementById('mep-campos-whatsapp').style.display = ['whatsapp','ambos'].includes(canal) ? '' : 'none';
   const btn = document.getElementById('mep-btn-enviar');
-  if (btn) btn.textContent = canal === 'whatsapp' ? '💬 Abrir WhatsApp' : '📧 Enviar e-mail';
+  if (btn) btn.textContent = canal === 'whatsapp' ? 'Enviar por WhatsApp' : canal === 'ambos' ? 'Enviar pelos dois canais' : 'Enviar por e-mail';
 }
 
 async function pcEnviarProposta() {
@@ -11134,29 +11137,44 @@ async function pcEnviarProposta() {
   const mensagem = document.getElementById('mep-mensagem')?.value?.trim() || '';
   const fb = document.getElementById('mep-feedback');
   const btn = document.getElementById('mep-btn-enviar');
+  const usaEmail = ['email','ambos'].includes(canal);
+  const usaWhatsApp = ['whatsapp','ambos'].includes(canal);
+  const emails = email.split(',').map(item => item.trim()).filter(Boolean);
+  const emailValido = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
   const _showFb = (html, ok) => {
     fb.innerHTML = `<div style="border-radius:6px;padding:10px 12px;font-size:13px;${ok ? 'background:#e8f5e9;border:1px solid #2e7d32;color:#1b5e20' : 'background:#ffebee;border:1px solid #c62828;color:#b71c1c'}">${html}</div>`;
     fb.style.display = '';
   };
 
+  if (usaEmail && !emails.length) {
+    _showFb('Informe ao menos um destinatário de e-mail.', false);
+    return;
+  }
+  const emailsInvalidos = emails.filter(item => !emailValido.test(item));
+  if (usaEmail && emailsInvalidos.length) {
+    _showFb(`E-mail(s) inválido(s): ${_escHtml(emailsInvalidos.join(', '))}`, false);
+    return;
+  }
+  if (usaWhatsApp && !telefone) {
+    _showFb('Informe o número de WhatsApp do destinatário.', false);
+    return;
+  }
+
   btn.disabled = true; btn.textContent = '⏳ Enviando...';
   let envioOk = false;
   try {
     const body = {canal, email, telefone, mensagem};
     const res  = await api(`/api/propostas-comerciais/${_mepPropostaId}/enviar`, 'POST', body);
-    if (res.erro) { _showFb(`❌ ${_escHtml(res.erro)}`, false); }
-    else if (canal === 'whatsapp') {
-      if (res.wa_url) {
-        window.open(res.wa_url, '_blank');
-        _showFb('💬 Evolution API não configurada. WhatsApp aberto em nova aba para envio manual.', true);
-        envioOk = true;
-      } else {
-        _showFb(`✅ Proposta enviada via WhatsApp para <strong>${_escHtml(res.dest || telefone)}</strong>!`, true);
-        envioOk = true;
-      }
+    const concluidos = [];
+    if (res.email?.ok) concluidos.push(`E-mail enviado para <strong>${_escHtml((res.email.destinatarios||emails).join(', '))}</strong>`);
+    if (res.whatsapp?.ok) concluidos.push(res.wa_url ? 'WhatsApp aberto para envio manual' : `WhatsApp enviado para <strong>${_escHtml(res.whatsapp.dest||telefone)}</strong>`);
+    if (res.erro) {
+      const resumoParcial = concluidos.length ? `<br><br>Concluído:<br>${concluidos.join('<br>')}` : '';
+      _showFb(`❌ ${_escHtml(res.erro)}${resumoParcial}`, false);
     } else {
-      _showFb(`✅ E-mail enviado com sucesso para <strong>${_escHtml(email)}</strong>!`, true);
+      if (res.wa_url) window.open(res.wa_url, '_blank');
+      _showFb(`✅ ${concluidos.join('<br>')}`, true);
       envioOk = true;
     }
     lpCarregar(_lpPage);  // Atualiza ícones de envio na lista

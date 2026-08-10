@@ -6645,6 +6645,14 @@ def smtp_send_proposta_comercial(
             "SMTP não configurado. Acesse Configurações → E-mail e preencha os dados SMTP."
         )
     sender = _smtp_normalize_sender(cfg.get("de", ""), cfg.get("user", ""))
+    destinatarios = (
+        [str(email).strip() for email in dest_email if str(email).strip()]
+        if isinstance(dest_email, (list, tuple, set))
+        else [str(dest_email or "").strip()]
+    )
+    destinatarios = list(dict.fromkeys(email for email in destinatarios if email))
+    if not destinatarios:
+        raise ValueError("Informe ao menos um destinatário de e-mail.")
 
     tipo_label = "SPOT" if (tipo or "").lower() == "spot" else "Mensal"
     smtp_email = sender["address"]
@@ -6652,7 +6660,7 @@ def smtp_send_proposta_comercial(
 
     msg = MIMEMultipart("mixed")
     msg["From"] = remetente_display
-    msg["To"] = dest_email
+    msg["To"] = destinatarios[0] if len(destinatarios) == 1 else "Undisclosed recipients:;"
     msg["Reply-To"] = smtp_email
     msg["Subject"] = f"Proposta Comercial {tipo_label} — {numero} | {remetente_nome}"
 
@@ -6775,11 +6783,11 @@ def smtp_send_proposta_comercial(
             with smtplib.SMTP(cfg["host"], port, timeout=20) as s:
                 s.starttls()
                 s.login(cfg["user"], cfg["senha"])
-                s.sendmail(sender["envelope_from"], dest_email, msg.as_string())
+                s.sendmail(sender["envelope_from"], destinatarios, msg.as_string())
         else:
             with smtplib.SMTP_SSL(cfg["host"], port, timeout=20) as s:
                 s.login(cfg["user"], cfg["senha"])
-                s.sendmail(sender["envelope_from"], dest_email, msg.as_string())
+                s.sendmail(sender["envelope_from"], destinatarios, msg.as_string())
 
     _smtp_exec_with_retry(_do_send)
 
@@ -15714,16 +15722,37 @@ def api_atualizar_status_proposta(pid):
 @app.route("/api/propostas-comerciais/<int:pid>/enviar", methods=["POST"])
 @lr
 def api_enviar_proposta_comercial(pid):
-    """Envia a proposta por email (com PDF regenerado) ou registra envio por WhatsApp."""
+    """Envia uma proposta por e-mail, WhatsApp ou pelos dois canais."""
     import json as _json
 
     p = db.get_or_404(PropostaComercial, pid)
     d = request.json or {}
-    canal = (d.get("canal") or "email").strip().lower()  # email | whatsapp
-    dest_email = (d.get("email") or p.email_contato or "").strip()
+    canal = (d.get("canal") or "email").strip().lower()
+    if canal not in ("email", "whatsapp", "ambos"):
+        return jsonify({"erro": 'Canal inválido. Use "email", "whatsapp" ou "ambos".'}), 400
+
+    usa_email = canal in ("email", "ambos")
+    usa_whatsapp = canal in ("whatsapp", "ambos")
+    emails_raw = str(d.get("email") or p.email_contato or "").strip()
+    destinatarios = list(
+        dict.fromkeys(email.strip() for email in emails_raw.split(",") if email.strip())
+    )
     dest_nome = (d.get("nome") or p.cliente_contato or p.empresa or "").strip()
     mensagem = (d.get("mensagem") or "").strip()
     telefone = (d.get("telefone") or "").strip()
+
+    if usa_email:
+        if not destinatarios:
+            return jsonify({"erro": "Informe ao menos um destinatário de e-mail."}), 400
+        if len(destinatarios) > 20:
+            return jsonify({"erro": "Informe no máximo 20 destinatários por envio."}), 400
+        invalidos = [email for email in destinatarios if not _is_valid_email_address(email)]
+        if invalidos:
+            return jsonify(
+                {"erro": "E-mail(s) inválido(s): " + ", ".join(invalidos)}
+            ), 400
+    if usa_whatsapp and not telefone:
+        return jsonify({"erro": "Informe o número de WhatsApp do destinatário."}), 400
 
     # Carrega remetente
     remetente = None
@@ -15740,36 +15769,36 @@ def api_enviar_proposta_comercial(pid):
         or "RM Facilities"
     )
 
-    if canal == "email":
-        if not dest_email:
-            return jsonify({"erro": "Informe o e-mail do destinatário."}), 400
-        # Carrega itens para regenerar o PDF
-        try:
-            itens = _json.loads(p.itens or "[]")
-        except Exception:
-            itens = []
-        try:
-            pdf_buf = _gerar_proposta_comercial_pdf(
-                p.empresa,
-                p.cnpj_dest,
-                p.funcao,
-                p.data_proposta,
-                p.cliente_contato,
-                p.email_contato,
-                itens,
-                remetente=remetente,
-                ref_num=p.numero,
-                tipo=p.tipo,
-                escopo_observacoes=p.escopo_observacoes,
-                insalubridade=p.insalubridade,
-            )
-            pdf_buf.seek(0)
-        except Exception as e:
-            app.logger.exception("Erro ao regenerar PDF para envio")
-            return jsonify({"erro": f"Erro ao gerar PDF: {e}"}), 500
+    try:
+        itens = _json.loads(p.itens or "[]")
+    except Exception:
+        itens = []
+    try:
+        pdf_buf = _gerar_proposta_comercial_pdf(
+            p.empresa,
+            p.cnpj_dest,
+            p.funcao,
+            p.data_proposta,
+            p.cliente_contato,
+            p.email_contato,
+            itens,
+            remetente=remetente,
+            ref_num=p.numero,
+            tipo=p.tipo,
+            escopo_observacoes=p.escopo_observacoes,
+            insalubridade=p.insalubridade,
+        )
+        pdf_buf.seek(0)
+        pdf_bytes = pdf_buf.read()
+    except Exception as e:
+        app.logger.exception("Erro ao gerar PDF para envio da proposta")
+        return jsonify({"erro": f"Erro ao gerar PDF: {e}"}), 500
+
+    resultados = {}
+    if usa_email:
         try:
             smtp_send_proposta_comercial(
-                dest_email=dest_email,
+                dest_email=destinatarios,
                 dest_nome=dest_nome,
                 numero=p.numero,
                 empresa_dest=p.empresa or "",
@@ -15777,31 +15806,22 @@ def api_enviar_proposta_comercial(pid):
                 data_str=p.data_proposta or "",
                 total=p.total or "",
                 mensagem_extra=mensagem,
-                pdf_buf=pdf_buf,
+                pdf_buf=io.BytesIO(pdf_bytes),
                 remetente_nome=rem_nome,
                 remetente=remetente,
             )
         except Exception as e:
             app.logger.exception("Erro ao enviar e-mail da proposta")
-            return jsonify({"erro": f"Erro ao enviar e-mail: {e}"}), 500
-        p.email_enviado_em = localnow()
-        db.session.commit()
-        audit_event(
-            "proposta_email_enviado",
-            "proposta",
-            pid,
-            None,
-            None,
-            True,
-            {"numero": p.numero, "dest": dest_email},
-        )
-        return jsonify({"ok": True, "canal": "email", "dest": dest_email})
+            resultados["email"] = {"ok": False, "erro": str(e)}
+        else:
+            p.email_enviado_em = localnow()
+            audit_event(
+                "proposta_email_enviado", "proposta", pid, None, None, True,
+                {"numero": p.numero, "destinatarios": destinatarios},
+            )
+            resultados["email"] = {"ok": True, "destinatarios": destinatarios}
 
-    elif canal == "whatsapp":
-        if not telefone:
-            return jsonify(
-                {"erro": "Informe o número de WhatsApp do destinatário."}
-            ), 400
+    if usa_whatsapp:
         tipo_label = "SPOT" if (p.tipo or "").lower() == "spot" else "Mensal"
         texto = (
             f"Olá{' ' + dest_nome if dest_nome else ''}.\n\n"
@@ -15810,31 +15830,6 @@ def api_enviar_proposta_comercial(pid):
             f"Empresa: {p.empresa or ''}\nData: {p.data_proposta or ''}\nValor Total: {p.total or ''}\n\n"
             f"Ficamos à disposição para quaisquer esclarecimentos.\n{rem_nome} Comercial"
         )
-        # Gera o PDF para anexar via Evolution API
-        try:
-            itens = _json.loads(p.itens or "[]")
-        except Exception:
-            itens = []
-        try:
-            pdf_buf = _gerar_proposta_comercial_pdf(
-                p.empresa,
-                p.cnpj_dest,
-                p.funcao,
-                p.data_proposta,
-                p.cliente_contato,
-                p.email_contato,
-                itens,
-                remetente=remetente,
-                ref_num=p.numero,
-                tipo=p.tipo,
-                escopo_observacoes=p.escopo_observacoes,
-                insalubridade=p.insalubridade,
-            )
-            pdf_buf.seek(0)
-            pdf_bytes = pdf_buf.read()
-        except Exception as e:
-            app.logger.exception("Erro ao gerar PDF para WhatsApp")
-            return jsonify({"erro": f"Erro ao gerar PDF: {e}"}), 500
         try:
             nome_pdf = (
                 f"Proposta_{p.numero}_{(p.empresa or '')[:30].replace(' ', '_')}.pdf"
@@ -15851,7 +15846,6 @@ def api_enviar_proposta_comercial(pid):
                     caption=f"Proposta {p.numero} — {p.empresa or ''}",
                 )
                 p.whatsapp_enviado_em = localnow()
-                db.session.commit()
                 audit_event(
                     "proposta_whatsapp_enviado",
                     "proposta",
@@ -15861,7 +15855,7 @@ def api_enviar_proposta_comercial(pid):
                     True,
                     {"numero": p.numero, "telefone": telefone},
                 )
-                return jsonify({"ok": True, "canal": "whatsapp", "dest": telefone})
+                resultados["whatsapp"] = {"ok": True, "dest": telefone}
             else:
                 # Fallback: link wa.me (Evolution API não configurada)
                 import urllib.parse
@@ -15873,7 +15867,6 @@ def api_enviar_proposta_comercial(pid):
                     else f"https://wa.me/?text={urllib.parse.quote(texto)}"
                 )
                 p.whatsapp_enviado_em = localnow()
-                db.session.commit()
                 audit_event(
                     "proposta_whatsapp_enviado",
                     "proposta",
@@ -15883,19 +15876,25 @@ def api_enviar_proposta_comercial(pid):
                     True,
                     {"numero": p.numero, "telefone": telefone},
                 )
-                return jsonify(
-                    {
-                        "ok": True,
-                        "canal": "whatsapp",
-                        "wa_url": wa_url,
-                        "dest": telefone,
-                    }
-                )
+                resultados["whatsapp"] = {
+                    "ok": True, "dest": telefone, "manual": True
+                }
         except Exception as e:
             app.logger.exception("Erro ao enviar WhatsApp da proposta")
-            return jsonify({"erro": f"Erro ao enviar WhatsApp: {e}"}), 500
+            resultados["whatsapp"] = {"ok": False, "erro": str(e)}
 
-    return jsonify({"erro": 'Canal inválido. Use "email" ou "whatsapp".'}), 400
+    db.session.commit()
+    resposta = {"ok": True, "canal": canal, **resultados}
+    if usa_whatsapp and resultados.get("whatsapp", {}).get("manual"):
+        resposta["wa_url"] = wa_url
+    falhas = [
+        nome for nome, resultado in resultados.items() if not resultado.get("ok")
+    ]
+    if falhas:
+        resposta["ok"] = False
+        resposta["erro"] = "Falha no envio por: " + ", ".join(falhas)
+        return jsonify(resposta), 502
+    return jsonify(resposta)
 
 
 # ── FIM PROPOSTA COMERCIAL ────────────────────────────────────────────────────
