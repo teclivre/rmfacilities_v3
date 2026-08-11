@@ -1,0 +1,8 @@
+<resources>
+    <color name="rm_primary">#205D8A</color>
+    <color name="rm_secondary">#F28E34</color>
+    <color name="rm_bg">#F5F0F6</color>
+    <color name="rm_surface">#FFFFFF</color>
+    <color name="rm_text">#020202</color>
+    <color name="rm_muted">#D3D3D3</color>
+</resources>
