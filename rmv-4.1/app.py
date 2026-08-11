@@ -8879,6 +8879,50 @@ def api_supervisor_agenda():
     return jsonify({"agenda": agenda})
 
 
+@app.route("/api/supervisor/checkin", methods=["GET"])
+@lr
+def api_supervisor_checkin_get():
+    return jsonify({"checkin": session.get("supervisor_checkin")})
+
+
+@app.route("/api/supervisor/checkin", methods=["POST"])
+@lr
+def api_supervisor_checkin_post():
+    d = request.json or {}
+    contrato_id = to_int(d.get("contrato_id"))
+    cliente_id = to_int(d.get("cliente_id"))
+    observacao = (d.get("observacao") or "").strip()
+
+    if not contrato_id:
+        return jsonify({"erro": "Contrato não informado para o check-in."}), 400
+
+    contrato = db.session.get(Contrato, contrato_id)
+    if not contrato:
+        return jsonify({"erro": "Contrato não encontrado."}), 404
+
+    cliente = db.session.get(Cliente, contrato.cliente_id)
+    if not cliente:
+        return jsonify({"erro": "Cliente do contrato não encontrado."}), 404
+
+    if cliente_id and int(cliente_id) != int(cliente.id):
+        return jsonify({"erro": "Cliente informado não corresponde ao contrato."}), 400
+
+    checkin = {
+        "contrato_id": contrato.id,
+        "cliente_id": cliente.id,
+        "cliente_nome": cliente.nome or "Cliente sem nome",
+        "numero": contrato.numero or f"Contrato #{contrato.id}",
+        "servico": _supervisor_servico_label(contrato),
+        "horario": localnow().strftime("%d/%m/%Y %H:%M"),
+        "observacao": observacao,
+    }
+
+    session["supervisor_checkin"] = checkin
+    session.modified = True
+
+    return jsonify({"ok": True, "checkin": checkin})
+
+
 @app.route("/api/cnpj/<cnpj>")
 @lr
 def api_cnpj(cnpj):
