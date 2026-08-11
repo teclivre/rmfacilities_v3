@@ -55,11 +55,19 @@ if [[ ! -f "$LOCAL_PROPERTIES" ]]; then
   printf 'sdk.dir=%s\n' "$SDK_DIR" > "$LOCAL_PROPERTIES"
 fi
 
+run_gradle_task() {
+  local task="$1"
+  if ! "$PROJECT_DIR/gradlew" --no-daemon --stacktrace "$task"; then
+    echo "Falha ao executar '$task'. Tentando novamente com --no-daemon --info..."
+    "$PROJECT_DIR/gradlew" --no-daemon --stacktrace --info "$task"
+  fi
+}
+
 echo "Limpando build anterior..."
-"$PROJECT_DIR/gradlew" clean
+run_gradle_task clean
 
 echo "Gerando APK debug..."
-"$PROJECT_DIR/gradlew" assembleDebug
+run_gradle_task assembleDebug
 
 if [[ -f "$APK_PATH" ]]; then
   echo "APK gerado com sucesso: $APK_PATH"
