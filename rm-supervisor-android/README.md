@@ -79,6 +79,11 @@ Comando Gradle direto:
 ./gradlew assembleDebug
 ```
 
+Se o script não gerar o APK:
+- confira se `ANDROID_SDK_ROOT` (ou `ANDROID_HOME`) está definido
+- confira se o JDK 17+ está instalado (`java -version`)
+- rode `./gradlew assembleDebug --stacktrace` para detalhes
+
 APK gerado em:
 - `app/build/outputs/apk/debug/app-debug.apk`
 
