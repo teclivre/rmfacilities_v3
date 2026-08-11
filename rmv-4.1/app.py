@@ -8847,6 +8847,51 @@ def _supervisor_servico_label(contrato):
     return " / ".join(servicos) if servicos else "Visita"
 
 
+def _supervisor_safe_int(value):
+    try:
+        if value in (None, ""):
+            return None
+        return int(value)
+    except Exception:
+        return None
+
+
+def _supervisor_report_payload():
+    checkin = session.get("supervisor_checkin") or {}
+    resumo = {
+        "status": "em_andamento",
+        "cliente_nome": checkin.get("cliente_nome") or "Cliente",
+        "servico": checkin.get("servico") or "Visita",
+        "horario_checkin": checkin.get("horario") or "",
+        "observacoes": checkin.get("observacao") or "",
+        "checklist_ok": 0,
+        "checklist_total": 0,
+        "checklist_pct": 0,
+        "ocorrencias_total": 0,
+        "fotos_total": 0,
+    }
+    return {
+        "checkin": checkin,
+        "checklist": session.get("supervisor_checklist") or {},
+        "ocorrencias": session.get("supervisor_ocorrencias") or [],
+        "fotos": session.get("supervisor_fotos") or [],
+        "resumo": session.get("supervisor_resumo") or resumo,
+        "gerado_em": localnow().isoformat(),
+        "supervisor": session.get("nome", "Supervisor"),
+    }
+
+
+def _persist_supervisor_report(payload):
+    base_dir = os.path.join(app.instance_path, "uploads", "supervisor_relatorios")
+    os.makedirs(base_dir, exist_ok=True)
+    stamp = localnow().strftime("%Y%m%d_%H%M%S")
+    fname = f"supervisor_relatorio_{stamp}.json"
+    abs_path = os.path.join(base_dir, fname)
+    with open(abs_path, "w", encoding="utf-8") as fp:
+        json.dump(payload, fp, ensure_ascii=False, indent=2)
+    return fname, abs_path
+
+
 @app.route("/api/supervisor/agenda")
 @lr
 def api_supervisor_agenda():
@@ -8889,8 +8934,8 @@ def api_supervisor_checkin_get():
 @lr
 def api_supervisor_checkin_post():
     d = request.json or {}
-    contrato_id = to_int(d.get("contrato_id"))
-    cliente_id = to_int(d.get("cliente_id"))
+    contrato_id = _supervisor_safe_int(d.get("contrato_id"))
+    cliente_id = _supervisor_safe_int(d.get("cliente_id"))
     observacao = (d.get("observacao") or "").strip()
 
     if not contrato_id:
@@ -8921,6 +8966,87 @@ def api_supervisor_checkin_post():
     session.modified = True
 
     return jsonify({"ok": True, "checkin": checkin})
+
+
+@app.route("/api/supervisor/relatorio.pdf", methods=["GET"])
+@lr
+def api_supervisor_relatorio_pdf():
+    payload = _supervisor_report_payload()
+    resumo = payload.get("resumo") or {}
+    checkin = payload.get("checkin") or {}
+
+    buf = io.BytesIO()
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+
+        c = canvas.Canvas(buf, pagesize=A4)
+        w, h = A4
+
+        y = h - 40
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(40, y, "RM Facilities - Relatorio de Supervisao")
+        y -= 22
+        c.setFont("Helvetica", 10)
+        c.drawString(40, y, f"Supervisor: {payload.get('supervisor')}")
+        y -= 14
+        c.drawString(40, y, f"Gerado em: {localnow().strftime('%d/%m/%Y %H:%M')}")
+        y -= 18
+
+        linhas = [
+            f"Cliente: {checkin.get('cliente_nome') or resumo.get('cliente_nome') or 'Cliente'}",
+            f"Contrato: {checkin.get('numero') or '-'}",
+            f"Servico: {checkin.get('servico') or resumo.get('servico') or 'Visita'}",
+            f"Horario check-in: {checkin.get('horario') or resumo.get('horario_checkin') or '-'}",
+            f"Status: {resumo.get('status') or 'em_andamento'}",
+            f"Checklist: {resumo.get('checklist_ok', 0)}/{resumo.get('checklist_total', 0)}",
+            f"Ocorrencias: {resumo.get('ocorrencias_total', 0)}",
+            f"Fotos: {resumo.get('fotos_total', 0)}",
+            f"Observacoes: {resumo.get('observacoes') or checkin.get('observacao') or '-'}",
+        ]
+
+        for line in linhas:
+            c.drawString(40, y, str(line)[:120])
+            y -= 14
+            if y < 50:
+                c.showPage()
+                c.setFont("Helvetica", 10)
+                y = h - 40
+
+        c.showPage()
+        c.save()
+        buf.seek(0)
+    except Exception:
+        app.logger.exception("[supervisor] falha ao gerar PDF")
+        return jsonify({"erro": "Nao foi possivel gerar o PDF do supervisor."}), 500
+
+    return send_file(
+        buf,
+        mimetype="application/pdf",
+        as_attachment=False,
+        download_name="relatorio_supervisor.pdf",
+    )
+
+
+@app.route("/api/supervisor/enviar-relatorio", methods=["POST"])
+@lr
+def api_supervisor_enviar_relatorio():
+    payload = _supervisor_report_payload()
+    try:
+        fname, abs_path = _persist_supervisor_report(payload)
+    except Exception:
+        app.logger.exception("[supervisor] falha ao salvar relatorio")
+        return jsonify({"erro": "Nao foi possivel registrar o relatorio no sistema."}), 500
+
+    return jsonify(
+        {
+            "ok": True,
+            "mensagem": "Relatorio do supervisor registrado com sucesso.",
+            "destino": abs_path,
+            "arquivo": fname,
+            "url": "/api/supervisor/relatorio.pdf",
+        }
+    )
 
 
 @app.route("/api/cnpj/<cnpj>")
