@@ -6,18 +6,20 @@
   <title>RM Facilities — Supervisor</title>
   <style>
     :root {
-      --azul: #205d8a;
-      --azul-esc: #0f2c47;
-      --verde: #168357;
-      --amarelo: #f4b740;
-      --vermelho: #c84a4a;
-      --cinza: #f4f7fb;
-      --cinza-2: #e8edf4;
-      --text: #172330;
-      --muted: #587086;
-      --borda: #d9e4f0;
-      --branco: #ffffff;
-      --shadow: 0 14px 38px rgba(19, 46, 72, 0.12);
+      --azul: #3273a6;
+      --azul-esc: #12304d;
+      --verde: #2fa86f;
+      --amarelo: #f0bf4c;
+      --vermelho: #d16969;
+      --cinza: #0b1622;
+      --cinza-2: #122235;
+      --text: #e8f0f7;
+      --muted: #a5bdd1;
+      --borda: #27425c;
+      --branco: #112132;
+      --surface-2: #172a3d;
+      --input-bg: #0f1d2c;
+      --shadow: 0 14px 38px rgba(2, 8, 14, 0.45);
       --radius: 18px;
     }
 
@@ -26,7 +28,7 @@
     html, body {
       margin: 0;
       min-height: 100%;
-      background: linear-gradient(180deg, #edf4fb 0%, #f9fbff 100%);
+      background: radial-gradient(circle at 20% 0%, #1d3f60 0%, #0b1622 42%, #08121d 100%);
       color: var(--text);
       font-family: Arial, Helvetica, sans-serif;
     }
@@ -46,7 +48,7 @@
       position: sticky;
       top: 0;
       z-index: 3;
-      background: rgba(255,255,255,.88);
+      background: rgba(11, 22, 34, 0.9);
       backdrop-filter: blur(10px);
       border-bottom: 1px solid var(--borda);
       padding: 12px 14px 10px;
@@ -83,11 +85,11 @@
     .badge {
       padding: 6px 10px;
       border-radius: 999px;
-      background: #eaf5ff;
-      color: var(--azul);
+      background: #173149;
+      color: #b9dbf8;
       font-size: 11px;
       font-weight: 700;
-      border: 1px solid #cfe3f4;
+      border: 1px solid #335978;
     }
 
     .header-card {
@@ -123,7 +125,7 @@
       border: 1px solid var(--borda);
       border-radius: 16px;
       padding: 14px 12px;
-      box-shadow: 0 8px 18px rgba(18, 40, 64, 0.05);
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.25);
     }
 
     .quick-card .icon {
@@ -132,7 +134,7 @@
       border-radius: 12px;
       display: grid;
       place-items: center;
-      background: #edf5ff;
+      background: #223d58;
       font-size: 20px;
       margin-bottom: 10px;
     }
@@ -155,7 +157,7 @@
       border-radius: 20px;
       padding: 16px 14px;
       margin-top: 18px;
-      box-shadow: 0 10px 26px rgba(16, 42, 64, 0.04);
+      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);
     }
 
     .panel-header {
@@ -173,8 +175,8 @@
 
     .small-action {
       border: 1px solid var(--borda);
-      background: #f7fafd;
-      color: var(--azul);
+      background: #1a3248;
+      color: #b9dbf8;
       border-radius: 999px;
       padding: 7px 10px;
       font-size: 0.75rem;
@@ -193,7 +195,7 @@
       border: 1px solid var(--borda);
       border-radius: 14px;
       padding: 12px 10px;
-      background: #fbfdff;
+      background: var(--surface-2);
       width: 100%;
       text-align: left;
       cursor: pointer;
@@ -203,7 +205,7 @@
 
     .visit-item.selected {
       border-color: rgba(32, 93, 138, 0.4);
-      background: #eef7ff;
+      background: #1f3850;
       box-shadow: inset 0 0 0 1px rgba(32, 93, 138, 0.15);
     }
 
@@ -280,7 +282,7 @@
       padding: 10px 12px;
       border: 1px solid var(--borda);
       border-radius: 12px;
-      background: #f9fbff;
+      background: var(--surface-2);
       color: var(--text);
       font-size: 0.88rem;
     }
@@ -311,7 +313,7 @@
       border-radius: 10px;
       padding: 10px 12px;
       font: inherit;
-      background: #fff;
+      background: var(--input-bg);
       color: var(--text);
     }
 
@@ -322,7 +324,7 @@
 
     .occurrence-item {
       border: 1px solid var(--borda);
-      background: #fbfdff;
+      background: var(--surface-2);
       border-radius: 12px;
       padding: 10px 12px;
       display: grid;
@@ -355,11 +357,11 @@
       min-height: 96px;
       border-radius: 16px;
       border: 1px solid var(--borda);
-      background: linear-gradient(180deg, #fff 0%, #f6faff 100%);
+      background: linear-gradient(180deg, #1c3248 0%, #16293c 100%);
       color: var(--text);
       font-weight: 700;
       text-decoration: none;
-      box-shadow: 0 10px 20px rgba(18, 40, 64, 0.03);
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
       font-size: 0.8rem;
     }
 
