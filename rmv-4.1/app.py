@@ -8834,6 +8834,51 @@ def pagina_supervisor():
     )
 
 
+def _supervisor_servico_label(contrato):
+    servicos = []
+    if to_num(getattr(contrato, "limpeza", 0), dec=True) > 0:
+        servicos.append("Limpeza")
+    if to_num(getattr(contrato, "jardinagem", 0), dec=True) > 0:
+        servicos.append("Jardinagem")
+    if to_num(getattr(contrato, "portaria", 0), dec=True) > 0:
+        servicos.append("Portaria")
+    if to_num(getattr(contrato, "materiais_equip_locacao", 0), dec=True) > 0:
+        servicos.append("Materiais")
+    return " / ".join(servicos) if servicos else "Visita"
+
+
+@app.route("/api/supervisor/agenda")
+@lr
+def api_supervisor_agenda():
+    try:
+        contratos = (
+            db.session.query(Contrato, Cliente)
+            .join(Cliente, Cliente.id == Contrato.cliente_id)
+            .filter(db.func.lower(db.func.coalesce(Cliente.status, "ativo")) == "ativo")
+            .filter(db.func.lower(db.func.coalesce(Contrato.status, "ativo")) == "ativo")
+            .order_by(db.func.lower(Cliente.nome), Contrato.id.desc())
+            .all()
+        )
+    except Exception:
+        app.logger.exception("[supervisor] falha ao montar agenda")
+        return jsonify({"erro": "Não foi possível carregar a agenda do supervisor."}), 500
+
+    agenda = [
+        {
+            "id": contrato.id,
+            "cliente_id": cliente.id,
+            "cliente_nome": cliente.nome or "Cliente sem nome",
+            "numero": contrato.numero or f"Contrato #{contrato.id}",
+            "servico": _supervisor_servico_label(contrato),
+            "status": "Disponível",
+            "data": "HOJE",
+        }
+        for contrato, cliente in contratos
+    ]
+
+    return jsonify({"agenda": agenda})
+
+
 @app.route("/api/cnpj/<cnpj>")
 @lr
 def api_cnpj(cnpj):
