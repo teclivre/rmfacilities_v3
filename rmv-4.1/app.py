@@ -8892,6 +8892,26 @@ def _persist_supervisor_report(payload):
     return fname, abs_path
 
 
+def _supervisor_touch_resumo(ocorrencias_total=None):
+    checkin = session.get("supervisor_checkin") or {}
+    resumo = session.get("supervisor_resumo") or {
+        "status": "em_andamento",
+        "cliente_nome": checkin.get("cliente_nome") or "Cliente",
+        "servico": checkin.get("servico") or "Visita",
+        "horario_checkin": checkin.get("horario") or "",
+        "observacoes": checkin.get("observacao") or "",
+        "checklist_ok": 0,
+        "checklist_total": 0,
+        "checklist_pct": 0,
+        "ocorrencias_total": 0,
+        "fotos_total": 0,
+    }
+    if ocorrencias_total is not None:
+        resumo["ocorrencias_total"] = int(ocorrencias_total)
+    session["supervisor_resumo"] = resumo
+    session.modified = True
+
+
 @app.route("/api/supervisor/agenda")
 @lr
 def api_supervisor_agenda():
@@ -8964,8 +8984,49 @@ def api_supervisor_checkin_post():
 
     session["supervisor_checkin"] = checkin
     session.modified = True
+    _supervisor_touch_resumo()
 
     return jsonify({"ok": True, "checkin": checkin})
+
+
+@app.route("/api/supervisor/ocorrencias", methods=["GET"])
+@lr
+def api_supervisor_ocorrencias_get():
+    ocorrencias = session.get("supervisor_ocorrencias") or []
+    return jsonify({"ocorrencias": ocorrencias})
+
+
+@app.route("/api/supervisor/ocorrencias", methods=["POST"])
+@lr
+def api_supervisor_ocorrencias_post():
+    d = request.json or {}
+
+    titulo = (d.get("titulo") or "").strip()
+    if not titulo:
+        return jsonify({"erro": "Título da ocorrência é obrigatório."}), 400
+
+    ocorrencias = session.get("supervisor_ocorrencias") or []
+    now = localnow()
+    item = {
+        "id": f"oc-{now.strftime('%Y%m%d%H%M%S%f')}",
+        "titulo": titulo,
+        "categoria": (d.get("categoria") or "Operacional").strip() or "Operacional",
+        "prioridade": (d.get("prioridade") or "Média").strip() or "Média",
+        "descricao": (d.get("descricao") or "").strip(),
+        "status": (d.get("status") or "Aberta").strip() or "Aberta",
+        "cliente_id": _supervisor_safe_int(d.get("cliente_id")),
+        "cliente_nome": (d.get("cliente_nome") or "Cliente").strip() or "Cliente",
+        "contrato_id": _supervisor_safe_int(d.get("contrato_id")),
+        "contrato_numero": (d.get("contrato_numero") or "Contrato").strip() or "Contrato",
+        "data": now.strftime("%d/%m/%Y"),
+        "horario": now.strftime("%H:%M"),
+    }
+
+    ocorrencias.insert(0, item)
+    session["supervisor_ocorrencias"] = ocorrencias
+    _supervisor_touch_resumo(ocorrencias_total=len(ocorrencias))
+
+    return jsonify({"ok": True, "ocorrencia": item, "ocorrencias": ocorrencias})
 
 
 @app.route("/api/supervisor/relatorio.pdf", methods=["GET"])
