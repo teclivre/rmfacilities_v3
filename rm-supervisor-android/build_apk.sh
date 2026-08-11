@@ -20,9 +20,28 @@ if [[ -z "${JAVA_HOME:-}" ]]; then
 fi
 
 SDK_DIR="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+
+if [[ -z "$SDK_DIR" && -f "$LOCAL_PROPERTIES" ]]; then
+  sdk_from_local="$(grep -E '^sdk\.dir=' "$LOCAL_PROPERTIES" | head -n1 | cut -d'=' -f2- || true)"
+  if [[ -n "$sdk_from_local" ]]; then
+    # local.properties can contain escaped slashes (sdk.dir=/home/user/Android/Sdk)
+    SDK_DIR="${sdk_from_local//\\/}"
+  fi
+fi
+
+if [[ -z "$SDK_DIR" ]]; then
+  for candidate in "$HOME/Android/Sdk" "$HOME/Android/sdk" "/opt/android-sdk" "/usr/lib/android-sdk"; do
+    if [[ -d "$candidate" ]]; then
+      SDK_DIR="$candidate"
+      break
+    fi
+  done
+fi
+
 if [[ -z "$SDK_DIR" ]]; then
   echo "Erro: ANDROID_SDK_ROOT/ANDROID_HOME não definido."
   echo "Defina uma dessas variáveis com o caminho do Android SDK e tente novamente."
+  echo "Exemplo: export ANDROID_SDK_ROOT=\"$HOME/Android/Sdk\""
   exit 1
 fi
 
