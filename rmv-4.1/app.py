@@ -8823,6 +8823,17 @@ def pagina_funcionario_app():
     return render_template("funcionario_app.html")
 
 
+@app.route("/supervisor")
+@app.route("/supervisor/")
+@lr
+def pagina_supervisor():
+    return render_template(
+        "supervisor.html",
+        nome=session.get("nome", "Supervisor"),
+        perfil=session.get("perfil", "supervisor"),
+    )
+
+
 @app.route("/api/cnpj/<cnpj>")
 @lr
 def api_cnpj(cnpj):
