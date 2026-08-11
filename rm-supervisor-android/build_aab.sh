@@ -4,6 +4,7 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AAB_PATH="$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab"
 KEYSTORE_PROPS="$PROJECT_DIR/keystore.properties"
+LOCAL_PROPERTIES="$PROJECT_DIR/local.properties"
 
 if [[ ! -x "$PROJECT_DIR/gradlew" ]]; then
   echo "Erro: gradlew não encontrado ou sem permissão de execução em $PROJECT_DIR"
@@ -41,12 +42,48 @@ if [[ ! -f "$keystore_path" ]]; then
   exit 1
 fi
 
+if ! command -v java >/dev/null 2>&1; then
+  echo "Erro: Java não encontrado no PATH. Instale JDK 17+ e tente novamente."
+  exit 1
+fi
+
 if [[ -z "${JAVA_HOME:-}" ]]; then
   echo "Aviso: JAVA_HOME não está definido. O Gradle pode usar o Java do sistema."
 fi
 
-if [[ -z "${ANDROID_HOME:-}" && -z "${ANDROID_SDK_ROOT:-}" ]]; then
-  echo "Aviso: ANDROID_HOME/ANDROID_SDK_ROOT não definido. Garanta que o SDK esteja configurado no Android Studio."
+SDK_DIR="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+
+if [[ -z "$SDK_DIR" && -f "$LOCAL_PROPERTIES" ]]; then
+  sdk_from_local="$(grep -E '^sdk\.dir=' "$LOCAL_PROPERTIES" | head -n1 | cut -d'=' -f2- || true)"
+  if [[ -n "$sdk_from_local" ]]; then
+    SDK_DIR="${sdk_from_local//\\/}"
+  fi
+fi
+
+if [[ -z "$SDK_DIR" ]]; then
+  for candidate in "$HOME/Android/Sdk" "$HOME/Android/sdk" "/opt/android-sdk" "/usr/lib/android-sdk"; do
+    if [[ -d "$candidate" ]]; then
+      SDK_DIR="$candidate"
+      break
+    fi
+  done
+fi
+
+if [[ -z "$SDK_DIR" ]]; then
+  echo "Erro: ANDROID_SDK_ROOT/ANDROID_HOME não definido."
+  echo "Defina uma dessas variáveis com o caminho do Android SDK e tente novamente."
+  echo "Exemplo: export ANDROID_SDK_ROOT=\"$HOME/Android/Sdk\""
+  exit 1
+fi
+
+if [[ ! -d "$SDK_DIR" ]]; then
+  echo "Erro: Android SDK não encontrado em: $SDK_DIR"
+  exit 1
+fi
+
+if [[ ! -f "$LOCAL_PROPERTIES" ]]; then
+  echo "Criando local.properties com sdk.dir..."
+  printf 'sdk.dir=%s\n' "$SDK_DIR" > "$LOCAL_PROPERTIES"
 fi
 
 echo "Limpando build anterior..."
