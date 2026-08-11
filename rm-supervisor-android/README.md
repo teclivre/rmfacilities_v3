@@ -82,6 +82,54 @@ Comando Gradle direto:
 APK gerado em:
 - `app/build/outputs/apk/debug/app-debug.apk`
 
+## Build AAB (Play Store)
+
+### 1) Preparar keystore de assinatura
+Se ainda não tiver keystore, crie uma:
+
+```bash
+keytool -genkeypair -v \
+  -storetype JKS \
+  -keystore keystore/upload-keystore.jks \
+  -alias upload \
+  -keyalg RSA \
+  -keysize 2048 \
+  -validity 10000
+```
+
+### 2) Configurar arquivo de assinatura
+1. Copie `keystore.properties.example` para `keystore.properties`.
+2. Preencha os campos:
+   - `storeFile`
+   - `storePassword`
+   - `keyAlias`
+   - `keyPassword`
+
+### 3) Gerar AAB release assinado
+
+```bash
+cd rm-supervisor-android
+chmod +x build_aab.sh
+./build_aab.sh
+```
+
+Comando Gradle direto:
+
+```bash
+./gradlew bundleRelease
+```
+
+AAB gerado em:
+- `app/build/outputs/bundle/release/app-release.aab`
+
+### 4) Publicar na Play Store
+No Google Play Console:
+1. Abra seu app.
+2. Vá em `Produção` (ou teste interno/fechado).
+3. Crie uma nova versão.
+4. Envie o arquivo `app-release.aab`.
+5. Preencha notas da versão e envie para revisão.
+
 ## Instalar no celular via ADB
 ```bash
 cd rm-supervisor-android
@@ -108,3 +156,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - Implementar upload real de fotos e geolocalização precisa.
 - Exportação de relatórios em PDF.
 - Testes instrumentados e unitários adicionais.
+
+## Segurança de assinatura
+- `keystore.properties` está no `.gitignore`.
+- Arquivos `.jks` e `.keystore` também estão no `.gitignore`.
+- Nunca publique senhas de assinatura no Git.
