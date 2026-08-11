@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>RM Facilities — Supervisor</title>
+  <style>
+    :root {
+      --azul: #205d8a;
+      --azul-esc: #0f2c47;
+      --verde: #168357;
+      --amarelo: #f4b740;
+      --vermelho: #c84a4a;
+      --cinza: #f4f7fb;
+      --cinza-2: #e8edf4;
+      --text: #172330;
+      --muted: #587086;
+      --borda: #d9e4f0;
+      --branco: #ffffff;
+      --shadow: 0 14px 38px rgba(19, 46, 72, 0.12);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: linear-gradient(180deg, #edf4fb 0%, #f9fbff 100%);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    body {
+      display: flex;
+      justify-content: center;
+      padding: 18px 12px 28px;
+    }
+
+    .app {
+      width: min(100%, 460px);
+      min-height: 100vh;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      background: rgba(255,255,255,.88);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--borda);
+      padding: 12px 14px 10px;
+      margin: -18px -12px 0;
+    }
+
+    .topbar-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 15px;
+    }
+
+    .brand-mark {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--azul) 0%, #7ba7d2 100%);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-size: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .badge {
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #eaf5ff;
+      color: var(--azul);
+      font-size: 11px;
+      font-weight: 700;
+      border: 1px solid #cfe3f4;
+    }
+
+    .header-card {
+      background: linear-gradient(135deg, var(--azul-esc) 0%, var(--azul) 100%);
+      border-radius: 22px;
+      color: #fff;
+      padding: 20px 18px 18px;
+      box-shadow: var(--shadow);
+      margin-top: 18px;
+    }
+
+    .header-card h1 {
+      margin: 0;
+      font-size: clamp(1.35rem, 5vw, 1.8rem);
+      line-height: 1.15;
+    }
+
+    .header-card p {
+      margin: 8px 0 0;
+      opacity: 0.88;
+      font-size: 0.92rem;
+    }
+
+    .quick-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .quick-card {
+      background: var(--branco);
+      border: 1px solid var(--borda);
+      border-radius: 16px;
+      padding: 14px 12px;
+      box-shadow: 0 8px 18px rgba(18, 40, 64, 0.05);
+    }
+
+    .quick-card .icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      background: #edf5ff;
+      font-size: 20px;
+      margin-bottom: 10px;
+    }
+
+    .quick-card .label {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .quick-card .value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .panel {
+      background: var(--branco);
+      border: 1px solid var(--borda);
+      border-radius: 20px;
+      padding: 16px 14px;
+      margin-top: 18px;
+      box-shadow: 0 10px 26px rgba(16, 42, 64, 0.04);
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .panel-title {
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .small-action {
+      border: 1px solid var(--borda);
+      background: #f7fafd;
+      color: var(--azul);
+      border-radius: 999px;
+      padding: 7px 10px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .visit-item {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      border: 1px solid var(--borda);
+      border-radius: 14px;
+      padding: 12px 10px;
+      background: #fbfdff;
+      width: 100%;
+      text-align: left;
+      cursor: pointer;
+      color: inherit;
+      font: inherit;
+    }
+
+    .visit-item.selected {
+      border-color: rgba(32, 93, 138, 0.4);
+      background: #eef7ff;
+      box-shadow: inset 0 0 0 1px rgba(32, 93, 138, 0.15);
+    }
+
+    .visit-status {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: var(--verde);
+      box-shadow: 0 0 0 4px rgba(22, 131, 87, 0.12);
+    }
+
+    .visit-status.warning {
+      background: var(--amarelo);
+      box-shadow: 0 0 0 4px rgba(244, 183, 64, 0.12);
+    }
+
+    .visit-status.danger {
+      background: var(--vermelho);
+      box-shadow: 0 0 0 4px rgba(200, 74, 74, 0.12);
+    }
+
+    .visit-main {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .visit-main strong {
+      display: block;
+      font-size: 0.94rem;
+      line-height: 1.3;
+    }
+
+    .visit-main span {
+      display: block;
+      font-size: 0.77rem;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 8px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      border: 1px solid transparent;
+    }
+
+    .chip.success {
+      color: var(--verde);
+      background: rgba(22, 131, 87, 0.08);
+      border-color: rgba(22, 131, 87, 0.12);
+    }
+
+    .chip.warning {
+      color: #9b6700;
+      background: rgba(244, 183, 64, 0.1);
+      border-color: rgba(244, 183, 64, 0.18);
+    }
+
+    .chip.danger {
+      color: #a33434;
+      background: rgba(200, 74, 74, 0.08);
+      border-color: rgba(200, 74, 74, 0.14);
+    }
+
+    .check-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--borda);
+      border-radius: 12px;
+      background: #f9fbff;
+      color: var(--text);
+      font-size: 0.88rem;
+    }
+
+    .check-item.done {
+      background: rgba(22, 131, 87, 0.05);
+      border-color: rgba(22, 131, 87, 0.2);
+    }
+
+    .check-item input {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--verde);
+      margin: 0;
+    }
+
+    .occurrence-form {
+      display: grid;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .occurrence-form input,
+    .occurrence-form select,
+    .occurrence-form textarea {
+      width: 100%;
+      border: 1px solid var(--borda);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font: inherit;
+      background: #fff;
+      color: var(--text);
+    }
+
+    .occurrence-form textarea {
+      min-height: 76px;
+      resize: vertical;
+    }
+
+    .occurrence-item {
+      border: 1px solid var(--borda);
+      background: #fbfdff;
+      border-radius: 12px;
+      padding: 10px 12px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .occurrence-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .cta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .action-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 96px;
+      border-radius: 16px;
+      border: 1px solid var(--borda);
+      background: linear-gradient(180deg, #fff 0%, #f6faff 100%);
+      color: var(--text);
+      font-weight: 700;
+      text-decoration: none;
+      box-shadow: 0 10px 20px rgba(18, 40, 64, 0.03);
+      font-size: 0.8rem;
+    }
+
+    .action-btn strong {
+      font-size: 1.8rem;
+      line-height: 1;
+    }
+
+    .action-btn.primary {
+      background: linear-gradient(135deg, var(--azul) 0%, #3b7bb0 100%);
+      color: #fff;
+      border-color: transparent;
+    }
+
+    .action-btn.success {
+      background: linear-gradient(135deg, #1f9c63 0%, #39b27f 100%);
+      color: #fff;
+      border-color: transparent;
+    }
+
+    .action-btn.danger {
+      background: linear-gradient(135deg, #d45757 0%, #ea7d7d 100%);
+      color: #fff;
+      border-color: transparent;
+    }
+
+    @media (min-width: 700px) {
+      body {
+        padding-top: 26px;
+      }
+
+      .app {
+        width: min(100%, 960px);
+      }
+
+      .topbar {
+        margin: -26px -24px 0;
+        padding-inline: 24px;
+      }
+
+      .header-card {
+        margin-top: 22px;
+      }
+
+      .cta-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <div class="brand-mark">RM</div>
+          <span>Supervisor</span>
+        </div>
+        <span class="badge">{{ perfil }}</span>
+      </div>
+    </div>
+
+    <section class="header-card">
+      <h1>Boa tarde, {{ nome }}.</h1>
+      <p>Agenda, visitas, checklist e fechamento em poucos passos.</p>
+    </section>
+
+    <section class="quick-grid">
+      <div class="quick-card">
+        <div class="icon">🏢</div>
+        <div class="label">Clientes ativos</div>
+        <div class="value" data-metric="ativos">0</div>
+      </div>
+      <div class="quick-card">
+        <div class="icon">💰</div>
+        <div class="label">Receita</div>
+        <div class="value" data-metric="receita">R$ 0</div>
+      </div>
+      <div class="quick-card">
+        <div class="icon">⏳</div>
+        <div class="label">Pendentes</div>
+        <div class="value" data-metric="pendentes">0</div>
+      </div>
+      <div class="quick-card">
+        <div class="icon">👥</div>
+        <div class="label">Funcionários</div>
+        <div class="value" data-metric="funcionarios_ativos">0</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Resumo do dia</div>
+        <button class="small-action" type="button" onclick="window.location.reload()">Atualizar</button>
+      </div>
+      <div class="list" id="alert-list">
+        <div class="visit-item">
+          <div class="visit-status"></div>
+          <div class="visit-main">
+            <strong>Carregando indicadores...</strong>
+            <span>Consultando dados operacionais.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Agenda de visitas</div>
+        <button class="small-action" type="button" id="refresh-agenda">Atualizar</button>
+      </div>
+      <div class="list" id="agenda-list">
+        <div class="visit-item">
+          <div class="visit-status"></div>
+          <div class="visit-main">
+            <strong>Carregando agenda...</strong>
+            <span>Buscando contratos ativos e clientes vinculados.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="checkin-panel">
+      <div class="panel-header">
+        <div class="panel-title">Check-in da visita</div>
+      </div>
+      <div class="list" id="checkin-state">
+        <div class="visit-item">
+          <div class="visit-status warning"></div>
+          <div class="visit-main">
+            <strong>Nenhum check-in registrado</strong>
+            <span>Selecione uma visita na agenda para começar a operação.</span>
+          </div>
+        </div>
+      </div>
+      <div class="cta-grid" style="margin-top: 14px;">
+        <button type="button" class="action-btn primary" id="register-checkin-btn">
+          <strong>📍</strong>
+          <span>Registrar check-in</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="panel" id="checklist-panel">
+      <div class="panel-header">
+        <div class="panel-title" id="checklist-title">Checklist da visita</div>
+        <button class="small-action" type="button" id="save-checklist-btn">Salvar</button>
+      </div>
+      <div class="list" id="checklist-list">
+        <div class="visit-item">
+          <div class="visit-status warning"></div>
+          <div class="visit-main">
+            <strong>Checklist indisponível</strong>
+            <span>Escolha uma visita e faça o check-in para iniciar.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="occurrence-panel">
+      <div class="panel-header">
+        <div class="panel-title">Ocorrências</div>
+        <button class="small-action" type="button" id="refresh-occurrences">Atualizar</button>
+      </div>
+      <form class="occurrence-form" id="occurrence-form">
+        <input type="text" id="occurrence-title" placeholder="Título da ocorrência" maxlength="120" required>
+        <select id="occurrence-category">
+          <option value="Operacional">Operacional</option>
+          <option value="Segurança">Segurança</option>
+          <option value="EPI">EPI</option>
+          <option value="Material">Material</option>
+          <option value="Cliente">Cliente</option>
+          <option value="Outros">Outros</option>
+        </select>
+        <select id="occurrence-priority">
+          <option value="Baixa">Baixa</option>
+          <option value="Média" selected>Média</option>
+          <option value="Alta">Alta</option>
+          <option value="Crítica">Crítica</option>
+        </select>
+        <textarea id="occurrence-description" placeholder="Descreva o problema, impacto e observações"></textarea>
+        <button type="submit" class="action-btn success" style="min-height: 52px;">
+          <strong>⚠️</strong>
+          <span>Registrar ocorrência</span>
+        </button>
+      </form>
+      <div class="list" id="occurrence-list" style="margin-top: 12px;">
+        <div class="visit-item">
+          <div class="visit-status warning"></div>
+          <div class="visit-main">
+            <strong>Nenhuma ocorrência registrada</strong>
+            <span>Use este bloco para registrar um problema da visita.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="photo-panel">
+      <div class="panel-header">
+        <div class="panel-title">Fotos da visita</div>
+        <button class="small-action" type="button" id="refresh-photos">Atualizar</button>
+      </div>
+      <form id="photo-form" class="occurrence-form" enctype="multipart/form-data">
+        <input type="file" id="photo-input" accept="image/*" capture="environment" multiple>
+        <button type="submit" class="action-btn" style="min-height: 52px;">
+          <strong>📸</strong>
+          <span>Anexar fotos</span>
+        </button>
+      </form>
+      <div class="list" id="photo-list" style="margin-top: 12px;">
+        <div class="visit-item">
+          <div class="visit-status warning"></div>
+          <div class="visit-main">
+            <strong>Nenhuma foto anexada</strong>
+            <span>Selecione imagens do celular ou da galeria.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="finalize-panel">
+      <div class="panel-header">
+        <div class="panel-title">Finalização da visita</div>
+        <button class="small-action" type="button" id="refresh-finalize">Revisar</button>
+      </div>
+      <div class="list" id="finalize-summary">
+        <div class="visit-item">
+          <div class="visit-status warning"></div>
+          <div class="visit-main">
+            <strong>Resumo ainda não gerado</strong>
+            <span>Faça o check-in, checklist e anexos antes de fechar.</span>
+          </div>
+        </div>
+      </div>
+      <form class="occurrence-form" id="finalize-form">
+        <textarea id="finalize-observacoes" placeholder="Observações finais da visita"></textarea>
+        <button type="submit" class="action-btn success" style="min-height: 52px;">
+          <strong>✅</strong>
+          <span>Confirmar visita concluída</span>
+        </button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Ações rápidas</div>
+      </div>
+      <div class="cta-grid">
+        <button type="button" class="action-btn primary" id="quick-checkin-btn">
+          <strong>📍</strong>
+          <span>Check-in</span>
+        </button>
+        <button type="button" class="action-btn success" id="quick-checklist-btn">
+          <strong>🧾</strong>
+          <span>Checklist</span>
+        </button>
+        <button type="button" class="action-btn" id="generate-pdf-btn">
+          <strong>📄</strong>
+          <span>GERAR PDF</span>
+        </button>
+        <button type="button" class="action-btn danger" id="send-report-btn">
+          <strong>📤</strong>
+          <span>ENVIAR RELATÓRIO</span>
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    let selectedVisit = null;
+
+    function getChecklistDefaultItems(servico = 'Visita') {
+      const label = String(servico || 'Visita').toLowerCase();
+      if (label.includes('limpeza')) {
+        return [
+          'Entrada e recepção livres de sujeira',
+          'Pisos, corredores e cantos varridos',
+          'Banheiros e vestiários higienizados',
+          'Lixeiras e resíduos removidos',
+          'Pias, espelhos e metais polidos',
+          'Produtos e equipamentos organizados'
+        ];
+      }
+      if (label.includes('portaria')) {
+        return [
+          'Recepção monitorada',
+          'Controle de acesso realizado',
+          'Comunicação interna registrada',
+          'Segurança e sinalização conferidas'
+        ];
+      }
+      if (label.includes('jardinagem')) {
+        return [
+          'Áreas verdes inspecionadas',
+          'Podas e limpeza realizadas',
+          'Irrigação e plantas conferidas',
+          'Pontos de risco identificados'
+        ];
+      }
+      return [
+        'Local conferido',
+        'Equipe em atendimento',
+        'Pendências registradas',
+        'Fechamento da visita finalizado'
+      ];
+    }
+
+    function renderCheckinState(checkin) {
+      const el = document.getElementById('checkin-state');
+      if (!el) return;
+
+      if (!checkin) {
+        el.innerHTML = `
+          <div class="visit-item">
+            <div class="visit-status warning"></div>
+            <div class="visit-main">
+              <strong>Nenhum check-in registrado</strong>
+              <span>Selecione uma visita na agenda para começar a operação.</span>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      el.innerHTML = `
+        <div class="visit-item selected">
+          <div class="visit-status"></div>
+          <div class="visit-main">
+            <strong>${(checkin.cliente_nome || 'Cliente').replace(/</g,'&lt;')}</strong>
+            <span>${checkin.horario || 'Hoje'} • ${checkin.numero || ''} • ${checkin.servico || 'Visita'}</span>
+          </div>
+          <span class="chip success">Check-in</span>
+        </div>
+      `;
+    }
+
+    async function loadSupervisorCheckin() {
+      try {
+        const response = await fetch('/api/supervisor/checkin');
+        if (!response.ok) throw new Error('Check-in indisponível');
+        const data = await response.json();
+        renderCheckinState(data.checkin || null);
+      } catch (error) {
+        renderCheckinState(null);
+      }
+    }
+
+    async function registerCheckin() {
+      if (!selectedVisit) {
+        const agendaList = document.getElementById('agenda-list');
+        const firstItem = agendaList?.querySelector('[data-visit-id]');
+        if (firstItem) {
+          selectedVisit = {
+            id: Number(firstItem.dataset.visitId || 0),
+            cliente_id: Number(firstItem.dataset.clienteId || 0),
+            cliente_nome: firstItem.dataset.clienteNome || 'Cliente',
+            numero: firstItem.dataset.numero || '',
+            servico: firstItem.dataset.servico || 'Visita',
+          };
+        }
+      }
+
+      if (!selectedVisit || !selectedVisit.id) {
+        alert('Selecione uma visita na agenda antes de registrar o check-in.');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/supervisor/checkin', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            contrato_id: selectedVisit.id,
+            cliente_id: selectedVisit.cliente_id,
+            observacao: 'Check-in realizado no ponto de atendimento'
+          })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.erro || 'Erro ao registrar check-in');
+        renderCheckinState(data.checkin || null);
+      } catch (error) {
+        alert(error.message || 'Não foi possível registrar o check-in.');
+      }
+    }
+
+    function renderChecklist(items = [], servico = 'Visita') {
+      const el = document.getElementById('checklist-list');
+      const title = document.getElementById('checklist-title');
+      if (title) {
+        title.textContent = String(servico || 'Visita').toLowerCase().includes('limpeza') ? 'Checklist de limpeza' : 'Checklist da visita';
+      }
+      if (!el) return;
+      const list = Array.isArray(items) && items.length ? items : getChecklistDefaultItems(servico).map((label) => ({ label, checked: false }));
+      el.innerHTML = list.map((item, idx) => `
+        <label class="check-item ${item.checked ? 'done' : ''}">
+          <input type="checkbox" data-index="${idx}" data-label="${String(item.label || 'Item').replace(/"/g, '&quot;')}" ${item.checked ? 'checked' : ''}>
+          <span>${String(item.label || 'Item').replace(/</g, '&lt;')}</span>
+        </label>
+      `).join('');
+    }
+
+    async function loadSupervisorChecklist() {
+      try {
+        const response = await fetch('/api/supervisor/checklist');
+        if (!response.ok) throw new Error('Checklist indisponível');
+        const data = await response.json();
+        const checklist = data.checklist || {};
+        const items = Array.isArray(checklist.items) && checklist.items.length ? checklist.items : [];
+        renderChecklist(items, checklist.servico || (selectedVisit && selectedVisit.servico) || 'Visita');
+      } catch (error) {
+        renderChecklist([], (selectedVisit && selectedVisit.servico) || 'Visita');
+      }
+    }
+
+    async function saveSupervisorChecklist() {
+      const el = document.getElementById('checklist-list');
+      if (!el) return;
+      const items = Array.from(el.querySelectorAll('input[type="checkbox"]')).map((input) => ({
+        label: input.dataset.label || `Item ${Number(input.dataset.index) + 1}`,
+        checked: input.checked,
+      }));
+      const payload = {
+        cliente_id: selectedVisit?.cliente_id || null,
+        contrato_id: selectedVisit?.id || null,
+        servico: (selectedVisit && selectedVisit.servico) || 'Visita',
+        items,
+      };
+      try {
+        const response = await fetch('/api/supervisor/checklist', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.erro || 'Erro ao salvar checklist');
+        renderChecklist(data.checklist?.items || items, data.checklist?.servico || payload.servico);
+      } catch (error) {
+        alert(error.message || 'Não foi possível salvar o checklist.');
+      }
+    }
+
+    function renderOccurrences(ocorrencias = []) {
+      const el = document.getElementById('occurrence-list');
+      if (!el) return;
+      if (!Array.isArray(ocorrencias) || !ocorrencias.length) {
+        el.innerHTML = `
+          <div class="visit-item">
+            <div class="visit-status warning"></div>
+            <div class="visit-main">
+              <strong>Nenhuma ocorrência registrada</strong>
+              <span>Use este bloco para registrar um problema da visita.</span>
+            </div>
+          </div>
+        `;
+        return;
+      }
+      el.innerHTML = ocorrencias.map((item) => `
+        <div class="occurrence-item">
+          <strong>${String(item.titulo || 'Ocorrência').replace(/</g, '&lt;')}</strong>
+          <div class="occurrence-meta">
+            <span>${item.categoria || 'Operacional'}</span>
+            <span class="chip ${item.prioridade === 'Crítica' ? 'danger' : item.prioridade === 'Alta' ? 'warning' : 'success'}">${item.prioridade || 'Média'}</span>
+          </div>
+          <div class="occurrence-meta">
+            <span>${item.data || ''} • ${item.horario || ''}</span>
+            <span>${item.status || 'Aberta'}</span>
+          </div>
+          <div>${String(item.descricao || '').replace(/</g, '&lt;')}</div>
+        </div>
+      `).join('');
+    }
+
+    function renderPhotos(fotos = []) {
+      const el = document.getElementById('photo-list');
+      if (!el) return;
+      if (!Array.isArray(fotos) || !fotos.length) {
+        el.innerHTML = `
+          <div class="visit-item">
+            <div class="visit-status warning"></div>
+            <div class="visit-main">
+              <strong>Nenhuma foto anexada</strong>
+              <span>Selecione imagens do celular ou da galeria.</span>
+            </div>
+          </div>
+        `;
+        return;
+      }
+      el.innerHTML = fotos.map((item) => `
+        <div class="occurrence-item">
+          <strong>${String(item.nome || 'Foto').replace(/</g, '&lt;')}</strong>
+          <div class="occurrence-meta">
+            <span>${item.tipo || 'visita'}</span>
+            <span>${item.data || ''} ${item.horario || ''}</span>
+          </div>
+          <div class="occurrence-meta">
+            <span>${item.usuario || 'Supervisor'}</span>
+            <span class="chip success">Anexada</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function loadSupervisorPhotos() {
+      try {
+        const response = await fetch('/api/supervisor/fotos');
+        if (!response.ok) throw new Error('Fotos indisponíveis');
+        const data = await response.json();
+        renderPhotos(Array.isArray(data.fotos) ? data.fotos : []);
+      } catch (error) {
+        renderPhotos([]);
+      }
+    }
+
+    async function uploadSupervisorPhotos(event) {
+      event.preventDefault();
+      const input = document.getElementById('photo-input');
+      if (!input || !input.files || !input.files.length) {
+        alert('Selecione pelo menos uma foto para anexar.');
+        return;
+      }
+      const formData = new FormData();
+      Array.from(input.files).forEach((file) => formData.append('arquivo', file));
+      formData.append('tipo', 'visita');
+      formData.append('referencia', selectedVisit ? String(selectedVisit.id) : 'visita');
+      try {
+        const response = await fetch('/api/supervisor/fotos', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.erro || 'Não foi possível anexar a foto');
+        renderPhotos(Array.isArray(data.fotos) ? data.fotos : []);
+        input.value = '';
+        await loadSupervisorVisitSummary();
+      } catch (error) {
+        alert(error.message || 'Não foi possível anexar a foto.');
+      }
+    }
+
+    function renderVisitSummary(summary = {}) {
+      const el = document.getElementById('finalize-summary');
+      if (!el) return;
+      const status = summary.status === 'concluida' ? 'concluida' : 'em_andamento';
+      const checklistOk = Number(summary.checklist_ok || 0);
+      const checklistTotal = Number(summary.checklist_total || 0);
+      const checklistPct = Number(summary.checklist_pct || 0);
+      const ocorrencias = Number(summary.ocorrencias_total || 0);
+      const fotos = Number(summary.fotos_total || 0);
+      const cliente = summary.cliente_nome || 'Cliente';
+      const servico = summary.servico || 'Visita';
+      const horario = summary.horario_checkin || 'Check-in não registrado';
+      const observacoes = summary.observacoes || 'Nenhuma observação registrada.';
+
+      el.innerHTML = `
+        <div class="visit-item selected">
+          <div class="visit-status ${status === 'concluida' ? '' : 'warning'}"></div>
+          <div class="visit-main">
+            <strong>${String(cliente).replace(/</g, '&lt;')} • ${String(servico).replace(/</g, '&lt;')}</strong>
+            <span>${String(horario).replace(/</g, '&lt;')} • Checklist ${checklistOk}/${checklistTotal} • ${checklistPct}% concluído</span>
+            <span>Ocorrências: ${ocorrencias} • Fotos: ${fotos}</span>
+            <span style="margin-top: 4px;">Observações: ${String(observacoes).replace(/</g, '&lt;')}</span>
+          </div>
+          <span class="chip ${status === 'concluida' ? 'success' : 'warning'}">${status === 'concluida' ? 'Concluída' : 'Revisar'}</span>
+        </div>
+      `;
+    }
+
+    async function loadSupervisorVisitSummary() {
+      try {
+        const response = await fetch('/api/supervisor/finalizar');
+        if (!response.ok) throw new Error('Resumo indisponível');
+        const data = await response.json();
+        renderVisitSummary(data.resumo || {});
+      } catch (error) {
+        renderVisitSummary({
+          cliente_nome: selectedVisit?.cliente_nome || 'Cliente',
+          servico: selectedVisit?.servico || 'Visita',
+          checklist_ok: 0,
+          checklist_total: 0,
+          checklist_pct: 0,
+          ocorrencias_total: 0,
+          fotos_total: 0,
+          observacoes: 'Nenhuma observação registrada.',
+          status: 'em_andamento'
+        });
+      }
+    }
+
+    async function finalizeSupervisorVisit(event) {
+      event.preventDefault();
+      if (!selectedVisit) {
+        alert('Selecione uma visita antes de confirmar a finalização.');
+        return;
+      }
+
+      const observacoes = document.getElementById('finalize-observacoes')?.value.trim() || '';
+      try {
+        const response = await fetch('/api/supervisor/finalizar', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ observacoes })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.erro || 'Não foi possível concluir a visita');
+        renderVisitSummary(data.resumo || {});
+        alert('VISITA CONCLUÍDA');
+      } catch (error) {
+        alert(error.message || 'Não foi possível concluir a visita.');
+      }
+    }
+
+    function generateSupervisorPdf() {
+      window.open('/api/supervisor/relatorio.pdf', '_blank');
+    }
+
+    async function sendSupervisorReport() {
+      try {
+        const response = await fetch('/api/supervisor/enviar-relatorio', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({})
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.erro || 'Não foi possível enviar o relatório');
+        alert(data.mensagem || 'Relatório enviado.');
+        if (data.url) {
+          window.open(data.url, '_blank');
+        }
+      } catch (error) {
+        alert(error.message || 'Não foi possível enviar o relatório.');
+      }
+    }
+
+    async function loadSupervisorOccurrences() {
+      try {
+        const response = await fetch('/api/supervisor/ocorrencias');
+        if (!response.ok) throw new Error('Ocorrências indisponíveis');
+        const data = await response.json();
+        renderOccurrences(Array.isArray(data.ocorrencias) ? data.ocorrencias : []);
+      } catch (error) {
+        renderOccurrences([]);
+      }
+    }
+
+    async function registerOccurrence(event) {
+      event.preventDefault();
+      if (!selectedVisit) {
+        alert('Selecione uma visita antes de registrar uma ocorrência.');
+        return;
+      }
+      const title = document.getElementById('occurrence-title').value.trim();
+      const category = document.getElementById('occurrence-category').value;
+      const priority = document.getElementById('occurrence-priority').value;
+      const description = document.getElementById('occurrence-description').value.trim();
+      if (!title) {
+        alert('Informe o título da ocorrência.');
+        return;
+      }
+      try {
+        const response = await fetch('/api/supervisor/ocorrencias', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            titulo: title,
+            categoria: category,
+            prioridade: priority,
+            descricao: description,
+            contrato_id: selectedVisit?.id || null,
+            cliente_id: selectedVisit?.cliente_id || null,
+            cliente_nome: selectedVisit?.cliente_nome || 'Cliente',
+            contrato_numero: selectedVisit?.numero || 'Contrato',
+            status: 'Aberta',
+          })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.erro || 'Não foi possível registrar a ocorrência');
+        document.getElementById('occurrence-form').reset();
+        document.getElementById('occurrence-priority').value = 'Média';
+        renderOccurrences(Array.isArray(data.ocorrencias) ? data.ocorrencias : [data.ocorrencia]);
+      } catch (error) {
+        alert(error.message || 'Não foi possível registrar a ocorrência.');
+      }
+    }
+
+    async function loadSupervisorAgenda() {
+      const agendaList = document.getElementById('agenda-list');
+      try {
+        const response = await fetch('/api/supervisor/agenda');
+        if (!response.ok) throw new Error('Agenda indisponível');
+        const data = await response.json();
+        const agenda = Array.isArray(data.agenda) ? data.agenda : [];
+
+        if (!agenda.length) {
+          agendaList.innerHTML = `
+            <div class="visit-item">
+              <div class="visit-status warning"></div>
+              <div class="visit-main">
+                <strong>Nenhuma visita agendada</strong>
+                <span>Não há contratos ativos para montar a agenda.</span>
+              </div>
+            </div>
+          `;
+          return;
+        }
+
+        agendaList.innerHTML = agenda.map((item) => `
+          <button type="button" class="visit-item ${selectedVisit && Number(selectedVisit.id) === Number(item.id) ? 'selected' : ''}" data-visit-id="${item.id}" data-cliente-id="${item.cliente_id || ''}" data-cliente-nome="${(item.cliente_nome || '').replace(/"/g, '&quot;')}" data-numero="${(item.numero || '').replace(/"/g, '&quot;')}" data-servico="${(item.servico || '').replace(/"/g, '&quot;')}">
+            <div class="visit-status ${item.status === 'Disponível' ? 'warning' : ''}"></div>
+            <div class="visit-main">
+              <strong>${(item.cliente_nome || 'Cliente sem nome').replace(/</g,'&lt;')}</strong>
+              <span>${(item.data || 'HOJE')} • ${item.numero || ''} • ${item.servico || 'Visita'}</span>
+            </div>
+            <span class="chip ${item.status === 'Disponível' ? 'warning' : 'success'}">${item.status || 'Agendado'}</span>
+          </button>
+        `).join('');
+
+        agendaList.querySelectorAll('[data-visit-id]').forEach((button) => {
+          button.addEventListener('click', () => {
+            selectedVisit = {
+              id: Number(button.dataset.visitId || 0),
+              cliente_id: Number(button.dataset.clienteId || 0),
+              cliente_nome: button.dataset.clienteNome || 'Cliente',
+              numero: button.dataset.numero || '',
+              servico: button.dataset.servico || 'Visita'
+            };
+            agendaList.querySelectorAll('[data-visit-id]').forEach((item) => item.classList.toggle('selected', Number(item.dataset.visitId) === Number(selectedVisit.id)));
+            loadSupervisorChecklist();
+          });
+        });
+      } catch (error) {
+        agendaList.innerHTML = `
+          <div class="visit-item">
+            <div class="visit-status danger"></div>
+            <div class="visit-main">
+              <strong>Agenda indisponível</strong>
+              <span>Não foi possível carregar os contratos do sistema.</span>
+            </div>
+            <span class="chip danger">Erro</span>
+          </div>
+        `;
+      }
+    }
+
+    async function loadSupervisorDashboard() {
+      const metricMap = {
+        ativos: document.querySelector('[data-metric="ativos"]'),
+        receita: document.querySelector('[data-metric="receita"]'),
+        pendentes: document.querySelector('[data-metric="pendentes"]'),
+        funcionarios_ativos: document.querySelector('[data-metric="funcionarios_ativos"]')
+      };
+
+      const alertList = document.getElementById('alert-list');
+
+      try {
+        const response = await fetch('/api/dashboard');
+        if (!response.ok) throw new Error('Erro ao consultar dashboard');
+        const data = await response.json();
+
+        if (metricMap.ativos) metricMap.ativos.textContent = Number(data.ativos || 0);
+        if (metricMap.receita) metricMap.receita.textContent = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(data.receita || 0));
+        if (metricMap.pendentes) metricMap.pendentes.textContent = Number(data.pendentes || 0);
+        if (metricMap.funcionarios_ativos) metricMap.funcionarios_ativos.textContent = Number(data.funcionarios_ativos || 0);
+
+        const alerts = [
+          {
+            title: 'Ponto do dia',
+            sub: `${Number(data.ponto_bateram_hoje || 0)} bateram e ${Number(data.ponto_falta_folga || 0)} em falta/folga`,
+            tone: 'success'
+          },
+          {
+            title: 'Inadimplência',
+            sub: `${Number(data.alerta_inadimplencia?.qtd || 0)} itens com atraso`,
+            tone: 'danger'
+          },
+          {
+            title: 'Contratos próximos do vencimento',
+            sub: `${Number(data.alerta_contratos?.qtd || 0)} alertas ativos`,
+            tone: 'warning'
+          },
+          {
+            title: 'ASO / benefícios',
+            sub: `${Number(data.alerta_aso?.qtd || 0)} pendências de documentação`,
+            tone: 'warning'
+          }
+        ];
+
+        alertList.innerHTML = alerts.map((item) => `
+          <div class="visit-item">
+            <div class="visit-status ${item.tone === 'danger' ? 'danger' : item.tone === 'warning' ? 'warning' : ''}"></div>
+            <div class="visit-main">
+              <strong>${item.title}</strong>
+              <span>${item.sub}</span>
+            </div>
+            <span class="chip ${item.tone === 'danger' ? 'danger' : item.tone === 'warning' ? 'warning' : 'success'}">${item.tone === 'danger' ? 'Atenção' : item.tone === 'warning' ? 'Verificar' : 'OK'}</span>
+          </div>
+        `).join('');
+      } catch (error) {
+        alertList.innerHTML = `
+          <div class="visit-item">
+            <div class="visit-status danger"></div>
+            <div class="visit-main">
+              <strong>Dashboard indisponível</strong>
+              <span>Não foi possível carregar os indicadores hoje.</span>
+            </div>
+            <span class="chip danger">Erro</span>
+          </div>
+        `;
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadSupervisorDashboard();
+      loadSupervisorAgenda();
+      loadSupervisorCheckin();
+      loadSupervisorChecklist();
+      loadSupervisorOccurrences();
+      document.getElementById('refresh-agenda')?.addEventListener('click', loadSupervisorAgenda);
+      document.getElementById('refresh-occurrences')?.addEventListener('click', loadSupervisorOccurrences);
+      document.getElementById('refresh-photos')?.addEventListener('click', loadSupervisorPhotos);
+      document.getElementById('quick-checkin-btn')?.addEventListener('click', registerCheckin);
+      document.getElementById('register-checkin-btn')?.addEventListener('click', registerCheckin);
+      document.getElementById('quick-checklist-btn')?.addEventListener('click', () => {
+        if (!selectedVisit) {
+          alert('Selecione uma visita na agenda antes de iniciar o checklist.');
+          return;
+        }
+        saveSupervisorChecklist();
+      });
+      document.getElementById('save-checklist-btn')?.addEventListener('click', saveSupervisorChecklist);
+      document.getElementById('occurrence-form')?.addEventListener('submit', registerOccurrence);
+      document.getElementById('photo-form')?.addEventListener('submit', uploadSupervisorPhotos);
+      document.getElementById('finalize-form')?.addEventListener('submit', finalizeSupervisorVisit);
+      document.getElementById('refresh-finalize')?.addEventListener('click', loadSupervisorVisitSummary);
+      document.getElementById('generate-pdf-btn')?.addEventListener('click', generateSupervisorPdf);
+      document.getElementById('send-report-btn')?.addEventListener('click', sendSupervisorReport);
+      loadSupervisorPhotos();
+      loadSupervisorVisitSummary();
+    });
+  </script>
+</body>
+</html>

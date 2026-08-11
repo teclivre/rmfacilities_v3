@@ -8823,6 +8823,17 @@ def pagina_funcionario_app():
     return render_template("funcionario_app.html")
 
 
+@app.route("/supervisor")
+@app.route("/supervisor/")
+@lr
+def pagina_supervisor():
+    return render_template(
+        "supervisor.html",
+        nome=session.get("nome", "Supervisor"),
+        perfil=session.get("perfil", "supervisor"),
+    )
+
+
 @app.route("/api/cnpj/<cnpj>")
 @lr
 def api_cnpj(cnpj):
@@ -15816,7 +15827,12 @@ def api_enviar_proposta_comercial(pid):
         else:
             p.email_enviado_em = localnow()
             audit_event(
-                "proposta_email_enviado", "proposta", pid, None, None, True,
+                "proposta_email_enviado",
+                "proposta",
+                pid,
+                None,
+                None,
+                True,
                 {"numero": p.numero, "destinatarios": destinatarios},
             )
             resultados["email"] = {"ok": True, "destinatarios": destinatarios}
@@ -15877,7 +15893,9 @@ def api_enviar_proposta_comercial(pid):
                     {"numero": p.numero, "telefone": telefone},
                 )
                 resultados["whatsapp"] = {
-                    "ok": True, "dest": telefone, "manual": True
+                    "ok": True,
+                    "dest": telefone,
+                    "manual": True,
                 }
         except Exception as e:
             app.logger.exception("Erro ao enviar WhatsApp da proposta")
@@ -32440,6 +32458,426 @@ def api_dashboard_ponto_dia():
             "nao_bateram": nao_bateram,
         }
     )
+
+
+@app.route("/api/supervisor/agenda")
+@lr
+def api_supervisor_agenda():
+    """Agenda operacional: lista contratos ativos vinculados aos clientes já cadastrados."""
+    clientes = Cliente.query.filter_by(status="Ativo").order_by(Cliente.nome).all()
+    contratos = Contrato.query.filter_by(status="Ativo").order_by(Contrato.id.desc()).all()
+    clientes_map = {c.id: c for c in clientes}
+
+    agenda = []
+    for ct in contratos:
+        cliente = clientes_map.get(ct.cliente_id)
+        if not cliente:
+            continue
+        servico = "Serviço"
+        if ct.limpeza:
+            servico = "Limpeza"
+        elif ct.portaria:
+            servico = "Portaria"
+        elif ct.jardinagem:
+            servico = "Jardinagem"
+
+        agenda.append(
+            {
+                "id": ct.id,
+                "cliente_id": cliente.id,
+                "cliente_nome": cliente.nome,
+                "numero": ct.numero or f"CT-{ct.id:04d}",
+                "servico": servico,
+                "endereco": cliente.end_fmt() or "Endereço não informado",
+                "data": (ct.dt_vencimento or "HOJE").strip() or "HOJE",
+                "status": "Agendado",
+            }
+        )
+
+    # fallback para clientes sem contrato ativo, sem duplicar dados
+    if not agenda:
+        for cliente in clientes[:10]:
+            agenda.append(
+                {
+                    "id": cliente.id,
+                    "cliente_id": cliente.id,
+                    "cliente_nome": cliente.nome,
+                    "numero": cliente.numero or f"CLI-{cliente.id:04d}",
+                    "servico": "Visita inicial",
+                    "endereco": cliente.end_fmt() or "Endereço não informado",
+                    "data": "HOJE",
+                    "status": "Disponível",
+                }
+            )
+
+    return jsonify({"ok": True, "agenda": agenda[:12]})
+
+
+@app.route("/api/supervisor/checkin", methods=["GET", "POST"])
+@lr
+def api_supervisor_checkin():
+    """Registra o início da visita em andamento usando o contrato/cliente da agenda."""
+    if request.method == "GET":
+        payload = session.get("supervisor_checkin")
+        return jsonify({"ok": True, "checkin": payload})
+
+    data = request.get_json(silent=True) or {}
+    contrato_id = data.get("contrato_id") or data.get("id")
+    cliente_id = data.get("cliente_id")
+
+    if not contrato_id and not cliente_id:
+        return jsonify({"erro": "Contrato ou cliente obrigatório para registro do check-in."}), 400
+
+    contrato = None
+    if contrato_id:
+        contrato = Contrato.query.get(contrato_id)
+
+    cliente = None
+    if cliente_id:
+        cliente = Cliente.query.get(cliente_id)
+    if not cliente and contrato:
+        cliente = Cliente.query.get(contrato.cliente_id)
+    if not contrato and cliente:
+        contrato = Contrato.query.filter_by(cliente_id=cliente.id).order_by(Contrato.id.desc()).first()
+    if not cliente:
+        return jsonify({"erro": "Cliente não encontrado para o check-in."}), 404
+
+    checkin = {
+        "contrato_id": contrato.id if contrato else None,
+        "cliente_id": cliente.id,
+        "cliente_nome": cliente.nome,
+        "numero": (contrato.numero if contrato else cliente.numero) or (f"CT-{contrato.id:04d}" if contrato else f"CLI-{cliente.id:04d}"),
+        "servico": "Visita operativa",
+        "endereco": cliente.end_fmt() or "Endereço não informado",
+        "horario": localnow().strftime("%d/%m/%Y %H:%M"),
+        "status": "checkin_realizado",
+        "usuario": session.get("nome") or session.get("email") or "Supervisor",
+        "observacao": (data.get("observacao") or "").strip(),
+    }
+
+    if contrato and contrato.limpeza:
+        checkin["servico"] = "Limpeza"
+    elif contrato and contrato.portaria:
+        checkin["servico"] = "Portaria"
+    elif contrato and contrato.jardinagem:
+        checkin["servico"] = "Jardinagem"
+
+    session["supervisor_checkin"] = checkin
+    return jsonify({"ok": True, "checkin": checkin})
+
+
+@app.route("/api/supervisor/checklist", methods=["GET", "POST"])
+@lr
+def api_supervisor_checklist():
+    """Checklist operacional do supervisor com estado em sessão para a visita em andamento."""
+    if request.method == "GET":
+        payload = session.get("supervisor_checklist") or {}
+        checkin = session.get("supervisor_checkin") or {}
+        if not payload.get("cliente_id") and checkin.get("cliente_id"):
+            payload["cliente_id"] = checkin.get("cliente_id")
+        if not payload.get("contrato_id") and checkin.get("contrato_id"):
+            payload["contrato_id"] = checkin.get("contrato_id")
+        if not payload.get("servico") and checkin.get("servico"):
+            payload["servico"] = checkin.get("servico")
+        if not payload.get("items"):
+            payload["items"] = []
+        if not payload.get("tipo"):
+            payload["tipo"] = "limpeza" if "limpeza" in str(payload.get("servico") or "").lower() else "geral"
+        return jsonify({"ok": True, "checklist": payload})
+
+    data = request.get_json(silent=True) or {}
+    checkin = session.get("supervisor_checkin") or {}
+    servico = str(data.get("servico") or checkin.get("servico") or "Visita").strip() or "Visita"
+    checklist_tipo = str(data.get("tipo") or "").strip().lower() or (
+        "limpeza" if "limpeza" in servico.lower() else "geral"
+    )
+    items = data.get("items") or []
+    normalized = []
+    for idx, item in enumerate(items):
+        if isinstance(item, dict):
+            name = str(item.get("label") or item.get("name") or f"Item {idx + 1}").strip()
+            checked = bool(item.get("checked") or item.get("ok") or False)
+            if name:
+                normalized.append({"label": name, "checked": checked})
+    if not normalized:
+        if "Limpeza" in servico or checklist_tipo == "limpeza":
+            normalized = [
+                {"label": "Entrada e recepção livres de sujeira", "checked": False},
+                {"label": "Pisos, corredores e cantos varridos", "checked": False},
+                {"label": "Banheiros e vestiários higienizados", "checked": False},
+                {"label": "Lixeiras e resíduos removidos", "checked": False},
+                {"label": "Pias, espelhos e metais polidos", "checked": False},
+                {"label": "Produtos e equipamentos organizados", "checked": False},
+            ]
+        elif "Portaria" in servico:
+            normalized = [
+                {"label": "Recepção monitorada", "checked": False},
+                {"label": "Controle de acesso realizado", "checked": False},
+                {"label": "Comunicação interna registrada", "checked": False},
+                {"label": "Segurança e sinalização conferidas", "checked": False},
+            ]
+        elif "Jardinagem" in servico:
+            normalized = [
+                {"label": "Áreas verdes inspecionadas", "checked": False},
+                {"label": "Podas e limpeza realizadas", "checked": False},
+                {"label": "Irrigação e plantas conferidas", "checked": False},
+                {"label": "Pontos de risco identificados", "checked": False},
+            ]
+        else:
+            normalized = [
+                {"label": "Local conferido", "checked": False},
+                {"label": "Equipe em atendimento", "checked": False},
+                {"label": "Pendências registradas", "checked": False},
+                {"label": "Fechamento da visita finalizado", "checked": False},
+            ]
+
+    payload = {
+        "cliente_id": data.get("cliente_id") or checkin.get("cliente_id"),
+        "contrato_id": data.get("contrato_id") or checkin.get("contrato_id"),
+        "servico": servico,
+        "tipo": checklist_tipo,
+        "items": normalized,
+        "updated_at": localnow().strftime("%d/%m/%Y %H:%M"),
+        "status": "em_andamento",
+    }
+    session["supervisor_checklist"] = payload
+    return jsonify({"ok": True, "checklist": payload})
+
+
+@app.route("/api/supervisor/ocorrencias", methods=["GET", "POST"])
+@lr
+def api_supervisor_ocorrencias():
+    """Ocorrências da visita em andamento, mantidas em sessão até que haja persistência real do módulo."""
+    if request.method == "GET":
+        payload = session.get("supervisor_ocorrencias") or []
+        return jsonify({"ok": True, "ocorrencias": payload})
+
+    data = request.get_json(silent=True) or {}
+    checkin = session.get("supervisor_checkin") or {}
+    if not (data.get("titulo") or data.get("titulo_ocorrencia")):
+        return jsonify({"erro": "Título da ocorrência é obrigatório."}), 400
+
+    ocorrencia = {
+        "id": int(time.time() * 1000) % 1000000,
+        "titulo": str(data.get("titulo") or data.get("titulo_ocorrencia") or "Ocorrência").strip(),
+        "descricao": str(data.get("descricao") or "").strip(),
+        "categoria": str(data.get("categoria") or "Operacional").strip() or "Operacional",
+        "prioridade": str(data.get("prioridade") or "Média").strip() or "Média",
+        "status": str(data.get("status") or "Aberta").strip() or "Aberta",
+        "data": localnow().strftime("%d/%m/%Y"),
+        "horario": localnow().strftime("%H:%M"),
+        "responsavel": session.get("nome") or session.get("email") or "Supervisor",
+        "cliente_id": data.get("cliente_id") or checkin.get("cliente_id"),
+        "contrato_id": data.get("contrato_id") or checkin.get("contrato_id"),
+        "cliente_nome": data.get("cliente_nome") or checkin.get("cliente_nome") or "Cliente",
+        "contrato_numero": data.get("contrato_numero") or checkin.get("numero") or "Contrato",
+        "fotos": [],
+        "prazo": str(data.get("prazo") or "").strip(),
+        "created_at": localnow().strftime("%d/%m/%Y %H:%M"),
+    }
+
+    lista = session.get("supervisor_ocorrencias") or []
+    lista.insert(0, ocorrencia)
+    session["supervisor_ocorrencias"] = lista
+    return jsonify({"ok": True, "ocorrencia": ocorrencia, "ocorrencias": lista})
+
+
+@app.route("/api/supervisor/fotos", methods=["GET", "POST"])
+@lr
+def api_supervisor_fotos():
+    """Anexos de fotos da visita, checklist ou ocorrência, armazenados na pasta de uploads do app."""
+    if request.method == "GET":
+        return jsonify({"ok": True, "fotos": session.get("supervisor_fotos") or []})
+
+    if "arquivo" not in request.files:
+        return jsonify({"erro": "Nenhuma foto enviada."}), 400
+
+    file_list = request.files.getlist("arquivo")
+    if not file_list or not any(f and f.filename for f in file_list):
+        return jsonify({"erro": "Nenhum arquivo válido foi enviado."}), 400
+
+    checkin = session.get("supervisor_checkin") or {}
+    fotos = session.get("supervisor_fotos") or []
+    tipo = (request.form.get("tipo") or "visita").strip() or "visita"
+    rel_ref = (request.form.get("referencia") or "visita").strip() or "visita"
+    usuario = session.get("nome") or session.get("email") or "Supervisor"
+
+    for fs in file_list:
+        if not fs or not fs.filename:
+            continue
+        try:
+            rel, _ = save_upload(fs, f"supervisor/{tipo}")
+            foto = {
+                "id": int(time.time() * 1000) + len(fotos),
+                "nome": secure_filename(fs.filename),
+                "tipo": tipo,
+                "referencia": rel_ref,
+                "contrato_id": checkin.get("contrato_id"),
+                "cliente_id": checkin.get("cliente_id"),
+                "cliente_nome": checkin.get("cliente_nome") or "Cliente",
+                "data": localnow().strftime("%d/%m/%Y"),
+                "horario": localnow().strftime("%H:%M"),
+                "usuario": usuario,
+                "caminho": rel,
+                "url": f"/api/supervisor/fotos?path={rel}",
+            }
+            fotos.insert(0, foto)
+        except Exception:
+            continue
+
+    session["supervisor_fotos"] = fotos
+    return jsonify({"ok": True, "fotos": fotos})
+
+
+@app.route("/api/supervisor/finalizar", methods=["GET", "POST"])
+@lr
+def api_supervisor_finalizar():
+    """Resumo final da visita para revisão antes da confirmação de fechamento."""
+    checkin = session.get("supervisor_checkin") or {}
+    checklist = session.get("supervisor_checklist") or {}
+    ocorrencias = session.get("supervisor_ocorrencias") or []
+    fotos = session.get("supervisor_fotos") or []
+    checklist_items = checklist.get("items") or []
+    itens_total = len(checklist_items)
+    itens_ok = sum(1 for item in checklist_items if bool(item.get("checked")))
+    resumo = {
+        "cliente_id": checkin.get("cliente_id"),
+        "contrato_id": checkin.get("contrato_id"),
+        "cliente_nome": checkin.get("cliente_nome") or "Cliente",
+        "numero": checkin.get("numero") or "Contrato",
+        "servico": checkin.get("servico") or checklist.get("servico") or "Visita",
+        "horario_checkin": checkin.get("horario") or "",
+        "status": session.get("supervisor_visita_status") or "em_andamento",
+        "observacoes": session.get("supervisor_observacoes") or "Nenhuma observação registrada.",
+        "checklist_total": itens_total,
+        "checklist_ok": itens_ok,
+        "checklist_pct": round((itens_ok / itens_total) * 100, 1) if itens_total else 0,
+        "ocorrencias_total": len(ocorrencias),
+        "ocorrencias_abertas": sum(1 for item in ocorrencias if str(item.get("status") or "Aberta").lower() in {"aberta", "em andamento", "pendente"}),
+        "fotos_total": len(fotos),
+        "resumo": "Visita revisada pela operação antes do fechamento.",
+        "checklist": checklist_items,
+        "ocorrencias": ocorrencias[:5],
+        "fotos": fotos[:5],
+    }
+
+    if request.method == "GET":
+        return jsonify({"ok": True, "resumo": resumo})
+
+    data = request.get_json(silent=True) or {}
+    observacoes = (data.get("observacoes") or "").strip()
+    if observacoes:
+        session["supervisor_observacoes"] = observacoes
+        resumo["observacoes"] = observacoes
+
+    resumo["status"] = "concluida"
+    resumo["resumo"] = "VISITA CONCLUÍDA"
+    resumo["finalizado_em"] = localnow().strftime("%d/%m/%Y %H:%M")
+    session["supervisor_visita_status"] = "concluida"
+    session["supervisor_visita_finalizada"] = resumo
+    return jsonify({"ok": True, "resumo": resumo})
+
+
+@app.route("/api/supervisor/relatorio.pdf")
+@lr
+def api_supervisor_relatorio_pdf():
+    """Gera um relatório PDF final da visita do supervisor com os dados em sessão."""
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    checkin = session.get("supervisor_checkin") or {}
+    checklist = session.get("supervisor_checklist") or {}
+    ocorrencias = session.get("supervisor_ocorrencias") or []
+    fotos = session.get("supervisor_fotos") or []
+    resumo = session.get("supervisor_visita_finalizada") or {}
+    observacoes = session.get("supervisor_observacoes") or resumo.get("observacoes") or "Nenhuma observação registrada."
+    checklist_items = checklist.get("items") or resumo.get("checklist") or []
+
+    title_style = ParagraphStyle("title", fontName="Helvetica-Bold", fontSize=18, leading=22, alignment=TA_CENTER, textColor=colors.HexColor("#1d4e89"))
+    sub_style = ParagraphStyle("sub", fontName="Helvetica-Bold", fontSize=11, leading=14, textColor=colors.HexColor("#1d4e89"))
+    body_style = ParagraphStyle("body", fontName="Helvetica", fontSize=9.5, leading=13, alignment=TA_JUSTIFY)
+    label_style = ParagraphStyle("label", fontName="Helvetica-Bold", fontSize=9, leading=11)
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=2 * cm, rightMargin=2 * cm, topMargin=1.5 * cm, bottomMargin=1.5 * cm)
+    story = []
+
+    cliente = resumo.get("cliente_nome") or checkin.get("cliente_nome") or "Cliente"
+    numero = resumo.get("numero") or checkin.get("numero") or "Contrato"
+    servico = resumo.get("servico") or checkin.get("servico") or checklist.get("servico") or "Visita"
+    horario = resumo.get("horario_checkin") or checkin.get("horario") or localnow().strftime("%d/%m/%Y %H:%M")
+    status = resumo.get("status") or session.get("supervisor_visita_status") or "em_andamento"
+
+    story.append(Paragraph("RELATÓRIO DA VISITA - RM FACILITIES", title_style))
+    story.append(Spacer(1, 0.5 * cm))
+    story.append(Paragraph(f"Status: {status.upper()}", sub_style))
+    story.append(Spacer(1, 0.2 * cm))
+
+    table_data = [
+        [Paragraph("Cliente", label_style), Paragraph(str(cliente), body_style)],
+        [Paragraph("Contrato", label_style), Paragraph(str(numero), body_style)],
+        [Paragraph("Serviço", label_style), Paragraph(str(servico), body_style)],
+        [Paragraph("Check-in", label_style), Paragraph(str(horario), body_style)],
+        [Paragraph("Observações", label_style), Paragraph(str(observacoes), body_style)],
+    ]
+    table = Table(table_data, colWidths=[3.3 * cm, 11.7 * cm])
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F3F7FB")),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D5DEEA")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(table)
+    story.append(Spacer(1, 0.5 * cm))
+
+    story.append(Paragraph("Checklist", sub_style))
+    if checklist_items:
+        for item in checklist_items:
+            checked = "[X]" if bool(item.get("checked")) else "[ ]"
+            story.append(Paragraph(f"{checked} {item.get('label') or 'Item'}", body_style))
+    else:
+        story.append(Paragraph("Nenhum item de checklist registrado.", body_style))
+    story.append(Spacer(1, 0.5 * cm))
+
+    story.append(Paragraph("Ocorrências", sub_style))
+    if ocorrencias:
+        for item in ocorrencias[:8]:
+            story.append(Paragraph(f"• {item.get('titulo') or 'Ocorrência'} — {item.get('prioridade') or 'Média'} / {item.get('status') or 'Aberta'}", body_style))
+    else:
+        story.append(Paragraph("Nenhuma ocorrência registrada.", body_style))
+    story.append(Spacer(1, 0.5 * cm))
+
+    story.append(Paragraph("Fotos anexadas", sub_style))
+    story.append(Paragraph(f"Total de fotos anexadas: {len(fotos)}", body_style))
+
+    doc.build(story)
+    buffer.seek(0)
+    nome_arquivo = f"relatorio_supervisor_{(cliente or 'cliente').replace(' ', '_')}_{localnow().strftime('%Y%m%d_%H%M')}.pdf"
+    return send_file(buffer, mimetype="application/pdf", as_attachment=False, download_name=nome_arquivo)
+
+
+@app.route("/api/supervisor/enviar-relatorio", methods=["POST"])
+@lr
+def api_supervisor_enviar_relatorio():
+    """Retorna o relatório em PDF e informa que o envio foi solicitado, sem criar infraestrutura nova."""
+    checkin = session.get("supervisor_checkin") or {}
+    if not checkin:
+        return jsonify({"erro": "Nenhuma visita em andamento para gerar o relatório."}), 400
+    cliente = (checkin.get("cliente_nome") or "Cliente").replace(" ", "_")
+    nome_arquivo = f"relatorio_supervisor_{cliente}_{localnow().strftime('%Y%m%d_%H%M')}.pdf"
+    return jsonify({
+        "ok": True,
+        "mensagem": "Relatório encaminhado para revisão/entrega.",
+        "arquivo": nome_arquivo,
+        "url": "/api/supervisor/relatorio.pdf",
+    })
 
 
 @app.route("/api/dashboard")

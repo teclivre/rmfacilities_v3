@@ -2989,16 +2989,16 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
         </div>
         <div class="ben-type-tabs" role="tablist" aria-label="Tipos e ferramentas de benefícios">
-          <button id="ben-tab-ativos" class="btn b-az b-sm" onclick="switchBenTab('ativos',this)">Colaboradores Ativos</button>
-          <button id="ben-tab-vt" class="btn b-gh b-sm" onclick="switchBenTab('vt',this)">Vale Transporte</button>
-          <button id="ben-tab-vr" class="btn b-gh b-sm" onclick="switchBenTab('vr',this)">Vale Refeição</button>
-          <button id="ben-tab-va" class="btn b-gh b-sm" onclick="switchBenTab('va',this)">Vale Alimentação</button>
-          <button id="ben-tab-pp" class="btn b-gh b-sm" onclick="switchBenTab('pp',this)">Prêmio Produtividade</button>
-          <button id="ben-tab-vg" class="btn b-gh b-sm" onclick="switchBenTab('vg',this)">Vale Gasolina</button>
-          <button id="ben-tab-cn" class="btn b-gh b-sm" onclick="switchBenTab('cn',this)">Cesta de Natal</button>
-          <button id="ben-tab-avulso" class="btn b-gh b-sm" onclick="switchBenTab('avulso',this)">&#128176; Pagar Avulso</button>
-          <button id="ben-tab-relatorios" class="btn b-gh b-sm" onclick="switchBenTab('relatorios',this)">Relatórios</button>
-          <button id="ben-tab-periodo" class="btn b-gh b-sm" onclick="switchBenTab('periodo',this)">&#128197; Calcular por Período</button>
+          <button id="ben-tab-ativos" class="btn b-az b-sm ben-type-tab" onclick="switchBenTab('ativos',this)">Colaboradores Ativos</button>
+          <button id="ben-tab-vt" class="btn b-gh b-sm ben-type-tab" onclick="switchBenTab('vt',this)">Vale Transporte</button>
+          <button id="ben-tab-vr" class="btn b-gh b-sm ben-type-tab" onclick="switchBenTab('vr',this)">Vale Refeição</button>
+          <button id="ben-tab-va" class="btn b-gh b-sm ben-type-tab" onclick="switchBenTab('va',this)">Vale Alimentação</button>
+          <button id="ben-tab-pp" class="btn b-gh b-sm ben-type-tab" onclick="switchBenTab('pp',this)">Prêmio Produtividade</button>
+          <button id="ben-tab-vg" class="btn b-gh b-sm ben-type-tab" onclick="switchBenTab('vg',this)">Vale Gasolina</button>
+          <button id="ben-tab-cn" class="btn b-gh b-sm ben-type-tab" onclick="switchBenTab('cn',this)">Cesta de Natal</button>
+          <button id="ben-tab-avulso" class="btn b-gh b-sm ben-type-tab" onclick="switchBenTab('avulso',this)">&#128176; Pagar Avulso</button>
+          <button id="ben-tab-relatorios" class="btn b-gh b-sm ben-type-tab" onclick="switchBenTab('relatorios',this)">Relatórios</button>
+          <button id="ben-tab-periodo" class="btn b-gh b-sm ben-type-tab" onclick="switchBenTab('periodo',this)">&#128197; Calcular por Período</button>
         </div>
 
         <div class="ben-secondary-actions">
@@ -11165,10 +11165,10 @@ async function pcEnviarProposta() {
   let envioOk = false;
   try {
     const body = {canal, email, telefone, mensagem};
-    const res  = await api(`/api/propostas-comerciais/${_mepPropostaId}/enviar`, 'POST', body);
+    const res = await api(`/api/propostas-comerciais/${_mepPropostaId}/enviar`, 'POST', body);
     const concluidos = [];
-    if (res.email?.ok) concluidos.push(`E-mail enviado para <strong>${_escHtml((res.email.destinatarios||emails).join(', '))}</strong>`);
-    if (res.whatsapp?.ok) concluidos.push(res.wa_url ? 'WhatsApp aberto para envio manual' : `WhatsApp enviado para <strong>${_escHtml(res.whatsapp.dest||telefone)}</strong>`);
+    if (res.email?.ok) concluidos.push(`E-mail enviado para <strong>${_escHtml((res.email.destinatarios || emails).join(', '))}</strong>`);
+    if (res.whatsapp?.ok) concluidos.push(res.wa_url ? 'WhatsApp aberto para envio manual' : `WhatsApp enviado para <strong>${_escHtml(res.whatsapp.dest || telefone)}</strong>`);
     if (res.erro) {
       const resumoParcial = concluidos.length ? `<br><br>Concluído:<br>${concluidos.join('<br>')}` : '';
       _showFb(`❌ ${_escHtml(res.erro)}${resumoParcial}`, false);
