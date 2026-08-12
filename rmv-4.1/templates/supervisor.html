@@ -505,6 +505,22 @@
       </div>
     </section>
 
+    <section class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Postos visitados</div>
+        <button class="small-action" type="button" id="refresh-visited-posts">Atualizar</button>
+      </div>
+      <div class="list" id="visited-posts-list">
+        <div class="visit-item">
+          <div class="visit-status warning"></div>
+          <div class="visit-main">
+            <strong>Nenhum posto visitado ainda</strong>
+            <span>Os locais concluídos aparecerão aqui após o envio do relatório.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="panel" id="checklist-panel">
       <div class="panel-header">
         <div class="panel-title" id="checklist-title">Checklist da visita</div>
@@ -929,6 +945,45 @@
       `;
     }
 
+    function renderVisitedPosts(visitados = []) {
+      const el = document.getElementById('visited-posts-list');
+      if (!el) return;
+      if (!Array.isArray(visitados) || !visitados.length) {
+        el.innerHTML = `
+          <div class="visit-item">
+            <div class="visit-status warning"></div>
+            <div class="visit-main">
+              <strong>Nenhum posto visitado ainda</strong>
+              <span>Os locais concluídos aparecerão aqui após o envio do relatório.</span>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      el.innerHTML = visitados.map((item) => `
+        <div class="visit-item selected">
+          <div class="visit-status"></div>
+          <div class="visit-main">
+            <strong>${String(item.cliente_nome || item.numero || 'Posto').replace(/</g, '&lt;')}</strong>
+            <span>${String(item.servico || 'Visita').replace(/</g, '&lt;')} • ${String(item.horario || item.data || 'Hoje')}</span>
+          </div>
+          <span class="chip success">Visitado</span>
+        </div>
+      `).join('');
+    }
+
+    async function loadSupervisorVisitedPosts() {
+      try {
+        const response = await fetch('/api/supervisor/visitados');
+        if (!response.ok) throw new Error('Histórico indisponível');
+        const data = await response.json();
+        renderVisitedPosts(Array.isArray(data.visitados) ? data.visitados : []);
+      } catch (error) {
+        renderVisitedPosts([]);
+      }
+    }
+
     async function loadSupervisorVisitSummary() {
       try {
         const response = await fetch('/api/supervisor/finalizar');
@@ -967,6 +1022,7 @@
         const data = await response.json();
         if (!response.ok) throw new Error(data.erro || 'Não foi possível concluir a visita');
         renderVisitSummary(data.resumo || {});
+        await loadSupervisorVisitedPosts();
         alert('VISITA CONCLUÍDA');
       } catch (error) {
         alert(error.message || 'Não foi possível concluir a visita.');
@@ -986,6 +1042,7 @@
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.erro || 'Não foi possível enviar o relatório');
+        await loadSupervisorVisitedPosts();
         alert(data.mensagem || 'Relatório enviado.');
         if (data.url) {
           window.open(data.url, '_blank');
@@ -1181,6 +1238,7 @@
       document.getElementById('refresh-agenda')?.addEventListener('click', loadSupervisorAgenda);
       document.getElementById('refresh-occurrences')?.addEventListener('click', loadSupervisorOccurrences);
       document.getElementById('refresh-photos')?.addEventListener('click', loadSupervisorPhotos);
+      document.getElementById('refresh-visited-posts')?.addEventListener('click', loadSupervisorVisitedPosts);
       document.getElementById('quick-checkin-btn')?.addEventListener('click', registerCheckin);
       document.getElementById('register-checkin-btn')?.addEventListener('click', registerCheckin);
       document.getElementById('quick-checklist-btn')?.addEventListener('click', () => {
@@ -1199,6 +1257,7 @@
       document.getElementById('send-report-btn')?.addEventListener('click', sendSupervisorReport);
       loadSupervisorPhotos();
       loadSupervisorVisitSummary();
+      loadSupervisorVisitedPosts();
     });
   </script>
 </body>

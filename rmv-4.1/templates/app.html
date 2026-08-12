@@ -2889,6 +2889,16 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
 
       <div class="card">
+        <div class="card-header"><span class="card-title">Relatórios de supervisão</span></div>
+        <div class="ben-filter-grid">
+          <div class="f"><label>Buscar cliente</label><input id="sup-rel-busca" placeholder="Nome do cliente" oninput="renderSupervisaoRelatorios()"></div>
+          <div class="f"><label>Data</label><input type="date" id="sup-rel-data" onchange="renderSupervisaoRelatorios()"></div>
+          <div class="f" style="display:flex;align-items:flex-end"><button class="btn b-gh b-sm" onclick="renderSupervisaoRelatorios()">Atualizar</button></div>
+        </div>
+        <div id="lista-relatorios-supervisao" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card">
         <div class="card-header"><span class="card-title">Colaboradores x Posto</span></div>
         <div class="ben-filter-grid">
           <div class="f"><label>Empresa</label><select id="op-posto-emp" onchange="renderOperPostos()"><option value="">Todas</option></select></div>
@@ -5635,7 +5645,7 @@ function nav(id,el,force=false){
     rhEscalaInit();
     rhSetSubAba(rhSubAba || 'funcionarios');
   }
-  if(targetId==='operacional'){renderOperDocs();renderOperPostos();}
+  if(targetId==='operacional'){renderOperDocs();renderOperPostos();renderSupervisaoRelatorios();}
   if(targetId==='compras'){renderOrdensCompra();}
   if(targetId==='beneficios'){carregarBeneficiosMensais();carregarConfigAlertaBeneficios();}
   if(targetId==='pagamento-salario'){rhSalariosIniciarPagina();}
@@ -14008,6 +14018,23 @@ async function renderOperDocs(){
   if(!el)return;
   if(!lst.length){el.innerHTML='<div class="vazio">Nenhum documento operacional.</div>';return;}
   el.innerHTML=lst.map(d=>`<div class="hist-item ${d.nome_arquivo?'row-clickable':''}" ${d.nome_arquivo?`onclick="window.open('/api/operacional/documentos/${d.id}/download','_blank')"`:''}><div><div class="hist-tit">${d.tipo} · ${d.titulo}</div><div class="hist-sub">${d.descricao||''}</div></div><div style="display:flex;gap:8px"><button class="btn b-gh b-sm" ${d.nome_arquivo?`onclick="event.stopPropagation();window.open('/api/operacional/documentos/${d.id}/download','_blank')"`:''} ${d.nome_arquivo?'':'disabled'}>Baixar</button><button class="btn b-ghr b-sm" onclick="event.stopPropagation();delOperDoc(${d.id})">Excluir</button></div></div>`).join('');
+}
+
+async function renderSupervisaoRelatorios(){
+  const busca=(document.getElementById('sup-rel-busca')?.value||'').trim().toLowerCase();
+  const data=(document.getElementById('sup-rel-data')?.value||'').trim();
+  const lst=await api('/api/operacional/relatorios-supervisao');
+  const el=document.getElementById('lista-relatorios-supervisao');
+  if(!el)return;
+  const filtrados=(lst||[]).filter(item=>{
+    const cliente=(item.cliente_nome||'').toLowerCase();
+    const itemData=(item.data_visita||'').slice(0,10) || (item.criado_fmt||'').slice(0,10);
+    const okBusca=!busca || cliente.includes(busca) || (item.servico||'').toLowerCase().includes(busca);
+    const okData=!data || itemData===data;
+    return okBusca && okData;
+  });
+  if(!filtrados.length){el.innerHTML='<div class="vazio">Nenhum relatório de supervisão encontrado.</div>';return;}
+  el.innerHTML=filtrados.map(item=>`<div class="hist-item row-clickable" onclick="window.open('/api/operacional/relatorios-supervisao/${item.id}/pdf','_blank')"><div><div class="hist-tit">${item.cliente_nome||'Cliente'} · ${item.servico||'Visita'}</div><div class="hist-sub">${item.data_visita || item.criado_fmt || ''} · ${item.contrato_numero || 'Contrato'} · ${item.status||'concluida'}</div></div><div style="display:flex;gap:8px;align-items:center"><span class="chip ${item.status==='concluida'?'success':'warning'}">${item.status==='concluida'?'Concluído':'Em revisão'}</span><button class="btn b-gh b-sm" onclick="event.stopPropagation();window.open('/api/operacional/relatorios-supervisao/${item.id}/pdf','_blank')">Abrir PDF</button></div></div>`).join('');
 }
 
 async function delOperDoc(id){

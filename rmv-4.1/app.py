@@ -2067,6 +2067,40 @@ class OperacionalDocumento(db.Model):
         return d
 
 
+class SupervisorRelatorio(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True, index=True)
+    cliente_id = db.Column(db.Integer, nullable=True, index=True)
+    cliente_nome = db.Column(db.String(200), nullable=False, default="")
+    contrato_id = db.Column(db.Integer, nullable=True, index=True)
+    contrato_numero = db.Column(db.String(120), default="")
+    servico = db.Column(db.String(120), default="")
+    data_visita = db.Column(db.String(20), default="")
+    horario = db.Column(db.String(30), default="")
+    status = db.Column(db.String(30), default="concluida")
+    observacoes = db.Column(db.Text, default="")
+    checklist_json = db.Column(db.Text, default="[]")
+    ocorrencias_json = db.Column(db.Text, default="[]")
+    fotos_json = db.Column(db.Text, default="[]")
+    pdf_caminho = db.Column(db.String(500), nullable=True)
+    json_caminho = db.Column(db.String(500), nullable=True)
+    criado_por = db.Column(db.String(100), default="")
+    criado_em = db.Column(db.DateTime, default=utcnow)
+
+    def to_dict(self):
+        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        d["criado_fmt"] = (
+            self.criado_em.strftime("%d/%m/%Y %H:%M") if self.criado_em else ""
+        )
+        for key in ("checklist_json", "ocorrencias_json", "fotos_json"):
+            raw = d.get(key) or "[]"
+            try:
+                d[key.replace("_json", "")] = json.loads(raw or "[]")
+            except Exception:
+                d[key.replace("_json", "")] = []
+        return d
+
+
 class BeneficioMensal(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     funcionario_id = db.Column(
@@ -8920,6 +8954,156 @@ def _supervisor_report_payload():
     }
 
 
+def _supervisor_pdf_bytes(payload=None):
+    payload = payload or _supervisor_report_payload()
+    buf = io.BytesIO()
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Image as RLImage, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=16 * mm,
+        bottomMargin=16 * mm,
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "TitleRM",
+        parent=styles["Title"],
+        fontName="Helvetica-Bold",
+        fontSize=18,
+        leading=22,
+        textColor=colors.HexColor("#0B1F2A"),
+        alignment=TA_CENTER,
+    )
+    heading_style = ParagraphStyle(
+        "HeadingRM",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=12,
+        leading=16,
+        textColor=colors.HexColor("#0F3B4D"),
+        spaceBefore=12,
+        spaceAfter=8,
+    )
+    body_style = ParagraphStyle(
+        "BodyRM",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=9.8,
+        leading=13,
+        textColor=colors.black,
+    )
+    small_style = ParagraphStyle(
+        "SmallRM",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.HexColor("#4B5963"),
+    )
+
+    resumo = payload.get("resumo") or {}
+    checkin = payload.get("checkin") or {}
+    checklist = payload.get("checklist") or {"servico": "Visita", "items": []}
+    ocorrencias = payload.get("ocorrencias") or []
+    fotos = payload.get("fotos") or []
+
+    story = []
+    story.append(Paragraph("RM Facilities", title_style))
+    story.append(Paragraph("Relatório de Supervisão", heading_style))
+    story.append(Paragraph(f"Supervisor: {payload.get('supervisor') or 'Supervisor'}", body_style))
+    story.append(Paragraph(f"Gerado em: {localnow().strftime('%d/%m/%Y %H:%M')}", small_style))
+    story.append(Spacer(1, 6 * mm))
+
+    info_data = [
+        [Paragraph("Cliente", body_style), Paragraph(str(checkin.get("cliente_nome") or resumo.get("cliente_nome") or "Cliente"), body_style)],
+        [Paragraph("Contrato", body_style), Paragraph(str(checkin.get("numero") or "-"), body_style)],
+        [Paragraph("Serviço", body_style), Paragraph(str(checkin.get("servico") or resumo.get("servico") or "Visita"), body_style)],
+        [Paragraph("Check-in", body_style), Paragraph(str(checkin.get("horario") or resumo.get("horario_checkin") or "-"), body_style)],
+        [Paragraph("Status", body_style), Paragraph(str(resumo.get("status") or "em_andamento").replace("_", " ").title(), body_style)],
+        [Paragraph("Checklist", body_style), Paragraph(f"{resumo.get('checklist_ok', 0)}/{resumo.get('checklist_total', 0)} ({resumo.get('checklist_pct', 0)}%)", body_style)],
+        [Paragraph("Ocorrências", body_style), Paragraph(str(resumo.get("ocorrencias_total", 0)), body_style)],
+        [Paragraph("Fotos", body_style), Paragraph(str(resumo.get("fotos_total", 0)), body_style)],
+    ]
+    info_table = Table(info_data, colWidths=[32 * mm, 98 * mm])
+    info_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F2F5F7")),
+                ("GRID", (0, 0), (-1, -1), 0.7, colors.HexColor("#D5DDE3")),
+                ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, colors.HexColor("#F8FAFB")]),
+            ]
+        )
+    )
+    story.append(info_table)
+    story.append(Spacer(1, 6 * mm))
+    story.append(Paragraph("Observações", heading_style))
+    story.append(Paragraph(str(resumo.get("observacoes") or checkin.get("observacao") or "Nenhuma observação registrada."), body_style))
+
+    if checklist.get("items"):
+        story.append(Spacer(1, 6 * mm))
+        story.append(Paragraph("Checklist", heading_style))
+        checklist_rows = [[Paragraph("Status", body_style), Paragraph("Item", body_style)]]
+        for item in checklist.get("items") or []:
+            checklist_rows.append([
+                Paragraph("✓" if bool(item.get("checked")) else "—", body_style),
+                Paragraph(str(item.get("label") or "Item"), body_style),
+            ])
+        checklist_table = Table(checklist_rows, colWidths=[12 * mm, 118 * mm])
+        checklist_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF3F7")),
+                    ("GRID", (0, 0), (-1, -1), 0.7, colors.HexColor("#D5DDE3")),
+                    ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ]
+            )
+        )
+        story.append(checklist_table)
+
+    if ocorrencias:
+        story.append(Spacer(1, 6 * mm))
+        story.append(Paragraph("Ocorrências registradas", heading_style))
+        for occ in ocorrencias[:6]:
+            story.append(Paragraph(f"• {occ.get('titulo') or 'Ocorrência'} ({occ.get('prioridade') or 'Média'})", body_style))
+            if occ.get("descricao"):
+                story.append(Paragraph(str(occ.get("descricao")), body_style))
+
+    if fotos:
+        story.append(Spacer(1, 6 * mm))
+        story.append(Paragraph("Fotos anexadas", heading_style))
+        story.append(Paragraph(f"Total: {len(fotos)} arquivos anexados", small_style))
+        for foto in fotos:
+            nome_arquivo = str(foto.get("arquivo") or "").strip()
+            if not nome_arquivo:
+                continue
+            caminho = os.path.join(UPLOAD_ROOT, "supervisor_visitas", nome_arquivo)
+            if not os.path.exists(caminho):
+                continue
+            try:
+                story.append(RLImage(caminho, width=90 * mm, height=60 * mm, kind="proportional"))
+                story.append(Paragraph(f"Arquivo: {foto.get('nome') or nome_arquivo}", small_style))
+                story.append(Spacer(1, 4 * mm))
+            except Exception:
+                app.logger.exception("[supervisor] falha ao adicionar imagem ao PDF")
+                story.append(Paragraph(f"Arquivo não pôde ser incorporado: {foto.get('nome') or nome_arquivo}", small_style))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
 def _persist_supervisor_report(payload):
     base_dir = os.path.join(app.instance_path, "uploads", "supervisor_relatorios")
     os.makedirs(base_dir, exist_ok=True)
@@ -8928,7 +9112,42 @@ def _persist_supervisor_report(payload):
     abs_path = os.path.join(base_dir, fname)
     with open(abs_path, "w", encoding="utf-8") as fp:
         json.dump(payload, fp, ensure_ascii=False, indent=2)
-    return fname, abs_path
+
+    pdf_name = f"supervisor_relatorio_{stamp}.pdf"
+    pdf_path = os.path.join(base_dir, pdf_name)
+    with open(pdf_path, "wb") as fp:
+        fp.write(_supervisor_pdf_bytes(payload))
+
+    return fname, abs_path, pdf_name, pdf_path
+
+
+def _supervisor_add_visit_history(checkin=None, resumo=None):
+    checkin = checkin or session.get("supervisor_checkin") or {}
+    resumo = resumo or session.get("supervisor_resumo") or {}
+    if not checkin and not resumo:
+        return session.get("supervisor_visitas_realizadas") or []
+
+    item = {
+        "contrato_id": _supervisor_safe_int(checkin.get("contrato_id")) if isinstance(checkin, dict) else None,
+        "cliente_id": _supervisor_safe_int(checkin.get("cliente_id")) if isinstance(checkin, dict) else None,
+        "cliente_nome": (checkin.get("cliente_nome") or resumo.get("cliente_nome") or "Cliente").strip() if isinstance(checkin, dict) else (resumo.get("cliente_nome") or "Cliente"),
+        "numero": (checkin.get("numero") or "Contrato").strip() if isinstance(checkin, dict) else (resumo.get("servico") or "Contrato"),
+        "servico": (checkin.get("servico") or resumo.get("servico") or "Visita").strip() if isinstance(checkin, dict) else (resumo.get("servico") or "Visita"),
+        "horario": (checkin.get("horario") or resumo.get("horario_checkin") or localnow().strftime("%d/%m/%Y %H:%M")).strip() if isinstance(checkin, dict) else (resumo.get("horario_checkin") or localnow().strftime("%d/%m/%Y %H:%M")),
+        "status": "visitado",
+        "data": localnow().strftime("%d/%m/%Y"),
+        "observacoes": (resumo.get("observacoes") or checkin.get("observacao") or "").strip() if isinstance(checkin, dict) else (resumo.get("observacoes") or ""),
+    }
+
+    history = session.get("supervisor_visitas_realizadas") or []
+    key = str(item.get("contrato_id") or item.get("cliente_id") or item.get("numero") or item.get("cliente_nome") or "")
+    if key and any(str(v.get("contrato_id") or v.get("cliente_id") or v.get("numero") or v.get("cliente_nome")) == key for v in history):
+        return history
+
+    history.insert(0, item)
+    session["supervisor_visitas_realizadas"] = history[:25]
+    session.modified = True
+    return session["supervisor_visitas_realizadas"]
 
 
 def _supervisor_default_checklist(servico="Visita"):
@@ -9223,7 +9442,14 @@ def api_supervisor_finalizar():
         resumo["status"] = "em_andamento"
     session["supervisor_resumo"] = resumo
     session.modified = True
+    _supervisor_add_visit_history(session.get("supervisor_checkin"), resumo)
     return jsonify({"ok": True, "resumo": resumo})
+
+
+@app.route("/api/supervisor/visitados", methods=["GET"])
+@lr
+def api_supervisor_visitados():
+    return jsonify({"visitados": session.get("supervisor_visitas_realizadas") or []})
 
 
 @app.route("/api/supervisor/relatorio.pdf", methods=["GET"])
@@ -9242,7 +9468,7 @@ def api_supervisor_relatorio_pdf():
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
-        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+        from reportlab.platypus import Image as RLImage, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
         from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
         doc = SimpleDocTemplate(
@@ -9361,6 +9587,21 @@ def api_supervisor_relatorio_pdf():
             story.append(Spacer(1, 6 * mm))
             story.append(Paragraph("Fotos anexadas", heading_style))
             story.append(Paragraph(f"Total: {len(fotos)} arquivos anexados", small_style))
+            for foto in fotos:
+                nome_arquivo = str(foto.get("arquivo") or "").strip()
+                if not nome_arquivo:
+                    continue
+                caminho = os.path.join(UPLOAD_ROOT, "supervisor_visitas", nome_arquivo)
+                if not os.path.exists(caminho):
+                    continue
+                try:
+                    image = RLImage(caminho, width=90 * mm, height=60 * mm, kind="proportional")
+                    story.append(image)
+                    story.append(Paragraph(f"Arquivo: {foto.get('nome') or nome_arquivo}", small_style))
+                    story.append(Spacer(1, 4 * mm))
+                except Exception:
+                    app.logger.exception("[supervisor] falha ao adicionar imagem ao PDF")
+                    story.append(Paragraph(f"Arquivo não pôde ser incorporado: {foto.get('nome') or nome_arquivo}", small_style))
 
         doc.build(story)
         buf.seek(0)
@@ -9381,7 +9622,28 @@ def api_supervisor_relatorio_pdf():
 def api_supervisor_enviar_relatorio():
     payload = _supervisor_report_payload()
     try:
-        fname, abs_path = _persist_supervisor_report(payload)
+        fname, abs_path, pdf_name, pdf_path = _persist_supervisor_report(payload)
+        rel = SupervisorRelatorio(
+            empresa_id=(payload.get("checkin") or {}).get("empresa_id") or None,
+            cliente_id=(_supervisor_safe_int((payload.get("checkin") or {}).get("cliente_id"))),
+            cliente_nome=(payload.get("checkin") or {}).get("cliente_nome") or (payload.get("resumo") or {}).get("cliente_nome") or "Cliente",
+            contrato_id=_supervisor_safe_int((payload.get("checkin") or {}).get("contrato_id")),
+            contrato_numero=(payload.get("checkin") or {}).get("numero") or "Contrato",
+            servico=(payload.get("checkin") or {}).get("servico") or (payload.get("resumo") or {}).get("servico") or "Visita",
+            data_visita=(payload.get("checkin") or {}).get("horario") or (payload.get("resumo") or {}).get("horario_checkin") or localnow().strftime("%d/%m/%Y"),
+            horario=(payload.get("checkin") or {}).get("horario") or (payload.get("resumo") or {}).get("horario_checkin") or localnow().strftime("%H:%M"),
+            status=(payload.get("resumo") or {}).get("status") or "concluida",
+            observacoes=(payload.get("resumo") or {}).get("observacoes") or "",
+            checklist_json=json.dumps((payload.get("checklist") or {}).get("items") or [], ensure_ascii=False),
+            ocorrencias_json=json.dumps(payload.get("ocorrencias") or [], ensure_ascii=False),
+            fotos_json=json.dumps(payload.get("fotos") or [], ensure_ascii=False),
+            pdf_caminho=pdf_path,
+            json_caminho=abs_path,
+            criado_por=session.get("nome", "Supervisor"),
+        )
+        db.session.add(rel)
+        db.session.commit()
+        _supervisor_add_visit_history(payload.get("checkin"), payload.get("resumo"))
     except Exception:
         app.logger.exception("[supervisor] falha ao salvar relatorio")
         return jsonify({"erro": "Nao foi possivel registrar o relatorio no sistema."}), 500
@@ -9392,8 +9654,32 @@ def api_supervisor_enviar_relatorio():
             "mensagem": "Relatorio do supervisor registrado com sucesso.",
             "destino": abs_path,
             "arquivo": fname,
+            "pdf": pdf_name,
             "url": "/api/supervisor/relatorio.pdf",
+            "visitados": session.get("supervisor_visitas_realizadas") or [],
         }
+    )
+
+
+@app.route("/api/operacional/relatorios-supervisao", methods=["GET"])
+@lr
+def api_operacional_relatorios_supervisao():
+    query = SupervisorRelatorio.query.order_by(SupervisorRelatorio.criado_em.desc())
+    items = [rel.to_dict() for rel in query.all()]
+    return jsonify(items)
+
+
+@app.route("/api/operacional/relatorios-supervisao/<int:id>/pdf", methods=["GET"])
+@lr
+def api_operacional_relatorio_supervisao_pdf(id):
+    rel = db.get_or_404(SupervisorRelatorio, id)
+    payload = json.loads(open(rel.json_caminho, "r", encoding="utf-8").read()) if rel.json_caminho and os.path.exists(rel.json_caminho) else {}
+    pdf_bytes = _supervisor_pdf_bytes(payload or {})
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=False,
+        download_name=f"relatorio_supervisao_{id}.pdf",
     )
 
 
