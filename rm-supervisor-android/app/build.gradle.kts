@@ -6,6 +6,51 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val versionPropsFile = file("version.properties")
+if (!versionPropsFile.exists()) {
+    versionPropsFile.writeText(
+        """
+        VERSION_CODE=1
+        VERSION_MAJOR=1
+        VERSION_MINOR=0
+        VERSION_PATCH=0
+        """.trimIndent()
+    )
+}
+
+val versionProps = Properties().apply {
+    FileInputStream(versionPropsFile).use { load(it) }
+}
+
+var verCode = (versionProps.getProperty("VERSION_CODE") ?: "1").toInt()
+var verMajor = (versionProps.getProperty("VERSION_MAJOR") ?: "1").toInt()
+var verMinor = (versionProps.getProperty("VERSION_MINOR") ?: "0").toInt()
+var verPatch = (versionProps.getProperty("VERSION_PATCH") ?: "0").toInt()
+
+val requestedTasks = gradle.startParameter.taskNames.joinToString(" ")
+val isBuildTask = Regex("(?s).*(assemble|bundle).*").matches(requestedTasks)
+if (isBuildTask) {
+    verCode += 1
+    verPatch += 1
+    if (verPatch >= 100) {
+        verPatch = 0
+        verMinor += 1
+    }
+    if (verMinor >= 100) {
+        verMinor = 0
+        verMajor += 1
+    }
+
+    versionProps["VERSION_CODE"] = verCode.toString()
+    versionProps["VERSION_MAJOR"] = verMajor.toString()
+    versionProps["VERSION_MINOR"] = verMinor.toString()
+    versionProps["VERSION_PATCH"] = verPatch.toString()
+    versionPropsFile.outputStream().use { versionProps.store(it, null) }
+    println("▶ Version bumped to $verMajor.$verMinor.$verPatch (code $verCode)")
+}
+
+val buildVersionName = "$verMajor.$verMinor.$verPatch"
+
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
@@ -26,8 +71,8 @@ android {
         applicationId = "com.rmfacilities.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = verCode
+        versionName = buildVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
