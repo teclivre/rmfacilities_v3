@@ -11,7 +11,7 @@ class SettingsViewModel(private val sessionStore: SecureSessionStore) : ViewMode
     val notificationEnabled: StateFlow<Boolean> = _notificationEnabled.asStateFlow()
 
     fun toggleNotifications() {
-        _notificationEnabled.value = \!_notificationEnabled.value
+        _notificationEnabled.value = !_notificationEnabled.value
     }
 
     fun clearSession() {

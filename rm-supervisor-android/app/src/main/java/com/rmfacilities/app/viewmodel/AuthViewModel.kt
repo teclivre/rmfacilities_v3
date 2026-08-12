@@ -23,7 +23,7 @@ class AuthViewModel(
     val state: StateFlow<AuthUiState> = _state.asStateFlow()
 
     init {
-        _state.value = _state.value.copy(isAuthenticated = \!sessionStore.getToken().isNullOrBlank())
+        _state.value = _state.value.copy(isAuthenticated = !sessionStore.getToken().isNullOrBlank())
     }
 
     fun login(email: String, senha: String) {
