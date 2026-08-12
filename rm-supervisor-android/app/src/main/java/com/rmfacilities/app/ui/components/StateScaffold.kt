@@ -2,6 +2,7 @@ package com.rmfacilities.app.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
@@ -20,12 +21,15 @@ fun <T> StateScaffold(
     state: UiState<T>,
     emptyMessage: String,
     onRetry: () -> Unit,
+    fullScreen: Boolean = true,
     success: @Composable (T) -> Unit
 ) {
+    val stateModifier = if (fullScreen) Modifier.fillMaxSize() else Modifier.fillMaxWidth()
+
     when (state) {
         is UiState.Loading -> {
             Column(
-                modifier = Modifier.fillMaxSize(),
+                modifier = stateModifier,
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -35,9 +39,7 @@ fun <T> StateScaffold(
 
         is UiState.Empty -> {
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
+                modifier = stateModifier.padding(24.dp),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -50,9 +52,7 @@ fun <T> StateScaffold(
 
         is UiState.Error -> {
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
+                modifier = stateModifier.padding(24.dp),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
