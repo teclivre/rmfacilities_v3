@@ -42,7 +42,7 @@ class ApiClient(private val session: SessionManager) {
             builder.addInterceptor { chain ->
                 val resp = chain.proceed(chain.request())
                 if (resp.code == 401 || resp.code == 403) {
-                    handleUnauthorized()
+                    handleUnauthorized(resp.code)
                 }
                 resp
             }
@@ -158,8 +158,16 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
-    private fun handleUnauthorized() {
-        session.logout()
+    private fun handleUnauthorized(code: Int) {
+        if (code == 403) {
+            // Funcionário desativado/demitido — logout imediato
+            session.logout()
+            return
+        }
+        // 401: só desloga se o refresh token foi explicitamente rejeitado pelo servidor
+        if (session.refreshToken.isBlank()) {
+            session.logout()
+        }
     }
 
     private fun responseCount(response: Response): Int {
@@ -217,7 +225,11 @@ class ApiClient(private val session: SessionManager) {
                 null
             } ?: return null
 
-            if (!renovado.ok || renovado.access_token.isNullOrBlank()) return null
+            if (!renovado.ok || renovado.access_token.isNullOrBlank()) {
+                // Servidor rejeitou o refresh: limpa o token para sinalizar logout obrigatório
+                session.refreshToken = ""
+                return null
+            }
             session.accessToken = renovado.access_token
             if (!renovado.refresh_token.isNullOrBlank()) {
                 session.refreshToken = renovado.refresh_token

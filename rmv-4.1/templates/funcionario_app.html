@@ -544,9 +544,10 @@ var ls={
         if(r.status===401) return refreshToken().then(function(ok){
           if(!ok){doLogout();return;}
           return fetch('/api/app/funcionario/me',{headers:{'Authorization':'Bearer '+_AT}})
-            .then(function(r2){if(!r2.ok)doLogout(); else showApp();});
+            .then(function(r2){if(r2.status===401||r2.status===403)doLogout(); else showApp();});
         });
-        if(!r.ok){doLogout();return;}
+        // Só desloga em falha de autenticação; erros temporários (500, rede) mantêm a sessão
+        if(r.status===401||r.status===403){doLogout();return;}
         return r.json().then(function(d){
           if(d.funcionario){
             _func=Object.assign({},_func,d.funcionario);
