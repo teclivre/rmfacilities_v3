@@ -702,6 +702,18 @@
         return;
       }
 
+      const hasCoords = checkin.lat != null && checkin.lon != null;
+      const mapPreview = hasCoords && checkin.map_url ? `
+        <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+          <img src="${checkin.map_url}" alt="Mapa do check-in" style="width: 100%; max-height: 170px; object-fit: cover; border-radius: 10px; border: 1px solid #d5d9df; background: #eff3f6;">
+          <a href="https://www.google.com/maps?q=${encodeURIComponent(`${checkin.lat},${checkin.lon}`)}" target="_blank" rel="noopener" style="color: var(--primary); font-weight: 600; text-decoration: none;">Ver no mapa</a>
+        </div>
+      ` : hasCoords ? `
+        <div style="margin-top: 10px; color: var(--text-muted); font-size: 12px;">
+          Coordenadas: ${Number(checkin.lat).toFixed(5)}, ${Number(checkin.lon).toFixed(5)}
+        </div>
+      ` : '';
+
       el.innerHTML = `
         <div class="visit-item selected">
           <div class="visit-status"></div>
@@ -711,7 +723,26 @@
           </div>
           <span class="chip success">Check-in</span>
         </div>
+        ${mapPreview}
       `;
+    }
+
+    function getCurrentCheckinLocation() {
+      return new Promise((resolve, reject) => {
+        if (!navigator.geolocation) {
+          reject(new Error('Seu navegador não permite obter a localização do ponto.'));
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+          (position) => resolve({
+            lat: Number(position.coords.latitude),
+            lon: Number(position.coords.longitude),
+          }),
+          () => reject(new Error('Não foi possível capturar a localização do ponto. Permita o acesso ao GPS e tente novamente.')),
+          { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+        );
+      });
     }
 
     async function loadSupervisorCheckin() {
@@ -746,13 +777,16 @@
       }
 
       try {
+        const location = await getCurrentCheckinLocation();
         const response = await fetch('/api/supervisor/checkin', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
             contrato_id: selectedVisit.id,
             cliente_id: selectedVisit.cliente_id,
-            observacao: 'Check-in realizado no ponto de atendimento'
+            observacao: 'Check-in realizado no ponto de atendimento',
+            lat: location.lat,
+            lon: location.lon,
           })
         });
         const data = await response.json();

@@ -8929,6 +8929,52 @@ def _supervisor_safe_int(value):
         return None
 
 
+def _supervisor_map_static_url(lat=None, lon=None, zoom=16):
+    try:
+        lat = float(lat)
+        lon = float(lon)
+    except Exception:
+        return ""
+    if lat is None or lon is None:
+        return ""
+    return (
+        "https://staticmap.openstreetmap.de/staticmap.php?"
+        f"center={lat},{lon}&zoom={zoom}&size=640x320&maptype=mapnik"
+        f"&markers={lat},{lon},red-pushpin"
+    )
+
+
+def _supervisor_map_path_for_checkin(checkin=None, force=False):
+    checkin = checkin or {}
+    lat = checkin.get("lat")
+    lon = checkin.get("lon")
+    if (lat is None or lon is None) and not force:
+        return ""
+    try:
+        lat = float(lat)
+        lon = float(lon)
+    except Exception:
+        return ""
+
+    folder = os.path.join(UPLOAD_ROOT, "supervisor_maps")
+    os.makedirs(folder, exist_ok=True)
+    filename = f"mapa_checkin_{abs(int(lat*1000000))}_{abs(int(lon*1000000))}.png"
+    path = os.path.join(folder, filename)
+    if os.path.exists(path) and not force:
+        return path
+
+    map_url = _supervisor_map_static_url(lat, lon)
+    if not map_url:
+        return ""
+    try:
+        with urllib.request.urlopen(map_url, timeout=20) as resp, open(path, "wb") as fp:
+            fp.write(resp.read())
+        return path
+    except Exception:
+        app.logger.warning("[supervisor] falha ao baixar mapa do check-in: %s", map_url)
+        return ""
+
+
 def _supervisor_report_payload():
     checkin = session.get("supervisor_checkin") or {}
     resumo = {
@@ -9032,6 +9078,10 @@ def _supervisor_pdf_bytes(payload=None):
         [Paragraph("Ocorrências", body_style), Paragraph(str(resumo.get("ocorrencias_total", 0)), body_style)],
         [Paragraph("Fotos", body_style), Paragraph(str(resumo.get("fotos_total", 0)), body_style)],
     ]
+    if checkin.get("lat") is not None and checkin.get("lon") is not None:
+        lat = checkin.get("lat")
+        lon = checkin.get("lon")
+        info_data.append([Paragraph("Localização", body_style), Paragraph(f"{lat}, {lon}", body_style)])
     info_table = Table(info_data, colWidths=[32 * mm, 98 * mm])
     info_table.setStyle(
         TableStyle(
@@ -9046,6 +9096,18 @@ def _supervisor_pdf_bytes(payload=None):
         )
     )
     story.append(info_table)
+    map_path = _supervisor_map_path_for_checkin(checkin)
+    if map_path and os.path.exists(map_path):
+        story.append(Spacer(1, 5 * mm))
+        story.append(Paragraph("Mapa do check-in", heading_style))
+        try:
+            story.append(RLImage(map_path, width=155 * mm, height=85 * mm, kind="proportional"))
+        except Exception:
+            app.logger.exception("[supervisor] falha ao anexar mapa ao PDF")
+    elif checkin.get("lat") is not None and checkin.get("lon") is not None:
+        story.append(Spacer(1, 5 * mm))
+        story.append(Paragraph("Mapa do check-in", heading_style))
+        story.append(Paragraph(f"Coordenadas: {checkin.get('lat')}, {checkin.get('lon')}", body_style))
     story.append(Spacer(1, 6 * mm))
     story.append(Paragraph("Observações", heading_style))
     story.append(Paragraph(str(resumo.get("observacoes") or checkin.get("observacao") or "Nenhuma observação registrada."), body_style))
@@ -9274,6 +9336,14 @@ def api_supervisor_checkin_post():
     contrato_id = _supervisor_safe_int(d.get("contrato_id"))
     cliente_id = _supervisor_safe_int(d.get("cliente_id"))
     observacao = (d.get("observacao") or "").strip()
+    lat = d.get("lat")
+    lon = d.get("lon")
+    try:
+        lat = float(lat) if lat not in (None, "") else None
+        lon = float(lon) if lon not in (None, "") else None
+    except Exception:
+        lat = None
+        lon = None
 
     if not contrato_id:
         return jsonify({"erro": "Contrato não informado para o check-in."}), 400
@@ -9289,6 +9359,7 @@ def api_supervisor_checkin_post():
     if cliente_id and int(cliente_id) != int(cliente.id):
         return jsonify({"erro": "Cliente informado não corresponde ao contrato."}), 400
 
+    map_url = _supervisor_map_static_url(lat, lon) if lat is not None and lon is not None else ""
     checkin = {
         "contrato_id": contrato.id,
         "cliente_id": cliente.id,
@@ -9297,6 +9368,9 @@ def api_supervisor_checkin_post():
         "servico": _supervisor_servico_label(contrato),
         "horario": localnow().strftime("%d/%m/%Y %H:%M"),
         "observacao": observacao,
+        "lat": lat,
+        "lon": lon,
+        "map_url": map_url,
     }
 
     session["supervisor_checkin"] = checkin
