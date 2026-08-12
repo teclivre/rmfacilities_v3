@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RM Facilities — Supervisor</title>
+  <style>
+    :root {
+      --bg: #071822;
+      --panel: #0f2231;
+      --panel-2: #132c3d;
+      --line: rgba(143, 212, 255, 0.18);
+      --text: #edf6ff;
+      --muted: #9db7c8;
+      --primary: #58c2ff;
+      --primary-strong: #2aa7ea;
+      --success: #4fe0b0;
+      --danger: #ff6b6b;
+      --shadow: rgba(0, 0, 0, 0.28);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: Arial, Helvetica, sans-serif;
+      background: radial-gradient(circle at top, #12354c 0%, #071822 35%, #020c12 100%);
+      color: var(--text);
+    }
+
+    .card {
+      width: min(92vw, 430px);
+      background: rgba(13, 31, 41, 0.96);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 20px 50px var(--shadow);
+      padding: 28px 24px 22px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .brand-mark {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, var(--primary) 0%, #77d3ff 100%);
+      color: #062436;
+      font-weight: 800;
+      font-size: 1.05rem;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      text-align: center;
+      font-size: clamp(1.6rem, 2vw, 2rem);
+    }
+
+    .subtitle {
+      margin: 0 0 22px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.96rem;
+    }
+
+    .alert {
+      border-radius: 10px;
+      background: rgba(255, 107, 107, 0.08);
+      border: 1px solid rgba(255, 107, 107, 0.3);
+      color: #ffd7d7;
+      padding: 10px 12px;
+      margin-bottom: 18px;
+      font-size: 0.9rem;
+    }
+
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.87rem;
+      font-weight: 600;
+    }
+
+    input {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.02);
+      border-radius: 10px;
+      color: var(--text);
+      padding: 13px 12px;
+      font-size: 1rem;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: rgba(88, 194, 255, 0.75);
+      box-shadow: 0 0 0 3px rgba(88, 194, 255, 0.12);
+    }
+
+    button {
+      margin-top: 6px;
+      border: 0;
+      border-radius: 999px;
+      padding: 14px 16px;
+      font-weight: 700;
+      font-size: 1rem;
+      color: #061b29;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--success) 100%);
+      cursor: pointer;
+    }
+
+    .footer {
+      margin-top: 18px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .footer a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <div class="brand-mark">RM</div>
+      <div>
+        <div style="font-size:0.82rem; color:var(--muted); letter-spacing:0.08em; text-transform:uppercase;">Supervisor</div>
+      </div>
+    </div>
+
+    <h1>Área do supervisor</h1>
+    <p class="subtitle">Entre com suas credenciais para acessar a supervisão da visita.</p>
+
+    {% if erro %}
+      <div class="alert">{{ erro }}</div>
+    {% endif %}
+
+    <form method="post">
+      <label>
+        E-mail
+        <input type="email" name="email" placeholder="seu@email.com.br" required>
+      </label>
+
+      <label>
+        Senha
+        <input type="password" name="senha" placeholder="••••••••" required>
+      </label>
+
+      <button type="submit">Entrar</button>
+    </form>
+
+    <div class="footer">
+      <a href="/login">Voltar ao login do sistema</a>
+    </div>
+  </div>
+</body>
+</html>

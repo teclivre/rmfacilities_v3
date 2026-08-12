@@ -306,6 +306,8 @@ from flask import session, g
 def _lr_unauth_response():
     if (request.path or "").startswith("/api/"):
         return jsonify({"erro": "Sessao expirada. Faca login novamente."}), 401
+    if (request.path or "").startswith("/supervisor"):
+        return redirect(url_for("supervisor_login"))
     return redirect(url_for("login"))
 
 
@@ -8387,6 +8389,43 @@ register_ponto_routes(
 )
 
 
+@app.route("/supervisor/login", methods=["GET", "POST"])
+def supervisor_login():
+    if "uid" in session and str(session.get("perfil", "")).lower() == "supervisor":
+        return redirect(url_for("pagina_supervisor"))
+    if "uid" in session:
+        session.clear()
+
+    erro = None
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip().lower()
+        senha = request.form.get("senha") or ""
+        if not email or not senha:
+            erro = "Informe e-mail e senha do supervisor."
+        else:
+            u = Usuario.query.filter_by(email=email, ativo=True).first()
+            if not u or not pw_check(u.senha, senha):
+                erro = "Credenciais inválidas para o supervisor."
+            elif str(u.perfil or "").lower() != "supervisor":
+                erro = "Este acesso é restrito ao perfil de supervisor."
+            else:
+                session.permanent = True
+                session["uid"] = u.id
+                session["nome"] = u.nome
+                session["perfil"] = u.perfil
+                session["areas"] = jloads(u.areas, [])
+                perms = jloads(getattr(u, "permissoes", "{}"), {})
+                if not isinstance(perms, dict):
+                    perms = {}
+                session["permissoes"] = perms
+                session["rbac_actions_ativo"] = bool(perms)
+                u.ultimo_acesso = utcnow()
+                db.session.commit()
+                return redirect(url_for("pagina_supervisor"))
+
+    return render_template("supervisor_login.html", erro=erro)
+
+
 @app.route("/login", methods=["GET", "POST"])
 @_limiter.limit("10 per minute", methods=["POST"])
 def login():
@@ -8892,8 +8931,51 @@ def _persist_supervisor_report(payload):
     return fname, abs_path
 
 
+def _supervisor_default_checklist(servico="Visita"):
+    label = str(servico or "Visita").lower()
+    if "limpeza" in label:
+        itens = [
+            "Entrada e recepção livres de sujeira",
+            "Pisos, corredores e cantos varridos",
+            "Banheiros e vestiários higienizados",
+            "Lixeiras e resíduos removidos",
+            "Pias, espelhos e metais polidos",
+            "Produtos e equipamentos organizados",
+        ]
+    elif "portaria" in label:
+        itens = [
+            "Recepção monitorada",
+            "Controle de acesso realizado",
+            "Comunicação interna registrada",
+            "Segurança e sinalização conferidas",
+        ]
+    elif "jardinagem" in label:
+        itens = [
+            "Áreas verdes inspecionadas",
+            "Podas e limpeza realizadas",
+            "Irrigação e plantas conferidas",
+            "Pontos de risco identificados",
+        ]
+    else:
+        itens = [
+            "Local conferido",
+            "Equipe em atendimento",
+            "Pendências registradas",
+            "Fechamento da visita finalizado",
+        ]
+    return {"servico": servico or "Visita", "items": [{"label": item, "checked": False} for item in itens]}
+
+
 def _supervisor_touch_resumo(ocorrencias_total=None):
     checkin = session.get("supervisor_checkin") or {}
+    checklist = session.get("supervisor_checklist") or _supervisor_default_checklist(
+        checkin.get("servico") or "Visita"
+    )
+    items = checklist.get("items") or []
+    checklist_total = len(items)
+    checklist_ok = sum(1 for item in items if bool(item.get("checked")))
+    checklist_pct = int(round((checklist_ok / checklist_total) * 100)) if checklist_total else 0
+
     resumo = session.get("supervisor_resumo") or {
         "status": "em_andamento",
         "cliente_nome": checkin.get("cliente_nome") or "Cliente",
@@ -8906,10 +8988,26 @@ def _supervisor_touch_resumo(ocorrencias_total=None):
         "ocorrencias_total": 0,
         "fotos_total": 0,
     }
-    if ocorrencias_total is not None:
-        resumo["ocorrencias_total"] = int(ocorrencias_total)
+    resumo.update(
+        {
+            "cliente_nome": checkin.get("cliente_nome") or resumo.get("cliente_nome") or "Cliente",
+            "servico": checkin.get("servico") or checklist.get("servico") or resumo.get("servico") or "Visita",
+            "horario_checkin": checkin.get("horario") or resumo.get("horario_checkin") or "",
+            "observacoes": checkin.get("observacao") or resumo.get("observacoes") or "",
+            "checklist_ok": checklist_ok,
+            "checklist_total": checklist_total,
+            "checklist_pct": checklist_pct,
+            "ocorrencias_total": len(session.get("supervisor_ocorrencias") or []) if ocorrencias_total is None else int(ocorrencias_total),
+            "fotos_total": len(session.get("supervisor_fotos") or []),
+        }
+    )
+    if resumo.get("checklist_total") and resumo.get("checklist_pct", 0) >= 100:
+        resumo["status"] = "concluida"
+    else:
+        resumo["status"] = "em_andamento"
     session["supervisor_resumo"] = resumo
     session.modified = True
+    return resumo
 
 
 @app.route("/api/supervisor/agenda")
@@ -8989,6 +9087,86 @@ def api_supervisor_checkin_post():
     return jsonify({"ok": True, "checkin": checkin})
 
 
+@app.route("/api/supervisor/checklist", methods=["GET", "POST"])
+@lr
+def api_supervisor_checklist():
+    if request.method == "GET":
+        checklist = session.get("supervisor_checklist") or _supervisor_default_checklist(
+            (session.get("supervisor_checkin") or {}).get("servico") or "Visita"
+        )
+        return jsonify({"checklist": checklist, "resumo": _supervisor_touch_resumo()})
+
+    d = request.get_json(silent=True) or {}
+    servico = ((d.get("servico") or (session.get("supervisor_checkin") or {}).get("servico") or "Visita")).strip() or "Visita"
+    raw_items = d.get("items") or []
+
+    if not isinstance(raw_items, list) or not raw_items:
+        checklist = _supervisor_default_checklist(servico)
+    else:
+        checklist = {
+            "servico": servico,
+            "items": [
+                {
+                    "label": (str(item.get("label") or f"Item {idx + 1}")).strip() or f"Item {idx + 1}",
+                    "checked": bool(item.get("checked")),
+                }
+                for idx, item in enumerate(raw_items)
+                if isinstance(item, dict)
+            ],
+        }
+        if not checklist["items"]:
+            checklist = _supervisor_default_checklist(servico)
+
+    session["supervisor_checklist"] = checklist
+    session.modified = True
+    resumo = _supervisor_touch_resumo()
+    return jsonify({"ok": True, "checklist": checklist, "resumo": resumo})
+
+
+@app.route("/api/supervisor/fotos", methods=["GET", "POST"])
+@lr
+def api_supervisor_fotos():
+    if request.method == "GET":
+        return jsonify({"fotos": session.get("supervisor_fotos") or []})
+
+    uploaded = request.files.getlist("arquivo") or request.files.getlist("files") or request.files.getlist("fotos")
+    if not uploaded:
+        return jsonify({"erro": "Selecione pelo menos uma foto para anexar."}), 400
+
+    base_dir = os.path.join(UPLOAD_ROOT, "supervisor_visitas")
+    os.makedirs(base_dir, exist_ok=True)
+
+    fotos = session.get("supervisor_fotos") or []
+    for idx, fileobj in enumerate(uploaded):
+        if fileobj is None or getattr(fileobj, "filename", "") in (None, ""):
+            continue
+        filename = secure_filename(fileobj.filename)
+        if not filename:
+            continue
+        nome = f"{datetime.now().strftime('%Y%m%d%H%M%S%f')}_{idx}_{filename}"
+        path = os.path.join(base_dir, nome)
+        fileobj.save(path)
+        fotos.append(
+            {
+                "nome": filename,
+                "arquivo": nome,
+                "tipo": "visita",
+                "usuario": session.get("nome", "Supervisor"),
+                "data": localnow().strftime("%d/%m/%Y"),
+                "horario": localnow().strftime("%H:%M"),
+                "url": f"/uploads/supervisor_visitas/{nome}",
+            }
+        )
+
+    if not fotos:
+        return jsonify({"erro": "Nenhuma foto válida foi recebida."}), 400
+
+    session["supervisor_fotos"] = fotos
+    session.modified = True
+    resumo = _supervisor_touch_resumo()
+    return jsonify({"ok": True, "fotos": fotos, "resumo": resumo})
+
+
 @app.route("/api/supervisor/ocorrencias", methods=["GET"])
 @lr
 def api_supervisor_ocorrencias_get():
@@ -9029,53 +9207,162 @@ def api_supervisor_ocorrencias_post():
     return jsonify({"ok": True, "ocorrencia": item, "ocorrencias": ocorrencias})
 
 
+@app.route("/api/supervisor/finalizar", methods=["GET", "POST"])
+@lr
+def api_supervisor_finalizar():
+    if request.method == "GET":
+        return jsonify({"resumo": _supervisor_touch_resumo()})
+
+    d = request.get_json(silent=True) or {}
+    resumo = _supervisor_touch_resumo()
+    if d.get("observacoes") is not None:
+        resumo["observacoes"] = str(d.get("observacoes") or "").strip()
+    if resumo.get("checklist_total") and resumo.get("checklist_pct", 0) >= 100:
+        resumo["status"] = "concluida"
+    else:
+        resumo["status"] = "em_andamento"
+    session["supervisor_resumo"] = resumo
+    session.modified = True
+    return jsonify({"ok": True, "resumo": resumo})
+
+
 @app.route("/api/supervisor/relatorio.pdf", methods=["GET"])
 @lr
 def api_supervisor_relatorio_pdf():
     payload = _supervisor_report_payload()
     resumo = payload.get("resumo") or {}
     checkin = payload.get("checkin") or {}
+    checklist = payload.get("checklist") or {"servico": "Visita", "items": []}
+    ocorrencias = payload.get("ocorrencias") or []
+    fotos = payload.get("fotos") or []
 
     buf = io.BytesIO()
     try:
+        from reportlab.lib import colors
         from reportlab.lib.pagesizes import A4
-        from reportlab.pdfgen import canvas
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
-        c = canvas.Canvas(buf, pagesize=A4)
-        w, h = A4
+        doc = SimpleDocTemplate(
+            buf,
+            pagesize=A4,
+            leftMargin=18 * mm,
+            rightMargin=18 * mm,
+            topMargin=16 * mm,
+            bottomMargin=16 * mm,
+        )
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            "TitleRM",
+            parent=styles["Title"],
+            fontName="Helvetica-Bold",
+            fontSize=18,
+            leading=22,
+            textColor=colors.HexColor("#0B1F2A"),
+            alignment=TA_CENTER,
+        )
+        heading_style = ParagraphStyle(
+            "HeadingRM",
+            parent=styles["Heading2"],
+            fontName="Helvetica-Bold",
+            fontSize=12,
+            leading=16,
+            textColor=colors.HexColor("#0F3B4D"),
+            spaceBefore=12,
+            spaceAfter=8,
+        )
+        body_style = ParagraphStyle(
+            "BodyRM",
+            parent=styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=9.8,
+            leading=13,
+            textColor=colors.black,
+        )
+        small_style = ParagraphStyle(
+            "SmallRM",
+            parent=styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=8.5,
+            leading=11,
+            textColor=colors.HexColor("#4B5963"),
+        )
 
-        y = h - 40
-        c.setFont("Helvetica-Bold", 14)
-        c.drawString(40, y, "RM Facilities - Relatorio de Supervisao")
-        y -= 22
-        c.setFont("Helvetica", 10)
-        c.drawString(40, y, f"Supervisor: {payload.get('supervisor')}")
-        y -= 14
-        c.drawString(40, y, f"Gerado em: {localnow().strftime('%d/%m/%Y %H:%M')}")
-        y -= 18
+        story = []
+        story.append(Paragraph("RM Facilities", title_style))
+        story.append(Paragraph("Relatório de Supervisão", heading_style))
+        story.append(Paragraph(f"Supervisor: {payload.get('supervisor') or 'Supervisor'}", body_style))
+        story.append(Paragraph(f"Gerado em: {localnow().strftime('%d/%m/%Y %H:%M')}", small_style))
+        story.append(Spacer(1, 6 * mm))
 
-        linhas = [
-            f"Cliente: {checkin.get('cliente_nome') or resumo.get('cliente_nome') or 'Cliente'}",
-            f"Contrato: {checkin.get('numero') or '-'}",
-            f"Servico: {checkin.get('servico') or resumo.get('servico') or 'Visita'}",
-            f"Horario check-in: {checkin.get('horario') or resumo.get('horario_checkin') or '-'}",
-            f"Status: {resumo.get('status') or 'em_andamento'}",
-            f"Checklist: {resumo.get('checklist_ok', 0)}/{resumo.get('checklist_total', 0)}",
-            f"Ocorrencias: {resumo.get('ocorrencias_total', 0)}",
-            f"Fotos: {resumo.get('fotos_total', 0)}",
-            f"Observacoes: {resumo.get('observacoes') or checkin.get('observacao') or '-'}",
+        info_data = [
+            [Paragraph("Cliente", body_style), Paragraph(str(checkin.get("cliente_nome") or resumo.get("cliente_nome") or "Cliente"), body_style)],
+            [Paragraph("Contrato", body_style), Paragraph(str(checkin.get("numero") or "-"), body_style)],
+            [Paragraph("Serviço", body_style), Paragraph(str(checkin.get("servico") or resumo.get("servico") or "Visita"), body_style)],
+            [Paragraph("Check-in", body_style), Paragraph(str(checkin.get("horario") or resumo.get("horario_checkin") or "-"), body_style)],
+            [Paragraph("Status", body_style), Paragraph(str(resumo.get("status") or "em_andamento").replace("_", " ").title(), body_style)],
+            [Paragraph("Checklist", body_style), Paragraph(f"{resumo.get('checklist_ok', 0)}/{resumo.get('checklist_total', 0)} ({resumo.get('checklist_pct', 0)}%)", body_style)],
+            [Paragraph("Ocorrências", body_style), Paragraph(str(resumo.get("ocorrencias_total", 0)), body_style)],
+            [Paragraph("Fotos", body_style), Paragraph(str(resumo.get("fotos_total", 0)), body_style)],
         ]
+        info_table = Table(info_data, colWidths=[32 * mm, 98 * mm])
+        info_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F2F5F7")),
+                    ("GRID", (0, 0), (-1, -1), 0.7, colors.HexColor("#D5DDE3")),
+                    ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, colors.HexColor("#F8FAFB")]),
+                ]
+            )
+        )
+        story.append(info_table)
 
-        for line in linhas:
-            c.drawString(40, y, str(line)[:120])
-            y -= 14
-            if y < 50:
-                c.showPage()
-                c.setFont("Helvetica", 10)
-                y = h - 40
+        story.append(Spacer(1, 6 * mm))
+        story.append(Paragraph("Observações", heading_style))
+        story.append(Paragraph(str(resumo.get("observacoes") or checkin.get("observacao") or "Nenhuma observação registrada."), body_style))
 
-        c.showPage()
-        c.save()
+        if checklist.get("items"):
+            story.append(Spacer(1, 6 * mm))
+            story.append(Paragraph("Checklist", heading_style))
+            checklist_rows = [[Paragraph("Status", body_style), Paragraph("Item", body_style)]]
+            for item in checklist.get("items") or []:
+                checklist_rows.append([
+                    Paragraph("✓" if bool(item.get("checked")) else "—", body_style),
+                    Paragraph(str(item.get("label") or "Item"), body_style),
+                ])
+            checklist_table = Table(checklist_rows, colWidths=[12 * mm, 118 * mm])
+            checklist_table.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF3F7")),
+                        ("GRID", (0, 0), (-1, -1), 0.7, colors.HexColor("#D5DDE3")),
+                        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+                        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ]
+                )
+            )
+            story.append(checklist_table)
+
+        if ocorrencias:
+            story.append(Spacer(1, 6 * mm))
+            story.append(Paragraph("Ocorrências registradas", heading_style))
+            for occ in ocorrencias[:6]:
+                story.append(Paragraph(f"• {occ.get('titulo') or 'Ocorrência'} ({occ.get('prioridade') or 'Média'})", body_style))
+                if occ.get("descricao"):
+                    story.append(Paragraph(str(occ.get("descricao")), body_style))
+
+        if fotos:
+            story.append(Spacer(1, 6 * mm))
+            story.append(Paragraph("Fotos anexadas", heading_style))
+            story.append(Paragraph(f"Total: {len(fotos)} arquivos anexados", small_style))
+
+        doc.build(story)
         buf.seek(0)
     except Exception:
         app.logger.exception("[supervisor] falha ao gerar PDF")
