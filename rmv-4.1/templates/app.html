@@ -2559,7 +2559,9 @@ document.addEventListener('DOMContentLoaded',()=>{
               <select id="ap-tipo" onchange="apToggleReducao()">
                 <option value="empresa_trabalhado">Empresa demite → Aviso Trabalhado (funcionário cumpre o período)</option>
                 <option value="empresa_indenizado">Empresa demite → Aviso Indenizado (empresa paga sem trabalho)</option>
+                <option value="empresa_antecipado">Empresa encerra antecipadamente (rescisão sem justa causa)</option>
                 <option value="pedido_demissao">Funcionário pede demissão (cumpre aviso ou paga indenização)</option>
+                <option value="funcionario_antecipado">Funcionário pede rescisão antecipada (acordo mútuo/sem justa causa)</option>
                 <option value="termino_contrato">Término de Contrato por Prazo Determinado (art. 443 CLT)</option>
               </select>
             </div>
@@ -10476,10 +10478,12 @@ function previaAvisoPrevio() {
   }
   const dataAvisoFmt = dataAviso ? new Date(dataAviso + 'T12:00:00').toLocaleDateString('pt-BR') : hoje;
   const TIPOS_AP = {
-    empresa_trabalhado: 'AVISO PRÉVIO TRABALHADO',
-    empresa_indenizado: 'AVISO PRÉVIO INDENIZADO',
-    pedido_demissao:    'PEDIDO DE DEMISSÃO — AVISO PRÉVIO',
-    termino_contrato:   'TÉRMINO DE CONTRATO POR PRAZO DETERMINADO',
+    empresa_trabalhado:    'AVISO PRÉVIO TRABALHADO',
+    empresa_indenizado:    'AVISO PRÉVIO INDENIZADO',
+    empresa_antecipado:    'RESCISÃO ANTECIPADA — ENCERRAMENTO PELA EMPRESA',
+    pedido_demissao:       'PEDIDO DE DEMISSÃO — AVISO PRÉVIO',
+    funcionario_antecipado: 'RESCISÃO ANTECIPADA — PEDIDO DO FUNCIONÁRIO',
+    termino_contrato:      'TÉRMINO DE CONTRATO POR PRAZO DETERMINADO',
   };
   const tipoLabel = TIPOS_AP[tipo] || 'AVISO PRÉVIO TRABALHADO';
   const corHdr = '#1A3A5C';

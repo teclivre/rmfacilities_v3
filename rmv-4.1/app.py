@@ -14957,7 +14957,7 @@ def _gerar_aviso_previo_pdf(
     # não aviso + N (que dava 1 dia a mais e divergia da prévia JS).
     if tipo == "termino_contrato":
         dt_fim = dt_aviso
-    elif tipo == "pedido_demissao" and demissao_aviso == "nao_cumprira":
+    elif tipo in ("pedido_demissao", "funcionario_antecipado", "empresa_antecipado") and demissao_aviso == "nao_cumprira":
         # Não há período a cumprir: vínculo encerra na data do próprio aviso;
         # o desconto será registrado nas verbas rescisórias (art. 487 §2º CLT).
         dt_fim = dt_aviso
@@ -14992,11 +14992,13 @@ def _gerar_aviso_previo_pdf(
     TIPOS = {
         "empresa_trabalhado": "AVISO PRÉVIO TRABALHADO",
         "empresa_indenizado": "AVISO PRÉVIO INDENIZADO",
+        "empresa_antecipado": "RESCISÃO ANTECIPADA — ENCERRAMENTO PELA EMPRESA",
         "pedido_demissao": (
             "PEDIDO DE DEMISSÃO — SEM CUMPRIMENTO DE AVISO PRÉVIO"
             if demissao_aviso == "nao_cumprira"
             else "PEDIDO DE DEMISSÃO — AVISO PRÉVIO"
         ),
+        "funcionario_antecipado": "RESCISÃO ANTECIPADA — PEDIDO DO FUNCIONÁRIO",
         "termino_contrato": "TÉRMINO DE CONTRATO POR PRAZO DETERMINADO",
     }
     tipo_label = TIPOS.get(tipo, "AVISO PRÉVIO TRABALHADO")
@@ -15166,6 +15168,22 @@ def _gerar_aviso_previo_pdf(
             f"dispensado(a) de comparecer ao trabalho a partir de <b>{data_aviso_fmt}</b>. "
             f"O valor correspondente aos {total_dias} dias será integrado às verbas rescisórias a serem pagas."
         )
+    elif tipo == "empresa_antecipado":
+        texto_intro = (
+            f"A empresa <b>{emp_nome}</b>, {cnpj_txt}vem por meio deste instrumento comunicar ao(à) "
+            f"colaborador(a) <b>{func_nome}</b>, RE/Mat. <b>{func_re}</b>, portador(a) do CPF nº <b>{func_cpf}</b>, "
+            f"ocupante do cargo de <b>{func_cargo}</b>, admitido(a) em <b>{data_adm_fmt}</b>, "
+            f"a rescisão antecipada de seu contrato de trabalho, <b>sem justa causa</b>, "
+            f"nos termos do art. 7º, I da Constituição Federal c/c arts. 477, 479 e 480 da CLT."
+        )
+        texto_prazo = (
+            f"A empresa comunicaa ao(à) colaborador(a) o término do contrato de trabalho a partir de <b>{data_aviso_fmt}</b>. "
+            f"Considerando <b>{anos_servico} ano(s)</b> de serviço prestado, o(a) colaborador(a) faz jus à <b>indenização integral</b> "
+            f"compreendendo: (i) saldo de salário; (ii) férias vencidas acrescidas do terço constitucional (se houver); "
+            f"(iii) férias proporcionais acrescidas do terço constitucional; (iv) 13º salário proporcional; "
+            f"(v) aviso prévio indenizado de {total_dias} dias; e (vi) multa de 50% sobre o saldo da conta do FGTS "
+            f"(art. 480, parágrafo único, da CLT). As verbas rescisórias serão pagas conforme determinação legal."
+        )
     elif tipo == "termino_contrato":
         texto_intro = (
             f"A empresa <b>{emp_nome}</b>, {cnpj_txt}vem por meio deste instrumento comunicar ao(à) "
@@ -15182,14 +15200,24 @@ def _gerar_aviso_previo_pdf(
             f"As verbas rescisórias devidas (saldo de salário, 13º proporcional, férias proporcionais + 1/3 e FGTS) "
             f"serão quitadas no prazo legal."
         )
-    else:  # pedido_demissao
-        texto_intro = (
-            f"Eu, <b>{func_nome}</b>, RE/Mat. <b>{func_re}</b>, portador(a) do CPF nº <b>{func_cpf}</b>, "
-            f"ocupante do cargo de <b>{func_cargo}</b> na empresa <b>{emp_nome}</b>, {cnpj_txt}"
-            f"admitido(a) em <b>{data_adm_fmt}</b>, venho por meio deste instrumento manifestar minha "
-            f"decisão de <b>rescindir voluntariamente</b> meu contrato de trabalho, "
-            f"solicitando meu desligamento da empresa a partir desta data."
-        )
+    else:  # pedido_demissao ou funcionario_antecipado
+        if tipo == "pedido_demissao":
+            texto_intro = (
+                f"Eu, <b>{func_nome}</b>, RE/Mat. <b>{func_re}</b>, portador(a) do CPF nº <b>{func_cpf}</b>, "
+                f"ocupante do cargo de <b>{func_cargo}</b> na empresa <b>{emp_nome}</b>, {cnpj_txt}"
+                f"admitido(a) em <b>{data_adm_fmt}</b>, venho por meio deste instrumento manifestar minha "
+                f"decisão de <b>rescindir voluntariamente</b> meu contrato de trabalho, "
+                f"solicitando meu desligamento da empresa a partir desta data."
+            )
+        else:  # funcionario_antecipado
+            texto_intro = (
+                f"Eu, <b>{func_nome}</b>, RE/Mat. <b>{func_re}</b>, portador(a) do CPF nº <b>{func_cpf}</b>, "
+                f"ocupante do cargo de <b>{func_cargo}</b> na empresa <b>{emp_nome}</b>, {cnpj_txt}"
+                f"admitido(a) em <b>{data_adm_fmt}</b>, venho por meio deste instrumento solicitar a "
+                f"<b>rescisão antecipada de meu contrato de trabalho</b>, em acordo mútuo com a empresa, "
+                f"conforme art. 484-A da CLT (rescisão consensual)."
+            )
+        
         if demissao_aviso == "nao_cumprira":
             texto_prazo = (
                 f"Declaro que <b>não cumprirei</b> o aviso prévio de <b>{total_dias} dias</b> previsto no "
@@ -15213,6 +15241,18 @@ def _gerar_aviso_previo_pdf(
             "<b>Base legal:</b> Arts. 443 a 481 da Consolidação das Leis do Trabalho (CLT); "
             "Lei nº 9.601/1998 — o término do contrato por prazo determinado extingue automaticamente o vínculo "
             "na data acordada, sem necessidade de aviso prévio, exceto se houver cláusula assecuratória recíproca (art. 481 CLT)."
+        )
+    elif tipo == "empresa_antecipado":
+        texto_base_legal = (
+            "<b>Base legal:</b> Art. 7º, I da Constituição Federal de 1988; Arts. 477, 479 e 480 da Consolidação das "
+            "Leis do Trabalho (CLT) — rescisão sem justa causa pela empresa garante ao empregado indenização integral, "
+            "incluindo multa sobre FGTS e aviso prévio indenizado."
+        )
+    elif tipo == "funcionario_antecipado":
+        texto_base_legal = (
+            "<b>Base legal:</b> Art. 484-A da Consolidação das Leis do Trabalho (CLT) — rescisão consensual do contrato "
+            "de trabalho, de comum acordo entre empresa e empregado, com possibilidade de acordo quanto ao aviso prévio, "
+            "multa do FGTS e demais condições de rescisão."
         )
     else:
         texto_base_legal = (
