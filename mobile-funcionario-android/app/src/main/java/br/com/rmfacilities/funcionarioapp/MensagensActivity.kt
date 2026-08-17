@@ -1,10 +1,6 @@
 package br.com.rmfacilities.funcionarioapp
 
 import android.content.Intent
-import android.graphics.BitmapFactory
-import android.graphics.Color
-import android.graphics.Rect
-import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -20,7 +16,6 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
-import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
@@ -33,14 +28,10 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.button.MaterialButton
-import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
-import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
-import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -70,16 +61,6 @@ class MensagensActivity : BaseActivity() {
     private var rootPaddingBottomOriginal = 0
 
     private var cameraPhotoUri: Uri? = null
-    private var tipoDocumentoPendente = ""
-    private val documentScanner by lazy {
-        val options = GmsDocumentScannerOptions.Builder()
-            .setGalleryImportAllowed(true)
-            .setPageLimit(1)
-            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
-            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
-            .build()
-        GmsDocumentScanning.getClient(options)
-    }
     private val pollingHandler = Handler(Looper.getMainLooper())
     private var isInChatTab = true
     // Polling como FALLBACK do FCM push. Em condicoes normais, ChatPushBus dispara
@@ -98,29 +79,15 @@ class MensagensActivity : BaseActivity() {
     }
 
     private val pickFile = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) enviarArquivo(uri, documentoTipo = tipoDocumentoPendente)
+        if (uri != null) enviarArquivo(uri)
     }
 
     private val takePhoto = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success) {
-            cameraPhotoUri?.let { enviarArquivo(it, documentoTipo = tipoDocumentoPendente) }
+            cameraPhotoUri?.let { enviarArquivo(it) }
         } else {
             Toast.makeText(this, "Captura de foto cancelada.", Toast.LENGTH_SHORT).show()
         }
-    }
-
-    private val scanDocument = registerForActivityResult(
-        ActivityResultContracts.StartIntentSenderForResult()
-    ) { result ->
-        if (result.resultCode != RESULT_OK) return@registerForActivityResult
-        val imageUri = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
-            ?.pages
-            ?.firstOrNull()
-            ?.imageUri
-        if (imageUri != null) {
-            enviarDocumentoDigitalizado(imageUri, tipoDocumentoPendente)
-        }
-        else Toast.makeText(this, "Nenhum documento foi digitalizado.", Toast.LENGTH_SHORT).show()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -210,10 +177,12 @@ class MensagensActivity : BaseActivity() {
         findViewById<MaterialButton>(R.id.btnVoltar).setOnClickListener { finish() }
         findViewById<MaterialButton>(R.id.btnEnviar).setOnClickListener { enviar() }
         findViewById<MaterialButton>(R.id.btnAnexar).setOnClickListener {
-            selecionarTipoDocumento { tipoDocumento ->
-                tipoDocumentoPendente = tipoDocumento
-                mostrarOpcoesDeAnexo()
-            }
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle("Enviar arquivo")
+                .setItems(arrayOf("📷 Câmera", "📁 Arquivo / Galeria")) { _, which ->
+                    if (which == 0) abrirCamera() else pickFile.launch("*/*")
+                }
+                .show()
         }
 
         // Abre na aba correta se vier de notificação de aviso
@@ -278,34 +247,6 @@ class MensagensActivity : BaseActivity() {
         btnTabAvisos.setTextColor(if (!isChat) colorTextoAtivo else colorTextoInativo)
     }
 
-    private fun mostrarOpcoesDeAnexo() {
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-            .setTitle("Enviar $tipoDocumentoPendente")
-            .setItems(arrayOf("Digitalizar documento (PDF)", "Câmera (foto comum)", "Arquivo / Galeria")) { _, which ->
-                when (which) {
-                    0 -> abrirScannerDocumento()
-                    1 -> abrirCamera()
-                    else -> pickFile.launch("*/*")
-                }
-            }
-            .show()
-    }
-
-    private fun selecionarTipoDocumento(aoSelecionar: (String) -> Unit) {
-        val tipos = arrayOf(
-            "Atestado medico",
-            "ASO",
-            "Documento de identidade",
-            "Comprovante de endereco",
-            "Comprovante bancario",
-            "Outro documento"
-        )
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-            .setTitle("Tipo de documento")
-            .setItems(tipos) { _, which -> aoSelecionar(tipos[which]) }
-            .show()
-    }
-
     private fun abrirCamera() {
         try {
             val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
@@ -321,73 +262,11 @@ class MensagensActivity : BaseActivity() {
         }
     }
 
-    private fun abrirScannerDocumento() {
-        documentScanner.getStartScanIntent(this)
-            .addOnSuccessListener { intentSender ->
-                scanDocument.launch(IntentSenderRequest.Builder(intentSender).build())
-            }
-            .addOnFailureListener { error ->
-                TelemetryLogger.logHandled(this, "mensagem_scanner_abrir", error)
-                Toast.makeText(this, "Não foi possível abrir o scanner de documentos.", Toast.LENGTH_LONG).show()
-            }
-    }
-
-    private fun enviarDocumentoDigitalizado(imageUri: Uri, documentoTipo: String) {
-        Toast.makeText(this, "Gerando PDF do documento...", Toast.LENGTH_SHORT).show()
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val pdfBytes = converterImagemParaPdf(imageUri)
-                if (pdfBytes.size > 20 * 1024 * 1024) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MensagensActivity, "Documento muito grande. Limite: 20 MB.", Toast.LENGTH_LONG).show()
-                    }
-                    return@launch
-                }
-                val nome = "${documentoTipo.lowercase().replace(' ', '_')}_${System.currentTimeMillis()}.pdf"
-                enviarBytesArquivo(pdfBytes, "application/pdf", nome, documentoTipo)
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    TelemetryLogger.logHandled(this@MensagensActivity, "mensagem_scanner_pdf", e)
-                    Toast.makeText(this@MensagensActivity, "Não foi possível gerar o PDF do documento.", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-
-    private fun converterImagemParaPdf(uri: Uri): ByteArray {
-        val bitmap = contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
-            ?: throw IllegalStateException("Não foi possível ler o documento digitalizado")
-        val pdf = PdfDocument()
-        try {
-            val page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
-            val area = Rect(24, 24, 571, 818)
-            val escala = minOf(area.width().toFloat() / bitmap.width, area.height().toFloat() / bitmap.height)
-            val largura = (bitmap.width * escala).toInt()
-            val altura = (bitmap.height * escala).toInt()
-            val esquerda = area.left + (area.width() - largura) / 2
-            val topo = area.top + (area.height() - altura) / 2
-            page.canvas.drawColor(Color.WHITE)
-            page.canvas.drawBitmap(bitmap, null, Rect(esquerda, topo, esquerda + largura, topo + altura), null)
-            pdf.finishPage(page)
-            return ByteArrayOutputStream().use { output ->
-                pdf.writeTo(output)
-                output.toByteArray()
-            }
-        } finally {
-            bitmap.recycle()
-            pdf.close()
-        }
-    }
-
     private fun configurarInsetsDoTeclado() {
         ViewCompat.setOnApplyWindowInsetsListener(mensagensRoot) { v, insets ->
             val tecladoVisivel = insets.isVisible(WindowInsetsCompat.Type.ime())
             bottomNav.visibility = if (tecladoVisivel) View.GONE else View.VISIBLE
-            val novoPaddingBottom = if (tecladoVisivel) {
-                insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-            } else {
-                rootPaddingBottomOriginal
-            }
+            val novoPaddingBottom = if (tecladoVisivel) 8.dp() else rootPaddingBottomOriginal
             if (v.paddingBottom != novoPaddingBottom) {
                 v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, novoPaddingBottom)
             }
@@ -502,7 +381,7 @@ class MensagensActivity : BaseActivity() {
         }
     }
 
-    private fun enviarArquivo(uri: Uri, nomePadrao: String? = null, documentoTipo: String) {
+    private fun enviarArquivo(uri: Uri) {
         val sizeLimit = 20 * 1024 * 1024L
         val fileSize = contentResolver.query(
             uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null
@@ -513,35 +392,27 @@ class MensagensActivity : BaseActivity() {
         }
 
         val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
-        val fileName = obterNomeArquivo(uri).takeIf { it.contains('.') }
-            ?: nomePadrao
-            ?: "arquivo"
+        val fileName = obterNomeArquivo(uri)
         Toast.makeText(this, "Enviando $fileName...", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val bytes = contentResolver.openInputStream(uri)?.readBytes()
                     ?: throw IllegalStateException("Não foi possível ler o arquivo")
-                enviarBytesArquivo(bytes, mimeType, fileName, documentoTipo)
+                val nova = api.enviarArquivoMensagem(bytes, mimeType, fileName)
+                withContext(Dispatchers.Main) {
+                    if (nova != null) {
+                        adapter.addMensagem(nova)
+                        rvMensagens.scrollToPosition(adapter.itemCount - 1)
+                    } else {
+                        // Enfileira os BYTES reais do arquivo (não só o texto) para reenvio offline.
+                        retryQueue.enqueueMensagemArquivo(bytes, mimeType, fileName)
+                        Toast.makeText(this@MensagensActivity, "Sem conexão. Arquivo na fila de envio offline.", Toast.LENGTH_LONG).show()
+                    }
+                }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     TelemetryLogger.logHandled(this@MensagensActivity, "mensagem_enviar_arquivo", e)
                     Toast.makeText(this@MensagensActivity, e.message ?: "Erro ao enviar arquivo.", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-
-    private fun enviarBytesArquivo(bytes: ByteArray, mimeType: String, fileName: String, documentoTipo: String) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            val nova = try { api.enviarArquivoMensagem(bytes, mimeType, fileName, documentoTipo = documentoTipo) }
-            catch (_: Exception) { null }
-            withContext(Dispatchers.Main) {
-                if (nova != null) {
-                    adapter.addMensagem(nova)
-                    rvMensagens.scrollToPosition(adapter.itemCount - 1)
-                } else {
-                    retryQueue.enqueueMensagemArquivo(bytes, mimeType, fileName, documentoTipo = documentoTipo)
-                    Toast.makeText(this@MensagensActivity, "Sem conexão. Arquivo na fila de envio offline.", Toast.LENGTH_LONG).show()
                 }
             }
         }

@@ -16175,17 +16175,24 @@ def _gerar_proposta_comercial_pdf(
     elems.append(Spacer(1, 0.2 * cm))
 
     # Cabeçalho da planilha
-    plan_header = ["Cod.", "Referência", "Função", "Qtd", "Valor unit.", "Subtotal"]
+    plan_header = [
+        Paragraph("<b>Cod.</b>", st("ph", fontSize=8, alignment=TA_CENTER)),
+        Paragraph("<b>Referência</b>", st("ph", fontSize=8, alignment=TA_CENTER)),
+        Paragraph("<b>Função</b>", st("ph", fontSize=8, alignment=TA_CENTER)),
+        Paragraph("<b>Qtd</b>", st("ph", fontSize=8, alignment=TA_CENTER)),
+        Paragraph("<b>Valor unit.</b>", st("ph", fontSize=8, alignment=TA_CENTER)),
+        Paragraph("<b>Subtotal</b>", st("ph", fontSize=8, alignment=TA_CENTER)),
+    ]
     plan_rows = [plan_header]
     for i, it in enumerate(itens):
         plan_rows.append(
             [
-                str(it.get("cod", str(i + 1))),
-                it.get("referencia", ""),
-                it.get("funcao_item", ""),
-                str(it.get("qtd", "1")),
-                it.get("valor_unit", ""),
-                it.get("subtotal", ""),
+                Paragraph(str(it.get("cod", str(i + 1))), st("pc", fontSize=9)),
+                Paragraph(it.get("referencia", ""), st("pc", fontSize=9)),
+                Paragraph(it.get("funcao_item", ""), st("pc", fontSize=9)),
+                Paragraph(str(it.get("qtd", "1")), st("pc", fontSize=9, alignment=TA_CENTER)),
+                Paragraph(it.get("valor_unit", ""), st("pc", fontSize=9, alignment=TA_RIGHT)),
+                Paragraph(it.get("subtotal", ""), st("pc", fontSize=9, alignment=TA_RIGHT)),
             ]
         )
 
@@ -16209,7 +16216,14 @@ def _gerar_proposta_comercial_pdf(
     else:
         total_val = "-"
 
-    plan_rows.append(["Total Mensal:", "", "", "", "", total_val])
+    plan_rows.append([
+        Paragraph("<b>Total Mensal:</b>", st("pc", fontSize=9, fontName="Helvetica-Bold")),
+        Paragraph("", st("pc", fontSize=9)),
+        Paragraph("", st("pc", fontSize=9)),
+        Paragraph("", st("pc", fontSize=9)),
+        Paragraph("", st("pc", fontSize=9)),
+        Paragraph(f"<b>{total_val}</b>", st("pc", fontSize=9, fontName="Helvetica-Bold", alignment=TA_RIGHT)),
+    ])
 
     plan_t = Table(
         plan_rows, colWidths=[1.2 * cm, 3.5 * cm, 6.5 * cm, 1.5 * cm, 3 * cm, 3.3 * cm]
@@ -16224,8 +16238,10 @@ def _gerar_proposta_comercial_pdf(
         ("BACKGROUND", (0, -1), (-1, -1), LGRAY),
         ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
         ("SPAN", (0, -1), (4, -1)),
+        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+        ("ALIGN", (0, 1), (0, -1), "CENTER"),
         ("ALIGN", (3, 0), (-1, -1), "RIGHT"),
-        ("ALIGN", (0, -1), (4, -1), "LEFT"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
         ("INNERGRID", (0, 0), (-1, -1), 0.3, BORDER),
         ("TOPPADDING", (0, 0), (-1, -1), 5),

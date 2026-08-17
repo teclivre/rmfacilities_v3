@@ -1,3 +1,5 @@
+import com.android.build.api.variant.ApkVariantOutput
+import java.io.File
 import java.io.FileInputStream
 import java.util.Properties
 
@@ -131,6 +133,43 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        val variantName = variant.name
+        val fileBaseName = "rmsupervisor-$variantName-v$buildVersionName-$verCode"
+
+        variant.outputs.forEach { output ->
+            (output as? ApkVariantOutput)?.outputFileName?.set("$fileBaseName.apk")
+        }
+
+        val bundleTaskName = "bundle" + variantName.replaceFirstChar {
+            if (it.isLowerCase()) it.titlecase() else it.toString()
+        }
+
+        tasks.named(bundleTaskName).configure {
+            doLast {
+                val bundleDir = layout.buildDirectory.dir("outputs/bundle/$variantName").get().asFile
+                val expectedAab = File(bundleDir, "app-$variantName.aab")
+                val targetAab = File(bundleDir, "$fileBaseName.aab")
+
+                if (expectedAab.exists()) {
+                    if (targetAab.exists()) targetAab.delete()
+                    expectedAab.renameTo(targetAab)
+                } else {
+                    bundleDir.listFiles()
+                        ?.filter { it.extension == "aab" }
+                        ?.forEach { aab ->
+                            if (aab.name != targetAab.name) {
+                                if (targetAab.exists()) targetAab.delete()
+                                aab.renameTo(targetAab)
+                            }
+                        }
+                }
+            }
         }
     }
 }
