@@ -3035,6 +3035,10 @@ class ComunicadoApp(db.Model):
 
 class MensagemApp(db.Model):
     __tablename__ = "mensagem_app"
+    __table_args__ = (
+        db.Index("idx_msg_app_funcionario_id", "funcionario_id"),
+        db.Index("idx_msg_app_funcionario_lida", "funcionario_id", "lida"),
+    )
     id = db.Column(db.Integer, primary_key=True)
     funcionario_id = db.Column(
         db.Integer, db.ForeignKey("funcionario.id"), nullable=False
@@ -23086,16 +23090,28 @@ def api_rh_mensagens_chat(fid):
     f = db.get_or_404(Funcionario, fid)
     if _status_norm(f.status) in ("demitido", "inativo") or not bool(getattr(f, "app_ativo", True)):
         return jsonify({"erro": "Funcionario sem acesso ao aplicativo."}), 404
+    
+    # Paginação opcional: limite de 500 mensagens por vez
+    limit = request.args.get("limit", 500, type=int)
+    limit = min(limit, 1000)  # Máximo 1000
+    
     msgs = (
         MensagemApp.query.filter_by(funcionario_id=fid)
         .order_by(MensagemApp.enviado_em.asc())
+        .limit(limit)
         .all()
     )
-    # Marcar mensagens do funcionário como lidas
-    for m in msgs:
-        if not m.de_rh and not m.lida:
-            m.lida = True
-    db.session.commit()
+    
+    # Marcar mensagens do funcionário (não-RH) como lidas em BATCH usando UPDATE
+    if msgs:
+        unread_ids = [m.id for m in msgs if not m.de_rh and not m.lida]
+        if unread_ids:
+            # UPDATE em batch é muito mais rápido que loop + commit
+            db.session.query(MensagemApp).filter(
+                MensagemApp.id.in_(unread_ids)
+            ).update({MensagemApp.lida: True}, synchronize_session=False)
+            db.session.commit()
+    
     audit_event(
         "mensagens_app_visualizar",
         "usuario",
