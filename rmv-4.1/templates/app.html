@@ -2812,6 +2812,22 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-az" onclick="salvarWAConfig()">Salvar configurações</button>
             <button class="btn b-ghv" onclick="testarWA()">Testar conexão</button>
           </div>
+        </div>
+
+        <div class="card" style="margin-top:10px">
+          <div class="card-header"><span class="card-title">Configuração WhatsApp Clientes (Evolution API)</span></div>
+          <div class="f"><label>URL base da Evolution API (Cliente)</label><input id="wa-client-url" placeholder="https://api.suaevolution.com.br"></div>
+          <div class="g2">
+            <div class="f"><label>Nome da Instância (Cliente)</label><input id="wa-client-instancia" placeholder="instancia-clientes"></div>
+            <div class="f"><label>API Key / Token (Cliente)</label><input id="wa-client-token" type="password" placeholder="••••••••••••"></div>
+          </div>
+          <div class="brow" style="justify-content:flex-start">
+            <button class="btn b-az" onclick="salvarWAConfigCliente()">Salvar configurações do cliente</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:10px">
+          <div class="card-header"><span class="card-title">Backup WhatsApp</span></div>
           <div class="g3" style="margin-top:10px">
             <div class="f"><label>Backup automático ativo</label><select id="wa-backup-enabled"><option value="1">Sim</option><option value="0">Não</option></select></div>
             <div class="f"><label>Backup a cada (horas)</label><input id="wa-backup-interval" type="number" min="1" max="168" step="1" value="2"></div>
@@ -16580,6 +16596,9 @@ async function loadWAConfig(){
   document.getElementById('wa-url').value=d.url||'';
   document.getElementById('wa-instancia').value=d.instancia||'';
   document.getElementById('wa-token').value=d.token||'';
+  document.getElementById('wa-client-url').value=d.client_url || d.cliente_url || d.url || '';
+  document.getElementById('wa-client-instancia').value=d.client_instancia || d.cliente_instancia || d.instancia || '';
+  document.getElementById('wa-client-token').value=d.client_token || d.cliente_token || '';
   document.getElementById('wa-backup-enabled').value=(d.backup_enabled||'1').toString();
   document.getElementById('wa-backup-email').value=d.backup_email||'';
   document.getElementById('wa-backup-interval').value=d.backup_interval_hours||'2';
@@ -16602,6 +16621,16 @@ async function salvarWAConfig(){
   };
   const r=await api('/api/config/whatsapp','POST',d);
   showSt('wa-cfg-st',r.erro||'Configurações salvas!',!!r.erro);
+}
+
+async function salvarWAConfigCliente(){
+  const d={
+    client_url: document.getElementById('wa-client-url').value,
+    client_instancia: document.getElementById('wa-client-instancia').value,
+    client_token: document.getElementById('wa-client-token').value,
+  };
+  const r=await api('/api/config/whatsapp','POST',d);
+  showSt('wa-cfg-st',r.erro||'Configurações de clientes salvas!',!!r.erro);
 }
 
 async function testarWA(){

@@ -4147,6 +4147,14 @@ def wa_cfg():
     }
 
 
+def wa_cliente_cfg():
+    return {
+        "url": gc("wa_cliente_url", gc("wa_url", "")),
+        "instancia": gc("wa_cliente_instancia", gc("wa_instancia", "")),
+        "token": gc("wa_cliente_token", gc("wa_token", "")),
+    }
+
+
 def wa_webhook_secret():
     # Segredo dedicado do webhook com fallback no token já existente de integração.
     return (
@@ -35693,6 +35701,7 @@ def api_smtp_testar():
 def api_wa_cfg_get():
     b = wa_backup_cfg()
     token = (gc("wa_token", "") or "").strip()
+    token_cliente = (gc("wa_cliente_token", "") or "").strip()
     webhook_secret = (wa_webhook_secret() or "").strip()
     return jsonify(
         {
@@ -35700,6 +35709,14 @@ def api_wa_cfg_get():
             "instancia": gc("wa_instancia", ""),
             "token": "",
             "has_token": bool(token),
+            "client_url": gc("wa_cliente_url", ""),
+            "client_instancia": gc("wa_cliente_instancia", ""),
+            "client_token": "",
+            "has_client_token": bool(token_cliente),
+            "cliente_url": gc("wa_cliente_url", ""),
+            "cliente_instancia": gc("wa_cliente_instancia", ""),
+            "cliente_token": "",
+            "has_cliente_token": bool(token_cliente),
             "webhook_secret": "",
             "has_webhook_secret": bool(webhook_secret),
             "backup_enabled": b.get("enabled", "1"),
@@ -35718,10 +35735,29 @@ def api_wa_cfg_save():
     for k in ["url", "instancia"]:
         if k in d:
             sc_cfg(f"wa_{k}", str(d[k]))
+
+    for key_name, cfg_key in (
+        ("client_url", "wa_cliente_url"),
+        ("cliente_url", "wa_cliente_url"),
+        ("client_instancia", "wa_cliente_instancia"),
+        ("cliente_instancia", "wa_cliente_instancia"),
+    ):
+        if key_name in d:
+            sc_cfg(cfg_key, str(d[key_name]).strip())
+
     if str(d.get("token_clear", "0")).strip().lower() in ("1", "true", "yes", "on"):
         sc_cfg("wa_token", "")
     elif "token" in d and str(d.get("token", "")).strip():
         sc_cfg("wa_token", str(d.get("token", "")).strip())
+
+    client_token_clear = str(d.get("client_token_clear", "0")).strip().lower()
+    if client_token_clear in ("1", "true", "yes", "on"):
+        sc_cfg("wa_cliente_token", "")
+    elif "client_token" in d and str(d.get("client_token", "")).strip():
+        sc_cfg("wa_cliente_token", str(d.get("client_token", "")).strip())
+    elif "cliente_token" in d and str(d.get("cliente_token", "")).strip():
+        sc_cfg("wa_cliente_token", str(d.get("cliente_token", "")).strip())
+
     if str(d.get("webhook_secret_clear", "0")).strip().lower() in (
         "1",
         "true",
