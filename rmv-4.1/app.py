@@ -4155,6 +4155,19 @@ def wa_cliente_cfg():
     }
 
 
+def wa_cfg_por_tipo(tipo="principal"):
+    tipo = (tipo or "principal").strip().lower()
+    return wa_cliente_cfg() if tipo in ("cliente", "clientes", "client") else wa_cfg()
+
+
+def wa_humano_cfg():
+    return {
+        "enabled": str(gc("wa_humano_enabled", "0")).strip().lower()
+        in ("1", "true", "yes", "on"),
+        "numero": (gc("wa_humano_numero", "") or "").strip(),
+    }
+
+
 def wa_webhook_secret():
     # Segredo dedicado do webhook com fallback no token já existente de integração.
     return (
@@ -4800,7 +4813,7 @@ ENCERRAMENTO
 Ao finalizar fluxos com coleta, gerar resumo técnico em tópicos e encerrar cordialmente."""
 
 
-def wa_send_text(numero, mensagem):
+def wa_send_text(numero, mensagem, tipo="principal", cfg=None):
     def _sanitize_whatsapp_text(raw_text):
         t = str(raw_text or "").replace("\r\n", "\n").replace("\r", "\n")
         # Remove marcacoes markdown que costumam quebrar no WhatsApp.
@@ -4811,9 +4824,9 @@ def wa_send_text(numero, mensagem):
         t = re.sub(r"\n{3,}", "\n\n", t)
         return t.strip()
 
-    cfg = wa_cfg()
+    cfg = cfg or wa_cfg_por_tipo(tipo)
     if not cfg["url"] or not cfg["instancia"]:
-        raise ValueError("WhatsApp nao configurado")
+        raise ValueError(f"WhatsApp {tipo} nao configurado")
     num = wa_norm_number(numero)
     if not wa_is_valid_number(num):
         raise ValueError(f"Numero WhatsApp invalido: {num or 'vazio'}")
@@ -4832,6 +4845,32 @@ def wa_send_text(numero, mensagem):
     except urllib.error.HTTPError as e:
         detalhe = e.read().decode(errors="ignore")
         raise ValueError(f"WhatsApp API {e.code}: {detalhe or e.reason}")
+
+
+def wa_send_text_cliente(numero, mensagem):
+    return wa_send_text(numero, mensagem, tipo="cliente")
+
+
+def wa_forward_para_humano(cliente_numero, conteudo, nome_cliente=None):
+    cfg = wa_humano_cfg()
+    if not cfg.get("enabled"):
+        return False
+    num_humano = (cfg.get("numero") or "").strip()
+    if not num_humano:
+        return False
+    num_humano = wa_norm_number(num_humano)
+    if not wa_is_valid_number(num_humano):
+        raise ValueError(f"Numero do atendente humano invalido: {num_humano or 'vazio'}")
+    cliente = wa_norm_number(cliente_numero)
+    nome = (nome_cliente or "Cliente").strip() or "Cliente"
+    txt = (
+        "Transferência de atendimento para atendente humano\n"
+        f"Cliente: {nome}\n"
+        f"Telefone: {cliente}\n\n"
+        f"Mensagem recebida:\n{str(conteudo or '').strip()[:1500]}"
+    )
+    wa_send_text(num_humano, txt, tipo="principal")
+    return True
 
 
 def _fcm_send_to_token(token, titulo, corpo, data=None):
@@ -35703,6 +35742,7 @@ def api_wa_cfg_get():
     token = (gc("wa_token", "") or "").strip()
     token_cliente = (gc("wa_cliente_token", "") or "").strip()
     webhook_secret = (wa_webhook_secret() or "").strip()
+    cfg_humano = wa_humano_cfg()
     return jsonify(
         {
             "url": gc("wa_url", ""),
@@ -35717,6 +35757,8 @@ def api_wa_cfg_get():
             "cliente_instancia": gc("wa_cliente_instancia", ""),
             "cliente_token": "",
             "has_cliente_token": bool(token_cliente),
+            "humano_enabled": int(cfg_humano["enabled"]),
+            "humano_numero": cfg_humano["numero"],
             "webhook_secret": "",
             "has_webhook_secret": bool(webhook_secret),
             "backup_enabled": b.get("enabled", "1"),
@@ -35749,6 +35791,17 @@ def api_wa_cfg_save():
         sc_cfg("wa_token", "")
     elif "token" in d and str(d.get("token", "")).strip():
         sc_cfg("wa_token", str(d.get("token", "")).strip())
+
+    if "humano_enabled" in d:
+        sc_cfg(
+            "wa_humano_enabled",
+            "1"
+            if str(d.get("humano_enabled", "0")).strip().lower()
+            in ("1", "true", "yes", "on")
+            else "0",
+        )
+    if "humano_numero" in d:
+        sc_cfg("wa_humano_numero", str(d.get("humano_numero", "")).strip())
 
     client_token_clear = str(d.get("client_token_clear", "0")).strip().lower()
     if client_token_clear in ("1", "true", "yes", "on"):
@@ -36078,10 +36131,11 @@ def api_wa_send():
     d = request.json or {}
     numero = (d.get("numero") or "").strip()
     texto = (d.get("texto") or "").strip()
+    tipo = str(d.get("tipo") or "principal").strip().lower()
     if not numero or not texto:
         return jsonify({"erro": "numero e texto obrigatorios"}), 400
     try:
-        wa_send_text(numero, texto)
+        wa_send_text(numero, texto, tipo=tipo)
     except Exception as e:
         return jsonify({"erro": str(e)}), 500
     c = WhatsAppConversa.query.filter_by(numero=numero).first()
@@ -36097,6 +36151,21 @@ def api_wa_send():
     )
     db.session.commit()
     wa_ai_pause_for(numero, 2)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/whatsapp/send-cliente", methods=["POST"])
+@lr
+def api_wa_send_cliente():
+    d = request.json or {}
+    numero = (d.get("numero") or "").strip()
+    texto = (d.get("texto") or "").strip()
+    if not numero or not texto:
+        return jsonify({"erro": "numero e texto obrigatorios"}), 400
+    try:
+        wa_send_text_cliente(numero, texto)
+    except Exception as e:
+        return jsonify({"erro": str(e)}), 500
     return jsonify({"ok": True})
 
 
@@ -36479,6 +36548,17 @@ def webhook_whatsapp():
                         "Auto-reply WhatsApp inativo para %s: configuracao incompleta",
                         numero,
                     )
+                try:
+                    cfg_humano = wa_humano_cfg()
+                    if cfg_humano.get("enabled"):
+                        try:
+                            wa_forward_para_humano(numero, conteudo, msg_data.get("pushName") or msg_data.get("notifyName") or "Cliente")
+                        except Exception as e:
+                            diag["erros"].append(f"Falha encaminhamento para atendente humano: {str(e)}")
+                            app.logger.warning("[wa] falha encaminhamento humano: %s", e)
+                except Exception as e:
+                    diag["erros"].append(f"Erro ao preparar encaminhamento humano: {str(e)}")
+
                 if ai_wa_enabled() and wa_ready and not wa_ai_pause_active(numero):
                     if _ai_upstream_block_active():
                         msg_bl = f"Auto-reply em pausa temporaria (falha upstream IA): {_ai_upstream_block_reason()}"

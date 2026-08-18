@@ -2827,6 +2827,17 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
 
         <div class="card" style="margin-top:10px">
+          <div class="card-header"><span class="card-title">Encaminhamento para atendente humano</span></div>
+          <div class="g2">
+            <div class="f"><label>Ativar encaminhamento</label><select id="wa-humano-enabled"><option value="0">Não</option><option value="1">Sim</option></select></div>
+            <div class="f"><label>Número do atendente humano</label><input id="wa-humano-numero" placeholder="5511999998888"></div>
+          </div>
+          <div class="brow" style="justify-content:flex-start">
+            <button class="btn b-az" onclick="salvarWAConfigHumano()">Salvar encaminhamento</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:10px">
           <div class="card-header"><span class="card-title">Backup WhatsApp</span></div>
           <div class="g3" style="margin-top:10px">
             <div class="f"><label>Backup automático ativo</label><select id="wa-backup-enabled"><option value="1">Sim</option><option value="0">Não</option></select></div>
@@ -16599,6 +16610,8 @@ async function loadWAConfig(){
   document.getElementById('wa-client-url').value=d.client_url || d.cliente_url || d.url || '';
   document.getElementById('wa-client-instancia').value=d.client_instancia || d.cliente_instancia || d.instancia || '';
   document.getElementById('wa-client-token').value=d.client_token || d.cliente_token || '';
+  document.getElementById('wa-humano-enabled').value=(d.humano_enabled || '0').toString();
+  document.getElementById('wa-humano-numero').value=d.humano_numero || '';
   document.getElementById('wa-backup-enabled').value=(d.backup_enabled||'1').toString();
   document.getElementById('wa-backup-email').value=d.backup_email||'';
   document.getElementById('wa-backup-interval').value=d.backup_interval_hours||'2';
@@ -16631,6 +16644,15 @@ async function salvarWAConfigCliente(){
   };
   const r=await api('/api/config/whatsapp','POST',d);
   showSt('wa-cfg-st',r.erro||'Configurações de clientes salvas!',!!r.erro);
+}
+
+async function salvarWAConfigHumano(){
+  const d={
+    humano_enabled: document.getElementById('wa-humano-enabled').value,
+    humano_numero: document.getElementById('wa-humano-numero').value,
+  };
+  const r=await api('/api/config/whatsapp','POST',d);
+  showSt('wa-cfg-st',r.erro||'Encaminhamento para atendente humano salvo!',!!r.erro);
 }
 
 async function testarWA(){
