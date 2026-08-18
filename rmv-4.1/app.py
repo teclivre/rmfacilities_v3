@@ -4855,20 +4855,54 @@ def wa_forward_para_humano(cliente_numero, conteudo, nome_cliente=None):
     cfg = wa_humano_cfg()
     if not cfg.get("enabled"):
         return False
+    num_cliente = wa_norm_number(cliente_numero)
+    if not num_cliente:
+        return False
+    if _funcionario_por_whatsapp(num_cliente):
+        return False
     num_humano = (cfg.get("numero") or "").strip()
     if not num_humano:
         return False
     num_humano = wa_norm_number(num_humano)
     if not wa_is_valid_number(num_humano):
         raise ValueError(f"Numero do atendente humano invalido: {num_humano or 'vazio'}")
-    cliente = wa_norm_number(cliente_numero)
+    cliente = wa_norm_number(num_cliente)
     nome = (nome_cliente or "Cliente").strip() or "Cliente"
-    txt = (
-        "Transferência de atendimento para atendente humano\n"
-        f"Cliente: {nome}\n"
-        f"Telefone: {cliente}\n\n"
-        f"Mensagem recebida:\n{str(conteudo or '').strip()[:1500]}"
-    )
+    raw = str(conteudo or "").strip()
+    linha = []
+    linha.append("Perfeito! Registrei suas informações e vou encaminhar para o nosso responsável.")
+    linha.append("")
+    linha.append("Resumo do atendimento:")
+    linha.append("* Fluxo: Cliente")
+
+    nome_extra = ""
+    if re.search(r"(?im)^\s*nome\s*[:\-]\s*(.+)$", raw):
+        nome_extra = re.search(r"(?im)^\s*nome\s*[:\-]\s*(.+)$", raw).group(1).strip()
+    if nome_extra:
+        nome = nome_extra
+    linha.append(f"* Nome: {nome}")
+
+    for padrao, label in (
+        (r"(?im)^\s*serviço\s*[:\-]\s*(.+)$", "Serviço"),
+        (r"(?im)^\s*servico\s*[:\-]\s*(.+)$", "Serviço"),
+        (r"(?im)^\s*cidade\s*[:\-]\s*(.+)$", "Cidade"),
+        (r"(?im)^\s*detalhes\s*principais\s*[:\-]\s*(.+)$", "Detalhes principais"),
+        (r"(?im)^\s*documento\s*[:\-]\s*(.+)$", "Documento"),
+        (r"(?im)^\s*e-mail\s*[:\-]\s*(.+)$", "E-mail"),
+        (r"(?im)^\s*email\s*[:\-]\s*(.+)$", "E-mail"),
+        (r"(?im)^\s*telefone\s*[:\-]\s*(.+)$", "Telefone"),
+    ):
+        m = re.search(padrao, raw)
+        if m:
+            linha.append(f"* {label}: {m.group(1).strip()}")
+
+    if not any("* Telefone:" in ln for ln in linha):
+        linha.append(f"* Telefone: {cliente}")
+
+    linha.append("")
+    linha.append("Nosso time entrará em contato em breve. Agradecemos seu interesse nos serviços da RM Facilities! Tenha um ótimo dia.")
+
+    txt = "\n".join(linha)
     wa_send_text(num_humano, txt, tipo="principal")
     return True
 
@@ -36552,9 +36586,18 @@ def webhook_whatsapp():
                     cfg_humano = wa_humano_cfg()
                     if cfg_humano.get("enabled"):
                         try:
-                            wa_forward_para_humano(numero, conteudo, msg_data.get("pushName") or msg_data.get("notifyName") or "Cliente")
+                            if not _funcionario_por_whatsapp(numero):
+                                wa_forward_para_humano(
+                                    numero,
+                                    conteudo,
+                                    msg_data.get("pushName")
+                                    or msg_data.get("notifyName")
+                                    or "Cliente",
+                                )
                         except Exception as e:
-                            diag["erros"].append(f"Falha encaminhamento para atendente humano: {str(e)}")
+                            diag["erros"].append(
+                                f"Falha encaminhamento para atendente humano: {str(e)}"
+                            )
                             app.logger.warning("[wa] falha encaminhamento humano: %s", e)
                 except Exception as e:
                     diag["erros"].append(f"Erro ao preparar encaminhamento humano: {str(e)}")
