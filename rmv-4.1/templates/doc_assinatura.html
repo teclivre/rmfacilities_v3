@@ -101,7 +101,7 @@
 
             <div class="doc-actions-sticky">
               <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
-                <button class="public-btn public-btn-primary" id="btn-solicitar-otp" type="button" onclick="solicitarOtp()">Solicitar código OTP</button>
+                <button class="public-btn public-btn-primary" id="btn-solicitar-otp" type="button" onclick="solicitarOtp()">Enviar assinatura</button>
               </div>
             </div>
 
@@ -231,7 +231,7 @@
         if(!r.ok||d.erro){
           msg.className='public-msg err';
           msg.textContent=erroAmigavel(d.erro||'Não foi possível enviar o OTP.');
-          SignatureCommon.buttonState(btn,'Solicitar código OTP',false);
+          SignatureCommon.buttonState(btn,'Enviar assinatura',false);
           return;
         }
         msg.className='public-msg ok';
@@ -243,7 +243,7 @@
       }catch(e){
         msg.className='public-msg err';
         msg.textContent='Falha de conexão ao enviar OTP.';
-        SignatureCommon.buttonState(btn,'Solicitar código OTP',false);
+        SignatureCommon.buttonState(btn,'Enviar assinatura',false);
       }
     }
 
