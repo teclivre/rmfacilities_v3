@@ -10348,6 +10348,10 @@ body{font-family:Arial,sans-serif;font-size:10.5pt;color:#222;background:#f0f4f8
     <div class="ass-bloco"><div class="ass-linha"></div><div class="ass-nome">Representante da Empresa<br>${_escHtml(empNome)}</div></div>
     <div class="ass-bloco"><div class="ass-linha"></div><div class="ass-nome"><strong>${_escHtml(f.nome||'')}</strong><br>Assinatura do Colaborador</div></div>
   </div>
+  <div class="assinaturas" style="margin-top:18px;gap:20px">
+    <div class="ass-bloco"><div class="ass-linha" style="width:88%"></div><div class="ass-nome">1ª Testemunha</div></div>
+    <div class="ass-bloco"><div class="ass-linha" style="width:88%"></div><div class="ass-nome">2ª Testemunha</div></div>
+  </div>
   <div class="rodape">Prévia gerada em ${hoje} · ${_escHtml(empNome)} — Gestão de RH</div>
 </div></body></html>`;
   const blob = new Blob([html], {type:'text/html;charset=utf-8'});
