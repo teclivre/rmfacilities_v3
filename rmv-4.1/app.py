@@ -14682,6 +14682,55 @@ def _gerar_advertencia_pdf(
         )
     )
 
+    witness_data = [
+        [
+            Paragraph(
+                "_" * 30,
+                ParagraphStyle(
+                    "a", fontName="Helvetica", fontSize=9, alignment=TA_CENTER
+                ),
+            ),
+            Paragraph(
+                "_" * 30,
+                ParagraphStyle(
+                    "a", fontName="Helvetica", fontSize=9, alignment=TA_CENTER
+                ),
+            ),
+        ],
+        [
+            Paragraph(
+                "1ª Testemunha",
+                ParagraphStyle(
+                    "a3",
+                    fontName="Helvetica",
+                    fontSize=8,
+                    textColor=colors.HexColor("#555"),
+                    alignment=TA_CENTER,
+                ),
+            ),
+            Paragraph(
+                "2ª Testemunha",
+                ParagraphStyle(
+                    "a3",
+                    fontName="Helvetica",
+                    fontSize=8,
+                    textColor=colors.HexColor("#555"),
+                    alignment=TA_CENTER,
+                ),
+            ),
+        ],
+    ]
+    witness_table = Table(witness_data, colWidths=[8.8 * cm, 8.8 * cm])
+    witness_table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+
     elems = [
         hdr_table,
         Spacer(1, 0.35 * cm),
@@ -14741,6 +14790,8 @@ def _gerar_advertencia_pdf(
         HRFlowable(width="100%", thickness=0.5, color=cor_header),
         Spacer(1, 0.3 * cm),
         ass_table,
+        Spacer(1, 0.5 * cm),
+        witness_table,
         Spacer(1, 0.3 * cm),
         Paragraph(f"Gerado automaticamente em {data_hoje} · {emp_nome}", st_rod),
     ]
