@@ -10467,14 +10467,18 @@ function previaAvisoPrevio() {
   const calcAnos = document.getElementById('ap-calc-anos')?.textContent?.trim();
   const calcAdm  = document.getElementById('ap-calc-adm')?.textContent?.trim();
   const calcExtras = document.getElementById('ap-calc-extras')?.textContent?.trim() || '0';
-  const totalDias = parseInt(calcDias) || 30;
+  const totalDias = (tipo === 'termino_contrato') ? 0 : (parseInt(calcDias) || 30);
   const diasAdic = parseInt(calcExtras) || 0;
   // Data fim
   let dataFimFmt = '';
   if (dataAviso) {
-    const dt = new Date(dataAviso + 'T12:00:00');
-    dt.setDate(dt.getDate() + totalDias);
-    dataFimFmt = dt.toLocaleDateString('pt-BR');
+    if (tipo === 'termino_contrato') {
+      dataFimFmt = new Date(dataAviso + 'T12:00:00').toLocaleDateString('pt-BR');
+    } else {
+      const dt = new Date(dataAviso + 'T12:00:00');
+      dt.setDate(dt.getDate() + totalDias);
+      dataFimFmt = dt.toLocaleDateString('pt-BR');
+    }
   }
   const dataAvisoFmt = dataAviso ? new Date(dataAviso + 'T12:00:00').toLocaleDateString('pt-BR') : hoje;
   const TIPOS_AP = {

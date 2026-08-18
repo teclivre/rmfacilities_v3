@@ -14945,6 +14945,8 @@ def _gerar_aviso_previo_pdf(
     # funcionário que pediu demissão, permitindo desconto indevido na resc.
     if tipo == "pedido_demissao":
         total_dias = 30
+    elif tipo == "termino_contrato":
+        total_dias = 0
     # BUG-FIX: usar comparação de tuplas para anos_servico (idem //365).
     if dt_adm and dt_aviso >= dt_adm:
         anos_servico = dt_aviso.year - dt_adm.year - (
@@ -14954,7 +14956,7 @@ def _gerar_aviso_previo_pdf(
             anos_servico = 0
     else:
         anos_servico = 0
-    dias_adicionais = total_dias - 30
+    dias_adicionais = max(total_dias - 30, 0)
     # BUG-FIX: para termino_contrato não há aviso prévio — último dia = data do
     # aviso (data acordada de vencimento do contrato). Para os demais tipos, o
     # dia da comunicação conta como dia 1 do aviso, então fim = aviso + (N-1),
@@ -15411,6 +15413,8 @@ def api_calcular_aviso_previo(id):
     # (Lei 12.506 é benefício apenas do empregado). UI deve refletir o mesmo.
     if tipo_q == "pedido_demissao":
         total_dias = 30
+    elif tipo_q == "termino_contrato":
+        total_dias = 0
     anos = 0
     data_adm_fmt = ""
     try:
@@ -15514,6 +15518,8 @@ def api_funcionario_gerar_aviso_previo(id):
     total_dias = _calcular_aviso_previo_dias(f.data_admissao, data_ref=dt_aviso_audit)
     if tipo == "pedido_demissao":
         total_dias = 30  # ver comentário no PDF (Lei 12.506 é do empregado)
+    elif tipo == "termino_contrato":
+        total_dias = 0
     # BUG-FIX: detectar duplicidade — se já existe um aviso prévio gerado
     # hoje para este colaborador (qualquer tipo), exigir flag 'forcar' no
     # body. Antes cada clique no botão salvava novo PDF + registro DB,
