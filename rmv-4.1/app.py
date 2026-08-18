@@ -14945,7 +14945,7 @@ def _gerar_aviso_previo_pdf(
     # funcionário que pediu demissão, permitindo desconto indevido na resc.
     if tipo == "pedido_demissao":
         total_dias = 30
-    elif tipo == "termino_contrato":
+    elif tipo in ("termino_contrato", "empresa_antecipado"):
         total_dias = 0
     # BUG-FIX: usar comparação de tuplas para anos_servico (idem //365).
     if dt_adm and dt_aviso >= dt_adm:
@@ -14961,9 +14961,11 @@ def _gerar_aviso_previo_pdf(
     # aviso (data acordada de vencimento do contrato). Para os demais tipos, o
     # dia da comunicação conta como dia 1 do aviso, então fim = aviso + (N-1),
     # não aviso + N (que dava 1 dia a mais e divergia da prévia JS).
-    if tipo == "termino_contrato":
+    if tipo in ("termino_contrato", "empresa_antecipado"):
+        # Para estes cenários, o vínculo encerra na própria data do aviso,
+        # sem prazo de 30 dias de aviso prévio.
         dt_fim = dt_aviso
-    elif tipo in ("pedido_demissao", "funcionario_antecipado", "empresa_antecipado") and demissao_aviso == "nao_cumprira":
+    elif tipo in ("pedido_demissao", "funcionario_antecipado") and demissao_aviso == "nao_cumprira":
         # Não há período a cumprir: vínculo encerra na data do próprio aviso;
         # o desconto será registrado nas verbas rescisórias (art. 487 §2º CLT).
         dt_fim = dt_aviso
@@ -15180,15 +15182,15 @@ def _gerar_aviso_previo_pdf(
             f"colaborador(a) <b>{func_nome}</b>, RE/Mat. <b>{func_re}</b>, portador(a) do CPF nº <b>{func_cpf}</b>, "
             f"ocupante do cargo de <b>{func_cargo}</b>, admitido(a) em <b>{data_adm_fmt}</b>, "
             f"a rescisão antecipada de seu contrato de trabalho, <b>sem justa causa</b>, "
-            f"nos termos do art. 7º, I da Constituição Federal c/c arts. 477, 479 e 480 da CLT."
+            f"com encerramento na própria data do aviso, sem prazo de 30 dias."
         )
         texto_prazo = (
-            f"A empresa comunicaa ao(à) colaborador(a) o término do contrato de trabalho a partir de <b>{data_aviso_fmt}</b>. "
-            f"Considerando <b>{anos_servico} ano(s)</b> de serviço prestado, o(a) colaborador(a) faz jus à <b>indenização integral</b> "
-            f"compreendendo: (i) saldo de salário; (ii) férias vencidas acrescidas do terço constitucional (se houver); "
-            f"(iii) férias proporcionais acrescidas do terço constitucional; (iv) 13º salário proporcional; "
-            f"(v) aviso prévio indenizado de {total_dias} dias; e (vi) multa de 50% sobre o saldo da conta do FGTS "
-            f"(art. 480, parágrafo único, da CLT). As verbas rescisórias serão pagas conforme determinação legal."
+            f"O vínculo empregatício será encerrado na data de <b>{data_fim_fmt}</b>, sem necessidade de aviso prévio de "
+            f"30 dias, conforme as condições dessa rescisão antecipada. Considerando <b>{anos_servico} ano(s)</b> de serviço prestado, "
+            f"o(a) colaborador(a) faz jus à <b>indenização integral</b> compreendendo: (i) saldo de salário; "
+            f"(ii) férias vencidas acrescidas do terço constitucional (se houver); (iii) férias proporcionais acrescidas do terço constitucional; "
+            f"(iv) 13º salário proporcional; (v) multa de 50% sobre o saldo da conta do FGTS (art. 480, parágrafo único, da CLT). "
+            f"As verbas rescisórias serão pagas conforme determinação legal."
         )
     elif tipo == "termino_contrato":
         texto_intro = (
@@ -15413,7 +15415,7 @@ def api_calcular_aviso_previo(id):
     # (Lei 12.506 é benefício apenas do empregado). UI deve refletir o mesmo.
     if tipo_q == "pedido_demissao":
         total_dias = 30
-    elif tipo_q == "termino_contrato":
+    elif tipo_q in ("termino_contrato", "empresa_antecipado"):
         total_dias = 0
     anos = 0
     data_adm_fmt = ""
@@ -15518,7 +15520,7 @@ def api_funcionario_gerar_aviso_previo(id):
     total_dias = _calcular_aviso_previo_dias(f.data_admissao, data_ref=dt_aviso_audit)
     if tipo == "pedido_demissao":
         total_dias = 30  # ver comentário no PDF (Lei 12.506 é do empregado)
-    elif tipo == "termino_contrato":
+    elif tipo in ("termino_contrato", "empresa_antecipado"):
         total_dias = 0
     # BUG-FIX: detectar duplicidade — se já existe um aviso prévio gerado
     # hoje para este colaborador (qualquer tipo), exigir flag 'forcar' no

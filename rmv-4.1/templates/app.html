@@ -10467,12 +10467,12 @@ function previaAvisoPrevio() {
   const calcAnos = document.getElementById('ap-calc-anos')?.textContent?.trim();
   const calcAdm  = document.getElementById('ap-calc-adm')?.textContent?.trim();
   const calcExtras = document.getElementById('ap-calc-extras')?.textContent?.trim() || '0';
-  const totalDias = (tipo === 'termino_contrato') ? 0 : (parseInt(calcDias) || 30);
+  const totalDias = (tipo === 'termino_contrato' || tipo === 'empresa_antecipado') ? 0 : (parseInt(calcDias) || 30);
   const diasAdic = parseInt(calcExtras) || 0;
   // Data fim
   let dataFimFmt = '';
   if (dataAviso) {
-    if (tipo === 'termino_contrato') {
+    if (tipo === 'termino_contrato' || tipo === 'empresa_antecipado') {
       dataFimFmt = new Date(dataAviso + 'T12:00:00').toLocaleDateString('pt-BR');
     } else {
       const dt = new Date(dataAviso + 'T12:00:00');
@@ -10538,6 +10538,15 @@ function previaAvisoPrevio() {
       de <strong>${dataAvisoFmt}</strong> a <strong>${dataFimFmt||'—'}</strong>,
       salvo dispensa expressa da empresa.`;
     textoBaseLegal = 'Art. 487, §2º CLT; Lei 12.506/2011.';
+  } else if (tipo === 'empresa_antecipado') {
+    textoIntro = `A empresa <strong>${_escHtml(empNome)}</strong> comunica ao(à) colaborador(a)
+      <strong>${_escHtml(f.nome||'')}</strong>, RE <strong>${_escHtml(String(f.re||''))}</strong>,
+      admitido(a) em <strong>${admFmt}</strong>, que a rescisão antecipada do contrato ocorrerá na própria data do aviso,
+      <strong>sem prazo de 30 dias</strong>, nos termos do art. 477 e seguintes da CLT.`;
+    textoPrazo = `O vínculo empregatício será encerrado na data de <strong>${dataFimFmt||dataAvisoFmt}</strong>,
+      sem necessidade de aviso prévio de 30 dias, e as verbas rescisórias (saldo de salário, 13º proporcional,
+      férias + 1/3, FGTS e demais parcelas) serão pagas no prazo legal.`;
+    textoBaseLegal = 'Arts. 477–480 CLT; art. 7º, I CF/1988.';
   } else {  // termino_contrato
     textoIntro = `A empresa <strong>${_escHtml(empNome)}</strong> comunica ao(à) colaborador(a)
       <strong>${_escHtml(f.nome||'')}</strong>, RE <strong>${_escHtml(String(f.re||''))}</strong>,
