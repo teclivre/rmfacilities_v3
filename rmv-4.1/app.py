@@ -11255,6 +11255,11 @@ def _status_norm(v):
     return txt
 
 
+def _status_permite_ponto(status):
+    st = _status_norm(status or "Ativo")
+    return st in ("ativo", "aviso_previo", "aviso previo")
+
+
 def _aplicar_regra_jornada_por_status(funcionario):
     """Regras automáticas de vínculo em jornada:
     - Demitido/Inativo: sempre sem jornada.
@@ -20670,9 +20675,9 @@ def api_app_ponto_marcar_me():
             {"erro": "Você está de férias e não pode registrar ponto neste período. Em caso de dúvida, contate o RH."}
         ), 400
     status_atual = _status_norm(f.status or "Ativo")
-    if status_atual != "ativo":
+    if not _status_permite_ponto(f.status):
         return jsonify(
-            {"erro": "Somente funcionários ativos podem registrar ponto."}
+            {"erro": "Somente funcionários ativos ou em aviso prévio podem registrar ponto."}
         ), 400
     dados = request.json or {}
     # Verificar se há atestado/afastamento ativo para hoje
@@ -20939,8 +20944,8 @@ def api_app_ponto_marcar_qr_me():
     if _app_funcionario_em_ferias_na_data(f, hoje_ref):
         return jsonify({"erro": "Você está de férias e não pode registrar ponto neste período."}), 400
     status_atual = _status_norm(f.status or "Ativo")
-    if status_atual != "ativo":
-        return jsonify({"erro": "Somente funcionários ativos podem registrar ponto."}), 400
+    if not _status_permite_ponto(f.status):
+        return jsonify({"erro": "Somente funcionários ativos ou em aviso prévio podem registrar ponto."}), 400
     dados = request.json or {}
     # Verificar afastamento/atestado ativo
     data_hoje = utcnow().date().strftime("%Y-%m-%d")
