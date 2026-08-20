@@ -18203,9 +18203,19 @@ def api_app_log():
     return jsonify({"ok": True, "salvos": salvos})
 
 
-@app.route("/api/admin/logs/app")
+@app.route("/api/admin/logs/app", methods=["GET", "DELETE"])
 @lr
 def api_admin_logs_app():
+    if request.method == "DELETE":
+        try:
+            deleted = AppLog.query.delete()
+            db.session.commit()
+            return jsonify({"ok": True, "apagados": deleted})
+        except Exception as ex:
+            db.session.rollback()
+            app.logger.exception("Falha ao limpar logs do app: %s", ex)
+            return jsonify({"erro": "Nao foi possivel limpar os logs do app."}), 500
+
     nivel = (request.args.get("nivel") or "").upper()
     limit = min(int(request.args.get("limit") or 200), 500)
     q = AppLog.query

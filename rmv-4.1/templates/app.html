@@ -5666,7 +5666,7 @@ function nav(id,el,force=false){
   }
   if(targetId==='empresas')renderEmps();
   if(targetId==='usuarios')renderUsr();
-  if(targetId==='config'){loadConfig();ocCarregarCatalogoItens();}
+  if(targetId==='config'){loadConfig(); logsCarregar(); ocCarregarCatalogoItens();}
   if(targetId==='rh'){
     renderFuncionarios();
     painelAssInicializar();
@@ -7585,6 +7585,7 @@ async function loadConfig(){
   document.getElementById('cfg-app-version-atual').value=d.app_version_atual||d.app_version_minima||'14';
   document.getElementById('cfg-app-version-cooldown').value=d.app_version_notif_cooldown_h||'24';
   document.getElementById('cfg-app-download-url').value=d.app_download_url||'';
+  try { logsCarregar(); } catch (e) { console.warn('Não foi possível carregar os logs do app:', e); }
 }
 
 async function salvarConfig(){
@@ -7607,13 +7608,15 @@ async function logsCarregar(){
   const nivel=(document.getElementById('logs-nivel')?.value||'').trim();
   const st=document.getElementById('logs-st');
   const body=document.getElementById('logs-tb-body');
+  const limparBtn=document.getElementById('logs-limpar-btn');
   if(st){st.textContent='Carregando…';st.style.display='';}
   try{
     const params=nivel?`?nivel=${encodeURIComponent(nivel)}&limit=200`:'?limit=200';
     const r=await api('/api/admin/logs/app'+params);
-    if(r.erro){if(st){st.textContent=r.erro;st.style.display='';}return;}
+    if(r.erro){if(st){st.textContent=r.erro;st.style.display='';}if(limparBtn) limparBtn.style.display='none';return;}
     const logs=r.logs||[];
     if(st){st.style.display='none';}
+    if(limparBtn) limparBtn.style.display=logs.length ? '' : 'none';
     if(!logs.length){body.innerHTML='<tr><td colspan="6" style="padding:16px;text-align:center;color:var(--text-muted)">Nenhum log encontrado.</td></tr>';return;}
     body.innerHTML=logs.map(l=>{
       const cor=_logsNivelCores[l.nivel]||'#666';
@@ -7628,7 +7631,7 @@ async function logsCarregar(){
         <td style="padding:6px 8px;white-space:nowrap;font-size:11px">${esc(l.versao_app||'')}</td>
       </tr>`;
     }).join('');
-  }catch(e){if(st){st.textContent='Erro ao carregar logs: '+e;st.style.display='';}}
+  }catch(e){if(st){st.textContent='Erro ao carregar logs: '+e;st.style.display='';}if(limparBtn) limparBtn.style.display='none';}
 }
 async function logsLimpar(){
   if(!confirm('Excluir TODOS os logs do app? Esta ação é irreversível.'))return;
