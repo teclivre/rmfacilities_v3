@@ -20839,6 +20839,21 @@ def api_app_ponto_dia_me():
             f"[ponto-dia] erro ao gerar resumo fid={f.id} data={data_ref}: {ex}",
             exc_info=True,
         )
+        # Registra o traceback real no AppLog para diagnostico via Administracao > Logs do App
+        # (o app so envia a mensagem generica ao usuario, sem detalhe do erro no servidor).
+        try:
+            db.session.add(
+                AppLog(
+                    funcionario_id=f.id,
+                    nivel="ERROR",
+                    tag="server_ponto_dia",
+                    mensagem=str(ex)[:2000],
+                    stack=traceback.format_exc()[:4000],
+                )
+            )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
         return jsonify(
             {
                 "ok": False,

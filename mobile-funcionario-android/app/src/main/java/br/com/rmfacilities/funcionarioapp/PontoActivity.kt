@@ -657,7 +657,7 @@ class PontoActivity : BaseActivity() {
                     updateStatus("Atualizado agora.", R.color.mobile_semantic_info)
                 } else {
                     if (!resp.erro.isNullOrBlank()) {
-                        TelemetryLogger.e("ponto_carregar", resp.erro)
+                        TelemetryLogger.logRespostaErro("ponto_carregar", resp.erro)
                     }
                     // Em caso de falha: restaura do cache para não sumir as marcações
                     restaurarCacheMarcacoes()

@@ -358,8 +358,9 @@ class ActionRetryQueue(context: Context) {
                             } else {
                                 val drop = shouldDropPontoByBusinessError(resp.erro)
                                 if (drop) {
+                                    // Duplicidade detectada e tratada (ponto já sincronizado) — não é uma falha real.
                                     try {
-                                        TelemetryLogger.e(TAG, "drop_ponto_offline_business_error: ${resp.erro ?: "erro_desconhecido"}")
+                                        TelemetryLogger.w(TAG, "drop_ponto_offline_business_error: ${resp.erro ?: "erro_desconhecido"}")
                                     } catch (_: Exception) {}
                                 }
                                 drop

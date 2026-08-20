@@ -68,6 +68,25 @@ object TelemetryLogger {
         enqueue("INFO", tag, msg, null)
     }
 
+    // Erros de rede/sessão são esperados e recuperáveis; não devem poluir os logs como ERROR.
+    private val transientPatterns = listOf(
+        "unable to resolve host", "failed to connect", "timeout", "timed out",
+        "network is unreachable", "software caused connection abort",
+        "connection reset", "no address associated with hostname", "sess\u00e3o expirada"
+    )
+
+    fun isTransient(msg: String?): Boolean {
+        if (msg.isNullOrBlank()) return false
+        val norm = msg.lowercase()
+        return transientPatterns.any { norm.contains(it) }
+    }
+
+    /** Loga como WARN se for erro transitório (rede/sessão) e como ERROR nos demais casos. */
+    fun logRespostaErro(tag: String, msg: String?) {
+        if (msg.isNullOrBlank()) return
+        if (isTransient(msg)) w(tag, msg) else e(tag, msg)
+    }
+
     private fun enqueue(nivel: String, tag: String, mensagem: String, stack: String?) {
         val entry = mutableMapOf<String, Any>(
             "nivel" to nivel,
