@@ -1,4 +1,4 @@
-const CACHE_NAME = "rmfacilities-v1";
+const CACHE_NAME = "rmfacilities-v2";
 const CORE_ASSETS = [
   "/",
   "/static/css/main.css",
@@ -45,19 +45,18 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Network-first para CSS/JS/manifest: evita que uma versao antiga fique
+  // presa em cache "para sempre" apos um deploy (bug cronico de layout
+  // quebrado/desatualizado). O cache so serve como fallback offline.
   event.respondWith(
-    caches.match(req).then((cached) => {
-      if (cached) {
-        return cached;
-      }
-      return fetch(req).then((response) => {
-        if (!response || response.status !== 200 || response.type !== "basic") {
-          return response;
+    fetch(req)
+      .then((response) => {
+        if (response && response.status === 200 && response.type === "basic") {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
         }
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
         return response;
-      });
-    })
+      })
+      .catch(() => caches.match(req))
   );
 });
