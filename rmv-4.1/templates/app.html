@@ -742,6 +742,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <a class="nav-item lv2" onclick="nav('empresas',this)"><span class="nav-label">Empresas</span></a>
           <a class="nav-item lv2" onclick="nav('usuarios',this)"><span class="nav-label">Usuarios</span></a>
           <a class="nav-item lv2" onclick="nav('config',this)"><span class="nav-label">Configuracoes</span></a>
+          <a class="nav-item lv2" onclick="nav('logs-app',this)"><span class="nav-label">Logs do App</span></a>
         </div>
       </div>
     </div>
@@ -4234,9 +4235,12 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
         </div>
       </div>
+    </div>
+
+    <div id="pg-logs-app" class="pg">
       <div class="card">
         <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-          <span class="card-title">📋 Logs do Sistema</span>
+          <span class="card-title">📋 Logs de Erros do Aplicativo</span>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <select id="logs-nivel" onchange="logsCarregar()" style="padding:6px 10px;border:1px solid var(--borda);border-radius:6px;font-size:12px">
               <option value="">Todos</option>
@@ -5638,7 +5642,8 @@ function nav(id,el,force=false){
   // Lógica padrão
   const targetId=id;
   const acessoDocumentosComercial = id==='documentos' && USER_AREAS.includes('clientes');
-  if(P!=='dono' && USER_AREAS.length && !USER_AREAS.includes(id) && id!=='dashboard' && !(id==='controle-ponto' && USER_AREAS.includes('rh')) && !acessoDocumentosComercial){
+  const acessoLogsApp = id==='logs-app' && USER_AREAS.includes('config');
+  if(P!=='dono' && USER_AREAS.length && !USER_AREAS.includes(id) && id!=='dashboard' && !(id==='controle-ponto' && USER_AREAS.includes('rh')) && !acessoDocumentosComercial && !acessoLogsApp){
     alert('Seu usuário não tem acesso a esta área.');
     return;
   }
@@ -5666,7 +5671,8 @@ function nav(id,el,force=false){
   }
   if(targetId==='empresas')renderEmps();
   if(targetId==='usuarios')renderUsr();
-  if(targetId==='config'){loadConfig(); logsCarregar(); ocCarregarCatalogoItens();}
+  if(targetId==='config'){loadConfig(); ocCarregarCatalogoItens();}
+  if(targetId==='logs-app'){logsCarregar();}
   if(targetId==='rh'){
     renderFuncionarios();
     painelAssInicializar();
@@ -7585,7 +7591,6 @@ async function loadConfig(){
   document.getElementById('cfg-app-version-atual').value=d.app_version_atual||d.app_version_minima||'14';
   document.getElementById('cfg-app-version-cooldown').value=d.app_version_notif_cooldown_h||'24';
   document.getElementById('cfg-app-download-url').value=d.app_download_url||'';
-  try { logsCarregar(); } catch (e) { console.warn('Não foi possível carregar os logs do app:', e); }
 }
 
 async function salvarConfig(){

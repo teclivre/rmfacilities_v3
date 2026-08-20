@@ -3544,7 +3544,7 @@ def _send_signature_otp(
     )
 
 
-def _send_app_login_otp(codigo, funcionario, canal_override=None):
+def _send_app_login_otp(codigo, funcionario, canal_override=None, validade_texto="10 minutos"):
     """Envia OTP de login/step-up pelo canal preferido do funcionário (whatsapp, sms, email)."""
     f = funcionario
     nome = (f.nome or "funcionario").strip()
@@ -3552,7 +3552,7 @@ def _send_app_login_otp(codigo, funcionario, canal_override=None):
         "RM Facilities - Codigo de acesso\n"
         f"Funcionario: {nome}\n"
         f"Codigo: {codigo}\n"
-        "Validade: 10 minutos. Nao compartilhe este codigo."
+        f"Validade: {validade_texto}. Nao compartilhe este codigo."
     )
     canal = (canal_override or f.app_canal_otp or "whatsapp").strip().lower()
 
@@ -4011,16 +4011,16 @@ _gc_cache_ts: float = 0.0
 _GC_TTL = 60.0  # segundos
 
 # Cache efêmero (em memória) do código de OTP em texto puro, usado apenas para
-# reenviar o MESMO código quando o app pede novo envio antes do anterior expirar.
+# reenviar o MESMO código enquanto o anterior ainda for válido (login valido por 2h).
 # Evita invalidar um código que já foi entregue (com atraso) pelo canal (WhatsApp/e-mail),
 # cenário que fazia o login "não completar" mesmo com o código correto digitado.
 _app_otp_plain_cache: dict = {}
-_APP_OTP_RESEND_WINDOW_S = 120  # janela em que o código anterior ainda pode ser reenviado
 
 
 def _app_otp_get_or_new(funcionario):
-    """Retorna (codigo, reaproveitado) reaproveitando o codigo anterior se ainda
-    for valido e estiver dentro da janela de reenvio; caso contrario gera um novo."""
+    """Retorna (codigo, reaproveitado) reaproveitando o codigo anterior enquanto
+    ele ainda for valido (mesmo numero durante toda a janela de validade do OTP
+    de login); caso contrario gera um novo."""
     cache = _app_otp_plain_cache.get(funcionario.id)
     if (
         cache
@@ -4028,8 +4028,6 @@ def _app_otp_get_or_new(funcionario):
         and funcionario.app_otp_expira_em
         and funcionario.app_otp_expira_em > utcnow()
         and cache.get("hash") == funcionario.app_otp_hash
-        and (utcnow() - cache.get("criado_em", utcnow())).total_seconds()
-        < _APP_OTP_RESEND_WINDOW_S
     ):
         return cache["codigo"], True
     return _otp_new_code(), False
@@ -17879,7 +17877,7 @@ def api_app_funcionario_auth_iniciar():
     otp_hash = token_hash(codigo)
     if not reaproveitado:
         f.app_otp_hash = otp_hash
-        f.app_otp_expira_em = utcnow() + timedelta(minutes=10)
+        f.app_otp_expira_em = utcnow() + timedelta(hours=2)
         f.app_otp_tentativas = 0
 
     # Atualiza canal preferido se o app enviou
@@ -17906,7 +17904,7 @@ def api_app_funcionario_auth_iniciar():
     _app_otp_cache_store(f, codigo, f.app_otp_hash)
 
     try:
-        envio = _send_app_login_otp(codigo, f)
+        envio = _send_app_login_otp(codigo, f, validade_texto="2 horas")
     except Exception as ex:
         # O OTP já ficou persistido; em caso de falha de envio, apenas retornamos erro.
         reg_auth_attempt("app_otp", cpf, False, "envio_falha")
