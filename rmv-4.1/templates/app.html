@@ -7616,7 +7616,8 @@ async function logsCarregar(){
   const limparBtn=document.getElementById('logs-limpar-btn');
   if(st){st.textContent='Carregando…';st.style.display='';}
   try{
-    const params=nivel?`?nivel=${encodeURIComponent(nivel)}&limit=200`:'?limit=200';
+    // _ts evita cache de navegador/proxy servindo uma resposta antiga (logs "desatualizados").
+    const params=(nivel?`?nivel=${encodeURIComponent(nivel)}&limit=200`:'?limit=200')+`&_ts=${Date.now()}`;
     const r=await api('/api/admin/logs/app'+params);
     if(r.erro){if(st){st.textContent=r.erro;st.style.display='';}if(limparBtn) limparBtn.style.display='none';return;}
     const logs=r.logs||[];

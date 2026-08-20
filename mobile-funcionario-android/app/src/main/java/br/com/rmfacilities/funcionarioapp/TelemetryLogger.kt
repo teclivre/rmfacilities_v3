@@ -98,7 +98,9 @@ object TelemetryLogger {
         )
         if (!stack.isNullOrBlank()) entry["stack"] = stack
         queue.offerLast(entry)
-        if (queue.size >= 20) flush()
+        // Lote pequeno: flush cedo em vez de esperar acumular muitos itens, para os
+        // erros chegarem ao Admin rapidamente (antes so enviava a cada 20 itens).
+        if (queue.size >= 3) flush()
     }
 
     fun flush() {

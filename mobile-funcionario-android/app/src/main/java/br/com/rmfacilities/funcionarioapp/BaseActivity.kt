@@ -75,6 +75,16 @@ abstract class BaseActivity : AppCompatActivity() {
         }
         sess.touchActivity()
         checkAppVersionIfNeeded(sess)
+        // Envia logs pendentes assim que houver uma tela autenticada em primeiro plano,
+        // em vez de esperar o app reiniciar do zero (evita logs presos na fila em memoria).
+        TelemetryLogger.flush()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Tenta esvaziar a fila antes de ir para segundo plano (o processo pode ser
+        // encerrado pelo sistema enquanto em background, perdendo logs em memoria).
+        TelemetryLogger.flush()
     }
 
     override fun onUserInteraction() {

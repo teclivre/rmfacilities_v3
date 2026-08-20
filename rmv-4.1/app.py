@@ -18263,7 +18263,10 @@ def api_admin_logs_app():
     if nivel:
         q = q.filter_by(nivel=nivel)
     logs = q.order_by(AppLog.id.desc()).limit(limit).all()
-    return jsonify({"logs": [l.to_dict() for l in logs]})
+    resp = jsonify({"logs": [l.to_dict() for l in logs]})
+    # Evita cache de navegador/proxy servindo uma lista desatualizada ao clicar "Atualizar".
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return resp
 
 
 @app.route("/api/app/funcionario/me")
