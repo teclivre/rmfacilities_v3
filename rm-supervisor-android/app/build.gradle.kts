@@ -145,7 +145,7 @@ androidComponents {
             if (it.isLowerCase()) it.titlecase() else it.toString()
         }
 
-        tasks.named(bundleTaskName).configure {
+        tasks.matching { it.name == bundleTaskName }.configureEach {
             doLast {
                 val bundleDir = layout.buildDirectory.dir("outputs/bundle/$variantName").get().asFile
                 val expectedAab = File(bundleDir, "app-$variantName.aab")
