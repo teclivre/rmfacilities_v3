@@ -29,6 +29,11 @@ if [[ -z "$SDK_DIR" && -f "$LOCAL_PROPERTIES" ]]; then
   fi
 fi
 
+if [[ -n "$SDK_DIR" && ! -d "$SDK_DIR" ]]; then
+  echo "Aviso: caminho de Android SDK inválido: $SDK_DIR"
+  SDK_DIR=""
+fi
+
 if [[ -z "$SDK_DIR" ]]; then
   for candidate in "$HOME/Android/Sdk" "$HOME/Android/sdk" "/opt/android-sdk" "/usr/lib/android-sdk"; do
     if [[ -d "$candidate" ]]; then
