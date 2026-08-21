@@ -2,12 +2,22 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AAB_PATH="$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab"
 KEYSTORE_PROPS="$PROJECT_DIR/keystore.properties"
 LOCAL_PROPERTIES="$PROJECT_DIR/local.properties"
+PROPS="$PROJECT_DIR/app/version.properties"
+AAB_DIR="$PROJECT_DIR/app/build/outputs/bundle/release"
+
+if [[ ! -x "$PROJECT_DIR/gradlew" ]]; then
+  chmod +x "$PROJECT_DIR/gradlew" || true
+fi
 
 if [[ ! -x "$PROJECT_DIR/gradlew" ]]; then
   echo "Erro: gradlew não encontrado ou sem permissão de execução em $PROJECT_DIR"
+  exit 1
+fi
+
+if [[ ! -f "$PROPS" ]]; then
+  echo "Erro: version.properties não encontrado em: $PROPS"
   exit 1
 fi
 
@@ -100,9 +110,30 @@ run_gradle_task clean
 echo "Gerando AAB release assinado..."
 run_gradle_task bundleRelease
 
-if [[ -f "$AAB_PATH" ]]; then
-  echo "AAB gerado com sucesso: $AAB_PATH"
+# O build.gradle.kts incrementa versão durante build; relê valores finais.
+real_code="$(grep 'VERSION_CODE' "$PROPS" | cut -d'=' -f2 || true)"
+real_major="$(grep 'VERSION_MAJOR' "$PROPS" | cut -d'=' -f2 || true)"
+real_minor="$(grep 'VERSION_MINOR' "$PROPS" | cut -d'=' -f2 || true)"
+real_patch="$(grep 'VERSION_PATCH' "$PROPS" | cut -d'=' -f2 || true)"
+real_version="${real_major}.${real_minor}.${real_patch}"
+
+expected_aab="$AAB_DIR/rmsupervisor-release-v${real_version}-${real_code}.aab"
+aab_path=""
+
+if [[ -f "$expected_aab" ]]; then
+  aab_path="$expected_aab"
+fi
+
+if [[ -z "$aab_path" ]]; then
+  aab_path="$(find "$AAB_DIR" -maxdepth 1 -type f -name '*.aab' 2>/dev/null | sort -r | head -1 || true)"
+fi
+
+if [[ -n "$aab_path" && -f "$aab_path" ]]; then
+  size="$(du -sh "$aab_path" | cut -f1)"
+  echo "AAB gerado com sucesso: $aab_path"
+  echo "Versão final: $real_version (code $real_code)"
+  echo "Tamanho: $size"
 else
-  echo "Build concluído, mas AAB não encontrado em: $AAB_PATH"
+  echo "Build concluído, mas AAB não encontrado em: $AAB_DIR"
   exit 1
 fi
