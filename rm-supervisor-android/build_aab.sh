@@ -6,6 +6,7 @@ KEYSTORE_PROPS="$PROJECT_DIR/keystore.properties"
 LOCAL_PROPERTIES="$PROJECT_DIR/local.properties"
 PROPS="$PROJECT_DIR/app/version.properties"
 AAB_DIR="$PROJECT_DIR/app/build/outputs/bundle/release"
+SKIP_KEYSTORE_CHECK="${SKIP_KEYSTORE_CHECK:-0}"
 
 if [[ ! -x "$PROJECT_DIR/gradlew" ]]; then
   chmod +x "$PROJECT_DIR/gradlew" || true
@@ -22,34 +23,58 @@ if [[ ! -f "$PROPS" ]]; then
 fi
 
 if [[ ! -f "$KEYSTORE_PROPS" ]]; then
-  echo "Erro: arquivo keystore.properties não encontrado em: $KEYSTORE_PROPS"
-  echo "Copie keystore.properties.example para keystore.properties e preencha os dados."
-  exit 1
+  if [[ "$SKIP_KEYSTORE_CHECK" == "1" ]]; then
+    echo "Aviso: keystore.properties não encontrado. Continuando em modo diagnóstico (SKIP_KEYSTORE_CHECK=1)."
+  else
+    echo "Erro: arquivo keystore.properties não encontrado em: $KEYSTORE_PROPS"
+    echo "Copie keystore.properties.example para keystore.properties e preencha os dados."
+    echo "Ou execute com SKIP_KEYSTORE_CHECK=1 para diagnosticar erro do Gradle sem assinatura."
+    exit 1
+  fi
 fi
 
-store_file="$(grep -E '^storeFile=' "$KEYSTORE_PROPS" | cut -d'=' -f2- || true)"
-store_password="$(grep -E '^storePassword=' "$KEYSTORE_PROPS" | cut -d'=' -f2- || true)"
-key_alias="$(grep -E '^keyAlias=' "$KEYSTORE_PROPS" | cut -d'=' -f2- || true)"
-key_password="$(grep -E '^keyPassword=' "$KEYSTORE_PROPS" | cut -d'=' -f2- || true)"
-
-if [[ -z "$store_file" || -z "$store_password" || -z "$key_alias" || -z "$key_password" ]]; then
-  echo "Erro: keystore.properties incompleto. Campos obrigatórios:"
-  echo "- storeFile"
-  echo "- storePassword"
-  echo "- keyAlias"
-  echo "- keyPassword"
-  exit 1
+store_file=""
+store_password=""
+key_alias=""
+key_password=""
+if [[ -f "$KEYSTORE_PROPS" ]]; then
+  store_file="$(grep -E '^storeFile=' "$KEYSTORE_PROPS" | cut -d'=' -f2- || true)"
+  store_password="$(grep -E '^storePassword=' "$KEYSTORE_PROPS" | cut -d'=' -f2- || true)"
+  key_alias="$(grep -E '^keyAlias=' "$KEYSTORE_PROPS" | cut -d'=' -f2- || true)"
+  key_password="$(grep -E '^keyPassword=' "$KEYSTORE_PROPS" | cut -d'=' -f2- || true)"
 fi
 
-if [[ "$store_file" = /* ]]; then
-  keystore_path="$store_file"
-else
-  keystore_path="$PROJECT_DIR/$store_file"
+if [[ -f "$KEYSTORE_PROPS" && ( -z "$store_file" || -z "$store_password" || -z "$key_alias" || -z "$key_password" ) ]]; then
+  if [[ "$SKIP_KEYSTORE_CHECK" == "1" ]]; then
+    echo "Aviso: keystore.properties incompleto. Continuando em modo diagnóstico (SKIP_KEYSTORE_CHECK=1)."
+  else
+    echo "Erro: keystore.properties incompleto. Campos obrigatórios:"
+    echo "- storeFile"
+    echo "- storePassword"
+    echo "- keyAlias"
+    echo "- keyPassword"
+    echo "Ou execute com SKIP_KEYSTORE_CHECK=1 para diagnosticar erro do Gradle sem assinatura."
+    exit 1
+  fi
 fi
 
-if [[ ! -f "$keystore_path" ]]; then
-  echo "Erro: keystore não encontrado em: $keystore_path"
-  exit 1
+keystore_path=""
+if [[ -n "$store_file" ]]; then
+  if [[ "$store_file" = /* ]]; then
+    keystore_path="$store_file"
+  else
+    keystore_path="$PROJECT_DIR/$store_file"
+  fi
+fi
+
+if [[ -n "$keystore_path" && ! -f "$keystore_path" ]]; then
+  if [[ "$SKIP_KEYSTORE_CHECK" == "1" ]]; then
+    echo "Aviso: keystore não encontrado em: $keystore_path. Continuando em modo diagnóstico."
+  else
+    echo "Erro: keystore não encontrado em: $keystore_path"
+    echo "Ou execute com SKIP_KEYSTORE_CHECK=1 para diagnosticar erro do Gradle sem assinatura."
+    exit 1
+  fi
 fi
 
 if ! command -v java >/dev/null 2>&1; then
@@ -98,9 +123,15 @@ fi
 
 run_gradle_task() {
   local task="$1"
-  if ! "$PROJECT_DIR/gradlew" --no-daemon --stacktrace "$task"; then
+  if ! "$PROJECT_DIR/gradlew" --no-daemon --stacktrace "$task" 2>&1 | tee "$PROJECT_DIR/.last_${task}.log"; then
     echo "Falha ao executar '$task'. Tentando novamente com --no-daemon --info..."
-    "$PROJECT_DIR/gradlew" --no-daemon --stacktrace --info "$task"
+    if ! "$PROJECT_DIR/gradlew" --no-daemon --stacktrace --info "$task" 2>&1 | tee "$PROJECT_DIR/.last_${task}_info.log"; then
+      echo ""
+      echo "===== ÚLTIMAS LINHAS DO ERRO (Gradle) ====="
+      tail -n 80 "$PROJECT_DIR/.last_${task}_info.log" || true
+      echo "============================================"
+      return 1
+    fi
   fi
 }
 

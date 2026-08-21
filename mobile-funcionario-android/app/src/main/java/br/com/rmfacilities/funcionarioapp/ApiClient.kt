@@ -440,7 +440,7 @@ class ApiClient(private val session: SessionManager) {
         http.newCall(req).execute().use { resp ->
             if (resp.code == 401) {
                 // O OkHttp Authenticator já tentou renovar a sessão e falhou
-                handleUnauthorized()
+                handleUnauthorized(resp.code)
                 return MeResponse(ok = false, erro = "Sessão expirada.")
             }
             val raw = resp.body?.string().orEmpty()
@@ -740,7 +740,7 @@ class ApiClient(private val session: SessionManager) {
             .build()
         http.newCall(req).execute().use { resp ->
             if (resp.code == 401) {
-                handleUnauthorized()
+                handleUnauthorized(resp.code)
                 return ApiSimpleResponse(ok = false, erro = "Sessão expirada.")
             }
             val raw = resp.body?.string().orEmpty()
@@ -803,7 +803,7 @@ class ApiClient(private val session: SessionManager) {
             .build()
         http.newCall(req).execute().use { resp ->
             if (resp.code == 401) {
-                handleUnauthorized()
+                handleUnauthorized(resp.code)
                 return PontoDiaResponse(ok = false, erro = "Sessão expirada.")
             }
             val raw = resp.body?.string().orEmpty()
@@ -884,7 +884,7 @@ class ApiClient(private val session: SessionManager) {
             .build()
         http.newCall(req).execute().use { resp ->
             if (resp.code == 401) {
-                handleUnauthorized()
+                handleUnauthorized(resp.code)
                 return PontoDiaResponse(ok = false, erro = "Sessão expirada.")
             }
             val raw = resp.body?.string().orEmpty()
@@ -910,7 +910,7 @@ class ApiClient(private val session: SessionManager) {
             .build()
         http.newCall(req).execute().use { resp ->
             if (resp.code == 401) {
-                handleUnauthorized()
+                handleUnauthorized(resp.code)
                 return PontoDiaResponse(ok = false, erro = "Sessão expirada.")
             }
             val raw = resp.body?.string().orEmpty()
