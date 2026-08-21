@@ -1,4 +1,3 @@
-import com.android.build.api.variant.ApkVariantOutput
 import java.io.File
 import java.io.FileInputStream
 import java.util.Properties
@@ -141,10 +140,6 @@ androidComponents {
     onVariants(selector().all()) { variant ->
         val variantName = variant.name
         val fileBaseName = "rmsupervisor-$variantName-v$buildVersionName-$verCode"
-
-        variant.outputs.forEach { output ->
-            (output as? ApkVariantOutput)?.outputFileName?.set("$fileBaseName.apk")
-        }
 
         val bundleTaskName = "bundle" + variantName.replaceFirstChar {
             if (it.isLowerCase()) it.titlecase() else it.toString()
