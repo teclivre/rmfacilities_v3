@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -24,7 +23,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rmfacilities.app.data.model.Ocorrencia
 import com.rmfacilities.app.data.model.OcorrenciaStatus
 import com.rmfacilities.app.data.model.Prioridade
+import com.rmfacilities.app.ui.components.RmSectionCard
+import com.rmfacilities.app.ui.components.ScreenHeader
 import com.rmfacilities.app.ui.components.StateScaffold
+import com.rmfacilities.app.ui.components.StatusChip
+import com.rmfacilities.app.ui.components.StatusTone
 import com.rmfacilities.app.utils.toBrDateTime
 import com.rmfacilities.app.viewmodel.OccurrencesViewModel
 import java.time.LocalDateTime
@@ -40,11 +43,10 @@ fun OccurrencesScreen(vm: OccurrencesViewModel, modifier: Modifier = Modifier) {
     var tipo by remember { mutableStateOf("") }
     var descricao by remember { mutableStateOf("") }
 
-    Column(modifier = modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Ocorrências", style = MaterialTheme.typography.headlineSmall)
+    Column(modifier = modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ScreenHeader("Ocorrências", "Registros abertos no atendimento operacional")
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        RmSectionCard {
                 OutlinedTextField(value = posto, onValueChange = { posto = it }, label = { Text("Posto") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = tipo, onValueChange = { tipo = it }, label = { Text("Tipo") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = descricao, onValueChange = { descricao = it }, label = { Text("Descrição") }, modifier = Modifier.fillMaxWidth())
@@ -74,7 +76,6 @@ fun OccurrencesScreen(vm: OccurrencesViewModel, modifier: Modifier = Modifier) {
                 ) {
                     Text("Cadastrar ocorrência")
                 }
-            }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -93,13 +94,14 @@ fun OccurrencesScreen(vm: OccurrencesViewModel, modifier: Modifier = Modifier) {
         StateScaffold(state = state, emptyMessage = "Não existem ocorrências cadastradas.", onRetry = { vm.load() }) { ocorrencias ->
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(ocorrencias) { o ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(12.dp)) {
+                    RmSectionCard {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("${o.tipo} - ${o.posto}", style = MaterialTheme.typography.titleMedium)
+                            StatusChip(o.prioridade.name, if (o.prioridade == Prioridade.ALTA || o.prioridade == Prioridade.CRITICA) StatusTone.Danger else StatusTone.Neutral)
+                        }
                             Text(o.descricao)
                             Text("Data: ${o.dataHora.toBrDateTime()}")
-                            Text("Prioridade: ${o.prioridade} | Status: ${o.status}")
-                        }
+                        Text("Status: ${o.status}")
                     }
                 }
             }

@@ -81,8 +81,8 @@ android {
             useSupportLibrary = true
         }
 
-        buildConfigField("String", "API_BASE_URL", "\"https://api.exemplo.rmfacilities.com\"")
-        buildConfigField("boolean", "USE_MOCK_DATA", "true")
+        buildConfigField("String", "API_BASE_URL", "\"https://portal.grupormfacilities.com.br\"")
+        buildConfigField("boolean", "USE_MOCK_DATA", "false")
     }
 
     signingConfigs {

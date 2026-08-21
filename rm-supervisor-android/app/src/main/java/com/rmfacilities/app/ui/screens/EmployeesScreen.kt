@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -24,7 +23,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rmfacilities.app.data.model.EntityStatus
 import com.rmfacilities.app.ui.components.InfoRow
+import com.rmfacilities.app.ui.components.RmSectionCard
+import com.rmfacilities.app.ui.components.ScreenHeader
 import com.rmfacilities.app.ui.components.StateScaffold
+import com.rmfacilities.app.ui.components.StatusChip
+import com.rmfacilities.app.ui.components.StatusTone
 import com.rmfacilities.app.ui.state.UiState
 import com.rmfacilities.app.utils.toBrDate
 import com.rmfacilities.app.viewmodel.EmployeesViewModel
@@ -38,8 +41,8 @@ fun EmployeesScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
 
-    Column(modifier = modifier.fillMaxSize().padding(12.dp)) {
-        Text("Funcionários", style = MaterialTheme.typography.headlineSmall)
+    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
+        ScreenHeader("Equipe", "Colaboradores sincronizados com o cadastro do sistema")
         OutlinedTextField(
             value = query,
             onValueChange = {
@@ -60,17 +63,15 @@ fun EmployeesScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(data) { funcionario ->
-                    Card(modifier = Modifier.fillMaxWidth().clickable { onOpenDetail(funcionario.id) }) {
-                        Column(modifier = Modifier.padding(12.dp)) {
+                    RmSectionCard(modifier = Modifier.clickable { onOpenDetail(funcionario.id) }) {
                             Text(funcionario.nome, style = MaterialTheme.typography.titleMedium)
                             Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                                 Text("Matrícula: ${funcionario.matricula}")
-                                Text(if (funcionario.status == EntityStatus.ATIVO) "Ativo" else "Inativo")
+                                StatusChip(if (funcionario.status == EntityStatus.ATIVO) "Ativo" else "Inativo", if (funcionario.status == EntityStatus.ATIVO) StatusTone.Success else StatusTone.Warning)
                             }
                             Text("Posto: ${funcionario.posto}")
                             Text("Função: ${funcionario.funcao}")
                             Text("Cidade: ${funcionario.cidade}")
-                        }
                     }
                 }
             }
@@ -86,13 +87,12 @@ fun EmployeeDetailScreen(id: String, vm: EmployeesViewModel, onBack: () -> Unit)
         vm.loadDetail(id)
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Detalhes do funcionário", style = MaterialTheme.typography.headlineSmall)
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ScreenHeader("Detalhes do funcionário", "Cadastro e vínculo operacional")
         Text("Voltar", modifier = Modifier.clickable { onBack() }, color = MaterialTheme.colorScheme.primary)
 
         StateScaffold(state = state, emptyMessage = "Funcionário não encontrado.", onRetry = { vm.loadDetail(id) }) { f ->
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            RmSectionCard {
                     InfoRow("Nome", f.nome)
                     InfoRow("Matrícula", f.matricula)
                     InfoRow("CPF", f.cpfMascarado)
@@ -102,7 +102,6 @@ fun EmployeeDetailScreen(id: String, vm: EmployeesViewModel, onBack: () -> Unit)
                     InfoRow("Telefone", f.telefone)
                     InfoRow("Admissão", f.dataAdmissao.toBrDate())
                     Text("Observações: ${f.observacoes}")
-                }
             }
         }
     }

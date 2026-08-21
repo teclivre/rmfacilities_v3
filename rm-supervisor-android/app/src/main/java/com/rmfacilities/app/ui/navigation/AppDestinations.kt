@@ -20,16 +20,14 @@ sealed class AppDestination(val route: String) {
 
 data class BottomNavItem(
     val label: String,
-    val route: String
+    val route: String,
+    val icon: String
 )
 
 val bottomNavItems = listOf(
-    BottomNavItem("Dashboard", AppDestination.Dashboard.route),
-    BottomNavItem("Funcionários", AppDestination.Employees.route),
-    BottomNavItem("Postos", AppDestination.Posts.route),
-    BottomNavItem("Visitas", AppDestination.Visits.route),
-    BottomNavItem("Ocorrências", AppDestination.Occurrences.route),
-    BottomNavItem("Tarefas", AppDestination.Tasks.route),
-    BottomNavItem("Relatórios", AppDestination.Reports.route),
-    BottomNavItem("Config", AppDestination.Settings.route)
+    BottomNavItem("Início", AppDestination.Dashboard.route, "home"),
+    BottomNavItem("Equipe", AppDestination.Employees.route, "people"),
+    BottomNavItem("Postos", AppDestination.Posts.route, "business"),
+    BottomNavItem("Visitas", AppDestination.Visits.route, "event"),
+    BottomNavItem("Ocorrências", AppDestination.Occurrences.route, "warning")
 )

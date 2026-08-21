@@ -10,6 +10,7 @@ private val LightColors = lightColorScheme(
     secondary = RmSecondary,
     background = RmBackground,
     surface = RmSurface,
+    surfaceVariant = RmMuted,
     onPrimary = RmSurface,
     onSecondary = RmText,
     onBackground = RmText,

@@ -1,9 +1,10 @@
 package com.rmfacilities.app.data.repository
 
 import com.rmfacilities.app.data.network.ApiConfig
+import com.rmfacilities.app.data.session.SecureSessionStore
 
 object RepositoryProvider {
-    val operationsRepository: OperationsRepository by lazy {
-        if (ApiConfig.useMockData) MockOperationsRepository() else ApiOperationsRepository()
+    fun create(sessionStore: SecureSessionStore): OperationsRepository {
+        return if (ApiConfig.useMockData) MockOperationsRepository() else ApiOperationsRepository(sessionStore)
     }
 }

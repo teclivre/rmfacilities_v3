@@ -24,6 +24,12 @@ class SecureSessionStore(context: Context) {
 
     fun getToken(): String? = prefs.getString("session_token", null)
 
+    fun saveUserName(name: String) {
+        prefs.edit().putString("user_name", name).apply()
+    }
+
+    fun getUserName(): String = prefs.getString("user_name", null) ?: "Supervisor"
+
     fun clear() {
         prefs.edit().clear().apply()
     }

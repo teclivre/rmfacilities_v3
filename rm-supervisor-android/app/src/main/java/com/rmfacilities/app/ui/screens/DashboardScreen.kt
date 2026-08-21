@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -15,7 +14,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rmfacilities.app.data.model.Prioridade
+import com.rmfacilities.app.ui.components.ProgressSummary
+import com.rmfacilities.app.ui.components.RmSectionCard
+import com.rmfacilities.app.ui.components.ScreenHeader
 import com.rmfacilities.app.ui.components.StateScaffold
+import com.rmfacilities.app.ui.components.StatusChip
+import com.rmfacilities.app.ui.components.StatusTone
 import com.rmfacilities.app.ui.components.StatCard
 import com.rmfacilities.app.utils.toBrDateTime
 import com.rmfacilities.app.viewmodel.DashboardViewModel
@@ -28,11 +33,14 @@ fun DashboardScreen(vm: DashboardViewModel, modifier: Modifier = Modifier) {
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            Text("Dashboard do Supervisor", style = MaterialTheme.typography.headlineSmall)
+            ScreenHeader(
+                title = "Dashboard do Supervisor",
+                subtitle = "Dados operacionais carregados diretamente do sistema RM"
+            )
         }
 
         item {
@@ -55,7 +63,7 @@ fun DashboardScreen(vm: DashboardViewModel, modifier: Modifier = Modifier) {
                     metricItems.chunked(2).forEach { rowItems ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             rowItems.forEach { item ->
                                 Column(modifier = Modifier.weight(1f)) {
@@ -72,7 +80,7 @@ fun DashboardScreen(vm: DashboardViewModel, modifier: Modifier = Modifier) {
         }
 
         item {
-            Text("Resumo operacional", style = MaterialTheme.typography.titleMedium)
+            Text("Resumo operacional", style = MaterialTheme.typography.titleLarge)
         }
 
         item {
@@ -82,36 +90,44 @@ fun DashboardScreen(vm: DashboardViewModel, modifier: Modifier = Modifier) {
                 onRetry = { vm.load() },
                 fullScreen = false
             ) { resumo ->
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text("Ocorrências recentes", style = MaterialTheme.typography.titleSmall)
+                val abertas = resumo.ocorrenciasRecentes.count { it.prioridade == Prioridade.ALTA || it.prioridade == Prioridade.CRITICA }
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    RmSectionCard {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Ocorrências recentes", style = MaterialTheme.typography.titleMedium)
+                            StatusChip("${resumo.ocorrenciasRecentes.size}", if (abertas > 0) StatusTone.Danger else StatusTone.Neutral)
+                        }
+                        if (resumo.ocorrenciasRecentes.isEmpty()) {
+                            Text("Sem ocorrências recentes.", style = MaterialTheme.typography.bodyMedium)
+                        } else {
                             resumo.ocorrenciasRecentes.forEach {
-                                Text("• ${it.tipo} - ${it.descricao}")
+                                Text("${it.posto} • ${it.tipo}: ${it.descricao}", style = MaterialTheme.typography.bodyMedium)
                             }
                         }
                     }
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text("Próximas visitas", style = MaterialTheme.typography.titleSmall)
-                            resumo.proximasVisitas.forEach {
-                                Text("• ${it.postoNome} - ${it.dataHora.toBrDateTime()}")
-                            }
+                    RmSectionCard {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Próximas visitas", style = MaterialTheme.typography.titleMedium)
+                            StatusChip("Agenda", StatusTone.Warm)
+                        }
+                        resumo.proximasVisitas.forEach {
+                            Text("${it.postoNome} • ${it.observacoes} • ${it.dataHora.toBrDateTime()}")
                         }
                     }
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text("Tarefas pendentes", style = MaterialTheme.typography.titleSmall)
-                            resumo.tarefasPendentes.forEach {
-                                Text("• ${it.titulo} (${it.status})")
-                            }
+                    RmSectionCard {
+                        ProgressSummary(
+                            label = "Checklist da visita",
+                            value = if (resumo.tarefasPendentes.isEmpty()) 1f else 0.35f,
+                            detail = "${resumo.tarefasPendentes.size} pendentes"
+                        )
+                        resumo.tarefasPendentes.forEach {
+                            Text("${it.titulo} • ${it.posto}")
                         }
                     }
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text("Alertas", style = MaterialTheme.typography.titleSmall)
-                            resumo.alertas.forEach { Text("• $it") }
-                        }
+                    RmSectionCard {
+                        Text("Alertas", style = MaterialTheme.typography.titleMedium)
+                        if (resumo.alertas.isEmpty()) Text("Nenhum alerta operacional no momento.")
+                        resumo.alertas.forEach { Text(it) }
                     }
                 }
             }

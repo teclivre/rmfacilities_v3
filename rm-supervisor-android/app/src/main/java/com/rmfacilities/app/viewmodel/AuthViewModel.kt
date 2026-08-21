@@ -32,6 +32,7 @@ class AuthViewModel(
             repository.login(email, senha)
                 .onSuccess {
                     sessionStore.saveToken(it.token)
+                    sessionStore.saveUserName(it.name)
                     _state.value = AuthUiState(isAuthenticated = true)
                 }
                 .onFailure {

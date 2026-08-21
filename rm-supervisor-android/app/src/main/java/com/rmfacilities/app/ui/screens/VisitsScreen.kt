@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -33,7 +32,11 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rmfacilities.app.data.model.VisitStatus
 import com.rmfacilities.app.data.model.Visita
+import com.rmfacilities.app.ui.components.RmSectionCard
+import com.rmfacilities.app.ui.components.ScreenHeader
 import com.rmfacilities.app.ui.components.StateScaffold
+import com.rmfacilities.app.ui.components.StatusChip
+import com.rmfacilities.app.ui.components.StatusTone
 import com.rmfacilities.app.utils.toBrDateTime
 import com.rmfacilities.app.viewmodel.VisitsViewModel
 import java.time.LocalDateTime
@@ -72,11 +75,13 @@ fun VisitsScreen(vm: VisitsViewModel, modifier: Modifier = Modifier) {
         }
     }
 
-    Column(modifier = modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Visitas de supervisão", style = MaterialTheme.typography.headlineSmall)
+    Column(modifier = modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ScreenHeader(
+            title = "Visitas de supervisão",
+            subtitle = "Registre presença, evidências e pendências do posto"
+        )
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        RmSectionCard {
                 OutlinedTextField(value = posto, onValueChange = { posto = it }, label = { Text("Posto") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = observacoes, onValueChange = { observacoes = it }, label = { Text("Observações") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = problemas, onValueChange = { problemas = it }, label = { Text("Problemas") }, modifier = Modifier.fillMaxWidth())
@@ -126,20 +131,29 @@ fun VisitsScreen(vm: VisitsViewModel, modifier: Modifier = Modifier) {
                 ) {
                     Text("Finalizar visita")
                 }
-            }
         }
 
         StateScaffold(state = state, emptyMessage = "Não existem visitas cadastradas.", onRetry = { vm.load() }) { visitas ->
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(visitas) { visita ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(12.dp)) {
+                    RmSectionCard {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(visita.postoNome, style = MaterialTheme.typography.titleMedium)
-                            Text("Data/hora: ${visita.dataHora.toBrDateTime()}")
-                            Text("Supervisor: ${visita.supervisor}")
-                            Text("Status: ${visita.status}")
-                            Text("Obs: ${visita.observacoes}")
+                            StatusChip(
+                                text = when (visita.status) {
+                                    VisitStatus.CONCLUIDA -> "Concluída"
+                                    VisitStatus.EM_ANDAMENTO -> "Em andamento"
+                                    VisitStatus.PROGRAMADA -> "Programada"
+                                },
+                                tone = when (visita.status) {
+                                    VisitStatus.CONCLUIDA -> StatusTone.Success
+                                    VisitStatus.EM_ANDAMENTO -> StatusTone.Warning
+                                    VisitStatus.PROGRAMADA -> StatusTone.Neutral
+                                }
+                            )
                         }
+                        Text("${visita.observacoes.ifBlank { "Visita operacional" }} • ${visita.dataHora.toBrDateTime()}")
+                        Text("Supervisor: ${visita.supervisor}", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }

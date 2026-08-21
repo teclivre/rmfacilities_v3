@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -23,7 +22,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rmfacilities.app.data.model.EntityStatus
 import com.rmfacilities.app.ui.components.InfoRow
+import com.rmfacilities.app.ui.components.RmSectionCard
+import com.rmfacilities.app.ui.components.ScreenHeader
 import com.rmfacilities.app.ui.components.StateScaffold
+import com.rmfacilities.app.ui.components.StatusChip
+import com.rmfacilities.app.ui.components.StatusTone
 import com.rmfacilities.app.viewmodel.PostsViewModel
 
 @Composable
@@ -31,8 +34,8 @@ fun PostsScreen(vm: PostsViewModel, onOpenDetail: (String) -> Unit, modifier: Mo
     val state by vm.state.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
 
-    Column(modifier = modifier.fillMaxSize().padding(12.dp)) {
-        Text("Postos", style = MaterialTheme.typography.headlineSmall)
+    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
+        ScreenHeader("Postos", "Contratos e clientes ativos na agenda de supervisão")
         OutlinedTextField(
             value = query,
             onValueChange = {
@@ -46,14 +49,12 @@ fun PostsScreen(vm: PostsViewModel, onOpenDetail: (String) -> Unit, modifier: Mo
         StateScaffold(state = state, emptyMessage = "Não existem postos cadastrados.", onRetry = { vm.load(query) }) { items ->
             LazyColumn(modifier = Modifier.fillMaxSize().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 this.items(items) { posto ->
-                    Card(modifier = Modifier.fillMaxWidth().clickable { onOpenDetail(posto.id) }) {
-                        Column(modifier = Modifier.padding(12.dp)) {
+                    RmSectionCard(modifier = Modifier.clickable { onOpenDetail(posto.id) }) {
                             Text(posto.nome, style = MaterialTheme.typography.titleMedium)
                             Text("Cliente: ${posto.cliente}")
                             Text("Cidade: ${posto.cidade}")
                             Text("Supervisor: ${posto.supervisorResponsavel}")
-                            Text(if (posto.status == EntityStatus.ATIVO) "Status: Ativo" else "Status: Inativo")
-                        }
+                            StatusChip(if (posto.status == EntityStatus.ATIVO) "Ativo" else "Inativo", if (posto.status == EntityStatus.ATIVO) StatusTone.Success else StatusTone.Warning)
                     }
                 }
             }
@@ -69,13 +70,12 @@ fun PostDetailScreen(id: String, vm: PostsViewModel, onBack: () -> Unit) {
         vm.loadDetail(id)
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Detalhes do posto", style = MaterialTheme.typography.headlineSmall)
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ScreenHeader("Detalhes do posto", "Informações do contrato operacional")
         Text("Voltar", modifier = Modifier.clickable { onBack() }, color = MaterialTheme.colorScheme.primary)
 
         StateScaffold(state = state, emptyMessage = "Posto não encontrado.", onRetry = { vm.loadDetail(id) }) { p ->
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            RmSectionCard {
                     InfoRow("Posto", p.nome)
                     InfoRow("Cliente", p.cliente)
                     InfoRow("Cidade", p.cidade)
@@ -86,7 +86,6 @@ fun PostDetailScreen(id: String, vm: PostsViewModel, onBack: () -> Unit) {
                     InfoRow("Ocorrências", p.ocorrencias.toString())
                     InfoRow("Visitas", p.visitasRealizadas.toString())
                     Text("Observações: ${p.observacoes}")
-                }
             }
         }
     }

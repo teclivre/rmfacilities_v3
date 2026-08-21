@@ -1,6 +1,15 @@
 package com.rmfacilities.app.ui.navigation
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -144,6 +153,16 @@ private fun MainScaffold(
     val currentRoute = entry?.destination?.route
 
     Scaffold(
+        topBar = {
+            androidx.compose.material3.TopAppBar(
+                title = { Text("RM Supervisor") },
+                actions = {
+                    IconButton(onClick = { navController.navigate(AppDestination.Settings.route) { launchSingleTop = true } }) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Configurações")
+                    }
+                }
+            )
+        },
         bottomBar = {
             NavigationBar {
                 bottomNavItems.forEach { item ->
@@ -155,7 +174,7 @@ private fun MainScaffold(
                             }
                         },
                         label = { Text(item.label) },
-                        icon = {}
+                        icon = { Icon(item.iconVector(), contentDescription = item.label) }
                     )
                 }
             }
@@ -163,4 +182,12 @@ private fun MainScaffold(
     ) { paddingValues ->
         content(Modifier.padding(paddingValues))
     }
+}
+
+private fun BottomNavItem.iconVector() = when (icon) {
+    "people" -> Icons.Filled.People
+    "business" -> Icons.Filled.Business
+    "event" -> Icons.Filled.Event
+    "warning" -> Icons.Filled.Warning
+    else -> Icons.Filled.Home
 }
