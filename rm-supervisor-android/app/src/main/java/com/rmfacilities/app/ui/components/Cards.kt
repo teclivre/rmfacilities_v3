@@ -73,7 +73,7 @@ fun ScreenHeader(title: String, subtitle: String, modifier: Modifier = Modifier)
 }
 
 @Composable
-fun RmSectionCard(modifier: Modifier = Modifier, content: @Composable Column.() -> Unit) {
+fun RmSectionCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
@@ -81,7 +81,9 @@ fun RmSectionCard(modifier: Modifier = Modifier, content: @Composable Column.() 
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant)
     ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            content()
+        }
     }
 }
 
