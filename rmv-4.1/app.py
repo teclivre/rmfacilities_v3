@@ -8544,7 +8544,8 @@ register_ponto_routes(
 
 @app.route("/supervisor/login", methods=["GET", "POST"])
 def supervisor_login():
-    if "uid" in session and str(session.get("perfil", "")).lower() == "supervisor":
+    perfis_supervisor = {"supervisor", "dono"}
+    if "uid" in session and str(session.get("perfil", "")).strip().lower() in perfis_supervisor:
         return redirect(url_for("pagina_supervisor"))
     if "uid" in session:
         session.clear()
@@ -8559,8 +8560,8 @@ def supervisor_login():
             u = Usuario.query.filter_by(email=email, ativo=True).first()
             if not u or not pw_check(u.senha, senha):
                 erro = "Credenciais inválidas para o supervisor."
-            elif str(u.perfil or "").lower() != "supervisor":
-                erro = "Este acesso é restrito ao perfil de supervisor."
+            elif str(u.perfil or "").strip().lower() not in perfis_supervisor:
+                erro = "Este acesso é restrito aos perfis de supervisor e dono."
             else:
                 session.permanent = True
                 session["uid"] = u.id
