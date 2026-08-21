@@ -55,8 +55,14 @@ if [[ ! -d "$SDK_DIR" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$LOCAL_PROPERTIES" ]]; then
-  echo "Criando local.properties com sdk.dir..."
+configured_sdk=""
+if [[ -f "$LOCAL_PROPERTIES" ]]; then
+  configured_sdk="$(grep -E '^sdk\.dir=' "$LOCAL_PROPERTIES" | head -n1 | cut -d'=' -f2- || true)"
+  configured_sdk="${configured_sdk//\\/}"
+fi
+
+if [[ ! -f "$LOCAL_PROPERTIES" || "$configured_sdk" != "$SDK_DIR" ]]; then
+  echo "Atualizando local.properties com sdk.dir=$SDK_DIR..."
   printf 'sdk.dir=%s\n' "$SDK_DIR" > "$LOCAL_PROPERTIES"
 fi
 
