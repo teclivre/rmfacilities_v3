@@ -138,6 +138,7 @@ class ApiOperationsRepository(private val sessionStore: SecureSessionStore) : Op
                 ).getOrThrow()
             }
             requestJson("/api/supervisor/finalizar", JSONObject().put("observacoes", visita.observacoes))
+            Unit
         }
     }
 
@@ -157,6 +158,7 @@ class ApiOperationsRepository(private val sessionStore: SecureSessionStore) : Op
                     .put("status", ocorrencia.status.label())
                     .put("cliente_nome", ocorrencia.posto.ifBlank { "Cliente" })
             )
+                    Unit
         }
     }
 
@@ -178,6 +180,7 @@ class ApiOperationsRepository(private val sessionStore: SecureSessionStore) : Op
                     .put("servico", checklist.optString("servico", "Visita"))
                     .put("items", items)
             )
+                    Unit
         }
     }
 
