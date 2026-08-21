@@ -66,12 +66,12 @@ class ApiOperationsRepository(private val sessionStore: SecureSessionStore) : Op
     }
 
     override suspend fun getFuncionarios(query: String): Result<List<Funcionario>> = withContext(Dispatchers.IO) {
-        runCatching { funcionariosItems(query, onlyActive = false) }
+        runCatching { funcionariosItems(query, onlyActive = true) }
     }
 
     override suspend fun getFuncionarioById(id: String): Result<Funcionario> = withContext(Dispatchers.IO) {
         runCatching {
-            funcionariosItems(onlyActive = false).firstOrNull { it.id == id }
+            funcionariosItems(onlyActive = true).firstOrNull { it.id == id }
                 ?: throw NoSuchElementException("Funcionário não encontrado")
         }
     }

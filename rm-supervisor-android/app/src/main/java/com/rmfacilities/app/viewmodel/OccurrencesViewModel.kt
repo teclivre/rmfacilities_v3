@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.rmfacilities.app.data.model.Ocorrencia
 import com.rmfacilities.app.data.model.OcorrenciaStatus
 import com.rmfacilities.app.data.model.Prioridade
+import com.rmfacilities.app.data.model.Posto
 import com.rmfacilities.app.data.repository.OperationsRepository
 import com.rmfacilities.app.ui.state.UiState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,8 +23,12 @@ class OccurrencesViewModel(private val repository: OperationsRepository) : ViewM
     private val _priorityFilter = MutableStateFlow<Prioridade?>(null)
     val priorityFilter: StateFlow<Prioridade?> = _priorityFilter.asStateFlow()
 
+    private val _postos = MutableStateFlow<List<Posto>>(emptyList())
+    val postos: StateFlow<List<Posto>> = _postos.asStateFlow()
+
     init {
         load()
+        buscarPostos()
     }
 
     fun load() {
@@ -39,6 +44,12 @@ class OccurrencesViewModel(private val repository: OperationsRepository) : ViewM
         viewModelScope.launch {
             repository.salvarOcorrencia(ocorrencia)
             load()
+        }
+    }
+
+    fun buscarPostos(query: String = "") {
+        viewModelScope.launch {
+            repository.getPostos(query).onSuccess { _postos.value = it }
         }
     }
 

@@ -2,6 +2,7 @@ package com.rmfacilities.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rmfacilities.app.data.model.Posto
 import com.rmfacilities.app.data.model.Visita
 import com.rmfacilities.app.data.repository.OperationsRepository
 import com.rmfacilities.app.ui.state.UiState
@@ -17,8 +18,12 @@ class VisitsViewModel(private val repository: OperationsRepository) : ViewModel(
     private val _saveState = MutableStateFlow<UiState<Unit>>(UiState.Success(Unit))
     val saveState: StateFlow<UiState<Unit>> = _saveState.asStateFlow()
 
+    private val _postos = MutableStateFlow<List<Posto>>(emptyList())
+    val postos: StateFlow<List<Posto>> = _postos.asStateFlow()
+
     init {
         load()
+        buscarPostos()
     }
 
     fun load() {
@@ -39,6 +44,12 @@ class VisitsViewModel(private val repository: OperationsRepository) : ViewModel(
                     load()
                 }
                 .onFailure { _saveState.value = UiState.Error(it.message ?: "Erro ao salvar visita") }
+        }
+    }
+
+    fun buscarPostos(query: String = "") {
+        viewModelScope.launch {
+            repository.getPostos(query).onSuccess { _postos.value = it }
         }
     }
 }

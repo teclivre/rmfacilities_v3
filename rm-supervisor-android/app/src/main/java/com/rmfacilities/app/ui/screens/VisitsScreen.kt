@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,8 +47,10 @@ import java.util.UUID
 fun VisitsScreen(vm: VisitsViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val state by vm.state.collectAsStateWithLifecycle()
+    val postos by vm.postos.collectAsStateWithLifecycle()
 
     var posto by remember { mutableStateOf("") }
+    var postoId by remember { mutableStateOf("") }
     var observacoes by remember { mutableStateOf("") }
     var problemas by remember { mutableStateOf("") }
     var latitude by remember { mutableStateOf<String?>(null) }
@@ -82,7 +85,30 @@ fun VisitsScreen(vm: VisitsViewModel, modifier: Modifier = Modifier) {
         )
 
         RmSectionCard {
-                OutlinedTextField(value = posto, onValueChange = { posto = it }, label = { Text("Posto") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = posto,
+                    onValueChange = {
+                        posto = it
+                        postoId = ""
+                        vm.buscarPostos(it)
+                    },
+                    label = { Text("Posto") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                postos.take(5).forEach { item ->
+                    Text(
+                        text = "${item.nome} - ${item.cidade}",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clickable {
+                                posto = item.nome
+                                postoId = item.id
+                                vm.buscarPostos(item.nome)
+                            },
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
                 OutlinedTextField(value = observacoes, onValueChange = { observacoes = it }, label = { Text("Observações") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = problemas, onValueChange = { problemas = it }, label = { Text("Problemas") }, modifier = Modifier.fillMaxWidth())
 
@@ -107,7 +133,7 @@ fun VisitsScreen(vm: VisitsViewModel, modifier: Modifier = Modifier) {
                             vm.salvar(
                                 Visita(
                                     id = UUID.randomUUID().toString(),
-                                    postoId = posto,
+                                    postoId = postoId.ifBlank { posto },
                                     postoNome = posto,
                                     supervisor = "Supervisor RM",
                                     dataHora = LocalDateTime.now(),
@@ -120,6 +146,7 @@ fun VisitsScreen(vm: VisitsViewModel, modifier: Modifier = Modifier) {
                                 )
                             )
                             posto = ""
+                            postoId = ""
                             observacoes = ""
                             problemas = ""
                             latitude = null

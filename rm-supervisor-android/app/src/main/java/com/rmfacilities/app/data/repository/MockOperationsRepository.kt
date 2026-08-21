@@ -68,7 +68,8 @@ class MockOperationsRepository : OperationsRepository {
     override suspend fun getFuncionarios(query: String): Result<List<Funcionario>> {
         delay(250)
         val q = query.trim().lowercase()
-        val filtered = if (q.isBlank()) funcionarios else funcionarios.filter {
+        val ativos = funcionarios.filter { it.status == EntityStatus.ATIVO }
+        val filtered = if (q.isBlank()) ativos else ativos.filter {
             it.nome.lowercase().contains(q) || it.matricula.lowercase().contains(q) || it.posto.lowercase().contains(q) || it.funcao.lowercase().contains(q) || it.cidade.lowercase().contains(q)
         }
         return Result.success(filtered)

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -36,6 +37,7 @@ import java.util.UUID
 @Composable
 fun OccurrencesScreen(vm: OccurrencesViewModel, modifier: Modifier = Modifier) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val postos by vm.postos.collectAsStateWithLifecycle()
     val statusFilter by vm.statusFilter.collectAsStateWithLifecycle()
     val priorityFilter by vm.priorityFilter.collectAsStateWithLifecycle()
 
@@ -47,7 +49,28 @@ fun OccurrencesScreen(vm: OccurrencesViewModel, modifier: Modifier = Modifier) {
         ScreenHeader("Ocorrências", "Registros abertos no atendimento operacional")
 
         RmSectionCard {
-                OutlinedTextField(value = posto, onValueChange = { posto = it }, label = { Text("Posto") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = posto,
+                    onValueChange = {
+                        posto = it
+                        vm.buscarPostos(it)
+                    },
+                    label = { Text("Posto") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                postos.take(5).forEach { item ->
+                    Text(
+                        text = "${item.nome} - ${item.cidade}",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clickable {
+                                posto = item.nome
+                                vm.buscarPostos(item.nome)
+                            },
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
                 OutlinedTextField(value = tipo, onValueChange = { tipo = it }, label = { Text("Tipo") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = descricao, onValueChange = { descricao = it }, label = { Text("Descrição") }, modifier = Modifier.fillMaxWidth())
                 Button(
