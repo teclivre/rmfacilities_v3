@@ -16,11 +16,13 @@
       --ok:#0f9d58;
       --warn:#d97706;
       --bad:#dc2626;
+      --app-shadow:0 10px 30px rgba(5, 45, 49, 0.12);
     }
     *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
     body{
       margin:0;
-      font-family:Segoe UI,Roboto,Arial,sans-serif;
+      font-family:"Poppins","Segoe UI",Tahoma,sans-serif;
       color:var(--ink);
       background:
         radial-gradient(circle at 0% 0%, #d7f3ee 0, transparent 34%),
@@ -29,7 +31,7 @@
       min-height:100dvh;
     }
     .wrap{max-width:1100px;margin:0 auto;padding:16px}
-    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;box-shadow:var(--app-shadow)}
     .row{display:grid;gap:12px}
     .row.cols-2{grid-template-columns:1fr 1fr}
     .row.cols-4{grid-template-columns:repeat(4,1fr)}
@@ -39,7 +41,7 @@
     .topbar h1{font-size:20px;margin:0}
     .topbar p{margin:3px 0 0;color:var(--muted);font-size:13px}
 
-    .btn{border:none;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+    .btn{border:none;border-radius:12px;padding:11px 14px;font-weight:600;cursor:pointer}
     .btn:disabled{opacity:.6;cursor:not-allowed}
     .btn.brand{background:linear-gradient(120deg,var(--brand),var(--brand-2));color:#fff}
     .btn.ghost{background:#eef7f6;color:var(--brand)}
@@ -53,7 +55,7 @@
     }
     input:focus,select:focus,textarea:focus{border-color:var(--brand)}
 
-    .kpi{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fbfefd}
+    .kpi{border:1px solid var(--line);border-radius:14px;padding:10px;background:#fbfefd}
     .kpi .t{font-size:12px;color:var(--muted)}
     .kpi .v{font-size:22px;font-weight:700;margin-top:4px}
     .kpi .v.pos{color:var(--ok)}
@@ -67,7 +69,7 @@
     .tab.on{background:#d8f3ef;border-color:#9fded5;color:#0f4f4a}
 
     .list{display:grid;gap:10px}
-    .item{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff}
+    .item{border:1px solid var(--line);border-radius:14px;padding:12px;background:#fff}
     .item-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
     .item-title{font-weight:700;font-size:15px}
     .item-meta{color:var(--muted);font-size:12px;margin-top:3px}
@@ -87,14 +89,61 @@
     .center{display:flex;align-items:center;justify-content:center;min-height:60vh}
     .login{max-width:460px;width:100%}
     .muted{color:var(--muted)}
+    .section{scroll-margin-top:96px}
+    .app-shell{position:relative}
+    .mobile-dock{display:none}
 
     @media (max-width:900px){
+      .app-shell{max-width:560px;margin:0 auto;padding-bottom:92px}
+      .topbar{
+        position:sticky;
+        top:0;
+        z-index:30;
+        background:rgba(244,248,247,.92);
+        backdrop-filter:blur(10px);
+        border-bottom:1px solid #d8e4e5;
+        padding:10px 0;
+        margin-bottom:12px;
+      }
       .row.cols-4{grid-template-columns:1fr 1fr}
       .row.cols-2{grid-template-columns:1fr}
+      .item-actions .btn{flex:1;min-width:120px}
+
+      .mobile-dock{
+        position:fixed;
+        left:10px;
+        right:10px;
+        bottom:calc(env(safe-area-inset-bottom,0px) + 8px);
+        display:grid;
+        grid-template-columns:repeat(4,1fr);
+        gap:8px;
+        background:rgba(255,255,255,.94);
+        border:1px solid var(--line);
+        border-radius:16px;
+        box-shadow:var(--app-shadow);
+        padding:8px;
+        z-index:40;
+      }
+      .dock-btn{
+        border:none;
+        border-radius:10px;
+        padding:10px 6px;
+        font-size:11px;
+        font-weight:600;
+        background:#eef7f6;
+        color:#0f4f4a;
+        line-height:1.15;
+      }
+      .dock-btn.primary{background:linear-gradient(120deg,var(--brand),var(--brand-2));color:#fff}
     }
+
     @media (max-width:560px){
+      .wrap{padding:12px}
+      .card{padding:12px;border-radius:14px}
       .row.cols-4{grid-template-columns:1fr}
       .topbar{flex-direction:column;align-items:flex-start}
+      .topbar h1{font-size:18px}
+      .toolbar .f{min-width:140px}
     }
   </style>
 </head>
@@ -124,7 +173,7 @@
   </div>
 
   <div id="app-screen" class="hidden">
-    <div class="wrap">
+    <div class="wrap app-shell">
       <div class="topbar">
         <div>
           <h1>Gestor Financeiro</h1>
@@ -136,7 +185,7 @@
         </div>
       </div>
 
-      <div class="card" style="margin-bottom:12px">
+      <div class="card section" id="sec-resumo-filtro" style="margin-bottom:12px">
         <div class="toolbar">
           <div class="f">
             <label>Competencia (mes)</label>
@@ -146,14 +195,14 @@
         </div>
       </div>
 
-      <div class="row cols-4" id="kpis" style="margin-bottom:12px">
+      <div class="row cols-4 section" id="sec-kpis" style="margin-bottom:12px">
         <div class="kpi"><div class="t">Saldo atual</div><div id="k-saldo-atual" class="v">R$ 0,00</div></div>
         <div class="kpi"><div class="t">Entradas futuras</div><div id="k-fut-in" class="v pos">R$ 0,00</div></div>
         <div class="kpi"><div class="t">Saidas futuras</div><div id="k-fut-out" class="v neg">R$ 0,00</div></div>
         <div class="kpi"><div class="t">Saldo projetado total</div><div id="k-proj" class="v">R$ 0,00</div></div>
       </div>
 
-      <div class="row cols-2">
+      <div class="row cols-2 section" id="sec-form">
         <div class="card">
           <h3 style="margin:0 0 10px">Novo lancamento</h3>
           <div class="row cols-2">
@@ -228,7 +277,7 @@
         </div>
       </div>
 
-      <div class="card" style="margin-top:12px">
+      <div class="card section" id="sec-lista" style="margin-top:12px">
         <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
           <h3 style="margin:0">Lancamentos</h3>
           <div class="tabs">
@@ -238,6 +287,13 @@
           </div>
         </div>
         <div id="lista" class="list" style="margin-top:10px"></div>
+      </div>
+
+      <div class="mobile-dock">
+        <button class="dock-btn" type="button" onclick="goSec('sec-resumo-filtro')">Resumo</button>
+        <button class="dock-btn primary" type="button" onclick="goSec('sec-form')">Novo</button>
+        <button class="dock-btn" type="button" onclick="goSec('sec-lista')">Lista</button>
+        <button class="dock-btn" type="button" onclick="window.location.href='/funcionario'">App</button>
       </div>
     </div>
   </div>
@@ -700,6 +756,12 @@
       var d = document.createElement('div');
       d.textContent = String(s || '');
       return d.innerHTML;
+    }
+
+    function goSec(id){
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.scrollIntoView({ behavior:'smooth', block:'start' });
     }
 
     toggleDataEfetiva();
