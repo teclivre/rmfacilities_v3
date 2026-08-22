@@ -2290,6 +2290,37 @@ class GestorFinanceiroLancamento(db.Model):
         return d
 
 
+class GestorFinanceiroCategoria(db.Model):
+    __tablename__ = "gestor_financeiro_categoria"
+    id = db.Column(db.Integer, primary_key=True)
+    funcionario_id = db.Column(
+        db.Integer, db.ForeignKey("funcionario.id"), nullable=False, index=True
+    )
+    tipo = db.Column(db.String(10), nullable=False, index=True)  # entrada | saida
+    nome = db.Column(db.String(80), nullable=False)
+    ordem = db.Column(db.Integer, default=0)
+    ativo = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=utcnow)
+    atualizado_em = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
+    __table_args__ = (
+        db.UniqueConstraint(
+            "funcionario_id", "tipo", "nome", name="uq_gestor_categoria_func_tipo_nome"
+        ),
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "funcionario_id": self.funcionario_id,
+            "tipo": self.tipo,
+            "nome": self.nome,
+            "ordem": int(self.ordem or 0),
+            "ativo": bool(self.ativo),
+            "criado_em": self.criado_em.isoformat() if self.criado_em else None,
+            "atualizado_em": self.atualizado_em.isoformat() if self.atualizado_em else None,
+        }
+
+
 # ── Folhas de pagamento customizáveis (múltiplas por competência) ─────────────
 class FolhaPagamento(db.Model):
     __tablename__ = "folha_pagamento"
@@ -19158,6 +19189,24 @@ def _gestor_exigir_funcionario_ativo():
     return None
 
 
+def _gestor_categoria_normalizar_nome(nome):
+    return re.sub(r"\s+", " ", str(nome or "").strip())[:80]
+
+
+def _gestor_categoria_exists(funcionario_id, tipo, nome, ignore_id=None):
+    nome_norm = _gestor_categoria_normalizar_nome(nome)
+    if not nome_norm:
+        return False
+    q = GestorFinanceiroCategoria.query.filter(
+        GestorFinanceiroCategoria.funcionario_id == funcionario_id,
+        GestorFinanceiroCategoria.tipo == tipo,
+        db.func.lower(GestorFinanceiroCategoria.nome) == nome_norm.lower(),
+    )
+    if ignore_id:
+        q = q.filter(GestorFinanceiroCategoria.id != int(ignore_id))
+    return bool(q.first())
+
+
 @app.route("/api/app/funcionario/me/gestor/resumo")
 @app_func_required
 def api_app_funcionario_gestor_resumo():
@@ -19254,6 +19303,170 @@ def api_app_funcionario_gestor_resumo():
     )
 
 
+@app.route("/api/app/funcionario/me/gestor/categorias")
+@app_func_required
+def api_app_funcionario_gestor_categorias():
+    bloqueio = _gestor_exigir_funcionario_ativo()
+    if bloqueio:
+        return bloqueio
+
+    f = g.app_funcionario
+    tipo_filtro = (request.args.get("tipo") or "").strip().lower()
+    incluir_inativas = str(request.args.get("incluir_inativas", "0")).strip() in (
+        "1",
+        "true",
+        "True",
+    )
+
+    q = GestorFinanceiroCategoria.query.filter(
+        GestorFinanceiroCategoria.funcionario_id == f.id
+    )
+    if tipo_filtro in ("entrada", "saida"):
+        q = q.filter(GestorFinanceiroCategoria.tipo == tipo_filtro)
+    if not incluir_inativas:
+        q = q.filter(GestorFinanceiroCategoria.ativo == True)
+
+    itens = q.order_by(
+        GestorFinanceiroCategoria.tipo.asc(),
+        GestorFinanceiroCategoria.ordem.asc(),
+        GestorFinanceiroCategoria.nome.asc(),
+    ).all()
+    return jsonify({"ok": True, "itens": [it.to_dict() for it in itens]})
+
+
+@app.route("/api/app/funcionario/me/gestor/categorias", methods=["POST"])
+@_limiter.limit("20 per minute; 100 per hour", key_func=_limiter_key_app_bearer)
+@app_func_required
+def api_app_funcionario_gestor_categoria_criar():
+    bloqueio = _gestor_exigir_funcionario_ativo()
+    if bloqueio:
+        return bloqueio
+
+    f = g.app_funcionario
+    d = request.json or {}
+    tipo = (d.get("tipo") or "").strip().lower()
+    if tipo not in ("entrada", "saida"):
+        return jsonify({"erro": "Tipo invalido. Use entrada ou saida."}), 400
+
+    nome = _gestor_categoria_normalizar_nome(d.get("nome"))
+    if not nome:
+        return jsonify({"erro": "Informe o nome da categoria."}), 400
+
+    if _gestor_categoria_exists(f.id, tipo, nome):
+        return jsonify({"erro": "Categoria ja cadastrada para este tipo."}), 400
+
+    nova = GestorFinanceiroCategoria(
+        funcionario_id=f.id,
+        tipo=tipo,
+        nome=nome,
+        ordem=to_num(d.get("ordem")),
+        ativo=bool(d.get("ativo", True)),
+    )
+    db.session.add(nova)
+    db.session.commit()
+    audit_event(
+        "gestor_financeiro_categoria_criar",
+        "funcionario",
+        f.id,
+        "gestor_financeiro_categoria",
+        nova.id,
+        True,
+        {"tipo": tipo, "nome": nome},
+    )
+    return jsonify({"ok": True, "item": nova.to_dict()}), 201
+
+
+@app.route("/api/app/funcionario/me/gestor/categorias/<int:cid>", methods=["PUT"])
+@_limiter.limit("20 per minute; 100 per hour", key_func=_limiter_key_app_bearer)
+@app_func_required
+def api_app_funcionario_gestor_categoria_editar(cid):
+    bloqueio = _gestor_exigir_funcionario_ativo()
+    if bloqueio:
+        return bloqueio
+
+    f = g.app_funcionario
+    item = db.session.get(GestorFinanceiroCategoria, cid)
+    if not item or item.funcionario_id != f.id:
+        return jsonify({"erro": "Categoria nao encontrada."}), 404
+
+    d = request.json or {}
+    tipo = item.tipo
+    if "tipo" in d:
+        tipo = (d.get("tipo") or "").strip().lower()
+        if tipo not in ("entrada", "saida"):
+            return jsonify({"erro": "Tipo invalido. Use entrada ou saida."}), 400
+
+    nome = item.nome
+    if "nome" in d:
+        nome = _gestor_categoria_normalizar_nome(d.get("nome"))
+        if not nome:
+            return jsonify({"erro": "Informe o nome da categoria."}), 400
+
+    if _gestor_categoria_exists(f.id, tipo, nome, ignore_id=item.id):
+        return jsonify({"erro": "Ja existe categoria com esse nome neste tipo."}), 400
+
+    item.tipo = tipo
+    item.nome = nome
+    if "ordem" in d:
+        item.ordem = to_num(d.get("ordem"))
+    if "ativo" in d:
+        item.ativo = bool(d.get("ativo"))
+
+    db.session.commit()
+    audit_event(
+        "gestor_financeiro_categoria_editar",
+        "funcionario",
+        f.id,
+        "gestor_financeiro_categoria",
+        item.id,
+        True,
+        {"tipo": item.tipo, "nome": item.nome, "ativo": bool(item.ativo)},
+    )
+    return jsonify({"ok": True, "item": item.to_dict()})
+
+
+@app.route(
+    "/api/app/funcionario/me/gestor/categorias/<int:cid>", methods=["DELETE"]
+)
+@_limiter.limit("20 per minute; 100 per hour", key_func=_limiter_key_app_bearer)
+@app_func_required
+def api_app_funcionario_gestor_categoria_excluir(cid):
+    bloqueio = _gestor_exigir_funcionario_ativo()
+    if bloqueio:
+        return bloqueio
+
+    f = g.app_funcionario
+    item = db.session.get(GestorFinanceiroCategoria, cid)
+    if not item or item.funcionario_id != f.id:
+        return jsonify({"erro": "Categoria nao encontrada."}), 404
+
+    em_uso = GestorFinanceiroLancamento.query.filter(
+        GestorFinanceiroLancamento.funcionario_id == f.id,
+        GestorFinanceiroLancamento.tipo == item.tipo,
+        db.func.lower(GestorFinanceiroLancamento.categoria) == item.nome.lower(),
+        GestorFinanceiroLancamento.status != "cancelado",
+    ).first()
+    if em_uso:
+        return jsonify(
+            {
+                "erro": "Categoria em uso em lancamentos. Edite ou desative ao inves de excluir.",
+            }
+        ), 400
+
+    db.session.delete(item)
+    db.session.commit()
+    audit_event(
+        "gestor_financeiro_categoria_excluir",
+        "funcionario",
+        f.id,
+        "gestor_financeiro_categoria",
+        cid,
+        True,
+        {},
+    )
+    return jsonify({"ok": True})
+
+
 @app.route("/api/app/funcionario/me/gestor/lancamentos")
 @app_func_required
 def api_app_funcionario_gestor_lancamentos():
@@ -19303,6 +19516,10 @@ def api_app_funcionario_gestor_lancamento_criar():
     if tipo not in ("entrada", "saida"):
         return jsonify({"erro": "Tipo invalido. Use entrada ou saida."}), 400
 
+    categoria_nome = _gestor_categoria_normalizar_nome(d.get("categoria"))
+    if categoria_nome and not _gestor_categoria_exists(f.id, tipo, categoria_nome):
+        return jsonify({"erro": "Categoria nao cadastrada para este tipo."}), 400
+
     valor = to_num(d.get("valor"), dec=True)
     if valor <= 0:
         return jsonify({"erro": "Informe um valor maior que zero."}), 400
@@ -19324,7 +19541,7 @@ def api_app_funcionario_gestor_lancamento_criar():
     novo = GestorFinanceiroLancamento(
         funcionario_id=f.id,
         tipo=tipo,
-        categoria=(d.get("categoria") or "").strip()[:80],
+        categoria=categoria_nome,
         descricao=(d.get("descricao") or "").strip()[:200],
         valor=round(abs(valor), 2),
         data_prevista=data_prev.strftime("%Y-%m-%d"),
@@ -19368,6 +19585,19 @@ def api_app_funcionario_gestor_lancamento_atualizar(lid):
             return jsonify({"erro": "Tipo invalido. Use entrada ou saida."}), 400
         item.tipo = tipo
 
+    categoria_nome = item.categoria or ""
+    if "categoria" in d:
+        categoria_nome = _gestor_categoria_normalizar_nome(d.get("categoria"))
+
+    tipo_para_categoria = item.tipo
+    if "tipo" in d:
+        tipo_para_categoria = item.tipo
+
+    if categoria_nome and not _gestor_categoria_exists(
+        f.id, tipo_para_categoria, categoria_nome
+    ):
+        return jsonify({"erro": "Categoria nao cadastrada para este tipo."}), 400
+
     if "valor" in d:
         valor = to_num(d.get("valor"), dec=True)
         if valor <= 0:
@@ -19398,7 +19628,7 @@ def api_app_funcionario_gestor_lancamento_atualizar(lid):
         item.data_efetiva = item.data_prevista
 
     if "categoria" in d:
-        item.categoria = (d.get("categoria") or "").strip()[:80]
+        item.categoria = categoria_nome
     if "descricao" in d:
         item.descricao = (d.get("descricao") or "").strip()[:200]
     if "observacao" in d:
