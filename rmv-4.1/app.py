@@ -2253,6 +2253,43 @@ class LancamentoAvulso(db.Model):
         return d
 
 
+class GestorFinanceiroLancamento(db.Model):
+    __tablename__ = "gestor_financeiro_lancamento"
+    id = db.Column(db.Integer, primary_key=True)
+    funcionario_id = db.Column(
+        db.Integer, db.ForeignKey("funcionario.id"), nullable=False, index=True
+    )
+    tipo = db.Column(db.String(10), nullable=False)  # entrada | saida
+    categoria = db.Column(db.String(80), default="")
+    descricao = db.Column(db.String(200), default="")
+    valor = db.Column(db.Float, default=0)
+    data_prevista = db.Column(db.String(10), nullable=False, index=True)  # YYYY-MM-DD
+    data_efetiva = db.Column(db.String(10), index=True)  # YYYY-MM-DD
+    status = db.Column(
+        db.String(20), default="previsto", index=True
+    )  # previsto | realizado | cancelado
+    observacao = db.Column(db.Text, default="")
+    criado_em = db.Column(db.DateTime, default=utcnow)
+    atualizado_em = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
+
+    def to_dict(self):
+        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        d["valor"] = float(self.valor or 0)
+        d["criado_em"] = self.criado_em.isoformat() if self.criado_em else None
+        d["atualizado_em"] = (
+            self.atualizado_em.isoformat() if self.atualizado_em else None
+        )
+        base = self.data_efetiva if self.status == "realizado" and self.data_efetiva else self.data_prevista
+        d["data_base"] = base
+        d["valor_assinado"] = d["valor"] if (self.tipo or "") == "entrada" else -d["valor"]
+        try:
+            hoje = localnow().date().strftime("%Y-%m-%d")
+            d["eh_futuro"] = bool(base and base > hoje and self.status == "previsto")
+        except Exception:
+            d["eh_futuro"] = False
+        return d
+
+
 # ── Folhas de pagamento customizáveis (múltiplas por competência) ─────────────
 class FolhaPagamento(db.Model):
     __tablename__ = "folha_pagamento"
@@ -9014,6 +9051,12 @@ def index():
 def pagina_funcionario_app():
     # Compatibilidade para links antigos que apontam para /funcionario.
     return render_template("funcionario_app.html")
+
+
+@app.route("/gestor")
+@app.route("/gestor/")
+def pagina_gestor_financeiro():
+    return render_template("gestor.html")
 
 
 @app.route("/supervisor")
@@ -19073,6 +19116,368 @@ def api_decidir_solicitacao_alteracao(id):
 def api_app_funcionario_me_documentos():
     resp, status = build_func_docs_response(g.app_funcionario.id)
     return jsonify(resp), status
+
+
+def _app_funcionario_ativo_estrito(funcionario):
+    if not funcionario:
+        return False
+    if not bool(getattr(funcionario, "app_ativo", True)):
+        return False
+    if bool((getattr(funcionario, "data_demissao", "") or "").strip()):
+        return False
+    return _status_norm(getattr(funcionario, "status", "Ativo")) == "ativo"
+
+
+def _gestor_parse_data_iso(valor):
+    txt = (valor or "").strip()
+    if not txt:
+        return None
+    try:
+        return datetime.strptime(txt, "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _gestor_mes_bounds(valor_mes):
+    txt = (valor_mes or "").strip()
+    if not re.match(r"^\d{4}-\d{2}$", txt or ""):
+        txt = localnow().strftime("%Y-%m")
+    ano, mes = txt.split("-")
+    ano_i = int(ano)
+    mes_i = int(mes)
+    ini = date(ano_i, mes_i, 1)
+    prox = date(ano_i + 1, 1, 1) if mes_i == 12 else date(ano_i, mes_i + 1, 1)
+    fim = prox - timedelta(days=1)
+    return txt, ini, fim
+
+
+def _gestor_exigir_funcionario_ativo():
+    f = getattr(g, "app_funcionario", None)
+    if not _app_funcionario_ativo_estrito(f):
+        return jsonify({"erro": "Gestor financeiro disponivel apenas para funcionarios ativos."}), 403
+    return None
+
+
+@app.route("/api/app/funcionario/me/gestor/resumo")
+@app_func_required
+def api_app_funcionario_gestor_resumo():
+    bloqueio = _gestor_exigir_funcionario_ativo()
+    if bloqueio:
+        return bloqueio
+
+    f = g.app_funcionario
+    mes_ref, inicio_mes, fim_mes = _gestor_mes_bounds(request.args.get("mes"))
+    hoje = localnow().date()
+
+    itens = (
+        GestorFinanceiroLancamento.query.filter(
+            GestorFinanceiroLancamento.funcionario_id == f.id,
+            GestorFinanceiroLancamento.status != "cancelado",
+        )
+        .order_by(
+            GestorFinanceiroLancamento.data_prevista.desc(),
+            GestorFinanceiroLancamento.id.desc(),
+        )
+        .all()
+    )
+
+    saldo_atual = 0.0
+    futuros_entradas = 0.0
+    futuros_saidas = 0.0
+    entradas_realizadas_mes = 0.0
+    saidas_realizadas_mes = 0.0
+    entradas_previstas_mes = 0.0
+    saidas_previstas_mes = 0.0
+    lancamentos_mes = []
+    proximos = []
+
+    for it in itens:
+        valor = float(it.valor or 0)
+        data_prev = _gestor_parse_data_iso(it.data_prevista)
+        data_efe = _gestor_parse_data_iso(it.data_efetiva)
+        data_base = data_efe if it.status == "realizado" and data_efe else data_prev
+        e_entrada = (it.tipo or "") == "entrada"
+
+        if it.status == "realizado":
+            saldo_atual += valor if e_entrada else -valor
+        elif it.status == "previsto" and data_base and data_base >= hoje:
+            if e_entrada:
+                futuros_entradas += valor
+            else:
+                futuros_saidas += valor
+
+        if data_base and inicio_mes <= data_base <= fim_mes:
+            d = it.to_dict()
+            lancamentos_mes.append(d)
+            if it.status == "realizado":
+                if e_entrada:
+                    entradas_realizadas_mes += valor
+                else:
+                    saidas_realizadas_mes += valor
+            elif it.status == "previsto":
+                if e_entrada:
+                    entradas_previstas_mes += valor
+                else:
+                    saidas_previstas_mes += valor
+
+        if it.status == "previsto" and data_base and data_base >= hoje:
+            proximos.append(it.to_dict())
+
+    proximos.sort(
+        key=lambda d: ((d.get("data_base") or ""), d.get("id") or 0)
+    )
+
+    saldo_mes = entradas_realizadas_mes - saidas_realizadas_mes
+    saldo_projetado_mes = saldo_mes + entradas_previstas_mes - saidas_previstas_mes
+
+    return jsonify(
+        {
+            "ok": True,
+            "mes": mes_ref,
+            "resumo": {
+                "saldo_atual": round(saldo_atual, 2),
+                "futuros_entradas": round(futuros_entradas, 2),
+                "futuros_saidas": round(futuros_saidas, 2),
+                "saldo_projetado_total": round(
+                    saldo_atual + futuros_entradas - futuros_saidas, 2
+                ),
+                "entradas_realizadas_mes": round(entradas_realizadas_mes, 2),
+                "saidas_realizadas_mes": round(saidas_realizadas_mes, 2),
+                "entradas_previstas_mes": round(entradas_previstas_mes, 2),
+                "saidas_previstas_mes": round(saidas_previstas_mes, 2),
+                "saldo_mes": round(saldo_mes, 2),
+                "saldo_projetado_mes": round(saldo_projetado_mes, 2),
+            },
+            "lancamentos_mes": lancamentos_mes,
+            "proximos_lancamentos": proximos[:20],
+        }
+    )
+
+
+@app.route("/api/app/funcionario/me/gestor/lancamentos")
+@app_func_required
+def api_app_funcionario_gestor_lancamentos():
+    bloqueio = _gestor_exigir_funcionario_ativo()
+    if bloqueio:
+        return bloqueio
+
+    f = g.app_funcionario
+    status_filtro = (request.args.get("status") or "").strip().lower()
+    tipo_filtro = (request.args.get("tipo") or "").strip().lower()
+    mes_filtro = (request.args.get("mes") or "").strip()
+
+    q = GestorFinanceiroLancamento.query.filter(
+        GestorFinanceiroLancamento.funcionario_id == f.id,
+        GestorFinanceiroLancamento.status != "cancelado",
+    )
+    if status_filtro in ("previsto", "realizado"):
+        q = q.filter(GestorFinanceiroLancamento.status == status_filtro)
+    if tipo_filtro in ("entrada", "saida"):
+        q = q.filter(GestorFinanceiroLancamento.tipo == tipo_filtro)
+
+    if mes_filtro:
+        _, ini, fim = _gestor_mes_bounds(mes_filtro)
+        q = q.filter(
+            GestorFinanceiroLancamento.data_prevista >= ini.strftime("%Y-%m-%d"),
+            GestorFinanceiroLancamento.data_prevista <= fim.strftime("%Y-%m-%d"),
+        )
+
+    itens = q.order_by(
+        GestorFinanceiroLancamento.data_prevista.desc(),
+        GestorFinanceiroLancamento.id.desc(),
+    ).limit(500).all()
+    return jsonify({"ok": True, "itens": [it.to_dict() for it in itens]})
+
+
+@app.route("/api/app/funcionario/me/gestor/lancamentos", methods=["POST"])
+@_limiter.limit("30 per minute; 200 per hour", key_func=_limiter_key_app_bearer)
+@app_func_required
+def api_app_funcionario_gestor_lancamento_criar():
+    bloqueio = _gestor_exigir_funcionario_ativo()
+    if bloqueio:
+        return bloqueio
+
+    f = g.app_funcionario
+    d = request.json or {}
+    tipo = (d.get("tipo") or "").strip().lower()
+    if tipo not in ("entrada", "saida"):
+        return jsonify({"erro": "Tipo invalido. Use entrada ou saida."}), 400
+
+    valor = to_num(d.get("valor"), dec=True)
+    if valor <= 0:
+        return jsonify({"erro": "Informe um valor maior que zero."}), 400
+
+    data_prev = _gestor_parse_data_iso(d.get("data_prevista"))
+    if not data_prev:
+        return jsonify({"erro": "data_prevista obrigatoria no formato YYYY-MM-DD."}), 400
+
+    status = (d.get("status") or "previsto").strip().lower()
+    if status not in ("previsto", "realizado"):
+        return jsonify({"erro": "Status invalido. Use previsto ou realizado."}), 400
+
+    data_efetiva = _gestor_parse_data_iso(d.get("data_efetiva"))
+    if status == "realizado" and not data_efetiva:
+        data_efetiva = data_prev
+    if status == "previsto":
+        data_efetiva = None
+
+    novo = GestorFinanceiroLancamento(
+        funcionario_id=f.id,
+        tipo=tipo,
+        categoria=(d.get("categoria") or "").strip()[:80],
+        descricao=(d.get("descricao") or "").strip()[:200],
+        valor=round(abs(valor), 2),
+        data_prevista=data_prev.strftime("%Y-%m-%d"),
+        data_efetiva=data_efetiva.strftime("%Y-%m-%d") if data_efetiva else None,
+        status=status,
+        observacao=(d.get("observacao") or "").strip()[:2000],
+    )
+    db.session.add(novo)
+    db.session.commit()
+    audit_event(
+        "gestor_financeiro_criar",
+        "funcionario",
+        f.id,
+        "gestor_financeiro_lancamento",
+        novo.id,
+        True,
+        {"tipo": tipo, "status": status, "valor": float(novo.valor or 0)},
+    )
+    return jsonify({"ok": True, "item": novo.to_dict()}), 201
+
+
+@app.route("/api/app/funcionario/me/gestor/lancamentos/<int:lid>", methods=["PUT"])
+@_limiter.limit("30 per minute; 200 per hour", key_func=_limiter_key_app_bearer)
+@app_func_required
+def api_app_funcionario_gestor_lancamento_atualizar(lid):
+    bloqueio = _gestor_exigir_funcionario_ativo()
+    if bloqueio:
+        return bloqueio
+
+    f = g.app_funcionario
+    item = db.session.get(GestorFinanceiroLancamento, lid)
+    if not item or item.funcionario_id != f.id:
+        return jsonify({"erro": "Lancamento nao encontrado."}), 404
+    if (item.status or "") == "cancelado":
+        return jsonify({"erro": "Lancamento cancelado nao pode ser editado."}), 400
+
+    d = request.json or {}
+    if "tipo" in d:
+        tipo = (d.get("tipo") or "").strip().lower()
+        if tipo not in ("entrada", "saida"):
+            return jsonify({"erro": "Tipo invalido. Use entrada ou saida."}), 400
+        item.tipo = tipo
+
+    if "valor" in d:
+        valor = to_num(d.get("valor"), dec=True)
+        if valor <= 0:
+            return jsonify({"erro": "Informe um valor maior que zero."}), 400
+        item.valor = round(abs(valor), 2)
+
+    if "data_prevista" in d:
+        data_prev = _gestor_parse_data_iso(d.get("data_prevista"))
+        if not data_prev:
+            return jsonify({"erro": "data_prevista invalida. Use YYYY-MM-DD."}), 400
+        item.data_prevista = data_prev.strftime("%Y-%m-%d")
+
+    if "status" in d:
+        status = (d.get("status") or "").strip().lower()
+        if status not in ("previsto", "realizado"):
+            return jsonify({"erro": "Status invalido. Use previsto ou realizado."}), 400
+        item.status = status
+        if status == "previsto":
+            item.data_efetiva = None
+
+    if "data_efetiva" in d:
+        data_efetiva = _gestor_parse_data_iso(d.get("data_efetiva"))
+        if d.get("data_efetiva") and not data_efetiva:
+            return jsonify({"erro": "data_efetiva invalida. Use YYYY-MM-DD."}), 400
+        item.data_efetiva = data_efetiva.strftime("%Y-%m-%d") if data_efetiva else None
+
+    if (item.status or "") == "realizado" and not item.data_efetiva:
+        item.data_efetiva = item.data_prevista
+
+    if "categoria" in d:
+        item.categoria = (d.get("categoria") or "").strip()[:80]
+    if "descricao" in d:
+        item.descricao = (d.get("descricao") or "").strip()[:200]
+    if "observacao" in d:
+        item.observacao = (d.get("observacao") or "").strip()[:2000]
+
+    db.session.commit()
+    audit_event(
+        "gestor_financeiro_editar",
+        "funcionario",
+        f.id,
+        "gestor_financeiro_lancamento",
+        item.id,
+        True,
+        {"tipo": item.tipo, "status": item.status, "valor": float(item.valor or 0)},
+    )
+    return jsonify({"ok": True, "item": item.to_dict()})
+
+
+@app.route(
+    "/api/app/funcionario/me/gestor/lancamentos/<int:lid>/baixar", methods=["POST"]
+)
+@_limiter.limit("30 per minute; 200 per hour", key_func=_limiter_key_app_bearer)
+@app_func_required
+def api_app_funcionario_gestor_lancamento_baixar(lid):
+    bloqueio = _gestor_exigir_funcionario_ativo()
+    if bloqueio:
+        return bloqueio
+
+    f = g.app_funcionario
+    item = db.session.get(GestorFinanceiroLancamento, lid)
+    if not item or item.funcionario_id != f.id:
+        return jsonify({"erro": "Lancamento nao encontrado."}), 404
+    if (item.status or "") == "cancelado":
+        return jsonify({"erro": "Lancamento cancelado."}), 400
+
+    d = request.json or {}
+    data_efetiva = _gestor_parse_data_iso(d.get("data_efetiva")) or localnow().date()
+    item.status = "realizado"
+    item.data_efetiva = data_efetiva.strftime("%Y-%m-%d")
+    db.session.commit()
+    audit_event(
+        "gestor_financeiro_baixar",
+        "funcionario",
+        f.id,
+        "gestor_financeiro_lancamento",
+        item.id,
+        True,
+        {"data_efetiva": item.data_efetiva},
+    )
+    return jsonify({"ok": True, "item": item.to_dict()})
+
+
+@app.route("/api/app/funcionario/me/gestor/lancamentos/<int:lid>", methods=["DELETE"])
+@_limiter.limit("30 per minute; 200 per hour", key_func=_limiter_key_app_bearer)
+@app_func_required
+def api_app_funcionario_gestor_lancamento_cancelar(lid):
+    bloqueio = _gestor_exigir_funcionario_ativo()
+    if bloqueio:
+        return bloqueio
+
+    f = g.app_funcionario
+    item = db.session.get(GestorFinanceiroLancamento, lid)
+    if not item or item.funcionario_id != f.id:
+        return jsonify({"erro": "Lancamento nao encontrado."}), 404
+    if (item.status or "") == "cancelado":
+        return jsonify({"ok": True, "item": item.to_dict()})
+
+    item.status = "cancelado"
+    db.session.commit()
+    audit_event(
+        "gestor_financeiro_cancelar",
+        "funcionario",
+        f.id,
+        "gestor_financeiro_lancamento",
+        item.id,
+        True,
+        {},
+    )
+    return jsonify({"ok": True, "item": item.to_dict()})
 
 
 @app.route("/api/app/funcionario/ultimo-pagamento")
