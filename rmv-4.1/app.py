@@ -37,7 +37,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from cryptography.fernet import Fernet
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import text, event
+from sqlalchemy import text, event, or_
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError, IntegrityError
 import re
@@ -19478,6 +19478,9 @@ def api_app_funcionario_gestor_lancamentos():
     status_filtro = (request.args.get("status") or "").strip().lower()
     tipo_filtro = (request.args.get("tipo") or "").strip().lower()
     mes_filtro = (request.args.get("mes") or "").strip()
+    categoria_filtro = _gestor_categoria_normalizar_nome(request.args.get("categoria"))
+    data_inicio = _gestor_parse_data_iso(request.args.get("data_inicio"))
+    data_fim = _gestor_parse_data_iso(request.args.get("data_fim"))
 
     q = GestorFinanceiroLancamento.query.filter(
         GestorFinanceiroLancamento.funcionario_id == f.id,
@@ -19485,8 +19488,26 @@ def api_app_funcionario_gestor_lancamentos():
     )
     if status_filtro in ("previsto", "realizado"):
         q = q.filter(GestorFinanceiroLancamento.status == status_filtro)
+    elif status_filtro == "futuro":
+        hoje_txt = localnow().date().strftime("%Y-%m-%d")
+        q = q.filter(
+            GestorFinanceiroLancamento.status == "previsto",
+            GestorFinanceiroLancamento.data_prevista >= hoje_txt,
+        )
     if tipo_filtro in ("entrada", "saida"):
         q = q.filter(GestorFinanceiroLancamento.tipo == tipo_filtro)
+
+    if categoria_filtro == "__sem_categoria__":
+        q = q.filter(
+            or_(
+                GestorFinanceiroLancamento.categoria.is_(None),
+                GestorFinanceiroLancamento.categoria == "",
+            )
+        )
+    elif categoria_filtro:
+        q = q.filter(
+            db.func.lower(GestorFinanceiroLancamento.categoria) == categoria_filtro.lower()
+        )
 
     if mes_filtro:
         _, ini, fim = _gestor_mes_bounds(mes_filtro)
@@ -19494,6 +19515,15 @@ def api_app_funcionario_gestor_lancamentos():
             GestorFinanceiroLancamento.data_prevista >= ini.strftime("%Y-%m-%d"),
             GestorFinanceiroLancamento.data_prevista <= fim.strftime("%Y-%m-%d"),
         )
+
+    data_base_expr = db.func.coalesce(
+        GestorFinanceiroLancamento.data_efetiva,
+        GestorFinanceiroLancamento.data_prevista,
+    )
+    if data_inicio:
+        q = q.filter(data_base_expr >= data_inicio.strftime("%Y-%m-%d"))
+    if data_fim:
+        q = q.filter(data_base_expr <= data_fim.strftime("%Y-%m-%d"))
 
     itens = q.order_by(
         GestorFinanceiroLancamento.data_prevista.desc(),
