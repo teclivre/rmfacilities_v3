@@ -381,11 +381,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
           <div><div class="menu-label">Histórico de Assinaturas</div><div class="menu-sub">Documentos assinados</div></div>
           <div class="menu-chevron">›</div>
         </div>
-        <div class="menu-item" onclick="abrirGestorFinanceiro()">
-          <div class="menu-icon" style="background:var(--blue-cl)">💰</div>
-          <div><div class="menu-label">Gestor Financeiro Pessoal</div><div class="menu-sub">Entradas, saídas e previsões futuras</div></div>
-          <div class="menu-chevron">›</div>
-        </div>
         <div class="menu-item" onclick="logout()">
           <div class="menu-icon" style="background:var(--red-cl)">🚪</div>
           <div><div class="menu-label" style="color:var(--red)">Sair da Conta</div><div class="menu-sub">Encerrar sessão</div></div>
@@ -1546,10 +1541,6 @@ function alterarSenha(){
   api('PUT','/api/app/funcionario/me/senha',{senha_atual:atual,nova_senha:nova})
     .then(function(){fecharModal('modal-senha');showToast('Senha alterada com sucesso!');})
     .catch(function(e){err.textContent=e.message||'Erro ao alterar senha.';});
-}
-
-function abrirGestorFinanceiro(){
-  window.location.href='/gestor';
 }
 
 /* MODAIS */

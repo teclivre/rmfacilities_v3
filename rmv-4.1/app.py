@@ -9086,8 +9086,15 @@ def pagina_funcionario_app():
 
 @app.route("/gestor")
 @app.route("/gestor/")
+@lr
 def pagina_gestor_financeiro():
-    return render_template("gestor.html")
+    if not is_owner_user():
+        return redirect(url_for("index"))
+    return render_template(
+        "gestor.html",
+        nome=session.get("nome", "Dono"),
+        perfil=session.get("perfil", "dono"),
+    )
 
 
 @app.route("/supervisor")
@@ -19182,10 +19189,19 @@ def _gestor_mes_bounds(valor_mes):
     return txt, ini, fim
 
 
-def _gestor_exigir_funcionario_ativo():
-    f = getattr(g, "app_funcionario", None)
-    if not _app_funcionario_ativo_estrito(f):
-        return jsonify({"erro": "Gestor financeiro disponivel apenas para funcionarios ativos."}), 403
+def _gestor_owner_uid():
+    uid = to_num(session.get("uid"))
+    if not uid or not is_owner_user():
+        return None
+    return int(uid)
+
+
+def _gestor_exigir_dono_json():
+    if _gestor_owner_uid() is None:
+        return (
+            jsonify({"erro": "Gestor financeiro disponivel apenas para usuario dono autenticado."}),
+            403,
+        )
     return None
 
 
@@ -19193,12 +19209,12 @@ def _gestor_categoria_normalizar_nome(nome):
     return re.sub(r"\s+", " ", str(nome or "").strip())[:80]
 
 
-def _gestor_categoria_exists(funcionario_id, tipo, nome, ignore_id=None):
+def _gestor_categoria_exists(owner_uid, tipo, nome, ignore_id=None):
     nome_norm = _gestor_categoria_normalizar_nome(nome)
     if not nome_norm:
         return False
     q = GestorFinanceiroCategoria.query.filter(
-        GestorFinanceiroCategoria.funcionario_id == funcionario_id,
+        GestorFinanceiroCategoria.funcionario_id == owner_uid,
         GestorFinanceiroCategoria.tipo == tipo,
         db.func.lower(GestorFinanceiroCategoria.nome) == nome_norm.lower(),
     )
@@ -19207,20 +19223,20 @@ def _gestor_categoria_exists(funcionario_id, tipo, nome, ignore_id=None):
     return bool(q.first())
 
 
-@app.route("/api/app/funcionario/me/gestor/resumo")
-@app_func_required
-def api_app_funcionario_gestor_resumo():
-    bloqueio = _gestor_exigir_funcionario_ativo()
+@app.route("/api/gestor/resumo")
+@lr
+def api_gestor_resumo():
+    bloqueio = _gestor_exigir_dono_json()
     if bloqueio:
         return bloqueio
 
-    f = g.app_funcionario
+    owner_uid = _gestor_owner_uid()
     mes_ref, inicio_mes, fim_mes = _gestor_mes_bounds(request.args.get("mes"))
     hoje = localnow().date()
 
     itens = (
         GestorFinanceiroLancamento.query.filter(
-            GestorFinanceiroLancamento.funcionario_id == f.id,
+            GestorFinanceiroLancamento.funcionario_id == owner_uid,
             GestorFinanceiroLancamento.status != "cancelado",
         )
         .order_by(
@@ -19303,14 +19319,14 @@ def api_app_funcionario_gestor_resumo():
     )
 
 
-@app.route("/api/app/funcionario/me/gestor/categorias")
-@app_func_required
-def api_app_funcionario_gestor_categorias():
-    bloqueio = _gestor_exigir_funcionario_ativo()
+@app.route("/api/gestor/categorias")
+@lr
+def api_gestor_categorias():
+    bloqueio = _gestor_exigir_dono_json()
     if bloqueio:
         return bloqueio
 
-    f = g.app_funcionario
+    owner_uid = _gestor_owner_uid()
     tipo_filtro = (request.args.get("tipo") or "").strip().lower()
     incluir_inativas = str(request.args.get("incluir_inativas", "0")).strip() in (
         "1",
@@ -19319,7 +19335,7 @@ def api_app_funcionario_gestor_categorias():
     )
 
     q = GestorFinanceiroCategoria.query.filter(
-        GestorFinanceiroCategoria.funcionario_id == f.id
+        GestorFinanceiroCategoria.funcionario_id == owner_uid
     )
     if tipo_filtro in ("entrada", "saida"):
         q = q.filter(GestorFinanceiroCategoria.tipo == tipo_filtro)
@@ -19334,15 +19350,15 @@ def api_app_funcionario_gestor_categorias():
     return jsonify({"ok": True, "itens": [it.to_dict() for it in itens]})
 
 
-@app.route("/api/app/funcionario/me/gestor/categorias", methods=["POST"])
-@_limiter.limit("20 per minute; 100 per hour", key_func=_limiter_key_app_bearer)
-@app_func_required
-def api_app_funcionario_gestor_categoria_criar():
-    bloqueio = _gestor_exigir_funcionario_ativo()
+@app.route("/api/gestor/categorias", methods=["POST"])
+@_limiter.limit("20 per minute; 100 per hour")
+@lr
+def api_gestor_categoria_criar():
+    bloqueio = _gestor_exigir_dono_json()
     if bloqueio:
         return bloqueio
 
-    f = g.app_funcionario
+    owner_uid = _gestor_owner_uid()
     d = request.json or {}
     tipo = (d.get("tipo") or "").strip().lower()
     if tipo not in ("entrada", "saida"):
@@ -19352,11 +19368,11 @@ def api_app_funcionario_gestor_categoria_criar():
     if not nome:
         return jsonify({"erro": "Informe o nome da categoria."}), 400
 
-    if _gestor_categoria_exists(f.id, tipo, nome):
+    if _gestor_categoria_exists(owner_uid, tipo, nome):
         return jsonify({"erro": "Categoria ja cadastrada para este tipo."}), 400
 
     nova = GestorFinanceiroCategoria(
-        funcionario_id=f.id,
+        funcionario_id=owner_uid,
         tipo=tipo,
         nome=nome,
         ordem=to_num(d.get("ordem")),
@@ -19366,8 +19382,8 @@ def api_app_funcionario_gestor_categoria_criar():
     db.session.commit()
     audit_event(
         "gestor_financeiro_categoria_criar",
-        "funcionario",
-        f.id,
+        "usuario",
+        owner_uid,
         "gestor_financeiro_categoria",
         nova.id,
         True,
@@ -19376,17 +19392,17 @@ def api_app_funcionario_gestor_categoria_criar():
     return jsonify({"ok": True, "item": nova.to_dict()}), 201
 
 
-@app.route("/api/app/funcionario/me/gestor/categorias/<int:cid>", methods=["PUT"])
-@_limiter.limit("20 per minute; 100 per hour", key_func=_limiter_key_app_bearer)
-@app_func_required
-def api_app_funcionario_gestor_categoria_editar(cid):
-    bloqueio = _gestor_exigir_funcionario_ativo()
+@app.route("/api/gestor/categorias/<int:cid>", methods=["PUT"])
+@_limiter.limit("20 per minute; 100 per hour")
+@lr
+def api_gestor_categoria_editar(cid):
+    bloqueio = _gestor_exigir_dono_json()
     if bloqueio:
         return bloqueio
 
-    f = g.app_funcionario
+    owner_uid = _gestor_owner_uid()
     item = db.session.get(GestorFinanceiroCategoria, cid)
-    if not item or item.funcionario_id != f.id:
+    if not item or item.funcionario_id != owner_uid:
         return jsonify({"erro": "Categoria nao encontrada."}), 404
 
     d = request.json or {}
@@ -19402,7 +19418,7 @@ def api_app_funcionario_gestor_categoria_editar(cid):
         if not nome:
             return jsonify({"erro": "Informe o nome da categoria."}), 400
 
-    if _gestor_categoria_exists(f.id, tipo, nome, ignore_id=item.id):
+    if _gestor_categoria_exists(owner_uid, tipo, nome, ignore_id=item.id):
         return jsonify({"erro": "Ja existe categoria com esse nome neste tipo."}), 400
 
     item.tipo = tipo
@@ -19415,8 +19431,8 @@ def api_app_funcionario_gestor_categoria_editar(cid):
     db.session.commit()
     audit_event(
         "gestor_financeiro_categoria_editar",
-        "funcionario",
-        f.id,
+        "usuario",
+        owner_uid,
         "gestor_financeiro_categoria",
         item.id,
         True,
@@ -19426,22 +19442,22 @@ def api_app_funcionario_gestor_categoria_editar(cid):
 
 
 @app.route(
-    "/api/app/funcionario/me/gestor/categorias/<int:cid>", methods=["DELETE"]
+    "/api/gestor/categorias/<int:cid>", methods=["DELETE"]
 )
-@_limiter.limit("20 per minute; 100 per hour", key_func=_limiter_key_app_bearer)
-@app_func_required
-def api_app_funcionario_gestor_categoria_excluir(cid):
-    bloqueio = _gestor_exigir_funcionario_ativo()
+@_limiter.limit("20 per minute; 100 per hour")
+@lr
+def api_gestor_categoria_excluir(cid):
+    bloqueio = _gestor_exigir_dono_json()
     if bloqueio:
         return bloqueio
 
-    f = g.app_funcionario
+    owner_uid = _gestor_owner_uid()
     item = db.session.get(GestorFinanceiroCategoria, cid)
-    if not item or item.funcionario_id != f.id:
+    if not item or item.funcionario_id != owner_uid:
         return jsonify({"erro": "Categoria nao encontrada."}), 404
 
     em_uso = GestorFinanceiroLancamento.query.filter(
-        GestorFinanceiroLancamento.funcionario_id == f.id,
+        GestorFinanceiroLancamento.funcionario_id == owner_uid,
         GestorFinanceiroLancamento.tipo == item.tipo,
         db.func.lower(GestorFinanceiroLancamento.categoria) == item.nome.lower(),
         GestorFinanceiroLancamento.status != "cancelado",
@@ -19457,8 +19473,8 @@ def api_app_funcionario_gestor_categoria_excluir(cid):
     db.session.commit()
     audit_event(
         "gestor_financeiro_categoria_excluir",
-        "funcionario",
-        f.id,
+        "usuario",
+        owner_uid,
         "gestor_financeiro_categoria",
         cid,
         True,
@@ -19467,14 +19483,14 @@ def api_app_funcionario_gestor_categoria_excluir(cid):
     return jsonify({"ok": True})
 
 
-@app.route("/api/app/funcionario/me/gestor/lancamentos")
-@app_func_required
-def api_app_funcionario_gestor_lancamentos():
-    bloqueio = _gestor_exigir_funcionario_ativo()
+@app.route("/api/gestor/lancamentos")
+@lr
+def api_gestor_lancamentos():
+    bloqueio = _gestor_exigir_dono_json()
     if bloqueio:
         return bloqueio
 
-    f = g.app_funcionario
+    owner_uid = _gestor_owner_uid()
     status_filtro = (request.args.get("status") or "").strip().lower()
     tipo_filtro = (request.args.get("tipo") or "").strip().lower()
     mes_filtro = (request.args.get("mes") or "").strip()
@@ -19483,7 +19499,7 @@ def api_app_funcionario_gestor_lancamentos():
     data_fim = _gestor_parse_data_iso(request.args.get("data_fim"))
 
     q = GestorFinanceiroLancamento.query.filter(
-        GestorFinanceiroLancamento.funcionario_id == f.id,
+        GestorFinanceiroLancamento.funcionario_id == owner_uid,
         GestorFinanceiroLancamento.status != "cancelado",
     )
     if status_filtro in ("previsto", "realizado"):
@@ -19532,22 +19548,22 @@ def api_app_funcionario_gestor_lancamentos():
     return jsonify({"ok": True, "itens": [it.to_dict() for it in itens]})
 
 
-@app.route("/api/app/funcionario/me/gestor/lancamentos", methods=["POST"])
-@_limiter.limit("30 per minute; 200 per hour", key_func=_limiter_key_app_bearer)
-@app_func_required
-def api_app_funcionario_gestor_lancamento_criar():
-    bloqueio = _gestor_exigir_funcionario_ativo()
+@app.route("/api/gestor/lancamentos", methods=["POST"])
+@_limiter.limit("30 per minute; 200 per hour")
+@lr
+def api_gestor_lancamento_criar():
+    bloqueio = _gestor_exigir_dono_json()
     if bloqueio:
         return bloqueio
 
-    f = g.app_funcionario
+    owner_uid = _gestor_owner_uid()
     d = request.json or {}
     tipo = (d.get("tipo") or "").strip().lower()
     if tipo not in ("entrada", "saida"):
         return jsonify({"erro": "Tipo invalido. Use entrada ou saida."}), 400
 
     categoria_nome = _gestor_categoria_normalizar_nome(d.get("categoria"))
-    if categoria_nome and not _gestor_categoria_exists(f.id, tipo, categoria_nome):
+    if categoria_nome and not _gestor_categoria_exists(owner_uid, tipo, categoria_nome):
         return jsonify({"erro": "Categoria nao cadastrada para este tipo."}), 400
 
     valor = to_num(d.get("valor"), dec=True)
@@ -19569,7 +19585,7 @@ def api_app_funcionario_gestor_lancamento_criar():
         data_efetiva = None
 
     novo = GestorFinanceiroLancamento(
-        funcionario_id=f.id,
+        funcionario_id=owner_uid,
         tipo=tipo,
         categoria=categoria_nome,
         descricao=(d.get("descricao") or "").strip()[:200],
@@ -19583,8 +19599,8 @@ def api_app_funcionario_gestor_lancamento_criar():
     db.session.commit()
     audit_event(
         "gestor_financeiro_criar",
-        "funcionario",
-        f.id,
+        "usuario",
+        owner_uid,
         "gestor_financeiro_lancamento",
         novo.id,
         True,
@@ -19593,17 +19609,17 @@ def api_app_funcionario_gestor_lancamento_criar():
     return jsonify({"ok": True, "item": novo.to_dict()}), 201
 
 
-@app.route("/api/app/funcionario/me/gestor/lancamentos/<int:lid>", methods=["PUT"])
-@_limiter.limit("30 per minute; 200 per hour", key_func=_limiter_key_app_bearer)
-@app_func_required
-def api_app_funcionario_gestor_lancamento_atualizar(lid):
-    bloqueio = _gestor_exigir_funcionario_ativo()
+@app.route("/api/gestor/lancamentos/<int:lid>", methods=["PUT"])
+@_limiter.limit("30 per minute; 200 per hour")
+@lr
+def api_gestor_lancamento_atualizar(lid):
+    bloqueio = _gestor_exigir_dono_json()
     if bloqueio:
         return bloqueio
 
-    f = g.app_funcionario
+    owner_uid = _gestor_owner_uid()
     item = db.session.get(GestorFinanceiroLancamento, lid)
-    if not item or item.funcionario_id != f.id:
+    if not item or item.funcionario_id != owner_uid:
         return jsonify({"erro": "Lancamento nao encontrado."}), 404
     if (item.status or "") == "cancelado":
         return jsonify({"erro": "Lancamento cancelado nao pode ser editado."}), 400
@@ -19624,7 +19640,7 @@ def api_app_funcionario_gestor_lancamento_atualizar(lid):
         tipo_para_categoria = item.tipo
 
     if categoria_nome and not _gestor_categoria_exists(
-        f.id, tipo_para_categoria, categoria_nome
+        owner_uid, tipo_para_categoria, categoria_nome
     ):
         return jsonify({"erro": "Categoria nao cadastrada para este tipo."}), 400
 
@@ -19667,8 +19683,8 @@ def api_app_funcionario_gestor_lancamento_atualizar(lid):
     db.session.commit()
     audit_event(
         "gestor_financeiro_editar",
-        "funcionario",
-        f.id,
+        "usuario",
+        owner_uid,
         "gestor_financeiro_lancamento",
         item.id,
         True,
@@ -19678,18 +19694,18 @@ def api_app_funcionario_gestor_lancamento_atualizar(lid):
 
 
 @app.route(
-    "/api/app/funcionario/me/gestor/lancamentos/<int:lid>/baixar", methods=["POST"]
+    "/api/gestor/lancamentos/<int:lid>/baixar", methods=["POST"]
 )
-@_limiter.limit("30 per minute; 200 per hour", key_func=_limiter_key_app_bearer)
-@app_func_required
-def api_app_funcionario_gestor_lancamento_baixar(lid):
-    bloqueio = _gestor_exigir_funcionario_ativo()
+@_limiter.limit("30 per minute; 200 per hour")
+@lr
+def api_gestor_lancamento_baixar(lid):
+    bloqueio = _gestor_exigir_dono_json()
     if bloqueio:
         return bloqueio
 
-    f = g.app_funcionario
+    owner_uid = _gestor_owner_uid()
     item = db.session.get(GestorFinanceiroLancamento, lid)
-    if not item or item.funcionario_id != f.id:
+    if not item or item.funcionario_id != owner_uid:
         return jsonify({"erro": "Lancamento nao encontrado."}), 404
     if (item.status or "") == "cancelado":
         return jsonify({"erro": "Lancamento cancelado."}), 400
@@ -19701,8 +19717,8 @@ def api_app_funcionario_gestor_lancamento_baixar(lid):
     db.session.commit()
     audit_event(
         "gestor_financeiro_baixar",
-        "funcionario",
-        f.id,
+        "usuario",
+        owner_uid,
         "gestor_financeiro_lancamento",
         item.id,
         True,
@@ -19711,17 +19727,17 @@ def api_app_funcionario_gestor_lancamento_baixar(lid):
     return jsonify({"ok": True, "item": item.to_dict()})
 
 
-@app.route("/api/app/funcionario/me/gestor/lancamentos/<int:lid>", methods=["DELETE"])
-@_limiter.limit("30 per minute; 200 per hour", key_func=_limiter_key_app_bearer)
-@app_func_required
-def api_app_funcionario_gestor_lancamento_cancelar(lid):
-    bloqueio = _gestor_exigir_funcionario_ativo()
+@app.route("/api/gestor/lancamentos/<int:lid>", methods=["DELETE"])
+@_limiter.limit("30 per minute; 200 per hour")
+@lr
+def api_gestor_lancamento_cancelar(lid):
+    bloqueio = _gestor_exigir_dono_json()
     if bloqueio:
         return bloqueio
 
-    f = g.app_funcionario
+    owner_uid = _gestor_owner_uid()
     item = db.session.get(GestorFinanceiroLancamento, lid)
-    if not item or item.funcionario_id != f.id:
+    if not item or item.funcionario_id != owner_uid:
         return jsonify({"erro": "Lancamento nao encontrado."}), 404
     if (item.status or "") == "cancelado":
         return jsonify({"ok": True, "item": item.to_dict()})
@@ -19730,8 +19746,8 @@ def api_app_funcionario_gestor_lancamento_cancelar(lid):
     db.session.commit()
     audit_event(
         "gestor_financeiro_cancelar",
-        "funcionario",
-        f.id,
+        "usuario",
+        owner_uid,
         "gestor_financeiro_lancamento",
         item.id,
         True,

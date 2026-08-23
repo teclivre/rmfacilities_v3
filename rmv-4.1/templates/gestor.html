@@ -238,31 +238,7 @@
   </style>
 </head>
 <body>
-  <div id="login-screen" class="center">
-    <div class="wrap login">
-      <div class="card">
-        <h2 style="margin:0 0 4px">Gestor Financeiro Pessoal</h2>
-        <p class="muted" style="margin-top:0">Acesso para funcionario ativo</p>
-
-        <div id="step-cpf">
-          <label>CPF</label>
-          <input id="l-cpf" type="tel" inputmode="numeric" placeholder="000.000.000-00" maxlength="14" />
-          <button class="btn brand" id="btn-enviar-otp" style="margin-top:10px;width:100%" onclick="enviarOtp()">Enviar codigo via WhatsApp</button>
-          <div id="login-msg" class="msg err hidden"></div>
-        </div>
-
-        <div id="step-otp" class="hidden">
-          <label>Codigo OTP</label>
-          <input id="l-otp" type="tel" inputmode="numeric" placeholder="000000" maxlength="6" />
-          <button class="btn brand" id="btn-confirmar-otp" style="margin-top:10px;width:100%" onclick="confirmarOtp()">Confirmar</button>
-          <button class="btn ghost" style="margin-top:8px;width:100%" onclick="voltarCpf()">Voltar</button>
-          <div id="otp-msg" class="msg err hidden"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div id="app-screen" class="hidden">
+  <div id="app-screen">
     <div class="wrap app-shell">
       <div class="topbar">
         <div>
@@ -271,7 +247,7 @@
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn ghost" id="btn-install" onclick="instalarPWA()">Instalar na tela inicial</button>
-          <button class="btn ghost" onclick="window.location.href='/funcionario'">Voltar ao App</button>
+          <button class="btn ghost" onclick="window.location.href='/'">Voltar ao Sistema</button>
           <button class="btn bad" onclick="logout()">Sair</button>
         </div>
       </div>
@@ -526,8 +502,7 @@
   <script>
     'use strict';
 
-    var _AT = '', _RT = '', _func = '', _otpCpf = '';
-    var _refreshPromise = null;
+    var _func = { nome: {{ (nome or 'Dono')|tojson }} };
     var _deferredInstallPrompt = null;
     var _mesRef = '';
     var _tab = 'resumo';
@@ -535,23 +510,10 @@
     var _itens = [];
     var _categorias = { entrada: [], saida: [] };
 
-    var ls = {
-      get: function(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
-      set: function(k,v){ try { localStorage.setItem(k,v); } catch(e){} },
-      del: function(k){ try { localStorage.removeItem(k); } catch(e){} }
-    };
-
     (function init(){
-      _AT = ls.get('rmf_at') || '';
-      _RT = ls.get('rmf_rt') || '';
-      try {
-        var f = ls.get('rmf_func');
-        if (f) _func = JSON.parse(f);
-      } catch(e) {}
-      setupCpfInput();
       setMesAtual();
       prepararPWA();
-      if (_AT) validarSessao();
+      abrirApp();
     })();
 
     function prepararPWA(){
@@ -592,17 +554,6 @@
       } else {
         alert('Se o navegador nao mostrou o prompt de instalacao, abra o menu do navegador e procure por "Instalar app".');
       }
-    }
-
-    function setupCpfInput(){
-      var el = document.getElementById('l-cpf');
-      el.addEventListener('input', function(){
-        var v = this.value.replace(/\D/g, '').slice(0, 11);
-        if (v.length > 9) v = v.replace(/(\d{3})(\d{3})(\d{3})(\d{0,2})/, '$1.$2.$3-$4');
-        else if (v.length > 6) v = v.replace(/(\d{3})(\d{3})(\d{0,3})/, '$1.$2.$3');
-        else if (v.length > 3) v = v.replace(/(\d{3})(\d{0,3})/, '$1.$2');
-        this.value = v;
-      });
     }
 
     function setMesAtual(){
@@ -646,124 +597,15 @@
       el.className = 'msg ' + (ok ? 'ok' : 'err') + (txt ? '' : ' hidden');
     }
 
-    function validarSessao(){
-      fetch('/api/app/funcionario/me', { headers: { 'Authorization': 'Bearer ' + _AT } })
-        .then(function(r){
-          if (r.status === 401) {
-            return refreshToken().then(function(ok){
-              if (!ok) return null;
-              return fetch('/api/app/funcionario/me', { headers: { 'Authorization': 'Bearer ' + _AT } });
-            });
-          }
-          return r;
-        })
-        .then(function(r){ if (!r || !r.ok) return null; return r.json(); })
-        .then(function(d){
-          if (!d || !d.funcionario) return;
-          _func = d.funcionario;
-          ls.set('rmf_func', JSON.stringify(_func));
-          abrirApp();
-        })
-        .catch(function(){});
-    }
-
-    function enviarOtp(){
-      var cpf = (document.getElementById('l-cpf').value || '').replace(/\D/g, '');
-      if (cpf.length < 11) return showMsg('login-msg', 'CPF invalido.', false);
-      showMsg('login-msg', '', false);
-      var btn = document.getElementById('btn-enviar-otp');
-      btn.disabled = true;
-      btn.textContent = 'Enviando...';
-
-      fetch('/api/app/funcionario/auth/iniciar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cpf: cpf, canal: 'whatsapp' })
-      })
-      .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, d: d }; }); })
-      .then(function(res){
-        if (!res.ok) return showMsg('login-msg', res.d.erro || 'Erro ao enviar codigo.', false);
-        _otpCpf = cpf;
-        document.getElementById('step-cpf').classList.add('hidden');
-        document.getElementById('step-otp').classList.remove('hidden');
-      })
-      .catch(function(){ showMsg('login-msg', 'Erro de conexao.', false); })
-      .finally(function(){
-        btn.disabled = false;
-        btn.textContent = 'Enviar codigo via WhatsApp';
-      });
-    }
-
-    function confirmarOtp(){
-      var codigo = (document.getElementById('l-otp').value || '').replace(/\D/g, '');
-      if (!/^\d{6}$/.test(codigo)) return showMsg('otp-msg', 'Informe o codigo de 6 digitos.', false);
-      showMsg('otp-msg', '', false);
-      var btn = document.getElementById('btn-confirmar-otp');
-      btn.disabled = true;
-      btn.textContent = 'Confirmando...';
-
-      fetch('/api/app/funcionario/auth/confirmar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cpf: _otpCpf, codigo: codigo })
-      })
-      .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, d: d }; }); })
-      .then(function(res){
-        if (!res.ok) return showMsg('otp-msg', res.d.erro || 'Codigo invalido.', false);
-        _AT = res.d.access_token;
-        _RT = res.d.refresh_token;
-        _func = res.d.funcionario;
-        ls.set('rmf_at', _AT);
-        ls.set('rmf_rt', _RT);
-        ls.set('rmf_func', JSON.stringify(_func));
-        abrirApp();
-      })
-      .catch(function(){ showMsg('otp-msg', 'Erro de conexao.', false); })
-      .finally(function(){
-        btn.disabled = false;
-        btn.textContent = 'Confirmar';
-      });
-    }
-
-    function voltarCpf(){
-      document.getElementById('step-otp').classList.add('hidden');
-      document.getElementById('step-cpf').classList.remove('hidden');
-      showMsg('otp-msg', '', false);
-    }
-
-    function refreshToken(){
-      if (!_RT) return Promise.resolve(false);
-      if (_refreshPromise) return _refreshPromise;
-      _refreshPromise = fetch('/api/app/funcionario/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: _RT })
-      })
-      .then(function(r){
-        if (!r.ok) return false;
-        return r.json().then(function(d){
-          if (d.access_token) { _AT = d.access_token; ls.set('rmf_at', _AT); }
-          if (d.refresh_token) { _RT = d.refresh_token; ls.set('rmf_rt', _RT); }
-          return true;
-        });
-      })
-      .catch(function(){ return false; })
-      .finally(function(){ _refreshPromise = null; });
-      return _refreshPromise;
-    }
-
-    function api(method, path, body, retried){
-      var opts = { method: method, headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _AT } };
+    function api(method, path, body){
+      var opts = { method: method, headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin' };
       if (body) opts.body = JSON.stringify(body);
       return fetch(path, opts).then(function(r){
-        if (r.status === 401 && !retried) {
-          return refreshToken().then(function(ok){
-            if (ok) return api(method, path, body, true);
-            logout();
-            return Promise.reject({ message: 'Sessao expirada' });
-          });
-        }
         return r.json().then(function(d){
+          if (r.status === 401) {
+            window.location.href = '/login';
+            return Promise.reject({ status: r.status, message: 'Sessao expirada' });
+          }
           if (!r.ok) return Promise.reject({ status: r.status, message: d.erro || d.error || ('Erro ' + r.status) });
           return d;
         });
@@ -771,9 +613,7 @@
     }
 
     function abrirApp(){
-      document.getElementById('login-screen').classList.add('hidden');
-      document.getElementById('app-screen').classList.remove('hidden');
-      var nome = (_func && _func.nome) ? _func.nome : 'Colaborador';
+      var nome = (_func && _func.nome) ? _func.nome : 'Dono';
       document.getElementById('boas-vindas').textContent = 'Ola, ' + nome + '. Use as abas para organizar seu financeiro.';
       carregarCategorias(true).then(function(){
         carregarResumo(true);
@@ -782,9 +622,7 @@
     }
 
     function logout(){
-      ls.del('rmf_at'); ls.del('rmf_rt'); ls.del('rmf_func');
-      _AT = ''; _RT = ''; _func = '';
-      window.location.reload();
+      window.location.href = '/logout';
     }
 
     function setMainTab(tab, btn){
@@ -842,7 +680,7 @@
 
     function carregarResumo(showSkeleton){
       if (showSkeleton) renderSkeletonResumo();
-      return api('GET', '/api/app/funcionario/me/gestor/resumo?mes=' + encodeURIComponent(_mesRef))
+      return api('GET', '/api/gestor/resumo?mes=' + encodeURIComponent(_mesRef))
         .then(function(d){
           renderKpisNormais();
           var r = d.resumo || {};
@@ -908,7 +746,7 @@
 
     function carregarLancamentos(showSkeleton){
       if (showSkeleton) renderSkeletonLancamentos();
-      return api('GET', '/api/app/funcionario/me/gestor/lancamentos?' + montarQueryLancamentos())
+      return api('GET', '/api/gestor/lancamentos?' + montarQueryLancamentos())
         .then(function(d){
           _itens = d.itens || [];
           renderLista();
@@ -928,7 +766,7 @@
 
     function carregarCategorias(showSkeleton){
       if (showSkeleton) renderSkeletonCategorias();
-      return api('GET', '/api/app/funcionario/me/gestor/categorias')
+      return api('GET', '/api/gestor/categorias')
         .then(function(d){
           var items = d.itens || [];
           _categorias.entrada = items.filter(function(it){ return it.tipo === 'entrada'; });
@@ -993,7 +831,7 @@
       var nome = (document.getElementById('cfg-nome').value || '').trim();
       var ordem = Number(document.getElementById('cfg-ordem').value || 0);
       if (!nome) return showMsg('cfg-msg', 'Informe o nome da categoria.', false);
-      api('POST', '/api/app/funcionario/me/gestor/categorias', { tipo: tipo, nome: nome, ordem: ordem })
+      api('POST', '/api/gestor/categorias', { tipo: tipo, nome: nome, ordem: ordem })
         .then(function(){
           document.getElementById('cfg-nome').value = '';
           document.getElementById('cfg-ordem').value = '0';
@@ -1005,7 +843,7 @@
 
     function criarCategoriaSemCategoria(){
       var tipo = document.getElementById('cfg-tipo').value;
-      api('POST', '/api/app/funcionario/me/gestor/categorias', { tipo: tipo, nome: 'Sem categoria', ordem: 999 })
+      api('POST', '/api/gestor/categorias', { tipo: tipo, nome: 'Sem categoria', ordem: 999 })
         .then(function(){
           showMsg('cfg-msg', 'Categoria padrao criada.', true);
           return carregarCategorias(false);
@@ -1017,7 +855,7 @@
       var nome = (document.getElementById('cat-nome-' + id).value || '').trim();
       var ordem = Number(document.getElementById('cat-ordem-' + id).value || 0);
       if (!nome) return showMsg('cfg-msg', 'Nome da categoria nao pode ficar vazio.', false);
-      api('PUT', '/api/app/funcionario/me/gestor/categorias/' + id, { tipo: tipo, nome: nome, ordem: ordem })
+      api('PUT', '/api/gestor/categorias/' + id, { tipo: tipo, nome: nome, ordem: ordem })
         .then(function(){
           showMsg('cfg-msg', 'Categoria atualizada.', true);
           return carregarCategorias(false);
@@ -1027,7 +865,7 @@
 
     function excluirCategoria(id){
       if (!confirm('Deseja excluir esta categoria?')) return;
-      api('DELETE', '/api/app/funcionario/me/gestor/categorias/' + id)
+      api('DELETE', '/api/gestor/categorias/' + id)
         .then(function(){
           showMsg('cfg-msg', 'Categoria excluida.', true);
           return carregarCategorias(false);
@@ -1091,8 +929,8 @@
       if (p.valor <= 0) return showMsg(prefix + '-msg', 'Informe um valor maior que zero.', false);
 
       var req = _edicao[prefix]
-        ? api('PUT', '/api/app/funcionario/me/gestor/lancamentos/' + _edicao[prefix], p)
-        : api('POST', '/api/app/funcionario/me/gestor/lancamentos', p);
+        ? api('PUT', '/api/gestor/lancamentos/' + _edicao[prefix], p)
+        : api('POST', '/api/gestor/lancamentos', p);
 
       req.then(function(){
         showMsg(prefix + '-msg', _edicao[prefix] ? 'Lancamento atualizado.' : 'Lancamento criado.', true);
@@ -1129,7 +967,7 @@
 
     function baixarLancamento(id){
       if (!confirm('Marcar este lancamento como realizado hoje?')) return;
-      api('POST', '/api/app/funcionario/me/gestor/lancamentos/' + id + '/baixar', { data_efetiva: isoHoje() })
+      api('POST', '/api/gestor/lancamentos/' + id + '/baixar', { data_efetiva: isoHoje() })
         .then(function(){
           carregarResumo(false);
           carregarLancamentos(false);
@@ -1139,7 +977,7 @@
 
     function cancelarLancamento(id){
       if (!confirm('Cancelar este lancamento?')) return;
-      api('DELETE', '/api/app/funcionario/me/gestor/lancamentos/' + id)
+      api('DELETE', '/api/gestor/lancamentos/' + id)
         .then(function(){
           if (_edicao.en === id) limparForm('en');
           if (_edicao.sa === id) limparForm('sa');
