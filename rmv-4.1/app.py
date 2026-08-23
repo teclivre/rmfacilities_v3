@@ -9086,15 +9086,152 @@ def pagina_funcionario_app():
 
 @app.route("/gestor")
 @app.route("/gestor/")
-@lr
 def pagina_gestor_financeiro():
-    if not is_owner_user():
-        return redirect(url_for("index"))
+    if not session.get("uid") or not is_owner_user():
+        return redirect(url_for("gestor_login"))
     return render_template(
         "gestor.html",
         nome=session.get("nome", "Dono"),
         perfil=session.get("perfil", "dono"),
     )
+
+
+def _gestor_iniciar_sessao_usuario(usuario):
+    session.permanent = True
+    session["uid"] = usuario.id
+    session["nome"] = usuario.nome
+    session["perfil"] = usuario.perfil
+    session["areas"] = jloads(usuario.areas, [])
+    permissoes = jloads(getattr(usuario, "permissoes", "{}"), {})
+    if not isinstance(permissoes, dict):
+        permissoes = {}
+    session["permissoes"] = permissoes
+    session["rbac_actions_ativo"] = bool(permissoes)
+    usuario.ultimo_acesso = utcnow()
+    db.session.commit()
+
+
+@app.route("/gestor/login", methods=["GET", "POST"])
+@_limiter.limit("10 per minute", methods=["POST"])
+def gestor_login():
+    if session.get("uid") and is_owner_user():
+        return redirect(url_for("pagina_gestor_financeiro"))
+
+    if request.method == "GET" and request.args.get("cancel2fa"):
+        for chave in (
+            "gestor_2fa_uid",
+            "gestor_2fa_code_hash",
+            "gestor_2fa_exp",
+            "gestor_2fa_attempts",
+        ):
+            session.pop(chave, None)
+
+    erro = None
+    if request.method == "POST":
+        etapa = (request.form.get("etapa") or "").strip().lower()
+        if etapa == "2fa":
+            uid = session.get("gestor_2fa_uid")
+            usuario = db.session.get(Usuario, uid) if uid else None
+            if (
+                not usuario
+                or not usuario.ativo
+                or (usuario.perfil or "").strip().lower() != "dono"
+            ):
+                erro = "Sessão de verificação expirada. Faça login novamente."
+            elif request.form.get("acao") == "reenviar":
+                codigo = f"{secrets.randbelow(1000000):06d}"
+                try:
+                    _send_admin_2fa_code(usuario, codigo, "login")
+                    session["gestor_2fa_code_hash"] = token_hash(codigo)
+                    session["gestor_2fa_exp"] = int(time.time()) + 600
+                    session["gestor_2fa_attempts"] = 0
+                    return render_template(
+                        "gestor_login.html",
+                        etapa="2fa",
+                        ok="Novo código enviado para seu celular.",
+                        email_mask=_mask_email(usuario.email),
+                        telefone_mask=_mask_phone(usuario.telefone),
+                    )
+                except Exception as ex:
+                    erro = f"Não foi possível reenviar o código: {str(ex)}"
+            else:
+                codigo = (request.form.get("codigo") or "").strip()
+                expirou = int(session.get("gestor_2fa_exp", 0) or 0) < int(time.time())
+                tentativas = int(session.get("gestor_2fa_attempts", 0) or 0)
+                invalido = not re.fullmatch(r"\d{6}", codigo)
+                invalido = invalido or not hmac.compare_digest(
+                    token_hash(codigo), str(session.get("gestor_2fa_code_hash") or "")
+                )
+                if expirou or tentativas >= 5 or invalido:
+                    session["gestor_2fa_attempts"] = tentativas + 1
+                    erro = "Código inválido ou expirado."
+                else:
+                    _gestor_iniciar_sessao_usuario(usuario)
+                    reg_auth_attempt("gestor", usuario.email, True, "ok_2fa")
+                    audit_event(
+                        "auth_gestor_sucesso_2fa", "usuario", usuario.id, "usuario", usuario.id, True, {}
+                    )
+                    for chave in (
+                        "gestor_2fa_uid", "gestor_2fa_code_hash", "gestor_2fa_exp", "gestor_2fa_attempts"
+                    ):
+                        session.pop(chave, None)
+                    resp = redirect(url_for("pagina_gestor_financeiro"))
+                    return _admin_bind_trusted_device(resp, usuario, reuse_cookie=False)
+
+            return render_template(
+                "gestor_login.html",
+                etapa="2fa",
+                erro=erro,
+                email_mask=_mask_email(usuario.email) if usuario else "",
+                telefone_mask=_mask_phone(usuario.telefone) if usuario else "",
+            )
+
+        email = (request.form.get("email") or "").strip().lower()
+        senha = request.form.get("senha") or ""
+        if auth_blocked("gestor", email, request.remote_addr or ""):
+            erro = "Muitas tentativas. Aguarde alguns minutos."
+        else:
+            usuario = Usuario.query.filter_by(email=email, ativo=True).first()
+            if not usuario or (usuario.perfil or "").strip().lower() != "dono" or not pw_check(usuario.senha, senha):
+                reg_auth_attempt("gestor", email, False, "credenciais_invalidas")
+                erro = "E-mail ou senha incorretos."
+            elif _admin_needs_2fa(usuario) and not _admin_is_trusted_device(usuario):
+                codigo = f"{secrets.randbelow(1000000):06d}"
+                try:
+                    _send_admin_2fa_code(usuario, codigo, "login")
+                    session["gestor_2fa_uid"] = usuario.id
+                    session["gestor_2fa_code_hash"] = token_hash(codigo)
+                    session["gestor_2fa_exp"] = int(time.time()) + 600
+                    session["gestor_2fa_attempts"] = 0
+                    return render_template(
+                        "gestor_login.html",
+                        etapa="2fa",
+                        email_mask=_mask_email(usuario.email),
+                        telefone_mask=_mask_phone(usuario.telefone),
+                        ok="Código de 6 dígitos enviado para seu celular.",
+                    )
+                except Exception as ex:
+                    erro = f"Falha ao enviar código de verificação: {str(ex)}"
+            else:
+                _gestor_iniciar_sessao_usuario(usuario)
+                reg_auth_attempt("gestor", usuario.email, True, "ok")
+                audit_event("auth_gestor_sucesso", "usuario", usuario.id, "usuario", usuario.id, True, {})
+                resp = redirect(url_for("pagina_gestor_financeiro"))
+                if _admin_needs_2fa(usuario):
+                    return _admin_bind_trusted_device(resp, usuario, reuse_cookie=True)
+                return resp
+
+    return render_template("gestor_login.html", erro=erro)
+
+
+@app.route("/gestor/logout")
+def gestor_logout():
+    try:
+        _admin_revoke_current_trusted_device()
+    except Exception as ex:
+        app.logger.warning("[auth_gestor] falha ao revogar dispositivo: %s", ex)
+    session.clear()
+    return redirect(url_for("gestor_login"))
 
 
 @app.route("/supervisor")

@@ -247,7 +247,6 @@
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn ghost" id="btn-install" onclick="instalarPWA()">Instalar na tela inicial</button>
-          <button class="btn ghost" onclick="window.location.href='/'">Voltar ao Sistema</button>
           <button class="btn bad" onclick="logout()">Sair</button>
         </div>
       </div>
@@ -622,7 +621,7 @@
     }
 
     function logout(){
-      window.location.href = '/logout';
+      window.location.href = '/gestor/logout';
     }
 
     function setMainTab(tab, btn){
