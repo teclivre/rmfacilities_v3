@@ -9209,9 +9209,11 @@ def api_cadastro_candidato():
     candidato.pdf_caminho = os.path.relpath(caminho_pdf, UPLOAD_ROOT).replace("\\", "/")
     db.session.commit()
     falhas = []
-    resumo = "Candidato: " + nome + "\nE-mail: " + email + "\nTelefone: " + telefone + "\nCargo desejado: " + (_candidato_texto(dados, "cargo_desejado", 120) or "-")
+    cidade_cand = _candidato_texto(dados, "cidade_uf", 80) or "-"
+    resumo = "Candidato: " + nome + "\nE-mail: " + email + "\nTelefone: " + telefone + "\nCidade: " + cidade_cand + "\nCargo desejado: " + (_candidato_texto(dados, "cargo_desejado", 120) or "-")
     try:
-        smtp_send_text("trabalheconosco@rmfacilities.com.br", "Nova ficha de candidato - " + nome, resumo, anexos=[{"path": caminho_pdf, "name": nome_pdf}])
+        assunto_email = "Nova ficha de candidato - " + nome + " - " + cidade_cand
+        smtp_send_text("trabalheconosco@rmfacilities.com.br", assunto_email, resumo, anexos=[{"path": caminho_pdf, "name": nome_pdf}])
     except Exception:
         app.logger.exception("[cadastro_candidato] falha no envio por e-mail")
         falhas.append("e-mail")
