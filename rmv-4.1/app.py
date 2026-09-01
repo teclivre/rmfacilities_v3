@@ -2321,6 +2321,18 @@ class GestorFinanceiroCategoria(db.Model):
         }
 
 
+class CadastroCandidato(db.Model):
+    __tablename__ = "cadastro_candidato"
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(200), nullable=False, index=True)
+    email = db.Column(db.String(150), nullable=False, index=True)
+    telefone = db.Column(db.String(30), nullable=False)
+    cpf = db.Column(db.String(20), default="")
+    dados_json = db.Column(db.Text, nullable=False, default="{}")
+    pdf_caminho = db.Column(db.String(500), default="")
+    criado_em = db.Column(db.DateTime, default=utcnow, index=True)
+
+
 # ── Folhas de pagamento customizáveis (múltiplas por competência) ─────────────
 class FolhaPagamento(db.Model):
     __tablename__ = "folha_pagamento"
@@ -9057,6 +9069,98 @@ def logout():
 @app.route("/privacy-policy")
 def pagina_privacidade_publica():
     return render_template("privacidade_publica.html", atualizado_em="16/05/2026")
+
+
+@app.route("/cadastro-candidato")
+@app.route("/cadastro-candidato/")
+def pagina_cadastro_candidato():
+    return render_template("cadastro_candidato.html")
+
+
+def _candidato_texto(dados, chave, limite=500):
+    return re.sub(r"\s+", " ", str((dados or {}).get(chave) or "").strip())[:limite]
+
+
+def _candidato_gerar_pdf(candidato, dados):
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+
+    pasta = os.path.join(UPLOAD_ROOT, "candidatos")
+    os.makedirs(pasta, exist_ok=True)
+    nome_arquivo = f"ficha_candidato_{candidato.id}.pdf"
+    caminho = os.path.join(pasta, nome_arquivo)
+    estilos = getSampleStyleSheet()
+    titulo = ParagraphStyle("CandidatoTitulo", parent=estilos["Heading1"], alignment=1, fontSize=16, textColor=colors.HexColor("#155e75"))
+    secao = ParagraphStyle("CandidatoSecao", parent=estilos["Heading2"], fontSize=10, textColor=colors.white, alignment=1, spaceBefore=8, spaceAfter=3)
+    corpo = ParagraphStyle("CandidatoCorpo", parent=estilos["BodyText"], fontSize=8.5, leading=11)
+    story = [Paragraph("RM FACILITIES", titulo), Paragraph("Ficha de Cadastro de Candidato", estilos["Title"]), Spacer(1, 4 * mm)]
+
+    secoes = [
+        ("Vaga", [("Cargo desejado", "cargo_desejado"), ("Pretensao salarial", "pretensao_salarial")]),
+        ("Dados pessoais", [("Nome completo", "nome"), ("Nacionalidade", "nacionalidade"), ("Naturalidade", "naturalidade"), ("Data de nascimento", "data_nascimento"), ("Estado civil", "estado_civil"), ("Nome do esposo(a)", "nome_conjuge"), ("Nome do pai", "nome_pai"), ("Nome da mae", "nome_mae"), ("Filhos", "filhos"), ("Calca / Camisa / Sapato", "vestuario"), ("Peso / Altura", "peso_altura")]),
+        ("Informacoes residenciais", [("Endereco", "endereco"), ("Numero / Complemento", "numero_complemento"), ("Bairro / Regiao", "bairro_regiao"), ("Cidade / UF", "cidade_uf"), ("CEP", "cep"), ("Telefone", "telefone"), ("Celular", "celular"), ("Recado", "recado"), ("E-mail", "email")]),
+        ("Documentacao", [("RG", "rg"), ("Carteira profissional", "carteira_profissional"), ("Titulo de eleitor", "titulo_eleitor"), ("CPF", "cpf"), ("Certificado militar", "certificado_militar"), ("CNH", "cnh"), ("PIS", "pis"), ("Outro documento", "outro_documento")]),
+        ("Escolaridade", [("Ensino fundamental", "ensino_fundamental"), ("Ensino medio", "ensino_medio"), ("Ensino superior / Curso", "ensino_superior"), ("Instituicao", "instituicao"), ("Cursos", "cursos"), ("Lingua / Informatica", "idiomas_informatica"), ("Outros cursos", "outros_cursos"), ("Data do curso / Academia ou escola", "formacao_extra")]),
+        ("Ultimo ou atual emprego", [("Empresa", "ultimo_empresa"), ("Cargo", "ultimo_cargo"), ("Endereco", "ultimo_endereco"), ("Ultimo salario", "ultimo_salario"), ("Admissao / Demissao", "ultimo_periodo"), ("Motivo da saida", "ultimo_motivo")]),
+        ("Penultimo emprego", [("Empresa", "penultimo_empresa"), ("Cargo", "penultimo_cargo"), ("Endereco", "penultimo_endereco"), ("Ultimo salario", "penultimo_salario"), ("Admissao / Demissao", "penultimo_periodo"), ("Motivo da saida", "penultimo_motivo")]),
+        ("Indicacao", [("Parentes na empresa / Grau", "parentes_empresa"), ("Nome do parente / Local", "nome_parente_local"), ("Ja trabalhou na empresa / Local", "ja_trabalhou"), ("Motivo da saida / Periodo", "empresa_saida_periodo"), ("Como conheceu a empresa", "origem_vaga"), ("Recomendacao de funcionario", "recomendacao"), ("Local de trabalho desejado", "local_trabalho")]),
+        ("Carta solicitando emprego", [("Mensagem", "carta")]),
+    ]
+    for nome_secao, campos in secoes:
+        story.append(Table([[Paragraph(nome_secao, secao)]], colWidths=[178 * mm], style=[("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#155e75")), ("BOX", (0, 0), (-1, -1), .3, colors.HexColor("#155e75"))]))
+        linhas = [[Paragraph("<b>" + label + ":</b> " + (_candidato_texto(dados, chave, 500) or "-"), corpo)] for label, chave in campos]
+        story.append(Table(linhas, colWidths=[178 * mm], style=[("BOX", (0, 0), (-1, -1), .3, colors.HexColor("#9fbfc3")), ("INNERGRID", (0, 0), (-1, -1), .2, colors.HexColor("#d4e2e4")), ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
+    story.append(Spacer(1, 5 * mm))
+    story.append(Paragraph("Declaro serem verdadeiras as informacoes prestadas. Enviado em " + localnow().strftime("%d/%m/%Y %H:%M") + ".", corpo))
+    SimpleDocTemplate(caminho, pagesize=A4, rightMargin=16 * mm, leftMargin=16 * mm, topMargin=14 * mm, bottomMargin=14 * mm).build(story)
+    return caminho, nome_arquivo
+
+
+@app.route("/api/cadastro-candidato", methods=["POST"])
+@_limiter.limit("5 per hour")
+def api_cadastro_candidato():
+    if not _same_origin_request(request):
+        return jsonify({"erro": "Origem da requisicao nao permitida."}), 403
+    dados = request.get_json(silent=True) or {}
+    if dados.get("website"):
+        return jsonify({"ok": True})
+    nome = _candidato_texto(dados, "nome", 200)
+    email = _candidato_texto(dados, "email", 150).lower()
+    telefone = _candidato_texto(dados, "celular", 30) or _candidato_texto(dados, "telefone", 30)
+    cpf = only_digits(_candidato_texto(dados, "cpf", 20))
+    if len(nome) < 3 or not _is_valid_email_address(email) or len(only_digits(telefone)) < 10:
+        return jsonify({"erro": "Informe nome completo, e-mail e telefone celular validos."}), 400
+    if cpf and not _valida_cpf(cpf):
+        return jsonify({"erro": "CPF invalido."}), 400
+    if not dados.get("declaracao"):
+        return jsonify({"erro": "Confirme a declaracao de veracidade dos dados."}), 400
+    candidato = CadastroCandidato(nome=nome, email=email, telefone=telefone, cpf=cpf, dados_json=json.dumps(dados, ensure_ascii=False))
+    db.session.add(candidato)
+    db.session.flush()
+    caminho_pdf, nome_pdf = _candidato_gerar_pdf(candidato, dados)
+    candidato.pdf_caminho = os.path.relpath(caminho_pdf, UPLOAD_ROOT).replace("\\", "/")
+    db.session.commit()
+    falhas = []
+    resumo = "Candidato: " + nome + "\nE-mail: " + email + "\nTelefone: " + telefone + "\nCargo desejado: " + (_candidato_texto(dados, "cargo_desejado", 120) or "-")
+    try:
+        smtp_send_text("trabalheconosco@rmfacilities.com.br", "Nova ficha de candidato - " + nome, resumo, anexos=[{"path": caminho_pdf, "name": nome_pdf}])
+    except Exception:
+        app.logger.exception("[cadastro_candidato] falha no envio por e-mail")
+        falhas.append("e-mail")
+    try:
+        numero_rh = wa_humano_cfg().get("numero") or ""
+        if not wa_is_valid_number(wa_norm_number(numero_rh)):
+            raise ValueError("Numero principal de WhatsApp nao configurado")
+        wa_send_text(numero_rh, "Nova ficha de candidato recebida: " + nome + ". PDF anexado.")
+        wa_send_pdf(numero_rh, caminho_pdf, nome_pdf, "Ficha de cadastro - " + nome)
+    except Exception:
+        app.logger.exception("[cadastro_candidato] falha no envio por WhatsApp")
+        falhas.append("WhatsApp")
+    audit_event("cadastro_candidato_recebido", "publico", email, "cadastro_candidato", candidato.id, not falhas, {"falhas": falhas})
+    return jsonify({"ok": True, "mensagem": "Ficha enviada com sucesso. Obrigado pelo seu interesse." if not falhas else "Ficha recebida com sucesso."}), 201
 
 
 @app.route("/codigo-conduta")
