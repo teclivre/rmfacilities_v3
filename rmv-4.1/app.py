@@ -9091,7 +9091,12 @@ def _candidato_gerar_pdf(candidato, dados):
 
     pasta = os.path.join(UPLOAD_ROOT, "candidatos")
     os.makedirs(pasta, exist_ok=True)
-    nome_arquivo = f"ficha_candidato_{candidato.id}.pdf"
+    
+    nome_cand = _clean_file_part(_candidato_texto(dados, "nome", 100) or candidato.nome or "", 80, "Candidato")
+    cargo_cand = _clean_file_part(_candidato_texto(dados, "cargo_desejado", 80), 60, "Candidato")
+    data_str = localnow().strftime("%d-%m-%Y")
+    
+    nome_arquivo = f"FICHA DE CADASTRO_{nome_cand}_{cargo_cand}_{data_str}.pdf"
     caminho = os.path.join(pasta, nome_arquivo)
     estilos = getSampleStyleSheet()
     titulo = ParagraphStyle("CandidatoTitulo", parent=estilos["Heading1"], alignment=1, fontSize=16, textColor=colors.HexColor("#155e75"))
