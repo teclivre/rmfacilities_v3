@@ -197,7 +197,8 @@ input::placeholder{color:var(--muted);opacity:.6}
           <div id="cep-hint" class="hint"></div>
         </div>
         <div class="full"><label>Endereço</label><input id="endereco" name="endereco" placeholder="Rua, Avenida..."></div>
-        <div><label>Número / Complemento</label><input name="numero_complemento" placeholder="Ex.: 123, Bl. B, Apto 12"></div>
+        <div><label>Número</label><input id="numero" name="numero" placeholder="Ex.: 123"></div>
+        <div><label>Complemento</label><input id="complemento" name="complemento" placeholder="Ex.: Bl. B, Apto 12"></div>
         <div><label>Bairro / Região</label><input id="bairro" name="bairro_regiao" placeholder="Seu bairro"></div>
         <div><label>Cidade / UF</label><input id="cidade-uf" name="cidade_uf" placeholder="Cidade / UF"></div>
         <div><label>Telefone</label><input name="telefone" inputmode="tel" maxlength="15" placeholder="(00) 0000-0000"></div>
@@ -403,7 +404,9 @@ function buscarCep(){
     .then(function(res){
       if(!res.ok) throw new Error(res.d.erro || 'CEP não encontrado.');
       var d = res.d;
-      document.getElementById('endereco').value = [d.logradouro, d.complemento].filter(Boolean).join(', ');
+      document.getElementById('endereco').value = d.logradouro || '';
+      var compEl = document.getElementById('complemento');
+      if(compEl && d.complemento) compEl.value = d.complemento;
       document.getElementById('bairro').value = d.bairro || '';
       document.getElementById('cidade-uf').value = [d.localidade || d.cidade, d.uf || d.estado].filter(Boolean).join(' / ');
       cepHint.textContent = 'Endereço preenchido automaticamente.';
