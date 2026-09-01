@@ -32,7 +32,11 @@ def register_ponto_routes(
     Escala=None,
     JornadaTrabalho=None,
     PontoAfastamento=None,
+    localnow=None,
 ):
+    if localnow is None:
+        localnow = utcnow
+
     if "api_ponto_marcar" in app.view_functions:
         return
 

@@ -8619,6 +8619,7 @@ register_ponto_routes(
     JornadaTrabalho=JornadaTrabalho,
     PontoAfastamento=PontoAfastamento,
     SolicitacaoHoraExtra=SolicitacaoHoraExtra,
+    localnow=localnow,
 )
 
 
@@ -23378,8 +23379,23 @@ def api_escala_vincular_funcionarios(id):
         
         # Se substituir_escala_atual=true e há conflito na mesma escala, atualizar em vez de criar novo
         if conflito_mesmo and substituir_escala_atual:
-            conflito_mesmo.data_inicio = data_ini
-            conflito_mesmo.data_fim = data_fim
+            if conflito_mesmo.data_inicio == data_ini:
+                conflito_mesmo.data_fim = data_fim
+                conflito_mesmo.ativo = True
+            else:
+                existente_data = EscalaFuncionario.query.filter_by(
+                    funcionario_id=fid,
+                    escala_id=id,
+                    data_inicio=data_ini,
+                ).first()
+                if existente_data:
+                    conflito_mesmo.ativo = False
+                    existente_data.data_fim = data_fim
+                    existente_data.ativo = True
+                else:
+                    conflito_mesmo.data_inicio = data_ini
+                    conflito_mesmo.data_fim = data_fim
+                    conflito_mesmo.ativo = True
             vinculados.append(fid)
             continue
 
@@ -23424,15 +23440,25 @@ def api_escala_vincular_funcionarios(id):
                     }
                 ), 409
 
-        # Criar vínculo
-        ef = EscalaFuncionario(
-            escala_id=id,
+        # Criar ou reativar vínculo (evita erro de UNIQUE constraint caso já exista registro para a mesma data_inicio)
+        existente_exato = EscalaFuncionario.query.filter_by(
             funcionario_id=fid,
+            escala_id=id,
             data_inicio=data_ini,
-            data_fim=data_fim,
-            ativo=True,
-        )
-        db.session.add(ef)
+        ).first()
+
+        if existente_exato:
+            existente_exato.data_fim = data_fim
+            existente_exato.ativo = True
+        else:
+            ef = EscalaFuncionario(
+                escala_id=id,
+                funcionario_id=fid,
+                data_inicio=data_ini,
+                data_fim=data_fim,
+                ativo=True,
+            )
+            db.session.add(ef)
         vinculados.append(fid)
 
     db.session.commit()
