@@ -184,6 +184,14 @@ input::placeholder{color:var(--muted);opacity:.6}
         <div><label>Naturalidade</label><input name="naturalidade" placeholder="Ex.: São Paulo / SP"></div>
         <div><label>Data de nascimento</label><input name="data_nascimento" type="date"></div>
         <div>
+          <label>Sexo *</label>
+          <select id="sexo" name="sexo" required>
+            <option value="">Selecione</option>
+            <option value="Masculino">Masculino</option>
+            <option value="Feminino">Feminino</option>
+          </select>
+        </div>
+        <div>
           <label>Estado civil</label>
           <select name="estado_civil">
             <option value="">Selecione</option>
@@ -232,10 +240,10 @@ input::placeholder{color:var(--muted);opacity:.6}
         <div><label>Carteira profissional (número, série e estado)</label><input name="carteira_profissional" placeholder="Ex.: 0000000-0000/SP" required></div>
         <div><label>Título de eleitor (número, zona e seção)</label><input name="titulo_eleitor" inputmode="numeric" placeholder="0000.0000.0000" required></div>
         <div><label>CPF</label><input name="cpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" required></div>
-        <div><label>Certificado militar</label><input name="certificado_militar" placeholder="Se aplicável" required></div>
-        <div><label>CNH (número, validade e categoria)</label><input name="cnh" placeholder="Ex.: 00000000000 - B - 12/2028" required></div>
+        <div><label id="lbl-certificado-militar">Certificado militar *</label><input id="certificado_militar" name="certificado_militar" placeholder="Se aplicável" required></div>
+        <div><label id="lbl-cnh">CNH (número, validade e categoria) *</label><input id="cnh" name="cnh" placeholder="Ex.: 00000000000 - B - 12/2028" required></div>
         <div><label>PIS / Data</label><input name="pis" inputmode="numeric" placeholder="000.00000.00-0" required></div>
-        <div><label>Outro documento</label><input name="outro_documento" placeholder="Outros registros se houver" required></div>
+        <div><label>Outro documento</label><input name="outro_documento" placeholder="Outros registros se houver"></div>
       </div>
     </section>
 
@@ -404,6 +412,24 @@ aplicarMascara('recado', mascaraTel);
 aplicarMascara('rg', mascaraRg);
 aplicarMascara('pis', mascaraPis);
 aplicarMascara('titulo_eleitor', mascaraTitulo);
+
+// CERTIFICADO MILITAR E CNH NAO OBRIGATORIOS PARA CANDIDATAS DO SEXO FEMININO
+var sexoInput = document.getElementById('sexo');
+var certificadoMilitarInput = document.getElementById('certificado_militar');
+var cnhInput = document.getElementById('cnh');
+var lblCertificadoMilitar = document.getElementById('lbl-certificado-militar');
+var lblCnh = document.getElementById('lbl-cnh');
+
+function atualizarObrigatoriedadeSexo(){
+  var ehFeminino = sexoInput.value === 'Feminino';
+  certificadoMilitarInput.required = !ehFeminino;
+  cnhInput.required = !ehFeminino;
+  lblCertificadoMilitar.textContent = 'Certificado militar' + (ehFeminino ? '' : ' *');
+  lblCnh.textContent = 'CNH (número, validade e categoria)' + (ehFeminino ? '' : ' *');
+}
+
+sexoInput.addEventListener('change', atualizarObrigatoriedadeSexo);
+atualizarObrigatoriedadeSexo();
 
 // BUSCA AUTOMÁTICA DE CEP (ViaCEP)
 var cepInput = document.getElementById('cep');

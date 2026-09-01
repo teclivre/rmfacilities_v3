@@ -9145,7 +9145,7 @@ def _candidato_gerar_pdf(candidato, dados):
 
     secoes = [
         ("Vaga", [("Cargo desejado", "cargo_desejado"), ("Pretensao salarial", "pretensao_salarial")]),
-        ("Dados pessoais", [("Nome completo", "nome"), ("Nacionalidade", "nacionalidade"), ("Naturalidade", "naturalidade"), ("Data de nascimento", "data_nascimento"), ("Estado civil", "estado_civil"), ("Nome do esposo(a)", "nome_conjuge"), ("Nome do pai", "nome_pai"), ("Nome da mae", "nome_mae"), ("Filhos", "filhos"), ("Calca / Camisa / Sapato", "vestuario"), ("Peso / Altura", "peso_altura")]),
+        ("Dados pessoais", [("Nome completo", "nome"), ("Sexo", "sexo"), ("Nacionalidade", "nacionalidade"), ("Naturalidade", "naturalidade"), ("Data de nascimento", "data_nascimento"), ("Estado civil", "estado_civil"), ("Nome do esposo(a)", "nome_conjuge"), ("Nome do pai", "nome_pai"), ("Nome da mae", "nome_mae"), ("Filhos", "filhos"), ("Calca / Camisa / Sapato", "vestuario"), ("Peso / Altura", "peso_altura")]),
         ("Informacoes residenciais", [("Endereco", "endereco"), ("Numero", "numero"), ("Complemento", "complemento"), ("Bairro / Regiao", "bairro_regiao"), ("Cidade / UF", "cidade_uf"), ("CEP", "cep"), ("Telefone", "telefone"), ("Celular", "celular"), ("Recado", "recado"), ("E-mail", "email")]),
         ("Documentacao", [("RG", "rg"), ("Carteira profissional", "carteira_profissional"), ("Titulo de eleitor", "titulo_eleitor"), ("CPF", "cpf"), ("Certificado militar", "certificado_militar"), ("CNH", "cnh"), ("PIS", "pis"), ("Outro documento", "outro_documento")]),
         ("Escolaridade", [("Grau de escolaridade", "escolaridade_grau"), ("Ensino superior / Curso", "ensino_superior"), ("Instituicao", "instituicao"), ("Cursos", "cursos"), ("Lingua / Informatica", "idiomas_informatica"), ("Outros cursos", "outros_cursos"), ("Data do curso / Academia ou escola", "formacao_extra")]),
@@ -9188,16 +9188,17 @@ def api_cadastro_candidato():
         "numero": "numero",
         "bairro_regiao": "bairro/regiao",
         "cidade_uf": "cidade/UF",
+        "sexo": "sexo",
         "rg": "RG",
         "carteira_profissional": "carteira profissional",
         "titulo_eleitor": "titulo de eleitor",
         "cpf": "CPF",
-        "certificado_militar": "certificado militar",
-        "cnh": "CNH",
         "pis": "PIS",
-        "outro_documento": "outro documento",
         "carta": "carta de solicitacao de emprego",
     }
+    if _candidato_texto(dados, "sexo", 20).lower() != "feminino":
+        obrigatorios["certificado_militar"] = "certificado militar"
+        obrigatorios["cnh"] = "CNH"
     faltando = [label for chave, label in obrigatorios.items() if not _candidato_texto(dados, chave, 80)]
     if faltando:
         return jsonify({"erro": "Preencha os campos obrigatorios: " + ", ".join(faltando) + "."}), 400
