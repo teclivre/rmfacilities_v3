@@ -209,14 +209,14 @@ input::placeholder{color:var(--muted);opacity:.6}
       <div class="grid three">
         <div>
           <label>CEP</label>
-          <input id="cep" name="cep" inputmode="numeric" maxlength="9" placeholder="00000-000">
+          <input id="cep" name="cep" inputmode="numeric" maxlength="9" placeholder="00000-000" required>
           <div id="cep-hint" class="hint"></div>
         </div>
-        <div class="full"><label>Endereço</label><input id="endereco" name="endereco" placeholder="Rua, Avenida..."></div>
-        <div><label>Número</label><input id="numero" name="numero" placeholder="Ex.: 123"></div>
+        <div class="full"><label>Endereço</label><input id="endereco" name="endereco" placeholder="Rua, Avenida..." required></div>
+        <div><label>Número</label><input id="numero" name="numero" placeholder="Ex.: 123" required></div>
         <div><label>Complemento</label><input id="complemento" name="complemento" placeholder="Ex.: Bl. B, Apto 12"></div>
-        <div><label>Bairro / Região</label><input id="bairro" name="bairro_regiao" placeholder="Seu bairro"></div>
-        <div><label>Cidade / UF</label><input id="cidade-uf" name="cidade_uf" placeholder="Cidade / UF"></div>
+        <div><label>Bairro / Região</label><input id="bairro" name="bairro_regiao" placeholder="Seu bairro" required></div>
+        <div><label>Cidade / UF</label><input id="cidade-uf" name="cidade_uf" placeholder="Cidade / UF" required></div>
         <div><label>Telefone</label><input name="telefone" inputmode="tel" maxlength="15" placeholder="(00) 0000-0000"></div>
         <div><label>Celular *</label><input name="celular" inputmode="tel" maxlength="15" placeholder="(00) 00000-0000" required></div>
         <div><label>Telefone para recado</label><input name="recado" inputmode="tel" maxlength="15" placeholder="(00) 00000-0000"></div>
@@ -228,14 +228,14 @@ input::placeholder{color:var(--muted);opacity:.6}
     <section class="section">
       <div class="section-title">🪪 Documentação</div>
       <div class="grid">
-        <div><label>RG (número, estado e emissão)</label><input name="rg" inputmode="numeric" placeholder="00.000.000-0"></div>
-        <div><label>Carteira profissional (número, série e estado)</label><input name="carteira_profissional" placeholder="Ex.: 0000000-0000/SP"></div>
-        <div><label>Título de eleitor (número, zona e seção)</label><input name="titulo_eleitor" inputmode="numeric" placeholder="0000.0000.0000"></div>
-        <div><label>CPF</label><input name="cpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00"></div>
-        <div><label>Certificado militar</label><input name="certificado_militar" placeholder="Se aplicável"></div>
-        <div><label>CNH (número, validade e categoria)</label><input name="cnh" placeholder="Ex.: 00000000000 - B - 12/2028"></div>
-        <div><label>PIS / Data</label><input name="pis" inputmode="numeric" placeholder="000.00000.00-0"></div>
-        <div><label>Outro documento</label><input name="outro_documento" placeholder="Outros registros se houver"></div>
+        <div><label>RG (número, estado e emissão)</label><input name="rg" inputmode="numeric" placeholder="00.000.000-0" required></div>
+        <div><label>Carteira profissional (número, série e estado)</label><input name="carteira_profissional" placeholder="Ex.: 0000000-0000/SP" required></div>
+        <div><label>Título de eleitor (número, zona e seção)</label><input name="titulo_eleitor" inputmode="numeric" placeholder="0000.0000.0000" required></div>
+        <div><label>CPF</label><input name="cpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" required></div>
+        <div><label>Certificado militar</label><input name="certificado_militar" placeholder="Se aplicável" required></div>
+        <div><label>CNH (número, validade e categoria)</label><input name="cnh" placeholder="Ex.: 00000000000 - B - 12/2028" required></div>
+        <div><label>PIS / Data</label><input name="pis" inputmode="numeric" placeholder="000.00000.00-0" required></div>
+        <div><label>Outro documento</label><input name="outro_documento" placeholder="Outros registros se houver" required></div>
       </div>
     </section>
 
@@ -301,7 +301,7 @@ input::placeholder{color:var(--muted);opacity:.6}
         <div><label>Como conheceu a vaga?</label><input name="origem_vaga" placeholder="Anúncio, indicação, redes sociais..."></div>
         <div><label>Recomendação de funcionário</label><input name="recomendacao" placeholder="Nome do funcionário se houver"></div>
         <div class="full"><label>Local de trabalho de sua preferência</label><input name="local_trabalho" placeholder="Região ou cidade preferida"></div>
-        <div class="full"><label>Carta / Apresentação solicitando o emprego</label><textarea name="carta" placeholder="Escreva brevemente o motivo do seu interesse na vaga..."></textarea></div>
+        <div class="full"><label>Carta / Apresentação solicitando o emprego</label><textarea name="carta" placeholder="Escreva brevemente o motivo do seu interesse na vaga..." required></textarea></div>
       </div>
     </section>
 

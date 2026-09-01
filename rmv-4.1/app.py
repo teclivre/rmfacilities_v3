@@ -9087,7 +9087,8 @@ def _candidato_gerar_pdf(candidato, dados):
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.utils import ImageReader
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
 
     pasta = os.path.join(UPLOAD_ROOT, "candidatos")
     os.makedirs(pasta, exist_ok=True)
@@ -9102,7 +9103,45 @@ def _candidato_gerar_pdf(candidato, dados):
     titulo = ParagraphStyle("CandidatoTitulo", parent=estilos["Heading1"], alignment=1, fontSize=16, textColor=colors.HexColor("#155e75"))
     secao = ParagraphStyle("CandidatoSecao", parent=estilos["Heading2"], fontSize=10, textColor=colors.white, alignment=1, spaceBefore=8, spaceAfter=3)
     corpo = ParagraphStyle("CandidatoCorpo", parent=estilos["BodyText"], fontSize=8.5, leading=11)
-    story = [Paragraph("RM FACILITIES", titulo), Paragraph("Ficha de Cadastro de Candidato", estilos["Title"]), Spacer(1, 4 * mm)]
+    logo_path = get_logo()
+    story = []
+    if logo_path and os.path.exists(logo_path):
+        try:
+            logo_header = RLImage(logo_path)
+            logo_header._restrictSize(60 * mm, 18 * mm)
+            logo_header.hAlign = "CENTER"
+            story.append(logo_header)
+            story.append(Spacer(1, 2 * mm))
+        except Exception:
+            story.append(Paragraph("RM FACILITIES", titulo))
+    else:
+        story.append(Paragraph("RM FACILITIES", titulo))
+    story.extend([Paragraph("Ficha de Cadastro de Candidato", estilos["Title"]), Spacer(1, 4 * mm)])
+
+    def _candidato_pdf_page(canvas_obj, doc):
+        if not logo_path or not os.path.exists(logo_path):
+            return
+        try:
+            img_reader = ImageReader(logo_path)
+            img_w, img_h = img_reader.getSize()
+            if not img_w or not img_h:
+                return
+            page_w, page_h = A4
+            target_w = page_w * 0.58
+            target_h = target_w * (float(img_h) / float(img_w))
+            max_h = page_h * 0.42
+            if target_h > max_h:
+                target_h = max_h
+                target_w = target_h * (float(img_w) / float(img_h))
+            canvas_obj.saveState()
+            if hasattr(canvas_obj, "setFillAlpha"):
+                canvas_obj.setFillAlpha(0.10)
+            canvas_obj.translate(page_w / 2.0, page_h / 2.0)
+            canvas_obj.rotate(30)
+            canvas_obj.drawImage(img_reader, -target_w / 2.0, -target_h / 2.0, target_w, target_h, mask="auto")
+            canvas_obj.restoreState()
+        except Exception:
+            pass
 
     secoes = [
         ("Vaga", [("Cargo desejado", "cargo_desejado"), ("Pretensao salarial", "pretensao_salarial")]),
@@ -9121,7 +9160,7 @@ def _candidato_gerar_pdf(candidato, dados):
         story.append(Table(linhas, colWidths=[178 * mm], style=[("BOX", (0, 0), (-1, -1), .3, colors.HexColor("#9fbfc3")), ("INNERGRID", (0, 0), (-1, -1), .2, colors.HexColor("#d4e2e4")), ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
     story.append(Spacer(1, 5 * mm))
     story.append(Paragraph("Declaro serem verdadeiras as informacoes prestadas. Enviado em " + localnow().strftime("%d/%m/%Y %H:%M") + ".", corpo))
-    SimpleDocTemplate(caminho, pagesize=A4, rightMargin=16 * mm, leftMargin=16 * mm, topMargin=14 * mm, bottomMargin=14 * mm).build(story)
+    SimpleDocTemplate(caminho, pagesize=A4, rightMargin=16 * mm, leftMargin=16 * mm, topMargin=14 * mm, bottomMargin=14 * mm).build(story, onFirstPage=_candidato_pdf_page, onLaterPages=_candidato_pdf_page)
     return caminho, nome_arquivo
 
 
@@ -9143,6 +9182,25 @@ def api_cadastro_candidato():
         return jsonify({"erro": "CPF invalido."}), 400
     if not dados.get("declaracao"):
         return jsonify({"erro": "Confirme a declaracao de veracidade dos dados."}), 400
+    obrigatorios = {
+        "cep": "CEP",
+        "endereco": "endereco",
+        "numero": "numero",
+        "bairro_regiao": "bairro/regiao",
+        "cidade_uf": "cidade/UF",
+        "rg": "RG",
+        "carteira_profissional": "carteira profissional",
+        "titulo_eleitor": "titulo de eleitor",
+        "cpf": "CPF",
+        "certificado_militar": "certificado militar",
+        "cnh": "CNH",
+        "pis": "PIS",
+        "outro_documento": "outro documento",
+        "carta": "carta de solicitacao de emprego",
+    }
+    faltando = [label for chave, label in obrigatorios.items() if not _candidato_texto(dados, chave, 80)]
+    if faltando:
+        return jsonify({"erro": "Preencha os campos obrigatorios: " + ", ".join(faltando) + "."}), 400
     candidato = CadastroCandidato(nome=nome, email=email, telefone=telefone, cpf=cpf, dados_json=json.dumps(dados, ensure_ascii=False))
     db.session.add(candidato)
     db.session.flush()
