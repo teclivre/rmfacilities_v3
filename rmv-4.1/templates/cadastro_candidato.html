@@ -10,6 +10,7 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
+  color-scheme: light;
   --azul:#205d8a;--azul-esc:#154060;--azul-cl:#d0e4f0;
   --laranja:#f28e34;--laranja-esc:#b86820;
   --verde:#168357;--verde-cl:#d9f3e8;
@@ -21,8 +22,9 @@
   --r:10px;--r2:16px;
 }
 html[data-theme='dark']{
+  color-scheme: dark;
   --bg:#0f1c2e;--card:#08111d;--text:#e6eef7;--muted:#94a3b8;
-  --borda:#21374d;--input-bg:rgba(255,255,255,.06);--input-border:#21374d;--input-text:#ffffff;
+  --borda:#21374d;--input-bg:#101d2f;--input-border:#21374d;--input-text:#e6eef7;
   --azul:#67b8ff;--azul-esc:#0d2640;--azul-cl:#1a3a58;
   --laranja:#ff9f4a;--verde:#36d09a;--verm:#f57575;
   --shadow:0 18px 40px rgba(0,0,0,.45);
@@ -78,6 +80,14 @@ input,select,textarea{
   padding:11px 13px;background:var(--input-bg);color:var(--input-text);
   font-family:'Manrope',sans-serif;font-size:13px;outline:none;
   transition:all .2s ease;
+}
+select option {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+html[data-theme='dark'] select option {
+  background-color: #0d1b2d;
+  color: #e6eef7;
 }
 textarea{min-height:96px;resize:vertical}
 input:focus,select:focus,textarea:focus{
