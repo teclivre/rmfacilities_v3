@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap">
 <style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
   color-scheme: light;
   --azul:#205d8a;--azul-esc:#154060;--azul-cl:#d0e4f0;
@@ -50,6 +50,7 @@ body{
   padding:8px 14px;border-radius:999px;font-size:12px;font-weight:700;
   cursor:pointer;display:inline-flex;align-items:center;gap:6px;
   transition:all .2s ease;box-shadow:0 2px 8px rgba(0,0,0,.05);
+  min-height:36px;
 }
 .theme-btn:hover{border-color:var(--azul);transform:translateY(-1px)}
 
@@ -77,9 +78,9 @@ body{
 label{display:block;font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px}
 input,select,textarea{
   width:100%;border:1.5px solid var(--input-border);border-radius:var(--r);
-  padding:11px 13px;background:var(--input-bg);color:var(--input-text);
-  font-family:'Manrope',sans-serif;font-size:13px;outline:none;
-  transition:all .2s ease;
+  padding:12px 14px;background:var(--input-bg);color:var(--input-text);
+  font-family:'Manrope',sans-serif;font-size:14px;outline:none;
+  transition:all .2s ease;min-height:46px;
 }
 select option {
   background-color: #ffffff;
@@ -89,21 +90,21 @@ html[data-theme='dark'] select option {
   background-color: #0d1b2d;
   color: #e6eef7;
 }
-textarea{min-height:96px;resize:vertical}
+textarea{min-height:100px;resize:vertical}
 input:focus,select:focus,textarea:focus{
   border-color:var(--azul);box-shadow:0 0 0 3px rgba(32,93,138,.18);
 }
 input::placeholder{color:var(--muted);opacity:.6}
 
 .hint{font-size:11px;color:var(--muted);margin-top:4px;min-height:14px}
-.check{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--text);cursor:pointer;user-select:none}
-.check input{width:18px;height:18px;margin-top:1px;flex-shrink:0;cursor:pointer}
+.check{display:flex;gap:12px;align-items:flex-start;font-size:13px;color:var(--text);cursor:pointer;user-select:none}
+.check input{width:22px;height:22px;min-width:22px;margin-top:2px;flex-shrink:0;cursor:pointer}
 
 .submit{padding:22px;background:rgba(0,0,0,.01)}
 .submit button{
-  border:none;border-radius:var(--r);padding:14px 22px;width:100%;
+  border:none;border-radius:var(--r);padding:14px 22px;width:100%;min-height:52px;
   background:linear-gradient(135deg,var(--azul) 0%,var(--azul-esc) 100%);
-  color:#ffffff;font-family:'Manrope',sans-serif;font-weight:800;font-size:15px;
+  color:#ffffff;font-family:'Manrope',sans-serif;font-weight:800;font-size:16px;
   cursor:pointer;transition:all .22s ease;box-shadow:0 6px 20px rgba(32,93,138,.3);
 }
 .submit button:hover{transform:translateY(-1px);box-shadow:0 10px 26px rgba(32,93,138,.45)}
@@ -123,10 +124,25 @@ input::placeholder{color:var(--muted);opacity:.6}
 .footer a{color:var(--azul);text-decoration:none;font-weight:700}
 .footer a:hover{text-decoration:underline}
 
-@media(max-width:680px){
-  .grid,.grid.three{grid-template-columns:1fr}
-  .header{flex-direction:column;align-items:flex-start}
-  .section{padding:16px}
+@media(max-width:768px){
+  .wrap{padding:12px 10px 40px}
+  .header{flex-direction:row;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px}
+  .brand-title{gap:10px}
+  .brand-title img{height:36px}
+  .brand-title h1{font-size:18px}
+  .theme-btn{padding:6px 12px;font-size:11px;min-height:32px}
+  .hero{padding:16px 14px;border-radius:12px;margin-bottom:14px}
+  .hero h2{font-size:18px}
+  .hero p{font-size:12px}
+  .form{border-radius:14px}
+  .section{padding:16px 12px}
+  .section-title{font-size:15px;margin-bottom:12px}
+  .grid,.grid.three{grid-template-columns:1fr;gap:12px}
+  input,select,textarea{font-size:16px;padding:12px;min-height:48px}
+  label{font-size:11px}
+  .submit{padding:16px 12px}
+  .submit button{min-height:50px;font-size:16px}
+  .footer{margin-top:24px;padding:20px 12px}
 }
 </style>
 </head>
