@@ -1,0 +1,10 @@
+.gradle/
+app/build/
+build/
+local.properties
+*.iml
+.idea/
+
+# Assinatura release — NÃO commitar
+keystore.properties
+app/rmfacilities-ponto-release.keystore
