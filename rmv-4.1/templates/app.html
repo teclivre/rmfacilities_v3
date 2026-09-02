@@ -3297,6 +3297,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="docs-subtab-clientes" class="subaba-bloco" onclick="docsSetAba('clientes',this)">🏢 Clientes</button>
         <button type="button" id="docs-subtab-proposta" class="subaba-bloco" onclick="docsSetAba('proposta',this)">🧾 Propostas</button>
         <button type="button" id="docs-subtab-lista-propostas" class="subaba-bloco" onclick="docsSetAba('lista-propostas',this)">📋 Histórico</button>
+        <button type="button" id="docs-subtab-candidatos" class="subaba-bloco" onclick="docsSetAba('candidatos',this)">📝 Fichas de Candidatos</button>
       </div>
 
       <!-- ── Painel: Funcionários ── -->
@@ -3378,6 +3379,22 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
 
       <!-- ── Painel: Clientes ── -->
+      <div id="docs-pane-candidatos" class="card" style="display:none">
+        <div class="card-header">
+          <span class="card-title">📝 Fichas preenchidas por candidatos</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input id="docs-cand-busca" placeholder="Buscar nome, e-mail, cargo ou cidade" oninput="docsCandidatosCarregar()" style="padding:6px 10px;font-size:12px;border:1.5px solid var(--borda);border-radius:var(--r);width:280px">
+            <button class="btn b-gh b-sm" onclick="docsCandidatosCarregar()">↻ Atualizar</button>
+          </div>
+        </div>
+        <div style="overflow:auto">
+          <table class="tbl" style="min-width:760px">
+            <thead><tr><th>Nome</th><th>Cargo desejado</th><th>Cidade</th><th>Contato</th><th>Recebida em</th><th>Ações</th></tr></thead>
+            <tbody id="docs-cand-tbody"><tr><td colspan="6" class="vazio">Nenhuma ficha carregada.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
       <div id="docs-pane-clientes" class="card" style="display:none">
         <div class="card-header"><span class="card-title">🏢 Documentos para Clientes</span></div>
         <div style="padding:18px">
@@ -3832,6 +3849,7 @@ document.addEventListener('DOMContentLoaded',()=>{
                 <button type="button" class="subaba-bloco asi-side-tab on" id="atab-funcionario" onclick="switchAsiTab('funcionario')">👤 Funcionários</button>
                 <button type="button" class="subaba-bloco asi-side-tab" id="atab-cliente" onclick="switchAsiTab('cliente')">🏢 Clientes</button>
                 <button type="button" class="subaba-bloco asi-side-tab" id="atab-avulso" onclick="switchAsiTab('avulso')">📄 Avulso</button>
+                <button type="button" class="subaba-bloco asi-side-tab" id="atab-enviadas" onclick="switchAsiTab('enviadas')">📬 Enviadas / Acompanhamento</button>
               </div>
               <div style="margin-top:10px;display:flex;justify-content:flex-start">
                 <button class="btn b-az b-sm" onclick="abrirNovoEnvelope()">+ Novo Documento</button>
@@ -10855,12 +10873,30 @@ function docsInit() {
 
 function docsSetAba(aba, el) {
   docsAbaAtiva = aba;
-  ['funcionarios','clientes','proposta','lista-propostas','contrato','lista-contratos'].forEach(a => {
+  ['funcionarios','clientes','proposta','lista-propostas','contrato','lista-contratos','candidatos'].forEach(a => {
     const pane = document.getElementById('docs-pane-' + a);
     const btn = document.getElementById('docs-subtab-' + a);
     if (pane) pane.style.display = a === aba ? '' : 'none';
     if (btn) btn.classList.toggle('on', a === aba);
   });
+  if(aba==='candidatos') docsCandidatosCarregar();
+}
+
+async function docsCandidatosCarregar(){
+  const tbody=document.getElementById('docs-cand-tbody');
+  if(!tbody) return;
+  tbody.innerHTML='<tr><td colspan="6" class="vazio">Carregando fichas...</td></tr>';
+  const busca=(document.getElementById('docs-cand-busca')?.value||'').trim();
+  try{
+    const d=await api('/api/rh/candidatos?q='+encodeURIComponent(busca));
+    const lista=d.candidatos||[];
+    if(!lista.length){tbody.innerHTML='<tr><td colspan="6" class="vazio">Nenhuma ficha encontrada.</td></tr>';return;}
+    tbody.innerHTML=lista.map(c=>`<tr>
+      <td><strong>${esc(c.nome||'')}</strong><div style="font-size:11px;color:var(--text-muted)">${esc(c.email||'')}</div></td>
+      <td>${esc(c.cargo||'—')}</td><td>${esc(c.cidade||'—')}</td><td>${esc(c.telefone||'—')}</td><td>${esc(c.criado_fmt||'—')}</td>
+      <td style="white-space:nowrap"><button class="btn b-az b-sm" onclick="rhCandidatoAbrir(${c.id})">Ver ficha</button> ${c.pdf_url?`<a class="btn b-gh b-sm" href="${c.pdf_url}">⬇ PDF</a>`:''}</td>
+    </tr>`).join('');
+  }catch(e){tbody.innerHTML='<tr><td colspan="6" class="vazio" style="color:var(--verm)">Erro ao carregar fichas.</td></tr>';}
 }
 
 function pcLimparFormulario() {
@@ -16945,10 +16981,27 @@ function switchAsiTab(tipo){
   document.querySelectorAll('#pg-assinaturas .asi-side-tab').forEach(b=>b.classList.remove('on'));
   const tb=document.getElementById('atab-'+tipo);
   if(tb) tb.classList.add('on');
-  const titles={'funcionario':'Documentos — Funcionários','cliente':'Documentos — Clientes','avulso':'Documentos — Avulso'};
+  const titles={'funcionario':'Documentos — Funcionários','cliente':'Documentos — Clientes','avulso':'Documentos — Avulso','enviadas':'Assinaturas Enviadas — Acompanhamento'};
   document.getElementById('asi-list-title').textContent=titles[tipo]||'Documentos';
   fecharDetalheEnvelope();
-  loadEnvelopes(tipo);
+  if(tipo==='enviadas') loadAssinaturasEnviadas();
+  else loadEnvelopes(tipo);
+}
+
+async function loadAssinaturasEnviadas(){
+  const box=document.getElementById('asi-lista');
+  box.innerHTML='<div class="vazio">Carregando assinaturas enviadas...</div>';
+  try{
+    const r=await api('/api/rh/assinaturas/painel?status=todos');
+    const lista=r.itens||[];
+    if(!lista.length){box.innerHTML='<div class="vazio">Nenhuma assinatura enviada encontrada.</div>';return;}
+    box.innerHTML=`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Funcionário</th><th>Documento</th><th>Categoria</th><th>Enviado em</th><th>Status</th><th>Ações</th></tr></thead><tbody>${lista.map(it=>`<tr>
+      <td><strong>${esc(it.funcionario_nome||'')}</strong><div style="font-size:11px;color:var(--text-muted)">${esc(it.funcionario_cargo||'')}</div></td>
+      <td>${esc(it.nome_arquivo||'')}</td><td>${esc(it.categoria_label||it.categoria||'')}</td><td>${esc(it.criado_fmt||'—')}</td>
+      <td>${_painelAssStatusBadge(it.ass_status,it.vencido)}</td>
+      <td style="white-space:nowrap"><button class="btn b-gh b-sm" onclick="downloadArquivoFuncionario('/api/funcionarios/arquivos/${it.arquivo_id}/download')">⬇ Baixar</button> ${it.ass_status==='pendente'?`<button class="btn b-az b-sm" onclick="painelAssReenviar(${it.arquivo_id})">🔔 Notificar</button>`:''}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+  }catch(e){box.innerHTML='<div class="vazio" style="color:var(--verm)">Erro ao carregar assinaturas enviadas.</div>';}
 }
 
 async function loadEnvelopes(tipo){
