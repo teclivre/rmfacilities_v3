@@ -11906,7 +11906,6 @@ def api_assinatura_confirmar(token):
     nome = (d.get("nome") or "").strip()
     cargo = (d.get("cargo") or "").strip()
     cpf = (only_digits(d.get("cpf") or "") or "").strip()
-    otp = (only_digits(d.get("otp") or "") or "").strip()
     aceite = bool(d.get("aceite"))
     if not nome:
         return _assinatura_json_erro("Informe o nome completo para assinar.", 400)
@@ -25597,50 +25596,6 @@ def api_func_doc_assinatura_confirmar(token):
         return _assinatura_json_erro(
             "O CPF informado não confere com o funcionário vinculado ao documento.", 400
         )
-
-    if not otp:
-        codigo = _otp_new_code()
-        a.ass_otp_hash = token_hash(codigo)
-        a.ass_otp_expira_em = utcnow() + timedelta(minutes=10)
-        a.ass_otp_tentativas = 0
-        try:
-            envio = _send_signature_otp(
-                codigo,
-                nome_dest=nome,
-                telefone=(f.telefone if f else ""),
-                email=(f.email if f else ""),
-                contexto="documento",
-                funcionario_id=(f.id if f else None),
-            )
-        except Exception as ex:
-            db.session.rollback()
-            return _assinatura_json_erro(
-                f"Falha ao enviar OTP de confirmação: {str(ex)}", 400
-            )
-        db.session.commit()
-        return _assinatura_json_otp(
-            mensagem=f"Código OTP enviado via {envio.get('canal', 'canal')} para {envio.get('destino', 'destino mascarado')}",
-            canal=envio.get("canal", ""),
-            destino=envio.get("destino", ""),
-        )
-
-    if not (a.ass_otp_hash or "").strip() or not a.ass_otp_expira_em:
-        return _assinatura_json_erro(
-            "Solicite um novo código OTP para concluir a assinatura.", 400
-        )
-    if a.ass_otp_expira_em < utcnow():
-        return _assinatura_json_erro(
-            "Código OTP expirado. Solicite um novo código.", 400
-        )
-    tent = int(a.ass_otp_tentativas or 0)
-    if tent >= 5:
-        return _assinatura_json_erro(
-            "Limite de tentativas de OTP excedido. Solicite um novo código.", 400
-        )
-    if not hmac.compare_digest(token_hash(otp), str(a.ass_otp_hash or "")):
-        a.ass_otp_tentativas = tent + 1
-        db.session.commit()
-        return _assinatura_json_erro("Código OTP inválido.", 400)
 
     if not a.ass_codigo:
         a.ass_codigo = secrets.token_urlsafe(10)
