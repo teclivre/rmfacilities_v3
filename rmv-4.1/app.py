@@ -15759,31 +15759,21 @@ def _gerar_os_nr01_pdf(funcionario):
         canvas = rl_canvas.Canvas(overlay, pagesize=(w, h))
         canvas.setFillColor(colors.white)
         if page_idx == 0:
-            table_left = 32
-            table_right = w - 32
-            table_divider = 82
-            canvas.rect(table_left, h - 172, table_right - table_left, 64, fill=1, stroke=0)
-            canvas.setStrokeColor(colors.black)
-            canvas.rect(table_left, h - 172, table_right - table_left, 64, fill=0, stroke=1)
-            for line_y in (h - 128, h - 148):
-                canvas.line(table_left, line_y, table_right, line_y)
-            canvas.line(table_divider, h - 172, table_divider, h - 108)
+            # Mascara somente os marcadores, preservando toda a tabela original.
+            canvas.rect(74, h - 133, 315, 18, fill=1, stroke=0)
+            canvas.rect(470, h - 133, 80, 18, fill=1, stroke=0)
+            canvas.rect(74, h - 153, 315, 18, fill=1, stroke=0)
             canvas.setFillColor(colors.black)
-            canvas.setFont("Helvetica", 10)
-            canvas.setFont("Helvetica-Bold", 9)
-            canvas.drawString(40, h - 122, "Nome:")
-            canvas.drawString(40, h - 142, "Cargo:")
-            canvas.drawString(40, h - 162, "Admissão:")
-            canvas.setFont("Helvetica", 10)
-            canvas.drawString(88, h - 122, f"{nome} - RE {re_func}")
-            canvas.drawString(88, h - 142, cargo)
-            canvas.drawString(88, h - 162, admissao)
+            canvas.setFont("Helvetica", 9)
+            canvas.drawString(76, h - 128, f"{nome} - RE {re_func}")
+            canvas.drawString(76, h - 148, cargo)
+            canvas.drawString(473, h - 128, admissao)
         elif page_idx == 1:
-            canvas.rect(55, 55, 245, 52, fill=1, stroke=0)
+            # Substitui o marcador de admissao dentro da celula original.
+            canvas.rect(32, h - 572, 88, 18, fill=1, stroke=0)
             canvas.setFillColor(colors.black)
-            canvas.setFont("Helvetica", 10)
-            canvas.drawString(70, 88, f"Data da Emissão: {localnow().strftime('%d/%m/%Y')}")
-            canvas.drawString(70, 68, f"Admissão: {admissao}")
+            canvas.setFont("Helvetica", 9)
+            canvas.drawString(38, h - 565, admissao)
         canvas.save()
         overlay.seek(0)
         page.merge_page(PdfReader(overlay).pages[0])
