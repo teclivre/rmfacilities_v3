@@ -9486,8 +9486,8 @@ def api_ponto_coletivo_marcar():
         return jsonify({"ok": False, "erro": "Localização inválida. Tente novamente."}), 400
     if (lat is not None and not (-90 <= lat <= 90)) or (lon is not None and not (-180 <= lon <= 180)):
         return jsonify({"ok": False, "erro": "Coordenadas de localização fora do intervalo válido."}), 400
-    if lat is None or lon is None:
-        return jsonify({"ok": False, "erro": "A localização é obrigatória para registrar o ponto."}), 400
+    if (lat is None) != (lon is None):
+        return jsonify({"ok": False, "erro": "Localização inválida. Tente novamente."}), 400
 
     hoje_ref = utcnow().date()
     if _app_funcionario_em_ferias_na_data(funcionario, hoje_ref):
@@ -9550,7 +9550,8 @@ def api_ponto_coletivo_marcar():
         local_txt = f"\nLocalização: {lat:.6f}, {lon:.6f}"
 
     posto = (getattr(funcionario, "posto_operacional", None) or "Reserva tecnica").strip()
-    link_mapa = f"https://www.google.com/maps?q={lat:.6f},{lon:.6f}"
+    tem_localizacao = lat is not None and lon is not None
+    link_mapa = f"https://www.google.com/maps?q={lat:.6f},{lon:.6f}" if tem_localizacao else ""
     link_ponto = url_for(
         "pagina_coletivo_ponto", _external=True, token=token
     ) if token else url_for("pagina_coletivo_ponto", _external=True)
@@ -9560,9 +9561,8 @@ def api_ponto_coletivo_marcar():
         f"Tipo: {_coletivo_label_tipo_whatsapp(tipo)}\n"
         f"Horário: {m.data_hora.strftime('%d/%m/%Y %H:%M')}\n"
         f"Posto de trabalho: {posto}\n"
-        f"Localização: {lat:.6f}, {lon:.6f}\n"
-        f"Mapa: {link_mapa}\n"
-        f"Link do ponto: {link_ponto}\n"
+        + (f"Localização: {lat:.6f}, {lon:.6f}\nMapa: {link_mapa}\n" if tem_localizacao else "")
+        + f"Link do ponto: {link_ponto}\n"
         f"Status: {tipo.replace('_', ' ').title()}"
     )
     whatsapp_ok = False
@@ -9570,7 +9570,8 @@ def api_ponto_coletivo_marcar():
     if numero and wa_is_valid_number(numero):
         try:
             wa_send_text(numero, mensagem, tipo="principal")
-            wa_send_location(numero, lat, lon, nome=f"Ponto - {posto}", endereco=posto)
+            if tem_localizacao:
+                wa_send_location(numero, lat, lon, nome=f"Ponto - {posto}", endereco=posto)
             whatsapp_ok = True
         except Exception as exc:
             app.logger.warning("[coletivo-whatsapp] falha para func %s: %s", funcionario.id, exc)
@@ -34821,9 +34822,9 @@ def _add_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     # Controla quais informações de referenciador são enviadas
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    # Limita permissões de API do browser
+    # Limita permissões de API do browser (geolocalização liberada para o próprio site, usada no ponto)
     response.headers.setdefault(
-        "Permissions-Policy", "geolocation=(), microphone=(), camera=()"
+        "Permissions-Policy", "geolocation=(self), microphone=(), camera=()"
     )
     # HSTS: força HTTPS por 1 ano, incluindo subdomínios
     response.headers.setdefault(

@@ -162,26 +162,19 @@
       btn.disabled = true;
       btn.textContent = 'Solicitando…';
 
-      if (!navigator.geolocation) {
-        setStatus('Este dispositivo não oferece localização. O ponto não pode ser registrado.', 'err');
-        btn.disabled = false;
-        btn.textContent = 'Bater ponto';
-        return;
-      }
-      let coords;
-      try {
-        coords = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(
-            (position) => resolve({ lat: position.coords.latitude, lon: position.coords.longitude }),
-            (error) => reject(error),
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-          );
-        });
-      } catch (e) {
-        setStatus('Autorize a localização do aparelho para registrar o ponto.', 'err');
-        btn.disabled = false;
-        btn.textContent = 'Bater ponto';
-        return;
+      let coords = null;
+      if (navigator.geolocation) {
+        try {
+          coords = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(
+              (position) => resolve({ lat: position.coords.latitude, lon: position.coords.longitude }),
+              (error) => reject(error),
+              { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+            );
+          });
+        } catch (e) {
+          coords = null;
+        }
       }
 
       setStatus('Registrando ponto…', '');
@@ -190,7 +183,7 @@
         const response = await fetch('/api/ponto/coletivo/marcar', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cpf_prefix: prefix, token: whatsappToken, lat: coords.lat, lon: coords.lon })
+          body: JSON.stringify({ cpf_prefix: prefix, token: whatsappToken, lat: coords ? coords.lat : null, lon: coords ? coords.lon : null })
         });
         const data = await response.json();
 
@@ -201,9 +194,10 @@
         document.getElementById('success-name').textContent = data.colaborador || 'Colaborador';
         document.getElementById('success-type').textContent = data.tipo_label || 'Ponto';
         document.getElementById('success-time').textContent = data.hora || '--:--';
-        document.getElementById('success-note').textContent = (data.data || '') + ' • ponto registrado com localização';
+        document.getElementById('success-note').textContent = (data.data || '') + (coords ? ' • ponto registrado com localização' : ' • ponto registrado sem localização');
         setStatus('Ponto registrado com sucesso.', 'ok');
         hideForm(true);
+
 
         setTimeout(() => {
           resetForm();
