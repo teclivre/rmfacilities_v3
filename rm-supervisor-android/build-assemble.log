@@ -1,0 +1,64 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.7/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+
+> Configure project :app
+▶ Version bumped to 1.0.23 (code 24)
+
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:checkKotlinGradlePluginConfigurationErrors
+> Task :app:generateDebugBuildConfig
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :app:generateDebugResValues UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :app:processDebugMainManifest
+> Task :app:processDebugManifest
+> Task :app:processDebugManifestForPackage
+> Task :app:processDebugResources
+> Task :app:compileDebugKotlin
+w: file:///home/rmfacilities/Documentos/Programas/rmfacilities_v3/rm-supervisor-android/app/src/main/java/com/rmfacilities/app/viewmodel/AppViewModelFactory.kt:10:119 Unchecked cast: AuthViewModel to T
+w: file:///home/rmfacilities/Documentos/Programas/rmfacilities_v3/rm-supervisor-android/app/src/main/java/com/rmfacilities/app/viewmodel/AppViewModelFactory.kt:11:111 Unchecked cast: DashboardViewModel to T
+w: file:///home/rmfacilities/Documentos/Programas/rmfacilities_v3/rm-supervisor-android/app/src/main/java/com/rmfacilities/app/viewmodel/AppViewModelFactory.kt:12:111 Unchecked cast: EmployeesViewModel to T
+w: file:///home/rmfacilities/Documentos/Programas/rmfacilities_v3/rm-supervisor-android/app/src/main/java/com/rmfacilities/app/viewmodel/AppViewModelFactory.kt:13:103 Unchecked cast: PostsViewModel to T
+w: file:///home/rmfacilities/Documentos/Programas/rmfacilities_v3/rm-supervisor-android/app/src/main/java/com/rmfacilities/app/viewmodel/AppViewModelFactory.kt:14:105 Unchecked cast: VisitsViewModel to T
+w: file:///home/rmfacilities/Documentos/Programas/rmfacilities_v3/rm-supervisor-android/app/src/main/java/com/rmfacilities/app/viewmodel/AppViewModelFactory.kt:15:115 Unchecked cast: OccurrencesViewModel to T
+w: file:///home/rmfacilities/Documentos/Programas/rmfacilities_v3/rm-supervisor-android/app/src/main/java/com/rmfacilities/app/viewmodel/AppViewModelFactory.kt:16:103 Unchecked cast: TasksViewModel to T
+w: file:///home/rmfacilities/Documentos/Programas/rmfacilities_v3/rm-supervisor-android/app/src/main/java/com/rmfacilities/app/viewmodel/AppViewModelFactory.kt:17:93 Unchecked cast: ReportsViewModel to T
+w: file:///home/rmfacilities/Documentos/Programas/rmfacilities_v3/rm-supervisor-android/app/src/main/java/com/rmfacilities/app/viewmodel/AppViewModelFactory.kt:18:111 Unchecked cast: SettingsViewModel to T
+
+> Task :app:javaPreCompileDebug UP-TO-DATE
+> Task :app:compileDebugJavaWithJavac
+> Task :app:mergeDebugShaders UP-TO-DATE
+> Task :app:compileDebugShaders NO-SOURCE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:mergeDebugAssets UP-TO-DATE
+> Task :app:compressDebugAssets UP-TO-DATE
+> Task :app:desugarDebugFileDependencies UP-TO-DATE
+> Task :app:dexBuilderDebug
+> Task :app:mergeDebugGlobalSynthetics
+> Task :app:processDebugJavaRes
+> Task :app:mergeDebugJavaResource
+> Task :app:checkDebugDuplicateClasses UP-TO-DATE
+> Task :app:mergeDebugStartupProfile UP-TO-DATE
+> Task :app:mergeExtDexDebug UP-TO-DATE
+> Task :app:mergeLibDexDebug UP-TO-DATE
+> Task :app:mergeProjectDexDebug
+> Task :app:mergeDebugJniLibFolders UP-TO-DATE
+> Task :app:mergeDebugNativeLibs UP-TO-DATE
+> Task :app:stripDebugDebugSymbols UP-TO-DATE
+> Task :app:validateSigningDebug UP-TO-DATE
+> Task :app:writeDebugAppMetadata UP-TO-DATE
+> Task :app:writeDebugSigningConfigVersions UP-TO-DATE
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect
+> Task :app:assembleDebug
+
+BUILD SUCCESSFUL in 1m 33s
+39 actionable tasks: 16 executed, 23 up-to-date
