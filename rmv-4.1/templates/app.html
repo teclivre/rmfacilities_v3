@@ -1615,6 +1615,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div id="st-rh" class="st"></div>
       <div id="rh-subabas" class="subaba-blocos rh-subabas">
         <button type="button" id="rh-subtab-funcionarios" class="subaba-bloco on" onclick="rhSetSubAba('funcionarios',this)">Cadastro de Funcionários</button>
+        <button type="button" id="rh-subtab-candidatos" class="subaba-bloco" onclick="rhSetSubAba('candidatos',this)">Fichas de Candidatos</button>
         <button type="button" id="rh-subtab-ferias-gestao" class="subaba-bloco" onclick="rhSetSubAba('ferias-gestao',this)">Gestão de Férias</button>
         <button type="button" id="rh-subtab-exportar" class="subaba-bloco" onclick="rhSetSubAba('exportar',this)">Exportar colaboradores ativos</button>
         <button type="button" id="rh-subtab-escalas" class="subaba-bloco" onclick="rhSetSubAba('escalas',this)">Escalas de Turnos</button>
@@ -1653,6 +1654,23 @@ document.addEventListener('DOMContentLoaded',()=>{
           <table class="tbl">
             <thead><tr><th>RE</th><th>Nome</th><th>Cargo/Função</th><th>Posto</th><th>Empresa</th><th>Contato</th><th>App</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody id="tb-func"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card rh-pane" id="rh-pane-candidatos" data-rh-pane="candidatos" style="display:none">
+        <div class="card-header">
+          <span class="card-title">Fichas preenchidas por candidatos</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input id="rh-cand-busca" placeholder="Buscar nome, e-mail, cargo ou cidade" oninput="rhCandidatosCarregar()" style="padding:6px 10px;font-size:12px;border:1.5px solid var(--borda);border-radius:var(--r);width:280px">
+            <button class="btn b-gh b-sm" onclick="rhCandidatosCarregar()">↻ Atualizar</button>
+          </div>
+        </div>
+        <div id="rh-cand-status" class="st" style="margin:0 12px 8px"></div>
+        <div style="overflow:auto">
+          <table class="tbl" style="min-width:760px">
+            <thead><tr><th>Nome</th><th>Cargo desejado</th><th>Cidade</th><th>Contato</th><th>Recebida em</th><th>Ações</th></tr></thead>
+            <tbody id="rh-cand-tbody"><tr><td colspan="6" class="vazio">Nenhuma ficha carregada.</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -4315,7 +4333,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div style="margin-top:10px;display:flex;gap:8px">
           <button class="btn b-az" onclick="uploadArquivoFuncionarioModal()" style="flex:1"><span style="font-size:14px">⬆️ Anexar arquivo</span></button>
           <button class="btn b-gh b-sm" onclick="buscarAnos()"><span>🔄 Atualizar</span></button>
-          <button class="btn b-gh b-sm" onclick="abrirDashboardAssinaturas()" title="Dashboard de pendentes de assinatura"><span>📋 Pendentes</span></button>
+          <button class="btn b-gh b-sm" onclick="abrirPainelAssinaturas()" title="Ver documentos pendentes e assinados"><span>📋 Assinaturas</span></button>
         </div>
         <div id="farq-upload-st" class="st" style="margin-top:8px"></div>
       </div>
@@ -5788,8 +5806,59 @@ function rhSalariosIniciarPagina(){
   rhSalariosOnEmpresaChange();
 }
 
+async function rhCandidatosCarregar(){
+  const tbody=document.getElementById('rh-cand-tbody');
+  if(!tbody) return;
+  tbody.innerHTML='<tr><td colspan="6" class="vazio">Carregando fichas...</td></tr>';
+  const busca=(document.getElementById('rh-cand-busca')?.value||'').trim();
+  try{
+    const d=await api('/api/rh/candidatos?q='+encodeURIComponent(busca));
+    const lista=d.candidatos||[];
+    if(!lista.length){tbody.innerHTML='<tr><td colspan="6" class="vazio">Nenhuma ficha encontrada.</td></tr>';return;}
+    tbody.innerHTML=lista.map(c=>`<tr>
+      <td><strong>${esc(c.nome||'')}</strong><div style="font-size:11px;color:var(--text-muted)">${esc(c.email||'')}</div></td>
+      <td>${esc(c.cargo||'—')}</td>
+      <td>${esc(c.cidade||'—')}</td>
+      <td>${esc(c.telefone||'—')}</td>
+      <td>${esc(c.criado_fmt||'—')}</td>
+      <td style="white-space:nowrap"><button class="btn b-az b-sm" onclick="rhCandidatoAbrir(${c.id})">Ver ficha</button> ${c.pdf_url?`<a class="btn b-gh b-sm" href="${c.pdf_url}">⬇ PDF</a>`:''}</td>
+    </tr>`).join('');
+  }catch(e){
+    tbody.innerHTML='<tr><td colspan="6" class="vazio" style="color:var(--verm)">Erro ao carregar fichas.</td></tr>';
+  }
+}
+
+async function rhCandidatoAbrir(id){
+  try{
+    const d=await api('/api/rh/candidatos/'+id);
+    const c=d.candidato||{};
+    const dados=c.dados||{};
+    const campos=Object.entries(dados).filter(([chave,valor])=>chave!=='website'&&valor!==null&&String(valor).trim()!=='');
+    const modal=document.createElement('div');
+    modal.className='mb on';
+    modal.innerHTML=`<div class="md" style="max-width:820px;max-height:90vh;overflow:auto">
+      <div class="mh"><span class="mt">Ficha de ${esc(c.nome||'candidato')}</span><button class="btn b-ci b-sm" type="button">Fechar ×</button></div>
+      <div class="mb-body">
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Recebida em ${esc(c.criado_fmt||'—')} · ${esc(c.email||'')} · ${esc(c.telefone||'')}</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px">${campos.map(([chave,valor])=>`<div style="padding:9px 10px;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:6px"><div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">${esc(rhCandidatoRotulo(chave))}</div><div style="font-size:13px;white-space:pre-wrap;word-break:break-word">${esc(String(valor))}</div></div>`).join('')}</div>
+        ${c.pdf_url?`<div style="margin-top:14px"><a class="btn b-az" href="${c.pdf_url}">⬇ Baixar ficha em PDF</a></div>`:''}
+      </div>
+    </div>`;
+    document.body.appendChild(modal);
+    const fechar=()=>modal.remove();
+    modal.querySelector('.mh button').onclick=fechar;
+    modal.onclick=e=>{if(e.target===modal)fechar();};
+  }catch(e){
+    showSt('rh-cand-status','Erro ao abrir a ficha.',true);
+  }
+}
+
+function rhCandidatoRotulo(chave){
+  return chave.replace(/_/g,' ').replace(/\b\w/g,letra=>letra.toUpperCase());
+}
+
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','ferias-gestao','exportar','escalas','feriados','ponto','painel-dia','auditoria-ponto','he-autorizacao','ciclo-assinatura','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo','simples-nacional'];
+  const tabs=['funcionarios','candidatos','ferias-gestao','exportar','escalas','feriados','ponto','painel-dia','auditoria-ponto','he-autorizacao','ciclo-assinatura','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo','simples-nacional'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
     if(p.dataset.rhPane===rhSubAba){
@@ -5821,6 +5890,9 @@ function rhSetSubAba(tab,btn){
   }
   if(rhSubAba==='gestao-facil'){
     gfCarregar();
+  }
+  if(rhSubAba==='candidatos'){
+    rhCandidatosCarregar();
   }
   if(rhSubAba==='he-autorizacao'){
     carregarHEPendentes();
@@ -13189,7 +13261,7 @@ function renderArquivoTree(categorias){
                   <span style="font-size:16px">📄</span>
                   <div style="flex:1">
                     <div style="font-weight:500;color:var(--preto);font-size:13px">${item.nome_arquivo}</div>
-                    <div style="font-size:11px;color:var(--preto);opacity:.7">${item.criado_fmt}${item.competencia?' · '+item.competencia:''}${item.ass_status==='pendente'?` · <span style="color:var(--laranja)">⏳ Assinatura pendente no app</span>`:''}${item.ass_status==='concluida'?` · <span style="color:var(--verde)">✅ Assinado</span>`:''}${item.ass_status==='cancelada'?` · <span style="color:var(--text-muted)">🚫 Assinatura cancelada</span>`:''}</div>
+                    <div style="font-size:11px;color:var(--preto);opacity:.7">${item.criado_fmt}${item.competencia?' · '+item.competencia:''}${item.ass_status==='pendente'?` · <span style="color:var(--laranja)">⏳ Assinatura pendente no app</span>`:''}${['assinado','concluida'].includes(item.ass_status)?` · <span style="color:var(--verde)">✅ Assinado</span>`:''}${item.ass_status==='cancelada'?` · <span style="color:var(--text-muted)">🚫 Assinatura cancelada</span>`:''}</div>
                   </div>
                   <div style="display:flex;gap:4px">
                     <button class="btn b-gh b-sm" onclick="downloadArquivoFuncionario('${item.download_url}')" style="padding:4px 8px;font-size:11px">⬇️</button>
@@ -13423,13 +13495,32 @@ async function abrirDashboardAssinaturas(){
           <strong>${it.nome_arquivo}</strong> · ${it.categoria}${it.competencia?' · '+it.competencia:''}
           <div style="color:var(--text-muted);margin-top:1px">Pendente há ${it.dias_pendente} dia(s)${it.prazo_fmt?' · Prazo: '+it.prazo_fmt:''}${it.lembretes_enviados>0?' · '+it.lembretes_enviados+' lembrete(s) enviado(s)':''}</div>
         </div>
-        <button onclick="cancelarAssinaturaArquivo(${it.arquivo_id})" style="font-size:10px;padding:3px 7px;background:var(--laranja-cl);color:var(--laranja-esc);border:1px solid var(--laranja);border-radius:4px;cursor:pointer;white-space:nowrap">🚫 Cancelar</button>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">
+          <button onclick="downloadArquivoFuncionario('/api/funcionarios/arquivos/${it.arquivo_id}/download')" style="font-size:10px;padding:3px 7px;background:var(--azul-cc);color:var(--azul-esc);border:1px solid var(--azul);border-radius:4px;cursor:pointer;white-space:nowrap">⬇ Baixar</button>
+          <button onclick="dashboardAssNotificar(${it.arquivo_id})" style="font-size:10px;padding:3px 7px;background:var(--verde-cl);color:var(--verde);border:1px solid var(--verde);border-radius:4px;cursor:pointer;white-space:nowrap">🔔 Notificar</button>
+          <button onclick="cancelarAssinaturaArquivo(${it.arquivo_id})" style="font-size:10px;padding:3px 7px;background:var(--laranja-cl);color:var(--laranja-esc);border:1px solid var(--laranja);border-radius:4px;cursor:pointer;white-space:nowrap">🚫 Cancelar</button>
+        </div>
       </div>`).join('')}
     </div>`).join('');
   }catch(e){
     const el=document.getElementById('dash-ass-content');
     if(el)el.innerHTML='<div style="color:red">Erro ao carregar dashboard.</div>';
   }
+}
+
+async function dashboardAssNotificar(arquivoId){
+  const r=await api('/api/funcionarios/arquivos/'+arquivoId+'/assinatura/solicitar','POST',{forcar_novo_token:false});
+  if(r&&r.ok){
+    alert('Notificação enviada'+(r.canal?' via '+r.canal:'')+'.');
+    abrirDashboardAssinaturas();
+  }else{
+    alert('Erro ao notificar: '+(r?.erro||'falha no envio'));
+  }
+}
+
+function abrirPainelAssinaturas(){
+  closeModal('farq',true);
+  abrirControlePonto('assinaturas');
 }
 
 async function uploadDocumentoRHLote(){

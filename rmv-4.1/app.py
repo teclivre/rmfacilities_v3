@@ -7807,10 +7807,6 @@ def build_func_docs_response(funcionario_id):
     regs = (
         FuncionarioArquivo.query.filter(
             FuncionarioArquivo.funcionario_id == funcionario_id,
-            _or_(
-                FuncionarioArquivo.ass_status == None,
-                FuncionarioArquivo.ass_status != "pendente",
-            ),
         )
         .order_by(FuncionarioArquivo.criado_em.desc())
         .all()
@@ -9257,6 +9253,73 @@ def api_cadastro_candidato():
         falhas.append("WhatsApp")
     audit_event("cadastro_candidato_recebido", "publico", email, "cadastro_candidato", candidato.id, not falhas, {"falhas": falhas})
     return jsonify({"ok": True, "mensagem": "Ficha enviada com sucesso. Obrigado pelo seu interesse." if not falhas else "Ficha recebida com sucesso."}), 201
+
+
+@app.route("/api/rh/candidatos")
+@lr
+def api_rh_candidatos():
+    busca = (request.args.get("q") or "").strip().lower()
+    registros = CadastroCandidato.query.order_by(CadastroCandidato.criado_em.desc()).limit(500).all()
+    resultado = []
+    for candidato in registros:
+        try:
+            dados = json.loads(candidato.dados_json or "{}")
+        except Exception:
+            dados = {}
+        cargo = _candidato_texto(dados, "cargo_desejado", 120)
+        cidade = _candidato_texto(dados, "cidade_uf", 120)
+        texto_busca = " ".join((candidato.nome, candidato.email, candidato.telefone, candidato.cpf, cargo, cidade)).lower()
+        if busca and busca not in texto_busca:
+            continue
+        resultado.append(
+            {
+                "id": candidato.id,
+                "nome": candidato.nome,
+                "email": candidato.email,
+                "telefone": candidato.telefone,
+                "cargo": cargo,
+                "cidade": cidade,
+                "criado_fmt": candidato.criado_em.strftime("%d/%m/%Y %H:%M") if candidato.criado_em else "",
+                "pdf_url": url_for("api_rh_candidato_pdf", id=candidato.id) if candidato.pdf_caminho else "",
+            }
+        )
+    return jsonify({"ok": True, "total": len(resultado), "candidatos": resultado})
+
+
+@app.route("/api/rh/candidatos/<int:id>")
+@lr
+def api_rh_candidato_detalhe(id):
+    candidato = db.get_or_404(CadastroCandidato, id)
+    try:
+        dados = json.loads(candidato.dados_json or "{}")
+    except Exception:
+        dados = {}
+    return jsonify(
+        {
+            "ok": True,
+            "candidato": {
+                "id": candidato.id,
+                "nome": candidato.nome,
+                "email": candidato.email,
+                "telefone": candidato.telefone,
+                "cpf": candidato.cpf or "",
+                "criado_fmt": candidato.criado_em.strftime("%d/%m/%Y %H:%M") if candidato.criado_em else "",
+                "dados": dados,
+                "pdf_url": url_for("api_rh_candidato_pdf", id=candidato.id) if candidato.pdf_caminho else "",
+            },
+        }
+    )
+
+
+@app.route("/api/rh/candidatos/<int:id>/pdf")
+@lr
+def api_rh_candidato_pdf(id):
+    candidato = db.get_or_404(CadastroCandidato, id)
+    caminho = os.path.abspath(os.path.join(UPLOAD_ROOT, candidato.pdf_caminho or ""))
+    raiz_upload = os.path.abspath(UPLOAD_ROOT)
+    if not candidato.pdf_caminho or os.path.commonpath([caminho, raiz_upload]) != raiz_upload or not os.path.isfile(caminho):
+        return jsonify({"erro": "PDF da ficha nao encontrado"}), 404
+    return send_file(caminho, as_attachment=True, download_name=os.path.basename(caminho))
 
 
 @app.route("/codigo-conduta")
@@ -25047,7 +25110,10 @@ def api_rh_assinaturas_painel():
         FuncionarioArquivo.ass_status != None,
     )
     if status_filtro != "todos":
-        q = q.filter(FuncionarioArquivo.ass_status == status_filtro)
+        if status_filtro == "concluida":
+            q = q.filter(FuncionarioArquivo.ass_status.in_(["concluida", "assinado"]))
+        else:
+            q = q.filter(FuncionarioArquivo.ass_status == status_filtro)
     if fid_filtro:
         q = q.filter(FuncionarioArquivo.funcionario_id == fid_filtro)
     if cat_filtro:
@@ -25082,6 +25148,8 @@ def api_rh_assinaturas_painel():
     for a in registros:
         f = _get_func(a.funcionario_id)
         st = a.ass_status or "pendente"
+        if st == "assinado":
+            st = "concluida"
         vencido = bool(st == "pendente" and a.ass_prazo_em and a.ass_prazo_em < agora)
         if st in totais:
             totais[st] += 1
