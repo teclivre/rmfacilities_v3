@@ -9410,6 +9410,35 @@ def _coletivo_label_tipo_whatsapp(tipo):
     }.get((tipo or "").strip().lower(), (tipo or "").strip() or "Ponto")
 
 
+def _notificar_ponto_whatsapp(funcionario, marcacao, posto="", lat=None, lon=None, token=None):
+    """Envia ao funcionário a confirmação da marcação já persistida."""
+    numero = wa_norm_number(funcionario.telefone or "")
+    if not numero or not wa_is_valid_number(numero):
+        return False
+    posto = (posto or getattr(funcionario, "posto_operacional", None) or "Reserva tecnica").strip()
+    tem_localizacao = lat is not None and lon is not None
+    link_mapa = f"https://www.google.com/maps?q={lat:.6f},{lon:.6f}" if tem_localizacao else ""
+    link_ponto = url_for("pagina_coletivo_ponto", _external=True, token=token) if token else url_for("pagina_coletivo_ponto", _external=True)
+    mensagem = (
+        f"Olá, {funcionario.nome}!\n\n"
+        "Seu ponto foi registrado com sucesso.\n"
+        f"Tipo: {_coletivo_label_tipo_whatsapp(marcacao.tipo)}\n"
+        f"Horário: {marcacao.data_hora.strftime('%d/%m/%Y %H:%M')}\n"
+        f"Posto de trabalho: {posto}\n"
+        + (f"Localização: {lat:.6f}, {lon:.6f}\nMapa: {link_mapa}\n" if tem_localizacao else "")
+        + f"Link do ponto: {link_ponto}\n"
+        f"Status: {marcacao.tipo.replace('_', ' ').title()}"
+    )
+    try:
+        wa_send_text(numero, mensagem, tipo="principal")
+        if tem_localizacao:
+            wa_send_location(numero, lat, lon, nome=f"Ponto - {posto}", endereco=posto)
+        return True
+    except Exception as exc:
+        app.logger.warning("[ponto-whatsapp] falha para func %s: %s", funcionario.id, exc)
+        return False
+
+
 def _whatsapp_ponto_token(funcionario, numero, validade_minutos=10):
     payload = {
         "funcionario_id": int(funcionario.id),
@@ -22499,6 +22528,13 @@ def api_app_ponto_marcar_me():
             "distancia_m": localizacao.get("distancia_m"),
         },
     )
+    whatsapp_enviado = _notificar_ponto_whatsapp(
+        f,
+        m,
+        posto=getattr(f, "posto_operacional", None),
+        lat=lat,
+        lon=lon,
+    )
     # Notificar clientes SSE sobre novo ponto
     try:
         import json as _json
@@ -22542,6 +22578,7 @@ def api_app_ponto_marcar_me():
                 "localizacao": localizacao,
             },
             "resumo": _app_ponto_resumo_dia(f, data_ref),
+            "whatsapp_enviado": whatsapp_enviado,
         }
     )
 
@@ -22708,6 +22745,13 @@ def api_app_ponto_marcar_qr_me():
         True,
         {"tipo": tipo, "data_ref": data_ref.strftime("%Y-%m-%d"), "origem": "app-qr", "cliente_id": cli_id_token},
     )
+    whatsapp_enviado = _notificar_ponto_whatsapp(
+        f,
+        m,
+        posto=getattr(f, "posto_operacional", None),
+        lat=lat,
+        lon=lon,
+    )
     # Notificar clientes SSE sobre novo ponto (mesma lógica do /marcar)
     try:
         import json as _json
@@ -22750,6 +22794,7 @@ def api_app_ponto_marcar_qr_me():
                 "localizacao": {"status": "qr_totem", "posto_cliente_id": cli_id_token or f.posto_cliente_id},
             },
             "resumo": _app_ponto_resumo_dia(f, data_ref),
+            "whatsapp_enviado": whatsapp_enviado,
         }
     )
 
