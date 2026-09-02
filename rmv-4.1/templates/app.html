@@ -1628,6 +1628,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <button type="button" id="rh-subtab-uniforme" class="subaba-bloco" onclick="rhSetSubAba('uniforme',this)">👕 Termo Uniforme</button>
         <button type="button" id="rh-subtab-decl-acumulo" class="subaba-bloco" onclick="rhSetSubAba('decl-acumulo',this)">📋 Decl. Acúmulo</button>
         <button type="button" id="rh-subtab-advertencia" class="subaba-bloco" onclick="rhSetSubAba('advertencia',this)">⚠️ Advertência</button>
+        <button type="button" id="rh-subtab-os-nr01" class="subaba-bloco" onclick="rhSetSubAba('os-nr01',this)">🦺 OS NR-01</button>
         <button type="button" id="rh-subtab-aviso-previo" class="subaba-bloco" onclick="rhSetSubAba('aviso-previo',this)">📅 Aviso Prévio</button>
         <button type="button" id="rh-subtab-simples-nacional" class="subaba-bloco" onclick="rhSetSubAba('simples-nacional',this)">📜 Simples Nacional</button>
       </div>
@@ -2547,6 +2548,34 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
 
+      <!-- ── ORDEM DE SERVIÇO NR-01 ── -->
+      <div class="card rh-pane" id="rh-pane-os-nr01" data-rh-pane="os-nr01">
+        <div class="card-header"><span class="card-title">🦺 OS NR-01 — Auxiliar de Limpeza</span></div>
+        <div style="padding:16px">
+          <div style="margin-bottom:14px;padding:10px 14px;background:var(--azul-cc);border:1px solid var(--azul-borda);border-radius:6px;font-size:13px;color:var(--text-muted)">
+            O sistema preencherá o nome, RE, cargo e data de admissão no modelo de Ordem de Serviço e salvará o documento no histórico do funcionário.
+          </div>
+          <div class="g4" style="margin-bottom:14px;align-items:flex-end">
+            <div class="f" style="flex:2">
+              <label>Colaborador</label>
+              <input id="os-nr01-busca-func" type="text" placeholder="Digite nome, matrícula ou RE..." oninput="osNr01BuscarFunc(this.value)" autocomplete="off" style="width:100%">
+              <div id="os-nr01-func-sugestoes" style="position:relative;z-index:200"></div>
+            </div>
+          </div>
+          <div id="os-nr01-func-selecionado" style="display:none;background:var(--azul-cc);border:1px solid var(--azul-borda);border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px">
+            <strong>Colaborador:</strong> <span id="os-nr01-func-nome-sel"></span> &nbsp;|&nbsp;
+            <strong>Cargo:</strong> <span id="os-nr01-func-cargo-sel"></span> &nbsp;|&nbsp;
+            <strong>Admissão:</strong> <span id="os-nr01-func-admissao-sel"></span>
+            <button class="btn b-sm" onclick="osNr01LimparFunc()" style="float:right;background:transparent;color:var(--text-muted);font-size:12px;padding:0 6px">✕ Limpar</button>
+          </div>
+          <div class="g4" style="margin-bottom:18px;align-items:flex-end">
+            <div class="f"><label>Enviar para assinatura via</label><select id="os-nr01-canal"><option value="nao">Apenas gerar (sem envio)</option><option value="app">📱 Aplicativo</option><option value="whatsapp">💬 WhatsApp</option><option value="link">🔗 Link (copiar)</option></select></div>
+            <button class="btn b-az" id="os-nr01-btn-gerar" onclick="gerarOsNr01()">🦺 Gerar OS NR-01</button>
+          </div>
+          <div id="os-nr01-resultado" style="display:none"></div>
+        </div>
+      </div>
+
       <!-- ── AVISO PRÉVIO ── -->
       <div class="card rh-pane" id="rh-pane-aviso-previo" data-rh-pane="aviso-previo">
         <div class="card-header">
@@ -3338,6 +3367,13 @@ document.addEventListener('DOMContentLoaded',()=>{
               <div style="font-weight:700;font-size:14px">Declaração de Acúmulo de Cargo</div>
               <div style="font-size:12px;color:var(--text-muted);flex:1">Declaração do colaborador informando ou negando o acúmulo de outro emprego, para controle de jornada.</div>
               <button class="btn b-az b-sm" onclick="nav('rh',null);setTimeout(()=>rhSetSubAba('decl-acumulo'),300)">Abrir no RH &rsaquo;</button>
+            </div>
+
+            <div class="card" style="padding:16px;border:1px solid var(--azul-borda);border-radius:10px;display:flex;flex-direction:column;gap:8px">
+              <div style="font-size:22px">🦺</div>
+              <div style="font-weight:700;font-size:14px">OS NR-01 — Auxiliar de Limpeza</div>
+              <div style="font-size:12px;color:var(--text-muted);flex:1">Ordem de Serviço de segurança do trabalho com os dados do funcionário e assinatura eletrônica.</div>
+              <button class="btn b-az b-sm" onclick="nav('rh',null);setTimeout(()=>rhSetSubAba('os-nr01'),300)">Abrir no RH &rsaquo;</button>
             </div>
 
             <div class="card docs-em-breve" style="padding:16px;border:1px dashed var(--borda);border-radius:10px;display:flex;flex-direction:column;gap:8px;opacity:.6">
@@ -5942,7 +5978,7 @@ async function rhCandidatoExcluir(id){
 }
 
 function rhSetSubAba(tab,btn){
-  const tabs=['funcionarios','candidatos','ferias-gestao','exportar','escalas','feriados','ponto','painel-dia','auditoria-ponto','he-autorizacao','ciclo-assinatura','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','aviso-previo','simples-nacional'];
+  const tabs=['funcionarios','candidatos','ferias-gestao','exportar','escalas','feriados','ponto','painel-dia','auditoria-ponto','he-autorizacao','ciclo-assinatura','envio','assinaturas','gestao-facil','ficha-epi','req-vt','uniforme','decl-acumulo','advertencia','os-nr01','aviso-previo','simples-nacional'];
   rhSubAba=tabs.includes(tab)?tab:'funcionarios';
   Array.from(document.querySelectorAll('#pg-rh [data-rh-pane]')).forEach(p=>{
     if(p.dataset.rhPane===rhSubAba){
@@ -10437,6 +10473,60 @@ async function gerarDeclaracaoAcumulo() {
 // ── ADVERTÊNCIA / SUSPENSÃO ───────────────────────────────────────────────────
 let advFuncSelecionado = null;
 let advBuscarTimer = null;
+
+let osNr01FuncSelecionado = null;
+let osNr01SearchTimer = null;
+
+function osNr01BuscarFunc(q) {
+  clearTimeout(osNr01SearchTimer);
+  const box = document.getElementById('os-nr01-func-sugestoes');
+  if (!q || q.length < 2) { box.innerHTML = ''; return; }
+  osNr01SearchTimer = setTimeout(async () => {
+    const lst = await api(`/api/funcionarios?q=${encodeURIComponent(q)}&status=Ativo`);
+    const lista = Array.isArray(lst) ? lst : (lst?.funcionarios || []);
+    if (!lista.length) { box.innerHTML = '<div style="padding:8px 12px;font-size:13px;color:var(--text-muted)">Nenhum resultado.</div>'; return; }
+    box.innerHTML = '<div class="sugestoes-lista">' + lista.slice(0,8).map(f =>
+      `<div class="sugestao-item" onclick='osNr01SelecionarFunc(${JSON.stringify(f).replace(/'/g,"&#39;")})' style="padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--borda)">${_escHtml(f.nome||'')} <span style="color:var(--text-muted);font-size:11px">RE:${f.re||''} · ${f.cargo||''}</span></div>`
+    ).join('') + '</div>';
+  }, 280);
+}
+
+function osNr01SelecionarFunc(f) {
+  if (!f) return;
+  osNr01FuncSelecionado = f;
+  document.getElementById('os-nr01-func-sugestoes').innerHTML = '';
+  document.getElementById('os-nr01-busca-func').value = f.nome || '';
+  document.getElementById('os-nr01-func-nome-sel').textContent = f.nome || '';
+  document.getElementById('os-nr01-func-cargo-sel').textContent = f.cargo || '';
+  document.getElementById('os-nr01-func-admissao-sel').textContent = f.data_admissao || 'Não informada';
+  document.getElementById('os-nr01-func-selecionado').style.display = 'block';
+}
+
+function osNr01LimparFunc() {
+  osNr01FuncSelecionado = null;
+  document.getElementById('os-nr01-busca-func').value = '';
+  document.getElementById('os-nr01-func-selecionado').style.display = 'none';
+  document.getElementById('os-nr01-func-sugestoes').innerHTML = '';
+}
+
+async function gerarOsNr01() {
+  if (!osNr01FuncSelecionado) { alert('Selecione um colaborador.'); return; }
+  const canal = document.getElementById('os-nr01-canal').value;
+  const btn = document.getElementById('os-nr01-btn-gerar');
+  const res = document.getElementById('os-nr01-resultado');
+  btn.disabled = true; btn.textContent = '⏳ Gerando...'; res.style.display = 'none';
+  try {
+    const r = await api(`/api/funcionarios/${osNr01FuncSelecionado.id}/gerar-os-nr01`, 'POST', { canal });
+    if (!r || !r.ok) throw new Error(r?.erro || 'Falha ao gerar o documento.');
+    const dl = r.download_url ? `<a href="${r.download_url}" target="_blank" class="btn b-gh b-sm" style="margin-top:8px">⬇️ Baixar PDF</a>` : '';
+    const ass = r.assinatura && r.assinatura.canal !== 'nao'
+      ? (r.assinatura.status === 'solicitada' ? `✅ Enviado via <strong>${esc(r.assinatura.canal)}</strong>. ${r.assinatura.link ? `<a href="${r.assinatura.link}" target="_blank">🔗 Link</a>` : ''}` : `⚠️ Erro no envio: ${esc(r.assinatura.erro||'')}`) : '';
+    res.innerHTML = `<div style="background:var(--verde-cl);border:1px solid var(--verde);border-radius:8px;padding:12px 16px;color:var(--verde)">✅ <strong>OS NR-01 gerada com sucesso!</strong><br><span style="font-size:13px;color:var(--text)">${esc(r.nome_arquivo||'')}</span>${dl}${ass ? `<div style="margin-top:8px;font-size:13px">${ass}</div>` : ''}</div>`;
+  } catch(e) {
+    res.innerHTML = `<div style="background:var(--verm-cl);border:1px solid var(--verm);border-radius:8px;padding:12px 16px;color:var(--verm)">❌ ${esc(String(e))}</div>`;
+  }
+  res.style.display = 'block'; btn.disabled = false; btn.textContent = '🦺 Gerar OS NR-01';
+}
 
 function advBuscarFunc(q) {
   clearTimeout(advBuscarTimer);

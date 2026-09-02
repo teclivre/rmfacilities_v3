@@ -7089,6 +7089,7 @@ DOC_CAT_PATH = {
     "declaracao_acumulo_cargo": "declaracao_acumulo_cargo",
     "advertencia": "advertencia",
     "aviso_previo": "aviso_previo",
+    "ordem_servico_nr01": "ordens_servico_nr01",
     "outros": "outros",
 }
 DOC_CAT_LABEL = {
@@ -7106,6 +7107,7 @@ DOC_CAT_LABEL = {
     "declaracao_acumulo_cargo": "Declaracao de Acumulo de Cargo",
     "advertencia": "Advertencia / Suspensao Disciplinar",
     "aviso_previo": "Aviso Previo",
+    "ordem_servico_nr01": "OS NR-01 - Auxiliar de Limpeza",
     "outros": "Outros",
 }
 
@@ -15723,6 +15725,123 @@ def api_funcionario_gerar_advertencia(id):
             "download_url": f"/api/funcionarios/arquivos/{a.id}/download",
         }
     ), 201
+
+
+def _gerar_os_nr01_pdf(funcionario):
+    try:
+        from pypdf import PdfReader, PdfWriter
+    except ImportError:
+        from PyPDF2 import PdfReader, PdfWriter
+    from reportlab.pdfgen import canvas as rl_canvas
+    from reportlab.lib import colors
+
+    modelo = os.path.join(BASE_DIR, "static", "modelos", "documentos", "os_nr01_auxiliar_limpeza.pdf")
+    if not os.path.isfile(modelo):
+        raise FileNotFoundError("Modelo OS NR-01 não encontrado no sistema.")
+
+    nome = (funcionario.nome or "").strip() or "Não informado"
+    re_func = str(getattr(funcionario, "re", None) or getattr(funcionario, "matricula", None) or "").strip()
+    admissao = str(getattr(funcionario, "data_admissao", None) or "").strip()
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", admissao):
+        admissao = datetime.strptime(admissao, "%Y-%m-%d").strftime("%d/%m/%Y")
+    elif re.match(r"^\d{2}/\d{2}/\d{4}$", admissao):
+        pass
+    else:
+        admissao = admissao or "Não informada"
+    cargo = (getattr(funcionario, "cargo", None) or "AUXILIAR DE LIMPEZA").strip()
+
+    reader = PdfReader(modelo)
+    writer = PdfWriter()
+    for page_idx, page in enumerate(reader.pages):
+        w = float(page.mediabox.width)
+        h = float(page.mediabox.height)
+        overlay = io.BytesIO()
+        canvas = rl_canvas.Canvas(overlay, pagesize=(w, h))
+        canvas.setFillColor(colors.white)
+        if page_idx == 0:
+            table_left = 32
+            table_right = w - 32
+            table_divider = 82
+            canvas.rect(table_left, h - 172, table_right - table_left, 64, fill=1, stroke=0)
+            canvas.setStrokeColor(colors.black)
+            canvas.rect(table_left, h - 172, table_right - table_left, 64, fill=0, stroke=1)
+            for line_y in (h - 128, h - 148):
+                canvas.line(table_left, line_y, table_right, line_y)
+            canvas.line(table_divider, h - 172, table_divider, h - 108)
+            canvas.setFillColor(colors.black)
+            canvas.setFont("Helvetica", 10)
+            canvas.setFont("Helvetica-Bold", 9)
+            canvas.drawString(40, h - 122, "Nome:")
+            canvas.drawString(40, h - 142, "Cargo:")
+            canvas.drawString(40, h - 162, "Admissão:")
+            canvas.setFont("Helvetica", 10)
+            canvas.drawString(88, h - 122, f"{nome} - RE {re_func}")
+            canvas.drawString(88, h - 142, cargo)
+            canvas.drawString(88, h - 162, admissao)
+        elif page_idx == 1:
+            canvas.rect(55, 55, 245, 52, fill=1, stroke=0)
+            canvas.setFillColor(colors.black)
+            canvas.setFont("Helvetica", 10)
+            canvas.drawString(70, 88, f"Data da Emissão: {localnow().strftime('%d/%m/%Y')}")
+            canvas.drawString(70, 68, f"Admissão: {admissao}")
+        canvas.save()
+        overlay.seek(0)
+        page.merge_page(PdfReader(overlay).pages[0])
+        writer.add_page(page)
+    output = io.BytesIO()
+    writer.write(output)
+    output.seek(0)
+    return output
+
+
+@app.route("/api/funcionarios/<int:id>/gerar-os-nr01", methods=["POST"])
+@lr
+def api_funcionario_gerar_os_nr01(id):
+    f = db.get_or_404(Funcionario, id)
+    d = request.json or {}
+    canal = (d.get("canal") or "nao").strip().lower()
+    if canal not in ("whatsapp", "app", "link", "nao"):
+        canal = "nao"
+    try:
+        buf = _gerar_os_nr01_pdf(f)
+    except Exception as e:
+        app.logger.exception("Erro ao gerar PDF OS NR-01")
+        return jsonify({"erro": f"Erro ao gerar PDF: {str(e)}"}), 500
+
+    comp = localnow().strftime("%Y-%m")
+    nome_arq = f"OS_NR01_Auxiliar_de_Limpeza_{_clean_file_part(f.nome or '', 60, 'Colaborador')}_{localnow().strftime('%Y%m%d')}.pdf"
+    subdir, cat = func_doc_subdir(id, "ordem_servico_nr01", comp)
+    prepare_func_doc_dirs(id, infer_doc_year(comp))
+    rel, abs_path, nome_final = unique_rel_filename(subdir, nome_arq)
+    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+    with open(abs_path, "wb") as fh:
+        fh.write(buf.read())
+    a = FuncionarioArquivo(
+        funcionario_id=id,
+        categoria=cat,
+        competencia=comp,
+        nome_arquivo=nome_final,
+        caminho=rel,
+    )
+    db.session.add(a)
+    db.session.flush()
+    assinatura = {"canal": canal}
+    if canal in ("whatsapp", "app", "link"):
+        rs = _solicitar_assinatura_arquivo_funcionario(a, f, canal=canal, commit_now=False)
+        assinatura.update({
+            "link": rs.get("link_curto") or rs.get("link", ""),
+            "status": "solicitada" if rs.get("ok") else "erro",
+            "erro": rs.get("erro", ""),
+        })
+    db.session.commit()
+    audit_event("os_nr01_gerada", "usuario", session.get("uid"), "funcionario", id, True, {"arquivo_id": a.id, "canal": canal})
+    return jsonify({
+        "ok": True,
+        "arquivo_id": a.id,
+        "nome_arquivo": nome_final,
+        "assinatura": assinatura,
+        "download_url": f"/api/funcionarios/arquivos/{a.id}/download",
+    }), 201
 
 
 # ── AVISO PRÉVIO ─────────────────────────────────────────────────────────────
