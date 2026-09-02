@@ -4964,6 +4964,35 @@ def wa_send_text(numero, mensagem, tipo="principal", cfg=None):
 def wa_send_text_cliente(numero, mensagem):
     return wa_send_text(numero, mensagem, tipo="cliente")
 
+def wa_send_location(numero, latitude, longitude, nome="Localização do ponto", endereco=""):
+    cfg = wa_cfg_por_tipo("principal")
+    if not cfg["url"] or not cfg["instancia"]:
+        raise ValueError("WhatsApp principal nao configurado")
+    num = wa_norm_number(numero)
+    if not wa_is_valid_number(num):
+        raise ValueError(f"Numero WhatsApp invalido: {num or 'vazio'}")
+    url = f"{cfg['url'].rstrip('/')}/message/sendLocation/{cfg['instancia']}"
+    data = json.dumps(
+        {
+            "number": num,
+            "latitude": float(latitude),
+            "longitude": float(longitude),
+            "name": str(nome or "Localização do ponto"),
+            "address": str(endereco or ""),
+        }
+    ).encode()
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json", "apikey": cfg["token"]},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        detalhe = e.read().decode(errors="ignore")
+        raise ValueError(f"WhatsApp API {e.code}: {detalhe or e.reason}")
+
 
 def wa_forward_para_humano(cliente_numero, conteudo, nome_cliente=None):
     cfg = wa_humano_cfg()
@@ -9374,6 +9403,8 @@ def api_ponto_coletivo_marcar():
         return jsonify({"ok": False, "erro": "Localização inválida. Tente novamente."}), 400
     if (lat is not None and not (-90 <= lat <= 90)) or (lon is not None and not (-180 <= lon <= 180)):
         return jsonify({"ok": False, "erro": "Coordenadas de localização fora do intervalo válido."}), 400
+    if lat is None or lon is None:
+        return jsonify({"ok": False, "erro": "A localização é obrigatória para registrar o ponto."}), 400
 
     hoje_ref = utcnow().date()
     if _app_funcionario_em_ferias_na_data(funcionario, hoje_ref):
@@ -9435,18 +9466,28 @@ def api_ponto_coletivo_marcar():
     if lat is not None and lon is not None:
         local_txt = f"\nLocalização: {lat:.6f}, {lon:.6f}"
 
+    posto = (getattr(funcionario, "posto_operacional", None) or "Reserva tecnica").strip()
+    link_mapa = f"https://www.google.com/maps?q={lat:.6f},{lon:.6f}"
+    link_ponto = url_for(
+        "pagina_coletivo_ponto", _external=True, token=token
+    ) if token else url_for("pagina_coletivo_ponto", _external=True)
     mensagem = (
         f"Olá, {funcionario.nome}!\n\n"
         f"Seu ponto foi registrado com sucesso.\n"
         f"Tipo: {_coletivo_label_tipo_whatsapp(tipo)}\n"
         f"Horário: {m.data_hora.strftime('%d/%m/%Y %H:%M')}\n"
-        f"Status: {tipo.replace('_', ' ').title()}{local_txt}"
+        f"Posto de trabalho: {posto}\n"
+        f"Localização: {lat:.6f}, {lon:.6f}\n"
+        f"Mapa: {link_mapa}\n"
+        f"Link do ponto: {link_ponto}\n"
+        f"Status: {tipo.replace('_', ' ').title()}"
     )
     whatsapp_ok = False
     numero = wa_norm_number(funcionario.telefone or "")
     if numero and wa_is_valid_number(numero):
         try:
             wa_send_text(numero, mensagem, tipo="principal")
+            wa_send_location(numero, lat, lon, nome=f"Ponto - {posto}", endereco=posto)
             whatsapp_ok = True
         except Exception as exc:
             app.logger.warning("[coletivo-whatsapp] falha para func %s: %s", funcionario.id, exc)

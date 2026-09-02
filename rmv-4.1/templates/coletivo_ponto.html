@@ -162,19 +162,26 @@
       btn.disabled = true;
       btn.textContent = 'Solicitando…';
 
-      let coords = { lat: null, lon: null };
-      if (navigator.geolocation) {
-        try {
-          coords = await new Promise((resolve) => {
-            navigator.geolocation.getCurrentPosition(
-              (position) => resolve({ lat: position.coords.latitude, lon: position.coords.longitude }),
-              () => resolve({ lat: null, lon: null }),
-              { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
-            );
-          });
-        } catch (e) {
-          coords = { lat: null, lon: null };
-        }
+      if (!navigator.geolocation) {
+        setStatus('Este dispositivo não oferece localização. O ponto não pode ser registrado.', 'err');
+        btn.disabled = false;
+        btn.textContent = 'Bater ponto';
+        return;
+      }
+      let coords;
+      try {
+        coords = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(
+            (position) => resolve({ lat: position.coords.latitude, lon: position.coords.longitude }),
+            (error) => reject(error),
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+          );
+        });
+      } catch (e) {
+        setStatus('Autorize a localização do aparelho para registrar o ponto.', 'err');
+        btn.disabled = false;
+        btn.textContent = 'Bater ponto';
+        return;
       }
 
       setStatus('Registrando ponto…', '');
@@ -194,7 +201,7 @@
         document.getElementById('success-name').textContent = data.colaborador || 'Colaborador';
         document.getElementById('success-type').textContent = data.tipo_label || 'Ponto';
         document.getElementById('success-time').textContent = data.hora || '--:--';
-        document.getElementById('success-note').textContent = (data.data || '') + ' • ponto registrado com sucesso' + ((coords.lat !== null && coords.lon !== null) ? ' • geolocalização capturada' : '');
+        document.getElementById('success-note').textContent = (data.data || '') + ' • ponto registrado com localização';
         setStatus('Ponto registrado com sucesso.', 'ok');
         hideForm(true);
 
