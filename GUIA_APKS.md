@@ -55,15 +55,37 @@ cd rm-supervisor-android
 
 ## 3. RMFacilities Ponto
 
-O app Android separado do ponto ainda não possui uma pasta própria neste repositório. A página `/ponto` é um PWA/web app e pode ser instalada pelo navegador.
-
-Para criar um APK separado do RM Funcionário, ele deverá ficar em:
+Projeto Android próprio:
 
 ```text
 mobile-rmfacilities-ponto-android/
 ```
 
-Esse novo projeto deverá usar outro identificador Android, por exemplo `br.com.rmfacilities.ponto`, para não substituir o app `rm.funcionario`.
+Gerar APK debug:
+
+```bash
+cd mobile-rmfacilities-ponto-android
+./gerar-apk-debug.sh
+```
+
+Gerar APK release:
+
+```bash
+cd mobile-rmfacilities-ponto-android
+./build-release.sh
+```
+
+O aplicativo abre o portal `/ponto`, preservando as funcionalidades da página, incluindo captura de localização e instalação PWA. O Android encaminha a permissão de GPS para o navegador interno.
+
+Identificador Android separado: `br.com.rmfacilities.ponto`
+
+O portal web continua disponível em:
+
+```text
+https://portal.grupormfacilities.com.br/ponto
+```
+
+O novo projeto não substitui o app `rm.funcionario`.
 
 ## Importante
 

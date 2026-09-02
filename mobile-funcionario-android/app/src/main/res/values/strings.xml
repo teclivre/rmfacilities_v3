@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">RMFacilities Ponto</string>
+    <string name="app_name">RM Funcionário</string>
     <string name="api_base_url_hint">URL da API</string>
     <string name="cpf">CPF</string>
     <string name="senha">Senha</string>

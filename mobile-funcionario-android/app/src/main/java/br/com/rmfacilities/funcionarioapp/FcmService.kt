@@ -62,7 +62,7 @@ class FcmService : FirebaseMessagingService() {
             "afastamento" -> "🏥 Afastamento Registrado"
             "pagamento" -> "💰 Pagamento Disponível"
             "ponto_lembrete" -> "⏰ Lembrete de Ponto"
-            else -> "RMFacilities Ponto"
+            else -> "RM Funcionário"
         }
         val corpo = message.notification?.body ?: data["corpo"] ?: when (tipo) {
             "documento_assinar" -> "Você tem um documento aguardando sua assinatura."
