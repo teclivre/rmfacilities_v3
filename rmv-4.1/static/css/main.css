@@ -176,6 +176,8 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 }
 
 #pg-controle-ponto.on{padding-top:0!important}
+#pg-catalogo-links.on{padding-top:0!important}
+#pg-catalogo-links.on > .card{margin-top:0!important}
 
 #pg-controle-ponto.on > :not(#st-controle-ponto):not(.card){
 	display:none!important;
