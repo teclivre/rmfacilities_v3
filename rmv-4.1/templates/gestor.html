@@ -13,15 +13,43 @@
     :root {
       --bg: #f4f8f7;
       --card: #ffffff;
+      --card-soft: #f9fbfc;
       --ink: #12252a;
       --muted: #63777d;
       --line: #d8e4e5;
-      --brand: #0f766e;
-      --brand-2: #155e75;
-      --ok: #0f9d58;
+      --brand: #205d8a;
+      --brand-2: #154060;
+      --brand-soft: #d0e4f0;
+      --accent: #f28e34;
+      --accent-soft: #fff1e4;
+      --ok: #168357;
+      --ok-soft: #d9f3e8;
       --warn: #d97706;
-      --bad: #dc2626;
+      --warn-soft: #ffedd5;
+      --bad: #bf2e2e;
+      --bad-soft: #fde7e7;
       --app-shadow: 0 10px 30px rgba(5, 45, 49, 0.12);
+    }
+
+    html[data-theme='dark'] {
+      --bg: #0c1623;
+      --card: #111f2f;
+      --card-soft: #13263d;
+      --ink: #eaf3ff;
+      --muted: #a1b9cf;
+      --line: #2a4363;
+      --brand: #67b8ff;
+      --brand-2: #205d8a;
+      --brand-soft: #1a3a58;
+      --accent: #ff9f4a;
+      --accent-soft: #352314;
+      --ok: #36d09a;
+      --ok-soft: #103729;
+      --warn: #f9b15c;
+      --warn-soft: #3a2b16;
+      --bad: #f57575;
+      --bad-soft: #3a1a1a;
+      --app-shadow: 0 22px 44px rgba(0, 0, 0, 0.45);
     }
 
     * { box-sizing: border-box; }
@@ -32,10 +60,18 @@
       font-family: "Poppins", "Segoe UI", Tahoma, sans-serif;
       color: var(--ink);
       background:
-        radial-gradient(circle at 0% 0%, #d7f3ee 0, transparent 34%),
-        radial-gradient(circle at 100% 20%, #d8eef8 0, transparent 32%),
+        radial-gradient(circle at 0% 0%, rgba(242, 142, 52, 0.16) 0, transparent 34%),
+        radial-gradient(circle at 100% 20%, rgba(32, 93, 138, 0.18) 0, transparent 32%),
         var(--bg);
       min-height: 100dvh;
+      transition: background .25s ease, color .25s ease;
+    }
+
+    html[data-theme='dark'] body {
+      background:
+        radial-gradient(circle at 0% 0%, rgba(255, 159, 74, 0.14) 0, transparent 34%),
+        radial-gradient(circle at 100% 20%, rgba(103, 184, 255, 0.18) 0, transparent 32%),
+        var(--bg);
     }
 
     .wrap { max-width: 1120px; margin: 0 auto; padding: 16px; }
@@ -45,6 +81,7 @@
       border-radius: 16px;
       padding: 14px;
       box-shadow: var(--app-shadow);
+      transition: background .25s ease, border-color .25s ease, box-shadow .25s ease;
     }
 
     .hidden { display: none !important; }
@@ -71,12 +108,28 @@
       padding: 11px 14px;
       font-weight: 600;
       cursor: pointer;
+      transition: filter .2s ease, opacity .2s ease;
     }
+    .btn:hover { filter: brightness(1.03); }
     .btn:disabled { opacity: .6; cursor: not-allowed; }
     .btn.brand { background: linear-gradient(120deg, var(--brand), var(--brand-2)); color: #fff; }
-    .btn.ghost { background: #eef7f6; color: var(--brand); }
-    .btn.bad { background: #fee2e2; color: #991b1b; }
-    .btn.warn { background: #ffedd5; color: #9a3412; }
+    .btn.ghost { background: var(--brand-soft); color: var(--brand-2); }
+    .btn.bad { background: var(--bad-soft); color: var(--bad); }
+    .btn.warn { background: var(--warn-soft); color: #9a3412; }
+    .theme-toggle {
+      border: 1px solid var(--line);
+      background: var(--card);
+      color: var(--ink);
+      border-radius: 999px;
+      width: 42px;
+      height: 42px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      box-shadow: var(--app-shadow);
+    }
 
     label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
     input, select, textarea {
@@ -85,22 +138,24 @@
       border: 1px solid var(--line);
       border-radius: 11px;
       outline: none;
-      background: #fff;
+      background: var(--card-soft);
       color: var(--ink);
+      transition: background .25s ease, border-color .25s ease, color .25s ease;
     }
     input:focus, select:focus, textarea:focus { border-color: var(--brand); }
 
     .main-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
     .main-tab {
       border: 1px solid var(--line);
-      background: #fff;
+      background: var(--card-soft);
       padding: 9px 12px;
       border-radius: 999px;
       cursor: pointer;
       font-size: 13px;
       font-weight: 600;
+      color: var(--ink);
     }
-    .main-tab.on { background: #d8f3ef; border-color: #9fded5; color: #0f4f4a; }
+    .main-tab.on { background: var(--brand-soft); border-color: var(--brand); color: var(--brand-2); }
 
     .tab-stage { position: relative; }
     .tab-pane {
@@ -121,7 +176,7 @@
       border: 1px solid var(--line);
       border-radius: 14px;
       padding: 10px;
-      background: #fbfefd;
+      background: var(--card-soft);
     }
     .kpi .t { font-size: 12px; color: var(--muted); }
     .kpi .v { font-size: 22px; font-weight: 700; margin-top: 4px; }
@@ -129,14 +184,14 @@
     .kpi .v.neg { color: var(--bad); }
 
     .msg { font-size: 13px; padding: 8px 10px; border-radius: 8px; margin-top: 8px; }
-    .msg.ok { background: #ecfdf3; color: #166534; border: 1px solid #bbf7d0; }
-    .msg.err { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .msg.ok { background: var(--ok-soft); color: var(--ok); border: 1px solid rgba(22,131,87,0.25); }
+    .msg.err { background: var(--bad-soft); color: var(--bad); border: 1px solid rgba(191,46,46,0.25); }
 
     .item {
       border: 1px solid var(--line);
       border-radius: 14px;
       padding: 12px;
-      background: #fff;
+      background: var(--card-soft);
     }
     .item-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
     .item-title { font-weight: 700; font-size: 15px; }
@@ -148,8 +203,8 @@
       border: 1px solid var(--line);
       white-space: nowrap;
     }
-    .pill.previsto { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
-    .pill.realizado { background: #ecfdf3; color: #166534; border-color: #bbf7d0; }
+    .pill.previsto { background: var(--warn-soft); color: #9a3412; border-color: rgba(217,119,6,0.28); }
+    .pill.realizado { background: var(--ok-soft); color: var(--ok); border-color: rgba(22,131,87,0.22); }
     .amt { font-weight: 800; }
     .amt.in { color: var(--ok); }
     .amt.out { color: var(--bad); }
@@ -164,7 +219,7 @@
       border: 1px solid var(--line);
       border-radius: 11px;
       padding: 8px 10px;
-      background: #fff;
+      background: var(--card-soft);
     }
     .cat-item input[type="text"], .cat-item input[type="number"] { padding: 7px 8px; }
 
@@ -245,7 +300,8 @@
           <h1>Gestor Financeiro</h1>
           <p id="boas-vindas">Controle suas entradas, saidas e previsoes futuras.</p>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="theme-toggle" id="theme-toggle" type="button" onclick="toggleTheme()" title="Ativar tema escuro" aria-label="Ativar tema escuro">🌙</button>
           <button class="btn ghost" id="btn-install" onclick="instalarPWA()">Instalar na tela inicial</button>
           <button class="btn bad" onclick="logout()">Sair</button>
         </div>
@@ -510,10 +566,44 @@
     var _categorias = { entrada: [], saida: [] };
 
     (function init(){
+      initTheme();
       setMesAtual();
       prepararPWA();
       abrirApp();
     })();
+
+    const THEME_KEY = 'rm_gestor_theme';
+
+    function applyTheme(theme){
+      var t = (theme === 'dark') ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', t);
+      var btn = document.getElementById('theme-toggle');
+      if (btn) {
+        var proximoTema = t === 'dark' ? 'claro' : 'escuro';
+        btn.textContent = t === 'dark' ? '☀️' : '🌙';
+        btn.title = 'Ativar tema ' + proximoTema;
+        btn.setAttribute('aria-label', 'Ativar tema ' + proximoTema);
+      }
+    }
+
+    function preferredTheme(){
+      var saved = localStorage.getItem(THEME_KEY);
+      if (saved === 'dark' || saved === 'light') return saved;
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+
+    function initTheme(){
+      var theme = preferredTheme();
+      localStorage.setItem(THEME_KEY, theme);
+      applyTheme(theme);
+    }
+
+    function toggleTheme(){
+      var current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+      var next = current === 'dark' ? 'light' : 'dark';
+      localStorage.setItem(THEME_KEY, next);
+      applyTheme(next);
+    }
 
     function prepararPWA(){
       if ('serviceWorker' in navigator) {
