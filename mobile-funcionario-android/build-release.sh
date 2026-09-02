@@ -13,9 +13,10 @@ echo "▶ Limpando build anterior..."
 echo "▶ Compilando APK release..."
 ./gradlew assembleRelease
 
-APK="$PROJ_DIR/app/build/outputs/apk/release/app-release.apk"
+APK_DIR="$PROJ_DIR/app/build/outputs/apk/release"
+APK="$(find "$APK_DIR" -maxdepth 1 -type f -name '*.apk' | sort | tail -n 1)"
 
-if [ -f "$APK" ]; then
+if [ -n "$APK" ] && [ -f "$APK" ]; then
     echo ""
     echo "✅ APK gerado com sucesso:"
     echo "   $APK"
