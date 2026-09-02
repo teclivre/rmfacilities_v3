@@ -9255,10 +9255,16 @@ def pagina_funcionario_app():
     return render_template("funcionario_app.html")
 
 
-@app.route("/coletivo")
-@app.route("/coletivo/")
+@app.route("/ponto")
+@app.route("/ponto/")
 def pagina_coletivo_ponto():
     return render_template("coletivo_ponto.html")
+
+
+@app.route("/coletivo")
+@app.route("/coletivo/")
+def pagina_coletivo_ponto_compat():
+    return redirect(url_for("pagina_coletivo_ponto"))
 
 
 def _coletivo_buscar_funcionario_por_prefixo(prefixo):
