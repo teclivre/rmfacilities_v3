@@ -25120,6 +25120,7 @@ def api_rh_assinaturas_painel():
     """Painel completo de status de assinaturas com filtros."""
     status_filtro = (request.args.get("status") or "todos").strip().lower()
     fid_filtro = to_num(request.args.get("funcionario_id") or 0)
+    nome_filtro = (request.args.get("funcionario_nome") or "").strip().lower()
     cat_filtro = (request.args.get("categoria") or "").strip().lower()
     comp_filtro = (request.args.get("competencia") or "").strip()
     data_ini_str = (request.args.get("data_ini") or "").strip()
@@ -25167,6 +25168,8 @@ def api_rh_assinaturas_painel():
     totais = {"pendente": 0, "concluida": 0, "cancelada": 0, "expirado": 0, "outros": 0}
     for a in registros:
         f = _get_func(a.funcionario_id)
+        if nome_filtro and nome_filtro not in ((f.nome or "") if f else "").lower():
+            continue
         st = a.ass_status or "pendente"
         if st == "assinado":
             st = "concluida"

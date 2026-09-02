@@ -3919,6 +3919,13 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div class="card-header">
             <span class="card-title" id="asi-list-title">Documentos — Funcionários</span>
           </div>
+          <div id="asi-enviadas-filtros" style="display:none;padding:0 12px 12px;gap:8px;flex-wrap:wrap;align-items:flex-end">
+            <div class="f" style="min-width:210px;flex:1"><label>Funcionário</label><input id="asi-env-filtro-nome" placeholder="Nome do funcionário" oninput="asiEnviadasCarregarDebounce()"></div>
+            <div class="f" style="min-width:150px"><label>Status</label><select id="asi-env-filtro-status" onchange="loadAssinaturasEnviadas()"><option value="todos">Todos</option><option value="pendente">Pendentes</option><option value="concluida">Assinadas</option><option value="cancelada">Canceladas</option><option value="expirado">Expiradas</option></select></div>
+            <div class="f"><label>De</label><input id="asi-env-filtro-ini" type="date" onchange="loadAssinaturasEnviadas()"></div>
+            <div class="f"><label>Até</label><input id="asi-env-filtro-fim" type="date" onchange="loadAssinaturasEnviadas()"></div>
+            <button class="btn b-gh b-sm" type="button" onclick="asiEnviadasLimparFiltros()">Limpar filtros</button>
+          </div>
           <div id="asi-lista"><div class="vazio">Nenhum documento encontrado.</div></div>
         </div>
       </div>
@@ -16992,6 +16999,8 @@ function switchAsiTab(tipo){
   if(tb) tb.classList.add('on');
   const titles={'funcionario':'Documentos — Funcionários','cliente':'Documentos — Clientes','avulso':'Documentos — Avulso','enviadas':'Assinaturas Enviadas — Acompanhamento'};
   document.getElementById('asi-list-title').textContent=titles[tipo]||'Documentos';
+  const filtros=document.getElementById('asi-enviadas-filtros');
+  if(filtros) filtros.style.display=tipo==='enviadas'?'flex':'none';
   fecharDetalheEnvelope();
   if(tipo==='enviadas') loadAssinaturasEnviadas();
   else loadEnvelopes(tipo);
@@ -17001,7 +17010,15 @@ async function loadAssinaturasEnviadas(){
   const box=document.getElementById('asi-lista');
   box.innerHTML='<div class="vazio">Carregando assinaturas enviadas...</div>';
   try{
-    const r=await api('/api/rh/assinaturas/painel?status=todos');
+    const status=document.getElementById('asi-env-filtro-status')?.value||'todos';
+    const nome=(document.getElementById('asi-env-filtro-nome')?.value||'').trim();
+    const ini=document.getElementById('asi-env-filtro-ini')?.value||'';
+    const fim=document.getElementById('asi-env-filtro-fim')?.value||'';
+    const params=new URLSearchParams({status});
+    if(nome) params.set('funcionario_nome',nome);
+    if(ini) params.set('data_ini',ini);
+    if(fim) params.set('data_fim',fim);
+    const r=await api('/api/rh/assinaturas/painel?'+params.toString());
     const lista=r.itens||[];
     if(!lista.length){box.innerHTML='<div class="vazio">Nenhuma assinatura enviada encontrada.</div>';return;}
     box.innerHTML=`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Funcionário</th><th>Documento</th><th>Categoria</th><th>Enviado em</th><th>Status</th><th>Ações</th></tr></thead><tbody>${lista.map(it=>`<tr>
@@ -17011,6 +17028,18 @@ async function loadAssinaturasEnviadas(){
       <td style="white-space:nowrap"><button class="btn b-gh b-sm" onclick="downloadArquivoFuncionario('/api/funcionarios/arquivos/${it.arquivo_id}/download')">⬇ Baixar</button> ${it.ass_status==='pendente'?`<button class="btn b-az b-sm" onclick="painelAssReenviar(${it.arquivo_id})">🔔 Notificar</button>`:''}</td>
     </tr>`).join('')}</tbody></table></div>`;
   }catch(e){box.innerHTML='<div class="vazio" style="color:var(--verm)">Erro ao carregar assinaturas enviadas.</div>';}
+}
+
+let asiEnviadasDebounceTimer=0;
+function asiEnviadasCarregarDebounce(){
+  clearTimeout(asiEnviadasDebounceTimer);
+  asiEnviadasDebounceTimer=setTimeout(loadAssinaturasEnviadas,300);
+}
+function asiEnviadasLimparFiltros(){
+  ['asi-env-filtro-nome','asi-env-filtro-ini','asi-env-filtro-fim'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const status=document.getElementById('asi-env-filtro-status');
+  if(status) status.value='todos';
+  loadAssinaturasEnviadas();
 }
 
 async function loadEnvelopes(tipo){
