@@ -176,7 +176,20 @@ body.sidebar-collapsed .subnav-lv3{display:none!important}
 }
 
 #pg-controle-ponto.on{padding-top:0!important}
-#pg-catalogo-links.on{padding-top:0!important}
+#pg-logs-app.on,
+#pg-catalogo-links.on{
+	position:fixed;
+	top:52px;
+	left:0;
+	right:0;
+	bottom:0;
+	overflow-y:auto;
+	overflow-x:hidden;
+	padding:0 22px;
+	animation:none;
+	z-index:9;
+}
+#pg-logs-app.on > .card,
 #pg-catalogo-links.on > .card{margin-top:0!important}
 
 #pg-controle-ponto.on > :not(#st-controle-ponto):not(.card){
