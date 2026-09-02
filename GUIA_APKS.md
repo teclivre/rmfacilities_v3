@@ -75,6 +75,17 @@ cd mobile-rmfacilities-ponto-android
 ./build-release.sh
 ```
 
+Gerar AAB assinado para a Play Store:
+
+```bash
+cd mobile-rmfacilities-ponto-android
+cp keystore.properties.example keystore.properties
+# preencha a keystore real em keystore.properties
+./gerar-aab.sh
+```
+
+Cada APK ou AAB gerado incrementa automaticamente a versão em `app/version.properties`.
+
 O aplicativo abre o portal `/ponto`, preservando as funcionalidades da página, incluindo captura de localização e instalação PWA. O Android encaminha a permissão de GPS para o navegador interno.
 
 Identificador Android separado: `br.com.rmfacilities.ponto`

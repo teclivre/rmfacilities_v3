@@ -3,6 +3,34 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+def versionPropsFile = file('version.properties')
+def versionProps = new Properties()
+versionPropsFile.withInputStream { versionProps.load(it) }
+
+def verCode = versionProps['VERSION_CODE'].toInteger()
+def verMajor = versionProps['VERSION_MAJOR'].toInteger()
+def verMinor = versionProps['VERSION_MINOR'].toInteger()
+def verPatch = versionProps['VERSION_PATCH'].toInteger()
+def requestedTasks = gradle.startParameter.taskNames.join(' ')
+if (requestedTasks ==~ /(?s).*(assemble|bundle).*/) {
+    verCode += 1
+    verPatch += 1
+    if (verPatch >= 100) { verPatch = 0; verMinor += 1 }
+    if (verMinor >= 100) { verMinor = 0; verMajor += 1 }
+    versionProps['VERSION_CODE'] = verCode.toString()
+    versionProps['VERSION_MAJOR'] = verMajor.toString()
+    versionProps['VERSION_MINOR'] = verMinor.toString()
+    versionProps['VERSION_PATCH'] = verPatch.toString()
+    versionPropsFile.withOutputStream { versionProps.store(it, null) }
+}
+def buildVersionName = "${verMajor}.${verMinor}.${verPatch}"
+
+def keystorePropsFile = rootProject.file('keystore.properties')
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+
 android {
     namespace 'br.com.rmfacilities.ponto'
     compileSdk 35
@@ -11,14 +39,34 @@ android {
         applicationId 'br.com.rmfacilities.ponto'
         minSdk 24
         targetSdk 35
-        versionCode 1
-        versionName '1.0.0'
+        versionCode verCode
+        versionName buildVersionName
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePropsFile.exists()) {
+                storeFile rootProject.file('app/' + keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
     }
 
     buildTypes {
         release {
+            if (keystorePropsFile.exists()) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            outputFileName = "rmfacilities-ponto-${variant.buildType.name}-v${buildVersionName}-${verCode}.apk"
         }
     }
 
