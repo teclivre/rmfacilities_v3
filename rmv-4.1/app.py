@@ -6921,12 +6921,13 @@ def smtp_send_proposta_comercial(
 
     tipo_label = "SPOT" if (tipo or "").lower() == "spot" else "Mensal"
     smtp_email = sender["address"]
-    remetente_display = formataddr((f"{remetente_nome} Comercial", smtp_email))
+    comercial_email = "comercial@rmfacilities.com.br"
+    remetente_display = formataddr((f"{remetente_nome} Comercial", comercial_email))
 
     msg = MIMEMultipart("mixed")
     msg["From"] = remetente_display
     msg["To"] = destinatarios[0] if len(destinatarios) == 1 else "Undisclosed recipients:;"
-    msg["Reply-To"] = smtp_email
+    msg["Reply-To"] = comercial_email
     msg["Subject"] = f"Proposta Comercial {tipo_label} — {numero} | {remetente_nome}"
 
     from html import escape as html_escape
@@ -6972,7 +6973,7 @@ def smtp_send_proposta_comercial(
     empresa_html = _texto_html(empresa_dest)
     data_html = _texto_html(data_str)
     total_html = _texto_html(total)
-    smtp_email_html = _texto_html(smtp_email)
+    smtp_email_html = _texto_html(comercial_email)
     logo_html = (
         "<img src='cid:logo-remetente' alt='"
         + nome_html
@@ -7018,7 +7019,7 @@ def smtp_send_proposta_comercial(
         + (f"{mensagem_extra}\n\n" if mensagem_extra else "")
         + f"Segue em anexo a Proposta Comercial {tipo_label} n° {numero}.\n"
         f"Empresa: {empresa_dest}\nData: {data_str}\nValor Total: {total}\n\n"
-        f"Atenciosamente,\n{remetente_nome} — Equipe Comercial\n{smtp_email}"
+        f"Atenciosamente,\n{remetente_nome} — Equipe Comercial\n{comercial_email}"
     )
     related = MIMEMultipart("related")
     alt = MIMEMultipart("alternative")
