@@ -743,6 +743,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <a class="nav-item lv2" onclick="nav('usuarios',this)"><span class="nav-label">Usuarios</span></a>
           <a class="nav-item lv2" onclick="nav('config',this)"><span class="nav-label">Configuracoes</span></a>
           <a class="nav-item lv2" onclick="nav('logs-app',this)"><span class="nav-label">Logs do App</span></a>
+          <a class="nav-item lv2" onclick="nav('catalogo-links',this)"><span class="nav-label">Links do Sistema</span></a>
         </div>
       </div>
     </div>
@@ -4315,6 +4316,17 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
     </div>
 
+    <div id="pg-catalogo-links" class="pg">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">🔗 Links do Sistema</span>
+          <button class="btn b-gh b-sm" type="button" onclick="renderCatalogoLinks()">↻ Atualizar</button>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Acesso centralizado aos portais e páginas públicas. O endereço abaixo usa o domínio atual do sistema.</p>
+        <div id="catalogo-links-lista"></div>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -5663,6 +5675,42 @@ function resetPageScroll(pageId){
   }catch(_){ }
 }
 
+function renderCatalogoLinks(){
+  const box=document.getElementById('catalogo-links-lista');
+  if(!box) return;
+  const origem=window.location.origin;
+  const links=[
+    {grupo:'Portais',nome:'Portal principal',caminho:'/',descricao:'Acesso ao sistema administrativo'},
+    {grupo:'Portais',nome:'Ponto coletivo',caminho:'/ponto',descricao:'Registro de ponto coletivo'},
+    {grupo:'Portais',nome:'Portal do gestor',caminho:'/gestor',descricao:'Acesso do gestor financeiro'},
+    {grupo:'Portais',nome:'Portal da supervisão',caminho:'/supervisor',descricao:'Acesso da supervisão'},
+    {grupo:'Portais',nome:'Login do gestor',caminho:'/gestor/login',descricao:'Tela de login do gestor'},
+    {grupo:'Portais',nome:'Login da supervisão',caminho:'/supervisor/login',descricao:'Tela de login da supervisão'},
+    {grupo:'Públicos',nome:'Cadastro de candidato',caminho:'/cadastro-candidato',descricao:'Link para candidatos preencherem a ficha'},
+    {grupo:'Públicos',nome:'Política de privacidade',caminho:'/privacidade',descricao:'Página pública de privacidade'},
+    {grupo:'Públicos',nome:'Código de conduta',caminho:'/codigo-conduta',descricao:'Página pública do código de conduta'}
+  ];
+  box.innerHTML=links.map(link=>{
+    const url=origem+link.caminho;
+    return `<div style="display:grid;grid-template-columns:minmax(150px,1fr) minmax(180px,2fr) auto;gap:12px;align-items:center;padding:12px 10px;border-bottom:1px solid var(--borda)">
+      <div><strong>${esc(link.nome)}</strong><div style="font-size:11px;color:var(--text-muted)">${esc(link.grupo)} · ${esc(link.descricao)}</div></div>
+      <div style="font-size:12px;color:var(--azul);word-break:break-all">${esc(url)}</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end"><a class="btn b-az b-sm" href="${esc(url)}" target="_blank" rel="noopener">Abrir</a><button class="btn b-gh b-sm" type="button" onclick="copiarLinkSistema(this,${JSON.stringify(url)})">Copiar</button></div>
+    </div>`;
+  }).join('');
+}
+
+async function copiarLinkSistema(botao,url){
+  try{
+    await navigator.clipboard.writeText(url);
+    const texto=botao.textContent;
+    botao.textContent='Copiado';
+    setTimeout(()=>{botao.textContent=texto;},1200);
+  }catch(_){
+    window.prompt('Copie o link:',url);
+  }
+}
+
 function nav(id,el,force=false){
   // Restaurar sidebar ao sair da página de Assinaturas
   if(document.getElementById('pg-assinaturas')?.classList.contains('on') && id!=='assinaturas'){
@@ -5686,7 +5734,8 @@ function nav(id,el,force=false){
   const targetId=id;
   const acessoDocumentosComercial = id==='documentos' && USER_AREAS.includes('clientes');
   const acessoLogsApp = id==='logs-app' && USER_AREAS.includes('config');
-  if(P!=='dono' && USER_AREAS.length && !USER_AREAS.includes(id) && id!=='dashboard' && !(id==='controle-ponto' && USER_AREAS.includes('rh')) && !acessoDocumentosComercial && !acessoLogsApp){
+  const acessoCatalogoLinks = id==='catalogo-links' && USER_AREAS.includes('config');
+  if(P!=='dono' && USER_AREAS.length && !USER_AREAS.includes(id) && id!=='dashboard' && !(id==='controle-ponto' && USER_AREAS.includes('rh')) && !acessoDocumentosComercial && !acessoLogsApp && !acessoCatalogoLinks){
     alert('Seu usuário não tem acesso a esta área.');
     return;
   }
@@ -5716,6 +5765,7 @@ function nav(id,el,force=false){
   if(targetId==='usuarios')renderUsr();
   if(targetId==='config'){loadConfig(); ocCarregarCatalogoItens();}
   if(targetId==='logs-app'){logsCarregar();}
+  if(targetId==='catalogo-links'){renderCatalogoLinks();}
   if(targetId==='rh'){
     renderFuncionarios();
     painelAssInicializar();
