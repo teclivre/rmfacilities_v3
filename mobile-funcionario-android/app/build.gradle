@@ -59,7 +59,7 @@ android {
         targetSdk 35
         versionCode verCode
         versionName buildVersionName
-        resValue "string", "app_name_version", "RM Funcionário"
+        resValue "string", "app_name_version", "RMFacilities Ponto"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField "String", "DEFAULT_API_BASE_URL", '"https://portal.grupormfacilities.com.br"'
