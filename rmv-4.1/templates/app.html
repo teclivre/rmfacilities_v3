@@ -5839,7 +5839,7 @@ async function rhCandidatosCarregar(){
       <td>${esc(c.cidade||'—')}</td>
       <td>${esc(c.telefone||'—')}</td>
       <td>${esc(c.criado_fmt||'—')}</td>
-      <td style="white-space:nowrap"><button class="btn b-az b-sm" onclick="rhCandidatoAbrir(${c.id})">Ver ficha</button> ${c.pdf_url?`<a class="btn b-gh b-sm" href="${c.pdf_url}">⬇ PDF</a>`:''}</td>
+      <td style="white-space:nowrap"><button class="btn b-az b-sm" onclick="rhCandidatoAbrir(${c.id})">Ver ficha</button> ${c.pdf_url?`<a class="btn b-gh b-sm" href="${c.pdf_url}">⬇ PDF</a>`:''} <button class="btn b-ghr b-sm" onclick="rhCandidatoExcluir(${c.id})">Excluir</button></td>
     </tr>`).join('');
   }catch(e){
     tbody.innerHTML='<tr><td colspan="6" class="vazio" style="color:var(--verm)">Erro ao carregar fichas.</td></tr>';
@@ -5857,7 +5857,7 @@ async function rhCandidatoAbrir(id){
     modal.innerHTML=`<div class="md" style="max-width:820px;max-height:90vh;overflow:auto">
       <div class="mh"><span class="mt">Ficha de ${esc(c.nome||'candidato')}</span><button class="btn b-ci b-sm" type="button">Fechar ×</button></div>
       <div class="mb-body">
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Recebida em ${esc(c.criado_fmt||'—')} · ${esc(c.email||'')} · ${esc(c.telefone||'')}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Recebida em ${esc(c.criado_fmt||'—')} · ${esc(c.email||'')} · ${esc(c.telefone||'')} · IP: ${esc(c.ip_cadastro||'não identificado')}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px">${campos.map(([chave,valor])=>`<div style="padding:9px 10px;background:var(--cinza-cl);border:1px solid var(--borda);border-radius:6px"><div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">${esc(rhCandidatoRotulo(chave))}</div><div style="font-size:13px;white-space:pre-wrap;word-break:break-word">${esc(String(valor))}</div></div>`).join('')}</div>
         ${c.pdf_url?`<div style="margin-top:14px"><a class="btn b-az" href="${c.pdf_url}">⬇ Baixar ficha em PDF</a></div>`:''}
       </div>
@@ -5873,6 +5873,15 @@ async function rhCandidatoAbrir(id){
 
 function rhCandidatoRotulo(chave){
   return chave.replace(/_/g,' ').replace(/\b\w/g,letra=>letra.toUpperCase());
+}
+
+async function rhCandidatoExcluir(id){
+  if(!confirm('Excluir esta ficha de candidato e o PDF gerado? Esta ação não pode ser desfeita.')) return;
+  try{
+    await api('/api/rh/candidatos/'+id,'DELETE');
+    rhCandidatosCarregar();
+    docsCandidatosCarregar();
+  }catch(e){showSt('rh-cand-status','Erro ao excluir a ficha.',true);}
 }
 
 function rhSetSubAba(tab,btn){
@@ -10894,7 +10903,7 @@ async function docsCandidatosCarregar(){
     tbody.innerHTML=lista.map(c=>`<tr>
       <td><strong>${esc(c.nome||'')}</strong><div style="font-size:11px;color:var(--text-muted)">${esc(c.email||'')}</div></td>
       <td>${esc(c.cargo||'—')}</td><td>${esc(c.cidade||'—')}</td><td>${esc(c.telefone||'—')}</td><td>${esc(c.criado_fmt||'—')}</td>
-      <td style="white-space:nowrap"><button class="btn b-az b-sm" onclick="rhCandidatoAbrir(${c.id})">Ver ficha</button> ${c.pdf_url?`<a class="btn b-gh b-sm" href="${c.pdf_url}">⬇ PDF</a>`:''}</td>
+      <td style="white-space:nowrap"><button class="btn b-az b-sm" onclick="rhCandidatoAbrir(${c.id})">Ver ficha</button> ${c.pdf_url?`<a class="btn b-gh b-sm" href="${c.pdf_url}">⬇ PDF</a>`:''} <button class="btn b-ghr b-sm" onclick="rhCandidatoExcluir(${c.id})">Excluir</button></td>
     </tr>`).join('');
   }catch(e){tbody.innerHTML='<tr><td colspan="6" class="vazio" style="color:var(--verm)">Erro ao carregar fichas.</td></tr>';}
 }

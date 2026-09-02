@@ -2330,6 +2330,7 @@ class CadastroCandidato(db.Model):
     cpf = db.Column(db.String(20), default="")
     dados_json = db.Column(db.Text, nullable=False, default="{}")
     pdf_caminho = db.Column(db.String(500), default="")
+    ip_cadastro = db.Column(db.String(64), default="")
     criado_em = db.Column(db.DateTime, default=utcnow, index=True)
 
 
@@ -9184,7 +9185,7 @@ def _candidato_gerar_pdf(candidato, dados):
         linhas = [[Paragraph("<b>" + label + ":</b> " + (_candidato_texto(dados, chave, 500) or "-"), corpo)] for label, chave in campos]
         story.append(Table(linhas, colWidths=[178 * mm], style=[("BOX", (0, 0), (-1, -1), .3, colors.HexColor("#9fbfc3")), ("INNERGRID", (0, 0), (-1, -1), .2, colors.HexColor("#d4e2e4")), ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
     story.append(Spacer(1, 5 * mm))
-    story.append(Paragraph("Declaro serem verdadeiras as informacoes prestadas. Enviado em " + localnow().strftime("%d/%m/%Y %H:%M") + ".", corpo))
+    story.append(Paragraph("Declaro serem verdadeiras as informacoes prestadas. Enviado em " + localnow().strftime("%d/%m/%Y %H:%M") + ". IP de origem: " + (candidato.ip_cadastro or "nao identificado") + ".", corpo))
     SimpleDocTemplate(caminho, pagesize=A4, rightMargin=16 * mm, leftMargin=16 * mm, topMargin=14 * mm, bottomMargin=14 * mm).build(story, onFirstPage=_candidato_pdf_page, onLaterPages=_candidato_pdf_page)
     return caminho, nome_arquivo
 
@@ -9227,7 +9228,7 @@ def api_cadastro_candidato():
     faltando = [label for chave, label in obrigatorios.items() if not _candidato_texto(dados, chave, 80)]
     if faltando:
         return jsonify({"erro": "Preencha os campos obrigatorios: " + ", ".join(faltando) + "."}), 400
-    candidato = CadastroCandidato(nome=nome, email=email, telefone=telefone, cpf=cpf, dados_json=json.dumps(dados, ensure_ascii=False))
+    candidato = CadastroCandidato(nome=nome, email=email, telefone=telefone, cpf=cpf, ip_cadastro=(request.remote_addr or "")[:64], dados_json=json.dumps(dados, ensure_ascii=False))
     db.session.add(candidato)
     db.session.flush()
     caminho_pdf, nome_pdf = _candidato_gerar_pdf(candidato, dados)
@@ -9279,6 +9280,7 @@ def api_rh_candidatos():
                 "telefone": candidato.telefone,
                 "cargo": cargo,
                 "cidade": cidade,
+                "ip_cadastro": candidato.ip_cadastro or "",
                 "criado_fmt": candidato.criado_em.strftime("%d/%m/%Y %H:%M") if candidato.criado_em else "",
                 "pdf_url": url_for("api_rh_candidato_pdf", id=candidato.id) if candidato.pdf_caminho else "",
             }
@@ -9303,6 +9305,7 @@ def api_rh_candidato_detalhe(id):
                 "email": candidato.email,
                 "telefone": candidato.telefone,
                 "cpf": candidato.cpf or "",
+                "ip_cadastro": candidato.ip_cadastro or "",
                 "criado_fmt": candidato.criado_em.strftime("%d/%m/%Y %H:%M") if candidato.criado_em else "",
                 "dados": dados,
                 "pdf_url": url_for("api_rh_candidato_pdf", id=candidato.id) if candidato.pdf_caminho else "",
@@ -9320,6 +9323,23 @@ def api_rh_candidato_pdf(id):
     if not candidato.pdf_caminho or os.path.commonpath([caminho, raiz_upload]) != raiz_upload or not os.path.isfile(caminho):
         return jsonify({"erro": "PDF da ficha nao encontrado"}), 404
     return send_file(caminho, as_attachment=True, download_name=os.path.basename(caminho))
+
+
+@app.route("/api/rh/candidatos/<int:id>", methods=["DELETE"])
+@lr
+def api_rh_candidato_excluir(id):
+    candidato = db.get_or_404(CadastroCandidato, id)
+    caminho = os.path.abspath(os.path.join(UPLOAD_ROOT, candidato.pdf_caminho or ""))
+    raiz_upload = os.path.abspath(UPLOAD_ROOT)
+    if candidato.pdf_caminho and os.path.commonpath([caminho, raiz_upload]) == raiz_upload and os.path.isfile(caminho):
+        try:
+            os.remove(caminho)
+        except OSError:
+            app.logger.exception("Falha ao remover PDF da ficha de candidato id=%s", id)
+    db.session.delete(candidato)
+    db.session.commit()
+    audit_event("cadastro_candidato_excluido", "usuario", session.get("uid"), "cadastro_candidato", id, True, {})
+    return jsonify({"ok": True})
 
 
 @app.route("/codigo-conduta")
@@ -38797,6 +38817,7 @@ with app.app_context():
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(UPLOAD_ROOT, exist_ok=True)
     db.metadata.create_all(bind=db.engine, checkfirst=True)
+    ensure_cols("cadastro_candidato", ["ip_cadastro VARCHAR(64)"])
     ensure_cols(
         "usuario",
         [
