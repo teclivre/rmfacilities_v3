@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1929">
+  <title>RM Ponto · Coletivo</title>
+  <style>
+    :root {
+      --bg:#0f1929; --bg2:#1a2540; --bg3:#243050; --card:#1e2d4a; --border:#2e4070;
+      --text:#e8ecf4; --text2:#9bacc8; --blue:#3b82f6; --green:#22c55e;
+      --yellow:#eab308; --orange:#f97316; --red:#ef4444; --blue-cl:rgba(59,130,246,.15);
+      --green-cl:rgba(34,197,94,.15); --yellow-cl:rgba(234,179,8,.15); --red-cl:rgba(239,68,68,.15);
+      --radius:14px; --safe-top:env(safe-area-inset-top, 0px); --safe-bot:env(safe-area-inset-bottom, 0px);
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    html,body { height:100%; background:linear-gradient(160deg,#0a1e3a 0%,#09234a 60%,#0a3f7a 100%); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; }
+    body { display:flex; align-items:center; justify-content:center; padding:20px; }
+    .app-shell { width:100%; max-width:420px; background:var(--bg); border:1px solid var(--border); border-radius:24px; overflow:hidden; box-shadow:0 20px 50px rgba(0,0,0,.35); }
+    .app-header { background:var(--bg2); border-bottom:1px solid var(--border); padding:calc(var(--safe-top) + 14px) 16px 12px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .brand { display:flex; align-items:center; gap:10px; min-width:0; }
+    .brand img { width:34px; height:34px; object-fit:contain; }
+    .title { font-size:14px; font-weight:700; letter-spacing:.04em; }
+    .badge { background:var(--blue-cl); color:var(--blue); border:1px solid rgba(59,130,246,.35); border-radius:999px; padding:4px 8px; font-size:10px; font-weight:700; }
+    .content { padding:18px 16px 20px; }
+    .clock { text-align:center; font-size:44px; font-weight:200; letter-spacing:-2px; margin-top:6px; }
+    .date { text-align:center; font-size:13px; color:var(--text2); margin:6px 0 18px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:12px; }
+    .label { display:block; font-size:12px; font-weight:700; color:var(--text2); text-transform:uppercase; letter-spacing:.06em; margin-bottom:8px; }
+    .input { width:100%; background:rgba(255,255,255,.08); border:1.5px solid rgba(255,255,255,.15); border-radius:12px; color:var(--text); font-size:24px; font-weight:700; letter-spacing:4px; text-align:center; padding:14px 12px; outline:none; }
+    .input:focus { border-color:var(--blue); }
+    .btn { display:block; width:100%; border:none; background:linear-gradient(135deg,#1d6fdb,#3b82f6); color:#fff; border-radius:14px; padding:16px 18px; font-size:16px; font-weight:700; cursor:pointer; margin-top:14px; }
+    .btn:active { opacity:.9; transform:scale(.99); }
+    .status { min-height:24px; margin-top:10px; font-size:13px; text-align:center; }
+    .status.err { color:#fca5a5; }
+    .status.ok { color:#8ef0c2; }
+    .success { display:none; text-align:center; padding:26px 18px; }
+    .success.on { display:block; }
+    .success-icon { font-size:68px; margin-bottom:8px; }
+    .success-name { font-size:22px; font-weight:700; margin-bottom:5px; }
+    .success-type { font-size:16px; font-weight:700; color:var(--green); margin-bottom:5px; }
+    .success-time { font-size:30px; font-weight:200; letter-spacing:-1px; margin-bottom:8px; }
+    .success-note { font-size:12px; color:var(--text2); line-height:1.5; }
+    .footer-note { text-align:center; font-size:11px; color:var(--text2); opacity:.9; }
+    @media (max-width:480px) { body { padding:8px; } .app-shell { border-radius:18px; } }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <div class="app-header">
+      <div class="brand">
+        <img src="/static/img/logo-rm-facilities.png" alt="RM Facilities">
+        <div class="title">RM PONTO</div>
+      </div>
+      <div class="badge">COLETIVO</div>
+    </div>
+
+    <div class="content">
+      <div class="clock" id="clock">--:--</div>
+      <div class="date" id="date">—</div>
+
+      <div id="form-card" class="card">
+        <label class="label" for="cpf-prefix">4 primeiros dígitos do CPF</label>
+        <input id="cpf-prefix" class="input" type="tel" inputmode="numeric" maxlength="4" placeholder="0000" autocomplete="off">
+        <button class="btn" id="btn-bater" type="button" onclick="baterPonto()">Bater ponto</button>
+        <div id="status" class="status" aria-live="polite"></div>
+      </div>
+
+      <div id="success-card" class="card success">
+        <div class="success-icon">✅</div>
+        <div class="success-name" id="success-name">—</div>
+        <div class="success-type" id="success-type">—</div>
+        <div class="success-time" id="success-time">--:--</div>
+        <div class="success-note" id="success-note">Ponto registrado com sucesso.</div>
+      </div>
+
+      <div class="footer-note">Terminal corporativo · sem login</div>
+    </div>
+  </div>
+
+  <script>
+    function updateClock() {
+      const now = new Date();
+      const h = String(now.getHours()).padStart(2, '0');
+      const m = String(now.getMinutes()).padStart(2, '0');
+      document.getElementById('clock').textContent = h + ':' + m;
+      const days = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
+      const months = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+      document.getElementById('date').textContent = days[now.getDay()] + ', ' + now.getDate() + ' de ' + months[now.getMonth()] + ' de ' + now.getFullYear();
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    function setStatus(text, kind) {
+      const el = document.getElementById('status');
+      el.textContent = text || '';
+      el.className = 'status' + (kind ? ' ' + kind : '');
+    }
+
+    function hideForm(showSuccess) {
+      const formCard = document.getElementById('form-card');
+      const successCard = document.getElementById('success-card');
+      if (showSuccess) {
+        formCard.style.display = 'none';
+        successCard.classList.add('on');
+      } else {
+        formCard.style.display = 'block';
+        successCard.classList.remove('on');
+      }
+    }
+
+    function resetForm() {
+      document.getElementById('cpf-prefix').value = '';
+      setStatus('', '');
+      hideForm(false);
+      setTimeout(function(){ document.getElementById('cpf-prefix').focus(); }, 50);
+    }
+
+    async function baterPonto() {
+      const prefix = document.getElementById('cpf-prefix').value.replace(/\D/g, '').slice(0, 4);
+      if (prefix.length !== 4) {
+        setStatus('Informe os 4 primeiros dígitos do CPF.', 'err');
+        return;
+      }
+
+      setStatus('Registrando ponto…', '');
+      const btn = document.getElementById('btn-bater');
+      btn.disabled = true;
+      btn.textContent = 'Registrando…';
+
+      try {
+        const response = await fetch('/api/ponto/coletivo/marcar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cpf_prefix: prefix })
+        });
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+          throw new Error(data.erro || 'Não foi possível registrar o ponto.');
+        }
+
+        document.getElementById('success-name').textContent = data.colaborador || 'Colaborador';
+        document.getElementById('success-type').textContent = data.tipo_label || 'Ponto';
+        document.getElementById('success-time').textContent = data.hora || '--:--';
+        document.getElementById('success-note').textContent = data.data + ' • ponto registrado com sucesso';
+        setStatus('Ponto registrado com sucesso.', 'ok');
+        hideForm(true);
+
+        setTimeout(() => {
+          resetForm();
+          setStatus('Próximo registro disponível.', 'ok');
+        }, 2500);
+      } catch (err) {
+        setStatus(err.message || 'Não foi possível registrar o ponto.', 'err');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Bater ponto';
+      }
+    }
+
+    document.getElementById('cpf-prefix').addEventListener('input', function () {
+      this.value = this.value.replace(/\D/g, '').slice(0, 4);
+    });
+    document.getElementById('cpf-prefix').addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') {
+        baterPonto();
+      }
+    });
+    document.getElementById('cpf-prefix').focus();
+  </script>
+</body>
+</html>

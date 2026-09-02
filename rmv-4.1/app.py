@@ -9255,6 +9255,130 @@ def pagina_funcionario_app():
     return render_template("funcionario_app.html")
 
 
+@app.route("/coletivo")
+@app.route("/coletivo/")
+def pagina_coletivo_ponto():
+    return render_template("coletivo_ponto.html")
+
+
+def _coletivo_buscar_funcionario_por_prefixo(prefixo):
+    digits = only_digits(prefixo or "")[:4]
+    if len(digits) != 4:
+        return None, "Informe os 4 primeiros dígitos do CPF do colaborador."
+    matches = []
+    for func in Funcionario.query.filter(Funcionario.cpf.isnot(None)).all():
+        cpf_digits = only_digits(func.cpf or "")
+        if cpf_digits.startswith(digits):
+            matches.append(func)
+    if not matches:
+        return None, "Nenhum colaborador encontrado com esse prefixo do CPF."
+    if len(matches) > 1:
+        return None, "Mais de um colaborador encontrou esse prefixo. Solicite apoio do RH."
+    return matches[0], None
+
+
+def _coletivo_label_tipo_whatsapp(tipo):
+    return {
+        "entrada": "Entrada",
+        "saida_intervalo": "Saída para almoço",
+        "retorno_intervalo": "Entrada do almoço",
+        "saida": "Saída",
+    }.get((tipo or "").strip().lower(), (tipo or "").strip() or "Ponto")
+
+
+@app.route("/api/ponto/coletivo/marcar", methods=["POST"])
+@_limiter.limit("40 per minute")
+def api_ponto_coletivo_marcar():
+    dados = request.get_json(silent=True) or {}
+    prefixo = (dados.get("cpf_prefix") or dados.get("cpf") or "").strip()
+    funcionario, erro = _coletivo_buscar_funcionario_por_prefixo(prefixo)
+    if erro:
+        return jsonify({"ok": False, "erro": erro}), 400
+
+    hoje_ref = utcnow().date()
+    if _app_funcionario_em_ferias_na_data(funcionario, hoje_ref):
+        return jsonify({"ok": False, "erro": "Este colaborador está de férias e não pode bater ponto neste período."}), 400
+    status_atual = _status_norm(funcionario.status or "Ativo")
+    if not _status_permite_ponto(funcionario.status):
+        return jsonify({"ok": False, "erro": "Somente colaboradores ativos podem bater ponto."}), 400
+
+    data_hoje = hoje_ref.strftime("%Y-%m-%d")
+    af_hoje = _afastamento_ativo_na_data(funcionario.id, data_hoje)
+    if af_hoje:
+        _tipo_raw = (af_hoje.tipo or "").strip()
+        tipo_label = {
+            "atestado": "Atestado médico",
+            "atestado medico": "Atestado médico",
+            "atestado médico": "Atestado médico",
+            "licenca": "Licença",
+            "licença": "Licença",
+            "outros": "Afastamento",
+        }.get(_tipo_raw.lower(), _tipo_raw or "Afastamento")
+        return jsonify({"ok": False, "erro": f"{tipo_label} registrado para hoje. Não é possível bater ponto."}), 400
+
+    data_hora = utcnow()
+    data_ref = _app_ponto_data_ref_efetiva(funcionario, data_hora) or data_hora.date()
+    bloqueio = _app_ponto_exigir_dia_aberto(funcionario.id, data_ref)
+    if bloqueio:
+        return bloqueio
+
+    marcacoes_dia = _app_ponto_marcacoes_dia(funcionario.id, data_ref)
+    tipo = _app_ponto_tipo_esperado(marcacoes_dia)
+    if any(abs((data_hora - m.data_hora).total_seconds()) < 60 for m in marcacoes_dia if getattr(m, "data_hora", None)):
+        return jsonify({"ok": False, "erro": "Já existe uma marcação neste minuto para este colaborador."}), 400
+
+    m = PontoMarcacao(
+        funcionario_id=funcionario.id,
+        tipo=tipo,
+        data_hora=data_hora,
+        origem="coletivo",
+        observacao="Registro coletivo via posto",
+        criado_por="coletivo-posto",
+        ip=(request.headers.get("X-Forwarded-For") or request.remote_addr or "")[:60],
+    )
+    db.session.add(m)
+    db.session.commit()
+
+    audit_event(
+        "ponto_marcacao_coletivo",
+        "funcionario",
+        funcionario.id,
+        "funcionario",
+        funcionario.id,
+        True,
+        {"tipo": tipo, "data_ref": data_ref.strftime("%Y-%m-%d"), "origem": "coletivo"},
+    )
+
+    mensagem = (
+        f"Olá, {funcionario.nome}!\n\n"
+        f"Seu ponto foi registrado com sucesso.\n"
+        f"Tipo: {_coletivo_label_tipo_whatsapp(tipo)}\n"
+        f"Horário: {m.data_hora.strftime('%d/%m/%Y %H:%M')}\n"
+        f"Status: {tipo.replace('_', ' ').title()}"
+    )
+    whatsapp_ok = False
+    numero = wa_norm_number(funcionario.telefone or "")
+    if numero and wa_is_valid_number(numero):
+        try:
+            wa_send_text(numero, mensagem, tipo="principal")
+            whatsapp_ok = True
+        except Exception as exc:
+            app.logger.warning("[coletivo-whatsapp] falha para func %s: %s", funcionario.id, exc)
+
+    return jsonify(
+        {
+            "ok": True,
+            "colaborador": funcionario.nome,
+            "tipo": tipo,
+            "tipo_label": _app_ponto_label(tipo),
+            "hora": m.data_hora.strftime("%H:%M"),
+            "data": m.data_hora.strftime("%d/%m/%Y"),
+            "whatsapp_enviado": whatsapp_ok,
+            "whatsapp_numero": bool(numero),
+        }
+    )
+
+
 @app.route("/gestor")
 @app.route("/gestor/")
 def pagina_gestor_financeiro():
