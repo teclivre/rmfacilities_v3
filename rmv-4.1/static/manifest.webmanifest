@@ -1,8 +1,8 @@
 {
-  "name": "RM Facilities",
-  "short_name": "RM",
-  "description": "Sistema RM Facilities para gestão operacional, RH e financeiro.",
-  "start_url": "/",
+  "name": "RMFacilities Ponto",
+  "short_name": "RMFacilities Ponto",
+  "description": "RMFacilities Ponto para registro de ponto coletivo em posto corporativo.",
+  "start_url": "/ponto",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",

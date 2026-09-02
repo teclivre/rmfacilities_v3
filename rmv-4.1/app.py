@@ -9301,6 +9301,18 @@ def api_ponto_coletivo_marcar():
     if erro:
         return jsonify({"ok": False, "erro": erro}), 400
 
+    lat = dados.get("lat")
+    lon = dados.get("lon")
+    try:
+        if lat is not None:
+            lat = float(lat)
+        if lon is not None:
+            lon = float(lon)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "erro": "Localização inválida. Tente novamente."}), 400
+    if (lat is not None and not (-90 <= lat <= 90)) or (lon is not None and not (-180 <= lon <= 180)):
+        return jsonify({"ok": False, "erro": "Coordenadas de localização fora do intervalo válido."}), 400
+
     hoje_ref = utcnow().date()
     if _app_funcionario_em_ferias_na_data(funcionario, hoje_ref):
         return jsonify({"ok": False, "erro": "Este colaborador está de férias e não pode bater ponto neste período."}), 400
@@ -9338,9 +9350,11 @@ def api_ponto_coletivo_marcar():
         tipo=tipo,
         data_hora=data_hora,
         origem="coletivo",
-        observacao="Registro coletivo via posto",
+        observacao=("Registro coletivo via posto" + (f" | lat={lat} lon={lon}" if lat is not None and lon is not None else ""))[:255],
         criado_por="coletivo-posto",
         ip=(request.headers.get("X-Forwarded-For") or request.remote_addr or "")[:60],
+        latitude=lat,
+        longitude=lon,
     )
     db.session.add(m)
     db.session.commit()
@@ -9355,12 +9369,16 @@ def api_ponto_coletivo_marcar():
         {"tipo": tipo, "data_ref": data_ref.strftime("%Y-%m-%d"), "origem": "coletivo"},
     )
 
+    local_txt = ""
+    if lat is not None and lon is not None:
+        local_txt = f"\nLocalização: {lat:.6f}, {lon:.6f}"
+
     mensagem = (
         f"Olá, {funcionario.nome}!\n\n"
         f"Seu ponto foi registrado com sucesso.\n"
         f"Tipo: {_coletivo_label_tipo_whatsapp(tipo)}\n"
         f"Horário: {m.data_hora.strftime('%d/%m/%Y %H:%M')}\n"
-        f"Status: {tipo.replace('_', ' ').title()}"
+        f"Status: {tipo.replace('_', ' ').title()}{local_txt}"
     )
     whatsapp_ok = False
     numero = wa_norm_number(funcionario.telefone or "")
