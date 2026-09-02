@@ -9258,7 +9258,10 @@ def pagina_funcionario_app():
 @app.route("/ponto")
 @app.route("/ponto/")
 def pagina_coletivo_ponto():
-    return render_template("coletivo_ponto.html")
+    return render_template(
+        "coletivo_ponto.html",
+        whatsapp_token=(request.args.get("token") or "").strip(),
+    )
 
 
 @app.route("/coletivo")
@@ -9292,14 +9295,73 @@ def _coletivo_label_tipo_whatsapp(tipo):
     }.get((tipo or "").strip().lower(), (tipo or "").strip() or "Ponto")
 
 
+def _whatsapp_ponto_token(funcionario, numero, validade_minutos=10):
+    payload = {
+        "funcionario_id": int(funcionario.id),
+        "numero": wa_norm_number(numero),
+        "exp": int(time.time()) + (validade_minutos * 60),
+        "nonce": secrets.token_urlsafe(12),
+    }
+    bruto = base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
+    ).decode().rstrip("=")
+    assinatura = hmac.new(
+        str(app.secret_key).encode(), bruto.encode(), hashlib.sha256
+    ).hexdigest()
+    return f"{bruto}.{assinatura}"
+
+
+def _whatsapp_ponto_token_funcionario(token):
+    partes = str(token or "").split(".", 1)
+    if len(partes) != 2:
+        return None
+    bruto, assinatura = partes
+    esperada = hmac.new(
+        str(app.secret_key).encode(), bruto.encode(), hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(assinatura, esperada):
+        return None
+    try:
+        padding = "=" * (-len(bruto) % 4)
+        payload = json.loads(
+            base64.urlsafe_b64decode((bruto + padding).encode()).decode()
+        )
+        if int(payload.get("exp", 0)) < int(time.time()):
+            return None
+        funcionario = db.session.get(Funcionario, int(payload["funcionario_id"]))
+        numero = wa_norm_number(payload.get("numero"))
+        if (
+            not funcionario
+            or not numero
+            or not wa_phone_matches(numero, funcionario.telefone or "")
+        ):
+            return None
+        return funcionario
+    except (TypeError, ValueError, KeyError, json.JSONDecodeError, UnicodeError):
+        return None
+
+
+def _whatsapp_ponto_comando(conteudo):
+    normalizado = unicodedata.normalize("NFKD", str(conteudo or "")).encode(
+        "ascii", "ignore"
+    ).decode().strip().lower()
+    return normalizado in {"ponto", "bater ponto", "marcar ponto", "bater o ponto"}
+
+
 @app.route("/api/ponto/coletivo/marcar", methods=["POST"])
 @_limiter.limit("40 per minute")
 def api_ponto_coletivo_marcar():
     dados = request.get_json(silent=True) or {}
     prefixo = (dados.get("cpf_prefix") or dados.get("cpf") or "").strip()
-    funcionario, erro = _coletivo_buscar_funcionario_por_prefixo(prefixo)
-    if erro:
-        return jsonify({"ok": False, "erro": erro}), 400
+    token = (dados.get("token") or "").strip()
+    if token:
+        funcionario = _whatsapp_ponto_token_funcionario(token)
+        if not funcionario:
+            return jsonify({"ok": False, "erro": "Link de ponto inválido ou expirado."}), 401
+    else:
+        funcionario, erro = _coletivo_buscar_funcionario_por_prefixo(prefixo)
+        if erro:
+            return jsonify({"ok": False, "erro": erro}), 400
 
     lat = dados.get("lat")
     lon = dados.get("lon")
@@ -9349,8 +9411,8 @@ def api_ponto_coletivo_marcar():
         funcionario_id=funcionario.id,
         tipo=tipo,
         data_hora=data_hora,
-        origem="coletivo",
-        observacao=("Registro coletivo via posto" + (f" | lat={lat} lon={lon}" if lat is not None and lon is not None else ""))[:255],
+        origem="whatsapp" if token else "coletivo",
+        observacao=("Registro via link WhatsApp" if token else "Registro coletivo via posto") + (f" | lat={lat} lon={lon}" if lat is not None and lon is not None else ""),
         criado_por="coletivo-posto",
         ip=(request.headers.get("X-Forwarded-For") or request.remote_addr or "")[:60],
         latitude=lat,
@@ -9366,7 +9428,7 @@ def api_ponto_coletivo_marcar():
         "funcionario",
         funcionario.id,
         True,
-        {"tipo": tipo, "data_ref": data_ref.strftime("%Y-%m-%d"), "origem": "coletivo"},
+        {"tipo": tipo, "data_ref": data_ref.strftime("%Y-%m-%d"), "origem": "whatsapp" if token else "coletivo"},
     )
 
     local_txt = ""
@@ -37791,6 +37853,43 @@ def webhook_whatsapp():
                     )
                 )
                 db.session.commit()
+                if _whatsapp_ponto_comando(conteudo):
+                    funcionario_wa = _funcionario_por_whatsapp(numero)
+                    if funcionario_wa:
+                        token_ponto = _whatsapp_ponto_token(funcionario_wa, numero)
+                        link_ponto = url_for(
+                            "pagina_coletivo_ponto", _external=True, token=token_ponto
+                        )
+                        resposta_ponto = (
+                            f"Olá, {funcionario_wa.nome}!\n\n"
+                            "Para registrar seu ponto, abra este link. Ele é válido por 10 minutos "
+                            "e solicitará sua localização:\n\n"
+                            f"{link_ponto}\n\n"
+                            "Depois de autorizar a localização, confirme a batida na tela."
+                        )
+                    else:
+                        resposta_ponto = (
+                            "Não encontrei um funcionário cadastrado para este número. "
+                            "Peça ao RH para atualizar seu telefone."
+                        )
+                    try:
+                        wa_send_text(numero, resposta_ponto, tipo="principal")
+                        diag["respostas_enviadas"] += 1
+                        c.ultima_msg = utcnow()
+                        db.session.add(
+                            WhatsAppMensagem(
+                                conversa_id=c.id,
+                                numero=numero,
+                                direcao="out",
+                                tipo="texto",
+                                conteudo=resposta_ponto,
+                            )
+                        )
+                        db.session.commit()
+                    except Exception as exc:
+                        diag["erros"].append(f"Falha ao enviar link de ponto: {str(exc)}")
+                        db.session.rollback()
+                    continue
                 # A IA considera apenas as mensagens das últimas 2 horas.
                 corte_hist = agora - timedelta(hours=2)
                 historico_db = (

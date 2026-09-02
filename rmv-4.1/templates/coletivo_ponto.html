@@ -98,6 +98,7 @@
     setInterval(updateClock, 1000);
 
     let installPrompt = null;
+    const whatsappToken = {{ whatsapp_token|default('', true)|tojson }};
 
     function setStatus(text, kind) {
       const el = document.getElementById('status');
@@ -151,7 +152,7 @@
 
     async function baterPonto() {
       const prefix = document.getElementById('cpf-prefix').value.replace(/\D/g, '').slice(0, 4);
-      if (prefix.length !== 4) {
+      if (!whatsappToken && prefix.length !== 4) {
         setStatus('Informe os 4 primeiros dígitos do CPF.', 'err');
         return;
       }
@@ -182,7 +183,7 @@
         const response = await fetch('/api/ponto/coletivo/marcar', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cpf_prefix: prefix, lat: coords.lat, lon: coords.lon })
+          body: JSON.stringify({ cpf_prefix: prefix, token: whatsappToken, lat: coords.lat, lon: coords.lon })
         });
         const data = await response.json();
 
