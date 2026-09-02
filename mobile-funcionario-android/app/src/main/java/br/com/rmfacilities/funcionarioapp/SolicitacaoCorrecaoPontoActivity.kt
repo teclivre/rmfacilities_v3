@@ -28,11 +28,13 @@ class SolicitacaoCorrecaoPontoActivity : BaseActivity() {
     private lateinit var btnSelecionarData: MaterialButton
     private lateinit var layoutMarcacoes: LinearLayout
     private lateinit var tvMarcacoesHint: TextView
+    private lateinit var btnSolicitarInclusao: MaterialButton
     private lateinit var layoutCorrecao: LinearLayout
     private lateinit var tvMarcacaoSelecionada: TextView
     private lateinit var tvHorarioOriginal: TextView
     private lateinit var tvHorarioNovo: TextView
     private lateinit var btnEscolherHorario: MaterialButton
+    private lateinit var btnRemoverMarcacao: MaterialButton
     private lateinit var etObservacao: EditText
     private lateinit var btnEnviar: MaterialButton
     private lateinit var tvStatus: TextView
@@ -43,6 +45,7 @@ class SolicitacaoCorrecaoPontoActivity : BaseActivity() {
     private var horarioOriginal: String = ""
     private var horarioCorreto: String = ""
     private var tipoMarcacao: String = ""
+    private var acaoMarcacao: String = "alterar"
     // Controle de limite de marcações faltando
     private var maxMarcacoesDia: Int = 4
     private var marcacoesDia: Int = 0          // marcações já existentes no dia
@@ -69,12 +72,14 @@ class SolicitacaoCorrecaoPontoActivity : BaseActivity() {
         tvData = findViewById(R.id.tvDataSelecionada)
         btnSelecionarData = findViewById(R.id.btnSelecionarData)
         layoutMarcacoes = findViewById(R.id.layoutMarcacoes)
+        btnSolicitarInclusao = findViewById(R.id.btnSolicitarInclusao)
         tvMarcacoesHint = findViewById(R.id.tvMarcacoesHint)
         layoutCorrecao = findViewById(R.id.layoutCorrecao)
         tvMarcacaoSelecionada = findViewById(R.id.tvMarcacaoSelecionada)
         tvHorarioOriginal = findViewById(R.id.tvHorarioOriginal)
         tvHorarioNovo = findViewById(R.id.tvHorarioNovo)
         btnEscolherHorario = findViewById(R.id.btnEscolherHorario)
+        btnRemoverMarcacao = findViewById(R.id.btnRemoverMarcacao)
         etObservacao = findViewById(R.id.etObservacaoCorrecao)
         btnEnviar = findViewById(R.id.btnEnviarCorrecao)
         tvStatus = findViewById(R.id.tvStatusCorrecao)
@@ -92,6 +97,14 @@ class SolicitacaoCorrecaoPontoActivity : BaseActivity() {
 
         btnSelecionarData.setOnClickListener { abrirDatePicker() }
         btnEscolherHorario.setOnClickListener { abrirTimePicker() }
+        btnSolicitarInclusao.setOnClickListener { mostrarPainelSemMarcacao() }
+        btnRemoverMarcacao.setOnClickListener {
+            acaoMarcacao = "remover"
+            horarioCorreto = ""
+            tvHorarioNovo.text = "Ação: solicitar remoção da marcação"
+            btnEscolherHorario.visibility = View.GONE
+            btnRemoverMarcacao.text = "Remoção solicitada"
+        }
         btnEnviar.setOnClickListener { enviarSolicitacao() }
         findViewById<View>(R.id.btnVoltarCorrecao).setOnClickListener { finish() }
     }
@@ -113,6 +126,8 @@ class SolicitacaoCorrecaoPontoActivity : BaseActivity() {
         marcacoesDia = 0
         layoutCorrecao.visibility = View.GONE
         layoutMarcacoes.visibility = View.GONE
+        btnSolicitarInclusao.visibility = View.GONE
+        btnRemoverMarcacao.visibility = View.GONE
         tvMarcacoesHint.visibility = View.VISIBLE
     }
 
@@ -140,6 +155,7 @@ class SolicitacaoCorrecaoPontoActivity : BaseActivity() {
         tvMarcacoesHint.visibility = View.VISIBLE
         layoutMarcacoes.removeAllViews()
         layoutMarcacoes.visibility = View.GONE
+        btnSolicitarInclusao.visibility = View.GONE
         layoutCorrecao.visibility = View.GONE
 
         lifecycleScope.launch {
@@ -196,6 +212,7 @@ class SolicitacaoCorrecaoPontoActivity : BaseActivity() {
                 }
                 layoutMarcacoes.addView(btn)
             }
+            btnSolicitarInclusao.visibility = if (marcacoesDia + correcoesFaltandoPendentes < maxMarcacoesDia) View.VISIBLE else View.GONE
         }
     }
 
@@ -211,24 +228,31 @@ class SolicitacaoCorrecaoPontoActivity : BaseActivity() {
         horarioOriginal = ""
         horarioCorreto = ""
         tipoMarcacao = "marcacao_faltando"
+        acaoMarcacao = "incluir"
         val num = enviadas + 1
         tvMarcacaoSelecionada.text = "Marcação $num de $maxMarcacoesDia — adicionar horário faltante"
         tvHorarioOriginal.text = "Horário original: —"
         tvHorarioNovo.text = "Horário correto: não definido"
         layoutCorrecao.visibility = View.VISIBLE
         btnEscolherHorario.text = "Definir horário que deveria ter"
+        btnEscolherHorario.visibility = View.VISIBLE
+        btnRemoverMarcacao.visibility = View.GONE
     }
 
     private fun selecionarMarcacao(id: Int, hora: String, tipo: String) {
         marcacaoId = id
         horarioOriginal = hora
         tipoMarcacao = "horario_errado"
+        acaoMarcacao = "alterar"
         tvMarcacaoSelecionada.text = "$tipo · $hora"
         tvHorarioOriginal.text = "Horário original: $hora"
         tvHorarioNovo.text = "Horário correto: não definido"
         horarioCorreto = ""
         layoutCorrecao.visibility = View.VISIBLE
         btnEscolherHorario.text = "Escolher horário correto"
+        btnEscolherHorario.visibility = View.VISIBLE
+        btnRemoverMarcacao.visibility = View.VISIBLE
+        btnRemoverMarcacao.text = "Solicitar remoção desta marcação"
     }
 
     private fun abrirTimePicker() {
@@ -263,7 +287,7 @@ class SolicitacaoCorrecaoPontoActivity : BaseActivity() {
             Toast.makeText(this, "Selecione a marcação a corrigir", Toast.LENGTH_SHORT).show()
             return
         }
-        if (horarioCorreto.isBlank() && tipoMarcacao != "marcacao_extra") {
+        if (horarioCorreto.isBlank() && tipoMarcacao != "marcacao_extra" && acaoMarcacao != "remover") {
             Toast.makeText(this, "Informe o horário correto", Toast.LENGTH_SHORT).show()
             return
         }
@@ -273,6 +297,7 @@ class SolicitacaoCorrecaoPontoActivity : BaseActivity() {
         }
 
         val tipoFinal = when {
+            marcacaoId != null && acaoMarcacao == "remover" -> "marcacao_remover"
             marcacaoId != null -> "horario_errado"
             tipoMarcacao == "marcacao_faltando" -> "marcacao_faltando"
             else -> "outro"

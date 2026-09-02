@@ -19494,6 +19494,7 @@ def api_app_ponto_solicitar_correcao():
     if tipo_problema not in (
         "horario_errado",
         "marcacao_faltando",
+        "marcacao_remover",
         "marcacao_extra",
         "outro",
     ):
@@ -19707,8 +19708,18 @@ def api_rh_decidir_correcao_ponto(id):
     it.status = "resolvido" if acao == "aprovar" else "rejeitado"
     it.motivo_admin = motivo
     it.resolvido_em = utcnow()
+    # Se aprovado como remoção, exclui a marcação somente após a autorização do RH.
+    if acao == "aprovar" and it.tipo_problema == "marcacao_remover" and it.marcacao_id:
+        marcacao = db.session.get(PontoMarcacao, it.marcacao_id)
+        if not marcacao:
+            db.session.rollback()
+            return jsonify({"erro": "A marcação solicitada não foi encontrada."}), 404
+        db.session.delete(marcacao)
+        app.logger.info(
+            f"[correcao-ponto] marcacao {it.marcacao_id} removida após aprovação da solicitação {it.id}"
+        )
     # Se aprovado e há marcação existente + horário correto → alterar horário
-    if acao == "aprovar" and it.marcacao_id and it.horario_correto:
+    elif acao == "aprovar" and it.marcacao_id and it.horario_correto:
         import re as _re
         if not _re.match(r"^\d{2}:\d{2}$", it.horario_correto):
             app.logger.error(

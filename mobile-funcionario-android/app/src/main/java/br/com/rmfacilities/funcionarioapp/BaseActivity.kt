@@ -19,12 +19,11 @@ import kotlinx.coroutines.withContext
  * Classe base para todas as Activities autenticadas.
  * Fornece:
  * - Logout automático via BroadcastReceiver (ACTION_LOGOUT)
- * - Verificação de idle timeout em onResume
  * - Verificação de versão mínima do app em todas as Activities
  * - goLogin() centralizado
  *
  * Subclasses com sessão autenticada devem sobrescrever provideSession()
- * para ativar a verificação de idle timeout.
+ * para fornecer a sessão autenticada.
  */
 abstract class BaseActivity : AppCompatActivity() {
 
@@ -68,11 +67,6 @@ abstract class BaseActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         val sess = provideSession() ?: return
-        if (sess.isIdleSessionExpired() && !sess.isTrustedDeviceValid()) {
-            sess.clear()
-            goLogin()
-            return
-        }
         sess.touchActivity()
         checkAppVersionIfNeeded(sess)
         // Envia logs pendentes assim que houver uma tela autenticada em primeiro plano,
@@ -100,11 +94,13 @@ abstract class BaseActivity : AppCompatActivity() {
                 val versao = withContext(Dispatchers.IO) {
                     ApiClient(session).getVersaoApp()
                 }
-                if (versao.versao_minima > 0 && BuildConfig.VERSION_CODE < versao.versao_minima) {
+                val atualizacaoDisponivel = versao.versao_atual > BuildConfig.VERSION_CODE
+                val atualizacaoObrigatoria = versao.versao_minima > 0 && BuildConfig.VERSION_CODE < versao.versao_minima
+                if (atualizacaoDisponivel || atualizacaoObrigatoria) {
                     appUpdateDialogShown = true
                     appVersionChecked = false
                     if (!isFinishing && !isDestroyed) {
-                        showAppUpdateDialog(versao.download_url)
+                        showAppUpdateDialog(versao.download_url, atualizacaoObrigatoria)
                     }
                 } else {
                     appVersionChecked = true
@@ -117,12 +113,12 @@ abstract class BaseActivity : AppCompatActivity() {
         }
     }
 
-    protected fun showAppUpdateDialog(downloadUrl: String?) {
+    protected fun showAppUpdateDialog(downloadUrl: String?, obrigatoria: Boolean = false) {
         if (updateDialog?.isShowing == true) return
         val dialog = MaterialAlertDialogBuilder(this)
-            .setTitle("Atualização necessária")
-            .setMessage("Há uma versão mais nova do app disponível. Por favor, atualize para continuar usando.")
-            .setCancelable(false)
+            .setTitle("Nova versão disponível")
+            .setMessage("Há uma versão mais nova do app disponível. Deseja atualizar agora?")
+            .setCancelable(!obrigatoria)
             .setPositiveButton("Atualizar") { _, _ ->
                 val url = downloadUrl?.takeIf { it.isNotBlank() }
                     ?: "${provideSession()?.apiBaseUrl?.trimEnd('/')}/app/download"
@@ -132,6 +128,7 @@ abstract class BaseActivity : AppCompatActivity() {
                 }
             }
             .create()
+        if (!obrigatoria) dialog.setButton(AlertDialog.BUTTON_NEGATIVE, "Agora não", null as android.content.DialogInterface.OnClickListener?)
         dialog.setOnDismissListener {
             appUpdateDialogShown = false
             updateDialog = null

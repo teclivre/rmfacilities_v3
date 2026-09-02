@@ -61,15 +61,17 @@ class LoginActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val versao = api.getVersaoApp()
-                if (versao.versao_minima > 0 && BuildConfig.VERSION_CODE < versao.versao_minima) {
+                val atualizacaoDisponivel = versao.versao_atual > BuildConfig.VERSION_CODE
+                val atualizacaoObrigatoria = versao.versao_minima > 0 && BuildConfig.VERSION_CODE < versao.versao_minima
+                if (atualizacaoDisponivel || atualizacaoObrigatoria) {
                     withContext(Dispatchers.Main) {
                         appVersionChecked = false
                         appUpdateDialogShown = true
                         if (!isFinishing && !isDestroyed) {
                             val dialog = AlertDialog.Builder(this@LoginActivity)
-                                .setTitle("Atualização necessária")
-                                .setMessage("Há uma versão mais nova do app disponível. Por favor, atualize para continuar usando.")
-                                .setCancelable(false)
+                                .setTitle("Nova versão disponível")
+                                .setMessage("Há uma versão mais nova do app disponível. Deseja atualizar agora?")
+                                .setCancelable(!atualizacaoObrigatoria)
                                 .setPositiveButton("Atualizar") { _, _ ->
                                     val baseUrl = session.apiBaseUrl.ifBlank { BuildConfig.DEFAULT_API_BASE_URL }.trimEnd('/')
                                     val url = versao.download_url?.takeIf { it.isNotBlank() } ?: "$baseUrl/app/download"
@@ -78,6 +80,9 @@ class LoginActivity : AppCompatActivity() {
                                     } catch (_: Exception) {}
                                 }
                                 .create()
+                            if (!atualizacaoObrigatoria) {
+                                dialog.setButton(AlertDialog.BUTTON_NEGATIVE, "Agora não", null as android.content.DialogInterface.OnClickListener?)
+                            }
                             dialog.setOnDismissListener {
                                 appUpdateDialogShown = false
                                 updateDialog = null

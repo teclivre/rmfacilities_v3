@@ -128,6 +128,17 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:visibility="gone" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSolicitarInclusao"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Solicitar inclusão de ponto esquecido"
+                    android:textAllCaps="false"
+                    android:textSize="13sp"
+                    android:visibility="gone"
+                    app:cornerRadius="8dp"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
             </LinearLayout>
 
             <!-- Card 3: Painel de correção (aparece após selecionar marcação) -->
@@ -185,6 +196,18 @@
                     android:text="Escolher horário correto"
                     android:textAllCaps="false"
                     android:textSize="13sp"
+                    android:layout_marginBottom="16dp"
+                    app:cornerRadius="8dp"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRemoverMarcacao"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Solicitar remoção desta marcação"
+                    android:textAllCaps="false"
+                    android:textSize="13sp"
+                    android:visibility="gone"
                     android:layout_marginBottom="16dp"
                     app:cornerRadius="8dp"
                     style="@style/Widget.MaterialComponents.Button.OutlinedButton" />

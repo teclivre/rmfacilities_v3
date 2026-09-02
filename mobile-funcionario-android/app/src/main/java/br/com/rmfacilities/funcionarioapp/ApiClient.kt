@@ -159,15 +159,8 @@ class ApiClient(private val session: SessionManager) {
     }
 
     private fun handleUnauthorized(code: Int) {
-        if (code == 403) {
-            // Funcionário desativado/demitido — logout imediato
-            session.logout()
-            return
-        }
-        // 401: só desloga se o refresh token foi explicitamente rejeitado pelo servidor
-        if (session.refreshToken.isBlank()) {
-            session.logout()
-        }
+        // A sessão só termina por ação explícita do funcionário. Erros 401/403
+        // continuam sendo tratados pela tela sem apagar as credenciais salvas.
     }
 
     private fun responseCount(response: Response): Int {
@@ -226,8 +219,6 @@ class ApiClient(private val session: SessionManager) {
             } ?: return null
 
             if (!renovado.ok || renovado.access_token.isNullOrBlank()) {
-                // Servidor rejeitou o refresh: limpa o token para sinalizar logout obrigatório
-                session.refreshToken = ""
                 return null
             }
             session.accessToken = renovado.access_token
