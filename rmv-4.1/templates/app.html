@@ -994,6 +994,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <button class="btn b-vd b-sm" type="button" id="fp-btn-fechar" onclick="fpFecharFolha()">✓ Fechar folha</button>
             <button class="btn b-gh b-sm" type="button" id="fp-btn-reabrir" style="display:none" onclick="fpReabrirFolha()">↺ Reabrir</button>
             <button class="btn b-vd b-sm" type="button" id="fp-btn-pagar" style="display:none" onclick="fpMarcarPaga()">💰 Marcar como paga</button>
+            <button class="btn b-az b-sm" type="button" id="fp-btn-cnab" style="display:none" onclick="fpExportarCnab()">🏦 Gerar CNAB240 PIX</button>
             <button class="btn b-ghv b-sm" type="button" onclick="fpNotificarPagamento()">🔔 Notificar pagamento</button>
             <button class="btn b-az b-sm" type="button" onclick="fpAbrirPrevia()">👁 Prévia</button>
             <button class="btn b-gh b-sm" type="button" onclick="fpExportar('xlsx')">⬇ XLSX</button>
@@ -12474,13 +12475,14 @@ function fpRenderFolhaPainel(){
   const btnFechar = document.getElementById('fp-btn-fechar');
   const btnReabrir = document.getElementById('fp-btn-reabrir');
   const btnPagar = document.getElementById('fp-btn-pagar');
+  const btnCnab = document.getElementById('fp-btn-cnab');
   const btnExcluir = document.getElementById('fp-btn-excluir');
   if(f.status === 'rascunho'){
-    btnFechar.style.display=''; btnReabrir.style.display='none'; btnPagar.style.display='none'; btnExcluir.style.display='';
+    btnFechar.style.display=''; btnReabrir.style.display='none'; btnPagar.style.display='none'; btnCnab.style.display='none'; btnExcluir.style.display='';
   } else if(f.status === 'fechada'){
-    btnFechar.style.display='none'; btnReabrir.style.display=''; btnPagar.style.display=''; btnExcluir.style.display='none';
+    btnFechar.style.display='none'; btnReabrir.style.display=''; btnPagar.style.display=''; btnCnab.style.display=''; btnExcluir.style.display='none';
   } else { // paga
-    btnFechar.style.display='none'; btnReabrir.style.display=''; btnPagar.style.display='none'; btnExcluir.style.display='none';
+    btnFechar.style.display='none'; btnReabrir.style.display=''; btnPagar.style.display='none'; btnCnab.style.display=''; btnExcluir.style.display='none';
   }
   // resumo
   const itens = f.itens || [];
@@ -12701,6 +12703,15 @@ function fpExportar(fmt){
   if(!f){ toast('Selecione uma folha.','e'); return; }
   const url = `/api/folhas/${f.id}/export.${fmt==='pdf'?'pdf':'xlsx'}`;
   window.open(url, '_blank');
+}
+
+function fpExportarCnab(){
+  const f = FP_STATE.folhaSelecionada;
+  if(!f){ toast('Selecione uma folha.','e'); return; }
+  const hoje = new Date().toISOString().slice(0,10);
+  const data = prompt('Data de pagamento (AAAA-MM-DD):', f.data_pagamento || hoje);
+  if(!data) return;
+  window.open(`/api/folhas/${f.id}/export.cnab240?data_pagamento=${encodeURIComponent(data)}`, '_blank');
 }
 
 // ── Filtros de itens na tabela da folha ──────────────────────────────────────

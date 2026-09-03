@@ -33951,6 +33951,123 @@ def _folha_pode_editar(folha):
     return (folha.status or "rascunho") == "rascunho"
 
 
+def _cnab240_field(record, start, end, value=" ", numeric=False):
+    width = end - start + 1
+    text_value = re.sub(r"[^0-9]", "", str(value or "")) if numeric else _cnab240_text(value)
+    text_value = text_value[-width:]
+    text_value = text_value.rjust(width, "0") if numeric else text_value.ljust(width)
+    record[start - 1:end] = text_value
+
+
+def _cnab240_text(value):
+    value = unicodedata.normalize("NFKD", str(value or ""))
+    return "".join(c for c in value if not unicodedata.combining(c)).encode("ascii", "ignore").decode("ascii").upper()
+
+
+def _cnab240_record(fields):
+    record = [" "] * 240
+    for start, end, value, numeric in fields:
+        _cnab240_field(record, start, end, value, numeric)
+    return "".join(record)
+
+
+def _cnab240_pix_key_type(key):
+    key = (key or "").strip()
+    digits = re.sub(r"\D", "", key)
+    if "@" in key:
+        return "02"
+    if len(digits) in (11, 14) and len(digits) == len(key):
+        return "03"
+    if key.startswith("+") or len(digits) in (10, 11):
+        return "01"
+    return "04"
+
+
+def _cnab240_pix_remessa(folha, empresa, data_pagamento):
+    cnpj = re.sub(r"\D", "", empresa.cnpj or "")
+    agencia = re.sub(r"\D", "", empresa.agencia or "")
+    conta = re.sub(r"\D", "", empresa.conta or "")
+    if len(cnpj) != 14 or not agencia or not conta:
+        raise ValueError("cadastre CNPJ, agência e conta da empresa antes de gerar o CNAB")
+    itens = folha.itens.order_by(FolhaPagamentoItem.id.asc()).all()
+    if not itens:
+        raise ValueError("a folha não possui colaboradores")
+    registros = [_cnab240_record([
+        (1, 3, "077", True), (8, 8, "0", True), (9, 17, "1", True),
+        (18, 18, "1", True), (19, 32, cnpj, True), (103, 132, "BANCO INTER", False),
+    ])]
+    registros.append(_cnab240_record([
+        (1, 3, "077", True), (4, 7, "1", True), (8, 8, "1", True),
+        (9, 9, "C", False), (10, 11, "20", True), (12, 13, "45", True),
+        (14, 16, "046", True), (18, 18, "2", True), (19, 32, cnpj, True),
+        (53, 57, agencia, True), (59, 70, conta, True), (73, 102, empresa.nome, False),
+        (143, 172, empresa.logradouro, False), (173, 177, empresa.numero, True),
+        (193, 212, empresa.cidade, False), (213, 217, empresa.cep, True),
+        (221, 222, empresa.estado, False),
+    ]))
+    soma = 0
+    for item_index, item in enumerate(itens, 1):
+        func = db.session.get(Funcionario, item.funcionario_id)
+        chave = (func.banco_pix or "").strip() if func else ""
+        if not func or not chave:
+            raise ValueError(f"cadastre a chave PIX de {func.nome if func else 'um colaborador'}")
+        valor = int(round(float(item.total_pagar or 0) * 100))
+        if valor <= 0:
+            raise ValueError(f"o valor de pagamento de {func.nome} deve ser maior que zero")
+        soma += valor
+        cpf = re.sub(r"\D", "", func.cpf or "")
+        if len(cpf) not in (11, 14):
+            raise ValueError(f"cadastre um CPF ou CNPJ válido de {func.nome}")
+        seq_a = item_index * 2 - 1
+        seq_b = item_index * 2
+        registros.append(_cnab240_record([
+            (1, 3, "077", True), (4, 7, "1", True), (8, 8, "3", True),
+            (9, 13, seq_a, True), (14, 14, "A", False), (15, 17, "0", True),
+            (18, 20, "000", True), (74, 93, f"FOLHA{folha.id}-{item_index}", False),
+            (94, 101, data_pagamento.strftime("%d%m%Y"), True), (102, 104, "BRL", False),
+            (120, 134, valor, True), (178, 191, cpf, True),
+        ]))
+        registros.append(_cnab240_record([
+            (1, 3, "077", True), (4, 7, "1", True), (8, 8, "3", True),
+            (9, 13, seq_b, True), (14, 14, "B", False),
+            (15, 17, _cnab240_pix_key_type(chave), False),
+            (18, 18, "1" if len(cpf) == 11 else "2", True), (19, 32, cpf, True),
+            (128, 226, chave, False),
+        ]))
+    detalhes = len(registros) - 2
+    registros.append(_cnab240_record([
+        (1, 3, "077", True), (4, 7, "1", True), (8, 8, "5", True),
+        (18, 23, detalhes + 2, True), (24, 41, soma, True),
+    ]))
+    registros.append(_cnab240_record([
+        (1, 3, "077", True), (8, 8, "9", True), (18, 23, 1, True),
+        (24, 29, len(registros) + 1, True),
+    ]))
+    return "\r\n".join(registros) + "\r\n"
+
+
+@app.route("/api/folhas/<int:fid>/export.cnab240", methods=["GET"])
+@lr
+def api_folha_exportar_cnab240(fid):
+    folha = db.get_or_404(FolhaPagamento, fid)
+    if folha.status not in ("fechada", "paga"):
+        return jsonify({"error": "feche a folha antes de gerar o arquivo CNAB240"}), 400
+    data_texto = (request.args.get("data_pagamento") or folha.data_pagamento or "").strip()
+    try:
+        data_pagamento = datetime.strptime(data_texto, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify({"error": "informe uma data de pagamento válida (AAAA-MM-DD)"}), 400
+    empresa = db.session.get(Empresa, folha.empresa_id) if folha.empresa_id else None
+    if not empresa:
+        return jsonify({"error": "selecione uma empresa na folha para gerar o CNAB240"}), 400
+    try:
+        conteudo = _cnab240_pix_remessa(folha, empresa, data_pagamento)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    audit_event("folha_cnab240_gerado", "folha_pagamento", folha.id, "folha_pagamento", folha.id, True, {"qtd": folha.itens.count(), "total": folha.total_valor})
+    return send_file(io.BytesIO(conteudo.encode("ascii")), mimetype="text/plain", as_attachment=True, download_name=f"CNAB240_PIX_{folha.competencia}_{folha.id}.REM")
+
+
 @app.route("/api/folhas/evolucao", methods=["GET"])
 @lr
 def api_folhas_evolucao():
