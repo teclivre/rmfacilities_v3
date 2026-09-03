@@ -1,4 +1,5 @@
             <button class="btn b-az b-sm" type="button" id="fp-btn-cnab" style="display:none" onclick="fpExportarCnab()">🏦 Gerar REM por conta</button>
+            <button class="btn b-gh b-sm" type="button" id="fp-btn-retorno" style="display:none" onclick="fpImportarRetornoCnab()">↥ Importar retorno</button>
   window.open(`/api/folhas/${f.id}/export.cnab240?data_pagamento=${encodeURIComponent(data)}`, '_blank');
 <!-- ════ MODAIS UTILITÁRIOS ════════════════════════════════════════════ -->
 <!-- Modal Enviar Proposta Comercial -->
@@ -1033,10 +1034,11 @@ document.addEventListener('DOMContentLoaded',()=>{
                 <th style="text-align:right;color:var(--verd)">+ Adicionais</th>
                 <th style="text-align:right;color:var(--verm)">− Descontos</th>
                 <th style="text-align:right;border-left:2px solid var(--azul);font-weight:800">Total</th>
+                <th>Status banco</th>
                 <th style="width:120px">Ações</th>
               </tr></thead>
               <tbody id="fp-tb-itens">
-                <tr><td colspan="9" style="text-align:center;padding:30px;color:var(--text-muted)">Selecione ou crie uma folha para começar.</td></tr>
+                <tr><td colspan="10" style="text-align:center;padding:30px;color:var(--text-muted)">Selecione ou crie uma folha para começar.</td></tr>
               </tbody>
             </table>
           </div>
@@ -12478,13 +12480,14 @@ function fpRenderFolhaPainel(){
   const btnReabrir = document.getElementById('fp-btn-reabrir');
   const btnPagar = document.getElementById('fp-btn-pagar');
   const btnCnab = document.getElementById('fp-btn-cnab');
+  const btnRetorno = document.getElementById('fp-btn-retorno');
   const btnExcluir = document.getElementById('fp-btn-excluir');
   if(f.status === 'rascunho'){
-    btnFechar.style.display=''; btnReabrir.style.display='none'; btnPagar.style.display='none'; btnCnab.style.display='none'; btnExcluir.style.display='';
+    btnFechar.style.display=''; btnReabrir.style.display='none'; btnPagar.style.display='none'; btnCnab.style.display='none'; btnRetorno.style.display='none'; btnExcluir.style.display='';
   } else if(f.status === 'fechada'){
-    btnFechar.style.display='none'; btnReabrir.style.display=''; btnPagar.style.display=''; btnCnab.style.display=''; btnExcluir.style.display='none';
+    btnFechar.style.display='none'; btnReabrir.style.display=''; btnPagar.style.display=''; btnCnab.style.display=''; btnRetorno.style.display=''; btnExcluir.style.display='none';
   } else { // paga
-    btnFechar.style.display='none'; btnReabrir.style.display=''; btnPagar.style.display='none'; btnCnab.style.display=''; btnExcluir.style.display='none';
+    btnFechar.style.display='none'; btnReabrir.style.display=''; btnPagar.style.display='none'; btnCnab.style.display=''; btnRetorno.style.display=''; btnExcluir.style.display='none';
   }
   // resumo
   const itens = f.itens || [];
@@ -12716,6 +12719,23 @@ function fpExportarCnab(){
   window.open(`/api/folhas/${f.id}/export.cnab240?data_pagamento=${encodeURIComponent(data)}`, '_blank');
 }
 
+async function fpImportarRetornoCnab(){
+  const f = FP_STATE.folhaSelecionada;
+  if(!f){ toast('Selecione uma folha.','e'); return; }
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.ret,.rem,.txt';
+  input.onchange = async ()=>{
+    if(!input.files[0]) return;
+    const fd = new FormData(); fd.append('arquivo', input.files[0]);
+    const resp = await fetch(`/api/folhas/${f.id}/importar-retorno-cnab240`, {method:'POST', body:fd, credentials:'same-origin'});
+    const r = await resp.json().catch(()=>({}));
+    if(!resp.ok || r.error){ toast(r.error||'Erro ao importar retorno.','e'); return; }
+    toast(`${r.atualizados} atualizado(s), ${r.rejeitados} rejeitado(s).`,'s');
+    await fpSelecionarFolha(f.id);
+  };
+  input.click();
+}
+
 // ── Filtros de itens na tabela da folha ──────────────────────────────────────
 function fpFiltrarItens(){
   const f = FP_STATE.folhaSelecionada;
@@ -12753,7 +12773,7 @@ function fpRenderItensTbody(itens, editavel){
   if(!tb) return;
   if(!itens.length){
     const msg = editavel ? 'Arraste funcionários da coluna esquerda para incluir nesta folha.' : 'Folha sem funcionários.';
-    tb.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--text-muted)">${msg}</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--text-muted)">${msg}</td></tr>`;
     return;
   }
   tb.innerHTML = itens.map((it,idx)=>{
@@ -12776,6 +12796,7 @@ function fpRenderItensTbody(itens, editavel){
       <td style="text-align:right;color:var(--verd)">${fpFmtMoeda(it.total_adicional)}</td>
       <td style="text-align:right;color:var(--verm)">${fpFmtMoeda(it.total_desconto)}</td>
       <td style="text-align:right;border-left:2px solid var(--azul);font-weight:700">${fpFmtMoeda(it.total_pagar)}</td>
+      <td>${it.cnab_status==='processado'?'<span style="color:var(--verd);font-weight:700">Processado</span>':it.cnab_status==='rejeitado'?'<span style="color:var(--verm);font-weight:700" title="'+fpEsc(it.cnab_ocorrencias||'')+'">Rejeitado</span>':'<span style="color:var(--text-muted)">Pendente</span>'}</td>
       <td>${acao}</td>
     </tr>`;
   }).join('');

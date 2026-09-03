@@ -2397,6 +2397,9 @@ class FolhaPagamentoItem(db.Model):
     total_desconto = db.Column(db.Float, default=0)
     total_pagar = db.Column(db.Float, default=0)
     obs = db.Column(db.String(300), default="")
+    cnab_status = db.Column(db.String(20), default="pendente")
+    cnab_ocorrencias = db.Column(db.String(120), default="")
+    cnab_retorno_em = db.Column(db.DateTime)
     incluido_em = db.Column(db.DateTime, default=utcnow)
     __table_args__ = (
         db.UniqueConstraint("folha_id", "funcionario_id", name="uq_folha_item_func"),
@@ -34120,6 +34123,46 @@ def api_folha_exportar_cnab240(fid):
     )
 
 
+@app.route("/api/folhas/<int:fid>/importar-retorno-cnab240", methods=["POST"])
+@lr
+def api_folha_importar_retorno_cnab240(fid):
+    folha = db.get_or_404(FolhaPagamento, fid)
+    arquivo = request.files.get("arquivo")
+    if not arquivo:
+        return jsonify({"error": "selecione o arquivo retorno do banco"}), 400
+    try:
+        linhas = arquivo.read().decode("latin-1").splitlines()
+    except Exception:
+        return jsonify({"error": "não foi possível ler o arquivo retorno"}), 400
+    if not linhas or any(len(linha.rstrip("\r")) != 240 for linha in linhas if linha.strip()):
+        return jsonify({"error": "arquivo inválido: cada registro CNAB deve ter 240 posições"}), 400
+    itens = folha.itens.order_by(FolhaPagamentoItem.id.asc()).all()
+    por_documento = {re.sub(r"\D", "", db.session.get(Funcionario, it.funcionario_id).cpf or ""): it for it in itens if db.session.get(Funcionario, it.funcionario_id)}
+    atualizados = 0
+    rejeitados = 0
+    sem_vinculo = 0
+    for posicao, linha in enumerate(linhas):
+        if linha[7:8] != "3" or linha[13:14] != "B":
+            continue
+        cpf = re.sub(r"\D", "", linha[18:32])
+        item = por_documento.get(cpf)
+        if not item:
+            sem_vinculo += 1
+            continue
+        ocorrencias = linha[230:240].strip()
+        if not ocorrencias and posicao > 0:
+            ocorrencias = linhas[posicao - 1][230:240].strip()
+        item.cnab_ocorrencias = ocorrencias
+        item.cnab_status = "rejeitado" if ocorrencias and "00" not in ocorrencias else "processado"
+        item.cnab_retorno_em = utcnow()
+        atualizados += 1
+        rejeitados += item.cnab_status == "rejeitado"
+    if atualizados:
+        db.session.commit()
+    audit_event("folha_cnab240_retorno_importado", "folha_pagamento", folha.id, "folha_pagamento", folha.id, True, {"atualizados": atualizados, "rejeitados": rejeitados, "sem_vinculo": sem_vinculo})
+    return jsonify({"ok": True, "atualizados": atualizados, "rejeitados": rejeitados, "sem_vinculo": sem_vinculo})
+
+
 @app.route("/api/folhas/evolucao", methods=["GET"])
 @lr
 def api_folhas_evolucao():
@@ -39112,6 +39155,14 @@ with app.app_context():
     os.makedirs(UPLOAD_ROOT, exist_ok=True)
     db.metadata.create_all(bind=db.engine, checkfirst=True)
     ensure_cols("cadastro_candidato", ["ip_cadastro VARCHAR(64)"])
+    ensure_cols(
+        "folha_pagamento_item",
+        [
+            'cnab_status VARCHAR(20) DEFAULT "pendente"',
+            "cnab_ocorrencias VARCHAR(120) DEFAULT ''",
+            "cnab_retorno_em DATETIME",
+        ],
+    )
     ensure_cols(
         "usuario",
         [
