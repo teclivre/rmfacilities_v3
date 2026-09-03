@@ -33985,6 +33985,18 @@ def _cnab240_bank_and_digit(value, width, label):
     return digits[:-1].zfill(width), digits[-1]
 
 
+def _cnab240_lote_header(cnpj, empresa, agencia, conta, agencia_dv, conta_dv, lote, forma):
+    return _cnab240_record([
+        (1, 3, "077", True), (4, 7, lote, True), (8, 8, "1", True), (9, 9, "C", False),
+        (10, 11, "20", True), (12, 13, forma, True), (14, 16, "046", True),
+        (18, 18, "2", True), (19, 32, cnpj, True), (53, 57, agencia, True),
+        (58, 58, agencia_dv, True), (59, 70, conta, True), (71, 71, conta_dv, True),
+        (73, 102, empresa.nome, False), (143, 172, empresa.logradouro, False),
+        (173, 177, empresa.numero, True), (193, 212, empresa.cidade, False),
+        (213, 217, empresa.cep, True), (221, 222, empresa.estado, False),
+    ])
+
+
 def _cnab240_conta_remessa(folha, empresa, data_pagamento):
     cnpj = re.sub(r"\D", "", empresa.cnpj or "")
     if len(cnpj) != 14:
@@ -33998,60 +34010,83 @@ def _cnab240_conta_remessa(folha, empresa, data_pagamento):
         (1, 3, "077", True), (8, 8, "0", True), (9, 17, "1", True),
         (18, 18, "1", True), (19, 32, cnpj, True), (103, 132, "BANCO INTER", False),
     ])]
-    registros.append(_cnab240_record([
-        (1, 3, "077", True), (4, 7, "1", True), (8, 8, "1", True), (9, 9, "C", False),
-        (10, 11, "20", True), (12, 13, "01", True), (14, 16, "046", True),
-        (18, 18, "2", True), (19, 32, cnpj, True), (53, 57, agencia, True),
-        (58, 58, agencia_dv, True), (59, 70, conta, True), (71, 71, conta_dv, True),
-        (73, 102, empresa.nome, False), (143, 172, empresa.logradouro, False),
-        (173, 177, empresa.numero, True), (193, 212, empresa.cidade, False),
-        (213, 217, empresa.cep, True), (221, 222, empresa.estado, False),
-    ]))
-    soma = 0
-    for item_index, item in enumerate(itens, 1):
+    grupos = {"conta": [], "pix": []}
+    for item in itens:
         func = db.session.get(Funcionario, item.funcionario_id)
         if not func:
             raise ValueError("colaborador da folha não encontrado")
         if func.empresa_id != empresa.id:
             raise ValueError(f"{func.nome} pertence a outra empresa e não pode entrar nesta remessa")
-        valor = int(round(float(item.total_pagar or 0) * 100))
-        if valor <= 0:
-            raise ValueError(f"o valor de pagamento de {func.nome} deve ser maior que zero")
-        cpf = re.sub(r"\D", "", func.cpf or "")
-        if len(cpf) not in (11, 14):
-            raise ValueError(f"cadastre um CPF ou CNPJ válido de {func.nome}")
-        banco = _cnab240_bank_value(func.banco_codigo, 3, f"banco de {func.nome}")
-        agencia_func, agencia_func_dv = _cnab240_bank_and_digit(func.banco_agencia, 5, f"agência de {func.nome}")
-        conta_func, conta_func_dv = _cnab240_bank_and_digit(func.banco_conta, 12, f"conta de {func.nome}")
-        tipo_conta = {"corrente": "01", "conta corrente": "01", "pagamento": "02", "poupanca": "03", "poupança": "03"}.get((func.banco_tipo_conta or "").strip().lower(), "")
-        if not tipo_conta:
-            raise ValueError(f"cadastre o tipo de conta de {func.nome}")
-        soma += valor
-        seq_a = item_index * 2 - 1
-        seq_b = item_index * 2
+        conta_completa = bool(func.banco_codigo and func.banco_agencia and func.banco_conta and func.banco_tipo_conta)
+        if conta_completa:
+            grupos["conta"].append((item, func))
+        elif func.banco_pix:
+            grupos["pix"].append((item, func))
+        else:
+            raise ValueError(f"cadastre agência e conta ou chave PIX de {func.nome}")
+    total_lotes = 0
+    for grupo, forma in (("conta", "01"), ("pix", "45")):
+        grupo_itens = grupos[grupo]
+        if not grupo_itens:
+            continue
+        lote = total_lotes + 1
+        total_lotes += 1
+        registros.append(_cnab240_lote_header(cnpj, empresa, agencia, conta, agencia_dv, conta_dv, lote, forma))
+        soma = 0
+        for item_index, (item, func) in enumerate(grupo_itens, 1):
+            valor = int(round(float(item.total_pagar or 0) * 100))
+            if valor <= 0:
+                raise ValueError(f"o valor de pagamento de {func.nome} deve ser maior que zero")
+            cpf = re.sub(r"\D", "", func.cpf or "")
+            if len(cpf) not in (11, 14):
+                raise ValueError(f"cadastre um CPF ou CNPJ válido de {func.nome}")
+            soma += valor
+            seq_a = item_index * 2 - 1
+            seq_b = item_index * 2
+            if grupo == "conta":
+                banco = _cnab240_bank_value(func.banco_codigo, 3, f"banco de {func.nome}")
+                agencia_func, agencia_func_dv = _cnab240_bank_and_digit(func.banco_agencia, 5, f"agência de {func.nome}")
+                conta_func, conta_func_dv = _cnab240_bank_and_digit(func.banco_conta, 12, f"conta de {func.nome}")
+                tipo_conta = {"corrente": "01", "conta corrente": "01", "pagamento": "02", "poupanca": "03", "poupança": "03"}.get((func.banco_tipo_conta or "").strip().lower(), "")
+                if not tipo_conta:
+                    raise ValueError(f"cadastre o tipo de conta de {func.nome}")
+                registros.append(_cnab240_record([
+                    (1, 3, "077", True), (4, 7, lote, True), (8, 8, "3", True), (9, 13, seq_a, True),
+                    (14, 14, "A", False), (15, 17, "0", True), (18, 20, "000", True),
+                    (21, 23, banco, True), (24, 28, agencia_func, True), (29, 29, agencia_func_dv, True),
+                    (30, 41, conta_func, True), (42, 42, conta_func_dv, True), (44, 73, func.nome, False),
+                    (74, 93, f"FOLHA{folha.id}-{item_index}", False), (94, 101, data_pagamento.strftime("%d%m%Y"), True),
+                    (102, 104, "BRL", False), (120, 134, valor, True), (200, 201, tipo_conta, True),
+                    (220, 224, "00004", True),
+                ]))
+                registros.append(_cnab240_record([
+                    (1, 3, "077", True), (4, 7, lote, True), (8, 8, "3", True), (9, 13, seq_b, True),
+                    (14, 14, "B", False), (18, 18, "1" if len(cpf) == 11 else "2", True), (19, 32, cpf, True),
+                    (33, 67, func.endereco, False), (68, 72, func.endereco_numero, False),
+                    (73, 87, func.endereco_complemento, False), (88, 102, func.endereco_bairro, False),
+                    (103, 117, func.cidade, False), (118, 125, func.cep, True), (126, 127, func.estado, False),
+                ]))
+            else:
+                chave = func.banco_pix.strip()
+                registros.append(_cnab240_record([
+                    (1, 3, "077", True), (4, 7, lote, True), (8, 8, "3", True), (9, 13, seq_a, True),
+                    (14, 14, "A", False), (15, 17, "0", True), (18, 20, "000", True),
+                    (74, 93, f"FOLHA{folha.id}-{item_index}", False), (94, 101, data_pagamento.strftime("%d%m%Y"), True),
+                    (102, 104, "BRL", False), (120, 134, valor, True), (178, 191, cpf, True),
+                ]))
+                registros.append(_cnab240_record([
+                    (1, 3, "077", True), (4, 7, lote, True), (8, 8, "3", True), (9, 13, seq_b, True),
+                    (14, 14, "B", False), (15, 17, "02" if "@" in chave else "04", False),
+                    (18, 18, "1" if len(cpf) == 11 else "2", True), (19, 32, cpf, True),
+                    (128, 226, chave, False),
+                ]))
         registros.append(_cnab240_record([
-            (1, 3, "077", True), (4, 7, "1", True), (8, 8, "3", True), (9, 13, seq_a, True),
-            (14, 14, "A", False), (15, 17, "0", True), (18, 20, "000", True),
-            (21, 23, banco, True), (24, 28, agencia_func, True), (29, 29, agencia_func_dv, True),
-            (30, 41, conta_func, True), (42, 42, conta_func_dv, True), (44, 73, func.nome, False),
-            (74, 93, f"FOLHA{folha.id}-{item_index}", False), (94, 101, data_pagamento.strftime("%d%m%Y"), True),
-            (102, 104, "BRL", False), (120, 134, valor, True), (200, 201, tipo_conta, True),
-            (220, 224, "00004", True),
-        ]))
-        registros.append(_cnab240_record([
-            (1, 3, "077", True), (4, 7, "1", True), (8, 8, "3", True), (9, 13, seq_b, True),
-            (14, 14, "B", False), (18, 18, "1" if len(cpf) == 11 else "2", True), (19, 32, cpf, True),
-            (33, 67, func.endereco, False), (68, 72, func.endereco_numero, False),
-            (73, 87, func.endereco_complemento, False), (88, 102, func.endereco_bairro, False),
-            (103, 117, func.cidade, False), (118, 125, func.cep, True), (126, 127, func.estado, False),
+            (1, 3, "077", True), (4, 7, lote, True), (8, 8, "5", True),
+            (18, 23, len(grupo_itens) * 2 + 2, True), (24, 41, soma, True),
         ]))
     registros.append(_cnab240_record([
-        (1, 3, "077", True), (4, 7, "1", True), (8, 8, "5", True),
-        (18, 23, len(itens) * 2 + 2, True), (24, 41, soma, True),
-    ]))
-    registros.append(_cnab240_record([
-        (1, 3, "077", True), (8, 8, "9", True), (18, 23, 1, True),
-        (24, 29, len(registros) + 1, True),
+        (1, 3, "077", True), (4, 7, "9999", True), (8, 8, "9", True),
+        (18, 23, total_lotes + 2, True), (24, 29, len(registros) + 1, True),
     ]))
     return "\r\n".join(registros) + "\r\n"
 
