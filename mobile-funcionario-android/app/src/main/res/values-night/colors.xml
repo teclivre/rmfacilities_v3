@@ -39,6 +39,8 @@
     <color name="mobile_tab_active">#67B8FF</color>
     <color name="mobile_tab_inactive">#7E97B3</color>
     <color name="mobile_card_border">#1F3A58</color>
+    <color name="mobile_border">#1F3A58</color>
+    <color name="mobile_primary_light">#1A3A58</color>
     <color name="mobile_glass_surface">#1A2436</color>
     <color name="mobile_glass_stroke">#304A69</color>
     <color name="mobile_nav_surface">#13233A</color>
