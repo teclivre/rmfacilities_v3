@@ -1777,6 +1777,11 @@ class Medicao(db.Model):
     forma_pagamento = db.Column(db.String(50))
     valor_juros = db.Column(db.Float, default=0)
     valor_multa = db.Column(db.Float, default=0)
+    boleto_status = db.Column(db.String(20), default="nao_emitido")
+    boleto_id_inter = db.Column(db.String(120), default="")
+    boleto_linha_digitavel = db.Column(db.String(100), default="")
+    nota_status = db.Column(db.String(20), default="nao_emitida")
+    nota_numero = db.Column(db.String(80), default="")
     criado_em = db.Column(db.DateTime, default=utcnow)
     criado_por = db.Column(db.String(100))
 
@@ -11106,6 +11111,11 @@ def _ensure_medicao_stamp_cols_runtime(force=False):
             "stamp_pagina INTEGER DEFAULT 1",
             "stamp_x_pct REAL DEFAULT 60.0",
             "stamp_y_pct REAL DEFAULT 10.0",
+            'boleto_status VARCHAR(20) DEFAULT "nao_emitido"',
+            'boleto_id_inter VARCHAR(120) DEFAULT ""',
+            'boleto_linha_digitavel VARCHAR(100) DEFAULT ""',
+            'nota_status VARCHAR(20) DEFAULT "nao_emitida"',
+            'nota_numero VARCHAR(80) DEFAULT ""',
         ],
     )
     db.session.commit()
@@ -39302,6 +39312,7 @@ with app.app_context():
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(UPLOAD_ROOT, exist_ok=True)
     db.metadata.create_all(bind=db.engine, checkfirst=True)
+    _ensure_medicao_stamp_cols_runtime(force=True)
     ensure_cols("cadastro_candidato", ["ip_cadastro VARCHAR(64)"])
     ensure_cols(
         "folha_pagamento_item",
