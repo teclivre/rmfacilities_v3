@@ -12715,12 +12715,12 @@ function fpRenderDisponiveis(){
   }
   cont.innerHTML = lista.map(f=>{
     const isDemitido = (f.status||'').toLowerCase()==='demitido';
-    const statusBadge = isDemitido ? '<span style="font-size:10px;background:#fde8e8;color:#c0392b;padding:1px 6px;border-radius:99px;font-weight:700;margin-left:4px">Demitido</span>' : '';
+    const statusBadge = isDemitido ? '<span style="font-size:10px;background:var(--verm-cl);color:var(--verm);padding:1px 6px;border-radius:99px;font-weight:700;margin-left:4px">Demitido</span>' : '';
     return `
     <div class="fp-disp-item" data-func-id="${f.id}"
-         style="border:1px solid var(--borda);border-radius:8px;padding:8px 10px;margin-bottom:6px;${editavel?'cursor:grab':'cursor:default;opacity:.7'};display:flex;align-items:center;gap:8px;background:var(--cinza-bg,#fff);transition:transform .12s,box-shadow .12s">
+         style="border:1px solid var(--borda);border-radius:8px;padding:8px 10px;margin-bottom:6px;${editavel?'cursor:grab':'cursor:default;opacity:.7'};display:flex;align-items:center;gap:8px;background:var(--bg-card);color:var(--preto);transition:transform .12s,box-shadow .12s">
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fpEsc(f.nome)}${statusBadge}</div>
+        <div style="font-weight:700;font-size:13px;color:var(--preto);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fpEsc(f.nome)}${statusBadge}</div>
         <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fpEsc(f.re)} ${f.cargo?'• '+fpEsc(f.cargo):''}${f.posto_operacional?' • '+fpEsc(f.posto_operacional):''}</div>
         ${f.empresa_nome?'<div style="font-size:10px;color:var(--text-muted)">'+fpEsc(f.empresa_nome)+'</div>':''}
       </div>
