@@ -688,6 +688,15 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
 
+      <div class="nav-module" id="mod-financeiro">
+        <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-financeiro')">
+          <span class="mod-icon">💰</span><span class="module-label">Financeiro</span><span class="module-caret">▾</span>
+        </button>
+        <div class="module-panel">
+          <a class="nav-item lv2" data-nav="financeiro" onclick="nav('financeiro',this)"><span class="nav-label">Pagamentos</span></a>
+        </div>
+      </div>
+
       <div class="nav-module" id="mod-controle-ponto">
         <button class="module-toggle" type="button" onclick="toggleSidebarModule('mod-controle-ponto')">
           <span class="mod-icon">⏱️</span><span class="module-label">Controle de Ponto</span><span class="module-caret">▾</span>
@@ -839,11 +848,29 @@ document.addEventListener('DOMContentLoaded',()=>{
       <div id="dash-empresas" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"></div>
     </div>
 
-    <!-- ══ ABA FINANCEIRO (PLACEHOLDER) ══ -->
+    <!-- ══ ABA FINANCEIRO ══ -->
     <div id="pg-financeiro" class="pg">
+      <div class="card" data-financeiro-bloco="pagamentos">
+        <div class="card-header"><span class="card-title">Pagamentos</span></div>
+        <div style="padding:12px 0;color:var(--text-muted)">Central de pagamentos de fornecedores por boleto, PIX e transferência.</div>
+        <div class="g3">
+          <div class="f"><label>Empresa pagadora *</label><select id="fin-bol-empresa"><option value="">Selecione...</option></select></div>
+          <div class="f"><label>Fornecedor / beneficiário *</label><select id="fin-bol-fornecedor"><option value="">Selecione...</option></select></div>
+          <div class="f"><label>CNPJ do beneficiário *</label><input id="fin-bol-cnpj" placeholder="Será usado para cadastro automático"></div>
+        </div>
+        <div class="g4" style="margin-top:10px">
+          <div class="f"><label>Vencimento *</label><input id="fin-bol-vencimento" type="date"></div>
+          <div class="f"><label>Valor *</label><input id="fin-bol-valor" type="number" min="0.01" step="0.01"></div>
+          <div class="f"><label>Linha digitável</label><input id="fin-bol-linha"></div>
+          <div class="f"><label>Upload do boleto</label><input id="fin-bol-arquivo" type="file" accept="application/pdf,image/*"></div>
+        </div>
+        <div class="brow" style="justify-content:flex-start"><button class="btn b-az" type="button" onclick="finSalvarBoleto()">Cadastrar boleto</button></div>
+        <div id="fin-bol-status" class="st"></div>
+        <div id="fin-pagamentos-lista"></div>
+      </div>
       <div class="card">
         <div class="card-header"><span class="card-title">Financeiro</span></div>
-        <div style="padding:20px 0">Selecione uma subaba: Faturamento, Pagamento de Salario, Despesas, Fluxo de Caixa, Contas a Pagar/Receber ou Relatorios.</div>
+        <div style="padding:20px 0">Use a subaba Pagamentos para cadastrar boletos e preparar os pagamentos dos fornecedores.</div>
       </div>
     </div>
 
@@ -2968,6 +2995,30 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="card-header"><span class="card-title">Documentos operacionais</span></div>
         <div id="lista-op-docs"></div>
       </div>
+
+        <div class="card">
+          <div class="card-header"><span class="card-title">Fornecedores</span></div>
+          <div class="g3">
+            <div class="f"><label>CNPJ *</label><div style="display:flex;gap:6px"><input id="for-cnpj" maxlength="18" placeholder="00.000.000/0000-00" style="flex:1"><button class="btn b-gh b-sm" type="button" onclick="forBuscarCnpj()">Buscar</button></div></div>
+            <div class="f"><label>Razão social / nome *</label><input id="for-nome"></div>
+            <div class="f"><label>E-mail</label><input id="for-email" type="email"></div>
+          </div>
+          <div class="g3" style="margin-top:10px">
+            <div class="f"><label>Telefone</label><input id="for-telefone"></div>
+            <div class="f"><label>Endereço</label><input id="for-endereco"></div>
+            <div class="f"><label>Chave PIX</label><input id="for-pix"></div>
+          </div>
+          <div class="g4" style="margin-top:10px">
+            <div class="f"><label>Banco</label><input id="for-banco" maxlength="3"></div>
+            <div class="f"><label>Agência + dígito</label><input id="for-agencia"></div>
+            <div class="f"><label>Conta + dígito</label><input id="for-conta"></div>
+            <div class="f"><label>Tipo de conta</label><select id="for-tipo"><option value="">Selecione...</option><option value="corrente">Corrente</option><option value="poupanca">Poupança</option><option value="pagamento">Pagamento</option></select></div>
+          </div>
+          <div class="brow" style="justify-content:flex-start"><button class="btn b-az" type="button" onclick="forSalvar()">Salvar fornecedor</button></div>
+          <div id="for-status" class="st"></div>
+          <div class="f" style="margin-top:10px"><label>Buscar fornecedor</label><input id="for-busca" oninput="forListar()" placeholder="Nome ou CNPJ"></div>
+          <div id="for-lista" style="margin-top:8px"></div>
+        </div>
 
       <div class="card">
         <div class="card-header"><span class="card-title">Relatórios de supervisão</span></div>
@@ -5757,10 +5808,6 @@ function nav(id,el,force=false){
   }
 
   const rotasFinanceiras=['financeiro','faturamento','historico','nova-medicao','despesas','fluxo-caixa','contas','relatorios','conciliacao','cobrancas'];
-  if(rotasFinanceiras.includes(id)){
-    alert('A área Financeira foi desativada neste programa. Use apenas RH, Clientes e Pagamento de Salário.');
-    return;
-  }
 
   if(!force && hasUnsavedChanges()){
     const ok=confirm('Existem alterações não salvas. Deseja sair desta página mesmo assim?');
@@ -5813,6 +5860,8 @@ function nav(id,el,force=false){
     rhSetSubAba(rhSubAba || 'funcionarios');
   }
   if(targetId==='operacional'){renderOperDocs();renderOperPostos();renderSupervisaoRelatorios();}
+  if(targetId==='operacional'){forListar();}
+  if(targetId==='financeiro'){finInicializar();}
   if(targetId==='compras'){renderOrdensCompra();}
   if(targetId==='beneficios'){carregarBeneficiosMensais();carregarConfigAlertaBeneficios();}
   if(targetId==='pagamento-salario'){rhSalariosIniciarPagina();}
@@ -12251,6 +12300,49 @@ function salLanTipoChange(){
   const natSel=document.getElementById('lan-natureza');
   if(!natSel) return;
   natSel.value=(tipo==='desconto_avulso')?'desconto':'adicional';
+}
+
+async function forBuscarCnpj(){
+  const cnpj=(document.getElementById('for-cnpj')?.value||'').replace(/\D/g,'');
+  if(cnpj.length!==14){showSt('for-status','Informe os 14 dígitos do CNPJ.',true);return;}
+  try{
+    const d=await api('/api/cnpj/'+cnpj);
+    if(d?.erro) throw new Error(d.erro);
+    document.getElementById('for-nome').value=d.nome||d.razao||'';
+    document.getElementById('for-endereco').value=[d.logradouro,d.numero,d.bairro,d.cidade,d.estado,d.cep].filter(Boolean).join(', ');
+    document.getElementById('for-telefone').value=d.telefone||'';
+    showSt('for-status','Dados carregados pela consulta de CNPJ.',false);
+  }catch(e){showSt('for-status',e.message||'Falha na consulta.',true);}
+}
+async function forSalvar(){
+  const d={nome:document.getElementById('for-nome').value,cnpj:document.getElementById('for-cnpj').value,email:document.getElementById('for-email').value,telefone:document.getElementById('for-telefone').value,endereco:document.getElementById('for-endereco').value,banco_codigo:document.getElementById('for-banco').value,banco_agencia:document.getElementById('for-agencia').value,banco_conta:document.getElementById('for-conta').value,banco_tipo_conta:document.getElementById('for-tipo').value,banco_pix:document.getElementById('for-pix').value};
+  const r=await api('/api/fornecedores','POST',d);
+  showSt('for-status',r?.erro||'Fornecedor salvo.',!!r?.erro); if(!r?.erro) forListar();
+}
+async function forListar(){
+  const r=await api('/api/fornecedores?q='+encodeURIComponent(document.getElementById('for-busca')?.value||''));
+  const el=document.getElementById('for-lista'); if(!el) return;
+  el.innerHTML=(Array.isArray(r)?r:[]).map(f=>`<div style="padding:8px;border-bottom:1px solid var(--borda)"><b>${esc(f.nome)}</b> · ${esc(f.cnpj||'')} ${f.banco_pix?'· PIX cadastrado':''}</div>`).join('')||'<span style="color:var(--text-muted)">Nenhum fornecedor.</span>';
+}
+async function finInicializar(){
+  const [emps,forns]=await Promise.all([api('/api/empresas'),api('/api/fornecedores')]);
+  const se=document.getElementById('fin-bol-empresa'); if(se) se.innerHTML='<option value="">Selecione...</option>'+(Array.isArray(emps)?emps:[]).map(e=>`<option value="${e.id}">${esc(e.nome)}</option>`).join('');
+  const sf=document.getElementById('fin-bol-fornecedor'); if(sf) sf.innerHTML='<option value="">Selecione...</option>'+(Array.isArray(forns)?forns:[]).map(f=>`<option value="${f.id}" data-cnpj="${f.cnpj}">${esc(f.nome)}</option>`).join('');
+  if(sf) sf.onchange=()=>{const o=sf.selectedOptions[0];document.getElementById('fin-bol-cnpj').value=o?.dataset?.cnpj||'';};
+  const lista=await api('/api/boletos-fornecedores'); const el=document.getElementById('fin-pagamentos-lista');
+  if(el) el.innerHTML=(Array.isArray(lista)?lista:[]).map(b=>`<div style="padding:8px;border-bottom:1px solid var(--borda)"><b>${esc(b.fornecedor_nome)}</b> · R$ ${Number(b.valor||0).toFixed(2)} · vence ${esc(b.vencimento)} · ${esc(b.status)}</div>`).join('')||'<span style="color:var(--text-muted)">Nenhum boleto cadastrado.</span>';
+}
+async function finSalvarBoleto(){
+  const fd=new FormData();
+  const campos={empresa:'empresa_id',fornecedor:'fornecedor_nome',cnpj:'fornecedor_cnpj',vencimento:'vencimento',valor:'valor',linha:'linha_digitavel'};
+  Object.entries(campos).forEach(([id,nome])=>{
+    let valor=document.getElementById('fin-bol-'+id)?.value||'';
+    if(id==='fornecedor'){const sel=document.getElementById('fin-bol-fornecedor'); valor=sel?.selectedOptions?.[0]?.textContent||valor;}
+    fd.append(nome,valor);
+  });
+  const ar=document.getElementById('fin-bol-arquivo')?.files?.[0]; if(ar) fd.append('arquivo',ar);
+  const r=await fetch('/api/boletos-fornecedores',{method:'POST',body:fd,credentials:'same-origin'}); const d=await r.json().catch(()=>({}));
+  showSt('fin-bol-status',d.erro||'Boleto cadastrado e fornecedor vinculado.',!r.ok); if(r.ok) finInicializar();
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

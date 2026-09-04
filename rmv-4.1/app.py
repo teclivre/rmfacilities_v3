@@ -2321,6 +2321,51 @@ class GestorFinanceiroCategoria(db.Model):
         }
 
 
+class Fornecedor(db.Model):
+    __tablename__ = "fornecedor"
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(200), nullable=False, index=True)
+    cnpj = db.Column(db.String(14), unique=True, index=True)
+    email = db.Column(db.String(150), default="")
+    telefone = db.Column(db.String(30), default="")
+    endereco = db.Column(db.String(250), default="")
+    banco_codigo = db.Column(db.String(3), default="")
+    banco_agencia = db.Column(db.String(30), default="")
+    banco_conta = db.Column(db.String(40), default="")
+    banco_tipo_conta = db.Column(db.String(20), default="")
+    banco_pix = db.Column(db.String(150), default="")
+    ativo = db.Column(db.Boolean, default=True, index=True)
+    criado_em = db.Column(db.DateTime, default=utcnow)
+    atualizado_em = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
+
+    def to_dict(self):
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
+
+class BoletoFornecedor(db.Model):
+    __tablename__ = "boleto_fornecedor"
+    id = db.Column(db.Integer, primary_key=True)
+    fornecedor_id = db.Column(db.Integer, db.ForeignKey("fornecedor.id"), nullable=False, index=True)
+    empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=False, index=True)
+    linha_digitavel = db.Column(db.String(100), default="")
+    codigo_barras = db.Column(db.String(100), default="")
+    valor = db.Column(db.Float, default=0)
+    vencimento = db.Column(db.String(10), nullable=False)
+    descricao = db.Column(db.String(200), default="")
+    status = db.Column(db.String(20), default="pendente", index=True)
+    arquivo_nome = db.Column(db.String(255), default="")
+    arquivo_caminho = db.Column(db.String(500), default="")
+    criado_em = db.Column(db.DateTime, default=utcnow)
+    pago_em = db.Column(db.DateTime)
+
+    def to_dict(self):
+        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        fornecedor = db.session.get(Fornecedor, self.fornecedor_id)
+        d["fornecedor_nome"] = fornecedor.nome if fornecedor else ""
+        d["fornecedor_cnpj"] = fornecedor.cnpj if fornecedor else ""
+        return d
+
+
 class CadastroCandidato(db.Model):
     __tablename__ = "cadastro_candidato"
     id = db.Column(db.Integer, primary_key=True)
@@ -33952,6 +33997,96 @@ def _folha_recalcular_total(folha):
 
 def _folha_pode_editar(folha):
     return (folha.status or "rascunho") == "rascunho"
+
+
+@app.route("/api/fornecedores", methods=["GET"])
+@lr
+def api_fornecedores_listar():
+    termo = (request.args.get("q") or "").strip().lower()
+    fornecedores = Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome.asc()).all()
+    if termo:
+        fornecedores = [f for f in fornecedores if termo in (f.nome or "").lower() or termo in (f.cnpj or "")]
+    return jsonify([f.to_dict() for f in fornecedores])
+
+
+@app.route("/api/fornecedores", methods=["POST"])
+@lr
+def api_fornecedor_criar():
+    d = request.json or {}
+    nome = (d.get("nome") or d.get("razao") or "").strip()
+    cnpj = re.sub(r"\D", "", str(d.get("cnpj") or ""))
+    if not nome or len(cnpj) != 14:
+        return jsonify({"erro": "Informe nome e CNPJ válido do fornecedor."}), 400
+    fornecedor = Fornecedor.query.filter_by(cnpj=cnpj).first()
+    if not fornecedor:
+        fornecedor = Fornecedor(cnpj=cnpj)
+        db.session.add(fornecedor)
+    for campo in ("nome", "email", "telefone", "endereco", "banco_codigo", "banco_agencia", "banco_conta", "banco_tipo_conta", "banco_pix"):
+        if campo in d:
+            setattr(fornecedor, campo, str(d.get(campo) or "").strip())
+    db.session.commit()
+    audit_event("fornecedor_salvo", "fornecedor", fornecedor.id, "fornecedor", fornecedor.id, True, {"cnpj": cnpj})
+    return jsonify(fornecedor.to_dict()), 201
+
+
+@app.route("/api/fornecedores/<int:fid>", methods=["PUT"])
+@lr
+def api_fornecedor_atualizar(fid):
+    fornecedor = db.get_or_404(Fornecedor, fid)
+    d = request.json or {}
+    for campo in ("nome", "email", "telefone", "endereco", "banco_codigo", "banco_agencia", "banco_conta", "banco_tipo_conta", "banco_pix"):
+        if campo in d:
+            setattr(fornecedor, campo, str(d.get(campo) or "").strip())
+    db.session.commit()
+    return jsonify(fornecedor.to_dict())
+
+
+@app.route("/api/boletos-fornecedores", methods=["GET"])
+@lr
+def api_boletos_fornecedores_listar():
+    empresa_id = to_num(request.args.get("empresa_id"))
+    q = BoletoFornecedor.query
+    if empresa_id:
+        q = q.filter_by(empresa_id=empresa_id)
+    return jsonify([b.to_dict() for b in q.order_by(BoletoFornecedor.vencimento.asc(), BoletoFornecedor.id.desc()).all()])
+
+
+@app.route("/api/boletos-fornecedores", methods=["POST"])
+@lr
+def api_boleto_fornecedor_criar():
+    d = request.form if request.form else (request.json or {})
+    cnpj = re.sub(r"\D", "", str(d.get("fornecedor_cnpj") or d.get("cnpj") or ""))
+    nome = (d.get("fornecedor_nome") or d.get("nome") or "").strip()
+    empresa_id = to_num(d.get("empresa_id"))
+    vencimento = (d.get("vencimento") or "").strip()
+    try:
+        valor = float(str(d.get("valor") or "0").replace(",", "."))
+    except ValueError:
+        valor = 0
+    if not empresa_id or not db.session.get(Empresa, empresa_id) or not nome or len(cnpj) != 14 or not vencimento or valor <= 0:
+        return jsonify({"erro": "Informe empresa, fornecedor, CNPJ, vencimento e valor válido."}), 400
+    fornecedor = Fornecedor.query.filter_by(cnpj=cnpj).first()
+    if not fornecedor:
+        fornecedor = Fornecedor(nome=nome, cnpj=cnpj)
+        db.session.add(fornecedor)
+        db.session.flush()
+    else:
+        fornecedor.nome = nome or fornecedor.nome
+    arquivo = request.files.get("arquivo")
+    caminho = ""
+    if arquivo and arquivo.filename:
+        caminho, _ = save_upload(arquivo, f"boletos/{fornecedor.id}")
+    boleto = BoletoFornecedor(
+        fornecedor_id=fornecedor.id, empresa_id=empresa_id,
+        linha_digitavel=re.sub(r"\D", "", str(d.get("linha_digitavel") or "")),
+        codigo_barras=re.sub(r"\D", "", str(d.get("codigo_barras") or "")),
+        valor=valor, vencimento=vencimento, descricao=(d.get("descricao") or "").strip(),
+        arquivo_nome=arquivo.filename if arquivo else "", arquivo_caminho=caminho,
+    )
+    db.session.add(boleto)
+    db.session.commit()
+    audit_event("boleto_fornecedor_criado", "boleto_fornecedor", boleto.id, "boleto_fornecedor", boleto.id, True, {"fornecedor_id": fornecedor.id, "empresa_id": empresa_id})
+    return jsonify(boleto.to_dict()), 201
 
 
 def _cnab240_field(record, start, end, value=" ", numeric=False):
