@@ -33988,6 +33988,18 @@ def _cnab240_bank_and_digit(value, width, label):
     return digits[:-1].zfill(width), digits[-1]
 
 
+def _cnab240_pix_key_type(key):
+    raw = (key or "").strip()
+    digits = re.sub(r"\D", "", raw)
+    if "@" in raw:
+        return "02"
+    if raw.isdigit() and len(raw) in (11, 14):
+        return "03"
+    if raw.startswith("+") or len(digits) in (10, 11):
+        return "01"
+    return "04"
+
+
 def _cnab240_lote_header(cnpj, empresa, agencia, conta, agencia_dv, conta_dv, lote, forma):
     return _cnab240_record([
         (1, 3, "077", True), (4, 7, lote, True), (8, 8, "1", True), (9, 9, "C", False),
@@ -34079,7 +34091,7 @@ def _cnab240_conta_remessa(folha, empresa, data_pagamento):
                 ]))
                 registros.append(_cnab240_record([
                     (1, 3, "077", True), (4, 7, lote, True), (8, 8, "3", True), (9, 13, seq_b, True),
-                    (14, 14, "B", False), (15, 17, "02" if "@" in chave else "04", False),
+                    (14, 14, "B", False), (15, 17, _cnab240_pix_key_type(chave), False),
                     (18, 18, "1" if len(cpf) == 11 else "2", True), (19, 32, cpf, True),
                     (128, 226, chave, False),
                 ]))
