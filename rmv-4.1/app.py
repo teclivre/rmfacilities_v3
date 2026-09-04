@@ -1215,6 +1215,8 @@ def api_medicao_detalhe(id):
             m.servicos = json.dumps(d["servicos"], ensure_ascii=False)
         if "valor_bruto" in d:
             m.valor_bruto = float(d["valor_bruto"] or 0)
+        if "aliquotas_impostos" in d:
+            m.aliquotas_impostos = json.dumps(d["aliquotas_impostos"] or {}, ensure_ascii=False)
         db.session.commit()
         audit_event(
             "medicao_editada",
@@ -1278,6 +1280,43 @@ def api_medicoes():
         _ensure_medicao_stamp_cols_runtime(force=True)
         lista = qr.order_by(Medicao.dt_emissao.desc(), Medicao.id.desc()).all()
     return jsonify([m.to_dict() for m in lista])
+
+
+@app.route("/api/medicoes", methods=["POST"])
+@lr
+def api_medicao_criar():
+    d = request.json or {}
+    numero = (d.get("numero") or prox_num()).strip()
+    if not (d.get("cliente_nome") or "").strip():
+        return jsonify({"erro": "Informe o cliente da emissão."}), 400
+    servicos = d.get("servicos") or []
+    try:
+        valor_bruto = float(d.get("valor_bruto") or sum(float(s.get("vtot") or 0) for s in servicos))
+    except (TypeError, ValueError):
+        return jsonify({"erro": "Valor bruto inválido."}), 400
+    impostos = d.get("aliquotas_impostos") or {}
+    if not isinstance(impostos, dict):
+        impostos = {}
+    try:
+        impostos = {k: {"aliquota": max(0, float(v.get("aliquota", 0))), "valor": max(0, float(v.get("valor", 0)))} for k, v in impostos.items() if isinstance(v, dict)}
+    except (TypeError, ValueError):
+        return jsonify({"erro": "Alíquotas de impostos inválidas."}), 400
+    impostos["base"] = valor_bruto
+    impostos["total"] = round(sum(v["valor"] for k, v in impostos.items() if isinstance(v, dict)), 2)
+    m = Medicao(
+        numero=numero, tipo=d.get("tipo") or "Medição de Serviços", cliente_id=to_num(d.get("cliente_id")),
+        cliente_nome=(d.get("cliente_nome") or "").strip(), cliente_cnpj=d.get("cliente_cnpj") or "",
+        cliente_end=d.get("cliente_end") or "", cliente_resp=d.get("cliente_resp") or "",
+        empresa_id=to_num(d.get("empresa_id")), empresa_nome=d.get("empresa_nome") or "",
+        mes_ref=d.get("mes_ref") or "", dt_emissao=d.get("dt_emissao") or "", dt_vencimento=d.get("dt_vencimento") or "",
+        servicos=json.dumps(servicos, ensure_ascii=False), valor_bruto=valor_bruto,
+        observacoes=d.get("observacoes") or "", ass_empresa=d.get("ass_empresa") or "", ass_cliente=d.get("ass_cliente") or "",
+        status="rascunho", aliquotas_impostos=json.dumps(impostos, ensure_ascii=False), criado_por=session.get("nome", ""),
+    )
+    db.session.add(m)
+    db.session.commit()
+    audit_event("medicao_criada", "usuario", session.get("uid"), "medicao", m.id, True, {"numero": m.numero, "valor": valor_bruto, "impostos": impostos})
+    return jsonify({"ok": True, "id": m.id, "medicao": m.to_dict()}), 201
 
 
 def _build_faturamento_query(args):
@@ -1782,12 +1821,17 @@ class Medicao(db.Model):
     boleto_linha_digitavel = db.Column(db.String(100), default="")
     nota_status = db.Column(db.String(20), default="nao_emitida")
     nota_numero = db.Column(db.String(80), default="")
+    aliquotas_impostos = db.Column(db.Text, default="{}")
     criado_em = db.Column(db.DateTime, default=utcnow)
     criado_por = db.Column(db.String(100))
 
     def to_dict(self):
         d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
         d["svcs"] = json.loads(self.servicos) if self.servicos else []
+        try:
+            d["aliquotas_impostos"] = json.loads(self.aliquotas_impostos or "{}")
+        except (TypeError, ValueError):
+            d["aliquotas_impostos"] = {}
         d["criado_fmt"] = (
             self.criado_em.strftime("%d/%m/%Y %H:%M") if self.criado_em else ""
         )
@@ -10928,6 +10972,12 @@ def api_get_config():
         "app_version_atual",
         "app_download_url",
         "app_version_notif_cooldown_h",
+        "nfse_municipio",
+        "nfse_provedor",
+        "nfse_ambiente",
+        "nfse_client_id",
+        "nfse_endpoint",
+        "nfse_configurada",
     ]
     return jsonify({k: gc(k) for k in chaves})
 
@@ -10935,8 +10985,30 @@ def api_get_config():
 @app.route("/api/config", methods=["POST"])
 @dr
 def api_save_config():
-    for k, v in request.json.items():
+    dados = request.json or {}
+    for k, v in dados.items():
+        if k in ("nfse_client_secret", "nfse_senha") and not str(v or "").strip():
+            continue
         sc_cfg(k, v)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/config/nfse", methods=["POST"])
+@dr
+def api_save_config_nfse():
+    for campo in ("municipio", "provedor", "ambiente", "client_id", "endpoint", "client_secret"):
+        valor = (request.form.get(campo) or "").strip()
+        if campo != "client_secret" or valor:
+            sc_cfg(f"nfse_{campo}", valor)
+    certificado = request.files.get("certificado")
+    if certificado and certificado.filename:
+        nome = secure_filename(certificado.filename)
+        if os.path.splitext(nome)[1].lower() not in (".p12", ".pfx", ".pem", ".crt"):
+            return jsonify({"erro": "Certificado NFS-e inválido."}), 400
+        rel, _ = save_upload(certificado, "nfse")
+        sc_cfg("nfse_certificado", rel)
+    sc_cfg("nfse_configurada", "1")
+    audit_event("config_nfse_salva", "usuario", session.get("uid"), "config", 0, True, {"provedor": gc("nfse_provedor"), "ambiente": gc("nfse_ambiente")})
     return jsonify({"ok": True})
 
 
@@ -11116,6 +11188,7 @@ def _ensure_medicao_stamp_cols_runtime(force=False):
             'boleto_linha_digitavel VARCHAR(100) DEFAULT ""',
             'nota_status VARCHAR(20) DEFAULT "nao_emitida"',
             'nota_numero VARCHAR(80) DEFAULT ""',
+            'aliquotas_impostos TEXT DEFAULT "{}"',
         ],
     )
     db.session.commit()
@@ -36769,6 +36842,23 @@ def _build_pdf(d):
     )
     story.append(tot)
     story.append(Spacer(1, 10))
+
+    impostos_nota = d.get("aliquotas_impostos") or {}
+    if isinstance(impostos_nota, str):
+        try:
+            impostos_nota = json.loads(impostos_nota)
+        except (TypeError, ValueError):
+            impostos_nota = {}
+    nomes_impostos = {"iss": "ISS", "inss": "INSS", "irrf": "IRRF", "pis": "PIS", "cofins": "COFINS", "csll": "CSLL"}
+    linhas_impostos = [[Paragraph("<b>Imposto</b>", ps("th", fontSize=8)), Paragraph("<b>Alíquota</b>", ps("th", fontSize=8)), Paragraph("<b>Valor</b>", ps("th", fontSize=8, alignment=TA_RIGHT))]]
+    for chave, nome in nomes_impostos.items():
+        item_imposto = impostos_nota.get(chave) or {}
+        if float(item_imposto.get("aliquota", 0) or 0) > 0:
+            linhas_impostos.append([Paragraph(nome, ps("tdi", fontSize=8)), Paragraph(f"{float(item_imposto.get('aliquota', 0)):.2f}%", ps("tdi", fontSize=8)), Paragraph(fmt_brl(item_imposto.get("valor", 0)), ps("tdi", fontSize=8, alignment=TA_RIGHT))])
+    if len(linhas_impostos) > 1:
+        story.append(Paragraph("<b>TRIBUTOS DA NOTA FISCAL</b>", ps("taxh", fontSize=9, textColor=AZ)))
+        story.append(Table(linhas_impostos, colWidths=[W * 0.5, W * 0.2, W * 0.3], style=TableStyle([("BACKGROUND", (0, 0), (-1, 0), CI), ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#CCCCCC")), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)])))
+        story.append(Spacer(1, 8))
 
     pags = []
     if epix:

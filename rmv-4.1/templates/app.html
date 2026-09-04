@@ -1532,6 +1532,20 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
 
+      <div class="card">
+        <div class="card-header"><span class="card-title">Impostos da nota fiscal</span><span style="font-size:11px;color:var(--text-muted)">Alíquotas aplicadas sobre o valor bruto</span></div>
+        <div class="g4">
+          <div class="f"><label>ISS (%)</label><input id="aliq-iss" type="number" min="0" step="0.01" value="0" oninput="calcularImpostosNota()"></div>
+          <div class="f"><label>INSS (%)</label><input id="aliq-inss" type="number" min="0" step="0.01" value="0" oninput="calcularImpostosNota()"></div>
+          <div class="f"><label>IRRF (%)</label><input id="aliq-irrf" type="number" min="0" step="0.01" value="0" oninput="calcularImpostosNota()"></div>
+          <div class="f"><label>PIS (%)</label><input id="aliq-pis" type="number" min="0" step="0.01" value="0" oninput="calcularImpostosNota()"></div>
+          <div class="f"><label>COFINS (%)</label><input id="aliq-cofins" type="number" min="0" step="0.01" value="0" oninput="calcularImpostosNota()"></div>
+          <div class="f"><label>CSLL (%)</label><input id="aliq-csll" type="number" min="0" step="0.01" value="0" oninput="calcularImpostosNota()"></div>
+          <div class="f"><label>Total impostos</label><strong id="nota-impostos-total">R$ 0,00</strong></div>
+          <div class="f"><label>Valor líquido</label><strong id="nota-valor-liquido">R$ 0,00</strong></div>
+        </div>
+      </div>
+
       <div class="g2">
         <div class="card" style="margin-bottom:0">
           <div class="card-header"><span class="card-title">Assinaturas</span></div>
@@ -4310,6 +4324,22 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
       </div>
       <div class="card">
+        <div class="card-header"><span class="card-title">Integração NFS-e da Prefeitura</span></div>
+        <div class="g3">
+          <div class="f"><label>Município</label><input id="cfg-nfse-municipio" placeholder="Ex.: Belo Horizonte"></div>
+          <div class="f"><label>Provedor NFS-e</label><input id="cfg-nfse-provedor" placeholder="Ex.: Ginfes, Betha, ISSNet"></div>
+          <div class="f"><label>Ambiente</label><select id="cfg-nfse-ambiente"><option value="homologacao">Homologação</option><option value="producao">Produção</option></select></div>
+        </div>
+        <div class="g3" style="margin-top:10px">
+          <div class="f"><label>Usuário / client ID</label><input id="cfg-nfse-client-id"></div>
+          <div class="f"><label>Senha / client secret</label><input id="cfg-nfse-client-secret" type="password" placeholder="Deixe vazio para manter"></div>
+          <div class="f"><label>Certificado digital</label><input id="cfg-nfse-certificado" type="file" accept=".p12,.pfx,.pem,.crt"></div>
+        </div>
+        <div class="f" style="margin-top:10px"><label>Endpoint da prefeitura/provedor</label><input id="cfg-nfse-endpoint" placeholder="https://..."></div>
+        <div class="brow" style="justify-content:flex-start;margin-top:12px"><button class="btn b-az" onclick="salvarConfigNfse()">Salvar configuração fiscal</button></div>
+        <div id="cfg-nfse-status" class="st"></div>
+      </div>
+      <div class="card">
         <div class="card-header"><span class="card-title">Banco de Itens de Compras</span></div>
         <div class="hint" style="margin-bottom:8px">Cadastre aqui os itens padrão usados em ordens de compra e pedidos de orçamento. Eles ficam disponíveis como sugestão no campo de itens.</div>
         <div class="g4">
@@ -6826,6 +6856,7 @@ function calc(){
 
 async function registrar(){
   const svcs=getSvcs(); const sub=svcs.reduce((a,s)=>a+s.vtot,0);
+  const impostos=calcularImpostosNota();
   const ee=document.getElementById('emp-sel');
   const d={numero:document.getElementById('nmed').value,tipo:document.getElementById('tipo-doc').value,
     cliente_id:cliAtual?.id,cliente_nome:cliAtual?.nome||document.getElementById('bcli').value||'',
@@ -6834,7 +6865,7 @@ async function registrar(){
     empresa_id:parseInt(ee.value)||null,empresa_nome:parseInt(ee.value)?(ee.options[ee.selectedIndex]?.text||''):'',
     mes_ref:document.getElementById('mesref').value,dt_emissao:document.getElementById('dtem').value,
     dt_vencimento:document.getElementById('dtvenc').value,servicos:svcs,
-    observacoes:document.getElementById('obs').value,
+    observacoes:document.getElementById('obs').value,aliquotas_impostos:impostos,
     ass_empresa:document.getElementById('ass1').value,ass_cliente:document.getElementById('ass2').value};
   const created=await api('/api/medicoes','POST',d);
   if(created && !created.erro && created.id){
@@ -6844,6 +6875,15 @@ async function registrar(){
   }
   showSt('st-med','Medição registrada no histórico!',false);
   await loadDash(); await loadProxNum();
+}
+
+function calcularImpostosNota(){
+  const base=getSvcs().reduce((a,s)=>a+Number(s.vtot||0),0);
+  const impostos={}; let total=0;
+  ['iss','inss','irrf','pis','cofins','csll'].forEach(k=>{const aliquota=Math.max(0,Number(document.getElementById('aliq-'+k)?.value||0));const valor=base*aliquota/100;impostos[k]={aliquota,valor};total+=valor;});
+  const totalEl=document.getElementById('nota-impostos-total'); const liquidoEl=document.getElementById('nota-valor-liquido');
+  if(totalEl) totalEl.textContent=brl(total); if(liquidoEl) liquidoEl.textContent=brl(Math.max(0,base-total));
+  impostos.total=total; impostos.base=base; return impostos;
 }
 
 async function gerarPDF(){
@@ -7835,6 +7875,11 @@ async function loadConfig(){
   document.getElementById('cfg-app-version-atual').value=d.app_version_atual||d.app_version_minima||'14';
   document.getElementById('cfg-app-version-cooldown').value=d.app_version_notif_cooldown_h||'24';
   document.getElementById('cfg-app-download-url').value=d.app_download_url||'';
+  document.getElementById('cfg-nfse-municipio').value=d.nfse_municipio||'';
+  document.getElementById('cfg-nfse-provedor').value=d.nfse_provedor||'';
+  document.getElementById('cfg-nfse-ambiente').value=d.nfse_ambiente||'homologacao';
+  document.getElementById('cfg-nfse-client-id').value=d.nfse_client_id||'';
+  document.getElementById('cfg-nfse-endpoint').value=d.nfse_endpoint||'';
 }
 
 async function salvarConfig(){
@@ -7846,10 +7891,26 @@ async function salvarConfig(){
     app_version_minima:document.getElementById('cfg-app-version-min').value,
     app_version_atual:document.getElementById('cfg-app-version-atual').value,
     app_version_notif_cooldown_h:document.getElementById('cfg-app-version-cooldown').value,
-    app_download_url:document.getElementById('cfg-app-download-url').value
+    app_download_url:document.getElementById('cfg-app-download-url').value,
+    nfse_municipio:document.getElementById('cfg-nfse-municipio').value,
+    nfse_provedor:document.getElementById('cfg-nfse-provedor').value,
+    nfse_ambiente:document.getElementById('cfg-nfse-ambiente').value,
+    nfse_client_id:document.getElementById('cfg-nfse-client-id').value,
+    nfse_endpoint:document.getElementById('cfg-nfse-endpoint').value,
+    nfse_client_secret:document.getElementById('cfg-nfse-client-secret').value
   });
   await loadProxNum();
   alert('Configurações salvas! Próxima medição: '+document.getElementById('prox-num').textContent);
+}
+
+async function salvarConfigNfse(){
+  const fd=new FormData();
+  const campos={municipio:'cfg-nfse-municipio',provedor:'cfg-nfse-provedor',ambiente:'cfg-nfse-ambiente',client_id:'cfg-nfse-client-id',endpoint:'cfg-nfse-endpoint',client_secret:'cfg-nfse-client-secret'};
+  Object.entries(campos).forEach(([nome,id])=>fd.append(nome,document.getElementById(id).value));
+  const certificado=document.getElementById('cfg-nfse-certificado')?.files?.[0]; if(certificado) fd.append('certificado',certificado);
+  const r=await fetch('/api/config/nfse',{method:'POST',body:fd,credentials:'same-origin'}).then(x=>x.json());
+  showSt('cfg-nfse-status',r?.erro||'Configuração fiscal salva.',!!r?.erro);
+  document.getElementById('cfg-nfse-client-secret').value='';
 }
 
 const _logsNivelCores={FATAL:'#bf2e2e',ERROR:'#d54848',WARN:'#d49a2a',INFO:'#205d8a',DEBUG:'#6b7e97'};
