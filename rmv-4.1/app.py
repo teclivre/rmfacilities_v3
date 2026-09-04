@@ -34175,7 +34175,8 @@ def api_boleto_fornecedor_criar():
 def _cnab240_field(record, start, end, value=" ", numeric=False):
     width = end - start + 1
     text_value = re.sub(r"[^0-9]", "", str(value or "")) if numeric else _cnab240_text(value)
-    text_value = text_value[-width:]
+    # Numérico: mantém os dígitos menos significativos (à direita). Texto: mantém o início (nomes, endereços).
+    text_value = text_value[-width:] if numeric else text_value[:width]
     text_value = text_value.rjust(width, "0") if numeric else text_value.ljust(width)
     record[start - 1:end] = text_value
 
