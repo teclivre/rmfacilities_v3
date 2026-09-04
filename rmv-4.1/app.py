@@ -39398,10 +39398,59 @@ def seed():
     db.session.commit()
 
 
-with app.app_context():
+def _schema_race_error(exc):
+    msg = str(exc or "").lower()
+    return "already exists" in msg or "duplicate column" in msg
+
+
+def _create_all_safe():
+    """Cria tabelas ausentes tolerando corrida entre workers no boot."""
+    try:
+        db.metadata.create_all(bind=db.engine, checkfirst=True)
+    except Exception as exc:
+        db.session.rollback()
+        if not _schema_race_error(exc):
+            raise
+        app.logger.warning(f"[startup] schema ja criado por outro worker: {exc}")
+
+
+class _StartupSchemaLock:
+    """Lock entre processos para o DDL de inicializacao rodar uma vez por vez."""
+
+    def __init__(self):
+        self._fh = None
+
+    def __enter__(self):
+        try:
+            import fcntl
+
+            os.makedirs(DATA_DIR, exist_ok=True)
+            self._fh = open(os.path.join(DATA_DIR, ".startup-schema.lock"), "w")
+            fcntl.flock(self._fh, fcntl.LOCK_EX)
+        except Exception as exc:
+            app.logger.warning(f"[startup] lock de schema indisponivel: {exc}")
+            self._fh = None
+        return self
+
+    def __exit__(self, *_exc):
+        if not self._fh:
+            return False
+        try:
+            import fcntl
+
+            fcntl.flock(self._fh, fcntl.LOCK_UN)
+        except Exception:
+            pass
+        finally:
+            self._fh.close()
+            self._fh = None
+        return False
+
+
+with app.app_context(), _StartupSchemaLock():
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(UPLOAD_ROOT, exist_ok=True)
-    db.metadata.create_all(bind=db.engine, checkfirst=True)
+    _create_all_safe()
     _ensure_medicao_stamp_cols_runtime(force=True)
     ensure_cols("cadastro_candidato", ["ip_cadastro VARCHAR(64)"])
     ensure_cols(
@@ -39441,18 +39490,18 @@ with app.app_context():
     try:
         db.engine.execute("SELECT 1 FROM contrato LIMIT 1")
     except Exception:
-        db.create_all()
+        _create_all_safe()
     # Cria tabela lancamento_avulso se não existir
     try:
         db.engine.execute("SELECT 1 FROM lancamento_avulso LIMIT 1")
     except Exception:
-        db.create_all()
+        _create_all_safe()
     # Cria tabelas folha_pagamento e folha_pagamento_item se não existirem
     try:
         db.engine.execute("SELECT 1 FROM folha_pagamento LIMIT 1")
         db.engine.execute("SELECT 1 FROM folha_pagamento_item LIMIT 1")
     except Exception:
-        db.create_all()
+        _create_all_safe()
     ensure_cols(
         "empresa",
         [
@@ -39823,7 +39872,7 @@ with app.app_context():
     try:
         db.session.execute(text("SELECT 1 FROM ordem_compra_item_catalogo LIMIT 1"))
     except Exception:
-        db.create_all()
+        _create_all_safe()
     ensure_cols(
         "ordem_compra_item_catalogo",
         [
@@ -39849,7 +39898,7 @@ with app.app_context():
     try:
         db.session.execute(text("SELECT 1 FROM ponto_afastamento LIMIT 1"))
     except Exception:
-        db.create_all()
+        _create_all_safe()
     ensure_cols(
         "ponto_afastamento",
         [
