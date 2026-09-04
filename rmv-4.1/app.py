@@ -34308,9 +34308,12 @@ def _cnab240_conta_remessa(folha, empresa, data_pagamento):
                 tipo_conta = {"corrente": "01", "conta corrente": "01", "pagamento": "02", "poupanca": "03", "poupança": "03"}.get((func.banco_tipo_conta or "").strip().lower(), "")
                 if not tipo_conta:
                     raise ValueError(f"cadastre o tipo de conta de {func.nome}")
+                # Câmara centralizadora: "000" só vale para crédito na mesma instituição (Banco Inter);
+                # transferência para outro banco precisa ir via TED/STR ("018"), senão o banco recusa a operação.
+                camara = "000" if banco == "077" else "018"
                 registros.append(_cnab240_record([
                     (1, 3, "077", True), (4, 7, lote, True), (8, 8, "3", True), (9, 13, seq_a, True),
-                    (14, 14, "A", False), (15, 17, "0", True), (18, 20, "000", True),
+                    (14, 14, "A", False), (15, 17, "0", True), (18, 20, camara, True),
                     (21, 23, banco, True), (24, 28, agencia_func, True), (29, 29, agencia_func_dv, True),
                     (30, 41, conta_func, True), (42, 42, conta_func_dv, True), (44, 73, nome_cnab, False),
                     (74, 93, f"FOLHA{folha.id}-{item_index}", False), (94, 101, data_pagamento.strftime("%d%m%Y"), True),
