@@ -34086,7 +34086,8 @@ def _cnab240_conta_remessa(folha, empresa, data_pagamento):
                 registros.append(_cnab240_record([
                     (1, 3, "077", True), (4, 7, lote, True), (8, 8, "3", True), (9, 13, seq_a, True),
                     (14, 14, "A", False), (15, 17, "0", True), (18, 20, "000", True),
-                    (74, 93, f"FOLHA{folha.id}-{item_index}", False), (94, 101, data_pagamento.strftime("%d%m%Y"), True),
+                    (44, 73, func.nome, False), (74, 93, f"FOLHA{folha.id}-{item_index}", False),
+                    (94, 101, data_pagamento.strftime("%d%m%Y"), True),
                     (102, 104, "BRL", False), (120, 134, valor, True), (178, 191, cpf, True),
                 ]))
                 registros.append(_cnab240_record([
