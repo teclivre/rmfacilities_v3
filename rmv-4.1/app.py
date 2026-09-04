@@ -34186,6 +34186,29 @@ def _cnab240_text(value):
     return "".join(c for c in value if not unicodedata.combining(c)).encode("ascii", "ignore").decode("ascii").upper()
 
 
+def _cnab240_nome_abreviado(nome, width=30):
+    """Abrevia nomes do meio (mantendo o primeiro e o último nome completos) para caber no campo do CNAB240."""
+    texto = _cnab240_text(nome).strip()
+    texto = re.sub(r"\s+", " ", texto)
+    if len(texto) <= width:
+        return texto
+    partes = texto.split(" ")
+    if len(partes) <= 2:
+        return texto[:width]
+    primeiro, ultimo = partes[0], partes[-1]
+    meio = partes[1:-1]
+    for i in range(len(meio)):
+        candidato = " ".join([primeiro] + [m[:1] + "." for m in meio[:i + 1]] + meio[i + 1:] + [ultimo])
+        if len(candidato) <= width:
+            texto = candidato
+            break
+    else:
+        texto = " ".join([primeiro] + [m[:1] + "." for m in meio] + [ultimo])
+    if len(texto) <= width:
+        return texto
+    return texto[:width]
+
+
 def _cnab240_record(fields):
     record = [" "] * 240
     for start, end, value, numeric in fields:
@@ -34277,6 +34300,7 @@ def _cnab240_conta_remessa(folha, empresa, data_pagamento):
             soma += valor
             seq_a = item_index * 2 - 1
             seq_b = item_index * 2
+            nome_cnab = _cnab240_nome_abreviado(func.nome)
             if grupo == "conta":
                 banco = _cnab240_bank_value(func.banco_codigo, 3, f"banco de {func.nome}")
                 agencia_func, agencia_func_dv = _cnab240_bank_and_digit(func.banco_agencia, 5, f"agência de {func.nome}")
@@ -34288,7 +34312,7 @@ def _cnab240_conta_remessa(folha, empresa, data_pagamento):
                     (1, 3, "077", True), (4, 7, lote, True), (8, 8, "3", True), (9, 13, seq_a, True),
                     (14, 14, "A", False), (15, 17, "0", True), (18, 20, "000", True),
                     (21, 23, banco, True), (24, 28, agencia_func, True), (29, 29, agencia_func_dv, True),
-                    (30, 41, conta_func, True), (42, 42, conta_func_dv, True), (44, 73, func.nome, False),
+                    (30, 41, conta_func, True), (42, 42, conta_func_dv, True), (44, 73, nome_cnab, False),
                     (74, 93, f"FOLHA{folha.id}-{item_index}", False), (94, 101, data_pagamento.strftime("%d%m%Y"), True),
                     (102, 104, "BRL", False), (120, 134, valor, True), (200, 201, tipo_conta, True),
                     (220, 224, "00004", True),
@@ -34305,7 +34329,7 @@ def _cnab240_conta_remessa(folha, empresa, data_pagamento):
                 registros.append(_cnab240_record([
                     (1, 3, "077", True), (4, 7, lote, True), (8, 8, "3", True), (9, 13, seq_a, True),
                     (14, 14, "A", False), (15, 17, "0", True), (18, 20, "000", True),
-                    (44, 73, func.nome, False), (74, 93, f"FOLHA{folha.id}-{item_index}", False),
+                    (44, 73, nome_cnab, False), (74, 93, f"FOLHA{folha.id}-{item_index}", False),
                     (94, 101, data_pagamento.strftime("%d%m%Y"), True),
                     (102, 104, "BRL", False), (120, 134, valor, True), (178, 191, cpf, True),
                 ]))
