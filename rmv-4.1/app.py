@@ -5053,7 +5053,9 @@ def wa_send_text(numero, mensagem, tipo="principal", cfg=None):
     )
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
-            return json.loads(r.read().decode())
+            resultado = json.loads(r.read().decode())
+            _wa_marcar_enviado_pelo_sistema(num)
+            return resultado
     except urllib.error.HTTPError as e:
         detalhe = e.read().decode(errors="ignore")
         raise ValueError(f"WhatsApp API {e.code}: {detalhe or e.reason}")
@@ -5341,7 +5343,9 @@ def wa_send_media_bytes(numero, arquivo_bytes, nome_arquivo, mimetype="", captio
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            return json.loads(r.read().decode())
+            resultado = json.loads(r.read().decode())
+            _wa_marcar_enviado_pelo_sistema(num)
+            return resultado
     except urllib.error.HTTPError as e:
         detalhe = e.read().decode(errors="ignore")
         raise ValueError(f"WhatsApp API {e.code}: {detalhe or e.reason}")
@@ -5423,6 +5427,27 @@ def wa_ai_pause_active(numero, ref=None):
         return False
     now = ref or utcnow()
     return until > now
+
+
+# Marca mensagens enviadas pelo próprio sistema (API) para não confundi-las com
+# respostas manuais digitadas pelo operador direto no WhatsApp (que devem pausar a IA).
+_WA_ENVIADO_PELO_SISTEMA = {}
+
+
+def _wa_marcar_enviado_pelo_sistema(numero):
+    n = wa_norm_number(numero)
+    if n:
+        _WA_ENVIADO_PELO_SISTEMA[n] = utcnow()
+
+
+def _wa_foi_enviado_pelo_sistema_agora(numero, janela_segundos=20):
+    n = wa_norm_number(numero)
+    if not n:
+        return False
+    quando = _WA_ENVIADO_PELO_SISTEMA.get(n)
+    if not quando:
+        return False
+    return (utcnow() - quando) <= timedelta(seconds=janela_segundos)
 
 
 def wa_ai_pause_for(numero, hours=8):
@@ -38424,6 +38449,38 @@ def webhook_whatsapp():
                 if bool(key_obj.get("fromMe")) or bool(
                     msg_data.get("fromMe")
                 ):
+                    # Mensagem enviada pelo próprio número conectado (fromMe). Se não foi
+                    # disparada pelo nosso sistema, é um operador respondendo manualmente
+                    # direto pelo WhatsApp: pausa a IA por 2h para esse contato.
+                    jid_fm = (
+                        key_obj.get("remoteJid")
+                        or msg_data.get("remoteJid")
+                        or msg_data.get("chatId")
+                        or msg_data.get("jid")
+                        or msg_data.get("sender")
+                        or msg_data.get("from")
+                        or ""
+                    )
+                    if isinstance(jid_fm, dict):
+                        jid_fm = (
+                            jid_fm.get("id")
+                            or jid_fm.get("jid")
+                            or jid_fm.get("phone")
+                            or jid_fm.get("number")
+                            or ""
+                        )
+                    jid_fm = str(jid_fm or "")
+                    if "@g.us" not in jid_fm and "status@broadcast" not in jid_fm:
+                        numero_fm = only_digits(jid_fm) or (
+                            jid_fm.split("@")[0] if jid_fm else ""
+                        )
+                        numero_fm = wa_norm_number(numero_fm)
+                        if (
+                            numero_fm
+                            and wa_is_valid_number(numero_fm)
+                            and not _wa_foi_enviado_pelo_sistema_agora(numero_fm)
+                        ):
+                            wa_ai_pause_for(numero_fm, 2)
                     continue
                 jid = (
                     key_obj.get("remoteJid")
