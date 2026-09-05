@@ -34172,12 +34172,11 @@ def api_boleto_fornecedor_criar():
     return jsonify(boleto.to_dict()), 201
 
 
-def _cnab240_field(record, start, end, value=" ", numeric=False, truncar=True):
+def _cnab240_field(record, start, end, value=" ", numeric=False):
     width = end - start + 1
     text_value = re.sub(r"[^0-9]", "", str(value or "")) if numeric else _cnab240_text(value)
-    if truncar:
-        # Numérico: mantém os dígitos menos significativos (à direita). Texto: mantém o início (nomes, endereços).
-        text_value = text_value[-width:] if numeric else text_value[:width]
+    # Numérico: mantém os dígitos menos significativos (à direita). Texto: mantém o início (nomes, endereços).
+    text_value = text_value[-width:] if numeric else text_value[:width]
     text_value = text_value.rjust(width, "0") if numeric else text_value.ljust(width)
     record[start - 1:end] = text_value
 
@@ -34189,10 +34188,8 @@ def _cnab240_text(value):
 
 def _cnab240_record(fields):
     record = [" "] * 240
-    for field in fields:
-        start, end, value, numeric = field[:4]
-        truncar = field[4] if len(field) > 4 else True
-        _cnab240_field(record, start, end, value, numeric, truncar)
+    for start, end, value, numeric in fields:
+        _cnab240_field(record, start, end, value, numeric)
     return "".join(record)
 
 
@@ -34294,7 +34291,7 @@ def _cnab240_conta_remessa(folha, empresa, data_pagamento):
                     (1, 3, "077", True), (4, 7, lote, True), (8, 8, "3", True), (9, 13, seq_a, True),
                     (14, 14, "A", False), (15, 17, "0", True), (18, 20, "000", True),
                     (21, 23, banco, True), (24, 28, agencia_func, True), (29, 29, agencia_func_dv, True),
-                    (30, 41, conta_func, True), (42, 42, conta_func_dv, True), (44, 73, nome_cnab, False, False),
+                    (30, 41, conta_func, True), (42, 42, conta_func_dv, True), (44, 73, nome_cnab, False),
                     (74, 93, f"FOLHA{folha.id}-{item_index}", False), (94, 101, data_pagamento.strftime("%d%m%Y"), True),
                     (102, 104, "BRL", False), (120, 134, valor, True), (200, 201, tipo_conta, True),
                     (220, 224, "00004", True),
@@ -34311,7 +34308,7 @@ def _cnab240_conta_remessa(folha, empresa, data_pagamento):
                 registros.append(_cnab240_record([
                     (1, 3, "077", True), (4, 7, lote, True), (8, 8, "3", True), (9, 13, seq_a, True),
                     (14, 14, "A", False), (15, 17, "0", True), (18, 20, "000", True),
-                    (44, 73, nome_cnab, False, False), (74, 93, f"FOLHA{folha.id}-{item_index}", False),
+                    (44, 73, nome_cnab, False), (74, 93, f"FOLHA{folha.id}-{item_index}", False),
                     (94, 101, data_pagamento.strftime("%d%m%Y"), True),
                     (102, 104, "BRL", False), (120, 134, valor, True), (178, 191, cpf, True),
                 ]))
