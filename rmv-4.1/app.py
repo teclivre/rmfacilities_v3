@@ -1,5 +1,6 @@
 import io
 import urllib.request
+import urllib.parse
 import urllib.error
 import csv
 import mimetypes
@@ -1420,6 +1421,239 @@ def api_financeiro_faturamento_list():
         db.session.rollback()
         _ensure_medicao_stamp_cols_runtime(force=True)
         return api_financeiro_faturamento_list()
+
+
+def _faturamento_valor_cliente(cliente, contrato=None):
+    origem = contrato or cliente
+    return round(
+        float(getattr(origem, "limpeza", 0) or 0)
+        + float(getattr(origem, "jardinagem", 0) or 0)
+        + float(getattr(origem, "portaria", 0) or 0)
+        + float(getattr(origem, "materiais_equip_locacao", 0) or 0),
+        2,
+    )
+
+
+def _faturamento_endereco_cliente(cliente):
+    if not cliente:
+        return ""
+    return cliente.end_fmt() or ""
+
+
+def _faturamento_previsao(cliente, contrato=None):
+    dia = getattr(contrato or cliente, "dia_faturamento", None) or getattr(cliente, "dia_faturamento", None) or 1
+    dia = max(1, min(31, int(dia)))
+    hoje = localnow().date()
+    ultimo_dia = (date(hoje.year + (1 if hoje.month == 12 else 0), 1 if hoje.month == 12 else hoje.month + 1, 1) - timedelta(days=1)).day
+    return hoje.replace(day=min(dia, ultimo_dia)).isoformat()
+
+
+def _faturamento_item_cliente(cliente, contrato=None, competencia=None, data_prevista=None):
+    competencia = competencia or localnow().strftime("%Y-%m")
+    data_prevista = data_prevista or _faturamento_previsao(cliente, contrato)
+    return FaturamentoEnvio(
+        cliente_id=cliente.id if cliente else None,
+        contrato_id=contrato.id if contrato else None,
+        cliente_nome=(cliente.nome if cliente else "").strip(),
+        cliente_cnpj=norm_doc(cliente.cnpj if cliente else ""),
+        cliente_email=(cliente.email if cliente else "").strip(),
+        cliente_telefone=(cliente.telefone if cliente else "").strip(),
+        cliente_endereco=_faturamento_endereco_cliente(cliente),
+        competencia=competencia,
+        data_prevista=data_prevista,
+        valor=_faturamento_valor_cliente(cliente, contrato),
+    )
+
+
+@app.route("/api/cobranca/faturamento", methods=["GET"])
+@lr
+def api_cobranca_faturamento():
+    hoje = localnow().date().isoformat()
+    competencia = (request.args.get("competencia") or localnow().strftime("%Y-%m")).strip()
+    status = (request.args.get("status") or "").strip().lower()
+    q = (request.args.get("q") or "").strip().lower()
+    itens = FaturamentoEnvio.query.filter_by(competencia=competencia).all()
+    ativos = Cliente.query.filter_by(status="Ativo").all()
+    contratos = Contrato.query.filter_by(status="Ativo").all()
+    contrato_por_cliente = {}
+    for contrato in contratos:
+        contrato_por_cliente.setdefault(contrato.cliente_id, contrato)
+    existentes = {i.cliente_id for i in itens if i.cliente_id and i.status in ("enviado", "processando")}
+    for cliente in ativos:
+        if cliente.id in existentes:
+            continue
+        contrato = contrato_por_cliente.get(cliente.id)
+        item = _faturamento_item_cliente(cliente, contrato, competencia)
+        if not FaturamentoEnvio.query.filter_by(cliente_id=cliente.id, competencia=competencia).first():
+            db.session.add(item)
+            itens.append(item)
+    db.session.commit()
+    out = []
+    for item in sorted(itens, key=lambda x: (x.data_prevista or "9999", (x.cliente_nome or "").lower())):
+        if status and item.status != status:
+            continue
+        if q and q not in (item.cliente_nome or "").lower() and q not in (item.cliente_cnpj or "").lower():
+            continue
+        d = item.to_dict()
+        d["atrasado"] = bool(item.status != "enviado" and item.data_prevista and item.data_prevista < hoje)
+        d["hoje"] = item.data_prevista == hoje
+        out.append(d)
+    return jsonify({"ok": True, "competencia": competencia, "hoje": hoje, "itens": out})
+
+
+@app.route("/api/cobranca/faturamento", methods=["POST"])
+@lr
+def api_cobranca_faturamento_avulso():
+    d = request.json or {}
+    cliente_id = to_num(d.get("cliente_id"))
+    cliente = db.session.get(Cliente, cliente_id) if cliente_id else None
+    cnpj = norm_doc(d.get("cliente_cnpj"))
+    if not cliente and cnpj:
+        cliente = Cliente.query.filter(Cliente.cnpj == cnpj).first()
+    if cliente:
+        contrato = db.session.get(Contrato, to_num(d.get("contrato_id"))) if d.get("contrato_id") else None
+        item = _faturamento_item_cliente(cliente, contrato, d.get("competencia"), d.get("data_prevista"))
+    else:
+        nome = (d.get("cliente_nome") or "").strip()
+        if not nome or not cnpj:
+            return jsonify({"erro": "Informe o nome e o CNPJ do cliente avulso."}), 400
+        item = FaturamentoEnvio(
+            cliente_nome=nome,
+            cliente_cnpj=cnpj,
+            cliente_email=(d.get("cliente_email") or "").strip(),
+            cliente_telefone=(d.get("cliente_telefone") or "").strip(),
+            cliente_endereco=(d.get("cliente_endereco") or "").strip(),
+            competencia=(d.get("competencia") or localnow().strftime("%Y-%m")),
+            data_prevista=(d.get("data_prevista") or localnow().date().isoformat()),
+            valor=float(d.get("valor") or 0),
+        )
+    if d.get("valor") is not None:
+        item.valor = float(d.get("valor") or 0)
+    db.session.add(item)
+    db.session.commit()
+    return jsonify({"ok": True, "item": item.to_dict()}), 201
+
+
+def _inter_config():
+    ambiente = (gc("inter_ambiente", os.environ.get("INTER_AMBIENTE", "sandbox")) or "sandbox").lower()
+    base = "https://cdpj.partners.bancointer.com.br" if ambiente == "producao" else "https://cdpj-sandbox.partners.uatinter.co"
+    return {
+        "base": base,
+        "client_id": gc("inter_client_id", os.environ.get("INTER_CLIENT_ID", "")),
+        "client_secret": gc("inter_client_secret", os.environ.get("INTER_CLIENT_SECRET", "")),
+        "cert_arquivo": gc("inter_cert_arquivo", os.environ.get("INTER_CERT_ARQUIVO", "")),
+        "cert_senha": gc("inter_cert_senha", os.environ.get("INTER_CERT_SENHA", "")),
+        "conta": gc("inter_conta_corrente", os.environ.get("INTER_CONTA_CORRENTE", "")),
+    }
+
+
+def _inter_request(method, path, body=None, scope="boleto-cobranca.write"):
+    cfg = _inter_config()
+    required = [cfg["client_id"], cfg["client_secret"], cfg["cert_arquivo"], cfg["conta"]]
+    if not all(required):
+        raise RuntimeError("Integração Inter não configurada: informe client ID, segredo, certificado e conta corrente.")
+    cert_path = _cert_rel_to_abs(cfg["cert_arquivo"])
+    if not cert_path or not os.path.exists(cert_path):
+        raise RuntimeError("Certificado da integração Inter não encontrado.")
+    import ssl
+    context = ssl.create_default_context()
+    context.load_cert_chain(cert_path, password=cfg["cert_senha"] or None)
+    token_data = urllib.parse.urlencode({"client_id": cfg["client_id"], "client_secret": cfg["client_secret"], "grant_type": "client_credentials", "scope": scope}).encode()
+    token_req = urllib.request.Request(cfg["base"] + "/oauth/v2/token", data=token_data, method="POST")
+    token_req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    with urllib.request.urlopen(token_req, context=context, timeout=30) as resp:
+        token = json.loads(resp.read().decode()).get("access_token")
+    payload = json.dumps(body or {}).encode() if body is not None else None
+    req = urllib.request.Request(cfg["base"] + path, data=payload, method=method)
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("x-conta-corrente", cfg["conta"])
+    if payload is not None:
+        req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, context=context, timeout=30) as resp:
+        raw = resp.read().decode()
+        return json.loads(raw) if raw else {}
+
+
+@app.route("/api/cobranca/faturamento/<int:id>/nf", methods=["POST"])
+@lr
+def api_cobranca_faturamento_nf(id):
+    item = db.get_or_404(FaturamentoEnvio, id)
+    fs = request.files.get("arquivo")
+    if not fs:
+        return jsonify({"erro": "Arquivo da NF não enviado."}), 400
+    rel, _ = save_upload(fs, f"faturamento/{id}")
+    item.nf_caminho = rel
+    item.nf_numero = (request.form.get("nf_numero") or "").strip()
+    item.nf_serie = (request.form.get("nf_serie") or "").strip()
+    db.session.commit()
+    return jsonify({"ok": True, "item": item.to_dict()})
+
+
+@app.route("/api/cobranca/faturamento/<int:id>/enviar", methods=["POST"])
+@lr
+def api_cobranca_faturamento_enviar(id):
+    import tempfile
+
+    item = db.get_or_404(FaturamentoEnvio, id)
+    d = request.json or {}
+    if d.get("valor") is not None:
+        item.valor = float(d.get("valor") or 0)
+    if item.valor < 2.5:
+        return jsonify({"erro": "O valor deve ser igual ou superior a R$ 2,50."}), 400
+    if not item.data_prevista:
+        return jsonify({"erro": "Informe a data de faturamento."}), 400
+    if item.status == "enviado" and not d.get("reenviar"):
+        return jsonify({"erro": "Este faturamento já foi enviado."}), 409
+    if not item.medicao_id:
+        medicao = Medicao(
+            numero=prox_num(), tipo="Fatura de Serviços", cliente_id=item.cliente_id,
+            cliente_nome=item.cliente_nome, cliente_cnpj=item.cliente_cnpj,
+            cliente_end=item.cliente_endereco, cliente_resp="", mes_ref=item.competencia,
+            dt_emissao=localnow().date().isoformat(), dt_vencimento=item.data_prevista,
+            valor_bruto=item.valor, servicos=json.dumps([], ensure_ascii=False),
+            status="emitida", criado_por=session.get("nome", ""),
+        )
+        db.session.add(medicao)
+        db.session.flush()
+        item.medicao_id = medicao.id
+    item.status = "processando"
+    db.session.commit()
+    enviado = False
+    erros = []
+    destino = item.cliente_email
+    try:
+        if destino:
+            emp = db.session.get(Empresa, getattr(medicao, "empresa_id", None)) if item.medicao_id else None
+            pdf_resp = _build_pdf({**medicao.to_dict(), "empresa": emp.to_dict() if emp else {}})
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tf:
+                tf.write(pdf_resp.get_data())
+                pdf_path = tf.name
+            anexos = [{"path": pdf_path, "name": f"Fatura_{medicao.numero}.pdf"}]
+            if item.nf_caminho:
+                nf_path = os.path.join(UPLOAD_ROOT, item.nf_caminho)
+                if os.path.exists(nf_path):
+                    anexos.append({"path": nf_path, "name": os.path.basename(nf_path)})
+            smtp_send_text(destino, f"Faturamento {medicao.numero}", f"Segue o faturamento referente a {item.competencia}.", anexos=anexos)
+            os.remove(pdf_path)
+            enviado = True
+    except Exception as ex:
+        erros.append(f"E-mail: {ex}")
+    try:
+        pagador = {"email": destino, "cpfCnpj": only_digits(item.cliente_cnpj), "tipoPessoa": "JURIDICA", "nome": item.cliente_nome}
+        inter = _inter_request("POST", "/cobranca/v3/cobrancas", {"seuNumero": str(medicao.numero)[:15], "valorNominal": item.valor, "dataVencimento": item.data_prevista, "pagador": pagador, "formasRecebimento": ["BOLETO", "PIX"]})
+        item.inter_codigo = inter.get("codigoSolicitacao", "")
+        item.inter_status = "EM_PROCESSAMENTO"
+        item.canal = "inter"
+        enviado = True
+    except Exception as ex:
+        item.inter_erro = str(ex)[:500]
+        if not destino:
+            erros.append(f"Inter: {ex}")
+    item.status = "enviado" if enviado else "erro"
+    item.data_envio = utcnow() if enviado else None
+    db.session.commit()
+    audit_event("faturamento_enviado", "usuario", session.get("uid"), "faturamento_envio", item.id, enviado, {"medicao_id": item.medicao_id, "inter_codigo": item.inter_codigo})
+    return jsonify({"ok": enviado, "item": item.to_dict(), "erros": erros}), (200 if enviado else 502)
 
 
 @app.route("/api/financeiro/faturamento/export.csv", methods=["GET"])
@@ -2874,6 +3108,39 @@ class CobrangaLog(db.Model):
         d["enviado_fmt"] = (
             self.enviado_em.strftime("%d/%m/%Y %H:%M") if self.enviado_em else ""
         )
+        return d
+
+
+class FaturamentoEnvio(db.Model):
+    __tablename__ = "faturamento_envio"
+    id = db.Column(db.Integer, primary_key=True)
+    cliente_id = db.Column(db.Integer, db.ForeignKey("cliente.id"), nullable=True, index=True)
+    contrato_id = db.Column(db.Integer, db.ForeignKey("contrato.id"), nullable=True, index=True)
+    medicao_id = db.Column(db.Integer, db.ForeignKey("medicao.id"), nullable=True, index=True)
+    cliente_nome = db.Column(db.String(200), nullable=False, default="")
+    cliente_cnpj = db.Column(db.String(30), nullable=False, default="")
+    cliente_email = db.Column(db.String(250), default="")
+    cliente_telefone = db.Column(db.String(30), default="")
+    cliente_endereco = db.Column(db.String(400), default="")
+    competencia = db.Column(db.String(7), nullable=False, default="")
+    data_prevista = db.Column(db.String(10), nullable=False, default="")
+    data_envio = db.Column(db.DateTime)
+    valor = db.Column(db.Float, nullable=False, default=0)
+    status = db.Column(db.String(30), nullable=False, default="pendente")
+    canal = db.Column(db.String(20), nullable=False, default="email")
+    inter_codigo = db.Column(db.String(80), default="")
+    inter_status = db.Column(db.String(40), default="")
+    inter_erro = db.Column(db.Text, default="")
+    nf_numero = db.Column(db.String(40), default="")
+    nf_serie = db.Column(db.String(20), default="")
+    nf_caminho = db.Column(db.String(500), default="")
+    criado_em = db.Column(db.DateTime, default=utcnow)
+    atualizado_em = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
+
+    def to_dict(self):
+        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        d["data_envio"] = self.data_envio.strftime("%d/%m/%Y %H:%M") if self.data_envio else ""
+        d["criado_em"] = self.criado_em.strftime("%d/%m/%Y %H:%M") if self.criado_em else ""
         return d
 
 
@@ -35725,6 +35992,26 @@ def api_dashboard():
         }
         for c in sorted(pendentes_clientes, key=lambda x: (x.nome or "").lower())
     ]
+    envios_mes = {
+        e.cliente_id: e
+        for e in FaturamentoEnvio.query.filter_by(competencia=mes).all()
+        if e.cliente_id
+    }
+    alertas_faturamento_dia = []
+    for cliente in ativos:
+        contrato = next((ct for ct in contratos_ativos if ct.cliente_id == cliente.id), None)
+        dia_faturamento = int(getattr(contrato or cliente, "dia_faturamento", 1) or 1)
+        if dia_faturamento != hoje.day:
+            continue
+        envio = envios_mes.get(cliente.id)
+        if envio and envio.status == "enviado":
+            continue
+        alertas_faturamento_dia.append({
+            "cliente_id": cliente.id,
+            "cliente_nome": cliente.nome or "",
+            "valor": _faturamento_valor_cliente(cliente, contrato),
+            "status": envio.status if envio else "pendente",
+        })
 
     def _parse_aso_validade(raw):
         """Interpreta o campo competencia do ASO como DATA DE EMISSÃO e devolve
@@ -36016,6 +36303,10 @@ def api_dashboard():
             "alerta_faturamento": {
                 "qtd": len(alertas_faturamento),
                 "itens": alertas_faturamento[:8],
+            },
+            "alerta_faturamento_dia": {
+                "qtd": len(alertas_faturamento_dia),
+                "itens": alertas_faturamento_dia[:8],
             },
             "alerta_calculo_beneficios": {
                 "qtd": len(alertas_calculo),

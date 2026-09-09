@@ -489,12 +489,37 @@ async function concDesvincular(txId){
 // ============================================================
 // RÉGUA DE COBRANÇA
 // ============================================================
+let _fatEnvioSugestoesTimer=null;
+function fatEnvioEsc(v){return String(v??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));}
+async function fatEnvioBuscarCliente(){
+  clearTimeout(_fatEnvioSugestoesTimer);
+  const q=(document.getElementById('fat-envio-busca')?.value||'').trim(), box=document.getElementById('fat-envio-sugestoes');
+  if(q.length<3){box.innerHTML='';return;}
+  _fatEnvioSugestoesTimer=setTimeout(async()=>{const lista=await api('/api/clientes?q='+encodeURIComponent(q));box.innerHTML=(lista||[]).slice(0,5).map(c=>`<button type="button" class="btn b-gh b-sm" style="margin:3px 3px 0 0" onclick="fatEnvioSelecionarCliente(${c.id})">${fatEnvioEsc(c.nome)} · ${fatEnvioEsc(c.cnpj||'')}</button>`).join('');},250);
+}
+async function fatEnvioSelecionarCliente(id){
+  const lista=await api('/api/clientes?q='+encodeURIComponent(id)), c=(lista||[]).find(x=>Number(x.id)===Number(id));
+  if(!c)return;
+  document.getElementById('fat-envio-busca').value=c.cnpj||c.nome||'';
+  document.getElementById('fat-envio-sugestoes').innerHTML=`Cliente selecionado: <b>${fatEnvioEsc(c.nome)}</b>`;
+}
+function fatEnvioStatus(text,ok=false){const el=document.getElementById('fat-envio-status');if(el){el.textContent=text;el.className='st '+(ok?'ok':'');}}
+async function fatEnvioCarregar(){
+  const comp=document.getElementById('fat-envio-comp');if(comp&&!comp.value)comp.value=new Date().toISOString().slice(0,7);
+  const p=new URLSearchParams({competencia:comp?.value||'',status:document.getElementById('fat-envio-filtro')?.value||''}), r=await api('/api/cobranca/faturamento?'+p.toString()), tb=document.getElementById('tb-fat-envio');
+  if(!tb)return;const itens=r?.itens||[];
+  if(!itens.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-muted)">Nenhum faturamento previsto.</td></tr>';return;}
+  tb.innerHTML=itens.map(i=>{const destaque=i.hoje?'border-left:3px solid var(--laranja)':(i.atrasado?'border-left:3px solid var(--verm)':'');const status=i.status==='enviado'?'p-vd':(i.status==='erro'?'p-vm':'p-gh');return `<tr style="${destaque}"><td>${fatEnvioEsc(i.data_prevista||'—')}${i.hoje?' <span class="pill p-lj">Hoje</span>':''}${i.atrasado?' <span class="pill p-vm">Atrasado</span>':''}</td><td><b>${fatEnvioEsc(i.cliente_nome)}</b><div style="font-size:11px;color:var(--text-muted)">${fatEnvioEsc(i.cliente_cnpj)} · ${fatEnvioEsc(i.cliente_email||'sem e-mail')}</div></td><td>${fatEnvioEsc(i.competencia)}</td><td><input id="fat-envio-valor-${i.id}" type="number" min="2.50" step="0.01" value="${Number(i.valor||0).toFixed(2)}" style="width:100px"></td><td><span class="pill ${status}">${fatEnvioEsc(i.status)}</span>${i.inter_codigo?`<div style="font-size:10px">Inter: ${fatEnvioEsc(i.inter_codigo)}</div>`:''}</td><td><input id="fat-envio-nf-${i.id}" type="file" accept="application/pdf,image/*" style="max-width:180px"><div style="font-size:10px;color:var(--text-muted)">${i.nf_numero?'NF '+fatEnvioEsc(i.nf_numero):'NF opcional'}</div></td><td><button class="btn b-az b-sm" onclick="fatEnvioEnviar(${i.id})">Enviar</button></td></tr>`;}).join('');
+}
+async function fatEnvioCriarAvulso(){const body={cliente_nome:document.getElementById('fat-avulso-nome').value.trim(),cliente_cnpj:document.getElementById('fat-avulso-cnpj').value.trim(),cliente_email:document.getElementById('fat-avulso-email').value.trim(),valor:parseFloat(document.getElementById('fat-avulso-valor').value||0),competencia:document.getElementById('fat-envio-comp').value};const r=await api('/api/cobranca/faturamento','POST',body);if(r?.erro){fatEnvioStatus(r.erro);return;}fatEnvioStatus('Faturamento avulso adicionado.',true);fatEnvioCarregar();}
+async function fatEnvioEnviar(id){const valor=parseFloat(document.getElementById('fat-envio-valor-'+id)?.value||0), file=document.getElementById('fat-envio-nf-'+id)?.files?.[0];if(file){const fd=new FormData();fd.append('arquivo',file);const nf=await fetch('/api/cobranca/faturamento/'+id+'/nf',{method:'POST',body:fd,credentials:'same-origin'});if(!nf.ok){fatEnvioStatus('Não foi possível anexar a NF.');return;}}const r=await api('/api/cobranca/faturamento/'+id+'/enviar','POST',{valor});if(r?.erro){fatEnvioStatus(r.erro);return;}fatEnvioStatus((r.erros||[]).join(' ')||'Faturamento enviado.',true);fatEnvioCarregar();}
+document.addEventListener('DOMContentLoaded',()=>{if(document.getElementById('pg-cobrancas'))fatEnvioCarregar();});
 async function cobrancarProcessar(){
   const tipos=[];
   if(document.getElementById('rg-d5')?.checked)tipos.push('D-5');
   if(document.getElementById('rg-d1')?.checked)tipos.push('D-1');
   if(document.getElementById('rg-d3')?.checked)tipos.push('D+3');
-  if(!tipos.length){alert('Selecione pelo menos um tipo de lembrete.');return;}
+    if(!tipos.length){alert('Selecione pelo menos um tipo de lembrete.');return;}
   const r=await api('/api/cobrancas/processar','POST',{tipos});
   const el=document.getElementById('cob-res');
   if(el){
@@ -694,6 +719,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         </button>
         <div class="module-panel">
           <a class="nav-item lv2" data-nav="financeiro" onclick="nav('financeiro',this)"><span class="nav-label">Pagamentos</span></a>
+          <a class="nav-item lv2" data-nav="cobrancas" onclick="nav('cobrancas',this)"><span class="nav-label">Cobranca</span></a>
         </div>
       </div>
 
@@ -1389,6 +1415,28 @@ document.addEventListener('DOMContentLoaded',()=>{
 
     <!-- ══ RÉGUA DE COBRANÇA ══ -->
     <div id="pg-cobrancas" class="pg">
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-header"><span class="card-title">Envio de faturamento</span><button class="btn b-gh b-sm" onclick="fatEnvioCarregar()">Atualizar</button></div>
+        <div style="padding:12px 0;color:var(--text-muted);font-size:13px">Clientes cadastrados entram pela data de faturamento do contrato. O envio avulso aceita um CNPJ e busca o cadastro automaticamente.</div>
+        <div class="g4" style="margin-bottom:10px">
+          <div class="f"><label>Buscar cliente ou CNPJ</label><input id="fat-envio-busca" placeholder="Digite o CNPJ" oninput="fatEnvioBuscarCliente()"><div id="fat-envio-sugestoes" style="font-size:11px"></div></div>
+          <div class="f"><label>Competência</label><input id="fat-envio-comp" type="month"></div>
+          <div class="f"><label>Filtro</label><select id="fat-envio-filtro" onchange="fatEnvioCarregar()"><option value="">Todos</option><option value="pendente">Pendentes</option><option value="enviado">Enviados</option><option value="erro">Com erro</option></select></div>
+          <div class="f"><label>Data de envio</label><input id="fat-envio-data" type="date"></div>
+        </div>
+        <div class="card" style="background:var(--cinza-cl);margin:0 0 12px;padding:12px">
+          <div style="font-weight:700;margin-bottom:8px">Envio avulso</div>
+          <div class="g4">
+            <div class="f"><label>Nome *</label><input id="fat-avulso-nome"></div>
+            <div class="f"><label>CNPJ *</label><input id="fat-avulso-cnpj" placeholder="Será buscado no cadastro"></div>
+            <div class="f"><label>E-mail</label><input id="fat-avulso-email" type="email"></div>
+            <div class="f"><label>Valor *</label><input id="fat-avulso-valor" type="number" min="2.50" step="0.01"></div>
+          </div>
+          <div class="brow" style="justify-content:flex-start;margin-top:8px"><button class="btn b-az b-sm" onclick="fatEnvioCriarAvulso()">Adicionar faturamento avulso</button></div>
+        </div>
+        <div id="fat-envio-status" class="st"></div>
+        <div style="overflow-x:auto"><table class="t" style="font-size:13px;min-width:1050px"><thead><tr><th>Previsto</th><th>Cliente</th><th>Competência</th><th>Valor</th><th>Status</th><th>Envio / NF</th><th>Ações</th></tr></thead><tbody id="tb-fat-envio"><tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-muted)">Carregando fila...</td></tr></tbody></table></div>
+      </div>
       <div class="card" style="margin-bottom:12px">
         <div class="card-header"><span class="card-title">Régua de Cobrança Automática</span></div>
         <div style="padding:12px">
@@ -5684,6 +5732,7 @@ async function loadDash(){
     const asoInval=d.alerta_sem_aso_valido||{qtd:0,itens:[]};
     const certs=d.alerta_certificados||{qtd:0,itens:[]};
     const contratos=d.alerta_contratos||{qtd:0,itens:[]};
+    const fatHoje=d.alerta_faturamento_dia||{qtd:0,itens:[]};
     const calcItens=(calc.itens||[]).length
       ? calc.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.titulo||'—'}</div><div style="font-size:11px;color:var(--text-muted)">${it.descricao||''}</div></div>`).join('')
       : '';
@@ -5702,9 +5751,15 @@ async function loadDash(){
     const contratosItens=(contratos.itens||[]).length
       ? contratos.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.cliente_nome||'—'}</div><div style="font-size:11px;color:var(--text-muted)">${it.vencido?'Vencido em':'Vence em'} ${it.vencimento||'—'} · ${it.vencido?'vencido há '+Math.abs(it.dias)+' dia(s)':'faltam '+it.dias+' dia(s)'}</div></div>`).join('')
       : '';
-    if((aso.itens||[]).length || (calc.itens||[]).length || (benPend.itens||[]).length || (asoInval.itens||[]).length || (certs.itens||[]).length || (contratos.itens||[]).length){
+    const fatHojeItens=(fatHoje.itens||[]).length
+      ? fatHoje.itens.map(it=>`<div style="padding:6px 0;border-bottom:1px dashed var(--borda)"><div style="font-size:12px;font-weight:700">${it.cliente_nome||'—'}</div><div style="font-size:11px;color:var(--text-muted)">Valor sugerido: ${brl(it.valor)} · ${it.status||'pendente'}</div></div>`).join('')
+      : '';
+    if((fatHoje.itens||[]).length || (aso.itens||[]).length || (calc.itens||[]).length || (benPend.itens||[]).length || (asoInval.itens||[]).length || (certs.itens||[]).length || (contratos.itens||[]).length){
       al.style.display='grid';
       const cards=[];
+      if((fatHoje.itens||[]).length){
+        cards.push(`<button type="button" class="card dash-alert-btn" style="margin-bottom:0;text-align:left" onclick="abrirDashboardDestino('cobrancas')"><div class="card-header" style="margin-bottom:8px"><span class="card-title">Faturamentos para enviar hoje</span><div style="display:flex;align-items:center;gap:8px"><span class="pill p-lj">${fatHoje.qtd||0}</span><span class="metric-go" style="font-size:9px">Ir</span></div></div><div>${fatHojeItens}</div></button>`);
+      }
       // cards de contratos removidos do dashboard (ver seção RH)
       if((calc.itens||[]).length){
         cards.push(`<button type="button" class="card dash-alert-btn" style="margin-bottom:0;text-align:left" onclick="abrirDashboardDestino('beneficios')">
