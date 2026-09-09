@@ -13734,6 +13734,8 @@ def api_atualizar_funcionario(id):
                 setattr(f, k, to_num(d.get(k)))
             elif k == "telefone":
                 setattr(f, k, wa_norm_number(d.get(k)))
+            elif k == "email":
+                setattr(f, k, (d.get(k) or "").strip().lower())
             elif k == "cep":
                 setattr(f, k, norm_cep(d.get(k)))
             elif k == "estado":
@@ -30744,13 +30746,24 @@ def api_operacional_postos():
     cls = Cliente.query.order_by(Cliente.nome).all()
     if empresa_id:
         cls = [c for c in cls if c.empresa_id == empresa_id]
+    contratos_ativos = Contrato.query.filter_by(status="Ativo").all()
+    contrato_capacidade = {}
+    for contrato in contratos_ativos:
+        capacidade = max(0, to_num(contrato.qtd_funcionarios_posto))
+        if capacidade > contrato_capacidade.get(contrato.cliente_id, 0):
+            contrato_capacidade[contrato.cliente_id] = capacidade
     clientes = [
         {
             "id": c.id,
             "nome": c.nome or "",
             "empresa_id": c.empresa_id,
             "numero_contrato": c.numero_contrato or "",
-            "qtd_funcionarios_posto": max(0, to_num(c.qtd_funcionarios_posto)),
+            "qtd_funcionarios_posto": max(
+                0,
+                to_num(c.qtd_funcionarios_posto),
+                contrato_capacidade.get(c.id, 0),
+            ),
+            "limite_origem": "cliente" if max(0, to_num(c.qtd_funcionarios_posto)) > 0 else ("contrato" if contrato_capacidade.get(c.id, 0) > 0 else "ausente"),
             "ocupados": Funcionario.query.filter_by(
                 posto_cliente_id=c.id, status="Ativo"
             ).count(),
@@ -30789,6 +30802,8 @@ def api_operacional_postos_salvar():
     if not fid:
         return jsonify({"erro": "Funcionario obrigatorio"}), 400
     f = db.get_or_404(Funcionario, fid)
+    if _status_norm(f.status) != "ativo":
+        return jsonify({"erro": "Somente funcionários ativos podem ser vinculados a um posto."}), 400
     posto_cliente_id = to_num(d.get("posto_cliente_id")) or None
     if posto_cliente_id:
         cli = db.get_or_404(Cliente, posto_cliente_id)
@@ -30796,7 +30811,10 @@ def api_operacional_postos_salvar():
             return jsonify(
                 {"erro": "O posto selecionado pertence a outra empresa."}
             ), 400
-        cap = max(0, to_num(cli.qtd_funcionarios_posto))
+        contrato_cap = max(
+            [max(0, to_num(ct.qtd_funcionarios_posto)) for ct in Contrato.query.filter_by(cliente_id=cli.id, status="Ativo").all()] or [0]
+        )
+        cap = max(0, to_num(cli.qtd_funcionarios_posto), contrato_cap)
         if cap <= 0:
             return jsonify(
                 {
@@ -30816,7 +30834,7 @@ def api_operacional_postos_salvar():
         f.posto_cliente_id = None
         f.posto_operacional = "Reserva tecnica"
     db.session.commit()
-    return jsonify({"ok": True, "funcionario": f.to_dict()})
+    return jsonify({"ok": True, "funcionario": f.to_dict(), "posto_cliente_id": f.posto_cliente_id, "posto_operacional": f.posto_operacional})
 
 
 @app.route("/api/beneficios/lancamentos", methods=["GET"])

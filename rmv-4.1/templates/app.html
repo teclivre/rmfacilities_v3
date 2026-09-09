@@ -14782,10 +14782,11 @@ function filtrarOpPostos(){
       const ocu=parseInt(c.ocupados||0,10)||0;
       const liv=Math.max(0,cap-ocu);
       const lotado=(cap>0 && liv<=0);
-      const txt=((c.posto_label||c.nome||'') + (cap>0?` (${ocu}/${cap} · livres ${liv})`:' (sem limite cadastrado)') + (lotado?' - LOTADO':'' )).replace(/"/g,'&quot;');
-      const disabled=(lotado && !s)?'disabled':'';
+      const semLimite=cap<=0;
+      const txt=((c.posto_label||c.nome||'') + (cap>0?` (${ocu}/${cap} · livres ${liv})`:' (limite não cadastrado - configure no cliente/contrato)') + (lotado?' - LOTADO':'' )).replace(/"/g,'&quot;');
+      const disabled=((lotado || semLimite) && !s)?'disabled':'';
       const cheio=lotado?'1':'0';
-      opts.push(`<option value="${c.id}" data-cheio="${cheio}" data-cap="${cap}" data-ocup="${ocu}" ${s} ${disabled}>${txt}</option>`);
+      opts.push(`<option value="${c.id}" data-cheio="${cheio}" data-sem-limite="${semLimite?'1':'0'}" data-cap="${cap}" data-ocup="${ocu}" ${s} ${disabled}>${txt}</option>`);
     });
     return opts.join('');
   }
@@ -14844,7 +14845,9 @@ function avisoPostoCheio(funcionarioId){
   if(!el) return;
   const opt=el.options[el.selectedIndex];
   if(!opt) return;
-  if(opt.getAttribute('data-cheio')==='1'){
+  if(opt.getAttribute('data-sem-limite')==='1'){
+    showSt('st-op','Este posto não possui limite cadastrado no cliente nem no contrato ativo.',true);
+  }else if(opt.getAttribute('data-cheio')==='1'){
     const cap=opt.getAttribute('data-cap')||'0';
     const ocup=opt.getAttribute('data-ocup')||'0';
     showSt('st-op',`Posto já está cheio (${ocup}/${cap}). Escolha outro posto.`,true);
