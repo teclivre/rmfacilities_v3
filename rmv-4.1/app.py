@@ -1682,9 +1682,18 @@ def api_cobranca_faturamento_enviar(id):
     d = request.json or {}
     if d.get("valor") is not None:
         item.valor = float(d.get("valor") or 0)
+    if d.get("desconto") is not None:
+        item.desconto = max(0, float(d.get("desconto") or 0))
+    if d.get("cliente_email") is not None:
+        item.cliente_email = (d.get("cliente_email") or "").strip()
+    if d.get("cliente_telefone") is not None:
+        item.cliente_telefone = (d.get("cliente_telefone") or "").strip()
+    if d.get("observacoes") is not None:
+        item.observacoes = (d.get("observacoes") or "").strip()
     if d.get("descricao_servico") is not None:
         item.descricao_servico = (d.get("descricao_servico") or "").strip() or "Serviços conforme contrato"
-    if item.valor < 2.5:
+    valor_liquido = round(max(0, item.valor - item.desconto), 2)
+    if valor_liquido < 2.5:
         return jsonify({"erro": "O valor deve ser igual ou superior a R$ 2,50."}), 400
     if not item.data_prevista:
         return jsonify({"erro": "Informe a data de faturamento."}), 400
@@ -1696,11 +1705,11 @@ def api_cobranca_faturamento_enviar(id):
             cliente_nome=item.cliente_nome, cliente_cnpj=item.cliente_cnpj,
             cliente_end=item.cliente_endereco, cliente_resp="", mes_ref=item.competencia,
             dt_emissao=localnow().date().isoformat(), dt_vencimento=item.data_prevista,
-            valor_bruto=item.valor, servicos=json.dumps([], ensure_ascii=False),
-            observacoes=(f"NF {item.nf_numero} série {item.nf_serie}" if item.nf_numero else ""),
+            valor_bruto=valor_liquido, desconto=item.desconto, servicos=json.dumps([], ensure_ascii=False),
+            observacoes=(f"NF {item.nf_numero} série {item.nf_serie}. " if item.nf_numero else "") + (item.observacoes or ""),
             status="emitida", criado_por=session.get("nome", ""),
         )
-        medicao.servicos = json.dumps([{"desc": item.descricao_servico or "Serviços conforme contrato", "unid": "Mês", "qtd": 1, "vun": item.valor, "vtot": item.valor}], ensure_ascii=False)
+        medicao.servicos = json.dumps([{"desc": item.descricao_servico or "Serviços conforme contrato", "unid": "Mês", "qtd": 1, "vun": valor_liquido, "vtot": valor_liquido}], ensure_ascii=False)
         db.session.add(medicao)
         db.session.flush()
         item.medicao_id = medicao.id
@@ -1708,44 +1717,110 @@ def api_cobranca_faturamento_enviar(id):
         medicao = db.session.get(Medicao, item.medicao_id)
         if not medicao:
             return jsonify({"erro": "Medição vinculada não encontrada."}), 409
+        medicao.valor_bruto = valor_liquido
+        medicao.desconto = item.desconto
+        medicao.observacoes = item.observacoes or medicao.observacoes
+        medicao.servicos = json.dumps([{"desc": item.descricao_servico or "Serviços conforme contrato", "unid": "Mês", "qtd": 1, "vun": valor_liquido, "vtot": valor_liquido}], ensure_ascii=False)
     item.status = "processando"
     db.session.commit()
     enviado = False
     erros = []
     destino = item.cliente_email
+    emails = [x.strip() for x in re.split(r"[,;\n]+", destino or "") if x.strip()]
+    boleto_pdf_path = None
+    boleto_pdf_name = ""
+    boleto_pdf_bytes = None
+    pdf_path = None
     try:
-        if destino:
+        pagador = {"email": emails[0] if emails else "", "cpfCnpj": only_digits(item.cliente_cnpj), "tipoPessoa": "JURIDICA", "nome": item.cliente_nome}
+        inter = _inter_request("POST", "/cobranca/v3/cobrancas", {"seuNumero": str(medicao.numero)[:15], "valorNominal": valor_liquido, "dataVencimento": item.data_prevista, "pagador": pagador, "formasRecebimento": ["BOLETO", "PIX"]})
+        item.inter_codigo = inter.get("codigoSolicitacao", "")
+        item.inter_status = "EM_PROCESSAMENTO"
+        item.canal = "inter"
+        if item.inter_codigo:
+            boleto = _inter_request("GET", f"/cobranca/v3/cobrancas/{item.inter_codigo}/pdf", scope="boleto-cobranca.read")
+            boleto_pdf_bytes = base64.b64decode(boleto.get("pdf", "")) if boleto.get("pdf") else None
+            if boleto_pdf_bytes:
+                boleto_pdf_name = f"Boleto_{medicao.numero}.pdf"
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tf:
+                    tf.write(boleto_pdf_bytes)
+                    boleto_pdf_path = tf.name
+                enviado = True
+    except Exception as ex:
+        item.inter_erro = str(ex)[:500]
+        erros = [f"Inter: {ex}"]
+    enviado = False
+    erros = locals().get("erros", [])
+    try:
+        if emails or item.cliente_telefone:
             emp = db.session.get(Empresa, getattr(medicao, "empresa_id", None)) if item.medicao_id else None
             pdf_resp = _build_pdf({**medicao.to_dict(), "empresa": emp.to_dict() if emp else {}})
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tf:
                 tf.write(pdf_resp.get_data())
                 pdf_path = tf.name
-            anexos = [{"path": pdf_path, "name": f"Fatura_{medicao.numero}.pdf"}]
+            anexos = [{"path": pdf_path, "name": f"Relatorio_Medicao_{medicao.numero}.pdf"}]
+            if boleto_pdf_path:
+                anexos.insert(0, {"path": boleto_pdf_path, "name": boleto_pdf_name})
             if item.nf_caminho:
                 nf_path = os.path.join(UPLOAD_ROOT, item.nf_caminho)
                 if os.path.exists(nf_path):
                     anexos.append({"path": nf_path, "name": os.path.basename(nf_path)})
-            smtp_send_text(destino, f"Faturamento {medicao.numero}", f"Segue o faturamento referente a {item.competencia}.", anexos=anexos)
-            os.remove(pdf_path)
-            enviado = True
+            corpo = (f"Prezado cliente,\n\nSegue o faturamento referente à competência {item.competencia}.\n"
+                     f"Valor bruto: R$ {item.valor:.2f}\nDesconto: R$ {item.desconto:.2f}\nValor a pagar: R$ {valor_liquido:.2f}\n\n"
+                     f"Anexos: boleto, nota fiscal e relatório de medição.\n\n{item.observacoes or ''}\n\nAtenciosamente,\nRM Facilities")
+            if emails:
+                smtp_send_text(", ".join(emails), f"Faturamento {medicao.numero} - RM Facilities", corpo, anexos=anexos)
+                enviado = True
     except Exception as ex:
         erros.append(f"E-mail: {ex}")
     try:
-        pagador = {"email": destino, "cpfCnpj": only_digits(item.cliente_cnpj), "tipoPessoa": "JURIDICA", "nome": item.cliente_nome}
-        inter = _inter_request("POST", "/cobranca/v3/cobrancas", {"seuNumero": str(medicao.numero)[:15], "valorNominal": item.valor, "dataVencimento": item.data_prevista, "pagador": pagador, "formasRecebimento": ["BOLETO", "PIX"]})
-        item.inter_codigo = inter.get("codigoSolicitacao", "")
-        item.inter_status = "EM_PROCESSAMENTO"
-        item.canal = "inter"
-        enviado = True
+        if item.cliente_telefone and pdf_path:
+            mensagem = (f"Olá, {item.cliente_nome}! Segue o faturamento {medicao.numero} da competência {item.competencia}. "
+                        f"Valor a pagar: R$ {valor_liquido:.2f}. Boleto, NF e relatório de medição estão anexados.")
+            if boleto_pdf_path:
+                wa_send_pdf(item.cliente_telefone, boleto_pdf_path, boleto_pdf_name, mensagem)
+            if item.nf_caminho:
+                nf_path = os.path.join(UPLOAD_ROOT, item.nf_caminho)
+                if os.path.exists(nf_path):
+                    with open(nf_path, "rb") as nf_file:
+                        wa_send_media_bytes(item.cliente_telefone, nf_file.read(), os.path.basename(nf_path), mimetypes.guess_type(nf_path)[0] or "application/octet-stream", "Nota fiscal")
+            wa_send_pdf(item.cliente_telefone, pdf_path, f"Relatorio_Medicao_{medicao.numero}.pdf", "Relatório de medição")
+            enviado = True
     except Exception as ex:
-        item.inter_erro = str(ex)[:500]
-        if not destino:
-            erros.append(f"Inter: {ex}")
+        erros.append(f"WhatsApp: {ex}")
+    finally:
+        if pdf_path:
+            try: os.remove(pdf_path)
+            except OSError: pass
+        if boleto_pdf_path:
+            try: os.remove(boleto_pdf_path)
+            except OSError: pass
     item.status = "enviado" if enviado else "erro"
     item.data_envio = utcnow() if enviado else None
     db.session.commit()
     audit_event("faturamento_enviado", "usuario", session.get("uid"), "faturamento_envio", item.id, enviado, {"medicao_id": item.medicao_id, "inter_codigo": item.inter_codigo})
     return jsonify({"ok": enviado, "item": item.to_dict(), "erros": erros}), (200 if enviado else 502)
+
+
+@app.route("/api/cobranca/faturamento/<int:id>", methods=["GET"])
+@lr
+def api_cobranca_faturamento_detalhe(id):
+    item = db.get_or_404(FaturamentoEnvio, id)
+    return jsonify({"ok": True, "item": item.to_dict()})
+
+
+@app.route("/api/cobranca/faturamento/<int:id>", methods=["PUT"])
+@lr
+def api_cobranca_faturamento_editar(id):
+    item = db.get_or_404(FaturamentoEnvio, id)
+    d = request.json or {}
+    for campo in ("cliente_nome", "cliente_cnpj", "cliente_email", "cliente_telefone", "descricao_servico", "observacoes", "data_prevista", "competencia"):
+        if campo in d:
+            setattr(item, campo, (d[campo] or "").strip() if isinstance(d[campo], str) else d[campo])
+    if "valor" in d: item.valor = max(0, float(d.get("valor") or 0))
+    if "desconto" in d: item.desconto = max(0, float(d.get("desconto") or 0))
+    db.session.commit()
+    return jsonify({"ok": True, "item": item.to_dict()})
 
 
 @app.route("/api/cobranca/faturamento/<int:id>/cancelar", methods=["POST"])
@@ -3238,6 +3313,7 @@ class FaturamentoEnvio(db.Model):
     data_prevista = db.Column(db.String(10), nullable=False, default="")
     data_envio = db.Column(db.DateTime)
     valor = db.Column(db.Float, nullable=False, default=0)
+    desconto = db.Column(db.Float, nullable=False, default=0)
     status = db.Column(db.String(30), nullable=False, default="pendente")
     canal = db.Column(db.String(20), nullable=False, default="email")
     inter_codigo = db.Column(db.String(80), default="")
@@ -3250,6 +3326,7 @@ class FaturamentoEnvio(db.Model):
     nf_valor = db.Column(db.Float, default=0)
     nf_caminho = db.Column(db.String(500), default="")
     descricao_servico = db.Column(db.String(500), default="Serviços conforme contrato")
+    observacoes = db.Column(db.Text, default="")
     criado_em = db.Column(db.DateTime, default=utcnow)
     atualizado_em = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
@@ -11391,6 +11468,16 @@ def api_get_config():
         "inter_conta_corrente",
         "inter_cert_arquivo",
         "inter_configurada",
+        "cnab400_banco",
+        "cnab400_agencia",
+        "cnab400_conta",
+        "cnab400_convenio",
+        "cnab400_carteira",
+        "cnab400_modalidade",
+        "cnab400_sequencial",
+        "cnab400_cnpj_beneficiario",
+        "cnab400_ambiente",
+        "cnab400_retorno_diretorio",
     ]
     return jsonify({k: gc(k) for k in chaves})
 
@@ -36959,6 +37046,8 @@ def _build_pdf(d):
         except Exception:
             svcs = []
     sub = sum(float(s.get("vtot", 0)) for s in svcs)
+    desconto_pdf = float(d.get("desconto", 0) or 0)
+    total_pdf = max(0, sub)
     por = d.get("criado_por", session.get("nome", ""))
     now = localnow()
 
@@ -37274,6 +37363,22 @@ def _build_pdf(d):
     story.append(svc_tbl)
     story.append(Spacer(1, 6))
 
+    if desconto_pdf > 0:
+        desconto_tbl = Table(
+            [[
+                Paragraph("<b>Desconto concedido:</b>", ps("dl", fontSize=10, textColor=AZ)),
+                Paragraph(
+                    f"-{fmt_brl(desconto_pdf)}",
+                    ps("dr", fontSize=10, alignment=TA_RIGHT, textColor=colors.HexColor("#b3261e")),
+                ),
+            ]],
+            colWidths=[W * 0.68, W * 0.32],
+        )
+        desconto_tbl.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), CI), ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#CCCCCC")), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+        story.append(desconto_tbl)
+        story.append(Spacer(1, 4))
+        total_pdf = max(0, sub - desconto_pdf)
+
     tot = Table(
         [
             [
@@ -37281,7 +37386,7 @@ def _build_pdf(d):
                     "<b>VALOR TOTAL A RECEBER:</b>", ps("tl", fontSize=13, textColor=VD)
                 ),
                 Paragraph(
-                    f"<b>{fmt_brl(sub)}</b>",
+                    f"<b>{fmt_brl(total_pdf)}</b>",
                     ps("tv2", fontSize=15, alignment=TA_RIGHT, textColor=VD),
                 ),
             ]
@@ -39946,10 +40051,12 @@ with app.app_context(), _StartupSchemaLock():
     ensure_cols(
         "faturamento_envio",
         [
+            'desconto FLOAT DEFAULT 0',
             'nf_data_emissao VARCHAR(10) DEFAULT ""',
             'nf_chave VARCHAR(60) DEFAULT ""',
             "nf_valor FLOAT DEFAULT 0",
             'descricao_servico VARCHAR(500) DEFAULT "Serviços conforme contrato"',
+            'observacoes TEXT DEFAULT ""',
         ],
     )
     _ensure_medicao_stamp_cols_runtime(force=True)

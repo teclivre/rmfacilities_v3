@@ -509,12 +509,30 @@ async function fatEnvioCarregar(){
   const p=new URLSearchParams({competencia:comp?.value||'',status:document.getElementById('fat-envio-filtro')?.value||''}), r=await api('/api/cobranca/faturamento?'+p.toString()), tb=document.getElementById('tb-fat-envio');
   if(!tb)return;const itens=r?.itens||[];
   if(!itens.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted)">Nenhum faturamento previsto.</td></tr>';return;}
-  tb.innerHTML=itens.map(i=>{const destaque=i.hoje?'border-left:3px solid var(--laranja)':(i.atrasado?'border-left:3px solid var(--verm)':'');const status=i.status==='enviado'?'p-vd':(i.status==='erro'?'p-vm':'p-gh');return `<tr style="${destaque}"><td>${fatEnvioEsc(i.data_prevista||'—')}${i.hoje?' <span class="pill p-lj">Hoje</span>':''}${i.atrasado?' <span class="pill p-vm">Atrasado</span>':''}</td><td><b>${fatEnvioEsc(i.cliente_nome)}</b><div style="font-size:11px;color:var(--text-muted)">${fatEnvioEsc(i.cliente_cnpj)} · ${fatEnvioEsc(i.cliente_email||'sem e-mail')}</div></td><td>${fatEnvioEsc(i.competencia)}</td><td><input id="fat-envio-desc-${i.id}" value="${fatEnvioEsc(i.descricao_servico||'Serviços conforme contrato')}" style="width:210px"></td><td><input id="fat-envio-valor-${i.id}" type="number" min="2.50" step="0.01" value="${Number(i.valor||0).toFixed(2)}" style="width:100px"></td><td><span class="pill ${status}">${fatEnvioEsc(i.status)}</span>${i.inter_codigo?`<div style="font-size:10px">Inter: ${fatEnvioEsc(i.inter_codigo)}</div>`:''}</td><td><input id="fat-envio-nf-${i.id}" type="file" accept=".pdf,.xml,application/pdf,text/xml" style="max-width:180px"><div style="font-size:10px;color:var(--text-muted)">${i.nf_numero?'NF '+fatEnvioEsc(i.nf_numero):'NF opcional'}</div></td><td><button class="btn b-az b-sm" onclick="fatEnvioEnviar(${i.id})">Enviar</button>${i.inter_codigo&&i.status!=='cancelado'?` <button class="btn b-ghr b-sm" onclick="fatEnvioCancelar(${i.id})">Cancelar boleto</button>`:''}</td></tr>`;}).join('');
+  tb.innerHTML=itens.map(i=>{const destaque=i.hoje?'border-left:3px solid var(--laranja)':(i.atrasado?'border-left:3px solid var(--verm)':'');const status=i.status==='enviado'?'p-vd':(i.status==='erro'?'p-vm':'p-gh');return `<tr style="${destaque}"><td>${fatEnvioEsc(i.data_prevista||'—')}${i.hoje?' <span class="pill p-lj">Hoje</span>':''}${i.atrasado?' <span class="pill p-vm">Atrasado</span>':''}</td><td><b>${fatEnvioEsc(i.cliente_nome)}</b><div style="font-size:11px;color:var(--text-muted)">${fatEnvioEsc(i.cliente_cnpj)} · ${fatEnvioEsc(i.cliente_email||'sem e-mail')}</div></td><td>${fatEnvioEsc(i.competencia)}</td><td>${fatEnvioEsc(i.descricao_servico||'Serviços conforme contrato')}</td><td>${Number(i.valor||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</td><td><span class="pill ${status}">${fatEnvioEsc(i.status)}</span>${i.inter_codigo?`<div style="font-size:10px">Inter: ${fatEnvioEsc(i.inter_codigo)}</div>`:''}</td><td>${i.nf_numero?'NF '+fatEnvioEsc(i.nf_numero):'NF não anexada'}</td><td><button class="btn b-az b-sm" onclick="fatEnvioAbrirNovaAba(${i.id})">Abrir faturamento</button></td></tr>`;}).join('');
 }
+function fatEnvioAbrirNovaAba(id){window.open('/?faturamento_envio='+encodeURIComponent(id),'faturamento-'+id,'noopener');}
 async function fatEnvioCriarAvulso(){const body={cliente_nome:document.getElementById('fat-avulso-nome').value.trim(),cliente_cnpj:document.getElementById('fat-avulso-cnpj').value.trim(),cliente_email:document.getElementById('fat-avulso-email').value.trim(),valor:parseFloat(document.getElementById('fat-avulso-valor').value||0),descricao_servico:document.getElementById('fat-avulso-desc').value.trim(),competencia:document.getElementById('fat-envio-comp').value};const r=await api('/api/cobranca/faturamento','POST',body);if(r?.erro){fatEnvioStatus(r.erro);return;}fatEnvioStatus('Faturamento avulso adicionado.',true);fatEnvioCarregar();}
 async function fatEnvioEnviar(id){const valor=parseFloat(document.getElementById('fat-envio-valor-'+id)?.value||0), descricao_servico=document.getElementById('fat-envio-desc-'+id)?.value||'', file=document.getElementById('fat-envio-nf-'+id)?.files?.[0];if(file){const fd=new FormData();fd.append('arquivo',file);const nf=await fetch('/api/cobranca/faturamento/'+id+'/nf',{method:'POST',body:fd,credentials:'same-origin'});if(!nf.ok){fatEnvioStatus('Não foi possível anexar a NF.');return;}}const r=await api('/api/cobranca/faturamento/'+id+'/enviar','POST',{valor,descricao_servico});if(r?.erro){fatEnvioStatus(r.erro);return;}fatEnvioStatus((r.erros||[]).join(' ')||'Faturamento enviado.',true);fatEnvioCarregar();}
 async function fatEnvioCancelar(id){if(!confirm('Cancelar o boleto deste faturamento no Banco Inter?'))return;const motivo=prompt('Motivo do cancelamento','Cancelamento solicitado pelo cliente')||'';if(!motivo)return;const r=await api('/api/cobranca/faturamento/'+id+'/cancelar','POST',{motivo});if(r?.erro){fatEnvioStatus(r.erro);return;}fatEnvioStatus('Boleto cancelado no Banco Inter.',true);fatEnvioCarregar();}
-document.addEventListener('DOMContentLoaded',()=>{if(document.getElementById('pg-cobrancas'))fatEnvioCarregar();});
+let _fatDetalheId=0;
+function fatDetalheStatus(text,ok=false){const el=document.getElementById('fat-detalhe-status');if(el){el.textContent=text;el.className='st '+(ok?'ok':'');}}
+function fatDetalheAtualizarLiquido(){const v=parseFloat(document.getElementById('fat-det-valor')?.value||0),d=parseFloat(document.getElementById('fat-det-desconto')?.value||0);document.getElementById('fat-det-liquido').value=Math.max(0,v-d).toFixed(2);}
+async function fatDetalheCarregar(id){
+  _fatDetalheId=Number(id)||0;const r=await api('/api/cobranca/faturamento/'+_fatDetalheId);if(r?.erro){fatDetalheStatus(r.erro);return;}const i=r.item||{};
+  document.getElementById('fat-det-nome').value=i.cliente_nome||'';document.getElementById('fat-det-cnpj').value=i.cliente_cnpj||'';document.getElementById('fat-det-comp').value=i.competencia||'';document.getElementById('fat-det-data').value=i.data_prevista||'';document.getElementById('fat-det-email').value=i.cliente_email||'';document.getElementById('fat-det-telefone').value=i.cliente_telefone||'';document.getElementById('fat-det-valor').value=i.valor||0;document.getElementById('fat-det-desconto').value=i.desconto||0;document.getElementById('fat-det-descricao').value=i.descricao_servico||'';document.getElementById('fat-det-obs').value=i.observacoes||'';document.getElementById('fat-det-nf-info').textContent=i.nf_numero?`NF ${i.nf_numero}${i.nf_serie?' série '+i.nf_serie:''} · valor ${i.nf_valor||'não informado'}`:'Nenhuma NF anexada.';document.getElementById('fat-det-cancelar').style.display=i.inter_codigo&&i.status!=='cancelado'?'inline-flex':'none';fatDetalheAtualizarLiquido();
+}
+function fatDetalheDados(){return {cliente_nome:document.getElementById('fat-det-nome').value.trim(),cliente_cnpj:document.getElementById('fat-det-cnpj').value.trim(),competencia:document.getElementById('fat-det-comp').value,data_prevista:document.getElementById('fat-det-data').value,cliente_email:document.getElementById('fat-det-email').value.trim(),cliente_telefone:document.getElementById('fat-det-telefone').value.trim(),valor:parseFloat(document.getElementById('fat-det-valor').value||0),desconto:parseFloat(document.getElementById('fat-det-desconto').value||0),descricao_servico:document.getElementById('fat-det-descricao').value.trim(),observacoes:document.getElementById('fat-det-obs').value.trim()};}
+async function fatDetalheSalvar(){const r=await api('/api/cobranca/faturamento/'+_fatDetalheId,'PUT',fatDetalheDados());if(r?.erro){fatDetalheStatus(r.erro);return false;}fatDetalheStatus('Alterações salvas.',true);return true;}
+async function fatDetalheAnexarNF(){const file=document.getElementById('fat-det-nf')?.files?.[0];if(!file){fatDetalheStatus('Selecione a NF em PDF ou XML.');return;}const fd=new FormData();fd.append('arquivo',file);const resp=await fetch('/api/cobranca/faturamento/'+_fatDetalheId+'/nf',{method:'POST',body:fd,credentials:'same-origin'});const r=await resp.json();if(!resp.ok||r?.erro){fatDetalheStatus(r?.erro||'Não foi possível anexar a NF.');return;}fatDetalheStatus('NF anexada e lida com sucesso.',true);fatDetalheCarregar(_fatDetalheId);}
+async function fatDetalheEnviar(){if(!await fatDetalheSalvar())return;const r=await api('/api/cobranca/faturamento/'+_fatDetalheId+'/enviar','POST',fatDetalheDados());if(r?.erro){fatDetalheStatus(r.erro);return;}fatDetalheStatus((r.erros||[]).join(' ')||'Medição gerada e faturamento enviado.',true);fatDetalheCarregar(_fatDetalheId);}
+async function fatDetalheCancelar(){const motivo=prompt('Motivo do cancelamento','Cancelamento solicitado pelo cliente')||'';if(!motivo)return;const r=await api('/api/cobranca/faturamento/'+_fatDetalheId+'/cancelar','POST',{motivo});if(r?.erro){fatDetalheStatus(r.erro);return;}fatDetalheStatus('Boleto cancelado no Banco Inter.',true);fatDetalheCarregar(_fatDetalheId);}
+document.getElementById('fat-det-valor')?.addEventListener('input',fatDetalheAtualizarLiquido);document.getElementById('fat-det-desconto')?.addEventListener('input',fatDetalheAtualizarLiquido);
+document.addEventListener('DOMContentLoaded',()=>{
+  const detalhe=new URLSearchParams(location.search).get('faturamento_envio');
+  if(detalhe){document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));document.getElementById('pg-faturamento-envio-detalhe')?.classList.add('on');document.getElementById('fat-det-valor')?.addEventListener('input',fatDetalheAtualizarLiquido);document.getElementById('fat-det-desconto')?.addEventListener('input',fatDetalheAtualizarLiquido);fatDetalheCarregar(detalhe);}
+  if(document.getElementById('pg-cobrancas'))fatEnvioCarregar();
+});
 async function cobrancarProcessar(){
   const tipos=[];
   if(document.getElementById('rg-d5')?.checked)tipos.push('D-5');
@@ -1459,6 +1477,37 @@ document.addEventListener('DOMContentLoaded',()=>{
             <thead><tr><th>Data/Hora</th><th>Nº Fatura</th><th>Cliente</th><th>Tipo</th><th>Destino</th><th>Status</th></tr></thead>
             <tbody id="tb-cob-log"><tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-muted)">Clique em Atualizar para carregar.</td></tr></tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="pg-faturamento-envio-detalhe" class="pg">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Detalhe do faturamento</span><button class="btn b-gh b-sm" onclick="window.close()">Fechar aba</button></div>
+        <div id="fat-detalhe-status" class="st"></div>
+        <div class="g3">
+          <div class="f"><label>Cliente</label><input id="fat-det-nome"></div>
+          <div class="f"><label>CNPJ</label><input id="fat-det-cnpj"></div>
+          <div class="f"><label>Competência</label><input id="fat-det-comp" type="month"></div>
+          <div class="f"><label>Data prevista / vencimento</label><input id="fat-det-data" type="date"></div>
+          <div class="f"><label>E-mails para envio</label><input id="fat-det-email" placeholder="financeiro@cliente.com.br; gestor@cliente.com.br"></div>
+          <div class="f"><label>Telefone / WhatsApp</label><input id="fat-det-telefone" placeholder="5512999999999"></div>
+          <div class="f"><label>Valor bruto</label><input id="fat-det-valor" type="number" min="0" step="0.01"></div>
+          <div class="f"><label>Desconto</label><input id="fat-det-desconto" type="number" min="0" step="0.01" value="0"></div>
+          <div class="f"><label>Valor líquido</label><input id="fat-det-liquido" readonly></div>
+        </div>
+        <div class="f" style="margin-top:10px"><label>Descrição do serviço para o relatório</label><input id="fat-det-descricao" placeholder="Ex.: Serviços de limpeza e conservação - competência"></div>
+        <div class="f" style="margin-top:10px"><label>Anotações</label><textarea id="fat-det-obs" rows="4" placeholder="Observações que devem constar no relatório e na mensagem"></textarea></div>
+        <div class="card" style="background:var(--cinza-cl);margin-top:12px;padding:12px">
+          <div style="font-weight:700;margin-bottom:8px">Nota fiscal</div>
+          <input id="fat-det-nf" type="file" accept=".pdf,.xml,application/pdf,text/xml">
+          <div id="fat-det-nf-info" style="font-size:12px;color:var(--text-muted);margin-top:6px">Nenhuma NF anexada.</div>
+          <button class="btn b-gh b-sm" style="margin-top:8px" onclick="fatDetalheAnexarNF()">Anexar e ler NF</button>
+        </div>
+        <div class="brow" style="justify-content:flex-start;margin-top:14px;gap:8px;flex-wrap:wrap">
+          <button class="btn b-gh" onclick="fatDetalheSalvar()">Salvar alterações</button>
+          <button class="btn b-az" onclick="fatDetalheEnviar()">Gerar medição e enviar</button>
+          <button id="fat-det-cancelar" class="btn b-ghr" style="display:none" onclick="fatDetalheCancelar()">Cancelar boleto</button>
         </div>
       </div>
     </div>
@@ -4404,6 +4453,24 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div class="brow" style="justify-content:flex-start;margin-top:12px"><button class="btn b-az" onclick="salvarConfigInter()">Salvar integração Inter</button></div>
         <div id="cfg-inter-status" class="st"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Integração de cobrança — CNAB400</span></div>
+        <div class="hint" style="margin-bottom:10px">Preencha conforme o manual CNAB400 do banco. Esses dados serão usados na montagem da remessa e na leitura do retorno.</div>
+        <div class="g4">
+          <div class="f"><label>Banco</label><input id="cfg-cnab-banco" placeholder="077 - Banco Inter"></div>
+          <div class="f"><label>Agência</label><input id="cfg-cnab-agencia"></div>
+          <div class="f"><label>Conta</label><input id="cfg-cnab-conta"></div>
+          <div class="f"><label>Convênio / código beneficiário</label><input id="cfg-cnab-convenio"></div>
+          <div class="f"><label>Carteira</label><input id="cfg-cnab-carteira"></div>
+          <div class="f"><label>Modalidade</label><input id="cfg-cnab-modalidade"></div>
+          <div class="f"><label>Próximo sequencial</label><input id="cfg-cnab-sequencial" type="number" min="1" value="1"></div>
+          <div class="f"><label>CNPJ do beneficiário</label><input id="cfg-cnab-cnpj"></div>
+          <div class="f"><label>Ambiente</label><select id="cfg-cnab-ambiente"><option value="homologacao">Homologação</option><option value="producao">Produção</option></select></div>
+          <div class="f"><label>Diretório de retorno</label><input id="cfg-cnab-retorno" placeholder="/data/retornos"></div>
+        </div>
+        <div class="brow" style="justify-content:flex-start;margin-top:12px"><button class="btn b-az" onclick="salvarConfigCnab400()">Salvar dados CNAB400</button></div>
+        <div id="cfg-cnab-status" class="st"></div>
       </div>
       <div class="card">
         <div class="card-header"><span class="card-title">Banco de Itens de Compras</span></div>
@@ -7956,6 +8023,22 @@ async function loadConfig(){
   document.getElementById('cfg-inter-ambiente').value=d.inter_ambiente||'sandbox';
   document.getElementById('cfg-inter-client-id').value=d.inter_client_id||'';
   document.getElementById('cfg-inter-conta').value=d.inter_conta_corrente||'';
+  document.getElementById('cfg-cnab-banco').value=d.cnab400_banco||'';
+  document.getElementById('cfg-cnab-agencia').value=d.cnab400_agencia||'';
+  document.getElementById('cfg-cnab-conta').value=d.cnab400_conta||'';
+  document.getElementById('cfg-cnab-convenio').value=d.cnab400_convenio||'';
+  document.getElementById('cfg-cnab-carteira').value=d.cnab400_carteira||'';
+  document.getElementById('cfg-cnab-modalidade').value=d.cnab400_modalidade||'';
+  document.getElementById('cfg-cnab-sequencial').value=d.cnab400_sequencial||'1';
+  document.getElementById('cfg-cnab-cnpj').value=d.cnab400_cnpj_beneficiario||'';
+  document.getElementById('cfg-cnab-ambiente').value=d.cnab400_ambiente||'homologacao';
+  document.getElementById('cfg-cnab-retorno').value=d.cnab400_retorno_diretorio||'';
+}
+
+async function salvarConfigCnab400(){
+  const dados={cnab400_banco:'cfg-cnab-banco',cnab400_agencia:'cfg-cnab-agencia',cnab400_conta:'cfg-cnab-conta',cnab400_convenio:'cfg-cnab-convenio',cnab400_carteira:'cfg-cnab-carteira',cnab400_modalidade:'cfg-cnab-modalidade',cnab400_sequencial:'cfg-cnab-sequencial',cnab400_cnpj_beneficiario:'cfg-cnab-cnpj',cnab400_ambiente:'cfg-cnab-ambiente',cnab400_retorno_diretorio:'cfg-cnab-retorno'};
+  const body={};Object.entries(dados).forEach(([k,id])=>body[k]=document.getElementById(id).value);
+  const r=await api('/api/config','POST',body);showSt('cfg-cnab-status',r?.erro||'Dados CNAB400 salvos.',!!r?.erro);
 }
 
 async function salvarConfigInter(){
