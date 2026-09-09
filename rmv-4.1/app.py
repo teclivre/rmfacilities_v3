@@ -1823,6 +1823,129 @@ def api_cobranca_faturamento_editar(id):
     return jsonify({"ok": True, "item": item.to_dict()})
 
 
+def _cnab400_text(value, length):
+    value = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii")
+    return value.upper().replace("\r", " ").replace("\n", " ")[:length].ljust(length)
+
+
+def _cnab400_num(value, length, decimals=0):
+    try:
+        number = float(value or 0) * (10 ** decimals)
+        raw = str(int(round(number)))
+    except (TypeError, ValueError):
+        raw = "0"
+    return raw[-length:].zfill(length)
+
+
+def _cnab400_date(value):
+    try:
+        return datetime.strptime(str(value), "%Y-%m-%d").strftime("%d%m%y")
+    except (TypeError, ValueError):
+        return "000000"
+
+
+def _cnab400_set(record, start, end, value):
+    """Preenche posições 1-based do registro CNAB400 sem alterar seu tamanho."""
+    width = end - start + 1
+    record[start - 1:end] = list(str(value)[:width].ljust(width))
+
+
+def _cnab400_config():
+    return {
+        "banco": gc("cnab400_banco", "077"),
+        "agencia": gc("cnab400_agencia", "0001"),
+        "conta": gc("cnab400_conta", ""),
+        "convenio": gc("cnab400_convenio", ""),
+        "carteira": gc("cnab400_carteira", "112"),
+        "modalidade": gc("cnab400_modalidade", ""),
+        "sequencial": max(1, to_num(gc("cnab400_sequencial", "1")) or 1),
+        "cnpj": only_digits(gc("cnab400_cnpj_beneficiario", "")),
+    }
+
+
+@app.route("/api/cobranca/cnab400/remessa", methods=["GET"])
+@lr
+def api_cobranca_cnab400_remessa():
+    cfg = _cnab400_config()
+    if not cfg["conta"] or not cfg["cnpj"]:
+        return jsonify({"erro": "Configure conta corrente e CNPJ do beneficiário em Configurações > CNAB400."}), 400
+    competencia = (request.args.get("competencia") or "").strip()
+    query = FaturamentoEnvio.query.filter(
+        FaturamentoEnvio.status == "enviado",
+        FaturamentoEnvio.inter_codigo.isnot(None),
+        FaturamentoEnvio.inter_codigo != "",
+    )
+    if competencia:
+        query = query.filter(FaturamentoEnvio.competencia == competencia)
+    itens = query.order_by(FaturamentoEnvio.id).all()
+    if not itens:
+        return jsonify({"erro": "Nenhum faturamento enviado com boleto Inter para gerar a remessa."}), 400
+
+    seq = cfg["sequencial"]
+    nome_empresa = gc("empresa_nome", "RM Facilities")
+    header = [" "] * 400
+    _cnab400_set(header, 1, 1, "0")
+    _cnab400_set(header, 2, 2, "1")
+    _cnab400_set(header, 3, 9, "REMESSA")
+    _cnab400_set(header, 10, 11, "01")
+    _cnab400_set(header, 12, 26, "COBRANCA")
+    _cnab400_set(header, 47, 76, nome_empresa)
+    _cnab400_set(header, 77, 79, "077")
+    _cnab400_set(header, 80, 94, "INTER")
+    _cnab400_set(header, 95, 100, localnow().strftime("%d%m%y"))
+    _cnab400_set(header, 111, 117, str(seq).zfill(7))
+    _cnab400_set(header, 395, 400, "000001")
+    registros = ["".join(header)]
+    avisos = []
+    for numero_registro, item in enumerate(itens, start=2):
+        if not item.cliente_cnpj or len(only_digits(item.cliente_cnpj)) != 14:
+            avisos.append(f"{item.cliente_nome}: CNPJ inválido ou ausente")
+            continue
+        record = [" "] * 400
+        _cnab400_set(record, 1, 1, "1")
+        _cnab400_set(record, 21, 23, _cnab400_num(cfg["carteira"], 3))
+        _cnab400_set(record, 24, 27, _cnab400_num(cfg["agencia"], 4))
+        _cnab400_set(record, 28, 36, _cnab400_num(cfg["conta"], 9))
+        _cnab400_set(record, 38, 62, cfg["convenio"] or item.inter_codigo)
+        _cnab400_set(record, 63, 65, "001")
+        _cnab400_set(record, 109, 110, "01")
+        _cnab400_set(record, 111, 120, item.medicao_id or item.id)
+        _cnab400_set(record, 121, 126, _cnab400_date(item.data_prevista))
+        _cnab400_set(record, 127, 139, _cnab400_num(max(0, item.valor - item.desconto), 13, 2))
+        _cnab400_set(record, 140, 141, "60")
+        _cnab400_set(record, 148, 149, "01")
+        _cnab400_set(record, 150, 150, "N")
+        _cnab400_set(record, 151, 156, localnow().strftime("%d%m%y"))
+        if item.desconto > 0:
+            _cnab400_set(record, 184, 184, "1")
+            _cnab400_set(record, 185, 197, _cnab400_num(item.desconto, 13, 2))
+            _cnab400_set(record, 202, 207, _cnab400_date(item.data_prevista))
+        _cnab400_set(record, 221, 222, "02")
+        _cnab400_set(record, 223, 236, only_digits(item.cliente_cnpj).zfill(14))
+        _cnab400_set(record, 237, 276, item.cliente_nome)
+        _cnab400_set(record, 277, 314, item.cliente_endereco)
+        cliente = db.session.get(Cliente, item.cliente_id) if item.cliente_id else None
+        _cnab400_set(record, 315, 316, cliente.estado if cliente else "")
+        _cnab400_set(record, 317, 324, only_digits(cliente.cep if cliente else "").zfill(8))
+        _cnab400_set(record, 325, 394, item.descricao_servico or "Cobranca de servicos")
+        _cnab400_set(record, 395, 400, str(numero_registro).zfill(6))
+        registros.append("".join(record))
+    if len(registros) == 1:
+        return jsonify({"erro": "Nenhum título válido para remessa.", "avisos": avisos}), 400
+    trailer = [" "] * 400
+    _cnab400_set(trailer, 1, 1, "9")
+    _cnab400_set(trailer, 2, 7, _cnab400_num(len(registros) - 1, 6))
+    _cnab400_set(trailer, 395, 400, str(len(registros) + 1).zfill(6))
+    registros.append("".join(trailer))
+    if any(len(registro) != 400 for registro in registros):
+        return jsonify({"erro": "Falha interna: registro CNAB400 fora de 400 posições."}), 500
+    sc_cfg("cnab400_sequencial", str(seq + 1))
+    conteudo = "\r\n".join(registros) + "\r\n"
+    nome = f"REMESSA{seq:07d}.REM"
+    audit_event("cnab400_remessa_gerada", "usuario", session.get("uid"), "cobranca", 0, True, {"arquivo": nome, "quantidade": len(registros) - 2, "competencia": competencia})
+    return Response(conteudo.encode("ascii"), mimetype="text/plain; charset=ascii", headers={"Content-Disposition": f'attachment; filename="{nome}"', "X-CNAB400-Avisos": str(len(avisos))})
+
+
 @app.route("/api/cobranca/faturamento/<int:id>/cancelar", methods=["POST"])
 @lr
 def api_cobranca_faturamento_cancelar(id):

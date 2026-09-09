@@ -504,6 +504,7 @@ async function fatEnvioSelecionarCliente(id){
   document.getElementById('fat-envio-sugestoes').innerHTML=`Cliente selecionado: <b>${fatEnvioEsc(c.nome)}</b>`;
 }
 function fatEnvioStatus(text,ok=false){const el=document.getElementById('fat-envio-status');if(el){el.textContent=text;el.className='st '+(ok?'ok':'');}}
+function fatGerarRemessaCnab400(){const competencia=document.getElementById('fat-envio-comp')?.value||'';window.open('/api/cobranca/cnab400/remessa?competencia='+encodeURIComponent(competencia),'_blank');}
 async function fatEnvioCarregar(){
   const comp=document.getElementById('fat-envio-comp');if(comp&&!comp.value)comp.value=new Date().toISOString().slice(0,7);
   const p=new URLSearchParams({competencia:comp?.value||'',status:document.getElementById('fat-envio-filtro')?.value||''}), r=await api('/api/cobranca/faturamento?'+p.toString()), tb=document.getElementById('tb-fat-envio');
@@ -1435,7 +1436,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     <!-- ══ RÉGUA DE COBRANÇA ══ -->
     <div id="pg-cobrancas" class="pg">
       <div class="card" style="margin-bottom:12px">
-        <div class="card-header"><span class="card-title">Envio de faturamento</span><button class="btn b-gh b-sm" onclick="fatEnvioCarregar()">Atualizar</button></div>
+        <div class="card-header"><span class="card-title">Envio de faturamento</span><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn b-gh b-sm" onclick="fatEnvioCarregar()">Atualizar</button><button class="btn b-az b-sm" onclick="fatGerarRemessaCnab400()">Gerar REM CNAB400</button></div></div>
         <div style="padding:12px 0;color:var(--text-muted);font-size:13px">Clientes cadastrados entram pela data de faturamento do contrato. O envio avulso aceita um CNPJ e busca o cadastro automaticamente.</div>
         <div class="g4" style="margin-bottom:10px">
           <div class="f"><label>Buscar cliente ou CNPJ</label><input id="fat-envio-busca" placeholder="Digite o CNPJ" oninput="fatEnvioBuscarCliente()"><div id="fat-envio-sugestoes" style="font-size:11px"></div></div>
