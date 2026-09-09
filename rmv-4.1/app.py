@@ -1462,6 +1462,7 @@ def _faturamento_item_cliente(cliente, contrato=None, competencia=None, data_pre
         competencia=competencia,
         data_prevista=data_prevista,
         valor=_faturamento_valor_cliente(cliente, contrato),
+        descricao_servico="Serviços conforme contrato",
     )
 
 
@@ -1526,6 +1527,7 @@ def api_cobranca_faturamento_avulso():
             competencia=(d.get("competencia") or localnow().strftime("%Y-%m")),
             data_prevista=(d.get("data_prevista") or localnow().date().isoformat()),
             valor=float(d.get("valor") or 0),
+            descricao_servico=(d.get("descricao_servico") or "Serviço avulso").strip(),
         )
     if d.get("valor") is not None:
         item.valor = float(d.get("valor") or 0)
@@ -1556,8 +1558,30 @@ def _inter_request(method, path, body=None, scope="boleto-cobranca.write"):
     if not cert_path or not os.path.exists(cert_path):
         raise RuntimeError("Certificado da integração Inter não encontrado.")
     import ssl
+    import tempfile
     context = ssl.create_default_context()
-    context.load_cert_chain(cert_path, password=cfg["cert_senha"] or None)
+    cert_temp = None
+    cert_ext = os.path.splitext(cert_path)[1].lower()
+    if cert_ext in (".p12", ".pfx"):
+        try:
+            from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, pkcs12
+
+            with open(cert_path, "rb") as cert_file:
+                key, certificate, chain = pkcs12.load_key_and_certificates(
+                    cert_file.read(), (cfg["cert_senha"] or "").encode() or None
+                )
+            if not key or not certificate:
+                raise RuntimeError("O certificado PKCS#12 não contém chave privada e certificado válidos.")
+            cert_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pem")
+            cert_temp.write(certificate.public_bytes(Encoding.PEM))
+            cert_temp.write(key.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()))
+            cert_temp.close()
+            cert_path = cert_temp.name
+            context.load_cert_chain(cert_path)
+        except Exception as ex:
+            raise RuntimeError(f"Não foi possível carregar o certificado PKCS#12: {ex}") from ex
+    else:
+        context.load_cert_chain(cert_path, password=cfg["cert_senha"] or None)
     token_data = urllib.parse.urlencode({"client_id": cfg["client_id"], "client_secret": cfg["client_secret"], "grant_type": "client_credentials", "scope": scope}).encode()
     token_req = urllib.request.Request(cfg["base"] + "/oauth/v2/token", data=token_data, method="POST")
     token_req.add_header("Content-Type", "application/x-www-form-urlencoded")
@@ -1569,9 +1593,16 @@ def _inter_request(method, path, body=None, scope="boleto-cobranca.write"):
     req.add_header("x-conta-corrente", cfg["conta"])
     if payload is not None:
         req.add_header("Content-Type", "application/json")
-    with urllib.request.urlopen(req, context=context, timeout=30) as resp:
-        raw = resp.read().decode()
-        return json.loads(raw) if raw else {}
+    try:
+        with urllib.request.urlopen(req, context=context, timeout=30) as resp:
+            raw = resp.read().decode()
+            return json.loads(raw) if raw else {}
+    finally:
+        if cert_temp:
+            try:
+                os.remove(cert_temp.name)
+            except OSError:
+                pass
 
 
 @app.route("/api/cobranca/faturamento/<int:id>/nf", methods=["POST"])
@@ -1585,8 +1616,61 @@ def api_cobranca_faturamento_nf(id):
     item.nf_caminho = rel
     item.nf_numero = (request.form.get("nf_numero") or "").strip()
     item.nf_serie = (request.form.get("nf_serie") or "").strip()
+    metadata = _extrair_nf_metadata(os.path.join(UPLOAD_ROOT, rel), fs.filename or "")
+    for campo in ("nf_numero", "nf_serie", "nf_data_emissao", "nf_chave", "nf_valor"):
+        if metadata.get(campo) not in (None, "", 0):
+            setattr(item, campo, metadata[campo])
     db.session.commit()
-    return jsonify({"ok": True, "item": item.to_dict()})
+    return jsonify({"ok": True, "item": item.to_dict(), "nota_fiscal": metadata})
+
+
+def _extrair_nf_metadata(path, nome_arquivo=""):
+    """Extrai campos comuns de NF-e de XML ou texto de PDF sem substituir revisão humana."""
+    texto = ""
+    ext = os.path.splitext(nome_arquivo or path)[1].lower()
+    try:
+        if ext == ".xml":
+            texto = open(path, "r", encoding="utf-8", errors="ignore").read()
+        else:
+            from pypdf import PdfReader
+
+            texto = "\n".join(page.extract_text() or "" for page in PdfReader(path).pages)
+    except Exception:
+        return {}
+    resultado = {}
+    if ext == ".xml":
+        try:
+            import xml.etree.ElementTree as ET
+
+            raiz = ET.fromstring(texto)
+            valores = {}
+            for no in raiz.iter():
+                valores[no.tag.rsplit("}", 1)[-1]] = (no.text or "").strip()
+            resultado["nf_numero"] = valores.get("nNF", "")
+            resultado["nf_serie"] = valores.get("serie", "")
+            resultado["nf_data_emissao"] = (valores.get("dhEmi", "") or valores.get("dEmi", ""))[:10]
+            resultado["nf_chave"] = "".join(ch for ch in valores.get("chNFe", "") if ch.isdigit())
+            resultado["nf_valor"] = _to_float_safe(valores.get("vNF"), 0) or 0
+            return resultado
+        except Exception:
+            pass
+    chave = re.search(r"\b\d{44}\b", texto)
+    numero = re.search(r"(?:n[úu]mero|n[ºo]|NF-e)\s*[:#-]?\s*(\d{1,12})", texto, re.I)
+    serie = re.search(r"s[ée]rie\s*[:#-]?\s*(\d{1,6})", texto, re.I)
+    data = re.search(r"(?:data\s*de\s*emiss[aã]o|emiss[aã]o)\s*[:#-]?\s*(\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2})", texto, re.I)
+    valor = re.search(r"(?:valor\s*total\s*da\s*nota|valor\s*total|vNF)\s*[:R$\s]*([\d.,]+)", texto, re.I)
+    if chave:
+        resultado["nf_chave"] = chave.group(0)
+    if numero:
+        resultado["nf_numero"] = numero.group(1)
+    if serie:
+        resultado["nf_serie"] = serie.group(1)
+    if data:
+        raw = data.group(1)
+        resultado["nf_data_emissao"] = f"{raw[6:]}-{raw[3:5]}-{raw[:2]}" if "/" in raw else raw
+    if valor:
+        resultado["nf_valor"] = _to_float_safe(valor.group(1).replace(".", "").replace(",", "."), 0) or 0
+    return resultado
 
 
 @app.route("/api/cobranca/faturamento/<int:id>/enviar", methods=["POST"])
@@ -1598,6 +1682,8 @@ def api_cobranca_faturamento_enviar(id):
     d = request.json or {}
     if d.get("valor") is not None:
         item.valor = float(d.get("valor") or 0)
+    if d.get("descricao_servico") is not None:
+        item.descricao_servico = (d.get("descricao_servico") or "").strip() or "Serviços conforme contrato"
     if item.valor < 2.5:
         return jsonify({"erro": "O valor deve ser igual ou superior a R$ 2,50."}), 400
     if not item.data_prevista:
@@ -1611,11 +1697,17 @@ def api_cobranca_faturamento_enviar(id):
             cliente_end=item.cliente_endereco, cliente_resp="", mes_ref=item.competencia,
             dt_emissao=localnow().date().isoformat(), dt_vencimento=item.data_prevista,
             valor_bruto=item.valor, servicos=json.dumps([], ensure_ascii=False),
+            observacoes=(f"NF {item.nf_numero} série {item.nf_serie}" if item.nf_numero else ""),
             status="emitida", criado_por=session.get("nome", ""),
         )
+        medicao.servicos = json.dumps([{"desc": item.descricao_servico or "Serviços conforme contrato", "unid": "Mês", "qtd": 1, "vun": item.valor, "vtot": item.valor}], ensure_ascii=False)
         db.session.add(medicao)
         db.session.flush()
         item.medicao_id = medicao.id
+    else:
+        medicao = db.session.get(Medicao, item.medicao_id)
+        if not medicao:
+            return jsonify({"erro": "Medição vinculada não encontrada."}), 409
     item.status = "processando"
     db.session.commit()
     enviado = False
@@ -1654,6 +1746,26 @@ def api_cobranca_faturamento_enviar(id):
     db.session.commit()
     audit_event("faturamento_enviado", "usuario", session.get("uid"), "faturamento_envio", item.id, enviado, {"medicao_id": item.medicao_id, "inter_codigo": item.inter_codigo})
     return jsonify({"ok": enviado, "item": item.to_dict(), "erros": erros}), (200 if enviado else 502)
+
+
+@app.route("/api/cobranca/faturamento/<int:id>/cancelar", methods=["POST"])
+@lr
+def api_cobranca_faturamento_cancelar(id):
+    item = db.get_or_404(FaturamentoEnvio, id)
+    if not item.inter_codigo:
+        return jsonify({"erro": "Este faturamento não possui boleto emitido pelo Banco Inter."}), 400
+    motivo = ((request.json or {}).get("motivo") or "Cancelamento solicitado pelo cliente")[:50]
+    try:
+        resposta = _inter_request("POST", f"/cobranca/v3/cobrancas/{item.inter_codigo}/cancelar", {"motivoCancelamento": motivo})
+        item.status = "cancelado"
+        item.inter_status = "CANCELADO"
+        db.session.commit()
+        audit_event("boleto_cancelado_inter", "usuario", session.get("uid"), "faturamento_envio", item.id, True, {"inter_codigo": item.inter_codigo})
+        return jsonify({"ok": True, "item": item.to_dict(), "resposta": resposta})
+    except Exception as ex:
+        item.inter_erro = str(ex)[:500]
+        db.session.commit()
+        return jsonify({"erro": str(ex)}), 502
 
 
 @app.route("/api/financeiro/faturamento/export.csv", methods=["GET"])
@@ -3133,7 +3245,11 @@ class FaturamentoEnvio(db.Model):
     inter_erro = db.Column(db.Text, default="")
     nf_numero = db.Column(db.String(40), default="")
     nf_serie = db.Column(db.String(20), default="")
+    nf_data_emissao = db.Column(db.String(10), default="")
+    nf_chave = db.Column(db.String(60), default="")
+    nf_valor = db.Column(db.Float, default=0)
     nf_caminho = db.Column(db.String(500), default="")
+    descricao_servico = db.Column(db.String(500), default="Serviços conforme contrato")
     criado_em = db.Column(db.DateTime, default=utcnow)
     atualizado_em = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
@@ -11270,6 +11386,11 @@ def api_get_config():
         "nfse_client_id",
         "nfse_endpoint",
         "nfse_configurada",
+        "inter_ambiente",
+        "inter_client_id",
+        "inter_conta_corrente",
+        "inter_cert_arquivo",
+        "inter_configurada",
     ]
     return jsonify({k: gc(k) for k in chaves})
 
@@ -11301,6 +11422,25 @@ def api_save_config_nfse():
         sc_cfg("nfse_certificado", rel)
     sc_cfg("nfse_configurada", "1")
     audit_event("config_nfse_salva", "usuario", session.get("uid"), "config", 0, True, {"provedor": gc("nfse_provedor"), "ambiente": gc("nfse_ambiente")})
+    return jsonify({"ok": True})
+
+
+@app.route("/api/config/inter", methods=["POST"])
+@dr
+def api_save_config_inter():
+    for campo in ("ambiente", "client_id", "client_secret", "conta_corrente", "cert_senha"):
+        valor = (request.form.get(campo) or "").strip()
+        if campo not in ("client_secret", "cert_senha") or valor:
+            sc_cfg(f"inter_{campo}", valor)
+    certificado = request.files.get("certificado")
+    if certificado and certificado.filename:
+        nome = secure_filename(certificado.filename)
+        if os.path.splitext(nome)[1].lower() not in (".p12", ".pfx", ".pem", ".crt"):
+            return jsonify({"erro": "Certificado do Inter inválido. Use .p12, .pfx, .pem ou .crt."}), 400
+        rel, _ = save_upload(certificado, "inter")
+        sc_cfg("inter_cert_arquivo", rel)
+    sc_cfg("inter_configurada", "1")
+    audit_event("config_inter_salva", "usuario", session.get("uid"), "config", 0, True, {"ambiente": gc("inter_ambiente"), "certificado": bool(gc("inter_cert_arquivo"))})
     return jsonify({"ok": True})
 
 
@@ -39803,6 +39943,15 @@ with app.app_context(), _StartupSchemaLock():
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(UPLOAD_ROOT, exist_ok=True)
     _create_all_safe()
+    ensure_cols(
+        "faturamento_envio",
+        [
+            'nf_data_emissao VARCHAR(10) DEFAULT ""',
+            'nf_chave VARCHAR(60) DEFAULT ""',
+            "nf_valor FLOAT DEFAULT 0",
+            'descricao_servico VARCHAR(500) DEFAULT "Serviços conforme contrato"',
+        ],
+    )
     _ensure_medicao_stamp_cols_runtime(force=True)
     ensure_cols("cadastro_candidato", ["ip_cadastro VARCHAR(64)"])
     ensure_cols(

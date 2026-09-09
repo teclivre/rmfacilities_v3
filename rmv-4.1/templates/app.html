@@ -508,11 +508,12 @@ async function fatEnvioCarregar(){
   const comp=document.getElementById('fat-envio-comp');if(comp&&!comp.value)comp.value=new Date().toISOString().slice(0,7);
   const p=new URLSearchParams({competencia:comp?.value||'',status:document.getElementById('fat-envio-filtro')?.value||''}), r=await api('/api/cobranca/faturamento?'+p.toString()), tb=document.getElementById('tb-fat-envio');
   if(!tb)return;const itens=r?.itens||[];
-  if(!itens.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-muted)">Nenhum faturamento previsto.</td></tr>';return;}
-  tb.innerHTML=itens.map(i=>{const destaque=i.hoje?'border-left:3px solid var(--laranja)':(i.atrasado?'border-left:3px solid var(--verm)':'');const status=i.status==='enviado'?'p-vd':(i.status==='erro'?'p-vm':'p-gh');return `<tr style="${destaque}"><td>${fatEnvioEsc(i.data_prevista||'—')}${i.hoje?' <span class="pill p-lj">Hoje</span>':''}${i.atrasado?' <span class="pill p-vm">Atrasado</span>':''}</td><td><b>${fatEnvioEsc(i.cliente_nome)}</b><div style="font-size:11px;color:var(--text-muted)">${fatEnvioEsc(i.cliente_cnpj)} · ${fatEnvioEsc(i.cliente_email||'sem e-mail')}</div></td><td>${fatEnvioEsc(i.competencia)}</td><td><input id="fat-envio-valor-${i.id}" type="number" min="2.50" step="0.01" value="${Number(i.valor||0).toFixed(2)}" style="width:100px"></td><td><span class="pill ${status}">${fatEnvioEsc(i.status)}</span>${i.inter_codigo?`<div style="font-size:10px">Inter: ${fatEnvioEsc(i.inter_codigo)}</div>`:''}</td><td><input id="fat-envio-nf-${i.id}" type="file" accept="application/pdf,image/*" style="max-width:180px"><div style="font-size:10px;color:var(--text-muted)">${i.nf_numero?'NF '+fatEnvioEsc(i.nf_numero):'NF opcional'}</div></td><td><button class="btn b-az b-sm" onclick="fatEnvioEnviar(${i.id})">Enviar</button></td></tr>`;}).join('');
+  if(!itens.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted)">Nenhum faturamento previsto.</td></tr>';return;}
+  tb.innerHTML=itens.map(i=>{const destaque=i.hoje?'border-left:3px solid var(--laranja)':(i.atrasado?'border-left:3px solid var(--verm)':'');const status=i.status==='enviado'?'p-vd':(i.status==='erro'?'p-vm':'p-gh');return `<tr style="${destaque}"><td>${fatEnvioEsc(i.data_prevista||'—')}${i.hoje?' <span class="pill p-lj">Hoje</span>':''}${i.atrasado?' <span class="pill p-vm">Atrasado</span>':''}</td><td><b>${fatEnvioEsc(i.cliente_nome)}</b><div style="font-size:11px;color:var(--text-muted)">${fatEnvioEsc(i.cliente_cnpj)} · ${fatEnvioEsc(i.cliente_email||'sem e-mail')}</div></td><td>${fatEnvioEsc(i.competencia)}</td><td><input id="fat-envio-desc-${i.id}" value="${fatEnvioEsc(i.descricao_servico||'Serviços conforme contrato')}" style="width:210px"></td><td><input id="fat-envio-valor-${i.id}" type="number" min="2.50" step="0.01" value="${Number(i.valor||0).toFixed(2)}" style="width:100px"></td><td><span class="pill ${status}">${fatEnvioEsc(i.status)}</span>${i.inter_codigo?`<div style="font-size:10px">Inter: ${fatEnvioEsc(i.inter_codigo)}</div>`:''}</td><td><input id="fat-envio-nf-${i.id}" type="file" accept=".pdf,.xml,application/pdf,text/xml" style="max-width:180px"><div style="font-size:10px;color:var(--text-muted)">${i.nf_numero?'NF '+fatEnvioEsc(i.nf_numero):'NF opcional'}</div></td><td><button class="btn b-az b-sm" onclick="fatEnvioEnviar(${i.id})">Enviar</button>${i.inter_codigo&&i.status!=='cancelado'?` <button class="btn b-ghr b-sm" onclick="fatEnvioCancelar(${i.id})">Cancelar boleto</button>`:''}</td></tr>`;}).join('');
 }
-async function fatEnvioCriarAvulso(){const body={cliente_nome:document.getElementById('fat-avulso-nome').value.trim(),cliente_cnpj:document.getElementById('fat-avulso-cnpj').value.trim(),cliente_email:document.getElementById('fat-avulso-email').value.trim(),valor:parseFloat(document.getElementById('fat-avulso-valor').value||0),competencia:document.getElementById('fat-envio-comp').value};const r=await api('/api/cobranca/faturamento','POST',body);if(r?.erro){fatEnvioStatus(r.erro);return;}fatEnvioStatus('Faturamento avulso adicionado.',true);fatEnvioCarregar();}
-async function fatEnvioEnviar(id){const valor=parseFloat(document.getElementById('fat-envio-valor-'+id)?.value||0), file=document.getElementById('fat-envio-nf-'+id)?.files?.[0];if(file){const fd=new FormData();fd.append('arquivo',file);const nf=await fetch('/api/cobranca/faturamento/'+id+'/nf',{method:'POST',body:fd,credentials:'same-origin'});if(!nf.ok){fatEnvioStatus('Não foi possível anexar a NF.');return;}}const r=await api('/api/cobranca/faturamento/'+id+'/enviar','POST',{valor});if(r?.erro){fatEnvioStatus(r.erro);return;}fatEnvioStatus((r.erros||[]).join(' ')||'Faturamento enviado.',true);fatEnvioCarregar();}
+async function fatEnvioCriarAvulso(){const body={cliente_nome:document.getElementById('fat-avulso-nome').value.trim(),cliente_cnpj:document.getElementById('fat-avulso-cnpj').value.trim(),cliente_email:document.getElementById('fat-avulso-email').value.trim(),valor:parseFloat(document.getElementById('fat-avulso-valor').value||0),descricao_servico:document.getElementById('fat-avulso-desc').value.trim(),competencia:document.getElementById('fat-envio-comp').value};const r=await api('/api/cobranca/faturamento','POST',body);if(r?.erro){fatEnvioStatus(r.erro);return;}fatEnvioStatus('Faturamento avulso adicionado.',true);fatEnvioCarregar();}
+async function fatEnvioEnviar(id){const valor=parseFloat(document.getElementById('fat-envio-valor-'+id)?.value||0), descricao_servico=document.getElementById('fat-envio-desc-'+id)?.value||'', file=document.getElementById('fat-envio-nf-'+id)?.files?.[0];if(file){const fd=new FormData();fd.append('arquivo',file);const nf=await fetch('/api/cobranca/faturamento/'+id+'/nf',{method:'POST',body:fd,credentials:'same-origin'});if(!nf.ok){fatEnvioStatus('Não foi possível anexar a NF.');return;}}const r=await api('/api/cobranca/faturamento/'+id+'/enviar','POST',{valor,descricao_servico});if(r?.erro){fatEnvioStatus(r.erro);return;}fatEnvioStatus((r.erros||[]).join(' ')||'Faturamento enviado.',true);fatEnvioCarregar();}
+async function fatEnvioCancelar(id){if(!confirm('Cancelar o boleto deste faturamento no Banco Inter?'))return;const motivo=prompt('Motivo do cancelamento','Cancelamento solicitado pelo cliente')||'';if(!motivo)return;const r=await api('/api/cobranca/faturamento/'+id+'/cancelar','POST',{motivo});if(r?.erro){fatEnvioStatus(r.erro);return;}fatEnvioStatus('Boleto cancelado no Banco Inter.',true);fatEnvioCarregar();}
 document.addEventListener('DOMContentLoaded',()=>{if(document.getElementById('pg-cobrancas'))fatEnvioCarregar();});
 async function cobrancarProcessar(){
   const tipos=[];
@@ -1431,11 +1432,12 @@ document.addEventListener('DOMContentLoaded',()=>{
             <div class="f"><label>CNPJ *</label><input id="fat-avulso-cnpj" placeholder="Será buscado no cadastro"></div>
             <div class="f"><label>E-mail</label><input id="fat-avulso-email" type="email"></div>
             <div class="f"><label>Valor *</label><input id="fat-avulso-valor" type="number" min="2.50" step="0.01"></div>
+            <div class="f"><label>Descrição do serviço</label><input id="fat-avulso-desc" value="Serviço avulso"></div>
           </div>
           <div class="brow" style="justify-content:flex-start;margin-top:8px"><button class="btn b-az b-sm" onclick="fatEnvioCriarAvulso()">Adicionar faturamento avulso</button></div>
         </div>
         <div id="fat-envio-status" class="st"></div>
-        <div style="overflow-x:auto"><table class="t" style="font-size:13px;min-width:1050px"><thead><tr><th>Previsto</th><th>Cliente</th><th>Competência</th><th>Valor</th><th>Status</th><th>Envio / NF</th><th>Ações</th></tr></thead><tbody id="tb-fat-envio"><tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-muted)">Carregando fila...</td></tr></tbody></table></div>
+        <div style="overflow-x:auto"><table class="t" style="font-size:13px;min-width:1250px"><thead><tr><th>Previsto</th><th>Cliente</th><th>Competência</th><th>Descrição do serviço</th><th>Valor</th><th>Status</th><th>Envio / NF</th><th>Ações</th></tr></thead><tbody id="tb-fat-envio"><tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted)">Carregando fila...</td></tr></tbody></table></div>
       </div>
       <div class="card" style="margin-bottom:12px">
         <div class="card-header"><span class="card-title">Régua de Cobrança Automática</span></div>
@@ -4386,6 +4388,22 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="f" style="margin-top:10px"><label>Endpoint da prefeitura/provedor</label><input id="cfg-nfse-endpoint" placeholder="https://..."></div>
         <div class="brow" style="justify-content:flex-start;margin-top:12px"><button class="btn b-az" onclick="salvarConfigNfse()">Salvar configuração fiscal</button></div>
         <div id="cfg-nfse-status" class="st"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Banco Inter — Cobrança V3</span></div>
+        <div class="hint" style="margin-bottom:10px">Use o ambiente Sandbox para homologação. A integração exige aplicação criada no Internet Banking, escopo <code>boleto-cobranca.write</code>, certificado mTLS e conta corrente.</div>
+        <div class="g3">
+          <div class="f"><label>Ambiente</label><select id="cfg-inter-ambiente"><option value="sandbox">Sandbox</option><option value="producao">Produção</option></select></div>
+          <div class="f"><label>Client ID</label><input id="cfg-inter-client-id"></div>
+          <div class="f"><label>Conta corrente</label><input id="cfg-inter-conta" inputmode="numeric"></div>
+        </div>
+        <div class="g3" style="margin-top:10px">
+          <div class="f"><label>Client Secret</label><input id="cfg-inter-secret" type="password" placeholder="Deixe vazio para manter"></div>
+          <div class="f"><label>Senha do certificado</label><input id="cfg-inter-cert-senha" type="password" placeholder="Deixe vazio para manter"></div>
+          <div class="f"><label>Certificado mTLS (.p12/.pfx/.pem/.crt)</label><input id="cfg-inter-cert" type="file" accept=".p12,.pfx,.pem,.crt"></div>
+        </div>
+        <div class="brow" style="justify-content:flex-start;margin-top:12px"><button class="btn b-az" onclick="salvarConfigInter()">Salvar integração Inter</button></div>
+        <div id="cfg-inter-status" class="st"></div>
       </div>
       <div class="card">
         <div class="card-header"><span class="card-title">Banco de Itens de Compras</span></div>
@@ -7935,6 +7953,18 @@ async function loadConfig(){
   document.getElementById('cfg-nfse-ambiente').value=d.nfse_ambiente||'homologacao';
   document.getElementById('cfg-nfse-client-id').value=d.nfse_client_id||'';
   document.getElementById('cfg-nfse-endpoint').value=d.nfse_endpoint||'';
+  document.getElementById('cfg-inter-ambiente').value=d.inter_ambiente||'sandbox';
+  document.getElementById('cfg-inter-client-id').value=d.inter_client_id||'';
+  document.getElementById('cfg-inter-conta').value=d.inter_conta_corrente||'';
+}
+
+async function salvarConfigInter(){
+  const fd=new FormData();
+  ['ambiente','client_id','client_secret','conta_corrente','cert_senha'].forEach(k=>fd.append(k,document.getElementById('cfg-inter-'+(k==='conta_corrente'?'conta':k==='client_secret'?'secret':k==='cert_senha'?'cert-senha':k)).value||''));
+  const cert=document.getElementById('cfg-inter-cert')?.files?.[0];if(cert)fd.append('certificado',cert);
+  const r=await fetch('/api/config/inter',{method:'POST',body:fd,credentials:'same-origin'}).then(x=>x.json());
+  showSt('cfg-inter-status',r?.erro||'Integração Inter salva.',!!r?.erro);
+  document.getElementById('cfg-inter-secret').value='';document.getElementById('cfg-inter-cert-senha').value='';
 }
 
 async function salvarConfig(){
