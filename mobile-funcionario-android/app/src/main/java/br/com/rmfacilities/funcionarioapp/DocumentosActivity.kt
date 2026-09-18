@@ -619,7 +619,12 @@ class DocumentosActivity : BaseActivity() {
                 "assinado" -> isAssinado
                 else -> true
             }
-            val categoriaOk = filtroCategoria.isBlank() || categoria.equals(filtroCategoria, ignoreCase = true)
+            val filtroCategoriaNorm = filtroCategoria.trim().lowercase(Locale.getDefault())
+            val categoriaId = (item.categoria ?: "").lowercase(Locale.getDefault())
+            val filtroHolerites = filtroCategoriaNorm == "holerite" || filtroCategoriaNorm == "holerites"
+            val categoriaOk = filtroCategoria.isBlank() ||
+                (filtroHolerites && categoriaId.startsWith("holerite")) ||
+                categoria.equals(filtroCategoria, ignoreCase = true)
             val anoOk = filtroAno.isBlank() || ano == filtroAno || competencia.startsWith(filtroAno) || criado.endsWith(filtroAno)
             val textoOk = q.isBlank() || nome.contains(q) || categoria.lowercase(Locale.getDefault()).contains(q)
             statusOk && categoriaOk && anoOk && textoOk

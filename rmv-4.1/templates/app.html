@@ -2231,6 +2231,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div class="f"><label>Tipo de documento</label>
             <select id="rh-lote-tipo">
               <option value="holerite">Holerite</option>
+              <option value="holerite_adiantamento">Holerite de adiantamento de salário</option>
               <option value="folha_ponto">Folha de Ponto</option>
               <option value="aso">ASO</option>
               <option value="epi">Ficha de EPI</option>
@@ -4604,6 +4605,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <select id="farq-cat" style="width:100%">
               <option value="outros">📦 Outros</option>
               <option value="holerite">💼 Holerite</option>
+              <option value="holerite_adiantamento">💼 Holerite de adiantamento</option>
               <option value="aso">🏥 ASO</option>
               <option value="atestado">🩺 Atestado</option>
               <option value="recibo_ferias">🏖️ Recibo de Férias</option>
@@ -14095,6 +14097,7 @@ async function uploadDocumentoRHLote(){
   fd.append('categoria',tipo);
   const DOC_TIPO_LABEL={
     holerite:'holerite',
+    holerite_adiantamento:'holerite de adiantamento de salário',
     folha_ponto:'folha de ponto',
     aso:'ASO',
     epi:'ficha de EPI',
@@ -14115,9 +14118,10 @@ async function uploadDocumentoRHLote(){
   }else if(tipo==='folha_ponto'){
     endpoint='/api/funcionarios/folhas-ponto/upload';
     nomeTipo='folhas de ponto';
-  }else if(tipo==='holerite'){
+  }else if(tipo==='holerite' || tipo==='holerite_adiantamento'){
     endpoint='/api/funcionarios/holerites/upload';
-    nomeTipo='holerites';
+    nomeTipo=tipo==='holerite_adiantamento'?'holerites de adiantamento':'holerites';
+    if(tipo==='holerite_adiantamento') fd.append('tipo_holerite','adiantamento');
   }else{
     endpoint='/api/funcionarios/documentos-rh/upload';
     nomeTipo=(tipo==='atestado')?'atestados':((tipo==='recibo_ferias')?'recibos de férias':(DOC_TIPO_LABEL[tipo]||'documentos RH'));

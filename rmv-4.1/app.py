@@ -7785,6 +7785,7 @@ DOC_CAT_PATH = {
     "epi": "epi",
     "treinamento": "treinamento",
     "holerite": "holerites",
+    "holerite_adiantamento": "holerites_adiantamento",
     "folha_ponto": "folha_ponto",
     "recibo_ferias": "recibo_ferias",
     "contrato_trabalho": "contrato_trabalho",
@@ -7803,6 +7804,7 @@ DOC_CAT_LABEL = {
     "epi": "EPI",
     "treinamento": "Treinamento",
     "holerite": "Holerite",
+    "holerite_adiantamento": "Holerite de Adiantamento",
     "folha_ponto": "Folha de Ponto",
     "recibo_ferias": "Recibo de Ferias",
     "contrato_trabalho": "Contrato de Trabalho",
@@ -8273,7 +8275,7 @@ def _clean_file_part(v, max_len=80, fallback="item"):
     return s[:max_len]
 
 
-def holerite_batch_filename(funcionario, competencia=""):
+def holerite_batch_filename(funcionario, competencia="", adiantamento=False):
     nome = _clean_file_part(getattr(funcionario, "nome", "") or "", 80, "Colaborador")
     matricula = (getattr(funcionario, "matricula", None) or "").strip()
     if not matricula:
@@ -8285,7 +8287,8 @@ def holerite_batch_filename(funcionario, competencia=""):
         )
     mat = _clean_file_part(matricula, 30, "SEM-MAT")
     comp = holerite_comp_label(competencia)
-    return f"{nome} - {mat} - {comp}.pdf"
+    prefixo = "Adiantamento - " if adiantamento else ""
+    return f"{prefixo}{nome} - {mat} - {comp}.pdf"
 
 
 def unique_rel_filename(subdir, filename):
@@ -8524,7 +8527,12 @@ def build_func_docs_response(funcionario_id):
     for a in regs:
         cat = norm_cat(a.categoria)
         ano = arq_year_from_path(a.caminho)
-        if cat_filter and cat != cat_filter:
+        cats_filter = (
+            {"holerite", "holerite_adiantamento"}
+            if cat_filter == "holerite"
+            else {cat_filter}
+        )
+        if cat_filter and cat not in cats_filter:
             continue
         if ano_filter and ano != ano_filter:
             continue
@@ -21630,7 +21638,7 @@ def api_app_funcionario_download_arquivo(id):
     a = db.get_or_404(FuncionarioArquivo, id)
     if a.funcionario_id != g.app_funcionario.id:
         return jsonify({"erro": "Acesso negado"}), 403
-    if norm_cat(a.categoria) == "holerite" and (a.ass_status or "").strip().lower() not in ("assinado", "concluida"):
+    if norm_cat(a.categoria) in ("holerite", "holerite_adiantamento") and (a.ass_status or "").strip().lower() not in ("assinado", "concluida"):
         return jsonify(
             {"erro": "Este holerite precisa ser assinado antes de ser baixado."}
         ), 403
@@ -29184,6 +29192,12 @@ def api_holerites_upload():
     canal_ass = (request.form.get("canal_assinatura") or "nao").strip().lower()
     if canal_ass not in ("nao", "whatsapp", "link", "app"):
         canal_ass = "nao"
+    tipo_holerite = (request.form.get("tipo_holerite") or "mensal").strip().lower()
+    if tipo_holerite not in ("mensal", "adiantamento"):
+        tipo_holerite = "mensal"
+    categoria_holerite = (
+        "holerite_adiantamento" if tipo_holerite == "adiantamento" else "holerite"
+    )
     ids_ass_raw = (request.form.get("assinatura_funcionario_ids") or "").strip()
     ids_ass_sel = set()
     if ids_ass_raw:
@@ -29218,15 +29232,17 @@ def api_holerites_upload():
         prepare_func_doc_dirs(alvo.id, ano)
         writer = PdfWriter()
         writer.add_page(page)
-        fake_name = holerite_batch_filename(alvo, comp)
-        subdir, _ = func_doc_subdir(alvo.id, "holerite", comp)
+        fake_name = holerite_batch_filename(
+            alvo, comp, adiantamento=tipo_holerite == "adiantamento"
+        )
+        subdir, _ = func_doc_subdir(alvo.id, categoria_holerite, comp)
         rel, abs_p, fake_name = unique_rel_filename(subdir, fake_name)
         os.makedirs(os.path.dirname(abs_p), exist_ok=True)
         with open(abs_p, "wb") as out:
             writer.write(out)
         a = FuncionarioArquivo(
             funcionario_id=alvo.id,
-            categoria="holerite",
+            categoria=categoria_holerite,
             competencia=comp,
             nome_arquivo=fake_name,
             caminho=rel,
