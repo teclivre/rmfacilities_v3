@@ -29451,8 +29451,6 @@ def api_documentos_rh_upload():
                 ids_ass_sel.add(int(p))
 
     categoria = norm_cat(cat_in)
-    if categoria in ("holerite", "folha_ponto"):
-        categoria = "outros"
     if categoria not in DOC_CAT_PATH:
         categoria = "outros"
 
