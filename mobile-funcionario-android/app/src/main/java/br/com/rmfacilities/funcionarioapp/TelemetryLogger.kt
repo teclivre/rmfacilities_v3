@@ -87,6 +87,43 @@ object TelemetryLogger {
         if (isTransient(msg)) w(tag, msg) else e(tag, msg)
     }
 
+    fun logLoginFailure(
+        baseUrl: String,
+        cpf: String,
+        etapa: String,
+        mensagem: String?,
+        statusCode: Int? = null,
+        throwable: Throwable? = null
+    ) {
+        val payload = mutableMapOf<String, Any>(
+            "cpf" to cpf,
+            "etapa" to etapa.take(40),
+            "mensagem" to (mensagem ?: throwable?.message ?: "Falha sem detalhe").take(2000),
+            "versao" to BuildConfig.VERSION_NAME,
+            "dispositivo" to "${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})",
+            "timestamp" to System.currentTimeMillis()
+        )
+        if (statusCode != null) payload["status_code"] = statusCode
+        if (throwable != null) payload["stack"] = throwable.stackTraceToString().take(4000)
+
+        executor.submit {
+            try {
+                val base = baseUrl.trim().trimEnd('/')
+                if (!base.startsWith("https://", ignoreCase = true)) return@submit
+                val body = gson.toJson(payload)
+                    .toRequestBody("application/json".toMediaType())
+                val req = Request.Builder()
+                    .url("$base/api/app/login-log")
+                    .post(body)
+                    .addHeader("Content-Type", "application/json")
+                    .build()
+                http.newCall(req).execute().use { }
+            } catch (_: Exception) {
+                // Falha no diagnóstico não pode afetar o fluxo de login.
+            }
+        }
+    }
+
     private fun enqueue(nivel: String, tag: String, mensagem: String, stack: String?) {
         val entry = mutableMapOf<String, Any>(
             "nivel" to nivel,

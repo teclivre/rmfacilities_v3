@@ -184,11 +184,14 @@ class ApiClient(private val session: SessionManager) {
         refreshHttp.newCall(req).execute().use { resp ->
             val raw = resp.body?.string().orEmpty()
             if (!resp.isSuccessful) {
-                return LoginResponse(ok = false, erro = parseErro(raw, "Não foi possível renovar a sessão."))
+                val erro = parseErro(raw, "Não foi possível renovar a sessão.")
+                TelemetryLogger.logLoginFailure(session.apiBaseUrl, session.lastLoginCpf, "sessao_renovar", erro, resp.code)
+                return LoginResponse(ok = false, erro = erro)
             }
             return try {
                 gson.fromJson(raw, LoginResponse::class.java)
             } catch (_: Exception) {
+                TelemetryLogger.logLoginFailure(session.apiBaseUrl, session.lastLoginCpf, "sessao_renovar", "Resposta inesperada do servidor.", resp.code)
                 LoginResponse(ok = false, erro = "Resposta inesperada do servidor.")
             }
         }
@@ -254,11 +257,14 @@ class ApiClient(private val session: SessionManager) {
             val raw = resp.body?.string().orEmpty()
             if (!resp.isSuccessful) {
                 val fallback = if (resp.code == 404) "Funcionalidade ainda não disponível neste servidor." else "Erro do servidor (${resp.code})."
-                return OtpStartResponse(ok = false, erro = parseErro(raw, fallback))
+                val erro = parseErro(raw, fallback)
+                TelemetryLogger.logLoginFailure(session.apiBaseUrl, cpf, "otp_iniciar", erro, resp.code)
+                return OtpStartResponse(ok = false, erro = erro)
             }
             return try {
                 gson.fromJson(raw, OtpStartResponse::class.java)
             } catch (_: Exception) {
+                TelemetryLogger.logLoginFailure(session.apiBaseUrl, cpf, "otp_iniciar", "Resposta inesperada do servidor.", resp.code)
                 OtpStartResponse(ok = false, erro = "Resposta inesperada do servidor.")
             }
         }
@@ -276,11 +282,14 @@ class ApiClient(private val session: SessionManager) {
             val raw = resp.body?.string().orEmpty()
             if (!resp.isSuccessful) {
                 val fallback = if (resp.code == 404) "Funcionalidade ainda não disponível neste servidor." else "Erro do servidor (${resp.code})."
-                return LoginResponse(ok = false, erro = parseErro(raw, fallback))
+                val erro = parseErro(raw, fallback)
+                TelemetryLogger.logLoginFailure(session.apiBaseUrl, cpf, "otp_confirmar", erro, resp.code)
+                return LoginResponse(ok = false, erro = erro)
             }
             return try {
                 gson.fromJson(raw, LoginResponse::class.java)
             } catch (_: Exception) {
+                TelemetryLogger.logLoginFailure(session.apiBaseUrl, cpf, "otp_confirmar", "Resposta inesperada do servidor.", resp.code)
                 LoginResponse(ok = false, erro = "Resposta inesperada do servidor.")
             }
         }

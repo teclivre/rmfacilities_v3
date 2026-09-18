@@ -19890,6 +19890,52 @@ def api_app_log():
     return jsonify({"ok": True, "salvos": salvos})
 
 
+@app.route("/api/app/login-log", methods=["POST"])
+@_limiter.limit("30 per minute")
+def api_app_login_log():
+    """Recebe diagnóstico mínimo de falhas ocorridas antes da autenticação."""
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False}), 400
+
+    cpf = norm_cpf(payload.get("cpf"))
+    funcionario = Funcionario.query.filter_by(cpf=cpf).first() if len(cpf) == 11 else None
+    etapa = str(payload.get("etapa") or "login")[:40]
+    mensagem = str(payload.get("mensagem") or "Falha sem detalhe")[:2000]
+    stack = str(payload.get("stack") or "")[:4000] or None
+    nivel = "WARN" if any(
+        termo in mensagem.lower()
+        for termo in ("timeout", "conexão", "connection", "network", "host")
+    ) else "ERROR"
+    ts_dispositivo = None
+    try:
+        from datetime import timezone
+
+        ts_dispositivo = datetime.fromtimestamp(
+            int(payload.get("timestamp")) / 1000, tz=timezone.utc
+        ).replace(tzinfo=None)
+    except (TypeError, ValueError, OverflowError, OSError):
+        pass
+
+    db.session.add(
+        AppLog(
+            funcionario_id=funcionario.id if funcionario else None,
+            nivel=nivel,
+            tag=f"login_{etapa}",
+            mensagem=mensagem,
+            stack=stack,
+            versao_app=str(payload.get("versao") or "")[:20],
+            dispositivo=str(payload.get("dispositivo") or "")[:120],
+            ts_dispositivo=ts_dispositivo,
+        )
+    )
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    return jsonify({"ok": True})
+
+
 @app.route("/api/admin/logs/app", methods=["GET", "DELETE"])
 @lr
 def api_admin_logs_app():

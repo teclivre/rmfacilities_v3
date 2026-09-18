@@ -204,6 +204,7 @@ class LoginActivity : AppCompatActivity() {
             val resp = try {
                 api.renovarSessao(session.refreshToken)
             } catch (e: Exception) {
+                TelemetryLogger.logLoginFailure(session.apiBaseUrl, session.lastLoginCpf, "renovacao_silenciosa", e.message, throwable = e)
                 LoginResponse(ok = false, erro = "Erro de conexão: ${e.message}")
             }
             withContext(Dispatchers.Main) {
@@ -240,6 +241,7 @@ class LoginActivity : AppCompatActivity() {
             val resp = try {
                 api.iniciarOtp(cpf)
             } catch (e: Exception) {
+                TelemetryLogger.logLoginFailure(session.apiBaseUrl, cpf, "otp_iniciar", e.message, throwable = e)
                 OtpStartResponse(ok = false, erro = "Erro de conexão: ${e.message}")
             }
             withContext(Dispatchers.Main) {
@@ -297,6 +299,7 @@ class LoginActivity : AppCompatActivity() {
             val resp = try {
                 api.confirmarOtp(cpf, codigo)
             } catch (e: Exception) {
+                TelemetryLogger.logLoginFailure(session.apiBaseUrl, cpf, "otp_confirmar", e.message, throwable = e)
                 LoginResponse(ok = false, erro = "Erro de conexão: ${e.message}")
             }
             withContext(Dispatchers.Main) {
@@ -362,6 +365,12 @@ class LoginActivity : AppCompatActivity() {
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
+                    TelemetryLogger.logLoginFailure(
+                        session.apiBaseUrl,
+                        session.biometricCpf,
+                        "biometria",
+                        "Erro $errorCode: $errString"
+                    )
                     showErro(errString.toString())
                 }
             })
@@ -403,6 +412,7 @@ class LoginActivity : AppCompatActivity() {
             val resp = try {
                 api.renovarSessao(session.refreshToken)
             } catch (e: Exception) {
+                TelemetryLogger.logLoginFailure(session.apiBaseUrl, cpf, "biometria_renovar", e.message, throwable = e)
                 LoginResponse(ok = false, erro = "Erro de conexão: ${e.message}")
             }
             withContext(Dispatchers.Main) {
