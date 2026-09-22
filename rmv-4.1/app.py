@@ -4955,6 +4955,27 @@ def wa_cfg_por_tipo(tipo="principal"):
     return wa_cliente_cfg() if tipo in ("cliente", "clientes", "client") else wa_cfg()
 
 
+def wa_webhook_tipo_origem(*payloads):
+    """Retorna a configuração da instância que originou o webhook."""
+    nomes = []
+    for payload in payloads:
+        if not isinstance(payload, dict):
+            continue
+        for chave in ("instance", "instanceName", "instance_name"):
+            valor = payload.get(chave)
+            if isinstance(valor, dict):
+                valor = valor.get("instance") or valor.get("name") or valor.get("instanceName")
+            if valor:
+                nomes.append(str(valor).strip().lower())
+    cliente = (wa_cliente_cfg().get("instancia") or "").strip().lower()
+    principal = (wa_cfg().get("instancia") or "").strip().lower()
+    if cliente and any(nome == cliente for nome in nomes):
+        return "cliente"
+    if principal and any(nome == principal for nome in nomes):
+        return "principal"
+    return "principal"
+
+
 def wa_humano_cfg():
     return {
         "enabled": str(gc("wa_humano_enabled", "0")).strip().lower()
@@ -39380,6 +39401,7 @@ def webhook_whatsapp():
                 )
                 db.session.commit()
                 if _whatsapp_ponto_comando(conteudo):
+                    tipo_ponto = wa_webhook_tipo_origem(data, raw, msg_data)
                     funcionario_wa = _funcionario_por_whatsapp(numero)
                     if funcionario_wa:
                         token_ponto = _whatsapp_ponto_token(funcionario_wa, numero)
@@ -39399,7 +39421,7 @@ def webhook_whatsapp():
                             "Peça ao RH para atualizar seu telefone."
                         )
                     try:
-                        wa_send_text(numero, resposta_ponto, tipo="principal")
+                        wa_send_text(numero, resposta_ponto, tipo=tipo_ponto)
                         diag["respostas_enviadas"] += 1
                         c.ultima_msg = utcnow()
                         db.session.add(
