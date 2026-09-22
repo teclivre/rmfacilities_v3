@@ -5647,10 +5647,10 @@ def wa_send_text(numero, mensagem, tipo="principal", cfg=None):
 def wa_send_text_cliente(numero, mensagem):
     return wa_send_text(numero, mensagem, tipo="cliente")
 
-def wa_send_location(numero, latitude, longitude, nome="Localização do ponto", endereco=""):
-    cfg = wa_cfg_por_tipo("principal")
+def wa_send_location(numero, latitude, longitude, nome="Localização do ponto", endereco="", tipo="principal"):
+    cfg = wa_cfg_por_tipo(tipo)
     if not cfg["url"] or not cfg["instancia"]:
-        raise ValueError("WhatsApp principal nao configurado")
+        raise ValueError(f"WhatsApp {tipo} nao configurado")
     num = wa_norm_number(numero)
     if not wa_is_valid_number(num):
         raise ValueError(f"Numero WhatsApp invalido: {num or 'vazio'}")
@@ -10143,9 +10143,9 @@ def _notificar_ponto_whatsapp(funcionario, marcacao, posto="", lat=None, lon=Non
         f"Status: {marcacao.tipo.replace('_', ' ').title()}"
     )
     try:
-        wa_send_text(numero, mensagem, tipo="principal")
+        wa_send_text(numero, mensagem, tipo="cliente")
         if tem_localizacao:
-            wa_send_location(numero, lat, lon, nome=f"Ponto - {posto}", endereco=posto)
+            wa_send_location(numero, lat, lon, nome=f"Ponto - {posto}", endereco=posto, tipo="cliente")
         return True
     except Exception as exc:
         app.logger.warning("[ponto-whatsapp] falha para func %s: %s", funcionario.id, exc)
@@ -10314,9 +10314,9 @@ def api_ponto_coletivo_marcar():
     numero = wa_norm_number(funcionario.telefone or "")
     if numero and wa_is_valid_number(numero):
         try:
-            wa_send_text(numero, mensagem, tipo="principal")
+            wa_send_text(numero, mensagem, tipo="cliente")
             if tem_localizacao:
-                wa_send_location(numero, lat, lon, nome=f"Ponto - {posto}", endereco=posto)
+                wa_send_location(numero, lat, lon, nome=f"Ponto - {posto}", endereco=posto, tipo="cliente")
             whatsapp_ok = True
         except Exception as exc:
             app.logger.warning("[coletivo-whatsapp] falha para func %s: %s", funcionario.id, exc)
