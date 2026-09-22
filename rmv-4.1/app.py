@@ -4995,7 +4995,9 @@ def wa_webhook_secret():
 
 def wa_webhook_authorized(payload=None):
     expected = (wa_webhook_secret() or "").strip()
-    if not expected:
+    expected_values = [expected, (gc("wa_cliente_token", "") or "").strip()]
+    expected_values = list(dict.fromkeys(value for value in expected_values if value))
+    if not expected_values:
         return False
 
     presented = []
@@ -5023,7 +5025,7 @@ def wa_webhook_authorized(payload=None):
                 presented.append(v.strip())
 
     for cand in presented:
-        if hmac.compare_digest(cand, expected):
+        if any(hmac.compare_digest(cand, value) for value in expected_values):
             return True
 
     sig = (
