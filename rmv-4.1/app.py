@@ -4275,7 +4275,7 @@ def _send_signature_otp(
     ultimo_erro = ""
     if wa_is_valid_number(tel):
         try:
-            wa_send_text(tel, msg)
+            wa_send_text(tel, msg, tipo="cliente")
             return {"canal": "whatsapp", "destino": _mask_phone(tel)}
         except Exception as ex:
             ultimo_erro = str(ex)
@@ -4334,7 +4334,7 @@ def _send_app_login_otp(codigo, funcionario, canal_override=None, validade_texto
         raise ValueError(
             "Telefone WhatsApp invalido ou nao cadastrado para este funcionario."
         )
-    wa_send_text(tel, msg)
+    wa_send_text(tel, msg, tipo="cliente")
     return {"canal": "whatsapp", "destino": _mask_phone(tel)}
 
 
@@ -5899,10 +5899,10 @@ def wa_media_meta(nome_arquivo, mimetype=""):
     return "document", mime
 
 
-def wa_send_media_bytes(numero, arquivo_bytes, nome_arquivo, mimetype="", caption=""):
-    cfg = wa_cfg()
+def wa_send_media_bytes(numero, arquivo_bytes, nome_arquivo, mimetype="", caption="", tipo="principal"):
+    cfg = wa_cfg_por_tipo(tipo)
     if not cfg["url"] or not cfg["instancia"]:
-        raise ValueError("WhatsApp nao configurado")
+        raise ValueError(f"WhatsApp {tipo} nao configurado")
     num = wa_norm_number(numero)
     if not wa_is_valid_number(num):
         raise ValueError(f"Numero WhatsApp invalido: {num or 'vazio'}")
@@ -5934,10 +5934,10 @@ def wa_send_media_bytes(numero, arquivo_bytes, nome_arquivo, mimetype="", captio
         raise ValueError(f"WhatsApp API {e.code}: {detalhe or e.reason}")
 
 
-def wa_send_pdf(numero, caminho_abs, nome_arquivo, caption=""):
+def wa_send_pdf(numero, caminho_abs, nome_arquivo, caption="", tipo="principal"):
     with open(caminho_abs, "rb") as f:
         return wa_send_media_bytes(
-            numero, f.read(), nome_arquivo, "application/pdf", caption
+            numero, f.read(), nome_arquivo, "application/pdf", caption, tipo=tipo
         )
 
 
@@ -7045,7 +7045,11 @@ def _processa_dialogo_holerite(conversa_id, numero, texto):
                     or f"holerite_{competencia.replace('/', '-')}.pdf"
                 )
                 wa_send_pdf(
-                    numero_envio, caminho_abs, nome_arquivo, f"Holerite {competencia}"
+                    numero_envio,
+                    caminho_abs,
+                    nome_arquivo,
+                    f"Holerite {competencia}",
+                    tipo="cliente",
                 )
                 enviados.append((competencia, nome_arquivo))
 
@@ -13666,7 +13670,7 @@ def _notificar_ferias_funcionario(funcionario):
                 f"✅ Previsão de retorno: *{retorno}*\n"
                 "Em caso de dúvidas, entre em contato com o RH."
             )
-            wa_send_text(tel, msg_wpp)
+            wa_send_text(tel, msg_wpp, tipo="cliente")
             ok_wpp = True
         except Exception as e:
             app.logger.warning(
@@ -14115,7 +14119,7 @@ def _solicitar_assinatura_arquivo_funcionario(
                 f"O link expira em 7 dias: {link_curto}"
             )
         try:
-            wa_send_text(tel, msg)
+            wa_send_text(tel, msg, tipo="cliente")
             enviado_wa = True
         except Exception as ex:
             erro_envio = str(ex)
@@ -14171,7 +14175,7 @@ def _solicitar_assinatura_arquivo_funcionario(
                         f"Acesse o link para assinar: {link_curto}"
                     )
                     try:
-                        wa_send_text(_tel_fb, _msg_fb)
+                        wa_send_text(_tel_fb, _msg_fb, tipo="cliente")
                         enviado_wa = True
                         erro_envio = ""
                     except Exception as _ex_wa:
@@ -19336,7 +19340,7 @@ def _app_notify_outdated_version(funcionario, pol):
                 )
                 if pol["download_url"]:
                     msg += f"Atualize em: {pol['download_url']}"
-                wa_send_text(tel, msg)
+                wa_send_text(tel, msg, tipo="cliente")
                 enviado = True
         except Exception as ex:
             app.logger.warning(
@@ -26563,6 +26567,7 @@ def api_func_doc_assinatura_confirmar(token):
                         pdf_path,
                         pdf_nome,
                         f"✅ Documento assinado: {a.nome_arquivo}\nCódigo: {a.ass_codigo}\nValidar: {validacao_link}",
+                        tipo="cliente",
                     )
                 else:
                     pdf_buf = _build_doc_assinatura_pdf(
@@ -26578,6 +26583,7 @@ def api_func_doc_assinatura_confirmar(token):
                         tmp_file,
                         pdf_nome,
                         f"✅ Documento assinado: {a.nome_arquivo}\nCódigo: {a.ass_codigo}\nValidar: {validacao_link}",
+                        tipo="cliente",
                     )
                     try:
                         os.remove(tmp_file)
@@ -28721,7 +28727,7 @@ def api_envelope_enviar(id):
                 f"🔗 Acesse e assine aqui:\n{link_curto}"
             )
             try:
-                wa_send_text(tel, msg)
+                wa_send_text(tel, msg, tipo="cliente")
                 _ass_track_mark_sent(sig, "whatsapp")
                 enviados.append(
                     {
@@ -29055,13 +29061,14 @@ def api_envelope_assinatura_confirmar(token):
                         f"Segue o documento *{env.titulo}* com a página de auditoria."
                     )
                     try:
-                        wa_send_pdf(tel, abs_pdf, fname, caption)
+                        wa_send_pdf(tel, abs_pdf, fname, caption, tipo="cliente")
                         wa_send_text(
                             tel,
                             (
                                 f"🏢 Empresa remetente: *{empresa_nome}*\n"
                                 f"🔗 Link para download do documento assinado:\n{signed_pdf_link}"
                             ),
+                            tipo="cliente",
                         )
                     except Exception:
                         pass
@@ -31693,7 +31700,7 @@ def api_beneficios_notificar():
                     + "\n".join(linhas_wpp)
                     + "\nQualquer dúvida, entre em contato com o RH."
                 )
-                wa_send_text(tel, msg_wpp)
+                wa_send_text(tel, msg_wpp, tipo="cliente")
                 enviados_wpp += 1
             except Exception as e:
                 app.logger.warning(f"[beneficios_notificar] WhatsApp falhou para func {fid}: {e}")
@@ -35526,7 +35533,7 @@ def api_folhas_notificar(fid):
                         f"💰 Valor líquido: *{_total_fmt}*\n"
                         "Qualquer dúvida, entre em contato com o RH."
                     )
-                    wa_send_text(tel, msg_wpp)
+                    wa_send_text(tel, msg_wpp, tipo="cliente")
                     enviados_wpp += 1
                 except Exception as e:
                     app.logger.warning(f"[folha_notificar] WhatsApp falhou para func {func_id}: {e}")
@@ -38429,6 +38436,7 @@ def api_rh_holerites_enviar(job_id):
                             abs_p,
                             item["nome_arquivo"],
                             f"Holerite {comp} - {fn}",
+                            tipo="cliente",
                         )
                         if tem_fp:
                             wa_send_pdf(
@@ -38436,6 +38444,7 @@ def api_rh_holerites_enviar(job_id):
                                 fp_abs,
                                 item.get("folha_ponto_nome") or "folha_ponto.pdf",
                                 f"Folha de ponto {comp} - {fn}",
+                                tipo="cliente",
                             )
                         s_w = True
                     if s_e and s_w:
@@ -39060,10 +39069,15 @@ def api_wa_send_colaboradores():
         try:
             if arquivo_bytes:
                 wa_send_media_bytes(
-                    tel, arquivo_bytes, arquivo_nome, arquivo_mimetype, texto_envio
+                    tel,
+                    arquivo_bytes,
+                    arquivo_nome,
+                    arquivo_mimetype,
+                    texto_envio,
+                    tipo="cliente",
                 )
             else:
-                wa_send_text(tel, texto_envio)
+                wa_send_text(tel, texto_envio, tipo="cliente")
             c = WhatsAppConversa.query.filter_by(numero=tel).first()
             if not c:
                 c = WhatsAppConversa(numero=tel, nome=f.nome or tel)
