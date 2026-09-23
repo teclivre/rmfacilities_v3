@@ -3017,6 +3017,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           </div>
           <div class="brow" style="justify-content:flex-start">
             <button class="btn b-az" onclick="salvarWAConfigCliente()">Salvar configurações do cliente</button>
+            <button class="btn b-ghv" onclick="testarWACliente()">Testar conexão do cliente</button>
           </div>
         </div>
 
@@ -17314,6 +17315,14 @@ async function testarWA(){
   showSt('wa-cfg-st','Testando conexão...',false);
   const r=await api('/api/config/whatsapp/testar','POST',{numero:num});
   showSt('wa-cfg-st',r.erro||'Mensagem de teste enviada! Verifique o WhatsApp.',!!r.erro);
+}
+
+async function testarWACliente(){
+  const num=prompt('Número para teste da API cliente (com DDI, ex: 5511999998888):');
+  if(!num)return;
+  showSt('wa-cfg-st','Testando conexão da API cliente...',false);
+  const r=await api('/api/config/whatsapp/testar','POST',{numero:num,tipo:'cliente'});
+  showSt('wa-cfg-st',r.erro||'Mensagem de teste enviada pela API cliente!',!!r.erro);
 }
 
 async function testarWABackup(){

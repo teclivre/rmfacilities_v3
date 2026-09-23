@@ -10156,9 +10156,9 @@ def _coletivo_label_tipo_whatsapp(tipo):
     }.get((tipo or "").strip().lower(), (tipo or "").strip() or "Ponto")
 
 
-def _notificar_ponto_whatsapp(funcionario, marcacao, posto="", lat=None, lon=None, token=None):
+def _notificar_ponto_whatsapp(funcionario, marcacao, posto="", lat=None, lon=None, token=None, numero_destino=None):
     """Envia ao funcionário a confirmação da marcação já persistida."""
-    numero = wa_norm_number(funcionario.telefone or "")
+    numero = wa_norm_number(numero_destino or funcionario.telefone or "")
     if not numero or not wa_is_valid_number(numero):
         return False
     posto = (posto or getattr(funcionario, "posto_operacional", None) or "Reserva tecnica").strip()
@@ -10245,6 +10245,26 @@ def _whatsapp_ponto_token_funcionario(token):
         return funcionario
     except (TypeError, ValueError, KeyError, json.JSONDecodeError, UnicodeError):
         return None
+
+
+def _whatsapp_ponto_token_numero(token, funcionario):
+    """Obtém o número que iniciou o fluxo, já validado pelo token do ponto."""
+    partes = str(token or "").split(".", 1)
+    if len(partes) != 2:
+        return wa_norm_number(funcionario.telefone or "")
+    try:
+        padding = "=" * (-len(partes[0]) % 4)
+        payload = json.loads(
+            base64.urlsafe_b64decode((partes[0] + padding).encode()).decode()
+        )
+        numero = wa_norm_number(payload.get("numero"))
+        return (
+            numero
+            if numero and wa_phone_matches(numero, funcionario.telefone or "")
+            else wa_norm_number(funcionario.telefone or "")
+        )
+    except (TypeError, ValueError, KeyError, json.JSONDecodeError, UnicodeError):
+        return wa_norm_number(funcionario.telefone or "")
 
 
 def _whatsapp_ponto_comando(conteudo):
@@ -10360,7 +10380,7 @@ def api_ponto_coletivo_marcar():
         f"Status: {tipo.replace('_', ' ').title()}"
     )
     whatsapp_ok = False
-    numero = wa_norm_number(funcionario.telefone or "")
+    numero = _whatsapp_ponto_token_numero(token, funcionario) if token else wa_norm_number(funcionario.telefone or "")
     if numero and wa_is_valid_number(numero):
         try:
             wa_send_text(numero, mensagem, tipo="cliente")
@@ -38780,11 +38800,14 @@ def api_wa_backup_restaurar():
 def api_wa_testar():
     d = request.json or {}
     numero = (d.get("numero") or "").strip()
+    tipo = str(d.get("tipo") or "principal").strip().lower()
+    if tipo not in ("principal", "cliente"):
+        return jsonify({"erro": "Tipo de WhatsApp inválido."}), 400
     if not numero:
         return jsonify({"erro": "Informe o numero de destino"}), 400
     try:
-        wa_send_text(numero, "Teste de conexao WhatsApp — RM Facilities")
-        return jsonify({"ok": True})
+        wa_send_text(numero, "Teste de conexao WhatsApp — RM Facilities", tipo=tipo)
+        return jsonify({"ok": True, "tipo": tipo})
     except Exception as e:
         return jsonify({"erro": str(e)}), 500
 
