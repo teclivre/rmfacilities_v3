@@ -5645,6 +5645,8 @@ def wa_send_text(numero, mensagem, tipo="principal", cfg=None):
     cfg = cfg or wa_cfg_por_tipo(tipo)
     if not cfg["url"] or not cfg["instancia"]:
         raise ValueError(f"WhatsApp {tipo} nao configurado")
+    if not cfg["token"]:
+        raise ValueError(f"WhatsApp {tipo} sem API key/token configurado")
     num = wa_norm_number(numero)
     if not wa_is_valid_number(num):
         raise ValueError(f"Numero WhatsApp invalido: {num or 'vazio'}")
@@ -5659,7 +5661,11 @@ def wa_send_text(numero, mensagem, tipo="principal", cfg=None):
     )
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
-            resultado = json.loads(r.read().decode())
+            corpo = r.read().decode(errors="replace").strip()
+            try:
+                resultado = json.loads(corpo) if corpo else {"ok": True}
+            except json.JSONDecodeError:
+                resultado = {"ok": True, "resposta": corpo[:500]}
             _wa_marcar_enviado_pelo_sistema(num)
             return resultado
     except urllib.error.HTTPError as e:
@@ -10171,12 +10177,28 @@ def _notificar_ponto_whatsapp(funcionario, marcacao, posto="", lat=None, lon=Non
     )
     try:
         wa_send_text(numero, mensagem, tipo="cliente")
-        if tem_localizacao:
-            wa_send_location(numero, lat, lon, nome=f"Ponto - {posto}", endereco=posto, tipo="cliente")
-        return True
     except Exception as exc:
-        app.logger.warning("[ponto-whatsapp] falha para func %s: %s", funcionario.id, exc)
+        cfg = wa_cliente_cfg()
+        app.logger.error(
+            "[ponto-whatsapp] falha texto func=%s numero=%s url=%s instancia=%s token_configurado=%s erro=%s",
+            funcionario.id,
+            numero,
+            cfg.get("url", ""),
+            cfg.get("instancia", ""),
+            bool(cfg.get("token")),
+            exc,
+        )
         return False
+    if tem_localizacao:
+        try:
+            wa_send_location(numero, lat, lon, nome=f"Ponto - {posto}", endereco=posto, tipo="cliente")
+        except Exception as exc:
+            app.logger.warning(
+                "[ponto-whatsapp] texto enviado, falha localizacao func=%s erro=%s",
+                funcionario.id,
+                exc,
+            )
+    return True
 
 
 def _whatsapp_ponto_token(funcionario, numero, validade_minutos=10):
