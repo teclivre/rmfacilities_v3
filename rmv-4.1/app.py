@@ -22483,31 +22483,39 @@ def _app_ponto_escala_info_data(funcionario, data_ref):
                             ),
                             None,
                         )
-                            idx_tpl = (
-                                data_obj.weekday()
-                                if data_obj.weekday() < len(dias)
-                                else idx_tpl_trab
+                        idx_tpl = (
+                            data_obj.weekday()
+                            if data_obj.weekday() < len(dias)
+                            else idx_tpl_trab
+                        )
+                        dia_info = (
+                            (dias[idx_tpl] or {})
+                            if idx_tpl is not None and idx_tpl < len(dias)
+                            else {"tipo": "trabalho"}
+                        )
+                        if data_obj.weekday() in sem_trab:
+                            if str((dia_info or {}).get("tipo", "")).lower() == "folga":
+                                idx_tpl = idx_tpl_trab
+                                dia_info = (
+                                    (dias[idx_tpl] or {})
+                                    if idx_tpl is not None and idx_tpl < len(dias)
+                                    else {"tipo": "trabalho"}
+                                )
+                        else:
+                            if idx_tpl_folga is not None:
+                                idx_tpl = idx_tpl_folga
+                            dia_info = (
+                                (dias[idx_tpl] or {})
+                                if idx_tpl is not None and idx_tpl < len(dias)
+                                else {"tipo": "folga"}
                             )
-                            dia_info = (dias[idx_tpl] or {}) if idx_tpl is not None and idx_tpl < len(dias) else {"tipo": "trabalho"}
-                            if data_obj.weekday() in sem_trab:
-                                if str((dia_info or {}).get("tipo", "")).lower() == "folga":
-                                    idx_tpl = idx_tpl_trab
-                                    dia_info = (
-                                        (dias[idx_tpl] or {})
-                                        if idx_tpl is not None and idx_tpl < len(dias)
-                                        else {"tipo": "trabalho"}
-                                    )
-                            else:
-                                if idx_tpl_folga is not None:
-                                    idx_tpl = idx_tpl_folga
-                    )
-                    return {
-                        "escala": esc,
-                        "vinculo": ef,
-                        "indice": data_obj.weekday(),
-                        "indice_template": idx_tpl,
-                        "dia_info": dia_info,
-                    }
+                        return {
+                            "escala": esc,
+                            "vinculo": ef,
+                            "indice": data_obj.weekday(),
+                            "indice_template": idx_tpl,
+                            "dia_info": dia_info,
+                        }
 
                 # 5x2 deve respeitar dia da semana (seg-sex trabalho; sab-dom folga),
                 # independentemente do deslocamento do ciclo por data_inicio.
