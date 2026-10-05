@@ -11,6 +11,29 @@ from flask import Response, jsonify, request, send_file, session
 from zoneinfo import ZoneInfo
 
 
+def _ponto_6x1_template_dia(dias, weekday):
+    """Mapeia seg-sab para os modelos de trabalho e domingo para a folga."""
+    tipo_por_indice = [
+        str((dia or {}).get("tipo", "trabalho")).strip().lower()
+        for dia in dias
+    ]
+    idx_trabalho = next(
+        (i for i, tipo in enumerate(tipo_por_indice) if tipo != "folga"),
+        None,
+    )
+    if weekday == 6:
+        idx = next(
+            (i for i, tipo in enumerate(tipo_por_indice) if tipo == "folga"),
+            None,
+        )
+        return idx, (dias[idx] or {}) if idx is not None else {"tipo": "folga"}
+
+    idx = weekday if weekday < len(dias) and tipo_por_indice[weekday] != "folga" else idx_trabalho
+    if idx is None:
+        return None, {"tipo": "folga"}
+    return idx, dias[idx] or {"tipo": "trabalho"}
+
+
 def register_ponto_routes(
     app,
     *,
@@ -256,6 +279,27 @@ def register_ponto_routes(
                                         "dia_info": dia_info,
                                         "minutos": minutos,
                                     }
+
+                            # 6x1 tem a folga fixa no domingo; a data de início
+                            # não deve deslocar o dia de descanso pelo calendário.
+                            if str(getattr(esc, "tipo", "")).strip().lower() == "6x1":
+                                idx_tpl, dia_info = _ponto_6x1_template_dia(
+                                    dias, data_obj.weekday()
+                                )
+                                minutos = 0
+                                if str((dia_info or {}).get("tipo", "")).lower() != "folga" and idx_tpl is not None:
+                                    try:
+                                        minutos = int(esc.carga_horaria_min_dia(int(idx_tpl)) or 0)
+                                    except Exception:
+                                        minutos = 0
+                                return {
+                                    "escala": esc,
+                                    "vinculo": ef,
+                                    "indice": data_obj.weekday(),
+                                    "indice_template": idx_tpl,
+                                    "dia_info": dia_info,
+                                    "minutos": minutos,
+                                }
 
                             # 5x2 deve seguir dia da semana (seg-sex trabalho;
                             # sab-dom folga), sem depender do deslocamento por

@@ -9541,7 +9541,7 @@ function rhEscalaMontarCiclo(){
   const intervalo=parseInt((document.getElementById('rh-esc-intervalo')?.value||'60').trim(),10)||0;
   const diasTrabalho=Math.max(1,parseInt((document.getElementById('rh-esc-dias-trabalho')?.value||'6').trim(),10)||6);
   const diasFolga=Math.max(0,parseInt((document.getElementById('rh-esc-dias-folga')?.value||'2').trim(),10)||2);
-  const diasSemanaTrabalho=rhEscalaSemanaTrabalhoSelecionados();
+  const diasSemanaTrabalho=(tipo==='6x1')?[0,1,2,3,4,5]:rhEscalaSemanaTrabalhoSelecionados();
   const montarOut=(arrDias)=>{
     const out={dias:arrDias};
     if(diasSemanaTrabalho.length) out.dias_semana_trabalho=diasSemanaTrabalho;
