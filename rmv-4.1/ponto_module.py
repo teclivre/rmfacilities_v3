@@ -251,15 +251,23 @@ def register_ponto_routes(
                                         ),
                                         None,
                                     )
+                                    idx_tpl = (
+                                        data_obj.weekday()
+                                        if data_obj.weekday() < len(dias)
+                                        else idx_tpl_trab
+                                    )
+                                    dia_info = (dias[idx_tpl] or {}) if idx_tpl is not None and idx_tpl < len(dias) else {"tipo": "trabalho"}
                                     if data_obj.weekday() in sem_trab:
-                                        idx_tpl = idx_tpl_trab
-                                        dia_info = (
-                                            (dias[idx_tpl] or {})
-                                            if idx_tpl is not None and idx_tpl < len(dias)
-                                            else {"tipo": "trabalho"}
-                                        )
+                                        if str((dia_info or {}).get("tipo", "")).lower() == "folga":
+                                            idx_tpl = idx_tpl_trab
+                                            dia_info = (
+                                                (dias[idx_tpl] or {})
+                                                if idx_tpl is not None and idx_tpl < len(dias)
+                                                else {"tipo": "trabalho"}
+                                            )
                                     else:
-                                        idx_tpl = idx_tpl_folga
+                                        if idx_tpl_folga is not None:
+                                            idx_tpl = idx_tpl_folga
                                         dia_info = (
                                             (dias[idx_tpl] or {})
                                             if idx_tpl is not None and idx_tpl < len(dias)

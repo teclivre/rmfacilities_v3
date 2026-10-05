@@ -22483,33 +22483,23 @@ def _app_ponto_escala_info_data(funcionario, data_ref):
                             ),
                             None,
                         )
-                        if data_obj.weekday() in sem_trab:
-                            idx_tpl = idx_tpl_trab
-                            dia_info = (
-                                (dias[idx_tpl] or {})
-                                if idx_tpl is not None and idx_tpl < len(dias)
-                                else {"tipo": "trabalho"}
+                            idx_tpl = (
+                                data_obj.weekday()
+                                if data_obj.weekday() < len(dias)
+                                else idx_tpl_trab
                             )
-                        else:
-                            idx_tpl = idx_tpl_folga
-                            dia_info = (
-                                (dias[idx_tpl] or {})
-                                if idx_tpl is not None and idx_tpl < len(dias)
-                                else {"tipo": "folga"}
-                            )
-                        return {
-                            "escala": esc,
-                            "vinculo": ef,
-                            "indice": data_obj.weekday(),
-                            "indice_template": idx_tpl,
-                            "dia_info": dia_info,
-                        }
-
-                # 6x1 mantém a folga no domingo, sem deslocamento pelo início
-                # do vínculo; configuração semanal explícita acima tem prioridade.
-                if str(getattr(esc, "tipo", "")).strip().lower() == "6x1":
-                    idx_tpl, dia_info = _ponto_6x1_template_dia(
-                        dias, data_obj.weekday()
+                            dia_info = (dias[idx_tpl] or {}) if idx_tpl is not None and idx_tpl < len(dias) else {"tipo": "trabalho"}
+                            if data_obj.weekday() in sem_trab:
+                                if str((dia_info or {}).get("tipo", "")).lower() == "folga":
+                                    idx_tpl = idx_tpl_trab
+                                    dia_info = (
+                                        (dias[idx_tpl] or {})
+                                        if idx_tpl is not None and idx_tpl < len(dias)
+                                        else {"tipo": "trabalho"}
+                                    )
+                            else:
+                                if idx_tpl_folga is not None:
+                                    idx_tpl = idx_tpl_folga
                     )
                     return {
                         "escala": esc,
