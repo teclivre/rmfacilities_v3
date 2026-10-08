@@ -12595,6 +12595,44 @@ function finAlternarCadastroRecebedor(){
   const form=document.getElementById('fin-receb-form');
   if(form)form.style.display=form.style.display==='none'?'block':'none';
 }
+function finAplicarDadosRecebedor(dados, fornecedorId=''){
+  const nome = String(dados?.nome || dados?.razao || dados?.fantasia || '').trim();
+  const cnpj = String(dados?.cnpj || '').replace(/\D/g,'') || (document.getElementById('fin-receb-cnpj')?.value||'').replace(/\D/g,'');
+  const pix = String(dados?.banco_pix || dados?.pix || '').trim();
+
+  const nomeEl = document.getElementById('fin-receb-nome');
+  const cnpjEl = document.getElementById('fin-receb-cnpj');
+  const pixEl = document.getElementById('fin-receb-pix');
+  if(nomeEl) nomeEl.value = nome;
+  if(cnpjEl && cnpj) cnpjEl.value = cnpj;
+  if(pixEl) pixEl.value = pix;
+
+  const seletor = document.getElementById('fin-bol-fornecedor');
+  if(seletor){
+    const existe = Array.from(seletor.options).some(o => (o.dataset.cnpj || '').replace(/\D/g,'') === cnpj || String(o.value) === String(fornecedorId));
+    if(fornecedorId && !existe){
+      const opt = new Option(nome || 'Fornecedor encontrado', String(fornecedorId), false, true);
+      opt.dataset.cnpj = cnpj;
+      opt.dataset.pix = pix;
+      seletor.add(opt);
+    }
+    if(fornecedorId){
+      seletor.value = String(fornecedorId);
+    } else if(nome && cnpj && !existe){
+      const opt = new Option(nome, `tmp-${cnpj}`, false, true);
+      opt.dataset.cnpj = cnpj;
+      opt.dataset.pix = pix;
+      seletor.add(opt);
+      seletor.value = opt.value;
+    }
+    if(seletor.value) seletor.dispatchEvent(new Event('change'));
+  }
+
+  const cnpjBol = document.getElementById('fin-bol-cnpj');
+  if(cnpjBol && cnpj) cnpjBol.value = cnpj;
+  const pixBol = document.getElementById('fin-bol-pix-chave');
+  if(pixBol && pix) pixBol.value = pix;
+}
 async function finBuscarCnpjRecebedor(){
   const cnpj=(document.getElementById('fin-receb-cnpj')?.value||'').replace(/\D/g,'');
   if(cnpj.length!==14){showSt('fin-bol-status','Informe os 14 dígitos do CNPJ.',true);return;}
@@ -12602,16 +12640,13 @@ async function finBuscarCnpjRecebedor(){
     const locais=await api('/api/fornecedores?q='+encodeURIComponent(cnpj));
     const existente=(Array.isArray(locais)?locais:[]).find(f=>(f.cnpj||'').replace(/\D/g,'')===cnpj);
     if(existente){
-      document.getElementById('fin-receb-nome').value=existente.nome||'';
-      document.getElementById('fin-receb-pix').value=existente.banco_pix||'';
-      const seletor=document.getElementById('fin-bol-fornecedor');
-      if(seletor){seletor.value=String(existente.id);seletor.dispatchEvent(new Event('change'));}
+      finAplicarDadosRecebedor(existente, String(existente.id));
       showSt('fin-bol-status','Fornecedor já cadastrado; dados carregados.',false);
       return;
     }
     const dados=await api('/api/cnpj/'+cnpj);
     if(dados?.erro)throw new Error(dados.erro);
-    document.getElementById('fin-receb-nome').value=dados.nome||dados.razao||'';
+    finAplicarDadosRecebedor(dados);
     showSt('fin-bol-status','Dados carregados pela consulta de CNPJ. Confira e salve o recebedor.',false);
   }catch(erro){showSt('fin-bol-status',erro.message||'Falha na consulta do CNPJ.',true);}
 }
