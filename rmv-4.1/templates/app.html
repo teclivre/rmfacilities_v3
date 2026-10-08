@@ -910,8 +910,16 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div class="f"><label>Linha digitável</label><input id="fin-bol-linha"></div>
           <div class="f"><label>Upload do boleto</label><input id="fin-bol-arquivo" type="file" accept="application/pdf,image/*"></div>
         </div>
-        <div class="brow" style="justify-content:flex-start"><button class="btn b-az" type="button" onclick="finSalvarBoleto()">Cadastrar boleto</button></div>
+        <div class="g2" style="margin-top:10px">
+          <div class="f"><label>Chave PIX do beneficiário</label><input id="fin-bol-pix-chave" placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória"></div>
+          <div class="f"><label>PIX copia e cola</label><input id="fin-bol-pix-copia-cola" placeholder="Código PIX do QR Code"><small style="color:var(--text-muted)">O CNAB240 do Banco Inter aceita até 99 caracteres nesse campo.</small></div>
+        </div>
+        <div class="brow" style="justify-content:flex-start;gap:8px">
+          <button class="btn b-az" type="button" onclick="finSalvarBoleto()">Cadastrar pagamento</button>
+          <button class="btn b-vd" type="button" onclick="finGerarRemPix()">Gerar REM PIX pendentes</button>
+        </div>
         <div id="fin-bol-status" class="st"></div>
+        <div id="fin-rem-status" class="st"></div>
         <div id="fin-pagamentos-lista"></div>
       </div>
       <div class="card">
@@ -12560,14 +12568,14 @@ async function forListar(){
 async function finInicializar(){
   const [emps,forns]=await Promise.all([api('/api/empresas'),api('/api/fornecedores')]);
   const se=document.getElementById('fin-bol-empresa'); if(se) se.innerHTML='<option value="">Selecione...</option>'+(Array.isArray(emps)?emps:[]).map(e=>`<option value="${e.id}">${esc(e.nome)}</option>`).join('');
-  const sf=document.getElementById('fin-bol-fornecedor'); if(sf) sf.innerHTML='<option value="">Selecione...</option>'+(Array.isArray(forns)?forns:[]).map(f=>`<option value="${f.id}" data-cnpj="${f.cnpj}">${esc(f.nome)}</option>`).join('');
-  if(sf) sf.onchange=()=>{const o=sf.selectedOptions[0];document.getElementById('fin-bol-cnpj').value=o?.dataset?.cnpj||'';};
+  const sf=document.getElementById('fin-bol-fornecedor'); if(sf) sf.innerHTML='<option value="">Selecione...</option>'+(Array.isArray(forns)?forns:[]).map(f=>`<option value="${f.id}" data-cnpj="${esc(f.cnpj||'')}" data-pix="${esc(f.banco_pix||'')}">${esc(f.nome)}</option>`).join('');
+  if(sf) sf.onchange=()=>{const o=sf.selectedOptions[0];document.getElementById('fin-bol-cnpj').value=o?.dataset?.cnpj||'';document.getElementById('fin-bol-pix-chave').value=o?.dataset?.pix||'';};
   const lista=await api('/api/boletos-fornecedores'); const el=document.getElementById('fin-pagamentos-lista');
   if(el) el.innerHTML=(Array.isArray(lista)?lista:[]).map(b=>`<div style="padding:8px;border-bottom:1px solid var(--borda)"><b>${esc(b.fornecedor_nome)}</b> · R$ ${Number(b.valor||0).toFixed(2)} · vence ${esc(b.vencimento)} · ${esc(b.status)}</div>`).join('')||'<span style="color:var(--text-muted)">Nenhum boleto cadastrado.</span>';
 }
 async function finSalvarBoleto(){
   const fd=new FormData();
-  const campos={empresa:'empresa_id',fornecedor:'fornecedor_nome',cnpj:'fornecedor_cnpj',vencimento:'vencimento',valor:'valor',linha:'linha_digitavel'};
+  const campos={empresa:'empresa_id',fornecedor:'fornecedor_nome',cnpj:'fornecedor_cnpj',vencimento:'vencimento',valor:'valor',linha:'linha_digitavel','pix-chave':'pix_chave','pix-copia-cola':'pix_copia_cola'};
   Object.entries(campos).forEach(([id,nome])=>{
     let valor=document.getElementById('fin-bol-'+id)?.value||'';
     if(id==='fornecedor'){const sel=document.getElementById('fin-bol-fornecedor'); valor=sel?.selectedOptions?.[0]?.textContent||valor;}
@@ -12575,7 +12583,18 @@ async function finSalvarBoleto(){
   });
   const ar=document.getElementById('fin-bol-arquivo')?.files?.[0]; if(ar) fd.append('arquivo',ar);
   const r=await fetch('/api/boletos-fornecedores',{method:'POST',body:fd,credentials:'same-origin'}); const d=await r.json().catch(()=>({}));
-  showSt('fin-bol-status',d.erro||'Boleto cadastrado e fornecedor vinculado.',!r.ok); if(r.ok) finInicializar();
+  showSt('fin-bol-status',d.erro||'Pagamento cadastrado e fornecedor vinculado.',!r.ok); if(r.ok) finInicializar();
+}
+async function finGerarRemPix(){
+  const empresaId=document.getElementById('fin-bol-empresa')?.value||'';
+  if(!empresaId){showSt('fin-rem-status','Selecione a empresa pagadora.',true);return;}
+  const r=await fetch('/api/boletos-fornecedores/export.cnab240?empresa_id='+encodeURIComponent(empresaId),{credentials:'same-origin'});
+  if(!r.ok){const d=await r.json().catch(()=>({}));showSt('fin-rem-status',d.erro||'Não foi possível gerar o arquivo REM.',true);return;}
+  const blob=await r.blob();
+  const url=URL.createObjectURL(blob); const link=document.createElement('a');
+  link.href=url; link.download=r.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/i)?.[1]||'pagamentos_pix.REM';
+  document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+  showSt('fin-rem-status','Arquivo REM PIX gerado para os pagamentos pendentes.',false);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

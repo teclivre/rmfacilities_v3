@@ -2942,6 +2942,7 @@ class BoletoFornecedor(db.Model):
     empresa_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=False, index=True)
     linha_digitavel = db.Column(db.String(100), default="")
     codigo_barras = db.Column(db.String(100), default="")
+    pix_copia_cola = db.Column(db.Text, default="")
     valor = db.Column(db.Float, default=0)
     vencimento = db.Column(db.String(10), nullable=False)
     descricao = db.Column(db.String(200), default="")
@@ -2956,6 +2957,7 @@ class BoletoFornecedor(db.Model):
         fornecedor = db.session.get(Fornecedor, self.fornecedor_id)
         d["fornecedor_nome"] = fornecedor.nome if fornecedor else ""
         d["fornecedor_cnpj"] = fornecedor.cnpj if fornecedor else ""
+        d["pix_chave"] = fornecedor.banco_pix if fornecedor else ""
         return d
 
 
@@ -34971,6 +34973,9 @@ def api_boleto_fornecedor_criar():
         db.session.flush()
     else:
         fornecedor.nome = nome or fornecedor.nome
+    pix_chave = (d.get("pix_chave") or "").strip()
+    if pix_chave:
+        fornecedor.banco_pix = pix_chave[:150]
     arquivo = request.files.get("arquivo")
     caminho = ""
     if arquivo and arquivo.filename:
@@ -34979,6 +34984,7 @@ def api_boleto_fornecedor_criar():
         fornecedor_id=fornecedor.id, empresa_id=empresa_id,
         linha_digitavel=re.sub(r"\D", "", str(d.get("linha_digitavel") or "")),
         codigo_barras=re.sub(r"\D", "", str(d.get("codigo_barras") or "")),
+        pix_copia_cola=(d.get("pix_copia_cola") or "").strip(),
         valor=valor, vencimento=vencimento, descricao=(d.get("descricao") or "").strip(),
         arquivo_nome=arquivo.filename if arquivo else "", arquivo_caminho=caminho,
     )
@@ -34986,6 +34992,111 @@ def api_boleto_fornecedor_criar():
     db.session.commit()
     audit_event("boleto_fornecedor_criado", "boleto_fornecedor", boleto.id, "boleto_fornecedor", boleto.id, True, {"fornecedor_id": fornecedor.id, "empresa_id": empresa_id})
     return jsonify(boleto.to_dict()), 201
+
+
+def _cnab240_pix_info(chave, copia_cola):
+    valor = str(copia_cola or "").strip()
+    tipo = "05"
+    if not valor:
+        valor = str(chave or "").strip()
+        tipo = _cnab240_pix_key_type(valor)
+    if not valor:
+        raise ValueError("informe a chave PIX ou o código PIX copia e cola")
+    try:
+        valor.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise ValueError("a chave ou o código PIX deve conter somente caracteres ASCII") from exc
+    if len(valor) > 99:
+        raise ValueError("o campo PIX excede 99 caracteres aceitos neste CNAB240 do Banco Inter")
+    if any(ord(char) < 32 or ord(char) > 126 for char in valor):
+        raise ValueError("a chave ou o código PIX contém caracteres inválidos")
+    return tipo, valor
+
+
+def _cnab240_fornecedor_pix_remessa(empresa, boletos):
+    cnpj = re.sub(r"\D", "", empresa.cnpj or "")
+    if len(cnpj) != 14:
+        raise ValueError("cadastre o CNPJ da empresa antes de gerar o CNAB")
+    agencia, agencia_dv = _cnab240_bank_and_digit(empresa.agencia, 5, "agência da empresa")
+    conta, conta_dv = _cnab240_bank_and_digit(empresa.conta, 12, "conta da empresa")
+    if not boletos:
+        raise ValueError("não há pagamentos PIX pendentes para esta empresa")
+
+    registros = [_cnab240_record([
+        (1, 3, "077", True), (8, 8, "0", True), (9, 17, "1", True),
+        (18, 18, "1", True), (19, 32, cnpj, True), (103, 132, "BANCO INTER", False),
+    ])]
+    registros.append(_cnab240_lote_header(cnpj, empresa, agencia, conta, agencia_dv, conta_dv, 1, "45"))
+    soma = 0
+    for item_index, boleto in enumerate(boletos, 1):
+        fornecedor = db.session.get(Fornecedor, boleto.fornecedor_id)
+        if not fornecedor:
+            raise ValueError(f"fornecedor do pagamento {boleto.id} não encontrado")
+        documento = re.sub(r"\D", "", fornecedor.cnpj or "")
+        if len(documento) not in (11, 14):
+            raise ValueError(f"cadastre CPF ou CNPJ válido de {fornecedor.nome}")
+        try:
+            data_pagamento = datetime.strptime(boleto.vencimento, "%Y-%m-%d").date()
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"data de vencimento inválida para {fornecedor.nome}") from exc
+        tipo_pix, valor_pix = _cnab240_pix_info(fornecedor.banco_pix, boleto.pix_copia_cola)
+        valor_centavos = int(round(float(boleto.valor or 0) * 100))
+        if valor_centavos <= 0:
+            raise ValueError(f"o valor do pagamento de {fornecedor.nome} deve ser maior que zero")
+        soma += valor_centavos
+        seq_a = item_index * 2 - 1
+        seq_b = item_index * 2
+        registros.append(_cnab240_record([
+            (1, 3, "077", True), (4, 7, 1, True), (8, 8, "3", True), (9, 13, seq_a, True),
+            (14, 14, "A", False), (15, 17, "0", True), (18, 20, "000", True),
+            (44, 73, fornecedor.nome, False), (74, 93, f"CONTA{boleto.id}", False),
+            (94, 101, data_pagamento.strftime("%d%m%Y"), True), (102, 104, "BRL", False),
+            (120, 134, valor_centavos, True),
+        ]))
+        segmento_b = list(_cnab240_record([
+            (1, 3, "077", True), (4, 7, 1, True), (8, 8, "3", True), (9, 13, seq_b, True),
+            (14, 14, "B", False), (15, 17, tipo_pix, False),
+            (18, 18, "1" if len(documento) == 11 else "2", True), (19, 32, documento, True),
+        ]))
+        segmento_b[127:226] = list(valor_pix.ljust(99))
+        registros.append("".join(segmento_b))
+
+    registros.append(_cnab240_record([
+        (1, 3, "077", True), (4, 7, 1, True), (8, 8, "5", True),
+        (18, 23, len(boletos) * 2 + 2, True), (24, 41, soma, True),
+    ]))
+    registros.append(_cnab240_record([
+        (1, 3, "077", True), (4, 7, "9999", True), (8, 8, "9", True),
+        (18, 23, 3, True), (24, 29, len(registros) + 1, True),
+    ]))
+    return "\r\n".join(registros) + "\r\n"
+
+
+@app.route("/api/boletos-fornecedores/export.cnab240", methods=["GET"])
+@lr
+def api_fornecedores_pix_exportar_cnab240():
+    empresa_id = to_num(request.args.get("empresa_id"))
+    empresa = db.session.get(Empresa, empresa_id) if empresa_id else None
+    if not empresa:
+        return jsonify({"erro": "selecione uma empresa pagadora válida"}), 400
+    boletos = BoletoFornecedor.query.filter_by(empresa_id=empresa.id, status="pendente").filter(
+        db.or_(BoletoFornecedor.pix_copia_cola != "", Fornecedor.banco_pix != "")
+    ).join(Fornecedor, BoletoFornecedor.fornecedor_id == Fornecedor.id).order_by(
+        BoletoFornecedor.vencimento.asc(), BoletoFornecedor.id.asc()
+    ).all()
+    if not boletos:
+        return jsonify({"erro": "não há pagamentos PIX pendentes para esta empresa"}), 400
+    try:
+        conteudo = _cnab240_fornecedor_pix_remessa(empresa, boletos)
+    except ValueError as exc:
+        return jsonify({"erro": str(exc)}), 400
+    audit_event("fornecedores_pix_cnab240_gerado", "usuario", session.get("uid"), "empresa", empresa.id, True, {"quantidade": len(boletos)})
+    gerado_em = localnow().strftime("%Y%m%d%H%M%S")
+    nome_empresa = _cnab240_text(empresa.nome)[:30].rstrip() or "EMPRESA"
+    return send_file(
+        io.BytesIO(conteudo.encode("ascii")), mimetype="text/plain", as_attachment=True,
+        download_name=f"CNAB240_PIX_{nome_empresa}_{gerado_em}.REM",
+    )
 
 
 def _cnab240_field(record, start, end, value=" ", numeric=False):
@@ -40377,6 +40488,7 @@ with app.app_context(), _StartupSchemaLock():
             "cnab_retorno_em DATETIME",
         ],
     )
+    ensure_cols("boleto_fornecedor", ['pix_copia_cola TEXT DEFAULT ""'])
     ensure_cols(
         "usuario",
         [
