@@ -907,7 +907,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div id="fin-receb-form" style="display:none;margin-top:10px;padding:10px 0;border-top:1px solid var(--borda)">
           <div class="g3">
             <div class="f"><label>Nome / razão social *</label><input id="fin-receb-nome"></div>
-            <div class="f"><label>CNPJ *</label><input id="fin-receb-cnpj" inputmode="numeric" maxlength="18" placeholder="00.000.000/0000-00"></div>
+            <div class="f"><label>CNPJ *</label><div style="display:flex;gap:6px"><input id="fin-receb-cnpj" inputmode="numeric" maxlength="18" placeholder="00.000.000/0000-00" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();finBuscarCnpjRecebedor()}"><button class="btn b-gh b-sm" type="button" onclick="finBuscarCnpjRecebedor()">Buscar</button></div></div>
             <div class="f"><label>Chave PIX</label><input id="fin-receb-pix" placeholder="CPF, CNPJ, e-mail, telefone ou aleatória"></div>
           </div>
           <div class="brow" style="justify-content:flex-start;margin-top:8px"><button class="btn b-az b-sm" type="button" onclick="finCadastrarRecebedor()">Salvar recebedor</button></div>
@@ -12594,6 +12594,26 @@ function finAtualizarFornecedores(fornecedores, selecionarId=''){
 function finAlternarCadastroRecebedor(){
   const form=document.getElementById('fin-receb-form');
   if(form)form.style.display=form.style.display==='none'?'block':'none';
+}
+async function finBuscarCnpjRecebedor(){
+  const cnpj=(document.getElementById('fin-receb-cnpj')?.value||'').replace(/\D/g,'');
+  if(cnpj.length!==14){showSt('fin-bol-status','Informe os 14 dígitos do CNPJ.',true);return;}
+  try{
+    const locais=await api('/api/fornecedores?q='+encodeURIComponent(cnpj));
+    const existente=(Array.isArray(locais)?locais:[]).find(f=>(f.cnpj||'').replace(/\D/g,'')===cnpj);
+    if(existente){
+      document.getElementById('fin-receb-nome').value=existente.nome||'';
+      document.getElementById('fin-receb-pix').value=existente.banco_pix||'';
+      const seletor=document.getElementById('fin-bol-fornecedor');
+      if(seletor){seletor.value=String(existente.id);seletor.dispatchEvent(new Event('change'));}
+      showSt('fin-bol-status','Fornecedor já cadastrado; dados carregados.',false);
+      return;
+    }
+    const dados=await api('/api/cnpj/'+cnpj);
+    if(dados?.erro)throw new Error(dados.erro);
+    document.getElementById('fin-receb-nome').value=dados.nome||dados.razao||'';
+    showSt('fin-bol-status','Dados carregados pela consulta de CNPJ. Confira e salve o recebedor.',false);
+  }catch(erro){showSt('fin-bol-status',erro.message||'Falha na consulta do CNPJ.',true);}
 }
 async function finCadastrarRecebedor(){
   const dados={nome:document.getElementById('fin-receb-nome')?.value.trim()||'',cnpj:document.getElementById('fin-receb-cnpj')?.value||'',banco_pix:document.getElementById('fin-receb-pix')?.value.trim()||''};
