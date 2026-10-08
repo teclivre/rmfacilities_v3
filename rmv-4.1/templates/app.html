@@ -901,8 +901,16 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div style="padding:12px 0;color:var(--text-muted)">Central de pagamentos de fornecedores por boleto, PIX e transferência.</div>
         <div class="g3">
           <div class="f"><label>Empresa pagadora *</label><select id="fin-bol-empresa"><option value="">Selecione...</option></select></div>
-          <div class="f"><label>Fornecedor / beneficiário *</label><select id="fin-bol-fornecedor"><option value="">Selecione...</option></select></div>
+          <div class="f"><label>Fornecedor / beneficiário *</label><div style="display:flex;gap:6px"><select id="fin-bol-fornecedor" style="flex:1"><option value="">Selecione...</option></select><button class="btn b-gh b-sm" type="button" onclick="finAlternarCadastroRecebedor()">+ Novo</button></div></div>
           <div class="f"><label>CNPJ do beneficiário *</label><input id="fin-bol-cnpj" placeholder="Será usado para cadastro automático"></div>
+        </div>
+        <div id="fin-receb-form" style="display:none;margin-top:10px;padding:10px 0;border-top:1px solid var(--borda)">
+          <div class="g3">
+            <div class="f"><label>Nome / razão social *</label><input id="fin-receb-nome"></div>
+            <div class="f"><label>CNPJ *</label><input id="fin-receb-cnpj" inputmode="numeric" maxlength="18" placeholder="00.000.000/0000-00"></div>
+            <div class="f"><label>Chave PIX</label><input id="fin-receb-pix" placeholder="CPF, CNPJ, e-mail, telefone ou aleatória"></div>
+          </div>
+          <div class="brow" style="justify-content:flex-start;margin-top:8px"><button class="btn b-az b-sm" type="button" onclick="finCadastrarRecebedor()">Salvar recebedor</button></div>
         </div>
         <div class="g4" style="margin-top:10px">
           <div class="f"><label>Vencimento *</label><input id="fin-bol-vencimento" type="date"></div>
@@ -916,10 +924,14 @@ document.addEventListener('DOMContentLoaded',()=>{
         </div>
         <div class="brow" style="justify-content:flex-start;gap:8px">
           <button class="btn b-az" type="button" onclick="finSalvarBoleto()">Cadastrar pagamento</button>
-          <button class="btn b-vd" type="button" onclick="finGerarRemPix()">Gerar REM PIX pendentes</button>
+          <button class="btn b-vd" type="button" onclick="finGerarRemPix()">Gerar REM do lote selecionado</button>
         </div>
         <div id="fin-bol-status" class="st"></div>
         <div id="fin-rem-status" class="st"></div>
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 0 4px;border-top:1px solid var(--borda);margin-top:10px">
+          <input id="fin-pagamentos-todos" type="checkbox" onchange="finSelecionarTodosPagamentos(this.checked)">
+          <label for="fin-pagamentos-todos" style="font-size:12px;color:var(--text-muted)">Selecionar todos os pagamentos PIX pendentes</label>
+        </div>
         <div id="fin-pagamentos-lista"></div>
       </div>
       <div class="card">
@@ -12567,18 +12579,63 @@ async function forListar(){
 }
 async function finInicializar(){
   const [emps,forns]=await Promise.all([api('/api/empresas'),api('/api/fornecedores')]);
-  const se=document.getElementById('fin-bol-empresa'); if(se) se.innerHTML='<option value="">Selecione...</option>'+(Array.isArray(emps)?emps:[]).map(e=>`<option value="${e.id}">${esc(e.nome)}</option>`).join('');
-  const sf=document.getElementById('fin-bol-fornecedor'); if(sf) sf.innerHTML='<option value="">Selecione...</option>'+(Array.isArray(forns)?forns:[]).map(f=>`<option value="${f.id}" data-cnpj="${esc(f.cnpj||'')}" data-pix="${esc(f.banco_pix||'')}">${esc(f.nome)}</option>`).join('');
+  const se=document.getElementById('fin-bol-empresa'); const empresaAtual=se?.value||'';
+  if(se){se.innerHTML='<option value="">Selecione...</option>'+(Array.isArray(emps)?emps:[]).map(e=>`<option value="${e.id}">${esc(e.nome)}</option>`).join('');if(empresaAtual)se.value=empresaAtual;se.onchange=finCarregarPagamentos;}
+  finAtualizarFornecedores(Array.isArray(forns)?forns:[]);
+  await finCarregarPagamentos();
+}
+function finAtualizarFornecedores(fornecedores, selecionarId=''){
+  const sf=document.getElementById('fin-bol-fornecedor'); if(!sf)return;
+  sf.innerHTML='<option value="">Selecione...</option>'+fornecedores.map(f=>`<option value="${f.id}" data-cnpj="${esc(f.cnpj||'')}" data-pix="${esc(f.banco_pix||'')}">${esc(f.nome)}</option>`).join('');
   if(sf) sf.onchange=()=>{const o=sf.selectedOptions[0];document.getElementById('fin-bol-cnpj').value=o?.dataset?.cnpj||'';document.getElementById('fin-bol-pix-chave').value=o?.dataset?.pix||'';};
-  const lista=await api('/api/boletos-fornecedores'); const el=document.getElementById('fin-pagamentos-lista');
-  if(el) el.innerHTML=(Array.isArray(lista)?lista:[]).map(b=>`<div style="padding:8px;border-bottom:1px solid var(--borda)"><b>${esc(b.fornecedor_nome)}</b> · R$ ${Number(b.valor||0).toFixed(2)} · vence ${esc(b.vencimento)} · ${esc(b.status)}</div>`).join('')||'<span style="color:var(--text-muted)">Nenhum boleto cadastrado.</span>';
+  if(selecionarId)sf.value=String(selecionarId);
+  sf.dispatchEvent(new Event('change'));
+}
+function finAlternarCadastroRecebedor(){
+  const form=document.getElementById('fin-receb-form');
+  if(form)form.style.display=form.style.display==='none'?'block':'none';
+}
+async function finCadastrarRecebedor(){
+  const dados={nome:document.getElementById('fin-receb-nome')?.value.trim()||'',cnpj:document.getElementById('fin-receb-cnpj')?.value||'',banco_pix:document.getElementById('fin-receb-pix')?.value.trim()||''};
+  const resultado=await api('/api/fornecedores','POST',dados);
+  if(resultado?.erro){showSt('fin-bol-status',resultado.erro,true);return;}
+  const fornecedores=await api('/api/fornecedores');
+  finAtualizarFornecedores(Array.isArray(fornecedores)?fornecedores:[],resultado.id);
+  document.getElementById('fin-bol-cnpj').value=resultado.cnpj||'';
+  document.getElementById('fin-bol-pix-chave').value=resultado.banco_pix||'';
+  document.getElementById('fin-receb-form').style.display='none';
+  showSt('fin-bol-status','Recebedor cadastrado e selecionado.',false);
+}
+async function finCarregarPagamentos(){
+  const empresaId=document.getElementById('fin-bol-empresa')?.value||'';
+  const listaEl=document.getElementById('fin-pagamentos-lista');
+  const todos=document.getElementById('fin-pagamentos-todos');
+  if(todos)todos.checked=false;
+  if(!empresaId){if(listaEl)listaEl.innerHTML='<span style="color:var(--text-muted)">Selecione a empresa pagadora para ver os pagamentos.</span>';return;}
+  const lista=await api('/api/boletos-fornecedores?empresa_id='+encodeURIComponent(empresaId));
+  if(!listaEl)return;
+  const itens=Array.isArray(lista)?lista:[];
+  listaEl.innerHTML=itens.map(b=>{
+    const elegivel=b.status==='pendente'&&(b.pix_chave||b.pix_copia_cola);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid var(--borda)">${elegivel?`<input type="checkbox" class="fin-pagamento-check" value="${Number(b.id)}" onchange="finAtualizarSelecaoPagamentos()">`:''}<span><b>${esc(b.fornecedor_nome)}</b> · R$ ${Number(b.valor||0).toFixed(2)} · vence ${esc(b.vencimento)} · ${esc(b.status)}${elegivel?' · PIX':''}</span></div>`;
+  }).join('')||'<span style="color:var(--text-muted)">Nenhum pagamento cadastrado para esta empresa.</span>';
+}
+function finSelecionarTodosPagamentos(marcar){
+  document.querySelectorAll('.fin-pagamento-check').forEach(c=>{c.checked=marcar;});
+}
+function finAtualizarSelecaoPagamentos(){
+  const checks=[...document.querySelectorAll('.fin-pagamento-check')];
+  const todos=document.getElementById('fin-pagamentos-todos');
+  if(todos)todos.checked=checks.length>0&&checks.every(c=>c.checked);
 }
 async function finSalvarBoleto(){
+  const selecionado=document.getElementById('fin-bol-fornecedor')?.selectedOptions?.[0];
+  if(!selecionado?.value){showSt('fin-bol-status','Selecione ou cadastre o recebedor.',true);return;}
   const fd=new FormData();
   const campos={empresa:'empresa_id',fornecedor:'fornecedor_nome',cnpj:'fornecedor_cnpj',vencimento:'vencimento',valor:'valor',linha:'linha_digitavel','pix-chave':'pix_chave','pix-copia-cola':'pix_copia_cola'};
   Object.entries(campos).forEach(([id,nome])=>{
     let valor=document.getElementById('fin-bol-'+id)?.value||'';
-    if(id==='fornecedor'){const sel=document.getElementById('fin-bol-fornecedor'); valor=sel?.selectedOptions?.[0]?.textContent||valor;}
+    if(id==='fornecedor')valor=selecionado.textContent||valor;
     fd.append(nome,valor);
   });
   const ar=document.getElementById('fin-bol-arquivo')?.files?.[0]; if(ar) fd.append('arquivo',ar);
@@ -12588,13 +12645,16 @@ async function finSalvarBoleto(){
 async function finGerarRemPix(){
   const empresaId=document.getElementById('fin-bol-empresa')?.value||'';
   if(!empresaId){showSt('fin-rem-status','Selecione a empresa pagadora.',true);return;}
-  const r=await fetch('/api/boletos-fornecedores/export.cnab240?empresa_id='+encodeURIComponent(empresaId),{credentials:'same-origin'});
+  const ids=[...document.querySelectorAll('.fin-pagamento-check:checked')].map(c=>c.value);
+  if(!ids.length){showSt('fin-rem-status','Selecione ao menos um pagamento PIX para montar o lote.',true);return;}
+  const query=new URLSearchParams({empresa_id:empresaId});ids.forEach(id=>query.append('id',id));
+  const r=await fetch('/api/boletos-fornecedores/export.cnab240?'+query.toString(),{credentials:'same-origin'});
   if(!r.ok){const d=await r.json().catch(()=>({}));showSt('fin-rem-status',d.erro||'Não foi possível gerar o arquivo REM.',true);return;}
   const blob=await r.blob();
   const url=URL.createObjectURL(blob); const link=document.createElement('a');
   link.href=url; link.download=r.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/i)?.[1]||'pagamentos_pix.REM';
   document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
-  showSt('fin-rem-status','Arquivo REM PIX gerado para os pagamentos pendentes.',false);
+  showSt('fin-rem-status',`Arquivo REM gerado com ${ids.length} pagamento(s) selecionado(s).`,false);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

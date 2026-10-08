@@ -28,16 +28,23 @@ class PixCnabInfoTests(unittest.TestCase):
             cep="01001000", estado="SP",
         )
         supplier = SimpleNamespace(nome="Fornecedor", cnpj="12345678000199", banco_pix="")
-        payment = SimpleNamespace(
+        payment_one = SimpleNamespace(
             id=7, fornecedor_id=3, vencimento="2026-10-10", valor=25.50,
             pix_copia_cola="000201abcXYZ",
         )
+        payment_two = SimpleNamespace(
+            id=8, fornecedor_id=3, vencimento="2026-10-11", valor=12.50,
+            pix_copia_cola="000201second",
+        )
         with patch("app.db.session.get", return_value=supplier):
-            content = _cnab240_fornecedor_pix_remessa(company, [payment])
+            content = _cnab240_fornecedor_pix_remessa(company, [payment_one, payment_two])
 
         records = content.splitlines()
         self.assertTrue(all(len(record) == 240 for record in records))
-        self.assertEqual(records[3][127:139], payment.pix_copia_cola)
+        self.assertEqual(records[3][127:127 + len(payment_one.pix_copia_cola)], payment_one.pix_copia_cola)
+        self.assertEqual(records[5][127:127 + len(payment_two.pix_copia_cola)], payment_two.pix_copia_cola)
+        self.assertEqual(records[6][17:23], "000006")
+        self.assertEqual(records[6][23:41], "000000000000003800")
 
 
 if __name__ == "__main__":

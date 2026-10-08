@@ -35079,18 +35079,28 @@ def api_fornecedores_pix_exportar_cnab240():
     empresa = db.session.get(Empresa, empresa_id) if empresa_id else None
     if not empresa:
         return jsonify({"erro": "selecione uma empresa pagadora válida"}), 400
-    boletos = BoletoFornecedor.query.filter_by(empresa_id=empresa.id, status="pendente").filter(
+    try:
+        ids = list(dict.fromkeys(int(item_id) for item_id in request.args.getlist("id")))
+    except (TypeError, ValueError):
+        return jsonify({"erro": "a seleção do lote contém um pagamento inválido"}), 400
+    if not ids:
+        return jsonify({"erro": "selecione os pagamentos que deseja incluir no lote"}), 400
+    boletos = BoletoFornecedor.query.filter(
+        BoletoFornecedor.id.in_(ids),
+        BoletoFornecedor.empresa_id == empresa.id,
+        BoletoFornecedor.status == "pendente",
+    ).filter(
         db.or_(BoletoFornecedor.pix_copia_cola != "", Fornecedor.banco_pix != "")
     ).join(Fornecedor, BoletoFornecedor.fornecedor_id == Fornecedor.id).order_by(
         BoletoFornecedor.vencimento.asc(), BoletoFornecedor.id.asc()
     ).all()
-    if not boletos:
-        return jsonify({"erro": "não há pagamentos PIX pendentes para esta empresa"}), 400
+    if len(boletos) != len(ids):
+        return jsonify({"erro": "um ou mais pagamentos selecionados não pertencem à empresa, não estão pendentes ou não têm dados PIX"}), 400
     try:
         conteudo = _cnab240_fornecedor_pix_remessa(empresa, boletos)
     except ValueError as exc:
         return jsonify({"erro": str(exc)}), 400
-    audit_event("fornecedores_pix_cnab240_gerado", "usuario", session.get("uid"), "empresa", empresa.id, True, {"quantidade": len(boletos)})
+    audit_event("fornecedores_pix_cnab240_gerado", "usuario", session.get("uid"), "empresa", empresa.id, True, {"quantidade": len(boletos), "pagamentos": ids})
     gerado_em = localnow().strftime("%Y%m%d%H%M%S")
     nome_empresa = _cnab240_text(empresa.nome)[:30].rstrip() or "EMPRESA"
     return send_file(
