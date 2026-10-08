@@ -11417,6 +11417,59 @@ def api_operacional_relatorio_supervisao_pdf(id):
     )
 
 
+def _cnpj_local_lookup(cnpj):
+    c = "".join(filter(str.isdigit, str(cnpj or "")))
+    if len(c) != 14:
+        return None
+
+    for model in (Fornecedor, Empresa):
+        record = model.query.filter_by(cnpj=c).first()
+        if record:
+            nome = getattr(record, "nome", "") or getattr(record, "razao", "") or getattr(record, "fantasia", "") or ""
+            razao = getattr(record, "razao", "") or nome
+            payload = {
+                "nome": nome,
+                "razao": razao,
+                "email": getattr(record, "email", "") or "",
+                "telefone": getattr(record, "telefone", "") or "",
+                "cep": getattr(record, "cep", "") or "",
+                "logradouro": getattr(record, "logradouro", "") or "",
+                "numero": getattr(record, "numero", "") or "",
+                "complemento": getattr(record, "complemento", "") or "",
+                "bairro": getattr(record, "bairro", "") or "",
+                "cidade": getattr(record, "cidade", "") or getattr(record, "municipio", "") or "",
+                "estado": getattr(record, "estado", "") or "",
+                "situacao": "ativo" if getattr(record, "ativo", True) is not False and getattr(record, "ativa", True) is not False else "inativo",
+            }
+            if hasattr(record, "banco_pix"):
+                payload["pix"] = getattr(record, "banco_pix", "") or ""
+            return payload
+
+    for model in (Empresa, Fornecedor):
+        for record in model.query.all():
+            if "".join(filter(str.isdigit, str(getattr(record, "cnpj", "") or ""))) == c:
+                nome = getattr(record, "nome", "") or getattr(record, "razao", "") or getattr(record, "fantasia", "") or ""
+                razao = getattr(record, "razao", "") or nome
+                payload = {
+                    "nome": nome,
+                    "razao": razao,
+                    "email": getattr(record, "email", "") or "",
+                    "telefone": getattr(record, "telefone", "") or "",
+                    "cep": getattr(record, "cep", "") or "",
+                    "logradouro": getattr(record, "logradouro", "") or "",
+                    "numero": getattr(record, "numero", "") or "",
+                    "complemento": getattr(record, "complemento", "") or "",
+                    "bairro": getattr(record, "bairro", "") or "",
+                    "cidade": getattr(record, "cidade", "") or getattr(record, "municipio", "") or "",
+                    "estado": getattr(record, "estado", "") or "",
+                    "situacao": "ativo" if getattr(record, "ativo", True) is not False and getattr(record, "ativa", True) is not False else "inativo",
+                }
+                if hasattr(record, "banco_pix"):
+                    payload["pix"] = getattr(record, "banco_pix", "") or ""
+                return payload
+    return None
+
+
 @app.route("/api/cnpj/<cnpj>")
 @lr
 def api_cnpj(cnpj):
@@ -11441,6 +11494,11 @@ def api_cnpj(cnpj):
         if cache_entry.get("status") == 200:
             return jsonify(cache_entry.get("data") or {})
         return jsonify({"erro": cache_entry.get("erro") or "Consulta temporariamente indisponível."}), int(cache_entry.get("status") or 500)
+
+    local_payload = _cnpj_local_lookup(c)
+    if local_payload:
+        _CNPJ_LOOKUP_CACHE[c] = {"exp": now_ts + TTL_OK, "status": 200, "data": local_payload}
+        return jsonify(local_payload)
 
     # Tenta Receitaws primeiro e usa BrasilAPI como fallback.
     throttled = False
@@ -34904,9 +34962,15 @@ def _folha_pode_editar(folha):
 @lr
 def api_fornecedores_listar():
     termo = (request.args.get("q") or "").strip().lower()
+    termo_digits = "".join(filter(str.isdigit, termo))
     fornecedores = Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome.asc()).all()
     if termo:
-        fornecedores = [f for f in fornecedores if termo in (f.nome or "").lower() or termo in (f.cnpj or "")]
+        fornecedores = [
+            f for f in fornecedores
+            if termo in (f.nome or "").lower()
+            or termo_digits and termo_digits in "".join(filter(str.isdigit, str(f.cnpj or "")))
+            or termo in (f.cnpj or "")
+        ]
     return jsonify([f.to_dict() for f in fornecedores])
 
 

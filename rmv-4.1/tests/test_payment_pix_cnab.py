@@ -1,8 +1,10 @@
 import unittest
+import urllib.error
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from app import _cnab240_fornecedor_pix_remessa, _cnab240_pix_info
+import app as app_module
+from app import app as flask_app, _cnab240_fornecedor_pix_remessa, _cnab240_pix_info
 
 
 class PixCnabInfoTests(unittest.TestCase):
@@ -45,6 +47,40 @@ class PixCnabInfoTests(unittest.TestCase):
         self.assertEqual(records[5][127:127 + len(payment_two.pix_copia_cola)], payment_two.pix_copia_cola)
         self.assertEqual(records[6][17:23], "000006")
         self.assertEqual(records[6][23:41], "000000000000003800")
+
+
+class CnpjLookupFallbackTests(unittest.TestCase):
+    def test_returns_local_supplier_when_cnpj_already_exists(self):
+        local_supplier = SimpleNamespace(
+            nome="Fornecedor Local Ltda",
+            razao="Fornecedor Local Ltda",
+            cnpj="12345678000199",
+            email="contato@fornecedor.com",
+            telefone="11999999999",
+            banco_pix="chave-local-pix",
+            ativo=True,
+        )
+
+        class DummyFornecedor:
+            query = SimpleNamespace(filter_by=lambda **_: SimpleNamespace(first=lambda: local_supplier))
+
+        class DummyEmpresa:
+            query = SimpleNamespace(filter_by=lambda **_: SimpleNamespace(first=lambda: None))
+
+        with flask_app.app_context():
+            with patch.object(app_module, "Fornecedor", DummyFornecedor), \
+                 patch.object(app_module, "Empresa", DummyEmpresa), \
+                 patch("app.urllib.request.urlopen", side_effect=urllib.error.URLError("provider down")):
+                with flask_app.test_client() as client:
+                    with client.session_transaction() as sess:
+                        sess["uid"] = 1
+                    resp = client.get("/api/cnpj/12345678000199")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["nome"], "Fornecedor Local Ltda")
+        self.assertEqual(resp.get_json()["razao"], "Fornecedor Local Ltda")
+        self.assertEqual(resp.get_json()["email"], "contato@fornecedor.com")
+        self.assertEqual(resp.get_json()["telefone"], "11999999999")
 
 
 if __name__ == "__main__":

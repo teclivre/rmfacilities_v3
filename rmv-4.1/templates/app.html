@@ -907,7 +907,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div id="fin-receb-form" style="display:none;margin-top:10px;padding:10px 0;border-top:1px solid var(--borda)">
           <div class="g3">
             <div class="f"><label>Nome / razão social *</label><input id="fin-receb-nome"></div>
-            <div class="f"><label>CNPJ *</label><div style="display:flex;gap:6px"><input id="fin-receb-cnpj" inputmode="numeric" maxlength="18" placeholder="00.000.000/0000-00" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();finBuscarCnpjRecebedor()}"><button class="btn b-gh b-sm" type="button" onclick="finBuscarCnpjRecebedor()">Buscar</button></div></div>
+            <div class="f"><label>CNPJ *</label><div style="display:flex;gap:6px"><input id="fin-receb-cnpj" inputmode="numeric" maxlength="18" placeholder="00.000.000/0000-00" style="flex:1" oninput="const c=this.value.replace(/\D/g,''); if(c.length===14){finBuscarCnpjRecebedor();}" onkeydown="if(event.key==='Enter'){event.preventDefault();finBuscarCnpjRecebedor()}"><button class="btn b-gh b-sm" type="button" onclick="finBuscarCnpjRecebedor()">Buscar</button></div></div>
             <div class="f"><label>Chave PIX</label><input id="fin-receb-pix" placeholder="CPF, CNPJ, e-mail, telefone ou aleatória"></div>
           </div>
           <div class="brow" style="justify-content:flex-start;margin-top:8px"><button class="btn b-az b-sm" type="button" onclick="finCadastrarRecebedor()">Salvar recebedor</button></div>
