@@ -24,3 +24,19 @@ def test_escala_6x1_nao_cria_folga_em_dia_util_por_falta_de_modelo():
     idx, dia = _ponto_6x1_template_dia(dias, 0)
     assert (idx, dia) == (0, dias[0])
     assert _ponto_6x1_template_dia(dias, 6) == (None, {"tipo": "folga"})
+
+
+def test_escala_6x1_respeita_folga_na_terca_e_mantem_sabado_proprio():
+    dias = [
+        {"tipo": "trabalho", "hora_entrada": "08:00", "hora_saida": "17:00"},
+        {"tipo": "folga"},
+        {"tipo": "trabalho", "hora_entrada": "08:00", "hora_saida": "17:00"},
+        {"tipo": "trabalho", "hora_entrada": "08:00", "hora_saida": "17:00"},
+        {"tipo": "trabalho", "hora_entrada": "08:00", "hora_saida": "17:00"},
+        {"tipo": "trabalho", "hora_entrada": "08:00", "hora_saida": "12:00"},
+        {"tipo": "trabalho", "hora_entrada": "08:00", "hora_saida": "17:00"},
+    ]
+
+    assert _ponto_6x1_template_dia(dias, 1) == (1, dias[1])
+    assert _ponto_6x1_template_dia(dias, 5) == (5, dias[5])
+    assert _ponto_6x1_template_dia(dias, 6) == (6, dias[6])

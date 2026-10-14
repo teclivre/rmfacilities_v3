@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 
 def _ponto_6x1_template_dia(dias, weekday):
-    """Mapeia seg-sab para os modelos de trabalho e domingo para a folga."""
+    """Mapeia cada dia da semana para seu modelo, respeitando a folga configurada."""
     tipo_por_indice = [
         str((dia or {}).get("tipo", "trabalho")).strip().lower()
         for dia in dias
@@ -21,6 +21,12 @@ def _ponto_6x1_template_dia(dias, weekday):
         (i for i, tipo in enumerate(tipo_por_indice) if tipo != "folga"),
         None,
     )
+    if 0 <= weekday < len(dias):
+        if tipo_por_indice[weekday] == "folga":
+            return weekday, dias[weekday] or {"tipo": "folga"}
+        if tipo_por_indice[weekday] != "folga":
+            return weekday, dias[weekday] or {"tipo": "trabalho"}
+
     if weekday == 6:
         idx = next(
             (i for i, tipo in enumerate(tipo_por_indice) if tipo == "folga"),
@@ -28,7 +34,7 @@ def _ponto_6x1_template_dia(dias, weekday):
         )
         return idx, (dias[idx] or {}) if idx is not None else {"tipo": "folga"}
 
-    idx = weekday if weekday < len(dias) and tipo_por_indice[weekday] != "folga" else idx_trabalho
+    idx = idx_trabalho
     if idx is None:
         return None, {"tipo": "folga"}
     return idx, dias[idx] or {"tipo": "trabalho"}
@@ -288,8 +294,8 @@ def register_ponto_routes(
                                         "minutos": minutos,
                                     }
 
-                            # 6x1 tem a folga fixa no domingo; a data de início
-                            # não deve deslocar o dia de descanso pelo calendário.
+                            # A folga 6x1 é determinada pelo template semanal,
+                            # sem deslocamento por data_inicio.
                             if str(getattr(esc, "tipo", "")).strip().lower() == "6x1":
                                 idx_tpl, dia_info = _ponto_6x1_template_dia(
                                     dias, data_obj.weekday()

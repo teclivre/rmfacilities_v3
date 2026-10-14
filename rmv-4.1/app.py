@@ -24636,7 +24636,7 @@ def api_escalas_criar():
         if not isinstance(_ciclo_val.get("dias"), list) or len(_ciclo_val.get("dias", [])) == 0:
             return jsonify({"erro": "ciclo_json deve conter ao menos 1 dia no array 'dias'"}), 400
         if tipo == "6x1":
-            _ciclo_val["dias_semana_trabalho"] = [0, 1, 2, 3, 4, 5]
+            _ciclo_val.setdefault("dias_semana_trabalho", [0, 1, 2, 3, 4, 5])
         sem_trab = _ciclo_val.get("dias_semana_trabalho")
         if sem_trab is not None:
             if not isinstance(sem_trab, list):
@@ -24649,12 +24649,11 @@ def api_escalas_criar():
                     return jsonify({"erro": "dias_semana_trabalho deve conter inteiros de 0 a 6"}), 400
                 if iv < 0 or iv > 6:
                     return jsonify({"erro": "dias_semana_trabalho deve conter inteiros de 0 a 6"}), 400
-                if iv == 6 and tipo == "6x1":
-                    continue
                 if iv not in sem_val:
                     sem_val.append(iv)
             if tipo == "6x1":
-                sem_val = [0, 1, 2, 3, 4, 5]
+                if len(sem_val) != 6:
+                    return jsonify({"erro": "A escala 6x1 deve ter exatamente 6 dias de trabalho por semana"}), 400
             _ciclo_val["dias_semana_trabalho"] = sem_val
             ciclo_json = json.dumps(_ciclo_val, ensure_ascii=False)
         # Validações adicionais por dia: tipo, formatos de hora e coerência de intervalo
@@ -24794,8 +24793,9 @@ def api_escala_editar(id):
             _ciclo_val = json.loads(ciclo_str)
             if not isinstance(_ciclo_val.get("dias"), list) or len(_ciclo_val.get("dias", [])) == 0:
                 return jsonify({"erro": "ciclo_json deve conter ao menos 1 dia no array 'dias'"}), 400
-            if "tipo" in d and d.get("tipo") == "6x1":
-                _ciclo_val["dias_semana_trabalho"] = [0, 1, 2, 3, 4, 5]
+            tipo_escala = d.get("tipo", e.tipo)
+            if tipo_escala == "6x1":
+                _ciclo_val.setdefault("dias_semana_trabalho", [0, 1, 2, 3, 4, 5])
             sem_trab = _ciclo_val.get("dias_semana_trabalho")
             if sem_trab is not None:
                 if not isinstance(sem_trab, list):
@@ -24808,12 +24808,10 @@ def api_escala_editar(id):
                         return jsonify({"erro": "dias_semana_trabalho deve conter inteiros de 0 a 6"}), 400
                     if iv < 0 or iv > 6:
                         return jsonify({"erro": "dias_semana_trabalho deve conter inteiros de 0 a 6"}), 400
-                    if iv == 6 and ("tipo" in d and d.get("tipo") == "6x1"):
-                        continue
                     if iv not in sem_val:
                         sem_val.append(iv)
-                if d.get("tipo") == "6x1":
-                    sem_val = [0, 1, 2, 3, 4, 5]
+                if tipo_escala == "6x1" and len(sem_val) != 6:
+                    return jsonify({"erro": "A escala 6x1 deve ter exatamente 6 dias de trabalho por semana"}), 400
                 _ciclo_val["dias_semana_trabalho"] = sem_val
                 ciclo_str = json.dumps(_ciclo_val, ensure_ascii=False)
         except (json.JSONDecodeError, AttributeError):

@@ -2018,7 +2018,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             <select id="rh-esc-tipo" onchange="rhEscalaAtualizarCicloTemplate()">
               <option value="">-- Selecione --</option>
               <option value="5x2">5x2 (5 dias trabalho, 2 folga)</option>
-              <option value="6x1">6x1 (seg-sáb trabalho, dom folga)</option>
+              <option value="6x1">6x1 (6 dias de trabalho, 1 folga configurável)</option>
               <option value="6x2">6x2 (6 dias trabalho, 2 folga)</option>
               <option value="4x2">4x2 (4 dias trabalho, 2 folga)</option>
               <option value="12x36">12x36 (12h trabalho, 36h folga)</option>
@@ -2057,7 +2057,19 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
             <div id="rh-esc-12x36-hint" class="hint" style="display:none;margin-top:6px">Na escala 12x36, a referência passa a ser a data de início da escala. Os horários são automáticos.</div>
             <div id="rh-esc-6x1-config" style="display:none;border:1px solid var(--borda);border-radius:8px;padding:10px;margin-top:8px">
-              <label style="font-weight:700">Configuração de sábado (somente para 6x1)</label>
+              <div class="f" style="max-width:260px">
+                <label for="rh-esc-6x1-folga-dia">Dia de folga semanal</label>
+                <select id="rh-esc-6x1-folga-dia" onchange="rhEscalaAtualizarCicloTemplate()">
+                  <option value="0">Segunda-feira</option>
+                  <option value="1">Terça-feira</option>
+                  <option value="2">Quarta-feira</option>
+                  <option value="3">Quinta-feira</option>
+                  <option value="4">Sexta-feira</option>
+                  <option value="5">Sábado</option>
+                  <option value="6" selected>Domingo</option>
+                </select>
+              </div>
+              <label style="font-weight:700;margin-top:8px">Configuração de sábado (somente para 6x1)</label>
               <div class="g3" style="margin-top:6px">
                 <div class="f"><label>Sábado - entrada</label><input id="rh-esc-sab-hora-entrada" type="time" value="08:00"></div>
                 <div class="f"><label>Sábado - saída</label><input id="rh-esc-sab-hora-saida" type="time" value="12:00"></div>
@@ -9561,7 +9573,10 @@ function rhEscalaMontarCiclo(){
   const intervalo=parseInt((document.getElementById('rh-esc-intervalo')?.value||'60').trim(),10)||0;
   const diasTrabalho=Math.max(1,parseInt((document.getElementById('rh-esc-dias-trabalho')?.value||'6').trim(),10)||6);
   const diasFolga=Math.max(0,parseInt((document.getElementById('rh-esc-dias-folga')?.value||'2').trim(),10)||2);
-  const diasSemanaTrabalho=(tipo==='6x1')?[0,1,2,3,4,5]:rhEscalaSemanaTrabalhoSelecionados();
+  const folga6x1=parseInt(document.getElementById('rh-esc-6x1-folga-dia')?.value||'6',10);
+  const diasSemanaTrabalho=(tipo==='6x1')
+    ?[0,1,2,3,4,5,6].filter(dia=>dia!==folga6x1)
+    :rhEscalaSemanaTrabalhoSelecionados();
   const montarOut=(arrDias)=>{
     const out={dias:arrDias};
     if(diasSemanaTrabalho.length) out.dias_semana_trabalho=diasSemanaTrabalho;
@@ -9580,12 +9595,18 @@ function rhEscalaMontarCiclo(){
   }
 
   if(tipo==='6x1'){
-    for(let i=0;i<5;i++) dias.push({...diaBase});
     const sabEntrada=(document.getElementById('rh-esc-sab-hora-entrada')?.value||'08:00').trim();
     const sabSaida=(document.getElementById('rh-esc-sab-hora-saida')?.value||'12:00').trim();
     const sabIntervalo=parseInt((document.getElementById('rh-esc-sab-intervalo')?.value||'0').trim(),10)||0;
-    dias.push(rhEscalaMontarDiaTrabalho(turno,sabEntrada,sabSaida,sabIntervalo));
-    dias.push({tipo:'folga'});
+    for(let weekday=0;weekday<=6;weekday++){
+      if(weekday===folga6x1){
+        dias.push({tipo:'folga'});
+      }else if(weekday===5){
+        dias.push(rhEscalaMontarDiaTrabalho(turno,sabEntrada,sabSaida,sabIntervalo));
+      }else{
+        dias.push({...diaBase});
+      }
+    }
     return montarOut(dias);
   }
 
@@ -9646,7 +9667,7 @@ function rhEscalaEditar(id){
   const diasFolga=dias.filter(d=>d && d.tipo==='folga');
   rhEscalaSemanaTrabalhoDefinir(e?.ciclo?.dias_semana_trabalho||[]);
   if(diasTrabalho.length){
-    const base=diasTrabalho[0]||{};
+    const base=(e.tipo==='6x1' ? dias.find((dia,weekday)=>weekday!==5 && dia && dia.tipo==='trabalho') : diasTrabalho[0])||diasTrabalho[0]||{};
     if(base.hora_entrada) document.getElementById('rh-esc-hora-entrada').value=base.hora_entrada;
     if(base.hora_saida) document.getElementById('rh-esc-hora-saida').value=base.hora_saida;
     if(base.intervalo_min!==undefined) document.getElementById('rh-esc-intervalo').value=base.intervalo_min;
@@ -9657,11 +9678,18 @@ function rhEscalaEditar(id){
     document.getElementById('rh-esc-dias-trabalho').value='1';
     document.getElementById('rh-esc-dias-folga').value='1';
   }
-  if((e.tipo||'')==='6x1' && diasTrabalho.length>=6){
-    const sab=diasTrabalho[5]||{};
-    if(sab.hora_entrada) document.getElementById('rh-esc-sab-hora-entrada').value=sab.hora_entrada;
-    if(sab.hora_saida) document.getElementById('rh-esc-sab-hora-saida').value=sab.hora_saida;
-    if(sab.intervalo_min!==undefined) document.getElementById('rh-esc-sab-intervalo').value=sab.intervalo_min;
+  if((e.tipo||'')==='6x1'){
+    const diasSemanaTrabalho=e?.ciclo?.dias_semana_trabalho;
+    const diaFolga=Array.isArray(diasSemanaTrabalho) && diasSemanaTrabalho.length===6
+      ?[0,1,2,3,4,5,6].find(weekday=>!diasSemanaTrabalho.map(Number).includes(weekday))
+      :dias.findIndex(dia=>dia && dia.tipo==='folga');
+    document.getElementById('rh-esc-6x1-folga-dia').value=String(diaFolga>=0?diaFolga:6);
+    const sab=dias[5]||{};
+    if(sab.tipo==='trabalho'){
+      if(sab.hora_entrada) document.getElementById('rh-esc-sab-hora-entrada').value=sab.hora_entrada;
+      if(sab.hora_saida) document.getElementById('rh-esc-sab-hora-saida').value=sab.hora_saida;
+      if(sab.intervalo_min!==undefined) document.getElementById('rh-esc-sab-intervalo').value=sab.intervalo_min;
+    }
   }
   const ehNoturno=(e.tipo==='noturna') || dias.some(d=>d && d.tipo==='trabalho' && d.noturno===true);
   document.getElementById('rh-esc-turno').value=ehNoturno?'noturno':'diurno';
@@ -9691,6 +9719,7 @@ async function rhEscalaLimparForm(){
   document.getElementById('rh-esc-sab-hora-entrada').value='08:00';
   document.getElementById('rh-esc-sab-hora-saida').value='12:00';
   document.getElementById('rh-esc-sab-intervalo').value='0';
+  document.getElementById('rh-esc-6x1-folga-dia').value='6';
   document.getElementById('rh-esc-ciclo').value='{}';
   document.getElementById('rh-esc-noturno-ini').value='22:00';
   document.getElementById('rh-esc-noturno-fim').value='05:00';
