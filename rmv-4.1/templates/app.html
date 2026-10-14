@@ -14944,14 +14944,16 @@ function filtrarOpPostos(){
   }
   function opcoesClienteFiltro(empresaId,selId){
     const opts=[];
-    clientes.filter(c=>!empresaId || !c.empresa_id || String(c.empresa_id)===String(empresaId)).forEach(c=>{
+    clientes.forEach(c=>{
       const s=String(c.id)===String(selId)?'selected':'';
       const cap=parseInt(c.qtd_funcionarios_posto||0,10)||0;
       const ocu=parseInt(c.ocupados||0,10)||0;
       const liv=Math.max(0,cap-ocu);
       const lotado=(cap>0 && liv<=0);
       const semLimite=cap<=0;
-      const txt=((c.posto_label||c.nome||'') + (cap>0?` (${ocu}/${cap} · livres ${liv})`:' (limite não cadastrado - configure no cliente/contrato)') + (lotado?' - LOTADO':'' )).replace(/"/g,'&quot;');
+      const nomeEmpresa=(c.empresa_nome||'').trim();
+      const nomePosto=(c.posto_label||c.nome||'').trim();
+      const txt=((nomeEmpresa?`${nomeEmpresa} — `:'')+nomePosto + (cap>0?` (${ocu}/${cap} · livres ${liv})`:' (limite não cadastrado - configure no cliente/contrato)') + (lotado?' - LOTADO':'' )).replace(/"/g,'&quot;');
       const disabled=((lotado || semLimite) && !s)?'disabled':'';
       const cheio=lotado?'1':'0';
       opts.push(`<option value="${c.id}" data-cheio="${cheio}" data-sem-limite="${semLimite?'1':'0'}" data-cap="${cap}" data-ocup="${ocu}" ${s} ${disabled}>${txt}</option>`);

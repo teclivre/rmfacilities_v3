@@ -30958,8 +30958,10 @@ def api_operacional_postos():
     if empresa_id:
         q = q.filter_by(empresa_id=empresa_id)
     cls = Cliente.query.order_by(Cliente.nome).all()
-    if empresa_id:
-        cls = [c for c in cls if c.empresa_id == empresa_id]
+    empresas_nomes = {
+        empresa.id: empresa.nome or ""
+        for empresa in Empresa.query.all()
+    }
     contratos_ativos = Contrato.query.filter_by(status="Ativo").all()
     contrato_capacidade = {}
     for contrato in contratos_ativos:
@@ -30971,6 +30973,7 @@ def api_operacional_postos():
             "id": c.id,
             "nome": c.nome or "",
             "empresa_id": c.empresa_id,
+            "empresa_nome": empresas_nomes.get(c.empresa_id, ""),
             "numero_contrato": c.numero_contrato or "",
             "qtd_funcionarios_posto": max(
                 0,
@@ -31021,10 +31024,6 @@ def api_operacional_postos_salvar():
     posto_cliente_id = to_num(d.get("posto_cliente_id")) or None
     if posto_cliente_id:
         cli = db.get_or_404(Cliente, posto_cliente_id)
-        if f.empresa_id and cli.empresa_id and f.empresa_id != cli.empresa_id:
-            return jsonify(
-                {"erro": "O posto selecionado pertence a outra empresa."}
-            ), 400
         contrato_cap = max(
             [max(0, to_num(ct.qtd_funcionarios_posto)) for ct in Contrato.query.filter_by(cliente_id=cli.id, status="Ativo").all()] or [0]
         )
