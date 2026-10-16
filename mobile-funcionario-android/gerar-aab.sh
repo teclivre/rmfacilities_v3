@@ -5,6 +5,8 @@
 # ============================================================
 set -euo pipefail
 
+JAVA_HOME="${JAVA_HOME:-}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -99,7 +101,7 @@ if [[ -z "$JAVA_HOME" ]]; then
 fi
 
 export JAVA_HOME
-export PATH="$JAVA_HOME/bin:$PATH"
+export PATH="$JAVA_HOME/bin:${PATH:-}"
 
 if [[ ! -f "$LOCAL_PROPERTIES" ]]; then
   printf 'sdk.dir=%s\n' "$SDK_DIR" > "$LOCAL_PROPERTIES"
@@ -117,7 +119,7 @@ echo "  RM Facilities — Gerar AAB (Play Store)  "
 echo "=========================================="
 echo "Versão atual (antes do build): $CURRENT_VERSION (code $CURRENT_CODE)"
 echo "SDK: $SDK_DIR"
-echo "JDK: $JAVA_HOME"
+echo "JDK: ${JAVA_HOME}"
 echo "Diretório: $SCRIPT_DIR"
 echo ""
 
