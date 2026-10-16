@@ -901,16 +901,8 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div style="padding:12px 0;color:var(--text-muted)">Central de pagamentos de fornecedores por boleto, PIX e transferência.</div>
         <div class="g3">
           <div class="f"><label>Empresa pagadora *</label><select id="fin-bol-empresa"><option value="">Selecione...</option></select></div>
-          <div class="f"><label>Fornecedor / beneficiário *</label><div style="display:flex;gap:6px"><select id="fin-bol-fornecedor" style="flex:1"><option value="">Selecione...</option></select><button class="btn b-gh b-sm" type="button" onclick="finAlternarCadastroRecebedor()">+ Novo</button></div></div>
+          <div class="f"><label>Fornecedor / beneficiário *</label><select id="fin-bol-fornecedor"><option value="">Selecione...</option></select></div>
           <div class="f"><label>CNPJ do beneficiário *</label><input id="fin-bol-cnpj" placeholder="Será usado para cadastro automático"></div>
-        </div>
-        <div id="fin-receb-form" style="display:none;margin-top:10px;padding:10px 0;border-top:1px solid var(--borda)">
-          <div class="g3">
-            <div class="f"><label>Nome / razão social *</label><input id="fin-receb-nome"></div>
-            <div class="f"><label>CNPJ *</label><div style="display:flex;gap:6px"><input id="fin-receb-cnpj" inputmode="numeric" maxlength="18" placeholder="00.000.000/0000-00" style="flex:1" oninput="const c=this.value.replace(/\D/g,''); if(c.length===14){finBuscarCnpjRecebedor();}" onkeydown="if(event.key==='Enter'){event.preventDefault();finBuscarCnpjRecebedor()}"><button class="btn b-gh b-sm" type="button" onclick="finBuscarCnpjRecebedor()">Buscar</button></div></div>
-            <div class="f"><label>Chave PIX</label><input id="fin-receb-pix" placeholder="CPF, CNPJ, e-mail, telefone ou aleatória"></div>
-          </div>
-          <div class="brow" style="justify-content:flex-start;margin-top:8px"><button class="btn b-az b-sm" type="button" onclick="finCadastrarRecebedor()">Salvar recebedor</button></div>
         </div>
         <div class="g4" style="margin-top:10px">
           <div class="f"><label>Vencimento *</label><input id="fin-bol-vencimento" type="date"></div>
@@ -918,20 +910,8 @@ document.addEventListener('DOMContentLoaded',()=>{
           <div class="f"><label>Linha digitável</label><input id="fin-bol-linha"></div>
           <div class="f"><label>Upload do boleto</label><input id="fin-bol-arquivo" type="file" accept="application/pdf,image/*"></div>
         </div>
-        <div class="g2" style="margin-top:10px">
-          <div class="f"><label>Chave PIX do beneficiário</label><input id="fin-bol-pix-chave" placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória"></div>
-          <div class="f"><label>PIX copia e cola</label><input id="fin-bol-pix-copia-cola" placeholder="Código PIX do QR Code"><small style="color:var(--text-muted)">O CNAB240 do Banco Inter aceita até 99 caracteres nesse campo.</small></div>
-        </div>
-        <div class="brow" style="justify-content:flex-start;gap:8px">
-          <button class="btn b-az" type="button" onclick="finSalvarBoleto()">Cadastrar pagamento</button>
-          <button class="btn b-vd" type="button" onclick="finGerarRemPix()">Gerar REM do lote selecionado</button>
-        </div>
+        <div class="brow" style="justify-content:flex-start"><button class="btn b-az" type="button" onclick="finSalvarBoleto()">Cadastrar boleto</button></div>
         <div id="fin-bol-status" class="st"></div>
-        <div id="fin-rem-status" class="st"></div>
-        <div style="display:flex;align-items:center;gap:8px;padding:10px 0 4px;border-top:1px solid var(--borda);margin-top:10px">
-          <input id="fin-pagamentos-todos" type="checkbox" onchange="finSelecionarTodosPagamentos(this.checked)">
-          <label for="fin-pagamentos-todos" style="font-size:12px;color:var(--text-muted)">Selecionar todos os pagamentos PIX pendentes</label>
-        </div>
         <div id="fin-pagamentos-lista"></div>
       </div>
       <div class="card">
@@ -12612,137 +12592,23 @@ async function forListar(){
 }
 async function finInicializar(){
   const [emps,forns]=await Promise.all([api('/api/empresas'),api('/api/fornecedores')]);
-  const se=document.getElementById('fin-bol-empresa'); const empresaAtual=se?.value||'';
-  if(se){se.innerHTML='<option value="">Selecione...</option>'+(Array.isArray(emps)?emps:[]).map(e=>`<option value="${e.id}">${esc(e.nome)}</option>`).join('');if(empresaAtual)se.value=empresaAtual;se.onchange=finCarregarPagamentos;}
-  finAtualizarFornecedores(Array.isArray(forns)?forns:[]);
-  await finCarregarPagamentos();
-}
-function finAtualizarFornecedores(fornecedores, selecionarId=''){
-  const sf=document.getElementById('fin-bol-fornecedor'); if(!sf)return;
-  sf.innerHTML='<option value="">Selecione...</option>'+fornecedores.map(f=>`<option value="${f.id}" data-cnpj="${esc(f.cnpj||'')}" data-pix="${esc(f.banco_pix||'')}">${esc(f.nome)}</option>`).join('');
-  if(sf) sf.onchange=()=>{const o=sf.selectedOptions[0];document.getElementById('fin-bol-cnpj').value=o?.dataset?.cnpj||'';document.getElementById('fin-bol-pix-chave').value=o?.dataset?.pix||'';};
-  if(selecionarId)sf.value=String(selecionarId);
-  sf.dispatchEvent(new Event('change'));
-}
-function finAlternarCadastroRecebedor(){
-  const form=document.getElementById('fin-receb-form');
-  if(form)form.style.display=form.style.display==='none'?'block':'none';
-}
-function finAplicarDadosRecebedor(dados, fornecedorId=''){
-  const nome = String(dados?.nome || dados?.razao || dados?.fantasia || '').trim();
-  const cnpj = String(dados?.cnpj || '').replace(/\D/g,'') || (document.getElementById('fin-receb-cnpj')?.value||'').replace(/\D/g,'');
-  const pix = String(dados?.banco_pix || dados?.pix || '').trim();
-
-  const nomeEl = document.getElementById('fin-receb-nome');
-  const cnpjEl = document.getElementById('fin-receb-cnpj');
-  const pixEl = document.getElementById('fin-receb-pix');
-  if(nomeEl) nomeEl.value = nome;
-  if(cnpjEl && cnpj) cnpjEl.value = cnpj;
-  if(pixEl) pixEl.value = pix;
-
-  const seletor = document.getElementById('fin-bol-fornecedor');
-  if(seletor){
-    const existe = Array.from(seletor.options).some(o => (o.dataset.cnpj || '').replace(/\D/g,'') === cnpj || String(o.value) === String(fornecedorId));
-    if(fornecedorId && !existe){
-      const opt = new Option(nome || 'Fornecedor encontrado', String(fornecedorId), false, true);
-      opt.dataset.cnpj = cnpj;
-      opt.dataset.pix = pix;
-      seletor.add(opt);
-    }
-    if(fornecedorId){
-      seletor.value = String(fornecedorId);
-    } else if(nome && cnpj && !existe){
-      const opt = new Option(nome, `tmp-${cnpj}`, false, true);
-      opt.dataset.cnpj = cnpj;
-      opt.dataset.pix = pix;
-      seletor.add(opt);
-      seletor.value = opt.value;
-    }
-    if(seletor.value) seletor.dispatchEvent(new Event('change'));
-  }
-
-  const cnpjBol = document.getElementById('fin-bol-cnpj');
-  if(cnpjBol && cnpj) cnpjBol.value = cnpj;
-  const pixBol = document.getElementById('fin-bol-pix-chave');
-  if(pixBol && pix) pixBol.value = pix;
-}
-async function finBuscarCnpjRecebedor(){
-  const cnpj=(document.getElementById('fin-receb-cnpj')?.value||'').replace(/\D/g,'');
-  if(cnpj.length!==14){showSt('fin-bol-status','Informe os 14 dígitos do CNPJ.',true);return;}
-  try{
-    const locais=await api('/api/fornecedores?q='+encodeURIComponent(cnpj));
-    const existente=(Array.isArray(locais)?locais:[]).find(f=>(f.cnpj||'').replace(/\D/g,'')===cnpj);
-    if(existente){
-      finAplicarDadosRecebedor(existente, String(existente.id));
-      showSt('fin-bol-status','Fornecedor já cadastrado; dados carregados.',false);
-      return;
-    }
-    const dados=await api('/api/cnpj/'+cnpj);
-    if(dados?.erro)throw new Error(dados.erro);
-    finAplicarDadosRecebedor(dados);
-    showSt('fin-bol-status','Dados carregados pela consulta de CNPJ. Confira e salve o recebedor.',false);
-  }catch(erro){showSt('fin-bol-status',erro.message||'Falha na consulta do CNPJ.',true);}
-}
-async function finCadastrarRecebedor(){
-  const dados={nome:document.getElementById('fin-receb-nome')?.value.trim()||'',cnpj:document.getElementById('fin-receb-cnpj')?.value||'',banco_pix:document.getElementById('fin-receb-pix')?.value.trim()||''};
-  const resultado=await api('/api/fornecedores','POST',dados);
-  if(resultado?.erro){showSt('fin-bol-status',resultado.erro,true);return;}
-  const fornecedores=await api('/api/fornecedores');
-  finAtualizarFornecedores(Array.isArray(fornecedores)?fornecedores:[],resultado.id);
-  document.getElementById('fin-bol-cnpj').value=resultado.cnpj||'';
-  document.getElementById('fin-bol-pix-chave').value=resultado.banco_pix||'';
-  document.getElementById('fin-receb-form').style.display='none';
-  showSt('fin-bol-status','Recebedor cadastrado e selecionado.',false);
-}
-async function finCarregarPagamentos(){
-  const empresaId=document.getElementById('fin-bol-empresa')?.value||'';
-  const listaEl=document.getElementById('fin-pagamentos-lista');
-  const todos=document.getElementById('fin-pagamentos-todos');
-  if(todos)todos.checked=false;
-  if(!empresaId){if(listaEl)listaEl.innerHTML='<span style="color:var(--text-muted)">Selecione a empresa pagadora para ver os pagamentos.</span>';return;}
-  const lista=await api('/api/boletos-fornecedores?empresa_id='+encodeURIComponent(empresaId));
-  if(!listaEl)return;
-  const itens=Array.isArray(lista)?lista:[];
-  listaEl.innerHTML=itens.map(b=>{
-    const elegivel=b.status==='pendente'&&(b.pix_chave||b.pix_copia_cola);
-    return `<div style="display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid var(--borda)">${elegivel?`<input type="checkbox" class="fin-pagamento-check" value="${Number(b.id)}" onchange="finAtualizarSelecaoPagamentos()">`:''}<span><b>${esc(b.fornecedor_nome)}</b> · R$ ${Number(b.valor||0).toFixed(2)} · vence ${esc(b.vencimento)} · ${esc(b.status)}${elegivel?' · PIX':''}</span></div>`;
-  }).join('')||'<span style="color:var(--text-muted)">Nenhum pagamento cadastrado para esta empresa.</span>';
-}
-function finSelecionarTodosPagamentos(marcar){
-  document.querySelectorAll('.fin-pagamento-check').forEach(c=>{c.checked=marcar;});
-}
-function finAtualizarSelecaoPagamentos(){
-  const checks=[...document.querySelectorAll('.fin-pagamento-check')];
-  const todos=document.getElementById('fin-pagamentos-todos');
-  if(todos)todos.checked=checks.length>0&&checks.every(c=>c.checked);
+  const se=document.getElementById('fin-bol-empresa'); if(se) se.innerHTML='<option value="">Selecione...</option>'+(Array.isArray(emps)?emps:[]).map(e=>`<option value="${e.id}">${esc(e.nome)}</option>`).join('');
+  const sf=document.getElementById('fin-bol-fornecedor'); if(sf) sf.innerHTML='<option value="">Selecione...</option>'+(Array.isArray(forns)?forns:[]).map(f=>`<option value="${f.id}" data-cnpj="${f.cnpj}">${esc(f.nome)}</option>`).join('');
+  if(sf) sf.onchange=()=>{const o=sf.selectedOptions[0];document.getElementById('fin-bol-cnpj').value=o?.dataset?.cnpj||'';};
+  const lista=await api('/api/boletos-fornecedores'); const el=document.getElementById('fin-pagamentos-lista');
+  if(el) el.innerHTML=(Array.isArray(lista)?lista:[]).map(b=>`<div style="padding:8px;border-bottom:1px solid var(--borda)"><b>${esc(b.fornecedor_nome)}</b> · R$ ${Number(b.valor||0).toFixed(2)} · vence ${esc(b.vencimento)} · ${esc(b.status)}</div>`).join('')||'<span style="color:var(--text-muted)">Nenhum boleto cadastrado.</span>';
 }
 async function finSalvarBoleto(){
-  const selecionado=document.getElementById('fin-bol-fornecedor')?.selectedOptions?.[0];
-  if(!selecionado?.value){showSt('fin-bol-status','Selecione ou cadastre o recebedor.',true);return;}
   const fd=new FormData();
-  const campos={empresa:'empresa_id',fornecedor:'fornecedor_nome',cnpj:'fornecedor_cnpj',vencimento:'vencimento',valor:'valor',linha:'linha_digitavel','pix-chave':'pix_chave','pix-copia-cola':'pix_copia_cola'};
+  const campos={empresa:'empresa_id',fornecedor:'fornecedor_nome',cnpj:'fornecedor_cnpj',vencimento:'vencimento',valor:'valor',linha:'linha_digitavel'};
   Object.entries(campos).forEach(([id,nome])=>{
     let valor=document.getElementById('fin-bol-'+id)?.value||'';
-    if(id==='fornecedor')valor=selecionado.textContent||valor;
+    if(id==='fornecedor'){const sel=document.getElementById('fin-bol-fornecedor'); valor=sel?.selectedOptions?.[0]?.textContent||valor;}
     fd.append(nome,valor);
   });
   const ar=document.getElementById('fin-bol-arquivo')?.files?.[0]; if(ar) fd.append('arquivo',ar);
   const r=await fetch('/api/boletos-fornecedores',{method:'POST',body:fd,credentials:'same-origin'}); const d=await r.json().catch(()=>({}));
-  showSt('fin-bol-status',d.erro||'Pagamento cadastrado e fornecedor vinculado.',!r.ok); if(r.ok) finInicializar();
-}
-async function finGerarRemPix(){
-  const empresaId=document.getElementById('fin-bol-empresa')?.value||'';
-  if(!empresaId){showSt('fin-rem-status','Selecione a empresa pagadora.',true);return;}
-  const ids=[...document.querySelectorAll('.fin-pagamento-check:checked')].map(c=>c.value);
-  if(!ids.length){showSt('fin-rem-status','Selecione ao menos um pagamento PIX para montar o lote.',true);return;}
-  const query=new URLSearchParams({empresa_id:empresaId});ids.forEach(id=>query.append('id',id));
-  const r=await fetch('/api/boletos-fornecedores/export.cnab240?'+query.toString(),{credentials:'same-origin'});
-  if(!r.ok){const d=await r.json().catch(()=>({}));showSt('fin-rem-status',d.erro||'Não foi possível gerar o arquivo REM.',true);return;}
-  const blob=await r.blob();
-  const url=URL.createObjectURL(blob); const link=document.createElement('a');
-  link.href=url; link.download=r.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/i)?.[1]||'pagamentos_pix.REM';
-  document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
-  showSt('fin-rem-status',`Arquivo REM gerado com ${ids.length} pagamento(s) selecionado(s).`,false);
+  showSt('fin-bol-status',d.erro||'Boleto cadastrado e fornecedor vinculado.',!r.ok); if(r.ok) finInicializar();
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

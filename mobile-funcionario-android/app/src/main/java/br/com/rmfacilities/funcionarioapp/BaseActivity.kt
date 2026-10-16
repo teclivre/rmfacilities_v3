@@ -27,11 +27,15 @@ import kotlinx.coroutines.withContext
  */
 abstract class BaseActivity : AppCompatActivity() {
 
+    private val baseSession by lazy { SessionManager(this) }
+    private var loginRedirectInProgress = false
+
     /**
      * Retorna o SessionManager desta Activity, ou null se a Activity não
-     * requer verificação de sessão (ex.: telas sem autenticação).
+     * requer verificação de sessão (ex.: telas sem autenticação). Por padrão,
+     * Activities que herdam desta classe usam a sessão do app.
      */
-    open fun provideSession(): SessionManager? = null
+    open fun provideSession(): SessionManager? = baseSession
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,6 +71,15 @@ abstract class BaseActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         val sess = provideSession() ?: return
+        if (sess.accessToken.isBlank()) {
+            goLogin()
+            return
+        }
+        if (sess.isIdleSessionExpired()) {
+            sess.logout()
+            goLogin()
+            return
+        }
         sess.touchActivity()
         checkAppVersionIfNeeded(sess)
         // Envia logs pendentes assim que houver uma tela autenticada em primeiro plano,
@@ -138,6 +151,8 @@ abstract class BaseActivity : AppCompatActivity() {
     }
 
     fun goLogin() {
+        if (loginRedirectInProgress || isFinishing) return
+        loginRedirectInProgress = true
         startActivity(Intent(this, LoginActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         })

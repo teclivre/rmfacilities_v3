@@ -8,7 +8,6 @@ import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -18,18 +17,22 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-class PontoHistoricoActivity : AppCompatActivity() {
+class PontoHistoricoActivity : BaseActivity() {
 
+    private lateinit var session: SessionManager
     private lateinit var api: ApiClient
     private lateinit var tvStatus: TextView
     private lateinit var containerHistorico: LinearLayout
     private lateinit var swipeRefreshHistorico: SwipeRefreshLayout
 
+    override fun provideSession() = session
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_ponto_historico)
 
-        api = ApiClient(SessionManager(this))
+        session = SessionManager(this)
+        api = ApiClient(session)
         tvStatus = findViewById(R.id.tvStatus)
         containerHistorico = findViewById(R.id.containerHistorico)
         swipeRefreshHistorico = findViewById(R.id.swipeRefreshHistorico)

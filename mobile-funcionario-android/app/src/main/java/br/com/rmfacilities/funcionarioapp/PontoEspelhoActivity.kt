@@ -14,7 +14,6 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
@@ -25,17 +24,21 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-class PontoEspelhoActivity : AppCompatActivity() {
+class PontoEspelhoActivity : BaseActivity() {
 
+    private lateinit var session: SessionManager
     private lateinit var api: ApiClient
     private lateinit var tvStatus: TextView
     private lateinit var containerCompetencias: LinearLayout
+
+    override fun provideSession() = session
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_ponto_espelho)
 
-        api = ApiClient(SessionManager(this))
+        session = SessionManager(this)
+        api = ApiClient(session)
         tvStatus = findViewById(R.id.tvStatus)
         containerCompetencias = findViewById(R.id.containerCompetencias)
 
