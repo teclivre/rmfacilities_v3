@@ -80,13 +80,16 @@ has_java_compiler() {
   [[ -x "$1/bin/java" && -x "$1/bin/javac" ]]
 }
 
-if ! has_java_compiler "${JAVA_HOME:-}"; then
+if ! has_java_compiler "$JAVA_HOME"; then
   JAVA_HOME=""
+
   for candidate in \
-    "/usr/lib/jvm/java-21-openjdk-amd64" \
-    "/usr/lib/jvm/java-21-openjdk" \
-    "/usr/lib/jvm/java-17-openjdk-amd64" \
-    "/usr/lib/jvm/java-17-openjdk"; do
+    /usr/lib/jvm/*21* \
+    /usr/lib/jvm/*17* \
+    "$HOME"/.sdkman/candidates/java/21* \
+    "$HOME"/.sdkman/candidates/java/17* \
+    "$HOME"/.jdks/*21* \
+    "$HOME"/.jdks/*17*; do
     if has_java_compiler "$candidate"; then
       JAVA_HOME="$candidate"
       break
@@ -94,9 +97,20 @@ if ! has_java_compiler "${JAVA_HOME:-}"; then
   done
 fi
 
+if [[ -z "$JAVA_HOME" ]] && command -v javac >/dev/null 2>&1; then
+  javac_path="$(readlink -f "$(command -v javac)" || true)"
+  if [[ "$javac_path" == */bin/javac ]]; then
+    candidate="${javac_path%/bin/javac}"
+    if has_java_compiler "$candidate"; then
+      JAVA_HOME="$candidate"
+    fi
+  fi
+fi
+
 if [[ -z "$JAVA_HOME" ]]; then
   echo "ERRO: JDK completo não encontrado (java e javac são necessários)."
-  echo "Configure JAVA_HOME para um JDK compatível, preferencialmente JDK 21."
+  echo "Instale o JDK 21 ou configure JAVA_HOME, por exemplo:"
+  echo "  export JAVA_HOME=\"\$(dirname \"\$(dirname \"\$(readlink -f \"\$(command -v javac)\")\")\")\""
   exit 1
 fi
 
