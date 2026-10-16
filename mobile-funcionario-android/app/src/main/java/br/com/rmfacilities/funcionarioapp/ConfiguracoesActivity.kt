@@ -35,7 +35,6 @@ class ConfiguracoesActivity : BaseActivity() {
         val switchNotificacoes = findViewById<SwitchMaterial>(R.id.switchNotificacoesConfig)
         val tvBiometriaStatus = findViewById<TextView>(R.id.tvBiometriaStatusConfig)
         val rgCanal = findViewById<RadioGroup>(R.id.rgCanalOtp)
-        val rgTimeout = findViewById<RadioGroup>(R.id.rgTimeoutSessao)
         val rgTema = findViewById<RadioGroup>(R.id.rgTemaApp)
         val tvCanalStatus = findViewById<TextView>(R.id.tvCanalOtpStatus)
         val tvFeedback = findViewById<TextView>(R.id.tvFeedbackConfig)
@@ -53,12 +52,6 @@ class ConfiguracoesActivity : BaseActivity() {
         when (session.canalOtp) {
             "email" -> rgCanal.check(R.id.rbCanalEmail)
             else -> rgCanal.check(R.id.rbCanalWhatsapp)
-        }
-
-        when (session.sessionIdleTimeoutMin) {
-            in 1..10 -> rgTimeout.check(R.id.rbTimeout10)
-            in 11..15 -> rgTimeout.check(R.id.rbTimeout15)
-            else -> rgTimeout.check(R.id.rbTimeout30)
         }
 
         internalThemeChange = true
@@ -126,19 +119,6 @@ class ConfiguracoesActivity : BaseActivity() {
                     }
                 }
             }
-        }
-
-        rgTimeout.setOnCheckedChangeListener { _, checkedId ->
-            window.decorView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            val minutes = when (checkedId) {
-                R.id.rbTimeout10 -> 10
-                R.id.rbTimeout30 -> 30
-                else -> 15
-            }
-            session.sessionIdleTimeoutMin = minutes
-            tvFeedback.text = "Bloqueio por inatividade ajustado para $minutes minutos."
-            tvFeedback.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_info))
-            Toast.makeText(this, "Bloqueio configurado para $minutes min.", Toast.LENGTH_SHORT).show()
         }
 
         rgTema.setOnCheckedChangeListener { _, checkedId ->

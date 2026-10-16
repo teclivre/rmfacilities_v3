@@ -42,13 +42,6 @@ class ApiClient(private val session: SessionManager) {
             builder.authenticator(okhttp3.Authenticator { _, response ->
                 authRetryRequest(response)
             })
-            builder.addInterceptor { chain ->
-                val resp = chain.proceed(chain.request())
-                if (resp.code == 401) {
-                    handleUnauthorized(resp)
-                }
-                resp
-            }
         }
         return builder.build()
     }
@@ -161,11 +154,7 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
-    private fun handleUnauthorized(response: Response) {
-        val authorization = response.request.header("Authorization") ?: return
-        if (!authorization.startsWith("Bearer ")) return
-
-        val tokenUsed = authorization.removePrefix("Bearer ").trim()
+    private fun handleUnauthorized(tokenUsed: String) {
         val currentToken = session.accessToken.trim()
         if (currentToken.isNotBlank() && currentToken != tokenUsed) return
 
@@ -250,7 +239,10 @@ class ApiClient(private val session: SessionManager) {
             }
 
             val refresh = session.refreshToken.trim()
-            if (refresh.isBlank()) return null
+            if (refresh.isBlank()) {
+                handleUnauthorized(tokenUsado)
+                return null
+            }
 
             val renovado = try {
                 refreshWithToken(refresh)
@@ -259,6 +251,9 @@ class ApiClient(private val session: SessionManager) {
             } ?: return null
 
             if (!renovado.ok || renovado.access_token.isNullOrBlank()) {
+                if (renovado.http_status == 401 || renovado.http_status == 403) {
+                    handleUnauthorized(tokenUsado)
+                }
                 return null
             }
             session.accessToken = renovado.access_token
@@ -476,8 +471,6 @@ class ApiClient(private val session: SessionManager) {
             .build()
         http.newCall(req).execute().use { resp ->
             if (resp.code == 401) {
-                // O OkHttp Authenticator já tentou renovar a sessão e falhou
-                handleUnauthorized(resp)
                 return MeResponse(ok = false, erro = "Sessão expirada.")
             }
             val raw = resp.body?.string().orEmpty()
@@ -777,7 +770,6 @@ class ApiClient(private val session: SessionManager) {
             .build()
         http.newCall(req).execute().use { resp ->
             if (resp.code == 401) {
-                handleUnauthorized(resp)
                 return ApiSimpleResponse(ok = false, erro = "Sessão expirada.")
             }
             val raw = resp.body?.string().orEmpty()
@@ -840,7 +832,6 @@ class ApiClient(private val session: SessionManager) {
             .build()
         http.newCall(req).execute().use { resp ->
             if (resp.code == 401) {
-                handleUnauthorized(resp)
                 return PontoDiaResponse(ok = false, erro = "Sessão expirada.")
             }
             val raw = resp.body?.string().orEmpty()
@@ -921,7 +912,6 @@ class ApiClient(private val session: SessionManager) {
             .build()
         http.newCall(req).execute().use { resp ->
             if (resp.code == 401) {
-                handleUnauthorized(resp)
                 return PontoDiaResponse(ok = false, erro = "Sessão expirada.")
             }
             val raw = resp.body?.string().orEmpty()
@@ -947,7 +937,6 @@ class ApiClient(private val session: SessionManager) {
             .build()
         http.newCall(req).execute().use { resp ->
             if (resp.code == 401) {
-                handleUnauthorized(resp)
                 return PontoDiaResponse(ok = false, erro = "Sessão expirada.")
             }
             val raw = resp.body?.string().orEmpty()

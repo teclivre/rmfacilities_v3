@@ -4577,6 +4577,9 @@ def b64u_dec(s):
     return base64.urlsafe_b64decode((s + pad).encode())
 
 
+APP_REFRESH_TTL_DAYS = 30
+
+
 def app_token_secret():
     tok = (os.environ.get("APP_TOKEN_SECRET") or "").strip()
     if tok:
@@ -4747,7 +4750,7 @@ def _app_issue_session_tokens(funcionario):
     sessao = FuncionarioAppSessao(
         funcionario_id=funcionario.id,
         refresh_hash=token_hash(refresh),
-        exp_refresh=utcnow() + timedelta(days=14),
+        exp_refresh=utcnow() + timedelta(days=APP_REFRESH_TTL_DAYS),
         revogado=False,
         ip=ip,
         ua=ua,
@@ -4761,7 +4764,7 @@ def _app_issue_session_tokens(funcionario):
         "refresh_token": refresh,
         "token_type": "Bearer",
         "expires_in": 3600,
-        "refresh_expires_in": 1209600,
+        "refresh_expires_in": APP_REFRESH_TTL_DAYS * 24 * 60 * 60,
         "sessao_id": sessao.id,
     }
 
@@ -19830,15 +19833,27 @@ def api_app_funcionario_refresh():
     sessao = FuncionarioAppSessao.query.filter_by(
         refresh_hash=token_hash(refresh), revogado=False
     ).first()
-    if not sessao or sessao.exp_refresh < utcnow():
+    now = utcnow()
+    if not sessao:
         return jsonify({"erro": "Refresh token invalido ou expirado"}), 401
+    if sessao.exp_refresh < now:
+        # Permite que sessões emitidas antes do aumento de 14 para 30 dias
+        # sejam renovadas até completar o novo limite de inatividade.
+        ultima_atividade = sessao.atualizado_em or sessao.criado_em
+        limite_inatividade = (
+            ultima_atividade + timedelta(days=APP_REFRESH_TTL_DAYS)
+            if ultima_atividade
+            else None
+        )
+        if limite_inatividade is None or limite_inatividade < now:
+            return jsonify({"erro": "Refresh token invalido ou expirado"}), 401
     f = db.session.get(Funcionario, sessao.funcionario_id)
     if not f or f.app_ativo is False or _status_norm(f.status) in ("demitido", "inativo") or bool((getattr(f, "data_demissao", "") or "").strip()):
         return jsonify({"erro": "Acesso desativado"}), 403
     novo_refresh = app_issue_refresh_token()
     sessao.refresh_hash = token_hash(novo_refresh)
-    # Sliding window: estende a expiração para mais 14 dias a cada uso válido.
-    sessao.exp_refresh = utcnow() + timedelta(days=14)
+    # Sliding window: mantém a sessão válida enquanto o usuário voltar a usar o app.
+    sessao.exp_refresh = utcnow() + timedelta(days=APP_REFRESH_TTL_DAYS)
     access = app_issue_access_token(f.id, sessao.id, ttl=3600)
     db.session.commit()
     app_update = _app_track_version(f, d, notificar=True)
