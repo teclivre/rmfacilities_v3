@@ -5,7 +5,8 @@ data class LoginResponse(
     val erro: String? = null,
     val access_token: String? = null,
     val refresh_token: String? = null,
-    val funcionario: FuncionarioResumo? = null
+    val funcionario: FuncionarioResumo? = null,
+    val http_status: Int? = null
 )
 
 data class OtpStartResponse(

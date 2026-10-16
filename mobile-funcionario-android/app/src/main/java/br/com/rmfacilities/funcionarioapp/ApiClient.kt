@@ -11,6 +11,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import java.io.IOException
 
 class ApiClient(private val session: SessionManager) {
     private val gson = Gson()
@@ -18,6 +19,8 @@ class ApiClient(private val session: SessionManager) {
     companion object {
         private const val MAX_DOWNLOAD_MB = 50
         private const val MAX_DOWNLOAD_BYTES = MAX_DOWNLOAD_MB * 1024 * 1024
+        private const val REFRESH_MAX_ATTEMPTS = 2
+        private const val REFRESH_RETRY_DELAY_MS = 500L
     }
 
     private fun buildHttpClient(withAuthenticator: Boolean = false): OkHttpClient {
@@ -166,7 +169,7 @@ class ApiClient(private val session: SessionManager) {
         val currentToken = session.accessToken.trim()
         if (currentToken.isNotBlank() && currentToken != tokenUsed) return
 
-        session.logout()
+        session.logout(sessionExpired = true)
     }
 
     private fun responseCount(response: Response): Int {
@@ -187,20 +190,48 @@ class ApiClient(private val session: SessionManager) {
             .addHeader("Content-Type", "application/json")
             .build()
 
-        refreshHttp.newCall(req).execute().use { resp ->
-            val raw = resp.body?.string().orEmpty()
-            if (!resp.isSuccessful) {
-                val erro = parseErro(raw, "Não foi possível renovar a sessão.")
-                TelemetryLogger.logLoginFailure(session.apiBaseUrl, session.lastLoginCpf, "sessao_renovar", erro, resp.code)
-                return LoginResponse(ok = false, erro = erro)
+        for (attempt in 1..REFRESH_MAX_ATTEMPTS) {
+            val (code, raw) = try {
+                refreshHttp.newCall(req).execute().use { resp ->
+                    resp.code to resp.body?.string().orEmpty()
+                }
+            } catch (e: IOException) {
+                if (attempt >= REFRESH_MAX_ATTEMPTS) throw e
+                pauseBeforeRefreshRetry()
+                continue
             }
+
+            if (code !in 200..299) {
+                val erro = parseErro(raw, "Não foi possível renovar a sessão.")
+                if (isRetryableRefreshStatus(code) && attempt < REFRESH_MAX_ATTEMPTS) {
+                    pauseBeforeRefreshRetry()
+                    continue
+                }
+                TelemetryLogger.logLoginFailure(session.apiBaseUrl, session.lastLoginCpf, "sessao_renovar", erro, code)
+                return LoginResponse(ok = false, erro = erro, http_status = code)
+            }
+
             return try {
                 gson.fromJson(raw, LoginResponse::class.java)
             } catch (_: Exception) {
-                TelemetryLogger.logLoginFailure(session.apiBaseUrl, session.lastLoginCpf, "sessao_renovar", "Resposta inesperada do servidor.", resp.code)
-                LoginResponse(ok = false, erro = "Resposta inesperada do servidor.")
+                TelemetryLogger.logLoginFailure(session.apiBaseUrl, session.lastLoginCpf, "sessao_renovar", "Resposta inesperada do servidor.", code)
+                LoginResponse(ok = false, erro = "Resposta inesperada do servidor.", http_status = code)
             }
         }
+        return LoginResponse(ok = false, erro = "Não foi possível renovar a sessão.")
+    }
+
+    private fun pauseBeforeRefreshRetry() {
+        try {
+            Thread.sleep(REFRESH_RETRY_DELAY_MS)
+        } catch (interrupted: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw IOException("Renovação de sessão interrompida.", interrupted)
+        }
+    }
+
+    private fun isRetryableRefreshStatus(code: Int): Boolean {
+        return code == 408 || code == 429 || code >= 500
     }
 
     private fun authRetryRequest(response: Response): Request? {

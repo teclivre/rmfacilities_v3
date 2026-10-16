@@ -152,10 +152,11 @@ class SessionManager(private val context: Context) {
         trustedDeviceLabel = ""
     }
 
-    fun logout() {
+    fun logout(sessionExpired: Boolean = false) {
         clear()
         val intent = android.content.Intent(ACTION_LOGOUT).apply {
             setPackage(context.packageName)
+            putExtra(EXTRA_SESSION_EXPIRED, sessionExpired)
         }
         context.sendBroadcast(intent)
     }
@@ -163,5 +164,6 @@ class SessionManager(private val context: Context) {
     companion object {
         private const val TAG = "SessionManager"
         const val ACTION_LOGOUT = "br.com.rmfacilities.funcionarioapp.LOGOUT"
+        const val EXTRA_SESSION_EXPIRED = "session_expired"
     }
 }

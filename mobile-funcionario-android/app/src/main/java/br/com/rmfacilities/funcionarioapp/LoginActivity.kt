@@ -128,6 +128,14 @@ class LoginActivity : AppCompatActivity() {
         tvErro = findViewById(R.id.tvErro)
         val tvPrivacidade: TextView = findViewById(R.id.tvPrivacidade)
 
+        if (intent.getBooleanExtra(SessionManager.EXTRA_SESSION_EXPIRED, false)) {
+            AlertDialog.Builder(this)
+                .setTitle("Sessão encerrada")
+                .setMessage("Sua sessão expirou. Faça login novamente para continuar.")
+                .setPositiveButton("Entendi", null)
+                .show()
+        }
+
         // Se o Keystore falhou, dados foram apagados por seguran\u00e7a — avisar o usu\u00e1rio
         if (session.keystoreFailed) {
             tvErro.visibility = android.view.View.VISIBLE
@@ -180,13 +188,17 @@ class LoginActivity : AppCompatActivity() {
             if (!savedCpf.isNullOrBlank()) etCpf.setText(savedCpf)
         }
 
-        tentarRenovacaoSilenciosa()
+        if (!intent.getBooleanExtra(SessionManager.EXTRA_SESSION_EXPIRED, false)) {
+            tentarRenovacaoSilenciosa()
+        }
     }
 
     override fun onResume() {
         super.onResume()
         checkAppVersionIfNeeded()
-        if (!silentAuthInProgress && !biometricPromptShown && shouldOfferBiometric()) {
+        if (!intent.getBooleanExtra(SessionManager.EXTRA_SESSION_EXPIRED, false) &&
+            !silentAuthInProgress && !biometricPromptShown && shouldOfferBiometric()
+        ) {
             biometricPromptShown = true
             autenticarComBiometria()
         }
@@ -219,8 +231,11 @@ class LoginActivity : AppCompatActivity() {
                     session.touchActivity()
                     goHomeOrDeepLink()
                 } else {
-                    // Token de refresh inválido/expirado: mantém login manual como fallback.
-                    session.refreshToken = ""
+                    if (resp.http_status == 401 || resp.http_status == 403) {
+                        session.refreshToken = ""
+                    } else {
+                        showErro(resp.erro ?: "Não foi possível renovar a sessão. Tente novamente.")
+                    }
                 }
             }
         }
@@ -426,9 +441,12 @@ class LoginActivity : AppCompatActivity() {
                     session.touchActivity()
                     goHomeOrDeepLink()
                 } else {
-                    // Se refresh expirou, mantém biometria, mas volta para o fluxo OTP.
-                    session.refreshToken = ""
-                    enviarCodigo()
+                    if (resp.http_status == 401 || resp.http_status == 403) {
+                        session.refreshToken = ""
+                        enviarCodigo()
+                    } else {
+                        showErro(resp.erro ?: "Não foi possível renovar a sessão. Tente novamente.")
+                    }
                 }
             }
         }

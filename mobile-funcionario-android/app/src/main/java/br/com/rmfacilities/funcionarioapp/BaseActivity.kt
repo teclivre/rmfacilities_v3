@@ -44,7 +44,7 @@ abstract class BaseActivity : AppCompatActivity() {
 
     private val logoutReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, i: Intent?) {
-            goLogin()
+            goLogin(i?.getBooleanExtra(SessionManager.EXTRA_SESSION_EXPIRED, false) == true)
         }
     }
 
@@ -76,8 +76,8 @@ abstract class BaseActivity : AppCompatActivity() {
             return
         }
         if (sess.isIdleSessionExpired()) {
-            sess.logout()
-            goLogin()
+            sess.logout(sessionExpired = true)
+            goLogin(sessionExpired = true)
             return
         }
         sess.touchActivity()
@@ -150,11 +150,12 @@ abstract class BaseActivity : AppCompatActivity() {
         if (!isFinishing && !isDestroyed) dialog.show()
     }
 
-    fun goLogin() {
+    fun goLogin(sessionExpired: Boolean = false) {
         if (loginRedirectInProgress || isFinishing) return
         loginRedirectInProgress = true
         startActivity(Intent(this, LoginActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            putExtra(SessionManager.EXTRA_SESSION_EXPIRED, sessionExpired)
         })
         finish()
     }
