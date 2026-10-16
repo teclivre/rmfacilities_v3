@@ -74,6 +74,33 @@ if [[ -z "$SDK_DIR" || ! -d "$SDK_DIR" ]]; then
   exit 1
 fi
 
+has_java_compiler() {
+  [[ -x "$1/bin/java" && -x "$1/bin/javac" ]]
+}
+
+if ! has_java_compiler "${JAVA_HOME:-}"; then
+  JAVA_HOME=""
+  for candidate in \
+    "/usr/lib/jvm/java-21-openjdk-amd64" \
+    "/usr/lib/jvm/java-21-openjdk" \
+    "/usr/lib/jvm/java-17-openjdk-amd64" \
+    "/usr/lib/jvm/java-17-openjdk"; do
+    if has_java_compiler "$candidate"; then
+      JAVA_HOME="$candidate"
+      break
+    fi
+  done
+fi
+
+if [[ -z "$JAVA_HOME" ]]; then
+  echo "ERRO: JDK completo não encontrado (java e javac são necessários)."
+  echo "Configure JAVA_HOME para um JDK compatível, preferencialmente JDK 21."
+  exit 1
+fi
+
+export JAVA_HOME
+export PATH="$JAVA_HOME/bin:$PATH"
+
 if [[ ! -f "$LOCAL_PROPERTIES" ]]; then
   printf 'sdk.dir=%s\n' "$SDK_DIR" > "$LOCAL_PROPERTIES"
 fi
@@ -90,6 +117,7 @@ echo "  RM Facilities — Gerar AAB (Play Store)  "
 echo "=========================================="
 echo "Versão atual (antes do build): $CURRENT_VERSION (code $CURRENT_CODE)"
 echo "SDK: $SDK_DIR"
+echo "JDK: $JAVA_HOME"
 echo "Diretório: $SCRIPT_DIR"
 echo ""
 
