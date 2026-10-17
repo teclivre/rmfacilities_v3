@@ -47,6 +47,7 @@ class PdfPreviewActivity : AppCompatActivity() {
         // Bloqueia captura e gravação de tela nesta tela sensível.
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         setContentView(R.layout.activity_pdf_preview)
+        EdgeToEdgeUtils.apply(this)
 
         rvPages = findViewById(R.id.rvPages)
         tvLoading = findViewById(R.id.tvLoading)

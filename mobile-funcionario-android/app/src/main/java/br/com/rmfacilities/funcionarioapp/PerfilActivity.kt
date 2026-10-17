@@ -334,7 +334,9 @@ class PerfilActivity : BaseActivity() {
     }
 
     private fun exibirFotoDosBytes(bytes: ByteArray) {
-        val bitmap = decodeSampledBitmap(bytes, 256, 256)
+        val bitmap = ivFoto.bitmapTargetSize()?.let { (width, height) ->
+            decodeSampledBitmap(bytes, width, height)
+        }
         if (bitmap != null) {
             ivFoto.setImageBitmap(bitmap)
             ivFoto.visibility = View.VISIBLE

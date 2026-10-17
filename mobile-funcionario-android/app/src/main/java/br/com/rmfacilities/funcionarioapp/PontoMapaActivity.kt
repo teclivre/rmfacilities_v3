@@ -23,6 +23,7 @@ class PontoMapaActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_ponto_mapa)
+        EdgeToEdgeUtils.apply(this)
 
         val lat = intent.getDoubleExtra(EXTRA_LAT, 0.0)
         val lon = intent.getDoubleExtra(EXTRA_LON, 0.0)

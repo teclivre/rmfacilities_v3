@@ -421,16 +421,20 @@ class HomeActivity : BaseActivity() {
                 // Carregar foto de perfil se disponível
                 val fotoUrl = me.funcionario?.foto_url
                 if (!fotoUrl.isNullOrBlank()) {
+                    val avatarView = ivAvatarHome
+                    val avatarSize = avatarView.bitmapTargetSize()
                     lifecycleScope.launch(Dispatchers.IO) {
                         try {
                             val bytes = api.downloadFile(fotoUrl)
-                            val bmp = decodeSampledBitmap(bytes, 256, 256)
+                            val bmp = avatarSize?.let { (width, height) ->
+                                decodeSampledBitmap(bytes, width, height)
+                            }
                             withContext(Dispatchers.Main) {
                                 if (bmp != null) {
-                                    ivAvatarHome.setImageBitmap(bmp)
-                                    ivAvatarHome.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
-                                    ivAvatarHome.clipToOutline = true
-                                    ivAvatarHome.visibility = View.VISIBLE
+                                    avatarView.setImageBitmap(bmp)
+                                    avatarView.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+                                    avatarView.clipToOutline = true
+                                    avatarView.visibility = View.VISIBLE
                                     tvAvatar.visibility = View.GONE
                                 }
                             }
@@ -709,4 +713,3 @@ class HomeActivity : BaseActivity() {
         }
     }
 }
-

@@ -25,6 +25,7 @@ class PrivacyPolicyActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_privacy_policy)
+        EdgeToEdgeUtils.apply(this)
 
         findViewById<TextView>(R.id.btnVoltar).setOnClickListener { finish() }
         findViewById<MaterialButton>(R.id.btnRecarregarPolitica).setOnClickListener { webView.reload() }

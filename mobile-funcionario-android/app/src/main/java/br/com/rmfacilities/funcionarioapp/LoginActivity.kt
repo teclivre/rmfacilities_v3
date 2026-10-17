@@ -106,6 +106,7 @@ class LoginActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         TelemetryLogger.init(this)
         setContentView(R.layout.activity_login)
+        EdgeToEdgeUtils.apply(this)
 
         session = SessionManager(this)
         api = ApiClient(session)

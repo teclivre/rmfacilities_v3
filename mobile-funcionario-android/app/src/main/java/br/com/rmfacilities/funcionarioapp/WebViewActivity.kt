@@ -24,6 +24,7 @@ class WebViewActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_web_view)
+        EdgeToEdgeUtils.apply(this)
 
         val rawUrl = intent.getStringExtra(EXTRA_URL) ?: run { finish(); return }
         // Item 1: rejeitar URLs não-HTTPS para evitar carregamento de conteúdo não confiável

@@ -1,6 +1,6 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
+<resources>
     <style name="Theme.RMFuncionarioApp" parent="Theme.MaterialComponents.Light.NoActionBar">
-        <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
+        <item name="android:forceDarkAllowed">false</item>
         <item name="colorPrimary">@color/primary</item>
         <item name="colorPrimaryVariant">@color/primary_variant</item>
         <item name="colorSecondary">@color/accent</item>
@@ -14,7 +14,6 @@
         <item name="android:textColorSecondary">@color/text_secondary</item>
         <item name="android:textColorHint">@color/text_hint</item>
         <item name="android:textColorLink">@color/primary</item>
-        <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>
         <item name="materialButtonStyle">@style/Widget.App.Button</item>
         <item name="textInputStyle">@style/Widget.App.TextInputLayout</item>
         <item name="android:windowAnimationStyle">@style/WindowAnimation</item>

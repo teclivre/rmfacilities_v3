@@ -13,6 +13,7 @@ class AboutActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_about)
+        EdgeToEdgeUtils.apply(this)
 
         findViewById<TextView>(R.id.btnVoltar).setOnClickListener { finish() }
 
