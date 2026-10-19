@@ -11,6 +11,12 @@ from flask import Response, jsonify, request, send_file, session
 from zoneinfo import ZoneInfo
 
 
+def _ponto_intervalo_duplicado(data_hora, outra_data_hora, intervalo_minutos=10):
+    if not data_hora or not outra_data_hora:
+        return False
+    return abs(data_hora - outra_data_hora) < timedelta(minutes=intervalo_minutos)
+
+
 def _ponto_6x1_template_dia(dias, weekday):
     """Mapeia cada dia da semana para seu modelo, respeitando a folga configurada."""
     tipo_por_indice = [
@@ -62,6 +68,8 @@ def register_ponto_routes(
     JornadaTrabalho=None,
     PontoAfastamento=None,
     localnow=None,
+    ponto_cooldown_response=None,
+    notify_ponto_email=None,
 ):
     if localnow is None:
         localnow = utcnow
@@ -1435,6 +1443,12 @@ def register_ponto_routes(
             return jsonify(
                 {"erro": "Não é permitido registrar ponto em horário futuro."}
             ), 400
+        if ponto_cooldown_response:
+            bloqueio_intervalo = ponto_cooldown_response(
+                funcionario.id, data_hora
+            )
+            if bloqueio_intervalo:
+                return bloqueio_intervalo
         # Marcações em escala noturna podem pertencer ao dia anterior quando
         # ocorrem antes do fim do período noturno.
         data_ref = _ponto_data_ref_efetiva(funcionario, data_hora) or data_hora.date()
@@ -1459,11 +1473,11 @@ def register_ponto_routes(
                 }
             ), 400
         if any(
-            abs((data_hora - marcacao.data_hora).total_seconds()) < 60
+            _ponto_intervalo_duplicado(data_hora, marcacao.data_hora, 10)
             for marcacao in marcacoes_dia
         ):
             return jsonify(
-                {"erro": "Já existe marcação neste minuto para este funcionário."}
+                {"erro": "Você já bateu o ponto há menos de 10 minutos. Aguarde completar esse intervalo para registrar outro ponto."}
             ), 400
         origem = (dados.get("origem") or "web").strip().lower()
         if origem not in ("web", "admin", "importacao"):
@@ -1499,6 +1513,8 @@ def register_ponto_routes(
         )
         db.session.add(marcacao)
         db.session.commit()
+        if notify_ponto_email:
+            notify_ponto_email(funcionario, marcacao)
         audit_event(
             "ponto_marcacao",
             "usuario",
@@ -2238,6 +2254,8 @@ def register_ponto_routes(
                 )
                 db.session.add(ajuste)
                 db.session.commit()
+                if notify_ponto_email:
+                    notify_ponto_email(funcionario, marcacao)
                 audit_event(
                     "ponto_ajuste",
                     "usuario",

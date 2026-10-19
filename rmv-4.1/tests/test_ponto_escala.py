@@ -1,4 +1,6 @@
-from ponto_module import _ponto_6x1_template_dia
+from datetime import datetime, timedelta
+
+from ponto_module import _ponto_6x1_template_dia, _ponto_intervalo_duplicado
 
 
 def test_escala_6x1_mantem_domingo_como_folga_e_sabado_como_jornada_propria():
@@ -40,3 +42,17 @@ def test_escala_6x1_respeita_folga_na_terca_e_mantem_sabado_proprio():
     assert _ponto_6x1_template_dia(dias, 1) == (1, dias[1])
     assert _ponto_6x1_template_dia(dias, 5) == (5, dias[5])
     assert _ponto_6x1_template_dia(dias, 6) == (6, dias[6])
+
+
+def test_intervalo_de_ponto_bloqueia_menos_de_dez_minutos():
+    batida = datetime(2026, 10, 19, 8, 0)
+
+    assert _ponto_intervalo_duplicado(batida, batida + timedelta(minutes=9, seconds=59))
+    assert not _ponto_intervalo_duplicado(batida, batida + timedelta(minutes=10))
+
+
+def test_intervalo_de_ponto_verifica_ambos_os_lados_da_batida():
+    batida = datetime(2026, 10, 19, 8, 0)
+
+    assert _ponto_intervalo_duplicado(batida, batida - timedelta(minutes=5))
+    assert not _ponto_intervalo_duplicado(batida, None)

@@ -49,7 +49,11 @@ import unicodedata
 import os, json, hashlib, hmac, secrets
 from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
-from ponto_module import _ponto_6x1_template_dia, register_ponto_routes
+from ponto_module import (
+    _ponto_6x1_template_dia,
+    _ponto_intervalo_duplicado,
+    register_ponto_routes,
+)
 
 
 # Flask app and DB initialization must come first
@@ -5266,6 +5270,86 @@ def smtp_send_text(dest, assunto, corpo, anexos=None):
     _smtp_exec_with_retry(_do_send)
 
 
+def _notificar_ponto_email(funcionario, marcacao):
+    tipos = {
+        "entrada": "Entrada",
+        "saida_intervalo": "Saída para intervalo",
+        "retorno_intervalo": "Retorno do intervalo",
+        "saida": "Saída",
+    }
+    nome = re.sub(r"[\r\n]+", " ", (getattr(funcionario, "nome", "") or "").strip())
+    data_hora = marcacao.data_hora
+    data_fmt = data_hora.strftime("%d/%m/%Y")
+    hora_fmt = data_hora.strftime("%H:%M:%S")
+    latitude = getattr(marcacao, "latitude", None)
+    longitude = getattr(marcacao, "longitude", None)
+    precisao = getattr(marcacao, "precisao_gps", None)
+    if latitude is not None and longitude is not None:
+        localizacao = (
+            f"Coordenadas: {latitude:.6f}, {longitude:.6f}\n"
+            f"Mapa: https://www.google.com/maps?q={latitude:.6f},{longitude:.6f}"
+        )
+        if precisao is not None:
+            localizacao += f"\nPrecisão do GPS: {precisao:.1f} m"
+    else:
+        localizacao = "Localização não informada."
+
+    posto = (getattr(funcionario, "posto_operacional", None) or "").strip()
+    corpo = (
+        "Nova marcação de ponto registrada.\n\n"
+        f"Colaborador: {nome or 'Não informado'}\n"
+        f"Tipo: {tipos.get((marcacao.tipo or '').strip().lower(), marcacao.tipo or 'Não informado')}\n"
+        f"Data: {data_fmt}\n"
+        f"Horário: {hora_fmt}\n"
+        f"Localização:\n{localizacao}\n"
+        f"Posto de trabalho: {posto or 'Não informado'}\n"
+        f"Origem: {getattr(marcacao, 'origem', None) or 'Não informada'}\n"
+    )
+    assunto = f"Ponto registrado - {nome or 'Colaborador'} - {data_fmt}"
+    try:
+        smtp_send_text("pontos@rmfacilities.com.br", assunto, corpo)
+        return True
+    except Exception:
+        app.logger.exception(
+            "[ponto-email] falha ao enviar marcação id=%s funcionario=%s",
+            getattr(marcacao, "id", None),
+            getattr(funcionario, "id", None),
+        )
+        return False
+
+
+def _app_ponto_bloqueio_intervalo(funcionario_id, data_hora):
+    # Serializa batidas simultâneas do mesmo colaborador em bancos com suporte
+    # a SELECT FOR UPDATE, evitando que duas requisições passem juntas.
+    (
+        db.session.query(Funcionario.id)
+        .filter(Funcionario.id == funcionario_id)
+        .with_for_update()
+        .first()
+    )
+    inicio = data_hora - timedelta(minutes=10)
+    fim = data_hora + timedelta(minutes=10)
+    recentes = (
+        PontoMarcacao.query.filter(
+            PontoMarcacao.funcionario_id == funcionario_id,
+            PontoMarcacao.data_hora > inicio,
+            PontoMarcacao.data_hora < fim,
+        )
+        .all()
+    )
+    if any(
+        _ponto_intervalo_duplicado(data_hora, marcacao.data_hora)
+        for marcacao in recentes
+    ):
+        return jsonify(
+            {
+                "ok": False,
+                "erro": "Você já bateu o ponto há menos de 10 minutos. Aguarde completar esse intervalo para registrar outro ponto."
+            }
+        ), 400
+    return None
+
+
 def wa_backup_maybe_send(force=False):
     cfg = wa_backup_cfg()
     if not force and not wa_backup_enabled():
@@ -9398,6 +9482,8 @@ register_ponto_routes(
     PontoAfastamento=PontoAfastamento,
     SolicitacaoHoraExtra=SolicitacaoHoraExtra,
     localnow=localnow,
+    ponto_cooldown_response=_app_ponto_bloqueio_intervalo,
+    notify_ponto_email=_notificar_ponto_email,
 )
 
 
@@ -10328,6 +10414,11 @@ def api_ponto_coletivo_marcar():
         return jsonify({"ok": False, "erro": f"{tipo_label} registrado para hoje. Não é possível bater ponto."}), 400
 
     data_hora = utcnow()
+    bloqueio_intervalo = _app_ponto_bloqueio_intervalo(
+        funcionario.id, data_hora
+    )
+    if bloqueio_intervalo:
+        return bloqueio_intervalo
     data_ref = _app_ponto_data_ref_efetiva(funcionario, data_hora) or data_hora.date()
     bloqueio = _app_ponto_exigir_dia_aberto(funcionario.id, data_ref)
     if bloqueio:
@@ -10351,6 +10442,7 @@ def api_ponto_coletivo_marcar():
     )
     db.session.add(m)
     db.session.commit()
+    _notificar_ponto_email(funcionario, m)
 
     audit_event(
         "ponto_marcacao_coletivo",
@@ -23330,6 +23422,9 @@ def api_app_ponto_marcar_me():
         return jsonify(
             {"erro": "Não é permitido registrar ponto em horário futuro."}
         ), 400
+    bloqueio_intervalo = _app_ponto_bloqueio_intervalo(f.id, data_hora)
+    if bloqueio_intervalo:
+        return bloqueio_intervalo
     data_ref = _app_ponto_data_ref_efetiva(f, data_hora) or data_hora.date()
     bloqueio = _app_ponto_exigir_dia_aberto(f.id, data_ref)
     if bloqueio:
@@ -23436,6 +23531,7 @@ def api_app_ponto_marcar_me():
     )
     db.session.add(m)
     db.session.commit()
+    _notificar_ponto_email(f, m)
     audit_event(
         "ponto_marcacao_app",
         "funcionario",
@@ -23592,6 +23688,9 @@ def api_app_ponto_marcar_qr_me():
         or ""
     ).strip()[:120]
     data_hora = utcnow()
+    bloqueio_intervalo = _app_ponto_bloqueio_intervalo(f.id, data_hora)
+    if bloqueio_intervalo:
+        return bloqueio_intervalo
     data_ref = _app_ponto_data_ref_efetiva(f, data_hora) or data_hora.date()
     bloqueio = _app_ponto_exigir_dia_aberto(f.id, data_ref)
     if bloqueio:
@@ -23661,6 +23760,7 @@ def api_app_ponto_marcar_qr_me():
     )
     db.session.add(m)
     db.session.commit()
+    _notificar_ponto_email(f, m)
     audit_event(
         "ponto_marcacao_app_qr",
         "funcionario",

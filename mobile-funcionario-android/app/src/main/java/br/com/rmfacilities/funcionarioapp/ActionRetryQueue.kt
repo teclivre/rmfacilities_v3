@@ -101,6 +101,7 @@ class ActionRetryQueue(context: Context) {
         // Erros definitivos (regra de negocio) travam a fila se não forem descartados.
         return (
             norm.contains("ordem de marcacao invalida") ||
+            norm.contains("ja bateu o ponto ha menos de 10 minutos") ||
             norm.contains("ja existe marcacao neste minuto") ||
             norm.contains("limite de") && norm.contains("marcacoes") ||
             norm.contains("fora da janela permitida") ||
