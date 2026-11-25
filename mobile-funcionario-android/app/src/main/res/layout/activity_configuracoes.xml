@@ -98,6 +98,16 @@
                     android:textColor="@color/mobile_text_secondary"
                     android:textSize="12sp" />
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnAlterarSenhaConfig"
+                    style="@style/Widget.App.Button.Outlined"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:layout_marginTop="10dp"
+                    android:text="Alterar senha"
+                    android:textColor="@color/mobile_semantic_info"
+                    app:strokeColor="@color/mobile_card_border" />
+
                 <com.google.android.material.switchmaterial.SwitchMaterial
                     android:id="@+id/switchNotificacoesConfig"
                     android:layout_width="match_parent"
@@ -159,57 +169,6 @@
                         android:textColor="@color/mobile_text_primary"
                         android:textSize="15sp" />
                 </RadioGroup>
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:orientation="vertical"
-                android:background="@drawable/bg_home_card_soft"
-                android:padding="14dp">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Canal para código de acesso"
-                    android:textColor="@color/mobile_text_primary"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
-
-                <RadioGroup
-                    android:id="@+id/rgCanalOtp"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:orientation="vertical">
-
-                    <RadioButton
-                        android:id="@+id/rbCanalWhatsapp"
-                        android:layout_width="match_parent"
-                        android:layout_height="52dp"
-                        android:gravity="center_vertical"
-                        android:text="WhatsApp"
-                        android:textColor="@color/mobile_text_primary"
-                        android:textSize="15sp" />
-
-                    <RadioButton
-                        android:id="@+id/rbCanalEmail"
-                        android:layout_width="match_parent"
-                        android:layout_height="52dp"
-                        android:gravity="center_vertical"
-                        android:text="E-mail"
-                        android:textColor="@color/mobile_text_primary"
-                        android:textSize="15sp" />
-                </RadioGroup>
-
-                <TextView
-                    android:id="@+id/tvCanalOtpStatus"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:textColor="@color/mobile_semantic_info"
-                    android:textSize="12sp" />
             </LinearLayout>
 
             <TextView

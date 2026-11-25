@@ -65,7 +65,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:text="Informe seu CPF para continuar"
+                android:text="Entre com seu CPF e sua senha"
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp" />
 
@@ -84,15 +84,30 @@
                     android:maxLength="14" />
             </com.google.android.material.textfield.TextInputLayout>
 
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.App.TextInputLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:hint="Senha">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etSenha"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textPassword"
+                    android:imeOptions="actionDone" />
+            </com.google.android.material.textfield.TextInputLayout>
+
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnEnviarCodigo"
+                android:id="@+id/btnEntrar"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:minHeight="0dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                android:text="Receber código no celular"
+                android:text="Entrar"
                 android:textSize="15sp"
                 android:textStyle="bold" />
 
@@ -106,73 +121,6 @@
                 android:textColor="@color/accent_blue"
                 app:strokeColor="@color/border"
                 android:visibility="gone" />
-
-            <!-- Seção OTP (oculta inicialmente) -->
-            <LinearLayout
-                android:id="@+id/layoutOtp"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <TextView
-                    android:id="@+id/tvOtpMsg"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="20dp"
-                    android:background="@drawable/bg_info_success"
-                    android:padding="14dp"
-                    android:textColor="@color/success"
-                    android:textSize="13sp" />
-
-                <com.google.android.material.textfield.TextInputLayout
-                    style="@style/Widget.App.TextInputLayout"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:hint="Código de verificação (6 dígitos)">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/etCodigo"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="numberPassword"
-                        android:maxLength="6" />
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnEntrar"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:minHeight="0dp"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
-                    android:text="Confirmar e entrar"
-                    android:textSize="15sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/tvReenviar"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:gravity="center"
-                    android:padding="8dp"
-                    android:text="Reenviar código"
-                    android:textColor="@color/accent_blue"
-                    android:textSize="13sp" />
-
-                <TextView
-                    android:id="@+id/tvDicaSeguranca"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:gravity="center"
-                    android:text="Dica: nunca compartilhe seu código de acesso."
-                    android:textColor="@color/text_hint"
-                    android:textSize="12sp" />
-            </LinearLayout>
 
             <ProgressBar
                 android:id="@+id/progressLogin"

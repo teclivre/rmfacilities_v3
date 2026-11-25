@@ -87,6 +87,9 @@
             android:name=".ConfiguracoesActivity"
             android:exported="false" />
         <activity
+            android:name=".PasswordChangeActivity"
+            android:exported="false" />
+        <activity
             android:name=".WebViewActivity"
             android:exported="false" />
         <activity

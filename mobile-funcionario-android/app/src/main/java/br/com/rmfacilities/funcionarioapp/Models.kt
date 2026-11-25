@@ -6,7 +6,13 @@ data class LoginResponse(
     val access_token: String? = null,
     val refresh_token: String? = null,
     val funcionario: FuncionarioResumo? = null,
+    val trocar_senha: Boolean = false,
     val http_status: Int? = null
+)
+
+data class PasswordChangeResponse(
+    val ok: Boolean = false,
+    val erro: String? = null
 )
 
 data class OtpStartResponse(

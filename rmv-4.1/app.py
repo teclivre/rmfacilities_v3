@@ -2151,7 +2151,7 @@ class PropostaComercial(db.Model):
     cliente_contato = db.Column(db.String(150))
     email_contato = db.Column(db.String(150))
     escopo_observacoes = db.Column(db.Text)
-    insalubridade = db.Column(db.String(80), default="20% Insalubridade")
+    insalubridade = db.Column(db.String(80), default="")
     remetente_id = db.Column(db.Integer, db.ForeignKey("empresa.id"), nullable=True)
     itens = db.Column(db.Text, default="[]")  # JSON
     total = db.Column(db.String(50))
@@ -2517,6 +2517,7 @@ class Funcionario(db.Model):
     areas = db.Column(db.Text, default="[]")
     data_nascimento = db.Column(db.Date, nullable=True)
     app_senha = db.Column(db.String(256))
+    app_trocar_senha = db.Column(db.Boolean, default=False)
     app_ativo = db.Column(db.Boolean, default=True)
     app_ultimo_acesso = db.Column(db.DateTime)
     app_otp_hash = db.Column(db.String(256))
@@ -2542,6 +2543,16 @@ class Funcionario(db.Model):
 
     def to_dict(self):
         d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        for campo_sensivel in (
+            "app_senha",
+            "app_otp_hash",
+            "app_otp_expira_em",
+            "app_otp_tentativas",
+            "app_stepup_hash",
+            "app_stepup_expira_em",
+            "app_stepup_tentativas",
+        ):
+            d.pop(campo_sensivel, None)
         try:
             d["areas"] = json.loads(self.areas or "[]")
         except Exception:
@@ -11529,6 +11540,27 @@ def api_cnpj(cnpj):
         return jsonify({"erro": "CNPJ inválido"}), 400
 
     now_ts = time.time()
+    fornecedor_local = Fornecedor.query.filter_by(cnpj=c).first()
+    if fornecedor_local:
+        payload = {
+            "nome": fornecedor_local.nome or "",
+            "razao": getattr(fornecedor_local, "razao", None) or fornecedor_local.nome or "",
+            "email": fornecedor_local.email or "",
+            "telefone": fornecedor_local.telefone or "",
+        }
+        _CNPJ_LOOKUP_CACHE[c] = {"exp": now_ts + TTL_OK, "status": 200, "data": payload}
+        return jsonify(payload)
+    empresa_local = Empresa.query.filter_by(cnpj=c).first()
+    if empresa_local:
+        payload = {
+            "nome": empresa_local.nome or "",
+            "razao": empresa_local.razao or empresa_local.nome or "",
+            "email": empresa_local.email or "",
+            "telefone": empresa_local.telefone or "",
+        }
+        _CNPJ_LOOKUP_CACHE[c] = {"exp": now_ts + TTL_OK, "status": 200, "data": payload}
+        return jsonify(payload)
+
     cache_entry = _CNPJ_LOOKUP_CACHE.get(c)
     if cache_entry and cache_entry.get("exp", 0) > now_ts:
         if cache_entry.get("status") == 200:
@@ -13758,6 +13790,48 @@ def api_criar_funcionario():
         return jsonify(
             {"erro": "Não foi possível salvar o funcionário (dados duplicados)."}
         ), 400
+
+
+@app.route("/api/funcionarios/<int:id>/app/senha", methods=["PUT"])
+@lr
+def api_funcionario_definir_senha_app(id):
+    f = db.get_or_404(Funcionario, id)
+    senha = (request.json or {}).get("senha") or ""
+    if not isinstance(senha, str) or len(senha) < 6:
+        return jsonify({"erro": "A senha deve ter ao menos 6 caracteres."}), 400
+    if len(norm_cpf(f.cpf or "")) != 11:
+        return jsonify({"erro": "Cadastre um CPF válido antes de definir a senha."}), 400
+    if (
+        f.app_ativo is False
+        or _status_norm(f.status) in ("demitido", "inativo")
+        or bool((f.data_demissao or "").strip())
+    ):
+        return jsonify({"erro": "O acesso ao app está desativado para este funcionário."}), 400
+
+    f.app_senha = pw_hash(senha)
+    f.app_trocar_senha = True
+    FuncionarioAppSessao.query.filter_by(
+        funcionario_id=f.id, revogado=False
+    ).update({"revogado": True}, synchronize_session=False)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception(
+            "Falha ao definir senha do app para funcionário %s", f.id
+        )
+        return jsonify({"erro": "Não foi possível salvar a senha do aplicativo."}), 500
+
+    audit_event(
+        "funcionario_app_senha_configurada",
+        "funcionario",
+        f.id,
+        "funcionario",
+        f.id,
+        True,
+        {"origem": "cadastro_funcionario"},
+    )
+    return jsonify({"ok": True})
 
 
 def _notificar_ferias_funcionario(funcionario):
@@ -18021,7 +18095,7 @@ def _gerar_proposta_comercial_pdf(
             {
                 "cod": "1",
                 "referencia": "Limpeza",
-                "funcao_item": f"AGENTES DE {(funcao or 'LIMPEZA').upper()} 44 HORAS SEMANAIS",
+                "funcao_item": f"AGENTES DE {(funcao or 'LIMPEZA').upper()} 40 HORAS SEMANAIS",
                 "valor_unit": "A definir",
                 "subtotal": "A definir",
             }
@@ -18312,15 +18386,17 @@ def _gerar_proposta_comercial_pdf(
         f"Todos os funcionários da {rem_nome} possuem os seguintes benefícios de acordo com a convenção coletiva;",
     ]:
         elems.append(Paragraph(txt, s_normal))
-    insalubridade_txt = (insalubridade or "20% Insalubridade").strip()
-    for txt in [
+    beneficios = [
         "Seguro de Vida em grupo;",
         "Vale Transporte;",
         "Vale Alimentação",
-        insalubridade_txt,
         "Uniforme;",
         "EPI's;",
-    ]:
+    ]
+    insalubridade_txt = (insalubridade or "").strip()
+    if insalubridade_txt:
+        beneficios.insert(3, insalubridade_txt)
+    for txt in beneficios:
         elems.append(Paragraph(f"• {txt}", s_h4))
     elems.append(Paragraph("Nr35 para trabalho em altura;", s_normal))
     elems.append(Spacer(1, 0.2 * cm))
@@ -18441,7 +18517,7 @@ def api_gerar_proposta_comercial():
     cliente = (d.get("cliente") or "").strip()
     email = (d.get("email") or "").strip()
     escopo_observacoes = (d.get("escopo_observacoes") or "").strip()
-    insalubridade = (d.get("insalubridade") or "20% Insalubridade").strip()
+    insalubridade = (d.get("insalubridade") or "").strip()
     itens = d.get("itens") or None
     tipo = (d.get("tipo") or "mensal").strip().lower()
 
@@ -19313,6 +19389,7 @@ def api_funcionario_app_acesso(id):
         if len(senha) < 6:
             return jsonify({"erro": "Senha do app deve ter ao menos 6 caracteres"}), 400
         f.app_senha = pw_hash(senha)
+        f.app_trocar_senha = True
     db.session.commit()
     audit_event(
         "funcionario_app_acesso_alterado",
@@ -19643,6 +19720,7 @@ def api_app_funcionario_login():
         {
             "ok": True,
             **sess,
+            "trocar_senha": bool(f.app_trocar_senha),
             "funcionario": {
                 "id": f.id,
                 "nome": f.nome,
@@ -22151,13 +22229,14 @@ def api_app_funcionario_me_senha():
     d = request.json or {}
     atual = d.get("senha_atual") or ""
     nova = d.get("nova_senha") or ""
-    if not atual or not nova:
-        return jsonify({"erro": "Senha atual e nova senha sao obrigatorias"}), 400
-    if not pw_check(f.app_senha, atual):
-        return jsonify({"erro": "Senha atual invalida"}), 401
     if len(nova) < 6:
         return jsonify({"erro": "Nova senha deve ter ao menos 6 caracteres"}), 400
+    if not bool(f.app_trocar_senha) and (not atual or not pw_check(f.app_senha, atual)):
+        return jsonify({"erro": "Senha atual invalida"}), 401
+    if bool(f.app_trocar_senha) and atual and not pw_check(f.app_senha, atual):
+        return jsonify({"erro": "Senha atual invalida"}), 401
     f.app_senha = pw_hash(nova)
+    f.app_trocar_senha = False
     db.session.commit()
     audit_event(
         "auth_app_troca_senha", "funcionario", f.id, "funcionario", f.id, True, {}
@@ -35140,11 +35219,24 @@ def _cnab240_pix_key_type(key):
     digits = re.sub(r"\D", "", raw)
     if "@" in raw:
         return "02"
-    if raw.isdigit() and len(raw) in (11, 14):
+    if re.fullmatch(r"\d{3}\.\d{3}\.\d{3}-\d{2}", raw):
         return "03"
     if raw.startswith("+") or len(digits) in (10, 11):
         return "01"
+    if len(digits) == 14:
+        return "03"
+    if raw.startswith("000201"):
+        return "05"
     return "04"
+
+
+def _cnab240_pix_info(pix_key):
+    key = (pix_key or "").strip()
+    if not key:
+        raise ValueError("informe a chave PIX cadastrada do favorecido")
+    if len(key) > 99:
+        raise ValueError("a chave PIX deve ter no máximo 99 caracteres")
+    return _cnab240_pix_key_type(key), key
 
 
 def _cnab240_lote_header(cnpj, empresa, agencia, conta, agencia_dv, conta_dv, lote, forma):
@@ -35180,10 +35272,10 @@ def _cnab240_conta_remessa(folha, empresa, data_pagamento):
         if func.empresa_id != empresa.id:
             raise ValueError(f"{func.nome} pertence a outra empresa e não pode entrar nesta remessa")
         conta_completa = bool(func.banco_codigo and func.banco_agencia and func.banco_conta and func.banco_tipo_conta)
-        if conta_completa:
-            grupos["conta"].append((item, func))
-        elif func.banco_pix:
+        if (func.banco_pix or "").strip():
             grupos["pix"].append((item, func))
+        elif conta_completa:
+            grupos["conta"].append((item, func))
         else:
             raise ValueError(f"cadastre agência e conta ou chave PIX de {func.nome}")
     total_lotes = 0
@@ -35232,7 +35324,7 @@ def _cnab240_conta_remessa(folha, empresa, data_pagamento):
                     (103, 117, func.cidade, False), (118, 125, func.cep, True), (126, 127, func.estado, False),
                 ]))
             else:
-                chave = func.banco_pix.strip()
+                tipo_chave, chave = _cnab240_pix_info(func.banco_pix)
                 registros.append(_cnab240_record([
                     (1, 3, "077", True), (4, 7, lote, True), (8, 8, "3", True), (9, 13, seq_a, True),
                     (14, 14, "A", False), (15, 17, "0", True), (18, 20, "000", True),
@@ -35242,7 +35334,7 @@ def _cnab240_conta_remessa(folha, empresa, data_pagamento):
                 ]))
                 registros.append(_cnab240_record([
                     (1, 3, "077", True), (4, 7, lote, True), (8, 8, "3", True), (9, 13, seq_b, True),
-                    (14, 14, "B", False), (15, 17, _cnab240_pix_key_type(chave), False),
+                    (14, 14, "B", False), (15, 17, tipo_chave, False),
                     (18, 18, "1" if len(cpf) == 11 else "2", True), (19, 32, cpf, True),
                     (128, 226, chave, False),
                 ]))
@@ -40511,7 +40603,7 @@ with app.app_context(), _StartupSchemaLock():
             "email_enviado_em DATETIME",
             "whatsapp_enviado_em DATETIME",
             "escopo_observacoes TEXT",
-            'insalubridade VARCHAR(80) DEFAULT "20% Insalubridade"',
+            'insalubridade VARCHAR(80) DEFAULT ""',
         ],
     )
     # Cria tabela contrato se não existir (ensure_cols não cria tabelas novas)
@@ -40575,6 +40667,7 @@ with app.app_context(), _StartupSchemaLock():
             "docs_admissao_ok BOOLEAN DEFAULT 0",
             "docs_admissao_obs TEXT",
             "app_senha VARCHAR(256)",
+            "app_trocar_senha BOOLEAN DEFAULT 0",
             "app_ativo BOOLEAN DEFAULT 1",
             "app_ultimo_acesso DATETIME",
             "app_otp_hash VARCHAR(256)",

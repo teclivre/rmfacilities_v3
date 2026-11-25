@@ -2,11 +2,9 @@ package br.com.rmfacilities.funcionarioapp
 
 import android.content.Intent
 import android.os.Bundle
-import android.os.CountDownTimer
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
-import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -16,7 +14,6 @@ import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
 import com.google.firebase.messaging.FirebaseMessaging
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -28,19 +25,13 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var api: ApiClient
 
     private lateinit var etCpf: TextInputEditText
-    private lateinit var etCodigo: TextInputEditText
-    private lateinit var btnEnviarCodigo: MaterialButton
+    private lateinit var etSenha: TextInputEditText
     private lateinit var btnBiometria: MaterialButton
     private lateinit var btnEntrar: MaterialButton
-    private lateinit var tvReenviar: TextView
-    private lateinit var layoutOtp: LinearLayout
-    private lateinit var tvOtpMsg: TextView
     private lateinit var progress: ProgressBar
     private lateinit var tvErro: TextView
 
-    private var cpfAtual = ""
     private var biometricPromptShown = false
-    private var otpCooldownTimer: CountDownTimer? = null
     private var silentAuthInProgress = false
     private var appUpdateDialogShown = false
     private var appVersionCheckInProgress = false
@@ -112,19 +103,20 @@ class LoginActivity : AppCompatActivity() {
         api = ApiClient(session)
 
         if (session.accessToken.isNotBlank()) {
-            goHomeOrDeepLink()
+            if (session.mustChangePassword) {
+                startActivity(Intent(this, PasswordChangeActivity::class.java))
+                finish()
+            } else {
+                goHomeOrDeepLink()
+            }
             return
         }
         checkAppVersionIfNeeded()
 
         etCpf = findViewById(R.id.etCpf)
-        etCodigo = findViewById(R.id.etCodigo)
-        btnEnviarCodigo = findViewById(R.id.btnEnviarCodigo)
+        etSenha = findViewById(R.id.etSenha)
         btnBiometria = findViewById(R.id.btnBiometria)
         btnEntrar = findViewById(R.id.btnEntrar)
-        tvReenviar = findViewById(R.id.tvReenviar)
-        layoutOtp = findViewById(R.id.layoutOtp)
-        tvOtpMsg = findViewById(R.id.tvOtpMsg)
         progress = findViewById(R.id.progressLogin)
         tvErro = findViewById(R.id.tvErro)
         val tvPrivacidade: TextView = findViewById(R.id.tvPrivacidade)
@@ -143,10 +135,8 @@ class LoginActivity : AppCompatActivity() {
             tvErro.text = "Armazenamento seguro indispon\u00edvel. Seus dados foram apagados. Fa\u00e7a login novamente."
         }
 
-        btnEnviarCodigo.setOnClickListener { enviarCodigo() }
         btnBiometria.setOnClickListener { autenticarComBiometria() }
-        btnEntrar.setOnClickListener { confirmarOtp() }
-        tvReenviar.setOnClickListener { enviarCodigo() }
+        btnEntrar.setOnClickListener { entrarComSenha() }
 
         // Máscara CPF: 000.000.000-00
         etCpf.addTextChangedListener(object : TextWatcher {
@@ -242,80 +232,20 @@ class LoginActivity : AppCompatActivity() {
         }
     }
 
-    private fun enviarCodigo() {
+    private fun entrarComSenha() {
         val cpf = etCpf.text?.toString()?.replace("\\D".toRegex(), "").orEmpty()
-
+        val senha = etSenha.text?.toString().orEmpty()
         if (cpf.length != 11) { showErro("Informe o CPF com 11 dígitos."); return }
-        if (!btnEnviarCodigo.isEnabled) return  // evita duplo clique
-
-        cpfAtual = cpf
+        if (senha.isBlank()) { showErro("Informe sua senha."); return }
         session.lastLoginCpf = cpf
         setLoading(true)
         hideErro()
 
         lifecycleScope.launch(Dispatchers.IO) {
             val resp = try {
-                api.iniciarOtp(cpf)
+                api.login(cpf, senha)
             } catch (e: Exception) {
-                TelemetryLogger.logLoginFailure(session.apiBaseUrl, cpf, "otp_iniciar", e.message, throwable = e)
-                OtpStartResponse(ok = false, erro = "Erro de conexão: ${e.message}")
-            }
-            withContext(Dispatchers.Main) {
-                setLoading(false)
-                if (resp.ok) {
-                    tvOtpMsg.text = resp.mensagem ?: "Código enviado! Verifique seu celular."
-                    layoutOtp.visibility = View.VISIBLE
-                    layoutOtp.alpha = 0f
-                    layoutOtp.translationY = 24f
-                    layoutOtp.animate().alpha(1f).translationY(0f).setDuration(300).start()
-                    btnEnviarCodigo.text = "Reenviar código"
-                    etCodigo.requestFocus()
-                    iniciarCooldownReenvio()
-                    hideErro()
-                } else {
-                    showErro(resp.erro ?: "Erro ao enviar código.")
-                }
-            }
-        }
-    }
-
-    private fun iniciarCooldownReenvio() {
-        otpCooldownTimer?.cancel()
-        tvReenviar.isEnabled = false
-        btnEnviarCodigo.isEnabled = false
-        otpCooldownTimer = object : CountDownTimer(45_000L, 1_000L) {
-            override fun onTick(ms: Long) {
-                val s = ms / 1000
-                tvReenviar.text = "Reenviar em ${String.format("%02d", s)}s"
-            }
-
-            override fun onFinish() {
-                tvReenviar.text = "Reenviar código"
-                tvReenviar.isEnabled = true
-                btnEnviarCodigo.isEnabled = true
-                otpCooldownTimer = null
-            }
-        }.start()
-    }
-
-    private fun confirmarOtp() {
-        if (!btnEntrar.isEnabled) return  // evita duplo clique
-        val cpf = cpfAtual.ifBlank {
-            etCpf.text?.toString()?.replace("\\D".toRegex(), "").orEmpty()
-        }
-        val codigo = etCodigo.text?.toString()?.replace("\\D".toRegex(), "").orEmpty()
-
-        if (cpf.length != 11) { showErro("CPF inválido."); return }
-        if (codigo.length != 6) { showErro("O código tem 6 dígitos."); return }
-
-        setLoading(true)
-        hideErro()
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            val resp = try {
-                api.confirmarOtp(cpf, codigo)
-            } catch (e: Exception) {
-                TelemetryLogger.logLoginFailure(session.apiBaseUrl, cpf, "otp_confirmar", e.message, throwable = e)
+                TelemetryLogger.logLoginFailure(session.apiBaseUrl, cpf, "login_senha", e.message, throwable = e)
                 LoginResponse(ok = false, erro = "Erro de conexão: ${e.message}")
             }
             withContext(Dispatchers.Main) {
@@ -323,37 +253,40 @@ class LoginActivity : AppCompatActivity() {
                 if (resp.ok && !resp.access_token.isNullOrBlank()) {
                     session.accessToken = resp.access_token
                     session.refreshToken = resp.refresh_token ?: ""
-                    session.lastLoginCpf = cpf
-                    session.markLoginSuccess(label = android.os.Build.MODEL)
-                    if (session.biometricCpf.isBlank()) {
-                        session.biometricCpf = cpf
+                    if (resp.trocar_senha) {
+                        session.mustChangePassword = true
+                        startActivity(Intent(this@LoginActivity, PasswordChangeActivity::class.java))
+                        finish()
+                    } else {
+                        concluirLogin(cpf)
                     }
-                    if (!session.biometricEnabled) {
-                        perguntarAtivarBiometria(cpf)
-                    }
-                    // Registrar token FCM imediatamente após login
-                    FirebaseMessaging.getInstance().token.addOnSuccessListener { fcmToken ->
-                        lifecycleScope.launch(Dispatchers.IO) {
-                            try { ApiClient(session).registrarPushToken(fcmToken) } catch (_: Exception) {}
-                        }
-                    }
-                    goHomeOrDeepLink()
                 } else {
-                    showErro(resp.erro ?: "Código inválido ou expirado.")
+                    showErro(resp.erro ?: "CPF ou senha inválidos.")
                 }
             }
         }
     }
 
+    private fun concluirLogin(cpf: String) {
+        session.mustChangePassword = false
+        session.lastLoginCpf = cpf
+        session.markLoginSuccess(label = android.os.Build.MODEL)
+        if (session.biometricCpf.isBlank()) {
+            session.biometricCpf = cpf
+        }
+        if (!session.biometricEnabled) {
+            perguntarAtivarBiometria(cpf)
+        }
+        FirebaseMessaging.getInstance().token.addOnSuccessListener { fcmToken ->
+            lifecycleScope.launch(Dispatchers.IO) {
+                try { api.registrarPushToken(fcmToken) } catch (_: Exception) {}
+            }
+        }
+        goHomeOrDeepLink()
+    }
+
     private fun setLoading(loading: Boolean) {
         progress.visibility = if (loading) View.VISIBLE else View.GONE
-        if (loading) {
-            btnEnviarCodigo.isEnabled = false
-            tvReenviar.isEnabled = false
-        } else if (otpCooldownTimer == null) {
-            btnEnviarCodigo.isEnabled = true
-            tvReenviar.isEnabled = true
-        }
         btnBiometria.isEnabled = !loading
         btnEntrar.isEnabled = !loading
     }
@@ -412,13 +345,13 @@ class LoginActivity : AppCompatActivity() {
     private fun loginComBiometria() {
         val cpf = session.biometricCpf
         if (cpf.length != 11) {
-            showErro("CPF biométrico não configurado. Faça login com código uma vez.")
+            showErro("CPF biométrico não configurado. Entre com CPF e senha.")
             return
         }
         etCpf.setText(cpf)
 
         if (session.refreshToken.isBlank()) {
-            enviarCodigo()
+            showErro("A sessão biométrica expirou. Entre com CPF e senha.")
             return
         }
 
@@ -444,7 +377,7 @@ class LoginActivity : AppCompatActivity() {
                 } else {
                     if (resp.http_status == 401 || resp.http_status == 403) {
                         session.refreshToken = ""
-                        enviarCodigo()
+                        showErro("A sessão biométrica expirou. Entre com CPF e senha.")
                     } else {
                         showErro(resp.erro ?: "Não foi possível renovar a sessão. Tente novamente.")
                     }
@@ -501,7 +434,5 @@ class LoginActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        otpCooldownTimer?.cancel()
-        otpCooldownTimer = null
     }
 }

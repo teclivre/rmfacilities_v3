@@ -34,9 +34,7 @@ class ConfiguracoesActivity : BaseActivity() {
         val switchBiometria = findViewById<SwitchMaterial>(R.id.switchBiometriaConfig)
         val switchNotificacoes = findViewById<SwitchMaterial>(R.id.switchNotificacoesConfig)
         val tvBiometriaStatus = findViewById<TextView>(R.id.tvBiometriaStatusConfig)
-        val rgCanal = findViewById<RadioGroup>(R.id.rgCanalOtp)
         val rgTema = findViewById<RadioGroup>(R.id.rgTemaApp)
-        val tvCanalStatus = findViewById<TextView>(R.id.tvCanalOtpStatus)
         val tvFeedback = findViewById<TextView>(R.id.tvFeedbackConfig)
 
         findViewById<TextView>(R.id.btnVoltar).setOnClickListener { finish() }
@@ -47,12 +45,6 @@ class ConfiguracoesActivity : BaseActivity() {
         internalBiometricChange = false
 
         tvBiometriaStatus.text = if (session.biometricEnabled) "Biometria ativa" else "Biometria desativada"
-
-        // Selecionar canal atual
-        when (session.canalOtp) {
-            "email" -> rgCanal.check(R.id.rbCanalEmail)
-            else -> rgCanal.check(R.id.rbCanalWhatsapp)
-        }
 
         internalThemeChange = true
         when (AppThemeManager.getMode(this)) {
@@ -89,36 +81,9 @@ class ConfiguracoesActivity : BaseActivity() {
             )
         }
 
-        rgCanal.setOnCheckedChangeListener { _, checkedId ->
+        findViewById<MaterialButton>(R.id.btnAlterarSenhaConfig).setOnClickListener {
             window.decorView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            val canal = when (checkedId) {
-                R.id.rbCanalEmail -> "email"
-                else -> "whatsapp"
-            }
-            session.canalOtp = canal
-            tvCanalStatus.text = "Salvando..."
-            tvCanalStatus.setTextColor(ContextCompat.getColor(this, R.color.mobile_semantic_info))
-            lifecycleScope.launch(Dispatchers.IO) {
-                val resp = try {
-                    api.salvarPreferenciaCanalOtp(canal)
-                } catch (e: Exception) {
-                    null
-                }
-                withContext(Dispatchers.Main) {
-                    if (resp?.ok == true) {
-                        val label = mapOf("whatsapp" to "WhatsApp", "email" to "E-mail")
-                        tvCanalStatus.text = "Preferência salva: ${label[canal]}"
-                        tvCanalStatus.setTextColor(ContextCompat.getColor(this@ConfiguracoesActivity, R.color.mobile_semantic_success))
-                        tvFeedback.text = "Canal de código atualizado com sucesso."
-                        tvFeedback.setTextColor(ContextCompat.getColor(this@ConfiguracoesActivity, R.color.mobile_semantic_success))
-                    } else {
-                        tvCanalStatus.text = resp?.erro ?: "Salvo localmente (sincronize ao entrar)"
-                        tvCanalStatus.setTextColor(ContextCompat.getColor(this@ConfiguracoesActivity, R.color.mobile_semantic_pending))
-                        tvFeedback.text = "Preferência salva localmente e será sincronizada depois."
-                        tvFeedback.setTextColor(ContextCompat.getColor(this@ConfiguracoesActivity, R.color.mobile_semantic_pending))
-                    }
-                }
-            }
+            startActivity(Intent(this, PasswordChangeActivity::class.java))
         }
 
         rgTema.setOnCheckedChangeListener { _, checkedId ->

@@ -277,6 +277,67 @@ class ApiClient(private val session: SessionManager) {
         return resolved
     }
 
+    fun login(cpf: String, senha: String): LoginResponse {
+        val payload = gson.toJson(mapOf("cpf" to cpf, "senha" to senha))
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/login"))
+            .post(payload.toRequestBody("application/json".toMediaType()))
+            .addHeader("Content-Type", "application/json")
+            .build()
+
+        refreshHttp.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                val erro = parseErro(raw, "CPF ou senha inválidos.")
+                TelemetryLogger.logLoginFailure(
+                    session.apiBaseUrl,
+                    cpf,
+                    "login_senha",
+                    erro,
+                    resp.code
+                )
+                return LoginResponse(ok = false, erro = erro, http_status = resp.code)
+            }
+            return try {
+                gson.fromJson(raw, LoginResponse::class.java)
+            } catch (_: Exception) {
+                TelemetryLogger.logLoginFailure(
+                    session.apiBaseUrl,
+                    cpf,
+                    "login_senha",
+                    "Resposta inesperada do servidor.",
+                    resp.code
+                )
+                LoginResponse(ok = false, erro = "Resposta inesperada do servidor.")
+            }
+        }
+    }
+
+    fun alterarSenha(senhaAtual: String, novaSenha: String): PasswordChangeResponse {
+        val payload = gson.toJson(
+            mapOf("senha_atual" to senhaAtual, "nova_senha" to novaSenha)
+        )
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/me/senha"))
+            .put(payload.toRequestBody("application/json".toMediaType()))
+            .addHeader("Authorization", "Bearer ${session.accessToken}")
+            .addHeader("Content-Type", "application/json")
+            .build()
+
+        http.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            return try {
+                gson.fromJson(raw, PasswordChangeResponse::class.java)
+                    .copy(ok = resp.isSuccessful)
+            } catch (_: Exception) {
+                PasswordChangeResponse(
+                    ok = false,
+                    erro = if (resp.isSuccessful) null else "Não foi possível alterar a senha."
+                )
+            }
+        }
+    }
+
     fun iniciarOtp(cpf: String): OtpStartResponse {
         val payload = gson.toJson(mapOf("cpf" to cpf, "canal" to session.canalOtp))
         val req = Request.Builder()

@@ -42,6 +42,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import android.os.Handler
 import android.os.Looper
 import java.text.SimpleDateFormat
+import java.text.Normalizer
 import java.util.Date
 import java.util.Locale
 import kotlin.coroutines.resume
@@ -456,7 +457,11 @@ class PontoActivity : BaseActivity() {
                     HapticFeedbackConstants.LONG_PRESS
                 btnPontoQrCode.performHapticFeedback(hapticError)
                 val msg = (resp.erro ?: "Falha ao registrar ponto via QR.").take(140)
-                updateStatus(msg, R.color.mobile_semantic_pending)
+                if (isPontoDuplicado(resp.erro)) {
+                    mostrarAvisoPontoDuplicado(resp.erro)
+                } else {
+                    updateStatus(msg, R.color.mobile_semantic_pending)
+                }
             }
         }
     }
@@ -527,22 +532,46 @@ class PontoActivity : BaseActivity() {
                 flashView.animate().alpha(0f).setDuration(500).withEndAction { root.removeView(flashView) }.start()
                 updateStatus("Ponto registrado com localização.", R.color.mobile_semantic_success)
             } else {
-                val hora = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                val tipoLabel = tvProximoTipo.text?.toString()?.removePrefix("Próxima marcação: ") ?: "Marcação"
-                localPendentes.add(LocalMarcacao(hora, tipoLabel, LocalStatus.ERROR))
-                renderMarcacoesComLocais(null)
-                retryQueue.enqueuePonto(loc.latitude, loc.longitude, loc.accuracy, System.currentTimeMillis())
                 @Suppress("DEPRECATION")
                 val hapticError = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
                     HapticFeedbackConstants.REJECT
                 else
                     HapticFeedbackConstants.LONG_PRESS
                 btnMarcarPonto.performHapticFeedback(hapticError)
-                val erroCurto = (resp.erro ?: "Falha ao enviar ponto.").take(140)
-                updateStatus("$erroCurto Ponto salvo — será sincronizado automaticamente.", R.color.mobile_semantic_pending)
-                atualizarBadgePendentes()
+                if (isPontoDuplicado(resp.erro)) {
+                    mostrarAvisoPontoDuplicado(resp.erro)
+                } else {
+                    val hora = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                    val tipoLabel = tvProximoTipo.text?.toString()?.removePrefix("Próxima marcação: ") ?: "Marcação"
+                    localPendentes.add(LocalMarcacao(hora, tipoLabel, LocalStatus.ERROR))
+                    renderMarcacoesComLocais(null)
+                    retryQueue.enqueuePonto(loc.latitude, loc.longitude, loc.accuracy, System.currentTimeMillis())
+                    val erroCurto = (resp.erro ?: "Falha ao enviar ponto.").take(140)
+                    updateStatus("$erroCurto Ponto salvo — será sincronizado automaticamente.", R.color.mobile_semantic_pending)
+                    atualizarBadgePendentes()
+                }
             }
         }
+    }
+
+    private fun isPontoDuplicado(erro: String?): Boolean {
+        if (erro.isNullOrBlank()) return false
+        val normalizado = Normalizer.normalize(erro.lowercase(Locale.ROOT), Normalizer.Form.NFD)
+            .replace("\\p{Mn}+".toRegex(), "")
+        return normalizado.contains("ja bateu o ponto ha menos de 10 minutos") ||
+            normalizado.contains("ja existe marcacao neste minuto")
+    }
+
+    private fun mostrarAvisoPontoDuplicado(erro: String?) {
+        updateStatus("Ponto duplicado. Aguarde 10 minutos entre as batidas.", R.color.mobile_semantic_pending)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("Ponto duplicado")
+            .setMessage(
+                erro?.takeIf { it.isNotBlank() }
+                    ?: "Já existe uma batida recente. Aguarde 10 minutos antes de bater o ponto novamente."
+            )
+            .setPositiveButton("Entendi", null)
+            .show()
     }
 
     // ── Cache de marcações (SharedPreferences) ──────────────────────────────────

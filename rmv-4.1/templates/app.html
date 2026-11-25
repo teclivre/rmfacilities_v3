@@ -3761,7 +3761,7 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
             <div class="f">
               <label>Texto de insalubridade</label>
-              <input id="pc-insalubridade" type="text" value="20% Insalubridade" placeholder="Ex: 40% Insalubridade" style="width:100%">
+              <input id="pc-insalubridade" type="text" placeholder="Opcional. Ex: 20% Insalubridade" style="width:100%">
             </div>
           </div>
 
@@ -3808,7 +3808,7 @@ document.addEventListener('DOMContentLoaded',()=>{
                   <tr>
                     <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="1" style="width:38px;text-align:center"></td>
                     <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="Limpeza" placeholder="Referência" style="width:98px"></td>
-                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="AGENTES DE LIMPEZA 44 HORAS SEMANAIS" placeholder="Descrição do serviço" style="width:100%"></td>
+                    <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="AGENTES DE LIMPEZA 40 HORAS SEMANAIS" placeholder="Descrição do serviço" style="width:100%"></td>
                     <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="number" min="1" value="1" style="width:52px;text-align:center" oninput="pcRecalcRow(this.closest('tr'))"></td>
                     <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="0,00" style="width:100px;text-align:right" oninput="pcRecalcRow(this.closest('tr'))"></td>
                     <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" readonly tabindex="-1" placeholder="0,00" style="width:100px;text-align:right;background:var(--azul-cc);cursor:default"></td>
@@ -4678,6 +4678,17 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="f"><label>Status</label><select id="fstatus"><option>Ativo</option><option>Férias</option><option>Afastado</option><option>Aviso prévio</option><option>Demitido</option><option>Inativo</option></select></div>
         <div class="f"><label>Data de demissão <span style="font-size:10px;color:var(--verm);font-weight:400">(preencher ao demitir)</span></label><input id="fdemissao" type="date" onchange="rhFuncionarioAoAlterarDemissao()"><div style="font-size:11px;color:var(--verm);margin-top:3px" id="fdemissao-st"></div></div>
       </div>
+      <div class="g2">
+        <div class="f">
+          <label>Senha de acesso ao aplicativo</label>
+          <input id="fsenha-app" type="password" autocomplete="new-password" placeholder="Mínimo de 6 caracteres">
+          <div class="hint">O usuário para entrar no aplicativo é o CPF do funcionário. Em edições, deixe em branco para manter a senha atual.</div>
+        </div>
+        <div class="f">
+          <label>Confirmar senha do aplicativo</label>
+          <input id="fsenha-app-confirmar" type="password" autocomplete="new-password">
+        </div>
+      </div>
       <div class="g3">
         <div class="f"><label>Início das férias</label><input id="fferias-inicio" type="date" onchange="rhFuncionarioAoAlterarFerias()"></div>
         <div class="f">
@@ -4825,6 +4836,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       </div>
       <div class="brow" style="margin-top:6px">
         <button class="btn b-ci" onclick="closeModal('func')">Cancelar</button>
+        <button class="btn b-az" type="button" onclick="gerarAcessoAppFuncionario()">🔐 Gerar acesso ao app e enviar WhatsApp</button>
         <span style="font-size:12px;color:var(--text-muted);align-self:center">Auto save ativo nesta tela</span>
       </div>
     </div>
@@ -8267,6 +8279,7 @@ let _rhFuncAutoInflight=false;
 let _rhFuncAutoHydrating=false;
 let _rhFuncAutoLastHash='';
 let _rhFuncAutoBound=false;
+let _rhFuncNovaCredencialObrigatoria=false;
 let _rhFuncEscalaAtual={escala_id:'',data_inicio:'',data_fim:''};
 
 function rhHojeISO(){
@@ -8510,7 +8523,7 @@ function rhFuncionarioBindAutoSave(){
   if(!root) return;
   _rhFuncAutoBound=true;
   root.querySelectorAll('input,select,textarea').forEach(el=>{
-    if(el.id==='fid' || el.type==='file') return;
+    if(el.id==='fid' || el.id==='fsenha-app' || el.id==='fsenha-app-confirmar' || el.type==='file') return;
     el.addEventListener('input',rhFuncionarioAutoSaveSchedule);
     el.addEventListener('change',rhFuncionarioAutoSaveSchedule);
   });
@@ -8677,10 +8690,11 @@ async function rhFuncionarioAutoSaveFlush(force=false,closeAfter=false){
 
 function openModalFunc(modo,id){
   _rhFuncAutoHydrating=true;
+  _rhFuncNovaCredencialObrigatoria=modo!=='editar'||!id;
   if(_rhFuncAutoTimer){ clearTimeout(_rhFuncAutoTimer); _rhFuncAutoTimer=null; }
   _rhFuncAutoLastHash='';
   document.getElementById('fid').value='';
-  ['fre','fnome','fcpf','femail','ftel','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fferias-inicio','fferias-fim','fferias-obs','fposto','fescala','fescala-data-ini','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fnascimento','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
+  ['fre','fnome','fcpf','femail','ftel','fsenha-app','fsenha-app-confirmar','fcargo','ffuncao','fcbo','fsetor','fadmissao','ftipo-contrato','fjornada','fferias-inicio','fferias-fim','fferias-obs','fposto','fescala','fescala-data-ini','fbanco-busca','fbanco-codigo','fbanco-nome','fbanco-agencia','fbanco-conta','fbanco-pix','fcep','fend','fnum-end','fcompl','fbairro','fcidade','festado','frg','forgao','fnascimento','fpis','fctps','ftitulo-eleitor','freservista','fcnh','fexame-adm','fdocs-obs','fobs'].forEach(k=>document.getElementById(k).value='');
   document.getElementById('fbanco-tipo').value='';
   document.getElementById('fddi').value='55';
   const st=document.getElementById('fcpf-st'); if(st){st.style.display='none';st.textContent='';}
@@ -9020,8 +9034,79 @@ async function buscarFuncionarioPorCPF(){
   if(st){ st.style.color='var(--verm)'; st.textContent='Falha ao consultar CPF em fonte externa.'; }
 }
 
+async function gerarAcessoAppFuncionario(){
+ const nome=(document.getElementById('fnome')?.value||'').trim();
+ const cpf=(document.getElementById('fcpf')?.value||'').replace(/\D/g,'');
+ const telefone=(document.getElementById('ftel')?.value||'').replace(/\D/g,'');
+ if(!nome || cpf.length!==11){
+   alert('Informe nome e CPF válidos antes de gerar o acesso ao aplicativo.');
+   return;
+ }
+ if(!telefone){
+   alert('Informe o telefone do funcionário antes de enviar o acesso por WhatsApp.');
+   return;
+ }
+ if(!_rhFuncNovaCredencialObrigatoria){
+   const confirmarEdicao=confirm('Gerar uma nova senha temporária substituirá a senha atual deste funcionário. Deseja continuar?');
+   if(!confirmarEdicao) return;
+ }
+ const chars='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+ let senha='';
+ for(let i=0;i<10;i++) senha+=chars[Math.floor(Math.random()*chars.length)];
+ document.getElementById('fsenha-app').value=senha;
+ document.getElementById('fsenha-app-confirmar').value=senha;
+ await salvarFuncionario();
+ const numero=telefone.startsWith('55')?telefone:`55${telefone}`;
+ const texto=`Olá, ${nome}! Seu acesso ao aplicativo RM Facilities foi criado.\\nCPF: ${cpf}\\nSenha temporária: ${senha}\\nAo entrar, você deverá criar uma nova senha.`;
+ try{
+   const r=await api('/api/whatsapp/send','POST',{numero,texto,nome,tipo:'principal'});
+   if(r?.erro) throw new Error(r.erro);
+   alert('Acesso configurado e instruções enviadas por WhatsApp.');
+ }catch(e){
+   alert(`Acesso configurado, mas o WhatsApp não pôde ser enviado: ${e.message||'erro inesperado.'}`);
+ }
+}
+
 async function salvarFuncionario(){
-  await rhFuncionarioAutoSaveFlush(true,true);
+  const senha=document.getElementById('fsenha-app').value;
+  const confirmar=document.getElementById('fsenha-app-confirmar').value;
+  const cpf=(document.getElementById('fcpf').value||'').replace(/\D/g,'');
+  if(_rhFuncNovaCredencialObrigatoria && !senha){
+    alert('Defina a senha de acesso ao aplicativo para concluir o cadastro.');
+    return;
+  }
+  if((senha || confirmar) && senha.length<6){
+    alert('A senha do aplicativo deve ter ao menos 6 caracteres.');
+    return;
+  }
+  if(senha!==confirmar && (senha || confirmar)){
+    alert('A confirmação da senha não confere.');
+    return;
+  }
+  if(senha && cpf.length!==11){
+    alert('Informe um CPF válido antes de definir a senha de acesso ao aplicativo.');
+    return;
+  }
+  const salvo=await rhFuncionarioAutoSaveFlush(true,false);
+  if(!salvo) return;
+  const id=parseInt(document.getElementById('fid').value||0,10)||0;
+  if(!id){ alert('Não foi possível salvar o cadastro do funcionário.'); return; }
+  if(senha){
+    try{
+      const r=await api(`/api/funcionarios/${id}/app/senha`,'PUT',{senha});
+      if(r?.erro) throw new Error(r.erro);
+      showSt('st-rh','Cadastro salvo e senha de acesso ao aplicativo configurada.',false);
+    }catch(e){
+      alert(`Cadastro salvo, mas não foi possível configurar a senha: ${e.message||'erro inesperado.'}`);
+      return;
+    }
+  }else{
+    showSt('st-rh','Cadastro do funcionário salvo.',false);
+  }
+  _rhFuncNovaCredencialObrigatoria=false;
+  document.getElementById('fsenha-app').value='';
+  document.getElementById('fsenha-app-confirmar').value='';
+  closeModal('func',true);
 }
 
 function rhJornadaFmtMin(min){
@@ -11385,7 +11470,7 @@ function pcLimparFormulario() {
   const pcTipo = document.getElementById('pc-tipo');
   if (pcTipo) pcTipo.value = 'mensal';
   const pcIns = document.getElementById('pc-insalubridade');
-  if (pcIns) pcIns.value = '20% Insalubridade';
+  if (pcIns) pcIns.value = '';
 
   const cliSel = document.getElementById('pc-cli-sel');
   if (cliSel) cliSel.style.display = 'none';
@@ -11408,7 +11493,7 @@ function pcLimparFormulario() {
       <tr>
         <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="1" style="width:38px;text-align:center"></td>
         <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="Limpeza" placeholder="Referência" style="width:98px"></td>
-        <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="AGENTES DE LIMPEZA 44 HORAS SEMANAIS" placeholder="Descrição do serviço" style="width:100%"></td>
+        <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" value="AGENTES DE LIMPEZA 40 HORAS SEMANAIS" placeholder="Descrição do serviço" style="width:100%"></td>
         <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="number" min="1" value="1" style="width:52px;text-align:center" oninput="pcRecalcRow(this.closest('tr'))"></td>
         <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" placeholder="0,00" style="width:100px;text-align:right" oninput="pcRecalcRow(this.closest('tr'))"></td>
         <td style="padding:4px 6px;border-bottom:1px solid var(--borda)"><input type="text" readonly tabindex="-1" placeholder="0,00" style="width:100px;text-align:right;background:var(--azul-cc);cursor:default"></td>
@@ -11430,8 +11515,6 @@ async function docsAbrirProposta() {
   if (pcData && !pcData.value) {
     pcData.value = new Date().toISOString().split('T')[0];
   }
-  const pcIns = document.getElementById('pc-insalubridade');
-  if (pcIns && !pcIns.value.trim()) pcIns.value = '20% Insalubridade';
   // Garante que os clientes estão carregados para o autocomplete de destinatária
   if (!Array.isArray(todos) || !todos.length) todos = await api('/api/clientes');
   // Carrega empresas remetentes
@@ -12076,7 +12159,7 @@ function previaProposta() {
   const dataVal = document.getElementById('pc-data').value;
   const cliente = document.getElementById('pc-cliente').value.trim();
   const email = document.getElementById('pc-email').value.trim();
-  const insalubridade = (document.getElementById('pc-insalubridade')?.value || '20% Insalubridade').trim() || '20% Insalubridade';
+  const insalubridade = (document.getElementById('pc-insalubridade')?.value || '').trim();
   const escopoObs = document.getElementById('pc-escopo-obs')?.value?.trim() || '';
   const itens = pcGetItens();
   const dataFmt = dataVal ? new Date(dataVal+'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
@@ -12169,7 +12252,7 @@ table.custo .total-row td{font-weight:700;background:#f0f4f8;border-top:2px soli
   <p class="body-text">Proposta de acordo com escopo fornecido contemplando os seguinte benefícios aos colaboradores;</p>
   <p class="body-text">Os valores informados contemplam todos os benefícios, treinamentos, administração e supervisão dos serviços e/ou funcionários e uniformes para o andamento da operação. Estão incluídos também todos os custos como, encargos sociais, trabalhistas e fiscais de responsabilidade da ${_escHtml(remNome)};</p>
   <p class="body-text">PPRA – Programa de Prevenção e Riscos Ambientais;<br>PCMSO – Programa de Controle Médico e Saúde Ocupacional;<br>Todos os funcionários da ${_escHtml(remNome)} possuem os seguintes benefícios de acordo com a convenção coletiva;</p>
-  ${['Seguro de Vida em grupo;','Vale Transporte;','Vale Alimentação',insalubridade,'Uniforme;',"EPI's;"].map(t=>`<div class="bullet">• ${_escHtml(t)}</div>`).join('')}
+  ${['Seguro de Vida em grupo;','Vale Transporte;','Vale Alimentação',insalubridade,'Uniforme;',"EPI's;"].filter(Boolean).map(t=>`<div class="bullet">• ${_escHtml(t)}</div>`).join('')}
   <p class="body-text">Nr35 para trabalho em altura;</p>
   <p class="body-text">Todos os funcionários ${_escHtml(remNome)} devem estar identificados através de crachás, devidamente uniformizados e munidos de EPI´s;</p>
 
@@ -12218,7 +12301,7 @@ async function gerarProposta() {
   const dataFmt = dataVal ? new Date(dataVal+'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
   const cliente = document.getElementById('pc-cliente').value.trim();
   const email   = document.getElementById('pc-email').value.trim();
-  const insalubridade = (document.getElementById('pc-insalubridade')?.value || '20% Insalubridade').trim() || '20% Insalubridade';
+  const insalubridade = (document.getElementById('pc-insalubridade')?.value || '').trim();
   const escopoObservacoes = document.getElementById('pc-escopo-obs')?.value?.trim() || '';
   const itens   = pcGetItens();
   const remetenteId = _pcEmpresaRemSel ? _pcEmpresaRemSel.id : null;

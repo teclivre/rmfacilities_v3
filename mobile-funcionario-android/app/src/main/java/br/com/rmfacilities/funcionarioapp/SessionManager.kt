@@ -71,6 +71,10 @@ class SessionManager(private val context: Context) {
         get() = prefs.getString("refresh_token", "") ?: ""
         set(value) = prefs.edit().putString("refresh_token", value).apply()
 
+    var mustChangePassword: Boolean
+        get() = prefs.getBoolean("must_change_password", false)
+        set(value) = prefs.edit().putBoolean("must_change_password", value).apply()
+
     var biometricEnabled: Boolean
         get() = prefs.getBoolean("biometric_enabled", false)
         set(value) = prefs.edit().putBoolean("biometric_enabled", value).apply()
