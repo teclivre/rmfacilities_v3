@@ -19833,6 +19833,84 @@ def api_app_funcionario_auth_iniciar():
     )
 
 
+@app.route("/api/app/funcionario/auth/esqueci-senha", methods=["POST"])
+@_limiter.limit("5 per hour")
+def api_app_funcionario_auth_esqueci_senha():
+    d = request.json or {}
+    cpf = norm_cpf(d.get("cpf"))
+    telefone = wa_norm_number(d.get("telefone"))
+    resposta = {
+        "ok": True,
+        "mensagem": (
+            "Se os dados conferirem, você receberá a senha temporária "
+            "no WhatsApp cadastrado."
+        ),
+    }
+
+    if len(cpf) != 11 or not wa_is_valid_number(telefone):
+        return jsonify(
+            {"erro": "Informe um CPF válido e o telefone cadastrado com DDD."}
+        ), 400
+
+    if auth_blocked("app_password_reset", cpf, request.remote_addr or ""):
+        return jsonify(resposta)
+
+    f = Funcionario.query.filter_by(cpf=cpf).first()
+    telefone_cadastrado = wa_norm_number(getattr(f, "telefone", "")) if f else ""
+    ativo = bool(
+        f
+        and f.app_ativo is not False
+        and _status_norm(f.status) not in ("demitido", "inativo")
+        and not bool((getattr(f, "data_demissao", "") or "").strip())
+    )
+    if (
+        not ativo
+        or not wa_is_valid_number(telefone_cadastrado)
+        or telefone_cadastrado != telefone
+    ):
+        reg_auth_attempt("app_password_reset", cpf, False, "credenciais_invalidas")
+        return jsonify(resposta)
+
+    f.app_senha = pw_hash(cpf)
+    f.app_trocar_senha = True
+    FuncionarioAppSessao.query.filter_by(
+        funcionario_id=f.id, revogado=False
+    ).update({"revogado": True}, synchronize_session=False)
+    try:
+        _db_commit_retry("app_password_reset", attempts=4)
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Falha ao redefinir senha do app")
+        reg_auth_attempt("app_password_reset", cpf, False, "persist_falha")
+        return jsonify(resposta)
+
+    mensagem = (
+        f"Olá, {f.nome}! Foi solicitada a redefinição do seu acesso ao "
+        "Aplicativo RM Facilities.\n\n"
+        f"*Login (CPF):* {cpf}\n"
+        f"*Senha temporária:* {cpf}\n\n"
+        "Por segurança, entre no aplicativo e crie uma nova senha."
+    )
+    try:
+        wa_send_text(telefone_cadastrado, mensagem)
+    except Exception:
+        app.logger.exception("Falha ao enviar senha temporária por WhatsApp")
+        reg_auth_attempt("app_password_reset", cpf, False, "envio_falha")
+        return jsonify(resposta)
+
+    reg_auth_attempt("app_password_reset", cpf, True, "senha_temporaria_enviada")
+    audit_event(
+        "auth_app_senha_redefinida",
+        "funcionario",
+        f.id,
+        "funcionario",
+        f.id,
+        True,
+        {"canal": "whatsapp"},
+    )
+    return jsonify(resposta)
+
+
 @app.route("/api/app/funcionario/auth/confirmar", methods=["POST"])
 @_limiter.limit("10 per minute")
 def api_app_funcionario_auth_confirmar():
@@ -19890,6 +19968,7 @@ def api_app_funcionario_auth_confirmar():
         {
             "ok": True,
             **sess,
+            "trocar_senha": bool(f.app_trocar_senha),
             "funcionario": {
                 "id": f.id,
                 "nome": f.nome,

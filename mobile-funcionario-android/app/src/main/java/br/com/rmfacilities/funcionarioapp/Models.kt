@@ -15,6 +15,12 @@ data class PasswordChangeResponse(
     val erro: String? = null
 )
 
+data class PasswordResetResponse(
+    val ok: Boolean = false,
+    val mensagem: String? = null,
+    val erro: String? = null
+)
+
 data class OtpStartResponse(
     val ok: Boolean = false,
     val erro: String? = null,

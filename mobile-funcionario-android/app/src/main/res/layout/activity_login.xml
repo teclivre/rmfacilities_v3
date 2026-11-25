@@ -112,6 +112,18 @@
                 android:textSize="15sp"
                 android:textStyle="bold" />
 
+            <TextView
+                android:id="@+id/btnEsqueciSenha"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:gravity="center"
+                android:text="Esqueci minha senha"
+                android:textColor="@color/accent_blue"
+                android:textSize="14sp"
+                android:clickable="true"
+                android:focusable="true" />
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnBiometria"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"

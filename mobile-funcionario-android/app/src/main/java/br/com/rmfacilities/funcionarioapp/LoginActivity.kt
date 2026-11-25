@@ -137,6 +137,9 @@ class LoginActivity : AppCompatActivity() {
 
         btnBiometria.setOnClickListener { autenticarComBiometria() }
         btnEntrar.setOnClickListener { entrarComSenha() }
+        findViewById<TextView>(R.id.btnEsqueciSenha).setOnClickListener {
+            startActivity(Intent(this, PasswordResetActivity::class.java))
+        }
 
         // Máscara CPF: 000.000.000-00
         etCpf.addTextChangedListener(object : TextWatcher {

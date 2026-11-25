@@ -338,6 +338,33 @@ class ApiClient(private val session: SessionManager) {
         }
     }
 
+    fun solicitarRedefinicaoSenha(cpf: String, telefone: String): PasswordResetResponse {
+        val payload = gson.toJson(mapOf("cpf" to cpf, "telefone" to telefone))
+        val req = Request.Builder()
+            .url(url("/api/app/funcionario/auth/esqueci-senha"))
+            .post(payload.toRequestBody("application/json".toMediaType()))
+            .addHeader("Content-Type", "application/json")
+            .build()
+
+        refreshHttp.newCall(req).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                return PasswordResetResponse(
+                    ok = false,
+                    erro = parseErro(raw, "Não foi possível solicitar a redefinição.")
+                )
+            }
+            return try {
+                gson.fromJson(raw, PasswordResetResponse::class.java)
+            } catch (_: Exception) {
+                PasswordResetResponse(
+                    ok = false,
+                    erro = "Resposta inesperada do servidor."
+                )
+            }
+        }
+    }
+
     fun iniciarOtp(cpf: String): OtpStartResponse {
         val payload = gson.toJson(mapOf("cpf" to cpf, "canal" to session.canalOtp))
         val req = Request.Builder()

@@ -90,6 +90,9 @@
             android:name=".PasswordChangeActivity"
             android:exported="false" />
         <activity
+            android:name=".PasswordResetActivity"
+            android:exported="false" />
+        <activity
             android:name=".WebViewActivity"
             android:exported="false" />
         <activity
