@@ -9056,7 +9056,14 @@ async function gerarAcessoAppFuncionario(){
  const salvo=await salvarFuncionario();
  if(!salvo) return;
  const numero=telefone.startsWith('55')?telefone:`55${telefone}`;
- const texto=`Olá, ${nome}! Seu acesso ao aplicativo RM Facilities foi criado.\\nLogin (CPF): ${cpf}\\nSenha temporária (CPF): ${senha}\\nAo entrar, você deverá criar uma nova senha.`;
+ const texto=`Olá, *${nome}*!
+
+Seu acesso ao *Aplicativo RM Facilities* foi criado.
+
+*Login (CPF):* ${cpf}
+*Senha temporária:* ${senha}
+
+Por segurança, altere sua senha no primeiro acesso.`;
  try{
    const r=await api('/api/whatsapp/send','POST',{numero,texto,nome,tipo:'principal'});
    if(r?.erro) throw new Error(r.erro);
