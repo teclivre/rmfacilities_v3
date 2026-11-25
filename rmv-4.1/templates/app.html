@@ -9050,14 +9050,13 @@ async function gerarAcessoAppFuncionario(){
    const confirmarEdicao=confirm('Gerar uma nova senha temporária substituirá a senha atual deste funcionário. Deseja continuar?');
    if(!confirmarEdicao) return;
  }
- const chars='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
- let senha='';
- for(let i=0;i<10;i++) senha+=chars[Math.floor(Math.random()*chars.length)];
+ const senha=cpf;
  document.getElementById('fsenha-app').value=senha;
  document.getElementById('fsenha-app-confirmar').value=senha;
- await salvarFuncionario();
+ const salvo=await salvarFuncionario();
+ if(!salvo) return;
  const numero=telefone.startsWith('55')?telefone:`55${telefone}`;
- const texto=`Olá, ${nome}! Seu acesso ao aplicativo RM Facilities foi criado.\\nCPF: ${cpf}\\nSenha temporária: ${senha}\\nAo entrar, você deverá criar uma nova senha.`;
+ const texto=`Olá, ${nome}! Seu acesso ao aplicativo RM Facilities foi criado.\\nLogin (CPF): ${cpf}\\nSenha temporária (CPF): ${senha}\\nAo entrar, você deverá criar uma nova senha.`;
  try{
    const r=await api('/api/whatsapp/send','POST',{numero,texto,nome,tipo:'principal'});
    if(r?.erro) throw new Error(r.erro);
@@ -9073,24 +9072,24 @@ async function salvarFuncionario(){
   const cpf=(document.getElementById('fcpf').value||'').replace(/\D/g,'');
   if(_rhFuncNovaCredencialObrigatoria && !senha){
     alert('Defina a senha de acesso ao aplicativo para concluir o cadastro.');
-    return;
+    return false;
   }
   if((senha || confirmar) && senha.length<6){
     alert('A senha do aplicativo deve ter ao menos 6 caracteres.');
-    return;
+    return false;
   }
   if(senha!==confirmar && (senha || confirmar)){
     alert('A confirmação da senha não confere.');
-    return;
+    return false;
   }
   if(senha && cpf.length!==11){
     alert('Informe um CPF válido antes de definir a senha de acesso ao aplicativo.');
-    return;
+    return false;
   }
   const salvo=await rhFuncionarioAutoSaveFlush(true,false);
-  if(!salvo) return;
+  if(!salvo) return false;
   const id=parseInt(document.getElementById('fid').value||0,10)||0;
-  if(!id){ alert('Não foi possível salvar o cadastro do funcionário.'); return; }
+  if(!id){ alert('Não foi possível salvar o cadastro do funcionário.'); return false; }
   if(senha){
     try{
       const r=await api(`/api/funcionarios/${id}/app/senha`,'PUT',{senha});
@@ -9098,7 +9097,7 @@ async function salvarFuncionario(){
       showSt('st-rh','Cadastro salvo e senha de acesso ao aplicativo configurada.',false);
     }catch(e){
       alert(`Cadastro salvo, mas não foi possível configurar a senha: ${e.message||'erro inesperado.'}`);
-      return;
+      return false;
     }
   }else{
     showSt('st-rh','Cadastro do funcionário salvo.',false);
@@ -9107,6 +9106,7 @@ async function salvarFuncionario(){
   document.getElementById('fsenha-app').value='';
   document.getElementById('fsenha-app-confirmar').value='';
   closeModal('func',true);
+  return true;
 }
 
 function rhJornadaFmtMin(min){
