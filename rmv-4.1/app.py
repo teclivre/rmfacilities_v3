@@ -19465,14 +19465,14 @@ def _app_version_policy():
     dl_cfg = (gc("app_download_url", "") or "").strip()
 
     versao_minima = _to_int_safe(
-        min_cfg if str(min_cfg or "").strip() else os.environ.get("APP_VERSION_MINIMA", "14"),
-        14,
+        min_cfg if str(min_cfg or "").strip() else os.environ.get("APP_VERSION_MINIMA", "731"),
+        731,
     )
     versao_atual = _to_int_safe(
         cur_cfg if str(cur_cfg or "").strip() else os.environ.get("APP_VERSION_ATUAL", str(versao_minima)),
         versao_minima,
     )
-    download_url = dl_cfg or (os.environ.get("APP_DOWNLOAD_URL", "").strip())
+    download_url = dl_cfg or (os.environ.get("APP_DOWNLOAD_URL", "https://play.google.com/store/apps/details?id=rm.funcionario").strip())
     cooldown_h = max(
         1,
         _to_int_safe(
