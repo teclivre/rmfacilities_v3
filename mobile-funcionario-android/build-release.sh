@@ -7,6 +7,13 @@ export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/tools:$PATH"
 PROJ_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$PROJ_DIR"
 
+VERSION_PROPS="$PROJ_DIR/app/version.properties"
+CURRENT_CODE=$(grep "VERSION_CODE" "$VERSION_PROPS" | cut -d'=' -f2)
+NEW_CODE=$((CURRENT_CODE + 1))
+
+echo "▶ Incrementando versão: $CURRENT_CODE -> $NEW_CODE"
+sed -i "s/VERSION_CODE=$CURRENT_CODE/VERSION_CODE=$NEW_CODE/" "$VERSION_PROPS"
+
 echo "▶ Limpando build anterior..."
 ./gradlew clean
 
