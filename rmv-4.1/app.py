@@ -19483,7 +19483,7 @@ def _app_version_policy():
     return {
         "versao_minima": max(0, versao_minima),
         "versao_atual": max(0, versao_atual),
-        "download_url": download_url,
+        "download_url": dl_cfg,
         "cooldown_h": cooldown_h,
     }
 
