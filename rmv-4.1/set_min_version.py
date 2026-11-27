@@ -1,4 +1,5 @@
 from app import app, db, Config
+import sys
 
 def set_min_version(version_code):
     with app.app_context():
@@ -14,5 +15,7 @@ def set_min_version(version_code):
         db.session.commit()
 
 if __name__ == "__main__":
-    # Definindo para 808 conforme a versão que você acabou de gerar
-    set_min_version(808)
+    if len(sys.argv) > 1:
+        set_min_version(sys.argv[1])
+    else:
+        print("Uso: python3 set_min_version.py <versao>")
