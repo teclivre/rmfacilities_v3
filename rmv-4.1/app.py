@@ -19459,15 +19459,26 @@ def _to_int_safe(v, default=0):
         return default
 
 
+def _get_min_version_from_file():
+    try:
+        path = os.path.join(BASE_DIR, "mobile-funcionario-android", "app", "version.properties")
+        with open(path, "r") as f:
+            for line in f:
+                if line.startswith("VERSION_CODE="):
+                    return int(line.split("=")[1].strip())
+    except Exception:
+        pass
+    return 808 # Fallback
+
 def _app_version_policy():
-    min_cfg = gc("app_version_minima", "")
+    # Agora lê direto do arquivo de versão do Android
+    versao_minima = _get_min_version_from_file()
+    
+    min_cfg = gc("app_version_minima", str(versao_minima))
     cur_cfg = gc("app_version_atual", "")
     dl_cfg = (gc("app_download_url", "") or "").strip()
 
-    versao_minima = _to_int_safe(
-        min_cfg if str(min_cfg or "").strip() else os.environ.get("APP_VERSION_MINIMA", "802"),
-        802,
-    )
+    versao_minima = _to_int_safe(min_cfg, versao_minima)
     versao_atual = _to_int_safe(
         cur_cfg if str(cur_cfg or "").strip() else os.environ.get("APP_VERSION_ATUAL", str(versao_minima)),
         versao_minima,
