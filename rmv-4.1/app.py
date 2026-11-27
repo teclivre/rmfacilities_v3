@@ -19465,8 +19465,8 @@ def _app_version_policy():
     dl_cfg = (gc("app_download_url", "") or "").strip()
 
     versao_minima = _to_int_safe(
-        min_cfg if str(min_cfg or "").strip() else os.environ.get("APP_VERSION_MINIMA", "800"),
-        800,
+        min_cfg if str(min_cfg or "").strip() else os.environ.get("APP_VERSION_MINIMA", "728"),
+        728,
     )
     versao_atual = _to_int_safe(
         cur_cfg if str(cur_cfg or "").strip() else os.environ.get("APP_VERSION_ATUAL", str(versao_minima)),
